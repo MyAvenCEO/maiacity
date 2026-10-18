@@ -1,5 +1,5 @@
 //! The Lab: in-process devices on a network the test controls. Each device has its own keys, its own edits and its own
-//! store, exactly what a real device would hold; there is also a relay server, a device of the device vault avenCEO
+//! store, exactly what a real device would hold; there is also a relay server, a device of the aven avenMAIA
 //! server, which holds relay shares and never reads, and any number of strangers. The scenario tests run on it, and so
 //! do the nodes: a device split off to run on its own (`split`) is what `avendb-net` puts on iroh.
 //!
@@ -58,7 +58,7 @@
 //! device that doesn't know its passkey's P-256 key yet drafts its edits for each key the passkey's first ceremony
 //! recovers to, all in one batch (`drafting_for`). A new device links to its person's vault by its passkey alone
 //! (`link_card`, `join`, `accept_join`), and a server no vault has claimed yet becomes a device of a new device vault,
-//! avenCEO server, owned by the human vault of the first device that claims it, directly or through the coops of its
+//! avenMAIA, owned by the human vault of the first device that claims it, directly or through the coops of its
 //! seed (`claim`, `accept_claim`).
 //!
 //! A Classic McEliece public key travels as a blob beside the edits that name it (`policy::Edit::blobs`): a device
@@ -227,7 +227,7 @@ impl Unsigned {
 
 /// Edits drafted on a device one after another, each building on those drafted before it, for its passkeys to sign all
 /// of them in one ceremony (`Lab::drafting`): as a person's first device founds their vault and adds itself, and the
-/// first to claim a server founds avenCEO server and adds the server, in one ceremony instead of one for each edit.
+/// first to claim a server founds avenMAIA and adds the server, in one ceremony instead of one for each edit.
 pub struct Drafting<'a> {
     lab: &'a Lab,
     /// The device's log, with the edits drafted so far.
@@ -803,7 +803,7 @@ impl Lab {
     }
 
     /// Device `on`'s claim of a server no vault has claimed yet (P8f): `draft` (`draft`, `drafting`) adds the server's
-    /// device to a device vault `on`'s view holds, avenCEO server, the last of the seed `on`'s human vault founds
+    /// device to a device vault `on`'s view holds, avenMAIA, the last of the seed `on`'s human vault founds
     /// (`world::SEED`), its key to seal to the one the server handed (`claim_key`). Every signer but the server signs
     /// it here, each by its ceremony among `ceremonies` or by its key at hand, and the claim brings the logs the server
     /// checks it by, and no others: the device vault's and its owners', up the chains (`sync::vault_logs`). The server
@@ -820,7 +820,7 @@ impl Lab {
         let Action::Share(Sharing::Device { vault, device: server, .. }) = edit.action else {
             return Err(Refusal::NotClaiming);
         };
-        if !self.held(on).view().vault(vault).is_some_and(|v| v.kind == Kind::DeviceVault) {
+        if !self.held(on).view().vault(vault).is_some_and(|v| claimable(v.kind)) {
             return Err(Refusal::NotClaiming);
         }
         let id = edit.id();
@@ -833,15 +833,15 @@ impl Lab {
         Ok(Claim { card, add: edit, sigs })
     }
 
-    /// The device vault device `server` belongs to by device `d`'s view: avenCEO server, once `d`'s person claimed the
+    /// The aven or device vault device `server` belongs to by device `d`'s view: avenMAIA, once `d`'s person claimed the
     /// server (`claim`), or once `d` holds the server's card (`card`).
     pub fn server_vault_of(&self, d: SignerId, server: SignerId) -> Option<VaultId> {
         let st = self.held(d).view();
-        let vault = st.vaults().iter().find(|v| v.kind == Kind::DeviceVault && v.devices.contains(&server))?;
+        let vault = st.vaults().iter().find(|v| claimable(v.kind) && v.devices.contains(&server))?;
         Some(vault.id)
     }
 
-    /// The avenCEO server of a seed device `d`'s own vault founded that has no device yet, by `d`'s view
+    /// The aven of a seed device `d`'s own vault founded that has no device yet, its server not added yet, by `d`'s view
     /// (`world::seeded`): the one a claim founded that the server didn't take, which a claim tried again adds the
     /// server to rather than found another seed.
     pub fn unclaimed_server(&self, d: SignerId) -> Option<VaultId> {
@@ -889,7 +889,7 @@ impl Lab {
         log.receive(card.iter().map(|s| s.edit.clone()));
         log.view().step(&signed.edit)?;
         log.receive([signed.edit.clone()]);
-        if !log.view().vault(vault).is_some_and(|v| v.kind == Kind::DeviceVault && v.devices.contains(&d)) {
+        if !log.view().vault(vault).is_some_and(|v| claimable(v.kind) && v.devices.contains(&d)) {
             return Err(Refusal::NotClaiming);
         }
         let blobs: Blobs = self.seal_public(d).map(|(_, blob)| (key.mceliece, blob)).into_iter().collect();
@@ -3511,4 +3511,10 @@ fn show_items(d: SignerId, store: &mut Store) {
         shown.insert(en.id, Shown { history, items, print });
     }
     store.shown = shown;
+}
+
+/// A vault of kind `kind` takes a device by a claim (`Lab::claim`, `Lab::accept_claim`): a device vault, an agent's or
+/// a worker's, or an aven, whose device is its server (Samuel 2026-10-18: an aven lives on its server).
+fn claimable(kind: Kind) -> bool {
+    matches!(kind, Kind::DeviceVault | Kind::Aven)
 }

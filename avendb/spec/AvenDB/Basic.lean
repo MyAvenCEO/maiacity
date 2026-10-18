@@ -28,12 +28,12 @@ inductive Kind where
   | human
   /-- A group's vault: owned by human and coop vaults. It has no devices, and acts through its owners. -/
   | coop
-  /-- An agent's identity: owned by one human vault alone, and a human vault owns one at most. It has no devices: it
-      acts through its owner's devices, and its agents, the device vaults it owns, act for themselves through the sub
-      caps it passes on to them. -/
+  /-- A coop's AI identity: owned by one coop alone, and a coop owns one at most. It lives on its server, its
+      device, which acts for it but never governs it; its coop's owners act for it through the coop. It owns nothing:
+      an agent session reaches it through its server, with the rights it holds, never as a vault of its own. -/
   | aven
-  /-- A vault for devices: owned by one human, coop or aven vault, which governs it. Its devices (an agent's harness,
-      a server, a drive) act for it but never govern it, and it owns nothing. -/
+  /-- A vault for devices: owned by one human or coop vault, which governs it. Its devices (a studio worker, a
+      drive) act for it but never govern it, and it owns nothing. -/
   | deviceVault
   deriving DecidableEq, Repr
 
@@ -66,15 +66,15 @@ structure KindRules where
 
 /-- The one table of vault kinds, which every rule about kinds reads (`ownerFits`, `Kind.hasDevices`, `roomFor`), the
     Rust core's `Kind::rules` mirrors and the page reads (the `kinds` op). A human vault is owned by signers and has
-    devices. A coop is owned by human and coop vaults, and has none. An aven is owned by one human vault alone, a
-    human vault owning one at most, and has none. A device vault is owned by one human, coop or aven vault, and has
-    devices. No kind lists a device vault among its owners, so a device vault owns nothing; only a device vault lists
-    an aven, so an aven owns device vaults alone, its agents. -/
+    devices. A coop is owned by human and coop vaults, and has none. An aven is owned by one coop alone, a coop owning
+    one at most, and has devices, its server (one aven per coop, none per person, and the aven lives on its server). A
+    device vault is owned by one human or coop vault, and has devices. No kind lists a device vault or an aven among its
+    owners, so neither owns anything: an agent reaches an aven through its server, never as a vault of its own. -/
 def Kind.rules : Kind → KindRules
   | .human       => ⟨.signers, none, true, none⟩
   | .coop        => ⟨.vaults [.human, .coop], none, false, none⟩
-  | .aven        => ⟨.vaults [.human], some 1, false, some 1⟩
-  | .deviceVault => ⟨.vaults [.human, .coop, .aven], some 1, true, none⟩
+  | .aven        => ⟨.vaults [.coop], some 1, true, some 1⟩
+  | .deviceVault => ⟨.vaults [.human, .coop], some 1, true, none⟩
 
 /-- A vault of the kind may have `n` owners. -/
 def KindRules.takes (r : KindRules) (n : Nat) : Bool := r.most.all (n ≤ ·)

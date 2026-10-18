@@ -854,7 +854,7 @@ fn settings(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepa
 /// device `me`'s own vault founds and owns alone, each of a kind by its name (`words::kind_name`) and named, their
 /// geneses drafted together for one ceremony of the passkey; the kind table says which kinds a vault may found, and how
 /// many (`Kind::rules`): a person's vault founds coops, one aven and device vaults. Once it signed them, the device
-/// acting for each through its vault gives avenCEO server the level it holds on the person's vault, backup or relay
+/// acting for each through its vault gives avenMAIA the level it holds on the person's vault, backup or relay
 /// (`world::server_level`), and writes its profile (`approved`): `{"vaults": [id, ...]}`, in the order named.
 fn found(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared, Refused> {
     let one = |v: &Map<String, Value>| -> Result<(Kind, String), Refused> {
@@ -1154,7 +1154,7 @@ fn asking<'a>(lab: &Lab, me: SignerId, asks: &'a str, to: VaultId, actor: VaultI
 /// saying why; or, `asks` "owner", to co-own `to`, or, "invite", invites `to` to co-own `as` (`owning`).
 /// The request is a record of avenDB's own `request` schema (`world::REQUEST`) that `as` writes in its own vault, and a
 /// share of that entry alone to `to`, which may read it and set its answer alone (`world::ANSWER`); sync carries both,
-/// straight to `to`'s devices or through any peer that keeps `as`'s vault for it, as avenCEO server does. `to`
+/// straight to `to`'s devices or through any peer that keeps `as`'s vault for it, as avenMAIA does. `to`
 /// answers with its share of the level asked to `as` (`share`, acting for `to`) and the answer it sets, "granted",
 /// or with "denied" alone (`set` of `answer`, acting for `to`), which comes back to `as` the same way. `{"entry": id,
 /// "share": id}`.
@@ -1242,7 +1242,7 @@ fn written(lab: &mut Lab, me: SignerId, vault: VaultId, name: &str) -> Result<bo
 }
 
 /// Vault `vault`, new under device `me`'s person's vault, follows each of that vault's standing grants
-/// (`world::standing`), the strongest first: avenCEO server's, backup, so the server keeps its ciphertext and passes it
+/// (`world::standing`), the strongest first: avenMAIA's, backup, so the server keeps its ciphertext and passes it
 /// on while its devices are away, or relay alone, as `back_up` sets it for all of them; and each given for "all my
 /// vaults, now and later", as to the person's aven and, resting on it, to the aven's agent (`follow`). Every vault
 /// founded under a person does, once it is founded (`written`, avendb-net's `Node::add_device_vault_with`): so what it

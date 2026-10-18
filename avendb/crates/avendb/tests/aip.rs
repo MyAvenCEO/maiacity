@@ -56,8 +56,9 @@ fn set(path: Value, value: Value) -> Value {
     json!({ "op": "set", "path": path, "value": value })
 }
 
-/// Alice's world with her aven, avenALICE, which her vault owns: an Editor of her notes, logic and AIPs; Bob a Viewer
-/// of those and of her reviews. Her Mac acts for both her vault and her aven; her phone and Bob's Mac read.
+/// Alice's world with her aven, avenALICE, which a coop of hers owns, her vault its one owner: an Editor of her notes,
+/// logic and AIPs; Bob a Viewer of those and of her reviews. Her Mac acts for both her vault and her aven, the aven
+/// through the coop and her vault; her phone and Bob's Mac read.
 struct Gate {
     w: World,
     alice: VaultId,
@@ -70,9 +71,13 @@ struct Gate {
 fn gate() -> Gate {
     let mut w = cast::world();
     let (alice, bob, mac, passkey) = (w.alice, w.bob, w.mac_a, w.passkey_a);
-    let owners = vec![Principal::Vault(alice)];
-    let genesis = Action::Genesis { kind: Kind::Aven, owners, threshold: 1, root: None, nonce: 5, seal_to: vec![] };
-    let aven = VaultId::from(w.lab.submit(mac, &[passkey], genesis).expect("avenALICE"));
+    let found = |w: &mut World, kind: Kind, owner: VaultId| {
+        let owners = vec![Principal::Vault(owner)];
+        let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce: 5, seal_to: vec![] };
+        VaultId::from(w.lab.submit(mac, &[passkey], genesis).expect("her passkey founds it"))
+    };
+    let coop = found(&mut w, Kind::Coop, alice);
+    let aven = found(&mut w, Kind::Aven, coop);
     let types = |ts: &[&str]| Selector::AnyOf(vec![vec![Atom::TypeIn(ts.iter().map(|&t| t.into()).collect())]]);
     let editor = cast::share(alice, cast::vault(aven), Level::Write, types(&["note", "logic", "aip"]));
     w.lab.issue(mac, &[mac], editor).expect("an editor");
@@ -412,25 +417,20 @@ fn two_devices_apart_give_one_number_twice_and_every_reader_labels_them_alike() 
 }
 
 /// An agent its person makes a Suggester of all her vaults, as the page grants it (`$lib/avendb/vaults.js`
-/// `standingOps`, and `aipAuthorOps` beside it): her vault gives her aven a standing Suggester, and the aven passes it
-/// on to agentClaude's device vault; a Suggester alone opens no AIP, which is an entry of its own. Then her vault gives
-/// the aven a share of its own, "AIP author", `create` and `set` on her AIPs alone, and the aven passes that on too,
-/// resting on it rather than on the standing Suggester the aven holds beside it, which would add nothing
-/// (`world::parent_giving`). On its own device agentClaude opens an AIP over its proposal line and promotes it, AIP-1;
-/// it changes no note beyond its proposal, nor reviews its AIP; her vault accepts it, and main holds the proposal on
-/// every device. agentCodex, a Viewer, opens none.
+/// `standingOps`, and `aipAuthorOps` beside it): her vault gives agentClaude's device vault, which it owns, a standing
+/// Suggester; a Suggester alone opens no AIP, which is an entry of its own. Then her vault gives it a share of its own,
+/// "AIP author", `create` and `set` on her AIPs alone. On its own device agentClaude opens an AIP over its proposal
+/// line and promotes it, AIP-1; it changes no note beyond its proposal, nor reviews its AIP; her vault accepts it, and
+/// main holds the proposal on every device. agentCodex, a Viewer, opens none.
 #[test]
 fn a_suggester_agent_given_an_aip_author_share_opens_aips_and_a_viewer_opens_none() {
     let mut w = cast::world();
     let (alice, mac, passkey) = (w.alice, w.mac_a, w.passkey_a);
-    let found = |w: &mut World, kind: Kind, owner: VaultId, nonce: u64| {
-        let owners = vec![Principal::Vault(owner)];
-        let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
-        VaultId::from(w.lab.submit(mac, &[passkey], genesis).expect("her passkey founds it"))
-    };
-    let aven = found(&mut w, Kind::Aven, alice, 5);
     let agent = |w: &mut World, name: &str, nonce: u64| {
-        let vault = found(w, Kind::DeviceVault, aven, nonce);
+        let owners = vec![Principal::Vault(alice)];
+        let kind = Kind::DeviceVault;
+        let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
+        let vault = VaultId::from(w.lab.submit(mac, &[passkey], genesis).expect("her passkey founds it"));
         let device = w.lab.device(name);
         let add = Action::Share(avendb::policy::Sharing::Device { vault, device, seal_to: None });
         w.lab.submit(mac, &[passkey, device], add).expect("its device");
@@ -438,13 +438,11 @@ fn a_suggester_agent_given_an_aip_author_share_opens_aips_and_a_viewer_opens_non
     };
     let (claudes, claude) = agent(&mut w, "agentClaude", 6);
     let (codexes, codex) = agent(&mut w, "agentCodex", 7);
-    let (a, v, c, x) = (alice.to_hex(), aven.to_hex(), claudes.to_hex(), codexes.to_hex());
+    let (a, c, x) = (alice.to_hex(), claudes.to_hex(), codexes.to_hex());
     let share = |w: &mut World, op: Value| ok(run(w, mac, op))["share"].as_str().expect("a share").to_string();
-    share(&mut w, json!({ "op": "share", "over": a, "who": { "vault": v }, "level": "Suggester", "standing": true,
-        "as": a }));
     share(&mut w, json!({ "op": "share", "over": a, "who": { "vault": c }, "level": "Suggester", "standing": true,
-        "as": v }));
-    share(&mut w, json!({ "op": "share", "over": a, "who": { "vault": x }, "level": "Viewer", "as": v }));
+        "as": a }));
+    share(&mut w, json!({ "op": "share", "over": a, "who": { "vault": x }, "level": "Viewer", "as": a }));
     let n = json!({ "op": "create", "vault": a, "type": "note", "value": note() });
     let n = ok(run(&mut w, mac, n))["entry"].clone();
     w.lab.sync_all(1);
@@ -456,19 +454,10 @@ fn a_suggester_agent_given_an_aip_author_share_opens_aips_and_a_viewer_opens_non
     let open = json!({ "op": "aip_open", "vault": a, "title": "Earlier corn", "note": "Why: it grows earlier.",
         "proposals": [{ "entry": n, "line": line }], "tags": ["game:sandbox-7"], "as": c });
     refused(&run(&mut w, claude, open.clone()));
-    // the AIP author's shares, as the page writes them: her vault's to the aven, then the aven's to its agent
+    // the AIP author's share, as the page writes it: her vault's to the agent
     let author = json!({ "name": "AIP author", "ops": [{ "op": "create" }, { "op": "set", "path": [] }] });
     let aips = json!({ "type": ["aip"] });
-    let given = share(&mut w, json!({ "op": "share", "over": a, "who": { "vault": v }, "level": author, "what": aips,
-        "as": a }));
-    let passed = share(&mut w, json!({ "op": "share", "over": a, "who": { "vault": c }, "level": author,
-        "what": aips, "as": v }));
-    let rests = w.lab.state(mac).share(avendb::id::ShareId::from_hex(&passed).expect("its id")).map(|s| s.share.parent);
-    assert_eq!(
-        rests.flatten().map(|p| p.to_hex()),
-        Some(given),
-        "the agent's rests on the aven's AIP author share, not on its standing Suggester"
-    );
+    share(&mut w, json!({ "op": "share", "over": a, "who": { "vault": c }, "level": author, "what": aips, "as": a }));
     w.lab.sync_all(2);
     let aip = ok(run(&mut w, claude, open))["entry"].clone();
     let promoted = ok(run(&mut w, claude, json!({ "op": "aip_promote", "entry": aip, "as": c })));

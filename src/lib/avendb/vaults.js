@@ -100,7 +100,7 @@ import { fieldPaths, pathWords } from './paths.js';
  * it on, its own vault first; `syncedTo` the devices that hold some of it, each with how many of its edits; `title` a
  * schema's title or a lens's name for those; `record` the record of a flow, a function, a post or a story (kind
  * `record`), or of a spark (kind `note`, ./sparks.js), each field it leaves out at its default.
- * @typedef {{ entry: string, vault: string, by: string, type: string | null, tags: string[] | null,
+ * @typedef {{ entry: string, vault: string, by: string, authors?: string[], type: string | null, tags: string[] | null,
  *   created: number | null, audience: string, public: boolean, levels: Record<string, Role>,
  *   readers: string[], writers: string[], sharers: string[], syncedTo: Holder[],
  *   kind: 'note' | 'todo' | 'file' | 'schema' | 'lens' | 'record' | 'sealed', title: string | null,
@@ -109,8 +109,8 @@ import { fieldPaths, pathWords } from './paths.js';
  *   record: Record<string, any> | null, files: import('./files.js').FileView[] }} EntryView
  */
 /**
- * The device's world (avendb-browser's `World::to_json`): `ownsServer` whether the person's vault owns avenCEO server,
- * the device vault avenCEO GmbH owns and the server is a device of, directly or through owners of owners; `backsUp`
+ * The device's world (avendb-browser's `World::to_json`): `ownsServer` whether the person's vault owns avenMAIA,
+ * the device vault Maia City owns and the server is a device of, directly or through owners of owners; `backsUp`
  * whether avenDB's server keeps an encrypted copy of it, `null` where it holds no share on it; `kinds` the kind table.
  * @typedef {{ me: string, mine: string, recovery: string | null, vaults: VaultView[], shares: CapView[],
  *   audiences: CellView[], entries: EntryView[], groups: Group[], kinds: KindRules[], ownsServer: boolean,
@@ -289,10 +289,28 @@ export function owns(world, a, b) {
 }
 
 /**
- * The person's one aven, the aven vault their vault owns, if it owns one.
+ * The aven the person's agents run under: their seed coop's one aven, avenMAIA, else the first aven they see.
  * @param {WorldView} world @returns {VaultView | undefined}
  */
-export const avenOf = (world) => ownedBy(world, world.mine).find((v) => v.kind === 'aven');
+export const avenOf = (world) => seeded(world)[1]?.[0] ?? world.vaults.find((v) => v.kind === 'aven');
+
+/**
+ * Who wrote an entry, or a version of it, in words (Samuel 2026-10-18: never the coop, always its aven and its human
+ * collaborators): its authors as avendb's `world::authors` lists them, the coop's aven first and then each human vault
+ * whose device signed a write of it, joined by " + ": "avenMAIA + Samuel + Alice". Each is a vault's id, which `world`
+ * names, or `{vault, name}` as the feed and the history give it. `fallback` where it has none.
+ * @param {WorldView | null | undefined} world @param {(string | { vault: string, name?: string | null })[] | null | undefined} authors
+ * @param {string} [fallback]
+ */
+export function authorsLine(world, authors, fallback = '') {
+	const byId = new Map((world?.vaults ?? []).map((v) => [v.id, v]));
+	const named = (/** @type {string | { vault: string, name?: string | null }} */ a) => {
+		const id = typeof a === 'string' ? a : a.vault;
+		const given = typeof a === 'string' ? null : a.name;
+		return given || (byId.has(id) ? nameOf(byId.get(id)) : `vault ${short(id)}`);
+	};
+	return (authors ?? []).length ? (authors ?? []).map(named).join(' + ') : fallback;
+}
 
 /** The first characters of an id, enough to tell two apart. @param {string | null | undefined} id */
 export const short = (id) => (id ? `${id.slice(0, 4)} ${id.slice(4, 8)}` : '');
@@ -417,7 +435,7 @@ export const acting = (world, v) =>
 
 /**
  * Who signer `id` is, as a person reads it: a device by its card's name, else as a device of its vault, a device
- * vault's by the vault's own name, as avenCEO server's server or agentClaude's agent; a vault's root as its passkey;
+ * vault's by the vault's own name, as avenMAIA's server or agentClaude's agent; a vault's root as its passkey;
  * the master recovery key; a passkey that owns a vault; else a key by the start of its id. `lead` capitalises what
  * starts a line, where it isn't a name.
  * @param {WorldView} world @param {string} id @param {boolean} [lead]
@@ -486,22 +504,21 @@ export function chainSteps(world, chain) {
 }
 
 /**
- * The names of the seed a person's claim of avenDB's server founds (avendb's `world::SEED_NAMES`): Maia Holding GmbH, a
- * coop their vault owns, avenCEO GmbH, a coop Maia Holding owns, avenCEO server, the device vault avenCEO GmbH owns and
- * the server is a device of, and Maia City, a coop avenCEO GmbH owns, where the content lives.
+ * The names of the seed a person's claim of avenDB's server founds (avendb's `world::SEED_NAMES`): Maia City, the one
+ * coop of the seed, which their vault owns and where the content lives, and avenMAIA, its one aven, which lives on the
+ * server, its device (Samuel 2026-10-18: no holding, no company coop, one aven per coop and none per person, and the
+ * server's vault and the coop's aven one vault).
  */
-export const SEED = /** @type {const} */ (['Maia Holding GmbH', 'avenCEO GmbH', 'avenCEO server', 'Maia City']);
+export const SEED = /** @type {const} */ (['Maia City', 'avenMAIA']);
 
 /** The kinds of the seed's chain, the person's vault owning the first (avendb's `world::SEED`). */
-const SEED_KINDS = /** @type {const} */ (['coop', 'coop', 'device']);
+const SEED_KINDS = /** @type {const} */ (['coop', 'aven']);
 
 /**
  * The seed of the person's vault, each vault of it with its name in `SEED`, if their claim of the server founded one:
- * a device vault with a device, the server, at the end of a chain of `SEED_KINDS`, each owned alone by the one before,
- * the first by their vault (avendb's `world::seeded`); then Maia City, a coop avenCEO GmbH owns alone, where there is
- * one. None otherwise.
- * @param {WorldView} world
- * @returns {[VaultView, string][]}
+ * an aven with a device, the server, owned alone by a coop their vault owns alone (avendb's `world::seeder`). Empty
+ * where their vault founded no seed.
+ * @param {WorldView} world @returns {[VaultView, string][]}
  */
 export function seeded(world) {
 	const byId = new Map(world.vaults.map((v) => [v.id, v]));
@@ -513,15 +530,16 @@ export function seeded(world) {
 		const chain = [server];
 		for (let up = owner(server); up && chain.length < SEED_KINDS.length; up = owner(up)) chain.unshift(up);
 		const kinds = chain.length === SEED_KINDS.length && chain.every((v, i) => v.kind === SEED_KINDS[i]);
-		if (kinds && owner(chain[0])?.id === world.mine) {
-			const company = chain[1];
-			const city = world.vaults.find((v) => v.kind === 'coop' && owner(v)?.id === company.id);
-			const seed = /** @type {[VaultView, string][]} */ (chain.map((v, i) => [v, SEED[i]]));
-			return city ? [...seed, [city, SEED[3]]] : seed;
-		}
+		if (kinds && owner(chain[0])?.id === world.mine) return /** @type {[VaultView, string][]} */ (chain.map((v, i) => [v, SEED[i]]));
 	}
 	return [];
 }
+
+/** The seed's coop, Maia City, if the person's claim founded it (`seeded`). @param {WorldView} world */
+export const seedCity = (world) => seeded(world)[0]?.[0];
+
+/** The seed's aven, avenMAIA, the server's vault, if the person's claim founded it (`seeded`). @param {WorldView} world */
+export const seedServer = (world) => seeded(world)[1]?.[0];
 
 /** The types of entries, as a person names one and many. */
 const NOUNS = /** @type {Record<string, [string, string]>} */ ({
@@ -865,7 +883,7 @@ export function fieldsOf(lane, type) {
 }
 
 /**
- * A cap in words, as a share, who · level · what: "avenBOB · Viewer · todos tagged “work”", "avenCEO server ·
+ * A cap in words, as a share, who · level · what: "avenBOB · Viewer · todos tagged “work”", "avenMAIA ·
  * Backup · Everything", "avenBOB · Tick done · “Fix the door”: read and set its status to “done”"; a built-in group's ops go
  * without saying.
  * @param {CapView} c @param {WorldView} world
@@ -952,7 +970,7 @@ export const sharedWith = (world, vault, entry) =>
 	sharedThrough(world, vault, world.shares.filter((c) => c.over === vault && c.entries.includes(entry)).map((c) => c.id));
 
 /**
- * One who entries are shared with, in words: "avenBOB (Editor)", "avenCEO server (keeps an encrypted copy)".
+ * One who entries are shared with, in words: "avenBOB (Editor)", "avenMAIA (keeps an encrypted copy)".
  * @param {Sharer} x
  */
 export const sharerWords = (x) => `${x.name} (${x.levels.join(', ') || KEEPS.backup})`;

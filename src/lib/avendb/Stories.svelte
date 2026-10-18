@@ -12,7 +12,7 @@
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import { allowed, creatable, may } from './ops.js';
-	import { count, nameOf, reads, why } from './vaults.js';
+	import { authorsLine, count, nameOf, reads, why } from './vaults.js';
 
 	/** The type of a story's entry, and the kind of its record. */
 	const TYPE = 'story';
@@ -142,7 +142,7 @@
 						<a class="card" href="#stories/{e.entry}">
 							<b>{e.title || 'Untitled story'}</b>
 							<small class="soft">
-								{#if format(e)}{format(e)} · {/if}By {nameOf(byId.get(e.by))}{e.proposals
+								{#if format(e)}{format(e)} · {/if}By {authorsLine(world, e.authors, nameOf(byId.get(e.by)))}{e.proposals
 									? ` · ${count(e.proposals, 'proposal')}`
 									: ''}
 							</small>

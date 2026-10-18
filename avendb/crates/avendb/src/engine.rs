@@ -72,7 +72,7 @@ use crate::rules;
 use crate::words;
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Attrs, Sym, LENS_TYPE, SCHEMA_TYPE};
-use crate::world::{FORK, SyncedTo, fork_mark};
+use crate::world::{FORK, SyncedTo, authors, authors_json, fork_mark};
 
 pub use vaults::{approve, approved, follow_standing, passkey_of, world, Approval, Prepared, Then};
 
@@ -980,7 +980,8 @@ fn pin(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused
 /// line (`version`), whether its readers count it (`counted`: a write that breaks its entry's schemas, that no op of
 /// its shares allows, or that builds on one, is on no line), why not (`why`) and, for the latest `limit` (`SHOWN`, left
 /// out) that change anything, the changes it made to the stored record (`ops::diff`), which every reader of the entry
-/// sees alike.
+/// sees alike. Each line and each release says who wrote it as it stands there (`authors`, `world::authors`): the
+/// coop's aven and the human vaults whose devices signed its writes.
 fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let entry = entry_of(o)?;
     let limit = count_of(o, "limit")?.unwrap_or(SHOWN);
@@ -992,6 +993,7 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
             "name": line_name(h, line),
             "from": start.map(|c| ids(&c.write.deps)),
             "heads": ids(&h.heads(line)),
+            "authors": authors_json(lab, me, &authors(lab, me, entry, &h.heads(line))),
             "version": described(h, line, &h.heads(line)),
             "versions": releases(h, line),
             "variant": line.is_some_and(|b| h.is_variant(b)),
@@ -1025,6 +1027,7 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
             "name": if matches!(x.kind, "propose" | "variant") { h.name(w.edit) } else { None },
             "from": x.from.map(|l| json!({ "line": line_json(l), "name": line_name(h, l) })),
             "version": numbers.get(&w.edit),
+            "authors": numbers.get(&w.edit).map(|_| authors_json(lab, me, &authors(lab, me, entry, &[w.edit]))),
             "changes": changes,
         })
     };

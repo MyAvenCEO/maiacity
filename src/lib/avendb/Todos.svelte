@@ -24,7 +24,8 @@
 		tagsIn,
 		tagsOf,
 		why,
-		writes
+		writes,
+		authorsLine
 	} from './vaults.js';
 
 	/**
@@ -163,7 +164,7 @@
 						</button>
 						<span class="title">{it.title}</span>
 						<Tags {world} {actor} {api} {busy} entry={it} />
-						{#if it.by !== vault}<small class="soft">by {nameOf(byId.get(it.by))}</small>{/if}
+						{#if it.authors?.length || it.by !== vault}<small class="soft">by {authorsLine(world, it.authors, nameOf(byId.get(it.by)))}</small>{/if}
 						{#if sharesOn(it, actor)}
 							<button class="btn quiet" disabled={busy} onclick={() => (sharing = sharing === it.entry ? '' : it.entry)}>Share</button>
 						{/if}

@@ -148,17 +148,17 @@ async fn a_new_server_lets_in_the_devices_of_the_vaults_it_relays() {
     let mac = node(&mut w, mac_a, &[passkey_a], 1, opts).await;
     mac.know(server.addr());
     assert!(!relay.admission().admits(&mac.id()), "the new server knows no device of Alice's");
-    // Alice's vault claims it first: the server is a device of avenCEO server, of the seed her vault founds
+    // Alice's vault claims it first: the server is a device of avenMAIA, the aven of the seed her vault founds
     let v = mac.claim(&started.offer, passkey_a).await.expect("Alice's vault claims the server");
-    assert_eq!(server::vault(server).await, Some(v), "the server is avenCEO's device");
+    assert_eq!(server::vault(server).await, Some(v), "the server is avenMAIA's device");
     until("the server knows Alice's Mac", || async { relay.admission().admits(&mac.id()) }).await;
     assert!(!relay.admission().admits(&bob_mac), "and not yet Bob's");
-    // the coop gives this avenCEO relay on the whole of it, and Alice writes Welcome into it
+    // the coop gives avenMAIA relay on the whole of it, and Alice writes Welcome into it
     let relayed = move |lab: &mut Lab, me| {
         lab.issue(me, &[me], share(coop, vault(v), Level::Backup, Selector::All))?;
         lab.create(me, coop, coop, "doc", &[], document("Welcome", WELCOME_TEXT, me))
     };
-    let welcome = mac.act(relayed).await.expect("the coop, relayed by avenCEO, and Welcome");
+    let welcome = mac.act(relayed).await.expect("the coop, relayed by avenMAIA, and Welcome");
     let holds = || server.read(move |lab, me| lab.fetched(me, welcome) > 0);
     until("the new server holds Welcome's edits", holds).await;
     until("from the coop's log it lets Bob's Mac in", || async { relay.admission().admits(&bob_mac) }).await;
@@ -369,24 +369,22 @@ async fn the_server_serves_the_code_everyone_reads_and_maia_citys_alone_for_seed
     let opts = Options { relay: Some(started.relay.url()), ..Options::local() };
     let mac = node(&mut w, mac_a, &[passkey], 1, opts).await;
     mac.know(server.addr());
-    // Alice's vault claims the server: the seed it founds holds Maia City, the coop avenCEO GmbH owns alone, which
-    // gives avenCEO server backup, as every vault founded under her follows her server setting; so the server knows it
-    // as its seed's coop
+    // Alice's vault claims the server: the seed it founds is Maia City, a coop her vault owns alone, and avenMAIA, its
+    // aven, the server's vault; Maia City gives avenMAIA backup, as every vault founded under her follows her server
+    // setting, so the server knows it as its seed's coop
     let avenceo = mac.claim(&started.offer, passkey).await.expect("Alice's vault claims the server");
-    let coop_of = move |lab: &Lab, me| {
-        let st = lab.state(me);
-        let Some([Principal::Vault(company)]) = st.vault(avenceo).map(|v| &v.owners[..]) else { return None };
-        let coop = |v: &&avendb::policy::Vault| v.kind == Kind::Coop && v.owners == [Principal::Vault(*company)];
-        st.vaults().iter().find(coop).map(|v| v.id)
+    let coop_of = move |lab: &Lab, me| match lab.state(me).vault(avenceo).map(|v| &v.owners[..]) {
+        Some(&[Principal::Vault(coop)]) => Some(coop),
+        _ => None,
     };
     let city = mac.read(coop_of).await.expect("Maia City, founded with the seed");
     let seed = || server.read(world::seed_of);
     let backup = move |v: VaultId| {
         move |lab: &mut Lab, me| lab.issue(me, &[me], share(v, vault(avenceo), Level::Backup, Selector::All))
     };
-    mac.act(backup(city)).await.expect("Maia City gives avenCEO server backup");
-    until("the server knows its seed's coop", || async { seed().await.last() == Some(&city) }).await;
-    assert_eq!(seed().await.len(), world::SEED_NAMES.len(), "Maia Holding, avenCEO GmbH, avenCEO server and Maia City");
+    mac.act(backup(city)).await.expect("Maia City gives avenMAIA backup");
+    until("the server knows its seed's coop", || async { seed().await.first() == Some(&city) }).await;
+    assert_eq!(seed().await, [city, avenceo], "Maia City and avenMAIA");
     // a coop of her own, which she calls Maia City too
     let owners = vec![Principal::Vault(w.alice)];
     let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: 41, seal_to: vec![] };
@@ -396,7 +394,7 @@ async fn the_server_serves_the_code_everyone_reads_and_maia_citys_alone_for_seed
     // view and a private logic
     let tag = "code:public";
     let (mut views, mut logics) = (vec![], vec![]);
-    mac.act(backup(fake)).await.expect("her coop gives avenCEO server backup too");
+    mac.act(backup(fake)).await.expect("her coop gives avenMAIA backup too");
     for v in [city, fake] {
         let v = v.to_hex();
         ran(&mac, json!({ "op": "profile", "vault": v, "name": world::SEED_COOP })).await;
@@ -503,20 +501,19 @@ async fn the_server_serves_a_public_code_entrys_newest_file_whole_as_plain_text(
     let opts = Options { relay: Some(started.relay.url()), ..Options::local() };
     let mac = node(&mut w, mac_a, &[passkey], 1, opts).await;
     mac.know(server.addr());
-    // Alice's vault claims the server, whose seed holds Maia City; both give avenCEO server backup
+    // Alice's vault claims the server, whose seed is Maia City and avenMAIA, its aven; Maia City and Alice's vault give
+    // avenMAIA backup
     let avenceo = mac.claim(&started.offer, passkey).await.expect("Alice's vault claims the server");
-    let coop_of = move |lab: &Lab, me| {
-        let st = lab.state(me);
-        let Some([Principal::Vault(company)]) = st.vault(avenceo).map(|v| &v.owners[..]) else { return None };
-        let coop = |v: &&avendb::policy::Vault| v.kind == Kind::Coop && v.owners == [Principal::Vault(*company)];
-        st.vaults().iter().find(coop).map(|v| v.id)
+    let coop_of = move |lab: &Lab, me| match lab.state(me).vault(avenceo).map(|v| &v.owners[..]) {
+        Some(&[Principal::Vault(coop)]) => Some(coop),
+        _ => None,
     };
     let city = mac.read(coop_of).await.expect("Maia City, founded with the seed");
     for v in [city, alice] {
         let backup = share(v, vault(avenceo), Level::Backup, Selector::All);
-        mac.act(move |lab, me| lab.issue(me, &[me], backup)).await.expect("it gives avenCEO server backup");
+        mac.act(move |lab, me| lab.issue(me, &[me], backup)).await.expect("it gives avenMAIA backup");
     }
-    let seeded = || async { server.read(world::seed_of).await.last() == Some(&city) };
+    let seeded = || async { server.read(world::seed_of).await.first() == Some(&city) };
     until("the server knows its seed's coop", seeded).await;
     // each Public on a tag
     let tag = "code:public";
@@ -816,13 +813,13 @@ async fn an_unclaimed_server_lets_in_the_browser_that_claims_it_and_then_no_stra
     let browser = node(&mut w, eves, &[eve_key], 8, with_pass(&url, pass)).await;
     // her browser founds her vault through the server, and in the same ceremony claims it
     let (eve, avenceo) = browser.found(&started.offer, eve_key).await.expect("Eve's vault, which claims the server");
-    assert_eq!(server::vault(server).await, Some(avenceo), "the server is avenCEO's device");
+    assert_eq!(server::vault(server).await, Some(avenceo), "the server is avenMAIA's device");
     assert!(relay.serves(&browser.id()), "through the relay");
     let seeded = browser.read(move |lab, me| avendb::world::seeded(lab.state(me), eve, avenceo)).await;
-    assert!(seeded, "avenCEO server of Eve's seed, owned through Maia Holding GmbH and avenCEO GmbH");
+    assert!(seeded, "avenMAIA of Eve's seed, owned through Maia City");
     until("claimed, its relay honours no stranger's pass", || async { !relay.admission().honours(&stranger_key) })
         .await;
-    assert!(relay.admission().honours(&eve_key), "but Eve's, whose vault owns avenCEO");
+    assert!(relay.admission().honours(&eve_key), "but Eve's, whose vault owns avenMAIA");
     until("and lets her browser in for good", || async { relay.admission().admits(&browser.id()) }).await;
     quiet(&[server, &browser]).await;
     browser.shutdown().await.expect("the browser stops");

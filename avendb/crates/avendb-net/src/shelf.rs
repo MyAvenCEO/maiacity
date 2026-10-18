@@ -143,8 +143,10 @@ fn listable(prefix: &str) -> bool {
 /// that day, as an entry's id is the hash of its vault, its creator and its creation's nonce, the edit format is 11,
 /// and each asset is one entry whose versions and variants are its history (Samuel asked for both); 16 since later
 /// still, as the seed writes each skill, the theOS paper and the avenDB docs as a story of Maia City with a doc post,
-/// and Samuel asked to reset and seed again.
-pub const FLOOR: u64 = 16;
+/// and Samuel asked to reset and seed again; 17 since later that day, as the seed is Maia City alone, a coop the first
+/// person's vault owns, and avenMAIA, its one aven, which lives on the server, its device: no holding, no company coop,
+/// no device vault of the server's, and an aven is a coop's, one to a coop, never a person's (Samuel asked for it).
+pub const FLOOR: u64 = 17;
 
 /// Whether a place keeps what is under `name`, the first part of its names there: a shelf of generation `FLOOR` or a
 /// later one. Whatever else the place holds came before the last reset, and goes as the place opens.

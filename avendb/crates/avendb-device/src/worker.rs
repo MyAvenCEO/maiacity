@@ -109,22 +109,11 @@ pub fn given(share: &Value, vault: VaultId) -> Result<Given> {
 }
 
 /// Whether vault `vault` may have a worker of its own, by view `st`: a person's own vault or a coop, whose media a
-/// worker works on, and none whose device vault would read as avenCEO server, the end of a seed (`world::seeder`), as
-/// one under avenCEO GmbH would. Fails with why not, before any sheet.
+/// worker works on. A worker's device vault under the seed's coop is never taken for its server, which is the coop's
+/// first device vault (`world::seeder`). Fails with why not, before any sheet.
 pub fn may_have(st: &State, vault: VaultId) -> Result<()> {
     let kind = st.vault(vault).map(|v| v.kind).with_context(|| format!("this Mac knows no vault {}", vault.to_hex()))?;
     anyhow::ensure!(matches!(kind, Kind::Human | Kind::Coop), "a worker works for a person's vault or a coop");
-    // the seed's chain above its device vault, read up from `vault`
-    let mut at = vault;
-    for kind in world::SEED[..world::SEED.len() - 1].iter().rev() {
-        let Some([Principal::Vault(owner)]) = st.vault(at).filter(|v| v.kind == *kind).map(|v| &v.owners[..]) else {
-            return Ok(());
-        };
-        at = *owner;
-    }
-    let seed = st.vault(at).is_some_and(|v| v.kind == Kind::Human);
-    let another = "add the worker under another";
-    anyhow::ensure!(!seed, "a device vault under this vault would read as avenCEO server: {another}");
     Ok(())
 }
 

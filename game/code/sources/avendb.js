@@ -184,7 +184,7 @@ export async function loadCode(viewOf, { url = feedOf(), fetch: get = globalThis
  * the copy on the vault is where that code changes. The first copy (`have` null) starts by opening the vault's views
  * and logic modules to everyone, by type, now and later, as the feed reads them (the repo they come from is public),
  * so whatever of it went in before a stop shows on the feed, and a rerun reads it there; with `server`, the id of
- * avenCEO server's vault, it first gives the server a Backup share, without which the feed has nothing to show (the
+ * avenMAIA's vault, it first gives the server a Backup share, without which the feed has nothing to show (the
  * page's "server keeps a copy" does the same).
  */
 export function copyOf(entries, vault, { have = null, server = null } = {}) {
@@ -197,7 +197,7 @@ export function copyOf(entries, vault, { have = null, server = null } = {}) {
 		.map((e) => recordOf(e))
 		.map(({ type, tags, value }) => ({ op: 'create', vault, type, tags, schema: type, value }));
 	const share = { op: 'share', over: vault, who: 'everyone', level: 'Public', what: { type: Object.keys(HOSTS) }, as: vault };
-	// the server serves only what it holds: a Backup share to its vault (avenCEO server) makes it keep the vault's entries
+	// the server serves only what it holds: a Backup share to its vault (avenMAIA) makes it keep the vault's entries
 	const keep = server ? [{ op: 'share', over: vault, who: { vault: server }, level: 'Backup', as: vault }] : [];
 	return { op: 'batch', ops: have ? ops : [...keep, share, ...ops], as: vault };
 }

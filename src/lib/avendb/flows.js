@@ -199,7 +199,7 @@ export function stageOf(e, flow) {
  * @param {import('./vaults.js').WorldView} world @param {string} vault
  */
 function trusted(world, vault) {
-	const company = seeded(world)[1]?.[0]?.id;
+	const company = seeded(world)[0]?.[0]?.id;
 	return company && company !== vault ? [vault, company] : [vault];
 }
 

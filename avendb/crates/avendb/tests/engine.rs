@@ -312,14 +312,13 @@ fn the_posts_everyone_reads_are_the_feed_newest_first() {
 fn the_entries_everyone_reads_are_served_and_maia_city_told_by_the_seed() {
     let mut w = cast::world();
     cast::library(&mut w);
-    let (mac, passkey, alice) = (w.mac_a, w.passkey_a, w.alice);
-    // Maia City, the coop avenCEO GmbH owns alone beside the seed, and a coop of Alice's that calls itself so too
-    let company = world::seed_of(&w.lab, mac)[1];
-    let owners = vec![Principal::Vault(company)];
-    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: 31, seal_to: vec![] };
-    let city = VaultId::from(w.lab.submit(mac, &[passkey], genesis).expect("Maia City"));
+    let (mac, alice) = (w.mac_a, w.alice);
+    // Maia City, the seed's coop, which owns avenMAIA, and a coop of Alice's that calls itself so too
+    let seed = world::seed_of(&w.lab, mac);
+    let city = seed[0];
     let fake = coop_of_alice(&mut w, 32);
-    assert_eq!(world::seed_of(&w.lab, mac).last(), Some(&city), "the seed's coop");
+    assert_eq!(seed, [city, w.avenceo], "the seed: Maia City, then avenMAIA, the server's aven");
+    assert_eq!(world::seed_coop(w.lab.state(mac), alice), Some(city), "the seed's coop, found from her vault");
     let tag = "code:public";
     let entry = |made: Value| made["entry"].as_str().expect("its id").to_string();
     let mut views = vec![];
@@ -847,14 +846,14 @@ fn an_aven_s_server_traces_back_to_the_vault_that_owns_the_aven() {
     let link = &chain["links"][0];
     let (who, at) = (json!({ "signer": server }), json!(avenceo));
     assert_eq!((&link["who"], &link["in"], &link["as"]), (&who, &at, &json!("device")));
-    // Alice's passkey approved the server's join for avenCEO, at the end of the seed her vault owns, and the server
-    // signed it too; avenCEO GmbH owns it
+    // Alice's passkey approved the server's join for avenMAIA, at the end of the seed her vault owns, and the server
+    // signed it too; Maia City owns it
     let signers = list(&link["signers"]);
     assert!(signers.contains(&json!({ "signer": w.passkey_a.to_hex(), "vault": alice, "as": "root" })), "{link}");
     assert!(signers.contains(&json!({ "signer": server, "vault": avenceo, "as": "device" })));
     let st = w.lab.state(w.mac_a);
-    let [Principal::Vault(gmbh)] = st.vault(w.avenceo).expect("avenCEO server").owners[..] else { panic!("one owner") };
-    assert_eq!(chain["owners"], json!([{ "vault": gmbh.to_hex() }]));
+    let [Principal::Vault(city)] = st.vault(w.avenceo).expect("avenMAIA").owners[..] else { panic!("one owner") };
+    assert_eq!(chain["owners"], json!([{ "vault": city.to_hex() }]));
     assert_eq!(world::seeder(st, w.avenceo), Some(w.alice), "up the seed her vault founded");
     // a signer that acts for no vault traces back to nothing
     let none = data::Audit::new(&w.lab, w.mac_a).chain(w.stranger, w.avenceo, &[]);
@@ -1216,7 +1215,7 @@ fn coop_of_alice(w: &mut World, nonce: u64) -> VaultId {
     VaultId::from(w.lab.submit(w.mac_a, &[w.passkey_a], genesis).expect("Alice's vault founds a coop"))
 }
 
-/// A vault founded before views had a v2 holds the schemas and lenses avenDB shipped then, as avenCEO GmbH holds them
+/// A vault founded before views had a v2 holds the schemas and lenses avenDB shipped then, as Maia City held them
 /// (the page's `standardize`), and neither View v2 nor its lens: `create` naming `"view"` makes a view of v2 there all
 /// the same, as every app reads through its own shipped schemas beside the vault's lane (`Lane::with_built_ins`), and
 /// a view of v1 written before opens in v2 through the shipped lens and edits on. The vault's database shows the two
@@ -2006,4 +2005,42 @@ fn a_write_counts_once_the_lane_holds_its_schema() {
     // an app on v2 reads it, read-only: no lens joins v2 to v1, which the todo was written under too
     let seen = ok(run(&mut w, mac, get));
     assert_eq!((seen["record"]["status"].clone(), seen["readOnly"].clone()), (json!("blocked"), json!(true)));
+}
+
+/// Who wrote an entry is never its coop (Samuel 2026-10-18): a story of Maia City is written by avenMAIA, Maia City's
+/// aven, and the human vaults whose devices signed its writes, each once in the order they first wrote; the world, the
+/// history of each release and line, and the feed everyone reads say so alike (`world::authors`).
+#[test]
+fn a_coops_entry_is_written_by_its_aven_and_the_people_who_signed_its_writes() {
+    let mut w = cast::world();
+    let (mac, mac_b, alice, bob) = (w.mac_a, w.mac_b, w.alice, w.bob);
+    let city = world::seed_of(&w.lab, mac)[0];
+    let (c, aven) = (city.to_hex(), w.avenceo.to_hex());
+    let story = json!({ "kind": "story", "title": "The first village", "text": "Day one." });
+    let made = ok(run(&mut w, mac, json!({ "op": "create", "vault": c, "type": "story", "tags": ["out"], "value": story,
+        "as": c })));
+    let entry = made["entry"].as_str().expect("its id").to_string();
+    let authors = |w: &mut World, d: SignerId| {
+        let world = ok(run(w, d, json!({ "op": "world" })));
+        let row = list(&world["entries"]).iter().find(|e| e["entry"] == entry.as_str()).cloned().expect("the story");
+        row["authors"].as_array().expect("its authors").iter().map(|v| v.as_str().unwrap().to_string()).collect::<Vec<_>>()
+    };
+    assert_eq!(authors(&mut w, mac), [aven.clone(), alice.to_hex()], "avenMAIA and Alice, never Maia City");
+    // Bob edits it by a share Maia City gives him: he joins its authors
+    let editor = json!({ "op": "share", "over": c, "who": { "vault": bob.to_hex() }, "level": "Editor", "what": { "type": ["story"] },
+        "as": c });
+    ok(run(&mut w, mac, editor));
+    w.lab.sync_all(5);
+    let set = json!({ "op": "set", "entry": entry, "path": ["text"], "value": "Day one, and two.", "as": bob.to_hex() });
+    ok(run(&mut w, mac_b, set));
+    w.lab.sync_all(5);
+    let want = [aven.clone(), alice.to_hex(), bob.to_hex()];
+    assert_eq!(authors(&mut w, mac), want, "and Bob, once");
+    // the history says it of the main line, and of a release as it was then
+    let history = ok(run(&mut w, mac, json!({ "op": "history", "entry": entry })));
+    let main = &list(&history["lines"])[0];
+    let names = |xs: &Value| xs.as_array().expect("authors").iter().map(|a| a["vault"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+    assert_eq!(names(&main["authors"]), want, "main as it stands");
+    let first = list(&history["edits"]).iter().find(|e| e["version"] == 1).expect("its first release");
+    assert_eq!(names(&first["authors"]), [aven, alice.to_hex()], "its first version, before Bob wrote");
 }

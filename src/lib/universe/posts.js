@@ -62,6 +62,17 @@ export function voiceOf(vault, name, kind) {
 	return { name: called, handle: slug(called), initials, color, kind, ai: kind === 'aven' || kind === 'device', coop: kind === 'coop', avendb: true };
 }
 
+// Who wrote post `p` of avenDB's feed (Samuel 2026-10-18: never the coop, always its aven and the humans whose devices
+// signed it): its authors as the feed lists them (avendb's `world::authors`), its aven first, joined by " + "; the key
+// the stream holds its voice by, and that voice, named so, in the first author's colour and kind; else its vault's.
+export function authorsOf(p) {
+	const authors = Array.isArray(p.authors) ? p.authors.filter((a) => a?.vault) : [];
+	if (!authors.length) return { key: p.vault, voice: voiceOf(p.vault, p.name, p.kind) };
+	const names = authors.map((a) => a.name || `Vault ${a.vault.slice(0, 4)}`);
+	const voice = voiceOf(authors[0].vault, names.join(' + '), authors[0].kind);
+	return { key: authors.map((a) => a.vault).join('+'), voice: { ...voice, handle: slug(names[0]) } };
+}
+
 // The cover of post `p`'s article text, as avenDB lays it out, where everyone may read it (`pictureOf`): its address
 // and its words, or null.
 function coverOf(p) {
@@ -85,7 +96,7 @@ export const fromFeed = (p, now, pictures = Array.isArray(p.pictures) ? p.pictur
 		entry: p.entry,
 		doc: docOf(p.entry),
 		title: p.title || 'Untitled',
-		author: p.vault,
+		author: authorsOf(p).key,
 		// none for a post that says no time (`created` 0, as before avenDB's devices set their clock)
 		ago: sentAt(p) > 0 ? Math.max(0, Math.round((now - sentAt(p)) / 60)) : null,
 		channel: p.channel || 'Devlog',

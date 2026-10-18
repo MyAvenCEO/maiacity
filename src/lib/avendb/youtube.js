@@ -27,7 +27,7 @@ export const took = (e, t) => (e.tags ?? []).includes(markOf(t));
  * @param {import('./vaults.js').WorldView} world @param {string} vault
  */
 export function wordsRule(world, vault) {
-	const company = seeded(world)[1]?.[0]?.id;
+	const company = seeded(world)[0]?.[0]?.id;
 	const rules = layered(BUILT_IN, company && company !== vault ? held(world, company) : [], held(world, vault));
 	return rules.find((r) => r.key === RULE) ?? null;
 }

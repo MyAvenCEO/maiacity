@@ -37,7 +37,8 @@
 		syncedWords,
 		tagsIn,
 		tagsOf,
-		why
+		why,
+		authorsLine
 	} from './vaults.js';
 
 	/** the tag of footage, which the studio's rules make proxies, stills and words of */
@@ -462,7 +463,7 @@
 			<dt>Size</dt>
 			<dd>{file?.len != null ? size(file.len) : 'sealed: this device can’t open it yet'}</dd>
 			<dt>Added</dt>
-			<dd>{added(viewing)}, by {nameOf(byId.get(viewing.by))}</dd>
+			<dd>{added(viewing)}, by {authorsLine(world, viewing.authors, nameOf(byId.get(viewing.by)))}</dd>
 			{#if viewing.tags?.length}
 				<dt>Tags</dt>
 				<dd class="tags">{#each viewing.tags as t (t)}<span class="chip tag">#{t}</span>{/each}</dd>
@@ -621,8 +622,8 @@
 							<span class="info">
 								<b>{e.title}</b>
 								<small class="soft">
-									{file?.len != null ? size(file.len) : 'sealed'} · {KINDS.find(([x]) => x === k)?.[1]}{e.by !== vault
-										? ` · by ${nameOf(byId.get(e.by))}`
+									{file?.len != null ? size(file.len) : 'sealed'} · {KINDS.find(([x]) => x === k)?.[1]}{e.authors?.length || e.by !== vault
+										? ` · by ${authorsLine(world, e.authors, nameOf(byId.get(e.by)))}`
 										: ''}
 								</small>
 								{#if e.tags?.length}

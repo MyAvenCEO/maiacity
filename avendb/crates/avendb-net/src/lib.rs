@@ -56,15 +56,15 @@
 //! - **Progress**: a node marks each step of founding its person's vault or linking to it (`Options::progress`), with
 //!   how long it took, for its person to watch while they wait (`Progress`).
 //! - **The server** (P8b, `server`): a node whose device keeps a secret of its own on its shelf, and which hands
-//!   its contact card, avenCEO server's log and its owners', to whoever asks (`Node::contact`), so that a vault can
-//!   give avenCEO server relay on its entries. Devices reach each other and the server through its relay, which lets
+//!   its contact card, avenMAIA's log and its owners', to whoever asks (`Node::contact`), so that a vault can
+//!   give avenMAIA relay on its entries. Devices reach each other and the server through its relay, which lets
 //!   in only the devices the server knows (`Admission`).
-//! - **avenCEO server** (P8f): a new server belongs to no vault, and the first human vault to claim it owns it
+//! - **avenMAIA** (P8f): a new server belongs to no vault, and the first human vault to claim it owns it
 //!   (`Node::claim`): the server hands its key to seal to whoever asks while nobody has claimed it, the person's
-//!   passkey founds the seed, its last vault avenCEO server, a device vault avenCEO GmbH owns, and adds the server as
+//!   passkey founds the seed, its last vault avenMAIA, a device vault Maia City owns, and adds the server as
 //!   its device, and the server signs that edit too and keeps it (`Lab::accept_claim`). A person's first device founds
 //!   their vault through a server nobody has claimed yet and claims it in the same ceremony (`Node::found_with`). From
-//!   then on the server acts as avenCEO server and never governs it, and nobody claims it again.
+//!   then on the server acts as avenMAIA and never governs it, and nobody claims it again.
 //! - **Adding a device vault** (`Place`, `Node::add_device_vault_with`): the claim is one case of the one flow that
 //!   adds a device of its own to a vault: a device vault founded under its parent, or there already, the device added
 //!   to it, which signs that edit too, as it answers claims while it belongs to no vault (`Options::card`); then the
@@ -369,10 +369,10 @@ pub enum Step {
     Join,
     /// The genesis of its person's vault and the edit that adds their first device to it, which that device drafts
     /// together (`Node::found_with`); and, through a server nobody has claimed yet, the seed's geneses and the edit
-    /// that adds the server to its device vault, avenCEO server (`Place::Seed`).
+    /// that adds the server to its device vault, avenMAIA (`Place::Seed`).
     Found,
     /// The geneses of the seed its person's human vault founds as their device claims a server, and the edit that adds
-    /// the server to its device vault, avenCEO server, drafted together (`Node::claim_with`, `Place::Seed`).
+    /// the server to its device vault, avenMAIA, drafted together (`Node::claim_with`, `Place::Seed`).
     Claim,
     /// Changes its person's vault approves, as the root of the vaults it owns: new vaults it owns, an owner share, the
     /// revocation of one, drafted together (`Node::approve_with`); or a device added to a device vault of theirs, with
@@ -382,12 +382,12 @@ pub enum Step {
 
 /// Where the device a person's device adds goes (`Node::add_device_vault_with`): a device vault of theirs, there
 /// already or new, and a new one under which vault. Every child that acts by keys of its own is added so, in the
-/// same steps (`add_device_vault`): an agent under its person's aven, the server under avenCEO GmbH, a coop's drive
+/// same steps (`add_device_vault`): an agent under its person's aven, the server under Maia City, a coop's drive
 /// under the coop.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Place {
     /// Device vault `0`, there already, which the device joins: agentClaude on a person's second Mac joining the
-    /// agentClaude their first Mac added, or the server the avenCEO server a claim it didn't take founded
+    /// agentClaude their first Mac added, or the server the avenMAIA a claim it didn't take founded
     /// (`Lab::unclaimed_server`).
     Vault(VaultId),
     /// A new device vault under vault `0`, which the person's vault owns: an agent's under their aven.
@@ -395,10 +395,9 @@ pub enum Place {
     /// A new device vault under a new vault of kind `0`, which the person's vault founds and owns alone, both in the
     /// same ceremony: their first agent's, under the aven founded with it.
     UnderNew(Kind),
-    /// avenCEO server, a new device vault under avenCEO GmbH, which the same ceremony founds with the rest of the seed
-    /// (`avendb::world::SEED`): Maia Holding GmbH, a coop the person's vault owns alone, avenCEO GmbH, a coop Maia
-    /// Holding owns alone, and beside them Maia City, a coop avenCEO GmbH owns alone
-    /// (`avendb::world::SEED_COOP_OF`).
+    /// avenMAIA, a new aven under Maia City, which the same ceremony founds with the rest of the seed
+    /// (`avendb::world::SEED`): Maia City, a coop the person's vault owns alone, and its one aven, whose device the
+    /// server becomes (Samuel 2026-10-18: an aven lives on its server).
     Seed,
 }
 
@@ -430,16 +429,14 @@ fn add_device_vault(
             found(Kind::DeviceVault, parent)?
         }
         Place::Seed => {
-            let [coops @ .., last] = avendb::world::SEED;
+            let [kinds @ .., last] = avendb::world::SEED;
             let mut chain = vec![human];
-            for kind in coops {
+            for kind in kinds {
                 let owner = *chain.last().expect("the human vault first");
                 chain.push(found(kind, owner)?);
             }
-            let server = found(last, *chain.last().expect("avenCEO GmbH last"))?;
-            // beside the chain, Maia City; the chain's vaults follow the human vault's place 0
-            found(Kind::Coop, chain[1 + avendb::world::SEED_COOP_OF])?;
-            server
+            // the chain's end, the coop's one aven, avenMAIA, which the server is added to: it lives on its server
+            found(last, *chain.last().expect("Maia City last"))?
         }
     };
     let add = Action::Share(Sharing::Device { vault, device, seal_to: Some(key) });
@@ -797,8 +794,8 @@ impl Node {
     /// key the Lab adds among its owners (`Lab::set_recovery`), and make it known to the server `offer` names, whose
     /// card it takes (`contact`): `authenticator` signs the vault's genesis and the edit that adds this device in one
     /// ceremony (`Lab::drafting`). If the card names no avenCEO, as nobody has claimed the server yet, the same
-    /// ceremony founds the seed (`Place::Seed`): Maia Holding GmbH, which the new human vault owns, avenCEO GmbH and
-    /// avenCEO server, and adds the server as that device vault's device, which the server signs too and keeps
+    /// ceremony founds the seed (`Place::Seed`): Maia City, which the new human vault owns, and
+    /// avenMAIA, and adds the server as that device vault's device, which the server signs too and keeps
     /// (`Lab::accept_claim`): the first person to found their vault through a server nobody has claimed owns it. Should
     /// another vault claim it first, this device takes that avenCEO from its card. The passkey is one of `passkeys`,
     /// whose keys the Lab holds: a device that doesn't know its passkey's P-256 key yet drafts it all for each key the
@@ -862,10 +859,10 @@ impl Node {
 
     /// Claim the server `offer` names for this device's person (P8f), while nobody has claimed it: the server hands its
     /// key to seal to (`Lab::claim_key`), and the passkey `passkey`, used on this device, adds it to a device vault of
-    /// theirs as any device vault's device is added (`add`): to avenCEO server, under avenCEO GmbH, which the same
-    /// ceremony founds with the rest of the seed (`Place::Seed`): Maia Holding GmbH, which this device's human vault
-    /// owns, avenCEO GmbH and Maia City. avenCEO server. Tried again after a claim the server didn't take, it adds the
-    /// server to the device vault that claim founded (`Lab::unclaimed_server`); after one whose answer was lost, it
+    /// theirs as any device vault's device is added (`add`): to avenMAIA, under Maia City, which the same
+    /// ceremony founds with the rest of the seed (`Place::Seed`): Maia City, which this device's human vault
+    /// owns, and avenMAIA, its aven, the server's vault. Tried again after a claim the server didn't take, it adds the
+    /// server to the aven that claim founded (`Lab::unclaimed_server`); after one whose answer was lost, it
     /// finds the server its device already. Fails if the device answering isn't the one offered, this device belongs to
     /// no vault, the passkey isn't at hand, or another vault has claimed the server, or the server refuses the claim.
     pub async fn claim(&self, offer: &Offer, passkey: SignerId) -> Result<VaultId> {
@@ -891,7 +888,7 @@ impl Node {
                 return claimed.ok_or(e);
             }
         };
-        // a claim tried again, after one the server didn't take, adds the server to the avenCEO server that one founded
+        // a claim tried again, after one the server didn't take, adds the server to the avenMAIA that one founded
         let unclaimed = self.shared.lab(|lab, me| lab.unclaimed_server(me)).await;
         self.add(offer, key, unclaimed.map_or(Place::Seed, Place::Vault), passkey, Step::Claim, authenticator).await
     }
@@ -995,7 +992,7 @@ impl Node {
         Ok(peer)
     }
 
-    /// The avenCEO server the server `offer` names is a device of, by its card (`contact`): none while nobody has
+    /// The avenMAIA the server `offer` names is a device of, by its card (`contact`): none while nobody has
     /// claimed it.
     async fn avenceo(&self, offer: &Offer) -> Result<Option<VaultId>> {
         self.offered(offer).await?;

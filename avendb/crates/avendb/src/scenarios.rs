@@ -157,7 +157,7 @@ pub static SCENARIOS: [Scenario; 31] = [
     Scenario { number: "24", title: "A cap resting on a cap", phase: "F2", play: a_share_on_a_share },
     Scenario { number: "25", title: "Wide caps, relays and Public", phase: "F2", play: wide_shares },
     Scenario { number: "26", title: "A cell that comes back into use moves on", phase: "F2", play: comeback },
-    Scenario { number: "27", title: "An aven's agent works within a coop's cap", phase: "A", play: an_avens_agent },
+    Scenario { number: "27", title: "A coop's aven lives on its server; a coop's worker works within its cap", phase: "A", play: a_coops_aven_and_worker },
     Scenario { number: "28", title: "An access request is a record and a share", phase: "A", play: an_access_request },
 ];
 
@@ -1182,64 +1182,69 @@ fn founded(kind: Kind, owner: VaultId, nonce: u64) -> Action {
     Action::Genesis { kind, owners: vec![Principal::Vault(owner)], threshold: 1, root: None, nonce, seal_to: vec![] }
 }
 
-fn an_avens_agent(run: &mut Run) -> Done {
+fn a_coops_aven_and_worker(run: &mut Run) -> Done {
     let mut w = world();
     let (alice, mac, passkey) = (w.alice, w.mac_a, w.passkey_a);
     let coop = coop_on(&mut w);
-    let aven = run.ok("Alice's passkey founds her aven, her vault its one owner", {
-        w.lab.submit(mac, &[passkey], founded(Kind::Aven, alice, 0))
-    })?;
+    let ours = run.ok("Alice's passkey founds a coop of her own", w.lab.submit(mac, &[passkey], founded(Kind::Coop, alice, 3)))?;
+    let ours = VaultId::from(ours);
+    let aven = run.ok("and its aven, the coop its one owner", w.lab.submit(mac, &[passkey], founded(Kind::Aven, ours, 0)))?;
     let aven = VaultId::from(aven);
-    let second = w.lab.submit(mac, &[passkey], founded(Kind::Aven, alice, 1)).err();
+    let second = w.lab.submit(mac, &[passkey], founded(Kind::Aven, ours, 1)).err();
     run.same("and no second one", second, Some(Refusal::SecondAven));
-    let agent = w.lab.device("Alice's agent");
-    let add = |vault| Action::Share(Sharing::Device { vault, device: agent, seal_to: None });
-    let refused = w.lab.submit(mac, &[passkey, agent], add(aven)).err();
-    run.same("an aven holds no devices", refused, Some(Refusal::NoDevices));
-    let harness = run.ok("the aven owns its agent's device vault", {
-        w.lab.submit(mac, &[passkey], founded(Kind::DeviceVault, aven, 0))
+    let own = w.lab.submit(mac, &[passkey], founded(Kind::Aven, alice, 2)).err();
+    run.same("nor one of her own vault's", own, Some(Refusal::WrongOwnerKind));
+    let server = w.lab.device("the aven's server");
+    let add = |vault| Action::Share(Sharing::Device { vault, device: server, seal_to: None });
+    run.ok("the aven lives on its server, its device", w.lab.submit(mac, &[passkey, server], add(aven)))?;
+    let under = w.lab.submit(mac, &[passkey], founded(Kind::DeviceVault, aven, 0)).err();
+    run.same("and owns no agent's device vault", under, Some(Refusal::WrongOwnerKind));
+    let worker = w.lab.device("the coop's worker");
+    let harness = run.ok("her coop owns its worker's device vault", {
+        w.lab.submit(mac, &[passkey], founded(Kind::DeviceVault, ours, 0))
     })?;
     let harness = VaultId::from(harness);
-    run.ok("whose device the agent is", w.lab.submit(mac, &[passkey, agent], add(harness)))?;
+    let join = Action::Share(Sharing::Device { vault: harness, device: worker, seal_to: None });
+    run.ok("whose device the worker is", w.lab.submit(mac, &[passkey, worker], join))?;
     let mut todo = |title: &str, tags: &[&str]| w.lab.create(mac, coop, coop, "todo", tags, Item::todo(title, mac));
-    let harvest = run.ok("the coop's work todo", todo("Plan the harvest", &["work"]))?;
+    let harvest = run.ok("the two people's coop's work todo", todo("Plan the harvest", &["work"]))?;
     let party = run.ok("and another", todo("Plan the party", &[]))?;
-    let to_aven = share(coop, vault(aven), Level::Write, of_type("todo"));
-    let to_aven = run.ok("the coop gives Alice's aven write on its todos", w.lab.issue(mac, &[mac], to_aven))?;
+    let to_ours = share(coop, vault(ours), Level::Write, of_type("todo"));
+    let to_ours = run.ok("that coop gives Alice's coop write on its todos", w.lab.issue(mac, &[mac], to_ours))?;
     let work = tagged("todo", "work");
-    let sub = share_on(coop, vault(harness), Level::Write, work.clone(), to_aven, aven);
-    let sub = run.ok("the aven passes the work todos on to its agent", w.lab.issue(mac, &[mac], sub))?;
-    let higher = share_on(coop, vault(harness), Level::Owner, work.clone(), to_aven, aven);
+    let sub = share_on(coop, vault(harness), Level::Write, work.clone(), to_ours, ours);
+    let sub = run.ok("Alice's coop passes the work todos on to its worker", w.lab.issue(mac, &[mac], sub))?;
+    let higher = share_on(coop, vault(harness), Level::Owner, work.clone(), to_ours, ours);
     let higher = w.lab.issue(mac, &[passkey], higher).err();
     run.same("no higher than its own", higher, Some(Refusal::BadParent));
-    let wider = share_on(coop, vault(harness), Level::Read, Selector::All, to_aven, aven);
+    let wider = share_on(coop, vault(harness), Level::Read, Selector::All, to_ours, ours);
     run.same("nor wider", w.lab.issue(mac, &[mac], wider).err(), Some(Refusal::BadParent));
-    let carol = share_on(coop, vault(w.carol), Level::Read, work.clone(), to_aven, aven);
+    let carol = share_on(coop, vault(w.carol), Level::Read, work.clone(), to_ours, ours);
     run.same("nor to a vault it doesn't own", w.lab.issue(mac, &[mac], carol).err(), Some(Refusal::BadParent));
     w.lab.sync_all(27);
-    let back = share_on(coop, vault(aven), Level::Read, work, sub, harness);
-    let on = w.lab.issue(agent, &[agent], back).err();
-    run.same("and the agent's vault, which owns nothing, passes nothing on", on, Some(Refusal::BadParent));
-    run.check("the agent reads the work todo", w.lab.reads(agent, harvest));
-    run.check("and not the other", !w.lab.reads(agent, party));
+    let back = share_on(coop, vault(ours), Level::Read, work, sub, harness);
+    let on = w.lab.issue(worker, &[worker], back).err();
+    run.same("and the worker's vault, which owns nothing, passes nothing on", on, Some(Refusal::BadParent));
+    run.check("the worker reads the work todo", w.lab.reads(worker, harvest));
+    run.check("and not the other", !w.lab.reads(worker, party));
     let note = |text: &'static str| move |i: &mut Item| _ = i.edit_todo(|t| t.notes = text.into());
-    let wrote = w.lab.edit(agent, harness, harvest, note("Booked the tractor"));
-    run.ok("the agent writes the work todo, through both caps", wrote)?;
-    let beyond = w.lab.edit(agent, harness, party, note("Cancelled")).is_err();
+    let wrote = w.lab.edit(worker, harness, harvest, note("Booked the tractor"));
+    run.ok("the worker writes the work todo, through both caps", wrote)?;
+    let beyond = w.lab.edit(worker, harness, party, note("Cancelled")).is_err();
     run.check("and can't write the other", beyond);
-    run.ok("the aven writes the other", w.lab.edit(mac, aven, party, note("Lanterns")))?;
+    run.ok("Alice's coop writes the other", w.lab.edit(mac, ours, party, note("Lanterns")))?;
     w.lab.sync_all(27);
     let notes = |d, e| w.lab.item(d, e).and_then(Item::as_todo).map(|t| t.notes);
     let shown = (notes(w.mac_b, harvest), notes(w.mac_b, party));
     let want = (Some("Booked the tractor".to_string()), Some("Lanterns".to_string()));
-    run.same("Bob's Mac counts what the agent and the aven wrote", shown, want);
-    let revoke = Action::Revoke(Revoking::Grant { share: to_aven, actor: coop, keep: vec![], via: vec![] });
-    run.ok("the coop revokes the aven's cap", w.lab.submit(mac, &[mac], revoke))?;
+    run.same("Bob's Mac counts what the worker and Alice's coop wrote", shown, want);
+    let revoke = Action::Revoke(Revoking::Grant { share: to_ours, actor: coop, keep: vec![], via: vec![] });
+    run.ok("the two people's coop revokes Alice's coop's cap", w.lab.submit(mac, &[mac], revoke))?;
     w.lab.sync_all(27);
-    let v = w.lab.state(agent);
-    run.check("which ends the agent's with it", !v.live(to_aven) && !v.live(sub));
-    let after = w.lab.edit(agent, harness, harvest, note("Sold the tractor")).is_err();
-    run.check("and the agent writes the work todo no more", after);
+    let v = w.lab.state(worker);
+    run.check("which ends the worker's with it", !v.live(to_ours) && !v.live(sub));
+    let after = w.lab.edit(worker, harness, harvest, note("Sold the tractor")).is_err();
+    run.check("and the worker writes the work todo no more", after);
     Ok(())
 }
 
@@ -1251,8 +1256,10 @@ fn op(w: &mut World, d: SignerId, v: Value) -> Value {
 fn an_access_request(run: &mut Run) -> Done {
     let mut w = world();
     let (alice, bob, mac, mac_b, mac_c, mac_d) = (w.alice, w.bob, w.mac_a, w.mac_b, w.mac_c, w.mac_d);
-    let aven = w.lab.submit(mac, &[w.passkey_a], founded(Kind::Aven, alice, 0));
-    let aven = VaultId::from(run.ok("Alice's passkey founds her aven", aven)?);
+    let hers = w.lab.submit(mac, &[w.passkey_a], founded(Kind::Coop, alice, 3));
+    let hers = VaultId::from(run.ok("Alice's passkey founds a coop of hers", hers)?);
+    let aven = w.lab.submit(mac, &[w.passkey_a], founded(Kind::Aven, hers, 0));
+    let aven = VaultId::from(run.ok("and its aven, the coop its one owner", aven)?);
     let garden = w.lab.submit(mac_b, &[w.passkey_b], founded(Kind::Coop, bob, 0));
     let garden = VaultId::from(run.ok("and Bob's his garden, a coop", garden)?);
     // Alice's Mac learns of the garden as from Bob's contact card

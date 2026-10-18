@@ -61,7 +61,6 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::engine;
 use avendb::id::{SignerId, VaultId};
 use avendb::lab::Lab;
-use avendb::policy::Kind;
 use avendb::keys;
 use avendb::sign::{self, Assertion, Ceremony};
 use avendb_browser::{Device, Fresh, Meta, Start, Unlock, steps_json};
@@ -717,9 +716,9 @@ impl Service {
 
     /// Grants agent device `name`'s access request (`agents`), the one its device `device` left; or, for an agent whose
     /// device is in its device vault already, one it made as a record (the ops engine's `ask`, to its aven), which
-    /// leaves no file. The agent is a device vault under the person's one aven, the aven their vault owns
-    /// (`agent::aven_of`), named after the agent (`agent::agent_vault`). Where their vault owns no aven yet, it founds
-    /// one, named `aven_name`, which it must then be given; where the aven has no device vault of that name, it founds
+    /// leaves no file. The agent is a device vault under their coop's one aven, avenMAIA, which Maia City owns and the
+    /// seed founded (`agent::aven_of`), named after the agent (`agent::agent_vault`); `aven_name` names nothing any more,
+    /// as no person has an aven of their own (Samuel 2026-10-18). Where the aven has no device vault of that name, it founds
     /// one under it, and adds the agent's device to it; where it has one that lacks this device, as for the same
     /// harness on their other Mac, it adds the device to that one: whatever of it there is to do, in one ceremony of
     /// their passkey in the sheet, which the agent's device cosigns (`Node::add_device_vault_with`), and the new vaults
@@ -737,7 +736,7 @@ impl Service {
         name: &str,
         device: &str,
         shares: &[Value],
-        aven_name: Option<&str>,
+        _aven_name: Option<&str>,
     ) -> Result<Value> {
         agent::named(name)?;
         let asked = self.request(name).filter(|a| a["device"] == device);
@@ -763,19 +762,15 @@ impl Service {
         });
         let (aven, vault, joined, checked) = found.await;
         checked?;
-        let aven_name = match (aven, aven_name) {
-            (None, Some(named)) => Some(agent::aven_named(named)?),
-            (None, None) => bail!("your vault has no aven yet: name the aven {name} joins"),
-            (Some(_), _) => None,
-        };
-        let place = match (aven, vault) {
-            (_, Some(_)) if joined => None,
-            (_, Some(vault)) => Some(Place::Vault(vault)),
-            (Some(aven), None) => Some(Place::Under(aven)),
-            (None, None) => Some(Place::UnderNew(Kind::Aven)),
+        // the coop's one aven, avenMAIA, founded with the seed (Samuel 2026-10-18: one aven per coop, none per person)
+        let Some(aven) = aven else { bail!("your coop has no aven yet: {name} runs under its coop's aven, avenMAIA") };
+        let place = match vault {
+            Some(_) if joined => None,
+            Some(vault) => Some(Place::Vault(vault)),
+            None => Some(Place::Under(aven)),
         };
         let (aven, vault) = match place {
-            None => (aven.context("an agent's vault has its aven")?, vault.context("the agent's vault")?),
+            None => (aven, vault.context("the agent's vault")?),
             Some(place) => {
                 // the agent's own device cosigns its being added: say so rather than wait for it in vain
                 let asked = asked.context("no such request: it changed")?;
@@ -784,11 +779,9 @@ impl Service {
                 let offer = asked["offer"].as_str().context("its device is another vault's: it can't join")?;
                 let (offer, approver) = (Offer::from_text(offer)?, self.approver().await?);
                 let (aven, vault) = d.node().add_device_vault_with(&offer, place, d.passkey(), &approver).await?;
-                // the new vaults named by their profiles: the aven as its person named it, the agent's after the agent
-                let mut names: Vec<(VaultId, String)> = aven_name.map(|named| (aven, named)).into_iter().collect();
-                if !matches!(place, Place::Vault(_)) {
-                    names.push((vault, name.to_string()));
-                }
+                // a new agent's vault named by its profile, after the agent
+                let names: Vec<(VaultId, String)> =
+                    if matches!(place, Place::Vault(_)) { vec![] } else { vec![(vault, name.to_string())] };
                 for (v, named) in names {
                     let profile = d.node().op(json!({ "op": "profile", "vault": hex(&v.0), "name": named })).await?;
                     if profile.get("ok").is_none() {

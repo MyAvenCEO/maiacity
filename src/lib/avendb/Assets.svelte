@@ -19,7 +19,7 @@
 	import Icon from './Icon.svelte';
 	import Lines from './Lines.svelte';
 	import { vaultSource } from './assets.js';
-	import { count, nameOf, seeded, short } from './vaults.js';
+	import { authorsLine, count, nameOf, seeded, short } from './vaults.js';
 	import { groupName, refusedOf, shelfOf } from '$lib/assets/sources/shelf.js';
 
 	/**
@@ -62,7 +62,7 @@
 	const here = $derived(world.vaults.find((v) => v.id === vault));
 	/** the Maia City vault, where the asset recipes are kept, as this person's world knows it: the seed's coop where
 	 *  they founded it, else a coop of that name */
-	const city = $derived(seeded(world)[3]?.[0] ?? world.vaults.find((v) => v.kind === 'coop' && v.name === 'Maia City'));
+	const city = $derived(seeded(world)[0]?.[0] ?? world.vaults.find((v) => v.kind === 'coop' && v.name === 'Maia City'));
 	const held = $derived(db?.vault === vault ? db : null);
 	/** the vault's recipes, read from its entries as the acting vault opens them, each file only when it is built */
 	const source = $derived(vaultSource(world, held, vault, actor, read));
@@ -239,6 +239,8 @@
 		<dl>
 			<dt>Ref</dt>
 			<dd class="mono">{chosen.label}</dd>
+			<dt>By</dt>
+			<dd>{authorsLine(world, world.entries.find((e) => e.entry === chosen.entry)?.authors, nameOf(here))}</dd>
 			<dt>Entry</dt>
 			<dd class="mono" title={chosen.entry}>{short(chosen.entry)}</dd>
 			<dt>Recipe</dt>

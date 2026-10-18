@@ -40,7 +40,7 @@ export function stepWords(here) {
 			does: `Its genesis, ${here} in it, and if nobody owns the server, Maia Holding, avenCEO, its server and Maia City`
 		},
 		sign: { title: 'Create your vault', does: 'Your passkey signs the whole draft in one go', prompt: true },
-		claim: { title: 'Handing the server its claim', does: 'It signs that it is avenCEO server’s device' },
+		claim: { title: 'Handing the server its claim', does: 'It signs that it is avenMAIA’s device' },
 		settle: {
 			title: 'Sharing your vault with the server',
 			does: `As Backup, or as Relay with backups off, and ${here}’s card in your vault`

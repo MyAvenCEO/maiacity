@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 // The stream held in memory and shared by the feed and the post pages: avenDB's feed (`loadFeed`), every post
 // published in avenDB that everyone may read, its author the vault that published it.
-import { ENTRIES, FEED, fromFeed, voiceOf } from './posts.js';
+import { ENTRIES, FEED, authorsOf, fromFeed } from './posts.js';
 import { inspireOf } from './inspire.js';
 
 export const stream = $state({
@@ -29,7 +29,10 @@ function take(posts, entries) {
 	stream.entries = new Map(entries.map((e) => [e.entry, e]));
 	const now = Date.now() / 1000;
 	const before = new Map(stream.posts.map((p) => [p.entry, p]));
-	for (const p of posts) stream.authors[p.vault] ??= voiceOf(p.vault, p.name, p.kind);
+	for (const p of posts) {
+		const { key, voice } = authorsOf(p);
+		stream.authors[key] ??= voice;
+	}
 	const fed = posts.map((p) => {
 		const had = before.get(p.entry);
 		const post = { ...fromFeed(p, now), ...(had && { liked: had.liked, likes: had.likes }) };

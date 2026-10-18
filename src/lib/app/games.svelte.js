@@ -26,7 +26,7 @@ export const isPublished = (id, fallback) => (games.ids && id ? games.ids.has(id
 
 /** The Maia City COOP vault, where this device acts for it (the seed's founder's devices), else null. */
 export function cityOf(world) {
-	return world ? (seeded(world)[3]?.[0] ?? null) : null;
+	return world ? (seeded(world)[0]?.[0] ?? null) : null;
 }
 
 /** The Public share that publishes game `id` in vault `city`, if the device sees one. */

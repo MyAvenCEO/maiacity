@@ -73,9 +73,9 @@ def runView (c : ViewCase) : List Bool × State :=
 /-! ## The cases
 
 Signers: Alice's passkey 1, her Mac 2, her iPhone 3, Bob's passkey 4 and Mac 5, Carol's passkey 6 and Mac 7, Dave's
-passkey 8, a second passkey 9 (Alice's backup) and a third 10, a new device 77 (an agent's device in the aven cases), a
-stranger 555, the relay server 600. Vaults: Alice 100, Bob 101, Carol 102, Dave 103 (human vaults), coops from 200,
-avens and device vaults from 300 (the relay server's device vault 300).
+passkey 8, a second passkey 9 (Alice's backup) and a third 10, a new device 77 (a worker's device in the sub cap case), 78
+(an aven's server), a stranger 555, the relay server 600. Vaults: Alice 100, Bob 101, Carol 102, Dave 103 (human
+vaults), coops from 200, avens and device vaults from 300 (the relay server's vault 300).
 Shares from 30, keep shares from 40. Entries: Welcome 1, the Charter 2, notes from 3, todos from 21. Types: a note 1, a
 todo 2, a schema 900 (`schemaType`) and a lens 901 (`lensType`); tags: work 7, home 8. Blobs, the content a schema or a
 lens entry's creation holds (`Header.blob`): from 1, and 0 for every other entry. An act for the coop names
@@ -296,60 +296,61 @@ def cases : List Case := [
     (5, [], newEntry 205 19 205 [] note (via := [200, 101])),
     (5, [], newEntry 205 20 205 [] note (via := [101])),
     (5, [], newEntry 205 21 205 [] note (via := [200]))] },
-  { name := "an aven: one human owner, one per human, its agents' device vaults", edits := humans ++ [
+  { name := "an aven: one coop owner, one per coop, its server its device, owning nothing", edits := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 1),
-    -- Alice's aven, owned by her human vault alone; it holds no devices
-    (1, [], .genesis 300 .aven [.vault 100] 1),
-    (1, [77], .share (.device 300 77)),
-    -- one aven per human: Alice's second is refused, Bob founds his
-    (1, [], .genesis 301 .aven [.vault 100] 1),
-    (4, [], .genesis 302 .aven [.vault 101] 1),
-    -- a human vault owns an aven, and nothing else does: no coop, no two humans, no signer
-    (1, [], .genesis 303 .aven [.vault 200] 1),
-    (6, [8], .genesis 304 .aven [.vault 102, .vault 103] 1),
+    -- the coop's aven, owned by the coop alone; it holds devices, its server 78
+    (1, [], .genesis 300 .aven [.vault 200] 1),
+    (1, [78], .share (.device 300 78)),
+    -- one aven per coop: the coop's second is refused; Bob's own coop founds its
+    (1, [], .genesis 301 .aven [.vault 200] 1),
+    (4, [], .genesis 201 .coop [.vault 101] 1),
+    (4, [], .genesis 302 .aven [.vault 201] 1),
+    -- a coop owns an aven, and nothing else does: no human, no two coops, no signer
+    (1, [], .genesis 303 .aven [.vault 100] 1),
+    (1, [4], .genesis 304 .aven [.vault 200, .vault 201] 1),
     (1, [], .genesis 305 .aven [.signer 1] 1),
-    -- an aven has one owner, so Carol doesn't join Alice's
+    -- an aven has one owner, so Carol doesn't join the coop's
     (1, [6], .share (.owner 300 (.vault 102))),
-    -- the aven owns its agents' device vaults, and nothing else
+    -- the aven owns nothing: no agent's device vault, no coop, no aven
     (1, [], .genesis 310 .deviceVault [.vault 300] 1),
-    (1, [77], .share (.device 310 77)),
     (1, [], .genesis 210 .coop [.vault 300] 1),
     (1, [], .genesis 311 .aven [.vault 300] 1),
-    -- Alice's Mac acts for her aven through her vault; the agent's device acts for its own vault, not for the aven
-    (2, [], newEntry 300 1 300 [] note (via := [100])),
-    (77, [], newEntry 310 2 310 [] note),
-    (77, [], newEntry 300 3 300 [] note)] },
-  { name := "sub caps: an aven passes on to its agents what a coop gave it", edits := humans ++ [
-    -- Bob's coop, Alice's aven and its agent's device vault, whose device is 77
+    -- Alice's Mac acts for the coop's aven through the coop and her vault; its server acts for it directly, and for
+    -- nothing else
+    (2, [], newEntry 300 1 300 [] note (via := [200, 100])),
+    (78, [], newEntry 300 2 300 [] note),
+    (78, [], newEntry 200 3 200 [] note)] },
+  { name := "sub caps: a coop passes on to its worker what another coop gave it", edits := humans ++ [
+    -- Bob's coop, his second coop and its worker's device vault, whose device is 77
     (4, [], .genesis 200 .coop [.vault 101] 1),
-    (1, [], .genesis 300 .aven [.vault 100] 1),
-    (1, [], .genesis 310 .deviceVault [.vault 300] 1),
-    (1, [77], .share (.device 310 77)),
-    -- the coop's two todos, one tagged work, and its write share on its todos for Alice's aven
+    (4, [], .genesis 300 .coop [.vault 101] 1),
+    (4, [], .genesis 310 .deviceVault [.vault 300] 1),
+    (4, [77], .share (.device 310 77)),
+    -- the coop's two todos, one tagged work, and its write share on its todos for the second coop
     (5, [], newEntry 200 21 200 [] todo (tags := [work]) (via := [101])),
     (5, [], newEntry 200 22 200 [] todo (via := [101])),
     (5, [], newShare 30 200 (toVault 300) .write 200 todos (via := [101])),
-    -- the aven passes the work todos on to its agent's vault, which it owns: a write share resting on 30
-    (2, [], newShare 31 200 (toVault 310) .write 300 workTodos (parent := some 30) (via := [100])),
-    -- no higher than 30, no wider, to no vault the aven doesn't own, and the agent's vault passes nothing on
-    (1, [], newShare 32 200 (toVault 310) .owner 300 workTodos (parent := some 30) (via := [100])),
-    (2, [], newShare 33 200 (toVault 310) .read 300 (wide := true) (parent := some 30) (via := [100])),
-    (2, [], newShare 34 200 (toVault 102) .read 300 workTodos (parent := some 30) (via := [100])),
+    -- the second coop passes the work todos on to its worker's vault, which it owns: a write share resting on 30
+    (5, [], newShare 31 200 (toVault 310) .write 300 workTodos (parent := some 30) (via := [101])),
+    -- no higher than 30, no wider, to no vault the second coop doesn't own, and the worker's vault passes nothing on
+    (4, [], newShare 32 200 (toVault 310) .owner 300 workTodos (parent := some 30) (via := [101])),
+    (5, [], newShare 33 200 (toVault 310) .read 300 (wide := true) (parent := some 30) (via := [101])),
+    (5, [], newShare 34 200 (toVault 102) .read 300 workTodos (parent := some 30) (via := [101])),
     (77, [], newShare 35 200 (toVault 103) .read 310 workTodos (parent := some 31)),
     -- a steward moves the work todo to the audience of 30 and 31, the other to that of 30
     (5, [], .move 200 21 [30, 31] [] [101]),
     (5, [], .move 200 22 [30] [] [101]),
-    -- the agent writes the work todo, not the other one; the aven writes that one
+    -- the worker writes the work todo, not the other one; the second coop writes that one
     (77, [], wr 200 21 310 [10] (stay := some 18) (proof := some 31)),
     (77, [], wr 200 22 310 [11] (stay := some 19) (proof := some 31)),
-    (2, [], wr 200 22 300 [11] (stay := some 19) (via := [100]) (proof := some 30)),
-    -- the coop revokes the aven's share, and the agent's share resting on it ends too
+    (5, [], wr 200 22 300 [11] (stay := some 19) (via := [101]) (proof := some 30)),
+    -- the coop revokes the second coop's share, and the worker's share resting on it ends too
     (5, [], .revoke (.grant 30 200 [20, 22] [101])),
     (77, [], wr 200 21 310 [20] (stay := some 18) (proof := some 31)),
-    -- a wide read for the aven, passed on wide to its agent; a wide write can't rest on it
+    -- a wide read for the second coop, passed on wide to its worker; a wide write can't rest on it
     (5, [], newShare 36 200 (toVault 300) .read 200 (wide := true) (via := [101])),
-    (2, [], newShare 37 200 (toVault 310) .read 300 (wide := true) (parent := some 36) (via := [100])),
-    (2, [], newShare 38 200 (toVault 310) .write 300 (wide := true) (parent := some 36) (via := [100]))] },
+    (5, [], newShare 37 200 (toVault 310) .read 300 (wide := true) (parent := some 36) (via := [101])),
+    (5, [], newShare 38 200 (toVault 310) .write 300 (wide := true) (parent := some 36) (via := [101]))] },
   { name := "shares and everyone", edits := humans ++ [
     (1, [4], .genesis 200 .coop [.vault 100, .vault 101] 2),
     -- Alice's Mac creates the coop's Welcome note in no share's audience, where only the coop reads it; Carol's passkey
@@ -1729,13 +1730,13 @@ def allActions : List Action :=
 #guard (cases.find? (·.name == "four kinds of vault, and acts that name their chain")).all fun c =>
   (run c.edits).1.drop humans.length == [true, true, false, true, true, false, false, false, false, false, false, false,
     true, false, false, false, false, false, false, true, true, false, false, true, true, false, false]
--- an aven: one owner, a human vault, which owns one aven; it holds no devices and owns only device vaults
-#guard (cases.find? (·.name == "an aven: one human owner, one per human, its agents' device vaults")).all fun c =>
-  (run c.edits).1.drop humans.length == [true, true, false, false, true, false, false, false, false, true, true, false,
+-- an aven: one owner, a coop, which owns one aven; it holds devices, its server, and owns nothing
+#guard (cases.find? (·.name == "an aven: one coop owner, one per coop, its server its device, owning nothing")).all fun c =>
+  (run c.edits).1.drop humans.length == [true, true, true, false, true, true, false, false, false, false, false, false,
     false, true, true, false]
 -- a sub cap: the agent writes what every share of its chain allows, and nothing once the coop revokes the aven's
 -- share, which ends the agent's too
-#guard (cases.find? (·.name == "sub caps: an aven passes on to its agents what a coop gave it")).all fun c =>
+#guard (cases.find? (·.name == "sub caps: a coop passes on to its worker what another coop gave it")).all fun c =>
   let (acc, st) := run c.edits
   acc.drop humans.length == [true, true, true, true, true, true, true, true, false, false, false, false, true, true,
     true, false, true, true, false, true, true, false] && st.revoked == [30, 31]

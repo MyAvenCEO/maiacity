@@ -225,42 +225,40 @@ def s3 : List Edit := s2 ++ chain 20 [
 /-! ## Four kinds of vault
 
 The vault is the identity. A human vault is owned by its person's passkeys, and its devices act for it. A coop vault
-is owned by human and coop vaults. A device vault is owned by one human, coop or aven vault, and its devices, a server
-or an agent's harness, act for it but never govern it: the relay server's vault is one, avenCEO server, at the end of
-the seed Alice's vault founds as it claims the server: Maia Holding GmbH, a coop her vault owns alone, avenCEO GmbH, a
-coop Maia Holding owns alone, and avenCEO server, which avenCEO GmbH owns. An aven, a person's own agent, is owned by
-that person's human vault alone, one aven to a person; it holds no devices, and owns the device vaults its agents run
-in. No signer owns any vault but a human vault. Each kind's rules are one row of the kind table, `Kind.rules`. -/
+is owned by human and coop vaults. An aven, a coop's own agent, is owned by that coop alone, one aven to a coop and
+none to a person; it lives on its server: the server is its device, which acts for it but never governs it. The seed
+Alice's vault founds as it claims the server is Maia City, a coop her vault owns alone, and avenMAIA, its aven, with
+the server as its device. A device vault is owned by one human, coop or aven vault, and its devices, an agent's
+harness or a studio worker, act for it but never govern it: an aven's agents run in device vaults it owns. No signer
+owns any vault but a human vault. Each kind's rules are one row of the kind table, `Kind.rules`. -/
 
-def holding := 210
-def gmbh := 211
+def city := 210
 def serverVault := 300
 def server := 600
 
-/-- The seed Alice's vault founds as it claims the server, from edit `n` on, with the server added to its device
-vault. -/
+/-- The seed Alice's vault founds as it claims the server, from edit `n` on: Maia City and its aven, avenMAIA, with
+the server added to the aven as its device. -/
 def seed (n : Nat) : List Edit := chain n [
-  (passkeyA, [], .genesis holding .coop [.vault alice] 1),
-  (passkeyA, [], .genesis gmbh .coop [.vault holding] 1),
-  (passkeyA, [], .genesis serverVault .deviceVault [.vault gmbh] 1),
+  (passkeyA, [], .genesis city .coop [.vault alice] 1),
+  (passkeyA, [], .genesis serverVault .aven [.vault city] 1),
   (passkeyA, [server], .share (.device serverVault server))]
 
 def sServer : List Edit := s3 ++ seed 400
 #guard refused sServer == []
 
--- the server acts for its vault, and so do Alice's devices, through Alice's vault and the two coops; Bob's don't
+-- the server acts for its aven, and so do Alice's devices, through Alice's vault and Maia City; Bob's don't
 #guard actsFor (view sServer) server serverVault && actsFor (view sServer) macA serverVault &&
   !actsFor (view sServer) macB serverVault
-#guard actsFor (view sServer) macA gmbh && !actsFor (view sServer) server gmbh
--- the vault's key opens on the server and on Alice's devices; neither Alice's vault's key nor the coops' opens on the
--- server
+#guard actsFor (view sServer) macA city && !actsFor (view sServer) server city
+-- the aven's key opens on the server and on Alice's devices; neither Alice's vault's key nor Maia City's opens on
+-- the server
 #guard opens' sServer server (.seed serverVault) && opens' sServer phoneA (.seed serverVault)
 #guard !opens' sServer server (.seed alice) && !opens' sServer macB (.seed serverVault)
-#guard !opens' sServer server (.seed gmbh) && !opens' sServer server (.seed holding)
--- the server doesn't govern its vault: it adds no device; Alice's passkey does, through Alice's vault
+#guard !opens' sServer server (.seed city)
+-- the server doesn't govern its aven: it adds no device; Alice's passkey does, through Alice's vault
 #guard !accepted sServer (attempt server [77] (.share (.device serverVault 77)))
 #guard accepted sServer (attempt passkeyA [77] (.share (.device serverVault 77)))
--- a device vault has one owner: Bob's vault doesn't join it, and it isn't founded with two
+-- an aven has one owner: Bob's vault doesn't join it; nor is a device vault founded with two
 #guard !accepted sServer (attempt passkeyA [passkeyB] (.share (.owner serverVault (.vault bob))))
 #guard !accepted s3 (attempt passkeyA [passkeyB] (.genesis serverVault .deviceVault [.vault alice, .vault coop] 1))
 -- signers own human vaults only, and a human vault no vault
@@ -275,30 +273,44 @@ def sServer : List Edit := s3 ++ seed 400
 #guard !accepted s3 (attempt passkeyA [passkeyB, 77] (.share (.device coop 77)))
 #guard accepted s3 (attempt passkeyA [passkeyB] (.genesis serverVault .deviceVault [.vault coop] 1))
 
--- Alice's aven, and the device vault one of its agents runs in, whose harness is the device `agent`
+-- Alice's coop, its aven with its server, the device `avenServer`, and a studio worker of the coop, a device vault
+-- whose device is `worker`
+def coopA := 212
 def avenA := 310
-def agentVault := 311
-def agent := 77
+def workerVault := 311
+def worker := 77
+def avenServer := 78
 
 def sAven : List Edit := s3 ++ chain 400 [
-  (passkeyA, [], .genesis avenA .aven [.vault alice] 1),
-  (passkeyA, [], .genesis agentVault .deviceVault [.vault avenA] 1),
-  (passkeyA, [agent], .share (.device agentVault agent))]
+  (passkeyA, [], .genesis coopA .coop [.vault alice] 1),
+  (passkeyA, [], .genesis avenA .aven [.vault coopA] 1),
+  (passkeyA, [avenServer], .share (.device avenA avenServer)),
+  (passkeyA, [], .genesis workerVault .deviceVault [.vault coopA] 1),
+  (passkeyA, [worker], .share (.device workerVault worker))]
 #guard refused sAven == []
 
--- Alice's devices act for her aven through her vault; the agent acts for its device vault, and not for the aven
-#guard actsFor (view sAven) macA avenA && actsFor (view sAven) agent agentVault && !actsFor (view sAven) agent avenA
--- one owner, a human vault, which has one aven: Alice has no second, Bob founds his, and neither the coop nor two
--- people found one; nobody joins Alice's as a second owner
-#guard !accepted sAven (attempt passkeyA [] (.genesis 312 .aven [.vault alice] 1))
-#guard accepted sAven (attempt passkeyB [] (.genesis 312 .aven [.vault bob] 1))
-#guard !accepted sAven (attempt passkeyA [passkeyB] (.genesis 312 .aven [.vault coop] 1))
-#guard !accepted sAven (attempt passkeyB [passkeyC] (.genesis 312 .aven [.vault bob, .vault carol] 1))
+-- the aven's server acts for the aven, and Alice's devices do through the coop and her vault; the server acts for
+-- nothing else, and the worker for its device vault alone
+#guard actsFor (view sAven) avenServer avenA && actsFor (view sAven) macA avenA && !actsFor (view sAven) avenServer coopA
+#guard actsFor (view sAven) worker workerVault && !actsFor (view sAven) worker avenA
+-- one owner, a coop, which has one aven: Alice's coop has no second, the two people's coop founds its own, and no
+-- person, no two coops and no signer found one; nobody joins Alice's coop's as a second owner
+#guard !accepted sAven (attempt passkeyA [] (.genesis 312 .aven [.vault coopA] 1))
+#guard accepted sAven (attempt passkeyA [passkeyB] (.genesis 312 .aven [.vault coop] 1))
+#guard !accepted sAven (attempt passkeyB [] (.genesis 312 .aven [.vault bob] 1))
+#guard !accepted sAven (attempt passkeyA [passkeyB] (.genesis 312 .aven [.vault coopA, .vault coop] 1))
+#guard !accepted sAven (attempt passkeyA [] (.genesis 312 .aven [.signer passkeyA] 1))
 #guard !accepted sAven (attempt passkeyA [passkeyC] (.share (.owner avenA (.vault carol))))
--- an aven holds no devices, and owns device vaults only
-#guard !accepted sAven (attempt passkeyA [78] (.share (.device avenA 78)))
+-- an aven owns nothing: no agent's device vault, no coop, no aven; its server governs it in nothing
+#guard !accepted sAven (attempt passkeyA [] (.genesis 312 .deviceVault [.vault avenA] 1))
 #guard !accepted sAven (attempt passkeyA [] (.genesis 312 .coop [.vault avenA] 1))
-#guard !accepted sAven (attempt passkeyA [] (.genesis 312 .aven [.vault avenA] 1))
+#guard !accepted sAven (attempt passkeyA [] (.genesis 313 .aven [.vault avenA] 1))
+#guard !accepted sAven (attempt avenServer [79] (.share (.device avenA 79)))
+
+-- who wrote an entry of Alice's coop: its aven and Alice, whose Mac signed its write, never the coop itself
+def sAuthored : List Edit := sAven ++ chain 405 [(macA, [], create coopA welcome coopA [] doc (via := [alice]))]
+#guard refused sAuthored == []
+#guard authors (view sAuthored) welcome ((view sAuthored).writes.map (·.edit)) == [avenA, alice]
 
 /-! ## Acts name their chain
 
@@ -312,10 +324,10 @@ belong to, is refused. -/
 #guard !accepted s3 (attempt macA [] (create coop welcome coop [] doc (via := [bob])))
 -- nor through Carol's vault, which doesn't own the coop
 #guard !accepted s3 (attempt macC [] (create coop welcome coop [] doc (via := [carol])))
--- the server creates an entry for its vault directly, Alice's Mac through the two coops and Alice's vault
+-- the server creates an entry for its aven directly, Alice's Mac through Maia City and Alice's vault
 #guard accepted sServer (attempt server [] (create serverVault status serverVault [] note))
 #guard accepted sServer
-  (attempt macA [] (create serverVault status serverVault [] note (via := [gmbh, holding, alice])))
+  (attempt macA [] (create serverVault status serverVault [] note (via := [city, alice])))
 #guard !accepted sServer (attempt macA [] (create serverVault status serverVault [] note (via := [alice])))
 #guard !accepted sServer (attempt macA [] (create serverVault status serverVault [] note))
 
@@ -330,37 +342,38 @@ def sGuild : List Edit := s3 ++ chain 410 [(passkeyA, [passkeyB], .genesis guild
 /-! ## Sub caps
 
 A vault holding a share passes part of it on to a vault it owns, by the rule every share that rests on another follows
-(`shareParentOk`): Alice's aven, given the coop's todos to write, passes the work todos on to its agent's device vault.
-The agent's share rests on the aven's, no higher and no wider; its keys reach the agent as any share's reach its
-grantee, the agent writes only what both shares select, and its share ends when the coop revokes the aven's. -/
+(`shareParentOk`): Alice's coop, given the two people's coop's todos to write, passes the work todos on to its studio
+worker's device vault. The worker's share rests on the coop's, no higher and no wider; its keys reach the worker as any
+share's reach its grantee, the worker writes only what both shares select, and its share ends when the two people's
+coop revokes Alice's coop's. -/
 
 def subCaps : List Edit := sAven ++ chain 420 [
   (macA, [], create coop task coop [] todo [work] (via := [alice])),
   (macA, [], create coop chore coop [] todo (via := [alice])),
-  (macA, [], .share (.grant (shareOf 60 coop avenA .write todos) [alice])),
+  (macA, [], .share (.grant (shareOf 60 coop coopA .write todos) [alice])),
   (macA, [], .share (.grant
-    (shareOf 61 coop agentVault .write workTodos (parent := some 60) (issuer := avenA)) [alice])),
+    (shareOf 61 coop workerVault .write workTodos (parent := some 60) (issuer := coopA)) [alice])),
   (macA, [], .move coop task [60, 61] [] [alice]),
   (macA, [], .move coop chore [60] [] [alice])]
 #guard refused subCaps == [] && tidy subCaps
--- the agent writes and reads the work todo, and not the chore; the aven writes both
-#guard writable subCaps agentVault == [task] && writable subCaps avenA == [task, chore]
-#guard readable subCaps agent == [task]
--- the agent's share is no higher than the aven's and no wider, and goes to no vault the aven doesn't own; the agent's
--- vault, which owns nothing and was given no share op, passes nothing on
+-- the worker writes and reads the work todo, and not the chore; Alice's coop writes both
+#guard writable subCaps workerVault == [task] && writable subCaps coopA == [task, chore]
+#guard readable subCaps worker == [task]
+-- the worker's share is no higher than the coop's and no wider, and goes to no vault the coop doesn't own; the
+-- worker's vault, which owns nothing and was given no share op, passes nothing on
 #guard !accepted subCaps (attempt passkeyA [] (.share (.grant
-  (shareOf 62 coop agentVault .owner workTodos (parent := some 60) (issuer := avenA)) [alice])))
+  (shareOf 62 coop workerVault .owner workTodos (parent := some 60) (issuer := coopA)) [alice])))
 #guard !accepted subCaps (attempt macA [] (.share (.grant
-  (shareOf 62 coop agentVault .read .all (parent := some 60) (issuer := avenA)) [alice])))
+  (shareOf 62 coop workerVault .read .all (parent := some 60) (issuer := coopA)) [alice])))
 #guard !accepted subCaps (attempt macA [] (.share (.grant
-  (shareOf 62 coop carol .read workTodos (parent := some 60) (issuer := avenA)) [alice])))
-#guard !accepted subCaps (attempt agent [] (.share (.grant
-  (shareOf 62 coop dave .read workTodos (parent := some 61) (issuer := agentVault)))))
--- the coop revokes the aven's share, and the agent's ends with it
+  (shareOf 62 coop carol .read workTodos (parent := some 60) (issuer := coopA)) [alice])))
+#guard !accepted subCaps (attempt worker [] (.share (.grant
+  (shareOf 62 coop dave .read workTodos (parent := some 61) (issuer := workerVault)))))
+-- the two people's coop revokes Alice's coop's share, and the worker's ends with it
 def subRevoked : List Edit := subCaps ++ chain 430 [
   (macA, [], .revoke (.grant 60 coop [420, 421, 422, 423, 424, 425] [alice]))]
 #guard refused subRevoked == [] && [60, 61].all (!(view subRevoked).live ·)
-#guard writable subRevoked agentVault == [] && writable subRevoked avenA == []
+#guard writable subRevoked workerVault == [] && writable subRevoked coopA == []
 
 /-! ## Scenario 28: an access request is a record and a share
 

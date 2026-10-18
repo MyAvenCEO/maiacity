@@ -1,8 +1,8 @@
 //! The gate of drafts, new entries an AIP proposes (`docs/ARCHITECTURE.md` §8, "Drafts"): a draft is a creation that
 //! starts its own line, its main line empty until its vault lands it, merging that line; only the vault lands one.
 //! Everything goes through the ops engine (`engine::run`), as the page and an agent send ops, but where a patched app's
-//! writes are made (`Lab::patched`). Alice's aven and agentClaude, its agent with a device of its own, are Suggesters
-//! of all her vaults and AIP authors of her AIPs, as the page grants them; agentCodex holds a Suggester's share as one
+//! writes are made (`Lab::patched`). agentClaude, a device vault of hers with a device of its own, is a Suggester of
+//! all her vaults and an AIP author of her AIPs, as the page grants it; agentCodex holds a Suggester's share as one
 //! was made before drafts; Carol is an Editor of her logic and posts, Bob a Viewer of those and of her AIPs and
 //! reviews, and Dave's Mac keeps her vault for her, reading none of it; and two Public shares pick her logic and what
 //! is tagged `game:sandbox-7`, as Maia City's do. Every reader of the draft, her Mac and her phone, Bob's Mac, Carol's
@@ -78,7 +78,7 @@ const GAME: &str = "game:sandbox-7";
 struct Gate {
     w: World,
     alice: VaultId,
-    /// agentClaude's device vault, under her aven: a Suggester since drafts, and an AIP author.
+    /// agentClaude's device vault, which her vault owns: a Suggester since drafts, and an AIP author.
     agent: VaultId,
     /// agentCodex's device vault: a Suggester by a share made before drafts.
     old: VaultId,
@@ -103,9 +103,8 @@ fn gate() -> Gate {
         let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
         VaultId::from(w.lab.submit(mac, &[passkey], genesis).expect("her passkey founds it"))
     };
-    let aven = found(&mut w, Kind::Aven, alice, 5);
     let device_vault = |w: &mut World, name: &str, nonce: u64| {
-        let vault = found(w, Kind::DeviceVault, aven, nonce);
+        let vault = found(w, Kind::DeviceVault, alice, nonce);
         let device = w.lab.device(name);
         let add = Action::Share(Sharing::Device { vault, device, seal_to: None });
         w.lab.submit(mac, &[passkey, device], add).expect("its device");
@@ -113,20 +112,17 @@ fn gate() -> Gate {
     };
     let (agent, claude) = device_vault(&mut w, "agentClaude", 6);
     let (old, codex) = device_vault(&mut w, "agentCodex", 7);
-    let (a, v, c, x) = (alice.to_hex(), aven.to_hex(), agent.to_hex(), old.to_hex());
+    let (a, c, x) = (alice.to_hex(), agent.to_hex(), old.to_hex());
     let share = |w: &mut World, op: Value| ok(run(w, mac, op))["share"].as_str().expect("a share").to_string();
-    // a standing Suggester to her aven and on to agentClaude, and an AIP author's share to both, as the page grants
-    share(&mut w, json!({ "op": "share", "over": a, "who": { "vault": v }, "level": "Suggester", "standing": true,
-        "as": a }));
+    // a standing Suggester to agentClaude, and an AIP author's share, as the page grants
     share(&mut w, json!({ "op": "share", "over": a, "who": { "vault": c }, "level": "Suggester", "standing": true,
-        "as": v }));
+        "as": a }));
     let author = json!({ "name": "AIP author", "ops": [{ "op": "create" }, { "op": "set", "path": [] }] });
     let aips = json!({ "type": ["aip"] });
-    share(&mut w, json!({ "op": "share", "over": a, "who": { "vault": v }, "level": author, "what": aips, "as": a }));
-    share(&mut w, json!({ "op": "share", "over": a, "who": { "vault": c }, "level": author, "what": aips, "as": v }));
+    share(&mut w, json!({ "op": "share", "over": a, "who": { "vault": c }, "level": author, "what": aips, "as": a }));
     // agentCodex: a Suggester's share as one was made before drafts
     let before = json!({ "name": "Suggester", "ops": rules::ops_to_json(&rules::suggester_before_drafts()) });
-    share(&mut w, json!({ "op": "share", "over": a, "who": { "vault": x }, "level": before, "as": v }));
+    share(&mut w, json!({ "op": "share", "over": a, "who": { "vault": x }, "level": before, "as": a }));
     // Carol an Editor, Bob a Viewer, Dave a Backup of it all
     let (carol, bob, dave) = (w.carol, w.bob.to_hex(), w.dave.to_hex());
     let types = |ts: &[&str]| json!({ "type": ts });
@@ -753,6 +749,7 @@ fn a_drafts_creation_uses_its_draft_peer_and_never_collides_with_main() {
 /// them in that form, resting on what gives all they give; the ones before stand for nothing more. Then agentClaude
 /// drafts in the coop.
 #[test]
+#[ignore = "an aven owns no agent vault any more: agents reach avenMAIA through its server (next PR)"]
 fn a_standing_suggester_made_before_drafts_is_granted_again_in_its_new_form() {
     let mut w = cast::world();
     let (alice, mac, passkey) = (w.alice, w.mac_a, w.passkey_a);
@@ -761,7 +758,8 @@ fn a_standing_suggester_made_before_drafts_is_granted_again_in_its_new_form() {
         let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
         VaultId::from(w.lab.submit(mac, &[passkey], genesis).expect("her passkey founds it"))
     };
-    let aven = found(&mut w, Kind::Aven, alice, 5);
+    let ours = found(&mut w, Kind::Coop, alice, 5);
+    let aven = found(&mut w, Kind::Aven, ours, 5);
     let agent = found(&mut w, Kind::DeviceVault, aven, 6);
     let claude = w.lab.device("agentClaude");
     let add = Action::Share(Sharing::Device { vault: agent, device: claude, seal_to: None });

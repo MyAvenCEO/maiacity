@@ -17,9 +17,8 @@
 	never read again. A new person
 	founds their vault with the passkey they signed up to maiaCITY with (the same relying party, maia.city), as they
 	come into the app ($lib/app/entry.js), or here if they went on without it; the first to found a vault through a server nobody has claimed yet claims it in the same
-	ceremony and founds the seed (avendb's `world::SEED`): Maia Holding GmbH, a coop their vault owns, avenCEO GmbH, a
-	coop Maia Holding owns, avenCEO server, the device vault avenCEO GmbH owns and the server is a device of, and Maia
-	City, a coop avenCEO GmbH owns. A person
+	ceremony and founds the seed (avendb's `world::SEED`): Maia City, a coop their vault owns, and avenMAIA, Maia
+	City's one aven, which lives on the server, its device. A person
 	with an account signs in on a new browser with their passkey alone: avenDB's server, which keeps their vault's log
 	as ciphertext, hands it over, and the browser joins their vault (P8c), as it does after they lost every device. Or
 	it links through the code another of their devices shows, scanned as a QR code or opened as a link (?link=), which
@@ -326,10 +325,10 @@
 				.catch((/** @type {Error} */ e) => (session.error = `Naming your vaults failed: ${plain(e.message)}`))
 				.finally(() => (profiling = false));
 		}
-		// avenDB's standard schemas and lenses, each an entry of the seed's company, avenCEO GmbH, shared with everyone
+		// avenDB's standard schemas and lenses, each an entry of the seed's coop, Maia City, shared with everyone
 		// as it adds them, their JSON as avenDB has it, so the same ids; and the content flow and its functions, Public
 		// too: written once, by whichever device comes first
-		const company = seeded(w)[1]?.[0];
+		const company = seeded(w)[0]?.[0];
 		if (company && !standardizing && !standardized.has(company.id)) {
 			standardizing = true;
 			standardize(w, company.id)
@@ -338,14 +337,14 @@
 				.finally(() => (standardizing = false));
 		}
 		// the repo seed (./seed.js): the code, templates, stories and their deliveries the repository holds, each
-		// written into Maia City once avenCEO GmbH holds its schemas, by the person's first device alone: one that joins
+		// written into Maia City once it holds the standard schemas, by the person's first device alone: one that joins
 		// later might not have synced what the first wrote yet, and would write it all again
-		const city = seeded(w)[3]?.[0];
+		const city = seeded(w)[0]?.[0];
 		const first = mine?.devices[0]?.me === true;
 		const tried = seededInto.has(city?.id) || seedFailed.has(city?.id ?? '');
 		if (city && company && first && standardized.has(company.id) && !bringing && !tried) {
 			bringing = true;
-			const left = unseeded(w, city.id, seedPieces(seeded(w)[2]?.[0]?.id ?? null));
+			const left = unseeded(w, city.id, seedPieces(seeded(w)[1]?.[0]?.id ?? null));
 			// a background job (Samuel 2026-10-18): nothing waits for it, the setup is over without it, and the corner
 			// shows how far it is while it has pieces to write
 			seed(w, city.id, left)
@@ -679,8 +678,8 @@
 						<input class="field" placeholder="Its connection server: https://…" bind:value={relay} />
 						<input class="field" placeholder="The server’s code: AVENDB1…" bind:value={server} />
 						<p class="soft">
-							The first person to found their vault through a server owns it: their vault founds Maia Holding GmbH, which
-							owns avenCEO GmbH, which owns avenCEO server, the device vault the server is a device of.
+							The first person to found their vault through a server owns it: their vault founds Maia City, which owns
+							avenMAIA, its one aven, which lives on the server, its device.
 						</p>
 					</details>
 					<label class="check">

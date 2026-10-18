@@ -1,11 +1,11 @@
 //! The server peer (P8b): a node on a shelf of its own (`shelf`), its bucket (blobs B3a, `bucket`) or else its folder
 //! (`disk`), with its device's secret on the shelf beside its edits (`SECRET`). At its first start on a shelf it makes
 //! that secret, and belongs to no vault until the first human vault to claim it does (P8f, `Node::claim`,
-//! `Node::found_with`): from then on it is a device of avenCEO server, a device vault avenCEO GmbH owns, of the seed
+//! `Node::found_with`): from then on it is a device of avenMAIA, the aven Maia City owns, of the seed
 //! that human vault founds, which it acts as and never governs, and it starts again from what the shelf holds, as the
-//! same device, whatever became of its folder beside a bucket. It hands its contact card, avenCEO server's log and its
-//! owners', to whoever asks, so that a vault can give avenCEO server relay on its entries; it holds only ciphertext,
-//! and opens nothing but what is public and avenCEO server's own. Its relay (the `avendb-server` binary) lets in only
+//! same device, whatever became of its folder beside a bucket. It hands its contact card, avenMAIA's log and its
+//! owners', to whoever asks, so that a vault can give avenMAIA relay on its entries; it holds only ciphertext,
+//! and opens nothing but what is public and avenMAIA's own. Its relay (the `avendb-server` binary) lets in only
 //! the devices it knows (`Admission`).
 
 use std::io::ErrorKind;
@@ -45,7 +45,7 @@ pub async fn open_agent(shelf: Shelf, name: &str, opts: Options) -> Result<Node>
     Node::spawn(lab, me, Options { shelf: Some(shelf), card: true, ..opts }).await
 }
 
-/// The vault the node's device belongs to, as its view has it: avenCEO server, once a device claimed the server; an
+/// The vault the node's device belongs to, as its view has it: avenMAIA, once a device claimed the server; an
 /// agent's device vault, once its person's Mac added it.
 pub async fn vault(node: &Node) -> Option<VaultId> {
     node.read(|lab, me| lab.vault_of(me)).await

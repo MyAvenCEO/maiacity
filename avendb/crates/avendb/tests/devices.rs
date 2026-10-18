@@ -1,8 +1,9 @@
 //! A device on a machine of its own (P8b): randomness drawn from the machine, a device that keeps a secret of its own
-//! (the server), claimed once by the first human vault to claim it, as a device of avenCEO server, a device vault
-//! (P8f), in the same ceremony that founds that vault, which then acts for it and never governs it; the contact card
-//! the server hands out, its vault's log, which another vault needs before it gives the server's vault a share; and a
-//! store reopened from what the device saved, which shows and sends the device's writes as before.
+//! (the server), claimed once by the first human vault to claim it, as a device of avenMAIA, the aven of the seed
+//! that vault founds (P8f), or of a device vault, in the same ceremony that founds it, which then acts for it and never
+//! governs it; the contact card the server hands out, its vault's log, which another vault needs before it gives the
+//! server's vault a share; and a store reopened from what the device saved, which shows and sends the device's writes
+//! as before.
 
 mod common;
 
@@ -60,25 +61,27 @@ fn the_first_human_vault_to_claim_the_server_owns_it_for_good() {
     assert_eq!(server, Lab::with_entropy([2; 32]).device_with("the server", [7; 32]), "its keys are its secret's");
     assert_eq!(lab.vault_of(server), None, "a new server belongs to no vault");
     assert!(lab.claim_key(server).is_ok(), "and hands its key to the first device that asks");
-    let avenceo = claim_on(&mut lab, mac, passkey, alice, server);
-    assert_eq!(lab.vault_of(server), Some(avenceo), "the server is a device of avenCEO");
-    let vault = lab.state(server).vault(avenceo).expect("avenCEO").clone();
-    let [Principal::Vault(gmbh)] = vault.owners[..] else { panic!("one owner, avenCEO GmbH: {vault:?}") };
-    let gmbh = lab.state(server).vault(gmbh).map(|v| v.kind);
-    assert_eq!((vault.kind, vault.root, gmbh), (Kind::DeviceVault, None, Some(Kind::Coop)), "a coop's device vault");
-    assert_eq!(world::seeder(lab.state(server), avenceo), Some(alice), "the end of the seed Alice's vault founded");
+    let aven = claim_on(&mut lab, mac, passkey, alice, server);
+    assert_eq!(lab.vault_of(server), Some(aven), "the server is a device of avenMAIA");
+    let vault = lab.state(server).vault(aven).expect("avenMAIA").clone();
+    let [Principal::Vault(city)] = vault.owners[..] else { panic!("one owner, Maia City: {vault:?}") };
+    let coop = lab.state(server).vault(city).map(|v| (v.kind, v.owners.clone()));
+    assert_eq!((vault.kind, vault.root), (Kind::Aven, None), "an aven");
+    assert_eq!(coop, Some((Kind::Coop, vec![Principal::Vault(alice)])), "of a coop Alice's vault owns alone");
+    assert_eq!(world::seed_of(&lab, mac), vec![city, aven], "the seed: Maia City, then avenMAIA");
+    assert_eq!(world::seeder(lab.state(server), aven), Some(alice), "the end of the seed Alice's vault founded");
     assert_eq!(vault.devices, vec![server], "with the server its one device");
-    assert_eq!(lab.state(mac).vault(avenceo).map(|v| v.devices.clone()), Some(vec![server]), "on her Mac too");
-    // the server opens avenCEO's key, which Alice's Mac boxed for it, and nothing of Alice's own
-    assert!(lab.opens(server, KeyFam::Seed(avenceo)) && !lab.opens(server, KeyFam::Seed(alice)));
-    // it acts for avenCEO, and never governs it
+    assert_eq!(lab.state(mac).vault(aven).map(|v| v.devices.clone()), Some(vec![server]), "on her Mac too");
+    // the server opens avenMAIA's key, which Alice's Mac boxed for it, and nothing of Alice's own
+    assert!(lab.opens(server, KeyFam::Seed(aven)) && !lab.opens(server, KeyFam::Seed(alice)));
+    // it acts for avenMAIA, and never governs it
     let other = lab.device("another server");
-    let add = Action::Share(Sharing::Device { vault: avenceo, device: other, seal_to: None });
+    let add = Action::Share(Sharing::Device { vault: aven, device: other, seal_to: None });
     assert_eq!(lab.submit(server, &[server, other], add.clone()), Err(Refusal::BelowThreshold));
     let note = document("Status", "The relay is up.", server);
-    let note = lab.create(server, avenceo, avenceo, "note", &[], note).expect("the server writes in avenCEO's vault");
+    let note = lab.create(server, aven, aven, "note", &[], note).expect("the server writes in avenMAIA's vault");
     assert!(lab.reads(server, note), "and reads what it wrote");
-    lab.submit(mac, &[passkey, other], add).expect("Alice's passkey adds a second server, through her vault");
+    lab.submit(mac, &[passkey, other], add).expect("Alice's passkey adds a second server, through Maia City");
     // nobody claims it again
     assert!(matches!(lab.claim_key(server), Err(Refusal::AlreadyMember)));
 }
@@ -172,7 +175,7 @@ fn one_ceremony_founds_a_vault_adds_its_device_and_claims_the_server() {
 }
 
 #[test]
-fn the_server_hands_out_avenceos_log_as_its_contact_card() {
+fn the_server_hands_out_its_avens_log_as_its_contact_card() {
     let (mut lab, server, passkey, mac, alice) = unclaimed(5);
     let avenceo = claim_on(&mut lab, mac, passkey, alice, server);
     let card = lab.card(server);

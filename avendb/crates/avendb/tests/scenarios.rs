@@ -157,7 +157,7 @@ fn scenario_26_an_audience_that_comes_back_into_use_moves_on() {
 }
 
 #[test]
-fn scenario_27_an_agent_writes_what_its_avens_share_allows_until_the_coop_revokes_it() {
+fn scenario_27_a_coops_aven_lives_on_its_server_and_its_worker_writes_within_its_cap() {
     play("27");
 }
 

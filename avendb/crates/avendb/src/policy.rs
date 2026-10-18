@@ -60,11 +60,12 @@ pub enum Kind {
     /// A vault owned together by human and coop vaults: a cooperative, a company, a household. It has no devices and
     /// acts through its owners.
     Coop,
-    /// A person's own agent: owned by that person's human vault alone, one to a person, with no devices of its own. It
-    /// acts through its owner's devices, and owns the device vaults its agents run in.
+    /// A coop's own agent: owned by that coop alone, one to a coop (Samuel 2026-10-18: one aven per coop, none per
+    /// person). It lives on its server, its device, which acts for it but never governs it; its coop's owners act for
+    /// it through the coop. It owns nothing: an agent session reaches it through its server, with its rights.
     Aven,
-    /// A vault for the devices of one machine or agent, a server or an agent's harness: owned by exactly one human,
-    /// coop or aven vault, and owning nothing. Its devices act for it but never govern it.
+    /// A vault for the devices of one machine, a studio worker or a drive: owned by exactly one human or coop vault,
+    /// and owning nothing. Its devices act for it but never govern it.
     DeviceVault,
 }
 
@@ -106,25 +107,25 @@ impl Kind {
     pub const ALL: [Kind; 4] = [Kind::Human, Kind::Coop, Kind::Aven, Kind::DeviceVault];
 
     /// The kind table, defined here once: signers own human vaults, which hold devices; human and coop vaults own
-    /// coops, which hold none; one human vault owns an aven, which holds none, and owns one aven at most; one human,
-    /// coop or aven vault owns a device vault, which holds devices. A kind no row lists as an owner owns nothing: a
-    /// device vault.
+    /// coops, which hold none; one coop owns an aven, which holds devices, its server, and owns one aven at most; one
+    /// human or coop vault owns a device vault, which holds devices. A kind no row lists as an owner owns nothing: an
+    /// aven and a device vault.
     pub const fn rules(self) -> KindRules {
         const COOP: &[Kind] = &[Kind::Human, Kind::Coop];
-        const AVEN: &[Kind] = &[Kind::Human];
-        const DEVICE_VAULT: &[Kind] = &[Kind::Human, Kind::Coop, Kind::Aven];
+        const AVEN: &[Kind] = &[Kind::Coop];
+        const DEVICE_VAULT: &[Kind] = &[Kind::Human, Kind::Coop];
         match self {
             Kind::Human => KindRules { owned_by: OwnedBy::Signers, most: None, devices: true, each: None },
             Kind::Coop => KindRules { owned_by: OwnedBy::Vaults(COOP), most: None, devices: false, each: None },
-            Kind::Aven => KindRules { owned_by: OwnedBy::Vaults(AVEN), most: Some(1), devices: false, each: Some(1) },
+            Kind::Aven => KindRules { owned_by: OwnedBy::Vaults(AVEN), most: Some(1), devices: true, each: Some(1) },
             Kind::DeviceVault => {
                 KindRules { owned_by: OwnedBy::Vaults(DEVICE_VAULT), most: Some(1), devices: true, each: None }
             }
         }
     }
 
-    /// Its vaults hold devices, which act for them: human and device vaults do; a coop and an aven act only through
-    /// their owners.
+    /// Its vaults hold devices, which act for them: human, aven and device vaults do, an aven its server; a coop acts
+    /// only through its owners.
     pub fn has_devices(self) -> bool {
         self.rules().devices
     }

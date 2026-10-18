@@ -28,7 +28,7 @@
 	} from './article.js';
 	import { mediaOf, whole } from './files.js';
 	import Mark from './Mark.svelte';
-	import { KINDS, nameOf, short } from './vaults.js';
+	import { KINDS, authorsLine, nameOf, short } from './vaults.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, item: import('./vaults.js').EntryView,
@@ -291,7 +291,7 @@
 		subtitle={parts.subtitleText}
 		sub={editable ? sub : undefined}
 		{avatar}
-		author={nameOf(author)}
+		author={authorsLine(world, item.authors, nameOf(author))}
 		{meta}
 		{tags}
 		{html}
