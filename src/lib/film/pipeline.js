@@ -176,7 +176,7 @@ export function createPipeline(renderer) {
 	const targets = new Map();
 	const target = (/** @type {string} */ key, /** @type {number} */ w, /** @type {number} */ h, /** @type {THREE.RenderTargetOptions} */ opts) => {
 		let rt = targets.get(key);
-		if (rt && (rt.width !== w || rt.height !== h)) (rt.dispose(), (rt = undefined));
+		if (rt && (rt.width !== w || rt.height !== h || rt.samples !== (opts.samples ?? 0))) (rt.dispose(), (rt = undefined));
 		if (!rt) {
 			rt = new THREE.WebGLRenderTarget(w, h, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, generateMipmaps: false, ...opts });
 			rt.texture.colorSpace = THREE.NoColorSpace;
@@ -206,11 +206,12 @@ export function createPipeline(renderer) {
 		samples,
 		/**
 		 * Draw the scene into the linear frame; with `of` > 1 the frame is one of `of` shutter samples, accumulated.
+		 * `aa` false: no multisampling (the live viewer's preview: a quarter of the memory and the fill, never a plate)
 		 * @param {THREE.Scene} scene @param {THREE.Camera} camera @param {number} w @param {number} h @param {number} i @param {number} of
 		 * @returns {THREE.Texture} the linear frame so far
 		 */
-		sample(scene, camera, w, h, i, of) {
-			const rt = target('scene', w, h, { type: THREE.HalfFloatType, samples, depthBuffer: true });
+		sample(scene, camera, w, h, i, of, aa = true) {
+			const rt = target('scene', w, h, { type: THREE.HalfFloatType, samples: aa ? samples : 0, depthBuffer: true });
 			renderer.setRenderTarget(rt);
 			renderer.render(scene, camera);
 			if (of <= 1) return rt.texture;

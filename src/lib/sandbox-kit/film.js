@@ -172,9 +172,12 @@ export function connectFilm(o) {
 			 * hour, whatever else the world advances, and the shadows drawn again. `lights` scales the lights over what the
 			 * hour gives them (1 = as the hour has them) and may recolour them.
 			 * `parts`: the world's moving parts the shot moves, by their channels' values at t (game/film/shot.js `evaluate`).
-			 * @param {number} t @param {FilmLight[]} [lights] @param {Record<string, Record<string, number>>} [parts]
+			 * `live`: a frame of the studio's live viewer, not a plate: the shadows are drawn again only when the world's own
+			 * rules say so (the sky's: when the sun or where they follow moves; every frame for a world that keeps
+			 * `shadowMap.autoUpdate`), as the game draws them.
+			 * @param {number} t @param {FilmLight[]} [lights] @param {Record<string, Record<string, number>>} [parts] @param {boolean} [live]
 			 */
-			advance(t, lights = [], parts = {}) {
+			advance(t, lights = [], parts = {}, live = false) {
 				if (hold.apply()) sky?.follow(camera.position.x, camera.position.z);
 				camera.updateMatrixWorld();
 				o.animate?.(t);
@@ -198,7 +201,7 @@ export function connectFilm(o) {
 					} else if (l.id === 'sky') scene.environmentIntensity *= k;
 					else o.lights?.[l.id]?.(k, l.color);
 				}
-				renderer.shadowMap.needsUpdate = true;
+				if (!live) renderer.shadowMap.needsUpdate = true;
 			},
 			/** @param {FilmWorldSpec} w */
 			stage: o.stage ?? (async (w) => place(w.stand[0], w.stand[1], 0, 0)),

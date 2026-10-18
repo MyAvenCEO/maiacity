@@ -68,6 +68,25 @@ export function startFilm({ base = '' } = {}) {
 	const shows = (spec) => spec.world.sandbox === here.sandbox && (spec.world.area ?? null) === (here.area ?? null);
 	/** @type {Map<string, number | [number, number][]>} metered exposures by the shot's picture fingerprint */
 	const metered = new Map();
+	// the live viewer asks for a frame of the same shot object many times a second: its normal form and its fingerprint
+	// are worked out once per object (a spec is data: an edit is a new object)
+	/** @type {WeakMap<object, Spec>} */
+	const normals = new WeakMap();
+	/** @param {any} raw @returns {Spec} */
+	const normal = (raw) => {
+		if (!raw || typeof raw !== 'object') return normalize(raw);
+		let n = normals.get(raw);
+		if (!n) normals.set(raw, (n = normalize(raw)));
+		return n;
+	};
+	/** @type {WeakMap<object, string>} */
+	const prints = new WeakMap();
+	/** @param {Spec} spec */
+	const printOf = (spec) => {
+		let k = prints.get(spec);
+		if (k === undefined) prints.set(spec, (k = fingerprint(spec)));
+		return k;
+	};
 	/** what the world is staged for now: where the walker stands, which set is built */
 	let staged = '';
 	/** the shot the walker is being moved for now (a stage under way), else '' */
@@ -127,8 +146,8 @@ export function startFilm({ base = '' } = {}) {
 
 	/** the world camera's own nearest distance, for the shots whose lens names none @type {number | undefined} */
 	let baseNear;
-	/** Set the whole world for one instant of a shot. */
-	function set(/** @type {any} */ v, /** @type {Spec} */ spec, /** @type {number} */ t, /** @type {Shape} */ shape, /** @type {number} */ aspect) {
+	/** Set the whole world for one instant of a shot (`live`: for the live viewer, its shadows drawn again only when the world's own rules say so). */
+	function set(/** @type {any} */ v, /** @type {Spec} */ spec, /** @type {number} */ t, /** @type {Shape} */ shape, /** @type {number} */ aspect, live = false) {
 		const e = evaluate(spec, t, shape);
 		w.__interiorHour = e.hour;
 		clock.world(e.clock);
@@ -146,19 +165,22 @@ export function startFilm({ base = '' } = {}) {
 			v.fly(...e.pose, e.frame);
 		}
 		v.camera.updateProjectionMatrix();
-		v.film.advance(e.clock, e.lights, e.parts);
+		v.film.advance(e.clock, e.lights, e.parts, live);
 		return e;
 	}
 
-	/** The linear frame at t (all its shutter samples accumulated), w×h. */
-	function linear(/** @type {any} */ v, /** @type {Spec} */ spec, /** @type {number} */ t, /** @type {Shape} */ shape, /** @type {number} */ W, /** @type {number} */ H, blur = true) {
+	/**
+	 * The linear frame at t (all its shutter samples accumulated), w×h. `live`: the live viewer's preview, as light as a
+	 * game's own frame (no multisampling, the shadows only when they change); never a plate, a still or a meter.
+	 */
+	function linear(/** @type {any} */ v, /** @type {Spec} */ spec, /** @type {number} */ t, /** @type {Shape} */ shape, /** @type {number} */ W, /** @type {number} */ H, blur = true, live = false) {
 		const times = blur ? shutterTimes(spec, t) : [t];
 		/** @type {any} */
 		let frame = null, first = null;
 		for (const [i, ts] of times.entries()) {
-			const e = set(v, spec, ts, shape, W / H);
+			const e = set(v, spec, ts, shape, W / H, live);
 			first ??= e;
-			frame = gpu().sample(v.scene, v.camera, W, H, i, times.length);
+			frame = gpu().sample(v.scene, v.camera, W, H, i, times.length, !live);
 		}
 		return { frame, at: /** @type {ReturnType<typeof evaluate>} */ (first) };
 	}
@@ -173,7 +195,7 @@ export function startFilm({ base = '' } = {}) {
 	/** The exposure (stops of gain before `stops`) a shot is metered at: a number, or [t, ev] keys for a ramp. */
 	async function exposureOf(/** @type {Spec} */ spec) {
 		if (spec.exposure.ev !== undefined && spec.exposure.meter !== 'ramp') return spec.exposure.ev;
-		const key = fingerprint(spec);
+		const key = printOf(spec);
 		const known = metered.get(key);
 		if (known !== undefined) return known;
 		const v = await mounted();
@@ -238,7 +260,7 @@ export function startFilm({ base = '' } = {}) {
 		/** @param {any[]} specs */
 		prepare(specs) {
 			return one(async () => {
-				const all = specs.map(normalize).filter(shows);
+				const all = specs.map(normal).filter(shows);
 				const v = await mounted();
 				// everything these shots need, kept built whichever shot asks last
 				v.film.keep(all.map((s) => s.world));
@@ -282,7 +304,7 @@ export function startFilm({ base = '' } = {}) {
 		 * @param {FrameAsk & { view?: { lut?: Lut | string | null, grade?: Lut | null }, quality?: 'proxy' | 'final' }} ask
 		 */
 		async show({ spec: raw, t, shape, width, height, view = {}, quality = 'proxy' }) {
-			const spec = normalize(raw), to = shape ?? spec.aspect;
+			const spec = normal(raw), to = shape ?? spec.aspect;
 			const v = await mounted();
 			// the world is being readied for another shot (a prepare): never draw this one with the walker elsewhere —
 			// the last frame stays up
@@ -294,7 +316,7 @@ export function startFilm({ base = '' } = {}) {
 			w.__filmDraw = true;
 			const os = quality === 'final' ? 1.5 : 1;
 			const W = Math.round(width * os), H = Math.round(height * os);
-			const { frame, at } = linear(v, spec, t, to, W, H, quality === 'final');
+			const { frame, at } = linear(v, spec, t, to, W, H, quality === 'final', quality !== 'final');
 			gpu().view(frame, width, height, 2 ** (evAt(ev, t) + at.stops), os > 1 ? 3 : 1, view);
 			// the frame is drawn: the page's clock runs again until the next, so the world keeps building what the
 			// shots ahead need while the timeline plays (held, every dome build would wait for a step that never comes)

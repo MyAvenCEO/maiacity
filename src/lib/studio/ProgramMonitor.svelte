@@ -225,6 +225,16 @@
 	// proxy, as the V1 intros do), and let go (its WebGL, its domes) when they are left — elsewhere a world shot plays
 	// from its HD proxy where it has one
 	const inWorld = $derived(s.wantWorld && liveTab(s.tab));
+	// the live world draws at the size the monitor is seen at (its long edge in device pixels), as a game draws at its canvas's
+	$effect(() => {
+		const el = frameEl;
+		if (!el) return;
+		const fit = () => void (s.world.px = Math.round(Math.max(el.clientWidth, el.clientHeight) * Math.min(2, window.devicePixelRatio || 1)));
+		fit();
+		const ro = new ResizeObserver(fit);
+		ro.observe(el);
+		return () => ro.disconnect();
+	});
 	$effect(() => {
 		if (inWorld && iframe) void s.world.attach(iframe, worldUrl(base, s.filmWorld));
 	});

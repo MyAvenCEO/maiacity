@@ -45,8 +45,17 @@ export const worldUrl = (base, world = {}) => {
 	return `${base}${filmPath(world)}`;
 };
 
-/** @param {ShotSpec} s */
-const specKey = (s) => JSON.stringify(s);
+/** @type {WeakMap<object, string>} */
+const keys = new WeakMap();
+/** a shot's key, worked out once per spec object (asked for every frame; an edit is a new object) @param {ShotSpec} s */
+const specKey = (s) => {
+	let k = keys.get(s);
+	if (k === undefined) keys.set(s, (k = JSON.stringify(s)));
+	return k;
+};
+/** how often the GPU may drop the world before the viewer stops loading it again (the proxies play) */
+const LOSSES = 3;
+const LOSS_WINDOW = 5 * 60_000;
 /** the film page a shot's world is drawn on @param {ShotSpec} s */
 const pathOf = (s) => filmPath(s.world);
 
@@ -76,6 +85,13 @@ export class WorldViewer {
 	recording = $state(false);
 	/** the last thing film mode refused (a shot it could not prepare or draw), said on the monitor */
 	error = $state('');
+	/**
+	 * the long edge of the program monitor in device pixels (the monitor sets it as it is laid out): the live world draws
+	 * no bigger than it is seen, as a game draws at its canvas's size — the proxy frame (HD) only on a monitor that big
+	 */
+	px = 1920;
+	/** when the GPU dropped the world (its WebGL context lost), the last few times (ms) */
+	losses = /** @type {number[]} */ ([]);
 
 	/**
 	 * Starts the world in its iframe and waits for film mode to answer. After `wait` ms without it the viewer says it is
@@ -102,7 +118,9 @@ export class WorldViewer {
 			/** @type {Film | undefined} */
 			let film;
 			try {
-				film = /** @type {(Window & { __film?: Film }) | null} */ (iframe.contentWindow)?.__film;
+				// (a page whose context the GPU dropped is going: never taken for the fresh one coming)
+				const win = /** @type {(Window & { __film?: Film, __lost?: boolean }) | null} */ (iframe.contentWindow);
+				film = win?.__lost ? undefined : win?.__film;
 			} catch {
 				break; // another origin: not film mode
 			}
@@ -112,8 +130,12 @@ export class WorldViewer {
 				try {
 					await film.ready();
 					if (this.url !== url) return;
+					// once the world is up: its canvas is there
+					this.watchLoss(/** @type {Window} */ (iframe.contentWindow), iframe, url);
 					this.film = film;
 					this.state = 'ready';
+					// loaded again after the GPU dropped it: nothing to say any more
+					if (this.error.startsWith('the GPU dropped')) this.error = '';
 					return;
 				} catch (e) {
 					// said, and asked again: a world that could not get ready once (a shader, a load) often can the next time
@@ -126,6 +148,39 @@ export class WorldViewer {
 			await new Promise((r) => setTimeout(r, waited > wait ? 2000 : 250));
 		}
 		if (this.iframe === iframe && this.url === url) this.state = 'unavailable';
+	}
+
+	/**
+	 * The GPU may drop the world's WebGL context (The OS's WebView on a Mac short of memory): every shader it is asked to
+	 * compile after that fails ("Argument 1 ('shader') to WebGL2RenderingContext.shaderSource…") and nothing it draws
+	 * shows. The world is then loaded again in a fresh page — a new context, its memory given back — up to LOSSES times
+	 * in LOSS_WINDOW; after that the proxies and stand-ins play, said on the monitor.
+	 * @param {Window} win @param {HTMLIFrameElement} iframe @param {string} url
+	 */
+	watchLoss(win, iframe, url) {
+		const w = /** @type {Window & { __lossWatched?: boolean, __lost?: boolean, __world?: { renderer?: { domElement?: HTMLCanvasElement } } }} */ (win);
+		const canvas = w.__world?.renderer?.domElement ?? win.document.querySelector('canvas');
+		if (w.__lossWatched || !canvas) return;
+		w.__lossWatched = true;
+		canvas.addEventListener('webglcontextlost', () => {
+			w.__lost = true;
+			if (this.iframe !== iframe || this.url !== url) return;
+			const now = performance.now();
+			this.losses = [...this.losses.filter((t) => now - t < LOSS_WINDOW), now];
+			const again = this.losses.length <= LOSSES;
+			this.error = `the GPU dropped the world (its WebGL context was lost)${again ? ': loading it again' : ` ${this.losses.length} times: the proxies play`}`;
+			console.warn(`world: ${this.error}`);
+			this.film = null;
+			this.readyShots.clear();
+			this.preparing.clear();
+			this.queued = null;
+			this.busy = false;
+			if (!again) return void (this.state = 'unavailable');
+			// a page of its own again: the lost context and everything it held go with the old one
+			this.state = 'off';
+			iframe.src = 'about:blank';
+			void this.attach(iframe, url);
+		});
 	}
 
 	/**
@@ -205,7 +260,8 @@ export class WorldViewer {
 		if (this.busy) return void (this.queued = o);
 		this.busy = true;
 		const t0 = performance.now();
-		const w = Math.round(o.width * this.scale), h = Math.round(o.height * this.scale);
+		const k = this.scale * Math.min(1, Math.max(320, this.px) / Math.max(o.width, o.height));
+		const w = Math.round(o.width * k), h = Math.round(o.height * k);
 		Promise.resolve(this.film.show({ ...o, width: w, height: h }))
 			.catch((/** @type {Error} */ e) => void (this.error = `show: ${e?.message ?? e}`))
 			.finally(() => {
