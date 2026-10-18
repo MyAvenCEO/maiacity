@@ -425,16 +425,18 @@ async function change(what, work) {
 
 /**
  * Runs op `op` as `what`, a change that brings file `file` (./ops.js `brings`), its length set in the op and its bytes
- * handed over a megabyte at a time, whatever its size: what it did, or `null` if it didn't go through.
- * @param {string} what @param {any} op @param {Blob} file
+ * handed over a megabyte at a time, whatever its size: what it did, or `null` if it didn't go through. Done `quiet`ly,
+ * as the repo seed's top-up writes in the background, it shows nothing while it runs, and a refusal throws.
+ * @param {string} what @param {any} op @param {Blob} file @param {boolean} [quiet]
  */
-async function bring(what, op, file) {
+async function bring(what, op, file, quiet = false) {
 	/** @param {number} at @param {number} n */
 	const read = async (at, n) => {
-		if (file.size > 0) doing = `${what}: ${Math.floor((100 * at) / file.size)} %`;
+		if (file.size > 0 && !quiet) doing = `${what}: ${Math.floor((100 * at) / file.size)} %`;
 		return new Uint8Array(await file.slice(at, at + n).arrayBuffer());
 	};
 	const sized = op.op === 'create' ? { ...op, file: { ...op.file, len: file.size } } : { ...op, len: file.size };
+	if (quiet) return answer(await send(sized, read));
 	let done = null;
 	const ok = await change(what, async () => (done = answer(await send(sized, read))));
 	return ok ? done : null;
@@ -523,10 +525,10 @@ const api = {
 	 * Runs op `op` as `what`, bringing file `file` as `putFile` does, its length set in the op: a `create` whose entry
 	 * and file are one edit (`file: { name?, media? }`), answering `{ entry, root, size }`, or a `put_file` into the
 	 * entry it names (`entry`), one edit on its main line, answering `{ entry, edit, root, size }`. What it did, or
-	 * `null` if it didn't go through.
-	 * @param {string} what @param {object} op @param {Blob} file
+	 * `null` if it didn't go through. `quiet`, it shows nothing while it runs, and a refusal throws.
+	 * @param {string} what @param {object} op @param {Blob} file @param {boolean} [quiet]
 	 */
-	bring: (what, op, file) => bring(what, op, file),
+	bring: (what, op, file, quiet) => bring(what, op, file, quiet),
 	/**
 	 * Bytes `from` to `to` of the file whose root is `root` and whose sealed size is `size`, from this device's
 	 * store or fetched from a peer that may hand them over.

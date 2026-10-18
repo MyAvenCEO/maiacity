@@ -399,7 +399,7 @@
 			try {
 				for (const op of await seeding(p, city)) {
 					const { op: ready, file } = beside(refs(op, done));
-					const made = file ? await session.api.bring(`Adding ${p.name}`, ready, file) : answer(await send(ready));
+					const made = file ? await session.api.bring(`Adding ${p.name}`, ready, file, true) : answer(await send(ready));
 					if (file && !made) throw new Error(`${p.name} didn’t go in`);
 					done.push(made);
 				}
