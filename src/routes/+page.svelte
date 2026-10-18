@@ -3,7 +3,6 @@
 	import { base } from '$app/paths';
 	import LatestList from '$lib/blog/LatestList.svelte';
 	import NextCard from '$lib/blog/NextCard.svelte';
-	import Player from '$lib/blog/Player.svelte';
 	import Manifesto from '$lib/Manifesto.svelte';
 	import StatusBadge from '$lib/blog/StatusBadge.svelte';
 	import { boardDays, mergeDays, postHref } from '$lib/blog/drafts';
@@ -43,11 +42,7 @@
 </svelte:head>
 
 <main class="wrap">
-	<Manifesto banner={data.banner}>
-		{#snippet afterHero()}
-			{#if post}<Player {post} maxHeight="78vh" />{/if}
-		{/snippet}
-	</Manifesto>
+	<Manifesto banner={data.banner} />
 
 	{#if post}
 		<p class="start eyebrow">Where it starts</p>
@@ -110,7 +105,7 @@
 		margin: 3rem auto 0;
 	}
 
-	/* the film now opens the page, so this card is the words only */
+	/* the words only: the landing page shows no film */
 	.pinned {
 		display: grid;
 		grid-template-columns: 1fr;
