@@ -39,6 +39,7 @@
 	import { INDEX, buildOf, hashOf, pageOf, recipeAt } from './vault.js';
 	import { parseRef, refOf } from './refs.js';
 	import { soilOf } from './soil.js';
+	import { treeOf } from './tree.js';
 
 	/** how many steps a world in disguise reports while it is built ($lib/buildings/inside.js) */
 	const STEPS = 5;
@@ -179,27 +180,8 @@
 	});
 	/** the views that apply to it */
 	const views = $derived(hero ? VIEWS.filter(([k]) => (k === 'explode' ? hero.explodes || !!rigApart : k === 'xray' ? hero.shells.length > 0 : k === 'labels' ? hero.labels.length > 0 : k === 'slow' ? !!hero.view.ticks : true)) : []);
-	/**
-	 * Its parts tree: its own parts by assembly, then each whole asset it carries (a Power Cube on a pickup's bed, its
-	 * `ref`) as one entry of its own, that asset's parts by its assemblies under it, linked to its own page.
-	 */
-	const tree = $derived.by(() => {
-		if (!catalog) return { own: [], units: [] };
-		const mine = (p) => !p.ref || p.ref === hero?.card?.ref;
-		const byAssembly = (list) => catalog.assemblies.map((a) => ({ a, parts: list.filter((p) => p.assembly === a.id) })).filter((x) => x.parts.length);
-		const carried = new Map();
-		for (const p of catalog.parts) if (!mine(p)) carried.set(p.ref, [...(carried.get(p.ref) ?? []), p]);
-		return {
-			own: byAssembly(catalog.parts.filter(mine)),
-			units: [...carried].map(([ref, parts]) => {
-				const groups = byAssembly(parts);
-				// its name as its host's catalog writes it before its assemblies' ("Power Cube: Frame"), else its ref
-				const heads = groups.map((g) => (g.a.label.includes(':') ? g.a.label.split(':')[0].trim() : null));
-				const name = heads.length && heads.every((h) => h && h === heads[0]) ? heads[0] : ref;
-				return { ref, name, parts, groups, href: hrefOf(ref) };
-			})
-		};
-	});
+	/** its parts tree (./tree.js): its own parts by assembly, then each whole asset it carries, linked to its own page */
+	const tree = $derived(treeOf(catalog, hero?.card?.ref, hrefOf));
 	const stageOf = $derived(chosen.stages && Number.isFinite(values.stage) ? chosen.stages[Math.min(chosen.stages.length - 1, Math.round(values.stage))] : null);
 
 	/** a whole asset's own page, by its ref (`machines/powercube@3`) */

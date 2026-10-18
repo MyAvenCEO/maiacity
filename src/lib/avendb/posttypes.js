@@ -8,7 +8,7 @@
 // Its posts are entries of type `post`, of the record kind `post:<type>` and tagged `post:<type>`, so the Maia
 // Universe stream lists them all, and a page lays each out by its type (./../universe/inspire.js for `inspire`).
 //
-// A doc post (`doc`) is a document on the Docs page (./docs.js): a skill, a paper or an architecture document, by its
+// A doc post (`doc`) is a document of avenDB's Docs view (./Docs.svelte, ./docs.js): a skill, a paper or an architecture document, by its
 // section, found by its `slug`; where the site lays it out on a page of its own, with live figures, its `page`.
 //
 // A film post (`film`) is the story gone out as a film: its rendered master (`media`, a Library file the render made),

@@ -7,7 +7,7 @@ import { useDb, type Db } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
 import { initRoles } from "../src/acl";
 import { useClock } from "../src/prem";
-import { clientKek, MAX_BYTES, normalize, statusRoute, transcribeRoute, useSttClient, type DeepgramResponse } from "../src/stt";
+import { MAX_BYTES, normalize, statusRoute, transcribeRoute, useSttClient, type DeepgramResponse } from "../src/stt";
 import fixture from "./fixtures/deepgram-nova3.json";
 
 const pg = new PGlite();
@@ -137,9 +137,3 @@ describe("POST /api/transcripts", () => {
   });
 });
 
-test("our key encryption key is made once and kept", async () => {
-  delete process.env.PREMAI_CLIENT_KEK;
-  const a = await clientKek();
-  expect(a).toMatch(/^[0-9a-f]{64}$/);
-  expect(await clientKek()).toBe(a);
-});

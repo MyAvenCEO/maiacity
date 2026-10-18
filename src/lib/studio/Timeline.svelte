@@ -9,6 +9,8 @@
 -->
 <script>
 	import { evaluate, shotAt, toKeys } from './shots.js';
+	import { lanesOf } from './lanes.js';
+	import CurveLane from './CurveLane.svelte';
 	import { FPS, TRACKS, UNLINKED, clockText, isWorld, onSoundTrack, raw, thumb, tint } from './studio.svelte.js';
 	import { cueEnd, cuesOf } from './analysis.js';
 	import { wordsOf } from './transcript.js';
@@ -30,10 +32,16 @@
 		const every = s.pxPerSec >= 40 ? 1 : s.pxPerSec >= 15 ? 5 : 10;
 		return Array.from({ length: Math.floor(s.span / every) + 1 }, (_, i) => i * every);
 	});
-	/** the world clip whose lanes are open */
-	const wc = $derived((s.tab === 'edit' || s.tab === '3d') && isWorld(s.sel) ? s.sel : null);
+	// the 3D tab: the picture track only, and under it the world shot's own lanes (Samuel 2026-10-18)
+	const threeD = $derived(s.tab === '3d');
+	/** the world clip whose lanes are open: the one picked, else in the 3D tab the one under the playhead */
+	const wc = $derived(
+		(s.tab === 'edit' || threeD) && isWorld(s.sel) ? s.sel : threeD ? (s.clips.find((c) => c.track === 'V1' && isWorld(c) && s.time >= c.start && s.time < c.start + c.dur) ?? null) : null
+	);
 	const spec = $derived(wc ? s.specOf(wc) : null);
-	const LANES = ['Camera', 'Hour', 'Exposure', 'Lights', 'Cues'];
+	/** its lanes (./lanes.js): the camera, the hour, the exposure, every light, each of its world's moving parts, the cues */
+	const lanes = $derived(spec ? lanesOf(spec) : []);
+	const laneRows = $derived(lanes.map((l) => (l.kind === 'curve' && threeD ? '2.2rem' : '1.45rem')).join(' '));
 	// the Audio tab: the sound tracks only, taller, each clip with its level on it
 	const audio = $derived(s.tab === 'audio');
 	// the Script tab: the story's structure (its sections and their tension) over the captions
@@ -124,12 +132,13 @@
 		if (c) s.selected = c.id;
 	};
 	const shown = $derived(
-		audio ? TRACKS.filter((t) => t.id.startsWith('A')) : story ? [STORY, ...TRACKS.filter((t) => t.id === 'T1')] : grading ? [...GRADE_LAYERS, ...TRACKS.filter((t) => t.id === 'V1')] : TRACKS
+		audio ? TRACKS.filter((t) => t.id.startsWith('A')) : story ? [STORY, ...TRACKS.filter((t) => t.id === 'T1')] : grading ? [...GRADE_LAYERS, ...TRACKS.filter((t) => t.id === 'V1')] : threeD ? TRACKS.filter((t) => t.id === 'V1') : TRACKS
 	);
 	const rows = $derived(
 		grading ? `1.5rem repeat(${GRADE_LAYERS.length}, 1.6rem) 7.2rem` :
 		story ? '1.5rem minmax(5rem, 3fr) minmax(2.6rem, 1fr)' :
-		audio ? `1.5rem repeat(${shown.length}, minmax(3.4rem, 1fr))` : `1.5rem minmax(2.6rem, 1fr) repeat(4, minmax(1.7rem, 1fr))${spec ? ` repeat(${LANES.length}, 1.45rem)` : ''}`
+		audio ? `1.5rem repeat(${shown.length}, minmax(3.4rem, 1fr))` :
+		threeD ? `1.5rem 3rem ${laneRows}` : `1.5rem minmax(2.6rem, 1fr) repeat(4, minmax(1.7rem, 1fr))${spec ? ` ${laneRows}` : ''}`
 	);
 
 	// ── the level on the clip (Audio): its gain as a line to drag, its fades as corners to drag, its loudness ──
@@ -184,6 +193,24 @@
 				const v = Math.round(Math.min(c.dur / 2, Math.max(0, what === 'fin' ? fin0 + dt : fout0 - dt)) * 20) / 20;
 				s.setSound(c.id, { [what]: v });
 			}
+		};
+		const up = () => (removeEventListener('pointermove', move), removeEventListener('pointerup', up));
+		addEventListener('pointermove', move);
+		addEventListener('pointerup', up);
+	}
+
+	/** a chapter flag on the ruler: a click goes to it, a drag moves it (on an editable cut)
+	 * @param {PointerEvent} e @param {import('$lib/auth/client').Chapter} c */
+	function moveChapter(e, c) {
+		e.stopPropagation();
+		s.seek(c.at);
+		if (!s.canEdit) return;
+		const x0 = e.clientX;
+		/** @param {PointerEvent} ev */
+		const move = (ev) => {
+			const at = Math.max(0, Math.min(s.span, c.at + (ev.clientX - x0) / s.pxPerSec));
+			s.editChapter(c.id, { at });
+			s.seek(at);
 		};
 		const up = () => (removeEventListener('pointermove', move), removeEventListener('pointerup', up));
 		addEventListener('pointermove', move);
@@ -504,15 +531,6 @@
 	const fmt = (v, d = 1) => (Math.round(v * 10 ** d) / 10 ** d).toString();
 	/** @param {ShotSpec} sp */
 	const hourText = (sp) => `${fmt(sp.time.hour)} h${sp.time.hourTo !== undefined && sp.time.hourTo !== sp.time.hour ? ` → ${fmt(sp.time.hourTo)} h` : ''}`;
-	/** @param {ShotSpec} sp */
-	const expText = (sp) => {
-		const st = sp.exposure.stops;
-		const stops = Array.isArray(st) ? `${st.length} keys of stops` : `${st >= 0 ? '+' : ''}${fmt(st)} stops`;
-		return `${sp.exposure.meter} · ${stops}${sp.exposure.ev !== undefined ? ` · EV ${fmt(sp.exposure.ev)}` : ''}`;
-	};
-	/** @param {ShotSpec} sp */
-	const lightText = (sp) =>
-		sp.lights.length ? sp.lights.map((l) => `${l.id} ${Array.isArray(l.intensity) ? '∿' : fmt(l.intensity ?? 1, 2)}`).join(' · ') : 'no light changes';
 </script>
 
 <div class="timeline" class:grading style:--rows={rows}>
@@ -521,9 +539,8 @@
 		<div class="heads">
 			<div class="head"></div>
 			{#each shown as t (t.id)}<div class="head"><b>{t.id}</b> {t.label}</div>{/each}
-			{#if spec}
-				{#each LANES as l (l)}<div class="head lane-head">{l}</div>{/each}
-			{/if}
+			{#each lanes as l (l.key)}<div class="head lane-head" title={l.title ?? l.label}>{l.label}</div>{/each}
+			{#if threeD && !spec}<div class="head lane-head">No world shot here</div>{/if}
 		</div>
 	{/if}
 	<div class="scroll" bind:this={scroller}>
@@ -534,6 +551,10 @@
 					{#each pics as c, i (c.id)}<span class="tick shot" class:now={nowId === c.id} style:left={left(c)} style:width={width(c)}><b>{i + 1}</b> {clockText(c.start)}</span>{/each}
 				{:else}
 					{#each ticks as t (t)}<span class="tick" style:left={x(t)}>{t}s</span>{/each}
+					{#each s.chapters as c (c.id)}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span class="chapter" class:now={s.chapterAt()?.id === c.id} style:left={x(c.at)} title="{c.name}, at {clockText(c.at)}. Click to go there, drag to move." onpointerdown={(e) => moveChapter(e, c)}>{c.name}</span>
+					{/each}
 				{/if}
 			</div>
 			{#each shown as t (t.id)}
@@ -692,42 +713,48 @@
 				</div>
 			{/each}
 			{#if spec && wc}
-				<!-- the world clip's keyframe lanes -->
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div class="lane" ondblclick={addKey} title={s.canEdit ? 'Double-click to add a camera key here' : ''}>
-					<i class="span" style:left={x(wc.start)} style:width={x(wc.dur)}></i>
-					{#if keys}
-						{#each keys as k, i (i)}
-							<button
-								class="key"
-								class:on={s.selectedKey === i}
-								class:out={!inClip(k.t)}
-								style:left={x(tl(k.t))}
-								onpointerdown={(e) => dragKey(e, i)}
-								ondblclick={(e) => e.stopPropagation()}
-								aria-label="Camera key at {fmt(k.t, 2)} s"
-							></button>
-						{/each}
+				<!-- the world clip's lanes (./lanes.js) -->
+				{#each lanes as l (l.key)}
+					{#if l.kind === 'camera'}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<div class="lane" ondblclick={addKey} title={s.canEdit ? 'Double-click to add a camera key here' : ''}>
+							<i class="span" style:left={x(wc.start)} style:width={x(wc.dur)}></i>
+							{#if keys}
+								{#each keys as k, i (i)}
+									<button
+										class="key"
+										class:on={s.selectedKey === i}
+										class:out={!inClip(k.t)}
+										style:left={x(tl(k.t))}
+										onpointerdown={(e) => dragKey(e, i)}
+										ondblclick={(e) => e.stopPropagation()}
+										aria-label="Camera key at {fmt(k.t, 2)} s"
+									></button>
+								{/each}
+							{:else}
+								<span class="val" style:left={x(wc.start)}>{spec.camera.kind === 'world' ? "the world's own camera" : `${spec.camera.kind} (${spec.camera.curve ?? 'glide'}) — preset move`}</span>
+							{/if}
+						</div>
+					{:else if l.kind === 'text'}
+						<div class="lane"><i class="span hour" style:left={x(wc.start)} style:width={x(wc.dur)}></i><span class="val" style:left={x(wc.start)}>{hourText(spec)}</span></div>
+					{:else if l.kind === 'curve'}
+						<CurveLane {s} clip={wc} {spec} lane={l} />
 					{:else}
-						<span class="val" style:left={x(wc.start)}>{spec.camera.kind} ({spec.camera.curve ?? 'glide'}) — preset move</span>
+						<div class="lane">
+							<i class="span" style:left={x(wc.start)} style:width={x(wc.dur)}></i>
+							{#each spec.cues as q, i (i)}
+								<button
+									class="key cue {q.kind}"
+									class:out={!inClip(q.at)}
+									style:left={x(tl(q.at))}
+									onpointerdown={(e) => dragCue(e, i)}
+									title={q.kind === 'sound' ? `sound cue (lands on A3) at ${fmt(q.at, 2)} s` : `${q.name} at ${fmt(q.at, 2)} s`}
+									aria-label="Cue at {fmt(q.at, 2)} s"
+								></button>
+							{/each}
+						</div>
 					{/if}
-				</div>
-				<div class="lane"><i class="span hour" style:left={x(wc.start)} style:width={x(wc.dur)}></i><span class="val" style:left={x(wc.start)}>{hourText(spec)}</span></div>
-				<div class="lane"><i class="span" style:left={x(wc.start)} style:width={x(wc.dur)}></i><span class="val" style:left={x(wc.start)}>{expText(spec)}</span></div>
-				<div class="lane"><i class="span" style:left={x(wc.start)} style:width={x(wc.dur)}></i><span class="val" style:left={x(wc.start)}>{lightText(spec)}</span></div>
-				<div class="lane">
-					<i class="span" style:left={x(wc.start)} style:width={x(wc.dur)}></i>
-					{#each spec.cues as q, i (i)}
-						<button
-							class="key cue {q.kind}"
-							class:out={!inClip(q.at)}
-							style:left={x(tl(q.at))}
-							onpointerdown={(e) => dragCue(e, i)}
-							title={q.kind === 'sound' ? `sound cue (lands on A3) at ${fmt(q.at, 2)} s` : `${q.name} at ${fmt(q.at, 2)} s`}
-							aria-label="Cue at {fmt(q.at, 2)} s"
-						></button>
-					{/each}
-				</div>
+				{/each}
 			{/if}
 			{#if !grading}<div class="playhead" style:left={x(s.time)}><i></i></div>{:else if gradeX !== null}<div class="playhead" style:left="{gradeX}px"><i></i></div>{/if}
 		</div>
@@ -815,6 +842,30 @@
 		font-size: 0.62rem;
 		line-height: 1.5rem;
 		color: var(--dim);
+	}
+
+	/* a chapter: a flag on the ruler, its name beside the line */
+	.chapter {
+		position: absolute;
+		top: 0;
+		height: 100%;
+		max-width: 12rem;
+		padding: 0 5px;
+		overflow: hidden;
+		border-left: 2px solid var(--accent);
+		background: color-mix(in srgb, var(--chrome) 70%, transparent);
+		font-size: 0.62rem;
+		font-weight: 600;
+		line-height: 1.5rem;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		color: var(--ink);
+		cursor: ew-resize;
+		z-index: 1;
+	}
+
+	.chapter.now {
+		background: var(--chosen);
 	}
 
 	.clip {

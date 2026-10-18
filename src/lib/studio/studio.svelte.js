@@ -1,10 +1,10 @@
 // The studio's one state: the library, the open timeline and its clips, the playhead and the sound, the colour
 // pipeline's LUTs, the world viewer, the renders — shared by the three working steps (Edit · Grade · Render) and every
 // panel in them. The panels only show it and call its methods; nothing here draws.
-import { API, fileUrl, describeMedia, listContent, listJobs, may, me, missing } from '$lib/auth/client';
+import { API, fileUrl, describeMedia, may, me } from '$lib/auth/client';
 import { ODT, PROFILES, WORKING, asStudio, isCache, isSequence, profileFor, proxyFor } from './color.js';
 import { avenLibrary, withGraded } from './aven.js';
-import { createCut, cutJobs, cutsHere, deleteCut, getCut, isCut, listCuts, listStories, renderCut, saveCut } from './cuts.js';
+import { createCut, cutJobs, cutsHere, deleteCut, getCut, isCut, listCuts, listStories, renderCut, renderQueue, saveCut } from './cuts.js';
 import { bringFilms } from './legacyfilms.js';
 import { sure } from '$lib/app/sure.js';
 import { filmLut, gradeLut, nativeLut } from './luts.js';
@@ -578,14 +578,13 @@ export class Studio {
 		this.lutFrom = this.luts[ODT] ? 'mac' : 'none';
 	}
 
-	/** The render queue (C6, `GET /api/film/jobs`), rendered by the Mac app — renders and hero frames. */
+	/** The render queue: every cut's renders and hero frames still to do, as avenDB tasks the Mac runs. */
 	async refreshJobs() {
 		try {
-			const all = await listJobs({ limit: 100 });
+			this.queue = /** @type {any} */ (await renderQueue());
 			this.jobsKnown = true;
-			this.queue = all.filter(running).sort((a, b) => (a.status === b.status ? Date.parse(a.created) - Date.parse(b.created) : a.status === 'rendering' ? -1 : 1));
 		} catch (e) {
-			if (!missing(e)) console.warn('jobs:', /** @type {Error} */ (e).message);
+			console.warn('jobs:', /** @type {Error} */ (e).message);
 			this.jobsKnown = false;
 		}
 	}
@@ -860,6 +859,40 @@ export class Studio {
 		if (!this.current) return;
 		this.current = { ...this.current, ...patch };
 		this.changed();
+	}
+
+	/**
+	 * The timeline's chapters (Samuel 2026-10-18), in the order they start: each a named part of the film from its
+	 * time `at` to the next one's, as a YouTube film lists them; kept with the cut.
+	 * @returns {import('$lib/auth/client').Chapter[]}
+	 */
+	get chapters() {
+		return [...(this.current?.chapters ?? [])].sort((a, b) => a.at - b.at);
+	}
+	/** @param {import('$lib/auth/client').Chapter[]} list */
+	setChapters(list) {
+		this.setMeta({ chapters: [...list].sort((a, b) => a.at - b.at) });
+	}
+	/** A new chapter starting at `at` (the playhead), on a frame; none where one starts there already. @param {number} [at] @param {string} [name] */
+	addChapter(at = this.time, name = '') {
+		const t = Math.max(0, Math.round(at * 30) / 30);
+		if (!this.current || this.chapters.some((c) => Math.abs(c.at - t) < 1 / 60)) return null;
+		const id = Math.max(0, ...this.chapters.map((c) => c.id)) + 1;
+		this.setChapters([...this.chapters, { id, at: t, name: name || `Chapter ${this.chapters.length + 1}` }]);
+		return id;
+	}
+	/** @param {number} id @param {Partial<import('$lib/auth/client').Chapter>} patch */
+	editChapter(id, patch) {
+		const at = patch.at === undefined ? {} : { at: Math.max(0, Math.round(patch.at * 30) / 30) };
+		this.setChapters(this.chapters.map((c) => (c.id === id ? { ...c, ...patch, ...at, id } : c)));
+	}
+	/** @param {number} id */
+	removeChapter(id) {
+		this.setChapters(this.chapters.filter((c) => c.id !== id));
+	}
+	/** The chapter time `t` is in, or null before the first. @param {number} [t] */
+	chapterAt(t = this.time) {
+		return this.chapters.filter((c) => c.at <= t + 1e-6).at(-1) ?? null;
 	}
 
 	/**
@@ -2003,27 +2036,13 @@ export class Studio {
 	/** @type {import('$lib/auth/client').RenderReport | null} */
 	lastReport = $derived(this.lastRender?.report ?? null);
 
-	/**
-	 * The files the last render delivered: the film's content item keeps every delivery of this timeline (format,
-	 * channels, and from the colour-managed worker its QC and loudness); the render's own report fills in QC and
-	 * loudness where the item has none.
-	 */
+	/** The files the last render delivered: a cut's deliveries are in its render's report. */
 	async refreshDeliveries() {
 		const id = this.current?.id;
-		if (!id || !this.lastRender) return void (this.deliveries = []);
-		// a cut's deliveries are in its render's report (its films are in avenDB, no content item carries them)
-		if (isCut(id)) {
-			const name = this.current?.name;
-			const ds = /** @type {any} */ (this.lastRender).deliveries ?? [];
-			return void (this.deliveries = /** @type {DeliveryRecord[]} */ (ds.map((/** @type {any} */ d) => ({ ...d, timeline: id, cut: name }))));
-		}
-		const items = await listContent().then((r) => r.items).catch(() => []);
-		if (this.current?.id !== id) return;
-		const fromReport = this.lastReport?.deliveries ?? [];
-		this.deliveries = /** @type {DeliveryRecord[]} */ (items.flatMap((i) => i.deliveries ?? []).filter((d) => d.timeline === id)).map((d) => {
-			const r = fromReport.find((x) => x.hash === d.hash && x.codec === d.codec);
-			return r ? { ...d, qc: d.qc ?? r.qc, loudness: d.loudness ?? r.loudness } : d;
-		});
+		if (!id || !this.lastRender || !isCut(id)) return void (this.deliveries = []);
+		const name = this.current?.name;
+		const ds = /** @type {any} */ (this.lastRender).deliveries ?? [];
+		this.deliveries = /** @type {DeliveryRecord[]} */ (ds.map((/** @type {any} */ d) => ({ ...d, timeline: id, cut: name })));
 	}
 
 	/** @param {boolean} on */

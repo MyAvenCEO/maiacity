@@ -404,6 +404,54 @@ export async function cutJobs(id) {
 	);
 }
 
+/**
+ * The worker's queue: every render and frame asked of any cut and not done yet, the running first, then by when
+ * each was asked; how far each is from the Mac's own job of it.
+ * @returns {Promise<{ id: string, kind: 'render' | 'frame', status: string, progress: number, timeline_id: string, created: string }[]>}
+ */
+export async function renderQueue() {
+	const call = await device();
+	if (!call) return [];
+	const world = await worldOf(call);
+	/** @type {Map<string, any>} */
+	const live = new Map();
+	try {
+		const { command } = await import('$lib/native');
+		const jobs = /** @type {{ active: any[] }} */ (await command('jobs_list', { limit: 0 }));
+		for (const j of jobs.active ?? []) live.set(j.subject, j);
+	} catch {
+		// the lanes unread: the tasks' own state alone
+	}
+	return tasksOf(world)
+		.filter((t) => (t.rule === 'render' || t.rule === 'frame') && (t.status === 'queued' || t.status === 'claimed' || t.status === 'failed'))
+		.map((t) => ({
+			id: `task:${t.entry}`,
+			kind: /** @type {'render' | 'frame'} */ (t.rule),
+			status: STATUS[t.status] ?? 'queued',
+			progress: Number(live.get(`aven:${t.entry}`)?.progress ?? 0),
+			timeline_id: `cut:${t.inputs[0]?.entry ?? ''}`,
+			created: new Date(t.at * 1000).toISOString()
+		}))
+		.sort((a, b) => (a.status === b.status ? Date.parse(a.created) - Date.parse(b.created) : a.status === 'rendering' ? -1 : 1));
+}
+
+/**
+ * The proxy of the original at avenDB entry `entry` made again: its task asked again from nothing, or asked now.
+ * @param {string} entry
+ */
+export async function remakeProxy(entry) {
+	const call = await device();
+	if (!call) throw new Error('Proxies are made by the Mac app.');
+	const world = await worldOf(call);
+	const e = world.entries.find((x) => x.entry === entry);
+	if (!e) throw new Error('That file is not in avenDB.');
+	const known = tasksOf(world).find((t) => t.rule === 'proxy' && t.inputs[0]?.entry === entry);
+	if (!known) return void (await ask(call, world, e, 'proxy', {}));
+	answer(await call('run', retrying(known, asIn(world, e.vault))));
+	const { nudge } = await import('./jobs/mac.js');
+	nudge();
+}
+
 /** Cut `id` deleted (avenDB's deleted tag: it can come back). @param {string} id */
 export async function deleteCut(id) {
 	const call = await device();

@@ -18,7 +18,7 @@ import { createHash } from "node:crypto";
 import { db } from "./pg";
 import { can } from "./acl";
 import { keyHolder } from "./keys";
-import { call, clientKek, failure, paused, pick, prem, PremError, resetPrem } from "./prem";
+import { call, failure, paused, pick, prem, PremError, resetPrem } from "./prem";
 
 export const MODEL = "deepgram/general-nova-3";
 /** Prem's limit for one request. */
@@ -107,7 +107,7 @@ export function useSttClient(c: Client | null) {
   testClient = c;
 }
 
-export { clientKek, prem, resetPrem };
+export { prem, resetPrem };
 
 /** Transcribe one audio file (at most 25 MB) — Deepgram's answer, normalised. */
 export async function transcribe(bytes: Uint8Array, mime = "audio/mp4", name = "speech.m4a"): Promise<Transcript> {

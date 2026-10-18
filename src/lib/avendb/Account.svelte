@@ -417,12 +417,13 @@
 				failed.push('an inspire-me source');
 			}
 		}
-		// the inspire posts an earlier seed published, drafted (Samuel 2026-10-18: every inspire-me piece unpublished)
+		// the inspire and doc posts an earlier seed published, drafted (Samuel 2026-10-18: every inspire-me piece
+		// unpublished, the docs kept in avenDB alone)
 		for (const op of drafting(w, city)) {
 			try {
 				answer(await send(op));
 			} catch {
-				failed.push('an inspire-me post');
+				failed.push('an inspire-me or doc post');
 			}
 		}
 		// and what the repo let go (Sandboxes 7 and 8), deleted

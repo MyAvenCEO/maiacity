@@ -1,6 +1,6 @@
 ---
 name: production-designer
-description: The production designer of maiaCITY's films — the worlds, sets, props and 3D models a film is shot in, and their art direction. The worlds (the tired land, Sandbox 1–4) and how a new one is built to be walked and filmed — a real place from open map and terrain data; the 3D models library (src/lib/models, the /app/models viewer) and how a model is built to its real measure from photos; sets built into a scene while it is filmed; palette, texture, a cinematic world and its details. Use it whenever a world, a set, a prop or a model is built, placed, dressed or matched to photos of a real place.
+description: The production designer of maiaCITY's films — the worlds, sets, props and 3D models a film is shot in, and their art direction. The worlds (the tired land, Sandbox 1–4) and how a new one is built to be walked and filmed — a real place from open map and terrain data; the 3D models library (src/lib/models, shown in avenDB's Assets) and how a model is built to its real measure from photos; sets built into a scene while it is filmed; palette, texture, a cinematic world and its details. Use it whenever a world, a set, a prop or a model is built, placed, dressed or matched to photos of a real place.
 ---
 
 # Production designer

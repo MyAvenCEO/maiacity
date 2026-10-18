@@ -1,13 +1,14 @@
 ---
 name: actor-skill
-description: The maiaCITY actor skill — people and animals rigged to move, in the Actors library (src/lib/actors, /app/actors): the stand-in a shot is blocked with and the animals of the worlds (chickens, rabbits, geese, goats, sheep, frogs, bees, ants, songbirds, fish), where an actor lives (a species on a body plan, a cast line, skins meshed off the page, crowds), clips and poses, how it composes (shared body plans, things in hands, actors placed in machines, buildings and worlds by ref), versions behind an argument or frozen files, the stand-in's face (always friendly with a slight sparkle; MakeHuman CC0 head, blend shapes joy and friendly from measured expression units, catchlights that survive the distance), checking and the lessons kept. Use it whenever a person or an animal is built, upgraded, posed or given an expression. Machines are machine-skill's (our notes in its ours.md). Part of asset-producer.
+description: The maiaCITY actor skill — people and animals rigged to move, in the Actors library (src/lib/actors, shown in avenDB's Assets): the stand-in a shot is blocked with and the animals of the worlds (chickens, rabbits, geese, goats, sheep, frogs, bees, ants, songbirds, fish), where an actor lives (a species on a body plan, a cast line, skins meshed off the page, crowds), clips and poses, how it composes (shared body plans, things in hands, actors placed in machines, buildings and worlds by ref), versions behind an argument or frozen files, the stand-in's face (always friendly with a slight sparkle; MakeHuman CC0 head, blend shapes joy and friendly from measured expression units, catchlights that survive the distance), checking and the lessons kept. Use it whenever a person or an animal is built, upgraded, posed or given an expression. Machines are machine-skill's (our notes in its ours.md). Part of asset-producer.
 ---
 
 # Actors: people and animals
 
-The Actors are the people and animals rigged to move, in `src/lib/actors`, shown in `/app/actors` (admin): the
-stand-in a shot is blocked with, and the animals of the worlds kind by kind. The older machines are rigged the same
-way in the same folder, but listed apart in `/app/machines` (`machine-skill`, our notes in its `ours.md`). The laws,
+The Actors are the people and animals rigged to move, in `src/lib/actors`, shown in avenDB's Assets
+(`/app/avendb/#assets`): the stand-in a shot is blocked with, and the animals of the worlds kind by kind. The older
+machines are rigged the same way in the same folder, but listed apart as the Machines (`machine-skill`, our notes in
+its `ours.md`). The laws,
 the shared core (refs, one version control) and how we check are the `asset-producer`'s; how the rig works, the
 stand-in's poses, birds and animals are in `production-designer`'s `models.md` ("The actors"). This is what the
 people and animals taught us since.

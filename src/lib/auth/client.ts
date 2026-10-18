@@ -5,6 +5,7 @@ import { dev } from '$app/environment';
 import { avenUrl, isAven } from '$lib/studio/avenref.js';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import { APP_API, command, native } from '$lib/native';
+import type { Sandbox } from '../../../game/film/worlds.js';
 
 /** api.maia.city in production, the local container in development. */
 // 3100 locally, so it can run beside other projects' stacks on 3000.
@@ -318,7 +319,11 @@ export type Timeline = {
 	/** the whole film's look */
 	/** the film's grade above its shots', as stacks of tools: each scene's look (by the scene its clips name), the timeline's look */
 	grade?: { scenes?: Record<string, GradeStack>; timeline?: GradeStack } | null;
+	/** its chapters: named parts of the film, each from its start to the next one's (src/lib/studio/studio.svelte.js) */
+	chapters?: Chapter[];
 };
+/** A chapter of a timeline: where it starts (seconds) and what it is called. */
+export type Chapter = { id: number; at: number; name: string };
 
 export const listTimelines = () => call<Timeline[]>('/api/timelines');
 export const createTimeline = (t: Partial<Timeline>) => call<Timeline>('/api/timelines', { method: 'POST', body: JSON.stringify(t) });
@@ -595,17 +600,20 @@ export type Curve = number | [number, number][];
 export const SHOT_LIGHTS = ['sun', 'fill', 'glow', 'lamps', 'sky', 'glass', 'cb60'] as const;
 /** A world shot as data (contract C2, game/film/shot.js `Spec`): everything the world needs to draw every frame of it. */
 export type ShotSpec = {
-	/** which sandbox and where in it (game/film/worlds.js); dome and props are Sandbox 4's */
-	world: { sandbox: 'sandbox-1' | 'sandbox-2' | 'sandbox-3' | 'sandbox-4' | 'sandbox-5' | 'sandbox-6'; area?: string; build: { commit: string; hash: string; file?: string } | null; seed: number; stand: [number, number]; dome?: number; props?: string; clock: number };
+	/** which world and where in it (game/film/worlds.js, the one registry of them); dome and props are Sandbox 4's */
+	world: { sandbox: Sandbox; area?: string; build: { commit: string; hash: string; file?: string } | null; seed: number; stand: [number, number]; dome?: number; props?: string; clock: number };
 	seconds: number;
 	fps: number;
 	/** the shape the shot is composed for; the others follow its framing */
 	aspect: Shape;
-	camera: { kind: 'move' | 'orbit' | 'turn' | 'fly' | 'whip' | 'keys'; curve?: 'glide' | 'ease' | 'landing' | 'drift'; keys?: CameraKey[]; [arg: string]: unknown };
-	lens: { fov: number; fovTo?: number };
+	/** game/film/camera.js: a move, or `world` (the world's own camera); `frame`: one of the world's frames its poses are in */
+	camera: { kind: 'move' | 'orbit' | 'turn' | 'fly' | 'whip' | 'keys' | 'world'; curve?: 'glide' | 'ease' | 'landing' | 'drift'; keys?: CameraKey[]; frame?: string; [arg: string]: unknown };
+	lens: { fov: number; fovTo?: number; near?: number };
 	time: { hour: number; hourTo?: number };
 	exposure: { meter: 'lock' | 'ramp' | 'fixed'; stops: Curve; ev?: number };
 	lights: { id: (typeof SHOT_LIGHTS)[number]; intensity?: Curve; color?: string }[];
+	/** the world's moving parts the shot moves (game/film/worlds.js `parts`): each by its channels, a constant or keys */
+	parts?: { id: string; [channel: string]: Curve | string }[];
 	cues: ({ at: number; kind: 'sound'; hash: string; level: number } | { at: number; kind: 'event'; name: string; args?: unknown })[];
 	shutter: { angle: number; samples: number };
 	framing: Partial<Record<Shape, { fov?: number; yaw?: number; pitch?: number; dx?: number; dy?: number }>>;

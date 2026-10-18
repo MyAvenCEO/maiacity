@@ -2,7 +2,10 @@
 	A vault's Library: every file of the vault the acting vault reads, as a media app lists them, in the layout every
 	avenDB view has (./Frame.svelte): on the left what narrows them, by kind (films, images, SVGs, PDFs, audio, other)
 	or a tag, each with how many there are, the deleted ones apart; in the middle each a tile with a preview where it
-	is a picture, its size, its kind and its tags. A click opens it in the middle, to save or delete there, its
+	is a picture or a film the Mac made a still of (the `still` rule's preview, $lib/studio/jobs/rules.js), its size, its
+	kind and its tags, or the same as a table (Samuel 2026-10-18), with every vault whose devices hold its bytes, and
+	right under each file what the Mac's rules made of it (its proxy, grading still, preview), as the old studio's
+	ingest table kept them (./made.js); where a rule's step stands is the Jobs app's. A click opens it in the middle, to save or delete there, its
 	details on the right (its kind, size, who added it and when, its tags, where it is synced to, who it is shared
 	with and its hash): a film or a song plays as the browser's player asks for it, a range at a time, streamed from
 	the device through a service worker (./files.js), or read whole where none runs; a picture, an SVG or a PDF shows
@@ -19,9 +22,11 @@
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import { address, dataUrl, kindOf, KINDS, mediaOf, serve, whole, WHOLE } from './files.js';
+	import { familyOf } from './made.js';
 	import { allowed, creatable, deleting, may } from './ops.js';
 	import {
 		count,
+		heldWords,
 		list,
 		nameOf,
 		reads,
@@ -63,6 +68,50 @@
 	/** the files deleted: listed apart, each to open and bring back */
 	const deleted = $derived(files.filter((e) => e.deleted));
 	const hidden = $derived(entries.length - seen.length);
+
+	/** what the Mac's rules made of each file (./made.js) */
+	const family = $derived(familyOf(world));
+	/** each made file's role (`Proxy · ACEScct` …), by its entry */
+	const roles = $derived(new Map([...family.made.values()].flat().map((m) => [m.entry.entry, m.role])));
+
+	/**
+	 * Each file's preview, by its entry: the JPEG the Mac's `still` rule made of it at its hero frame
+	 * ($lib/studio/jobs/rules.js, vault/app/src/aven.rs), or of its original, for a file made of one; where this device
+	 * can open it.
+	 */
+	const previewOf = $derived.by(() => {
+		/** @type {Map<string, EntryView>} */
+		const out = new Map();
+		for (const [from, made] of family.made) {
+			const p = made.find((m) => m.rule === 'still' && m.entry.tags?.includes('media:preview'))?.entry;
+			if (!p || p.files?.[0]?.len == null) continue;
+			out.set(from, p);
+			for (const m of made) if (m.entry !== p) out.set(m.entry.entry, p);
+		}
+		return out;
+	});
+
+	/**
+	 * @typedef {{ e: EntryView, of?: EntryView, role?: string }} Row a file, and its original if it is one a rule made
+	 *   of it
+	 */
+	/**
+	 * The table's rows: each file, then right under it the files the rules made of it; a made file whose original
+	 * isn't listed stands alone.
+	 */
+	const rows = $derived.by(() => {
+		const listed = new Set(shown.map((e) => e.entry));
+		/** @type {Row[]} */
+		const out = [];
+		for (const e of shown) {
+			const of = family.of.get(e.entry);
+			if (of && listed.has(of)) continue;
+			out.push({ e, role: roles.get(e.entry) });
+			if (binned) continue;
+			for (const m of family.made.get(e.entry) ?? []) if (reads(m.entry, actor)) out.push({ e: m.entry, of: e, role: m.role });
+		}
+		return out;
+	});
 
 	/** Entry `e`'s kind of file. @param {EntryView} e */
 	const kind = (e) => kindOf(e.media, e.title ?? '');
@@ -194,21 +243,80 @@
 		return k === 'svg' ? dataUrl(blob) : urlOf(blob);
 	}
 
-	/** Previews entry `e`'s picture once its tile shows. @param {HTMLElement} node @param {EntryView} e */
-	function previews(node, e) {
-		const file = fileOf(e);
-		if (!file || file.len === null || file.len > THUMB || (kind(e) !== 'image' && kind(e) !== 'svg')) return;
-		const seen = new IntersectionObserver(([x]) => {
-			if (!x.isIntersecting || thumbing.has(file.root)) return;
-			seen.disconnect();
-			thumbing.add(file.root);
-			picture(e)
-				.then((url) => (thumbs = { ...thumbs, [file.root]: url }))
-				.catch(() => {});
-		});
-		seen.observe(node);
-		return { destroy: () => seen.disconnect() };
+	/** Entry `e`'s preview as a URL: its picture, or of a film the JPEG still `still` the Mac made of it. @param {EntryView} e @param {EntryView} [still] */
+	async function thumbnail(e, still) {
+		const file = still && fileOf(still);
+		if (!file) return picture(e);
+		return urlOf(await whole(read, file, still.media ?? 'image/jpeg'));
 	}
+
+	/**
+	 * Previews entry `e` once its tile or row shows: a picture of its own, or a film's still (`still`), which may come
+	 * in later, as the Mac makes it. @param {HTMLElement} node @param {[EntryView, EntryView | undefined]} of
+	 */
+	function previews(node, of) {
+		/** @type {IntersectionObserver | null} */
+		let seen = null;
+		const watch = (/** @type {[EntryView, EntryView | undefined]} */ [e, still]) => {
+			seen?.disconnect();
+			const file = fileOf(e);
+			if (!file || file.len === null || thumbing.has(file.root)) return;
+			const own = (kind(e) === 'image' || kind(e) === 'svg') && file.len <= THUMB;
+			if (!own && !still) return;
+			seen = new IntersectionObserver(([x]) => {
+				if (!x.isIntersecting || thumbing.has(file.root)) return;
+				seen?.disconnect();
+				thumbing.add(file.root);
+				thumbnail(e, own ? undefined : still)
+					.then((url) => (thumbs = { ...thumbs, [file.root]: url }))
+					.catch(() => thumbing.delete(file.root));
+			});
+			seen.observe(node);
+		};
+		watch(of);
+		return { update: watch, destroy: () => seen?.disconnect() };
+	}
+
+	/** how the files are laid out, remembered on this device: tiles, or a table */
+	const LAYOUT = 'avendb:library:layout';
+	let layout = $state(/** @type {'grid' | 'table'} */ ('grid'));
+	try {
+		if (localStorage.getItem(LAYOUT) === 'table') layout = 'table';
+	} catch {}
+	/** @param {'grid' | 'table'} to */
+	function lay(to) {
+		layout = to;
+		try {
+			localStorage.setItem(LAYOUT, to);
+		} catch {}
+	}
+
+	/**
+	 * The vaults whose devices hold file `file`'s bytes, each once, with the names of those devices (Samuel 2026-10-18:
+	 * the vault and its devices, "Samuel: Mac app, Safari on iPhone") and, in words, how much each holds and when it
+	 * last said so; a device of no vault this device knows stands by its own name.
+	 * @param {import('./files.js').FileView | undefined} file
+	 */
+	function heldBy(file) {
+		/** @type {Map<string, { name: string, devices: string[], words: string[] }>} */
+		const out = new Map();
+		for (const h of file?.syncedTo ?? []) {
+			const v = world.vaults.find((x) => x.devices.some((d) => d.id === h.device));
+			const held = heldWords(h);
+			const at = out.get(v?.id ?? h.device) ?? { name: v ? nameOf(v) : signerName(world, h.device), devices: [], words: [] };
+			if (v) at.devices.push(v.devices.find((d) => d.id === h.device)?.name ?? (v.kind === 'device' && v.name ? v.name : 'a device'));
+			at.words.push(`${signerName(world, h.device)}${held ? ` (${held})` : ''}`);
+			out.set(v?.id ?? h.device, at);
+		}
+		return [...out.values()];
+	}
+
+	/** When entry `e` was added, short: the year only when it is not this one. @param {EntryView} e */
+	const day = (e) => {
+		if (!e.created) return '';
+		const d = new Date(e.created * 1000);
+		return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(d.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }) });
+	};
 
 	/** the entry open in the main area */
 	let open = $state('');
@@ -439,15 +547,74 @@
 					</p>
 				</div>
 			{:else if shown.length}
+				<div class="layout" role="group" aria-label="Lay the files out">
+					<button aria-pressed={layout === 'grid'} onclick={() => lay('grid')}><Icon name="apps" /> Grid</button>
+					<button aria-pressed={layout === 'table'} onclick={() => lay('table')}><Icon name="table" /> Table</button>
+				</div>
+				{#if layout === 'table'}
+					<div class="rows">
+						<table>
+							<thead>
+								<tr><th><span class="hide">Preview</span></th><th>Name</th><th>Kind</th><th class="num">Size</th><th>Added</th><th>Tags</th><th>Synced to</th></tr>
+							</thead>
+							<tbody>
+								{#each rows as r (r.e.entry)}
+										{@const e = r.e}
+										{@const k = kind(e)}
+										{@const file = fileOf(e)}
+										{@const thumb = file ? thumbs[file.root] : undefined}
+										{@const own = r.of ? [] : (e.tags ?? []).filter((t) => !t.includes(':'))}
+										<tr class:deleted={e.deleted} class:made={!!r.of}>
+											<td class="mini">
+												<span class="thumb {k}" use:previews={[e, previewOf.get(e.entry)]}>
+													{#if thumb}
+														<img src={thumb} alt="" loading="lazy" />
+													{:else}
+														<Icon name={k === 'film' ? 'play' : (KINDS.find(([x]) => x === k)?.[2] ?? 'file')} size={16} />
+													{/if}
+												</span>
+											</td>
+											<td class="name"
+												><button class="open" class:sub={!!r.of} title={e.title} onclick={() => show(e)}>{r.of ? '↳ ' : ''}{e.title}</button></td
+											>
+											<td class="when">
+												{#if r.role}
+													{@const [what, colour] = r.role.split(' · ')}
+													{what}{#if colour}<small class="colour">{colour}</small>{/if}
+												{:else}
+													{KINDS.find(([x]) => x === k)?.[1]}
+												{/if}
+											</td>
+											<td class="num">{file?.len != null ? size(file.len) : 'sealed'}</td>
+											<td class="soft when">{day(e)}{e.by !== vault ? `, by ${nameOf(byId.get(e.by))}` : ''}</td>
+											<td>
+												{#if own.length}<span class="tags">{#each own as t (t)}<span class="chip tag">#{t}</span>{/each}</span>{/if}
+											</td>
+											<td>
+												<span class="held">
+													{#each heldBy(file) as h (h.name)}
+														<span title={h.words.join(', ')}><b>{h.name}</b>{#if h.devices.length}<small>{h.devices.join(', ')}</small>{/if}</span>
+													{:else}
+														<span class="soft">nowhere yet</span>
+													{/each}
+												</span>
+											</td>
+										</tr>
+								{/each}
+							</tbody>
+						</table>
+					</div>
+				{:else}
 				<div class="grid">
 					{#each shown as e (e.entry)}
 						{@const k = kind(e)}
 						{@const file = fileOf(e)}
 						{@const thumb = file ? thumbs[file.root] : undefined}
 						<button class="tile" class:deleted={e.deleted} onclick={() => show(e)} aria-label="Open {e.title}">
-							<span class="thumb {k}" use:previews={e}>
+							<span class="thumb {k}" use:previews={[e, previewOf.get(e.entry)]}>
 								{#if thumb}
 									<img src={thumb} alt="" loading="lazy" />
+									{#if k === 'film'}<span class="play"><Icon name="play" size={22} /></span>{/if}
 								{:else}
 									<Icon name={k === 'film' ? 'play' : (KINDS.find(([x]) => x === k)?.[2] ?? 'file')} size={k === 'film' ? 28 : 34} />
 								{/if}
@@ -466,6 +633,7 @@
 						</button>
 					{/each}
 				</div>
+				{/if}
 			{:else}
 				<p class="soft">{binned ? 'Nothing deleted.' : `No file here${asked ? ' yet: drop some on this page.' : '.'}`}</p>
 			{/if}
@@ -501,7 +669,7 @@
 					<p class="note">Opening it: {Math.floor(loading * 100)} %</p>
 				{:else if k === 'film' && src}
 					<!-- svelte-ignore a11y_media_has_caption -->
-					<video src={src} controls autoplay playsinline></video>
+					<video src={src} poster={file ? thumbs[file.root] : undefined} controls autoplay playsinline></video>
 				{:else if k === 'audio' && src}
 					<div class="song"><Icon name="audio" size={64} /><audio src={src} controls autoplay></audio></div>
 				{:else if (k === 'image' || k === 'svg') && src}
@@ -601,6 +769,198 @@
 		gap: 1rem;
 	}
 
+	.layout {
+		display: flex;
+		width: fit-content;
+		margin: 0 0 0.8rem auto;
+		padding: 2px;
+		border: 1px solid var(--edge);
+		border-radius: 8px;
+		background: #fff;
+	}
+
+	.layout button {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		padding: 0.3rem 0.7rem;
+		border: 0;
+		border-radius: 6px;
+		background: none;
+		font: inherit;
+		font-size: 0.8rem;
+		color: rgb(0 0 0 / 0.6);
+		cursor: pointer;
+	}
+
+	.layout button[aria-pressed='true'] {
+		background: #e9e4d9;
+		color: inherit;
+		font-weight: 600;
+	}
+
+	.held {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.25rem;
+	}
+
+	.held > span:not(.soft) {
+		padding: 0.1rem 0.5rem;
+		border-radius: 999px;
+		background: #e9e4d9;
+		font-size: 0.74rem;
+		white-space: nowrap;
+	}
+
+	.held b {
+		font-weight: 600;
+	}
+
+	.held small {
+		margin-left: 0.3rem;
+		font-size: 0.7rem;
+		color: rgb(0 0 0 / 0.55);
+	}
+
+	.rows .held {
+		max-width: 24rem;
+	}
+
+	.rows {
+		overflow-x: auto;
+		border: 1px solid var(--edge);
+		border-radius: 10px;
+		background: #fff;
+	}
+
+	.rows table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 0.84rem;
+	}
+
+	.rows th {
+		padding: 0.5rem 0.65rem;
+		font-size: 0.72rem;
+		font-weight: 600;
+		text-align: left;
+		color: rgb(0 0 0 / 0.55);
+		white-space: nowrap;
+	}
+
+	.rows td {
+		padding: 0.4rem 0.65rem;
+		border-top: 1px solid var(--edge);
+		vertical-align: middle;
+	}
+
+	.rows tbody tr:hover td {
+		background: rgb(0 0 0 / 0.03);
+	}
+
+	.rows tr.deleted td {
+		opacity: 0.55;
+	}
+
+	.rows .num {
+		text-align: right;
+		white-space: nowrap;
+	}
+
+	.rows .name {
+		max-width: 20rem;
+	}
+
+	.rows .open {
+		display: block;
+		overflow: hidden;
+		max-width: 100%;
+		padding: 0;
+		border: 0;
+		background: none;
+		font: inherit;
+		font-weight: 600;
+		color: inherit;
+		text-align: left;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.rows .open:hover,
+	.rows .open:focus-visible {
+		color: var(--accent);
+	}
+
+	.rows .mini {
+		width: 4.2rem;
+	}
+
+	.rows tr.made td {
+		border-top: 1px dashed var(--edge);
+		background: #faf8f4;
+	}
+
+	.rows .when {
+		white-space: nowrap;
+	}
+
+	.rows .colour {
+		display: block;
+		font-size: 0.72rem;
+		color: rgb(0 0 0 / 0.5);
+	}
+
+	.rows tr.made .mini .thumb {
+		width: 3.2rem;
+		height: 1.8rem;
+		margin-left: 1rem;
+	}
+
+	.rows .sub {
+		padding-left: 0.6rem;
+		font-weight: 400;
+		color: rgb(0 0 0 / 0.7);
+	}
+
+	.rows .mini .thumb {
+		width: 4.2rem;
+		height: 2.4rem;
+		border: 0;
+		border-radius: 5px;
+	}
+
+	.rows .tags {
+		margin: 0;
+	}
+
+	.rows .tags .chip,
+	.rows .held .soft {
+		white-space: nowrap;
+	}
+
+	.hide {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+	}
+
+	.thumb .play {
+		position: absolute;
+		inset: 0;
+		margin: auto;
+		display: grid;
+		place-items: center;
+		width: 2.6rem;
+		height: 2.6rem;
+		border-radius: 50%;
+		background: rgb(0 0 0 / 0.45);
+		color: #fff;
+	}
+
 	.tile {
 		display: flex;
 		flex-direction: column;
@@ -629,6 +989,7 @@
 	}
 
 	.thumb {
+		position: relative;
 		display: grid;
 		place-items: center;
 		height: 8.5rem;

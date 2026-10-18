@@ -33,3 +33,12 @@ test('only the Maia City vault takes them, and a film there is found by its tag'
 	expect(held.story?.entry).toBe('s');
 	expect(held.cut).toBe(null);
 });
+
+test('a frozen film holds every world shot its timeline plays, and its files by BLAKE3 hash', async () => {
+	const { badFrozen } = await import('./filmlist.js');
+	const h = 'a'.repeat(64);
+	const film = { key: 'x', timeline: { id: 't', clips: [{ kind: 'world', shot: 's1', shotVersion: 2 }, { kind: 'video', hash: h }] }, shots: { 's1@2': { name: 'S', project: null, spec: {} } }, files: [h] };
+	expect(badFrozen(film)).toBeNull();
+	expect(badFrozen({ ...film, shots: {} })).toBe('the shot s1@2 is missing');
+	expect(badFrozen({ ...film, files: ['nope'] })).toBe('files are BLAKE3 hashes');
+});

@@ -3,9 +3,12 @@
 	to (a cut's `story` link), its timelines under it, a click opening one; a new timeline of a story where the
 	person can edit; the timelines of no story last. A legacy film coming into the Maia City vault (./legacyfilms.js)
 	shows under its story as it comes: how many of its files are in, a bar for how far, and after, the files that
-	could not come, or why it stopped, with Try again.
+	could not come, or why it stopped, with Try again. Under the open timeline, its chapters (Samuel 2026-10-18):
+	a click goes to one, a double click renames it, × removes it, + Chapter (or M) adds one at the playhead.
 -->
 <script>
+	import { clockText } from './studio.svelte.js';
+
 	/** @type {{ s: import('./studio.svelte.js').Studio }} */
 	let { s } = $props();
 
@@ -28,6 +31,22 @@
 
 	/** whether a story's timelines are folded away: open unless folded, and always where the open timeline is */
 	const folded = (/** @type {string} */ id) => s.expanded.includes(`fold:${id}`) && !s.timelines.some((t) => t.id === s.current?.id && storyOf(t) === id);
+
+	/** the chapter being renamed, and its name as typed */
+	let naming = $state(/** @type {number | null} */ (null));
+	let typed = $state('');
+	/** @param {import('$lib/auth/client').Chapter} c */
+	function rename(c) {
+		if (!s.canEdit) return;
+		naming = c.id;
+		typed = c.name;
+	}
+	function named() {
+		if (naming !== null && typed.trim()) s.editChapter(naming, { name: typed.trim() });
+		naming = null;
+	}
+	/** @param {HTMLInputElement} el */
+	const focusIt = (el) => (el.focus(), el.select());
 
 	/** @param {Timeline} t */
 	async function pick(t) {
@@ -60,6 +79,25 @@
 		</button>
 		<button class="x" onclick={() => s.removeTimeline(t)} aria-label="Delete {t.name}" title="Delete">×</button>
 	</li>
+	{#if s.current?.id === t.id}
+		<li class="chapters">
+			<ol>
+				{#each s.chapters as c (c.id)}
+					<li class="chapter" class:on={s.chapterAt()?.id === c.id}>
+						{#if naming === c.id}
+							<input class="name" bind:value={typed} use:focusIt onblur={named} onkeydown={(e) => (e.stopPropagation(), e.key === 'Enter' ? named() : e.key === 'Escape' && (naming = null))} aria-label="Chapter name" />
+						{:else}
+							<button class="go" onclick={() => s.seek(c.at)} ondblclick={() => rename(c)} title="Go to {c.name}{s.canEdit ? '; double click to rename' : ''}">
+								<span class="at">{clockText(c.at)}</span><span class="nm">{c.name}</span>
+							</button>
+							{#if s.canEdit}<button class="x" onclick={() => s.removeChapter(c.id)} aria-label="Remove {c.name}" title="Remove">×</button>{/if}
+						{/if}
+					</li>
+				{/each}
+			</ol>
+			{#if s.canEdit}<button class="chapter-add" onclick={() => s.addChapter()} title="A chapter at the playhead (M)">+ Chapter</button>{/if}
+		</li>
+	{/if}
 {/snippet}
 
 <nav class="stories" aria-label="Stories and their timelines">
@@ -273,6 +311,84 @@
 
 	.add:hover,
 	.x:hover {
+		color: var(--ink);
+	}
+
+	.chapters {
+		margin: 0.1rem 0 0.3rem 1.15rem;
+	}
+
+	ol {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
+	.chapter {
+		display: flex;
+		align-items: center;
+		border-radius: 6px;
+	}
+
+	.chapter:hover {
+		background: var(--hover);
+	}
+
+	.chapter.on .go {
+		color: var(--ink);
+	}
+
+	.go {
+		display: flex;
+		flex: 1;
+		gap: 0.35rem;
+		align-items: baseline;
+		min-width: 0;
+		padding: 0.15rem 0.35rem;
+		border: 0;
+		border-left: 2px solid var(--accent);
+		background: none;
+		font: inherit;
+		font-size: 0.7rem;
+		text-align: left;
+		color: var(--dim);
+		cursor: pointer;
+	}
+
+	.at {
+		flex: none;
+		font-variant-numeric: tabular-nums;
+		font-size: 0.62rem;
+	}
+
+	.chapter:hover .x {
+		visibility: visible;
+	}
+
+	.name {
+		flex: 1;
+		min-width: 0;
+		padding: 0.1rem 0.3rem;
+		border: 1px solid var(--edge);
+		border-radius: 4px;
+		background: var(--raised);
+		font: inherit;
+		font-size: 0.7rem;
+		color: var(--ink);
+	}
+
+	.chapter-add {
+		margin: 0.15rem 0.35rem 0;
+		padding: 0;
+		border: 0;
+		background: none;
+		font: inherit;
+		font-size: 0.68rem;
+		color: var(--dim);
+		cursor: pointer;
+	}
+
+	.chapter-add:hover {
 		color: var(--ink);
 	}
 
