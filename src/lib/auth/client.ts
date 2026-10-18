@@ -247,6 +247,11 @@ export const deviceRequest = (code: string) => call<DeviceRequest>(`/api/device/
 export const approveDevice = (code: string) =>
 	call<{ ok: true }>(`/api/device/${encodeURIComponent(code)}/approve`, { method: 'POST' });
 
+/** The OS approves its own key with `assertion`, a passkey ceremony over a sign-in's challenge that its sign-in sheet
+ *  brought back to it alone (src/routes/app/avendb/sheet/): no browser session, no code to compare. */
+export const approveDeviceWithPasskey = (code: string, assertion: object) =>
+	call<{ ok: true }>(`/api/device/${encodeURIComponent(code)}/passkey`, { method: 'POST', body: JSON.stringify(assertion) });
+
 // ─────────────────────────────── the studio's timelines ───────────────────────────────
 
 /** The delivery shapes: every film goes out in each, framed for it. */

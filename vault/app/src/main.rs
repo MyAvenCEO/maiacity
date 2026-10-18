@@ -584,7 +584,6 @@ fn main() {
             auth::auth_status,
             auth::auth_start,
             auth::auth_sign_out,
-            auth::auth_open,
             auth::api,
             passkey::passkey_sheet,
             avendb::avendb,
