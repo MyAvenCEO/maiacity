@@ -584,8 +584,11 @@ pub struct Imported {
 /// (`<stem>.transcript.json`, tagged `media:transcript` and `legacy:<hash>`), which the rules take as they are instead
 /// of hearing and watching it again (src/lib/studio/jobs/executors.js). A file brought before (an original tagged
 /// `legacy:<hash>`) is not brought again. It copies, never moves: the legacy vault is left as it is.
+/// With `tags`, each file is put with those in place of `media:original` (a legacy world shot's proxy, as
+/// `media:proxy` and the shot it stands for: src/lib/studio/importer.js `bringProxies`), and nothing beside it; a
+/// file brought before is then one tagged `legacy:<hash>` and the first of them.
 #[tauri::command]
-pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, actor: Option<String>) -> Result<Vec<Imported>, String> {
+pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, actor: Option<String>, tags: Option<Vec<String>>) -> Result<Vec<Imported>, String> {
     use tauri::Manager as _;
     use crate::jobs::Kind;
     let legacy = app.state::<crate::App>().vault.clone();
@@ -597,7 +600,8 @@ pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, a
         let hash = hash.to_lowercase();
         let mark = format!("legacy:{hash}");
         let mut made = serde_json::Map::new();
-        if let Some(e) = entries.iter().find(|e| e["vault"] == vault.as_str() && e["deleted"] != json!(true) && tagged(e, &mark) && tagged(e, "media:original")) {
+        let role = tags.as_ref().and_then(|t| t.first()).map(String::as_str).unwrap_or("media:original");
+        if let Some(e) = entries.iter().find(|e| e["vault"] == vault.as_str() && e["deleted"] != json!(true) && tagged(e, &mark) && tagged(e, role)) {
             out.push(Imported { hash, entry: e["entry"].as_str().map(str::to_string), made, error: None });
             continue;
         }
@@ -614,7 +618,9 @@ pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, a
                 crate::jobs::stage(Kind::Ingest, &s2, "bringing it into avenDB", moved as f64 / total as f64);
                 app2.emit("studio-import", json!({ "hash": h2, "done": moved, "len": total })).ok();
             };
-            let mut op = json!({ "op": "put_file", "vault": vault, "name": name, "media": m.mime, "tags": ["media:original", mark] });
+            let mut put_tags = tags.clone().unwrap_or_else(|| vec!["media:original".to_string()]);
+            put_tags.push(mark.clone());
+            let mut op = json!({ "op": "put_file", "vault": vault, "name": name, "media": m.mime, "tags": put_tags });
             if let Some(actor) = &actor {
                 op["as"] = json!(actor);
             }
@@ -627,8 +633,8 @@ pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, a
                 run(&app, op).await.ok();
                 return Err(format!("its copy's BLAKE3 is {}, not its legacy hash: not counted", put["blake3"]));
             }
-            // its words and its analysis beside it, as the rules keep a long value
-            for k in ["transcript", "analysis"] {
+            // its words and its analysis beside it, as the rules keep a long value (an original's only)
+            for k in ["transcript", "analysis"].into_iter().filter(|_| tags.is_none()) {
                 let Some(v) = m.meta.get(k).filter(|v| v.is_object()) else { continue };
                 let file = format!("{}.{k}.json", stem(&name));
                 let path = work(&format!("legacy-{hash}"))?.join(&file);

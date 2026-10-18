@@ -15,8 +15,7 @@
 		{ id: 'edit', label: 'Edit', key: '3' },
 		{ id: 'audio', label: 'Audio', key: '4' },
 		{ id: 'grade', label: 'Grade', key: '5' },
-		{ id: 'render', label: 'Render', key: '6' },
-		{ id: 'deliverables', label: 'Deliverables', key: '7' }
+		{ id: 'render', label: 'Render', key: '6' }
 	];
 	/** @param {Tab} t */
 	function go(t) {

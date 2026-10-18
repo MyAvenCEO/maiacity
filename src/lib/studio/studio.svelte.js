@@ -44,7 +44,7 @@ import { cleanEq, cleanKeys, keyDb, webAudioQ } from '../../../game/film/sound.j
  */
 /** A shot of the script: its clip, how far it is (words, a storyboard still, the footage, a world shot), what is said under it. @typedef {{ clip: Clip, stage: 'text' | 'storyboard' | 'footage' | 'world', lines: Clip[] }} ScriptShot */
 /** @typedef {{ scene: string, shots: ScriptShot[] }} ScriptScene */
-/** @typedef {'script' | '3d' | 'edit' | 'audio' | 'grade' | 'render' | 'deliverables'} Tab */
+/** @typedef {'script' | '3d' | 'edit' | 'audio' | 'grade' | 'render'} Tab */
 /**
  * A sound cue of a world shot, where it lands on A3 (derived from the shot record, never saved as a clip).
  * @typedef {Clip & { cue: true, from: string }} CueClip

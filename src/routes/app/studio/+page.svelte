@@ -13,7 +13,7 @@
 
 	Every change is saved to the timeline a moment after it is made. The pieces live in src/lib/studio/. The studio is
 	avenDB's (Samuel 2026-10-18): its timelines are cuts in avenDB, its files the vaults' Library (footage comes in
-	there), its jobs in avenDB's Jobs app; the legacy Data, Library and Jobs tabs are gone.
+	there), its jobs in avenDB's Jobs app; the legacy Data, Library and Jobs tabs are gone, and the Deliverables placeholder too (a film's posts are made in the story's Movie tab).
 -->
 <script lang="ts">
 	import { base } from '$app/paths';
@@ -24,7 +24,6 @@
 	import CueCard from '$lib/studio/CueCard.svelte';
 	import Script from '$lib/studio/Script.svelte';
 	import TimelinePicker from '$lib/studio/TimelinePicker.svelte';
-	import DeliverablesTab from '$lib/studio/DeliverablesTab.svelte';
 	import GradeAside from '$lib/studio/GradeAside.svelte';
 	import { forwardConsole, native } from '$lib/native';
 	import ProgramMonitor from '$lib/studio/ProgramMonitor.svelte';
@@ -74,9 +73,9 @@
 	function onKey(e: KeyboardEvent) {
 		const target = e.target as HTMLElement | null;
 		if (target?.closest?.('input, textarea, select')) return;
-		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7'].includes(e.code)) {
+		if (e.altKey && ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6'].includes(e.code)) {
 			e.preventDefault();
-			s.tab = (['script', '3d', 'edit', 'audio', 'grade', 'render', 'deliverables'] as const)[Number(e.code.slice(-1)) - 1]!;
+			s.tab = (['script', '3d', 'edit', 'audio', 'grade', 'render'] as const)[Number(e.code.slice(-1)) - 1]!;
 			return;
 		}
 		// inside the source player's own controls its keys are its own (Space plays it, arrows step through it)
@@ -158,9 +157,7 @@
 			</div>
 		</header>
 
-		{#if s.tab === 'deliverables'}
-			<DeliverablesTab {s} />
-		{:else if s.tab === '3d'}
+		{#if s.tab === '3d'}
 			<!-- the live world: only here — Edit, Grade and Render show each world shot's HD proxy -->
 			<Bin {s} />
 			<div class="monitors">
@@ -201,10 +198,8 @@
 			</div>
 			<Deliveries {s} />
 		{/if}
-		{#if s.tab !== 'deliverables'}
-			<Transport {s} />
-			<Timeline {s} />
-		{/if}
+		<Transport {s} />
+		<Timeline {s} />
 		<!-- the stories and their timelines, on every tab -->
 		<StoryNav {s} />
 		<CueCard {s} />
@@ -340,15 +335,6 @@
 			'tabs tabs tabs';
 	}
 
-	/* Deliverables: one panel under the bar, no transport or timeline */
-	.studio.tab-deliverables {
-		grid-template-columns: 11rem 1fr;
-		grid-template-rows: auto minmax(0, 1fr) auto;
-		grid-template-areas:
-			'bar bar'
-			'nav main'
-			'tabs tabs';
-	}
 
 	/* the working steps, centred along the bottom edge */
 	.tabs {
