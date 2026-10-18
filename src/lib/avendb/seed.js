@@ -6,7 +6,9 @@
 // pages read offline, and what a reset brings back.
 //
 //   keep       a Backup share to avenMAIA's vault, where the vault gives it none yet: the server serves only what
-//              it keeps, so without it the feeds have nothing of the vault's to show
+//              it keeps, so without it the feeds have nothing of the vault's to show; and avenMAIA's default rights
+//              (Samuel 2026-10-18): Suggester on the whole of it, and an AIP author's share on its AIPs, so the aven,
+//              and every agent that is its device, proposes and drafts and opens AIPs, and a human of it merges
 //   code       each view and logic module of code/ (game/code/sources/avendb.js `recordOf`), found by its `ref:` tag,
 //              and one Public share of the vault's views and logic, so the server's code feed serves them
 //   post types each post type, a schema of the vault's own with its template inside (./posttypes.js): journal
@@ -154,7 +156,7 @@ const filled = (o) =>
 const folderOf = (path) => path.split('/').at(-2) ?? '';
 
 /**
- * @typedef {{ key: string, kind: 'keep' | 'code' | 'share' | 'post-type' | 'journal' | 'inspire' | 'pad' | 'published' |
+ * @typedef {{ key: string, kind: 'keep' | 'aven-suggests' | 'aven-aips' | 'code' | 'share' | 'post-type' | 'journal' | 'inspire' | 'pad' | 'published' |
  *   'inspire-share' | 'name-share' | 'doc' | 'game-schema' | 'game' | 'recipe-share' | 'recipe', name: string, mark: string, server?: string }} Piece
  */
 
@@ -164,7 +166,13 @@ const folderOf = (path) => path.split('/').at(-2) ?? '';
  * @param {string | null} [server] @returns {Piece[]}
  */
 export function seedPieces(server = null) {
-	const keep = server ? [{ key: 'server-keep', kind: /** @type {const} */ ('keep'), name: 'The server keeps it', mark: '', server }] : [];
+	const keep = server
+		? [
+				{ key: 'server-keep', kind: /** @type {const} */ ('keep'), name: 'The server keeps it', mark: '', server },
+				{ key: 'aven-suggests', kind: /** @type {const} */ ('aven-suggests'), name: 'avenMAIA suggests', mark: '', server },
+				{ key: 'aven-aips', kind: /** @type {const} */ ('aven-aips'), name: 'avenMAIA opens AIPs', mark: '', server }
+			]
+		: [];
 	const code = Object.values(ENTRIES)
 		.filter((e) => CODE_TYPES.includes(e.type))
 		.sort((a, b) => a.ref.localeCompare(b.ref))
@@ -206,6 +214,21 @@ export function codeShared(world, vault, of = CODE_TYPES) {
 	const types = (/** @type {any} */ c) => [...(c.slice?.where?.type ?? [])].sort().join();
 	return world.shares.some((c) => c.over === vault && c.who === EVERYONE && types(c) === [...of].sort().join());
 }
+
+/** The level avenMAIA, the seed's aven, holds on Maia City by default (Samuel 2026-10-18): it suggests, and a human
+ *  of Maia City merges, or accepts its AIP; the agents that are its devices act with that. */
+export const SUGGESTER = 'Suggester';
+
+/** The group of the share by which the aven opens AIPs over its proposal lines, on the vault's AIPs alone, beside its
+ *  Suggester's (avendb-device's `agent::AIP_AUTHOR`). */
+export const AIP_AUTHOR = 'AIP author';
+
+/**
+ * Whether vault `vault` gives vault `aven` a share of group `group` (`SUGGESTER`, `AIP_AUTHOR`), standing.
+ * @param {import('./vaults.js').WorldView} world @param {string} vault @param {string} aven @param {string} group
+ */
+export const avenHolds = (world, vault, aven, group) =>
+	world.shares.some((c) => c.over === vault && c.who === aven && (/** @type {any} */ (c).group === group || /** @type {any} */ (c).slice?.name === group));
 
 /**
  * Whether vault `vault` gives vault `server` a share on the whole of it that keeps it there (Backup, or one that reads
@@ -309,6 +332,8 @@ export function unseeded(world, vault, all) {
 	const games = new Set(mine.filter((e) => e.type === GAME).flatMap((e) => e.tags ?? []));
 	return all.filter((p) =>
 		p.kind === 'keep' ? !serverKeeps(world, vault, p.server ?? '') :
+		p.kind === 'aven-suggests' ? !avenHolds(world, vault, p.server ?? '', SUGGESTER) :
+		p.kind === 'aven-aips' ? !avenHolds(world, vault, p.server ?? '', AIP_AUTHOR) :
 		p.kind === 'share' ? !codeShared(world, vault) : p.kind === 'published' ? !publishedShared(world, vault) :
 		p.kind === 'recipe-share' ? !codeShared(world, vault, RECIPE_TYPES) :
 		p.kind === 'inspire-share' ? !inspireShared(world, vault) :
@@ -341,6 +366,11 @@ export async function seeding(p, vault) {
 		return [{ op: 'create', vault, type, tags, schema: type, value, as }];
 	}
 	if (p.kind === 'keep') return [{ op: 'share', over: vault, who: { vault: p.server }, level: 'Backup', as }];
+	if (p.kind === 'aven-suggests') return [{ op: 'share', over: vault, who: { vault: p.server }, level: SUGGESTER, as }];
+	if (p.kind === 'aven-aips') {
+		const level = { name: AIP_AUTHOR, ops: [{ op: 'read' }, { op: 'create' }, { op: 'set', path: [] }] };
+		return [{ op: 'share', over: vault, who: { vault: p.server }, level, what: { type: ['aip'] }, as }];
+	}
 	if (p.kind === 'share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { type: CODE_TYPES }, as }];
 	if (p.kind === 'recipe-share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { type: RECIPE_TYPES }, as }];
 	if (p.kind === 'recipe') return assetOps(p.name, vault, p.mark);

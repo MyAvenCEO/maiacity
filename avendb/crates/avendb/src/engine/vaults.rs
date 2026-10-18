@@ -850,19 +850,24 @@ fn settings(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepa
     governed(lab, me, Action::Settings { vault, set })
 }
 
-/// `{"op": "found", "vaults": [{"kind", "name"}, ...]}`, or `{"op": "found", "kind", "name"}` for one: new vaults
-/// device `me`'s own vault founds and owns alone, each of a kind by its name (`words::kind_name`) and named, their
+/// `{"op": "found", "vaults": [{"kind", "name", "under"?}, ...]}`, or `{"op": "found", "kind", "name"}` for one: new
+/// vaults device `me`'s own vault founds and owns alone, or that one named before it in the list does (`under`, its
+/// place there), as a new coop and its aven, each of a kind by its name (`words::kind_name`) and named, their
 /// geneses drafted together for one ceremony of the passkey; the kind table says which kinds a vault may found, and how
 /// many (`Kind::rules`): a person's vault founds coops, one aven and device vaults. Once it signed them, the device
 /// acting for each through its vault gives avenMAIA the level it holds on the person's vault, backup or relay
 /// (`world::server_level`), and writes its profile (`approved`): `{"vaults": [id, ...]}`, in the order named.
 fn found(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared, Refused> {
-    let one = |v: &Map<String, Value>| -> Result<(Kind, String), Refused> {
+    let one = |v: &Map<String, Value>| -> Result<(Kind, String, Option<usize>), Refused> {
         let kind = v.get("kind").and_then(Value::as_str).and_then(words::kind_of);
         let kind = kind.ok_or_else(|| bad("a vault's kind is one of the kind table's names: kind"))?;
-        Ok((kind, name_of(v, "name", "a new vault")?))
+        let under = match v.get("under") {
+            None => None,
+            Some(u) => Some(u.as_u64().ok_or_else(|| bad("under is the place of a vault named before it"))? as usize),
+        };
+        Ok((kind, name_of(v, "name", "a new vault")?, under))
     };
-    let new: Vec<(Kind, String)> = match o.get("vaults") {
+    let new: Vec<(Kind, String, Option<usize>)> = match o.get("vaults") {
         Some(_) if o.contains_key("kind") || o.contains_key("name") => {
             return Err(bad("found takes its vaults, or one vault's kind and name"));
         }
@@ -880,12 +885,17 @@ fn found(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared
     let (passkey, signers) = approvers(lab, me, None).ok_or(Refusal::BelowThreshold)?;
     let nonces: Vec<u64> = new.iter().map(|_| lab.nonce()).collect();
     let mut drafting = lab.drafting(me);
-    for (&(kind, _), nonce) in new.iter().zip(nonces) {
-        let owners = vec![Principal::Vault(mine)];
+    let mut made: Vec<VaultId> = vec![];
+    for (&(kind, _, under), nonce) in new.iter().zip(nonces) {
+        let owner = match under {
+            None => mine,
+            Some(i) => *made.get(i).ok_or_else(|| bad("under is the place of a vault named before it"))?,
+        };
+        let owners = vec![Principal::Vault(owner)];
         let genesis = Action::Genesis { kind, owners, threshold: 1, root: None, nonce, seal_to: vec![] };
-        drafting.draft(&signers, genesis)?;
+        made.push(VaultId::from(drafting.draft(&signers, genesis)?));
     }
-    let (drafts, then) = (drafting.done(), Then::Found(new.into_iter().map(|(_, name)| name).collect()));
+    let (drafts, then) = (drafting.done(), Then::Found(new.into_iter().map(|(_, name, _)| name).collect()));
     Ok(Prepared::Approve(Approval { passkey, signers, drafts, then }))
 }
 

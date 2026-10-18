@@ -29,21 +29,10 @@
 
 	In the Mac app, before an agent belongs to any vault, its request is a file it left on the Mac (avendb-device's
 	`agent`), as a harness such as Claude Code or Codex starts its own device (agentClaude, agentCodex): it says who asks,
-	by its device's name and key, what it asks for and why. An agent always joins the person's one aven, the aven vault
-	their vault owns: as a device vault of its own under it, its device in it, which holds sub caps, shares that rest on
-	the aven's own, so it never gets more than the aven holds. Where their vault owns no aven yet, the person names it,
-	and approving founds it. Then they pick the vaults it works in, a level each, Viewer, Suggester or Editor: every
-	vault they own, or only some, never an aven or a device vault, which act for their one owner alone (the kind table's
-	`most`); and each vault that shared with the aven, as a coop that hired it, up to the aven's own level there.
-	Approving an agent that has no device vault yet takes one touch of their passkey; a share needs none. A Suggester
-	gets an AIP author's share beside each Suggester's, on that vault's AIPs alone (./vaults.js `aipAuthorOps`,
-	avendb-device's `pass_on_aips`), so it opens AIPs over its proposal lines for the person to review, as the sheet
-	says. "All my vaults,
-	now and later" is a standing grant (avendb's `world::STANDING`): their vault gives the aven one, which the aven
-	passes on to the agent, every vault they own follows it now, and every vault they found later follows it as it
-	follows their server setting, the aven's share first and the agent's resting on it. Each vault's Sharing page shows
-	what the agent holds and takes it back, a standing grant for every vault it reached, and revoking the aven's share
-	ends the agent's too.
+	by its device's name and key, and why. An agent always joins its coop's one aven, avenMAIA for Maia City, as one of
+	its devices beside its server (Samuel 2026-10-18: no agent vaults, no sub caps): it acts as the aven, with exactly
+	what the aven holds, by default a Suggester on the coop. Approving takes one touch of their passkey, which the
+	agent's own device cosigns; removing its device from the aven takes it out again.
 
 	It rises as a sheet from the foot of the page, as the passkey's does (./Signing.svelte), one request at a time, the
 	agents' files first, with pills to pick from rather than the browser's own selects and radios. "Later" puts it away
@@ -286,7 +275,7 @@
 	/** @param {Request} r */
 	function approve(r) {
 		const a = answers[key(r)];
-		ongrant(r.name, r.device, shares(a), avenName(a), standing(a));
+		ongrant(r.name, r.device, [], '', '');
 	}
 
 	/** Who asks `q`, in words: an agent of the person's aven, else its vault's kind; and the vault it asks, where that
@@ -482,8 +471,9 @@
 
 		{#if aven}
 			<p class="joins">
-				{member ? 'An agent of' : 'Joins'} your aven <b>{nameOf(aven)}</b>, as a device vault of its own under it, with
-				only what {nameOf(aven)} holds.
+				{member ? 'A device of' : 'Joins'} <b>{nameOf(aven)}</b>, your coop's aven, as one of its devices beside its
+				server: it acts as {nameOf(aven)}, with exactly what {nameOf(aven)} holds, by default a Suggester on your coop,
+				so it proposes and drafts and opens AIPs, and you merge.
 			</p>
 		{:else}
 			<section>
@@ -493,50 +483,9 @@
 				</p>
 			</section>
 		{/if}
-
-		<section>
-			<h3>Which vaults</h3>
-			<div class="switch" role="radiogroup" aria-label="Which vaults">
-				<button role="radio" aria-checked={a.all} class:on={a.all} onclick={() => (a.all = true)}
-					>All my vaults, now and later</button
-				>
-				<button role="radio" aria-checked={!a.all} class:on={!a.all} onclick={() => (a.all = false)}
-					>Only some</button
-				>
-			</div>
-			{#if a.all}
-				<div class="vault">
-					<span>Every vault, and each you found later</span>
-					<div class="levels" role="radiogroup" aria-label="Every vault's level">
-						{#each LEVELS as l (l)}
-							<button role="radio" aria-checked={a.level === l} class:on={a.level === l} onclick={() => (a.level = l)}
-								>{l}</button
-							>
-						{/each}
-					</div>
-				</div>
-			{:else}
-				{#each ownable as v (v.id)}{@render pills(a.levels, v.id, PICKS)}{/each}
-			{/if}
-		</section>
-
-		{#if aven && hired.length}
-			<section>
-				<h3>Shared with {nameOf(aven)}</h3>
-				<p class="soft">Vaults that hired {nameOf(aven)}: {r.name} gets at most what {nameOf(aven)} holds there.</p>
-				{#each hired as h (h.v.id)}{@render pills(a.levels, h.v.id, ['', ...h.levels])}{/each}
-			</section>
-		{/if}
-
-		{#if suggests(a)}
-			<p class="soft">As a Suggester, {r.name} can also open AIPs, bundles of its proposals, for you to review.</p>
-		{/if}
 		<p class="says">
-			{says(r, a)}
-			{#if !member}
-				One touch of your passkey adds {r.name}{aven ? '' : `, founding ${avenName(a) || 'your aven'} first`}.
-			{/if}
-			Each vault's Sharing page shows it and takes it back.
+			{#if !member}One touch of your passkey adds {r.name} to {aven ? nameOf(aven) : 'the aven'}.{/if}
+			Removing its device from {aven ? nameOf(aven) : 'the aven'} takes it out again.
 		</p>
 		{#if !member && !r.online}
 			<p class="offline">
@@ -549,7 +498,7 @@
 			<button class="btn quiet danger" disabled={busy} onclick={() => ondeny(r.name, r.device)}>Deny</button>
 			<button
 				class="btn primary"
-				disabled={busy || !avenName(a) || (!member && !r.online)}
+				disabled={busy || !aven || (!member && !r.online)}
 				onclick={() => approve(r)}>Approve</button
 			>
 		</div>
@@ -941,8 +890,7 @@
 		border-bottom: 0;
 	}
 
-	.switch + .vault,
-	.switch + .vault ~ .vault {
+	.switch + .vault {
 		margin-top: 0;
 	}
 

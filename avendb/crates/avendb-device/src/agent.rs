@@ -2,14 +2,13 @@
 //! Codex, Cursor, Grok, or our own native aven) starts on its person's Mac. Claude Code's is
 //! `claude mcp add --scope user avendb -- <the app's avendb-device> agent claude`, the device agentClaude.
 //!
-//! A person's aven is their one AI identity, a vault their vault owns alone, which holds no devices and acts through
-//! its agents. Each agent is a device vault the aven owns (agentClaude, agentCodex, agentCursor, agentGrok, agentAven),
-//! the harness's devices its devices, as a person's Mac and phone are devices of their one vault; and each holds sub
-//! shares of what the aven reaches, none more than the aven's own, each resting on one the aven holds, so that taking
-//! the aven's share back ends its agents' too. So every harness acts as its own device vault by its own key, with the
-//! shares its aven passed on to it, and one is taken out by removing its device, or its vault, leaving the others. No
-//! token: the device's key is who it is. The harness never names or picks an aven: the person's one aven is the parent,
-//! and the agent is added under it.
+//! A coop's aven is its one AI identity, avenMAIA for Maia City: a vault the coop owns alone, which lives on its
+//! server, its device, and owns nothing (Samuel 2026-10-18: one aven per coop, none per person, no agent vaults under
+//! an aven and no sub caps). Each harness is an agent of its own, agentClaude, agentCodex, agentCursor, agentGrok,
+//! agentAven, a device with a key of its own; approved, its key joins avenMAIA as a device beside its server, and it
+//! acts as avenMAIA, with avenMAIA's rights, no more and no less: by default a Suggester on Maia City, which proposes
+//! and drafts and whose AIPs a human of Maia City accepts. One is taken out by removing its device from avenMAIA. No
+//! token: the device's key is who it is. The harness never names or picks an aven: its person's coop's one aven is it.
 //!
 //! It is a device of its own (`avendb_net::server::open_agent`), in a folder of its own in the agents' folder beside
 //! the Mac app's (`<app's folder>-agents/<device>`, which the app's device never clears), which keeps its key and its
@@ -22,15 +21,10 @@
 //!
 //! It asks for access as anyone asks avenDB for it, and its person answers on the page's one consent screen: it leaves
 //! an access request for the Mac app (`<app's folder>-agents/<device>.request`, `asking`): who asks, by its device's
-//! name and key, the level it asks for, why, and the vaults it names, if any; while it belongs to no vault, its offer
-//! too. Its person picks the vaults their aven passes on to it, a level each, and approves or denies. Approving adds
-//! the agent under their aven, founding the aven too if they have none yet, named as they say, in one ceremony of their
-//! passkey (`Node::add_device_vault_with`): its device vault, named after it, founded under the aven, and its device
-//! added to it, or, where the aven has that agent's device vault already, as the same harness has on their other Mac,
-//! its device added to that one. Then the aven passes a share on to it for each vault picked, as any share is given
-//! (`pass_on`). From then on it acts as its device vault by its own key, as its shares allow, and asks for more with
-//! `avendb_request_access`. A no is left for it (`<device>.denied`, the device it said no to), and it asks no more
-//! until it asks again.
+//! name and key, why, and while it belongs to no vault, its offer. Approving adds its key to avenMAIA in one ceremony of
+//! their passkey (`Node::add_device_vault_with` at `Place::Vault`), which the agent's device cosigns; from then on it
+//! acts as avenMAIA by its own key. A no is left for it (`<device>.denied`, the device it said no to), and it asks no
+//! more until it asks again.
 //!
 //! It finds the Mac's device by the offer the app leaves (`<app's folder>-agents/offer.txt`), the device whose key is
 //! the offer's endpoint, and reaches it directly. While it belongs to no vault it asks that device for what it may
@@ -56,8 +50,8 @@
 //! most: `avendb_add_spark` captures a spark as the page's Sparks capture one, the same `create` op run as
 //! `avendb_run` runs it; `avendb_add_artifact` adds a source fact as the page's Artifacts add one, a link or a file of
 //! this Mac saved to the Library first, and puts it on a spark's canvas where it names one. Each goes in the vault it
-//! names, else in its person's seed coop, Maia City (`world::seed_coop`), where all its person's sparks and artifacts
-//! are seeded, where its shares let it add or draft one there, else in its person's own vault (`homes`). Where they let
+//! names, else in its aven's coop, Maia City (`homes`), where all sparks and artifacts are seeded, where the aven's
+//! shares let it add or draft one there. Where they let
 //! it only suggest, as a Suggester's do, which an agent is on Maia City by its standing rule, it is a draft, and its
 //! file a draft Library file of its own that brings it in its creation, which the vault's owners land by accepting an
 //! AIP the agent opens over them. `avendb_read_file` is `get_file`.
@@ -71,9 +65,9 @@ use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::engine;
-use avendb::id::{ShareId, SignerId, VaultId};
-use avendb::lab::{Lab, NewShare};
-use avendb::policy::{Issued, Kind, Level, Principal, State, Vault, Who};
+use avendb::id::{SignerId, VaultId};
+use avendb::lab::Lab;
+use avendb::policy::{Kind, Principal, State, Vault};
 use avendb::rules;
 use avendb::slice::{Atom, Selector};
 use avendb::wire::FileHold;
@@ -247,13 +241,6 @@ pub struct Asking {
     pub vaults: Vec<String>,
 }
 
-/// An aven's name, as its person gives it on the consent screen as their first agent joins: some text, at most 64
-/// characters. Fails with why not.
-pub fn aven_named(name: &str) -> Result<String> {
-    let name = name.trim();
-    anyhow::ensure!(!name.is_empty() && name.chars().count() <= 64, "{name:?} names no aven: 1 to 64 characters");
-    Ok(name.to_string())
-}
 
 /// The aven a person whose vault is `mine` runs agents under, by view `st`: their seed coop's one aven, avenMAIA, which
 /// Maia City owns alone (`world::seed_coop`, `world::aven_of`; Samuel 2026-10-18: one aven per coop, none per person).
@@ -270,112 +257,8 @@ pub fn agent_vault(lab: &Lab, me: SignerId, aven: VaultId, name: &str) -> Option
     st.vaults().iter().filter(under).map(|v| v.id).find(|&v| named(v))
 }
 
-/// The built-in group of level `level`, one of `LEVELS`, and its class (`rules::level_of`). Fails for another.
-fn group(level: &str) -> Result<(rules::Group, Level)> {
-    let group = rules::groups().into_iter().find(|g| g.name == level && LEVELS.contains(&g.name));
-    let group = group.with_context(|| format!("{level:?} isn't a level to give: {LEVELS:?}"))?;
-    let class = rules::level_of(&group.ops);
-    Ok((group, class))
-}
 
-/// Whether the aven `aven` of the person whose vault is `mine`, or, `None`, the one their vault founds for its first
-/// agent, can pass a share over vault `over` at `level`, one of `LEVELS`, on to an agent of its, by view `st`, as
-/// `pass_on` passes it on: over the aven itself, or over a vault `mine` is or owns, which gives the aven its share
-/// first where it lacks it, always; else over a vault that gave the aven a share at that level or more, such as a coop
-/// that hired it. Fails with why not, before anything is drafted.
-pub fn passable(st: &State, mine: VaultId, aven: Option<VaultId>, over: VaultId, level: &str) -> Result<()> {
-    let (_, class) = group(level)?;
-    if over == mine || st.owns(mine, over) || aven == Some(over) {
-        return Ok(());
-    }
-    let holds = |aven: VaultId| {
-        let at = |cp: &&Issued| {
-            cp.share.over == over && st.live(cp.id) && !cp.share.level.is_keep() && cp.share.level.allows(class)
-        };
-        st.shares_held(aven).any(|cp| at(&cp))
-    };
-    match aven {
-        Some(aven) if holds(aven) => Ok(()),
-        _ => {
-            let over = over.to_hex();
-            bail!("the aven holds no share over {over} at {level} or more to pass on: its owners give it one first")
-        }
-    }
-}
 
-/// Aven `aven` passes a share over vault `over` at `level`, one of `LEVELS`, on to its agent's device vault `vault`, on
-/// device `me` of the person whose vault is `mine`, acting as the aven, with no ceremony: a share resting on one the
-/// aven holds there that lets it (`world::parent`: the grantee is a vault the aven owns, and it is no higher than its
-/// parent, and wide only if it is), so that taking that one back ends it too. Over a vault `mine` is or owns, on one on
-/// the whole of it, which `over` gives the aven first, acting as itself, where the aven holds none at `level` or more;
-/// over another, as a coop that hired the aven, on the share that vault gave it, on the whole of it if one is, else on
-/// the part it gives; over the aven itself, the aven's own. One the aven passed on before with the group's ops stands
-/// for it, as for the same harness's device on the person's other Mac. One of a group whose ops grew since, as a
-/// Suggester's made before drafts (`rules::suggester_before_drafts`), is passed on again in the group's form now,
-/// resting on a share of the aven's that gives all it gives (`world::gives`): over a vault `mine` is or owns, `over`
-/// gives the aven one first where it holds none such, as `pass_on_aips` does, with no ceremony, as the share is below
-/// Owner; over a coop, only where the coop gave the aven one, else the one passed on before stands. The share. Fails
-/// with why not (`passable`).
-pub fn pass_on(
-    lab: &mut Lab,
-    me: SignerId,
-    mine: VaultId,
-    aven: VaultId,
-    vault: VaultId,
-    over: VaultId,
-    level: &str,
-) -> Result<ShareId> {
-    let (group, class) = group(level)?;
-    let st = lab.state(me);
-    let ops = rules::normalize(group.ops.clone()).ok();
-    let passed = |cp: &&Issued| cp.share.over == over && cp.share.issuer == aven && st.live(cp.id);
-    let now = |cp: &&Issued| passed(cp) && lab.slice(me, cp.id).is_some_and(|s| Some(&s.grant.ops) == ops.as_ref());
-    if let Some(cp) = st.shares_held(vault).find(now) {
-        return Ok(cp.id);
-    }
-    // one passed on in the group's form before it grew, as a Suggester's made before drafts
-    let old = |cp: &&Issued| passed(cp) && world::group_of(&cp.share, lab.slice(me, cp.id)) == Some(group.name);
-    let old = st.shares_held(vault).find(old).map(|cp| cp.id);
-    let who = Who::Vault(vault);
-    // a share of the aven's this one may rest on that gives all it gives
-    let giving = |lab: &Lab, wide| {
-        let held = world::parents(lab.state(me), aven, over, who, class, wide);
-        held.into_iter().find(|&p| world::gives(lab, me, p, &group.ops))
-    };
-    let parent = if over == aven {
-        None
-    } else if over == mine || lab.state(me).owns(mine, over) {
-        if giving(lab, true).is_none() {
-            let (name, ops, select) = (group.name.to_string(), group.ops.clone(), Selector::All);
-            let (who, parent) = (Who::Vault(aven), None);
-            let given = NewShare { over, who, name, select, ops, parent, issuer: over, keep: None };
-            lab.issue(me, &[me], given).map_err(|why| anyhow!("the aven's {level} share is refused: {why:?}"))?;
-        }
-        Some(giving(lab, true).context("the aven's share to pass on")?)
-    } else {
-        passable(lab.state(me), mine, Some(aven), over, level)?;
-        match (giving(lab, true).or_else(|| giving(lab, false)), old) {
-            (Some(p), _) => Some(p),
-            (None, Some(old)) => return Ok(old),
-            (None, None) => {
-                let parent = |wide| world::parent(lab.state(me), aven, over, who, class, wide);
-                let parent = parent(true).or_else(|| parent(false));
-                let none = || format!("the aven's share over {} lets it pass nothing on", over.to_hex());
-                Some(parent.with_context(none)?)
-            }
-        }
-    };
-    // on the part of the vault its parent gives, unless that is all of it
-    let select = match parent {
-        Some(p) if !lab.state(me).share(p).is_some_and(|cp| cp.share.wide) => {
-            lab.slice(me, p).context("the part of the vault the aven's share gives")?.select.clone()
-        }
-        _ => Selector::All,
-    };
-    let (name, ops) = (group.name.to_string(), group.ops);
-    let sub = NewShare { over, who, name, select, ops, parent, issuer: aven, keep: None };
-    lab.issue(me, &[me], sub).map_err(|why| anyhow!("the agent's {level} share is refused: {why:?}"))
-}
 
 /// The level whose agents also open AIPs: a Suggester writes only on proposals, and bundles its lines in an AIP for its
 /// person to review (`pass_on_aips`).
@@ -399,57 +282,6 @@ pub fn aip_author() -> (Vec<rules::Op>, Selector) {
     (ops, Selector::AnyOf(vec![vec![Atom::TypeIn(vec![AIP.into()])]]))
 }
 
-/// Aven `aven` passes an AIP author's share over vault `over` (`aip_author`) on to its agent's device vault `vault`,
-/// beside the Suggester's share `pass_on` passes on to it there, on device `me` of the person whose vault is `mine`,
-/// acting as the aven, with no ceremony, as `pass_on` passes a share on: resting on one the aven holds over `over` that
-/// gives all it gives and reaches the vault's AIPs, an AIP author's own or one on the whole vault, such as an Editor's
-/// (`world::gives`), so that taking that one back ends it too. Over a vault `mine` is or owns, `over` gives the aven an
-/// AIP author's share first where it holds none such, always; over the aven itself, the aven's own; over another, as a
-/// coop that hired the aven, only where the coop gave it such a share, and none where it didn't, as one gave it a
-/// Suggester's alone. One the aven passed on before stands for it. The share, or none where the aven may pass none on.
-pub fn pass_on_aips(
-    lab: &mut Lab,
-    me: SignerId,
-    mine: VaultId,
-    aven: VaultId,
-    vault: VaultId,
-    over: VaultId,
-) -> Result<Option<ShareId>> {
-    let (ops, select) = aip_author();
-    let st = lab.state(me);
-    let before = |cp: &&Issued| {
-        cp.share.over == over && cp.share.issuer == aven && st.live(cp.id)
-            && lab.slice(me, cp.id).is_some_and(|s| s.name == AIP_AUTHOR)
-    };
-    if let Some(cp) = st.shares_held(vault).find(before) {
-        return Ok(Some(cp.id));
-    }
-    let who = Who::Vault(vault);
-    // a share of the aven's that gives all it gives, on the vault's AIPs or on the whole vault
-    let rests = |lab: &Lab| {
-        let st = lab.state(me);
-        let reaches = |p: ShareId| {
-            st.share(p).is_some_and(|cp| cp.share.wide) || lab.slice(me, p).is_some_and(|s| s.select == select)
-        };
-        let held = world::parents(st, aven, over, who, rules::level_of(&ops), false);
-        held.into_iter().find(|&p| world::gives(lab, me, p, &ops) && reaches(p))
-    };
-    let parent = if over == aven {
-        None
-    } else if let Some(p) = rests(lab) {
-        Some(p)
-    } else if over == mine || lab.state(me).owns(mine, over) {
-        let (name, ops, select) = (AIP_AUTHOR.to_string(), ops.clone(), select.clone());
-        let given = NewShare { over, who: Who::Vault(aven), name, select, ops, parent: None, issuer: over, keep: None };
-        lab.issue(me, &[me], given).map_err(|why| anyhow!("the aven's AIP author share is refused: {why:?}"))?;
-        Some(rests(lab).context("the aven's AIP author share to pass on")?)
-    } else {
-        return Ok(None);
-    };
-    let sub = NewShare { over, who, name: AIP_AUTHOR.to_string(), select, ops, parent, issuer: aven, keep: None };
-    let sub = lab.issue(me, &[me], sub).map_err(|why| anyhow!("the agent's AIP author share is refused: {why:?}"))?;
-    Ok(Some(sub))
-}
 
 /// The file in the agents' folder beside the app's `host` folder where the Mac's device leaves its offer for them.
 pub fn host_offer(host: &Path) -> PathBuf {
@@ -867,21 +699,20 @@ impl Agent {
 
     fn instructions(&self) -> String {
         format!(
-            "{name} is an agent device on this Mac: an avenDB device with a key of its own, a device of {name}, a \
-             device vault its person's aven owns. An aven is its person's one AI identity, a vault their vault owns; \
-             it acts through its agents, each a device vault under it with the shares the aven passes on to it, none \
-             more than the aven's own. Every read and change is one JSON op of avenDB's engine \
-             (avendb/docs/ARCHITECTURE.md §8). Call avendb_vaults first: it says who {name} is, its device vault and \
-             the aven it is under, once its person added it, and which vaults it sees. Read with avendb_ask; change \
-             with avendb_run, which acts as {name}'s device vault by the shares its aven passed on to it: on a vault \
+            "{name} is an agent device on this Mac: an avenDB device with a key of its own, which joins its coop's one \
+             aven, avenMAIA for Maia City, as a device beside its server, once its person approves it. An aven is a \
+             coop's one AI identity, a vault the coop owns; {name} acts as it, with its rights, no more and no less. \
+             Every read and change is one JSON op of avenDB's engine (avendb/docs/ARCHITECTURE.md §8). Call \
+             avendb_vaults first: it says who {name} is, the aven it acts as, once its person approved it, and which \
+             vaults it sees. Read with avendb_ask; change with avendb_run, which acts as the aven by its shares: on a vault \
              where it may only suggest, write on a proposal (`propose`, then ops with its `line`), and its person \
              merges it; where it may merge, its merge into main counts only once the entry's vault accepted the \
              proposal (one of its owners, by a review), and brings in only the version accepted. To put changes to \
              its person, write them on proposals, then bundle those lines in an AIP (an Aven Improvement Proposal) \
              with avendb_run: `aip_open` (`vault`, `title`, a `note` saying why and what changes, and `proposals`, \
              each `{{entry, line}}` of that vault; it makes an entry of type aip, so only where its shares let it \
-             create: a Suggester agent may, as its person's grant gives it an AIP author's share on the vault's AIPs \
-             beside its Suggester's, and an Editor may), then `aip_promote` (`entry`), which gives it the vault's next \
+             create: a Suggester may, as its coop gives its aven an AIP author's share on the vault's AIPs beside \
+             its Suggester's, and an Editor may), then `aip_promote` (`entry`), which gives it the vault's next \
              number, AIP-n. To propose a new entry where it may only suggest, draft it: `create` with `draft: true` \
              (`vault`, `type`, `tags`, `value`) answers its `entry` and `line`, a line of its own; write on that line \
              as on any proposal, then name it in `aip_open`'s `proposals` as `{{entry, line}}` and `aip_promote`. A \
@@ -906,8 +737,8 @@ impl Agent {
              picture or a clip, with avendb_add_artifact: its `url`, or the absolute `path` of a file on this Mac, \
              which it saves to the Library first, or both; its `title`, `note`, `by`, `taken`, `language` and \
              `transcript` if known; and a `spark` to put it on that spark's canvas. Each goes in the `vault` it names, \
-             else in its person's seed coop, {coop}, where its person's sparks and artifacts are all seeded, where \
-             its shares let it add or draft one there, else in its person's own vault. Where it may only suggest, \
+             else in its aven's coop, {coop}, where all sparks and artifacts are seeded, where the aven's shares \
+             let it add or draft one there. Where it may only suggest, \
              as a Suggester, which an agent is on {coop}, it is a draft, its file a draft Library file of its own: \
              the answer says `draft: true`, and gives its `line` and the `proposals` to name in `aip_open`, then \
              `aip_promote`; the vault's owners land it by accepting the AIP. For access it lacks, ask its person \
@@ -945,10 +776,11 @@ impl Agent {
                 let all = world["vaults"].as_array().cloned().unwrap_or_default();
                 let vaults: Vec<Value> =
                     all.iter().map(|v| json!({ "id": v["id"], "name": v["name"], "kind": v["kind"] })).collect();
-                // the aven over its device vault, its one owner, by its name where the agent reads its profile
-                let over = move |lab: &Lab, me| match lab.state(me).vault(vault)?.owners[..] {
-                    [Principal::Vault(aven)] => Some(aven),
-                    _ => None,
+                // the aven it acts as: the vault its key is a device of, avenMAIA (an older agent's device vault's
+                // owner, the aven over it)
+                let over = move |lab: &Lab, me| {
+                    let v = lab.state(me).vault(vault)?;
+                    if v.kind == Kind::Aven { Some(vault) } else { owner_of(v) }
                 };
                 let aven = self.node.read(over).await.map(|a| hex(&a.0));
                 let named = |id: &Option<String>| all.iter().find(|v| v["id"].as_str() == id.as_deref());
@@ -956,7 +788,7 @@ impl Agent {
                 let me = json!({ "device": self.name, "vault": hex(&vault.0), "aven": aven, "avenName": aven_name,
                     "key": hex(&self.node.device().0) });
                 let under = aven_name.as_str().map(String::from).or(aven).unwrap_or_else(|| "no aven".into());
-                let who = format!("{} is an agent under the aven {under}, acting as its own device vault", self.name);
+                let who = format!("{} is a device of the aven {under}, acting as it with its rights", self.name);
                 Ok(json!({ "who": who, "me": me, "vaults": vaults }).to_string())
             }
             "avendb_ask" => {
@@ -1159,8 +991,7 @@ impl Agent {
     /// past `TITLE` letters (`title_of`), its opening heading (block 1) the title too and, where the text says more, a
     /// paragraph (block 2) that reads it: its kind, title and blocks alone, which every version of the schema reads
     /// alike; a link or a media file goes in as an artifact of its own. It goes in vault `vault`, else in the first of
-    /// its `homes` its shares let it add one to or draft one in (`adding`): its person's seed coop, Maia City, then its
-    /// person's own vault, the human vault over its aven. A new entry of type spark tagged `tags` and the tags a share
+    /// its `homes` its shares let it add one to or draft one in (`adding`): its aven's coop, Maia City. A new entry of type spark tagged `tags` and the tags a share
     /// it adds through asks for (the `creatable` op), by the op the page runs, `create`, run as avendb_run runs one
     /// (`run`): on main where its shares let it create one there, else, where they let it only suggest, as a draft
     /// (`create` with `draft`), which the vault's owners land by accepting an AIP that names it (`lands`).
@@ -1439,8 +1270,8 @@ impl Agent {
         Ok(asked.map(|t| t.iter().filter_map(|t| t.as_str().map(String::from)).collect()))
     }
 
-    /// The vaults its new entries go in where it names none (`homes`), by their ids: its person's seed coop, then its
-    /// person's own vault, as its device vault `mine`'s view knows them.
+    /// The vaults its new entries go in where it names none (`homes`), by their ids: its aven's coop, as the view of
+    /// the aven `mine` it is a device of knows it.
     async fn homes(&self, mine: VaultId) -> Vec<String> {
         let homes = self.node.read(move |lab, me| homes(lab.state(me), mine)).await;
         homes.iter().map(|v| hex(&v.0)).collect()
@@ -1494,12 +1325,8 @@ impl Agent {
         }
         let to = match (named, homes) {
             (Some(v), _) => format!("vault {}", label(&vaults, v)),
-            (None, [coop, person]) => {
-                let (coop, person) = (label(&vaults, coop), label(&vaults, person));
-                format!("its person's own vault, {person}, nor to its person's seed coop, {coop}")
-            }
-            (None, [person]) => format!("its person's own vault, {}", label(&vaults, person)),
-            (None, _) => "its person's own vault, which it doesn't know".into(),
+            (None, [coop, ..]) => format!("its aven's coop, {}", label(&vaults, coop)),
+            (None, _) => "its aven's coop, which it doesn't know".into(),
         };
         let (me, may, drafts) = (&self.name, may.join(", "), drafts.join(", "));
         let can = match (may.is_empty(), drafts.is_empty()) {
@@ -1529,17 +1356,19 @@ impl Agent {
         let answers = "Its person sees the request in The OS app and answers it there; avendb_ask with \
                        {\"op\": \"requests\"} shows its answer once it comes, and avendb_vaults what it has.";
         if let Some(vault) = vault {
-            let over = move |lab: &Lab, me| match lab.state(me).vault(vault)?.owners[..] {
-                [Principal::Vault(aven)] => Some(aven),
-                _ => None,
+            // acting as the aven, it asks the coop that owns it, which decides what the aven holds
+            let over = move |lab: &Lab, me| {
+                let v = lab.state(me).vault(vault)?;
+                let aven = if v.kind == Kind::Aven { v } else { lab.state(me).vault(owner_of(v)?)? };
+                owner_of(aven)
             };
-            let aven = self.node.read(over).await.context("its device vault has its aven, its one owner")?;
-            let ask = json!({ "op": "ask", "to": hex(&aven.0), "level": level, "why": why, "vaults": vaults });
+            let coop = self.node.read(over).await.context("its aven has its coop, its one owner")?;
+            let ask = json!({ "op": "ask", "to": hex(&coop.0), "level": level, "why": why, "vaults": vaults });
             let asked = self.node.op(ask).await?;
             if let Some(refused) = asked.get("refused") {
                 bail!("the request is refused ({refused}): {}", asked["why"]);
             }
-            return Ok(format!("Asked its aven for {level} access, as a request in {}'s vault. {answers}", self.name));
+            return Ok(format!("Asked its aven's coop for {level} access, as a request of the aven. {answers}"));
         }
         let (device, offer) = (hex(&self.node.device().0), Some(self.node.offer().to_text()));
         let ask = Asking { level: level.to_string(), why: why.to_string(), vaults };
@@ -1578,8 +1407,8 @@ fn lands(made: &mut Value, drafted: &[&Value]) {
 }
 
 /// What a new spark's or artifact's `vault` says, in avendb_add_spark's and avendb_add_artifact's schemas.
-const HOME: &str = "The id of the vault it goes in (avendb_vaults lists them); left out, its person's seed coop, Maia \
-                    City, where it may add or draft one there, else its person's own vault";
+const HOME: &str = "The id of the vault it goes in (avendb_vaults lists them); left out, its aven's coop, Maia \
+                    City, where it may add or draft one there";
 
 /// The tools it offers.
 fn tools() -> Value {
@@ -1709,9 +1538,9 @@ fn tools() -> Value {
             "description": "Capture a spark as this agent, as the Sparks page captures one: anything that might \
                             become a story (a thought, a quote, a note), one small entry of avenDB's spark schema. \
                             Give its text, and its title and tags, if any. A link or a media file goes in as an \
-                            artifact of its own, not on the spark. It goes in the vault named, else in its person's \
-                            seed coop, Maia City, where its shares let it add or draft one there, else in its \
-                            person's own vault. Where its shares let it create there, as an Editor's do, on the \
+                            artifact of its own, not on the spark. It goes in the vault named, else in its aven's \
+                            coop, Maia City, where the aven's shares let it add or draft one there. Where they let \
+                            it create there, as an Editor's do, on the \
                             vault's main line; where they let it only suggest, as a Suggester's, which an agent is on \
                             Maia City, as a draft, which the vault's owners land by accepting an AIP: the answer says \
                             draft: true and gives its line and the proposals to name in aip_open, then aip_promote. \
@@ -1726,7 +1555,7 @@ fn tools() -> Value {
                             avenDB's artifact schema. Give its url, or the absolute path of a file on this Mac, which \
                             it saves to the Library first, or both; and its title, note, by, taken, language and \
                             transcript if known. It goes where avendb_add_spark's goes: in the vault named, else in \
-                            its person's seed coop, Maia City, else in its person's own vault; on main where its \
+                            its aven's coop, Maia City; on main where the aven's \
                             shares let it create, else, where they let it only suggest, as a draft, its file a draft \
                             Library file of its own, both landed by the vault's owners accepting an AIP that names \
                             them (the answer's proposals). A spark named puts it on that spark's canvas too, where \
@@ -1862,12 +1691,19 @@ fn title_of(text: &str) -> String {
     format!("{kept}…")
 }
 
-/// Its person's own vault, by view `st`: the human vault that owns the aven that owns agent device vault `vault`, if
-/// the device knows them.
+/// The coop an agent acting as vault `vault` works for, by view `st`: the coop that owns the aven it is a device of
+/// (`vault` itself, as an agent's key is a device of avenMAIA), or, for an older agent's device vault, the coop over
+/// the aven that owns it; if the device knows them.
 fn person_of(st: &State, vault: VaultId) -> Option<VaultId> {
-    let [Principal::Vault(aven)] = st.vault(vault)?.owners[..] else { return None };
-    let [Principal::Vault(person)] = st.vault(aven)?.owners[..] else { return None };
-    Some(person)
+    let v = st.vault(vault)?;
+    let aven = if v.kind == Kind::Aven { vault } else { owner_of(v)? };
+    owner_of(st.vault(aven)?)
+}
+
+/// Vault `v`'s one owner, where a vault alone owns it.
+fn owner_of(v: &Vault) -> Option<VaultId> {
+    let [Principal::Vault(owner)] = v.owners[..] else { return None };
+    Some(owner)
 }
 
 /// The vaults a new spark or artifact of agent device vault `vault` goes in where it names none, by view `st`, in the

@@ -827,9 +827,10 @@
 						<h3>Agents on {here}</h3>
 						<p class="soft">
 							avenMAIA is Maia City's one AI identity, an aven the coop owns: one aven per coop, none per person. Each
-							agent harness joins it as an agent of its own, a device vault under it with a key of its own: Claude Code as agentClaude, Codex as agentCodex, and so
-							on. Once a harness runs its device, this page asks you which vaults it may work in, and it gets sub caps of
-							what avenMAIA holds there. It reads your files from this Mac's one store, so nothing is kept twice.
+							agent harness joins it as one of its devices, with a key of its own: Claude Code as agentClaude, Codex as
+							agentCodex, and so on. Once a harness runs its device, this page asks you to approve it, and it acts as
+							avenMAIA with exactly what avenMAIA holds, by default a Suggester on Maia City. It reads your files from this
+							Mac's one store, so nothing is kept twice.
 						</p>
 						<label class="harness">
 							<span>Harness</span>
