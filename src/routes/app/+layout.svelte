@@ -276,7 +276,7 @@
 	const rel = $derived(page.url.pathname.slice(base.length));
 	// full screen: a sandbox (Sandbox 3 is a page of cards), a world, the turntables ($lib/app/Turntable.svelte), a
 	// factory's hall, and the studio's editor
-	const immersive = $derived(/^\/app\/(games\/(?!sandbox-3\/?$)[^/]+|worlds\/[^/]+|maiacity-v1|models|actors|factories|machines|biomes|plants)\/?$/.test(rel) || rel.startsWith('/app/studio') || fullScreen.on);
+	const immersive = $derived(/^\/app\/(games\/(?!sandbox-3\/?$)[^/]+|worlds\/[^/]+|maiacity-v1|factories|biomes)\/?$/.test(rel) || rel.startsWith('/app/studio') || fullScreen.on);
 	// a draft game is the admins' only; anyone else with its link is told so
 	const game = $derived(gameAt(page.url.pathname));
 	const closed = $derived(!!game && !released(founder, game));

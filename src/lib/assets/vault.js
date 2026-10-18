@@ -48,7 +48,7 @@ export { NotInVault };
  * world's first `use` finds them. ./vault.test.js finds every page that reaches this module among these (an asset's own
  * page and a film's world wait for them themselves).
  */
-export const ASSET_PAGES = /^\/app\/(?:actors|machines|models|plants|buildings|biomes|factories|maiacity-v1|worlds\/[^/]+|games\/sandbox-[45]|assets\/(?:box|render)(?:\/levels)?)\/?$/;
+export const ASSET_PAGES = /^\/app\/(?:buildings|biomes|factories|maiacity-v1|worlds\/[^/]+|games\/sandbox-[45]|assets\/(?:box|render)(?:\/levels)?)\/?$/;
 
 /**
  * The code feed the recipes are read from: avenDB's server in every build. Only a dev server a developer started for it

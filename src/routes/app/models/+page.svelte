@@ -1,12 +1,6 @@
-<!--
-	Things: every reusable still model the worlds are built from (src/lib/models), in the one asset viewer
-	($lib/assets/AssetViewer.svelte), each built in the asset box; the address kept from when they were the Models. The
-	buildings (the domes, the containers) are /app/buildings/, what moves by its parts /app/machines/, people and animals
-	/app/actors/. An admin's.
--->
+<!-- An old viewer (the Things): the assets are avenDB's now, each shown in its Assets app (Samuel 2026-10-18). -->
 <script>
-	import { MODELS } from '$lib/models';
-	import AssetViewer from '$lib/assets/AssetViewer.svelte';
+	import Moved from '$lib/app/Moved.svelte';
 </script>
 
-<AssetViewer name="models" group="things" title="Things" lede="The still things the worlds are built from, each to its real measure. What moves by its parts is a machine; people and animals are actors." items={MODELS} />
+<Moved to="/app/avendb/#assets" />

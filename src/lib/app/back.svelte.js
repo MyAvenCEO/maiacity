@@ -11,7 +11,7 @@ import { base } from '$app/paths';
 import { untrack } from 'svelte';
 
 /** the asset viewers, by address: each group's app and the engine's labs */
-const ASSET_APPS = /^\/app\/(factories|machines|actors|buildings|models|biomes|plants|assets)\//;
+const ASSET_APPS = /^\/app\/(factories|buildings|biomes|assets)\//;
 
 /** @typedef {{ label: string, go: () => void }} Way */
 
