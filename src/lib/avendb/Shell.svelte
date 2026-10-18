@@ -38,6 +38,7 @@
 	import Hitl from './Hitl.svelte';
 	import Functions from './Functions.svelte';
 	import Database from './Database.svelte';
+	import Docs from './Docs.svelte';
 	import Frame, { HEAD } from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import Jobs from './Jobs.svelte';
@@ -122,7 +123,9 @@
 			// an asset the Assets page shows (`#assets/` and its entry, then the hash of a version or variant of it), in
 			// the page, not on the whole screen
 			asset: known === 'assets' && hex(entry) ? (entry ?? '') : '',
-			recipe: known === 'assets' && hex(entry) && hex(edit) ? (edit ?? '') : ''
+			recipe: known === 'assets' && hex(entry) && hex(edit) ? (edit ?? '') : '',
+			// a doc the Docs page shows (`#docs/` and its entry), in the page
+			doc: known === 'docs' && hex(entry) ? (entry ?? '') : ''
 		};
 	}
 
@@ -315,6 +318,8 @@
 				<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
 			{:else if tab === 'artifacts'}
 				<Artifacts {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} />
+			{:else if tab === 'docs'}
+				<Docs {world} vault={context} {actor} {api} entry={route.doc} onaccess={() => go('sharing')} />
 			{:else if tab === 'library'}
 				<Library {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
 			{:else if tab === 'assets'}

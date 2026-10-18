@@ -112,7 +112,7 @@ export const fromFeed = (p, now, pictures = Array.isArray(p.pictures) ? p.pictur
 export const postHref = (base, p) => `${base}/${p.doc}/?t=${slug(p.title)}`;
 
 // the tag of a doc post (src/lib/avendb/posttypes.js `doc`): a skill, a paper or an architecture document, which the
-// Docs page lists (src/routes/docs) and the stream leaves out
+// Docs view lists ($lib/avendb/Docs.svelte) and the stream leaves out
 export const DOC = 'post:doc';
 export const isDoc = (p) => p.tags.includes(DOC);
 
