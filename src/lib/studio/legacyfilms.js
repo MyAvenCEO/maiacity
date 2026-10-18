@@ -94,10 +94,12 @@ async function bringing() {
 	const { frozenFilm } = await import('./frozen.js');
 	// the repo's frozen copy first, with the Mac's film seed (./frozen.js), the old studio only for one it lacks
 	const frozenOf = new Map(await Promise.all(FILMS.map(async (f) => /** @type {const} */ ([f.key, await frozenFilm(f)]))));
-	// a film that came before its world proxies did: the proxies of its shots whose world is gone, from the film seed now
+	// a film that came before its proxies did: its footage's (the old studio's HD proxies) and those of its shots whose
+	// world is gone, from the film seed now
 	if (FILMS.some((f) => heldOf(world, city.vault, f).cut)) {
-		const { bringProxies } = await import('./importer.js');
+		const { bringFootageProxies, bringProxies } = await import('./importer.js');
 		const frozen = /** @type {import('./frozen.js').Frozen[]} */ ([...frozenOf.values()].filter(Boolean));
+		await bringFootageProxies(city.vault, city.as, frozen).catch((e) => console.warn('footage proxies:', e));
 		await bringProxies(city.vault, city.as, frozen).catch((e) => console.warn('world proxies:', e));
 	}
 	// MaiaCity V1's intros, after the films: made here, from the game, with no call to the old studio
