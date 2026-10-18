@@ -34,6 +34,9 @@ export function legacyOf(f, all) {
 
 const HASH = /^[0-9a-f]{64}$/;
 
+/** The files timeline `t` plays, by their BLAKE3 hash, each once (a world clip plays a shot, no file). @param {any} t @returns {string[]} */
+export const filesIn = (t) => [...new Set((t?.clips ?? []).filter((/** @type {any} */ c) => c.kind !== 'world' && typeof c.hash === 'string' && HASH.test(c.hash)).map((/** @type {any} */ c) => c.hash))];
+
 /**
  * Why `v` is no frozen film, or `null` where it is one.
  * @param {any} v @returns {string | null}
