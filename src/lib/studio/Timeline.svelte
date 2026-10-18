@@ -10,6 +10,7 @@
 <script>
 	import { evaluate, shotAt, toKeys } from './shots.js';
 	import { lanesOf } from './lanes.js';
+	import { isAven } from './avenref.js';
 	import CurveLane from './CurveLane.svelte';
 	import { FPS, TRACKS, UNLINKED, clockText, isWorld, onSoundTrack, raw, thumb, tint } from './studio.svelte.js';
 	import { cueEnd, cuesOf } from './analysis.js';
@@ -72,7 +73,7 @@
 		const orig = String(s.byHash.get(c.hash)?.meta?.proxy_of ?? c.hash);
 		const meta = s.byHash.get(orig)?.meta;
 		const h = meta?.preview;
-		return typeof h === 'string' && /^[0-9a-f]{64}$/.test(h) ? raw(h) : null;
+		return isAven(h) ? raw(/** @type {string} */ (h)) : null;
 	};
 	// every picture clip's thumbnail as the film will show it: its grading still through its whole grade (balance,
 	// secondaries, grade, looks, finishing), made by the Mac a moment after any of it changes — the Grade strip and the

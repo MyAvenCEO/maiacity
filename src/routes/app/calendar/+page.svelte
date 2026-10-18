@@ -2,5 +2,5 @@
 	import Moved from '$lib/app/Moved.svelte';
 </script>
 
-<!-- the calendar is the Stories page's Calendar view now -->
-<Moved to="/app/stories/?view=calendar" />
+<!-- the stories, and when each goes out, live in avenDB's Stories now -->
+<Moved to="/app/#stories" />

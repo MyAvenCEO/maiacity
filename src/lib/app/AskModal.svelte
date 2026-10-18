@@ -8,7 +8,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { command, native } from '$lib/native';
-	import { className } from '$lib/studio/vault';
 
 	type AskFile = {
 		hash: string;
@@ -34,6 +33,17 @@
 
 	const size = (b: number) =>
 		b >= 1e9 ? `${(b / 1e9).toFixed(1)} GB` : b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`;
+	/** A file class's one name (`n` ≠ 1: its plural); a file flagged neither original, proxy nor delivery is a working file. */
+	const CLASS_NAMES: Record<string, { one: string; many: string }> = {
+		default: { one: 'working', many: 'working files' },
+		original: { one: 'original', many: 'originals' },
+		proxy: { one: 'proxy', many: 'proxies' },
+		delivery: { one: 'delivery', many: 'deliveries' }
+	};
+	const className = (c: string, n = 1) => {
+		const k = CLASS_NAMES[c] ?? CLASS_NAMES.default;
+		return n === 1 ? k.one : k.many;
+	};
 	const what = (f: AskFile) => [f.role, className(f.class ?? 'default'), f.kind].filter(Boolean).join(' · ');
 
 	onMount(() => {

@@ -1,10 +1,8 @@
 // The title card rendered from its layers, as a picture: the same layout Card.svelte draws on the page (every place a
 // percent of the 16:9 canvas, a text's size a percent of its width), drawn on a canvas at full size and encoded as a
-// JPEG — what goes into the vault as the card, and what YouTube gets. Every picture comes from the vault (vault://
-// in the Mac app, the gateway on the web, both answering CORS so the canvas stays exportable); the font is the page's
+// JPEG — what goes into avenDB as the card, and what YouTube gets. Every picture comes from `src` (avenDB's Story
+// Thumbnail hands over its files' addresses, which answer CORS so the canvas stays exportable); the font is the page's
 // own Fraunces, loaded before drawing.
-import { fileUrl } from '$lib/auth/client';
-
 /** @typedef {import('$lib/auth/client').Layer} Layer */
 
 /** the colours a text can be, by name; anything else is taken as written — as Card.svelte */
@@ -47,7 +45,7 @@ export async function renderCard(layers, hook, o = {}) {
 	const W = o.width ?? 3240;
 	const [rw, rh] = o.ratio ?? [16, 9];
 	const H = Math.round((W * rh) / rw);
-	const src = o.src ?? ((/** @type {Layer} */ l) => (l.hash ? fileUrl(l.hash) : null));
+	const src = o.src ?? (() => null);
 	const shown = layers.filter((l) => l.on !== false);
 	// the pictures first, all of them, so a missing one is said before anything is drawn
 	const urls = [...new Set(shown.filter((l) => l.kind === 'image' || l.kind === 'cutout').map(src).filter((u) => !!u))];

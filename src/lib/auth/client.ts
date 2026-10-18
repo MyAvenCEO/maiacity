@@ -2,7 +2,6 @@
 // site on the CDN; only these calls reach a server, and only when somebody
 // actually signs up.
 import { dev } from '$app/environment';
-import { avenUrl, isAven } from '$lib/studio/avenref.js';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
 import { APP_API, command, native } from '$lib/native';
 import type { Sandbox } from '../../../game/film/worlds.js';
@@ -27,12 +26,6 @@ export type Founder = {
 
 /** May they? The API decides for real; this only keeps the site from offering what it would refuse. */
 export const may = (founder: Founder | null | undefined, cap: string) => !!founder?.caps?.includes(cap);
-
-/** A file's address, by its BLAKE3 hash: in maiaCITY Studio from this Mac's vault (with Range); on the web from the
- *  vault's gateway (a public file; a private one answers only the app). An avenDB file (studio 2.0) by its reference,
- *  from avenDB's device in the app ($lib/studio/aven.js). */
-export const fileUrl = (hash: string) =>
-	isAven(hash) ? avenUrl(hash) : native() ? `vault://localhost/${hash}` : `https://api.maia.city/vault/files/${hash}`;
 
 /** Every call carries the session cookie, and every failure carries a sentence
  *  a person can read rather than a status code. In the Mac app the call goes out natively, with the app's key. */
@@ -159,73 +152,6 @@ export type MediaItem = {
 	class?: string;
 };
 
-// ── the media vault: devices the admin paired (only these sync), and revoking one ──
-export type VaultDevice = { endpoint_id: string; label: string; created: string; seen: string | null; revoked_at: string | null };
-export const listVaultDevices = () => call<VaultDevice[]>('/api/vault/devices');
-
-/** One file the vault server knows (its mirror of the catalog): what every device can see of it. */
-export type VaultFile = {
-	hash: string;
-	size: number;
-	mime: string;
-	kind: string;
-	title: string;
-	description: string;
-	tags: string[];
-	public: boolean;
-	meta: Record<string, unknown>;
-	/** its bytes are on the server (else still syncing from the Mac) */
-	stored: boolean;
-	added: string;
-};
-/** The vault's files carrying a tag ("idea:Coming Soon - Sunday 19.10."), newest first — media:admin. */
-export const listVaultFiles = (q: { tag?: string; kind?: string } = {}) => {
-	const p = new URLSearchParams();
-	if (q.tag) p.set('tag', q.tag);
-	if (q.kind) p.set('kind', q.kind);
-	const qs = p.toString();
-	return call<VaultFile[]>(`/api/vault/files${qs ? `?${qs}` : ''}`);
-};
-
-/**
- * A file the studio made itself (a title card rendered from its layers) into this Mac's vault, into a story with its
- * tags, titled and described — maiaCITY Studio only. The bytes go as the raw body, the rest in a header.
- */
-export async function ingestBytes(
-	bytes: ArrayBuffer | Uint8Array,
-	about: { name: string; story?: string | null; tags?: string[]; title?: string; description?: string; public?: boolean }
-): Promise<{ hash: string; files: number; verified: number; duplicates: number; mismatches: number }> {
-	const { invoke } = await import('@tauri-apps/api/core');
-	return invoke('vault_ingest_bytes', bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes), { headers: { 'x-ingest': encodeURIComponent(JSON.stringify(about)) } });
-}
-export async function revokeVaultDevice(endpointId: string): Promise<void> {
-	await call(`/api/vault/devices/${endpointId}`, { method: 'DELETE' });
-}
-
-/** Every file this Mac's vault knows (the catalog), newest first — maiaCITY Studio only. */
-export async function listMedia(): Promise<MediaItem[]> {
-	const all = await command<(Partial<MediaItem> & { hash: string; mime: string; kind: string; size: number })[]>('vault_list');
-	return all.map((f) => ({
-		hash: f.hash,
-		mime: f.mime,
-		kind: f.kind,
-		size: f.size,
-		added: f.added ?? '',
-		title: f.title ?? '',
-		description: f.description ?? '',
-		tags: f.tags ?? [],
-		meta: f.meta ?? {},
-		public: f.public ?? false,
-		original_name: f.original_name,
-		story: f.story || undefined,
-		class: f.class || 'default'
-	}));
-}
-
-/** Set what is known about a file: each field given replaces the one before; meta is merged key by key. It syncs. */
-export const describeMedia = (hash: string, about: { title?: string; description?: string; tags?: string[]; meta?: Record<string, unknown>; public?: boolean }) =>
-	command<MediaItem>('vault_describe', { hash, patch: about });
-
 // ─────────────────────────────── colour (C5) ───────────────────────────────
 
 /** A picture's colour, as the ingest detected it (media meta.color); `override` is the one set by hand in the studio. */
@@ -239,13 +165,6 @@ export type EqBand = import('../../../game/film/sound.js').EqBand;
 /** A grade: ASC CDL in ACEScct (game/film/color.js). */
 export type Cdl = { slope: [number, number, number]; offset: [number, number, number]; power: [number, number, number]; sat: number };
 // ─────────────────────────────── signing a terminal in ───────────────────────────────
-
-export type DeviceRequest = { scope: string[]; descriptions: string[]; label: string; approved_at: string | null; expires_at: string };
-
-export const deviceRequest = (code: string) => call<DeviceRequest>(`/api/device/${encodeURIComponent(code)}`);
-
-export const approveDevice = (code: string) =>
-	call<{ ok: true }>(`/api/device/${encodeURIComponent(code)}/approve`, { method: 'POST' });
 
 /** The OS approves its own key with `assertion`, a passkey ceremony over a sign-in's challenge that its sign-in sheet
  *  brought back to it alone (src/routes/app/avendb/sheet/): no browser session, no code to compare. */
@@ -501,50 +420,11 @@ export type Post = {
 	url?: string;
 };
 
-/** The first delivery that fits, preferring one rendered from the post's own cut. */
-const pick = (deliveries: Delivery[], fits: (d: Delivery) => boolean, timeline?: string) =>
-	(timeline && deliveries.find((d) => fits(d) && d.timeline === timeline)) || deliveries.find(fits);
-
-/**
- * A post's film and the picture it goes out with — the picture each platform actually shows (as the upload step,
- * api/scripts/zernio.ts, sends it): YouTube Shorts and X videos take no custom thumbnail (their first frame shows);
- * an X Article shows its 5:2 cover; LinkedIn videos and Instagram take the title card in the film's own shape.
- */
-export const postFiles = (post: Post, deliveries: Delivery[]) => {
-	// the day's own title cards first (the Hook stage's: one set every platform shares), else the one a render made
-	const thumb = (aspect: string) => {
-		const fits = (d: Delivery) => d.kind === 'thumbnail' && d.aspect === aspect;
-		return deliveries.find((d) => fits(d) && d.timeline === 'day') ?? pick(deliveries, fits, post.timeline);
-	};
-	const firstFrameOnly = (post.platform === 'youtube' && post.format === 'short') || (post.platform === 'x' && post.format === 'video');
-	const video = post.aspect
-		? pick(deliveries, (d) => (d.kind ?? 'video') === 'video' && d.aspect === post.aspect && d.codec === post.codec, post.timeline)
-		: undefined;
-	return {
-		video,
-		thumbnail:
-			post.platform === 'x' && post.format === 'article'
-				? (thumb('5:2') ?? thumb('16:9'))
-				: firstFrameOnly
-					? undefined // no cover image: a frame of the film shows, and the hook is over its opening
-					: !post.aspect
-						? undefined
-						: thumb(post.aspect)
-	};
-};
-
 export const listContent = (from?: string, to?: string) =>
 	call<{ items: ContentItem[]; kinds: string[]; channels: string[]; statuses: Status[] }>(
 		`/api/content${from ? `?${new URLSearchParams({ from, to: to ?? '' })}` : ''}`
 	);
-export const createContent = (item: Partial<ContentItem>) => call<ContentItem>('/api/content', { method: 'POST', body: JSON.stringify(item) });
-export const saveContent = (id: string, item: Partial<ContentItem>) =>
-	call<ContentItem>(`/api/content/${id}`, { method: 'PUT', body: JSON.stringify(item) });
-export async function deleteContent(id: string): Promise<void> {
-	if (native()) return void (await call(`/api/content/${id}`, { method: 'DELETE' }));
-	const res = await fetch(`${API}/api/content/${id}`, { method: 'DELETE', credentials: 'include' });
-	if (!res.ok) throw new Error('Could not delete it.');
-}
+
 
 // ─────────────────────────────── exporting a timeline ───────────────────────────────
 
@@ -582,18 +462,6 @@ export type RenderReport = {
 	[k: string]: unknown;
 };
 
-/** Queue a timeline's render: `delivery` "youtube-4k" — the 16:9 4K master for YouTube alone; none — every delivery. */
-export const queueRender = (timelineId: string, delivery?: 'youtube-4k') =>
-	call<RenderJob>(`/api/timelines/${timelineId}/renders`, { method: 'POST', body: JSON.stringify(delivery ? { delivery } : {}) });
-export const listRenders = (timelineId: string) => call<RenderJob[]>(`/api/timelines/${timelineId}/renders`);
-/** The worker's latest jobs, newest first: of a kind, of a timeline or a world shot (its HD proxy). */
-export const listJobs = (q: { kind?: 'render' | 'proxy' | 'lut' | 'frame'; timeline?: string; shot?: string; limit?: number } = {}) =>
-	call<RenderJob[]>(`/api/film/jobs?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`);
-/** A film's proxy made again, natively on this Mac (its colour read again too). */
-export const remakeProxy = (hash: string) => command<void>('vault_proxy', { hash });
-/** A hero frame: one frame of the timeline at t (seconds) in a delivery shape, rendered by the worker at full precision. */
-export const queueFrame = (timelineId: string, at: { t: number; shape: string }) =>
-	call<RenderJob>(`/api/timelines/${timelineId}/frames`, { method: 'POST', body: JSON.stringify(at) });
 
 // ─────────────────────────────── world shots (C2) ───────────────────────────────
 
@@ -627,14 +495,7 @@ export type ShotSpec = {
 };
 export type Shot = { id: string; name: string; project: string | null; version: number; spec: ShotSpec; created: string; updated: string };
 
-export const listShots = (project?: string) => call<Shot[]>(`/api/shots${project ? `?${new URLSearchParams({ project })}` : ''}`);
-/** One shot, at a version (else its newest). */
+/** One legacy shot, at a version (else its newest): the films brought into avenDB read their shots here once ($lib/studio/importer.js). */
 export const getShot = (id: string, version?: number) => call<Shot>(`/api/shots/${id}${version ? `?version=${version}` : ''}`);
-export const createShot = (s: { name: string; project?: string | null; spec: ShotSpec }) => call<Shot>('/api/shots', { method: 'POST', body: JSON.stringify(s) });
-/** A changed spec is saved as a new version; the old one stays (a clip cut with it keeps rendering it). */
-export const saveShot = (id: string, s: { name?: string; spec?: ShotSpec }) => call<Shot>(`/api/shots/${id}`, { method: 'PUT', body: JSON.stringify(s) });
-/** Every version of a shot, oldest first. */
-export const shotVersions = (id: string) => call<{ version: number; spec: ShotSpec; created: string }[]>(`/api/shots/${id}/versions`);
-
 /** Any API call, the same way as every helper here. */
 export const apiCall = <T>(path: string, init: RequestInit = {}) => call<T>(path, init);

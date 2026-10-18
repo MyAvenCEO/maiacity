@@ -8,8 +8,6 @@
 	so the large card, the small preview and the rendered JPEG (card.js) show the same lines.
 -->
 <script>
-	import { fileUrl } from '$lib/auth/client';
-
 	/** @typedef {import('$lib/auth/client').Layer} Layer */
 
 	/**
@@ -34,7 +32,7 @@
 		onmove,
 		onresize,
 		ratio = '16 / 9',
-		src = (l) => (l.hash ? fileUrl(l.hash) : null)
+		src = () => null
 	} = $props();
 
 	/** @type {HTMLElement | null} */

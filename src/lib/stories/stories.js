@@ -1,22 +1,6 @@
-// What the Stories pages know about a story beyond the board's helpers ($lib/admin/board): what each step is for, the
-// kinds of beat its journey is made of (each its own colour), where a story's page is, and the links in its pad.
-import { base } from '$app/paths';
-
-/** @typedef {import('$lib/auth/client').Status} Status */
+// The kinds of beat a story's journey is made of, each with its name, what it is for and its own colour (avenDB's
+// Story Journey and Story Movie).
 /** @typedef {import('$lib/auth/client').BeatType} BeatType */
-
-/** @type {Record<Status, string>} what a story gets at each step */
-export const STAGE_NOTE = {
-	idea: 'The brainstorm pad: links, concepts, fragments',
-	hook: 'The hook, the intro and the description',
-	thumbnail: 'The 16:9 title card, designed in layers: the picture, the cut-out, the hook, the badge',
-	journey: 'The arc: from where to where, beat by beat, and what the viewer feels',
-	writing: 'The script (the film’s timeline, as the studio reads it) and the long-form article every output derives from',
-	movie: 'The film, in the studio: script to render',
-	derivatives: 'The posts derived from the article and the film',
-	scheduled: 'When each post goes out',
-	published: 'Out: where each one is'
-};
 
 /** @type {Record<BeatType, string>} */
 export const BEAT_LABEL = {
@@ -56,47 +40,3 @@ export const BEAT_COLOR = {
 	solution: '#4a9a58',
 	vision: '#3f9fd6'
 };
-
-/** How tense a beat of that kind usually is, for a new beat (0 calm … 1 most). */
-/** @type {Record<BeatType, number>} */
-export const BEAT_TENSION = { hook: 0.6, context: 0.25, problem: 0.5, intention: 0.4, obstacle: 0.7, low: 0.85, turn: 0.75, solution: 0.5, vision: 0.3 };
-
-/** The words on a story's card: its image title (the hook's catchwords, one per line), else the hook, else its name. */
-export const cardWords = (/** @type {{ image_title?: string[], hook?: string | null, title: string }} */ i) =>
-	(i.image_title ?? []).filter(Boolean).join('\n') || (i.hook ?? '').trim() || i.title;
-
-/** A story's own page, at a tab. */
-export const storyHref = (/** @type {string} */ id, /** @type {string} */ tab = '') =>
-	`${base}/app/stories/story/?id=${encodeURIComponent(id)}${tab ? `&tab=${tab}` : ''}`;
-
-/** Every link in a pad, once, in order: its address, its host, and the words written before it on its line. */
-export function linksIn(/** @type {string} */ md) {
-	/** @type {{ url: string; host: string; label: string }[]} */
-	const out = [];
-	for (const line of (md ?? '').split('\n')) {
-		for (const m of line.matchAll(/https?:\/\/[^\s)>\]]+/g)) {
-			const url = m[0].replace(/[.,;:!?]+$/, '');
-			if (out.some((l) => l.url === url)) continue;
-			let host = url;
-			try {
-				host = new URL(url).hostname.replace(/^www\./, '');
-			} catch {
-				/* shown as written */
-			}
-			const label = line
-				.slice(0, m.index)
-				.replace(/^[\s>*-]*(\d+\.)?\s*/, '')
-				.replace(/[*_`[\]]/g, '')
-				.replace(/[\s:—–-]+$/, '')
-				.trim();
-			out.push({ url, host, label });
-		}
-	}
-	return out;
-}
-
-/** About how many words, and minutes to read at 200 a minute. */
-export function wordsOf(/** @type {string} */ md) {
-	const words = (md ?? '').trim() ? md.trim().split(/\s+/).length : 0;
-	return { words, minutes: Math.max(1, Math.round(words / 200)) };
-}
