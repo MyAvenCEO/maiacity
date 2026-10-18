@@ -124,11 +124,8 @@ describe('our own Markdown reads as before', () => {
 
 // Raw HTML on our pages ({@html}) comes only from an engine that makes it safe, or from strings of our own: each place
 // is named here with what feeds it. A new {@html} fails until its HTML comes through one of these (for Markdown:
-// $lib/markdown, or $lib/admin/markdown's renderMarkdown on top of it) and is added below.
+// $lib/markdown) and is added below.
 const RAW_HTML = {
-	'src/lib/admin/PostCard.svelte': 'renderMarkdown ($lib/markdown)',
-	'src/lib/stories/WritingTab.svelte': 'renderMarkdown ($lib/markdown)',
-	'src/lib/stories/Pad.svelte': 'renderMarkdown ($lib/markdown)',
 	'src/lib/blog/PostLayout.svelte': 'its html prop: blog posts through journalHtml ($lib/markdown, $lib/server/blog.ts)',
 	'src/routes/app/skills/+page.svelte': '$lib/markdown, our links around its <code>',
 	'src/lib/avendb/ArticleView.svelte': "avenDB's escaping article renderer (render)",
