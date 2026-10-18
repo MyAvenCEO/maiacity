@@ -1,11 +1,13 @@
 <!--
 	One artifact on a page of its own (`#artifacts/` and its entry, ./artifacts.js): one source fact, standing on its
-	own. Its picture where a Library file it shows is one; what it is, its title, its link and the site it is on, whose
-	it is where it isn't ours, when it was made, its language, a video's length, and our own words about it; the Library
-	files it shows, each to take off or add; a video's chapters and its transcript, each row from a second; its tags,
-	the auto tags `sparks` and `stories` among them; and the sparks whose canvas holds it, and the stories they grow
-	into, with a new spark to put it on. A Library file is only bytes: what they are is said here. Each change is one op
-	on its main line, for the acting vault, as the device allows it (`may`).
+	own, to read. Its title, its picture (a YouTube video's opens the video), our own words about it, the Library files
+	it shows, a video's chapters and its transcript, each row from a second; beside it, in an aside on the right (on a
+	phone, sliding in from the round button at the foot of the screen), what it is, its link, the site it is on, whose
+	it is where it isn't ours, when it was made, its language and length, who added it, its tags (the auto tags `sparks`
+	and `stories` among them), and the sparks whose canvas holds it and the stories they grow into, with a new spark to
+	put it on. Nothing here is a field to type into: avens write artifacts (avendb_add_artifact), and the Mac fetches a
+	YouTube video's words (./youtube.js). Each change it can make is one op on its main line, for the acting vault, as
+	the device allows it (`may`).
 -->
 <script>
 	import { untrack } from 'svelte';
@@ -14,7 +16,6 @@
 		entryOf,
 		IN_SPARKS,
 		IN_STORIES,
-		linkTo,
 		LOOK_NAME,
 		LOOKS,
 		lookOf,
@@ -22,11 +23,10 @@
 		youtubeId,
 		youtubePicture
 	} from './artifacts.js';
-	import { mediaOf } from './files.js';
 	import Icon from './Icon.svelte';
 	import { allowed, creatable, DELETED, may } from './ops.js';
 	import { addingSpark, grownFrom, itemsFor, pictureOf, SPARK, sparkRecord } from './sparks.js';
-	import { count, nameOf, signerName } from './vaults.js';
+	import { count, signerName } from './vaults.js';
 	import { filling, took, wordsOf, wordsRule, wordsTasks } from './youtube.js';
 	import { nudge } from '$lib/studio/jobs/mac.js';
 	import { lacking } from '$lib/studio/jobs/schemas.js';
@@ -41,8 +41,8 @@
 	const item = $derived(byId.get(entry));
 	const record = $derived(/** @type {any} */ (item?.record) ?? {});
 	const look = $derived(lookOf(item));
-	const as = $derived(world.vaults.find((v) => v.id === actor));
 	const files = $derived(/** @type {any[]} */ (record.files ?? []));
+	const by = $derived(/** @type {{ name?: string, url?: string, platform?: string }} */ (record.by ?? {}));
 	const holding = $derived(sparksHolding(world, entry));
 	const stories = $derived([
 		...new Map(holding.flatMap((s) => grownFrom(world, s.entry).filter((g) => g.type === 'story')).map((g) => [g.entry, g])).values()
@@ -50,13 +50,12 @@
 	const tags = $derived((item?.tags ?? []).filter((t) => !t.includes(':')));
 	/** whether tag `t` is one avenDB's pages keep. @param {string} t */
 	const auto = (t) => t === IN_SPARKS || t === IN_STORIES;
-	const video = $derived(look === 'video' || look === 'youtube');
 	/** whether its words carry times: a transcript's do, a text copied in as paragraphs doesn't */
 	const timed = $derived((record.transcript ?? []).some((/** @type {any} */ r) => r.t > 0));
+	const yt = $derived(youtubeId(record.url ?? ''));
 
 	/** whether the acting vault's ops let it change the artifact, as the device says */
 	let changes = $state(false);
-	let askedFile = $state(/** @type {string[] | null} */ (null));
 	let askedSpark = $state(/** @type {string[] | null} */ (null));
 	$effect(() => {
 		void world;
@@ -64,7 +63,6 @@
 		let gone = false;
 		const probe = { op: 'set', entry, path: ['title'], value: item.title ?? '', as: actor };
 		may(api, actor, [probe]).then(([a]) => !gone && (changes = allowed(a)));
-		creatable(api, actor, item.vault, 'file').then((t) => !gone && (askedFile = t));
 		creatable(api, actor, item.vault, SPARK).then((t) => !gone && (askedSpark = t));
 		return () => {
 			gone = true;
@@ -74,62 +72,6 @@
 
 	/** Runs change `op` on it as `what`. @param {string} what @param {object} op */
 	const change = (what, op) => api.run(what, { ...op, entry, as: actor });
-
-	/** the fields as the person edits them, and as last shown: one they aren't editing follows what arrives */
-	let f = $state({ title: '', url: '', site: '', byName: '', byUrl: '', platform: '', taken: '', language: '', duration: '', note: '' });
-	/** @type {Record<string, string>} */
-	let shown = {};
-	$effect(() => {
-		const now = /** @type {Record<string, string>} */ ({
-			title: record.title ?? '',
-			url: record.url ?? '',
-			site: record.site ?? '',
-			byName: record.by?.name ?? '',
-			byUrl: record.by?.url ?? '',
-			platform: record.by?.platform ?? '',
-			taken: record.taken ?? '',
-			language: record.language ?? '',
-			duration: record.duration === undefined ? '' : clock(record.duration),
-			note: record.note ?? ''
-		});
-		untrack(() => {
-			const at = /** @type {Record<string, string>} */ (f);
-			for (const k of Object.keys(now)) if (shown[k] === undefined || at[k] === shown[k]) at[k] = now[k];
-			shown = now;
-		});
-	});
-
-	/** Sets field `field` to `value`, or takes it out where it is empty. @param {string} field @param {unknown} value */
-	function put(field, value) {
-		const empty = value === '' || value === null || (value && typeof value === 'object' && !Object.keys(value).length);
-		const had = record[field];
-		if (empty) return had === undefined ? null : change(`Clearing its ${field}`, { op: 'unset', path: [field] });
-		if (JSON.stringify(had) === JSON.stringify(value)) return null;
-		return change(`Changing its ${field}`, { op: 'set', path: [field], value });
-	}
-
-	/** Whose it is, as the fields read now: only those filled in. */
-	const by = () =>
-		Object.fromEntries(
-			Object.entries({ name: f.byName.trim(), url: f.byUrl.trim(), platform: f.platform.trim() }).filter(([, v]) => v)
-		);
-
-	/** Seconds as typed: `612`, `10:12` or `1:02:03`; `null` for anything else. @param {string} t */
-	function seconds(t) {
-		const parts = t.trim().split(':').map(Number);
-		if (!t.trim() || parts.some((n) => !Number.isFinite(n) || n < 0)) return null;
-		return parts.reduce((s, n) => s * 60 + n, 0);
-	}
-
-	/** Adds files it shows, each into the Library first. @param {FileList | null} list */
-	async function addFiles(list) {
-		if (!item) return;
-		for (const one of list ?? []) {
-			const putIt = await api.putFile(actor, item.vault, one, mediaOf(one), askedFile ?? []);
-			if (!putIt) return;
-			await change(`Adding ${one.name} to it`, { op: 'insert', path: ['files'], value: linkTo(item.vault, putIt.entry) });
-		}
-	}
 
 	/** the pictures of its files, by entry, once read */
 	let pics = $state(/** @type {Record<string, string>} */ ({}));
@@ -147,35 +89,6 @@
 	});
 	const cover = $derived(files.map((l) => pics[entryOf(l)]).find(Boolean) ?? youtubePicture(item?.record));
 
-	/** A new chapter at the time typed. */
-	let chapterAt = $state('');
-	let chapterTitle = $state('');
-	async function addChapter() {
-		const t = seconds(chapterAt);
-		if (t === null || !chapterTitle.trim()) return;
-		const rows = /** @type {any[]} */ (record.chapters ?? []);
-		const id = Math.max(0, ...rows.map((r) => r.id)) + 1;
-		const at = rows.filter((r) => r.t <= t).length;
-		const value = { id, t, title: chapterTitle.trim() };
-		if (await change('Adding the chapter', { op: 'insert', path: ['chapters'], value, at })) [chapterAt, chapterTitle] = ['', ''];
-	}
-
-	/** A transcript as pasted: each line a row, from its time where it starts with one (`1:05 …`). */
-	let pasted = $state('');
-	async function saveTranscript() {
-		let t = 0;
-		const rows = pasted
-			.split('\n')
-			.map((l) => l.trim())
-			.filter(Boolean)
-			.map((l, i) => {
-				const m = /^\[?((?:\d+:)?\d{1,2}:\d{2})\]?\s+(.*)$/.exec(l);
-				if (m) t = seconds(m[1]) ?? t;
-				return { id: i + 1, t, text: m ? m[2] : l };
-			});
-		if (await change('Saving its transcript', { op: 'set', path: ['transcript'], value: rows })) pasted = '';
-	}
-
 	/** A new spark that holds it on its canvas, opened at once. */
 	async function spark() {
 		if (!item || askedSpark === null) return;
@@ -188,8 +101,6 @@
 	/** Deletes it, or with `back`, brings it back: a tag in its record, so every edit stays. @param {boolean} back */
 	const remove = (back) =>
 		change(back ? 'Bringing it back' : 'Deleting it', { op: back ? 'remove' : 'insert', path: ['tags'], value: DELETED });
-
-	const yt = $derived(youtubeId(record.url ?? ''));
 
 	// its words from YouTube (./youtube.js): the studio's `youtube` rule, done on the Mac, its newest task at this link,
 	// and a done task's value, which the page copies into what is empty here once (./Shell.svelte)
@@ -218,264 +129,231 @@
 	const again = async () => job && (await api.run('Asking the Mac again for its words', retrying(job, actor))) && nudge();
 	/** Takes YouTube's words in again, into what is empty now. */
 	const takeAgain = () => item && got && api.run('Taking YouTube’s words', { op: 'batch', as: actor, ops: filling(item, got) });
+
+	/** whether its details show, where they slide in */
+	let open = $state(false);
 </script>
 
 <div class="doc">
-<div class="page">
-	<a class="back" href="#artifacts"><Icon name="back" size={14} /> Artifacts</a>
-	{#if !item}
-		<p class="soft">This browser holds no such artifact, or can’t open it.</p>
-	{:else}
-		<header>
-			<span class="icon {look}" aria-hidden="true">
-				{#if cover}<img src={cover} alt="" />{:else}<Icon name={LOOKS.find(([l]) => l === look)?.[2] ?? 'artifact'} size={22} />{/if}
-			</span>
-			<div class="head">
-				<input
-					class="title"
-					bind:value={f.title}
-					disabled={!edits}
-					aria-label="Its title"
-					placeholder="Untitled"
-					onchange={() => put('title', f.title.trim())}
-				/>
-				<small class="soft"
-					>{LOOK_NAME[look]} · added by {signerName(world, item.by)}{record.duration ? ` · ${clock(record.duration)}` : ''}</small
-				>
-			</div>
-		</header>
+	<main class="main">
+		<div class="page">
+			<a class="back" href="#artifacts"><Icon name="back" size={14} /> Artifacts</a>
+			{#if !item}
+				<p class="soft">This browser holds no such artifact, or can’t open it.</p>
+			{:else}
+				<header>
+					<h1>{item.title || 'Untitled'}</h1>
+					<p class="soft">
+						{LOOK_NAME[look]}{by.name ? ` · ${by.name}` : ''}{record.duration ? ` · ${clock(record.duration)}` : ''}
+					</p>
+				</header>
 
-		{#if item.deleted}
-			<p class="banner">
-				This artifact is deleted: Artifacts lists it under Deleted, and every edit of it stays.
-				{#if edits}<button class="btn" onclick={() => remove(true)}>Bring it back</button>{/if}
-			</p>
-		{/if}
-
-		{#if cover}
-			<img class="cover" src={cover} alt={item.title ?? ''} />
-		{/if}
-
-		<div class="looks" role="group" aria-label="What it is">
-			{#each LOOKS as [l, , icon] (l)}
-				<button class="chip" class:on={look === l} aria-pressed={look === l} disabled={!edits || look === l} onclick={() => put('look', l)}
-					><Icon name={icon} size={12} /> {LOOK_NAME[l]}</button
-				>
-			{/each}
-		</div>
-
-		<div class="grid">
-			<label class="wide">
-				<span>Link</span>
-				<span class="with">
-					<input class="field" bind:value={f.url} placeholder="https://…" disabled={!edits} onchange={() => put('url', f.url.trim())} />
-					{#if record.url}
-						<a class="btn quiet" href={record.url} target="_blank" rel="noopener noreferrer" title="Open the link"><Icon name="out" size={14} /></a>
-					{/if}
-				</span>
-			</label>
-			<label>
-				<span>Site</span>
-				<input class="field" bind:value={f.site} placeholder="youtube.com" disabled={!edits} onchange={() => put('site', f.site.trim())} />
-			</label>
-			<label>
-				<span>Made or published</span>
-				<input class="field" bind:value={f.taken} placeholder="2026-10-16" disabled={!edits} onchange={() => put('taken', f.taken.trim())} />
-			</label>
-			<label>
-				<span>Language</span>
-				<input class="field" bind:value={f.language} placeholder="en, de, …" disabled={!edits} onchange={() => put('language', f.language.trim())} />
-			</label>
-			{#if video}
-				<label>
-					<span>Length</span>
-					<input class="field" bind:value={f.duration} placeholder="10:12" disabled={!edits} onchange={() => put('duration', seconds(f.duration))} />
-				</label>
-			{/if}
-		</div>
-
-		<fieldset class="source">
-			<legend>Whose it is <small class="soft">the source a story cites, where it isn’t ours</small></legend>
-			<div class="grid three">
-				<input class="field" bind:value={f.byName} placeholder="Name" aria-label="Whose it is: name" disabled={!edits} onchange={() => put('by', by())} />
-				<input class="field" bind:value={f.platform} placeholder="Platform" aria-label="Its platform" disabled={!edits} onchange={() => put('by', by())} />
-				<input class="field" bind:value={f.byUrl} placeholder="Their page" aria-label="Their page" disabled={!edits} onchange={() => put('by', by())} />
-			</div>
-		</fieldset>
-
-		<label class="words">
-			<span>Our words about it</span>
-			<textarea class="field" rows="3" bind:value={f.note} disabled={!edits}></textarea>
-			{#if f.note !== (record.note ?? '')}
-				<span class="row">
-					<button class="btn primary" disabled={!edits} onclick={() => put('note', f.note)}>Save</button>
-					<button class="btn quiet" onclick={() => (f.note = record.note ?? '')}>Discard</button>
-				</span>
-			{/if}
-		</label>
-
-		<section class="part">
-			<h4>Library files <small class="soft">the bytes it shows {files.length ? `· ${files.length}` : ''}</small></h4>
-			<div class="files">
-				{#each files as l (entryOf(l))}
-					{@const id = entryOf(l)}
-					{@const file = byId.get(id)}
-					<span class="file">
-						{#if pics[id]}<img src={pics[id]} alt="" />{:else}<span class="blank"><Icon name="file" size={20} /></span>{/if}
-						<small>{file?.title ?? 'A file this browser doesn’t hold'}</small>
-						{#if edits}
-							<button class="x" aria-label="Take {file?.title ?? 'it'} off" onclick={() => change('Taking the file off', { op: 'remove', path: ['files'], value: l })}
-								><Icon name="close" size={12} /></button
-							>
-						{/if}
-					</span>
-				{/each}
-				{#if edits && askedFile !== null}
-					<label class="file add">
-						<span class="blank"><Icon name="upload" size={20} /></span>
-						<small>Add files</small>
-						<input type="file" multiple onchange={(e) => (addFiles(e.currentTarget.files), (e.currentTarget.value = ''))} />
-					</label>
+				{#if item.deleted}
+					<p class="banner">
+						This artifact is deleted: Artifacts lists it under Deleted, and every edit of it stays.
+						{#if edits}<button class="btn" onclick={() => remove(true)}>Bring it back</button>{/if}
+					</p>
 				{/if}
-			</div>
-		</section>
 
-		{#if video || record.chapters?.length || record.transcript?.length}
-			<section class="part">
-				{#if video || record.chapters?.length}
-				<h4>Chapters <small class="soft">{record.chapters?.length || ''}</small></h4>
+				{#if cover}
+					{#if record.url && (look === 'youtube' || look === 'link')}
+						<a class="cover" href={record.url} target="_blank" rel="noopener noreferrer" title="Open {record.site ?? 'the link'}">
+							<img src={cover} alt={item.title ?? ''} />
+							{#if look === 'youtube'}<span class="play" aria-hidden="true"><Icon name="play" size={26} /></span>{/if}
+						</a>
+					{:else}
+						<span class="cover"><img src={cover} alt={item.title ?? ''} /></span>
+					{/if}
+				{/if}
+
+				{#if record.note?.trim()}
+					<section class="part">
+						<h4>Our words about it</h4>
+						<p class="note">{record.note}</p>
+					</section>
+				{/if}
+
+				{#if files.length > 1 || (files.length && !pics[entryOf(files[0])])}
+					<section class="part">
+						<h4>Library files <small class="soft">{files.length}</small></h4>
+						<div class="files">
+							{#each files as l (entryOf(l))}
+								{@const id = entryOf(l)}
+								{@const file = byId.get(id)}
+								<span class="file">
+									{#if pics[id]}<img src={pics[id]} alt="" />{:else}<span class="blank"><Icon name="file" size={20} /></span>{/if}
+									<small>{file?.title ?? 'A file this browser doesn’t hold'}</small>
+								</span>
+							{/each}
+						</div>
+					</section>
+				{/if}
+
 				{#if record.chapters?.length}
-					<ol class="times">
-						{#each record.chapters as c (c.id)}
-							<li>
-								<span class="t">{clock(c.t)}</span>
-								<span>{c.title}</span>
-								{#if edits}
-									<button class="x inline" aria-label="Take the chapter out" onclick={() => change('Taking the chapter out', { op: 'remove', path: ['chapters', { id: c.id }] })}
-										><Icon name="close" size={11} /></button
-									>
+					<section class="part">
+						<h4>Chapters <small class="soft">{record.chapters.length}</small></h4>
+						<ol class="times">
+							{#each record.chapters as c (c.id)}
+								<li><span class="t">{clock(c.t)}</span><span>{c.title}</span></li>
+							{/each}
+						</ol>
+					</section>
+				{/if}
+
+				{#if record.transcript?.length || look === 'youtube' || look === 'video'}
+					<section class="part">
+						<h4>
+							{look === 'link' || look === 'image' ? 'Its words' : 'Transcript'}
+							<small class="soft">{record.transcript?.length ? count(record.transcript.length, timed ? 'line' : 'paragraph') : ''}</small>
+						</h4>
+						{#if record.transcript?.length}
+							<ol class="times transcript" class:untimed={!timed}>
+								{#each record.transcript as r (r.id)}
+									<li>{#if timed}<span class="t">{clock(r.t)}</span>{/if}<span>{r.text}</span></li>
+								{/each}
+							</ol>
+						{:else if look === 'youtube' && yt}
+							<div class="fetch">
+								{#if job?.status === 'queued'}
+									<p class="soft">Waiting for the Mac app to fetch its words from YouTube.</p>
+								{:else if job?.status === 'claimed'}
+									<p class="soft">The Mac app is fetching its words from YouTube…</p>
+								{:else if job?.status === 'failed'}
+									<p class="soft">
+										Fetching its words failed: {job.error || 'no reason given'}. The Mac app tries again, {count(left, 'more time')}.
+									</p>
+								{:else if job?.status === 'held'}
+									<p class="soft">Fetching its words failed {TRIES} times: {job.error || 'no reason given'}.</p>
+									{#if edits}<button class="btn" onclick={again}>Try again</button>{/if}
+								{:else if job?.status === 'done' && got?.transcript?.length && !took(item, job)}
+									<p class="soft">YouTube’s words are here; they go in as soon as the acting vault may write them.</p>
+								{:else if job?.status === 'done' && got?.transcript?.length}
+									<p class="soft">Its words were taken out. YouTube’s are kept with the fetch.</p>
+									{#if edits}<button class="btn" onclick={takeAgain}>Take YouTube’s words again</button>{/if}
+								{:else if job?.status === 'done' && got?.needs_speech}
+									<p class="soft">YouTube has no captions for it. Its words come once the Mac app hears it.</p>
+								{:else if job?.status === 'done'}
+									<p class="soft">YouTube gave no words for it.</p>
+								{:else if rule && edits}
+									<button class="btn" disabled={busy} onclick={fetchWords}><Icon name="download" size={14} /> Fetch its words from YouTube</button>
+									<small class="soft">The Mac app fetches its title, channel, chapters and captions, and fills in what is empty here.</small>
+								{:else}
+									<p class="soft">No words yet. The Mac app fetches YouTube’s own.</p>
 								{/if}
-							</li>
-						{/each}
-					</ol>
-				{/if}
-				{#if edits}
-					<form class="row" onsubmit={(e) => (e.preventDefault(), addChapter())}>
-						<input class="field t" bind:value={chapterAt} placeholder="1:05" aria-label="From" />
-						<input class="field" bind:value={chapterTitle} placeholder="A chapter" aria-label="The chapter’s title" />
-						<button class="btn" disabled={seconds(chapterAt) === null || !chapterTitle.trim()}>Add</button>
-					</form>
-				{/if}
-				{/if}
-
-				<h4>{video ? 'Transcript' : 'Its words'} <small class="soft">{record.transcript?.length ? count(record.transcript.length, timed ? 'line' : 'paragraph') : ''}</small></h4>
-				{#if record.transcript?.length}
-					<ol class="times transcript" class:untimed={!timed}>
-						{#each record.transcript as r (r.id)}
-							<li>{#if timed}<span class="t">{clock(r.t)}</span>{/if}<span>{r.text}</span></li>
-						{/each}
-					</ol>
-				{:else if look === 'youtube' && yt}
-					<div class="fetch">
-						{#if job?.status === 'queued'}
-							<p class="soft">Waiting for the Mac app to fetch its words from YouTube.</p>
-						{:else if job?.status === 'claimed'}
-							<p class="soft">The Mac app is fetching its words from YouTube…</p>
-						{:else if job?.status === 'failed'}
-							<p class="soft">
-								Fetching its words failed: {job.error || 'no reason given'}. The Mac app tries again, {count(left, 'more time')}.
-							</p>
-						{:else if job?.status === 'held'}
-							<p class="soft">Fetching its words failed {TRIES} times: {job.error || 'no reason given'}.</p>
-							{#if edits}<button class="btn" onclick={again}>Try again</button>{/if}
-						{:else if job?.status === 'done' && got?.transcript?.length && !took(item, job)}
-							<p class="soft">YouTube’s words are here; they go in as soon as {nameOf(as)} may write them.</p>
-						{:else if job?.status === 'done' && got?.transcript?.length}
-							<p class="soft">Its words were taken out. YouTube’s are kept with the fetch.</p>
-							{#if edits}<button class="btn" onclick={takeAgain}>Take YouTube’s words again</button>{/if}
-						{:else if job?.status === 'done' && got?.needs_speech}
-							<p class="soft">YouTube has no captions for it. Its words come once the Mac app hears it; until then, paste them here.</p>
-						{:else if job?.status === 'done'}
-							<p class="soft">YouTube gave no words for it. Paste them here.</p>
-						{:else if rule && edits}
-							<button class="btn" disabled={busy} onclick={fetchWords}><Icon name="download" size={14} /> Fetch its words from YouTube</button>
-							<small class="soft">The Mac app fetches its title, channel, chapters and captions, and fills in what is empty here.</small>
+							</div>
 						{:else}
-							<p class="soft">No transcript yet. The Mac app fetches YouTube’s own once the studio has its YouTube rule; until then, paste it here.</p>
+							<p class="soft">No transcript yet.</p>
 						{/if}
-					</div>
-				{:else}
-					<p class="soft">No transcript yet.</p>
+					</section>
 				{/if}
-				{#if edits}
-					<textarea class="field" rows="3" bind:value={pasted} placeholder="Paste a transcript: a line each, times like 1:05 at their start"></textarea>
-					{#if pasted.trim()}
-						<span class="row">
-							<button class="btn primary" onclick={saveTranscript}>{record.transcript?.length ? 'Replace the transcript' : 'Save the transcript'}</button>
-						</span>
+			{/if}
+		</div>
+	</main>
+
+	{#if item}
+		<!-- narrower: its details slide in from the right, from a round button at the foot of the screen -->
+		<button class="drawer" aria-pressed={open} aria-label="Its details" onclick={() => (open = !open)}><Icon name="info" size={20} /></button>
+		{#if open}
+			<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+			<div class="scrim" onclick={() => (open = false)}></div>
+		{/if}
+		<aside class="details" class:open aria-label="About {item.title || 'it'}">
+			<div class="top">
+				<h3>Details</h3>
+				<button class="btn quiet shut" aria-label="Close" onclick={() => (open = false)}><Icon name="close" size={16} /></button>
+			</div>
+			<dl>
+				<dt>What it is</dt>
+				<dd class="what"><Icon name={LOOKS.find(([l]) => l === look)?.[2] ?? 'artifact'} size={14} /> {LOOK_NAME[look]}</dd>
+				{#if record.url}
+					<dt>Link</dt>
+					<dd><a href={record.url} target="_blank" rel="noopener noreferrer">{record.url}</a></dd>
+				{/if}
+				{#if record.site}
+					<dt>Site</dt>
+					<dd>{record.site}</dd>
+				{/if}
+				{#if by.name || by.platform || by.url}
+					<dt>Whose it is</dt>
+					<dd>
+						{#if by.url}<a href={by.url} target="_blank" rel="noopener noreferrer">{by.name || by.url}</a>{:else}{by.name ?? ''}{/if}{by.platform
+							? `${by.name || by.url ? ' · ' : ''}${by.platform}`
+							: ''}
+					</dd>
+				{/if}
+				{#if record.taken}
+					<dt>Made or published</dt>
+					<dd>{record.taken}</dd>
+				{/if}
+				{#if record.language}
+					<dt>Language</dt>
+					<dd>{record.language}</dd>
+				{/if}
+				{#if record.duration}
+					<dt>Length</dt>
+					<dd>{clock(record.duration)}</dd>
+				{/if}
+				<dt>Added by</dt>
+				<dd>{signerName(world, item.by)}</dd>
+				<dt>Tags</dt>
+				<dd>
+					{#if tags.length}
+						<span class="tags"
+							>{#each tags as t (t)}<span
+									class="chip tag"
+									class:auto={auto(t)}
+									title={auto(t) ? 'Kept by the page, from the sparks and stories that hold it' : undefined}>#{t}</span
+								>{/each}</span
+						>
+					{:else}
+						<span class="soft">None yet. It is tagged #{IN_SPARKS} once a spark holds it, #{IN_STORIES} once a story grows from it.</span>
 					{/if}
+				</dd>
+				<dt>On sparks</dt>
+				<dd>
+					{#if holding.length}
+						<span class="tags">
+							{#each holding as s (s.entry)}<a class="chip" href="#notes/{s.entry}"><Icon name="spark" size={12} /> {s.title || 'Untitled'}</a>{/each}
+							{#each stories as s (s.entry)}<a class="chip" href="#stories/{s.entry}"><Icon name="story" size={12} /> {s.title || 'A story'}</a>{/each}
+						</span>
+					{:else}
+						<span class="soft">No spark holds it yet.</span>
+					{/if}
+				</dd>
+			</dl>
+			<div class="acts">
+				{#if askedSpark !== null}
+					<button class="btn" disabled={busy} onclick={spark}><Icon name="spark" size={14} /> Put it on a new spark</button>
 				{/if}
-			</section>
-		{/if}
-
-		<section class="part">
-			<h4>Tags</h4>
-			{#if tags.length}
-				<span class="tags">{#each tags as t (t)}<span class="chip tag" class:auto={auto(t)} title={auto(t) ? 'Kept by the page, from the sparks and stories that hold it' : undefined}>#{t}</span>{/each}</span>
-			{:else}
-				<p class="soft">None. It is tagged #{IN_SPARKS} once a spark holds it, and #{IN_STORIES} once a story grows from that spark.</p>
-			{/if}
-		</section>
-
-		<section class="part">
-			<h4>On sparks <small class="soft">{holding.length || ''}</small></h4>
-			{#if holding.length}
-				<span class="tags">
-					{#each holding as s (s.entry)}<a class="chip" href="#notes/{s.entry}"><Icon name="spark" size={12} /> {s.title || 'Untitled'}</a>{/each}
-					{#each stories as s (s.entry)}<a class="chip" href="#stories/{s.entry}"><Icon name="story" size={12} /> {s.title || 'A story'}</a>{/each}
-				</span>
-			{:else}
-				<p class="soft">No spark holds it yet.</p>
-			{/if}
-			{#if askedSpark !== null}
-				<button class="btn" disabled={busy} onclick={spark}><Icon name="spark" size={14} /> Put it on a new spark</button>
-			{/if}
-		</section>
-
-		{#if edits && !item.deleted}
-			<p class="foot"><button class="btn quiet danger" onclick={() => remove(false)}><Icon name="trash" size={14} /> Delete it</button></p>
-		{/if}
-		{#if !changes && !busy}
-			<p class="soft">{nameOf(as)}’s share doesn’t let it change this artifact.</p>
-		{/if}
+				{#if edits && !item.deleted}
+					<button class="btn quiet danger" onclick={() => remove(false)}><Icon name="trash" size={14} /> Delete it</button>
+				{/if}
+			</div>
+		</aside>
 	{/if}
-</div>
 </div>
 
 <style>
+	/* the artifact on the left, as it reads; its details in an aside on the right, each scrolling on its own */
 	.doc {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 20rem;
 		height: 100%;
+		min-height: 0;
+	}
+
+	.main {
+		min-height: 0;
 		overflow-y: auto;
 	}
 
 	.page {
 		display: flex;
 		flex-direction: column;
-		gap: 0.9rem;
+		gap: 1rem;
 		max-width: 46rem;
 		margin: 0 auto;
 		padding: calc(1rem + env(safe-area-inset-top, 0px)) 1rem calc(var(--nav-room, 5rem) + 1.5rem);
-	}
-
-	.fetch {
-		display: flex;
-		flex-direction: column;
-		align-items: flex-start;
-		gap: 0.4rem;
-	}
-
-	.fetch p {
-		margin: 0;
 	}
 
 	.back {
@@ -487,65 +365,51 @@
 		text-decoration: none;
 	}
 
-	header {
-		display: flex;
-		align-items: center;
-		gap: 0.75rem;
-	}
-
-	.icon {
-		display: grid;
-		flex: none;
-		place-items: center;
-		overflow: hidden;
-		width: 3rem;
-		height: 3rem;
-		border-radius: 12px;
-		background: #e3eaf3;
-		color: #2b3f63;
-	}
-
-	.icon img {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-	}
-
-	.icon.video,
-	.icon.youtube {
-		background: #2a2f2c;
-		color: #fff;
-	}
-
-	.icon.image {
-		background: #e2ece7;
-		color: var(--accent);
-	}
-
-	.head {
-		display: flex;
-		flex: 1;
-		flex-direction: column;
-		min-width: 0;
-	}
-
-	.title {
-		width: 100%;
-		padding: 0.15rem 0;
-		border: 0;
-		background: none;
-		font: inherit;
-		font-size: 1.3rem;
+	header h1 {
+		margin: 0;
+		font-family: var(--font-body);
+		font-size: 1.45rem;
 		font-weight: 700;
-		outline: none;
+		letter-spacing: 0;
+		line-height: 1.25;
+		overflow-wrap: anywhere;
+	}
+
+	header p {
+		margin: 0.25rem 0 0;
 	}
 
 	.cover {
-		width: 100%;
-		max-height: 24rem;
+		position: relative;
+		display: block;
+		overflow: hidden;
 		border-radius: 14px;
-		object-fit: contain;
 		background: #f1ede4;
+	}
+
+	.cover img {
+		display: block;
+		width: 100%;
+		max-height: 26rem;
+		object-fit: contain;
+	}
+
+	.play {
+		position: absolute;
+		top: 50%;
+		left: 50%;
+		display: grid;
+		place-items: center;
+		width: 3.6rem;
+		height: 3.6rem;
+		border-radius: 50%;
+		background: rgb(20 24 22 / 0.72);
+		color: #fff;
+		transform: translate(-50%, -50%);
+	}
+
+	.cover:hover .play {
+		background: #c4302b;
 	}
 
 	.banner {
@@ -558,88 +422,6 @@
 		border-radius: 10px;
 		background: #fbeee6;
 		font-size: 0.85rem;
-	}
-
-	.looks,
-	.tags {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.3rem;
-	}
-
-	.looks .chip {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3rem;
-		border: 1px solid transparent;
-		font: inherit;
-		font-size: 0.78rem;
-		cursor: pointer;
-	}
-
-	.looks .chip.on {
-		border-color: var(--accent);
-		background: #d6e8e4;
-		color: #1f4f47;
-	}
-
-	.grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(min(100%, 12rem), 1fr));
-		gap: 0.6rem;
-	}
-
-	.grid .wide {
-		grid-column: 1 / -1;
-	}
-
-	label,
-	.words {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		font-size: 0.8rem;
-	}
-
-	.with {
-		display: flex;
-		gap: 0.3rem;
-	}
-
-	.with .field {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.source {
-		margin: 0;
-		padding: 0.6rem 0.7rem 0.7rem;
-		border: 1px solid var(--edge);
-		border-radius: 12px;
-	}
-
-	.source legend {
-		padding: 0 0.3rem;
-		font-size: 0.8rem;
-	}
-
-	.three {
-		grid-template-columns: repeat(auto-fill, minmax(min(100%, 9rem), 1fr));
-	}
-
-	.row {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.4rem;
-	}
-
-	.row .field {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.row .field.t {
-		flex: 0 0 5rem;
 	}
 
 	.part {
@@ -657,6 +439,12 @@
 		font-weight: 400;
 	}
 
+	.note {
+		font-size: 0.95rem;
+		line-height: 1.55;
+		white-space: pre-wrap;
+	}
+
 	.files {
 		display: flex;
 		flex-wrap: wrap;
@@ -664,7 +452,6 @@
 	}
 
 	.file {
-		position: relative;
 		display: flex;
 		flex-direction: column;
 		gap: 0.2rem;
@@ -690,38 +477,6 @@
 		white-space: nowrap;
 	}
 
-	.file.add {
-		position: relative;
-		cursor: pointer;
-	}
-
-	.file.add input {
-		position: absolute;
-		inset: 0;
-		opacity: 0;
-		cursor: pointer;
-	}
-
-	.x {
-		position: absolute;
-		top: 0.25rem;
-		right: 0.25rem;
-		display: grid;
-		place-items: center;
-		width: 1.4rem;
-		height: 1.4rem;
-		padding: 0;
-		border: 0;
-		border-radius: 50%;
-		background: rgb(255 255 255 / 0.9);
-		cursor: pointer;
-	}
-
-	.x.inline {
-		position: static;
-		margin-left: auto;
-	}
-
 	.times {
 		display: flex;
 		flex-direction: column;
@@ -729,7 +484,7 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
-		font-size: 0.85rem;
+		font-size: 0.88rem;
 	}
 
 	.times li {
@@ -746,21 +501,100 @@
 	}
 
 	.transcript {
-		max-height: 18rem;
-		overflow: auto;
+		line-height: 1.45;
 	}
 
 	.transcript.untimed {
 		gap: 0.6rem;
-		line-height: 1.45;
 	}
 
-	.tags .chip {
+	.fetch {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.4rem;
+	}
+
+	.fetch .btn,
+	.acts .btn {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+
+	/* its details: what it is, where from, whose, and where it is used */
+	.details {
+		display: flex;
+		flex-direction: column;
+		gap: 0.7rem;
+		min-height: 0;
+		box-sizing: border-box;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		padding: calc(1rem + env(safe-area-inset-top, 0px)) 1rem calc(var(--nav-room, 5rem) + 1.5rem);
+		border-left: 1px solid var(--edge);
+		background: #f7f5f0;
+		font-size: 0.84rem;
+	}
+
+	.details .top {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+		min-height: 2rem;
+	}
+
+	.details h3 {
+		margin: 0;
+		font-size: 0.98rem;
+	}
+
+	.details dl {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		gap: 0.15rem;
+		margin: 0;
+	}
+
+	.details dt {
+		margin-top: 0.5rem;
+		color: var(--soft);
+		font-size: 0.72rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
+	.details dd {
+		margin: 0;
+		line-height: 1.45;
+		overflow-wrap: anywhere;
+	}
+
+	.details a {
+		color: var(--accent);
+	}
+
+	.what {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+
+	.tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.3rem;
+	}
+
+	.details .tags .chip {
 		display: inline-flex;
 		align-items: center;
 		gap: 0.25rem;
+		max-width: 100%;
 		color: inherit;
 		text-decoration: none;
+		white-space: normal;
 	}
 
 	.chip.tag {
@@ -773,26 +607,111 @@
 		color: #1f4f47;
 	}
 
-	.part .btn {
-		display: inline-flex;
-		align-items: center;
-		align-self: flex-start;
-		gap: 0.3rem;
-	}
-
-	.foot {
-		margin: 0;
+	.acts {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.4rem;
+		padding-top: 0.4rem;
 	}
 
 	.danger {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3rem;
 		color: #a33a2a;
 	}
 
 	p {
 		margin: 0;
 		font-size: 0.85rem;
+	}
+
+	/* the toggle and the close button show only where the details slide in */
+	.drawer,
+	.details .top button.shut,
+	.scrim {
+		display: none;
+	}
+
+	/* narrower: the artifact alone, its details sliding in from the right */
+	@media (max-width: 900px) {
+		.doc {
+			display: block;
+			overflow-y: auto;
+			overscroll-behavior: contain;
+		}
+
+		.main {
+			overflow: visible;
+		}
+
+		/* round, as tall as the nav pill and at its foot, at the right of the screen */
+		.drawer {
+			display: grid;
+			place-items: center;
+			position: fixed;
+			right: max(12px, env(safe-area-inset-right, 0px));
+			bottom: var(--nav-foot, 14px);
+			z-index: 50;
+			box-sizing: border-box;
+			width: var(--nav-height, 52px);
+			height: var(--nav-height, 52px);
+			padding: 0;
+			border: 1px solid var(--line, var(--edge));
+			border-radius: 50%;
+			background: rgb(250 248 242 / 0.94);
+			box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
+			backdrop-filter: blur(10px);
+			color: inherit;
+			cursor: pointer;
+		}
+
+		.drawer[aria-pressed='true'] {
+			border-color: var(--accent);
+			background: var(--accent);
+			color: #fff;
+		}
+
+		.scrim {
+			display: block;
+			position: fixed;
+			inset: 0;
+			z-index: 40;
+			background: rgb(20 28 24 / 0.28);
+		}
+
+		.details {
+			position: fixed;
+			top: 0;
+			right: 0;
+			bottom: 0;
+			z-index: 41;
+			width: min(22rem, 86vw);
+			border-left: 0;
+			box-shadow: 0 0 40px rgb(0 0 0 / 0.18);
+			visibility: hidden;
+			transform: translateX(100%);
+			transition:
+				transform 240ms ease,
+				visibility 0s linear 240ms;
+		}
+
+		.details.open {
+			visibility: visible;
+			transform: none;
+			transition: transform 240ms ease;
+		}
+
+		.details .top button.shut {
+			display: grid;
+			place-items: center;
+			width: 2rem;
+			height: 2rem;
+			padding: 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.details {
+			transition: none;
+		}
 	}
 </style>

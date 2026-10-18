@@ -1,10 +1,12 @@
 <!--
-	A spark's canvas, over its words on its page (Note), on the line shown (./sparks.js): an open board where its
+	A spark's canvas, filling its page (Note), on the line shown (./sparks.js): an open board where its
 	items sit wherever they were put, artifacts (./artifacts.js) as cards with their picture, text notes to write in
 	place, and other sparks; each dragged by hand to a new place, taken off, or added: a note, artifacts and sparks of
 	its vault dragged in from beside it (./SparkShelf.svelte), a link pasted or files dropped onto the board, each a new
 	artifact where it lands, each file into the Library first. Then the stories that grow from it, and a story to start from it. Each change
-	is one op on that line, for the acting vault, as the device allows it (`may`).
+	is one op on that line, for the acting vault, as the device allows it (`may`). A spark's own words, as sparks were
+	written before their canvas held notes (its text, the paragraph after its heading), are a note on the canvas too:
+	moved there once where the acting vault may, shown there until then.
 -->
 <script>
 	import { untrack } from 'svelte';
@@ -29,9 +31,9 @@
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean, entry: string,
-	 *   vault: string, line: string | null, record: any, writes: boolean }}
+	 *   vault: string, line: string | null, record: any, writes: boolean, words?: string }}
 	 */
-	let { world, actor, api, busy, entry, vault, line, record, writes } = $props();
+	let { world, actor, api, busy, entry, vault, line, record, writes, words = '' } = $props();
 
 	const byId = $derived(new Map(world.entries.map((e) => [e.entry, e])));
 	const as = $derived(world.vaults.find((v) => v.id === actor));
@@ -58,6 +60,27 @@
 		};
 	});
 	const edits = $derived(changes && !busy);
+
+	// its words, where it still has them beside its canvas: a note on it, where it would go, until they are moved there
+	const said = $derived(words.trim());
+	const saidAt = $derived(placing(items, 1)[0]);
+	/** as wide as two cards where its words are more than a line or two */
+	const saidW = $derived(said.length > 80 ? CARD.w * 2 + CARD.gap : CARD.w);
+	let moved = '';
+	$effect(() => {
+		const text = said;
+		if (!text || !writes || busy) return;
+		const key = `${line}:${text}`;
+		if (key === moved) return;
+		moved = key;
+		const ops = [
+			{ op: 'insert', entry, line, path: ['items'], value: { ...textItem(untrack(() => items), text), w: saidW } },
+			{ op: 'remove', entry, line, path: ['blocks', { id: 2 }] }
+		];
+		may(api, actor, ops).then((v) => {
+			if (v.every(allowed)) api.run('Putting its words on the canvas as a note', { op: 'batch', as: actor, ops });
+		});
+	});
 
 	/** Runs change `op` on the line as `what`. @param {string} what @param {object} op */
 	const change = (what, op) => api.run(what, { ...op, entry, line, as: actor });
@@ -347,7 +370,12 @@
 					{/if}
 				</div>
 			{/each}
-			{#if !items.length}
+			{#if said}
+				<div class="item text" style:left="{saidAt.x}px" style:top="{saidAt.y}px" style:width="{saidW}px" role="group" aria-label="Its words">
+					<p class="words">{said}</p>
+				</div>
+			{/if}
+			{#if !items.length && !said}
 				<p class="empty soft">
 					An empty canvas. {edits ? 'Add a note, drag artifacts and sparks in from the side, or drop pictures and links here.' : ''}
 				</p>
@@ -369,9 +397,10 @@
 <style>
 	.spark {
 		display: flex;
+		flex: 1 1 auto;
 		flex-direction: column;
 		gap: 0.6rem;
-		margin: 0 0 1rem;
+		min-height: 0;
 	}
 
 	.bar {
@@ -405,8 +434,9 @@
 	/* the board: a dotted sheet that scrolls both ways, its items placed on it */
 	.board {
 		position: relative;
+		flex: 1 1 auto;
 		overflow: auto;
-		height: min(68vh, 40rem);
+		min-height: max(20rem, calc(100dvh - 16rem));
 		border: 1px solid var(--edge);
 		border-radius: 14px;
 		background-color: #fbfaf6;

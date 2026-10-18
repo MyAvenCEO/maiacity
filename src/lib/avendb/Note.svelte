@@ -619,24 +619,23 @@
 			{:else}
 				<h1 class="title">{(seen ? seen.title : here?.title) ?? item?.title ?? 'A note'}</h1>
 			{/if}
-			<p class="meta">
+			<p class="meta" title={unsaved ? undefined : 'Every edit signed and saved'}>
 				{#if item}<Tags {world} {actor} {api} {busy} entry={item} />{/if}
-				{vaultName(item?.vault)}{note ? ` · ${count(numbered.length, 'edit')}` : ''} ·
+				{vaultName(item?.vault)}{note ? ` · ${count(numbered.length, 'edit')}` : ''}
 				{#if unfit}
+					·
 					<b class="unsaved" title="What they make of the note breaks its schema: no one counts them"
 						>{count(unfit, 'edit')} {unfit === 1 ? 'breaks' : 'break'} its schema</b
-					> ·
+					>
 				{/if}
 				{#if uncounted}
+					·
 					<b class="unsaved" title="Their shares don’t allow what they change: no one counts them"
 						>{count(uncounted, 'edit')} not allowed</b
-					> ·
+					>
 				{/if}
-				{#if unsaved}<b class="unsaved">Unsaved changes</b>{:else}Every edit signed and saved{/if}
+				{#if unsaved}· <b class="unsaved">Unsaved changes</b>{/if}
 			</p>
-			{#if item}
-				<p class="meta shared">Shared with {sharedWords(shared)}{item.public ? ' · Public' : ''}</p>
-			{/if}
 		</div>
 		<div class="tools">
 			{#if here}
@@ -665,13 +664,13 @@
 				<button class="btn primary" disabled={busy} onclick={save}>Save on {at(here?.line ?? null)}</button>
 				<button class="btn quiet" onclick={() => (drafts[k] = here?.text ?? '')}>Discard</button>
 			{/if}
-			<span class="people">
+			<span class="people" title={item ? `Shared with ${sharedWords(shared)}${item.public ? ' · Public' : ''}` : undefined}>
 				{#each sharers.filter((x) => byId.has(x.id)) as x (x.id)}
 					<span class="person" title="Shared with {sharerWords(x)}"><Mark vault={byId.get(x.id)} size={28} /></span>
 				{/each}
 			</span>
 			{#if owns}
-				<button class="btn share" class:primary={!sharing} onclick={() => (sharing = !sharing)}>
+				<button class="btn share" class:primary={!sharing} aria-label="Share" onclick={() => (sharing = !sharing)}>
 					<Icon name="share" size={15} /> <span class="label">Share</span>
 				</button>
 			{/if}
@@ -679,6 +678,7 @@
 				<button
 					class="btn quiet danger"
 					disabled={busy || !lets('delete')}
+					aria-label="Delete"
 					title={barred('delete') ?? 'Delete it: Sparks lists it apart, and every edit stays'}
 					onclick={() => remove(false)}
 				>
@@ -747,7 +747,7 @@
 				</aside>
 			{/if}
 
-			<main class="canvas" class:sheet={article}>
+			<main class="canvas" class:sheet={article} class:spread={spark && !seen}>
 				{#if seen}
 					<div class="banner old">
 						<span class="chip warn">{versionOf(seen)}</span>
@@ -840,7 +840,7 @@
 						/>
 					{/if}
 				{:else}
-				<!-- a spark's canvas comes first, the artifacts, notes and sparks it holds; its words on the page under it -->
+				<!-- a spark is its canvas, the artifacts, notes and sparks it holds, filling the middle; a note is its page -->
 				{#if spark && item && !seen}
 					<SparkCanvas
 						{world}
@@ -852,8 +852,9 @@
 						line={here.line}
 						record={here.record}
 						{writes}
+						words={here.text ?? ''}
 					/>
-				{/if}
+				{:else}
 				<article class="paper" class:old={!!seen} class:short={spark}>
 					{#if seen}
 						<div class="text">{seen.text || '…'}</div>
@@ -870,6 +871,7 @@
 						<div class="text">{here.text || '…'}</div>
 					{/if}
 				</article>
+				{/if}
 				{/if}
 
 				{#if seen && (seen.text ?? '') !== (here.text ?? '')}
@@ -1187,8 +1189,8 @@
 		display: flex;
 		flex-wrap: wrap;
 		align-items: center;
-		gap: 0.6rem 0.9rem;
-		padding: calc(0.6rem + env(safe-area-inset-top, 0px)) 1rem 0.6rem;
+		gap: 0.4rem 0.7rem;
+		padding: calc(0.4rem + env(safe-area-inset-top, 0px)) 1rem 0.4rem;
 		border-bottom: 1px solid var(--edge);
 		background: #f7f5f0;
 	}
@@ -1209,8 +1211,8 @@
 	.docicon {
 		display: grid;
 		place-items: center;
-		width: 2.3rem;
-		height: 2.3rem;
+		width: 2rem;
+		height: 2rem;
 		border-radius: 8px;
 		background: var(--accent);
 		color: #fff;
@@ -1251,7 +1253,7 @@
 	}
 
 	.meta {
-		margin: 0.1rem 0 0 0.4rem;
+		margin: 0 0 0 0.4rem;
 		color: var(--soft);
 		font-size: 0.78rem;
 	}
@@ -1508,6 +1510,13 @@
 	/* the middle: the note as a page */
 	.canvas {
 		padding: 1.4rem clamp(0.8rem, 3vw, 2.4rem) 10rem;
+	}
+
+	/* a spark: its canvas fills the middle */
+	.canvas.spread {
+		display: flex;
+		flex-direction: column;
+		padding: 0.8rem clamp(0.6rem, 1.5vw, 1.2rem) var(--nav-room, 5rem);
 	}
 
 	/* an article: the page edge to edge, as it is read, and what is around it on the same paper */
@@ -1856,7 +1865,7 @@
 
 	/* the drawers' toggles and close buttons show only where the sides slide in */
 	.drawer,
-	.shut,
+	.body aside button.shut,
 	.scrim {
 		display: none;
 	}
@@ -1950,7 +1959,7 @@
 			transition: transform 240ms ease;
 		}
 
-		.shut {
+		.body aside button.shut {
 			display: grid;
 			place-items: center;
 			float: right;
@@ -1993,9 +2002,11 @@
 			white-space: nowrap;
 		}
 
-		/* the avatars say who it is shared with; its line of edits and tags waits on a wider screen */
+		/* the avatars say who it is shared with; its line of edits and tags waits on a wider screen, and the buttons
+		   go by their icons, so the title keeps its room */
 		.meta,
-		.mode:not(.warn) {
+		.tools .mode:not(.warn),
+		.tools .label {
 			display: none;
 		}
 
