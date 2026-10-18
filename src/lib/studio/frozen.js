@@ -14,23 +14,35 @@ import { badFrozen, filesIn } from './filmlist.js';
 const ALL = /** @type {Record<string, { default: Frozen }>} */ (import.meta.glob('/films/legacy/*.json', { eager: true }));
 
 /**
- * Film `key` frozen: as the repo keeps it, else as this Mac's film seed does; `null` where neither has it.
- * @param {import('./filmlist.js').Film} film @returns {Promise<Frozen | null>}
+ * Film `film` as this Mac's film seed has it (`{ timeline, shots, proxies }`), `null` off the Mac app or where it isn't.
+ * @param {import('./filmlist.js').Film} film
+ * @returns {Promise<{ timeline: any, shots: Frozen['shots'], proxies?: Record<string, string> } | null>}
  */
-export async function frozenFilm(film) {
-	const inRepo = Object.values(ALL).map((m) => m.default).find((x) => x?.key === film.key);
-	if (inRepo && !badFrozen(inRepo)) return inRepo;
+async function seedOf(film) {
 	try {
 		const { command, native } = await import('$lib/native');
 		if (!native()) return null;
-		const v = /** @type {{ timeline: any, shots: Frozen['shots'] } | null} */ (await command('film_seed', { key: film.key }));
-		if (!v) return null;
-		const f = { key: film.key, name: film.name, frozen: '', story: { title: film.name, description: v.timeline?.description ?? '' }, timeline: v.timeline, shots: v.shots, files: filesIn(v.timeline) };
-		const bad = badFrozen(f);
-		if (bad) console.warn(`the film seed of ${film.name}: ${bad}`);
-		return bad ? null : f;
+		return await command('film_seed', { key: film.key });
 	} catch (e) {
 		console.warn(`the film seed of ${film.name}:`, e);
 		return null;
 	}
+}
+
+/**
+ * Film `key` frozen: as the repo keeps it, else as this Mac's film seed does, with the seed's world proxies either way
+ * (the repo keeps no bytes); `null` where neither has it.
+ * @param {import('./filmlist.js').Film} film @returns {Promise<Frozen | null>}
+ */
+export async function frozenFilm(film) {
+	const found = Object.values(ALL).map((m) => m.default).find((x) => x?.key === film.key);
+	const inRepo = found && !badFrozen(found) ? found : null;
+	const v = await seedOf(film);
+	const proxies = { ...(v?.proxies ?? {}), ...(inRepo?.proxies ?? {}) };
+	if (inRepo) return { ...inRepo, proxies };
+	if (!v) return null;
+	const f = { key: film.key, name: film.name, frozen: '', story: { title: film.name, description: v.timeline?.description ?? '' }, timeline: v.timeline, shots: v.shots, files: filesIn(v.timeline), proxies };
+	const bad = badFrozen(f);
+	if (bad) console.warn(`the film seed of ${film.name}: ${bad}`);
+	return bad ? null : f;
 }

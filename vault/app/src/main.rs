@@ -592,6 +592,7 @@ fn main() {
             aven::studio_job,
             aven::studio_import,
             aven::film_seed,
+            aven::film_seed_keep,
             sync::vault_connect,
             sync::vault_copies,
             mcp::mcp_info,

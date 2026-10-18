@@ -705,7 +705,68 @@ pub async fn film_seed(key: String) -> Result<Option<Value>, String> {
     if !dir.join("timeline.json").is_file() {
         return Ok(None);
     }
-    Ok(Some(json!({ "timeline": read("timeline.json")?, "shots": read("shots.json")? })))
+    // its world proxies (`proxies.json`, `<shot>@<version>` → hash), where it keeps any yet
+    let proxies = if dir.join("proxies.json").is_file() { read("proxies.json")? } else { json!({}) };
+    Ok(Some(json!({ "timeline": read("timeline.json")?, "shots": read("shots.json")?, "proxies": proxies })))
+}
+
+/// World proxies of film `key` kept in its film seed (`proxies`: `<shot>@<version>` → hash): each one's bytes copied
+/// out of the legacy vault into `files/<hash>` (checked against its hash, never moved), its catalog record into
+/// `files.json`, and the pair into `proxies.json`, so the film's proxies come from the seed once the legacy vault is
+/// gone (src/lib/studio/importer.js `bringProxies`). How many it copied; one already there costs nothing.
+#[tauri::command]
+pub async fn film_seed_keep(app: AppHandle, key: String, proxies: std::collections::BTreeMap<String, String>) -> Result<usize, String> {
+    use tauri::Manager as _;
+    if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err(format!("{key:?} is no film key"));
+    }
+    let dir = film_seeds().join(&key);
+    if !dir.join("timeline.json").is_file() {
+        return Err(format!("{key} has no film seed on this Mac"));
+    }
+    let legacy = app.state::<crate::App>().vault.clone();
+    let files = dir.join("files");
+    std::fs::create_dir_all(&files).map_err(|e| format!("{}: {e}", files.display()))?;
+    let read = |f: &str, empty: Value| std::fs::read(dir.join(f)).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).unwrap_or(empty);
+    let mut records = read("files.json", json!([]));
+    let mut kept = read("proxies.json", json!({}));
+    let mut n = 0;
+    for (shot, hash) in proxies {
+        let h: iroh_blobs::Hash = hash.to_lowercase().parse().map_err(|e| format!("{hash} is no vault hash: {e}"))?;
+        let hash = h.to_hex().to_string();
+        let path = files.join(&hash);
+        if !path.is_file() {
+            let m = legacy.catalog.meta(h).await.map_err(|e| e.to_string())?.ok_or_else(|| format!("{hash} is not in the legacy vault's catalog"))?;
+            let part = files.join(format!(".{hash}.part"));
+            legacy.store.blobs().export(h, &part).await.map_err(|e| format!("out of the legacy vault: {e}"))?;
+            let check = part.clone();
+            let got = tauri::async_runtime::spawn_blocking(move || -> std::io::Result<String> {
+                let mut hasher = blake3::Hasher::new();
+                hasher.update_reader(std::fs::File::open(&check)?)?;
+                Ok(hasher.finalize().to_hex().to_string())
+            })
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+            if got != hash {
+                std::fs::remove_file(&part).ok();
+                return Err(format!("{hash}: its copy's BLAKE3 is {got}: not kept"));
+            }
+            std::fs::rename(&part, &path).map_err(|e| format!("{}: {e}", path.display()))?;
+            if let Some(list) = records.as_array_mut().filter(|l| !l.iter().any(|r| r["hash"] == hash.as_str())) {
+                list.push(serde_json::to_value(&m).map_err(|e| e.to_string())?);
+            }
+            n += 1;
+        }
+        kept[shot.as_str()] = json!(hash);
+    }
+    let write = |f: &str, v: &Value| {
+        let path = dir.join(f);
+        std::fs::write(&path, serde_json::to_vec_pretty(v).unwrap_or_default()).map_err(|e| format!("{}: {e}", path.display()))
+    };
+    write("files.json", &records)?;
+    write("proxies.json", &kept)?;
+    Ok(n)
 }
 
 /// A folder of its own on this Mac for what task `id` makes, before it goes into avenDB.

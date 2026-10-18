@@ -91,17 +91,19 @@ async function bringing() {
 	const city = cityOf(world);
 	if (!city) return [];
 	const wanted = FILMS.filter((f) => !heldOf(world, city.vault, f).cut);
-	// a film that came before the world proxies did: its world shots' proxies from the legacy vault now
+	const { frozenFilm } = await import('./frozen.js');
+	// the repo's frozen copy first, with the Mac's film seed (./frozen.js), the old studio only for one it lacks
+	const frozenOf = new Map(await Promise.all(FILMS.map(async (f) => /** @type {const} */ ([f.key, await frozenFilm(f)]))));
+	// a film that came before its world proxies did: the proxies of its shots whose world is gone, from the film seed now
 	if (FILMS.some((f) => heldOf(world, city.vault, f).cut)) {
 		const { bringProxies } = await import('./importer.js');
-		await bringProxies(city.vault, city.as).catch((e) => console.warn('world proxies:', e));
+		const frozen = /** @type {import('./frozen.js').Frozen[]} */ ([...frozenOf.values()].filter(Boolean));
+		await bringProxies(city.vault, city.as, frozen).catch((e) => console.warn('world proxies:', e));
 	}
 	// MaiaCity V1's intros, after the films: made here, from the game, with no call to the old studio
 	const intros = async () => (await import('./intros.js')).bringIntros(call, city, { tell, arrived });
 	if (!wanted.length) return intros();
-	const { frozenFilm } = await import('./frozen.js');
-	// each shows in the aside at once; the repo's frozen copy first (./frozen.js), the old studio only for one it lacks
-	const frozenOf = new Map(await Promise.all(wanted.map(async (f) => /** @type {const} */ ([f.key, await frozenFilm(f)]))));
+	// each shows in the aside at once
 	for (const f of wanted) tell(f, frozenOf.get(f.key) ? 'Starting…' : 'Asking the old studio…');
 	const { listTimelines } = await import('$lib/auth/client');
 	const { importTimeline, legacyCall } = await import('./importer.js');

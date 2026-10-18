@@ -16,6 +16,7 @@
 import { answer, DELETED } from '$lib/avendb/ops.js';
 import { BUILT_IN, held, layered } from './jobs/rules.js';
 import { madeIndex, newTask, pin, retrying, tasksOf } from './jobs/tasks.js';
+import { DEFAULT_SANDBOX, isWorld } from '../../../game/film/worlds.js';
 
 export const CUT = 'cut';
 
@@ -236,17 +237,21 @@ export async function saveCut(id, t) {
  * @param {(c: string, ...a: any[]) => Promise<any>} call @param {import('../avendb/vaults.js').WorldView} world @param {any} t
  */
 async function proxiesOf(call, world, t) {
-	const { versionEntry } = await import('./avenshots.js');
+	const { shotFrom, versionEntry } = await import('./avenshots.js');
 	const seen = new Set();
 	for (const c of t.clips ?? []) {
 		if (c.kind !== 'world' || typeof c.shot !== 'string' || !c.shot.startsWith('shot:') || seen.has(`${c.shot}@${c.shotVersion}`)) continue;
 		seen.add(`${c.shot}@${c.shotVersion}`);
 		const v = versionEntry(world, c.shot, c.shotVersion);
-		// one brought from the legacy studio needs none rendered (./importer.js `bringProxies`)
+		// one brought from the film seed needs none rendered, nor can one whose world the camera no longer has
+		// (./importer.js `bringProxies`)
 		const tag = `proxy:${c.shot}:${c.shotVersion}`;
-		if (v && !world.entries.some((e) => !e.deleted && (e.tags ?? []).includes(tag))) await ask(call, world, v, 'world-proxy', {}).catch(() => null);
+		if (v && shootable(shotFrom(v).spec) && !world.entries.some((e) => !e.deleted && (e.tags ?? []).includes(tag))) await ask(call, world, v, 'world-proxy', {}).catch(() => null);
 	}
 }
+
+/** Whether the film camera can shoot spec `spec`'s world (game/film/worlds.js), so a proxy is rendered there. @param {any} spec */
+export const shootable = (spec) => isWorld(spec?.world?.sandbox ?? DEFAULT_SANDBOX);
 
 /** @typedef {{ id: string, track: string, kind?: string, hash?: string, stacks?: unknown, frame?: Record<string, unknown>, script?: { scene?: string } }} Graded */
 

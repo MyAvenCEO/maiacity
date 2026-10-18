@@ -14,7 +14,7 @@
 import { answer } from '$lib/avendb/ops.js';
 import { avenRef, isAven } from './avenref.js';
 import { SHOT, SHOT_V1, shotFrom } from './avenshots.js';
-import { CUT, createCut, device, homeOf, schemaIn, timelineOf, worldOf } from './cuts.js';
+import { CUT, createCut, device, homeOf, schemaIn, shootable, timelineOf, worldOf } from './cuts.js';
 
 /** @typedef {import('$lib/auth/client').Timeline} Timeline */
 
@@ -141,7 +141,7 @@ export async function importTimeline(id, tell = () => {}, into = {}) {
 		shots.set(k, { shot: `shot:${made.entry}`, version: 1 });
 	}
 	tell('Bringing the world shots’ proxies…', { ...at });
-	await bringProxies(home.vault, home.as).catch((e) => console.warn('world proxies:', e));
+	await bringProxies(home.vault, home.as, into.frozen ? [into.frozen] : []).catch((e) => console.warn('world proxies:', e));
 	tell('Making the cut…', { ...at });
 	const named = Object.fromEntries(Object.entries({ name: into.name, project: into.project, story: into.story }).filter(([, v]) => v));
 	const cut = await createCut({ ...moved(t, refs, shots), ...named, legacy: id }, { ...home, tags: into.tags ?? [] });
@@ -154,37 +154,57 @@ export async function importTimeline(id, tell = () => {}, into = {}) {
 export const proxyTag = (shot, version) => `proxy:${shot}:${version}`;
 
 /**
- * Each world shot of vault `vault` brought from the legacy studio (its `legacy` names `<shot>@<version>`) that has no
- * proxy there yet, its proxy copied from the legacy vault where the legacy app rendered one (vault/app/src/world.rs: a
- * video file naming the shot and version), tagged `media:proxy` and `proxyTag`, acting as `as`. So a shot whose world
- * the film camera no longer has (the Apartment, the Isar, the Backyard: game/film/worlds.js) still plays, and none is
- * rendered again. How many it brought.
- * @param {string} vault @param {string} as
+ * Each world shot of vault `vault` brought from the legacy studio (its `legacy` names `<shot>@<version>`) whose world
+ * the film camera no longer has (game/film/worlds.js: the room, the Isar, the Backyard) and has no proxy there yet,
+ * its proxy brought, tagged `media:proxy` and `proxyTag`, acting as `as`: from the film seed of `frozen`'s film that
+ * names it (its `proxies`, the bytes beside the films' files, which `studio_import` reads first). One the seed lacks
+ * yet comes from the legacy vault while this Mac still has it, and is kept into that film's seed on the way
+ * (`film_seed_keep`), so the next reset needs no legacy vault. A shot in a world the camera has gets none of these:
+ * its proxy is rendered in that world, as avenDB holds it (./cuts.js `proxiesOf`). How many it brought.
+ * @param {string} vault @param {string} as @param {import('./frozen.js').Frozen[]} [frozen]
  */
-export async function bringProxies(vault, as) {
+export async function bringProxies(vault, as, frozen = []) {
 	const call = await device();
 	if (!call) return 0;
 	const world = await worldOf(call);
 	const has = new Set(world.entries.filter((e) => e.vault === vault && !e.deleted && (e.tags ?? []).includes('media:proxy')).flatMap((e) => e.tags ?? []));
 	const wanted = world.entries
 		.filter((e) => e.vault === vault && e.type === SHOT && !e.deleted && typeof e.record?.legacy === 'string')
-		.map((e) => ({ shot: shotFrom(e), legacy: /** @type {string} */ (e.record?.legacy) }))
-		.filter((w) => !has.has(proxyTag(w.shot.id, w.shot.version)));
+		.map((e) => ({ shot: shotFrom(e), legacy: /** @type {string} */ (e.record?.legacy).toLowerCase() }))
+		.filter((w) => !shootable(w.shot.spec) && !has.has(proxyTag(w.shot.id, w.shot.version)));
 	if (!wanted.length) return 0;
 	const { command } = await import('$lib/native');
-	const files = /** @type {{ hash: string, kind: string, meta?: Record<string, any> }[]} */ (await command('vault_list'));
-	/** each legacy world proxy, by `<shot>@<version>`, the newest first */
-	const proxies = new Map();
-	for (const m of files) {
-		if (m.kind !== 'video' || !m.meta?.shot || m.meta.shotVersion == null) continue;
-		const k = `${String(m.meta.shot).toLowerCase()}@${Number(m.meta.shotVersion)}`;
-		if (!proxies.has(k)) proxies.set(k, m.hash);
+	/** each proxy known, by `<shot>@<version>` */
+	const known = new Map(frozen.flatMap((f) => Object.entries(f.proxies ?? {}).map(([k, h]) => /** @type {const} */ ([k.toLowerCase(), h]))));
+	const lacking = wanted.filter((w) => !known.has(w.legacy));
+	if (lacking.length) {
+		// the legacy vault's world proxies (vault/app/src/world.rs: a video file naming the shot and version), the newest first
+		const files = /** @type {{ hash: string, kind: string, meta?: Record<string, any> }[]} */ (await command('vault_list').catch(() => []));
+		/** @type {Map<string, string>} */
+		const legacy = new Map();
+		for (const m of files) {
+			if (m.kind !== 'video' || !m.meta?.shot || m.meta.shotVersion == null) continue;
+			const k = `${String(m.meta.shot).toLowerCase()}@${Number(m.meta.shotVersion)}`;
+			if (!legacy.has(k)) legacy.set(k, m.hash);
+		}
+		for (const w of lacking) {
+			const [shot, version] = w.legacy.split('@');
+			const hash = legacy.get(`${shot}@${Number(version)}`);
+			if (hash) known.set(w.legacy, hash);
+		}
+		// kept into the seed of the film each belongs to
+		for (const f of frozen) {
+			const keep = Object.fromEntries(Object.keys(f.shots).map((k) => k.toLowerCase()).filter((k) => lacking.some((w) => w.legacy === k) && known.has(k)).map((k) => [k, known.get(k)]));
+			if (Object.keys(keep).length) await command('film_seed_keep', { key: f.key, proxies: keep }).catch((e) => console.warn(`the film seed of ${f.name}:`, e));
+		}
 	}
 	let n = 0;
 	for (const w of wanted) {
-		const [shot, version] = w.legacy.split('@');
-		const hash = proxies.get(`${shot.toLowerCase()}@${Number(version)}`);
-		if (!hash) continue;
+		const hash = known.get(w.legacy);
+		if (!hash) {
+			console.warn(`world proxy of ${w.shot.name}: neither the film seed nor the legacy vault has one`);
+			continue;
+		}
 		const [b] = /** @type {{ entry: string | null, error: string | null }[]} */ (await command('studio_import', { vault, hashes: [hash], actor: as, tags: ['media:proxy', proxyTag(w.shot.id, w.shot.version)] }));
 		if (b?.entry) n++;
 		else console.warn(`world proxy of ${w.shot.name}:`, b?.error);

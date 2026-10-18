@@ -38,14 +38,14 @@ export const WORLDS = {
 	// the planet itself, drawn from its map, so a shot renders the same every time
 	'sandbox-2': { label: 'Sandbox 2 · the planet', route: '/app/games/sandbox-2/', areas: ['planet'], parts: [] },
 	// one dome's whole inside, walked at eye height, with its forest round it
-	'sandbox-3': { label: 'Sandbox 3 · inside a dome', route: '/app/buildings/', areas: ['home', 'tent', 'glamp', 'large', 'master', 'factory'], parts: [] },
+	'sandbox-3': { label: 'Inside a dome (the Buildings app)', route: '/app/buildings/', areas: ['home', 'tent', 'glamp', 'large', 'master', 'factory'], parts: [] },
 	// a whole dome cell: thirteen domes, their insides built as the camera comes
-	'sandbox-4': { label: 'Sandbox 4 · a dome cell', route: '/app/games/sandbox-4/', areas: null, domes: 13, sets: ['tired-land'], parts: [] },
+	'sandbox-4': { label: 'Sandbox 3 · a dome cell', route: '/app/games/sandbox-4/', areas: null, domes: 13, sets: ['tired-land'], parts: [] },
 	// the same dome cell, its food forest grown from our plants (src/lib/sandbox-2/interior/sandbox5.js)
-	'sandbox-5': { label: 'Sandbox 5 · a dome cell grown from our plants', route: '/app/games/sandbox-5/', areas: null, domes: 13, sets: ['tired-land'], parts: [] },
+	'sandbox-5': { label: 'Sandbox 4 · a dome cell grown from our plants', route: '/app/games/sandbox-5/', areas: null, domes: 13, sets: ['tired-land'], parts: [] },
 	// a valley of settlers, played by its autoplayer from the same seed: roads, carriers, workshops
 	// (src/lib/sandbox-6)
-	'sandbox-6': { label: 'Sandbox 6 · a valley of settlers', route: '/app/games/sandbox-6/', areas: null, parts: [] },
+	'sandbox-6': { label: 'Sandbox 5 · a valley of settlers', route: '/app/games/sandbox-6/', areas: null, parts: [] },
 	// the tired land on its own: the fields, the highway, the trucks (src/lib/worlds/tired-land.ts; the same set as
 	// Sandbox 4's `tired-land`)
 	'tired-land': { label: 'The tired land · fields, a highway, trucks', route: '/app/worlds/tired-land/', areas: null, parts: [] },
