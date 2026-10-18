@@ -1094,6 +1094,42 @@ pub fn seed_of(lab: &Lab, me: SignerId) -> Vec<VaultId> {
     chain
 }
 
+/// Maia City, the coop of the seed that the claim of human vault `person` founded, by view `st`, found walking down
+/// from `person` rather than up from the server, as `seed_of` walks: so a view that holds no avenCEO server finds it,
+/// as an agent's holds none, though it holds the vaults over the one its share is on. A coop owned alone by the vault
+/// at `SEED_COOP_OF` of a chain of `SEED`'s kinds down from `person`, each owned alone by the one before, the first by
+/// `person`: Maia City, owned alone by avenCEO GmbH, owned alone by Maia Holding GmbH, owned alone by the human vault.
+/// Never by its name, which anyone may give a vault. Where the view holds a chain whole to its server (avenCEO server,
+/// a device vault avenCEO GmbH owns alone, `seeder`), as the person's own devices do, the coop of such a chain alone,
+/// none where it has none, as a seed founded before Maia City was: a chain of coops of the person's own beside it is
+/// never taken for it. Else, where more than one matches, as where the person founded such a chain too, the first the
+/// view holds, by the order the vaults were founded (`State::vaults`), as the seed is founded with the person's vault
+/// or as they claim a server, before a coop of their own. None where no chain of the seed's kinds goes down from
+/// `person` far enough.
+pub fn seed_coop(st: &State, person: VaultId) -> Option<VaultId> {
+    let alone = |owner: VaultId, kind: Kind| -> Vec<VaultId> {
+        let owned = |v: &&Vault| v.kind == kind && v.owners == [Principal::Vault(owner)];
+        st.vaults().iter().filter(owned).map(|v| v.id).collect()
+    };
+    // every chain of `kinds` down from `person`, the person first, in the order the view holds its vaults
+    let chains = |kinds: &[Kind]| {
+        let mut chains = vec![vec![person]];
+        for &kind in kinds {
+            let longer = |chain: &Vec<VaultId>| {
+                let at = *chain.last().expect("the person first");
+                alone(at, kind).into_iter().map(|v| [&chain[..], &[v]].concat()).collect::<Vec<_>>()
+            };
+            chains = chains.iter().flat_map(longer).collect();
+        }
+        chains
+    };
+    let coop = |chain: &Vec<VaultId>| alone(chain[1 + SEED_COOP_OF], Kind::Coop).first().copied();
+    match chains(&SEED) {
+        whole if !whole.is_empty() => whole.iter().find_map(coop),
+        _ => chains(&SEED[..=SEED_COOP_OF]).iter().find_map(coop),
+    }
+}
+
 /// Whether vault `server` ends a seed founded from vault `mine`, by view `st` (`seeder`).
 pub fn seeded(st: &State, mine: VaultId, server: VaultId) -> bool {
     seeder(st, server) == Some(mine)

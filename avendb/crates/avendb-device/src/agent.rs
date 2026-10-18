@@ -54,9 +54,13 @@
 //! or else from the Mac's one store, and writes it to the `path` beside the op, never over a file there unless
 //! `overwrite` is beside it too; a small text file comes back inline as well. Two named tools do what an agent does
 //! most: `avendb_add_spark` captures a spark as the page's Sparks capture one, the same `create` op run as
-//! `avendb_run` runs it, into its person's own vault unless it names another; `avendb_add_artifact` adds a source fact
-//! as the page's Artifacts add one, a link or a file of this Mac saved to the Library first, and puts it on a spark's
-//! canvas where it names one; and `avendb_read_file` is `get_file`.
+//! `avendb_run` runs it; `avendb_add_artifact` adds a source fact as the page's Artifacts add one, a link or a file of
+//! this Mac saved to the Library first, and puts it on a spark's canvas where it names one. Each goes in the vault it
+//! names, else in its person's seed coop, Maia City (`world::seed_coop`), where all its person's sparks and artifacts
+//! are seeded, where its shares let it add or draft one there, else in its person's own vault (`homes`). Where they let
+//! it only suggest, as a Suggester's do, which an agent is on Maia City by its standing rule, it is a draft, and its
+//! file a draft Library file of its own that brings it in its creation, which the vault's owners land by accepting an
+//! AIP the agent opens over them. `avendb_read_file` is `get_file`.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -888,23 +892,28 @@ impl Agent {
              with its diff); after a revise, write again on the same lines and promote it again: it keeps its \
              number. Save a file of this Mac into a vault with avendb_run: a `put_file` op (`vault`, `name`, and \
              `media` and `tags` if any), and the file's absolute `path` beside the op. It makes a new entry of type \
-             file, so only where its shares let it create, as an Editor's do, not where it may only suggest. An \
-             entry of any other type brings its file in its creation, one write: `create` with `file` (an object, \
-             `name` and `media` if any) and the `path` beside it, a draft too; `put_file` with `entry` brings a file \
-             into an entry it may edit on main. Read a \
+             file, so only where its shares let it create, as an Editor's do, not where it may only suggest. Any \
+             entry brings its file in its creation, one write: `create` with `file` (an object, `name` and `media` \
+             if any) and the `path` beside it, a draft too, so where it may only suggest a Library file is a draft \
+             of type file (`value` `{{kind: \"file\", title, media}}`); `put_file` with `entry` brings a file into \
+             an entry it may edit on main. Read a \
              file of a vault back with avendb_read_file, or a `get_file` op on avendb_run: the file entry's `entry`, \
              or a `vault` and the file's `name`, and an absolute `path` on this Mac to write it to, never over a file \
              there unless `overwrite` is true; a text file of at most 64 KiB comes back inline too, as `text`, and \
              with no `path` inline alone. Capture a spark, anything that might become a story (a thought, a quote, a \
              note), with avendb_add_spark: its `text`, and its `title` and `tags` if any (a link or a media file goes \
-             in as an artifact of its own); it goes in its person's own vault unless it names another `vault`, and \
-             answers its entry. Add a source fact, a link, a YouTube video, a picture or a clip, with \
-             avendb_add_artifact: its `url`, or the absolute `path` of a file on this Mac, which it saves to the \
-             Library first, or both; its `title`, `note`, `by`, `taken`, `language` and `transcript` if known; and a \
-             `spark` to put it on that spark's canvas. For access it lacks, ask its person with \
-             avendb_request_access, saying why: they \
-             answer in The OS app.",
-            name = self.name
+             in as an artifact of its own), and answers its entry. Add a source fact, a link, a YouTube video, a \
+             picture or a clip, with avendb_add_artifact: its `url`, or the absolute `path` of a file on this Mac, \
+             which it saves to the Library first, or both; its `title`, `note`, `by`, `taken`, `language` and \
+             `transcript` if known; and a `spark` to put it on that spark's canvas. Each goes in the `vault` it names, \
+             else in its person's seed coop, {coop}, where its person's sparks and artifacts are all seeded, where \
+             its shares let it add or draft one there, else in its person's own vault. Where it may only suggest, \
+             as a Suggester, which an agent is on {coop}, it is a draft, its file a draft Library file of its own: \
+             the answer says `draft: true`, and gives its `line` and the `proposals` to name in `aip_open`, then \
+             `aip_promote`; the vault's owners land it by accepting the AIP. For access it lacks, ask its person \
+             with avendb_request_access, saying why: they answer in The OS app.",
+            name = self.name,
+            coop = world::SEED_COOP,
         )
     }
 
@@ -1149,11 +1158,14 @@ impl Agent {
     /// record of avenDB's own `spark` schema titled `title`, or else by the first line of its `text`, cut at a word
     /// past `TITLE` letters (`title_of`), its opening heading (block 1) the title too and, where the text says more, a
     /// paragraph (block 2) that reads it: its kind, title and blocks alone, which every version of the schema reads
-    /// alike; a link or a media file goes in as an artifact of its own. It goes in vault `vault`, else in its person's
-    /// own vault, the human vault over its aven (`person_of`), as a new entry of type spark tagged `tags` and the tags
-    /// a share it adds through asks for (the `creatable` op), by the op the page runs, `create`, run as avendb_run runs
-    /// a change (`run`). `{"entry", "vault", "tags"}`. Fails with why, in words: where it may add no spark, the vaults
-    /// it may.
+    /// alike; a link or a media file goes in as an artifact of its own. It goes in vault `vault`, else in the first of
+    /// its `homes` its shares let it add one to or draft one in (`adding`): its person's seed coop, Maia City, then its
+    /// person's own vault, the human vault over its aven. A new entry of type spark tagged `tags` and the tags a share
+    /// it adds through asks for (the `creatable` op), by the op the page runs, `create`, run as avendb_run runs one
+    /// (`run`): on main where its shares let it create one there, else, where they let it only suggest, as a draft
+    /// (`create` with `draft`), which the vault's owners land by accepting an AIP that names it (`lands`).
+    /// `{"entry", "vault", "tags"}`, and for a draft `"draft": true`, its `line` and the `proposals` to name in an AIP.
+    /// Fails with why, in words: where it may add no spark, the vaults it may, and those it may draft one in.
     async fn add_spark(&self, mine: VaultId, args: &Value) -> Result<String> {
         const TAKES: [&str; 4] = ["text", "title", "tags", "vault"];
         if let Some(k) = args.as_object().into_iter().flatten().map(|(k, _)| k).find(|k| !TAKES.contains(&k.as_str())) {
@@ -1183,32 +1195,22 @@ impl Agent {
             Some(v) => Some(v.as_str().context("vault is a vault's id, 64 hex digits")?.trim().to_ascii_lowercase()),
             None => None,
         };
-        let person = self.node.read(move |lab, me| person_of(lab.state(me), mine)).await;
-        let into = named.clone().or(person.map(|p| hex(&p.0)));
-        let asked = match &into {
-            Some(v) => self.creatable(v, SPARK, &tags).await?,
-            None => None,
+        let homes = self.homes(mine).await;
+        let into = named.clone().map_or_else(|| homes.clone(), |v| vec![v]);
+        let Some(Adding { vault, draft, asked }) = self.adding(&into, &[(SPARK, &tags)]).await? else {
+            anyhow::bail!("{}", self.nowhere(mine, (SPARK, "sparks"), "", &tags, named.as_deref(), &homes).await?);
         };
-        let (Some(vault), Some(asked)) = (into.clone(), asked) else {
-            let me = &self.name;
-            let (vaults, may) = self.creatable_in(mine, SPARK, &tags).await?;
-            let what = match (&named, &into) {
-                (Some(v), _) => format!("vault {}", label(&vaults, v)),
-                (None, Some(v)) => format!("its person's own vault, {}", label(&vaults, v)),
-                (None, None) => "its person's own vault, which it doesn't know".into(),
-            };
-            let may = if may.is_empty() {
-                "It may add sparks to no vault: ask its person for Editor access with avendb_request_access".into()
-            } else {
-                format!("It may add sparks to {}: name one as vault", may.join(", "))
-            };
-            anyhow::bail!("{me} may add no spark to {what}: no share of its lets it create one there. {may}.");
-        };
-        let tags = [tags, asked].concat();
-        let op = json!({ "op": "create", "vault": vault, "type": SPARK, "tags": tags, "value": value });
+        let tags = [tags, asked.into_iter().flatten().collect()].concat();
+        let op = json!({ "op": "create", "vault": vault, "type": SPARK, "tags": tags, "value": value, "draft": draft });
         let answer = self.run(op, Beside::default()).await?;
         match (answer["ok"]["entry"].as_str(), answer.get("refused")) {
-            (Some(entry), _) => Ok(json!({ "entry": entry, "vault": vault, "tags": tags }).to_string()),
+            (Some(entry), _) => {
+                let mut made = json!({ "entry": entry, "vault": vault, "tags": tags });
+                if draft {
+                    lands(&mut made, &[&answer["ok"]]);
+                }
+                Ok(made.to_string())
+            }
             (None, Some(refused)) => {
                 let (why, refused) = (answer["why"].as_str(), refused.as_str());
                 anyhow::bail!("the spark isn't added: {} ({})", why.unwrap_or_default(), refused.unwrap_or_default())
@@ -1224,11 +1226,18 @@ impl Agent {
     /// as a put_file saves it, which the artifact shows (`files`), a picture an image and a film or a sound a video.
     /// Titled `title`, else by its link (`link_title`), else by its file's name; with its `note`, `by`, `taken` and
     /// `language` where given, and its `transcript`, a paragraph a row, each from the time it starts with, if any
-    /// (`rows_of`). It goes in vault `vault`, else in its person's own vault, as add_spark's does, as a new entry of
-    /// type artifact tagged `tags` and the tags a share it adds through asks for; and where `spark` names a spark, it
-    /// is put on that spark's canvas too, under the rest (`put_on`). `{"entry", "vault", "tags", "look", "file"?,
-    /// "spark"?}`, `spark` what became of the placing. Fails with why, in words, before it saves anything where it may
-    /// add no artifact, or no file, there.
+    /// (`rows_of`). It goes in vault `vault`, else where add_spark's goes, the first of its `homes` its shares let it
+    /// add it and its file to or draft them in (`adding`), as a new entry of type artifact tagged `tags` and the tags a
+    /// share it adds through asks for; and where `spark` names a spark, it is put on that spark's canvas too, under
+    /// the rest (`put_on`). Where its shares let it only suggest there, the artifact is a draft, as add_spark's is, and
+    /// its file a draft Library file of its own, which brings it in its creation (`create` with `draft` and `file`), as
+    /// `put_file`, which makes a file entry on main, may not; the artifact links it as it links any, so once the AIP
+    /// that names both lands them, it shows its file as one the page saved. It puts one on a spark, a draft or not,
+    /// only where it may change the spark's main line: not on a draft spark its vault hasn't landed, nor where it may
+    /// only suggest, where it says it didn't, and why. `{"entry", "vault", "tags", "look", "file"?, "spark"?}`, `spark`
+    /// what became of the placing; and for a draft `"draft": true`, its `line`, its file's `fileLine`, and the
+    /// `proposals` to name in an AIP, both. Fails with why, in words, before it saves anything where it may add no
+    /// artifact, or no file, there.
     async fn add_artifact(&self, mine: VaultId, args: &Value) -> Result<String> {
         const TAKES: [&str; 11] =
             ["url", "path", "title", "note", "by", "taken", "language", "transcript", "tags", "vault", "spark"];
@@ -1281,55 +1290,46 @@ impl Agent {
         };
         let spark = text("spark")?.map(|s| s.to_ascii_lowercase());
         let named = text("vault")?.map(|v| v.to_ascii_lowercase());
-        let person = self.node.read(move |lab, me| person_of(lab.state(me), mine)).await;
-        let into = named.clone().or(person.map(|p| hex(&p.0)));
+        let homes = self.homes(mine).await;
+        let into = named.clone().map_or_else(|| homes.clone(), |v| vec![v]);
         // where it may add the artifact, and its file first, if it brings one
-        let mut asked = None;
-        if let Some(v) = &into {
-            let file = match &path {
-                Some(_) => self.creatable(v, FILE, &[]).await?,
-                None => Some(vec![]),
-            };
-            asked = match (file, self.creatable(v, ARTIFACT, &tags).await?) {
-                (Some(file), Some(artifact)) => Some((file, artifact)),
-                _ => None,
-            };
-        }
-        let (Some(vault), Some((file_tags, asked))) = (into.clone(), asked) else {
-            let me = &self.name;
-            let (vaults, may) = self.creatable_in(mine, ARTIFACT, &tags).await?;
-            let what = match (&named, &into) {
-                (Some(v), _) => format!("vault {}", label(&vaults, v)),
-                (None, Some(v)) => format!("its person's own vault, {}", label(&vaults, v)),
-                (None, None) => "its person's own vault, which it doesn't know".into(),
-            };
-            let may = if may.is_empty() {
-                "It may add artifacts to no vault: ask its person for Editor access with avendb_request_access".into()
-            } else {
-                format!("It may add artifacts to {}: name one as vault", may.join(", "))
-            };
-            let file = if path.is_some() { " and its file" } else { "" };
-            anyhow::bail!("{me} may add no artifact{file} to {what}: no share of its lets it create one there. {may}.");
+        let none: &[String] = &[];
+        let kinds = [(ARTIFACT, &tags[..]), (FILE, none)];
+        let kinds = if path.is_some() { &kinds[..] } else { &kinds[..1] };
+        let Some(Adding { vault, draft, asked }) = self.adding(&into, kinds).await? else {
+            let with = if path.is_some() { " and its file" } else { "" };
+            let nowhere = self.nowhere(mine, (ARTIFACT, "artifacts"), with, &tags, named.as_deref(), &homes).await?;
+            anyhow::bail!("{nowhere}");
         };
-        // its file, saved to the Library first
+        let mut asked = asked.into_iter();
+        let (asked, file_tags) = (asked.next().unwrap_or_default(), asked.next().unwrap_or_default());
+        // its file, saved to the Library first: a file entry on main, as put_file makes one; or, where it may only
+        // suggest, a draft file entry, which brings it in its creation, as put_file's next write would
         let mut file = None;
         if let Some(path) = path {
             let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).context("the path names no file")?;
             let media = media_of(&name);
-            let op = json!({ "op": "put_file", "vault": vault, "name": name, "media": media, "tags": file_tags });
+            let op = if draft {
+                let value = json!({ "kind": FILE, "title": name, "media": media });
+                let file = json!({ "name": name, "media": media });
+                json!({ "op": "create", "vault": vault, "type": FILE, "tags": file_tags, "value": value, "draft": true,
+                    "file": file })
+            } else {
+                json!({ "op": "put_file", "vault": vault, "name": name, "media": media, "tags": file_tags })
+            };
             let answer = self.run(op, Beside { path: Some(path), overwrite: false }).await?;
             let Some(entry) = answer["ok"]["entry"].as_str() else {
                 let (why, refused) = (answer["why"].as_str(), answer["refused"].as_str());
                 anyhow::bail!("its file isn't saved: {} ({})", why.unwrap_or_default(), refused.unwrap_or_default());
             };
-            file = Some((entry.to_string(), name, media));
+            file = Some((entry.to_string(), name, media, answer["ok"].clone()));
         }
-        let look = look_of(link.as_ref(), file.as_ref().map(|(_, _, media)| *media));
+        let look = look_of(link.as_ref(), file.as_ref().map(|(_, _, media, _)| *media));
         let title = match text("title")? {
             Some(title) => title,
             None => match (&link, &file) {
                 (Some(link), _) => link_title(link),
-                (None, Some((_, name, _))) => name.clone(),
+                (None, Some((_, name, _, _))) => name.clone(),
                 (None, None) => unreachable!("a link or a file, as checked"),
             },
         };
@@ -1353,11 +1353,12 @@ impl Agent {
         if let Some(t) = text("transcript")? {
             value["transcript"] = rows_of(&t).into();
         }
-        if let Some((entry, _, _)) = &file {
+        if let Some((entry, _, _, _)) = &file {
             value["files"] = json!([{ "vault": vault, "entry": entry }]);
         }
         let tags = [tags, asked].concat();
-        let op = json!({ "op": "create", "vault": vault, "type": ARTIFACT, "tags": tags, "value": value });
+        let op =
+            json!({ "op": "create", "vault": vault, "type": ARTIFACT, "tags": tags, "value": value, "draft": draft });
         let answer = self.run(op, Beside::default()).await?;
         let entry = match (answer["ok"]["entry"].as_str(), answer.get("refused")) {
             (Some(entry), _) => entry.to_string(),
@@ -1368,8 +1369,15 @@ impl Agent {
             (None, None) => anyhow::bail!("the artifact isn't added: its person's passkey would approve it ({answer})"),
         };
         let mut made = json!({ "entry": entry, "vault": vault, "tags": tags, "look": look });
-        if let Some((file, _, _)) = file {
-            made["file"] = file.into();
+        if let Some((file, _, _, _)) = &file {
+            made["file"] = file.as_str().into();
+        }
+        if draft {
+            let saved = file.as_ref().map(|(_, _, _, saved)| saved);
+            lands(&mut made, &[&answer["ok"]].into_iter().chain(saved).collect::<Vec<_>>());
+            if let Some(saved) = saved {
+                made["fileLine"] = saved["line"].clone();
+            }
         }
         if let Some(spark) = spark {
             made["spark"] = match self.put_on(&spark, &vault, &entry).await {
@@ -1382,11 +1390,13 @@ impl Agent {
 
     /// Puts artifact `entry` of vault `vault` on the canvas of spark `spark`, as the page puts a piece there: an item
     /// of its `items` that links to it, under the lowest card, from the left (sparks.js, `placing`), with an id no item
-    /// has. Fails with why where it reads no such spark, or may not change it, as where it may only suggest.
+    /// has, on the spark's main line. Fails with why where it reads no such spark there, as a draft its vault hasn't
+    /// landed, which holds nothing on main yet, or may not change it, as where it may only suggest.
     async fn put_on(&self, spark: &str, vault: &str, entry: &str) -> Result<()> {
         let got = self.node.op(json!({ "op": "get", "entry": spark })).await?;
         if let Some(refused) = got["refused"].as_str() {
-            bail!("{} reads no spark {spark} ({refused})", self.name);
+            let none = "none is there, none of its shares reaches it, or it is a draft its vault hasn't landed";
+            bail!("{} reads no spark {spark} on its main line ({refused}): {none}", self.name);
         }
         let record = &got["ok"]["record"];
         anyhow::ensure!(record["kind"] == SPARK, "entry {spark} is no spark");
@@ -1417,10 +1427,10 @@ impl Agent {
     }
 
     /// The tags a new entry of type `kind` tagged `tags` in vault `vault` carries besides, as a share it adds through
-    /// asks for (the `creatable` op): none where no share of its lets it create one there. Fails where the vault's id
-    /// is none.
-    async fn creatable(&self, vault: &str, kind: &str, tags: &[String]) -> Result<Option<Vec<String>>> {
-        let ask = json!({ "op": "creatable", "vault": vault, "type": kind, "tags": tags });
+    /// asks for (the `creatable` op), on main, or with `draft`, as a draft: none where no share of its lets it create
+    /// one there, or draft one. Fails where the vault's id is none.
+    async fn creatable(&self, vault: &str, kind: &str, tags: &[String], draft: bool) -> Result<Option<Vec<String>>> {
+        let ask = json!({ "op": "creatable", "vault": vault, "type": kind, "tags": tags, "draft": draft });
         let answer = self.node.op(ask).await?;
         if answer["refused"] == "BadOp" {
             anyhow::bail!("{}", answer["why"].as_str().unwrap_or_default());
@@ -1429,19 +1439,79 @@ impl Agent {
         Ok(asked.map(|t| t.iter().filter_map(|t| t.as_str().map(String::from)).collect()))
     }
 
-    /// The vaults its world shows, and of them, by their names, those but its own device vault `mine` where it may add
-    /// an entry of type `kind` tagged `tags` (`creatable`).
-    async fn creatable_in(&self, mine: VaultId, kind: &str, tags: &[String]) -> Result<(Vec<Value>, Vec<String>)> {
-        let world = self.node.op(json!({ "op": "world" })).await?;
-        let vaults = world["ok"]["vaults"].as_array().cloned().unwrap_or_default();
-        let mut may = vec![];
-        for v in &vaults {
-            let Some(id) = v["id"].as_str().filter(|id| *id != hex(&mine.0)) else { continue };
-            if self.creatable(id, kind, tags).await?.is_some() {
-                may.push(label(&vaults, id));
+    /// The vaults its new entries go in where it names none (`homes`), by their ids: its person's seed coop, then its
+    /// person's own vault, as its device vault `mine`'s view knows them.
+    async fn homes(&self, mine: VaultId) -> Vec<String> {
+        let homes = self.node.read(move |lab, me| homes(lab.state(me), mine)).await;
+        homes.iter().map(|v| hex(&v.0)).collect()
+    }
+
+    /// How it adds a new entry of each of `kinds`, a type and its tags, to the first of the vaults `into`, by their
+    /// ids, where its shares let it: on main where they let it create every one there; else as drafts, where they let
+    /// it only suggest, as a Suggester's do, where they let it draft every one; each with the tags a share it adds
+    /// through asks for besides (`creatable`). None where they let it do neither in any of them.
+    async fn adding(&self, into: &[String], kinds: &[(&str, &[String])]) -> Result<Option<Adding>> {
+        for vault in into {
+            for draft in [false, true] {
+                let mut asked = vec![];
+                for (kind, tags) in kinds {
+                    match self.creatable(vault, kind, tags, draft).await? {
+                        Some(tags) => asked.push(tags),
+                        None => break,
+                    }
+                }
+                if asked.len() == kinds.len() {
+                    return Ok(Some(Adding { vault: vault.clone(), draft, asked }));
+                }
             }
         }
-        Ok((vaults, may))
+        Ok(None)
+    }
+
+    /// Why, in words, it may add no entry of type `kind` tagged `tags`, its type its word for one too and `kinds` for
+    /// several, `with` after it, as " and its file", to the vault it `named`, or to any of its `homes`, where it names
+    /// none: and of the vaults its world shows but its own device vault `mine`, the ones it may add one to
+    /// (`creatable`), and the ones it may only draft one in, by their names.
+    async fn nowhere(
+        &self,
+        mine: VaultId,
+        (kind, kinds): (&str, &str),
+        with: &str,
+        tags: &[String],
+        named: Option<&str>,
+        homes: &[String],
+    ) -> Result<String> {
+        let world = self.node.op(json!({ "op": "world" })).await?;
+        let vaults = world["ok"]["vaults"].as_array().cloned().unwrap_or_default();
+        let (mut may, mut drafts) = (vec![], vec![]);
+        for v in &vaults {
+            let Some(id) = v["id"].as_str().filter(|id| *id != hex(&mine.0)) else { continue };
+            if self.creatable(id, kind, tags, false).await?.is_some() {
+                may.push(label(&vaults, id));
+            } else if self.creatable(id, kind, tags, true).await?.is_some() {
+                drafts.push(label(&vaults, id));
+            }
+        }
+        let to = match (named, homes) {
+            (Some(v), _) => format!("vault {}", label(&vaults, v)),
+            (None, [coop, person]) => {
+                let (coop, person) = (label(&vaults, coop), label(&vaults, person));
+                format!("its person's own vault, {person}, nor to its person's seed coop, {coop}")
+            }
+            (None, [person]) => format!("its person's own vault, {}", label(&vaults, person)),
+            (None, _) => "its person's own vault, which it doesn't know".into(),
+        };
+        let (me, may, drafts) = (&self.name, may.join(", "), drafts.join(", "));
+        let can = match (may.is_empty(), drafts.is_empty()) {
+            (true, true) => format!(
+                "It may add {kinds} to no vault, nor draft one: ask its person for access with avendb_request_access, \
+                 Suggester to draft them or Editor to add them"
+            ),
+            (false, true) => format!("It may add {kinds} to {may}: name one as vault"),
+            (true, false) => format!("It may draft {kinds} in {drafts}, where it may only suggest: name one as vault"),
+            (false, false) => format!("It may add {kinds} to {may}, and draft them in {drafts}: name one as vault"),
+        };
+        Ok(format!("{me} may add no {kind}{with} to {to}: no share of its lets it create or draft one there. {can}."))
     }
 
     /// Asks its person for the access `args` name, a level of `LEVELS` and why, and the vaults it names, if any. Once
@@ -1481,6 +1551,36 @@ impl Agent {
     }
 }
 
+/// How an agent adds new entries to a vault (`Agent::adding`): the vault, by its id; whether as drafts, where it may
+/// only suggest there; and the tags a share it adds through asks for besides, for each entry in turn.
+struct Adding {
+    vault: String,
+    draft: bool,
+    asked: Vec<Vec<String>>,
+}
+
+/// What the answer of avendb_add_spark or avendb_add_artifact says of a draft it made, beside its line and the
+/// proposals to name in an AIP (`lands`).
+const LANDS: &str = "A draft, on a line of its own: it shows nowhere on the vault's main line until the vault's owners \
+                     land it, accepting an AIP that names it. Put it to them with avendb_run: aip_open (vault, title, \
+                     a note saying why, and proposals, these, with any other drafts and proposals of that vault), then \
+                     aip_promote (entry).";
+
+/// The answer `made` of a draft avendb_add_spark or avendb_add_artifact made, the create answers `drafted` of its
+/// entry and of the drafts it brought, its file's, each `{entry, line}`: with `"draft": true`, its `line`, the
+/// `proposals` to name in `aip_open`, and how its vault's owners land it (`LANDS`).
+fn lands(made: &mut Value, drafted: &[&Value]) {
+    let proposals: Vec<Value> = drafted.iter().map(|d| json!({ "entry": d["entry"], "line": d["line"] })).collect();
+    made["draft"] = true.into();
+    made["line"] = drafted.first().map_or(Value::Null, |d| d["line"].clone());
+    made["proposals"] = proposals.into();
+    made["lands"] = LANDS.into();
+}
+
+/// What a new spark's or artifact's `vault` says, in avendb_add_spark's and avendb_add_artifact's schemas.
+const HOME: &str = "The id of the vault it goes in (avendb_vaults lists them); left out, its person's seed coop, Maia \
+                    City, where it may add or draft one there, else its person's own vault";
+
 /// The tools it offers.
 fn tools() -> Value {
     let one = json!({ "type": "object", "description": "One op of avenDB's engine, as JSON" });
@@ -1509,7 +1609,7 @@ fn tools() -> Value {
                 "items": { "type": "string" },
                 "description": "Its tags; those a share it adds through asks for besides are added",
             },
-            "vault": text("The id of the vault it goes in (avendb_vaults lists them); left out, its person's own"),
+            "vault": text(HOME),
         },
         "required": ["text"],
     });
@@ -1540,7 +1640,7 @@ fn tools() -> Value {
                 "items": { "type": "string" },
                 "description": "Its tags; those a share it adds through asks for besides are added",
             },
-            "vault": text("The id of the vault it goes in (avendb_vaults lists them); left out, its person's own"),
+            "vault": text(HOME),
             "spark": text("The entry id of a spark to put it on, on that spark's canvas"),
         },
     });
@@ -1609,10 +1709,14 @@ fn tools() -> Value {
             "description": "Capture a spark as this agent, as the Sparks page captures one: anything that might \
                             become a story (a thought, a quote, a note), one small entry of avenDB's spark schema. \
                             Give its text, and its title and tags, if any. A link or a media file goes in as an \
-                            artifact of its own, not on the spark. It goes in its person's own vault, or in the vault \
-                            named, where its shares let it create, as an Editor's do; where they don't, it says \
-                            which vaults it may add sparks to. Answers the new spark's entry id, its vault and its \
-                            tags.",
+                            artifact of its own, not on the spark. It goes in the vault named, else in its person's \
+                            seed coop, Maia City, where its shares let it add or draft one there, else in its \
+                            person's own vault. Where its shares let it create there, as an Editor's do, on the \
+                            vault's main line; where they let it only suggest, as a Suggester's, which an agent is on \
+                            Maia City, as a draft, which the vault's owners land by accepting an AIP: the answer says \
+                            draft: true and gives its line and the proposals to name in aip_open, then aip_promote. \
+                            Where they let it do neither, it says which vaults it may add or draft sparks in. Answers \
+                            the new spark's entry id, its vault and its tags.",
             "inputSchema": spark,
         },
         {
@@ -1621,10 +1725,14 @@ fn tools() -> Value {
                             on its own, a bookmarked link, a YouTube video, a picture or a clip, one entry of \
                             avenDB's artifact schema. Give its url, or the absolute path of a file on this Mac, which \
                             it saves to the Library first, or both; and its title, note, by, taken, language and \
-                            transcript if known. It goes in its person's own vault, or in the vault named, where its \
-                            shares let it create, as an Editor's do; a spark named puts it on that spark's canvas \
-                            too. Answers the new artifact's entry id, its vault, tags and look, its file's entry if \
-                            it saved one, and whether it is on the spark.",
+                            transcript if known. It goes where avendb_add_spark's goes: in the vault named, else in \
+                            its person's seed coop, Maia City, else in its person's own vault; on main where its \
+                            shares let it create, else, where they let it only suggest, as a draft, its file a draft \
+                            Library file of its own, both landed by the vault's owners accepting an AIP that names \
+                            them (the answer's proposals). A spark named puts it on that spark's canvas too, where \
+                            the agent may change the spark on main. Answers the new artifact's entry id, its vault, \
+                            tags and look, its file's entry if it saved one, whether it is on the spark, and for a \
+                            draft, draft: true, its line, its file's fileLine and the proposals.",
             "inputSchema": artifact,
         },
         {
@@ -1760,6 +1868,16 @@ fn person_of(st: &State, vault: VaultId) -> Option<VaultId> {
     let [Principal::Vault(aven)] = st.vault(vault)?.owners[..] else { return None };
     let [Principal::Vault(person)] = st.vault(aven)?.owners[..] else { return None };
     Some(person)
+}
+
+/// The vaults a new spark or artifact of agent device vault `vault` goes in where it names none, by view `st`, in the
+/// order it tries them, the first its shares let it add one to or draft one in taking it (`Agent::adding`): its
+/// person's seed coop, Maia City, where all its person's sparks and artifacts are seeded, found from its person down
+/// as an agent's view holds no avenCEO server (`world::seed_coop`); then its person's own vault (`person_of`). None it
+/// doesn't know.
+pub fn homes(st: &State, vault: VaultId) -> Vec<VaultId> {
+    let Some(person) = person_of(st, vault) else { return vec![] };
+    world::seed_coop(st, person).into_iter().chain([person]).collect()
 }
 
 /// Vault `id` in words, by its name among `vaults`, as the world shows them, if it has one: `"Name" (id)`, else its id.
