@@ -73,11 +73,14 @@
 					The day we are 1,346,269 founders strong, we build the first real village on the Mediterranean,
 					and the village that proved itself in the game moves in as its first settlers.
 				</p>
+				<p class="milestone">
+					That village is our first major milestone: the seed the whole city grows from.
+				</p>
 			</div>
 			<ol class="prize-path">
 				<li><strong>1,000</strong><span>villages compete in the game</span></li>
 				<li><strong>1,346,269</strong><span>founders, and the build begins</span></li>
-				<li><strong>1</strong><span>real village on the Mediterranean, and its first settlers</span></li>
+				<li><strong>1</strong><span>real village on the Mediterranean: the first milestone, before the city grows</span></li>
 			</ol>
 		</div>
 	</section>
@@ -366,6 +369,15 @@
 		font-size: clamp(1.15rem, 1.9vw, 1.4rem);
 		line-height: 1.6;
 		color: var(--ink-soft);
+	}
+
+	.prize-text .milestone {
+		margin: 1.75rem 0 0;
+		font-family: var(--font-display);
+		font-size: clamp(1.5rem, 2.8vw, 2.1rem);
+		line-height: 1.2;
+		letter-spacing: -0.02em;
+		color: var(--ink);
 	}
 
 	/* the path in three numbers, each a size of its own, read top to bottom */
