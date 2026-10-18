@@ -466,7 +466,16 @@ export class Studio {
 	worldProxy(c) {
 		return this.library.find((m) => m.meta?.shot === c.shot && Number(m.meta?.shotVersion) === c.shotVersion && m.kind === 'video') ?? null;
 	}
-	/** whether every world clip of the cut has its HD proxy: Edit then plays them and leaves the live world unloaded */
+	/**
+	 * Whether world clip `c` plays its HD proxy rather than the live world: in Edit, whenever it has one — in any world,
+	 * game or sandbox. A cut between proxies is a cut between two videos, instant; the live world is staged only for
+	 * the clips with none yet (their proxies are rendered in the background) and in 3D, where the camera is flown.
+	 * @param {Clip | null | undefined} c
+	 */
+	onWorldProxy(c) {
+		return !!c && isWorld(c) && this.tab !== '3d' && !!this.worldProxy(c);
+	}
+	/** whether every world clip of the cut has its HD proxy: Edit then leaves the live world unloaded */
 	allWorldProxied = $derived(this.worldClips.length > 0 && this.worldClips.every((c) => !!this.worldProxy(c)));
 	/**
 	 * The profile the viewer takes a clip's picture in by.
@@ -1503,7 +1512,7 @@ export class Studio {
 			if (!v) continue;
 			// the live world draws this shot: its proxy (hidden under it) waits, not decoding along
 			const spec = isWorld(c) ? this.specOf(c) : null;
-			const live = c.id === this.picture?.id && !!spec && liveTab(this.tab) && this.world.isLive(spec);
+			const live = c.id === this.picture?.id && !!spec && liveTab(this.tab) && !this.onWorldProxy(c) && this.world.isLive(spec);
 			if (c.id !== this.picture?.id || live) {
 				// waiting in the wings: paused on its first frame
 				if (!v.paused) v.pause();
@@ -1529,7 +1538,8 @@ export class Studio {
 	driveWorld() {
 		const c = this.picture;
 		if (this.world.state !== 'ready') return;
-		const upcoming = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start).slice(0, 3);
+		// the clips the live world draws: those that play no proxy (`onWorldProxy`)
+		const upcoming = this.worldClips.filter((w) => w.start + w.dur > this.time && !this.onWorldProxy(w)).sort((a, b) => a.start - b.start).slice(0, 3);
 		const specs = upcoming.map((w) => this.specOf(w)).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
 		// while it plays, only the shots staged where the one on screen is: preparing one that stands elsewhere moved the
 		// world there under the playing shot (its frames held, then staged back, then again at the cut: no clean
@@ -1546,7 +1556,7 @@ export class Studio {
 		}
 		// while a move is flown by hand the world has its canvas and clock back (film mode's record): no frames asked
 		if (this.world.recording) return;
-		if (!c || !isWorld(c)) return;
+		if (!c || !isWorld(c) || this.onWorldProxy(c)) return;
 		// the shot as it is being edited (a draft) when it is: what the stand-in and the lanes show, the world draws too
 		const spec = this.specOf(c);
 		if (!spec) return;
