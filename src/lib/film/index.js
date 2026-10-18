@@ -126,6 +126,8 @@ export function startFilm({ base = '' } = {}) {
 	let staged = '';
 	/** the shot the walker is being moved for now (a stage under way), else '' */
 	let staging = '';
+	/** the shot drawn before its world was all there (past its wait), while the rest streams in, else '' */
+	let streaming = '';
 	/** what has been staged and settled (loads done, shaders compiled) before: staged there again while the world
 	 * still holds it, nothing new is built, so nothing is compiled again (compiling the whole scene at every cut hitched) */
 	const settledFor = new Set();
@@ -190,7 +192,10 @@ export function startFilm({ base = '' } = {}) {
 			})();
 			const late = limit < Infinity && (await Promise.race([done.then(() => false), sleep(limit).then(() => true)]));
 			if (late) {
-				done.catch(() => {});
+				// drawn as it is until the rest is in: not staged again every frame meanwhile (each would move the walker
+				// and wait once more)
+				streaming = key;
+				done.catch(() => {}).finally(() => void (streaming === key && (streaming = '')));
 				console.warn(`film: ${spec.meta?.name ?? 'a shot'} still loading after ${limit / 1000} s: drawn as it is, the rest streams in`);
 			} else await done;
 			staged = key;
@@ -390,15 +395,19 @@ export function startFilm({ base = '' } = {}) {
 		 * shutter blur — the live world viewer; 'final': as the plate.
 		 * `meter: false` (the timeline playing): a shot not metered yet is drawn at the exposure drawn last, never metered
 		 * at its cut (five renders there and back hitched it); it is metered once the timeline stops.
-		 * @param {FrameAsk & { view?: { lut?: Lut | string | null, grade?: Lut | null }, quality?: 'proxy' | 'final', meter?: boolean }} ask
+		 * `wait`: the most a 'proxy' frame waits for its shot's staging (ms, default STAGE_LIMIT) before it is drawn as the
+		 * world has it, the rest streaming in as it does in the game: while the timeline plays, a cut to a shot that stands
+		 * elsewhere holds the picture no longer than that (waiting the whole staging out hitched every cut there).
+		 * @param {FrameAsk & { view?: { lut?: Lut | string | null, grade?: Lut | null }, quality?: 'proxy' | 'final', meter?: boolean, wait?: number }} ask
 		 * @returns {Promise<boolean>} whether the frame was drawn (not while the world is being staged for another shot)
 		 */
-		async show({ spec: raw, t, shape, width, height, view = {}, quality = 'proxy', meter = true }) {
+		async show({ spec: raw, t, shape, width, height, view = {}, quality = 'proxy', meter = true, wait = STAGE_LIMIT }) {
 			const spec = normal(raw), to = shape ?? spec.aspect;
 			const v = await mounted();
 			// the world is being readied for another shot (a prepare): never draw this one with the walker elsewhere —
 			// the last frame stays up
-			if (staging && staging !== keyOf(spec)) return false;
+			const key = keyOf(spec);
+			if (staging && staging !== key) return false;
 			const t0 = performance.now();
 			const live = quality !== 'final';
 			const known = live ? knownExposure(spec) : undefined;
@@ -406,7 +415,7 @@ export function startFilm({ base = '' } = {}) {
 			if (live) lastEv = typeof ev === 'number' ? ev : ev.reduce((a, k) => a + k[1], 0) / ev.length;
 			const t1 = performance.now();
 			// restaged in line with the prepares, never beside one (two at once pull the walker back and forth)
-			if (staged !== keyOf(spec) || !v.film.holds(spec.world)) await one(() => stage(spec, quality === 'final' ? Infinity : STAGE_LIMIT));
+			if (staged !== key || (streaming !== key && !v.film.holds(spec.world))) await one(() => stage(spec, quality === 'final' ? Infinity : wait));
 			const t2 = performance.now();
 			clock.enter();
 			w.__filmDraw = true;

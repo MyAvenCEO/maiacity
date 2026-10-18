@@ -16,8 +16,9 @@ import { filmPath } from '../../../game/film/worlds.js';
 /** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
 /** What film mode draws a frame through: the clip's grade and the output LUT, cubes the Mac bakes (RGB triples, red fastest). */
 /** @typedef {{ lut: { size: number, data: Float32Array } | null, grade: { size: number, data: Float32Array } | null }} FilmView */
-/** `meter: false` while the timeline plays: a shot not metered yet is not metered at its cut (film mode draws it at the exposure drawn last) */
-/** @typedef {{ spec: ShotSpec, t: number, shape: Shape, width: number, height: number, view: FilmView, meter?: boolean }} ShowArgs */
+/** `meter: false` while the timeline plays: a shot not metered yet is not metered at its cut (film mode draws it at the exposure drawn last);
+ * `wait`: the most a cut holds the picture for its shot's staging (ms) before it is drawn as the world has it */
+/** @typedef {{ spec: ShotSpec, t: number, shape: Shape, width: number, height: number, view: FilmView, meter?: boolean, wait?: number }} ShowArgs */
 /**
  * The film-mode API of a sandbox (contract C3).
  * @typedef {{
