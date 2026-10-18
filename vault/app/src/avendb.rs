@@ -57,6 +57,19 @@ pub async fn call(app: &tauri::AppHandle, call: &str, args: Vec<Value>) -> Resul
     call_on(&app.state::<Avendb>(), None, call.to_string(), args).await
 }
 
+/// Whether avenDB's device runs in the app now (a page or a job started it), without starting it.
+pub async fn running(app: &tauri::AppHandle) -> bool {
+    use tauri::Manager as _;
+    app.state::<Avendb>().0.lock().await.is_some()
+}
+
+/// The generation of the device's shelf in use now: the newest `g<n>` in its folder (`avendb_net::disk`), which a
+/// reset or a forgotten device moves on; `None` before it made one.
+pub fn generation() -> Option<u64> {
+    let dirs = std::fs::read_dir(folder()).ok()?;
+    dirs.flatten().filter_map(|d| d.file_name().to_str()?.strip_prefix('g')?.parse::<u64>().ok()).max()
+}
+
 /// The node of the studio worker whose device is `device` (hex), which this Mac hosts, for the studio's jobs to put
 /// what they make by the worker's own key (`Host::node_of`): none where it hosts no such worker.
 pub async fn worker(app: &tauri::AppHandle, device: &str) -> Result<OpenNode, String> {

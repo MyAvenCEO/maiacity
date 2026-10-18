@@ -10,6 +10,7 @@ mod aven;
 mod avendb;
 mod blob;
 mod jobs;
+mod legacy_copy;
 mod local;
 mod models;
 mod page;
@@ -361,6 +362,8 @@ fn main() {
             app.manage(App { vault: vault.clone(), busy: AtomicBool::new(false) });
             // every process this Mac runs, in one registry (jobs.rs): the studio's Processes tab is its view
             jobs::init(app.handle().clone());
+            // the legacy vault's files copied into avenDB's Maia City, once per generation, by themselves (legacy_copy.rs)
+            legacy_copy::start(app.handle().clone());
             // the legacy vault's routes for the film scripts while they still read it (local.rs)
             let v = vault.clone();
             tauri::async_runtime::spawn(async move {
@@ -411,6 +414,7 @@ fn main() {
             jobs::jobs_cancel,
             jobs::jobs_bump,
             jobs::jobs_retry,
+            legacy_copy::legacy_copy,
             transcripts::transcript_edit,
             proxies::color_lut,
             proxies::color_grade,

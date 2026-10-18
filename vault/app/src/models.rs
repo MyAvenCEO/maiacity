@@ -89,6 +89,22 @@ async fn kept(vault: &Vault, f: &ModelFile) -> Result<PathBuf, String> {
     Ok(path)
 }
 
+/// Whether `hash` (64 hex) is one of the pinned model files (`PHONON`, `SILERO`).
+pub fn pinned(hash: &str) -> bool {
+    [&PHONON, &SILERO].iter().any(|m| m.files.iter().any(|f| f.blake3 == hash))
+}
+
+/// Every pinned model file kept on this Mac (`kept`), so the speech models outlive the legacy vault: how many are here
+/// now, or why one isn't.
+pub async fn keep_all(vault: &Vault) -> Result<usize, String> {
+    let mut n = 0;
+    for f in PHONON.files.iter().chain(SILERO.files) {
+        kept(vault, f).await?;
+        n += 1;
+    }
+    Ok(n)
+}
+
 /// Model file `f`, read whole from where this Mac keeps it, checked against its pin.
 async fn read(vault: &Vault, f: &ModelFile) -> Result<Vec<u8>, String> {
     let path = kept(vault, f).await?;

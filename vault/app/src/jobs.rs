@@ -404,6 +404,26 @@ pub async fn turn(kind: Kind, subject: &str) -> Result<Turn, Cancelled> {
     }
 }
 
+/// Whether a job other than `but` waits for lane `lane` now (queued, asking for its turn): a job that holds the lane a
+/// long time (legacy_copy.rs) lets it go to that one first (`requeue`).
+pub fn waiting_for(lane: Lane, but: &str) -> bool {
+    with(|r| r.active.values().any(|j| j.lane == lane && j.id != but && j.state == State::Queued && r.asking.contains(&j.id)))
+}
+
+/// A running job back in its lane's queue, `stage` saying why, so that it asks for its turn again (`turn`) after the
+/// jobs that wait for its lane now.
+pub fn requeue(kind: Kind, subject: &str, stage: &str) {
+    update(
+        &id(kind, subject),
+        |j| {
+            j.state = State::Queued;
+            j.stage = stage.into();
+            j.queued = now();
+        },
+        true,
+    );
+}
+
 /// A queued job taken off before its turn.
 #[derive(Debug)]
 pub struct Cancelled;
