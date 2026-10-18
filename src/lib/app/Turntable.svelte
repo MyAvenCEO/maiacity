@@ -22,7 +22,8 @@
 
 	`inline` keeps it in its place on a page that has its own list and its own screen round it (the avenDB app's Assets,
 	$lib/assets/VaultAsset.svelte): no list, a block in the page's column, by the room the column gives it rather than the
-	screen's — the deck over the canvas where the column is wide, under it where it is not.
+	screen's — the deck over the canvas where the column is wide, under it where it is not. Its `head` (its name and the
+	bar's chips) stands above the canvas and stays at the top of the column while the rest of it scrolls by.
 -->
 <script>
 	import PickList from './PickList.svelte';
@@ -37,13 +38,14 @@
 	 *   canvas?: HTMLDivElement,
 	 *   stage?: HTMLDivElement,
 	 *   full?: boolean,
+	 *   head?: import('svelte').Snippet,
 	 *   bar?: import('svelte').Snippet,
 	 *   panel?: import('svelte').Snippet,
 	 *   readout?: import('svelte').Snippet,
 	 *   children?: import('svelte').Snippet
 	 * }}
 	 */
-	let { name, picks, inline = false, canvas = $bindable(), stage = $bindable(), full = false, bar, panel, readout, children } = $props();
+	let { name, picks, inline = false, canvas = $bindable(), stage = $bindable(), full = false, head, bar, panel, readout, children } = $props();
 
 	/**
 	 * Which side the notch is on, a phone on its side: iOS keeps the same room on both sides then (its safe-area insets
@@ -76,6 +78,7 @@
 
 <svelte:element this={inline ? 'div' : 'main'} class="turntable {name}" class:inline class:full class:notch-left={notch === 'left' && !inline} class:notch-right={notch === 'right' && !inline}>
 	{#if !full && picks}<PickList {...picks} />{/if}
+	{#if head && inline}<header class="head">{@render head()}</header>{/if}
 	<section class="view">
 		<div class="stage" bind:this={stage}>
 			<div class="canvas" bind:this={canvas}></div>
@@ -249,8 +252,45 @@
 		display: block;
 		padding: 0;
 		border-radius: 14px;
-		overflow: hidden;
+		/* clipped to its round corners without being a scroller of its own, so its head stays at the column's top */
+		overflow: clip;
 		container-type: inline-size;
+	}
+
+	/* at the top of the column it scrolls in: up through the column's own top margin where the page says how far
+	   (`--turntable-top`, below 0), as a scroller keeps a sticky box inside its padding */
+	.turntable.inline > .head {
+		position: sticky;
+		top: var(--turntable-top, 0px);
+		z-index: 3;
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		padding: 0.65rem 0.8rem;
+		border-bottom: 1px solid rgb(0 0 0 / 0.08);
+		background: rgb(255 255 255 / 0.94);
+		-webkit-backdrop-filter: blur(10px);
+		backdrop-filter: blur(10px);
+	}
+
+	.turntable.inline > .head:not(:has(*)) {
+		display: none;
+	}
+
+	.turntable.inline .head :global(.chips) {
+		flex-wrap: nowrap;
+		overflow-x: auto;
+		scrollbar-width: none;
+		margin: -0.2rem -0.8rem;
+		padding: 0.2rem 0.8rem;
+	}
+
+	.turntable.inline .head :global(.chips)::-webkit-scrollbar {
+		display: none;
+	}
+
+	.turntable.inline .head :global(.chip) {
+		flex: none;
 	}
 
 	.turntable.inline .view {
@@ -390,7 +430,8 @@
 			overflow: auto;
 		}
 
-		.turntable.inline .bar :global(.chips) {
+		.turntable.inline .bar :global(.chips),
+		.turntable.inline .head :global(.chips) {
 			flex-wrap: wrap;
 			overflow-x: visible;
 			margin: 0;

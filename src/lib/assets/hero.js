@@ -239,10 +239,27 @@ export function heroOf({ obj: root, card }, { start } = {}) {
 			return hero.partOf(hit.object);
 		},
 		objOf: (id) => parts.find((p) => p.info.id === id && !p.groups)?.obj ?? null,
-		/** a part of a skinned mesh lit up, the rest a ghost if it is shown alone; false for a part the stage lights itself */
-		highlight(id, alone) {
+		/** where a part is now, as a box in the world: its node's, or a rigged one's by the faces of its groups, posed */
+		boxOf(id) {
+			const p = parts.find((x) => x.info.id === id);
+			if (!p?.obj) return null;
+			const box = new THREE.Box3();
+			if (!p.groups) return box.setFromObject(p.obj);
+			const mesh = p.obj, g = mesh.geometry, v = new THREE.Vector3();
+			mesh.updateWorldMatrix(true, false);
+			for (const k of p.groups) {
+				const r = g.groups[k];
+				for (let i = r?.start ?? 0, end = r ? r.start + r.count : 0; i < end; i++) box.expandByPoint(mesh.getVertexPosition(g.index ? g.index.getX(i) : i, v).applyMatrix4(mesh.matrixWorld));
+			}
+			return box.isEmpty() ? null : box;
+		},
+		/**
+		 * A part of a skinned mesh lit up, the rest a ghost if it is shown alone, or not drawn at all if `solo` (the part
+		 * then in its own colours); false for a part the stage lights itself
+		 */
+		highlight(id, alone, solo = false) {
 			if (!grouped.length) return false;
-			paint(id, alone);
+			paint(id, alone, solo);
 			return true;
 		},
 		/** where a part is now (a rigged one's by its bone, `p.<id>`) */
@@ -296,12 +313,13 @@ export function heroOf({ obj: root, card }, { start } = {}) {
 		const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
 		const lit = new THREE.MeshStandardMaterial({ vertexColors: !!mesh.geometry.attributes.color, roughness: 0.5, emissive: '#ff7a1a', emissiveIntensity: 0.55, side: THREE.DoubleSide });
 		const ghost = new THREE.MeshStandardMaterial({ vertexColors: !!mesh.geometry.attributes.color, roughness: 0.8, transparent: true, opacity: 0.07, depthWrite: false, side: THREE.DoubleSide });
-		mesh.material = [...mats, lit, ghost];
+		const none = new THREE.MeshBasicMaterial({ visible: false });
+		mesh.material = [...mats, lit, ghost, none];
 		const at = mats.length;
-		paint = (id, alone) => {
+		paint = (id, alone, solo) => {
 			mesh.geometry.groups.forEach((g, i) => {
 				const p = byGroup.get(i);
-				g.materialIndex = id && p === id ? at : id && alone ? at + 1 : own[i];
+				g.materialIndex = id && p === id ? (solo ? own[i] : at) : id && solo ? at + 2 : id && alone ? at + 1 : own[i];
 			});
 		};
 	}

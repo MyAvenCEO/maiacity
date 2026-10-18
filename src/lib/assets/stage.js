@@ -36,6 +36,9 @@ import { CUT, ContactShadow, LAB_PLANES, LAYER_FX, approach, clamp, ease, ghostM
 
 export const MODES = /** @type {const} */ (['explode', 'cut', 'xray', 'labels', 'slow']);
 
+/** the layer a part shown on its own puts the rest of its asset on: one no camera of the stage draws */
+const SOLO_OFF = 30;
+
 export class Stage {
 	/**
 	 * @param {THREE.WebGLRenderer} renderer the page's renderer (its tone mapping is set while the stage draws)
@@ -62,9 +65,14 @@ export class Stage {
 		this.held = {};
 		/** @type {THREE.Box3 | null} the asset's world box as shown, for the labels' columns */
 		this.box = null;
-		/** the part picked, and whether it is shown alone */
+		/** the part picked, whether it is shown alone (the rest a ghost) or on its own (`solo`, the rest not drawn) */
 		this.picked = null;
 		this.alone = false;
+		this.solo = false;
+		/** @type {THREE.Mesh[] | null} the meshes a part on its own leaves undrawn, and what of the asset it is */
+		this.hidden = null;
+		/** @type {Set<THREE.Object3D> | null} */
+		this.own = null;
 		const paper = theme === 'paper';
 		this.bg = untonemap(new THREE.Color(paper ? 0xf3f2ee : 0x0d0e10).convertSRGBToLinear(), 1);
 		this.scene.background = this.bg.clone();
@@ -457,16 +465,37 @@ export class Stage {
 		}
 		return null;
 	}
-	/** pick a part (null: none): its edges drawn bright @param {string | null} id @param {boolean} alone */
-	setPick(id, alone) {
+	/**
+	 * Pick a part (null: none): its edges drawn bright; `alone`, the rest a ghost round it; `solo`, the part on its own,
+	 * the rest not drawn, lit or picked at all (off the camera's layers, so the shadows and the passes leave it out too)
+	 * @param {string | null} id @param {boolean} alone @param {boolean} [solo]
+	 */
+	setPick(id, alone, solo = false) {
 		this._unpick();
 		this.picked = id;
-		this.alone = !!(id && alone);
-		// an asset that lights its own parts (by the groups of a skinned mesh) does, the rest a ghost if alone
-		this.painted = !!this.asset?.highlight?.(id, this.alone);
+		this.alone = !!(id && (alone || solo));
+		// an asset that lights its own parts (by the groups of a skinned mesh) does, the rest a ghost if alone, or not
+		// drawn if on its own
+		this.painted = !!this.asset?.highlight?.(id, this.alone, !!(id && solo));
+		this.solo = this.painted && !!(id && solo);
 		if (this.painted) return;
 		const obj = id ? this.asset?.objOf(id) : null;
 		if (!obj) return;
+		if (solo) {
+			this.solo = true;
+			// the part with all it holds (a part that moves with it, as a wheel on its axle), and nothing else
+			const own = new Set();
+			obj.traverse((m) => own.add(m));
+			const hidden = [];
+			this.root.traverse((m) => {
+				if (!m.isMesh || m.layers.mask !== 1 || own.has(m)) return;
+				if (m.userData.ghost?.visible) this._ghost(m, 0);
+				m.layers.set(SOLO_OFF);
+				hidden.push(m);
+			});
+			[this.hidden, this.own] = [hidden, own];
+			return;
+		}
 		const lines = [];
 		obj.traverse((m) => {
 			if (!m.isMesh || m.layers.mask !== 1) return;
@@ -485,6 +514,9 @@ export class Stage {
 			e.material.dispose();
 		}
 		this.edges = null;
+		for (const m of this.hidden ?? []) m.layers.set(0);
+		this.hidden = this.own = null;
+		this.solo = false;
 	}
 	/** where a part is now (its middle, in the world) @param {string} id */
 	partCentre(id) {
@@ -519,7 +551,7 @@ export class Stage {
 		for (const L of this.asset.labels) {
 			L.obj.updateWorldMatrix(true, false);
 			const p = L.at.clone().applyMatrix4(L.obj.matrixWorld).project(this.camera);
-			if (p.z >= 1 || !L.obj.visible) continue;
+			if (p.z >= 1 || !L.obj.visible || (this.solo && this.own && !this.own.has(L.obj))) continue;
 			const x = (p.x * 0.5 + 0.5) * w, y = (-p.y * 0.5 + 0.5) * h;
 			items.push({ x, y, side: L.side ?? (x < mid ? 'left' : 'right'), text: L.text, value: L.value?.() ?? '', lx: 0, ly: 0, on });
 		}

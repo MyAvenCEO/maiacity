@@ -1,28 +1,37 @@
 <!--
 	A vault's assets: the recipes of the vault looked at, its `recipe` entries (avenDB's `Recipe, v1`, one for each
-	version or variant of an asset, the Maia City vault's seed writes them), from the entries alone
+	asset, its versions and variants in its history, the Maia City vault's seed writes them), from the entries alone
 	($lib/assets/sources/shelf.js), in the layout every avenDB view has (./Frame.svelte): on the left its assets, by
 	group, each leading to its newest version; in the middle the one picked, shown in 3D, built in the box from its
 	entry's own file ($lib/assets/VaultAsset.svelte), in the turntable every asset viewer of the app has (its name, its
-	note and its measure under it); on the right the one place for it, its versions and their variants to pick, and its
-	ref, entry, recipe and engine. Everything comes from the vault as this browser's device holds it (./assets.js): the
-	rows from the database op, a file from the device when a build needs it, held to the hash its ref names. Nothing
-	comes from the repo's recipes, cards or libraries, so what the vault lacks, or holds otherwise, shows here, naming
-	its ref and why, and is never stood in for. Each recipe has an address of its own, `#assets/` and its entry, which
-	the table editor's View asset leads to.
+	name and its moves and views above it, staying at the top as the column scrolls); on the right the one place for it,
+	avenDB's version-control side every entry has (./Lines.svelte): its history, its versions and variants to pick (with
+	its ref, entry, recipe and engine), and its parts, a part picked there or on the asset shown on its own
+	($lib/assets/Parts.svelte). Everything comes from the vault as this browser's device holds it (./assets.js): the rows
+	from the database op, its history from the note op, a file from the device when a build needs it, held to the hash
+	its ref names. Nothing comes from the repo's recipes, cards or libraries, so what the vault lacks, or holds otherwise,
+	shows here, naming its ref and why, and is never stood in for. Each asset has an address of its own, `#assets/` and
+	its entry, which the table editor's View asset leads to (its newest version), and each version and variant of it
+	one more, its recipe's hash after the entry.
 -->
 <script>
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
+	import Lines from './Lines.svelte';
 	import { vaultSource } from './assets.js';
 	import { count, nameOf, seeded, short } from './vaults.js';
 	import { groupName, refusedOf, shelfOf } from '$lib/assets/sources/shelf.js';
 
 	/**
-	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, entry?: string }}
-	 *   `entry` the recipe entry the address names, if it names one
+	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, entry?: string,
+	 *   recipe?: string }}
+	 *   `entry` the recipe entry the address names, if it names one, and `recipe` the hash of the version or variant of
+	 *   it, if it names one
 	 */
-	let { world, vault, actor, api, entry = '' } = $props();
+	let { world, vault, actor, api, entry = '', recipe = '' } = $props();
+
+	/** the parts list, with the stage's own `Parts` of an asset's parts, loaded with the stage */
+	const partsList = import('$lib/assets/Parts.svelte');
 
 	/** the viewer, with three.js and the asset stage, loaded once this page shows */
 	const viewer = import('$lib/assets/VaultAsset.svelte');
@@ -78,8 +87,88 @@
 	/** the recipe an asset's row leads to: its newest version, not a variant of it where it has one */
 	const newestOf = (/** @type {any} */ a) => a.versions[0].recipes.find((/** @type {any} */ r) => !r.variant) ?? a.versions[0].recipes[0];
 	const all = $derived(shelf.flatMap((g) => g.assets.flatMap((a) => a.versions.flatMap((v) => v.recipes.map((r) => ({ ...r, asset: a, group: g.group }))))));
-	/** the recipe shown: the one the address names, else the newest of the first asset listed */
-	const chosen = $derived(entry ? all.find((r) => r.entry === entry) : all[0]);
+	/** the recipe shown: the version or variant the address names, else its entry's newest, else the newest of the first
+	 *  asset listed */
+	const chosen = $derived.by(() => {
+		if (!entry) return all[0];
+		const of = all.filter((r) => r.entry === entry);
+		const newest = of.length ? newestOf(of[0].asset) : null;
+		return of.find((r) => r.hash === recipe) ?? of.find((r) => r.hash === newest?.hash);
+	});
+	/** the recipes of the asset shown, with the write that brought each and the line it is on (null for main's) */
+	const kept = $derived(
+		chosen
+			? all
+					.filter((r) => r.entry === chosen.entry)
+					.map((r) => {
+						const row = source.rowOf(r.hash);
+						return { ...r, edit: String(row?.edit ?? ''), line: row?.line ?? null, main: row?.main ?? null };
+					})
+			: []
+	);
+	const shown = $derived(kept.find((r) => r.hash === chosen?.hash));
+	const hrefOf = (/** @type {{ entry: string, hash: string }} */ r) => `#assets/${r.entry}/${r.hash}`;
+
+	/** the asset's history and lines, as the device's note op reads its entry: none until it has, nor of another entry */
+	let noted = $state.raw(/** @type {{ entry: string, note: any } | null} */ (null));
+	const asset = $derived(chosen?.entry ?? '');
+	$effect(() => {
+		void world;
+		const e = asset;
+		if (!e) return;
+		let gone = false;
+		api.note(e).then(
+			(/** @type {any} */ n) => {
+				if (!gone) noted = { entry: e, note: n ?? null };
+			},
+			() => {
+				if (!gone) noted = { entry: e, note: null };
+			}
+		);
+		return () => {
+			gone = true;
+		};
+	});
+	const note = $derived(noted?.entry === asset ? noted.note : null);
+
+	/** what each line of the asset's entry holds: its versions, newest first, each one to show
+	 *  @param {{ line: string | null }} l */
+	const versionsOf = (l) =>
+		kept
+			.filter((r) => r.line === l.line)
+			.sort((a, b) => b.v - a.v)
+			.map((r) => ({ key: r.hash, label: `v${r.v}${l.line === null && r.variant && r.name !== r.asset.title ? ` · ${r.name}` : ''}`, href: hrefOf(r), on: r.hash === chosen?.hash }));
+	/** the recipe an edit of its history brought, or the version of main a merge made, if one */
+	const recipeOf = (/** @type {any} */ e) =>
+		kept.find((r) => r.edit === e.id) ??
+		(e.kind === 'merge' && e.line === null && e.version ? kept.find((r) => r.line === null && r.main === e.version) : undefined);
+	/** what an edit that brought a version did, in the asset's words */
+	const saidOf = (/** @type {any} */ e) => {
+		const r = kept.find((x) => x.edit === e.id);
+		if (!r) return undefined;
+		return r.line === null ? `Wrote v${r.v}${e.deps.length ? '' : ', its first'}` : `Wrote v${r.v} of the variant “${r.name}”`;
+	};
+
+	/** what the side shows: the asset's history, its versions, or its parts */
+	let tab = $state('versions');
+	/** its parts as built, the one picked, and whether it is shown on its own */
+	let catalog = $state.raw(/** @type {any} */ (null));
+	let picked = $state(/** @type {string | null} */ (null));
+	let solo = $state(true);
+	// a part picked on the asset itself: its card in the side
+	$effect(() => {
+		if (picked) tab = 'parts';
+	});
+	/** where a whole asset another carries is shown here, by its ref (`machines/powercube@3`) @param {string} ref */
+	const unitHref = (ref) => {
+		try {
+			const h = source.hashOf(String(ref).split('?')[0]);
+			const r = all.find((x) => x.hash === h);
+			return r ? hrefOf(r) : null;
+		} catch {
+			return null;
+		}
+	};
 	/** the entry the address names, where the vault hands out no recipe of it: its row, and why not */
 	const unnamed = $derived.by(() => {
 		if (!entry || chosen || !held) return null;
@@ -116,27 +205,37 @@
 	{/each}
 {/snippet}
 
-<!-- on the right, the one place for the asset shown: its versions and variants, then what its entry says -->
+<!-- on the right, the one place for the asset shown: avenDB's version-control side, with its parts beside -->
 {#snippet about()}
 	{#if chosen}
 		<header class="about-head">
 			<small>{groupName(chosen.group)}</small>
 			<h3>{chosen.asset.title}</h3>
+			<p class="soft">v{chosen.v}{chosen.variant && chosen.name !== chosen.asset.title ? ` · ${chosen.name}` : ''}{shown?.line ? ', a variant' : ''}</p>
 		</header>
-		<h4 class="side-head">Versions and variants</h4>
-		<ol class="history" aria-label="{chosen.asset.title}: versions">
-			{#each chosen.asset.versions as v (v.v)}
-				<li>
-					<span class="v">v{v.v}</span>
-					{#each v.recipes as r (r.hash)}
-						<a class="pick" class:on={chosen.hash === r.hash} href="#assets/{r.entry}" title={r.label} aria-current={chosen.hash === r.hash ? 'page' : undefined}
-							>{r.variant ? r.name : 'This version'}</a
-						>
-					{/each}
-				</li>
-			{/each}
-		</ol>
-		<h4 class="side-head">In {nameOf(here)}</h4>
+		<Lines
+			{world}
+			{note}
+			line={shown?.line ?? null}
+			at={shown?.edit ?? ''}
+			bind:tab
+			thing="the asset"
+			{versionsOf}
+			hrefOf={(e) => {
+				const r = recipeOf(e);
+				return r ? hrefOf(r) : undefined;
+			}}
+			said={saidOf}
+			tabs={catalog ? [{ id: 'parts', label: 'Parts', icon: 'parts', count: catalog.parts.length, body: partsTab }] : []}
+			versions={details}
+		/>
+	{/if}
+{/snippet}
+
+<!-- under its lines, what its entry says of the version shown -->
+{#snippet details()}
+	{#if chosen}
+		<h4 class="side-head">This version, in {nameOf(here)}</h4>
 		<dl>
 			<dt>Ref</dt>
 			<dd class="mono">{chosen.label}</dd>
@@ -154,11 +253,18 @@
 	{/if}
 {/snippet}
 
+<!-- its parts: the part picked, shown on its own, and the tree to pick from -->
+{#snippet partsTab()}
+	{#await partsList then { default: Parts }}
+		<Parts {catalog} own={chosen?.card.ref} bind:picked bind:solo hrefOf={unitHref} />
+	{/await}
+{/snippet}
+
 <Frame
 	nav={held && recipes ? shelfNav : undefined}
 	aside={held && chosen && !unnamed ? about : undefined}
 	navLabel="{nameOf(here)}’s assets"
-	asideLabel="The asset’s versions and details"
+	asideLabel="The asset’s history, versions and parts"
 	navIcon="asset"
 >
 	{#if failed}
@@ -196,7 +302,9 @@
 				{#await viewer}
 					<p class="soft">Opening the stage…</p>
 				{:then { default: VaultAsset }}
-					<VaultAsset {source} hash={chosen.hash} title={nameOfRecipe(chosen)} note={chosen.note} />
+					<div class="viewer">
+						<VaultAsset {source} hash={chosen.hash} title="{nameOfRecipe(chosen)} v{chosen.v}" note={chosen.note} bind:catalog bind:picked {solo} />
+					</div>
 				{:catch e}
 					<p class="error">The stage could not be opened: {e?.message ?? e}</p>
 				{/await}
@@ -227,6 +335,18 @@
 		font-size: 0.86rem;
 	}
 
+	/* the asset's name and its bar stay at the very top of the column as it scrolls, up through the column's top
+	   margin (./Frame.svelte's middle) */
+	.viewer {
+		--turntable-top: -1.4rem;
+	}
+
+	@media (max-width: 760px) {
+		.viewer {
+			--turntable-top: -1rem;
+		}
+	}
+
 	.refused {
 		margin: 0 0 1rem;
 		font-size: 0.82rem;
@@ -255,70 +375,29 @@
 		text-transform: uppercase;
 	}
 
+	.about-head {
+		margin: 0 0 0.9rem 0.35rem;
+	}
+
 	.about-head h3 {
 		margin: 0.15rem 0 0;
 		font-size: 1.15rem;
 		overflow-wrap: anywhere;
 	}
 
+	.about-head p {
+		margin: 0.1rem 0 0;
+		font-size: 0.8rem;
+	}
+
 	.side-head {
-		margin: 1.3rem 0 0.5rem;
+		margin: 0 0 0.5rem 0.35rem;
 		color: var(--soft);
 		font-family: var(--font-body);
 		font-size: 0.68rem;
 		font-weight: 600;
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
-	}
-
-	.v {
-		flex: none;
-		font-size: 0.7rem;
-		font-style: normal;
-		font-variant-numeric: tabular-nums;
-		opacity: 0.6;
-	}
-
-	/* the asset's versions, newest first, each with its variants beside it */
-	.history {
-		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
-		margin: 0;
-		padding: 0 0 0 0.6rem;
-		border-left: 2px solid rgb(0 0 0 / 0.08);
-		list-style: none;
-	}
-
-	.history li {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.3rem;
-	}
-
-	.history .v {
-		min-width: 1.8rem;
-	}
-
-	.pick {
-		padding: 0.18rem 0.6rem;
-		border: 1px solid rgb(0 0 0 / 0.12);
-		border-radius: 999px;
-		background: rgb(255 255 255 / 0.7);
-		font-size: 0.76rem;
-		color: inherit;
-		text-decoration: none;
-	}
-
-	.pick:hover {
-		background: #fff;
-	}
-
-	.pick.on {
-		border-color: #1f2a23;
-		background: #1f2a23;
-		color: #fff;
 	}
 
 	dl {

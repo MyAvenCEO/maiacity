@@ -119,8 +119,10 @@
 			entry: opens ? entry : '',
 			edit: editing,
 			step: opens && known === 'stories' && !editing ? (edit ?? '') : '',
-			// a recipe the Assets page shows (`#assets/` and its entry), in the page, not on the whole screen
-			asset: known === 'assets' && hex(entry) ? (entry ?? '') : ''
+			// an asset the Assets page shows (`#assets/` and its entry, then the hash of a version or variant of it), in
+			// the page, not on the whole screen
+			asset: known === 'assets' && hex(entry) ? (entry ?? '') : '',
+			recipe: known === 'assets' && hex(entry) && hex(edit) ? (edit ?? '') : ''
 		};
 	}
 
@@ -316,7 +318,7 @@
 			{:else if tab === 'library'}
 				<Library {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
 			{:else if tab === 'assets'}
-				<Assets {world} vault={context} {actor} {api} entry={route.asset} />
+				<Assets {world} vault={context} {actor} {api} entry={route.asset} recipe={route.recipe} />
 			{:else if tab === 'flows'}
 				<Flows {world} vault={context} {actor} />
 			{:else if tab === 'functions'}

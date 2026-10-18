@@ -379,7 +379,8 @@ test("the viewer's modules reach nothing of the repo's recipes, cards or librari
 	// and the table editor's drawer leads a recipe row there, by its entry
 	const editor = readFileSync(resolve(ROOT, 'src/lib/avendb/TableEditor.svelte'), 'utf8');
 	expect(editor).toContain('href="#assets/{row.entry}"');
+	const apps = readFileSync(resolve(ROOT, 'src/lib/avendb/VaultApps.svelte'), 'utf8');
+	expect(apps).toContain("['assets', 'Assets', 'asset']");
 	const shell = readFileSync(resolve(ROOT, 'src/lib/avendb/Shell.svelte'), 'utf8');
-	expect(shell).toContain("['assets', 'Assets', 'asset']");
-	expect(shell).toContain('<Assets {world} vault={context} {actor} {api} entry={route.asset} />');
+	expect(shell).toContain('<Assets {world} vault={context} {actor} {api} entry={route.asset} recipe={route.recipe} />');
 });
