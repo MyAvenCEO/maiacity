@@ -25,7 +25,7 @@
 -->
 <script>
 	import { setContext } from 'svelte';
-	import { base } from '$app/paths';
+	import { wayBack } from '$lib/app/back.svelte.js';
 	import { enter } from '$lib/app/immersive.svelte';
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import AccessRequest from './AccessRequest.svelte';
@@ -50,6 +50,7 @@
 	import Stories from './Stories.svelte';
 	import Story from './Story.svelte';
 	import Todos from './Todos.svelte';
+	import VaultApps, { NAV, OUT } from './VaultApps.svelte';
 	import { may } from './ops.js';
 	import { session } from './session.svelte.js';
 	import { acting, count, KINDS, list, nameOf, pillVaults, signerName } from './vaults.js';
@@ -84,49 +85,6 @@
 	/** how many changes wait for each vault's yes (./Hitl.svelte), for the bubbles on the vaults in the nav pill */
 	let waiting = $state(/** @type {Record<string, number>} */ ({}));
 
-	/** The vault's pages, in its list: each a group's, by its address, name and icon; on its home, each an app. */
-	const NAV = /** @type {const} */ ([
-		[
-			'',
-			[
-				['sparks', 'Sparks', 'spark'],
-				['artifacts', 'Artifacts', 'artifact'],
-				['todos', 'Todos', 'todo'],
-				['stories', 'Stories', 'story'],
-				['library', 'Library', 'library'],
-				['studio', 'Studio', 'studio'],
-				['assets', 'Assets', 'asset'],
-				['flows', 'Flows', 'flow'],
-				['functions', 'Functions', 'fn']
-			]
-		],
-		[
-			'Database',
-			[
-				['query', 'Query', 'search'],
-				['tables', 'Table editor', 'table'],
-				['schemas', 'Schemas', 'schema'],
-				['lenses', 'Lenses', 'lens'],
-				['history', 'History', 'history'],
-				['jobs', 'Jobs', 'jobs']
-			]
-		],
-		[
-			'Settings',
-			[
-				['about', 'About', 'info'],
-				['members', 'Owners & devices', 'users'],
-				['sharing', 'Sharing', 'share']
-			]
-		]
-	]);
-	/** the apps that open a page of the app's own, not one of the vault's: the studio, which cuts the vaults' footage
-	 *  into films (Samuel 2026-10-18) */
-	const OUT = /** @type {Record<string, string>} */ ({ studio: `${base}/app/studio/` });
-	/** each group's name on the home screen, where every group has one */
-	const HEADS = /** @type {Record<string, string>} */ ({ '': 'Workspace' });
-	/** each group's colour on the home screen: its apps' icons, on light tiles (Samuel 2026-10-18) */
-	const TINTS = /** @type {Record<string, string>} */ ({ '': 'work', Database: 'data', Settings: 'set' });
 	/** @typedef {(typeof NAV)[number][1][number]} PageItem */
 	const PAGES = NAV.flatMap(([, items]) => /** @type {readonly PageItem[]} */ (items));
 	/** @typedef {PageItem[0]} Page */
@@ -259,6 +217,15 @@
 	/** Open story `entry`, on the whole screen. @param {string} entry */
 	const openStory = (entry) => go(`stories/${entry}`);
 
+	// while a spark, an artifact or a story is open on the whole screen, the nav pill's Back closes it, back to its list
+	// (a story's text, to its Writing tab); on a list, Back goes up to the dashboard, which shows these apps (./VaultApps.svelte)
+	$effect(() => {
+		const { entry, page, edit } = route;
+		if (!entry) return;
+		const to = page === 'stories' && edit ? `stories/${entry}/writing` : page;
+		return wayBack(`Back to ${edit ? 'the story' : PAGES.find(([id]) => id === page)?.[1]}`, () => go(to));
+	});
+
 	// a note opens in its vault: its sparks are where its back arrow goes
 	$effect(() => {
 		const entry = route.entry;
@@ -327,19 +294,7 @@
 				{#if !here.via}<button class="btn" onclick={() => (asking = true)}>Ask for access</button>{/if}
 			</header>
 			<AccessRequest {world} {requests} asked={asks.asked} made={asks.made} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
-			{#each NAV as [group, items] (group)}
-				<section class="apps" aria-labelledby="apps-{TINTS[group]}">
-					<h2 class="group" id="apps-{TINTS[group]}">{HEADS[group] ?? group}</h2>
-					<div class="grid">
-						{#each items as [id, label, icon] (id)}
-							<a class="app" href={OUT[id] ?? `#${id}`}>
-								<span class="tile {TINTS[group]}"><Icon name={icon} size={34} /></span>
-								<span class="label">{label}</span>
-							</a>
-						{/each}
-					</div>
-				</section>
-			{/each}
+			<VaultApps />
 		</section>
 	{:else}
 		<!-- a view: its own navigation on the left, itself in the middle under the head above, what it shows on the right,
@@ -506,89 +461,6 @@
 		font-size: 0.86rem;
 	}
 
-	.apps .group {
-		margin: 1.4rem 0 0.8rem;
-		color: var(--soft);
-		font-family: var(--font-body);
-		font-size: 0.7rem;
-		font-weight: 600;
-		letter-spacing: 0.08em;
-		text-transform: uppercase;
-	}
-
-	.grid {
-		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
-		gap: 1.3rem 0.75rem;
-	}
-
-	/* a page as an app: a light round-cornered tile, as the dashboard's, its icon in its group's colour, its name under it */
-	.app {
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 0.4rem;
-		min-width: 0;
-		color: inherit;
-		text-decoration: none;
-		-webkit-tap-highlight-color: transparent;
-	}
-
-	.tile {
-		display: grid;
-		place-items: center;
-		width: 5rem;
-		height: 5rem;
-		border: 1px solid var(--line, #dcd5c4);
-		border-radius: 1.35rem;
-		background: var(--paper, #faf8f2);
-		box-shadow: 0 1px 2px rgb(38 56 44 / 0.06);
-		transition:
-			transform 150ms ease,
-			box-shadow 150ms ease;
-	}
-
-	/* the brand's colours: the workspace terracotta, the database green, the settings mustard */
-	.tile.work {
-		color: var(--terracotta, #c8744f);
-	}
-
-	.tile.data {
-		color: #2f6d62;
-	}
-
-	.tile.set {
-		color: #c58a1c;
-	}
-
-	.app:hover .tile {
-		transform: translateY(-2px);
-		box-shadow: 0 8px 22px rgb(38 56 44 / 0.1);
-	}
-
-	.app:active .tile {
-		transform: scale(0.94);
-	}
-
-	.app:focus-visible {
-		outline: none;
-	}
-
-	.app:focus-visible .tile {
-		outline: 2px solid var(--accent);
-		outline-offset: 3px;
-	}
-
-	.label {
-		max-width: 100%;
-		color: var(--ink, #26382c);
-		font-size: 0.84rem;
-		font-weight: 500;
-		line-height: 1.25;
-		text-align: center;
-		overflow-wrap: anywhere;
-	}
-
 	/* at the foot, in the middle, just above the app's own nav pill (--nav-room, src/app.css) */
 	.toasts {
 		position: fixed;
@@ -622,22 +494,6 @@
 		/* clear of the notch and the status bar, now that nothing stands above it */
 		.main {
 			padding-top: calc(1rem + env(safe-area-inset-top, 0px));
-		}
-
-		/* four apps a row, as a phone's home screen shows them */
-		.grid {
-			grid-template-columns: repeat(4, minmax(0, 1fr));
-			gap: 1.1rem 0.35rem;
-		}
-
-		.tile {
-			width: 4.2rem;
-			height: 4.2rem;
-			border-radius: 1.15rem;
-		}
-
-		.label {
-			font-size: 0.74rem;
 		}
 	}
 

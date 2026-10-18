@@ -1,14 +1,22 @@
 <!--
-	The dashboard: where a founder lands once signed in. A greeting, then everything the app holds as tiles — the
-	games to play, the groups (Sandboxes, Game Assets, My Data, each opening its list), and the Universe.
+	The dashboard, the one place everything starts from (Samuel 2026-10-18: one dashboard, no group pages): a greeting;
+	the Game Worlds, every game (MaiaCity V1, the sandboxes) as the Maia City COOP vault serves it, published or, for an
+	admin, a draft, which whoever's device acts for that vault publishes or withdraws right here
+	($lib/app/games.svelte.js); the founder's apps (Ledger, Coops, Proposals, the Universe, and for an admin Game
+	Assets); then avenDB's apps, the vault's pages as its own home lists them ($lib/avendb/VaultApps.svelte), each
+	opening in the vault picked in the nav pill.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { base } from '$app/paths';
 	import { founderCount, me, type Founder } from '$lib/auth/client';
 	// the person's name, from their avenDB human vault's profile: none of it in maiaCITY's database
 	import { session } from '$lib/avendb/session.svelte.js';
+	import { nameOf } from '$lib/avendb/vaults.js';
+	import VaultApps from '$lib/avendb/VaultApps.svelte';
 	import Icon from '$lib/app/Icon.svelte';
-	import { APPS, CITY, GROUPS, UNIVERSE, holds, released } from '$lib/app/places';
+	import { APPS, ASSETS_GROUP, GAME_WORLDS, holds, isAdmin, published, released } from '$lib/app/places';
+	import { cityOf, publish } from '$lib/app/games.svelte.js';
 	import { asset } from '$lib/media/url';
 
 	let founder = $state<Founder | null>(null);
@@ -20,9 +28,14 @@
 
 	const hour = new Date().getHours();
 	const hello = hour < 5 ? 'Good night' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-	// the groups this founder has something in: the Sandboxes (published ones, and for an admin the drafts too), Game
-	// Assets and My Data, each a tile that opens its list
-	const groups = $derived(GROUPS.filter((g) => holds(founder, g) && g.items.some((p) => holds(founder, p) && released(founder, p))));
+	const admin = $derived(isAdmin(founder));
+	// the games this founder may open: the published ones, and for an admin the drafts too
+	const games = $derived(GAME_WORLDS.filter((g) => released(founder, g)));
+	const apps = $derived([...APPS, ASSETS_GROUP].filter((t) => holds(founder, t)));
+	// the Maia City COOP vault, where this device acts for it: only then a game can be published or withdrawn here
+	const city = $derived(admin ? cityOf(session.world) : null);
+	// the vault avenDB's apps open in: the one picked in the nav pill
+	const vault = $derived(session.world?.vaults.find((v: { id: string }) => v.id === session.vault) ?? null);
 </script>
 
 <svelte:head>
@@ -38,27 +51,36 @@
 
 	<p class="divider">Game Worlds</p>
 	<div class="games">
-		{#each CITY as g (g.href)}
-			<a class="game" href={g.href}>
-				{#if g.cover}<img src={asset(g.cover)} alt="" loading="lazy" />{:else}<span class="nocover"></span>{/if}
-				<span class="label"><b>{g.label}</b><span>{g.note}</span></span>
-			</a>
+		{#each games as g (g.href)}
+			{@const on = published(g)}
+			<div class="game">
+				<a href={g.href}>
+					{#if g.cover}<img src={asset(g.cover)} alt="" loading="lazy" />{:else}<span class="nocover"></span>{/if}
+					<span class="label"><b>{g.label}</b><span>{g.note}</span></span>
+				</a>
+				{#if !on}<span class="draft">Draft</span>{/if}
+				{#if city && g.game}
+					<button class="publish" class:on disabled={!!session.doing} onclick={() => publish(g.game!, !on)} title={on ? 'Everyone may watch and read it: withdraw it' : 'Only the admins open it: publish it to everyone'}>{on ? 'Withdraw' : 'Publish'}</button>
+				{/if}
+			</div>
 		{/each}
 	</div>
+	{#if city && session.error}<p class="err">{session.error}</p>{/if}
 
 	<p class="divider">Your apps</p>
-	<div class="tiles two">
-		{#each APPS as t (t.href)}
+	<div class="tiles">
+		{#each apps as t (t.href)}
 			<a class="tile" href={t.href}><Icon name={t.icon} size={34} /><b>{t.label}</b><span>{t.note}</span></a>
 		{/each}
 	</div>
 
-	<p class="divider">Make</p>
-	<div class="tiles four">
-		{#each [...groups, UNIVERSE] as t (t.href)}
-			<a class="tile" href={t.href}><Icon name={t.icon} size={34} /><b>{t.label}</b><span>{t.note}</span></a>
-		{/each}
-	</div>
+	{#if admin}
+		<VaultApps at="{base}/app/avendb/">
+			{#snippet head(name: string)}
+				<p class="divider">{name}{#if vault && name === 'Workspace'}<small> · {nameOf(vault)}</small>{/if}</p>
+			{/snippet}
+		</VaultApps>
+	{/if}
 </main>
 
 <style>
@@ -89,6 +111,12 @@
 		color: var(--muted);
 	}
 
+	.divider small {
+		font-size: inherit;
+		letter-spacing: inherit;
+		text-transform: none;
+	}
+
 	.divider::before,
 	.divider::after {
 		content: '';
@@ -97,10 +125,10 @@
 		background: var(--line);
 	}
 
-	/* the games: their own pictures, two by two */
+	/* the games: their own pictures, three a row, MaiaCity V1 over the whole row */
 	.games {
 		display: grid;
-		grid-template-columns: repeat(2, minmax(0, 1fr));
+		grid-template-columns: repeat(3, minmax(0, 1fr));
 		gap: 14px;
 	}
 
@@ -110,8 +138,60 @@
 		aspect-ratio: 16 / 9;
 		border-radius: 18px;
 		background: var(--ink);
+	}
+
+	.game:first-child {
+		grid-column: 1 / -1;
+		aspect-ratio: 21 / 9;
+	}
+
+	.game a {
+		display: block;
+		height: 100%;
 		color: #fff;
 		text-decoration: none;
+	}
+
+	.draft {
+		position: absolute;
+		top: 0.7rem;
+		left: 0.7rem;
+		padding: 0.15rem 0.55rem;
+		border-radius: 999px;
+		background: var(--mustard);
+		color: var(--ink);
+		font-size: 0.68rem;
+		font-weight: 600;
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		pointer-events: none;
+	}
+
+	.publish {
+		position: absolute;
+		top: 0.6rem;
+		right: 0.6rem;
+		padding: 0.3rem 0.8rem;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--paper);
+		color: var(--ink);
+		font: inherit;
+		font-size: 0.78rem;
+		cursor: pointer;
+	}
+
+	.publish:not(.on) {
+		border-color: var(--mustard);
+		background: var(--mustard);
+	}
+
+	.publish:disabled {
+		opacity: 0.5;
+	}
+
+	.err {
+		color: #a03224;
 	}
 
 	.game img {
@@ -152,29 +232,24 @@
 	}
 
 	.game .label span {
+		display: -webkit-box;
+		overflow: hidden;
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
+		-webkit-box-orient: vertical;
 		font-size: 0.85rem;
 		opacity: 0.85;
 	}
 
-	/* the rest: square tiles, three to a row */
+	.game:not(:first-child) b {
+		font-size: 1.1rem;
+	}
+
+	/* your apps: tiles in one row on a wide screen, two a row on a phone */
 	.tiles {
 		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
+		grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr));
 		gap: 14px;
-	}
-
-	/* your apps: Ledger and Coops, wide and side by side */
-	.tiles.two {
-		grid-template-columns: repeat(2, minmax(0, 1fr));
-	}
-
-	/* make: the Sandboxes, Game Assets, My Data and the Universe, four in a row */
-	.tiles.four {
-		grid-template-columns: repeat(4, minmax(0, 1fr));
-	}
-
-	.tiles.two .tile {
-		aspect-ratio: 1.6 / 1;
 	}
 
 	.tile {
@@ -215,16 +290,28 @@
 		color: var(--muted);
 	}
 
-	@media (max-width: 560px) {
+	@media (max-width: 860px) {
 		.games {
-			grid-template-columns: minmax(0, 1fr);
-		}
-		.tiles,
-		.tiles.four {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
-		.tiles.two .tile {
-			aspect-ratio: 0.9 / 1;
+	}
+
+	@media (max-width: 560px) {
+		/* on a phone the sandboxes stay two a row, their names alone */
+		.game:first-child {
+			aspect-ratio: 16 / 9;
+		}
+		.game:not(:first-child) {
+			aspect-ratio: 4 / 3;
+		}
+		.game:not(:first-child) .label span {
+			display: none;
+		}
+		.game:not(:first-child) .label {
+			padding: 1.4rem 0.7rem 0.6rem;
+		}
+		.tiles {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 	}
 </style>

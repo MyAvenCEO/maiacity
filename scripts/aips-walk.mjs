@@ -3,7 +3,7 @@
  * /api/ request answered here (a founder who sits at MaiaCity V1's seat A; two V1 MIPs). It checks the stages, the game
  * filter, a V1 detail with its signatures, a new V1 proposal from a COOP's "Propose a payout" link, and that the game
  * shows no proposal on its own screen. avenDB's public feed is answered too: the Maia City COOP vault shares Sandbox 5
- * and MaiaCity V1 with everyone (A2), so the Sandboxes list shows Sandbox 5 without Draft.
+ * and MaiaCity V1 with everyone (A2), so the dashboard's Game Worlds show Sandbox 5 without Draft.
  * Each step is screenshot, wide and on a phone.
  *
  *   BASE=http://localhost:5173 node scripts/aips-walk.mjs [--out dir]
@@ -162,11 +162,12 @@ await page.goto(`${base}/app/`, { waitUntil: 'domcontentloaded' });
 check('the dashboard has the Proposals app next to Ledger and Coops', await until(async () => (await page.evaluate(() => [...document.querySelectorAll('a')].some((a) => a.getAttribute('href')?.endsWith('/app/aips/')))) ));
 await shot('4-dashboard');
 
-// the Sandboxes: published by the Maia City COOP vault's Public share, as its feed lists them
-await page.goto(`${base}/app/games/`, { waitUntil: 'domcontentloaded' });
-const rowOf = (label) => page.evaluate((label) => [...document.querySelectorAll('.list li')].map((li) => li.textContent?.replace(/\s+/g, ' ').trim() ?? '').find((t) => t.startsWith(label)) ?? '', label);
+// the Game Worlds on the dashboard: published by the Maia City COOP vault's Public share, as its feed lists them
+const rowOf = (label) => page.evaluate((label) => [...document.querySelectorAll('.games .game')].find((g) => g.querySelector('.label b')?.textContent?.trim() === label)?.textContent?.replace(/\s+/g, ' ').trim() ?? '', label);
 check('a published sandbox shows no Draft', await until(async () => { const r = await rowOf('Sandbox 5'); return r && !r.includes('Draft'); }), await rowOf('Sandbox 5'));
 check('one the vault does not publish still shows Draft', (await rowOf('Sandbox 6')).includes('Draft'), await rowOf('Sandbox 6'));
+await page.goto(`${base}/app/games/`, { waitUntil: 'domcontentloaded' });
+check('the old Sandboxes list moves on to the dashboard', await until(async () => new URL(page.url()).pathname.replace(/\/$/, '').endsWith('/app')), page.url());
 await shot('5-sandboxes');
 
 // signed out: the Proposals app opens, read only
