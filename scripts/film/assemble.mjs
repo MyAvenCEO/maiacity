@@ -5,7 +5,7 @@
 // The shots dissolve into one another where the shot list cuts them; each voice take comes in where the list places it; the music
 // sits under it at the levels the list gives and fades out at the end. The captions are the voice's own words, in
 // short phrases, timed to the moment each is spoken — set in the site's display face by Chrome, laid over by ffmpeg.
-// Voice, music and sounds are taken from the vault by their hashes (the Mac app's local server).
+// Voice, music and sounds are taken from avenDB's Library by their hashes (./vault.mjs, as the device agentScripts).
 import puppeteer from 'puppeteer-core';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
