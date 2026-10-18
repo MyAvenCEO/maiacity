@@ -63,11 +63,16 @@ export function heldOf(world, vault, f) {
 }
 
 /**
- * Every film the Maia City vault lacks, brought into it, `tell` hearing how far; the names of those brought.
- * Nothing where this isn't the Mac app with avenDB open, or the Maia City vault isn't reached here.
- * @param {(line: string) => void} [tell] @returns {Promise<string[]>}
+ * Every film the Maia City vault lacks, brought into it one after another: `tell` hearing how far each is (its story
+ * made first, so the studio shows it as it comes), `arrived` each as its cut is made, with the files that could not
+ * come (./importer.js), or why it can't be (`missing`: the old studio has no such timeline). The films brought, each with those. Nothing where this isn't the Mac app with avenDB open, or
+ * the Maia City vault isn't reached here.
+ * @param {{ tell?: (f: Film, line: string, at?: import('./importer.js').Progress) => void,
+ *   arrived?: (f: Film, failed: { hash: string, error: string }[], missing?: string) => void | Promise<void> }} [on]
+ * @returns {Promise<{ film: Film, failed: { hash: string, error: string }[] }[]>}
  */
-export async function bringFilms(tell = () => {}) {
+export async function bringFilms(on = {}) {
+	const { tell = () => {}, arrived = () => {} } = on;
 	const call = await device();
 	if (!call) return [];
 	let world = await worldOf(call);
@@ -75,22 +80,29 @@ export async function bringFilms(tell = () => {}) {
 	if (!city) return [];
 	const wanted = FILMS.filter((f) => !heldOf(world, city.vault, f).cut);
 	if (!wanted.length) return [];
+	// each shows in the aside at once, while the old studio is asked for them
+	for (const f of wanted) tell(f, 'Asking the old studio…');
 	const { listTimelines } = await import('$lib/auth/client');
-	const legacy = /** @type {any[]} */ (await listTimelines());
-	const { importTimeline } = await import('./importer.js');
+	const { importTimeline, legacyCall } = await import('./importer.js');
+	const legacy = /** @type {any[]} */ (await legacyCall(listTimelines()));
 	const brought = [];
 	for (const f of wanted) {
 		const t = legacyOf(f, legacy);
-		if (!t) continue;
-		tell(`Bringing “${f.name}”…`);
+		if (!t) {
+			await arrived(f, [], `no timeline "${f.timeline}" of "${f.project}" in the old studio`);
+			continue;
+		}
+		tell(f, 'Starting…');
 		world = await worldOf(call);
 		let story = heldOf(world, city.vault, f).story?.entry;
 		if (!story) {
 			const value = { kind: 'story', title: f.name, text: '', description: t.description ?? '', series: 'Films', sparks: [], tags: [] };
 			story = answer(await call('run', { op: 'create', vault: city.vault, type: 'story', tags: [MOVIE, filmTag(f)], value, as: city.as })).entry;
 		}
-		await importTimeline(t.id, tell, { ...city, name: f.name, project: f.name, story: { vault: city.vault, entry: /** @type {string} */ (story) }, tags: [filmTag(f)] });
-		brought.push(f.name);
+		const cut = await importTimeline(t.id, (line, at) => tell(f, line, at), { ...city, name: f.name, project: f.name, story: { vault: city.vault, entry: /** @type {string} */ (story) }, tags: [filmTag(f)] });
+		const failed = cut.failed ?? [];
+		await arrived(f, failed);
+		brought.push({ film: f, failed });
 	}
 	return brought;
 }
