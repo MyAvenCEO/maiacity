@@ -1,26 +1,18 @@
-//! The render worker is this app. The studio (or an agent, over MCP) queues a job on the API's render queue
-//! (render_jobs: `POST /api/timelines/:id/renders`, `…/frames`); this Mac claims it with its own key, renders it
-//! natively with `vault-render` — Core Image on Metal, VideoToolbox, AVFoundation, Core Text; no bun, no ffmpeg, no
-//! Chrome — puts every file it makes into the vault, and hands the API the same report the old worker did
-//! (`PUT /api/renders/:id`: progress while it works, then `Render::job_result`), so the studio's Render tab, its
-//! deliveries and the calendar work as they did.
+//! Films and frames of a cut of avenDB, rendered on this Mac — the `render` and `frame` rules (aven.rs `studio_job`
+//! calls `render_cut` and `frame_cut`, and puts what they make into the cut's vault) — natively with `vault-render`:
+//! Core Image on Metal, VideoToolbox, AVFoundation, Core Text; no bun, no ffmpeg, no Chrome.
 //!
-//!   render  a timeline into every delivery (16:9 4K master + 1080 copy, 9:16, 1:1, 4:5), levelled to `LOUDNESS`;
-//!           with `params.delivery` "youtube-4k", the 16:9 4K master for YouTube alone.
-//!           World clips are rendered first as ACEScct plates at each shape's size, in the app's own unseen world
-//!           (world.rs, cached by what they are made of); every delivery goes into the vault as class delivery, in the
-//!           story most of the timeline's files are in (else the inbox), described by `Render::about`.
-//!   frame   of a media clip (`params.clip`, or the one on screen at `params.t`): its file's graded still — the grading
-//!           still through the clip's whole chain, 1920×1080, a JPEG — as the file's preview, replacing the one before.
-//!           Of a world clip or a gap: a hero frame at `params.t` in `params.shape`, a 16-bit PNG, replacing the one
-//!           before of that clip and shape.
-//!   proxy, lut  history: closed as failed, saying the Mac makes them now (as the old worker did).
+//!   render  a cut into every delivery (16:9 4K master + 1080 copy, 9:16, 1:1, 4:5), levelled to `LOUDNESS`; with
+//!           delivery "youtube-4k", the 16:9 4K master for YouTube alone. World clips are rendered first as ACEScct
+//!           plates at each shape's size, in the app's own unseen world (world.rs, cached on this Mac by what they
+//!           are made of).
+//!   frame   of a media clip (named, or the one on screen at `at`): its file's graded still — the grading still
+//!           through the clip's whole chain, 1920×1080, a JPEG. Of a world clip or a gap: a hero frame at `at` in a
+//!           shape, a 16-bit PNG.
 //!
-//! It shares the proxies' rules: one heavy GPU job at a time (`proxies::TURN` — proxies, world proxies and renders all
-//! take it; the job is only claimed once it is this Mac's turn), an ingest first, only while macOS says memory is
-//! normal, and while it renders the uploads wait (`hold: render`). How far it is shows beside the proxies
-//! (`proxies_now`, `of: "render:<job id>"`) and on the job itself. `vault_render::render` runs on one blocking
-//! thread: its GPU and AVFoundation objects are not `Send`, and one render runs at a time.
+//! Every file is read in place from avenDB (`Footage`); the legacy vault and the old API's render queue are not used.
+//! `vault_render::render` runs on one blocking thread: its GPU and AVFoundation objects are not `Send`. And the
+//! Audio tab's measures (`sound_measure`, `eq_response`).
 
 use std::{
     collections::HashMap,
@@ -30,15 +22,14 @@ use std::{
 
 use anyhow::Context;
 use serde_json::{Value, json};
-use tauri::{AppHandle, Manager};
-use vault_core::Vault;
+use tauri::AppHandle;
 use vault_render::{
     Library, Lut3d, Media, Options, Plate, Target,
     output::RENDER_LUT_SIZE,
     timeline::{Clip, FPS, Shape, Timeline, shapes_of},
 };
 
-use crate::{Res, auth::Auth, err, world};
+use crate::{Res, err, world};
 
 /// The loudness every film is levelled to: −14 LUFS integrated, the true peak at most −1 dBTP — what YouTube,
 /// Instagram and TikTok play at (and room for their AAC encoders). Change it here.
@@ -57,70 +48,85 @@ pub(crate) fn odt() -> &'static Lut3d {
     })
 }
 
-/// Whoever hears how far a render is (0…1) and what it is doing: an API job's `Progress`, or a task's stage in the
-/// Mac's jobs (aven.rs).
+/// Whoever hears how far a render is (0…1) and what it is doing: a task's stage in the Mac's jobs (aven.rs).
 pub(crate) type Told = Arc<dyn Fn(f64, &str) + Send + Sync>;
 
-// ── the vault, as the render reads it ──────────────────────────────────────────────────────────────────────────────
+// ── avenDB's footage, as the render reads it ───────────────────────────────────────────────────────────────────
 
-/// The vault's catalog when the job started, and its files exported to disk as the render asks for them — with
-/// their own extension (AVFoundation tells a movie by it), into the job's folder, removed with it.
-struct Vaulted {
-    vault: Arc<Vault>,
+/// The footage a cut plays: the studio's library items for it the page named (src/lib/studio/aven.js `libraryOf`),
+/// each by its avenDB reference (`aven:…`), and any other reference a clip names, told from the reference alone (its
+/// media type rides on it: src/lib/studio/avenref.js). Every file's bytes are read in place from avenDB's device
+/// (aven.rs); the legacy vault is not read.
+struct Footage {
     rt: tokio::runtime::Handle,
     media: HashMap<String, Media>,
     ext: HashMap<String, String>,
     /// an original's proxy (its meta.proxy) → the original: conform finds it from either side
     originals: HashMap<String, String>,
-    /// each file as it is read: in place, from the vault's blob store (never copied out)
+    /// each file as it is read: in place, from avenDB's device (never copied out)
     files: Mutex<HashMap<String, vault_media::Source>>,
 }
 
-impl Vaulted {
-    async fn new(vault: &Arc<Vault>) -> Res<Self> {
-        let list = vault.catalog.list_view().await.map_err(err)?;
-        let mut media = HashMap::new();
-        let mut ext = HashMap::new();
-        let mut originals = HashMap::new();
-        for m in list {
-            if let Some(p) = m.meta.get("proxy").and_then(Value::as_str).filter(|_| m.meta.get("role").and_then(Value::as_str) != Some("proxy")) {
-                originals.insert(p.to_string(), m.hash.clone());
-            }
-            ext.insert(m.hash.clone(), extension(&m));
-            media.insert(m.hash.clone(), Media { hash: m.hash, mime: m.mime, kind: m.kind, size: m.size, title: m.title, meta: m.meta });
-        }
-        Ok(Self { vault: vault.clone(), rt: tokio::runtime::Handle::current(), media, ext, originals, files: Mutex::new(HashMap::new()) })
-    }
-
-    /// avenDB's footage beside the vault's (Jobs and studio 2.0): the studio's library items for it the page named
-    /// (src/lib/studio/aven.js `libraryOf`), each by its reference (`aven:…`), its bytes read in place from avenDB's
-    /// device (aven.rs) — a cut may play both.
-    fn with_aven(mut self, items: &[Value]) -> Self {
+impl Footage {
+    fn new(items: &[Value], t: &Timeline) -> Self {
+        let mut lib = Self { rt: tokio::runtime::Handle::current(), media: HashMap::new(), ext: HashMap::new(), originals: HashMap::new(), files: Mutex::new(HashMap::new()) };
         for v in items {
             let Ok(m) = serde_json::from_value::<Media>(v.clone()) else { continue };
-            if crate::aven::file_of_ref(&m.hash).is_none() {
+            lib.add(m);
+        }
+        // a clip's file the page named no item for: what its reference says
+        for h in t.clips.iter().filter(|c| !c.is_world()).filter_map(|c| c.hash.as_deref()) {
+            if lib.media.contains_key(h) {
                 continue;
             }
-            if let Some(p) = m.meta.get("proxy").and_then(Value::as_str).filter(|_| m.meta.get("role").and_then(Value::as_str) != Some("proxy")) {
-                self.originals.insert(p.to_string(), m.hash.clone());
-            }
-            let about = vault_core::Meta { original_name: m.title.clone(), mime: m.mime.clone(), meta: m.meta.clone(), ..Default::default() };
-            self.ext.insert(m.hash.clone(), extension(&about));
-            self.media.insert(m.hash.clone(), m);
+            let Some(Ok(f)) = crate::aven::file_of_ref(h) else { continue };
+            let mime = h.splitn(5, ':').nth(4).map(percent_decode).unwrap_or_default();
+            let kind = mime.split('/').next().filter(|k| ["video", "audio", "image"].contains(k)).unwrap_or("other").to_string();
+            lib.add(Media { hash: h.to_string(), mime, kind, size: f.len, title: String::new(), meta: Value::Null });
         }
-        self
+        lib
+    }
+
+    fn add(&mut self, m: Media) {
+        if crate::aven::file_of_ref(&m.hash).is_none() {
+            return;
+        }
+        if let Some(p) = m.meta.get("proxy").and_then(Value::as_str).filter(|_| m.meta.get("role").and_then(Value::as_str) != Some("proxy")) {
+            self.originals.insert(p.to_string(), m.hash.clone());
+        }
+        self.ext.insert(m.hash.clone(), extension(&m.title, &m.mime, &m.meta));
+        self.media.insert(m.hash.clone(), m);
     }
 }
 
-/// A file's extension on disk: the one it came in with, else its type's.
-fn extension(m: &vault_core::Meta) -> String {
-    if m.meta.get("sequence").and_then(Value::as_str) == Some("exr") {
+/// "%2F" and the like back to their bytes (a reference's media type is percent-encoded).
+fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            if let Ok(v) = u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or("zz"), 16) {
+                out.push(v);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// A file's extension on disk: the one its name has, else its type's.
+fn extension(name: &str, mime: &str, meta: &Value) -> String {
+    if meta.get("sequence").and_then(Value::as_str) == Some("exr") {
         return "tar".into();
     }
-    if let Some(e) = Path::new(&m.original_name).extension().map(|e| e.to_string_lossy().to_lowercase()).filter(|e| !e.is_empty() && e.len() <= 5) {
+    if let Some(e) = Path::new(name).extension().map(|e| e.to_string_lossy().to_lowercase()).filter(|e| !e.is_empty() && e.len() <= 5) {
         return e;
     }
-    match m.mime.as_str() {
+    match mime {
         "video/mp4" => "mp4",
         "video/quicktime" => "mov",
         "video/x-m4v" => "m4v",
@@ -139,7 +145,7 @@ fn extension(m: &vault_core::Meta) -> String {
     .into()
 }
 
-impl Library for Vaulted {
+impl Library for Footage {
     fn media(&self, hash: &str) -> Option<Media> {
         self.media.get(hash).cloned()
     }
@@ -148,13 +154,11 @@ impl Library for Vaulted {
         if let Some(s) = self.files.lock().unwrap().get(hash) {
             return Ok(s.clone());
         }
-        let m = self.media.get(hash).with_context(|| format!("{hash} is not in the vault's catalog"))?;
-        let name = if m.title.is_empty() { hash.to_string() } else { m.title.clone() };
+        let m = self.media.get(hash).with_context(|| format!("{hash} is no avenDB file the cut names"))?;
+        let name = if m.title.is_empty() { "file".to_string() } else { m.title.clone() };
         let ext = self.ext.get(hash).map(String::as_str).unwrap_or("bin");
-        let src = match crate::aven::file_of_ref(hash) {
-            Some(f) => crate::aven::source_on(&self.rt, f.map_err(anyhow::Error::msg)?, &format!("{name}.{ext}")).map_err(anyhow::Error::msg)?,
-            None => crate::blob::source_blocking(&self.vault, &self.rt, hash.parse()?, &format!("{name}.{ext}"))?,
-        };
+        let f = crate::aven::file_of_ref(hash).with_context(|| format!("{hash} is no avenDB file"))?.map_err(anyhow::Error::msg)?;
+        let src = crate::aven::source_on(&self.rt, f, &format!("{name}.{ext}")).map_err(anyhow::Error::msg)?;
         self.files.lock().unwrap().insert(hash.to_string(), src.clone());
         Ok(src)
     }
@@ -171,9 +175,9 @@ impl Library for Vaulted {
 
 /// How each sound clip of a timeline sounds (vault_render `measure_sound`): loudness, true peak, a curve to draw, the
 /// music under each voice clip.
-pub async fn measure_sound(vault: &Arc<Vault>, timeline: &Value) -> Res<Value> {
+pub async fn measure_sound(timeline: &Value, library: &[Value]) -> Res<Value> {
     let t: Timeline = serde_json::from_value(timeline.clone()).map_err(err)?;
-    let lib = Arc::new(Vaulted::new(vault).await?);
+    let lib = Arc::new(Footage::new(library, &t));
     let out = tauri::async_runtime::spawn_blocking(move || vault_render::measure_sound(&t, &*lib)).await.map_err(err)?.map_err(err);
     out
 }
@@ -196,32 +200,30 @@ pub fn eq_response(eq: Value, n: Option<usize>) -> Res<Value> {
     Ok(json!({ "bands": bands, "curve": curve }))
 }
 
-/// The Audio tab: how the timeline on screen sounds, clip by clip (to draw; it changes nothing).
+/// The Audio tab: how the timeline on screen sounds, clip by clip (to draw; it changes nothing). `library`: the studio's
+/// library items of its footage (src/lib/studio/aven.js `libraryOf`), else each clip's reference says what it is.
 #[tauri::command]
-pub async fn sound_measure(app: tauri::State<'_, crate::App>, timeline: Value) -> Res<Value> {
+pub async fn sound_measure(timeline: Value, library: Option<Vec<Value>>) -> Res<Value> {
     crate::gate()?;
-    measure_sound(&app.vault, &timeline).await
+    measure_sound(&timeline, library.as_deref().unwrap_or_default()).await
 }
 
 // ── world plates ────────────────────────────────────────────────────────────────────────────────────────────────
 
-/// A world clip's shot record's spec (the version the clip names): avenDB's (`shot:<entry>`), or the API's.
-async fn spec_of(handle: &AppHandle, auth: &Auth, c: &Clip) -> Res<(String, Value)> {
+/// A world clip's shot record's spec, at the version the clip names: avenDB's (`shot:<entry>`, world.rs `aven_shot`).
+async fn spec_of(handle: &AppHandle, c: &Clip) -> Res<(String, Value)> {
     let shot = c.shot.clone().ok_or_else(|| format!("world clip {} names no shot", c.id))?;
-    if shot.starts_with("shot:") {
-        let version = c.shot_version.ok_or_else(|| format!("world clip {} names no version of its shot", c.id))?;
-        // named by its entry alone: the name goes into file and run labels
-        return Ok((shot.trim_start_matches("shot:").to_string(), world::aven_shot(handle, &shot, version as u64).await?.1));
+    if !shot.starts_with("shot:") {
+        return Err(format!("world clip {} names shot {shot} of the old API: a cut's world clips name avenDB's shots (shot:<entry>)", c.id));
     }
-    let q = c.shot_version.map(|v| format!("?version={v}")).unwrap_or_default();
-    let r = auth.get_ok("GET", &format!("/api/shots/{shot}{q}"), None).await.map_err(|e| format!("shot {shot}: {e}"))?;
-    let spec = r.get("spec").filter(|s| s.is_object()).cloned().ok_or_else(|| format!("shot {shot} v{} has no spec", c.shot_version.unwrap_or(0)))?;
-    Ok((shot, spec))
+    let version = c.shot_version.ok_or_else(|| format!("world clip {} names no version of its shot", c.id))?;
+    // named by its entry alone: the name goes into file and run labels
+    Ok((shot.trim_start_matches("shot:").to_string(), world::aven_shot(handle, &shot, version as u64).await?.1))
 }
 
 /// Every world clip's plate for every shape: `frames` of its stretch (clip.in … clip.in + dur, a frame over), at the
 /// shape's render size and the film's rate.
-async fn plates_for(handle: &AppHandle, vault: &Vault, auth: &Auth, t: &Timeline, shapes: &[Shape], told: &Told, span: (f64, f64)) -> Res<HashMap<(String, String), Plate>> {
+async fn plates_for(handle: &AppHandle, t: &Timeline, shapes: &[Shape], told: &Told, span: (f64, f64)) -> Res<HashMap<(String, String), Plate>> {
     let clips: Vec<&Clip> = t.clips.iter().filter(|c| c.is_world() && c.track == "V1").collect();
     let mut out = HashMap::new();
     if clips.is_empty() {
@@ -233,7 +235,7 @@ async fn plates_for(handle: &AppHandle, vault: &Vault, auth: &Auth, t: &Timeline
     let mut done = 0.0;
     told(span.0, "rendering world plates");
     for c in clips {
-        let (shot, spec) = spec_of(handle, auth, c).await?;
+        let (shot, spec) = spec_of(handle, c).await?;
         let version = c.shot_version.unwrap_or(0);
         for s in shapes {
             let (width, height) = s.render_size();
@@ -242,7 +244,7 @@ async fn plates_for(handle: &AppHandle, vault: &Vault, auth: &Auth, t: &Timeline
             let (p, base, of) = (told.clone(), done, frames as f64);
             let told = move |x: f64| p(span.0 + (span.1 - span.0) * (base + x * of) / total, "rendering world plates");
             let label = format!("plate-{}-v{version}-{}", &shot[..8.min(shot.len())], s.tag());
-            let made = world::plate(handle, vault, &label, &ask, told)
+            let made = world::plate(handle, &label, &ask, told)
                 .await
                 .map_err(|e| format!("world clip {} (shot {shot} v{version}), its {} plate: {e}", c.id, s.aspect))?;
             tracing::info!("plate of shot {shot} v{version} {}–{} s · {} {width}×{height}: {}", c.in_, c.in_ + c.dur, s.aspect, if made.reused { "from the cache" } else { "rendered" });
@@ -260,10 +262,10 @@ async fn plates_for(handle: &AppHandle, vault: &Vault, auth: &Auth, t: &Timeline
 
 /// Timeline `t` rendered into `out` from library `lib`, every delivery, or with `delivery` "youtube-4k" the 16:9 4K
 /// master for YouTube alone: what it made, its files still on the disk (the caller puts them where they go).
-async fn render_into(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, t: &Timeline, lib: Arc<Vaulted>, delivery: Option<&str>, out: PathBuf, told: &Told) -> Res<vault_render::Render> {
+async fn render_into(handle: &AppHandle, t: &Timeline, lib: Arc<Footage>, delivery: Option<&str>, out: PathBuf, told: &Told) -> Res<vault_render::Render> {
     let youtube = delivery == Some(YOUTUBE_4K);
     let shapes: Vec<Shape> = shapes_of(t).into_iter().filter(|s| !youtube || s.aspect == "16:9").collect();
-    let plates = plates_for(handle, vault, auth, t, &shapes, told, (0.03, 0.3)).await?;
+    let plates = plates_for(handle, t, &shapes, told, (0.03, 0.3)).await?;
     let (from, span) = if plates.is_empty() { (0.03, 0.9) } else { (0.3, 0.63) };
 
     let (t2, p) = (t.clone(), told.clone());
@@ -293,7 +295,7 @@ pub(crate) enum Framed {
 
 /// A frame of timeline `t` made into `work` from library `lib`: of media clip `clip`, or of the one on screen at `at`,
 /// its file's graded still; of a world clip or a gap, a hero frame at `at` in shape `aspect`.
-async fn frame_into(handle: &AppHandle, auth: &Auth, t: &Timeline, lib: Arc<Vaulted>, clip: Option<&str>, at: f64, aspect: &str, work: &Path, told: &Told) -> Res<Framed> {
+async fn frame_into(handle: &AppHandle, t: &Timeline, lib: Arc<Footage>, clip: Option<&str>, at: f64, aspect: &str, work: &Path, told: &Told) -> Res<Framed> {
     let s = Shape::of(aspect).ok_or_else(|| format!("no such shape: {aspect}"))?;
     // the clip on screen, as hero_frame picks it: a world clip gets a plate of that one frame
     let has_cards = |c: &Clip| lib.media(c.hash.as_deref().unwrap_or("")).is_some_and(|m| m.meta.get("cards").is_some_and(Value::is_object));
@@ -319,13 +321,12 @@ async fn frame_into(handle: &AppHandle, auth: &Auth, t: &Timeline, lib: Arc<Vaul
     let mut plates = HashMap::new();
     if let Some(c) = clip.filter(|c| c.is_world()) {
         told(0.1, "rendering world plates");
-        let vault = handle.state::<crate::App>().vault.clone();
-        let (shot, spec) = spec_of(handle, auth, c).await?;
+        let (shot, spec) = spec_of(handle, c).await?;
         let (width, height) = s.render_size();
         let fps = FPS as f64;
         let ask = world::Frames { spec, shape: s.aspect, width, height, fps, from: c.in_ + (at - c.start), frames: 1, bitrate: Some(world::plate_bitrate(width, height, fps)) };
         let label = format!("frame-{}-{}", &shot[..8.min(shot.len())], s.tag());
-        let made = world::plate(handle, &vault, &label, &ask, |_| {}).await.map_err(|e| format!("world clip {}: its frame: {e}", c.id))?;
+        let made = world::plate(handle, &label, &ask, |_| {}).await.map_err(|e| format!("world clip {}: its frame: {e}", c.id))?;
         plates.insert((c.id.clone(), aspect.to_string()), Plate { file: made.file, offset: at - c.start, key: Some(made.key), fingerprint: Some(made.fingerprint), reused: Some(made.reused) });
     }
     told(0.5, "rendering the frame");
@@ -344,25 +345,16 @@ async fn frame_into(handle: &AppHandle, auth: &Auth, t: &Timeline, lib: Arc<Vaul
 
 // ── cuts of avenDB (Jobs and studio 2.0, J12-J13: aven.rs `studio_job`) ────────────────────────────────────────
 
-/// The library a cut of avenDB reads: the legacy vault's catalog, and avenDB's footage the page named (`aven`).
-async fn cut_library(handle: &AppHandle, aven: &[Value]) -> Res<(Arc<Vault>, Auth, Arc<Vaulted>)> {
-    let vault = handle.state::<crate::App>().vault.clone();
-    let auth = handle.state::<Auth>().inner().clone();
-    let lib = Arc::new(Vaulted::new(&vault).await?.with_aven(aven));
-    Ok((vault, auth, lib))
-}
-
-/// Cut `t` of avenDB rendered into `out` (every delivery, or `delivery` "youtube-4k" alone), its files read from the
-/// legacy vault and avenDB (`aven`, the page's library items of its footage): what it made, its files still on the
-/// disk for aven.rs to put into the cut's vault. The uploads wait while it renders, as for a job of the API's.
+/// Cut `t` of avenDB rendered into `out` (every delivery, or `delivery` "youtube-4k" alone), its files read from avenDB
+/// (`aven`, the page's library items of its footage): what it made, its files still on the disk for aven.rs to put
+/// into the cut's vault.
 pub(crate) async fn render_cut(handle: &AppHandle, t: &Timeline, aven: &[Value], delivery: Option<&str>, out: PathBuf, told: Told) -> Res<vault_render::Render> {
     told(0.02, "fetching files");
-    let (vault, auth, lib) = cut_library(handle, aven).await?;
+    let lib = Arc::new(Footage::new(aven, t));
     let made = {
-        let _held = vault.hold.take("render");
         let _awake = world::Awake::begin("rendering a film");
         let _kept = world::keep();
-        render_into(handle, &vault, &auth, t, lib, delivery, out, &told).await
+        render_into(handle, t, lib, delivery, out, &told).await
     };
     world::close_if_idle(handle);
     made
@@ -371,11 +363,11 @@ pub(crate) async fn render_cut(handle: &AppHandle, t: &Timeline, aven: &[Value],
 /// A frame of cut `t` of avenDB made into `work` (`frame_into`), its files read as `render_cut` reads them.
 pub(crate) async fn frame_cut(handle: &AppHandle, t: &Timeline, aven: &[Value], clip: Option<&str>, at: f64, aspect: &str, work: &Path, told: Told) -> Res<Framed> {
     told(0.05, "fetching files");
-    let (_, auth, lib) = cut_library(handle, aven).await?;
+    let lib = Arc::new(Footage::new(aven, t));
     let made = {
         let _awake = world::Awake::begin("rendering a frame");
         let _kept = world::keep();
-        frame_into(handle, &auth, t, lib, clip, at, aspect, work, &told).await
+        frame_into(handle, t, lib, clip, at, aspect, work, &told).await
     };
     world::close_if_idle(handle);
     made
@@ -392,11 +384,12 @@ mod tests {
 
     #[test]
     fn a_file_is_exported_with_its_own_extension() {
-        let m = |name: &str, mime: &str, meta: Value| vault_core::Meta { original_name: name.into(), mime: mime.into(), meta, ..Default::default() };
-        assert_eq!(extension(&m("A001.MOV", "video/quicktime", Value::Null)), "mov");
-        assert_eq!(extension(&m("", "video/mp4", Value::Null)), "mp4");
-        assert_eq!(extension(&m("shot_010", "application/x-tar", json!({ "sequence": "exr" }))), "tar");
-        assert_eq!(extension(&m("take.wav", "audio/wav", Value::Null)), "wav");
-        assert_eq!(extension(&m("", "application/octet-stream", Value::Null)), "bin");
+        let m = |name: &'static str, mime: &'static str, meta: Value| (name, mime, meta);
+        let extension = |(name, mime, meta): (&str, &str, Value)| extension(name, mime, &meta);
+        assert_eq!(extension(m("A001.MOV", "video/quicktime", Value::Null)), "mov");
+        assert_eq!(extension(m("", "video/mp4", Value::Null)), "mp4");
+        assert_eq!(extension(m("shot_010", "application/x-tar", json!({ "sequence": "exr" }))), "tar");
+        assert_eq!(extension(m("take.wav", "audio/wav", Value::Null)), "wav");
+        assert_eq!(extension(m("", "application/octet-stream", Value::Null)), "bin");
     }
 }

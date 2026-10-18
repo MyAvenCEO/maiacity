@@ -54,16 +54,6 @@ pub async fn source(vault: &Vault, hash: Hash, name: &str) -> anyhow::Result<Sou
     Ok(Source::blob(Arc::new(bytes), format!("{}.{}", hash.to_hex(), ext_of(name))))
 }
 
-/// The same, from a blocking thread (the render's library): waits on the runtime for the status.
-pub fn source_blocking(vault: &Vault, rt: &tokio::runtime::Handle, hash: Hash, name: &str) -> anyhow::Result<Source> {
-    let len = match rt.block_on(vault.store.blobs().status(hash))? {
-        BlobStatus::Complete { size } => size,
-        _ => anyhow::bail!("{name}: its bytes are not all on this Mac (yet)"),
-    };
-    let bytes = IrohBytes { reader: Mutex::new(vault.store.blobs().reader(hash)), len, rt: rt.clone() };
-    Ok(Source::blob(Arc::new(bytes), format!("{}.{}", hash.to_hex(), ext_of(name))))
-}
-
 /// A file name's extension, lower case ("bin" without one).
 pub fn ext_of(name: &str) -> String {
     std::path::Path::new(name).extension().map(|e| e.to_string_lossy().to_lowercase()).filter(|e| !e.is_empty()).unwrap_or_else(|| "bin".into())

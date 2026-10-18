@@ -457,7 +457,6 @@ unsafe fn player_for(item: &AVPlayerItem, mtm: MainThreadMarker) -> Arc<Driver> 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn player_load(
-    app: tauri::State<'_, crate::App>,
     timeline: Value,
     shape: String,
     files: HashMap<String, String>,
@@ -469,7 +468,7 @@ pub async fn player_load(
     let n = LOADS.fetch_add(1, Ordering::Relaxed) + 1;
     *LAST_LOAD.lock().unwrap() = Some(serde_json::json!({ "timeline": timeline, "shape": shape, "files": files, "profiles": profiles, "width": width }));
     let t: vault_render::Timeline = serde_json::from_value(timeline).map_err(err)?;
-    let program = program(&app.vault, &t, &shape, &files, &profiles, width).await?;
+    let program = program(&t, &shape, &files, &profiles, width).await?;
     let made = tauri::async_runtime::spawn_blocking(move || on_player(move || -> anyhow::Result<()> {
         // SAFETY: AVFoundation's player works off the main thread, on the player's own (see `post`); objc2 asks for
         // the marker only to be careful. The output's frames are read on the pump's thread.
@@ -514,7 +513,6 @@ pub async fn player_load(
 /// The film as it plays: every picture clip on V1 with its file (`files`: its proxy, else its original) and that
 /// file's journey (`profiles`), its grade and looks as one cube, the film's finishing, at `width` (320…1920) in `shape`.
 pub(crate) async fn program(
-    vault: &std::sync::Arc<vault_core::Vault>,
     t: &vault_render::Timeline,
     shape: &str,
     files: &HashMap<String, String>,
@@ -529,17 +527,11 @@ pub(crate) async fn program(
     v1.sort_by(|a, b| a.start.total_cmp(&b.start));
     for c in v1 {
         let Some(file) = files.get(&c.id) else { continue };
-        // an avenDB file (studio 2.0), else the legacy vault's
-        let source = match crate::aven::source_of_ref(file, &format!("{}.mov", c.id)) {
-            Some(source) => source?,
-            None => {
-                let hash: iroh_blobs::Hash = file.parse().map_err(err)?;
-                crate::blob::source(vault, hash, &format!("{}.mov", c.id)).await.map_err(|e| format!("{e:#}"))?
-            }
-        };
+        // an avenDB file, by its reference (the page names each clip's proxy, else its original)
+        let source = crate::proxies::source_of(file, &format!("{}.mov", c.id))?;
         let profile = profiles.get(&c.id).map(String::as_str).unwrap_or("rec709");
         let journey = vault_media::cst::journey(profile).or_else(|| vault_media::cst::journey("rec709")).ok_or("no journey")?.kernel_args();
-        let (steps, cubes) = crate::proxies::graded(vault, t, c, 33).await?;
+        let (steps, cubes) = crate::proxies::graded(t, c, 33).await?;
         clips.push(vault_render::player::PlayClip { clip: c.clone(), source, journey, steps, cubes });
     }
     Ok(Arc::new(vault_render::player::Program { clips, aspect: s.aspect.to_string(), width: w, height: h, output: crate::render::odt().clone() }))

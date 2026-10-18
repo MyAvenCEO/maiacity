@@ -276,15 +276,6 @@ impl Auth {
         let status = res.status().as_u16();
         Ok((status, res.json().await.unwrap_or(Value::Null)))
     }
-
-    /// Like `call`, but a refusal is an error with the API's own sentence.
-    pub async fn get_ok(&self, method: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
-        let (status, body) = self.call(method, path, body).await?;
-        if status >= 400 {
-            return Err(body["error"].as_str().map(String::from).unwrap_or_else(|| format!("The API answered {status}.")));
-        }
-        Ok(body)
-    }
 }
 
 /// Only the admin passes: every vault and studio command checks this first.
