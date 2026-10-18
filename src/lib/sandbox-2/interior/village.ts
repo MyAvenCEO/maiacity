@@ -1459,6 +1459,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const t0 = performance.now()
 			// and every animal it will see: all coarse from afar, rigged those its camera path passes near — there before
 			// the shot is drawn
+			// (two frames first: the herds say where each of them is, round where the walker now stands)
+			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
 			actorsNear(views)
 			await actorsSettled()
 			const t1 = performance.now()

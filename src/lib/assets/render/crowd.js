@@ -25,6 +25,8 @@ export { blend };
 
 /** how coarse an actor is drawn from afar */
 export const FAR = 0.2;
+/** how far (m) an actor is in sight: within it (and in a shot's frame) its coarse build is made, never before */
+export const SEEN = 300;
 
 /** the loader and the boxes crowds are built in, a few side by side (one for each spare core, up to three), and the
  *  Maia City vault's recipes they are built from (../vault.js): fetched when a crowd first builds, so a world's module
@@ -63,10 +65,10 @@ function built(ref, detail) {
 /** every crowd made, held weakly (a dome's crowds go with it): what `wantNear` asks */
 const crowds = new Set();
 /**
- * The near builds the actors round these points will need (a shot's camera path, src/lib/sandbox-kit/stream.js views),
- * asked for now: a rigged build is made only for a coat one of whose actors comes near an eye, never up front, and a
- * shot asks for those its camera passes before it is drawn (`settled` then waits for them).
- * @param {{ x: number, y?: number, z: number }[]} points
+ * The builds the actors these views will see need (a shot's camera path, src/lib/sandbox-kit/stream.js views), asked
+ * for now: a coat's coarse build once one of its actors is in a view's frame within SEEN, its rigged build once one
+ * comes near — never up front; a shot asks for what its camera sees before it is drawn (`settled` then waits for it).
+ * @param {{ x: number, y?: number, z: number, frustum?: { containsPoint(p: { x: number, y: number, z: number }): boolean } | null }[]} points
  */
 export function wantNear(points) {
 	for (const ref of crowds) {
@@ -98,7 +100,7 @@ const meshOf = (root) => {
  * @param {string[]} refs
  * @param {number[]} counts
  * @param {{
- *   near: number, max: number, scale?: number, lift?: number, shadows?: boolean, detail?: number,
+ *   near: number, max: number, scale?: number, lift?: number, shadows?: boolean, detail?: number, seen?: number,
  *   farShape?: (coat: number) => { geometry: THREE.BufferGeometry, material: THREE.Material | THREE.Material[] }
  * }} o `near`: up to how far (m) from the eye they are rigged; `max`: how many at most at once; `scale`: how big they
  *   are against the build (a bee drawn larger than life, to be seen); `lift`: how high the build's middle stands over
@@ -106,7 +108,10 @@ const meshOf = (root) => {
  *   (`FAR`); `farShape`: what stands in for them from afar instead of a coarser build (a bee: a striped speck)
  */
 export function crowd(refs, counts, o) {
-	const { near, max, scale = 1, lift = 0, shadows = true, detail = FAR } = o;
+	const { near, max, scale = 1, lift = 0, shadows = true, detail = FAR, seen = SEEN } = o;
+	// the boxes and the recipes, made ready now while the world loads: the first build asked for (the first shot's)
+	// finds them warm
+	void loaderOf().catch(() => {});
 	const object = new THREE.Group();
 	/** far: the coarse build at rest, one instanced mesh a coat */
 	const far = counts.map(() => null);
@@ -135,13 +140,19 @@ export function crowd(refs, counts, o) {
 			clips[c] = playerOf(view?.clips?.motion, view?.clips?.bones ?? []);
 		});
 	};
-	refs.forEach((ref, c) => {
+	/** whether each coat's coarse build is asked for: only once one of its actors is in sight of an eye (`seen`) */
+	const askedFar = counts.map(() => false);
+	const askFar = (/** @type {number} */ c) => {
+		if (askedFar[c]) return;
+		askedFar[c] = true;
 		if (o.farShape) return void farMesh(c, o.farShape(c));
-		void built(ref, detail).then((got) => {
+		void built(refs[c], detail).then((got) => {
 			const m = got && meshOf(got.obj);
 			if (m) farMesh(c, { geometry: m.geometry, material: m.material });
 		});
-	});
+	};
+	// a drawn far shape costs no build: there from the start
+	if (o.farShape) refs.forEach((_, c) => askFar(c));
 	const rigged = (c, k) => {
 		const pool = pools[c];
 		while (pool.length <= k) {
@@ -180,8 +191,11 @@ export function crowd(refs, counts, o) {
 		 * @param {{ x: number, z: number }[]} points
 		 */
 		want(points) {
-			const r2 = (near * 1.5) ** 2;
-			for (const en of last) if (!asked[en.coat] && points.some((pt) => (pt.x - en.x) ** 2 + (pt.z - en.z) ** 2 < r2)) askNear(en.coat);
+			const r2 = (near * 1.5) ** 2, s2 = seen * seen;
+			for (const en of last) {
+				if (!askedFar[en.coat] && points.some((pt) => (pt.x - en.x) ** 2 + ((pt.y ?? en.y) - en.y) ** 2 + (pt.z - en.z) ** 2 < s2 && (!pt.frustum || pt.frustum.containsPoint(en)))) askFar(en.coat);
+				if (!asked[en.coat] && points.some((pt) => (pt.x - en.x) ** 2 + (pt.z - en.z) ** 2 < r2)) askNear(en.coat);
+			}
 		},
 		/** each coat's clips, by name, once its near build is here: (t, motion) → pose */
 		clips,
@@ -199,8 +213,12 @@ export function crowd(refs, counts, o) {
 		},
 		end() {
 			last = entries;
-			// a coat with an actor near the eye: its rigged build asked for (drawn coarse until it is here)
-			for (const en of entries) if (en.d2 < near * near) askNear(en.coat);
+			// a coat with an actor in sight: its coarse build asked for; near the eye: its rigged one (drawn coarse until
+			// it is here)
+			for (const en of entries) {
+				if (en.d2 < seen * seen) askFar(en.coat);
+				if (en.d2 < near * near) askNear(en.coat);
+			}
 			const close = entries.filter((en) => en.d2 < near * near && models[en.coat]).sort((a, b) => a.d2 - b.d2).slice(0, max);
 			const chosen = new Set(close);
 			const used = counts.map(() => 0);
