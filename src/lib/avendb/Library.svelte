@@ -4,8 +4,8 @@
 	or a tag, each with how many there are, the deleted ones apart; in the middle each a tile with a preview where it
 	is a picture or a film the Mac made a still of (the `still` rule's preview, $lib/studio/jobs/rules.js), its size, its
 	kind and its tags, or the same as a table (Samuel 2026-10-18), with every vault whose devices hold its bytes, and
-	right under each file what the Mac's rules made of it (its proxy, grading still, preview) and each step on it, done
-	or still to come, as the old studio's ingest table kept them (./made.js). A click opens it in the middle, to save or delete there, its
+	right under each file what the Mac's rules made of it (its proxy, grading still, preview), as the old studio's
+	ingest table kept them (./made.js); where a rule's step stands is the Jobs app's. A click opens it in the middle, to save or delete there, its
 	details on the right (its kind, size, who added it and when, its tags, where it is synced to, who it is shared
 	with and its hash): a film or a song plays as the browser's player asks for it, a range at a time, streamed from
 	the device through a service worker (./files.js), or read whole where none runs; a picture, an SVG or a PDF shows
@@ -22,7 +22,7 @@
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import { address, dataUrl, kindOf, KINDS, mediaOf, serve, whole, WHOLE } from './files.js';
-	import { familyOf, stateOf } from './made.js';
+	import { familyOf } from './made.js';
 	import { allowed, creatable, deleting, may } from './ops.js';
 	import {
 		count,
@@ -68,7 +68,7 @@
 	const deleted = $derived(files.filter((e) => e.deleted));
 	const hidden = $derived(entries.length - seen.length);
 
-	/** what the Mac's rules made of each file, and their steps on it (./made.js) */
+	/** what the Mac's rules made of each file (./made.js) */
 	const family = $derived(familyOf(world));
 	/** each made file's role (`Proxy · ACEScct` …), by its entry */
 	const roles = $derived(new Map([...family.made.values()].flat().map((m) => [m.entry.entry, m.role])));
@@ -91,34 +91,23 @@
 	});
 
 	/**
-	 * @typedef {import('./made.js').Step} Step
-	 * @typedef {{ key: string, e: EntryView, of?: EntryView, role?: string, steps: Step[] }} FileRow a file, its original
-	 *   if it is one a rule made of it, and the steps on its line
-	 * @typedef {{ key: string, coming: Step, of: EntryView }} ComingRow a file a rule is still to make
+	 * @typedef {{ e: EntryView, of?: EntryView, role?: string }} Row a file, and its original if it is one a rule made
+	 *   of it
 	 */
 	/**
-	 * The table's rows: each file, then right under it the files the rules made of it, and those still to come (a step
-	 * that makes files, not done yet); a made file whose original isn't listed stands alone. Each step sits on the line
-	 * of what it made or is making (Samuel 2026-10-18), the ones that make no file on the original's.
+	 * The table's rows: each file, then right under it the files the rules made of it; a made file whose original
+	 * isn't listed stands alone.
 	 */
 	const rows = $derived.by(() => {
 		const listed = new Set(shown.map((e) => e.entry));
-		/** @type {(FileRow | ComingRow)[]} */
+		/** @type {Row[]} */
 		const out = [];
 		for (const e of shown) {
 			const of = family.of.get(e.entry);
 			if (of && listed.has(of)) continue;
-			const steps = family.steps.get(e.entry) ?? [];
-			if (binned) {
-				out.push({ key: e.entry, e, role: roles.get(e.entry), steps });
-				continue;
-			}
-			const made = (family.made.get(e.entry) ?? []).filter((m) => reads(m.entry, actor));
-			const shows = (/** @type {Step} */ s) => made.some((m) => m.rule === s.rule);
-			const coming = steps.filter((s) => s.makes && !s.done && !shows(s));
-			out.push({ key: e.entry, e, role: roles.get(e.entry), steps: steps.filter((s) => !shows(s) && !coming.includes(s)) });
-			for (const m of made) out.push({ key: m.entry.entry, e: m.entry, of: e, role: m.role, steps: steps.filter((s) => s.rule === m.rule) });
-			for (const s of coming) out.push({ key: `${e.entry}:${s.rule}`, coming: s, of: e });
+			out.push({ e, role: roles.get(e.entry) });
+			if (binned) continue;
+			for (const m of family.made.get(e.entry) ?? []) if (reads(m.entry, actor)) out.push({ e: m.entry, of: e, role: m.role });
 		}
 		return out;
 	});
@@ -563,32 +552,10 @@
 					<div class="rows">
 						<table>
 							<thead>
-								<tr
-									><th><span class="hide">Preview</span></th><th>Name</th><th>Kind</th><th class="num">Size</th><th>Added</th><th>Tags</th><th
-										>Made by the Mac</th
-									><th>Synced to</th></tr
-								>
+								<tr><th><span class="hide">Preview</span></th><th>Name</th><th>Kind</th><th class="num">Size</th><th>Added</th><th>Tags</th><th>Synced to</th></tr>
 							</thead>
 							<tbody>
-								{#snippet chip(/** @type {Step} */ st)}
-									{@const stuck = st.task.status === 'held' || st.task.status === 'failed'}
-									<span class:done={st.done} class:stuck title="{st.name}: {stateOf(st.task)}{st.task.error ? ` (${st.task.error})` : ''}"
-										>{st.done ? '✓' : st.task.status === 'claimed' ? '↻' : stuck ? '!' : '…'} {st.name}</span
-									>
-								{/snippet}
-								{#each rows as r (r.key)}
-									{#if 'coming' in r}
-										<tr class="made coming">
-											<td class="mini"><span class="thumb"><Icon name="sync" size={16} /></span></td>
-											<td class="name"><span class="sub">↳ {r.coming.name}</span></td>
-											<td class="soft when" title={r.coming.task.error || undefined}>{stateOf(r.coming.task)}</td>
-											<td></td>
-											<td></td>
-											<td></td>
-											<td><span class="steps">{@render chip(r.coming)}</span></td>
-											<td></td>
-										</tr>
-									{:else}
+								{#each rows as r (r.e.entry)}
 										{@const e = r.e}
 										{@const k = kind(e)}
 										{@const file = fileOf(e)}
@@ -621,9 +588,6 @@
 												{#if own.length}<span class="tags">{#each own as t (t)}<span class="chip tag">#{t}</span>{/each}</span>{/if}
 											</td>
 											<td>
-												<span class="steps">{#each r.steps as st (st.rule)}{@render chip(st)}{/each}</span>
-											</td>
-											<td>
 												<span class="held">
 													{#each heldBy(file) as h (h.name)}
 														<span title={h.devices.join(', ')}>{h.name}</span>
@@ -633,7 +597,6 @@
 												</span>
 											</td>
 										</tr>
-									{/if}
 								{/each}
 							</tbody>
 						</table>
@@ -861,7 +824,7 @@
 	}
 
 	.rows th {
-		padding: 0.5rem 0.5rem;
+		padding: 0.5rem 0.65rem;
 		font-size: 0.72rem;
 		font-weight: 600;
 		text-align: left;
@@ -870,7 +833,7 @@
 	}
 
 	.rows td {
-		padding: 0.4rem 0.5rem;
+		padding: 0.4rem 0.65rem;
 		border-top: 1px solid var(--edge);
 		vertical-align: middle;
 	}
@@ -889,7 +852,7 @@
 	}
 
 	.rows .name {
-		max-width: 16rem;
+		max-width: 20rem;
 	}
 
 	.rows .open {
@@ -942,34 +905,6 @@
 		padding-left: 0.6rem;
 		font-weight: 400;
 		color: rgb(0 0 0 / 0.7);
-	}
-
-	.rows tr.coming td {
-		color: rgb(0 0 0 / 0.5);
-	}
-
-	.steps {
-		display: flex;
-		gap: 0.2rem;
-	}
-
-	.steps > span {
-		padding: 0.1rem 0.4rem;
-		border-radius: 999px;
-		background: #f1efe9;
-		font-size: 0.7rem;
-		color: rgb(0 0 0 / 0.55);
-		white-space: nowrap;
-	}
-
-	.steps > span.done {
-		background: #e3efe6;
-		color: #2f6b45;
-	}
-
-	.steps > span.stuck {
-		background: #f6e3dd;
-		color: #9a3b26;
 	}
 
 	.rows .mini .thumb {
