@@ -4,7 +4,7 @@
 import { API, fileUrl, describeMedia, listContent, listJobs, may, me, missing } from '$lib/auth/client';
 import { ODT, PROFILES, WORKING, asStudio, isCache, isSequence, profileFor, proxyFor } from './color.js';
 import { avenLibrary, withGraded } from './aven.js';
-import { createCut, cutJobs, cutsHere, deleteCut, getCut, isCut, listCuts, renderCut, saveCut } from './cuts.js';
+import { createCut, cutJobs, cutsHere, deleteCut, getCut, isCut, listCuts, listStories, renderCut, saveCut } from './cuts.js';
 import { bringFilms } from './legacyfilms.js';
 import { filmLut, gradeLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
@@ -143,6 +143,9 @@ export class Studio {
 	library = $state([]);
 	/** @type {Timeline[]} */
 	timelines = $state([]);
+	/** the stories this Mac holds, for the timelines that belong to one (a cut's `story` link): the aside (./StoryNav.svelte) */
+	/** @type {{ id: string, vault: string, title: string }[]} */
+	stories = $state([]);
 	/** @type {Timeline | null} */
 	current = $state(null);
 	/** @type {'saved' | 'saving' | 'unsaved'} */
@@ -514,9 +517,10 @@ export class Studio {
 			return void (this.phase = 'signed-out');
 		}
 		try {
-			const [media, tls, here] = await Promise.all([allMedia(), listTimelines(), cutsHere().catch(() => false)]);
+			const [media, tls, here, stories] = await Promise.all([allMedia(), listTimelines(), cutsHere().catch(() => false), listStories().catch(() => [])]);
 			this.library = media;
 			this.timelines = tls;
+			this.stories = stories;
 			this.avenHere = here;
 			if (here) void this.bringFilms();
 		} catch (e) {
@@ -542,9 +546,10 @@ export class Studio {
 			/* no storage: open the newest */
 		}
 		const open = this.timelines.find((t) => t.id === last) ?? this.timelines[0];
-		// a timeline loads its sound (decoded) and its world: only when it is looked at — Ingest and the library
-		// never need it, and on an 8 GB Mac it is a gigabyte and more
-		this.later = open ?? 'new';
+		// a timeline loads its sound (decoded) and its world: only when it is looked at, as on an 8 GB Mac it is a
+		// gigabyte and more; none yet while the films are on their way (`bringFilms` opens one of them)
+		this.waitFilms = !open && !!this.importing;
+		this.later = open ?? (this.waitFilms ? null : 'new');
 		await this.openLater();
 	}
 
@@ -641,15 +646,23 @@ export class Studio {
 	/** the program monitor starts the world iframe when this is set */
 	wantWorld = $state(false);
 
-	async newTimeline() {
+	/**
+	 * A new timeline, opened: of story `story` where one is given (in its vault, linked to it), else of none.
+	 * @param {{ id: string, vault: string, title: string }} [story]
+	 */
+	async newTimeline(story) {
 		const made = await this.starter();
-		const t = (await createTimeline({ name: `Timeline ${this.timelines.length + 1}`, aspect: '16:9', tags: [], clips: made, stage: 'edit', version: 1, color: { working: 'acescct', output: 'odt-rec709' }, grade: null }));
+		const mine = story ? this.timelines.filter((x) => /** @type {any} */ (x).story?.entry === story.id).length : this.timelines.length;
+		const of = story ? { project: story.title, story: { vault: story.vault, entry: story.id } } : {};
+		const t = await createCut({ name: `Timeline ${mine + 1}`, ...of, aspect: '16:9', tags: [], clips: made, stage: 'edit', version: 1, color: { working: 'acescct', output: 'odt-rec709' }, grade: null }, story ? { vault: story.vault } : {});
 		this.timelines = [t, ...this.timelines];
 		await this.openTimeline(t);
 	}
 
 	/** Whether new cuts go into avenDB on this Mac (and the two legacy films can be brought there, `bringFilms`). */
 	avenHere = $state(false);
+	/** Whether the studio opened with no timeline while the films were on their way, to open one once they are. */
+	waitFilms = false;
 	/** What bringing the legacy films into avenDB is doing now; '' when nothing. */
 	importing = $state('');
 
@@ -663,14 +676,21 @@ export class Studio {
 		try {
 			const brought = await bringFilms((line) => (this.importing = line));
 			if (!brought.length) return;
-			const [media, tls] = await Promise.all([allMedia(), listTimelines()]);
+			const [media, tls, stories] = await Promise.all([allMedia(), listTimelines(), listStories().catch(() => this.stories)]);
 			this.library = media;
 			this.timelines = tls;
+			this.stories = stories;
 			this.notice = `Brought into the Maia City vault: ${brought.join(', ')}.`;
 		} catch (e) {
 			this.error = `Bringing the films: ${/** @type {Error} */ (e).message}`;
 		} finally {
 			this.importing = '';
+			// nothing was open while they came: the first timeline now, or a new one where there is none
+			if (this.waitFilms) {
+				this.waitFilms = false;
+				this.later = this.timelines[0] ?? 'new';
+				await this.openLater();
+			}
 		}
 	}
 

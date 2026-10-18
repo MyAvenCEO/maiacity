@@ -31,6 +31,7 @@
 	import RenderQueue from '$lib/studio/RenderQueue.svelte';
 	import SourceMonitor from '$lib/studio/SourceMonitor.svelte';
 	import StageBar from '$lib/studio/StageBar.svelte';
+	import StoryNav from '$lib/studio/StoryNav.svelte';
 	import Timeline from '$lib/studio/Timeline.svelte';
 	import Transport from '$lib/studio/Transport.svelte';
 	import { Studio } from '$lib/studio/studio.svelte';
@@ -146,7 +147,7 @@
 				<div class="side end" data-tauri-drag-region>
 				{#if s.error}<button class="err" onclick={() => (s.error = '')} title="Dismiss">{s.error}</button>{/if}
 				{#if s.notice}<button class="err note" onclick={() => (s.notice = '')} title="{s.notice} (click to dismiss)">{s.notice}</button>{/if}
-				<TimelinePicker {s} />
+				<span class="picker"><TimelinePicker {s} /></span>
 				{#if s.active && s.tab !== 'render'}
 					<button class="rpill" style:--p="{Math.round(s.active.progress * 100)}%" onclick={() => (s.tab = 'render')}>
 						{s.active.status === 'queued' ? 'Render waiting…' : `Rendering ${Math.round(s.active.progress * 100)}%`}
@@ -204,6 +205,8 @@
 			<Transport {s} />
 			<Timeline {s} />
 		{/if}
+		<!-- the stories and their timelines, on every tab -->
+		<StoryNav {s} />
 		<CueCard {s} />
 		<!-- the working steps, along the window's bottom edge -->
 		<footer class="tabs"><StageBar {s} /></footer>
@@ -272,14 +275,14 @@
 		   src/app.css), so the working steps along the bottom edge stay in view */
 		padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) var(--nav-room) env(safe-area-inset-left, 0px);
 		display: grid;
-		grid-template-columns: 19rem 1fr 17rem;
+		grid-template-columns: 11rem 19rem 1fr 17rem;
 		grid-template-rows: auto minmax(0, 1fr) auto minmax(11rem, auto) auto;
 		grid-template-areas:
-			'bar bar bar'
-			'bin monitor inspector'
-			'bin transport transport'
-			'bin timeline timeline'
-			'tabs tabs tabs';
+			'bar bar bar bar'
+			'nav bin monitor inspector'
+			'nav bin transport transport'
+			'nav bin timeline timeline'
+			'tabs tabs tabs tabs';
 		gap: 1px;
 		background: var(--edge);
 		color: var(--ink);
@@ -289,51 +292,51 @@
 	/* Grade: the program; the layers over V1 on the timeline, full width */
 	/* Grade: the picture, the transport and the layers' lanes; beside them, the full height, the chosen layer's controls */
 	.studio.tab-grade {
-		grid-template-columns: minmax(0, 1fr) 22rem;
+		grid-template-columns: 11rem minmax(0, 1fr) 22rem;
 		grid-template-rows: auto minmax(0, 1fr) auto auto auto;
 		grid-template-areas:
-			'bar bar'
-			'monitor aside'
-			'transport aside'
-			'timeline aside'
-			'tabs tabs';
+			'bar bar bar'
+			'nav monitor aside'
+			'nav transport aside'
+			'nav timeline aside'
+			'tabs tabs tabs';
 	}
 
 	.studio.tab-render {
-		grid-template-columns: 19rem 1fr 19rem;
+		grid-template-columns: 11rem 19rem 1fr 19rem;
 	}
 
 	/* Script: the script (left half), the program (right half), the timeline full width under them */
 	.studio.tab-script {
-		grid-template-columns: 1fr 1fr;
+		grid-template-columns: 11rem 1fr 1fr;
 		grid-template-areas:
-			'bar bar'
-			'bin monitor'
-			'transport transport'
-			'timeline timeline'
-			'tabs tabs';
+			'bar bar bar'
+			'nav bin monitor'
+			'nav transport transport'
+			'nav timeline timeline'
+			'tabs tabs tabs';
 	}
 
 	/* Audio: the program and, beside it, the selected clip (its EQ) over the sound tracks, which carry the levels */
 	.studio.tab-audio {
-		grid-template-columns: 1fr 19rem;
+		grid-template-columns: 11rem 1fr 19rem;
 		grid-template-rows: auto minmax(0, 1fr) auto minmax(14rem, auto) auto;
 		grid-template-areas:
-			'bar bar'
-			'monitor inspector'
-			'transport transport'
-			'timeline timeline'
-			'tabs tabs';
+			'bar bar bar'
+			'nav monitor inspector'
+			'nav transport transport'
+			'nav timeline timeline'
+			'tabs tabs tabs';
 	}
 
 	/* Deliverables: one panel under the bar, no transport or timeline */
 	.studio.tab-deliverables {
-		grid-template-columns: 1fr;
+		grid-template-columns: 11rem 1fr;
 		grid-template-rows: auto minmax(0, 1fr) auto;
 		grid-template-areas:
-			'bar'
-			'main'
-			'tabs';
+			'bar bar'
+			'nav main'
+			'tabs tabs';
 	}
 
 	/* the working steps, centred along the bottom edge */
@@ -581,6 +584,11 @@
 		color: var(--ink);
 	}
 
+	/* the stories aside opens the timelines; on a phone, where it doesn't show, the menu in the bar */
+	.picker {
+		display: none;
+	}
+
 	@media (max-width: 900px) {
 		.studio,
 		.studio.tab-render {
@@ -607,8 +615,13 @@
 
 		.studio :global(.inspector),
 		.studio :global(.grade),
-		.studio :global(.dl) {
+		.studio :global(.dl),
+		.studio :global(.stories) {
 			display: none;
+		}
+
+		.picker {
+			display: contents;
 		}
 
 		.row {
