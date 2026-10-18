@@ -104,11 +104,14 @@ export const dataUrl = (b) =>
 	});
 
 const WORKER = `${base}/app/avendb-files.sw.js`;
-const SCOPE = `${base}/app/avendb`;
+/** the pages it serves: the app's, as avenDB opens on its dashboard (src/routes/app/+page.svelte) */
+const SCOPE = `${base}/app/`;
+/** where its files are, which the worker answers (static/app/avendb-files.sw.js `PATH`) */
+const FILES = `${base}/app/avendb`;
 
 /** The address the browser's player streams file `file` of type `media` from, through the service worker. */
 export const address = (/** @type {FileView} */ file, /** @type {string} */ media) =>
-	`${SCOPE}/file/${file.root}/${file.size}/${file.len}?type=${encodeURIComponent(media)}`;
+	`${FILES}/file/${file.root}/${file.size}/${file.len}?type=${encodeURIComponent(media)}`;
 
 /**
  * Has the page answer the service worker's asks for a file's bytes with `read`, and starts the worker: `ready` says

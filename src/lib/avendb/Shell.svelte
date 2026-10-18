@@ -51,7 +51,8 @@
 	import Stories from './Stories.svelte';
 	import Story from './Story.svelte';
 	import Todos from './Todos.svelte';
-	import VaultApps, { NAV, OUT } from './VaultApps.svelte';
+	import { NAV, OUT } from './VaultApps.svelte';
+	import Dashboard from '$lib/app/Dashboard.svelte';
 	import { may } from './ops.js';
 	import { session } from './session.svelte.js';
 	import { acting, count, KINDS, list, nameOf, pillVaults, signerName } from './vaults.js';
@@ -290,16 +291,15 @@
 			{/if}
 		{/key}
 	{:else if tab === 'home'}
-		<!-- the vault's home: each of its pages an app, by group, as a phone's home screen shows them -->
+		<!-- the vault's home: the app's one dashboard, the same for every vault (Samuel 2026-10-18), the consent screen
+		     over it while a request waits -->
 		<section class="main home">
-			<header class="home-head">
-				<small>{KINDS[here.kind]}</small>
-				<h1>{nameOf(here)}</h1>
-				<p class="soft">{owners(here)}</p>
-				{#if !here.via}<button class="btn" onclick={() => (asking = true)}>Ask for access</button>{/if}
-			</header>
-			<AccessRequest {world} {requests} asked={asks.asked} made={asks.made} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
-			<VaultApps />
+		<Dashboard>
+			<div class="home-asks">
+				{#if !here.via}<button class="btn" onclick={() => (asking = true)}>Ask {nameOf(here)} for access</button>{/if}
+				<AccessRequest {world} {requests} asked={asks.asked} made={asks.made} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
+			</div>
+		</Dashboard>
 		</section>
 	{:else}
 		<!-- a view: its own navigation on the left, itself in the middle under the head above, what it shows on the right,
@@ -434,38 +434,17 @@
 		line-height: 1.45;
 	}
 
-	/* the vault's home, on the whole screen: its pages as apps, in a column no wider than a few rows of them */
+	/* the vault's home, on the whole screen: the app's one dashboard */
 	.home {
 		grid-column: 1 / -1;
-		padding-bottom: calc(var(--nav-room, 5rem) + 3rem);
 	}
 
-	.home > * {
-		max-width: 46rem;
-		margin-inline: auto;
-	}
-
-	.home-head small {
-		color: var(--accent);
-		font-size: 0.72rem;
-		letter-spacing: 0.05em;
-		text-transform: uppercase;
-	}
-
-	.home-head h1 {
-		margin: 0.2rem 0 0.3rem;
-		font-family: var(--font-body);
-		font-size: 1.6rem;
-		font-weight: 650;
-		font-variation-settings: normal;
-		letter-spacing: -0.01em;
-		line-height: 1.2;
-		overflow-wrap: anywhere;
-	}
-
-	.home-head p {
-		margin: 0 0 0.6rem;
-		font-size: 0.86rem;
+	.home-asks {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.6rem;
+		margin-top: 1rem;
 	}
 
 	/* at the foot, in the middle, just above the app's own nav pill (--nav-room, src/app.css) */

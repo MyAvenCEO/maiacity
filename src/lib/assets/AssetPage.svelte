@@ -209,7 +209,7 @@
 </svelte:head>
 
 <main class="wrap asset">
-	<a class="back" href="{base}/app/avendb/#assets">← Assets</a>
+	<a class="back" href="{base}/app/#assets">← Assets</a>
 
 	<header>
 		<p class="eyebrow">{OBJECT_GROUPS[at.group]?.label ?? at.group}</p>
