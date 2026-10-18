@@ -2,12 +2,15 @@
 	A story's Thumbnail tab (./Story.svelte): its cards, one entry of avenDB's `artwork` schema each (./artworks.js), a
 	chip for each above, by shape (16:9, 9:16, 1:1, 4:5, 5:2), an A/B card beside its first. The card picked is designed
 	in layers as the old board's thumbnail was (src/lib/stories/Card.svelte): large on the left, a layer picked there or
-	in the list on the right and moved by dragging it, sized by its corner, turned by its handle; under the list what the
-	picked layer is made of: its picture (a Library file: one the story's sparks show, any of the vault's, or one
-	uploaded here), its words (empty: the hook the card carries), colour, place and size. "Render the card" draws it at
-	full size (src/lib/stories/card.js) into the Library, a file tagged with its role and shape, which the card links.
-	A story with no cards makes one per shape its format goes out in, its first picture and its hook on each. Every
-	change is one op on the card, as the device allows it; a slider or a word field writes once it is let go of.
+	in the list on the right and moved by dragging it, sized by its corner, turned by its handle; the card stays in view
+	while the list scrolls. Over the list a 16:9 card shows small as it is being laid out, as YouTube lists it beside its
+	title; under the list what the picked layer is made of: its picture (a Library file: one the story's sparks show,
+	any of the vault's, or one uploaded here), its words (empty: the hook the card carries), colour, place and size. A
+	card with no layers starts with the usual four, as the old board's did: a picture, a cut-out, the hook, the day
+	badge. "Render the card" draws it at full size (src/lib/stories/card.js) into the Library, a file tagged with its role
+	and shape, which the card links. A story with no cards makes one per shape its format goes out in, its first picture
+	and its hook on each. Every change is one op on the card, as the device allows it; a slider or a word field writes
+	once it is let go of.
 -->
 <script>
 	import Card from '$lib/stories/Card.svelte';
@@ -69,6 +72,10 @@
 	let pickedId = $state(/** @type {number | null} */ (null));
 	const picked = $derived(layers.find((l) => l.id === pickedId) ?? null);
 	const words = $derived(cardWords(story, record));
+	/** what goes out as its title beside it: the hook it carries, else the story's chosen one, else its working name */
+	const title = $derived(
+		/** @type {any[]} */ (story.hooks ?? []).find((h) => h.id === (record.hook ?? story.hook))?.text?.trim() || story.title || 'Untitled'
+	);
 	/** the story's hooks a card can carry: those written */
 	const hookRows = $derived(/** @type {any[]} */ (story.hooks ?? []).filter((h) => h.text?.trim()));
 
@@ -161,6 +168,19 @@
 		const value = layerOf(kind, shape.key, newId(layers), { name: LAYER_KINDS.find(([k]) => k === kind)?.[1], ...file });
 		pickedId = value.id;
 		change('Adding a layer', { op: 'insert', path: ['layers'], value });
+	}
+
+	/** The usual four, as the old board started a card, bottom to top: the picture, a cut-out over it, the hook, the day badge. */
+	function start() {
+		const first = storyPictures(world, item)[0];
+		const file = first ? { file: { vault: first.vault, entry: first.entry } } : {};
+		/** @type {any[]} */
+		const made = [];
+		for (const [kind, name] of [['image', 'Background'], ['cutout', 'Face'], ['text', 'Hook'], ['badge', 'Day']])
+			made.push(layerOf(kind, shape.key, newId([...layers, ...made]), { name, ...(kind === 'image' ? file : {}) }));
+		pickedId = made[2].id;
+		const ops = made.map((value) => ({ op: 'insert', entry: card?.entry, path: ['layers'], value }));
+		api.run('Laying out the usual four', { op: 'batch', as: actor, ops });
 	}
 
 	/** Takes layer `id` off the card. @param {number} id */
@@ -334,6 +354,21 @@
 			</div>
 
 			<aside class="panel" aria-label="The card's layers">
+				{#if shape.key === '16x9'}
+					<!-- how it looks small, as it is being laid out: a YouTube list entry (dark, the card wide, the title beside it) -->
+					<div class="small" aria-label="How it looks on YouTube">
+						<div class="mini">
+							<span class="new">New</span>
+							<span class="length">0:15</span>
+							<Card layers={drawn} hook={words} {src} />
+						</div>
+						<div class="minitext">
+							<b>{title}</b>
+							<small>maiaCITY <i class="verified" title="Verified">✓</i></small>
+							<small>▷ 1.2K · 1d ago</small>
+						</div>
+					</div>
+				{/if}
 				<div class="filing">
 					{#if rendered && pics[rendered.entry]}<img class="still" src={pics[rendered.entry]} alt="The card as rendered" />{/if}
 					<div>
@@ -380,8 +415,13 @@
 							</li>
 						{/each}
 					</ol>
+				{:else if edits}
+					<div class="usual">
+						<button class="btn primary" onclick={start}>Start with the usual four</button>
+						<small class="soft">A picture · a cut-out · the hook · the day badge. Or add one layer at a time above.</small>
+					</div>
 				{:else}
-					<p class="soft empty">No layers: add a picture and the words.</p>
+					<p class="soft empty">No layers yet.</p>
 				{/if}
 
 				{#if picked}
@@ -577,9 +617,96 @@
 	}
 
 	.stage {
-		/* a tall card is as high as the window lets it be, a wide one as wide as its column */
+		/* a tall card is as high as the window lets it be, a wide one as wide as its column; it stays in view while the
+		   layers beside it scroll */
+		position: sticky;
+		top: 0.6rem;
 		width: min(100%, calc(70vh * var(--w) / var(--h)));
 		margin: 0 auto;
+	}
+
+	/* ── how it looks small: YouTube's list entry, dark, the card about 55% wide, the words beside it in its own sans ── */
+	.small {
+		display: flex;
+		gap: 0.55rem;
+		padding: 0.6rem 0.6rem 0.7rem;
+		border-radius: 12px;
+		background: #0f0f0f;
+		color: #f1f1f1;
+		font-family: Roboto, system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+	}
+
+	.mini {
+		position: relative;
+		flex: none;
+		width: 55%;
+		overflow: hidden;
+		border-radius: 8px;
+	}
+
+	.mini .new,
+	.mini .length {
+		position: absolute;
+		z-index: 1;
+		padding: 0.1rem 0.3rem;
+		border-radius: 4px;
+		font-size: 0.62rem;
+		font-weight: 600;
+		line-height: 1.2;
+	}
+
+	.mini .new {
+		top: 0.3rem;
+		left: 0.3rem;
+		background: #fff;
+		color: #0f0f0f;
+	}
+
+	.mini .length {
+		right: 0.3rem;
+		bottom: 0.3rem;
+		background: rgb(0 0 0 / 0.8);
+		color: #fff;
+	}
+
+	.minitext {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2rem;
+		min-width: 0;
+	}
+
+	.minitext b {
+		display: -webkit-box;
+		overflow: hidden;
+		color: #f1f1f1;
+		font-size: 0.78rem;
+		font-weight: 500;
+		line-height: 1.3;
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
+		-webkit-box-orient: vertical;
+	}
+
+	.minitext small {
+		color: #aaa;
+		font-size: 0.66rem;
+	}
+
+	.minitext .verified {
+		font-size: 0.6rem;
+		font-style: normal;
+	}
+
+	.usual {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.35rem;
+	}
+
+	.usual small {
+		font-size: 0.76rem;
 	}
 
 	.under {
@@ -852,6 +979,11 @@
 	@container (max-width: 720px) {
 		.work {
 			grid-template-columns: minmax(0, 1fr);
+		}
+
+		/* one column: the card scrolls away with the rest, over nothing */
+		.stage {
+			position: static;
 		}
 	}
 </style>
