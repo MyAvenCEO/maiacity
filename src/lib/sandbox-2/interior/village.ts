@@ -1366,8 +1366,18 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	/** the domes of the shots a film asked for, the latest last: the latest are kept built (pinned) */
 	const recent: number[][] = []
 	/** the domes that would be shown in full to a walker standing at x, z once built: all of them must be built before a
-	 *  shot from there is filmed, or a dome could appear between two renders of it */
-	const nearDomes = (x: number, z: number) => domes.map((d, i) => ({ i, gap: Math.hypot(x - d.x, z - d.z) - d.ext })).filter((d) => d.gap < SHOW_NEAREST).map((d) => d.i)
+	 *  shot from there is filmed, or a dome could appear between two renders of it. Exactly those `place` shows in full —
+	 *  every dome within SHOW_WITHIN and the nearest within SHOW_NEAREST — and no more: the others draw their simple
+	 *  selves whether built or not. Waiting for every dome within SHOW_NEAREST built domes no shot shows, and where more
+	 *  than KEEP stood that near it could never be met (a shot waiting twenty minutes) */
+	const nearDomes = (x: number, z: number) => {
+		const gaps = domes.map((d, i) => ({ i, gap: Math.hypot(x - d.x, z - d.z) - d.ext })).sort((a, b) => a.gap - b.gap)
+		const full = gaps.filter((d) => d.gap < SHOW_WITHIN).map((d) => d.i)
+		const nearest = gaps.find((d) => d.gap < SHOW_NEAREST)
+		if (nearest && !full.includes(nearest.i)) full.push(nearest.i)
+		// never more than the cell keeps built at once (the nearest first)
+		return full.slice(0, KEEP - 1)
+	}
 	/** show or hide each built dome for where the walker stands now (as the world does as you walk) */
 	const settle = () => {
 		for (const i of built.keys()) place(i)
