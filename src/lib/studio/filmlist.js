@@ -32,13 +32,7 @@ export function legacyOf(f, all) {
  * has gets its proxy rendered in that world instead (./cuts.js `proxiesOf`).
  * @typedef {{ key: string, name: string, frozen: string, story: { title: string, description: string },
  *   timeline: any, shots: Record<string, { name: string, project: string | null, spec: any }>, files: string[],
- *   proxies?: Record<string, string>, published?: Published[] }} Frozen
- */
-/**
- * A file a film's published post used (the film as it went out, a still), as the Mac's film seed lists it
- * (`published/files.json`): its BLAKE3 hash, where in `published/` its bytes are, which post files used it, and its
- * legacy catalog record.
- * @typedef {{ hash: string, file?: string, bytes?: number, in?: string[], record?: { mime?: string, title?: string, original_name?: string, meta?: Record<string, any> } }} Published
+ *   proxies?: Record<string, string> }} Frozen
  */
 
 const HASH = /^[0-9a-f]{64}$/;
@@ -59,7 +53,6 @@ export function badFrozen(v) {
 		if (c.kind === 'world' && typeof c.shot === 'string' && !c.shot.startsWith('shot:') && !v.shots[`${c.shot}@${c.shotVersion}`]) return `the shot ${c.shot}@${c.shotVersion} is missing`;
 	}
 	if (!Array.isArray(v.files) || v.files.some((/** @type {unknown} */ h) => !HASH.test(String(h)))) return 'files are BLAKE3 hashes';
-	if (v.published != null && (!Array.isArray(v.published) || v.published.some((/** @type {any} */ p) => !HASH.test(String(p?.hash))))) return 'published files are BLAKE3 hashes';
 	if (v.proxies != null && (typeof v.proxies !== 'object' || Object.values(v.proxies).some((h) => !HASH.test(String(h))))) return 'proxies are BLAKE3 hashes';
 	return null;
 }
