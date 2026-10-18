@@ -347,15 +347,22 @@ export function startFilm({ base = '' } = {}) {
 			// the world is being readied for another shot (a prepare): never draw this one with the walker elsewhere —
 			// the last frame stays up
 			if (staging && staging !== keyOf(spec)) return false;
+			const t0 = performance.now();
 			const ev = await exposureOf(spec);
+			const t1 = performance.now();
 			// restaged in line with the prepares, never beside one (two at once pull the walker back and forth)
 			if (staged !== keyOf(spec) || !v.film.holds(spec.world)) await one(() => stage(spec, quality === 'final' ? Infinity : STAGE_LIMIT));
+			const t2 = performance.now();
 			clock.enter();
 			w.__filmDraw = true;
 			const os = quality === 'final' ? 1.5 : 1;
 			const W = Math.round(width * os), H = Math.round(height * os);
 			const { frame, at } = linear(v, spec, t, to, W, H, quality === 'final', quality !== 'final');
 			gpu().view(frame, width, height, 2 ** (evAt(ev, t) + at.stops), os > 1 ? 3 : 1, view);
+			// a frame that took a hitch's time says what it spent it on (the studio's log): a cut's first frame should cost
+			// what any other does, all its work done in the prepare
+			const t3 = performance.now();
+			if (quality !== 'final' && t3 - t0 > 100) console.warn(`film: ${spec.meta?.name ?? 'a shot'} at ${t.toFixed(2)} s took ${Math.round(t3 - t0)} ms — exposure ${Math.round(t1 - t0)}, staging ${Math.round(t2 - t1)}, drawing ${Math.round(t3 - t2)}`);
 			// the frame is drawn: the page's clock runs again until the next, so the world keeps building what the
 			// shots ahead need while the timeline plays (held, every dome build would wait for a step that never comes)
 			clock.leave();
