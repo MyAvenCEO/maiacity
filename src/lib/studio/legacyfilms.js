@@ -12,6 +12,9 @@
  * from there alone (Samuel 2026-10-18 13:29: both must come back after the old studio is gone); the old studio is
  * asked only for one not frozen yet. The legacy timelines and Postgres stay as they are until J15.
  *
+ * Each film's published files come along from the film seed too (`bringPublished`): the film as it went out, as a
+ * draft film post of its story, and the stills its post used.
+ *
  * The same run brings MaiaCity V1's two first-run intros (./intros.js): a story, a script and a cut of world shots
  * each, made from the game itself rather than the old studio, after the films (and whether or not any film is wanted).
  */
@@ -102,7 +105,8 @@ async function bringing() {
 	}
 	// MaiaCity V1's intros, after the films: made here, from the game, with no call to the old studio
 	const intros = async () => (await import('./intros.js')).bringIntros(call, city, { tell, arrived });
-	if (!wanted.length) return intros();
+	const published = () => bringPublished(call, city, frozenOf).catch((e) => console.warn('published films:', e));
+	if (!wanted.length) return (await published(), intros());
 	// each shows in the aside at once
 	for (const f of wanted) tell(f, frozenOf.get(f.key) ? 'Starting…' : 'Asking the old studio…');
 	const { listTimelines } = await import('$lib/auth/client');
@@ -128,5 +132,60 @@ async function bringing() {
 		await arrived(f, failed);
 		brought.push({ film: f, failed });
 	}
+	await published();
 	return [...brought, ...(await intros())];
+}
+
+/** A film's shape, from its width and height where its record says them. @param {Record<string, any> | undefined} m */
+const shapeOf = (m) => {
+	const r = Number(m?.width) / Number(m?.height);
+	return !Number.isFinite(r) || r > 1.2 ? '16:9' : r < 0.8 ? '9:16' : '1:1';
+};
+
+/**
+ * Each film's published files (the film as it went out, its stills: ./filmlist.js `Published`), from the Mac's film
+ * seed into the Maia City vault beside its story, each copied and checked by its hash as `studio_import` brings every
+ * file: a film tagged `media:delivery`, a still `media:published`, both with the film's tag; the biggest film a film
+ * post of the story ($lib/avendb/posttypes.js), its `media` that file, as a draft. One already there is found, not
+ * brought or posted again.
+ * @param {(c: string, ...a: any[]) => Promise<any>} call @param {{ vault: string, as: string }} city
+ * @param {Map<string, import('./frozen.js').Frozen | null>} frozenOf
+ */
+async function bringPublished(call, city, frozenOf) {
+	const { command } = await import('$lib/native');
+	const { postTag } = await import('../avendb/posttypes.js');
+	const { postsOfFilm } = await import('./films.js');
+	for (const f of FILMS) {
+		const list = frozenOf.get(f.key)?.published ?? [];
+		const world = await worldOf(call);
+		const story = heldOf(world, city.vault, f).story;
+		if (!list.length || !story) continue;
+		const isFilm = (/** @type {import('./filmlist.js').Published} */ p) => /^video\//.test(p.record?.mime ?? '');
+		const master = list.filter(isFilm).sort((a, b) => (b.bytes ?? 0) - (a.bytes ?? 0))[0];
+		/** whether file `p` is in the vault already, as `studio_import` marks what it brought */
+		const there = (/** @type {import('./filmlist.js').Published} */ p) => world.entries.some((e) => e.vault === city.vault && !e.deleted && (e.tags ?? []).includes(`legacy:${p.hash.toLowerCase()}`) && (e.tags ?? []).includes(filmTag(f)));
+		for (const p of list) {
+			if (p !== master && there(p)) continue;
+			const tags = [isFilm(p) ? 'media:delivery' : 'media:published', filmTag(f)];
+			const [b] = /** @type {{ entry: string | null, error: string | null }[]} */ (await command('studio_import', { vault: city.vault, hashes: [p.hash], actor: city.as, tags }).catch((e) => [{ entry: null, error: String(e?.message ?? e) }]));
+			if (!b?.entry) {
+				console.warn(`${f.name}, published ${p.record?.title || p.hash.slice(0, 12)}:`, b?.error);
+				continue;
+			}
+			if (p !== master || postsOfFilm(await worldOf(call), b.entry).length) continue;
+			const seconds = Number(p.record?.meta?.duration_s ?? p.record?.meta?.duration);
+			const value = {
+				kind: postTag('film'),
+				title: story.title || f.name,
+				text: '',
+				story: { vault: city.vault, entry: story.entry },
+				channel: 'Film',
+				media: { vault: city.vault, entry: b.entry },
+				shape: shapeOf(p.record?.meta),
+				...(Number.isFinite(seconds) && seconds > 0 ? { seconds } : {}),
+				tags: []
+			};
+			answer(await call('run', { op: 'create', vault: city.vault, type: 'post', tags: [postTag('film'), filmTag(f)], value, as: city.as }));
+		}
+	}
 }
