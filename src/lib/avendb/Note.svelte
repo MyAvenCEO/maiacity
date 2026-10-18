@@ -1,17 +1,19 @@
 <!--
 	One note as a docs app shows a document, the whole screen: at the top its title, its vault, its tags, its edits, the
 	line being edited, who it is shared with and Share (this note alone, or a rule its tags match); on the left its main
-	line and its proposals, each a line of its own to switch to, and its variants, the notes made from it; in the middle
-	the note on the line picked, as a page, to edit there, and what a proposal changes since it started, to merge it
+	line, its proposals and its variants, each a line of its own to switch to, and its copies, the notes made from it;
+	in the middle the note on the line picked, as a page, to edit there, and what a proposal changes since it started, to merge it
 	into main, as a pull request merges, or bring main's changes in: a merge keeps every change of both lines, and where
 	both changed the same words, main keeps its own unless the person takes the proposal's there; a conflict on a row
 	of a record that holds rows says where under it both changed it, at any depth ("the text of row 11 of its kids");
 	every edit of both stays in the history. On the right its history, every edit of that line, newest first, each
 	with what it changed, word by word, or for a record that is no document the places it changed, at any depth, who
-	made it, and the version it made, to view, restore, undo or propose from. A variant is a new note
-	with what a line reads now, whose first edit names that note and that version by the hashes of its edits (avendb's
-	`variant_mark`): its history goes on into the original's edits up to that version, for whoever reads both, and the
-	original lists its variants by the version each came from. Delete marks the note deleted, so Sparks lists it apart,
+	made it, and the version it made, to view, restore, undo or propose from. A variant is a line that stays open
+	beside main and follows it: each merge into main brings main into it, and it keeps its own where both changed one
+	place; its numbers are its own ("Silkie v3"), and it says which main version it holds. A copy is a new note with
+	what a line reads now, whose first edit names that note and that version by the hashes of its edits (avendb's
+	`fork_mark`): its history goes on into the original's edits up to that version, for whoever reads both, and the
+	original lists its copies by the version each came from. Delete marks the note deleted, so Sparks lists it apart,
 	and its page offers to bring it back; every edit of it stays. All of it acts for the acting vault, whose caps the
 	device checks as any peer does: a note it only reads, it reads, every version of it; and a button offers what the
 	ops of the caps it writes through allow, as the device answers a dry run of it (`may`): a vault that may only
@@ -31,6 +33,7 @@
 	import SparkCanvas from './SparkCanvas.svelte';
 	import SparkShelf from './SparkShelf.svelte';
 	import Tags from './Tags.svelte';
+	import { versionWords } from './versions.js';
 
 	/** Whether a record of kind `kind` keeps its text in one field, `text`: an article, a story or a post.
 	 *  @param {string | null | undefined} kind */
@@ -52,12 +55,14 @@
 	 * @typedef {{ at: unknown[], what: 'value' | 'row' | 'order', base: unknown, ours: unknown, theirs: unknown }} Conflict
 	 * @typedef {{ line: string | null, name: string | null, from: string[] | null, heads: string[], history: string[],
 	 *   title: string | null, text: string | null, blocks: { id: number, type: string }[] | null,
-	 *   base: { title: string | null, text: string | null } | null, conflicts: Conflict[] | null, record?: any }} LineView
+	 *   base: { title: string | null, text: string | null } | null, conflicts: Conflict[] | null, record?: any,
+	 *   version?: import('./versions.js').Described, versions?: { edit: string, version: number }[],
+	 *   variant?: boolean, main?: import('./versions.js').Described | null, behind?: boolean }} LineView
 	 * @typedef {{ id: string, author: string, actor: string, via: string[], chain: import('./vaults.js').Chain,
 	 *   line: string | null, deps: string[],
-	 *   kind: 'edit' | 'propose' | 'merge' | 'accept' | 'sealed', name: string | null,
+	 *   kind: 'edit' | 'propose' | 'variant' | 'merge' | 'accept' | 'sealed', name: string | null,
 	 *   from: { line: string | null, name: string | null } | null, title: string | null, text: string | null,
-	 *   before: string | null, counted: boolean,
+	 *   before: string | null, counted: boolean, version?: number | null,
 	 *   why: 'builds-on' | 'sealed' | 'unfit' | 'policy' | 'ops' | null }} EditView
 	 * @typedef {EditView & { n: number }} Numbered
 	 * @typedef {{ vault: string | null, entry: string, kind: string | null, lines: LineView[],
@@ -74,7 +79,7 @@
 
 	let note = $state(/** @type {NoteData | null} */ (null));
 	let loaded = $state(false);
-	/** the line picked: `null` for the main line, else the id of its proposal's first edit */
+	/** the line picked: `null` for the main line, else the id of its proposal's or variant's first edit */
 	let line = $state(/** @type {string | null} */ (null));
 	/** the edit whose version shows, read-only: '' for the line's latest */
 	let viewing = $state('');
@@ -85,16 +90,18 @@
 	let shown = {};
 	/** @type {Record<string, string>} */
 	let named = {};
-	/** a new proposal being named: the version it starts from, that version in words, and its name */
-	let naming = $state(/** @type {{ from: string[], at: string, name: string } | null} */ (null));
-	/** the vault a variant goes to, and the variant made */
+	/** a new proposal or variant being named: which, the version it starts from, that version in words, and its name */
+	let naming = $state(
+		/** @type {{ kind: 'propose' | 'variant', from: string[], at: string, name: string } | null} */ (null)
+	);
+	/** the vault a copy goes to, and the copy made */
 	let into = $state('');
 	let made = $state('');
 	let sharing = $state(false);
-	/** narrower, the side the lines and variants (left) or the history (right) slide in from, if open */
+	/** narrower, the side the lines and copies (left) or the history (right) slide in from, if open */
 	let drawer = $state(/** @type {'' | 'versions' | 'history'} */ (''));
-	/** on a spark, what its left side shows: what its canvas can take (./SparkShelf.svelte), or its lines and variants */
-	/** what the right side shows: the history, or the lines (main, the proposals) and the variants */
+	/** on a spark, what its left side shows: what its canvas can take (./SparkShelf.svelte), or its lines and copies */
+	/** what the right side shows: the history, or the lines (main, the proposals, the variants) and the copies */
 	let side = $state(/** @type {'history' | 'lines'} */ ('history'));
 	/** the conflicts where the person takes the proposal's value, by place (`place`) */
 	let taking = $state(/** @type {Record<string, boolean>} */ ({}));
@@ -141,13 +148,13 @@
 		};
 	});
 
-	/** the note this one is a variant of, as its page reads it, where this browser reads it */
+	/** the note this one is a copy of, as its page reads it, where this browser reads it */
 	let original = $state(/** @type {NoteData | null} */ (null));
 
 	// and the original's history, which this one's goes on into
 	$effect(() => {
 		void world;
-		const from = item?.variantOf;
+		const from = item?.forkOf;
 		if (!from || !world.entries.some((e) => e.entry === from)) {
 			original = null;
 			return;
@@ -180,7 +187,9 @@
 		return item && flow ? stageOf(item, flow) : null;
 	});
 	const main = $derived(lines[0]);
-	const proposals = $derived(lines.slice(1));
+	const proposals = $derived(lines.slice(1).filter((l) => !l.variant));
+	/** the variants: lines that stay open beside main and follow it */
+	const breeds = $derived(lines.slice(1).filter((l) => l.variant));
 	const k = $derived(key(here?.line ?? null));
 	/** whether the acting vault changes the note, and shares it on, as the device says */
 	const writes = $derived(!!item?.writers.includes(actor));
@@ -199,16 +208,24 @@
 		return numbered.filter((e) => on.has(e.id)).reverse();
 	});
 	const seen = $derived(viewing ? history.find((e) => e.id === viewing) : undefined);
+	/** an edit's version in words: its number where it is a release of main (each merge into main is the next) or of a
+	 * variant (each time it follows main, or takes a proposal), else its place among the note's edits */
+	const versionOf = (/** @type {Numbered} */ e) =>
+		!e.version || (e.line !== null && !lineOf(e.line).variant)
+			? `edit #${e.n}`
+			: e.line === null
+				? `v${e.version}`
+				: `${lineName(lineOf(e.line))} v${e.version}`;
 	/** whether its left side lists what its canvas can take: a spark's latest, not a version of it looked back at */
 	const shelf = $derived(spark && !seen);
 	/** the line's one latest edit, which restoring changes nothing */
 	const latest = $derived(here?.heads.length === 1 ? here.heads[0] : '');
-	/** the vaults the acting vault may add the variant to, as the device answers a dry run of making it in each */
-	const targets = $derived(world.vaults.filter((v) => can[`variant ${v.id}`] === true));
+	/** the vaults the acting vault may add the copy to, as the device answers a dry run of making it in each */
+	const targets = $derived(world.vaults.filter((v) => can[`fork ${v.id}`] === true));
 	/** the notes this browser reads, by entry */
 	const notes = $derived(new Map(world.entries.filter((e) => e.type === 'note').map((e) => [e.entry, e])));
-	const origin = $derived(item?.variantOf ? notes.get(item.variantOf) : undefined);
-	const variants = $derived([...notes.values()].filter((n) => n.variantOf === entry));
+	const origin = $derived(item?.forkOf ? notes.get(item.forkOf) : undefined);
+	const copies = $derived([...notes.values()].filter((n) => n.forkOf === entry));
 	/**
 	 * The original's edits this note's history goes on into, newest first: those of the version it was made from and
 	 * every edit they build on, numbered as the original numbers them.
@@ -217,7 +234,7 @@
 		const edits = (original?.edits ?? []).filter((e) => e.counted !== false);
 		const byEdit = new Map(edits.map((e, i) => [e.id, { ...e, n: i + 1 }]));
 		const held = new Set();
-		const todo = [...(item?.variantAt ?? [])];
+		const todo = [...(item?.forkAt ?? [])];
 		while (todo.length) {
 			const id = /** @type {string} */ (todo.pop());
 			const e = byEdit.get(id);
@@ -227,10 +244,10 @@
 		}
 		return [...byEdit.values()].filter((e) => held.has(e.id)).reverse();
 	});
-	/** The version of this note variant `v` was made from, in words: its number, as the history numbers it. */
+	/** The version of this note copy `v` was made from, in words: its number, as the history numbers it. */
 	const madeAt = (/** @type {import('./vaults.js').EntryView} */ v) => {
-		const n = (v.variantAt ?? []).map((id) => numbered.find((e) => e.id === id)?.n).filter((n) => n !== undefined);
-		return n.length ? `from version #${Math.max(.../** @type {number[]} */ (n))}` : '';
+		const n = (v.forkAt ?? []).map((id) => numbered.find((e) => e.id === id)?.n).filter((n) => n !== undefined);
+		return n.length ? `from edit #${Math.max(.../** @type {number[]} */ (n))}` : '';
 	};
 	const unsaved = $derived(!!here && writes && !seen && (drafts[k] ?? '') !== (here.text ?? ''));
 	/** who the note is shared with: its vault first, then the strongest */
@@ -240,8 +257,8 @@
 	/**
 	 * What the ops of the caps the acting vault writes through let it do on the line shown, as the device answers a
 	 * dry run of each (`may`): save its text (`write`), rename it (`title`, and `heading`, the heading it opens with),
-	 * propose, merge the proposal into main, update it from main, restore or undo the version
-	 * shown, make a variant in each vault it may add one to (`variant` and the vault, which only a dry run the device
+	 * propose, start a variant, merge the proposal into main, update it from main, restore or undo the version
+	 * shown, make a copy in each vault it may add one to (`fork` and the vault, which only a dry run the device
 	 * would make offers), and delete the note or bring it back (`delete`, `back`). Elsewhere only the ops' refusal
 	 * (`NotAllowed`) holds a button back, and a merge into main the vault hasn't accepted (`NotAccepted`, `waits`):
 	 * what the person then does is the device's to refuse, as any op.
@@ -269,12 +286,13 @@
 		if (!here) return;
 		const [on, blocks, title] = [here.line, here.blocks ?? [], `${here.title ?? ''} `];
 		/** @type {Record<string, object>} */
-		const asks = Object.fromEntries(world.vaults.map((v) => [`variant ${v.id}`, varying(v.id)]));
+		const asks = Object.fromEntries(world.vaults.map((v) => [`fork ${v.id}`, forking(v.id)]));
 		if (writes) {
 			asks.write = saving(on, `${here.text ?? ''} `, blocks);
 			asks.title = { op: 'set', entry, line: on, path: ['title'], value: title };
 			if (!article) asks.heading = { op: 'set', entry, line: on, path: blockText(1), value: title };
 			asks.propose = { op: 'propose', entry, from: here.heads, name: 'a proposal' };
+			asks.variant = { op: 'variant', entry, from: here.heads, name: 'a variant' };
 			asks[item?.deleted ? 'back' : 'delete'] = deleting(entry, item?.deleted);
 		}
 		if (writes && on !== null) {
@@ -290,9 +308,9 @@
 		may(api, actor, Object.values(asks)).then((answers) => {
 			/** what the device refuses, if it does @param {any} a @returns {string | null} */
 			const refused = (a) => a?.refused ?? null;
-			/** a variant where the device would make it; else all the ops allow @param {string} n @param {any} a */
+			/** a copy where the device would make it; else all the ops allow @param {string} n @param {any} a */
 			const offers = (n, a) =>
-				allowed(a) || (!n.startsWith('variant ') && !['NotAllowed', 'NotAccepted'].includes(refused(a) ?? ''));
+				allowed(a) || (!n.startsWith('fork ') && !['NotAllowed', 'NotAccepted'].includes(refused(a) ?? ''));
 			if (gone) return;
 			can = Object.fromEntries(names.map((n, i) => [n, offers(n, answers[i])]));
 			waits = Object.fromEntries(names.map((n, i) => [n, refused(answers[i]) === 'NotAccepted']));
@@ -316,8 +334,8 @@
 	});
 
 	/** A line's name, as a person reads it. @param {{ line: string | null, name: string | null } | null | undefined} l */
-	const lineName = (l) => (!l ? 'a line' : l.line === null ? 'main' : (l.name ?? 'a proposal this browser can’t name'));
-	/** Line `l` of the note. @param {string | null} l */
+	const lineName = (l) => (!l ? 'a line' : l.line === null ? 'main' : (l.name ?? 'a line this browser can’t name'));
+	/** Line `l` of the note. @param {string | null} l @returns {{ line: string | null, name: string | null, variant?: boolean }} */
 	const lineOf = (l) => lines.find((x) => x.line === l) ?? { line: l, name: null };
 	/** Line `l` quoted, as a sentence names it. @param {string | null} l */
 	const at = (l) => `“${lineName(lineOf(l))}”`;
@@ -335,8 +353,11 @@
 		switch (e.kind) {
 			case 'propose':
 				return `Proposed “${e.name ?? '…'}”${e.from ? ` from ${at(from)}` : ''}`;
+			case 'variant':
+				return `Started the variant “${e.name ?? '…'}”${e.from ? ` from ${at(from)}` : ''}`;
 			case 'merge':
 				if (e.line === null) return `Merged ${at(from)} into main`;
+				if (from === null && lineOf(e.line).variant) return `Brought main into ${at(e.line)}`;
 				if (from === null) return `Updated ${at(e.line)} from main`;
 				return `Merged ${at(from)} into ${at(e.line)}`;
 			case 'accept':
@@ -359,6 +380,8 @@
 		switch (e.kind) {
 			case 'propose':
 				return `Proposed “${e.name ?? '…'}”`;
+			case 'variant':
+				return `Started the variant “${e.name ?? '…'}”`;
 			case 'merge':
 				return e.line === null ? `Merged ${name(e.from?.line ?? null)} into main` : `Updated ${name(e.line)} from main`;
 			case 'accept':
@@ -377,13 +400,20 @@
 
 	/** Name a new proposal from version `from`, `words` saying which. @param {string[]} from @param {string} words */
 	function proposeFrom(from, words) {
-		naming = { from, at: words, name: '' };
+		naming = { kind: 'propose', from, at: words, name: '' };
 	}
 
+	/** Name a new variant from version `from`, `words` saying which. @param {string[]} from @param {string} words */
+	function varyFrom(from, words) {
+		naming = { kind: 'variant', from, at: words, name: '' };
+	}
+
+	/** Start the proposal or the variant being named, and show it. */
 	async function propose() {
 		const name = naming?.name.trim();
 		if (!naming || !name) return;
-		const made = await api.run('Proposing', { op: 'propose', as: actor, entry, from: naming.from, name });
+		const [op, doing] = naming.kind === 'variant' ? ['variant', 'Starting the variant'] : ['propose', 'Proposing'];
+		const made = await api.run(doing, { op, as: actor, entry, from: naming.from, name });
 		if (made) [line, viewing, naming] = [made.line, '', null];
 	}
 
@@ -498,16 +528,16 @@
 	}
 
 	/**
-	 * The op that makes a variant of the line shown in vault `target`: the device marks the copy, in its first write,
+	 * The op that makes a copy of the line shown in vault `target`: the device marks the copy, in its first write,
 	 * with this note and the version it copies.
 	 * @param {string} target
 	 */
-	const varying = (target) => ({ op: 'variant', entry, line: here?.line ?? null, into: target });
+	const forking = (target) => ({ op: 'fork', entry, line: here?.line ?? null, into: target });
 
-	async function variant() {
+	async function fork() {
 		const target = targets.some((v) => v.id === into) ? into : targets[0]?.id;
 		if (!here || !target) return;
-		made = (await api.run('Making the variant', { ...varying(target), as: actor }))?.entry ?? '';
+		made = (await api.run('Making the copy', { ...forking(target), as: actor }))?.entry ?? '';
 	}
 
 	/**
@@ -617,13 +647,15 @@
 					class:main={!seen && writes && !viewOnly && here.line === null}
 				>
 					{#if seen}
-						Viewing version #{seen.n}
+						Viewing {versionOf(seen)}
 					{:else if !writes}
 						Viewing: {nameOf(as)} may only view it
 					{:else if viewOnly}
 						Viewing: {viewOnly}
 					{:else if here.line === null}
-						Editing main
+						Editing main{here.version ? ` · ${versionWords(here.version)}` : ''}
+					{:else if here.variant}
+						Editing variant “{lineName(here)}”{here.version ? ` · ${versionWords(here.version)}` : ''}
 					{:else}
 						Editing proposal “{lineName(here)}”
 					{/if}
@@ -718,7 +750,7 @@
 			<main class="canvas" class:sheet={article}>
 				{#if seen}
 					<div class="banner old">
-						<span class="chip warn">Version #{seen.n}</span>
+						<span class="chip warn">{versionOf(seen)}</span>
 						<span class="soft">as it was after: {what(seen)}</span>
 						<span class="actions">
 							{#if writes && seen.id !== latest}
@@ -734,7 +766,7 @@
 									class="btn"
 									disabled={busy || !lets('propose')}
 									title={barred('propose')}
-									onclick={() => proposeFrom([seen.id], `version #${seen.n}`)}
+									onclick={() => proposeFrom([seen.id], versionOf(seen))}
 								>
 									Propose from here
 								</button>
@@ -742,12 +774,33 @@
 							<button class="btn quiet" onclick={() => (viewing = '')}>Back to the latest</button>
 						</span>
 					</div>
+				{:else if here.variant}
+					<div class="banner proposal" style:--hue={hue(here.line ?? '')}>
+						<span>
+							<Icon name="variant" size={15} />
+							<span>
+								Variant <b>“{lineName(here)}”</b>{here.version ? ` · ${versionWords(here.version)}` : ''}{here.main
+									? `, holds main ${versionWords(here.main)}`
+									: ''}{here.behind ? '. Main has changed since' : ''}
+							</span>
+						</span>
+						{#if writes && here.behind}
+							<span class="actions">
+								<button
+									class="btn primary"
+									disabled={busy || !lets('update')}
+									title={barred('update') ?? 'Main’s changes come in; where both changed one place, the variant keeps its own'}
+									onclick={() => merge(null, here.line)}>Bring main in</button
+								>
+							</span>
+						{/if}
+					</div>
 				{:else if here.line !== null}
 					{@const start = numbered.find((e) => e.id === here.from?.[0])}
 					<div class="banner proposal" style:--hue={hue(here.line)}>
 						<span>
 							<Icon name="proposal" size={15} />
-							<span>Proposal <b>“{lineName(here)}”</b>{#if start}, from version #{start.n} of {at(start.line)}{/if}</span>
+							<span>Proposal <b>“{lineName(here)}”</b>{#if start}, from {versionOf(start)} of {at(start.line)}{/if}</span>
 						</span>
 						{#if writes}
 							<span class="actions">
@@ -877,7 +930,7 @@
 						><Icon name="history" size={14} /> History</button
 					>
 					<button role="tab" class="side" class:on={side === 'lines'} aria-selected={side === 'lines'} onclick={() => (side = 'lines')}
-						><Icon name="proposal" size={14} /> Versions <small>{proposals.length + variants.length || ''}</small></button
+						><Icon name="proposal" size={14} /> Versions <small>{proposals.length + breeds.length + copies.length || ''}</small></button
 					>
 				</div>
 				{#if side === 'lines'}
@@ -917,7 +970,7 @@
 					{#if writes}
 						{#if naming}
 							<div class="naming">
-								<label for="proposal-name">New proposal, from {naming.at}</label>
+								<label for="proposal-name">New {naming.kind === 'variant' ? 'variant' : 'proposal'}, from {naming.at}</label>
 								<input
 									id="proposal-name"
 									class="field"
@@ -926,7 +979,9 @@
 									onkeydown={(e) => e.key === 'Enter' && propose()}
 								/>
 								<div class="row">
-									<button class="btn primary" disabled={busy || !naming.name.trim()} onclick={propose}>Propose</button>
+									<button class="btn primary" disabled={busy || !naming.name.trim()} onclick={propose}
+										>{naming.kind === 'variant' ? 'Start it' : 'Propose'}</button
+									>
 									<button class="btn quiet" onclick={() => (naming = null)}>Cancel</button>
 								</div>
 							</div>
@@ -943,16 +998,55 @@
 					{/if}
 				</section>
 
+				<section>
+					<h4>Variants <small>{breeds.length || ''}</small></h4>
+					{#each breeds as l (key(l.line))}
+						<button
+							class="line"
+							class:on={l.line === here.line}
+							style:--hue={hue(l.line ?? '')}
+							aria-current={l.line === here.line ? 'true' : undefined}
+							onclick={() => pick(l.line)}
+						>
+							<i class="dot"></i>
+							<span>
+								<b>{lineName(l)}{l.version?.version ? ` v${l.version.version}` : ''}</b>
+								<small
+									>{l.behind ? 'main has changed since' : `holds main ${l.main ? versionWords(l.main) : ''}`} · {count(
+										l.history.length,
+										'edit'
+									)}</small
+								>
+							</span>
+						</button>
+					{:else}
+						<p class="hint soft">
+							None yet. A variant is a line that stays beside main, as breeds of one animal do: each merge into main comes
+							into it, and it keeps its own where both changed one place.
+						</p>
+					{/each}
+					{#if writes && !naming}
+						<button
+							class="btn add"
+							disabled={busy || !lets('variant')}
+							title={barred('variant')}
+							onclick={() => varyFrom(main.heads, `the latest of main`)}
+						>
+							<Icon name="variant" size={14} /> New variant
+						</button>
+					{/if}
+				</section>
+
 				<section class="variants">
-					<h4>Variants <small>{variants.length || ''}</small></h4>
+					<h4>Copies <small>{copies.length || ''}</small></h4>
 					{#if origin}
 						<a class="variant" href="#notes/{origin.entry}">
-							<Icon name="back" size={13} /> <span>Variant of <b>“{origin.title}”</b></span>
+							<Icon name="back" size={13} /> <span>Copy of <b>“{origin.title}”</b></span>
 						</a>
-					{:else if item?.variantOf}
-						<p class="hint soft">A variant of a note {nameOf(as)} doesn’t read.</p>
+					{:else if item?.forkOf}
+						<p class="hint soft">A copy of a note {nameOf(as)} doesn’t read.</p>
 					{/if}
-					{#each variants as v (v.entry)}
+					{#each copies as v (v.entry)}
 						<a class="variant" href="#notes/{v.entry}">
 							<Icon name="variant" size={13} />
 							<span><b>“{v.title}”</b> <small>in {vaultName(v.vault)} {madeAt(v)}</small></span>
@@ -960,19 +1054,19 @@
 					{/each}
 					{#if targets.length}
 						{#if targets.length > 1}
-							<select class="field" bind:value={into} aria-label="Make the variant in">
+							<select class="field" bind:value={into} aria-label="Make the copy in">
 								{#each targets as v (v.id)}<option value={v.id}>{nameOf(v)}</option>{/each}
 							</select>
 						{/if}
-						<button class="btn add" disabled={busy} onclick={variant}>
-							<Icon name="variant" size={14} /> Make a variant
+						<button class="btn add" disabled={busy} onclick={fork}>
+							<Icon name="variant" size={14} /> Make a copy
 						</button>
 						<p class="hint soft">
 							A new note{targets.length === 1 ? ` in ${nameOf(targets[0])}` : ''}, with its tags, of what {at(here.line)} reads
 							now. Its history goes on into this note's, up to this version.
 						</p>
 						{#if made}
-							<p class="made">Made a variant. <a href="#notes/{made}">Open it</a></p>
+							<p class="made">Made a copy. <a href="#notes/{made}">Open it</a></p>
 						{/if}
 					{/if}
 				</section>
@@ -994,6 +1088,10 @@
 							>
 								<b>{what(e)}</b>
 								<span class="n mono">#{e.n}</span>
+								{#if e.version && (e.line === null || lineOf(e.line).variant)}<span
+										class="release chip"
+										title="Version {e.version} of {at(e.line)}">v{e.version}</span
+									>{/if}
 							</button>
 							<small class="soft">{who(e)} · <span class="mono" title={e.id}>{short(e.id)}</span></small>
 							{#if wrote && e.text !== null && (e.before ?? '') !== e.text}
@@ -1032,7 +1130,7 @@
 										class="btn quiet"
 										disabled={busy || !lets('propose')}
 										title={barred('propose')}
-										onclick={() => proposeFrom([e.id], `version #${e.n}`)}
+										onclick={() => proposeFrom([e.id], versionOf(e))}
 									>
 										Propose from here
 									</button>
@@ -1041,14 +1139,14 @@
 						</li>
 					{/each}
 				</ol>
-				{#if item?.variantOf}
+				{#if item?.forkOf}
 					<section class="origin" aria-label="The history it goes on into">
 						{#if origin}
 							<p class="from">
 								<Icon name="variant" size={13} />
 								<span>
 									Made from <a href="#notes/{origin.entry}">“{origin.title}”</a>{inherited.length
-										? ` at version #${inherited[0].n}`
+										? ` at edit #${inherited[0].n}`
 										: ''}: its history goes on there
 								</span>
 							</p>
@@ -1243,7 +1341,7 @@
 		background: #f3f0e9;
 	}
 
-	/* a spark's side: what its canvas can take, or its lines and variants */
+	/* a spark's side: what its canvas can take, or its lines and copies */
 	.sides {
 		display: flex;
 		gap: 0.25rem;
@@ -1711,6 +1809,13 @@
 		color: var(--soft);
 	}
 
+	/* a release of main: each merge into main is its next version */
+	.release {
+		margin-left: 0.3rem;
+		font-size: 0.68rem;
+		font-weight: 700;
+	}
+
 	.history small {
 		display: block;
 		font-size: 0.72rem;
@@ -1756,7 +1861,7 @@
 		display: none;
 	}
 
-	/* narrower: the page alone, the lines and variants sliding in from the left and the history from the right */
+	/* narrower: the page alone, the lines and copies sliding in from the left and the history from the right */
 	@media (max-width: 1100px) {
 		.body {
 			display: block;

@@ -695,6 +695,48 @@ def headsOf (edits : List Edit) (l : Option EditId) : List EditId := heads (view
 #guard !accepted (s8) (attempt macA [] (.write coop onboarding coop none 0 [31] (.on 300) [alice]))
 #guard !accepted (s8) (attempt macA [] (.write coop welcome coop (some 51) 0 [] (.on 999) [alice]))
 
+/-! ## Scenario 8, numbered: version numbers
+
+Welcome's main line counts its releases (`Proposals.lean`): its creation (30) is v1, Bob's edit (40) is no release, and
+each merge is the next release, one more than the highest of main's releases in its past (T10i). Then Bob edits draft
+again (307), and Alice merges it into main as she saw it at 305 (308), apart from her merge of rewrite (306): both are
+v3, and release 3 is the two together. Alice starts a proposal, tidy, from both merges (309), edits it (310) and merges
+it (311): v4, which counts past both. Bob edits main (312). -/
+
+def ops8v : List (SignerId × List SignerId × Action) := [
+  (macB, [], .write coop welcome coop (some 51) 0 [301] (.on 300) [bob]),          -- 307: Bob edits draft again
+  (macA, [], .write coop welcome coop (some 51) 0 [305, 307] .main [alice]),       -- 308: Alice merges it, main at 305
+  (macA, [], .write coop welcome coop (some 51) 0 [306, 308] .new [alice]),        -- 309: tidy, from both merges
+  (macA, [], .write coop welcome coop (some 51) 0 [309] (.on 309) [alice]),        -- 310: an edit on tidy
+  (macA, [], .write coop welcome coop (some 51) 0 [306, 308, 310] .main [alice]),  -- 311: Alice merges tidy
+  (macB, [], .write coop welcome coop (some 51) 0 [311] .main [bob])]              -- 312: Bob edits main
+def s8v (n : Nat := ops8v.length) : List Edit := s8 ++ chain 307 (ops8v.take n)
+#guard refused (s8v) == []
+
+def releasesOf (edits : List Edit) (l : Option EditId) : List (EditId × Nat) := releases (view edits).counted welcome l
+def describeAt (edits : List Edit) (v : List EditId) : Described := describe (view edits).counted welcome none v
+
+-- the creation is v1 and Bob's edit no release: main reads v1 and 1 edit
+#guard releasesOf (s8 2) none == [(30, 1)] && describeAt (s8 2) [40] == ⟨some 1, 1⟩
+-- the merge of draft is v2, and draft's start its own v1; draft's writes are no edits of main's
+#guard releasesOf (s8 3) none == [(30, 1), (302, 2)] && releasesOf (s8 3) (some 300) == [(300, 1)]
+#guard describeAt (s8 3) [302] == ⟨some 2, 0⟩ && describeAt (s8 3) [301] == ⟨some 1, 1⟩
+-- an older version still reads as what it was, and main moving on reads v2 and 1 edit
+#guard describeAt (s8 3) (release (view (s8 3)).counted welcome none 1) == ⟨some 1, 0⟩
+#guard describeAt (s8 6) [305] == ⟨some 2, 1⟩
+-- the merge of rewrite is v3
+#guard releasesOf (s8) none == [(30, 1), (302, 2), (306, 3)]
+-- the merge made apart is v3 too, and release 3 is both together, which reads v3; the next merge counts past both
+#guard releasesOf (s8v) none == [(30, 1), (302, 2), (306, 3), (308, 3), (311, 4)]
+#guard release (view (s8v)).counted welcome none 3 == [306, 308] && describeAt (s8v) [306, 308] == ⟨some 3, 0⟩
+#guard describeAt (s8v) [311] == ⟨some 4, 0⟩ && describeAt (s8v) [312] == ⟨some 4, 1⟩
+#guard releasesOf (s8v) (some 300) == [(300, 1)] && releasesOf (s8v) (some 309) == [(309, 1)]
+-- a number never changes as more writes come, and is the same in another order of the same writes (T10j)
+#guard releasesOf (s8v 2) none == [(30, 1), (302, 2), (306, 3), (308, 3)]
+def replayed : List Write := [30, 40, 300, 301, 302, 305, 307, 308, 303, 304, 306, 309, 310, 311, 312].filterMap
+  fun i => (view (s8v)).counted.find? (·.edit == i)
+#guard releases replayed welcome none == [(30, 1), (302, 2), (308, 3), (306, 3), (311, 4)]
+
 /-! ## Drafts: a new entry proposed on a line of its own
 
 Bob may only suggest on Alice's notes (the Suggester group): read them, create drafts, write on proposals, start them
@@ -760,6 +802,11 @@ def landedDraft : List Edit := acceptedDraft ++ chain 909 [
 #guard refused landedDraft == []
 #guard (history (view landedDraft).counted harvest none).map (·.edit) == [905, 906, 908, 909]
 #guard ((view landedDraft).entry? harvest).any (landed (view landedDraft))
+-- a draft is v1 of its own line, and its main line has no release until the vault's merge lands it, as main's v1
+#guard releases (view drafted).counted harvest none == [] &&
+  releases (view drafted).counted harvest (some 905) == [(905, 1)]
+#guard describe (view drafted).counted harvest none (heads (view drafted).counted harvest none) == ⟨none, 0⟩
+#guard releases (view landedDraft).counted harvest none == [(909, 1)]
 #guard upkeep landedDraft harvest == some [60, 61, 62]
 def landedDraft' : List Edit := landedDraft ++ chain 910 [
   (macA, [], .move alice harvest [60, 61, 62] [905, 906, 907, 908, 909])]

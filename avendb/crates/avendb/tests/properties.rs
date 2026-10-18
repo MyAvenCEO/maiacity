@@ -2727,3 +2727,72 @@ fn one_side_kept(base: &Value, ours: &Value, theirs: &Value, merged: &Value) -> 
 fn repo_log(lines: &[(Line, Vec<EditId>, Value)], line: Line) -> Vec<EditId> {
     lines.iter().find(|x| x.0 == line).map(|x| x.1.clone()).unwrap_or_default()
 }
+
+/// Version numbers (`History::releases`): on random histories of edits, proposals and merges, some merges made on a
+/// line as its author saw it some writes ago (made apart), every device numbers the releases alike, whatever order it
+/// took the writes in; a release is one more than the highest release of its line it builds on; and a release names
+/// itself (`describe`).
+#[test]
+fn versions_are_the_same_in_every_replay_order() {
+    use avendb::history::{Change, Described, Draft, History};
+    let (mut releases, mut shared) = (0, 0);
+    for seed in RUNS {
+        let mut rng = Rng(seed);
+        let mut repo = Repo::new(&Item::document("Welcome", MAC_A), MAC_A);
+        for _ in 0..30 {
+            let ls: Vec<Line> = repo.history().lines();
+            let author = rng.pick(&[MAC_A, MAC_B, MAC_C]);
+            let (from, into) = (rng.pick(&ls), rng.pick(&ls));
+            let title = rng.pick(&["One", "Two", "Three", "Four"]);
+            match rng.below(4) {
+                0 => drop(repo.edit(author, into, |i| {
+                    i.edit_document(|d| d.title = title.into());
+                })),
+                1 => {
+                    let at = rng.pick(&repo.history().changes().iter().map(|c| c.write.edit).collect::<Vec<_>>());
+                    repo.propose(author, &[at], "a proposal").expect("a version the repo holds");
+                }
+                2 if from != into => drop(repo.merge(author, from, into)),
+                // a merge on the line as its author saw it some writes ago, so long as it extends that line
+                _ if from != into => {
+                    let seen = repo.log(into);
+                    let seen = seen[rng.below(seen.len())];
+                    let mut deps = vec![seen];
+                    deps.extend(repo.heads(from).into_iter().filter(|h| *h != seen));
+                    let extends = |d: &EditId| repo.history().get(*d).is_some_and(|c| c.write.line() == into);
+                    if into.is_none() || deps.iter().any(extends) {
+                        let proposal = into.map_or(Proposal::Main, Proposal::On);
+                        repo.make(author, Draft { proposal, deps, body: vec![] }).expect("a merge of writes it holds");
+                    }
+                }
+                _ => {}
+            }
+        }
+        let h = repo.history();
+        // the same writes, taken in another order that keeps each after what it builds on: the newest it can first
+        let mut other = History::default();
+        let mut left: Vec<&Change> = h.changes().iter().collect();
+        while !left.is_empty() {
+            let ready = |c: &&Change| c.write.deps.iter().all(|d| other.get(*d).is_some());
+            let at = left.iter().rposition(ready).expect("one ready");
+            other.push(left.remove(at).clone()).expect("what it builds on is in");
+        }
+        for line in h.lines() {
+            let mine = h.releases(line);
+            let mut theirs = other.releases(line);
+            theirs.sort_by_key(|r| mine.iter().position(|m| m.edit == r.edit));
+            assert_eq!(mine, theirs, "seed {seed}");
+            for r in &mine {
+                let deps = &h.get(r.edit).expect("a release").write.deps;
+                let below: HashSet<EditId> = h.version(deps).iter().map(|c| c.write.edit).collect();
+                let top = mine.iter().filter(|x| below.contains(&x.edit)).map(|x| x.version).max().unwrap_or(0);
+                assert_eq!(r.version, top + 1, "seed {seed}");
+                let at = Described { version: Some(r.version), edits: 0 };
+                assert_eq!(h.describe(line, &[r.edit]), at, "seed {seed}");
+            }
+            releases += mine.len();
+            shared += mine.iter().filter(|r| mine.iter().any(|x| x.edit != r.edit && x.version == r.version)).count();
+        }
+    }
+    assert!(releases > 200 && shared > 20, "{releases} releases, {shared} sharing a number");
+}

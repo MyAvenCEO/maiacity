@@ -1928,6 +1928,21 @@ impl Lab {
         self.make(on, actor, entry, draft, TagDelta::default())
     }
 
+    /// Start a variant of an entry named `name` from version `from`, on device `on`, acting for `actor`: a line that
+    /// stays open beside main and follows it (`history::History::variant`).
+    pub fn variant(
+        &mut self,
+        on: SignerId,
+        actor: VaultId,
+        entry: EntryId,
+        from: &[EditId],
+        name: &str,
+    ) -> Result<EditId, Refusal> {
+        self.unlocked(on)?;
+        let draft = self.shown(on, entry).variant(from, name);
+        self.make(on, actor, entry, draft, TagDelta::default())
+    }
+
     /// Accept proposal `line` of an entry as it stands, on device `on`, acting for `actor`, the entry's vault: a write on
     /// the proposal that builds on its heads and changes nothing, which every reader of the entry reads as the vault's
     /// accept (`policy::is_accept`, M2). A merge of the proposal into main by anyone else counts only on top of it, and
@@ -1994,10 +2009,10 @@ impl Lab {
         self.make(on, actor, entry, draft, TagDelta::default())
     }
 
-    /// A variant of what device `on` shows on line `line` of an entry: a new entry of vault `into` with its record, its
+    /// A fork of what device `on` shows on line `line` of an entry: a new entry of vault `into` with its record, its
     /// type and its tags, and none of its history, as `on`'s first write of the new entry, acting for `actor`.
     /// `ReadOnly` if it shows nothing there.
-    pub fn variant(
+    pub fn fork(
         &mut self,
         on: SignerId,
         actor: VaultId,
@@ -2005,12 +2020,12 @@ impl Lab {
         line: Line,
         into: VaultId,
     ) -> Result<EntryId, Refusal> {
-        self.variant_with(on, actor, entry, (line, into), |_| Ok(()))
+        self.fork_with(on, actor, entry, (line, into), |_| Ok(()))
     }
 
-    /// `variant`, with `change` made to the copy before it is written: one first write holds both, as when the ops
-    /// engine's `variant` marks where the copy came from.
-    pub fn variant_with<E: From<Refusal>>(
+    /// `fork`, with `change` made to the copy before it is written: one first write holds both, as when the ops
+    /// engine's `fork` marks where the copy came from.
+    pub fn fork_with<E: From<Refusal>>(
         &mut self,
         on: SignerId,
         actor: VaultId,

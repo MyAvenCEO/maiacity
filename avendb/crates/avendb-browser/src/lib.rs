@@ -95,7 +95,7 @@ use wasm_bindgen::prelude::*;
 use wasm_bindgen_futures::{JsFuture, future_to_promise};
 use zeroize::Zeroizing;
 
-pub use avendb::world::{CARD, DELETED, FILE, NOTE, PROFILE, TODO, VARIANT};
+pub use avendb::world::{CARD, DELETED, FILE, FORK, NOTE, PROFILE, TODO};
 
 /// How many bytes of a file the page hands its device at a time (`PageDevice::run`'s `read`, for `put_file` and a
 /// `create` that brings a file).

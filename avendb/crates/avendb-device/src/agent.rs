@@ -1589,7 +1589,7 @@ fn tools() -> Value {
         {
             "name": "avendb_run",
             "description": "Run a change op of avenDB's engine as this agent, as its shares allow: create, set, unset, \
-                            insert, remove, move, tag, propose, merge, restore, undo, variant, batch, aip_open, \
+                            insert, remove, move, tag, propose, variant, merge, restore, undo, fork, batch, aip_open, \
                             aip_promote, aip_withdraw, put_file, get_file. Where it may only suggest, write on a \
                             proposal, or draft a new entry: create with draft: true, which answers its entry and the \
                             line it starts; put proposals and drafts to its person in an AIP: aip_open over their \

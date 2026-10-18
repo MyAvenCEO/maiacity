@@ -131,14 +131,14 @@ export function storyPictures(world, story) {
 
 /**
  * The cards of story entry `story`, as this browser reads them, by shape in the shapes' order, each shape's first
- * card before its variants.
+ * card before its copies (A/B cards).
  * @param {import('./vaults.js').WorldView} world @param {string} story
  */
 export function artworksOf(world, story) {
 	const order = (/** @type {any} */ e) => SHAPES.findIndex(([k]) => k === e.record?.shape);
 	return world.entries
 		.filter((e) => e.type === ARTWORK && !e.deleted && entryOf(/** @type {any} */ (e.record)?.story) === story)
-		.sort((a, b) => order(a) - order(b) || (a.variantOf ? 1 : 0) - (b.variantOf ? 1 : 0) || (a.created ?? 0) - (b.created ?? 0));
+		.sort((a, b) => order(a) - order(b) || (a.forkOf ? 1 : 0) - (b.forkOf ? 1 : 0) || (a.created ?? 0) - (b.created ?? 0));
 }
 
 /**

@@ -332,7 +332,11 @@
 			'Takes out one older edit by a three-way merge, keeping every change made after it, at any depth. Undoing a merge takes out only what the merge itself wrote, so both lines’ changes stay; restore the version before it to take back the merge.'
 		],
 		[
-			'Make a variant',
+			'Start a variant',
+			'A line of its own that stays beside main, as breeds of one animal do. Each merge into main comes into it in the same step, and where both changed one place, the variant keeps its own. It has its own numbers, Silkie v1, v2, and says which version of main it holds.'
+		],
+		[
+			'Make a copy',
 			'A new note, in this vault or another, with the line’s content and tags. Its first edit names this note and the version it came from by the hashes of its edits, so its history goes on into this one’s.'
 		]
 	];
@@ -421,6 +425,7 @@
 	const reads = [
 		'query',
 		'get',
+		'pin',
 		'history',
 		'schemas',
 		'groups',
@@ -454,9 +459,10 @@
 		'aip_promote',
 		'aip_withdraw',
 		'aip_review',
+		'variant',
 		'restore',
 		'undo',
-		'variant',
+		'fork',
 		'batch'
 	];
 	const vaultOps = [
@@ -1152,8 +1158,16 @@
 			<h2>Main, proposals and variants</h2>
 			<p class="prose-col">
 				Nothing is overwritten: every write extends a line. Main is what everyone reads. A proposal is a line of its own
-				that starts from any version, so a change can be tried and reviewed without touching main. A variant is a new note
-				made from any version; it keeps its link to this history, as a fork does, and the original lists its variants.
+				that starts from any version, so a change can be tried and reviewed without touching main. A variant is a line that
+				stays beside main and follows it, as breeds of one animal do: each merge into main comes into it, and it keeps its
+				own where both changed one place. A copy is a new note made from any version; it keeps its link to this history,
+				and the original lists its copies.
+			</p>
+			<p class="prose-col">
+				Each proposal merged into main makes main's next version: the create is v1, the first merge v2, and so on. The
+				numbers come from the history alone, so every device reads the same ones, and they never change. A version
+				between two merges reads as "v3 + 2 edits". Each variant counts its own: "Silkie v3". A link to one version stores only hashes, the entry's id and the
+				version's edits, and is labelled from avenDB: "Crawler excavator v4 · 01627d33…".
 			</p>
 			<figure>
 				<div class="frame">
@@ -1175,8 +1189,8 @@
 						<text class="s" x="652" y="104">Merge into main:</text>
 						<text class="s" x="652" y="122">nothing is lost</text>
 						<text class="s" x="600" y="40">Restore and Undo are new writes too</text>
-						<text class="s" x="760" y="196">a variant: a new note,</text>
-						<text class="s" x="760" y="214">linked to this version</text>
+						<text class="s" x="760" y="196">a variant: a line beside</text>
+						<text class="s" x="760" y="214">main that follows it</text>
 					</svg>
 				</div>
 			</figure>

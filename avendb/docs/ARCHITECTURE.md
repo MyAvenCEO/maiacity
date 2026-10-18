@@ -841,14 +841,36 @@ the start cuts the whole proposal (`spec/AvenDB/Proposals.lean`).
 
 A write on one line changes no other line (T10f). Nothing is ever overwritten: restore and undo are writes too.
 
-**Variants keep their link.** A write carries only its own signer's changes to an entry's Loro document, so a variant
-can't copy the original's history into itself: those edits stay signed by whoever made them, in the original. It
-links to it instead. Its first write puts a mark in its own tags, `avendb:variant:<entry>@<edit>,<edit>`: the
-original entry and the heads of the version it copied, by hash (`world::variant_mark`). A variant of a variant names
-its own original and drops the older mark. The world gives each note's `variantOf` and `variantAt`, and the page walks
-the original's edits back from those heads, so the variant's history goes on into the original's, up to that version.
-The original lists its variants, each with the version it was made from. Anyone who reads the variant but not the
-original sees that it came from a note they can't read, and nothing of it.
+**Version numbers.** Every line of every entry counts its own versions, read off its history alone
+(`history::History::releases`). A line's releases are its start (an entry's creation for the main line, the merge that
+lands a draft, a proposal's start for its own line) and each write on it that brings in writes its history held nowhere
+in that write's own past: a merge of another line. A release's number is one more than the highest number among the
+line's releases it builds on. So each merged proposal makes main's next version, and the numbers are the same on every
+device that counts the writes, whatever order they came in, and never change as more writes come. Two merges made
+apart, each on the main line its device saw, share a number, and the next counts past both; `@n` names them together,
+the version that holds both. Direct edits make no new number: a version between releases reads as `git describe` reads
+a commit, "v3 + 2 edits" (`History::describe`). The ops engine shows each line's `version` and `versions`, each write's
+own number where it is a release, reads any version by its number (`get` with `version`), and names what a pin of an
+entry at some heads is (`pin`): the line, its number, the title there and the entry's short id, so a page labels a pin
+from avenDB alone ("Crawler excavator v4 · 01627d33…") and stores only the entry id and the heads, all hashes.
+
+**Forks keep their link.** A fork is a copy of an entry as a new one, into any vault (`fork`). A write carries only its
+own signer's changes to an entry's Loro document, so a fork can't copy the original's history into itself: those edits
+stay signed by whoever made them, in the original. It links to it instead. Its first write puts a mark in its own tags,
+`avendb:fork:<entry>@<edit>,<edit>`: the original entry and the heads of the version it copied, by hash
+(`world::fork_mark`). A fork of a fork names its own original and drops the older mark. The world gives each note's
+`forkOf` and `forkAt`, and the page walks the original's edits back from those heads, so the fork's history goes on
+into the original's, up to that version. The original lists its forks, each with the version it was made from. Anyone
+who reads the fork but not the original sees that it came from a note they can't read, and nothing of it.
+
+**Living variants.** A variant is a line of the same entry that stays open beside main, as breeds of one animal do
+(`variant {entry, from, name, as}`, `History::variant`). Its start is a proposal's start whose sealed name holds the
+byte `0xFF` first, which no UTF-8 text begins with, so it needs no new field and no reader without the entry's key
+learns which lines are variants. A variant follows main: when a merge into main lands, the same op merges main into
+every variant behind it (`follow`), and that merge keeps the variant's own value wherever both changed one place, so it
+never asks. A variant whose actor may not write on it stays behind and shows it (`behind`). Each follow, and each
+proposal merged into the variant, is a release of the variant's own line, so it has its own numbers ("Silkie v3"), and
+`main` names the main version it holds. A variant's change goes back to main as a proposal, as any change does.
 
 **Merge, as git merges.** A merge works as a pull request merges a branch, and loses nothing
 (`crates/avendb/src/merge.rs`, `Doc.lean`'s `mergeInto`). Its base is what both lines' histories hold in common. A
@@ -991,8 +1013,9 @@ or a lens brings none. The record ops `set`, `unset`, `insert`, `remove`,
 `{at: path, what: value | row | order}`, as `note` lists a proposal's `conflicts`; `review {entry, line, verdict,
 text, as}`, the vault's answer to a proposal (below, "Merges by policy"); the AIP ops `aip_open {vault, title, note,
 proposals, tags, as}`, `aip_promote {entry, as}`, `aip_withdraw {entry, why, as}` and `aip_review {entry, verdict, text,
-as}` (below, "AIPs"); `restore`, `undo`, `variant`; and `batch {ops, as}`, whose record ops in a row on one entry's
-line make one write. A schema or a lens is created as an entry of its type (section 9).
+as}` (below, "AIPs"); `variant {entry, from, name, as}`, a living variant (above); `restore`, `undo`, `fork {entry,
+line, into, schema, ops, as}`; and `batch {ops, as}`, whose record ops in a row on one entry's line make one write. A
+schema or a lens is created as an entry of its type (section 9).
 
 **Vaults.** Each runs alone, never in a batch, and `may` covers each:
 

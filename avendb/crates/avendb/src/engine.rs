@@ -9,33 +9,36 @@
 //!   (`View::put`), so the lens writes only what changed, in the representation the item already uses: a new schema
 //!   needs no new code.
 //! - **Reads** (`read`). `query`: the entries whose labels and records a `where` holds of, picked by the selector of
-//!   its labels first (`ops::Where::plan`), so a device opens no more than the selector picks, each record read only
-//!   so many rows down (`QUERY_DEPTH`, or the query's own, up to the device's most) before its lens translates it,
-//!   then ordered and a page at a time, the links at the places it names followed a level at a time (`ops::follow`),
-//!   each hop opening only what the device reads. `get`: one entry on a line, or at a version. `history`: an entry's
-//!   lines and every write of it, each with the changes it made to the entry's stored record (`ops::diff`), as every
-//!   reader sees them alike. `schemas`: the schemas and lenses a vault's entries are read through. `groups`: the
-//!   built-in groups of ops a share names (`rules::groups`), which the page offers when it shares. `aips` and `aip`:
-//!   the AIPs the device holds, their stages, labels, reviews and what each line changes (`aips`). `kinds`: the kind
-//!   table (`Kind::rules`, `words::kinds_json`), which the page reads, as in `world`, to say what each kind of vault
-//!   may own and hold, and never decides itself. `limits`: how deep
-//!   the device's queries read. And of the device's vaults (`vaults`, V2): `world`, `database`, `note`, `log`,
-//!   `creatable`, `taggable`, `requests` (the access requests its person answers, and those its vaults made);
-//!   `read_file`, whose bytes a node reads (avendb-net's `Node::run`).
+//!   its labels first (`ops::Where::plan`), so a device opens no more than the selector picks, each record read only so
+//!   many rows down (`QUERY_DEPTH`, or the query's own, up to the device's most) before its lens translates it, then
+//!   ordered and a page at a time, the links at the places it names followed a level at a time (`ops::follow`), each
+//!   hop opening only what the device reads. `get`: one entry on a line, at a version, or at a release of its line
+//!   (`version`). `pin`: what a pin of an entry at a version names, all from its history, for its label. `history`: an
+//!   entry's lines, each with its version numbers, and every write of it, each with the changes it made to the entry's
+//!   stored record (`ops::diff`), as every reader sees them alike. `schemas`: the schemas and lenses a vault's entries
+//!   are read through. `groups`: the built-in groups of ops a share names (`rules::groups`), which the page offers when
+//!   it shares. `aips` and `aip`: the AIPs the device holds, their stages, labels, reviews and what each line changes
+//!   (`aips`). `kinds`: the kind table (`Kind::rules`, `words::kinds_json`), which the page reads, as in `world`, to
+//!   say what each kind of vault may own and hold, and never decides itself. `limits`: how deep the device's queries
+//!   read. And of the device's vaults (`vaults`, V2): `world`, `database`, `note`, `log`, `creatable`, `taggable`,
+//!   `requests` (the access requests its person answers, and those its vaults made); `read_file`, whose bytes a node
+//!   reads (avendb-net's `Node::run`).
 //! - **Changes** (`run`). `create`, of a schema or lens entry too, which holds its JSON alone (`Lab::add_schema`), or
 //!   with `draft`, a draft that starts its own line, which its vault lands by merging it (`Lab::create_draft`), as a
 //!   Suggester proposes a new entry; the record ops (`ops::RecordOp`): `set`, `unset`, `insert`, `remove`, `move`;
-//!   `tag`; `propose`, `merge`, `review` (the vault's answer to a proposal, its accept with it: `review`), `restore`,
-//!   `undo`, `variant`; the AIP ops, `aip_open`, `aip_promote`, `aip_withdraw` and `aip_review`, the vault's answer
-//!   over every line (`aips`); and `batch`, whose record ops in a row on one entry's line make one write. Each acts for
-//!   a vault (`"as"`, the device's own by default), as every edit does, and the rules judge it as they judge any
-//!   peer's. A write through a share carries the proof that the ops of the shares of its chain allow what it touches
-//!   and the tags it asks for, and is refused (`NotAllowed`) where they don't, as is a merge into main through a share
-//!   on top of no accept of the vault's (`NotAccepted`, M2): its readers wouldn't count it (`rules`, `policy::passes`).
-//!   And the changes of vaults (`vaults`), each run alone: `share`, `keep`, `revoke`, `settings`, `found`, `put_file`,
-//!   `back_up`, `mark`, `card`, `profile`, `follow`, `set_limits`, and `ask`, an access request: a record and a share.
-//!   One its vault's owners approve the device drafts for its person's passkey (`prepare`, `Prepared::Approve`):
-//!   without a ceremony it answers `approve` and makes nothing; with one, `approve` keeps it.
+//!   `tag`; `propose`; `variant`, a line that stays open beside main and follows it (`History::variant`); `merge`, and
+//!   a merge into main brings main into every variant too (`follow`); `review` (the vault's answer to a proposal, its
+//!   accept with it: `review`), `restore`, `undo`, `fork` (a copy of an entry as a new one); the AIP ops, `aip_open`,
+//!   `aip_promote`, `aip_withdraw` and `aip_review`, the vault's answer over every line (`aips`); and `batch`, whose
+//!   record ops in a row on one entry's line make one write. Each acts for a vault (`"as"`, the device's own by
+//!   default), as every edit does, and the rules judge it as they judge any peer's. A write through a share carries the
+//!   proof that the ops of the shares of its chain allow what it touches and the tags it asks for, and is refused
+//!   (`NotAllowed`) where they don't, as is a merge into main through a share on top of no accept of the vault's
+//!   (`NotAccepted`, M2): its readers wouldn't count it (`rules`, `policy::passes`). And the changes of vaults
+//!   (`vaults`), each run alone: `share`, `keep`, `revoke`, `settings`, `found`, `put_file`, `back_up`, `mark`, `card`,
+//!   `profile`, `follow`, `set_limits`, and `ask`, an access request: a record and a share. One its vault's owners
+//!   approve the device drafts for its person's passkey (`prepare`, `Prepared::Approve`): without a ceremony it answers
+//!   `approve` and makes nothing; with one, `approve` keeps it.
 //! - **Asking** (`may`, `shares`). Whether each of some change ops would be made, by a dry run of each that checks,
 //!   proves and refuses as `run` does and makes nothing: what a page asks before it offers a button; `true`, or
 //!   `{"approve": {signers}}` where the passkey would approve it. `shares` lists the shares over a vault, owners and
@@ -69,7 +72,7 @@ use crate::rules;
 use crate::words;
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Attrs, Sym, LENS_TYPE, SCHEMA_TYPE};
-use crate::world::{SyncedTo, VARIANT, variant_mark};
+use crate::world::{FORK, SyncedTo, fork_mark};
 
 pub use vaults::{approve, approved, follow_standing, passkey_of, world, Approval, Prepared, Then};
 
@@ -151,7 +154,8 @@ fn bad(why: impl Into<String>) -> Refused {
 fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
         "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow"],
-        "get" => &["entry", "schema", "line", "at"],
+        "get" => &["entry", "schema", "line", "at", "version"],
+        "pin" => &["entry", "at"],
         "history" => &["entry", "limit"],
         "schemas" => &["vault"],
         "groups" | "kinds" | "limits" | "requests" => &[],
@@ -160,7 +164,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
             &["entry", "line", "schema", "as", "path", "value", "at", "to"]
         }
         "tag" => &["entry", "add", "remove", "as"],
-        "propose" => &["entry", "from", "name", "as"],
+        "propose" | "variant" => &["entry", "from", "name", "as"],
         "merge" => &["entry", "from", "into", "take", "as"],
         "review" => &["entry", "line", "verdict", "text", "as"],
         "aip_open" => &["vault", "title", "note", "proposals", "tags", "as"],
@@ -171,7 +175,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "aip" => &["entry"],
         "restore" => &["entry", "line", "at", "as"],
         "undo" => &["entry", "line", "edit", "as"],
-        "variant" => &["entry", "line", "into", "schema", "ops", "as"],
+        "fork" => &["entry", "line", "into", "schema", "ops", "as"],
         "batch" | "may" => &["ops", "as"],
         "world" | "log" | "jobs" => &[],
         "shares" => &["over", "as"],
@@ -199,9 +203,10 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds.
-const READS: [&str; 18] = [
+const READS: [&str; 19] = [
     "query",
     "get",
+    "pin",
     "history",
     "schemas",
     "aips",
@@ -282,6 +287,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
     let out = op_of(v).and_then(|(name, o)| match name {
         "query" => query(lab, me, o),
         "get" => get(lab, me, o),
+        "pin" => pin(lab, me, o),
         "history" => history(lab, me, o),
         "schemas" => schemas(lab, me, o),
         "aips" => aips::aips(lab, me, o),
@@ -794,9 +800,10 @@ pub(crate) fn limits(depth: usize) -> Value {
     json!({ "depth": depth, "default": QUERY_DEPTH, "ceiling": lens::CEILING })
 }
 
-/// `{"op": "get", "entry", "schema"?, "line"?, "at"?}`: entry `entry` on line `line` (the main line, left out), or at
-/// version `at` of that line, read-only, through `schema`, as a query's row, with the line's heads and the schemas the
-/// item was written under.
+/// `{"op": "get", "entry", "schema"?, "line"?, "at"? | "version"?}`: entry `entry` on line `line` (the main line, left
+/// out), or at version `at` of that line, or at its release numbered `version` (`History::release`), read-only, through
+/// `schema`, as a query's row, with the line's heads, which release of the line it shows and how many of the line's
+/// writes after it (`version`, `History::describe`), and the schemas the item was written under.
 fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let (entry, line, schema) = (entry_of(o)?, line_of(o, "line")?, named(o)?);
     let h = lab.history(me, entry).ok_or(Refused::NoEntry)?;
@@ -805,9 +812,19 @@ fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused
     }
     let vault = lab.vault_of_entry(me, entry).ok_or(Refused::NoEntry)?;
     let m = lab.meaning(me, entry).ok_or(Refused::NoEntry)?;
-    let at = o.get("at").map(|v| edits_of(v, "at")).transpose()?;
+    let mut at = o.get("at").map(|v| edits_of(v, "at")).transpose()?;
     if at.iter().flatten().any(|e| h.get(*e).is_none()) {
         return Err(Refusal::UnknownDep.into());
+    }
+    if let Some(n) = count_of(o, "version")? {
+        if at.is_some() {
+            return Err(bad("get reads a version by its edits (at) or by its number (version), not both"));
+        }
+        let release = h.release(line, n as u64);
+        if release.is_empty() {
+            return Err(bad(format!("the line has no version {n}")));
+        }
+        at = Some(release);
     }
     let version;
     let item = match &at {
@@ -823,16 +840,17 @@ fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused
     out["line"] = line_json(line);
     out["heads"] = ids(&h.heads(line)).into();
     out["at"] = at.as_deref().map_or(Value::Null, |at| ids(at).into());
+    out["version"] = described(h, line, at.as_deref().unwrap_or(&h.heads(line)));
     out["authored"] = item.authored().iter().map(BlobId::to_hex).collect::<Vec<_>>().into();
     Ok(out)
 }
 
 /// What one write of an entry's history is, as `history` and the note page show it.
 pub struct Wrote {
-    /// `edit`; `propose`, the start of a proposal; `draft`, a creation that starts its own line (`Lab::create_draft`);
-    /// `merge` of two lines, with the change, if any, that brings Loro's merged item to the three-way merge of both;
-    /// `accept`, the vault's accept of the proposal it is on (M2, `policy::is_accept`); or `sealed`, a write the device
-    /// can't open.
+    /// `edit`; `propose`, the start of a proposal; `variant`, the start of a variant; `draft`, a creation that starts
+    /// its own line (`Lab::create_draft`); `merge` of two lines, with the change, if any, that brings Loro's merged
+    /// item to the three-way merge of both; `accept`, the vault's accept of the proposal it is on (M2,
+    /// `policy::is_accept`); or `sealed`, a write the device can't open.
     pub kind: &'static str,
     /// The other line it builds on: for a merge, the line it brought in; for a proposal, the line it started from.
     pub from: Option<Line>,
@@ -855,6 +873,7 @@ pub fn wrote(h: &History, c: &history::Change) -> Wrote {
     let from = w.deps.iter().filter_map(on).find(|l| *l != line);
     let kind = match &c.body {
         _ if w.proposal == Proposal::New && w.first => "draft",
+        _ if w.proposal == Proposal::New && h.is_variant(w.edit) => "variant",
         _ if w.proposal == Proposal::New => "propose",
         None => "sealed",
         Some(_) if c.accept() => "accept",
@@ -890,14 +909,65 @@ pub fn line_name(h: &History, line: Line) -> Option<String> {
     }
 }
 
-/// `{"op": "history", "entry", "limit"?}`: entry `entry`'s lines, the main line first, then each proposal in the order
-/// it started, each with its name, the version it started from and its heads; and every write of it the device holds,
-/// in the order it took them, each with its id, its device (`author`), the vault it acted for, the owners it acted
-/// through (`via`) and who stands behind it, link by link back to the passkeys (`chain`, `data::Audit::chain`), its
-/// line, what it builds on, what it is (`wrote`), whether its readers count it (`counted`: a write that breaks its
-/// entry's schemas, that no op of its shares allows, or that builds on one, is on no line), why not (`why`) and, for
-/// the latest `limit` (`SHOWN`, left out) that change anything, the changes it made to the stored record
-/// (`ops::diff`), which every reader of the entry sees alike.
+/// The version `heads` of `line` by its releases (`History::describe`): `{version, edits}`, the highest release of
+/// the line it holds (`null` before the first) and how many of the line's writes it holds after it, as a page names a
+/// version "v4", or "v4 + 2 edits".
+pub fn described(h: &History, line: Line, heads: &[EditId]) -> Value {
+    let d = h.describe(line, heads);
+    json!({ "version": d.version, "edits": d.edits })
+}
+
+/// The releases of `line` (`History::releases`), each `{edit, version}`, oldest first.
+pub fn releases(h: &History, line: Line) -> Vec<Value> {
+    h.releases(line).iter().map(|r| json!({ "edit": r.edit.to_hex(), "version": r.version })).collect()
+}
+
+/// The number of each write of `h` that is a release of its own line.
+pub fn numbered(h: &History) -> HashMap<EditId, u64> {
+    h.lines().into_iter().flat_map(|l| h.releases(l)).map(|r| (r.edit, r.version)).collect()
+}
+
+/// `{"op": "pin", "entry", "at"?}`: what a pin of entry `entry` at version `at` (its main line's heads, left out)
+/// names, all read off the entry's history at that version: the line its writes are on and its name (`main`, or the
+/// proposal's or variant's), which release of the line it is and how many of the line's writes it holds after it
+/// (`version`, `History::describe`), the record's title there, and the entry's short id, its first 8 hex digits. So a
+/// page labels a pin "Crawler excavator v4 · 01627d33…" from avenDB alone, and stores only the entry id and the heads.
+fn pin(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let entry = entry_of(o)?;
+    let h = lab.history(me, entry).ok_or(Refused::NoEntry)?;
+    let at = match o.get("at") {
+        Some(v) => edits_of(v, "at")?,
+        None => h.heads(MAIN),
+    };
+    if at.iter().any(|e| h.get(*e).is_none()) {
+        return Err(Refusal::UnknownDep.into());
+    }
+    let first = at.first().and_then(|e| h.get(*e)).ok_or(Refused::NoEntry)?;
+    let line = first.write.line();
+    let record = h.item_at(&at, me, line).record();
+    let title = record.get("title").and_then(Value::as_str).map(String::from);
+    Ok(json!({
+        "entry": entry.to_hex(),
+        "at": ids(&at),
+        "line": line_json(line),
+        "name": line_name(h, line),
+        "version": described(h, line, &at),
+        "title": title,
+        "short": entry.to_hex()[..8].to_string(),
+    }))
+}
+
+/// `{"op": "history", "entry", "limit"?}`: entry `entry`'s lines, the main line first, then each proposal and variant
+/// in the order it started, each with its name, the version it started from, its heads, which release its heads are
+/// (`version`, `described`) and its releases (`versions`), and for a variant, that it is one (`variant`), which version
+/// of main it holds (`main`) and whether main has writes it hasn't followed (`behind`); and every write of it the
+/// device holds, in the order it took them, each with its id, its device (`author`), the vault it acted for, the owners
+/// it acted through (`via`) and who stands behind it, link by link back to the passkeys (`chain`,
+/// `data::Audit::chain`), its line, what it builds on, what it is (`wrote`), its number where it is a release of its
+/// line (`version`), whether its readers count it (`counted`: a write that breaks its entry's schemas, that no op of
+/// its shares allows, or that builds on one, is on no line), why not (`why`) and, for the latest `limit` (`SHOWN`, left
+/// out) that change anything, the changes it made to the stored record (`ops::diff`), which every reader of the entry
+/// sees alike.
 fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let entry = entry_of(o)?;
     let limit = count_of(o, "limit")?.unwrap_or(SHOWN);
@@ -909,8 +979,14 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
             "name": line_name(h, line),
             "from": start.map(|c| ids(&c.write.deps)),
             "heads": ids(&h.heads(line)),
+            "version": described(h, line, &h.heads(line)),
+            "versions": releases(h, line),
+            "variant": line.is_some_and(|b| h.is_variant(b)),
+            "main": line.filter(|&b| h.is_variant(b)).map(|_| described(h, MAIN, &h.heads(line))),
+            "behind": line.is_some_and(|b| h.is_variant(b) && h.behind(line, MAIN)),
         })
     };
+    let numbers = numbered(h);
     let shown = h.changes().len().saturating_sub(limit);
     let audit = data::Audit::new(lab, me);
     let edit = |(i, c): (usize, &history::Change)| {
@@ -933,8 +1009,9 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
             "kind": x.kind,
             "counted": c.counted,
             "why": x.why,
-            "name": if x.kind == "propose" { h.name(w.edit) } else { None },
+            "name": if matches!(x.kind, "propose" | "variant") { h.name(w.edit) } else { None },
             "from": x.from.map(|l| json!({ "line": line_json(l), "name": line_name(h, l) })),
+            "version": numbers.get(&w.edit),
             "changes": changes,
         })
     };
@@ -1018,6 +1095,8 @@ enum Step {
     Edits { entry: EntryId, line: Line, schema: Named, ops: Vec<RecordOp> },
     Tag { entry: EntryId, add: Vec<String>, remove: Vec<String> },
     Propose { entry: EntryId, from: Option<Vec<EditId>>, name: String },
+    /// A variant of `entry` named `name`, from version `from`, its main line's heads left out (`Lab::variant`).
+    Variant { entry: EntryId, from: Option<Vec<EditId>>, name: String },
     Merge { entry: EntryId, from: Line, into: Line, take: BTreeSet<Place> },
     /// The vault's answer to proposal `line` of `entry` (`review`).
     Review { entry: EntryId, line: EditId, verdict: String, text: String },
@@ -1032,7 +1111,7 @@ enum Step {
     AipReview { entry: EntryId, verdict: String, text: String, heads: Option<Vec<EditId>> },
     Restore { entry: EntryId, line: Line, at: Vec<EditId> },
     Undo { entry: EntryId, line: Line, edit: EditId },
-    Variant { entry: EntryId, line: Line, into: VaultId, schema: Named, ops: Vec<RecordOp> },
+    Fork { entry: EntryId, line: Line, into: VaultId, schema: Named, ops: Vec<RecordOp> },
 }
 
 impl Step {
@@ -1060,7 +1139,7 @@ fn record_ops(v: &Value) -> Result<Vec<RecordOp>, Refused> {
             return Err(bad(format!("{name} isn't an op on a record")));
         }
         if let Some(k) = ["entry", "line", "schema", "as"].iter().find(|k| o.contains_key(**k)) {
-            return Err(bad(format!("an op on the copy takes no {k:?}: the variant names them")));
+            return Err(bad(format!("an op on the copy takes no {k:?}: the fork names them")));
         }
         RecordOp::of_json(x).map_err(bad)
     };
@@ -1107,6 +1186,10 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
         "propose" => {
             let from = o.get("from").map(|v| edits_of(v, "from")).transpose()?;
             Step::Propose { entry: entry_of(o)?, from, name: text("name")? }
+        }
+        "variant" => {
+            let from = o.get("from").map(|v| edits_of(v, "from")).transpose()?;
+            Step::Variant { entry: entry_of(o)?, from, name: text("name")? }
         }
         "merge" => {
             if !o.contains_key("from") {
@@ -1173,10 +1256,10 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
             let edit = id_of(o.get("edit"), "edit", EditId::from_hex)?;
             Step::Undo { entry: entry_of(o)?, line: line_of(o, "line")?, edit }
         }
-        "variant" => {
+        "fork" => {
             let ops = o.get("ops").map(record_ops).transpose()?.unwrap_or_default();
             let (line, schema) = (line_of(o, "line")?, named(o)?);
-            Step::Variant { entry: entry_of(o)?, line, into: vault_of(o, "into")?, schema, ops }
+            Step::Fork { entry: entry_of(o)?, line, into: vault_of(o, "into")?, schema, ops }
         }
         name if vaults::CHANGES.contains(&name) => return Err(bad(format!("{name} runs alone, never in a batch"))),
         "batch" => return Err(bad("a batch holds no batch")),
@@ -1327,9 +1410,19 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
             let edit = lab.propose(me, actor, entry, &from, &name)?;
             Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "line": edit.to_hex() }))
         }
+        Step::Variant { entry, from, name } => {
+            if !lab.landed(me, entry) {
+                return Err(bad("the entry is a draft its vault hasn't landed: a variant starts from its main line"));
+            }
+            let h = lab.history(me, entry).ok_or(Refused::NoEntry)?;
+            let from = from.unwrap_or_else(|| h.heads(MAIN));
+            let edit = lab.variant(me, actor, entry, &from, &name)?;
+            Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "line": edit.to_hex() }))
+        }
         Step::Merge { entry, from, into, take } => {
             let edit = lab.merge(me, actor, entry, from, into, &take)?;
-            Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "line": line_json(into) }))
+            let follows = if into == MAIN { follow(lab, me, actor, entry) } else { vec![] };
+            Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "line": line_json(into), "follows": follows }))
         }
         Step::Review { entry, line, verdict, text } => review(lab, me, actor, (entry, line), &verdict, text),
         Step::AipOpen { vault, title, note, proposals, tags } => {
@@ -1350,7 +1443,7 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
             let edit = lab.undo(me, actor, entry, line, edit)?;
             Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "line": line_json(line) }))
         }
-        Step::Variant { entry, line, into, schema, ops } => {
+        Step::Fork { entry, line, into, schema, ops } => {
             let vault = lab.vault_of_entry(me, entry).ok_or(Refused::NoEntry)?;
             let lane = lane(lab, me, vault);
             // the copy names where it came from, in its first write: the note and the version it copies, by the hashes
@@ -1358,11 +1451,11 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
             let at = lab.history(me, entry).map(|h| h.heads(line)).unwrap_or_default();
             let mark = |copy: &mut Item| -> Result<(), Refused> {
                 let tags = copy.as_markdown().map(|d| d.tags);
-                let older = tags.iter().flatten().filter(|t| t.starts_with(VARIANT));
+                let older = tags.iter().flatten().filter(|t| t.starts_with(FORK));
                 let drop = |t: &String| RecordOp::top("tags", FieldOp::Drop(t.as_str().into()));
                 let mut all: Vec<RecordOp> = older.map(drop).collect();
                 if tags.is_some() {
-                    all.push(RecordOp::top("tags", FieldOp::Add(variant_mark(entry, &at).into(), None)));
+                    all.push(RecordOp::top("tags", FieldOp::Add(fork_mark(entry, &at).into(), None)));
                 }
                 all.extend(ops);
                 if all.is_empty() {
@@ -1372,10 +1465,21 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
                 copy.write(&view, &new);
                 Ok(())
             };
-            let made = lab.variant_with(me, actor, entry, (line, into), mark)?;
+            let made = lab.fork_with(me, actor, entry, (line, into), mark)?;
             Ok(json!({ "entry": made.to_hex() }))
         }
     }
+}
+
+/// Bring main into every variant of entry `entry` that lacks a write of it, acting for `actor`: a merge of main into
+/// each, which keeps the variant's own value wherever both changed one place, so it never asks. A variant `actor` may
+/// not write on stays behind, as it is, and shows it. Answers each merge made, `{line, edit}`.
+fn follow(lab: &mut Lab, me: SignerId, actor: VaultId, entry: EntryId) -> Vec<Value> {
+    let Some(h) = lab.history(me, entry) else { return vec![] };
+    let behind: Vec<EditId> = h.variants().into_iter().filter(|&v| h.behind(Some(v), MAIN)).collect();
+    let none = BTreeSet::new();
+    let merged = behind.into_iter().filter_map(|v| Some((v, lab.merge(me, actor, entry, MAIN, Some(v), &none).ok()?)));
+    merged.map(|(v, edit)| json!({ "line": v.to_hex(), "edit": edit.to_hex() })).collect()
 }
 
 /// The verdicts a review gives (`lens::blobs::REVIEW_V1`).

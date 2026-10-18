@@ -444,6 +444,11 @@ theorem view_reachable (edits : List Edit) : Reachable (view edits) := ⟨_, vie
 theorem writes_ordered (edits : List Edit) : Ordered (view edits).writes :=
   Shares.writes_ordered edits
 
+/-- The writes a peer counts come in that order too, so `Proposals.lean`'s T10i to T10k hold of the version numbers
+    every peer counts. -/
+theorem counted_ordered (edits : List Edit) : Ordered (view edits).counted :=
+  (writes_ordered edits).sublist List.filter_sublist
+
 /-! ## Strong removal -/
 
 /-- T16 (strong removal), replaying `edits` with the removals `rem`: an edit stands only if `apply` accepts it on the
