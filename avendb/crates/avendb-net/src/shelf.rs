@@ -141,8 +141,10 @@ fn listable(prefix: &str) -> bool {
 /// 14 since 2026-10-18, as one passkey signs a person in to maiaCITY and opens their avenDB together, a person's profile
 /// lives in their human vault alone, public by default, and Samuel asked to sign up again through it; 15 since later
 /// that day, as an entry's id is the hash of its vault, its creator and its creation's nonce, the edit format is 11,
-/// and each asset is one entry whose versions and variants are its history (Samuel asked for both).
-pub const FLOOR: u64 = 15;
+/// and each asset is one entry whose versions and variants are its history (Samuel asked for both); 16 since later
+/// still, as the seed writes each skill, the theOS paper and the avenDB docs as a story of Maia City with a doc post,
+/// and Samuel asked to reset and seed again.
+pub const FLOOR: u64 = 16;
 
 /// Whether a place keeps what is under `name`, the first part of its names there: a shelf of generation `FLOOR` or a
 /// later one. Whatever else the place holds came before the last reset, and goes as the place opens.
