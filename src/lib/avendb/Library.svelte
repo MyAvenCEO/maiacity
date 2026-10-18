@@ -91,13 +91,15 @@
 	});
 
 	/**
-	 * @typedef {{ key: string, e: EntryView, of?: EntryView, role?: string }} FileRow a file, and its original if it is
-	 *   one a rule made of it
-	 * @typedef {{ key: string, coming: import('./made.js').Step, of: EntryView }} ComingRow a file a rule is still to make
+	 * @typedef {import('./made.js').Step} Step
+	 * @typedef {{ key: string, e: EntryView, of?: EntryView, role?: string, steps: Step[] }} FileRow a file, its original
+	 *   if it is one a rule made of it, and the steps on its line
+	 * @typedef {{ key: string, coming: Step, of: EntryView }} ComingRow a file a rule is still to make
 	 */
 	/**
 	 * The table's rows: each file, then right under it the files the rules made of it, and those still to come (a step
-	 * that makes files, not done yet); a made file whose original isn't listed stands alone.
+	 * that makes files, not done yet); a made file whose original isn't listed stands alone. Each step sits on the line
+	 * of what it made or is making (Samuel 2026-10-18), the ones that make no file on the original's.
 	 */
 	const rows = $derived.by(() => {
 		const listed = new Set(shown.map((e) => e.entry));
@@ -106,12 +108,17 @@
 		for (const e of shown) {
 			const of = family.of.get(e.entry);
 			if (of && listed.has(of)) continue;
-			out.push({ key: e.entry, e, role: roles.get(e.entry) });
-			if (binned) continue;
-			const made = family.made.get(e.entry) ?? [];
-			for (const m of made) if (reads(m.entry, actor)) out.push({ key: m.entry.entry, e: m.entry, of: e, role: m.role });
-			for (const s of family.steps.get(e.entry) ?? [])
-				if (s.makes && !s.done && !made.some((m) => m.rule === s.rule)) out.push({ key: `${e.entry}:${s.rule}`, coming: s, of: e });
+			const steps = family.steps.get(e.entry) ?? [];
+			if (binned) {
+				out.push({ key: e.entry, e, role: roles.get(e.entry), steps });
+				continue;
+			}
+			const made = (family.made.get(e.entry) ?? []).filter((m) => reads(m.entry, actor));
+			const shows = (/** @type {Step} */ s) => made.some((m) => m.rule === s.rule);
+			const coming = steps.filter((s) => s.makes && !s.done && !shows(s));
+			out.push({ key: e.entry, e, role: roles.get(e.entry), steps: steps.filter((s) => !shows(s) && !coming.includes(s)) });
+			for (const m of made) out.push({ key: m.entry.entry, e: m.entry, of: e, role: m.role, steps: steps.filter((s) => s.rule === m.rule) });
+			for (const s of coming) out.push({ key: `${e.entry}:${s.rule}`, coming: s, of: e });
 		}
 		return out;
 	});
@@ -312,8 +319,12 @@
 		return [...out.values()];
 	}
 
-	/** When entry `e` was added, short. @param {EntryView} e */
-	const day = (e) => (e.created ? new Date(e.created * 1000).toLocaleDateString('en-GB', { dateStyle: 'medium' }) : '');
+	/** When entry `e` was added, short: the year only when it is not this one. @param {EntryView} e */
+	const day = (e) => {
+		if (!e.created) return '';
+		const d = new Date(e.created * 1000);
+		return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(d.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }) });
+	};
 
 	/** the entry open in the main area */
 	let open = $state('');
@@ -559,6 +570,12 @@
 								>
 							</thead>
 							<tbody>
+								{#snippet chip(/** @type {Step} */ st)}
+									{@const stuck = st.task.status === 'held' || st.task.status === 'failed'}
+									<span class:done={st.done} class:stuck title="{st.name}: {stateOf(st.task)}{st.task.error ? ` (${st.task.error})` : ''}"
+										>{st.done ? '✓' : st.task.status === 'claimed' ? '↻' : stuck ? '!' : '…'} {st.name}</span
+									>
+								{/snippet}
 								{#each rows as r (r.key)}
 									{#if 'coming' in r}
 										<tr class="made coming">
@@ -568,7 +585,7 @@
 											<td></td>
 											<td></td>
 											<td></td>
-											<td></td>
+											<td><span class="steps">{@render chip(r.coming)}</span></td>
 											<td></td>
 										</tr>
 									{:else}
@@ -576,7 +593,7 @@
 										{@const k = kind(e)}
 										{@const file = fileOf(e)}
 										{@const thumb = file ? thumbs[file.root] : undefined}
-										{@const steps = r.of ? [] : (family.steps.get(e.entry) ?? [])}
+										{@const own = r.of ? [] : (e.tags ?? []).filter((t) => !t.includes(':'))}
 										<tr class:deleted={e.deleted} class:made={!!r.of}>
 											<td class="mini">
 												<span class="thumb {k}" use:previews={[e, previewOf.get(e.entry)]}>
@@ -590,7 +607,7 @@
 											<td class="name"
 												><button class="open" class:sub={!!r.of} title={e.title} onclick={() => show(e)}>{r.of ? '↳ ' : ''}{e.title}</button></td
 											>
-											<td>
+											<td class="when">
 												{#if r.role}
 													{@const [what, colour] = r.role.split(' · ')}
 													{what}{#if colour}<small class="colour">{colour}</small>{/if}
@@ -601,16 +618,10 @@
 											<td class="num">{file?.len != null ? size(file.len) : 'sealed'}</td>
 											<td class="soft when">{day(e)}{e.by !== vault ? `, by ${nameOf(byId.get(e.by))}` : ''}</td>
 											<td>
-												{#if !r.of && e.tags?.length}<span class="tags">{#each e.tags as t (t)}<span class="chip tag">#{t}</span>{/each}</span>{/if}
+												{#if own.length}<span class="tags">{#each own as t (t)}<span class="chip tag">#{t}</span>{/each}</span>{/if}
 											</td>
 											<td>
-												<span class="steps">
-													{#each steps as st (st.rule)}
-														<span class:done={st.done} class:stuck={st.task.status === 'held' || st.task.status === 'failed'} title="{st.name}: {stateOf(st.task)}{st.task.error ? ` (${st.task.error})` : ''}"
-															>{st.done ? '✓' : st.task.status === 'claimed' ? '↻' : st.task.status === 'held' || st.task.status === 'failed' ? '!' : '…'} {st.name}</span
-														>
-													{/each}
-												</span>
+												<span class="steps">{#each r.steps as st (st.rule)}{@render chip(st)}{/each}</span>
 											</td>
 											<td>
 												<span class="held">
@@ -850,7 +861,7 @@
 	}
 
 	.rows th {
-		padding: 0.5rem 0.65rem;
+		padding: 0.5rem 0.5rem;
 		font-size: 0.72rem;
 		font-weight: 600;
 		text-align: left;
@@ -859,7 +870,7 @@
 	}
 
 	.rows td {
-		padding: 0.4rem 0.65rem;
+		padding: 0.4rem 0.5rem;
 		border-top: 1px solid var(--edge);
 		vertical-align: middle;
 	}
@@ -939,15 +950,14 @@
 
 	.steps {
 		display: flex;
-		flex-wrap: wrap;
-		gap: 0.25rem;
+		gap: 0.2rem;
 	}
 
 	.steps > span {
-		padding: 0.1rem 0.45rem;
+		padding: 0.1rem 0.4rem;
 		border-radius: 999px;
 		background: #f1efe9;
-		font-size: 0.72rem;
+		font-size: 0.7rem;
 		color: rgb(0 0 0 / 0.55);
 		white-space: nowrap;
 	}
@@ -971,6 +981,11 @@
 
 	.rows .tags {
 		margin: 0;
+	}
+
+	.rows .tags .chip,
+	.rows .held .soft {
+		white-space: nowrap;
 	}
 
 	.hide {
