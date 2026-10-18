@@ -1,7 +1,13 @@
 <script>
+	// @ts-nocheck — plain JS, kept loose on purpose
+	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
+	import { isDoc, postHref } from '$lib/universe/posts.js';
+	import { loadFeed, stream } from '$lib/universe/stream.svelte.js';
 
-	// Every document, one tile each: a new one is a new entry here and a page of its own under /docs/.
+	// Every document is a story of the Maia City vault, owned by the Maia City COOP and versioned in avenDB, and its doc
+	// post, which everyone reads ($lib/avendb/docs.js). The two with live figures keep their own pages, one tile each
+	// here; every other doc, each skill, opens as its post.
 	const docs = [
 		{
 			href: `${base}/docs/avendb`,
@@ -21,6 +27,19 @@
 			tags: ['economics', 'HEARTS', 'COOP', 'post-labour']
 		}
 	];
+
+	onMount(() => {
+		if (stream.feed === 'idle') loadFeed();
+	});
+
+	/** the doc posts everyone reads, by the section of each */
+	const docPosts = $derived(stream.posts.filter(isDoc));
+	const inVault = (slug) => docPosts.some((p) => p.md && p.tags.includes(`doc:${slug === 'theos' ? 'paper' : 'docs'}/${slug}`));
+	const skills = $derived(docPosts.filter((p) => slugOf(p)).sort((a, b) => a.title.localeCompare(b.title)));
+	/** a skill post's folder name, from its tag `doc:skill/<name>` */
+	function slugOf(p) {
+		return (p.tags.find((t) => t.startsWith('doc:skill/')) ?? '').slice('doc:skill/'.length);
+	}
 </script>
 
 <svelte:head>
@@ -65,7 +84,9 @@
 						</svg>
 						{/if}
 					</div>
-					<p class="eyebrow">{doc.kind}&ensp;·&ensp;updated {doc.updated}</p>
+					<p class="eyebrow">
+						{doc.kind}&ensp;·&ensp;updated {doc.updated}{#if inVault(doc.href.split('/').filter(Boolean).at(-1))}&ensp;·&ensp;in avenDB{/if}
+					</p>
 					<h2>{doc.title}</h2>
 					<p class="text">{doc.text}</p>
 					<ul class="tag-list">
@@ -77,6 +98,31 @@
 			</li>
 		{/each}
 	</ul>
+
+	<section class="skills" aria-labelledby="skills">
+		<p class="eyebrow">How the work is done</p>
+		<h2 id="skills">Skills</h2>
+		<p class="lede">
+			What our agents know and follow, one skill each: written in the Maia City vault, versioned in avenDB, and read here by
+			everyone.
+		</p>
+		{#if skills.length}
+			<ul class="list">
+				{#each skills as p (p.entry)}
+					<li>
+						<a href={postHref(base, p)}>
+							<b>{p.title}</b>
+							<span>{p.text.slice(0, 220).replace(/\s+\S*$/, '')}…</span>
+						</a>
+					</li>
+				{/each}
+			</ul>
+		{:else}
+			<p class="soft">
+				{stream.feed === 'failed' ? 'avenDB can’t be reached right now.' : stream.feed === 'done' ? 'No skill is published yet.' : 'Loading the skills from avenDB…'}
+			</p>
+		{/if}
+	</section>
 </main>
 
 <style>
@@ -171,6 +217,47 @@
 		flex: 1;
 		margin: 0;
 		color: var(--ink-soft);
+	}
+	.skills {
+		margin-top: 4rem;
+		padding-top: 3rem;
+		border-top: 1px solid var(--line);
+	}
+	.skills h2 {
+		margin-top: 0.5rem;
+	}
+	.list {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(min(100%, 18rem), 1fr));
+		gap: 1rem;
+		margin: 2rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+	.list a {
+		display: flex;
+		flex-direction: column;
+		gap: 0.4rem;
+		height: 100%;
+		box-sizing: border-box;
+		padding: 1rem 1.1rem;
+		border-radius: var(--radius);
+		background: var(--paper);
+		color: inherit;
+		text-decoration: none;
+	}
+	.list a:hover {
+		box-shadow: 0 10px 26px rgb(38 56 44 / 0.08);
+	}
+	.list b {
+		font-family: var(--font-display);
+		font-size: 1.15rem;
+	}
+	.list span,
+	.soft {
+		color: var(--ink-soft);
+		font-size: 0.92rem;
+		line-height: 1.45;
 	}
 	.tag-list li {
 		background: color-mix(in srgb, var(--sage) 40%, var(--paper));

@@ -24,6 +24,9 @@
 //              published stage is public: the posts and their stories go on the stream
 //   name       one Public share of the vault's profile, by type, so its posts on the stream go out under its name
 //              ("Maia City"), not a stand-in from its id
+//   docs       each document of ./docs.js (Samuel 2026-10-18): each skill of .claude/skills, the theOS paper and the
+//              avenDB architecture, a story with its full text, and its doc post (`post:doc`), published, which the
+//              Docs page lists
 //   pads       the journal's sources and each story's idea pad, sparks as ./legacy.js copies them
 //   games      the Games area (game/games.js): the vault's own schema "Game, v1", then each game's entry, of type `game`,
 //              tagged `game` and `game:<id>`; a game the repo released (places.ts, no `release: 'draft'`) also gets
@@ -51,6 +54,7 @@ import { stageTag } from './flows.js';
 import { copying, legacyTag, pieces as legacyPieces } from './legacy.js';
 import { EVERYONE, nameShare, nameShared } from './vaults.js';
 import { POST_TYPES, postTag, postTypeSchema, postTypeTitle } from './posttypes.js';
+import { DOCS, readable } from './docs.js';
 import { brings } from './ops.js';
 import { GAME, GAMES, gameTag } from '../../../game/games.js';
 import { INDEX, recipeAt } from '../assets/recipes.js';
@@ -67,6 +71,9 @@ export const PUBLISHED = stageTag('content', 'published');
 
 /** The tag of the content flow's draft stage, which only those its vault shares it with read. */
 export const DRAFT = stageTag('content', 'draft');
+
+/** The tag of the doc post of document `key` (./docs.js `DOCS`), by which the seed finds it. @param {string} key */
+export const docTag = (key) => `doc:${key}`;
 
 /** The tag every inspire post the seed drafted carries (Samuel 2026-10-18: all inspire-me pieces unpublished), so a
  *  post drafted once is never drafted again: one its owner publishes later stays published. */
@@ -110,7 +117,8 @@ const REPORTS = /** @type {Record<string, () => Promise<string>>} */ (
 const TEMPLATES = /** @type {Record<string, () => Promise<string>>} */ ({
 	...import.meta.glob('/blog/TEMPLATE.md', { query: '?raw', import: 'default' }),
 	...import.meta.glob('/inspire-me/FORMAT.md', { query: '?raw', import: 'default' }),
-	...import.meta.glob('/films/TEMPLATE.md', { query: '?raw', import: 'default' })
+	...import.meta.glob('/films/TEMPLATE.md', { query: '?raw', import: 'default' }),
+	...import.meta.glob('/docs/TEMPLATE.md', { query: '?raw', import: 'default' })
 });
 /** Every recipe's card, by its hash (src/lib/assets/sources/cards.json, 1 MB), loaded once a recipe is written. */
 const CARDS = /** @type {Record<string, () => Promise<{ cards: Record<string, any> }>>} */ (
@@ -146,7 +154,7 @@ const folderOf = (path) => path.split('/').at(-2) ?? '';
 
 /**
  * @typedef {{ key: string, kind: 'keep' | 'code' | 'share' | 'post-type' | 'journal' | 'inspire' | 'pad' | 'published' |
- *   'inspire-share' | 'name-share' | 'game-schema' | 'game' | 'recipe-share' | 'recipe', name: string, mark: string, server?: string }} Piece
+ *   'inspire-share' | 'name-share' | 'doc' | 'game-schema' | 'game' | 'recipe-share' | 'recipe', name: string, mark: string, server?: string }} Piece
  */
 
 /**
@@ -168,6 +176,7 @@ export function seedPieces(server = null) {
 	const inspire = Object.keys(REPORTS)
 		.sort()
 		.map((p) => ({ key: `inspire-me/${folderOf(p)}`, kind: /** @type {const} */ ('inspire'), name: folderOf(p), mark: legacyTag(`inspire-me/${folderOf(p)}`) }));
+	const docs = DOCS.map((d) => ({ key: d.key, kind: /** @type {const} */ ('doc'), name: d.key, mark: docTag(d.key) }));
 	const pads = legacyPieces([])
 		.filter((p) => p.kind === 'journal' || p.kind === 'pad')
 		.map((p) => ({ key: p.key, kind: /** @type {const} */ ('pad'), name: p.name, mark: legacyTag(p.key) }));
@@ -184,7 +193,7 @@ export function seedPieces(server = null) {
 		.sort(([a], [b]) => a.localeCompare(b))
 		.map(([asset, versions]) => ({ key: asset, kind: /** @type {const} */ ('recipe'), name: asset, mark: refTag(versions[versions.length - 1][0]) }));
 	const recipeShare = recipes.length ? [{ key: 'recipe-share', kind: /** @type {const} */ ('recipe-share'), name: 'Everyone reads its recipes', mark: '' }] : [];
-	return [...keep, ...code, ...share, ...types, ...published, ...games, ...journal, ...inspire, ...pads, ...recipeShare, ...recipes];
+	return [...keep, ...code, ...share, ...types, ...published, ...games, ...journal, ...inspire, ...docs, ...pads, ...recipeShare, ...recipes];
 }
 
 /**
@@ -350,6 +359,21 @@ export async function seeding(p, vault) {
 	if (p.kind === 'pad') {
 		const legacy = legacyPieces([]).find((x) => x.key === p.key);
 		return legacy ? copying(legacy, vault, vault, { spark: [], artifact: [] }) : [];
+	}
+	if (p.kind === 'doc') {
+		const d = DOCS.find((x) => x.key === p.name);
+		if (!d) return [];
+		const text = await d.read();
+		const fm = /** @type {Record<string, any>} */ (d.section === 'skill' ? split(text).fm : {});
+		const title = str(fm.name) || d.title;
+		const excerpt = str(fm.description) || d.excerpt;
+		const story = filled({ kind: 'story', title, text, series: 'Docs', description: excerpt, sparks: [], tags: [] });
+		const own = { excerpt, language: 'en', section: d.section, slug: d.slug, page: d.page };
+		const shown = d.section === 'skill' ? readable(text) : text;
+		return [
+			{ op: 'create', vault, type: 'story', tags: [stageTag('story', 'published'), 'doc'], value: story, as },
+			posting(vault, 'doc', title, shown, '$0', '', own, p.mark)
+		];
 	}
 	if (p.kind === 'journal') {
 		const { fm, body } = split(await POSTS[`/blog/${p.name}/post.md`]());

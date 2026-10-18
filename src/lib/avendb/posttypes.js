@@ -8,6 +8,9 @@
 // Its posts are entries of type `post`, of the record kind `post:<type>` and tagged `post:<type>`, so the Maia
 // Universe stream lists them all, and a page lays each out by its type (./../universe/inspire.js for `inspire`).
 //
+// A doc post (`doc`) is a document on the Docs page (./docs.js): a skill, a paper or an architecture document, by its
+// section, found by its `slug`; where the site lays it out on a page of its own, with live figures, its `page`.
+//
 // A film post (`film`) is the story gone out as a film: its rendered master (`media`, a Library file the render made),
 // the cut it was rendered from and that cut's script (the film workshop behind it, $lib/studio/scripts.js), its shape
 // and its length.
@@ -48,6 +51,16 @@ export const POST_TYPES = {
 			script: { 'x-link': 'newest' },
 			shape: { type: 'string', maxLength: 16, default: '16:9' },
 			seconds: { type: 'number', minimum: 0 }
+		}
+	},
+	doc: {
+		channel: 'Docs',
+		template: '/docs/TEMPLATE.md',
+		fields: {
+			...WORDS,
+			section: { type: 'string', enum: ['skill', 'paper', 'architecture'], default: 'skill' },
+			slug: { type: 'string', maxLength: 80, default: '' },
+			page: { type: 'string', maxLength: 200, default: '' }
 		}
 	},
 	inspire: {

@@ -5,7 +5,7 @@
 	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
 	import { shaped } from '$lib/app/shapes.js';
-	import { CHANNELS, postHref } from '$lib/universe/posts.js';
+	import { CHANNELS, isDoc, postHref } from '$lib/universe/posts.js';
 	import { authorOf, loadFeed, stream } from '$lib/universe/stream.svelte.js';
 	import PostCard from '$lib/universe/PostCard.svelte';
 
@@ -18,7 +18,8 @@
 		return () => clearInterval(again);
 	});
 
-	const posts = $derived(stream.posts);
+	// the stream's posts, its docs left to the Docs page
+	const posts = $derived(stream.posts.filter((p) => !isDoc(p)));
 	let channel = $state('All');
 
 	const shown = $derived(channel === 'All' ? posts : posts.filter((p) => p.channel === channel));
