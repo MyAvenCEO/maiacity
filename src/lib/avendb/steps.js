@@ -50,6 +50,7 @@ export function stepWords(here) {
 		join: { title: `Adding ${here} to your vault`, does: 'Your pass signs the edit that adds it' },
 		check: { title: 'Opening your vault', does: `${Here} belongs to the vault its store holds` },
 		save: { title: `Saving on ${here}`, does: 'What opens it again, kept on its shelf in this browser' },
+		profile: { title: 'Naming your human vault', does: 'Its profile takes your name, which everyone reads' },
 		seed: {
 			title: 'Bringing Maia City’s seed',
 			does: 'avenCEO’s schemas, then the code, stories and asset recipes the repository holds, each recipe with its file'
