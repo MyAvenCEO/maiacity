@@ -105,6 +105,11 @@
 	let bringing = false;
 	const seededInto = new Set();
 	const seedFailed = /** @type {Map<string, string>} */ (new Map());
+	/** whether the device is bringing the studio's films into Maia City after the seed, and whether it tried this
+	 *  visit; what it is at, for the corner pill (Samuel 2026-10-18: the studio's footage seeded the same way) */
+	let filming = false;
+	let filmed = false;
+	let filmAt = $state('');
 	/** how far the repo seed has come, the pieces written of those it is writing, while it writes them in the
 	 *  background: a corner pill shows it, and nothing waits for it */
 	let seedAt = $state(/** @type {{ done: number, of: number } | null} */ (null));
@@ -346,8 +351,26 @@
 				.finally(() => {
 					bringing = false;
 					seedAt = null;
+					films();
 				});
 		}
+	}
+
+	/**
+	 * The studio's films (the legacy timelines, with exactly the footage they play) brought into Maia City once the repo
+	 * seed's run is over, whether or not each piece went in, in the background too, once a visit, on the Mac alone ($lib/studio/legacyfilms.js): the studio,
+	 * opening meanwhile, joins this run.
+	 */
+	function films() {
+		if (filming || filmed) return;
+		filming = filmed = true;
+		import('$lib/studio/legacyfilms.js')
+			.then(({ bringFilms }) => bringFilms({ tell: (f, line) => (filmAt = `${f.name}: ${line}`) }))
+			.catch((/** @type {Error} */ e) => (session.error = `Bringing the studio’s films into Maia City failed: ${plain(e.message)}`))
+			.finally(() => {
+				filming = false;
+				filmAt = '';
+			});
 	}
 
 	/**
@@ -682,10 +705,10 @@
 	</div>
 {/if}
 
-{#if seedAt && seedAt.of}
-	<p class="seeding" role="status" title="Maia City’s seed: code, stories and asset recipes, written in the background">
+{#if (seedAt && seedAt.of) || filmAt}
+	<p class="seeding" role="status" title="Maia City’s seed: code, stories, asset recipes and the studio’s films, written in the background">
 		<span class="spin" aria-hidden="true"></span>
-		Bringing Maia City’s seed · {seedAt.done} of {seedAt.of}
+		{#if seedAt && seedAt.of}Bringing Maia City’s seed · {seedAt.done} of {seedAt.of}{:else}Bringing the studio’s films · {filmAt}{/if}
 	</p>
 {/if}
 
