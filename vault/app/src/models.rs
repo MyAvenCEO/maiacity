@@ -1,24 +1,17 @@
-//! The on-device models, delivered by our own vault — never fetched from the internet by a device. Every model file
-//! is a vault file in the **Models** story (class default, meta `{ role: "model", model, file, source, version }`),
-//! pinned here by its BLAKE3 hash: it comes to this Mac over iroh like any file of the vault, and ONNX Runtime loads
-//! it straight from the store's bytes (`vault_asr::ModelBytes`) — nothing is unpacked into a folder.
-//!
-//! Once, by hand (the MCP tool `models_import`, run on one Mac): each file is downloaded from where it was published
-//! (or, made here — Phonon-2's ONNX, by vault/tools/phonon2_onnx.py — taken from `~/Library/Application Support/city.maia.studio/models-made/<model>/`),
-//! ingested into the Models story with the normal three-hash check, and its hash compared with the pin — after that
-//! nothing fetches from the internet again; new devices get the models peer to peer / from the bucket.
+//! The on-device speech models (the `transcript` rule: aven.rs `transcript`), pinned here by their BLAKE3 hashes and
+//! kept on this Mac in `~/Library/Application Support/city.maia.studio/models/<blake3>`, from where ONNX Runtime loads
+//! them (`vault_asr::ModelBytes`). A file not there yet is copied once out of the legacy vault's store, where the
+//! Models story kept them, its hash checked; after that the legacy vault is not needed for them. A file can also be put
+//! there by hand (named by its hash): it is checked the same way. Nothing is fetched from the internet by a device.
 
-use std::{path::PathBuf, sync::Arc};
+use std::path::PathBuf;
 
 use iroh_blobs::{Hash, api::proto::BlobStatus};
-use serde_json::{Value, json};
-use vault_core::{Vault, ingest::Batch};
-
-/// The Models story (maiaCITY Studio): where every model file is kept.
-pub const MODELS_STORY: &str = "5f4381a8410988727d96c94d96ae953646961814ba92ba421ef7db4dc2c9f016";
+use vault_core::Vault;
 
 /// One file of a model: its name in the model's folder, where it was published (an https URL; else it is made here,
 /// and `source` says by what), its size and BLAKE3 hash (pinned).
+#[allow(dead_code)] // `source` and `version` say where a pin came from
 pub struct ModelFile {
     pub name: &'static str,
     pub source: &'static str,
@@ -26,6 +19,7 @@ pub struct ModelFile {
     pub blake3: &'static str,
 }
 
+#[allow(dead_code)]
 pub struct Model {
     /// its name in the files' meta
     pub id: &'static str,
@@ -59,33 +53,58 @@ pub const SILERO: Model = Model {
     }],
 };
 
-/// The files of these models not complete in this Mac's store yet.
-async fn missing(vault: &Vault, models: &[&Model]) -> Vec<(Hash, u64)> {
-    let mut out = Vec::new();
-    for f in models.iter().flat_map(|m| m.files.iter()) {
-        let Ok(h) = f.blake3.parse::<Hash>() else { continue };
-        if !matches!(vault.store.blobs().status(h).await, Ok(BlobStatus::Complete { .. })) {
-            out.push((h, f.size));
-        }
-    }
-    out
+/// Where this Mac keeps the model files, each named by its BLAKE3 hash.
+fn models_dir() -> PathBuf {
+    crate::settings_file().with_file_name("models")
 }
 
-/// The speech models, ready on this Mac: every pinned file complete in the store (they come over iroh with the vault's
-/// sync, verified by hash), read straight from it by hash. `progress` says how far ("the speech model is read").
-pub async fn ready(vault: &Arc<Vault>, progress: &mut (dyn FnMut(&str, f64) + Send)) -> Result<vault_asr::ModelBytes, String> {
-    let models = [&PHONON, &SILERO];
-    let need = missing(vault, &models).await;
-    if !need.is_empty() {
-        let mb = need.iter().map(|(_, s)| s).sum::<u64>() as f64 / 1e6;
-        return Err(format!("the speech model is not on this Mac yet ({} files, {mb:.0} MB still to come over iroh; once imported by hand with models_import)", need.len()));
+/// Model file `f` on this Mac (`models_dir`): there and whole already, else copied out of the legacy vault's store
+/// (its BLAKE3 checked before it counts). Its path.
+async fn kept(vault: &Vault, f: &ModelFile) -> Result<PathBuf, String> {
+    let path = models_dir().join(f.blake3);
+    if std::fs::metadata(&path).is_ok_and(|m| m.len() == f.size) {
+        return Ok(path);
     }
-    let read = |f: &'static ModelFile| async move {
-        let h: Hash = f.blake3.parse().map_err(|e| format!("{e}"))?;
-        vault.store.blobs().get_bytes(h).await.map(|b| b.to_vec()).map_err(|e| format!("{}: {e:#}", f.name))
-    };
-    let file = |m: &'static Model, name: &str| m.files.iter().find(|f| f.name == name).ok_or_else(|| format!("{} has no {name}", m.id));
+    let h: Hash = f.blake3.parse().map_err(|e| format!("{e}"))?;
+    if !matches!(vault.store.blobs().status(h).await, Ok(BlobStatus::Complete { .. })) {
+        return Err(format!("the speech model's {} is not on this Mac: put it in {} as {}", f.name, models_dir().display(), f.blake3));
+    }
+    std::fs::create_dir_all(models_dir()).map_err(|e| e.to_string())?;
+    let part = path.with_extension("part");
+    vault.store.blobs().export(h, &part).await.map_err(|e| format!("{}: out of the legacy vault: {e}", f.name))?;
+    let check = part.clone();
+    let got = tauri::async_runtime::spawn_blocking(move || -> std::io::Result<String> {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update_reader(std::fs::File::open(&check)?)?;
+        Ok(hasher.finalize().to_hex().to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    if got != f.blake3 {
+        std::fs::remove_file(&part).ok();
+        return Err(format!("{}: its copy's BLAKE3 is {got}, not its pin", f.name));
+    }
+    std::fs::rename(&part, &path).map_err(|e| e.to_string())?;
+    Ok(path)
+}
+
+/// Model file `f`, read whole from where this Mac keeps it, checked against its pin.
+async fn read(vault: &Vault, f: &ModelFile) -> Result<Vec<u8>, String> {
+    let path = kept(vault, f).await?;
+    let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if blake3::hash(&bytes).to_hex().as_str() != f.blake3 {
+        return Err(format!("{}: {} is not the pinned file", f.name, path.display()));
+    }
+    Ok(bytes)
+}
+
+/// The speech models, ready on this Mac: every pinned file kept here (`kept`), read whole. `progress` says how far
+/// ("the speech model is read").
+pub async fn ready(vault: &Vault, progress: &mut (dyn FnMut(&str, f64) + Send)) -> Result<vault_asr::ModelBytes, String> {
     progress("the speech model is read", 0.0);
+    let file = |m: &'static Model, name: &str| m.files.iter().find(|f| f.name == name).ok_or_else(|| format!("{} has no {name}", m.id));
+    let read = |f: &'static ModelFile| read(vault, f);
     let bytes = vault_asr::ModelBytes {
         features: read(file(&PHONON, "nemo128.onnx")?).await?,
         encoder: read(file(&PHONON, "encoder-model.int8.onnx")?).await?,
@@ -95,83 +114,4 @@ pub async fn ready(vault: &Arc<Vault>, progress: &mut (dyn FnMut(&str, f64) + Se
     };
     progress("the speech model is read", 1.0);
     Ok(bytes)
-}
-
-/// Once, by hand: every model file downloaded from where it was published (or taken from where it was made:
-/// `~/Library/Application Support/city.maia.studio/models-made/<model>/<file>`), ingested into the Models story (the three-hash check), and its hash
-/// compared with the pin. Returns what happened to each.
-pub async fn import(vault: &Arc<Vault>, http: &reqwest::Client) -> Result<Value, String> {
-    let dir = vault.ingest_dir().join("models-import");
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let made = crate::settings_file().with_file_name("models-made");
-    let mut out = Vec::new();
-    for m in [&PHONON, &SILERO] {
-        for f in m.files {
-            let pinned: Hash = f.blake3.parse().map_err(|e| format!("{e}"))?;
-            if matches!(vault.store.blobs().status(pinned).await, Ok(BlobStatus::Complete { .. })) && vault.catalog.has(pinned).await.unwrap_or(false) {
-                out.push(json!({ "model": m.id, "file": f.name, "hash": f.blake3, "verdict": "already in the vault" }));
-                continue;
-            }
-            let path = dir.join(f.name);
-            if f.source.starts_with("https://") {
-                download(http, f.source, &path).await?;
-            } else {
-                let from = made.join(m.id).join(f.name);
-                if !from.is_file() {
-                    return Err(format!("{} is made here, not downloaded ({}) — put it at {} first", f.name, f.source, from.display()));
-                }
-                std::fs::rename(&from, &path).or_else(|_| std::fs::copy(&from, &path).map(|_| ())).map_err(|e| format!("{}: {e}", from.display()))?;
-            }
-            let batch = Batch {
-                session: format!("models {}", vault_core::ingest::now_iso()),
-                tags: vec!["model".into(), m.id.into()],
-                title: Some(format!("{} · {}", m.id, f.name)),
-                meta: json!({ "role": "model", "model": m.id, "file": f.name, "source": f.source, "version": m.version }),
-                story: Some(MODELS_STORY.into()),
-                class: Some("default".into()),
-                moves_existing: false,
-                ..Default::default()
-            };
-            let o = vault.ingest_file(&path, &batch).await.map_err(|e| format!("{e:#}"))?;
-            std::fs::remove_file(&path).ok();
-            let ok = o.hash == f.blake3;
-            out.push(json!({ "model": m.id, "file": f.name, "hash": o.hash, "pinned": f.blake3, "matches_pin": ok, "verdict": o.verdict }));
-            if !ok {
-                return Err(format!("{} came in as {} — the pin is {}: not what the code expects (a new version? then pin it in models.rs)", f.name, o.hash, f.blake3));
-            }
-        }
-    }
-    std::fs::remove_dir_all(&dir).ok();
-    Ok(Value::Array(out))
-}
-
-async fn download(http: &reqwest::Client, url: &str, to: &PathBuf) -> Result<(), String> {
-    use tokio::io::AsyncWriteExt;
-    let mut res = http.get(url).send().await.map_err(|e| format!("{url}: {e}"))?;
-    if !res.status().is_success() {
-        return Err(format!("{url} answered {}", res.status()));
-    }
-    let mut file = tokio::fs::File::create(to).await.map_err(|e| e.to_string())?;
-    while let Some(chunk) = res.chunk().await.map_err(|e| format!("{url}: {e}"))? {
-        file.write_all(&chunk).await.map_err(|e| e.to_string())?;
-    }
-    file.sync_all().await.map_err(|e| e.to_string())?;
-    Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn every_pin_is_a_hash_and_every_source_names_its_file() {
-        for m in [&PHONON, &SILERO] {
-            for f in m.files {
-                assert!(f.blake3.parse::<Hash>().is_ok(), "{}", f.name);
-                assert!(f.source.ends_with(f.name), "{} ← {}", f.name, f.source);
-                assert!(f.size > 0);
-            }
-        }
-        assert!(MODELS_STORY.len() == 64);
-    }
 }
