@@ -677,21 +677,27 @@ fn film_seeds() -> std::path::PathBuf {
     std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default().join("maiaCITY-seed/films")
 }
 
-/// File `hash` in the film seed: where its bytes are and its catalog record (`{}` where `files.json` has none).
+/// File `hash` in the film seed: where its bytes are and its catalog record (`{}` where no `files.json` has one). A film
+/// keeps its files in `files/<blake3>`, and the files its published posts used in `published/` (`files.json` there:
+/// `{hash, file, bytes, in, record}`, the bytes at `file`).
 fn seeded_file(hash: &str) -> Option<(std::path::PathBuf, Value)> {
+    use std::path::Component;
     for film in std::fs::read_dir(film_seeds()).ok()?.flatten() {
-        let path = film.path().join("files").join(hash);
-        if !path.is_file() {
-            continue;
+        for part in [film.path(), film.path().join("published")] {
+            let records = std::fs::read(part.join("files.json")).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).unwrap_or_default();
+            let r = records.as_array().and_then(|l| l.iter().find(|r| r["hash"] == hash)).cloned();
+            // where its record says, never out of the film's folder
+            let named = r.as_ref().and_then(|r| r["file"].as_str()).filter(|f| !f.is_empty() && std::path::Path::new(f).components().all(|c| matches!(c, Component::Normal(_)))).map(|f| part.join(f));
+            let Some(path) = [part.join("files").join(hash), part.join(hash)].into_iter().chain(named).find(|p| p.is_file()) else { continue };
+            let record = r.map(|r| if r["record"].is_object() { r["record"].clone() } else { r }).unwrap_or_else(|| json!({}));
+            return Some((path, record));
         }
-        let records = std::fs::read(film.path().join("files.json")).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).unwrap_or_default();
-        let record = records.as_array().and_then(|l| l.iter().find(|r| r["hash"] == hash)).cloned().unwrap_or_else(|| json!({}));
-        return Some((path, record));
     }
     None
 }
 
-/// Film `key`'s timeline and world shots from the film seed (`{ timeline, shots }`), `null` where it isn't there.
+/// Film `key`'s timeline and world shots from the film seed (`{ timeline, shots, proxies, published }`), `null` where it
+/// isn't there.
 #[tauri::command]
 pub async fn film_seed(key: String) -> Result<Option<Value>, String> {
     if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
@@ -707,7 +713,9 @@ pub async fn film_seed(key: String) -> Result<Option<Value>, String> {
     }
     // its world proxies (`proxies.json`, `<shot>@<version>` → hash), where it keeps any yet
     let proxies = if dir.join("proxies.json").is_file() { read("proxies.json")? } else { json!({}) };
-    Ok(Some(json!({ "timeline": read("timeline.json")?, "shots": read("shots.json")?, "proxies": proxies })))
+    // the files its published posts used (the films as they went out, their stills), where it keeps them
+    let published = if dir.join("published/files.json").is_file() { read("published/files.json")? } else { json!([]) };
+    Ok(Some(json!({ "timeline": read("timeline.json")?, "shots": read("shots.json")?, "proxies": proxies, "published": published })))
 }
 
 /// World proxies of film `key` kept in its film seed (`proxies`: `<shot>@<version>` → hash): each one's bytes copied
