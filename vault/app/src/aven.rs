@@ -1378,10 +1378,16 @@ async fn transcript(job: &Job<'_>, name: &str) -> Result<Value, String> {
         let mut slot = crate::transcripts::RECOGNIZER.lock().unwrap_or_else(|p| p.into_inner());
         if slot.is_none() {
             t3("loading the speech model", 0.0);
-            let models = models.as_ref().ok_or("the speech model was let go of while this recording waited: again")?;
-            *slot = Some(vault_asr::Recognizer::open_bytes(models).map_err(|e| format!("{e:#}"))?);
+            let bytes = models.ok_or("the speech model was let go of while this recording waited: again")?;
+            *slot = Some(vault_asr::Recognizer::open_bytes(&bytes).map_err(|e| format!("{e:#}"))?);
+            // the files' bytes, gone as soon as the model is loaded from them (hundreds of MB)
+            drop(bytes);
         }
-        slot.as_mut().expect("loaded").transcribe(&samples, &mut |stage, d| t3(stage, d)).map_err(|e| format!("{e:#}"))
+        let heard = slot.as_mut().expect("loaded").transcribe(&samples, &mut |stage, d| t3(stage, d)).map_err(|e| format!("{e:#}"));
+        // and the model let go of once the recording is heard: held between jobs, it kept gigabytes of an 8 GB Mac
+        // that the app's pages need (the next transcript loads it again)
+        *slot = None;
+        heard
     })
     .await
     .map_err(|e| e.to_string())??;

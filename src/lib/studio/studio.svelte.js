@@ -1614,6 +1614,8 @@ export class Studio {
 		// stopped (or started again) while it loaded: this start is over
 		if (run !== this.run) return;
 		this.playing = true;
+		// the Mac's jobs wait while the studio plays (./jobs/mac.js)
+		void import('./jobs/mac.js').then((m) => m.studioPlaying(true));
 		this.schedule();
 		// sound on the tracks but none laid on the clock: say why (the app's log carries it)
 		const sounding = this.clips.filter((c) => onSoundTrack(c) && c.hash && c.start + c.dur > this.time);
@@ -1633,6 +1635,7 @@ export class Studio {
 		this.run++;
 		this.starting = false;
 		this.playing = false;
+		void import('./jobs/mac.js').then((m) => m.studioPlaying(false));
 		this.soundOff = false;
 		clearInterval(this.listener);
 		cancelAnimationFrame(this.frame);

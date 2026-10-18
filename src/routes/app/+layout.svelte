@@ -189,7 +189,8 @@
 			const w = await macWorker().catch(() => null);
 			if (!w && !stopped) timer = setTimeout(tryStart, 120_000);
 		};
-		let timer = setTimeout(tryStart, 5_000);
+		// a minute after the app opens: its pages, avenDB and the dashboard's worlds load first
+		let timer = setTimeout(tryStart, 60_000);
 		return () => {
 			stopped = true;
 			clearTimeout(timer);
