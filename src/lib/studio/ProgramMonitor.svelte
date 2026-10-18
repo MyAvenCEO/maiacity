@@ -30,7 +30,7 @@
 	const pic = $derived(s.picture);
 	const spec = $derived(isWorld(pic) ? s.specOf(pic) : null);
 	/** the live world is showing this frame */
-	const live = $derived(!!spec && !s.onWorldProxy(pic) && s.world.isLive(spec));
+	const live = $derived(!!spec && s.world.isLive(spec));
 	/** the world is readied for this frame: its first frame is asked for at once (paused, nothing else would ask) */
 	const ready = $derived(!!spec && s.world.isReady(spec));
 	const worldVideo = $derived(isWorld(pic) && !live ? (s.reelVideos[pic?.id ?? ''] ?? null) : null);
@@ -232,8 +232,8 @@
 	// the live world: started in its iframe in the 3D and Edit tabs (Samuel 2026-10-18: world shots play without a
 	// proxy, as the V1 intros do), and let go (its WebGL, its domes) when they are left — elsewhere a world shot plays
 	// from its HD proxy where it has one
-	// in Edit, a cut whose every world clip has its HD proxy plays those, the (heavy) live world not loaded; 3D is live
-	const inWorld = $derived(s.wantWorld && liveTab(s.tab) && (s.tab === '3d' || !s.allWorldProxied));
+	// the world plays live in Edit and 3D, in any world: a shot's HD proxy shows only while its live world is not ready
+	const inWorld = $derived(s.wantWorld && liveTab(s.tab));
 	// the live world draws at the size the monitor is seen at (its long edge in device pixels), as a game draws at its canvas's
 	$effect(() => {
 		const el = frameEl;
