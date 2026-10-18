@@ -1,10 +1,6 @@
-<!--
-	Machines: everything we build that works by moving parts (src/lib/machines), on the shared turntable
-	($lib/assets/AssetViewer.svelte), every part to pick with its card. The people and animals are /app/actors/. An admin's.
--->
+<!-- An old viewer (the Machines): the assets are avenDB's now, each shown in its Assets app (Samuel 2026-10-18). -->
 <script>
-	import { MACHINES } from '$lib/machines';
-	import AssetViewer from '$lib/assets/AssetViewer.svelte';
+	import Moved from '$lib/app/Moved.svelte';
 </script>
 
-<AssetViewer name="machines" group="machines" title="Machines" lede="What works by moving parts: diggers, the pod and its forklift, the LifeTrac, the cubes and the BatteryPack, every part its own." items={MACHINES} />
+<Moved to="/app/avendb/#assets" />
