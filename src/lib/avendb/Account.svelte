@@ -396,6 +396,8 @@
 		const send = session.ask;
 		/** @type {string[]} */
 		const failed = [];
+		/** why each piece that failed did, the first time a reason comes up */
+		const reasons = new Set();
 		seedAt = { done: 0, of: left.length };
 		for (const p of left) {
 			/** @type {any[]} */
@@ -407,8 +409,9 @@
 					if (file && !made) throw new Error(`${p.name} didn’t go in`);
 					done.push(made);
 				}
-			} catch {
+			} catch (e) {
 				failed.push(p.name);
+				reasons.add(`${p.name}: ${/** @type {Error} */ (e)?.message ?? e}`);
 			}
 			seedAt = { done: (seedAt?.done ?? 0) + 1, of: left.length };
 		}
@@ -436,7 +439,8 @@
 				failed.push('a retired entry');
 			}
 		}
-		if (failed.length) throw new Error(`Maia City refused ${failed.length} of them: ${failed.join(', ')}`);
+		if (failed.length)
+			throw new Error(`Maia City refused ${failed.length} of them: ${failed.join(', ')}. Why: ${[...reasons].slice(0, 3).join(' · ')}`);
 	}
 
 	/**
