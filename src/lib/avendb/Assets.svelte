@@ -15,7 +15,7 @@
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import { vaultSource } from './assets.js';
-	import { count, nameOf, seeded, short } from './vaults.js';
+	import { authorsLine, count, nameOf, seeded, short } from './vaults.js';
 	import { groupName, refusedOf, shelfOf } from '$lib/assets/sources/shelf.js';
 
 	/**
@@ -140,6 +140,8 @@
 		<dl>
 			<dt>Ref</dt>
 			<dd class="mono">{chosen.label}</dd>
+			<dt>By</dt>
+			<dd>{authorsLine(world, world.entries.find((e) => e.entry === chosen.entry)?.authors, nameOf(here))}</dd>
 			<dt>Entry</dt>
 			<dd class="mono" title={chosen.entry}>{short(chosen.entry)}</dd>
 			<dt>Recipe</dt>

@@ -2006,3 +2006,41 @@ fn a_write_counts_once_the_lane_holds_its_schema() {
     let seen = ok(run(&mut w, mac, get));
     assert_eq!((seen["record"]["status"].clone(), seen["readOnly"].clone()), (json!("blocked"), json!(true)));
 }
+
+/// Who wrote an entry is never its coop (Samuel 2026-10-18): a story of Maia City is written by avenMAIA, Maia City's
+/// aven, and the human vaults whose devices signed its writes, each once in the order they first wrote; the world, the
+/// history of each release and line, and the feed everyone reads say so alike (`world::authors`).
+#[test]
+fn a_coops_entry_is_written_by_its_aven_and_the_people_who_signed_its_writes() {
+    let mut w = cast::world();
+    let (mac, mac_b, alice, bob) = (w.mac_a, w.mac_b, w.alice, w.bob);
+    let city = world::seed_of(&w.lab, mac)[0];
+    let (c, aven) = (city.to_hex(), w.avenceo.to_hex());
+    let story = json!({ "kind": "story", "title": "The first village", "text": "Day one." });
+    let made = ok(run(&mut w, mac, json!({ "op": "create", "vault": c, "type": "story", "tags": ["out"], "value": story,
+        "as": c })));
+    let entry = made["entry"].as_str().expect("its id").to_string();
+    let authors = |w: &mut World, d: SignerId| {
+        let world = ok(run(w, d, json!({ "op": "world" })));
+        let row = list(&world["entries"]).iter().find(|e| e["entry"] == entry.as_str()).cloned().expect("the story");
+        row["authors"].as_array().expect("its authors").iter().map(|v| v.as_str().unwrap().to_string()).collect::<Vec<_>>()
+    };
+    assert_eq!(authors(&mut w, mac), [aven.clone(), alice.to_hex()], "avenMAIA and Alice, never Maia City");
+    // Bob edits it by a share Maia City gives him: he joins its authors
+    let editor = json!({ "op": "share", "over": c, "who": { "vault": bob.to_hex() }, "level": "Editor", "what": { "type": ["story"] },
+        "as": c });
+    ok(run(&mut w, mac, editor));
+    w.lab.sync_all(5);
+    let set = json!({ "op": "set", "entry": entry, "path": ["text"], "value": "Day one, and two.", "as": bob.to_hex() });
+    ok(run(&mut w, mac_b, set));
+    w.lab.sync_all(5);
+    let want = [aven.clone(), alice.to_hex(), bob.to_hex()];
+    assert_eq!(authors(&mut w, mac), want, "and Bob, once");
+    // the history says it of the main line, and of a release as it was then
+    let history = ok(run(&mut w, mac, json!({ "op": "history", "entry": entry })));
+    let main = &list(&history["lines"])[0];
+    let names = |xs: &Value| xs.as_array().expect("authors").iter().map(|a| a["vault"].as_str().unwrap().to_string()).collect::<Vec<_>>();
+    assert_eq!(names(&main["authors"]), want, "main as it stands");
+    let first = list(&history["edits"]).iter().find(|e| e["version"] == 1).expect("its first release");
+    assert_eq!(names(&first["authors"]), [aven, alice.to_hex()], "its first version, before Bob wrote");
+}

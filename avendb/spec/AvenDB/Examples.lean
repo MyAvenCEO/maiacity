@@ -307,6 +307,11 @@ def sAven : List Edit := s3 ++ chain 400 [
 #guard !accepted sAven (attempt passkeyA [] (.genesis 313 .aven [.vault avenA] 1))
 #guard !accepted sAven (attempt avenServer [79] (.share (.device avenA 79)))
 
+-- who wrote an entry of Alice's coop: its aven and Alice, whose Mac signed its write, never the coop itself
+def sAuthored : List Edit := sAven ++ chain 405 [(macA, [], create coopA welcome coopA [] doc (via := [alice]))]
+#guard refused sAuthored == []
+#guard authors (view sAuthored) welcome ((view sAuthored).writes.map (·.edit)) == [avenA, alice]
+
 /-! ## Acts name their chain
 
 An edit that acts for a vault names the owners it goes through, down to the vault its device belongs to: Alice's Mac

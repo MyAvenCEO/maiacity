@@ -28,7 +28,7 @@
 	import Icon from './Icon.svelte';
 	import { allowed, creatable, DELETED, may } from './ops.js';
 	import { addingSpark, grownFrom, itemsFor, pictureOf, SPARK, sparkRecord } from './sparks.js';
-	import { count, signerName } from './vaults.js';
+	import { authorsLine, count, signerName } from './vaults.js';
 	import { filling, took, wordsOf, wordsRule, wordsTasks } from './youtube.js';
 	import { nudge } from '$lib/studio/jobs/mac.js';
 	import { lacking } from '$lib/studio/jobs/schemas.js';
@@ -170,7 +170,7 @@
 					<dd>{clock(record.duration)}</dd>
 				{/if}
 				<dt>Added by</dt>
-				<dd>{signerName(world, item.by)}</dd>
+				<dd>{authorsLine(world, item.authors, signerName(world, item.by))}</dd>
 				<dt>Tags</dt>
 				<dd>
 					{#if tags.length}

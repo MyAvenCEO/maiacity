@@ -222,6 +222,9 @@ pub struct EntryView {
     pub vault: VaultId,
     /// The vault its first write acted for.
     pub by: VaultId,
+    /// Who wrote its main line as it stands (`authors`): its coop's aven, then each human vault whose device signed a
+    /// write of it.
+    pub authors: Vec<VaultId>,
     /// Its type, its tags now and when it was created, in seconds since 1970, if the device reads them: they travel
     /// inside its encrypted writes.
     pub ty: Option<String>,
@@ -400,6 +403,7 @@ impl World {
                 "entry": hex(&i.entry.0),
                 "vault": hex(&i.vault.0),
                 "by": hex(&i.by.0),
+                "authors": i.authors.iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
                 "type": i.ty,
                 "tags": i.tags,
                 "created": i.created,
@@ -618,6 +622,7 @@ fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
         entry: en.id,
         vault: v,
         by: en.creator,
+        authors: lab.history(me, en.id).map_or(vec![], |h| authors(lab, me, en.id, &h.heads(MAIN))),
         ty,
         tags,
         created,
@@ -887,11 +892,47 @@ pub fn public_posts(lab: &Lab, me: SignerId) -> Vec<Value> {
             "published": field("published"),
             "tags": attrs.tags.iter().map(|t| t.as_str()).collect::<Vec<_>>(),
             "pictures": pictures,
+            "authors": lab.history(me, en.id).map_or(json!([]), |h| authors_json(lab, me, &authors(lab, me, en.id, &h.heads(MAIN)))),
         });
         posts.push((attrs.created, en.id, post));
     }
     posts.sort_by_key(|p| std::cmp::Reverse((p.0, p.1)));
     posts.into_iter().map(|(_, _, post)| post).collect()
+}
+
+/// Who wrote version `version` of entry `entry` (its heads), by device `me`'s view (Samuel 2026-10-18: never the coop,
+/// always the coop's aven and its human collaborators): the aven of the entry's vault, where that vault is a coop with
+/// one (`aven_of`), first; then the vault each write of that version its readers count was signed in, each once, in the
+/// order they first wrote, where it is a human vault or an aven: the vault the writing device belongs to, the last of
+/// the owners it acted through, or the vault it acted for where it acted directly, as an aven's server does. So a story
+/// of Maia City reads "avenMAIA + Samuel + Alice", whoever's devices wrote it, and never names a device vault or a coop.
+pub fn authors(lab: &Lab, me: SignerId, entry: EntryId, version: &[EditId]) -> Vec<VaultId> {
+    let st = lab.state(me);
+    let mut out: Vec<VaultId> = vec![];
+    let vault = lab.vault_of_entry(me, entry);
+    if let Some(aven) = vault.filter(|&v| st.vault(v).is_some_and(|v| v.kind == Kind::Coop)).and_then(|v| aven_of(st, v)) {
+        out.push(aven);
+    }
+    let Some(history) = lab.history(me, entry) else { return out };
+    for c in history.version(version).into_iter().filter(|c| c.counted) {
+        let signed = c.write.via.last().copied().unwrap_or(c.write.actor);
+        let person = st.vault(signed).is_some_and(|v| matches!(v.kind, Kind::Human | Kind::Aven));
+        if person && !out.contains(&signed) {
+            out.push(signed);
+        }
+    }
+    out
+}
+
+/// Vaults `vaults`, as `authors` lists them, as JSON: each `{vault, name, kind}`, its name as its profile reads (`null`
+/// where it has none the device opens).
+pub fn authors_json(lab: &Lab, me: SignerId, vaults: &[VaultId]) -> Value {
+    let st = lab.state(me);
+    let one = |&v: &VaultId| {
+        let name = profile_of(lab, me, v).map(|(_, name)| name);
+        json!({ "vault": v.to_hex(), "name": name, "kind": st.vault(v).map(|v| kind_name(v.kind)) })
+    };
+    Value::Array(vaults.iter().map(one).collect())
 }
 
 /// The kinds of record that are code: a recipe, a view, a logic and a function, the code entries avenDB ships
@@ -980,6 +1021,7 @@ fn public_row(
         "schema": app.id().to_hex(),
         "tags": meaning.attrs.tags.iter().map(|t| t.as_str()).collect::<Vec<_>>(),
         "heads": history.heads(MAIN).iter().map(EditId::to_hex).collect::<Vec<_>>(),
+        "authors": authors_json(lab, me, &authors(lab, me, en.id, &history.heads(MAIN))),
         "created": meaning.attrs.created,
         "record": record,
         "files": lab.line_files(me, en.id, MAIN).into_iter().filter_map(file_json).collect::<Vec<_>>(),
@@ -994,6 +1036,7 @@ fn public_row(
                 "edit": edit.to_hex(),
                 "line": line.map(|b| b.to_hex()),
                 "version": engine::main_version(history, edit, line),
+                "authors": authors_json(lab, me, &authors(lab, me, en.id, &[edit])),
                 "files": files.into_iter().filter_map(file_json).collect::<Vec<_>>(),
                 "record": record,
             })

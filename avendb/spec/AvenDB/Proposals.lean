@@ -62,6 +62,25 @@ A line's releases and their numbers, as `History::releases` counts them, and a v
 def past (ws : List Write) (w : Write) : List Write :=
   reach ws w.entry fun x => w.deps.contains x.edit
 
+/-- The aven of coop `c`: the one aven it owns alone (`Kind.rules`), if it has one. -/
+def avenOf (st : State) (c : VaultId) : Option VaultId :=
+  (st.vaults.find? fun v => v.kind == .aven && v.owners == [.vault c]).map (·.id)
+
+/-- The vault write `w` was signed in: the vault its device belongs to, the last owner it acted through, or the vault it
+    acted for where it acted directly, as an aven's server does. -/
+def signedIn (w : Write) : VaultId := w.via.getLast?.getD w.actor
+
+/-- Who wrote version `heads` of entry `e` (Samuel 2026-10-18: never the coop, always its aven and its human
+    collaborators): the aven of the entry's vault, where that vault is a coop with one, first; then the vault each
+    counted write of that version was signed in (`signedIn`), each once, in the order they first wrote, where it is a
+    human vault or an aven. The Rust core's `world::authors`. -/
+def authors (st : State) (e : EntryId) (heads : List EditId) : List VaultId :=
+  let vault := (st.entries.find? (·.id == e)).map (·.vault)
+  let aven := vault.bind fun v => if (st.vault? v).any (·.kind == .coop) then avenOf st v else none
+  let signed := (reach st.counted e (heads.contains ·.edit)).map signedIn |>.filter fun v =>
+    (st.vault? v).any fun vt => vt.kind == .human || vt.kind == .aven
+  (aven.toList ++ signed).eraseDups
+
 /-- Write `w` brings in writes its line's history held nowhere in its own past: some write it builds on is outside the
     history of its line among its past. Judged on its past alone, never on what came beside it. -/
 def brings (ws : List Write) (w : Write) : Bool :=

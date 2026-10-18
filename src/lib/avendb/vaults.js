@@ -100,7 +100,7 @@ import { fieldPaths, pathWords } from './paths.js';
  * it on, its own vault first; `syncedTo` the devices that hold some of it, each with how many of its edits; `title` a
  * schema's title or a lens's name for those; `record` the record of a flow, a function, a post or a story (kind
  * `record`), or of a spark (kind `note`, ./sparks.js), each field it leaves out at its default.
- * @typedef {{ entry: string, vault: string, by: string, type: string | null, tags: string[] | null,
+ * @typedef {{ entry: string, vault: string, by: string, authors?: string[], type: string | null, tags: string[] | null,
  *   created: number | null, audience: string, public: boolean, levels: Record<string, Role>,
  *   readers: string[], writers: string[], sharers: string[], syncedTo: Holder[],
  *   kind: 'note' | 'todo' | 'file' | 'schema' | 'lens' | 'record' | 'sealed', title: string | null,
@@ -293,6 +293,24 @@ export function owns(world, a, b) {
  * @param {WorldView} world @returns {VaultView | undefined}
  */
 export const avenOf = (world) => seeded(world)[1]?.[0] ?? world.vaults.find((v) => v.kind === 'aven');
+
+/**
+ * Who wrote an entry, or a version of it, in words (Samuel 2026-10-18: never the coop, always its aven and its human
+ * collaborators): its authors as avendb's `world::authors` lists them, the coop's aven first and then each human vault
+ * whose device signed a write of it, joined by " + ": "avenMAIA + Samuel + Alice". Each is a vault's id, which `world`
+ * names, or `{vault, name}` as the feed and the history give it. `fallback` where it has none.
+ * @param {WorldView | null | undefined} world @param {(string | { vault: string, name?: string | null })[] | null | undefined} authors
+ * @param {string} [fallback]
+ */
+export function authorsLine(world, authors, fallback = '') {
+	const byId = new Map((world?.vaults ?? []).map((v) => [v.id, v]));
+	const named = (/** @type {string | { vault: string, name?: string | null }} */ a) => {
+		const id = typeof a === 'string' ? a : a.vault;
+		const given = typeof a === 'string' ? null : a.name;
+		return given || (byId.has(id) ? nameOf(byId.get(id)) : `vault ${short(id)}`);
+	};
+	return (authors ?? []).length ? (authors ?? []).map(named).join(' + ') : fallback;
+}
 
 /** The first characters of an id, enough to tell two apart. @param {string | null | undefined} id */
 export const short = (id) => (id ? `${id.slice(0, 4)} ${id.slice(4, 8)}` : '');

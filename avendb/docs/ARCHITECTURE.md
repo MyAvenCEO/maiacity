@@ -382,6 +382,15 @@ vault founded after follows it. The person's devices are often away, and the ser
 there: so what an aven or an agent writes, an access request among it, reaches the server, and through it whoever it
 is for.
 
+### Who wrote it
+
+An entry of a coop is never shown as written by the coop (Samuel 2026-10-18). Who wrote a version of it is the coop's
+aven, then each human vault whose device signed a write of that version that its readers count, each once, in the
+order they first wrote (`world::authors`, the Lean `authors` in `Proposals.lean`): a story of Maia City reads
+"avenMAIA + Samuel + Alice". The world gives each entry its `authors` for main as it stands, the `history` op gives
+them for each line and each release, and the feed everyone reads gives them for each post, each public entry and each
+version an entry brings (`authors`, `{vault, name, kind}`), so a page nobody signed in to shows the same names.
+
 ### A coop's aven and its agents
 
 An aven is a coop's one AI identity: an aven vault the coop alone owns, one per coop, and no person has one of their

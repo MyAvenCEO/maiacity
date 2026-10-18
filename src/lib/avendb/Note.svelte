@@ -44,6 +44,7 @@
 	const textual = (kind) => kind === 'article' || kind === 'story' || !!kind?.startsWith('post');
 	import {
 		actingWords,
+		authorsLine,
 		chainSteps,
 		count,
 		hue,
@@ -67,6 +68,7 @@
 	 *   kind: 'edit' | 'propose' | 'variant' | 'merge' | 'accept' | 'sealed', name: string | null,
 	 *   from: { line: string | null, name: string | null } | null, title: string | null, text: string | null,
 	 *   before: string | null, counted: boolean, version?: number | null,
+	 *   authors?: { vault: string, name: string | null, kind: string | null }[] | null,
 	 *   why: 'builds-on' | 'sealed' | 'unfit' | 'policy' | 'ops' | null }} EditView
 	 * @typedef {EditView & { n: number }} Numbered
 	 * @typedef {{ vault: string | null, entry: string, kind: string | null, lines: LineView[],
@@ -782,10 +784,15 @@
 							<span class="n mono">#{e.n}</span>
 							{#if e.version && (e.line === null || lineOf(e.line).variant)}<span
 									class="release chip"
-									title="Version {e.version} of {at(e.line)}">v{e.version}</span
+									title="Version {e.version} of {at(e.line)}, by {authorsLine(world, e.authors, 'whoever wrote it')}">v{e.version}</span
 								>{/if}
 						</button>
-						<small class="soft">{who(e)} · <span class="mono" title={e.id}>{short(e.id)}</span></small>
+						<small class="soft"
+							>{#if e.version && e.authors?.length}By {authorsLine(world, e.authors)} · {/if}{who(e)} · <span
+								class="mono"
+								title={e.id}>{short(e.id)}</span
+							></small
+						>
 						{#if wrote && e.text !== null && (e.before ?? '') !== e.text}
 							<p class="diff">{@render pieces(diff(e.before ?? '', e.text))}</p>
 						{:else if wrote && changed[e.id]}
