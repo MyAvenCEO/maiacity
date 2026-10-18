@@ -207,7 +207,7 @@
 	async function signs(title, plan, work) {
 		const prompts = plan.filter((step) => words[step]?.prompt).length;
 		const began = performance.now();
-		const asked = `${asks[0].toUpperCase()}${asks.slice(1)} ${times(prompts)}`;
+		const asked = prompts ? `${asks[0].toUpperCase()}${asks.slice(1)} ${times(prompts)}` : '';
 		signing = { title, asks: asked, plan, own: [], report: null, began, t0: began, ended: 0, error: '' };
 		const s = signing;
 		[session.doing, session.error] = [title, ''];
@@ -366,7 +366,11 @@
 		const tried = seededInto.has(city?.id) || seedFailed.has(city?.id ?? '');
 		if (city && company && first && standardized.has(company.id) && !bringing && !tried) {
 			bringing = true;
-			seed(w, city.id)
+			const left = unseeded(w, city.id, seedPieces(seeded(w)[2]?.[0]?.id ?? null));
+			// after a setup at the app's way in, which founds the vault and leaves the seed to this page: the seed in the
+			// sheet, step and seconds, as a setup here shows it, while it has pieces to write
+			if (left.length && !signing) void signs('Bringing Maia City’s seed', ['seed'], seeds);
+			seed(w, city.id, left)
 				.then(() => seededInto.add(city.id))
 				.catch((/** @type {Error} */ e) => {
 					const said = `Bringing the repo’s seed into Maia City failed: ${plain(e.message)}`;
@@ -381,15 +385,14 @@
 	}
 
 	/**
-	 * Each piece of the repo seed vault `city` holds no copy of yet (./seed.js), written into it acting for it, one
-	 * piece after another, each op of a piece naming the entries the ones before it made (`refs`); a recipe's create
+	 * Each piece of the repo seed vault `city` holds no copy of yet (./seed.js), `left`, written into it acting for it,
+	 * one piece after another, each op of a piece naming the entries the ones before it made (`refs`); a recipe's create
 	 * with its file beside it, as the session brings one (`beside`). A piece the vault refuses is left out, and the rest
 	 * go on: what was left out is said at the end, and the next visit tries it again.
-	 * @param {import('./vaults.js').WorldView} w @param {string} city
+	 * @param {import('./vaults.js').WorldView} w @param {string} city @param {import('./seed.js').Piece[]} left
 	 */
-	async function seed(w, city) {
+	async function seed(w, city, left) {
 		const send = session.ask;
-		const left = unseeded(w, city, seedPieces(seeded(w)[2]?.[0]?.id ?? null));
 		/** @type {string[]} */
 		const failed = [];
 		seedAt = { done: 0, of: left.length };

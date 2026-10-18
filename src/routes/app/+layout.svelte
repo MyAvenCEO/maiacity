@@ -3,7 +3,8 @@
 	is asked who they are first, with their passkey, which in the same touch opens their avenDB on this browser: one way
 	in for the app and their own database together, never a second sign-in on avenDB's pages ($lib/app/entry.js); a
 	browser new to them joins their human vault, and a person new to avenDB, as everyone just signed up, founds it,
-	named as they say. Then the dashboard, the games and — for whoever holds them — the admin's tools. One nav pill at the foot of every page is the only way round ($lib/app/NavPill.svelte: back, home,
+	named as they say. While avenDB starts, a sheet shows each step, the passkey's prompts among them, with its seconds
+	(Samuel 2026-10-18: what happens while the passkey's window is open or the device works). Then the dashboard, the games and — for whoever holds them — the admin's tools. One nav pill at the foot of every page is the only way round ($lib/app/NavPill.svelte: back, home,
 	you): no top bar, and no page has a back button of its own. A sandbox, a world and the studio's editor run full
 	screen, the pill over them — and so does a game gone full screen over its own page (Sandbox 3's domes). A page that
 	builds assets (a world, a viewer, the box's lab: $lib/assets/vault.js ASSET_PAGES) opens once the Maia City vault's
@@ -30,6 +31,9 @@
 	import { loadCode } from '../../../game/code/index.js';
 	import VaultRecipes from '$lib/assets/VaultRecipes.svelte';
 	import { ASSET_PAGES } from '$lib/assets/vault.js';
+	import Signing from '$lib/avendb/Signing.svelte';
+	import { asks, here, type Steps } from '$lib/avendb/session.svelte.js';
+	import { plan, reported, rows, stepWords, type Report, type Stage } from '$lib/avendb/steps.js';
 
 	let { children } = $props();
 
@@ -44,6 +48,30 @@
 	/** the passkey roots no human vault yet, or the person just signed up: the name its profile takes, to found it */
 	let naming = $state(false);
 	let name = $state('');
+	/**
+	 * avenDB's start under way at the way in, or just over, which the sheet shows step by step with the seconds each took
+	 * (Signing.svelte): the passkey's prompts among them, so the person sees what happens while the prompt is open and
+	 * after it (`starts`). The page's clock ticks for it while it runs.
+	 */
+	let start = $state<{
+		title: string;
+		asks: string;
+		plan: string[];
+		own: Stage[];
+		report: Report | null;
+		began: number;
+		t0: number;
+		ended: number;
+		error: string;
+	} | null>(null);
+	let clock = $state(0);
+	let tick: ReturnType<typeof setInterval> | undefined;
+	const words = stepWords(here);
+	const shown = $derived(
+		start
+			? rows([...start.own, ...reported(start.report, start.t0)], start.plan, words, { now: clock, ended: start.ended, failed: !!start.error })
+			: []
+	);
 
 	onMount(async () => {
 		void loadGames();
@@ -79,6 +107,46 @@
 
 	const say = (what: string) => (busy = what);
 
+	/** Begins the sheet for a start of avenDB of kind `kind`, titled as the way in says what it does; a founding ends by
+	 *  naming the vault. How the session marks the start's steps: the page's own, and the device's from when it starts. */
+	function starts(kind: 'found' | 'link' | 'open'): Steps {
+		const steps = plan(kind, { mac: native() }).filter((step) => step !== 'seed');
+		const prompts = steps.filter((step) => words[step]?.prompt).length;
+		const began = performance.now();
+		const asked = `${asks[0].toUpperCase()}${asks.slice(1)} ${prompts === 1 ? 'once' : 'twice'}`;
+		start = { title: busy, asks: asked, plan: kind === 'found' ? [...steps, 'profile'] : steps, own: [], report: null, began, t0: began, ended: 0, error: '' };
+		const s = start;
+		clearInterval(tick);
+		[clock, tick] = [began, setInterval(() => (clock = performance.now()), 100)];
+		/** the page's own step under way, if any, is over at `at` */
+		const over = (at: number) => s.own.filter((o) => o.end == null).forEach((o) => (o.end = at));
+		return {
+			step: (step) => {
+				const at = performance.now();
+				over(at);
+				s.own.push({ step, start: at, end: null });
+			},
+			device: () => {
+				over((s.t0 = performance.now()));
+				return (report) => (s.report = report);
+			}
+		};
+	}
+
+	/** The sheet's start is over: through, when the sheet closes by itself a little after; or failed, saying why
+	 *  `e`, where it says more than that the person closed the passkey's prompt, which closes it. */
+	function ended(e?: unknown) {
+		const s = start;
+		if (!s || s.ended) return;
+		clearInterval(tick);
+		const f = e === undefined ? null : failure(e);
+		if (f && (!f.message || f.kind === 'held' || f.kind === 'no-account')) return void (start = null);
+		const at = performance.now();
+		s.own.filter((o) => o.end == null).forEach((o) => (o.end = at));
+		[s.ended, s.error, clock] = [at, f?.message ?? '', at];
+		if (!f) setTimeout(() => start === s && (start = null), 3000);
+	}
+
 	/** avenDB didn't open after the sign-in: in anyway where another tab holds it, the name asked for where the passkey
 	 *  roots no vault yet, else why, and the way on without it. */
 	function failed(e: unknown) {
@@ -93,8 +161,11 @@
 	async function avendb(named = '') {
 		[error, stuck] = ['', false];
 		try {
-			done(await open(say, named));
+			const founded = await open(say, named, starts);
+			ended();
+			done(founded);
 		} catch (e) {
+			ended(e);
 			failed(e);
 		} finally {
 			busy = '';
@@ -175,7 +246,8 @@
 		if (native()) return enterApp();
 		[error, stuck] = ['', false];
 		try {
-			const signed = await signIn(say);
+			const signed = await signIn(say, starts);
+			ended(signed.why ?? undefined);
 			// the sign-in answers who they are; their role and caps (the admin's tools, a draft game) come with /api/me
 			founder = (await me().catch(() => null)) ?? signed.founder;
 			remember(true);
@@ -183,6 +255,7 @@
 			settle();
 			if (phase === 'locked' && !naming) await avendb();
 		} catch (e) {
+			ended(e);
 			error = failure(e).message;
 		} finally {
 			busy = '';
@@ -293,6 +366,20 @@
 	<NavPill {founder} name={session.name} onsignout={leave} />
 {/if}
 {#if native() && phase === 'ready'}<AskModal />{/if}
+<!-- what the passkey's prompt and avenDB's start are doing, step by step, at the way in and as it hands over to the app -->
+{#if start}
+	<div class="sheet">
+		<Signing
+			title={start.title}
+			asks={start.asks}
+			rows={shown}
+			total={(start.ended || clock) - start.began}
+			over={!!start.ended}
+			error={start.error}
+			onclose={() => (start = null)}
+		/>
+	</div>
+{/if}
 
 <style>
 	.gate {
@@ -350,6 +437,30 @@
 		background: var(--paper);
 		font: inherit;
 		text-align: center;
+	}
+
+	/* the sheet of avenDB's start, in the colours of avenDB's page (src/routes/app/avendb/+page.svelte) */
+	.sheet {
+		display: contents;
+		--ok: #3f7a4f;
+		--bad: #b5523a;
+		--soft: rgb(0 0 0 / 0.55);
+		--edge: rgb(0 0 0 / 0.1);
+		--card: #fff;
+		--accent: #2f6d62;
+		text-align: left;
+	}
+
+	.sheet :global(.btn) {
+		padding: 0.38rem 0.8rem;
+		border: 1px solid var(--accent);
+		border-radius: 999px;
+		background: var(--accent);
+		font: inherit;
+		font-size: 0.82rem;
+		font-weight: 500;
+		color: #fff;
+		cursor: pointer;
 	}
 
 	/* the device code the Mac app shows while the browser asks for the passkey */

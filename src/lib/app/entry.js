@@ -20,6 +20,14 @@ import { deviceName, relay, server } from '$lib/avendb/server.js';
 import { session } from '$lib/avendb/session.svelte.js';
 import { nameShare, nameShared } from '$lib/avendb/vaults.js';
 
+/**
+ * How the gate shows a start of avenDB's step by step while it runs ($lib/avendb/steps.js, Signing.svelte): called as
+ * the start of kind `kind` begins, it hands over how the session marks its steps. The way in shows none without one.
+ * @typedef {(kind: 'found' | 'link' | 'open') => import('$lib/avendb/session.svelte.js').Steps} Starts
+ */
+/** @type {Starts} */
+const UNSHOWN = () => ({ step: () => {}, device: () => () => {} });
+
 /** sessionStorage: this tab goes on without avenDB */
 const LATER = 'avendb:later';
 /** localStorage: this browser's passkey has no PRF, so avenDB can't open here with it */
@@ -82,11 +90,12 @@ export function failure(e) {
 /**
  * Signs the person in to the API: where this browser holds their account, locked, in the ceremony that unlocks it too,
  * which `say` names as it begins. Their founder, and why avenDB didn't open, if it was to open and didn't; a passkey the
- * API doesn't know (one made for avenDB alone) signs in with a ceremony of its own after.
- * @param {(what: string) => void} say
+ * API doesn't know (one made for avenDB alone) signs in with a ceremony of its own after. The unlock shows its steps by
+ * `starts`.
+ * @param {(what: string) => void} say @param {Starts} [starts]
  * @returns {Promise<{ founder: import('$lib/auth/client').Founder, why: unknown }>}
  */
-export async function signIn(say) {
+export async function signIn(say, starts = UNSHOWN) {
 	await session.load();
 	if (native() || session.phase !== 'closed' || flag(() => sessionStorage, LATER)) {
 		say('Signing in');
@@ -102,7 +111,7 @@ export async function signIn(say) {
 	/** @type {unknown} */
 	let why = null;
 	try {
-		await session.unlock(undefined, { challenge: options.challenge, finish });
+		await session.unlock(starts('open'), { challenge: options.challenge, finish });
 	} catch (e) {
 		// no ceremony, or none that finished: the sign-in alone, unless the person closed the prompt
 		if (!signed && failure(e).kind !== 'held') throw e;
@@ -118,14 +127,15 @@ export async function signIn(say) {
  * Opens avenDB once the person is signed in, naming each step by `say`: unlocks the account this browser holds, or
  * where it holds none, joins their human vault through avenDB's server; and where their passkey has none yet, or they
  * just signed up, founds it, its profile named `name` (or as they signed up). Whether it founded the vault. Fails with
- * `failure`'s kinds: `no-account` asks for the name the new vault's profile takes.
- * @param {(what: string) => void} say @param {string} [name]
+ * `failure`'s kinds: `no-account` asks for the name the new vault's profile takes. Each start shows its steps by
+ * `starts`, a founding's naming last.
+ * @param {(what: string) => void} say @param {string} [name] @param {Starts} [starts]
  */
-export async function open(say, name = '') {
+export async function open(say, name = '', starts = UNSHOWN) {
 	await session.load();
 	if (session.phase === 'closed') {
 		say('Unlocking avenDB');
-		await session.unlock();
+		await session.unlock(starts('open'));
 		return false;
 	}
 	if (session.phase !== 'new') return false;
@@ -133,13 +143,15 @@ export async function open(say, name = '') {
 	const named = (name || signUpName()).trim();
 	if (!named) {
 		say(`Adding ${native() ? 'this Mac' : 'this browser'} to your avenDB`);
-		await session.link(server(), how);
+		await session.link(server(), how, starts('link'));
 		return false;
 	}
 	say('Setting up your human vault');
-	await session.found(false, { ...how, server: server(), backup: true, person: named });
+	const at = starts('found');
+	await session.found(false, { ...how, server: server(), backup: true, person: named }, at);
 	keep(() => sessionStorage, SIGNUP, null);
 	say('Naming your human vault');
+	at.step('profile');
 	await profile(named);
 	return true;
 }
