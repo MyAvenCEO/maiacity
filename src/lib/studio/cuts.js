@@ -191,9 +191,7 @@ export async function createCut(t, at = {}) {
 	world = await worldOf(call);
 	const e = world.entries.find((x) => x.entry === made.entry);
 	if (!e) throw new Error('The cut was made but this Mac does not show it yet.');
-	const cut = timelineOf(e);
-	await proxiesOf(call, world, cut);
-	return cut;
+	return timelineOf(e);
 }
 
 /**
@@ -227,16 +225,17 @@ export async function saveCut(id, t) {
 	// every file whose look on screen changed: its graded still made again (never failing the save itself)
 	const before = timelineOf(e);
 	for (const clip of restill(before, saved)) await ask(call, world, e, 'frame', { clip }).catch(() => null);
-	await proxiesOf(call, world, saved);
 	return saved;
 }
 
 /**
  * Each world shot version cut `t` plays that has no proxy yet, its proxy asked for (the `world-proxy` rule, J10):
- * avenDB's shots only, the API's are the legacy app's to make.
+ * avenDB's shots only, the API's are the legacy app's to make. No longer asked by itself when a cut is made or saved:
+ * a world shot plays live in its world in the 3D and Edit tabs (Samuel 2026-10-18), and a proxy rendered for every shot
+ * of a cut at once ran a second world beside the live one, more than an 8 GB Mac holds.
  * @param {(c: string, ...a: any[]) => Promise<any>} call @param {import('../avendb/vaults.js').WorldView} world @param {any} t
  */
-async function proxiesOf(call, world, t) {
+export async function proxiesOf(call, world, t) {
 	const { shotFrom, versionEntry } = await import('./avenshots.js');
 	const seen = new Set();
 	for (const c of t.clips ?? []) {

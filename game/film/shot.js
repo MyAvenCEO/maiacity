@@ -245,7 +245,7 @@ export function evaluate(spec, t, shape) {
 	const pose = pathOf(spec.camera, spec.seconds)(p);
 	const keyed = fovOf(spec.camera, p, spec.seconds);
 	const composed = keyed ?? (spec.lens.fovTo === undefined ? spec.lens.fov : lerp(spec.lens.fov, spec.lens.fovTo, p));
-	const to = shape ?? spec.aspect, f = spec.framing[to] ?? {};
+	const to = shape ?? spec.aspect, f = spec.framing?.[to] ?? {};
 	let fov = f.fov ?? fovFor(composed, spec.aspect, to);
 	/** @type {Pose} */
 	let out = [...pose];

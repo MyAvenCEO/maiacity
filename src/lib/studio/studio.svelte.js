@@ -71,6 +71,8 @@ const DUCK = 0.5;
 
 /** @param {Clip | null | undefined} c */
 export const isWorld = (c) => c?.kind === 'world';
+/** Whether tab `tab` plays world clips in the live world (the rest play their HD proxies). @param {string} tab */
+export const liveTab = (tab) => tab === '3d' || tab === 'edit';
 /** @param {string} shape */
 export const ratio = (shape) => {
 	const [w, h] = shape.split(':').map(Number);
@@ -1405,7 +1407,7 @@ export class Studio {
 			const v = this.reelVideos[c.id];
 			if (!v) continue;
 			// the live world draws this shot: its proxy (hidden under it) waits, not decoding along
-			const live = c.id === this.picture?.id && isWorld(c) && this.tab === '3d' && this.world.isReady(cached(c.shot, c.shotVersion)?.spec ?? /** @type {any} */ ({}));
+			const live = c.id === this.picture?.id && isWorld(c) && liveTab(this.tab) && this.world.isReady(cached(c.shot, c.shotVersion)?.spec ?? /** @type {any} */ ({}));
 			if (c.id !== this.picture?.id || live) {
 				// waiting in the wings: paused on its first frame
 				if (!v.paused) v.pause();

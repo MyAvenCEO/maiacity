@@ -9,6 +9,7 @@
  */
 
 import { answer } from '$lib/avendb/ops.js';
+import { normalize } from '../../../game/film/shot.js';
 import { asIn, device, homeOf, schemaIn, worldOf } from './cuts.js';
 
 export const SHOT = 'shot';
@@ -54,14 +55,31 @@ export function versionEntry(world, id, v) {
 /** Version entry `e` as the studio's shot. @param {EntryView} e @returns {Shot} */
 export function shotFrom(e) {
 	const r = e.record ?? {};
-	let spec = {};
+	return /** @type {Shot} */ ({ id: shotOf(e), name: r.name ?? 'A shot', project: r.project || null, version: r.version ?? 1, spec: specOf(r.spec), created: at(e), updated: at(e) });
+}
+
+/** when version entry `e` was made @param {EntryView} e */
+const at = (e) => new Date(((/** @type {any} */ (e.record))?.at ?? e.created ?? 0) * 1000).toISOString();
+
+/**
+ * A stored spec as the players read it: checked and completed (game/film/shot.js `normalize`: its framing, cues,
+ * shutter … filled in), else, for one of a world the registry no longer has (the room), as it was with the parts
+ * every player reads made sure of; one that doesn't parse plays as an empty one.
+ * @param {unknown} text @returns {any}
+ */
+export function specOf(text) {
+	let s = {};
 	try {
-		spec = JSON.parse(r.spec);
+		s = typeof text === 'string' ? JSON.parse(text) : (text ?? {});
 	} catch {
-		// a spec that doesn't parse plays as an empty one
+		return {};
 	}
-	const at = new Date((r.at ?? e.created ?? 0) * 1000).toISOString();
-	return /** @type {Shot} */ ({ id: shotOf(e), name: r.name ?? 'A shot', project: r.project || null, version: r.version ?? 1, spec, created: at, updated: at });
+	try {
+		return normalize(s);
+	} catch {
+		const o = /** @type {any} */ (s);
+		return { ...o, framing: o.framing ?? {}, lights: o.lights ?? [], cues: o.cues ?? [], lens: o.lens ?? { fov: 45 }, exposure: o.exposure ?? { meter: 'lock', stops: 0 }, shutter: o.shutter ?? { angle: 180, samples: 1 } };
+	}
 }
 
 /** Every shot this Mac's device holds, at its newest version; none off the Mac app. @param {string} [project] @returns {Promise<Shot[]>} */

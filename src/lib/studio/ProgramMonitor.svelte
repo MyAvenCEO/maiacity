@@ -8,7 +8,7 @@
 <script>
 	import { base } from '$app/paths';
 	import { evaluate } from './shots.js';
-	import { clockText, isWorld, ratio, raw } from './studio.svelte.js';
+	import { clockText, isWorld, liveTab, ratio, raw } from './studio.svelte.js';
 	import Viewer from './Viewer.svelte';
 	import { untrack } from 'svelte';
 	import { nativeFrame } from './luts.js';
@@ -221,9 +221,10 @@
 		}
 		s.scopeCanvas = c;
 	});
-	// the live world: started in its iframe in the 3D tab only, and let go (its WebGL, its domes) when the tab is left —
-	// everywhere else a world shot plays from its HD proxy
-	const inWorld = $derived(s.wantWorld && s.tab === '3d');
+	// the live world: started in its iframe in the 3D and Edit tabs (Samuel 2026-10-18: world shots play without a
+	// proxy, as the V1 intros do), and let go (its WebGL, its domes) when they are left — elsewhere a world shot plays
+	// from its HD proxy where it has one
+	const inWorld = $derived(s.wantWorld && liveTab(s.tab));
 	$effect(() => {
 		if (inWorld && iframe) void s.world.attach(iframe, worldUrl(base, s.filmWorld));
 	});

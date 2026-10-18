@@ -18,7 +18,6 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
-	import Bin from '$lib/studio/Bin.svelte';
 	import Deliveries from '$lib/studio/Deliveries.svelte';
 	import Inspector from '$lib/studio/Inspector.svelte';
 	import CueCard from '$lib/studio/CueCard.svelte';
@@ -160,8 +159,8 @@
 		</header>
 
 		{#if s.tab === '3d'}
-			<!-- the live world: only here — Edit, Grade and Render show each world shot's HD proxy -->
-			<Bin {s} />
+			<!-- the live world: only here — Edit, Grade and Render show each world shot's HD proxy; no library (Samuel
+			     2026-10-18): the stories aside picks the cut, the timeline is the world's own lanes -->
 			<div class="monitors">
 				<ProgramMonitor {s} label="3D · the live world" />
 			</div>
@@ -303,8 +302,9 @@
 		grid-template-columns: 11rem 19rem 1fr 19rem;
 	}
 
-	/* Edit: the stories, the monitors and the inspector; no library */
-	.studio.tab-edit {
+	/* Edit and 3D: the stories, the monitors and the inspector; no library */
+	.studio.tab-edit,
+	.studio.tab-3d {
 		grid-template-columns: 11rem 1fr 17rem;
 		grid-template-areas:
 			'bar bar bar'
