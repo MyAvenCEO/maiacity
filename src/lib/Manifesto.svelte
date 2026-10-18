@@ -58,8 +58,8 @@
 	<section class="prize">
 		<p class="kicker"><span>The prize</span></p>
 		<h2 class="prize-head">
-			<span class="light">Not just a game.</span>
-			<span>A brick builder for a whole <em>civilization.</em></span>
+			<span class="light">Not just another city builder game...</span>
+			<span>but a <em>civilization scale</em> brick builder for a new generation of sovereign cities.</span>
 		</h2>
 		<div class="prize-body">
 			<div class="prize-text">
