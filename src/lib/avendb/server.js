@@ -8,9 +8,9 @@ import { native } from '$lib/native';
 /** The server's relay. */
 export const RELAY = 'https://avendb.maia.city';
 
-/** The server's offer, the same as long as its shelf (g13, since the reset of #896) keeps its device's key. */
+/** The server's offer, the same as long as its shelf (g14, since the reset of #904) keeps its device's key. */
 export const SERVER =
-	'AVENDB1XGGIDUODE5OKXPWRA5AWZQLXYM4RVMOKVBDJSOD77TPJ6N2K6Y3Z3AV4VERR7CN6GGUHFWCDMOABGFZAEXBGABCGGWI2PEI7H4ACHTIBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
+	'AVENDB1KZPJ2G6LQ2JDX6UKS33ECIGLFLD5GGXDSIBFGSLR3OF6ZMHYHXAN7FVCLYRTWGOQGME4I52KMWJGJSWULRRCV4RXZ62GCYTMNWSONHQBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
 
 /** In a dev build alone, a test server's for this tab ($lib/app/entry.js, scripts/entry-walk.mjs): a link can't lead
  *  a person's page to another server. @param {string} key */
