@@ -34,6 +34,8 @@ const MIDDLE_GREY = 0.18;
 const METER_WIDTH = 160;
 /** a time-lapse (meter: 'ramp') is metered every half second of the shot and eased between */
 const RAMP_EVERY = 0.5;
+/** the longest the live viewer waits on a shot's staging (the world built where it stands): after it, drawn as it is */
+const STAGE_LIMIT = 30000;
 
 const sleep = (/** @type {number} */ ms) => new Promise((r) => setTimeout(r, ms));
 /** the page's frames drawn so far: said when a shot takes long to stage, so a page whose frames are held back shows */
@@ -120,8 +122,11 @@ export function startFilm({ base = '' } = {}) {
 		line = run.catch(() => {});
 		return run;
 	};
-	/** Stand where the shot needs the world loaded, build its set, and wait until the world has built what it needs. */
-	async function stage(/** @type {Spec} */ spec) {
+	/**
+	 * Stand where the shot needs the world loaded, build its set, and wait until the world has built what it needs — at
+	 * most `limit` ms (the live viewer's), then drawn as it is; a render waits for all of it.
+	 */
+	async function stage(/** @type {Spec} */ spec, limit = Infinity) {
 		if (!shows(spec)) throw new Error(`this shot is in ${spec.world.sandbox}${spec.world.area ? ` (${spec.world.area})` : ''}, and this page is ${here.sandbox}${here.area ? ` (${here.area})` : ''}: open ${filmPath(spec.world)}`);
 		const v = await mounted();
 		const key = keyOf(spec);
@@ -133,13 +138,23 @@ export function startFilm({ base = '' } = {}) {
 		if (spec.world.props && !w.__props) sets[/** @type {keyof typeof sets} */ (spec.world.props)]?.(spec.world.seed);
 		// the world stands where the shot needs it loaded, and resolves once everything the shot can see is built
 		try {
-			const slow = setTimeout(() => console.warn(`film: ${spec.meta?.name ?? 'a shot'} still being staged after ${LOAD_WAIT / 1000} s (frames drawn: ${frames})`), LOAD_WAIT);
-			try {
-				await v.film.stage({ ...spec.world, name: spec.meta?.name });
-			} finally {
-				clearTimeout(slow);
-			}
-			await settled(v);
+			// the live viewer never waits for ever: a world that never says it is staged (an asset that never came) held
+			// every shot after it in the line, and it showed stand-ins for good. Past the limit the shot is drawn as the
+			// world has it, the rest streaming in
+			const done = (async () => {
+				const slow = setTimeout(() => console.warn(`film: ${spec.meta?.name ?? 'a shot'} still being staged after ${LOAD_WAIT / 1000} s (frames drawn: ${frames})`), LOAD_WAIT);
+				try {
+					await v.film.stage({ ...spec.world, name: spec.meta?.name });
+				} finally {
+					clearTimeout(slow);
+				}
+				await settled(v);
+			})();
+			const late = limit < Infinity && (await Promise.race([done.then(() => false), sleep(limit).then(() => true)]));
+			if (late) {
+				done.catch(() => {});
+				console.warn(`film: ${spec.meta?.name ?? 'a shot'} still loading after ${limit / 1000} s: drawn as it is, the rest streams in`);
+			} else await done;
 			staged = key;
 		} finally {
 			if (staging === key) staging = '';
@@ -279,14 +294,14 @@ export function startFilm({ base = '' } = {}) {
 				else await settled(v);
 			});
 		},
-		/** @param {any[]} specs */
-		prepare(specs) {
+		/** @param {any[]} specs @param {{ live?: boolean }} [opts] `live`: for the live viewer, each staging waited on at most STAGE_LIMIT */
+		prepare(specs, { live = false } = {}) {
 			return one(async () => {
 				const all = specs.map(normal).filter(shows);
 				const v = await mounted();
 				// everything these shots need, kept built whichever shot asks last
 				v.film.keep(all.map((s) => s.world));
-				for (const s of all) await stage(s);
+				for (const s of all) await stage(s, live ? STAGE_LIMIT : Infinity);
 				for (const s of all) await exposureOf(s);
 			});
 		},
@@ -334,7 +349,7 @@ export function startFilm({ base = '' } = {}) {
 			if (staging && staging !== keyOf(spec)) return false;
 			const ev = await exposureOf(spec);
 			// restaged in line with the prepares, never beside one (two at once pull the walker back and forth)
-			if (staged !== keyOf(spec) || !v.film.holds(spec.world)) await one(() => stage(spec));
+			if (staged !== keyOf(spec) || !v.film.holds(spec.world)) await one(() => stage(spec, quality === 'final' ? Infinity : STAGE_LIMIT));
 			clock.enter();
 			w.__filmDraw = true;
 			const os = quality === 'final' ? 1.5 : 1;

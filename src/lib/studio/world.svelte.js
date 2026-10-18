@@ -21,7 +21,7 @@ import { filmPath } from '../../../game/film/worlds.js';
  * The film-mode API of a sandbox (contract C3).
  * @typedef {{
  *   ready(): Promise<void>,
- *   prepare(specs: ShotSpec[]): Promise<void>,
+ *   prepare(specs: ShotSpec[], opts?: { live?: boolean }): Promise<void>,
  *   show(o: ShowArgs): void | boolean | Promise<void | boolean>,
  *   capture?(o: { spec: ShotSpec, t: number, shape: Shape, width: number, height: number }): Promise<ArrayBuffer>,
  *   meter?(spec: ShotSpec): Promise<number>,
@@ -56,12 +56,27 @@ const keys = new WeakMap();
  */
 const specKey = (s) => {
 	let k = keys.get(s);
-	if (k === undefined) keys.set(s, (k = JSON.stringify(s.world ?? null)));
+	if (k === undefined) {
+		// the world's clock is where its story is at, not what is built: the V1 intro's shots, one after another on the
+		// same seat, are one world readied once
+		const { clock, ...w } = /** @type {Record<string, unknown>} */ (s.world ?? {});
+		keys.set(s, (k = JSON.stringify(w)));
+	}
+	return k;
+};
+/** @type {WeakMap<object, string>} */
+const wholes = new WeakMap();
+/** the whole shot as data (its exposure is metered by it), once per spec object @param {ShotSpec} s */
+const wholeKey = (s) => {
+	let k = wholes.get(s);
+	if (k === undefined) wholes.set(s, (k = JSON.stringify(s)));
 	return k;
 };
 /** how often the GPU may drop the world before the viewer stops loading it again (the proxies play) */
 const LOSSES = 3;
 const LOSS_WINDOW = 5 * 60_000;
+/** how often a world page that never came up is loaded again before the stand-ins play for good */
+const RELOADS = 2;
 /** the film page a shot's world is drawn on @param {ShotSpec} s */
 const pathOf = (s) => filmPath(s.world);
 
@@ -103,6 +118,12 @@ export class WorldViewer {
 	 * shown it was a black frame under "live world"
 	 */
 	drawn = $state('');
+	/** how often the page in the iframe was loaded again because it never came up */
+	reloads = 0;
+	/** the shots whose exposure film mode has metered (or is metering), by the whole shot */
+	metered = new Set();
+	/** a metering of the shots ahead under way */
+	metering = false;
 
 	/**
 	 * Starts the world in its iframe and waits for film mode to answer. After `wait` ms without it the viewer says it is
@@ -118,6 +139,8 @@ export class WorldViewer {
 		if (this.url !== url || this.iframe !== iframe) {
 			this.film = null;
 			this.drawn = '';
+			this.reloads = 0;
+			this.metered.clear();
 			this.readyShots.clear();
 			this.preparing.clear();
 			this.queued = null;
@@ -164,7 +187,21 @@ export class WorldViewer {
 			}
 			await new Promise((r) => setTimeout(r, waited > wait ? 2000 : 250));
 		}
-		if (this.iframe === iframe && this.url === url) this.state = 'unavailable';
+		if (this.iframe !== iframe || this.url !== url) return;
+		this.state = 'unavailable';
+		// a page that never came up is loaded again, a few times (it was left a stand-in for good)
+		if (this.reloads >= RELOADS) return;
+		this.reloads++;
+		console.warn(`world: ${url} never came up: loading it again (${this.reloads} of ${RELOADS})`);
+		this.state = 'off';
+		// (the page going is never taken for the fresh one coming)
+		try {
+			/** @type {any} */ (iframe.contentWindow).__lost = true;
+		} catch {
+			/* another origin */
+		}
+		iframe.src = 'about:blank';
+		void this.attach(iframe, url, wait, patience);
 	}
 
 	/**
@@ -189,6 +226,7 @@ export class WorldViewer {
 			console.warn(`world: ${this.error}`);
 			this.film = null;
 			this.drawn = '';
+			this.metered.clear();
 			this.readyShots.clear();
 			this.preparing.clear();
 			this.queued = null;
@@ -230,6 +268,7 @@ export class WorldViewer {
 	detach() {
 		this.film = null;
 		this.drawn = '';
+		this.metered.clear();
 		this.iframe = null;
 		this.url = '';
 		this.state = 'off';
@@ -260,7 +299,7 @@ export class WorldViewer {
 			const t0 = performance.now();
 			const slow = setInterval(() => console.warn(`world: still preparing ${s.meta?.name ?? 'a shot'} after ${Math.round((performance.now() - t0) / 1000)} s`), 15000);
 			const p = film
-				.prepare([s])
+				.prepare([s], { live: true })
 				.then(() => void this.readyShots.add(k))
 				.catch((/** @type {Error} */ e) => {
 					this.error = `prepare: ${e?.message ?? e}`;
@@ -270,6 +309,29 @@ export class WorldViewer {
 			this.preparing.set(k, p);
 		}
 		return Promise.all(specs.map((s) => this.preparing.get(specKey(s)) ?? Promise.resolve())).then(() => {});
+	}
+
+	/**
+	 * Meters the exposure of these shots, one at a time, while `still()` holds (the timeline stopped). Metering a shot
+	 * renders it at five moments across it, which moves a world whose story runs on a timeline (the V1 intro) away and
+	 * back: done while the timeline plays, every cut to a shot not metered yet hitched. Stopped, it is done ahead.
+	 * @param {ShotSpec[]} specs @param {() => boolean} still
+	 */
+	async meterAhead(specs, still) {
+		const film = this.film;
+		if (this.metering || !film?.meter) return;
+		this.metering = true;
+		try {
+			for (const s of specs) {
+				if (!still() || this.film !== film) return;
+				const k = wholeKey(s);
+				if (this.metered.has(k) || !this.holds(s) || !this.readyShots.has(specKey(s))) continue;
+				this.metered.add(k);
+				await film.meter(s).catch(() => this.metered.delete(k));
+			}
+		} finally {
+			this.metering = false;
+		}
 	}
 
 	/**
