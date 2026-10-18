@@ -4,8 +4,6 @@
  * nothing goes to a model whose enclave has not proven itself.
  *
  *   PREMAI_API_KEY      Prem's API key (a GitHub secret, into this container's env by the deploy) — never on a Mac
- *   PREMAI_CLIENT_KEK   optional: our own 32-byte key encryption key (64 hex). Without it, one is made once and kept
- *                       in the database's `secrets`, like the session key. Prem never sees it.
  *   PREMAI_PAUSED=1     the kill switch: no call reaches Prem (every model answers paused), whatever else is set
  *   PREMAI_MAX_PER_MINUTE  optional: the hard limit of calls per model per minute (default 6 for Deepgram, 20 else)
  *   PREMAI_PROXY_URL, PREMAI_ENCLAVE_URL   optional pins; otherwise the values Prem publishes at
@@ -18,8 +16,6 @@
  * the file waits, queued with the reason, and is tried again each round without using up a try; 401/403: our key or
  * its scope; 200 while the SDK's verification failed: a genuine attestation failure. A 429 is transient too.
  */
-import { randomBytes } from "node:crypto";
-import { db } from "./pg";
 
 export type Endpoints = { proxy: string; enclave: string };
 const DEFAULTS: Endpoints = { proxy: "https://gateway.prem.io", enclave: "https://conf-engine.prem.io" };
@@ -57,18 +53,12 @@ export function discover(fetcher: typeof fetch = fetch): Promise<void> {
 }
 
 /**
- * Our key encryption key: PREMAI_CLIENT_KEK when set, else made once and kept in the database's `secrets` (like the
- * session key) — never in the repository, the .env or a log.
+ * No key encryption key (Samuel 2026-10-18: we keep nothing at Prem). The SDK's KEK only wraps the keys of files and RAG
+ * data uploaded to Prem; we only ask chat models, encrypted to the attested enclave by keys made per client. So the
+ * client gets an empty key store and no KEK: its files and tools clients, which would need one, fail if anything ever
+ * calls them.
  */
-export async function clientKek(): Promise<string> {
-  const env = process.env.PREMAI_CLIENT_KEK?.trim();
-  if (env && /^[0-9a-fA-F]{64}$/.test(env)) return env;
-  const read = async () => (await db.query<{ value: string }>("SELECT value FROM secrets WHERE key = 'premai_client_kek'")).rows[0]?.value;
-  const have = await read();
-  if (have) return have;
-  await db.query("INSERT INTO secrets (key, value) VALUES ('premai_client_kek', $1) ON CONFLICT (key) DO NOTHING", [randomBytes(32).toString("hex")]);
-  return (await read())!; // whoever won the race owns the key
-}
+const NOTHING_KEPT = { fileDEKs: new Map<string, Uint8Array>() };
 
 let client: Promise<unknown> | null = null;
 
@@ -79,7 +69,7 @@ export async function prem(): Promise<unknown> {
       await discover();
       // loaded only when first needed: the SDK is large, and nothing else in the API uses it
       const { createRvencClient } = await import("@premai/api-sdk");
-      return (await createRvencClient({ apiKey: process.env.PREMAI_API_KEY!, clientKEK: await clientKek(), config: { endpoints: { ...endpoints } } })) as unknown;
+      return (await createRvencClient({ apiKey: process.env.PREMAI_API_KEY!, dekStore: NOTHING_KEPT, config: { endpoints: { ...endpoints } } })) as unknown;
     })();
     client.catch(() => (client = null));
   }

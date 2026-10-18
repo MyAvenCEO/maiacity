@@ -1014,4 +1014,12 @@ export const MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    // No key for Prem (Samuel 2026-10-18: we keep nothing at Prem): its client takes no key
+    // encryption key any more (prem.ts), so the one made and kept here goes.
+    id: "0051-no-prem-kek",
+    sql: `
+      DELETE FROM secrets WHERE key = 'premai_client_kek';
+    `,
+  },
 ];
