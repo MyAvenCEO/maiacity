@@ -1,8 +1,9 @@
 //! avenDB's files for the studio's Rust (Jobs and studio 2.0): the bytes of a file of the person's vaults, read in
 //! place by range from avenDB's device inside the app (avendb.rs), as the byte source every reader of vault-media and
 //! vault-render takes (`Source::Blob`, as blob.rs gives the legacy vault's); and a file on this Mac brought into a vault
-//! (`put_path`), read back and compared before it counts. Every read and write is one op through the device's `run`,
-//! the same the page sends (avendb/docs/ARCHITECTURE.md §8), so the keys never leave the device.
+//! (`put_path`), read back and compared before it counts. Every read and write is one op the device runs, the same the
+//! page sends (avendb/docs/ARCHITECTURE.md §8), so the keys never leave the device; a read runs on its node itself, its
+//! bytes handed over with no JSON between (`read`).
 //!
 //! The jobs: `studio_job` does one task of a rule the page's worker claimed (src/lib/studio/jobs/worker.js) in the
 //! Mac's lanes (jobs.rs) and answers what it made; `studio_ingest` brings a card's files in (plan J1).
@@ -63,9 +64,18 @@ pub async fn world(app: &AppHandle) -> Result<Value, String> {
     run(app, json!({ "op": "world" })).await
 }
 
-/// File `f`'s plain bytes from `from` to `to`.
+/// File `f`'s plain bytes from `from` to `to`: from the open device's node itself, the bytes handed over as it read
+/// them. The call through the device (`run`, as the page sends it) puts them in base64 in its JSON answer, copied
+/// twice more on the way, every window of every movie the player, the sound and the page read (2026-10-18: The OS
+/// grew to 12.8 GB); it is taken only until a page has opened the device.
 pub async fn read(app: &AppHandle, f: &File, from: u64, to: u64) -> Result<Vec<u8>, String> {
+    use avendb_net::{NoBytes, NoCeremony};
     let op = json!({ "op": "read_file", "root": f.root, "size": f.size, "from": from, "to": to });
+    if let Some(node) = crate::avendb::node(app).await? {
+        let (out, bytes) = node.run(op, None::<NoBytes>, None::<&NoCeremony>).await.map_err(|e| format!("{e:#}"))?;
+        answer(out)?;
+        return bytes.ok_or_else(|| "the device gave no bytes".into());
+    }
     let out = crate::avendb::call(app, "run", vec![op]).await?;
     let bytes = out.get("bytes").and_then(Value::as_str).map(str::to_string);
     answer(out)?;

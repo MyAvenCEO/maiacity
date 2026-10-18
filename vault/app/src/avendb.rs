@@ -66,6 +66,13 @@ pub async fn worker(app: &tauri::AppHandle, device: &str) -> Result<OpenNode, St
     host.node_of(id).ok_or_else(|| "this Mac hosts no such worker (yet): its node opens a few seconds after avenDB does".into())
 }
 
+/// The node of avenDB's device open in the app (`Host::node`), for the app's own Rust to read a file's bytes by range
+/// with nothing between (`aven::read`): none until a page has opened the device.
+pub async fn node(app: &tauri::AppHandle) -> Result<Option<OpenNode>, String> {
+    use tauri::Manager as _;
+    Ok(host_of(&app.state::<Avendb>(), None).await?.node())
+}
+
 async fn call_on(
     state: &Avendb,
     window: Option<tauri::WebviewWindow>,
