@@ -1,7 +1,8 @@
 <!--
 	A vault's artifacts (./artifacts.js): every artifact of the vault the acting vault reads, one source fact each, a
-	bookmarked link, a picture, a clip, a YouTube video, as a list (./ArtifactRow.svelte), narrowed by what they are or
-	a tag, the auto tags `sparks` and `stories` among them, the deleted ones apart. A tap opens one
+	bookmarked link, a picture, a clip, a YouTube video, in the layout every avenDB view has (./Frame.svelte): on the
+	left what narrows them, what they are or a tag, the auto tags `sparks` and `stories` among them, and the deleted
+	ones apart; in the middle them as a list (./ArtifactRow.svelte), newest first. A tap opens one
 	(./Artifact.svelte). Picking some offers a spark that holds them on its canvas. At the foot, docked just above the
 	app's nav pill, one row to capture: paste links or drop files, each an artifact of its own at once, each file into
 	the Library first, the artifact showing it. A Library file is only bytes; what they are is the artifact's. Nothing
@@ -11,6 +12,7 @@
 <script>
 	import { addingArtifact, ARTIFACT, fromFile, fromLink, isArtifact, LOOKS, lookOf } from './artifacts.js';
 	import { mediaOf } from './files.js';
+	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import ArtifactRow from './ArtifactRow.svelte';
 	import { allowed, creatable, may } from './ops.js';
@@ -40,6 +42,8 @@
 	let only = $state('');
 	let bin = $state(false);
 	const binned = $derived(bin && deleted.length > 0);
+	/** whether there is anything to narrow: the left side shows only then */
+	const narrows = $derived(live.length > 0 || deleted.length > 0);
 	const shown = $derived.by(() => {
 		if (binned) return deleted;
 		if (only.startsWith('#')) return live.filter((e) => e.tags?.includes(only.slice(1)));
@@ -130,138 +134,144 @@
 	}
 </script>
 
-{#if live.length || deleted.length}
-	<nav class="filter" aria-label="Narrow the artifacts">
-		<button class="chip" class:on={!only && !binned} aria-pressed={!only && !binned} onclick={() => ([only, bin] = ['', false])}
-			>All {live.length}</button
+<!-- the left side: what narrows the artifacts, what they are or a tag, or the deleted ones instead -->
+{#snippet narrow()}
+	<h3 class="nav-group">Artifacts</h3>
+	<button class="nav-item" class:on={!only && !binned} aria-pressed={!only && !binned} data-pick onclick={() => ([only, bin] = ['', false])}
+		><Icon name="artifact" size={16} /><span>All</span><small>{live.length}</small></button
+	>
+	{#each looks.filter((x) => x.n) as x (x.l)}
+		{@const on = only === x.l && !binned}
+		<button class="nav-item" class:on aria-pressed={on} data-pick onclick={() => ([only, bin] = [on ? '' : x.l, false])}
+			><Icon name={x.icon} size={16} /><span>{x.name}</span><small>{x.n}</small></button
 		>
-		{#each looks.filter((x) => x.n) as x (x.l)}
-			{@const on = only === x.l && !binned}
-			<button class="chip" class:on aria-pressed={on} onclick={() => ([only, bin] = [on ? '' : x.l, false])}
-				><Icon name={x.icon} size={12} /> {x.name} <small>{x.n}</small></button
-			>
-		{/each}
+	{/each}
+	{#if deleted.length}
+		<button class="nav-item" class:on={binned} aria-pressed={binned} data-pick onclick={() => (bin = !binned)}
+			><Icon name="trash" size={16} /><span>Deleted</span><small>{deleted.length}</small></button
+		>
+	{/if}
+	{#if tags.length}
+		<h3 class="nav-group">Tags</h3>
 		{#each tags as t (t.tag)}
 			{@const on = only === `#${t.tag}` && !binned}
-			<button class="chip tag" class:on aria-pressed={on} onclick={() => ([only, bin] = [on ? '' : `#${t.tag}`, false])}
-				>#{t.tag} <small>{t.uses}</small></button
+			<button class="nav-item" class:on aria-pressed={on} data-pick onclick={() => ([only, bin] = [on ? '' : `#${t.tag}`, false])}
+				><Icon name="tag" size={16} /><span>{t.tag}</span><small>{t.uses}</small></button
 			>
 		{/each}
-		{#if deleted.length}
-			<button class="chip bin" class:on={binned} aria-pressed={binned} onclick={() => (bin = !binned)}
-				><Icon name="trash" size={12} /> Deleted <small>{deleted.length}</small></button
-			>
-		{/if}
-	</nav>
-{/if}
+	{/if}
+{/snippet}
 
-{#if binned}
-	<p class="soft binned">Deleted artifacts keep every edit. Open one to bring it back.</p>
-{/if}
+<Frame nav={narrows ? narrow : undefined} navLabel="Narrow the artifacts" navIcon="artifact">
+	{#if binned}
+		<p class="soft binned">Deleted artifacts keep every edit. Open one to bring it back.</p>
+	{/if}
 
-{#if !seen.length && vault !== actor}
-	<p class="soft">
-		{nameOf(as)} can't see {hidden ? `the ${count(hidden, 'entry', 'entries')}` : 'anything'} in {nameOf(here)}: none of
-		it is shared with {nameOf(as)}. A vault that owns it can share some of it with {nameOf(as)} in
-		<button class="link" onclick={onaccess}>Sharing</button>.
-	</p>
-{:else if shown.length}
-	<ul class="list">
-		{#each shown as it (it.entry)}
-			<ArtifactRow
-				{world}
-				{api}
-				item={it}
-				picked={pickedNow.includes(it.entry)}
-				onpick={binned ? undefined : (on) => pick(it.entry, on)}
-			/>
-		{/each}
-	</ul>
-{:else}
-	<p class="soft">
-		No artifact here{asked ? ' yet: paste a link or drop a picture or a clip below.' : '.'} Each source is an artifact:
-		a link, a picture, a video. Sparks hold them on their canvas.
-	</p>
-{/if}
-
-{#if hidden > 0 && seen.length}
-	<p class="soft">{count(hidden, 'more entry', 'more entries')} here {nameOf(as)} can't read.</p>
-{/if}
-
-<!-- docked just above the app's nav pill: the artifacts picked, or one row to capture -->
-{#if pickedNow.length}
-	<div class="dock picked" role="region" aria-label="The artifacts picked">
-		<b>{pickedNow.length} picked</b>
-		<input class="name" bind:value={sparkTitle} placeholder="The spark’s title" aria-label="The spark’s title" />
-		<button
-			class="btn primary"
-			disabled={busy || askedSpark === null}
-			title={askedSpark === null ? `${nameOf(as)} can’t add a spark here` : undefined}
-			onclick={spark}><Icon name="spark" size={14} /> Spark</button
-		>
-		<button class="btn quiet round" aria-label="Clear the picked" onclick={() => (picked = [])}
-			><Icon name="close" size={14} /></button
-		>
-	</div>
-{:else if asked}
-	<form
-		class="dock capture"
-		class:over
-		aria-label="Capture an artifact"
-		title={unadded ? `${nameOf(as)} can’t add an artifact here: ${unadded}` : undefined}
-		onsubmit={(e) => (e.preventDefault(), capture())}
-		ondragover={(e) => (e.preventDefault(), (over = true))}
-		ondragleave={() => (over = false)}
-		ondrop={(e) => (e.preventDefault(), (over = false), take(e.dataTransfer?.files))}
-	>
-		{#if files.length || tagsOpen}
-			<div class="extra">
-				{#each files as f, i (i)}
-					<span class="chip"
-						>{f.name}
-						<button type="button" aria-label="Leave out {f.name}" onclick={() => (files = files.filter((_, j) => j !== i))}
-							><Icon name="close" size={11} /></button
-						></span
-					>
-				{/each}
-				{#if tagsOpen}
-					<input class="tags" bind:value={tagging} placeholder="Tags, by commas" aria-label="Their tags" />
-				{/if}
-			</div>
-		{/if}
-		<div class="one">
-			<label class="round attach" class:disabled={busy || !!unadded || askedFile === null} title="Add files">
-				<Icon name="plus" size={18} />
-				<input
-					type="file"
-					multiple
-					aria-label="Add files"
-					disabled={busy || !!unadded || askedFile === null}
-					onchange={(e) => (take(e.currentTarget.files), (e.currentTarget.value = ''))}
+	{#if !seen.length && vault !== actor}
+		<p class="soft">
+			{nameOf(as)} can't see {hidden ? `the ${count(hidden, 'entry', 'entries')}` : 'anything'} in {nameOf(here)}: none of
+			it is shared with {nameOf(as)}. A vault that owns it can share some of it with {nameOf(as)} in
+			<button class="link" onclick={onaccess}>Sharing</button>.
+		</p>
+	{:else if shown.length}
+		<ul class="list">
+			{#each shown as it (it.entry)}
+				<ArtifactRow
+					{world}
+					{api}
+					item={it}
+					picked={pickedNow.includes(it.entry)}
+					onpick={binned ? undefined : (on) => pick(it.entry, on)}
 				/>
-			</label>
-			<input
-				class="line"
-				bind:value={line}
-				placeholder={unadded ? `${nameOf(as)} can’t add an artifact here` : 'Paste links, drop pictures or clips'}
-				aria-label="Links"
-				disabled={busy || !!unadded}
-			/>
+			{/each}
+		</ul>
+	{:else}
+		<p class="soft">
+			No artifact here{asked ? ' yet: paste a link or drop a picture or a clip below.' : '.'} Each source is an artifact:
+			a link, a picture, a video. Sparks hold them on their canvas.
+		</p>
+	{/if}
+
+	{#if hidden > 0 && seen.length}
+		<p class="soft">{count(hidden, 'more entry', 'more entries')} here {nameOf(as)} can't read.</p>
+	{/if}
+
+	<!-- docked just above the app's nav pill: the artifacts picked, or one row to capture -->
+	{#if pickedNow.length}
+		<div class="dock picked" class:beside={narrows} role="region" aria-label="The artifacts picked">
+			<b>{pickedNow.length} picked</b>
+			<input class="name" bind:value={sparkTitle} placeholder="The spark’s title" aria-label="The spark’s title" />
 			<button
-				type="button"
-				class="round hash"
-				class:on={tagsOpen || !!tagging.trim()}
-				aria-pressed={tagsOpen}
-				title="Tags"
-				aria-label="Tags"
-				onclick={() => (tagsOpen = !tagsOpen)}>#</button
+				class="btn primary"
+				disabled={busy || askedSpark === null}
+				title={askedSpark === null ? `${nameOf(as)} can’t add a spark here` : undefined}
+				onclick={spark}><Icon name="spark" size={14} /> Spark</button
 			>
-			<button class="round send" disabled={busy || !!unadded || !capturing} aria-label="Add"
-				><Icon name="check" size={18} /></button
+			<button class="btn quiet round" aria-label="Clear the picked" onclick={() => (picked = [])}
+				><Icon name="close" size={14} /></button
 			>
 		</div>
-	</form>
-{/if}
+	{:else if asked}
+		<form
+			class="dock capture"
+			class:beside={narrows}
+			class:over
+			aria-label="Capture an artifact"
+			title={unadded ? `${nameOf(as)} can’t add an artifact here: ${unadded}` : undefined}
+			onsubmit={(e) => (e.preventDefault(), capture())}
+			ondragover={(e) => (e.preventDefault(), (over = true))}
+			ondragleave={() => (over = false)}
+			ondrop={(e) => (e.preventDefault(), (over = false), take(e.dataTransfer?.files))}
+		>
+			{#if files.length || tagsOpen}
+				<div class="extra">
+					{#each files as f, i (i)}
+						<span class="chip"
+							>{f.name}
+							<button type="button" aria-label="Leave out {f.name}" onclick={() => (files = files.filter((_, j) => j !== i))}
+								><Icon name="close" size={11} /></button
+							></span
+						>
+					{/each}
+					{#if tagsOpen}
+						<input class="tags" bind:value={tagging} placeholder="Tags, by commas" aria-label="Their tags" />
+					{/if}
+				</div>
+			{/if}
+			<div class="one">
+				<label class="round attach" class:disabled={busy || !!unadded || askedFile === null} title="Add files">
+					<Icon name="plus" size={18} />
+					<input
+						type="file"
+						multiple
+						aria-label="Add files"
+						disabled={busy || !!unadded || askedFile === null}
+						onchange={(e) => (take(e.currentTarget.files), (e.currentTarget.value = ''))}
+					/>
+				</label>
+				<input
+					class="line"
+					bind:value={line}
+					placeholder={unadded ? `${nameOf(as)} can’t add an artifact here` : 'Paste links, drop pictures or clips'}
+					aria-label="Links"
+					disabled={busy || !!unadded}
+				/>
+				<button
+					type="button"
+					class="round hash"
+					class:on={tagsOpen || !!tagging.trim()}
+					aria-pressed={tagsOpen}
+					title="Tags"
+					aria-label="Tags"
+					onclick={() => (tagsOpen = !tagsOpen)}>#</button
+				>
+				<button class="round send" disabled={busy || !!unadded || !capturing} aria-label="Add"
+					><Icon name="check" size={18} /></button
+				>
+			</div>
+		</form>
+	{/if}
+</Frame>
 
 <style>
 	/* one row docked just above the app's nav pill (--nav-room, src/app.css), over the pages' column on a wider screen */
@@ -282,8 +292,9 @@
 		backdrop-filter: blur(10px);
 	}
 
+	/* beside the left side of the layout (./Frame.svelte), where it stands */
 	@media (min-width: 761px) {
-		.dock {
+		.dock.beside {
 			left: calc(15.5rem + 1rem);
 			right: 1rem;
 		}
@@ -423,41 +434,8 @@
 		gap: 0.3rem;
 	}
 
-	.filter {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.3rem;
-		margin: 0 0 1rem;
-	}
-
-	.filter button {
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3rem;
-		border: 1px solid transparent;
-		font: inherit;
-		font-size: 0.78rem;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	.filter button small {
-		color: var(--soft);
-	}
-
-	.filter button.on {
-		border-color: var(--accent);
-		background: #d6e8e4;
-		color: #1f4f47;
-	}
-
-	.filter .tag {
-		background: #e4e9f3;
-		color: #2b3f63;
-	}
-
 	.binned {
-		margin: -0.4rem 0 1rem;
+		margin: 0 0 1rem;
 		font-size: 0.82rem;
 	}
 

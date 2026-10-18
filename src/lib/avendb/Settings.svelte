@@ -1,32 +1,36 @@
 <!--
-	A vault's settings, as its aside lists them: About (what it is, by the kind table, who approves a change to it and
-	how many of its owners, how this browser acts for it), Owners and devices (who owns it, and which vault may own it
-	too, as the kind table says; what it owns, each vault with its devices and shares (./Owned.svelte): the person's
-	aven and its agents, an aven's agents, avenCEO GmbH's server; the devices that act for it,
-	each removed as a lost one is, and for the person's own vault what each of their devices keeps, a full copy or a
-	light one, this browser's name, how deep its queries read (Query limits), linking the next device and forgetting
-	this one; in the Mac app, its Drives: each volume plugged in, used for avenDB as a device of the vault of its own in
-	one ceremony of the passkey, and each
-	drive joined, plugged in or, unplugged, when it last checked what it holds), and Sharing, the one place that says who has the vault: each vault
-	it is shared with, and Everyone where it is public, one line each, with its shares (level · what, and what each
-	reaches now; shares on chosen entries folded into one line a level; a standing grant marked "All your vaults, now
-	and later", revoked on every vault it reached) and the devices of theirs it is on, each opening
-	it or only keeping an encrypted copy; the one Share form; what others share with the vault; and asking for access
-	(./Ask.svelte), as the vault where the person acts for it, else asking it, with the requests their vaults made and
-	the answers. All of it is the
-	device's: its world (avendb-browser's `World`) and its list of the shares over the vault (the `shares` op), which
-	says too whether the acting vault may revoke each; every other button shows only where the device answers a dry run
-	of it (`may`), and every change goes out as one op, acting for the acting vault, which the rules check against what
-	is shared with it.
+	A vault's settings, in the layout every avenDB view has (./Frame.svelte): on the left its three pages, About, Owners
+	& devices and Sharing (`#about`, `#members`, `#sharing`), and under them the parts of the page open, to show one of
+	them alone; in the middle that page. About: what it is, by the kind table, its name and who sees it, that it is
+	quantum-proof, and for the person's own vault its backup. Owners and devices: who owns it, and which vault may own
+	it too, as the kind table says; what it owns, each vault with its devices and shares (./Owned.svelte): the person's
+	aven and its agents, an aven's agents, avenCEO GmbH's server; the devices that act for it, each removed as a lost
+	one is, and for the person's own vault what each of their devices keeps, a full copy or a light one, this browser's
+	name, how deep its queries read (Query limits), linking the next device and forgetting this one; in the Mac app, its
+	Drives: each volume plugged in, used for avenDB as a device of the vault of its own in one ceremony of the passkey,
+	and each drive joined, plugged in or, unplugged, when it last checked what it holds. Sharing, the one place that
+	says who has the vault: each vault it is shared with, and Everyone where it is public, one line each, with its
+	shares (level · what, and what each reaches now; shares on chosen entries folded into one line a level; a standing
+	grant marked "All your vaults, now and later", revoked on every vault it reached) and the devices of theirs it is
+	on, each opening it or only keeping an encrypted copy; the one Share form; what others share with the vault; and
+	asking for access (./Ask.svelte), as the vault where the person acts for it, else asking it, with the requests
+	their vaults made and the answers. On the right, on every page, the vault itself: its kind and name, its id, its
+	root, how many of its owners approve a change, and how this browser acts for it. All of it is the device's: its
+	world (avendb-browser's `World`) and its list of the shares over the vault (the `shares` op), which says too
+	whether the acting vault may revoke each; every other button shows only where the device answers a dry run of it
+	(`may`), and every change goes out as one op, acting for the acting vault, which the rules check against what is
+	shared with it.
 -->
 <script>
 	import { native } from '$lib/native';
 	import { sure } from '$lib/app/sure.js';
 	import Ask from './Ask.svelte';
+	import Frame from './Frame.svelte';
+	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
 	import { allowed, may, read } from './ops.js';
 	import Ops from './Ops.svelte';
-	import Owned from './Owned.svelte';
+	import Owned, { ownedTitle } from './Owned.svelte';
 	import Share from './Share.svelte';
 	import {
 		acting,
@@ -60,6 +64,7 @@
 
 	/** @typedef {import('./vaults.js').ShareRow} ShareRow */
 	/** @typedef {import('./vaults.js').Verdict} Verdict */
+	/** @typedef {import('svelte').ComponentProps<typeof Icon>['name']} IconName */
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean,
@@ -387,6 +392,53 @@
 		ejected: 'Ejected: avenDB holds nothing open on it, so you can unplug it.',
 		busy: 'Under way…'
 	};
+
+	/** the settings' pages, as the left side lists them: each its address, its name and its icon */
+	const TABS = /** @type {const} */ ([
+		['about', 'About', 'info'],
+		['members', 'Owners & devices', 'users'],
+		['sharing', 'Sharing', 'share']
+	]);
+	/**
+	 * The parts of the page open, as the left side lists them under its pages: each its key, its name, its icon, and
+	 * how many it lists where it lists some; only those the page shows here.
+	 * @type {{ key: string, name: string, icon: IconName, n?: number }[]}
+	 */
+	const parts = $derived.by(() => {
+		const own = vault === world.mine;
+		const owned = ownedTitle(world, vault);
+		/** @type {Record<string, { key: string, name: string, icon: IconName, n?: number, when?: unknown }[]>} */
+		const of = {
+			about: [
+				{ key: 'name', name: 'Name', icon: 'text' },
+				{ key: 'quantum', name: 'Quantum-proof', icon: 'lock' },
+				{ key: 'backup', name: 'Backup', icon: 'upload', when: own && backs != null }
+			],
+			members: [
+				{ key: 'owners', name: 'Owners', icon: 'key', n: v.owners.length },
+				{ key: 'owned', name: owned, icon: 'users', when: owned },
+				{ key: 'devices', name: 'Devices', icon: 'sync', n: v.devices.length },
+				{ key: 'drives', name: 'Drives', icon: 'file', n: drives?.drives.length, when: own && drives },
+				{ key: 'link', name: 'Link another device', icon: 'link', when: own },
+				{ key: 'agents', name: `Agents on ${here}`, icon: 'code', when: own && sockets },
+				{ key: 'limits', name: 'Query limits', icon: 'search', when: own && limits },
+				{ key: 'here', name: Here, icon: 'info', when: own }
+			],
+			sharing: [
+				{ key: 'people', name: 'Who has it', icon: 'users', n: people.length },
+				{ key: 'held', name: 'What others share with it', icon: 'share', n: held.length },
+				{ key: 'ask', name: 'Ask for access', icon: 'access' }
+			]
+		};
+		return of[tab].filter((x) => !('when' in x) || !!x.when);
+	});
+	/** the part of the page the left side picked, '' for all of it: each page, and each vault, opens on all of it */
+	let section = $derived.by(() => {
+		void [tab, vault];
+		return '';
+	});
+	/** Whether the page shows its part `key`: all of them, or the one picked while the page has it. @param {string} key */
+	const shows = (key) => !section || section === key || !parts.some((x) => x.key === section);
 </script>
 
 <!-- what a device keeps, one switch: the chosen half filled -->
@@ -404,537 +456,584 @@
 	</span>
 {/snippet}
 
-{#if tab === 'about'}
-	<div class="cards">
-		<article class="card">
-			<div class="row head">
-				<Mark vault={v} size={52} />
-				<div>
-					<h3>{nameOf(v)}</h3>
-					<span class="chip accent">{KINDS[v.kind]}</span>
-				</div>
-			</div>
-			<p class="soft">{kindHint(world, v.kind)}</p>
-			{#if v.via}
-				{#if naming === null}
-					<button class="btn" disabled={busy} onclick={() => (naming = v.name ?? '')}>Rename</button>
-				{:else}
-					<div class="row">
-						<input class="field" bind:value={naming} aria-label="Its name" />
+<!-- down the left, the settings' pages, then the parts of the page open, to show one alone -->
+{#snippet menu()}
+	<h3 class="nav-group">Settings</h3>
+	{#each TABS as [id, label, icon] (id)}
+		<a class="nav-item" class:on={tab === id} href="#{id}" aria-current={tab === id ? 'page' : undefined} onclick={() => (section = '')}
+			><Icon name={icon} size={16} /><span>{label}</span></a
+		>
+	{/each}
+	<h3 class="nav-group">{TABS.find(([id]) => id === tab)?.[1]}</h3>
+	<button class="nav-item" class:on={!section} aria-pressed={!section} data-pick onclick={() => (section = '')}
+		><Icon name="board" size={16} /><span>Everything</span></button
+	>
+	{#each parts as x (x.key)}
+		<button class="nav-item" class:on={section === x.key} aria-pressed={section === x.key} data-pick onclick={() => (section = x.key)}
+			><Icon name={x.icon} size={16} /><span>{x.name}</span>{#if x.n != null}<small>{x.n}</small>{/if}</button
+		>
+	{/each}
+{/snippet}
+
+<!-- on the right, on every page, the vault itself: what it is, and who decides a change to it -->
+{#snippet facts()}
+	<header class="about-head">
+		<small>{KINDS[v.kind]}</small>
+		<h3>{nameOf(v)}</h3>
+	</header>
+	<h4 class="side-head">Who decides</h4>
+	<dl>
+		<dt>Its id</dt>
+		<dd class="mono" title={v.id}>{short(v.id)}</dd>
+		{#if v.root}
+			<dt>Its root</dt>
+			<dd>
+				Passkey <span class="mono">{short(v.root)}</span>: it approves every change alone{recovers
+					? '; the master recovery key can also recover it while avenDB is young'
+					: ''}.
+			</dd>
+		{/if}
+		<dt>A change needs</dt>
+		<dd>
+			{#if v.via && v.owners.length > 1}
+				{v.root ? 'its root, or ' : ''}
+				<select class="field count" bind:value={threshold} aria-label="How many of its owners approve a change">
+					{#each v.owners.map((_, i) => i + 1) as n (n)}<option value={n}>{n}</option>{/each}
+				</select>
+				of its {count(v.owners.length, 'owner')} to approve.
+				{#if threshold !== v.threshold}
+					<span class="row">
 						<button
 							class="btn primary"
-							disabled={busy || !naming.trim() || !lets('profile')}
-							title={barred('profile') || undefined}
-							onclick={async () =>
-								(await api.run('Renaming', { op: 'profile', vault, name: naming?.trim() })) && (naming = null)}
+							disabled={busy || !lets('threshold')}
+							onclick={() => api.run('Changing who decides', { op: 'settings', vault, threshold })}>Save</button
 						>
-							Save
-						</button>
-						<button class="btn quiet" onclick={() => (naming = null)}>Cancel</button>
-					</div>
-					<p class="soft">Its name is its profile, an entry of it, end-to-end encrypted like the others.</p>
+						<button class="btn quiet" onclick={() => (threshold = v.threshold)}>Cancel</button>
+					</span>
+					{#if barred('threshold')}<small class="soft">It can’t: {barred('threshold')}.</small>{/if}
 				{/if}
-				<!-- its name is public by default (./vaults.js NAME_TYPES): its owners keep it to those it shares with here -->
-				<div class="row">
-					<p class="soft">
-						{namePublic ? 'Everyone sees its name: its profile is Public.' : 'Only those it shares with see its name.'}
-					</p>
-					<button
-						class="btn quiet"
-						disabled={busy}
-						onclick={() =>
-							namePublic
-								? api.run('Keeping its name private', { op: 'revoke', share: namePublic.id, as: vault })
-								: api.run('Making its name public', nameShare(vault))}
-					>
-						{namePublic ? 'Keep it private' : 'Make it public'}
-					</button>
-				</div>
+			{:else}
+				{v.root ? 'its root, or ' : ''}{v.threshold} of its {count(v.owners.length, 'owner')} to approve.
 			{/if}
-		</article>
-		<article class="card">
-			<h3>Who decides</h3>
-			<dl>
-				<dt>Its id</dt>
-				<dd class="mono" title={v.id}>{short(v.id)}</dd>
-				{#if v.root}
-					<dt>Its root</dt>
-					<dd>
-						Passkey <span class="mono">{short(v.root)}</span>: it approves every change alone{recovers
-							? '; the master recovery key can also recover it while avenDB is young'
-							: ''}.
-					</dd>
-				{/if}
-				<dt>A change needs</dt>
-				<dd>
-					{#if v.via && v.owners.length > 1}
-						{v.root ? 'its root, or ' : ''}
-						<select class="field count" bind:value={threshold} aria-label="How many of its owners approve a change">
-							{#each v.owners.map((_, i) => i + 1) as n (n)}<option value={n}>{n}</option>{/each}
-						</select>
-						of its {count(v.owners.length, 'owner')} to approve.
-						{#if threshold !== v.threshold}
-							<span class="row">
+		</dd>
+		<dt>{Here}</dt>
+		<dd>{actsFor}</dd>
+	</dl>
+{/snippet}
+
+<Frame nav={menu} aside={facts} navLabel="{nameOf(v)}’s settings" asideLabel="Who decides, and its id" asideIcon="key">
+	{#if tab === 'about'}
+		<div class="cards">
+			{#if shows('name')}
+				<article class="card">
+					<div class="row head">
+						<Mark vault={v} size={52} />
+						<div>
+							<h3>{nameOf(v)}</h3>
+							<span class="chip accent">{KINDS[v.kind]}</span>
+						</div>
+					</div>
+					<p class="soft">{kindHint(world, v.kind)}</p>
+					{#if v.via}
+						{#if naming === null}
+							<button class="btn" disabled={busy} onclick={() => (naming = v.name ?? '')}>Rename</button>
+						{:else}
+							<div class="row">
+								<input class="field" bind:value={naming} aria-label="Its name" />
 								<button
 									class="btn primary"
-									disabled={busy || !lets('threshold')}
-									onclick={() => api.run('Changing who decides', { op: 'settings', vault, threshold })}>Save</button
+									disabled={busy || !naming.trim() || !lets('profile')}
+									title={barred('profile') || undefined}
+									onclick={async () =>
+										(await api.run('Renaming', { op: 'profile', vault, name: naming?.trim() })) && (naming = null)}
 								>
-								<button class="btn quiet" onclick={() => (threshold = v.threshold)}>Cancel</button>
-							</span>
-							{#if barred('threshold')}<small class="soft">It can’t: {barred('threshold')}.</small>{/if}
+									Save
+								</button>
+								<button class="btn quiet" onclick={() => (naming = null)}>Cancel</button>
+							</div>
+							<p class="soft">Its name is its profile, an entry of it, end-to-end encrypted like the others.</p>
 						{/if}
-					{:else}
-						{v.root ? 'its root, or ' : ''}{v.threshold} of its {count(v.owners.length, 'owner')} to approve.
+						<!-- its name is public by default (./vaults.js NAME_TYPES): its owners keep it to those it shares with here -->
+						<div class="row">
+							<p class="soft">
+								{namePublic ? 'Everyone sees its name: its profile is Public.' : 'Only those it shares with see its name.'}
+							</p>
+							<button
+								class="btn quiet"
+								disabled={busy}
+								onclick={() =>
+									namePublic
+										? api.run('Keeping its name private', { op: 'revoke', share: namePublic.id, as: vault })
+										: api.run('Making its name public', nameShare(vault))}
+							>
+								{namePublic ? 'Keep it private' : 'Make it public'}
+							</button>
+						</div>
 					{/if}
-				</dd>
-				<dt>{Here}</dt>
-				<dd>{actsFor}</dd>
-			</dl>
-		</article>
-		<article class="card">
-			<h3>Quantum-proof</h3>
-			<p><span class="chip ok">Post-quantum only</span></p>
-			<p class="soft">
-				Every edit carries an SLH-DSA signature, and only that signature counts: a passkey's WebAuthn assertion beside
-				it only shows a person was there. Keys are sealed with X-Wing and Classic McEliece, every connection agrees its
-				keys with X25519MLKEM768, and every edit, vault, share, signer and file is named by a BLAKE3 hash.
-			</p>
-		</article>
-		{#if vault === world.mine && backs != null}
-			<article class="card">
-				<h3>Backup</h3>
-				<p>
-					<span class="chip" class:ok={backs}>{backs ? 'Backed up' : 'Relay only'}</span>
-				</p>
-				<p class="soft">
-					{backs
-						? "avenDB's server keeps your vault encrypted, which it can never open, so your passkey alone brings it back with every device lost."
-						: "avenDB's server only helps your devices find and reach each other and keeps nothing: your vault lives on your devices alone, so losing them all loses it."}
-				</p>
-				<p class="soft">Turning it off keeps what the server holds already; it just stops taking more.</p>
-				<button
-					class="btn"
-					disabled={busy || !lets('backUp')}
-					title={barred('backUp') || undefined}
-					onclick={() => api.run(backs ? 'Turning backups off' : 'Turning backups on', { op: 'back_up', on: !backs })}
-				>
-					{backs ? 'Turn backups off' : 'Turn backups on'}
-				</button>
-			</article>
-		{/if}
-	</div>
-{:else if tab === 'members'}
-	<div class="cards">
-		<article class="card">
-			<h3>Owners</h3>
-			<ul class="list grants">
-				{#each v.owners as o (('vault' in o ? o.vault : o.signer))}
-					{@const row = ownerRow(o)}
-					<li>
-						<span class="cap">
-							{#if 'vault' in o}
-								<Mark vault={byId.get(o.vault)} size={28} />
-								<b>{nameOf(byId.get(o.vault))}</b>
-								<span class="soft">{KINDS[byId.get(o.vault)?.kind ?? 'human']}</span>
-							{:else}
-								<span class="key">{o.recovery ? '🛟' : '🔑'}</span>
-								<b>{ownerLabel(o)}</b>
-								<span class="soft mono">{short(o.signer)}</span>
-							{/if}
-						</span>
-						{#if row && allowed(row.revoke)}
-							<button class="btn quiet danger" disabled={busy} onclick={() => removeOwner(o)}>Remove</button>
-						{/if}
-					</li>
-				{/each}
-			</ul>
-			<p class="soft">{v.threshold} of {count(v.owners.length, 'owner')} approve{v.owners.length === 1 ? 's' : ''} a change.</p>
-			{#if actor === vault && takesOwner}
-				<div class="add-owner">
-					<select class="field" bind:value={newOwner} aria-label="A vault to make an owner too">
-						<option value="">A vault to make an owner too…</option>
-						{#each ownable as x (x.id)}<option value={x.id}>{nameOf(x)} · {KINDS[x.kind]}</option>{/each}
-						<option value={BY_ID}>A person’s vault by its id…</option>
-					</select>
+				</article>
+			{/if}
+			{#if shows('quantum')}
+				<article class="card">
+					<h3>Quantum-proof</h3>
+					<p><span class="chip ok">Post-quantum only</span></p>
+					<p class="soft">
+						Every edit carries an SLH-DSA signature, and only that signature counts: a passkey's WebAuthn assertion beside
+						it only shows a person was there. Keys are sealed with X-Wing and Classic McEliece, every connection agrees its
+						keys with X25519MLKEM768, and every edit, vault, share, signer and file is named by a BLAKE3 hash.
+					</p>
+				</article>
+			{/if}
+			{#if vault === world.mine && backs != null && shows('backup')}
+				<article class="card">
+					<h3>Backup</h3>
+					<p>
+						<span class="chip" class:ok={backs}>{backs ? 'Backed up' : 'Relay only'}</span>
+					</p>
+					<p class="soft">
+						{backs
+							? "avenDB's server keeps your vault encrypted, which it can never open, so your passkey alone brings it back with every device lost."
+							: "avenDB's server only helps your devices find and reach each other and keeps nothing: your vault lives on your devices alone, so losing them all loses it."}
+					</p>
+					<p class="soft">Turning it off keeps what the server holds already; it just stops taking more.</p>
 					<button
 						class="btn"
-						disabled={busy || !/^[0-9a-f]{64}$/.test(newcomer)}
-						onclick={() => addOwner(newcomer).then(() => ([newOwner, ownerId] = ['', '']))}
-						>{!newcomer || theirs(newcomer) ? 'Add as owner' : 'Invite'}</button
+						disabled={busy || !lets('backUp')}
+						title={barred('backUp') || undefined}
+						onclick={() => api.run(backs ? 'Turning backups off' : 'Turning backups on', { op: 'back_up', on: !backs })}
 					>
-				</div>
-				{#if newOwner === BY_ID}
-					<input class="field" bind:value={ownerId} placeholder="Their vault's id: 64 hex digits" aria-label="Their vault's id" />
-				{/if}
-				<p class="soft">
-					A new owner acts for it as you do. One of your own vaults is added at once; anyone else's is invited, and
-					added once they accept with their passkey and you finish it with yours. To hand it over, add the new owner
-					first, then remove the old one.
-				</p>
+						{backs ? 'Turn backups off' : 'Turn backups on'}
+					</button>
+				</article>
 			{/if}
-			{#if invited.length}
-				<ul class="list grants">
-					{#each invited as m (m.entry)}
-						<li>
-							<span class="cap">
-								<Mark vault={byId.get(m.to)} size={28} />
-								<b>{byId.has(m.to) ? nameOf(byId.get(m.to)) : `Vault ${short(m.to)}`}</b>
-								<span class="soft">{invitedWords(m)}{m.created ? ` · ${ago(m.created)}` : ''}</span>
-							</span>
-						</li>
-					{/each}
-				</ul>
-			{/if}
-			{#if recoveryMissing && lets('recovery')}
-				<p class="soft">
-					The master recovery key is avenDB's way back into a vault whose passkeys are all lost, while avenDB
-					is young. Your vault doesn't have it.
-				</p>
-				<button
-					class="btn"
-					disabled={busy}
-					onclick={() =>
-						api.run('Adding the master recovery key', {
-							op: 'share',
-							over: vault,
-							who: { signer: world.recovery },
-							level: 'Owner',
-							what: 'everything'
-						})}>Add the master recovery key</button
-				>
-			{/if}
-		</article>
-
-		<Owned {world} {vault} {api} {busy} onrevoke={revokeShare} onremove={removeDevice} />
-
-		<article class="card">
-			<h3>Devices</h3>
-			{#if !holds}
-				<p class="soft">{actsWords(world, v.kind)}</p>
-			{:else if !v.devices.length}
-				<p class="soft">
-					No device of its own yet: {v.via ? `${here} acts for it through its owners` : 'its owners act for it'}.
-				</p>
-			{/if}
-			<ul class="list">
-				{#each v.devices as d (d.id)}
-					<li class="device">
-						{#if d.me && renaming !== null}
-							<input class="field" bind:value={renaming} aria-label={`${Here}'s name`} />
-							<button
-								class="btn primary"
-								disabled={busy || !renaming.trim()}
-								onclick={async () => (await api.rename(renaming?.trim())) && (renaming = null)}
-							>
-								Save
-							</button>
-							<button class="btn quiet" onclick={() => (renaming = null)}>Cancel</button>
-						{:else}
-							<span class="who">
-								<b>{d.me ? (d.name ?? thisName) : deviceName(d.id)}</b>
-								<span class="meta">
-									{#if d.me}
-										<span class="chip accent">{here}</span>
-									{:else}
-										{#if drivesById.has(d.id)}<span class="chip">Drive</span>{/if}
-										<span class="soft mono">{short(d.id)}</span>
-									{/if}
-								</span>
-							</span>
-							{#if vault === world.mine}
-								{@render keeps(d)}
-							{/if}
-							{#if d.me}
-								<button class="btn quiet" disabled={busy} onclick={() => (renaming = d.name ?? thisName)}>Rename</button>
-							{:else if removable(d.id)}
-								<button class="btn quiet danger" disabled={busy} onclick={() => removeDevice(d.id, deviceName(d.id))}
-									>Remove</button
-								>
-							{/if}
-						{/if}
-					</li>
-				{/each}
-			</ul>
-			{#if vault === world.mine && v.devices.length}
-				<p class="soft">
-					A full copy keeps every entry and every file of every vault the device syncs, so it works offline and is one
-					more backup. A light one keeps every entry, and a file only once it is opened there.
-				</p>
-			{/if}
-		</article>
-
-		{#if vault === world.mine && drives}
-			<article class="card">
-				<h3>Drives</h3>
-				<p class="soft">
-					Each drive you use for avenDB is a device of your vault of its own, with a key of its own that is never on the
-					drive in plain: the drive holds only ciphertext. While it is plugged into {here}, {here} keeps it in sync;
-					unplugged, it shows what it held when it last checked.
-				</p>
-				<ul class="list">
-					{#each drives.drives as x (x.device)}
-						{@const d = v.devices.find((y) => y.id === x.device)}
-						{@const name = d?.name ?? x.name ?? 'A drive'}
-						<li class="device">
-							<span class="who">
-								<b>💽 {name}</b>
-								<span class="meta">
-									{#if x.plugged}
-										<span class="chip ok">Plugged in</span>
-									{:else}
-										<span class="chip">Unplugged</span>
-										<span class="soft">{x.checked == null ? 'not checked yet' : `checked ${ago(x.checked)}`}</span>
-									{/if}
-								</span>
-							</span>
-							{#if d}{@render keeps(d)}{/if}
-							{#if x.plugged && x.volume}
-								<button class="btn quiet" disabled={busy} onclick={() => api.ejectDrive(x.volume, name)}>Eject</button>
-							{/if}
-							{#if removable(x.device)}
-								<button class="btn quiet danger" disabled={busy} onclick={() => removeDevice(x.device, name)}>Remove</button>
-							{/if}
-						</li>
-					{/each}
-					{#each loose as x (x.path)}
-						<li>
-							<span class="key">💽</span>
-							<b>{x.name}</b>
-							<span class="soft">{VOLUME[x.state]}</span>
-							{#if x.state === 'free' || x.state === 'removed'}
-								<button class="btn" disabled={busy} onclick={() => api.useDrive(x.path, x.name)}>Use for avenDB</button>
-							{:else if x.state === 'locked' || x.state === 'ejected'}
-								<button class="btn" disabled={busy} onclick={() => api.openDrive(x.path, x.name)}>Open on {here}</button>
-							{/if}
-						</li>
-					{/each}
-				</ul>
-				{#if !drives.drives.length && !loose.length}
-					<p class="soft">No drive is plugged in. Plug one in to use it for avenDB.</p>
-				{:else}
-					<p class="soft">
-						Using a drive asks for your passkey once. Eject it here before you unplug it. A drive you lose, you remove
-						as you would a lost phone.
-					</p>
-				{/if}
-			</article>
-		{/if}
-
-		{#if vault === world.mine}
-			<article class="card">
-				<h3>Link another device</h3>
-				<p class="soft">
-					Open this link on your other device, or scan it with its camera. It joins your vault once you confirm with your
-					passkey there. Or sign in there with your passkey alone.
-				</p>
-				<!-- the SVG is the device's own, made by qrSvg from the link -->
-				<div class="qr">{@html qr}</div>
-				<input class="field code" readonly value={link} onfocus={(e) => e.currentTarget.select()} />
-			</article>
-			{#if sockets}
+		</div>
+	{:else if tab === 'members'}
+		<div class="cards">
+			{#if shows('owners')}
 				<article class="card">
-					<h3>Agents on {here}</h3>
-					<p class="soft">
-						Your aven is your one AI identity, a vault your vault owns. Each agent harness joins it as an agent of its
-						own, a device vault under it with a key of its own: Claude Code as agentClaude, Codex as agentCodex, and so
-						on. Once a harness runs its device, this page asks you which vaults it may work in, and it gets sub caps of
-						what your aven holds there. It reads your files from this Mac's one store, so nothing is kept twice.
-					</p>
-					<label class="harness">
-						<span>Harness</span>
-						<input class="field" bind:value={harness} aria-label="The harness's name" placeholder="claude" />
-					</label>
-					{#if running}
+					<h3>Owners</h3>
+					<ul class="list grants">
+						{#each v.owners as o (('vault' in o ? o.vault : o.signer))}
+							{@const row = ownerRow(o)}
+							<li>
+								<span class="cap">
+									{#if 'vault' in o}
+										<Mark vault={byId.get(o.vault)} size={28} />
+										<b>{nameOf(byId.get(o.vault))}</b>
+										<span class="soft">{KINDS[byId.get(o.vault)?.kind ?? 'human']}</span>
+									{:else}
+										<span class="key">{o.recovery ? '🛟' : '🔑'}</span>
+										<b>{ownerLabel(o)}</b>
+										<span class="soft mono">{short(o.signer)}</span>
+									{/if}
+								</span>
+								{#if row && allowed(row.revoke)}
+									<button class="btn quiet danger" disabled={busy} onclick={() => removeOwner(o)}>Remove</button>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+					<p class="soft">{v.threshold} of {count(v.owners.length, 'owner')} approve{v.owners.length === 1 ? 's' : ''} a change.</p>
+					{#if actor === vault && takesOwner}
+						<div class="add-owner">
+							<select class="field" bind:value={newOwner} aria-label="A vault to make an owner too">
+								<option value="">A vault to make an owner too…</option>
+								{#each ownable as x (x.id)}<option value={x.id}>{nameOf(x)} · {KINDS[x.kind]}</option>{/each}
+								<option value={BY_ID}>A person’s vault by its id…</option>
+							</select>
+							<button
+								class="btn"
+								disabled={busy || !/^[0-9a-f]{64}$/.test(newcomer)}
+								onclick={() => addOwner(newcomer).then(() => ([newOwner, ownerId] = ['', '']))}
+								>{!newcomer || theirs(newcomer) ? 'Add as owner' : 'Invite'}</button
+							>
+						</div>
+						{#if newOwner === BY_ID}
+							<input class="field" bind:value={ownerId} placeholder="Their vault's id: 64 hex digits" aria-label="Their vault's id" />
+						{/if}
 						<p class="soft">
-							{running.claude
-								? `Run this line once in a terminal: Claude Code then starts ${running.device} in every folder.`
-								: `Give this command to the harness's MCP settings, as the server it starts: ${running.device}.`}
+							A new owner acts for it as you do. One of your own vaults is added at once; anyone else's is invited, and
+							added once they accept with their passkey and you finish it with yours. To hand it over, add the new owner
+							first, then remove the old one.
 						</p>
-						<input
-							class="field code"
-							readonly
-							value={running.claude ?? running.command}
-							onfocus={(e) => e.currentTarget.select()}
-						/>
-						<button class="btn quiet" onclick={copyRunning}>{copied ? 'Copied' : 'Copy the line'}</button>
+					{/if}
+					{#if invited.length}
+						<ul class="list grants">
+							{#each invited as m (m.entry)}
+								<li>
+									<span class="cap">
+										<Mark vault={byId.get(m.to)} size={28} />
+										<b>{byId.has(m.to) ? nameOf(byId.get(m.to)) : `Vault ${short(m.to)}`}</b>
+										<span class="soft">{invitedWords(m)}{m.created ? ` · ${ago(m.created)}` : ''}</span>
+									</span>
+								</li>
+							{/each}
+						</ul>
+					{/if}
+					{#if recoveryMissing && lets('recovery')}
+						<p class="soft">
+							The master recovery key is avenDB's way back into a vault whose passkeys are all lost, while avenDB
+							is young. Your vault doesn't have it.
+						</p>
+						<button
+							class="btn"
+							disabled={busy}
+							onclick={() =>
+								api.run('Adding the master recovery key', {
+									op: 'share',
+									over: vault,
+									who: { signer: world.recovery },
+									level: 'Owner',
+									what: 'everything'
+								})}>Add the master recovery key</button
+						>
 					{/if}
 				</article>
 			{/if}
-			{#if limits}
+
+			{#if shows('owned')}
+				<Owned {world} {vault} {api} {busy} onrevoke={revokeShare} onremove={removeDevice} />
+			{/if}
+
+			{#if shows('devices')}
 				<article class="card">
-					<h3>Query limits</h3>
-					<p class="soft">
-						A query on {here} reads each record so many rows down, and follows links as many levels: {limits.default}
-						unless it asks for more, and never more than this, so a record nested deep, or a long chain of links, costs
-						only what you allow. A link or a list of rows deeper than that shows as not read.
-					</p>
-					<label class="harness">
-						<span>At most</span>
-						<input
-							class="field"
-							type="number"
-							min="1"
-							max={limits.ceiling}
-							bind:value={deepest}
-							aria-label="The most rows and links down a query reads"
-						/>
-						<span class="soft">of {limits.ceiling} levels</span>
-					</label>
-					<button
-						class="btn quiet"
-						disabled={busy || !(deepest >= 1 && deepest <= limits.ceiling) || deepest === limits.depth}
-						onclick={setDepth}>Save</button
-					>
-				</article>
-			{/if}
-			<article class="card">
-				<h3>{Here}</h3>
-				{#if sockets}
-					<p>
-						<span class="chip ok">Native</span>
-						avenDB runs beside the app, not in this page: it reaches your other devices directly, over {count(
-							sockets.length,
-							'UDP socket'
-						)} of its own, through avenDB's connection server only where your network leaves no other way, and keeps
-						your vault in a folder on this Mac.
-					</p>
-				{/if}
-				<p class="soft">
-					Forgetting your account here leaves your vault and everything in it with your other devices and avenDB's server:
-					sign in again with your passkey.
-				</p>
-				<button class="btn danger" disabled={busy} onclick={api.forget}>Forget my account on {here}</button>
-			</article>
-		{/if}
-	</div>
-{:else if tab === 'sharing'}
-	<div class="cards">
-		<article class="card wide">
-			<div class="row top">
-				<h3>Who has {nameOf(v)}</h3>
-				{#if sharesOn}
-					<button class="btn" class:primary={!adding} onclick={() => (adding = !adding)}>
-						{adding ? 'Close' : 'Share'}
-					</button>
-				{/if}
-			</div>
-			<p class="soft">
-				Each vault it is shared with, and Everyone where it is public: at what level, on what, and on which of their
-				devices it is. A share on a type or a tag reaches what matches it now and later. A note or a todo shares the
-				same way, from its own Share button.{sharesOn
-					? ''
-					: ` Only ${nameOf(v)} itself, or a vault it shares some of it with as Owner, shares it on.`}
-			</p>
-			{#if adding}
-				<div class="adding"><Share {world} {actor} {api} {busy} {vault} ondone={() => (adding = false)} /></div>
-			{/if}
-			<ul class="list people">
-				{#each people as p (p.id)}
-					{@const pv = p.id === EVERYONE ? undefined : byId.get(p.id)}
-					{@const on = [...(getters.get(p.id)?.values() ?? [])]}
-					<li>
-						{#if p.id === EVERYONE}<span class="chip">Public</span>{:else}<Mark vault={pv} size={28} />{/if}
-						<div class="person">
-							<span>
-								<b class:mine={p.id === actor}>{p.id === EVERYONE ? 'Everyone' : nameOf(pv)}</b>
-								{#if p.owner}<small class="soft">· {p.owner}</small>{/if}
-							</span>
-							<ul class="theirs">
-								{#if p.owner}<li><span>{roleGroup(world, 'owner')} · Everything</span></li>{/if}
-								{#each p.grants as r (r.id)}
-									{@const hint = rowHint(r, world)}
-									<li>
-										<span class="held">
-											<span>
-												<span title={hint}>{rowLevel(r, world)}</span> · {rowWhat(r, world)}
-												{#if isStanding(r.name)}<span
-														class="chip"
-														title="A standing grant: every vault you found later gets it too, and revoking it ends it on all of them"
-														>All your vaults, now and later</span
-													>{/if}
-												<small class="soft">
-													{KEEPS[r.level] ? `· ${KEEPS[r.level]} ` : ''}· reaches
-													{count(r.reaches, 'entry', 'entries')} now{r.issuer
-														? ` · given by ${nameOf(byId.get(r.issuer))}`
-														: ''}{r.parent ? ', through its own Owner share, which narrows it too' : ''}
-												</small>
-											</span>
-											{#if r.what === null}
-												<small class="soft">What it picks and allows is sealed from {here}.</small>
-											{:else if !r.group && r.ops}
-												<Ops ops={r.ops} />
+					<h3>Devices</h3>
+					{#if !holds}
+						<p class="soft">{actsWords(world, v.kind)}</p>
+					{:else if !v.devices.length}
+						<p class="soft">
+							No device of its own yet: {v.via ? `${here} acts for it through its owners` : 'its owners act for it'}.
+						</p>
+					{/if}
+					<ul class="list">
+						{#each v.devices as d (d.id)}
+							<li class="device">
+								{#if d.me && renaming !== null}
+									<input class="field" bind:value={renaming} aria-label={`${Here}'s name`} />
+									<button
+										class="btn primary"
+										disabled={busy || !renaming.trim()}
+										onclick={async () => (await api.rename(renaming?.trim())) && (renaming = null)}
+									>
+										Save
+									</button>
+									<button class="btn quiet" onclick={() => (renaming = null)}>Cancel</button>
+								{:else}
+									<span class="who">
+										<b>{d.me ? (d.name ?? thisName) : deviceName(d.id)}</b>
+										<span class="meta">
+											{#if d.me}
+												<span class="chip accent">{here}</span>
+											{:else}
+												{#if drivesById.has(d.id)}<span class="chip">Drive</span>{/if}
+												<span class="soft mono">{short(d.id)}</span>
 											{/if}
 										</span>
-										{#if allowed(r.revoke)}
-											<button class="btn quiet danger" disabled={busy} onclick={() => revoke(r)}
-												>{isStanding(r.name) ? 'Revoke everywhere' : 'Revoke'}</button
-											>
+									</span>
+									{#if vault === world.mine}
+										{@render keeps(d)}
+									{/if}
+									{#if d.me}
+										<button class="btn quiet" disabled={busy} onclick={() => (renaming = d.name ?? thisName)}>Rename</button>
+									{:else if removable(d.id)}
+										<button class="btn quiet danger" disabled={busy} onclick={() => removeDevice(d.id, deviceName(d.id))}
+											>Remove</button
+										>
+									{/if}
+								{/if}
+							</li>
+						{/each}
+					</ul>
+					{#if vault === world.mine && v.devices.length}
+						<p class="soft">
+							A full copy keeps every entry and every file of every vault the device syncs, so it works offline and is one
+							more backup. A light one keeps every entry, and a file only once it is opened there.
+						</p>
+					{/if}
+				</article>
+			{/if}
+
+			{#if vault === world.mine && drives && shows('drives')}
+				<article class="card">
+					<h3>Drives</h3>
+					<p class="soft">
+						Each drive you use for avenDB is a device of your vault of its own, with a key of its own that is never on the
+						drive in plain: the drive holds only ciphertext. While it is plugged into {here}, {here} keeps it in sync;
+						unplugged, it shows what it held when it last checked.
+					</p>
+					<ul class="list">
+						{#each drives.drives as x (x.device)}
+							{@const d = v.devices.find((y) => y.id === x.device)}
+							{@const name = d?.name ?? x.name ?? 'A drive'}
+							<li class="device">
+								<span class="who">
+									<b>💽 {name}</b>
+									<span class="meta">
+										{#if x.plugged}
+											<span class="chip ok">Plugged in</span>
+										{:else}
+											<span class="chip">Unplugged</span>
+											<span class="soft">{x.checked == null ? 'not checked yet' : `checked ${ago(x.checked)}`}</span>
 										{/if}
-									</li>
-								{/each}
-								{#each [...p.chosen] as [level, rs] (level)}
-									<li>
-										<details class="chosen">
-											<summary>{level} · {count(rs.length, 'chosen entry', 'chosen entries')}</summary>
-											<ul>
-												{#each rs as r (r.id)}
-													<li>
-														<span>{list(entriesOf(r).map((e) => titleOf(world, e)))}</span>
-														{#if allowed(r.revoke)}
-															<button class="btn quiet danger" disabled={busy} onclick={() => revoke(r)}>Revoke</button>
-														{/if}
-													</li>
-												{/each}
-											</ul>
-										</details>
-									</li>
-								{/each}
-							</ul>
-							{#if on.length}
-								<span class="on">
-									<small class="soft">On</small>
-									{#each on as d (d.device)}
-										<span class="chip" class:ok={d.opens} title={gets(d)}>{deviceName(d.device)}</span>
-									{/each}
+									</span>
 								</span>
-							{/if}
-						</div>
-					</li>
-				{/each}
-			</ul>
-		</article>
+								{#if d}{@render keeps(d)}{/if}
+								{#if x.plugged && x.volume}
+									<button class="btn quiet" disabled={busy} onclick={() => api.ejectDrive(x.volume, name)}>Eject</button>
+								{/if}
+								{#if removable(x.device)}
+									<button class="btn quiet danger" disabled={busy} onclick={() => removeDevice(x.device, name)}>Remove</button>
+								{/if}
+							</li>
+						{/each}
+						{#each loose as x (x.path)}
+							<li>
+								<span class="key">💽</span>
+								<b>{x.name}</b>
+								<span class="soft">{VOLUME[x.state]}</span>
+								{#if x.state === 'free' || x.state === 'removed'}
+									<button class="btn" disabled={busy} onclick={() => api.useDrive(x.path, x.name)}>Use for avenDB</button>
+								{:else if x.state === 'locked' || x.state === 'ejected'}
+									<button class="btn" disabled={busy} onclick={() => api.openDrive(x.path, x.name)}>Open on {here}</button>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+					{#if !drives.drives.length && !loose.length}
+						<p class="soft">No drive is plugged in. Plug one in to use it for avenDB.</p>
+					{:else}
+						<p class="soft">
+							Using a drive asks for your passkey once. Eject it here before you unplug it. A drive you lose, you remove
+							as you would a lost phone.
+						</p>
+					{/if}
+				</article>
+			{/if}
 
-		<article class="card wide">
-			<h3>What others share with {nameOf(v)}</h3>
-			<ul class="list">
-				{#each held as c (c.id)}
-					<li>
-						<Mark vault={byId.get(c.over)} size={28} />
-						<span class="held">
-							<span>
-								<b>{levelName(c, world)}</b> · {shareWhat(c, world)} · of <b>{nameOf(byId.get(c.over))}</b>
-							</span>
-							{#if c.slice && !groupOf(c, world)}<Ops ops={c.slice.ops} />{/if}
-						</span>
-					</li>
-				{:else}
-					<li class="soft">Nothing in another vault.</li>
-				{/each}
-			</ul>
-		</article>
+			{#if vault === world.mine}
+				{#if shows('link')}
+					<article class="card">
+						<h3>Link another device</h3>
+						<p class="soft">
+							Open this link on your other device, or scan it with its camera. It joins your vault once you confirm with your
+							passkey there. Or sign in there with your passkey alone.
+						</p>
+						<!-- the SVG is the device's own, made by qrSvg from the link -->
+						<div class="qr">{@html qr}</div>
+						<input class="field code" readonly value={link} onfocus={(e) => e.currentTarget.select()} />
+					</article>
+				{/if}
+				{#if sockets && shows('agents')}
+					<article class="card">
+						<h3>Agents on {here}</h3>
+						<p class="soft">
+							Your aven is your one AI identity, a vault your vault owns. Each agent harness joins it as an agent of its
+							own, a device vault under it with a key of its own: Claude Code as agentClaude, Codex as agentCodex, and so
+							on. Once a harness runs its device, this page asks you which vaults it may work in, and it gets sub caps of
+							what your aven holds there. It reads your files from this Mac's one store, so nothing is kept twice.
+						</p>
+						<label class="harness">
+							<span>Harness</span>
+							<input class="field" bind:value={harness} aria-label="The harness's name" placeholder="claude" />
+						</label>
+						{#if running}
+							<p class="soft">
+								{running.claude
+									? `Run this line once in a terminal: Claude Code then starts ${running.device} in every folder.`
+									: `Give this command to the harness's MCP settings, as the server it starts: ${running.device}.`}
+							</p>
+							<input
+								class="field code"
+								readonly
+								value={running.claude ?? running.command}
+								onfocus={(e) => e.currentTarget.select()}
+							/>
+							<button class="btn quiet" onclick={copyRunning}>{copied ? 'Copied' : 'Copy the line'}</button>
+						{/if}
+					</article>
+				{/if}
+				{#if limits && shows('limits')}
+					<article class="card">
+						<h3>Query limits</h3>
+						<p class="soft">
+							A query on {here} reads each record so many rows down, and follows links as many levels: {limits.default}
+							unless it asks for more, and never more than this, so a record nested deep, or a long chain of links, costs
+							only what you allow. A link or a list of rows deeper than that shows as not read.
+						</p>
+						<label class="harness">
+							<span>At most</span>
+							<input
+								class="field"
+								type="number"
+								min="1"
+								max={limits.ceiling}
+								bind:value={deepest}
+								aria-label="The most rows and links down a query reads"
+							/>
+							<span class="soft">of {limits.ceiling} levels</span>
+						</label>
+						<button
+							class="btn quiet"
+							disabled={busy || !(deepest >= 1 && deepest <= limits.ceiling) || deepest === limits.depth}
+							onclick={setDepth}>Save</button
+						>
+					</article>
+				{/if}
+				{#if shows('here')}
+					<article class="card">
+						<h3>{Here}</h3>
+						{#if sockets}
+							<p>
+								<span class="chip ok">Native</span>
+								avenDB runs beside the app, not in this page: it reaches your other devices directly, over {count(
+									sockets.length,
+									'UDP socket'
+								)} of its own, through avenDB's connection server only where your network leaves no other way, and keeps
+								your vault in a folder on this Mac.
+							</p>
+						{/if}
+						<p class="soft">
+							Forgetting your account here leaves your vault and everything in it with your other devices and avenDB's server:
+							sign in again with your passkey.
+						</p>
+						<button class="btn danger" disabled={busy} onclick={api.forget}>Forget my account on {here}</button>
+					</article>
+				{/if}
+			{/if}
+		</div>
+	{:else if tab === 'sharing'}
+		<div class="cards">
+			{#if shows('people')}
+				<article class="card wide">
+					<div class="row top">
+						<h3>Who has {nameOf(v)}</h3>
+						{#if sharesOn}
+							<button class="btn" class:primary={!adding} onclick={() => (adding = !adding)}>
+								{adding ? 'Close' : 'Share'}
+							</button>
+						{/if}
+					</div>
+					<p class="soft">
+						Each vault it is shared with, and Everyone where it is public: at what level, on what, and on which of their
+						devices it is. A share on a type or a tag reaches what matches it now and later. A note or a todo shares the
+						same way, from its own Share button.{sharesOn
+							? ''
+							: ` Only ${nameOf(v)} itself, or a vault it shares some of it with as Owner, shares it on.`}
+					</p>
+					{#if adding}
+						<div class="adding"><Share {world} {actor} {api} {busy} {vault} ondone={() => (adding = false)} /></div>
+					{/if}
+					<ul class="list people">
+						{#each people as p (p.id)}
+							{@const pv = p.id === EVERYONE ? undefined : byId.get(p.id)}
+							{@const on = [...(getters.get(p.id)?.values() ?? [])]}
+							<li>
+								{#if p.id === EVERYONE}<span class="chip">Public</span>{:else}<Mark vault={pv} size={28} />{/if}
+								<div class="person">
+									<span>
+										<b class:mine={p.id === actor}>{p.id === EVERYONE ? 'Everyone' : nameOf(pv)}</b>
+										{#if p.owner}<small class="soft">· {p.owner}</small>{/if}
+									</span>
+									<ul class="theirs">
+										{#if p.owner}<li><span>{roleGroup(world, 'owner')} · Everything</span></li>{/if}
+										{#each p.grants as r (r.id)}
+											{@const hint = rowHint(r, world)}
+											<li>
+												<span class="held">
+													<span>
+														<span title={hint}>{rowLevel(r, world)}</span> · {rowWhat(r, world)}
+														{#if isStanding(r.name)}<span
+																class="chip"
+																title="A standing grant: every vault you found later gets it too, and revoking it ends it on all of them"
+																>All your vaults, now and later</span
+															>{/if}
+														<small class="soft">
+															{KEEPS[r.level] ? `· ${KEEPS[r.level]} ` : ''}· reaches
+															{count(r.reaches, 'entry', 'entries')} now{r.issuer
+																? ` · given by ${nameOf(byId.get(r.issuer))}`
+																: ''}{r.parent ? ', through its own Owner share, which narrows it too' : ''}
+														</small>
+													</span>
+													{#if r.what === null}
+														<small class="soft">What it picks and allows is sealed from {here}.</small>
+													{:else if !r.group && r.ops}
+														<Ops ops={r.ops} />
+													{/if}
+												</span>
+												{#if allowed(r.revoke)}
+													<button class="btn quiet danger" disabled={busy} onclick={() => revoke(r)}
+														>{isStanding(r.name) ? 'Revoke everywhere' : 'Revoke'}</button
+													>
+												{/if}
+											</li>
+										{/each}
+										{#each [...p.chosen] as [level, rs] (level)}
+											<li>
+												<details class="chosen">
+													<summary>{level} · {count(rs.length, 'chosen entry', 'chosen entries')}</summary>
+													<ul>
+														{#each rs as r (r.id)}
+															<li>
+																<span>{list(entriesOf(r).map((e) => titleOf(world, e)))}</span>
+																{#if allowed(r.revoke)}
+																	<button class="btn quiet danger" disabled={busy} onclick={() => revoke(r)}>Revoke</button>
+																{/if}
+															</li>
+														{/each}
+													</ul>
+												</details>
+											</li>
+										{/each}
+									</ul>
+									{#if on.length}
+										<span class="on">
+											<small class="soft">On</small>
+											{#each on as d (d.device)}
+												<span class="chip" class:ok={d.opens} title={gets(d)}>{deviceName(d.device)}</span>
+											{/each}
+										</span>
+									{/if}
+								</div>
+							</li>
+						{/each}
+					</ul>
+				</article>
+			{/if}
 
-		<article class="card wide">
-			<h3>Ask for access</h3>
-			<p class="soft">
-				{v.via
-					? `Ask another vault to share with ${vault === world.mine ? 'your aven or a vault of yours' : nameOf(v)}: its owners answer on their consent screen.`
-					: `Ask ${nameOf(v)} to share with your aven or a vault of yours: its owners answer on their consent screen.`}
-			</p>
-			<Ask {world} {api} {busy} made={asks.made} to={v.via ? '' : vault} as={v.via && vault !== world.mine ? vault : ''} />
-		</article>
-	</div>
-{/if}
+			{#if shows('held')}
+				<article class="card wide">
+					<h3>What others share with {nameOf(v)}</h3>
+					<ul class="list">
+						{#each held as c (c.id)}
+							<li>
+								<Mark vault={byId.get(c.over)} size={28} />
+								<span class="held">
+									<span>
+										<b>{levelName(c, world)}</b> · {shareWhat(c, world)} · of <b>{nameOf(byId.get(c.over))}</b>
+									</span>
+									{#if c.slice && !groupOf(c, world)}<Ops ops={c.slice.ops} />{/if}
+								</span>
+							</li>
+						{:else}
+							<li class="soft">Nothing in another vault.</li>
+						{/each}
+					</ul>
+				</article>
+			{/if}
+
+			{#if shows('ask')}
+				<article class="card wide">
+					<h3>Ask for access</h3>
+					<p class="soft">
+						{v.via
+							? `Ask another vault to share with ${vault === world.mine ? 'your aven or a vault of yours' : nameOf(v)}: its owners answer on their consent screen.`
+							: `Ask ${nameOf(v)} to share with your aven or a vault of yours: its owners answer on their consent screen.`}
+					</p>
+					<Ask {world} {api} {busy} made={asks.made} to={v.via ? '' : vault} as={v.via && vault !== world.mine ? vault : ''} />
+				</article>
+			{/if}
+		</div>
+	{/if}
+</Frame>
 
 <style>
 	h3 {
@@ -955,12 +1054,38 @@
 		line-height: 1.5;
 	}
 
+	/* the right side: the vault, then who decides a change to it */
+	.about-head small {
+		color: var(--accent);
+		font-size: 0.7rem;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+	}
+
+	.about-head h3 {
+		margin: 0.15rem 0 0;
+		font-size: 1.15rem;
+		overflow-wrap: anywhere;
+	}
+
+	.side-head {
+		margin: 1.3rem 0 0.5rem;
+		color: var(--soft);
+		font-family: var(--font-body);
+		font-size: 0.68rem;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
 	dl {
 		display: grid;
-		grid-template-columns: max-content 1fr;
-		gap: 0.35rem 0.9rem;
+		grid-template-columns: max-content minmax(0, 1fr);
+		gap: 0.35rem 0.8rem;
 		margin: 0;
-		font-size: 0.9rem;
+		font-size: 0.84rem;
+		line-height: 1.45;
 	}
 
 	dt {
@@ -969,6 +1094,7 @@
 
 	dd {
 		margin: 0;
+		overflow-wrap: anywhere;
 	}
 
 	.add-owner {

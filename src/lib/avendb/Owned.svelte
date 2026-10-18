@@ -9,8 +9,26 @@
 	device taken out of its vault as a lost one is, and a share given up by the vault that holds it, which ends every
 	share resting on it. A standing grant, "all my vaults, now and later" (avendb's `world::STANDING`), shows as one
 	line however many vaults it reached, and Revoke ends it for each of them (the `revoke` op's `standing`), so no vault
-	founded later follows it.
+	founded later follows it. Its title, or none where it shows nothing, is `ownedTitle`, which the settings' left side
+	lists it by.
 -->
+<script module>
+	import { ownedBy, seeded } from './vaults.js';
+
+	/**
+	 * What Owners & devices calls the vaults vault `vault` owns: '' where it shows none, as on a vault that owns none,
+	 * unless it is the person's own or an aven.
+	 * @param {import('./vaults.js').WorldView} world @param {string} vault
+	 */
+	export function ownedTitle(world, vault) {
+		const v = world.vaults.find((x) => x.id === vault);
+		if (!v || (vault !== world.mine && v.kind !== 'aven' && !ownedBy(world, vault).length)) return '';
+		if (vault === world.mine) return 'Your aven and its agents';
+		if (v.kind === 'aven') return 'Agents';
+		return vault === seeded(world)[1]?.[0].id ? 'Server' : 'It owns';
+	}
+</script>
+
 <script>
 	import Mark from './Mark.svelte';
 	import { allowed, may } from './ops.js';
@@ -23,10 +41,8 @@
 		nameOf,
 		oneOwner,
 		order,
-		ownedBy,
 		plainName,
 		roleGroup,
-		seeded,
 		shareWhat,
 		short
 	} from './vaults.js';
@@ -74,11 +90,8 @@
 		});
 	};
 
-	/** the person's aven and its agents, an aven's agents, avenCEO GmbH's server, or what any other vault owns */
-	const company = $derived(seeded(world)[1]?.[0].id);
-	const title = $derived(
-		vault === world.mine ? 'Your aven and its agents' : v.kind === 'aven' ? 'Agents' : vault === company ? 'Server' : 'It owns'
-	);
+	/** the person's aven and its agents, an aven's agents, avenCEO GmbH's server, what any other vault owns, or '' */
+	const title = $derived(ownedTitle(world, vault));
 	const lead = $derived.by(() => {
 		if (vault === world.mine && !own.some((x) => x.kind === 'aven'))
 			return 'No aven yet: the first agent you approve on your Mac founds it, your one AI identity.';
@@ -88,7 +101,6 @@
 			return 'Each agent is a device vault with a key of its own, holding sub caps: shares resting on its aven’s, so revoking one of the aven’s ends the agent’s too.';
 		return '';
 	});
-	const shown = $derived(vault === world.mine || v.kind === 'aven' || owns.length > 0);
 
 	/** every vault it shows with its devices and shares: those wholly its own, and those they own that hold devices */
 	const listed = $derived(own.flatMap((x) => [x, ...under(x)]));
@@ -171,7 +183,7 @@
 	</ul>
 {/snippet}
 
-{#if shown}
+{#if title}
 	<article class="card">
 		<h3>{title}</h3>
 		{#if lead}<p class="soft">{lead}</p>{/if}

@@ -1,15 +1,18 @@
 <!--
 	The studio's history: every signed edit this browser holds, the database's history, as a database studio lists its
-	logs: those that concern the vault, or all of them, by kind (writes and marks, keys, shares, vaults and devices),
-	newest first, each with its place in the order the browser took them, what it does in words, who signed it and how
-	(an SLH-DSA signature, post-quantum, on every edit, and a passkey's WebAuthn assertion beside its own), its causal
-	depth and its size; each opens in a drawer, every field and signature, and the edits it builds on. What
-	an edit seals, a write's body, a cap's slice or a key's boxes, shows by its size alone, as avenDB's server sees it;
-	a cap's slice shows in words where this browser reads it. A write the ops of the caps it relies on don't allow,
-	or that builds on one, says so: no reader of its entry counts it.
+	logs, in the layout every avenDB view has (./Frame.svelte). On the left a search of the edits, those that concern
+	the vault or all of them, and their kinds (writes and marks, keys, shares, vaults and devices), each with its count;
+	in the middle the edits found, newest first, each with its place in the order the browser took them, what it does
+	in words, who signed it and how (an SLH-DSA signature, post-quantum, on every edit, and a passkey's WebAuthn
+	assertion beside its own), its causal depth and its size; on the right the edit picked, every field and signature,
+	who stands behind it and the edits it builds on, each to pick in turn. What an edit seals, a write's body, a cap's
+	slice or a key's boxes, shows by its size alone, as avenDB's server sees it; a cap's slice shows in words where this
+	browser reads it. A write the ops of the caps it relies on don't allow, or that builds on one, says so: no reader of
+	its entry counts it.
 -->
 <script>
-	import Panel from './Panel.svelte';
+	import Frame from './Frame.svelte';
+	import Icon from './Icon.svelte';
 	import { describe, GROUPS, KIND_NAMES } from './db.js';
 	import { chainSteps, count, list, short, size } from './vaults.js';
 
@@ -23,12 +26,20 @@
 	let group = $state('all');
 	let query = $state('');
 	let shown = $state(200);
-	/** the edit whose drawer is open */
+	/** the edit picked, shown on the right */
 	let open = $state('');
+	/** which side slides in, where the screen is narrow */
+	let side = $state(/** @type {'' | 'nav' | 'aside'} */ (''));
+
+	/** @typedef {import('svelte').ComponentProps<typeof Icon>['name']} IconName */
+	/** each kind's icon on the left, by its group's id @type {Record<string, IconName>} */
+	const KIND_ICONS = { all: 'board', writes: 'note', keys: 'key', shares: 'share', vaults: 'users' };
 
 	const edits = $derived(log?.edits ?? []);
 	const byId = $derived(new Map(edits.map((e) => [e.id, e])));
-	const scoped = $derived(scope === 'all' ? edits : edits.filter((e) => e.vaults.includes(vault)));
+	/** the edits that concern the vault */
+	const ours = $derived(edits.filter((e) => e.vaults.includes(vault)));
+	const scoped = $derived(scope === 'all' ? edits : ours);
 	const said = $derived(new Map(scoped.map((e) => [e.id, describe(e, s, (id) => byId.get(id))])));
 	/** @param {string} id */
 	const kindsOf = (id) => /** @type {readonly string[]} */ (GROUPS.find(([g]) => g === id)?.[2] ?? []);
@@ -49,6 +60,9 @@
 	});
 	const page = $derived(found.slice(0, shown));
 	const picked = $derived(open ? byId.get(open) : undefined);
+
+	/** Show edit `id` on the right, sliding it in where the screen is narrow. @param {string} id */
+	const show = (id) => ([open, side] = [id, 'aside']);
 
 	/** A passkey's WebAuthn assertion beside its signature, as its chip names it. @param {import('./db.js').SigView} sig */
 	const webauthn = (sig) =>
@@ -78,83 +92,33 @@
 				: { chip: 'not allowed', why: NOT_ALLOWED };
 </script>
 
-{#if failed}
-	<p class="error">Reading the history failed: {failed}</p>
-{:else if !log}
-	<p class="soft">Reading the history…</p>
-{:else}
-	<div class="toolbar">
-		<div class="seg" role="group" aria-label="Which edits">
-			<button class:on={scope === 'vault'} aria-pressed={scope === 'vault'} onclick={() => ([scope, shown] = ['vault', 200])}>
-				{s.vaultName(vault)}’s
-			</button>
-			<button class:on={scope === 'all'} aria-pressed={scope === 'all'} onclick={() => ([scope, shown] = ['all', 200])}>
-				All this browser holds
-			</button>
-		</div>
-		<input class="field search" placeholder="Search edits" bind:value={query} aria-label="Search edits" />
-	</div>
-	<div class="kinds" role="group" aria-label="Kinds">
-		{#each GROUPS as [id, label] (id)}
-			<button class="kind" class:on={group === id} aria-pressed={group === id} onclick={() => ([group, shown] = [id, 200])}>
-				{label} <small>{counts.get(id)}</small>
-			</button>
-		{/each}
-	</div>
+<svelte:window onkeydown={(e) => e.key === 'Escape' && (open = '')} />
 
-	<div class="grid" role="region" aria-label="Edits" tabindex="-1">
-		<table>
-			<thead>
-				<tr>
-					<th class="num">#</th>
-					<th>Edit</th>
-					<th>Kind</th>
-					<th>What it does</th>
-					<th>Signed by</th>
-					<th>Signatures</th>
-					<th class="num">Depth</th>
-					<th class="num">Size</th>
-				</tr>
-			</thead>
-			<tbody>
-				{#each page as e (e.id)}
-					<!-- the row opens on a click anywhere; its id's button takes the keyboard's -->
-					<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-					<tr class="rec {e.kind}" class:on={open === e.id} onclick={() => (open = e.id)}>
-						<td class="num soft">{e.n}</td>
-						<td><button class="open mono" title={e.id}>{short(e.id)}</button></td>
-						<td><span class="chip k">{KIND_NAMES[e.kind] ?? e.kind}</span></td>
-						<td class="what">
-							{said.get(e.id)}
-							{#if e.counted === false}<span class="chip warn" title={CUT}>cut by a removal</span>{/if}
-							{#if e.allowed === false}
-								<span class="chip warn" title={uncounted(e).why}>{uncounted(e).chip}</span>
-							{/if}
-						</td>
-						<td>{signers(e)}</td>
-						<td><span class="sigs">
-							{#each e.sigs as sig, i (i)}
-								<span class="chip ok" title="SLH-DSA: post-quantum">SLH-DSA {size(sig.pq)}</span>
-								{#if sig.webauthn}<span class="chip" title={PRESENCE}>{webauthn(sig)}</span>{/if}
-							{/each}
-						</span></td>
-						<td class="num">{e.depth}</td>
-						<td class="num">{size(e.bytes)}</td>
-					</tr>
-				{/each}
-			</tbody>
-		</table>
-		{#if !page.length}<p class="nothing">No edit {query ? 'matches' : 'here'}.</p>{/if}
-	</div>
-	<footer class="foot">
-		<span>{page.length < found.length ? `${page.length} of ${count(found.length, 'edit')}` : count(found.length, 'edit')}, newest first</span>
-		{#if page.length < found.length}<button class="btn" onclick={() => (shown += 200)}>Show 200 more</button>{/if}
-		<span class="soft">{count(edits.length, 'signed edit')} held in all; what each seals shows by its size alone.</span>
-	</footer>
-{/if}
+<!-- the left: a search, which edits, and their kinds, each with its count -->
+{#snippet filters()}
+	<input class="nav-search" type="search" placeholder="Search edits" bind:value={query} aria-label="Search edits" />
+	<h3 class="nav-group">Which edits</h3>
+	<button class="nav-item" class:on={scope === 'vault'} aria-pressed={scope === 'vault'} data-pick onclick={() => ([scope, shown] = ['vault', 200])}
+		><Icon name="history" size={16} /><span>{s.vaultName(vault)}’s</span><small>{ours.length}</small></button
+	>
+	<button class="nav-item" class:on={scope === 'all'} aria-pressed={scope === 'all'} data-pick onclick={() => ([scope, shown] = ['all', 200])}
+		><Icon name="sync" size={16} /><span>All this browser holds</span><small>{edits.length}</small></button
+	>
+	<h3 class="nav-group">Kinds</h3>
+	{#each GROUPS as [id, label] (id)}
+		<button class="nav-item" class:on={group === id} aria-pressed={group === id} data-pick onclick={() => ([group, shown] = [id, 200])}
+			><Icon name={KIND_ICONS[id] ?? 'history'} size={16} /><span>{label}</span><small>{counts.get(id)}</small></button
+		>
+	{/each}
+{/snippet}
 
-{#if picked}
-	<Panel title="{KIND_NAMES[picked.kind] ?? picked.kind} · #{picked.n}" sub={picked.id} onclose={() => (open = '')}>
+<!-- the right: the edit picked, every field and signature, and the edits behind it, each to pick in turn -->
+{#snippet edit()}
+	{#if picked}
+		<header class="about-head">
+			<small>Edit #{picked.n}</small>
+			<h3>{KIND_NAMES[picked.kind] ?? picked.kind}</h3>
+		</header>
 		<p class="said">{said.get(picked.id) ?? describe(picked, s, (id) => byId.get(id))}</p>
 		<dl>
 			<dt>Edit</dt>
@@ -181,7 +145,7 @@
 			{/if}
 		</dl>
 		{#if picked.chain}
-			<h4 class="kept">Who stands behind it</h4>
+			<h4 class="side-head">Who stands behind it</h4>
 			<ol class="chain">
 				{#each chainSteps(s.world, picked.chain) as step, i (i)}
 					{@const made = step.edit ? byId.get(step.edit) : undefined}
@@ -196,7 +160,7 @@
 				{/each}
 			</ol>
 		{/if}
-		<h4 class="kept">Signatures</h4>
+		<h4 class="side-head">Signatures</h4>
 		<ul class="sig-list">
 			{#each picked.sigs as sig, i (i)}
 				<li>
@@ -207,7 +171,7 @@
 			{/each}
 		</ul>
 		{#if picked.parents.length}
-			<h4 class="kept">Builds on</h4>
+			<h4 class="side-head">Builds on</h4>
 			<div class="parents">
 				{#each picked.parents as p (p)}
 					{@const parent = byId.get(p)}
@@ -221,77 +185,76 @@
 			<summary>Its fields</summary>
 			<pre class="json">{JSON.stringify(picked.fields, null, 2)}</pre>
 		</details>
-	</Panel>
-{/if}
+	{/if}
+{/snippet}
+
+<Frame
+	nav={log && !failed ? filters : undefined}
+	aside={picked ? edit : undefined}
+	bind:open={side}
+	navLabel="Which edits"
+	asideLabel="The edit picked"
+	navIcon="search"
+	asideIcon="info"
+>
+	{#if failed}
+		<p class="error">Reading the history failed: {failed}</p>
+	{:else if !log}
+		<p class="soft">Reading the history…</p>
+	{:else}
+		<div class="grid" role="region" aria-label="Edits" tabindex="-1">
+			<table>
+				<thead>
+					<tr>
+						<th class="num">#</th>
+						<th>Edit</th>
+						<th>Kind</th>
+						<th>What it does</th>
+						<th>Signed by</th>
+						<th>Signatures</th>
+						<th class="num">Depth</th>
+						<th class="num">Size</th>
+					</tr>
+				</thead>
+				<tbody>
+					{#each page as e (e.id)}
+						<!-- the row opens on a click anywhere; its id's button takes the keyboard's -->
+						<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+						<tr class="rec {e.kind}" class:on={open === e.id} onclick={() => show(e.id)}>
+							<td class="num soft">{e.n}</td>
+							<td><button class="open mono" title={e.id}>{short(e.id)}</button></td>
+							<td><span class="chip k">{KIND_NAMES[e.kind] ?? e.kind}</span></td>
+							<td class="what">
+								{said.get(e.id)}
+								{#if e.counted === false}<span class="chip warn" title={CUT}>cut by a removal</span>{/if}
+								{#if e.allowed === false}
+									<span class="chip warn" title={uncounted(e).why}>{uncounted(e).chip}</span>
+								{/if}
+							</td>
+							<td>{signers(e)}</td>
+							<td><span class="sigs">
+								{#each e.sigs as sig, i (i)}
+									<span class="chip ok" title="SLH-DSA: post-quantum">SLH-DSA {size(sig.pq)}</span>
+									{#if sig.webauthn}<span class="chip" title={PRESENCE}>{webauthn(sig)}</span>{/if}
+								{/each}
+							</span></td>
+							<td class="num">{e.depth}</td>
+							<td class="num">{size(e.bytes)}</td>
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+			{#if !page.length}<p class="nothing">No edit {query ? 'matches' : 'here'}.</p>{/if}
+		</div>
+		<footer class="foot">
+			<span>{page.length < found.length ? `${page.length} of ${count(found.length, 'edit')}` : count(found.length, 'edit')}, newest first</span>
+			{#if page.length < found.length}<button class="btn" onclick={() => (shown += 200)}>Show 200 more</button>{/if}
+			<span class="soft">{count(edits.length, 'signed edit')} held in all; what each seals shows by its size alone.</span>
+		</footer>
+	{/if}
+</Frame>
 
 <style>
-	.toolbar {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.6rem;
-		margin-bottom: 0.6rem;
-	}
-
-	.seg {
-		display: inline-flex;
-		padding: 0.15rem;
-		border-radius: 9px;
-		background: rgb(0 0 0 / 0.06);
-	}
-
-	.seg button {
-		padding: 0.3rem 0.75rem;
-		border: 0;
-		border-radius: 7px;
-		background: none;
-		font: inherit;
-		font-size: 0.82rem;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	.seg button.on {
-		background: #fff;
-		box-shadow: 0 1px 2px rgb(0 0 0 / 0.1);
-		font-weight: 600;
-	}
-
-	.search {
-		width: min(100%, 15rem);
-		padding: 0.3rem 0.55rem;
-		font-size: 0.82rem;
-	}
-
-	.kinds {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.3rem;
-		margin-bottom: 0.7rem;
-	}
-
-	.kind {
-		padding: 0.2rem 0.65rem;
-		border: 1px solid rgb(0 0 0 / 0.12);
-		border-radius: 999px;
-		background: #fff;
-		font: inherit;
-		font-size: 0.78rem;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	.kind small {
-		color: var(--soft);
-	}
-
-	.kind.on {
-		border-color: var(--accent);
-		background: #d6e8e4;
-		color: #1f4f47;
-	}
-
 	.grid {
 		max-height: max(16rem, calc(100dvh - 22rem));
 		overflow: auto;
@@ -402,18 +365,33 @@
 		font-size: 0.78rem;
 	}
 
+	/* the right side: the edit picked */
+	.about-head small {
+		color: var(--accent);
+		font-size: 0.7rem;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+	}
+
+	.about-head h3 {
+		margin: 0.15rem 0 0;
+		font-size: 1.15rem;
+		overflow-wrap: anywhere;
+	}
+
 	.said {
-		margin: 0 0 1rem;
-		font-size: 0.95rem;
+		margin: 0.6rem 0 1rem;
+		font-size: 0.9rem;
 		line-height: 1.5;
 	}
 
 	dl {
 		display: grid;
 		grid-template-columns: max-content minmax(0, 1fr);
-		gap: 0.35rem 1rem;
+		gap: 0.3rem 0.8rem;
 		margin: 0 0 1rem;
-		font-size: 0.86rem;
+		font-size: 0.82rem;
 	}
 
 	dt {
@@ -425,13 +403,13 @@
 		overflow-wrap: anywhere;
 	}
 
-	.kept {
-		margin: 1.2rem 0 0.5rem;
+	.side-head {
+		margin: 1.3rem 0 0.5rem;
 		color: var(--soft);
 		font-family: var(--font-body);
-		font-size: 0.72rem;
+		font-size: 0.68rem;
 		font-weight: 600;
-		letter-spacing: 0.05em;
+		letter-spacing: 0.06em;
 		text-transform: uppercase;
 	}
 
