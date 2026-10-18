@@ -4,8 +4,10 @@
  * new name, and a story of its own there that the cut belongs to (its `story` link, so the story's Movie tab lists it,
  * its renders go out as its film posts). Never into a person's own vault.
  *
- * The studio brings them whenever it opens on the Mac and the Maia City vault lacks one (`bringFilms`), so after a reset
- * of avenDB they come back by themselves; a film already there (its story and its cut carry the film's tag) costs no
+ * They are part of Maia City's seed (Samuel 2026-10-18): the account page brings them in the background right after
+ * the repo seed, on the Mac, as it writes the rest ($lib/avendb/Account.svelte), and the studio brings them too
+ * whenever it opens there and the Maia City vault lacks one (`bringFilms`), one run for both, so after a reset of
+ * avenDB they come back by themselves; a film already there (its story and its cut carry the film's tag) costs no
  * call to the legacy API. The legacy timelines, their vault and Postgres stay as they are until J15.
  */
 
@@ -71,8 +73,28 @@ export function heldOf(world, vault, f) {
  *   arrived?: (f: Film, failed: { hash: string, error: string }[], missing?: string) => void | Promise<void> }} [on]
  * @returns {Promise<{ film: Film, failed: { hash: string, error: string }[] }[]>}
  */
-export async function bringFilms(on = {}) {
-	const { tell = () => {}, arrived = () => {} } = on;
+export function bringFilms(on = {}) {
+	listening.add(on);
+	going ??= bringing().finally(() => {
+		going = null;
+		listening.clear();
+	});
+	return going;
+}
+
+/** Who hears the run going now (`bringFilms`): one that asks while it runs joins it, from where it is. */
+const listening = /** @type {Set<Parameters<typeof bringFilms>[0] & {}>} */ (new Set());
+/** @type {ReturnType<typeof bringing> | null} the run going now */
+let going = null;
+
+/** The one run `bringFilms` shares, telling everyone who listens. */
+async function bringing() {
+	/** @type {(f: Film, line: string, at?: import('./importer.js').Progress) => void} */
+	const tell = (...a) => listening.forEach((l) => l.tell?.(...a));
+	/** @type {(f: Film, failed: { hash: string, error: string }[], missing?: string) => Promise<void>} */
+	const arrived = async (...a) => {
+		for (const l of [...listening]) await l.arrived?.(...a);
+	};
 	const call = await device();
 	if (!call) return [];
 	let world = await worldOf(call);
