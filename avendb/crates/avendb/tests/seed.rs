@@ -6,11 +6,21 @@
 //!
 //!   node scripts/seed-ops.mjs 0000…0000 /tmp/seed.json && SEED_OPS=/tmp/seed.json cargo test --test seed -- --ignored
 //!
-//! The vault the ops name is swapped for Alice's, where her Mac writes them.
+//! The vault the ops name is swapped for Alice's, where her Mac writes them. An op that brings a file (a recipe's
+//! create, a version's `put_file`) runs with that many bytes beside it, as a node brings them (`engine::put_file`).
 
 use avendb::cast;
 use avendb::engine;
+use avendb::sealed::{Brought, FileKey, seal};
 use serde_json::{Value, json};
+
+/// A file of `len` bytes, sealed as a node's store seals one (`Node::store_file`), in place of the recipe whose text
+/// the ops leave out: op `op`'s own text over and over, so no two files of the seed are one.
+fn file_of(op: &Value, len: u64) -> Brought {
+    let text = op.to_string().into_bytes();
+    let (key, plain) = (FileKey::from_bytes([7; 32]), text.iter().copied().cycle().take(len as usize).collect::<Vec<_>>());
+    Brought::new(avendb::hash::hash("a seed file's root", &seal(&key, &plain)), key, len)
+}
 
 /// Op `op` with each `"$n"` the entry the op n before it made, of `done`, and each `"$n.line"` the line it started,
 /// as the page's `refs` has it.
@@ -52,15 +62,10 @@ fn the_repo_seed_fits_its_schemas() {
                 continue;
             }
             op.as_object_mut().unwrap().remove("as");
-            // a version of an asset brings its file beside its op, which a node takes: here its record alone, as a set
-            // of the whole record on its line
-            if op["op"] == "put_file" {
-                let keep = ["entry", "line", "value", "schema"];
-                op.as_object_mut().unwrap().retain(|k, _| keep.contains(&k.as_str()));
-                op["op"] = json!("set");
-                op["path"] = json!([]);
-            }
-            let answer = engine::run(&mut w.lab, mac, &op);
+            let answer = match engine::len_of(&op) {
+                Ok(len) if engine::brings(&op) => engine::put_file(&mut w.lab, mac, &op, file_of(&op, len)),
+                _ => engine::run(&mut w.lab, mac, &op),
+            };
             let Some(ok) = answer.get("ok") else {
                 refused.push(format!("{}: {} refused: {answer}", p["key"], op["type"]));
                 continue 'pieces;
