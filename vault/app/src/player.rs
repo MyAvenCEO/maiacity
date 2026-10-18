@@ -286,6 +286,25 @@ static LAST_LOAD: Mutex<Option<Value>> = Mutex::new(None);
 
 /// Pictures sent to the viewer, all told (`player_state` watches it move).
 static SENT: AtomicU64 = AtomicU64::new(0);
+/// Pictures sent to the viewer that it has not said it drew yet (`player_drawn`). A page that falls behind (a busy
+/// webview, the Mac short of memory) is sent no more until it catches up: a frame it can't draw in time is dropped
+/// here, never queued in the channel, where frames piled up in The OS for as long as the page lagged.
+static IN_FLIGHT: AtomicU64 = AtomicU64::new(0);
+/// When the last picture was sent (ms since the pump's epoch): a page that has said nothing for a second is sent the
+/// next one anyway (an answer lost is never a picture stopped for good).
+static SENT_AT: AtomicU64 = AtomicU64::new(0);
+/// The most pictures the viewer may have in hand.
+const AHEAD: u64 = 2;
+
+fn epoch_ms() -> u64 {
+    static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+    EPOCH.get_or_init(Instant::now).elapsed().as_millis() as u64
+}
+
+/// Whether the viewer has room for another picture now.
+fn room() -> bool {
+    IN_FLIGHT.load(Ordering::Relaxed) < AHEAD || epoch_ms().saturating_sub(SENT_AT.load(Ordering::Relaxed)) > 1000
+}
 /// The pump's rounds, the frames it copied, and the step it is on (0 waiting, 1 asking the output, 2 copying, 3 making
 /// the picture, 4 handing it on) — what `player_state` shows of it.
 static PUMP_ROUNDS: AtomicU64 = AtomicU64::new(0);
@@ -380,6 +399,11 @@ fn pump(out: Output, mut sink: Sink, stop: Arc<AtomicBool>, driver: Arc<Driver>)
                         PUMP_STEP.store(0, Ordering::Relaxed);
                         return;
                     }
+                    // the viewer is behind: this picture is dropped before it is made, and the next one waits for it
+                    if !room() {
+                        PUMP_STEP.store(0, Ordering::Relaxed);
+                        return;
+                    }
                     let (w, h) = (objc2_core_video::CVPixelBufferGetWidth(&pb) as u32, objc2_core_video::CVPixelBufferGetHeight(&pb) as u32);
                     PUMP_STEP.store(3, Ordering::Relaxed);
                     let made = gpu.jpeg_bytes(&gpu.frame(&pb), w, h);
@@ -409,8 +433,16 @@ fn to_viewer(frames: Channel<InvokeResponseBody>) -> Sink {
     let mut sent = 0u64;
     Box::new(move |bytes, w, h, _| {
         let size = bytes.len();
+        // a picture past the one-second fallback starts the count again
+        if IN_FLIGHT.load(Ordering::Relaxed) >= AHEAD {
+            IN_FLIGHT.store(0, Ordering::Relaxed);
+        }
         if frames.send(InvokeResponseBody::Raw(bytes)).is_err() {
             return false;
+        }
+        if size > 0 {
+            IN_FLIGHT.fetch_add(1, Ordering::Relaxed);
+            SENT_AT.store(epoch_ms(), Ordering::Relaxed);
         }
         sent += 1;
         SENT.fetch_add(1, Ordering::Relaxed);
@@ -501,6 +533,8 @@ pub async fn player_load(
                 }
             };
             tracing::info!("playback: load {n} in place");
+            // a new channel: nothing of the last one is in the viewer's hands
+            IN_FLIGHT.store(0, Ordering::Relaxed);
             pump(Output(out, item), to_viewer(frames), stop, driver);
         }
         Ok(())
@@ -560,6 +594,13 @@ pub fn player_pause(time: f64) -> Res<()> {
     if let Some(d) = driver() {
         d.pause(time);
     }
+    Ok(())
+}
+
+/// The viewer drew (or dropped) a picture it was sent: room for the next.
+#[tauri::command]
+pub fn player_drawn() -> Res<()> {
+    let _ = IN_FLIGHT.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| Some(n.saturating_sub(1)));
     Ok(())
 }
 
