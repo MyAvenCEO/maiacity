@@ -263,9 +263,9 @@ export async function saveCut(id, t) {
 
 /**
  * Each world shot version cut `t` plays that has no proxy yet, its proxy asked for (the `world-proxy` rule, J10):
- * avenDB's shots only, the API's are the legacy app's to make. No longer asked by itself when a cut is made or saved:
- * a world shot plays live in its world in the 3D and Edit tabs (Samuel 2026-10-18), and a proxy rendered for every shot
- * of a cut at once ran a second world beside the live one, more than an 8 GB Mac holds.
+ * avenDB's shots only, the API's are the legacy app's to make. Asked as a cut opens (`askWorldProxies`); the Mac's
+ * worker renders them one at a time, never while the studio plays or its live world is open (./jobs/mac.js), so no
+ * second world runs beside the live one.
  * @param {(c: string, ...a: any[]) => Promise<any>} call @param {import('../avendb/vaults.js').WorldView} world @param {any} t
  */
 export async function proxiesOf(call, world, t) {
@@ -280,6 +280,15 @@ export async function proxiesOf(call, world, t) {
 		const tag = `proxy:${c.shot}:${c.shotVersion}`;
 		if (v && shootable(shotFrom(v).spec) && !world.entries.some((e) => !e.deleted && (e.tags ?? []).includes(tag))) await ask(call, world, v, 'world-proxy', {}).catch(() => null);
 	}
+}
+
+/** The world proxies cut `t` lacks, asked for on this Mac's device (`proxiesOf`); nothing off the Mac app. @param {any} t */
+export async function askWorldProxies(t) {
+	const call = await device();
+	if (!call) return;
+	await proxiesOf(call, await worldOf(call), t);
+	const { nudge } = await import('./jobs/mac.js');
+	nudge();
 }
 
 /** Whether the film camera can shoot spec `spec`'s world (game/film/worlds.js), so a proxy is rendered there. @param {any} spec */

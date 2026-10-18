@@ -19,6 +19,10 @@ export const lines = [];
 let playing = false;
 /** The studio says when it plays and stops. @param {boolean} on */
 export const studioPlaying = (on) => void (playing = on);
+/** whether the studio's live world is open: no world proxy is rendered then, a second world beside it (`held`) */
+let worldOpen = false;
+/** The world viewer says when its world is up and when it is let go. @param {boolean} on */
+export const studioWorld = (on) => void (worldOpen = on);
 
 /** The app's device, or `null` off the Mac app or while it isn't open. */
 async function device() {
@@ -39,10 +43,10 @@ export async function macWorker() {
 		// every vault the person reaches but a device's: the Maia City vault's footage as much as their own
 		vaults: (w) => (w.vaults ?? []).filter((/** @type {any} */ v) => v.kind !== 'device' && v.acting?.reaches).map((/** @type {any} */ v) => v.id),
 		executors: { ...EXECUTORS, ...NATIVE },
-		// one task at a time, none while the studio plays (Samuel's Mac, 8 GB: a proxy, the speech model and an analysis
+		// one task at a time, none while the studio plays and no world proxy beside its live world (Samuel's Mac, 8 GB: a proxy, the speech model and an analysis
 		// at once, beside the app's own pages, ran it out of memory before the studio was even open)
 		max: 1,
-		held: () => playing,
+		held: (t) => playing || (t.rule === 'world-proxy' && worldOpen),
 		log: (line) => {
 			lines.unshift(`${new Date().toLocaleTimeString()} ${line}`);
 			lines.length = Math.min(lines.length, 50);

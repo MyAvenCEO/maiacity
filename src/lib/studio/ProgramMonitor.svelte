@@ -232,7 +232,8 @@
 	// the live world: started in its iframe in the 3D and Edit tabs (Samuel 2026-10-18: world shots play without a
 	// proxy, as the V1 intros do), and let go (its WebGL, its domes) when they are left — elsewhere a world shot plays
 	// from its HD proxy where it has one
-	const inWorld = $derived(s.wantWorld && liveTab(s.tab));
+	// in Edit, a cut whose every world clip has its HD proxy plays those, the (heavy) live world not loaded; 3D is live
+	const inWorld = $derived(s.wantWorld && liveTab(s.tab) && (s.tab === '3d' || !s.allWorldProxied));
 	// the live world draws at the size the monitor is seen at (its long edge in device pixels), as a game draws at its canvas's
 	$effect(() => {
 		const el = frameEl;
