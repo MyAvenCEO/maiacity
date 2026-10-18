@@ -14,7 +14,7 @@
 	import PostLayout from '$lib/blog/PostLayout.svelte';
 	import { bodyText, laidOut, render } from '$lib/avendb/article.js';
 	import { shaped } from '$lib/app/shapes.js';
-	import { ago, pictureOf, postHref, slug } from '$lib/universe/posts.js';
+	import { ago, isDoc, pictureOf, postHref, slug } from '$lib/universe/posts.js';
 	import { authorOf, findPost, loadFeed, stream } from '$lib/universe/stream.svelte.js';
 	import PostCard from '$lib/universe/PostCard.svelte';
 	import InspirePost from '$lib/universe/InspirePost.svelte';
@@ -35,7 +35,7 @@
 	const waiting = $derived(!post && (stream.feed === 'idle' || stream.feed === 'loading'));
 	// more from the same channel, then the rest of the stream
 	const more = $derived(
-		post ? [...stream.posts.filter((p) => p !== post && p.channel === post.channel), ...stream.posts.filter((p) => p !== post && p.channel !== post.channel)].slice(0, 3) : []
+		post ? [...stream.posts.filter((p) => p !== post && p.channel === post.channel), ...stream.posts.filter((p) => p !== post && p.channel !== post.channel && !isDoc(p))].slice(0, 3) : []
 	);
 
 	// an avenDB article as avenDB lays it out: its subtitle, its cover, then its body, with the pictures everyone reads

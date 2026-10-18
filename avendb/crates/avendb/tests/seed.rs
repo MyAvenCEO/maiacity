@@ -93,5 +93,7 @@ fn the_repo_seed_fits_its_schemas() {
         let tags = got["ok"]["tags"].as_array().cloned().unwrap_or_default();
         assert!(tags.contains(&json!(format!("ref:{}", key.as_str().unwrap()))), "{key}: its ref tag: {got}");
     }
-    assert_eq!(posts.len(), 68, "18 journal days and 50 inspire-me reports, each a post of its story");
+    let told = pieces.iter().filter(|p| ["journal", "inspire", "doc"].contains(&p["kind"].as_str().unwrap_or(""))).count();
+    assert!(told >= 18 + 50 + 3, "the journal days, the inspire-me reports and the docs: {told}");
+    assert_eq!(posts.len(), told, "each journal day, inspire-me report and doc is a post of its story");
 }

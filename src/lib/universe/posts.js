@@ -111,5 +111,10 @@ export const fromFeed = (p, now, pictures = Array.isArray(p.pictures) ? p.pictur
 
 export const postHref = (base, p) => `${base}/${p.doc}/?t=${slug(p.title)}`;
 
+// the tag of a doc post (src/lib/avendb/posttypes.js `doc`): a skill, a paper or an architecture document, which the
+// Docs page lists (src/routes/docs) and the stream leaves out
+export const DOC = 'post:doc';
+export const isDoc = (p) => p.tags.includes(DOC);
+
 // the post brought in from the old address `from` (`blog/<day>`, `inspire-me/<slug>`), among `posts`, if one is
 export const postFrom = (posts, from) => posts.find((p) => p.tags.includes(`legacy:${from}`));
