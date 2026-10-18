@@ -54,6 +54,34 @@
 		</header>
 	{/if}
 
+	<!-- the prize: what the game is for, set as a feature spread — a headline, a column of text, the path in numbers -->
+	<section class="prize">
+		<p class="kicker"><span>The prize</span></p>
+		<h2 class="prize-head">
+			<span class="light">Not just a game.</span>
+			<span>A brick builder for a whole <em>civilization.</em></span>
+		</h2>
+		<div class="prize-body">
+			<div class="prize-text">
+				<p class="dropcap">
+					Think of maiaCITY as a research laboratory you can play. Every village built in it tests one of
+					the building blocks a new civilization needs: how we grow our food, share our energy, own what we
+					build and decide together. We try them in the game, long before a single real brick is laid.
+				</p>
+				<p>
+					A thousand villages will rise in the game, and they will compete. Not for points, but for a place.
+					The day we are 1,346,269 founders strong, we build the first real village on the Mediterranean,
+					and the village that proved itself in the game moves in as its first settlers.
+				</p>
+			</div>
+			<ol class="prize-path">
+				<li><strong>1,000</strong><span>villages compete in the game</span></li>
+				<li><strong>1,346,269</strong><span>founders, and the build begins</span></li>
+				<li><strong>1</strong><span>real village on the Mediterranean, and its first settlers</span></li>
+			</ol>
+		</div>
+	</section>
+
 	<section class="spread">
 		<p class="kicker"><span>Manifesto</span></p>
 		<svelte:element this={banner ? 'h2' : 'h1'} class="headline">
@@ -297,6 +325,87 @@
 		color: inherit;
 	}
 
+	/* ── the prize: a feature spread ─────────────────────────── */
+	.prize {
+		padding-block: 4rem 3.5rem;
+		border-bottom: 1px solid var(--ink);
+	}
+
+	.prize-head {
+		display: flex;
+		flex-direction: column;
+		gap: 0.1em;
+		max-width: 22ch;
+		margin: 0 0 2.75rem;
+		font-size: clamp(2.2rem, 5.6vw, 4.6rem);
+		font-weight: 600;
+		line-height: 1;
+		letter-spacing: -0.035em;
+		text-wrap: balance;
+	}
+
+	.prize-head .light {
+		font-weight: 300;
+		color: var(--ink-soft);
+	}
+
+	.prize-head em {
+		font-weight: 400;
+		color: var(--terracotta);
+	}
+
+	.prize-body {
+		display: grid;
+		grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+		gap: 3.5rem;
+		align-items: start;
+	}
+
+	.prize-text p {
+		margin: 0 0 1.25rem;
+		font-size: clamp(1.15rem, 1.9vw, 1.4rem);
+		line-height: 1.6;
+		color: var(--ink-soft);
+	}
+
+	/* the path in three numbers, each a size of its own, read top to bottom */
+	.prize-path {
+		display: flex;
+		flex-direction: column;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		border-top: 1px solid var(--ink);
+	}
+
+	.prize-path li {
+		display: flex;
+		flex-direction: column;
+		gap: 0.35rem;
+		padding-block: 1.25rem;
+		border-bottom: 1px solid var(--line);
+	}
+
+	.prize-path strong {
+		font-family: var(--font-display);
+		font-size: clamp(2.4rem, 4.6vw, 3.6rem);
+		font-weight: 600;
+		line-height: 1;
+		letter-spacing: -0.04em;
+	}
+
+	.prize-path li:last-child strong {
+		color: var(--terracotta);
+	}
+
+	.prize-path span {
+		font-size: 0.78rem;
+		font-weight: 500;
+		letter-spacing: 0.16em;
+		text-transform: uppercase;
+		color: var(--muted);
+	}
+
 	/* ── chapters hang off a gutter, magazine style ─────────── */
 	.chapter {
 		display: grid;
@@ -510,8 +619,14 @@
 			object-position: 30% 40%;
 		}
 
-		.spread {
+		.spread,
+		.prize {
 			padding-top: 3rem;
+		}
+
+		.prize-body {
+			grid-template-columns: 1fr;
+			gap: 1.5rem;
 		}
 
 		.chapter {
