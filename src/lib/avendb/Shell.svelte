@@ -24,6 +24,7 @@
 	form that asks it (./Ask.svelte) in a drawer.
 -->
 <script>
+	import { setContext } from 'svelte';
 	import { base } from '$app/paths';
 	import { enter } from '$lib/app/immersive.svelte';
 	import { pillContext } from '$lib/app/pill.svelte.js';
@@ -37,6 +38,7 @@
 	import Hitl from './Hitl.svelte';
 	import Functions from './Functions.svelte';
 	import Database from './Database.svelte';
+	import Frame, { HEAD } from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import Jobs from './Jobs.svelte';
 	import Library from './Library.svelte';
@@ -79,8 +81,6 @@
 	let adding = $state(false);
 	/** whether the drawer that asks the vault looked at for access is open */
 	let asking = $state(false);
-	/** on a phone, whether the vault's pages slide in from the left */
-	let pages = $state(false);
 	/** how many changes wait for each vault's yes (./Hitl.svelte), for the bubbles on the vaults in the nav pill */
 	let waiting = $state(/** @type {Record<string, number>} */ ({}));
 
@@ -266,6 +266,14 @@
 		if (of) session.vault = of;
 	});
 
+	// the head over each view's middle column (./Frame.svelte): the vault it is in, back to its home, the view's name
+	// and who the person acts as
+	setContext(HEAD, {
+		get head() {
+			return head;
+		}
+	});
+
 	/** Who owns vault `v`, as a line. @param {import('./vaults.js').VaultView} v */
 	function owners(v) {
 		if (v.id === world.mine) return 'Your vault: your passkey is its root.';
@@ -274,7 +282,27 @@
 	}
 </script>
 
-<svelte:window onhashchange={() => ((route = parse(location.hash)), (pages = false))} />
+<svelte:window onhashchange={() => (route = parse(location.hash))} />
+
+{#snippet head()}
+	<header class="main-head">
+		<a class="crumb" href="#home" title="{nameOf(here)}'s apps"><Icon name="apps" size={14} /><span>{KINDS[here.kind]} · {nameOf(here)}</span></a>
+		<h2>{PAGES.find(([id]) => id === tab)?.[1]}</h2>
+		<p class="soft">
+			{#if context === world.mine}
+				As <b>{nameOf(mine)}</b>.
+			{:else if actor === context}
+				As <b>{nameOf(mine)}</b>, its owner: you see and change all of it.
+			{:else if !SETTINGS.includes(/** @type {Page} */ (tab))}
+				As <b>{nameOf(as)}</b>: you see what {nameOf(here)} shares with {nameOf(as)}.
+				{#if !here.via}<button class="link" onclick={() => (asking = true)}>Ask for access</button>{/if}
+			{:else}
+				As <b>{nameOf(as)}</b>. {nameOf(here)}'s settings show every share and device, as its owners see them.
+			{/if}
+		</p>
+	</header>
+	<AccessRequest {world} {requests} asked={asks.asked} made={asks.made} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
+{/snippet}
 
 <div class="shell" class:reading={!!route.entry}>
 	{#if route.entry}
@@ -314,55 +342,8 @@
 			{/each}
 		</section>
 	{:else}
-
-	{#if pages}
-		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
-		<div class="scrim" onclick={() => (pages = false)}></div>
-	{/if}
-	<!-- on a phone: the vault's pages, from a round button at the foot of the screen, left of the nav pill -->
-	<button
-		class="pages"
-		aria-pressed={pages}
-		aria-label="{nameOf(here)}'s pages"
-		onclick={() => (pages = !pages)}><Icon name="library" size={20} /></button
-	>
-	<aside class="aside" class:open={pages}>
-		<header>
-			<small>{KINDS[here.kind]}</small>
-			<h1>{nameOf(here)}</h1>
-			<p class="soft">{owners(here)}</p>
-		</header>
-		<nav class="tabs-list" aria-label="{nameOf(here)}'s pages">
-			<a class="item" href="#home"><Icon name="apps" /><span>Home</span></a>
-			{#each NAV as [group, items] (group)}
-				{#if group}<small class="group">{group}</small>{/if}
-				{#each items as [id, label, icon] (id)}
-					<a class="item" class:on={tab === id} href={OUT[id] ?? `#${id}`} aria-current={tab === id ? 'page' : undefined}>
-						<Icon name={icon} />
-						<span>{label}</span>
-					</a>
-				{/each}
-			{/each}
-		</nav>
-	</aside>
-
-	<section class="main">
-		<header class="main-head">
-			<h2>{PAGES.find(([id]) => id === tab)?.[1]}</h2>
-			<p class="soft">
-				{#if context === world.mine}
-					As <b>{nameOf(mine)}</b>.
-				{:else if actor === context}
-					As <b>{nameOf(mine)}</b>, its owner: you see and change all of it.
-				{:else if !SETTINGS.includes(tab)}
-					As <b>{nameOf(as)}</b>: you see what {nameOf(here)} shares with {nameOf(as)}.
-					{#if !here.via}<button class="link" onclick={() => (asking = true)}>Ask for access</button>{/if}
-				{:else}
-					As <b>{nameOf(as)}</b>. {nameOf(here)}'s settings show every share and device, as its owners see them.
-				{/if}
-			</p>
-		</header>
-		<AccessRequest {world} {requests} asked={asks.asked} made={asks.made} {api} {busy} ongrant={api.grant} ondeny={api.deny} />
+		<!-- a view: its own navigation on the left, itself in the middle under the head above, what it shows on the right,
+		     each in the one layout every view has (./Frame.svelte) -->
 		<svelte:boundary
 			onerror={(e, reset) => {
 				console.error(e);
@@ -393,13 +374,14 @@
 				<Database {world} vault={context} {actor} {api} view={tab} onopen={open} onview={go} />
 			{/if}
 			{#snippet failed(e, reset)}
-				<div class="card" role="alert">
-					<p class="error">This page stopped on an error: {e instanceof Error ? e.message : String(e)}</p>
-					<button class="btn" onclick={reset}>Try again</button>
-				</div>
+				<Frame>
+					<div class="card" role="alert">
+						<p class="error">This page stopped on an error: {e instanceof Error ? e.message : String(e)}</p>
+						<button class="btn" onclick={reset}>Try again</button>
+					</div>
+				</Frame>
 			{/snippet}
 		</svelte:boundary>
-	</section>
 	{/if}
 
 	<div class="toasts">
@@ -422,118 +404,48 @@
 </div>
 
 <style>
-	/* the screen, never scrolled: each column scrolls on its own */
+	/* the screen, never scrolled: each column of the view on it scrolls on its own (./Frame.svelte) */
 	.shell {
 		display: grid;
-		grid-template-columns: 15.5rem minmax(0, 1fr);
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-rows: minmax(0, 1fr);
 		height: 100vh;
 		height: 100dvh;
 		overflow: hidden;
 	}
 
-	/* a note open, on the whole screen */
-	.shell.reading {
-		grid-template-columns: minmax(0, 1fr);
-	}
-
-	.aside,
 	.main {
+		min-width: 0;
 		min-height: 0;
 		box-sizing: border-box;
 		overflow-y: auto;
 		overscroll-behavior: contain;
+		padding: calc(1.4rem + env(safe-area-inset-top, 0px)) clamp(1rem, 3vw, 2.4rem) 10rem;
 	}
 
-	/* wider, the vault's pages stand in their column: no button to slide them in */
-	.pages {
-		display: none;
-	}
-
-	.aside {
-		padding: calc(1.3rem + env(safe-area-inset-top, 0px)) 0.8rem 7rem;
-		border-right: 1px solid var(--edge);
-		background: #efebe3;
-	}
-
-	.aside header {
-		padding: 0 0.5rem 0.8rem;
-	}
-
-	.aside small {
+	/* the vault the view is in, back to its apps */
+	.crumb {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.35rem;
+		max-width: 100%;
+		margin: 0 0 0.25rem;
 		color: var(--accent);
 		font-size: 0.72rem;
+		font-weight: 600;
 		letter-spacing: 0.05em;
+		text-decoration: none;
 		text-transform: uppercase;
 	}
 
-	/* a vault's name in the body's face, which keeps the capitals of names like avenALICE plain */
-	.aside h1 {
-		margin: 0.2rem 0 0.3rem;
-		font-family: var(--font-body);
-		font-size: 1.3rem;
-		font-weight: 650;
-		font-variation-settings: normal;
-		letter-spacing: -0.01em;
-		line-height: 1.2;
-		overflow-wrap: anywhere;
+	.crumb span {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 
-	.aside p {
-		margin: 0;
-		font-size: 0.82rem;
-		line-height: 1.45;
-	}
-
-	.tabs-list {
-		display: flex;
-		flex-direction: column;
-		gap: 0.1rem;
-	}
-
-	/* a group's name over its pages, as a database studio heads its sidebar's sections */
-	.tabs-list .group {
-		padding: 1rem 0.6rem 0.3rem;
-		color: var(--soft);
-		font-size: 0.68rem;
-		font-weight: 600;
-	}
-
-	.item {
-		display: flex;
-		align-items: center;
-		gap: 0.55rem;
-		width: 100%;
-		box-sizing: border-box;
-		padding: 0.42rem 0.6rem;
-		border-radius: 8px;
-		font-size: 0.9rem;
-		color: inherit;
-		text-decoration: none;
-		cursor: pointer;
-	}
-
-	.item :global(svg) {
-		flex: none;
-		color: var(--soft);
-	}
-
-	.item.on :global(svg) {
-		color: var(--accent);
-	}
-
-	.item:hover {
-		background: rgb(0 0 0 / 0.05);
-	}
-
-	.item.on {
-		background: #fff;
-		box-shadow: 0 1px 0 rgb(0 0 0 / 0.06);
-		font-weight: 600;
-	}
-
-	.main {
-		min-width: 0;
-		padding: calc(1.4rem + env(safe-area-inset-top, 0px)) clamp(1rem, 3vw, 2.4rem) 10rem;
+	.crumb:hover span {
+		text-decoration: underline;
 	}
 
 	.main-head h2 {
@@ -707,78 +619,9 @@
 	}
 
 	@media (max-width: 760px) {
-		.shell {
-			grid-template-columns: minmax(0, 1fr);
-			grid-template-rows: minmax(0, 1fr);
-		}
-
-		/* the vault's pages slide in from the left, over a scrim, from the round button at the foot */
-		.aside {
-			position: fixed;
-			top: 0;
-			bottom: 0;
-			left: 0;
-			z-index: 41;
-			box-sizing: border-box;
-			width: min(19rem, 84vw);
-			overflow-y: auto;
-			overscroll-behavior: contain;
-			padding: calc(1.2rem + env(safe-area-inset-top, 0px)) 0.8rem calc(var(--nav-room, 5rem) + 1rem);
-			box-shadow: 0 0 40px rgb(0 0 0 / 0.18);
-			visibility: hidden;
-			transform: translateX(-100%);
-			transition:
-				transform 240ms ease,
-				visibility 0s linear 240ms;
-		}
-
-		.aside.open {
-			visibility: visible;
-			transform: none;
-			transition: transform 240ms ease;
-		}
-
-		.scrim {
-			position: fixed;
-			inset: 0;
-			z-index: 40;
-			background: rgb(20 28 24 / 0.28);
-		}
-
-		.pages {
-			display: grid;
-			place-items: center;
-			position: fixed;
-			bottom: var(--nav-foot, 8px);
-			left: max(12px, env(safe-area-inset-left, 0px));
-			z-index: 50;
-			box-sizing: border-box;
-			width: var(--nav-height, 52px);
-			height: var(--nav-height, 52px);
-			padding: 0;
-			border: 1px solid var(--line, var(--edge));
-			border-radius: 50%;
-			background: rgb(250 248 242 / 0.94);
-			box-shadow: 0 10px 30px rgb(38 56 44 / 0.18);
-			backdrop-filter: blur(10px);
-			color: inherit;
-			cursor: pointer;
-		}
-
-		.pages[aria-pressed='true'] {
-			border-color: var(--accent);
-			background: var(--accent);
-			color: #fff;
-		}
-
 		/* clear of the notch and the status bar, now that nothing stands above it */
 		.main {
 			padding-top: calc(1rem + env(safe-area-inset-top, 0px));
-		}
-
-		.shell.reading {
-			grid-template-columns: minmax(0, 1fr);
-			grid-template-rows: minmax(0, 1fr);
 		}
 
 		/* four apps a row, as a phone's home screen shows them */
@@ -798,9 +641,4 @@
 		}
 	}
 
-	@media (prefers-reduced-motion: reduce) {
-		.aside {
-			transition: none;
-		}
-	}
 </style>

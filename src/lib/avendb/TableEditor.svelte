@@ -1,22 +1,25 @@
 <!--
-	The studio's table editor: a vault's entries as tables, as a database studio shows Postgres's: who they are shared
-	with to pick, or all of them, and its tables on the left, every one a schema's (db.js `tables`): one for each family
-	of the schemas this device holds, the versions its lenses join, each entry in the one it was written under; one for
-	each type no schema held here names; what the acting vault doesn't open sealed in its type's, or where it can't read
-	its type either, in sealed. The table picked as a grid, its columns the fields of its schema, newest version first,
-	each with its type, then what avenDB keeps of each row (who it is shared with, the devices it is synced to, the tags
-	shares select it by, which its record's own fields don't hold, its schemas, edits, proposals and who wrote it first,
-	and with the studio's internals shown its key's generation and size), SEALED where a row's record would tell and the
-	acting vault doesn't open it; sorted by a column, searched, and each row opened in a drawer, its record field by
-	field, a list of records' rows each opened in turn, at any depth, and each link followed to the record or row it
-	leads to, a level at a time, as the device's query follows it (./RecordView.svelte), and with the internals shown,
-	its mark to run now (the `mark` op). Files are entries too: a table whose entries bring files, as the File schema's
-	do, shows the file each brings beside its fields (its root, its length, its sealed size and its pieces), and they
-	are shared, synced and searched as every table's rows are.
+	The studio's table editor: a vault's entries as tables, as a database studio shows Postgres's, in the layout every
+	avenDB view has (./Frame.svelte). On the left a search of the rows, who they are shared with to pick, or all of
+	them, its tables, every one a schema's (db.js `tables`): one for each family of the schemas this device holds, the
+	versions its lenses join, each entry in the one it was written under; one for each type no schema held here names;
+	what the acting vault doesn't open sealed in its type's, or where it can't read its type either, in sealed; and the
+	switch that shows the studio's internals. In the middle the table picked as a grid, its columns the fields of its
+	schema, newest version first, each with its type, then what avenDB keeps of each row (who it is shared with, the
+	devices it is synced to, the tags shares select it by, which its record's own fields don't hold, its schemas, edits,
+	proposals and who wrote it first, and with the internals shown its key's generation and size), SEALED where a row's
+	record would tell and the acting vault doesn't open it; sorted by a column and searched. On the right the row
+	picked: its record field by field, a list of records' rows each opened in turn, at any depth, and each link followed
+	to the record or row it leads to, a level at a time, as the device's query follows it (./RecordView.svelte), then
+	what avenDB keeps of it, its entry, who it is shared with, where it is synced to, and with the internals shown its
+	mark to run now (the `mark` op); and with the internals shown, under it, what this browser holds of the database.
+	Files are entries too: a table whose entries bring files, as the File schema's do, shows the file each brings beside
+	its fields (its root, its length, its sealed size and its pieces), and they are shared, synced and searched as every
+	table's rows are.
 -->
 <script>
+	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
-	import Panel from './Panel.svelte';
 	import RecordView from './RecordView.svelte';
 	import { isLink, isLinks, isRows, valueWords } from './paths.js';
 	import { cell, hint, parsed, pgType, tables, typeOf } from './db.js';
@@ -30,22 +33,24 @@
 	 */
 
 	/**
-	 * @type {{ s: import('./db.js').Studio, cell: string, actor: string, api: any, internals: boolean,
-	 *   onopen: (entry: string) => void }}
+	 * @type {{ s: import('./db.js').Studio, db: import('./db.js').Db, cell: string, actor: string, api: any,
+	 *   internals: boolean, onopen: (entry: string) => void }}
 	 */
-	let { s, cell: within = $bindable(''), actor, api, internals, onopen } = $props();
+	let { s, db, cell: within = $bindable(''), actor, api, internals = $bindable(false), onopen } = $props();
 
 	/** the table picked, by its id: none at first, so the first */
 	let picked = $state('');
 	let query = $state('');
 	/** the column the rows are sorted by, and which way: none at first, in the order the vault holds them */
 	let sort = $state({ by: '', down: false });
-	/** the row whose drawer is open */
+	/** the row picked, shown on the right */
 	let open = $state('');
-	/** where in its record the drawer is: each list's field and a row of it, each link followed (./RecordView.svelte) */
+	/** which side slides in, where the screen is narrow */
+	let side = $state(/** @type {'' | 'nav' | 'aside'} */ (''));
+	/** where in its record the right side is: each list's field and a row of it, each link followed (./RecordView.svelte) */
 	let trail = $state(/** @type {(string | number | { id: number } | { to: true })[]} */ ([]));
 
-	// another row's drawer opens at its record
+	// another row opens at its record
 	$effect.pre(() => {
 		void open;
 		trail = [];
@@ -195,101 +200,61 @@
 	function sortBy(name) {
 		sort = sort.by !== name ? { by: name, down: false } : sort.down ? { by: '', down: false } : { by: name, down: true };
 	}
+
+	/** Show row `entry` on the right, sliding it in where the screen is narrow. @param {string} entry */
+	const show = (entry) => ([open, side] = [entry, 'aside']);
 </script>
 
-<div class="editor">
-	<aside class="tables" aria-label="Tables">
-		<label class="pick">
-			<span>Shared with</span>
-			<select class="field" bind:value={within} aria-label="Shared with">
-				<option value="">Every entry</option>
-				{#each s.byWho as g (g.words)}<option value={g.words}>{g.words}</option>{/each}
-			</select>
-		</label>
-		<h4>Tables</h4>
-		<ul>
-			{#each all as t (t.id)}
-				<li>
-					<button
-						class="t"
-						class:on={t.id === table?.id}
-						class:none={!t.rows.length}
-						data-table={t.id}
-						title={t.hint}
-						onclick={() => ([picked, open, sort] = [t.id, '', { by: '', down: false }])}
-					>
-						<Icon name={t.id === 'sealed' ? 'lock' : 'table'} size={14} />
-						<span class="mono">{t.label}</span>
-						<small>{t.rows.length}</small>
-					</button>
-				</li>
-			{/each}
-		</ul>
-	</aside>
+<svelte:window onkeydown={(e) => e.key === 'Escape' && (open = '')} />
 
-	<section class="area">
-		{#if table}
-			<header class="bar">
-				<h3 class="mono">{table.label}</h3>
-				{#if family}
-					<span class="chip accent" title="The versions of the schema its rows are written under, each joined to the next by a lens"
-						>{family.schemas.map((sc) => sc.title).join(' ⇄ ')}</span
-					>
-				{/if}
-				<span class="soft hint">{table.hint}</span>
-				<label class="search">
-					<Icon name="search" size={14} />
-					<input class="field" placeholder="Search rows" bind:value={query} aria-label="Search rows" />
-				</label>
-			</header>
+<!-- the left: a search of the rows, who they are shared with, the tables, and the switch for the internals -->
+{#snippet tablesNav()}
+	<input class="nav-search" type="search" placeholder="Search rows" bind:value={query} aria-label="Search rows" />
+	<h3 class="nav-group">Shared with</h3>
+	<button class="nav-item" class:on={!within} aria-pressed={!within} data-pick onclick={() => ([within, open] = ['', ''])}
+		><Icon name="board" size={16} /><span>Every entry</span><small>{s.rows.length}</small></button
+	>
+	{#each s.byWho as g (g.words)}
+		<button
+			class="nav-item"
+			class:on={within === g.words}
+			aria-pressed={within === g.words}
+			title={g.words}
+			data-pick
+			onclick={() => ([within, open] = [g.words, ''])}><Icon name="users" size={16} /><span>{g.words}</span><small>{g.entries}</small></button
+		>
+	{/each}
+	<h3 class="nav-group">Tables</h3>
+	{#each all as t (t.id)}
+		<button
+			class="nav-item"
+			class:on={t.id === table?.id}
+			aria-pressed={t.id === table?.id}
+			data-table={t.id}
+			title={t.hint}
+			data-pick
+			onclick={() => ([picked, open, sort] = [t.id, '', { by: '', down: false }])}
+			><Icon name={t.id === 'sealed' ? 'lock' : 'table'} size={16} /><span class="mono">{t.label}</span><small>{t.rows.length}</small></button
+		>
+	{/each}
+	<h3 class="nav-group">Internals</h3>
+	<button
+		class="nav-item"
+		class:on={internals}
+		aria-pressed={internals}
+		title="What this browser holds, key ids and generations, document sizes"
+		onclick={() => (internals = !internals)}><Icon name={internals ? 'eye' : 'eye-off'} size={16} /><span>Show the internals</span></button
+	>
+{/snippet}
 
-			<div class="grid" role="region" aria-label="{table.label}’s rows" tabindex="-1">
-				<table>
-					<thead>
-						<tr>
-							{#each columns as c ((c.sys || c.pk ? 'avendb:' : '') + c.name)}
-								<th class:pk={c.pk} class:sys={c.sys} title={c.hint} data-col={c.name} aria-sort={sort.by === c.name ? (sort.down ? 'descending' : 'ascending') : undefined}>
-									<button onclick={() => sortBy(c.name)}>
-										{#if c.pk}<Icon name="key" size={12} />{/if}
-										<span class="name">{c.name}</span>
-										<span class="type">{c.type}</span>
-										{#if sort.by === c.name}<span aria-hidden="true">{sort.down ? '↓' : '↑'}</span>{/if}
-									</button>
-								</th>
-							{/each}
-						</tr>
-					</thead>
-					<tbody>
-						{#each rows as r (r.entry)}
-							<!-- the row opens on a click anywhere; its key cell's button takes the keyboard's -->
-							<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-							<tr class="rec" class:on={open === r.entry} onclick={() => (open = r.entry)}>
-								{#each columns as c ((c.sys || c.pk ? 'avendb:' : '') + c.name)}
-									{@const v = shown(c, r)}
-									<td class={v.kind} class:pk={c.pk} class:sys={c.sys} data-col={c.name} title={c.pk ? r.entry : undefined}>
-										{#if c.pk}<button class="open mono" aria-label="Open the row {short(r.entry)}">{v.text}</button>{:else}{v.text}{/if}
-									</td>
-								{/each}
-							</tr>
-						{/each}
-					</tbody>
-				</table>
-				{#if !rows.length}
-					<p class="nothing">{query ? 'No row matches.' : 'No rows.'}</p>
-				{/if}
-			</div>
-			<footer class="foot">
-				<span>{count(rows.length, 'row')}{query ? ` of ${table.rows.length}` : ''}</span>
-				<span class="soft">{within ? `Shared with ${within}` : 'Every entry'} · {nameOf(s.here)}</span>
-				<span class="soft">As {nameOf(s.as)}: what is shared with it shows; the rest shows sealed.</span>
-			</footer>
-		{/if}
-	</section>
-</div>
-
-{#if row && table}
-	{@const opened = s.opens(row)}
-	<Panel title="{table.label} · {short(row.entry)}" sub={row.entry} onclose={() => (open = '')}>
+<!-- the right: the row picked, its record and what avenDB keeps of it; with the internals shown, the database's -->
+{#snippet inspector()}
+	{#if row && table}
+		{@const opened = s.opens(row)}
+		<header class="about-head">
+			<small>{table.label}</small>
+			<h3 class="mono" title={row.entry}>{short(row.entry)}</h3>
+		</header>
 		{#if opened && trail.length}
 			<RecordView {api} entry={row.entry} record={row.record} bind:trail />
 		{:else if opened}
@@ -343,7 +308,7 @@
 			</p>
 		{/if}
 
-		<h4 class="kept">What avenDB keeps of it</h4>
+		<h4 class="side-head">What avenDB keeps of it</h4>
 		<dl>
 			<dt>Entry</dt>
 			<dd class="mono">{row.entry}</dd>
@@ -401,96 +366,146 @@
 				<pre class="json">{JSON.stringify(row.record, null, 2)}</pre>
 			</details>
 		{/if}
-	</Panel>
-{/if}
+	{/if}
+	{#if internals}
+		<h4 class="side-head" class:top={!row}>What this browser holds</h4>
+		<div class="stats">
+			<div class="stat"><b>{s.rows.length}</b><span>{s.rows.length === 1 ? 'entry' : 'entries'}</span></div>
+			<div class="stat" title="Writes of its entries"><b>{db.edits.writes}</b><span>writes</span></div>
+			<div class="stat" title="Shares given over it, and how many of those were revoked">
+				<b>{db.edits.shares}</b><span>shares, {db.edits.revokes} revoked</span>
+			</div>
+			<div class="stat" title="The keys of its entries: one for the entries the same shares reach">
+				<b>{s.cells.length}</b><span>{s.cells.length === 1 ? 'key' : 'keys'}, its seed at generation {db.seed}</span>
+			</div>
+			<div class="stat" title="Every signed edit this browser holds, of every vault it knows">
+				<b>{db.held.edits}</b><span>signed edits held</span>
+			</div>
+			<div class="stat" title="The McEliece keys this browser holds, to open what is sealed to it">
+				<b>{db.held.keys}</b><span>McEliece keys held</span>
+			</div>
+		</div>
+	{/if}
+{/snippet}
+
+<Frame
+	nav={tablesNav}
+	aside={(row && table) || internals ? inspector : undefined}
+	bind:open={side}
+	navLabel="Tables"
+	asideLabel="The row picked, and what avenDB keeps of it"
+	navIcon="table"
+	asideIcon="info"
+>
+	{#if table}
+		<header class="bar">
+			<h3 class="mono">{table.label}</h3>
+			{#if family}
+				<span class="chip accent" title="The versions of the schema its rows are written under, each joined to the next by a lens"
+					>{family.schemas.map((sc) => sc.title).join(' ⇄ ')}</span
+				>
+			{/if}
+			<span class="soft hint">{table.hint}</span>
+		</header>
+
+		<div class="grid" role="region" aria-label="{table.label}’s rows" tabindex="-1">
+			<table>
+				<thead>
+					<tr>
+						{#each columns as c ((c.sys || c.pk ? 'avendb:' : '') + c.name)}
+							<th class:pk={c.pk} class:sys={c.sys} title={c.hint} data-col={c.name} aria-sort={sort.by === c.name ? (sort.down ? 'descending' : 'ascending') : undefined}>
+								<button onclick={() => sortBy(c.name)}>
+									{#if c.pk}<Icon name="key" size={12} />{/if}
+									<span class="name">{c.name}</span>
+									<span class="type">{c.type}</span>
+									{#if sort.by === c.name}<span aria-hidden="true">{sort.down ? '↓' : '↑'}</span>{/if}
+								</button>
+							</th>
+						{/each}
+					</tr>
+				</thead>
+				<tbody>
+					{#each rows as r (r.entry)}
+						<!-- the row opens on a click anywhere; its key cell's button takes the keyboard's -->
+						<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+						<tr class="rec" class:on={open === r.entry} onclick={() => show(r.entry)}>
+							{#each columns as c ((c.sys || c.pk ? 'avendb:' : '') + c.name)}
+								{@const v = shown(c, r)}
+								<td class={v.kind} class:pk={c.pk} class:sys={c.sys} data-col={c.name} title={c.pk ? r.entry : undefined}>
+									{#if c.pk}<button class="open mono" aria-label="Open the row {short(r.entry)}">{v.text}</button>{:else}{v.text}{/if}
+								</td>
+							{/each}
+						</tr>
+					{/each}
+				</tbody>
+			</table>
+			{#if !rows.length}
+				<p class="nothing">{query ? 'No row matches.' : 'No rows.'}</p>
+			{/if}
+		</div>
+		<footer class="foot">
+			<span>{count(rows.length, 'row')}{query ? ` of ${table.rows.length}` : ''}</span>
+			<span class="soft">{within ? `Shared with ${within}` : 'Every entry'} · {nameOf(s.here)}</span>
+			<span class="soft">As {nameOf(s.as)}: what is shared with it shows; the rest shows sealed.</span>
+		</footer>
+	{/if}
+</Frame>
 
 <style>
-	.editor {
-		display: grid;
-		grid-template-columns: 12.5rem minmax(0, 1fr);
-		gap: 1.2rem;
-	}
-
-	.tables .pick {
-		display: flex;
-		flex-direction: column;
-		gap: 0.25rem;
-		margin-bottom: 1rem;
-		font-size: 0.72rem;
+	/* the right side: the row picked, then what avenDB keeps of it */
+	.about-head small {
+		color: var(--accent);
+		font-size: 0.7rem;
 		font-weight: 600;
 		letter-spacing: 0.05em;
 		text-transform: uppercase;
-		color: var(--soft);
 	}
 
-	.tables select {
-		text-transform: none;
-		letter-spacing: 0;
-		font-weight: 400;
-		color: #1f2a23;
+	.about-head h3 {
+		margin: 0.15rem 0 1rem;
+		font-size: 1.05rem;
+		overflow-wrap: anywhere;
 	}
 
-	h4 {
-		margin: 0 0 0.4rem;
+	.side-head {
+		margin: 1.3rem 0 0.5rem;
 		color: var(--soft);
 		font-family: var(--font-body);
-		font-size: 0.72rem;
+		font-size: 0.68rem;
 		font-weight: 600;
-		letter-spacing: 0.05em;
+		letter-spacing: 0.06em;
 		text-transform: uppercase;
 	}
 
-	.tables ul {
+	.side-head.top {
+		margin-top: 0.2rem;
+	}
+
+	/* what this browser holds of the database, with the internals shown */
+	.stats {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: 0.5rem;
+	}
+
+	.stat {
 		display: flex;
 		flex-direction: column;
-		gap: 0.1rem;
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	.t {
-		display: flex;
-		align-items: center;
-		gap: 0.45rem;
-		width: 100%;
-		padding: 0.38rem 0.5rem;
-		border: 0;
-		border-radius: 7px;
-		background: none;
-		font: inherit;
-		font-size: 0.86rem;
-		text-align: left;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	.t .mono {
-		flex: 1;
-		font-size: 0.82rem;
-	}
-
-	.t small {
-		color: var(--soft);
-		font-size: 0.72rem;
-	}
-
-	.t:hover {
-		background: rgb(0 0 0 / 0.05);
-	}
-
-	.t.on {
+		gap: 0.15rem;
+		padding: 0.55rem 0.7rem;
+		border: 1px solid var(--edge);
+		border-radius: 10px;
 		background: #fff;
-		box-shadow: 0 1px 0 rgb(0 0 0 / 0.06);
-		font-weight: 600;
 	}
 
-	.t.none {
+	.stat b {
+		font-size: 1.15rem;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.stat span {
 		color: var(--soft);
-	}
-
-	.area {
-		min-width: 0;
+		font-size: 0.74rem;
 	}
 
 	.bar {
@@ -509,19 +524,6 @@
 	.bar .hint {
 		flex: 1 1 12rem;
 		font-size: 0.78rem;
-	}
-
-	.search {
-		display: flex;
-		align-items: center;
-		gap: 0.35rem;
-		color: var(--soft);
-	}
-
-	.search input {
-		width: 11rem;
-		padding: 0.3rem 0.5rem;
-		font-size: 0.82rem;
 	}
 
 	/* the grid: a header that stays, a key column that stays, every cell on one line */
@@ -665,7 +667,7 @@
 		font-size: 0.78rem;
 	}
 
-	/* the drawer */
+	/* the row's record, field by field */
 	.fields {
 		display: flex;
 		flex-direction: column;
@@ -714,16 +716,12 @@
 		line-height: 1.5;
 	}
 
-	.kept {
-		margin: 1.3rem 0 0.5rem;
-	}
-
 	dl {
 		display: grid;
 		grid-template-columns: max-content minmax(0, 1fr);
-		gap: 0.35rem 1rem;
+		gap: 0.3rem 0.8rem;
 		margin: 0 0 1rem;
-		font-size: 0.86rem;
+		font-size: 0.82rem;
 	}
 
 	dt {
@@ -749,41 +747,5 @@
 
 	details .json {
 		margin-top: 0.4rem;
-	}
-
-	@media (max-width: 1000px) {
-		.editor {
-			grid-template-columns: minmax(0, 1fr);
-			gap: 0.6rem;
-		}
-
-		.tables {
-			display: flex;
-			flex-wrap: wrap;
-			align-items: flex-end;
-			gap: 0.4rem 0.8rem;
-		}
-
-		/* as wide as the screen at most, however long the names of who a cell is shared with */
-		.tables .pick {
-			margin: 0;
-			max-width: 100%;
-		}
-
-		.tables h4 {
-			display: none;
-		}
-
-		.tables ul {
-			flex-direction: row;
-			flex-wrap: nowrap;
-			max-width: 100%;
-			overflow-x: auto;
-		}
-
-		.t {
-			width: auto;
-			white-space: nowrap;
-		}
 	}
 </style>

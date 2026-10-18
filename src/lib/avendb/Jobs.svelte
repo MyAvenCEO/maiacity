@@ -1,20 +1,25 @@
 <!--
-	What this device does in the background for the vault the page shows, live: what it works on now, each job with its kind, what it works on, how far it is and how
-	long it has left; and what it did, each with where what it worked on is synced to now, or why it failed. Its jobs
-	(the device's `jobs` op): files brought into its store, sealed as their bytes come; files kept whole, their pieces
-	fetched from the peers that hold them; and the edits a peer holds for it, asked for page by page and taken. Each
-	job tells the vaults and entries it is about, and the page shows only those of its vault, a pull with only that
-	vault's edits. Beside them, what still syncs, by entry and by file, from where each is synced to: each device that
-	holds only some of what this one holds of the vault, with how much of it.
-	On the Mac app, under them, the studio's jobs (Samuel 2026-10-18: the studio has no Jobs tab of its own any more):
-	the studio's rules, once for every vault this Mac works for, and every job they start, live, as the legacy studio's
-	jobs viewer showed them ($lib/studio/jobs/Tasks.svelte).
+	What this device does in the background for the vault the page shows, live, in the layout every avenDB view has
+	(./Frame.svelte): on the left what to show, everything, what runs now, what still syncs, what is done and failed,
+	or only the failed or only the done; in the middle what it works on now, each job with its kind, what it works on,
+	how far it is and how long it has left; what still syncs, by entry and by file, from where each is synced to: each
+	device that holds only some of what this one holds of the vault, with how much of it; and what it did, each with
+	where what it worked on is synced to now, or why it failed; on the right the job picked, how far it is, when it
+	started and ended, what it is about and where that is synced to now. Its jobs (the device's `jobs` op): files
+	brought into its store, sealed as their bytes come; files kept whole, their pieces fetched from the peers that hold
+	them; and the edits a peer holds for it, asked for page by page and taken. Each job tells the vaults and entries it
+	is about, and the page shows only those of its vault, a pull with only that vault's edits.
+	On the Mac app, under them and on the left too, the studio's jobs (Samuel 2026-10-18: the studio has no Jobs tab of
+	its own any more): the studio's rules, once for every vault this Mac works for, and every job they start, live, as
+	the legacy studio's jobs viewer showed them ($lib/studio/jobs/Tasks.svelte).
 -->
 <script>
 	import { onMount } from 'svelte';
 	import { native } from '$lib/native';
 	import Tasks from '$lib/studio/jobs/Tasks.svelte';
 	import { studio } from './db.js';
+	import Frame from './Frame.svelte';
+	import Icon from './Icon.svelte';
 	import { ago, count, short, size } from './vaults.js';
 
 	/**
@@ -35,12 +40,27 @@
 	let ended = $state([]);
 	let failed = $state('');
 	let now = $state(Date.now());
-	let filter = $state(/** @type {'all' | 'failed' | 'done'} */ ('all'));
+	/** what the left side shows: everything, one part of the page, or the jobs that ended so */
+	let show = $state(/** @type {(typeof PARTS)[number][0]} */ (''));
+	/** the job picked, by its id, whose progress the right side shows */
+	let picked = $state('');
+	/** the side slid in, where the sides slide in */
+	let open = $state(/** @type {'' | 'nav' | 'aside'} */ (''));
 
 	const s = $derived(studio(world, null, vault, actor));
 
 	/** Each kind, as its chip names it. */
 	const KIND = /** @type {Record<string, string>} */ ({ bring: 'Bringing in', keep: 'Keeping', pull: 'Taking' });
+	/** What the left side shows, each by its key, its name and its icon: the studio's in the Mac app alone. */
+	const PARTS = /** @type {const} */ ([
+		['', 'Everything', 'jobs'],
+		['now', 'Now', 'play'],
+		['syncing', 'Syncing', 'sync'],
+		['ended', 'Done and failed', 'history'],
+		['failed', 'Failed', 'close'],
+		['done', 'Done', 'check'],
+		['studio', 'Studio', 'studio']
+	]);
 
 	// the device's jobs, read again each second while the page shows
 	onMount(() => {
@@ -99,11 +119,11 @@
 		return p !== null && p > 0.02 && p < 1 && t > 3 ? (t / p) * (1 - p) : null;
 	};
 
+	/** A time in milliseconds since 1970, as a person reads it. @param {number} t */
+	const stamp = (t) => new Date(t).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+
 	/** When job `j` ended, as a person reads it. @param {Job} j */
-	const when = (j) =>
-		j.ended
-			? new Date(j.ended).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-			: '';
+	const when = (j) => (j.ended ? stamp(j.ended) : '');
 
 	/** the vault's entries, by id */
 	const entries = $derived(new Map(world.entries.filter((e) => e.vault === vault).map((e) => [e.entry, e])));
@@ -178,136 +198,252 @@
 
 	const busy = $derived(running.filter(ours));
 	const ends = $derived(ended.filter(ours));
-	const shown = $derived(ends.filter((j) => filter === 'all' || j.state === filter));
+	const shown = $derived(ends.filter((j) => (show !== 'failed' && show !== 'done') || j.state === show));
 	const failures = $derived(ends.filter((j) => j.state === 'failed').length);
+	/** how many each part on the left lists */
+	const counts = $derived(
+		/** @type {Record<string, number>} */ ({
+			now: busy.length,
+			syncing: syncing.length,
+			ended: ends.length,
+			failed: failures,
+			done: ends.length - failures
+		})
+	);
+	/** Whether the page shows its part `part`, as the left side picks. @param {string} part */
+	const shows = (part) => !show || show === part || (part === 'ended' && (show === 'failed' || show === 'done'));
+	/** the job picked, while the device still tells it */
+	const job = $derived(picked ? [...busy, ...ends].find((j) => j.id === picked) : undefined);
+
+	/** Picks job `j`, its progress on the right, slid in where the right side slides in. @param {Job} j */
+	function pick(j) {
+		picked = j.id;
+		if (matchMedia('(max-width: 1100px)').matches) open = 'aside';
+	}
 </script>
 
-<div class="jobs">
-	<p class="soft lead">
-		What this device does in the background for this vault: files it brings in and keeps whole, edits it takes from
-		your other devices and avenDB’s server, where each is synced to now, and what still syncs, by entry and by file.
-	</p>
-	{#if failed}<p class="error">Reading the jobs failed: {failed}</p>{/if}
-
-	<section>
-		<h3>Now</h3>
-		{#if busy.length}
-			<table>
-				<tbody>
-					{#each busy as j (j.id)}
-						{@const p = part(j)}
-						{@const eta = left(j)}
-						<tr>
-							<td><span class="chip accent">{KIND[j.kind] ?? j.kind}</span></td>
-							<td class="name" title={j.subject}>{what(j)}</td>
-							<td class="bar"><i style:width="{(p ?? 0) * 100}%" class:unknown={p === null}></i></td>
-							<td class="num">{p === null ? '' : `${Math.round(p * 100)} %`}</td>
-							<td class="soft">
-								{[j.stage, howFar(j), clock(took(j)), eta !== null ? `${clock(eta)} left` : '']
-									.filter(Boolean)
-									.join(' · ')}
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
+<!-- where what job `j` worked on is synced to now, a chip each device -->
+{#snippet where(/** @type {Job} */ j)}
+	<div class="where">
+		{#each syncedTo(j) as h (h.device)}
+			{@const all = h.has >= h.of}
+			{@const held = all ? 'all of it' : `${h.has} of ${h.of}`}
+			{@const since = h.checked == null ? '' : `, as it said ${ago(h.checked, now)}`}
+			<span class="chip" class:ok={all} class:warn={!all} title="{s.signer(h.device)} holds {held}{since}">
+				{s.signer(h.device)}{all ? '' : ` ${Math.round((100 * h.has) / h.of)} %`}{h.checked == null
+					? ''
+					: ` · ${ago(h.checked, now)}`}
+			</span>
 		{:else}
-			<p class="empty">Nothing runs now.</p>
-		{/if}
-	</section>
+			<span class="chip">Not synced yet</span>
+		{/each}
+	</div>
+{/snippet}
 
-	<section>
-		<h3>Syncing</h3>
-		{#if syncing.length}
-			<table>
-				<tbody>
-					{#each syncing as r (r.id)}
-						<tr>
-							<td><span class="chip">{r.kind === 'file' ? 'File' : 'Entry'}</span></td>
-							<td class="name">{r.what}</td>
-							<td class="bar"><i style:width="{(r.has / r.of) * 100}%"></i></td>
-							<td class="num">{Math.round((100 * r.has) / r.of)} %</td>
-							<td class="soft">
-								{s.signer(r.device)} holds {r.has} of {count(r.of, r.kind === 'file' ? 'piece' : 'edit')}
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		{:else}
-			<p class="empty">Everything here is on every device that holds it.</p>
-		{/if}
-	</section>
+<!-- what job `j` works on, to pick it: its progress shows on the right -->
+{#snippet name(/** @type {Job} */ j)}
+	<button class="pick" aria-pressed={picked === j.id} title={j.subject} onclick={() => pick(j)}>{what(j)}</button>
+{/snippet}
 
-	<section>
-		<div class="head">
-			<h3>Done and failed</h3>
-			<div class="seg">
-				<button class:on={filter === 'all'} onclick={() => (filter = 'all')}>All</button>
-				<button class:on={filter === 'failed'} onclick={() => (filter = 'failed')}>
-					Failed{failures ? ` (${failures})` : ''}
-				</button>
-				<button class:on={filter === 'done'} onclick={() => (filter = 'done')}>Done</button>
+<!-- down the left, what the page shows: everything, a part of it, or the jobs that ended so -->
+{#snippet parts()}
+	<h3 class="nav-group">Show</h3>
+	{#each PARTS as [key, label, icon] (key)}
+		{#if key !== 'studio' || native()}
+			<button class="nav-item" class:on={show === key} aria-pressed={show === key} data-pick onclick={() => (show = key)}
+				><Icon name={icon} size={16} /><span>{label}</span>{#if key in counts}<small>{counts[key]}</small>{/if}</button
+			>
+		{/if}
+	{/each}
+{/snippet}
+
+<!-- on the right, the job picked: how far it is, when, what it is about and where that is synced to -->
+{#snippet progress()}
+	{#if job}
+		{@const p = part(job)}
+		{@const eta = left(job)}
+		{@const about = itsEntries(job)}
+		<header class="about-head">
+			<small>{KIND[job.kind] ?? job.kind}</small>
+			<h3>{what(job)}</h3>
+		</header>
+		<h4 class="side-head">{job.state === 'running' ? 'How far it is' : job.state === 'failed' ? 'Why it failed' : 'What it did'}</h4>
+		{#if job.state === 'running'}
+			<div class="meter">
+				<span class="bar"><i style:width="{(p ?? 0) * 100}%" class:unknown={p === null}></i></span>
+				<b class="num">{p === null ? '' : `${Math.round(p * 100)} %`}</b>
 			</div>
-		</div>
-		{#if shown.length}
-			<table>
-				<tbody>
-					{#each shown as j (j.id)}
-						<tr class={j.state}>
-							<td class="soft when">{when(j)}</td>
-							<td><span class="chip">{KIND[j.kind] ?? j.kind}</span></td>
-							<td class="name" title={j.subject}>{what(j)}</td>
-							<td>
-								<div class="where">
-									{#if j.state === 'failed'}
-										<span class="chip bad">Failed</span>
-									{:else}
-										{#each syncedTo(j) as h (h.device)}
-											{@const all = h.has >= h.of}
-											{@const held = all ? 'all of it' : `${h.has} of ${h.of}`}
-											{@const since = h.checked == null ? '' : `, as it said ${ago(h.checked, now)}`}
-											<span class="chip" class:ok={all} class:warn={!all} title="{s.signer(h.device)} holds {held}{since}">
-												{s.signer(h.device)}{all ? '' : ` ${Math.round((100 * h.has) / h.of)} %`}{h.checked == null
-													? ''
-													: ` · ${ago(h.checked, now)}`}
-											</span>
-										{:else}
-											<span class="chip">Not synced yet</span>
-										{/each}
-									{/if}
-								</div>
-							</td>
-							<td class="soft" title={j.error ?? ''}>
-								{j.state === 'failed' ? j.error : `${howFar(j)} in ${clock(took(j))}`}
-							</td>
-						</tr>
-					{/each}
-				</tbody>
-			</table>
-		{:else}
-			<p class="empty">Nothing yet.</p>
 		{/if}
-	</section>
-
-	{#if native()}
-		<section class="studio">
-			<h3>Studio</h3>
-			<p class="soft">What the studio’s rules want made of your vaults’ footage and cuts (proxies, stills, transcripts, renders), and this Mac making it, as every vault’s worker.</p>
-			<Tasks />
-		</section>
+		<dl>
+			<dt>It is</dt>
+			<dd>
+				{#if job.state === 'failed'}<span class="chip bad">Failed</span>
+				{:else if job.state === 'done'}<span class="chip ok">Done</span>
+				{:else}<span class="chip accent">Running</span>{/if}
+			</dd>
+			{#if job.stage}
+				<dt>Stage</dt>
+				<dd>{job.stage}</dd>
+			{/if}
+			<dt>{job.state === 'running' ? 'So far' : 'It did'}</dt>
+			<dd>{howFar(job)}</dd>
+			<dt>Started</dt>
+			<dd>{stamp(job.started)}</dd>
+			{#if job.ended}
+				<dt>Ended</dt>
+				<dd>{when(job)}</dd>
+			{/if}
+			<dt>{job.ended ? 'It took' : 'Running for'}</dt>
+			<dd>{clock(took(job))}</dd>
+			{#if eta !== null}
+				<dt>Left</dt>
+				<dd>{clock(eta)}</dd>
+			{/if}
+			{#if job.error}
+				<dt>Why</dt>
+				<dd class="error">{job.error}</dd>
+			{/if}
+		</dl>
+		<h4 class="side-head">What it is about</h4>
+		<dl>
+			<dt>{job.kind === 'pull' ? 'From' : 'File'}</dt>
+			{#if job.kind === 'pull'}
+				<dd>{s.signer(job.subject)}</dd>
+			{:else}
+				<dd class="mono" title={job.subject}>{short(job.subject)}</dd>
+			{/if}
+			{#if about.length}
+				<dt>{about.length === 1 ? 'Entry' : 'Entries'}</dt>
+				<dd>{about.map((e) => s.entry(e)).join(', ')}</dd>
+			{/if}
+		</dl>
+		{#if job.state === 'done'}
+			<h4 class="side-head">Synced to</h4>
+			{@render where(job)}
+		{/if}
 	{/if}
-</div>
+{/snippet}
+
+<Frame
+	nav={parts}
+	aside={job ? progress : undefined}
+	bind:open
+	navLabel="What it shows"
+	asideLabel="The job’s progress"
+	navIcon="jobs"
+	asideIcon="info"
+>
+	<div class="jobs">
+		<p class="soft lead">
+			What this device does in the background for this vault: files it brings in and keeps whole, edits it takes from
+			your other devices and avenDB’s server, where each is synced to now, and what still syncs, by entry and by file.
+		</p>
+		{#if failed}<p class="error">Reading the jobs failed: {failed}</p>{/if}
+
+		{#if shows('now')}
+			<section>
+				<h3>Now</h3>
+				{#if busy.length}
+					<table>
+						<tbody>
+							{#each busy as j (j.id)}
+								{@const p = part(j)}
+								{@const eta = left(j)}
+								<tr class:on={picked === j.id}>
+									<td><span class="chip accent">{KIND[j.kind] ?? j.kind}</span></td>
+									<td class="name">{@render name(j)}</td>
+									<td class="bar"><i style:width="{(p ?? 0) * 100}%" class:unknown={p === null}></i></td>
+									<td class="num">{p === null ? '' : `${Math.round(p * 100)} %`}</td>
+									<td class="soft">
+										{[j.stage, howFar(j), clock(took(j)), eta !== null ? `${clock(eta)} left` : '']
+											.filter(Boolean)
+											.join(' · ')}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				{:else}
+					<p class="empty">Nothing runs now.</p>
+				{/if}
+			</section>
+		{/if}
+
+		{#if shows('syncing')}
+			<section>
+				<h3>Syncing</h3>
+				{#if syncing.length}
+					<table>
+						<tbody>
+							{#each syncing as r (r.id)}
+								<tr>
+									<td><span class="chip">{r.kind === 'file' ? 'File' : 'Entry'}</span></td>
+									<td class="name">{r.what}</td>
+									<td class="bar"><i style:width="{(r.has / r.of) * 100}%"></i></td>
+									<td class="num">{Math.round((100 * r.has) / r.of)} %</td>
+									<td class="soft">
+										{s.signer(r.device)} holds {r.has} of {count(r.of, r.kind === 'file' ? 'piece' : 'edit')}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				{:else}
+					<p class="empty">Everything here is on every device that holds it.</p>
+				{/if}
+			</section>
+		{/if}
+
+		{#if shows('ended')}
+			<section>
+				<h3>{show === 'failed' ? 'Failed' : show === 'done' ? 'Done' : 'Done and failed'}</h3>
+				{#if shown.length}
+					<table>
+						<tbody>
+							{#each shown as j (j.id)}
+								<tr class={j.state} class:on={picked === j.id}>
+									<td class="soft when">{when(j)}</td>
+									<td><span class="chip">{KIND[j.kind] ?? j.kind}</span></td>
+									<td class="name">{@render name(j)}</td>
+									<td>
+										{#if j.state === 'failed'}
+											<span class="chip bad">Failed</span>
+										{:else}
+											{@render where(j)}
+										{/if}
+									</td>
+									<td class="soft" title={j.error ?? ''}>
+										{j.state === 'failed' ? j.error : `${howFar(j)} in ${clock(took(j))}`}
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				{:else}
+					<p class="empty">Nothing yet.</p>
+				{/if}
+			</section>
+		{/if}
+
+		{#if native() && shows('studio')}
+			<section class="studio">
+				<h3>Studio</h3>
+				<p class="soft">What the studio’s rules want made of your vaults’ footage and cuts (proxies, stills, transcripts, renders), and this Mac making it, as every vault’s worker.</p>
+				<Tasks />
+			</section>
+		{/if}
+	</div>
+</Frame>
 
 <style>
 	/* the studio's jobs, in this page's colours */
 	.studio {
+		--warn: #9a6a14;
 		--dim: var(--muted, #8a8579);
 		--hover: #f1eee6;
 		--ok: #2f7a4a;
 		--accent: #b8742a;
 		--bad: #b23a22;
-		--warn: #9a6a14;
 	}
 
 	.studio :global(.ghost.small) {
@@ -331,49 +467,12 @@
 		margin: 0;
 	}
 
-	h3 {
+	.jobs h3 {
 		margin: 0 0 0.5rem;
 		font-size: 0.72rem !important;
 		letter-spacing: 0.06em !important;
 		text-transform: uppercase;
 		color: var(--soft);
-	}
-
-	.head {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.5rem;
-		margin-bottom: 0.4rem;
-	}
-
-	.head h3 {
-		margin: 0;
-	}
-
-	.seg {
-		display: inline-flex;
-		padding: 0.15rem;
-		border-radius: 9px;
-		background: rgb(0 0 0 / 0.06);
-	}
-
-	.seg button {
-		padding: 0.25rem 0.7rem;
-		border: 0;
-		border-radius: 7px;
-		background: none;
-		font: inherit;
-		font-size: 0.8rem;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	.seg button.on {
-		background: #fff;
-		box-shadow: 0 1px 2px rgb(0 0 0 / 0.1);
-		font-weight: 600;
 	}
 
 	table {
@@ -400,6 +499,30 @@
 		white-space: nowrap;
 		text-overflow: ellipsis;
 		font-weight: 500;
+	}
+
+	/* what a job works on, to pick it */
+	.pick {
+		display: block;
+		max-width: 18rem;
+		overflow: hidden;
+		padding: 0;
+		border: 0;
+		background: none;
+		font: inherit;
+		color: inherit;
+		text-align: left;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+		cursor: pointer;
+	}
+
+	.pick:hover {
+		text-decoration: underline;
+	}
+
+	tr.on td {
+		background: rgb(0 0 0 / 0.04);
 	}
 
 	.bar {
@@ -441,8 +564,63 @@
 		font-variant-numeric: tabular-nums;
 	}
 
+	/* the right side: the job picked, how far it is, then what it is about */
+	.about-head small {
+		color: var(--accent);
+		font-size: 0.7rem;
+		font-weight: 600;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+	}
+
+	.about-head h3 {
+		margin: 0.15rem 0 0;
+		font-size: 1.15rem;
+		overflow-wrap: anywhere;
+	}
+
+	.side-head {
+		margin: 1.3rem 0 0.5rem;
+		color: var(--soft);
+		font-family: var(--font-body);
+		font-size: 0.68rem;
+		font-weight: 600;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+	}
+
+	.meter {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		margin: 0 0 0.7rem;
+		font-size: 0.86rem;
+	}
+
+	.meter .bar {
+		display: block;
+		flex: 1;
+	}
+
+	dl {
+		display: grid;
+		grid-template-columns: max-content minmax(0, 1fr);
+		gap: 0.3rem 0.8rem;
+		margin: 0;
+		font-size: 0.8rem;
+	}
+
+	dt {
+		opacity: 0.6;
+	}
+
+	dd {
+		margin: 0;
+		overflow-wrap: anywhere;
+	}
+
 	@media (max-width: 640px) {
-		.bar,
+		td.bar,
 		.when {
 			display: none;
 		}
