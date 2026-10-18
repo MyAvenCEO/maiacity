@@ -145,8 +145,10 @@ fn listable(prefix: &str) -> bool {
 /// still, as the seed writes each skill, the theOS paper and the avenDB docs as a story of Maia City with a doc post,
 /// and Samuel asked to reset and seed again; 17 since later that day, as the seed is Maia City alone, a coop the first
 /// person's vault owns, and avenMAIA, its one aven, which lives on the server, its device: no holding, no company coop,
-/// no device vault of the server's, and an aven is a coop's, one to a coop, never a person's (Samuel asked for it).
-pub const FLOOR: u64 = 17;
+/// no device vault of the server's, and an aven is a coop's, one to a coop, never a person's (Samuel asked for it); 18
+/// since that evening, as Studio 2 stands alone, the old studio's vault unwired, and the old vault's media is copied
+/// into a fresh Maia City (Samuel: "migrate everything to Studio 2, then feel free to reset again").
+pub const FLOOR: u64 = 18;
 
 /// Whether a place keeps what is under `name`, the first part of its names there: a shelf of generation `FLOOR` or a
 /// later one. Whatever else the place holds came before the last reset, and goes as the place opens.
