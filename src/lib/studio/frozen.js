@@ -1,19 +1,36 @@
 /*
- * The legacy films as the repo keeps them (films/legacy/<key>.json, written once by scripts/freeze-films.mjs): the
- * timeline as the old studio had it, its world shots' specs by `<shot>@<version>`, and the media vault files it plays,
- * by their BLAKE3 hash. ./legacyfilms.js brings a film from here when the repo has it, so neither an avenDB reset nor
- * the old studio's going loses it: the footage and the voice come from the media vault, which stays.
+ * The legacy films frozen: the timeline as the old studio had it, its world shots' specs by `<shot>@<version>`, and
+ * the files it plays, by their BLAKE3 hash. Kept in the repo (films/legacy/<key>.json, scripts/freeze-films.mjs) or,
+ * as now, in the film seed on the Mac (~/maiaCITY-seed/films/<key>/, the app's `film_seed`, with the files' bytes
+ * beside it, which `studio_import` reads first). ./legacyfilms.js brings a film from here when it is frozen, so
+ * neither an avenDB reset nor the old studio's going loses it.
  */
 
-import { badFrozen } from './filmlist.js';
+import { badFrozen, filesIn } from './filmlist.js';
 
 /** @typedef {import('./filmlist.js').Frozen} Frozen */
 
 /** Every frozen film in the repo, by its key. */
 const ALL = /** @type {Record<string, { default: Frozen }>} */ (import.meta.glob('/films/legacy/*.json', { eager: true }));
 
-/** Film `key` as the repo keeps it, or `null`. @param {string} key @returns {Frozen | null} */
-export function frozenFilm(key) {
-	const f = Object.values(ALL).map((m) => m.default).find((x) => x?.key === key) ?? null;
-	return f && !badFrozen(f) ? f : null;
+/**
+ * Film `key` frozen: as the repo keeps it, else as this Mac's film seed does; `null` where neither has it.
+ * @param {import('./filmlist.js').Film} film @returns {Promise<Frozen | null>}
+ */
+export async function frozenFilm(film) {
+	const inRepo = Object.values(ALL).map((m) => m.default).find((x) => x?.key === film.key);
+	if (inRepo && !badFrozen(inRepo)) return inRepo;
+	try {
+		const { command, native } = await import('$lib/native');
+		if (!native()) return null;
+		const v = /** @type {{ timeline: any, shots: Frozen['shots'] } | null} */ (await command('film_seed', { key: film.key }));
+		if (!v) return null;
+		const f = { key: film.key, name: film.name, frozen: '', story: { title: film.name, description: v.timeline?.description ?? '' }, timeline: v.timeline, shots: v.shots, files: filesIn(v.timeline) };
+		const bad = badFrozen(f);
+		if (bad) console.warn(`the film seed of ${film.name}: ${bad}`);
+		return bad ? null : f;
+	} catch (e) {
+		console.warn(`the film seed of ${film.name}:`, e);
+		return null;
+	}
 }

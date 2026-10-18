@@ -8,8 +8,8 @@
  * the repo seed, on the Mac, as it writes the rest ($lib/avendb/Account.svelte), and the studio brings them too
  * whenever it opens there and the Maia City vault lacks one (`bringFilms`), one run for both, so after a reset of
  * avenDB they come back by themselves; a film already there (its story and its cut carry the film's tag) costs no
- * call to the legacy API. A film frozen into the repo (films/legacy/<key>.json, ./frozen.js) comes from there and the
- * media vault alone (Samuel 2026-10-18 13:29: both must come back after the old studio is gone); the old studio is
+ * call to the legacy API. A film frozen (into the repo, or the Mac's film seed ~/maiaCITY-seed/films, ./frozen.js) comes
+ * from there alone (Samuel 2026-10-18 13:29: both must come back after the old studio is gone); the old studio is
  * asked only for one not frozen yet. The legacy timelines and Postgres stay as they are until J15.
  *
  * The same run brings MaiaCity V1's two first-run intros (./intros.js): a story, a script and a cut of world shots
@@ -101,13 +101,14 @@ async function bringing() {
 	if (!wanted.length) return intros();
 	const { frozenFilm } = await import('./frozen.js');
 	// each shows in the aside at once; the repo's frozen copy first (./frozen.js), the old studio only for one it lacks
-	for (const f of wanted) tell(f, frozenFilm(f.key) ? 'Starting…' : 'Asking the old studio…');
+	const frozenOf = new Map(await Promise.all(wanted.map(async (f) => /** @type {const} */ ([f.key, await frozenFilm(f)]))));
+	for (const f of wanted) tell(f, frozenOf.get(f.key) ? 'Starting…' : 'Asking the old studio…');
 	const { listTimelines } = await import('$lib/auth/client');
 	const { importTimeline, legacyCall } = await import('./importer.js');
-	const legacy = wanted.every((f) => frozenFilm(f.key)) ? [] : /** @type {any[]} */ (await legacyCall(listTimelines()));
+	const legacy = wanted.every((f) => frozenOf.get(f.key)) ? [] : /** @type {any[]} */ (await legacyCall(listTimelines()));
 	const brought = [];
 	for (const f of wanted) {
-		const frozen = frozenFilm(f.key);
+		const frozen = frozenOf.get(f.key);
 		const t = frozen ? { id: frozen.timeline.id, description: frozen.story.description } : legacyOf(f, legacy);
 		if (!t) {
 			await arrived(f, [], `no timeline "${f.timeline}" of "${f.project}" in the old studio`);

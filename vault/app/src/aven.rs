@@ -607,9 +607,19 @@ pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, a
         }
         let brought = async {
             let h: iroh_blobs::Hash = hash.parse().map_err(|e| format!("{hash} is no vault hash: {e}"))?;
-            let m = legacy.catalog.meta(h).await.map_err(|e| e.to_string())?.ok_or("it is not in the legacy vault's catalog")?;
-            let name = [&m.original_name, &m.title].into_iter().find(|n| !n.is_empty()).cloned().unwrap_or_else(|| format!("{}.bin", &hash[..12]));
-            let src = crate::blob::source(&legacy, h, &name).await.map_err(|e| format!("{e:#}"))?;
+            let unnamed = || format!("{}.bin", &hash[..12]);
+            // the film seed on this Mac first (it outlives the legacy vault), else the legacy vault; either way the
+            // copy's BLAKE3 is checked against the hash below
+            let (name, mime, meta, src) = if let Some((path, r)) = seeded_file(&hash) {
+                let name = ["original_name", "title"].iter().filter_map(|k| r[*k].as_str()).find(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(unnamed);
+                let mime = r["mime"].as_str().unwrap_or("application/octet-stream").to_string();
+                (name, mime, r["meta"].clone(), Source::from(path.as_path()))
+            } else {
+                let m = legacy.catalog.meta(h).await.map_err(|e| e.to_string())?.ok_or("it is not in the film seed nor in the legacy vault's catalog")?;
+                let name = [&m.original_name, &m.title].into_iter().find(|n| !n.is_empty()).cloned().unwrap_or_else(unnamed);
+                let src = crate::blob::source(&legacy, h, &name).await.map_err(|e| format!("{e:#}"))?;
+                (name, m.mime.clone(), m.meta.clone(), src)
+            };
             let subject = format!("aven:legacy:{hash}");
             crate::jobs::queue(Kind::Ingest, &subject, &name);
             let total = 3 * src.reader().and_then(|mut r| r.len()).unwrap_or(1).max(1);
@@ -620,7 +630,7 @@ pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, a
             };
             let mut put_tags = tags.clone().unwrap_or_else(|| vec!["media:original".to_string()]);
             put_tags.push(mark.clone());
-            let mut op = json!({ "op": "put_file", "vault": vault, "name": name, "media": m.mime, "tags": put_tags });
+            let mut op = json!({ "op": "put_file", "vault": vault, "name": name, "media": mime, "tags": put_tags });
             if let Some(actor) = &actor {
                 op["as"] = json!(actor);
             }
@@ -635,7 +645,7 @@ pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, a
             }
             // its words and its analysis beside it, as the rules keep a long value (an original's only)
             for k in ["transcript", "analysis"].into_iter().filter(|_| tags.is_none()) {
-                let Some(v) = m.meta.get(k).filter(|v| v.is_object()) else { continue };
+                let Some(v) = meta.get(k).filter(|v| v.is_object()) else { continue };
                 let file = format!("{}.{k}.json", stem(&name));
                 let path = work(&format!("legacy-{hash}"))?.join(&file);
                 std::fs::write(&path, v.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -657,6 +667,45 @@ pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, a
         }
     }
     Ok(out)
+}
+
+/// The film seed on this Mac (Samuel 2026-10-18): each legacy film frozen into `~/maiaCITY-seed/films/<key>/`, its
+/// timeline (`timeline.json`, as the legacy API gave it), its world shots (`shots.json`, by `<shot>@<version>`), its
+/// files' catalog records (`files.json`) and their bytes (`files/<blake3>`), outside avenDB and the legacy vault, so
+/// both films come back after every avenDB reset, with or without the old studio.
+fn film_seeds() -> std::path::PathBuf {
+    std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default().join("maiaCITY-seed/films")
+}
+
+/// File `hash` in the film seed: where its bytes are and its catalog record (`{}` where `files.json` has none).
+fn seeded_file(hash: &str) -> Option<(std::path::PathBuf, Value)> {
+    for film in std::fs::read_dir(film_seeds()).ok()?.flatten() {
+        let path = film.path().join("files").join(hash);
+        if !path.is_file() {
+            continue;
+        }
+        let records = std::fs::read(film.path().join("files.json")).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).unwrap_or_default();
+        let record = records.as_array().and_then(|l| l.iter().find(|r| r["hash"] == hash)).cloned().unwrap_or_else(|| json!({}));
+        return Some((path, record));
+    }
+    None
+}
+
+/// Film `key`'s timeline and world shots from the film seed (`{ timeline, shots }`), `null` where it isn't there.
+#[tauri::command]
+pub async fn film_seed(key: String) -> Result<Option<Value>, String> {
+    if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        return Err(format!("{key:?} is no film key"));
+    }
+    let dir = film_seeds().join(&key);
+    let read = |f: &str| -> Result<Value, String> {
+        let path = dir.join(f);
+        serde_json::from_slice(&std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?).map_err(|e| format!("{}: {e}", path.display()))
+    };
+    if !dir.join("timeline.json").is_file() {
+        return Ok(None);
+    }
+    Ok(Some(json!({ "timeline": read("timeline.json")?, "shots": read("shots.json")? })))
 }
 
 /// A folder of its own on this Mac for what task `id` makes, before it goes into avenDB.
