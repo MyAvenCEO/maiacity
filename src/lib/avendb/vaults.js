@@ -104,8 +104,8 @@ import { fieldPaths, pathWords } from './paths.js';
  *   created: number | null, audience: string, public: boolean, levels: Record<string, Role>,
  *   readers: string[], writers: string[], sharers: string[], syncedTo: Holder[],
  *   kind: 'note' | 'todo' | 'file' | 'schema' | 'lens' | 'record' | 'sealed', title: string | null,
- *   text: string | null, status: 'open' | 'doing' | 'done' | null, variantOf: string | null,
- *   variantAt: string[] | null, deleted: boolean, edits: number, proposals: number, media: string | null,
+ *   text: string | null, status: 'open' | 'doing' | 'done' | null, forkOf: string | null,
+ *   forkAt: string[] | null, deleted: boolean, edits: number, proposals: number, variants: number, media: string | null,
  *   record: Record<string, any> | null, files: import('./files.js').FileView[] }} EntryView
  */
 /**

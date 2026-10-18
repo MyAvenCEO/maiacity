@@ -17,9 +17,14 @@
 //!
 //! Only a line's latest edit is reverted as it is: its line goes back to the record of the version it built on
 //! (`restore`, which puts back any version's record). An older edit is undone by a three-way merge of records
-//! (`undo`), which keeps every change made since. A variant copies an item's record into a new entry, with no history
-//! (`doc::Item::copy`). A device stores full Loro snapshots (`doc::Item::bytes`), never shallow ones: a shallow
-//! snapshot refuses the updates of a proposal that starts before it.
+//! (`undo`), which keeps every change made since. A fork copies an item's record into a new entry, with no history
+//! (`doc::Item::copy`).
+//!
+//! A **variant** is a line that stays open beside main, as a breed of an animal does: its start is a proposal's start
+//! whose name holds `VARIANT_START` first (`History::variant`), sealed as every name is. It follows main by merges of
+//! main into it, which keep its own value wherever both changed one place, so it goes on with main and never asks. A
+//! device stores full Loro snapshots (`doc::Item::bytes`), never shallow ones: a shallow snapshot refuses the updates
+//! of a proposal that starts before it.
 //!
 //! A line's history is made of the writes the entry's readers count (`Change::counted`, C1 to C4, S1 to S4): a write
 //! counts where it fits the schemas its entry was written under, through a share only where the ops of the shares of
@@ -51,6 +56,10 @@ use crate::rules::{self, Touch};
 
 /// The main line.
 pub const MAIN: Line = None;
+
+/// The byte a variant's start holds before its name (`History::variant`): never a byte of UTF-8 text, so no
+/// proposal's name begins with it.
+pub const VARIANT_START: u8 = 0xFF;
 
 /// One accepted write of an entry as a device holds it: the write, what it carries if the device could open it (a
 /// Loro update, nothing for a merge Loro's merged item already shows, or for a write that starts a proposal, the
@@ -133,6 +142,21 @@ pub struct Reading {
     pub fits: bool,
 }
 
+/// A release of a line (`History::releases`): the write, and its version number on that line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Release {
+    pub edit: EditId,
+    pub version: u64,
+}
+
+/// A version of a line by its releases (`History::describe`): the highest release of the line it holds, `None` before
+/// the line's first (a draft not yet landed, for the main line), and how many of the line's writes it holds after it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Described {
+    pub version: Option<u64>,
+    pub edits: usize,
+}
+
 impl History {
     /// Add the next accepted write. Refused, as the rules refuse it, if it builds on a write the history doesn't
     /// hold or, on a proposal, on neither the proposal's start nor another write on it.
@@ -164,17 +188,36 @@ impl History {
         self.changes.iter().find(|c| c.write.edit == edit)
     }
 
-    /// The lines: the main line, then each proposal in the order it started, of those whose start counts.
+    /// The lines: the main line, then each proposal and variant in the order it started, of those whose start counts.
     pub fn lines(&self) -> Vec<Line> {
         let starts = self.counted().filter(|c| c.write.proposal == Proposal::New).map(|c| Some(c.write.edit));
         std::iter::once(MAIN).chain(starts).collect()
     }
 
-    /// The name of the proposal `b` started, if the device could open it: none for a draft's line, whose start holds
-    /// the entry's first content, not a name.
+    /// The name of the proposal or variant `b` started, if the device could open it: none for a draft's line, whose
+    /// start holds the entry's first content, not a name.
     pub fn name(&self, b: EditId) -> Option<String> {
         let c = self.get(b).filter(|c| c.write.proposal == Proposal::New && !c.write.first)?;
-        String::from_utf8(c.body.clone()?).ok()
+        let body = c.body.as_deref()?;
+        String::from_utf8(body.strip_prefix(&[VARIANT_START]).unwrap_or(body).to_vec()).ok()
+    }
+
+    /// Line `b` is a variant: its start, as the device opens it, holds `VARIANT_START` before its name.
+    pub fn is_variant(&self, b: EditId) -> bool {
+        let start = self.get(b).filter(|c| c.write.proposal == Proposal::New && !c.write.first);
+        start.and_then(|c| c.body.as_ref()).is_some_and(|body| body.first() == Some(&VARIANT_START))
+    }
+
+    /// The variants, in the order they started, of those whose start counts.
+    pub fn variants(&self) -> Vec<EditId> {
+        self.lines().into_iter().flatten().filter(|&b| self.is_variant(b)).collect()
+    }
+
+    /// Line `line` lacks writes of line `of`: a head of `of` is outside its history, as a variant is behind main once a
+    /// release lands there that it hasn't followed.
+    pub fn behind(&self, line: Line, of: Line) -> bool {
+        let held: HashSet<EditId> = self.history(line).iter().map(|c| c.write.edit).collect();
+        self.heads(of).iter().any(|h| !held.contains(h))
     }
 
     /// The entry is a draft: its creation, which every peer reads in the clear, started its own line.
@@ -384,6 +427,12 @@ impl History {
         Draft { proposal: Proposal::New, deps: version.to_vec(), body: name.as_bytes().to_vec() }
     }
 
+    /// A new variant named `name`, starting from `version`: a proposal's start whose name holds `VARIANT_START` first.
+    pub fn variant(&self, version: &[EditId], name: &str) -> Draft {
+        let body = std::iter::once(VARIANT_START).chain(name.bytes()).collect();
+        Draft { proposal: Proposal::New, deps: version.to_vec(), body }
+    }
+
     /// The base of a merge of `from` into `into`: the version both lines' histories hold in common, the writes of it
     /// no write of it builds on, as git takes a merge base.
     pub fn base(&self, from: Line, into: Line) -> Vec<EditId> {
@@ -444,6 +493,52 @@ impl History {
         Draft { proposal: on(line), deps: self.heads(line), body: item.export(&since) }
     }
 
+    /// The releases of `line`, in replay order, each with its version number (`Proposals.lean`'s `releases`): the
+    /// line's start (an entry's creation for the main line, a draft's for its own, a proposal's or a variant's start
+    /// for theirs) and each write on it that brings in writes the line's history held nowhere in its own past, a
+    /// merge of another line. A release's number is one more than the highest of the line's releases it builds on, so
+    /// it is the same on every device that counts it, and never changes as more writes come: two merges made apart
+    /// share their number, and the next release counts past both. Direct edits of a line make no release.
+    pub fn releases(&self, line: Line) -> Vec<Release> {
+        let writes: HashMap<EditId, &Write> = self.counted().map(|c| (c.write.edit, &c.write)).collect();
+        let mut level: HashMap<EditId, u64> = HashMap::new();
+        let mut out = vec![];
+        for c in self.counted() {
+            let w = &c.write;
+            let below = w.deps.iter().filter_map(|d| level.get(d)).max().copied().unwrap_or(0);
+            let release = w.line() == line && (w.first || w.proposal == Proposal::New || brings(&writes, w));
+            let version = below + u64::from(release);
+            level.insert(w.edit, version);
+            if release {
+                out.push(Release { edit: w.edit, version });
+            }
+        }
+        out
+    }
+
+    /// Which release of `line` the version `heads` is, and how many of the line's writes it holds after it
+    /// (`Described`): the highest number among the line's releases it holds, as `git describe` names a commit by
+    /// its tag and the commits since.
+    pub fn describe(&self, line: Line, heads: &[EditId]) -> Described {
+        let held: HashSet<EditId> = self.version(heads).iter().filter(|c| c.counted).map(|c| c.write.edit).collect();
+        let releases: Vec<Release> = self.releases(line).into_iter().filter(|r| held.contains(&r.edit)).collect();
+        let Some(version) = releases.iter().map(|r| r.version).max() else {
+            let edits = self.counted().filter(|c| held.contains(&c.write.edit) && c.write.line() == line).count();
+            return Described { version: None, edits };
+        };
+        let at: Vec<EditId> = releases.iter().filter(|r| r.version == version).map(|r| r.edit).collect();
+        let released: HashSet<EditId> = self.version(&at).iter().map(|c| c.write.edit).collect();
+        let since = |c: &&Change| held.contains(&c.write.edit) && c.write.line() == line;
+        let edits = self.counted().filter(since).filter(|c| !released.contains(&c.write.edit)).count();
+        Described { version: Some(version), edits }
+    }
+
+    /// The version that is release `version` of `line`: the releases of that number, together (two merges made apart
+    /// share one, and their union is the version that holds both). Empty if the line has none of that number.
+    pub fn release(&self, line: Line, version: u64) -> Vec<EditId> {
+        self.releases(line).into_iter().filter(|r| r.version == version).map(|r| r.edit).collect()
+    }
+
     /// The heads of `into`, then those of `from` it doesn't share.
     fn both(&self, from: Line, into: Line) -> Vec<EditId> {
         let mut deps = self.heads(into);
@@ -465,6 +560,30 @@ fn build(changes: &[&Change], signer: SignerId, line: Line) -> Option<Item> {
         shown |= import(&mut item, c);
     }
     shown.then_some(item)
+}
+
+/// Write `w`, of the counted writes `writes`, brings in writes its line's history held nowhere in its own past: some
+/// write it builds on is neither on its line nor built on by a write of its line it builds on. Judged on `w`'s own
+/// past alone, never on what came beside it, so every device that counts it judges it alike.
+fn brings(writes: &HashMap<EditId, &Write>, w: &Write) -> bool {
+    let line = w.line();
+    let on_line = |d: &EditId| writes.get(d).is_some_and(|x| x.line() == line);
+    if w.deps.iter().all(on_line) {
+        return false;
+    }
+    // its past, and the history of its line in that past: the line's writes there and all they build on
+    let closure = |from: Vec<EditId>| {
+        let (mut seen, mut todo) = (HashSet::new(), from);
+        while let Some(e) = todo.pop() {
+            if seen.insert(e) {
+                todo.extend(writes.get(&e).map_or(&[][..], |x| &x.deps[..]));
+            }
+        }
+        seen
+    };
+    let past = closure(w.deps.clone());
+    let held = closure(past.iter().copied().filter(on_line).collect());
+    w.deps.iter().any(|d| !held.contains(d))
 }
 
 /// Import the update change `c` carries into `item`, checked against the Loro peer its write's ops carry
@@ -687,6 +806,76 @@ mod tests {
         assert_eq!(undo(&now, &after, &before), json!([{"id": 1}, {"id": 2}, {"id": 3, "x": 1}]));
         let now = json!([{"id": 3}, {"id": 1}, {"id": 2}, {"id": 4}]);
         assert_eq!(undo(&now, &after, &before), now);
+    }
+
+    #[test]
+    fn each_merge_into_a_line_is_its_next_release() {
+        let s = SignerId::from_u64(2);
+        let mut repo = Repo::new(&Item::document("Welcome", s), s);
+        let retitle = |title: &'static str| move |i: &mut Item| {
+            i.edit_document(|d| d.title = title.into());
+        };
+        let releases = |repo: &Repo, line| repo.history().releases(line).iter().map(|r| r.version).collect::<Vec<_>>();
+        assert_eq!(releases(&repo, MAIN), [1]);
+        // a direct edit is no release: the version reads "v1 + 1 edit"
+        repo.edit(s, MAIN, retitle("Hello"));
+        assert_eq!(releases(&repo, MAIN), [1]);
+        assert_eq!(repo.history().describe(MAIN, &repo.heads(MAIN)), Described { version: Some(1), edits: 1 });
+        // a proposal merged in is v2, and the proposal's own start is its v1
+        let p = repo.propose(s, &repo.heads(MAIN), "intro").unwrap();
+        repo.edit(s, Some(p), retitle("Intro"));
+        assert_eq!(releases(&repo, Some(p)), [1]);
+        let v2 = repo.merge(s, Some(p), MAIN);
+        assert_eq!(releases(&repo, MAIN), [1, 2]);
+        assert_eq!(repo.history().release(MAIN, 2), [v2]);
+        assert_eq!(repo.history().describe(MAIN, &[v2]), Described { version: Some(2), edits: 0 });
+        // an older version still reads as what it was
+        let v1 = repo.history().release(MAIN, 1);
+        assert_eq!(repo.history().describe(MAIN, &v1), Described { version: Some(1), edits: 0 });
+        // the proposal's writes, on another line, are no edits of main's
+        assert_eq!(repo.history().describe(MAIN, &repo.heads(MAIN)), Described { version: Some(2), edits: 0 });
+    }
+
+    #[test]
+    fn merges_made_apart_share_a_number_and_the_next_counts_past_both() {
+        let s = SignerId::from_u64(2);
+        let retitle = |title: &'static str| move |i: &mut Item| {
+            i.edit_document(|d| d.title = title.into());
+        };
+        let mut repo = Repo::new(&Item::document("Welcome", s), s);
+        let base = repo.heads(MAIN);
+        let (a, b) = (repo.propose(s, &base, "a").unwrap(), repo.propose(s, &base, "b").unwrap());
+        repo.edit(s, Some(a), retitle("A"));
+        repo.edit(s, Some(b), retitle("B"));
+        // two devices merge at once, each on the main line it saw, one of them merging `a` twice over
+        let merge_of = |repo: &Repo, p: EditId| {
+            let mut deps = base.clone();
+            deps.extend(repo.heads(Some(p)));
+            Draft { proposal: Proposal::Main, deps, body: vec![] }
+        };
+        let (ma, mb) = (merge_of(&repo, a), merge_of(&repo, b));
+        let (ma, ma2, mb) = (repo.make(s, ma.clone()).unwrap(), repo.make(s, ma).unwrap(), repo.make(s, mb).unwrap());
+        let numbered: Vec<(EditId, u64)> = repo.history().releases(MAIN).iter().map(|r| (r.edit, r.version)).collect();
+        assert_eq!(numbered[1..], [(ma, 2), (ma2, 2), (mb, 2)]);
+        assert_eq!(repo.history().release(MAIN, 2), [ma, ma2, mb]);
+        // the next merge builds on all three, and is v3
+        let c = repo.propose(s, &repo.heads(MAIN), "c").unwrap();
+        repo.edit(s, Some(c), retitle("C"));
+        let v3 = repo.merge(s, Some(c), MAIN);
+        assert_eq!(repo.history().releases(MAIN).last(), Some(&Release { edit: v3, version: 3 }));
+    }
+
+    #[test]
+    fn a_draft_is_v1_once_its_vault_lands_it() {
+        let s = SignerId::from_u64(2);
+        let mut repo = Repo { history: History::default() };
+        let body = Item::document("Draft", s).export(&Default::default());
+        let draft = repo.make(s, Draft { proposal: Proposal::New, deps: vec![], body }).unwrap();
+        assert_eq!(repo.history().releases(MAIN), []);
+        assert_eq!(repo.history().describe(MAIN, &repo.heads(MAIN)), Described { version: None, edits: 0 });
+        assert_eq!(repo.history().releases(Some(draft)).iter().map(|r| r.version).collect::<Vec<_>>(), [1]);
+        let landed = repo.merge(s, Some(draft), MAIN);
+        assert_eq!(repo.history().releases(MAIN), [Release { edit: landed, version: 1 }]);
     }
 
     #[test]

@@ -191,10 +191,10 @@
 		if (!ticked.length) ticked = shapesFor(story.format);
 	});
 
-	/** An A/B card of this one: a variant, to carry another hook. */
+	/** An A/B card of this one: a copy of it as a card of its own (`fork`), to carry another hook. */
 	async function variant() {
 		if (!card) return;
-		const made = await api.run('Making an A/B card', { op: 'variant', entry: card.entry, into: card.vault, as: actor });
+		const made = await api.run('Making an A/B card', { op: 'fork', entry: card.entry, into: card.vault, as: actor });
 		if (made?.entry) chosenId = made.entry;
 	}
 

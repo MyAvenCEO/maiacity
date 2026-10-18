@@ -18,7 +18,7 @@
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean,
 	 *   item: import('./vaults.js').EntryView, writes: boolean,
-	 *   lines: { line: string | null, name: string | null, record: any }[] }}
+	 *   lines: { line: string | null, name: string | null, record: any, variant?: boolean }[] }}
 	 */
 	let { world, actor, api, busy, item, writes, lines } = $props();
 
@@ -45,7 +45,7 @@
 	const words = $derived((record.image_title ?? []).filter(Boolean).join('\n') || chosen?.text?.trim() || record.title || '');
 	/** the 16:9 card as rendered on the Thumbnail step, once it is: what YouTube shows */
 	const rendered = $derived.by(() => {
-		const card = artworksOf(world, entry).find((c) => /** @type {any} */ (c.record)?.shape === '16x9' && !c.variantOf);
+		const card = artworksOf(world, entry).find((c) => /** @type {any} */ (c.record)?.shape === '16x9' && !c.forkOf);
 		const id = entryOf(/** @type {any} */ (card?.record)?.render);
 		return (id && world.entries.find((e) => e.entry === id)) || null;
 	});
@@ -61,7 +61,7 @@
 
 	/** the hooks each proposal adds or rewrites, not on the main line yet */
 	const proposed = $derived(
-		lines.slice(1).flatMap((l) =>
+		lines.slice(1).filter((l) => !l.variant).flatMap((l) =>
 			/** @type {any[]} */ (l.record?.hooks ?? [])
 				.filter((h) => !rows.some((r) => r.id === h.id && r.text === h.text))
 				.map((h) => ({ ...h, proposal: l.name ?? 'a proposal' }))

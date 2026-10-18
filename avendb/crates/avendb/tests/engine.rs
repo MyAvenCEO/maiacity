@@ -1,7 +1,7 @@
 //! The ops engine on the Lab (`avendb::engine`, `docs/ARCHITECTURE.md` §8): queries that pick entries by the selector
 //! of their labels and test what they open; record ops through an app's schema and its lens, which write only what
 //! changed; every write's changes in its entry's history, the same for every reader; batches, proposals, merges,
-//! restores, undos and variants as ops; and every op's write judged as any peer's, by the shares of the vault it acts
+//! restores, undos and forks as ops; and every op's write judged as any peer's, by the shares of the vault it acts
 //! for, by the ops of every share of the chain it relies on (C1 to C4, `spec/AvenDB/Theorems.lean`) and by the schemas
 //! its entry was written under (S1 to S4): `may` answers before a page offers a button, a write they don't allow is
 //! refused, and one a patched app makes all the same counts for no reader, nor anything built on it. Alice's library
@@ -214,13 +214,13 @@ fn articles_flows_functions_and_posts_are_kinds_of_their_own() {
     assert!(w.lab.item(mac, article).unwrap().as_document().is_none(), "not a document");
     let note = ok(run(&mut w, mac, json!({ "op": "note", "entry": hex(article) })));
     assert_eq!((&note["kind"], &note["lines"][0]["text"]), (&json!("article"), &json!("First *light*, then rain.")));
-    // a variant names its origin among the article's own tags, as a note's does
+    // a fork names its origin among the article's own tags, as a note's does
     let coop = cast::coop_on(&mut w);
-    let variant = json!({ "op": "variant", "entry": hex(article), "into": coop.to_hex(), "as": coop.to_hex() });
-    let copy = id(ok(run(&mut w, mac, variant)));
+    let fork = json!({ "op": "fork", "entry": hex(article), "into": coop.to_hex(), "as": coop.to_hex() });
+    let copy = id(ok(run(&mut w, mac, fork)));
     let at = w.lab.history(mac, article).unwrap().heads(None);
     let tags = w.lab.item(mac, copy).unwrap().as_markdown().unwrap().tags;
-    assert_eq!(tags, vec![world::variant_mark(article, &at)]);
+    assert_eq!(tags, vec![world::fork_mark(article, &at)]);
     // a flow of stages, a function on one of them, and a post: records of their own kinds, which the world shows
     let stage = |id: u64, key: &str, next: &[&str]| json!({ "id": id, "key": key, "name": key, "next": next });
     let stages = [stage(1, "idea", &["draft"]), stage(2, "draft", &["published"]), stage(3, "published", &["draft"])];
@@ -528,7 +528,7 @@ fn an_artwork_is_a_story_card_of_one_shape_in_layers_rendered_into_the_library()
     assert_eq!(r["story"]["to"]["title"], "Trailer story");
 }
 
-/// An article written for a story: it links the story and says its language, and a German variant of it links the
+/// An article written for a story: it links the story and says its language, and a German fork of it links the
 /// same story and names the article it came from. One written under v1, as every article was before, opens in v2 as it
 /// was and edits on, what v2 adds beside what v1 held.
 #[test]
@@ -546,7 +546,7 @@ fn an_article_is_written_for_a_story_and_a_v1_article_edits_on_in_v2() {
     ok(run(&mut w, mac, json!({ "op": "set", "entry": article, "path": ["quote"], "value": quote })));
     let ops = json!([{ "op": "set", "path": ["language"], "value": "de" }, { "op": "set", "path": ["title"],
         "value": "Trailer story · Deutsch" }]);
-    let de = ok(run(&mut w, mac, json!({ "op": "variant", "entry": article, "into": alice, "ops": ops })));
+    let de = ok(run(&mut w, mac, json!({ "op": "fork", "entry": article, "into": alice, "ops": ops })));
     let de = de["entry"].as_str().unwrap().to_string();
     let got = ok(run(&mut w, mac, json!({ "op": "get", "entry": de, "schema": "article" })));
     let r = &got["record"];
@@ -561,7 +561,7 @@ fn an_article_is_written_for_a_story_and_a_v1_article_edits_on_in_v2() {
     let of = |e: &str| seen["entries"].as_array().unwrap().iter().find(|x| x["entry"] == e).unwrap().clone();
     let shown = of(&de);
     assert_eq!((&shown["kind"], &shown["record"]["story"]["entry"]), (&json!("note"), &json!(story)));
-    assert_eq!((&shown["variantOf"], &shown["text"]), (&json!(article), &json!("## The morning")));
+    assert_eq!((&shown["forkOf"], &shown["text"]), (&json!(article), &json!("## The morning")));
     assert_eq!(shown["record"].get("text"), None, "its text is the entry's, not told twice");
     // an article of v1 opens as it was, and takes its story
     let old = json!({ "kind": "article", "title": "Seeds", "text": "*Sown in March.*" });
@@ -659,7 +659,7 @@ fn an_access_request_is_a_record_and_a_share_the_vault_asked_answers() {
 }
 
 #[test]
-fn lines_merge_restore_undo_and_variants_are_ops() {
+fn lines_merge_restore_undo_and_forks_are_ops() {
     let mut w = cast::world();
     let l = cast::library(&mut w);
     let mac = w.mac_a;
@@ -693,29 +693,113 @@ fn lines_merge_restore_undo_and_variants_are_ops() {
     assert_eq!(main(&w), "Plan");
     ok(run(&mut w, mac, json!({ "op": "restore", "entry": plan, "at": [edits[4]] })));
     assert_eq!(main(&w), "The plan");
-    // a variant in the coop, tagged in the same first write, which names the note and the version it copies
+    // a fork in the coop, tagged in the same first write, which names the note and the version it copies
     let coop = cast::coop_on(&mut w);
     let tag = [{ json!({ "op": "insert", "path": ["tags"], "value": "draft" }) }];
-    let variant = json!({ "op": "variant", "entry": plan, "into": coop.to_hex(), "as": coop.to_hex(), "ops": tag });
-    let made = ok(run(&mut w, mac, variant))["entry"].as_str().unwrap().to_string();
+    let fork = json!({ "op": "fork", "entry": plan, "into": coop.to_hex(), "as": coop.to_hex(), "ops": tag });
+    let made = ok(run(&mut w, mac, fork))["entry"].as_str().unwrap().to_string();
     let copy = EntryId::from_hex(&made).unwrap();
     let doc = w.lab.item(mac, copy).unwrap().as_document().unwrap();
     let at = w.lab.history(mac, l.plan).unwrap().heads(None);
     assert_eq!(at.len(), 1, "main's one latest edit, the restore");
-    let mark = world::variant_mark(l.plan, &at);
+    let mark = world::fork_mark(l.plan, &at);
     assert_eq!((doc.title, doc.tags), ("The plan".to_string(), vec![mark.clone(), "draft".to_string()]));
     assert_eq!(w.lab.history(mac, copy).unwrap().changes().len(), 1);
-    // a variant of the variant names the variant, and the version of it it copies, alone
-    let again = json!({ "op": "variant", "entry": made, "into": coop.to_hex(), "as": coop.to_hex() });
+    // a fork of the fork names the fork, and the version of it it copies, alone
+    let again = json!({ "op": "fork", "entry": made, "into": coop.to_hex(), "as": coop.to_hex() });
     let made = EntryId::from_hex(ok(run(&mut w, mac, again))["entry"].as_str().unwrap()).unwrap();
     let doc = w.lab.item(mac, made).unwrap().as_document().unwrap();
     let at = w.lab.history(mac, copy).unwrap().heads(None);
-    assert_eq!(doc.tags, vec!["draft".to_string(), world::variant_mark(copy, &at)]);
-    // the world says so: what each is a variant of, and at which version
+    assert_eq!(doc.tags, vec!["draft".to_string(), world::fork_mark(copy, &at)]);
+    // the world says so: what each is a fork of, and at which version
     let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
     let of = |e: EntryId| seen["entries"].as_array().unwrap().iter().find(|x| x["entry"] == hex(e)).unwrap().clone();
-    assert_eq!((&of(made)["variantOf"], &of(made)["variantAt"]), (&json!(hex(copy)), &json!([at[0].to_hex()])));
-    assert_eq!((&of(l.plan)["variantOf"], &of(l.plan)["variantAt"]), (&Value::Null, &Value::Null));
+    assert_eq!((&of(made)["forkOf"], &of(made)["forkAt"]), (&json!(hex(copy)), &json!([at[0].to_hex()])));
+    assert_eq!((&of(l.plan)["forkOf"], &of(l.plan)["forkAt"]), (&Value::Null, &Value::Null));
+}
+
+#[test]
+fn each_merge_into_main_is_its_next_version_and_a_pin_names_one_by_avendb_alone() {
+    let mut w = cast::world();
+    let l = cast::library(&mut w);
+    let mac = w.mac_a;
+    let plan = hex(l.plan);
+    let read = json!({ "op": "history", "entry": plan });
+    let main = |w: &mut World| ok(run(w, mac, read.clone()))["lines"][0]["version"].clone();
+    assert_eq!(main(&mut w), json!({ "version": 1, "edits": 0 }));
+    // a direct edit makes no new number
+    ok(run(&mut w, mac, json!({ "op": "set", "entry": plan, "path": ["title"], "value": "Our plan" })));
+    assert_eq!(main(&mut w), json!({ "version": 1, "edits": 1 }));
+    // a proposal merged in is v2, and v3 after it
+    for title in ["The plan", "The big plan"] {
+        let line = ok(run(&mut w, mac, json!({ "op": "propose", "entry": plan, "name": title })))["line"].clone();
+        ok(run(&mut w, mac, json!({ "op": "set", "entry": plan, "line": line, "path": ["title"], "value": title })));
+        ok(run(&mut w, mac, json!({ "op": "merge", "entry": plan, "from": line })));
+    }
+    assert_eq!(main(&mut w), json!({ "version": 3, "edits": 0 }));
+    let history = ok(run(&mut w, mac, json!({ "op": "history", "entry": plan })));
+    let versions: Vec<&Value> = list(&history["lines"][0]["versions"]).iter().map(|v| &v["version"]).collect();
+    assert_eq!(versions, [&json!(1), &json!(2), &json!(3)]);
+    let merges: Vec<&Value> =
+        list(&history["edits"]).iter().filter(|e| e["kind"] == "merge").map(|e| &e["version"]).collect();
+    assert_eq!(merges, [&json!(2), &json!(3)]);
+    // any version reads by its number, read-only
+    let v2 = ok(run(&mut w, mac, json!({ "op": "get", "entry": plan, "version": 2 })));
+    assert_eq!((&v2["record"]["title"], &v2["version"]), (&json!("The plan"), &json!({ "version": 2, "edits": 0 })));
+    assert_eq!(refused(&run(&mut w, mac, json!({ "op": "get", "entry": plan, "version": 9 }))), "BadOp");
+    // a pin stores the entry and the heads; all it shows comes from the history there
+    let pin = ok(run(&mut w, mac, json!({ "op": "pin", "entry": plan, "at": v2["at"] })));
+    assert_eq!(pin["title"], "The plan");
+    assert_eq!((&pin["name"], &pin["version"]), (&json!("main"), &json!({ "version": 2, "edits": 0 })));
+    assert_eq!(pin["short"], json!(plan[..8]));
+    let now = ok(run(&mut w, mac, json!({ "op": "pin", "entry": plan })));
+    assert_eq!((&now["title"], &now["version"]["version"]), (&json!("The big plan"), &json!(3)));
+}
+
+/// A variant is a line of the same entry that stays open beside main and follows it: a merge into main brings main
+/// into every variant in the same op, keeping the variant's own value where both changed one place. Each follow is the
+/// variant's next version, and the variant says which version of main it holds and whether main has gone on since.
+#[test]
+fn a_variant_follows_main_and_keeps_its_own_values() {
+    let mut w = cast::world();
+    let l = cast::library(&mut w);
+    let mac = w.mac_a;
+    let plan = hex(l.plan);
+    let silkie = ok(run(&mut w, mac, json!({ "op": "variant", "entry": plan, "name": "Silkie" })))["line"].clone();
+    let retitle = |line: &Value, title: &str| json!({ "op": "set", "entry": plan, "line": line, "path": ["title"],
+        "value": title });
+    ok(run(&mut w, mac, retitle(&silkie, "Silkie plan")));
+    let lines = |w: &mut World| ok(run(w, mac, json!({ "op": "history", "entry": plan })))["lines"].clone();
+    let v = lines(&mut w)[1].clone();
+    assert_eq!((&v["line"], &v["name"], &v["variant"]), (&silkie, &json!("Silkie"), &json!(true)));
+    let version = |version: u64, edits: u64| json!({ "version": version, "edits": edits });
+    assert_eq!((&v["version"], &v["main"]), (&version(1, 1), &version(1, 0)));
+    assert_eq!((&lines(&mut w)[0]["variant"], &v["behind"]), (&json!(false), &json!(false)));
+    // a proposal merged into main is main's v2, and the variant follows in the same op: main's new tag comes in, and
+    // the variant keeps its own title where both changed it
+    let spring = ok(run(&mut w, mac, json!({ "op": "propose", "entry": plan, "name": "Spring" })))["line"].clone();
+    ok(run(&mut w, mac, retitle(&spring, "Spring plan")));
+    ok(run(&mut w, mac, json!({ "op": "insert", "entry": plan, "line": spring, "path": ["tags"], "value": "spring" })));
+    let merged = ok(run(&mut w, mac, json!({ "op": "merge", "entry": plan, "from": spring })));
+    assert_eq!(each(&merged["follows"], |f| &f["line"]), [silkie.as_str().unwrap()]);
+    let v = lines(&mut w)[1].clone();
+    assert_eq!((&v["version"], &v["main"]), (&version(2, 0), &version(2, 0)));
+    let get = |line: &Value| json!({ "op": "get", "entry": plan, "line": line });
+    let record = |w: &mut World, line: &Value| ok(run(w, mac, get(line)))["record"].clone();
+    let shown = record(&mut w, &silkie);
+    assert_eq!((&shown["title"], &shown["tags"]), (&json!("Silkie plan"), &json!(["spring"])));
+    assert_eq!(record(&mut w, &Value::Null)["title"], "Spring plan");
+    // a direct edit of main leaves it behind until the next release lands
+    ok(run(&mut w, mac, json!({ "op": "set", "entry": plan, "path": ["title"], "value": "Plan" })));
+    let now = lines(&mut w);
+    assert_eq!((&now[1]["behind"], &now[2]["variant"]), (&json!(true), &json!(false)));
+    // its start reads as a variant's, with its name; the world counts proposals and variants apart
+    let history = ok(run(&mut w, mac, json!({ "op": "history", "entry": plan })));
+    let start = list(&history["edits"]).iter().find(|e| e["id"] == silkie).expect("the variant's start").clone();
+    assert_eq!((&start["kind"], &start["name"]), (&json!("variant"), &json!("Silkie")));
+    let seen = ok(run(&mut w, mac, json!({ "op": "world" })));
+    let of = list(&seen["entries"]).iter().find(|x| x["entry"] == json!(plan)).expect("the plan").clone();
+    assert_eq!((&of["proposals"], &of["variants"]), (&json!(1), &json!(1)));
 }
 
 #[test]
@@ -857,7 +941,7 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
         json!({ "op": "get", "entry": "door" }),
         json!({ "op": "set", "entry": hex(l.door), "path": ["status"] }),
         json!({ "op": "batch", "ops": [{ "op": "batch", "ops": [] }] }),
-        json!({ "op": "variant", "entry": hex(l.plan), "into": hex(l.plan), "ops": [{ "op": "tag", "add": [] }] }),
+        json!({ "op": "fork", "entry": hex(l.plan), "into": hex(l.plan), "ops": [{ "op": "tag", "add": [] }] }),
     ] {
         assert_eq!(refused(&run(&mut w, mac, bad.clone())), "BadOp", "{bad}");
     }
@@ -1581,12 +1665,12 @@ fn run_and_may_take_deep_paths_and_deep_caps() {
     }
 }
 
-/// Merges, undos, restores and variants of an outline, rows down: a proposal's rows join main's by id inside each of
+/// Merges, undos, restores and forks of an outline, rows down: a proposal's rows join main's by id inside each of
 /// the outline's own rows, and a clash anywhere in one makes that row the conflict, whole, the merge keeping main's
-/// unless it takes the proposal's; undo and restore give back what a version showed, at any depth; a variant copies
+/// unless it takes the proposal's; undo and restore give back what a version showed, at any depth; a fork copies
 /// every row.
 #[test]
-fn merge_undo_restore_and_variants_reach_rows_of_rows() {
+fn merge_undo_restore_and_forks_reach_rows_of_rows() {
     let mut w = cast::world();
     let mac = w.mac_a;
     let (outline, _) = alices_outline(&mut w);
@@ -1639,11 +1723,11 @@ fn merge_undo_restore_and_variants_reach_rows_of_rows() {
     assert_eq!(kids(&record(&mut w, &main)), ["North bed", "East bed"]);
     ok(run(&mut w, mac, json!({ "op": "restore", "entry": e, "at": [merge] })));
     assert_eq!(kids(&record(&mut w, &main)), ["North bed", "Sunny bed", "East bed"]);
-    // a variant in her vault, whose lane holds the outline schema, copies every row, and a deep op in its first write
+    // a fork in her vault, whose lane holds the outline schema, copies every row, and a deep op in its first write
     let alice = w.alice.to_hex();
     let more = [json!({ "op": "insert", "path": down(&[1, 11], &["kids"]), "value": { "id": 111, "text": "Beans" } })];
-    let variant = json!({ "op": "variant", "entry": e, "into": alice, "ops": more });
-    let copy = ok(run(&mut w, mac, variant))["entry"].as_str().expect("its id").to_string();
+    let fork = json!({ "op": "fork", "entry": e, "into": alice, "ops": more });
+    let copy = ok(run(&mut w, mac, fork))["entry"].as_str().expect("its id").to_string();
     let copied = ok(run(&mut w, mac, json!({ "op": "get", "entry": copy })))["record"].clone();
     assert_eq!(kids(&copied), ["North bed", "Sunny bed", "East bed"]);
     assert_eq!(copied["nodes"][0]["kids"][0]["kids"][0]["text"], "Beans");

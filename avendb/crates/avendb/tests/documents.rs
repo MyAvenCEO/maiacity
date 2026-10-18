@@ -1,6 +1,6 @@
 //! Documents, schemas and proposals (P4, P5; T9, T10, T11), item by item: the lenses between schema versions, edits
 //! through an app's view that keep what it can't see, proposals merged as git merges, the latest change reverted and an
-//! older one undone, a variant that copies a record into a new entry, and items that converge whatever order their
+//! older one undone, a fork that copies a record into a new entry, and items that converge whatever order their
 //! edits arrive in and refuse an update whose ops aren't its signer's. In a flat vault each item is one entry, a doc, a
 //! note or a todo: its writes carry its Loro updates, encrypted, on the main line or on a proposal, and an app reads
 //! it through the schemas and lenses in its vault's lane, those the vault itself creates as entries (T17, in

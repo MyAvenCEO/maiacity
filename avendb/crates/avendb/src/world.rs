@@ -73,16 +73,16 @@ pub fn answering() -> Vec<rules::Op> {
     }]
 }
 
-/// The start of the mark a variant carries among its document's own tags, inside its record: a note made from what
-/// one line of another shows (the ops engine's `variant`), marked with that note's entry and the version it copied, the
-/// hashes of that version's edits, in hex (`variant_mark`). So a variant's history goes on into its original's, up to
-/// that version, for whoever reads both; the original's edits stay its own, signed by whoever made them.
-pub const VARIANT: &str = "avendb:variant:";
+/// The start of the mark a fork carries among its document's own tags, inside its record: a note made from what one
+/// line of another shows (the ops engine's `fork`), marked with that note's entry and the version it copied, the
+/// hashes of that version's edits, in hex (`fork_mark`). So a fork's history goes on into its original's, up to that
+/// version, for whoever reads both; the original's edits stay its own, signed by whoever made them.
+pub const FORK: &str = "avendb:fork:";
 
-/// The mark of a variant of entry `entry` made from its version `at`: `avendb:variant:<entry>@<edit>,<edit>`.
-pub fn variant_mark(entry: EntryId, at: &[EditId]) -> String {
+/// The mark of a fork of entry `entry` made from its version `at`: `avendb:fork:<entry>@<edit>,<edit>`.
+pub fn fork_mark(entry: EntryId, at: &[EditId]) -> String {
     let at: Vec<String> = at.iter().map(|e| hex(&e.0)).collect();
-    format!("{VARIANT}{}@{}", hex(&entry.0), at.join(","))
+    format!("{FORK}{}@{}", hex(&entry.0), at.join(","))
 }
 
 /// The mark a deleted note carries among its document's own tags, inside its record: the page lists it apart, under
@@ -240,17 +240,18 @@ pub struct EntryView {
 /// What an entry holds, as a device reads it.
 pub enum What {
     /// A document: its title and the text of its first paragraph (block 2), as `cast::document` writes them; the note
-    /// it is a variant of and the version of it it copied, if it is one (`VARIANT`); whether it is deleted (`DELETED`);
-    /// how many edits of it the device counts, and how many proposals it has; and for a spark or an article, its
-    /// record, each field it leaves out at its default: a spark's canvas; an article's story, language and quote, all
-    /// but its text, which `text` is.
+    /// it is a fork of and the version of it it copied, if it is one (`FORK`); whether it is deleted (`DELETED`); how
+    /// many edits of it the device counts, how many proposals it has and how many variants; and for a spark or an
+    /// article, its record, each field it leaves out at its default: a spark's canvas; an article's story, language
+    /// and quote, all but its text, which `text` is.
     Note {
         title: String,
         text: String,
-        variant_of: Option<(EntryId, Vec<EditId>)>,
+        fork_of: Option<(EntryId, Vec<EditId>)>,
         deleted: bool,
         edits: usize,
         proposals: usize,
+        variants: usize,
         record: Option<Value>,
     },
     Todo { title: String, status: Status },
@@ -379,15 +380,15 @@ impl World {
                 What::Record { title, text, .. } => ("record", Some(title), text.as_ref(), None),
                 What::Sealed => ("sealed", None, None, None),
             };
-            let (variant_of, deleted, edits, proposals, media) = match &i.what {
-                What::Note { variant_of, deleted, edits, proposals, .. } => {
-                    (variant_of.as_ref(), *deleted, *edits, *proposals, None)
+            let (fork_of, deleted, edits, (proposals, variants), media) = match &i.what {
+                What::Note { fork_of, deleted, edits, proposals, variants, .. } => {
+                    (fork_of.as_ref(), *deleted, *edits, (*proposals, *variants), None)
                 }
-                What::File { deleted, media, .. } => (None, *deleted, 0, 0, Some(media)),
-                What::Record { deleted, .. } => (None, *deleted, 0, 0, None),
-                _ => (None, false, 0, 0, None),
+                What::File { deleted, media, .. } => (None, *deleted, 0, (0, 0), Some(media)),
+                What::Record { deleted, .. } => (None, *deleted, 0, (0, 0), None),
+                _ => (None, false, 0, (0, 0), None),
             };
-            let variant_at = variant_of.map(|(_, at)| at.iter().map(|e| hex(&e.0)).collect::<Vec<_>>());
+            let fork_at = fork_of.map(|(_, at)| at.iter().map(|e| hex(&e.0)).collect::<Vec<_>>());
             let levels: Map<String, Value> =
                 i.levels.iter().map(|(v, r)| (hex(&v.0), Value::from(level_name(*r)))).collect();
             let with = |need: Level| i.levels.iter().filter(|(_, r)| r.allows(need)).map(|(v, _)| v.0).collect();
@@ -412,11 +413,12 @@ impl World {
                 "title": title,
                 "text": text,
                 "status": status,
-                "variantOf": variant_of.map(|(e, _)| hex(&e.0)),
-                "variantAt": variant_at,
+                "forkOf": fork_of.map(|(e, _)| hex(&e.0)),
+                "forkAt": fork_at,
                 "deleted": deleted,
                 "edits": edits,
                 "proposals": proposals,
+                "variants": variants,
                 "media": media,
                 "record": match &i.what {
                     What::Record { record, .. } | What::Note { record: Some(record), .. } => record.clone(),
@@ -589,14 +591,15 @@ fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
                 let text = doc.blocks.iter().find(|b| b.id == 2).map(|b| b.text.clone()).unwrap_or_default();
                 let history = lab.history(me, en.id);
                 let edits = history.map_or(0, |h| h.changes().len());
-                let proposals = history.map_or(0, |h| h.lines().len().saturating_sub(1));
+                let variants = history.map_or(0, |h| h.variants().len());
+                let proposals = history.map_or(0, |h| h.lines().len().saturating_sub(1 + variants));
                 let deleted = doc.tags.iter().any(|t| t == DELETED);
                 let read = |kind: &str| View::built_in(kind).and_then(|v| item.read(v));
                 // an article's text is the entry's text already: its record tells the rest
                 let article = || read("article").map(|mut r| (r.as_object_mut().map(|o| o.remove("text")), r).1);
                 let record = read("spark").or_else(article);
-                let variant_of = variant_of(&doc);
-                What::Note { title: doc.title.clone(), text, variant_of, deleted, edits, proposals, record }
+                let fork_of = fork_of(&doc);
+                What::Note { title: doc.title.clone(), text, fork_of, deleted, edits, proposals, variants, record }
             }
             (_, None, Some(todo)) => What::Todo { title: todo.title, status: todo.status },
             (_, None, None) => record(item.record()),
@@ -640,9 +643,9 @@ fn record(record: Value) -> What {
     What::Record { title, text: text("text"), deleted, record }
 }
 
-/// The note a document is a variant of and the version of it it copied, by its mark (`variant_mark`), if it is one.
-fn variant_of(doc: &DocV1) -> Option<(EntryId, Vec<EditId>)> {
-    let mark = doc.tags.iter().find_map(|t| t.strip_prefix(VARIANT))?;
+/// The note a document is a fork of and the version of it it copied, by its mark (`fork_mark`), if it is one.
+fn fork_of(doc: &DocV1) -> Option<(EntryId, Vec<EditId>)> {
+    let mark = doc.tags.iter().find_map(|t| t.strip_prefix(FORK))?;
     let (entry, at) = mark.split_once('@')?;
     let at: Option<Vec<EditId>> = at.split(',').filter(|e| !e.is_empty()).map(EditId::from_hex).collect();
     Some((EntryId::from_hex(entry)?, at?))

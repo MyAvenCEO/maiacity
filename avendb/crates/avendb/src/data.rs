@@ -13,7 +13,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use serde_json::{Map, Value, json};
 
 use crate::doc::Item;
-use crate::engine::{SHOWN, Wrote, line_name, wrote};
+use crate::engine::{SHOWN, Wrote, described, line_name, numbered, releases, wrote};
 use crate::history::{Change, History, MAIN};
 use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName, Recipient};
@@ -69,12 +69,12 @@ pub fn database(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
     })
 }
 
-/// Entry `en` as the studio's table editor shows it: its type and its tags now, if the device reads them; its record
-/// as the device opens it on the main line, or a schema's or lens's JSON (`null` if it opens none of it), and its
-/// `kind` as the record names it, or its type for a schema or lens (`"sealed"` then); the schemas its edits were made
-/// under; how many edits of it the device counts and holds; its lines (the main line and each proposal) and its
-/// proposals' names; its audience and its key's epoch there; the size of its Loro document; the device and the vault
-/// of its first edit; and who may read it.
+/// Entry `en` as the studio's table editor shows it: its type and its tags now, if the device reads them; its record as
+/// the device opens it on the main line, or a schema's or lens's JSON (`null` if it opens none of it), and its `kind`
+/// as the record names it, or its type for a schema or lens (`"sealed"` then); the schemas its edits were made under;
+/// how many edits of it the device counts and holds; its lines (the main line, each proposal and each variant) and its
+/// proposals' and its variants' names; its audience and its key's epoch there; the size of its Loro document; the
+/// device and the vault of its first edit; and who may read it.
 fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
     let (st, entry) = (lab.state(me), en.id);
     let item = lab.item(me, entry);
@@ -96,7 +96,9 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
     let history = lab.history(me, entry);
     let lines = history.map(History::lines).unwrap_or_default();
     let name = |b: EditId| history.and_then(|h| h.name(b)).map_or(Value::Null, Value::from);
-    let proposals: Vec<Value> = lines.iter().flatten().map(|&b| name(b)).collect();
+    let variant = |b: &&EditId| history.is_some_and(|h| h.is_variant(**b));
+    let proposals: Vec<Value> = lines.iter().flatten().filter(|b| !variant(b)).map(|&b| name(b)).collect();
+    let variants: Vec<Value> = lines.iter().flatten().filter(variant).map(|&b| name(b)).collect();
     let author = st.write(en.creation).map(|w| hex(&w.author.0));
     let authored: Vec<String> = item.map(|i| i.authored().iter().map(|b| b.to_hex()).collect()).unwrap_or_default();
     let (v, x) = (en.vault, en.audience());
@@ -113,6 +115,7 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
         "held": lab.fetched(me, entry),
         "lines": lines.len(),
         "proposals": proposals,
+        "variants": variants,
         "audience": hex(&x.0),
         "epoch": st.epoch(KeyFam::Audience(v, x)),
         "bytes": item.map_or(0, |i| i.bytes().len()),
@@ -424,9 +427,11 @@ fn recipient(r: &Recipient) -> Value {
 
 /// Note `entry` as device `me` holds it, for the page's note page, an article alike (`Item::as_markdown`), and any
 /// other record by its title and the record itself (a story's page): the kind its record names on the main line
-/// (`"document"`, `"article"`, `"story"`); its lines, the main line first, then each proposal in the
-/// order it started, each with its name (`named`), the version it started from, its heads, its history (its own edits
-/// and every edit they build on, oldest first), and the note it shows there; for a proposal, as a pull request shows
+/// (`"document"`, `"article"`, `"story"`); its lines, the main line first, then each proposal and variant in the order
+/// it started, each with its name (`named`), the version it started from, its heads, which release of the line they are
+/// (`version`, `engine::described`) and its releases (`versions`), for a variant, that it is one, which version of main
+/// it holds (`main`) and whether main has writes it hasn't followed (`behind`), its history (its own edits and every
+/// edit they build on, oldest first), and the note it shows there; for a proposal or a variant, as a pull request shows
 /// one, the note at its base with main, what both lines hold in common (`base`), and where a merge into main would find
 /// both changed one place differently (`conflicts`, `merge::Conflict`); and every edit of it the device counts, in the
 /// order the device took them (`edit`). `None` if it counts none.
@@ -451,6 +456,11 @@ pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
             "name": line_name(h, line),
             "from": start.map(|c| ids(&c.write.deps)),
             "heads": ids(&h.heads(line)),
+            "version": described(h, line, &h.heads(line)),
+            "versions": releases(h, line),
+            "variant": line.is_some_and(|b| h.is_variant(b)),
+            "main": line.filter(|&b| h.is_variant(b)).map(|_| described(h, MAIN, &h.heads(line))),
+            "behind": line.is_some_and(|b| h.is_variant(b) && h.behind(line, MAIN)),
             "history": h.history(line).iter().map(|c| hex(&c.write.edit.0)).collect::<Vec<_>>(),
             "title": doc.as_ref().map(|d| d.title.clone()).or_else(|| titled(&record)),
             "text": doc.as_ref().map(body),
@@ -463,7 +473,9 @@ pub fn note(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
     let lines: Vec<Value> = h.lines().into_iter().map(line).collect();
     let shown = h.changes().len().saturating_sub(SHOWN);
     let audit = Audit::new(lab, me);
-    let edits: Vec<Value> = h.changes().iter().enumerate().map(|(i, c)| edit(h, me, &audit, c, i >= shown)).collect();
+    let numbers = numbered(h);
+    let edit = |(i, c): (usize, &Change)| edit(h, me, &audit, c, numbers.get(&c.write.edit), i >= shown);
+    let edits: Vec<Value> = h.changes().iter().enumerate().map(edit).collect();
     let vault = lab.vault_of_entry(me, entry).map(|v| hex(&v.0));
     let kind = lab.item_on(me, entry, None).and_then(|i| i.record().get("kind")?.as_str().map(String::from));
     Some(json!({ "entry": hex(&entry.0), "vault": vault, "kind": kind, "lines": lines, "edits": edits }))
@@ -478,11 +490,12 @@ fn titled(record: &Value) -> Option<String> {
 /// (`via`) and who stands behind it (`chain`, `Audit::chain`), the line it extends, what it builds on, and what it is,
 /// as the ops engine's `history` says (`engine::wrote`): an `edit` of the text, the start of a proposal (`propose`,
 /// with its name), a `merge` of two lines, the vault's `accept` of a proposal, or `sealed`; and the line it brought
-/// in, or for a proposal the line it started from (`from`); and whether the note's readers count it, as it fits the
-/// note's schemas, the ops of the shares it relies on allow it, a merge into main through a share builds on the
-/// vault's accept and what it builds on counts (`Change::counted`), and why not (`why`). With `shown`, the
-/// note's title and text at its version, and the text at the one it changed, so the page's diff shows what it brought.
-fn edit(h: &History, me: SignerId, audit: &Audit, c: &Change, shown: bool) -> Value {
+/// in, or for a proposal the line it started from (`from`); its number where it is a release of its line (`version`);
+/// and whether the note's readers count it, as it fits the note's schemas, the ops of the shares it relies on allow it,
+/// a merge into main through a share builds on the vault's accept and what it builds on counts (`Change::counted`), and
+/// why not (`why`). With `shown`, the note's title and text at its version, and the text at the one it changed, so the
+/// page's diff shows what it brought.
+fn edit(h: &History, me: SignerId, audit: &Audit, c: &Change, version: Option<&u64>, shown: bool) -> Value {
     let (w, Wrote { kind, from, base, why }) = (&c.write, wrote(h, c));
     let line = w.line();
     let at = |version: &[EditId]| h.item_at(version, me, line).as_markdown();
@@ -504,8 +517,9 @@ fn edit(h: &History, me: SignerId, audit: &Audit, c: &Change, shown: bool) -> Va
         "line": line.map(|b| hex(&b.0)),
         "deps": ids(&w.deps),
         "kind": kind,
-        "name": if kind == "propose" { h.name(w.edit) } else { None },
+        "name": if matches!(kind, "propose" | "variant") { h.name(w.edit) } else { None },
         "from": from.map(|l| json!({ "line": l.map(|b| hex(&b.0)), "name": line_name(h, l) })),
+        "version": version,
         "title": title,
         "text": after.as_ref().map(body),
         "before": before.as_ref().map(body),

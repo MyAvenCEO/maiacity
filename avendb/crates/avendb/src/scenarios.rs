@@ -488,10 +488,10 @@ fn proposals(run: &mut Run) -> Done {
     w.lab.sync_all(8);
     let mine = w.lab.propose(w.mac_c, carol, welcome, &first, "mine").err();
     run.same("Carol, who may only read Welcome, can't start a proposal on it", mine, Some(Refusal::NoCap));
-    let copy = w.lab.variant(w.mac_c, carol, welcome, MAIN, carol);
-    let copy = run.ok("she makes a variant of it in her own vault", copy)?;
+    let copy = w.lab.fork(w.mac_c, carol, welcome, MAIN, carol);
+    let copy = run.ok("she forks it into her own vault", copy)?;
     let record = |e| w.lab.item(w.mac_c, e).map(|i| i.record());
-    run.same("the variant holds Welcome's record", record(copy), record(welcome));
+    run.same("the fork holds Welcome's record", record(copy), record(welcome));
     run.same("and none of its history", w.lab.history(w.mac_c, copy).map(|h| h.changes().len()), Some(1));
     let theirs = w.lab.meaning(w.mac_c, copy).map(|m| (m.attrs.ty, m.attrs.author));
     run.same("it is a doc of Carol's own", theirs, Some(("doc".into(), carol)));
