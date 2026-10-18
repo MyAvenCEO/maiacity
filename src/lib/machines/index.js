@@ -1,6 +1,6 @@
 /*
  * THE MACHINES — everything we build that works by moving parts, as the Machines gallery (/app/machines/) lists it:
- * the excavators, the pod and the forklift that loads it, Open Source Ecology's LifeTrac and Power Cube, and our own
+ * the small and the large excavator, the pod and the forklift that loads it, Open Source Ecology's LifeTrac and Power Cube, and our own
  * ElectroCube, BatteryCube and BatteryPack — each kind with its variants and its versions. Most are rigged like the
  * people and animals (a bone and a card for every part, $lib/actors/rig.ts) and built beside them in $lib/actors, where
  * the games import them from; a machine built at AirSup's realism (real meshes in measured materials, its insides there
@@ -130,24 +130,30 @@ const HISTORY = {
 		},
 		{ v: 11, date: '2026-10-15', note: 'Its moves back, apart from its views: Service (both buttons pressed, the whole inside pulled out between the columns and slid home till the catches click) and Grip (the trigger squeezed, both pawls swing in and click out again), beside the stage’s Run and Assemble; the sliders they set follow them' }
 	],
-	excavator: [
-		{ ...FIRST, build: [{ id: 'excavator', label: 'Mini excavator', note: 'yellow, an open canopy, a 40 cm bucket', make: () => excavatorV1() }] },
-		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are', build: [{ id: 'excavator', label: 'Excavator', note: 'yellow, an open canopy, an 80 cm backhoe bucket', make: () => excavatorV2() }] },
-		{ v: 3, date: '2026-10-06', note: 'Two machines: a 14-tonne crawler excavator built as one (steel tracks, an enclosed cab, a mono boom on two rams, no blade), and the mini back at its own size' }
-	]
+	// the small excavator is the first excavator grown up: v1 and v2 were the only one, v3 the mini at its own size
+	'excavator-small': [
+		{ ...FIRST, build: [{ id: 'excavator-small', label: 'Mini excavator', note: 'yellow, an open canopy, a 40 cm bucket', make: () => excavatorV1() }] },
+		{ v: 2, date: '2026-10-06', note: 'Twice the size; the bucket turned round, its mouth and teeth towards the machine as a backhoe’s are', build: [{ id: 'excavator-small', label: 'Excavator', note: 'yellow, an open canopy, an 80 cm backhoe bucket', make: () => excavatorV2() }] },
+		{ v: 3, date: '2026-10-06', note: 'The mini back at its own size, 1.7 t: rubber tracks, an open canopy, a dozer blade, a swinging boom, a 40 cm bucket (beside the large excavator, which was built new then; each its own asset since 18 Oct 2026)' }
+	],
+	'excavator-large': [{ v: 1, date: '2026-10-06', note: 'A 14-tonne crawler excavator built as one: steel tracks, an enclosed cab, a mono boom on two rams, no blade (the Excavator’s big variant until 18 Oct 2026, now its own asset)' }]
 };
 
 /** @type {Omit<Family, 'versions' | 'version'>[]} */
 const LIST = [
 	{
-		id: 'excavator',
-		label: 'Excavator',
-		note: 'tracked diggers, each rigged: the house slews, boom, arm and bucket work on their rams, the wheels turn; they dig, slew and dump, drive, and the mini dozes with its blade',
+		id: 'excavator-small',
+		label: 'Small excavator',
+		note: 'a mini excavator of 1.7 t, rigged: the house slews, boom, arm and bucket work on their rams, the wheels turn; it digs, slews and dumps, drives and dozes with its blade',
 		from: 'Sandbox 1: building the settlement',
-		variants: [
-			{ id: 'excavator-small', label: 'Small · 1.7 t', note: 'a mini excavator: rubber tracks, an open canopy, a dozer blade, a swinging boom, a 40 cm bucket', make: () => miniExcavator() },
-			{ id: 'excavator-big', label: 'Big · 14 t', note: 'a crawler excavator: steel tracks, an enclosed cab, a mono boom on two rams, a 1 m bucket, 8.3 m reach', make: () => crawlerExcavator() }
-		]
+		variants: [{ id: 'excavator-small', label: 'Small · 1.7 t', note: 'rubber tracks, an open canopy, a dozer blade, a swinging boom, a 40 cm bucket', make: () => miniExcavator() }]
+	},
+	{
+		id: 'excavator-large',
+		label: 'Large excavator',
+		note: 'a crawler excavator of 14 t, rigged: the house slews, boom, arm and bucket work on their rams, the wheels turn; it digs, slews and dumps, and drives',
+		from: 'Sandbox 1: building the settlement',
+		variants: [{ id: 'excavator-large', label: 'Large · 14 t', note: 'steel tracks, an enclosed cab, a mono boom on two rams, a 1 m bucket, 8.3 m reach', make: () => crawlerExcavator() }]
 	},
 	{
 		id: 'pod',
