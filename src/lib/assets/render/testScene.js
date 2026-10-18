@@ -86,7 +86,7 @@ export const KINDS = {
 	],
 	// the yard
 	machines: [
-		['machines/excavator:excavator-small', 6],
+		['machines/excavator-small', 6],
 		['machines/forklift:forklift-pallet', 8],
 		['machines/lifetrac', 6],
 		['machines/van', 6],
