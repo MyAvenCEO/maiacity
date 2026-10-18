@@ -11,6 +11,9 @@
  * call to the legacy API. A film frozen into the repo (films/legacy/<key>.json, ./frozen.js) comes from there and the
  * media vault alone (Samuel 2026-10-18 13:29: both must come back after the old studio is gone); the old studio is
  * asked only for one not frozen yet. The legacy timelines and Postgres stay as they are until J15.
+ *
+ * The same run brings MaiaCity V1's two first-run intros (./intros.js): a story, a script and a cut of world shots
+ * each, made from the game itself rather than the old studio, after the films (and whether or not any film is wanted).
  */
 
 import { answer } from '$lib/avendb/ops.js';
@@ -48,14 +51,17 @@ export function heldOf(world, vault, f) {
 	};
 }
 
+/** What the run brings, as its callers name it: a film, or an intro (./intros.js). @typedef {{ key: string, name: string }} Brought */
+
 /**
  * Every film the Maia City vault lacks, brought into it one after another: `tell` hearing how far each is (its story
  * made first, so the studio shows it as it comes), `arrived` each as its cut is made, with the files that could not
  * come (./importer.js), or why it can't be (`missing`: the old studio has no such timeline). The films brought, each with those. Nothing where this isn't the Mac app with avenDB open, or
  * the Maia City vault isn't reached here.
- * @param {{ tell?: (f: Film, line: string, at?: import('./importer.js').Progress) => void,
- *   arrived?: (f: Film, failed: { hash: string, error: string }[], missing?: string) => void | Promise<void> }} [on]
- * @returns {Promise<{ film: Film, failed: { hash: string, error: string }[] }[]>}
+ * Then every intro of MaiaCity V1 it lacks (./intros.js), heard the same way.
+ * @param {{ tell?: (f: Brought, line: string, at?: import('./importer.js').Progress) => void,
+ *   arrived?: (f: Brought, failed: { hash: string, error: string }[], missing?: string) => void | Promise<void> }} [on]
+ * @returns {Promise<{ film: Brought, failed: { hash: string, error: string }[] }[]>}
  */
 export function bringFilms(on = {}) {
 	listening.add(on);
@@ -73,9 +79,9 @@ let going = null;
 
 /** The one run `bringFilms` shares, telling everyone who listens. */
 async function bringing() {
-	/** @type {(f: Film, line: string, at?: import('./importer.js').Progress) => void} */
+	/** @type {(f: Brought, line: string, at?: import('./importer.js').Progress) => void} */
 	const tell = (...a) => listening.forEach((l) => l.tell?.(...a));
-	/** @type {(f: Film, failed: { hash: string, error: string }[], missing?: string) => Promise<void>} */
+	/** @type {(f: Brought, failed: { hash: string, error: string }[], missing?: string) => Promise<void>} */
 	const arrived = async (...a) => {
 		for (const l of [...listening]) await l.arrived?.(...a);
 	};
@@ -90,7 +96,9 @@ async function bringing() {
 		const { bringProxies } = await import('./importer.js');
 		await bringProxies(city.vault, city.as).catch((e) => console.warn('world proxies:', e));
 	}
-	if (!wanted.length) return [];
+	// MaiaCity V1's intros, after the films: made here, from the game, with no call to the old studio
+	const intros = async () => (await import('./intros.js')).bringIntros(call, city, { tell, arrived });
+	if (!wanted.length) return intros();
 	const { frozenFilm } = await import('./frozen.js');
 	// each shows in the aside at once; the repo's frozen copy first (./frozen.js), the old studio only for one it lacks
 	for (const f of wanted) tell(f, frozenFilm(f.key) ? 'Starting…' : 'Asking the old studio…');
@@ -117,5 +125,5 @@ async function bringing() {
 		await arrived(f, failed);
 		brought.push({ film: f, failed });
 	}
-	return brought;
+	return [...brought, ...(await intros())];
 }

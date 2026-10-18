@@ -177,3 +177,48 @@ export function story(view, seat, seen) {
 			'One day it feeds the people who come after you. Tomorrow, you pick up the next settlers.')
 	];
 }
+
+// The story's steps as the world plays them: the same for the game (Game.svelte) and for the film of the intro
+// (./intro.js, ./film.js), so the film shows the moment the game plays, and the game plays what the film shows.
+
+/** a step that only tells (Next, or an intro's shot), so it can be told again: no move of the game makes it done */
+export const TOLD = (x) => x.kind === 'next' || x.kind === 'intro';
+
+/**
+ * Where the world stands for the story's step `at` of `steps` (-1: no story, everything at home): what `world.set`
+ * takes, and the place the camera looks at (`place`).
+ */
+export function worldStage(view, seat, steps, at) {
+	const tour = at >= 0 ? steps[at] : null;
+	const where = tour ?? { ...AT_HOME, battery: view.players.B.founder ? 'home' : 'store' };
+	const otherSeat = seat === 'A' ? 'B' : 'A';
+	const player = view.players[seat];
+	const other = view.players[otherSeat]?.founder ? otherSeat : null;
+	// whose backpack is down in the tent: mine once my home stands (the pitch told), the other's always (Samuel 2026-10-14)
+	const homed = { [seat]: !tour || steps.findIndex((x) => x.id === 'pitch') < at, [otherSeat]: true };
+	const spot = player?.tree ?? player?.spot ?? null;
+	return {
+		set: { at: where.at, cube: where.cube, tent: where.tent ?? 'up', battery: where.battery ?? 'store', me: seat, other, rides: !!tour && seat === 'B' && (where.at === 'village' || where.at === 'cruise'), hour: where.hour, cruise: where.cruise ?? '', spot: spot && { x: spot.x, z: spot.z }, marked: !!spot, by: where.by ?? '', pick: player?.tree?.plant ?? player?.seedling ?? '', name: player?.tree?.name ?? player?.name ?? '', homed },
+		place: where.place
+	};
+}
+
+/** how much of the locked land shows at step `at` of the story (all of it with no story) */
+export const revealOf = (steps, at) => (at >= 0 ? Math.max(0, ...steps.slice(0, at + 1).map((x) => x.reveal ?? 0)) : 2);
+
+/**
+ * The moment the world plays for a step of the story, started now: the intro's shots, the station, a load, a pitch,
+ * a drive, the sowing, or a shot told over the place the step is at. reel: the shots it is filmed by
+ * (game/film/reel.js), else the moves the world codes for it.
+ */
+export function momentOf(world, step, reel = null) {
+	const lines = step.lines;
+	world.reel?.(reel);
+	if (step.kind === 'intro') return world.intro(step.part, { lines });
+	if (step.kind === 'station') return world.station({ lines });
+	if (step.kind === 'load') return world.load({ lines, what: step.what });
+	if (step.kind === 'build') return world.pitch({ lines, what: step.what });
+	if (step.kind === 'drive') return world.drive(step.leg, { fetch: !!step.fetch, lines });
+	if (step.kind === 'sow') return world.sow({ lines });
+	return world.scene(step.place, step);
+}

@@ -8,6 +8,12 @@
 //   { kind: 'whip',  path: <camera>, out, into, d }                a whip pan at the end (out) or start (into)
 //   { kind: 'keys',  keys: [{ t, position, aim } | { t, position, yaw, pitch }, … + fov?], curve }
 //                                                                  keyframes in shot seconds (a recorded flight)
+//   { kind: 'world' }                                             the world's own camera: whatever the world shows
+//                                                                  at that moment (a game's coded moves), no pose here
+//
+// Any of them may name a `frame`: one of the world's own frames its poses are in (a van, a pickup), where the world
+// says that stands at each moment (src/lib/sandbox-kit/film.js `frames`), so the camera rides with it however the
+// world got it there; without one, the poses are the world's.
 //
 // `curve` is one of CURVES by name. The maths is exactly scripts/film/camera.mjs's (which is now built on this file),
 // so a shot list written with camera.mjs becomes data without a single pose changing.
@@ -22,8 +28,10 @@
  *   | { kind: 'turn', at: Vec3, yaw0: number, yaw1: number, pitch0: number, pitch1: number, curve?: CurveName }
  *   | { kind: 'fly', keys: [Vec3, Vec3][], curve?: CurveName }
  *   | { kind: 'whip', path: Camera, out?: number, into?: number, d?: number }
- *   | { kind: 'keys', keys: Key[], curve?: CurveName }} Camera
+ *   | { kind: 'keys', keys: Key[], curve?: CurveName }
+ *   | { kind: 'world' }} CameraKind
  */
+/** @typedef {CameraKind & { frame?: string }} Camera */
 /** @typedef {{ t: number, position: Vec3, aim?: Vec3, yaw?: number, pitch?: number, fov?: number }} Key */
 
 const lerp = (/** @type {number} */ a, /** @type {number} */ b, /** @type {number} */ t) => a + (b - a) * t;
@@ -112,6 +120,9 @@ export function pathOf(cam, seconds = 1) {
 			const curve = curveOf(cam.curve), keys = keyPoses(cam.keys);
 			return (t) => sampleKeys(keys, curve(t) * seconds).pose;
 		}
+		case 'world':
+			// the world's own: nothing to say here (a stand-in pose at the origin, looking north)
+			return () => [0, 0, 0, 0, 0];
 		default:
 			throw new Error(`unknown camera kind "${/** @type {any} */ (cam).kind}"`);
 	}
@@ -168,6 +179,13 @@ export function checkCamera(cam, where = 'camera') {
 	};
 	if (!cam || typeof cam !== 'object') bad('missing');
 	if (cam.curve !== undefined && !(cam.curve in CURVES)) bad(`unknown curve "${cam.curve}"`);
+	if (cam.frame !== undefined && !/^[a-z][a-z0-9-]{0,40}$/.test(String(cam.frame))) bad('frame is a short name of one of the world\'s frames');
+	const checked = checkKind(cam, where, bad);
+	return cam.frame !== undefined && checked.kind !== 'world' ? { ...checked, frame: String(cam.frame) } : checked;
+}
+
+/** One kind of camera checked (checkCamera, without its frame). @param {any} cam @param {string} where @param {(s: string) => never} bad @returns {Camera} */
+function checkKind(cam, where, bad) {
 	const need = (/** @type {string[]} */ ks, /** @type {number} */ n) => ks.forEach((k) => (n ? vec(cam[k], n) : finite(cam[k])) || bad(`${k} must be ${n ? `${n} numbers` : 'a number'}`));
 	switch (cam.kind) {
 		case 'move':
@@ -182,6 +200,8 @@ export function checkCamera(cam, where = 'camera') {
 		case 'fly':
 			if (!Array.isArray(cam.keys) || cam.keys.length < 2 || cam.keys.length > 200 || !cam.keys.every((/** @type {any} */ k) => Array.isArray(k) && vec(k[0], 3) && vec(k[1], 3))) bad('a flight is 2–200 [position, aim] keys');
 			return { kind: 'fly', keys: cam.keys, ...(cam.curve ? { curve: cam.curve } : {}) };
+		case 'world':
+			return { kind: 'world' };
 		case 'whip':
 			for (const k of ['out', 'into', 'd']) if (cam[k] !== undefined && !finite(cam[k])) bad(`${k} must be a number`);
 			if (cam.d !== undefined && (cam.d <= 0 || cam.d > 1)) bad('d is a share of the shot, 0–1');

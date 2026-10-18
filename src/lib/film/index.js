@@ -125,6 +125,8 @@ export function startFilm({ base = '' } = {}) {
 		await v.renderer.compileAsync(v.scene, v.camera);
 	}
 
+	/** the world camera's own nearest distance, for the shots whose lens names none @type {number | undefined} */
+	let baseNear;
 	/** Set the whole world for one instant of a shot. */
 	function set(/** @type {any} */ v, /** @type {Spec} */ spec, /** @type {number} */ t, /** @type {Shape} */ shape, /** @type {number} */ aspect) {
 		const e = evaluate(spec, t, shape);
@@ -133,11 +135,18 @@ export function startFilm({ base = '' } = {}) {
 		// a set is in the shots that name it, and nowhere else
 		for (const [name, group] of Object.entries(w.__sets ?? {})) /** @type {any} */ (group).visible = name === spec.world.props;
 		if (spec.world.props) w.__props?.(e.clock);
-		v.camera.fov = e.fov;
 		v.camera.aspect = aspect;
+		// the world's own camera (camera kind `world`): its lens and its moves are the world's; else the shot's, its
+		// pose perhaps in one of the world's frames (camera `frame`)
+		if (e.own && v.release) v.release();
+		else {
+			baseNear ??= v.camera.near;
+			v.camera.fov = e.fov;
+			v.camera.near = e.near ?? baseNear;
+			v.fly(...e.pose, e.frame);
+		}
 		v.camera.updateProjectionMatrix();
-		v.fly(...e.pose);
-		v.film.advance(e.clock, e.lights);
+		v.film.advance(e.clock, e.lights, e.parts);
 		return e;
 	}
 

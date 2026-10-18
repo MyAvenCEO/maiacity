@@ -13,12 +13,14 @@
 
 	/**
 	 * @type {{
-	 *   sandbox: string,
-	 *   to: string,
+	 *   sandbox: import('../../../game/film/worlds.js').Sandbox,
+	 *   to?: string,
 	 *   mount: (stage: HTMLElement, area: string | undefined, onProgress: (label: string) => void) => Promise<{ dispose: () => void }>
 	 * }}
 	 */
-	let { sandbox, to, mount } = $props();
+	let { sandbox, to: toGiven, mount } = $props();
+	/** where the address passes on to: the world's own page in the app (the registry's route), unless given */
+	const to = $derived(toGiven ?? WORLDS[sandbox]?.route ?? '/app/');
 
 	/** null until the page knows its own address (it is prerendered without one) */
 	let film = $state(/** @type {boolean | null} */ (null));

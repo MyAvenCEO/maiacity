@@ -3,17 +3,23 @@
 // renders it on demand — live in the studio, as a proxy, or as a 4K log plate at render time.
 //
 //   spec = {
-//     world:    { sandbox: 'sandbox-1' … 'sandbox-6' | 'tired-land', area?, build: { commit, hash, file? } | null, seed, stand: [x, z],
+//     world:    { sandbox: one of ./worlds.js WORLDS (sandbox-1 … sandbox-6, tired-land, maiacity-v1), area?, build: { commit, hash, file? } | null, seed, stand: [x, z],
 //                 dome?, props?, clock },   which world (game/film/worlds.js) and where in it; dome and props are Sandbox 4's
 //     seconds, fps: 30, aspect: '1:1',          the shot's length, frame rate, and the shape it was composed for
-//     camera:   game/film/camera.js (move · orbit · turn · fly · whip · keys, with a curve),
-//     lens:     { fov, fovTo? },                vertical field of view in degrees (for `aspect`), zooming to fovTo
+//     camera:   game/film/camera.js (move · orbit · turn · fly · whip · keys, with a curve; or `world`, the world's
+//               own camera), its poses in the world's frame or, with `frame`, in one of the world's own (a van, a
+//               pickup: the world says where that stands at each moment, so the camera rides with it),
+//     lens:     { fov, fovTo?, near? },         vertical field of view in degrees (for `aspect`), zooming to fovTo; the
+//               nearest the camera sees (m: 0.05 inside a van), else the world's own
 //     time:     { hour, hourTo? },              the hour, and where a time-lapse runs to
 //     exposure: { meter: 'lock' | 'ramp' | 'fixed', stops, ev? },   metered like a camera (middle grey 18%), `stops`
 //               over or under it; `ev` = the metered (or, fixed, the given) gain in stops — once known, it is pinned
 //     lights:   [{ id: 'sun' | 'fill' | 'glow' | 'lamps' | 'sky' | 'glass' | 'cb60', intensity?: k | [[t, k], …], color? }],  multipliers
 //               (glass: the low sun's warm sheen on the domes' glass, 0 = none, about 1–4 a glow; cb60: the Neewer CB60 of the
 //               room world, since removed; kept so its old shots still read)
+//     parts:    [{ id, <channel>: value | [[t, value], …] }],  the world's moving parts (./worlds.js `parts`: a van
+//               along its road, a tent pitched), each channel a constant or keys on the shot's clock, kept to the
+//               channel's range; a part left out moves as the world moves it
 //     cues:     [{ at, kind: 'sound', hash, level } | { at, kind: 'event', name, args }],  on the shot's clock (seconds)
 //     shutter:  { angle: 180, samples: 1 },     motion blur: the shutter open for angle/360 of a frame, in samples
 //     framing:  { [shape]: { fov?, yaw?, pitch?, dx?, dy? } },  a native camera per delivery shape (else the rule)
@@ -38,10 +44,11 @@ import { DEFAULT_SANDBOX, WORLDS } from './worlds.js';
  *   world: { sandbox: Sandbox, area?: string, build: Build, seed: number, stand: [number, number], dome?: number, props?: string, clock: number },
  *   seconds: number, fps: number, aspect: Shape,
  *   camera: Camera,
- *   lens: { fov: number, fovTo?: number },
+ *   lens: { fov: number, fovTo?: number, near?: number },
  *   time: { hour: number, hourTo?: number },
  *   exposure: { meter: 'lock' | 'ramp' | 'fixed', stops: Curve, ev?: number },
  *   lights: { id: LightId, intensity?: Curve, color?: string }[],
+ *   parts?: ({ id: string } & Record<string, Curve>)[],
  *   cues: Cue[],
  *   shutter: { angle: number, samples: number },
  *   framing: Partial<Record<Shape, Frame>>,
@@ -50,7 +57,7 @@ import { DEFAULT_SANDBOX, WORLDS } from './worlds.js';
  * }} Spec
  */
 /** @typedef {'sun' | 'fill' | 'glow' | 'lamps' | 'sky' | 'glass' | 'cb60'} LightId */
-/** @typedef {'sandbox-1' | 'sandbox-2' | 'sandbox-3' | 'sandbox-4' | 'sandbox-5' | 'sandbox-6' | 'tired-land'} Sandbox */
+/** @typedef {import('./worlds.js').Sandbox} Sandbox */
 
 /** The delivery shapes, width over height. */
 export const SHAPES = /** @type {Record<Shape, number>} */ ({ '1:1': 1, '16:9': 16 / 9, '9:16': 9 / 16, '4:5': 4 / 5 });
@@ -72,7 +79,8 @@ const lerp = (/** @type {number} */ a, /** @type {number} */ b, /** @type {numbe
  * @param {any} s @returns {Spec}
  */
 export function normalize(s) {
-	const bad = (/** @type {string} */ m) => {
+	/** @type {(m: string) => never} */
+	const bad = (m) => {
 		throw new ShotError(m);
 	};
 	if (!s || typeof s !== 'object') bad('A shot is an object.');
@@ -90,7 +98,7 @@ export function normalize(s) {
 	};
 	const w = s.world ?? {};
 	const sandbox = /** @type {Sandbox} */ (w.sandbox ?? DEFAULT_SANDBOX);
-	const where = WORLDS[sandbox];
+	const where = Object.hasOwn(WORLDS, sandbox) ? WORLDS[sandbox] : undefined;
 	if (!where) bad(`world.sandbox is one of ${Object.keys(WORLDS).join(', ')}.`);
 	const areas = where.areas;
 	if (w.area !== undefined && w.area !== null && !areas?.includes(w.area)) bad(areas ? `world.area in ${sandbox} is one of ${areas.join(', ')}.` : `${sandbox} has no areas.`);
@@ -124,7 +132,7 @@ export function normalize(s) {
 	} catch (e) {
 		bad(/** @type {Error} */ (e).message);
 	}
-	const lens = { fov: num(s.lens?.fov, 'lens.fov', 0.5, 170, 45), ...(s.lens?.fovTo !== undefined ? { fovTo: num(s.lens.fovTo, 'lens.fovTo', 0.5, 170) } : {}) };
+	const lens = { fov: num(s.lens?.fov, 'lens.fov', 0.5, 170, 45), ...(s.lens?.fovTo !== undefined ? { fovTo: num(s.lens.fovTo, 'lens.fovTo', 0.5, 170) } : {}), ...(s.lens?.near !== undefined ? { near: num(s.lens.near, 'lens.near', 0.005, 10) } : {}) };
 	const time = { hour: num(s.time?.hour, 'time.hour', 0, 48), ...(s.time?.hourTo !== undefined ? { hourTo: num(s.time.hourTo, 'time.hourTo', 0, 48) } : {}) };
 	const meter = s.exposure?.meter ?? 'lock';
 	if (!['lock', 'ramp', 'fixed'].includes(meter)) bad('exposure.meter is lock, ramp or fixed.');
@@ -136,6 +144,25 @@ export function normalize(s) {
 		if (l.color !== undefined && !/^#[0-9a-f]{6}$/i.test(String(l.color))) bad(`lights[${i}].color is #rrggbb.`);
 		return { id: l.id, ...(l.intensity !== undefined ? { intensity: curve(l.intensity, `lights[${i}].intensity`, 0, 1000) } : {}), ...(l.color ? { color: String(l.color).toLowerCase() } : {}) };
 	});
+	// the world's moving parts: only those it declares, each channel only one it has, its values kept to its range
+	if (s.parts !== undefined && (!Array.isArray(s.parts) || s.parts.length > 40)) bad('parts is a list.');
+	/** @type {({ id: string } & Record<string, Curve>)[]} */
+	const parts = (s.parts ?? []).map((/** @type {any} */ q, /** @type {number} */ i) => {
+		const part = where.parts.find((x) => x.id === q?.id);
+		if (!part) bad(where.parts.length ? `parts[${i}].id is one of ${where.parts.map((x) => x.id).join(', ')}.` : `${sandbox} has no moving parts.`);
+		/** @type {any} */
+		const out = { id: part.id };
+		for (const [k, v] of Object.entries(q)) {
+			if (k === 'id') continue;
+			const ch = Object.hasOwn(part.channels, k) ? part.channels[k] : null;
+			if (!ch) bad(`parts[${i}] (${part.id}) moves by ${Object.keys(part.channels).join(', ')}, not ${k}.`);
+			const [lo, hi] = ch.range, keep = (/** @type {number} */ x) => Math.min(hi, Math.max(lo, x));
+			const c = curve(v, `parts[${i}].${k}`, -1e6, 1e6);
+			out[k] = Array.isArray(c) ? c.map(([t, x]) => [t, keep(x)]) : keep(c);
+		}
+		return out;
+	});
+	if (new Set(parts.map((q) => q.id)).size !== parts.length) bad('parts names each part once.');
 	if (s.cues !== undefined && (!Array.isArray(s.cues) || s.cues.length > 200)) bad('cues is a list.');
 	const cues = (s.cues ?? []).map((/** @type {any} */ c, /** @type {number} */ i) => {
 		const at = num(c?.at, `cues[${i}].at`, -1e6, 1e6);
@@ -175,6 +202,8 @@ export function normalize(s) {
 		time,
 		exposure: /** @type {Spec['exposure']} */ (exposure),
 		lights,
+		// only when it moves any: a shot without parts keeps the fingerprint it always had
+		...(parts.length ? { parts } : {}),
 		cues: /** @type {Cue[]} */ (cues),
 		shutter,
 		framing,
@@ -206,7 +235,10 @@ export function fovFor(fov, from, to) {
 /**
  * Everything about a shot at time t (seconds from its first frame), for one delivery shape.
  * @param {Spec} spec @param {number} t @param {Shape} [shape]
- * @returns {{ pose: Pose, fov: number, hour: number, stops: number, lights: { id: LightId, intensity: number, color?: string }[], cues: Cue[], clock: number, progress: number }}
+ * `own`: the camera is the world's own (camera kind `world`: the pose and the lens are the world's, not these);
+ * `frame`: the pose is in that frame of the world's (camera `frame`), not the world's; `near`: the lens's, if it says.
+ * `parts`: each moving part the shot moves, its channels' values at t (the world's own moves for the rest).
+ * @returns {{ pose: Pose, fov: number, near?: number, own: boolean, frame?: string, hour: number, stops: number, lights: { id: LightId, intensity: number, color?: string }[], parts: Record<string, Record<string, number>>, cues: Cue[], clock: number, progress: number }}
  */
 export function evaluate(spec, t, shape) {
 	const p = Math.min(1, Math.max(0, t / spec.seconds));
@@ -229,9 +261,13 @@ export function evaluate(spec, t, shape) {
 	return {
 		pose: out,
 		fov,
+		...(spec.lens.near !== undefined ? { near: spec.lens.near } : {}),
+		own: spec.camera.kind === 'world',
+		...(spec.camera.frame ? { frame: spec.camera.frame } : {}),
 		hour: spec.time.hourTo === undefined ? spec.time.hour : lerp(spec.time.hour, spec.time.hourTo, p),
 		stops: valueAt(spec.exposure.stops, t),
 		lights: spec.lights.map((l) => ({ id: l.id, intensity: l.intensity === undefined ? 1 : valueAt(l.intensity, t), ...(l.color ? { color: l.color } : {}) })),
+		parts: Object.fromEntries((spec.parts ?? []).map(({ id, ...ch }) => [id, Object.fromEntries(Object.entries(ch).map(([k, c]) => [k, valueAt(/** @type {Curve} */ (c), t)]))])),
 		cues: spec.cues.filter((c) => c.at <= t),
 		clock: spec.world.clock + t,
 		progress: p

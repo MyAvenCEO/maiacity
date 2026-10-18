@@ -162,7 +162,7 @@
 				delete sp.world.area, delete sp.world.dome, delete sp.world.props;
 			})}>{#each Object.entries(WORLDS) as [id, w] (id)}<option value={id}>{w.label}</option>{/each}</select></label>
 			{#if here?.areas}
-				<label>Area <select value={spec.world.area ?? here.areas[0]} onchange={(e) => edit((sp) => (sp.world.area = e.currentTarget.value))}>{#each here.areas as a (a)}<option>{a}</option>{/each}</select></label>
+				<label>Area <select value={spec.world.area ?? here.areas[0]} onchange={(e) => edit((sp) => (sp.world.area = e.currentTarget.value))}>{#each here.areas as a (a)}<option value={a}>{here.areaNames?.[a] ?? a}</option>{/each}</select></label>
 			{/if}
 			{#if spec.world.sandbox === 'sandbox-2' && spec.world.area === 'island'}
 				<label>Island seed <input type="number" step="1" min="0" value={spec.world.seed} onchange={(e) => edit((sp) => (sp.world.seed = Math.round(num(e.currentTarget.value, 1))))} /></label>
@@ -174,7 +174,7 @@
 				<button class="ghost small rec" class:on={s.world.recording} onclick={() => sel && s.record(sel)} disabled={s.world.state !== 'ready'} title={s.world.state === 'ready' ? 'Fly the camera by hand while the timeline plays from this clip' : 'Needs the live world (film mode)'}>
 					{s.world.recording ? '■ Stop recording' : '● Record a move'}
 				</button>
-				{#if spec.camera.kind !== 'keys'}
+				{#if spec.camera.kind !== 'keys' && spec.camera.kind !== 'world'}
 					<button class="ghost small" title="Turn the preset move into keys, one a second" onclick={() => edit((sp) => (sp.camera = { kind: 'keys', curve: sp.camera.curve ?? 'glide', keys: toKeys(sp) }))}>Preset → keys</button>
 				{/if}
 			</div>
