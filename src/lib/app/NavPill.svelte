@@ -36,7 +36,9 @@
 		pill.context?.list.reduce((n, a) => n + (a.id === pill.context?.current ? 0 : (a.badge ?? 0)), 0) ?? 0
 	);
 	const path = $derived(page.url.pathname);
-	const up = $derived(upFrom(path.slice(base.length)));
+	const up = $derived(upFrom(path.slice(base.length), page.url.hash));
+	/** on the dashboard with a vault's page open over it (`#sparks`, …): Home brings the dashboard itself back */
+	const atHome = $derived(path === home && (!page.url.hash || page.url.hash === '#home'));
 	const initials = $derived(name ? name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase() : '·');
 	const who = $derived(name || 'You');
 	// looking at another account than one's own (a COOP's wallet): the avatar and the word say whose
@@ -69,7 +71,7 @@
 	{:else if up}
 		<a class="item" href={up.href} title={up.label} aria-label={up.label}><Icon name="back" /><span>Back</span></a>
 	{/if}
-	<a class="item" href={home} aria-current={path === home ? 'page' : undefined} title="Dashboard">
+	<a class="item" href={path === home ? `${home}#home` : home} aria-current={atHome ? 'page' : undefined} title="Dashboard">
 		<Icon name="home" /><span>Home</span>
 	</a>
 	{#if pill.center}

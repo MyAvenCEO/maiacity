@@ -26,6 +26,7 @@
 <script>
 	import { setContext } from 'svelte';
 	import { wayBack } from '$lib/app/back.svelte.js';
+	import { afterNavigate } from '$app/navigation';
 	import { enter } from '$lib/app/immersive.svelte';
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import AccessRequest from './AccessRequest.svelte';
@@ -131,6 +132,8 @@
 	}
 
 	let route = $state(parse(typeof location === 'undefined' ? '' : location.hash));
+	// the app's own links (the nav pill's Home and Back) reach this page too: its address after `#` read again each time
+	afterNavigate(() => (route = parse(location.hash)));
 	const tab = $derived(route.page);
 
 	const busy = $derived(!!doing);
@@ -255,7 +258,7 @@
 	}
 </script>
 
-<svelte:window onhashchange={() => (route = parse(location.hash))} />
+<svelte:window onhashchange={() => (route = parse(location.hash))} onpopstate={() => (route = parse(location.hash))} />
 
 {#snippet head()}
 	<header class="main-head">
