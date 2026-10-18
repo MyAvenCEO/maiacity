@@ -18,7 +18,8 @@
 	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
-	import { AT_HOME, STORY_INVESTS, story } from './tour.js';
+	import { STORY_INVESTS, TOLD, momentOf, revealOf, story, worldStage } from './tour.js';
+	import { reelFor } from './intro.js';
 	import { sure } from '$lib/app/sure.js';
 	import { treeNow } from './trees.js';
 	import { plantOf } from './plants.js';
@@ -96,18 +97,15 @@
 		world?.trees(t);
 	});
 	// the land still to unlock shows its rims as the welcome story reaches it (all of it once the story is done or skipped)
-	$effect(() => void (view && world?.reveal(tour ? Math.max(0, ...steps.slice(0, tourAt + 1).map((x) => x.reveal ?? 0)) : 2)));
-	// where the story stands in the world: the pickup, the powercube and the players, and what the camera looks at
-	// once a second player is in, the BatteryCube and the solar panel stand at home beside the tent
-	const where = $derived(tour ?? { ...AT_HOME, battery: view?.players.B.founder ? 'home' : 'store' });
 	const otherSeat = $derived(seat === 'A' ? 'B' : 'A');
+	$effect(() => void (view && world?.reveal(revealOf(steps, tour ? tourAt : -1))));
+	// where the story stands in the world: the pickup, the powercube and the players, and what the camera looks at
+	// once a second player is in, the BatteryCube and the solar panel stand at home beside the tent (./tour.js
+	// worldStage: the same for the film of the intro)
 	$effect(() => {
 		if (!view || !world) return;
-		const other = view.players[otherSeat]?.founder ? otherSeat : null;
-		// whose backpack is down in the tent: mine once my home stands (the pitch told), the other's always (Samuel 2026-10-14)
-		const homed = { [seat]: !tour || steps.findIndex((x) => x.id === 'pitch') < tourAt, [otherSeat]: true };
-		const spot = player?.tree ?? player?.spot ?? null;
-		world.set({ at: where.at, cube: where.cube, tent: where.tent ?? 'up', battery: where.battery ?? 'store', me: seat, other, rides: !!tour && seat === 'B' && (where.at === 'village' || where.at === 'cruise'), hour: where.hour, cruise: where.cruise ?? '', spot: spot && { x: spot.x, z: spot.z }, marked: !!spot, by: where.by ?? '', pick: player?.tree?.plant ?? player?.seedling ?? '', name: player?.tree?.name ?? player?.name ?? '', homed });
+		const where = worldStage(view, seat, steps, tour ? tourAt : -1);
+		world.set(where.set);
 		world.touring(!!tour);
 		if (where.place) world.focus(growth != null && !tour ? `tree:${seat}` : where.place);
 	});
@@ -191,29 +189,30 @@
 		if (!tour || !world || playing || (!demo && resumed !== started)) return;
 		const step = tour;
 		fadeIn = step.id === 'arrive';
+		// every moment is filmed by the intro's shots for this step (./intro.js: the world's own camera, till the shots
+		// are tuned in the studio), through the one shot player the studio and the plates use (game/film/reel.js)
+		const reel = reelFor(seat, step);
 		if (step.kind === 'intro') {
 			playing = 'intro';
-			world.intro(step.part, { lines: step.lines }).then(() => ((playing = ''), mark(step.id)));
+			momentOf(world, step, reel).then(() => ((playing = ''), mark(step.id)));
 		} else if (step.kind === 'station' || step.kind === 'drive' || step.kind === 'load' || step.kind === 'build') {
 			playing = step.kind;
 			// the moment cuts a shot a line and carries the voice-over itself, so each action lands on its words
-			const lines = step.lines;
-			const moment = step.kind === 'station' ? world.station({ lines }) : step.kind === 'load' ? world.load({ lines, what: step.what }) : step.kind === 'build' ? world.pitch({ lines, what: step.what }) : world.drive(step.leg, { fetch: !!step.fetch, lines });
-			moment.then(() => ((playing = ''), mark(step.id)));
+			momentOf(world, step, reel).then(() => ((playing = ''), mark(step.id)));
 		} else if (step.kind === 'sow' && !told[step.id] && player?.seedling) {
 			// the seed into the earth and the water over it; the move goes to the game as the moment ends, the film held
 			// till it is there (no "Plant it" prompt flashing up between the last shot and the next)
 			playing = 'sow';
-			world.sow({ lines: step.lines }).then(() => {
+			momentOf(world, step, reel).then(() => {
 				told = { ...told, [step.id]: true };
 				Promise.resolve(plantIt()).finally(() => (playing = ''));
 			});
 		} else if ((step.kind === 'invest' || step.kind === 'mint' || step.kind === 'pick' || step.kind === 'spot') && !told[step.id]) {
 			playing = 'scene';
-			world.scene(step.place, step).then(() => ((playing = ''), (told = { ...told, [step.id]: true })));
+			momentOf(world, step, reel).then(() => ((playing = ''), (told = { ...told, [step.id]: true })));
 		} else if (step.kind === 'next' || step.kind === 'done') {
 			playing = 'scene';
-			world.scene(step.place, step).then(() => {
+			momentOf(world, step, reel).then(() => {
 				playing = '';
 				if (step.kind === 'done') (ended = true), setTimeout(() => (ended = false), 1600);
 				mark(step.id);
@@ -459,8 +458,6 @@
 		for (const x of steps.slice(0, tourAt + 1)) for (const u of UNLOCKS[x.id] ?? []) on.add(u);
 		return on;
 	});
-	/** a step that only tells (Next, or an intro shot), so it can be told again: not a move read off the game */
-	const TOLD = (x) => x.kind === 'next' || x.kind === 'intro';
 	const shows = (what) => !unlocked || unlocked.has('all') || unlocked.has(what) || (what.startsWith('view:') && unlocked.has('mips'));
 	const mark = (id) => {
 		seen = { ...seen, [seat]: { ...(seen[seat] ?? {}), [id]: true } };

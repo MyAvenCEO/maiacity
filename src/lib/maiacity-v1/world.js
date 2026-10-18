@@ -16,6 +16,12 @@
  * plant stake pressed in beside it (sticks), the seed sown and watered (sow), and watered each game month after
  * (water). The sun follows the story's hour, or else the virtual day. Tapping a player names them (onPick), a tap on
  * the ground while a spot is chosen goes to onGround, and every frame the players' labels' places go to onLabels.
+ *
+ * Its moments are filmed by world shots (game/film/shot.js), the one shot player of the game, the studio and the
+ * plates: a moment given a reel (`reel`, game/film/reel.js) is filmed by the reel's shots, its camera, its lens and the
+ * frames it rides in (the van, the pickup) as the shots say, while the moment moves the world as it always did; given
+ * none, by the moves coded here, which the intro's shots are made from (./intro.js, ./film.js). The same world, on the
+ * film's clock, is the film world of /games/maiacity-v1/?film (`clock`, `own: false`, `tick`, `film`).
  */
 import * as THREE from 'three';
 import { createControls } from '$lib/render/core.js';
@@ -28,6 +34,8 @@ import { PLOT } from '../../../game/maiacity-v1/engine.js';
 import { look, pathOf } from '../../../game/film/camera.js';
 import { BAG_PARTS, BELL_TENT, BOTTLE_MOUTH, CENTRE_AT, FIRE_CATCHES, FIRE_WALK, PACK_PACKETS, PICKUP, RAMP, STAKE_FLAG, TENT_CLOTH, TENT_LAMP, TENT_WALK, THINGS, WALK_CYCLE, stakeRef, standInRef, tentWork } from './things.js';
 import { createDrawn } from './drawn.js';
+import { aim, filmHoldsSize, poseIn } from '$lib/sandbox-kit/film.js';
+import { frameAt as reelFrame } from '../../../game/film/reel.js';
 import { plantRef } from './plants.js';
 
 /** the hex's radius in metres: 114.75, one and a half times 76.5 again (Samuel 2026-10-13, 17:49) */
@@ -660,7 +668,15 @@ function acting(p, t) {
 const VAN_SEAT = V(0.2, 1.8, 0.26);
 const VAN_LOOK = V(0.0, 1.45, 14);
 
-export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, onCaption = () => {}, onGround = () => {}, onRoam = () => {} } = {}) {
+/**
+ * The world on a canvas. clock: the world's clock in seconds (else the page's); own: whether it runs its own frames
+ * (a film world runs none: the film asks for each, `tick`); film: it is the film's world (no room kept for the
+ * story's card; the hour the shot's where the film sets one, `hourOf`); random: its chance (seeded, on film).
+ */
+export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, onCaption = () => {}, onGround = () => {}, onRoam = () => {}, clock: clockOf = null, own = true, film = false, hourOf = () => undefined, random = Math.random } = {}) {
+	/** the world's clock, in seconds */
+	const now = clockOf ?? (() => performance.now() / 1000);
+	let rand = random;
 	// the world renderer ($lib/render/world.js): soft shadows, V1's own colours (no tone mapping), at most 1.5 pixels
 	// per CSS pixel
 	const renderer = worldRenderer({ canvas, maxPixelRatio: 1.5, toneMapping: 'none' });
@@ -989,7 +1005,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	 *  of it, slowing over CREEP metres; the camera held in it (cruiseHold) */
 	let cruising = null;
 	let cruiseHold = '';
-	const cruiseU = () => (cruising ? cruising.u0 + (CREEP * (1 - Math.exp(-(performance.now() / 1000 - cruising.t0) / 9))) / TRACK_L : U_STORE);
+	const cruiseU = () => (cruising ? cruising.u0 + (CREEP * (1 - Math.exp(-(now() - cruising.t0) / 9))) / TRACK_L : U_STORE);
 	function place() {
 		seatMe(false);
 		const { at, me, other, rides } = stage;
@@ -1005,7 +1021,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		} else if ((at === 'stop' || at === 'van' || at === 'cab') && !fetched) putTruck(U_START);
 		else if (at === 'village') putTruck(U_STORE);
 		else if (at === 'cruise') {
-			if (cruising?.to !== stage.cruise) cruising = { to: stage.cruise, u0: U_NEAR[stage.cruise] ?? U_STORE, t0: performance.now() / 1000 };
+			if (cruising?.to !== stage.cruise) cruising = { to: stage.cruise, u0: U_NEAR[stage.cruise] ?? U_STORE, t0: now() };
 			putTruck(cruiseU());
 		} else putTruck(1);
 		truck.updateMatrixWorld(true);
@@ -1088,7 +1104,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	const lensFor = (s) => ((camera.near = s.inside ? 0.05 : s.near ?? 0.5), (camera.fov = (s.fov ?? 42) + (camera.aspect < 0.8 ? 14 : 0)), camera.updateProjectionMatrix());
 	function ride(step) {
 		rollVan(step);
-		const t = performance.now() / 1000;
+		const t = now();
 		const held = RIDE_SHOTS[rideHold];
 		camera.position.copy(held ? held.cam(t, 1) : van.localToWorld(VAN_SEAT.clone())).add(V(0, Math.sin(t * 23) * 0.012 + Math.sin(t * 7.3) * 0.02, 0));
 		camera.lookAt(held ? held.at(t, 1) : van.localToWorld(VAN_LOOK.clone().add(V(Math.sin(t * 0.21) * 3, 0, 0))));
@@ -1107,7 +1123,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		van.rotation.y = Math.PI / 2;
 		van.updateMatrixWorld(true);
 		dust(van, -2.6);
-		van.userData.nod(performance.now() / 1000, step);
+		van.userData.nod(now(), step);
 	}
 	/** the shots of the ride, one a line of the story, so every sentence cuts to a new view (Samuel 2026-10-13, the
 	 *  script 2026-10-14). In the van's own frame (+z ahead, +x the door's side, the player's seat by it) */
@@ -1267,7 +1283,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				if (trees[seat] !== g) return;
 				away();
 				// watered: it grows in place, from the height it had to its new one (Samuel 2026-10-14)
-				if (was && t.grown > was.grown && height > 0.002) grows.push({ plant, t0: performance.now() / 1000, from: Math.min(1, was.height / height) });
+				if (was && t.grown > was.grown && height > 0.002) grows.push({ plant, t0: now(), from: Math.min(1, was.height / height) });
 			});
 			world.add(g);
 			trees[seat] = g;
@@ -1439,7 +1455,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** while the story's card sits low on the screen, the picture is drawn a little higher, so the place shows above it */
 	function frameView() {
 		const w = canvas.clientWidth || 1, h = canvas.clientHeight || 1;
-		if (tourOn && !busy) camera.setViewOffset(w, h, 0, h * 0.17, w, h);
+		if (tourOn && !busy && !film) camera.setViewOffset(w, h, 0, h * 0.17, w, h);
 		else camera.clearViewOffset();
 	}
 	const touring = (on) => {
@@ -1453,7 +1469,11 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	let moment = null;
 	/** play a moment (steps); hour: its light (a step may move it: a time-lapse); keep: its last frame stays when it
 	 *  ends, while a prompt waits on the player */
+	/** the reel the next moment is filmed by (`reel`), taken by it as it starts */
+	let nextReel = null;
 	function play(steps, { hour: at, keep = false } = {}) {
+		const reel = nextReel;
+		nextReel = null;
 		return new Promise((done) => {
 			if (roam || freeTruck) walk(false); // a moment ends the free walk and drive, everyone back where the story has them
 			busy = true;
@@ -1464,7 +1484,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			goal = null;
 			fore.visible = false;
 			frameView();
-			moment = { steps, i: 0, t0: performance.now() / 1000, done, hour: at ?? stage.hour ?? undefined, keep };
+			moment = { steps, i: 0, t0: now(), start: now(), done, hour: at ?? stage.hour ?? undefined, keep, reel };
 		});
 	}
 	function endMoment() {
@@ -1521,7 +1541,62 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			if (step.caption) onCaption(spoken(m, m.i));
 		}
 		step.run?.(t / step.dur);
+		if (m.reel) filmed(m.reel, now - m.start);
 	}
+	/** the camera as a reel's shot has it at time t of the moment: its pose (in the world, or in one of the world's
+	 *  frames) and its lens; on an upright screen, the shot's upright framing */
+	function filmed(reel, t) {
+		const e = reelFrame(reel, t, camera.aspect < 0.8 ? '9:16' : undefined);
+		if (!e) return;
+		if (e.own) return void putParts(e.parts);
+		putParts(e.parts);
+		const f = e.frame && frames[e.frame]?.();
+		aim(camera, f ? poseIn(f, e.pose) : e.pose);
+		camera.fov = e.fov;
+		if (e.near) camera.near = e.near;
+		camera.updateProjectionMatrix();
+		camera.updateMatrixWorld();
+	}
+	/** the world's moving parts a shot moves (game/film/worlds.js `parts`), put where it has them over the world's own
+	 *  moves: the van along the highway (1 at the bus stop), the pickup along the track, the tent as far as pitched.
+	 *  Returns how to put them back as the world had them */
+	function putParts(v = {}) {
+		const was = [];
+		if (v.van?.along !== undefined) {
+			const p = van.position.clone(), r = van.rotation.y;
+			was.push(() => (van.position.copy(p), (van.rotation.y = r), van.updateMatrixWorld(true)));
+			van.position.set(VAN_HALT.x - 2200 * (1 - v.van.along), 0, VAN_HALT.z);
+			van.rotation.y = Math.PI / 2;
+			van.updateMatrixWorld(true);
+		}
+		if (v.pickup?.along !== undefined) {
+			const p = truck.position.clone(), r = truck.rotation.y;
+			was.push(() => (truck.position.copy(p), (truck.rotation.y = r), truck.updateMatrixWorld(true)));
+			putTruck(v.pickup.along);
+			truck.updateMatrixWorld(true);
+		}
+		if (v.tent?.pitch !== undefined) {
+			const e = homePitch;
+			was.push(() => setPitch(e));
+			setPitch(v.tent.pitch);
+		}
+		return () => was.forEach((f) => f());
+	}
+	/** where the first tree's spot stands, turned as its own frame turns (spotAt): +z on toward the hex's middle */
+	const spotFrame = new THREE.Object3D();
+	/** the world's own frames a shot's camera may ride in (game/film/camera.js `frame`), each where it stands now: the
+	 *  van, the pickup, the player and the first tree's spot */
+	const frames = {
+		van: () => van,
+		pickup: () => truck,
+		player: () => people[stage.me],
+		spot: () => {
+			const S = stage.spot ?? { x: 0, z: 30 };
+			spotFrame.position.set(S.x, 0, S.z);
+			spotFrame.rotation.set(0, spotYaw(S), 0);
+			return spotFrame;
+		}
+	};
 	const ease = (k) => k * k * (3 - 2 * k);
 	const easeOut = (k) => 1 - (1 - k) * (1 - k);
 	let dt = 1 / 60; // the last frame's length, so the camera follows at the same pace however fast the frames come
@@ -1558,7 +1633,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		return m;
 	});
 	let puffAt = 0;
-	const lastDust = new WeakMap();
+	let lastDust = new WeakMap();
 	function dust(o, back) {
 		const was = lastDust.get(o);
 		const now = o.position.clone();
@@ -1569,7 +1644,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		puffAt = 0;
 		const p = puffs.find((x) => x.userData.age > 2.4) ?? puffs[0];
 		o.updateMatrixWorld(true);
-		p.position.copy(o.localToWorld(V((Math.random() - 0.5) * 1.2, 0.5, back)));
+		p.position.copy(o.localToWorld(V((rand() - 0.5) * 1.2, 0.5, back)));
 		p.userData.age = 0;
 		p.visible = true;
 	}
@@ -2736,7 +2811,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		return play([
 			beat(4, (sec, k) => {
 				rollVan(dt);
-				const t = performance.now() / 1000;
+				const t = now();
 				const at = mcu.at(t, 1);
 				camera.position.copy(mcu.cam(t, 1)).lerp(at, 0.18 * ease(Math.min(1, k * 2))).add(V(0, Math.sin(t * 23) * 0.012 + Math.sin(t * 7.3) * 0.02, 0));
 				camera.lookAt(at);
@@ -2768,7 +2843,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				let fixed = null;
 				steps.push(beat(3, (sec, k) => {
 					rollVan(dt);
-					const t = performance.now() / 1000;
+					const t = now();
 					const bump = kind.inside ? V(0, Math.sin(t * 23) * 0.012 + Math.sin(t * 7.3) * 0.02, 0) : V(0, 0, 0);
 					camera.position.copy(fixed ?? kind.cam(t, k)).add(bump);
 					const at = kind.at(t, k);
@@ -2864,7 +2939,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		seatOut(me);
 		me.visible = true;
 		wear(me, true); // out of the tent with them, for the seed and the bottle
-		errand = { pts: [me.position.clone().setY(0), spotAt(S)(0, 0, -0.62)], t0: performance.now() / 1000, yaw: spotYaw(S) };
+		errand = { pts: [me.position.clone().setY(0), spotAt(S)(0, 0, -0.62)], t0: now(), yaw: spotYaw(S) };
+		return walkTime(errand.pts);
 	}
 
 	/** walking freely, once the story is told (Samuel 2026-10-14): the camera behind the player, following them; a tap
@@ -2959,12 +3035,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		boardNext = false;
 		driveTo = null;
 		speed = 0;
-		boarding = { into: on, t0: performance.now() / 1000 };
+		boarding = { into: on, t0: now() };
 		return true;
 	}
 	function boardingStep() {
 		const me = people[stage.me];
-		const k = Math.min(1, (performance.now() / 1000 - boarding.t0) / GET_IN);
+		const k = Math.min(1, (now() - boarding.t0) / GET_IN);
 		if (boarding.into) climbIn(me, 'driver', k);
 		else climbOut(me, 'driver', k);
 		if (k < 1) return;
@@ -3238,11 +3314,14 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	// follows what the camera looks at, so the shadows fall wherever the story is
 	/** the canvas's glow by day and at night, and the lantern's own light, as the bell tent gives them */
 	const CLOTH_DAY = new THREE.Color('#5a4c34'), CLOTH_NIGHT = new THREE.Color('#ffb36a'), LANTERN = 1.4;
+	/** the hour the world's light is at now: the moment's (a time-lapse moves it), the story's, else the game's */
+	const hourNow = () => moment?.hour ?? stage.hour ?? hour;
 	function light(t) {
-		const day = ((moment?.hour ?? stage.hour ?? hour) - 6) / 12;
+		const day = ((hourOf() ?? hourNow()) - 6) / 12;
 		const up = Math.sin(Math.PI * Math.min(1, Math.max(0, day)));
 		const a = Math.PI * day;
-		const cold = !!moment?.cold; // the low cut cold: a bluer, flatter light for its beat
+		// the low cut cold: a bluer, flatter light for its beat (on film, the shot's lights say it: ./intro.js COLD)
+		const cold = !film && !!moment?.cold;
 		sun.target.position.copy(controls.target).setY(0);
 		sun.position.set(Math.cos(a) * 90, 8 + up * 80, -30 + Math.sin(a) * 20).add(sun.target.position);
 		sun.intensity = (0.25 + up * 2.1) * (cold ? 0.55 : 1);
@@ -3280,6 +3359,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	}
 
 	function resize() {
+		if (film && filmHoldsSize()) return; // the film keeps the size it asked for
 		const w = canvas.clientWidth || 1;
 		const h = canvas.clientHeight || 1;
 		renderer.setSize(w, h, false);
@@ -3329,11 +3409,15 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	let frame = 0;
 	let raf = 0;
 	let roamSeen = { on: false, near: false, driving: false };
-	const clock = new THREE.Clock();
 	let lastT = null;
+	/** the world's own frames: one a screen refresh, on the world's clock */
 	function loop() {
 		raf = requestAnimationFrame(loop);
-		const t = clock.getElapsedTime();
+		frameOf(now(), true);
+	}
+	/** one frame of the world at time t (s, its clock): everything moved on to t, and, drawn, the picture drawn (a film
+	 *  world comes to a moment frame by frame, drawing only the last: the film draws it) */
+	function frameOf(t, drawn_ = true) {
 		const step = Math.min(0.25, t - (lastT ?? t));
 		lastT = t;
 		settleDust(step);
@@ -3346,17 +3430,17 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		if (errand && !moment) {
 			// walking to where the first tree grows, the camera holding
 			const me = people[stage.me];
-			if (walkOn(me, errand.pts, performance.now() / 1000 - errand.t0)) me.rotation.y = errand.yaw;
+			if (walkOn(me, errand.pts, t - errand.t0)) me.rotation.y = errand.yaw;
 		}
 		for (let i = grows.length - 1; i >= 0; i--) {
 			// a watered tree grows in place
-			const g = grows[i], k = Math.min(1, (performance.now() / 1000 - g.t0) / 1.8);
+			const g = grows[i], k = Math.min(1, (t - g.t0) / 1.8);
 			g.plant.scale.setScalar(g.from + (1 - g.from) * easeOut(k));
 			if (k >= 1) grows.splice(i, 1);
 		}
 		// once the story is told the player simply walks: back on their feet as soon as no film plays
 		if (wantRoam && !roam && !moment && !riding && stage.at !== 'cruise' && !choosing && !errand) walk(true);
-		if (moment) runMoment(performance.now() / 1000);
+		if (moment) runMoment(t);
 		else if (riding) ride(step);
 		else if (stage.at === 'cruise' && cruising) cruise();
 		else if (held && !roam) controls.enabled = false;
@@ -3378,9 +3462,10 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		// the players posed after the moment has said where they are and what they do, so a cut never shows the last
 		// shot's pose for a frame
 		for (const p of Object.values(people)) if (p.visible) (stride(p, p.parent === world), acting(p, (p.userData.t += step)), busy && (p.userData.glow.visible = false));
+		if (!drawn_) return;
 		light(t);
 		drawn.update();
-		renderer.render(scene, camera);
+		if (own) renderer.render(scene, camera);
 		if (++frame % 4 === 0) {
 			const w = canvas.clientWidth;
 			const h = canvas.clientHeight;
@@ -3403,9 +3488,66 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			if (r.on !== roamSeen.on || r.near !== roamSeen.near || r.driving !== roamSeen.driving) ((roamSeen = r), onRoam(r));
 		}
 	}
-	loop();
+	if (own) loop();
+
+	/** the film's hold on the world (./film.js): the world brought back to how a moment of the story starts, whatever
+	 *  came before it, so the same moment always plays the same way */
+	const filmHold = {
+		renderer,
+		scene,
+		camera,
+		frames,
+		/** one frame at time t (s); drawn: the last of a run, everything the picture needs made ready */
+		tick: (t, drawn_ = false) => frameOf(t, drawn_),
+		/** nothing playing, nothing held, nothing left over of the moment before: the world at time t as the story's
+		 *  next moment starts it (its chance seeded with `seed`) */
+		reset(t, seed) {
+			moment = null;
+			busy = held = false;
+			nextReel = null;
+			errand = null;
+			cruising = null;
+			cruiseHold = rideHold = '';
+			rideT = 0;
+			rideCut = 0;
+			talkShow(false);
+			placeNow = '';
+			placed = true;
+			goal = null;
+			grows.length = 0;
+			canvas.style.filter = '';
+			for (const p of puffs) (p.visible = false), (p.userData.age = 9), (p.material.opacity = 0);
+			puffAt = 0;
+			lastDust = new WeakMap();
+			for (const p of Object.values(people)) Object.assign(p.userData, { t: 0, walked: 0, last: null, joy: false, extra: null });
+			for (const o of van.userData.people) Object.assign(o.userData, { k: 0, to: 0, lift: 0 });
+			rand = random;
+			if (seed != null) rand = rng(seed);
+			lastT = t;
+			camera.clearViewOffset();
+			lensOut();
+		},
+		/** the moment playing now: which of its steps, whether that one is a shot (a cut to a new one), the reel's start */
+		moment: () => (moment ? { i: moment.i, shot: !!moment.steps[moment.i]?.shot, start: moment.start, t0: moment.t0, cold: !!moment.cold } : null),
+		/** the moving parts put where a shot has them; returns how to put them back as the world had them */
+		parts: putParts,
+		/** the hour the world's light is at now, as the story has it */
+		hour: () => hourNow(),
+		/** the world's own lights a shot scales and colours over what the hour gives them (game/film/shot.js LIGHTS) */
+		lights: {
+			sun: (k, color) => ((sun.intensity *= k), color && sun.color.set(color)),
+			fill: (k, color) => ((hemi.intensity *= k), color && hemi.color.set(color)),
+			glow: (k, color) => {
+				if (pitched?.lamp) pitched.lamp.intensity *= k;
+				if (pitched?.canvas) (pitched.canvas.emissiveIntensity *= k), color && pitched.canvas.emissive.set(color);
+			}
+		}
+	};
 
 	return {
+		film: filmHold,
+		/** the reel the next moment is filmed by (game/film/reel.js), else the moves coded here */
+		reel: (r) => void (nextReel = r ?? null),
 		update,
 		freeWalk,
 		reveal,
