@@ -69,7 +69,7 @@
 					build and decide together. We try them in the game, long before a single real brick is laid.
 				</p>
 				<p>
-					A thousand villages will rise in the game, and they will compete. Not for points, but for a place.
+					876 villages will rise in the game, and they will compete. Not for points, but for a place.
 					The day we are 1,346,269 founders strong, we build the first real village on the Mediterranean,
 					and the village that proved itself in the game moves in as its first settlers.
 				</p>
@@ -78,7 +78,7 @@
 				</p>
 			</div>
 			<ol class="prize-path">
-				<li><strong>1,000</strong><span>villages compete in the game</span></li>
+				<li><strong>876</strong><span>in-game villages compete</span></li>
 				<li><strong>1,346,269</strong><span>founders, and the build begins</span></li>
 				<li><strong>1</strong><span>real village on the Mediterranean: the first milestone, before the city grows</span></li>
 			</ol>
@@ -147,7 +147,7 @@
 		<p class="creed">when we unite in vision, the impossible becomes possible.</p>
 		<p class="signature">
 			<img src={asset(SAMUEL)} alt="" />
-			<span>avenSAMUEL</span>
+			<span>Samuel Andert</span>
 		</p>
 	</footer>
 </article>
