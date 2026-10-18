@@ -12,11 +12,12 @@ export const API = dev
 	? ((import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3100')
 	: 'https://api.maia.city';
 
+/** Who is signed in, as maiaCITY's API knows them: their id, place in the line and role. Their profile, their name
+ *  among it, lives in their avenDB human vault alone ($lib/avendb/session.svelte.js `session.name`). */
 export type Founder = {
 	id: string;
 	/** their place in the line — founder number 1, 2, 3 … */
 	number: number;
-	name: string;
 	since: string;
 	/** only on /api/me: their role, and every capability it holds */
 	role?: string;
@@ -72,19 +73,18 @@ export const founderCount = () => call<{ count: number; step: number }>('/api/fo
 
 export const me = () => call<Founder>('/api/me');
 
-export const rename = (name: string) =>
-	call<Founder>('/api/me', { method: 'PATCH', body: JSON.stringify({ name }) });
-
 export const signOut = () =>
 	native()
 		? command('auth_sign_out')
 		: fetch(`${API}/api/session`, { method: 'DELETE', credentials: 'include' });
 
-/** Sign up: create a passkey, and the passkey is the whole account. */
-export async function signUp(name: string): Promise<Founder> {
+/** Sign up, with the invite an admin gave (none for the very first person, who runs the city): create a passkey, and
+ *  the passkey is the whole account. `name` labels the passkey in the person's authenticator; their profile takes it in
+ *  their human vault, which the app founds with the passkey as they come in ($lib/app/entry.js). */
+export async function signUp(name: string, invite = ''): Promise<Founder> {
 	const options = await call<any>('/api/passkey/register/options', {
 		method: 'POST',
-		body: JSON.stringify({ name })
+		body: JSON.stringify({ name, invite })
 	});
 	const attestation = await startRegistration({ optionsJSON: forAvenDB(options) });
 	return call<Founder>('/api/passkey/register/finish', {
@@ -107,15 +107,26 @@ function forAvenDB(options: any) {
 	};
 }
 
+/** A sign-in's options: its challenge among them, which the passkey's assertion must be over. */
+export const loginOptions = () => call<any>('/api/passkey/login/options', { method: 'POST' });
+
+/** Signs in with `assertion`, a ceremony over a sign-in's challenge (WebAuthn's JSON): here, or in the ceremony that
+ *  unlocks the person's avenDB on this browser too ($lib/app/entry.js). */
+export const loginFinish = (assertion: object) =>
+	call<Founder>('/api/passkey/login/finish', { method: 'POST', body: JSON.stringify(assertion) });
+
 /** Sign in: no username field anywhere — the passkey already knows who it is. */
 export async function signIn(): Promise<Founder> {
-	const options = await call<any>('/api/passkey/login/options', { method: 'POST' });
-	const assertion = await startAuthentication({ optionsJSON: options });
-	return call<Founder>('/api/passkey/login/finish', {
-		method: 'POST',
-		body: JSON.stringify(assertion)
-	});
+	const options = await loginOptions();
+	return loginFinish(await startAuthentication({ optionsJSON: options }));
 }
+
+/** Whether an invite may still be used to sign up with: an admin's, unused, unexpired. */
+export const inviteOpen = (code: string) =>
+	call<{ open: boolean }>(`/api/invites/${encodeURIComponent(code)}`).then((r) => r.open);
+
+/** A new invite, for an admin to hand one person: its code, and until when it may be used. */
+export const invite = () => call<{ code: string; expires: string }>('/api/invites', { method: 'POST' });
 
 /** Does this browser do passkeys at all? Checked before anything is promised. */
 export const passkeysAvailable = () =>

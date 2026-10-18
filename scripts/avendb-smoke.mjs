@@ -44,6 +44,12 @@ const check = (what, ok, found = '') => {
 
 const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage();
+// the app's way in ($lib/app/entry.js) lets this tab on without avenDB, whose own page it walks; the vault founded
+// there is named as the person signed up
+await page.evaluateOnNewDocument(() => {
+	sessionStorage.setItem('avendb:later', '1');
+	sessionStorage.setItem('maia:signup', 'Samuel');
+});
 await page.setViewport({ width: 1300, height: 1000 });
 page.on('pageerror', (e) => check(`no error on the page: ${e.message}`, false));
 // /api/me answers as an admin. Only that request is held: Puppeteer's own interception holds every request, and the
@@ -79,7 +85,7 @@ async function shot(name) {
 try {
 	await page.goto(`${base}/app/avendb/`, { waitUntil: 'domcontentloaded' });
 	const offers = (await waitText('Use my maiaCITY passkey', 60000)) && (await waitText('Sign in with my passkey'));
-	check('it opens on the account, offering to found a vault with the maiaCITY passkey, or to sign in', offers && (await waitText('Make a new passkey')));
+	check('it opens on the account, offering to found a vault with the maiaCITY passkey, or to sign in', offers && !(await text()).includes('Make a new passkey'));
 	const lead = await page.$eval('.account .lead h1', (e) => e.textContent?.trim()).catch(() => '');
 	check('named after the person', lead === 'Samuel', lead);
 	check('its device loads', !(await text()).includes("can't be a device"), (await text()).match(/can't be a device[^.]*/)?.[0]);

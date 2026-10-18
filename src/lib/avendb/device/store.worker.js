@@ -30,7 +30,7 @@ const RESERVED = [BLOBS, OUTBOARDS, NEW, LOCK];
 const GENERATION = /^g[1-9][0-9]*$/;
 /** The generation every store is at least, avenDB's `avendb_net::shelf::FLOOR`: as a store opens, it clears every
  *  older one (`clear`). */
-const FLOOR = 13;
+const FLOOR = 14;
 /** A finished blob's name: its hash in hex. */
 const HASH = /^[0-9a-f]{64}$/;
 /** A blob being written: a name of letters, digits and `-`. */

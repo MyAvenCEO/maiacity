@@ -137,8 +137,10 @@ fn listable(prefix: &str) -> bool {
 /// server is a device vault avenCEO GmbH owns, and access requests are records; 11 since 2026-10-17, as Maia City
 /// comes back from the repository's seed after a reset (Samuel chose "Reset now" to check it); 12 since later that day,
 /// as there are only stories and the posts of a post type drawn from them, no articles, no notes, no templates; 13 since
-/// later still, as the seed, the asset recipes with it, is written while the account is set up (Samuel asked for it).
-pub const FLOOR: u64 = 13;
+/// later still, as the seed, the asset recipes with it, is written while the account is set up (Samuel asked for it);
+/// 14 since 2026-10-18, as one passkey signs a person in to maiaCITY and opens their avenDB together, a person's profile
+/// lives in their human vault alone, public by default, and Samuel asked to sign up again through it.
+pub const FLOOR: u64 = 14;
 
 /// Whether a place keeps what is under `name`, the first part of its names there: a shelf of generation `FLOOR` or a
 /// later one. Whatever else the place holds came before the last reset, and goes as the place opens.

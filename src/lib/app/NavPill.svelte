@@ -3,9 +3,11 @@
 	too, on a phone and a desktop alike: back ($lib/app/back.svelte.js: out of what a page has open over itself, else up
 	a place), home to the dashboard, and you (who is signed in, your name, the public site, signing out). No page has a
 	bar or a back button of its own, and everything else — the games, the worlds, the admin's tools — is a tile on the
-	dashboard. A page may add a green "+" between Home and You that opens its main sheet, and the accounts it can be
-	looked at as, listed in the You menu ($lib/app/pill.svelte.js: MaiaCity V1's wallet and its COOPs), and a context of
-	its own beside You, with a menu of its own (avenDB's vaults), kept apart from the account signed in.
+	dashboard. You is the person's vault switcher too (Samuel 2026-10-18): their avenDB vaults, their own first, which
+	is their profile (their name lives there alone), and the one picked shown on the item, with how many changes wait
+	in the others; then the public site, inviting a new human (the super admin's alone) and signing out. A page may add a
+	green "+" between Home and You that opens its main sheet, and the accounts it can be looked at as, listed in the You
+	menu ($lib/app/pill.svelte.js: MaiaCity V1's wallet and its COOPs).
 
 	Where it floats and the room it takes are said once, in src/app.css (--nav-foot, --nav-height, --nav-room): full-screen
 	pages keep what they show at their foot above it with --nav-room.
@@ -13,36 +15,51 @@
 <script>
 	import { base } from '$app/paths';
 	import { page } from '$app/state';
+	import { invite } from '$lib/auth/client';
 	import Icon from './Icon.svelte';
 	import { back, upFrom } from './back.svelte.js';
 	import { pill } from './pill.svelte.js';
 	import { shaped } from './shapes.js';
 
-	/** @type {{ founder: import('$lib/auth/client').Founder, onsignout: () => void }} */
-	let { founder, onsignout } = $props();
+	/** @type {{ founder: import('$lib/auth/client').Founder, name?: string, onsignout: () => void }} the person's name
+	 *  from their avenDB human vault's profile, '' until avenDB shows it */
+	let { founder, name = '', onsignout } = $props();
 
 	const home = `${base}/app/`;
 	let open = $state(false);
-	/** whether the page's context menu (avenDB's vaults) is open, apart from the You menu */
-	let ctx = $state(false);
+	/** the vault picked, as the You item shows it: the person's own until they pick another */
 	const here = $derived(pill.context ? (pill.context.list.find((a) => a.id === pill.context?.current) ?? null) : null);
+	/** the invite link the super admin made last, to hand one person */
+	let invited = $state('');
 	/** what waits in the context's other entries (avenDB: the changes waiting for each other vault's yes) */
 	const elsewhere = $derived(
 		pill.context?.list.reduce((n, a) => n + (a.id === pill.context?.current ? 0 : (a.badge ?? 0)), 0) ?? 0
 	);
 	const path = $derived(page.url.pathname);
 	const up = $derived(upFrom(path.slice(base.length)));
-	const initials = $derived(founder.name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase());
+	const initials = $derived(name ? name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase() : '·');
+	const who = $derived(name || 'You');
 	// looking at another account than one's own (a COOP's wallet): the avatar and the word say whose
 	const acting = $derived(pill.accounts ? pill.accounts.list.find((a) => a.id === pill.accounts?.current && a !== pill.accounts.list[0]) : null);
 	$effect(() => {
 		void path;
 		open = false;
-		ctx = false;
 	});
+
+	/** Makes an invite for one new human, its link copied to hand them. */
+	async function inviting() {
+		try {
+			const { code } = await invite();
+			invited = `${location.origin}${base}/join/?${new URLSearchParams({ invite: code })}`;
+			await navigator.clipboard?.writeText(invited).catch(() => {});
+		} catch (e) {
+			invited = '';
+			alert(/** @type {Error} */ (e).message);
+		}
+	}
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && ((open = false), (ctx = false))} />
+<svelte:window onkeydown={(e) => e.key === 'Escape' && (open = false)} />
 
 <nav class="pill" aria-label="App">
 	{#if back.open}
@@ -60,36 +77,30 @@
 			<span class="ring"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg></span><span>{pill.center.label}</span>
 		</button>
 	{/if}
-	<button class="item" class:on={open} onclick={() => ((open = !open), (ctx = false))} aria-expanded={open} aria-haspopup="true" title={acting ? `${founder.name}, as ${acting.label}` : founder.name}>
+	<button class="item" class:on={open} onclick={() => (open = !open)} aria-expanded={open} aria-haspopup="true" title={acting ? `${who}, as ${acting.label}` : here ? `${who}: ${here.label}` : who}>
 		{#if acting}<span class="avatar {acting.shape ?? 'human'}" style="background:{acting.colour}; color:#fff; {shaped(acting.shape)}">{acting.text}</span><span>{acting.label.replace(/ COOP$/, '')}</span>
+		{:else if here}<span class="avatar {here.shape ?? 'human'}" style="background:{here.colour}; color:#fff; {shaped(here.shape)}">{here.text}</span><span class="ctx-name">{here.label}</span>
 		{:else}<span class="avatar">{initials}</span><span>You</span>{/if}
+		{#if elsewhere}<span class="bubble" title="{elsewhere} waiting in your other vaults">{elsewhere}</span>{/if}
 	</button>
-	{#if pill.context && here}
-		<button class="item" class:on={ctx} onclick={() => ((ctx = !ctx), (open = false))} aria-expanded={ctx} aria-haspopup="true" title="{pill.context.title}: {here.label}">
-			<span class="avatar {here.shape ?? 'human'}" style="background:{here.colour}; color:#fff; {shaped(here.shape)}">{here.text}</span><span class="ctx-name">{here.label}</span>
-			{#if elsewhere}<span class="bubble" title="{elsewhere} waiting in your other vaults">{elsewhere}</span>{/if}
-		</button>
-	{/if}
-	{#if ctx && pill.context}
-		<div class="account" role="menu">
-			<p class="group">{pill.context.title}</p>
-			{#each pill.context.list as a (a.id)}
-				<button role="menuitemradio" class="acct" aria-checked={a.id === pill.context.current} onclick={() => (pill.context?.pick(a.id), (ctx = false))}>
-					<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff; {shaped(a.shape)}">{a.text}</span>
-					<span class="acct-name">{a.label}{#if a.sub}<small>{a.sub}</small>{/if}</span>
-					{#if a.badge}<span class="bubble" title="{a.badge} waiting">{a.badge}</span>{/if}
-					{#if a.id === pill.context.current}<span class="tick" aria-hidden="true">✓</span>{/if}
-				</button>
-			{/each}
-			{#if pill.context.add}
-				<hr />
-				<button role="menuitem" onclick={() => (pill.context?.add?.go(), (ctx = false))}>{pill.context.add.label}</button>
-			{/if}
-		</div>
-	{/if}
 	{#if open}
 		<div class="account" role="menu">
-			<p class="who"><b>{founder.name}</b><span>Founder {String(founder.number).padStart(3, '0')}</span></p>
+			<p class="who"><b>{who}</b><span>Founder {String(founder.number).padStart(3, '0')}</span></p>
+			{#if pill.context}
+				<p class="group">{pill.context.title}</p>
+				{#each pill.context.list as a (a.id)}
+					<button role="menuitemradio" class="acct" aria-checked={a.id === pill.context.current} onclick={() => (pill.context?.pick(a.id), (open = false))}>
+						<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff; {shaped(a.shape)}">{a.text}</span>
+						<span class="acct-name">{a.label}{#if a.sub}<small>{a.sub}</small>{/if}</span>
+						{#if a.badge}<span class="bubble" title="{a.badge} waiting">{a.badge}</span>{/if}
+						{#if a.id === pill.context.current}<span class="tick" aria-hidden="true">✓</span>{/if}
+					</button>
+				{/each}
+				{#if pill.context.add}
+					<button role="menuitem" onclick={() => (pill.context?.add?.go(), (open = false))}>{pill.context.add.label}</button>
+				{/if}
+				<hr />
+			{/if}
 			{#if pill.accounts}
 				<p class="group">{pill.accounts.title}</p>
 				{#each pill.accounts.list as a (a.id)}
@@ -102,7 +113,10 @@
 				{/each}
 				<hr />
 			{/if}
-			<a role="menuitem" href="{base}/join/">Your name</a>
+			{#if founder.caps?.includes('humans:invite')}
+				<button role="menuitem" onclick={inviting}>{invited ? 'Invite link copied: make another' : 'Invite a new human'}</button>
+				{#if invited}<input class="invited" readonly value={invited} onfocus={(e) => e.currentTarget.select()} aria-label="The invite link" />{/if}
+			{/if}
 			{#if founder.caps?.includes('media:admin')}<a role="menuitem" href="{base}/join/#terminal">Sign a terminal in</a>{/if}
 			<a role="menuitem" href="{base}/">The public site</a>
 			<button role="menuitem" class="out" onclick={onsignout}>Sign out</button>
@@ -293,6 +307,17 @@
 	.who span {
 		font-size: 0.78rem;
 		color: var(--muted);
+	}
+
+	/* the invite link just made, to copy and hand one person */
+	.invited {
+		margin: 0.1rem 0.4rem 0.4rem;
+		padding: 0.35rem 0.5rem;
+		border: 1px solid var(--line);
+		border-radius: 8px;
+		background: var(--cream);
+		font: inherit;
+		font-size: 0.72rem;
 	}
 
 	.account a,

@@ -3,13 +3,13 @@
 	(the world's `kinds`): those its kind may own that hold no devices, a coop, and an aven while it owns fewer than one
 	owner may, as a device vault comes with its device, an agent's on the consent screen. One ceremony of their passkey
 	signs all their geneses (the `found` op, avendb-browser's `Device::found_vaults`); then this browser, acting for each
-	through their vault, founds its home, lets avenCEO server relay it and writes its name there. It opens on one empty
+	through their vault, founds its home, lets avenCEO server relay it and writes its name there, which everyone reads. It opens on one empty
 	row: the person names every vault they found, as many as they like, and Create shows once the device answers a dry
 	run of founding them (`may`).
 -->
 <script>
 	import { allowed, may } from './ops.js';
-	import { count, KINDS, kindRules, list, mayOwn, nameOf, ownedBy, why } from './vaults.js';
+	import { count, KINDS, kindRules, list, mayOwn, nameOf, nameShare, nameShared, ownedBy, why } from './vaults.js';
 
 	/** @type {{ world: import('./vaults.js').WorldView, api: any, busy: boolean, onclose: () => void }} */
 	let { world, api, busy, onclose } = $props();
@@ -71,7 +71,12 @@
 	});
 
 	async function create() {
-		if (await api.run(`Creating ${count(ready.length, 'vault')}`, $state.snapshot(op))) onclose();
+		const before = new Set(world.vaults.map((v) => v.id));
+		if (!(await api.run(`Creating ${count(ready.length, 'vault')}`, $state.snapshot(op)))) return;
+		// each one's name public, as every vault's is by default (./vaults.js `NAME_TYPES`), shared acting for it
+		const fresh = world.vaults.filter((v) => !before.has(v.id) && !nameShared(world, v.id));
+		if (fresh.length) await api.runAll('Making their names public', fresh.map((v) => nameShare(v.id)));
+		onclose();
 	}
 </script>
 

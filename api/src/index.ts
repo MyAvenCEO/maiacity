@@ -7,7 +7,7 @@
 import { migrate } from "./migrations";
 import { sql } from "./db";
 import { clearCookie, founderIdFrom, initSessions, sessionCookie, tokenFor } from "./session";
-import { loginFinish, loginOptions, registerFinish, registerOptions } from "./passkey";
+import { inviteOpen, loginFinish, loginOptions, makeInvite, registerFinish, registerOptions } from "./passkey";
 import { fromBunSql, useDb } from "./pg";
 import { migrateLedger } from "./ledger/store";
 import { account, claim, LedgerError } from "./ledger/hearts";
@@ -131,10 +131,10 @@ const preflight = (req: Request) => new Response(null, { status: 204, headers: c
 const stills = (founderId: string, before: Parameters<typeof queueStillsOf>[1], after: Parameters<typeof queueStillsOf>[2]) =>
   queueStillsOf(founderId, before, after).catch((e) => console.error("graded stills of a timeline:", e));
 
-const publicFounder = (f: { id: string; number: number | bigint; name: string; created: Date }) => ({
+// who signed up, as the API knows them: no profile, which lives in their avenDB human vault (Samuel 2026-10-18)
+const publicFounder = (f: { id: string; number: number | bigint; created: Date }) => ({
   id: f.id,
   number: Number(f.number),
-  name: f.name,
   since: f.created,
 });
 
@@ -178,9 +178,10 @@ const server = Bun.serve({
         const me = await signedIn(req);
         if (me instanceof Response) return me;
         try {
-          // an app key (the Mac's MCP) only reads: a seat goes to a person signing in on the page
-          const [f] = "scope" in me ? [] : await sql`SELECT name FROM founders WHERE id = ${me.id}`;
-          return json(req, { game: await getGame("scope" in me ? null : { id: me.id, name: f?.name ?? "" }), me: me.id, admin: can(me, "economy:admin"), now: Date.now() });
+          // an app key (the Mac's MCP) only reads: a seat goes to a person signing in on the page, named as their
+          // avenDB profile names them (the page says so: no name of theirs is kept here)
+          const name = new URL(req.url).searchParams.get("name") ?? "";
+          return json(req, { game: await getGame("scope" in me ? null : { id: me.id, name }), me: me.id, admin: can(me, "economy:admin"), now: Date.now() });
         } catch (e) {
           return fail(req, e);
         }
@@ -193,8 +194,8 @@ const server = Bun.serve({
         if (me instanceof Response) return me;
         const body = await readJson(req);
         try {
-          const [f] = await sql`SELECT name FROM founders WHERE id = ${me.id}`;
-          return json(req, { game: await takeSeat({ id: me.id, name: f?.name ?? "" }, String(body?.seat ?? "")), now: Date.now() });
+          const name = String(body?.name ?? "");
+          return json(req, { game: await takeSeat({ id: me.id, name }, String(body?.seat ?? "")), now: Date.now() });
         } catch (e) {
           return fail(req, e);
         }
@@ -293,7 +294,7 @@ const server = Bun.serve({
       OPTIONS: (req) => new Response(null, { status: 204, headers: cors(req) }),
       POST: async (req) => {
         const body = await readJson(req);
-        const result = await registerOptions(String(body?.name ?? ""));
+        const result = await registerOptions(String(body?.name ?? ""), String(body?.invite ?? ""));
         if (!result.ok) return json(req, { error: result.error }, { status: 400 });
         return json(req, result.value);
       },
@@ -332,23 +333,26 @@ const server = Bun.serve({
         const key = await keyHolder(req);
         const id = key?.id ?? founderIdFrom(req);
         if (!id) return json(req, { error: "not signed in" }, { status: 401 });
-        const [founder] = await sql`SELECT id, number, name, created, role FROM founders WHERE id = ${id}`;
+        const [founder] = await sql`SELECT id, number, created, role FROM founders WHERE id = ${id}`;
         if (!founder) return json(req, { error: "not signed in" }, { status: 401 });
         // what they may do comes with who they are, so the site can show them only what they can use
         const caps = [...capabilities(founder.role)].filter((c) => !key || key.scope.includes(c));
         return json(req, { ...publicFounder(founder), role: founder.role, caps });
       },
-      // The only thing a founder can change: the name they are known by.
-      PATCH: async (req) => {
-        const id = founderIdFrom(req);
-        if (!id) return json(req, { error: "not signed in" }, { status: 401 });
-        const name = String((await readJson(req))?.name ?? "").trim().slice(0, 60);
-        if (name.length < 2) return json(req, { error: "Please give a name with at least two characters." }, { status: 400 });
-        const [founder] = await sql`
-          UPDATE founders SET name = ${name} WHERE id = ${id}
-          RETURNING id, number, name, created`;
-        return json(req, publicFounder(founder));
+    },
+
+    // Invite only: once the city has its admin, signing up takes an invite one of its super admins made, used once
+    "/api/invites": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await allowed(req, "humans:invite");
+        if (me instanceof Response) return me;
+        return json(req, await makeInvite(me.id));
       },
+    },
+    "/api/invites/:code": {
+      OPTIONS: preflight,
+      GET: async (req) => json(req, { open: await inviteOpen(req.params.code) }),
     },
 
     // ─────────────────────────────── the hearts ───────────────────────────
@@ -389,7 +393,7 @@ const server = Bun.serve({
       GET: async (req) => {
         const me = await allowed(req, "roles:admin");
         if (me instanceof Response) return me;
-        const rows = await sql`SELECT id, number, name, role, created FROM founders ORDER BY number`;
+        const rows = await sql`SELECT id, number, role, created FROM founders ORDER BY number`;
         return json(req, rows.map((r: any) => ({ ...r, number: Number(r.number) })));
       },
     },

@@ -25,7 +25,7 @@ export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 
 // Open challenges, short-lived, in memory. One container holds the registry;
 // if that ever stops being true these move into Postgres.
-type Challenge = { purpose: "register" | "login"; founderId?: string; name?: string; expires: number };
+type Challenge = { purpose: "register" | "login"; founderId?: string; name?: string; invite?: string; expires: number };
 const CHALLENGES = new Map<string, Challenge>();
 
 function remember(challenge: string, data: Omit<Challenge, "expires">) {
@@ -44,22 +44,46 @@ const b64url = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");
 
 // ---------------------------------------------------------------- signing up
 
-export async function registerOptions(name: string): Promise<Result<unknown>> {
+/** Whether invite `code` may sign one person up: one an admin made, unused, unexpired. */
+export async function inviteOpen(code: string): Promise<boolean> {
+  if (!code) return false;
+  const [row] = await sql`
+    SELECT 1 FROM signup_invites WHERE code = ${code} AND used_by IS NULL AND expires_at > now()`;
+  return !!row;
+}
+
+/** A new invite, made by `by`: a code no one can guess, open for a week. */
+export async function makeInvite(by: string): Promise<{ code: string; expires: string }> {
+  const code = b64url(crypto.getRandomValues(new Uint8Array(18)));
+  const [row] = await sql`
+    INSERT INTO signup_invites (code, made_by, expires_at) VALUES (${code}, ${by}, now() + interval '7 days')
+    RETURNING expires_at`;
+  return { code, expires: new Date(row.expires_at).toISOString() };
+}
+
+const INVITE_ONLY = "maiaCITY is invite only: ask its admin for an invite link.";
+
+export async function registerOptions(name: string, invite = ""): Promise<Result<unknown>> {
   const clean = name.trim().slice(0, 60);
   if (clean.length < 2) return { ok: false, error: "Please give a name with at least two characters." };
+  // the very first person runs the city and needs none; everyone after them signs up with an admin's invite
+  const [any] = await sql`SELECT 1 FROM founders LIMIT 1`;
+  if (any && !(await inviteOpen(invite))) return { ok: false, error: INVITE_ONLY };
 
   const options = await generateRegistrationOptions({
     rpName: RP_NAME,
     rpID: RP_ID,
     // Nothing identifying goes into the credential: a fresh id, and the name
-    // the person chose to be known by.
+    // the person chose to be known by, which labels the passkey in their
+    // authenticator. The name itself is kept nowhere here: it is their human
+    // vault's profile, in avenDB.
     userID: new TextEncoder().encode(randomUUID()),
     userName: clean,
     userDisplayName: clean,
     attestationType: "none",
     authenticatorSelection: { residentKey: "required", userVerification: "preferred" },
   });
-  remember(options.challenge, { purpose: "register", name: clean });
+  remember(options.challenge, { purpose: "register", name: clean, invite: any ? invite : undefined });
   return { ok: true, value: options };
 }
 
@@ -85,18 +109,34 @@ export async function registerFinish(body: any): Promise<Result<Founder>> {
 
   const { credential } = verification.registrationInfo;
   const id = randomUUID();
-  // the very first signup runs the city; everyone after them starts as a citizen
-  const [founder] = await sql`
-    INSERT INTO founders (id, name, role)
-    VALUES (${id}, ${pending.name},
-            CASE WHEN EXISTS (SELECT 1 FROM founders) THEN ${DEFAULT_ROLE} ELSE ${FIRST_SIGNUP_ROLE} END)
-    RETURNING id, number, name, created`;
-  await sql`
-    INSERT INTO passkeys (id, founder_id, public_key, counter, transports)
-    VALUES (${credential.id}, ${id}, ${b64url(credential.publicKey)}, ${credential.counter},
-            ${credential.transports?.join(",") ?? null})`;
-  return { ok: true, value: founder };
+  // the very first signup runs the city; everyone after them starts as a citizen, with an invite they use up here, in
+  // the same transaction: an invite signs one person up, and a sign-up without one, once the city has its admin, none
+  const signedUp = await sql.begin(async (tx: any) => {
+    const [first] = await tx`SELECT NOT EXISTS (SELECT 1 FROM founders) AS first`;
+    if (!first.first && !pending.invite) return null;
+    const [founder] = await tx`
+      INSERT INTO founders (id, name, role)
+      VALUES (${id}, '', ${first.first ? FIRST_SIGNUP_ROLE : DEFAULT_ROLE})
+      RETURNING id, number, created`;
+    if (!first.first) {
+      const [used] = await tx`
+        UPDATE signup_invites SET used_by = ${id}, used_at = now()
+        WHERE code = ${pending.invite} AND used_by IS NULL AND expires_at > now()
+        RETURNING code`;
+      if (!used) throw new InviteUsed();
+    }
+    await tx`
+      INSERT INTO passkeys (id, founder_id, public_key, counter, transports)
+      VALUES (${credential.id}, ${id}, ${b64url(credential.publicKey)}, ${credential.counter},
+              ${credential.transports?.join(",") ?? null})`;
+    return founder;
+  }).catch((e: unknown) => (e instanceof InviteUsed ? null : Promise.reject(e)));
+  if (!signedUp) return { ok: false, error: INVITE_ONLY };
+  return { ok: true, value: signedUp };
 }
+
+/** An invite used up or expired while its sign-up was under way: the sign-up rolls back. */
+class InviteUsed extends Error {}
 
 // --------------------------------------------------------------- signing in
 
@@ -141,7 +181,7 @@ export async function loginFinish(body: any): Promise<Result<Founder>> {
   if (!verification.verified) return { ok: false, error: "That passkey did not verify." };
 
   await sql`UPDATE passkeys SET counter = ${verification.authenticationInfo.newCounter} WHERE id = ${key.id}`;
-  const [founder] = await sql`SELECT id, number, name, created FROM founders WHERE id = ${key.founder_id}`;
+  const [founder] = await sql`SELECT id, number, created FROM founders WHERE id = ${key.founder_id}`;
   if (!founder) return { ok: false, error: "That passkey has no account behind it." };
   return { ok: true, value: founder };
 }

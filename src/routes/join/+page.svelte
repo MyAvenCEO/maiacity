@@ -1,6 +1,11 @@
 <!--
 	The second seed. Day 01 says the first step is taken alone and the second is
-	somebody else saying yes — this is where that happens.
+	somebody else saying yes — this is where that happens. Invite only (Samuel
+	2026-10-18): once the city has its admin, an invite link from one of its
+	super admins (?invite=) is the only way to sign up, used once. Signing up
+	makes the passkey; the app then founds the person's human vault with it in
+	avenDB, its profile named as they say here ($lib/app/entry.js): the name
+	lives there, nowhere else.
 
 	Everything here runs in the browser. The page itself is prerendered like the
 	rest of the journal; only the passkey ceremony and the four API calls need a
@@ -11,40 +16,34 @@
 	import { goto } from '$app/navigation';
 	import { onMount } from 'svelte';
 	import { remember } from '$lib/app/session';
-	import {
-		founderCount,
-		me,
-		passkeysAvailable,
-		rename,
-		signIn,
-		signOut,
-		signUp,
-		type Founder
-	} from '$lib/auth/client';
+	import { founderCount, inviteOpen, me, passkeysAvailable, signOut, signUp, type Founder } from '$lib/auth/client';
+	import { signingUp } from '$lib/app/entry.js';
 
 	let founder = $state<Founder | null>(null);
 	let count = $state<{ count: number; step: number } | null>(null);
 	let name = $state('');
 	let busy = $state(false);
 	let error = $state('');
-	let saved = $state(false);
 	let code = $state('');
 	let ready = $state(false);
 	let supported = $state(true);
+	/** the invite this link brings, and whether it may still sign one person up */
+	let invite = $state('');
+	let invited = $state(false);
+	/** the first person runs the city and needs no invite; everyone after them does */
+	const open = $derived(count?.count === 0 || invited);
 
 	onMount(async () => {
 		supported = passkeysAvailable();
-		// Both are best-effort: a signed-out visitor and an API that is briefly
-		// down should see the page, not an error.
-		founderCount()
+		invite = new URLSearchParams(location.search).get('invite') ?? '';
+		// Best-effort, all of them: a signed-out visitor and an API that is
+		// briefly down should see the page, not an error.
+		const counted = founderCount()
 			.then((c) => (count = c))
 			.catch(() => {});
-		try {
-			founder = await me();
-			name = founder.name;
-		} catch {
-			founder = null;
-		}
+		const checked = invite ? inviteOpen(invite).then((ok) => (invited = ok), () => {}) : null;
+		founder = await me().catch(() => null);
+		await Promise.all([counted, checked]);
 		ready = true;
 	});
 
@@ -53,9 +52,9 @@
 		error = '';
 		try {
 			founder = await run();
-			name = founder.name;
 			remember(true);
-			// signed in: on into the city's own rooms
+			// signed up: on into the city's own rooms, where the passkey founds their human vault, named as they said
+			signingUp(name);
 			return void (await goto(`${base}/app/`));
 		} catch (e) {
 			// A cancelled passkey prompt is not a failure worth shouting about.
@@ -66,25 +65,10 @@
 		}
 	}
 
-	async function save() {
-		busy = true;
-		error = '';
-		saved = false;
-		try {
-			founder = await rename(name);
-			saved = true;
-		} catch (e) {
-			error = (e as Error).message;
-		} finally {
-			busy = false;
-		}
-	}
-
 	async function leave() {
 		await signOut();
 		remember(false);
 		founder = null;
-		name = '';
 	}
 </script>
 
@@ -102,25 +86,9 @@
 			<p class="eyebrow">Founder {String(founder.number).padStart(3, '0')}</p>
 			<h1>You are in the line.</h1>
 			<p class="lede">
-				This is the name the city knows you by. Change it whenever you like — nothing else about
-				you is stored.
+				Your name lives in your human vault in avenDB, which only you hold: change it there, in
+				its About page. Nothing about you is stored anywhere else.
 			</p>
-
-			<form
-				onsubmit={(e) => {
-					e.preventDefault();
-					save();
-				}}
-			>
-				<label for="name">Your name</label>
-				<input id="name" bind:value={name} maxlength="60" autocomplete="name" />
-				<button class="pill-btn" type="submit" disabled={busy || name.trim().length < 2}>
-					{busy ? 'Saving…' : 'Save'}
-				</button>
-			</form>
-
-			{#if saved}<p class="note ok">Saved.</p>{/if}
-			{#if error}<p class="note bad">{error}</p>{/if}
 
 			{#if founder.caps?.includes('media:admin')}
 				<!-- a terminal (`bun media login`) shows a code; typed here it opens the page that approves it -->
@@ -148,16 +116,26 @@
 				more. Put your name in and the line grows by one.
 			</p>
 
-			{#if !supported}
+			{#if ready && !open}
+				<p class="note">
+					maiaCITY is invite only: {invite
+						? 'this invite link is used up or expired. Ask for a new one.'
+						: 'an invite link from its admin lets you join.'}
+				</p>
+				<p class="already">
+					Already a founder?
+					<a class="quiet" href="{base}/app/">Sign in</a>
+				</p>
+			{:else if !supported}
 				<p class="note bad">
 					This browser cannot create a passkey. Try a current Safari, Chrome or Firefox — on a
 					phone it usually just works.
 				</p>
-			{:else}
+			{:else if ready}
 				<form
 					onsubmit={(e) => {
 						e.preventDefault();
-						act(() => signUp(name));
+						act(() => signUp(name, invite));
 					}}
 				>
 					<label for="name">What should the city call you?</label>
@@ -177,13 +155,13 @@
 
 				<p class="fine">
 					No password, no email address. Your device makes a passkey and that is the whole
-					account — which also means that if you lose every device you have, the account goes
-					with them.
+					account: it opens your human vault in avenDB too, where your name lives — which also
+					means that if you lose every device you have, the account goes with them.
 				</p>
 
 				<p class="already">
 					Already a founder?
-					<button class="quiet" disabled={busy} onclick={() => act(signIn)}>Sign in</button>
+					<a class="quiet" href="{base}/app/">Sign in</a>
 				</p>
 			{/if}
 		{/if}
@@ -281,10 +259,6 @@
 	.note {
 		margin: 1rem 0 0;
 		font-size: 0.9rem;
-	}
-
-	.note.ok {
-		color: var(--ink-soft);
 	}
 
 	.note.bad {
