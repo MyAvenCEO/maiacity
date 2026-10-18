@@ -74,6 +74,10 @@ const DUCK = 0.5;
 export const isWorld = (c) => c?.kind === 'world';
 /** Whether tab `tab` plays world clips in the live world (the rest play their HD proxies). @param {string} tab */
 export const liveTab = (tab) => tab === '3d' || tab === 'edit';
+/** While the timeline plays, the most a cut to a world shot standing elsewhere holds the picture (ms) before film mode
+ * draws it as the world has it, the rest streaming in as in the game: waiting the whole move out (0.5 s and more in
+ * Sandbox 3's village, whose shots stand all over the cell) hitched every cut. Stopped, a shot waits until it is staged. */
+const CUT_WAIT = 50;
 /** where a shot has its world staged (src/lib/film `keyOf`): its stand, dome and set @param {ShotSpec} s */
 const stageKey = (s) => JSON.stringify([s.world?.stand ?? null, s.world?.dome ?? null, s.world?.props ?? null]);
 /** @param {string} shape */
@@ -1553,7 +1557,7 @@ export class Studio {
 		// the view film mode draws through: the clip's grade (balance, its CDL, the film's look: the Mac's cube) and the output
 		const stacks = this.stacksOf(c);
 		const grade = stacks.length ? this.cubeFor(stacks) : null;
-		this.world.show({ spec, t: this.shotTime(c), shape: /** @type {Shape} */ (this.viewShape), ...hd(this.viewShape), view: { lut: filmLut(this.luts['odt-rec709'] ?? null), grade: filmLut(grade) }, meter: still });
+		this.world.show({ spec, t: this.shotTime(c), shape: /** @type {Shape} */ (this.viewShape), ...hd(this.viewShape), view: { lut: filmLut(this.luts['odt-rec709'] ?? null), grade: filmLut(grade) }, meter: still, wait: still ? undefined : CUT_WAIT });
 	}
 
 	/** each play and stop moves this on: a start still awaiting, or a frame of a playback before, does nothing */
