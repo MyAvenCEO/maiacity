@@ -30,6 +30,26 @@
 	it from the consent screen ($lib/avendb/AccessRequest.svelte). avenDB's server runs at avendb.maia.city: its
 	relay and its code are filled in, and in a dev build a test server’s can take their place (?relay=, ?server=).
 -->
+<script module>
+	// Maia City's seed and the studio's films run in the background (Samuel 2026-10-18), on past this page: kept here,
+	// once for the tab, so a person who leaves avenDB while they run and comes back sees them going on, and the page
+	// never starts them a second time beside the first, which would write the same pieces twice
+
+	/** whether the device is writing the repo seed into Maia City, and the vaults it wrote it into, or failed to:
+	 *  each tried once a visit, the next visit writing what is left */
+	let bringing = false;
+	const seededInto = new Set();
+	const seedFailed = /** @type {Map<string, string>} */ (new Map());
+	/** whether the device is bringing the studio's films into Maia City after the seed, and whether it tried this
+	 *  visit; what it is at, for the corner pill (Samuel 2026-10-18: the studio's footage seeded the same way) */
+	let filming = false;
+	let filmed = false;
+	let filmAt = $state('');
+	/** how far the repo seed has come, the pieces written of those it is writing, while it writes them in the
+	 *  background: a corner pill shows it, and nothing waits for it */
+	let seedAt = $state(/** @type {{ done: number, of: number } | null} */ (null));
+</script>
+
 <script>
 	import { onMount, untrack } from 'svelte';
 	import { signUpName } from '$lib/app/entry.js';
@@ -100,19 +120,6 @@
 	/** whether the device is writing avenCEO GmbH's standard schemas, and the companies whose it wrote */
 	let standardizing = false;
 	const standardized = new Set();
-	/** whether the device is writing the repo seed into Maia City, and the vaults it wrote it into, or failed to:
-	 *  each tried once a visit, the next visit writing what is left */
-	let bringing = false;
-	const seededInto = new Set();
-	const seedFailed = /** @type {Map<string, string>} */ (new Map());
-	/** whether the device is bringing the studio's films into Maia City after the seed, and whether it tried this
-	 *  visit; what it is at, for the corner pill (Samuel 2026-10-18: the studio's footage seeded the same way) */
-	let filming = false;
-	let filmed = false;
-	let filmAt = $state('');
-	/** how far the repo seed has come, the pieces written of those it is writing, while it writes them in the
-	 *  background: a corner pill shows it, and nothing waits for it */
-	let seedAt = $state(/** @type {{ done: number, of: number } | null} */ (null));
 
 	// the tab's device, loaded once for every page of the site, or taken up again where this tab opened it already, so
 	// one unlock lasts the tab (./session.svelte.js); the session lets this page go as it closes, and what watched the
