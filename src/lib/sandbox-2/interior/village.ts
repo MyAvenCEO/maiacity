@@ -22,7 +22,7 @@ import { LEVELS } from '$lib/assets/render/lod.js'
 import { songbirds } from './birds.js'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
 import { antHills, apiary, fishes, herd } from './animals'
-import { settled as actorsSettled } from '$lib/assets/render/crowd.js'
+import { settled as actorsSettled, wantNear as actorsNear } from '$lib/assets/render/crowd.js'
 import { flow, pond, shore, stream } from './water'
 import { createWorldRenderer } from '$lib/render/world.js'
 import { createSky } from '$lib/sandbox-kit/sky.js'
@@ -1457,7 +1457,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			}
 			settle()
 			const t0 = performance.now()
-			// and every animal, built in the box (far and near), there before the shot is drawn
+			// and every animal it will see: all coarse from afar, rigged those its camera path passes near — there before
+			// the shot is drawn
+			actorsNear(views)
 			await actorsSettled()
 			const t1 = performance.now()
 			// and every shape of every plant (each kind at both its details and its picture), so no frame of the shot draws

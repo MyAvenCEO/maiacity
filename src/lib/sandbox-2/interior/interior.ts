@@ -27,7 +27,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { flagstone, grass, groundCover, leaves, limestone, oak, soil, water } from './textures'
 import { cafes, coops, coopsAround, henPatches, rabbitPatches, squaresAround, type Kit } from './spaces'
 import { antHills, apiary, fishes, herd, TANK_FISH } from './animals'
-import { settled as actorsSettled } from '$lib/assets/render/crowd.js'
+import { settled as actorsSettled, wantNear as actorsNear } from '$lib/assets/render/crowd.js'
 import { buildFactory, LEVELS as FACTORY_LEVELS, NAMES as FACTORY_NAMES } from './factory'
 import { buildTent } from './tent'
 import { furnish, terraceSet } from './rooms'
@@ -2667,9 +2667,11 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		hold: walker,
 		sky,
 		place: (x, z, yw, p, y) => walker.place(x, z, yw, p, y),
-		// stand where the shot is, and wait for every animal, built in the box, to be there
+		// stand where the shot is, and wait for every animal it will see, built in the box (rigged those its camera path
+		// passes near), to be there
 		stage: async (w) => {
 			walker.place(w.stand[0], w.stand[1], 0, 0)
+			actorsNear(w.views?.length ? w.views : [{ x: w.stand[0], z: w.stand[1] }])
 			await actorsSettled()
 		},
 		animate: (t) => {

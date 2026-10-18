@@ -60,6 +60,22 @@ function built(ref, detail) {
 	return loads.get(label);
 }
 
+/** every crowd made, held weakly (a dome's crowds go with it): what `wantNear` asks */
+const crowds = new Set();
+/**
+ * The near builds the actors round these points will need (a shot's camera path, src/lib/sandbox-kit/stream.js views),
+ * asked for now: a rigged build is made only for a coat one of whose actors comes near an eye, never up front, and a
+ * shot asks for those its camera passes before it is drawn (`settled` then waits for them).
+ * @param {{ x: number, y?: number, z: number }[]} points
+ */
+export function wantNear(points) {
+	for (const ref of crowds) {
+		const c = ref.deref();
+		if (c) c.want(points);
+		else crowds.delete(ref);
+	}
+}
+
 /** every build a crowd asked for, here (or failed) */
 export async function settled() {
 	let n = -1;
@@ -107,23 +123,23 @@ export function crowd(refs, counts, o) {
 	/** @type {(Record<string, Clip> | undefined)[]} each coat's clips, played from its tables, once its near build is here */
 	const clips = counts.map(() => undefined);
 	const pools = counts.map(() => []);
+	/** whether each coat's near (rigged) build is asked for: only once one of its actors comes near an eye */
+	const asked = counts.map(() => false);
+	const askNear = (/** @type {number} */ c) => {
+		if (asked[c]) return;
+		asked[c] = true;
+		void built(refs[c], 1).then((got) => {
+			if (!got) return;
+			const view = got.obj.userData.view;
+			models[c] = got.obj;
+			clips[c] = playerOf(view?.clips?.motion, view?.clips?.bones ?? []);
+		});
+	};
 	refs.forEach((ref, c) => {
-		const nearOf = () =>
-			built(ref, 1).then((got) => {
-				if (!got) return;
-				const view = got.obj.userData.view;
-				models[c] = got.obj;
-				clips[c] = playerOf(view?.clips?.motion, view?.clips?.bones ?? []);
-			});
-		if (o.farShape) {
-			farMesh(c, o.farShape(c));
-			void nearOf();
-			return;
-		}
+		if (o.farShape) return void farMesh(c, o.farShape(c));
 		void built(ref, detail).then((got) => {
 			const m = got && meshOf(got.obj);
 			if (m) farMesh(c, { geometry: m.geometry, material: m.material });
-			void nearOf();
 		});
 	});
 	const rigged = (c, k) => {
@@ -153,9 +169,20 @@ export function crowd(refs, counts, o) {
 	};
 
 	let entries = [];
+	/** where its actors stood the last frame (what `want` measures from) */
+	let last = [];
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, 'YXZ'), p = new THREE.Vector3(), s = new THREE.Vector3();
-	return {
+	const self = {
 		object,
+		/**
+		 * The near builds of the coats with an actor within `near` (and a margin, they move) of any of these points,
+		 * asked for (`wantNear`).
+		 * @param {{ x: number, z: number }[]} points
+		 */
+		want(points) {
+			const r2 = (near * 1.5) ** 2;
+			for (const en of last) if (!asked[en.coat] && points.some((pt) => (pt.x - en.x) ** 2 + (pt.z - en.z) ** 2 < r2)) askNear(en.coat);
+		},
 		/** each coat's clips, by name, once its near build is here: (t, motion) → pose */
 		clips,
 		begin() {
@@ -171,6 +198,9 @@ export function crowd(refs, counts, o) {
 			entries.push({ coat, x, y: y - lift * scale * size, z, yaw, pitch, roll, d2, size, pose });
 		},
 		end() {
+			last = entries;
+			// a coat with an actor near the eye: its rigged build asked for (drawn coarse until it is here)
+			for (const en of entries) if (en.d2 < near * near) askNear(en.coat);
 			const close = entries.filter((en) => en.d2 < near * near && models[en.coat]).sort((a, b) => a.d2 - b.d2).slice(0, max);
 			const chosen = new Set(close);
 			const used = counts.map(() => 0);
@@ -198,6 +228,8 @@ export function crowd(refs, counts, o) {
 			});
 		}
 	};
+	crowds.add(new WeakRef(self));
+	return self;
 }
 
 /**
