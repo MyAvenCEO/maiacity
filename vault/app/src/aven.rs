@@ -607,18 +607,40 @@ pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, a
         }
         let brought = async {
             let h: iroh_blobs::Hash = hash.parse().map_err(|e| format!("{hash} is no vault hash: {e}"))?;
-            let unnamed = || format!("{}.bin", &hash[..12]);
             // the film seed on this Mac first (it outlives the legacy vault), else the legacy vault; either way the
-            // copy's BLAKE3 is checked against the hash below
-            let (name, mime, meta, src) = if let Some((path, r)) = seeded_file(&hash) {
-                let name = ["original_name", "title"].iter().filter_map(|k| r[*k].as_str()).find(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(unnamed);
-                let mime = r["mime"].as_str().unwrap_or("application/octet-stream").to_string();
-                (name, mime, r["meta"].clone(), Source::from(path.as_path()))
-            } else {
-                let m = legacy.catalog.meta(h).await.map_err(|e| e.to_string())?.ok_or("it is not in the film seed nor in the legacy vault's catalog")?;
-                let name = [&m.original_name, &m.title].into_iter().find(|n| !n.is_empty()).cloned().unwrap_or_else(unnamed);
-                let src = crate::blob::source(&legacy, h, &name).await.map_err(|e| format!("{e:#}"))?;
-                (name, m.mime.clone(), m.meta.clone(), src)
+            // copy's BLAKE3 is checked against the hash below. Its name and type: the seed's record (or the record it
+            // wraps), else the legacy catalog's, else read off its first bytes, so a film never comes in as a nameless
+            // `.bin` the players can't open (2026-10-18: Day 1's camera files did)
+            let catalog = legacy.catalog.meta(h).await.ok().flatten();
+            let seeded = seeded_file(&hash).map(|(path, r)| (path, if r["record"].is_object() { r["record"].clone() } else { r }));
+            if seeded.is_none() && catalog.is_none() {
+                return Err("it is not in the film seed nor in the legacy vault's catalog".to_string());
+            }
+            let said = |k: &str| -> Option<String> {
+                let from_seed = seeded.as_ref().and_then(|(_, r)| r[k].as_str().map(str::to_string));
+                let from_catalog = catalog.as_ref().map(|m| match k {
+                    "original_name" => m.original_name.clone(),
+                    "title" => m.title.clone(),
+                    _ => m.mime.clone(),
+                });
+                [from_seed, from_catalog].into_iter().flatten().find(|v| !v.is_empty() && v != "application/octet-stream")
+            };
+            let meta = seeded.as_ref().map(|(_, r)| r["meta"].clone()).filter(|m| !m.is_null()).or_else(|| catalog.as_ref().map(|m| m.meta.clone())).unwrap_or(Value::Null);
+            let src = match &seeded {
+                Some((path, _)) => Source::from(path.as_path()),
+                None => crate::blob::source(&legacy, h, &format!("{hash}.bin")).await.map_err(|e| format!("{e:#}"))?,
+            };
+            let mime = match said("mime") {
+                Some(m) => m,
+                None => sniff(&chunk_of(&src, 0, 16).await.unwrap_or_default()).to_string(),
+            };
+            let ext = ext_of_mime(&mime);
+            let name = said("original_name").or_else(|| said("title")).unwrap_or_else(|| format!("{}.{ext}", &hash[..12]));
+            // a name without its type's extension gets it (the players tell a movie by it)
+            let name = if crate::blob::ext_of(&name) == "bin" && ext != "bin" { format!("{}.{ext}", stem(&name)) } else { name };
+            let src = match &seeded {
+                Some(_) => src,
+                None => crate::blob::source(&legacy, h, &name).await.map_err(|e| format!("{e:#}"))?,
             };
             let subject = format!("aven:legacy:{hash}");
             crate::jobs::queue(Kind::Ingest, &subject, &name);
@@ -667,6 +689,40 @@ pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, a
         }
     }
     Ok(out)
+}
+
+/// What a file is, from its first bytes, where nothing says: the media the studio plays, else unknown.
+fn sniff(b: &[u8]) -> &'static str {
+    match b {
+        [_, _, _, _, b'f', b't', b'y', b'p', b'q', b't', ..] => "video/quicktime",
+        [_, _, _, _, b'f', b't', b'y', b'p', b'M', b'4', b'A', ..] => "audio/mp4",
+        [_, _, _, _, b'f', b't', b'y', b'p', ..] => "video/mp4",
+        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'A', b'V', b'E', ..] => "audio/wav",
+        [b'I', b'D', b'3', ..] | [0xFF, 0xFB | 0xF3 | 0xF2, ..] => "audio/mpeg",
+        [b'O', b'g', b'g', b'S', ..] => "audio/ogg",
+        [b'f', b'L', b'a', b'C', ..] => "audio/flac",
+        [0xFF, 0xD8, 0xFF, ..] => "image/jpeg",
+        [0x89, b'P', b'N', b'G', ..] => "image/png",
+        _ => "application/octet-stream",
+    }
+}
+
+/// The extension a file of type `mime` is named with.
+fn ext_of_mime(mime: &str) -> &'static str {
+    match mime {
+        "video/quicktime" => "mov",
+        "video/mp4" => "mp4",
+        "audio/mp4" | "audio/x-m4a" => "m4a",
+        "audio/wav" | "audio/x-wav" | "audio/wave" => "wav",
+        "audio/mpeg" => "mp3",
+        "audio/ogg" => "ogg",
+        "audio/flac" => "flac",
+        "audio/aac" => "aac",
+        "image/jpeg" => "jpg",
+        "image/png" => "png",
+        "image/webp" => "webp",
+        _ => "bin",
+    }
 }
 
 /// The film seed on this Mac (Samuel 2026-10-18): each legacy film frozen into `~/maiaCITY-seed/films/<key>/`, its
