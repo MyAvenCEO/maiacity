@@ -162,7 +162,7 @@ export function startFilm({ base = '' } = {}) {
 		if (!shows(spec)) throw new Error(`this shot is in ${spec.world.sandbox}${spec.world.area ? ` (${spec.world.area})` : ''}, and this page is ${here.sandbox}${here.area ? ` (${here.area})` : ''}: open ${filmPath(spec.world)}`);
 		const v = await mounted();
 		const key = keyOf(spec);
-		const held = v.film.holds(spec.world);
+		const held = v.film.holds({ ...spec.world, views: viewsOf(v, spec) });
 		if (key === staged && held) return;
 		const known = held && settledFor.has(key);
 		// the walker leaves the shot staged last: no frame of that shot is drawn until it stands there again
@@ -178,7 +178,7 @@ export function startFilm({ base = '' } = {}) {
 			const done = (async () => {
 				const slow = setTimeout(() => console.warn(`film: ${spec.meta?.name ?? 'a shot'} still being staged after ${LOAD_WAIT / 1000} s (frames drawn: ${frames})`), LOAD_WAIT);
 				try {
-					await v.film.stage({ ...spec.world, name: spec.meta?.name });
+					await v.film.stage({ ...spec.world, name: spec.meta?.name, views: viewsOf(v, spec) });
 				} finally {
 					clearTimeout(slow);
 				}
@@ -203,6 +203,47 @@ export function startFilm({ base = '' } = {}) {
 			if (staging === key) staging = '';
 		}
 	}
+	/**
+	 * What the shot's camera sees along its path: its frustum at moments a third of a second apart, as its frames will
+	 * be drawn (the walker's convention: pitch, then yaw). A world that streams by view (src/lib/sandbox-kit/stream.js)
+	 * builds exactly what these see, and no more; none for a shot of the world's own camera or one flown in a frame of
+	 * it, whose path only the world knows (it stages by where the shot stands then).
+	 * @param {any} v @param {Spec} spec @returns {{ x: number, y: number, z: number, frustum: any }[] | undefined}
+	 */
+	function viewsOf(v, spec) {
+		const T = v.THREE;
+		if (!T) return undefined;
+		// asked every frame (whether the world still holds the shot): worked out once per path
+		const key = JSON.stringify([spec.camera, spec.lens, spec.seconds, spec.aspect, spec.framing ?? null]);
+		if (viewsKept.has(key)) return viewsKept.get(key);
+		const views = pathViews(T, spec);
+		if (viewsKept.size > 200) viewsKept.clear();
+		viewsKept.set(key, views);
+		return views;
+	}
+	/** @type {Map<string, { x: number, y: number, z: number, frustum: any }[] | undefined>} */
+	const viewsKept = new Map();
+	/** @param {any} T @param {Spec} spec */
+	function pathViews(T, spec) {
+		const n = Math.max(2, Math.min(30, Math.ceil(spec.seconds / VIEW_EVERY) + 1));
+		const aspect = { '1:1': 1, '16:9': 16 / 9, '9:16': 9 / 16, '4:5': 4 / 5 }[spec.aspect] ?? 16 / 9;
+		const cam = new T.PerspectiveCamera(45, aspect, 0.1, 5000);
+		const out = [];
+		for (let k = 0; k < n; k++) {
+			const e = evaluate(spec, (spec.seconds * k) / (n - 1), spec.aspect);
+			if (e.own || e.frame) return undefined;
+			const [x, y, z, yaw, pitch] = e.pose;
+			cam.fov = e.fov;
+			cam.position.set(x, y, z);
+			cam.rotation.set(pitch, yaw, 0, 'YXZ');
+			cam.updateProjectionMatrix();
+			cam.updateMatrixWorld(true);
+			out.push({ x, y, z, frustum: new T.Frustum().setFromProjectionMatrix(new T.Matrix4().multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse)) });
+		}
+		return out;
+	}
+	/** how far apart (shot seconds) the moments of a shot's path are whose views a world builds for */
+	const VIEW_EVERY = 1 / 3;
 	/** what a shot needs the world staged as: where the walker stands, its dome, its set */
 	const keyOf = (/** @type {Spec} */ spec) => JSON.stringify([spec.world.stand, spec.world.dome ?? null, spec.world.props ?? null]);
 
@@ -354,7 +395,7 @@ export function startFilm({ base = '' } = {}) {
 				const all = specs.map(normal).filter(shows);
 				const v = await mounted();
 				// everything these shots need, kept built whichever shot asks last
-				v.film.keep(all.map((s) => s.world));
+				v.film.keep(all.map((s) => ({ ...s.world, views: viewsOf(v, s) })));
 				for (const s of all) await stage(s, live ? STAGE_LIMIT : Infinity);
 				if (meter) for (const s of all) if (!live || knownExposure(s) === undefined) await exposureOf(s);
 			});
@@ -415,7 +456,7 @@ export function startFilm({ base = '' } = {}) {
 			if (live) lastEv = typeof ev === 'number' ? ev : ev.reduce((a, k) => a + k[1], 0) / ev.length;
 			const t1 = performance.now();
 			// restaged in line with the prepares, never beside one (two at once pull the walker back and forth)
-			if (staged !== key || (streaming !== key && !v.film.holds(spec.world))) await one(() => stage(spec, quality === 'final' ? Infinity : wait));
+			if (staged !== key || (streaming !== key && !v.film.holds({ ...spec.world, views: viewsOf(v, spec) }))) await one(() => stage(spec, quality === 'final' ? Infinity : wait));
 			const t2 = performance.now();
 			clock.enter();
 			w.__filmDraw = true;

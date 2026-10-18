@@ -45,7 +45,9 @@ import * as THREE from 'three';
  */
 
 /**
- * @typedef {{ sandbox: string, area?: string, stand: [number, number], dome?: number, props?: string, seed: number }} FilmWorldSpec
+ * @typedef {{ sandbox: string, area?: string, stand: [number, number], dome?: number, props?: string, seed: number, views?: import('./stream.js').View[] }} FilmWorldSpec
+ *   views: what the shot's camera sees along its path (src/lib/film `viewsOf`), when the film knows it: a world that
+ *   streams by view (./stream.js) builds for exactly these
  */
 
 // the three rules of a world under the film camera are the film renderer's

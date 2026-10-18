@@ -29,6 +29,7 @@ import { createSky } from '$lib/sandbox-kit/sky.js'
 import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
+import { createStream, type View } from '$lib/sandbox-kit/stream.js'
 import { ambience, levelsAt } from './ambience'
 import { createForest, INSIDE, type Forest } from './flora.js'
 import { createDrawn, createFlora } from './drawn.js'
@@ -126,8 +127,6 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const built = new Map<number, EmbeddedDome>()
 	const shown = new Set<number>()
 	let building: { i: number; cancelled: boolean } | null = null
-	/** domes the film camera keeps built however far the walker goes: the shots it is preparing need them */
-	const pinned = new Set<number>()
 	const lastNear = new Map<number, number>()
 	let nightNow = 0
 
@@ -1204,29 +1203,73 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		for (const i of built.keys()) if (gapTo(i) < gap) (gap = gapTo(i)), (best = i)
 		return best
 	}
-	const build = (i: number) => {
-		const d = domes[i]!
-		const job = { i, cancelled: false }
-		building = job
-		// on film nothing is drawn while the world is readied (__filmDraw): every dome builds in long stretches
-		mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || filmDraws(), background: () => gapTo(i) > 45 && !filmDraws(), library, flora: flora ? { garden: flora.inside, seed: flora.seed, flora: plantsIn!, drawn: library } : undefined })
-			.then((h) => {
-				if (building === job) building = null
-				if (job.cancelled || !h.embedded) return h.dispose()
-				built.set(i, h.embedded)
-				h.embedded.setHour(sky.hour())
-				lastNear.set(i, performance.now())
-				place(i)
-			})
-			.catch(() => {
-				if (building === job) building = null
-			})
+	/* The domes' full insides are streamed by what is seen ($lib/sandbox-kit/stream, one scheduler for every world):
+	   the walker's camera wants every dome within SHOW_NEAREST, those it looks at first, the biggest on screen first;
+	   a shot wants exactly the domes its camera path sees, no more. At most KEEP are built, the longest unseen let go;
+	   one builds at a time. A dome not built shows its simple self. */
+	/** the domes the shot being filmed sees (its views, as it was staged): shown in full for the whole shot */
+	let filmed: Set<number> | null = null
+	const domeStream = createStream({
+		budget: KEEP,
+		far: SHOW_NEAREST,
+		// while nothing seen waits, the nearest domes are built ahead (as the cell always did): a turn, or the next shot,
+		// finds them ready
+		ahead: true,
+		onBuilt: (item, h: EmbeddedDome) => {
+			const i = item.id as number
+			built.set(i, h)
+			h.setHour(sky.hour())
+			lastNear.set(i, performance.now())
+			place(i)
+		},
+		onDisposed: (item) => {
+			const i = item.id as number
+			built.delete(i)
+			shown.delete(i)
+			show(i, true)
+		}
+	})
+	domes.forEach((d, i) =>
+		domeStream.add({
+			id: i,
+			x: d.x,
+			y: d.R * 0.5,
+			z: d.z,
+			r: d.ext,
+			build: (job) =>
+				new Promise<EmbeddedDome>((resolve, reject) => {
+					const mine = { i, cancelled: false }
+					building = mine
+					// on film nothing is drawn while the world is readied (__filmDraw): every dome builds in long stretches
+					mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || filmDraws(), background: () => gapTo(i) > 45 && !filmDraws(), library, flora: flora ? { garden: flora.inside, seed: flora.seed, flora: plantsIn!, drawn: library } : undefined })
+						.then((h) => {
+							if (building === mine) building = null
+							if (job.cancelled || !h.embedded) {
+								h.dispose()
+								return reject(new Error('let go'))
+							}
+							resolve(h.embedded)
+						})
+						.catch((e) => {
+							if (building === mine) building = null
+							reject(e)
+						})
+				}),
+			dispose: (h: EmbeddedDome) => h.dispose()
+		})
+	)
+	/** what the walker's camera looks at: its frustum, every dome within SHOW_NEAREST wanted, the seen first */
+	const frustum = new THREE.Frustum(), projView = new THREE.Matrix4()
+	const walkerView = () => {
+		camera.updateMatrixWorld()
+		frustum.setFromProjectionMatrix(projView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse))
+		return [{ x: camera.position.x, y: camera.position.y, z: camera.position.z, frustum, near: SHOW_NEAREST }]
 	}
-	/** show a built dome in full when you are near it, its simple self when you are not */
+	/** show a built dome in full when you are near it (a shot: when its camera sees it), its simple self when not */
 	const place = (i: number) => {
 		const dm = built.get(i)
 		if (!dm) return
-		const near = gapTo(i) < SHOW_WITHIN || i === nearestBuilt()
+		const near = filmed ? filmed.has(i) : gapTo(i) < SHOW_WITHIN || i === nearestBuilt()
 		if (dm.root.visible !== near) renderer.shadowMap.needsUpdate = true
 		dm.root.visible = near
 		dm.show(near)
@@ -1242,31 +1285,12 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 	let maskedKey = ''
 	const manageDomes = () => {
-		const order = domes.map((_, i) => i).sort((a, b) => gapTo(a) - gapTo(b))
+		filmed = null
+		domeStream.look(walkerView())
+		domeStream.tick()
 		for (const i of built.keys()) {
 			place(i)
 			if (gapTo(i) < SHOW_WITHIN) lastNear.set(i, performance.now())
-		}
-		// the dome you are nearly at comes first: drop a build far away for it
-		const urgent = order.find((i) => !built.has(i) && gapTo(i) < 40)
-		if (building && urgent !== undefined && building.i !== urgent && gapTo(building.i) > gapTo(urgent) + 40) {
-			building.cancelled = true
-			building = null
-		}
-		if (!building) {
-			const next = order.find((i) => !built.has(i))
-			if (next !== undefined) {
-				// room for it: let go of the dome you were near longest ago
-				if (built.size >= KEEP) {
-					const old = [...built.keys()].filter((i) => !shown.has(i) && !pinned.has(i)).sort((a, b) => (lastNear.get(a) ?? 0) - (lastNear.get(b) ?? 0))[0]
-					if (old !== undefined && gapTo(old) > gapTo(next)) {
-						built.get(old)!.dispose()
-						built.delete(old)
-						show(old, true)
-					}
-				}
-				if (built.size < KEEP) build(next)
-			}
 		}
 	}
 
@@ -1363,21 +1387,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 
 	/* ── the film camera's hold on the cell (src/lib/film, $lib/sandbox-kit/film): every frame set from the shot alone,
 	   never from the frame before it. Players never reach any of this. ── */
-	/** the domes of the shots a film asked for, the latest last: the latest are kept built (pinned) */
-	const recent: number[][] = []
-	/** the domes that would be shown in full to a walker standing at x, z once built: all of them must be built before a
-	 *  shot from there is filmed, or a dome could appear between two renders of it. Exactly those `place` shows in full —
-	 *  every dome within SHOW_WITHIN and the nearest within SHOW_NEAREST — and no more: the others draw their simple
-	 *  selves whether built or not. Waiting for every dome within SHOW_NEAREST built domes no shot shows, and where more
-	 *  than KEEP stood that near it could never be met (a shot waiting twenty minutes) */
-	const nearDomes = (x: number, z: number) => {
-		const gaps = domes.map((d, i) => ({ i, gap: Math.hypot(x - d.x, z - d.z) - d.ext })).sort((a, b) => a.gap - b.gap)
-		const full = gaps.filter((d) => d.gap < SHOW_WITHIN).map((d) => d.i)
-		const nearest = gaps.find((d) => d.gap < SHOW_NEAREST)
-		if (nearest && !full.includes(nearest.i)) full.push(nearest.i)
-		// never more than the cell keeps built at once (the nearest first)
-		return full.slice(0, KEEP - 1)
-	}
+	/** what a shot sees: its camera path's views (the film knows them), else all round where it stands */
+	const shotViews = (w: { stand: [number, number]; views?: View[] }): View[] => (w.views?.length ? w.views : [{ x: w.stand[0], y: 1.7, z: w.stand[1], near: SHOW_WITHIN }])
 	/** show or hide each built dome for where the walker stands now (as the world does as you walk) */
 	const settle = () => {
 		for (const i of built.keys()) place(i)
@@ -1425,24 +1436,26 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				}
 			}
 		},
-		/* stand where the shot needs the cell loaded, and wait until its dome is built and shown, and every dome near
-		   enough to be shown in full from there is built too (one arriving later would change the picture between two
-		   renders of the shot) */
+		/* stand where the shot needs the cell loaded, and wait until every dome its camera sees is built and shown in
+		   full (one arriving later would change the picture between two renders of the shot) — and no other */
 		stage: async (w) => {
 			walker.place(w.stand[0], w.stand[1], 0, 0, 0)
-			settle()
-			const dome = w.dome
-			const need = nearDomes(w.stand[0], w.stand[1])
-			for (let waited = 0; ; waited += 100) {
-				const now = building?.i ?? null
-				const ok = (dome === undefined || (built.has(dome) && shown.has(dome))) && need.every((i) => built.has(i)) && (now === null || !need.includes(now))
-				if (ok) break
-				if (waited > 20 * 60000) throw new Error(`the world never got ready for this shot (dome ${dome}, near ${need.join(', ')})`)
-				// a shot that keeps waiting says what for (the studio's log shows it)
-				if (waited && waited % 10000 === 0)
-					console.warn(`film: ${(w as { name?: string }).name ?? 'a shot'} waits ${waited / 1000} s — dome ${dome ?? '-'} built ${dome === undefined || built.has(dome)} shown ${dome === undefined || shown.has(dome)}; near ${need.join(',')} built ${need.filter((i) => built.has(i)).join(',') || 'none'}; building ${now}`)
-				await new Promise((r) => setTimeout(r, 100))
+			// exactly the domes the shot's camera sees, built (one at a time, the biggest on screen first) before it is drawn
+			const views = shotViews(w)
+			const need = domeStream.wanted(views) as number[]
+			filmed = new Set(need)
+			domeStream.look(views)
+			const t = performance.now()
+			const slow = setInterval(() => {
+				const missing = need.filter((i) => !built.has(i))
+				console.warn(`film: ${(w as { name?: string }).name ?? 'a shot'} waits ${Math.round((performance.now() - t) / 1000)} s for domes ${missing.join(',') || '-'} (sees ${need.join(',') || 'none'}; building ${building?.i ?? '-'})`)
+			}, 10000)
+			try {
+				await domeStream.ready(views)
+			} finally {
+				clearInterval(slow)
 			}
+			settle()
 			const t0 = performance.now()
 			// and every animal, built in the box (far and near), there before the shot is drawn
 			await actorsSettled()
@@ -1457,17 +1470,23 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const t3 = performance.now()
 			if (t3 - t0 > 300) console.warn(`film: ${(w as { name?: string }).name ?? 'a shot'} staged: animals ${Math.round(t1 - t0)} ms, plants ${Math.round(t2 - t1)} ms, library ${Math.round(t3 - t2)} ms`)
 		},
-		holds: (w) => w.dome === undefined || shown.has(w.dome),
-		// keep the domes of the shots the film asked for last built while it needs them — never all of them: a pin
-		// that only grew would fill every place (KEEP) and no other dome could ever be built
-		keep: (ws) => {
-			const domesOf = ws.map((w) => w.dome).filter((d): d is number => d !== undefined)
-			if (domesOf.length) recent.push(domesOf)
-			pinned.clear()
-			for (const set of [...recent].reverse())
-				for (const i of set) if (pinned.size < KEEP - 1) pinned.add(i)
-			while (recent.length > KEEP) recent.shift()
+		// still staged for a shot while every dome its camera sees is shown in full (another shot from the same stand that
+		// sees others is staged again)
+		// (another shot from the same stand that sees other domes: when they are built it is held at once, the domes it
+		// sees shown in full and the rest their simple selves — no staging; when not, it is staged)
+		holds: (w) => {
+			const views = shotViews(w)
+			const need = domeStream.wanted(views) as number[]
+			if ((w.dome !== undefined && !built.has(w.dome)) || !need.every((i) => built.has(i))) return false
+			if (!filmed || filmed.size !== need.length || need.some((i) => !filmed!.has(i))) {
+				filmed = new Set(need)
+				domeStream.look(views)
+				settle()
+			}
+			return true
 		},
+		// keep built what the shots ahead see (the stream lets go of nothing pinned, and never goes over KEEP)
+		keep: (ws) => domeStream.pin(ws.map(shotViews)),
 		// the library: the film's sets put their assets in it (src/lib/film/sets.js, the tired land's trucks)
 		extra: { herds, built, shown, domes, water: waterPts, playgrounds: PLAYGROUNDS, library }
 	})
@@ -1522,8 +1541,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		dispose() {
 			running = false
 			cancelAnimationFrame(frame)
-			if (building) building.cancelled = true
-			for (const dm of built.values()) dm.dispose()
+			domeStream.dispose()
 			plantsOut?.dispose()
 			plantsIn?.dispose()
 			library.dispose()
