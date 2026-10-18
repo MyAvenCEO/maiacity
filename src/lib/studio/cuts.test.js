@@ -13,10 +13,11 @@ test('a timeline goes into a cut record and comes back the same', () => {
 	expect(f.variant).toBe('');
 	expect(JSON.parse(f.timeline).id).toBeUndefined();
 	expect(JSON.parse(f.timeline).if_updated).toBeUndefined();
-	const back = timelineOf({ entry: 'e1', vault: 'v', created: 10, edits: 4, record: { kind: 'cut', ...f } });
+	const back = timelineOf({ entry: 'e1', vault: 'v', created: 10, heads: ['h1', 'h2'], record: { kind: 'cut', ...f } });
 	expect(back.id).toBe('cut:e1');
 	expect(isCut(back.id)).toBe(true);
-	expect(back.updated).toBe('4');
+	expect(back.updated).toBe('h1,h2');
+	expect(timelineOf({ entry: 'e2', vault: 'v', record: { kind: 'cut', ...f } }).updated).toBe('');
 	expect(back.clips).toEqual(t.clips);
 	expect(back.aspect).toBe('9:16');
 	expect(back.version).toBe(2);

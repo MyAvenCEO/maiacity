@@ -104,7 +104,8 @@ export const raw = (hash) => (isAven(hash) ? avenUrl(hash) : '');
  * timelines in the API's Postgres are no longer the studio's (Samuel 2026-10-18): only the two films ./legacyfilms.js
  * copies into the Maia City vault come over from them.
  */
-const listTimelines = listCuts;
+/** The cuts of the vault picked in the nav pill (Maia City's in Maia City, a person's own in theirs), else all. */
+const listTimelines = async () => listCuts((await import('$lib/avendb/session.svelte.js')).session.vault ?? null);
 /** @param {Partial<Timeline>} t */
 const createTimeline = createCut;
 const getTimeline = getCut;
@@ -645,13 +646,22 @@ export class Studio {
 	}
 
 	/** Every world clip's shot record, at the version it was cut with; and its sound cues' files. */
-	async loadShots() {
-		await Promise.all(this.worldClips.map((c) => (c.shot ? shotAt(c.shot, c.shotVersion) : null)));
+	async loadShots(tries = 0) {
+		const id = this.current?.id;
+		// one shot that can't be read (avenDB not open yet as the app starts, a shot gone) leaves the others to load: a
+		// rejected Promise.all here left the world off and every world clip a stand-in
+		const got = await Promise.allSettled(this.worldClips.map((c) => (c.shot ? shotAt(c.shot, c.shotVersion) : null)));
+		const failed = got.find((r) => r.status === 'rejected');
+		if (failed) console.warn(`studio: a world shot could not be read: ${/** @type {any} */ (failed).reason?.message ?? failed}`);
 		this.shotRev++;
 		for (const q of this.cueClips) if (q.hash) void this.source(q.hash).catch(() => null);
 		// the world: started as soon as the timeline has a world clip in a world it can be shot in, and let go (its
 		// WebGL and memory with it) for a timeline with none — its world clips (if any) play from their proxies
 		this.wantWorld = this.worldClips.some((c) => shootable(cached(c.shot, c.shotVersion)?.spec));
+		const lost = this.worldClips.filter((c) => !cached(c.shot, c.shotVersion));
+		if (lost.length) console.warn(`studio: ${lost.length} of ${this.worldClips.length} world clips have no shot on this Mac (${lost[0].shot}@${lost[0].shotVersion}…)`);
+		// asked again a few times: avenDB opens a moment after the studio, and its shots come with it
+		if (lost.length && tries < 6) setTimeout(() => void (this.current?.id === id && this.loadShots(tries + 1)), 2000 * (tries + 1));
 	}
 	/** the program monitor starts the world iframe when this is set */
 	wantWorld = $state(false);
@@ -1237,6 +1247,12 @@ export class Studio {
 	/** The library read again (a proxy or a transcript came in), and the sounds waiting on it tried. */
 	/** when the library was last read again (`reloadLibrary`) */
 	libraryAt = 0;
+	/** The timelines again, as the vault picked in the nav pill changes: only that vault's cuts are listed. */
+	async reloadTimelines() {
+		const tls = await listTimelines().catch(() => null);
+		if (tls) this.timelines = tls;
+	}
+
 	async reloadLibrary() {
 		this.libraryAt = Date.now();
 		this.library = await allMedia().catch(() => this.library);
@@ -2040,7 +2056,8 @@ export class Studio {
 	timelineWatch = null;
 	watchVault() {
 		// the open timeline as others change it (an agent through MCP): seen here within seconds
-		this.timelineWatch ??= setInterval(() => void this.refresh(), 4000);
+		// not while it plays: a read of the cut every few seconds then only costs frames
+		this.timelineWatch ??= setInterval(() => void (!this.playing && this.refresh()), 4000);
 		this.vaultWatch ??= setInterval(() => void (this.waitingOnVault() && this.reloadLibrary()), 20000);
 	}
 

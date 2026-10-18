@@ -1526,8 +1526,11 @@ pub async fn serve(app: AppHandle, request: tauri::http::Request<Vec<u8>>) -> ta
                 .body(Vec::new())
                 .unwrap_or_default();
         }
-        // a whole file in one answer only while it is small (a still, a preview): a movie is asked for by range
-        None => (0, len.saturating_sub(1).min(64 * MAX - 1), false),
+        // a whole file in one answer only while it is small (a still, a preview, a proxy); a bigger one answers its
+        // first piece as a range, so the player asks for the rest piece by piece: a whole original in one answer
+        // (gigabytes, held over the bridge) ran The OS out of memory
+        None if len > 32 * MAX => (0, MAX - 1, true),
+        None => (0, len.saturating_sub(1), false),
     };
     let body = if len == 0 {
         vec![]
