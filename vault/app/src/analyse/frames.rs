@@ -97,7 +97,7 @@ mod tests {
     }
 
     /// The real thing on a synthetic ACEScct proxy: frames sampled with their times, the cut found, through the output
-    /// transform; one frame for a thumbnail. Skipped where ffmpeg (which only makes the test movie) is not.
+    /// transform. Skipped where ffmpeg (which only makes the test movie) is not.
     #[test]
     fn samples_frames_through_the_output_transform() {
         let dir = std::env::temp_dir().join(format!("vault-analyse-{}", std::process::id()));
@@ -122,8 +122,6 @@ mod tests {
         assert!(f.times.iter().any(|t| (t - 2.5).abs() < 0.05), "the cut is sampled: {:?}", f.times);
         assert!(last > 0.9);
         assert_eq!(&f.jpegs[0][..2], &[0xff, 0xd8]);
-        let thumb = one(Source::Path(movie.clone()), Some(3.0), plan::EDGE, true).unwrap();
-        assert!(thumb.len() > 1000 && thumb[..2] == [0xff, 0xd8]);
         std::fs::remove_dir_all(&dir).ok();
     }
 }

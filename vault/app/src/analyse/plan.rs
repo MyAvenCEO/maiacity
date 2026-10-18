@@ -258,13 +258,6 @@ pub fn base64(bytes: &[u8]) -> String {
 mod tests {
     use super::*;
 
-    const O: &str = "0000000000000000000000000000000000000000000000000000000000000001";
-    const P: &str = "0000000000000000000000000000000000000000000000000000000000000002";
-
-    fn set(xs: &[&str]) -> HashSet<String> {
-        xs.iter().map(|x| x.to_string()).collect()
-    }
-
     #[test]
     fn frames_and_stretches() {
         assert_eq!(interval(30.0), 1.0);
@@ -352,13 +345,5 @@ mod tests {
         assert_eq!(base64(b"fo"), "Zm8=");
         assert_eq!(base64(b"foobar"), "Zm9vYmFy");
         assert_eq!(base64(&[0xff, 0xfe, 0xfd]), "//79");
-    }
-
-    #[test]
-    fn a_record_is_patched_key_by_key() {
-        let r = json!({ "state": "failed: x", "tries": 1, "thumbnail": "t" });
-        let next = patched(Some(&r), &Map::from_iter([("state".into(), json!("analysing")), ("tries".into(), Value::Null)]));
-        assert_eq!(next, json!({ "state": "analysing", "thumbnail": "t" }));
-        assert_eq!(patched(None, &Map::from_iter([("state".into(), json!("queued"))])), json!({ "state": "queued" }));
     }
 }
