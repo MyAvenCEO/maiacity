@@ -14,10 +14,11 @@
 -->
 <script>
 	import { base } from '$app/paths';
+	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { invite } from '$lib/auth/client';
 	import Icon from './Icon.svelte';
-	import { back, upFrom } from './back.svelte.js';
+	import { back, onDashboard, upFrom } from './back.svelte.js';
 	import { pill } from './pill.svelte.js';
 	import { shaped } from './shapes.js';
 
@@ -36,7 +37,13 @@
 		pill.context?.list.reduce((n, a) => n + (a.id === pill.context?.current ? 0 : (a.badge ?? 0)), 0) ?? 0
 	);
 	const path = $derived(page.url.pathname);
-	const up = $derived(upFrom(path.slice(base.length)));
+	// the dashboard's address names avenDB's view on it in its hash (`/app/#sparks`), which a link sets with no
+	// navigation of the router's: read after each of either
+	let hash = $state(typeof location === 'undefined' ? '' : location.hash);
+	afterNavigate(() => (hash = location.hash));
+	const up = $derived(upFrom(path.slice(base.length), hash));
+	/** on the dashboard itself, not on one of avenDB's views on it */
+	const atHome = $derived(path === home && onDashboard(hash));
 	const initials = $derived(name ? name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase() : '·');
 	const who = $derived(name || 'You');
 	// looking at another account than one's own (a COOP's wallet): the avatar and the word say whose
@@ -59,7 +66,7 @@
 	}
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && (open = false)} />
+<svelte:window onkeydown={(e) => e.key === 'Escape' && (open = false)} onhashchange={() => (hash = location.hash)} />
 
 <nav class="pill" aria-label="App">
 	{#if back.open}
@@ -69,7 +76,7 @@
 	{:else if up}
 		<a class="item" href={up.href} title={up.label} aria-label={up.label}><Icon name="back" /><span>Back</span></a>
 	{/if}
-	<a class="item" href={home} aria-current={path === home ? 'page' : undefined} title="Dashboard">
+	<a class="item" href={home} aria-current={atHome ? 'page' : undefined} title="Dashboard">
 		<Icon name="home" /><span>Home</span>
 	</a>
 	{#if pill.center}
