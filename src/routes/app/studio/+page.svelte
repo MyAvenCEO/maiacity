@@ -33,8 +33,18 @@
 	import Timeline from '$lib/studio/Timeline.svelte';
 	import Transport from '$lib/studio/Transport.svelte';
 	import { Studio } from '$lib/studio/studio.svelte';
+	import { session as avendb } from '$lib/avendb/session.svelte.js';
 
 	const s = new Studio();
+	// the vault picked in the nav pill: its cuts alone (Samuel 2026-10-18: Maia City's, not every vault's)
+	let pickedVault = '';
+	$effect(() => {
+		const v = avendb.vault ?? '';
+		if (v === pickedVault) return;
+		const first = !pickedVault;
+		pickedVault = v;
+		if (!first) void s.reloadTimelines();
+	});
 	let studio = $state<HTMLElement | null>(null);
 
 	// the studio lives in maiaCITY Studio, the Mac app, only: its media functions never run in a browser

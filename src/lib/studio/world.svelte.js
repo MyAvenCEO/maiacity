@@ -146,7 +146,10 @@ export class WorldViewer {
 				}
 			}
 			const waited = performance.now() - t0;
-			if (waited > wait && this.state === 'loading') this.state = 'unavailable';
+			if (waited > wait && this.state === 'loading') {
+				this.state = 'unavailable';
+				console.warn(`world: no film mode at ${url} after ${Math.round(waited / 1000)} s${this.error ? ` (${this.error})` : ''}: the stand-ins play`);
+			}
 			await new Promise((r) => setTimeout(r, waited > wait ? 2000 : 250));
 		}
 		if (this.iframe === iframe && this.url === url) this.state = 'unavailable';

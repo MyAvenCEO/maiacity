@@ -60,8 +60,9 @@ const parse = (s) => {
 };
 
 /**
- * Cut entry `e` as the studio's timeline.
- * @param {import('../avendb/vaults.js').EntryView} e @returns {Timeline}
+ * Cut entry `e` as the studio's timeline: a row of the world, or the one the `get` op answers, which names the heads
+ * of the version read.
+ * @param {import('../avendb/vaults.js').EntryView & { heads?: string[] }} e @returns {Timeline}
  */
 export function timelineOf(e) {
 	const r = e.record ?? {};
@@ -81,7 +82,8 @@ export function timelineOf(e) {
 		version: r.version ?? 1,
 		legacy: r.legacy || null,
 		created: new Date((e.created ?? 0) * 1000).toISOString(),
-		updated: String(e.edits ?? 0),
+		// the version read, by its heads (the `get` op's), so a save over an older copy is refused; '' where unknown
+		updated: Array.isArray(e.heads) ? e.heads.join(',') : '',
 		at,
 		vault: e.vault
 	});
@@ -104,19 +106,42 @@ export function fieldsOf(t) {
 	return { ...own, timeline: JSON.stringify(rest), at: Math.floor(Date.now() / 1000) };
 }
 
-/** The app's avenDB device, or `null` off the Mac app or while it isn't open. */
+/** The ops that read and change nothing: a world read stays good across them (`worldOf`). */
+const READS = new Set(['world', 'get', 'query', 'history', 'schemas', 'requests', 'aips', 'aip', 'may', 'jobs', 'shares', 'database', 'note', 'read_file', 'creatable', 'taggable']);
+
+/**
+ * The world read last and when, shared by every caller for a moment (Samuel 2026-10-18: the whole world as JSON over
+ * the bridge, read by thirty callers and every four seconds, ran The OS out of memory and stuttered playback): one
+ * read answers all who ask within `FRESH`, and any change made through `device()` drops it.
+ * @type {{ at: number, world: Promise<any> } | null}
+ */
+let kept = null;
+const FRESH = 3000;
+
+/** The app's avenDB device, or `null` off the Mac app or while it isn't open: a change through it drops the world kept. */
 export async function device() {
 	const { native } = await import('$lib/native');
 	if (!native()) return null;
 	const { call, status } = await import('$lib/avendb/native.js');
-	return (await status().catch(() => null))?.open ? call : null;
+	if (!(await status().catch(() => null))?.open) return null;
+	return (/** @type {string} */ c, /** @type {any[]} */ ...a) => {
+		if (c !== 'run' || !READS.has(a[0]?.op)) kept = null;
+		return call(c, ...a);
+	};
 }
 
 /**
- * The device's world.
+ * The device's world: one read for every caller within a few seconds, none of a change made since (`kept`).
  * @param {(c: string, ...a: any[]) => Promise<any>} call @returns {Promise<import('../avendb/vaults.js').WorldView>}
  */
-export const worldOf = async (call) => answer(await call('run', { op: 'world' }));
+export const worldOf = async (call) => {
+	if (!kept || performance.now() - kept.at > FRESH) {
+		const world = call('run', { op: 'world' }).then(answer);
+		kept = { at: performance.now(), world };
+		world.catch(() => (kept = null));
+	}
+	return kept.world;
+};
 
 /**
  * The vault new cuts go into, and the vault the person acts as there: the Maia City vault if they reach it, else their
@@ -138,13 +163,18 @@ export async function cutsHere() {
 	return !!call && !!homeOf(await worldOf(call));
 }
 
-/** Every cut this device holds, newest first; none off the Mac app. @returns {Promise<Timeline[]>} */
-export async function listCuts() {
+/**
+ * Every cut this device holds, newest first, or those of vault `vault` alone (the vault picked in the nav pill: Maia
+ * City's in Maia City, a person's own in theirs); none off the Mac app.
+ * @param {string | null} [vault] @returns {Promise<Timeline[]>}
+ */
+export async function listCuts(vault = null) {
 	const call = await device();
 	if (!call) return [];
 	const world = await worldOf(call);
 	return world.entries
 		.filter((e) => e.type === CUT && e.record?.kind === CUT && !e.deleted && !(e.tags ?? []).includes(DELETED))
+		.filter((e) => !vault || e.vault === vault)
 		.map(timelineOf)
 		.sort((a, b) => (/** @type {any} */ (b).at < /** @type {any} */ (a).at ? -1 : 1));
 }
@@ -168,9 +198,11 @@ export async function listStories() {
 export async function getCut(id) {
 	const call = await device();
 	if (!call) throw new Error('This cut lives in avenDB, which is open only in the Mac app.');
-	const e = (await worldOf(call)).entries.find((x) => x.entry === id.slice(4));
-	if (!e) throw new Error('No such cut on this Mac.');
-	return timelineOf(e);
+	// the one entry, not the whole world: read every few seconds while a cut is open
+	const got = await call('run', { op: 'get', entry: id.slice(4) }).catch(() => null);
+	const row = got?.ok;
+	if (!row) throw new Error('No such cut on this Mac.');
+	return timelineOf(row);
 }
 
 /**
@@ -213,15 +245,16 @@ export async function saveCut(id, t) {
 	const call = await device();
 	if (!call) throw new Error('avenDB is not open in this app.');
 	const entry = id.slice(4);
-	let world = await worldOf(call);
-	const e = world.entries.find((x) => x.entry === entry);
+	const read = async () => (await call('run', { op: 'get', entry }).catch(() => null))?.ok ?? null;
+	const e = await read();
 	if (!e) throw new Error('No such cut on this Mac.');
-	if (t.if_updated && t.if_updated !== String(e.edits ?? 0)) throw new Error('The cut was changed elsewhere.');
+	if (t.if_updated && t.if_updated !== timelineOf(e).updated) throw new Error('The cut was changed elsewhere.');
 	const fields = fieldsOf({ ...timelineOf(e), ...t });
 	const ops = Object.entries(fields).map(([k, value]) => ({ op: 'set', entry, path: [k], value }));
+	let world = await worldOf(call);
 	answer(await call('run', { op: 'batch', ops, as: asIn(world, e.vault) }));
+	const saved = timelineOf((await read()) ?? e);
 	world = await worldOf(call);
-	const saved = timelineOf(world.entries.find((x) => x.entry === entry) ?? e);
 	// every file whose look on screen changed: its graded still made again (never failing the save itself)
 	const before = timelineOf(e);
 	for (const clip of restill(before, saved)) await ask(call, world, e, 'frame', { clip }).catch(() => null);
