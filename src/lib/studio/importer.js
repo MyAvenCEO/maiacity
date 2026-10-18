@@ -64,11 +64,12 @@ export function moved(t, refs, shots) {
 /**
  * Legacy timeline `id` brought into avenDB as a cut (or the cut it was brought as before), `tell` hearing how far:
  * into vault `into.vault`, acting as `into.as` (else the person's home vault, `homeOf`), named `into.name` and
- * `into.project` where given, linked to story `into.story` and tagged `into.tags` (./legacyfilms.js). The files come
+ * `into.project` where given, linked to story `into.story` and tagged `into.tags` (./legacyfilms.js); from the repo's
+ * frozen copy `into.frozen` (./frozen.js) where given, the old studio not asked at all. The files come
  * one at a time; one that can't come (not in the legacy vault on this Mac, a copy that doesn't match) is left out
  * and told (`failed`), and the cut is made of the rest, its clip keeping the legacy hash, as no file plays it.
  * @param {string} id @param {(line: string, at: Progress) => void} [tell]
- * @param {{ vault?: string, as?: string, name?: string, project?: string, story?: { vault: string, entry: string }, tags?: string[] }} [into]
+ * @param {{ vault?: string, as?: string, name?: string, project?: string, story?: { vault: string, entry: string }, tags?: string[], frozen?: import('./frozen.js').Frozen }} [into]
  * @returns {Promise<Timeline & { failed?: Progress['failed'] }>}
  */
 export async function importTimeline(id, tell = () => {}, into = {}) {
@@ -80,7 +81,7 @@ export async function importTimeline(id, tell = () => {}, into = {}) {
 	const before = world.entries.find((e) => e.vault === home.vault && e.type === CUT && e.record?.legacy === id && !e.deleted && !(e.tags ?? []).includes('avendb:deleted'));
 	if (before) return timelineOf(before);
 	const { getShot, getTimeline } = await import('$lib/auth/client');
-	const t = await legacyCall(getTimeline(id));
+	const t = into.frozen?.timeline ?? (await legacyCall(getTimeline(id)));
 	const hashes = filesOf(t);
 	/** @type {Progress} */
 	const at = { done: 0, total: hashes.length, part: 0, failed: [] };
@@ -133,7 +134,7 @@ export async function importTimeline(id, tell = () => {}, into = {}) {
 			shots.set(k, { shot: shotFrom(had).id, version: had.record?.version ?? 1 });
 			continue;
 		}
-		const s = await legacyCall(getShot(c.shot, c.shotVersion));
+		const s = into.frozen?.shots[k] ?? (await legacyCall(getShot(c.shot, c.shotVersion)));
 		await schemaIn(call, world, home.vault, SHOT_V1, home.as);
 		const value = { kind: SHOT, shot: '', name: s.name, project: s.project ?? '', version: 1, spec: JSON.stringify(s.spec), legacy: k, at: Math.floor(Date.now() / 1000) };
 		const made = answer(await call('run', { op: 'create', vault: home.vault, type: SHOT, value, as: home.as }));

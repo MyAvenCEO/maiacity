@@ -8,39 +8,23 @@
  * the repo seed, on the Mac, as it writes the rest ($lib/avendb/Account.svelte), and the studio brings them too
  * whenever it opens there and the Maia City vault lacks one (`bringFilms`), one run for both, so after a reset of
  * avenDB they come back by themselves; a film already there (its story and its cut carry the film's tag) costs no
- * call to the legacy API. The legacy timelines, their vault and Postgres stay as they are until J15.
+ * call to the legacy API. A film frozen into the repo (films/legacy/<key>.json, ./frozen.js) comes from there and the
+ * media vault alone (Samuel 2026-10-18 13:29: both must come back after the old studio is gone); the old studio is
+ * asked only for one not frozen yet. The legacy timelines and Postgres stay as they are until J15.
  */
 
 import { answer } from '$lib/avendb/ops.js';
 import { CUT, device, worldOf } from './cuts.js';
+import { FILMS, legacyOf } from './filmlist.js';
 
-/**
- * Each film: its legacy timeline, by its story (`project`) and its name, and what it is called now.
- * @typedef {{ key: string, project: string, timeline: string, name: string }} Film
- * @type {Film[]}
- */
-export const FILMS = [
-	{ key: '1-million-decision', project: 'The 1 million decision', timeline: 'Day 01 · Opening', name: '1 million decision' },
-	{ key: 'the-first-village', project: '233 settlers, how it starts', timeline: 'World', name: 'The first village' }
-];
+export { FILMS, legacyOf } from './filmlist.js';
+/** @typedef {import('./filmlist.js').Film} Film */
 
 /** The story flow's Movie stage, as $lib/avendb/flows.js `stageTag('story', 'movie')` names it. */
 const MOVIE = 'story:movie';
 
 /** The tag film `f`'s story and cut carry. @param {Film} f */
 export const filmTag = (f) => `film:${f.key}`;
-
-/** @param {unknown} s */
-const norm = (s) => String(s ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
-
-/**
- * The legacy timeline of film `f` among `all`: of its story, by its name, else its only one there.
- * @param {Film} f @param {{ id: string, name: string, project: string | null, description?: string | null }[]} all
- */
-export function legacyOf(f, all) {
-	const mine = all.filter((t) => norm(t.project) === norm(f.project));
-	return mine.find((t) => norm(t.name) === norm(f.timeline)) ?? (mine.length === 1 ? mine[0] : null);
-}
 
 /**
  * The Maia City COOP vault, as this device reaches it, and who acts there; `null` where it doesn't.
@@ -107,14 +91,16 @@ async function bringing() {
 		await bringProxies(city.vault, city.as).catch((e) => console.warn('world proxies:', e));
 	}
 	if (!wanted.length) return [];
-	// each shows in the aside at once, while the old studio is asked for them
-	for (const f of wanted) tell(f, 'Asking the old studio…');
+	const { frozenFilm } = await import('./frozen.js');
+	// each shows in the aside at once; the repo's frozen copy first (./frozen.js), the old studio only for one it lacks
+	for (const f of wanted) tell(f, frozenFilm(f.key) ? 'Starting…' : 'Asking the old studio…');
 	const { listTimelines } = await import('$lib/auth/client');
 	const { importTimeline, legacyCall } = await import('./importer.js');
-	const legacy = /** @type {any[]} */ (await legacyCall(listTimelines()));
+	const legacy = wanted.every((f) => frozenFilm(f.key)) ? [] : /** @type {any[]} */ (await legacyCall(listTimelines()));
 	const brought = [];
 	for (const f of wanted) {
-		const t = legacyOf(f, legacy);
+		const frozen = frozenFilm(f.key);
+		const t = frozen ? { id: frozen.timeline.id, description: frozen.story.description } : legacyOf(f, legacy);
 		if (!t) {
 			await arrived(f, [], `no timeline "${f.timeline}" of "${f.project}" in the old studio`);
 			continue;
@@ -126,7 +112,7 @@ async function bringing() {
 			const value = { kind: 'story', title: f.name, text: '', description: t.description ?? '', series: 'Films', sparks: [], tags: [] };
 			story = answer(await call('run', { op: 'create', vault: city.vault, type: 'story', tags: [MOVIE, filmTag(f)], value, as: city.as })).entry;
 		}
-		const cut = await importTimeline(t.id, (line, at) => tell(f, line, at), { ...city, name: f.name, project: f.name, story: { vault: city.vault, entry: /** @type {string} */ (story) }, tags: [filmTag(f)] });
+		const cut = await importTimeline(t.id, (line, at) => tell(f, line, at), { ...city, name: f.name, project: f.name, story: { vault: city.vault, entry: /** @type {string} */ (story) }, tags: [filmTag(f)], ...(frozen ? { frozen } : {}) });
 		const failed = cut.failed ?? [];
 		await arrived(f, failed);
 		brought.push({ film: f, failed });
