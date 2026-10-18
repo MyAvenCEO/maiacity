@@ -219,13 +219,15 @@ export async function bringFootageProxies(vault, as, frozen, hashes = frozen.fla
 export const proxyTag = (shot, version) => `proxy:${shot}:${version}`;
 
 /**
- * Each world shot of vault `vault` brought from the legacy studio (its `legacy` names `<shot>@<version>`) whose world
- * the film camera no longer has (game/film/worlds.js: the room, the Isar, the Backyard) and has no proxy there yet,
- * its proxy brought, tagged `media:proxy` and `proxyTag`, acting as `as`: from the film seed of `frozen`'s film that
- * names it (its `proxies`, the bytes beside the films' files, which `studio_import` reads first). One the seed lacks
- * yet comes from the legacy vault while this Mac still has it, and is kept into that film's seed on the way
- * (`film_seed_keep`), so the next reset needs no legacy vault. A shot in a world the camera has gets none of these:
- * its proxy is rendered in that world, as avenDB holds it (./cuts.js `proxiesOf`). How many it brought.
+ * Each world shot of vault `vault` brought from the legacy studio (its `legacy` names `<shot>@<version>`) with no
+ * proxy there yet, its proxy brought, tagged `media:proxy` and `proxyTag`, acting as `as`: from the film seed of
+ * `frozen`'s film that names it (its `proxies`, the bytes beside the films' files, which `studio_import` reads first).
+ * One the seed lacks yet comes from the legacy vault while this Mac still has it, and is kept into that film's seed on
+ * the way (`film_seed_keep`), so the next reset needs no legacy vault. A shot whose world the film camera no longer has
+ * (game/film/worlds.js: the room, the Isar, the Backyard) plays only from it. One in a world it has plays from it
+ * until its world is live, as the old studio played it: the dome cell builds each shot's place in 20 to 60 s and
+ * gigabytes, more than an 8 GB Mac keeps up with live, and one the old studio never rendered is rendered in that
+ * world, as avenDB holds it (./cuts.js `proxiesOf`). How many it brought.
  * @param {string} vault @param {string} as @param {import('./frozen.js').Frozen[]} [frozen]
  */
 export async function bringProxies(vault, as, frozen = []) {
@@ -236,7 +238,7 @@ export async function bringProxies(vault, as, frozen = []) {
 	const wanted = world.entries
 		.filter((e) => e.vault === vault && e.type === SHOT && !e.deleted && typeof e.record?.legacy === 'string')
 		.map((e) => ({ shot: shotFrom(e), legacy: /** @type {string} */ (e.record?.legacy).toLowerCase() }))
-		.filter((w) => !shootable(w.shot.spec) && !has.has(proxyTag(w.shot.id, w.shot.version)));
+		.filter((w) => !has.has(proxyTag(w.shot.id, w.shot.version)));
 	if (!wanted.length) return 0;
 	const { command } = await import('$lib/native');
 	/** each proxy known, by `<shot>@<version>` */
@@ -267,7 +269,8 @@ export async function bringProxies(vault, as, frozen = []) {
 	for (const w of wanted) {
 		const hash = known.get(w.legacy);
 		if (!hash) {
-			console.warn(`world proxy of ${w.shot.name}: neither the film seed nor the legacy vault has one`);
+			// one in a world the camera has is rendered there instead
+			if (!shootable(w.shot.spec)) console.warn(`world proxy of ${w.shot.name}: neither the film seed nor the legacy vault has one`);
 			continue;
 		}
 		const [b] = /** @type {{ entry: string | null, error: string | null }[]} */ (await command('studio_import', { vault, hashes: [hash], actor: as, tags: ['media:proxy', proxyTag(w.shot.id, w.shot.version)] }));

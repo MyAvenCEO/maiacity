@@ -43,3 +43,14 @@ test("a brought film's legacy proxy is taken by the proxy rule while its journey
 	const ctx = { world, entry: (/** @type {string} */ id) => world.entries.find((e) => e.entry === id) };
 	expect(await NATIVE.proxy(task, ctx)).toEqual({ outputs: ['p'], result: { profile: 'apple-log', legacy: true } });
 });
+
+test("a world shot's proxy brought before its render ran is taken by the world-proxy rule", async () => {
+	const { NATIVE } = await import('./jobs/executors.js');
+	const v = { entry: 'v2', vault: 'V', type: 'shot', record: { shot: 's1', version: 2 } };
+	const p = { entry: 'p', vault: 'V', type: 'file', tags: ['media:proxy', 'proxy:shot:s1:2'] };
+	const older = { entry: 'q', vault: 'V', type: 'file', tags: ['media:proxy', 'proxy:shot:s1:1'] };
+	const world = { entries: [v, older, p] };
+	const task = { rule: 'world-proxy', inputs: [{ entry: 'v2' }], params: '{}' };
+	const ctx = { world, entry: (/** @type {string} */ id) => world.entries.find((e) => e.entry === id) };
+	expect(await NATIVE['world-proxy'](task, ctx)).toEqual({ outputs: ['p'], result: { shot: 'shot:s1', shotVersion: 2, legacy: true } });
+});
