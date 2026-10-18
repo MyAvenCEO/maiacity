@@ -20,7 +20,7 @@ use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::KeyFam;
 use crate::lab::Lab;
 use crate::lens::{DocV1, Lane, Lens, Schema, Status, View};
-use crate::policy::{Entry, Issued, KeepMode, Kind, Level, Principal, Share, State, Vault, Who};
+use crate::policy::{Entry, Issued, KeepMode, Kind, Level, Line, Principal, Share, State, Vault, Who};
 use crate::rules;
 use crate::sealed::{FileRoot, PIECE};
 use crate::slice::{LENS_TYPE, Selector, Slice};
@@ -943,7 +943,11 @@ fn everyone_reads(st: &State, en: &Entry) -> bool {
 /// names in its vault's lane, the newest, as the ops engine's `get` reads it (`engine::own`), each field it leaves out
 /// at its default: so a view of v1 reads as one of v2, as the schema it names says. With its kind, and whether it is
 /// deleted (`DELETED`). None where `me` opens none of it, or no schema reads it. `vaults` holds each vault's lane and
-/// name, read once however many of its entries are shown.
+/// name, read once however many of its entries are shown. An entry whose writes bring files more than once, as an
+/// asset's versions and variants do, each a record and its file in one write (`Lab::brought`), lists each of them
+/// too (`brought`): `{edit, line, version, files, record}`, the line whose history holds it (`null` for main's), the
+/// version of main it belongs to (`engine::main_version`), the files it brings, as `files` lists them, and the record
+/// at it, read as the entry's own is: so a reader finds every version of it, and its file by its root.
 fn public_row(
     lab: &Lab,
     me: SignerId,
@@ -967,7 +971,7 @@ fn public_row(
     let kind = app.kind()?.to_string();
     let tags = record.get("tags").and_then(Value::as_array);
     let deleted = tags.is_some_and(|ts| ts.iter().any(|t| t.as_str() == Some(DELETED)));
-    let row = json!({
+    let mut row = json!({
         "entry": en.id.to_hex(),
         "vault": en.vault.to_hex(),
         "name": name,
@@ -980,6 +984,22 @@ fn public_row(
         "record": record,
         "files": lab.line_files(me, en.id, MAIN).into_iter().filter_map(file_json).collect::<Vec<_>>(),
     });
+    let brought = lab.brought(me, en.id);
+    if brought.len() > 1 {
+        let version = |(edit, line, files): (EditId, Line, Vec<(FileRoot, Option<u64>)>)| {
+            let item = history.item_at(&[edit], me, line);
+            let stored = item.record();
+            let record = engine::own(lane, &stored).and_then(|app| lane.view(&app, &item.authored()).0.get(&stored));
+            json!({
+                "edit": edit.to_hex(),
+                "line": line.map(|b| b.to_hex()),
+                "version": engine::main_version(history, edit, line),
+                "files": files.into_iter().filter_map(file_json).collect::<Vec<_>>(),
+                "record": record,
+            })
+        };
+        row["brought"] = brought.into_iter().map(version).collect();
+    }
     Some((kind, deleted, row))
 }
 

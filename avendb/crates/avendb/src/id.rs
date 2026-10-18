@@ -1,7 +1,8 @@
 //! Ids, all 32 bytes. A signer is named by the hash of its keys. Everything an edit creates is named by that edit's
-//! id, the hash of the signed edit: a vault by its genesis, a share by the edit that issued it. An entry's id is drawn
-//! at random by whoever creates it. An audience, the entries of a vault that the same shares select, is named by the
-//! hash of its vault and its shares (`AudienceId::of`).
+//! id, the hash of the signed edit: a vault by its genesis, a share by the edit that issued it. An entry is named by the
+//! hash of its vault, its creator and a nonce its creation carries (`EntryId::of`), as its creation seals its content
+//! under a key its id names. An audience, the entries of a vault that the same shares select, is named by the hash of
+//! its vault and its shares (`AudienceId::of`).
 
 macro_rules! ids {
     ($($(#[$doc:meta])* $name:ident),* $(,)?) => {$(
@@ -71,7 +72,8 @@ ids! {
     SignerId,
     /// A human, coop or aven vault: the id of its genesis edit.
     VaultId,
-    /// One entry of a vault, a note or a todo: 32 random bytes its creator draws.
+    /// One entry of a vault, a note or a todo: the hash of its vault, its creator and its creation's nonce
+    /// (`EntryId::of`).
     EntryId,
     /// A share: the id of the edit that issued it.
     ShareId,
@@ -103,6 +105,17 @@ impl From<EditId> for ShareId {
     }
 }
 
+impl EntryId {
+    /// The id of the entry signer `creator` creates in vault `v` with the nonce `nonce` (`policy::Creation`), which
+    /// every peer checks as it verifies the creation (`sign::Signed::verify`): so an id names its vault and its
+    /// creator, and nobody creates an entry under the id of another signer's, in any vault.
+    pub fn of(v: VaultId, creator: SignerId, nonce: &[u8; 32]) -> EntryId {
+        let mut h = crate::hash::Hasher::new("entry id");
+        h.update(&v.0).update(&creator.0).update(nonce);
+        EntryId(h.finalize())
+    }
+}
+
 impl AudienceId {
     /// The id of the audience of vault `v` that the shares `shares` select, given in canonical order
     /// (`policy::mk_audience`): the hash of the vault and the shares, so two peers name one audience alike and no relay
@@ -128,6 +141,15 @@ mod tests {
         assert_eq!(VaultId::from_u64(258).0[30..], [1, 2]);
         assert_eq!(format!("{:?}", EditId::from_u64(7)), "EditId(7)");
         assert_eq!(format!("{:?}", EditId([0xab; 32])), "EditId(abababab…)");
+    }
+
+    #[test]
+    fn an_entry_id_names_its_vault_its_creator_and_its_nonce() {
+        let (v, w, a, b) = (VaultId::from_u64(1), VaultId::from_u64(2), SignerId::from_u64(1), SignerId::from_u64(2));
+        let ids = [EntryId::of(v, a, &[0; 32]), EntryId::of(w, a, &[0; 32]), EntryId::of(v, b, &[0; 32])];
+        let ids = [ids[0], ids[1], ids[2], EntryId::of(v, a, &[1; 32])];
+        assert!(ids.iter().enumerate().all(|(i, x)| ids[i + 1..].iter().all(|y| x != y)));
+        assert_eq!(EntryId::of(v, a, &[0; 32]), ids[0]);
     }
 
     #[test]

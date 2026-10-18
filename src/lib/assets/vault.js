@@ -140,7 +140,8 @@ const holds = (bytes, hash) => bytes instanceof Uint8Array && bytesToHex(blake3(
 
 /**
  * How a row's file is read: this device's copy of it, where it keeps one that hashes to the recipe's hash (`kept`);
- * otherwise the newest its entry brings (the feed lists them oldest first), from the feed beside the rows, whole, as
+ * otherwise the newest its entry brings (the feed lists them oldest first), or for one version of an asset's entry,
+ * the file of its own write (./sources/avendb.js `versionsOf`), by its root, from the feed beside the rows, whole, as
  * bytes, so its hash is of the bytes the server holds, kept on the device once it hashes to the recipe's. Refused,
  * saying why, where its entry brings none or one larger than a recipe may be. Either way ./sources/avendb.js holds
  * what it hands out to the ref's hash, version and variant.
@@ -152,7 +153,7 @@ const readerOf = (get, feed, kept) => async (row) => {
 	const file = Array.isArray(row?.files) ? row.files.at(-1) : undefined;
 	if (!file) throw new Error('its entry brings no file');
 	if (typeof file.len === 'number' && file.len > MOST) throw new Error(`its file is ${file.len.toLocaleString('en')} bytes, more than a recipe may be (${MOST.toLocaleString('en')})`);
-	const url = fileOf(row.vault, row.entry, feed);
+	const url = fileOf(row.vault, row.entry, feed, row.edit ? file.root : undefined);
 	const ctl = new AbortController();
 	const t = setTimeout(() => ctl.abort(), TIMEOUT.file);
 	try {

@@ -84,11 +84,13 @@ export function answer(out) {
 
 /**
  * Op `op` of a list run one after another, each `"$n"` in it the entry op n of the list created, by the answers of
- * those before it, `done` (as a flow's move names the post its function creates, ./flows.js).
+ * those before it, `done` (as a flow's move names the post its function creates, ./flows.js), and each `"$n.line"` the
+ * line it started (a proposal's or a variant's).
  * @param {any} op @param {any[]} done @returns {any}
  */
 export function refs(op, done) {
-	if (typeof op === 'string' && /^\$\d+$/.test(op)) return done[Number(op.slice(1))]?.entry ?? op;
+	const ref = typeof op === 'string' ? /^\$(\d+)(\.line)?$/.exec(op) : null;
+	if (ref) return done[Number(ref[1])]?.[ref[2] ? 'line' : 'entry'] ?? op;
 	if (Array.isArray(op)) return op.map((x) => refs(x, done));
 	if (op && typeof op === 'object') return Object.fromEntries(Object.entries(op).map(([k, v]) => [k, refs(v, done)]));
 	return op;

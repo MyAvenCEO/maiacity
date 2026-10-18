@@ -190,7 +190,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "revoke" => &["share", "vault", "owner", "device", "standing", "as"],
         "settings" => &["vault", "threshold", "root"],
         "found" => &["vaults", "kind", "name"],
-        "put_file" => &["vault", "entry", "name", "media", "tags", "len", "as"],
+        "put_file" => &["vault", "entry", "line", "value", "schema", "name", "media", "tags", "len", "as"],
         "back_up" => &["on"],
         "mark" => &["entry"],
         "card" => &["name"],
@@ -915,6 +915,19 @@ pub fn line_name(h: &History, line: Line) -> Option<String> {
 pub fn described(h: &History, line: Line, heads: &[EditId]) -> Value {
     let d = h.describe(line, heads);
     json!({ "version": d.version, "edits": d.edits })
+}
+
+/// Which version of main write `edit` of entry history `h` belongs to, where it is in the history of line `line`, main
+/// or a variant (`Lab::brought`): of main's, the first release of main that holds it, its creation or the merge that
+/// took in the proposal it was made on; of a variant's, the release of main it holds (`History::describe`), as the
+/// variant follows main. `null` for none.
+pub fn main_version(h: &History, edit: EditId, line: Line) -> Value {
+    let holds = |r: &history::Release| h.version(&[r.edit]).iter().any(|c| c.write.edit == edit);
+    let version = match line {
+        None => h.releases(MAIN).iter().find(|r| holds(r)).map(|r| r.version),
+        Some(_) => h.describe(MAIN, &[edit]).version,
+    };
+    json!(version)
 }
 
 /// The releases of `line` (`History::releases`), each `{edit, version}`, oldest first.

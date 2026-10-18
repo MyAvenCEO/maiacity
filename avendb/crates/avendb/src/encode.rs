@@ -4,17 +4,20 @@
 //! byte is the format's version, so a later format can live beside this one.
 
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
-use crate::policy::{Action, Edit, KeepMode, Kind, Level, Principal, Proposal, Revoking, Setting, Share, Sharing, Who};
+use crate::policy::{
+    Action, Creation, Edit, KeepMode, Kind, Level, Principal, Proposal, Revoking, Setting, Share, Sharing, Who,
+};
 use crate::rules::{Grant, On, Op, Proof, Scalar, Step};
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 
-/// The version byte every edit starts with: 10 since every id is a BLAKE3 hash, so avenDB starts afresh (9 since every
+/// The version byte every edit starts with: 11 since a write that creates its entry carries the nonce its id is the
+/// hash of (`policy::Creation`), so avenDB starts afresh (10 since every id is a BLAKE3 hash, 9 since every
 /// signature on an edit is SLH-DSA alone, a passkey's with its WebAuthn assertion beside it, and checkpoints are gone,
 /// 8 since the v8 kinds, 7 since every human vault is founded with the master recovery key among its owners, 6 since
 /// shares are named groups of ops, 5 since flat vaults, 4 since the three kinds of vault, 3 since P5, whose writes name
 /// the line of history they extend, 2 since P4b, whose ids were SHA-3 hashes until 10).
-pub const VERSION: u8 = 10;
+pub const VERSION: u8 = 11;
 
 /// An edit's id: the BLAKE3 hash of its bytes, the name iroh-blobs gives them (`hash::content`).
 pub(crate) fn edit_id(edit: &Edit) -> [u8; 32] {
@@ -553,6 +556,14 @@ impl Encode for Share {
     }
 }
 
+/// Its audience, then its nonce.
+impl Encode for Creation {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.audience.as_slice().encode(out);
+        self.nonce.encode(out);
+    }
+}
+
 impl Encode for Proposal {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
@@ -673,7 +684,7 @@ impl Encode for Action {
                 deps.encode(out);
                 proposal.encode(out);
                 via.encode(out);
-                create.as_deref().encode(out);
+                create.encode(out);
                 files.encode(out);
                 body.encode(out);
             }
@@ -720,11 +731,15 @@ mod tests {
         Edit { parents: vec![], depth: 0, author: SignerId::from_u64(1), cosigners: vec![], action }
     }
 
-    fn write(stay: Option<EditId>, proposal: Proposal, via: Vec<VaultId>, create: Option<Vec<ShareId>>) -> Edit {
+    fn write(stay: Option<EditId>, proposal: Proposal, via: Vec<VaultId>, create: Option<Creation>) -> Edit {
         let (vault, entry, actor) = (VaultId::from_u64(1), EntryId::from_u64(1), VaultId::from_u64(1));
         let (deps, files, body) = (vec![], vec![], vec![]);
         let action = Action::Write { vault, entry, actor, stay, epoch: 0, deps, proposal, via, create, files, body };
         Edit { action, ..genesis(0) }
+    }
+
+    fn created(audience: Vec<ShareId>, nonce: u8) -> Creation {
+        Creation { audience, nonce: [nonce; 32] }
     }
 
     fn distinct(ids: &[[u8; 32]]) -> bool {
@@ -763,7 +778,7 @@ mod tests {
     }
 
     #[test]
-    fn a_writes_line_stay_and_audience_change_its_id() {
+    fn a_writes_line_stay_audience_and_nonce_change_its_id() {
         let (a, b) = (EditId::from_u64(1), EditId::from_u64(2));
         let main = |stay| write(stay, Proposal::Main, vec![], None);
         let ids = [
@@ -773,8 +788,9 @@ mod tests {
             edit_id(&write(None, Proposal::New, vec![], None)),
             edit_id(&write(None, Proposal::On(a), vec![], None)),
             edit_id(&write(None, Proposal::On(b), vec![], None)),
-            edit_id(&write(None, Proposal::Main, vec![], Some(vec![]))),
-            edit_id(&write(None, Proposal::Main, vec![], Some(vec![ShareId::from_u64(1)]))),
+            edit_id(&write(None, Proposal::Main, vec![], Some(created(vec![], 0)))),
+            edit_id(&write(None, Proposal::Main, vec![], Some(created(vec![ShareId::from_u64(1)], 0)))),
+            edit_id(&write(None, Proposal::Main, vec![], Some(created(vec![], 1)))),
         ];
         assert!(distinct(&ids));
     }

@@ -16,8 +16,9 @@
  * as they are.
  *
  * THE MAIA CITY VAULT'S RECIPES (`vaultRecipes`, V5 of the avenDB migration): a page will resolve a repo ref
- * (`plants/apple@2`) from the vault's `recipe` entries alone, one per version or variant (`recipeEntryOf`), and a
- * recipe's source from its entry's file, held to the hash its ref names. There is no repo fallback (Samuel 2026-10-17):
+ * (`plants/apple@2`) from the vault's `recipe` entries alone, one per asset, each version and variant a record of it
+ * (`recipeEntryOf`) written with its file (`versionsOf`), and a recipe's source from that file, held to the hash its
+ * ref names. There is no repo fallback (Samuel 2026-10-17):
  * what the vault doesn't hold, or holds otherwise, fails, naming the ref (`NotInVault`). Where the rows and their files
  * come from is the caller's, the server's feed or the person's device; nothing reads them yet, until avenDB's feed
  * serves a recipe entry's file and the seed has written them.
@@ -190,17 +191,42 @@ function recipeOfRow(row) {
 	const e = r.engine ?? {};
 	if (card.engine !== LATEST.v || e.host !== 'box' || e.version !== LATEST.v || e.hash !== LATEST.blake3)
 		return no(`made for ${e.host ?? '?'} engine ${e.version ?? '?'} (${String(e.hash ?? '?').slice(0, 12)}…), its card for ${card.engine}: pages run box engine ${LATEST.v} (${LATEST.blake3.slice(0, 12)}…)`);
-	// a kind's first variant: the one its ref names where it names no variant
-	const first = card.variant && tags.includes(refTag(refOf(card.group, card.id, card.version))) ? card.variant : undefined;
+	// a kind's first variant: the one its ref names where it names no variant, on its entry's main line where it is one
+	// version of an entry of the asset's (`versionsOf`), as a variant's own line is beside it
+	const onMain = row.line === null || row.line === undefined;
+	const first = card.variant && onMain && tags.includes(refTag(refOf(card.group, card.id, card.version))) ? card.variant : undefined;
 	return { hash: card.recipe, label, card, ...(first ? { first } : {}) };
+}
+
+/**
+ * The rows one row of the vault stands for: itself, or, where its entry brought files more than once, as an asset's
+ * versions and variants each do (one entry for the asset, each version a record and its file in one write on main or
+ * on a variant's line, avenDB's `Lab::brought`), one row for each: the row with that version's record, its files, its
+ * write (`edit`, its `heads` too), the line whose history holds it (`line`, null for main's) and the version of main
+ * it belongs to (`main`), as the feed (`world::public_row`) and the device (`data::database`) list them (`brought`).
+ * @param {any} row @returns {any[]}
+ */
+export function versionsOf(row) {
+	const brought = Array.isArray(row?.brought) ? row.brought : [];
+	if (!brought.length) return [row];
+	const { brought: _, ...own } = row;
+	return brought.map((/** @type {any} */ b) => ({
+		...own,
+		record: b?.record ?? null,
+		files: Array.isArray(b?.files) ? b.files : [],
+		heads: typeof b?.edit === 'string' ? [b.edit] : [],
+		edit: b?.edit,
+		line: b?.line ?? null,
+		main: b?.version ?? null
+	}));
 }
 
 /**
  * The Maia City vault's recipes as a page will read them, with no repo fallback (V5; Samuel 2026-10-17: what isn't
  * ported fails hard). `rows` are the vault's `recipe` entries as it hands them out, each `{ vault, entry, type, tags,
- * heads, record }` (a row of avenDB's feed, `world::public_row`, or one the person's device reads); `read(row)` hands
- * out a row's file, as bytes or text, from whoever handed out the rows, and is asked only when a build needs that
- * recipe. A row that doesn't check is left out, and why is said (`refused`); a ref two entries claim as two recipes, or
+ * heads, record }` (a row of avenDB's feed, `world::public_row`, or one the person's device reads), an asset's entry
+ * read as one row for each of its versions and variants (`versionsOf`); `read(row)` hands out a row's file, as bytes
+ * or text, from whoever handed out the rows, and is asked only when a build needs that recipe. A row that doesn't check is left out, and why is said (`refused`); a ref two entries claim as two recipes, or
  * a recipe two refs claim, names nothing.
  *
  * It reads as ../recipes.js reads the repo's index: `index`, the shape of `virtual:asset-recipes`; `hashOf(ref)`, the
@@ -226,7 +252,7 @@ export function vaultRecipes(rows, { read }) {
 	const claims = new Map();
 	/** @type {Map<string, Set<string>>} */
 	const labelsOf = new Map();
-	for (const row of Array.isArray(rows) ? rows : []) {
+	for (const row of (Array.isArray(rows) ? rows : []).flatMap(versionsOf)) {
 		const m = recipeOfRow(row);
 		if ('error' in m) {
 			if (m.label) refuse(m.label, m.error);

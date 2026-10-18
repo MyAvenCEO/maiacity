@@ -26,7 +26,10 @@
 //! too, once for the three, and takes what each asks from that. Each row lists the files its entry's main line brings
 //! that every reader counts as the entry's (`files`, `{root, size, len}`, oldest first, `Lab::line_files`), and the
 //! newest of a code entry's is served whole at `GET /feed/entry/<vault>/<entry>/file` (`OF_ENTRY`, `source`): a
-//! recipe's source, say, as plain text that no page runs as a script, which its loader checks against its hash.
+//! recipe's source, say, as plain text that no page runs as a script, which its loader checks against its hash. An
+//! entry whose writes bring files more than once, as an asset's versions and variants each do, lists each of those
+//! writes with the record at it (`brought`, `Lab::brought`), and any file a row lists is served by its root at `GET
+//! /feed/entry/<vault>/<entry>/file/<root>` (`OF_ROOT`).
 
 use std::convert::Infallible;
 use std::net::SocketAddr;
@@ -69,6 +72,11 @@ pub const ENTRY: &str = "/feed/entry/";
 /// Where the newest file of a code entry everyone may read is served, after its entry's place: `ENTRY`
 /// `<vault>/<entry>` `OF_ENTRY` (`source`).
 pub const OF_ENTRY: &str = "/file";
+
+/// Where one file of a code entry everyone may read is served, by its root, after its entry's place: `ENTRY`
+/// `<vault>/<entry>` `OF_ROOT` `<root>`, its root in 64 hex digits (`source`): any of the files its row lists, as an
+/// asset's versions each bring their own (`brought`).
+pub const OF_ROOT: &str = "/file/";
 
 /// The most kinds one query names.
 const MOST_KINDS: usize = 16;
@@ -149,8 +157,8 @@ impl Feed {
 }
 
 /// The answer to `request`: for a GET or HEAD, the feed of `PATH`, a picture of `FILES` (`picture`), the entries of
-/// `ENTRIES` or the code of `CODE` (`listed`), an entry of `ENTRY` (`entry`), or its file (`OF_ENTRY`, `source`);
-/// nothing for a browser's OPTIONS before any of them; and not found for anything else.
+/// `ENTRIES` or the code of `CODE` (`listed`), an entry of `ENTRY` (`entry`), or a file of it (`OF_ENTRY`, `OF_ROOT`,
+/// `source`); nothing for a browser's OPTIONS before any of them; and not found for anything else.
 async fn answer(
     request: Request<Incoming>,
     node: Arc<Node>,
@@ -163,7 +171,10 @@ async fn answer(
     }
     let query = request.uri().query().unwrap_or_default();
     if let Some(at) = path.strip_prefix(ENTRY).and_then(|at| at.strip_suffix(OF_ENTRY)).filter(|_| reads) {
-        return Ok(source(at, query, &node, &feeds.entries).await);
+        return Ok(source(at, None, query, &node, &feeds.entries).await);
+    }
+    if let Some((at, root)) = path.strip_prefix(ENTRY).and_then(by_root).filter(|_| reads) {
+        return Ok(source(at, Some(root), query, &node, &feeds.entries).await);
     }
     let ours = [PATH, ENTRIES, CODE].contains(&path) || path.starts_with(FILES) || path.starts_with(ENTRY);
     let (status, body) = match path.strip_prefix(ENTRY) {
@@ -181,6 +192,12 @@ async fn answer(
     headers.insert(header::ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("GET, HEAD, OPTIONS"));
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=10"));
     Ok(response)
+}
+
+/// Place `at` after `ENTRY` as a file of an entry by its root, `<vault>/<entry>` `OF_ROOT` `<root>`: the entry's place
+/// and the root, as written.
+fn by_root(at: &str) -> Option<(&str, &str)> {
+    at.split_once(OF_ROOT).filter(|(_, root)| !root.contains('/'))
 }
 
 /// What `kept` holds, if the server worked it out a moment ago (`FRESH`), else what `work` works out anew, kept.
@@ -401,9 +418,11 @@ async fn picture(at: &str, node: &Node) -> Response<Full<Bytes>> {
 /// `ENTRY` serves, that the query asks for (`Asked`: `seed=1` keeps Maia City's alone, as ever), whole, as the server
 /// opens it, as plain text (`text/plain; charset=utf-8`, `X-Content-Type-Options: nosniff`), so that no page runs it
 /// as a script, nor takes it for anything else, whatever it holds: a loader checks it against its hash before a
-/// sandboxed host runs it. A bad request for a query it can't read; not found for any other entry, one that brings no
-/// file or whose newest is larger than `LARGEST`; and unavailable while the server can't read its bytes.
-async fn source(at: &str, query: &str, node: &Node, kept: &Kept<Listed>) -> Response<Full<Bytes>> {
+/// sandboxed host runs it. With `root`, of `ENTRY` `at` `OF_ROOT` `root`, the file of that root among those the row
+/// lists (`listed_file`) instead. A bad request for a query it can't read; not found for any other entry, one that
+/// brings no file (or none of that root) or whose file is larger than `LARGEST`; and unavailable while the server can't
+/// read its bytes.
+async fn source(at: &str, root: Option<&str>, query: &str, node: &Node, kept: &Kept<Listed>) -> Response<Full<Bytes>> {
     let asked = match Asked::of(query, false) {
         Ok(asked) => asked,
         Err(why) => return plain(StatusCode::BAD_REQUEST, why),
@@ -415,7 +434,11 @@ async fn source(at: &str, query: &str, node: &Node, kept: &Kept<Listed>) -> Resp
     let listed = entries(node, kept).await;
     let is = |row: &&Value| row["vault"].as_str() == Some(&vault) && row["entry"].as_str() == Some(&entry);
     let row = listed.rows.iter().find(is).filter(|row| of_code(row) && asked.keeps(row));
-    let Some((root, len)) = row.and_then(newest) else {
+    let file = match root {
+        None => row.and_then(newest),
+        Some(root) => row.zip(BlobId::from_hex(root)).and_then(|(row, root)| listed_file(row, root)),
+    };
+    let Some((root, len)) = file else {
         return plain(StatusCode::NOT_FOUND, "no file of an entry everyone may read here");
     };
     let bytes = match node.read_file(root, 0..len).await {
@@ -437,7 +460,22 @@ async fn source(at: &str, query: &str, node: &Node, kept: &Kept<Listed>) -> Resp
 /// The newest file of row `row` (`world::public_entries`), as the feed serves it (`source`): the last of its `files`,
 /// its root and plaintext length, where it is at most `LARGEST` bytes.
 fn newest(row: &Value) -> Option<(FileRoot, u64)> {
-    let file = row["files"].as_array()?.last()?;
+    served(row["files"].as_array()?.last()?)
+}
+
+/// The file of root `root` among those row `row` lists (`world::public_entries`), as the feed serves it (`source`): of
+/// its `files`, or of a version it brought (`brought`, each with its `files`), its root and plaintext length, where it
+/// is at most `LARGEST` bytes.
+fn listed_file(row: &Value, root: BlobId) -> Option<(FileRoot, u64)> {
+    let versions = row["brought"].as_array().into_iter().flatten().map(|b| &b["files"]);
+    let lists = std::iter::once(&row["files"]).chain(versions).filter_map(Value::as_array);
+    let root = root.to_hex();
+    lists.flatten().find(|f| f["root"].as_str() == Some(root.as_str())).and_then(served)
+}
+
+/// File `file` of a row, `{root, size, len}`, as the feed serves it: its root and plaintext length, where the server
+/// opens it (`len`) and it is at most `LARGEST` bytes.
+fn served(file: &Value) -> Option<(FileRoot, u64)> {
     let hash = BlobId::from_hex(file["root"].as_str()?)?.0;
     let (size, len) = (file["size"].as_u64()?, file["len"].as_u64()?);
     (len <= LARGEST).then_some((FileRoot { hash, size }, len))
@@ -480,5 +518,20 @@ mod tests {
         assert_eq!(newest(&json!({ "type": "recipe" })), None, "no files at all");
         let unopened = json!({ "files": [{ "root": a, "size": 100, "len": null }] });
         assert_eq!(newest(&unopened), None, "none the server opens");
+    }
+
+    /// A file of a row by its root is any its row lists, of its main line's or of a version it brought, and no other.
+    #[test]
+    fn a_rows_file_by_its_root_is_one_it_lists() {
+        let (a, b, c) = ("ab".repeat(32), "cd".repeat(32), "ef".repeat(32));
+        let id = |hex: &str| BlobId::from_hex(hex).expect("a root");
+        let root = |hex: &str, size| FileRoot { hash: id(hex).0, size };
+        let mut versions = row(&[(&a, 100, 40)]);
+        let variant = json!({ "edit": c, "line": c, "files": [{ "root": b, "size": 200, "len": 120 }] });
+        versions["brought"] = json!([{ "edit": a, "line": null, "files": versions["files"].clone() }, variant]);
+        assert_eq!(listed_file(&versions, id(&a)), Some((root(&a, 100), 40)), "one of main's");
+        assert_eq!(listed_file(&versions, id(&b)), Some((root(&b, 200), 120)), "one a variant brought");
+        assert_eq!(listed_file(&versions, id(&c)), None, "none it lists");
+        assert_eq!(listed_file(&row(&[(&a, 100, 40)]), id(&b)), None, "a row that brought no versions");
     }
 }

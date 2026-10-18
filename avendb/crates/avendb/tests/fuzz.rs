@@ -17,7 +17,7 @@ use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId
 use avendb::keys::{self, KeyBox, KeyFam, KeyName, Recipient, SeededRng, Secret};
 use avendb::lens::example::{self, DOCUMENT_V0, TODO_V0};
 use avendb::lens::{BlockV1, Lane, Lens, Schema, TypeV1, View, DOCUMENT_V1, TODO_V1};
-use avendb::policy::{Action, Edit, KeepMode, Level, Proposal, Revoking, Share, Sharing, Who};
+use avendb::policy::{Action, Creation, Edit, KeepMode, Level, Proposal, Revoking, Share, Sharing, Who};
 use avendb::rules::{Grant, On, Op, Proof, Scalar, Step};
 use avendb::sign::{Assertion, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, WebAuthn};
 use avendb::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
@@ -117,10 +117,16 @@ fn a_changed_box_opens_to_nothing() {
     }
 }
 
-/// Alice's and Bob's vaults, and the door todo in Alice's.
+/// Alice's and Bob's vaults, and the door todo in Alice's, which her device creates with the nonce `DOOR_NONCE`.
 const ALICE: VaultId = VaultId::from_u64(100);
 const BOB: VaultId = VaultId::from_u64(101);
-const DOOR: EntryId = EntryId::from_u64(21);
+const DOOR_NONCE: [u8; 32] = [21; 32];
+
+/// The door's id: the hash of Alice's vault, her device that creates it and its nonce.
+fn door() -> EntryId {
+    static ONE: OnceLock<EntryId> = OnceLock::new();
+    *ONE.get_or_init(|| EntryId::of(ALICE, DeviceKey::from_secret([7; 32]).id(), &DOOR_NONCE))
+}
 
 /// What the sealed parts of `signed_edits` open with: the key of the door in its first stay, under which its writes
 /// are encrypted, and the current seeds of Alice's and Bob's vaults, to which the share's selector key is wrapped.
@@ -283,21 +289,21 @@ fn signed_edits() -> Edits {
     let (audience, main) = (vec![ShareId::from_u64(8), ShareId::from_u64(9)], Proposal::Main);
     let create = Action::Write {
         vault: ALICE,
-        entry: DOOR,
+        entry: door(),
         actor: ALICE,
         stay: None,
         epoch: 1,
         deps: vec![],
         proposal: main,
         via: vec![],
-        create: Some(audience),
+        create: Some(Creation { audience, nonce: DOOR_NONCE }),
         files: vec![],
         body: vec![],
     };
     let create = by_device(seal_body(edit(2, create), &door_created(), &k.door, &mut rng));
     let write = Action::Write {
         vault: ALICE,
-        entry: DOOR,
+        entry: door(),
         actor: ALICE,
         stay: None,
         epoch: 1,
@@ -315,7 +321,7 @@ fn signed_edits() -> Edits {
     let share = by_device(edit(4, Action::Share(Sharing::Grant(share, vec![]))));
     let keep = vec![create.edit.id(), write.edit.id()];
     let (caps, wants) = (Some(vec![ShareId::from_u64(9)]), Some(vec![ShareId::from_u64(5)]));
-    let marked = by_device(edit(5, Action::Mark { vault: ALICE, entry: DOOR, caps, wants, keep, via: vec![] }));
+    let marked = by_device(edit(5, Action::Mark { vault: ALICE, entry: door(), caps, wants, keep, via: vec![] }));
     let (who, level) = (Who::Device(device.id()), Level::Keep(KeepMode::Whole));
     let mut keep = Share { over: BOB, who, level, wide: false, select: vec![], parent: None, issuer: ALICE, nonce: 3 };
     keep.select = seal_select(&keep, &proxies(), &k, &mut rng);
@@ -324,7 +330,7 @@ fn signed_edits() -> Edits {
     let revoked = Revoking::Grant { share: share_id, actor: ALICE, keep: vec![], via: vec![] };
     let revoked = by_device(edit(7, Action::Revoke(revoked)));
     let wants = Some(vec![ShareId::from_u64(5), ShareId::from_u64(6)]);
-    let wanted = Action::Mark { vault: ALICE, entry: DOOR, caps: None, wants, keep: vec![], via: vec![] };
+    let wanted = Action::Mark { vault: ALICE, entry: door(), caps: None, wants, keep: vec![], via: vec![] };
     let wanted = by_device(edit(8, wanted));
     Edits { add, create, write, share, marked, keep, revoked, wanted }
 }
@@ -459,9 +465,12 @@ fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
                     }
                     6 => via.push(vault(g)),
                     7 => match create {
-                        Some(audience) if g.below(2) == 0 => audience.push(share(g)),
-                        Some(_) => *create = None,
-                        None => *create = Some(vec![]),
+                        Some(c) => match g.below(3) {
+                            0 => c.audience.push(share(g)),
+                            1 => c.nonce[g.below(32)] ^= 1 << g.below(8),
+                            _ => *create = None,
+                        },
+                        None => *create = Some(Creation { audience: vec![], nonce: [0; 32] }),
                     },
                     _ => *body = mutate(g, body),
                 }
@@ -686,7 +695,7 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     ask.haves.insert(LogId::Vault(ALICE), vec![EditId::from_u64(1), EditId::from_u64(2)]);
     ask.haves.insert(LogId::Share(ShareId::from_u64(12)), vec![]);
     ask.haves.insert(audience, vec![EditId::from_u64(4)]);
-    ask.haves.insert(LogId::Entry(DOOR), vec![EditId::from_u64(5), EditId::from_u64(6)]);
+    ask.haves.insert(LogId::Entry(door()), vec![EditId::from_u64(5), EditId::from_u64(6)]);
     ask.loose = vec![EditId::from_u64(7), EditId::from_u64(9)];
     ask.follow = vec![ALICE.min(BOB), ALICE.max(BOB)];
     wire_mutations(&mut g, &ask, 3000, |_| {});
@@ -701,7 +710,7 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
             assert!(edit.verify().is_err(), "{edit:?}");
         }
     });
-    let logs = [LogId::Vault(ALICE), LogId::Share(ShareId::from_u64(12)), audience, LogId::Entry(DOOR)];
+    let logs = [LogId::Vault(ALICE), LogId::Share(ShareId::from_u64(12)), audience, LogId::Entry(door())];
     let frontier = |n: u64| Frontier { heads: vec![EditId::from_u64(n)], waiting: vec![EditId::from_u64(n + 10)] };
     let logs = logs.into_iter().zip(1..).map(|(l, n)| (l, frontier(n))).collect();
     let (one, film) = (FileRoot { hash: [1; 32], size: 16 }, FileRoot { hash: [2; 32], size: 3 * PIECE });

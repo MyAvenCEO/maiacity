@@ -17,7 +17,9 @@ use std::collections::BTreeMap;
 use crate::encode::{Encode, VERSION};
 use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
-use crate::policy::{Action, Edit, KeepMode, Kind, Level, Principal, Proposal, Revoking, Setting, Share, Sharing, Who};
+use crate::policy::{
+    Action, Creation, Edit, KeepMode, Kind, Level, Principal, Proposal, Revoking, Setting, Share, Sharing, Who,
+};
 use crate::recovery::RecoveryKey;
 use crate::rules::{Grant, On, Op, Proof, Scalar, Step, MAX_GRANTS, MAX_NAME, MAX_OPS, MAX_STEPS, MAX_VALUES};
 use crate::sealed::{Brought, FileKey, FileRoot};
@@ -705,6 +707,12 @@ impl Decode for Share {
     }
 }
 
+impl Decode for Creation {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(Creation { audience: r.seq(32)?, nonce: r.array()? })
+    }
+}
+
 impl Decode for Proposal {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
@@ -778,7 +786,7 @@ impl Decode for Action {
                 deps: r.seq(32)?,
                 proposal: Proposal::decode(r)?,
                 via: r.seq(32)?,
-                create: r.option_seq(32)?,
+                create: r.option()?,
                 files: r.set(40)?,
                 body: r.bytes()?,
             },

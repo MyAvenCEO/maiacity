@@ -5,7 +5,9 @@
 //! brought into an entry, as its readers count a file as the entry's (`Lab::line_files`), so a Suggester, who writes
 //! on proposals alone, brings none into main. Whoever reads the entry opens its file, and its record reads as it would
 //! without one. Alice keeps recipes, as Maia City does: Carol is an Editor of them, Bob a Viewer, Dave a Suggester, and
-//! a Public share picks them, so the server's feed lists each with its files.
+//! a Public share picks them, so the server's feed lists each with its files. An asset is one entry: each version a
+//! record and its file in one write, on a proposal merged into main, and each variant a line beside main that follows
+//! it (`put_file` with a `line` and a `value`, `Lab::bring_on`), which the feed lists one by one (`Lab::brought`).
 
 use avendb::cast::{self, World};
 use avendb::engine;
@@ -234,7 +236,8 @@ fn put_file_brings_a_file_into_an_entry_as_its_setters_alone_do() {
     let writes = g.writes(carol, e);
     assert_eq!(writes.len(), 2, "one write more: {writes:?}");
     assert_eq!((&writes[1].0, &writes[1].1, writes[1].2), (&edit, &Value::Null, true), "on main, counted");
-    // Alice brings a third, her own vault's
+    // Alice brings a third, her own vault's, once she holds Carol's: so it comes after it in every order
+    g.w.lab.sync_all(2);
     let third = source("lod1 ");
     let (three, three_len) = (third.root, third.len);
     ok(engine::put_file(&mut g.w.lab, mac, &into(three_len, alice), third));
@@ -265,7 +268,10 @@ fn put_file_brings_a_file_into_an_entry_as_its_setters_alone_do() {
         (json!({ "op": "put_file", "entry": e.to_hex(), "tags": ["x"], "len": 1 }), "BadOp"),
         (json!({ "op": "put_file", "entry": e.to_hex(), "name": 3, "len": 1 }), "BadOp"),
         (json!({ "op": "put_file", "entry": e.to_hex() }), "BadOp"),
-        (json!({ "op": "put_file", "entry": e.to_hex(), "len": 1, "line": edit }), "BadOp"),
+        (json!({ "op": "put_file", "entry": e.to_hex(), "len": 1, "line": edit }), "NoEntry"),
+        (json!({ "op": "put_file", "entry": e.to_hex(), "len": 1, "value": [1] }), "BadOp"),
+        (json!({ "op": "put_file", "entry": e.to_hex(), "len": 1, "schema": "recipe" }), "BadOp"),
+        (json!({ "op": "put_file", "vault": alice.to_hex(), "name": "x", "len": 1, "line": edit }), "BadOp"),
         (json!({ "op": "put_file", "entry": "cd".repeat(32), "len": 1 }), "NoEntry"),
         (json!({ "op": "put_file", "entry": "nobody", "len": 1 }), "BadOp"),
     ];
@@ -284,4 +290,97 @@ fn put_file_brings_a_file_into_an_entry_as_its_setters_alone_do() {
     let library = json!({ "op": "put_file", "vault": alice.to_hex(), "name": "Lamp.jpg", "len": picture.len });
     let picture = entry_id(&ok(engine::put_file(&mut g.w.lab, mac, &library, picture)));
     assert_eq!(g.writes(mac, picture).len(), 2, "a file entry, then the write that brings its bytes");
+}
+
+/// An asset is one entry, as the seed writes one: its first version a creation with its file, each later one a proposal
+/// whose one write sets the record and brings the file (`put_file` with a `line` and a `value`, `Lab::bring_on`),
+/// merged into main, and a variant a line beside main whose own write does the same once it follows main. The feed's
+/// row lists each such write with the record at it and the version of main it belongs to (`brought`, `Lab::brought`),
+/// main's first, and its newest file is main's. Dave, a Suggester, proposes a version with its file, which counts as
+/// the entry's once Alice merges it into main.
+#[test]
+fn an_assets_versions_and_variants_are_one_entry() {
+    let mut g = gate();
+    let (mac, alice, dave, daves_vault) = (g.mac, g.alice, g.w.mac_d, g.w.dave);
+    let card = |label: &str, version: u64| {
+        let mut r = recipe(label);
+        r["card"]["version"] = json!(version);
+        r
+    };
+    let first = source("v1 ");
+    let (one, one_len) = (first.root, first.len);
+    let lamp = g.create("Lamp", alice, one_len);
+    let e = entry_id(&ok(engine::put_file(&mut g.w.lab, mac, &lamp, first)));
+    let e_hex = e.to_hex();
+    let at = |line: &Value, value: Value, len: u64, actor: VaultId| {
+        json!({ "op": "put_file", "entry": e_hex, "line": line, "value": value, "len": len, "as": actor.to_hex() })
+    };
+    let start = |w: &mut World, d: SignerId, op: &str, name: &str, actor: VaultId| {
+        let op = json!({ "op": op, "entry": e_hex, "name": name, "as": actor.to_hex() });
+        ok(run(w, d, &op))["line"].clone()
+    };
+    // version 2: a proposal whose one write is its record and its file, merged into main
+    let proposal = start(&mut g.w, mac, "propose", "v2", alice);
+    let second = source("v2 ");
+    let (two, two_len) = (second.root, second.len);
+    let made = ok(engine::put_file(&mut g.w.lab, mac, &at(&proposal, card("Lamp", 2), two_len, alice), second));
+    assert_eq!(made["line"], proposal, "{made}");
+    assert_eq!(g.record(mac, e)["card"]["version"], Value::Null, "main holds version 1 till the merge");
+    assert_eq!(g.w.lab.line_files(mac, e, MAIN), [(one, Some(one_len))]);
+    ok(run(&mut g.w, mac, &json!({ "op": "merge", "entry": e_hex, "from": proposal, "into": null })));
+    assert_eq!(g.record(mac, e)["card"]["version"], json!(2), "main is version 2");
+    assert_eq!(g.w.lab.line_files(mac, e, MAIN), [(one, Some(one_len)), (two, Some(two_len))]);
+    // a variant of it, brass: a line beside main whose one write is its record and its file
+    let variant = start(&mut g.w, mac, "variant", "brass", alice);
+    let brass = source("brass v2 ");
+    let (three, three_len) = (brass.root, brass.len);
+    ok(engine::put_file(&mut g.w.lab, mac, &at(&variant, card("Lamp brass", 2), three_len, alice), brass));
+    // Dave proposes version 3 with its file, as a Suggester may, and never on main; it counts once Alice merges it
+    g.w.lab.sync_all(2);
+    let daves = start(&mut g.w, dave, "propose", "v3", daves_vault);
+    let third = source("v3 ");
+    let (four, four_len) = (third.root, third.len);
+    let op = at(&daves, card("Lamp", 3), four_len, daves_vault);
+    assert_eq!(ok(run(&mut g.w, dave, &json!({ "op": "may", "ops": [op] }))), json!([true]), "on his own proposal");
+    ok(engine::put_file(&mut g.w.lab, dave, &op, third));
+    let on_main = at(&Value::Null, card("Lamp", 3), 1, daves_vault);
+    assert_eq!(refused(&engine::put_file(&mut g.w.lab, dave, &on_main, source("x"))), "NotAllowed");
+    g.w.lab.sync_all(2);
+    let merged = ok(run(&mut g.w, mac, &json!({ "op": "merge", "entry": e_hex, "from": daves, "into": null })));
+    assert_eq!(merged["follows"][0]["line"], variant, "brass follows main: {merged}");
+    let brass = source("brass v3 ");
+    let (five, five_len) = (brass.root, brass.len);
+    ok(engine::put_file(&mut g.w.lab, mac, &at(&variant, card("Lamp brass", 3), five_len, alice), brass));
+    g.w.lab.sync_all(3);
+    let brass_line = variant.as_str().and_then(EditId::from_hex);
+    // each version: its record's label and version, the version of main it belongs to, its file, its line
+    let wants = [
+        ("Lamp", Value::Null, 1, (one, one_len), MAIN),
+        ("Lamp", json!(2), 2, (two, two_len), MAIN),
+        ("Lamp", json!(3), 3, (four, four_len), MAIN),
+        ("Lamp brass", json!(2), 2, (three, three_len), brass_line),
+        ("Lamp brass", json!(3), 3, (five, five_len), brass_line),
+    ];
+    for d in [mac, g.w.phone_a, g.w.mac_b, g.w.mac_c, dave] {
+        let brought = g.w.lab.brought(d, e);
+        let lines: Vec<_> = brought.iter().map(|(_, line, files)| (*line, files.clone())).collect();
+        let want: Vec<_> = wants.iter().map(|w| (w.4, vec![(w.3.0, Some(w.3.1))])).collect();
+        assert_eq!(lines, want, "main's first, then brass's, on {d:?}");
+        assert_eq!(g.record(d, e)["card"]["version"], json!(3), "on {d:?}");
+        let row = g.row(d, e);
+        assert_eq!(list(&row["files"]).last(), Some(&listed(four, four_len)), "main's newest, on {d:?}");
+        let read = |b: &Value| {
+            let card = &b["record"]["card"];
+            let (label, version) = (card["label"].clone(), card["version"].clone());
+            (label, version, b["version"].clone(), b["files"].clone(), b["line"].clone())
+        };
+        let want: Vec<_> = wants
+            .iter()
+            .map(|(label, v, main, (root, len), line)| {
+                let line = line.map_or(Value::Null, |b| json!(b.to_hex()));
+                (json!(label), v.clone(), json!(main), json!([listed(*root, *len)]), line)
+            })
+            .collect();
+        assert_eq!(list(&row["brought"]).iter().map(read).collect::<Vec<_>>(), want, "on {d:?}");
+    }
 }
