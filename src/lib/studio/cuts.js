@@ -148,6 +148,21 @@ export async function listCuts() {
 		.sort((a, b) => (/** @type {any} */ (b).at < /** @type {any} */ (a).at ? -1 : 1));
 }
 
+/**
+ * Every story this device holds, by title: the stories the studio's timelines belong to (a cut's `story` link) are
+ * picked from these; none off the Mac app.
+ * @returns {Promise<{ id: string, vault: string, title: string }[]>}
+ */
+export async function listStories() {
+	const call = await device();
+	if (!call) return [];
+	const world = await worldOf(call);
+	return world.entries
+		.filter((e) => e.type === 'story' && !e.deleted && !(e.tags ?? []).includes(DELETED))
+		.map((e) => ({ id: e.entry, vault: e.vault, title: String(e.title || /** @type {any} */ (e.record)?.title || 'Untitled') }))
+		.sort((a, b) => a.title.localeCompare(b.title, undefined, { numeric: true }));
+}
+
 /** Cut `id` as it is now. @param {string} id @returns {Promise<Timeline>} */
 export async function getCut(id) {
 	const call = await device();
@@ -158,7 +173,8 @@ export async function getCut(id) {
 }
 
 /**
- * A new cut of timeline `t` in the person's home vault (`homeOf`), or in vault `at.vault` acting as `at.as`, tagged
+ * A new cut of timeline `t` in the person's home vault (`homeOf`), or in vault `at.vault` acting as `at.as` (else as
+ * the person acts there), tagged
  * `at.tags`; its schema added first if the vault lacks it.
  * @param {Partial<Timeline>} t @param {{ vault?: string, as?: string, tags?: string[] }} [at]
  */
@@ -166,7 +182,7 @@ export async function createCut(t, at = {}) {
 	const call = await device();
 	if (!call) throw new Error('avenDB is not open in this app.');
 	let world = await worldOf(call);
-	const home = at.vault && at.as ? { vault: at.vault, as: at.as } : homeOf(world);
+	const home = at.vault ? { vault: at.vault, as: at.as ?? asIn(world, at.vault) } : homeOf(world);
 	if (!home) throw new Error('No avenDB vault to keep the cut in.');
 	await schemaIn(call, world, home.vault, CUT_V1, home.as);
 	const tags = at.tags?.length ? { tags: at.tags } : {};
