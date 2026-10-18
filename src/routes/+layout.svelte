@@ -8,6 +8,7 @@
 	import { page } from '$app/state';
 	import { socials } from '$lib/social';
 	import SiteFooter from '$lib/SiteFooter.svelte';
+	import logo from '$lib/images/maiacity-logo.png';
 	import SocialIcon from '$lib/SocialIcon.svelte';
 	import { me } from '$lib/auth/client';
 	import { remember, signedInHere } from '$lib/app/session';
@@ -61,7 +62,7 @@
 	<div class="status-strip" aria-hidden="true"></div>
 	<header class="wrap">
 		<nav>
-			<a class="logo" href="{base || '/'}">maia<strong>CITY</strong></a>
+			<a class="logo" href="{base || '/'}"><img src={logo} alt="" />Maia City</a>
 
 			<ul class="social" aria-label="Follow avenSAMUEL">
 				{#each socials as s (s.id)}
@@ -122,23 +123,32 @@
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;
-		padding: 0.45rem 0.45rem 0.45rem 1.4rem;
+		padding: 0.45rem 0.45rem 0.45rem 0;
 		border-radius: 999px;
 		background: var(--paper);
 		box-shadow: 0 6px 24px rgb(38 56 44 / 0.06);
 	}
 
+	/* the round logo fills the pill's height and sits flush in its round left end */
 	.logo {
-		margin-right: auto;
+		display: flex;
+		align-items: center;
+		gap: 0.7rem;
+		align-self: stretch;
+		margin: -0.45rem auto -0.45rem 0;
 		font-family: var(--font-display);
 		font-size: 1.3rem;
-		font-weight: 300;
+		font-weight: 400;
 		letter-spacing: -0.02em;
 		text-decoration: none;
+		white-space: nowrap;
 	}
 
-	.logo strong {
-		font-weight: 600;
+	/* its size sets the pill's height (the links plus the pill's padding are just under it) */
+	.logo img {
+		width: 3.4rem;
+		height: 3.4rem;
+		border-radius: 50%;
 	}
 
 	ul {
@@ -222,15 +232,21 @@
 	@media (max-width: 760px) {
 		nav {
 			display: grid;
-			grid-template-columns: 1fr auto 1fr;
+			grid-template-columns: auto 1fr auto;
 			gap: 0;
-			padding: 0.4rem 0.4rem 0.4rem 1.1rem;
+			padding: 0.4rem 0.4rem 0.4rem 0;
 			border-radius: 26px;
 		}
 
 		.logo {
-			margin: 0;
+			margin: -0.4rem 0;
+			gap: 0.5rem;
 			font-size: 1.15rem;
+		}
+
+		.logo img {
+			width: 3.3rem;
+			height: 3.3rem;
 		}
 
 		.social {

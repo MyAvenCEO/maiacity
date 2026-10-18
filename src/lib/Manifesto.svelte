@@ -147,7 +147,7 @@
 		<p class="creed">when we unite in vision, the impossible becomes possible.</p>
 		<p class="signature">
 			<img src={asset(SAMUEL)} alt="" />
-			<span>avenSAMUEL</span>
+			<span>Samuel Andert</span>
 		</p>
 	</footer>
 </article>
