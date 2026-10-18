@@ -39,15 +39,20 @@ export function wayBack(label, go) {
 }
 
 /**
- * The place above a page, by its path (without the base): a world's is the Worlds, an asset viewer's avenDB's Assets,
- * everything else's the dashboard, and the dashboard has none.
+ * The place above a page, by its path (without the base) and its hash: a world's is the Worlds, an asset viewer's
+ * avenDB's Assets, everything else's the dashboard, avenDB's views on it too (`/app/#sparks`), and the dashboard itself
+ * (`/app/`, `/app/#home`) has none.
  * @param {string} rel
+ * @param {string} [hash]
  * @returns {{ href: string, label: string } | null}
  */
-export function upFrom(rel) {
-	if (/^\/app\/?$/.test(rel)) return null;
+export function upFrom(rel, hash = '') {
+	if (/^\/app\/?$/.test(rel)) return onDashboard(hash) ? null : { href: `${base}/app/`, label: 'Back to the dashboard' };
 	if (/^\/app\/worlds\/[^/]+\/?$/.test(rel)) return { href: `${base}/app/worlds/`, label: 'Back to the worlds' };
 	// an asset viewer goes back to the assets, which avenDB's Assets app lists (Samuel 2026-10-18)
 	if (ASSET_APPS.test(rel)) return { href: `${base}/app/#assets`, label: 'Back to the assets' };
 	return { href: `${base}/app/`, label: 'Back to the dashboard' };
 }
+
+/** Whether `/app/` with hash `hash` shows the dashboard itself, not one of avenDB's views on it. @param {string} hash */
+export const onDashboard = (hash) => /^#?(home)?$/.test(hash);

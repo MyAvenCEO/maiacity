@@ -25,6 +25,7 @@
 -->
 <script>
 	import { setContext } from 'svelte';
+	import { afterNavigate } from '$app/navigation';
 	import { wayBack } from '$lib/app/back.svelte.js';
 	import { enter } from '$lib/app/immersive.svelte';
 	import { pillContext } from '$lib/app/pill.svelte.js';
@@ -132,6 +133,9 @@
 
 	let route = $state(parse(typeof location === 'undefined' ? '' : location.hash));
 	const tab = $derived(route.page);
+	// a link to the dashboard itself (the nav pill's Home and Back, `/app/` with no hash) is the router's navigation, no
+	// hashchange: the page it leads to is read from the address after every navigation too
+	afterNavigate(() => (route = parse(location.hash)));
 
 	const busy = $derived(!!doing);
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
