@@ -109,11 +109,18 @@
 {/if}
 
 <style>
-	/* pinned to the home screen, the status bar is see-through over the page: the header keeps below it */
+	/* The pill stays on top while the page scrolls under it. Pinned to the home screen, the status bar is see-through
+	   over the page: the header keeps below it. Only the pill takes clicks, not the clear band above it. */
 	header {
-		position: relative;
-		z-index: 2;
+		position: sticky;
+		top: 0;
+		z-index: 10;
 		padding-top: calc(1.25rem + env(safe-area-inset-top, 0px));
+		pointer-events: none;
+	}
+
+	nav {
+		pointer-events: auto;
 	}
 
 	/* Desktop: logo · page links · channels, one pill. The order is set in CSS
