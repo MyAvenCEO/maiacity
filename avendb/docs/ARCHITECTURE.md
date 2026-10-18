@@ -1858,10 +1858,10 @@ is in use; every older one is put aside, never read again. Forgetting a device s
 raises `shelf::FLOOR`, the generation every place is at least: as a place opens, it clears every shelf older than that
 and whatever else an earlier avenDB kept there (`shelf::kept`), and starts empty, the server with a new device key. The
 Mac clears its folder (`disk::clear`), a page its OPFS folder, the server its folder as it starts and its bucket while
-it runs (`bucket::clear`). `FLOOR` is 16 since the last reset (2026-10-18), as the seed writes each skill, the theOS
-paper and the avenDB docs as a story of Maia City with a doc post; 15 before it, as an entry's id is the hash of its
-vault, its creator and its creation's nonce (edit format 11), and each asset is one entry whose versions and variants
-are its history.
+it runs (`bucket::clear`). `FLOOR` is 18 since the last reset (2026-10-18 evening), as Studio 2 stands alone and the
+old studio's media is copied into a fresh Maia City; 17 before it, as the seed is Maia City and avenMAIA, its one aven,
+which lives on the server; 16 before that, as the seed writes each skill, the theOS paper and the avenDB docs as a
+story of Maia City with a doc post.
 
 ### Layout of one generation
 
