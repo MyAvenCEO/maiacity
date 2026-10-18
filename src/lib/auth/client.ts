@@ -318,7 +318,11 @@ export type Timeline = {
 	/** the whole film's look */
 	/** the film's grade above its shots', as stacks of tools: each scene's look (by the scene its clips name), the timeline's look */
 	grade?: { scenes?: Record<string, GradeStack>; timeline?: GradeStack } | null;
+	/** its chapters: named parts of the film, each from its start to the next one's (src/lib/studio/studio.svelte.js) */
+	chapters?: Chapter[];
 };
+/** A chapter of a timeline: where it starts (seconds) and what it is called. */
+export type Chapter = { id: number; at: number; name: string };
 
 export const listTimelines = () => call<Timeline[]>('/api/timelines');
 export const createTimeline = (t: Partial<Timeline>) => call<Timeline>('/api/timelines', { method: 'POST', body: JSON.stringify(t) });

@@ -190,6 +190,24 @@
 		addEventListener('pointerup', up);
 	}
 
+	/** a chapter flag on the ruler: a click goes to it, a drag moves it (on an editable cut)
+	 * @param {PointerEvent} e @param {import('$lib/auth/client').Chapter} c */
+	function moveChapter(e, c) {
+		e.stopPropagation();
+		s.seek(c.at);
+		if (!s.canEdit) return;
+		const x0 = e.clientX;
+		/** @param {PointerEvent} ev */
+		const move = (ev) => {
+			const at = Math.max(0, Math.min(s.span, c.at + (ev.clientX - x0) / s.pxPerSec));
+			s.editChapter(c.id, { at });
+			s.seek(at);
+		};
+		const up = () => (removeEventListener('pointermove', move), removeEventListener('pointerup', up));
+		addEventListener('pointermove', move);
+		addEventListener('pointerup', up);
+	}
+
 	// ── J and L cuts: clips of one track that overlap sit in two lanes, the overlap marked by what it does at the
 	// picture cut in it — J: the next sound comes in before the cut; L: the last one runs on past it; × no cut ─
 	const cuts = $derived(s.clips.filter((c) => c.track === 'V1' && c.start > 0.05).map((c) => c.start));
@@ -534,6 +552,10 @@
 					{#each pics as c, i (c.id)}<span class="tick shot" class:now={nowId === c.id} style:left={left(c)} style:width={width(c)}><b>{i + 1}</b> {clockText(c.start)}</span>{/each}
 				{:else}
 					{#each ticks as t (t)}<span class="tick" style:left={x(t)}>{t}s</span>{/each}
+					{#each s.chapters as c (c.id)}
+						<!-- svelte-ignore a11y_no_static_element_interactions -->
+						<span class="chapter" class:now={s.chapterAt()?.id === c.id} style:left={x(c.at)} title="{c.name}, at {clockText(c.at)}. Click to go there, drag to move." onpointerdown={(e) => moveChapter(e, c)}>{c.name}</span>
+					{/each}
 				{/if}
 			</div>
 			{#each shown as t (t.id)}
@@ -815,6 +837,30 @@
 		font-size: 0.62rem;
 		line-height: 1.5rem;
 		color: var(--dim);
+	}
+
+	/* a chapter: a flag on the ruler, its name beside the line */
+	.chapter {
+		position: absolute;
+		top: 0;
+		height: 100%;
+		max-width: 12rem;
+		padding: 0 5px;
+		overflow: hidden;
+		border-left: 2px solid var(--accent);
+		background: color-mix(in srgb, var(--chrome) 70%, transparent);
+		font-size: 0.62rem;
+		font-weight: 600;
+		line-height: 1.5rem;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		color: var(--ink);
+		cursor: ew-resize;
+		z-index: 1;
+	}
+
+	.chapter.now {
+		background: var(--chosen);
 	}
 
 	.clip {

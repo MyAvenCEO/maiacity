@@ -863,6 +863,40 @@ export class Studio {
 	}
 
 	/**
+	 * The timeline's chapters (Samuel 2026-10-18), in the order they start: each a named part of the film from its
+	 * time `at` to the next one's, as a YouTube film lists them; kept with the cut.
+	 * @returns {import('$lib/auth/client').Chapter[]}
+	 */
+	get chapters() {
+		return [...(this.current?.chapters ?? [])].sort((a, b) => a.at - b.at);
+	}
+	/** @param {import('$lib/auth/client').Chapter[]} list */
+	setChapters(list) {
+		this.setMeta({ chapters: [...list].sort((a, b) => a.at - b.at) });
+	}
+	/** A new chapter starting at `at` (the playhead), on a frame; none where one starts there already. @param {number} [at] @param {string} [name] */
+	addChapter(at = this.time, name = '') {
+		const t = Math.max(0, Math.round(at * 30) / 30);
+		if (!this.current || this.chapters.some((c) => Math.abs(c.at - t) < 1 / 60)) return null;
+		const id = Math.max(0, ...this.chapters.map((c) => c.id)) + 1;
+		this.setChapters([...this.chapters, { id, at: t, name: name || `Chapter ${this.chapters.length + 1}` }]);
+		return id;
+	}
+	/** @param {number} id @param {Partial<import('$lib/auth/client').Chapter>} patch */
+	editChapter(id, patch) {
+		const at = patch.at === undefined ? {} : { at: Math.max(0, Math.round(patch.at * 30) / 30) };
+		this.setChapters(this.chapters.map((c) => (c.id === id ? { ...c, ...patch, ...at, id } : c)));
+	}
+	/** @param {number} id */
+	removeChapter(id) {
+		this.setChapters(this.chapters.filter((c) => c.id !== id));
+	}
+	/** The chapter time `t` is in, or null before the first. @param {number} [t] */
+	chapterAt(t = this.time) {
+		return this.chapters.filter((c) => c.at <= t + 1e-6).at(-1) ?? null;
+	}
+
+	/**
 	 * A first edit to start from: a still, the newest voice take on it, a music bed under it.
 	 * @returns {Promise<Clip[]>}
 	 */
