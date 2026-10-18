@@ -148,7 +148,10 @@ export function startFilm({ base = '' } = {}) {
 				} finally {
 					clearTimeout(slow);
 				}
+				const s0 = performance.now();
 				await settled(v);
+				const took = performance.now() - s0;
+				if (took > 300) console.warn(`film: ${spec.meta?.name ?? 'a shot'}: loads and shaders settled in ${Math.round(took)} ms`);
 			})();
 			const late = limit < Infinity && (await Promise.race([done.then(() => false), sleep(limit).then(() => true)]));
 			if (late) {
