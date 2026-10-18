@@ -39,6 +39,12 @@ const check = (what, ok, found = '') => {
 
 const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
 const page = await browser.newPage();
+// the app's way in ($lib/app/entry.js) lets this tab on without avenDB, whose own page it walks; the vault founded
+// there is named as the person signed up
+await page.evaluateOnNewDocument(() => {
+	sessionStorage.setItem('avendb:later', '1');
+	sessionStorage.setItem('maia:signup', 'Samuel');
+});
 const wide = { width: 1300, height: 1000 };
 // a phone's width: no isMobile, which would load the page again
 const phone = { width: 390, height: 844 };

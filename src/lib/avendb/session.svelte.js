@@ -111,7 +111,7 @@ const unhex = (/** @type {string} */ s) => new Uint8Array((s.match(/../g) ?? [])
  */
 function boot() {
 	if (typeof window === 'undefined') return () => {};
-	booting ??= start();
+	void load();
 	holders += 1;
 	if (phase === 'open') watch();
 	let gone = false;
@@ -121,6 +121,14 @@ function boot() {
 		holders -= 1;
 		if (!holders) watching = null;
 	};
+}
+
+/** Loads this tab's device once, as `boot` does, without holding the session for a page: the app's way in waits for
+ *  it to know whether this browser holds the person's account ($lib/app/entry.js). Never fails. */
+function load() {
+	if (typeof window === 'undefined') return Promise.resolve();
+	booting ??= start();
+	return booting;
 }
 
 async function start() {
@@ -192,13 +200,15 @@ async function ceremonies(/** @type {string | undefined} */ id) {
 	return { passkey, ...passkey.ceremonies(avendb, id) };
 }
 
-/** A sign-in whose passkey roots no vault the other side holds: say which button sets one up. @param {Error} e */
+/** A sign-in whose passkey roots no vault the other side holds: say which button sets one up, and mark it so (`code`
+ *  'no-account'), for the app's way in to set one up instead. @param {Error} e */
 const noAccount = (e) => {
 	if (!/no vault of this passkey/.test(e.message)) throw e;
-	throw new Error(
+	const why = new Error(
 		'This passkey has no account yet: set one up with “Use my maiaCITY passkey”, ' +
 			'or pick the passkey you set yours up with.'
 	);
+	throw Object.assign(why, { code: 'no-account' });
 };
 
 /**
@@ -250,18 +260,26 @@ async function link(through, { name, relay }, { step, device: shown } = QUIET) {
 }
 
 /**
+ * A sign-in to maiaCITY's API in the ceremony that unlocks this browser's account ($lib/app/entry.js): the API's
+ * challenge, base64url, which the unlock is over, and what takes the ceremony's assertion, as the API takes a sign-in.
+ * @typedef {{ challenge: string, finish: (assertion: object) => void }} Login
+ */
+
+/**
  * Opens the account this browser, or the app, holds, in the one ceremony of the passkey that unlocks it, only where it
- * is closed: it shows its steps by `at`, and a second call while it is under way joins it. A store of the device taken
- * out of its vault, or kept before avenDB started fresh, opens nothing: it is put aside, never deleted, the account is
- * new here again, and it fails saying so. Fails with why not.
- * @param {Steps} [at]
+ * is closed: it shows its steps by `at`, and a second call while it is under way joins it. With `login`, the same
+ * ceremony signs the person in to the app too (in a browser: the Mac app signs in with its own key). A store another
+ * tab holds open fails before the passkey is asked (`code` 'held'). A store of the device taken out of its vault, or
+ * kept before avenDB started fresh, opens nothing: it is put aside, never deleted, the account is new here again, and
+ * it fails saying so. Fails with why not.
+ * @param {Steps} [at] @param {Login | null} [login]
  * @returns {Promise<void>}
  */
-function unlock(at = QUIET) {
+function unlock(at = QUIET, login = null) {
 	if (phase !== 'closed') return unlocking ?? Promise.resolve();
 	unlocking ??= (async () => {
 		try {
-			await opening(at);
+			await opening(at, login);
 		} catch (e) {
 			if (!String(/** @type {Error} */ (e)?.message ?? e).includes('holds no vault this device belongs to')) throw e;
 			await (mac ? mac.call('forget') : store.aside());
@@ -276,15 +294,45 @@ function unlock(at = QUIET) {
 	return unlocking;
 }
 
-/** Opens the device this browser, or the app, holds, in the unlock alone: it marks its own steps with `step` and
- *  hands the device the function it shows its own by with `device`. @param {Steps} at */
-async function opening({ step, device: shown }) {
+/** Opens the device this browser, or the app, holds, in the unlock alone, over the API's challenge with `login`, whose
+ *  assertion it hands over before the device opens: it marks its own steps with `step` and hands the device the
+ *  function it shows its own by with `device`. @param {Steps} at @param {Login | null} login */
+async function opening({ step, device: shown }, login) {
 	if (mac) return macOpened(await stepping(shown(), 'open'));
-	const { unlock } = await ceremonies(meta.credential);
+	// the store first, so that a tab that can't open it never asks for the passkey: one tab at a time holds it
+	await store.hold().catch(() => {
+		const why = new Error(`avenDB is open in another tab of ${here}: it opens in one tab at a time`);
+		throw Object.assign(why, { code: 'held' });
+	});
+	const { passkey, unlock } = await ceremonies(meta.credential);
 	step('unlock');
-	const unlocked = await unlock(unhex(meta.nonce));
+	let unlocked;
+	try {
+		unlocked = await unlock(unhex(meta.nonce), login ? passkey.unbase64url(login.challenge) : undefined);
+	} catch (e) {
+		await store.release().catch(() => {});
+		throw e;
+	}
+	login?.finish(signedIn(passkey, unlocked));
 	running(await avendb.Device.open(unlocked, shown(), store));
 }
+
+/**
+ * Ceremony `c` as maiaCITY's API takes a sign-in (WebAuthn's JSON, as @simplewebauthn/browser hands it over): its
+ * assertion alone. Its PRF outputs, from which the device's keys come, never leave the page.
+ * @param {any} passkey ./device/passkey.js @param {any} c
+ */
+const signedIn = (passkey, c) => ({
+	id: c.id,
+	rawId: c.id,
+	type: 'public-key',
+	response: {
+		clientDataJSON: passkey.base64url(c.clientDataJSON),
+		authenticatorData: passkey.base64url(c.authenticatorData),
+		signature: passkey.base64url(c.signature)
+	},
+	clientExtensionResults: {}
+});
 
 /** The device runs from here on, its shelf keeping what opens it again, even should that fail: it can still show
  *  its code, for the person's next device to link through. @param {any} d @param {Uint8Array} nonce
@@ -399,6 +447,17 @@ async function rename(name) {
 	meta = { ...meta, name };
 }
 
+/** Locks the account here again, as the person signs out of the app: the device lets go of its store, and the next
+ *  unlock opens it again. In the Mac app its device runs on beside the app, which signs out of its own key alone. */
+async function lock() {
+	if (mac) return;
+	const d = device;
+	watching = null;
+	[device, world, vault] = [null, null, ''];
+	if (meta) phase = 'closed';
+	await d?.close().catch(() => {});
+}
+
 /** Forgets the account here: the device lets go, and its shelf is put aside, never deleted, and a new one is in use,
  *  in the app's folder or in OPFS; the account is new here, and every page of the tab sees it so. */
 async function forget() {
@@ -503,6 +562,12 @@ export const session = {
 	get acting() {
 		return world ? actingIn(world, this.vault).as : '';
 	},
+	/** the person's name: their own vault's profile, avenDB being where a person's profile lives (Samuel 2026-10-18,
+	 *  nothing of it in maiaCITY's database); '' until the device shows it */
+	get name() {
+		const w = world;
+		return w?.vaults.find((v) => v.id === w.mine)?.name ?? '';
+	},
 	/** what opens the device again, its name and relay among it, once it holds an account */
 	get meta() {
 		return meta;
@@ -530,7 +595,9 @@ export const session = {
 		error = why;
 	},
 	boot,
+	load,
 	unlock,
+	lock,
 	found,
 	link,
 	forget,

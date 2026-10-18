@@ -997,4 +997,21 @@ export const MIGRATIONS: Migration[] = [
       DROP FUNCTION IF EXISTS code_moved_to_repo();
     `,
   },
+  {
+    // Invite only (Samuel 2026-10-18: "after admin account the whole system is invite only", "only super admins can
+    // invite new humans"): once the city has its admin, signing up takes an invite one of them made, used once. A
+    // person's profile, their name among it, lives in their avenDB human vault alone: founders.name is no longer served
+    // or written (kept as it is for those who signed up before).
+    id: "0050-signup-invites",
+    sql: `
+      CREATE TABLE signup_invites (
+        code       TEXT PRIMARY KEY,
+        made_by    TEXT NOT NULL REFERENCES founders(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+        expires_at TIMESTAMPTZ NOT NULL,
+        used_by    TEXT REFERENCES founders(id) ON DELETE SET NULL,
+        used_at    TIMESTAMPTZ
+      );
+    `,
+  },
 ];

@@ -43,6 +43,8 @@
 		list,
 		mayCoOwn,
 		nameOf,
+		nameShare,
+		nameShared,
 		owns,
 		roleGroup,
 		rowHint,
@@ -98,6 +100,8 @@
 
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const v = $derived(/** @type {import('./vaults.js').VaultView} */ (byId.get(vault)));
+	/** the share that lets everyone read its name, if it has one */
+	const namePublic = $derived(nameShared(world, vault));
 	const as = $derived(byId.get(actor));
 	const mine = $derived(byId.get(world.mine));
 	/** whether vaults of its kind hold devices, as the kind table says */
@@ -429,6 +433,22 @@
 					</div>
 					<p class="soft">Its name is its profile, an entry of it, end-to-end encrypted like the others.</p>
 				{/if}
+				<!-- its name is public by default (./vaults.js NAME_TYPES): its owners keep it to those it shares with here -->
+				<div class="row">
+					<p class="soft">
+						{namePublic ? 'Everyone sees its name: its profile is Public.' : 'Only those it shares with see its name.'}
+					</p>
+					<button
+						class="btn quiet"
+						disabled={busy}
+						onclick={() =>
+							namePublic
+								? api.run('Keeping its name private', { op: 'revoke', share: namePublic.id, as: vault })
+								: api.run('Making its name public', nameShare(vault))}
+					>
+						{namePublic ? 'Keep it private' : 'Make it public'}
+					</button>
+				</div>
 			{/if}
 		</article>
 		<article class="card">

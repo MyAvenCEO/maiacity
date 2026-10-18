@@ -318,6 +318,27 @@ export function hue(id) {
 	return Math.round((parseInt(id.slice(0, 4), 16) / 0xffff) * 360);
 }
 
+/**
+ * World `w`'s vaults as the app's nav pill lists them ($lib/app/pill.svelte.js): the person's own first, their profile,
+ * then the rest, each by its name, its kind, its initials in its colour and its shape, with how many changes wait in it
+ * (`waiting`, by vault).
+ * @param {WorldView} w @param {Record<string, number>} [waiting]
+ */
+export function pillVaults(w, waiting = {}) {
+	const mine = w.vaults.find((v) => v.id === w.mine);
+	return [mine, ...w.vaults.filter((v) => v.id !== w.mine)]
+		.filter((v) => !!v)
+		.map((v) => ({
+			id: v.id,
+			label: nameOf(v),
+			sub: v.id === w.mine ? 'You' : KINDS[v.kind],
+			text: initials(v),
+			colour: `hsl(${hue(v.id)} 38% 42%)`,
+			shape: v.kind,
+			badge: waiting[v.id] ?? 0
+		}));
+}
+
 /** One, or many, of a thing. @param {number} n @param {string} one @param {string} [many] */
 export const count = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
@@ -531,6 +552,28 @@ const day = (at) => new Date(at * 1000).toLocaleDateString('en-GB', { day: 'nume
 
 /** A share's who for everyone: the Public group's. */
 export const EVERYONE = 'everyone';
+
+/** The types of the entries that name a vault, its profile, which everyone reads by default: a vault's own device
+ *  shares them Public as it names a vault it just founded, signed with its owner's key, and its owners may take that
+ *  back in its settings (Samuel 2026-10-18: "the profile is set to public by default"). Nobody else can. */
+export const NAME_TYPES = ['profile'];
+
+/** The share that lets everyone read vault `vault`'s name, as world `w` shows its shares, if it has one.
+ *  @param {WorldView} w @param {string} vault */
+export const nameShared = (w, vault) =>
+	w.shares.find(
+		(c) => c.over === vault && c.who === EVERYONE && [...(/** @type {any} */ (c.slice?.where)?.type ?? [])].sort().join() === NAME_TYPES.join()
+	);
+
+/** The op by which vault `vault` lets everyone read its name. @param {string} vault */
+export const nameShare = (vault) => ({
+	op: 'share',
+	over: vault,
+	who: EVERYONE,
+	level: 'Public',
+	what: { type: NAME_TYPES },
+	as: vault
+});
 
 /**
  * What the name of a standing grant starts with (avendb's `world::STANDING`): a share on the whole of the person's

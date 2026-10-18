@@ -39,7 +39,8 @@ function join(state, founder) {
 }
 
 /** the game as it stands now (advanced and kept, so month ends are booked once); a founder signing in (not an app
- * key) joins it on the first free seat */
+ * key) joins it on the first free seat
+ * @param {{ id: string, name?: string } | null} [founder] @param {number} [now] */
 export function getGame(founder = null, now = Date.now()) {
   return db.transaction(async (tx) => {
     const state = advance(await load(tx, now), now);

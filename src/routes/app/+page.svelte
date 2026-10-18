@@ -5,6 +5,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { founderCount, me, type Founder } from '$lib/auth/client';
+	// the person's name, from their avenDB human vault's profile: none of it in maiaCITY's database
+	import { session } from '$lib/avendb/session.svelte.js';
 	import Icon from '$lib/app/Icon.svelte';
 	import { APPS, CITY, GROUPS, UNIVERSE, holds, released } from '$lib/app/places';
 	import { asset } from '$lib/media/url';
@@ -30,7 +32,7 @@
 <main class="dash">
 	<header>
 		<p class="eyebrow">{founder ? `Founder ${String(founder.number).padStart(3, '0')}` : ' '}</p>
-		<h1>{hello}{founder ? `, ${founder.name}` : ''}.</h1>
+		<h1>{hello}{session.name ? `, ${session.name}` : ''}.</h1>
 		{#if count}<p class="lede">{count} {count === 1 ? 'founder is' : 'founders are'} in the line.</p>{/if}
 	</header>
 

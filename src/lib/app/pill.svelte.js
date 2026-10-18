@@ -4,8 +4,10 @@
  * page can be looked at as, listed in the You menu (V1: you, the other player, each COOP). A page calls `pillCenter`
  * or `pillAccounts` while it shows them, and calls what it gets back once they are gone; the last one wins.
  *
- * A page may also add a context of its own, an item of the pill beside You with a menu of its own (`pillContext`):
- * avenDB's vaults, which it is looked at in. It is kept apart from the You menu, the account signed in to the app.
+ * The You item is the person's vault switcher too (Samuel 2026-10-18): a context (`pillContext`) lists their avenDB
+ * vaults, their own (their profile) first, in its menu, and the item shows the one picked. The app lists them on every
+ * page once avenDB is open, as its `base`; avenDB's page lists them as it looks at them, with what waits in each, in
+ * its place while it shows.
  */
 import { untrack } from 'svelte';
 
@@ -14,7 +16,7 @@ import { untrack } from 'svelte';
 /** @typedef {{ title: string, readonly list: Account[], readonly current: string, pick: (id: string) => void }} Accounts */
 /**
  * @typedef {{ title: string, readonly list: Account[], readonly current: string, pick: (id: string) => void,
- *   add?: { label: string, go: () => void } }} Context
+ *   add?: { label: string, go: () => void }, base?: boolean }} Context
  */
 
 /** @type {Center[]} */
@@ -31,8 +33,9 @@ export const pill = {
 	get accounts() {
 		return accounts.at(-1) ?? null;
 	},
+	/** the last context a page added, over the app's `base` one */
 	get context() {
-		return contexts.at(-1) ?? null;
+		return contexts.findLast((c) => !c.base) ?? contexts.at(-1) ?? null;
 	}
 };
 
@@ -57,7 +60,7 @@ export function pillAccounts(a) {
 }
 
 /**
- * the pill shows this context, its current one beside You, with a menu of its own, while the page shows it
+ * the You item shows this context's current one, and its menu lists the context, while the page shows it
  * @param {Context} c
  * @returns {() => void} it is gone
  */

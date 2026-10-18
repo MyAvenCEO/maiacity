@@ -8,14 +8,15 @@
 	unlock. Every device of the vault
 	shows by the name on its card, an entry of the vault the device writes itself, end-to-end encrypted like its notes
 	(avendb-browser's `Device::card`), and every vault by the name on its profile, an entry this browser writes into it
-	(`Device::profile`): the person's own by their maiaCITY name, the seed's by theirs. In the Mac app the device runs
+	(`Device::profile`): the person's own by the name they gave as they set it up, their profile, which lives
+	here alone (none of it in maiaCITY's database), the seed's by theirs. In the Mac app the device runs
 	natively beside the app ($lib/avendb/native.js): its node on UDP sockets of its own, its shelf in a folder on the
 	Mac; and it hosts each of the person's drives plugged into the Mac, a device of their vault of its own, which the
 	page lists and joins in Owners & devices ($lib/avendb/Settings.svelte), where alone the person forgets their
 	account here. A device forgotten there, one taken out of its vault, or what an earlier avenDB kept, is put aside and
 	never read again. A new person
-	founds their vault here with the passkey they signed up to maiaCITY with (the same relying party, maia.city), or
-	one they make here; the first to found a vault through a server nobody has claimed yet claims it in the same
+	founds their vault with the passkey they signed up to maiaCITY with (the same relying party, maia.city), as they
+	come into the app ($lib/app/entry.js), or here if they went on without it; the first to found a vault through a server nobody has claimed yet claims it in the same
 	ceremony and founds the seed (avendb's `world::SEED`): Maia Holding GmbH, a coop their vault owns, avenCEO GmbH, a
 	coop Maia Holding owns, avenCEO server, the device vault avenCEO GmbH owns and the server is a device of, and Maia
 	City, a coop avenCEO GmbH owns. A person
@@ -31,7 +32,7 @@
 -->
 <script>
 	import { onMount, untrack } from 'svelte';
-	import { me } from '$lib/auth/client';
+	import { signUpName } from '$lib/app/entry.js';
 	import { native } from '$lib/native';
 	import AccessRequest from './AccessRequest.svelte';
 	import Shell from './Shell.svelte';
@@ -39,15 +40,10 @@
 	import { FLOW, FLOWS, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
 	import { answer, refs } from './ops.js';
 	import { beside, retiring, seeding, seedPieces, touchingUp, unseeded } from './seed.js';
+	import { deviceName, relay as relayOf, server as serverOf } from './server.js';
 	import { asks, Here, here, session } from './session.svelte.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
-	import { EVERYONE, plain, seeded, standingOps } from './vaults.js';
-
-	/** avenDB's server (avendb.maia.city, rolled out by .github/workflows/avendb.yml): its relay, and its offer as it
-	 *  logs it at every start; the same as long as its shelf (g13, since the reset of #896) keeps its device's key */
-	const RELAY = 'https://avendb.maia.city';
-	const SERVER =
-		'AVENDB1XGGIDUODE5OKXPWRA5AWZQLXYM4RVMOKVBDJSOD77TPJ6N2K6Y3Z3AV4VERR7CN6GGUHFWCDMOABGFZAEXBGABCGGWI2PEI7H4ACHTIBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
+	import { EVERYONE, nameShare, nameShared, plain, seeded, standingOps } from './vaults.js';
 
 	// the tab's device, as the session holds it (./session.svelte.js): what it is now, and what it shows of its world
 	const phase = $derived(session.phase);
@@ -80,7 +76,8 @@
 	let arrived = $state(false);
 	/** this browser's name, its card's title, which the person's other devices show it by */
 	let name = $state('');
-	/** the person's name at maiaCITY, which their account goes by */
+	/** the person's name, their human vault's profile: as it names them once open, else as they signed up, or type it
+	 *  for the vault they found here */
 	let person = $state('');
 	let qr = $state('');
 	let link = $state('');
@@ -110,36 +107,6 @@
 	/** how far the repo seed has come: the pieces written of those it is writing, while it writes them */
 	let seedAt = $state(/** @type {{ done: number, of: number } | null} */ (null));
 
-	/** A name for this browser that tells it from the person's other devices: its browser, on its system; or the app. */
-	function deviceName() {
-		if (native()) return 'maiaCITY Studio on Mac';
-		const ua = navigator.userAgent;
-		const touchMac = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
-		const system = /iPhone/.test(ua)
-			? 'iPhone'
-			: /iPad/.test(ua) || touchMac
-				? 'iPad'
-				: /Android/.test(ua)
-					? 'Android'
-					: /Mac/.test(ua)
-						? 'Mac'
-						: /Windows/.test(ua)
-							? 'Windows'
-							: /Linux|CrOS/.test(ua)
-								? 'Linux'
-								: '';
-		const browser = /Edg(e|A|iOS)?\//.test(ua)
-			? 'Edge'
-			: /Firefox\/|FxiOS/.test(ua)
-				? 'Firefox'
-				: /Chrome\/|CriOS/.test(ua)
-					? 'Chrome'
-					: /Safari\//.test(ua)
-						? 'Safari'
-						: 'A browser';
-		return system ? `${browser} on ${system}` : browser;
-	}
-
 	// the tab's device, loaded once for every page of the site, or taken up again where this tab opened it already, so
 	// one unlock lasts the tab (./session.svelte.js); the session lets this page go as it closes, and what watched the
 	// device for it stops, while the device runs on, syncing
@@ -147,15 +114,12 @@
 		const q = new URLSearchParams(location.search);
 		// the built-in server, or, in a dev build alone, a test server's for this visit only: a link can't lead a
 		// person's page to another server
-		relay = (import.meta.env.DEV && q.get('relay')) || RELAY;
-		server = (import.meta.env.DEV && q.get('server')) || SERVER;
+		relay = (import.meta.env.DEV && q.get('relay')) || relayOf();
+		server = (import.meta.env.DEV && q.get('server')) || serverOf();
 		code = q.get('link') ?? '';
 		arrived = !!code;
 		name = deviceName();
-		me().then(
-			(f) => (person = f.name),
-			() => {}
-		);
+		person = session.name || signUpName();
 		return session.boot();
 	});
 
@@ -366,7 +330,8 @@
 				.finally(() => (copying = false));
 		}
 		// the profiles of the person's vault, by their maiaCITY name, and of the seed their claim of the server
-		// founded, if it did: written once, by whichever of their devices comes first
+		// founded, if it did: written once, by whichever of their devices comes first, each public as it is named
+		// (./vaults.js `NAME_TYPES`)
 		/** @type {[string, string][]} */
 		const unnamed = [];
 		if (mine && !mine.name && who) unnamed.push([mine.id, who]);
@@ -374,7 +339,10 @@
 		if (unnamed.length && !profiling) {
 			profiling = true;
 			(async () => {
-				for (const [v, name] of unnamed) answer(await session.ask({ op: 'profile', vault: v, name }));
+				for (const [v, name] of unnamed) {
+					answer(await session.ask({ op: 'profile', vault: v, name }));
+					if (!nameShared(w, v)) answer(await session.ask(nameShare(v)));
+				}
 			})()
 				.catch((/** @type {Error} */ e) => (session.error = `Naming your vaults failed: ${plain(e.message)}`))
 				.finally(() => (profiling = false));
@@ -612,7 +580,7 @@
 	<div class="account">
 		<header class="lead">
 			<small>Your account</small>
-			<h1>{person || 'You'}</h1>
+			<h1>{session.name || person || 'You'}</h1>
 			<p>Your own database, end-to-end encrypted and quantum-proof: a vault only you hold, on every device you link to it.</p>
 		</header>
 		{#if doing && !signing}<p class="soft asking" role="status">{doing}…</p>{/if}
@@ -653,18 +621,21 @@
 					<article class="card">
 						<h3>New to avenDB?</h3>
 						<p>
-							Set up your account: a vault that only you hold. The passkey you signed up to maiaCITY with becomes its
+							Set up your human vault: a vault that only you hold. The passkey you signed up to maiaCITY with becomes its
 							root, and {here} its first device. The master recovery key can also recover it while avenDB is young.
 						</p>
+						<label class="name">
+							<span class="soft">Your name, which your vault's profile keeps: the city knows you by it</span>
+							<input class="field" bind:value={person} maxlength="60" autocomplete="name" />
+						</label>
 						<div class="row">
-							<button class="btn primary" disabled={!!doing || !server.trim() || !relay.trim() || !name.trim()} onclick={() => found(false)}>
+							<button
+								class="btn primary"
+								disabled={!!doing || !server.trim() || !relay.trim() || !name.trim() || !person.trim()}
+								onclick={() => found(false)}
+							>
 								Use my maiaCITY passkey
 							</button>
-							{#if !native()}
-								<button class="btn quiet" disabled={!!doing || !server.trim() || !relay.trim() || !name.trim()} onclick={() => found(true)}>
-									Make a new passkey
-								</button>
-							{/if}
 						</div>
 					</article>
 					<article class="card">

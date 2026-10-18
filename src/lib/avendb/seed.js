@@ -44,7 +44,7 @@ import { recordOf } from '../../../game/code/sources/avendb.js';
 import { PICTURE } from './article.js';
 import { stageTag } from './flows.js';
 import { copying, legacyTag, pieces as legacyPieces } from './legacy.js';
-import { EVERYONE } from './vaults.js';
+import { EVERYONE, nameShare, nameShared } from './vaults.js';
 import { POST_TYPES, postTag, postTypeSchema, postTypeTitle } from './posttypes.js';
 import { brings } from './ops.js';
 import { GAME, GAMES, gameTag } from '../../../game/games.js';
@@ -56,9 +56,6 @@ export const CODE_TYPES = ['view', 'logic'];
 
 /** The types of the asset recipes the vault holds, which everyone reads, as the repo's assets are open to everyone. */
 export const RECIPE_TYPES = ['recipe'];
-
-/** The types of the entries that name a vault, which everyone reads (its profile). */
-export const NAME_TYPES = ['profile'];
 
 /** The tag of the content flow's published stage, which everyone reads. */
 export const PUBLISHED = stageTag('content', 'published');
@@ -268,7 +265,7 @@ export function unseeded(world, vault, all) {
 		p.kind === 'share' ? !codeShared(world, vault) : p.kind === 'published' ? !publishedShared(world, vault) :
 		p.kind === 'recipe-share' ? !codeShared(world, vault, RECIPE_TYPES) :
 		p.kind === 'inspire-share' ? !inspireShared(world, vault) :
-		p.kind === 'name-share' ? !codeShared(world, vault, NAME_TYPES) :
+		p.kind === 'name-share' ? !nameShared(world, vault) :
 		p.kind === 'game-schema' ? !mine.some((e) => e.kind === 'schema' && e.title === GAME_SCHEMA) :
 		p.kind === 'post-type' ? !mine.some((e) => e.kind === 'schema' && e.title === postTypeTitle(p.name)) :
 		p.kind === 'game' ? !games.has(p.mark) : !have.has(p.mark)
@@ -302,7 +299,7 @@ export async function seeding(p, vault) {
 	if (p.kind === 'recipe') return [await recipeCreate(p.name, vault)];
 	if (p.kind === 'published') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: PUBLISHED }, as }];
 	if (p.kind === 'inspire-share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: INSPIRE }, as }];
-	if (p.kind === 'name-share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { type: NAME_TYPES }, as }];
+	if (p.kind === 'name-share') return [nameShare(vault)];
 	if (p.kind === 'game-schema') return [{ op: 'create', vault, type: 'schema', value: GAME_V1, as }];
 	if (p.kind === 'game') {
 		const g = GAMES.find((x) => x.id === p.name);

@@ -49,7 +49,7 @@
 	import Todos from './Todos.svelte';
 	import { may } from './ops.js';
 	import { session } from './session.svelte.js';
-	import { acting, count, hue, initials, KINDS, list, nameOf, signerName } from './vaults.js';
+	import { acting, count, KINDS, list, nameOf, pillVaults, signerName } from './vaults.js';
 	import { wordsFilling } from './youtube.js';
 
 	/**
@@ -120,7 +120,7 @@
 	]);
 	/** each group's name on the home screen, where every group has one */
 	const HEADS = /** @type {Record<string, string>} */ ({ '': 'Workspace' });
-	/** each group's colour on the home screen: its apps' tiles */
+	/** each group's colour on the home screen: its apps' icons, on light tiles (Samuel 2026-10-18) */
 	const TINTS = /** @type {Record<string, string>} */ ({ '': 'work', Database: 'data', Settings: 'set' });
 	/** @typedef {(typeof NAV)[number][1][number]} PageItem */
 	const PAGES = NAV.flatMap(([, items]) => /** @type {readonly PageItem[]} */ (items));
@@ -169,7 +169,6 @@
 	const context = $derived(byId.has(picked) ? picked : world.mine);
 	const actor = $derived(acting(world, context).as);
 	const mine = $derived(byId.get(world.mine));
-	const rest = $derived(world.vaults.filter((v) => v.id !== world.mine));
 	const here = $derived(/** @type {import('./vaults.js').VaultView} */ (byId.get(context) ?? mine));
 	const as = $derived(byId.get(actor) ?? mine);
 
@@ -223,19 +222,9 @@
 	// its own: avenDB's vaults apart from the account signed in to the app
 	$effect(() =>
 		pillContext({
-			title: 'avenDB vaults',
+			title: 'Your vaults',
 			get list() {
-				return [mine, ...rest]
-					.filter((v) => !!v)
-					.map((v) => ({
-						id: v.id,
-						label: nameOf(v),
-						sub: KINDS[v.kind],
-						text: initials(v),
-						colour: `hsl(${hue(v.id)} 38% 42%)`,
-						shape: v.kind,
-						badge: waiting[v.id] ?? 0
-					}));
+				return pillVaults(world, waiting);
 			},
 			get current() {
 				return context;
@@ -311,7 +300,7 @@
 					<div class="grid">
 						{#each items as [id, label, icon] (id)}
 							<a class="app" href="#{id}">
-								<span class="tile {TINTS[group]}"><Icon name={icon} size={26} /></span>
+								<span class="tile {TINTS[group]}"><Icon name={icon} size={34} /></span>
 								<span class="label">{label}</span>
 							</a>
 						{/each}
@@ -626,11 +615,11 @@
 
 	.grid {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(5.5rem, 1fr));
-		gap: 1.1rem 0.5rem;
+		grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr));
+		gap: 1.3rem 0.75rem;
 	}
 
-	/* a page as an app: a small round-cornered tile, its name under it */
+	/* a page as an app: a light round-cornered tile, as the dashboard's, its icon in its group's colour, its name under it */
 	.app {
 		display: flex;
 		flex-direction: column;
@@ -645,30 +634,33 @@
 	.tile {
 		display: grid;
 		place-items: center;
-		width: 3.6rem;
-		height: 3.6rem;
-		border-radius: 1rem;
-		color: #fff;
-		box-shadow:
-			inset 0 1px 0 rgb(255 255 255 / 0.18),
-			0 2px 6px rgb(30 45 38 / 0.18);
-		transition: transform 120ms ease;
+		width: 5rem;
+		height: 5rem;
+		border: 1px solid var(--line, #dcd5c4);
+		border-radius: 1.35rem;
+		background: var(--paper, #faf8f2);
+		box-shadow: 0 1px 2px rgb(38 56 44 / 0.06);
+		transition:
+			transform 150ms ease,
+			box-shadow 150ms ease;
 	}
 
+	/* the brand's colours: the workspace terracotta, the database green, the settings mustard */
 	.tile.work {
-		background: linear-gradient(160deg, #3d8577, #2a5f55);
+		color: var(--terracotta, #c8744f);
 	}
 
 	.tile.data {
-		background: linear-gradient(160deg, #4b6a92, #344e70);
+		color: #2f6d62;
 	}
 
 	.tile.set {
-		background: linear-gradient(160deg, #8a8478, #67625a);
+		color: #c58a1c;
 	}
 
 	.app:hover .tile {
 		transform: translateY(-2px);
+		box-shadow: 0 8px 22px rgb(38 56 44 / 0.1);
 	}
 
 	.app:active .tile {
@@ -686,7 +678,9 @@
 
 	.label {
 		max-width: 100%;
-		font-size: 0.74rem;
+		color: var(--ink, #26382c);
+		font-size: 0.84rem;
+		font-weight: 500;
 		line-height: 1.25;
 		text-align: center;
 		overflow-wrap: anywhere;
@@ -807,17 +801,17 @@
 		/* four apps a row, as a phone's home screen shows them */
 		.grid {
 			grid-template-columns: repeat(4, minmax(0, 1fr));
-			gap: 1rem 0.25rem;
+			gap: 1.1rem 0.35rem;
 		}
 
 		.tile {
-			width: 3.4rem;
-			height: 3.4rem;
-			border-radius: 0.95rem;
+			width: 4.2rem;
+			height: 4.2rem;
+			border-radius: 1.15rem;
 		}
 
 		.label {
-			font-size: 0.7rem;
+			font-size: 0.74rem;
 		}
 	}
 
