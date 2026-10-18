@@ -52,3 +52,11 @@ test("only a shot whose world the camera has gets its proxy rendered; the room's
 	expect(shootable({ world: {} })).toBe(true);
 	expect(shootable({ world: { sandbox: 'room' } })).toBe(false);
 });
+
+test('a copy that came in without its type is brought again; a typed one stays', async () => {
+	const { untyped } = await import('./legacyfilms.js');
+	expect(untyped({ media: 'application/octet-stream' })).toBe(true);
+	expect(untyped({ media: null, record: {} })).toBe(true);
+	expect(untyped({ media: 'video/quicktime' })).toBe(false);
+	expect(untyped({ media: null, record: { media: 'audio/wav' } })).toBe(false);
+});

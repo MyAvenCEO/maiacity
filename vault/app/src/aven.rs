@@ -601,7 +601,7 @@ pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, a
         let mark = format!("legacy:{hash}");
         let mut made = serde_json::Map::new();
         let role = tags.as_ref().and_then(|t| t.first()).map(String::as_str).unwrap_or("media:original");
-        if let Some(e) = entries.iter().find(|e| e["vault"] == vault.as_str() && e["deleted"] != json!(true) && tagged(e, &mark) && tagged(e, role)) {
+        if let Some(e) = entries.iter().find(|e| e["vault"] == vault.as_str() && e["deleted"] != json!(true) && !tagged(e, DELETED) && tagged(e, &mark) && tagged(e, role)) {
             out.push(Imported { hash, entry: e["entry"].as_str().map(str::to_string), made, error: None });
             continue;
         }

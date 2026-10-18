@@ -16,7 +16,7 @@
  * each, made from the game itself rather than the old studio, after the films (and whether or not any film is wanted).
  */
 
-import { answer } from '$lib/avendb/ops.js';
+import { answer, DELETED } from '$lib/avendb/ops.js';
 import { CUT, device, worldOf } from './cuts.js';
 import { FILMS, legacyOf } from './filmlist.js';
 
@@ -49,6 +49,47 @@ export function heldOf(world, vault, f) {
 		story: world.entries.find((e) => live(e) && e.type === 'story') ?? null,
 		cut: world.entries.find((e) => live(e) && e.type === CUT) ?? null
 	};
+}
+
+/**
+ * A file copy that came in without its type (before #969: Day 1's camera files as nameless `.bin`), which no player
+ * opens and no rule takes. @param {import('../avendb/vaults.js').EntryView} e
+ */
+export const untyped = (e) => {
+	const media = /** @type {any} */ (e).media ?? /** @type {any} */ (e.record)?.media ?? '';
+	return !media || media === 'application/octet-stream';
+};
+
+/**
+ * Each film the Maia City vault holds with untyped copies of its files (`untyped`), brought again (Samuel
+ * 2026-10-18, "Replace films"): its cut and those copies tagged deleted, so the run imports it once more with its
+ * files named and typed; its story stays, and so does every typed file (found again by its `legacy:` tag). And the
+ * world-proxy tasks still waiting there, which ran a second world beside the live one (#969). Whether it changed
+ * anything.
+ * @param {(c: string, ...a: any[]) => Promise<any>} call @param {import('../avendb/vaults.js').WorldView} world
+ * @param {{ vault: string, as: string }} city @param {Map<string, import('./frozen.js').Frozen | null>} frozenOf
+ */
+async function repairFilms(call, world, city, frozenOf) {
+	const live = (/** @type {any} */ e) => e.vault === city.vault && !e.deleted && !(e.tags ?? []).includes(DELETED);
+	const drop = (/** @type {string} */ entry) => call('run', { op: 'insert', entry, path: ['tags'], value: DELETED, as: city.as }).catch((e) => console.warn('films: could not set aside', entry, e));
+	let changed = false;
+	const { tasksOf } = await import('./jobs/tasks.js');
+	for (const t of tasksOf(world).filter((t) => t.vault === city.vault && t.rule === 'world-proxy' && t.status === 'queued')) {
+		await drop(t.entry);
+		changed = true;
+	}
+	for (const f of FILMS) {
+		const cut = heldOf(world, city.vault, f).cut;
+		const marks = new Set((frozenOf.get(f.key)?.files ?? []).map((h) => `legacy:${h}`));
+		if (!cut || !marks.size) continue;
+		const copies = world.entries.filter((e) => live(e) && e.type === 'file' && untyped(e) && (e.tags ?? []).some((t) => marks.has(t)));
+		if (!copies.length) continue;
+		console.warn(`films: ${f.name} holds ${copies.length} untyped copies: brought again`);
+		for (const e of copies) await drop(e.entry);
+		await drop(cut.entry);
+		changed = true;
+	}
+	return changed;
 }
 
 /** What the run brings, as its callers name it: a film, or an intro (./intros.js). @typedef {{ key: string, name: string }} Brought */
@@ -90,10 +131,11 @@ async function bringing() {
 	let world = await worldOf(call);
 	const city = cityOf(world);
 	if (!city) return [];
-	const wanted = FILMS.filter((f) => !heldOf(world, city.vault, f).cut);
 	const { frozenFilm } = await import('./frozen.js');
 	// the repo's frozen copy first, with the Mac's film seed (./frozen.js), the old studio only for one it lacks
 	const frozenOf = new Map(await Promise.all(FILMS.map(async (f) => /** @type {const} */ ([f.key, await frozenFilm(f)]))));
+	if (await repairFilms(call, world, city, frozenOf)) world = await worldOf(call);
+	const wanted = FILMS.filter((f) => !heldOf(world, city.vault, f).cut);
 	// a film that came before its world proxies did: the proxies of its shots whose world is gone, from the film seed now
 	if (FILMS.some((f) => heldOf(world, city.vault, f).cut)) {
 		const { bringProxies } = await import('./importer.js');
