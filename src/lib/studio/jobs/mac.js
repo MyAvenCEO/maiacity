@@ -2,7 +2,8 @@
  * The worker on this Mac (plan J0d-J0f): one for the app, started by the app's layout (src/routes/app/+layout.svelte) once
  * the app's avenDB device is open, rounds every minute, a round at once when asked (`nudge`). It works on every vault
  * the person reaches, acting as each vault's acting vault, through the app's device (src/lib/avendb/native.js), until
- * the person makes this Mac a vault's studio worker (J0c, ./Tasks.svelte), and then as that worker there.
+ * this Mac is made a vault's studio worker (J0c: by itself, as the Jobs page opens, ./Tasks.svelte), and then as that
+ * worker there.
  */
 
 import { native } from '$lib/native';

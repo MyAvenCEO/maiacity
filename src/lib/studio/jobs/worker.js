@@ -51,7 +51,7 @@ const own = (op) => {
 export class Worker {
 	/**
 	 * @param {{ send: (op: any, node?: string) => Promise<any>, executors: Record<string, Executor>,
-	 *   hosted?: () => Promise<{ device: string, vault: string, hosted?: boolean }[]>,
+	 *   hosted?: () => Promise<{ device: string, vault: string, for?: string | null, hosted?: boolean }[]>,
 	 *   lanes?: import('./schemas.js').Lane[], vaults?: (world: any) => string[], ceo?: string | null,
 	 *   now?: () => number, log?: (line: string) => void }} o
 	 */
@@ -101,7 +101,8 @@ export class Worker {
 			let world = await this.world();
 			const me = world.me;
 			const hosted = await this.hosted().catch(() => []);
-			this.nodes = new Map(hosted.filter((w) => w.hosted !== false).map((w) => [w.vault, w.device]));
+			// each row names its own device vault (`vault`) and the vault it works for (`for`)
+			this.nodes = new Map(hosted.filter((w) => w.hosted !== false).map((w) => [w.for ?? w.vault, w.device]));
 			this.acting = new Map((world.vaults ?? []).map((/** @type {any} */ v) => [v.id, v.acting?.as ?? v.id]));
 			for (const vault of this.vaults(world)) {
 				// only the rules some worker can do yet: a task nobody runs would only sit in every device's log

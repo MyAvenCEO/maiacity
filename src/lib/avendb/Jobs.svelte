@@ -7,8 +7,8 @@
 	vault's edits. Beside them, what still syncs, by entry and by file, from where each is synced to: each device that
 	holds only some of what this one holds of the vault, with how much of it.
 	On the Mac app, under them, the studio's jobs (Samuel 2026-10-18: the studio has no Jobs tab of its own any more):
-	the rules of each vault this Mac works for and the tasks they want, each where it stands
-	($lib/studio/jobs/Tasks.svelte).
+	the studio's rules, once for every vault this Mac works for, and every job they start, live, as the legacy studio's
+	jobs viewer showed them ($lib/studio/jobs/Tasks.svelte).
 -->
 <script>
 	import { onMount } from 'svelte';
@@ -293,20 +293,21 @@
 	{#if native()}
 		<section class="studio">
 			<h3>Studio</h3>
-			<p class="soft">What the studio’s rules want made of each vault’s footage and cuts (proxies, stills, transcripts, renders), and this Mac doing it.</p>
+			<p class="soft">What the studio’s rules want made of your vaults’ footage and cuts (proxies, stills, transcripts, renders), and this Mac making it, as every vault’s worker.</p>
 			<Tasks />
 		</section>
 	{/if}
 </div>
 
 <style>
-	/* the studio's tasks list, in this page's colours */
+	/* the studio's jobs, in this page's colours */
 	.studio {
 		--dim: var(--muted, #8a8579);
 		--hover: #f1eee6;
 		--ok: #2f7a4a;
 		--accent: #b8742a;
 		--bad: #b23a22;
+		--warn: #9a6a14;
 	}
 
 	.studio :global(.ghost.small) {
