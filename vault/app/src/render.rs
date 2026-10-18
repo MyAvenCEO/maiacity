@@ -26,20 +26,19 @@ use std::{
     collections::HashMap,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
-    time::Duration,
 };
 
 use anyhow::Context;
 use serde_json::{Value, json};
-use tauri::{AppHandle, Emitter, Manager};
-use vault_core::{Vault, Verdict, ingest::Batch};
+use tauri::{AppHandle, Manager};
+use vault_core::Vault;
 use vault_render::{
     Library, Lut3d, Media, Options, Plate, Target,
     output::RENDER_LUT_SIZE,
     timeline::{Clip, FPS, Shape, Timeline, shapes_of},
 };
 
-use crate::{Res, auth::Auth, err, jobs, proxies, world};
+use crate::{Res, auth::Auth, err, world};
 
 /// The loudness every film is levelled to: −14 LUFS integrated, the true peak at most −1 dBTP — what YouTube,
 /// Instagram and TikTok play at (and room for their AAC encoders). Change it here.
@@ -47,10 +46,6 @@ pub const LOUDNESS: Target = Target { lufs: -14.0, true_peak: -1.0 };
 
 /// The one delivery the studio renders for now: the 16:9 4K master for YouTube (HEVC 10-bit, 80 Mb/s, AAC 384 kb/s).
 pub const YOUTUBE_4K: &str = "youtube-4k";
-
-/// How often the queue is asked while it is empty, and how long an API that cannot be reached is waited out.
-const POLL: Duration = Duration::from_secs(3);
-const AWAY: Duration = Duration::from_secs(10);
 
 /// The output transform every render and hero frame takes: ACES 2.0 to Rec.709 (`vault_media::aces2`), baked once at
 /// 129³ (a few seconds, on the first render's thread).
@@ -62,200 +57,9 @@ pub(crate) fn odt() -> &'static Lut3d {
     })
 }
 
-/// Claim render jobs and render them, one at a time, for as long as the app runs.
-pub async fn sweep(handle: AppHandle, vault: Arc<Vault>) {
-    // work a render that ended midway left behind (the app quit, the Mac froze)
-    for e in std::fs::read_dir(vault.ingest_dir()).into_iter().flatten().flatten() {
-        if e.file_name().to_string_lossy().starts_with("render-") {
-            tracing::info!("left from an earlier render, removed: {}", e.path().display());
-            std::fs::remove_dir_all(e.path()).ok();
-        }
-    }
-    tokio::time::sleep(Duration::from_secs(20)).await;
-    let mut refused: Option<u16> = None;
-    loop {
-        if !crate::auth::signed_in() {
-            tokio::time::sleep(AWAY).await;
-            continue;
-        }
-        let auth = handle.state::<Auth>().inner().clone();
-        // this Mac's turn first — after the proxies queued before, after an ingest, with memory to spare — and only
-        // then a job: one claimed here never waits behind other work
-        // memory first, then the lane: waiting for memory while holding the GPU lane held every other job too
-        vault.hold.free_of("ingest").await;
-        while proxies::short_of_memory() {
-            tokio::time::sleep(Duration::from_secs(5)).await;
-        }
-        let turn = jobs::hidden_turn(jobs::Lane::Gpu, "render-queue").await;
-        let job = match auth.call("POST", "/api/renders/claim", None).await {
-            Ok((200..=299, job)) if job.is_object() => job,
-            Ok((status, _)) if status >= 400 => {
-                if refused != Some(status) {
-                    tracing::warn!("render queue: the API refused the claim ({status})");
-                    refused = Some(status);
-                }
-                drop(turn);
-                tokio::time::sleep(Duration::from_secs(30)).await;
-                continue;
-            }
-            Ok(_) => {
-                // nothing queued
-                refused = None;
-                drop(turn);
-                tokio::time::sleep(POLL).await;
-                continue;
-            }
-            Err(_) => {
-                // the API away for a moment (restarted, rebuilt) is waited out
-                drop(turn);
-                tokio::time::sleep(AWAY).await;
-                continue;
-            }
-        };
-        refused = None;
-        run(&handle, &vault, &auth, job).await;
-        drop(turn);
-    }
-}
-
-/// A job's progress: on the API's job (throttled, always the latest) and in this Mac's jobs (jobs.rs).
-#[derive(Clone)]
-struct Progress {
-    tx: Arc<tokio::sync::watch::Sender<(f64, String)>>,
-    kind: jobs::Kind,
-    id: String,
-}
-
-impl Progress {
-    /// Start telling the API. The task ends once every copy of the `Progress` is dropped, after sending the last
-    /// value — await it before the job's last word, so no progress lands after it.
-    fn start(auth: &Auth, id: &str, kind: jobs::Kind, name: &str) -> (Self, tauri::async_runtime::JoinHandle<()>) {
-        let (tx, mut rx) = tokio::sync::watch::channel((0.0, "starting".to_string()));
-        let (auth, path) = (auth.clone(), format!("/api/renders/{id}"));
-        let task = tauri::async_runtime::spawn(async move {
-            while rx.changed().await.is_ok() {
-                let (progress, note) = rx.borrow_and_update().clone();
-                if let Err(e) = auth.call("PUT", &path, Some(json!({ "progress": progress, "note": note }))).await {
-                    tracing::warn!("render progress: {e}");
-                }
-                // at most one report every two seconds, always the latest
-                tokio::time::sleep(Duration::from_secs(2)).await;
-            }
-        });
-        let p = Self { tx: Arc::new(tx), kind, id: id.to_string() };
-        // the lane is the render queue's already (its poll holds the GPU): the job runs at once
-        jobs::queue(kind, id, name);
-        jobs::stage(kind, id, "starting", 0.0);
-        (p, task)
-    }
-
-    /// How far (0…1) and what is happening — "rendering 9:16" is "rendering" on the job, as the studio reads it.
-    fn set(&self, done: f64, what: &str) {
-        let note = if what.starts_with("rendering") && what != "rendering world plates" && what != "rendering the frame" { "rendering" } else { what };
-        self.tx.send_replace((done.clamp(0.0, 1.0), note.to_string()));
-        jobs::stage(self.kind, &self.id, what, done);
-    }
-
-    fn named(&self, name: &str) {
-        jobs::name(self.kind, &self.id, name);
-    }
-
-    /// The same, as a plain teller (`Told`).
-    fn told(&self) -> Told {
-        let p = self.clone();
-        Arc::new(move |x, what| p.set(x, what))
-    }
-}
-
 /// Whoever hears how far a render is (0…1) and what it is doing: an API job's `Progress`, or a task's stage in the
 /// Mac's jobs (aven.rs).
 pub(crate) type Told = Arc<dyn Fn(f64, &str) + Send + Sync>;
-
-/// One job, start to report.
-async fn run(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: Value) {
-    let id = job["id"].as_str().unwrap_or_default().to_string();
-    let kind = job["kind"].as_str().unwrap_or("render").to_string();
-    tracing::info!("render job {id}: {kind} {}", job["timeline_id"].as_str().unwrap_or(""));
-    let body = match kind.as_str() {
-        // from before: proxies and the viewer's LUTs are this app's own work, never jobs
-        "proxy" => json!({ "status": "failed", "note": "Proxies are made by the Mac app now — a world shot's too, when a timeline plays it." }),
-        "lut" => json!({ "status": "failed", "note": "The viewer's LUTs are baked by the Mac app now." }),
-        _ => {
-            let label = if kind == "frame" { "Frame" } else { "Render" };
-            let jk = if kind == "frame" { jobs::Kind::Frame } else { jobs::Kind::Render };
-            let (progress, told) = Progress::start(auth, &id, jk, label);
-            let result = {
-                let _held = vault.hold.take("render");
-                let _awake = world::Awake::begin("rendering a film");
-                let _kept = world::keep();
-                let work = Work::new(vault.ingest_dir().join(format!("render-{id}")));
-                match work {
-                    Ok(work) => {
-                        if kind == "frame" {
-                            frame_job(handle, vault, auth, &job, &work, &progress).await
-                        } else {
-                            render_job(handle, vault, auth, &job, &work, &progress).await
-                        }
-                    }
-                    Err(e) => Err(e),
-                }
-            };
-            world::close_if_idle(handle);
-            jobs::end(jk, &id, result.as_ref().map(|_| ()).map_err(|e| e.clone()));
-            // the last progress report is sent before the result, never after it
-            drop(progress);
-            told.await.ok();
-            match result {
-                Ok(body) => body,
-                Err(e) => json!({ "status": "failed", "note": e.chars().take(280).collect::<String>() }),
-            }
-        }
-    };
-    let status = body["status"].as_str().unwrap_or("").to_string();
-    match status.as_str() {
-        "done" => tracing::info!("render job {id}: done → {}", body["output_hash"].as_str().unwrap_or("")),
-        _ => tracing::warn!("render job {id}: {status} — {}", body["note"].as_str().unwrap_or("")),
-    }
-    report(auth, &id, body).await;
-    handle.emit("vault-render", json!({ "job": id, "status": status })).ok();
-}
-
-/// The job's last word: tried again for a while — a finished render must not be lost to a moment without the API.
-async fn report(auth: &Auth, id: &str, body: Value) {
-    let body = match vault_render::api_accepts(&body) {
-        Ok(()) => body,
-        Err(e) => json!({ "status": "failed", "note": format!("the render's report is not one the API takes: {e}").chars().take(280).collect::<String>() }),
-    };
-    for wait in [0u64, 5, 15, 30, 60, 120] {
-        tokio::time::sleep(Duration::from_secs(wait)).await;
-        match auth.call("PUT", &format!("/api/renders/{id}"), Some(body.clone())).await {
-            Ok((s, _)) if s < 300 => return,
-            Ok((s, answer)) if (400..500).contains(&s) => {
-                tracing::warn!("render job {id}: the API refused the report ({s}): {answer}");
-                return;
-            }
-            Ok((s, _)) => tracing::warn!("render job {id}: the API answered {s} to the report — again"),
-            Err(e) => tracing::warn!("render job {id}: {e} — again"),
-        }
-    }
-}
-
-/// The job's own folder in the ingest area: the exported sources and the files it makes; gone when the job is.
-struct Work(PathBuf);
-
-impl Work {
-    fn new(dir: PathBuf) -> Res<Self> {
-        std::fs::remove_dir_all(&dir).ok();
-        std::fs::create_dir_all(&dir).map_err(err)?;
-        Ok(Self(dir))
-    }
-}
-
-impl Drop for Work {
-    fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.0).ok();
-    }
-}
 
 // ── the vault, as the render reads it ──────────────────────────────────────────────────────────────────────────────
 
@@ -266,7 +70,6 @@ struct Vaulted {
     rt: tokio::runtime::Handle,
     media: HashMap<String, Media>,
     ext: HashMap<String, String>,
-    story: HashMap<String, String>,
     /// an original's proxy (its meta.proxy) → the original: conform finds it from either side
     originals: HashMap<String, String>,
     /// each file as it is read: in place, from the vault's blob store (never copied out)
@@ -278,17 +81,15 @@ impl Vaulted {
         let list = vault.catalog.list_view().await.map_err(err)?;
         let mut media = HashMap::new();
         let mut ext = HashMap::new();
-        let mut story = HashMap::new();
         let mut originals = HashMap::new();
         for m in list {
             if let Some(p) = m.meta.get("proxy").and_then(Value::as_str).filter(|_| m.meta.get("role").and_then(Value::as_str) != Some("proxy")) {
                 originals.insert(p.to_string(), m.hash.clone());
             }
             ext.insert(m.hash.clone(), extension(&m));
-            story.insert(m.hash.clone(), m.story.clone());
             media.insert(m.hash.clone(), Media { hash: m.hash, mime: m.mime, kind: m.kind, size: m.size, title: m.title, meta: m.meta });
         }
-        Ok(Self { vault: vault.clone(), rt: tokio::runtime::Handle::current(), media, ext, story, originals, files: Mutex::new(HashMap::new()) })
+        Ok(Self { vault: vault.clone(), rt: tokio::runtime::Handle::current(), media, ext, originals, files: Mutex::new(HashMap::new()) })
     }
 
     /// avenDB's footage beside the vault's (Jobs and studio 2.0): the studio's library items for it the page named
@@ -308,20 +109,6 @@ impl Vaulted {
             self.media.insert(m.hash.clone(), m);
         }
         self
-    }
-
-    /// The story most of the timeline's files live in; None (the inbox) when most are in the inbox.
-    fn story_of(&self, t: &Timeline) -> Option<String> {
-        let mut hashes: Vec<&str> = t.clips.iter().filter(|c| !c.is_world()).filter_map(|c| c.hash.as_deref()).collect();
-        hashes.sort_unstable();
-        hashes.dedup();
-        let mut count: HashMap<&str, usize> = HashMap::new();
-        for h in hashes {
-            if let Some(s) = self.story.get(h) {
-                *count.entry(s.as_str()).or_default() += 1;
-            }
-        }
-        count.into_iter().max_by_key(|(s, n)| (*n, *s)).map(|(s, _)| s.to_string()).filter(|s| !s.is_empty())
     }
 }
 
@@ -471,52 +258,6 @@ async fn plates_for(handle: &AppHandle, vault: &Vault, auth: &Auth, t: &Timeline
 
 // ── the jobs ────────────────────────────────────────────────────────────────────────────────────────────────────
 
-async fn timeline_of(auth: &Auth, job: &Value) -> Res<Timeline> {
-    let id = job["timeline_id"].as_str().ok_or("the job names no timeline")?;
-    let raw = auth.get_ok("GET", &format!("/api/timelines/{id}"), None).await.map_err(|e| format!("the timeline: {e}"))?;
-    serde_json::from_value(raw).map_err(|e| format!("the timeline: {e}"))
-}
-
-/// A timeline into every delivery, into the vault: the job's result.
-async fn render_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &Value, work: &Work, progress: &Progress) -> Res<Value> {
-    let id = job["id"].as_str().unwrap_or_default();
-    let t = timeline_of(auth, job).await?;
-    progress.named(&format!("Render · {}", t.name));
-    progress.set(0.02, "fetching files");
-    let lib = Arc::new(Vaulted::new(vault).await?);
-    let story = lib.story_of(&t);
-    let made = render_into(handle, vault, auth, &t, lib, job["params"]["delivery"].as_str(), work.0.join("out"), &progress.told()).await?;
-
-    // each file into the vault, described — tagged by what it is (the name it came in as is only a fact)
-    progress.set(0.94, "into the vault");
-    let mut made = made;
-    for i in 0..made.deliveries.len() {
-        let about = made.about(&t, &made.deliveries[i]);
-        let file = made.deliveries[i].file.clone();
-        let batch = Batch {
-            session: format!("render {id}"),
-            tags: about.tags,
-            title: Some(about.title),
-            description: Some(about.description),
-            meta: about.meta,
-            story: story.clone(),
-            class: Some("delivery".into()),
-            ..Default::default()
-        };
-        let o = vault.ingest_file(&file, &batch).await.map_err(err)?;
-        if o.verdict == Verdict::Mismatch {
-            return Err(format!("{}: the copy in the vault is not what was rendered (hash mismatch)", made.deliveries[i].name));
-        }
-        std::fs::remove_file(&file).ok();
-        made.deliveries[i].hash = Some(o.hash);
-        progress.set(0.94 + 0.05 * (i + 1) as f64 / made.deliveries.len() as f64, "into the vault");
-    }
-    for w in &made.warnings {
-        tracing::warn!("render job {id}: {w}");
-    }
-    made.job_result(&t).map_err(err)
-}
-
 /// Timeline `t` rendered into `out` from library `lib`, every delivery, or with `delivery` "youtube-4k" the 16:9 4K
 /// master for YouTube alone: what it made, its files still on the disk (the caller puts them where they go).
 async fn render_into(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, t: &Timeline, lib: Arc<Vaulted>, delivery: Option<&str>, out: PathBuf, told: &Told) -> Res<vault_render::Render> {
@@ -548,52 +289,6 @@ const GRADED_WIDTH: u32 = 1920;
 pub(crate) enum Framed {
     Graded { file: PathBuf, rep: Value, clip: String },
     Hero { file: PathBuf, rep: Value, at: f64, aspect: String, width: u32, height: u32 },
-}
-
-/// A `frame` job into the vault: the job's result. Of a media clip — named (`params.clip`, queued when a timeline
-/// save changed how its file looks) or on screen at `params.t` (an agent's ask) — it is that file's graded still,
-/// replacing the one before; of a world clip or a gap, a hero frame at `params.t` in `params.shape`, replacing the
-/// one before of the same clip and shape. Never a history of either.
-async fn frame_job(handle: &AppHandle, vault: &Arc<Vault>, auth: &Auth, job: &Value, work: &Work, progress: &Progress) -> Res<Value> {
-    let at = job["params"]["t"].as_f64().filter(|t| *t >= 0.0).unwrap_or(0.0);
-    let aspect = job["params"]["shape"].as_str().unwrap_or("16:9").to_string();
-    let t = timeline_of(auth, job).await?;
-    progress.named(&format!("Frame · {} · {at:.2} s", t.name));
-    progress.set(0.05, "fetching files");
-    let lib = Arc::new(Vaulted::new(vault).await?);
-    let story = lib.story_of(&t);
-    let (file, rep, w, h) = match frame_into(handle, auth, &t, lib, job["params"]["clip"].as_str(), at, &aspect, &work.0, &progress.told()).await? {
-        Framed::Graded { file, rep, clip } => {
-            progress.set(0.9, "into the vault");
-            return graded_still_in(vault, &t, clip, file, rep).await;
-        }
-        Framed::Hero { file, rep, width, height, .. } => (file, rep, width, height),
-    };
-    progress.set(0.9, "into the vault");
-    let what = rep["what"].as_str().unwrap_or("").to_string();
-    let batch = Batch {
-        session: format!("hero frame {}", job["id"].as_str().unwrap_or_default()),
-        tags: std::iter::once("role:frame".to_string()).chain(t.project.clone()).collect(),
-        title: Some(format!("{} · hero frame {at:.2} s · {aspect}", t.name)),
-        description: Some(format!("One frame at full precision ({w}×{h}, 16-bit) through the whole chain, without graphics — {what}")),
-        meta: json!({ "role": "frame", "timeline": t.id, "version": t.version.unwrap_or(1), "t": at, "shape": aspect, "width": w, "height": h, "clip": rep["clip"] }),
-        story,
-        ..Default::default()
-    };
-    let o = vault.ingest_file(&file, &batch).await.map_err(err)?;
-    if o.verdict == Verdict::Mismatch {
-        return Err("the hero frame's copy in the vault is not what was rendered (hash mismatch)".into());
-    }
-    // one hero frame per clip and shape: the one it replaces goes
-    let same = |m: &vault_core::Meta| {
-        is_frame(m) && m.meta["timeline"] == json!(t.id) && m.meta["clip"] == rep["clip"] && m.meta["shape"] == json!(aspect)
-    };
-    for m in vault.catalog.list().await.map_err(err)?.iter().filter(|m| same(m) && m.hash != o.hash) {
-        if let Ok(h) = m.hash.parse::<iroh_blobs::Hash>() {
-            vault.catalog.delete_file(h, "replaced by the clip's new hero frame").await.ok();
-        }
-    }
-    Ok(json!({ "status": "done", "progress": 1, "note": format!("hero frame ready · {at:.2} s · {aspect}"), "output_hash": o.hash, "report": rep }))
 }
 
 /// A frame of timeline `t` made into `work` from library `lib`: of media clip `clip`, or of the one on screen at `at`,
@@ -684,54 +379,6 @@ pub(crate) async fn frame_cut(handle: &AppHandle, t: &Timeline, aven: &[Value], 
     };
     world::close_if_idle(handle);
     made
-}
-
-/// A hero frame: a frame of a timeline the render worker made (`role: frame`, or the tag `role:frame` with the
-/// timeline it is of). The old library's story frames carry the tag too, without a timeline: they are art, not this.
-pub fn is_frame(m: &vault_core::Meta) -> bool {
-    m.meta.get("role").and_then(Value::as_str) == Some("frame")
-        || (m.tags.iter().any(|t| t == "role:frame") && m.meta.get("timeline").and_then(Value::as_str).is_some())
-}
-
-/// A file's graded still (`jpg`, made of clip `clip`) into the vault, as its preview (`meta.preview`): the one it
-/// replaces goes.
-async fn graded_still_in(vault: &Arc<Vault>, t: &Timeline, clip: String, jpg: PathBuf, rep: Value) -> Res<Value> {
-    let of = rep["of"].as_str().unwrap_or_default().to_string();
-    let hash: iroh_blobs::Hash = of.parse().map_err(err)?;
-    let original = vault.catalog.meta(hash).await.map_err(err)?.ok_or("the clip's file is not in the vault's catalog")?;
-    let stem = Path::new(&original.original_name).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| of[..12].to_string());
-    // named like every file made of an original: `<its name>.preview.jpg` (graded or not, it is the file's preview)
-    let named = jpg.with_file_name(format!("{stem}.preview.jpg"));
-    std::fs::rename(&jpg, &named).map_err(err)?;
-    let batch = Batch {
-        session: format!("graded still of {of}"),
-        tags: vec!["preview".into()],
-        title: Some(format!("{stem} · preview")),
-        meta: json!({ "role": "preview", "preview_of": of, "t": rep["t"], "width": rep["width"], "height": rep["height"], "shape": "16:9",
-            "graded": { "timeline": t.id, "version": t.version.unwrap_or(1), "clip": clip } }),
-        story: Some(original.story.clone()).filter(|s| !s.is_empty()),
-        class: Some("proxy".into()),
-        ..Default::default()
-    };
-    let o = vault.ingest_file(&named, &batch).await.map_err(err)?;
-    if o.verdict == Verdict::Mismatch {
-        return Err("the graded still's copy in the vault is not what was rendered (hash mismatch)".into());
-    }
-    // the same picture as before is the same file, still under the name it first came in as: named as it is now
-    if let Ok(h) = o.hash.parse::<iroh_blobs::Hash>() {
-        vault.catalog.describe(h, &json!({ "original_name": format!("{stem}.preview.jpg"), "title": format!("{stem} · preview") })).await.map_err(err)?;
-    }
-    vault.catalog.describe(hash, &json!({ "meta": { "preview": o.hash } })).await.map_err(err)?;
-    // one preview per file: the one it replaces goes
-    for m in vault.catalog.list().await.map_err(err)? {
-        if m.meta.get("preview_of").and_then(Value::as_str) == Some(&of)
-            && m.hash != o.hash
-            && let Ok(h) = m.hash.parse::<iroh_blobs::Hash>()
-        {
-            vault.catalog.delete_file(h, "replaced by the file's new graded still").await.ok();
-        }
-    }
-    Ok(json!({ "status": "done", "progress": 1, "note": format!("graded still ready · {stem}"), "output_hash": o.hash, "report": rep }))
 }
 
 #[cfg(test)]

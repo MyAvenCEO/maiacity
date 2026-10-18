@@ -3,13 +3,10 @@
 //! where a file is "held" (complete in this Mac's store, not in the bucket) and who works on it (one Mac at a time,
 //! like the transcripts: `device` + `updated`).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
-use iroh_blobs::Hash;
 use serde_json::{Map, Value, json};
 
-/// How often a file is tried before it waits for a person.
-pub const TRIES: u64 = 3;
 /// Frames per request (a stretch of the file).
 pub const BATCH: usize = 12;
 /// Frames of one file at most (an hour: one every six seconds); picture changes come on top, then all are thinned.
@@ -20,158 +17,11 @@ pub const EDGE: u32 = 768;
 /// 0…1 of display code values) is sampled too — a cut, a light switched on. (ffmpeg's scene score before: 0.35 on
 /// its own scale.)
 pub const SCENE: f64 = 0.12;
-/// The proxies' working space (vault-media `proxy::WORKING`).
-pub const WORKING: &str = vault_media::proxy::WORKING;
-/// How long a recording's analysis waits for its words before it goes on without them.
-pub const WORDS_WAIT_HOURS: i64 = 6;
-/// Another device's analysis that has said nothing for this long is taken over.
-pub const STALE_HOURS: i64 = 6;
-/// The Day 01 story: what the analysis runs for when nothing else is set.
-pub const DAY_01: &str = "9e89f786b06a26d5d33fa8ed2d77cc828afacc016e1113bb779ab4076243fa26";
 /// The analysis' own version, in every record it writes (`version`): raised when what it makes changes enough to make
 /// every file's again — a record of an older one (none said: 1) is due. A proxy made again is not that: it shows the
 /// same original.
 pub const VERSION: u64 = 1;
 
-pub(crate) fn s<'a>(v: &'a Value, k: &str) -> &'a str {
-    v.get(k).and_then(|x| x.as_str()).unwrap_or("")
-}
-
-pub fn is_hash(x: &str) -> bool {
-    x.len() == 64 && x.bytes().all(|b| b.is_ascii_hexdigit())
-}
-
-/// What the model looks at for a file.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Source {
-    /// a movie's ACEScct proxy (HEVC Main10)
-    Movie { hash: Hash, size: u64 },
-    /// a still: its ACEScct proxy (a 16-bit PNG), or the still itself when it is a display picture that needed none
-    Still { hash: Hash, size: u64, acescct: bool },
-}
-
-impl Source {
-    pub fn hash(&self) -> Hash {
-        match self {
-            Source::Movie { hash, .. } | Source::Still { hash, .. } => *hash,
-        }
-    }
-    pub fn size(&self) -> u64 {
-        match self {
-            Source::Movie { size, .. } | Source::Still { size, .. } => *size,
-        }
-    }
-    /// Is it in ACEScct (then it goes through the output transform)?
-    pub fn acescct(&self) -> bool {
-        matches!(self, Source::Movie { .. } | Source::Still { acescct: true, .. })
-    }
-    pub fn movie(&self) -> bool {
-        matches!(self, Source::Movie { .. })
-    }
-}
-
-/// Is this file's story one the analysis runs for? (None: every story.)
-pub fn in_scope(meta: &Value, only: Option<&HashSet<String>>) -> bool {
-    only.is_none_or(|set| set.contains(s(meta, "story")))
-}
-
-/// Does this file get analysed? Footage to cut with: a video original, an EXR sequence, a still — never a proxy, a
-/// delivery, or the pipeline's own working files (hero frames, LUTs, thumbnails, audio proxies).
-pub fn wants(meta: &Value) -> bool {
-    let role = meta.pointer("/meta/role").and_then(|r| r.as_str()).unwrap_or("");
-    let working = matches!(role, "frame" | "lut" | "proxy" | "proxy-cache" | "audio" | "thumbnail" | "plate" | "model" | "grade-still" | "preview");
-    let superseded = meta["tags"].as_array().is_some_and(|t| t.iter().any(|t| t.as_str() == Some("superseded"))) || meta.pointer("/meta/deleted").is_some_and(|d| !d.is_null());
-    let sequence = meta.pointer("/meta/sequence").and_then(|x| x.as_str()) == Some("exr");
-    matches!(s(meta, "class"), "" | "default" | "original") && !working && !superseded && (matches!(s(meta, "kind"), "video" | "image") || sequence)
-}
-
-/// Which file shows it: its ACEScct proxy once this Mac holds it (the original's `meta.proxy`, or a proxy naming it
-/// in `proxy_of`), or — a small display still that needed no proxy — the still itself.
-pub fn source(hex: &str, meta: &Value, metas: &HashMap<String, Value>, proxy_of: &HashMap<String, String>, held: &HashSet<String>) -> Option<Source> {
-    let named = meta.pointer("/meta/proxy").and_then(|p| p.as_str()).unwrap_or("");
-    let proxy = if is_hash(named) { Some(named.to_string()) } else { proxy_of.get(hex).cloned() };
-    if let Some(p) = proxy {
-        let pm = metas.get(&p)?;
-        if !held.contains(&p) || pm.pointer("/meta/color/profile").and_then(|x| x.as_str()) != Some(WORKING) {
-            return None;
-        }
-        let (hash, size) = (p.parse().ok()?, pm["size"].as_u64().unwrap_or(0));
-        return Some(if s(pm, "kind") == "image" { Source::Still { hash, size, acescct: true } } else { Source::Movie { hash, size } });
-    }
-    if s(meta, "kind") == "image" && named.starts_with("none") && held.contains(hex) {
-        return Some(Source::Still { hash: hex.parse().ok()?, size: meta["size"].as_u64().unwrap_or(0), acescct: false });
-    }
-    None
-}
-
-/// The hashes `source` may pick for a file (to ask this Mac's store whether it holds them).
-pub fn candidates(hex: &str, meta: &Value, proxy_of: &HashMap<String, String>) -> Vec<String> {
-    let named = meta.pointer("/meta/proxy").and_then(|p| p.as_str()).unwrap_or("");
-    let mut out = vec![hex.to_string()];
-    if is_hash(named) {
-        out.push(named.to_string());
-    }
-    if let Some(p) = proxy_of.get(hex) {
-        out.push(p.clone());
-    }
-    out
-}
-
-/// Is its analysis due now (its `analysis/<hash>` record)? None yet, or made by an older version of the analysis
-/// (`VERSION`), or not finished and failed fewer than TRIES times — or failed for good, of another file than shows it
-/// now (a proxy made again may open where the old one did not). The record is the original's (keyed by its hash: an
-/// original changed is another file, with a record of its own), so a finished one stands whatever shows the file: a
-/// proxy made again (another colour journey) shows the same frames at the same times — nothing is asked again, the
-/// record follows it (`follows`).
-pub fn due(record: Option<&Value>, source: &Source) -> bool {
-    let Some(r) = record.filter(|r| r.get("state").is_some()) else { return true };
-    if r["version"].as_u64().unwrap_or(1) < VERSION {
-        return true;
-    }
-    let state = s(r, "state");
-    if finished(state) {
-        return false;
-    }
-    !(state.starts_with("failed") && r["tries"].as_u64().unwrap_or(0) >= TRIES) || shown_by_another(r, source)
-}
-
-/// Is what it found final (done, or nothing to find)?
-fn finished(state: &str) -> bool {
-    state == "done" || state.starts_with("none")
-}
-
-/// Was the record made of another file than the one that shows the original now (its proxy made again)?
-fn shown_by_another(r: &Value, source: &Source) -> bool {
-    !s(r, "of").is_empty() && s(r, "of") != source.hash().to_hex().as_str()
-}
-
-/// Does a finished analysis follow its file to a new proxy (made again: `of` another hash)? Its `of` is set to the
-/// new one, quietly — what it found stands.
-pub fn follows(record: Option<&Value>, source: &Source) -> bool {
-    record.is_some_and(|r| finished(s(r, "state")) && !due(Some(r), source) && shown_by_another(r, source))
-}
-
-/// Is another device working on it right now (analysing, and heard from within STALE_HOURS)? Then it is left to it.
-pub fn elsewhere(record: Option<&Value>, me: &str, now: &str) -> bool {
-    let Some(r) = record else { return false };
-    let device = s(r, "device");
-    s(r, "state") == "analysing" && !device.is_empty() && device != me && crate::transcripts::age_hours(s(r, "updated"), now).is_some_and(|h| h < STALE_HOURS)
-}
-
-/// Does a recording's analysis still wait for its words? Until its transcript has settled — or, when no Mac has made
-/// it within WORDS_WAIT_HOURS of its sound being read (`sound/<hash>`'s `at`), not any longer; a file without sound
-/// never waits.
-pub fn waits_for_words(meta: &Value, transcript: Option<&Value>, sound: Option<&Value>, now: &str) -> bool {
-    if !crate::sound::wants_value(meta) || crate::sound::settled(transcript) {
-        return false;
-    }
-    let state = sound.and_then(|x| x["state"].as_str()).unwrap_or("");
-    if state.starts_with("none") {
-        return false;
-    }
-    let since = sound.and_then(|x| x["at"].as_str()).and_then(|a| crate::transcripts::age_hours(a, now));
-    !since.is_some_and(|h| h >= WORDS_WAIT_HOURS)
-}
 
 
 /// Seconds between the regular frames: one a second, fewer for a long file.
@@ -404,26 +254,6 @@ pub fn base64(bytes: &[u8]) -> String {
     out
 }
 
-/// A record with these keys set (Null: taken out) — everything else as it was.
-pub fn patched(latest: Option<&Value>, patch: &Map<String, Value>) -> Value {
-    let mut out = latest.filter(|v| v.is_object()).cloned().unwrap_or_else(|| json!({}));
-    let o = out.as_object_mut().unwrap();
-    for (k, v) in patch {
-        if v.is_null() {
-            o.remove(k);
-        } else {
-            o.insert(k.clone(), v.clone());
-        }
-    }
-    out
-}
-
-/// The failure a file's record says: why, and whether it tries again by itself.
-pub fn failed(why: &str, tries: u64) -> String {
-    let why: String = why.chars().take(300).collect();
-    if tries < TRIES { format!("failed: {why} — tried {tries} of {TRIES}, again by itself") } else { format!("failed: {why} — tried {TRIES} times, waits for a person") }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -433,111 +263,6 @@ mod tests {
 
     fn set(xs: &[&str]) -> HashSet<String> {
         xs.iter().map(|x| x.to_string()).collect()
-    }
-
-    #[test]
-    fn which_files_and_what_shows_them() {
-        let orig = json!({ "hash": O, "kind": "video", "class": "original", "size": 900, "meta": { "proxy": P } });
-        let proxy = json!({ "hash": P, "kind": "video", "class": "proxy", "size": 90, "meta": { "proxy_of": O, "color": { "profile": "acescct" } } });
-        let metas: HashMap<String, Value> = [(O.to_string(), orig.clone()), (P.to_string(), proxy.clone())].into();
-        assert!(wants(&orig) && !wants(&proxy));
-        assert!(!wants(&json!({ "kind": "image", "class": "default", "meta": { "role": "frame" } })));
-        assert!(!wants(&json!({ "kind": "image", "class": "proxy", "meta": { "role": "thumbnail" } })));
-        assert!(!wants(&json!({ "kind": "audio", "class": "original" })));
-        assert!(wants(&json!({ "kind": "other", "class": "default", "meta": { "sequence": "exr" } })));
-        // the proxy, once this Mac holds it
-        assert_eq!(source(O, &orig, &metas, &HashMap::new(), &set(&[O])), None);
-        assert_eq!(source(O, &orig, &metas, &HashMap::new(), &set(&[O, P])), Some(Source::Movie { hash: P.parse().unwrap(), size: 90 }));
-        // the original's meta.proxy written over: the proxy naming it still counts
-        let bare = json!({ "hash": O, "kind": "video", "class": "original", "meta": {} });
-        let of: HashMap<String, String> = [(O.to_string(), P.to_string())].into();
-        assert!(matches!(source(O, &bare, &metas, &of, &set(&[P])), Some(Source::Movie { .. })));
-        assert_eq!(candidates(O, &bare, &of), vec![O.to_string(), P.to_string()]);
-        // an old proxy not in ACEScct: not the model's picture
-        let old = json!({ "hash": P, "kind": "video", "class": "proxy", "meta": { "color": { "profile": "slog3" } } });
-        let metas2: HashMap<String, Value> = [(O.to_string(), orig.clone()), (P.to_string(), old)].into();
-        assert_eq!(source(O, &orig, &metas2, &HashMap::new(), &set(&[O, P])), None);
-        // a small display still: itself
-        let still = json!({ "hash": O, "kind": "image", "class": "default", "size": 5, "meta": { "proxy": "none: a 1080×720 display still needs none" } });
-        assert_eq!(source(O, &still, &HashMap::new(), &HashMap::new(), &set(&[O])), Some(Source::Still { hash: O.parse().unwrap(), size: 5, acescct: false }));
-        // a still's PNG proxy: through the output transform
-        let png = json!({ "hash": P, "kind": "image", "class": "proxy", "size": 7, "meta": { "color": { "profile": "acescct" } } });
-        let exr = json!({ "hash": O, "kind": "image", "class": "original", "meta": { "proxy": P } });
-        let metas3: HashMap<String, Value> = [(P.to_string(), png)].into();
-        assert_eq!(source(O, &exr, &metas3, &HashMap::new(), &set(&[P])), Some(Source::Still { hash: P.parse().unwrap(), size: 7, acescct: true }));
-        // the scope: the Day 01 story only, unless every story
-        let only = set(&[DAY_01]);
-        assert!(in_scope(&json!({ "story": DAY_01 }), Some(&only)) && !in_scope(&json!({ "story": "x" }), Some(&only)) && in_scope(&json!({}), None));
-    }
-
-    #[test]
-    fn when_it_is_due_and_whose_it_is() {
-        let src = Source::Movie { hash: P.parse().unwrap(), size: 1 };
-        assert!(due(None, &src));
-        // only a first thumbnail so far
-        assert!(due(Some(&json!({ "thumbnail": "t" })), &src));
-        assert!(!due(Some(&json!({ "state": "done", "of": P })), &src));
-        // the proxy was made again: what was found stands (a_proxy_made_again_keeps_the_analysis)
-        assert!(!due(Some(&json!({ "state": "done", "of": O })), &src));
-        assert!(due(Some(&json!({ "state": "failed: x", "tries": 2, "of": P })), &src));
-        assert!(!due(Some(&json!({ "state": "failed: x", "tries": 3, "of": P })), &src));
-        assert!(due(Some(&json!({ "state": "analysing", "progress": 0.4, "of": P })), &src));
-        // another Mac at work an hour ago: its own; gone quiet for six hours, or the server's old run: taken over
-        let now = "2026-09-30T12:00:00Z";
-        assert!(elsewhere(Some(&json!({ "state": "analysing", "device": "mac2", "updated": "2026-09-30T11:00:00Z" })), "me", now));
-        assert!(!elsewhere(Some(&json!({ "state": "analysing", "device": "mac2", "updated": "2026-09-30T05:00:00Z" })), "me", now));
-        assert!(!elsewhere(Some(&json!({ "state": "analysing", "progress": 0.2 })), "me", now));
-        assert!(!elsewhere(Some(&json!({ "state": "analysing", "device": "me", "updated": "2026-09-30T11:59:00Z" })), "me", now));
-        assert_eq!(failed("x", 1), "failed: x — tried 1 of 3, again by itself");
-        assert_eq!(failed("x", 3), "failed: x — tried 3 times, waits for a person");
-    }
-
-    #[test]
-    fn a_proxy_made_again_keeps_the_analysis() {
-        // the original analysed through its proxy P; P made again (another colour journey) as Q, named on the original
-        const Q: &str = "0000000000000000000000000000000000000000000000000000000000000003";
-        let orig = json!({ "hash": O, "kind": "video", "class": "original", "size": 900, "meta": { "proxy": Q } });
-        let remade = json!({ "hash": Q, "kind": "video", "class": "proxy", "size": 95, "meta": { "proxy_of": O, "color": { "profile": "acescct" } } });
-        let metas: HashMap<String, Value> = [(O.to_string(), orig.clone()), (Q.to_string(), remade)].into();
-        let src = source(O, &orig, &metas, &HashMap::new(), &set(&[O, Q])).unwrap();
-        assert_eq!(src.hash(), Q.parse::<Hash>().unwrap());
-        let done = json!({ "state": "done", "of": P, "version": VERSION, "hero": { "t": 14.0, "why": "his face in the light" } });
-        // not asked again (its hero frame stays where it is); its `of` follows the new proxy, once
-        assert!(!due(Some(&done), &src));
-        assert!(follows(Some(&done), &src));
-        let followed = patched(Some(&done), &Map::from_iter([("of".into(), json!(Q))]));
-        assert!(!due(Some(&followed), &src) && !follows(Some(&followed), &src));
-        assert_eq!(followed["hero"]["t"], 14.0);
-        // a record of before the version was written down counts as the first
-        assert_eq!(due(Some(&json!({ "state": "done", "of": P })), &src), VERSION > 1);
-        // the analysis' version raised: every older record again (one of a newer app is left alone); nothing follows
-        let older = json!({ "state": "done", "of": P, "version": VERSION - 1 });
-        assert!(due(Some(&older), &src) && !follows(Some(&older), &src));
-        assert!(!due(Some(&json!({ "state": "done", "of": P, "version": VERSION + 1 })), &src));
-        // the original changed: another file, no record of its own yet
-        assert!(due(None, &src));
-        // failed for good through the old proxy: the new one gets a try (it may open where the old did not); not twice
-        let failed_for_good = json!({ "state": "failed: x", "tries": 3, "of": P, "version": VERSION });
-        assert!(due(Some(&failed_for_good), &src) && !follows(Some(&failed_for_good), &src));
-        assert!(!due(Some(&json!({ "state": "failed: x", "tries": 4, "of": Q, "version": VERSION })), &src));
-        // under way, or nothing said of what it looked at: nothing to follow
-        assert!(!follows(Some(&json!({ "state": "analysing", "progress": 0.4, "of": P })), &src));
-        assert!(!follows(Some(&json!({ "state": "done" })), &src) && !follows(None, &src));
-    }
-
-    #[test]
-    fn a_recording_waits_for_its_words_but_not_forever() {
-        let rec = json!({ "kind": "video", "class": "original", "meta": {} });
-        let now = "2026-09-30T12:00:00Z";
-        let sound = |at: &str| json!({ "state": "done", "at": at });
-        assert!(waits_for_words(&rec, None, Some(&sound("2026-09-30T11:00:00Z")), now));
-        assert!(waits_for_words(&rec, Some(&json!({ "state": "transcribing", "progress": 0.5 })), None, now));
-        assert!(!waits_for_words(&rec, Some(&json!({ "state": "done", "words": [] })), None, now));
-        // no Mac made them in six hours: on without them
-        assert!(!waits_for_words(&rec, None, Some(&sound("2026-09-30T05:59:00Z")), now));
-        // no sound at all, or a still: never waits
-        assert!(!waits_for_words(&rec, None, Some(&json!({ "state": "none: no sound track" })), now));
-        assert!(!waits_for_words(&json!({ "kind": "image", "class": "default" }), None, None, now));
     }
 
     #[test]

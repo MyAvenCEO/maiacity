@@ -8,73 +8,13 @@
 //! reading the API's answers — a pause (`503` with `paused_until`) or a transient failure makes the files wait (no try
 //! used up), a refusal of the file's own is its failure.
 
-use std::{collections::HashSet, path::PathBuf, time::{Duration, Instant}};
+use std::time::{Duration, Instant};
 
-use serde_json::{Map, Value, json};
+use serde_json::{Value, json};
 
 use crate::auth::Auth;
 
-// ── the settings: the stories ──
 
-fn settings_file() -> PathBuf {
-    let home = std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default();
-    home.join("Library/Application Support/city.maia.studio/analysis.json")
-}
-
-fn settings() -> Map<String, Value> {
-    std::fs::read(settings_file()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
-}
-
-/// Change the settings (Null: taken out). A key an earlier version kept here is dropped: keys live on the server.
-pub fn set_settings(patch: &Map<String, Value>) -> Result<(), String> {
-    let mut map = settings();
-    map.remove("prem_key");
-    map.remove("prem_base");
-    for (k, v) in patch {
-        if v.is_null() {
-            map.remove(k);
-        } else {
-            map.insert(k.clone(), v.clone());
-        }
-    }
-    let file = settings_file();
-    std::fs::create_dir_all(file.parent().unwrap()).map_err(|e| e.to_string())?;
-    let tmp = file.with_extension("part");
-    std::fs::write(&tmp, serde_json::to_vec_pretty(&map).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-    std::fs::rename(&tmp, &file).map_err(|e| e.to_string())
-}
-
-/// No LLM key on a Mac: one an earlier version kept is taken out at start.
-pub fn forget_old_key() {
-    if settings().contains_key("prem_key") || settings().contains_key("prem_base") {
-        set_settings(&Map::new()).ok();
-        tracing::info!("analysis: the Prem key kept on this Mac is gone — the server asks Prem");
-    }
-}
-
-/// The stories whose files are analysed: ANALYSE_STORIES (story ids, comma separated; `*` every story), else what is
-/// set on this Mac (an empty list: every story), else the Day 01 story. None: every story.
-pub fn stories() -> Option<HashSet<String>> {
-    let parse = |v: &str| -> Option<HashSet<String>> {
-        let set: HashSet<String> = v.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect();
-        (!set.is_empty() && !set.contains("*")).then_some(set)
-    };
-    if let Ok(v) = std::env::var("ANALYSE_STORIES") {
-        return parse(&v);
-    }
-    match settings().get("stories") {
-        Some(Value::Array(xs)) => parse(&xs.iter().filter_map(|x| x.as_str()).collect::<Vec<_>>().join(",")),
-        Some(Value::String(s)) => parse(s),
-        _ => Some(HashSet::from([super::plan::DAY_01.to_string()])),
-    }
-}
-
-/// What is set, for a person or an agent to see.
-pub fn status() -> Value {
-    let stories = stories().map(|s| s.into_iter().collect::<Vec<_>>());
-    json!({ "through": "our server (POST /api/analysis): the model, its key and the prompt are the server's",
-            "stories": stories.map(Value::from).unwrap_or(json!("every story")), "settings": settings_file().display().to_string() })
-}
 
 // ── one stretch ──
 
@@ -141,18 +81,6 @@ impl Prem {
     async fn call(&self, auth: &Auth, method: &str, body: Option<Value>) -> Result<Value, Ask> {
         let (status, body) = auth.call(method, "/api/analysis", body).await.map_err(|e| wait(e))?;
         read(status, body)
-    }
-
-    /// Is the analysis set up on the server and not paused? (No: why the files wait.)
-    pub async fn ready(&self, auth: &Auth) -> Result<(), Ask> {
-        let s = self.call(auth, "GET", None).await?;
-        if s["ready"].as_bool() != Some(true) {
-            return Err(wait("the shot analysis is not set up on the server yet (its Prem key)"));
-        }
-        if let Some(until) = s["paused_until"].as_str() {
-            return read(503, json!({ "error": s["reason"].as_str().unwrap_or("the model is paused"), "paused_until": until })).map(|_| ());
-        }
-        Ok(())
     }
 
     /// One stretch of frames → its tags, cues, summary and thumbnail pick.

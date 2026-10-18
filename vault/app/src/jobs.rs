@@ -19,7 +19,7 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+
 use tauri::{AppHandle, Emitter};
 
 use crate::Res;
@@ -233,17 +233,6 @@ pub fn id(kind: Kind, subject: &str) -> String {
     format!("{}:{subject}", serde_json::to_value(kind).ok().and_then(|v| v.as_str().map(String::from)).unwrap_or_default())
 }
 
-/// Is it queued or running?
-pub fn active(kind: Kind, subject: &str) -> bool {
-    let id = id(kind, subject);
-    with(|r| r.active.contains_key(&id))
-}
-
-/// Its name, once it knows it.
-pub fn name(kind: Kind, subject: &str, name: &str) {
-    update(&id(kind, subject), |j| j.name = name.into(), true);
-}
-
 fn update(id: &str, f: impl FnOnce(&mut Job), always: bool) {
     let job = with(|r| {
         let j = r.active.get_mut(id)?;
@@ -274,18 +263,6 @@ pub fn stage(kind: Kind, subject: &str, stage: &str, progress: f64) {
             j.started.get_or_insert_with(now);
         },
         changed,
-    );
-}
-
-/// It waits for something that comes by itself (an ingest to finish, memory, a model, a file still on its way).
-pub fn waiting(kind: Kind, subject: &str, why: &str) {
-    update(
-        &id(kind, subject),
-        |j| {
-            j.state = State::Waiting;
-            j.stage = why.into();
-        },
-        true,
     );
 }
 
@@ -325,22 +302,6 @@ impl Drop for Ending {
             end(self.kind, &self.subject, Err("stopped on an error (the app's log says which)".into()));
         }
     }
-}
-
-/// It ended because there was nothing to do after all (no work kept as history).
-pub fn drop_quietly(kind: Kind, subject: &str) {
-    let id = id(kind, subject);
-    with(|r| {
-        r.active.remove(&id);
-        r.told.remove(&id);
-        if r.busy.values().any(|b| *b == id) {
-            r.busy.retain(|_, b| *b != id);
-        }
-    });
-    if let Some(h) = HANDLE.get() {
-        h.emit("jobs-gone", &id).ok();
-    }
-    TURNS.notify_waiters();
 }
 
 fn finish(id: &str, (state, error): (State, Option<String>)) {
@@ -443,49 +404,6 @@ pub async fn turn(kind: Kind, subject: &str) -> Result<Turn, Cancelled> {
     }
 }
 
-/// A place in a lane that is no job of its own — the render queue's poll, which takes the GPU before it asks the API
-/// for a film, so a film it claims never waits behind other work. Most urgent; never shown. Dropped with its turn.
-pub async fn hidden_turn(lane: Lane, tag: &str) -> Turn {
-    let id = format!("~{tag}");
-    with(|r| {
-        r.active.entry(id.clone()).or_insert_with(|| Job {
-            id: id.clone(),
-            kind: Kind::Render,
-            lane,
-            subject: tag.into(),
-            name: String::new(),
-            state: State::Queued,
-            stage: String::new(),
-            progress: 0.0,
-            priority: -2,
-            queued: now(),
-            started: None,
-            ended: None,
-            error: None,
-            hidden: true,
-        });
-    });
-    loop {
-        let notified = TURNS.notified();
-        tokio::pin!(notified);
-        notified.as_mut().enable();
-        let ready = with(|r| {
-            if r.busy.contains_key(&lane) {
-                return false;
-            }
-            r.busy.insert(lane, id.clone());
-            if let Some(j) = r.active.get_mut(&id) {
-                j.state = State::Running;
-            }
-            true
-        });
-        if ready {
-            return Turn { id, lane, hidden: true };
-        }
-        let _ = tokio::time::timeout(Duration::from_secs(1), notified).await;
-    }
-}
-
 /// A queued job taken off before its turn.
 #[derive(Debug)]
 pub struct Cancelled;
@@ -496,52 +414,6 @@ impl std::fmt::Display for Cancelled {
     }
 }
 
-/// The lane free of an ingest and with memory to spare, the job saying so while it waits.
-pub async fn ready_to_run(vault: &vault_core::Vault, kind: Kind, subject: &str) {
-    if vault.hold.now().iter().any(|h| h == "ingest") {
-        waiting(kind, subject, "after the ingest");
-        vault.hold.free_of("ingest").await;
-    }
-    while crate::proxies::short_of_memory() {
-        waiting(kind, subject, "waiting for memory");
-        tokio::time::sleep(Duration::from_secs(5)).await;
-    }
-}
-
-// ── what starts them ─────────────────────────────────────────────────────────────────────────────────────────────
-
-/// A watcher's rule: what it sees (`when`), the job it starts (`then`, of `kind`), and how it looks (`watch`: as it
-/// happens, or a round every so often that catches what was missed). The Processes tab lists them beside the lanes.
-#[derive(Serialize)]
-pub struct Rule {
-    pub id: &'static str,
-    /// a few words a person knows it by
-    pub name: &'static str,
-    pub when: &'static str,
-    pub then: &'static str,
-    pub kind: Kind,
-    pub watch: &'static str,
-    /// the code that keeps it
-    pub code: &'static str,
-}
-
-/// Every rule, in the order the work flows: a file in → its proxy → its stills and words → its analysis and hero frame
-/// → its graded still → the film. Each names the code that keeps it (`code`), so the list and the code agree.
-pub const RULES: &[Rule] = &[
-    Rule { id: "ingest", name: "Ingest", when: "Files are brought in (dropped, or from a card or a drive)", then: "Ingest: hashed, into the vault, described", kind: Kind::Ingest, watch: "when asked", code: "main.rs ingest" },
-    Rule { id: "proxy", name: "Proxy", when: "A video original or an EXR sequence comes in (a display still never: it is its own picture) — or its colour journey becomes known", then: "Proxy: ACEScct, to play and grade on", kind: Kind::Proxy, watch: "at ingest · every 10 min", code: "proxies.rs sweep, auto_proxy" },
-    Rule { id: "still", name: "Grading still", when: "A video's proxy is made (its journey known)", then: "Grading still (4K ACEScct) and preview, at its hero frame — the middle until one is picked", kind: Kind::Still, watch: "with the proxy · every 10 min", code: "proxies.rs grading_still_at (with the proxy), backfill_still" },
-    Rule { id: "still-hero", name: "Hero frame moved", when: "A video's hero frame moves (the analysis picks it, or a person sets it)", then: "Grading still and preview again, at the new moment", kind: Kind::Still, watch: "every 10 min", code: "proxies.rs marked_at" },
-    Rule { id: "transcript", name: "Transcript", when: "A video or sound original is on this Mac without its words (or with an older model's)", then: "Transcript: words with their times, on this Mac", kind: Kind::Transcript, watch: "at ingest · every 10 min", code: "transcripts.rs sweep" },
-    Rule { id: "sound", name: "Sound record", when: "A recording is on this Mac without its sound record", then: "Sound record: its tracks, length and start timecode", kind: Kind::Sound, watch: "at ingest · every 10 min", code: "sound.rs round" },
-    Rule { id: "analysis", name: "AI analysis", when: "A picture's proxy is here and its words have settled (in the stories in scope)", then: "AI analysis: tags, cues, takes — and its hero frame", kind: Kind::Analysis, watch: "after a proxy or transcript · every 10 min", code: "analyse/mod.rs round" },
-    Rule { id: "graded", name: "Graded still on save", when: "A timeline save changes how a file looks (its stacks of tools, its 16:9 framing, its scene's or the timeline's look)", then: "Graded still: its grading still through the clip's grade, as its preview — the one before goes", kind: Kind::Frame, watch: "on save · render queue every few s", code: "api/src/renders.ts queueStillsOf → render.rs graded_still_job" },
-    Rule { id: "graded-again", name: "Graded still, new hero", when: "A file's grading still is made again (a new hero frame)", then: "Graded still again, through the clip that last graded it", kind: Kind::Frame, watch: "with the grading still", code: "api/src/renders.ts queueStillOfFile (proxies.rs grading_still_at)" },
-    Rule { id: "world-proxy", name: "World proxy", when: "A timeline plays a world shot version without its proxy", then: "World proxy: the shot rendered in the app's own world", kind: Kind::WorldProxy, watch: "every minute", code: "world.rs proxies" },
-    Rule { id: "render", name: "Render", when: "A render is asked for (the Render tab, or an agent)", then: "Render: every delivery, levelled, into the vault and the calendar", kind: Kind::Render, watch: "render queue every few s", code: "api/src/renders.ts queueRender → render.rs render_job" },
-    Rule { id: "keep", name: "Keep on stores", when: "A file this Mac or a drive keeps (its story's rules) is not here — or no longer kept", then: "Kept: fetched over iroh and pinned — or let go of", kind: Kind::Keep, watch: "every minute", code: "keep.rs round" },
-];
-
 // ── the studio's view ─────────────────────────────────────────────────────────────────────────────────────────
 
 /// Every job: the running and queued ones (each lane's in its order), then the history, newest first.
@@ -549,10 +421,8 @@ pub const RULES: &[Rule] = &[
 pub struct Jobs {
     pub active: Vec<Job>,
     pub history: Vec<Job>,
-    /// what holds the lanes now: an ingest, memory
+    /// what holds the lanes now: memory
     pub holds: Vec<String>,
-    /// what starts the jobs, each with the lane its job runs in
-    pub rules: Vec<serde_json::Value>,
 }
 
 pub fn list(limit: usize) -> Jobs {
@@ -562,15 +432,14 @@ pub fn list(limit: usize) -> Jobs {
             let run = |j: &Job| !matches!(j.state, State::Running | State::Waiting) as u8;
             run(a).cmp(&run(b)).then(a.priority.cmp(&b.priority)).then(a.queued.cmp(&b.queued))
         });
-        Jobs { active, history: r.history.iter().take(limit).cloned().collect(), holds: Vec::new(), rules: RULES.iter().map(|r| json!({ "id": r.id, "name": r.name, "when": r.when, "then": r.then, "kind": r.kind, "lane": r.kind.lane(), "watch": r.watch, "code": r.code })).collect() }
+        Jobs { active, history: r.history.iter().take(limit).cloned().collect(), holds: Vec::new() }
     })
 }
 
 #[tauri::command]
-pub fn jobs_list(app: tauri::State<'_, crate::App>, limit: Option<usize>) -> Res<Jobs> {
+pub fn jobs_list(limit: Option<usize>) -> Res<Jobs> {
     crate::gate()?;
     let mut j = list(limit.unwrap_or(200));
-    j.holds = app.vault.hold.now();
     if crate::proxies::short_of_memory() {
         j.holds.push("memory".into());
     }
@@ -598,34 +467,13 @@ pub fn jobs_bump(id: String) -> Res<()> {
     Ok(())
 }
 
-/// A failed (or cancelled) job made again, as its kind is made.
+/// A failed (or cancelled) job made again: every job of this Mac's is a task of avenDB's now (aven.rs `studio_job`),
+/// asked again from that task.
 #[tauri::command]
-pub async fn jobs_retry(handle: AppHandle, app: tauri::State<'_, crate::App>, id: String) -> Res<()> {
+pub fn jobs_retry(id: String) -> Res<()> {
     crate::gate()?;
-    let job = with(|r| r.history.iter().find(|j| j.id == id).cloned()).ok_or("no such job in the history")?;
-    retry(&handle, &app.vault, &job).await
-}
-
-pub async fn retry(handle: &AppHandle, vault: &std::sync::Arc<vault_core::Vault>, job: &Job) -> Res<()> {
-    let hash = || job.subject.parse::<iroh_blobs::Hash>().map_err(|e| e.to_string());
-    match job.kind {
-        Kind::Proxy => {
-            vault.catalog.describe(hash()?, &json!({ "meta": { "proxy_tries": 0 } })).await.map_err(crate::err)?;
-            tauri::async_runtime::spawn(crate::proxies::auto_proxy(handle.clone(), vault.clone(), job.subject.clone(), std::path::PathBuf::new()));
-        }
-        Kind::Still => {
-            vault.catalog.describe(hash()?, &json!({ "meta": { "grade_still_tries": 0 } })).await.map_err(crate::err)?;
-            tauri::async_runtime::spawn(crate::proxies::backfill_still(vault.clone(), job.subject.clone()));
-        }
-        Kind::Transcript => crate::transcripts::queue(handle.clone(), vault.clone(), job.subject.clone()),
-        Kind::Analysis => crate::analyse::again(vault, &job.subject).await?,
-        Kind::Sound => crate::sound::wake(),
-        Kind::WorldProxy => crate::world::wake(),
-        Kind::Keep => {}
-        Kind::Fetch => return Err("a fetch is asked again from its task (Jobs, avenDB tasks: Again)".into()),
-        Kind::Render | Kind::Frame | Kind::Ingest => return Err("a render or a hero frame is queued again from the Render tab (or the MCP); an ingest from the Ingest tab".into()),
-    }
-    Ok(())
+    with(|r| r.history.iter().any(|j| j.id == id)).then_some(()).ok_or("no such job in the history")?;
+    Err("a job is asked again from its avenDB task (Jobs: Again)".into())
 }
 
 #[cfg(test)]

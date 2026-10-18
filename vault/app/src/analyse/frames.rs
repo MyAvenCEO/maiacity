@@ -4,7 +4,7 @@
 //! Core Image and JPEG-encoded in memory. A frame every so many seconds, and every picture change on top (a cut, a
 //! light switched on), told by how much a small grey copy of each frame differs from the one before.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use vault_media::Source;
 use vault_render::{av::VideoReader, gpu::{Extent, Gpu}};
 
@@ -80,25 +80,6 @@ pub fn sample(src: Source, seconds: f64, every: f64, edge: u32, acescct: bool, t
         }
         anyhow::ensure!(!out.times.is_empty(), "the movie gave no frames");
         Ok(out)
-    })
-}
-
-/// One frame as a JPEG, `edge` on its long side: a movie's at `at` seconds, or a still.
-pub fn one(src: Source, at: Option<f64>, edge: u32, acescct: bool) -> Result<Vec<u8>> {
-    objc2::rc::autoreleasepool(|_| {
-        let gpu = gpu(acescct)?;
-        let img = match at {
-            Some(t) => {
-                let mut r = VideoReader::open(src, t, t + 0.1)?;
-                let turn = r.info.transform;
-                let pb = r.at(t)?.context("no frame there")?;
-                gpu.orient(&gpu.frame(pb), turn)
-            }
-            None => gpu.still(src)?,
-        };
-        let e = img.ext();
-        let (w, h) = fit(e.size.width, e.size.height, edge);
-        gpu.jpeg_bytes(&*shown(&gpu, &img, w, h, acescct)?, w, h)
     })
 }
 

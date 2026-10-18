@@ -9,7 +9,6 @@ mod auth;
 mod aven;
 mod avendb;
 mod blob;
-mod drives;
 mod jobs;
 mod local;
 mod models;
@@ -17,12 +16,7 @@ mod page;
 mod passkey;
 mod player;
 mod proxies;
-mod keep;
 mod render;
-mod sound;
-mod sources;
-mod stories;
-mod sync;
 mod transcripts;
 mod world;
 
@@ -59,34 +53,6 @@ fn err(e: impl std::fmt::Display) -> String {
     format!("{e:#}")
 }
 
-#[derive(Serialize)]
-struct Status {
-    endpoint: String,
-    catalog: String,
-    dir: String,
-    files: usize,
-    bytes: u64,
-    disk_free: u64,
-    disk_total: u64,
-}
-
-#[tauri::command]
-async fn vault_status(app: State<'_, App>) -> Res<Status> {
-    gate()?;
-    let v = &app.vault;
-    let list = v.catalog.list().await.map_err(err)?;
-    let (free, total) = disk_space(&v.dir);
-    Ok(Status {
-        endpoint: v.endpoint.id().to_string(),
-        catalog: v.catalog.id().to_string(),
-        dir: v.dir.display().to_string(),
-        files: list.len(),
-        bytes: list.iter().map(|m| m.size).sum(),
-        disk_free: free,
-        disk_total: total,
-    })
-}
-
 #[tauri::command]
 async fn vault_list(app: State<'_, App>) -> Res<Vec<Meta>> {
     gate()?;
@@ -117,62 +83,6 @@ async fn vault_describe(app: State<'_, App>, hash: String, patch: serde_json::Va
     Ok(app.vault.catalog.meta_view(hash).await.map_err(err)?.unwrap_or(meta))
 }
 
-#[derive(Serialize)]
-struct Source {
-    name: String,
-    path: String,
-    free: u64,
-    total: u64,
-}
-
-/// Cards and drives: everything mounted under /Volumes except the system disk.
-#[tauri::command]
-fn vault_sources() -> Res<Vec<Source>> {
-    gate()?;
-    let mut out = Vec::new();
-    for e in std::fs::read_dir("/Volumes").map_err(err)? {
-        let e = e.map_err(err)?;
-        let path = e.path();
-        // the system volume appears here as a link to /
-        if std::fs::canonicalize(&path).map(|p| p == PathBuf::from("/")).unwrap_or(false) {
-            continue;
-        }
-        // Time Machine's snapshots and other hidden system volumes are never a source
-        let name = e.file_name().to_string_lossy().into_owned();
-        if name.starts_with('.') || name.starts_with("com.apple.") || name.contains("TimeMachine") || name == "Recovery" {
-            continue;
-        }
-        let (free, total) = disk_space(&path);
-        out.push(Source { name, path: path.display().to_string(), free, total });
-    }
-    Ok(out)
-}
-
-#[derive(Serialize)]
-struct Scan {
-    files: usize,
-    bytes: u64,
-    kinds: std::collections::BTreeMap<String, usize>,
-}
-
-#[tauri::command]
-async fn vault_scan(paths: Vec<String>) -> Res<Scan> {
-    gate()?;
-    tauri::async_runtime::spawn_blocking(move || {
-        let mut scan = Scan { files: 0, bytes: 0, kinds: Default::default() };
-        for p in paths {
-            for f in ingest::walk(&PathBuf::from(p)).map_err(err)? {
-                scan.files += 1;
-                scan.bytes += std::fs::metadata(&f).map(|m| m.len()).unwrap_or(0);
-                *scan.kinds.entry(ingest::kind_of(ingest::mime_of(&f)).to_string()).or_default() += 1;
-            }
-        }
-        Ok(scan)
-    })
-    .await
-    .map_err(err)?
-}
-
 #[derive(Serialize, Clone)]
 struct Progress {
     index: usize,
@@ -194,30 +104,6 @@ struct Summary {
     duplicates: usize,
     mismatches: usize,
     report: String,
-}
-
-/// Ingest files and folders with the three-hash check; each file reports as it starts and as it ends
-/// (event `ingest`). The session's report goes into the catalog as `ingest/<session>`.
-#[tauri::command]
-async fn vault_ingest(
-    handle: AppHandle,
-    app: State<'_, App>,
-    paths: Vec<String>,
-    tags: Vec<String>,
-    story: Option<String>,
-    class: Option<String>,
-) -> Res<Summary> {
-    gate()?;
-    if let Some(c) = &class {
-        stories::by_hand(c)?;
-    }
-    if app.busy.swap(true, Ordering::SeqCst) {
-        return Err("an ingest is already running".into());
-    }
-    // a person ingests: what is already in the vault moves into the chosen story
-    let result = run_ingest(&handle, &app.vault, paths, tags, story, class, true).await;
-    app.busy.store(false, Ordering::SeqCst);
-    result.map_err(err)
 }
 
 /// A file the studio made itself (a title card rendered from its layers on the Thumbnail step): its bytes come as
@@ -301,7 +187,6 @@ async fn run_ingest(
     let ingesting = jobs::Ending::begin(jobs::Kind::Ingest, &session, &format!("{total} files from {source}"));
     // local work first: while the files come in, nothing is rendered and nothing is sent — each resumes after
     let held = vault.hold.take("ingest");
-    let mut proxies_due = Vec::new();
     let story = batch.story.clone().unwrap_or_default();
     for (index, f) in files.iter().enumerate() {
         let size = std::fs::metadata(f).map(|m| m.len()).unwrap_or(0);
@@ -318,29 +203,10 @@ async fn run_ingest(
         let o = vault.ingest_file_with(f, &batch, told).await?;
         jobs::stage(jobs::Kind::Ingest, &session, &format!("{} of {total} in", index + 1), (index + 1) as f64 / total.max(1) as f64);
         handle.emit("ingest", Progress { index, total, path, size, story: story.clone(), outcome: Some(o.clone()) }).ok();
-        // every video original gets its proxy — once all files are in, one at a time, from the source while it is here
-        if o.verdict == Verdict::Verified {
-            if let Ok(Some(m)) = vault.catalog.meta(o.hash.parse()?).await {
-                if proxies::wants_proxy(&m) {
-                    proxies_due.push((o.hash.clone(), f.clone()));
-                }
-            }
-        }
         outcomes.push(o);
     }
     drop(held);
     ingesting.done();
-    for (hash, source) in proxies_due {
-        tauri::async_runtime::spawn(proxies::auto_proxy(handle.clone(), vault.clone(), hash, source));
-    }
-    // and every recording its words, here, on-device — once the ingest is done (transcripts.rs)
-    {
-        let (h, v) = (handle.clone(), vault.clone());
-        tauri::async_runtime::spawn(async move { transcripts::queue_due(&h, &v).await });
-        // its sound record (the start timecode) and its shot analysis, here too (sound.rs, analyse/)
-        sound::wake();
-        analyse::wake();
-    }
     let seconds = started.elapsed().as_secs_f64();
     let bytes = outcomes.iter().map(|o| o.size).sum();
     let count = |v: Verdict| outcomes.iter().filter(|o| o.verdict == v).count();
@@ -356,20 +222,6 @@ async fn run_ingest(
         mismatches: count(Verdict::Mismatch),
         report: report_hash.to_hex(),
     })
-}
-
-fn disk_space(path: &std::path::Path) -> (u64, u64) {
-    use std::{ffi::CString, os::unix::ffi::OsStrExt};
-    let Ok(c) = CString::new(path.as_os_str().as_bytes()) else { return (0, 0) };
-    // SAFETY: statvfs fills the struct for a valid, NUL-terminated path.
-    unsafe {
-        let mut s: libc::statvfs = std::mem::zeroed();
-        if libc::statvfs(c.as_ptr(), &mut s) != 0 {
-            return (0, 0);
-        }
-        let frag = s.f_frsize as u64;
-        (s.f_bavail as u64 * frag, s.f_blocks as u64 * frag)
-    }
 }
 
 /// `vault://localhost/<hash>`: the file's bytes, with Range, straight from the store.
@@ -509,47 +361,6 @@ fn main() {
             app.manage(App { vault: vault.clone(), busy: AtomicBool::new(false) });
             // every process this Mac runs, in one registry (jobs.rs): the studio's Processes tab is its view
             jobs::init(app.handle().clone());
-            // signed in already: join the network now; then keep this Mac complete in the background
-            let handle = app.handle().clone();
-            let v = vault.clone();
-            tauri::async_runtime::spawn(async move {
-                if auth::signed_in() {
-                    let auth = handle.state::<auth::Auth>();
-                    if let Err(e) = sync::connect(&v, &auth).await {
-                        tracing::warn!("joining the vault's network: {e}");
-                    }
-                }
-                sync::keep_complete(handle, v).await;
-            });
-            // every video original without its proxy: queued, now and every ten minutes
-            tauri::async_runtime::spawn(proxies::sweep(app.handle().clone(), vault.clone()));
-            // and every recording without its words: transcribed here, on-device (Phonon-2), now and every ten minutes
-            tauri::async_runtime::spawn(transcripts::sweep(app.handle().clone(), vault.clone()));
-            // and every recording's sound record (its start timecode), read here from the file itself
-            tauri::async_runtime::spawn(sound::sweep(vault.clone()));
-            // and every picture's tags, cues and thumbnail: its proxy's frames, sampled here, to Prem's Qwen from this Mac
-            tauri::async_runtime::spawn(analyse::sweep(app.handle().clone(), vault.clone()));
-            // and every world shot a timeline plays, rendered here in the studio's own world (world.rs)
-            tauri::async_runtime::spawn(world::sweep(app.handle().clone(), vault.clone()));
-            // nothing of the vault beside its store: old plates become vault files; the models' unpacked copies and the
-            // retired scope sheets go (the models are read from their blobs)
-            {
-                let v = vault.clone();
-                tauri::async_runtime::spawn(async move {
-                    world::import_old_plates(&v).await;
-                    for old in ["models", "scopes"] {
-                        std::fs::remove_dir_all(v.dir.join(old)).ok();
-                    }
-                });
-            }
-            // and every external drive that is a vault device of its own, kept complete for its stories (drives.rs)
-            tauri::async_runtime::spawn(drives::start(app.handle().clone(), vault.clone()));
-            // and what this Mac keeps (avenSSD): its stories' files fetched, pinned and announced, the rest let go of (keep.rs)
-            tauri::async_runtime::spawn(keep::sweep(vault.clone()));
-            // and the render queue: this Mac is the render worker — films and hero frames, natively (render.rs)
-            tauri::async_runtime::spawn(render::sweep(app.handle().clone(), vault.clone()));
-            // and every story on the Stories board past its idea, filed in the vault's bucket of its name (stories.rs)
-            tauri::async_runtime::spawn(stories::file_sweep(app.handle().clone(), vault.clone()));
             // the legacy vault's routes for the film scripts while they still read it (local.rs)
             let v = vault.clone();
             tauri::async_runtime::spawn(async move {
@@ -589,34 +400,18 @@ fn main() {
             aven::studio_import,
             aven::film_seed,
             aven::film_seed_keep,
-            sync::vault_connect,
-            sync::vault_copies,
             asks::asks_open,
-            keep::stores_status,
             asks::ask_answer,
             page::page_answer,
-            vault_status,
             vault_list,
             vault_describe,
             vault_ingest_bytes,
             log_js,
-            stories::stories_list,
-            sources::ingest_sources,
-            sources::source_ready,
-            sources::source_delete,
-            sync::vault_transfers,
-            stories::story_save,
-            stories::story_delete,
-            stories::files_move,
-            stories::file_download,
             jobs::jobs_list,
             jobs::jobs_cancel,
             jobs::jobs_bump,
             jobs::jobs_retry,
             transcripts::transcript_edit,
-            stories::files_class,
-            proxies::proxies_now,
-            proxies::vault_hold,
             proxies::color_lut,
             proxies::color_grade,
             proxies::color_frame,
@@ -624,18 +419,12 @@ fn main() {
             player::player_play,
             player::player_pause,
             player::player_sync,
-            proxies::vault_proxy,
             transcripts::vault_transcribe,
-            analyse::analysis_setup,
-            analyse::vault_analyse,
             render::sound_measure,
             render::eq_response,
             world::world_proxy_next,
             world::world_proxy_frame,
-            world::world_proxy_end,
-            vault_sources,
-            vault_scan,
-            vault_ingest
+            world::world_proxy_end
         ])
         .build(tauri::generate_context!())
         .expect("start maiaCITY Studio")
