@@ -602,6 +602,23 @@ const server = Bun.serve({
         }
       },
     },
+    // The OS approves its own key's code with a passkey sign-in its sheet brought back (src/routes/app/avendb/sheet/):
+    // the sheet hands the passkey's answer only to the app that opened it, so no one compares a code
+    "/api/device/:code/passkey": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const signed = await loginFinish((await readJson(req)) ?? {});
+        if (!signed.ok) return json(req, { error: signed.error }, { status: 401 });
+        const [me] = await sql`SELECT id, role FROM founders WHERE id = ${signed.value.id}`;
+        if (!me) return json(req, { error: "That passkey has no account behind it." }, { status: 401 });
+        try {
+          await approveDevice(req.params.code, me);
+          return json(req, { ok: true });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
     // The studio's timelines: edits over the vault's files, by hash.
     "/api/timelines": {
       OPTIONS: preflight,

@@ -8,6 +8,12 @@
 	from the page as they are sealed, and sent back to the app through its own scheme, which the sheet hands to the app
 	instead of loading: nothing crosses but sealed, and only the page that asked opens it. Outside the /app/ layout: the
 	sheet keeps no cookies, and needs no maiaCITY sign-in.
+
+	It also signs The OS itself in to maiaCITY's API, in the same sheet as every other ceremony, so the app needs no
+	browser and no code to compare (Samuel 2026-10-18: one way in): given a sign-in's challenge the app fetched, the
+	passkey signs it here and the sheet hands the answer back to the app alone, which approves its own key's code with
+	it (src/routes/app/+layout.svelte `enterApp`, the API's /api/device/:code/passkey). The sheet approves nothing
+	itself: a link that opens it in a browser gets nothing a stranger can use.
 -->
 <script>
 	import { onMount } from 'svelte';
@@ -19,7 +25,8 @@
 		found: 'to found your vault',
 		claim: 'to claim avenDB’s server',
 		approve: 'to approve what your vault changes',
-		drive: 'to use a drive for avenDB as one of your devices'
+		drive: 'to use a drive for avenDB as one of your devices',
+		signin: 'to sign The OS in to maiaCITY on this Mac'
 	};
 
 	/** @type {'loading' | 'asking' | 'sending' | 'failed' | 'lost'} */
@@ -33,6 +40,10 @@
 	let module = null;
 	/** @type {{ challenge: Uint8Array, salt: Uint8Array, device?: Uint8Array, id?: string, key: Uint8Array } | null} */
 	let ask = null;
+	/** a sign-in's options (WebAuthn's JSON), when The OS signs in to the API */
+	let signin = $state('');
+	/** what the sheet runs, and again on "Try again" */
+	let run = go;
 
 	onMount(async () => {
 		module = import('$lib/avendb/device/avendb_browser.js').then(async (pkg) => {
@@ -43,6 +54,8 @@
 		const q = new URLSearchParams(location.hash.slice(1));
 		const [challenge, salt, key] = ['challenge', 'salt', 'key'].map((k) => q.get(k));
 		what = q.get('what') ?? '';
+		signin = what === 'signin' ? (q.get('options') ?? '') : '';
+		if (signin) return void (run = signIn)();
 		if (!challenge || !salt || !key) return void (phase = 'lost');
 		const device = q.get('device');
 		ask = {
@@ -75,6 +88,23 @@
 		}
 	}
 
+	/** The OS's sign-in: the passkey signs the app's challenge, and the answer goes back to the app, which redeems it. */
+	async function signIn() {
+		[phase, error] = ['asking', ''];
+		try {
+			const { startAuthentication } = await import('@simplewebauthn/browser');
+			const assertion = await startAuthentication({ optionsJSON: JSON.parse(signin) });
+			phase = 'sending';
+			back({ assertion: JSON.stringify(assertion) });
+		} catch (e) {
+			const message = /** @type {Error} */ (e).message ?? String(e);
+			error = /NotAllowed|not allowed|cancel/i.test(`${/** @type {Error} */ (e).name} ${message}`)
+				? 'Your passkey wasn’t used: try again.'
+				: message;
+			phase = 'failed';
+		}
+	}
+
 	/** Back to the app, with what the sheet brings: the sealed ceremony, or why there is none. @param {Record<string, string>} answer */
 	function back(answer) {
 		location.href = `${passkey.BACK}#${new URLSearchParams(answer)}`;
@@ -94,14 +124,18 @@
 			<p>This page opens from maiaCITY Studio, the Mac app, when it asks for your passkey.</p>
 		{:else}
 			<h1>Confirm with your passkey</h1>
-			<p>The app asks for your passkey {purpose}. It stays in your passkey prompt; what the app gets back is sealed to it alone.</p>
+			{#if signin}
+				<p>The OS asks for your passkey {purpose}. It stays in your passkey prompt: the app gets a key of its own, for the studio and nothing else.</p>
+			{:else}
+				<p>The app asks for your passkey {purpose}. It stays in your passkey prompt; what the app gets back is sealed to it alone.</p>
+			{/if}
 			<p class="soft">Confirm only if you just asked for this in maiaCITY Studio: whichever app opened this sheet gets the answer.</p>
 			{#if phase === 'sending'}
 				<p class="soft" role="status">Back to the app…</p>
 			{:else if phase === 'failed'}
 				<p class="bad" role="alert">{error}</p>
 				<div class="row">
-					<button class="btn primary" onclick={go}>Try again</button>
+					<button class="btn primary" onclick={() => run()}>Try again</button>
 					<button class="btn" onclick={() => back({ error: 'You closed the sign-in sheet.' })}>Cancel</button>
 				</div>
 			{:else}

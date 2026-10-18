@@ -1,10 +1,11 @@
 //! Signing the app in with the admin's passkey — the device flow the terminals already use (api/src/keys.ts).
 //!
-//! Passkeys belong to maia.city, so the app cannot use one itself. It asks the API for a device code, opens the
-//! approval page in the Mac's own browser, and waits; the admin approves there with the passkey, and the app
-//! receives a key — its session, kept in a file only this user can read, never shown. Every API call the app makes goes out
-//! from here with that key, so the studio's admin functions never run from a web page.
+//! Passkeys belong to maia.city, so the app cannot use one itself. It asks the API for a device code, the page approves
+//! it with the passkey in the app's sign-in sheet (`passkey_sheet`), and the app receives a key — its session, kept in a
+//! file only this user can read, never shown. Every API call the app makes goes out from here with that key, so the
+//! studio's admin functions never run from a web page.
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
@@ -17,6 +18,9 @@ const SERVICE: &str = "city.maia.studio";
 const SCOPE: &str = "media:admin,content:admin,economy:admin";
 /// A key must be able to do this to open the studio — the admin gate.
 const GATE: &str = "/api/vault/join";
+/// The latest sign-in: a code the person walked away from stops waiting once they start again, so its expiry never
+/// reaches the new one's window.
+static ROUND: AtomicU64 = AtomicU64::new(0);
 
 pub fn api_base() -> String {
     std::env::var("MAIACITY_API").unwrap_or_else(|_| "https://api.maia.city".into())
@@ -135,8 +139,9 @@ pub async fn auth_status(auth: State<'_, Auth>) -> Result<AuthState, String> {
     Ok(auth.state().await)
 }
 
-/// Start the device flow: get a code, open the approval page in the browser, and wait for the key in the background.
-/// The window hears `auth` when it arrives (or when the code expires).
+/// Start the device flow: get a code, which the page approves with the passkey in the app's sign-in sheet (its
+/// `passkey_sheet`, src/routes/app/avendb/sheet/), and wait for the key in the background. No browser, and no code to
+/// compare (Samuel 2026-10-18: one way in). The window hears `auth` when it arrives (or when the code expires).
 #[tauri::command]
 pub async fn auth_start(handle: AppHandle, auth: State<'_, Auth>) -> Result<DeviceStart, String> {
     let api = api_base();
@@ -155,14 +160,17 @@ pub async fn auth_start(handle: AppHandle, auth: State<'_, Auth>) -> Result<Devi
         .map_err(|e| e.to_string())?;
 
     let url = format!("{}/app/device/?code={}", site_base(), started.user_code);
-    std::process::Command::new("/usr/bin/open").arg(&url).spawn().ok();
 
     let http = auth.http.clone();
     let (device_code, interval, expires) = (started.device_code.clone(), started.interval.max(2), started.expires_in);
+    let round = ROUND.fetch_add(1, Ordering::SeqCst) + 1;
     tauri::async_runtime::spawn(async move {
         let deadline = std::time::Instant::now() + Duration::from_secs(expires);
         while std::time::Instant::now() < deadline {
             tokio::time::sleep(Duration::from_secs(interval)).await;
+            if ROUND.load(Ordering::SeqCst) != round {
+                return; // a newer sign-in waits instead
+            }
             let Ok(r) = http.post(format!("{api}/api/device/token")).json(&serde_json::json!({ "device_code": device_code })).send().await
             else {
                 continue;
@@ -294,13 +302,3 @@ pub fn host_name() -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| "this Mac".into())
 }
-
-/// Open the approval page again in the Mac's browser (only maia.city pages).
-#[tauri::command]
-pub fn auth_open(url: String) -> Result<(), String> {
-    if !url.starts_with(&format!("{}/app/device/", site_base())) {
-        return Err("Only the approval page.".into());
-    }
-    std::process::Command::new("/usr/bin/open").arg(url).spawn().map(|_| ()).map_err(|e| e.to_string())
-}
-

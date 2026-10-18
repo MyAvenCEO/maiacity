@@ -16,7 +16,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { me, signOut, type Founder } from '$lib/auth/client';
+	import { approveDeviceWithPasskey, loginOptions, me, signOut, type Founder } from '$lib/auth/client';
 	import { failure, later, open, signIn, signUpName, waits } from '$lib/app/entry.js';
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import { session } from '$lib/avendb/session.svelte.js';
@@ -212,17 +212,17 @@
 		};
 	});
 
-	// maiaCITY Studio (the Mac app) cannot hold maia.city's passkey: it asks for a key, the browser opens the approval
-	// page, the admin says yes with the passkey there, and the app is in
-	let device = $state<{ user_code: string; url: string } | null>(null);
+	// The OS (the Mac app) cannot use maia.city's passkey in its own web view: it asks the API for a key of its own, the
+	// passkey signs a sign-in's challenge in the app's sign-in sheet, as every other ceremony (src/routes/app/avendb/sheet/),
+	// and that answer, which reaches this app alone, approves the key: no browser and no code to compare
 	async function enterApp() {
-		busy = 'Waiting for your approval';
+		busy = 'Waiting for your passkey';
 		error = '';
+		let stop = () => {};
 		try {
 			const { listen } = await import('@tauri-apps/api/event');
-			const stop = await listen<{ signed_in: boolean; reason: string | null }>('auth', async ({ payload }) => {
+			stop = await listen<{ signed_in: boolean; reason: string | null }>('auth', async ({ payload }) => {
 				stop();
-				device = null;
 				busy = '';
 				if (!payload.signed_in) return void (error = payload.reason ?? '');
 				founder = await me();
@@ -232,9 +232,20 @@
 				settle();
 				if (phase === 'locked' && !naming) void avendb();
 			});
-			device = await command('auth_start');
+			const { SHEET } = await import('$lib/avendb/device/passkey.js');
+			const { user_code } = await command<{ user_code: string }>('auth_start');
+			const options = await loginOptions();
+			const back = await command<string>('passkey_sheet', {
+				url: `${SHEET}#${new URLSearchParams({ what: 'signin', options: JSON.stringify(options) })}`
+			});
+			const answer = new URLSearchParams(back.split('#')[1] ?? '');
+			const assertion = answer.get('assertion');
+			if (!assertion) throw new Error(answer.get('error') || 'The sign-in sheet brought nothing back.');
+			// the key arrives through `auth`, once the app's wait for it sees the approval
+			await approveDeviceWithPasskey(user_code, JSON.parse(assertion));
 		} catch (e) {
-			error = String(e);
+			stop();
+			error = e instanceof Error ? e.message : String(e);
 			busy = '';
 		}
 	}
@@ -338,14 +349,8 @@
 			{#if phase !== 'locked'}
 				<p class="lede">The city’s own rooms — the games, your avenDB, what we build with — open to its founders, with one passkey.</p>
 			{/if}
-			{#if device}
-				<p class="lede">Your browser opened maia.city. Approve this Mac there with your passkey — the code is</p>
-				<p class="code">{device.user_code}</p>
-				<p class="fine">Waiting for your approval… <button class="quiet" onclick={() => command('auth_open', { url: device!.url })}>Open the page again</button></p>
-			{:else}
-				<button class="pill-btn" disabled={!!busy} onclick={enter}>{busy ? `${busy}…` : phase === 'locked' ? 'Unlock with your passkey' : 'Sign in with your passkey'}</button>
-				<a class="back" href="{base}/">← Back to the homepage</a>
-			{/if}
+			<button class="pill-btn" disabled={!!busy} onclick={enter}>{busy ? `${busy}…` : phase === 'locked' ? 'Unlock with your passkey' : 'Sign in with your passkey'}</button>
+			<a class="back" href="{base}/">← Back to the homepage</a>
 		{/if}
 		{#if error}<p class="bad">{error}</p>{/if}
 		{#if phase === 'locked' && (stuck || naming) && !busy}<button class="quiet later" onclick={without}>Go on without avenDB for now</button>{/if}
@@ -461,17 +466,6 @@
 		font-weight: 500;
 		color: #fff;
 		cursor: pointer;
-	}
-
-	/* the device code the Mac app shows while the browser asks for the passkey */
-	.code {
-		margin: 0.2rem 0 0.4rem;
-		padding: 0.5rem 1rem;
-		border-radius: 12px;
-		background: var(--cream);
-		font-family: ui-monospace, monospace;
-		font-size: 2rem;
-		letter-spacing: 0.12em;
 	}
 
 	.logo {
