@@ -395,26 +395,22 @@ version an entry brings (`authors`, `{vault, name, kind}`), so a page nobody sig
 
 An aven is a coop's one AI identity: an aven vault the coop alone owns, one per coop, and no person has one of their
 own (Samuel 2026-10-18): Maia City's is avenMAIA, founded with the seed. Other coops hire it by sharing with it. It
-lives on its server, its one device, which acts for it and governs nothing; the coop's owners act as its aven from
-their own devices, as for any vault they own, and its agents work for it with the rights it passes on. Each agent is a device vault the aven owns, named after the
-agent, with one agent device in it, a key of its own, never a token: Claude Code as agentClaude, Codex as agentCodex,
-and likewise Cursor, Grok and our own native aven.
+lives on its server, a device of it, which acts for it and governs nothing; the coop's owners act as its aven from
+their own devices, as for any vault they own. It owns nothing.
 
-An agent holds sub caps: shares the aven passes on to it, each resting on one the aven holds, no stronger and no wider
-(Passing a right on, above). So no agent ever gets more than its aven, and a coop that revokes its share to the aven
-ends every agent's share resting on it. An agent given Suggester over a vault gets a second sub cap there beside it, a
-group of its own, "AIP author" (`create` and `set`, on `{"type": ["aip"]}` alone), resting on one the aven holds that
-gives as much, so that it opens AIPs over its own proposal lines and promotes them as their author, while the vault
-alone reviews them (section 8, "AIPs"); a new entry it proposes is a draft, on a line of its own that the vault's
-acceptance lands (section 8, "Drafts"). Each harness signs by its own key with no more than its aven gives it, and one
-is taken out by removing its device or revoking its shares, leaving the others. The same harness on the person's second
-Mac is a second device of the same agent's device vault. A harness never names or picks an aven: the person's one aven
-is the parent, and the agent is added under it, the aven founded with the person's first agent.
+An agent is a device of the aven too, beside its server, a key of its own, never a token: Claude Code as agentClaude,
+Codex as agentCodex, and likewise Cursor, Grok and our own native aven. It acts as the aven, with exactly what the aven
+holds, no more and no less: no agent vaults under the aven and no sub caps. By default the aven holds Suggester on its
+coop and an "AIP author" share on the coop's AIPs (`create` and `set`, on `{"type": ["aip"]}` alone), which the seed
+gives it (the page's `seed.js`): so an agent proposes and drafts, opens AIPs over its proposal lines and promotes them,
+and a human of the coop reviews them (section 8, "AIPs", "Drafts"). A coop that gives the aven more gives every agent of
+it more, and one that takes a share back takes it from all of them. One agent is taken out by removing its device from
+the aven, leaving the others. A harness never names or picks an aven: its person's coop's one aven is it.
 
 `avendb-device agent <harness>` (`crates/avendb-device/src/agent.rs`) runs an agent device as the harness's MCP server
 on its stdin and stdout, in a folder beside the desktop app's that the app never clears
 (`<app folder>-agents/<device>`). It keeps its secret on its shelf, as the server does (`server::open_agent`), and its
-iroh key derives from it. It acts as its device vault, its shares deciding. It keeps no file whole of its own accord and
+iroh key derives from it. It acts as the aven it is a device of, the aven's shares deciding. It keeps no file whole of its own accord and
 reads its person's files from their desktop's one store, so nothing is kept twice. It saves a file of the desktop as
 every device does (`put_file`, or a `create` with a `file`, the file named by its path beside the op): an Editor share
 creates its entry, a Suggester's or a Viewer's doesn't. It seals the file onto its own shelf, and lets go of it once the
@@ -426,7 +422,7 @@ page's Library reads it (`read_file`, a window at a time, from its own shelf or 
 where its shares let it read the entry, and written to the path beside the op, never over a file there unless
 `overwrite` says so; a text file of at most 64 KiB comes back inline too. It captures a spark with `avendb_add_spark`,
 its text, title and tags alone (a link or a media file goes in as an artifact of its own): the `create` the page's
-Sparks run, run as any change of its, into its person's own vault unless it names another, where its shares let it
+Sparks run, run as any change of its, into the aven's coop unless it names another, where the aven's shares let it
 create; where they don't, it says which vaults they let it. A reset clears its folder as the app's, and it asks to join
 again.
 

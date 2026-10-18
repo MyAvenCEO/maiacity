@@ -264,7 +264,7 @@
 
 	// one flow adds every vault that acts by keys of its own
 	const addings = [
-		['An agent', 'Your COOP’s aven, avenMAIA, founded with the seed', 'The agent harness’s key on your Mac', 'Sub caps of the aven’s shares'],
+		['An agent', 'Your COOP’s aven itself, avenMAIA: a device of it', 'The agent harness’s key on your Mac', 'The aven’s own, no more and no less'],
 		['The same harness on your other Mac', 'That agent’s device vault', 'That Mac’s harness key', 'What the agent holds already'],
 		['The server', 'avenMAIA itself, founded with the seed: the server is its device', 'The server’s key', 'Backup or Relay, from each vault over itself']
 	];
@@ -272,7 +272,7 @@
 	// the one rule a share rests on another by, case by case
 	const passing = [
 		['A COOP shares with its aven', 'Maia City gives avenMAIA Editor', 'Maia City gives a share over itself, resting on none'],
-		['The aven gives an agent a sub cap', 'avenMAIA passes Maia City’s share on to agentClaude', 'avenMAIA owns agentClaude'],
+		['A COOP passes a share on to its worker', 'Maia City passes a share on to its Render Mac', 'Maia City owns the worker’s device vault'],
 		['A COOP passes a share on to its aven', 'Maia City passes on a share another COOP gave it', 'Maia City owns avenMAIA'],
 		['An Owner of a slice shares it on', 'Whoever holds Owner on the todos tagged garden shares them with Bob', 'It rests on an Owner share']
 	];
@@ -833,11 +833,8 @@
 					<svg class="fig" viewBox="0 0 960 520" role="img" aria-label="Samuel’s vaults: who owns which, and one share passed on">
 						<path class="own" d="M480 92 V150" />
 						<path class="own" d="M480 208 V244 H190 V280" />
-						<path class="own" d="M190 338 V374 H123 V410 M190 374 H350 V410" />
 						<path class="cap" d="M350 190 H30 V266" />
 						<polygon class="bc" points="23,266 30,280 37,266" />
-						<path class="cap" d="M70 338 V396" />
-						<polygon class="bc" points="63,396 70,410 77,396" />
 						<rect class="k-human" x="340" y="20" width="280" height="72" rx="10" />
 						<rect class="dev" x="596" y="30" width="10" height="10" rx="2" />
 						<text class="h" x="358" y="46">Samuel</text>
@@ -853,13 +850,13 @@
 						<rect class="k-device" x="16" y="410" width="214" height="58" rx="10" />
 						<rect class="dev" x="206" y="420" width="10" height="10" rx="2" />
 						<text class="h" x="34" y="434">agentClaude</text>
-						<text class="s" x="34" y="456">device vault · Claude Code</text>
+						<text class="s" x="34" y="456">a device of avenMAIA · Claude Code</text>
 						<rect class="k-device" x="250" y="410" width="200" height="58" rx="10" />
 						<rect class="dev" x="426" y="420" width="10" height="10" rx="2" />
 						<text class="h" x="268" y="434">agentCodex</text>
-						<text class="s" x="268" y="456">device vault · Codex</text>
+						<text class="s" x="268" y="456">a device of avenMAIA · Codex</text>
 						<text class="s" x="40" y="236">Editor: Maia City shares with its aven</text>
-						<text class="s" x="78" y="372">sub cap</text>
+						<text class="s" x="78" y="390">its agents: devices of avenMAIA, with its rights</text>
 						<g transform="translate(560 410)">
 							<line class="own" x1="0" y1="10" x2="40" y2="10" />
 							<text class="s" x="52" y="14">owns: the owner decides for it</text>
@@ -872,9 +869,9 @@
 				</div>
 				<figcaption>
 					Samuel’s vaults. A line runs from an owner down to each vault it owns. The dashed line is a share: Maia City
-					shares with avenMAIA, its one aven, and avenMAIA passes part of that share on to agentClaude as a sub cap. If
-					Maia City revokes its share, agentClaude’s share ends with it. avenMAIA lives on the server: the server is
-					its device.
+					shares with avenMAIA, its one aven. avenMAIA lives on the server, its device, and its agents, agentClaude and
+					agentCodex, are devices of it too: each acts as avenMAIA, with exactly what avenMAIA holds. If Maia City
+					takes a share back, every agent loses it with the aven.
 				</figcaption>
 			</figure>
 			<p class="prose-col">
@@ -930,20 +927,19 @@
 			<h3>A COOP’s aven and its agents</h3>
 			<p class="prose-col">
 				An aven is a COOP’s one AI identity, one per COOP and none per person: Maia City’s is avenMAIA, founded with the
-				seed. Its COOP’s owners act as it from their own devices. Each agent harness is an agent of its own: a device
-				vault the aven owns, named after it, with the
-				harness’s key as its device. The key is who it is, never a token. Claude Code is agentClaude, Codex is
-				agentCodex, and likewise Cursor, Grok and our own native aven. <code>avendb-device agent claude</code> is that
-				device on your desktop, which Claude Code starts as its MCP server. A harness never names or picks an aven: it
-				always joins your COOP’s one aven.
+				seed. It lives on its server, a device of it, and its COOP’s owners act as it from their own devices. Each agent
+				harness is an agent of its own: a device of the aven, beside its server, with a key of its own. The key is who it
+				is, never a token. Claude Code is agentClaude, Codex is agentCodex, and likewise Cursor, Grok and our own native
+				aven. <code>avendb-device agent claude</code> is that device on your desktop, which Claude Code starts as its MCP
+				server. A harness never names or picks an aven: it always joins your COOP’s one aven, once you approve it.
 			</p>
 			<p class="prose-col">
-				Each agent holds sub caps: shares your aven passes on to it, each resting on one your aven holds, never stronger
-				or wider. So no agent gets more than your aven has. A COOP that revokes its share to your aven ends that share for
-				every agent at once, and removing one agent leaves the others. The same harness on your other Mac is a second
-				device of the same agent. An agent saves a file of your desktop, named by its path, where its shares let it
-				create, as an Editor may. It keeps no file of its own: once your desktop holds a file it saved whole, it lets go
-				of its copy, and it reads your files from your desktop’s one store, so nothing is kept twice.
+				An agent acts as the aven, with exactly what the aven holds, no more and no less: no agent vaults and no sub caps.
+				By default avenMAIA is a Suggester on Maia City and may open AIPs there, so an agent proposes and drafts and you
+				merge. Give the aven more and every agent has more; take a share back and every agent loses it; remove one agent’s
+				device from the aven and the others stay. An agent saves a file of your desktop, named by its path, where the
+				aven may create, as an Editor may. It keeps no file of its own: once your desktop holds a file it saved whole, it
+				lets go of its copy, and it reads your files from your desktop’s one store, so nothing is kept twice.
 			</p>
 			<h3>Asking for access</h3>
 			<p class="prose-col">

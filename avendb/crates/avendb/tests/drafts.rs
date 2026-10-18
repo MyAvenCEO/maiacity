@@ -743,13 +743,11 @@ fn a_drafts_creation_uses_its_draft_peer_and_never_collides_with_main() {
     }
 }
 
-/// A standing Suggester her page gave before drafts, to her aven and on to agentClaude, and that a coop she owns
-/// followed, is given again in the group's form when her page grants it again (`$lib/avendb/vaults.js`
-/// `standingOps`): no sheet, a new standing grant each, the agent's resting on the aven's new one, and the coop follows
-/// them in that form, resting on what gives all they give; the ones before stand for nothing more. Then agentClaude
-/// drafts in the coop.
+/// A standing Suggester her page gave her coop's aven before drafts, and that another coop she owns followed, is given
+/// again in the group's form when her page grants it again (`$lib/avendb/vaults.js` `standingOps`): no sheet, a new
+/// standing grant, and the coop follows it in that form; the one before stands for nothing more. Then agentClaude, a
+/// device of the aven, acting as it with its rights, drafts in the coop.
 #[test]
-#[ignore = "an aven owns no agent vault any more: agents reach avenMAIA through its server (next PR)"]
 fn a_standing_suggester_made_before_drafts_is_granted_again_in_its_new_form() {
     let mut w = cast::world();
     let (alice, mac, passkey) = (w.alice, w.mac_a, w.passkey_a);
@@ -760,52 +758,43 @@ fn a_standing_suggester_made_before_drafts_is_granted_again_in_its_new_form() {
     };
     let ours = found(&mut w, Kind::Coop, alice, 5);
     let aven = found(&mut w, Kind::Aven, ours, 5);
-    let agent = found(&mut w, Kind::DeviceVault, aven, 6);
     let claude = w.lab.device("agentClaude");
-    let add = Action::Share(Sharing::Device { vault: agent, device: claude, seal_to: None });
-    w.lab.submit(mac, &[passkey, claude], add).expect("its device");
+    let add = Action::Share(Sharing::Device { vault: aven, device: claude, seal_to: None });
+    w.lab.submit(mac, &[passkey, claude], add).expect("agentClaude a device of her coop's aven");
     let coop = found(&mut w, Kind::Coop, alice, 7);
-    // the standing grants as her page made them before drafts, and the coop following them
+    // the standing grant as her page made it before drafts, and the coop following it
     let name = world::standing_name("Suggester");
-    let old = |over: VaultId, who: VaultId, parent, issuer| avendb::lab::NewShare {
+    let old = |over: VaultId, who: VaultId, issuer| avendb::lab::NewShare {
         name: name.clone(),
         ops: rules::suggester_before_drafts(),
-        parent,
+        parent: None,
         issuer,
         ..cast::share(over, cast::vault(who), avendb::policy::Level::Write, avendb::slice::Selector::All)
     };
     let issue = |w: &mut World, s| w.lab.issue(mac, &[mac], s).expect("as it was");
-    let to_aven = issue(&mut w, old(alice, aven, None, alice));
-    let to_agent = issue(&mut w, old(alice, agent, Some(to_aven), aven));
-    let followed = issue(&mut w, old(coop, aven, None, coop));
-    issue(&mut w, old(coop, agent, Some(followed), aven));
+    let to_aven = issue(&mut w, old(alice, aven, alice));
+    issue(&mut w, old(coop, aven, coop));
     let before: Vec<_> = world::standing(&w.lab, mac, alice).into_iter().map(|s| s.share).collect();
-    assert_eq!(before, [to_aven, to_agent]);
-    // her page grants them again
-    let (a, v, c) = (alice.to_hex(), aven.to_hex(), agent.to_hex());
-    let grant = |w: &mut World, who: &str, by: &str| {
-        let op = json!({ "op": "share", "over": a, "who": { "vault": who }, "level": "Suggester", "standing": true,
-            "as": by });
+    assert_eq!(before, [to_aven]);
+    // her page grants it again
+    let (a, v) = (alice.to_hex(), aven.to_hex());
+    let grant = |w: &mut World| {
+        let op = json!({ "op": "share", "over": a, "who": { "vault": v }, "level": "Suggester", "standing": true,
+            "as": a });
         avendb::id::ShareId::from_hex(&text(&ok(run(w, mac, op))["share"])).expect("a share")
     };
-    let (aven_now, agent_now) = (grant(&mut w, &v, &a), grant(&mut w, &c, &v));
-    assert!(aven_now != to_aven && agent_now != to_agent, "given again");
-    assert_eq!(w.lab.state(mac).share(agent_now).and_then(|cp| cp.share.parent), Some(aven_now));
+    let aven_now = grant(&mut w);
+    assert_ne!(aven_now, to_aven, "given again");
     let now: Vec<_> = world::standing(&w.lab, mac, alice).into_iter().map(|s| s.share).collect();
-    assert_eq!(now, [aven_now, agent_now], "the ones before stand for nothing more");
-    assert_eq!((grant(&mut w, &v, &a), grant(&mut w, &c, &v)), (aven_now, agent_now), "asked again, they stand");
-    // the coop follows them in the group's form: the agent drafts there
+    assert_eq!(now, [aven_now], "the one before stands for nothing more");
+    assert_eq!(grant(&mut w), aven_now, "asked again, it stands");
+    // the coop follows it in the group's form: the aven's agent drafts there, as the aven
     let seen = world::world(&w.lab, mac).expect("her world");
-    let over = |who: VaultId| {
-        let of =
-            |s: &&world::ShareView| s.share.over == coop && s.share.who == Who::Vault(who) && s.drafts() == Some(true);
-        seen.shares.iter().find(of).map(|s| s.id)
-    };
-    let (coops, agents) = (over(aven).expect("the aven's"), over(agent).expect("the agent's"));
-    assert_eq!(w.lab.state(mac).share(agents).and_then(|cp| cp.share.parent), Some(coops));
+    let of = |s: &&world::ShareView| s.share.over == coop && s.share.who == Who::Vault(aven) && s.drafts() == Some(true);
+    assert!(seen.shares.iter().any(|s| of(&s)), "the coop's, in the group's form");
     w.lab.sync_all(1);
     let draft = json!({ "op": "create", "vault": coop.to_hex(), "type": "logic", "value": logic("Coop rules"),
-        "draft": true, "as": c });
+        "draft": true, "as": v });
     let made = ok(run(&mut w, claude, draft));
     w.lab.sync_all(2);
     let e = text(&made["entry"]);
