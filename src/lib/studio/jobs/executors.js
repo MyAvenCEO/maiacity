@@ -55,6 +55,14 @@ const native = (rule) => async (task, ctx) => {
 			if (v) return { outputs: [kept.entry], result: { file: kept.entry, state: v.state ?? 'done', hero: v.hero ?? null, language: v.language ?? null, seconds: v.seconds ?? null } };
 		}
 	}
+	// and the HD proxy the old studio played it from (../importer.js `bringFootageProxies`), while its journey is the one
+	// found in the file: remaking it from the 4K original took the 8 GB Mac a long while, the footage playing from its
+	// originals until then. A profile set by hand makes a new one.
+	if (rule === 'proxy') {
+		const kept = legacyValue(rule, ctx.entry(task.inputs[0]?.entry ?? ''), ctx.world);
+		const journey = paramsOf(task)['probe.journey'];
+		if (kept && !journey?.override) return { outputs: [kept.entry], result: { profile: journey?.profile ?? null, legacy: true } };
+	}
 	/** @type {Record<string, any>} */
 	const entries = {};
 	for (const i of task.inputs) {
@@ -81,6 +89,16 @@ export function legacyValue(rule, o, world) {
 	const mark = (o?.tags ?? []).find((t) => t.startsWith('legacy:'));
 	if (!o || !mark) return undefined;
 	return world.entries.find((e) => e.vault === o.vault && !e.deleted && e.type === 'file' && (e.tags ?? []).includes(mark) && (e.tags ?? []).includes(`media:${rule}`));
+}
+
+/** A task's param values (./tasks.js keeps them as JSON). @param {{ params?: unknown }} task @returns {Record<string, any>} */
+function paramsOf(task) {
+	if (typeof task.params !== 'string') return /** @type {Record<string, any>} */ (task.params ?? {});
+	try {
+		return JSON.parse(task.params) ?? {};
+	} catch {
+		return {};
+	}
 }
 
 /** The rules the Mac app's Rust does (vault/app/src/aven.rs). */
