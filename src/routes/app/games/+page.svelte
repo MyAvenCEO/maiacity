@@ -1,7 +1,6 @@
-<!-- Sandboxes: every sandbox as one list, opened from the dashboard's Sandboxes tile. -->
+<!-- An old list (the dashboard's Sandboxes group): everything in it is on the dashboard now (Samuel 2026-10-18). -->
 <script>
-	import GroupList from '$lib/app/GroupList.svelte';
-	import { SANDBOXES } from '$lib/app/places';
+	import Moved from '$lib/app/Moved.svelte';
 </script>
 
-<GroupList group={SANDBOXES} lede="Every sandbox, each a world of its own to play." />
+<Moved to="/app/" />

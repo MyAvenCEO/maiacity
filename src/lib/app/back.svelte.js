@@ -1,7 +1,8 @@
 /**
  * The way back, the one in the nav pill ($lib/app/NavPill.svelte): no page has a back button of its own.
  *
- * By default it goes up a place: a world to the Worlds, anything else to the dashboard. While a page has something
+ * By default it goes up a place: a world to the Worlds, a game asset's app to Game Assets, anything else (a game, an
+ * app, avenDB's pages) to the dashboard, which shows them all. While a page has something
  * open over itself (a city on the planet, the inside of a dome, the island's sandbox), the way back closes that
  * first: the page calls `wayBack(label, go)` while it is open, and calls what it gets back once it has closed. The
  * last one opened is the first one closed.
@@ -36,9 +37,8 @@ export function wayBack(label, go) {
 }
 
 /**
- * The place above a page, by its path (without the base): a world's is the Worlds, a grouped place's its group (the
- * Sandboxes, Game Assets, My Data), everything else's the dashboard,
- * and the dashboard has none.
+ * The place above a page, by its path (without the base): a world's is the Worlds, a game asset's app's Game Assets,
+ * everything else's the dashboard, and the dashboard has none.
  * @param {string} rel
  * @returns {{ href: string, label: string } | null}
  */
@@ -46,7 +46,7 @@ export function upFrom(rel) {
 	if (/^\/app\/?$/.test(rel)) return null;
 	if (/^\/app\/worlds\/[^/]+\/?$/.test(rel)) return { href: `${base}/app/worlds/`, label: 'Back to the worlds' };
 	if (/^\/app\/stories\/story\/?$/.test(rel)) return { href: `${base}/app/stories/`, label: 'Back to the stories' };
-	// a place in a group (a sandbox, a game asset, my data) goes back to its group's list
+	// a game asset's app goes back to the Game Assets list
 	const group = groupOf(`${base}${rel.replace(/\/?$/, '/')}`);
 	if (group) return { href: group.href, label: `Back to ${group.label}` };
 	return { href: `${base}/app/`, label: 'Back to the dashboard' };

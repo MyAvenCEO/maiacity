@@ -20,17 +20,16 @@ export type Place = {
 };
 export type IconName = 'back' | 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key' | 'ledger' | 'coops' | 'proposals' | 'leaf' | 'database' | 'universe' | 'gear';
 
-// a founder's own apps: their money and the COOPs, read from MaiaCity V1's one game, and the proposals of every game
-// (AIPs), which live only here, never on a game's own screens (Samuel 2026-10-17).
+// a founder's own apps: their money and the COOPs, read from MaiaCity V1's one game, the proposals of every game
+// (AIPs), which live only here, never on a game's own screens (Samuel 2026-10-17), and the Universe.
 // Every sandbox draws the same ones.
 export const APPS: Place[] = [
 	{ href: `${base}/app/ledger/`, label: 'Ledger', icon: 'ledger', note: 'Your HEARTS and MINDs, every rent and pay day, every transaction' },
 	{ href: `${base}/app/coops/`, label: 'Coops', icon: 'coops', note: 'The three COOPs: treasuries, holders, assets, rents' },
 	{ href: `${base}/app/aips/`, label: 'Proposals', icon: 'proposals', note: 'Every game’s proposals: ideas, proposed, applied or rejected' },
+	// the Universe stream, on the public site (the navbar's Universe tab): the journal and Inspire me are its channels
+	{ href: `${base}/universe/`, label: 'Universe', icon: 'universe', note: 'What happens in maiaCITY, as it happens' }
 ];
-
-/** the Universe stream: on the public site (the navbar's Universe tab), a tile in the dashboard's Make row */
-export const UNIVERSE: Place = { href: `${base}/universe/`, label: 'Universe', icon: 'universe', note: 'What happens in maiaCITY, as it happens' };
 
 /** the worlds' and sandboxes' older versions, by address, each with what it was */
 const HISTORY: Record<string, (Change & { build?: string })[]> = {
@@ -86,28 +85,16 @@ export const GAME_ASSETS: Place[] = [
 	{ href: `${base}/app/assets/render/`, label: 'Renderer lab', icon: 'gear', cap: 'media:admin', note: 'A thousand assets from the box, drawn by one renderer at the detail each needs', cover: `${base}/app/covers/render.jpg` }
 ];
 
-/** what is the founder's own: films, vaults, skills, generated mini apps, the stories, the journal and Inspire me, one
- *  group (My Data, /app/data/); every founder sees it, each place only if they hold its capability */
-export const MY_DATA: Place[] = [
-	{ href: `${base}/app/studio/`, label: 'Studio', icon: 'studio', cap: 'media:admin', note: 'Films and sound', cover: `${base}/app/covers/studio.jpg` },
-	{ href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', cap: 'media:admin', note: 'Your own vaults, end-to-end encrypted and quantum-proof', cover: `${base}/app/covers/avendb.jpg` },
-	{ href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', cap: 'media:admin', note: "The film crew's skills, as a wiki", cover: `${base}/app/covers/skills.jpg` },
-	{ href: `${base}/app/genui/`, label: 'Generated UI', icon: 'spark', cap: 'media:admin', note: 'Mini apps agents make on the fly, each in its own box', cover: `${base}/app/covers/genui.jpg` },
-	{ href: `${base}/app/stories/`, label: 'Stories', icon: 'board', cap: 'content:admin', note: 'Every story, idea to published, and when it goes out', cover: `${base}/app/covers/stories.jpg` },
-	{ href: `${base}/universe/?c=Journal`, label: 'Journal', icon: 'journal', note: 'Day by day', cover: `${base}/app/covers/journal.jpg` },
-	{ href: `${base}/universe/?c=Inspire%20me`, label: 'Inspire me', icon: 'spark', note: 'Ideas we learn from', cover: `${base}/app/covers/inspire.jpg` }
-];
-
-/** a dashboard tile that opens a list of places: the sandboxes, the game assets, my data */
+/** the game's building blocks as one list (Game Assets, /app/assets/), an admin's tile among the dashboard's apps */
 export type Group = Place & { items: Place[] };
-export const SANDBOXES: Group = { href: `${base}/app/games/`, label: 'Sandboxes', icon: 'play', note: 'Every sandbox, each a world of its own to play', items: PLAY };
 export const ASSETS_GROUP: Group = { href: `${base}/app/assets/`, label: 'Game Assets', icon: 'media', cap: 'media:admin', note: 'Factories, machines, actors, worlds, buildings, things, biomes and plants', items: GAME_ASSETS };
-export const DATA_GROUP: Group = { href: `${base}/app/data/`, label: 'My Data', icon: 'database', note: 'Studio, avenDB, Skills, Generated UI, Stories, the Journal and Inspire me', items: MY_DATA };
-export const GROUPS: Group[] = [SANDBOXES, ASSETS_GROUP, DATA_GROUP];
 
-/** the group a place sits in, if any: its way back goes there */
-export const groupOf = (path: string) => GROUPS.find((g) => g.items.some((p) => path.startsWith(p.href)));
+/** every game, on the dashboard's Game Worlds: MaiaCity V1 first, then the sandboxes, each published as the Maia City
+ *  COOP vault says ($lib/app/games.svelte.js) */
+export const GAME_WORLDS: Place[] = [...CITY, ...PLAY];
 
+/** the group a place sits in, if any (a game asset's, Game Assets): its way back goes there */
+export const groupOf = (path: string) => (ASSETS_GROUP.items.some((p) => path.startsWith(p.href)) ? ASSETS_GROUP : undefined);
 
 export const holds = (founder: Founder | null, p: Place) => !p.cap || !!founder?.caps?.includes(p.cap);
 
@@ -136,28 +123,3 @@ const BIOMES_TILE: Place = { href: `${base}/app/biomes/`, label: 'Biomes', icon:
 const SKILLS_TILE: Place = { href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', release: 'draft' };
 const AVENDB_TILE: Place = { href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', release: 'draft' };
 const GENUI_TILE: Place = { href: `${base}/app/genui/`, label: 'Generated UI', icon: 'spark', release: 'draft' };
-
-/** Where a path is, in words: the top bar's title. */
-export function placeOf(path: string): string {
-	const rel = path.slice(base.length).replace(/\/+$/, '/');
-	if (rel === '/app/') return 'Dashboard';
-	if (rel.startsWith('/app/games/')) return PLAY.find((p) => path.startsWith(p.href))?.label ?? 'Sandboxes';
-	if (rel.startsWith('/app/assets/')) return 'Game Assets';
-	if (rel.startsWith('/app/data/')) return 'My Data';
-	if (rel.startsWith('/app/worlds/')) return WORLDS.find((p) => path.startsWith(p.href))?.label ?? 'Worlds';
-	if (rel.startsWith('/app/models/')) return 'Things';
-	if (rel.startsWith('/app/buildings/')) return 'Buildings';
-	if (rel.startsWith('/app/actors/')) return 'Actors';
-	if (rel.startsWith('/app/factories/')) return 'Factories';
-	if (rel.startsWith('/app/machines/')) return 'Machines';
-	if (rel.startsWith('/app/plants/')) return 'Plants';
-	if (rel.startsWith('/app/biomes/')) return 'Biomes';
-	if (rel.startsWith('/app/skills/')) return 'Skills';
-	if (rel.startsWith('/app/avendb/')) return 'avenDB';
-	if (rel.startsWith('/app/genui/')) return 'Generated UI';
-	const city = CITY.find((p) => path.startsWith(p.href));
-	if (city) return city.label;
-	const app = APPS.find((p) => path.startsWith(p.href));
-	if (app) return app.label;
-	return [UNIVERSE, { href: `${base}/app/device/`, label: 'Terminal' } as Place, ...GAME_ASSETS, ...MY_DATA].find((p) => path.startsWith(p.href))?.label ?? '';
-}

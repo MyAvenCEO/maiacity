@@ -1,16 +1,12 @@
 <!--
-	A dashboard group opened (the Sandboxes, Game Assets, My Data): its places as a list, a picture on each row, and on
+	A dashboard group opened (Game Assets): its places as a list, a picture on each row, and on
 	a wide screen an aside on the left that shows the picture of the row under the pointer (or in focus) large.
 	Only the places this founder may open are listed: those whose capability they hold, a draft only for an admin.
-	A game is published or withdrawn here by whoever's device acts for the Maia City COOP vault, whose Public share on
-	the game is what publishing it is ($lib/app/games.svelte.js).
 -->
 <script>
 	import { onMount } from 'svelte';
 	import { me } from '$lib/auth/client';
-	import { holds, isAdmin, published, released } from '$lib/app/places';
-	import { cityOf, loadGames, publish } from '$lib/app/games.svelte.js';
-	import { session } from '$lib/avendb/session.svelte.js';
+	import { holds, published, released } from '$lib/app/places';
 	import { asset } from '$lib/media/url';
 	import Icon from '$lib/app/Icon.svelte';
 
@@ -24,12 +20,6 @@
 		founder = await me().catch(() => null);
 		ready = true;
 	});
-	onMount(() => void loadGames());
-	// the Maia City COOP vault, where this device acts for it: only then a game here can be published or withdrawn
-	const hasGames = $derived(group.items.some((p) => p.game));
-	// an admin's tab alone opens avenDB here: nobody else could act for the vault
-	$effect(() => (hasGames && isAdmin(founder) ? session.boot() : undefined));
-	const city = $derived(hasGames ? cityOf(session.world) : null);
 
 	const items = $derived(group.items.filter((p) => holds(founder, p) && released(founder, p)));
 	/** the row the aside shows: the one under the pointer or in focus, else the first */
@@ -77,17 +67,12 @@
 						</span>
 						<span class="go" aria-hidden="true">›</span>
 					</a>
-					{#if city && p.game}
-						{@const on = published(p)}
-						<button class="publish" class:on disabled={!!session.doing} onclick={() => publish(p.game, !on)} title={on ? 'Everyone may watch and read it: withdraw it' : 'Only the admins open it: publish it to everyone'}>{on ? 'Withdraw' : 'Publish'}</button>
-					{/if}
 				</li>
 			{:else}
 				{#if ready}<li class="empty">Nothing here for you yet.</li>{/if}
 			{/each}
 		</ul>
 	</div>
-	{#if city && session.error}<p class="err">{session.error}</p>{/if}
 </main>
 
 <style>
@@ -203,31 +188,6 @@
 	.list li > a {
 		flex: 1;
 		min-width: 0;
-	}
-
-	.publish {
-		flex: none;
-		padding: 0.35rem 0.8rem;
-		border: 1px solid var(--line);
-		border-radius: 999px;
-		background: var(--paper);
-		color: var(--ink);
-		font: inherit;
-		font-size: 0.8rem;
-		cursor: pointer;
-	}
-
-	.publish:not(.on) {
-		border-color: var(--mustard);
-		background: var(--mustard);
-	}
-
-	.publish:disabled {
-		opacity: 0.5;
-	}
-
-	.err {
-		color: #a03224;
 	}
 
 	.list a {
