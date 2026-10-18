@@ -18,7 +18,7 @@
 // so the stream runs in a test as it runs in a world.
 
 /**
- * @typedef {{ x: number, y: number, z: number, frustum?: { intersectsSphere(s: { center: { x: number, y: number, z: number }, radius: number }): boolean } | null, near?: number }} View
+ * @typedef {{ x: number, y: number, z: number, frustum?: { intersectsSphere(s: { center: { x: number, y: number, z: number }, radius: number }): boolean, containsPoint(p: { x: number, y: number, z: number }): boolean } | null, near?: number }} View
  *   a camera looking: where it stands, what it sees (none: all round it), and how near round it a thing is wanted
  *   unseen
  * @typedef {{ id: string | number, x: number, y?: number, z: number, r: number, cost?: number, build: (job: { cancelled: boolean }) => Promise<any>, dispose?: (handle: any) => void }} Item

@@ -2671,7 +2671,8 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		// passes near), to be there
 		stage: async (w) => {
 			walker.place(w.stand[0], w.stand[1], 0, 0)
-			actorsNear(w.views?.length ? w.views : [{ x: w.stand[0], z: w.stand[1] }])
+			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+			actorsNear(w.views?.length ? w.views : [{ x: w.stand[0], y: 1.7, z: w.stand[1] }])
 			await actorsSettled()
 		},
 		animate: (t) => {
