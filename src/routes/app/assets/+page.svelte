@@ -1,7 +1,6 @@
-<!-- Game Assets: the machines, actors, worlds, buildings, things, biomes and plants the games are made of, as one list. An admin's. -->
+<!-- An old list (the dashboard's Game Assets): the assets are avenDB's now, in its Assets app (Samuel 2026-10-18). -->
 <script>
-	import GroupList from '$lib/app/GroupList.svelte';
-	import { ASSETS_GROUP } from '$lib/app/places';
+	import Moved from '$lib/app/Moved.svelte';
 </script>
 
-<GroupList group={ASSETS_GROUP} lede="What the games are made of: factories, machines, people and animals, worlds, buildings, still things, biomes and plants." />
+<Moved to="/app/avendb/#assets" />

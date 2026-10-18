@@ -2,8 +2,8 @@
 	The dashboard, the one place everything starts from (Samuel 2026-10-18: one dashboard, no group pages): a greeting;
 	the Game Worlds, every game (MaiaCity V1, the sandboxes) as the Maia City COOP vault serves it, published or, for an
 	admin, a draft, which whoever's device acts for that vault publishes or withdraws right here
-	($lib/app/games.svelte.js); the founder's apps (Ledger, Coops, Proposals, the Universe, and for an admin Game
-	Assets); then avenDB's apps, the vault's pages as its own home lists them ($lib/avendb/VaultApps.svelte), each
+	($lib/app/games.svelte.js); the founder's apps (Ledger, Coops, Proposals, the Universe); then avenDB's apps (the
+	game assets among them, in its Assets), the vault's pages as its own home lists them ($lib/avendb/VaultApps.svelte), each
 	opening in the vault picked in the nav pill.
 -->
 <script lang="ts">
@@ -15,7 +15,7 @@
 	import { nameOf } from '$lib/avendb/vaults.js';
 	import VaultApps from '$lib/avendb/VaultApps.svelte';
 	import Icon from '$lib/app/Icon.svelte';
-	import { APPS, ASSETS_GROUP, GAME_WORLDS, holds, isAdmin, published, released } from '$lib/app/places';
+	import { APPS, GAME_WORLDS, holds, isAdmin, published, released } from '$lib/app/places';
 	import { cityOf, publish } from '$lib/app/games.svelte.js';
 	import { asset } from '$lib/media/url';
 
@@ -31,7 +31,7 @@
 	const admin = $derived(isAdmin(founder));
 	// the games this founder may open: the published ones, and for an admin the drafts too
 	const games = $derived(GAME_WORLDS.filter((g) => released(founder, g)));
-	const apps = $derived([...APPS, ASSETS_GROUP].filter((t) => holds(founder, t)));
+	const apps = $derived(APPS.filter((t) => holds(founder, t)));
 	// the Maia City COOP vault, where this device acts for it: only then a game can be published or withdrawn here
 	const city = $derived(admin ? cityOf(session.world) : null);
 	// the vault avenDB's apps open in: the one picked in the nav pill
