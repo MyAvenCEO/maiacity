@@ -10,7 +10,7 @@ export const RELAY = 'https://avendb.maia.city';
 
 /** The server's offer, the same as long as its shelf (g18, since the reset that Studio 2 standing alone brought) keeps its device's key. */
 export const SERVER =
-	'AVENDB1A2XWACHCQNFUJXODP4ZZC5THHROTH6VWUMWLJTTJFQATJ22EUKMJYBSSDDI76WJ3PK5IET2KKAFASISOB6LOGOXG3ZRWZE6DUXZQU7QBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
+	'AVENDB1UAYTJU2GDDXXNHWO5YZJOJJBYJFXCKVEPNGILCF6ORDFGRZQXIYOKZOGNSNV64ZIP4VEW4HJPYXUPWZBQJWGRT75JV4CAO3N25TOCMYBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
 
 /** In a dev build alone, a test server's for this tab ($lib/app/entry.js, scripts/entry-walk.mjs): a link can't lead
  *  a person's page to another server. @param {string} key */
