@@ -21,7 +21,7 @@ description: Derive a maiaCITY day's posts from its base article — the single 
 | `youtube` | `video` — the film (4K master or the film as it is), title + description with chapters (first 0:00, ≥ 3, each ≥ 10 s); `short` — a square or vertical film of ≤ 3 min (YouTube makes it a Short by itself) | title 100, description 5000 |
 | `linkedin` | `video` (1080 H.264), `post` (a text post: one idea) | 3000 |
 | `x` | `video` (1080 H.264), `post`, `thread` (`thread: [...]`, one entry per tweet, `text` = the first), `article` — an X Article, long form (the blog article) | 280 per tweet; an X Article 100 000 |
-| `instagram` | `reel` (9:16, **≤ 90 s** — a film longer than that gets its own Reel cut, e.g. `api/scripts/cut.ts`), `video` with `placement: "feed"` (the full film, 1:1) | 2200 |
+| `instagram` | `reel` (9:16, **≤ 90 s** — a film longer than that gets its own Reel cut: a draft `cut` entry in Studio 2, made from the film's cut), `video` with `placement: "feed"` (the full film, 1:1) | 2200 |
 
 A derivative that posts a film names its cut: `variant` (the timeline letter: `G` full film, `H` Reel), plus `aspect` and `codec` of the delivery it uses (16:9 hevc → YouTube; 16:9 h264 → X, LinkedIn; 9:16 h264 → Reel; 1:1 h264 → Instagram feed). A film that is already in the post (not from a timeline) is listed under `files` in derivatives.json by its library name — its copies too (e.g. a 1080 H.264 copy of a 2160 HEVC film for X, LinkedIn, Instagram and the Short).
 
