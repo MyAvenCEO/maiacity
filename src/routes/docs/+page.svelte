@@ -10,6 +10,15 @@
 			text: 'The user-owned, local-first, post-quantum database under maiaCITY: what the server can and cannot see, vaults, CRDT entries with history, shares, schemas and lenses, sync between your devices, and terabytes of media backed up to a sealed bucket.',
 			updated: '13 October 2026',
 			tags: ['local-first', 'CRDT', 'iroh', 'post-quantum']
+		},
+		{
+			href: `${base}/theos`,
+			art: 'theos',
+			kind: 'Paper',
+			title: 'theOS',
+			text: 'The civilization scale operating system of Abundism: a macroeconomic and system-engineering framework for a post-labour economy, with HEARTS as the unit of account, liquidity owned by the City COOP, and a floor where no one starves and no one has to work to survive.',
+			updated: '17 October 2026',
+			tags: ['economics', 'HEARTS', 'COOP', 'post-labour']
 		}
 	];
 </script>
@@ -31,6 +40,20 @@
 			<li>
 				<a href={doc.href}>
 					<div class="art" aria-hidden="true">
+						{#if doc.art === 'theos'}
+							<!-- one COOP at the centre, a heart (HEARTS) inside, its members around it, each linked in -->
+							<svg viewBox="0 0 240 120">
+								<path class="ctl" d="M120 60 L70 30 M120 60 L170 30 M120 60 L70 90 M120 60 L170 90 M120 60 L40 60 M120 60 L200 60" />
+								<circle class="dev" cx="70" cy="30" r="11" />
+									<circle class="dev" cx="170" cy="30" r="11" />
+									<circle class="dev" cx="70" cy="90" r="11" />
+									<circle class="dev" cx="170" cy="90" r="11" />
+									<circle class="dev" cx="40" cy="60" r="11" />
+									<circle class="dev" cx="200" cy="60" r="11" />
+									<circle class="bkt" cx="120" cy="60" r="24" />
+									<path class="heart" d="M120 71 C104 61 108 49 115 49 C118 49 120 52 120 54 C120 52 122 49 125 49 C132 49 136 61 120 71 Z" />
+								</svg>
+							{:else}
 						<svg viewBox="0 0 240 120">
 							<rect class="dev" x="14" y="16" width="70" height="40" rx="9" />
 							<rect class="dev" x="14" y="68" width="70" height="40" rx="9" />
@@ -40,6 +63,7 @@
 							<path class="ctl" d="M84 36 L112 52 M84 88 L112 72 M49 56 V68" />
 							<path class="bytes" d="M168 62 H190" />
 						</svg>
+						{/if}
 					</div>
 					<p class="eyebrow">{doc.kind}&ensp;·&ensp;updated {doc.updated}</p>
 					<h2>{doc.title}</h2>
@@ -136,6 +160,9 @@
 		stroke: var(--terracotta);
 		stroke-width: 5;
 		stroke-linecap: round;
+	}
+	.heart {
+		fill: var(--terracotta);
 	}
 	h2 {
 		font-size: clamp(1.9rem, 3vw, 2.4rem);

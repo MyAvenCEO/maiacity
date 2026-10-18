@@ -17,10 +17,9 @@
 
 	const links = [
 		{ href: base || '/', label: 'Home' },
-		// the theOS paper keeps its own spelling, not the nav's capitals
-		{ href: `${base}/theos`, label: 'theOS', asIs: true },
 		{ href: `${base}/universe`, label: 'Universe' },
-		{ href: `${base}/docs`, label: 'Docs' }
+		// the theOS paper lives under Docs, as one of its tiles
+		{ href: `${base}/docs`, label: 'Docs', also: [`${base}/theos`] }
 	];
 
 	// The signed-in app (/app/: the dashboard, the games, the admin's tools) is its own place: none of the public
@@ -88,7 +87,7 @@
 			<ul class="pages" id="site-pages" class:open={menuOpen}>
 				{#each links as link (link.href)}
 					<li>
-						<a href={link.href} class:as-is={link.asIs} aria-current={isActive(link.href) ? 'page' : undefined}>{link.label}</a>
+						<a href={link.href} aria-current={isActive(link.href) || link.also?.some(isActive) ? 'page' : undefined}>{link.label}</a>
 					</li>
 				{/each}
 				<li>
@@ -125,7 +124,7 @@
 		gap: 0.5rem;
 		padding: 0.45rem 0.45rem 0.45rem 0;
 		border-radius: 999px;
-		background: var(--paper);
+		background: #e7decd; /* the logo's own beige, so the round logo melts into the pill */
 		box-shadow: 0 6px 24px rgb(38 56 44 / 0.06);
 	}
 
@@ -195,12 +194,6 @@
 		text-transform: uppercase;
 		text-decoration: none;
 		color: var(--ink-soft);
-	}
-
-	.pages a.as-is {
-		text-transform: none;
-		letter-spacing: 0.04em;
-		font-size: 0.82rem;
 	}
 
 	.pages a:hover {
