@@ -41,4 +41,14 @@ test('a frozen film holds every world shot its timeline plays, and its files by 
 	expect(badFrozen(film)).toBeNull();
 	expect(badFrozen({ ...film, shots: {} })).toBe('the shot s1@2 is missing');
 	expect(badFrozen({ ...film, files: ['nope'] })).toBe('files are BLAKE3 hashes');
+	expect(badFrozen({ ...film, proxies: { 's1@2': h } })).toBeNull();
+	expect(badFrozen({ ...film, proxies: { 's1@2': 'nope' } })).toBe('proxies are BLAKE3 hashes');
+});
+
+test("only a shot whose world the camera has gets its proxy rendered; the room's comes from the film seed", async () => {
+	const { shootable } = await import('./cuts.js');
+	expect(shootable({ world: { sandbox: 'sandbox-4' } })).toBe(true);
+	expect(shootable({ world: { sandbox: 'maiacity-v1', area: 'A' } })).toBe(true);
+	expect(shootable({ world: {} })).toBe(true);
+	expect(shootable({ world: { sandbox: 'room' } })).toBe(false);
 });

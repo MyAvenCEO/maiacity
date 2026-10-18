@@ -27,9 +27,12 @@ export function legacyOf(f, all) {
 }
 
 /**
- * A frozen film.
+ * A frozen film. `proxies`: the proxy, by its BLAKE3 hash, of each world shot (`<shot>@<version>`) whose world the
+ * film camera no longer has (game/film/worlds.js), kept in the Mac's film seed beside its files; a shot in a world it
+ * has gets its proxy rendered in that world instead (./cuts.js `proxiesOf`).
  * @typedef {{ key: string, name: string, frozen: string, story: { title: string, description: string },
- *   timeline: any, shots: Record<string, { name: string, project: string | null, spec: any }>, files: string[] }} Frozen
+ *   timeline: any, shots: Record<string, { name: string, project: string | null, spec: any }>, files: string[],
+ *   proxies?: Record<string, string> }} Frozen
  */
 
 const HASH = /^[0-9a-f]{64}$/;
@@ -50,5 +53,6 @@ export function badFrozen(v) {
 		if (c.kind === 'world' && typeof c.shot === 'string' && !c.shot.startsWith('shot:') && !v.shots[`${c.shot}@${c.shotVersion}`]) return `the shot ${c.shot}@${c.shotVersion} is missing`;
 	}
 	if (!Array.isArray(v.files) || v.files.some((/** @type {unknown} */ h) => !HASH.test(String(h)))) return 'files are BLAKE3 hashes';
+	if (v.proxies != null && (typeof v.proxies !== 'object' || Object.values(v.proxies).some((h) => !HASH.test(String(h))))) return 'proxies are BLAKE3 hashes';
 	return null;
 }
