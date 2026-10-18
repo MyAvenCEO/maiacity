@@ -307,11 +307,6 @@
 					</div>
 				</section>
 			{/each}
-			<p class="pq">
-				<span class="chip ok" title="Every edit counts by its SLH-DSA signature alone, and every key is sealed post-quantum"
-					>Post-quantum only</span
-				>
-			</p>
 		</section>
 	{:else}
 
@@ -344,11 +339,6 @@
 				{/each}
 			{/each}
 		</nav>
-		<p class="pq">
-			<span class="chip ok" title="Every edit counts by its SLH-DSA signature alone, and every key is sealed post-quantum"
-				>Post-quantum only</span
-			>
-		</p>
 	</aside>
 
 	<section class="main">
@@ -536,10 +526,6 @@
 		font-weight: 600;
 	}
 
-	.pq {
-		padding: 1rem 0.5rem 0;
-	}
-
 	.main {
 		min-width: 0;
 		padding: calc(1.4rem + env(safe-area-inset-top, 0px)) clamp(1rem, 3vw, 2.4rem) 10rem;
@@ -686,10 +672,6 @@
 		overflow-wrap: anywhere;
 	}
 
-	.home .pq {
-		padding: 2rem 0 0;
-	}
-
 	/* at the foot, in the middle, just above the app's own nav pill (--nav-room, src/app.css) */
 	.toasts {
 		position: fixed;
@@ -792,10 +774,6 @@
 		.shell.reading {
 			grid-template-columns: minmax(0, 1fr);
 			grid-template-rows: minmax(0, 1fr);
-		}
-
-		.pq {
-			display: none;
 		}
 
 		/* four apps a row, as a phone's home screen shows them */
