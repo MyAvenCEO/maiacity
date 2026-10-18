@@ -33,7 +33,7 @@
 		menuOpen = false;
 	});
 
-	// Whoever is signed in on this browser gets the dashboard in the nav, everyone else the way to join. The site stays
+	// Whoever is signed in on this browser gets the way into the app (Sign in) in the nav, everyone else the way to join. The site stays
 	// static for a visitor: the API is only asked once this browser has been signed in before (a hint, checked here).
 	let signedIn = $state(false);
 	$effect(() => {
@@ -92,7 +92,7 @@
 				{/each}
 				<li>
 					{#if signedIn}
-						<a class="admin" href="{base}/app/">Dashboard</a>
+						<a class="admin" href="{base}/app/">Sign in</a>
 					{:else}
 						<a href="{base}/join" aria-current={isActive(`${base}/join`) ? 'page' : undefined}>Join</a>
 					{/if}
@@ -212,8 +212,15 @@
 		color: var(--cream);
 	}
 
-	.pages a.admin:not([aria-current='page']) {
-		box-shadow: inset 0 0 0 1px var(--line);
+	/* the way into the app: a brand green button */
+	.pages a.admin {
+		background: var(--brand-green);
+		color: var(--cream);
+	}
+
+	.pages a.admin:hover {
+		background: var(--ink);
+		color: var(--cream);
 	}
 
 	.burger {
