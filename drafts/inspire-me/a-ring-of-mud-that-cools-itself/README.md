@@ -1,8 +1,10 @@
 ---
 title: A ring of mud that cools itself
+originalTitle: "This \"Ring\" Home Cools 400 Rooms For $0. Why Can't You Build One?"
 source: https://www.youtube.com/watch?v=9TKm9tylBM0
 type: video
 author: Wild Line
+authorUrl: https://www.youtube.com/@wildline_YT
 added: 2026-10-19
 categories: [architecture, energy, housing]
 hook: >-
@@ -67,5 +69,4 @@ So why did people stop building them? Not because of a villain. Everything that 
 
 - The CASBEE scores, the 2009 measurements and the wind model come from Japanese studies the video names only loosely ("Yoshino"). Find the papers before quoting, and check the video's own comparison of rank A with LEED Gold.
 - The video gives about 1,260 heating degree days a year for Yongding without a unit. In °F-days that is about 700 °C-days, which seems more likely for this climate than 1,260 °C-days. Check before comparing it with Munich.
-- The channel is named only in the narration ("Here at Wild Line"). Confirm the channel name before linking an author page.
 - Would a rammed-earth ring work for a settlement's first buildings in Bavaria? Its summer half is free, but the winter half needs heat piped from the village centre's geothermal plant.
