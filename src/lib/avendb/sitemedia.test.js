@@ -5,7 +5,7 @@
 import { expect, test } from 'bun:test';
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { bringing, marking, nameOf, SITE, source, uncopied } from './sitemedia.js';
+import { bringing, copyAll, LEGACY, marking, nameOf, SITE, source, uncopied } from './sitemedia.js';
 
 const hex = (b) => bytesToHex(blake3(b));
 const h = (c) => c.repeat(64);
@@ -43,7 +43,7 @@ test('what is left: the files Maia City lacks, and those it holds untagged, whic
 	]);
 	expect(marking(left, 'city', 'me', false)).toEqual([
 		{ op: 'share', over: 'city', who: 'everyone', level: 'Public', what: { tag: SITE }, as: 'me' },
-		{ op: 'tag', entry: 'e2', add: [SITE], remove: [], as: 'me' }
+		{ op: 'tag', entry: 'e2', add: [SITE, LEGACY], remove: [], as: 'me' }
 	]);
 	expect(marking(left, 'city', 'me', true)).toHaveLength(1);
 	expect(bringing(left[1], 'city', 'me', ['coop:files', SITE])).toEqual({
@@ -51,7 +51,7 @@ test('what is left: the files Maia City lacks, and those it holds untagged, whic
 		vault: 'city',
 		name: `${h('c')}.mp3`,
 		media: 'audio/mpeg',
-		tags: [SITE, 'coop:files'],
+		tags: [LEGACY, SITE, 'coop:files'],
 		as: 'me'
 	});
 });
@@ -130,4 +130,86 @@ test('a download that names no length is read whole first', async () => {
 	expect(file.size).toBe(2500);
 	expect((await twice(file, 1000))[1]).toEqual(bytes);
 	expect(served.downloads).toBe(1);
+});
+
+test('a file copied private, as the old vault keeps it, is done too', () => {
+	const world = { entries: [{ entry: 'e1', vault: 'city', type: 'file', title: `${h('a')}.mp3`, tags: [LEGACY], deleted: false, files: [{}] }] };
+	expect(uncopied(world, 'city', { [h('a')]: { mime: 'audio/mpeg', title: 'kept' } })).toEqual([]);
+});
+
+/** Answers each address of `answers` in turn: a status, or a server of bytes; how often each was asked. */
+function addresses(answers) {
+	const asked = {};
+	const get = async (url, init) => {
+		asked[url] = (asked[url] ?? 0) + 1;
+		const a = answers[url];
+		const now = Array.isArray(a) ? a[Math.min(asked[url], a.length) - 1] : a;
+		if (now === 'drop') throw new TypeError('network');
+		return typeof now === 'number' ? new Response('no', { status: now }) : now.get(url, init);
+	};
+	return { get, asked };
+}
+
+test('a file the old vault keeps private comes through the Mac app’s key, and a failing server is asked again', async () => {
+	const bytes = bytesOf(1500);
+	const { get, asked } = addresses({ public: 401, keyed: ['drop', 502, server(bytes)] });
+	const file = await source(['public', 'keyed'], hex(bytes), get, undefined, 0);
+	expect(file.kept).toBe(true);
+	expect((await twice(file, 400))[1]).toEqual(bytes);
+	expect(asked).toEqual({ public: 1, keyed: 3 });
+	const open = await source(['public', 'keyed'], hex(bytes), addresses({ public: server(bytes), keyed: 500 }).get, undefined, 0);
+	expect(open.kept).toBe(false);
+	await expect(source(['public'], hex(bytes), addresses({ public: 401 }).get, undefined, 0)).rejects.toThrow(/keeps it private/);
+	await expect(source(['public'], hex(bytes), addresses({ public: [503, 503, 503, server(bytes)] }).get, undefined, 0)).rejects.toThrow(/answered 503/);
+});
+
+test('copying everything marks what Maia City holds, brings the rest each as the old vault shows it, and goes on past a failure', async () => {
+	const [one, two, three] = [bytesOf(900), bytesOf(1200).map((b) => b ^ 1), bytesOf(700).map((b) => b ^ 2)];
+	const pieces = [
+		{ hash: h('9'), name: `${h('9')}.jpg`, media: 'image/jpeg', title: 'held', entry: 'e9' },
+		{ hash: hex(one), name: `${hex(one)}.jpg`, media: 'image/jpeg', title: 'public' },
+		{ hash: hex(two), name: `${hex(two)}.mp3`, media: 'audio/mpeg', title: 'private' },
+		{ hash: h('8'), name: `${h('8')}.png`, media: 'image/png', title: 'gone' },
+		{ hash: hex(three), name: `${hex(three)}.mp4`, media: 'video/mp4', title: 'film' }
+	];
+	const answers = {
+		[`p/${hex(one)}`]: server(one),
+		[`p/${hex(two)}`]: 401,
+		[`k/${hex(two)}`]: server(two),
+		[`p/${h('8')}`]: 404,
+		[`k/${h('8')}`]: 404,
+		[`p/${hex(three)}`]: server(three)
+	};
+	const ran = [];
+	const brought = [];
+	const api = {
+		runAll: async (what, ops) => (ran.push(...ops), ops.map(() => ({}))),
+		bring: async (what, op, file) => {
+			brought.push({ name: op.name, tags: op.tags, bytes: (await twice(file, 256))[1] });
+			return { entry: op.name };
+		},
+		refresh: async () => ran.push('refreshed')
+	};
+	const seen = [];
+	const out = await copyAll({
+		api,
+		left: pieces,
+		vault: 'city',
+		actor: 'city',
+		shared: false,
+		asked: [],
+		urlsOf: (hash) => [`p/${hash}`, `k/${hash}`],
+		progress: (at) => seen.push(at.done),
+		get: addresses(answers).get
+	});
+	expect(ran.map((o) => o.op ?? o)).toEqual(['share', 'tag', 'refreshed']);
+	expect(brought.map((b) => [b.name.split('.')[1], b.tags])).toEqual([
+		['jpg', [LEGACY, SITE]],
+		['mp3', [LEGACY]],
+		['mp4', [LEGACY, SITE]]
+	]);
+	expect(brought.map((b) => b.bytes)).toEqual([one, two, three]);
+	expect({ done: out.done, of: out.of, kept: out.kept }).toEqual({ done: 4, of: 5, kept: 1 });
+	expect(out.failed.map((f) => [f.piece.title, f.why])).toEqual([['gone', expect.stringMatching(/answered 404/)]]);
+	expect(seen.at(-1)).toBe(4);
 });

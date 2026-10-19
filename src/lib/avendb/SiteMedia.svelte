@@ -2,17 +2,18 @@
 	The site's pictures, sounds and films (./sitemedia.js), offered on the Library (./Library.svelte) of the seed's Maia
 	City alone, to copy in once from the old media vault (Samuel 2026-10-19, the final move to avenDB): each file the
 	homepage, the Maia Universe and the sandboxes show by its hash, named so, tagged `site:media`, which one Public share
-	lets everyone read; a file Maia City holds already under that name (an article's picture) only gets the tag. Each
-	file's bytes are checked against its hash as they come in, so nothing else goes in under its name. The old vault
-	keeps its copies. What is copied already is left out, so it shows only while something is left, and copying again
-	goes on from there. "Not now" hides it in this browser for this vault.
+	lets everyone read; a file Maia City holds already under that name (an article's picture) only gets the tag, and one
+	the old vault keeps private goes in private (./sitemedia-copy.js). Each file's bytes are checked against its hash as
+	they come in, so nothing else goes in under its name. The old vault keeps its copies. The same copy runs by itself
+	as an owner opens avenDB (./Account.svelte); this is the way to run it again by hand. What is copied already is left
+	out, so it shows only while something is left, and copying again goes on from there. "Not now" hides it in this
+	browser for this vault.
 -->
 <script>
-	import published from '$lib/media/manifest.json';
-	import { GATEWAY } from '$lib/media/url';
 	import { publicShare } from './flows.js';
 	import { allowed, creatable, may } from './ops.js';
-	import { bringing, marking, SITE, source, uncopied } from './sitemedia.js';
+	import { bringing, marking, SITE } from './sitemedia.js';
+	import { copySiteMedia, leftOut, siteLeft } from './sitemedia-copy.js';
 	import { count, nameOf, seeded, size, why } from './vaults.js';
 
 	/** @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean }} */
@@ -21,7 +22,7 @@
 	/** whether this is the Maia City COOP of the person's seed: the one vault the copy goes into */
 	const city = $derived(seeded(world)[0]?.[0]?.id === vault);
 	const here = $derived(world.vaults.find((v) => v.id === vault));
-	const left = $derived(city ? uncopied(world, vault, /** @type {any} */ (published)) : []);
+	const left = $derived(city ? siteLeft(world, vault) : []);
 	const shared = $derived(!!publicShare(world, vault, SITE));
 	const by = $derived({
 		picture: left.filter((p) => p.media.startsWith('image/')).length,
@@ -87,36 +88,17 @@
 	let going = $state(/** @type {{ done: number, of: number, now: string, bytes: number } | null} */ (null));
 	let failed = $state('');
 	async function copyIn() {
-		const t = asked;
-		if (!t || going) return;
-		const todo = [...left];
-		const marks = marking(todo, vault, actor, shared);
+		if (!asked || going) return;
 		failed = '';
-		going = { done: 0, of: todo.length, now: '', bytes: 0 };
-		if (marks.length && !(await api.runAll(`Making the site’s media public in ${nameOf(here)}`, marks))) {
-			failed = 'Maia City didn’t take the share or the tags, so nothing was copied.';
+		going = { done: 0, of: left.length, now: '', bytes: 0 };
+		try {
+			const out = await copySiteMedia(api, world, vault, actor, (at) => (going = at));
+			failed = leftOut(out);
+		} catch (e) {
+			failed = `${/** @type {Error} */ (e)?.message ?? e}. What was copied stays; copying again goes on from there.`;
+		} finally {
 			going = null;
-			return;
 		}
-		going = { ...going, done: todo.filter((p) => p.entry).length };
-		for (const p of todo.filter((p) => !p.entry)) {
-			going = { ...going, now: p.title, bytes: 0 };
-			/** @type {Awaited<ReturnType<typeof source>> | undefined} */
-			let file;
-			try {
-				file = await source(`${GATEWAY}/${p.hash}`, p.hash);
-				going = { ...going, bytes: file.size };
-				await api.bring(`Copying ${p.title}`, bringing(p, vault, actor, t), /** @type {any} */ (file), true);
-			} catch (e) {
-				failed = `Stopped at “${p.title}”: ${/** @type {Error} */ (e)?.message ?? e}. What was copied stays; copying again goes on from there.`;
-				break;
-			} finally {
-				file?.close();
-			}
-			going = { ...going, done: going.done + 1 };
-		}
-		going = null;
-		await api.refresh();
 	}
 </script>
 
