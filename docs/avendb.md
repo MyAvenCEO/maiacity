@@ -627,6 +627,8 @@ MCP Apps here is the protocol a view speaks with the page that shows it. It is n
 
 One checker knows every kind of code and says what can’t work in a box: a view, a game’s screen, logic, and a config, which it holds to the shape of the repo’s own, so a config from a vault changes a game’s numbers, never what the game finds where. Nothing checks code on its way into a vault, so a page and the API check each view, logic and config as they load it, and MaiaCity V1 checks each screen a proposal brings. A recipe loads only if it was made for the newest box engine, its file hashes to the name its card gives, and its last line names the version its card says; a build this device kept is held to its card again when read back. A function is checked before it runs: it imports nothing and hands back its `run`, or it doesn’t run. Safety never rests on the checker: the box holds whatever it misses.
 
+The kernel, which is the boxes, the engines, the checker, the render core and the Markdown engine, changes only with its tests green. A gate runs them on every pull request and before every deploy, and the deploy stops if they fail. It also runs two probes in headless Chromium: code made to do harm tries every way out of the asset box and of a view, through the network, storage, the page, its links and its markup, aiming at a canary server that hears anything that gets out, and code that never stops or eats its memory must be stopped.
+
 ### Where it runs today
 
 Most code that runs from a vault is Maia City’s, read from the feed with `?seed=1`: the recipes of every 3D world, MaiaCity V1’s default screen, and the configs the games read. avenDB’s Assets page builds the recipes of any vault the person reads, and the recipes an AIP proposes build in a box too, before anyone accepts them. Functions come from the entry’s vault, from Maia City where the person’s vault owns it, and from the app. The OS, the Mac app, runs the same pages and boxes in macOS’s WebKit.
@@ -638,7 +640,7 @@ The game sandboxes and MaiaCity V1 are our own trusted code, not boxes. From a v
 ### Not protected yet
 
 - **The page around the boxes.** The site sets no strict script policy, and the Mac app sets none, so the page’s own code is guarded only by how it is written.
-- **Changes to our own code.** A merge to main deploys the boxes, the engines, the checker and the game rules, and no test gates it.
+- **Our own code.** The kernel’s tests and both probes gate every pull request and every deploy, but the pages, the game sandboxes and V1 are our own code and are trusted, and the probes run only in Chromium, not yet in WebKit, which The OS and Safari use.
 - **Which code is Maia City’s.** Pages and the API check hashes and shapes, not avenDB’s signatures, so they rest on the server and TLS for which code is the vault’s.
 - **Recipes in one box.** Recipes built in one box share its worker: kept from the page, not from each other.
 - **Memory and time.** Only QuickJS has a memory cap, and a view’s script is stopped only once it stops answering.
