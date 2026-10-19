@@ -14,6 +14,7 @@ use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::world;
 use avendb::policy::{Action, Kind, Level, Principal, Sharing};
+use avendb::sign::{self, DeviceKey, Suite};
 use avendb::slice::Selector;
 use avendb_net::{Admission, Node, Options, Place, disk, server, shelf};
 use common::Folder;
@@ -379,4 +380,27 @@ async fn an_avens_access_request_reaches_the_coop_it_asks_directly_and_through_t
     for n in [phone, server] {
         n.shutdown().await.expect("the node stops");
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_server_made_before_the_key_move_opens_as_itself_and_a_new_one_in_ml_dsa_65() {
+    // a server made before the key move kept the 32 bytes of its secret alone: it opens in SLH-DSA, as itself
+    let old = Folder::new("old server");
+    let shelf = disk::open(old.path()).expect("its shelf");
+    shelf.put(server::SECRET, bytes::Bytes::copy_from_slice(&[7; 32])).await.expect("its secret, as it kept it");
+    let node = server::open(shelf, Options::local()).await.expect("the server");
+    assert_eq!(node.device(), DeviceKey::from_secret_in([7; 32], Suite::SlhDsa).id(), "in SLH-DSA, as itself");
+    node.shutdown().await.expect("it shuts down");
+    // a new one makes its secret in ML-DSA-65, keeps its suite with it, and opens as itself again
+    let new = Folder::new("new server");
+    let first = open(&new, &Admission::default()).await.expect("a new server");
+    let kept = disk::open(new.path()).expect("its shelf").get(server::SECRET).await.expect("it reads");
+    let (secret, suite) = sign::kept_secret_of(&kept.expect("its secret")).expect("a kept secret");
+    assert_eq!(suite, Suite::MlDsa);
+    let id = first.device();
+    assert_eq!(id, DeviceKey::from_secret_in(*secret, suite).id());
+    first.shutdown().await.expect("it shuts down");
+    let again = open(&new, &Admission::default()).await.expect("the server again");
+    assert_eq!(again.device(), id, "the same device");
+    again.shutdown().await.expect("it shuts down");
 }

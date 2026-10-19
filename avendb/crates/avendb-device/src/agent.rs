@@ -348,8 +348,10 @@ pub async fn serve_built(
 /// A cloud session's agent, as its harness names it: `avendb-device agent cloud`, the device agentCloud.
 pub const CLOUD: &str = "cloud";
 
-/// The environment variable a cloud session's agent reads its key from: 64 hex digits, as The OS app showed them once
-/// when it added the key to avenMAIA (`add_cloud_agent`), which its person keeps in the environment's secrets.
+/// The environment variable a cloud session's agent reads its key from: 66 hex digits, its suite's byte and then its
+/// secret, or the 64 of the secret alone for a key in SLH-DSA, made before the key move (`sign::kept_secret`), as The
+/// OS app showed them once when it added the key to avenMAIA (`add_cloud_agent`), which its person keeps in the
+/// environment's secrets.
 pub const KEY_VAR: &str = "AVENDB_AGENT_KEY";
 
 /// The environment variable that names the server a cloud session's agent reaches, by its offer, where it isn't
@@ -446,7 +448,7 @@ impl Cloud {
             o.used = tokio::time::Instant::now();
             return Ok(o.agent.clone());
         }
-        let secret = cloud_key(&self.key)?;
+        let (secret, suite) = cloud_key(&self.key)?;
         let server = Offer::from_text(self.server.trim()).with_context(|| format!("{SERVER_VAR} is no server's offer"))?;
         // a folder of the key's own, by a hash of it that tells nothing of it, so that another key never opens it
         let mark = avendb::hash::hash("a cloud agent's folder", &*secret);
@@ -455,7 +457,7 @@ impl Cloud {
         let shelf = disk::open(&folder)?;
         let relay = server.addr.relay_urls().next().cloned();
         let opts = Options { bind: None, direct: false, relay, proxy: self.proxy, ..Options::local() };
-        let node = Arc::new(server::open_agent_with(Some(shelf), name, &secret, opts).await?);
+        let node = Arc::new(server::open_agent_with(Some(shelf), name, &secret, suite, opts).await?);
         drop(secret);
         node.know(server.addr.clone());
         if !node.on_relay().await {
@@ -484,23 +486,22 @@ impl Cloud {
     }
 }
 
-/// A cloud session's agent's key, `text` as its environment holds it (`KEY_VAR`): 64 hex digits. Fails, saying where
-/// it comes from.
-fn cloud_key(text: &str) -> Result<zeroize::Zeroizing<[u8; 32]>> {
+/// A cloud session's agent's key and its suite, `text` as its environment holds it (`KEY_VAR`): 66 hex digits, or 64
+/// for a key made before the key move (`sign::kept_secret`). Fails, saying where it comes from.
+fn cloud_key(text: &str) -> Result<(zeroize::Zeroizing<[u8; 32]>, avendb::sign::Suite)> {
     let text = text.trim();
     anyhow::ensure!(
         !text.is_empty(),
         "{KEY_VAR} isn't set: its person adds a cloud agent in The OS app (Settings, Agents, Add a cloud agent), which \
          shows its key once, and puts it in this environment's {KEY_VAR}; a new session reads it"
     );
-    let mut key = zeroize::Zeroizing::new([0u8; 32]);
-    let fits = text.len() == 64 && text.is_char_boundary(64);
-    anyhow::ensure!(fits, "{KEY_VAR} holds no key: 64 hex digits, as The OS app shows it");
-    for (i, byte) in key.iter_mut().enumerate() {
-        *byte = u8::from_str_radix(&text[2 * i..2 * i + 2], 16)
-            .map_err(|_| anyhow!("{KEY_VAR} holds no key: 64 hex digits, as The OS app shows it"))?;
+    let wrong = || anyhow!("{KEY_VAR} holds no key: 66 hex digits, as The OS app shows it");
+    anyhow::ensure!(text.len() % 2 == 0 && text.is_ascii(), wrong());
+    let mut bytes = zeroize::Zeroizing::new(vec![0u8; text.len() / 2]);
+    for (i, byte) in bytes.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&text[2 * i..2 * i + 2], 16).map_err(|_| wrong())?;
     }
-    Ok(key)
+    avendb::sign::kept_secret_of(&bytes).ok_or_else(wrong)
 }
 
 /// Closes a cloud session's agent's device, if it is open.

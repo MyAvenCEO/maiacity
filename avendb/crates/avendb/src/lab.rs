@@ -63,8 +63,8 @@
 //!
 //! A Classic McEliece public key travels as a blob beside the edits that name it (`policy::Edit::blobs`): a device
 //! keeps the blobs of the edits it keeps, each only if it hashes to its id, and seals to a key once it holds that key's
-//! blob. Every edit is signed with SLH-DSA (`sign`), so every device counts every edit that stands, and trusts no
-//! curve.
+//! blob. Every edit is signed with ML-DSA-65, or SLH-DSA by a signer made before the key move (`sign`), so every
+//! device counts every edit that stands, and trusts no curve.
 //! Devices sync by what each holds of each log and the vaults each follows (`follow`), gossip one digest per log in
 //! random orders, and go offline and come back; a device restored from a backup forks from what it made since
 //! (`forks`), and follows what it followed.
@@ -101,7 +101,8 @@ use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
 use crate::sealed::{Brought, FileRoot};
 use crate::sign::{
-    self, Ceremony, DeviceKey, EnclaveKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, Suite, WebAuthn,
+    self, Ceremony, DeviceKey, EnclaveKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, Suite, SUITES,
+    WebAuthn,
 };
 use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, CAP_GROUP_TYPE, LENS_TYPE, SCHEMA_TYPE};
 use crate::sync::{
@@ -787,17 +788,24 @@ impl Lab {
         self.add_device(DeviceKey::from_secret_in(secret, suite), name)
     }
 
+    /// Device `id`, whose keys come from `secret`, as `device_with` makes it, in whichever suite they are its
+    /// (`DeviceKey::of`): so a device made before the key move opens as itself. `None` if they are another device's.
+    pub fn device_as(&mut self, name: &str, secret: [u8; 32], id: SignerId) -> Option<SignerId> {
+        Some(self.add_device(DeviceKey::of(secret, id)?, name))
+    }
+
     /// A passkey in the platform's authenticator (P8e), whose P-256 key is `p256`, as a ceremony of it over any
     /// challenge showed it (`sign::Ceremony`): the Lab holds its keys and the public key sealed to it, which the
-    /// ceremony's PRF output derives, and no secret. It signs in ceremonies alone (`complete`). `None` unless the
-    /// ceremony's assertion is that key's.
-    pub fn web_passkey(&mut self, name: &str, p256: [u8; 33], ceremony: &Ceremony) -> Option<SignerId> {
+    /// ceremony's PRF output derives, and no secret. It signs in ceremonies alone (`complete`). The PRF output derives
+    /// its keys in each suite, and the Lab holds both, so that whichever its vault knows signs (`engine::passkey_of`),
+    /// the other its next key (the key move): their ids, the suite new signers are made in first (`sign::SUITES`).
+    /// `None` unless the ceremony's assertion is that key's.
+    pub fn web_passkey(&mut self, name: &str, p256: [u8; 33], ceremony: &Ceremony) -> Option<[SignerId; 2]> {
         let assertion = ceremony.assertion()?;
         if !ceremony.challenge().is_some_and(|c| assertion.verify(&p256, EditId(c))) {
             return None;
         }
-        let keys = ceremony.keys(p256);
-        Some(self.web_key(name, keys, ceremony))
+        Some(SUITES.map(|suite| self.web_key(name, ceremony.keys_in(p256, suite), ceremony)))
     }
 
     /// The owner key whose keys are `keys`, held as `web_passkey` and `web_enclave` hold it, from `ceremony`, its
@@ -818,14 +826,16 @@ impl Lab {
     }
 
     /// A Touch ID key in a Mac's Secure Enclave, as a ceremony of it over any challenge showed it (`sign::Ceremony::
-    /// enclave`), held as `web_passkey` holds a passkey: its keys and the public key sealed to it, and no secret. It
-    /// signs in ceremonies alone (`complete`). `None` unless it is a Touch ID key's ceremony whose Enclave signature
-    /// verifies.
+    /// enclave`), held as `web_passkey` holds a passkey: its keys and the public key sealed to it, and no secret, in
+    /// each suite, so that whichever its vault knows signs (the key move). It signs in ceremonies alone (`complete`).
+    /// Its id in the suite new signers are made in. `None` unless it is a Touch ID key's ceremony whose Enclave
+    /// signature verifies.
     pub fn web_enclave(&mut self, name: &str, ceremony: &Ceremony) -> Option<SignerId> {
         let keys = ceremony.enclave_keys()?;
         let challenge = ceremony.challenge()?;
         ceremony.sign(keys, EditId(challenge))?;
-        Some(self.web_key(name, keys, ceremony))
+        let [new, _] = SUITES.map(|suite| self.web_key(name, ceremony.keys_in([0; 33], suite), ceremony));
+        Some(new)
     }
 
     /// The keys of owner key `s`, held as `web_passkey` and `web_enclave` hold them if the Lab doesn't hold them yet and
@@ -841,11 +851,20 @@ impl Lab {
         let challenge = EditId(ceremony.challenge()?);
         let keys = match ceremony.assertion() {
             Some(a) => a.recover().into_iter().find_map(|p256| ceremony.keys_of(p256, s)),
-            None => [Suite::MlDsa, Suite::SlhDsa].map(|suite| ceremony.keys_in([0; 33], suite)).into_iter().find(|k| k.id() == s),
+            None => SUITES.map(|suite| ceremony.keys_in([0; 33], suite)).into_iter().find(|k| k.id() == s),
         }?;
         ceremony.sign(keys, challenge)?;
         self.web_key(&name, keys, ceremony);
         self.keys_of(s)
+    }
+
+    /// Of `keys`, the one the vault device `d` belongs to knows as an owner, its root first: so a device that holds its
+    /// person's passkey in each suite (`web_passkey`) acts as the one their vault knows (the key move). `None` if it
+    /// knows none of them, or the device belongs to no vault.
+    pub fn owner_among(&self, d: SignerId, keys: &[SignerId]) -> Option<SignerId> {
+        let vault = self.state(d).vault(self.vault_of(d)?)?;
+        let root = keys.iter().find(|&&k| vault.root == Some(k));
+        root.or_else(|| keys.iter().find(|&&k| vault.owners.contains(&Principal::Signer(k)))).copied()
     }
 
     /// The master recovery key `key` (`recovery`): every human vault a device of this Lab founds from now on adds it as
@@ -2067,7 +2086,12 @@ impl Lab {
     /// the share issued to it (`claim_invite`), as a software passkey signs. Its id, which a share to the invite names
     /// (`Who::Invite`).
     pub fn invite_key(&mut self, secret: [u8; 32]) -> SignerId {
-        let key = Passkey::from_seed(secret);
+        self.invite_key_in(secret, sign::SIGNING)
+    }
+
+    /// `invite_key`, in suite `suite`: an invite made before the key move names its key in SLH-DSA.
+    pub fn invite_key_in(&mut self, secret: [u8; 32], suite: Suite) -> SignerId {
+        let key = Passkey::from_seed_in(secret, suite);
         let id = key.id();
         self.keys.insert(id, Key::Passkey(key));
         self.names.insert(id, "an invite key".into());

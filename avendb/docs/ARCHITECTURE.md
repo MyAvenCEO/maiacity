@@ -126,8 +126,8 @@ Each line names the theorem that states it (section 15).
   the rules refuse (T27).
 - **Relays are blind and still exact.** The server reads no selector, type or tag, yet every edit stands or falls for
   it exactly as for an owner (T25).
-- **Post-quantum.** Every edit, a write too, counts by its hash-based SLH-DSA signature alone, so nothing counts on
-  the curves.
+- **Post-quantum.** Every edit, a write too, counts by its post-quantum signature alone, ML-DSA-65 or, from a signer
+  made before the key move, SLH-DSA, so nothing counts on the curves.
 - **Readers agree.** Whether a write counts reads nothing a reader may lack (C2), a counted write did only what its
   chain allows (C3), and it fits its entry's schemas (S3).
 
@@ -465,7 +465,7 @@ standing grant that each vault founded later follows.
 **A cloud session's agent.** A Claude Code session in Anthropic's cloud runs no desktop, so no agent of it can leave a
 file there. The desktop app makes its key instead: `addCloudAgent` makes a fresh key, starts it as a device for a
 moment, and adds it to the coop's one aven by the flow above, at `Place::Vault`, in one ceremony that the new key
-cosigns; it shows the key once and keeps none of it. Its person puts the key in the cloud environment's secrets
+cosigns; it shows the key once, 66 hex digits, its suite's byte and its secret, and keeps none of it. Its person puts the key in the cloud environment's secrets
 (`AVENDB_AGENT_KEY`), and every session there runs `avendb-device agent cloud`, the device agentCloud: the same MCP as
 any agent, reaching the server alone, on its relay, through the environment's HTTP proxy. The relay lets in only the
 devices it knows, so a key the desktop never added reaches nothing. Every session holding the key is the same device,
@@ -1562,23 +1562,33 @@ Every node trusts no elliptic curve alone, and there is no switch back.
 
 | Where | How |
 |---|---|
-| Signatures | SLH-DSA-SHA2-128f on every edit, the only signature that counts (17,088 bytes each). |
-| Passkeys | A passkey's WebAuthn assertion (P-256) rides beside its SLH-DSA signature: it shows a person was there. |
-| Touch ID keys | A Mac's Secure Enclave signs with ML-DSA-65 beside the key's SLH-DSA signature, and opens its secret with ML-KEM-768 (section 11). |
+| Signatures | ML-DSA-65 (FIPS 204) from every signer made since the key move (2026-10-19), each 3,309-byte signature with its 1,952-byte key beside it; SLH-DSA-SHA2-128f (FIPS 205, 17,088 bytes) from a signer made before, which keeps it. Either is the only signature that counts. Every device checks both, and a signer's id hashes its suite with its keys (`sign::Suite`). |
+| Passkeys | A passkey's WebAuthn assertion (P-256) rides beside its post-quantum signature: it shows a person was there. |
+| Touch ID keys | A Mac's Secure Enclave signs with ML-DSA-65, and opens its secret with ML-KEM-768 (section 11). A key made before the key move signs with its SLH-DSA key beside it. |
 | Sealed keys | Every box is sealed to X-Wing (ML-KEM-768 with X25519) and Classic McEliece 6688128f at once. |
 | Data | XChaCha20-Poly1305 for edits and boxes, ChaCha20-Poly1305 per 64 KiB file segment, 256-bit keys. |
 | Hashes | BLAKE3 for every hash of avenDB's own: an id is the plain hash of its bytes, the name iroh-blobs gives them; every other hash derives its own key for its purpose (`hash`). |
 | Connections | TLS 1.3 with X25519MLKEM768 as the only key exchange, on every link between nodes. |
-| Hellos | Each connection opens with an SLH-DSA signature each way over the TLS exporter (section 12). |
+| Hellos | Each connection opens with a post-quantum signature each way over the TLS exporter (section 12). |
 | The bucket | Its endpoint is classical, so the server seals every object first, with a 256-bit key of its own. |
 
 A box opens only with both shared secrets, so it stays closed while either scheme holds. A McEliece public key is a
 megabyte, so it travels as a blob named by its hash, beside the edits that name it. The Verifpal model `seal.vp` shows
 that a sealed key stays secret when either scheme falls (`spec/protocol`).
 
-A device's ed25519 key is only its iroh endpoint's identity: its hello binds it to its SLH-DSA key, and it signs no
-edit. A person's device keeps the secret its keys come from masked by its passkey's PRF output, and unmasks it at each
-unlock, so the SLH-DSA key behind each of its edits traces back to the passkey.
+A device's ed25519 key is only its iroh endpoint's identity: its hello binds it to its post-quantum key, and it signs
+no edit. A person's device keeps the secret its keys come from masked by its passkey's PRF output, and unmasks it at
+each unlock, so the post-quantum key behind each of its edits traces back to the passkey.
+
+**The key move.** Samuel chose ML-DSA-65 over SLH-DSA on 2026-10-19: it signs in a millisecond or two where SLH-DSA
+takes ten, and its signature with its key is a third of the size. Every signer made since signs with it
+(`sign::SIGNING`). A signer made before keeps its SLH-DSA key and its id: a device opens again in the suite its kept id
+is in (`Lab::device_as`); a passkey's or Touch ID key's ceremony brings its keys in both suites, and the one its vault
+knows signs (`Lab::web_passkey`, `Lab::owner_among`); a new device shows its passkey's pass in each suite, as its
+person's vault may know either; an invite made before claims in SLH-DSA; and the server's and agents' kept secret
+names its suite (`sign::kept_secret`: the 32 bytes alone for SLH-DSA, as every one kept before, else its suite's byte
+first, so a cloud agent's key is 66 hex digits). The spec's `keyMove` example shows a vault moving to new keys with
+the edits it already has.
 
 ## 11. Passkeys
 
@@ -1598,15 +1608,18 @@ ceremony brings back: an assertion over a challenge, and PRF outputs on avenDB's
   credential gets these outputs. Each key derives under a label of its own. So a device unlocks only with its
   person's passkey, and a stolen, locked device opens nothing.
 - **Bound to the passkey.** A ceremony counts only if its assertion verifies under the passkey's P-256 key and the
-  SLH-DSA key derived from its PRF output is the one the vault knows (`sign::Ceremony`). So maiaCITY's API, which sees
+  post-quantum key derived from its PRF output, in either suite, is the one the vault knows (`sign::Ceremony`). So maiaCITY's API, which sees
   its own sign-ins' assertions and never a PRF output, can't sign for a vault.
 - **One prompt for many edits.** Edits drafted together are signed in one ceremony over their batch: its challenge is
-  the hash of their ids, smallest first (`sign::batch_challenge`), and SLH-DSA still signs each edit's own id.
+  the hash of their ids, smallest first (`sign::batch_challenge`), and the post-quantum key still signs each edit's
+  own id.
   A first browser founds its vault, adds itself and claims a new server in one prompt after the unlock. New vaults its
   vault owns come in one more (`found`).
 - **The pass.** The ceremony that unlocks a new device is its passkey's pass for it (`sign::RelayPass`): an assertion
-  and an SLH-DSA signature over the device's keys and the time, good for ten minutes. It lets the device onto the
-  server's relay and proves it to the peer it links through. A device that never saw its passkey made learns its
+  and a post-quantum signature over the device's keys and the time, good for ten minutes. It lets the device onto the
+  server's relay and proves it to the peer it links through. The device makes it in each suite
+  (`Ceremony::passes`), as its person's vault may know their passkey in either: the relay reads both from one token
+  (`avendb_net::passes_token`) and takes the one it honours, and a peer is shown one after the other. A device that never saw its passkey made learns its
   P-256 key from the next ceremony: it drafts for each key the unlock's assertion recovers to, and keeps the drafts of
   the one that ceremony verifies under (`Lab::drafting_for`).
 - **Held briefly.** The device copies each PRF output into memory that wipes itself, and wipes the buffer it came in.
@@ -1629,9 +1642,10 @@ stays its root (spec: `Examples.touch`, `tests/touch_id.rs`).
 
 - **Two Enclave keys, one touch.** An ML-DSA-65 key signs each ceremony's challenge with avenDB's context
   (`sign::ENCLAVE_CONTEXT`). An ML-KEM-768 key opens a secret sealed to it once, at setup. Both are locked to the
-  fingers enrolled then (`biometryCurrentSet`), and one touch covers both. The secret derives the key's SLH-DSA key, as
-  a passkey's PRF output derives a passkey's, and every signature carries both (`sign::EnclaveSig`). The signer id
-  hashes both keys (`SignerKeys::Enclave`). Rust checks a signature a real Enclave made (`sign.rs`,
+  fingers enrolled then (`biometryCurrentSet`), and one touch covers both. The Enclave's signature is the key's whole
+  signature (`sign::EnclaveSig`). A key made before the key move also has an SLH-DSA key its secret derives, as a
+  passkey's PRF output derives a passkey's, and each of its signatures carries both. The signer id hashes its keys
+  (`SignerKeys::Enclave`). Rust checks a signature a real Enclave made (`sign.rs`,
   `tests/data/enclave-mac.kat`).
 - **Added by the passkey.** Setup (`touchSetup`) makes the keys, then adds the key as an owner in one edit that the
   passkey approves and the key consents to. The same passkey ceremony brings the PRF output on the device's salt, so
@@ -1707,9 +1721,9 @@ node reaches every peer through the relay; its TLS is rustls with ring, and X255
 ### The hello
 
 Each connection opens with a hello each way, on the first stream (`session::dial_hello`, `listen_hello`). Both ends
-draw a 32-byte TLS exporter with the label `avendb hello`. Each signs it with SLH-DSA, with a flag for its end, and
-sends its keys (`sign::Hello`). The verifier checks that the hello's ed25519 key is the one TLS proved. So the curve
-half is proven by TLS, the hash-based half by the hello, and the hello can't be replayed on another connection or
+draw a 32-byte TLS exporter with the label `avendb hello`. Each signs it with its post-quantum key, with a flag for
+its end, and sends its keys (`sign::Hello`). The verifier checks that the hello's ed25519 key is the one TLS proved. So
+the curve half is proven by TLS, the post-quantum half by the hello, and the hello can't be replayed on another connection or
 reflected. The listener checks the dialer's hello before it sends its own, and closes a connection without one. The
 Verifpal model `hello.vp` shows what this protects once the curves fall.
 
@@ -1806,7 +1820,7 @@ would not know where anything is. So each device also signs what it tells each p
 Statement { keys, checked: u64, logs: [(LogId, Frontier)], files: [(FileRoot, Whole | Pieces)], sig }
 ```
 
-- **Signed by the device.** SLH-DSA-SHA2-128f over the version, the device, `checked` (seconds since 1970 by its
+- **Signed by the device.** Its post-quantum key signs the version, the device, `checked` (seconds since 1970 by its
   clock) and its holdings, under its own context string (`sign::STATEMENT_CONTEXT`): it counts as nothing else, and
   only a device's own key proves one. A passkey's keys prove none.
 - **When.** A device signs one statement for each set of holdings it tells a peer, on each new connection, once they
@@ -1866,7 +1880,7 @@ A new device links by its passkey alone:
 With every other device lost, the server's offer brings the vault back. The Verifpal model `link.vp` covers this.
 
 **Not gossip.** Announcements go straight to one proven device. A gossip topic would tell every member of a log, its
-members learn each other's addresses, and its 4 KiB messages can't carry one SLH-DSA signature.
+members learn each other's addresses, and its 4 KiB messages can't carry one post-quantum signature with its key.
 
 ## 13. Files
 
@@ -2112,7 +2126,7 @@ whose keys sign it on that connection.
 | `crates/avendb/src/policy.rs` | Edits, the eight kinds, shares, refusals, the replay, strong removal, meaning |
 | `crates/avendb/src/sync.rs` | Logs, frontiers, asks, follow lists, what a peer sends (`answer`, `Reach`) |
 | `crates/avendb/src/keys.rs` | Key families, epochs, sealed boxes (X-Wing and McEliece) |
-| `crates/avendb/src/sign.rs` | SLH-DSA signatures with a passkey's WebAuthn assertion, hellos, passkey ceremonies, standing consent, the pass |
+| `crates/avendb/src/sign.rs` | Post-quantum signatures in two suites (ML-DSA-65, SLH-DSA) with a passkey's WebAuthn assertion, hellos, passkey ceremonies, standing consent, the pass, kept secrets |
 | `crates/avendb/src/wire.rs`, `encode.rs` | Every message and edit as bytes, one encoding each; holdings' `Announce` |
 | `crates/avendb/src/lab.rs` | A device's state and its upkeep: stewards, keys, schema entries, dry runs |
 | `crates/avendb/src/engine.rs`, `engine/vaults.rs` | `run(op)`: every read, ask and change as one JSON op, and approval |

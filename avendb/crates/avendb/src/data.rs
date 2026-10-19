@@ -22,7 +22,7 @@ use crate::lens::{self, DocV1, Lens, Schema};
 use crate::merge::Conflict;
 use crate::sealed::FileRoot;
 use crate::policy::{Action, Edit, Entry, Line, Principal, Proposal, Revoking, Setting, Sharing, State, Vault, Who};
-use crate::sign::{Signature, Suite, WebAuthn};
+use crate::sign::{Signature, WebAuthn};
 use crate::slice::LENS_TYPE;
 use crate::wire::Wire as _;
 use crate::words::{hex, kind_name, level_name, who_name};
@@ -374,10 +374,7 @@ fn signature(sig: &Signature) -> Value {
         (None, Some(e)) => (Some("batch"), Some(e.edits.len())),
     };
     let signer = hex(&sig.keys.id().0);
-    let alg = match sig.keys.suite() {
-        Suite::SlhDsa => "SLH-DSA",
-        Suite::MlDsa => "ML-DSA-65",
-    };
+    let alg = sig.keys.suite().name();
     let pq = match &sig.enclave {
         Some(e) if sig.pq.is_empty() => e.public.len() + e.sig.len(),
         _ => sig.pq.len(),

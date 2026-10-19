@@ -609,8 +609,8 @@
 					<h3>Quantum-proof</h3>
 					<p><span class="chip ok">Post-quantum only</span></p>
 					<p class="soft">
-						Every edit carries an SLH-DSA signature, and only that signature counts: a passkey's WebAuthn assertion beside
-						it only shows a person was there. Keys are sealed with X-Wing and Classic McEliece, every connection agrees its
+						Every edit carries an ML-DSA-65 signature, or an SLH-DSA one from a key made before the key move, and only that
+						signature counts: a passkey's WebAuthn assertion beside it only shows a person was there. Keys are sealed with X-Wing and Classic McEliece, every connection agrees its
 						keys with X25519MLKEM768, and every edit, vault, share, signer and file is named by a BLAKE3 hash.
 					</p>
 				</article>

@@ -12,6 +12,7 @@ use avendb::id::{BlobId, EntryId, ShareId, SignerId};
 use avendb::lab::GroupShare;
 use avendb::policy::{Level, Refusal, Who};
 use avendb::rules::{Cap, CapGroup, Op};
+use avendb::sign::Suite;
 use avendb::slice::{Atom, Selector, Sym};
 use serde_json::{json, Value};
 
@@ -224,4 +225,23 @@ fn the_engine_defines_lists_shares_and_narrows_cap_groups_and_hands_out_an_invit
     assert_eq!(groups[2]["name"], json!("Nobody"));
     let wrong = engine::run(&mut c.w.lab, mac_a, &json!({ "op": "share_group", "over": alice, "group": entry }));
     assert_eq!(wrong["refused"], json!("BadOp"), "a share names whom it goes to");
+}
+
+#[test]
+fn an_invite_made_before_the_key_move_is_claimed_by_its_key_in_slh_dsa() {
+    let mut c = city();
+    let mac_a = c.w.mac_a;
+    let old = c.w.lab.invite_key_in([7; 32], Suite::SlhDsa);
+    let share = of_group(&c, Who::Invite(old), c.traveler, Level::Read);
+    let invite: ShareId = c.w.lab.issue_group(mac_a, &[mac_a], share).expect("an invite made before the key move");
+    let passkey_e = c.w.lab.passkey("Erin");
+    let mac_e = c.w.lab.device_of(passkey_e, "Erin's Mac");
+    let erin = cast::human_on(&mut c.w.lab, passkey_e, &[mac_e]);
+    c.w.lab.sync(mac_a, mac_e);
+    c.w.lab.hand_invite(mac_a, mac_e, invite).expect("the link carries the invite");
+    // the link's secret makes its key in the suite new signers are made in too, which the invite doesn't name
+    let new = c.w.lab.invite_key([7; 32]);
+    assert_ne!(new, old);
+    assert_eq!(c.w.lab.claim_invite(mac_e, invite, erin, new), Err(Refusal::NoConsent));
+    c.w.lab.claim_invite(mac_e, invite, erin, old).expect("in SLH-DSA, Erin's vault claims it");
 }

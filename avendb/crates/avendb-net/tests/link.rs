@@ -123,6 +123,7 @@ async fn a_browser_links_with_the_passkey_in_its_authenticator_in_two_ceremonies
     let offer = Offer::from_text(&mac.offer().to_text()).expect("the Mac's code");
     // Eve's passkey in the authenticator: the join it signs isn't Alice's passkey's, and the link fails
     let eves = Browser(Mutex::new((Passkey::from_seed([9; 32]), vec![])));
+    let pass = [pass];
     assert!(browser.link_with(&offer, &pass, &eves).await.is_err(), "another passkey's ceremony");
     let authenticator = Browser(Mutex::new((passkey, vec![])));
     let linked = browser.link_with(&offer, &pass, &authenticator).await.expect("the browser links");
