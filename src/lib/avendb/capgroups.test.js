@@ -1,0 +1,93 @@
+// @ts-nocheck
+// The Maia City vault's cap groups (./capgroups.js): what the seed defines where the vault holds none of a name yet,
+// and which a person holds by the shares over the vault their world shows; and which vault is Maia City to anyone
+// (./vaults.js `serverCity`).
+// Run: bun test src/lib/avendb/capgroups.test.js
+import { describe, expect, test } from 'bun:test';
+import { CAP_GROUPS, CITIZEN, TRAVELER, capGroupOps, heldGroups } from './capgroups.js';
+import { refs } from './ops.js';
+import { serverCity } from './vaults.js';
+
+const CITY = 'c'.repeat(64);
+const ME = 'a'.repeat(64);
+const [T, C] = ['1'.repeat(64), '2'.repeat(64)];
+const groups = [
+	{ entry: T, name: TRAVELER, caps: [], includes: [] },
+	{ entry: C, name: CITIZEN, caps: [], includes: [T] }
+];
+const share = (o) => ({ id: 'x', over: CITY, who: ME, capGroup: null, ...o });
+const world = (shares) => ({ mine: ME, vaults: [], shares });
+
+describe('the seed defines', () => {
+	test('both groups in a vault that holds none, Citizen including the Traveler just defined', () => {
+		const ops = capGroupOps([], CITY);
+		expect(ops.map((o) => o.group.name)).toEqual([TRAVELER, CITIZEN]);
+		expect(ops[0]).toEqual({ op: 'define_group', vault: CITY, group: { name: TRAVELER, caps: CAP_GROUPS[0].caps, includes: [] } });
+		expect(ops[1].group.includes).toEqual(['$0']);
+		// run one after another, the include names what the first one defined
+		expect(refs(ops[1], [{ entry: T }]).group.includes).toEqual([T]);
+	});
+
+	test('only what is missing, including the Traveler the vault holds', () => {
+		const ops = capGroupOps([groups[0]], CITY);
+		expect(ops).toHaveLength(1);
+		expect(ops[0].group).toMatchObject({ name: CITIZEN, includes: [T] });
+	});
+
+	test('nothing in a vault that holds both', () => expect(capGroupOps(groups, CITY)).toEqual([]));
+
+	test('a Traveler reads the games, the recipes and the code; a Citizen all of MaiaCity V1 besides', () => {
+		expect(CAP_GROUPS[0].caps).toEqual([{ op: 'read', where: { type: ['game', 'recipe', 'view', 'logic'] } }]);
+		expect(CAP_GROUPS[1].caps).toEqual([{ op: 'read', where: { tag: 'game:maiacity-v1' } }]);
+	});
+});
+
+describe('a person holds', () => {
+	test('the group a share to their vault names, and every group it includes', () => {
+		expect([...heldGroups(world([share({ capGroup: C })]), CITY, groups)].sort()).toEqual([CITIZEN, TRAVELER]);
+		expect([...heldGroups(world([share({ capGroup: T })]), CITY, groups)]).toEqual([TRAVELER]);
+	});
+
+	test('a group shared with everyone', () => {
+		expect([...heldGroups(world([share({ who: 'everyone', capGroup: T })]), CITY, groups)]).toEqual([TRAVELER]);
+	});
+
+	test('nothing from a share over another vault, to someone else, or naming no group', () => {
+		const other = [share({ over: 'd'.repeat(64), capGroup: C }), share({ who: 'b'.repeat(64), capGroup: C }), share({})];
+		expect(heldGroups(world(other), CITY, groups).size).toBe(0);
+	});
+
+	test('nothing from a group the vault does not hold, and a loop of includes ends', () => {
+		expect(heldGroups(world([share({ capGroup: '9'.repeat(64) })]), CITY, groups).size).toBe(0);
+		const loop = [
+			{ entry: T, name: TRAVELER, caps: [], includes: [C] },
+			{ entry: C, name: CITIZEN, caps: [], includes: [T] }
+		];
+		expect(heldGroups(world([share({ capGroup: T })]), CITY, loop).size).toBe(2);
+	});
+});
+
+describe('Maia City, to anyone', () => {
+	const vault = (id, kind, owner, devices = []) => ({ id, kind, name: null, owners: owner ? [{ vault: owner }] : [{ signer: 'f'.repeat(64), recovery: false }], devices });
+	const [SAM, SERVER, FAKE, FAKE_AVEN] = ['5'.repeat(64), '6'.repeat(64), '7'.repeat(64), '8'.repeat(64)];
+	const vaults = [
+		vault(ME, 'human'),
+		vault(SAM, 'human'),
+		vault(CITY, 'coop', SAM),
+		vault(SERVER, 'aven', CITY, [{ id: '9'.repeat(64), me: false }]),
+		// a look-alike: a coop owned by a coop, and its aven with a device
+		vault(FAKE, 'coop', CITY),
+		vault(FAKE_AVEN, 'aven', FAKE, [{ id: 'e'.repeat(64), me: false }])
+	];
+	const keeps = (who, o = {}) => ({ id: 'k', over: ME, who, level: 'backup', whole: true, ...o });
+
+	test('is the coop of the seed whose aven keeps the person’s vault, whoever founded it', () => {
+		expect(serverCity({ mine: ME, vaults, shares: [keeps(SERVER)] })?.id).toBe(CITY);
+	});
+
+	test('is none by a share on a part of their vault, or to a vault that is no seed’s server', () => {
+		expect(serverCity({ mine: ME, vaults, shares: [keeps(SERVER, { whole: false })] })).toBeUndefined();
+		expect(serverCity({ mine: ME, vaults, shares: [keeps(FAKE_AVEN)] })).toBeUndefined();
+		expect(serverCity({ mine: ME, vaults, shares: [keeps(SERVER, { over: SAM })] })).toBeUndefined();
+	});
+});

@@ -5,7 +5,9 @@
 	bar or a back button of its own, and everything else — the games, the worlds, the admin's tools — is a tile on the
 	dashboard. You is the person's vault switcher too (Samuel 2026-10-18): their avenDB vaults, their own first, which
 	is their profile (their name lives there alone), and the one picked shown on the item, with how many changes wait
-	in the others; then the public site, inviting a new human (the super admin's alone) and signing out. A page may add a
+	in the others; then the public site, inviting a new human as a traveler or a citizen (Maia City's own devices
+	alone, $lib/app/access.svelte.js: the link brings a share of its cap group, which their vault claims as they sign
+	up) and signing out. A page may add a
 	green "+" between Home and You that opens its main sheet, and the accounts it can be looked at as, listed in the You
 	menu ($lib/app/pill.svelte.js: MaiaCity V1's wallet and its COOPs).
 
@@ -16,7 +18,8 @@
 	import { base } from '$app/paths';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { invite } from '$lib/auth/client';
+	import { invites, makeInvite } from './access.svelte.js';
+	import { CITIZEN, TRAVELER } from '$lib/avendb/capgroups.js';
 	import Icon from './Icon.svelte';
 	import { back, onDashboard, upFrom } from './back.svelte.js';
 	import { pill } from './pill.svelte.js';
@@ -30,8 +33,10 @@
 	let open = $state(false);
 	/** the vault picked, as the You item shows it: the person's own until they pick another */
 	const here = $derived(pill.context ? (pill.context.list.find((a) => a.id === pill.context?.current) ?? null) : null);
-	/** the invite link the super admin made last, to hand one person */
+	/** the invite link made last, to hand one person, and what it makes them */
 	let invited = $state('');
+	let invitedAs = $state('');
+	let inviting = $state('');
 	/** what waits in the context's other entries (avenDB: the changes waiting for each other vault's yes) */
 	const elsewhere = $derived(
 		pill.context?.list.reduce((n, a) => n + (a.id === pill.context?.current ? 0 : (a.badge ?? 0)), 0) ?? 0
@@ -53,15 +58,19 @@
 		open = false;
 	});
 
-	/** Makes an invite for one new human, its link copied to hand them. */
-	async function inviting() {
+	/** Makes an invite for one new human, of Maia City's cap group `group`, its link copied to hand them.
+	 *  @param {string} group */
+	async function invite(group) {
+		inviting = group;
 		try {
-			const { code } = await invite();
-			invited = `${location.origin}${base}/join/?${new URLSearchParams({ invite: code })}`;
+			invited = await makeInvite(group);
+			invitedAs = group;
 			await navigator.clipboard?.writeText(invited).catch(() => {});
 		} catch (e) {
-			invited = '';
+			[invited, invitedAs] = ['', ''];
 			alert(/** @type {Error} */ (e).message);
+		} finally {
+			inviting = '';
 		}
 	}
 </script>
@@ -120,9 +129,14 @@
 				{/each}
 				<hr />
 			{/if}
-			{#if founder.caps?.includes('humans:invite')}
-				<button role="menuitem" onclick={inviting}>{invited ? 'Invite link copied: make another' : 'Invite a new human'}</button>
-				{#if invited}<input class="invited" readonly value={invited} onfocus={(e) => e.currentTarget.select()} aria-label="The invite link" />{/if}
+			{#if founder.caps?.includes('humans:invite') && invites()}
+				{#each [TRAVELER, CITIZEN] as group (group)}
+					<button role="menuitem" disabled={!!inviting} onclick={() => invite(group)}>{inviting === group ? 'Making the invite…' : `Invite a new ${group.toLowerCase()}`}</button>
+				{/each}
+				{#if invited}
+					<p class="group">{invitedAs} invite link copied</p>
+					<input class="invited" readonly value={invited} onfocus={(e) => e.currentTarget.select()} aria-label="The invite link" />
+				{/if}
 			{/if}
 			{#if founder.caps?.includes('media:admin')}<a role="menuitem" href="{base}/join/#terminal">Sign a terminal in</a>{/if}
 			<a role="menuitem" href="{base}/">The public site</a>
