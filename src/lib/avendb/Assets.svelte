@@ -6,11 +6,12 @@
 	entry's own file ($lib/assets/VaultAsset.svelte), in the turntable every asset viewer of the app has (its name, its
 	name and its moves and views above it, staying at the top as the column scrolls); on the right the one place for it,
 	avenDB's version-control side every entry has (./Lines.svelte): its history, its versions and variants to pick (with
-	its ref, entry, recipe and engine), and its parts, a part picked there or on the asset shown on its own
-	($lib/assets/Parts.svelte). Everything comes from the vault as this browser's device holds it (./assets.js): the rows
-	from the database op, its history from the note op, a file from the device when a build needs it, held to the hash
-	its ref names. Nothing comes from the repo's recipes, cards or libraries, so what the vault lacks, or holds otherwise,
-	shows here, naming its ref and why, and is never stood in for. Each asset has an address of its own, `#assets/` and
+	its name by avenDB's own ids, its title, number, variant and the entry's short id, never a slug (Samuel
+	2026-10-19), its entry, the heads of its version, its recipe and engine), and its parts, a part picked there or on
+	the asset shown on its own ($lib/assets/Parts.svelte). Everything comes from the vault as this browser's device
+	holds it (./assets.js): the rows from the database op, its history from the note op, a file from the device when a
+	build needs it, held to the hash its card names. Nothing comes from the repo's recipes, cards or libraries, so what
+	the vault lacks, or holds otherwise, shows here, saying why, and is never stood in for. Each asset has an address of its own, `#assets/` and
 	its entry, which the table editor's View asset leads to (its newest version), and each version and variant of it
 	one more, its recipe's hash after the entry.
 -->
@@ -20,7 +21,7 @@
 	import Lines from './Lines.svelte';
 	import { vaultSource } from './assets.js';
 	import { authorsLine, count, nameOf, seeded, short } from './vaults.js';
-	import { groupName, refusedOf, shelfOf } from '$lib/assets/sources/shelf.js';
+	import { groupName, nameOf as versionName, refusedOf, shelfOf, shortId } from '$lib/assets/sources/shelf.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, entry?: string,
@@ -77,7 +78,7 @@
 		const q = query.trim().toLowerCase();
 		if (!q) return shelf;
 		return shelf
-			.map((g) => ({ ...g, assets: g.group.includes(q) ? g.assets : g.assets.filter((a) => `${a.title} ${a.ref}`.toLowerCase().includes(q)) }))
+			.map((g) => ({ ...g, assets: g.group.includes(q) ? g.assets : g.assets.filter((a) => `${a.title} ${a.entry}`.toLowerCase().includes(q)) }))
 			.filter((g) => g.assets.length);
 	});
 
@@ -174,7 +175,7 @@
 		const row = held.rows.find((r) => r.entry === entry);
 		/** @type {any} */
 		const card = row?.record?.card;
-		const ref = card && typeof card === 'object' ? `${card.group}/${card.id}@${card.version}${card.variant ? `:${card.variant}` : ''}` : '';
+		const ref = card && typeof card === 'object' ? `${String(card.label ?? 'An asset')} · ${shortId(entry)}` : '';
 		const said = row ? refusedOf(source, { entry: row.entry, record: row.record }) : [];
 		const why = !row
 			? `${nameOf(here)} holds no entry ${short(entry)} this browser knows`
@@ -193,9 +194,9 @@
 	<input class="nav-search" type="search" placeholder="Find an asset" bind:value={query} aria-label="Find an asset" />
 	{#each found as g (g.group)}
 		<h3 class="nav-group">{groupName(g.group)}</h3>
-		{#each g.assets as a (a.ref)}
+		{#each g.assets as a (a.entry)}
 			{@const to = newestOf(a)}
-			<a class="nav-item" class:on={chosen?.asset.ref === a.ref} href="#assets/{to.entry}" title={a.ref} aria-current={chosen?.asset.ref === a.ref ? 'page' : undefined}
+			<a class="nav-item" class:on={chosen?.asset.entry === a.entry} href="#assets/{to.entry}" title={shortId(a.entry)} aria-current={chosen?.asset.entry === a.entry ? 'page' : undefined}
 				><Icon name="asset" size={16} /><span>{a.title}</span><small>v{a.versions[0].v}</small></a
 			>
 		{/each}
@@ -210,7 +211,7 @@
 		<header class="about-head">
 			<small>{groupName(chosen.group)}</small>
 			<h3>{chosen.asset.title}</h3>
-			<p class="soft">v{chosen.v}{chosen.variant && chosen.name !== chosen.asset.title ? ` · ${chosen.name}` : ''}{shown?.line ? ', a variant' : ''}</p>
+			<p class="soft">v{chosen.v}{chosen.variant && chosen.name !== chosen.asset.title ? ` · ${chosen.name}` : ''}{shown?.line ? ', a variant' : ''} · {shortId(chosen.entry)}</p>
 		</header>
 		<Lines
 			{world}
@@ -236,12 +237,16 @@
 	{#if chosen}
 		<h4 class="side-head">This version, in {nameOf(here)}</h4>
 		<dl>
-			<dt>Ref</dt>
-			<dd class="mono">{chosen.label}</dd>
+			<dt>Version</dt>
+			<dd>{versionName(chosen.asset, chosen)}</dd>
 			<dt>By</dt>
 			<dd>{authorsLine(world, world.entries.find((e) => e.entry === chosen.entry)?.authors, nameOf(here))}</dd>
 			<dt>Entry</dt>
 			<dd class="mono" title={chosen.entry}>{short(chosen.entry)}</dd>
+			{#if shown?.edit}
+				<dt>Heads</dt>
+				<dd class="mono" title={shown.edit}>{short(shown.edit)}</dd>
+			{/if}
 			<dt>Recipe</dt>
 			<dd class="mono" title={chosen.hash}>BLAKE3 {short(chosen.hash)}</dd>
 			<dt>Engine</dt>
@@ -308,7 +313,7 @@
 				{/await}
 				{#snippet failed(e, reset)}
 					<p class="error" role="alert">
-						Showing {chosen.label} failed: {/** @type {any} */ (e)?.message ?? e}
+						Showing {versionName(chosen.asset, chosen)} failed: {/** @type {any} */ (e)?.message ?? e}
 						<button class="btn quiet" onclick={reset}>Try again</button>
 					</p>
 				{/snippet}

@@ -214,9 +214,6 @@ test("a row that doesn't check is left out, saying why, and the ref it would nam
 		'a record of another kind': changed(row, (r) => (r.record.kind = 'view')),
 		'a card that does not fit': changed(row, (r) => delete r.record.card.size),
 		'a card naming no recipe': changed(row, (r) => delete r.record.card.recipe),
-		'no ref tag': changed(row, (r) => (r.tags = r.tags.filter((t) => !t.startsWith('ref:')))),
-		'the ref tag of another version': changed(row, (r) => (r.tags = ['group:plants', 'ref:plants/apple@1'])),
-		'no group tag': changed(row, (r) => (r.tags = r.tags.filter((t) => !t.startsWith('group:')))),
 		'an engine of another host': changed(row, (r) => (r.record.engine.host = 'logic')),
 		'an engine never frozen': changed(row, (r) => (r.record.engine.hash = 'c0ffee'.repeat(10) + 'c0de')),
 		'an older engine than pages run': changed(row, (r) => {
@@ -241,6 +238,12 @@ test("a row that doesn't check is left out, saying why, and the ref it would nam
 		// the rest of the vault reads as before
 		expect(v.hashOf('plants/apple@1')).toBe(made.index.labels['plants/apple@1']);
 		expect(Object.keys(v.index.recipes).length).toBe(326);
+	}
+	// its tags are not read: an asset is its entry, its versions the entry's (avenDB's ids, not refs)
+	for (const tags of [[], ['group:plants', 'ref:plants/apple@1'], ['ref:things/bell-tent@1']]) {
+		const v = vaultOf([...ROWS.filter((x) => x !== row), changed(row, (r) => (r.tags = tags))]);
+		expect(v.refused).toEqual([]);
+		expect(v.index).toEqual(made.index);
 	}
 	// what is no row at all is left out the same way, and takes nothing with it
 	const v = vaultOf([null, 42, 'plants/apple@2', {}, { type: 'recipe', record: null }, ...ROWS]);
@@ -335,30 +338,33 @@ test('an asset is one entry: each version and variant it brought is a recipe of 
 	expect(w.hashOf('actors/goat@2:goat-boer')).toBe(hashOf('actors/goat@2:goat-boer'));
 });
 
-test('a version proposed and accepted onto an asset’s main line counts without a tag of its own, nowhere else', () => {
+test('an entry is one asset: its versions count with no tags at all, and one naming another asset is refused', () => {
 	const { rows } = assetRows();
-	// the truck's entry as the seed wrote it at v1, its v2 then accepted onto main by a proposal (no tag op)
+	// the truck's entry as the seed wrote it at v1, its v2 then accepted onto main by a proposal, and no tags at all
 	const truck = rows.find((r) => r.entry === 'asset-machines/truck');
 	expect(Math.max(...truck.brought.map((b) => b.version))).toBe(2);
-	const v2 = (t) => /^ref:machines\/truck@2(:|$)/.test(t);
-	const accepted = { ...truck, tags: truck.tags.filter((t) => !v2(t)) };
-	expect(accepted.tags.length).toBeLessThan(truck.tags.length);
-	const v = vaultRecipes(rows.map((r) => (r === truck ? accepted : r)), { read: async () => undefined });
+	const bare = rows.map((r) => ({ ...r, tags: [] }));
+	const v = vaultRecipes(bare, { read: async () => undefined });
 	expect(v.refused).toEqual([]);
 	expect(v.index).toEqual(made.index);
 	expect(v.hashOf('machines/truck')).toBe(hashOf('machines/truck@2:truck'));
 	expect(v.hashOf('machines/truck@1')).toBe(hashOf('machines/truck@1:truck'));
-	// on a variant's line, a version still needs its own tag
-	const lined = { ...accepted, brought: accepted.brought.map((b) => (b.version === 2 ? { ...b, line: 'line-x' } : b)) };
-	const w = vaultRecipes(rows.map((r) => (r === truck ? lined : r)), { read: async () => undefined });
-	expect(w.refused.some((x) => x.includes('machines/truck@2:truck') && x.includes('not tagged'))).toBe(true);
-	expect(() => w.hashOf('machines/truck@2')).toThrow(NotInVault);
-	// an asset's entry never holds another asset's recipe untagged
+	expect(v.rowOf(hashOf('machines/truck@2:truck')).main).toBe(2);
+	// a variant's own line is never its kind's first, tags or none
+	const goat = bare.find((r) => r.entry === 'asset-actors/goat');
+	expect(goat.brought.some((b) => b.line !== null)).toBe(true);
+	expect(v.index.first['actors/goat@2']).toBe(made.index.first['actors/goat@2']);
+	// an asset's entry never holds another asset's recipe: refused, and the asset's own entry still names it
 	const pickup = rows.find((r) => r.entry === 'asset-machines/pickup').brought[0];
-	const smuggled = { ...accepted, brought: [...accepted.brought, { ...pickup, edit: 'w-smuggled' }] };
-	const x = vaultRecipes(rows.filter((r) => r.entry !== 'asset-machines/pickup').map((r) => (r === truck ? smuggled : r)), { read: async () => undefined });
-	expect(x.refused.some((y) => y.includes('machines/pickup@1') && y.includes('not tagged'))).toBe(true);
-	expect(() => x.hashOf('machines/pickup@1')).toThrow(NotInVault);
+	const smuggled = { ...truck, tags: [], brought: [...truck.brought, { ...pickup, edit: 'w-smuggled' }] };
+	const x = vaultRecipes(bare.map((r) => (r.entry === truck.entry ? smuggled : r)), { read: async () => undefined });
+	expect(x.refused.length).toBe(1);
+	expect(x.refused[0]).toMatch(/^machines\/pickup@1:pickup \(entry asset-machin…\): its entry is machines\/truck’s, and an entry is one asset$/);
+	expect(x.hashOf('machines/pickup@1')).toBe(hashOf('machines/pickup@1:pickup'));
+	expect(x.rowOf(hashOf('machines/pickup@1:pickup')).entry).toBe('asset-machines/pickup');
+	// and where the pickup's own entry is gone, the truck's still doesn't speak for it
+	const y = vaultRecipes(bare.filter((r) => r.entry !== 'asset-machines/pickup').map((r) => (r.entry === truck.entry ? smuggled : r)), { read: async () => undefined });
+	expect(() => y.hashOf('machines/pickup@1')).toThrow(NotInVault);
 });
 
 test("a vault's ref is still refused: avenDB storage is not switched on", () => {

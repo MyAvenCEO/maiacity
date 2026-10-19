@@ -60,14 +60,19 @@ async function bytesOf(file, read) {
 
 /**
  * The recipes an AIP proposes, for its vault to see before it answers ($lib/avendb/Hitl.svelte): each of its `recipe`
- * lines as `get` reads it on that line (its record, the entry's tags, and `files`, what the line brings, oldest
- * first), read as the vault's own are (`vaultRecipes`, `proposed`), each file the newest its line brings, held to the
- * hash its card names. A device older than `get`'s `files` lists none, and says so.
- * @param {any[]} rows @param {import('./files.js').Read} read
+ * lines as `get` reads it on that line (its record and `files`, what the line brings, oldest first), read as the
+ * vault's own are (`vaultRecipes`), each file the newest its line brings, held to the hash its card names. A device
+ * older than `get`'s `files` lists none, and says so. `firsts`, each entry's first version as `get` reads it
+ * (`version: 1` on main), say which asset each entry is, so a line that brings another asset's recipe is refused.
+ * @param {any[]} rows @param {import('./files.js').Read} read @param {any[]} [firsts]
  */
-export function proposedSource(rows, read) {
+export function proposedSource(rows, read, firsts = []) {
+	const assets = firsts.flatMap((f) => {
+		const card = f?.record?.card;
+		return typeof f?.entry === 'string' && card?.group && card?.id ? [/** @type {[string, string]} */ ([f.entry, `${card.group}/${card.id}`])] : [];
+	});
 	return vaultRecipes(rows, {
-		proposed: true,
+		assets,
 		read: (row) => {
 			if (!Array.isArray(row?.files)) throw new Error('this device lists no files on a proposal’s line yet: it needs a newer avenDB');
 			return bytesOf(row.files.at(-1), read);

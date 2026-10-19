@@ -2,8 +2,9 @@
 	The assets an AIP proposes, in 3D, before its vault answers it: its `recipe` lines (a new version of an asset, or a
 	new asset), each read on its own line with `get` (its record and the files the line brings), read as the vault's own
 	assets are (./assets.js `proposedSource`) and built from the newest file on its line, held to its hash, as avenDB's
-	Assets builds one ($lib/assets/VaultAsset.svelte); a tab for each where it proposes several. What none of its lines
-	lets through is said, and nothing stands in for it. The HITL card shows it `compact` (./Hitl.svelte), the Proposals
+	Assets builds one ($lib/assets/VaultAsset.svelte); a tab for each where it proposes several. Each entry's first
+	version (`get` on main, `version: 1`) says which asset the entry is, so a line that brings another asset's recipe is
+	refused. What none of its lines lets through is said, and nothing stands in for it. The HITL card shows it `compact` (./Hitl.svelte), the Proposals
 	app whole ($lib/proposals/AvendbAip.svelte).
 -->
 <script>
@@ -37,11 +38,14 @@
 		[proposed, pick] = [null, 0];
 		if (!recipes.length) return;
 		let gone = false;
-		Promise.all(recipes.map((l) => ask({ op: 'get', entry: l.entry, line: l.line }))).then(
+		const entries = [...new Set(recipes.map((l) => l.entry))];
+		Promise.all([...recipes.map((l) => ask({ op: 'get', entry: l.entry, line: l.line })), ...entries.map((entry) => ask({ op: 'get', entry, version: 1 }))]).then(
 			(/** @type {any[]} */ got) => {
 				if (gone) return;
-				const rows = got.map((g) => g?.ok).filter(Boolean);
-				const source = proposedSource(rows, read);
+				const rows = got.slice(0, recipes.length).map((g) => g?.ok).filter(Boolean);
+				// a new entry the AIP lands on Accept has no first version yet: its line is its first
+				const firsts = got.slice(recipes.length).map((g) => g?.ok).filter(Boolean);
+				const source = proposedSource(rows, read, firsts);
 				const cards = rows.map((r) => r.record?.card).filter((c) => c?.recipe && Object.hasOwn(source.index.recipes, c.recipe));
 				const shown = cards.map((c) => ({ hash: c.recipe, title: `${nameOf(c)} v${c.version}`, note: c.note ?? '' }));
 				if (shown.length) viewer ??= import('$lib/assets/VaultAsset.svelte');
