@@ -271,7 +271,7 @@
 	// one flow adds every vault that acts by keys of its own
 	const addings = [
 		['An agent', 'Your COOP’s aven itself, avenMAIA: a device of it', 'The agent harness’s key on your Mac', 'The aven’s own, no more and no less'],
-		['The same harness on your other Mac', 'That agent’s device vault', 'That Mac’s harness key', 'What the agent holds already'],
+		['The same harness on your other Mac', 'The aven again: one more device of it', 'That Mac’s harness key', 'The aven’s own, no more and no less'],
 		['The server', 'avenMAIA itself, founded with the seed: the server is its device', 'The server’s key', 'Backup or Relay, from each vault over itself'],
 		['A studio worker', 'A device vault under the vault whose media it works on, yours or a COOP’s', 'A key the desktop app makes and hosts', 'That vault’s shares over itself, or passed on from those it holds']
 	];

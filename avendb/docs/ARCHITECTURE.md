@@ -42,7 +42,7 @@ Paths below are relative to `avendb/` unless they start with `src/` or `static/`
 | Agent | A device of a coop's aven, whose key is one agent harness's, as agentClaude. It acts as the aven, with its rights. |
 | Seed | The vaults a claim of the server founds: Maia City and avenMAIA, its aven, the server's vault. |
 | Entry | One item of data in one vault: a Loro document with a type and tags. |
-| Edit | One signed change. Its id is the BLAKE3 hash of its bytes. Seven kinds. |
+| Edit | One signed change. Its id is the BLAKE3 hash of its bytes. Eight kinds. |
 | Log | The edits of one vault, one share, one audience or one entry. Each edit builds on its log's frontier. |
 | Share | Who may do what on which entries of a vault: who, level, what. |
 | Sub cap | A share that rests on another: no stronger, no wider, and ended with it. |
@@ -591,9 +591,8 @@ A share may rest on another (`parent`), a sub cap, by one rule (`State::share_pa
 `spec/AvenDB/Step.lean`): the parent is a live share over the same vault that its issuer holds, other than a keep share;
 the new share is at a level no higher than the parent's, and wide only if the parent is; and either the parent is an
 owner share, whose `share` op lets its holder share on with anyone, or the new share goes to a vault its issuer owns
-directly. So the holder of an owner share of a slice shares it on with anyone, a person passes a share a coop gave them
-on to their aven, and an aven passes its shares on to its agents' device vaults (section 3, Passing a right on; Lab
-scenario 27). A chain selects the AND of its selectors, and allows only what every share of it allows (C1), and revoking
+directly. So the holder of an owner share of a slice shares it on with anyone, and a coop passes a share another coop
+gave it on to its worker's device vault (section 3, Passing a right on; Lab scenario 27). A chain selects the AND of its selectors, and allows only what every share of it allows (C1), and revoking
 a share ends every share resting on it. A share with no parent is issued by the vault it is over, or is a keep share. No
 owner share is wide (below), so a wide share rests on none, or on a wide share passed on to a vault its issuer owns.
 
