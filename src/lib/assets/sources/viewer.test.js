@@ -26,7 +26,8 @@ mock.module('$app/paths', () => ({ base: '' }));
 const { NotInVault, recipeEntryOf } = await import('./avendb.js');
 const { GROUPS, refusedOf, shelfOf } = await import('./shelf.js');
 const { buildName, vaultBuild } = await import('./viewer.js');
-const { MOST, fileReader, newestFile, recipeRows, vaultSource } = await import('../../avendb/assets.js');
+const { MOST, fileReader, newestFile, proposedSource, recipeRows, vaultSource } = await import('../../avendb/assets.js');
+const { vaultRecipes } = await import('./avendb.js');
 const { ENGINES, recipeFile } = await import('../engines.js');
 const { keyOf } = await import('../cache.js');
 const { recipeOfFile } = await import('./cards.js');
@@ -369,8 +370,40 @@ function reached(...from) {
 	return { files: [...seen].map((f) => f.slice(ROOT.length)), names: [...names] };
 }
 
+test("an AIP's version of an asset is read on its line and built from its own file, before its vault accepts it", async () => {
+	const [one, two] = [LABEL['machines/truck@1:truck'], LABEL['machines/truck@2:truck']];
+	const entryOf = (hash) => recipeEntryOf({ code: FILES[hash], card: CARDS[hash], first: true });
+	const store = new Map();
+	const fileOf = (hash) => {
+		const bytes = utf8ToBytes(FILES[hash]);
+		const f = sealed(bytes, hash);
+		store.set(f.root, bytes);
+		return f;
+	};
+	const readFile = async (root, size, from, to) => store.get(root).slice(from, to);
+	// the truck's entry as the seed wrote it at v1, and v2 proposed on a line of it (scripts/propose-version.mjs), as
+	// `get` reads that line: the entry's tags, v2's record, and what the line brings, v1's file first
+	const row = { entry: 'e'.repeat(64), vault: VAULT, type: 'recipe', tags: entryOf(one).tags, record: entryOf(two).value, line: 'a'.repeat(64), heads: ['b'.repeat(64)], files: [fileOf(one), fileOf(two)] };
+	expect(row.tags).not.toContain('ref:machines/truck@2:truck');
+	const p = proposedSource([row], readFile);
+	expect(p.refused).toEqual([]);
+	expect(Object.keys(p.index.recipes)).toEqual([two]);
+	expect(await p.recipeAt(two)).toEqual({ hash: two, code: FILES[two] });
+	const built = await vaultBuild(p, two, {}, { box: boxOf(), keep: false });
+	expect(built.card.version).toBe(2);
+	// read as the vault's own, the line's version is no recipe of it: only an AIP's card shows it
+	const own = vaultRecipes([row], { read: async () => undefined });
+	expect(own.refused.some((x) => x.includes('machines/truck@2:truck') && x.includes('not tagged'))).toBe(true);
+	// nor is another asset's version on the truck's line
+	const other = { ...row, record: entryOf(LABEL['machines/pickup@1:pickup']).value };
+	expect(proposedSource([other], readFile).refused.some((x) => x.includes('not tagged'))).toBe(true);
+	// a device older than `get`'s files says so, and a file that isn't the recipe its card names is refused
+	expect((await thrown(() => proposedSource([{ ...row, files: undefined }], readFile).recipeAt(two))).message).toMatch(/needs a newer avenDB/);
+	expect(await thrown(() => proposedSource([{ ...row, files: [fileOf(two), fileOf(one)] }], readFile).recipeAt(two))).toBeInstanceOf(NotInVault);
+});
+
 test("the viewer's modules reach nothing of the repo's recipes, cards or libraries: only the kernel", () => {
-	const { files, names } = reached('src/lib/avendb/Assets.svelte', 'src/lib/assets/VaultAsset.svelte');
+	const { files, names } = reached('src/lib/avendb/Assets.svelte', 'src/lib/assets/VaultAsset.svelte', 'src/lib/avendb/Hitl.svelte', 'src/lib/proposals/AvendbAip.svelte');
 	for (const f of ['src/lib/avendb/assets.js', 'src/lib/assets/sources/shelf.js', 'src/lib/assets/sources/viewer.js', 'src/lib/assets/sources/avendb.js', 'src/lib/assets/box/host.js', 'src/lib/assets/hero.js', 'src/lib/assets/stage.js', 'src/lib/render/stage.js', 'src/lib/assets/cache.js'])
 		expect(files).toContain(f);
 	for (const f of ['src/lib/assets/recipes.js', 'src/lib/assets/load.js', 'src/lib/assets/AssetViewer.svelte', 'src/lib/assets/index.js', 'src/lib/assets/sources/cards.js', 'src/lib/assets/box/plugin.js', 'src/lib/assets/recipe.js', 'src/lib/assets/groups.js'])
