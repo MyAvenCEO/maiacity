@@ -812,7 +812,10 @@ pub(crate) fn limits(depth: usize) -> Value {
 /// `{"op": "get", "entry", "schema"?, "line"?, "at"? | "version"?}`: entry `entry` on line `line` (the main line, left
 /// out), or at version `at` of that line, or at its release numbered `version` (`History::release`), read-only, through
 /// `schema`, as a query's row, with the line's heads, which release of the line it shows and how many of the line's
-/// writes after it (`version`, `History::describe`), and the schemas the item was written under.
+/// writes after it (`version`, `History::describe`), the schemas the item was written under, and the files the line
+/// brings that `me` counts as the entry's (`Lab::line_files`), oldest first, each `{root, size, len}` as the world lists
+/// an entry's main line's, its plaintext length null where `me` opens none: so a proposal's file, a new version of an
+/// asset's recipe on its line, is read before its vault accepts it.
 fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let (entry, line, schema) = (entry_of(o)?, line_of(o, "line")?, named(o)?);
     let h = lab.history(me, entry).ok_or(Refused::NoEntry)?;
@@ -851,6 +854,8 @@ fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused
     out["at"] = at.as_deref().map_or(Value::Null, |at| ids(at).into());
     out["version"] = described(h, line, at.as_deref().unwrap_or(&h.heads(line)));
     out["authored"] = item.authored().iter().map(BlobId::to_hex).collect::<Vec<_>>().into();
+    let file = |(root, len): (FileRoot, Option<u64>)| json!({ "root": BlobId(root.hash).to_hex(), "size": root.size, "len": len });
+    out["files"] = lab.line_files(me, entry, line).into_iter().map(file).collect::<Vec<_>>().into();
     Ok(out)
 }
 

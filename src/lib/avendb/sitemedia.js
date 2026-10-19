@@ -4,7 +4,10 @@
  * named `<hash>.<ending>`, tagged `site:media`, which one Public share on that tag lets everyone read (Samuel
  * 2026-10-19, the final move to avenDB). avenDB's server serves each by that hash (avendb-server's feed.rs,
  * `/feed/media/`), and api.maia.city's `/vault/files/<hash>` asks it first, the old gateway only for what it has none
- * of yet (deploy/Caddyfile): the site's addresses stay as they are. ./SiteMedia.svelte offers the copy.
+ * of yet (deploy/Caddyfile): the site's addresses stay as they are. A file the old vault keeps private (it answers
+ * 401 without the Mac app's key) is copied as it is there, private: tagged `legacy:media` alone, which no share
+ * reaches. The copy runs by itself in the background as an owner of Maia City opens avenDB (./Account.svelte, Samuel
+ * 2026-10-19: "copy everything for me"), and ./SiteMedia.svelte offers it on Maia City's Library besides (`copyAll`).
  */
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
@@ -12,6 +15,8 @@ import { EVERYONE } from './vaults.js';
 
 /** The tag of the site's media, which the Public share reaches. */
 export const SITE = 'site:media';
+/** The tag of every file copied from the old media vault, public there or not. */
+export const LEGACY = 'legacy:media';
 
 /** Each media type the site shows, and the ending its file is named with (as avenDB's server reads it back). */
 export const ENDINGS = /** @type {Record<string, string>} */ ({
@@ -58,7 +63,7 @@ export function uncopied(world, vault, manifest) {
 		const name = nameOf(hash, p.mime);
 		if (!name) continue;
 		const e = held.get(name);
-		if (e?.tags?.includes(SITE)) continue;
+		if (e?.tags?.some((t) => t === SITE || t === LEGACY)) continue;
 		left.push({ hash, name, media: p.mime, title: p.title || name, ...(e ? { entry: e.entry } : {}) });
 	}
 	return left;
@@ -72,45 +77,72 @@ export function uncopied(world, vault, manifest) {
 export function marking(left, vault, actor, shared) {
 	/** @type {object[]} */
 	const ops = shared ? [] : [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: SITE }, as: actor }];
-	for (const p of left) if (p.entry) ops.push({ op: 'tag', entry: p.entry, add: [SITE], remove: [], as: actor });
+	for (const p of left) if (p.entry) ops.push({ op: 'tag', entry: p.entry, add: [SITE, LEGACY], remove: [], as: actor });
 	return ops;
 }
 
 /**
- * The op that brings piece `p` into vault `vault`, acting for `actor`, tagged the site's and as `asked` (the tags its
- * cap asks a new file to carry, ./ops.js `creatable`); its length is the file's.
- * @param {Piece} p @param {string} vault @param {string} actor @param {string[]} asked
+ * The op that brings piece `p` into vault `vault`, acting for `actor`, tagged as copied, the site's unless the old
+ * vault keeps it private (`kept`), and as `asked` (the tags its cap asks a new file to carry, ./ops.js `creatable`);
+ * its length is the file's.
+ * @param {Piece} p @param {string} vault @param {string} actor @param {string[]} asked @param {boolean} [kept]
  */
-export const bringing = (p, vault, actor, asked) => ({
+export const bringing = (p, vault, actor, asked, kept = false) => ({
 	op: 'put_file',
 	vault,
 	name: p.name,
 	media: p.media,
-	tags: [...new Set([SITE, ...asked])],
+	tags: [...new Set([LEGACY, ...(kept ? [] : [SITE]), ...asked])],
 	as: actor
 });
 
 /** The bytes of a file kept whole once read, so the device's second reading needs no second download. */
 const KEEP = 16 << 20;
 
+/** How often a download is asked where the old vault's server fails, or the network does, before it gives up. */
+const TRIES = 3;
+
 /**
- * File `hash` from `url`, as a device reads a file it brings (./session.svelte.js `bring`): a Blob's `size` and its
+ * File `hash` from the first of `urls` that hands it over: the old vault's public gateway, then in the Mac app the
+ * same through the app, with its key, which reads what the vault keeps private (`kept`, where only that one did). As a
+ * device reads a file it brings (./session.svelte.js `bring`), it is a Blob's `size` and its
  * `slice(from, to).arrayBuffer()`, read in order from the start, twice (once for its key, once to seal it), each time
  * one download streamed through, or for a small one, the bytes the first kept. As the first reading ends its bytes
  * must hash to `hash` (BLAKE3), or it throws, so that no other bytes go in under its name. `close` lets go of a
  * download still open. Its `size` is the length the download names, or where it names none, it is read whole first.
- * @param {string} url @param {string} hash @param {typeof fetch} [get] @param {number} [keep] the most bytes kept
- * @returns {Promise<{ size: number, slice: (from: number, to: number) => { arrayBuffer: () => Promise<ArrayBuffer> },
- *   close: () => void }>}
+ * A download the server fails (5xx) or the network drops is asked again, `TRIES` times in all, `wait` ms apart and
+ * twice that the next time.
+ * @param {string | string[]} urls @param {string} hash @param {typeof fetch} [get] @param {number} [keep] the most
+ *   bytes kept @param {number} [wait]
+ * @returns {Promise<{ size: number, kept: boolean, slice: (from: number, to: number) => { arrayBuffer: () =>
+ *   Promise<ArrayBuffer> }, close: () => void }>}
  */
-export async function source(url, hash, get = fetch, keep = KEEP) {
-	/** @returns {Promise<Response>} */
-	const download = async () => {
-		const res = await get(url, { cache: 'no-store' });
-		if (res.status !== 200 || !res.body) throw new Error(`the old vault answered ${res.status} for ${hash.slice(0, 12)}…`);
-		return res;
+export async function source(urls, hash, get = fetch, keep = KEEP, wait = 1000) {
+	const all = [urls].flat();
+	/** The answer to a GET of `url`, asked again where the server or the network fails. @param {string} url */
+	async function asked(url) {
+		for (let n = 1; ; n++) {
+			const res = await get(url, { cache: 'no-store' }).catch((e) => (n < TRIES ? null : Promise.reject(e)));
+			if (res && (res.status < 500 || n === TRIES)) return res;
+			await new Promise((r) => setTimeout(r, wait * 2 ** (n - 1)));
+		}
+	}
+	/** @param {Response} res */
+	const whole = (res) => {
+		if (res.status === 200 && res.body) return res;
+		const why = res.status === 401 ? ', which keeps it private (the Mac app reads it with its key)' : '';
+		throw new Error(`the old vault answered ${res.status} for ${hash.slice(0, 12)}…${why}`);
 	};
-	let res = await download();
+	// the first address that doesn't turn it away (401, 403): where it hands it over, or the last one's why not
+	let url = all[0];
+	let res = await asked(url);
+	for (const next of all.slice(1)) {
+		if (res.status !== 401 && res.status !== 403) break;
+		url = next;
+		res = await asked(url);
+	}
+	whole(res);
+	const download = async () => whole(await asked(url));
 	const named = Number(res.headers.get('content-length') ?? NaN);
 	/** @type {Uint8Array | null} */
 	let kept = Number.isSafeInteger(named) && named >= 0 ? null : new Uint8Array(await res.arrayBuffer());
@@ -191,7 +223,50 @@ export async function source(url, hash, get = fetch, keep = KEEP) {
 	}
 	return {
 		size,
+		kept: url !== all[0],
 		slice: (from, to) => ({ arrayBuffer: async () => /** @type {ArrayBuffer} */ ((await read(from, to - from)).buffer) }),
 		close
 	};
+}
+
+/**
+ * Copies pieces `left` into vault `vault`, acting for `actor`, through the vault screens' `api`
+ * (./session.svelte.js): first what marks them (`marking`: the Public share where `shared` says the vault gives none
+ * yet, the tag on each it holds already), then each other piece from the first of its addresses (`urlsOf`, `source`)
+ * that hands it over, one after another, quietly, as `asked` asks (./ops.js `creatable`), telling `progress` how far
+ * it is. A piece that fails is left out, and the rest go on; the next copy goes on from what is left. What it copied,
+ * of all, those the old vault keeps private, and why each failed piece did. A refusal of the marks stops it first.
+ * @param {{ api: any, left: Piece[], vault: string, actor: string, shared: boolean, asked: string[],
+ *   urlsOf: (hash: string) => string[], progress?: (at: { done: number, of: number, now: string, bytes: number }) => void,
+ *   get?: typeof fetch }} job
+ */
+export async function copyAll({ api, left, vault, actor, shared, asked, urlsOf, progress = () => {}, get = fetch }) {
+	const of = left.length;
+	const marks = marking(left, vault, actor, shared);
+	if (marks.length && !(await api.runAll('Making the site’s media public in Maia City', marks))) {
+		throw new Error('Maia City didn’t take the share or the tags, so nothing was copied');
+	}
+	let done = left.filter((p) => p.entry).length;
+	let kept = 0;
+	/** @type {{ piece: Piece, why: string }[]} */
+	const failed = [];
+	for (const p of left.filter((p) => !p.entry)) {
+		progress({ done, of, now: p.title, bytes: 0 });
+		/** @type {Awaited<ReturnType<typeof source>> | undefined} */
+		let file;
+		try {
+			file = await source(urlsOf(p.hash), p.hash, get);
+			progress({ done, of, now: p.title, bytes: file.size });
+			await api.bring(`Copying ${p.title}`, bringing(p, vault, actor, asked, file.kept), file, true);
+			done++;
+			if (file.kept) kept++;
+		} catch (e) {
+			failed.push({ piece: p, why: /** @type {Error} */ (e)?.message ?? String(e) });
+		} finally {
+			file?.close();
+		}
+	}
+	progress({ done, of, now: '', bytes: 0 });
+	await api.refresh?.();
+	return { done, of, kept, failed };
 }

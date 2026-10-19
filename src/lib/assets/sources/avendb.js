@@ -172,9 +172,11 @@ const UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
  * One row the vault hands out as a recipe of the index, or why not: a `recipe` entry whose card fits its schema and
  * names its recipe, tagged with its group and the ref its card names, made for the box engine pages run (the latest of
  * ../engines.json, by its hash). Its file is not read here: only when a build needs it.
- * @param {any} row @returns {{ hash: string, label: string, card: any, first?: string } | { error: string, label?: string }}
+ * A version on a proposal's line counts the same way where `proposed` (an AIP's line, as `get` reads it on that line,
+ * shown for its vault to answer, never put in the shelf of the vault's own).
+ * @param {any} row @param {boolean} [proposed] @returns {{ hash: string, label: string, card: any, first?: string } | { error: string, label?: string }}
  */
-function recipeOfRow(row) {
+function recipeOfRow(row, proposed = false) {
 	const where = whereOf(row);
 	const r = row?.record ?? {};
 	if (row?.type !== 'recipe' || r.kind !== 'recipe') return { error: `${where}: not a recipe entry` };
@@ -190,7 +192,7 @@ function recipeOfRow(row) {
 	// a version proposed and accepted after its asset's entry was written (`versionsOf`) comes onto its main line
 	// without a tag of its own: it counts there where the entry is tagged as one of that asset's (`ref:group/id@…`)
 	const own = tags.includes(refTag(label));
-	const accepted = Object.hasOwn(row, 'main') && onMain && tags.some((/** @type {string} */ t) => t.startsWith(refTag(`${card.group}/${card.id}@`)));
+	const accepted = ((Object.hasOwn(row, 'main') && onMain) || proposed) && tags.some((/** @type {string} */ t) => t.startsWith(refTag(`${card.group}/${card.id}@`)));
 	if (!own && !accepted)
 		return no(`it is not tagged ${refTag(label)}, the ref its card names`);
 	if (!tags.includes(groupTag(card.group))) return no(`it is not tagged ${groupTag(card.group)}`);
@@ -240,9 +242,11 @@ export function versionsOf(row) {
  * another variant than the one it names); `recipeAt(hash)`, `{ hash, code }`, the entry's file once read, held to the
  * hash (the BLAKE3 of its bytes) and to the version and variant its card says. Each throws NotInVault, naming the ref,
  * for what the vault doesn't hold or holds otherwise.
- * @param {any[]} rows @param {{ read: (row: any) => Promise<Uint8Array | ArrayBuffer | string | undefined> }} o
+ * With `proposed`, the rows are an AIP's lines, each as `get` reads it on its line: a version proposed on an asset's
+ * entry counts where the entry is tagged as that asset, so its vault sees what it would accept ($lib/avendb/Hitl.svelte).
+ * @param {any[]} rows @param {{ read: (row: any) => Promise<Uint8Array | ArrayBuffer | string | undefined>, proposed?: boolean }} o
  */
-export function vaultRecipes(rows, { read }) {
+export function vaultRecipes(rows, { read, proposed = false }) {
 	/** @type {{ engine: number, recipes: Record<string, any>, labels: Record<string, string>, latest: Record<string, number>, first: Record<string, string> }} */
 	const index = { engine: LATEST.v, recipes: {}, labels: {}, latest: {}, first: {} };
 	/** @type {string[]} */
@@ -259,7 +263,7 @@ export function vaultRecipes(rows, { read }) {
 	/** @type {Map<string, Set<string>>} */
 	const labelsOf = new Map();
 	for (const row of (Array.isArray(rows) ? rows : []).flatMap(versionsOf)) {
-		const m = recipeOfRow(row);
+		const m = recipeOfRow(row, proposed);
 		if ('error' in m) {
 			if (m.label) refuse(m.label, m.error);
 			else refused.push(m.error);

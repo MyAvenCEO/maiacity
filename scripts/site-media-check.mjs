@@ -3,7 +3,8 @@
 // what Maia City doesn't serve yet (deploy/Caddyfile). Each is read by ranges, a window at a time as a player reads a
 // film, and hashed (BLAKE3): it must come back whole and its own. A picture is asked whole too, as a page's <img> asks
 // it, a sound or a film a range from its middle, as a player seeking asks. It counts how many avenDB served
-// (`x-served-by: avenDB`), and asks once what a browser asks before a range (its CORS preflight).
+// (`x-served-by: avenDB`), lists apart those the old vault keeps private (401: Maia City keeps them private too, so
+// they are no failure), and asks once what a browser asks before a range (its CORS preflight).
 //
 //   bun scripts/site-media-check.mjs                    check them all, list what failed, and fail if any did
 //   ALL_FROM_AVENDB=1 bun scripts/site-media-check.mjs  fail too while any still comes from the old media vault
@@ -25,21 +26,26 @@ const AT_ONCE = 6;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const from = (res) => (res.headers.get('x-served-by') === 'avenDB' ? 'avenDB' : 'old vault');
 
-/** A GET of `url` with `headers`, tried three times where the network fails. */
+/** A GET of `url` with `headers`, tried three times where the network or the server (5xx) fails. */
 async function get(url, headers = {}) {
 	for (let tries = 1; ; tries++) {
 		try {
-			return await fetch(url, { headers });
+			const res = await fetch(url, { headers });
+			if (res.status < 500 || tries === 3) return res;
 		} catch (e) {
 			if (tries === 3) throw e;
-			await sleep(1000 * tries);
 		}
+		await sleep(1000 * tries);
 	}
 }
+
+/** What the old media vault answers for a file it keeps private: no one sees it without the Mac app's key. */
+class Private extends Error {}
 
 /** Bytes `at` to `to` (past its last) of `url`: they, the file's length its Content-Range names, and who served them. */
 async function range(url, at, to) {
 	const res = await get(url, { range: `bytes=${at}-${to - 1}` });
+	if (res.status === 401) throw new Private('private in the old media vault');
 	if (res.status !== 206) throw new Error(`answered ${res.status} for bytes ${at}-${to - 1}`);
 	const part = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(res.headers.get('content-range') ?? '');
 	if (!part || Number(part[1]) !== at) throw new Error(`named ${res.headers.get('content-range')} for bytes ${at}-${to - 1}`);
@@ -101,7 +107,8 @@ await Promise.all(
 			try {
 				results.set(hash, { title, mime, ...(await check(hash, mime)) });
 			} catch (e) {
-				results.set(hash, { title, mime, failed: e?.message ?? String(e) });
+				const why = e?.message ?? String(e);
+				results.set(hash, { title, mime, ...(e instanceof Private ? { private: why } : { failed: why }) });
 			}
 		}
 	})
@@ -111,13 +118,15 @@ const flight = await preflight(files[0][0]).catch((e) => `the preflight failed: 
 const all = [...results.values()];
 const failed = [...results].filter(([, r]) => r.failed);
 const fromAvenDB = all.filter((r) => r.by === 'avenDB');
-const fromOld = all.filter((r) => !r.failed && r.by !== 'avenDB');
+const kept = all.filter((r) => r.private);
+const fromOld = all.filter((r) => r.by && r.by !== 'avenDB');
 const bytes = all.reduce((n, r) => n + (r.len ?? 0), 0);
 const lines = [
 	`## The site's media: ${files.length} files`,
 	'',
-	`- ${all.length - failed.length} came back whole and their own (${(bytes / 1e6).toFixed(1)} MB, ${Math.round((Date.now() - started) / 1000)} s)`,
+	`- ${all.length - failed.length - kept.length} came back whole and their own (${(bytes / 1e6).toFixed(1)} MB, ${Math.round((Date.now() - started) / 1000)} s)`,
 	`- ${fromAvenDB.length} served by avenDB, ${fromOld.length} still by the old media vault${fromOld.some((r) => r.by.includes('avenDB')) ? ' (some partly)' : ''}`,
+	`- ${kept.length} private in the old media vault, so no one sees them without the Mac app's key (401)`,
 	`- ${failed.length} failed`,
 	`- the browser's preflight before a range: ${flight || 'allowed'}`,
 	...failed.map(([hash, r]) => `  - ${hash} (${r.title}, ${r.mime}): ${r.failed}`),

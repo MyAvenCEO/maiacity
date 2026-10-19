@@ -68,7 +68,6 @@
 	const source = $derived(vaultSource(world, held, vault, actor, read));
 	const shelf = $derived(shelfOf(source));
 	const recipes = $derived(Object.keys(source.index.recipes).length);
-	const assets = $derived(shelf.reduce((n, g) => n + g.assets.length, 0));
 	/** the recipe entries this browser holds that the acting vault doesn't open */
 	const sealed = $derived((held?.rows ?? []).filter((r) => r.type === 'recipe' && r.record === null).length);
 
@@ -274,15 +273,12 @@
 	{:else if !held}
 		<p class="soft">Reading {nameOf(here)}’s recipe entries…</p>
 	{:else}
-		<p class="soft lead">
-			{#if recipes}
-				{count(recipes, 'recipe')} of {count(assets, 'asset')} in {nameOf(here)}, each built from its entry’s own file as this
-				browser’s device holds it.
-			{:else}
-				No recipe entry in {nameOf(here)} that a page may build{source.refused.length ? '' : ' yet'}.
-			{/if}
-			{#if sealed}{count(sealed, 'more recipe entry', 'more recipe entries')} {nameOf(world.vaults.find((v) => v.id === actor))} doesn’t open.{/if}
-		</p>
+		{#if !recipes || sealed}
+			<p class="soft lead">
+				{#if !recipes}No recipe entry in {nameOf(here)} that a page may build{source.refused.length ? '' : ' yet'}.{/if}
+				{#if sealed}{count(sealed, 'more recipe entry', 'more recipe entries')} {nameOf(world.vaults.find((v) => v.id === actor))} doesn’t open.{/if}
+			</p>
+		{/if}
 		{#if source.refused.length}
 			<details class="refused">
 				<summary class="error">{count(source.refused.length, 'entry', 'entries')} refused: no page builds {source.refused.length === 1 ? 'it' : 'them'}</summary>

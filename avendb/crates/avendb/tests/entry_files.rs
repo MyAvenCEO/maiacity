@@ -327,6 +327,13 @@ fn an_assets_versions_and_variants_are_one_entry() {
     assert_eq!(made["line"], proposal, "{made}");
     assert_eq!(g.record(mac, e)["card"]["version"], Value::Null, "main holds version 1 till the merge");
     assert_eq!(g.w.lab.line_files(mac, e, MAIN), [(one, Some(one_len))]);
+    // before the merge, its file is read on its line (`get` with the line): what the line brings, main's first
+    let file = |root: FileRoot, len: u64| json!({ "root": BlobId(root.hash).to_hex(), "size": root.size, "len": len });
+    let on = |w: &mut World, d: SignerId, line: &Value| ok(run(w, d, &json!({ "op": "get", "entry": e_hex, "line": line })));
+    let got = on(&mut g.w, mac, &proposal);
+    assert_eq!(got["files"], json!([file(one, one_len), file(two, two_len)]), "{got}");
+    assert_eq!(got["record"]["card"]["version"], json!(2), "{got}");
+    assert_eq!(on(&mut g.w, mac, &Value::Null)["files"], json!([file(one, one_len)]), "main's alone");
     ok(run(&mut g.w, mac, &json!({ "op": "merge", "entry": e_hex, "from": proposal, "into": null })));
     assert_eq!(g.record(mac, e)["card"]["version"], json!(2), "main is version 2");
     assert_eq!(g.w.lab.line_files(mac, e, MAIN), [(one, Some(one_len)), (two, Some(two_len))]);
@@ -346,6 +353,9 @@ fn an_assets_versions_and_variants_are_one_entry() {
     let on_main = at(&Value::Null, card("Lamp", 3), 1, daves_vault);
     assert_eq!(refused(&engine::put_file(&mut g.w.lab, dave, &on_main, source("x"))), "NotAllowed");
     g.w.lab.sync_all(2);
+    // the vault reads Dave's file on his proposal before it accepts it, as its last
+    let got = on(&mut g.w, mac, &daves);
+    assert_eq!(got["files"].as_array().and_then(|fs| fs.last()), Some(&file(four, four_len)), "{got}");
     let merged = ok(run(&mut g.w, mac, &json!({ "op": "merge", "entry": e_hex, "from": daves, "into": null })));
     assert_eq!(merged["follows"][0]["line"], variant, "brass follows main: {merged}");
     let brass = source("brass v3 ");

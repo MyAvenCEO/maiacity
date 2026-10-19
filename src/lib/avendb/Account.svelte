@@ -42,6 +42,11 @@
 	/** how far the repo seed has come, the pieces written of those it is writing, while it writes them in the
 	 *  background: a corner pill shows it, and nothing waits for it */
 	let seedAt = $state(/** @type {{ done: number, of: number } | null} */ (null));
+	/** whether the device is copying the site's media into Maia City (./sitemedia-copy.js), the vaults it tried this
+	 *  visit, and how far it is, which the corner shows */
+	let copyingMedia = false;
+	const mediaTried = new Set();
+	let mediaAt = $state(/** @type {{ done: number, of: number } | null} */ (null));
 </script>
 
 <script>
@@ -55,6 +60,7 @@
 	import { FLOW, FLOWS, FUNCTION, FUNCTIONS } from './flows.js';
 	import { answer, refs } from './ops.js';
 	import { beside, seeding, seedPieces, unseeded } from './seed.js';
+	import { copySiteMedia, leftOut, siteLeft } from './sitemedia-copy.js';
 	import { capGroupOps } from './capgroups.js';
 	import { deviceName, relay as relayOf, server as serverOf } from './server.js';
 	import { asks, Here, here, session } from './session.svelte.js';
@@ -356,6 +362,26 @@
 				.finally(() => {
 					bringing = false;
 					seedAt = null;
+				});
+		}
+		// the site's media (./sitemedia-copy.js, Samuel 2026-10-19: "copy everything for me"): what Maia City lacks of
+		// the pictures, sounds and films the site shows from the old media vault, copied into it in the background once
+		// the seed's top-up is over (or another device brings it), once a visit, by any device of an owner; in the Mac
+		// app the private ones too, with its key
+		const seedOver = !bringing && (!first || seededInto.has(city?.id) || seedFailed.has(city?.id ?? ''));
+		const owns = !!city?.owners.some((o) => 'vault' in o && o.vault === mine?.id);
+		if (city && owns && seedOver && !copyingMedia && !mediaTried.has(city.id) && siteLeft(w, city.id).length) {
+			copyingMedia = true;
+			mediaTried.add(city.id);
+			copySiteMedia(session.api, w, city.id, city.id, (at) => (mediaAt = at))
+				.then((out) => {
+					const missed = leftOut(out);
+					if (missed) session.error = `Copying the site’s media into Maia City: ${missed}.`;
+				})
+				.catch((/** @type {Error} */ e) => (session.error = `Copying the site’s media into Maia City failed: ${plain(e.message)}`))
+				.finally(() => {
+					copyingMedia = false;
+					mediaAt = null;
 				});
 		}
 	}
@@ -671,6 +697,11 @@
 	<p class="seeding" role="status" title="Maia City’s seed: what the repository adds that Maia City never held, written in the background">
 		<span class="spin" aria-hidden="true"></span>
 		Bringing Maia City’s seed · {seedAt.done} of {seedAt.of}
+	</p>
+{:else if mediaAt && mediaAt.of}
+	<p class="seeding" role="status" title="The site’s pictures, sounds and films, copied from the old media vault into Maia City">
+		<span class="spin" aria-hidden="true"></span>
+		Copying the site’s media · {mediaAt.done} of {mediaAt.of}
 	</p>
 {/if}
 

@@ -1,13 +1,15 @@
 <!--
-	One avenDB AIP in the Proposals app: every line it bundles (a note, an asset, a view, a game config, any type of
-	entry), each with what it changes field by field as its schema reads it (the `aip` read's diff, derived, never
-	typed), the reviews so far, and what the person may do with it, acting as the vault the device says: promote an idea
+	One avenDB AIP in the Proposals app: the assets it proposes, in 3D, built from the files on their lines
+	($lib/avendb/ProposedAssets.svelte); then, in a section that opens, what it changes, a line per part, and every line
+	it bundles (a note, an asset, a view, a game config, any type of entry), each with what it changes field by field as
+	its schema reads it (the `aip` read's diff, derived, never typed); the reviews so far, and what the person may do with it, acting as the vault the device says: promote an idea
 	and withdraw it (its author or its vault), and accept, decline or ask for a revision of a proposed one (its vault
 	alone, and only that review counts). Accepting merges every line at once; a new entry's line (a draft) lands in main
 	only then, every field of it shown as added.
 -->
 <script>
 	// @ts-nocheck — plain JS
+	import ProposedAssets from '$lib/avendb/ProposedAssets.svelte';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import { acting, authorsLine, nameOf } from '$lib/avendb/vaults.js';
 	import { when } from './aips.js';
@@ -46,31 +48,42 @@
 	// a review names every line's heads as the page shows them, so a line written after it was drawn is never accepted unseen
 	const review = (what, verdict) => act(what, { op: 'aip_review', verdict, text, heads: shown.flatMap((l) => l.heads ?? []) });
 	const show = (v) => (v == null ? '—' : typeof v === 'string' ? v : JSON.stringify(v));
+	// the AIP and the version of its lines: its assets are read again when a line moves
+	const key = $derived(`${aip.entry ?? ''}/${aip.lines.map((l) => l.heads.join()).join(';')}`);
+	const readFile = (root, size, from, to) => session.api.readFile(root, size, from, to);
 	const VERDICT = { accepted: 'Accepted', declined: 'Declined', revise: 'Asked for a revision' };
 </script>
 
 <div class="av">
-	{#each shown as l, i (i)}
-		<section class="line">
-			<p class="head"><b>{l.title ?? l.name ?? 'An entry'}</b> <small>{l.type ?? 'entry'}{l.new ? ' · new' : ''}{l.merged ? ' · merged' : ''}{l.public && !l.merged ? ' · goes public on Accept' : ''}</small></p>
-			{#if l.diff?.length}
-				<ul class="diff">
-					{#each l.diff as d, j (j)}
-						<li class={d.kind}>
-							<span class="label">{d.label ?? d.path?.join(' › ')}</span>
-							{#if l.new}<span class="new">+ {show(d.new)}</span>
-							{:else if d.kind === 'text'}<span class="old">{show(d.old)}</span><span class="new">{show(d.new)}</span>
-							{:else if d.kind === 'add'}<span class="new">+ {show(d.new)}</span>
-							{:else if d.kind === 'remove'}<span class="old">− {show(d.old)}</span>
-							{:else}<span class="old">{show(d.old)}</span> → <span class="new">{show(d.new)}</span>{/if}
-						</li>
-					{/each}
-				</ul>
-			{:else if lines}
-				<p class="dim">No field changes against main.</p>
-			{/if}
-		</section>
-	{/each}
+	<ProposedAssets lines={aip.lines} ask={(op) => session.ask(op)} read={readFile} {key} />
+
+	<details class="changes">
+		<summary>What it changes <small>{shown.length} part{shown.length === 1 ? '' : 's'}</small></summary>
+		{#if a.changes.length}
+			<ul class="summary">{#each a.changes as c, i (i)}<li>{c}</li>{/each}</ul>
+		{/if}
+		{#each shown as l, i (i)}
+			<section class="line">
+				<p class="head"><b>{l.title ?? l.name ?? 'An entry'}</b> <small>{l.type ?? 'entry'}{l.new ? ' · new' : ''}{l.merged ? ' · merged' : ''}{l.public && !l.merged ? ' · goes public on Accept' : ''}</small></p>
+				{#if l.diff?.length}
+					<ul class="diff">
+						{#each l.diff as d, j (j)}
+							<li class={d.kind}>
+								<span class="label">{d.label ?? d.path?.join(' › ')}</span>
+								{#if l.new}<span class="new">+ {show(d.new)}</span>
+								{:else if d.kind === 'text'}<span class="old">{show(d.old)}</span><span class="new">{show(d.new)}</span>
+								{:else if d.kind === 'add'}<span class="new">+ {show(d.new)}</span>
+								{:else if d.kind === 'remove'}<span class="old">− {show(d.old)}</span>
+								{:else}<span class="old">{show(d.old)}</span> → <span class="new">{show(d.new)}</span>{/if}
+							</li>
+						{/each}
+					</ul>
+				{:else if lines}
+					<p class="dim">No field changes against main.</p>
+				{/if}
+			</section>
+		{/each}
+	</details>
 
 	{#if aip.links?.length}
 		<p class="links">{#each aip.links as l (l.id)}<a href={l.url} target="_blank" rel="noopener">{l.name || l.url} ↗</a>{/each}</p>
@@ -111,6 +124,24 @@
 <style>
 	.av {
 		font-size: 0.88rem;
+	}
+	.changes {
+		margin: 0.6rem 0;
+	}
+	.changes > summary {
+		cursor: pointer;
+		font-weight: 600;
+		color: #24452f;
+	}
+	.changes > summary small {
+		margin-left: 0.3rem;
+		font-weight: 400;
+		color: var(--muted);
+	}
+	.summary {
+		margin: 0.5rem 0;
+		padding-left: 1.1rem;
+		overflow-wrap: anywhere;
 	}
 	.line {
 		margin: 0.6rem 0;
