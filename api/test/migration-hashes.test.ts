@@ -1,6 +1,6 @@
 // Migration 0029 against real Postgres semantics (PGlite): a database as it was, naming its files by IPFS CID, comes out
-// naming each by its BLAKE3 hash — timelines, shots and their versions, the board and the render queue. The old library
-// tables are left as they were.
+// naming each by its BLAKE3 hash — timelines, shots and their versions, the board and the render queue (the shots and the
+// queue until 0052 drops them). The old library tables are left as they were.
 import { beforeAll, describe, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { useDb, type Db } from "../src/pg";
@@ -10,6 +10,8 @@ import { listContent } from "../src/content";
 import { normalize } from "../../game/film/shot.js";
 
 const at = MIGRATIONS.findIndex((m) => m.id === "0029-hashes-not-cids");
+// 0052 drops the studio tables this checks, so the migrations after 0029 run up to it, and it is checked last
+const drop = MIGRATIONS.findIndex((m) => m.id === "0052-drop-studio-1-and-genui");
 const [[C1, H1], [C2, H2], [C3, H3], [C4, H4]] = CID_MAP.slice(0, 4) as [string, string][];
 
 const dbOf = (pg: PGlite): Db => {
@@ -69,7 +71,7 @@ describe("0029: every CID becomes its hash", () => {
        JSON.stringify({ luts: { "odt-rec709": { cid: C3, hash: "aaaa", size: 65 } } })],
     );
     await pg.exec(MIGRATIONS[at]!.sql);
-    await pg.exec(MIGRATIONS.slice(at + 1).map((m) => m.sql).join(";\n"));
+    await pg.exec(MIGRATIONS.slice(at + 1, drop).map((m) => m.sql).join(";\n"));
     useDb(dbOf(pg));
   });
 
@@ -128,6 +130,15 @@ describe("0029: every CID becomes its hash", () => {
   test("nothing of the migration's own is left behind", async () => {
     expect((await pg.query("SELECT 1 FROM pg_class WHERE relname = 'cid_map'")).rows).toHaveLength(0);
     expect((await pg.query("SELECT 1 FROM pg_proc WHERE proname IN ('hashed', 'rekeyed', 'rehashed')")).rows).toHaveLength(0);
+  });
+
+  test("0052 drops Studio 1's shots and render queue and the Generated UI's views; the timelines and the board stay", async () => {
+    await pg.exec(MIGRATIONS.slice(drop).map((m) => m.sql).join(";\n"));
+    const { rows } = await pg.query<{ relname: string }>(
+      "SELECT relname FROM pg_class WHERE relkind = 'r' AND relname IN ('shots', 'shot_versions', 'render_jobs', 'genui_views', 'timelines', 'content_items')",
+    );
+    expect(rows.map((r) => r.relname).sort()).toEqual(["content_items", "timelines"]);
+    expect((await pg.query("SELECT 1 FROM timelines WHERE id = $1", [timeline])).rows).toHaveLength(1);
   });
 });
 
