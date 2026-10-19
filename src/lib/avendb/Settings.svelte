@@ -133,8 +133,16 @@
 	);
 	/** whether the vault has the master recovery key among its owners */
 	const recovers = $derived(v.owners.some((o) => 'signer' in o && o.recovery));
-	/** A signer owner, as the owners list labels it. @param {{ signer: string, recovery: boolean }} o */
-	const ownerLabel = (o) => (o.recovery ? 'Master recovery key' : o.signer === v.root ? 'Root passkey' : 'Passkey');
+	/** A signer owner, as the owners list labels it, by the kind of key it is: the master recovery key, the root
+	 *  passkey, a Mac's Touch ID key, another passkey. @param {{ signer: string, recovery: boolean, by: string | null }} o */
+	const ownerLabel = (o) =>
+		o.recovery
+			? 'Master recovery key'
+			: o.signer === v.root
+				? 'Root passkey'
+				: o.by === 'touch'
+					? 'Mac Touch ID key'
+					: 'Passkey';
 	/** the vault itself and the vaults that own it: each holds all of it */
 	const owners = $derived(
 		[v, ...v.owners.flatMap((o) => ('vault' in o ? [byId.get(o.vault)] : []))].filter((x) => !!x)
@@ -636,7 +644,7 @@
 										<b>{nameOf(byId.get(o.vault))}</b>
 										<span class="soft">{KINDS[byId.get(o.vault)?.kind ?? 'human']}</span>
 									{:else}
-										<span class="key">{o.recovery ? '🛟' : '🔑'}</span>
+										<span class="key">{o.recovery ? '🛟' : o.by === 'touch' ? '👆' : '🔑'}</span>
 										<b>{ownerLabel(o)}</b>
 										<span class="soft mono">{short(o.signer)}</span>
 									{/if}

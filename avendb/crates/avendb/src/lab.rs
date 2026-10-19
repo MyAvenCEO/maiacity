@@ -853,6 +853,25 @@ impl Lab {
         self.keys.get(&s).map(Key::keys)
     }
 
+    /// The public keys of each signer of `signers` that device `d` knows: at hand (`keys_of`), or else as a signature
+    /// it holds brings them. A signer it never saw sign is left out.
+    pub fn signers_seen(&self, d: SignerId, signers: &BTreeSet<SignerId>) -> BTreeMap<SignerId, SignerKeys> {
+        let mut out: BTreeMap<SignerId, SignerKeys> =
+            signers.iter().filter_map(|&s| Some((s, self.keys_of(s)?))).collect();
+        if out.len() < signers.len() {
+            for sig in self.held(d).signed.values().flat_map(|s| &s.sigs) {
+                let s = sig.keys.id();
+                if signers.contains(&s) && !out.contains_key(&s) {
+                    out.insert(s, sig.keys.clone());
+                    if out.len() == signers.len() {
+                        break;
+                    }
+                }
+            }
+        }
+        out
+    }
+
     fn add_device(&mut self, key: DeviceKey, name: &str) -> SignerId {
         key.seal_secret().prepare();
         let id = key.id();
