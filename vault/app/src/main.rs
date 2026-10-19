@@ -9,6 +9,7 @@ mod auth;
 mod aven;
 mod avendb;
 mod blob;
+mod enclave;
 mod jobs;
 mod models;
 mod page;
@@ -387,6 +388,7 @@ fn main() {
             auth::api,
             passkey::passkey_sheet,
             avendb::avendb,
+            enclave::avendb_touch_ready,
             aven::studio_ingest,
             aven::studio_job,
             aven::studio_import,

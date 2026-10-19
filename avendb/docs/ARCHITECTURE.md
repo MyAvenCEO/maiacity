@@ -1636,6 +1636,10 @@ stays its root (spec: `Examples.touch`, `tests/touch_id.rs`).
 - **What stays on the Mac.** The Enclave's blobs of both keys and the ciphertext are in `Meta::touch`. Only that
   Enclave reads them, and only after a touch. `touchOff` forgets them. The vault's owners revoke the key like any
   owner, from any device (the `revoke` op). A Mac whose fingers changed falls back to the passkey.
+- **The app's side.** The device asks for each touch in a line `{"enclave": n, ...}`, as it asks for a sheet. The OS
+  answers it with CryptoKit in Swift (vault/app/enclave/Enclave.swift, linked in by build.rs; vault/app/src/enclave.rs).
+  The touch that makes the keys also covers the edit that adds them, so setup takes one touch beside the passkey.
+  `vault/app/scripts/enclave-check.sh` checks the bridge on a Mac without building the app.
 
 **A device's secure boundary.** Nothing on disk, in a view, in a log line or in a debug print holds a secret: a node's
 store holds signed edits and McEliece public keys, and a key prints as its id. The server's device secret is the one
