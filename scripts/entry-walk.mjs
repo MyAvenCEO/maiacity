@@ -272,6 +272,11 @@ try {
 	const link = made ? await a.page.$eval('input.invited', (i) => i.value) : '';
 	check('the super admin makes an invite link to a traveler, its share and key after its #', /\/join\/\?invite=\w+#share=[0-9a-f]{64}&key=[0-9a-f]{64}$/.test(link), link);
 	await shot(a.page, '06-invite');
+	// the seed writes hundreds of entries in the background after the founding, which the server takes in turn: the
+	// invite reaches it once they did, as the admin's app shows the seed done
+	const seeded = Date.now();
+	await until(async () => !(await a.page.$('p.seeding')), 900000);
+	console.log(`  (the seed was done ${Math.round((Date.now() - seeded) / 1000)} s after the invite)`);
 
 	// 4. invite only: without one, the join page offers none; with the admin's, a second person signs up, once, while
 	// the admin's app is open still, so the server holds the invite their device made
