@@ -104,43 +104,75 @@ describe('loaded entries', () => {
 });
 
 describe('loading', () => {
-	const reply = (status, body) => async () => ({ ok: status === 200, status, json: async () => body });
-	test('takes what the feed hands out', async () => {
-		const r = await loadCode({ url: 'https://feed.example/code', fetch: reply(200, { code: rowsOf([ENTRIES['views/view-holders']]).map((r) => ({ ...r, seed: 'Maia City' })) }) });
+	/** where the test's proof is, as avenDB's server serves one */
+	const AT = 'https://feed.example/feed/proof';
+	/**
+	 * A feed that hands out `rows` as its proof's bytes, tagged `tag`, or answers `status`: what the stand-in below
+	 * reads back (./proof.test.js holds avenDB's own WebAssembly to refusing what is no proof).
+	 */
+	const proof = (rows, { status = 200, tag = '"one"' } = {}) => {
+		const asked = [];
+		const get = async (url, o) => (asked.push([url, o?.headers ?? {}]), new Response(status === 200 ? JSON.stringify(rows) : 'down', { status, headers: { etag: tag } }));
+		return { get, asked };
+	};
+	/** a stand-in for avenDB's WebAssembly that reads the test's rows back as proven, counting what it is asked */
+	const proved = [];
+	const trusting = async (bytes, vault, kinds) => (proved.push([vault, kinds]), JSON.parse(new TextDecoder().decode(bytes)));
+	/** where what was proved is kept: one of the test's own */
+	const keep = () => {
+		const kept = new Map();
+		return { get: (k) => kept.get(k), put: (k, v) => kept.set(k, v), kept };
+	};
+	const load = (f, o) => loadCode({ url: AT, vault: VAULT, fetch: f.get, verify: trusting, keep: keep(), ...o });
+	test('takes what the proof proves, anchored to Maia City by its id', async () => {
+		proved.length = 0;
+		const r = await load(proof(rowsOf([ENTRIES['views/view-holders']])));
 		expect(r).toEqual({ taken: ['views/view-holders'], refused: [] });
 		expect(codeAt('views/view-holders').source).toBe('avendb');
+		expect(proved).toEqual([[VAULT, ['view', 'logic', 'config']]]);
 	});
-	test("a feed handing out code of a vault that is not the seed's Maia City is not taken", async () => {
-		const r = await loadCode({ url: 'https://feed.example/code', fetch: reply(200, { code: rowsOf([ENTRIES['views/view-holders']]).map((r) => ({ ...r, seed: null })) }) });
-		expect(r).toEqual({ error: "https://feed.example/code handed out code of a vault that is not the seed's Maia City" });
-		expect(await loadCode({ url: 'https://feed.example/code', fetch: reply(200, { posts: [] }) })).toEqual({ error: 'https://feed.example/code answered no rows' });
-		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
+	test('a proof checked once is kept by its tag: the same proof again runs no check, a new one is checked', async () => {
+		const kept = keep();
+		const f = proof(rowsOf([ENTRIES['views/view-holders']]));
+		proved.length = 0;
+		await load(f, { keep: kept });
+		expect([...kept.kept.values()]).toEqual([{ tag: '"one"', rows: rowsOf([ENTRIES['views/view-holders']]) }]);
+		// the API asks by the tag (a page's browser does it itself); unchanged, the server says so
+		expect(f.asked[0][1]).toEqual({});
+		const unchanged = { get: async (url, o) => (f.asked.push([url, o?.headers ?? {}]), new Response(null, { status: 304, headers: { etag: '"one"' } })) };
+		expect(await load(unchanged, { keep: kept })).toEqual({ taken: ['views/view-holders'], refused: [] });
+		expect(f.asked[1][1]).toEqual({ 'if-none-match': '"one"' });
+		expect(proved.length).toBe(1);
+		// a 304 for a proof this device never checked is no proof
+		expect(await load(unchanged)).toEqual({ error: `${AT} answered 304` });
+		const newer = proof(rowsOf([ENTRIES['views/coop-chart']]), { tag: '"two"' });
+		expect(await load(newer, { keep: kept })).toEqual({ taken: ['views/coop-chart'], refused: [] });
+		expect(proved.length).toBe(2);
 	});
-	test('a feed handing out code of more than one vault is not taken', async () => {
-		const other = { ...rowsOf([ENTRIES['views/coop-chart']])[0], vault: 'b'.repeat(64) };
-		const r = await loadCode({ url: 'https://feed.example/code', fetch: reply(200, [...rowsOf([ENTRIES['views/view-holders']]), other]) });
-		expect(r).toEqual({ error: 'https://feed.example/code handed out code of more than one vault' });
+	test("rows of another vault than Maia City's are not taken, whatever they call themselves", async () => {
+		const other = { ...rowsOf([ENTRIES['views/coop-chart']])[0], vault: 'b'.repeat(64), seed: 'Maia City' };
+		const r = await load(proof([...rowsOf([ENTRIES['views/view-holders']]), other]));
+		expect(r).toEqual({ error: `the proof at ${AT} proved code of another vault than Maia City's` });
 		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
 	});
 	test('no feed, or no network: the seed stays, and nothing throws', async () => {
-		expect(await loadCode({ url: 'https://feed.example/code', fetch: reply(404, {}) })).toEqual({ error: 'https://feed.example/code answered 404' });
-		expect(await loadCode({ url: 'https://feed.example/code', fetch: async () => { throw new Error('offline'); } })).toEqual({ error: 'offline' });
+		expect(await load(proof([], { status: 404 }))).toEqual({ error: `${AT} answered 404` });
+		expect(await load({ get: async () => { throw new Error('offline'); } })).toEqual({ error: `the proof at ${AT} doesn't check out: offline` });
 		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
 	});
-	test('an empty feed (a vault reset and not seeded yet): the seed runs', async () => {
-		expect(await loadCode({ url: 'https://feed.example/code', fetch: reply(200, { code: [] }) })).toEqual({ taken: [], refused: [] });
+	test('an empty vault (one reset and not seeded yet): the seed runs', async () => {
+		expect(await load(proof([]))).toEqual({ taken: [], refused: [] });
 		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
 	});
-	test("the live feed is read for the seed's views and logic modules; switched off, nothing is asked and the seed runs", async () => {
-		expect(feedOf()).toBe('https://avendb.maia.city/feed/code?seed=1&type=view,logic,config');
-		expect(feedOf('http://avendb:3351/feed/code')).toBe('http://avendb:3351/feed/code?seed=1&type=view,logic,config');
+	test("the live feed's proof is read for Maia City's views, logic modules and configs; switched off, nothing is asked and the seed runs", async () => {
+		expect(feedOf('https://avendb.maia.city/feed/code', VAULT)).toBe(`https://avendb.maia.city/feed/proof?vault=${VAULT}&type=view,logic,config`);
+		expect(feedOf('http://avendb:3351/feed/code', VAULT)).toBe(`http://avendb:3351/feed/proof?vault=${VAULT}&type=view,logic,config`);
 		expect(avendb.on).toBe(true);
 		avendb.on = false;
 		try {
-			let asked = false;
-			const fetch = async () => ((asked = true), { ok: true, status: 200, json: async () => ({ code: [] }) });
-			expect(await loadCode({ url: 'https://feed.example/code', fetch })).toEqual({ error: 'code from avenDB is switched off' });
-			expect(asked).toBe(false);
+			const f = proof([]);
+			expect(await load(f)).toEqual({ error: 'code from avenDB is switched off' });
+			expect(f.asked).toEqual([]);
 		} finally {
 			avendb.on = true;
 		}

@@ -469,6 +469,43 @@ export function prfSalt() {
 }
 
 /**
+ * The rows of the public code of kinds `kinds` (a comma-separated list: `view,logic,config`, `recipe`) of vault
+ * `vault`, its id in 64 hex digits, that the proof `bytes` proves, as JSON text: an array of rows shaped as
+ * `/feed/code` serves them, `seed` null in each (`avendb::provenance::verify`). A device of no vault, made for the
+ * call, takes the edits as every device takes a sync reply, each signature checked and every rule replayed, and reads
+ * back those of that vault alone. Throws why, for a vault that is no id, bytes that are no reply, or a reply that
+ * proves no vault of that id.
+ * @param {Uint8Array} bytes
+ * @param {string} vault
+ * @param {string} kinds
+ * @returns {string}
+ */
+export function provenCode(bytes, vault, kinds) {
+    let deferred5_0;
+    let deferred5_1;
+    try {
+        const ptr0 = passArray8ToWasm0(bytes, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(vault, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(kinds, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.provenCode(ptr0, len0, ptr1, len1, ptr2, len2);
+        var ptr4 = ret[0];
+        var len4 = ret[1];
+        if (ret[3]) {
+            ptr4 = 0; len4 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred5_0 = ptr4;
+        deferred5_1 = len4;
+        return getStringFromWasm0(ptr4, len4);
+    } finally {
+        wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
+    }
+}
+
+/**
  * `text` as a QR code, an SVG image at least `size` pixels wide: a device's code, or the link that carries it, for the
  * next device's camera. The code's base32 goes in the QR code's compact alphanumeric mode.
  * @param {string} text
@@ -1123,7 +1160,7 @@ function __wbg_get_imports() {
             return ret;
         },
         __wbindgen_generic_0000000000000002: function(arg0, arg1) {
-            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 5685, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
+            // Cast intrinsic for `Closure(Closure { owned: true, function: Function { arguments: [Externref], shim_idx: 5686, ret: Result(Unit), inner_ret: Some(Result(Unit)) }, mutable: true }) -> Externref`.
             const ret = makeMutClosure(arg0, arg1, wasm_bindgen_1b01b22b89dc28df___convert__closures_____invoke___wasm_bindgen_1b01b22b89dc28df___JsValue__core_37ee0ce0c4cd57d5___result__Result_____wasm_bindgen_1b01b22b89dc28df___JsError___true_);
             return ret;
         },

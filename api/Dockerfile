@@ -11,6 +11,9 @@ COPY code /app/code
 # its modules resolve node_modules from /app upward, so the API's are linked there, and engines.json sits where the repo keeps it
 RUN ln -s /app/api/node_modules /app/node_modules
 COPY src/lib/sandbox/engines.json /app/src/lib/sandbox/engines.json
+# avenDB's WebAssembly, the page's device module, which checks the proof of the code the API runs (H2:
+# game/code/sources/feed.js `verifyProof`)
+COPY src/lib/avendb/device/avendb_browser.js src/lib/avendb/device/avendb_browser_bg.wasm /app/src/lib/avendb/device/
 ENV PORT=3000
 EXPOSE 3000
 CMD ["bun", "src/index.ts"]

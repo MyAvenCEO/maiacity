@@ -1,7 +1,8 @@
 // @ts-nocheck — plain JS
 // Every page builds its assets from the Maia City vault's recipes (./vault.js; V5 of the avenDB migration, Samuel
 // 2026-10-17, "Ok do it!", with no repo fallback): the index, `hashOf`, `recipeAt` and the cards from the vault's
-// `recipe` rows on avenDB's feed (`seed=1`, one vault, the seed's), each recipe's file fetched only when this device's
+// `recipe` rows as its own signed edits prove them (`/feed/proof`, anchored to Maia City's vault id, H2; avenDB's
+// WebAssembly checks them, and a stand-in here reads the test's rows back), each recipe's file fetched only when this device's
 // cache lacks the build, held to its hash. A ref names the same build, page and cache key as the repo's index named; a
 // recipe the vault doesn't hold, or holds otherwise, and a feed that can't be reached, fail, naming the ref. The feed here
 // is the dev server's stand-in made from the repo (./sources/devfeed.js) behind a fetch of the test's own, so this runs
@@ -42,13 +43,13 @@ const { cardOf } = await import('./card.js');
 const { bake } = await import('./box/bake.js');
 const { catalogOf, viewOf } = await import('./box/view.js');
 const { serialize } = await import('./box/serialize.js');
-const { CODE_FEED, fileOf, seedFeedOf } = await import('../../../game/code/sources/feed.js');
+const { CODE_FEED, fileOf, proofOf, seedFeedOf, verifyProof } = await import('../../../game/code/sources/feed.js');
 
 /** the stand-in for the vault's feed, made from the repo as the seed writes it */
 const FEED = devFeedOf(made, CARDS);
 /** where the test's feed is: as avenDB's server's, at another address */
 const AT = 'https://feed.example/feed/code';
-const ROWS_URL = `${AT}?seed=1&type=recipe`;
+const ROWS_URL = `https://feed.example/feed/proof?vault=${DEV_VAULT}&type=recipe`;
 const LABEL = made.index.labels;
 /** each recipe's file, by its hash, as the box plugin makes it */
 const FILES = Object.fromEntries(Object.entries(made.index.recipes).map(([hash, at]) => [hash, recipeFile(made.libraries[`${at.group}/${at.id}`], at.id, at.v, at.variant)]));
@@ -56,8 +57,9 @@ const FILES = Object.fromEntries(Object.entries(made.index.recipes).map(([hash, 
 const rowAt = (label) => FEED.rows.find((r) => r.record.card.recipe === LABEL[label]);
 
 /**
- * A feed as avenDB's server serves one, as a fetch: `<AT>?…` the rows, `{ code }`, and each row's newest file at
- * `…/feed/entry/<vault>/<entry>/file`, counting what is asked of it. `status` is how the rows are answered.
+ * A feed as avenDB's server serves one, as a fetch: `…/feed/proof?…` the proof of the rows, here the rows as JSON,
+ * which `trusting` reads back, and each row's newest file at `…/feed/entry/<vault>/<entry>/file`, counting what is
+ * asked of it. `status` is how the proof is answered.
  */
 function feedOf({ rows = FEED.rows, files = FEED.files, status = 200, throws = null } = {}) {
 	const asked = [];
@@ -65,7 +67,7 @@ function feedOf({ rows = FEED.rows, files = FEED.files, status = 200, throws = n
 		asked.push(url);
 		if (throws) throw new Error(throws);
 		const u = new URL(url);
-		if (u.pathname === '/feed/code') return status === 200 ? Response.json({ code: rows }) : new Response('down', { status });
+		if (u.pathname === '/feed/proof') return status === 200 ? new Response(JSON.stringify(rows)) : new Response('down', { status });
 		const m = /^\/feed\/entry\/([0-9a-f]{64})\/([0-9a-f]{64})\/file$/.exec(u.pathname);
 		const bytes = m && u.searchParams.get('seed') === '1' && rows.some((r) => r.vault === m[1] && r.entry === m[2]) ? files.get(m[2]) : undefined;
 		return bytes ? new Response(bytes, { headers: { 'content-type': 'text/plain; charset=utf-8' } }) : new Response('not found', { status: 404 });
@@ -73,10 +75,20 @@ function feedOf({ rows = FEED.rows, files = FEED.files, status = 200, throws = n
 	return { get, asked, files: () => asked.filter((u) => u.includes('/file')) };
 }
 
+/**
+ * A stand-in for avenDB's WebAssembly (game/code/sources/feed.js `verifyProof`) that reads the test's rows back as
+ * proven: what the loader does with proven rows is under test here; that only a proof proves any is avenDB's
+ * (avendb/crates/avendb/tests/provenance.rs), and that the loader takes nothing else, below and ../code/proof.test.js.
+ */
+const trusting = async (bytes) => JSON.parse(new TextDecoder().decode(bytes));
+/** how the test's loads prove their rows: anchored to the stand-in's vault, by the stand-in */
+const PROVING = { vault: DEV_VAULT, verify: trusting };
+
 /** the vault's recipes loaded from a feed of the test's own (`kept`: where the files are kept on the device) */
 const loaded = (o) => {
 	const f = feedOf(o);
-	return vault.loadRecipes({ feed: AT, fetch: f.get, timeout: 1000, ...(o?.kept ? { kept: o.kept } : {}) }).then((r) => ({ ...f, r }));
+	const proving = { ...PROVING, ...(o?.vault !== undefined ? { vault: o.vault } : {}), ...(o?.verify ? { verify: o.verify } : {}) };
+	return vault.loadRecipes({ feed: AT, fetch: f.get, timeout: 1000, ...proving, ...(o?.kept ? { kept: o.kept } : {}) }).then((r) => ({ ...f, r }));
 };
 
 /** what `f` threw or rejected with, or null */
@@ -136,9 +148,10 @@ const repoKey = (hash, params) => {
 	return cache.keyOf({ engine: engineAt(made.index.engine).blake3, recipe: hash, params: at.params?.length ? valuesOf(at.params, params) : undefined });
 };
 
-test("a page reads avenDB's own feed, the seed's Maia City and its recipes alone; the dev feed never in a build", () => {
+test("a page reads avenDB's own feed, the proof of Maia City's recipes by its id; the dev feed never in a build", () => {
 	expect(vault.feedOf()).toBe(CODE_FEED);
 	expect(CODE_FEED).toBe('https://avendb.maia.city/feed/code');
+	expect(proofOf(['recipe'], { vault: DEV_VAULT })).toBe(`https://avendb.maia.city/feed/proof?vault=${DEV_VAULT}&type=recipe`);
 	expect(seedFeedOf(['recipe'])).toBe('https://avendb.maia.city/feed/code?seed=1&type=recipe');
 	const [v, e] = ['ab'.repeat(32), 'cd'.repeat(32)];
 	expect(fileOf(v, e)).toBe(`https://avendb.maia.city/feed/entry/${v}/${e}/file?seed=1`);
@@ -354,9 +367,13 @@ test("a feed that can't be reached, or answers otherwise, fails the page, naming
 		return r;
 	};
 	await down({ status: 503 }, new RegExp(`^the asset recipes could not be loaded from the Maia City vault: ${ROWS_URL.replace(/[?.]/g, '\\$&')} answered 503$`));
-	await down({ throws: 'offline' }, /could not be loaded from the Maia City vault: offline$/);
-	await down({ rows: [...FEED.rows.slice(0, 3), { ...FEED.rows[3], vault: 'ef'.repeat(32) }] }, /handed out code of more than one vault/);
-	await down({ rows: FEED.rows.map((x) => ({ ...x, seed: 'Maia Town' })) }, /handed out code of a vault that is not the seed's Maia City/);
+	await down({ throws: 'offline' }, /could not be loaded from the Maia City vault: the proof at .* doesn't check out: offline$/);
+	await down({ rows: [...FEED.rows.slice(0, 3), { ...FEED.rows[3], vault: 'ef'.repeat(32) }] }, /proved code of another vault than Maia City's/);
+	// no anchor: nothing is taken from the feed at all
+	const unset = await down({ vault: '' }, /Maia City's vault id is not set \(MAIA_CITY/);
+	expect(unset.feed).toBe('https://feed.example/feed/proof?vault=&type=recipe');
+	// the rows handed out as they are, unproven: avenDB's own WebAssembly takes them for no proof, and nothing is built
+	await down({ verify: verifyProof }, /doesn't check out: what the server handed out is no avenDB reply/);
 	await down({ rows: [] }, /^the Maia City vault holds no asset recipes yet: .* listed none$/);
 	await down({ rows: FEED.rows.map((x) => changed(x, (c) => (c.record.engine.version = 1))) }, /holds no asset recipes yet: .* listed 327 entries, none of them one \(.*made for box engine 1/);
 	// and once it answers, the page asks again and builds
@@ -391,7 +408,7 @@ test("a world's files are read a few at a time, and one the network drops, or th
 		}
 	};
 	const none = { get: async () => undefined, put: async () => true };
-	await vault.loadRecipes({ feed: AT, fetch: get, timeout: 1000, kept: none, again: [0, 0] });
+	await vault.loadRecipes({ feed: AT, fetch: get, timeout: 1000, kept: none, again: [0, 0], ...PROVING });
 	const hashes = Object.keys(made.index.recipes).filter((h) => made.index.recipes[h].group === 'plants');
 	const asked = [...hashes, LABEL['things/bell-tent@1']];
 	const got = await Promise.all(asked.map((h) => vault.recipeAt(h)));
@@ -408,7 +425,7 @@ test("a world's files are read a few at a time, and one the network drops, or th
 	expect(tries.get(ant)).toBe(3);
 	// a file the server hasn't got is no passing failure: asked once
 	const lost = feedOf({ files: new Map([...FEED.files].filter(([e]) => e !== tent)) });
-	await vault.loadRecipes({ feed: AT, fetch: lost.get, timeout: 1000, kept: none, again: [0, 0] });
+	await vault.loadRecipes({ feed: AT, fetch: lost.get, timeout: 1000, kept: none, again: [0, 0], ...PROVING });
 	expect((await thrown(() => vault.recipeAt(LABEL['things/bell-tent@1']))).message).toMatch(/answered 404\)$/);
 	expect(lost.files().length).toBe(1);
 });

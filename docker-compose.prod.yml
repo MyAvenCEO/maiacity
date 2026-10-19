@@ -21,6 +21,9 @@ services:
       # avenDB's feed of code, read inside the compose network (avendb.maia.city takes only
       # post-quantum TLS)
       AVENDB_FEED: http://avendb:3351/feed/code
+      # Maia City's vault id, 64 hex digits: the code the API runs is what its signed edits prove (H2,
+      # game/code/sources/feed.js MAIA_CITY); unset, the API runs the repo's seed
+      MAIA_CITY: ${MAIA_CITY:-}
 
   # the vault's peer: its image from GHCR; UDP 7400 open to the Macs, the relay and gateway only through Caddy
   vault:

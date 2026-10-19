@@ -36,6 +36,7 @@
 //! | Bootstrap | `recovery`: the master recovery key, a passkey kept in software that every human vault adds as an owner while avenDB is bootstrapped, for emergencies; its public half as a file; `bin/master-key`, which makes it | |
 //! | V2 one API | `engine`: every read and change the page and the Mac app make as one op, shares, keeps, revocations, settings, new vaults, files, marks, cards and profiles too, each answered done, refused or to approve, and `may` of each; `world`, `words`, `data`: a device's world, its names for the core's words, its database and its history as the page reads them | |
 //! | CG cap groups and the gate | `rules`: a cap group, a name, caps (an op over a slice each) and the groups it includes, an entry of its vault, versioned; `policy`: a share that names a cap group, judged by the version in force where each write comes, an invite key a newcomer's vault claims once (`Action::Claim`); `gate`: what a server takes of a batch, a new person's vault only with the invite it claims, a coop or an aven only an admin's; `engine`: `cap_groups`, `define_group`, `redefine_group`, `share_group` | CG1, G1, G2 |
+//! | H2 provenance | `provenance`: the proof of a vault's public code, of what a stranger that follows it may receive (`sync::answer`), as one reply; an observer, a device of no vault anchored to the vault by its id, that takes it as any reply and reads back the rows the feed serves, and holds a file to the write that brought it | T12 |
 
 pub mod aip;
 pub mod backup;
@@ -54,6 +55,7 @@ pub mod lens;
 pub mod merge;
 pub mod ops;
 pub mod policy;
+pub mod provenance;
 pub mod recovery;
 pub mod rules;
 pub mod scenarios;

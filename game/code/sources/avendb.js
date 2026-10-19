@@ -14,10 +14,12 @@
  *
  * The loader (../index.js) reads them through this source once they are loaded (`loadCode`), and the repo's code/ is
  * the seed: what every page and the API run offline, before the first load, and for any path the vault does not hold.
- * Each entry comes back in the repo entry's own shape ({ ref, type, for, title, ..., files, hash }), with its vault,
- * entry and heads beside, checked by the one checker and held to an engine version the repo ships; what fails either
- * is left out and the seed's stays. Nothing here writes: `copyOf` makes the one batch the vault's owner runs to copy
- * the repo in.
+ * What is loaded is what Maia City's own signed edits prove, checked by avenDB's WebAssembly where it runs, and nothing
+ * the server says otherwise (H2, ./feed.js `provenRows`): a proof that doesn't check out loads nothing, and the seed
+ * runs, as offline. Each entry comes back in the repo entry's own shape ({ ref, type, for, title, ..., files, hash }),
+ * with its vault, entry and heads beside, checked by the one checker and held to an engine version the repo ships;
+ * what fails either is left out and the seed's stays. Nothing here writes: `copyOf` makes the one batch the vault's
+ * owner runs to copy the repo in.
  *
  * A ref `vault:<vault id>/<entry id>@<heads>` names one entry at one version, as avenDB pins one: it is served only
  * while the loaded entry is at those heads.
@@ -27,7 +29,7 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import { canonical, jsonFile } from '../files.js';
 import { checkCode } from '../check.js';
 import { ENTRIES as SEED } from '../../../code/index.js';
-import { CODE_FEED, seedFeedOf, seedRows } from './feed.js';
+import { CODE_FEED, MAIA_CITY, proofOf, provenRows } from './feed.js';
 import ENGINES from '../../../src/lib/sandbox/engines.json' with { type: 'json' };
 
 /** the kinds of code entry this source carries, and the host each runs in */
@@ -40,9 +42,9 @@ export const AVENDB_REF = /^vault:([A-Za-z0-9_-]{8,128})\/([A-Za-z0-9_-]{8,128})
 /** where avenDB's server serves public code entries (its feed, as /feed/posts serves posts): { code: [row] } */
 export { CODE_FEED };
 
-/** the code entries the loader reads there: views and logic modules of the server's own seed's Maia City vault, which
- * the server names by where it sits in the seed it was founded with (`seed=1`), never by its name (./feed.js) */
-export const feedOf = (feed = CODE_FEED) => seedFeedOf(KINDS, feed);
+/** where the loader reads the code entries: the proof of the views, logic modules and configs of Maia City's vault,
+ * named by its id (./feed.js `MAIA_CITY`), never by its name nor by the server's say; `feed` where /feed/code is */
+export const feedOf = (feed = CODE_FEED, vault = MAIA_CITY) => proofOf(KINDS, { vault, feed });
 
 const PATH = /^(views|logic|configs)\/[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*$/;
 
@@ -190,13 +192,15 @@ export const avendb = {
 };
 
 /**
- * Load the vault's code entries from the server's feed: { taken, refused } or { error } (offline, a feed that answers
- * something else), and on any failure what was loaded before stays, else the seed. `viewOf` is ../index.js
- * `viewOfEntry`; `url` the feed's query (`feedOf`), on the API the server's own feed inside (AVENDB_FEED).
+ * Load the vault's code entries, as Maia City's own signed edits prove them (H2, ./feed.js `provenRows`): { taken,
+ * refused } or { error } (no anchor, offline, a proof that doesn't check out), and on any failure what was loaded
+ * before stays, else the seed: never a row the proof didn't prove. `viewOf` is ../index.js `viewOfEntry`; `feed` where
+ * /feed/code is, on the API the server's own feed inside (AVENDB_FEED); `vault` the anchor, Maia City's id
+ * (`MAIA_CITY`); `url` the proof's address (`feedOf`); `verify` and `keep` as `provenRows` takes them (a test's).
  */
-export async function loadCode(viewOf, { url = feedOf(), fetch: get = globalThis.fetch, timeout = 4000 } = {}) {
+export async function loadCode(viewOf, { feed = CODE_FEED, vault = MAIA_CITY, url = feedOf(feed, vault), fetch: get = globalThis.fetch, timeout = 4000, verify, keep } = {}) {
 	if (!avendb.on) return { error: 'code from avenDB is switched off' };
-	const got = await seedRows(url, { fetch: get, timeout });
+	const got = await provenRows(url, { vault, kinds: KINDS, fetch: get, timeout, ...(verify ? { verify } : {}), ...(keep ? { keep } : {}) });
 	return 'error' in got ? got : avendb.use(got.rows, viewOf);
 }
 

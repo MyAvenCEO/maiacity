@@ -19,6 +19,7 @@ use avendb::id::{SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::policy::{Action, Kind, Level, Principal, Revoking};
+use avendb::provenance::{self, Unproven};
 use avendb::sign::{PASS_LIFE, Passkey, Suite};
 use avendb::slice::Selector;
 use avendb::{engine, lens, world};
@@ -473,8 +474,45 @@ async fn the_server_serves_the_code_everyone_reads_and_maia_citys_alone_for_seed
         let (head, body) = http(addr, "GET", &path).await;
         assert!(head.starts_with("http/1.1 404") && body.starts_with(r#"{"error":"#), "{why}: {head}");
     }
+    // the proof of Maia City's code (H2): an observer anchored to Maia City by its id reads off it the code the feed
+    // lists, as the feed lists it, and nothing of the other coop that calls itself Maia City; asked again with its tag,
+    // it hasn't changed; and a proof is of one vault, which a query names
+    let (head, proof) = fetched(addr, "/feed/proof?seed=1&type=view,logic", None).await;
+    assert!(head.starts_with("http/1.1 200") && head.contains("content-type: application/octet-stream"), "{head}");
+    let tag = head.lines().find_map(|l| l.strip_prefix("etag: ")).expect("its tag").to_string();
+    let proven = provenance::verify(&proof, city, &world::CODE_KINDS).expect("it proves Maia City's code");
+    let fields = |r: &Value| ["entry", "vault", "type", "schema", "tags", "heads", "record"].map(|f| r[f].clone());
+    let listed: Vec<_> = ours["code"].as_array().expect("its rows").iter().map(fields).collect();
+    assert_eq!(proven.iter().map(fields).collect::<Vec<_>>(), listed, "the rows the feed lists");
+    assert_eq!(provenance::verify(&proof, fake, &world::CODE_KINDS), Err(Unproven::NoVault), "nothing of the other");
+    let (head, again) = fetched(addr, "/feed/proof?seed=1&type=view,logic", Some(&tag)).await;
+    assert!(head.starts_with("http/1.1 304") && again.is_empty(), "{head}");
+    let (_, by_id) = fetched(addr, &format!("/feed/proof?vault={}&kind=logic,view", city.to_hex()), None).await;
+    assert_eq!(by_id, proof, "the same proof, by Maia City's id");
+    let (_, theirs) = fetched(addr, &format!("/feed/proof?vault={}", fake.to_hex()), None).await;
+    let theirs = provenance::verify(&theirs, fake, &world::CODE_KINDS).expect("it proves the other coop's code");
+    assert_eq!(theirs.iter().map(|r| r["entry"].clone()).collect::<Vec<_>>(), [json!(views[1])]);
+    let bad = ["/feed/proof", "/feed/proof?type=view", "/feed/proof?seed=1&entry=ab", "/feed/proof?seed=1&type=story"];
+    for path in bad {
+        let (head, _) = fetched(addr, path, None).await;
+        assert!(head.starts_with("http/1.1 400"), "{path}: {head}");
+    }
     mac.shutdown().await.expect("Alice's Mac stops");
     started.shutdown().await.expect("the server stops");
+}
+
+/// What the server at `addr` answers a plain HTTP/1.1 GET of `path`, with `If-None-Match` `tag` where one is given:
+/// its head, lower case, and its body, as bytes.
+async fn fetched(addr: SocketAddr, path: &str, tag: Option<&str>) -> (String, Vec<u8>) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = tokio::net::TcpStream::connect(addr).await.expect("the feed's socket");
+    let tag = tag.map(|t| format!("If-None-Match: {t}\r\n")).unwrap_or_default();
+    let request = format!("GET {path} HTTP/1.1\r\nHost: avendb.maia.city\r\n{tag}Connection: close\r\n\r\n");
+    stream.write_all(request.as_bytes()).await.expect("the request");
+    let mut answer = vec![];
+    stream.read_to_end(&mut answer).await.expect("the answer");
+    let at = answer.windows(4).position(|w| w == b"\r\n\r\n").expect("a head and a body");
+    (String::from_utf8_lossy(&answer[..at]).to_lowercase(), answer[at + 4..].to_vec())
 }
 
 /// Op `op` on `node` with the bytes of `text` beside it, as a page hands a file's bytes over (`Node::run`), which it

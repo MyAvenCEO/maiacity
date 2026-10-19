@@ -18,7 +18,6 @@ import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } 
 import { checkModels, pick } from "./prem";
 import { GameError, getGame, move, takeSeat } from "./maiacity-v1.js";
 import { loadCode } from "../../game/code/index.js";
-import { feedOf } from "../../game/code/sources/avendb.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const ORIGINS = (process.env.SITE_ORIGIN ?? "http://localhost:5173")
@@ -120,12 +119,14 @@ const publicFounder = (f: { id: string; number: number | bigint; created: Date }
 
 await migrate();
 useDb(fromBunSql(sql));
-// the views and logic modules from the Maia City vault (C10): read once before serving, then every minute, so a change
-// accepted in the vault runs here without a deploy. Read from avenDB's own feed inside the compose network
-// (AVENDB_FEED): avendb.maia.city takes only post-quantum key exchange. A failed read keeps what was loaded, else the seed.
-const CODE_FEED = feedOf(process.env.AVENDB_FEED || undefined);
+// the views, logic modules and configs from the Maia City vault (C10): read once before serving, then every minute, so
+// a change accepted in the vault runs here without a deploy. Read from avenDB's own feed inside the compose network
+// (AVENDB_FEED): avendb.maia.city takes only post-quantum key exchange. What runs is what Maia City's own signed edits
+// prove, checked here by avenDB's WebAssembly against its vault id (MAIA_CITY), never the feed's JSON (H2,
+// game/code/sources/feed.js `provenRows`). A failed read or check keeps what was loaded, else the seed.
+const CODE_FEED = process.env.AVENDB_FEED || undefined;
 const loadVaultCode = () =>
-  loadCode({ url: CODE_FEED }).then(
+  loadCode({ feed: CODE_FEED, timeout: 30_000 }).then(
     (r: { error?: string }) => r.error && console.error("code from the Maia City vault:", r.error),
     (e: unknown) => console.error("code from the Maia City vault:", e),
   );

@@ -3,14 +3,16 @@
  * OUR RECIPES, FROM THE MAIA CITY VAULT — where every page that builds an asset reads its recipes (V5 of the avenDB
  * migration; Samuel 2026-10-17, "Ok do it!"): the sandboxes and the worlds, MaiaCity V1, the Things, Machines, Actors,
  * Plants, Buildings, Biomes and Factories, an asset's own page and the box's lab. The index (each recipe's hash, what it
- * builds and takes, the labels at it), `hashOf`, `recipeAt` and each recipe's card come from the `recipe` entries of the
- * server's own seed's coop, Maia City, on avenDB's feed, read as the code our hosts run is read (C10,
- * game/code/sources/feed.js: `seed=1`, one vault only, the seed's), and checked as ./sources/avendb.js `vaultRecipes`
- * checks them (each card, its tags and its engine; a file held to its ref's hash, as UTF-8, its last line the version
- * and variant its card says):
+ * builds and takes, the labels at it), `hashOf`, `recipeAt` and each recipe's card come from the `recipe` entries of
+ * the coop Maia City, as its own signed edits prove them, read as the code our hosts run is read (C10 and H2,
+ * game/code/sources/feed.js `provenRows`: avenDB's WebAssembly checks every signature and rule, anchored to Maia City's
+ * vault id, `MAIA_CITY`), and checked as ./sources/avendb.js `vaultRecipes` checks them (each card, its tags and its
+ * engine; a file held to its ref's hash, which the proven card names, as UTF-8, its last line the version and variant
+ * its card says):
  *
- *   <feed>/code?seed=1&type=recipe                 the rows, each with its record and its card: once a page, the
- *                                                  first that builds an asset
+ *   <feed>/proof?vault=<Maia City>&type=recipe     the proof of the rows, each with its record and its card: once a
+ *                                                  page, the first that builds an asset, and checked once a device
+ *                                                  while it is unchanged
  *   <feed>/entry/<vault>/<entry>/file?seed=1       a recipe's source, its entry's newest file: only when this device's
  *                                                  cache lacks the build and the file (./cache.js `fileAt`), which
  *                                                  then keeps it under its hash, held to it again when read back
@@ -32,7 +34,7 @@
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { idOf, slug } from '$lib/ids.js';
-import { CODE_FEED, fileOf, seedFeedOf, seedRows } from '../../../game/code/sources/feed.js';
+import { CODE_FEED, MAIA_CITY, fileOf, proofOf, provenRows, seedFeedOf, seedRows } from '../../../game/code/sources/feed.js';
 import { buildOf } from './builds.js';
 import * as cache from './cache.js';
 import { LATEST } from './engines.js';
@@ -61,8 +63,8 @@ export const feedOf = () => (import.meta.env.DEV && import.meta.env.VITE_RECIPE_
 /** the most a recipe's file may be (the stand-in's, the largest, is 315 kB), as the avenDB app's Assets read one */
 export const MOST = 16_000_000;
 
-/** how long the feed may take to answer, and a recipe's file once it is asked for (ms) */
-const TIMEOUT = { rows: 15000, file: 30000 };
+/** how long the proof of the rows may take, fetched and checked, and a recipe's file once it is asked for (ms) */
+const TIMEOUT = { rows: 30000, file: 30000 };
 
 /**
  * How many recipe files a page asks the feed for at once: a world asks for dozens together, and a phone's network or
@@ -212,14 +214,19 @@ const readerOf = (get, feed, kept, again) => async (row) => {
 	return bytes;
 };
 
-/** the recipes read off the feed: what the page knows of them after */
-async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = TIMEOUT.rows, kept = KEPT, again = AGAIN } = {}) {
-	const url = seedFeedOf(['recipe'], feed);
+/**
+ * The recipes read off the feed: what the page knows of them after. The rows are those the proof proves (H2,
+ * game/code/sources/feed.js `provenRows`), never the feed's JSON, but on a dev server that reads its stand-in.
+ */
+async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = TIMEOUT.rows, kept = KEPT, again = AGAIN, vault = MAIA_CITY, verify, proofs } = {}) {
+	const standIn = import.meta.env.DEV && import.meta.env.VITE_RECIPE_FEED === 'dev' && feed === feedOf();
+	const url = standIn ? seedFeedOf(['recipe'], feed) : proofOf(['recipe'], { vault, feed });
 	source = null;
 	fill(null);
 	Object.assign(recipes, { phase: 'loading', feed: url, vault: '', count: 0, error: '', refused: [], missed: [] });
 	tell();
-	const got = await seedRows(url, { fetch: get, timeout });
+	const proving = { vault, kinds: ['recipe'], fetch: get, timeout, ...(verify ? { verify } : {}), ...(proofs ? { keep: proofs } : {}) };
+	const got = standIn ? await seedRows(url, { fetch: get, timeout }) : await provenRows(url, proving);
 	/** @param {string} error */
 	const failed = (error) => {
 		Object.assign(recipes, { phase: 'failed', error });
@@ -247,9 +254,10 @@ let loading = null;
  * The vault's recipes, loaded once a page (and shared by every module of it): resolves to what the page knows of them
  * (`recipes`), ready or failed; never throws. With options, loaded again from there: `feed` where /feed/code is,
  * `fetch`, `timeout`, `kept` where the files are kept on the device (`{ get(hash), put(hash, bytes) }`, ./cache.js's
- * by default), `again` the waits before a dropped file is asked again (ms, `AGAIN`): a test's, or a page's that asks
- * again (`reloadRecipes`).
- * @param {{ feed?: string, fetch?: typeof globalThis.fetch, timeout?: number, kept?: { get: (hash: string) => any, put: (hash: string, bytes: Uint8Array) => any }, again?: number[] }} [o]
+ * by default), `again` the waits before a dropped file is asked again (ms, `AGAIN`), `vault` the anchor (Maia City's
+ * id, `MAIA_CITY`), `verify` and `proofs` how a proof is checked and where what it proved is kept
+ * (game/code/sources/feed.js `provenRows`): a test's, or a page's that asks again (`reloadRecipes`).
+ * @param {{ feed?: string, fetch?: typeof globalThis.fetch, timeout?: number, kept?: { get: (hash: string) => any, put: (hash: string, bytes: Uint8Array) => any }, again?: number[], vault?: string, verify?: (bytes: Uint8Array, vault: string, kinds: string[]) => Promise<any[]>, proofs?: { get: (key: string) => any, put: (key: string, value: any) => void } }} [o]
  * @returns {Promise<typeof recipes>}
  */
 export const loadRecipes = (o) => (o ? (loading = load(o)) : (loading ??= load()));
