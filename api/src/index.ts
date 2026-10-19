@@ -12,7 +12,7 @@ import { fromBunSql, useDb } from "./pg";
 import { assignRole, can, capabilities, createRole, deleteRole, initRoles, listRoles, RoleError, setRoleCaps } from "./acl";
 import { CAPABILITIES } from "./caps";
 import { addIdea, deleteIdea, IdeaError, listIdeas, updateIdea } from "./ideas";
-import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
+import { approveDevice, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
 import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice, VaultError } from "./vault";
 import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } from "./analysis";
 import { checkModels, pick } from "./prem";
@@ -102,6 +102,14 @@ async function signedIn(req: Request): Promise<{ id: string; role: string } | Re
   return me ?? json(req, { error: "Please sign in." }, { status: 401 });
 }
 
+/** The person signed in with their passkey, never a key: a key sits in a file any program of theirs reads, an agent's
+ *  too, and an agent reaches the city only through avenDB vault caps (Samuel 2026-10-19). */
+async function person(req: Request): Promise<{ id: string; role: string } | Response> {
+  if (await keyHolder(req)) return json(req, { error: "A key cannot do this: it is a person's, signed in with their passkey." }, { status: 403 });
+  const me = await viewer(req);
+  return me ?? json(req, { error: "Please sign in." }, { status: 401 });
+}
+
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
   if (e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof VaultError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
@@ -147,18 +155,20 @@ const server = Bun.serve({
     // Health, for the container and for the deploy job.
     "/api/health": (req) => json(req, { ok: true }),
 
-    // MaiaCity V1 (api/src/maiacity-v1.js): one shared game for two players. Any signed-in founder reads it; the first
-    // two to sign in take seat A and seat B, and only the founder in a seat moves for it.
+    // MaiaCity V1 (api/src/maiacity-v1.js): one shared game for two players. Any signed-in founder reads it (the Mac
+    // app's key too); the first two to sign in take seat A and seat B, and only the founder in a seat moves for it, signed
+    // in with their passkey: no key takes a seat or moves.
     "/api/maiacity-v1": {
       OPTIONS: preflight,
       GET: async (req) => {
         const me = await signedIn(req);
         if (me instanceof Response) return me;
         try {
-          // an app key (the Mac's MCP) only reads: a seat goes to a person signing in on the page, named as their
-          // avenDB profile names them (the page says so: no name of theirs is kept here)
+          // a key (the Mac app's) only reads, as a watcher: a seat goes to a person signed in with their passkey on the
+          // page, named as their avenDB profile names them (the page says so: no name of theirs is kept here)
           const name = new URL(req.url).searchParams.get("name") ?? "";
-          return json(req, { game: await getGame("scope" in me ? null : { id: me.id, name }), me: me.id, admin: can(me, "economy:admin"), now: Date.now() });
+          if ("scope" in me) return json(req, { game: await getGame(null), me: null, admin: false, now: Date.now() });
+          return json(req, { game: await getGame({ id: me.id, name }), me: me.id, admin: can(me, "economy:admin"), now: Date.now() });
         } catch (e) {
           return fail(req, e);
         }
@@ -167,7 +177,7 @@ const server = Bun.serve({
     "/api/maiacity-v1/seat": {
       OPTIONS: preflight,
       POST: async (req) => {
-        const me = await signedIn(req);
+        const me = await person(req);
         if (me instanceof Response) return me;
         const body = await readJson(req);
         try {
@@ -181,11 +191,9 @@ const server = Bun.serve({
     "/api/maiacity-v1/move": {
       OPTIONS: preflight,
       POST: async (req) => {
-        const me = await signedIn(req);
+        const me = await person(req);
         if (me instanceof Response) return me;
         const body = await readJson(req);
-        // an app key (the Mac's MCP, an agent) proposes, but never signs or rejects: that is the players' own, on the page
-        if ("scope" in me && ["sign", "reject"].includes(body?.action?.type)) return json(req, { error: "A MIP is signed or rejected by a player, on the page." }, { status: 403 });
         try {
           return json(req, { game: await move(me, can(me, "economy:admin"), String(body?.seat ?? ""), body?.action), now: Date.now() });
         } catch (e) {
@@ -431,7 +439,7 @@ const server = Bun.serve({
       },
     },
 
-    // ── a terminal signs in with the admin's passkey: it asks for a key, the admin approves it in the browser ──
+    // ── the Mac app signs in with the admin's passkey: it asks for a key and approves it in its sign-in sheet (below) ──
     "/api/device/start": {
       OPTIONS: preflight,
       POST: async (req) => {
@@ -457,30 +465,6 @@ const server = Bun.serve({
     "/api/device/key": {
       OPTIONS: preflight,
       DELETE: async (req) => (await revokeKey(req)) ? new Response(null, { status: 204, headers: cors(req) }) : json(req, { error: "No such key." }, { status: 404 }),
-    },
-    "/api/device/:code": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        if (!(await viewer(req))) return json(req, { error: "Please sign in." }, { status: 401 });
-        try {
-          return json(req, await deviceInfo(req.params.code));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/device/:code/approve": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await viewer(req);
-        if (!me) return json(req, { error: "Please sign in." }, { status: 401 });
-        try {
-          await approveDevice(req.params.code, me);
-          return json(req, { ok: true });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
     },
     // The OS approves its own key's code with a passkey sign-in its sheet brought back (src/routes/app/avendb/sheet/):
     // the sheet hands the passkey's answer only to the app that opened it, so no one compares a code

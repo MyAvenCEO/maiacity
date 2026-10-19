@@ -315,8 +315,8 @@
 			onRoam: (r) => ((roamNow = r), (walking = r.on))
 		});
 		refresh().then(async () => {
-			// claim a seat (or keep mine) and bring its name up to the profile's: the Mac app reads the game with its app key,
-			// which the server never seats on a read, so the page asks for the seat itself
+			// claim a seat (or keep mine) and bring its name up to the profile's: a read never seats anyone, so the page asks
+			// for the seat itself. The Mac app's key only watches (no `me`): a seat and a move are a passkey's, in the browser
 			if (me && game && (mySeat || SEATS.some((s) => !game.players[s].founder))) {
 				try {
 					take(await takeSeat(mySeat ?? 'A'));
