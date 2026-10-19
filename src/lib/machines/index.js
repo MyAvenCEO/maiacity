@@ -28,7 +28,8 @@ import { batteryCube as batteryCubeV1 } from '$lib/actors/batterycube.v1.js';
 import { batteryPack } from '$lib/actors/batterypack.js';
 import { batteryPack as batteryPackV1 } from '$lib/actors/batterypack.v1.js';
 import { batteryPack as batteryPackV10 } from './batterypack.js';
-import { truck } from '$lib/models/furniture';
+import { truck as truckV1 } from '$lib/models/furniture';
+import { truck } from './truck.js';
 import { castOf } from '$lib/assets/parts.js';
 import { FIRST, versioned } from '$lib/app/versions.js';
 
@@ -80,6 +81,18 @@ const HISTORY = {
 	lifetrac: [{ ...FIRST, date: '2026-10-13' }],
 	van: [{ ...FIRST, date: '2026-10-14' }],
 	pickup: [{ ...FIRST, date: '2026-10-14' }],
+	truck: [
+		{
+			...FIRST,
+			date: '2026-10-16',
+			build: [{ id: 'truck', label: 'Truck', note: 'as at v1: a cab and a box trailer as plain blocks on eight wheels, in its two colours', make: (cab = '#a33a2a', box = '#e0ddd6') => /** @type {any} */ (truckV1({ cab, box })) }]
+		},
+		{
+			v: 2,
+			date: '2026-10-19',
+			note: 'Built at AirSup’s realism round a heavy engine: a 13 L inline six with its crank, rods, pistons, overhead cam, four valves a cylinder, common rail, turbocharger and charge-air cooler, every part its own to cut open, and a 12-speed range-change gearbox; a 4×2 tractor (ladder frame, leaf-sprung steer axle, air-sprung drive axle with its twin wheels and differential, tilting sleeper cab, fifth wheel) pulling a three-axle box semi-trailer on air bellows; a solver drives it: the power at its wheels to hold a speed on a grade with a payload up to 40 t, its gear, revs, boost and fuel, the load on each axle; past the drive axle’s grip its wheels spin. Moves: tilt the cab, open the rear doors'
+		}
+	],
 	powercube: [
 		{
 			...FIRST,
@@ -232,13 +245,13 @@ const LIST = [
 	{
 		id: 'truck',
 		label: 'Truck',
-		note: 'a cab and a box trailer on a long chassis, eight wheels, about 16 × 2.55 × 4 m: the trucks on the tired land’s highway, each in its own colours (a Thing until 2026-10-16, things/truck@1)',
+		note: 'the trucks on the tired land’s highway, each in its own colours, built at AirSup’s realism: a 4×2 tractor and a three-axle box semi-trailer, 16.4 × 2.55 × 4 m, 40 t at most; a 13 L inline six with its turbo and every moving part to cut open, a 12-speed gearbox, leaf and air springs, a tilting sleeper cab and twelve wheels; a solver drives it on a grade with a payload, the load on every axle, and the drive wheels spin past their grip (a Thing until 2026-10-16, things/truck@1)',
 		from: 'The tired land: the highway',
 		params: [
 			{ id: 'cab', label: 'Cab', type: 'string', value: '#a33a2a', maxLength: 7 },
 			{ id: 'box', label: 'Box', type: 'string', value: '#e0ddd6', maxLength: 7 }
 		],
-		variants: [{ id: 'truck', label: 'Truck', note: 'a red cab and a white box trailer, as listed; a world gives each its colours (cab, box)', make: (cab = '#a33a2a', box = '#e0ddd6') => /** @type {any} */ (truck({ cab, box })) }]
+		variants: [{ id: 'truck', label: 'Truck', note: 'a red cab and a white box trailer, as listed; a world gives each its colours (cab, box); 14.4 t empty, 25.6 t payload', make: (cab = '#a33a2a', box = '#e0ddd6') => castOf(truck({ cab, box })) }]
 	}
 ];
 

@@ -186,15 +186,21 @@ function recipeOfRow(row) {
 	const no = (why) => ({ error: `${label} (${where}): ${why}`, label });
 	if (!card.recipe) return no('its card names no recipe');
 	const tags = Array.isArray(row.tags) ? row.tags : [];
-	if (!tags.includes(refTag(label))) return no(`it is not tagged ${refTag(label)}, the ref its card names`);
+	const onMain = row.line === null || row.line === undefined;
+	// a version proposed and accepted after its asset's entry was written (`versionsOf`) comes onto its main line
+	// without a tag of its own: it counts there where the entry is tagged as one of that asset's (`ref:group/id@…`)
+	const own = tags.includes(refTag(label));
+	const accepted = Object.hasOwn(row, 'main') && onMain && tags.some((/** @type {string} */ t) => t.startsWith(refTag(`${card.group}/${card.id}@`)));
+	if (!own && !accepted)
+		return no(`it is not tagged ${refTag(label)}, the ref its card names`);
 	if (!tags.includes(groupTag(card.group))) return no(`it is not tagged ${groupTag(card.group)}`);
 	const e = r.engine ?? {};
 	if (card.engine !== LATEST.v || e.host !== 'box' || e.version !== LATEST.v || e.hash !== LATEST.blake3)
 		return no(`made for ${e.host ?? '?'} engine ${e.version ?? '?'} (${String(e.hash ?? '?').slice(0, 12)}…), its card for ${card.engine}: pages run box engine ${LATEST.v} (${LATEST.blake3.slice(0, 12)}…)`);
 	// a kind's first variant: the one its ref names where it names no variant, on its entry's main line where it is one
-	// version of an entry of the asset's (`versionsOf`), as a variant's own line is beside it
-	const onMain = row.line === null || row.line === undefined;
-	const first = card.variant && onMain && tags.includes(refTag(refOf(card.group, card.id, card.version))) ? card.variant : undefined;
+	// version of an entry of the asset's (`versionsOf`), as a variant's own line is beside it; a version accepted onto
+	// main untagged is main's, so its first
+	const first = card.variant && onMain && (!own || tags.includes(refTag(refOf(card.group, card.id, card.version)))) ? card.variant : undefined;
 	return { hash: card.recipe, label, card, ...(first ? { first } : {}) };
 }
 

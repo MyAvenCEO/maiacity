@@ -36,6 +36,7 @@ export const REAL_SIZES = {
 	batteryCabinet: { size: [1.6, 2.51, 1.6], what: 'a 230 kWh outdoor battery cabinet on its plinth, its cable out the back' },
 	travelVan: { size: [1.95, 2.8, 5.0], what: 'an old travel van, bags tied on its roof' },
 	vanMachine: { size: [2.27, 2.84, 5.31], what: 'the travel van as a Machine at AirSup’s realism: 1.9 m body, its mirrors out of it, 2.13 m to its roof and 2.84 m to its bags (machines/van.js)' },
+	truckMachine: { size: [2.97, 4.02, 16.44], what: 'the tired land’s truck as a Machine at AirSup’s realism: a 4×2 tractor and a box semi-trailer, 2.55 m wide with its mirrors out of it, 4 m to its roof, 16.4 m long over all (machines/truck.js)' },
 	busStop: { size: [5, 2.9, 2.2], what: 'a bus shelter with its sign' },
 	gasStation: { size: [24, 8.2, 16], what: 'a forecourt with its canopy and price sign' },
 	oldShed: { size: [6.2, 2.9, 5], what: 'a small half-roofed shed' },
