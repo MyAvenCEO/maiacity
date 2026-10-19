@@ -6,6 +6,7 @@ import AvenDB.KeyLemmas
 import AvenDB.SyncLemmas
 import AvenDB.RuleLemmas
 import AvenDB.Schemas
+import AvenDB.Gate
 
 /-!
 # The theorems
@@ -306,6 +307,40 @@ theorem allowed_creates {st : State} {a v : VaultId} {cp : Share} {attrs : Attrs
     don't count or anything built on it. -/
 theorem uncounted_closed {st : State} (hr : Reachable st) : CountsClosed st :=
   Ruling.uncounted_closed hr
+
+/-! ## Invites and new vaults
+
+An invite is a share to a one-time invite key, which the vault it invites claims once, signed by that key (G1). The
+server of a vault takes a new vault onto what it holds only where it welcomes it (G2): a human vault only with a share
+of the vault it serves, the invite it claimed, and a coop or an aven only owned by a founder. -/
+
+/-- G1 (an invite is claimed once): once a claim of share `c` is accepted, the share names the claiming vault, and no
+    claim of it is accepted again, whoever signs it. -/
+theorem G1_claim_once {st post : State} {sigs : List SignerId} {author : SignerId} {c : ShareId} {v : VaultId}
+    {via : List VaultId} (h : applyClaim st sigs author c v via = some post) :
+    (∃ x, post.share? c = some x ∧ x.who = .vault v) ∧
+      ∀ sigs' author' v' via', applyClaim post sigs' author' c v' via' = none :=
+  Gating.claim_once h
+
+/-- G2 (the server takes only vaults it welcomes): what the server of `home` takes of a batch is the batch without some
+    of its geneses, and every vault new to what it knows once it holds them is one it welcomes there. -/
+theorem G2_takes_welcome {home : VaultId} {edits batch b : List Edit} (h : takes home edits batch = some b) :
+    b.Sublist batch ∧ (∀ e ∈ batch, e ∉ b → ∃ v k os t r, e.action = .genesis v k os t r) ∧
+      ∀ v ∈ newVaults edits b, welcomes (view (edits ++ b)) home v = true :=
+  Gating.takes_welcome h
+
+/-- G2, a human vault: the server welcomes a human vault other than `home` only where it holds a share of `home`, the
+    invite it claimed, or owns `home`. -/
+theorem G2_human {st : State} {home v : VaultId} {vt : Vault} (hv : st.vault? v = some vt) (hk : vt.kind = .human)
+    (hne : v ≠ home) (h : welcomes st home v = true) : holdsAny st home v = true ∨ owns st v home = true :=
+  Gating.human hv hk hne h
+
+/-- G2, a coop or an aven: the server welcomes one other than `home` only where a founder owns it: `home`, a vault that
+    owns `home`, or one holding `home`'s Founder cap group. -/
+theorem G2_founded {st : State} {home v : VaultId} {vt : Vault} (hv : st.vault? v = some vt)
+    (hk : vt.kind = .coop ∨ vt.kind = .aven) (hne : v ≠ home) (h : welcomes st home v = true) :
+    ∃ u ∈ st.vaults, isFounder st home u.id = true ∧ owns st u.id v = true :=
+  Gating.founded hv hk hne h
 
 /-! ## Drafts
 

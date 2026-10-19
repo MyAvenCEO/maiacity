@@ -457,11 +457,11 @@ theorem applyClaim_ops (st : State) (sigs : List SignerId) (author : SignerId) (
     | invite k =>
       dsimp only
       by_cases h1 : (!st.live c || !sigs.contains k || !actsVia st author via v) = true
-      · rw [if_pos h1, if_pos h1]; rfl
-      · rw [if_neg h1, if_neg h1]
+      · rw [ite_eq_left h1, ite_eq_left h1]; rfl
+      · rw [ite_eq_right h1, ite_eq_right h1]
         by_cases h2 : ((st.vault? v).isNone || v == x.over) = true
-        · rw [if_pos h2, if_pos h2]; rfl
-        · rw [if_neg h2, if_neg h2, Option.map_some, claimShare_ops]
+        · rw [ite_eq_left h2, ite_eq_left h2]; rfl
+        · rw [ite_eq_right h2, ite_eq_right h2, Option.map_some, claimShare_ops]
     | vault _ => rfl
     | everyone => rfl
     | device _ => rfl

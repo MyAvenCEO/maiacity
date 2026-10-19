@@ -155,7 +155,7 @@ theorem capsOf_seen (st : State) (vis : List ShareId) : capsOf (st.seen vis) = c
 theorem opsOn_seen (st : State) {vis : List ShareId} {c : Share} (hv : vis.contains c.id = true) (a : Attrs) :
     opsOn (st.seen vis) (c.seen vis) a = opsOn st c a := by
   unfold opsOn
-  rw [seen_group, capsOf_seen, seen_over, seen_level, seen_ops, if_pos hv]
+  rw [seen_group, capsOf_seen, seen_over, seen_level, seen_ops, ite_eq_left hv]
 
 /-- A share's ops, as a reader who sees them sees them, keep what its level says of it. -/
 theorem levelOk_seen {vis : List ShareId} {c : Share} (hv : vis.contains c.id = true) :

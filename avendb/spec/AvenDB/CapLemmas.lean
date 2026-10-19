@@ -408,7 +408,7 @@ theorem idxOf_map_id {l : List Share} {f : Share → Share} (hf : ∀ x, (f x).i
         simp only [beq_eq_false_iff_ne, ne_eq]
         intro h
         exact hne (by rw [h])
-      simp only [List.map_cons, List.idxOf_cons, h1, h2, ih hnd.2 ha', cond_false]
+      simp only [List.map_cons, List.idxOf_cons, h1, h2, ih hnd.2 ha']
 
 /-- A claim keeps the shares well formed: it keeps every id, place and parent, and changes no share another rests on,
     since a share rests only on one that names a vault. -/
