@@ -346,7 +346,8 @@ export function hue(id) {
  */
 export function pillVaults(w, waiting = {}) {
 	const mine = w.vaults.find((v) => v.id === w.mine);
-	return [mine, ...w.vaults.filter((v) => v.id !== w.mine)]
+	// a device vault with no device left (its last one removed, as the studio's old workers were) acts for nobody: not one to switch to
+	return [mine, ...w.vaults.filter((v) => v.id !== w.mine && !(v.kind === 'device' && !v.devices?.length))]
 		.filter((v) => !!v)
 		.map((v) => ({
 			id: v.id,

@@ -133,7 +133,7 @@ export function studioJobs(tasks, active, history, now, named, on) {
 			id: `task:${t.entry}`,
 			kind: t.rule,
 			lane: t.lane === 'net' ? 'io' : t.lane,
-			name: named(t.inputs[0]?.entry ?? '') || t.inputs[0]?.entry.slice(0, 12) || t.entry.slice(0, 12),
+			name: named(first(t)) || first(t).slice(0, 12) || t.entry.slice(0, 12),
 			vault: t.vault,
 			state,
 			stage,
@@ -186,13 +186,16 @@ export function studioJobs(tasks, active, history, now, named, on) {
 	return out;
 }
 
+/** The entry a task's first input names, or ''. @param {Task} t */
+const first = (t) => t.inputs?.[0]?.entry ?? '';
+
 /** What a done task made, in a few words. @param {Task} t */
 function made(t) {
 	try {
 		const r = JSON.parse(t.result || 'null');
 		if (r?.blake3) return Object.values(r.blake3).map((h) => String(h).slice(0, 16)).join(' ');
 	} catch {}
-	return t.outputs.length ? `${t.outputs.length} made` : 'done';
+	return t.outputs?.length ? `${t.outputs.length} made` : 'done';
 }
 
 /** Whether job `j` still runs or waits. @param {Job} j */

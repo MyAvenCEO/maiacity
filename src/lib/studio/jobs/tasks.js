@@ -34,11 +34,20 @@ export const TRIES = 3;
  */
 /** An input, pinned: its name in the rule, its entry, and what it was read at. @typedef {{ id: number, name: string, entry: string, at: string[] }} Input */
 
+/** What a task's record holds where it doesn't say: a record written before a field was, or read without it, is whole. */
+const BLANK = { inputs: [], outputs: [], params: '{}', status: 'queued', worker: '', lease_until: 0, attempts: 0, error: '', result: '', by: '', at: 0 };
+
 /** The tasks the world holds, those deleted (or tagged deleted: a graded still a newer look replaced) left out. @param {import('../../avendb/vaults.js').WorldView} world */
 export function tasksOf(world) {
 	return world.entries
 		.filter((e) => e.type === TASK && e.record?.kind === TASK && !e.deleted && !(e.tags ?? []).includes('avendb:deleted'))
-		.map((e) => /** @type {Task} */ ({ ...e.record, entry: e.entry, vault: e.vault }));
+		.map((e) => {
+			/** @type {Record<string, any>} */
+			const r = e.record ?? {};
+			// a field the record leaves out (or holds as null) reads as the schema's default
+			const filled = Object.fromEntries(Object.entries(BLANK).map(([k, v]) => [k, r[k] ?? v]));
+			return /** @type {Task} */ ({ ...r, ...filled, entry: e.entry, vault: e.vault });
+		});
 }
 
 /**
