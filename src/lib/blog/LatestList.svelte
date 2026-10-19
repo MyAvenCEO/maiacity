@@ -5,7 +5,6 @@
 <script lang="ts">
 	import { base } from '$app/paths';
 	import { postHref } from './drafts';
-	import StatusBadge from './StatusBadge.svelte';
 	import type { PostMeta } from './types';
 
 	let { posts, title = 'Latest days' }: { posts: PostMeta[]; title?: string } = $props();
@@ -20,16 +19,10 @@
 		<ul>
 			{#each posts as day (day.slug)}
 				<li>
-					<a href={postHref(day)} class:marked={day.board}>
+					<a href={postHref(day)}>
 						<span class="num">{String(day.day ?? '').padStart(2, '0')}</span>
 						<span class="title">{day.title}</span>
-						<span class="date">
-							{#if day.board}
-								<StatusBadge post={day} />
-							{:else}
-								{new Date(day.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-							{/if}
-						</span>
+						<span class="date">{new Date(day.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
 						<span class="arrow" aria-hidden="true">→</span>
 					</a>
 				</li>
@@ -118,16 +111,11 @@
 			grid-template-columns: 2rem minmax(0, 1fr) 1rem;
 		}
 
-		/* an unpublished day keeps its badge */
-		li a.marked {
-			grid-template-columns: 2rem minmax(0, 1fr) auto 1rem;
-		}
-
 		.title {
 			white-space: normal;
 		}
 
-		li a:not(.marked) .date {
+		li a .date {
 			display: none;
 		}
 	}

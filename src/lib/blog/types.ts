@@ -24,17 +24,8 @@ export interface PostMeta {
 	categories: string[];
 	draft?: boolean;
 	readingMinutes: number;
-	/** where the post is read, when not at /blog/<slug> (an unpublished day, previewed from the content board) */
+	/** where the post is read, when not at /blog/<slug> */
 	href?: string;
-	/** the day's card on the content board — only ever set in an admin's browser, for a day not yet published */
-	board?: BoardState;
-}
-
-/** Where a day stands on the content board, and when it goes out. */
-export interface BoardState {
-	status: string;
-	/** when the journal post goes out (the day's own date, else its card's) */
-	goesOut: string | null;
 }
 
 export interface Post extends PostMeta {

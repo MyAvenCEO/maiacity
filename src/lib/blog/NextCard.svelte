@@ -6,7 +6,6 @@
 <script lang="ts">
 	import CoverArt from './CoverArt.svelte';
 	import { postHref } from './drafts';
-	import StatusBadge from './StatusBadge.svelte';
 	import type { PostMeta } from './types';
 
 	let {
@@ -31,7 +30,6 @@
 	<div class="body">
 		<p class="eyebrow">
 			{label}{#if day}&ensp;·&ensp;Day {day}{/if}{#if formatted}&ensp;·&ensp;{formatted}{/if}
-			{#if post.board}&ensp;<StatusBadge {post} />{/if}
 		</p>
 		<h3>{post.title}</h3>
 		<p class="excerpt">{post.excerpt}</p>
