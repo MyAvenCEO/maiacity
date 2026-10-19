@@ -4,7 +4,11 @@
 	production chains from the forest to the mint, soldiers who widen the land, and a rival keep to take.
 -->
 <script>
-	import Valley from '$lib/sandbox-6/Valley.svelte';
+	import { loadCode } from '../../../../../game/code/index.js';
+
+	// the valley's numbers are a config entry of the Maia City COOP (configs/sandbox-5/rules): loaded before the game's
+	// modules are, as they read them as they load
+	const valley = loadCode().then(() => import('$lib/sandbox-6/Valley.svelte'));
 </script>
 
 <svelte:head>
@@ -12,4 +16,6 @@
 	<meta name="description" content="Settle a valley: build roads and flags, let carriers bring wares from flag to flag, run production chains from logs to coins, and take the rival keep." />
 </svelte:head>
 
-<Valley />
+{#await valley then { default: Valley }}
+	<Valley />
+{/await}

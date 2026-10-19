@@ -1,0 +1,6 @@
+{
+	"type": "config",
+	"for": "sandbox-1",
+	"title": "Sandbox 1 island biomes",
+	"note": "The island's biomes, each giving one resource and how much a batch at a dome's first level, how many biomes a hex holds, what opening a new hex takes and the ground rent. v0.4. TEN biomes, each extracting exactly ONE resource. Every hex is composed of 1 or 2 biomes; extraction requires a FACTORY dome on a hex with the matching biome. yieldPerBatch = units per extraction batch at dome LV.1. All land belongs to the CITY SPARK — hexes are rented, never sold."
+}
