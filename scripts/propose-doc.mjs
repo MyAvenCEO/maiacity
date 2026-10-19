@@ -4,7 +4,9 @@
 // starts as its MCP server: `avendb-device agent claude`). The seed writes a document into the vault once, as a story
 // and its doc post (src/lib/avendb/seed.js `docOps`); every text after that goes in as a proposal the vault's owners
 // accept. It finds the doc post by its `doc:<key>` tag and the story it names, starts a proposal on each whose text
-// differs (`propose`), sets the new text on that line (`set` at `text`), and opens one AIP over the lines (`aip_open`).
+// differs (`propose`, or the same day's line a failed run left with no AIP over it), sets the new text on that line
+// (`set` at `text`, through the record's own schema, as the app edits it), and opens one AIP over the lines
+// (`aip_open`).
 // An owner then puts it forward ("Propose it") and accepts it in the Proposals app (/app/aips/); the accept merges the
 // lines into main. Without --run it only says what it would do.
 //
@@ -91,7 +93,11 @@ function session({ command, args }) {
 			if (got && typeof got === 'object' && 'ok' in got) return got.ok;
 			throw new Error(`${name} ${a.op?.op ?? ''}: ${text.slice(0, 600)}`);
 		},
-		close: () => child.stdin.end()
+		/** @param {boolean} [done] whether the run got through: if not, the device is stopped, not waited for */
+		close(done = true) {
+			child.stdin.end();
+			if (!done) child.kill();
+		}
 	};
 }
 
@@ -126,6 +132,7 @@ if (!flag('--run')) {
 }
 
 const agent = session(device());
+let done = false;
 try {
 	await agent.open();
 	const me = await agent.call('avendb_vaults', {});
@@ -140,29 +147,40 @@ try {
 	if (!at || p.record?.story?.vault !== city.id) throw new Error(`the doc post ${p.entry} names no story of Maia City: nothing was written`);
 	const s = await agent.call('avendb_ask', { op: { op: 'get', entry: at } });
 	const targets = [
-		{ entry: at, schema: 'story', now: s.record?.text, text: story },
-		{ entry: p.entry, schema: 'post', now: p.record?.text, text: post }
+		{ entry: at, now: s.record?.text, text: story },
+		{ entry: p.entry, now: p.record?.text, text: post }
 	].filter((t) => t.now !== t.text);
 	if (!targets.length) {
 		console.error(`Maia City's ${key} already holds the repository's text: nothing to propose`);
+		agent.close();
 		process.exit(0);
 	}
 	const entries = new Set(targets.map((t) => t.entry));
-	const open = (await agent.call('avendb_ask', { op: { op: 'aips', vault: city.id } })).filter(
+	const aips = await agent.call('avendb_ask', { op: { op: 'aips', vault: city.id } });
+	const open = aips.filter(
 		(/** @type {any} */ a) => !a.bare && ['idea', 'proposed'].includes(a.stage) && !a.outcome && (a.lines ?? []).some((/** @type {any} */ l) => entries.has(l.entry))
 	);
 	if (open.length && !flag('--again')) throw new Error(`an AIP over ${key} is open already (${open.map((/** @type {any} */ a) => `${a.title} ${a.entry}`).join('; ')}): nothing was written (--again proposes all the same)`);
 	const name = `text ${new Date().toISOString().slice(0, 10)}`;
+	// a line of today's name no AIP names yet: a run that failed before its AIP left it, and this one goes on with it
+	const left = new Map(
+		aips
+			.filter((/** @type {any} */ a) => a.bare)
+			.flatMap((/** @type {any} */ a) => a.lines ?? [])
+			.filter((/** @type {any} */ l) => entries.has(l.entry) && l.name === name && !l.merged)
+			.map((/** @type {any} */ l) => [l.entry, l.line])
+	);
 	const proposals = [];
 	for (const t of targets) {
-		const { line } = await agent.call('avendb_run', { op: { op: 'propose', entry: t.entry, name } });
+		const line = left.get(t.entry) ?? (await agent.call('avendb_run', { op: { op: 'propose', entry: t.entry, name } })).line;
 		if (!line) throw new Error(`the proposal on ${t.entry} started no line`);
-		await agent.call('avendb_run', { op: { op: 'set', entry: t.entry, line, schema: t.schema, path: ['text'], value: t.text } });
+		await agent.call('avendb_run', { op: { op: 'set', entry: t.entry, line, path: ['text'], value: t.text } });
 		proposals.push({ entry: t.entry, line });
 	}
 	const aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title, note, proposals } });
 	console.log(JSON.stringify({ vault: city.id, proposals, aip }, null, 2));
 	console.error(`Opened. An owner puts it forward ("Propose it") and accepts it in the Proposals app: /app/aips/?aip=${aip.entry}`);
+	done = true;
 } finally {
-	agent.close();
+	agent.close(done);
 }
