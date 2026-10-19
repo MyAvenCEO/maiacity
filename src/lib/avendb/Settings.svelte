@@ -133,16 +133,11 @@
 	);
 	/** whether the vault has the master recovery key among its owners */
 	const recovers = $derived(v.owners.some((o) => 'signer' in o && o.recovery));
-	/** A signer owner, as the owners list labels it, by the kind of key it is: the master recovery key, the root
-	 *  passkey, a Mac's Touch ID key, another passkey. @param {{ signer: string, recovery: boolean, by: string | null }} o */
-	const ownerLabel = (o) =>
-		o.recovery
-			? 'Master recovery key'
-			: o.signer === v.root
-				? 'Root passkey'
-				: o.by === 'touch'
-					? 'Mac Touch ID key'
-					: 'Passkey';
+	/**
+	 * A signer owner, as the owners list labels it, by the kind of key it is, never ranked: every owner is equal
+	 * (Samuel 2026-10-19). @param {{ signer: string, recovery: boolean, by: string | null }} o
+	 */
+	const ownerLabel = (o) => (o.recovery ? 'Master recovery key' : o.by === 'touch' ? 'Mac Touch ID key' : 'Passkey');
 	/** the vault itself and the vaults that own it: each holds all of it */
 	const owners = $derived(
 		[v, ...v.owners.flatMap((o) => ('vault' in o ? [byId.get(o.vault)] : []))].filter((x) => !!x)
@@ -511,8 +506,9 @@
 		{#if v.root}
 			<dt>Its root</dt>
 			<dd>
-				Passkey <span class="mono">{short(v.root)}</span>: it approves every change alone{recovers
-					? '; the master recovery key can also recover it while avenDB is young'
+				Passkey <span class="mono">{short(v.root)}</span>: a new device finds the vault by it, and it approves every
+				change alone. Every owner is equal: any of them hands the root on{recovers
+					? ', the master recovery key too while avenDB is young'
 					: ''}.
 			</dd>
 		{/if}

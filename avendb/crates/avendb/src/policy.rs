@@ -668,7 +668,8 @@ pub enum Refusal {
     NotHuman,
     /// Only human and device vaults hold devices: a coop and an aven act only through their owners.
     NoDevices,
-    /// Only a vault's root hands the root on.
+    /// Only a vault's root hands the root on: no longer refused so since every owner is equal (2026-10-19), kept for
+    /// the refusals already recorded.
     NotRoot,
     /// The edit's author doesn't act for the vault it claims to act for through the owners it names.
     NotActing,
@@ -2229,12 +2230,16 @@ impl State {
             }
             &Action::Settings { vault, set: Setting::Root { root, .. } } => {
                 let at = vault_at(vault)?;
-                // only the root hands the root on, and the new root signs
-                if !self.vaults[at].root.is_some_and(|r| sigs.contains(&r)) {
-                    return Err(Refusal::NotRoot);
+                // the vault's owners hand the root on, by its threshold, as any change (every owner equal: Samuel
+                // 2026-10-19), and the new root signs; only a human vault has one
+                if !approves(Principal::Vault(vault)) {
+                    return Err(Refusal::BelowThreshold);
                 }
                 if root.is_some_and(|r| !sigs.contains(&r)) {
                     return Err(Refusal::NoConsent);
+                }
+                if root.is_some() && self.vaults[at].kind != Kind::Human {
+                    return Err(Refusal::NotHuman);
                 }
                 Ok(Change::SetRoot { at, root })
             }
@@ -3311,9 +3316,8 @@ fn priority(base: &State, edit: &Edit) -> (u8, usize, u8, usize) {
                 None => (0, tier, 2, 0),
                 Some(vt) => {
                     let sigs: Vec<SignerId> = edit.sigs().collect();
-                    if vt.root.is_some_and(|r| sigs.contains(&r)) {
-                        (0, tier, 0, 0)
-                    } else if let Some(i) = vt.owners.iter().position(|&p| base.approves(&sigs, p)) {
+                    // its owners in the order they joined, every owner equal, the root no senior
+                    if let Some(i) = vt.owners.iter().position(|&p| base.approves(&sigs, p)) {
                         (0, tier, 1, i)
                     } else {
                         (0, tier, 2, 0)

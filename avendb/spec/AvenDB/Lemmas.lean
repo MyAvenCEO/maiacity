@@ -192,9 +192,9 @@ inductive VaultChange (st : State) (sigs : List SignerId) (v : VaultId) (vt : Va
       VaultChange st sigs v vt { vt with devices := vt.devices ++ [d] }
   | revokeDevice (d : SignerId) : (approves st sigs (.vault v) = true ∨ d ∈ sigs) →
       VaultChange st sigs v vt { vt with devices := vt.devices.erase d }
-  /-- The root hands itself on, or steps down: the current root signed, and so did the new one. -/
-  | settingsRoot (r : Option SignerId) : vt.root.any sigs.contains = true → r.all sigs.contains = true →
-      VaultChange st sigs v vt { vt with root := r }
+  /-- The owners hand the root on, or it steps down: the vault's threshold approved, and the new root signed. -/
+  | settingsRoot (r : Option SignerId) : approves st sigs (.vault v) = true → r.all sigs.contains = true →
+      (r.isSome = true → vt.kind = .human) → VaultChange st sigs v vt { vt with root := r }
 
 /-- A change to a vault keeps its id. -/
 theorem VaultChange.id {st : State} {sigs : List SignerId} {v : VaultId} {vt vt' : Vault}
@@ -264,8 +264,8 @@ theorem apply_vaults {st post : State} {edit : Edit} (h : apply st edit = some p
     · simp at h
     · rename_i v r keep _ _ vt hv
       simp at h
-      obtain ⟨⟨hroot, hnew⟩, rfl⟩ := h
-      exact .inr (.inr ⟨v, vt, _, hv, .settingsRoot r hroot hnew, rfl⟩)
+      obtain ⟨⟨⟨hroot, hnew⟩, hhuman⟩, rfl⟩ := h
+      exact .inr (.inr ⟨v, vt, _, hv, .settingsRoot r hroot hnew hhuman, rfl⟩)
   case h_13 =>
     -- a claim changes one share alone
     obtain ⟨-, -, -, -, -, -, -, -, -, rfl⟩ := applyClaim_some h
@@ -544,7 +544,7 @@ theorem step_owners {st st' : State} {edit : Edit}
       | settingsThreshold _ _ => exact hex _ _ hvt _ ho
       | shareDevice _ _ _ _ => exact hex _ _ hvt _ ho
       | revokeDevice _ _ => exact hex _ _ hvt _ ho
-      | settingsRoot _ _ _ => exact hex _ _ hvt _ ho
+      | settingsRoot _ _ _ _ => exact hex _ _ hvt _ ho
     -- the only new edges point into `v`, from vaults `vt'` lists and `vt` didn't
     have hedge : ∀ a b, OwnerOf st' a b →
         OwnerOf st a b ∨ (b = v ∧ Principal.vault a ∈ vt'.owners ∧ Principal.vault a ∉ vt.owners) := by
@@ -708,9 +708,11 @@ theorem kindsFit_step {st st' : State} {edit : Edit} (hk : KindsFit st) (h : ste
       | revokeDevice d _ =>
         refine ⟨fun q hq => ownerFits_step h (ho q hq), fun hne => hd fun hnil => hne ?_, hr⟩
         simp [hnil]
-      | settingsRoot r hold _ =>
-        refine ⟨fun q hq => ownerFits_step h (ho q hq), hd, fun _ => hr fun hnone => ?_⟩
-        simp [hnone] at hold
+      | settingsRoot r _ _ hhuman =>
+        refine ⟨fun q hq => ownerFits_step h (ho q hq), hd, fun hne => hhuman ?_⟩
+        cases r with
+        | none => exact absurd rfl hne
+        | some _ => rfl
     · obtain ⟨ho, hd, hr⟩ := hk x u hx
       exact ⟨fun p hp => ownerFits_step h (ho p hp), hd, hr⟩
 

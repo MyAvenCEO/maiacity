@@ -177,7 +177,7 @@ def s1 : List Edit := chain 1 [
 #guard accepted s1 (attempt passkeyA [77] (.share (.device alice 77)))
 -- a device can't be added without its own signature
 #guard !accepted s1 (attempt passkeyA [] (.share (.device alice 77)))
--- only the root hands the root on, and the new root signs
+-- the vault's owners hand the root on, as any change, and the new root signs; a device governs nothing
 #guard accepted s1 (attempt passkeyA [77] (.settings alice (.root (some 77) [])))
 #guard !accepted s1 (attempt passkeyA [] (.settings alice (.root (some 77) [])))
 #guard !accepted s1 (attempt macA [77] (.settings alice (.root (some 77) [])))
@@ -208,10 +208,10 @@ def twoKeys : List Edit := s1 ++ chain 140 [
 A Mac's Secure Enclave holds a key behind Touch ID that never leaves the chip (Samuel, 2026-10-19). Alice's passkey
 adds it once as an owner of her vault, with its own signature; from then on her finger on that Mac approves for her
 vault as her passkey does at threshold 1, with no passkey at all: a new device, a device revoked. It is an owner like a
-second passkey (`twoKeys`), so no rule changes; what changes is only how it signs, which the model abstracts. The
-passkey stays the root: the Touch ID key never hands the root on, the root still approves alone even if the key took
-the passkey off the owners, and where their removals clash the root's stands, so a lost Mac's key goes with one
-revocation. The Mac's device itself still governs nothing. -/
+second passkey (`twoKeys`), so no rule changes; what changes is only how it signs, which the model abstracts. Every
+owner is equal (Samuel, 2026-10-19): the key may hand the root on or give it up, as the passkey may; where their
+removals clash the owner who joined first stands, here the passkey, so a lost Mac's key goes with one revocation. The
+Mac's device itself still governs nothing. -/
 
 def touchA := 79
 
@@ -228,12 +228,14 @@ def touch : List Edit := s1 ++ chain 150 [(passkeyA, [touchA], .share (.owner al
 #guard opens' touch touchA (.seed alice)
 -- the Mac's device still governs nothing, Touch ID key or not
 #guard !accepted touch (attempt macA [78] (.share (.device alice 78)))
--- the key never hands the root on
-#guard !accepted touch (attempt touchA [78] (.settings alice (.root (some 78) [])))
-#guard !accepted touch (attempt touchA [78] (.settings alice (.root (some touchA) [])))
+-- an owner like the passkey, the key hands the root on, takes it, or gives it up; the new root signs
+#guard accepted touch (attempt touchA [78] (.settings alice (.root (some 78) [])))
+#guard accepted touch (attempt touchA [] (.settings alice (.root (some touchA) [])))
+#guard accepted touch (attempt touchA [] (.settings alice (.root none [])))
+#guard !accepted touch (attempt touchA [] (.settings alice (.root (some 78) [])))
 
--- the key may take the passkey off the owners, but the passkey stays the root: it still approves alone, and it comes
--- back as an owner and removes the key (never the last owner, so in that order)
+-- the key may take the passkey off the owners; the passkey stays the root until an owner changes that, so it still
+-- approves alone, and it comes back as an owner and removes the key (never the last owner, so in that order)
 def keyAlone : List Edit := touch ++ chain 151 [(touchA, [], .revoke (.owner alice (.signer passkeyA) [150]))]
 #guard refused keyAlone == []
 #guard ((view keyAlone).vault? alice).map (·.owners) == some [.signer touchA]
@@ -247,7 +249,7 @@ def rootBack : List Edit := keyAlone ++ chain 152 [
 #guard ((view rootBack).vault? alice).map (·.owners) == some [.signer passkeyA]
 
 -- the Mac is lost: the passkey revokes its key, and the key, on a copy that hadn't seen that, takes the passkey off the
--- owners. The root's removal stands and the key's falls; the key approves nothing more
+-- owners. The passkey joined first, so its removal stands and the key's falls; the key approves nothing more
 def lostMac : List Edit := touch ++ chain 151 [(passkeyA, [], .revoke (.owner alice (.signer touchA) [150]))] ++
   offline 170 150 [(touchA, [], .revoke (.owner alice (.signer passkeyA) []))]
 #guard refused lostMac == [170]
@@ -1280,8 +1282,8 @@ def clash : List Edit := sPair ++ [
 #guard refused clash == [160]
 #guard ((view clash).vault? pair).map (·.owners) == some [.vault alice]
 
--- a thief holding Alice's second passkey removes the root's passkey from the owners and adds a device; the root,
--- having seen neither, removes the second passkey. It keeps the threshold it had set, which counted that passkey.
+-- a thief holding Alice's second passkey removes her first passkey from the owners and adds a device; the first
+-- passkey, having seen neither, removes the second, and stands: it joined first. It keeps the threshold it had set, which counted that passkey.
 def stolen : List Edit :=
   twoKeys ++ chain 142 [(passkeyA, [], .revoke (.owner alice (.signer 77) [141]))] ++ offline 170 141 [
     (77, [passkeyA], .revoke (.owner alice (.signer passkeyA) [])),

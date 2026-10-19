@@ -89,9 +89,9 @@ fn a_touch_id_key_owns_alices_vault_beside_her_passkey() {
     assert!(lab.draft(mac, &[mac], leave.clone()).is_err(), "a device doesn't govern");
     let left = by_touch(&mut lab, mac, &[touch], leave, &enclave);
     assert!(!lab.state(mac).acts_for(phone, vault) && checks_out(&lab, mac, left));
-    // only the root hands the root on
+    // every owner equal (Samuel, 2026-10-19): the key, an owner, takes the root too, the new root signing
     let hand_on = Action::Settings { vault, set: Setting::Root { root: Some(touch), keep: vec![] } };
-    assert_eq!(lab.draft(mac, &[touch], hand_on).err(), Some(Refusal::NotRoot));
+    assert!(lab.draft(mac, &[touch], hand_on).is_ok());
 }
 
 #[test]

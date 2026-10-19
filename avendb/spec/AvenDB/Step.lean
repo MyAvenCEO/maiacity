@@ -12,8 +12,8 @@ claim to come before the removal, and nobody writes into an entry after a mark t
 
 namespace AvenDB
 
-/-- What a vault's settings edit sets: its threshold, or its root, which the root hands on to a new passkey, which
-    signs too, or gives up. Handing the root on is a removal: it names the edits it had seen and keeps. -/
+/-- What a vault's settings edit sets: its threshold, or its root, which its owners hand on to a new passkey, which
+    signs too, or give up. Handing the root on is a removal: it names the edits it had seen and keeps. -/
 inductive Setting where
   | threshold (n : Nat)
   | root      (r : Option SignerId) (keep : List EditId)
@@ -344,8 +344,9 @@ def apply (st : State) (edit : Edit) : Option State :=
     match st.vault? v with
     | none => none
     | some vt =>
-      -- only the root hands the root on, and the new root signs
-      if !vt.root.any sigs.contains || !r.all sigs.contains then none
+      -- the vault's owners hand the root on, by its threshold, as any change (every owner equal: Samuel 2026-10-19),
+      -- and the new root signs; only a human vault has one
+      if !approves st sigs (.vault v) || !r.all sigs.contains || !(r.isNone || vt.kind == .human) then none
       else some (setVault st { vt with root := r })
   | .share (.grant c via) =>
     if (st.share? c.id).isSome || (st.vault? c.over).isNone then none
@@ -487,13 +488,13 @@ def order (edits : List Edit) : List Edit := (edits.filter (wellFormed edits)).m
 
 /-! ## Strong removal
 
-A removal names the edits it had seen and keeps (`keep`): revoking an owner, a device or a grant, the root handing
-itself on, and a mark that takes an entry to another audience. Every other edit that comes before it in the replay order
+A removal names the edits it had seen and keeps (`keep`): revoking an owner, a device or a grant, the owners handing
+the root on, and a mark that takes an entry to another audience. Every other edit that comes before it in the replay order
 was made concurrently, or claims to be: it stands only if it also stands with what the removal takes away hidden. When
 removals clash, the senior one stands: a vault's removals (revoking an owner or a device, handing the root on) settle
-from the top down, a vault's before those of the coops it owns, and within a vault its root, then its owners in the
-order they joined, then removals no owner approved (a device leaving); revoked grants follow, the most senior revoker
-first; marks that change an audience come last (`priority`). A mark of the wants alone is no removal: it takes nothing
+from the top down, a vault's before those of the coops it owns, and within a vault its owners in the order they
+joined (every owner equal, the root no senior: Samuel 2026-10-19), then removals no owner approved (a device leaving);
+revoked grants follow, the most senior revoker first; marks that change an audience come last (`priority`). A mark of the wants alone is no removal: it takes nothing
 away, so nothing it hadn't seen falls by it. Nor does revoking a keep share take anything away (`removes`): nothing
 rests on a keep share, no audience holds one, and no mark asks whether the keep shares it names are live. -/
 
@@ -612,8 +613,7 @@ def priority (base : State) (edit : Edit) : List Nat :=
     match base.vault? v with
     | none => [0, t, 2, 0]
     | some vt =>
-      if vt.root.any edit.sigs.contains then [0, t, 0, 0]
-      else match vt.owners.zipIdx.find? fun (p, _) => approves base edit.sigs p with
+      match vt.owners.zipIdx.find? fun (p, _) => approves base edit.sigs p with
         | some (_, i) => [0, t, 1, i]
         | none => [0, t, 2, 0]
   | .revoke (.grant c a _ _) => [1, (base.share? c).elim 0 (seniority base a), 0, 0]
