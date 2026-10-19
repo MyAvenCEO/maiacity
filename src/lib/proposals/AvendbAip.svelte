@@ -9,7 +9,7 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { session } from '$lib/avendb/session.svelte.js';
-	import { acting, nameOf } from '$lib/avendb/vaults.js';
+	import { acting, authorsLine, nameOf } from '$lib/avendb/vaults.js';
 	import { when } from './aips.js';
 
 	/** a: the AIP in the app's shape (./aips.js fromAvendb); onchanged: after a change, to read the list again */
@@ -21,6 +21,11 @@
 	const ownVault = $derived(!!as && as === aip.vault);
 	const mine = $derived(!!as && as === aip.author);
 	const vaultName = (id) => nameOf(world?.vaults.find((v) => v.id === id));
+	// who answered a review: the people whose devices signed it (its `authors`, after the coop's aven), not its `by`,
+	// which names who started the AIP
+	const answeredBy = (r) =>
+		authorsLine(world, (r.authors ?? []).filter((a) => a.kind === 'human')) ||
+		authorsLine(world, r.authors, vaultName(aip.vault));
 
 	// the lines with their diffs: the `aip` read, once per AIP shown (a bare proposal has no entry of its own to read)
 	let lines = $state(null);
@@ -75,7 +80,7 @@
 		<h3>Reviews</h3>
 		<ul class="reviews">
 			{#each aip.reviews as r (r.review)}
-				<li><b>{VERDICT[r.verdict]}</b> by {vaultName(r.by)} · {when(r.at)}{r.current ? '' : ' · on an older version'}{#if r.text}<br /><span class="dim">“{r.text}”</span>{/if}</li>
+				<li><b>{VERDICT[r.verdict]}</b> by {answeredBy(r)} · {when(r.at)}{r.current ? '' : ' · on an older version'}{#if r.text}<br /><span class="dim">“{r.text}”</span>{/if}</li>
 			{/each}
 		</ul>
 	{/if}

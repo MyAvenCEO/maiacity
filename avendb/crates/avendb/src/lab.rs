@@ -100,7 +100,7 @@ use crate::policy::{
 use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
 use crate::sealed::{Brought, FileRoot};
-use crate::sign::{self, Ceremony, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, WebAuthn};
+use crate::sign::{self, Ceremony, DeviceKey, EnclaveKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, WebAuthn};
 use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, CAP_GROUP_TYPE, LENS_TYPE, SCHEMA_TYPE};
 use crate::sync::{
     answer, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs, LogId, Place,
@@ -134,9 +134,11 @@ enum Key {
     /// A device.
     Device(DeviceKey),
     Passkey(Passkey),
-    /// A passkey in the platform's authenticator (P8e): no secret, only its keys and the public key sealed to it, as a
-    /// ceremony showed them, and the id of that key, whose McEliece pair the process forgets as a device locks. It
-    /// signs in a ceremony alone (`Lab::complete`).
+    /// A software Touch ID key (`sign::EnclaveKey`), as the tests hold one.
+    Enclave(EnclaveKey),
+    /// A passkey in the platform's authenticator (P8e), or a Touch ID key in a Mac's Secure Enclave: no secret, only its
+    /// keys and the public key sealed to it, as a ceremony showed them, and the id of that key, whose McEliece pair the
+    /// process forgets as a device locks. It signs in a ceremony alone (`Lab::complete`).
     Web { keys: SignerKeys, seal: (PublicKey, Arc<[u8]>), pair: KeyId },
     /// A signer the Lab holds the public half of alone, and its standing consent to be added as an owner, as the master
     /// recovery key (`Lab::set_recovery`): it signs no edit but one that takes that consent (`sign::standing`).
@@ -149,6 +151,7 @@ impl Key {
         match self {
             Key::Device(k) => Some(k.sign(edit)),
             Key::Passkey(p) => Some(p.sign(edit)),
+            Key::Enclave(k) => Some(k.sign(edit)),
             Key::Web { .. } | Key::Consent(_) => None,
         }
     }
@@ -159,6 +162,7 @@ impl Key {
         match self {
             Key::Device(k) => Some(k.seal_secret()),
             Key::Passkey(p) => Some(p.seal_secret()),
+            Key::Enclave(k) => Some(k.seal_secret()),
             Key::Web { .. } | Key::Consent(_) => None,
         }
     }
@@ -179,6 +183,7 @@ impl Key {
         match self {
             Key::Device(k) => k.keys(),
             Key::Passkey(p) => p.keys(),
+            Key::Enclave(k) => k.keys(),
             Key::Web { keys, .. } => *keys,
             Key::Consent(k) => k.keys,
         }
@@ -724,12 +729,23 @@ impl Lab {
         id
     }
 
+    /// A software Touch ID key (`sign::EnclaveKey`), as a Mac's Secure Enclave holds one: an owner signer like a
+    /// passkey, which signs on the Mac whose Enclave holds it.
+    pub fn touch_key(&mut self, name: &str) -> SignerId {
+        let key = EnclaveKey::from_seed(self.secret("touch id key", name));
+        key.seal_secret().prepare();
+        let id = key.id();
+        self.keys.insert(id, Key::Enclave(key));
+        self.names.insert(id, format!("{name}'s Touch ID"));
+        id
+    }
+
     /// The secret of passkey `passkey`, a software passkey's private key, for another Lab to take it in
     /// (`passkey_from`): `None` if the Lab doesn't hold that passkey. A real passkey never leaves its authenticator.
     pub fn passkey_secret(&self, passkey: SignerId) -> Option<Zeroizing<[u8; 32]>> {
         match self.keys.get(&passkey)? {
             Key::Passkey(p) => Some(p.secret()),
-            Key::Device(_) | Key::Web { .. } | Key::Consent(_) => None,
+            Key::Device(_) | Key::Enclave(_) | Key::Web { .. } | Key::Consent(_) => None,
         }
     }
 
@@ -762,7 +778,8 @@ impl Lab {
     /// ceremony's PRF output derives, and no secret. It signs in ceremonies alone (`complete`). `None` unless the
     /// ceremony's assertion is that key's.
     pub fn web_passkey(&mut self, name: &str, p256: [u8; 33], ceremony: &Ceremony) -> Option<SignerId> {
-        if !ceremony.challenge().is_some_and(|c| ceremony.assertion.verify(&p256, EditId(c))) {
+        let assertion = ceremony.assertion()?;
+        if !ceremony.challenge().is_some_and(|c| assertion.verify(&p256, EditId(c))) {
             return None;
         }
         let secret = ceremony.seal_secret();
@@ -772,6 +789,40 @@ impl Lab {
         self.keys.insert(id, Key::Web { keys, seal, pair });
         self.names.insert(id, if name.ends_with("passkey") { name.into() } else { format!("{name}'s passkey") });
         Some(id)
+    }
+
+    /// A Touch ID key in a Mac's Secure Enclave, as a ceremony of it over any challenge showed it (`sign::Ceremony::
+    /// enclave`), held as `web_passkey` holds a passkey: its keys and the public key sealed to it, and no secret. It
+    /// signs in ceremonies alone (`complete`). `None` unless it is a Touch ID key's ceremony whose Enclave signature
+    /// verifies.
+    pub fn web_enclave(&mut self, name: &str, ceremony: &Ceremony) -> Option<SignerId> {
+        let keys = ceremony.enclave_keys()?;
+        let challenge = ceremony.challenge()?;
+        ceremony.sign(keys, EditId(challenge))?;
+        let secret = ceremony.seal_secret();
+        let (seal, pair) = ((secret.public(), secret.mceliece_public()), secret.id());
+        let id = keys.id();
+        self.keys.insert(id, Key::Web { keys, seal, pair });
+        self.names.insert(id, format!("{name}'s Touch ID"));
+        Some(id)
+    }
+
+    /// The keys of owner key `s`, held as `web_passkey` and `web_enclave` hold them if the Lab doesn't hold them yet and
+    /// `ceremony` is that key's: so a Mac its Touch ID key opened, with no passkey's ceremony, takes its person's passkey
+    /// in from the first ceremony it makes, as for a change only the vault's root makes (2026-10-19). A passkey's are
+    /// those of the key its assertion recovers to whose keys hash to `s`. `None` if neither is at hand.
+    pub fn take_in(&mut self, s: SignerId, ceremony: &Ceremony) -> Option<SignerKeys> {
+        if let Some(keys) = self.keys_of(s) {
+            return Some(keys);
+        }
+        let name = self.names.get(&s).cloned().unwrap_or_else(|| "the person".into());
+        let brought = match ceremony.assertion() {
+            Some(a) => a.recover().into_iter().find(|&p256| ceremony.keys(p256).id() == s).and_then(|p256| {
+                self.web_passkey(&name, p256, ceremony)
+            }),
+            None => self.web_enclave(&name, ceremony),
+        };
+        brought.filter(|&id| id == s).and_then(|id| self.keys_of(id))
     }
 
     /// The master recovery key `key` (`recovery`): every human vault a device of this Lab founds from now on adds it as
@@ -920,9 +971,9 @@ impl Lab {
 
     /// Signer `s`'s signature on edit `id`: by its ceremony among `ceremonies`, over the edit's id or, with the edits
     /// `batch` drafted together, over theirs (`Ceremony::sign_in`), or, with `pass`, the device an edit adds and when
-    /// the pass was made, as the passkey's pass for that device (`Ceremony::sign_adding`); or by its key at hand
-    /// (`sign_held`). `Locked` if its key isn't at hand, `BadSignature` if its ceremony isn't its own over that
-    /// challenge.
+    /// the pass was made, as the passkey's pass for that device (`Ceremony::sign_adding`), its keys taken in from that
+    /// ceremony where the Lab doesn't hold them (`take_in`); or by its key at hand (`sign_held`). `Locked` if its key isn't
+    /// at hand, `BadSignature` if its ceremony isn't its own over that challenge.
     #[allow(clippy::too_many_arguments)]
     fn sign_by(
         &mut self,
@@ -935,7 +986,7 @@ impl Lab {
     ) -> Result<Signature, Refusal> {
         match ceremonies.iter().find(|(c, _)| *c == s) {
             Some((_, c)) => {
-                let keys = self.keys_of(s).ok_or(Refusal::Locked)?;
+                let keys = self.take_in(s, c).ok_or(Refusal::Locked)?;
                 let signed = match pass {
                     Some((device, made)) => c.sign_adding(keys, id, device, made),
                     None => c.sign_in(keys, id, batch),
@@ -2641,9 +2692,13 @@ impl Lab {
                 match &sig.keys {
                     SignerKeys::Device { ed25519, slh } => out.extend(ed25519.iter().chain(slh)),
                     SignerKeys::Passkey { p256, slh } => out.extend(p256.iter().chain(slh)),
+                    SignerKeys::Enclave { mldsa, slh } => out.extend(mldsa.iter().chain(slh)),
                 }
                 if let Some(a) = sig.webauthn.as_ref().map(WebAuthn::assertion) {
                     out.extend(a.authenticator_data.iter().chain(&a.client_data_json).chain(&a.signature));
+                }
+                if let Some(e) = &sig.enclave {
+                    out.extend(e.public.iter().chain(&e.sig));
                 }
                 out.extend(&sig.pq);
             }
@@ -2824,7 +2879,7 @@ impl Lab {
     pub fn endpoint_secret(&self, d: SignerId) -> Option<Zeroizing<[u8; 32]>> {
         match self.keys.get(&d)? {
             Key::Device(k) => Some(k.endpoint_secret()),
-            Key::Passkey(_) | Key::Web { .. } | Key::Consent(_) => None,
+            Key::Passkey(_) | Key::Enclave(_) | Key::Web { .. } | Key::Consent(_) => None,
         }
     }
 
@@ -2834,7 +2889,7 @@ impl Lab {
     pub fn own_key(&self, d: SignerId, purpose: &str, data: &[u8]) -> Option<Secret> {
         match self.keys.get(&d)? {
             Key::Device(k) => Some(k.seal_secret().child(purpose, data)),
-            Key::Passkey(_) | Key::Web { .. } | Key::Consent(_) => None,
+            Key::Passkey(_) | Key::Enclave(_) | Key::Web { .. } | Key::Consent(_) => None,
         }
     }
 
@@ -2843,7 +2898,7 @@ impl Lab {
     pub fn hello(&self, d: SignerId, exporter: &[u8; 32], dialer: bool) -> Option<Hello> {
         match self.keys.get(&d)? {
             Key::Device(k) => Some(k.hello(exporter, dialer)),
-            Key::Passkey(_) | Key::Web { .. } | Key::Consent(_) => None,
+            Key::Passkey(_) | Key::Enclave(_) | Key::Web { .. } | Key::Consent(_) => None,
         }
     }
 
@@ -2870,15 +2925,17 @@ impl Lab {
         let device = device.keys();
         match self.keys.get_mut(&passkey)? {
             Key::Passkey(p) => Some(p.pass(device, made)),
-            Key::Device(_) | Key::Web { .. } | Key::Consent(_) => None,
+            Key::Device(_) | Key::Enclave(_) | Key::Web { .. } | Key::Consent(_) => None,
         }
     }
 
-    /// A ceremony of passkey `passkey` over `challenge` (`sign::Ceremony`), as a software passkey the Lab holds makes
-    /// it: `None` unless the Lab holds one. A passkey in the platform's authenticator makes its own, in the browser.
+    /// A ceremony of passkey `passkey` over `challenge` (`sign::Ceremony`), as a software passkey or Touch ID key the Lab
+    /// holds makes it: `None` unless the Lab holds one. A passkey in the platform's authenticator makes its own, in the
+    /// browser, and a Touch ID key in a Mac's Secure Enclave, in the Mac app.
     pub fn ceremony(&mut self, passkey: SignerId, challenge: [u8; 32]) -> Option<Ceremony> {
         match self.keys.get_mut(&passkey)? {
             Key::Passkey(p) => Some(p.ceremony(challenge)),
+            Key::Enclave(k) => Some(k.ceremony(challenge)),
             Key::Device(_) | Key::Web { .. } | Key::Consent(_) => None,
         }
     }

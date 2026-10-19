@@ -41,6 +41,7 @@ use crate::lab::Lab;
 use crate::lens::{self, Lane};
 use crate::ops::{self, FieldOp, Link, Record, RecordOp};
 use crate::policy::Refusal;
+use crate::world;
 use crate::slice::Attrs;
 
 /// The type of an AIP entry, and its record's kind.
@@ -124,7 +125,11 @@ fn aip_of(lab: &Lab, me: SignerId, lanes: &mut HashMap<VaultId, Lane>, entry: En
 struct Review {
     id: EntryId,
     heads: Vec<String>,
+    /// Who started what it answers, as its record names them: the AIP's author, not who answered.
     by: Value,
+    /// Who answered: the vaults the writes of the review were signed in, as bylines read them (`world::authors`), the
+    /// human whose device signed it after the coop's aven, in `world::authors_json`'s shape.
+    authors: Value,
     verdict: String,
     text: String,
     at: u64,
@@ -144,6 +149,7 @@ impl Review {
             "text": self.text,
             "heads": self.heads,
             "by": self.by,
+            "authors": self.authors,
             "at": self.at,
             "current": self.covers(lines),
         })
@@ -319,12 +325,15 @@ impl<'a> Book<'a> {
         let review = Named::Id(lens::REVIEW_V1.id());
         let r = see(lane_of(&mut self.lanes, lab, me, vault), lab.item(me, entry)?, &review)?.record;
         let text = |f: &str| r.get(f).and_then(Value::as_str).map(str::to_string);
-        let made = lab.history(me, entry)?.changes().first()?.write.edit;
+        let history = lab.history(me, entry)?;
+        let made = history.changes().first()?.write.edit;
+        let authors = world::authors_json(lab, me, &world::authors(lab, me, entry, &history.heads(MAIN)));
         let heads = r.get("heads").and_then(Value::as_array).into_iter().flatten();
         let review = Review {
             id: entry,
             heads: heads.filter_map(|h| h.as_str().map(str::to_string)).collect(),
             by: r.get("by").cloned().unwrap_or(Value::Null),
+            authors,
             verdict: text("verdict")?,
             text: text("text").unwrap_or_default(),
             at: r.get("at").and_then(Value::as_u64).unwrap_or(0),
@@ -486,8 +495,9 @@ impl<'a> Book<'a> {
 /// entry tags, author, intent and links; its lines, each `{entry, line, type, title, name, heads, merged, new, tags,
 /// public}`, `new` for a new entry, a draft, `tags` its entry's tags and `public` whether a share to everyone picks a
 /// new entry once it lands (advice: only the vault's stewards read every selector); its
-/// reviews, newest first, each `{review, verdict, text, heads, by, at, current}`, `current` where it answers every
-/// line's heads now; its signatures against the default policy, `{have, need: 1, of: "owners"}`, the accepted reviews
+/// reviews, newest first, each `{review, verdict, text, heads, by, authors, at, current}`, `by` who started what it
+/// answers (the AIP's author), `authors` who answered (`world::authors`: the vault's aven, then the human whose device
+/// signed it), `current` where it answers every line's heads now; its signatures against the default policy, `{have, need: 1, of: "owners"}`, the accepted reviews
 /// that are current (no policy entry is read); and its summary, a line per part. Then each open proposal line no AIP
 /// names, `bare`, an idea of its own. The numbered first, by vault and number, then the ideas by key, then the bare.
 pub(super) fn aips(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {

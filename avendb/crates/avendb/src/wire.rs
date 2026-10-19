@@ -26,7 +26,7 @@ use crate::rules::{
     MAX_VALUES,
 };
 use crate::sealed::{Brought, FileKey, FileRoot};
-use crate::sign::{self, Assertion, Hello, RelayPass, Signature, SignerKeys, Signed, WebAuthn};
+use crate::sign::{self, Assertion, EnclaveSig, Hello, RelayPass, Signature, SignerKeys, Signed, WebAuthn};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use crate::sync::{Ask, LogId, Place};
 
@@ -80,7 +80,7 @@ macro_rules! wire {
     )*};
 }
 
-wire!(Signed, Ask, Hello, Request, Reply, Announce, Statement, Join, RelayPass, Claim, PublicKey, Slice, Select, Body, RecoveryKey);
+wire!(Signed, Signature, SignerKeys, Ask, Hello, Request, Reply, Announce, Statement, Join, RelayPass, Claim, PublicKey, Slice, Select, Body, RecoveryKey);
 
 /// An edit on the wire is the bytes its id hashes (`encode::bytes`): the format's version, then the edit.
 impl Wire for Edit {
@@ -874,6 +874,11 @@ impl Encode for SignerKeys {
                 p256.encode(out);
                 slh.encode(out);
             }
+            SignerKeys::Enclave { mldsa, slh } => {
+                out.push(2);
+                mldsa.encode(out);
+                slh.encode(out);
+            }
         }
     }
 }
@@ -883,6 +888,7 @@ impl Decode for SignerKeys {
         match r.u8()? {
             0 => Ok(SignerKeys::Device { ed25519: r.array()?, slh: r.array()? }),
             1 => Ok(SignerKeys::Passkey { p256: r.array()?, slh: r.array()? }),
+            2 => Ok(SignerKeys::Enclave { mldsa: r.array()?, slh: r.array()? }),
             _ => Err(WireError::Unknown),
         }
     }
@@ -938,12 +944,21 @@ impl Decode for Assertion {
     }
 }
 
-/// Its keys, its assertion, and its SLH-DSA signature after a 1, as the master recovery key's consent has it.
+/// Its keys, its assertion, and its SLH-DSA signature after a 1, as the master recovery key's consent has it; or, for
+/// a Touch ID key's, after a 2 and its Enclave's signature (`EnclaveSig`).
 impl Encode for Signature {
     fn encode(&self, out: &mut Vec<u8>) {
         self.keys.encode(out);
         self.webauthn.encode(out);
-        out.push(1);
+        match &self.enclave {
+            None => out.push(1),
+            Some(e) => {
+                out.push(2);
+                e.public.encode(out);
+                e.sig.encode(out);
+                e.edits.encode(out);
+            }
+        }
         self.pq.encode(out);
     }
 }
@@ -952,10 +967,12 @@ impl Decode for Signature {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let keys = SignerKeys::decode(r)?;
         let webauthn = Option::<WebAuthn>::decode(r)?;
-        if r.u8()? != 1 {
-            return Err(WireError::Unknown);
-        }
-        Ok(Signature { keys, webauthn, pq: r.bytes()? })
+        let enclave = match r.u8()? {
+            1 => None,
+            2 => Some(EnclaveSig { public: r.bytes()?, sig: r.bytes()?, edits: r.set(32)? }),
+            _ => return Err(WireError::Unknown),
+        };
+        Ok(Signature { keys, webauthn, enclave, pq: r.bytes()? })
     }
 }
 
@@ -1353,6 +1370,32 @@ mod tests {
         let mut swapped = bytes.clone();
         swapped[at..at + 64].copy_from_slice(&[&b[..], &a[..]].concat());
         assert_eq!(Signed::from_wire(&swapped), Err(WireError::Unordered));
+    }
+
+    #[test]
+    fn a_touch_id_keys_signature_reads_back_whole() {
+        let w = world();
+        let edits: Vec<Edit> = w.lab.log(w.mac_a).edits()[..2].to_vec();
+        let touch = crate::sign::EnclaveKey::from_seed([1; 32]);
+        assert_eq!(SignerKeys::from_wire(&touch.keys().to_wire()), Ok(touch.keys()));
+        let alone = Signed { edit: edits[0].clone(), sigs: vec![touch.sign(edits[0].id())] };
+        assert_eq!(Signed::from_wire(&alone.to_wire()), Ok(alone.clone()));
+        let mut batch: Vec<EditId> = edits.iter().map(Edit::id).collect();
+        batch.sort();
+        let ceremony = touch.ceremony(crate::sign::batch_challenge(&batch));
+        let sig = ceremony.sign_in(touch.keys(), edits[1].id(), &batch).expect("its signature");
+        let together = Signed { edit: edits[1].clone(), sigs: vec![sig] };
+        assert_eq!(Signed::from_wire(&together.to_wire()), Ok(together));
+        // a passkey's signature keeps its bytes: a 1 after its assertion, where a Touch ID key's has a 2
+        let mut passkey = crate::sign::Passkey::from_seed([1; 32]);
+        let bytes = passkey.sign(edits[0].id()).to_wire();
+        assert_eq!(Signature::from_wire(&bytes).map(|s| s.enclave), Ok(None));
+        let bytes = alone.sigs[0].to_wire();
+        let at = 1 + 64 + 1;
+        assert_eq!(bytes[at], 2, "after its keys and no assertion");
+        let mut other = bytes.clone();
+        other[at] = 3;
+        assert_eq!(Signature::from_wire(&other), Err(WireError::Unknown));
     }
 
     #[test]

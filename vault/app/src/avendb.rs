@@ -5,7 +5,8 @@
 //! answered by the device itself, with no lines of JSON between. The avenDB page calls it through `avendb`
 //! ($lib/avendb/native.js), in the calls the page's own device answers; each ceremony of the person's passkey it asks
 //! for runs in the sign-in sheet over the window that called last (passkey.rs), what comes back sealed to a key the
-//! device made for that ceremony alone. The app's own Rust reads a file's bytes on the device's own node (`node`).
+//! device made for that ceremony alone; each touch of the Mac's Touch ID key it asks for, the Secure Enclave answers
+//! (enclave.rs). The app's own Rust reads a file's bytes on the device's own node (`node`).
 //! It starts with the first call, runs on while the app does, its node
 //! syncing whichever page is open, and stops as the app quits (`stop`), closing its store.
 //!
@@ -178,10 +179,19 @@ fn start() -> Result<Hosted, String> {
     Ok(Hosted { host, window, quit, ended })
 }
 
-/// Shows each sheet the device asks for over the window that called last, and gives it the sheet's answer; until the
-/// host is gone.
+/// Shows each sheet the device asks for over the window that called last, and gives it the sheet's answer; and asks
+/// the Secure Enclave for each touch it asks for (enclave.rs), and gives it the Enclave's answer; until the host is gone.
 async fn sheets(mut lines: avendb_device::Lines, host: Host, window: Window) {
     while let Some(message) = lines.recv().await {
+        if let Some(n) = message.get("enclave").and_then(Value::as_u64) {
+            let host = host.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                let mut answer = crate::enclave::ask(&message).unwrap_or_else(|why| json!({ "error": why }));
+                answer["enclave"] = n.into();
+                host.answer(&answer);
+            });
+            continue;
+        }
         let Some(n) = message.get("sheet").and_then(Value::as_u64) else { continue };
         let url = message.get("url").and_then(Value::as_str).unwrap_or_default().to_string();
         let (host, window) = (host.clone(), window.lock().expect("the window").clone());

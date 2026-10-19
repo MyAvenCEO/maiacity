@@ -150,23 +150,41 @@ pub fn approved(lab: &mut Lab, me: SignerId, then: &Then, ids: &[EditId]) -> Res
     })
 }
 
-/// The person's passkey as device `me` holds it: of its vault's owners, the passkeys whose keys it holds, the vault's
-/// root first, never the master recovery key. It approves for its vault and every vault that vault owns.
+/// The person's owner key as device `me` holds it, which approves for its vault and every vault that vault owns: of
+/// its vault's owners, the keys it holds that sign in a ceremony, its Mac's Touch ID key first, so a touch approves
+/// where it can (2026-10-19), then the vault's root, then a passkey; never the master recovery key.
 pub fn passkey_of(lab: &Lab, me: SignerId) -> Option<SignerId> {
-    let vault = lab.state(me).vault(lab.vault_of(me)?)?;
-    let passkey =
-        |s: &SignerId| matches!(lab.keys_of(*s), Some(SignerKeys::Passkey { .. })) && Some(*s) != lab.recovery();
-    let owners = vault.owners.iter().filter_map(|p| match p {
-        Principal::Signer(s) => Some(*s),
-        Principal::Vault(_) => None,
-    });
-    vault.root.filter(passkey).or_else(|| owners.filter(passkey).next())
+    owner_key(lab, me, false)
 }
 
-/// Who signs a change of device `me`'s that its vault's owners approve: the passkey, and `newcomer`, the signer it
-/// adds, where the device holds its keys, as it must sign too. None while the device holds no passkey.
-fn approvers(lab: &Lab, me: SignerId, newcomer: Option<SignerId>) -> Option<(SignerId, Vec<SignerId>)> {
-    let passkey = passkey_of(lab, me)?;
+/// `passkey_of`, or, for a change only the vault's root makes (`root`), the root alone, if the device holds its keys or
+/// its vault's Touch ID key, which a Mac opens with alone.
+fn owner_key(lab: &Lab, me: SignerId, root: bool) -> Option<SignerId> {
+    let vault = lab.state(me).vault(lab.vault_of(me)?)?;
+    let held = |s: &SignerId| Some(*s) != lab.recovery();
+    let passkey = |s: &SignerId| held(s) && matches!(lab.keys_of(*s), Some(SignerKeys::Passkey { .. }));
+    let touch = |s: &SignerId| held(s) && matches!(lab.keys_of(*s), Some(SignerKeys::Enclave { .. }));
+    let owners: Vec<SignerId> = vault
+        .owners
+        .iter()
+        .filter_map(|p| match p {
+            Principal::Signer(s) => Some(*s),
+            Principal::Vault(_) => None,
+        })
+        .collect();
+    let first = owners.iter().copied().find(touch);
+    if root {
+        // a Mac its Touch ID key opened holds no passkey's keys: the root's own ceremony brings them (`Lab::take_in`)
+        return vault.root.filter(|r| passkey(r) || touch(r) || (first.is_some() && held(r)));
+    }
+    first.or(vault.root.filter(passkey)).or_else(|| owners.iter().copied().find(passkey))
+}
+
+/// Who signs a change of device `me`'s that its vault's owners approve, or its root alone if `root`: the owner key
+/// (`owner_key`), and `newcomer`, the signer it adds, where the device holds its keys, as it must sign too. None while
+/// the device holds no such key.
+fn approvers(lab: &Lab, me: SignerId, newcomer: Option<SignerId>, root: bool) -> Option<(SignerId, Vec<SignerId>)> {
+    let passkey = owner_key(lab, me, root)?;
     let newcomer = newcomer.filter(|&s| s != passkey && lab.keys_of(s).is_some());
     Some((passkey, [passkey].into_iter().chain(newcomer).collect()))
 }
@@ -195,7 +213,8 @@ fn approval(
     if !matches!(refused, Refusal::BelowThreshold | Refusal::NoConsent | Refusal::NotRoot) {
         return Err(refused.into());
     }
-    let Some((passkey, signers)) = approvers(lab, me, newcomer) else { return Err(refused.into()) };
+    let root = refused == Refusal::NotRoot;
+    let Some((passkey, signers)) = approvers(lab, me, newcomer, root) else { return Err(refused.into()) };
     let drafts = vec![draft(lab, &signers)?];
     Ok(Prepared::Approve(Approval { passkey, signers, drafts, then }))
 }
@@ -985,7 +1004,7 @@ fn found(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared
         return Err(bad("found names the vaults it founds"));
     }
     let mine = lab.vault_of(me).ok_or(Refusal::NotActing)?;
-    let (passkey, signers) = approvers(lab, me, None).ok_or(Refusal::BelowThreshold)?;
+    let (passkey, signers) = approvers(lab, me, None, false).ok_or(Refusal::BelowThreshold)?;
     let nonces: Vec<u64> = new.iter().map(|_| lab.nonce()).collect();
     let mut drafting = lab.drafting(me);
     let mut made: Vec<VaultId> = vec![];
@@ -1177,23 +1196,27 @@ fn owning(
     if actor != by || !lab.state(me).acts_for(me, by) {
         return Err(Refusal::NotActing.into());
     }
-    let passkey = passkey_of(lab, me).ok_or(Refusal::NotActing)?;
+    let mine = passkey_of(lab, me).ok_or(Refusal::NotActing)?;
     let action = Action::Share(Sharing::Owner { vault: over, owner: Principal::Vault(who), seal_to: None });
-    let (then, draft) = match granting {
+    let (passkey, then, draft) = match granting {
         true => {
             let first = world::approver(lab.state(me), r.from);
             let first = first.ok_or_else(|| bad("no one passkey approves for the vault asking"))?;
-            let signers: Vec<SignerId> = [passkey].into_iter().chain(Some(first).filter(|&f| f != passkey)).collect();
-            (Then::Part { entry, by }, lab.draft(me, &signers, action)?)
+            let signers: Vec<SignerId> = [mine].into_iter().chain(Some(first).filter(|&f| f != mine)).collect();
+            (mine, Then::Part { entry, by }, lab.draft(me, &signers, action)?)
         }
         false => {
             let part = sign::unbase64url(&r.part).and_then(|b| Signed::from_wire(&b).ok());
             let part = part.ok_or_else(|| bad("the request's part is no signed edit"))?;
             let rest: Vec<SignerId> = part.edit.sigs().skip(part.sigs.len()).collect();
-            if part.edit.action != action || rest != [passkey] {
-                return Err(bad("the request's part adds another owner, or waits on another passkey than this one"));
-            }
-            (Then::Finish(part.sigs.clone()), lab.parted(me, &part))
+            // the part waits on the asking vault's root (`world::approver`), which a Mac its Touch ID key opened
+            // signs as in its sheet
+            let root = owner_key(lab, me, true);
+            let passkey = match rest[..] {
+                [s] if part.edit.action == action && (s == mine || Some(s) == root) => s,
+                _ => return Err(bad("the request's part adds another owner, or waits on another passkey than this one")),
+            };
+            (passkey, Then::Finish(part.sigs.clone()), lab.parted(me, &part))
         }
     };
     Ok(Prepared::Approve(Approval { passkey, signers: vec![passkey], drafts: vec![draft], then }))

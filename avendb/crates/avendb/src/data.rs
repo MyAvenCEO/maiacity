@@ -358,19 +358,23 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
     }
 }
 
-/// A signature as the History view shows it: its signer, whether that is a device or a passkey, the size of its SLH-DSA
-/// signature, and a passkey's WebAuthn assertion beside it (`webauthn`): over the edit, over a batch of edits, with how
-/// many (`batch`), or a pass for the device the edit adds.
+/// A signature as the History view shows it: its signer, whether that is a device, a passkey or a Touch ID key
+/// (`touch`), the size of its SLH-DSA signature, and a passkey's WebAuthn assertion beside it (`webauthn`): over the
+/// edit, over a batch of edits, with how many (`batch`), or a pass for the device the edit adds; a Touch ID key's
+/// Enclave signature counts as `edit` or `batch` the same way.
 fn signature(sig: &Signature) -> Value {
     let by = match sig.keys {
         SignerKeys::Device { .. } => "device",
         SignerKeys::Passkey { .. } => "passkey",
+        SignerKeys::Enclave { .. } => "touch",
     };
-    let (webauthn, batch) = match &sig.webauthn {
-        None => (None, None),
-        Some(WebAuthn::Edit(_)) => (Some("edit"), None),
-        Some(WebAuthn::Batch { edits, .. }) => (Some("batch"), Some(edits.len())),
-        Some(WebAuthn::Pass { .. }) => (Some("pass"), None),
+    let (webauthn, batch) = match (&sig.webauthn, &sig.enclave) {
+        (None, None) => (None, None),
+        (Some(WebAuthn::Edit(_)), _) => (Some("edit"), None),
+        (Some(WebAuthn::Batch { edits, .. }), _) => (Some("batch"), Some(edits.len())),
+        (Some(WebAuthn::Pass { .. }), _) => (Some("pass"), None),
+        (None, Some(e)) if e.edits.is_empty() => (Some("edit"), None),
+        (None, Some(e)) => (Some("batch"), Some(e.edits.len())),
     };
     let signer = hex(&sig.keys.id().0);
     json!({ "signer": signer, "by": by, "webauthn": webauthn, "batch": batch, "pq": sig.pq.len() })

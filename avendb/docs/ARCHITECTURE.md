@@ -1558,6 +1558,7 @@ Every node trusts no elliptic curve alone, and there is no switch back.
 |---|---|
 | Signatures | SLH-DSA-SHA2-128f on every edit, the only signature that counts (17,088 bytes each). |
 | Passkeys | A passkey's WebAuthn assertion (P-256) rides beside its SLH-DSA signature: it shows a person was there. |
+| Touch ID keys | A Mac's Secure Enclave signs with ML-DSA-65 beside the key's SLH-DSA signature, and opens its secret with ML-KEM-768 (section 11). |
 | Sealed keys | Every box is sealed to X-Wing (ML-KEM-768 with X25519) and Classic McEliece 6688128f at once. |
 | Data | XChaCha20-Poly1305 for edits and boxes, ChaCha20-Poly1305 per 64 KiB file segment, 256-bit keys. |
 | Hashes | BLAKE3 for every hash of avenDB's own: an id is the plain hash of its bytes, the name iroh-blobs gives them; every other hash derives its own key for its purpose (`hash`). |
@@ -1613,6 +1614,33 @@ ceremony brings back: an assertion over a challenge, and PRF outputs on avenDB's
 
 Every page on `maia.city` can ask the person's authenticator for a ceremony of that relying party, so the site's own
 scripts are part of what guards the root, as for any passkey. Each ceremony shows the person a prompt.
+
+### Touch ID on a Mac
+
+A Mac with macOS 26 can keep a Touch ID key for avenDB in its Secure Enclave (2026-10-19), so the desktop app opens
+with a touch and no sign-in sheet. The key is a second owner of the person's human vault, beside their passkey, which
+stays its root (spec: `Examples.touch`, `tests/touch_id.rs`).
+
+- **Two Enclave keys, one touch.** An ML-DSA-65 key signs each ceremony's challenge with avenDB's context
+  (`sign::ENCLAVE_CONTEXT`). An ML-KEM-768 key opens a secret sealed to it once, at setup. Both are locked to the
+  fingers enrolled then (`biometryCurrentSet`), and one touch covers both. The secret derives the key's SLH-DSA key, as
+  a passkey's PRF output derives a passkey's, and every signature carries both (`sign::EnclaveSig`). The signer id
+  hashes both keys (`SignerKeys::Enclave`). Rust checks a signature a real Enclave made (`sign.rs`,
+  `tests/data/enclave-mac.kat`).
+- **Added by the passkey.** Setup (`touchSetup`) makes the keys, then adds the key as an owner in one edit that the
+  passkey approves and the key consents to. The same passkey ceremony brings the PRF output on the device's salt, so
+  the device's secret is also kept masked by what the touch opens (`Ceremony::device_mask`, `avendb_browser::Touch`).
+- **Opens and approves.** At each start a touch unmasks the device's secret (`Device::open_by_touch`). Where no touch
+  comes, the passkey's sheet opens it as before. A touch then approves what the vault's owners approve
+  (`engine::passkey_of` picks the key first). Only the root hands the root on: on a Mac the touch opened, the passkey's
+  sheet signs that, and its ceremony brings the passkey's keys (`Lab::take_in`).
+- **What stays on the Mac.** The Enclave's blobs of both keys and the ciphertext are in `Meta::touch`. Only that
+  Enclave reads them, and only after a touch. `touchOff` forgets them. The vault's owners revoke the key like any
+  owner, from any device (the `revoke` op). A Mac whose fingers changed falls back to the passkey.
+- **The app's side.** The device asks for each touch in a line `{"enclave": n, ...}`, as it asks for a sheet. The OS
+  answers it with CryptoKit in Swift (vault/app/enclave/Enclave.swift, linked in by build.rs; vault/app/src/enclave.rs).
+  The touch that makes the keys also covers the edit that adds them, so setup takes one touch beside the passkey.
+  `vault/app/scripts/enclave-check.sh` checks the bridge on a Mac without building the app.
 
 **A device's secure boundary.** Nothing on disk, in a view, in a log line or in a debug print holds a secret: a node's
 store holds signed edits and McEliece public keys, and a key prints as its id. The server's device secret is the one
