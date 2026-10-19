@@ -397,8 +397,8 @@ their own devices, as for any vault they own. It owns nothing.
 An agent is a device of the aven too, beside its server, a key of its own, never a token: Claude Code as agentClaude,
 Codex as agentCodex, and likewise Cursor, Grok and our own native aven. It acts as the aven, with exactly what the aven
 holds, no more and no less: no agent vaults under the aven and no sub caps. By default the aven holds Suggester on its
-coop and an "AIP author" share on the coop's AIPs (`read`, `create` and `set`, on `{"type": ["aip"]}` alone), which the
-seed gives it (the page's `seed.js`): so an agent proposes and drafts, opens AIPs over its proposal lines and promotes
+coop and an "AIP author" share on the coop's AIPs (`read`, `create` and `set`, on `{"type": ["aip"]}` alone), which
+Maia City's first seed gave avenMAIA (nothing re-grants them: a coop that takes one back keeps it taken back): so an agent proposes and drafts, opens AIPs over its proposal lines and promotes
 them, and a human of the coop reviews them (section 8, "AIPs", "Drafts"). A coop that gives the aven more gives every
 agent of it more, and one that takes a share back takes it from all of them. One agent is taken out by removing its
 device from the aven, leaving the others. A harness never names or picks an aven: its person's coop's one aven is it.

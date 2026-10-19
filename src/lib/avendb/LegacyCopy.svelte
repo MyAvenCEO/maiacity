@@ -1,7 +1,7 @@
 <!--
 	What maiaCITY kept before avenDB, offered on the Sparks page (./Sparks.svelte) of the Maia City COOP alone, where the
 	acting vault may add sparks and artifacts to it (Samuel 2026-10-18: a person's own vault gets no sparks, artifacts or
-	the like from the seed; they all go into Maia City, as ./seed.js writes the rest), to copy in once (./legacy.js): the inspire-me reports with their sources, the journal's
+	the like from the seed; they all go into Maia City), to copy in once (./legacy.js): the inspire-me reports with their sources, the journal's
 	sources and idea pads, and the admin's notebook where the person signed in to maia.city holds it. The originals stay
 	where they are. Each piece copies as its artifacts and then its spark, one after another; what is copied already is
 	left out, so it shows only while something is left. "Not now" hides it in this browser for this vault.
