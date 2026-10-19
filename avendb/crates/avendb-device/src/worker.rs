@@ -62,8 +62,8 @@ pub const LOOK: Duration = Duration::from_secs(3);
 /// The longest name a worker takes, in characters.
 const NAME: usize = 64;
 
-/// The workers' folder beside the app's `host` folder: `<host>-workers`, outside it, as the app's device clears
-/// whatever its own folder holds beside its shelves (`disk::clear`).
+/// The workers' folder beside the app's `host` folder: `<host>-workers`, outside it, so the app's own folder holds its
+/// shelves alone.
 pub fn workers(host: &Path) -> PathBuf {
     let mut name = host.file_name().unwrap_or_default().to_os_string();
     name.push("-workers");

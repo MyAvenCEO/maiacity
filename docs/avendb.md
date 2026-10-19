@@ -717,7 +717,7 @@ Each place keeps what lasts on one shelf, laid out the same everywhere. A shelf 
 | **Server** | The sealed bucket; its disk is only a cache | Every file whole, by default |
 
 ```
-g18/                one generation, 18 or later since the last reset; starting fresh makes g19
+g18/                one generation, 18 or later, for good: avenDB is never reset; starting fresh makes g19
   meta/<n>          what opens the device again, its follow list and query limit too (browser, desktop)
   journal/<n>       what one save added: new edits, and the McEliece keys they brought
   heads/<n>         after every 64 saves: the packs that hold the log so far
@@ -733,11 +733,11 @@ g18/                one generation, 18 or later since the last reset; starting f
 
 Packing is what makes object storage work for a database. Hetzner bills every object as at least 64 KB and allows 750 requests a second per bucket. A million edits stored one per object would take 22 minutes of a fully busy bucket to write or restore. Packed, a node reads a few dozen objects to start.
 
-- **Put aside, clear at a reset.** Forgetting an account, or starting fresh, makes a new generation beside the old one, which is never read again. A reset raises the lowest generation, now 18. As each place opens, it deletes every older one: the desktop its folder, a browser its private storage, the server its folder and its bucket.
+- **Put aside, never cleared.** Forgetting an account, or starting fresh, makes a new generation beside the old one, which is never read again and never deleted. avenDB is never reset: the lowest generation stays at 18, the edit format at version 11, and no place deletes what it finds in its folder, its private storage or its bucket.
 - **Nothing counts until the bucket has it.** The server’s shelf answers only once the bucket holds the object, so its holdings name an edit or a file only then.
 - **Sealed and in parts.** Every object in the bucket is sealed and bound to its name. A blob is stored in 8 MiB parts, and counts once its outboard, written last, is there.
 - **Its disk is a cache.** The server caches parts it read lately, 8 GiB by default. Its own device secret is in the bucket too, sealed, so a server whose disk is lost comes back from the bucket alone.
-- **Locked.** Every object version is kept for 7 days in compliance mode, so not even a compromised server can wipe the backup. What a reset deletes stays there 7 more days, then goes.
+- **Locked.** Every object version is kept for 7 days in compliance mode, so not even a compromised server can wipe the backup.
 
 Post-quantum
 

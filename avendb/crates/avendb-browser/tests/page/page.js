@@ -12,7 +12,7 @@
  * with `nest`, a device adds a row of its own three lists down in it, at once with the other device, and waits until
  * it reads both rows. Each step is reported to the test, with the passkey's ceremonies so far, and how deep the
  * device's queries read. With `earlier`,
- * it keeps in OPFS what an earlier avenDB kept for the store, which the store clears as it opens; with `twice`, it
+ * it keeps in OPFS what an earlier avenDB kept for the store, which the store keeps as it opens; with `twice`, it
  * tries to hold a store another page's device runs from.
  */
 import init, * as avendb from '/pkg/avendb_browser.js';

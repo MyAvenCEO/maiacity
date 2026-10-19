@@ -1,6 +1,7 @@
 //! A node's edits on its shelf (v8 phase S), here a folder's (`disk`), as on the Mac: what its device holds comes back
-//! whole and in its order when the node starts again; a place's first shelf clears whatever came before the last
-//! reset, and a shelf put aside stays whole beside the next; a head follows every 64 journal entries; a head or an
+//! whole and in its order when the node starts again; a place's first shelf deletes nothing it finds beside it, a
+//! shelf of before the last reset or an earlier avenDB's store, and a shelf put aside stays whole beside the next;
+//! avenDB's floor stays where its last reset left it; a head follows every 64 journal entries; a head or an
 //! entry cut short is passed and never replaced; an edit whose signatures fail brings a head of the whole log; and an
 //! object is put once.
 
@@ -93,7 +94,7 @@ async fn edits_and_keys_come_back_in_the_order_they_were_taken() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_shelf_clears_what_came_before_the_last_reset_and_puts_older_ones_aside_whole() {
+async fn a_shelf_deletes_nothing_it_finds_and_puts_older_ones_aside_whole() {
     let dir = Folder::new("aside");
     // an earlier avenDB's store, which no avenDB reads again
     fs::create_dir_all(dir.path().join("store/keys")).expect("its folders");
@@ -106,17 +107,18 @@ async fn a_shelf_clears_what_came_before_the_last_reset_and_puts_older_ones_asid
     let earlier = files(dir.path());
     assert_eq!(disk::generations(dir.path()).expect("its shelves"), vec![1], "an old shelf alone");
     let (node, _, coop) = mac(dir.path()).await;
-    assert_eq!(disk::generations(dir.path()).expect("its shelves"), vec![FLOOR], "a new one, of the floor's, alone");
+    assert_eq!(disk::generations(dir.path()).expect("its shelves"), vec![1, FLOOR], "a new one, of the floor's, beside");
     let welcome = write(&node, coop, "Welcome", WELCOME_TEXT).await;
     node.shutdown().await.expect("it stops");
     drop(node);
     let now = files(dir.path());
-    assert!(earlier.keys().all(|name| !now.contains_key(name)), "what came before the reset is cleared: {now:?}");
-    assert!(now.keys().all(|n| n.starts_with(&format!("g{FLOOR}/"))), "all there is is in the new shelf");
-    assert_eq!(fs::read_dir(dir.path()).expect("its folder").count(), 1, "not even an empty folder of before");
+    for (name, bytes) in &earlier {
+        assert_eq!(now.get(name), Some(bytes), "{name}, from before the last reset, stays as it was");
+    }
+    assert!(now.keys().any(|n| n.starts_with(&format!("g{FLOOR}/journal/"))), "the new shelf keeps what the Mac takes");
     // put aside: a second shelf beside it, which holds nothing, and the first stays whole
     assert_eq!(disk::aside(dir.path()).expect("put aside"), FLOOR + 1);
-    assert_eq!(disk::generations(dir.path()).expect("its shelves"), vec![FLOOR, FLOOR + 1]);
+    assert_eq!(disk::generations(dir.path()).expect("its shelves"), vec![1, FLOOR, FLOOR + 1]);
     let (node, _, coop) = mac(dir.path()).await;
     assert!(!shows(&node, welcome, WELCOME_TEXT).await, "the Mac starts on the new shelf, without Welcome");
     write(&node, coop, "Onboarding", ONBOARDING_TEXT).await;
@@ -263,4 +265,11 @@ async fn an_object_is_put_once_and_owned_by_its_owner_alone() {
         let mode = fs::metadata(key).expect("its file").permissions().mode();
         assert_eq!(mode & 0o777, 0o600, "readable by its owner alone");
     }
+}
+
+/// avenDB is never reset again (Samuel 2026-10-19: "so no accidental resets can happen anymore"): its floor stays at
+/// the generation its last reset left, so no place ever leaves the shelf it holds for a new, empty one.
+#[test]
+fn the_floor_stays_where_the_last_reset_left_it() {
+    assert_eq!(FLOOR, 18, "raising the floor would leave every place's shelf for an empty one: a reset");
 }

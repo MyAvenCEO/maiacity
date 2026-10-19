@@ -2,8 +2,8 @@
 //! the page (`tests/page/`) and the device's WebAssembly, which `scripts/test-browser.sh` builds for passkeys of
 //! localhost; it starts a relay open to sign-up and a new server, nobody's yet, on this machine, and drives one
 //! headless Chromium over its DevTools protocol. The tab's virtual authenticator, with PRF, holds Eve's passkey, and
-//! each of her browsers is a frame of the tab, with a store of its own in OPFS, its shelf. Her first browser clears
-//! there what an earlier avenDB kept, makes the passkey, founds her vault and claims the server in one ceremony after
+//! each of her browsers is a frame of the tab, with a store of its own in OPFS, its shelf. Her first browser keeps
+//! there what an earlier avenDB kept, deleting none of it, makes the passkey, founds her vault and claims the server in one ceremony after
 //! the unlock, and writes a note; then it runs the ops the page's screens send, each through `run` (V2): it brings a
 //! file (`put_file`) and reads a range of it back (`read_file`), founds two vaults in one more ceremony, reads its
 //! world, shares a note and revokes the share, keeps her notes, makes the coop a co-owner and sets a threshold, each in
@@ -11,7 +11,7 @@
 //! the first one's code in one ceremony and edits it; both add a row three lists down in her outline at once, and each
 //! reads the other's, the two agreeing on the whole outline; the first closes, opens again from its shelf in one
 //! ceremony and edits the note once more, no other page holding its store while it runs; then she forgets it there, and
-//! its shelf is put aside, a new one in use, what the earlier avenDB kept gone. Each page reports its steps to the test
+//! its shelf is put aside, a new one in use, what the earlier avenDB kept still there. Each page reports its steps to the test
 //! over HTTP. `cargo test` skips it; the script runs it.
 
 use std::collections::VecDeque;
@@ -315,7 +315,7 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let opts = Options { relay: Some(relay.url()), admission: Some(admission.clone()), card: true, ..Options::local() };
     let server = Node::spawn(lab, server_d, opts).await.expect("the server");
 
-    // what an earlier avenDB kept for her first browser's store in OPFS, which it clears as it opens
+    // what an earlier avenDB kept for her first browser's store in OPFS, which it keeps as it opens: avenDB is never reset
     tab.frame(&[("page", "earlier"), ("store", "first"), ("earlier", "1")]).await;
     let earlier = tab.expect("earlier", "earlier").await;
     assert!(earlier["ops"].is_string() && earlier["old"].is_string(), "kept: {earlier}");
@@ -339,9 +339,9 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let entry = EntryId(id(&first, "entry"));
     let holds = move |lab: &Lab, me| lab.fetched(me, entry) > 0;
     until("the server keeps her note", || server.read(holds)).await;
-    // her browser's shelf is a new one, alone, what the earlier avenDB kept cleared; the file she brought is there, its
+    // her browser's shelf is a new one, beside the shelf from before the last reset; the file she brought is there, its
     // one piece under its hash, its outboard too
-    assert_eq!(first["generations"], json!([format!("g{FLOOR}")]), "one shelf: {first}");
+    assert_eq!(first["generations"], json!(["g1", format!("g{FLOOR}")]), "a new shelf beside the old: {first}");
     let root = first["file"]["root"].as_str().unwrap_or_else(|| panic!("the file she brought: {first}"));
     for kept in ["blobs", "outboards"] {
         let held = first["shelf"][kept].as_array().unwrap_or_else(|| panic!("its {kept}: {first}"));
@@ -431,18 +431,17 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     tab.expect("second", "read again").await;
 
     // she forgets it there: its shelf is put aside, deleting nothing, and a new one is in use, holding nothing; what
-    // the earlier avenDB kept, it cleared
+    // the earlier avenDB kept, it still keeps
     tab.eval("localStorage.setItem('go:again', '1')").await;
     tab.expect("again", "closed").await;
     let forgot = tab.expect("again", "forgot").await;
     let (old, new) = (format!("g{FLOOR}"), format!("g{}", FLOOR + 1));
-    assert_eq!(forgot["generations"], json!([old, new]), "a new shelf beside the old: {forgot}");
+    assert_eq!(forgot["generations"], json!(["g1", old, new]), "a new shelf beside the old: {forgot}");
     // what opened it, as it kept it at the start and again with how deep its queries read
-    let metas = json!({ old: ["0000000000000001", "0000000000000002"], new: [] });
+    let metas = json!({ "g1": ["0000000000000001"], old: ["0000000000000001", "0000000000000002"], new: [] });
     assert_eq!(forgot["metas"], metas, "the old shelf as it was");
     assert_eq!(forgot["meta"], Value::Null, "nothing opens a device on the new one");
-    let gone = json!({ "ops": null, "meta": null, "key": null, "old": null });
-    assert_eq!(forgot["earlier"], gone, "what the earlier avenDB kept, cleared");
+    assert_eq!(forgot["earlier"], earlier, "what the earlier avenDB kept, as it was");
     let passkeys = tab.passkeys().await;
     assert_eq!(passkeys.len(), 1, "one passkey, Eve's: {passkeys:?}");
     assert_eq!(passkeys[0]["rpId"], "localhost");

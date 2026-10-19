@@ -11,8 +11,12 @@ use crate::rules::{Cap, CapGroup, Grant, On, Op, Proof, Scalar, Step};
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 
-/// The version byte every edit starts with: 11 since a write that creates its entry carries the nonce its id is the
-/// hash of (`policy::Creation`), so avenDB starts afresh (10 since every id is a BLAKE3 hash, 9 since every
+/// The version byte every edit starts with, for good: avenDB is never reset again (Samuel 2026-10-19: "so no accidental
+/// resets can happen anymore"), and an edit of another version is one no avenDB reads (`wire::versioned`), so raising
+/// it would leave every edit every vault holds unread, a reset. A new form of edit is a new kind, op or field that
+/// version 11 reads beside the old ones, never a new byte; a test holds it (`the_edit_version_stays_where_the_last_reset_left_it`). 11 since a write that
+/// creates its entry carries the nonce its id is the hash of (`policy::Creation`), when avenDB last started afresh
+/// (10 since every id is a BLAKE3 hash, 9 since every
 /// signature on an edit is SLH-DSA alone, a passkey's with its WebAuthn assertion beside it, and checkpoints are gone,
 /// 8 since the v8 kinds, 7 since every human vault is founded with the master recovery key among its owners, 6 since
 /// shares are named groups of ops, 5 since flat vaults, 4 since the three kinds of vault, 3 since P5, whose writes name
@@ -1041,5 +1045,12 @@ mod tests {
         a.encode(&mut ea);
         b.encode(&mut eb);
         assert!(!ea.starts_with(&eb) && !eb.starts_with(&ea));
+    }
+
+    /// avenDB is never reset again (Samuel 2026-10-19): an edit of another version is one no avenDB reads, so the byte
+    /// stays at the version of its last reset.
+    #[test]
+    fn the_edit_version_stays_where_the_last_reset_left_it() {
+        assert_eq!(VERSION, 11, "raising it would leave every edit every vault holds unread: a reset");
     }
 }

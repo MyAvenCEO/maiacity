@@ -535,7 +535,7 @@
 		['Server', 'The sealed bucket; its disk is only a cache', 'Every file whole, by default']
 	];
 
-	const LAYOUT = `g18/                one generation, 18 or later since the last reset; starting fresh makes g19
+	const LAYOUT = `g18/                one generation, 18 or later, for good: avenDB is never reset; starting fresh makes g19
   meta/<n>          what opens the device again, its follow list and query limit too (browser, desktop)
   journal/<n>       what one save added: new edits, and the McEliece keys they brought
   heads/<n>         after every 64 saves: the packs that hold the log so far
@@ -1898,9 +1898,9 @@
 			</p>
 			<ul class="prose-col">
 				<li>
-					<b>Put aside, clear at a reset.</b> Forgetting an account, or starting fresh, makes a new generation beside the
-					old one, which is never read again. A reset raises the lowest generation, now 18. As each place opens, it deletes
-					every older one: the desktop its folder, a browser its private storage, the server its folder and its bucket.
+					<b>Put aside, never cleared.</b> Forgetting an account, or starting fresh, makes a new generation beside the old
+					one, which is never read again and never deleted. avenDB is never reset: the lowest generation stays at 18, the
+					edit format at version 11, and no place deletes what it finds in its folder, its private storage or its bucket.
 				</li>
 				<li>
 					<b>Nothing counts until the bucket has it.</b> The server’s shelf answers only once the bucket holds the object,
@@ -1916,7 +1916,7 @@
 				</li>
 				<li>
 					<b>Locked.</b> Every object version is kept for 7 days in compliance mode, so not even a compromised server can
-					wipe the backup. What a reset deletes stays there 7 more days, then goes.
+					wipe the backup.
 				</li>
 			</ul>
 		</section>

@@ -15,12 +15,11 @@
 	import { VILLAGE_INFO } from '$lib/models/village.js';
 	import { WAYSIDE_INFO } from '$lib/models/wayside.js';
 	import { RENTED, SUBLET, COOPS, DAY_MS, act, newGame, MINDS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
-	import { loadGame, resetGame, sendMove, takeSeat } from './store.js';
+	import { loadGame, sendMove, takeSeat } from './store.js';
 	import { createWorld } from './world.js';
 	import LedgerView from './LedgerView.svelte';
 	import { STORY_INVESTS, TOLD, momentOf, revealOf, story, worldStage } from './tour.js';
 	import { reelFor } from './intro.js';
-	import { sure } from '$lib/app/sure.js';
 	import { treeNow } from './trees.js';
 	import { plantOf } from './plants.js';
 	import { SEEDLINGS } from '../../../game/maiacity-v1/engine.js';
@@ -833,7 +832,6 @@
 					<p class="about">One game month {view.settings.hoursPerMonth === 24 ? 'a real day' : `every ${hrs(view.settings.hoursPerMonth)}`}, from year 0, on the 13-month calendar: 13 months of 28 days, Sol first (it begins on 21 March, the new year) and March last. Every month starts on a Sunday. Every balance melts continuously at {f(view.settings.demurrage * 100, 0)} % a year. Every game week ends in a pay day (the 8th, 15th, 22nd and the next 1st, each a Sunday): every rent is paid, a quarter of a month’s, and a payer short of a MIND swaps its others through the pool on its own; what is still missing is owed and paid first next pay day. Every sale pays its owners: {f(view.settings.dividendShare * 100, 0)} % of every rent a COOP is paid goes at once to the holders of its MIND, pro rata. Every setting and every COOP changes only through a proposal with {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'}, made and signed in the Proposals app.</p>
 					<div class="buttons">
 						{#if canMove}<a class="button primary" href={aipsLink({})}>Propose a change</a>{/if}
-						{#if admin}<button class="danger" disabled={busy} onclick={async () => (await sure('Start the game again from year 0? Every balance, MIP and the ledger go.')) && run(resetGame)}>Start again from year 0</button>{/if}
 					</div>
 				{/if}
 			</ViewSlot>
@@ -1480,9 +1478,6 @@
 		background: #24452f;
 		border-color: #24452f;
 		color: #f4f1e8;
-	}
-	button.danger {
-		color: #b5523a;
 	}
 	button:disabled {
 		opacity: 0.45;

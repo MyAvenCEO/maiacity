@@ -1,6 +1,6 @@
 //! A node's bucket (blobs B3a, v8 phase S): its shelf, every object sealed under the node's seal; a node whose folder
-//! is lost starting again from its bucket alone; a bucket's first shelf marked as it clears the bucket and the folder
-//! of whatever came before the last reset, and one put aside left whole; a bucket sealed under another seal refused;
+//! is lost starting again from its bucket alone; a bucket's first shelf marked beside whatever came before the last
+//! reset, which neither the bucket nor the folder loses, and an older shelf left whole beside a newer one; a bucket sealed under another seal refused;
 //! a server the same device again from its bucket, its secret there alone; and a server that states it holds an edit
 //! or a file only once its bucket has it (v8 phase H).
 
@@ -40,8 +40,7 @@ async fn until<F: Future<Output = bool>>(what: &str, mut check: impl FnMut() -> 
     }
 }
 
-/// Every file under `dir`, by its path there, with its bytes: one a node deletes while it is listed is gone, as a
-/// clear running beside the listing deletes them.
+/// Every file under `dir`, by its path there, with its bytes: one a node deletes while it is listed is gone.
 fn files(dir: &Path) -> BTreeMap<String, Vec<u8>> {
     let mut found = BTreeMap::new();
     for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
@@ -103,20 +102,17 @@ async fn a_node_whose_folder_is_lost_starts_again_from_its_bucket_alone() {
     fs::write(objects.path().join("g1/journal/0000000000000001"), [9; 8]).expect("an old journal entry");
     let earlier = files(objects.path());
     let sealed = Sealed::new(bucket::Folder::new(objects.path()), &SEAL);
-    bucket::aside(&sealed).await.expect("an old shelf's marker");
     sealed.put("generations/g1", b"1760000000").await.expect("its marker");
-    sealed.delete(&format!("generations/g{FLOOR}")).await.expect("the old shelf the newest");
     assert_eq!(bucket::generations(&sealed).await.expect("its shelves"), vec![1], "an old shelf alone");
     // and in the folder, a cache from before the reset
     fs::create_dir_all(cache.path().join("g1/cache")).expect("an old cache");
     fs::write(cache.path().join("g1/cache/part"), [5; 8]).expect("an old part");
     fs::write(cache.path().join("store.db"), [6; 8]).expect("an earlier store");
     let opts = on(&sealed, cache.path()).await.expect("its shelf");
-    assert_eq!(fs::read_dir(cache.path()).expect("its folder").count(), 1, "the folder cleared as it starts");
-    let cleared = || async { files(objects.path()).keys().all(|n| !earlier.contains_key(n) && n != "generations/g1") };
-    until("the bucket is cleared of what came before the reset", cleared).await;
-    assert_eq!(bucket::generations(&sealed).await.expect("its shelves"), vec![FLOOR], "the first, of avenDB's floor");
-    assert_eq!(bucket::clear(&sealed).await.expect("cleared again"), 0, "nothing more to clear");
+    let folder = files(cache.path());
+    assert!(folder.contains_key("g1/cache/part") && folder.contains_key("store.db"), "the folder keeps all it held");
+    let generations = bucket::generations(&sealed).await.expect("its shelves");
+    assert_eq!(generations, vec![1, FLOOR], "a first of avenDB's floor, beside the old one");
     let mac = Node::spawn(w.lab.split(mac_a, &[passkey_a], [1; 32]), mac_a, opts).await.expect("a node");
     let write = move |lab: &mut Lab, me| lab.create(me, coop, coop, "doc", &[], document("Welcome", WELCOME_TEXT, me));
     let welcome = mac.act(write).await.expect("Alice's Mac writes Welcome");
@@ -125,6 +121,9 @@ async fn a_node_whose_folder_is_lost_starts_again_from_its_bucket_alone() {
     mac.shutdown().await.expect("it stops");
     drop(mac);
     let now = files(objects.path());
+    for (name, bytes) in &earlier {
+        assert_eq!(now.get(name), Some(bytes), "{name}, from before the last reset, stays in the bucket");
+    }
     let journal = format!("g{FLOOR}/journal/");
     assert!(now.keys().any(|n| n.starts_with(&journal)), "the Mac's edits are in its shelf's journal");
     for (name, bytes) in &now {
@@ -148,10 +147,10 @@ async fn a_node_whose_folder_is_lost_starts_again_from_its_bucket_alone() {
     let other = Sealed::new(bucket::Folder::new(objects.path()), &[8; 32]);
     let refused = on(&other, cache.path()).await.err().expect("a bucket sealed under another seal is refused");
     assert!(format!("{refused:#}").contains("doesn't open"), "{refused:#}");
-    // put aside: a second shelf beside the first, which holds nothing, and the first stays whole
+    // a newer shelf marked beside the first, which holds nothing: the node uses it, and the first stays whole
     let before = files(objects.path());
-    assert_eq!(bucket::aside(&sealed).await.expect("put aside"), FLOOR + 1);
-    assert_eq!(bucket::generations(&sealed).await.expect("its shelves"), vec![FLOOR, FLOOR + 1]);
+    sealed.put(&format!("generations/g{}", FLOOR + 1), b"1770000000").await.expect("its marker");
+    assert_eq!(bucket::generations(&sealed).await.expect("its shelves"), vec![1, FLOOR, FLOOR + 1]);
     let mut third = world();
     handbook_ready(&mut third);
     let lab = third.lab.split(mac_a, &[passkey_a], [1; 32]);
