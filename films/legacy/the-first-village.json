@@ -1260,7 +1260,16 @@
 					],
 					"kind": "fly"
 				},
-				"lights": [],
+				"lights": [
+					{
+						"id": "fill",
+						"intensity": 3
+					},
+					{
+						"id": "sky",
+						"intensity": 1.8
+					}
+				],
 				"framing": {},
 				"seconds": 12.784000000000002,
 				"shutter": {
@@ -1268,7 +1277,7 @@
 					"samples": 1
 				},
 				"exposure": {
-					"ev": 0.8,
+					"ev": 1.2,
 					"meter": "fixed",
 					"stops": 0
 				}
@@ -1327,7 +1336,16 @@
 						-34
 					]
 				},
-				"lights": [],
+				"lights": [
+					{
+						"id": "fill",
+						"intensity": 3
+					},
+					{
+						"id": "sky",
+						"intensity": 1.8
+					}
+				],
 				"framing": {},
 				"seconds": 4.2429999999999986,
 				"shutter": {
@@ -1335,7 +1353,7 @@
 					"samples": 1
 				},
 				"exposure": {
-					"ev": 0.8,
+					"ev": 1.2,
 					"meter": "fixed",
 					"stops": 0
 				}
@@ -1399,6 +1417,14 @@
 						"id": "glass",
 						"color": "#ffb070",
 						"intensity": 4
+					},
+					{
+						"id": "fill",
+						"intensity": 3
+					},
+					{
+						"id": "sky",
+						"intensity": 1.8
 					}
 				],
 				"framing": {},
@@ -1408,7 +1434,7 @@
 					"samples": 1
 				},
 				"exposure": {
-					"ev": 0.8,
+					"ev": 1.2,
 					"meter": "fixed",
 					"stops": 0
 				}

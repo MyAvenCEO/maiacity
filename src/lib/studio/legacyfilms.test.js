@@ -52,3 +52,38 @@ test("only a shot whose world the camera has gets its proxy rendered; the room's
 	expect(shootable({ world: {} })).toBe(true);
 	expect(shootable({ world: { sandbox: 'room' } })).toBe(false);
 });
+
+test("a shot the repo's frozen copy changed comes as its next version, unless it was tuned in the studio since", async () => {
+	const { retunedOf } = await import('./legacyfilms.js');
+	const old = { time: { hour: 5 }, exposure: { ev: 0.8, meter: 'fixed', stops: 0 } };
+	const lit = { time: { hour: 5 }, exposure: { ev: 1.2, meter: 'fixed', stops: 0 } };
+	const frozen = { shots: { 'u1@2': { name: 'A', spec: lit }, 'u2@1': { name: 'B', spec: old }, 'u3@1': { name: 'C', spec: lit }, 'u4@1': { name: 'D', spec: lit } } };
+	const v = (entry, shot, version, spec, legacy = '') => ({ entry, vault: 'city', type: 'shot', record: { kind: 'shot', shot, version, spec: JSON.stringify(spec), legacy } });
+	const world = {
+		entries: [
+			v('a', '', 1, old, 'u1@2'), // brought, changed in the repo since
+			v('b', '', 1, old, 'u2@1'), // brought, the repo's copy the same
+			v('c', '', 1, old, 'u3@1'), // brought, then tuned in the studio
+			v('c2', 'c', 2, { ...old, exposure: { ev: 2, meter: 'fixed', stops: 0 } }),
+			v('d', '', 1, old, 'u4@1'), // its new version made, the cut not saved yet
+			v('d2', 'd', 2, lit)
+		]
+	};
+	const cut = { clips: ['a', 'b', 'c', 'd'].map((e) => ({ kind: 'world', shot: `shot:${e}`, shotVersion: 1 })).concat([{ kind: 'video', hash: 'x' }]) };
+	const out = retunedOf(world, cut, frozen);
+	expect([...out.keys()]).toEqual(['shot:a@1', 'shot:d@1']);
+	expect(out.get('shot:a@1')).toEqual({ shot: 'shot:a', spec: lit });
+	expect(out.get('shot:d@1')).toEqual({ shot: 'shot:d', spec: lit, at: 2 });
+	// once the cut plays the new version, nothing is left to do
+	expect(retunedOf(world, { clips: [{ kind: 'world', shot: 'shot:d', shotVersion: 2 }] }, frozen).size).toBe(0);
+});
+
+test("the first village's dawn shots are lit softer in the repo's frozen copy", async () => {
+	const film = (await import('../../../films/legacy/the-first-village.json')).default;
+	const first = film.timeline.clips.filter((c) => c.kind === 'world').sort((a, b) => a.start - b.start).slice(0, 3);
+	for (const c of first) {
+		const { spec } = film.shots[`${c.shot}@${c.shotVersion}`];
+		expect(spec.exposure.ev).toBe(1.2);
+		expect(spec.lights.filter((l) => l.id === 'fill' || l.id === 'sky').map((l) => l.intensity)).toEqual([3, 1.8]);
+	}
+});
