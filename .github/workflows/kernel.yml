@@ -1,0 +1,85 @@
+name: Kernel
+
+# The kernel gate (hardening H7 and H8, gaps G2 and G9): the code that holds what we can't trust (the shell and its
+# lockdown, the frozen engines, the asset box, the view host and its engine, the logic host, the one checker, the render
+# core and the Markdown engine) changes only with its tests green and every way out of its boxes refused, in a real
+# browser. It runs on every pull request, and before every deploy: deploy.yml calls it, and puts nothing on the server
+# unless it passed. A frozen engine is never changed: a new version goes beside it (node scripts/freeze-engine.mjs).
+#
+#   tests  – the kernel's tests (bun test, the list below)
+#   probes – every way out of the asset box and of a view, tried from inside each by code made to do harm, in headless
+#            Chromium against the dev server (scripts/probes.mjs: the box's lab, /app/assets/box/, and the view probe,
+#            /app/views/probe/, with a canary that hears anything that got out)
+on:
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# a pull request's new push replaces its run; a run deploy.yml called is its own (deploy.yml's group holds it)
+concurrency:
+  group: kernel-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: The kernel's tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - run: bun install --frozen-lockfile
+
+      # the paths the tests import by ($lib) are SvelteKit's tsconfig's
+      - run: bunx svelte-kit sync
+
+      # src/lib/sandbox/              the kernel's engines frozen (bytes = their hashes, sources = the latest, no CDN),
+      #                               the logic core (QuickJS, its limits), the view engine's sanitizer and templates
+      # src/lib/assets/engines.test   the box's engines frozen; our recipes build on the latest as in the page
+      # src/lib/assets/box/           what leaves the box: plain data, checked and rebuilt in the page
+      # src/lib/assets/schemas/       every card fits its frozen schema; a card made to do harm is refused
+      # src/lib/assets/sources/       a vault's recipes read strictly: each file held to its hash, else refused
+      # src/lib/assets/vault.test     the recipes from the vault alone, no repo fallback
+      # src/lib/assets/worlds.test    no world builds round the box
+      # src/lib/assets/params.test    a recipe takes only its own parameters; one build, one name, one cache key
+      # src/lib/code/                 the one checker (game/code, game/genui): every kind of code, hostile code refused
+      # src/lib/render/lint.test      the render core's lint: no renderer or raw WebGL context outside it
+      # src/lib/markdown/             the Markdown engine against hostile Markdown; every {@html} fed by a safe engine
+      - run: >-
+          bun test
+          ./src/lib/sandbox/
+          ./src/lib/assets/engines.test.js
+          ./src/lib/assets/box/
+          ./src/lib/assets/schemas/
+          ./src/lib/assets/sources/
+          ./src/lib/assets/vault.test.js
+          ./src/lib/assets/worlds.test.js
+          ./src/lib/assets/params.test.js
+          ./src/lib/code/
+          ./src/lib/render/lint.test.js
+          ./src/lib/markdown/
+
+  probes:
+    name: Every way out, tried in Chromium
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - run: bun install --frozen-lockfile
+
+      # Playwright's Chromium, the same build the probes run in on a developer's machine (/opt/pw-browsers)
+      - run: npx --yes playwright@1.56.1 install --with-deps chromium
+
+      - run: node scripts/probes.mjs
