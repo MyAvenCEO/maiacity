@@ -5,7 +5,6 @@ import { may, me } from '$lib/auth/client';
 import { ODT, PROFILES, WORKING, asStudio, isCache, isSequence, profileFor, proxyFor } from './color.js';
 import { avenLibrary, avenUrl, isAven, withGraded } from './aven.js';
 import { createCut, cutJobs, cutsHere, deleteCut, getCut, isCut, listCuts, listStories, renderCut, renderQueue, saveCut, setProfile, setTranscript, shootable } from './cuts.js';
-import { bringFilms } from './legacyfilms.js';
 import { sure } from '$lib/app/sure.js';
 import { filmLut, gradeLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
@@ -105,8 +104,8 @@ export const raw = (hash) => (isAven(hash) ? avenUrl(hash) : '');
 
 /**
  * The studio's timelines: the cuts in avenDB (./cuts.js, J9), each read and saved by its `cut:` id. The legacy
- * timelines in the API's Postgres are no longer the studio's (Samuel 2026-10-18): only the two films ./legacyfilms.js
- * copies into the Maia City vault come over from them.
+ * timelines in the API's Postgres are no longer the studio's (Samuel 2026-10-18); the two films that came over from
+ * them are Maia City's own cuts now, changed only in the studio (Samuel 2026-10-19: nothing written back over Maia City).
  */
 /** The cuts of the vault picked in the nav pill (Maia City's in Maia City, a person's own in theirs), else all. */
 const listTimelines = async () => listCuts((await import('$lib/avendb/session.svelte.js')).session.vault ?? null);
@@ -539,7 +538,6 @@ export class Studio {
 			this.timelines = tls;
 			this.stories = stories;
 			this.avenHere = here;
-			if (here) void this.bringFilms();
 		} catch (e) {
 			this.error = /** @type {Error} */ (e).message;
 		}
@@ -564,9 +562,8 @@ export class Studio {
 		}
 		const open = this.timelines.find((t) => t.id === last) ?? this.timelines[0];
 		// a timeline loads its sound (decoded) and its world: only when it is looked at, as on an 8 GB Mac it is a
-		// gigabyte and more; none yet while the films are on their way (`bringFilms` opens one of them)
-		this.waitFilms = !open && !!this.importing;
-		this.later = open ?? (this.waitFilms ? null : 'new');
+		// gigabyte and more
+		this.later = open ?? 'new';
 		await this.openLater();
 	}
 
@@ -688,61 +685,8 @@ export class Studio {
 		await this.openTimeline(t);
 	}
 
-	/** Whether new cuts go into avenDB on this Mac (and the two legacy films can be brought there, `bringFilms`). */
+	/** Whether new cuts go into avenDB on this Mac. */
 	avenHere = $state(false);
-	/** Whether the studio opened with no timeline while the films were on their way, to open one once they are. */
-	waitFilms = false;
-	/** What bringing the legacy films into avenDB is doing now; '' when nothing. */
-	importing = $state('');
-
-	/**
-	 * Each legacy film coming in now or come with files missing, by its name: how far it is (./importer.js
-	 * `Progress`), what it is doing, and why it stopped; the stories aside shows them (./StoryNav.svelte).
-	 * @type {Record<string, { line: string, done: number, total: number, part: number, failed: { hash: string, error: string }[], error: string, coming: boolean }>}
-	 */
-	films = $state({});
-
-	/**
-	 * The two films of the legacy studio the Maia City vault lacks, brought into it (./legacyfilms.js), and the
-	 * timelines, the stories and the library read again as each one comes; the legacy ones stay as they are.
-	 */
-	async bringFilms() {
-		if (this.importing) return;
-		this.importing = 'Starting…';
-		const blank = { line: '', done: 0, total: 0, part: 0, failed: [], error: '', coming: true };
-		const asked = new Set();
-		try {
-			await bringFilms({
-				tell: (f, line, at) => {
-					this.films = { ...this.films, [f.name]: { ...blank, ...this.films[f.name], ...at, line, coming: true } };
-					this.importing = `${f.name}: ${line}`;
-					// its story shows in the aside at once, as it comes
-					if (!asked.has(f.name) && !this.stories.some((x) => x.title === f.name) && asked.add(f.name)) void listStories().then((st) => (this.stories = st)).catch(() => {});
-				},
-				arrived: async (f, failed, missing) => {
-					if (missing) return void (this.films = { ...this.films, [f.name]: { ...blank, ...this.films[f.name], error: missing, coming: false } });
-					const [media, tls, stories] = await Promise.all([allMedia(), listTimelines(), listStories().catch(() => this.stories)]);
-					[this.library, this.timelines, this.stories] = [media, tls, stories];
-					const { [f.name]: was, ...rest } = this.films;
-					this.films = failed.length ? { ...rest, [f.name]: { ...blank, ...was, failed, coming: false } } : rest;
-				}
-			});
-		} catch (e) {
-			const why = /** @type {Error} */ (e).message;
-			// the film coming now stopped, and those waiting after it with it
-			const stopped = Object.entries(this.films).filter(([, f]) => f.coming);
-			if (stopped.length) this.films = { ...this.films, ...Object.fromEntries(stopped.map(([n, f]) => [n, { ...f, error: why, coming: false }])) };
-			else this.error = `Bringing the films: ${why}`;
-		} finally {
-			this.importing = '';
-			// nothing was open while they came: the first timeline now, or a new one where there is none
-			if (this.waitFilms) {
-				this.waitFilms = false;
-				this.later = this.timelines[0] ?? 'new';
-				await this.openLater();
-			}
-		}
-	}
 
 	/** @param {Timeline} t */
 	async removeTimeline(t) {

@@ -1,7 +1,7 @@
 /*
- * The two films that come over from the legacy studio (Samuel 2026-10-18), as plain data: read by ./legacyfilms.js
- * and by scripts/freeze-films.mjs, which freezes each into films/legacy/<key>.json once, so the films come back
- * after any avenDB reset, and after the old studio is gone, from the repo and the media vault alone (./frozen.js).
+ * The two films that come over from the legacy studio (Samuel 2026-10-18), as plain data: read by
+ * scripts/freeze-films.mjs, which froze each into films/legacy/<key>.json once (./frozen.js). Both films are Maia
+ * City's own cuts now, and nothing brings them in again (Samuel 2026-10-19: nothing written back over Maia City).
  */
 
 /**

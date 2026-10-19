@@ -52,7 +52,7 @@ export function moved(t, refs, shots) {
 /**
  * Legacy timeline `id` brought into avenDB as a cut (or the cut it was brought as before), `tell` hearing how far:
  * into vault `into.vault`, acting as `into.as` (else the person's home vault, `homeOf`), named `into.name` and
- * `into.project` where given, linked to story `into.story` and tagged `into.tags` (./legacyfilms.js); from its frozen
+ * `into.project` where given, linked to story `into.story` and tagged `into.tags`; from its frozen
  * copy `into.frozen` (./frozen.js: the repo's, else the Mac's film seed), without which nothing comes. The files come
  * one at a time; one that can't come (not in the legacy vault on this Mac, a copy that doesn't match) is left out
  * and told (`failed`), and the cut is made of the rest, its clip keeping the legacy hash, as no file plays it.

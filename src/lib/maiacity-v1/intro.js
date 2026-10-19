@@ -3,7 +3,7 @@
  * MaiaCity V1's first-run intro as a film: each seat's whole journey (./tour.js `story`) played on a fresh game, the
  * same every time, as a list of world shots (game/film/shot.js) one after another, each carrying its line of the
  * voice-over. The film world of /games/maiacity-v1/?film&area=A|B (./film.js) plays it on the film's clock; the studio
- * gets it as a story, a script and a cut in the Maia City vault ($lib/studio/intros.js), to tune shot by shot; the game
+ * has it as a story, a script and a cut in the Maia City vault, tuned there shot by shot; the game
  * plays a step's moment through the same shots (Game.svelte, `reelFor`), so what the studio shows is what the game
  * plays.
  *

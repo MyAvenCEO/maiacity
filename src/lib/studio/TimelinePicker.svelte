@@ -33,7 +33,7 @@
 
 <div class="picker" bind:this={box}>
 	<button class="now" onclick={() => (open = !open)} aria-haspopup="menu" aria-expanded={open} title="Open another timeline">
-		{#if s.importing}{s.importing}{:else if s.current}{[s.current.project, s.current.variant].filter(Boolean).join(' · ') || s.current.name}{:else}Timelines{/if}
+		{#if s.current}{[s.current.project, s.current.variant].filter(Boolean).join(' · ') || s.current.name}{:else}Timelines{/if}
 		<span class="caret">▾</span>
 	</button>
 	{#if open}
