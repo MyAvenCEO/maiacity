@@ -1850,6 +1850,13 @@
 				before it runs: it imports nothing and hands back its <code>run</code>, or it doesn’t run. Safety never rests on
 				the checker: the box holds whatever it misses.
 			</p>
+			<p class="prose-col">
+				The kernel, which is the boxes, the engines, the checker, the render core and the Markdown engine, changes only
+				with its tests green. A gate runs them on every pull request and before every deploy, and the deploy stops if they fail. It also runs
+				two probes in headless Chromium: code made to do harm tries every way out of the asset box and of a view, through
+				the network, storage, the page, its links and its markup, aiming at a canary server that hears anything that gets
+				out, and code that never stops or eats its memory must be stopped.
+			</p>
 			<h3>Where it runs today</h3>
 			<p class="prose-col">
 				Most code that runs from a vault is Maia City’s, read from the feed with <code>?seed=1</code>: the recipes of
@@ -1875,8 +1882,9 @@
 					page’s own code is guarded only by how it is written.
 				</li>
 				<li>
-					<b>Changes to our own code.</b> A merge to main deploys the boxes, the engines, the checker and the game rules,
-					and no test gates it.
+					<b>Our own code.</b> The kernel’s tests and both probes gate every pull request and every deploy, but the
+					pages, the game sandboxes and V1 are our own code and are trusted, and the probes run only in Chromium, not yet
+					in WebKit, which The OS and Safari use.
 				</li>
 				<li>
 					<b>Which code is Maia City’s.</b> Pages and the API check hashes and shapes, not avenDB’s signatures, so they

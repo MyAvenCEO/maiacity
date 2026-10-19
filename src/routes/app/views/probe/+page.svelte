@@ -60,7 +60,7 @@
 
 	/** whether the views are through: every attempt said, and the views that never stop stopped */
 	const through = () =>
-		WORKER_TRIES.every((t) => said[t]) && said['(done)'] && has(spin.id, /held its worker/) && logic.every((v) => has(v.id, /ran too long|took more than/));
+		WORKER_TRIES.every((t) => said[t]) && said['(done)'] && has(spin.id, /held its worker/) && logic.every((v) => has(v.id, /ran too long|took more than|out of memory/));
 
 	/** what of the views this page keeps: its cookies, its storage, its databases and caches */
 	async function kept() {
@@ -87,7 +87,7 @@
 		const stopped = has(spin.id, /held its worker/);
 		add('A script that never yields is stopped', !!stopped, stopped ? `after ${(stopped.at / 1000).toFixed(1)} s: ${stopped.message}` : 'it was never stopped');
 		for (const v of logic) {
-			const e = has(v.id, /ran too long|took more than/);
+			const e = has(v.id, /ran too long|took more than|out of memory/);
 			add(`${v.title} is stopped`, !!e, e ? `after ${(e.at / 1000).toFixed(1)} s: ${e.message}` : 'it was never stopped');
 		}
 		add('The page goes on meanwhile', gap < 1000, `the page’s clock never waited more than ${Math.round(gap)} ms`);
