@@ -1237,7 +1237,7 @@ async fn a_note_takes_proposals_merges_and_forks_and_the_database_shows_every_re
     let hers = json!(v.to_hex());
     assert!(writes.iter().all(|o| o["vaults"].as_array().is_some_and(|vs| vs.contains(&hers))));
     assert!(!of("keys").is_empty());
-    let slh = |s: &Value| s["pq"].as_u64() == Some(17_088);
+    let slh = |s: &Value| s["alg"] == "SLH-DSA" && s["pq"].as_u64() == Some(17_088);
     let signed_all = |o: &Value| {
         let sigs = o["sigs"].as_array().unwrap();
         o["bytes"].as_u64().is_some_and(|n| n > 0) && !sigs.is_empty() && sigs.iter().all(slh)

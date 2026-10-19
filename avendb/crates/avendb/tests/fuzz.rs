@@ -19,7 +19,9 @@ use avendb::lens::example::{self, DOCUMENT_V0, TODO_V0};
 use avendb::lens::{BlockV1, Lane, Lens, Schema, TypeV1, View, DOCUMENT_V1, TODO_V1};
 use avendb::policy::{Action, Creation, Edit, KeepMode, Level, Proposal, Revoking, Share, Sharing, Who};
 use avendb::rules::{Grant, On, Op, Proof, Scalar, Step};
-use avendb::sign::{Assertion, DeviceKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, WebAuthn};
+use avendb::sign::{
+    Assertion, DeviceKey, EnclaveKey, Hello, Passkey, PqKey, RelayPass, Signature, SignerKeys, Signed, Suite, WebAuthn,
+};
 use avendb::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use avendb::sync::{Ask, LogId};
 use avendb::sealed::{FileRoot, PIECE};
@@ -347,6 +349,45 @@ fn batched(add: &Signed) -> Signed {
     Signed { edit: add.edit.clone(), sigs: vec![sig, device.sign(add.edit.id())] }
 }
 
+/// Edits signed with ML-DSA-65 (the key move): a passkey adding its device, by itself and in a batch, the device's
+/// write, a Touch ID key's edit signed by its Enclave alone, and the old device signing its new key in.
+fn ml_signed_edits() -> Vec<Signed> {
+    let device = DeviceKey::from_secret_in([7; 32], Suite::MlDsa);
+    let mut passkey = Passkey::from_seed_in([9; 32], Suite::MlDsa);
+    let touch = EnclaveKey::from_seed_in([5; 32], Suite::MlDsa);
+    let old = DeviceKey::from_secret_in([7; 32], Suite::SlhDsa);
+    let edit = |author, cosigners, action| Edit { parents: vec![EditId::from_u64(1)], depth: 1, author, cosigners, action };
+    let adds = |d: SignerId| Action::Share(Sharing::Device { vault: ALICE, device: d, seal_to: None });
+    let add = edit(passkey.id(), vec![device.id()], adds(device.id()));
+    let add = Signed { sigs: vec![passkey.sign(add.id()), device.sign(add.id())], edit: add };
+    let mut batch = vec![add.edit.id(), EditId::from_u64(3)];
+    batch.sort();
+    let ceremony = passkey.ceremony(avendb::sign::batch_challenge(&batch));
+    let sig = ceremony.sign_in(passkey.keys(), add.edit.id(), &batch).expect("an edit of the batch");
+    let batched = Signed { edit: add.edit.clone(), sigs: vec![sig, device.sign(add.edit.id())] };
+    let body = Body::default().to_wire();
+    let write = Action::Write {
+        vault: ALICE,
+        entry: door(),
+        actor: ALICE,
+        stay: None,
+        epoch: 1,
+        deps: vec![],
+        proposal: Proposal::Main,
+        via: vec![],
+        create: None,
+        files: vec![],
+        body,
+    };
+    let write = edit(device.id(), vec![], write);
+    let write = Signed { sigs: vec![device.sign(write.id())], edit: write };
+    let touched = edit(touch.id(), vec![device.id()], adds(device.id()));
+    let touched = Signed { sigs: vec![touch.sign(touched.id()), device.sign(touched.id())], edit: touched };
+    let moved = edit(old.id(), vec![device.id()], adds(device.id()));
+    let moved = Signed { sigs: vec![old.sign(moved.id()), device.sign(moved.id())], edit: moved };
+    vec![add, batched, write, touched, moved]
+}
+
 #[test]
 fn a_changed_write_decrypts_to_nothing() {
     // a write's body opens with its entry's key, bound to the write as it is with an empty body: the body changed, or
@@ -386,16 +427,19 @@ fn other_assertion() -> Assertion {
 }
 
 /// `sig` with one part changed: a key, a passkey's assertion (changed, left out, or one put on a device's), a Touch ID
-/// key's Enclave signature (changed, or left out), or the SLH-DSA signature (changed, cut short or made up).
+/// key's Enclave signature (changed, or left out), or the post-quantum signature (changed, cut short or made up).
 fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
     let mut s = sig.clone();
     match g.below(3) {
         0 => {
             let first = g.below(2) == 0;
             let part: &mut [u8] = match &mut s.keys {
-                SignerKeys::Device { ed25519, slh } => if first { ed25519 } else { slh },
-                SignerKeys::Passkey { p256, slh } => if first { p256 } else { slh },
-                SignerKeys::Enclave { mldsa, slh } => if first { mldsa } else { slh },
+                SignerKeys::Device { ed25519, .. } if first => ed25519,
+                SignerKeys::Passkey { p256, .. } if first => p256,
+                SignerKeys::Device { pq: PqKey::Slh(k) | PqKey::MlDsa(k), .. } => k,
+                SignerKeys::Passkey { pq: PqKey::Slh(k) | PqKey::MlDsa(k), .. } => k,
+                SignerKeys::Enclave { slh: Some(slh), .. } if !first => slh,
+                SignerKeys::Enclave { mldsa, .. } => mldsa,
             };
             let i = g.below(part.len());
             part[i] ^= 1 << g.below(8);
@@ -539,8 +583,9 @@ fn mutate_edit(g: &mut Gen, edit: &Edit) -> Edit {
 fn a_changed_signed_edit_is_refused() {
     let edits = signed_edits();
     let batched = batched(&edits.add);
+    let ml = ml_signed_edits();
     let mut g = Gen::new(3);
-    for signed in edits.all().into_iter().chain([&batched]) {
+    for signed in edits.all().into_iter().chain([&batched]).chain(&ml) {
         assert!(signed.verify().is_ok());
         for _ in 0..300 {
             let mut bad = signed.clone();
@@ -558,8 +603,10 @@ fn a_changed_signed_edit_is_refused() {
             }
         }
     }
-    // without its SLH-DSA signature, nothing is signed: no write, no governance, no share, no mark, no keep share
-    for signed in edits.all() {
+    // without its post-quantum signature, nothing is signed: no write, no governance, no share, no mark, no keep
+    // share; in either suite, but by a Touch ID key whose Enclave signs alone
+    let enclave_alone = |s: &Signed| s.sigs.iter().any(|s| s.pq.is_empty());
+    for signed in edits.all().into_iter().chain(ml.iter().filter(|s| !enclave_alone(s))) {
         let mut curves = signed.clone();
         curves.sigs.iter_mut().for_each(|s| s.pq = vec![]);
         assert!(curves.verify().is_err(), "{curves:?}");
@@ -641,7 +688,8 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
     // batch
     let batched = batched(&edits.add);
     assert!(batched.verify().is_ok());
-    for signed in edits.all().into_iter().chain([&batched]) {
+    let ml = ml_signed_edits();
+    for signed in edits.all().into_iter().chain([&batched]).chain(&ml) {
         let read = wire_mutations(&mut g, signed, 1500, |s: &Signed| assert!(s.verify().is_err(), "{s:?}"));
         assert!(read > 0, "some changes still read as a signed edit, to be refused");
         wire_mutations(&mut g, &signed.edit, 1000, |o: &Edit| assert_ne!(o, &signed.edit));
@@ -668,20 +716,24 @@ fn a_changed_message_on_the_wire_reads_as_nothing_or_as_its_own_bytes() {
         let answers = |b: &Body| assert!(b.answers.windows(2).all(|w| w[0] < w[1]), "{b:?}");
         wire_mutations(&mut g, &body, 3000, answers);
     }
-    // a hello read from changed bytes proves no device on the connection
-    let device = DeviceKey::from_secret([7; 32]);
-    let SignerKeys::Device { ed25519: endpoint, .. } = device.keys() else { unreachable!() };
-    let exporter = [4; 32];
-    let hello = device.hello(&exporter, true);
-    assert_eq!(hello.verify(&exporter, true, &endpoint), Some(device.id()));
-    wire_mutations(&mut g, &hello, 1000, |h: &Hello| assert_eq!(h.verify(&exporter, true, &endpoint), None));
+    // a hello read from changed bytes proves no device on the connection, in either suite
+    for suite in [Suite::SlhDsa, Suite::MlDsa] {
+        let device = DeviceKey::from_secret_in([7; 32], suite);
+        let SignerKeys::Device { ed25519: endpoint, .. } = device.keys() else { unreachable!() };
+        let exporter = [4; 32];
+        let hello = device.hello(&exporter, true);
+        assert_eq!(hello.verify(&exporter, true, &endpoint), Some(device.id()));
+        wire_mutations(&mut g, &hello, 1000, |h: &Hello| assert_eq!(h.verify(&exporter, true, &endpoint), None));
+    }
     // a pass read from changed bytes is the passkey's for no device: a changed signature recovers to other keys,
-    // nobody's
-    let mut passkey = Passkey::from_seed([6; 32]);
-    let pass = passkey.pass(passkey.device([1; 32]).keys(), 1_791_500_000);
-    assert!(pass.passkeys(pass.made).contains(&passkey.id()));
-    let (now, theirs) = (pass.made, passkey.id());
-    wire_mutations(&mut g, &pass, 1500, |p: &RelayPass| assert!(!p.passkeys(now.max(p.made)).contains(&theirs)));
+    // nobody's; in either suite
+    for suite in [Suite::SlhDsa, Suite::MlDsa] {
+        let mut passkey = Passkey::from_seed_in([6; 32], suite);
+        let pass = passkey.pass(passkey.device([1; 32]).keys(), 1_791_500_000);
+        assert!(pass.passkeys(pass.made).contains(&passkey.id()));
+        let (now, theirs) = (pass.made, passkey.id());
+        wire_mutations(&mut g, &pass, 1500, |p: &RelayPass| assert!(!p.passkeys(now.max(p.made)).contains(&theirs)));
+    }
     // a join read from changed bytes carries a refused edit, or the same edit beside other bytes, which the device
     // checks against the ids its edit names
     let add = &edits.add;

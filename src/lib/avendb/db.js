@@ -38,7 +38,7 @@ import {
  *   builtIn: { schemas: SchemaView[], lenses: LensView[] }, seed: number, edits: EditCounts, schemas: SchemaView[],
  *   lenses: LensView[], audiences: CellRow[], rows: RowView[] }} Db
  * @typedef {{ signer: string, by: 'device' | 'passkey' | 'touch', webauthn: 'edit' | 'batch' | 'pass' | null,
- *   batch: number | null, pq: number }} SigView
+ *   batch: number | null, alg: 'SLH-DSA' | 'ML-DSA-65', pq: number }} SigView
  * @typedef {{ n: number, id: string, kind: string, fields: any, author: string, cosigners: string[], sigs: SigView[],
  *   parents: string[], depth: number, bytes: number, vaults: string[], counted: boolean | null,
  *   allowed: boolean | null, why: 'builds-on' | 'sealed' | 'unfit' | 'policy' | 'ops' | null,

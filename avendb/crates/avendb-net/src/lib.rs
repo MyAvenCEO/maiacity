@@ -1070,7 +1070,7 @@ impl Node {
         let keep = move |lab: &mut Lab, me| {
             let mut made = |p: SignerId| match (lab.take_in(p, &ceremony), ceremony.assertion()) {
                 (Some(SignerKeys::Passkey { p256, .. }), Some(a)) => a.verify(&p256, EditId(challenge)),
-                (Some(keys @ SignerKeys::Enclave { .. }), None) => ceremony.enclave_keys() == Some(keys),
+                (Some(keys @ SignerKeys::Enclave { .. }), None) => ceremony.is_enclave_of(&keys),
                 _ => false,
             };
             let at = sets.iter().position(|(p, _, _)| made(*p)).ok_or(Refusal::BadSignature)?;

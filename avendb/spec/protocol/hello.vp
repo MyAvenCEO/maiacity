@@ -1,14 +1,17 @@
 // The hello every avenDB connection opens with (P8a; crates/avendb-net/src/session.rs, crates/avendb/src/sign.rs
 // `Hello`). iroh's TLS 1.3 agrees its key by X25519MLKEM768, an X25519 share and an ML-KEM-768 encapsulation, and
 // each end proves its endpoint by its ed25519 key, the device's own. On top of that, each device signs the
-// connection's TLS exporter and which end it is (the dialer or the listener) with its SLH-DSA key, and the other end
-// serves it nothing before that hello checks.
+// connection's TLS exporter and which end it is (the dialer or the listener) with its post-quantum key, and the other
+// end serves it nothing before that hello checks.
+//
+// The post-quantum key is SLH-DSA's or, for a device made since the key move (2026-10-19), ML-DSA-65's
+// (`sign::Suite`). Verifpal's signatures are ideal, so the model holds for either; `_slh` names that key here.
 //
 // Expected: c0c1a0a0
 //
 // The curves fall from the start (`PUBKEY[weak]`): X25519, and ed25519, so the attacker can sign as either endpoint
 // and stand in the middle of the TLS handshake, two connections where the devices think there is one. ML-KEM-768 and
-// SLH-DSA hold. Alice's Mac answers her iPhone's connection twice: first with what a node would serve on TLS alone
+// the post-quantum signatures hold. Alice's Mac answers her iPhone's connection twice: first with what a node would serve on TLS alone
 // (`unchecked`), then, once the iPhone's hello checks, with what avenDB serves (`served`). The attacker reads the
 // first and not the second: the hello is what keeps the connection the devices' own. And each hello the other end
 // takes is the device's own, said on this connection for its own end.

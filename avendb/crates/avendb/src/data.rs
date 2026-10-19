@@ -22,7 +22,7 @@ use crate::lens::{self, DocV1, Lens, Schema};
 use crate::merge::Conflict;
 use crate::sealed::FileRoot;
 use crate::policy::{Action, Edit, Entry, Line, Principal, Proposal, Revoking, Setting, Sharing, State, Vault, Who};
-use crate::sign::{Signature, WebAuthn};
+use crate::sign::{Signature, Suite, WebAuthn};
 use crate::slice::LENS_TYPE;
 use crate::wire::Wire as _;
 use crate::words::{hex, kind_name, level_name, who_name};
@@ -359,9 +359,10 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
 }
 
 /// A signature as the History view shows it: its signer, whether that is a device, a passkey or a Touch ID key
-/// (`touch`), the size of its SLH-DSA signature, and a passkey's WebAuthn assertion beside it (`webauthn`): over the
-/// edit, over a batch of edits, with how many (`batch`), or a pass for the device the edit adds; a Touch ID key's
-/// Enclave signature counts as `edit` or `batch` the same way.
+/// (`touch`), its post-quantum signature's algorithm (`alg`: SLH-DSA, or ML-DSA-65 since the key move) and size with
+/// the key it brings (`pq`; a Touch ID key's Enclave signature where that signs alone), and a passkey's WebAuthn
+/// assertion beside it (`webauthn`): over the edit, over a batch of edits, with how many (`batch`), or a pass for the
+/// device the edit adds; a Touch ID key's Enclave signature counts as `edit` or `batch` the same way.
 fn signature(sig: &Signature) -> Value {
     let by = sig.keys.kind();
     let (webauthn, batch) = match (&sig.webauthn, &sig.enclave) {
@@ -373,7 +374,15 @@ fn signature(sig: &Signature) -> Value {
         (None, Some(e)) => (Some("batch"), Some(e.edits.len())),
     };
     let signer = hex(&sig.keys.id().0);
-    json!({ "signer": signer, "by": by, "webauthn": webauthn, "batch": batch, "pq": sig.pq.len() })
+    let alg = match sig.keys.suite() {
+        Suite::SlhDsa => "SLH-DSA",
+        Suite::MlDsa => "ML-DSA-65",
+    };
+    let pq = match &sig.enclave {
+        Some(e) if sig.pq.is_empty() => e.public.len() + e.sig.len(),
+        _ => sig.pq.len(),
+    };
+    json!({ "signer": signer, "by": by, "webauthn": webauthn, "batch": batch, "alg": alg, "pq": pq })
 }
 
 /// The vaults edit `id` concerns, by device `st`'s view: the vault it founds or changes, the vault it acts for and the

@@ -531,7 +531,7 @@ impl Device {
         let (touch, draft) = self.node.act(draft).await.map_err(|why| anyhow!("the Touch ID key is refused: {why:?}"))?;
         let (unlock, consent) = sign(draft.challenge()).await?;
         let secret = xor(&self.mask, &unlock.device);
-        anyhow::ensure!(DeviceKey::from_secret(*secret).id() == meta.device, "the unlock is of another device");
+        anyhow::ensure!(DeviceKey::of(*secret, meta.device).is_some(), "the unlock is of another device");
         let pad = consent.device_mask().context("the Touch ID key's ceremony isn't a touch")?;
         let complete = move |lab: &mut Lab, me| lab.complete(me, draft, &[(passkey, &unlock.ceremony), (touch, &consent)]);
         self.node.act(complete).await.map_err(|why| anyhow!("the Touch ID key isn't added: {why:?}"))?;

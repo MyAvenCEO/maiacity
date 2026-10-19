@@ -1716,4 +1716,57 @@ def sAdmin : List Edit := sInvite ++ chain 620 [
 #guard isAdmin (view sAdmin) city bob && !isAdmin (view sInvite) city bob
 #guard takes city sAdmin bobsCoop == some bobsCoop
 
+/-! ## A key move: every signer to ML-DSA-65
+
+avenDB signs with ML-DSA-65 where it signed with SLH-DSA (Samuel, 2026-10-19). A signer's id hashes its keys, so a
+signer's new key is a new signer, and a vault moves to it with the edits it already has: the old key adds the new one,
+which signs too, hands the root on to it where it is the root (the new key signing), and the new key removes the old. Alice moves her passkey
+and her Mac, Bob his after her; Alice's iPhone stays as it is for now. No rule changes, as the model abstracts how each
+signer signs: every edit the old keys made still stands and counts, the new keys read and approve all the old ones did,
+and the old keys approve and open nothing more. -/
+
+def passkeyA' := 81
+def macA' := 82
+def passkeyB' := 84
+def macB' := 85
+
+/-- Every edit of `edits`: what a removal names as seen and kept by a device that had seen them all. -/
+def seen (edits : List Edit) : List EditId := edits.map (·.id)
+
+def keyMove : List Edit := allTodos' ++ chain 720 [
+  (passkeyA, [passkeyA'], .share (.owner alice (.signer passkeyA'))),
+  (passkeyA, [passkeyA'], .settings alice (.root (some passkeyA') (seen allTodos' ++ [720]))),
+  (passkeyA', [], .revoke (.owner alice (.signer passkeyA) (seen allTodos' ++ [720, 721]))),
+  (passkeyA', [macA'], .share (.device alice macA')),
+  (passkeyA', [], .revoke (.device alice macA (seen allTodos' ++ [720, 721, 722, 723]))),
+  (passkeyB, [passkeyB'], .share (.owner bob (.signer passkeyB'))),
+  (passkeyB, [passkeyB'], .settings bob (.root (some passkeyB') (seen allTodos' ++ [725]))),
+  (passkeyB', [], .revoke (.owner bob (.signer passkeyB) (seen allTodos' ++ [725, 726]))),
+  (passkeyB', [macB'], .share (.device bob macB')),
+  (passkeyB', [], .revoke (.device bob macB (seen allTodos' ++ [725, 726, 727, 728])))]
+#guard refused keyMove == []
+#guard ((view keyMove).vault? alice).map (fun v => (v.owners, v.root, v.devices)) ==
+  some ([.signer passkeyA'], some passkeyA', [phoneA, macA'])
+#guard ((view keyMove).vault? bob).map (fun v => (v.owners, v.root, v.devices)) ==
+  some ([.signer passkeyB'], some passkeyB', [macB'])
+-- the old keys' writes still count, and the new keys read what the old ones read, Bob's through Alice's share
+#guard (view keyMove).uncounted == (view allTodos').uncounted
+#guard readable keyMove macA' == readable allTodos' macA && readable keyMove passkeyA' == readable allTodos' macA
+#guard readable keyMove macB' == [door, seeds, solar]
+-- the old keys read nothing more, open nothing and approve nothing; the new ones do
+#guard readable keyMove macA == [] && readable keyMove macB == []
+#guard !opens' keyMove passkeyA (.seed alice) && !opens' keyMove macA (.seed alice) && opens' keyMove macA' (.seed alice)
+#guard !actsFor (view keyMove) macA alice && actsFor (view keyMove) macA' alice
+#guard accepted keyMove (attempt passkeyA' [78] (.share (.device alice 78)))
+#guard !accepted keyMove (attempt passkeyA [78] (.share (.device alice 78)))
+#guard accepted keyMove (attempt macA' [] (create alice 30 alice [] todo))
+#guard !accepted keyMove (attempt macA [] (create alice 30 alice [] todo))
+-- the new key joins only with its own signature, and the root goes to it only with its signature; every owner being
+-- equal, it may as well take the root itself once it is an owner
+#guard !accepted allTodos' (attempt passkeyA [] (.share (.owner alice (.signer passkeyA'))))
+#guard !accepted (keyMove.take (allTodos'.length + 1))
+  (attempt passkeyA [] (.settings alice (.root (some passkeyA') [])))
+#guard accepted (keyMove.take (allTodos'.length + 1))
+  (attempt passkeyA' [] (.settings alice (.root (some passkeyA') [])))
+
 end AvenDB.Examples

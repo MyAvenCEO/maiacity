@@ -52,7 +52,7 @@ pub(crate) const SIGN_UP: u8 = 10;
 /// The error code a node closes a connection or a stream with when it refuses it.
 pub(crate) const REFUSED: VarInt = VarInt::from_u32(1);
 
-/// The most a hello may take: an SLH-DSA-SHA2-128f signature is 17,088 bytes.
+/// The most a hello may take: an SLH-DSA-SHA2-128f signature is 17,088 bytes, an ML-DSA-65 one with its key 5,261.
 const HELLO_LIMIT: usize = 64 << 10;
 /// The most a key to seal to may take: an X-Wing public key and the id of a McEliece one.
 pub(crate) const KEY_LIMIT: usize = 64 << 10;

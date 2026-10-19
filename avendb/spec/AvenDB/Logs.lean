@@ -244,8 +244,9 @@ structure Conn where
   deriving DecidableEq, Repr
 
 /-- A device's signed statement of its holdings (H2, `wire::Statement`): the device, when it checked (seconds by its
-    clock), and what it holds, as it tells one peer. The model abstracts its SLH-DSA signature as `signer`: whose key
-    it verifies under, if anyone's (`Statement::verify`), which only that device's key can make. -/
+    clock), and what it holds, as it tells one peer. The model abstracts its signature, ML-DSA-65 or, from a device
+    made before the key move, SLH-DSA, as `signer`: whose key it verifies under, if anyone's (`Statement::verify`),
+    which only that device's key can make. -/
 structure Statement where
   device   : SignerId
   checked  : Nat
@@ -348,7 +349,7 @@ def Node.syncedTo (n : Node) (me : SignerId) (t : Synced) : List (SignerId × Bo
 /-! ### Signed holdings (H2)
 
 A device also signs what it tells each peer it holds, with when it checked (`Node.states`): the holdings it announces to
-that peer (`Node.tells`), under its own SLH-DSA signature. A statement names its device and proves itself, so unlike an
+that peer (`Node.tells`), under its own signature. A statement names its device and proves itself, so unlike an
 announcement it counts whatever connection it came on, and a node passes it on. Of each device it knows as some vault's
 (`devicesIn`) a node keeps the newest statement that device signed, the one checked last (`Node.statement`), and passes
 it to a peer only if the peer may know all it says by the node's view (`Node.passes`), so it tells nobody what they may

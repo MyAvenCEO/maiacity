@@ -100,7 +100,9 @@ use crate::policy::{
 use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
 use crate::sealed::{Brought, FileRoot};
-use crate::sign::{self, Ceremony, DeviceKey, EnclaveKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, WebAuthn};
+use crate::sign::{
+    self, Ceremony, DeviceKey, EnclaveKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, Suite, WebAuthn,
+};
 use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, CAP_GROUP_TYPE, LENS_TYPE, SCHEMA_TYPE};
 use crate::sync::{
     answer, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs, LogId, Place,
@@ -721,7 +723,13 @@ impl Lab {
     /// The passkey a software passkey's secret makes again (`passkey_secret`), as a platform syncs a passkey to another
     /// of its person's devices: a page holding its person's passkey (P8d) brings it into its Lab this way.
     pub fn passkey_from(&mut self, name: &str, secret: [u8; 32]) -> SignerId {
-        let key = Passkey::from_seed(secret);
+        self.passkey_from_in(name, secret, sign::SIGNING)
+    }
+
+    /// `passkey_from`, its post-quantum key in suite `suite`: the same passkey in either suite, as its one PRF output
+    /// derives both keys, and so two signers, the second its next key (the key move).
+    pub fn passkey_from_in(&mut self, name: &str, secret: [u8; 32], suite: Suite) -> SignerId {
+        let key = Passkey::from_seed_in(secret, suite);
         key.seal_secret().prepare();
         let id = key.id();
         self.keys.insert(id, Key::Passkey(key));
@@ -770,7 +778,13 @@ impl Lab {
     /// (`sign::device_salt`), or, for a device made since 2026-10-10, a secret of its own that this output masks. It
     /// starts unlocked.
     pub fn device_with(&mut self, name: &str, secret: [u8; 32]) -> SignerId {
-        self.add_device(DeviceKey::from_secret(secret), name)
+        self.device_with_in(name, secret, sign::SIGNING)
+    }
+
+    /// `device_with`, its post-quantum key in suite `suite`: from one secret, a device in each suite, the second its
+    /// next key (the key move).
+    pub fn device_with_in(&mut self, name: &str, secret: [u8; 32], suite: Suite) -> SignerId {
+        self.add_device(DeviceKey::from_secret_in(secret, suite), name)
     }
 
     /// A passkey in the platform's authenticator (P8e), whose P-256 key is `p256`, as a ceremony of it over any
@@ -782,13 +796,25 @@ impl Lab {
         if !ceremony.challenge().is_some_and(|c| assertion.verify(&p256, EditId(c))) {
             return None;
         }
+        let keys = ceremony.keys(p256);
+        Some(self.web_key(name, keys, ceremony))
+    }
+
+    /// The owner key whose keys are `keys`, held as `web_passkey` and `web_enclave` hold it, from `ceremony`, its
+    /// ceremony.
+    fn web_key(&mut self, name: &str, keys: SignerKeys, ceremony: &Ceremony) -> SignerId {
         let secret = ceremony.seal_secret();
         let (seal, pair) = ((secret.public(), secret.mceliece_public()), secret.id());
-        let keys = ceremony.keys(p256);
         let id = keys.id();
         self.keys.insert(id, Key::Web { keys, seal, pair });
-        self.names.insert(id, if name.ends_with("passkey") { name.into() } else { format!("{name}'s passkey") });
-        Some(id)
+        let name = match keys {
+            SignerKeys::Enclave { .. } if name.ends_with("Touch ID") => name.into(),
+            SignerKeys::Enclave { .. } => format!("{name}'s Touch ID"),
+            _ if name.ends_with("passkey") => name.into(),
+            _ => format!("{name}'s passkey"),
+        };
+        self.names.insert(id, name);
+        id
     }
 
     /// A Touch ID key in a Mac's Secure Enclave, as a ceremony of it over any challenge showed it (`sign::Ceremony::
@@ -799,30 +825,27 @@ impl Lab {
         let keys = ceremony.enclave_keys()?;
         let challenge = ceremony.challenge()?;
         ceremony.sign(keys, EditId(challenge))?;
-        let secret = ceremony.seal_secret();
-        let (seal, pair) = ((secret.public(), secret.mceliece_public()), secret.id());
-        let id = keys.id();
-        self.keys.insert(id, Key::Web { keys, seal, pair });
-        self.names.insert(id, format!("{name}'s Touch ID"));
-        Some(id)
+        Some(self.web_key(name, keys, ceremony))
     }
 
     /// The keys of owner key `s`, held as `web_passkey` and `web_enclave` hold them if the Lab doesn't hold them yet and
     /// `ceremony` is that key's: so a Mac its Touch ID key opened, with no passkey's ceremony, takes its person's passkey
     /// in from the first ceremony it makes, as for a change only the vault's root makes (2026-10-19). A passkey's are
-    /// those of the key its assertion recovers to whose keys hash to `s`. `None` if neither is at hand.
+    /// those of the key its assertion recovers to whose keys hash to `s`, in either suite, as are a Touch ID key's: so
+    /// a device takes in an owner key another device moved to ML-DSA-65 (the key move). `None` if neither is at hand.
     pub fn take_in(&mut self, s: SignerId, ceremony: &Ceremony) -> Option<SignerKeys> {
         if let Some(keys) = self.keys_of(s) {
             return Some(keys);
         }
         let name = self.names.get(&s).cloned().unwrap_or_else(|| "the person".into());
-        let brought = match ceremony.assertion() {
-            Some(a) => a.recover().into_iter().find(|&p256| ceremony.keys(p256).id() == s).and_then(|p256| {
-                self.web_passkey(&name, p256, ceremony)
-            }),
-            None => self.web_enclave(&name, ceremony),
-        };
-        brought.filter(|&id| id == s).and_then(|id| self.keys_of(id))
+        let challenge = EditId(ceremony.challenge()?);
+        let keys = match ceremony.assertion() {
+            Some(a) => a.recover().into_iter().find_map(|p256| ceremony.keys_of(p256, s)),
+            None => [Suite::MlDsa, Suite::SlhDsa].map(|suite| ceremony.keys_in([0; 33], suite)).into_iter().find(|k| k.id() == s),
+        }?;
+        ceremony.sign(keys, challenge)?;
+        self.web_key(&name, keys, ceremony);
+        self.keys_of(s)
     }
 
     /// The master recovery key `key` (`recovery`): every human vault a device of this Lab founds from now on adds it as
@@ -1113,8 +1136,8 @@ impl Lab {
     /// Unlock device `d` with `secret`, the secret its keys come from, as a browser's device unlocks with what its
     /// passkey's ceremony brings back (P8e, `device_with`): its keys derive again. False if they derive another device.
     pub fn unlock_with(&mut self, d: SignerId, secret: [u8; 32]) -> bool {
-        let key = DeviceKey::from_secret(secret);
-        if key.id() != d || !self.stores.contains_key(&d) {
+        let Some(key) = DeviceKey::of(secret, d) else { return false };
+        if !self.stores.contains_key(&d) {
             return false;
         }
         self.take_key(d, key);
@@ -2709,9 +2732,9 @@ impl Lab {
             out.extend(encode::bytes(edit));
             for sig in &store.signed[&edit.id()].sigs {
                 match &sig.keys {
-                    SignerKeys::Device { ed25519, slh } => out.extend(ed25519.iter().chain(slh)),
-                    SignerKeys::Passkey { p256, slh } => out.extend(p256.iter().chain(slh)),
-                    SignerKeys::Enclave { mldsa, slh } => out.extend(mldsa.iter().chain(slh)),
+                    SignerKeys::Device { ed25519, pq } => out.extend(ed25519.iter().chain(pq.bytes())),
+                    SignerKeys::Passkey { p256, pq } => out.extend(p256.iter().chain(pq.bytes())),
+                    SignerKeys::Enclave { mldsa, slh } => out.extend(mldsa.iter().chain(slh.iter().flatten())),
                 }
                 if let Some(a) = sig.webauthn.as_ref().map(WebAuthn::assertion) {
                     out.extend(a.authenticator_data.iter().chain(&a.client_data_json).chain(&a.signature));

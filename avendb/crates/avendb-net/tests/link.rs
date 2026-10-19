@@ -239,7 +239,7 @@ async fn a_node_hands_its_card_for_a_pass_for_the_device_on_that_very_connection
     // Alice's assertion with the hash-based half of Bob's passkey's pass: the pass of a passkey that is nobody's
     let mut mixed = lab.relay_pass(new, passkey_a, now).expect("Alice's pass");
     let bobs = lab.relay_pass(new, passkey_b, now).expect("Bob's pass");
-    (mixed.slh, mixed.sig) = (bobs.slh, bobs.sig);
+    (mixed.pq, mixed.sig) = (bobs.pq, bobs.sig);
     let card = Reply::from_wire(&say(&conn, link, &mixed.to_wire()).await.expect("a card")).expect("a reply");
     assert!(card.edits.is_empty(), "which roots no vault: an empty card");
     let pass = lab.relay_pass(new, passkey_a, now).expect("the passkey's pass").to_wire();
