@@ -42,6 +42,11 @@ export function forwardConsole(win: Window, from: string) {
 	}
 	w.addEventListener('error', (e) => send('error', `${e.message} (${e.filename}:${e.lineno})`));
 	w.addEventListener('unhandledrejection', (e) => send('error', `unhandled: ${text([e.reason])}`));
+	// what the script policy (vault/app/tauri.conf.json, src/lib/sandbox/policy.js) refused: WebKit says it only in its
+	// own console, never through console.error, so the app's log would not show it
+	w.addEventListener('securitypolicyviolation', (e) =>
+		send('error', `the script policy refused ${e.blockedURI || 'an inline script'} (${e.effectiveDirective}) at ${e.sourceFile || 'the page'}:${e.lineNumber}`)
+	);
 }
 
 /** Inside the app, library files come through the app (key and Range) instead of straight from the API. */
