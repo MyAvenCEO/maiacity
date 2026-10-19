@@ -505,7 +505,11 @@
 		['Ask logs', 'A request for some logs alone, those whose heads it lacks', 'A page of edits'],
 		['Link', 'A passkey’s pass, for a new device', 'The vault logs of that passkey'],
 		['Join', 'The edit that adds the new device', 'Nothing, once taken'],
-		['Card', 'A request for the server’s contact card', 'The vault logs of avenMAIA and every vault that owns it'],
+		[
+			'Card',
+			'A request for the contact card of a server or an agent',
+			'The logs of the vaults it acts for, avenMAIA for the server, and of every vault that owns them'
+		],
 		[
 			'Claim key, Claim',
 			'Asks a device that belongs to no vault yet, an unclaimed server or a new agent, for its key, then adds it to its device vault',
@@ -520,15 +524,20 @@
 	];
 
 	const blobs = [
-		['An edit (a write, a share, a mark)', 'Its signed bytes; a write’s body is encrypted', 'about 17 KiB of SLH-DSA signature, then its body', 'In a journal entry, then a pack'],
-		['A pack of edits', 'One blob of many edits, named by a head', 'up to 64 saves', 'On the shelf'],
+		[
+			'An edit (a write, a share, a mark)',
+			'A record, not a blob of its own: its bytes and each signer’s signature, ML-DSA-65, or SLH-DSA from a signer made before ML-DSA-65 came in; a write’s body is encrypted',
+			'about 5 or 17 KiB per signer, then its body',
+			'In a journal entry, then a pack'
+		],
+		['A pack of edits', 'One blob of many edits, named by a head', '64 saves, or the whole log', 'On the shelf'],
 		['A McEliece public key', 'One blob, named by its hash in the edits that use it', 'about 1 MiB', 'On the shelf'],
 		['A photo, a document', 'One sealed blob', 'up to 1 GiB', 'On the shelf, with its outboard'],
 		['A film or a camera card', 'A HashSeq of sealed 1 GiB pieces', '1 GiB to many TB', 'Whole, or fetched as it plays']
 	];
 
 	const places = [
-		['Desktop', 'A folder of the app’s own', 'What its keep shares want; files whole where they say so'],
+		['Desktop', 'A folder of the app’s own', 'What its keep shares want; files whole where they say so, and every file it adds'],
 		['Phone or browser', 'The page’s private storage (OPFS), in a worker', 'The same; pieces read but not kept stay in memory'],
 		['Drive', 'A folder on the drive, hosted by the Mac it is plugged into', 'The same as a desktop'],
 		['Server', 'The sealed bucket; its disk is only a cache', 'Every file whole, by default']
@@ -538,25 +547,38 @@
   meta/<n>          what opens the device again, its follow list and query limit too (browser, desktop)
   journal/<n>       what one save added: new edits, and the McEliece keys they brought
   heads/<n>         after every 64 saves: the packs that hold the log so far
-  blobs/<hash>      edit packs, McEliece keys, HashSeqs and file pieces
+  blobs/<hash>      edit packs, McEliece keys, HashSeqs and file pieces (in the bucket, in 8 MiB parts)
   outboards/<hash>  each blob's BLAKE3 outboard, written last
-  stated/<device>/  each device's signed holdings, named by when it checked, at most one an hour each
+  stated/<device>/  each device's signed holdings, named by when it checked, at most one an hour each,
+                    or one a day while they stay the same
   drives/<device>   a drive's key, wrapped under the desktop's own (desktop)
+  device.key        the server's own secret, sealed (server)
   new/              what is still being written`;
 
 	const quantum = [
-		['Connections', 'TLS 1.3 with X25519MLKEM768 as the only key exchange, on every link between nodes.'],
 		[
-			'Hellos',
-			'Each connection opens with an SLH-DSA signature each way over its TLS session, so both ends know which device they speak to even once the curves fall.'
+			'Connections',
+			'TLS 1.3 with X25519MLKEM768 as the only key exchange, on every link between nodes and on the HTTPS in front of the relay.'
 		],
 		[
 			'Signatures',
-			'SLH-DSA-SHA2-128f on every edit, the only signature that counts. A passkey adds its WebAuthn assertion beside it, which only shows a person was there.'
+			'ML-DSA-65 (FIPS 204), the suite of every new signer: the passkey of a new vault, a device, a Touch ID key, an invite, a server, an agent. A signer made before ML-DSA-65 came in keeps signing with SLH-DSA-SHA2-128f (FIPS 205) as itself, and every device checks both. A signer’s id hashes its suite and its keys, so each suite names signers of its own. An ML-DSA-65 signature is 3,309 bytes and brings its 1,952-byte key; an SLH-DSA one is 17,088 bytes. A passkey adds its WebAuthn assertion beside it, which only shows a person was there.'
+		],
+		[
+			'Touch ID',
+			'A Mac’s Touch ID key, an owner beside the passkey, signs with ML-DSA-65 inside its Secure Enclave, which never lets the key out and signs only once Touch ID passes. That signature counts. A Touch ID key made before ML-DSA-65 came in also signs with SLH-DSA beside it.'
+		],
+		[
+			'Hellos',
+			'Each connection opens with a post-quantum signature each way over its TLS session, in the device’s suite, so both ends know which device they speak to even once the curves fall.'
+		],
+		[
+			'Passes',
+			'A new device shows its passkey’s pass, a WebAuthn assertion and a post-quantum signature over the device and the time, to the server’s relay and to the peer it links through. Both take a pass in either suite.'
 		],
 		[
 			'Keys sent to devices',
-			'Sealed boxes of X-Wing (ML-KEM-768 with X25519) and Classic McEliece 6688128f together: closed while either holds.'
+			'Sealed boxes of X-Wing (ML-KEM-768 with X25519) and Classic McEliece 6688128f together: closed while either holds. A passkey’s ceremony coming back from the Mac app’s sign-in sheet is sealed once to X-Wing alone, to a key made for that crossing.'
 		],
 		[
 			'Edits and files',
@@ -564,17 +586,26 @@
 		],
 		[
 			'Hashes',
-			'BLAKE3 for every hash of avenDB’s own: an edit’s or a blob’s id is the plain hash of its bytes, the name iroh gives them, and every other hash, a signer’s id among them, derives its own key for its purpose. An entry’s id is the hash of its vault, the signer that created it and a nonce its creation carries, which every peer checks.'
+			'BLAKE3 for every hash of avenDB’s own: a blob’s id is the plain hash of its bytes, the name iroh gives it, and an edit’s the plain hash of its bytes before its signatures. Every other hash, a signer’s id among them, derives its own key for its purpose. An entry’s id is the hash of its vault, the signer that created it and a nonce its creation carries, which every peer checks.'
 		],
-		['The bucket', 'Every object sealed again with a 256-bit key of the server’s, since the link to it is classical.']
+		[
+			'The buckets',
+			'Every object sealed again with a 256-bit key derived from the server’s seal, each vault’s snapshots under a key of their own, since the link to them may be classical: the server’s TLS to its buckets offers X25519MLKEM768 first and X25519 after it.'
+		]
 	];
 
 	const proofs = [
 		['Only edits by someone allowed stand, and a revocation wins over what it hadn’t seen', 'T1'],
-		['Changing owners, devices or settings needs the vault’s approval and the newcomer’s consent', 'T2'],
+		[
+			'Changing a vault’s owners, threshold or devices needs the vault’s approval, unless an owner or a device takes itself out, and whoever is added approves too',
+			'T2'
+		],
 		['A key opens only for whoever may read what it protects', 'T5, T24'],
 		['After a removal, the current keys open only for those still entitled, and new writes use them', 'T6, T15'],
-		['The server holds no key of a vault, except what is public', 'T7'],
+		[
+			'A server whose vaults read nothing of another vault opens no key of a vault whose seed it never held, unless that key was public',
+			'T7'
+		],
 		['Everyone can only read', 'T8'],
 		['The same edits in any order give the same state', 'T11'],
 		['Sync sends only what shares reach, and strangers get nothing', 'T12'],
@@ -598,7 +629,7 @@
 			'H2'
 		],
 		['What any device says or signs it holds never gets anyone a file the rules refuse', 'T27'],
-		['Every reader agrees whether a write counts, and a write that breaks its schema counts for no one', 'C2, S3'],
+		['Every reader agrees whether a write counts, and a write that breaks its schema counts for no one', 'C2 (counts_seen), S3'],
 		['A record that fits its schema stays so, and no write reaches deeper than 256 rows', 'S2'],
 		[
 			'A query shows through links only what its reader opened, says why where it opened nothing, and a cycle of links ends at its depth',
@@ -609,13 +640,27 @@
 			'A merge through a share brings in only the places its merge op names, and into main only what the vault accepted',
 			'M1, M2'
 		],
-		['Only its vault lands a draft, and a draft that hasn’t landed is in no public audience', 'D1, D2, D3'],
+		[
+			'Only its vault lands a draft, a draft by anyone else counts only through a share that lets it create one, and a draft that hasn’t landed is in no public audience, unless its vault shares all of itself with Everyone',
+			'D1, D2, D3'
+		],
 		['A share of a cap group never grants an op above its level, whatever version of the group is in force', 'CG1'],
 		['An invite is claimed once, and from then on its share names the vault that claimed it', 'G1'],
 		[
-			'A gated server takes a new human vault only with its invite, and a new COOP or aven only from Maia City’s Admins',
+			'A gated server takes a new human vault only with a share of the vault it serves, such as the invite it claims, or as an owner of that vault, and a new COOP or aven only owned by an admin of it',
 			'G2'
-		]
+		],
+		[
+			'A backup restores exactly the vault’s snapshot, and later backups and pruning leave every kept snapshot restoring as before',
+			'B1, B4'
+		],
+		[
+			'A backup built on a snapshot stores only the edits beyond its frontiers, and each file once, and asking by frontiers loses nothing',
+			'B2, B7'
+		],
+		['A snapshot holds only edits the server holds, of entries only its vault’s, and every file it names is there', 'B3, B6'],
+		['Retention keeps the newest snapshot, and one of every day, week and month with one, in its window', 'B5'],
+		['A restore reads at most 64 packs, and checks itself log by log against its manifest', 'B8, B9']
 	];
 </script>
 
@@ -1566,10 +1611,11 @@
 			<h2>Desktop, phone and server: one protocol stack</h2>
 			<p class="prose-col">
 				Every device is a full avenDB node with its own shelf: a folder on a desktop, the page’s private storage on a phone
-				or in a browser. The server is the same kind of node, and its shelf is a sealed bucket. Devices talk to each other
-				directly whenever the network allows it, and through the relay when it does not. A phone or a browser always goes
-				through the relay. So as it sets up or signs in, a browser first waits up to 20 seconds for the relay to let it in,
-				then reaches the server: a dial sent sooner would be lost, and tried again ever later.
+				or in a browser. The server is the same kind of node, and its shelf is a sealed bucket. A desktop and the server
+				talk to other devices directly whenever the network allows it, and through the relay when it does not. A phone, a
+				browser or an agent in a cloud session always goes through the relay. So as it sets up or signs in, a browser
+				first waits up to 20 seconds for the relay to let it in, then reaches the server: a dial sent sooner would be
+				lost, and tried again ever later.
 			</p>
 			<figure>
 				<div class="frame">
@@ -1592,22 +1638,25 @@
 						<text class="h" x="410" y="182">avenDB server · Hetzner</text>
 						<text class="s" x="410" y="212">relay: lets your devices meet</text>
 						<text class="s" x="410" y="234">sync peer: always online</text>
-						<text class="s" x="410" y="256">backup: ciphertext only, no keys</text>
-						<line class="thin" x1="410" y1="276" x2="670" y2="276" />
-						<text class="s" x="410" y="300">its shelf is the bucket;</text>
-						<text class="s" x="410" y="322">its disk, a cache it can lose:</text>
-						<text class="s" x="410" y="344">parts read lately, blobs in transit</text>
-						<text class="m" x="410" y="380">a device of avenMAIA</text>
+						<text class="s" x="410" y="256">backup: ciphertext of your vaults</text>
+						<text class="s" x="410" y="278">snapshots: every vault, every night</text>
+						<line class="thin" x1="410" y1="296" x2="670" y2="296" />
+						<text class="s" x="410" y="320">its shelf is the bucket;</text>
+						<text class="s" x="410" y="342">its disk, a cache it can lose:</text>
+						<text class="s" x="410" y="364">parts read lately, blobs in transit</text>
+						<text class="m" x="410" y="388">a device of avenMAIA</text>
 						<path class="bkt" d="M770 170 v210 a80 18 0 0 0 160 0 v-210" />
 						<ellipse class="bkt" cx="850" cy="170" rx="80" ry="18" />
-						<text class="h" x="850" y="214" text-anchor="middle">Object storage</text>
-						<text class="s" x="850" y="236" text-anchor="middle">maiacity-avendb, hel1</text>
-						<text class="m" x="850" y="264" text-anchor="middle">g&lt;n&gt;/journal/</text>
-						<text class="m" x="850" y="284" text-anchor="middle">g&lt;n&gt;/heads/</text>
-						<text class="m" x="850" y="304" text-anchor="middle">g&lt;n&gt;/blobs/</text>
-						<text class="m" x="850" y="324" text-anchor="middle">g&lt;n&gt;/outboards/</text>
-						<text class="s" x="850" y="352" text-anchor="middle">sealed, locked 7 days</text>
-						<text class="s" x="850" y="372" text-anchor="middle">the server's truth</text>
+						<text class="h" x="850" y="210" text-anchor="middle">Object storage</text>
+						<text class="s" x="850" y="230" text-anchor="middle">maiacity-avendb, hel1</text>
+						<text class="m" x="850" y="252" text-anchor="middle">g&lt;n&gt;/journal/</text>
+						<text class="m" x="850" y="269" text-anchor="middle">g&lt;n&gt;/heads/</text>
+						<text class="m" x="850" y="286" text-anchor="middle">g&lt;n&gt;/blobs/</text>
+						<text class="m" x="850" y="303" text-anchor="middle">g&lt;n&gt;/outboards/</text>
+						<text class="m" x="850" y="320" text-anchor="middle">g&lt;n&gt;/stated/</text>
+						<text class="m" x="850" y="337" text-anchor="middle">g&lt;n&gt;/device.key</text>
+						<text class="s" x="850" y="360" text-anchor="middle">sealed, locked 7 days</text>
+						<text class="s" x="850" y="378" text-anchor="middle">the server's truth</text>
 						<line class="relay" x1="120" y1="210" x2="120" y2="350" />
 						<path class="bytes" d="M175 214 V346" stroke-dasharray="2 9" />
 						<text class="s" x="190" y="268">QUIC end to end,</text>
@@ -1633,8 +1682,11 @@
 					</svg>
 				</div>
 				<figcaption>
-					Every arrow carries ciphertext only. Keys never leave the devices of the people a vault shares with, and the
-					server seals every object again before it goes to the bucket.
+					Every arrow is encrypted, and so is every body inside it: the server checks who signed what under which share,
+					and opens only what is public or shared with avenMAIA, the vault it is a device of. Keys never leave the devices
+					of the people a vault shares with, and the server seals every object again before it goes to the bucket. Each
+					night it also snapshots every vault into a second bucket, <code>maiacity-avendb-snapshots</code>, sealed and
+					locked the same way.
 				</figcaption>
 			</figure>
 		</section>
@@ -1667,7 +1719,7 @@
 						<text class="s" x="428" y="200">one pool, verified ranges, resume, GetMany</text>
 						<rect class="band-n0" x="20" y="228" width="760" height="56" rx="10" />
 						<text class="h" x="40" y="253">Endpoint and router (iroh 1.3)</text>
-						<text class="s" x="40" y="273">one id per device · QUIC · TLS 1.3 with X25519MLKEM768 only · hole punching</text>
+						<text class="s" x="40" y="273">one id per device · QUIC · TLS 1.3 with X25519MLKEM768 only · hole punching where it has UDP</text>
 						<rect class="band-n0" x="20" y="294" width="760" height="50" rx="10" />
 						<text class="h" x="40" y="317">Transport</text>
 						<text class="s" x="140" y="317">UDP when direct, avenDB's own relay otherwise (WebSocket for browsers)</text>
@@ -1689,11 +1741,11 @@
 			<p class="eyebrow">Sync</p>
 			<h2>Devices say what they hold, and ask only for what differs</h2>
 			<p class="prose-col">
-				Each connection opens with a hello each way: an SLH-DSA signature over the TLS session, so both ends know which
-				device they speak to. Then each tells the other its holdings: for every log it may share with that peer, its
-				frontier, and for every file, whether it holds it whole or in pieces. After that it sends only what changed. A
-				device that hears of a head it lacks asks for that log alone, and gets only what it lacks, in pages of about 4
-				MiB. Order never matters, so any device can sync with any other, in any order, any number of times.
+				Each connection opens with a hello each way: the device’s post-quantum signature over the TLS session, so both
+				ends know which device they speak to. Then each tells the other its holdings: for every log it may share with that
+				peer, its frontier, and for every file, whether it holds it whole or in pieces. After that it sends only what
+				changed. A device that hears of a head it lacks asks for that log alone, and gets only what it lacks, in pages of
+				about 4 MiB. Order never matters, so any device can sync with any other, in any order, any number of times.
 			</p>
 			<div class="split">
 				<div>
@@ -1706,16 +1758,16 @@
 				<div>
 					<h3>Keep shares: what it wants</h3>
 					<p>
-						Whole, when opened or never, by the same selector a share uses. Your phone fetches pieces as it plays, your
-						desktop keeps originals whole, the server keeps all.
+						Whole, when opened or never, by the same selector a share uses. Your phone fetches pieces as it plays. Your
+						desktop keeps whole what you set it to keep, and every file you add on it. The server keeps all.
 					</p>
 				</div>
 				<div>
 					<h3>Holdings: who has what</h3>
 					<p>
-						Only what a device holds for good, on its shelf. Announced, they count only from the device itself on its own
-						connection, and choose whom to fetch from; signed, they outlive it and only show. Both fill in “Synced to”.
-						They never grant anything.
+						Only what a device holds for good, on its shelf. Announced, they count only from the device itself, said on its
+						own connection, and choose whom to fetch from; signed, they pass from node to node and only show. Both fill in
+						“Synced to”. They never grant anything.
 					</p>
 				</div>
 				<div>
@@ -1745,25 +1797,28 @@
 			</p>
 			<h3>Signed holdings: “checked 2 h ago”</h3>
 			<p class="prose-col">
-				An announcement counts only while its device is connected. So each device also signs what it tells a peer it
-				holds, with when it checked: a statement, signed with SLH-DSA like an edit and good for nothing else. It signs a
-				new one on each connection and once its holdings change, at most every 10 seconds, and again every 15 minutes
-				while they stay the same, and hands it only to the peers it is connected to. Every node, the server no less than
-				your desktop, keeps the newest statement of each device it knows, whoever brought it, passes it on to each
-				connected peer that may know all it says, and keeps it on its shelf, so it outlives the device’s connection and
-				the node’s restarts. “Synced to” lists a device connected now by what it announced, and any other by its newest
-				statement, with when it checked: the phone in your drawer shows as “checked 2 h ago”. Statements only show: a
-				node asks and fetches by what its connected peers announce, and no statement lets anyone fetch anything.
+				An announcement counts only from its own device, said on that device’s own connection: no node can pass it on.
+				So each device also signs what it tells a peer it holds, with when it checked: a statement, signed with its
+				post-quantum key like an edit and good for nothing else. It hands a peer one as they connect, a new one once its
+				holdings change, at most every 10 seconds, and again every 15 minutes while they stay the same, and reuses one
+				it signed less than 15 minutes ago for the same holdings. It hands them only to the peers it is connected to.
+				Every node, the server no less than your desktop, keeps the newest statement of each device it knows, whoever
+				brought it, passes it on to each connected peer that may know all it says, and keeps it on its shelf, so it
+				outlives the device’s connection and the node’s restarts. A node also keeps what a device it knows last
+				announced after that device disconnects. “Synced to” lists a device connected now by what it announced, and any
+				other by its newest statement, with when it checked, so the phone in your drawer shows as “checked 2 h ago”; a
+				device of which no statement reached the node, by what it last announced. Statements only show: a node asks and
+				fetches by what devices announced, connected ones first, and no statement lets anyone fetch anything.
 			</p>
 		</section>
 
 		<section id="files">
 			<p class="eyebrow">Files</p>
-			<h2>An edit is a small blob, a file is a list of big ones</h2>
+			<h2>An edit is a small record, a file is a list of big blobs</h2>
 			<div class="table">
 				<table>
 					<thead>
-						<tr><th>Thing</th><th>As a blob</th><th>Typical size</th><th>Where a device keeps it</th></tr>
+						<tr><th>Thing</th><th>What it is</th><th>Typical size</th><th>Where a device keeps it</th></tr>
 					</thead>
 					<tbody>
 						{#each blobs as [thing, form, size, where] (thing)}
@@ -1773,18 +1828,19 @@
 				</table>
 			</div>
 			<p class="prose-col">
-				Every edit and every blob has one name, the BLAKE3 hash of its bytes, which is also the name iroh stores and
-				moves those bytes by. An edit’s signatures sign that name. Edits are kept in packs and files in pieces, each a
-				blob. The write that brings a file names the file’s root hash and sealed size in the clear, because the server and
-				other devices need them to back the file up and to know who may fetch it. The file’s key sits inside the write’s
-				encrypted body. Whoever may fetch the write may fetch its files, and nobody else.
+				Every edit and every blob has one name, the BLAKE3 hash of its bytes, an edit’s before its signatures, which sign
+				that name. A blob’s name is also the name iroh stores and moves it by. Edits are kept in a journal, then in
+				packs, and travel in sync’s replies; files are kept in pieces. Packs and pieces are blobs. The write that brings
+				a file names the file’s root hash and sealed size in the clear, because the server and other devices need them
+				to back the file up and to know who may fetch it. The file’s key sits inside the write’s encrypted body. Whoever
+				may fetch the write may fetch its files, and nobody else.
 			</p>
 			<p class="prose-col">
-				Every vault has a Library that lists its files by kind: films, images, SVGs, PDFs and audio. A file is an ordinary
-				entry of type <code>file</code>, a document named after the file whose first write brings it, so shares, sync and
-				deletion work on it as on a note. A film plays as it streams: the player asks for byte ranges, and the device
-				fetches only the 64 KiB segments those ranges need, verified by iroh-blobs, and opens them. The database lists
-				files too, as a table like any other, with each file’s root, size, sealed size and pieces.
+				Every vault has a Library that lists its files by kind: films, images, SVGs, PDFs, audio and other files. A file
+				is an ordinary entry of type <code>file</code>, a document named after the file whose first write brings it, so
+				shares, sync and deletion work on it as on a note. A film plays as it streams: the player asks for byte ranges,
+				and the device fetches only the 64 KiB segments those ranges need, verified by iroh-blobs, and opens them. The
+				database lists files too, as a table like any other, with each file’s root, size, sealed size and pieces.
 			</p>
 			<figure>
 				<div class="frame">
@@ -1799,7 +1855,7 @@
 						<text class="m" x="150" y="66">65,520 B</text>
 						<text class="m" x="264" y="66">65,520 B</text>
 						<text class="m" x="378" y="66">65,520 B</text>
-						<text class="s" x="530" y="58">key K derived from the file, keyed by the vault</text>
+						<text class="s" x="530" y="58">key K derived from the file, keyed by your vault’s current seed</text>
 						<text class="s" x="530" y="76">ChaCha20-Poly1305, nonce = segment number + last flag</text>
 						<path class="thin" d="M240 84 v24" />
 						<path class="thin" d="M234 100 l6 8 l6 -8" />
@@ -1833,8 +1889,8 @@
 						<text class="m" x="190" y="271">piece 1 · 1 GiB</text>
 						<text class="m" x="346" y="271">piece n · rest</text>
 						<path class="thin" d="M95 286 V316 M251 286 V316 M407 286 V316 M95 316 H407 M251 316 V330" />
-						<rect class="box" x="120" y="330" width="262" height="36" rx="7" />
-						<text class="m" x="134" y="353">HashSeq root = list of piece hashes</text>
+						<rect class="box" x="106" y="330" width="290" height="36" rx="7" />
+						<text class="m" x="120" y="353">over 1 GiB: HashSeq root = piece hashes</text>
 						<text class="h" x="20" y="400">4 · The write that brings it</text>
 						<rect class="edit" x="20" y="412" width="500" height="44" rx="8" />
 						<text class="s" x="36" y="432">in the clear: root hash, sealed size</text>
@@ -1847,9 +1903,10 @@
 				<figcaption>
 					This format is called sealed blob v2. The tag adds 0.024 %. Pieces cannot be swapped or reordered, because every
 					nonce counts segments across the whole file. Whoever holds the key verifies by decrypting; everyone else verifies
-					the ciphertext with BLAKE3. A file’s key is derived from what it holds, keyed by a secret of the person’s vault: the
-					same film added again by any of their devices seals to the same blobs, kept once, while another person’s copy
-					seals to unrelated ones.
+					the ciphertext with BLAKE3. A file that seals to 1 GiB or less is one piece, whose hash is its root. A file’s
+					key is derived from what it holds, keyed by a secret of the current seed of the person’s vault: the same film
+					added again by any of their devices seals to the same blobs, kept once, until that seed changes, while another
+					person’s copy seals to unrelated ones.
 				</figcaption>
 			</figure>
 		</section>
@@ -1873,9 +1930,9 @@
 			<p class="eyebrow">Where the bytes live</p>
 			<h2>One shelf per place</h2>
 			<p class="prose-col">
-				Each place keeps what lasts on one shelf, laid out the same everywhere. A shelf says it has something only once its
-				place’s source of truth holds it, so “synced to” never means “on its way”. Pieces a device reads but doesn’t keep
-				stay in memory, 64 MiB at most.
+				Each place keeps what lasts on one shelf, laid out the same everywhere but in the bucket, which keeps each blob in
+				8 MiB parts. A shelf says it has something only once its place’s source of truth holds it, so “synced to” never
+				means “on its way”. Pieces a device reads but doesn’t keep stay in memory, 64 MiB at most.
 			</p>
 			<div class="table">
 				<table>
@@ -1892,20 +1949,22 @@
 			<figure>
 				<pre><code>{LAYOUT}</code></pre>
 				<figcaption>
-					One generation of a shelf. A node starts from its newest head and the journal after it: a few dozen objects,
-					however long the log.
+					One generation of a shelf. A node starts from its newest head, the packs it names and the journal after it: at
+					most 64 packs and 63 journal entries, however long the log, with the McEliece keys they name.
 				</figcaption>
 			</figure>
 			<p class="prose-col">
 				Packing is what makes object storage work for a database. Hetzner bills every object as at least 64 KB and allows
 				750 requests a second per bucket. A million edits stored one per object would take 22 minutes of a fully busy
-				bucket to write or restore. Packed, a node reads a few dozen objects to start.
+				bucket to write or restore. Packed, a node reads one head, at most 64 packs and 63 journal entries to start, and
+				its McEliece keys.
 			</p>
 			<ul class="prose-col">
 				<li>
 					<b>Put aside, never cleared.</b> Forgetting an account, or starting fresh, makes a new generation beside the old
 					one, which is never read again and never deleted. avenDB is never reset: the lowest generation stays at 18, the
-					edit format at version 11, and no place deletes what it finds in its folder, its private storage or its bucket.
+					edit format at version 11, and no place deletes a shelf, nor anything on it but a blob it never finished and a
+					file an agent lets go of once its person’s Mac holds it whole.
 				</li>
 				<li>
 					<b>Nothing counts until the bucket has it.</b> The server’s shelf answers only once the bucket holds the object,
@@ -1920,8 +1979,18 @@
 					the bucket too, sealed, so a server whose disk is lost comes back from the bucket alone.
 				</li>
 				<li>
-					<b>Locked.</b> Every object version is kept for 7 days in compliance mode, so not even a compromised server can
-					wipe the backup.
+					<b>Locked.</b> Every object version is kept for 7 days in compliance mode, so for those 7 days not even a
+					compromised server can wipe it.
+				</li>
+				<li>
+					<b>A snapshot of every vault, every night.</b> At 03:00 UTC the server backs up every vault it knows into a
+					second bucket, <code>maiacity-avendb-snapshots</code>, a folder for each vault, sealed under a key of its own:
+					what changed since the vault’s newest snapshot, each blob once. It keeps its own device secret there too, and every
+					snapshot of the last 48 hours, the newest of each day for 30 days, of each week for 26 weeks and of each month
+					for good, and lets go of the rest; that bucket is locked for 7 days the same way. Then it checks every folder
+					without restoring it: the listing and the newest snapshot’s edits every day, and each blob of the files on one
+					day in 30. A restore puts each vault back as of any day kept, into a new, empty folder with the server’s
+					device secret, and a server started there is the same device.
 				</li>
 			</ul>
 		</section>
@@ -1930,9 +1999,11 @@
 			<p class="eyebrow">Post-quantum</p>
 			<h2>Quantum-proof, everywhere</h2>
 			<p class="prose-col">
-				Every node runs in post-quantum-only mode: no classical-only path is left. Every edit counts by its SLH-DSA
-				signature alone, and where a classical algorithm still appears, in a key exchange or a sealed box, a post-quantum
-				one stands beside it, so it stays closed while either holds.
+				Every link between nodes is post-quantum only: X25519MLKEM768 is the only key exchange either end offers. No
+				curve makes an edit count: each of its signers signs it with ML-DSA-65 or SLH-DSA. Where a classical algorithm
+				still appears in a key exchange or a sealed box, a post-quantum one stands beside it, so it stays closed while
+				either holds. The one link that may be classical is the server’s to its buckets, and it carries only objects the
+				server sealed again under a 256-bit key.
 			</p>
 			<div class="table">
 				<table>
@@ -1955,7 +2026,8 @@
 				avenDB’s rules are written twice: in Lean 4, where each guarantee below is a theorem with a machine-checked proof,
 				and in Rust. Shared test vectors hold the two to the same answers, edit by edit. The proofs assume that signatures
 				can’t be forged, that sealed data reveals nothing without its key, that ids don’t collide and that Loro converges.
-				Verifpal models cover the hello, linking and the sealed box against an attacker who breaks the curves.
+				Verifpal models cover the hello, linking and the sealed box against an attacker who breaks the curves. No CI job
+				builds the Lean model or runs the Verifpal models.
 			</p>
 			<div class="table">
 				<table>
