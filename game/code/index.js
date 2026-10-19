@@ -8,18 +8,20 @@
  *
  *   codeAt('views/village-scene')            the entry: { ref, type, title, ..., files, hash }
  *   codeAt('views/village-scene@3f2a…')       the same, only while its hash starts so (a ref pinned to a version)
- *   codeIn('logic/sandbox-7/')               every entry under a path, in order
+ *   codeIn('configs/sandbox-5/')             every entry under a path, in order
+ *   configAt('configs/sandbox-5/rules')      a game's settings, as plain JSON (A3: the Maia City COOP keeps them)
  *   viewOfEntry(e), cardOfEntry(e)           a view entry as a Generated UI view, or as a game's view card
  *
- * An entry is { type: 'view' | 'logic', title, note?, ... } and its files: a view's view.html (or a2ui.json), data.json,
- * input.json and logic.js; a logic module's logic.js. Every one passes the one checker (./check.js) in a test.
+ * An entry is { type: 'view' | 'logic' | 'config', title, note?, ... } and its files: a view's view.html (or a2ui.json),
+ * data.json, input.json and logic.js; a logic module's logic.js; a config's config.json. Every one passes the one
+ * checker (./check.js) in a test, and a config from the vault is held to the shape of the seed's.
  */
 import { ENTRIES } from '../../code/index.js';
 import { AVENDB_REF, avendb, loadCode as load } from './sources/avendb.js';
 
 export class CodeError extends Error {}
 
-const REPO_REF = /^((?:views|logic)\/[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*)(?:@([0-9a-f]{6,64}))?$/;
+const REPO_REF = /^((?:views|logic|configs)\/[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*)(?:@([0-9a-f]{6,64}))?$/;
 
 /** a ref read: { source: 'repo', path, hash? } or { source: 'avendb', vault, entry, heads } */
 export function parseCodeRef(ref) {
@@ -28,7 +30,7 @@ export function parseCodeRef(ref) {
 	if (repo) return { source: 'repo', path: repo[1], ...(repo[2] ? { hash: repo[2] } : {}) };
 	const db = s.match(AVENDB_REF);
 	if (db) return { source: 'avendb', vault: db[1], entry: db[2], heads: db[3] };
-	throw new CodeError(`"${s.slice(0, 80)}" is no code ref: views/<id>, logic/<group>/<id>, optionally @<hash>`);
+	throw new CodeError(`"${s.slice(0, 80)}" is no code ref: views/<id>, logic/<group>/<id>, configs/<game>/<id>, optionally @<hash>`);
 }
 
 /** the entry `ref` names @param {string} ref */
@@ -39,6 +41,17 @@ export function codeAt(ref) {
 	if (!e) throw new CodeError(`no code entry ${r.path}`);
 	if (r.hash && !e.hash.startsWith(r.hash)) throw new CodeError(`${r.path} is ${e.hash.slice(0, 12)}… now, not ${r.hash.slice(0, 12)}…`);
 	return e;
+}
+
+/**
+ * The settings config entry `ref` holds, as plain JSON: the vault's once loaded (`loadCode`), else the seed's. A copy, so
+ * a game that changes what it reads changes nothing here.
+ * @param {string} ref
+ */
+export function configAt(ref) {
+	const e = codeAt(ref);
+	if (e.type !== 'config') throw new CodeError(`${e.ref} is a ${e.type}, not a config`);
+	return JSON.parse(e.files['config.json'] ?? '{}');
 }
 
 /** every entry under `prefix`, in the order of their refs */

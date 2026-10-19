@@ -59,7 +59,7 @@
 		requestAnimationFrame(() =>
 			requestAnimationFrame(async () => {
 				const { mountVillage } = await import('$lib/sandbox-2/interior/village');
-				const { SANDBOX_5 } = await import('$lib/sandbox-2/interior/sandbox5.js');
+				const SANDBOX_5 = await (await import('$lib/sandbox-2/interior/sandbox5.js')).sandbox5();
 				const v = await mountVillage(
 					stage!,
 					(label) => {

@@ -1,0 +1,23 @@
+{
+	"hoursPerMonth": 24,
+	"mintWindowHours": 24,
+	"signatures": 2,
+	"starterPack": 124800,
+	"euroIngest": 12500,
+	"heartsPerDay": 24,
+	"demurrage": 0.07,
+	"poolShare": 0.1,
+	"dividendShare": 0.2,
+	"weightMAIA": 1,
+	"weightTRIBE": 1,
+	"weightVILLAGE": 1,
+	"swapFee": 0.003,
+	"homeRent": 100,
+	"tentRent": 10,
+	"hexRent": 100,
+	"pickupRent": 100,
+	"powercubeRent": 50,
+	"batteryRent": 50,
+	"solarRent": 50,
+	"hexSubRent": 25
+}

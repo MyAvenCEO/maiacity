@@ -21,7 +21,9 @@ describe('code/', () => {
 	test('every entry passes the one checker, with nothing it holds left doing nothing', () => {
 		for (const e of Object.values(ENTRIES)) {
 			const r =
-				e.type === 'logic'
+				e.type === 'config'
+					? checkCode('config', JSON.parse(e.files['config.json']), { seed: JSON.parse(e.files['config.json']) })
+					: e.type === 'logic'
 					? checkCode('logic', { code: e.files['logic.js'], hooks: e.hooks })
 					: e.for === 'genui'
 						? checkCode('view', viewOfEntry(e))

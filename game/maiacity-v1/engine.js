@@ -35,6 +35,7 @@
  */
 
 import { checkViewCard } from '../genui/views.js';
+import { configAt } from '../code/index.js';
 import { SLOTS, SLOT_NAMES } from './views.js';
 
 export const DAY_MS = 86_400_000;
@@ -80,47 +81,24 @@ const DUST = 1e-9;
 /** an amount asked for may exceed what is held by this much (the melt between a look and a click): it takes all */
 const SLACK = 0.005;
 
-export const DEFAULT_SETTINGS = {
-	/** real hours a game month lasts (24: a month a real day) */
-	hoursPerMonth: 24,
-	/** how far back the right to mint reaches, in real hours */
-	mintWindowHours: 24,
-	/** signatures a MIP needs before it applies (two seats: 1 or 2) */
-	signatures: 2,
-	/** each player's first mint brings this starter pack on top of what grew: the 7 % equilibrium (equilibriumOf) */
-	starterPack: 124800,
-	/** and brings this many €uro into the MaiaCity COOP (the euro ingest) */
-	euroIngest: 12500,
-	heartsPerDay: 24,
-	/** a year of virtual time melts every balance by this much */
-	demurrage: 0.07,
-	/** of every MIND into a treasury, this share goes to the pool */
-	poolShare: 0.1,
-	/** Law 5, every sale pays its owners: this share of every sale (each rent a COOP is paid) goes at once to the
-	 * holders of the COOP's MIND, pro rata, in that MIND (its own treasury and the pool get none) */
-	dividendShare: 0.2,
-	/** the pool's weights, one per MIND (taken as shares of their sum: 1, 1, 1 is 1/3 each) */
-	weightMAIA: 1,
-	weightTRIBE: 1,
-	weightVILLAGE: 1,
-	/** the pool's swap fee, kept in the pool */
-	swapFee: 0.003,
-	/** every price a game week (Samuel 2026-10-14). Each player to the Tribe COOP, in tribeMIND: the home rent, for
-	 * using everything (the tent, the pickup, the power) */
-	homeRent: 100,
-	/** the tent's own price inside the home rent, shown on the Tribe COOP's price list (nobody pays it apart) */
-	tentRent: 10,
-	/** the Village COOP to the MaiaCity COOP, for the hex, in maiaMIND */
-	hexRent: 100,
-	/** the Tribe COOP to the Village COOP, for the machines it uses, in the owner's MIND (villageMIND): 250 a week in all */
-	pickupRent: 100,
-	powercubeRent: 50,
-	batteryRent: 50,
-	solarRent: 50,
-	/** the Tribe COOP to the Village COOP, for the hex the Village COOP rents and the tribe lives on, a player a week, in
-	 * villageMIND (Samuel 2026-10-15) */
-	hexSubRent: 25
-};
+/** where the settings a new game starts with are kept: the Maia City COOP's vault (A3), else the repo's seed of them */
+export const SETTINGS_CONFIG = 'configs/maiacity-v1/settings';
+
+/** the settings as the repo seeds them (code/configs/maiacity-v1/settings): the clock (hoursPerMonth, mintWindowHours),
+ * MIP signatures, a first mint's starter pack and euro ingest, HEARTS a day, demurrage, the pool's share, weights and
+ * fee, Law 5's dividend share, and the weekly rents of the chain player → Tribe → Village → MaiaCity */
+export const DEFAULT_SETTINGS = configAt(SETTINGS_CONFIG);
+
+/**
+ * The settings a new game starts with now: the vault's once it is loaded (game/code/index.js `loadCode`), each value
+ * the game's limits refuse (SETTING_LIMITS) the seed's.
+ */
+export function defaultSettings() {
+	const got = configAt(SETTINGS_CONFIG);
+	const out = { ...DEFAULT_SETTINGS };
+	for (const [k, [lo, hi]] of Object.entries(SETTING_LIMITS)) if (typeof got[k] === 'number' && got[k] >= lo && got[k] <= hi) out[k] = got[k];
+	return out;
+}
 
 /** the rents were a month until 2026-10-14; a game from before starts on the weekly prices (2: the Tribe COOP pays
  * the Village COOP 250 a week, Samuel 2026-10-14) */
@@ -179,7 +157,7 @@ export function newGame(now = Date.now(), settings = {}) {
 		month: 0,
 		week: 0,
 		rentsWeekly: RENTS_WEEKLY,
-		settings: { ...DEFAULT_SETTINGS, ...settings },
+		settings: { ...defaultSettings(), ...settings },
 		players: Object.fromEntries(SEATS.map((s) => [s, { seat: s, name: `Player ${s}`, founder: null, wallet: wallet(), lastMint: null, arrears: 0 }])),
 		coops: Object.fromEntries(Object.entries(COOPS).map(([id, c]) => [id, { id, ...c, treasury: wallet(), arrears: 0 }])),
 		pool: { MAIA: 0, TRIBE: 0, VILLAGE: 0 },
@@ -431,12 +409,13 @@ export const nextPayDay = (s) => timeOfMonth(s, ((s.week ?? s.month * WEEKS_A_MO
 export function advance(state, now = Date.now()) {
 	const s = clone(state);
 	// a setting added later (the starter pack) takes its default in a game started before it
-	s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
+	s.settings = { ...defaultSettings(), ...s.settings };
 	// a game from before weekly pay days counts its weeks from its months
 	s.week ??= s.month * WEEKS_A_MONTH;
 	// a game from before the weekly prices takes them, and what it owed on the old monthly ones is forgiven
 	if (s.rentsWeekly !== RENTS_WEEKLY) {
-		for (const k of RENT_SETTINGS) s.settings[k] = DEFAULT_SETTINGS[k];
+		const d = defaultSettings();
+		for (const k of RENT_SETTINGS) s.settings[k] = d[k];
 		for (const p of Object.values(s.players)) p.arrears = 0;
 		for (const c of Object.values(s.coops)) {
 			c.arrears = 0;
