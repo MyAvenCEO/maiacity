@@ -96,8 +96,8 @@ Eight principles follow from the shape:
 6. **One API.** Every read and change is one JSON op through `run(op)`, the same on every device. The page keeps no
    rule; it asks the device.
 7. **One transport per job, the iroh way.** Our protocol decides what a peer may get. iroh-blobs moves the bytes.
-8. **Put aside, clear at a reset.** An old store becomes an older generation beside the new one. A reset clears what
-   came before it, on every place.
+8. **Put aside, never cleared.** An old store becomes an older generation beside the new one, and stays whole there.
+   avenDB is never reset (Samuel 2026-10-19), so nothing clears a place.
 
 ## 2. What it guarantees
 
@@ -419,8 +419,8 @@ store), only where its shares let it read the entry, and written to the path bes
 unless `overwrite` says so; a text file of at most 64 KiB comes back inline too. It captures a spark with
 `avendb_add_spark`, its text, title and tags alone (a link or a media file goes in as an artifact of its own, with
 `avendb_add_artifact`): the `create` the page's Sparks run, run as any change of its, into the aven's coop unless it
-names another, where the aven's shares let it create; where they don't, it says which vaults they let it. A reset clears
-its folder as the app's, and it asks to join again.
+names another, where the aven's shares let it create; where they don't, it says which vaults they let it. Its folder,
+like the app's, keeps what it holds: avenDB is never reset.
 
 Each session of a harness starts its own `avendb-device agent`, yet one device is one node, one shelf and one iroh
 endpoint, never two of the same key at once. So of an agent's sessions on a desktop, one runs its device: the one that
@@ -429,7 +429,7 @@ holds its lock file (`<app folder>-agents/<device>.lock`), which answers the oth
 away, one of the others takes the lock and its place, and asks it again whatever was left unanswered. A session's first
 line to it says its build (when its program was made): one of a newer build, as after the desktop app was rebuilt,
 takes over at once, and the older answers its harness through it from then on. It writes that it runs to a file of its
-device's own (`<device-name>.<key>.alive`), so another device of the agent, as an older build's after a reset, never
+device's own (`<device-name>.<key>.alive`), so another device of the agent, as an older build's, never
 stands in for it. While it belongs to no vault it asks the desktop's device for what it may hold, so a join it missed,
 as one made while it didn't run, still reaches it.
 
@@ -1306,7 +1306,8 @@ of the edits is new, nothing new is on the wire, and every write counts as any w
 
 **The honest limit.** Each line's merge still counts on its own. One review accepts every line and merges them in one
 go, but a reader that holds only some of those merges reads only those: all or none for every reader would need the
-merge writes to name their AIP, a change on the wire left for the next reset.
+merge writes to name their AIP, a change on the wire that must come as a new op version 11 reads, since avenDB is never
+reset.
 
 ### Drafts: new entries an AIP proposes
 
@@ -1910,15 +1911,14 @@ Over its shelf a node runs a blob store of its own (`ShelfStore`), which iroh-bl
 
 A browser tab's worker holds the store's lock, so one device never runs in two tabs at once.
 
-**Generations and resets.** A place keeps its shelves side by side, one per generation, `g1`, `g2` and on. The newest
-is in use; every older one is put aside, never read again. Forgetting a device starts a new one. A reset of avenDB
-raises `shelf::FLOOR`, the generation every place is at least: as a place opens, it clears every shelf older than that
-and whatever else an earlier avenDB kept there (`shelf::kept`), and starts empty, the server with a new device key. The
-Mac clears its folder (`disk::clear`), a page its OPFS folder, the server its folder as it starts and its bucket while
-it runs (`bucket::clear`). `FLOOR` is 18 since the last reset (2026-10-18 evening), as Studio 2 stands alone and the
-old studio's media is copied into a fresh Maia City; 17 before it, as the seed is Maia City and avenMAIA, its one aven,
-which lives on the server; 16 before that, as the seed writes each skill, the theOS paper and the avenDB docs as a
-story of Maia City with a doc post.
+**Generations, and no resets.** A place keeps its shelves side by side, one per generation, `g1`, `g2` and on. The
+newest is in use; every older one is put aside, never read again, and never deleted. Forgetting a device starts a new
+one. avenDB is never reset (Samuel 2026-10-19: "we never want to reset at all our avenDB anymore", "so no accidental
+resets can happen anymore"): no place clears anything it finds in its folder, OPFS folder or bucket, and
+`shelf::FLOOR`, the oldest generation this avenDB reads, stays at 18, where the last reset (2026-10-18 evening, as
+Studio 2 stood alone and the old studio's media was copied into a fresh Maia City) left it. A place whose shelves are
+all older than that starts a new one beside them. Tests hold `FLOOR` at 18 and the edit format at version 11
+(`encode::VERSION`): raising either would leave every vault unread, a reset.
 
 ### Layout of one generation
 
@@ -1943,8 +1943,8 @@ story of Maia City with a doc post.
 - **Packs, not one object per edit.** An edit is a few kilobytes and object storage bills at least 64 KB per object,
   so packs keep "everything is a blob" true and cheap.
 - **Generations.** A place keeps its shelves side by side: `g1`, `g2` and on. The newest is in use. Forgetting an
-  account, or starting fresh, makes a new generation beside the old one, which is never read again. A reset clears
-  every generation below `FLOOR` and whatever else the folder or bucket holds, such as an older avenDB's store.
+  account, or starting fresh, makes a new generation beside the old one, which is never read again and never deleted.
+  Nothing clears a folder or a bucket of what it holds.
 
 ### The server's bucket
 
@@ -1960,7 +1960,7 @@ story of Maia City with a doc post.
   So the server's holdings name an edit or a file only once it is in the bucket. Until then, the device that wrote it
   sees the server lacks it, keeps it and offers it again.
 - **Locked.** The bucket keeps every object version for 7 days in compliance mode (Object Lock), so not even a
-  compromised server wipes the backup. What a reset clears stays there 7 more days, then goes.
+  compromised server wipes the backup. The server deletes nothing in it but the files a node lets go of.
 
 A server with no bucket runs on a folder shelf, laid out the same. A node with no shelf at all keeps its blobs in
 memory and nothing past its end; only tests run one.

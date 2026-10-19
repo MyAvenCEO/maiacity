@@ -40,7 +40,6 @@
 //              configs by type, so the server's code feed serves them, then each config an entry of type `config`,
 //              tagged `ref:configs/<game>/<id>` and `game:<id>`, which every game reads through game/code/index.js
 //              `configAt` (the seed's until the vault's are loaded, held to the seed's shape)
-//   retire     every entry of a game the repo let go (`RETIRED`: Sandboxes 7 and 8), deleted
 //   recipes    last, as their files are most of the seed's bytes (V5 of the avenDB migration): one Public share of the
 //              vault's recipes, by type, so the server's feed serves them and their files; then each asset of the
 //              asset box (src/lib/assets/box/plugin.js) one `recipe` entry with its history (Samuel 2026-10-18): its
@@ -343,24 +342,8 @@ export function drafting(world, vault) {
 	return out;
 }
 
-/** The tags of what the vault let go (Samuel 2026-10-17: Sandboxes 7 and 8 deleted, with their proposals, worlds and
- * code): every entry carrying one is deleted (`retiring`). A tag ending in `/` names every tag it starts. */
-export const RETIRED = ['game:sandbox-7', 'game:sandbox-8', 'ref:logic/sandbox-7/', 'ref:views/view-wants'];
-
 /** The tag a deleted entry carries among its own tags: no feed reader takes it in (game/code/sources/avendb.js, game/games.js). */
 export const GONE = 'avendb:deleted';
-
-/**
- * The ops that delete what vault `vault` still holds of a game the repo let go (`RETIRED`): its game entry, its AIPs,
- * its code, each tagged `GONE`. Its edits stay in the vault's history, as every edit does.
- * @param {import('./vaults.js').WorldView} world @param {string} vault
- */
-export function retiring(world, vault) {
-	const gone = (/** @type {string} */ t) => RETIRED.some((r) => (r.endsWith('/') ? t.startsWith(r) : t === r));
-	return world.entries
-		.filter((e) => e.vault === vault && !e.deleted && !(e.tags ?? []).includes(GONE) && (e.tags ?? []).some(gone))
-		.map((e) => ({ op: 'tag', entry: e.entry, add: [GONE], as: vault }));
-}
 
 /**
  * The pieces among `all` vault `vault` holds no copy of yet: no entry of it carries the piece's tag (an entry's last

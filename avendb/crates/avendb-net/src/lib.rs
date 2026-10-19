@@ -36,7 +36,7 @@
 //!   server's in its S3 bucket (`bucket`), every object sealed, its folder only a cache. It saves its device's edits
 //!   there as they change (`edits`), and starts again from it. What it holds for good, as it tells its peers, is what
 //!   its shelf holds: on the server, what its bucket took. A place puts a shelf aside by starting a new generation
-//!   beside it, and clears the shelves older than a reset (`shelf::FLOOR`).
+//!   beside it, and never deletes one: avenDB is never reset (`shelf::FLOOR`).
 //! - **Files** (blobs B2, `files`): a node keeps one iroh-blobs store, over its shelf (blobs B2d, B3b, `shelf`), or
 //!   else in memory: what it brings and keeps whole goes onto the shelf. It brings a file sealed as it reads it
 //!   (`Node::store_file`), reads any range of a file its device opens, fetching only the sealed segments that hold it

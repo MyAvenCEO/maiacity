@@ -129,7 +129,7 @@ A device starts in one of three ways; everything after is one op through `PageDe
   a worker of its own (`js/store.js`, `js/store.worker.js`; [ARCHITECTURE.md](docs/ARCHITECTURE.md) §14), with what
   opens it again (`Meta`, the vaults it follows among it). It opens again in one ceremony, the unlock; the relay knows
   it, so it needs no pass. While it runs, its worker holds its shelf, so it never runs in two tabs at once. What an
-  earlier avenDB kept in OPFS, before the last reset, it clears as it opens.
+  earlier avenDB kept in OPFS it keeps: avenDB is never reset, and nothing clears a store.
 - **Steps** (`avendb_net::Progress`): each start marks its steps as it takes them, by name, with when each began and how
   long it took: the unlock, the keys, the node, the server, the draft, the ceremony that signs it, the claim, and so
   on (`progress.rs` lists them). The page watches them through the function it hands `found`, `link` or `open`, the
@@ -213,10 +213,10 @@ opens nothing but what is public.
   and belongs to no vault until a human vault claims it ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3). It logs its
   offer (`AVENDB1…`): its device, its endpoint, its public address and its relay. The app keeps it, so that devices
   reach the server, and a new device links through it with its person's passkey alone.
-- A reset raises `shelf::FLOOR` (`crates/avendb-net/src/shelf.rs`, 18 now, and `FLOOR` in
-  `crates/avendb-browser/js/store.worker.js` with it), the generation every place's shelf is at least. What an earlier
-  avenDB kept in its bucket or its folder, it clears (`bucket::clear`, `disk::clear`): its first start after a reset
-  makes a new shelf generation, with a new device's secret, so a new offer, nobody's until a human vault claims it.
+- avenDB is never reset (Samuel 2026-10-19): `shelf::FLOOR` (`crates/avendb-net/src/shelf.rs`, and `FLOOR` in
+  `crates/avendb-browser/js/store.worker.js` with it) stays at 18, the oldest generation of shelf this avenDB reads, and
+  the edit format stays at version 11, tests holding both. The server deletes nothing it finds in its bucket or its
+  folder, and starts every time from the shelf it holds, as the same device.
 - A vault gives avenMAIA backup on the whole of it, and the server keeps the vault's edits and McEliece keys and
   serves them to the devices that may hold them, also while the device that wrote them is away. With relay instead
   (backups off, at setup or later with the `back_up` op), the server learns only the vault's devices, from its log, to
@@ -275,7 +275,7 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
    is `/relay`, and `api.maia.city/relay` is the media vault's relay.
 4. **Devices**: the offer it logs as it starts (`avenDB server: offer AVENDB1…`, in both workflows' logs) is filled
    in on **Your account** (`SERVER` in `src/lib/avendb/server.js`), beside its relay. It stays the same as long
-   as the server keeps its device secret; after a reset it is a new one, filled in again once that is deployed.
+   as the server keeps its device secret, in its bucket: avenDB is never reset, so it stays for good.
 5. **The claim**: the first person to found their vault on **Your account** claims the server, founding the seed, Maia
    City and avenMAIA, and makes it avenMAIA's device, so whoever runs a new server founds their vault there first.
    Every device reads the server from that seed (`avendb::world::seeder`). Both workflows log whether it is claimed

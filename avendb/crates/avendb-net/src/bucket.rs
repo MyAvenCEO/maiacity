@@ -3,9 +3,8 @@
 //! is given (`Sealed`), as the bucket's TLS isn't post-quantum, and bound to its name, so an object read back under
 //! another name doesn't open. The bucket holds a shelf for each generation (`shelf::generation`), each under a prefix
 //! of its own, `g1/`, `g2/` and on, with a marker for each, `generations/g<n>`: the newest is the one in use, and
-//! every older one is put aside, never read again (`aside`). As the server starts, the bucket is cleared of what came
-//! before the last reset (`clear`): shelves older than `shelf::FLOOR`, and whatever else it holds, as an earlier
-//! avenDB's store. Under a generation's prefix:
+//! every older one is never read again, and never deleted: avenDB is never reset (`shelf::FLOOR`), and the server
+//! deletes nothing it finds in the bucket beside its shelf. Under a generation's prefix:
 //!
 //! - `blobs/<hash>/<n>`: the parts of each blob, `PART` bytes each but a blob's last, and `outboards/<hash>-<size>` its
 //!   outboard, put once its parts are all in the bucket: a blob counts once its outboard is there;
@@ -18,7 +17,7 @@
 //!
 //! One server writes a bucket. It puts a named object only where the bucket holds none, and the bucket keeps every
 //! version of an object for 7 days (Object Lock). Nothing deletes an object but the files a node lets go of
-//! (`Call::Drop`), a blob's outboard first, then its parts, and a reset (`clear`).
+//! (`Call::Drop`), a blob's outboard first, then its parts.
 
 use std::collections::HashMap;
 use std::fmt;
@@ -33,7 +32,6 @@ use anyhow::{Context as _, Result, anyhow, ensure};
 use avendb::keys::{self, Secret, SeededRng};
 use bytes::Bytes;
 use iroh_blobs::Hash;
-use n0_future::{BufferedStreamExt as _, StreamExt as _, stream};
 
 use crate::shelf::{self, Call, FLOOR, Shelf, generation, hash_of};
 
@@ -49,8 +47,6 @@ const OUTBOARDS: &str = "outboards/";
 const PART: u64 = 8 << 20;
 /// The most bytes of parts a node's folder keeps by default.
 pub const CACHE: u64 = 8 << 30;
-/// The objects a reset deletes from the bucket at once (`clear`).
-const CLEARING: usize = 16;
 
 /// What `Bucket`'s calls return.
 pub type Fut<'a, T> = Pin<Box<dyn Future<Output = Result<T>> + Send + 'a>>;
@@ -192,40 +188,6 @@ pub async fn generations(bucket: &Sealed) -> Result<Vec<u64>> {
     Ok(found)
 }
 
-/// Puts the shelf in `bucket` in use aside: a new generation marked beside it, empty, which the next `shelf` uses.
-/// Its number.
-pub async fn aside(bucket: &Sealed) -> Result<u64> {
-    let n = generations(bucket).await?.last().map_or(FLOOR, |n| (n + 1).max(FLOOR));
-    mark(bucket, n).await?;
-    Ok(n)
-}
-
-/// Clears `bucket` of what came before the last reset: every object but the shelves of generation `shelf::FLOOR` and
-/// later and their markers (`shelf::kept`), as older shelves and an earlier avenDB's store, `CLEARING` at a time. Each
-/// version it deletes the bucket keeps 7 more days (Object Lock), then lets go. How many objects it deleted.
-pub async fn clear(bucket: &Sealed) -> Result<usize> {
-    let gone: Vec<String> = bucket.list("").await?.into_iter().filter(|name| !kept(name)).collect();
-    let deleting = gone.into_iter().map(|name| {
-        let bucket = bucket.clone();
-        async move { bucket.delete(&name).await }
-    });
-    let mut deleting = stream::iter(deleting).buffered_unordered(CLEARING);
-    let mut deleted = 0;
-    while let Some(done) = deleting.next().await {
-        match done {
-            Ok(()) => deleted += 1,
-            Err(e) => tracing::warn!("avendb: {e:#}"),
-        }
-    }
-    Ok(deleted)
-}
-
-/// Whether the bucket keeps object `name` at a reset: one of a shelf `shelf::FLOOR` or later keeps, or its marker.
-fn kept(name: &str) -> bool {
-    let name = name.strip_prefix(GENERATIONS).unwrap_or(name);
-    shelf::kept(name.split_once('/').map_or(name, |(first, _)| first))
-}
-
 /// Marks generation `n` in `bucket`, with when, in seconds since 1970.
 async fn mark(bucket: &Sealed, n: u64) -> Result<()> {
     bucket.put(&format!("{GENERATIONS}g{n}"), crate::unix_now().to_string().as_bytes()).await
@@ -290,10 +252,10 @@ impl Cached {
 }
 
 /// The shelf of a node whose shelf is `bucket`, beside its folder `dir`, which caches `budget` bytes of parts at most:
-/// the bucket's newest generation's, or, with none there yet or only older ones than `shelf::FLOOR`, a new one of that
-/// generation. What came before the last reset, it clears from the folder as it starts (`disk::clear`) and from the
-/// bucket while it runs (`clear`); and what the folder staged of blobs never finished, it drops. Fails if the bucket's
-/// marker of its generation doesn't open: a bucket sealed under another seal.
+/// the bucket's newest generation's, or, with none there yet of `shelf::FLOOR` or later, a new one of that generation
+/// beside whatever the bucket holds. It deletes nothing it finds in the bucket or the folder but what the folder staged
+/// of blobs never finished. Fails if the bucket's marker of its generation doesn't open: a bucket sealed under another
+/// seal.
 pub async fn shelf(bucket: Sealed, dir: &Path, budget: u64) -> Result<Shelf> {
     let n = match generations(&bucket).await?.last() {
         Some(&n) if n >= FLOOR => n,
@@ -303,15 +265,6 @@ pub async fn shelf(bucket: Sealed, dir: &Path, budget: u64) -> Result<Shelf> {
         }
     };
     bucket.get(&format!("{GENERATIONS}g{n}")).await?.context("the bucket's generation, marked and gone")?;
-    crate::disk::clear(dir);
-    let clearing = bucket.clone();
-    tokio::spawn(async move {
-        match clear(&clearing).await {
-            Ok(0) => {}
-            Ok(n) => tracing::info!("avendb: cleared {n} objects from before generation {FLOOR} from the bucket"),
-            Err(e) => tracing::warn!("avendb: the bucket isn't cleared of what came before generation {FLOOR}: {e:#}"),
-        }
-    });
     let local = dir.join(format!("g{n}"));
     let (staging, cache) = (local.join("new"), local.join("cache"));
     if staging.exists() {
