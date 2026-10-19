@@ -1,7 +1,8 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /**
- * Generated UI (Samuel, 2026-10-13): mini app views an agent writes on the fly, over the MCP, and the page
- * /app/genui/ draws. Two kinds, after the two kinds of generative UI (A2UI and MCP Apps):
+ * Generated UI (Samuel, 2026-10-13): mini app views, the code views of code/views and the Maia City vault and a game's
+ * screens (the admin page that drew agents' drafts went 2026-10-19, a test only). Two kinds, after the two kinds of
+ * generative UI (A2UI and MCP Apps):
  *
  * - `a2ui`: DECLARATIVE. JSON only: a flat list of components from OUR catalog (below), each with an id, the root's
  *   id, a data model, and optional logic. The page draws it with its own Svelte components; text is always text.
