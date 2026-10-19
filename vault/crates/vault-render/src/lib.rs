@@ -15,7 +15,7 @@
 //!   report   QC (qc.mjs natively), loudness of each delivered file, every transform by hash — the worker's JSON.
 //!
 //! Entry points: `render::render` (a timeline into its deliveries), `render::hero_frame` (the `frame` job),
-//! `Render::about` / `Render::job_result` (what goes into the vault and back to the API).
+//! `Render::about` / `Render::job_result` (what goes into the vault and into the render task's result).
 
 pub mod av;
 pub mod captions;

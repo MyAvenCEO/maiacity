@@ -14,18 +14,6 @@ export const FILMS = [
 	{ key: 'the-first-village', project: '233 settlers, how it starts', timeline: 'World', name: 'The first village' }
 ];
 
-/** @param {unknown} s */
-const norm = (s) => String(s ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
-
-/**
- * The legacy timeline of film `f` among `all`: of its story, by its name, else its only one there.
- * @param {Film} f @param {{ id: string, name: string, project: string | null, description?: string | null }[]} all
- */
-export function legacyOf(f, all) {
-	const mine = all.filter((t) => norm(t.project) === norm(f.project));
-	return mine.find((t) => norm(t.name) === norm(f.timeline)) ?? (mine.length === 1 ? mine[0] : null);
-}
-
 /**
  * A frozen film. `proxies`: the proxy, by its BLAKE3 hash, of each world shot (`<shot>@<version>`) whose world the
  * film camera no longer has (game/film/worlds.js), kept in the Mac's film seed beside its files; a shot in a world it

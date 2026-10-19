@@ -241,7 +241,8 @@ fn the_master_and_its_copy() {
         assert!(d.qc.ok, "{}: {:?}", d.name, d.qc);
         assert_eq!(d.qc.frames, 30);
     }
-    // the job's result is one the API takes (reportRender, the calendar's deliveries) — once every file has its hash
+    // the job's result is one the legacy API took (its reportRender, the calendar's deliveries), as the render task
+    // keeps it — once every file has its hash
     let mut out = out;
     assert!(out.job_result(&t).is_err(), "no hashes yet");
     for (i, d) in out.deliveries.iter_mut().enumerate() {

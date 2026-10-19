@@ -1199,13 +1199,13 @@ pub fn graded_still(t: &Timeline, lib: &dyn Library, output: &dyn Output, clip: 
     Ok(json!({ "of": original.hash, "t": at, "clip": c.id, "width": w, "height": h, "what": format!("{} at {at:.3} s, from {what}", if original.title.is_empty() { &original.hash } else { &original.title }) }))
 }
 
-// ── the job's result, as the worker hands it to the API ──────────────────────────────────────────────────────────
+// ── the job's result, as the render task keeps it ────────────────────────────────────────────────────────────────
 
-/// Does the API take this report of a job (`PUT /api/renders/:id`)? What `reportRender` (api/src/renders.ts) checks —
-/// a status of rendering, done or failed; progress 0…1; the output named by its hash (64 hex); the report an object —
-/// and what the calendar keeps of each delivery (content.ts `Delivery`: channels, the file by its hash, format,
-/// aspect, width, height, codec, bytes, seconds; a kind of video or thumbnail). The note may be long: the API keeps
-/// its first 300 characters.
+/// Is this report of a job one the legacy API took (its `PUT /api/renders/:id`, gone with the legacy studio)? What its
+/// `reportRender` checked — a status of rendering, done or failed; progress 0…1; the output named by its hash (64 hex);
+/// the report an object — and what the calendar keeps of each delivery (content.ts `Delivery`: channels, the file by
+/// its hash, format, aspect, width, height, codec, bytes, seconds; a kind of video or thumbnail). The render task keeps
+/// the same shape as its result (vault/app/src/aven.rs). The note may be long: the API kept its first 300 characters.
 pub fn api_accepts(body: &Value) -> Result<()> {
     let hex64 = |v: &Value| v.as_str().is_some_and(|s| s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()));
     let field = |k: &str| body.get(k).filter(|v| !v.is_null());
@@ -1281,8 +1281,8 @@ impl Render {
         json!({ "working": self.color.working, "output": self.color.output, "engine": self.color.engine, "transforms": self.color.transforms, "look": self.color.look })
     }
 
-    /// The job's result for `PUT /api/renders/:id` once every delivery has its vault hash: `{ output_hash, deliveries,
-    /// report }` — the film the studio plays (the 1080 H.264 cut of the timeline's own frame; a render of the 4K master
+    /// The job's result, the render task's (vault/app/src/aven.rs), once every delivery has its vault hash:
+    /// `{ output_hash, deliveries, report }` — the film the studio plays (the 1080 H.264 cut of the timeline's own frame; a render of the 4K master
     /// alone, the master), every delivery with its
     /// thumbnails, and the report (colour, conform, plates, warnings, per delivery QC and loudness, the sound).
     pub fn job_result(&self, t: &Timeline) -> Result<Value> {

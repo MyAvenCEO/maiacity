@@ -6,10 +6,10 @@
  * derived from it then. Three things carry a story out, each its own job: the hook grabs attention and is the title
  * everywhere (picked from the variants tried, `hooks`); the intro, the first 3–30 s of a film, sparks curiosity and
  * says why to care and what the viewer's transformation is; the description is the overview and the detail.
- * A film is one item, whatever its cuts: every render of the project's timelines files its
- * deliveries on it (the 4K master, the 1080 copy, the 9:16 Reel, their thumbnails), and its posts, one per platform,
- * are written for them — prepared, never typed in a form. Once a story has a hook, the Mac app files it in a story
- * of its own in the media vault (an iroh-docs bucket), and its id is kept here.
+ * A film is one item, whatever its cuts: its deliveries come onto it with its day, by hash (the 4K master, the 1080
+ * copy, the 9:16 Reel, their thumbnails), and its posts, one per platform, are written for them — prepared, never
+ * typed in a form. Once a story has a hook, the Mac app files it in a story of its own in the media vault (an
+ * iroh-docs bucket), and its id is kept here.
  */
 import { db } from "./pg";
 
@@ -376,7 +376,7 @@ export async function saveContent(id: string, body: Record<string, unknown>): Pr
   return rows[0];
 }
 
-/** The film's item: one per project ("Day 19"), made the first time any of its cuts delivers or gets its posts. */
+/** The film's item: one per project ("Day 19"), made the first time any of its legacy cuts gets its posts. */
 async function filmItem(founderId: string | null, timelineId: string, title?: string): Promise<{ id: string; project: string; timeline: string }> {
   const { rows: t } = await db.query<{ name: string; project: string | null }>("SELECT name, project FROM timelines WHERE id = $1", [timelineId]);
   if (!t[0]) throw new ContentError("No such timeline.", 404);
@@ -391,29 +391,8 @@ async function filmItem(founderId: string | null, timelineId: string, title?: st
 }
 
 /**
- * A render is done: its files go onto the film's item, in place of whatever that same cut delivered before (the
- * other cuts' files stay). Its stage stays as it is: only moving the card on locks the base article — a render
- * never does (a day's article is audited while it is written).
- */
-export async function deliverRender(founderId: string | null, timelineId: string, cut: string, deliveries: Delivery[]): Promise<Item> {
-  const item = await filmItem(founderId, timelineId);
-  const mine = deliveries.map((d) => ({ ...d, timeline: timelineId, cut }));
-  const { rows } = await db.query<Item>(
-    `UPDATE content_items SET
-        deliveries = coalesce((SELECT jsonb_agg(d) FROM jsonb_array_elements(deliveries) d WHERE d->>'timeline' IS DISTINCT FROM $2), '[]'::jsonb) || ($3::text)::jsonb,
-        hashes = ARRAY(SELECT DISTINCT unnest(hashes || ${arr(4)})),
-        channels = ARRAY(SELECT DISTINCT unnest(channels || ${arr(5)})),
-        updated = now()
-      WHERE id = $1 RETURNING ${COLS}`,
-    [item.id, timelineId, JSON.stringify(mine), JSON.stringify([...new Set(mine.map((d) => d.hash))]),
-     JSON.stringify([...new Set(mine.flatMap((d) => d.channels).filter((c) => CHANNELS.includes(c)))])],
-  );
-  return rows[0]!;
-}
-
-/**
  * A render's deliveries taken off a card again (a test render, a cut that was dropped): its films and their hashes go;
- * everything else on the card stays. The inverse of deliverRender for that timeline.
+ * everything else on the card stays.
  */
 export async function dropDeliveries(id: string, timelineId: string): Promise<Item> {
   const { rows } = await db.query<Item>(
@@ -454,7 +433,7 @@ export async function savePosts(founderId: string | null, timelineId: string, po
  * story back to Writing opens it again — and, once the base is locked, its derivatives, each with its time: the whole
  * set at once. Sending derivatives locks the article (the story moves on to "derivatives"); a story that is only an
  * idea has no base to derive from. The item is the project's ("Day 19"), made if it is new. The films' files come
- * separately, from their renders.
+ * with it, by hash (`deliveries`).
  */
 export async function saveDay(
   founderId: string | null, project: string,

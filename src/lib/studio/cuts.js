@@ -298,7 +298,7 @@ export const shootable = (spec) => isWorld(spec?.world?.sandbox ?? DEFAULT_SANDB
 
 /**
  * Per file, the first picture clip that plays it, and what its graded still is made of (its look on screen), as the
- * API reads it (api/src/renders.ts `gradesOf`).
+ * legacy API read it.
  * @param {any} t
  */
 function gradesOf(t) {

@@ -10,7 +10,6 @@ mod aven;
 mod avendb;
 mod blob;
 mod jobs;
-mod local;
 mod models;
 mod page;
 mod passkey;
@@ -358,16 +357,9 @@ fn main() {
         .setup(|app| {
             aven::init(app.handle());
             let vault = Arc::new(tauri::async_runtime::block_on(Vault::open(vault_dir()))?);
-            app.manage(App { vault: vault.clone(), busy: AtomicBool::new(false) });
+            app.manage(App { vault, busy: AtomicBool::new(false) });
             // every process this Mac runs, in one registry (jobs.rs): the studio's Processes tab is its view
             jobs::init(app.handle().clone());
-            // the legacy vault's routes for the film scripts while they still read it (local.rs)
-            let v = vault.clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = local::serve(v).await {
-                    tracing::warn!("the scripts' vault routes: {e:#}");
-                }
-            });
             Ok(())
         })
         // the studio's window closed: the unseen world window goes with it, so the app quits as it always did

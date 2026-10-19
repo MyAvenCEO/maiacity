@@ -249,17 +249,6 @@ export type Timeline = {
 /** A chapter of a timeline: where it starts (seconds) and what it is called. */
 export type Chapter = { id: number; at: number; name: string };
 
-export const listTimelines = () => call<Timeline[]>('/api/timelines');
-export const createTimeline = (t: Partial<Timeline>) => call<Timeline>('/api/timelines', { method: 'POST', body: JSON.stringify(t) });
-export const getTimeline = (id: string) => call<Timeline>(`/api/timelines/${id}`);
-export const saveTimeline = (id: string, t: Partial<Timeline> & { if_updated?: string }) =>
-	call<Timeline>(`/api/timelines/${id}`, { method: 'PUT', body: JSON.stringify(t) });
-export async function deleteTimeline(id: string): Promise<void> {
-	if (native()) return void (await call(`/api/timelines/${id}`, { method: 'DELETE' }));
-	const res = await fetch(`${API}/api/timelines/${id}`, { method: 'DELETE', credentials: 'include' });
-	if (!res.ok) throw new Error('Could not delete the timeline.');
-}
-
 // ─────────────────────────────── the stories ───────────────────────────────
 
 /**
@@ -495,7 +484,5 @@ export type ShotSpec = {
 };
 export type Shot = { id: string; name: string; project: string | null; version: number; spec: ShotSpec; created: string; updated: string };
 
-/** One legacy shot, at a version (else its newest): the films brought into avenDB read their shots here once ($lib/studio/importer.js). */
-export const getShot = (id: string, version?: number) => call<Shot>(`/api/shots/${id}${version ? `?version=${version}` : ''}`);
 /** Any API call, the same way as every helper here. */
 export const apiCall = <T>(path: string, init: RequestInit = {}) => call<T>(path, init);
