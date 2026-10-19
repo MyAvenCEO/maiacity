@@ -9,7 +9,8 @@
  *   Traveler   every invited human: reads the games, the asset recipes and the code the sandboxes and worlds run, so
  *              they open every sandbox, world and game asset, read only
  *   Citizen    a Traveler who plays MaiaCity V1 too (to become the paid one later), and reads all of V1, its proposals
- *              among it; V1's moves still run on maiaCITY's API, so no write of them is a cap yet
+ *              among it; V1's moves still run on maiaCITY's API, so no write of them is a cap yet. Nobody is invited
+ *              a citizen (Samuel 2026-10-19): travelers become citizens by other means, later
  *   Admin      may found coops and avens through avenDB's server (avendb's `gate::ADMIN`); Maia City's own owners always
  *              may. The seed defines none: nobody holds it besides them yet
  *

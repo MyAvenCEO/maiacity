@@ -379,7 +379,7 @@
 			<p class="lede">
 				{#if game?.admin}{game.label} is the admins’ own.
 				{:else if session.phase !== 'open'}{game?.label} opens with your avenDB, which holds what your invite gave you: unlock it with your passkey.
-				{:else if game?.needs === CITIZEN}{game.label} is for citizens: ask Maia City to make you one.
+				{:else if game?.needs === CITIZEN}{game.label} is for citizens, which travelers become later on.
 				{:else}{game?.label} opens to every traveler, as everyone invited to Maia City is: ask for an invite.{/if}
 			</p>
 		</div>
