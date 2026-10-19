@@ -1661,7 +1661,7 @@
 					move is one tag change, and a public stage is one Public share on that tag. Functions react to a move: each
 					runs in QuickJS on the device that moves the entry and asks for changes, which its vault’s shares still
 					decide. A function may ask for a new entry in its vault, for a set, unset, insert, remove, move or tag on the
-					entry moved, its posts and its pictures, and for a Public share. The functions that run are the entry’s vault’s own, Maia City’s where
+					entry moved, its posts and its pictures, and for a Public share of those or of an entry it made. The functions that run are the entry’s vault’s own, Maia City’s where
 					the person’s vault owns it, and the app’s. Publishing a post moves it to Published: a Public share on that
 					stage’s tag makes it public, and one on its vault’s profile makes that public too; the app’s Publish
 					function then tags the private pictures it shows, so they go public with it, and the server’s feed serves
@@ -1819,14 +1819,16 @@
 				256 KB stack and a set amount of work for each call, and its random numbers and its clock come from what it is
 				handed, so the same input gives the same answer. Today only functions run there. A function’s answer is ops,
 				which the device bounds before it makes them: a new entry in its vault, a change to the entry it moves, its posts
-				or its pictures, or a Public share in its vault; its vault’s shares still decide each one. A view’s logic would
-				run there too, but no view shown today has any.
+				or its pictures, or a Public share of those entries or of one it made. One op outside that, or a wider share, and
+				the function makes nothing; its vault’s shares still decide each op. A view’s logic would run there too, but no
+				view shown today has any.
 			</p>
 			<h3>A view</h3>
 			<p class="prose-col">
 				A view is HTML, or A2UI turned into HTML with our maia-* components: cards, metrics, badges, progress bars,
 				charts, tables and lists. Its frame runs our view engine alone, the only script that ever writes its DOM, from the
-				view’s HTML cleaned of scripts, handlers, links and outside pictures. A view’s own script runs in a worker the
+				view’s HTML cleaned of scripts, handlers, links and outside pictures, and it cleans again each value the view’s
+				template fills into an attribute. A view’s own script runs in a worker the
 				engine starts, against a stand-in DOM it can’t see past; the engine cleans each picture the worker sends before
 				it draws it, and lends it at most eight canvases. The worker gets Three.js, d3 and the MCP Apps client from frozen
 				files of ours, and nothing else. One that doesn’t answer for four seconds is stopped, and so is a view whose frame
@@ -1844,8 +1846,9 @@
 				what the game finds where. Nothing checks code on its way into a vault, so a page and the API check each view,
 				logic and config as they load it, and MaiaCity V1 checks each screen a proposal brings. A recipe loads only if it
 				was made for the newest box engine, its file hashes to the name its card gives, and its last line names the
-				version its card says; a build this device kept is held to its card again when read back. No checker reads a
-				function. Safety never rests on the checker: the box holds whatever it misses.
+				version its card says; a build this device kept is held to its card again when read back. A function is checked
+				before it runs: it imports nothing and hands back its <code>run</code>, or it doesn’t run. Safety never rests on
+				the checker: the box holds whatever it misses.
 			</p>
 			<h3>Where it runs today</h3>
 			<p class="prose-col">
@@ -1891,8 +1894,13 @@
 					pinned: a view or logic runs on the latest engine of its kind.
 				</li>
 				<li>
-					<b>Functions.</b> A function may ask for a Public share of any part of its vault, and a move makes its ops with
-					no preview.
+					<b>What a function makes.</b> A function may make entries of any type in its vault, flows and functions among
+					them. Only the functions of the entry’s own vault, Maia City’s and the app’s run, so only those vaults can.
+				</li>
+				<li>
+					<b>PDFs in the Library.</b> Chromium shows a PDF only in a frame with no sandbox, so the Library’s PDF frame
+					holds a policy instead: no script runs in it and it loads nothing. A link inside a PDF still opens in the
+					avenDB tab, and WebKit, in The OS, ignores that policy.
 				</li>
 			</ul>
 		</section>
