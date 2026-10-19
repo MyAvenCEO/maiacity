@@ -788,6 +788,15 @@ impl Harness {
         Harness { to: Some(to), from: BufReader::new(from).lines(), serving, next: 0 }
     }
 
+    /// A cloud session starts its agent, agentCloud, as `cloud` says.
+    fn cloud(cloud: agent::Cloud) -> Harness {
+        let (pipe, device) = tokio::io::duplex(1 << 20);
+        let (input, output) = tokio::io::split(device);
+        let serving = tokio::spawn(agent::serve_cloud(cloud, input, output));
+        let (from, to) = tokio::io::split(pipe);
+        Harness { to: Some(to), from: BufReader::new(from).lines(), serving, next: 0 }
+    }
+
     /// MCP request `method` with `params`: its result, or its error.
     async fn ask(&mut self, method: &str, params: Value) -> Result<Value, Value> {
         self.next += 1;
@@ -935,7 +944,8 @@ async fn once_it_may(h: &mut Harness, tool: &str, args: Value) -> (String, bool)
     let mut made = (String::new(), true);
     for _ in 0..100 {
         made = h.tool(tool, args.clone()).await;
-        if !made.0.contains("waiting for its person") && !made.0.contains("may add no ") {
+        let waits = ["waiting for its person", "may add no ", "isn't a device of avenMAIA", "doesn't let agentCloud in"];
+        if !waits.iter().any(|w| made.0.contains(w)) {
             break;
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
@@ -1764,6 +1774,78 @@ async fn a_suggester_agent_drafts_sparks_and_artifacts_in_her_maia_city_which_la
     assert!(!error, "{read}");
     assert_eq!(std::fs::read(&back).expect("written"), picture, "every byte");
     claude.quit().await;
+    app.quit().await;
+    server.shutdown().await.expect("the server's node stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_cloud_agent_her_mac_adds_to_avenmaia_drafts_a_spark_through_the_server_alone() {
+    let folder = Folder::new("agent-cloud");
+    let (_relay, url, server) = unclaimed(&folder.0.join("server")).await;
+    let dir = folder.0.join("avendb");
+    let mut app = App::start(&dir, Passkey::from_seed([6; 32]), true);
+    app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await.expect("her vault");
+    app.asked();
+    let world = world_of(&mut app).await;
+    let mine = world["mine"].clone();
+    let (city, maia) = seed_coop_in(&world, &mine);
+    give(&mut app, &city, &maia, "Suggester", &city).await;
+    let author = json!({ "name": "AIP author", "ops": [{ "op": "read" }, { "op": "create" }, { "op": "set", "path": [] }] });
+    let aips = json!({ "op": "share", "over": city, "who": { "vault": maia }, "level": author, "what": { "type": ["aip"] },
+        "as": city });
+    run(&mut app, aips).await.expect("avenMAIA an AIP author of her Maia City's AIPs");
+    // a cloud session with no key yet says where one comes from, and runs no device
+    let cloud = |key: &str| agent::Cloud {
+        dir: folder.0.join("cloud"),
+        key: key.to_string().into(),
+        server: server.offer().to_text(),
+        proxy: false,
+    };
+    let mut keyless = Harness::cloud(cloud(""));
+    let started = keyless.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("it starts");
+    let says = started["instructions"].as_str().expect("its instructions");
+    assert!(says.starts_with("agentCloud is an agent device in this cloud session"), "{says}");
+    let (said, error) = keyless.tool("avendb_vaults", json!({})).await;
+    assert!(error && said.contains(agent::KEY_VAR) && said.contains("Add a cloud agent"), "{said}");
+    keyless.quit().await;
+    // her Mac makes a key and adds it to avenMAIA in one sheet; the key comes back once, and goes nowhere else
+    let added = app.call("addCloudAgent", json!([])).await.expect("a cloud agent");
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    assert_eq!((&added["name"], &added["aven"], &added["variable"]), (&json!("agentCloud"), &maia, &json!(agent::KEY_VAR)));
+    let key = added["key"].as_str().expect("its key").to_string();
+    assert_eq!(key.len(), 64, "{added}");
+    let device = added["device"].clone();
+    device_shown(&mut app, &maia, &device, "agentCloud a device of avenMAIA", |d| d.is_some()).await;
+    // a cloud session with it acts as avenMAIA, through the server alone, as nothing tells it where her Mac is
+    let mut session = Harness::cloud(cloud(&key));
+    let (said, error) = once_it_may(&mut session, "avendb_vaults", json!({})).await;
+    assert!(!error, "{said}");
+    let me: Value = serde_json::from_str(&said).expect("JSON");
+    assert_eq!((&me["me"]["aven"], &me["me"]["key"]), (&maia, &device), "it acts as avenMAIA: {me}");
+    let thought = json!({ "text": "Shade for the east beds.", "tags": ["garden"] });
+    let (made, error) = once_it_may(&mut session, "avendb_add_spark", thought).await;
+    assert!(!error, "{made}");
+    let spark: Value = serde_json::from_str(&made).expect("JSON");
+    assert_eq!((&spark["vault"], &spark["draft"]), (&city, &json!(true)), "a draft in her Maia City: {spark}");
+    // its draft reaches her Mac by way of the server, and lands once her Maia City accepts the AIP the agent opens
+    let open = json!({ "op": "aip_open", "vault": city, "title": "Shade", "note": "Why: hot afternoons.",
+        "proposals": spark["proposals"] });
+    let (opened, error) = session.tool("avendb_run", json!({ "op": open })).await;
+    assert!(!error, "{opened}");
+    let aip = serde_json::from_str::<Value>(&opened).expect("JSON")["ok"]["entry"].clone();
+    assert!(aip.is_string(), "{opened}");
+    let (promoted, error) = session.tool("avendb_run", json!({ "op": { "op": "aip_promote", "entry": aip } })).await;
+    assert!(!error && promoted.contains("\"ok\""), "{promoted}");
+    let end = Instant::now() + Duration::from_secs(60);
+    while !run(&mut app, json!({ "op": "aip", "entry": aip })).await.is_ok_and(|r| r["label"] == "AIP-1") {
+        assert!(Instant::now() < end, "the AIP promoted, on her Mac, within 60 s");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let review = json!({ "op": "aip_review", "entry": aip, "verdict": "accepted", "text": "Yes", "as": city });
+    run(&mut app, review).await.expect("her Maia City accepts it");
+    let landed = shown(&mut app, &spark["entry"], "the spark landed", |s| s["type"] == "spark").await;
+    assert_eq!((&landed["vault"], &landed["title"]), (&city, &json!("Shade for the east beds.")));
+    session.quit().await;
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");
 }

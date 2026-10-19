@@ -68,7 +68,7 @@ use avendb::id::SignerId;
 use avendb::keys;
 use avendb::sign::{self, Assertion, Ceremony};
 use avendb_browser::{Device, Fresh, Meta, Start, Touch, Unlock, steps_json};
-use avendb_net::{Authenticator, Ending, NoBytes, NoCeremony, Node, Offer, Place, Progress, Shelf, Step, disk};
+use avendb_net::{Authenticator, Ending, NoBytes, NoCeremony, Node, Offer, Options, Place, Progress, Shelf, Step, disk};
 use bytes::Bytes;
 use data_encoding::{BASE64, BASE64URL_NOPAD};
 use iroh::RelayUrl;
@@ -384,6 +384,7 @@ impl Service {
                 self.deny(&a.text(0)?, &a.text(1)?)?;
                 Value::Null
             }
+            "addCloudAgent" => self.add_cloud_agent(&d).await?,
             "fileEnd" => {
                 let incoming = self.files.lock().expect("the files").remove(&number(0)?);
                 let Incoming { chunks, answer, .. } = incoming.context("no such file on its way in")?;
@@ -742,6 +743,38 @@ impl Service {
         }
         std::fs::remove_file(agent::request(&self.config.dir, name)).ok();
         Ok(json!({ "aven": hex(&aven.0), "vault": hex(&aven.0) }))
+    }
+
+    /// `addCloudAgent`: a new agent for its person's cloud sessions, agentCloud (`agent::serve_cloud`), whose key this
+    /// Mac makes and adds to their coop's one aven, avenMAIA, as a device beside its server, in one ceremony of their
+    /// passkey in the sheet, or their Touch ID key's, which the new key cosigns from a node of its own here, on no
+    /// shelf, for that moment alone (`Node::add_device_vault_with` at `Place::Vault`, as `grant` adds a Mac's agent).
+    /// From then on it acts as avenMAIA, with avenMAIA's rights, no more and no less. The key goes nowhere but back to
+    /// the page, once, for its person to keep in their cloud environment's secrets (`agent::KEY_VAR`): every session
+    /// there acts as that one device (Samuel 2026-10-19: one stored key). Removing the device from avenMAIA ends it.
+    /// `{device, name, aven, key, variable}`: its device, its name, avenMAIA, its key in hex, and the variable.
+    async fn add_cloud_agent(self: &Arc<Self>, d: &Arc<Device>) -> Result<Value> {
+        let mine = d.vault().await.context("this Mac belongs to no vault")?;
+        let aven = d.node().read(move |lab, me| agent::aven_of(lab.state(me), mine)).await;
+        let aven = aven.context("your coop has no aven yet: a cloud agent joins its coop's aven, avenMAIA")?;
+        let meta = Meta::load(&self.shelf()).await?.context("this Mac holds no avenDB account")?;
+        let relay: RelayUrl = meta.relay.parse().map_err(|_| anyhow!("the relay's URL isn't one"))?;
+        let (name, secret) = (agent::device_name(agent::CLOUD), Zeroizing::new(random()?));
+        let opts = Options { bind: None, direct: self.config.direct, relay: Some(relay), ..Options::local() };
+        let node = avendb_net::server::open_agent_with(None, &name, &secret, opts).await?;
+        d.node().know(node.addr());
+        let added = async {
+            let approver = self.approver().await?;
+            // the owner key that approves: the Mac's Touch ID key where it is one, else the passkey
+            let owner = d.node().read(engine::passkey_of).await.unwrap_or(d.passkey());
+            d.node().add_device_vault_with(&node.offer(), Place::Vault(aven), owner, &approver).await
+        };
+        let added = added.await;
+        let device = node.device();
+        node.shutdown().await.ok();
+        added.context("the cloud agent isn't added")?;
+        Ok(json!({ "device": hex(&device.0), "name": name, "aven": hex(&aven.0), "key": hex(&*secret),
+            "variable": agent::KEY_VAR }))
     }
 
     /// Denies agent `name`'s access request, the one its device `device` left: it is taken away, and the no left for

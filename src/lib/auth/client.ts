@@ -119,8 +119,13 @@ export async function signIn(): Promise<Founder> {
 export const inviteOpen = (code: string) =>
 	call<{ open: boolean }>(`/api/invites/${encodeURIComponent(code)}`).then((r) => r.open);
 
-/** A new invite, for an admin to hand one person: its code, and until when it may be used. */
-export const invite = () => call<{ code: string; expires: string }>('/api/invites', { method: 'POST' });
+/** A new invite, for an admin to hand one person: its code, and until when it may be used. In the Mac app, whose key
+ *  may not invite, their passkey says it is them, in the app's sign-in sheet (`sheetAssertion`). */
+export const invite = async () =>
+	call<{ code: string; expires: string }>('/api/invites', {
+		method: 'POST',
+		...(native() ? { body: JSON.stringify({ assertion: await sheetAssertion('invite') }) } : {})
+	});
 
 /** Does this browser do passkeys at all? Checked before anything is promised. */
 export const passkeysAvailable = () =>
@@ -165,6 +170,21 @@ export type EqBand = import('../../../game/film/sound.js').EqBand;
 /** A grade: ASC CDL in ACEScct (game/film/color.js). */
 export type Cdl = { slope: [number, number, number]; offset: [number, number, number]; power: [number, number, number]; sat: number };
 // ─────────────────────────────── signing a terminal in ───────────────────────────────
+
+/** In The OS, a ceremony of the person's passkey over a new sign-in's challenge, in its sign-in sheet
+ *  (src/routes/app/avendb/sheet/), which brings it back to the app alone: what the API takes as the person's own word
+ *  where the app's key may not act, `what` for (its sign-in, an invite). */
+export async function sheetAssertion(what: 'signin' | 'invite' = 'signin'): Promise<object> {
+	const { SHEET } = await import('$lib/avendb/device/passkey.js');
+	const options = await loginOptions();
+	const back = await command<string>('passkey_sheet', {
+		url: `${SHEET}#${new URLSearchParams({ what, options: JSON.stringify(options) })}`
+	});
+	const answer = new URLSearchParams(back.split('#')[1] ?? '');
+	const assertion = answer.get('assertion');
+	if (!assertion) throw new Error(answer.get('error') || 'The sign-in sheet brought nothing back.');
+	return JSON.parse(assertion);
+}
 
 /** The OS approves its own key with `assertion`, a passkey ceremony over a sign-in's challenge that its sign-in sheet
  *  brought back to it alone (src/routes/app/avendb/sheet/): no browser session, no code to compare. */
