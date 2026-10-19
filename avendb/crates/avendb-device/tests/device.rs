@@ -1174,6 +1174,16 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
         let (no, error) = claude.tool("avendb_run", json!({ "op": op, "path": bad })).await;
         assert!(error && no.contains(why), "{no}");
     }
+    // never a file in a folder that keeps her Mac's keys, its avenDB folder or its agents', nor through a link to one
+    std::os::unix::fs::symlink(&dir, folder.0.join("Keys")).expect("a link to her avenDB folder");
+    let kept = [dir.join("key"), agent::folder(&dir, "agentClaude").join("key"), folder.0.join("Keys").join("key")];
+    for kept in &kept {
+        let (no, error) = claude.tool("avendb_run", json!({ "op": op, "path": at(kept) })).await;
+        assert!(error && no.contains("keeps this Mac's keys"), "{no}");
+        let artifact = json!({ "path": at(kept), "title": "A key" });
+        let (no, error) = claude.tool("avendb_add_artifact", artifact).await;
+        assert!(error && no.contains("keeps this Mac's keys"), "{no}");
+    }
     let create = json!({ "op": "create", "vault": mine, "type": "note", "value": titled("Beans", "In May.") });
     let (no, error) = claude.tool("avendb_run", json!({ "op": create, "path": at(&path) })).await;
     assert!(error && no.contains("beside put_file, a create with a file or get_file alone"), "{no}");
@@ -1207,6 +1217,12 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     assert_eq!(said, (&file, &json!("Harvest.csv"), &json!("text/csv"), &json!(harvest.len()), &at(&back)));
     assert!(read.get("text").is_none(), "nothing inline past 64 KiB: {read}");
     assert_eq!(std::fs::read(&back).expect("read back"), harvest, "every byte");
+    // nor written into a folder that keeps her Mac's keys
+    for kept in &kept {
+        let (no, error) = claude.tool("avendb_read_file", json!({ "entry": file, "path": at(kept) })).await;
+        assert!(error && no.contains("keeps this Mac's keys"), "{no}");
+        assert!(!kept.exists(), "nothing written at {}", kept.display());
+    }
     // never over a file there, unless it says so, as a get_file op on avendb_run by the file's vault and name does
     std::fs::write(&back, b"hers").expect("a file of hers");
     let (no, error) = claude.tool("avendb_read_file", json!({ "entry": file, "path": at(&back) })).await;
