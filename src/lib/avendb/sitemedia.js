@@ -97,15 +97,10 @@ export const bringing = (p, vault, actor, asked, kept = false) => ({
 });
 
 /** The bytes of a file kept whole once read, so the device's second reading needs no second download. */
-const KEEP = 16 << 20;
+const KEEP = 64 << 20;
 
 /** How often a download is asked where the old vault's server fails, or the network does, before it gives up. */
 const TRIES = 3;
-
-/** Whether page `path` shows avenDB, its dashboard or its own pages: the one place the copy works. A world, a game or
- *  the studio draws every frame, and the copy's hashing and handing over a megabyte at a time would take the frames
- *  from it (Samuel 2026-10-19: moving got choppy on the iPad and in the Mac app while it ran). @param {string} path */
-export const inAvenDB = (path) => /^\/app(\/avendb(\/.*)?)?\/?$/.test(path);
 
 /**
  * File `hash` from the first of `urls` that hands it over: the old vault's public gateway, then in the Mac app the
@@ -239,13 +234,13 @@ export async function source(urls, hash, get = fetch, keep = KEEP, wait = 1000) 
  * (./session.svelte.js): first what marks them (`marking`: the Public share where `shared` says the vault gives none
  * yet, the tag on each it holds already), then each other piece from the first of its addresses (`urlsOf`, `source`)
  * that hands it over, one after another, quietly, as `asked` asks (./ops.js `creatable`), telling `progress` how far
- * it is. A piece that fails is left out, and the rest go on; the next copy goes on from what is left. Before each piece
- * and each megabyte it hands over, it waits for `calm`, so the page it runs in keeps drawing; a piece the vault holds
- * by then (`held`: another device of an owner copied it meanwhile) is counted and not written again. What it copied,
+ * it is, as fast as it goes (Samuel 2026-10-19: "a one time thing, just bring it through as fast as you can"). A
+ * piece that fails is left out, and the rest go on; the next copy goes on from what is left. A piece the vault holds by
+ * the time it comes to it (`held`: another device of an owner copied it meanwhile) is counted and not written again. What it copied,
  * of all, those the old vault keeps private, and why each failed piece did. A refusal of the marks stops it first.
  * @param {{ api: any, left: Piece[], vault: string, actor: string, shared: boolean, asked: string[],
  *   urlsOf: (hash: string) => string[], progress?: (at: { done: number, of: number, now: string, bytes: number }) => void,
- *   get?: typeof fetch, calm?: () => Promise<void>, held?: (p: Piece) => boolean }} job
+ *   get?: typeof fetch, held?: (p: Piece) => boolean }} job
  */
 export async function copyAll({
 	api,
@@ -257,7 +252,6 @@ export async function copyAll({
 	urlsOf,
 	progress = () => {},
 	get = fetch,
-	calm = async () => {},
 	held = () => false
 }) {
 	const of = left.length;
@@ -274,25 +268,13 @@ export async function copyAll({
 		/** @type {Awaited<ReturnType<typeof source>> | undefined} */
 		let file;
 		try {
-			await calm();
 			if (held(p)) {
 				done++;
 				continue;
 			}
 			file = await source(urlsOf(p.hash), p.hash, get);
 			progress({ done, of, now: p.title, bytes: file.size });
-			const read = file.slice;
-			/** the file as the device reads it, a megabyte at a time, each once the page is calm */
-			const gentle = {
-				size: file.size,
-				slice: (/** @type {number} */ from, /** @type {number} */ to) => ({
-					arrayBuffer: async () => {
-						await calm();
-						return read(from, to).arrayBuffer();
-					}
-				})
-			};
-			await api.bring(`Copying ${p.title}`, bringing(p, vault, actor, asked, file.kept), gentle, true);
+			await api.bring(`Copying ${p.title}`, bringing(p, vault, actor, asked, file.kept), file, true);
 			done++;
 			if (file.kept) kept++;
 		} catch (e) {
