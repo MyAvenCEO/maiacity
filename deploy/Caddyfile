@@ -6,6 +6,9 @@
 #
 # The API (api.maia.city):
 #   /relay, /generate_204  the iroh relay inside vault-server (paired devices only)
+#   /vault/files/<hash>    the site's media (src/lib/media/url.ts): Maia City's public files from avenDB's feed
+#                          (/feed/media/<hash>, with Range), by the BLAKE3 hash the old media vault named them by; one
+#                          avenDB doesn't serve (yet) comes from the old vault's gateway, until that vault retires
 #   /vault/*               the media vault's gateway (files by BLAKE3 hash, with Range)
 #   everything else        the API
 #
@@ -72,6 +75,25 @@ www.{$SITE_ADDRESS:maia.city} {
 }
 
 {$API_ADDRESS} {
+	# the site's media, from avenDB: no key goes on to it (the Mac app sends its own), as everyone may read them
+	@media path_regexp media ^/vault/files/([0-9a-f]{64}(\.[a-z0-9]+)?)$
+	handle @media {
+		reverse_proxy avendb:3351 {
+			rewrite /feed/media/{re.media.1}
+			header_up -Authorization
+			@missing status 404 503
+			handle_response @missing {
+				reverse_proxy vault:3341
+			}
+		}
+	}
+	# and while avenDB doesn't answer at all (as it restarts), from the old vault's gateway
+	handle_errors 502 503 504 {
+		@media_fallback path_regexp ^/vault/files/[0-9a-f]{64}(\.[a-z0-9]+)?$
+		handle @media_fallback {
+			reverse_proxy vault:3341
+		}
+	}
 	handle /relay* {
 		reverse_proxy vault:3340
 	}

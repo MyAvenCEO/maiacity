@@ -581,6 +581,8 @@ const api = {
 	 * @param {string} what @param {object} op @param {Blob} file @param {boolean} [quiet]
 	 */
 	bring: (what, op, file, quiet) => bring(what, op, file, quiet),
+	/** Shows what changed, as after a change: what `quiet` ones made, once they are done. */
+	refresh: () => refresh(),
 	/**
 	 * Bytes `from` to `to` of the file whose root is `root` and whose sealed size is `size`, from this device's
 	 * store or fetched from a peer that may hand them over.

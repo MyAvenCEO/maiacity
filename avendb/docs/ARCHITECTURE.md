@@ -1550,6 +1550,16 @@ tags them with the stage's tag, as it tags the post, so the same Public share co
 the other function takes the tag off those no other published entry shows. A published article that leaves any out
 offers it again.
 
+The site's own media, the pictures, sounds and films its homepage, the Maia Universe and the sandboxes show by the
+BLAKE3 hash their bytes had in the old media vault, are files of the seed's Maia City named `<hash>.<ending>` and
+tagged `site:media`, which one Public share reaches (copied in once from its Library, Samuel 2026-10-19). The server
+serves each at `GET /feed/media/<hash>`, or `<hash>.<ending>` where the ending is its file's, by `Range`, at most 8 MiB
+an answer (`WINDOW`), so a player reads a film a window at a time from any second; asked whole, a file up to 32 MiB
+comes whole, a larger one its first window. Pictures, sounds and films alone, by their names' endings; not found for
+any other name, a file of another vault, or one everyone may not read. Caddy sends api.maia.city's
+`/vault/files/<hash>` there first, and to the old media vault only where the server answers not found or can't read
+the bytes yet, so the site's addresses stay as they were.
+
 ## 10. Post-quantum only
 
 Every node trusts no elliptic curve alone, and there is no switch back.

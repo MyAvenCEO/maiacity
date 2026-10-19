@@ -10,6 +10,11 @@
 //! post's page shows its cover and its pictures. Pictures alone, by their names' endings (`media_of`): nothing a page
 //! would run.
 //!
+//! And the site's media (`GET /feed/media/<hash>`, `MEDIA`): each a file of the seed's coop, Maia City, that everyone
+//! may read, named by the BLAKE3 hash its bytes had in the old media vault and its ending (`<hash>.jpg`), as the site
+//! names its pictures, sounds and films (src/lib/media/url.ts), served by `Range` a window at a time, so that a page
+//! plays a film from any second (`media`). Pictures, sound and film alone, by their names' endings (`played`).
+//!
 //! And the entries everyone may read (`GET /feed/entries`, `ENTRIES`, `avendb::world::public_entries`): each entry of
 //! what the server keeps that a Public share reaches, of whatever kind, as JSON, `{"entries": [...]}`, each with its
 //! record as its main line holds it, the schema that reads it and the heads of that version, by its vault, then its
@@ -31,6 +36,7 @@
 //! writes with the record at it (`brought`, `Lab::brought`), and any file a row lists is served by its root at `GET
 //! /feed/entry/<vault>/<entry>/file/<root>` (`OF_ROOT`).
 
+use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -78,6 +84,14 @@ pub const OF_ENTRY: &str = "/file";
 /// asset's versions each bring their own (`brought`).
 pub const OF_ROOT: &str = "/file/";
 
+/// Where the site's media everyone may read are served, each at `MEDIA` `<hash>`, or `<hash>.<ending>`: the file of
+/// the seed's coop that everyone may read named so, the BLAKE3 hash its bytes had in the old media vault in 64 hex
+/// digits and its ending (`media`).
+pub const MEDIA: &str = "/feed/media/";
+
+/// The most bytes one answer of `MEDIA` carries of a file read by `Range`: a film is read a window at a time.
+const WINDOW: u64 = 8 << 20;
+
 /// The most kinds one query names.
 const MOST_KINDS: usize = 16;
 
@@ -96,12 +110,18 @@ const MOST: usize = 200;
 /// What the server last worked out of a feed: when, and what.
 type Kept<T> = Arc<Mutex<Option<(Instant, T)>>>;
 
-/// What the server last worked out of each: the feed's JSON, and the entries everyone may read (`Listed`).
+/// What the server last worked out of each: the feed's JSON, the entries everyone may read (`Listed`), and the site's
+/// media (`Media`).
 #[derive(Clone, Default)]
 struct Feeds {
     posts: Kept<Bytes>,
     entries: Kept<Listed>,
+    media: Kept<Media>,
 }
+
+/// The site's media, as the server worked them out (`site_media`): each file of the seed's coop everyone may read that
+/// is named by a hash and an ending it plays (`played`), by that hash, with its media type.
+type Media = Arc<BTreeMap<String, (world::PublicFile, &'static str)>>;
 
 /// The entries everyone may read, as the server worked them out: each as a row (`world::public_entries`), and the JSON
 /// of them all and of the code among them, whole.
@@ -156,9 +176,10 @@ impl Feed {
     }
 }
 
-/// The answer to `request`: for a GET or HEAD, the feed of `PATH`, a picture of `FILES` (`picture`), the entries of
-/// `ENTRIES` or the code of `CODE` (`listed`), an entry of `ENTRY` (`entry`), or a file of it (`OF_ENTRY`, `OF_ROOT`,
-/// `source`); nothing for a browser's OPTIONS before any of them; and not found for anything else.
+/// The answer to `request`: for a GET or HEAD, the feed of `PATH`, a picture of `FILES` (`picture`), a medium of `MEDIA`
+/// by the `Range` it asks (`media`), the entries of `ENTRIES` or the code of `CODE` (`listed`), an entry of `ENTRY`
+/// (`entry`), or a file of it (`OF_ENTRY`, `OF_ROOT`, `source`); nothing for a browser's OPTIONS before any of them;
+/// and not found for anything else.
 async fn answer(
     request: Request<Incoming>,
     node: Arc<Node>,
@@ -169,6 +190,10 @@ async fn answer(
     if let Some(at) = path.strip_prefix(FILES).filter(|_| reads) {
         return Ok(picture(at, &node).await);
     }
+    if let Some(at) = path.strip_prefix(MEDIA).filter(|_| reads) {
+        let range = request.headers().get(header::RANGE).and_then(|r| r.to_str().ok());
+        return Ok(media(at, range, &node, &feeds.media).await);
+    }
     let query = request.uri().query().unwrap_or_default();
     if let Some(at) = path.strip_prefix(ENTRY).and_then(|at| at.strip_suffix(OF_ENTRY)).filter(|_| reads) {
         return Ok(source(at, None, query, &node, &feeds.entries).await);
@@ -176,7 +201,7 @@ async fn answer(
     if let Some((at, root)) = path.strip_prefix(ENTRY).and_then(by_root).filter(|_| reads) {
         return Ok(source(at, Some(root), query, &node, &feeds.entries).await);
     }
-    let ours = [PATH, ENTRIES, CODE].contains(&path) || path.starts_with(FILES) || path.starts_with(ENTRY);
+    let ours = [PATH, ENTRIES, CODE].contains(&path) || [FILES, MEDIA, ENTRY].iter().any(|at| path.starts_with(at));
     let (status, body) = match path.strip_prefix(ENTRY) {
         Some(at) if reads => entry(at, query, &node, &feeds.entries).await,
         _ if reads && path == PATH => (StatusCode::OK, posts(&node, &feeds.posts).await),
@@ -190,6 +215,7 @@ async fn answer(
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
     headers.insert(header::ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("GET, HEAD, OPTIONS"));
+    headers.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("Range"));
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=10"));
     Ok(response)
 }
@@ -413,6 +439,123 @@ async fn picture(at: &str, node: &Node) -> Response<Full<Bytes>> {
     response
 }
 
+/// The media type of a file named `name` that a page shows or plays, by its name's ending: a picture's (`media_of`), a
+/// sound's or a film's; none for anything else, which a page might run.
+fn played(name: &str) -> Option<&'static str> {
+    if let Some(picture) = media_of(name) {
+        return Some(picture);
+    }
+    let (_, ending) = name.rsplit_once('.')?;
+    Some(match ending {
+        "mp3" => "audio/mpeg",
+        "m4a" => "audio/mp4",
+        "wav" => "audio/wav",
+        "ogg" | "oga" => "audio/ogg",
+        "mp4" | "m4v" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        _ => return None,
+    })
+}
+
+/// The site's media (`Media`): as the server last worked them out, if that was a moment ago (`FRESH`), else anew. None
+/// while the server has no seed.
+async fn site_media(node: &Node, kept: &Kept<Media>) -> Media {
+    let work = async {
+        let files = node.read(|lab, me| {
+            let Some(&city) = world::seed_of(lab, me).first() else { return BTreeMap::new() };
+            let named = |((vault, name), file): ((VaultId, String), world::PublicFile)| {
+                let (hash, _) = name.split_once('.').filter(|(h, _)| vault == city && hexes(h))?;
+                Some((hash.to_string(), (file, played(&name)?)))
+            };
+            let mut by_hash = BTreeMap::new();
+            for (hash, file) in world::public_files(lab, me).into_iter().filter_map(named) {
+                by_hash.entry(hash).or_insert(file);
+            }
+            by_hash
+        });
+        Arc::new(files.await)
+    };
+    fresh_or(kept, work).await
+}
+
+/// Whether `text` is a hash in 64 lower-case hex digits.
+fn hexes(text: &str) -> bool {
+    text.len() == 64 && text.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// The bytes `range`, a request's `Range`, asks of a file of `len` bytes, as `media` serves them: none for a file asked
+/// whole (no `Range`, or one it doesn't read, which it serves whole as HTTP says); or one range of `bytes=`, its first
+/// byte and the end past its last, as it asks, from its start to its end, from its start on, or its last bytes, at
+/// most `WINDOW` of them; or `Err` for one that asks nothing of the file, as one past its end.
+fn ranged(range: Option<&str>, len: u64) -> Result<Option<(u64, u64)>, ()> {
+    let Some(asked) = range.and_then(|r| r.trim().strip_prefix("bytes=")).filter(|r| !r.contains(',')) else {
+        return Ok(None);
+    };
+    let Some((first, last)) = asked.trim().split_once('-') else { return Ok(None) };
+    let (first, last) = (first.trim(), last.trim());
+    let (from, to) = match (first.parse::<u64>(), last.parse::<u64>()) {
+        (Ok(from), Ok(last)) if last >= from => (from, last.saturating_add(1).min(len)),
+        (Ok(from), Err(_)) if last.is_empty() => (from, len),
+        (Err(_), Ok(n)) if first.is_empty() && n > 0 => (len.saturating_sub(n), len),
+        (Err(_), Ok(0)) if first.is_empty() => return Err(()),
+        _ => return Ok(None),
+    };
+    if from >= len {
+        return Err(());
+    }
+    Ok(Some((from, to.min(from + WINDOW))))
+}
+
+/// The answer to a GET or HEAD of `MEDIA` `at`, `<hash>` or `<hash>.<ending>`, by `Range` `range`: the site's medium
+/// of that hash (`site_media`), whole, or the window of it the range asks (`ranged`), each with its media type and
+/// that it is read by ranges (`Accept-Ranges`); a file larger than `LARGEST` asked whole is answered its first window,
+/// as a page that plays it asks for more as it goes. Not found for a hash Maia City shows no one, or an ending other
+/// than its file's; not satisfiable for a range past its end; and unavailable while the server can't read its bytes.
+async fn media(at: &str, range: Option<&str>, node: &Node, kept: &Kept<Media>) -> Response<Full<Bytes>> {
+    let (hash, ending) = at.split_once('.').map_or((at, None), |(hash, ending)| (hash, Some(ending)));
+    let found = match hexes(hash) {
+        true => site_media(node, kept).await.get(hash).cloned(),
+        false => None,
+    };
+    let found = found.filter(|(_, media)| ending.is_none_or(|e| played(&format!("x.{e}")) == Some(*media)));
+    let Some((file, media)) = found else { return plain(StatusCode::NOT_FOUND, "no such medium") };
+    let (status, window) = match ranged(range, file.len) {
+        Ok(Some(window)) => (StatusCode::PARTIAL_CONTENT, window),
+        Ok(None) if file.len <= LARGEST => (StatusCode::OK, (0, file.len)),
+        Ok(None) => (StatusCode::PARTIAL_CONTENT, (0, file.len.min(WINDOW))),
+        Err(()) => {
+            let mut response = plain(StatusCode::RANGE_NOT_SATISFIABLE, "no such range of this medium");
+            let whole = HeaderValue::from_str(&format!("bytes */{}", file.len)).expect("a header");
+            response.headers_mut().insert(header::CONTENT_RANGE, whole);
+            return response;
+        }
+    };
+    let bytes = match node.read_file(file.root, window.0..window.1).await {
+        Ok(bytes) => bytes,
+        Err(e) => {
+            tracing::debug!("avenDB feed: the medium {hash}: {e:#}");
+            return plain(StatusCode::SERVICE_UNAVAILABLE, "the server can't read this medium yet");
+        }
+    };
+    let mut response = Response::new(Full::new(Bytes::from(bytes)));
+    *response.status_mut() = status;
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static(media));
+    headers.insert(header::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
+    if status == StatusCode::PARTIAL_CONTENT {
+        let part = format!("bytes {}-{}/{}", window.0, window.1 - 1, file.len);
+        headers.insert(header::CONTENT_RANGE, HeaderValue::from_str(&part).expect("a header"));
+    }
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    let shown = "Accept-Ranges, Content-Range, Content-Length";
+    headers.insert(header::ACCESS_CONTROL_EXPOSE_HEADERS, HeaderValue::from_static(shown));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(KEPT));
+    headers.insert("x-served-by", HeaderValue::from_static("avenDB"));
+    response
+}
+
 /// The answer to a GET or HEAD of `ENTRY` `at` `OF_ENTRY`, `<vault>/<entry>/file`, asking `query`: the newest file of
 /// that entry (`newest`), where it is a row of the code everyone may read (`entries`, `of_code`), the same rows
 /// `ENTRY` serves, that the query asks for (`Asked`: `seed=1` keeps Maia City's alone, as ever), whole, as the server
@@ -494,6 +637,33 @@ fn plain(status: StatusCode, why: &'static str) -> Response<Full<Bytes>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_range_asks_one_window_of_a_medium() {
+        assert_eq!(ranged(None, 100), Ok(None), "whole");
+        assert_eq!(ranged(Some("bytes=0-9"), 100), Ok(Some((0, 10))));
+        assert_eq!(ranged(Some("bytes=90-"), 100), Ok(Some((90, 100))), "from 90 on");
+        assert_eq!(ranged(Some("bytes=-5"), 100), Ok(Some((95, 100))), "the last five");
+        assert_eq!(ranged(Some("bytes=-500"), 100), Ok(Some((0, 100))), "the last 500 of 100: all of it");
+        assert_eq!(ranged(Some("bytes=50-500"), 100), Ok(Some((50, 100))), "up to its end");
+        assert_eq!(ranged(Some("bytes=0-"), 100 << 20), Ok(Some((0, WINDOW))), "a window of a film");
+        assert_eq!(ranged(Some("bytes=100-"), 100), Err(()), "past its end");
+        assert_eq!(ranged(Some("bytes=-0"), 100), Err(()), "nothing of it");
+        for unread in ["bytes=5-1", "bytes=0-1,5-6", "items=0-1", "bytes=a-b", "bytes=7"] {
+            assert_eq!(ranged(Some(unread), 100), Ok(None), "{unread}: served whole, as HTTP says");
+        }
+    }
+
+    #[test]
+    fn a_medium_is_a_picture_a_sound_or_a_film() {
+        let types = ["a.jpg", "a.png", "a.mp3", "a.m4a", "a.mp4", "a.webm"].map(played);
+        let want = ["image/jpeg", "image/png", "audio/mpeg", "audio/mp4", "video/mp4", "video/webm"].map(Some);
+        assert_eq!(types, want);
+        for never in ["a.html", "a.js", "a.svg", "a.txt", "mp3"] {
+            assert_eq!(played(never), None, "{never}");
+        }
+        assert!(hexes(&"ab".repeat(32)) && !hexes(&"AB".repeat(32)) && !hexes("ab") && !hexes(&"g".repeat(64)));
+    }
 
     /// A row whose files are `files`, each `(root, size, len)`.
     fn row(files: &[(&str, u64, u64)]) -> Value {
