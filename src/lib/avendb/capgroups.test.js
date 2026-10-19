@@ -4,7 +4,7 @@
 // (./vaults.js `serverCity`).
 // Run: bun test src/lib/avendb/capgroups.test.js
 import { describe, expect, test } from 'bun:test';
-import { CAP_GROUPS, CITIZEN, TRAVELER, capGroupOps, heldGroups } from './capgroups.js';
+import { ADMIN, CAP_GROUPS, CITIZEN, TRAVELER, capGroupOps, heldGroups } from './capgroups.js';
 import { refs } from './ops.js';
 import { serverCity } from './vaults.js';
 
@@ -19,26 +19,30 @@ const share = (o) => ({ id: 'x', over: CITY, who: ME, capGroup: null, ...o });
 const world = (shares) => ({ mine: ME, vaults: [], shares });
 
 describe('the seed defines', () => {
-	test('both groups in a vault that holds none, Citizen including the Traveler just defined', () => {
+	test('every group in a vault that holds none, each including the one just defined before it', () => {
 		const ops = capGroupOps([], CITY);
-		expect(ops.map((o) => o.group.name)).toEqual([TRAVELER, CITIZEN]);
+		expect(ops.map((o) => o.group.name)).toEqual([TRAVELER, CITIZEN, ADMIN]);
 		expect(ops[0]).toEqual({ op: 'define_group', vault: CITY, group: { name: TRAVELER, caps: CAP_GROUPS[0].caps, includes: [] } });
 		expect(ops[1].group.includes).toEqual(['$0']);
-		// run one after another, the include names what the first one defined
+		expect(ops[2].group.includes).toEqual(['$1']);
+		// run one after another, the include names what the one before defined
 		expect(refs(ops[1], [{ entry: T }]).group.includes).toEqual([T]);
 	});
 
-	test('only what is missing, including the Traveler the vault holds', () => {
+	test('only what is missing, including the groups the vault holds', () => {
 		const ops = capGroupOps([groups[0]], CITY);
-		expect(ops).toHaveLength(1);
+		expect(ops.map((o) => o.group.name)).toEqual([CITIZEN, ADMIN]);
 		expect(ops[0].group).toMatchObject({ name: CITIZEN, includes: [T] });
+		expect(capGroupOps(groups, CITY)).toEqual([{ op: 'define_group', vault: CITY, group: { name: ADMIN, caps: CAP_GROUPS[2].caps, includes: [C] } }]);
 	});
 
-	test('nothing in a vault that holds both', () => expect(capGroupOps(groups, CITY)).toEqual([]));
+	test('nothing in a vault that holds them all', () =>
+		expect(capGroupOps([...groups, { entry: '3'.repeat(64), name: ADMIN, caps: [], includes: [C] }], CITY)).toEqual([]));
 
-	test('a Traveler reads the games, the recipes and the code; a Citizen all of MaiaCity V1 besides', () => {
+	test('a Traveler reads the games, the recipes and the code; a Citizen all of MaiaCity V1 besides; an Admin all of it', () => {
 		expect(CAP_GROUPS[0].caps).toEqual([{ op: 'read', where: { type: ['game', 'recipe', 'view', 'logic'] } }]);
 		expect(CAP_GROUPS[1].caps).toEqual([{ op: 'read', where: { tag: 'game:maiacity-v1' } }]);
+		expect(CAP_GROUPS[2]).toEqual({ name: ADMIN, caps: [{ op: 'read' }], includes: [CITIZEN] });
 	});
 });
 

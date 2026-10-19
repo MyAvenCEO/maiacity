@@ -34,7 +34,7 @@
 	import Signing from '$lib/avendb/Signing.svelte';
 	import { asks, here, type Steps } from '$lib/avendb/session.svelte.js';
 	import { plan, reported, rows, stepWords, type Report, type Stage } from '$lib/avendb/steps.js';
-	import { CITIZEN } from '$lib/avendb/capgroups.js';
+	import { ADMIN, CITIZEN } from '$lib/avendb/capgroups.js';
 
 	let { children } = $props();
 
@@ -303,7 +303,7 @@
 		readAccess();
 	});
 	const waiting = $derived(!!game?.needs && !access.owner && !access.known && session.phase === 'open');
-	const closed = $derived(!!game && !waiting && !opens(founder, game));
+	const closed = $derived(!!game && !waiting && !opens(game));
 	// the Proposals app is open signed out too: public is watch and read only (Samuel 2026-10-17), so it shows the
 	// proposals of the published games, and nothing there writes without a sign-in
 	const watching = $derived(phase === 'signed-out' && rel.startsWith('/app/aips/'));
@@ -377,8 +377,8 @@
 		<div class="gate">
 			<h1>Not open to you yet.</h1>
 			<p class="lede">
-				{#if game?.admin}{game.label} is the admins’ own.
-				{:else if session.phase !== 'open'}{game?.label} opens with your avenDB, which holds what your invite gave you: unlock it with your passkey.
+				{#if session.phase !== 'open'}{game?.label} opens with your avenDB, which holds what Maia City gave you: unlock it with your passkey.
+				{:else if game?.needs === ADMIN}{game.label} is the admins’ own.
 				{:else if game?.needs === CITIZEN}{game.label} is for citizens, which travelers become later on.
 				{:else}{game?.label} opens to every traveler, as everyone invited to Maia City is: ask for an invite.{/if}
 			</p>
