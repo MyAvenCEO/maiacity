@@ -102,14 +102,6 @@ async function signedIn(req: Request): Promise<{ id: string; role: string } | Re
   return me ?? json(req, { error: "Please sign in." }, { status: 401 });
 }
 
-/** The person signed in with their passkey, never a key: a key sits in a file any program of theirs reads, an agent's
- *  too, and an agent reaches the city only through avenDB vault caps (Samuel 2026-10-19). */
-async function person(req: Request): Promise<{ id: string; role: string } | Response> {
-  if (await keyHolder(req)) return json(req, { error: "A key cannot do this: it is a person's, signed in with their passkey." }, { status: 403 });
-  const me = await viewer(req);
-  return me ?? json(req, { error: "Please sign in." }, { status: 401 });
-}
-
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
   if (e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof VaultError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
@@ -155,20 +147,19 @@ const server = Bun.serve({
     // Health, for the container and for the deploy job.
     "/api/health": (req) => json(req, { ok: true }),
 
-    // MaiaCity V1 (api/src/maiacity-v1.js): one shared game for two players. Any signed-in founder reads it (the Mac
-    // app's key too); the first two to sign in take seat A and seat B, and only the founder in a seat moves for it, signed
-    // in with their passkey: no key takes a seat or moves.
+    // MaiaCity V1 (api/src/maiacity-v1.js): one shared game for two players. Any signed-in founder reads it; the first
+    // two to sign in take seat A and seat B, and only the founder in a seat moves for it. The Mac app plays it with its
+    // key (Samuel 2026-10-19: "Play in The OS"), but a MIP is signed or rejected by a player in the browser.
     "/api/maiacity-v1": {
       OPTIONS: preflight,
       GET: async (req) => {
         const me = await signedIn(req);
         if (me instanceof Response) return me;
         try {
-          // a key (the Mac app's) only reads, as a watcher: a seat goes to a person signed in with their passkey on the
-          // page, named as their avenDB profile names them (the page says so: no name of theirs is kept here)
+          // a read seats nobody: a seat goes to a person on the page, who asks for it, named as their avenDB profile names
+          // them (the page says so: no name of theirs is kept here)
           const name = new URL(req.url).searchParams.get("name") ?? "";
-          if ("scope" in me) return json(req, { game: await getGame(null), me: null, admin: false, now: Date.now() });
-          return json(req, { game: await getGame({ id: me.id, name }), me: me.id, admin: can(me, "economy:admin"), now: Date.now() });
+          return json(req, { game: await getGame("scope" in me ? null : { id: me.id, name }), me: me.id, admin: can(me, "economy:admin"), now: Date.now() });
         } catch (e) {
           return fail(req, e);
         }
@@ -177,7 +168,7 @@ const server = Bun.serve({
     "/api/maiacity-v1/seat": {
       OPTIONS: preflight,
       POST: async (req) => {
-        const me = await person(req);
+        const me = await signedIn(req);
         if (me instanceof Response) return me;
         const body = await readJson(req);
         try {
@@ -191,9 +182,11 @@ const server = Bun.serve({
     "/api/maiacity-v1/move": {
       OPTIONS: preflight,
       POST: async (req) => {
-        const me = await person(req);
+        const me = await signedIn(req);
         if (me instanceof Response) return me;
         const body = await readJson(req);
+        // the Mac app's key plays, but never signs or rejects a MIP: that is a player's own, in the browser
+        if ("scope" in me && ["sign", "reject"].includes(body?.action?.type)) return json(req, { error: "A MIP is signed or rejected by a player, in the browser." }, { status: 403 });
         try {
           return json(req, { game: await move(me, can(me, "economy:admin"), String(body?.seat ?? ""), body?.action), now: Date.now() });
         } catch (e) {
