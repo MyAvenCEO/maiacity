@@ -133,6 +133,15 @@ impl SignerKeys {
         SignerId(h.finalize())
     }
 
+    /// What kind of signer it is, as the views name it: `device`, `passkey`, or `touch`, a Mac's Touch ID key.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            SignerKeys::Device { .. } => "device",
+            SignerKeys::Passkey { .. } => "passkey",
+            SignerKeys::Enclave { .. } => "touch",
+        }
+    }
+
     fn slh(&self) -> &[u8; 32] {
         match self {
             SignerKeys::Device { slh, .. } | SignerKeys::Passkey { slh, .. } | SignerKeys::Enclave { slh, .. } => slh,

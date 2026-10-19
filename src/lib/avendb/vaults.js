@@ -37,7 +37,7 @@ import { fieldPaths, pathWords } from './paths.js';
  */
 /**
  * @typedef {{ id: string, kind: Kind, name: string | null,
- *   owners: ({ vault: string } | { signer: string, recovery: boolean })[],
+ *   owners: ({ vault: string } | { signer: string, recovery: boolean, by: 'device' | 'passkey' | 'touch' | null })[],
  *   threshold: number, root: string | null, devices: DeviceView[], via: string[] | null, acting: Acting }} VaultView
  */
 /**
@@ -439,7 +439,8 @@ export const acting = (world, v) =>
 /**
  * Who signer `id` is, as a person reads it: a device by its card's name, else as a device of its vault, a device
  * vault's by the vault's own name, as avenMAIA's server or agentClaude's agent; a vault's root as its passkey;
- * the master recovery key; a passkey that owns a vault; else a key by the start of its id. `lead` capitalises what
+ * the master recovery key; a Mac's Touch ID key or a passkey that owns a vault; else a key by the start of its id.
+ * `lead` capitalises what
  * starts a line, where it isn't a name.
  * @param {WorldView} world @param {string} id @param {boolean} [lead]
  */
@@ -451,8 +452,11 @@ export function signerName(world, id, lead = false) {
 		if (d) return d.name ?? (v.kind === 'device' && v.name ? v.name : say(`a device of ${nameOf(v)}`));
 		if (v.root === id) return `${nameOf(v)}’s passkey`;
 	}
-	const owned = world.vaults.find((v) => v.owners.some((o) => 'signer' in o && o.signer === id));
-	return say(owned ? `a passkey of ${nameOf(owned)}` : `key ${short(id)}`);
+	for (const v of world.vaults) {
+		const o = v.owners.find((x) => 'signer' in x && x.signer === id);
+		if (o && 'by' in o) return say(`${o.by === 'touch' ? 'a Mac Touch ID key' : 'a passkey'} of ${nameOf(v)}`);
+	}
+	return say(`key ${short(id)}`);
 }
 
 /**

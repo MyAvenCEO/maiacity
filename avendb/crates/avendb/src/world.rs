@@ -9,7 +9,7 @@
 //! (`PROFILE`), a file it brings (`FILE`), an access request (`REQUEST`); and how avenMAIA, the device vault
 //! avenDB's server is a device of, keeps or relays a person's vaults (`avenceo`, `server_level`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde_json::{Map, Value, json};
 
@@ -127,6 +127,9 @@ pub struct World {
     pub mine: VaultId,
     /// The master recovery key it adds (`Lab::set_recovery`), if any.
     pub recovery: Option<SignerId>,
+    /// What kind of signer each owner of its vaults that is one is (`SignerKeys::kind`), of those it saw sign
+    /// (`Lab::signers_seen`): the master recovery key, which never signs, among none.
+    pub signers: BTreeMap<SignerId, &'static str>,
     /// Its vault owns avenMAIA (`owns_server`).
     pub owns_server: bool,
     /// avenMAIA keeps a backup of its vault (`backs_up`).
@@ -277,7 +280,8 @@ impl World {
     /// device doesn't read them and its levels by vault; the built-in groups of ops the page offers when it shares
     /// (`rules::groups`), each with its level; the kind table, what each kind of vault may be owned by and hold
     /// (`kinds`, `words::kinds_json`); and the master recovery key it adds, `recovery`, `null` for none, which a
-    /// vault's owners mark as such. As the device works it out, so the page keeps no rule:
+    /// vault's owners mark as such, each other signer among them with its kind, `by` (`signers`: `device`, `passkey`
+    /// or `touch`, `null` where the device never saw it sign). As the device works it out, so the page keeps no rule:
     ///
     /// - `ownsServer` and `backsUp` (`owns_server`, `backs_up`, `null` while it knows no avenMAIA);
     /// - each vault's `acting`: `{as, reaches, shares}` (`Acting`);
@@ -306,7 +310,9 @@ impl World {
         };
         let owner = |p: &Principal| match p {
             Principal::Vault(v) => json!({ "vault": hex(&v.0) }),
-            Principal::Signer(s) => json!({ "signer": hex(&s.0), "recovery": Some(*s) == self.recovery }),
+            Principal::Signer(s) => {
+                json!({ "signer": hex(&s.0), "recovery": Some(*s) == self.recovery, "by": self.signers.get(s) })
+            }
         };
         let vault = |v: &VaultView| {
             let device = |d: &SignerId| {
@@ -528,7 +534,16 @@ pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
     let entries = shown.iter().map(|en| entry(lab, me, en)).collect();
     let (owns_server, backs_up) = (owns_server(lab, me), backs_up(lab, me));
     let synced_to = SyncedTo::default();
-    Some(World { mine, recovery: lab.recovery(), owns_server, backs_up, vaults, shares, audiences, entries, synced_to })
+    let recovery = lab.recovery();
+    let owners: BTreeSet<SignerId> = st
+        .vaults()
+        .iter()
+        .flat_map(|v| &v.owners)
+        .filter_map(|p| if let Principal::Signer(s) = p { Some(*s) } else { None })
+        .filter(|&s| Some(s) != recovery)
+        .collect();
+    let signers = lab.signers_seen(me, &owners).into_iter().map(|(s, keys)| (s, keys.kind())).collect();
+    Some(World { mine, recovery, signers, owns_server, backs_up, vaults, shares, audiences, entries, synced_to })
 }
 
 /// As which vault device `me`, of vault `mine`, has its person act in vault `v`, and what that vault may there: the

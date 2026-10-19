@@ -22,7 +22,7 @@ use crate::lens::{self, DocV1, Lens, Schema};
 use crate::merge::Conflict;
 use crate::sealed::FileRoot;
 use crate::policy::{Action, Edit, Entry, Line, Principal, Proposal, Revoking, Setting, Sharing, State, Vault, Who};
-use crate::sign::{Signature, SignerKeys, WebAuthn};
+use crate::sign::{Signature, WebAuthn};
 use crate::slice::LENS_TYPE;
 use crate::wire::Wire as _;
 use crate::words::{hex, kind_name, level_name, who_name};
@@ -363,11 +363,7 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
 /// edit, over a batch of edits, with how many (`batch`), or a pass for the device the edit adds; a Touch ID key's
 /// Enclave signature counts as `edit` or `batch` the same way.
 fn signature(sig: &Signature) -> Value {
-    let by = match sig.keys {
-        SignerKeys::Device { .. } => "device",
-        SignerKeys::Passkey { .. } => "passkey",
-        SignerKeys::Enclave { .. } => "touch",
-    };
+    let by = sig.keys.kind();
     let (webauthn, batch) = match (&sig.webauthn, &sig.enclave) {
         (None, None) => (None, None),
         (Some(WebAuthn::Edit(_)), _) => (Some("edit"), None),

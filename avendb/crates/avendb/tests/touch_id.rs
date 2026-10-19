@@ -147,3 +147,22 @@ fn the_root_takes_a_lost_macs_touch_id_key_off() {
     let join = Action::Share(Sharing::Device { vault, device: phone, seal_to: None });
     assert!(lab.draft(mac, &[touch, phone], join).is_err());
 }
+
+#[test]
+fn the_owners_list_names_a_touch_id_key_by_its_kind() {
+    let (mut authenticator, enclave) = (Passkey::from_seed([1; 32]), EnclaveKey::from_seed([2; 32]));
+    let (mut lab, mac, passkey, touch, vault) = mac(&mut authenticator, &enclave);
+    add_touch(&mut lab, mac, vault, &mut authenticator, &enclave);
+    // each owner as the page reads it, `by` its kind: from the keys at hand, then, with neither key at hand, as their
+    // signatures on the Mac show them
+    let owners = |lab: &Lab| {
+        let seen = avendb::world::world(lab, mac).expect("her world").to_json(mac);
+        let mine = seen["vaults"].as_array().unwrap().iter().find(|v| v["id"] == vault.to_hex()).cloned();
+        mine.expect("her vault")["owners"].as_array().unwrap().iter().map(|o| o["by"].clone()).collect::<Vec<_>>()
+    };
+    assert_eq!(owners(&lab), [serde_json::json!("passkey"), serde_json::json!("touch")]);
+    lab.lose(passkey);
+    lab.lose(touch);
+    assert!(lab.keys_of(touch).is_none());
+    assert_eq!(owners(&lab), [serde_json::json!("passkey"), serde_json::json!("touch")]);
+}
