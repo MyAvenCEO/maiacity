@@ -523,7 +523,7 @@ impl Service {
                     let sheets = Sheets::new(self.clone(), Some(meta.credential.clone()));
                     let unlock = sheets.unlock("drive", meta.nonce, random()?).await?;
                     let secret = xor(&meta.mask, &unlock.device);
-                    if DeviceKey::from_secret(*secret).id() != meta.device {
+                    if DeviceKey::of(*secret, meta.device).is_none() {
                         bail!("your passkey doesn't open this drive");
                     }
                     self.wrap_key(&d, &KEY, meta.device, &secret).await?;

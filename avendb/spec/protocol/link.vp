@@ -10,8 +10,11 @@
 //
 // Expected: c0c1a1a0
 //
-// The curves fall from the start (`PUBKEY[weak]`): X25519, ed25519 and the passkey's P-256. ML-KEM-768 and SLH-DSA
-// hold. Nothing ties the new iPhone's keys to Alice before it joins: the attacker can be any device it likes. The pass
+// The post-quantum signatures are SLH-DSA's or, for a signer made since the key move (2026-10-19), ML-DSA-65's
+// (`sign::Suite`). Verifpal's signatures are ideal, so the model holds for either; `_slh` names those keys here.
+//
+// The curves fall from the start (`PUBKEY[weak]`): X25519, ed25519 and the passkey's P-256. ML-KEM-768 and the
+// post-quantum signatures hold. Nothing ties the new iPhone's keys to Alice before it joins: the attacker can be any device it likes. The pass
 // travels in the clear, as at the relay, and names no connection: whoever replays it on a connection of its own says
 // no hello of the iPhone's there. The card the Mac hands over on the pass stays secret (`card`), where a card handed
 // to whichever device said its hello would not (`unchecked`). The pass the Mac takes is the passkey's for the iPhone,

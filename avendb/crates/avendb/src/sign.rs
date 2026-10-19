@@ -1,27 +1,31 @@
 //! Signatures: what makes an edit's signers its signers. A signature signs the edit's id, which hashes everything the
 //! edit says, so the rules (`policy`) only ever see edits whose author and cosigners really signed them.
 //!
-//! Every signature on every edit is SLH-DSA-SHA2-128f (FIPS 205), a hash-based signature, over the edit's id: no
-//! quantum computer and no better mathematics of curves forges one, as long as SHA-256 holds. A signer's id is the
-//! hash of its public keys, so it names each of them.
+//! Every signature on every edit is post-quantum, over the edit's id, in its signer's suite (`Suite`): ML-DSA-65
+//! (FIPS 204), the suite of every signer made since the key move (Samuel, 2026-10-19), or SLH-DSA-SHA2-128f (FIPS 205),
+//! a hash-based signature, the suite of every signer made before. ML-DSA-65 signs in a millisecond or two where
+//! SLH-DSA takes ten, verifies four times faster, and its signature with its key is a third of SLH-DSA's 17 KB. A
+//! signer's id is the hash of its suite and its public keys, so it names each of them, and a signer's new key is a new
+//! signer, which its vault takes in as it takes any. Every edit made before the move keeps its SLH-DSA signature, which
+//! every device checks as it always has.
 //!
-//! - A device signs with its SLH-DSA key alone. Its ed25519 key is its iroh endpoint's, which TLS proves on a
+//! - A device signs with its post-quantum key alone. Its ed25519 key is its iroh endpoint's, which TLS proves on a
 //!   connection beside its hello (`Hello`); it signs no edit. A person's device derives all its keys from their
 //!   passkey's PRF output (WebAuthn's `prf` extension) on a salt of its own, at every unlock, and holds them in memory
 //!   only: a locked or stolen device holds no key. The server, which has no passkey, keeps keys of its own.
-//! - A passkey's SLH-DSA key derives from its PRF output: the authenticator computes it, a keyed hash, so it is as
+//! - A passkey's post-quantum key derives from its PRF output: the authenticator computes it, a keyed hash, so it is as
 //!   post-quantum as the signature. Its signature also carries the ceremony's WebAuthn assertion (`WebAuthn`), as
 //!   WebAuthn signs only with curves, P-256 here: the authenticator signs its data followed by the SHA-256 of the
 //!   client data, whose challenge is the edit's id, or the hash of the ids of several edits it signs at once
 //!   (`batch_challenge`). The assertion is the proof that the authenticator, and its person's fingerprint or PIN, took
-//!   part in that very ceremony, which the SLH-DSA key, the same at every ceremony, can't give; it adds nothing against
-//!   a quantum computer, and nothing counts on it alone.
-//! - A Mac's Touch ID key (Samuel, 2026-10-19), an owner of its person's vault beside their passkey, is two keys
-//!   behind one touch: an ML-DSA-65 key (FIPS 204) its Secure Enclave makes and never lets out, which signs only once
-//!   Touch ID passes, and 32 secret bytes the Enclave seals, which its SLH-DSA key derives from. Its signature carries
-//!   the Enclave's ML-DSA-65 signature (`EnclaveSig`) as a passkey's carries its assertion: the proof that the chip,
-//!   and its person's finger, took part in that very ceremony. Unlike an assertion, it holds against a quantum
-//!   computer too.
+//!   part in that very ceremony, which the post-quantum key, the same at every ceremony, can't give; it adds nothing
+//!   against a quantum computer, and nothing counts on it alone.
+//! - A Mac's Touch ID key (Samuel, 2026-10-19), an owner of its person's vault beside their passkey, is an ML-DSA-65
+//!   key its Secure Enclave makes and never lets out, which signs only once Touch ID passes, and 32 secret bytes the
+//!   Enclave seals, opened by the same touch, which the key keys are sealed to derives from. Its Enclave's signature
+//!   (`EnclaveSig`) is the proof that the chip, and its person's finger, took part in that very ceremony, and, unlike an
+//!   assertion, it holds against a quantum computer too: in the ML-DSA suite it is the key's whole signature. A Touch ID
+//!   key made before the move also has an SLH-DSA key, derived from the secret, which signs beside it.
 //!
 //! A signer may also consent once, for good, to be added as an owner (`consent_challenge`, `standing`): its signature
 //! over a challenge that names it alone. An edit that founds a vault with it among the first owners, or adds it as an
@@ -34,8 +38,8 @@
 //! open what is sealed to it, and nothing else can.
 //!
 //! A passkey in the browser's authenticator signs in ceremonies (P8e, `Ceremony`): `navigator.credentials.get` over a
-//! challenge, with the PRF evaluated on `PRF_SALT` in the same ceremony. The hash-based key and the key sealed to the
-//! passkey derive from the PRF output, which a device holds for that ceremony only. The software passkey of the tests
+//! challenge, with the PRF evaluated on `PRF_SALT` in the same ceremony. The post-quantum keys and the key sealed to
+//! the passkey derive from the PRF output, which a device holds for that ceremony only. The software passkey of the tests
 //! and the Lab makes the same ceremonies (`Passkey::ceremony`).
 
 use std::fmt;
@@ -51,18 +55,29 @@ use crate::id::{EditId, EntryId, SignerId};
 use crate::keys::Secret;
 use crate::policy::{Action, Edit, Principal, Refusal, Sharing};
 
-/// What a signature signs: the edit's id, with this as its SLH-DSA context string. It names an edit by its first name,
+/// What a signature signs: the edit's id, with this as its post-quantum context string. It names an edit by its first name,
 /// op, as the master recovery key's standing consent, made offline, signs it (`recovery`).
 pub const SIG_CONTEXT: &[u8] = b"avenDB 2026-10-08 op signature";
 
-/// What a device's hello signs on a connection (`Hello`): SLH-DSA, with this as its context string, over which end of
-/// the connection the device speaks for and the connection's TLS exporter. Never an edit's id: the context keeps them
+/// What a device's hello signs on a connection (`Hello`), with this as its context string: which end of the
+/// connection the device speaks for and the connection's TLS exporter. Never an edit's id: the context keeps them
 /// apart.
 pub const HELLO_CONTEXT: &[u8] = b"avenDB 2026-10-08 hello";
 
-/// The suite of every signer and signature: SLH-DSA-SHA2-128f, a device's beside its ed25519 endpoint key and a
-/// passkey's beside its P-256 key. A signer's id hashes it, so a later suite names other signers.
-pub const SUITE: u8 = 1;
+/// What a signer signs its edits with, its post-quantum key's: a device's beside its ed25519 endpoint key, a passkey's
+/// beside its P-256 key. A signer's id hashes its suite's byte, so each suite names signers of its own.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Suite {
+    /// SLH-DSA-SHA2-128f: the suite of every signer made before the key move.
+    SlhDsa = 1,
+    /// ML-DSA-65: the suite of every signer made since. A signer's keys name its ML-DSA-65 key by its hash
+    /// (`ml_dsa_key`), and each of its signatures brings that key whole.
+    MlDsa = 2,
+}
+
+/// The suite new signers are made in. Every device reads and checks both suites; new signers sign with ML-DSA-65 once
+/// every app that reads edits checks it (the key move, K3), as an older app would refuse their edits.
+pub const SIGNING: Suite = Suite::SlhDsa;
 
 /// An SLH-DSA-SHA2-128f signature's size.
 pub const PQ_SIGNATURE_BYTES: usize = 17_088;
@@ -106,29 +121,71 @@ pub fn device_salt(nonce: &[u8; 32]) -> Vec<u8> {
 const UP: u8 = 0x01;
 const UV: u8 = 0x04;
 
+/// A device's or a passkey's post-quantum key, which signs its edits: an SLH-DSA key, 32 bytes, or the hash of an
+/// ML-DSA-65 key (`ml_dsa_key`), whose signatures bring the key whole.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum PqKey {
+    Slh([u8; 32]),
+    MlDsa([u8; 32]),
+}
+
+impl PqKey {
+    pub fn suite(&self) -> Suite {
+        match self {
+            PqKey::Slh(_) => Suite::SlhDsa,
+            PqKey::MlDsa(_) => Suite::MlDsa,
+        }
+    }
+
+    /// Its 32 bytes: the SLH-DSA key, or the ML-DSA-65 key's hash.
+    pub fn bytes(&self) -> &[u8; 32] {
+        match self {
+            PqKey::Slh(k) | PqKey::MlDsa(k) => k,
+        }
+    }
+
+    /// `sig` is this key's signature on `message` with the context string `context`: SLH-DSA's own, or an ML-DSA-65
+    /// key that hashes to this one followed by its signature.
+    fn verifies(&self, message: &[u8], context: &[u8], sig: &[u8]) -> bool {
+        match self {
+            PqKey::Slh(key) => {
+                let Ok(key) = slh_dsa::VerifyingKey::<Sha2_128f>::try_from(&key[..]) else { return false };
+                let Ok(sig) = slh_dsa::Signature::<Sha2_128f>::try_from(sig) else { return false };
+                key.try_verify_with_context(message, context, &sig).is_ok()
+            }
+            PqKey::MlDsa(hash) => {
+                let Some((public, sig)) = sig.split_at_checked(ML_DSA_PUBLIC_BYTES) else { return false };
+                ml_dsa_key(public) == *hash && verify_mldsa(public, message, context, sig)
+            }
+        }
+    }
+}
+
 /// A signer's public keys.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum SignerKeys {
-    /// A device: its SLH-DSA key, which signs, and its ed25519 key, its iroh endpoint's, which TLS proves.
-    Device { ed25519: [u8; 32], slh: [u8; 32] },
-    /// A passkey: the SLH-DSA key derived from its PRF output, which signs, and its P-256 key (SEC1 compressed), which
-    /// signs its ceremonies' assertions.
-    Passkey { p256: [u8; 33], slh: [u8; 32] },
-    /// A Mac's Touch ID key: the SLH-DSA key derived from the secret its Secure Enclave seals, which signs, and the
-    /// hash of the ML-DSA-65 key the Enclave holds (`enclave_key`), which signs its ceremonies; each signature brings
-    /// that key whole (`EnclaveSig`).
-    Enclave { mldsa: [u8; 32], slh: [u8; 32] },
+    /// A device: its post-quantum key, which signs, and its ed25519 key, its iroh endpoint's, which TLS proves.
+    Device { ed25519: [u8; 32], pq: PqKey },
+    /// A passkey: the post-quantum key derived from its PRF output, which signs, and its P-256 key (SEC1 compressed),
+    /// which signs its ceremonies' assertions.
+    Passkey { p256: [u8; 33], pq: PqKey },
+    /// A Mac's Touch ID key: the hash of the ML-DSA-65 key its Secure Enclave holds (`enclave_key`), which signs its
+    /// ceremonies, each signature bringing that key whole (`EnclaveSig`); and, made before the key move, the SLH-DSA
+    /// key derived from the secret the Enclave seals, which signs beside it. Without one, the Enclave's signature is
+    /// the key's whole signature.
+    Enclave { mldsa: [u8; 32], slh: Option<[u8; 32]> },
 }
 
 impl SignerKeys {
-    /// The signer's id: the hash of the suite and its keys.
+    /// The signer's id: the hash of its suite and its keys.
     pub fn id(&self) -> SignerId {
         let mut h = Hasher::new("signer id");
-        h.update(&[SUITE]);
+        h.update(&[self.suite() as u8]);
         match self {
-            SignerKeys::Device { ed25519, slh } => h.update(&[0]).update(ed25519).update(slh),
-            SignerKeys::Passkey { p256, slh } => h.update(&[1]).update(p256).update(slh),
-            SignerKeys::Enclave { mldsa, slh } => h.update(&[2]).update(mldsa).update(slh),
+            SignerKeys::Device { ed25519, pq } => h.update(&[0]).update(ed25519).update(pq.bytes()),
+            SignerKeys::Passkey { p256, pq } => h.update(&[1]).update(p256).update(pq.bytes()),
+            SignerKeys::Enclave { mldsa, slh: Some(slh) } => h.update(&[2]).update(mldsa).update(slh),
+            SignerKeys::Enclave { mldsa, slh: None } => h.update(&[2]).update(mldsa),
         };
         SignerId(h.finalize())
     }
@@ -142,9 +199,21 @@ impl SignerKeys {
         }
     }
 
-    fn slh(&self) -> &[u8; 32] {
+    /// The suite its signatures are in: a Touch ID key's is SLH-DSA's where it has an SLH-DSA key beside its Enclave's.
+    pub fn suite(&self) -> Suite {
         match self {
-            SignerKeys::Device { slh, .. } | SignerKeys::Passkey { slh, .. } | SignerKeys::Enclave { slh, .. } => slh,
+            SignerKeys::Device { pq, .. } | SignerKeys::Passkey { pq, .. } => pq.suite(),
+            SignerKeys::Enclave { slh: Some(_), .. } => Suite::SlhDsa,
+            SignerKeys::Enclave { slh: None, .. } => Suite::MlDsa,
+        }
+    }
+
+    /// The post-quantum key its signatures carry a signature of beside any assertion or Enclave signature: `None` for a
+    /// Touch ID key whose Enclave's signature is its whole signature.
+    fn pq(&self) -> Option<PqKey> {
+        match self {
+            SignerKeys::Device { pq, .. } | SignerKeys::Passkey { pq, .. } => Some(*pq),
+            SignerKeys::Enclave { slh, .. } => slh.map(PqKey::Slh),
         }
     }
 }
@@ -152,6 +221,11 @@ impl SignerKeys {
 /// What a Touch ID key's keys name of its ML-DSA-65 key, `public` as FIPS 204 encodes it: its hash.
 pub fn enclave_key(public: &[u8]) -> [u8; 32] {
     hash::hash("enclave ml-dsa-65 key", public)
+}
+
+/// What a device's or a passkey's keys name of its ML-DSA-65 key, `public` as FIPS 204 encodes it: its hash.
+pub fn ml_dsa_key(public: &[u8]) -> [u8; 32] {
+    hash::hash("signer ml-dsa-65 key", public)
 }
 
 /// A Touch ID key's proof on a signature, as a passkey's assertion is one (`WebAuthn`): its ML-DSA-65 key, which
@@ -187,12 +261,12 @@ impl EnclaveSig {
         } else {
             return false;
         };
-        enclave_key(&self.public) == *mldsa && verify_mldsa(&self.public, &challenge, &self.sig)
+        enclave_key(&self.public) == *mldsa && verify_mldsa(&self.public, &challenge, ENCLAVE_CONTEXT, &self.sig)
     }
 }
 
-/// `sig` is the ML-DSA-65 signature of the key `public` over `challenge`, with `ENCLAVE_CONTEXT`.
-fn verify_mldsa(public: &[u8], challenge: &[u8; 32], sig: &[u8]) -> bool {
+/// `sig` is the ML-DSA-65 signature of the key `public` on `message`, with the context string `context`.
+fn verify_mldsa(public: &[u8], message: &[u8], context: &[u8], sig: &[u8]) -> bool {
     use ml_dsa::{EncodedSignature, EncodedVerifyingKey, MlDsa65, Signature as MlDsaSignature, VerifyingKey};
     let (Ok(public), Ok(sig)) =
         (EncodedVerifyingKey::<MlDsa65>::try_from(public), EncodedSignature::<MlDsa65>::try_from(sig))
@@ -200,12 +274,12 @@ fn verify_mldsa(public: &[u8], challenge: &[u8; 32], sig: &[u8]) -> bool {
         return false;
     };
     let Some(sig) = MlDsaSignature::<MlDsa65>::decode(&sig) else { return false };
-    VerifyingKey::<MlDsa65>::decode(&public).verify_with_context(challenge, ENCLAVE_CONTEXT, &sig)
+    VerifyingKey::<MlDsa65>::decode(&public).verify_with_context(message, context, &sig)
 }
 
-/// One signer's signature on an edit: its keys, which hash to its id; the SLH-DSA signature over the edit's id; and a
-/// passkey's WebAuthn assertion from the ceremony that made it, or a Touch ID key's Secure Enclave signature, which a
-/// device's never carries.
+/// One signer's signature on an edit: its keys, which hash to its id; the post-quantum signature over the edit's id;
+/// and a passkey's WebAuthn assertion from the ceremony that made it, or a Touch ID key's Secure Enclave signature,
+/// which a device's never carries.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Signature {
     pub keys: SignerKeys,
@@ -213,11 +287,13 @@ pub struct Signature {
     pub webauthn: Option<WebAuthn>,
     /// A Touch ID key's Secure Enclave signature; `None` for a device or a passkey.
     pub enclave: Option<EnclaveSig>,
-    /// SLH-DSA-SHA2-128f over the edit's id, `PQ_SIGNATURE_BYTES` long.
+    /// The signature of the keys' post-quantum key over the edit's id: SLH-DSA-SHA2-128f's, `PQ_SIGNATURE_BYTES`
+    /// long; or the ML-DSA-65 key, `ML_DSA_PUBLIC_BYTES` long, followed by its signature. Empty for a Touch ID key
+    /// whose Enclave's signature is its whole signature.
     pub pq: Vec<u8>,
 }
 
-/// The SLH-DSA signature shows only its size.
+/// The post-quantum signature shows only its size.
 impl fmt::Debug for Signature {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let pq = format!("{} bytes", self.pq.len());
@@ -296,14 +372,14 @@ impl Signed {
     }
 }
 
-/// A device's hello on a connection (P8): its keys, and its SLH-DSA signature over the connection's TLS exporter and
-/// the end it speaks for. The TLS handshake proves the device's ed25519 key, its iroh endpoint's, and the hello its
-/// SLH-DSA key: a connection proves which device is talking even once the curves fall, and a hello can't be replayed
-/// on another connection, nor sent back by the other end.
+/// A device's hello on a connection (P8): its keys, and its post-quantum signature over the connection's TLS exporter
+/// and the end it speaks for. The TLS handshake proves the device's ed25519 key, its iroh endpoint's, and the hello
+/// its post-quantum key: a connection proves which device is talking even once the curves fall, and a hello can't be
+/// replayed on another connection, nor sent back by the other end.
 #[derive(Clone, PartialEq, Eq)]
 pub struct Hello {
     pub keys: SignerKeys,
-    /// SLH-DSA-SHA2-128f, `PQ_SIGNATURE_BYTES` long.
+    /// The device's post-quantum signature, as an edit's signature holds it (`Signature::pq`).
     pub sig: Vec<u8>,
 }
 
@@ -317,16 +393,11 @@ impl fmt::Debug for Hello {
 impl Hello {
     /// The device this hello proves on the connection whose TLS exporter is `exporter`, from the end that dialed if
     /// `dialer`, `endpoint` being the ed25519 key the handshake proved: `None` unless the keys are a device's, their
-    /// ed25519 half is `endpoint`, and the SLH-DSA signature checks out.
+    /// ed25519 half is `endpoint`, and the post-quantum signature checks out.
     pub fn verify(&self, exporter: &[u8; 32], dialer: bool, endpoint: &[u8; 32]) -> Option<SignerId> {
-        let SignerKeys::Device { ed25519, slh } = &self.keys else { return None };
-        if ed25519 != endpoint {
-            return None;
-        }
-        let key = slh_dsa::VerifyingKey::<Sha2_128f>::try_from(&slh[..]).ok()?;
-        let sig = slh_dsa::Signature::<Sha2_128f>::try_from(&self.sig[..]).ok()?;
-        key.try_verify_with_context(&hello_message(exporter, dialer), HELLO_CONTEXT, &sig).ok()?;
-        Some(self.keys.id())
+        let SignerKeys::Device { ed25519, pq } = &self.keys else { return None };
+        let said = pq.verifies(&hello_message(exporter, dialer), HELLO_CONTEXT, &self.sig);
+        (ed25519 == endpoint && said).then(|| self.keys.id())
     }
 }
 
@@ -338,8 +409,8 @@ fn hello_message(exporter: &[u8; 32], dialer: bool) -> [u8; 33] {
     m
 }
 
-/// A passkey's pass for one device (P8d, P8e): the passkey's SLH-DSA key, its WebAuthn assertion and its SLH-DSA
-/// signature, both over a hash of the device's id and the time the pass was made. Two take it:
+/// A passkey's pass for one device (P8d, P8e): the passkey's post-quantum key, its WebAuthn assertion and its
+/// post-quantum signature, both over a hash of the device's id and the time the pass was made. Two take it:
 ///
 /// - The server's relay lets the device's endpoint in for `PASS_LIFE` seconds if the passkey roots a vault the server
 ///   knows, or any passkey while sign-up is open: a new device with no UDP of its own, a browser's, reaches nobody but
@@ -353,15 +424,15 @@ fn hello_message(exporter: &[u8; 32], dialer: bool) -> [u8; 33] {
 /// that founds or joins its vault.
 ///
 /// It names no P-256 key, which a device that didn't make the passkey can't know from one assertion. Whoever checks it
-/// recovers the keys its assertion could be from, two, rarely up to four, each of them with the SLH-DSA key a passkey
-/// that may have made it (`RelayPass::passkeys`). Only one of them is anyone's: an assertion that recovers to another
+/// recovers the keys its assertion could be from, two, rarely up to four, each of them with the post-quantum key a
+/// passkey that may have made it (`RelayPass::passkeys`). Only one of them is anyone's: an assertion that recovers to another
 /// passkey's key is that passkey's forgery.
 #[derive(Clone, PartialEq, Eq)]
 pub struct RelayPass {
-    /// The SLH-DSA key of the passkey that made it, from its PRF output.
-    pub slh: [u8; 32],
+    /// The post-quantum key of the passkey that made it, from its PRF output.
+    pub pq: PqKey,
     pub assertion: Assertion,
-    /// SLH-DSA-SHA2-128f, `PQ_SIGNATURE_BYTES` long.
+    /// That key's signature, as an edit's signature holds it (`Signature::pq`).
     pub sig: Vec<u8>,
     /// The device it is for, by its keys: its ed25519 half is the endpoint the pass lets in.
     pub device: SignerKeys,
@@ -369,11 +440,11 @@ pub struct RelayPass {
     pub made: u64,
 }
 
-/// The SLH-DSA signature shows only its size.
+/// The post-quantum signature shows only its size.
 impl fmt::Debug for RelayPass {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RelayPass")
-            .field("slh", &self.slh)
+            .field("pq", &self.pq)
             .field("assertion", &self.assertion)
             .field("sig", &format!("{} bytes", self.sig.len()))
             .field("device", &self.device)
@@ -382,21 +453,19 @@ impl fmt::Debug for RelayPass {
     }
 }
 
-/// What a pass signs with SLH-DSA (`RelayPass`), as its context string: never an edit's id, nor a hello.
+/// What a pass signs with its passkey's post-quantum key (`RelayPass`), as its context string: never an edit's id, nor
+/// a hello.
 pub const RELAY_PASS_CONTEXT: &[u8] = b"avenDB 2026-10-10 relay pass";
 
-/// The context of a device's SLH-DSA signature on its statement of its holdings (H2, `wire::Statement`): what it signs
-/// counts as that statement alone, never as an edit, a hello or a pass.
+/// The context of a device's post-quantum signature on its statement of its holdings (H2, `wire::Statement`): what it
+/// signs counts as that statement alone, never as an edit, a hello or a pass.
 pub const STATEMENT_CONTEXT: &[u8] = b"avenDB 2026-10-15 holdings statement";
 
-/// The device whose keys `keys` are, if `sig` is their SLH-DSA signature on the body of a statement of holdings,
+/// The device whose keys `keys` are, if `sig` is their post-quantum signature on the body of a statement of holdings,
 /// `body` (`wire::Statement::body`): `None` unless they are a device's keys and the signature checks out.
 pub fn verify_statement(keys: &SignerKeys, body: &[u8], sig: &[u8]) -> Option<SignerId> {
-    let SignerKeys::Device { slh, .. } = keys else { return None };
-    let key = slh_dsa::VerifyingKey::<Sha2_128f>::try_from(&slh[..]).ok()?;
-    let sig = slh_dsa::Signature::<Sha2_128f>::try_from(sig).ok()?;
-    key.try_verify_with_context(body, STATEMENT_CONTEXT, &sig).ok()?;
-    Some(keys.id())
+    let SignerKeys::Device { pq, .. } = keys else { return None };
+    pq.verifies(body, STATEMENT_CONTEXT, sig).then(|| keys.id())
 }
 
 /// How long a pass lets its device in: seconds from when it was made.
@@ -406,16 +475,16 @@ pub const PASS_LIFE: u64 = 10 * 60;
 pub const PASS_SKEW: u64 = 5 * 60;
 
 impl RelayPass {
-    /// The passkeys whose pass it could be, unchecked: each key its assertion recovers to, with its SLH-DSA key. Cheap,
-    /// so that a relay asks whether it honours any of them before it checks the signatures (`passkeys`).
+    /// The passkeys whose pass it could be, unchecked: each key its assertion recovers to, with its post-quantum key.
+    /// Cheap, so that a relay asks whether it honours any of them before it checks the signatures (`passkeys`).
     pub fn candidates(&self) -> Vec<SignerId> {
-        let passkey = |p256| SignerKeys::Passkey { p256, slh: self.slh }.id();
+        let passkey = |p256| SignerKeys::Passkey { p256, pq: self.pq }.id();
         self.assertion.recover().into_iter().map(passkey).collect()
     }
 
     /// The passkeys that made it for its device, checked at `now`, seconds since 1970 by the checker's clock: none
     /// unless its device's keys are a device's, it was made in the `PASS_LIFE` seconds before `now` (or at most
-    /// `PASS_SKEW` after) and its SLH-DSA signature checks out; then each of its `candidates` whose P-256 key its
+    /// `PASS_SKEW` after) and its post-quantum signature checks out; then each of its `candidates` whose P-256 key its
     /// assertion verifies under. Which device it is for, the checker checks: the endpoint a relay's handshake proved,
     /// or the device whose hello proved it on a connection.
     pub fn passkeys(&self, now: u64) -> Vec<SignerId> {
@@ -424,16 +493,11 @@ impl RelayPass {
             return vec![];
         }
         let challenge = pass_challenge(self.device.id(), self.made);
-        let pq = |key: &[u8; 32], sig: &[u8]| -> Option<()> {
-            let key = slh_dsa::VerifyingKey::<Sha2_128f>::try_from(&key[..]).ok()?;
-            let sig = slh_dsa::Signature::<Sha2_128f>::try_from(sig).ok()?;
-            key.try_verify_with_context(&challenge, RELAY_PASS_CONTEXT, &sig).ok()
-        };
-        if pq(&self.slh, &self.sig).is_none() {
+        if !self.pq.verifies(&challenge, RELAY_PASS_CONTEXT, &self.sig) {
             return vec![];
         }
         let verifies = |p256: &[u8; 33]| self.assertion.verify(p256, EditId(challenge));
-        let passkey = |p256| SignerKeys::Passkey { p256, slh: self.slh }.id();
+        let passkey = |p256| SignerKeys::Passkey { p256, pq: self.pq }.id();
         self.assertion.recover().into_iter().filter(verifies).map(passkey).collect()
     }
 
@@ -496,8 +560,9 @@ pub fn batch_challenge(edits: &[EditId]) -> [u8; 32] {
     h.finalize()
 }
 
-/// `sig` is `signer`'s signature on edit `edit`: its keys hash to the signer, its SLH-DSA signature verifies, and a
-/// passkey's assertion or a Touch ID key's Enclave signature verifies too, where a device's carries neither.
+/// `sig` is `signer`'s signature on edit `edit`: its keys hash to the signer, its post-quantum signature verifies, and
+/// a passkey's assertion or a Touch ID key's Enclave signature verifies too, where a device's carries neither. A Touch
+/// ID key without an SLH-DSA key signs with its Enclave alone, and carries no other signature.
 pub fn verify(signer: SignerId, edit: EditId, sig: &Signature) -> bool {
     verify_adding(signer, edit, sig, None)
 }
@@ -522,13 +587,11 @@ pub fn verify_adding(signer: SignerId, edit: EditId, sig: &Signature, joins: Opt
         (SignerKeys::Enclave { mldsa, .. }, None, Some(e)) => e.verify(mldsa, edit),
         _ => false,
     };
-    present && verify_pq(sig.keys.slh(), edit, &sig.pq)
-}
-
-fn verify_pq(key: &[u8; 32], edit: EditId, sig: &[u8]) -> bool {
-    let Ok(key) = slh_dsa::VerifyingKey::<Sha2_128f>::try_from(&key[..]) else { return false };
-    let Ok(sig) = slh_dsa::Signature::<Sha2_128f>::try_from(sig) else { return false };
-    key.try_verify_with_context(&edit.0, SIG_CONTEXT, &sig).is_ok()
+    present
+        && match sig.keys.pq() {
+            Some(pq) => pq.verifies(&edit.0, SIG_CONTEXT, &sig.pq),
+            None => sig.pq.is_empty(),
+        }
 }
 
 fn sha256(bytes: &[u8]) -> [u8; 32] {
@@ -650,41 +713,65 @@ impl Ceremony {
         }
     }
 
-    /// The keys of its passkey, whose P-256 key is `p256`, the hash-based key derived from the PRF output; or of its
-    /// Touch ID key, the hash-based key derived from its secret (`p256` unread).
+    /// The keys of its passkey, whose P-256 key is `p256`, in the suite new signers are made in (`SIGNING`); or of its
+    /// Touch ID key (`p256` unread).
     pub fn keys(&self, p256: [u8; 33]) -> SignerKeys {
-        let slh = slh_public(&self.slh());
+        self.keys_in(p256, SIGNING)
+    }
+
+    /// The keys of its passkey, whose P-256 key is `p256`, in suite `suite`: the post-quantum key derived from the PRF
+    /// output; or of its Touch ID key, the Enclave's key and, in SLH-DSA's suite, the SLH-DSA key derived from its
+    /// secret (`p256` unread).
+    pub fn keys_in(&self, p256: [u8; 33], suite: Suite) -> SignerKeys {
         match &self.proof {
-            Proof::WebAuthn(_) => SignerKeys::Passkey { p256, slh },
-            Proof::Enclave { public, .. } => SignerKeys::Enclave { mldsa: enclave_key(public), slh },
+            Proof::WebAuthn(_) => SignerKeys::Passkey { p256, pq: PqSigner::derive(suite, "passkey", &self.secret).public() },
+            Proof::Enclave { public, .. } => {
+                let slh = (suite == Suite::SlhDsa).then(|| slh_public(&slh_key("enclave slh-dsa key", &self.secret)));
+                SignerKeys::Enclave { mldsa: enclave_key(public), slh }
+            }
         }
     }
 
-    /// The keys of its Touch ID key: `None` for a passkey's ceremony, whose P-256 key it doesn't say (`keys`).
+    /// The keys of its passkey, whose P-256 key is `p256`, in whichever suite they are signer `id`'s: `None` if neither.
+    pub fn keys_of(&self, p256: [u8; 33], id: SignerId) -> Option<SignerKeys> {
+        [Suite::MlDsa, Suite::SlhDsa].into_iter().map(|suite| self.keys_in(p256, suite)).find(|k| k.id() == id)
+    }
+
+    /// The keys of its Touch ID key, in the suite new signers are made in: `None` for a passkey's ceremony, whose P-256
+    /// key it doesn't say (`keys`).
     pub fn enclave_keys(&self) -> Option<SignerKeys> {
         matches!(self.proof, Proof::Enclave { .. }).then(|| self.keys([0; 33]))
     }
 
-    fn slh(&self) -> slh_dsa::SigningKey<Sha2_128f> {
-        match self.proof {
-            Proof::WebAuthn(_) => slh_key("passkey slh-dsa key", &self.secret),
-            Proof::Enclave { .. } => slh_key("enclave slh-dsa key", &self.secret),
-        }
+    /// It is a ceremony of the Touch ID key whose keys are `keys`, in either suite: its Enclave's key is theirs, and, in
+    /// SLH-DSA's suite, its secret derives their SLH-DSA key.
+    pub fn is_enclave_of(&self, keys: &SignerKeys) -> bool {
+        let SignerKeys::Enclave { slh, .. } = keys else { return false };
+        let suite = if slh.is_some() { Suite::SlhDsa } else { Suite::MlDsa };
+        matches!(self.proof, Proof::Enclave { .. }) && self.keys_in([0; 33], suite) == *keys
     }
 
-    /// Its key's hash-based key, if it is a ceremony over `challenge` of the owner key whose keys are `keys`: its PRF
-    /// output or secret derives their hash-based key, and a passkey's assertion verifies under their P-256 key, a Touch
-    /// ID key's Enclave signature under the ML-DSA-65 key they name.
-    fn of(&self, keys: &SignerKeys, challenge: [u8; 32]) -> Option<slh_dsa::SigningKey<Sha2_128f>> {
-        let proved = match (keys, &self.proof) {
-            (SignerKeys::Passkey { p256, .. }, Proof::WebAuthn(a)) => a.verify(p256, EditId(challenge)),
+    /// Its key's post-quantum key, if it is a ceremony over `challenge` of the owner key whose keys are `keys`: its PRF
+    /// output or secret derives their post-quantum key in their suite, and a passkey's assertion verifies under their
+    /// P-256 key, a Touch ID key's Enclave signature under the ML-DSA-65 key they name. `Some(None)` for a Touch ID key
+    /// whose Enclave's signature is its whole signature.
+    fn of(&self, keys: &SignerKeys, challenge: [u8; 32]) -> Option<Option<PqSigner>> {
+        let (proved, purpose) = match (keys, &self.proof) {
+            (SignerKeys::Passkey { p256, .. }, Proof::WebAuthn(a)) => (a.verify(p256, EditId(challenge)), "passkey"),
             (SignerKeys::Enclave { mldsa, .. }, Proof::Enclave { public, sig, challenge: c }) => {
-                *c == challenge && enclave_key(public) == *mldsa && verify_mldsa(public, c, sig)
+                let proved = *c == challenge
+                    && enclave_key(public) == *mldsa
+                    && verify_mldsa(public, c, ENCLAVE_CONTEXT, sig);
+                (proved, "enclave")
             }
-            _ => false,
+            _ => (false, ""),
         };
-        let key = self.slh();
-        (proved && slh_public(&key) == *keys.slh()).then_some(key)
+        if !proved {
+            return None;
+        }
+        let Some(pq) = keys.pq() else { return Some(None) };
+        let key = PqSigner::derive(pq.suite(), purpose, &self.secret);
+        (key.public() == pq).then_some(Some(key))
     }
 
     /// Its proof on a signature on edit `edit`, `batch` the ids of the edits it signs together, empty for the edit
@@ -699,17 +786,17 @@ impl Ceremony {
         }
     }
 
-    /// The signature on edit `edit` of the owner key whose keys are `keys`: the SLH-DSA signature over the edit's id,
-    /// with the assertion or the Enclave's signature beside it. `None` unless this is that key's ceremony over the
+    /// The signature on edit `edit` of the owner key whose keys are `keys`: the post-quantum signature over the edit's
+    /// id, with the assertion or the Enclave's signature beside it. `None` unless this is that key's ceremony over the
     /// edit's id.
     pub fn sign(&self, keys: SignerKeys, edit: EditId) -> Option<Signature> {
-        let slh = self.of(&keys, edit.0)?;
+        let key = self.of(&keys, edit.0)?;
         let (webauthn, enclave) = self.proof(&[]);
-        Some(Signature { keys, webauthn, enclave, pq: sign_pq(&slh, edit) })
+        Some(Signature { keys, webauthn, enclave, pq: sign_pq(key.as_ref(), edit) })
     }
 
     /// The same, for edit `edit` among the edits `batch` this ceremony signs together, their ids smallest first: the
-    /// SLH-DSA signature over the edit's own id, beside the assertion or the Enclave's signature over their
+    /// post-quantum signature over the edit's own id, beside the assertion or the Enclave's signature over their
     /// `batch_challenge` (`WebAuthn::Batch`, `EnclaveSig::edits`). An empty `batch` is the edit alone (`sign`). `None`
     /// unless the edit is among them and this is that key's ceremony over their batch.
     pub fn sign_in(&self, keys: SignerKeys, edit: EditId, batch: &[EditId]) -> Option<Signature> {
@@ -719,26 +806,32 @@ impl Ceremony {
         if !batch.contains(&edit) || !batch.windows(2).all(|w| w[0] < w[1]) {
             return None;
         }
-        let slh = self.of(&keys, batch_challenge(batch))?;
+        let key = self.of(&keys, batch_challenge(batch))?;
         let (webauthn, enclave) = self.proof(batch);
-        Some(Signature { keys, webauthn, enclave, pq: sign_pq(&slh, edit) })
+        Some(Signature { keys, webauthn, enclave, pq: sign_pq(key.as_ref(), edit) })
     }
 
     /// The signature on edit `edit`, which adds the device `device` to a vault (`Sharing::Device`), of the passkey
     /// whose keys are `keys`, as this ceremony is that passkey's pass for the device, made at `made` (`pass`): the
-    /// SLH-DSA signature over the edit's own id, beside the pass's assertion (`WebAuthn::Pass`). So the ceremony that
-    /// unlocks a new device also signs the edit adding it, and the device signs in with one ceremony. `None` unless
+    /// post-quantum signature over the edit's own id, beside the pass's assertion (`WebAuthn::Pass`). So the ceremony
+    /// that unlocks a new device also signs the edit adding it, and the device signs in with one ceremony. `None` unless
     /// this is that passkey's ceremony over the device's `pass_challenge`.
     pub fn sign_adding(&self, keys: SignerKeys, edit: EditId, device: SignerId, made: u64) -> Option<Signature> {
         let assertion = self.assertion()?.clone();
-        let slh = self.of(&keys, pass_challenge(device, made))?;
+        let key = self.of(&keys, pass_challenge(device, made))?;
         let webauthn = WebAuthn::Pass { assertion, made };
-        Some(Signature { keys, webauthn: Some(webauthn), enclave: None, pq: sign_pq(&slh, edit) })
+        Some(Signature { keys, webauthn: Some(webauthn), enclave: None, pq: sign_pq(key.as_ref(), edit) })
     }
 
-    /// Its passkey's pass (`RelayPass`) for the device whose keys are `device`, made at `made`: `None` unless they are a
-    /// device's and this is a passkey's ceremony over their `pass_challenge`, as the one that unlocks a new device is.
+    /// Its passkey's pass (`RelayPass`) for the device whose keys are `device`, made at `made`, signed by its
+    /// post-quantum key in the suite new signers are made in: `None` unless they are a device's and this is a
+    /// passkey's ceremony over their `pass_challenge`, as the one that unlocks a new device is.
     pub fn pass(&self, device: SignerKeys, made: u64) -> Option<RelayPass> {
+        self.pass_in(device, made, SIGNING)
+    }
+
+    /// `pass`, signed by its passkey's post-quantum key in suite `suite`.
+    pub fn pass_in(&self, device: SignerKeys, made: u64, suite: Suite) -> Option<RelayPass> {
         let assertion = self.assertion()?.clone();
         if !matches!(device, SignerKeys::Device { .. }) {
             return None;
@@ -747,9 +840,8 @@ impl Ceremony {
         if self.challenge() != Some(challenge) {
             return None;
         }
-        let slh = self.slh();
-        let sig = slh.try_sign_with_context(&challenge, RELAY_PASS_CONTEXT, None).expect("a short context");
-        Some(RelayPass { slh: slh_public(&slh), assertion, sig: sig.to_vec(), device, made })
+        let key = PqSigner::derive(suite, "passkey", &self.secret);
+        Some(RelayPass { pq: key.public(), assertion, sig: key.sign(&challenge, RELAY_PASS_CONTEXT), device, made })
     }
 
     /// The key keys are sealed to for its owner key, from the PRF output or the secret: what the key lends a device
@@ -833,20 +925,69 @@ fn slh_key(purpose: &str, secret: &[u8; 32]) -> slh_dsa::SigningKey<Sha2_128f> {
     slh_dsa::SigningKey::slh_keygen_internal(&seeds[..16], &seeds[16..32], &seeds[32..])
 }
 
-fn sign_pq(key: &slh_dsa::SigningKey<Sha2_128f>, edit: EditId) -> Vec<u8> {
-    key.try_sign_with_context(&edit.0, SIG_CONTEXT, None).expect("a short context").to_vec()
-}
-
 fn slh_public(key: &slh_dsa::SigningKey<Sha2_128f>) -> [u8; 32] {
     key.verifying_key().to_bytes().into()
 }
 
-/// A device's keys: its SLH-DSA key, which signs; ed25519, the same key as its iroh endpoint, so a connection proves
-/// which device is talking; and the key keys are sealed to for it. All three derive from 32 secret bytes, and each
-/// wipes itself as it is dropped.
+/// An ML-DSA-65 key from 32 secret bytes: its seed, a hash of them.
+fn ml_key(purpose: &str, secret: &[u8; 32]) -> ml_dsa::SigningKey<ml_dsa::MlDsa65> {
+    let seed = Zeroizing::new(hash::keyed(secret, purpose, b""));
+    ml_dsa::SigningKey::from_seed(&(*seed).into())
+}
+
+/// The post-quantum signature on edit `edit` of `key`, as `Signature::pq` holds it: none where a Touch ID key's Enclave
+/// signs alone.
+fn sign_pq(key: Option<&PqSigner>, edit: EditId) -> Vec<u8> {
+    key.map_or(vec![], |key| key.sign(&edit.0, SIG_CONTEXT))
+}
+
+/// A post-quantum key that signs, in either suite, as a device, a passkey or a Touch ID key made before the key move
+/// derives it. It wipes itself as it is dropped.
+enum PqSigner {
+    Slh(slh_dsa::SigningKey<Sha2_128f>),
+    MlDsa(ml_dsa::SigningKey<ml_dsa::MlDsa65>),
+}
+
+impl ZeroizeOnDrop for PqSigner {}
+
+impl PqSigner {
+    /// The key in suite `suite` that 32 secret bytes derive for a signer of kind `kind` (`device`, `passkey`,
+    /// `enclave`).
+    fn derive(suite: Suite, kind: &str, secret: &[u8; 32]) -> Self {
+        match suite {
+            Suite::SlhDsa => PqSigner::Slh(slh_key(&format!("{kind} slh-dsa key"), secret)),
+            Suite::MlDsa => PqSigner::MlDsa(ml_key(&format!("{kind} ml-dsa-65 key"), secret)),
+        }
+    }
+
+    fn public(&self) -> PqKey {
+        match self {
+            PqSigner::Slh(key) => PqKey::Slh(slh_public(key)),
+            PqSigner::MlDsa(key) => PqKey::MlDsa(ml_dsa_key(&key.verifying_key().encode())),
+        }
+    }
+
+    /// Its signature on `message`, with the context string `context`, as `Signature::pq` holds it: SLH-DSA's, or the
+    /// ML-DSA-65 key followed by its signature, which is deterministic.
+    fn sign(&self, message: &[u8], context: &[u8]) -> Vec<u8> {
+        match self {
+            PqSigner::Slh(key) => {
+                key.try_sign_with_context(message, context, None).expect("a short context").to_vec()
+            }
+            PqSigner::MlDsa(key) => {
+                let sig = key.expanded_key().sign_deterministic(message, context).expect("a short context");
+                [&key.verifying_key().encode()[..], &sig.encode()[..]].concat()
+            }
+        }
+    }
+}
+
+/// A device's keys: its post-quantum key, which signs; ed25519, the same key as its iroh endpoint, so a connection
+/// proves which device is talking; and the key keys are sealed to for it. All three derive from 32 secret bytes, and
+/// each wipes itself as it is dropped.
 pub struct DeviceKey {
     ed25519: ed25519_dalek::SigningKey,
-    slh: slh_dsa::SigningKey<Sha2_128f>,
+    pq: PqSigner,
     seal: Secret,
 }
 
@@ -864,42 +1005,52 @@ const _: fn() = || {
 };
 
 impl DeviceKey {
-    /// A device's keys from 32 secret bytes: its passkey's PRF output on the device's salt (`Passkey::device`), or, for
-    /// the server, bytes of its own.
+    /// A device's keys from 32 secret bytes, in the suite new signers are made in (`SIGNING`): its passkey's PRF output
+    /// on the device's salt (`Passkey::device`), or, for the server, bytes of its own.
     pub fn from_secret(secret: [u8; 32]) -> Self {
+        Self::from_secret_in(secret, SIGNING)
+    }
+
+    /// A device's keys from 32 secret bytes, in suite `suite`. Its ed25519 key and the key sealed to it are the same in
+    /// either suite.
+    pub fn from_secret_in(secret: [u8; 32], suite: Suite) -> Self {
         let secret = Zeroizing::new(secret);
         let ed25519 = Zeroizing::new(hash::keyed(&secret, "device ed25519 key", b""));
         Self {
             ed25519: ed25519_dalek::SigningKey::from_bytes(&ed25519),
-            slh: slh_key("device slh-dsa key", &secret),
+            pq: PqSigner::derive(suite, "device", &secret),
             seal: Secret::derive("device seal key", &secret),
         }
     }
 
+    /// The keys of device `id` from 32 secret bytes, in whichever suite they are its: `None` if neither.
+    pub fn of(secret: [u8; 32], id: SignerId) -> Option<Self> {
+        [Suite::MlDsa, Suite::SlhDsa].into_iter().map(|suite| Self::from_secret_in(secret, suite)).find(|k| k.id() == id)
+    }
+
     pub fn keys(&self) -> SignerKeys {
-        SignerKeys::Device { ed25519: self.ed25519.verifying_key().to_bytes(), slh: slh_public(&self.slh) }
+        SignerKeys::Device { ed25519: self.ed25519.verifying_key().to_bytes(), pq: self.pq.public() }
     }
 
     pub fn id(&self) -> SignerId {
         self.keys().id()
     }
 
-    /// The device's signature on edit `edit`: SLH-DSA over its id.
+    /// The device's signature on edit `edit`: its post-quantum key's over its id.
     pub fn sign(&self, edit: EditId) -> Signature {
-        Signature { keys: self.keys(), webauthn: None, enclave: None, pq: sign_pq(&self.slh, edit) }
+        Signature { keys: self.keys(), webauthn: None, enclave: None, pq: sign_pq(Some(&self.pq), edit) }
     }
 
     /// The device's hello on the connection whose TLS exporter is `exporter`, speaking for the end that dialed if
     /// `dialer`.
     pub fn hello(&self, exporter: &[u8; 32], dialer: bool) -> Hello {
-        let message = hello_message(exporter, dialer);
-        let sig = self.slh.try_sign_with_context(&message, HELLO_CONTEXT, None).expect("a short context").to_vec();
-        Hello { keys: self.keys(), sig }
+        Hello { keys: self.keys(), sig: self.pq.sign(&hello_message(exporter, dialer), HELLO_CONTEXT) }
     }
 
-    /// The device's SLH-DSA signature on `body`, the body of its statement of its holdings (`wire::Statement::body`).
+    /// The device's post-quantum signature on `body`, the body of its statement of its holdings
+    /// (`wire::Statement::body`).
     pub fn state(&self, body: &[u8]) -> Vec<u8> {
-        self.slh.try_sign_with_context(body, STATEMENT_CONTEXT, None).expect("a short context").to_vec()
+        self.pq.sign(body, STATEMENT_CONTEXT)
     }
 
     /// The secret of the device's iroh endpoint: its ed25519 key's, as iroh takes it.
@@ -919,15 +1070,21 @@ impl DeviceKey {
 pub struct Passkey {
     key: p256::ecdsa::SigningKey,
     counter: u32,
-    /// The hash-based key, derived from the PRF output on `PRF_SALT`, as the app derives it in every ceremony.
-    slh: slh_dsa::SigningKey<Sha2_128f>,
+    /// The post-quantum key, derived from the PRF output on `PRF_SALT`, as the app derives it in every ceremony.
+    pq: PqSigner,
 }
 
 impl ZeroizeOnDrop for Passkey {}
 
 impl Passkey {
-    /// A passkey whose private key derives from `seed`.
+    /// A passkey whose private key derives from `seed`, in the suite new signers are made in (`SIGNING`).
     pub fn from_seed(seed: [u8; 32]) -> Self {
+        Self::from_seed_in(seed, SIGNING)
+    }
+
+    /// A passkey whose private key derives from `seed`, its post-quantum key in suite `suite`: the same passkey in
+    /// either suite, as one authenticator's PRF output derives both keys.
+    pub fn from_seed_in(seed: [u8; 32], suite: Suite) -> Self {
         let mut bytes = Zeroizing::new(seed);
         let key = loop {
             // a seed outside the curve's scalar range is about 2^-32 likely; hash on until one fits
@@ -936,9 +1093,13 @@ impl Passkey {
             }
             *bytes = hash::hash("software passkey seed", &*bytes);
         };
-        let mut passkey = Self { key, counter: 0, slh: slh_key("passkey slh-dsa key", &[0; 32]) };
-        passkey.slh = slh_key("passkey slh-dsa key", &passkey.prf(PRF_SALT));
-        passkey
+        let pq = PqSigner::derive(suite, "passkey", &prf(&key, PRF_SALT));
+        Self { key, counter: 0, pq }
+    }
+
+    /// Its post-quantum key's suite.
+    pub fn suite(&self) -> Suite {
+        self.pq.public().suite()
     }
 
     /// The P-256 public key, SEC1 compressed.
@@ -948,14 +1109,15 @@ impl Passkey {
     }
 
     pub fn keys(&self) -> SignerKeys {
-        SignerKeys::Passkey { p256: self.public(), slh: slh_public(&self.slh) }
+        SignerKeys::Passkey { p256: self.public(), pq: self.pq.public() }
     }
 
     pub fn id(&self) -> SignerId {
         self.keys().id()
     }
 
-    /// The passkey's signature on edit `edit`, made in a ceremony at `origin`: SLH-DSA over its id, and the assertion.
+    /// The passkey's signature on edit `edit`, made in a ceremony at `origin`: its post-quantum key's over its id, and
+    /// the assertion.
     pub fn sign_at(&mut self, edit: EditId, origin: &str) -> Signature {
         use p256::ecdsa::signature::Signer as _;
         self.counter += 1;
@@ -969,7 +1131,7 @@ impl Passkey {
         let assertion =
             Assertion { authenticator_data: data, client_data_json, signature: sig.to_der().as_bytes().to_vec() };
         let webauthn = Some(WebAuthn::Edit(assertion));
-        Signature { keys: self.keys(), webauthn, enclave: None, pq: sign_pq(&self.slh, edit) }
+        Signature { keys: self.keys(), webauthn, enclave: None, pq: sign_pq(Some(&self.pq), edit) }
     }
 
     /// The passkey's signature on edit `edit`, made on the website.
@@ -992,10 +1154,10 @@ impl Passkey {
     }
 
     /// The passkey's pass for the device whose keys are `device`, made at `made`, seconds since 1970 (`RelayPass`): an
-    /// assertion and the SLH-DSA signature, in one ceremony.
+    /// assertion and the post-quantum signature, in one ceremony.
     pub fn pass(&mut self, device: SignerKeys, made: u64) -> RelayPass {
         let ceremony = self.ceremony(pass_challenge(device.id(), made));
-        ceremony.pass(device, made).expect("its own ceremony, for a device")
+        ceremony.pass_in(device, made, self.suite()).expect("its own ceremony, for a device")
     }
 
     /// Its private key: the seed `from_seed` makes the same passkey again from, as a platform syncs a passkey between
@@ -1009,10 +1171,7 @@ impl Passkey {
     /// assertion. The browser hashes the salt with the label "WebAuthn PRF" and the authenticator answers with its
     /// `hmac-secret` over that hash; this one uses a keyed BLAKE3 hash with a secret of its own instead of HMAC.
     pub fn prf(&self, salt: &[u8]) -> Zeroizing<[u8; 32]> {
-        let hashed = sha256(&[&b"WebAuthn PRF\0"[..], salt].concat());
-        let scalar: Zeroizing<[u8; 32]> = Zeroizing::new(self.key.to_bytes().into());
-        let cred_random = Zeroizing::new(hash::keyed(&scalar, "software passkey credential", b""));
-        Zeroizing::new(hash::keyed(&cred_random, "software passkey prf", &hashed))
+        prf(&self.key, salt)
     }
 
     /// The key keys are sealed to for this passkey, derived from its PRF output on `PRF_SALT`: a device that uses the
@@ -1022,10 +1181,18 @@ impl Passkey {
     }
 
     /// The keys of the device whose salt ends in `nonce`, derived from the passkey's PRF output on that salt, as the
-    /// device derives them at every unlock.
+    /// device derives them at every unlock, in the passkey's suite.
     pub fn device(&self, nonce: [u8; 32]) -> DeviceKey {
-        DeviceKey::from_secret(*self.prf(&device_salt(&nonce)))
+        DeviceKey::from_secret_in(*self.prf(&device_salt(&nonce)), self.suite())
     }
+}
+
+/// The software passkey `key`'s PRF output on `salt` (`Passkey::prf`).
+fn prf(key: &p256::ecdsa::SigningKey, salt: &[u8]) -> Zeroizing<[u8; 32]> {
+    let hashed = sha256(&[&b"WebAuthn PRF\0"[..], salt].concat());
+    let scalar: Zeroizing<[u8; 32]> = Zeroizing::new(key.to_bytes().into());
+    let cred_random = Zeroizing::new(hash::keyed(&scalar, "software passkey credential", b""));
+    Zeroizing::new(hash::keyed(&cred_random, "software passkey prf", &hashed))
 }
 
 /// A Touch ID key as the Lab and the tests hold it: a software Secure Enclave, whose ML-DSA-65 key signs a ceremony's
@@ -1035,17 +1202,25 @@ impl Passkey {
 pub struct EnclaveKey {
     mldsa: ml_dsa::SigningKey<ml_dsa::MlDsa65>,
     secret: Zeroizing<[u8; 32]>,
+    /// Its keys' suite: in SLH-DSA's, an SLH-DSA key derived from the secret signs beside the Enclave.
+    suite: Suite,
 }
 
 impl ZeroizeOnDrop for EnclaveKey {}
 
 impl EnclaveKey {
-    /// A Touch ID key whose ML-DSA-65 key and secret derive from `seed`.
+    /// A Touch ID key whose ML-DSA-65 key and secret derive from `seed`, in the suite new signers are made in
+    /// (`SIGNING`).
     pub fn from_seed(seed: [u8; 32]) -> Self {
+        Self::from_seed_in(seed, SIGNING)
+    }
+
+    /// A Touch ID key whose ML-DSA-65 key and secret derive from `seed`, in suite `suite`.
+    pub fn from_seed_in(seed: [u8; 32], suite: Suite) -> Self {
         let seed = Zeroizing::new(seed);
         let mldsa = Zeroizing::new(hash::keyed(&seed, "software enclave ml-dsa key", b""));
         let secret = Zeroizing::new(hash::keyed(&seed, "software enclave secret", b""));
-        Self { mldsa: ml_dsa::SigningKey::from_seed(&(*mldsa).into()), secret }
+        Self { mldsa: ml_dsa::SigningKey::from_seed(&(*mldsa).into()), secret, suite }
     }
 
     /// Its ML-DSA-65 public key, as FIPS 204 encodes it.
@@ -1054,7 +1229,7 @@ impl EnclaveKey {
     }
 
     pub fn keys(&self) -> SignerKeys {
-        let slh = slh_public(&slh_key("enclave slh-dsa key", &self.secret));
+        let slh = (self.suite == Suite::SlhDsa).then(|| slh_public(&slh_key("enclave slh-dsa key", &self.secret)));
         SignerKeys::Enclave { mldsa: enclave_key(&self.public()), slh }
     }
 
@@ -1193,7 +1368,7 @@ mod tests {
         let mut on_edit = master.sign(EditId(consent_challenge(m)));
         assert!(verify(m, EditId(consent_challenge(m)), &on_edit));
         on_edit.pq = vec![0; PQ_SIGNATURE_BYTES];
-        assert!(!verify(m, EditId(consent_challenge(m)), &on_edit), "its SLH-DSA signature");
+        assert!(!verify(m, EditId(consent_challenge(m)), &on_edit), "its post-quantum signature");
     }
 
     #[test]
@@ -1203,7 +1378,7 @@ mod tests {
         let signed = Signed { edit: edit.clone(), sigs: vec![key.sign(edit.id())] };
         assert!(signed.verify().is_ok());
         assert_eq!(signed.sigs[0].pq.len(), PQ_SIGNATURE_BYTES);
-        assert_eq!(signed.sigs[0].webauthn, None, "a device signs with SLH-DSA alone");
+        assert_eq!(signed.sigs[0].webauthn, None, "a device signs with its post-quantum key alone");
         // the same signature on a changed edit, or claimed by another signer, is refused
         let other = Edit { parents: vec![EditId::from_u64(1)], ..edit.clone() };
         assert_eq!(
@@ -1246,7 +1421,7 @@ mod tests {
     }
 
     #[test]
-    fn the_slh_dsa_signature_must_verify() {
+    fn the_post_quantum_signature_must_verify() {
         let key = DeviceKey::from_secret([7; 32]);
         let (governance, w) = (edit(key.id(), vec![]), write(key.id()));
         // every edit, a write as any other, carries it
@@ -1256,10 +1431,10 @@ mod tests {
             broken.pq = vec![0; PQ_SIGNATURE_BYTES];
             assert!(Signed { edit: e.clone(), sigs: vec![broken] }.verify().is_err());
         }
-        // nor does one made with another SLH-DSA key pass: the keys no longer hash to the signer
+        // nor does one made with another post-quantum key pass: the keys no longer hash to the signer
         let thief = DeviceKey::from_secret([9; 32]);
         let mut theirs = thief.sign(governance.id());
-        theirs.keys = SignerKeys::Device { ed25519: key.ed25519.verifying_key().to_bytes(), slh: *thief.keys().slh() };
+        theirs.keys = SignerKeys::Device { ed25519: key.ed25519.verifying_key().to_bytes(), pq: thief.pq.public() };
         assert!(!verify(key.id(), governance.id(), &theirs));
         // a device's signature carries no assertion, and a passkey's always one
         let mut passkey = Passkey::from_seed([1; 32]);
@@ -1274,10 +1449,10 @@ mod tests {
     #[test]
     fn a_signer_id_names_both_keys() {
         let (a, b) = (DeviceKey::from_secret([1; 32]), DeviceKey::from_secret([2; 32]));
-        let SignerKeys::Device { ed25519, slh } = a.keys() else { unreachable!() };
-        let SignerKeys::Device { slh: other, .. } = b.keys() else { unreachable!() };
-        assert_ne!(SignerKeys::Device { ed25519, slh: other }.id(), a.id());
-        assert_eq!(SignerKeys::Device { ed25519, slh }.id(), a.id());
+        let SignerKeys::Device { ed25519, pq } = a.keys() else { unreachable!() };
+        let SignerKeys::Device { pq: other, .. } = b.keys() else { unreachable!() };
+        assert_ne!(SignerKeys::Device { ed25519, pq: other }.id(), a.id());
+        assert_eq!(SignerKeys::Device { ed25519, pq }.id(), a.id());
         // a passkey's keys never hash like a device's
         let p = Passkey::from_seed([1; 32]);
         assert_ne!(p.id(), a.id());
@@ -1329,7 +1504,7 @@ mod tests {
             let named = Signature { webauthn, ..sig.clone() };
             assert!(!verify(passkey.id(), a.id(), &named), "only the batch the ceremony signed");
         }
-        // its SLH-DSA signature is the edit's own
+        // its post-quantum signature is the edit's own
         let lone = ceremony.sign_in(passkey.keys(), b.id(), &batch).expect("its signature");
         let swapped = Signature { pq: lone.pq, ..sig };
         assert!(!verify(passkey.id(), a.id(), &swapped));
@@ -1364,13 +1539,13 @@ mod tests {
         let alone = adds(device.id(), vec![]);
         let alone_sig = unlock.sign_adding(passkey.keys(), alone.id(), device.id(), made).expect("signed");
         assert!(Signed { edit: alone.clone(), sigs: vec![alone_sig] }.verify().is_err(), "the device must cosign");
-        // its SLH-DSA signature is the edit's own, and never left out
+        // its post-quantum signature is the edit's own, and never left out
         assert!(!verify(passkey.id(), join.id(), &sig), "a pass counts on an edit adding its device alone");
         let bare = Signature { pq: vec![], ..sig.clone() };
         assert!(Signed { edit: join.clone(), sigs: vec![bare, device.sign(join.id())] }.verify().is_err());
         let other_join = Edit { depth: 1, ..join.clone() };
         let swapped = Signed { edit: other_join.clone(), sigs: vec![sig, device.sign(other_join.id())] };
-        assert!(swapped.verify().is_err(), "its SLH-DSA signature signs this very edit");
+        assert!(swapped.verify().is_err(), "its post-quantum signature signs this very edit");
     }
 
     #[test]
@@ -1421,13 +1596,13 @@ mod tests {
         assert_eq!(hello.verify(&other, true, &endpoint), None);
         assert_eq!(hello.verify(&exporter, false, &endpoint), None);
         assert_eq!(hello.verify(&exporter, true, &DeviceKey::from_secret([8; 32]).endpoint_secret()), None);
-        // whoever broke the device's ed25519 key and signs with an SLH-DSA key of their own proves another device
+        // whoever broke the device's ed25519 key and signs with a post-quantum key of their own proves another device
         let thief = DeviceKey::from_secret([9; 32]);
         let mut stolen = thief.hello(&exporter, true);
-        stolen.keys = SignerKeys::Device { ed25519: endpoint, slh: *thief.keys().slh() };
+        stolen.keys = SignerKeys::Device { ed25519: endpoint, pq: thief.pq.public() };
         assert!(stolen.verify(&exporter, true, &endpoint).is_some_and(|s| s != key.id()));
         // an edit's signature is no hello, and a passkey says no hello
-        let edit = Hello { keys: key.keys(), sig: sign_pq(&key.slh, EditId(exporter)) };
+        let edit = Hello { keys: key.keys(), sig: sign_pq(Some(&key.pq), EditId(exporter)) };
         assert_eq!(edit.verify(&exporter, true, &endpoint), None);
         let passkey = Passkey::from_seed([1; 32]);
         assert_eq!(Hello { keys: passkey.keys(), sig: hello.sig.clone() }.verify(&exporter, true, &endpoint), None);
@@ -1456,11 +1631,12 @@ mod tests {
         assert!(RelayPass { device: passkey.device([6; 32]).keys(), ..pass.clone() }.passkeys(made).is_empty());
         assert!(RelayPass { made: made + 1, ..pass.clone() }.passkeys(made).is_empty());
         assert!(RelayPass { device: passkey.keys(), ..pass.clone() }.passkeys(made).is_empty());
-        // whoever broke the passkey's P-256 key and signs with an SLH-DSA key of their own makes a pass of others
+        // whoever broke the passkey's P-256 key and signs with a post-quantum key of their own makes a pass of others
         let theirs = Passkey::from_seed([2; 32]).pass(device, made);
-        let stolen = RelayPass { slh: theirs.slh, sig: theirs.sig, ..pass.clone() }.passkeys(made);
+        let stolen = RelayPass { pq: theirs.pq, sig: theirs.sig, ..pass.clone() }.passkeys(made);
         assert!(!stolen.is_empty() && !stolen.contains(&passkey.id()));
-        // a passkey's signature on an edit over the same challenge is no pass: its SLH-DSA signature, another context
+        // a passkey's signature on an edit over the same challenge is no pass: its post-quantum signature, another
+        // context
         let edit = passkey.sign(EditId(pass_challenge(device.id(), made)));
         let Some(WebAuthn::Edit(assertion)) = edit.webauthn.clone() else { unreachable!() };
         let replayed = RelayPass { assertion, sig: edit.pq.clone(), ..pass.clone() };
@@ -1510,7 +1686,7 @@ mod tests {
         let edit = edit(passkey.id(), vec![device.id()]);
         let ceremony = passkey.ceremony(edit.id().0);
         assert_eq!(ceremony.challenge(), Some(edit.id().0));
-        assert_eq!(ceremony.keys(passkey.public()), passkey.keys(), "its PRF output derives the hash-based key");
+        assert_eq!(ceremony.keys(passkey.public()), passkey.keys(), "its PRF output derives the post-quantum key");
         assert_eq!(ceremony.seal_secret(), passkey.seal_secret(), "and the key sealed to the passkey");
         // an edit signed by the ceremony and the device is signed by both
         let sig = ceremony.sign(passkey.keys(), edit.id()).expect("the passkey's signature");
@@ -1533,12 +1709,12 @@ mod tests {
         assert!(ceremony.pass(passkey.device([5; 32]).keys(), 0).is_none());
         // another passkey's ceremony, or keys with another passkey's half: its PRF output or assertion isn't theirs
         assert!(other.ceremony(a.id().0).sign(passkey.keys(), a.id()).is_none());
-        let (SignerKeys::Passkey { slh: theirs, .. }, SignerKeys::Passkey { slh, .. }) = (other.keys(), passkey.keys())
+        let (SignerKeys::Passkey { pq: theirs, .. }, SignerKeys::Passkey { pq, .. }) = (other.keys(), passkey.keys())
         else {
             unreachable!()
         };
-        assert!(ceremony.sign(SignerKeys::Passkey { p256: passkey.public(), slh: theirs }, a.id()).is_none());
-        assert!(ceremony.sign(SignerKeys::Passkey { p256: other.public(), slh }, a.id()).is_none());
+        assert!(ceremony.sign(SignerKeys::Passkey { p256: passkey.public(), pq: theirs }, a.id()).is_none());
+        assert!(ceremony.sign(SignerKeys::Passkey { p256: other.public(), pq }, a.id()).is_none());
         // and a device signs no ceremony
         assert!(ceremony.sign(DeviceKey::from_secret([7; 32]).keys(), a.id()).is_none());
     }
@@ -1585,7 +1761,7 @@ mod tests {
         let (a, b) = (edit(touch.id(), vec![]), edit(touch.id(), vec![device.id()]));
         let ceremony = touch.ceremony(a.id().0);
         assert_eq!(ceremony.challenge(), Some(a.id().0));
-        assert_eq!(ceremony.enclave_keys(), Some(touch.keys()), "its secret derives the hash-based key");
+        assert_eq!(ceremony.enclave_keys(), Some(touch.keys()), "its secret derives the SLH-DSA key");
         assert_eq!(ceremony.seal_secret(), touch.seal_secret(), "and the key sealed to it");
         assert!(ceremony.assertion().is_none(), "no passkey's");
         let sig = ceremony.sign(touch.keys(), a.id()).expect("its signature");
@@ -1599,7 +1775,7 @@ mod tests {
         let Proof::Enclave { sig, .. } = &ceremony.proof else { unreachable!("a Touch ID key's") };
         let lying = Ceremony::enclave(touch.public(), sig.clone(), b.id().0, *touch.secret);
         assert!(lying.sign(touch.keys(), b.id()).is_none());
-        // edits signed together: one touch, each its own SLH-DSA signature beside the Enclave's over their batch
+        // edits signed together: one touch, each its own post-quantum signature beside the Enclave's over their batch
         let mut batch = vec![a.id(), b.id()];
         batch.sort();
         let together = touch.ceremony(batch_challenge(&batch));
@@ -1627,15 +1803,15 @@ mod tests {
         let (public, sig) = (lines.next().expect("its public key"), lines.next().expect("its signature"));
         assert_eq!((public.len(), sig.len()), (1952, 3309), "ML-DSA-65's sizes");
         let msg: [u8; 32] = std::array::from_fn(|i| i as u8);
-        assert!(verify_mldsa(&public, &msg, &sig));
+        assert!(verify_mldsa(&public, &msg, ENCLAVE_CONTEXT, &sig));
         // another message, a byte of the signature or the key changed: no signature
-        assert!(!verify_mldsa(&public, &[0; 32], &sig));
+        assert!(!verify_mldsa(&public, &[0; 32], ENCLAVE_CONTEXT, &sig));
         let mut bent = sig.clone();
         bent[100] ^= 1;
-        assert!(!verify_mldsa(&public, &msg, &bent));
+        assert!(!verify_mldsa(&public, &msg, ENCLAVE_CONTEXT, &bent));
         let mut other = public.clone();
         other[100] ^= 1;
-        assert!(!verify_mldsa(&other, &msg, &sig));
+        assert!(!verify_mldsa(&other, &msg, ENCLAVE_CONTEXT, &sig));
         // nor without avenDB's context, as the Enclave signs for another use
         use ml_dsa::{EncodedSignature, EncodedVerifyingKey, MlDsa65, VerifyingKey};
         let key = VerifyingKey::<MlDsa65>::decode(&EncodedVerifyingKey::<MlDsa65>::try_from(&public[..]).expect("its size"));
@@ -1683,5 +1859,178 @@ mod tests {
         for origin in others {
             assert!(!relying_party(origin, &test), "{origin}");
         }
+    }
+
+    /// The signer ids of signers made before the key move, as avenDB computed them before it read ML-DSA-65 (main at
+    /// 5308b60, 2026-10-19): every vault names its signers by them, so they never change.
+    #[test]
+    fn a_signer_made_before_the_key_move_keeps_its_id() {
+        let ids = [
+            (DeviceKey::from_secret_in([7; 32], Suite::SlhDsa).id(), "ef7d8bee911ae8d227780c232b98dcfbe590f7b12e8ab57c9a7df617123fe146"),
+            (Passkey::from_seed_in([1; 32], Suite::SlhDsa).id(), "101bf00526bba32bb4b8e05fd2eb1f2714335679411ac740442570e0f476f91e"),
+            (EnclaveKey::from_seed_in([1; 32], Suite::SlhDsa).id(), "df4bc843aa6e619d5d091ba0df77c755e79ee7a92dbf584b00a11fd7a6d76d74"),
+        ];
+        for (id, before) in ids {
+            assert_eq!(id.to_hex(), before);
+        }
+        // the same secret in ML-DSA-65's suite is another signer, of the same kind, its ed25519 or P-256 key the same
+        let (old, new) = (DeviceKey::from_secret_in([7; 32], Suite::SlhDsa), DeviceKey::from_secret_in([7; 32], Suite::MlDsa));
+        assert_ne!(old.id(), new.id());
+        assert_eq!((old.keys().suite(), new.keys().suite()), (Suite::SlhDsa, Suite::MlDsa));
+        assert_eq!(*old.endpoint_secret(), *new.endpoint_secret(), "one iroh endpoint");
+        assert_eq!(old.seal_secret(), new.seal_secret(), "one key sealed to the device");
+        let (old, new) = (Passkey::from_seed_in([1; 32], Suite::SlhDsa), Passkey::from_seed_in([1; 32], Suite::MlDsa));
+        assert_ne!(old.id(), new.id());
+        assert_eq!((old.public(), old.seal_secret()), (new.public(), new.seal_secret()));
+        assert_eq!(new.device([5; 32]).keys().suite(), Suite::MlDsa, "a passkey's devices are in its suite");
+        let (old, new) = (EnclaveKey::from_seed_in([1; 32], Suite::SlhDsa), EnclaveKey::from_seed_in([1; 32], Suite::MlDsa));
+        assert_ne!(old.id(), new.id());
+        assert_eq!(new.keys(), SignerKeys::Enclave { mldsa: enclave_key(&old.public()), slh: None });
+        // a device's secret makes it again in whichever suite its id is in, and no other device
+        for suite in [Suite::SlhDsa, Suite::MlDsa] {
+            let id = DeviceKey::from_secret_in([7; 32], suite).id();
+            assert_eq!(DeviceKey::of([7; 32], id).map(|k| k.id()), Some(id), "{suite:?}");
+            assert!(DeviceKey::of([8; 32], id).is_none(), "{suite:?}");
+        }
+    }
+
+    #[test]
+    fn every_signer_signs_with_ml_dsa_65_and_brings_its_key() {
+        let device = DeviceKey::from_secret_in([7; 32], Suite::MlDsa);
+        let mut passkey = Passkey::from_seed_in([1; 32], Suite::MlDsa);
+        let touch = EnclaveKey::from_seed_in([1; 32], Suite::MlDsa);
+        let e = edit(passkey.id(), vec![device.id()]);
+        let (by_device, by_passkey) = (device.sign(e.id()), passkey.sign(e.id()));
+        // a device's and a passkey's: their ML-DSA-65 key, then its signature, 5,261 bytes against SLH-DSA's 17,088
+        for sig in [&by_device, &by_passkey] {
+            assert_eq!(sig.pq.len(), ML_DSA_PUBLIC_BYTES + ML_DSA_SIGNATURE_BYTES);
+            assert_eq!(sig.keys.pq(), Some(PqKey::MlDsa(ml_dsa_key(&sig.pq[..ML_DSA_PUBLIC_BYTES]))), "it brings its key");
+        }
+        assert!(Signed { edit: e.clone(), sigs: vec![by_passkey.clone(), by_device.clone()] }.verify().is_ok());
+        // a Touch ID key's: its Enclave's signature alone
+        let t = edit(touch.id(), vec![device.id()]);
+        let by_touch = touch.sign(t.id());
+        assert!(by_touch.pq.is_empty() && by_touch.enclave.is_some());
+        assert!(Signed { edit: t.clone(), sigs: vec![by_touch.clone(), device.sign(t.id())] }.verify().is_ok());
+        assert!(verify(touch.id(), EditId(consent_challenge(touch.id())), &touch.consent()));
+        assert!(verify(passkey.id(), EditId(consent_challenge(passkey.id())), &passkey.consent()));
+        // a changed byte of the signature, or of the key it brings, verifies nowhere
+        for at in [10, ML_DSA_PUBLIC_BYTES + 10] {
+            let mut bent = by_device.clone();
+            bent.pq[at] ^= 1;
+            assert!(!verify(device.id(), e.id(), &bent), "byte {at}");
+        }
+        // nor a signature cut short, or with the key alone
+        for len in [0, ML_DSA_PUBLIC_BYTES, ML_DSA_PUBLIC_BYTES + ML_DSA_SIGNATURE_BYTES - 1] {
+            let cut = Signature { pq: by_device.pq[..len].to_vec(), ..by_device.clone() };
+            assert!(!verify(device.id(), e.id(), &cut), "{len} bytes");
+        }
+        // another ML-DSA-65 key's signature brings a key that hashes to another signer
+        let thief = DeviceKey::from_secret_in([9; 32], Suite::MlDsa);
+        assert!(!verify(device.id(), e.id(), &Signature { pq: thief.sign(e.id()).pq, ..by_device.clone() }));
+        // a Touch ID key without an SLH-DSA key carries no other signature, and one with an SLH-DSA key never goes
+        // without it
+        let dressed = Signature { pq: device.sign(t.id()).pq, ..by_touch.clone() };
+        assert!(!verify(touch.id(), t.id(), &dressed));
+        let old = EnclaveKey::from_seed_in([1; 32], Suite::SlhDsa);
+        let bare = Signature { pq: vec![], ..old.sign(t.id()) };
+        assert!(!verify(old.id(), t.id(), &bare));
+    }
+
+    #[test]
+    fn a_signature_counts_in_its_own_signers_suite_alone() {
+        let (old, new) = (DeviceKey::from_secret_in([7; 32], Suite::SlhDsa), DeviceKey::from_secret_in([7; 32], Suite::MlDsa));
+        let e = edit(old.id(), vec![]);
+        let (slh, ml) = (old.sign(e.id()), new.sign(e.id()));
+        assert!(verify(old.id(), e.id(), &slh) && verify(new.id(), e.id(), &ml));
+        // one suite's signature under the other suite's keys: refused, whichever id it claims
+        for id in [old.id(), new.id()] {
+            assert!(!verify(id, e.id(), &Signature { pq: ml.pq.clone(), ..slh.clone() }));
+            assert!(!verify(id, e.id(), &Signature { pq: slh.pq.clone(), ..ml.clone() }));
+        }
+        // the old signer's keys naming the new key's hash as an SLH-DSA key are a third signer, and verify nothing
+        let SignerKeys::Device { ed25519, pq } = new.keys() else { unreachable!() };
+        let mixed = SignerKeys::Device { ed25519, pq: PqKey::Slh(*pq.bytes()) };
+        assert!(mixed.id() != old.id() && mixed.id() != new.id());
+        assert!(!verify(mixed.id(), e.id(), &Signature { keys: mixed, ..ml.clone() }));
+        // a hello and a statement, in either suite
+        let (exporter, endpoint) = ([1; 32], old.ed25519.verifying_key().to_bytes());
+        for key in [&old, &new] {
+            let hello = key.hello(&exporter, true);
+            assert_eq!(hello.verify(&exporter, true, &endpoint), Some(key.id()));
+            assert_eq!(verify_statement(&key.keys(), b"holdings", &key.state(b"holdings")), Some(key.id()));
+            assert_eq!(verify_statement(&key.keys(), b"other", &key.state(b"holdings")), None);
+        }
+        assert_eq!(new.hello(&exporter, true).sig.len(), ML_DSA_PUBLIC_BYTES + ML_DSA_SIGNATURE_BYTES);
+        let crossed = Hello { keys: old.keys(), sig: new.hello(&exporter, true).sig };
+        assert_eq!(crossed.verify(&exporter, true, &endpoint), None);
+        // an edit's ML-DSA-65 signature is no hello and no statement: another context
+        assert_eq!(Hello { keys: new.keys(), sig: ml.pq.clone() }.verify(&exporter, true, &endpoint), None);
+        assert_eq!(verify_statement(&new.keys(), &e.id().0, &ml.pq), None);
+    }
+
+    #[test]
+    fn one_ceremony_signs_as_its_passkey_in_either_suite() {
+        let (mut old, new) = (Passkey::from_seed_in([1; 32], Suite::SlhDsa), Passkey::from_seed_in([1; 32], Suite::MlDsa));
+        let device = new.device([5; 32]);
+        let e = edit(old.id(), vec![new.id()]);
+        // the ceremony that moves a passkey: its one PRF output derives both keys, so it signs as both
+        let ceremony = old.ceremony(e.id().0);
+        assert_eq!(ceremony.keys_in(old.public(), Suite::SlhDsa), old.keys());
+        assert_eq!(ceremony.keys_in(old.public(), Suite::MlDsa), new.keys());
+        assert_eq!(ceremony.keys_of(old.public(), old.id()), Some(old.keys()));
+        assert_eq!(ceremony.keys_of(old.public(), new.id()), Some(new.keys()));
+        assert_eq!(ceremony.keys_of(old.public(), device.id()), None, "its devices are no keys of its own");
+        let sigs = [old.keys(), new.keys()].map(|k| ceremony.sign(k, e.id()).expect("its signature"));
+        assert!(Signed { edit: e.clone(), sigs: sigs.to_vec() }.verify().is_ok(), "the old key signs the new in");
+        // in a batch, and on the edit adding a device, as in SLH-DSA's
+        let f = edit(new.id(), vec![]);
+        let mut batch = vec![e.id(), f.id()];
+        batch.sort();
+        let mut moved = Passkey::from_seed_in([1; 32], Suite::MlDsa);
+        let together = moved.ceremony(batch_challenge(&batch));
+        for id in &batch {
+            assert!(verify(new.id(), *id, &together.sign_in(new.keys(), *id, &batch).expect("its signature")));
+        }
+        let made = 1_791_500_000;
+        let unlock = moved.ceremony(pass_challenge(device.id(), made));
+        let adds = Edit {
+            parents: vec![],
+            depth: 0,
+            author: new.id(),
+            cosigners: vec![device.id()],
+            action: Action::Share(Sharing::Device { vault: VaultId::from_u64(1), device: device.id(), seal_to: None }),
+        };
+        let sig = unlock.sign_adding(new.keys(), adds.id(), device.id(), made).expect("the pass's signature");
+        assert!(Signed { edit: adds.clone(), sigs: vec![sig, device.sign(adds.id())] }.verify().is_ok());
+        // its pass is in its suite, read by its size, and names the passkey it is in that suite
+        let pass = unlock.pass_in(device.keys(), made, Suite::MlDsa).expect("a pass");
+        assert_eq!((pass.pq.suite(), pass.sig.len()), (Suite::MlDsa, ML_DSA_PUBLIC_BYTES + ML_DSA_SIGNATURE_BYTES));
+        assert!(pass.passkeys(made).contains(&new.id()) && !pass.passkeys(made).contains(&old.id()));
+        assert_eq!(moved.pass(device.keys(), made).pq, pass.pq, "a passkey passes in its own suite");
+        // a pass whose key claims the other suite is no pass
+        let claimed = RelayPass { pq: PqKey::Slh(*pass.pq.bytes()), ..pass.clone() };
+        assert!(claimed.passkeys(made).is_empty());
+        // another passkey's keys in ML-DSA-65's suite: its PRF output derives no such key
+        let theirs = Passkey::from_seed_in([2; 32], Suite::MlDsa).keys();
+        let SignerKeys::Passkey { pq, .. } = theirs else { unreachable!() };
+        assert!(ceremony.sign(SignerKeys::Passkey { p256: old.public(), pq }, e.id()).is_none());
+    }
+
+    #[test]
+    fn a_touch_id_ceremony_signs_as_its_key_in_either_suite() {
+        let (old, new) = (EnclaveKey::from_seed_in([1; 32], Suite::SlhDsa), EnclaveKey::from_seed_in([1; 32], Suite::MlDsa));
+        let e = edit(old.id(), vec![new.id()]);
+        let ceremony = old.ceremony(e.id().0);
+        assert!(ceremony.is_enclave_of(&old.keys()) && ceremony.is_enclave_of(&new.keys()));
+        assert!(!ceremony.is_enclave_of(&EnclaveKey::from_seed_in([2; 32], Suite::MlDsa).keys()));
+        assert!(!ceremony.is_enclave_of(&Passkey::from_seed_in([1; 32], Suite::MlDsa).keys()));
+        assert_eq!(ceremony.keys_in([0; 33], Suite::MlDsa), new.keys());
+        let sigs = [old.keys(), new.keys()].map(|k| ceremony.sign(k, e.id()).expect("its signature"));
+        assert_eq!((sigs[0].pq.len(), sigs[1].pq.len()), (PQ_SIGNATURE_BYTES, 0));
+        assert!(Signed { edit: e, sigs: sigs.to_vec() }.verify().is_ok(), "one touch signs as both");
+        // a passkey's ceremony is no Touch ID key's, in either suite
+        let mut passkey = Passkey::from_seed_in([1; 32], Suite::MlDsa);
+        assert!(!passkey.ceremony([1; 32]).is_enclave_of(&new.keys()));
     }
 }

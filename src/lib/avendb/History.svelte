@@ -3,8 +3,8 @@
 	logs, in the layout every avenDB view has (./Frame.svelte). On the left a search of the edits, those that concern
 	the vault or all of them, and their kinds (writes and marks, keys, shares, vaults and devices), each with its count;
 	in the middle the edits found, newest first, each with its place in the order the browser took them, what it does
-	in words, who signed it and how (an SLH-DSA signature, post-quantum, on every edit, and a passkey's WebAuthn
-	assertion beside its own), its causal depth and its size; on the right the edit picked, every field and signature,
+	in words, who signed it and how (a post-quantum signature on every edit, SLH-DSA or, since the key move, ML-DSA-65,
+	and a passkey's WebAuthn assertion beside its own), its causal depth and its size; on the right the edit picked, every field and signature,
 	who stands behind it and the edits it builds on, each to pick in turn. What an edit seals, a write's body, a cap's
 	slice or a key's boxes, shows by its size alone, as avenDB's server sees it; a cap's slice shows in words where this
 	browser reads it. A write the ops of the caps it relies on don't allow, or that builds on one, says so: no reader of
@@ -70,7 +70,9 @@
 		return sig.webauthn === 'batch' ? `${kind}, one for ${sig.batch}` : sig.webauthn === 'pass' ? `${kind} pass` : kind;
 	};
 	/** what a passkey's assertion or a Touch ID key's Secure Enclave signature shows */
-	const PRESENCE = 'Its passkey’s WebAuthn assertion or its Mac’s Touch ID signature: a person was there. Only the SLH-DSA signature counts';
+	const PRESENCE = 'Its passkey’s WebAuthn assertion or its Mac’s Touch ID signature: a person was there. Only the post-quantum signature counts';
+	/** a signature's post-quantum algorithm, as its chip names it; an older device's history names none @param {import('./db.js').SigView} sig */
+	const alg = (sig) => sig.alg ?? 'SLH-DSA';
 	/** how a signer's kind reads */
 	const BY = { device: 'device', passkey: 'passkey', touch: 'Touch ID key' };
 	/** why the device doesn't count a write */
@@ -169,7 +171,7 @@
 			{#each picked.sigs as sig, i (i)}
 				<li>
 					<b>{s.signer(sig.signer)}</b>, its {BY[sig.by] ?? sig.by}:
-					<span class="chip ok">SLH-DSA, {size(sig.pq)}</span>
+					<span class="chip ok">{alg(sig)}, {size(sig.pq)}</span>
 					{#if sig.webauthn}<span class="chip" title={PRESENCE}>{webauthn(sig)}</span>{/if}
 				</li>
 			{/each}
@@ -238,7 +240,7 @@
 							<td>{signers(e)}</td>
 							<td><span class="sigs">
 								{#each e.sigs as sig, i (i)}
-									<span class="chip ok" title="SLH-DSA: post-quantum">SLH-DSA {size(sig.pq)}</span>
+									<span class="chip ok" title="{alg(sig)}: post-quantum">{alg(sig)} {size(sig.pq)}</span>
 									{#if sig.webauthn}<span class="chip" title={PRESENCE}>{webauthn(sig)}</span>{/if}
 								{/each}
 							</span></td>

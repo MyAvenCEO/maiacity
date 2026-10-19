@@ -26,7 +26,10 @@ use crate::rules::{
     MAX_VALUES,
 };
 use crate::sealed::{Brought, FileKey, FileRoot};
-use crate::sign::{self, Assertion, EnclaveSig, Hello, RelayPass, Signature, SignerKeys, Signed, WebAuthn};
+use crate::sign::{
+    self, Assertion, EnclaveSig, Hello, PqKey, RelayPass, Signature, SignerKeys, Signed, Suite, WebAuthn,
+    PQ_SIGNATURE_BYTES,
+};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use crate::sync::{Ask, LogId, Place};
 
@@ -861,23 +864,30 @@ impl Decode for Edit {
     }
 }
 
+/// A device's keys after a 0, a passkey's after a 1 and a Touch ID key's after a 2, as each was in SLH-DSA's suite
+/// before the key move; in ML-DSA-65's, a device's after a 3, a passkey's after a 4, and a Touch ID key's, its Enclave's
+/// key alone, after a 5.
 impl Encode for SignerKeys {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
-            SignerKeys::Device { ed25519, slh } => {
-                out.push(0);
+            SignerKeys::Device { ed25519, pq } => {
+                out.push(if pq.suite() == Suite::SlhDsa { 0 } else { 3 });
                 ed25519.encode(out);
-                slh.encode(out);
+                pq.bytes().encode(out);
             }
-            SignerKeys::Passkey { p256, slh } => {
-                out.push(1);
+            SignerKeys::Passkey { p256, pq } => {
+                out.push(if pq.suite() == Suite::SlhDsa { 1 } else { 4 });
                 p256.encode(out);
-                slh.encode(out);
+                pq.bytes().encode(out);
             }
-            SignerKeys::Enclave { mldsa, slh } => {
+            SignerKeys::Enclave { mldsa, slh: Some(slh) } => {
                 out.push(2);
                 mldsa.encode(out);
                 slh.encode(out);
+            }
+            SignerKeys::Enclave { mldsa, slh: None } => {
+                out.push(5);
+                mldsa.encode(out);
             }
         }
     }
@@ -886,9 +896,12 @@ impl Encode for SignerKeys {
 impl Decode for SignerKeys {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
-            0 => Ok(SignerKeys::Device { ed25519: r.array()?, slh: r.array()? }),
-            1 => Ok(SignerKeys::Passkey { p256: r.array()?, slh: r.array()? }),
-            2 => Ok(SignerKeys::Enclave { mldsa: r.array()?, slh: r.array()? }),
+            0 => Ok(SignerKeys::Device { ed25519: r.array()?, pq: PqKey::Slh(r.array()?) }),
+            1 => Ok(SignerKeys::Passkey { p256: r.array()?, pq: PqKey::Slh(r.array()?) }),
+            2 => Ok(SignerKeys::Enclave { mldsa: r.array()?, slh: Some(r.array()?) }),
+            3 => Ok(SignerKeys::Device { ed25519: r.array()?, pq: PqKey::MlDsa(r.array()?) }),
+            4 => Ok(SignerKeys::Passkey { p256: r.array()?, pq: PqKey::MlDsa(r.array()?) }),
+            5 => Ok(SignerKeys::Enclave { mldsa: r.array()?, slh: None }),
             _ => Err(WireError::Unknown),
         }
     }
@@ -1072,9 +1085,12 @@ impl Decode for Hello {
     }
 }
 
+/// The passkey's post-quantum key, its assertion, its signature, the device and when it was made. The key's 32 bytes
+/// say no suite; its signature does, by its size: SLH-DSA's is `PQ_SIGNATURE_BYTES` long, any other is ML-DSA-65's
+/// key and signature.
 impl Encode for RelayPass {
     fn encode(&self, out: &mut Vec<u8>) {
-        self.slh.encode(out);
+        self.pq.bytes().encode(out);
         self.assertion.encode(out);
         self.sig.encode(out);
         self.device.encode(out);
@@ -1084,8 +1100,9 @@ impl Encode for RelayPass {
 
 impl Decode for RelayPass {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        let (slh, assertion, sig) = (r.array()?, Assertion::decode(r)?, r.bytes()?);
-        Ok(RelayPass { slh, assertion, sig, device: SignerKeys::decode(r)?, made: u64::decode(r)? })
+        let (key, assertion, sig) = (r.array()?, Assertion::decode(r)?, r.bytes()?);
+        let pq = if sig.len() == PQ_SIGNATURE_BYTES { PqKey::Slh(key) } else { PqKey::MlDsa(key) };
+        Ok(RelayPass { pq, assertion, sig, device: SignerKeys::decode(r)?, made: u64::decode(r)? })
     }
 }
 
@@ -1396,6 +1413,47 @@ mod tests {
         let mut other = bytes.clone();
         other[at] = 3;
         assert_eq!(Signature::from_wire(&other), Err(WireError::Unknown));
+    }
+
+    #[test]
+    fn an_ml_dsa_65_signer_reads_back_on_a_tag_of_its_own() {
+        use crate::sign::{EnclaveKey, Passkey};
+        let w = world();
+        let edit = w.lab.log(w.mac_a).edits()[0].clone();
+        let (slh, ml) = (Suite::SlhDsa, Suite::MlDsa);
+        // each kind in each suite, its tag first: a signer made before the key move keeps its bytes
+        let keys = [
+            (DeviceKey::from_secret_in([3; 32], slh).keys(), 0, 65),
+            (Passkey::from_seed_in([1; 32], slh).keys(), 1, 66),
+            (EnclaveKey::from_seed_in([1; 32], slh).keys(), 2, 65),
+            (DeviceKey::from_secret_in([3; 32], ml).keys(), 3, 65),
+            (Passkey::from_seed_in([1; 32], ml).keys(), 4, 66),
+            (EnclaveKey::from_seed_in([1; 32], ml).keys(), 5, 33),
+        ];
+        for (k, tag, len) in keys {
+            let bytes = k.to_wire();
+            assert_eq!((bytes[0], bytes.len()), (tag, len), "{k:?}");
+            assert_eq!(SignerKeys::from_wire(&bytes), Ok(k));
+        }
+        assert_eq!(SignerKeys::from_wire(&[&[6], &[0; 64][..]].concat()), Err(WireError::Unknown));
+        // their signatures, a hello and a pass
+        let device = DeviceKey::from_secret_in([3; 32], ml);
+        let mut passkey = Passkey::from_seed_in([1; 32], ml);
+        let touch = EnclaveKey::from_seed_in([1; 32], ml);
+        for sig in [device.sign(edit.id()), passkey.sign(edit.id()), touch.sign(edit.id())] {
+            assert_eq!(Signature::from_wire(&sig.to_wire()), Ok(sig));
+        }
+        let hello = device.hello(&[5; 32], true);
+        assert_eq!(Hello::from_wire(&hello.to_wire()), Ok(hello));
+        // a pass says its suite by its signature's size
+        let made = 1_791_500_000;
+        for suite in [slh, ml] {
+            let mut passkey = Passkey::from_seed_in([1; 32], suite);
+            let pass = passkey.pass(DeviceKey::from_secret_in([3; 32], suite).keys(), made);
+            let read = RelayPass::from_wire(&pass.to_wire()).expect("a pass");
+            assert_eq!((read.pq.suite(), &read), (suite, &pass));
+            assert!(read.passkeys(made).contains(&passkey.id()));
+        }
     }
 
     #[test]
@@ -1735,7 +1793,7 @@ mod tests {
         let body = Statement::body(mac.id(), stated.checked, &stated.logs, &stated.files);
         assert!(!crate::sign::verify(mac.id(), edit, &Signature { pq: mac.state(&body), ..mac.sign(edit) }));
         // a passkey's keys prove no statement
-        let passkey = SignerKeys::Passkey { p256: [2; 33], slh: [1; 32] };
+        let passkey = SignerKeys::Passkey { p256: [2; 33], pq: PqKey::Slh([1; 32]) };
         assert_eq!(Statement { keys: passkey, ..stated.clone() }.verify(), None);
         // logs or files out of order
         let swapped = Statement { logs: stated.logs.iter().rev().cloned().collect(), ..stated.clone() };
