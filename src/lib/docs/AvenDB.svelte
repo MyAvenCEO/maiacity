@@ -32,7 +32,8 @@
 				['shares', 'Shares'],
 				['audiences', 'Audiences and keys'],
 				['schemas', 'Schemas and lenses'],
-				['ops', 'JSON ops']
+				['ops', 'JSON ops'],
+				['code', 'Code in a box']
 			]
 		],
 		[
@@ -278,7 +279,7 @@
 
 	// the one rule a share rests on another by, case by case
 	const passing = [
-		['A COOP shares with its aven', 'Maia City gives avenMAIA Editor', 'Maia City gives a share over itself, resting on none'],
+		['A COOP shares with its aven', 'Maia City gives avenMAIA Suggester', 'Maia City gives a share over itself, resting on none'],
 		['A COOP passes a share on to a machine it runs', 'Maia City passes a share on to its render machine', 'Maia City owns the machine’s device vault'],
 		['A COOP passes a share on to its aven', 'Maia City passes on a share another COOP gave it', 'Maia City owns avenMAIA'],
 		['An Owner of a slice shares it on', 'Whoever holds Owner on the todos tagged garden shares them with Bob', 'It rests on an Owner share']
@@ -295,17 +296,28 @@
 
 	const kinds = [
 		['Genesis', 'A new vault: its kind, owners, threshold and root', 'Its vault'],
-		['Settings', 'How many owners must approve, or handing the root passkey on', 'The vault'],
+		[
+			'Settings',
+			'How many owners must approve, or a human vault’s root: the passkey that approves alone, set or cleared by the vault’s approval',
+			'The vault'
+		],
 		['Share', 'A share, an owner or a device', 'Its own log, or the vault’s for owners and devices'],
 		['Revoke', 'Ends any of them', 'The same log as what it ends'],
 		['Write', 'An encrypted change of one entry, and the files it brings', 'The entry'],
 		['Mark', 'Which shares pick an entry, and which keep shares want it', 'The entry'],
-		['Keys', 'Sealed boxes of one key, for exactly who may open it', 'The key’s family'],
+		[
+			'Keys',
+			'Boxes of one key, sealed or wrapped for exactly who may open it; a key Everyone may read goes in the clear',
+			'The key’s family: its vault’s, share’s, audience’s or entry’s'
+		],
 		['Claim', 'A newcomer’s vault takes an invite share, signed with the invite’s key', 'The share’s log']
 	];
 
 	const merges = [
-		['Text', 'Character by character: both insertions stay, in the same order on every device.'],
+		[
+			'Text (a field its schema marks as text: a block’s text, a todo’s notes)',
+			'Character by character: both insertions stay, in the same order on every device.'
+		],
 		[
 			'A list of records (a note’s blocks, a checklist)',
 			'Rows are matched by their id: rows added on two devices both stay, and a row moved or removed is that row and no other.'
@@ -315,7 +327,8 @@
 			'The same at any depth: each list is a container of its own in the row that holds it. A row moved within its list keeps an edit made to it meanwhile; a row moved to another list is deleted and added anew, so such an edit is lost.'
 		],
 		['One row id added on two devices', 'Both rows stay, each with the rows under it, and apps show the first.'],
-		['Any other field', 'One value wins, and it is the same one on every device.']
+		['A list of values (a record’s tags)', 'Item by item: what either device inserts or deletes holds on both.'],
+		['Any other field, a title or a number', 'One value wins, and it is the same one on every device.']
 	];
 
 	const lines = [
@@ -330,7 +343,7 @@
 		],
 		[
 			'Put it in an AIP',
-			'Every change is put to a vault the same way, whatever entries it touches: an AIP, an Aven Improvement Proposal, names proposals on the vault’s entries, of any types, with a title and a note on why. Promoted, it takes the vault’s next number, AIP-1, AIP-2, and one owner’s review answers every proposal in it at once: accepted merges them all into main, declined or withdrawn merges nothing, and revise sends it back as an idea that keeps its number. What it changes is read off its proposals through each entry’s schema, never typed. Each merge still counts on its own, so a device that holds only some of them shows only those.'
+			'Every change is put to a vault the same way, whatever entries it touches: an AIP, an Aven Improvement Proposal, names proposals on the vault’s entries, of any types, with a title and a note on why. Promoted, it takes the vault’s next number as the device counts them, AIP-1, AIP-2; two promoted apart on one number read as AIP-3 and AIP-3.2. One owner’s review answers every proposal in it at once, and a review that names the versions it saw is refused if any moved since: accepted merges them all into main, declined or withdrawn merges nothing, and revise sends it back as an idea that keeps its number. What it changes is read off its proposals through each entry’s schema, never typed. Each merge still counts on its own, so a device that holds only some of them shows only those.'
 		],
 		['Update from main', 'The same merge the other way: brings what main gained since into the proposal.'],
 		['Restore', 'Puts back any older version, as a new write.'],
@@ -344,13 +357,13 @@
 		],
 		[
 			'Make a copy',
-			'A new note, in this vault or another, with the line’s content and tags. Its first edit names this note and the version it came from by the hashes of its edits, so its history goes on into this one’s.'
+			'A new entry, in this vault or another, with what the line shows now and its tags. A copy of a document, a spark or an article names this entry and that version in its first edit, by the hashes of its edits, so its history goes on into this one’s.'
 		]
 	];
 
 	const who = [
 		[
-			'A vault: a person, a COOP, an aven or an agent',
+			'A vault: a person, a COOP, an aven or a machine’s device vault',
 			'It reaches every device that acts for that vault, so a new phone needs no new share.'
 		],
 		['Everyone', 'Read only. Its key is published in the clear, and it goes only to devices with a reason to ask.'],
@@ -361,7 +374,12 @@
 	const groups = [
 		['Owner', 'Owner', 'Everything, and share on', 'Co-owners, on the whole vault; anyone, on a slice'],
 		['Editor', 'Write', 'Read, create, set, tag, propose, merge', 'Someone who works on the entries'],
-		['Suggester', 'Write', 'Read, propose and draft new entries; set and merge on proposals', 'A reviewer: main changes only when an editor merges'],
+		[
+			'Suggester',
+			'Write',
+			'Read, propose and draft new entries; set and merge on proposals',
+			'Someone who proposes: main changes only once one of the vault’s owners accepts'
+		],
 		['Viewer', 'Read', 'Read', 'A reader'],
 		['Public', 'Read', 'Read, for Everyone', 'Anything published: its key goes out in the clear'],
 		['Backup', 'Backup', 'Keep the ciphertext, read nothing', 'The server, by default'],
@@ -420,9 +438,11 @@
   "notes": [{ "vault": "…", "entry": "…",
               "empty": "NoEntry", "why": "…" }] }`;
 
-	const ANSWER = `{ "ok": { "rows": [{ "entry": "…", "type": "todo", "tags": ["garden"],
-                    "record": { "title": "Water the figs", "status": "doing" } }],
-          "count": 1 } }
+	const ANSWER = `{ "ok": { "rows": [{ "entry": "…", "vault": "…", "type": "todo", "tags": ["garden"],
+                    "created": …, "author": "…", "schema": "…", "readOnly": false,
+                    "record": { "title": "Water the figs", "status": "doing" },
+                    "cut": false }],
+          "count": 1, "plan": …, "depth": 16 } }
 
 { "refused": "NotAllowed",
   "why": "the ops of the shares the vault acts through don't allow what it does" }
@@ -492,6 +512,38 @@
 		'define_group',
 		'redefine_group',
 		'share_group'
+	];
+
+	// the boxes code from a vault runs in: what each runs, where, and what it may and may not reach
+	const boxes = [
+		[
+			'Asset box',
+			'A recipe: an asset’s file, from a vault',
+			'A worker in a hidden frame with no origin',
+			'Three.js and four of its add-ons, its file and params; 20 seconds a build',
+			'The network, storage, cookies, the page, avenDB'
+		],
+		[
+			'Logic',
+			'A flow’s functions; a view’s logic, which no view shown has yet',
+			'QuickJS, in a worker in a hidden frame with no origin',
+			'The JSON it is handed; 8 MB and a set amount of work a call',
+			'Anything else: it is given no function of the host'
+		],
+		[
+			'View frame',
+			'Our view engine alone, drawing a view’s cleaned HTML',
+			'A frame with no origin, in its place on the page',
+			'Its own DOM, the maia-* components, pictures from data: and blob:, its port to the page',
+			'The network, storage, cookies, the page, popups, forms'
+		],
+		[
+			'View worker',
+			'A view’s own script',
+			'A worker the view engine starts in the frame',
+			'A stand-in DOM, up to eight canvases, Three.js, d3, the MCP Apps client, and eight MCP Apps messages to the page',
+			'The network, storage, the frame’s real DOM, the page, tools, resources, links'
+		]
 	];
 
 	const messages = [
@@ -1094,11 +1146,12 @@
 				</table>
 			</div>
 			<p class="prose-col">
-				Each edit names its log’s latest edits, the frontier, as its parents, so every log is a small graph of hashes: no
-				edit can be changed, dropped or put in another order without every device noticing. Every device replays the edits
-				it holds in one order, so concurrent edits settle the same way everywhere. A removal, such as a revocation, names
-				the edits it had seen. An edit it hadn’t seen that relied on what it took away is cut, so nobody can backdate an
-				edit around it.
+				Each edit names its log’s latest edits, the frontier, as its parents, so every log is a small graph of hashes:
+				changing an edit changes its hash, so the edits after it no longer name it. An edit whose parents a device lacks
+				waits until they arrive, and two edits one device signed on the same past are flagged as a fork. Every device
+				replays the edits it holds in one order, so concurrent edits settle the same way everywhere. A removal, such as a
+				revocation, names the edits it had seen. An edit it hadn’t seen that relied on what it took away is cut, so
+				nobody can backdate an edit around it.
 			</p>
 		</section>
 
@@ -1106,7 +1159,8 @@
 			<p class="eyebrow">Entries and the CRDT</p>
 			<h2>Every entry merges</h2>
 			<p class="prose-col">
-				An entry is one note, todo, article, file, card or profile. Its type and tags travel encrypted inside its writes. Each entry
+				An entry is one record of any type: a note, a todo, an article, a story, a spark, a post, a file, a card, a
+				profile, a schema or any other. Its type and tags travel encrypted inside its writes. Each entry
 				is a Loro document, a CRDT: any device changes its own copy at any time, and two devices that hold the same writes
 				read the same entry, whatever order the writes arrived in.
 			</p>
@@ -1170,18 +1224,20 @@
 				that starts from any version, so a change can be tried and reviewed without touching main. A variant is a line that
 				stays beside main and follows it, as breeds of one animal do: each merge into main comes into it, and it keeps its
 				own where both changed one place. A draft is a new entry on a proposal of its own: main holds nothing of it
-				until its vault merges it, and only the vault can. A copy is a new note made from any version; it keeps its link to this history,
-				and the original lists its copies.
+				until its vault merges it, and only the vault can. A copy is a new entry made from what a line shows now; a copy
+				of a document, a spark or an article keeps its link to this history, and the original lists its copies.
 			</p>
 			<p class="prose-col">
-				Each proposal merged into main makes main's next version: the create is v1, the first merge v2, and so on. The
-				numbers come from the history alone, so every device reads the same ones, and they never change. A version
-				between two merges reads as "v3 + 2 edits". Each variant counts its own: "Silkie v3". A link to one version stores only hashes, the entry's id and the
-				version's edits, and is labelled from avenDB: "Crawler excavator v4 · 01627d33…".
+				Each proposal merged into main makes main’s next version: the create is v1, the first merge v2, and so on. The
+				numbers come from the history alone, so every device reads the same ones, and they never change. Two merges made
+				apart share a number, and the next counts past both. A version between two merges reads as "v3 + 2 edits". Each
+				variant counts its own: "Silkie v3". A link to one version stores only hashes, the entry’s id and the version’s
+				edits, and is labelled from avenDB: "Crawler excavator v4 · 01627d33…", with the line’s name after the number
+				where it isn’t main: "Chicken v4 · Silkie · 01627d33…".
 			</p>
 			<p class="prose-col">
 				An asset is one entry with this history. Its first version is created together with its file. Each later version
-				is a proposal whose one write holds both the new record and its file, and the merge makes it main's next version.
+				is a proposal whose one write holds both the new record and its file, and the merge makes it main’s next version.
 				Each variant, a goat breed say, is a line beside main: after main moves on, the variant writes its own record and
 				file. Readers find every version by the write that brought its file.
 			</p>
@@ -1231,10 +1287,12 @@
 			<p class="eyebrow">Shares</p>
 			<h2>A share says who may do what, on which entries</h2>
 			<p class="prose-col">
-				Every permission in avenDB is a share: <b>who</b>, at which <b>level</b>, on <b>what</b>. People, COOPs, avens and
-				their agents, Everyone, the server and each of your own devices are given shares. On the wire, a vault’s owners and
-				its devices are shares too, so the device lists them with every other share, and Revoke ends any of them. Every
-				device checks every write against the shares its author relies on, so a write no share allows counts for no one.
+				Every permission in avenDB is a share: <b>who</b>, at which <b>level</b>, on <b>what</b>. People, COOPs, avens,
+				the machines a vault runs, Everyone, an invite and each of your own devices are given shares. The server and an
+				aven’s agents hold none of their own: each is a device of an aven, the server of avenMAIA, and acts by that
+				aven’s shares. On the wire, a vault’s owners and its devices are shares too, so the device lists them with every
+				other share, and Revoke ends any of them. Every device checks every write against the shares its author relies
+				on, so a write no share allows counts for no one.
 			</p>
 			<div class="table">
 				<table>
@@ -1252,8 +1310,9 @@
 				<b>What</b> is everything in the vault, or a selector over an entry’s labels: its type, the vault that created it,
 				its id, when it was created, and its tags. Tags change, so a share reaches every entry tagged so, now and later. A
 				share is also a group of JSON ops, and its <b>level</b> is the class of its strongest op. It carries its own ops, or
-				names a cap group the vault defines. In the app, one Share form makes every share, wherever a page offers to share,
-				and a vault’s Sharing page is the one place that says who has it.
+				names a cap group the vault defines. In the app, one Share form makes a share wherever a page offers to share; an
+				invite, a stage made public, the answer to an access request and each device’s copy setting are made where they
+				happen. A vault’s Sharing page is the one place that says who has it.
 			</p>
 			<figure>
 				<pre><code>{SHARE}</code></pre>
@@ -1264,8 +1323,9 @@
 				<code>["nodes", "*", "kids", "*", "text"]</code> is the text of any row under any node. An op on a row covers
 				everything under it. The Share form offers every field of the schema at any depth, in words, and each list of
 				rows to add to, delete from or reorder. A merge op may name a place too: a tuner that may merge
-				<code>["params", "*", "default"]</code> into main merges a proposal that only changes the defaults of the params,
-				and not one that also changes the code.
+				<code>["params", "*", "default"]</code> into main merges, once the vault has accepted it, a proposal that only
+				changes the defaults of the params, and not one that also changes its source. Any merge into main through a share
+				counts only on top of the vault’s accept, and brings in only what was accepted.
 			</p>
 			<div class="table">
 				<table>
@@ -1280,35 +1340,43 @@
 				</table>
 			</div>
 			<p class="prose-col">
-				The selector, the name and the ops travel sealed, to the vault, the holder and whoever gave the share. In the clear
-				a share shows only who holds it and at which level, so the server learns nothing of what it picks or allows. A
-				share may rest on another, and a chain of shares allows only what every share of it allows.
+				The selector, the name and the ops travel sealed, to the vault, the holder if it may read, and whoever gave the
+				share; a share to Everyone or to an invite carries them in the clear. In the clear a share shows the vault it is
+				over, who holds it, its level, whether it covers the whole vault, the share it rests on, who gave it and the cap
+				group it names, so the server learns nothing of what a sealed share picks or allows. A share may rest on another,
+				and a chain of shares allows only what every share of it allows.
 			</p>
 			<h3>Cap groups</h3>
 			<p class="prose-col">
 				A cap is one op over one slice. A cap group is an entry of its vault with a name, its caps, and the groups it
 				includes. A share of a cap group names the group and holds no copy of its ops, so a new version of the group reaches
-				every share naming it at once. Revoke ends one share. To narrow what many hold, change the group. Owner, Editor,
-				Suggester and Viewer are fixed in the engine. Maia City defines Traveler (read the games, worlds and asset recipes),
-				Citizen (Traveler and the MaiaCity V1 moves) and Admin. A group share’s level is what its caps need, and it never
-				grants an op above that level, whatever a later version of the group says.
+				every share naming it at once. Every share over a vault picks its cap groups, so whoever reads anything of it
+				judges each write alike. Revoke ends one share. To narrow what many hold, change the group. Owner, Editor,
+				Suggester and Viewer are fixed in the engine. Maia City defines Traveler (read its games, asset recipes, views,
+				logic and configs), Citizen (Traveler, and read every entry of MaiaCity V1; V1’s moves still run on maiaCITY’s
+				API, so none of them is a cap yet) and Admin (Citizen, and read all of Maia City). A group share’s level is what
+				its caps need, and it never grants an op above that level, whatever a later version of the group says.
 			</p>
 			<h3>Invites, and who the server takes</h3>
 			<p class="prose-col">
-				An owner of Maia City signs a group share to a one-time invite key, and the invite link carries the share and the
-				key. At sign-up the newcomer’s new vault claims it, signed with that key, and the share is theirs: no owner taps
-				anything. A claimed invite can’t be claimed again. With its gate on, the server takes a new human vault only
-				together with the invite it claims, and a new COOP or aven only where an admin owns it: Maia City, an owner
-				of it, or a holder of its Admin cap group. Anyone
-				may still make a vault on their own devices, but the server keeps none it hasn’t taken.
+				A device that acts for Maia City gives a Traveler group share to a one-time invite key, with no passkey prompt,
+				and the invite link carries the share and the key after its <code>#</code>. At sign-up the newcomer’s new vault
+				claims it, signed with that key, and the share is theirs: no owner taps anything. A claimed invite can’t be
+				claimed again. maiaCITY’s API signs the newcomer up on the same link: it asks avenDB’s server whether that
+				invite is still open, and takes each one once. The server’s gate is off unless it is started with it. With its
+				gate on, the server takes a new human vault only once it holds a share of Maia City, as the invite it claims
+				gives it, or owns Maia City; a new COOP or aven only where an admin owns it: Maia City, an owner of it, or a
+				holder of its Admin cap group; and a machine’s device vault always. Anyone may still make a vault on their own
+				devices, but the server keeps none it hasn’t taken.
 			</p>
 			<h3>Passing a share on</h3>
 			<p class="prose-col">
-				A share may rest on a share its giver holds over the same vault. It must be no stronger than that share, and
-				cover the whole vault only if that share does. And one of two things must be true: the share it rests on is an
-				Owner share, which lets its holder share on with anyone; or the new share goes to a vault its giver owns. This
-				one rule covers every case. The second part is safe because an owner added every key of the vault it owns and
-				can remove each one, so what it passes on goes nowhere it can’t take back.
+				A share may rest on a share its giver holds over the same vault, one still live and not a keep share. It must be
+				no stronger than that share, and cover the whole vault only if that share does. And one of two things must be
+				true: the share it rests on is an Owner share, which lets its holder share on with anyone; or the new share goes
+				to a vault its giver owns directly. This one rule covers every case. The second part is safe because an owner
+				added every key of the vault it owns and can remove each one, so what it passes on goes nowhere it can’t take
+				back.
 			</p>
 			<div class="table">
 				<table>
@@ -1322,17 +1390,26 @@
 					</tbody>
 				</table>
 			</div>
+			<p class="prose-col">
+				Some shares are never made: one from a vault to itself, one to Everyone beyond Read, Owner to an invite, and
+				Owner on a whole vault, which is a co-owner and comes only with the vault’s approval and the newcomer’s consent.
+				Giving or ending an Owner share on a slice takes the approval of the vault that does it, and a vault’s last owner
+				can’t be removed.
+			</p>
 			<h3>Owners and devices</h3>
 			<p class="prose-col">
 				An owner is “Owner on Everything”: a co-owner who approves changes to the vault. Only signers own a human vault:
-				its person’s passkeys, and the master recovery key it is founded with. An aven and a device vault take exactly
-				one owner. An Owner share on a slice, one todo or one tag, is something else: its holder may share that slice on.
-				A device “acts for” its vault: it writes as the vault and approves nothing.
+				its person’s passkeys, a Mac’s Touch ID key, and the master recovery key it is founded with. Its root, the
+				passkey it is founded with, approves any change alone. The vault’s approval, with the new root signing too, sets
+				another root, or none, and in a clash between owners the root ranks as any owner. An aven and a device vault
+				take exactly one owner. An Owner share on a slice, one todo or one tag, is something else: its holder may share
+				that slice on. A device “acts for” its vault: it writes as the vault and approves nothing.
 			</p>
 			<h3>Keep shares: what each of your devices syncs</h3>
 			<p class="prose-col">
-				A keep share goes from your vault to one of your own devices, by the same selector as any share. It grants nothing:
-				it says what that device syncs, and whether it keeps files whole.
+				A keep share goes from your vault to one of your own devices, by the same selector as any share, over your vault,
+				or over another your vault holds a share of at Backup or more. It grants nothing: it says what that device
+				syncs, and whether it keeps files whole.
 			</p>
 			<div class="table">
 				<table>
@@ -1347,11 +1424,20 @@
 				</table>
 			</div>
 			<p class="prose-col">
-				Each device also has one copy setting, a keep share over everything it may read: a full copy keeps every entry and
-				file whole, a light copy syncs every entry and fetches a file only when it is opened. You pick it when the device
-				joins, the desktop app full and any browser light by default, and change it in Owners and devices. With neither, the
-				server keeps every file whole and any other device fetches pieces as it reads them. A keep share always brings the
-				vault’s schemas along. Only the vault that made it can end it, so nobody else can force your phone to sync more.
+				Each device also has one copy setting, a keep share over its whole vault that also stands for every other vault
+				it syncs and has no keep share over: a full copy keeps every entry and file whole, a light copy syncs every entry
+				and fetches a file only when it is opened. You pick it when the device joins, the desktop app full and any
+				browser light by default, and change it in Owners and devices; the app makes no other keep share yet. With
+				neither, the server keeps every file whole and any other device fetches pieces as it reads them. A keep share
+				that syncs anything always brings the vault’s schemas, lenses and cap groups along. Only the vault that made it
+				can end it, so nobody else can force your phone to sync more.
+			</p>
+			<h3>All your vaults, now and later</h3>
+			<p class="prose-col">
+				A standing grant gives another vault a built-in group below Owner on the whole of your own vault. Every vault
+				yours owns gives it the same, and so does each vault founded under you later; an aven or a device vault gives
+				none that reads, as each serves its one owner alone. Revoking it ends it in every vault it reached, and no vault
+				founded after follows it.
 			</p>
 			<h3>The server: Backup or Relay</h3>
 			<p class="prose-col">
@@ -1374,9 +1460,12 @@
 			<h2>One key for what the same shares pick</h2>
 			<p class="prose-col">
 				Entries are not encrypted with one key each, nor with one key for the whole vault. Each entry carries, in the
-				clear, its audience: the list of shares that pick it. An audience has one key per epoch, and each entry’s key is
-				derived from it. Share the todos tagged garden with Bob as an Editor, and every todo tagged garden has the audience
-				“that share”. Bob gets its key once.
+				clear, its audience: the shares that pick it by their selectors. A share over the whole vault reaches every
+				audience of it without being named, and a keep share is never in one. An audience has one key per epoch, and
+				each entry’s key is derived from it. Share the todos tagged garden with Bob as an Editor, and every todo tagged
+				garden has the audience “that share”. Bob gets its key once. An entry created through a share starts in that
+				share’s own audience, so its maker reads what it made, until a device of the vault’s own marks it into the
+				audience its labels call for.
 			</p>
 			<p class="prose-col">
 				Tag another todo garden and a device of the vault’s own marks it into that audience, with a link that lets its
@@ -1386,7 +1475,8 @@
 			<p class="prose-col">
 				The audience is in the clear for a reason. The server reads no selector, type or tag, yet it checks every write:
 				the mark on each entry tells it which shares may write there. The marks provably mean what the shares say, so the
-				server decides every edit exactly as an owner would.
+				server lets through and keeps exactly the edits an owner would. Whether a write’s content fits its ops and its
+				schema, only its readers judge.
 			</p>
 			<div class="table">
 				<table>
@@ -1401,8 +1491,9 @@
 				</table>
 			</div>
 			<p class="note prose-col">
-				Keys are derived inside the vault and wrapped only across a trust boundary. Every key sent to a person or a device
-				is sealed with X-Wing and Classic McEliece together. Backup and Relay shares get no key at all.
+				Keys are derived inside the vault. Where the sealer already holds the key a box goes to, it wraps the key under
+				it, with no public key at all; every other box, as one to a person or a device, is sealed with X-Wing and
+				Classic McEliece together. A key Everyone may read goes in the clear. Backup and Relay shares get no key at all.
 			</p>
 		</section>
 
@@ -1413,7 +1504,8 @@
 				Every record has a schema: a JSON Schema, named by its hash. When a schema changes, a lens says how a record of one
 				version reads as the other, both ways. No record is ever migrated: an edit stays in the version it was written in,
 				each app reads through the lens in its own version, and its edits go back as only what changed. So an old app and
-				a new one edit the same todo side by side.
+				a new one edit the same todo side by side. An app follows one lens: an entry written under its own version and at
+				most one other, with a lens between them, opens to edit, and anything else opens read-only.
 			</p>
 			<div class="codes">
 				<figure>
@@ -1458,8 +1550,9 @@
 				<li>
 					<b>avenDB’s own schemas ship with every app</b>: documents, todos, articles, stories, sparks, artifacts, artworks, flows,
 					functions, posts, reviews, bundles of proposals, policies, AIPs, access requests, cap groups, the code entries (recipes, views and logic: their
-					source, the engine they run on, a manifest of the names they use, their params and a contract; a view also its
-					data, its input, its height, its form, HTML or A2UI, and its own logic), and a device’s
+					source, a recipe’s in the file it brings, the engine they run on, a manifest of the names they say they use,
+					their params and a contract; a recipe also its asset’s card; a view also its data, its input, its height, its
+					form, HTML or A2UI, and its own logic), and a device’s
 					card, a vault’s profile and a file, each starting at version 1. A kind that grew
 					ships its older versions too, with the lenses between them, so a spark written as version 1 opens on version 2’s
 					canvas, an article written as version 1 opens as it was, ready to be linked to its story, and a view of version
@@ -1471,19 +1564,32 @@
 					the same id. The todo’s version 0 above is the lens engine’s worked example, which lives only in its tests.
 				</li>
 				<li>
-					<b>Flows are stages any entry can be in.</b> An article goes from idea to draft to published. A stage is a
-					tag, so a move is one tag change, and a public stage is one Public share on that tag. Functions react to a
-					move: each runs in QuickJS on the device that moves the entry and asks for changes, which its vault’s shares
-					still decide. Publishing an article makes a public post about it, which the server’s feed serves to the
-					Maia Universe stream, and asks whether the pictures it shows go public too, so the stream shows them.
+					<b>Flows are stages an entry of the types a flow names can be in.</b> A post goes from idea to draft to
+					published; a story from its idea through its hook, thumbnail, journey, writing, movie, derivatives and
+					schedule to published, every stage of it private. The app ships no flow for articles. A stage is a tag, so a
+					move is one tag change, and a public stage is one Public share on that tag. Functions react to a move: each
+					runs in QuickJS on the device that moves the entry and asks for changes, which its vault’s shares still
+					decide. A function may ask for a new entry in its vault, for a set, unset, insert, remove, move or tag on the
+					entry moved, its posts and its pictures, and for a Public share. The functions that run are the entry’s vault’s own, Maia City’s where
+					the person’s vault owns it, and the app’s. Publishing a post moves it to Published: a Public share on that
+					stage’s tag makes it public, and one on its vault’s profile makes that public too; the app’s Publish
+					function then tags the private pictures it shows, so they go public with it, and the server’s feed serves
+					them to the Maia Universe stream (<code>/feed/posts</code>). A story’s posts are made and published in its
+					Derivatives tab.
 				</li>
 				<li>
-					<b>Public entries and code, for pages nobody signed in to.</b> The same feed serves every entry everyone may
+					<b>Public entries and code, for every page and the API.</b> The same feed serves every entry everyone may
 					read, of the kinds a page asks for, with its record, its schema and the version every reader agrees on
 					(<code>/feed/entries?type=story,article</code>), the views, logic, recipes, functions and configs among them
-					(<code>/feed/code</code>), and any one of them whole (<code>/feed/entry/&lt;vault&gt;/&lt;entry&gt;</code>).
-					Anyone can call a vault Maia City, so the feed names Maia City only where it stands in the server’s seed, and
-					<code>?seed=1</code> keeps its entries alone. Whoever loads code checks it again before a sandbox runs it.
+					(<code>/feed/code</code>), any one of them whole (<code>/feed/entry/&lt;vault&gt;/&lt;entry&gt;</code>), and
+					the files a code entry brings, as plain text no page runs as a script
+					(<code>/feed/entry/&lt;vault&gt;/&lt;entry&gt;/file</code>). <code>vault=</code> keeps one vault’s, and
+					<code>bare=1</code> leaves the records out. Beside them it serves the public posts
+					(<code>/feed/posts</code>), the pictures they show (<code>/feed/files</code>), the site’s media
+					(<code>/feed/media</code>), and whether an invite is open (<code>/feed/invite/&lt;share&gt;</code>). Anyone
+					can call a vault Maia City, so the feed names Maia City only where it stands in the server’s seed, and
+					<code>?seed=1</code> keeps its entries alone. Every page, signed in or not, and the API, every minute, read
+					code and configs from it, and check them again as they load (<a href="#code">Code in a box</a>).
 				</li>
 			</ul>
 		</section>
@@ -1512,8 +1618,13 @@
 				device allows, which you set in Settings, from 1 to 256. A list of rows deeper than that isn’t read, and the
 				answer says so for that entry (<code>"cut": true</code>). A query also follows the links at the places it names, a level at a time:
 				each hop opens only what your device may read there, and a hop that opens nothing says why. Every row and every
-				hop is one level, so a long chain of links, or a cycle, ends at the query’s depth. There is no paging: your
-				device holds what it reads.
+				hop is one level, so a long chain of links, or a cycle, ends at the query’s depth. Your device holds what it
+				reads, so a query pages over it there: <code>offset</code> skips so many rows, <code>limit</code> takes at most
+				so many, and <code>count</code> says how many matched. A query may also keep one <code>vault</code>, read through
+				a <code>schema</code> it names, or as stored, and <code>select</code> only some fields; the answer says which
+				schema read each row, whether it may be changed through it, and the <code>plan</code> the labels picked
+				entries by. <code>get</code> opens one entry on a line, at a version or at a release number, and
+				<code>history</code> lists its lines, their releases and every write the device holds, and why one isn’t counted.
 			</p>
 			<div class="codes">
 				<figure class="wide">
@@ -1547,18 +1658,152 @@
 			<p class="prose-col">
 				Before it shows a button, the page asks <code>may</code>: would this device be allowed to make the op, on what it
 				holds now? So a button you see is a change you may make. The page keeps no rule of its own: it reads levels, ops
-				and who may do what from the device’s answers. A <code>batch</code> runs several changes of entries as one.
+				and who may do what from the device’s answers. A <code>batch</code> runs several changes of entries in order,
+				each run of record ops on one entry making one write. At the first one refused it stops, and says which and
+				what ran before it, which stands. A create that brings a file never goes in a batch.
 			</p>
 			<p class="prose-col">
 				Most changes need nothing but the device. A change the vault’s owners must approve, such as a co-owner, a new
-				device, a threshold or new vaults, is drafted on the device and signed by your passkey, in one prompt however many
-				edits it makes. With no passkey at hand, as for an agent, the answer is <code>approve</code>: what to sign and by
-				whom, and nothing is made until it is signed.
+				device, a threshold or new vaults, is drafted on the device and signed by your passkey, or on a Mac by its
+				Touch ID key, in one prompt however many edits it makes. With no passkey at hand, as for an agent, the answer is
+				<code>approve</code>: what to sign and by whom, and nothing is made until it is signed.
 			</p>
 			<p class="prose-col">
 				An agent speaks the same ops through its MCP tools. It acts as its aven, so the aven’s shares decide what
-				each op may do, and it asks for more with the <code>ask</code> op, as any vault asks.
+				each op may do, and it asks for more with the <code>ask</code> op, as any vault asks. It may not make
+				<code>follow</code> or <code>set_limits</code>, a device’s own settings, and it has one op of its own,
+				<code>get_file</code>, which reads a file of a vault back to a path it names. Its tools are
+				<code>avendb_vaults</code>, <code>avendb_ask</code> for reads, <code>avendb_run</code> for changes,
+				<code>avendb_request_access</code>, <code>avendb_add_spark</code>, <code>avendb_add_artifact</code> and
+				<code>avendb_read_file</code>.
 			</p>
+		</section>
+
+		<section id="code">
+			<p class="eyebrow">Code in a box</p>
+			<h2>Code from a vault runs in a box</h2>
+			<p class="prose-col">
+				A vault holds code as well as data: a recipe builds an asset, a view draws a screen, a function reacts to a move,
+				and a config sets a game’s numbers. Each is an entry like any other, with versions, proposals and shares, and
+				none of it is trusted. A page runs it only in a box: a frame with no origin, running an engine of ours that never
+				changes, so the code reaches neither the network, nor storage, nor the page around it. A config runs nothing: our
+				own code reads it as data.
+			</p>
+			<p class="prose-col">
+				Every box is a frame allowed only to run scripts. It has no origin, so it holds no cookie, no storage and no
+				passkey of ours, and it can’t reach into the page. Its policy lets in no connection, no frame, no form and no
+				plugin, and every device feature is off, from the camera to the clipboard and full screen. The code runs in a
+				worker inside it, never in a window, and before it starts, fetch, sockets, storage, caches, channels and new
+				workers are taken off the worker’s global scope.
+			</p>
+			<p class="prose-col">
+				The engine that runs the code is a file we froze, one per version, served from our own site. The page checks its
+				BLAKE3 hash before it starts it, and nothing comes from a CDN. A new engine is a new version beside the old ones,
+				and pages run the latest of each kind. A build or a call that runs past its time, 20 seconds in the asset box and
+				10 in the logic box, ends with the frame and its worker removed.
+			</p>
+			<p class="prose-col">
+				Code hands back plain data, never code, and the page checks it again. The asset box sends a model as numbers and
+				named materials; the page builds it with its own materials, within a budget of nodes, triangles, pictures, lights
+				and bones, and holds the card that comes with it to the recipe asked for. Logic sends JSON. A view sends HTML,
+				which our engine cleans again before it draws it, and messages of the MCP Apps protocol, of which the page answers
+				eight; it can’t call a tool, read a resource or open a link.
+			</p>
+			<div class="table">
+				<table>
+					<thead>
+						<tr><th>Box</th><th>It runs</th><th>Where</th><th>It may reach</th><th>It never reaches</th></tr>
+					</thead>
+					<tbody>
+						{#each boxes as [box, runs, where, may, mayNot] (box)}
+							<tr><td><b>{box}</b></td><td>{runs}</td><td>{where}</td><td>{may}</td><td>{mayNot}</td></tr>
+						{/each}
+					</tbody>
+				</table>
+			</div>
+			<h3>Logic, in QuickJS</h3>
+			<p class="prose-col">
+				Logic runs in QuickJS, a JavaScript engine built to WebAssembly, in a box of its own. It is given no function of
+				the host: a JSON text goes in and a JSON text comes out, with no typed arrays, no timers and no I/O. It has 8 MB, a
+				256 KB stack and a set amount of work for each call, and its random numbers and its clock come from what it is
+				handed, so the same input gives the same answer. Today only functions run there. A function’s answer is ops,
+				which the device bounds before it makes them: a new entry in its vault, a change to the entry it moves, its posts
+				or its pictures, or a Public share in its vault; its vault’s shares still decide each one. A view’s logic would
+				run there too, but no view shown today has any.
+			</p>
+			<h3>A view</h3>
+			<p class="prose-col">
+				A view is HTML, or A2UI turned into HTML with our maia-* components: cards, metrics, badges, progress bars,
+				charts, tables and lists. Its frame runs our view engine alone, the only script that ever writes its DOM, from the
+				view’s HTML cleaned of scripts, handlers, links and outside pictures. A view’s own script runs in a worker the
+				engine starts, against a stand-in DOM it can’t see past; the engine cleans each picture the worker sends before
+				it draws it, and lends it at most eight canvases. The worker gets Three.js, d3 and the MCP Apps client from frozen
+				files of ours, and nothing else. One that doesn’t answer for four seconds is stopped, and so is a view whose frame
+				loads a second page. A view is handed only the data its page passes it, and a page never puts one where a person
+				decides: the page’s own buttons stay outside it, and its own panel is one tap away.
+			</p>
+			<p class="note prose-col">
+				MCP Apps here is the protocol a view speaks with the page that shows it. It is not an agent’s MCP tools, which
+				speak avenDB’s JSON ops (<a href="#ops">JSON ops</a>).
+			</p>
+			<h3>Checked as it loads</h3>
+			<p class="prose-col">
+				One checker knows every kind of code and says what can’t work in a box: a view, a game’s screen, logic, and a
+				config, which it holds to the shape of the repo’s own, so a config from a vault changes a game’s numbers, never
+				what the game finds where. Nothing checks code on its way into a vault, so a page and the API check each view,
+				logic and config as they load it, and MaiaCity V1 checks each screen a proposal brings. A recipe loads only if it
+				was made for the newest box engine, its file hashes to the name its card gives, and its last line names the
+				version its card says; a build this device kept is held to its card again when read back. No checker reads a
+				function. Safety never rests on the checker: the box holds whatever it misses.
+			</p>
+			<h3>Where it runs today</h3>
+			<p class="prose-col">
+				Most code that runs from a vault is Maia City’s, read from the feed with <code>?seed=1</code>: the recipes of
+				every 3D world, MaiaCity V1’s default screen, and the configs the games read. avenDB’s Assets page builds the
+				recipes of any vault the person reads, and the recipes an AIP proposes build in a box too, before anyone accepts
+				them. Functions come from the entry’s vault, from Maia City where the person’s vault owns it, and from the app.
+				The OS, the Mac app, runs the same pages and boxes in macOS’s WebKit.
+			</p>
+			<h3>The games are not boxes</h3>
+			<p class="prose-col">
+				The game sandboxes and MaiaCity V1 are our own trusted code, not boxes. From a vault they read only data and
+				recipes: the sandboxes read their configs, of biomes, a garden, rules and specs, and the recipes they take from
+				it build in the asset box. No game runs a vault’s logic in QuickJS yet. V1’s rules are one module the API and
+				the page share, and a new game takes its settings from a config, each value outside the game’s limits replaced
+				by the seed’s. V1’s default screen comes from the vault, but the game, its moves and the screens its proposals
+				add live in maiaCITY’s Postgres, outside avenDB’s shares, history and proposals. Each screen still shows in a
+				view frame, and its events change nothing.
+			</p>
+			<h3>Not protected yet</h3>
+			<ul class="prose-col">
+				<li>
+					<b>The page around the boxes.</b> The site sets no strict script policy, and the Mac app sets none, so the
+					page’s own code is guarded only by how it is written.
+				</li>
+				<li>
+					<b>Changes to our own code.</b> A merge to main deploys the boxes, the engines, the checker and the game rules,
+					and no test gates it.
+				</li>
+				<li>
+					<b>Which code is Maia City’s.</b> Pages and the API check hashes and shapes, not avenDB’s signatures, so they
+					rest on the server and TLS for which code is the vault’s.
+				</li>
+				<li>
+					<b>Recipes in one box.</b> Recipes built in one box share its worker: kept from the page, not from each other.
+				</li>
+				<li>
+					<b>Memory and time.</b> Only QuickJS has a memory cap, and a view’s script is stopped only once it stops
+					answering.
+				</li>
+				<li>
+					<b>What code declares.</b> An entry’s manifest and contract aren’t enforced, and its engine version isn’t
+					pinned: a view or logic runs on the latest engine of its kind.
+				</li>
+				<li>
+					<b>Functions.</b> A function may ask for a Public share of any part of its vault, and a move makes its ops with
+					no preview.
+				</li>
+			</ul>
 		</section>
 
 		<section id="system">
