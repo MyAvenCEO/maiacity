@@ -65,9 +65,9 @@ const EJECT_AGAIN: Duration = Duration::from_millis(700);
 /// `drives/<device>`.
 const KEY: Kept = Kept { under: "drives/", purpose: "drive key", info: b"avenDB drive " };
 
-/// The key of a device the Mac hosts beside its own, a drive's (`KEY`) or a studio worker's (`worker::KEY`), as the
-/// Mac's shelf keeps it: wrapped under a key the Mac's device alone derives from its own (`Lab::own_key`), so that the
-/// Mac opens it silently while its own device is open (`Service::wrap_key`).
+/// The key of a device the Mac hosts beside its own, a drive's (`KEY`), as the Mac's shelf keeps it: wrapped under a
+/// key the Mac's device alone derives from its own (`Lab::own_key`), so that the Mac opens it silently while its own
+/// device is open (`Service::wrap_key`).
 pub(crate) struct Kept {
     /// Where on the Mac's shelf, before the device's id in hex: `drives/<device>`.
     pub(crate) under: &'static str,
@@ -95,7 +95,7 @@ impl Kept {
     }
 }
 
-/// A Lab for a device the Mac hosts beside its own, a drive's or a worker's, by its key `secret`, named `name`, which
+/// A Lab for a device the Mac hosts beside its own, a drive's, by its key `secret`, named `name`, which
 /// knows the master recovery key, as every device's Lab does (`Start::recovery`): the Lab, and the device.
 pub(crate) fn lab_of(name: &str, secret: &[u8; 32]) -> Result<(Lab, SignerId)> {
     let mut lab = Lab::with_entropy(random()?);
@@ -591,7 +591,7 @@ impl Service {
         self.drives.hosted.lock().expect("hosted").insert(node.device(), hosted);
     }
 
-    /// Keeps device `device`'s key `secret`, a drive's or a worker's (`Kept`), on this Mac's shelf, wrapped under a key
+    /// Keeps device `device`'s key `secret`, a drive's (`Kept`), on this Mac's shelf, wrapped under a key
     /// this Mac's device alone derives from its own (`Lab::own_key`), bound to the device: what opens it here with no
     /// ceremony. One kept already counts.
     pub(crate) async fn wrap_key(&self, d: &Device, kept: &Kept, device: SignerId, secret: &[u8; 32]) -> Result<()> {

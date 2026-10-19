@@ -2,12 +2,13 @@
 	The vaults a vault owns, one component for every parent, as Owners & devices shows them ($lib/avendb/Settings.svelte):
 	first those wholly its own, of a kind that takes one owner alone (the kind table's `most`), each with its devices
 	and the shares it holds, by name, over which vault and at what level, and under it the vaults it owns in turn that
-	hold devices; then, in one line, the other vaults it owns. So it is "Your aven and its agents" on the person's own
-	vault, their aven with each agent's device vault under it; "Agents" on an aven; "Server" on avenCEO GmbH, avenCEO
-	server, the device vault of the seed (vaults.js's `seeded`); and "It owns" anywhere else. Remove and Revoke are the
-	settings' own (`onremove`, `onrevoke`), and each shows only where the device answers a dry run of it (`may`): a
-	device taken out of its vault as a lost one is, and a share given up by the vault that holds it, which ends every
-	share resting on it. A standing grant, "all my vaults, now and later" (avendb's `world::STANDING`), shows as one
+	hold devices; then, in one line, the other vaults it owns. So it is "Agents" on an aven, whose agents are devices
+	of it beside its server; "Its aven" on the seed's coop, Maia City, which owns avenMAIA (vaults.js's `seeded`); and
+	"It owns" anywhere else. A legacy studio worker, a device vault the studio hired before the Mac worked straight in
+	the vaults (#1010), shows only while it holds a device or a share, so that its Revoke stays at hand (`retired`).
+	Remove and Revoke are the settings' own (`onremove`, `onrevoke`), and each shows only where the device answers a dry
+	run of it (`may`): a device taken out of its vault as a lost one is, and a share given up by the vault that holds
+	it, which ends every share resting on it. A standing grant, "all my vaults, now and later" (avendb's `world::STANDING`), shows as one
 	line however many vaults it reached, and Revoke ends it for each of them (the `revoke` op's `standing`), so no vault
 	founded later follows it. Its title, or none where it shows nothing, is `ownedTitle`, which the settings' left side
 	lists it by.
@@ -61,9 +62,9 @@
 	const rank = (/** @type {string} */ kind) => (world.kinds ?? []).findIndex((k) => k.kind === kind);
 	const owns = $derived(ownedBy(world, vault).sort((a, b) => rank(a.kind) - rank(b.kind)));
 	/** the vaults wholly its own, which act for it alone, and the others it owns */
-	const own = $derived(owns.filter((x) => oneOwner(world, x.kind)));
+	const own = $derived(owns.filter((x) => oneOwner(world, x.kind) && !retired(x)));
 	const others = $derived(owns.filter((x) => !oneOwner(world, x.kind)));
-	/** The vaults vault `x` owns in turn that hold devices: an aven's agents. @param {VaultView} x */
+	/** The vaults vault `x` owns in turn that hold devices. @param {VaultView} x */
 	const under = (x) => ownedBy(world, x.id).filter((y) => kindRules(world, y.kind)?.devices);
 	/** The shares vault `x` holds in other vaults, the strongest first: those of a standing grant apart.
 	 *  @param {VaultView} x */
@@ -90,17 +91,21 @@
 		});
 	};
 
-	/** the person's aven and its agents, an aven's agents, avenCEO GmbH's server, what any other vault owns, or '' */
+	/** The name the studio's workers went by, each a device vault, before the Mac worked straight in the vaults
+	 *  (#1010; studio/jobs/mac.js took their devices out). */
+	const LEGACY_WORKER = 'Studio worker';
+	/** A legacy studio worker, @param {VaultView} x */
+	const legacy = (x) => x.kind === 'device' && x.name === LEGACY_WORKER;
+	/** one with nothing left, no device and no share, which it leaves out @param {VaultView} x */
+	const retired = (x) => legacy(x) && !x.devices.length && !held(x).length && !standing(x).length;
+
+	/** an aven's agents, the seed coop's aven, what any other vault owns, or '' */
 	const title = $derived(ownedTitle(world, vault));
-	const lead = $derived.by(() => {
-		if (vault === world.mine && !own.some((x) => x.kind === 'aven'))
-			return 'No aven yet: the first agent you approve on your Mac founds it, your one AI identity.';
-		if (v.kind === 'aven' && !own.length)
-			return `No agent yet: one you approve on your Mac joins ${nameOf(v)} as a device vault of its own.`;
-		if (v.kind === 'aven' || vault === world.mine)
-			return 'Each agent is a device vault with a key of its own, holding sub caps: shares resting on its aven’s, so revoking one of the aven’s ends the agent’s too.';
-		return '';
-	});
+	const lead = $derived(
+		v.kind === 'aven'
+			? `Each agent you approve on your Mac joins ${nameOf(v)} as a device beside its server, with a key of its own, and acts with ${nameOf(v)}’s rights. Remove one in its devices to end it.`
+			: ''
+	);
 
 	/** every vault it shows with its devices and shares: those wholly its own, and those they own that hold devices */
 	const listed = $derived(own.flatMap((x) => [x, ...under(x)]));
@@ -134,6 +139,9 @@
 		<b>{nameOf(x)}</b>
 		<span class="soft">{KINDS[x.kind] ?? x.kind}</span>
 	</div>
+	{#if legacy(x)}
+		<p class="soft">Legacy: the studio no longer uses it, as the Mac runs its jobs as you. Revoke its shares and it leaves this list.</p>
+	{/if}
 	<ul class="rows">
 		{#each x.devices as d (d.id)}
 			{@const name = d.name ?? `${nameOf(x)}’s device`}

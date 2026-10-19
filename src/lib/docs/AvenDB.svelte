@@ -265,7 +265,7 @@
 		['Human', 'Your passkeys and the master recovery key', 'Any, by threshold', 'Yes: your desktops, phones, browsers and drives', 'Any number'],
 		['COOP', 'Human and COOP vaults', 'Any, by threshold', 'No', 'Any number'],
 		['Aven', 'One COOP', 'Exactly one', 'Yes: its server and its agents', 'One per COOP, none per person'],
-		['Device vault', 'One human or COOP vault', 'Exactly one', 'Yes: the keys of one studio worker', 'Any number']
+		['Device vault', 'One human or COOP vault', 'Exactly one', 'Yes: the keys of one machine its owner runs', 'Any number']
 	];
 
 	// one flow adds every vault that acts by keys of its own
@@ -273,13 +273,13 @@
 		['An agent', 'Your COOP’s aven itself, avenMAIA: a device of it', 'The agent harness’s key on your Mac', 'The aven’s own, no more and no less'],
 		['The same harness on your other Mac', 'The aven again: one more device of it', 'That Mac’s harness key', 'The aven’s own, no more and no less'],
 		['The server', 'avenMAIA itself, founded with the seed: the server is its device', 'The server’s key', 'Backup or Relay, from each vault over itself'],
-		['A studio worker', 'A device vault under the vault whose media it works on, yours or a COOP’s', 'A key the desktop app makes and hosts', 'That vault’s shares over itself, or passed on from those it holds']
+		['A machine a vault runs', 'A device vault under that vault, yours or a COOP’s', 'The machine’s own key', 'That vault’s shares over itself, or passed on from those it holds']
 	];
 
 	// the one rule a share rests on another by, case by case
 	const passing = [
 		['A COOP shares with its aven', 'Maia City gives avenMAIA Editor', 'Maia City gives a share over itself, resting on none'],
-		['A COOP passes a share on to its worker', 'Maia City passes a share on to its Render Mac', 'Maia City owns the worker’s device vault'],
+		['A COOP passes a share on to a machine it runs', 'Maia City passes a share on to its render machine', 'Maia City owns the machine’s device vault'],
 		['A COOP passes a share on to its aven', 'Maia City passes on a share another COOP gave it', 'Maia City owns avenMAIA'],
 		['An Owner of a slice shares it on', 'Whoever holds Owner on the todos tagged garden shares them with Bob', 'It rests on an Owner share']
 	];
@@ -531,7 +531,6 @@
 		['Desktop', 'A folder of the app’s own', 'What its keep shares want; files whole where they say so'],
 		['Phone or browser', 'The page’s private storage (OPFS), in a worker', 'The same; pieces read but not kept stay in memory'],
 		['Drive', 'A folder on the drive, hosted by the Mac it is plugged into', 'The same as a desktop'],
-		['Studio worker', 'A folder beside the desktop app’s, hosted by that Mac', 'What it makes; other files it reads from the Mac’s store'],
 		['Server', 'The sealed bucket; its disk is only a cache', 'Every file whole, by default']
 	];
 
@@ -543,7 +542,6 @@
   outboards/<hash>  each blob's BLAKE3 outboard, written last
   stated/<device>/  each device's signed holdings, named by when it checked, at most one an hour each
   drives/<device>   a drive's key, wrapped under the desktop's own (desktop)
-  workers/<device>  a studio worker's key, wrapped the same way (desktop)
   new/              what is still being written`;
 
 	const quantum = [
@@ -843,7 +841,7 @@
 				<div>
 					<h3>Device vault</h3>
 					<p>
-						The keys of one studio worker, owned by exactly one human or COOP vault. Its devices act for
+						The keys of one machine its owner runs, owned by exactly one human or COOP vault. Its devices act for
 						it with all its rights and approve nothing. It owns nothing, and holds only what its owner gives it or passes
 						on to it.
 					</p>
@@ -905,7 +903,7 @@
 			</p>
 			<h3>One flow adds a device vault</h3>
 			<p class="prose-col">
-				Everything that acts with keys of its own, an agent, the server or a studio worker, is added the same way, in three steps. First,
+				Everything that acts with keys of its own, an agent, the server or a machine a vault runs, is added the same way, in three steps. First,
 				a device vault is founded under its parent, or the one there already is taken. Second, the device’s key is added
 				to it, and the device signs that edit too, so no key joins a vault without its own consent. Third, the device
 				vault gets its shares: its parent passes on shares it holds, or a vault gives it a share over itself. Your passkey
@@ -935,7 +933,7 @@
 				founds their vault. That prompt also founds the seed: Maia City, a COOP their vault owns, where the city’s content
 				lives, and avenMAIA, Maia City’s one aven, with the server as its device: an aven lives on its server. Each is
 				named as it is founded. Every device finds the server by this chain, not by a name: it is the aven, with a device,
-				of a COOP owned alone by a human vault. So an agent, a drive or a worker in a device vault never passes for the
+				of a COOP owned alone by a human vault. So an agent, a drive or a machine in a device vault never passes for the
 				server.
 			</p>
 			<p class="prose-col">

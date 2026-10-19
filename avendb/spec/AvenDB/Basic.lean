@@ -32,8 +32,8 @@ inductive Kind where
       device, which acts for it but never governs it; its coop's owners act for it through the coop. It owns nothing:
       an agent session reaches it through its server, with the rights it holds, never as a vault of its own. -/
   | aven
-  /-- A vault for devices: owned by one human or coop vault, which governs it. Its devices (a studio worker, a
-      drive) act for it but never govern it, and it owns nothing. -/
+  /-- A vault for devices: owned by one human or coop vault, which governs it. Its devices (the keys of a machine its
+      owner runs) act for it but never govern it, and it owns nothing. -/
   | deviceVault
   deriving DecidableEq, Repr
 

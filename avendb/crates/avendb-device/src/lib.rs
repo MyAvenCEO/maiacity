@@ -51,17 +51,9 @@
 //! as a second node while the drive is plugged in (`drive`): the page lists the volumes and the drives (`drives`), uses
 //! a drive for avenDB in one ceremony (`joinDrive`), opens one that another Mac of theirs joined in one more
 //! (`openDrive`), and ejects one, its node stopped first, so that Finder never finds it in use (`ejectDrive`).
-//!
-//! Each studio worker, a machine that works on a vault's media for the studio's jobs, is a device vault of its own,
-//! owned by the vault whose media it works on, with a key of its own and only the shares that vault gives it, which
-//! the Mac's device hosts as a second node as it hosts a drive (`worker`): the studio adds one in one ceremony at most
-//! (`addWorker`), lists those hosted here (`workers`), runs an op as one by naming its device (`run [op, node]`), and
-//! its own Rust takes one's node (`Host::node_of`) to read a file by range and post its jobs by the worker's own
-//! rights, never the Mac's.
 
 pub mod agent;
 pub mod drive;
-pub mod worker;
 
 use std::collections::HashMap;
 use std::io;
@@ -183,7 +175,6 @@ pub fn host(config: Config) -> Result<(Host, Lines)> {
         progress: Mutex::default(),
         files: Mutex::default(),
         drives: drive::Drives::default(),
-        workers: worker::Workers::default(),
     });
     Ok((Host { service, runtime }, asks))
 }
@@ -231,19 +222,10 @@ impl Host {
     /// jobs (`Node::jobs`) with no JSON between: none until a call opens the device (`found`, `link`, `open`), and none
     /// once it is forgotten or closed.
     pub fn node(&self) -> Option<OpenNode> {
-        self.service.device.lock().expect("the device").clone().map(|d| OpenNode(Held::Device(d)))
+        self.service.device.lock().expect("the device").clone().map(OpenNode)
     }
 
-    /// The node of the studio worker whose device is `device`, which this Mac hosts (`worker`), for the studio's own
-    /// Rust to read a file by range and post its jobs as that worker, by its own key and its shares alone, never the
-    /// Mac's: as `node` hands the Mac's own, and as the call `run [op, node]` runs an op on it. None for a device this
-    /// Mac hosts no worker of, the Mac's own among them, and none once the worker is taken out of its vault or the
-    /// Mac's device is forgotten or closed.
-    pub fn node_of(&self, device: SignerId) -> Option<OpenNode> {
-        self.service.workers.node(device).map(|n| OpenNode(Held::Worker(n)))
-    }
-
-    /// What `serve` does as its input ends, the app gone: the drives and the workers it hosts stop, the device closes,
+    /// What `serve` does as its input ends, the app gone: the drives it hosts stop, the device closes,
     /// its shelf holding what it holds, and every sheet still awaited ends. The app closes it before it quits.
     pub async fn close(&self) {
         let service = self.service.clone();
@@ -253,27 +235,16 @@ impl Host {
     }
 }
 
-/// The node of the device open in a host (`Host::node`), or of a studio worker it hosts (`Host::node_of`): it derefs
-/// to the node (`avendb_net::Node`), and keeps the device or the worker it is the node of while it is held. Once the
-/// host closes the device, or forgets it, the node is shut down; a worker's too once it is taken out of its vault.
+/// The node of the device open in a host (`Host::node`): it derefs to the node (`avendb_net::Node`), and keeps the
+/// device it is the node of while it is held. Once the host closes the device, or forgets it, the node is shut down.
 #[derive(Clone)]
-pub struct OpenNode(Held);
-
-/// What an open node keeps: the Mac's own device, or a worker's node.
-#[derive(Clone)]
-enum Held {
-    Device(Arc<Device>),
-    Worker(Arc<Node>),
-}
+pub struct OpenNode(Arc<Device>);
 
 impl std::ops::Deref for OpenNode {
     type Target = Node;
 
     fn deref(&self) -> &Node {
-        match &self.0 {
-            Held::Device(d) => d.node(),
-            Held::Worker(node) => node,
-        }
+        self.0.node()
     }
 }
 
@@ -299,8 +270,6 @@ struct Service {
     files: Mutex<HashMap<u64, Incoming>>,
     /// The drives it hosts, and the volumes it looks at (`drive`).
     drives: drive::Drives,
-    /// The studio workers it hosts (`worker`).
-    workers: worker::Workers,
 }
 
 /// A file on its way in from the page, a chunk at a time (`fileChunk`), into the device's blob store and the write that
@@ -362,11 +331,6 @@ impl Service {
     /// `drives` the volumes plugged in and the drives joined here, `joinDrive [volume, name]` a drive used for avenDB as
     /// a device of the person's vault, `openDrive [volume]` one another Mac of theirs joined, opened here, and
     /// `ejectDrive [volume]` one hosted here, its node stopped and the volume ejected (`drive`).
-    /// `addWorker [vault, name, shares]` a studio worker added for vault `vault`, the person's or one it owns, named
-    /// `name`, and given each of `shares`, `{name, where, ops}` and `over` for one over another vault, in one ceremony
-    /// at most, `{device, name, vault, for}`; `workers` those whose keys this Mac keeps, each `{device, name, vault,
-    /// for, hosted}`; and `run [op, node]` op `op` run on the node of the worker whose device `node` names, as that
-    /// worker, with no ceremony at hand (`worker`).
     async fn on_device(self: &Arc<Self>, call: &str, a: Args<'_>) -> Result<Value> {
         let d = self.device()?;
         let number = |i: usize| a.get(i).as_u64().with_context(|| format!("argument {} is a file's number", i + 1));
@@ -381,14 +345,9 @@ impl Service {
             }
             "run" => {
                 let op = a.get(0).clone();
-                let (mut answer, bytes) = match a.get(1) {
-                    Value::Null => {
-                        let asks = engine::reads(&op) || engine::asks(&op);
-                        let approver = if asks { None } else { Some(self.approver().await?) };
-                        d.run(op, None::<NoBytes>, approver.as_ref()).await?
-                    }
-                    node => self.run_on_worker(node, op).await?,
-                };
+                let asks = engine::reads(&op) || engine::asks(&op);
+                let approver = if asks { None } else { Some(self.approver().await?) };
+                let (mut answer, bytes) = d.run(op, None::<NoBytes>, approver.as_ref()).await?;
                 if let (Some(bytes), Some(out)) = (bytes, answer.as_object_mut()) {
                     out.insert("bytes".to_string(), BASE64.encode(&bytes).into());
                 }
@@ -412,15 +371,10 @@ impl Service {
             "joinDrive" => self.join_drive(&a.text(0)?, a.get(1).as_str().unwrap_or_default()).await?,
             "openDrive" => self.open_drive(&a.text(0)?).await?,
             "ejectDrive" => self.eject_drive(&a.text(0)?).await?,
-            "workers" => self.workers().await?,
             "touchSetup" => self.touch_setup(&d).await?,
             "touchOff" => {
                 d.forget_touch().await?;
                 Value::Null
-            }
-            "addWorker" => {
-                let shares = a.get(2).as_array().cloned().unwrap_or_default();
-                self.add_worker(&d, &a.text(0)?, &a.text(1)?, &shares).await?
             }
             "grant" => {
                 let shares = a.get(2).as_array().cloned().unwrap_or_default();
@@ -517,7 +471,6 @@ impl Service {
     async fn forget(&self) -> Result<()> {
         let _life = self.life.lock().await;
         self.drives.stop().await;
-        self.workers.stop().await;
         let d = self.device.lock().expect("the device").take();
         if let Some(d) = d {
             d.close().await.ok();
@@ -531,11 +484,10 @@ impl Service {
         self.device()?.rename(name).await
     }
 
-    /// The app went away: the drives and the workers it hosts stop, the device closes, and every sheet still awaited
+    /// The app went away: the drives it hosts stop, the device closes, and every sheet still awaited
     /// ends.
     async fn close(&self) {
         self.drives.stop().await;
-        self.workers.stop().await;
         let d = self.device.lock().expect("the device").take();
         if let Some(d) = d {
             d.close().await.ok();
@@ -670,14 +622,12 @@ impl Service {
         Ok(info)
     }
 
-    /// Device `d` runs from here on, and hosts the person's drives plugged into this Mac (`drive`) and the studio
-    /// workers whose keys it keeps (`worker`).
+    /// Device `d` runs from here on, and hosts the person's drives plugged into this Mac (`drive`).
     fn opened(self: &Arc<Self>, d: Device) -> Value {
         let d = Arc::new(d);
         *self.device.lock().expect("the device") = Some(d.clone());
         self.leave_offer(&d);
         self.watch_drives();
-        self.watch_workers();
         info(&d)
     }
 

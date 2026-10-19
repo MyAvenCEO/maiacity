@@ -92,7 +92,7 @@ async fn host_of(state: &Avendb, window: Option<tauri::WebviewWindow>) -> Result
     Ok(hosted.host.clone())
 }
 
-/// Stops avenDB's device as the app quits: it closes its drives, workers, node and store, for five seconds at most;
+/// Stops avenDB's device as the app quits: it closes its drives, node and store, for five seconds at most;
 /// then the app quits whether it is done or not.
 pub async fn stop(state: &Avendb) {
     let Some(hosted) = state.0.lock().await.take() else { return };
