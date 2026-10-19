@@ -136,7 +136,7 @@ fn fresh(authenticator: &mut Passkey, secret: [u8; 32]) -> (Lab, SignerId, Vec<S
     let mut lab = Lab::with_entropy([7; 32]);
     let device = lab.device_with("Alice's browser", secret);
     let pass = unlock.pass(key.keys(), NOW).expect("the unlock is the passkey's pass for the device");
-    let recovered = unlock.assertion.recover().into_iter();
+    let recovered = unlock.assertion().expect("a passkey's").recover().into_iter();
     let passkeys: Vec<SignerId> = recovered.filter_map(|p256| lab.web_passkey("Alice", p256, &unlock)).collect();
     (lab, device, passkeys, RelayPass::from_wire(&pass.to_wire()).expect("a pass"))
 }

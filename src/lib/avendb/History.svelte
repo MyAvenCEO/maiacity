@@ -65,10 +65,14 @@
 	const show = (id) => ([open, side] = [id, 'aside']);
 
 	/** A passkey's WebAuthn assertion beside its signature, as its chip names it. @param {import('./db.js').SigView} sig */
-	const webauthn = (sig) =>
-		sig.webauthn === 'batch' ? `WebAuthn, one for ${sig.batch}` : sig.webauthn === 'pass' ? 'WebAuthn pass' : 'WebAuthn';
-	/** what a passkey's assertion shows */
-	const PRESENCE = 'Its passkey’s WebAuthn assertion: a person was there. Only the SLH-DSA signature counts';
+	const webauthn = (sig) => {
+		const kind = sig.by === 'touch' ? 'Touch ID, ML-DSA' : 'WebAuthn';
+		return sig.webauthn === 'batch' ? `${kind}, one for ${sig.batch}` : sig.webauthn === 'pass' ? `${kind} pass` : kind;
+	};
+	/** what a passkey's assertion or a Touch ID key's Secure Enclave signature shows */
+	const PRESENCE = 'Its passkey’s WebAuthn assertion or its Mac’s Touch ID signature: a person was there. Only the SLH-DSA signature counts';
+	/** how a signer's kind reads */
+	const BY = { device: 'device', passkey: 'passkey', touch: 'Touch ID key' };
 	/** why the device doesn't count a write */
 	const CUT = 'Its signer was removed before it: the removal cuts what it wrote after';
 
@@ -164,7 +168,7 @@
 		<ul class="sig-list">
 			{#each picked.sigs as sig, i (i)}
 				<li>
-					<b>{s.signer(sig.signer)}</b>, its {sig.by}:
+					<b>{s.signer(sig.signer)}</b>, its {BY[sig.by] ?? sig.by}:
 					<span class="chip ok">SLH-DSA, {size(sig.pq)}</span>
 					{#if sig.webauthn}<span class="chip" title={PRESENCE}>{webauthn(sig)}</span>{/if}
 				</li>

@@ -37,7 +37,7 @@ import {
  * @typedef {{ vault: string, held: { edits: number, keys: number },
  *   builtIn: { schemas: SchemaView[], lenses: LensView[] }, seed: number, edits: EditCounts, schemas: SchemaView[],
  *   lenses: LensView[], audiences: CellRow[], rows: RowView[] }} Db
- * @typedef {{ signer: string, by: 'device' | 'passkey', webauthn: 'edit' | 'batch' | 'pass' | null,
+ * @typedef {{ signer: string, by: 'device' | 'passkey' | 'touch', webauthn: 'edit' | 'batch' | 'pass' | null,
  *   batch: number | null, pq: number }} SigView
  * @typedef {{ n: number, id: string, kind: string, fields: any, author: string, cosigners: string[], sigs: SigView[],
  *   parents: string[], depth: number, bytes: number, vaults: string[], counted: boolean | null,

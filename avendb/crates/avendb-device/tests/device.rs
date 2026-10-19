@@ -46,7 +46,7 @@ use avendb::id::{EntryId, SignerId, VaultId};
 use avendb::keys::{self, SeededRng};
 use avendb::lab::Lab;
 use avendb::sealed::FileRoot;
-use avendb::sign::{Ceremony, DeviceKey, PRF_SALT, Passkey, device_salt};
+use avendb::sign::{DeviceKey, PRF_SALT, Passkey, device_salt};
 use avendb_device::{Config, Host, SHEET, agent, drive, host, serve, worker};
 use avendb_net::shelf::FLOOR;
 use avendb_net::{Admission, NoCeremony, Node, Options, disk};
@@ -164,7 +164,7 @@ fn sheet_page(passkey: &mut Passkey, n: u64, asked: &HashMap<&str, &str>) -> Val
     assert_eq!(bytes("salt"), PRF_SALT, "the app's PRF salt");
     assert!(asked.get("id").is_none_or(|id| *id == CREDENTIAL), "her passkey's credential, if any");
     let challenge: [u8; 32] = bytes("challenge").try_into().expect("a challenge of 32 bytes");
-    let Ceremony { assertion, .. } = passkey.ceremony(challenge);
+    let assertion = passkey.ceremony(challenge).assertion().cloned().expect("a passkey's");
     let prf = passkey.prf(PRF_SALT);
     let device = asked.contains_key("device").then(|| passkey.prf(&bytes("device")));
     let parts: [&[u8]; 6] = [

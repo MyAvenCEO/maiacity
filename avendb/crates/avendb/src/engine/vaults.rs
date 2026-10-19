@@ -150,23 +150,39 @@ pub fn approved(lab: &mut Lab, me: SignerId, then: &Then, ids: &[EditId]) -> Res
     })
 }
 
-/// The person's passkey as device `me` holds it: of its vault's owners, the passkeys whose keys it holds, the vault's
-/// root first, never the master recovery key. It approves for its vault and every vault that vault owns.
+/// The person's owner key as device `me` holds it, which approves for its vault and every vault that vault owns: of
+/// its vault's owners, the keys it holds that sign in a ceremony, its Mac's Touch ID key first, so a touch approves
+/// where it can (2026-10-19), then the vault's root, then a passkey; never the master recovery key.
 pub fn passkey_of(lab: &Lab, me: SignerId) -> Option<SignerId> {
-    let vault = lab.state(me).vault(lab.vault_of(me)?)?;
-    let passkey =
-        |s: &SignerId| matches!(lab.keys_of(*s), Some(SignerKeys::Passkey { .. })) && Some(*s) != lab.recovery();
-    let owners = vault.owners.iter().filter_map(|p| match p {
-        Principal::Signer(s) => Some(*s),
-        Principal::Vault(_) => None,
-    });
-    vault.root.filter(passkey).or_else(|| owners.filter(passkey).next())
+    owner_key(lab, me, false)
 }
 
-/// Who signs a change of device `me`'s that its vault's owners approve: the passkey, and `newcomer`, the signer it
-/// adds, where the device holds its keys, as it must sign too. None while the device holds no passkey.
-fn approvers(lab: &Lab, me: SignerId, newcomer: Option<SignerId>) -> Option<(SignerId, Vec<SignerId>)> {
-    let passkey = passkey_of(lab, me)?;
+/// `passkey_of`, or, for a change only the vault's root makes (`root`), the root alone, if the device holds its keys.
+fn owner_key(lab: &Lab, me: SignerId, root: bool) -> Option<SignerId> {
+    let vault = lab.state(me).vault(lab.vault_of(me)?)?;
+    let held = |s: &SignerId| Some(*s) != lab.recovery();
+    let passkey = |s: &SignerId| held(s) && matches!(lab.keys_of(*s), Some(SignerKeys::Passkey { .. }));
+    let touch = |s: &SignerId| held(s) && matches!(lab.keys_of(*s), Some(SignerKeys::Enclave { .. }));
+    if root {
+        return vault.root.filter(|r| passkey(r) || touch(r));
+    }
+    let owners: Vec<SignerId> = vault
+        .owners
+        .iter()
+        .filter_map(|p| match p {
+            Principal::Signer(s) => Some(*s),
+            Principal::Vault(_) => None,
+        })
+        .collect();
+    let first = owners.iter().copied().find(touch);
+    first.or(vault.root.filter(passkey)).or_else(|| owners.iter().copied().find(passkey))
+}
+
+/// Who signs a change of device `me`'s that its vault's owners approve, or its root alone if `root`: the owner key
+/// (`owner_key`), and `newcomer`, the signer it adds, where the device holds its keys, as it must sign too. None while
+/// the device holds no such key.
+fn approvers(lab: &Lab, me: SignerId, newcomer: Option<SignerId>, root: bool) -> Option<(SignerId, Vec<SignerId>)> {
+    let passkey = owner_key(lab, me, root)?;
     let newcomer = newcomer.filter(|&s| s != passkey && lab.keys_of(s).is_some());
     Some((passkey, [passkey].into_iter().chain(newcomer).collect()))
 }
@@ -195,7 +211,8 @@ fn approval(
     if !matches!(refused, Refusal::BelowThreshold | Refusal::NoConsent | Refusal::NotRoot) {
         return Err(refused.into());
     }
-    let Some((passkey, signers)) = approvers(lab, me, newcomer) else { return Err(refused.into()) };
+    let root = refused == Refusal::NotRoot;
+    let Some((passkey, signers)) = approvers(lab, me, newcomer, root) else { return Err(refused.into()) };
     let drafts = vec![draft(lab, &signers)?];
     Ok(Prepared::Approve(Approval { passkey, signers, drafts, then }))
 }
@@ -985,7 +1002,7 @@ fn found(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared
         return Err(bad("found names the vaults it founds"));
     }
     let mine = lab.vault_of(me).ok_or(Refusal::NotActing)?;
-    let (passkey, signers) = approvers(lab, me, None).ok_or(Refusal::BelowThreshold)?;
+    let (passkey, signers) = approvers(lab, me, None, false).ok_or(Refusal::BelowThreshold)?;
     let nonces: Vec<u64> = new.iter().map(|_| lab.nonce()).collect();
     let mut drafting = lab.drafting(me);
     let mut made: Vec<VaultId> = vec![];

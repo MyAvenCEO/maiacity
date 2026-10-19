@@ -1010,7 +1010,8 @@ impl Node {
 
     /// Sign `sets`, edits drafted for each of a few passkeys, one of them its person's, all over one batch
     /// (`Lab::drafting`, `Lab::drafting_for`), in one ceremony for `step` made by `authenticator`; and keep the set of the
-    /// passkey whose P-256 key the ceremony's assertion verifies under, on this device in the order it was drafted; but
+    /// passkey whose P-256 key the ceremony's assertion verifies under, or of the Touch ID key whose keys the ceremony's
+    /// are, on this device in the order it was drafted; but
     /// its last edit, if `claiming`, which adds a server to avenCEO: this device's claim of it (`Lab::claim`), which the
     /// server signs too (`send_claim`). That passkey, what its set was drafted with, and the claim.
     async fn sign<T: Send + 'static>(
@@ -1024,8 +1025,9 @@ impl Node {
         let challenge = first.context("nothing to sign")?.challenge();
         let ceremony = authenticator.ceremony(challenge, step).await?;
         let keep = move |lab: &mut Lab, me| {
-            let made = |p: SignerId| match lab.keys_of(p) {
-                Some(SignerKeys::Passkey { p256, .. }) => ceremony.assertion.verify(&p256, EditId(challenge)),
+            let made = |p: SignerId| match (lab.keys_of(p), ceremony.assertion()) {
+                (Some(SignerKeys::Passkey { p256, .. }), Some(a)) => a.verify(&p256, EditId(challenge)),
+                (Some(keys @ SignerKeys::Enclave { .. }), None) => ceremony.enclave_keys() == Some(keys),
                 _ => false,
             };
             let (passkey, out, mut drafts) = sets.into_iter().find(|(p, _, _)| made(*p)).ok_or(Refusal::BadSignature)?;

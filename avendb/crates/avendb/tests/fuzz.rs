@@ -385,8 +385,8 @@ fn other_assertion() -> Assertion {
     ONE.get_or_init(sign).clone()
 }
 
-/// `sig` with one part changed: a key, a passkey's assertion (changed, left out, or one put on a device's), or the
-/// SLH-DSA signature (changed, cut short or made up).
+/// `sig` with one part changed: a key, a passkey's assertion (changed, left out, or one put on a device's), a Touch ID
+/// key's Enclave signature (changed, or left out), or the SLH-DSA signature (changed, cut short or made up).
 fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
     let mut s = sig.clone();
     match g.below(3) {
@@ -395,10 +395,17 @@ fn mutate_signature(g: &mut Gen, sig: &Signature) -> Signature {
             let part: &mut [u8] = match &mut s.keys {
                 SignerKeys::Device { ed25519, slh } => if first { ed25519 } else { slh },
                 SignerKeys::Passkey { p256, slh } => if first { p256 } else { slh },
+                SignerKeys::Enclave { mldsa, slh } => if first { mldsa } else { slh },
             };
             let i = g.below(part.len());
             part[i] ^= 1 << g.below(8);
         }
+        1 if s.enclave.is_some() => match (g.below(4), s.enclave.as_mut().expect("an Enclave signature")) {
+            (0, _) => s.enclave = None,
+            (1, e) => e.public = mutate(g, &e.public),
+            (2, e) => e.edits.push(EditId::from_u64(g.next())),
+            (_, e) => e.sig = mutate(g, &e.sig),
+        },
         1 => match &mut s.webauthn {
             None => s.webauthn = Some(WebAuthn::Edit(other_assertion())),
             Some(_) if g.below(4) == 0 => s.webauthn = None,

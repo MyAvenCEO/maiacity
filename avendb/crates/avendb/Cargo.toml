@@ -21,6 +21,9 @@ p256 = { version = "0.14", default-features = false, features = ["ecdsa", "std"]
 sha2 = "0.11"
 # the hash-based half of every signature but a write's: SLH-DSA-SHA2-128f (FIPS 205); a release candidate, pinned
 slh-dsa = { version = "=0.2.0-rc.5", features = ["zeroize"] }
+# a Mac's Touch ID key (2026-10-19): its Secure Enclave signs with ML-DSA-65 (FIPS 204) beside its SLH-DSA half, which
+# every device checks; deterministic signing alone, for the software key of the tests
+ml-dsa = { version = "0.1.1", default-features = false, features = ["alloc", "zeroize"] }
 # WebAuthn's clientDataJSON
 serde_json.workspace = true
 # sealed boxes: an X-Wing share (ML-KEM-768 + X25519) and a Classic McEliece 6688128f share in every box, edits under

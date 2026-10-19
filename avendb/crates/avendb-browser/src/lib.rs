@@ -611,7 +611,8 @@ fn passed(
     let mut lab = Lab::with_entropy(start.entropy);
     start.recovery.clone().map(|key| lab.set_recovery(key));
     let me = lab.device_with(&start.name, *fresh.secret);
-    let keys = p256.map_or_else(|| unlock.ceremony.assertion.recover(), |p256| vec![p256]);
+    let recover = || unlock.ceremony.assertion().map(|a| a.recover()).unwrap_or_default();
+    let keys = p256.map_or_else(recover, |p256| vec![p256]);
     let passkey = |p256| lab.web_passkey("the person", p256, &unlock.ceremony);
     let passkeys: Vec<SignerId> = keys.into_iter().filter_map(passkey).collect();
     if passkeys.is_empty() {

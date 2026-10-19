@@ -113,7 +113,7 @@ async fn a_browser_links_with_the_passkey_in_its_authenticator_in_two_ceremonies
     let pass = unlock.pass(key.keys(), made).expect("the passkey's pass for the browser");
     let mut lab = Lab::with_entropy([7; 32]);
     let new = lab.device_with("Alice's browser", [5; 32]);
-    for p256 in unlock.assertion.recover() {
+    for p256 in unlock.assertion().expect("a passkey's").recover() {
         lab.web_passkey("Alice", p256, &unlock).expect("a passkey the pass may be from");
     }
     let (mac_a, passkey_a, alice) = (w.mac_a, w.passkey_a, w.alice);
