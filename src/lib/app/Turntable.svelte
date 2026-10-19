@@ -23,7 +23,8 @@
 	`inline` keeps it in its place on a page that has its own list and its own screen round it (the avenDB app's Assets,
 	$lib/assets/VaultAsset.svelte): no list, a block in the page's column, by the room the column gives it rather than the
 	screen's — the deck over the canvas where the column is wide, under it where it is not. Its `head` (its name and the
-	bar's chips) stands above the canvas and stays at the top of the column while the rest of it scrolls by.
+	bar's chips) stands above the canvas and stays at the top of the column while the rest of it scrolls by. `compact`, in
+	a card that has its own answers under it (an AIP's, $lib/avendb/Hitl.svelte), keeps only the head and a short canvas.
 -->
 <script>
 	import PickList from './PickList.svelte';
@@ -38,6 +39,7 @@
 	 *   canvas?: HTMLDivElement,
 	 *   stage?: HTMLDivElement,
 	 *   full?: boolean,
+	 *   compact?: boolean,
 	 *   head?: import('svelte').Snippet,
 	 *   bar?: import('svelte').Snippet,
 	 *   panel?: import('svelte').Snippet,
@@ -45,7 +47,7 @@
 	 *   children?: import('svelte').Snippet
 	 * }}
 	 */
-	let { name, picks, inline = false, canvas = $bindable(), stage = $bindable(), full = false, head, bar, panel, readout, children } = $props();
+	let { name, picks, inline = false, canvas = $bindable(), stage = $bindable(), full = false, compact = false, head, bar, panel, readout, children } = $props();
 
 	/**
 	 * Which side the notch is on, a phone on its side: iOS keeps the same room on both sides then (its safe-area insets
@@ -76,7 +78,7 @@
 	});
 </script>
 
-<svelte:element this={inline ? 'div' : 'main'} class="turntable {name}" class:inline class:full class:notch-left={notch === 'left' && !inline} class:notch-right={notch === 'right' && !inline}>
+<svelte:element this={inline ? 'div' : 'main'} class="turntable {name}" class:inline class:full class:compact class:notch-left={notch === 'left' && !inline} class:notch-right={notch === 'right' && !inline}>
 	{#if !full && picks}<PickList {...picks} />{/if}
 	{#if head && inline}<header class="head">{@render head()}</header>{/if}
 	<section class="view">
@@ -84,11 +86,13 @@
 			<div class="canvas" bind:this={canvas}></div>
 			{@render children?.()}
 		</div>
-		<div class="deck">
-			{#if bar}<div class="card bar">{@render bar()}</div>{/if}
-			{#if panel && !full}<div class="card panel">{@render panel()}</div>{/if}
-			{#if readout && !full}<div class="card readout">{@render readout()}</div>{/if}
-		</div>
+		{#if !compact || bar}
+			<div class="deck">
+				{#if bar}<div class="card bar">{@render bar()}</div>{/if}
+				{#if panel && !full && !compact}<div class="card panel">{@render panel()}</div>{/if}
+				{#if readout && !full && !compact}<div class="card readout">{@render readout()}</div>{/if}
+			</div>
+		{/if}
 	</section>
 </svelte:element>
 
@@ -302,6 +306,16 @@
 		position: relative;
 		inset: auto;
 		height: clamp(17rem, 52vh, 34rem);
+	}
+
+	/* compact: in a card that scrolls on its own, its head stays in its place */
+	.turntable.inline.compact > .head {
+		position: relative;
+		top: auto;
+	}
+
+	.turntable.inline.compact .stage {
+		height: clamp(10rem, 26vh, 14rem);
 	}
 
 	.turntable.inline .deck {

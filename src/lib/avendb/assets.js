@@ -42,14 +42,37 @@ export const newestFile = (e) => e?.files?.at(-1);
  */
 export function fileReader(world, read) {
 	const byEntry = new Map(world.entries.map((e) => [e.entry, e]));
-	return async (row) => {
-		const file = row?.edit && Array.isArray(row.files) ? row.files.at(-1) : newestFile(byEntry.get(row?.entry));
-		if (!file) throw new Error('its entry brings no file');
-		if (file.len === null || file.len === undefined) throw new Error('this browser holds no key to its file yet');
-		if (file.len > MOST) throw new Error(`its file is ${size(file.len)}, larger than a recipe may be (${size(MOST)} at most)`);
-		const blob = await whole(read, file, RECIPE_MEDIA);
-		return new Uint8Array(await blob.arrayBuffer());
-	};
+	return (row) => bytesOf(row?.edit && Array.isArray(row.files) ? row.files.at(-1) : newestFile(byEntry.get(row?.entry)), read);
+}
+
+/**
+ * A recipe's file read whole through `read`, as bytes; refused, saying why, where there is none, this browser holds
+ * no key to it yet, or it is larger than a recipe may be.
+ * @param {import('./files.js').FileView | undefined} file @param {import('./files.js').Read} read
+ */
+async function bytesOf(file, read) {
+	if (!file) throw new Error('its entry brings no file');
+	if (file.len === null || file.len === undefined) throw new Error('this browser holds no key to its file yet');
+	if (file.len > MOST) throw new Error(`its file is ${size(file.len)}, larger than a recipe may be (${size(MOST)} at most)`);
+	const blob = await whole(read, file, RECIPE_MEDIA);
+	return new Uint8Array(await blob.arrayBuffer());
+}
+
+/**
+ * The recipes an AIP proposes, for its vault to see before it answers ($lib/avendb/Hitl.svelte): each of its `recipe`
+ * lines as `get` reads it on that line (its record, the entry's tags, and `files`, what the line brings, oldest
+ * first), read as the vault's own are (`vaultRecipes`, `proposed`), each file the newest its line brings, held to the
+ * hash its card names. A device older than `get`'s `files` lists none, and says so.
+ * @param {any[]} rows @param {import('./files.js').Read} read
+ */
+export function proposedSource(rows, read) {
+	return vaultRecipes(rows, {
+		proposed: true,
+		read: (row) => {
+			if (!Array.isArray(row?.files)) throw new Error('this device lists no files on a proposal’s line yet: it needs a newer avenDB');
+			return bytesOf(row.files.at(-1), read);
+		}
+	});
 }
 
 /**

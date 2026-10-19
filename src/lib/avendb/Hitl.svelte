@@ -6,9 +6,11 @@
 	schema derives, and the signatures so far against the policy, one owner for now. A part that is a new entry, a draft
 	proposed inside the AIP, wears a "New" badge with its type, and says so where it goes public on Accept, with its
 	tags: no share to everyone reaches a draft until its vault accepts it. More detail opens the AIP whole in
-	the Proposals app. At its foot, in the middle: Decline, Revise and Accept, one review over every part. Revise asks
-	for a few words that go back to whoever proposed. On a touch screen a swipe answers too: right accepts, left
-	declines, up revises. Accepting applies every part at once. "Later" puts the stack away until a new AIP arrives; a
+	the Proposals app. An AIP that proposes assets (its `recipe` lines: a new version of one, or a new one) shows the
+	one it proposes in 3D above its note, built from the file on its line, as the vault's own assets are
+	(./ProposedAssets.svelte), so the vault sees what it would accept. At its foot, in the middle: Decline, Revise and
+	Accept, one review over every part. Revise asks for a few words that go back to whoever proposed. On a touch screen
+	a swipe answers too: right accepts, left declines, up revises. Accepting applies every part at once. "Later" puts the stack away until a new AIP arrives; a
 	pill above the nav brings it back.
 
 	Acting as a vault that proposed (an aven), the cards are the revisions asked of it, each with the words it was sent
@@ -21,6 +23,7 @@
 	import { fade, fly } from 'svelte/transition';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
+	import ProposedAssets from './ProposedAssets.svelte';
 	import { answering, asksOf, countsOf, detail, lead, newsOf, revisionsOf, signed, top as topOf } from './hitl.js';
 	import { nameOf } from './vaults.js';
 
@@ -81,6 +84,9 @@
 		[revising, words] = [false, ''];
 	});
 
+	/** Bytes `from` to `to` of a file, as the device reads them. @type {import('./files.js').Read} */
+	const read = (root, size, from, to) => api.readFile(root, size, from, to);
+
 	/** Answer the top card with `verdict`: one review over every part. @param {import('./hitl.js').Verdict} verdict */
 	async function answer(verdict) {
 		if (!top || busy) return;
@@ -99,7 +105,7 @@
 	let dy = $state(0);
 	/** @param {PointerEvent} e */
 	function down(e) {
-		if (e.pointerType === 'mouse' || revising || (e.target instanceof Element && e.target.closest('a, button, textarea'))) return;
+		if (e.pointerType === 'mouse' || revising || (e.target instanceof Element && e.target.closest('a, button, textarea, .proposed'))) return;
 		start = { x: e.clientX, y: e.clientY };
 	}
 	/** @param {PointerEvent} e */
@@ -152,6 +158,7 @@
 							{#each news as n, i (i)}<span class="new">{n}</span>{/each}
 						</p>
 					{/if}
+					<ProposedAssets lines={top.lines} ask={(op) => api.ask(op)} {read} key={keyOf(top)} compact />
 					{#if top.note}
 						<p class="text">{lead(top.note)}</p>
 					{/if}
@@ -372,11 +379,18 @@
 	}
 
 	/* the answers, in the middle at the card's foot */
+	/* the answers stay in sight at the card's foot while a long card (an asset in 3D) scrolls under them */
 	.answers {
+		position: sticky;
+		/* flush with the card's foot, through its padding */
+		bottom: -1rem;
+		z-index: 5;
 		display: flex;
 		gap: 0.5rem;
 		justify-content: center;
 		margin-top: 0.8rem;
+		padding: 0.5rem 0 1rem;
+		background: var(--card, #fff);
 	}
 
 	.answers .btn {

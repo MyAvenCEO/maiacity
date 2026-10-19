@@ -34,13 +34,15 @@
 
 	/**
 	 * @type {{ source: ReturnType<typeof import('./sources/avendb.js').vaultRecipes>, hash: string, title?: string,
-	 *   note?: string, about?: import('svelte').Snippet, catalog?: any, picked?: string | null, solo?: boolean }}
+	 *   note?: string, about?: import('svelte').Snippet, catalog?: any, picked?: string | null, solo?: boolean,
+	 *   compact?: boolean }}
 	 *   `source` the vault's recipes ($lib/avendb/assets.js `vaultSource`), `hash` the recipe shown, `title` and `note`
 	 *   what its entry calls it and says of it, `about` what the page says of its entry, at the foot of the panel;
 	 *   `catalog` its parts as built (null where it lists none), `picked` the part picked, `solo` whether it is shown on
-	 *   its own
+	 *   its own; `compact`, its name, its moves and views and a short canvas alone, in a card with its own answers
+	 *   ($lib/avendb/Hitl.svelte, an AIP's)
 	 */
-	let { source, hash, title = '', note = '', about, catalog = $bindable(null), picked = $bindable(null), solo = true } = $props();
+	let { source, hash, title = '', note = '', about, catalog = $bindable(null), picked = $bindable(null), solo = true, compact = false } = $props();
 
 	/** the stage's views, as the bar names them */
 	const VIEWS = /** @type {const} */ ([
@@ -455,7 +457,7 @@
 
 <svelte:window onkeydown={key} />
 
-<Turntable name="vault-asset" inline bind:canvas={canvasBox}>
+<Turntable name="vault-asset" inline {compact} bind:canvas={canvasBox}>
 	{#snippet head()}
 		<h2 class="name">{title || at?.label || 'An asset'}{#if stageName}<small>{` · ${stageName}`}</small>{/if}</h2>
 		{#if hero && !error}

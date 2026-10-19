@@ -114,7 +114,8 @@
 			<h2>{current.title} <span class="status {outcome(current)}">{outcome(current)}</span></h2>
 			<p class="by">By {current.author}{current.via === 'mcp' ? ', through the MCP' : ''} · {when(current.created)}{current.decided ? ` · decided ${when(current.decided)}` : ''} · {current.policy}{current.stage === 'proposed' ? ` (${current.signed} of ${current.needs} so far)` : ''}</p>
 			{#if current.text}<p class="prose">{current.text}</p>{/if}
-			{#if current.changes.length}
+			<!-- an avenDB AIP shows what it changes in a section of its own that opens (AvendbAip) -->
+			{#if current.changes.length && current.source !== 'avendb'}
 				<h3>What it changes</h3>
 				<ul class="changes">{#each current.changes as c, i (i)}<li>{c}</li>{/each}</ul>
 			{/if}
