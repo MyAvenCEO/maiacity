@@ -1,4 +1,4 @@
-import AvenDB.Props
+import AvenDB.Claims
 
 /-!
 # Blind relays
@@ -28,7 +28,7 @@ def eblind (en : Entry) : Entry := { en with attrs := ⟨0, 0, 0, 0, []⟩, admi
 /-- The operational part blinds the shares and the entries and keeps the rest. -/
 theorem ops_eq (st : State) :
     st.ops = { st with shares := st.shares.map Share.blind, entries := st.entries.map eblind,
-                       uncounted := [], accepts := [] } :=
+                       uncounted := [], accepts := [], defs := [] } :=
   rfl
 
 /-- The operational part keeps the vaults. -/
@@ -432,9 +432,39 @@ theorem ops_with_counted (s : State) (W : List Write) (U : List EditId) :
   cases s; rfl
 
 /-- The same, where the write's readers read an accept too. -/
-theorem ops_with_accepts (s : State) (W : List Write) (U A : List EditId) :
-    ({ s with writes := W, uncounted := U, accepts := A } : State).ops = { s.ops with writes := W } := by
+theorem ops_with_accepts (s : State) (W : List Write) (U A : List EditId) (D : List (EditId × CapGroup)) :
+    ({ s with writes := W, uncounted := U, accepts := A, defs := D } : State).ops = { s.ops with writes := W } := by
   cases s; rfl
+
+/-- A claim commutes with taking the operational part: a relay sees which share names which grantee. -/
+theorem claimShare_ops (st : State) (c : ShareId) (v : VaultId) : (st.claimShare c v).ops = st.ops.claimShare c v := by
+  simp only [ops_eq, State.claimShare, List.map_map]
+  congr 1
+  apply List.map_congr_left; intro x _
+  simp only [Function.comp, Share.claimed, blind_id, blind_who]
+  split <;> rfl
+
+/-- Checking a claim reads, of the shares, their ids, grantees, the vault they are over and whether they are live. -/
+theorem applyClaim_ops (st : State) (sigs : List SignerId) (author : SignerId) (c : ShareId) (v : VaultId)
+    (via : List VaultId) : applyClaim st.ops sigs author c v via = (applyClaim st sigs author c v via).map State.ops := by
+  unfold applyClaim
+  rw [share?_ops, live_ops, actsVia_ops, vault?_ops]
+  cases st.share? c with
+  | none => rfl
+  | some x =>
+    simp only [Option.map_some, blind_who, blind_over]
+    cases x.who with
+    | invite k =>
+      dsimp only
+      by_cases h1 : (!st.live c || !sigs.contains k || !actsVia st author via v) = true
+      · rw [if_pos h1, if_pos h1]; rfl
+      · rw [if_neg h1, if_neg h1]
+        by_cases h2 : ((st.vault? v).isNone || v == x.over) = true
+        · rw [if_pos h2, if_pos h2]; rfl
+        · rw [if_neg h2, if_neg h2, Option.map_some, claimShare_ops]
+    | vault _ => rfl
+    | everyone => rfl
+    | device _ => rfl
 
 /-- Hiding facts commutes with taking the operational part. -/
 theorem hide_ops (st : State) (fs : List Fact) : (hide st fs).ops = hide st.ops fs := by
@@ -667,6 +697,10 @@ theorem apply_ops (st : State) (edit : Edit) :
     simp only [Edit.blind, Action.blind]
     simp only [apply, mayBox_ops, ops_seals, ops_published]
     simp only [map_ite_none, Option.map_some, ops_ops]
+  | claim c v via =>
+    simp only [Edit.blind, Action.blind]
+    simp only [apply, sigs_mk]
+    simp only [applyClaim_ops, Option.map_map, Function.comp_def, ops_ops]
 
 /-! ## A relay's copy of an edit -/
 

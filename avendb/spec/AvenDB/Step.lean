@@ -65,11 +65,12 @@ inductive Action where
       added tags are its first tags. Its body carries a proof (`proof`) where it acts through a share: the share it
       relies on, whose chain's ops its readers then read; and its readers read off its Loro update what it touches
       (`touches`, `Rules.lean`), besides the tags it asks for, and whether what it makes of the record fits the schemas
-      the entry was written under up to it (`fits`, `Schemas.lean`). -/
+      the entry was written under up to it (`fits`, `Schemas.lean`); and, of a cap group entry, the cap group its
+      record says after it (`defines`), which counts where the vault itself writes it on the main line (`groupAt`). -/
   | write      (v : VaultId) (e : EntryId) (actor : VaultId) (stay : Option EditId) (epoch : Nat)
                (deps : List EditId := []) (proposal : Proposal := .main) (via : List VaultId := [])
                (create : Option (Audience × Header) := none) (tags : TagDelta := {}) (proof : Option ShareId := none)
-               (touches : List Touch := []) (fits : Bool := true)
+               (touches : List Touch := []) (fits : Bool := true) (defines : Option CapGroup := none)
   /-- A steward, acting for vault `v`, marks its entry `e`: with the audience its shares select (`caps`), which begins a
       stay and keeps the writes it had seen (`keep`), with the keep shares that pick it (`wants`), or with both. A part
       left out (`none`) stays as it is, so a mark of the wants alone never puts back an audience that another steward
@@ -80,6 +81,10 @@ inductive Action where
       says who may open what, so this edit changes nothing here: a peer accepts it only from a signer that may open the
       key, and only if every box is one the schedule seals. -/
   | keys       (secret : KeyName) (to : List KeyName) (pub : Bool := false)
+  /-- Vault `v` claims share `c`, which names an invite key, acting through the owners `via`: signed by that key, whose
+      secret came with the invite, and by a member of `v` acting for it. From then on the share names `v`, and its key
+      is sealed to `v`'s seed (`targets`); a second claim finds no invite left. -/
+  | claim      (c : ShareId) (v : VaultId) (via : List VaultId := [])
   deriving DecidableEq, Repr
 
 /-- A mark that takes entry `e` to audience `to` and leaves its wants as they are: what a move was. -/
@@ -133,9 +138,24 @@ def State.counting (st : State) (ok : Bool) (w : EditId) : List EditId :=
 def State.accepting (st : State) (yes : Bool) (w : EditId) : List EditId :=
   if yes then st.accepts ++ [w] else st.accepts
 
+/-- What writes say cap groups are, with what write `w` says, if it says one and is the vault's own on the main line
+    (`yes`). -/
+def State.defining (st : State) (yes : Bool) (g : Option CapGroup) (w : EditId) : List (EditId × CapGroup) :=
+  match g with
+  | some g => if yes then st.defs ++ [(w, g)] else st.defs
+  | none => st.defs
+
 /-- Entry `e` marked with the wants `rs`. -/
 def State.markWants (st : State) (e : EntryId) (rs : List ShareId) : State :=
   { st with marks := st.marks.filter (·.1 != e) ++ [(e, rs)] }
+
+/-- Share `x` claimed by vault `v`, if it is share `c` and names an invite key: it names `v` from now on. -/
+def Share.claimed (c : ShareId) (v : VaultId) (x : Share) : Share :=
+  if x.id == c && x.who.invite?.isSome then { x with who := .vault v } else x
+
+/-- Share `c`, which names an invite key, names vault `v` from now on. -/
+def State.claimShare (st : State) (c : ShareId) (v : VaultId) : State :=
+  { st with shares := st.shares.map (Share.claimed c v) }
 
 def setEntry (st : State) (en : Entry) : State :=
   { st with entries := st.entries.map fun x => if x.id == en.id then en else x }
@@ -248,6 +268,21 @@ def mayBox (st : State) (d : SignerId) : KeyName → Bool
 def reenters (st : State) (v : VaultId) (x : Audience) : Bool :=
   !(keyFams st).contains (.audience v x) && st.seals.any (·.secret == st.curKey (.audience v x))
 
+/-- Vault `v` claims share `c` by an edit its signers `sigs` signed, whose author acts for `v` through the owners `via`:
+    the share is live and names an invite key, which signs; and `v` is a vault there is, other than the one the share is
+    over. The share names `v` from then on. -/
+@[irreducible] def applyClaim (st : State) (sigs : List SignerId) (author : SignerId) (c : ShareId) (v : VaultId)
+    (via : List VaultId) : Option State :=
+  match st.share? c with
+  | none => none
+  | some x =>
+    match x.who with
+    | .invite k =>
+      if !st.live c || !sigs.contains k || !actsVia st author via v then none
+      else if (st.vault? v).isNone || v == x.over then none
+      else some (st.claimShare c v)
+    | _ => none
+
 /-- Check one edit against the state just before it; `none` when it is refused. -/
 def apply (st : State) (edit : Edit) : Option State :=
   let sigs := edit.sigs
@@ -316,11 +351,13 @@ def apply (st : State) (edit : Edit) : Option State :=
     if (st.share? c.id).isSome || (st.vault? c.over).isNone then none
     -- a share names a device exactly when it is a keep share (KeepNeedsDevice, DeviceOnlyKeeps)
     else if c.level.isKeep != c.who.isDevice then none
-    -- grants name vaults or everyone, nor the vault they are over; everyone only reads
+    -- grants name vaults, everyone or an invite key, nor the vault they are over; everyone only reads; an invite
+    -- makes no owner, which takes the newcomer's consent
     else if (match c.who with
              | .device _ => false
              | .vault x  => (st.vault? x).isNone || x == c.over
-             | .everyone => c.level != Level.read) then none
+             | .everyone => c.level != Level.read
+             | .invite _ => c.level == Level.owner) then none
     -- owner of the whole vault is an owner of it, which only a vault's approval and the newcomer's consent make
     -- (WideOwner); owner of a slice is a grant
     else if c.level == Level.owner && c.wide then none
@@ -339,7 +376,7 @@ def apply (st : State) (edit : Edit) : Option State :=
       -- the share and every share resting on it end
       else some (dropUnseen st { st with revoked := st.revoked ++
         ((st.shares.filter fun x => restsOn st cid x.id && !st.revoked.contains x.id).map (·.id)) } keep)
-  | .write v e actor stay epoch deps proposal via create tags proof touches fits =>
+  | .write v e actor stay epoch deps proposal via create tags proof touches fits defines =>
     -- its epoch is its writer's to name, and no peer checks it against the epoch it holds: an audience moves on by
     -- edits of other entries too, one that empties it and one that brings it back into use, which a device the entry is
     -- shared with later never receives (T12), so such a check would refuse there what every device of the vault
@@ -358,7 +395,8 @@ def apply (st : State) (edit : Edit) : Option State :=
         -- its readers count it if it fits and the share it was created through lets a creation on its line through
         some { st with entries := st.entries ++ [en], born := st.born ++ [e],
                        writes  := st.writes ++ [⟨edit.id, edit.author, actor, e, none, epoch, [], proposal, via, true, x⟩],
-                       uncounted := st.counting (creates st actor v x proof (proposal == .main) fits) edit.id }
+                       uncounted := st.counting (creates st actor v x attrs proof (proposal == .main) fits) edit.id,
+                       defs := st.defining (actor == v && proposal == .main) defines edit.id }
     | none =>
       match st.entry? e with
       | none => none
@@ -381,7 +419,8 @@ def apply (st : State) (edit : Edit) : Option State :=
               let ok := counts st actor en deps proof (proposal == .main) (touches ++ tags.touches) fits
               -- the vault's own write on a proposal that touches nothing and asks for no tag is its accept
               some { st' with writes := st'.writes ++ [w], uncounted := st'.counting ok edit.id,
-                              accepts := st'.accepting (isAccept actor en proposal (touches ++ tags.touches)) edit.id }
+                              accepts := st'.accepting (isAccept actor en proposal (touches ++ tags.touches)) edit.id,
+                              defs := st'.defining (actor == v && proposal == .main) defines edit.id }
   | .mark v e caps wants keep via =>
     match st.entry? e with
     | none => none
@@ -411,6 +450,7 @@ def apply (st : State) (edit : Edit) : Option State :=
     else if !to.all (fun t => st.seals.contains ⟨secret, t⟩) then none
     else if pub && !st.published.contains secret then none
     else some st
+  | .claim cid v via => applyClaim st sigs edit.author cid v via
 
 /-- One edit: check it, then rotate, seal and link keys. -/
 def step (st : State) (edit : Edit) : Option State := (apply st edit).map (settle st)

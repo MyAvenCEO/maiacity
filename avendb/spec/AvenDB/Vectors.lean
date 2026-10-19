@@ -1449,6 +1449,7 @@ def who : Who → String
   | .vault v  => obj [("vault", nat v)]
   | .everyone => str "everyone"
   | .device d => obj [("device", nat d)]
+  | .invite k => obj [("invite", nat k)]
 
 def atom : Atom → String
   | .typeIn ts       => obj [("typeIn", ids ts)]
@@ -1522,9 +1523,18 @@ def touch : Touch → String
 
 /-- A share, with its ops. -/
 def shareJson (c : Share) : String :=
-  obj [("id", nat c.id), ("over", nat c.over), ("who", who c.who), ("level", level c.level),
+  obj ([("id", nat c.id), ("over", nat c.over), ("who", who c.who), ("level", level c.level),
        ("wide", bool c.wide), ("select", selector c.select), ("ops", arr (c.ops.map opJson)),
-       ("parent", opt nat c.parent), ("issuer", nat c.issuer)]
+       ("parent", opt nat c.parent), ("issuer", nat c.issuer)] ++ match c.group with
+         | some g => [("group", nat g)]
+         | none => [])
+
+/-- A cap: an op over a slice. -/
+def capJson (c : Cap) : String := obj [("op", opJson c.op), ("slice", selector c.slice)]
+
+/-- A cap group, as a cap group entry's record says it. -/
+def capGroupJson (g : CapGroup) : String :=
+  obj [("name", str g.name), ("caps", arr (g.caps.map capJson)), ("includes", ids g.includes)]
 
 /-- A built-in group. -/
 def group (g : Group) : String :=
@@ -1568,17 +1578,20 @@ def action : Action → String
       ("keep", ids keep)])])]
   | .revoke (.device v d keep) => obj [("revoke", obj [("device", obj [("vault", nat v), ("device", nat d),
       ("keep", ids keep)])])]
-  | .write v e a s g deps p via create tags pr ts ft => obj [("write", obj ([("vault", nat v), ("entry", nat e),
+  | .write v e a s g deps p via create tags pr ts ft df => obj [("write", obj ([("vault", nat v), ("entry", nat e),
       ("actor", nat a), ("stay", opt nat s), ("epoch", nat g), ("deps", ids deps), ("proposal", proposal p),
       ("via", ids via), ("create", opt (fun (x, h) => obj [("audience", ids x), ("header", header h)]) create),
       ("tags", tagDelta tags)] ++ (match pr with
         | some c => [("proof", nat c)]
         | none => []) ++ (if ts.isEmpty then [] else [("touches", arr (ts.map touch))]) ++
-        if ft then [] else [("fits", bool false)]))]
+        (if ft then [] else [("fits", bool false)]) ++ match df with
+          | some g => [("defines", capGroupJson g)]
+          | none => []))]
   | .mark v e caps wants keep via => obj [("mark", obj ([("vault", nat v), ("entry", nat e)] ++ markJson caps wants ++
       [("keep", ids keep), ("via", ids via)]))]
   | .keys secret to pub => obj [("keys", obj [("secret", keyName secret), ("to", arr (to.map keyName)),
       ("public", bool pub)])]
+  | .claim c v via => obj [("claim", obj [("share", nat c), ("vault", nat v), ("via", ids via)])]
 
 def vault (vt : Vault) : String :=
   obj [("id", nat vt.id), ("kind", kind vt.kind), ("owners", arr (vt.owners.map principal)),

@@ -185,35 +185,57 @@ theorem T23_creations (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs
 C1 to C4 (`avendb/docs/ARCHITECTURE.md` §8): a share is a name and the ops its grantee may make, its level the class of
 its strongest op, and every reader of an entry counts a write by anyone but the entry's vault only where the share the
 write's proof names reaches the entry and every share of its chain is the class of its ops and allows what the write
-touches. The half of C3 about a write's changes, `changes_allowed`, is proven in `Rules.lean`. -/
+touches. A share that names a cap group (CG1) carries no ops of its own: it grants, on an entry, the op of each cap of
+the group in force, and of the groups it includes, that its level reaches and whose slice holds the entry (`opsOn`).
+The half of C3 about a write's changes, `changes_allowed`, is proven in `Rules.lean`. -/
 
 /-- C1 (chains narrow): a chain allows no write that one of its shares forbids, and lets nothing through a share whose
-    level isn't the class of its ops. -/
-theorem chain_narrows {st : State} {cp c : Share} {main : Bool} {ts : List Touch}
-    (h : chainAllows st cp main ts = true) (hc : c ∈ chain st cp) :
-    c.level = levelOf c.ops ∧ allowsAll c.ops main ts = true :=
+    level isn't the class of its ops, unless it names a cap group (`Share.levelOk`). -/
+theorem chain_narrows {st : State} {cp c : Share} {a : Attrs} {main : Bool} {ts : List Touch}
+    (h : chainAllows st cp a main ts = true) (hc : c ∈ chain st cp) :
+    c.levelOk = true ∧ allowsAll (opsOn st c a) main ts = true :=
   Ruling.chain_narrows h hc
 
 /-- C1, a share and the share it rests on: in every reachable state a share's chain allows no write the chain of the
     share it rests on doesn't allow (T22's twin for ops). -/
 theorem child_narrows {st : State} (hr : Reachable st) {c pc : Share} (hc : c ∈ st.shares) (hp : c.parent = some pc.id)
-    (hpc : pc ∈ st.shares) : ∀ main ts, chainAllows st c main ts = true → chainAllows st pc main ts = true :=
+    (hpc : pc ∈ st.shares) : ∀ a main ts, chainAllows st c a main ts = true → chainAllows st pc a main ts = true :=
   Ruling.child_narrows hr hc hp hpc
 
-/-- C2 (readers agree): whether the readers of an entry count a write reads no selector, type or tag, and no ops but
-    those of the chain the write's proof names, so every reader of the entry, whatever shares it opened, counts the same
-    writes. -/
-theorem counts_seen (st : State) (a : VaultId) (en : Entry) (attrs : Attrs) (deps : List EditId)
-    (proof : Option ShareId) (main : Bool) (ts : List Touch) (fits : Bool) :
+/-- C1, shares with their own ops: such a share is what its level says exactly when its level is the class of its ops,
+    and it grants its ops on every entry. -/
+theorem plain_ops {st : State} {c : Share} (hg : c.group = none) (a : Attrs) :
+    (c.levelOk = true ↔ c.level = levelOf c.ops) ∧ opsOn st c a = c.ops :=
+  Ruling.plain_ops hg a
+
+/-- CG1 (a cap group stays under the level): a share that names a cap group grants, on any entry, no op whose class is
+    above the share's level, whatever the group in force, or a later version of it, says. -/
+theorem CG1_group_bounded {st : State} {c : Share} {a : Attrs} {o : Op} (ho : o ∈ opsOn st c a)
+    (hg : c.group.isSome) : o.level.rank ≤ c.level.rank :=
+  Ruling.group_bounded ho hg
+
+/-- C2 (readers agree): whether the readers of an entry count a write reads no selector, and no ops but those of the
+    chain the write's proof names, so every reader of the entry, whatever shares it opened, counts the same writes. Of
+    cap groups it reads what every reader of the vault reads: every share over a vault selects its cap groups
+    (`shareSelects`). -/
+theorem counts_seen (st : State) (a : VaultId) (en : Entry) (deps : List EditId) (proof : Option ShareId) (main : Bool)
+    (ts : List Touch) (fits : Bool) :
+    counts (st.seen (proofShares st proof)) a en deps proof main ts fits = counts st a en deps proof main ts fits :=
+  Ruling.counts_seen st a en deps proof main ts fits
+
+/-- C2, shares with their own ops: where no share names a cap group, the verdict reads no type and no tag either. -/
+theorem counts_seen_plain (st : State) (hg : ∀ c ∈ st.shares, c.group = none) (a : VaultId) (en : Entry)
+    (attrs : Attrs) (deps : List EditId) (proof : Option ShareId) (main : Bool) (ts : List Touch) (fits : Bool) :
     counts (st.seen (proofShares st proof)) a { en with attrs } deps proof main ts fits =
       counts st a en deps proof main ts fits :=
-  Ruling.counts_seen st a en attrs deps proof main ts fits
+  Ruling.counts_seen_plain st hg a en attrs deps proof main ts fits
 
 /-- C2, creations: whether the readers of an entry count its creation, on the main line or as a draft, reads no
     selector and no ops but those of the chain the creation's proof names. -/
-theorem creates_seen (st : State) (a v : VaultId) (x : Audience) (proof : Option ShareId) (main fits : Bool) :
-    creates (st.seen (proofShares st proof)) a v x proof main fits = creates st a v x proof main fits :=
-  Ruling.creates_seen st a v x proof main fits
+theorem creates_seen (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs) (proof : Option ShareId)
+    (main fits : Bool) :
+    creates (st.seen (proofShares st proof)) a v x attrs proof main fits = creates st a v x attrs proof main fits :=
+  Ruling.creates_seen st a v x attrs proof main fits
 
 /-- C3 (counted writes do what they may): a counted write whose actor isn't the entry's vault relies on the share its
     proof names, which its actor holds with write or more and which reaches the entry, and every share of that share's
@@ -222,7 +244,7 @@ theorem counted_allowed {st : State} {a : VaultId} {en : Entry} {deps : List Edi
     {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
     (hv : a ≠ en.vault) :
     ∃ cp ∈ st.shares, proof = some cp.id ∧ holdsShare st a cp .write = true ∧ inAudience st cp en = true ∧
-      ∀ c ∈ chain st cp, c.level = levelOf c.ops ∧ allowsAll c.ops main ts = true :=
+      ∀ c ∈ chain st cp, c.levelOk = true ∧ allowsAll (opsOn st c en.attrs) main ts = true :=
   Ruling.counted_allowed hc hv
 
 /-- C3, by class: each touch of such a write is allowed, in every share of the chain, by an op that writes; a read,
@@ -230,8 +252,8 @@ theorem counted_allowed {st : State} {a : VaultId} {en : Entry} {deps : List Edi
 theorem counted_writes {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option ShareId}
     {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
     (hv : a ≠ en.vault) :
-    ∃ cp ∈ st.shares, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∀ t ∈ ts, ∃ o ∈ c.ops, o.allows main t = true ∧
-      o.level = .write :=
+    ∃ cp ∈ st.shares, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∀ t ∈ ts, ∃ o ∈ opsOn st c en.attrs,
+      o.allows main t = true ∧ o.level = .write :=
   Ruling.counted_writes hc hv
 
 /-- M1 (merges by path): each place a counted merge by anyone but the entry's vault brings a change to, every place the
@@ -240,8 +262,8 @@ theorem counted_writes {st : State} {a : VaultId} {en : Entry} {deps : List Edit
 theorem M1_merges_within {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option ShareId}
     {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
     (hv : a ≠ en.vault) {l : Ops.Loc} (hl : Touch.merged l ∈ ts) :
-    ∃ cp ∈ st.shares, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∃ o p, Op.merge o p ∈ c.ops ∧ onLine main o = true ∧
-      reaches p l.steps = true :=
+    ∃ cp ∈ st.shares, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∃ o p, Op.merge o p ∈ opsOn st c en.attrs ∧
+      onLine main o = true ∧ reaches p l.steps = true :=
   Ruling.counted_merges_within hc hv hl
 
 /-- M2 (merges by policy): a merge into main by anyone but the entry's vault counts only on top of the vault's accept:
@@ -264,7 +286,7 @@ theorem M2_owner_counts (st : State) (en : Entry) (deps : List EditId) (proof : 
     merges into main on top of the vault's accept (M2), and if it is on main, of an entry that has landed (D1). -/
 theorem allowed_counts {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {main : Bool} {ts : List Touch}
     {cp : Share} (hd : ∀ d ∈ deps, d ∉ st.uncounted) (hcp : cp ∈ st.shares) (hh : holdsShare st a cp .write = true)
-    (hi : inAudience st cp en = true) (ha : chainAllows st cp main ts = true)
+    (hi : inAudience st cp en = true) (ha : chainAllows st cp en.attrs main ts = true)
     (hacc : main = true → Touch.merge ∈ ts → accepted st en deps = true)
     (hland : main = true → landed st en = true) :
     counts st a en deps (some cp.id) main ts true = true :=
@@ -273,9 +295,10 @@ theorem allowed_counts {st : State} {a : VaultId} {en : Entry} {deps : List Edit
 /-- C4, creations: a creation that fits, on the main line or as a draft (`main`), in the intake audience of a share over
     the vault that its actor holds with write or more, whose proof names that share and whose chain allows `create` on
     that line, counts. -/
-theorem allowed_creates {st : State} {a v : VaultId} {cp : Share} {main : Bool} (hcp : cp ∈ st.shares)
-    (hv : cp.over = v) (hh : holdsShare st a cp .write = true) (ha : chainAllows st cp main [.create] = true) :
-    creates st a v (intake st cp) (some cp.id) main true = true :=
+theorem allowed_creates {st : State} {a v : VaultId} {cp : Share} {attrs : Attrs} {main : Bool}
+    (hcp : cp ∈ st.shares) (hv : cp.over = v) (hh : holdsShare st a cp .write = true)
+    (ha : chainAllows st cp attrs main [.create] = true) :
+    creates st a v (intake st cp) attrs (some cp.id) main true = true :=
   Ruling.allowed_creates hcp hv hh ha
 
 /-- C4, what builds on writes that don't count: in every reachable state the readers of an entry count no write that
@@ -303,20 +326,21 @@ theorem D1_drafts_land_by_their_vault {st : State} {a : VaultId} {en : Entry} {d
     when it fits and its proof names a share over the vault that its creator holds with write or more, in whose intake
     audience it was created, every share of whose chain is the class of its ops and names `create` on no line or on
     proposals (`allowed_creates` with `main = false`, read back). -/
-theorem D2_draft_creations {st : State} {a v : VaultId} {x : Audience} {proof : Option ShareId} {fits : Bool}
-    (hv : a ≠ v) :
-    creates st a v x proof false fits = true ↔ fits = true ∧ ∃ cp ∈ st.shares, proof = some cp.id ∧ cp.over = v ∧
-      holdsShare st a cp .write = true ∧ intake st cp = x ∧ ∀ c ∈ chain st cp, c.level = levelOf c.ops ∧
-        (Op.create none ∈ c.ops ∨ Op.create (some .proposals) ∈ c.ops) :=
+theorem D2_draft_creations {st : State} {a v : VaultId} {x : Audience} {attrs : Attrs} {proof : Option ShareId}
+    {fits : Bool} (hv : a ≠ v) :
+    creates st a v x attrs proof false fits = true ↔ fits = true ∧ ∃ cp ∈ st.shares, proof = some cp.id ∧
+      cp.over = v ∧ holdsShare st a cp .write = true ∧ intake st cp = x ∧ ∀ c ∈ chain st cp, c.levelOk = true ∧
+        (Op.create none ∈ opsOn st c attrs ∨ Op.create (some .proposals) ∈ opsOn st c attrs) :=
   Ruling.draft_creations hv
 
 /-- D2, a step: a step that takes in a draft records its creation as the start of its own line, and its readers count
     it exactly as `creates` says of a creation on a proposal. -/
 theorem D2_draft_step {st st' : State} {edit : Edit} (h : step st edit = some st')
-    {v e a epoch via x hdr tags proof touches fits}
-    (ha : edit.action = .write v e a none epoch [] .new via (some (x, hdr)) tags proof touches fits) :
+    {v e a epoch via x hdr tags proof touches fits defines}
+    (ha : edit.action = .write v e a none epoch [] .new via (some (x, hdr)) tags proof touches fits defines) :
     (⟨edit.id, edit.author, a, e, none, epoch, [], .new, via, true, x⟩ : Write) ∈ st'.writes ∧
-      st'.uncounted = st.counting (creates st a v x proof false fits) edit.id :=
+      st'.uncounted = st.counting (creates st a v x ⟨hdr.type, a, e, hdr.created, tags.apply []⟩ proof false fits)
+        edit.id :=
   Ruling.draft_step h ha
 
 /-- D3 (drafts aren't public): in every reachable state, where the live part of an entry's audience is its semantic
@@ -366,24 +390,24 @@ theorem S2_ceiling {V : Type} [DecidableEq V] {fit : Ops.Fit V} {n : Nat} {ps : 
 /-- S3 (writes that don't fit count for no reader): readers count no write and no creation whose result doesn't fit,
     whatever its shares and their ops, and so (C4) nothing built on it. -/
 theorem S3_unfit_uncounted (st : State) (a v : VaultId) (en : Entry) (deps : List EditId) (proof : Option ShareId)
-    (main : Bool) (ts : List Touch) (x : Audience) :
-    counts st a en deps proof main ts false = false ∧ creates st a v x proof main false = false := by
+    (main : Bool) (ts : List Touch) (x : Audience) (attrs : Attrs) :
+    counts st a en deps proof main ts false = false ∧ creates st a v x attrs proof main false = false := by
   simp [counts, creates]
 
 /-- S3, a step: a write accepted whose result doesn't fit is one its readers don't count. -/
 theorem S3_step {st st' : State} {edit : Edit} (h : step st edit = some st')
-    {v e actor stay epoch deps proposal via create tags proof touches}
-    (ha : edit.action = .write v e actor stay epoch deps proposal via create tags proof touches false) :
+    {v e actor stay epoch deps proposal via create tags proof touches defines}
+    (ha : edit.action = .write v e actor stay epoch deps proposal via create tags proof touches false defines) :
     edit.id ∈ st'.uncounted :=
   Ruling.step_unfit h ha
 
 /-- S4 (relays don't judge records): whether a write fits, which only its readers can tell, changes nothing but which
     writes they count: the write is accepted or refused alike, and leaves the same operational part of the state. -/
-theorem S4_fit_unread (st : State) (edit : Edit) {v e a s g deps p via create tags proof ts} {f : Bool}
-    (ha : edit.action = .write v e a s g deps p via create tags proof ts f) (f' : Bool) :
-    (apply st { edit with action := .write v e a s g deps p via create tags proof ts f' }).map State.ops =
+theorem S4_fit_unread (st : State) (edit : Edit) {v e a s g deps p via create tags proof ts df} {f : Bool}
+    (ha : edit.action = .write v e a s g deps p via create tags proof ts f df) (f' : Bool) :
+    (apply st { edit with action := .write v e a s g deps p via create tags proof ts f' df }).map State.ops =
       (apply st edit).map State.ops := by
-  have hb : ({ edit with action := .write v e a s g deps p via create tags proof ts f' } : Edit).blind =
+  have hb : ({ edit with action := .write v e a s g deps p via create tags proof ts f' df } : Edit).blind =
       edit.blind := by
     simp only [Edit.blind, Action.blind, ha]
   rw [← Relays.apply_sim (st := st) (st' := st) rfl edit, ← Relays.apply_sim (st := st) (st' := st) rfl, hb]
@@ -400,8 +424,8 @@ readers read off them (`laneOf`): no edit publishes into it, and no peer checks 
     adds nothing. -/
 theorem T17_lane_from_creations {st st' : State} (hr : Reachable st) {edit : Edit} (h : step st edit = some st')
     {v : VaultId} {b : BlobId} (hb : b ∈ laneOf st' v) :
-    b ∈ laneOf st v ∨ ∃ e epoch via x hdr tags proof touches,
-      edit.action = .write v e v none epoch [] .main via (some (x, hdr)) tags proof touches true ∧
+    b ∈ laneOf st v ∨ ∃ e epoch via x hdr tags proof touches defines,
+      edit.action = .write v e v none epoch [] .main via (some (x, hdr)) tags proof touches true defines ∧
       hdr.type ∈ schemaTypes ∧ hdr.blob = b ∧ actsVia st edit.author via v = true :=
   Core.T17_lane_from_creations hr h hb
 
@@ -409,8 +433,8 @@ theorem T17_lane_from_creations {st st' : State} (hr : Reachable st) {edit : Edi
     lens entry holds what its creation put in it; the lane never reads what later writes, or the tags they set, make of
     it. -/
 theorem T17_writes_ignored {st st' : State} (hr : Reachable st) {edit : Edit} (h : step st edit = some st')
-    {v e actor stay epoch deps proposal via tags proof touches fits}
-    (ha : edit.action = .write v e actor stay epoch deps proposal via none tags proof touches fits) :
+    {v e actor stay epoch deps proposal via tags proof touches fits defines}
+    (ha : edit.action = .write v e actor stay epoch deps proposal via none tags proof touches fits defines) :
     laneOf st' = laneOf st := by
   obtain ⟨edits, rfl⟩ := hr
   exact Core.T17_writes_ignored

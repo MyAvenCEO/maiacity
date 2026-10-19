@@ -121,6 +121,33 @@ def groups : List Group := [
 #guard (groups.map fun g => levelOf g.ops) == [.owner, .write, .write, .read, .read, .backup, .relay]
 #guard groups.all fun g => !g.everyone || levelOf g.ops == .read
 
+/-! ## Cap groups
+
+A cap is one op over one slice. A cap group is a name, its caps, and the cap groups of the same vault it includes: an
+entry of its vault (`capGroupType`, `State.lean`), versioned as every entry is, which a share names in place of ops of
+its own (`Share.group`). So Citizen is the Traveler group and the moves of the game: `includes` composes, and a new
+version of a group narrows or widens every share that names it at once. -/
+
+/-- One op over the entries a selector picks. -/
+structure Cap where
+  op    : Op
+  slice : Selector := .all
+  deriving DecidableEq, Repr
+
+/-- A cap group, as the record of its entry says: its name, its caps, and the cap groups of its vault it includes, by
+    their entries. -/
+structure CapGroup where
+  name     : String
+  caps     : List Cap := []
+  includes : List EntryId := []
+  deriving DecidableEq, Repr
+
+/-- A built-in group is a cap group of the same kind, fixed by the engine: each of its ops over the whole vault. -/
+def Group.toCapGroup (g : Group) : CapGroup := ⟨g.name, g.ops.map fun o => ⟨o, .all⟩, []⟩
+
+-- the built-in groups as cap groups grant, over any entry, exactly their ops
+#guard groups.all fun g => (g.toCapGroup.caps.map (·.op)) == g.ops
+
 /-- A step of a place, as a step of a path. -/
 def Ops.Seg.step : Seg → Step
   | .field f => .field f

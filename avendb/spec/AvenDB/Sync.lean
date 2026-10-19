@@ -37,14 +37,14 @@ inductive LogId where
   deriving DecidableEq, Repr
 
 /-- The log an edit belongs to: a vault's genesis and settings, its owners and devices given and revoked, and a seed's
-    key to its vault's; a grant or a keep share, its revocation and its key to the share's; an audience's key to the
+    key to its vault's; a grant or a keep share, its revocation, its claim and its key to the share's; an audience's key to the
     audience's; a write (of a schema or a lens entry too), a mark and an entry's key to the entry's. -/
 def Edit.log? (edit : Edit) : Option LogId :=
   match edit.action with
   | .genesis v .. | .settings v _ | .share (.owner v _) | .share (.device v _) | .revoke (.owner v ..)
   | .revoke (.device v ..) => some (.vault v)
   | .share (.grant c _) => some (.share c.id)
-  | .revoke (.grant c ..) => some (.share c)
+  | .revoke (.grant c ..) | .claim c .. => some (.share c)
   | .write _ e .. | .mark _ e .. => some (.entry e)
   | .keys k .. =>
     match k with
@@ -71,7 +71,7 @@ def mayReceiveAudience (st : State) (d : SignerId) (v : VaultId) (x : Audience) 
     match cp.who with
     | .vault g  => actsFor st d g
     | .everyone => follow.contains v || interested st d v
-    | .device _ => false
+    | .device _ | .invite _ => false
 
 /-- Device `d`, which follows the vaults `follow`, may receive the edits of entry `e`: it may receive the entry's
     audience. -/
@@ -129,6 +129,7 @@ def Edit.vaultsNamed (edit : Edit) : List VaultId :=
   | .revoke (.grant _ a _ via) => a :: via
   | .write v _ a _ _ _ _ via _ _ => [v, a] ++ via
   | .mark v _ _ _ _ via => v :: via
+  | .claim _ v via => v :: via
   | _ => []
 
 /-- `vs` and every vault that owns one of them, directly or further up. -/

@@ -129,11 +129,14 @@ def Level.mode? : Level → Option KeepMode
   | .keep m => some m
   | _ => none
 
-/-- Whom a share names: a vault, everyone, or a device. Only a keep share names a device, one of its issuer's (T4). -/
+/-- Whom a share names: a vault, everyone, a device, or an invite key. Only a keep share names a device, one of its
+    issuer's (T4). An invite key is a one-time signer key its inviter makes and hands on with the invite: until a vault
+    claims the share with it (`Action.claim`), nobody holds the share, and from then on it names that vault. -/
 inductive Who where
   | vault    (v : VaultId)
   | everyone
   | device   (d : SignerId)
+  | invite   (k : SignerId)
   deriving DecidableEq, Repr
 
 /-- The device a share names, if it names one. -/
@@ -143,6 +146,11 @@ def Who.device? : Who → Option SignerId
 
 /-- A share names a device. -/
 def Who.isDevice (w : Who) : Bool := w.device?.isSome
+
+/-- The invite key a share names, if it names one. -/
+def Who.invite? : Who → Option SignerId
+  | .invite k => some k
+  | _ => none
 
 /-! ## Slices
 

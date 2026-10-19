@@ -1,4 +1,4 @@
-import AvenDB.Props
+import AvenDB.Claims
 
 /-!
 # Shares, audiences, removals and relays
@@ -201,27 +201,34 @@ theorem apply_narrow {st post : State} {edit : Edit} (h : apply st edit = some p
   unfold apply at h
   dsimp only at h
   split at h <;> (repeat' split at h) <;> (try cases h) <;> (try rfl)
+  -- a claim changes one share alone
+  obtain ⟨-, -, -, -, -, -, -, -, -, rfl⟩ := applyClaim_some h
+  rfl
 
 /-- An accepted edit leaves the epochs alone. -/
 theorem apply_epochs {st post : State} {edit : Edit} (h : apply st edit = some post) : post.epochs = st.epochs := by
   unfold apply at h
   dsimp only at h
   split at h <;> (repeat' split at h) <;> (try cases h) <;> (try rfl)
+  -- a claim changes one share alone
+  obtain ⟨-, -, -, -, -, -, -, -, -, rfl⟩ := applyClaim_some h
+  rfl
 
 /-- An accepted edit leaves the shares alone, or adds one share with a new id that rests where it may (`restsOk`: on
     nothing for a keep share, else as `shareParentOk` says), and that is no owner share over a whole vault
     (WideOwner). -/
 theorem apply_shares {st post : State} {edit : Edit} (h : apply st edit = some post) :
     post.shares = st.shares ∨
-      ∃ c, post.shares = st.shares ++ [c] ∧ st.share? c.id = none ∧ restsOk st c = true ∧
-        (c.level = .owner → c.wide = false) := by
+      (∃ c, post.shares = st.shares ++ [c] ∧ st.share? c.id = none ∧ restsOk st c = true ∧
+        (c.level = .owner → c.wide = false)) ∨
+      ∃ c v, post = st.claimShare c v := by
   unfold apply at h
   dsimp only at h
   split at h
   case h_8 c via _ =>
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨h1, -, -, h2, -, h3, -, rfl⟩ := h
-    refine .inr ⟨c, rfl, ?_, ?_, fun ho => ?_⟩
+    refine .inr (.inl ⟨c, rfl, ?_, ?_, fun ho => ?_⟩)
     · cases hc : st.share? c.id with
       | none => rfl
       | some _ => simp [hc] at h1
@@ -231,6 +238,9 @@ theorem apply_shares {st post : State} {edit : Edit} (h : apply st edit = some p
     · cases hw : c.wide with
       | false => rfl
       | true => simp [ho, hw] at h2
+  case h_13 =>
+    obtain ⟨-, -, -, -, -, -, -, -, -, rfl⟩ := applyClaim_some h
+    exact .inr (.inr ⟨_, _, rfl⟩)
   all_goals (repeat' split at h) <;> (try cases h) <;> exact .inl rfl
 
 /-- An accepted edit leaves the writes alone, or is a write edit adding one write with its new id and its author that
@@ -239,12 +249,12 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
     post.writes = st.writes ∨
     (∃ w, post.writes = st.writes ++ [w] ∧ w.edit = edit.id ∧ w.author = edit.author ∧
       (∀ x ∈ st.writes, x.edit ≠ w.edit) ∧ depsIn st.writes w = true ∧
-      ∃ v e a s g d p via cr tg pr tc ft, edit.action = .write v e a s g d p via cr tg pr tc ft) ∨
+      ∃ v e a s g d p via cr tg pr tc ft df, edit.action = .write v e a s g d p via cr tg pr tc ft df) ∨
     (post.writes.Sublist st.writes ∧ ∀ w ∈ post.writes, depsIn post.writes w = true) := by
   unfold apply at h
   dsimp only at h
   split at h
-  case h_10 v e actor stay epoch deps proposal via create tags hact =>
+  case h_10 v e actor stay epoch deps proposal via create tags proof touches fits defines hact =>
     split at h
     · cases h
     rename_i hok
@@ -253,8 +263,8 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
       intro x hx hxe
       simp only [Bool.or_eq_true, List.any_eq_true, beq_iff_eq] at hok
       exact hok (.inl ⟨x, hx, hxe⟩)
-    have hw : ∃ v e a s g d p via cr tg pr tc ft, edit.action = .write v e a s g d p via cr tg pr tc ft :=
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, hact⟩
+    have hw : ∃ v e a s g d p via cr tg pr tc ft df, edit.action = .write v e a s g d p via cr tg pr tc ft df :=
+      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, hact⟩
     split at h
     · -- a new entry: its first write builds on nothing
       repeat' split at h
@@ -265,6 +275,9 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
       all_goals
         rename_i hdeps _ _
         exact .inr (.inl ⟨_, rfl, rfl, rfl, hfresh, by simpa using hdeps, hw⟩)
+  case h_13 =>
+    obtain ⟨-, -, -, -, -, -, -, -, -, rfl⟩ := applyClaim_some h
+    exact .inl rfl
   all_goals (repeat' split at h) <;> (try cases h) <;>
     first | exact .inl rfl | exact .inr (.inr (dropUnseen_writes _ _ _))
 
@@ -377,15 +390,56 @@ theorem sharesWell_add {st st' : State} (hw : SharesWell st) {c : Share} (hshare
       simp only [hshares, List.idxOf_append, hc, ↓reduceIte, List.idxOf_cons_self, Nat.zero_add]
       exact List.idxOf_lt_length_of_mem hpcm
 
+/-- Where ids come once, a change that keeps every id finds each changed share at the place it found it. -/
+theorem idxOf_map_id {l : List Share} {f : Share → Share} (hf : ∀ x, (f x).id = x.id) (hnd : (l.map (·.id)).Nodup)
+    {a : Share} (ha : a ∈ l) : (l.map f).idxOf (f a) = l.idxOf a := by
+  induction l with
+  | nil => cases ha
+  | cons b l ih =>
+    simp only [List.map_cons, List.nodup_cons, List.mem_map] at hnd
+    rcases List.mem_cons.1 ha with rfl | ha'
+    · simp [List.idxOf_cons_self]
+    · have hne : b.id ≠ a.id := fun h => hnd.1 ⟨a, ha', h.symm⟩
+      have h1 : (f b == f a) = false := by
+        simp only [beq_eq_false_iff_ne, ne_eq]
+        intro h
+        exact hne (by rw [← hf b, h, hf a])
+      have h2 : (b == a) = false := by
+        simp only [beq_eq_false_iff_ne, ne_eq]
+        intro h
+        exact hne (by rw [h])
+      simp only [List.map_cons, List.idxOf_cons, h1, h2, ih hnd.2 ha', cond_false]
+
+/-- A claim keeps the shares well formed: it keeps every id, place and parent, and changes no share another rests on,
+    since a share rests only on one that names a vault. -/
+theorem sharesWell_claim {st : State} (hw : SharesWell st) (c : ShareId) (v : VaultId) :
+    SharesWell (st.claimShare c v) := by
+  obtain ⟨hnd, hpar⟩ := hw
+  refine ⟨by rw [claimShare_ids]; exact hnd, fun x hx p hp => ?_⟩
+  rw [claimShare_shares] at hx
+  obtain ⟨y, hy, rfl⟩ := List.mem_map.1 hx
+  rw [claimed_parent] at hp
+  obtain ⟨pc, hpc, hlt, hover, hgr, hkeep, hrank, hwide⟩ := hpar y hy p hp
+  have hself : pc.claimed c v = pc := claimed_self (by rw [hgr]; rfl)
+  have hpcm := List.mem_of_find?_eq_some hpc
+  refine ⟨pc, by rw [claimShare_share?, hpc, Option.map_some, hself], ?_, by rw [claimed_over]; exact hover,
+    by rw [claimed_issuer]; exact hgr, hkeep, by rw [claimed_level]; exact hrank,
+    by rw [claimed_wide]; exact hwide⟩
+  rw [claimShare_shares]
+  conv => lhs; rw [← hself]
+  rw [idxOf_map_id (claimed_id c v) hnd hpcm, idxOf_map_id (claimed_id c v) hnd hy]
+  exact hlt
+
 /-- In every reachable state the shares are well formed. -/
 theorem sharesWell_reachable {st : State} (hr : Reachable st) : SharesWell st := by
   obtain ⟨edits, rfl⟩ := hr
   refine replay_inv SharesWell (fun st st' edit hw h => ?_) edits {} ⟨List.nodup_nil, fun _ h => by cases h⟩
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
-  rcases apply_shares hpost with hshares | ⟨c, hshares, hnew, hok, -⟩
+  rcases apply_shares hpost with hshares | ⟨c, hshares, hnew, hok, -⟩ | ⟨c, v, rfl⟩
   · exact (sharesWell_congr ((settle_shares st post).trans hshares)).2 hw
   · exact sharesWell_add hw ((settle_shares st post).trans hshares) hnew hok
+  · exact (sharesWell_congr (settle_shares _ _)).2 (sharesWell_claim hw c v)
 
 /-- With a rank that drops from each share to its parent, any fuel at least a share's rank gives its whole chain. -/
 theorem chainN_stable (st : State) (r : Share → Nat)
@@ -463,7 +517,7 @@ theorem T22_wide_shares {st : State} (hr : Reachable st) :
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   intro x hx
   rw [settle_shares] at hx
-  rcases apply_shares hpost with hshares | ⟨c, hshares, -, hok, hwo⟩
+  rcases apply_shares hpost with hshares | ⟨c, hshares, -, hok, hwo⟩ | ⟨c, v, rfl⟩
   · exact hinv x (hshares ▸ hx)
   · rw [hshares, List.mem_append, List.mem_singleton] at hx
     rcases hx with hx | hx
@@ -479,6 +533,11 @@ theorem T22_wide_shares {st : State} (hr : Reachable st) :
       unfold shareParentOk at hok
       rw [hp] at hok
       simpa using hok
+  · -- a claim keeps every share's level, width, parent, issuer and vault
+    rw [claimShare_shares] at hx
+    obtain ⟨y, hy, rfl⟩ := List.mem_map.1 hx
+    simp only [claimed_level, claimed_wide, claimed_parent, claimed_issuer, claimed_over]
+    exact hinv y hy
 
 /-- Two tests that agree on every member of a list agree on whether some member passes. -/
 theorem any_congr_mem {α : Type} {l : List α} {p q : α → Bool} (h : ∀ x ∈ l, p x = q x) : l.any p = l.any q := by
@@ -678,7 +737,7 @@ theorem resolve_stands (edits : List Edit) :
 theorem replay_writes_from :
     ∀ (l : List Edit) (st : State) (w : Write), w ∈ (replay st l).writes → w ∈ st.writes ∨
       ∃ o ∈ l, o.id = w.edit ∧ o.author = w.author ∧
-        ∃ v e a s g d p via cr tg pr tc ft, o.action = .write v e a s g d p via cr tg pr tc ft
+        ∃ v e a s g d p via cr tg pr tc ft df, o.action = .write v e a s g d p via cr tg pr tc ft df
   | [], _, _, h => .inl h
   | edit :: edits, st, w, h => by
     change w ∈ (replay ((step st edit).getD st) edits).writes at h
