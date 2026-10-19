@@ -365,6 +365,54 @@ test("a feed that can't be reached, or answers otherwise, fails the page, naming
 	expect(vault.hashOf('plants/apple@2')).toBe(LABEL['plants/apple@2']);
 });
 
+test("a world's files are read a few at a time, and one the network drops, or the server can't hand out yet, is asked again", async () => {
+	// the feed as a phone on a busy network reaches it: each file a moment late, the apple's dropped twice ("Load
+	// failed", as Safari says), the tent's answered 503 once, the ant's never; counting how many are read at once
+	const f = feedOf();
+	const [apple, tent, ant] = ['plants/apple@2', 'things/bell-tent@1', 'actors/ant@1:ant'].map((l) => rowAt(l).entry);
+	const drops = new Map([[apple, 2], [tent, 1], [ant, 9]]);
+	const tries = new Map();
+	let now = 0;
+	let most = 0;
+	const get = async (url, o) => {
+		const entry = /\/entry\/[0-9a-f]{64}\/([0-9a-f]{64})\/file/.exec(url)?.[1];
+		if (!entry) return f.get(url, o);
+		tries.set(entry, (tries.get(entry) ?? 0) + 1);
+		most = Math.max(most, ++now);
+		try {
+			await new Promise((r) => setTimeout(r, 2));
+			const left = drops.get(entry) ?? 0;
+			drops.set(entry, left - 1);
+			if (left > 0 && entry === tent) return new Response('the server can\'t read this file yet', { status: 503 });
+			if (left > 0) throw new TypeError('Load failed');
+			return f.get(url, o);
+		} finally {
+			now--;
+		}
+	};
+	const none = { get: async () => undefined, put: async () => true };
+	await vault.loadRecipes({ feed: AT, fetch: get, timeout: 1000, kept: none, again: [0, 0] });
+	const hashes = Object.keys(made.index.recipes).filter((h) => made.index.recipes[h].group === 'plants');
+	const asked = [...hashes, LABEL['things/bell-tent@1']];
+	const got = await Promise.all(asked.map((h) => vault.recipeAt(h)));
+	expect(got.map((x) => x.code)).toEqual(asked.map((h) => FILES[h]));
+	expect(hashes.length).toBeGreaterThan(20);
+	expect(most).toBeLessThanOrEqual(6);
+	// the apple came on its third asking, the tent on its second, every other file on its first; the ant, dropped
+	// every time, fails, saying how often it was asked
+	expect([tries.get(apple), tries.get(tent)]).toEqual([3, 2]);
+	expect([...tries].filter(([e]) => e !== apple && e !== tent).every(([, n]) => n === 1)).toBe(true);
+	const err = await thrown(() => vault.recipeAt(LABEL['actors/ant@1:ant']));
+	expect(err).toBeInstanceOf(NotInVault);
+	expect(err.message).toBe('actors/ant@1:ant: its file could not be read from the Maia City vault (Load failed, asked 3 times)');
+	expect(tries.get(ant)).toBe(3);
+	// a file the server hasn't got is no passing failure: asked once
+	const lost = feedOf({ files: new Map([...FEED.files].filter(([e]) => e !== tent)) });
+	await vault.loadRecipes({ feed: AT, fetch: lost.get, timeout: 1000, kept: none, again: [0, 0] });
+	expect((await thrown(() => vault.recipeAt(LABEL['things/bell-tent@1']))).message).toMatch(/answered 404\)$/);
+	expect(lost.files().length).toBe(1);
+});
+
 test("the dev server's stand-in serves the feed as avenDB's server does: the rows, and each entry's file as plain text", async () => {
 	const serve = serveDevFeed('/__recipe-feed', async () => FEED);
 	const ask = (url) =>

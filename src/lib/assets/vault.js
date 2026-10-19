@@ -61,8 +61,61 @@ export const feedOf = () => (import.meta.env.DEV && import.meta.env.VITE_RECIPE_
 /** the most a recipe's file may be (the stand-in's, the largest, is 315 kB), as the avenDB app's Assets read one */
 export const MOST = 16_000_000;
 
-/** how long the feed may take to answer, and a recipe's file (ms) */
+/** how long the feed may take to answer, and a recipe's file once it is asked for (ms) */
 const TIMEOUT = { rows: 15000, file: 30000 };
+
+/**
+ * How many recipe files a page asks the feed for at once: a world asks for dozens together, and a phone's network or
+ * a busy server drops what it can't carry (Sandbox 4 on an iPad, 2026-10-19: 79 at once, each "Load failed").
+ */
+const AT_ONCE = 6;
+
+/** after how long (ms) a file the network dropped, that took too long, or that the server couldn't hand out yet is
+ *  asked again: twice, then it fails */
+const AGAIN = [1000, 4000];
+
+/** the files being read, and those waiting their turn @type {{ running: number, waiting: (() => void)[] }} */
+const turns = { running: 0, waiting: [] };
+/** a turn to read a file: at once while fewer than `AT_ONCE` are read, else when one ends */
+const turn = () => (turns.running < AT_ONCE ? (turns.running++, Promise.resolve()) : new Promise((go) => turns.waiting.push(go)));
+/** a turn over: the next waiting one takes it */
+const done = () => {
+	const next = turns.waiting.shift();
+	if (next) next();
+	else turns.running--;
+};
+
+/** an answer the server may give otherwise when asked again: it couldn't read the file yet, or a proxy before it failed */
+const passing = (/** @type {number} */ status) => status === 502 || status === 503 || status === 504;
+
+/**
+ * A file's bytes off the feed at `url`, in its turn (`AT_ONCE`), within `TIMEOUT.file` from when it is asked: asked
+ * again (`again`, the waits between) where the network dropped it, it took too long, or the server couldn't hand it out
+ * yet; what failed the last time is said, and how often it was asked.
+ * @param {typeof globalThis.fetch} get @param {string} url @param {number[]} again
+ */
+async function fetched(get, url, again) {
+	for (let i = 0; ; i++) {
+		/** what failed this time, and whether asking again may help */
+		let failed, retry;
+		await turn();
+		const ctl = new AbortController();
+		const t = setTimeout(() => ctl.abort(), TIMEOUT.file);
+		try {
+			const res = await get(url, { signal: ctl.signal });
+			if (res.ok) return new Uint8Array(await res.arrayBuffer());
+			[failed, retry] = [new Error(`${url} answered ${res.status}`), passing(res.status)];
+		} catch (e) {
+			// the network dropped it, or it took too long
+			[failed, retry] = [e instanceof Error ? e : new Error(String(e)), true];
+		} finally {
+			clearTimeout(t);
+			done();
+		}
+		if (!retry || i >= again.length) throw i ? new Error(`${failed.message}, asked ${i + 1} times`) : failed;
+		await new Promise((r) => setTimeout(r, again[i]));
+	}
+}
 
 /**
  * The index of the vault's recipes, as the repo's was shaped (`virtual:asset-recipes`): the engine they are made for,
@@ -142,33 +195,25 @@ const holds = (bytes, hash) => bytes instanceof Uint8Array && bytesToHex(blake3(
  * How a row's file is read: this device's copy of it, where it keeps one that hashes to the recipe's hash (`kept`);
  * otherwise the newest its entry brings (the feed lists them oldest first), or for one version of an asset's entry,
  * the file of its own write (./sources/avendb.js `versionsOf`), by its root, from the feed beside the rows, whole, as
- * bytes, so its hash is of the bytes the server holds, kept on the device once it hashes to the recipe's. Refused,
- * saying why, where its entry brings none or one larger than a recipe may be. Either way ./sources/avendb.js holds
- * what it hands out to the ref's hash, version and variant.
+ * bytes, a few at a time and asked again where it was dropped (`fetched`), so its hash is of the bytes the server
+ * holds, kept on the device once it hashes to the recipe's. Refused, saying why, where its entry brings none or one
+ * larger than a recipe may be. Either way ./sources/avendb.js holds what it hands out to the ref's hash, version and
+ * variant.
  */
-const readerOf = (get, feed, kept) => async (row) => {
+const readerOf = (get, feed, kept, again) => async (row) => {
 	const hash = hashOfRow.get(row);
 	const had = hash ? await Promise.resolve(kept.get(hash)).catch(() => undefined) : undefined;
 	if (had && holds(had, hash)) return had;
 	const file = Array.isArray(row?.files) ? row.files.at(-1) : undefined;
 	if (!file) throw new Error('its entry brings no file');
 	if (typeof file.len === 'number' && file.len > MOST) throw new Error(`its file is ${file.len.toLocaleString('en')} bytes, more than a recipe may be (${MOST.toLocaleString('en')})`);
-	const url = fileOf(row.vault, row.entry, feed, row.edit ? file.root : undefined);
-	const ctl = new AbortController();
-	const t = setTimeout(() => ctl.abort(), TIMEOUT.file);
-	try {
-		const res = await get(url, { signal: ctl.signal });
-		if (!res.ok) throw new Error(`${url} answered ${res.status}`);
-		const bytes = new Uint8Array(await res.arrayBuffer());
-		if (hash && holds(bytes, hash)) Promise.resolve(kept.put(hash, bytes)).catch(() => {});
-		return bytes;
-	} finally {
-		clearTimeout(t);
-	}
+	const bytes = await fetched(get, fileOf(row.vault, row.entry, feed, row.edit ? file.root : undefined), again);
+	if (hash && holds(bytes, hash)) Promise.resolve(kept.put(hash, bytes)).catch(() => {});
+	return bytes;
 };
 
 /** the recipes read off the feed: what the page knows of them after */
-async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = TIMEOUT.rows, kept = KEPT } = {}) {
+async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = TIMEOUT.rows, kept = KEPT, again = AGAIN } = {}) {
 	const url = seedFeedOf(['recipe'], feed);
 	source = null;
 	fill(null);
@@ -185,7 +230,7 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 	if ('error' in got) return failed(`the asset recipes could not be loaded from the Maia City vault: ${got.error}`);
 	// an entry the vault deleted (tagged so: src/lib/avendb/seed.js GONE) is no recipe of it
 	const rows = got.rows.filter((r) => !(r?.tags ?? []).includes('avendb:deleted'));
-	const read = vaultRecipes(rows, { read: readerOf(get, feed, kept) });
+	const read = vaultRecipes(rows, { read: readerOf(get, feed, kept, again) });
 	hashOfRow = new WeakMap(Object.keys(read.index.recipes).map((h) => [read.rowOf(h), h]));
 	if (!Object.keys(read.index.recipes).length)
 		return failed(`the Maia City vault holds no asset recipes yet: ${url} listed ${rows.length ? `${rows.length} entries, none of them one` : 'none'}${read.refused.length ? ` (${read.refused.slice(0, 3).join('; ')})` : ''}`);
@@ -202,8 +247,9 @@ let loading = null;
  * The vault's recipes, loaded once a page (and shared by every module of it): resolves to what the page knows of them
  * (`recipes`), ready or failed; never throws. With options, loaded again from there: `feed` where /feed/code is,
  * `fetch`, `timeout`, `kept` where the files are kept on the device (`{ get(hash), put(hash, bytes) }`, ./cache.js's
- * by default): a test's, or a page's that asks again (`reloadRecipes`).
- * @param {{ feed?: string, fetch?: typeof globalThis.fetch, timeout?: number, kept?: { get: (hash: string) => any, put: (hash: string, bytes: Uint8Array) => any } }} [o]
+ * by default), `again` the waits before a dropped file is asked again (ms, `AGAIN`): a test's, or a page's that asks
+ * again (`reloadRecipes`).
+ * @param {{ feed?: string, fetch?: typeof globalThis.fetch, timeout?: number, kept?: { get: (hash: string) => any, put: (hash: string, bytes: Uint8Array) => any }, again?: number[] }} [o]
  * @returns {Promise<typeof recipes>}
  */
 export const loadRecipes = (o) => (o ? (loading = load(o)) : (loading ??= load()));
