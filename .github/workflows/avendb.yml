@@ -4,8 +4,8 @@ name: avenDB server
 # so a change to avenDB never restarts the API or the media vault, and a failed avenDB build never holds up theirs.
 #
 #   image  – build the server's image (avendb/Dockerfile.server), push to GHCR tagged with the commit
-#   deploy – over SSH: AVENDB_IMAGE and its bucket's settings into the server's .env, then pull and restart this one
-#            container
+#   deploy – over SSH: AVENDB_IMAGE, its bucket's settings and its bucket of snapshots into the server's .env, then pull
+#            and restart this one container
 #   bucket – make sure avenDB's own bucket is there (BUCKET in hel1, beside the media vault's), with Object Lock
 #
 # The bucket gets Object Lock as it is made, as no bucket can get it later, and so keeps versioning on for good. Every
@@ -42,6 +42,8 @@ env:
   API_HOST: api.maia.city
   AVENDB_HOST: avendb.maia.city
   BUCKET: maiacity-avendb
+  # its bucket of snapshots, which avendb-backups.yml makes
+  SNAPSHOTS: maiacity-avendb-snapshots
   S3_ENDPOINT: https://hel1.your-objectstorage.com
   S3_REGION: hel1
 
@@ -101,8 +103,10 @@ jobs:
           # The bucket's settings, if every secret is set: with one missing, the server keeps its store on its volume.
           # They go to the server over stdin too, and never into the log.
           if [ -n "$BUCKET_ACCESS_KEY" ] && [ -n "$BUCKET_SECRET_KEY" ] && [ -n "$BUCKET_SEAL" ]; then
-            BUCKET_ENV=$(printf 'AVENDB_BUCKET=%s\nAVENDB_BUCKET_ENDPOINT=%s\nAVENDB_BUCKET_REGION=%s\nAVENDB_BUCKET_ACCESS_KEY=%s\nAVENDB_BUCKET_SECRET_KEY=%s\nAVENDB_BUCKET_SEAL=%s' \
-              "$BUCKET" "$S3_ENDPOINT" "$S3_REGION" "$BUCKET_ACCESS_KEY" "$BUCKET_SECRET_KEY" "$BUCKET_SEAL")
+            # and its bucket of snapshots (avendb/docs/BACKUP.md, avendb-backups.yml), at the same endpoint with the same
+            # key and seal: every vault backed up into it each day at 03:00 UTC
+            BUCKET_ENV=$(printf 'AVENDB_BUCKET=%s\nAVENDB_BUCKET_ENDPOINT=%s\nAVENDB_BUCKET_REGION=%s\nAVENDB_BUCKET_ACCESS_KEY=%s\nAVENDB_BUCKET_SECRET_KEY=%s\nAVENDB_BUCKET_SEAL=%s\nAVENDB_SNAPSHOTS=%s' \
+              "$BUCKET" "$S3_ENDPOINT" "$S3_REGION" "$BUCKET_ACCESS_KEY" "$BUCKET_SECRET_KEY" "$BUCKET_SEAL" "$SNAPSHOTS")
           else
             BUCKET_ENV=
             echo "::warning::No bucket for avenDB's server: set HETZNER_S3_ACCESS_KEY, HETZNER_S3_SECRET_KEY and AVENDB_BUCKET_SEAL."
@@ -114,7 +118,7 @@ jobs:
           grep -q '^AVENDB_DATA_PATH=' .env 2>/dev/null \
             || { echo "::error::$APP_DIR/.env has no avenDB settings yet: run the API workflow (api.yml) first."; exit 1; }
           sed -i '/^AVENDB_IMAGE=/d' .env && echo "AVENDB_IMAGE=$IMAGE" >> .env
-          sed -i '/^AVENDB_BUCKET/d' .env
+          sed -i '/^AVENDB_BUCKET/d; /^AVENDB_SNAPSHOTS=/d' .env
           cat >> .env <<'BUCKET'
           $BUCKET_ENV
           BUCKET

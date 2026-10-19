@@ -50,9 +50,9 @@ const HEADS: &str = "heads/";
 const JOURNAL: &str = "journal/";
 
 /// A blob on the shelf: its hash and its size.
-type Blob = (Hash, u64);
+pub(crate) type Blob = (Hash, u64);
 /// A McEliece key on the shelf: its id, the hash of the blob that holds it, and its size.
-type Key = (BlobId, u64);
+pub(crate) type Key = (BlobId, u64);
 
 /// A node's edits on its shelf, as the module says.
 pub(crate) struct Edits {
@@ -143,7 +143,7 @@ fn put_keys(out: &mut Vec<u8>, keys: &[Key]) {
 }
 
 /// The hash of the blob that holds McEliece key `id`: its id.
-fn key_blob(id: BlobId) -> Hash {
+pub(crate) fn key_blob(id: BlobId) -> Hash {
     Hash::from_bytes(id.0)
 }
 
@@ -409,6 +409,20 @@ impl Edits {
             }
         }
     }
+}
+
+/// A pack of the edits `signed`, as a shelf keeps them: what a head names, and what a vault's snapshot is made of
+/// (`backup`), so that a snapshot's packs are a restored node's own.
+pub(crate) fn pack_of<'a>(signed: impl IntoIterator<Item = &'a Signed>) -> Bytes {
+    let mut out = PACK.to_vec();
+    signed.into_iter().for_each(|s| record(&mut out, s));
+    out.into()
+}
+
+/// Puts the first head on `shelf`, a new node's: of `packs` and the McEliece keys `keys`, each a blob the shelf holds.
+/// A node started on it takes back their edits and keys (`Edits::open`), each checked again: a restored snapshot.
+pub(crate) async fn put_first_head(shelf: &Shelf, packs: Vec<Blob>, keys: Vec<Key>) -> Result<()> {
+    Ok(shelf.put(&head_name(1), Head { journal: 0, packs, keys }.to_bytes()).await?)
 }
 
 /// Head `n` on `shelf`, and the edits of its packs, every one of which must read whole.

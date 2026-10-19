@@ -277,7 +277,7 @@ impl Shelf {
 }
 
 /// A name for a blob being written, of the node's own choosing.
-fn fresh() -> String {
+pub(crate) fn fresh() -> String {
     let mut n = [0; 8];
     getrandom::fill(&mut n).expect("randomness");
     format!("new-{}", HEXLOWER.encode(&n))

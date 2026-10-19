@@ -158,6 +158,12 @@ impl Sealed {
         Sealed { bucket: Arc::new(bucket), key: Arc::new(Secret::derive(SEAL, seal)) }
     }
 
+    /// `bucket`, each object sealed under a key derived from `seal` for `purpose`: the bucket of snapshots seals each
+    /// vault's folder under a key of its own (`backup`).
+    pub(crate) fn derived(bucket: Arc<dyn Bucket>, purpose: &str, seal: &[u8; 32]) -> Sealed {
+        Sealed { bucket, key: Arc::new(Secret::derive(purpose, seal)) }
+    }
+
     /// Puts `plain` under `name`, sealed.
     pub async fn put(&self, name: &str, plain: &[u8]) -> Result<()> {
         let mut rng = SeededRng::new("avenDB bucket nonce", &*crate::server::random()?);
@@ -242,10 +248,10 @@ fn failed(e: anyhow::Error) -> io::Error {
 }
 
 /// The shelf of a node whose shelf is a bucket: the bucket's generation in use, with what it writes staged in the
-/// node's folder and what it read of late cached there.
+/// node's folder and what it read of late cached there; or a vault's folder in the bucket of snapshots (`backup`).
 struct BucketShelf {
     bucket: Sealed,
-    /// The prefix of the generation in use, `g<n>/`.
+    /// The prefix of the generation in use, `g<n>/`, or of the vault's folder, `vaults/<vault>/`.
     root: String,
     staging: PathBuf,
     cache: PathBuf,
@@ -312,7 +318,14 @@ pub async fn shelf(bucket: Sealed, dir: &Path, budget: u64) -> Result<Shelf> {
             Err(e) => tracing::warn!("avendb: the bucket isn't cleared of what came before generation {FLOOR}: {e:#}"),
         }
     });
-    let local = dir.join(format!("g{n}"));
+    shelf_at(bucket, format!("g{n}/"), &dir.join(format!("g{n}")), budget)
+}
+
+/// A shelf whose blobs and named objects are those in `bucket` under the prefix `root`, which ends in `/`, beside the
+/// folder `local`, which stages what it writes and caches `budget` bytes of parts at most: a generation's (`shelf`),
+/// or a vault's folder in the bucket of snapshots (`backup`), which no reset clears. What the folder staged of blobs
+/// never finished, it drops.
+pub(crate) fn shelf_at(bucket: Sealed, root: String, local: &Path, budget: u64) -> Result<Shelf> {
     let (staging, cache) = (local.join("new"), local.join("cache"));
     if staging.exists() {
         fs::remove_dir_all(&staging)?;
@@ -333,7 +346,7 @@ pub async fn shelf(bucket: Sealed, dir: &Path, budget: u64) -> Result<Shelf> {
     }
     let on = Arc::new(BucketShelf {
         bucket,
-        root: format!("g{n}/"),
+        root,
         staging,
         cache,
         sizes: Mutex::default(),

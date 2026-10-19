@@ -248,6 +248,7 @@ plain HTTP on port 3350 and the feed's on port 3351. Its environment:
 | `AVENDB_GATE` | `off` | `on`: it takes a new person's vault only with an invite of Maia City's it claims, and a new coop or aven only where an admin owns it (Maia City, its owner, or a holder of its cap group named Admin); `off`: any. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §5, Who the server takes |
 | `AVENDB_BUCKET` and the rest | none | Its bucket (see [Deploying the server](#deploying-the-server), step 6) |
 | `AVENDB_CACHE` | `8` | With a bucket, the gigabytes of the parts it read lately that its folder caches |
+| `AVENDB_SNAPSHOTS` and the rest | none | Its bucket of snapshots: every vault backed up into it each day (see [docs/BACKUP.md](docs/BACKUP.md)) |
 | `RUST_LOG` | `info` | How much it logs |
 
 ### Deploying the server
@@ -283,6 +284,11 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
    the GitHub secret `AVENDB_BUCKET_SEAL`, and the compose files pass them on; with one of those secrets unset, it
    writes none. The bucket is avenDB's own, `maiacity-avendb` in `hel1`, beside the media vault's: `avendb.yml`'s
    `bucket` job makes it with Object Lock, every object version locked for 7 days, or checks the one there.
+7. **Its backups** ([docs/BACKUP.md](docs/BACKUP.md)): `avendb.yml` also writes `AVENDB_SNAPSHOTS`, the bucket of
+   snapshots `maiacity-avendb-snapshots` beside it, which `avendb-backups.yml` makes with Object Lock. The server backs
+   up every vault into it each day at 03:00 UTC, and on `docker kill -s USR1 maia-city-avendb`; `avendb-server drill`
+   rehearses a restore of every vault from it, and `avendb-server restore` brings the server back from it after a
+   disaster, as the same device.
 
 Its shelf and its device's secret live in its bucket, or on the Hetzner volume where it keeps none, so a rebuilt server
 is still the same device, even with its folder lost; the database backups don't hold them. Losing them makes a new

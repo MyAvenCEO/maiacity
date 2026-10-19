@@ -28,6 +28,7 @@
 //! City's told apart, each listed or whole, as JSON over plain HTTP on a socket of its own, behind the same proxy at
 //! avendb.maia.city/feed/.
 
+pub mod backups;
 pub mod bucket;
 pub mod feed;
 
@@ -38,7 +39,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
-use anyhow::{Context as _, Result, anyhow};
+use anyhow::{Context as _, Result, anyhow, bail};
+use avendb::backup::Keep;
 use avendb::id::SignerId;
 use avendb_net::bucket::Sealed;
 use avendb_net::{Admission, Node, Offer, Options, server, token_pass};
@@ -83,6 +85,25 @@ pub struct Config {
     pub bucket: Option<BucketConfig>,
     /// The most bytes of the files in its bucket its folder caches (`AVENDB_CACHE`, in gigabytes, 8 by default).
     pub cache: u64,
+    /// The bucket of snapshots of every vault it keeps (`AVENDB_SNAPSHOTS` and the rest of `SnapshotsConfig`), if any;
+    /// else it backs nothing up.
+    pub snapshots: Option<SnapshotsConfig>,
+}
+
+/// The server's backups (`backups`, `docs/BACKUP.md`): the bucket of snapshots, with a folder for each vault, and when
+/// each day it backs up every vault.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SnapshotsConfig {
+    /// The bucket (`AVENDB_SNAPSHOTS`, its name), at `AVENDB_SNAPSHOTS_ENDPOINT` and `AVENDB_SNAPSHOTS_REGION`, with
+    /// the key `AVENDB_SNAPSHOTS_ACCESS_KEY` and `AVENDB_SNAPSHOTS_SECRET_KEY`, each the server's bucket's if unsaid;
+    /// each folder sealed under a key derived from the server's seal (`AVENDB_BUCKET_SEAL`) and its vault.
+    pub bucket: BucketConfig,
+    /// When each day it backs up every vault (`AVENDB_SNAPSHOTS_AT`, `03:00` by default), in seconds into the day, UTC.
+    pub at: u64,
+    /// The folder where what it puts in the bucket is staged and what it reads cached (`AVENDB_SNAPSHOTS_DIR`,
+    /// `avendb-snapshots` in the system's temporary folder by default): not the server's own, which it clears of all
+    /// but its shelf as it starts.
+    pub dir: PathBuf,
 }
 
 /// The bucket that is the server's shelf (blobs B3a), its folder only a cache of it.
@@ -146,8 +167,37 @@ impl Config {
                 Some(v) => v.parse::<u64>().map(|g| g << 30).with_context(|| format!("AVENDB_CACHE: {v} isn't one"))?,
                 None => avendb_net::bucket::CACHE,
             },
+            snapshots: var("AVENDB_SNAPSHOTS").map(|name| snapshots_config(name, &var)).transpose()?,
         })
+        .and_then(Config::checked)
     }
+
+    /// It, if its buckets are two: the server clears its own of all but its shelf (`avendb_net::bucket::clear`).
+    fn checked(self) -> Result<Config> {
+        if let (Some(b), Some(s)) = (&self.bucket, &self.snapshots)
+            && (b.name == s.bucket.name && b.endpoint == s.bucket.endpoint)
+        {
+            bail!("AVENDB_SNAPSHOTS: {} is the server's own bucket, which it clears of all but its shelf", b.name);
+        }
+        Ok(self)
+    }
+}
+
+/// The bucket of snapshots named `name`, as `var` says the rest of it is: what it doesn't say, as the server's bucket
+/// is, and the server's seal, which must be said.
+fn snapshots_config(name: String, var: &impl Fn(&str) -> Option<String>) -> Result<SnapshotsConfig> {
+    // each part as the server's bucket's, unless its own is said; the seal the server's alone
+    let mine = |n: &str| match n.strip_prefix("AVENDB_BUCKET_").filter(|part| *part != "SEAL") {
+        Some(part) => var(&format!("AVENDB_SNAPSHOTS_{part}")).or_else(|| var(n)),
+        None => var(n),
+    };
+    let bucket = bucket_config(name, &mine).context("AVENDB_SNAPSHOTS, the bucket of snapshots")?;
+    let at = match var("AVENDB_SNAPSHOTS_AT") {
+        Some(v) => backups::time_of_day(&v).with_context(|| format!("AVENDB_SNAPSHOTS_AT: {v} is no HH:MM"))?,
+        None => 3 * 3600,
+    };
+    let dir = var("AVENDB_SNAPSHOTS_DIR").map_or_else(|| std::env::temp_dir().join("avendb-snapshots"), PathBuf::from);
+    Ok(SnapshotsConfig { bucket, at, dir })
 }
 
 /// The bucket named `name`, as `var` says the rest of it is: every part must be said.
@@ -167,11 +217,12 @@ fn bucket_config(name: String, var: &impl Fn(&str) -> Option<String>) -> Result<
     })
 }
 
-/// The server running: its node, its relay, its feed, and its offer.
+/// The server running: its node, its relay, its feed, its backups, and its offer.
 pub struct Running {
     pub node: Arc<Node>,
     pub relay: Relay,
     pub feed: feed::Feed,
+    pub backups: Option<backups::Backups>,
     /// What the apps know of the server (P8c), so that a new device links through it with its person's passkey alone:
     /// its device, its endpoint, where devices on UDP reach it (`Config::public_addr`) and its relay. A device it
     /// doesn't know yet reaches it straight, over UDP, as its relay lets the device in only once it joined.
@@ -203,6 +254,7 @@ pub async fn start(config: &Config) -> Result<Running> {
         }
         None => avendb_net::disk::open(&config.data)?,
     };
+    let own = shelf.clone();
     let opts = Options {
         bind: Some(config.bind),
         direct: false,
@@ -231,7 +283,8 @@ pub async fn start(config: &Config) -> Result<Running> {
         offer.addr = relays.into_iter().fold(addr, EndpointAddr::with_relay_url);
     }
     let feed = feed::Feed::spawn(config.feed_bind, node.clone()).await?;
-    Ok(Running { node, relay, feed, offer })
+    let backups = config.snapshots.as_ref().map(|s| backups::Backups::spawn(node.clone(), own, s, Keep::default()));
+    Ok(Running { node, relay, feed, backups: backups.transpose()?, offer })
 }
 
 /// The server's relay: iroh's, serving plain HTTP on its socket, letting in only the clients its admission admits or

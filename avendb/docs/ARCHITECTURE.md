@@ -1961,6 +1961,21 @@ story of Maia City with a doc post.
 A server with no bucket runs on a folder shelf, laid out the same. A node with no shelf at all keeps its blobs in
 memory and nothing past its end; only tests run one.
 
+### Snapshots
+
+The server's bucket holds what is true now. Each day the server also backs up every vault into a bucket of snapshots
+of its own, `maiacity-avendb-snapshots` ([BACKUP.md](BACKUP.md), `spec/AvenDB/Backup.lean`, B1 to B9):
+
+- **A folder per vault**, `vaults/<vault>/`, laid out as a shelf (`bucket::shelf_at`), sealed under a key derived from
+  the seal and the vault. No reset clears it.
+- **By frontiers.** A backup asks the vault's snapshot, `respond` for the whole vault, for what lies beyond the
+  frontiers its newest manifest names, as a device asks a peer (T19), and adds one pack of that, in the format a node
+  keeps its own edits in. It copies only the keys and file blobs the folder lacks. Each snapshot is one manifest and
+  one HashSeq root of every blob it names. At 64 packs, the next is made whole.
+- **Back as a node.** A restore copies a snapshot's blobs onto a new shelf and puts the first head of its packs, so a
+  node started there takes back every edit, each checked again. A drill checks each log against the manifest (B9) and
+  every file whole; a restore after a disaster brings every vault and the server's secret back on a new shelf.
+
 ## 15. The Lean model: what guards what
 
 The model is Lean 4 with no Mathlib (`spec/`). `lake build` checks every proof, every scenario (`#guard` in

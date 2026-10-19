@@ -1,18 +1,50 @@
-//! The avenDB server's binary: its node and its relay, as its environment says (`Config`), until it is told to stop.
+//! The avenDB server's binary: its node and its relay, as its environment says (`Config`), until it is told to stop;
+//! and, with a bucket of snapshots (`AVENDB_SNAPSHOTS`), what it does with them from the bucket alone (`backups`):
+//!
+//! - `avendb-server`: runs the server; SIGUSR1 has it back up every vault now (`docker kill -s USR1 maia-city-avendb`);
+//! - `avendb-server snapshots`: lists each vault's snapshots;
+//! - `avendb-server drill [--at <time>]`: rehearses a restore of every vault, each into a node of its own, and fails
+//!   unless each comes back whole;
+//! - `avendb-server restore [--at <time>]`: with the server stopped, puts its shelf aside and restores every vault onto
+//!   a new one, as the server, the same device.
+//!
+//! A time is seconds since 1970, or a day, `YYYY-MM-DD`, to its end in UTC: each vault as its newest snapshot then.
 
-use anyhow::{Result, anyhow};
+use std::process::ExitCode;
+
+use anyhow::{Context as _, Result, anyhow, bail};
+use avendb_server::backups::{self, time_said, when};
 use avendb_server::{Config, start};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<ExitCode> {
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     tracing_subscriber::fmt().with_env_filter(filter).init();
     // the TLS of whatever doesn't name its own: avenDB's, X25519MLKEM768 only, never iroh-relay's ring
     let provider = std::sync::Arc::unwrap_or_clone(avendb_net::pq_provider());
     provider.install_default().map_err(|_| anyhow!("a TLS provider was installed before avenDB's"))?;
     let config = Config::from_env()?;
-    let running = start(&config).await?;
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let at = match args.iter().position(|a| a == "--at") {
+        Some(i) => {
+            let said = args.get(i + 1).context("--at: no time after it")?;
+            Some(time_said(said).with_context(|| format!("--at: {said} is neither seconds since 1970 nor YYYY-MM-DD"))?)
+        }
+        None => None,
+    };
+    match args.first().map(String::as_str) {
+        None => serve(&config).await.map(|()| ExitCode::SUCCESS),
+        Some("snapshots") => list(&config).await.map(|()| ExitCode::SUCCESS),
+        Some("drill") => drill(&config, at).await,
+        Some("restore") => restore(&config, at).await.map(|()| ExitCode::SUCCESS),
+        Some(other) => bail!("{other}: avendb-server runs the server, or says snapshots, drill or restore"),
+    }
+}
+
+/// Runs the server until it is told to stop.
+async fn serve(config: &Config) -> Result<()> {
+    let running = start(config).await?;
     let node = &running.node;
     let (device, vault) = (node.device(), avendb_net::server::vault(node).await);
     match vault {
@@ -32,25 +64,91 @@ async fn main() -> Result<()> {
         }
         None => tracing::info!("avenDB server: no bucket, its shelf is in {data}"),
     }
-    stopped().await?;
+    match &config.snapshots {
+        Some(s) => tracing::info!(
+            "avenDB server: backs up every vault into bucket {} each day at {} UTC, and on SIGUSR1",
+            s.bucket.name,
+            &when(s.at)[11..16]
+        ),
+        None => tracing::info!("avenDB server: no bucket of snapshots, so no backups"),
+    }
+    stopped(running.backups.as_ref()).await?;
     tracing::info!("avenDB server: stopping");
     running.shutdown().await
 }
 
-/// Waits until the process is told to stop: ctrl-c, or the SIGTERM a container gets.
-async fn stopped() -> Result<()> {
+/// The bucket of snapshots `config` names.
+fn snapshots(config: &Config) -> Result<avendb_net::backup::Snapshots> {
+    backups::snapshots(config.snapshots.as_ref().context("AVENDB_SNAPSHOTS: unsaid, so there are no snapshots")?)
+}
+
+/// Lists each vault's snapshots, and what the newest holds.
+async fn list(config: &Config) -> Result<()> {
+    let snapshots = snapshots(config)?;
+    for v in snapshots.vaults().await? {
+        let folder = snapshots.folder(v).await?;
+        let times = folder.times().await?;
+        let newest = folder.newest().await?;
+        let held = newest.map_or("none reads whole".into(), |m| format!("{} edits, {} files", m.edits, m.files.len()));
+        println!("vault {}: {} snapshots; the newest {held}", v.to_hex(), times.len());
+        for t in times {
+            println!("  {t}  {}", when(t));
+        }
+    }
+    Ok(())
+}
+
+/// Rehearses a restore of every vault: fails unless each comes back whole.
+async fn drill(config: &Config, at: Option<u64>) -> Result<ExitCode> {
+    let snapshots = snapshots(config)?;
+    let dir = std::env::temp_dir().join(format!("avendb-drill-{}", std::process::id()));
+    let (drilled, failed) = backups::drill(&snapshots, at, &dir).await?;
+    std::fs::remove_dir_all(&dir).ok();
+    let broken: Vec<_> = drilled.iter().filter(|d| !d.rehearsal.whole()).collect();
+    let (all, not) = (drilled.len(), broken.len());
+    println!("{all} vaults rehearsed, {} whole, {not} not whole, {} failed", all - not, failed.len());
+    for d in &broken {
+        println!("  not whole: vault {}: {:?}", d.vault.to_hex(), d.rehearsal);
+    }
+    for (v, why) in &failed {
+        println!("  failed: vault {}: {why}", v.to_hex());
+    }
+    let whole = broken.is_empty() && failed.is_empty() && !drilled.is_empty();
+    Ok(if whole { ExitCode::SUCCESS } else { ExitCode::FAILURE })
+}
+
+/// Restores the server from the bucket of snapshots, which must not be running.
+async fn restore(config: &Config, at: Option<u64>) -> Result<()> {
+    tracing::warn!("avenDB restore: the server must be stopped; its shelf is put aside, not deleted");
+    let restored = backups::restore(config, &snapshots(config)?, at).await?;
+    for (v, m) in &restored {
+        println!("vault {}: the snapshot of {} ({} edits, {} files)", v.to_hex(), when(m.time), m.edits, m.files.len());
+    }
+    println!("{} vaults restored: start the server again", restored.len());
+    Ok(())
+}
+
+/// Waits until the process is told to stop: ctrl-c, or the SIGTERM a container gets. On SIGUSR1, has `backups` back
+/// up every vault now.
+async fn stopped(backups: Option<&backups::Backups>) -> Result<()> {
     #[cfg(unix)]
     {
         use tokio::signal::unix::{SignalKind, signal};
-        let mut term = signal(SignalKind::terminate())?;
-        tokio::select! {
-            c = tokio::signal::ctrl_c() => c?,
-            _ = term.recv() => {}
+        let (mut term, mut usr1) = (signal(SignalKind::terminate())?, signal(SignalKind::user_defined1())?);
+        loop {
+            tokio::select! {
+                c = tokio::signal::ctrl_c() => return Ok(c?),
+                _ = term.recv() => return Ok(()),
+                _ = usr1.recv() => match backups {
+                    Some(b) => b.now(),
+                    None => tracing::warn!("avenDB server: told to back up, with no bucket of snapshots"),
+                },
+            }
         }
-        Ok(())
     }
     #[cfg(not(unix))]
     {
+        let _ = backups;
         Ok(tokio::signal::ctrl_c().await?)
     }
 }

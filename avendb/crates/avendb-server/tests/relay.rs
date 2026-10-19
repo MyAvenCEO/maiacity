@@ -134,7 +134,9 @@ async fn a_new_server_lets_in_the_devices_of_the_vaults_it_relays() {
     let (relay_url, public_addr) = (None, None);
     let (signup, gate, bucket, cache) = (false, false, None, 0);
     let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
-    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache };
+    let snapshots = None;
+    let config =
+        Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache, snapshots };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let (server, relay) = (&started.node, &started.relay);
     let url = relay.url();
@@ -249,6 +251,7 @@ async fn the_servers_offer_names_its_public_address_and_its_relay() {
         gate: false,
         bucket: None,
         cache: 0,
+        snapshots: None,
     };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let offer = Offer::from_text(&started.offer.to_text()).expect("its offer reads back");
@@ -278,7 +281,9 @@ async fn the_server_serves_the_posts_everyone_reads_as_the_maia_universe_feed() 
     let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
     let (signup, gate, bucket, cache) = (true, false, None, 0);
     let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
-    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache };
+    let snapshots = None;
+    let config =
+        Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache, snapshots };
     let started = avendb_server::start(&config).await.expect("the server, its relay and its feed");
     let addr = started.feed.addr();
     // a new server keeps nothing anyone published yet; any page may read its feed
@@ -362,7 +367,9 @@ async fn the_server_serves_the_code_everyone_reads_and_maia_citys_alone_for_seed
     let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
     let (signup, gate, bucket, cache) = (false, false, None, 0);
     let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
-    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache };
+    let snapshots = None;
+    let config =
+        Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache, snapshots };
     let started = avendb_server::start(&config).await.expect("the server, its relay and its feed");
     let (server, addr) = (&started.node, started.feed.addr());
     let mut w = world();
@@ -494,7 +501,9 @@ async fn the_server_serves_a_public_code_entrys_newest_file_whole_as_plain_text(
     let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
     let (signup, gate, bucket, cache) = (false, false, None, 0);
     let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
-    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache };
+    let snapshots = None;
+    let config =
+        Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache, snapshots };
     let started = avendb_server::start(&config).await.expect("the server, its relay and its feed");
     let (server, addr) = (&started.node, started.feed.addr());
     let mut w = world();
@@ -659,6 +668,29 @@ fn the_server_is_configured_by_its_environment() {
         };
         assert!(Config::from_vars(var).is_err(), "a bucket with {unsaid} unsaid, or a seal short of 32 bytes: said so");
     }
+    assert!(defaults.snapshots.is_none() && set.snapshots.is_none(), "no backups, unless their bucket is said");
+    // a bucket of snapshots, at the server's bucket's endpoint with its key unless its own are said, under its seal
+    let mut backed = vars.clone();
+    backed.extend([("AVENDB_SNAPSHOTS", "maiacity-avendb-snapshots"), ("AVENDB_SNAPSHOTS_AT", "04:30")]);
+    backed.insert("AVENDB_SNAPSHOTS_ACCESS_KEY", "a key of its own");
+    let set = Config::from_vars(|k| backed.get(k).map(|v| v.to_string())).expect("a bucket of snapshots");
+    let snapshots = set.snapshots.expect("its backups");
+    let b = &snapshots.bucket;
+    let at = (b.name.as_str(), b.endpoint.as_str(), b.region.as_str());
+    let hel1 = ("maiacity-avendb-snapshots", "https://hel1.your-objectstorage.com", "hel1");
+    assert_eq!(at, hel1, "where the server's bucket is");
+    assert_eq!((b.access_key.as_str(), b.secret_key.as_str()), ("a key of its own", "a secret key"));
+    assert_eq!((*b.seal, snapshots.at), ([0xab; 32], 4 * 3600 + 30 * 60), "the server's seal, at half past four");
+    assert_eq!(snapshots.dir, std::env::temp_dir().join("avendb-snapshots"));
+    let at_three = |k: &str| (k != "AVENDB_SNAPSHOTS_AT").then(|| backed.get(k).map(|v| v.to_string())).flatten();
+    assert_eq!(Config::from_vars(at_three).expect("by default").snapshots.expect("its backups").at, 3 * 3600);
+    for (k, v) in [("AVENDB_SNAPSHOTS", "maiacity-avendb"), ("AVENDB_SNAPSHOTS_AT", "4h"), ("AVENDB_BUCKET_SEAL", "")] {
+        let var = |n: &str| match n == k {
+            true => Some(v.to_string()).filter(|v| !v.is_empty()),
+            false => backed.get(n).map(|v| v.to_string()),
+        };
+        assert!(Config::from_vars(var).is_err(), "{k} as {v:?}: the server's own bucket, no time, or no seal");
+    }
     assert!(Config::from_vars(|k| (k == "AVENDB_SIGNUP").then(|| "maybe".to_string())).is_err());
     assert!(Config::from_vars(|k| (k == "AVENDB_GATE").then(|| "maybe".to_string())).is_err());
     let wrong = Config::from_vars(|k| (k == "AVENDB_BIND").then(|| "the server's port".to_string()));
@@ -804,7 +836,9 @@ async fn an_unclaimed_server_lets_in_the_browser_that_claims_it_and_then_no_stra
     let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
     let (signup, gate, bucket, cache) = (false, false, None, 0);
     let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
-    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache };
+    let snapshots = None;
+    let config =
+        Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache, snapshots };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let (server, relay) = (&started.node, &started.relay);
     let url = relay.url();
