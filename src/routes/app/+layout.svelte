@@ -48,6 +48,22 @@
 	let stuck = $state(false);
 	/** why the invite a link brought didn't go through, if it didn't */
 	let invited = $state('');
+	/** the key move (K3b) under way, and why it didn't go through, if it didn't */
+	let moveBusy = $state(false);
+	let moveError = $state('');
+	/** who asks once more for the key move: the passkey's prompt, Touch ID, or both */
+	const moveAsks = $derived(
+		[session.moving?.passkey ? `${asks} once more` : '', session.moving?.touch ? 'Touch ID asks for a touch' : '']
+			.filter(Boolean)
+			.join(', and ')
+	);
+
+	/** Moves the person's keys to ML-DSA-65 now (session.moveKeys), showing why not if it didn't go through. */
+	async function moveNow() {
+		[moveBusy, moveError] = [true, ''];
+		if (!(await session.moveKeys())) moveError = session.error;
+		moveBusy = false;
+	}
 	/** the passkey roots no human vault yet, or the person just signed up: the name its profile takes, to found it */
 	let naming = $state(false);
 	let name = $state('');
@@ -377,7 +393,12 @@
 			</p>
 		</div>
 	{:else}
-		{#if invited}<p class="invite-note" role="status">{invited} <button class="quiet later" onclick={() => (invited = '')}>OK</button></p>{/if}
+		{#if invited}<p class="invite-note" role="status">{invited} <button class="quiet later" onclick={() => (invited = '')}>OK</button></p>
+		{:else if session.moving && moveAsks}<p class="invite-note move-note" role="status">
+				Your keys move to ML-DSA-65, smaller and faster post-quantum signatures: {moveAsks}.
+				<button class="quiet later" disabled={moveBusy} onclick={moveNow}>{moveBusy ? 'Moving…' : 'Move my keys'}</button>
+				{#if moveError}<span class="bad">{moveError}</span>{/if}
+			</p>{/if}
 		<div class="app" class:immersive>
 			<VaultRecipes hold={assetPage}>{@render children()}</VaultRecipes>
 		</div>
@@ -462,6 +483,11 @@
 		color: var(--terracotta);
 		font-size: 0.9rem;
 		transform: translateX(-50%);
+	}
+
+	/* the key move's one ask (K3b): news, not trouble */
+	.move-note {
+		color: var(--ink);
 	}
 
 	/* the name a new human vault takes */

@@ -6,9 +6,10 @@
 //! server, its device, and owns nothing (Samuel 2026-10-18: one aven per coop, none per person, no agent vaults under
 //! an aven and no sub caps). Each harness is an agent of its own, agentClaude, agentCodex, agentCursor, agentGrok,
 //! agentAven, a device with a key of its own; approved, its key joins avenMAIA as a device beside its server, and it
-//! acts as avenMAIA, with avenMAIA's rights, no more and no less: by default a Suggester on Maia City, which proposes
-//! and drafts and whose AIPs a human of Maia City accepts. One is taken out by removing its device from avenMAIA. No
-//! token: the device's key is who it is. The harness never names or picks an aven: its person's coop's one aven is it.
+//! acts as avenMAIA, with avenMAIA's rights, no more and no less. Maia City decides what avenMAIA holds: given
+//! Suggester and an AIP author's share, an agent proposes, drafts and opens AIPs, which a human of Maia City accepts.
+//! One is taken out by removing its device from avenMAIA. No token: the device's key is who it is. The harness never
+//! names or picks an aven: its person's coop's one aven is it.
 //!
 //! It is a device of its own (`avendb_net::server::open_agent`), in a folder of its own in the agents' folder beside
 //! the Mac app's (`<app's folder>-agents/<device>`, which the app's device never clears), which keeps its key and its

@@ -83,6 +83,7 @@ use rand_core::Rng as _;
 use serde_json::Value;
 use zeroize::Zeroizing;
 
+use crate::cast;
 use crate::doc::{Item, Version};
 use crate::encode::{self, box_info, share_context, share_select_info, write_context};
 use crate::gate;
@@ -95,7 +96,7 @@ use crate::merge;
 use crate::ops::Loc;
 use crate::policy::{
     mk_audience, replay, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log, Meaning,
-    Principal, Proposal, Readings, Refusal, Replay, Share, Sharing, State, Who, Write,
+    Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share, Sharing, State, Who, Write,
 };
 use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
@@ -867,6 +868,218 @@ impl Lab {
         root.or_else(|| keys.iter().find(|&&k| vault.owners.contains(&Principal::Signer(k)))).copied()
     }
 
+    /// Device `d`, whose keys come from `secret`, in each suite (the key move, K3b), as `web_passkey` holds a passkey:
+    /// the one it signs as now and the other, its next key before the move, or after it the key it moved from, held
+    /// beside it where the Lab doesn't hold them yet, with no store of their own, for the edits that move it to name
+    /// and sign (`draft_move`, `finish_move`). One secret makes both, with the same iroh endpoint and the same key keys
+    /// are sealed to: so the device opens again as its next key on the same shelf (`moved`), and what it wrapped under
+    /// `own_key` opens as before. The Mac holds each drive it hosts so too, to move it beside its own device. Locking a
+    /// device of the Lab forgets them. Their ids, the suite new signers are made in first; `None` if `secret` isn't
+    /// `d`'s.
+    pub fn device_keys(&mut self, d: SignerId, secret: [u8; 32]) -> Option<[SignerId; 2]> {
+        DeviceKey::of(secret, d)?;
+        let name = self.names.get(&d).cloned().unwrap_or_else(|| "a device".into());
+        Some(SUITES.map(|suite| {
+            let key = DeviceKey::from_secret_in(secret, suite);
+            let id = key.id();
+            if !self.keys.contains_key(&id) {
+                key.seal_secret().prepare();
+                self.keys.insert(id, Key::Device(key));
+                self.names.entry(id).or_insert_with(|| name.clone());
+            }
+            id
+        }))
+    }
+
+    /// The next key of signer `s` (the key move, K3b), in the suite new signers are made in, where `s` signs in
+    /// another and the Lab holds both: the same passkey's other key (`web_passkey`), by its P-256 key; the same Touch
+    /// ID key's (`web_enclave`), by its Enclave's key; the same device's (`device_keys`), by its ed25519 key. `None` if
+    /// `s` is in that suite already, or either key isn't at hand.
+    pub fn next_key(&self, s: SignerId) -> Option<SignerId> {
+        self.next_of(self.keys_of(s)?)
+    }
+
+    /// The next key the Lab holds of the signer whose keys are `keys` (`next_key`), whether or not it holds that
+    /// signer.
+    fn next_of(&self, keys: SignerKeys) -> Option<SignerId> {
+        if keys.suite() == sign::SIGNING {
+            return None;
+        }
+        let same = |k: &SignerKeys| match (keys, *k) {
+            (SignerKeys::Passkey { p256: a, .. }, SignerKeys::Passkey { p256: b, .. }) => a == b,
+            (SignerKeys::Enclave { mldsa: a, .. }, SignerKeys::Enclave { mldsa: b, .. }) => a == b,
+            (SignerKeys::Device { ed25519: a, .. }, SignerKeys::Device { ed25519: b, .. }) => a == b,
+            _ => false,
+        };
+        let held = self.keys.values().map(Key::keys).filter(|k| k.suite() == sign::SIGNING && same(k));
+        held.map(|k| k.id()).min()
+    }
+
+    /// What device `on` moves to ML-DSA-65 now (the key move, K3b), each signer with its next key: each owner key of
+    /// the vault it belongs to that signs in SLH-DSA and whose next key is at hand (`next_key`), and the Touch ID key
+    /// whose Enclave's key `touch` names (`sign::enclave_key`), as a touch of it signs as its next key too; and each
+    /// device of that vault whose next key the Lab holds (`device_keys`): `on`, or the key `on` moved from, where it
+    /// is in the vault still, and any device `on` runs beside it, as the Mac runs its drives. Nothing once they all
+    /// moved, or if `on` belongs to no vault.
+    pub fn moves(&self, on: SignerId, touch: Option<[u8; 32]>) -> Vec<(SignerId, SignerId)> {
+        let Some(vault) = self.vault_of(on).and_then(|v| self.state(on).vault(v)) else { return vec![] };
+        let owners = vault.owners.iter().filter_map(|p| if let Principal::Signer(s) = *p { Some(s) } else { None });
+        let signers: BTreeSet<SignerId> = owners.chain(vault.devices.iter().copied()).collect();
+        let next = |keys: SignerKeys| match keys {
+            SignerKeys::Enclave { mldsa, slh: Some(_) } if Some(mldsa) == touch => {
+                Some(SignerKeys::Enclave { mldsa, slh: None }.id())
+            }
+            _ => self.next_of(keys),
+        };
+        let seen = self.signers_seen(on, &signers);
+        seen.into_iter().filter_map(|(s, keys)| Some((s, next(keys)?))).collect()
+    }
+
+    /// The edits that move `moves`' signers to their next keys (`moves`) on device `on`, drafted together for one
+    /// ceremony of each owner key among them (`drafting`): an owner key adds its next key as an owner, which signs too
+    /// (with the root, where an owner's approval alone isn't the vault's), hands it the root where it held it, and the
+    /// next key removes it, the root first, as its approval is the vault's; then the vault's approval, by `by` or its
+    /// next key, adds each device's next key, which signs too. Each device then leaves on its own (`finish_move`). So
+    /// it is as avenDB's Lean model's `keyMove` says: no edit is signed again, nothing founded again, and the old edits
+    /// keep their signatures. Each step is drafted only where it is still to be made, so a move cut short goes on where
+    /// it stopped, and nothing is drafted once the keys moved. `NotActing` if `on` belongs to no vault; otherwise why
+    /// `on`'s view refuses a step.
+    pub fn draft_move(
+        &self,
+        on: SignerId,
+        moves: &[(SignerId, SignerId)],
+        by: SignerId,
+    ) -> Result<Vec<Unsigned>, Refusal> {
+        let vault = self.vault_of(on).ok_or(Refusal::NotActing)?;
+        let approves = |view: &State, s: &[SignerId]| view.approves(s, Principal::Vault(vault));
+        let owner = |view: &State, s| view.vault(vault).is_some_and(|v| v.owners.contains(&Principal::Signer(s)));
+        let root = |view: &State| view.vault(vault).and_then(|v| v.root);
+        let mut drafting = self.drafting(on);
+        let view = drafting.log.view();
+        let mut owners: Vec<(SignerId, SignerId)> =
+            moves.iter().copied().filter(|&(old, _)| owner(&view, old)).collect();
+        owners.sort_by_key(|&(old, _)| root(&view) != Some(old));
+        for (old, new) in owners {
+            let view = drafting.log.view();
+            if !owner(&view, new) {
+                let mut signers = vec![old];
+                signers.extend(root(&view).filter(|&r| r != old && !approves(&view, &[old])));
+                signers.push(new);
+                let (seal_to, blobs) = self.next_seal(on, &view, old, new);
+                let add = Sharing::Owner { vault, owner: Principal::Signer(new), seal_to };
+                drafting.draft(&signers, Action::Share(add))?;
+                drafting.drafts.last_mut().expect("drafted").blobs.extend(blobs);
+            }
+            if root(&view) == Some(old) {
+                let hand_on = Setting::Root { root: Some(new), keep: vec![] };
+                drafting.draft(&[old, new], Action::Settings { vault, set: hand_on })?;
+            }
+            // the next key removes it, or, where its approval alone isn't the vault's, it leaves on its own beside it
+            let signers = if approves(&drafting.log.view(), &[new]) { vec![new] } else { vec![new, old] };
+            let off = Revoking::Owner { vault, owner: Principal::Signer(old), keep: vec![] };
+            drafting.draft(&signers, Action::Revoke(off))?;
+        }
+        let view = drafting.log.view();
+        let by = moves.iter().find(|&&(old, _)| old == by).map_or(by, |&(_, new)| new);
+        let joining = moves.iter().filter(|&&(old, new)| view.is_device(old, vault) && !view.is_device(new, vault));
+        for &(old, new) in joining {
+            let (seal_to, blobs) = self.next_seal(on, &view, old, new);
+            drafting.draft(&[by, new], Action::Share(Sharing::Device { vault, device: new, seal_to }))?;
+            drafting.drafts.last_mut().expect("drafted").blobs.extend(blobs);
+        }
+        Ok(drafting.done())
+    }
+
+    /// The key to seal to of `new`, the next key of `old` (`draft_move`), for the edit that adds it: its own where
+    /// the Lab holds it, else `old`'s as `view` knows it, the same, as one secret makes both; and the McEliece key it
+    /// names, as the Lab or device `on` holds it.
+    fn next_seal(&self, on: SignerId, view: &State, old: SignerId, new: SignerId) -> (Option<PublicKey>, Blobs) {
+        let (key, blob) = match self.seal_public(new) {
+            Some((key, blob)) => (key, Some(blob)),
+            None => match view.seal_key(old) {
+                Some(key) => (key.clone(), self.blob(on, key.mceliece)),
+                None => return (None, Blobs::new()),
+            },
+        };
+        let blobs = blob.map(|b| (key.mceliece, b)).into_iter().collect();
+        (Some(key), blobs)
+    }
+
+    /// Sign the move's edits (`draft_move`) and keep them on device `on` in their order, each signer by its ceremony
+    /// among `ceremonies` or by its key at hand (`complete`). The ids of the edits kept.
+    pub fn complete_move(
+        &mut self,
+        on: SignerId,
+        drafts: Vec<Unsigned>,
+        ceremonies: &[(SignerId, &Ceremony)],
+    ) -> Result<Vec<EditId>, Refusal> {
+        drafts.into_iter().map(|draft| self.complete(on, draft, ceremonies)).collect()
+    }
+
+    /// The key move's last step on device `on` (K3b): each device of `moves` whose next key is a device of the vault
+    /// `on` belongs to leaves it, `on` last, once the move's edits are kept (`complete_move`) and what opens each
+    /// again names its next key. Its next key first takes over the keep shares naming it, its copy setting among them
+    /// (`carry_keeps`), so it keeps what the device kept; then the device leaves on its own, its next key signing
+    /// beside it, both keys at hand (`device_keys`). Drafted only now, each removal names every edit standing, so
+    /// nothing a device made since the batch is lost with it. The ids of the removals.
+    pub fn finish_move(&mut self, on: SignerId, moves: &[(SignerId, SignerId)]) -> Result<Vec<EditId>, Refusal> {
+        let vault = self.vault_of(on).ok_or(Refusal::NotActing)?;
+        let st = self.state(on);
+        let mut leaving: Vec<(SignerId, SignerId)> =
+            moves.iter().copied().filter(|&(old, new)| st.is_device(old, vault) && st.is_device(new, vault)).collect();
+        leaving.sort_by_key(|&(old, _)| old == on);
+        let mut left = vec![];
+        for (old, new) in leaving {
+            self.carry_keeps(on, old, new)?;
+            let leave = Action::Revoke(Revoking::Device { vault, device: old, keep: vec![] });
+            left.push(self.submit(on, &[new, old], leave)?);
+        }
+        Ok(left)
+    }
+
+    /// The live keep shares naming device `old` that the vault device `on` belongs to issued, issued again to `new`,
+    /// its next key, which signs them: over the same vault, in the same mode, on the same selector as `on` reads it,
+    /// the whole vault for a wide one, as a copy setting is. One `new` has the like of already stays as it is, and one
+    /// whose selector `on` doesn't read can't be issued again.
+    fn carry_keeps(&mut self, on: SignerId, old: SignerId, new: SignerId) -> Result<(), Refusal> {
+        let Some(vault) = self.vault_of(on) else { return Ok(()) };
+        let st = self.state(on);
+        let keeps = |d| {
+            let named = move |k: &&Issued| k.share.level.is_keep() && k.share.who == Who::Device(d);
+            st.shares().iter().filter(named).filter(move |k| k.share.issuer == vault && st.live(k.id))
+        };
+        let what = |k: &Issued| {
+            let select = if k.share.wide { Selector::All } else { self.slice(on, k.id)?.select.clone() };
+            Some((k.share.over, k.share.level.mode()?, select))
+        };
+        let held: Vec<_> = keeps(new).filter_map(what).collect();
+        let carried: Vec<_> = keeps(old).filter_map(what).filter(|w| !held.contains(w)).collect();
+        for (over, mode, select) in carried {
+            self.issue(on, &[new], cast::keep(vault, new, over, mode, select))?;
+        }
+        Ok(())
+    }
+
+    /// Device `d`, its keys moved (`finish_move`), to open again as `new`, its next key or itself, on the same shelf as
+    /// a node does (`avendb_net::Node::spawn`): a Lab of its own, with randomness of its own from `seed`, holding `new`
+    /// with no edit yet, as `d` followed and read, and the keys this Lab holds of every owner and of `new` in the
+    /// other suite, which it hands over; every signer's name, and the master recovery key it adds. The edits `d` holds
+    /// stay here, for its node to put on the shelf as it closes, and the new node takes them from the shelf. `None`
+    /// unless `d` is a device of the Lab and it holds `new`, `d` or a key of `d`'s in the other suite (`device_keys`).
+    pub fn moved(&mut self, d: SignerId, new: SignerId, seed: [u8; 32]) -> Option<Lab> {
+        let held = self.stores.get(&d)?;
+        let (follow, query_depth, gate) = (held.follow.clone(), held.query_depth, held.gate);
+        let store = Store { follow, query_depth, gate, ..Store::default() };
+        let Some(SignerKeys::Device { ed25519, .. }) = self.keys.get(&new).map(Key::keys) else { return None };
+        let mine = |k: &Key| match k.keys() {
+            SignerKeys::Device { ed25519: e, .. } => e == ed25519,
+            SignerKeys::Passkey { .. } | SignerKeys::Enclave { .. } => true,
+        };
+        let taken: Vec<SignerId> = self.keys.iter().filter(|(_, k)| mine(k)).map(|(s, _)| *s).collect();
+        let keys = taken.into_iter().filter_map(|s| Some((s, self.keys.remove(&s)?))).collect();
+        Some(self.split_off(keys, new, store, HashMap::new(), seed))
+    }
+
     /// The master recovery key `key` (`recovery`): every human vault a device of this Lab founds from now on adds it as
     /// an owner, by its standing consent (`sign::standing`), and the Lab signs as it with that consent alone, on such an
     /// edit or one that adds it as an owner. A Lab that holds its secret (`passkey_from`) signs as it in full. Its id.
@@ -1117,13 +1330,21 @@ impl Lab {
         vault_logs(store.log.edits(), st, vs).iter().map(Edit::id).collect()
     }
 
-    /// Lock device `d`: its keys, and every key and item they opened, leave its memory, each key wiped. So does the
-    /// secret half of each of their McEliece pairs that nothing else here holds (`keys::forget_pairs`): another
-    /// signer's own key, a key another device holds, or a spare. Its edits and their ciphertext stay, and it still
-    /// receives and passes on edits.
+    /// Lock device `d`: its keys, and every key and item they opened, leave its memory, each key wiped, and so do the
+    /// device keys held beside the Lab's devices for the key move (`device_keys`). So does the secret half of each of
+    /// their McEliece pairs that nothing else here holds (`keys::forget_pairs`): another signer's own key, a key
+    /// another device holds, or a spare. Its edits and their ciphertext stay, and it still receives and passes on
+    /// edits.
     pub fn lock(&mut self, d: SignerId) {
         let own = self.keys.remove(&d).and_then(|k| k.seal_secret()).map(|s| s.id());
         let mut gone: BTreeSet<KeyId> = own.into_iter().collect();
+        // and the device keys held beside its devices for the key move (`device_keys`)
+        let devices = &self.devices;
+        let beside = self.keys.iter().filter(|(s, k)| matches!(k, Key::Device(_)) && !devices.contains(s));
+        let beside: Vec<SignerId> = beside.map(|(s, _)| *s).collect();
+        for s in beside {
+            gone.extend(self.keys.remove(&s).and_then(|k| k.seal_secret()).map(|x| x.id()));
+        }
         let store = self.stores.get_mut(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
         gone.extend(store.keys.ids());
         store.forget();
@@ -1447,7 +1668,7 @@ impl Lab {
         let author = signed.edit.author;
         let lent: Vec<(SignerId, Secret)> = match (ceremony(author), self.keys.get(&author)) {
             (Some(c), _) => vec![(author, c.seal_secret())],
-            (None, Some(key)) if !self.devices.contains(&author) => {
+            (None, Some(key)) if !self.devices.contains(&author) && !matches!(key, Key::Device(_)) => {
                 key.seal_secret().map(|s| (author, s)).into_iter().collect()
             }
             _ => vec![],
@@ -2913,12 +3134,26 @@ impl Lab {
     pub fn split(&mut self, d: SignerId, with: &[SignerId], seed: [u8; 32]) -> Lab {
         let store = self.stores.remove(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
         self.devices.retain(|&x| x != d);
-        let mut keys: HashMap<SignerId, Key> =
+        let keys: HashMap<SignerId, Key> =
             [d].iter().chain(with).filter_map(|s| Some((*s, self.keys.remove(s)?))).collect();
+        let salts = self.salts.remove(&d).map(|salt| (d, salt)).into_iter().collect();
+        self.split_off(keys, d, store, salts, seed)
+    }
+
+    /// A Lab on a machine of its own holding `keys` and device `d`, its store `store` and its salt among `salts`, with
+    /// every signer's name, the master recovery key this Lab adds, and randomness of its own from `seed` (`split`,
+    /// `moved`).
+    fn split_off(
+        &self,
+        mut keys: HashMap<SignerId, Key>,
+        d: SignerId,
+        store: Store,
+        salts: HashMap<SignerId, (SignerId, [u8; 32])>,
+        seed: [u8; 32],
+    ) -> Lab {
         if let Some(r) = &self.recovery {
             keys.entry(r.id()).or_insert_with(|| Key::Consent(r.clone()));
         }
-        let salts = self.salts.remove(&d).map(|salt| (d, salt)).into_iter().collect();
         let seed = Zeroizing::new(seed);
         let mut rng = SeededRng::new("lab randomness", &*seed);
         let mut spares = Spares { keys: VecDeque::new(), keep: self.spares.keep };
