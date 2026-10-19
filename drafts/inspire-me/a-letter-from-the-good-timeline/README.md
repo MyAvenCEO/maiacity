@@ -9,7 +9,7 @@ published: 2026-10-14
 added: 2026-10-19
 categories: [ai, ecology, civic]
 hook: >-
-  The screenwriter of Dune walks on stage after a day of careful scientists and says his job is to speculate irresponsibly.
+  A co-writer of Dune walks on stage after a day of careful scientists and says his job is to speculate irresponsibly.
   He's a time traveller from a hundred years ahead, and in his timeline we got AI mostly right.
 shift:
   from: The future of AI is a technical race, and the best we can hope for is to survive it.
