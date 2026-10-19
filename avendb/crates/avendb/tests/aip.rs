@@ -271,6 +271,9 @@ fn one_aip_over_two_types_derives_its_diff_and_one_review_applies_every_line() {
             (&read["reviews"][0]["verdict"], &read["reviews"][0]["current"]),
             (&json!("accepted"), &json!(true))
         );
+        // the review names its aven as who started the AIP, and Alice, whose Mac signed it, as who answered it
+        let answered: Vec<&Value> = list(&read["reviews"][0]["authors"]).iter().map(|a| &a["vault"]).collect();
+        assert_eq!((&read["reviews"][0]["by"], answered), (&json!(g.aven.to_hex()), vec![&json!(g.alice.to_hex())]));
         assert_eq!(g.stored(d, &n, &Value::Null), wanted[0], "the note's main holds the proposal, byte for byte");
         assert_eq!(g.stored(d, &l, &Value::Null), wanted[1], "the logic's main holds the proposal, byte for byte");
         for (e, before) in [(&n, writes[0]), (&l, writes[1])] {
