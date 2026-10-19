@@ -617,6 +617,116 @@ async fn the_server_serves_a_public_code_entrys_newest_file_whole_as_plain_text(
     started.shutdown().await.expect("the server stops");
 }
 
+/// What the server at `addr` answers a GET of `path` that asks for `range` (a `Range` header): its head, lower case,
+/// and its body.
+async fn ranged(addr: SocketAddr, path: &str, range: &str) -> (String, String) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = tokio::net::TcpStream::connect(addr).await.expect("the feed's socket");
+    let request =
+        format!("GET {path} HTTP/1.1\r\nHost: avendb.maia.city\r\nRange: {range}\r\nConnection: close\r\n\r\n");
+    stream.write_all(request.as_bytes()).await.expect("the request");
+    let mut answer = String::new();
+    stream.read_to_string(&mut answer).await.expect("the answer");
+    let (head, body) = answer.split_once("\r\n\r\n").expect("a head and a body");
+    (head.to_lowercase(), body.to_string())
+}
+
+/// The site's media, over HTTP, as maia.city shows its pictures and plays its sounds and films: Maia City and Alice's
+/// own vault are each Public on a tag, and bring files named by the hash their bytes had in the old media vault. The
+/// server serves Maia City's by that hash, with or without its ending, whole or by `Range`, a sound as a sound and a
+/// picture as a picture; never a private one, another vault's, one of an ending a page might run, or a range past its
+/// end.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_server_serves_maia_citys_media_by_their_old_hash_whole_or_by_range() {
+    let dir = Folder::new("media");
+    let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
+    let (signup, gate, bucket, cache) = (false, false, None, 0);
+    let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
+    let snapshots = None;
+    let config =
+        Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache, snapshots };
+    let started = avendb_server::start(&config).await.expect("the server, its relay and its feed");
+    let (server, addr) = (&started.node, started.feed.addr());
+    let mut w = world();
+    let (mac_a, passkey, alice) = (w.mac_a, w.passkey_a, w.alice);
+    let opts = Options { relay: Some(started.relay.url()), ..Options::local() };
+    let mac = node(&mut w, mac_a, &[passkey], 1, opts).await;
+    mac.know(server.addr());
+    // Alice's vault claims the server, whose seed is Maia City and avenMAIA; Maia City and Alice's vault give avenMAIA
+    // backup, and each is Public on the site's tag
+    let avenceo = mac.claim(&started.offer, passkey).await.expect("Alice's vault claims the server");
+    let coop_of = move |lab: &Lab, me| match lab.state(me).vault(avenceo).map(|v| &v.owners[..]) {
+        Some(&[Principal::Vault(coop)]) => Some(coop),
+        _ => None,
+    };
+    let city = mac.read(coop_of).await.expect("Maia City, founded with the seed");
+    let tag = "site:media";
+    for v in [city, alice] {
+        let backup = share(v, vault(avenceo), Level::Backup, Selector::All);
+        mac.act(move |lab, me| lab.issue(me, &[me], backup)).await.expect("it gives avenMAIA backup");
+        let public = json!({ "op": "share", "over": v.to_hex(), "who": "everyone", "level": "Public",
+            "what": { "tag": tag }, "as": v.to_hex() });
+        ran(&mac, public).await;
+    }
+    let seeded = || async { server.read(world::seed_of).await.first() == Some(&city) };
+    until("the server knows its seed's coop", seeded).await;
+    let put = |v: VaultId, name: &str, media: &str, tags: Value, text: &str| {
+        json!({ "op": "put_file", "vault": v.to_hex(), "name": name, "media": media, "tags": tags,
+            "len": text.len(), "as": v.to_hex() })
+    };
+    let [sound, picture, private, theirs, page] = [1u8, 2, 3, 4, 5].map(|n| format!("{n:02x}").repeat(32));
+    let geese = "0123456789abcdef";
+    brought(&mac, put(city, &format!("{sound}.mp3"), "audio/mpeg", json!([tag]), geese), geese).await;
+    brought(&mac, put(city, &format!("{picture}.jpg"), "image/jpeg", json!([tag]), "a cover"), "a cover").await;
+    brought(&mac, put(city, &format!("{private}.png"), "image/png", json!([]), "a draft"), "a draft").await;
+    brought(&mac, put(alice, &format!("{theirs}.mp3"), "audio/mpeg", json!([tag]), "hers"), "hers").await;
+    brought(&mac, put(city, &format!("{page}.html"), "text/html", json!([tag]), "<script>"), "<script>").await;
+    let at = |hash: &str| format!("/feed/media/{hash}");
+    let served = || async { http(addr, "GET", &at(&sound)).await.0.starts_with("http/1.1 200") };
+    until("the server serves Maia City's sound by its old hash", served).await;
+    // whole, by its hash alone or with its ending, as a sound read by ranges
+    for path in [at(&sound), at(&format!("{sound}.mp3"))] {
+        let (head, body) = http(addr, "GET", &path).await;
+        assert_eq!(body, geese, "{path}");
+        let want = ["content-type: audio/mpeg", "accept-ranges: bytes", "access-control-allow-origin: *",
+            "x-content-type-options: nosniff", "x-served-by: avendb", "content-length: 16"];
+        for want in want {
+            assert!(head.contains(want), "{path}: {want}: {head}");
+        }
+    }
+    let (head, body) = http(addr, "GET", &at(&picture)).await;
+    assert!(head.starts_with("http/1.1 200") && head.contains("content-type: image/jpeg") && body == "a cover", "{head}");
+    // by Range: a window, its last bytes, and none past its end
+    let (head, body) = ranged(addr, &at(&sound), "bytes=2-5").await;
+    assert!(head.starts_with("http/1.1 206") && head.contains("content-range: bytes 2-5/16"), "{head}");
+    assert_eq!(body, "2345");
+    let (head, body) = ranged(addr, &at(&sound), "bytes=-3").await;
+    assert!(head.starts_with("http/1.1 206") && head.contains("content-range: bytes 13-15/16") && body == "def", "{head}");
+    let (head, _) = ranged(addr, &at(&sound), "bytes=16-").await;
+    assert!(head.starts_with("http/1.1 416") && head.contains("content-range: bytes */16"), "{head}");
+    let (head, body) = http(addr, "HEAD", &at(&sound)).await;
+    assert!(head.starts_with("http/1.1 200") && head.contains("content-length: 16") && body.is_empty(), "{head}");
+    let (head, _) = http(addr, "OPTIONS", &at(&sound)).await;
+    assert!(head.starts_with("http/1.1 204") && head.contains("access-control-allow-headers: range"), "{head}");
+    // and none of these
+    let none = [
+        (at(&format!("{sound}.jpg")), "an ending its file hasn't"),
+        (at(&private), "a private picture"),
+        (at(&theirs), "a vault other than Maia City"),
+        (at(&page), "a page, which a page might run"),
+        (at(&"cd".repeat(32)), "a hash Maia City shows no one"),
+        (at("geese.mp3"), "no hash"),
+        (format!("/feed/media/{sound}/more"), "no such path"),
+    ];
+    for (path, why) in none {
+        let (head, body) = http(addr, "GET", &path).await;
+        assert!(head.starts_with("http/1.1 404") && head.contains("access-control-allow-origin: *"), "{why}: {head}");
+        assert_eq!(body, "no such medium", "{why}");
+    }
+    mac.shutdown().await.expect("Alice's Mac stops");
+    started.shutdown().await.expect("the server stops");
+}
+
 #[test]
 fn the_server_is_configured_by_its_environment() {
     let defaults = Config::from_vars(|_| None).expect("the defaults");
