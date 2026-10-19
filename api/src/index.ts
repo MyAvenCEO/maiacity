@@ -25,7 +25,6 @@ import { claimRender, listJobs, queueFrame, queueRender, queueStillOfFile, queue
 import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries, fileStory, unfiledStories } from "./content";
 import { format } from "../../game/time";
 import { GameError, getGame, move, resetGame, takeSeat } from "./maiacity-v1.js";
-import { ViewError, deleteView, dropLandedDrafts, keepView, listViews, putView } from "./genui.js";
 import { loadCode } from "../../game/code/index.js";
 import { feedOf } from "../../game/code/sources/avendb.js";
 
@@ -120,7 +119,7 @@ async function signedIn(req: Request): Promise<{ id: string; role: string } | Re
 
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError || e instanceof VaultError || e instanceof GameError || e instanceof ViewError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError || e instanceof VaultError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -151,8 +150,6 @@ const loadVaultCode = () =>
   );
 await loadVaultCode();
 setInterval(loadVaultCode, 60_000);
-// what the last deploy brought from the repo: Generated UI drafts that were kept
-await dropLandedDrafts().catch((e) => console.error("dropping landed drafts:", e));
 await migrateLedger();
 await initSessions();
 await initRoles();
@@ -223,60 +220,6 @@ const server = Bun.serve({
         if (me instanceof Response) return me;
         try {
           return json(req, { game: await resetGame(), now: Date.now() });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-
-    // Generated UI (api/src/genui.js): the repo's views, and the drafts an agent writes over the MCP (the app's key)
-    // until the admin keeps one and it lands in the repo; /app/genui/ draws them all, each in its own box. An admin's,
-    // like the other tools: reading and writing both need media:admin; keeping a draft is the admin's own, on the page.
-    "/api/genui": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, { ...(await listViews()), now: Date.now() });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/genui/:id": {
-      OPTIONS: preflight,
-      PUT: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          const body = await readJson(req);
-          return json(req, { view: await putView({ ...body, id: req.params.id }, "scope" in me ? "mcp" : "page") });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-      DELETE: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          await deleteView(req.params.id);
-          return new Response(null, { status: 204, headers: cors(req) });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    // keeping a draft ({ keep: true }, or false to take it back) is the admin's, on the page (the Mac app's page asks
-    // with the app's key, so its MCP refuses this path to agents, as it refuses deciding a MIP)
-    "/api/genui/:id/keep": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          const body = await readJson(req);
-          return json(req, { view: await keepView(req.params.id, body?.keep !== false) });
         } catch (e) {
           return fail(req, e);
         }
