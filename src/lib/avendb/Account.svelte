@@ -60,7 +60,7 @@
 	import { FLOW, FLOWS, FUNCTION, FUNCTIONS } from './flows.js';
 	import { answer, refs } from './ops.js';
 	import { beside, seeding, seedPieces, unseeded } from './seed.js';
-	import { copySiteMedia, leftOut, siteLeft } from './sitemedia-copy.js';
+	import { copySiteMedia, leftOut, siteDoubled, siteLeft } from './sitemedia-copy.js';
 	import { capGroupOps } from './capgroups.js';
 	import { deviceName, relay as relayOf, server as serverOf } from './server.js';
 	import { asks, Here, here, session } from './session.svelte.js';
@@ -367,10 +367,11 @@
 		// the site's media (./sitemedia-copy.js, Samuel 2026-10-19: "copy everything for me"): what Maia City lacks of
 		// the pictures, sounds and films the site shows from the old media vault, copied into it in the background once
 		// the seed's top-up is over (or another device brings it), once a visit, by an owner's Mac app alone, as it
-		// copies the private ones too, with its key (a browser has the Library's card), as fast as it goes, on any page
+		// copies the private ones too, with its key (a browser has the Library's card), as fast as it goes, on any page;
+		// and the second copies of any it holds deleted, as the iPad and the Mac once copied the same ones at once
 		const seedOver = !bringing && (!first || seededInto.has(city?.id) || seedFailed.has(city?.id ?? ''));
 		const owns = !!city?.owners.some((o) => 'vault' in o && o.vault === mine?.id);
-		if (native() && city && owns && seedOver && !copyingMedia && !mediaTried.has(city.id) && siteLeft(w, city.id).length) {
+		if (native() && city && owns && seedOver && !copyingMedia && !mediaTried.has(city.id) && (siteLeft(w, city.id).length || siteDoubled(w, city.id).length)) {
 			copyingMedia = true;
 			mediaTried.add(city.id);
 			copySiteMedia(session.api, () => session.world ?? w, city.id, city.id, (at) => (mediaAt = at))
