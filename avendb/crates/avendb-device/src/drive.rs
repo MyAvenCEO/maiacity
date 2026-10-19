@@ -96,13 +96,18 @@ impl Kept {
 }
 
 /// A Lab for a device the Mac hosts beside its own, a drive's, by its key `secret`, named `name`, which
-/// knows the master recovery key, as every device's Lab does (`Start::recovery`): the Lab, and the device.
-pub(crate) fn lab_of(name: &str, secret: &[u8; 32]) -> Result<(Lab, SignerId)> {
+/// knows the master recovery key, as every device's Lab does (`Start::recovery`): the Lab, and the device: `device`,
+/// in its own suite (`Lab::device_as`), or a new one, in the suite new signers are made in. Fails if `secret` is
+/// another device's key than `device`'s.
+pub(crate) fn lab_of(name: &str, secret: &[u8; 32], device: Option<SignerId>) -> Result<(Lab, SignerId)> {
     let mut lab = Lab::with_entropy(random()?);
     if let Some(key) = Start::recovery() {
         lab.set_recovery(key);
     }
-    let me = lab.device_with(name, *secret);
+    let me = match device {
+        Some(d) => lab.device_as(name, *secret, d).context("the key opens another device than this drive's")?,
+        None => lab.device_with(name, *secret),
+    };
     Ok((lab, me))
 }
 
@@ -462,20 +467,22 @@ impl Service {
         let unlock = sheets.unlock("drive", nonce, fresh.challenge(now)).await?;
         let mask = fresh.mask(&unlock);
         let Unlock { ceremony, .. } = unlock;
-        let (mut lab, me) = lab_of(&name, &secret)?;
+        let (mut lab, me) = lab_of(&name, &secret, None)?;
         lab.web_passkey("the person", d.p256(), &ceremony).context("the sheet's passkey isn't this Mac's")?;
-        let pass = ceremony.pass(fresh.keys(), now).context("the sheet's ceremony isn't over the drive's challenge")?;
+        // in each suite, as its person's vault may know their passkey in either (the key move)
+        let passes = ceremony.passes(fresh.keys(), now);
+        anyhow::ensure!(!passes.is_empty(), "the sheet's ceremony isn't over the drive's challenge");
         let relay: RelayUrl = host.relay.parse().map_err(|_| anyhow!("the relay's URL isn't one"))?;
         let opts = Options {
             bind: None,
             direct: self.config.direct,
             relay: Some(relay),
-            relay_passes: vec![pass.clone()],
+            relay_passes: passes.clone(),
             shelf: Some(shelf.clone()),
             ..Options::local()
         };
         let node = Arc::new(Node::spawn(lab, me, opts).await?);
-        if let Err(e) = node.link_by_pass(&d.node().offer(), &pass, ceremony).await {
+        if let Err(e) = node.link_by_pass(&d.node().offer(), &passes, ceremony).await {
             node.shutdown().await.ok();
             return Err(e.context("the drive doesn't join your vault"));
         }
@@ -566,11 +573,8 @@ impl Service {
 
     /// Drive `meta.device` hosted here from now on: its node on its shelf on `volume`, its key `secret`.
     async fn host(&self, d: &Arc<Device>, volume: PathBuf, shelf: Shelf, meta: &Meta, secret: Zeroizing<[u8; 32]>) -> Result<()> {
-        let (mut lab, me) = lab_of(&meta.name, &secret)?;
+        let (mut lab, me) = lab_of(&meta.name, &secret, Some(meta.device))?;
         drop(secret);
-        if me != meta.device {
-            bail!("the key opens another device than this drive's");
-        }
         lab.follow(me, &meta.follow);
         if let Some(depth) = meta.query_depth {
             lab.set_query_depth(me, depth);

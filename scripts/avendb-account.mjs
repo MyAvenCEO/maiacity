@@ -450,7 +450,7 @@ try {
 	check('every signed edit', await until(async () => (await page.$$('.main .grid tr.rec')).length > 10, 20000));
 	const said = await text('.main .grid');
 	check('each in words', said.includes('Samuel writes') && said.includes('proposing a change'), said.slice(0, 300));
-	check('with its post-quantum signature', said.includes('SLH-DSA'), said.slice(0, 300));
+	check('with its post-quantum signature', said.includes('ML-DSA-65') || said.includes('SLH-DSA'), said.slice(0, 300));
 	await shot('3i-history');
 
 	// the cast to enact, named by hand: four vaults Samuel's vault owns, in one ceremony

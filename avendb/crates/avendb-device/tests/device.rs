@@ -1813,7 +1813,8 @@ async fn a_cloud_agent_her_mac_adds_to_avenmaia_drafts_a_spark_through_the_serve
     assert_eq!(app.asked(), ["approve"], "one sheet");
     assert_eq!((&added["name"], &added["aven"], &added["variable"]), (&json!("agentCloud"), &maia, &json!(agent::KEY_VAR)));
     let key = added["key"].as_str().expect("its key").to_string();
-    assert_eq!(key.len(), 64, "{added}");
+    assert_eq!(key.len(), 66, "its suite's byte, then its secret: {added}");
+    assert!(key.starts_with("02"), "ML-DSA-65, as every new signer");
     let device = added["device"].clone();
     device_shown(&mut app, &maia, &device, "agentCloud a device of avenMAIA", |d| d.is_some()).await;
     // a cloud session with it acts as avenMAIA, through the server alone, as nothing tells it where her Mac is

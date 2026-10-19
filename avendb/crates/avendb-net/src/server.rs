@@ -1,34 +1,36 @@
 //! The server peer (P8b): a node on a shelf of its own (`shelf`), its bucket (blobs B3a, `bucket`) or else its folder
 //! (`disk`), with its device's secret on the shelf beside its edits (`SECRET`). At its first start on a shelf it makes
-//! that secret, and belongs to no vault until the first human vault to claim it does (P8f, `Node::claim`,
-//! `Node::found_with`): from then on it is a device of avenMAIA, the aven Maia City owns, of the seed
-//! that human vault founds, which it acts as and never governs, and it starts again from what the shelf holds, as the
-//! same device, whatever became of its folder beside a bucket. It hands its contact card, avenMAIA's log and its
-//! owners', to whoever asks, so that a vault can give avenMAIA relay on its entries; it holds only ciphertext,
-//! and opens nothing but what is public and avenMAIA's own. Its relay (the `avendb-server` binary) lets in only
-//! the devices it knows (`Admission`).
+//! that secret, in the suite new signers are made in (`sign::kept_secret`), and belongs to no vault until the first
+//! human vault to claim it does (P8f, `Node::claim`, `Node::found_with`): from then on it is a device of avenMAIA, the
+//! aven Maia City owns, of the seed that human vault founds, which it acts as and never governs, and it starts again
+//! from what the shelf holds, as the same device, whatever became of its folder beside a bucket. It hands its contact
+//! card, avenMAIA's log and its owners', to whoever asks, so that a vault can give avenMAIA relay on its entries; it
+//! holds only ciphertext, and opens nothing but what is public and avenMAIA's own. Its relay (the `avendb-server`
+//! binary) lets in only the devices it knows (`Admission`).
 
 use std::io::ErrorKind;
 
 use anyhow::{Context as _, Result, anyhow};
 use avendb::id::VaultId;
 use avendb::lab::Lab;
+use avendb::sign::{self, Suite};
 use bytes::Bytes;
 use zeroize::{Zeroize as _, Zeroizing};
 
 use crate::{Node, Options, Shelf};
 
 /// The object on the server's shelf that holds its device's secret: in a folder, a file readable by its owner alone;
-/// in a bucket, sealed.
+/// in a bucket, sealed. With its suite where it isn't SLH-DSA (`sign::kept_secret`): a server made before the key move
+/// keeps the 32 bytes alone, and opens as itself.
 pub const SECRET: &str = "device.key";
 
 /// The server's node on `shelf`, with `opts` for its network: its device's secret read from the shelf, or made at its
 /// first start and put there; and its edits beside it, where it keeps whole every file the edits it holds bring
 /// (`Options::keep`). It hands its contact card to whoever asks, and the first human vault to claim it owns it.
 pub async fn open(shelf: Shelf, opts: Options) -> Result<Node> {
-    let secret = secret(&shelf).await?;
+    let (secret, suite) = secret(&shelf).await?;
     let mut lab = Lab::with_entropy(*random()?);
-    let me = lab.device_with("the server", *secret);
+    let me = lab.device_with_in("the server", *secret, suite);
     Node::spawn(lab, me, Options { shelf: Some(shelf), keep: true, card: true, ..opts }).await
 }
 
@@ -39,17 +41,23 @@ pub async fn open(shelf: Shelf, opts: Options) -> Result<Node> {
 /// to a device vault under their aven (`Node::add_device_vault_with`); from then on it acts as that device vault by its
 /// own key.
 pub async fn open_agent(shelf: Shelf, name: &str, opts: Options) -> Result<Node> {
-    let secret = secret(&shelf).await?;
-    open_agent_with(Some(shelf), name, &secret, opts).await
+    let (secret, suite) = secret(&shelf).await?;
+    open_agent_with(Some(shelf), name, &secret, suite, opts).await
 }
 
-/// An agent device named `name` whose key is `secret`, which its person keeps elsewhere, never on `shelf`: a cloud
-/// session's agent, whose key is in its environment's secrets, as The OS showed it once; or that key as The OS makes it,
-/// on no shelf, for the moment it takes its person's Mac to add it under their aven, which it cosigns
-/// (`Node::add_device_vault_with`). Else as `open_agent`.
-pub async fn open_agent_with(shelf: Option<Shelf>, name: &str, secret: &[u8; 32], opts: Options) -> Result<Node> {
+/// An agent device named `name` whose key is `secret`, in suite `suite`, which its person keeps elsewhere, never on
+/// `shelf`: a cloud session's agent, whose key is in its environment's secrets, as The OS showed it once
+/// (`sign::kept_secret`); or that key as The OS makes it, on no shelf, for the moment it takes its person's Mac to add
+/// it under their aven, which it cosigns (`Node::add_device_vault_with`). Else as `open_agent`.
+pub async fn open_agent_with(
+    shelf: Option<Shelf>,
+    name: &str,
+    secret: &[u8; 32],
+    suite: Suite,
+    opts: Options,
+) -> Result<Node> {
     let mut lab = Lab::with_entropy(*random()?);
-    let me = lab.device_with(name, *secret);
+    let me = lab.device_with_in(name, *secret, suite);
     Node::spawn(lab, me, Options { shelf, card: true, ..opts }).await
 }
 
@@ -59,19 +67,19 @@ pub async fn vault(node: &Node) -> Option<VaultId> {
     node.read(|lab, me| lab.vault_of(me)).await
 }
 
-/// The device's secret on `shelf`, or a new one put there.
-async fn secret(shelf: &Shelf) -> Result<Zeroizing<[u8; 32]>> {
+/// The device's secret on `shelf` and its suite, or a new one put there, in the suite new signers are made in.
+async fn secret(shelf: &Shelf) -> Result<(Zeroizing<[u8; 32]>, Suite)> {
     for _ in 0..2 {
         if let Some(bytes) = shelf.get(SECRET).await.context("the server's secret")? {
-            let secret = <[u8; 32]>::try_from(&bytes[..]).map(Zeroizing::new);
+            let secret = sign::kept_secret_of(&bytes);
             if let Ok(mut bytes) = bytes.try_into_mut() {
                 bytes[..].zeroize();
             }
-            return secret.map_err(|_| anyhow!("the shelf's {SECRET} holds no 32-byte secret"));
+            return secret.ok_or_else(|| anyhow!("the shelf's {SECRET} holds no device's secret"));
         }
         let secret = random()?;
-        match shelf.put(SECRET, Bytes::copy_from_slice(&*secret)).await {
-            Ok(()) => return Ok(secret),
+        match shelf.put(SECRET, Bytes::copy_from_slice(&sign::kept_secret(&secret, sign::SIGNING))).await {
+            Ok(()) => return Ok((secret, sign::SIGNING)),
             // put meanwhile: that one it is
             Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
             Err(e) => return Err(e).context("the server's secret"),

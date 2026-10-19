@@ -3,13 +3,14 @@
 //! and stays as it is.
 //!
 //! - **Who**: a node's endpoint key is its device's ed25519 key, so iroh's TLS proves the endpoint. Each connection
-//!   then opens with a hello each way (`sign::Hello`): the device's SLH-DSA signature over the connection's TLS
+//!   then opens with a hello each way (`sign::Hello`): the device's post-quantum signature over the connection's TLS
 //!   exporter, which proves the device itself, by both its keys, on this connection alone. The listener checks the
 //!   dialer's hello before it sends its own and closes a connection without one; the dialer checks the listener's.
 //! - **Key exchange**: X25519MLKEM768 is the only group either end offers (`pq_provider`): ML-KEM-768 agrees the keys
 //!   of every connection along with X25519, and a peer that offers only classical groups doesn't connect.
-//! - **No curve trusted**: every signature on every edit is SLH-DSA, so neither ed25519 nor P-256 makes an edit count;
-//!   a passkey's WebAuthn assertion beside it only proves its person took part.
+//! - **No curve trusted**: every signature on every edit is ML-DSA-65, or SLH-DSA from a signer made before the key
+//!   move (`sign::Suite`), so neither ed25519 nor P-256 makes an edit count; a passkey's WebAuthn assertion beside it
+//!   only proves its person took part.
 //! - **Sync**: either end asks the other on the connection (`wire::Request`) and is answered with the edits it may
 //!   receive by the other's view and the McEliece keys they name (`wire::Reply`), each key by its id and BLAKE3 hash
 //!   alone. The asker fetches the keys it lacks over iroh-blobs, where a node hands a key out only to a device a hello
@@ -77,7 +78,8 @@
 //! - **Linking** (P8c): a device shows its offer as a QR code (`Node::offer`, `Offer::to_text`): its endpoint, its
 //!   device and where it is reached. A new device of the same person scans it and links through it (`Node::link`):
 //!   once the hellos proved both devices, the new device shows its person's passkey's pass for it on the connection
-//!   (`sign::RelayPass`), an assertion and an SLH-DSA signature over the new device's id and when the pass was made;
+//!   (`sign::RelayPass`), an assertion and a post-quantum signature over the new device's id and when the pass was made
+//!   (it shows one in each suite, one after the other, as its person's vault may know the passkey in either);
 //!   the peer checks it is for the device whose hello proved it, and hands back the logs of the vaults the passkey owns,
 //!   and nothing else (`Lab::link_card`); the new device adds itself to the vault whose root is the passkey, signed by
 //!   the passkey and by itself (`Lab::join`), and the peer accepts that edit alone, for that device alone
@@ -134,7 +136,7 @@ use avendb::keys::PublicKey;
 use avendb::lab::{Backup, Drafting, Lab, Unsigned};
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
 use avendb::sealed::{FileRoot, PIECE};
-use avendb::sign::{Ceremony, RelayPass, Signed, SignerKeys};
+use avendb::sign::{Ceremony, RelayPass, SUITES, Signed, SignerKeys};
 use avendb::sync::{log_of, place, LogId};
 use avendb::wire::{Announce, Claim, FileHold, Join, Reply, Request, Statement, Wire};
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
@@ -718,31 +720,39 @@ impl Node {
         let now = unix_now();
         let pass = self.shared.lab(move |lab, me| lab.relay_pass(me, passkey, now)).await;
         let pass = pass.context("the passkey isn't at hand")?;
-        let (_, vault) = self.link_with(offer, &pass, &InLab(self.shared.clone(), passkey)).await?;
+        let passes = std::slice::from_ref(&pass);
+        let (_, vault) = self.link_with(offer, passes, &InLab(self.shared.clone(), passkey)).await?;
         Ok(vault)
     }
 
-    /// `link`, with its person's passkey in the platform's authenticator (P8e): `pass` is the passkey's pass for this
-    /// device, the ceremony that unlocked it, which the peer takes in place of a ceremony of the passkey's on their
-    /// connection, and `authenticator` signs the one more ceremony linking takes, the edit that adds this device to its
-    /// person's vault. The pass may be from any of a few passkeys, as this device may not know its passkey's P-256 key
-    /// yet (`RelayPass::candidates`): the one whose vault the peer hands over is its person's, and its keys must be at
-    /// hand in the Lab (`Lab::web_passkey`), as those of the others may be. That passkey and the vault it joined.
+    /// `link`, with its person's passkey in the platform's authenticator (P8e): `passes` are the passkey's pass for
+    /// this device, the ceremony that unlocked it, which the peer takes in place of a ceremony of the passkey's on
+    /// their connection, and `authenticator` signs the one more ceremony linking takes, the edit that adds this device
+    /// to its person's vault. A pass may be from any of a few passkeys, as this device may not know its passkey's P-256
+    /// key yet (`RelayPass::candidates`): the one whose vault the peer hands over is its person's, and its keys must be
+    /// at hand in the Lab (`Lab::web_passkey`), as those of the others may be. It shows the peer one pass after
+    /// another, one in each suite (`sign::Ceremony::passes`), until the peer hands a vault over: their vault may know
+    /// their passkey in either (the key move). That passkey and the vault it joined.
     pub async fn link_with(
         &self,
         offer: &Offer,
-        pass: &RelayPass,
+        passes: &[RelayPass],
         authenticator: &impl Authenticator,
     ) -> Result<(SignerId, VaultId)> {
-        self.linking(offer, pass, Joins::By(authenticator)).await
+        self.linking(offer, passes, Joins::By(authenticator)).await
     }
 
     /// `link_with`, in the one ceremony that unlocked this device, `unlock`, which is the passkey's pass for it: that
     /// ceremony signs the edit adding the device too, as the pass (`sign::WebAuthn::Pass`), its PRF output making the
     /// SLH-DSA signature over the edit itself, so that a browser signs in to its person's vault in one ceremony. That
     /// passkey and the vault it joined.
-    pub async fn link_by_pass(&self, offer: &Offer, pass: &RelayPass, unlock: Ceremony) -> Result<(SignerId, VaultId)> {
-        self.linking(offer, pass, Joins::<InLab>::Pass(unlock)).await
+    pub async fn link_by_pass(
+        &self,
+        offer: &Offer,
+        passes: &[RelayPass],
+        unlock: Ceremony,
+    ) -> Result<(SignerId, VaultId)> {
+        self.linking(offer, passes, Joins::<InLab>::Pass(unlock)).await
     }
 
     /// `link_by_pass` through the server `offer` names, only if the pass's passkey roots a vault the server knows: one
@@ -752,30 +762,31 @@ impl Node {
     pub async fn rejoin_by_pass(
         &self,
         offer: &Offer,
-        pass: &RelayPass,
+        passes: &[RelayPass],
         unlock: Ceremony,
     ) -> Result<Option<(SignerId, VaultId)>> {
-        self.join_through(offer, pass, Joins::<InLab>::Pass(unlock), false).await
+        self.join_through(offer, passes, Joins::<InLab>::Pass(unlock), false).await
     }
 
     async fn linking<A: Authenticator>(
         &self,
         offer: &Offer,
-        pass: &RelayPass,
+        passes: &[RelayPass],
         joins: Joins<'_, A>,
     ) -> Result<(SignerId, VaultId)> {
         self.on_relay().await;
         self.shared.opts.progress.step("server");
-        self.join_through(offer, pass, joins, true).await?.context("no vault of this passkey to join")
+        self.join_through(offer, passes, joins, true).await?.context("no vault of this passkey to join")
     }
 
-    /// Join the vault the pass's passkey roots, through device `offer`, which hands over its log for the pass: `None`
-    /// if it hands over none. `linking` marks the pass step as it shows the pass; a device that founds its vault, only
-    /// once the server handed one over.
+    /// Join the vault a pass's passkey roots, through device `offer`, which hands over its log for the pass: `None`
+    /// if it hands over none for any of `passes`, which it shows one after another, the next only if the peer handed
+    /// nothing over for the one before (a pass in each suite, the key move). `linking` marks the pass step as it shows
+    /// the passes; a device that founds its vault, only once the server handed one over.
     async fn join_through<A: Authenticator>(
         &self,
         offer: &Offer,
-        pass: &RelayPass,
+        passes: &[RelayPass],
         joins: Joins<'_, A>,
         linking: bool,
     ) -> Result<Option<(SignerId, VaultId)>> {
@@ -784,13 +795,18 @@ impl Node {
         if linking {
             progress.step("pass");
         }
-        let card = session::exchange(&peer.conn, session::LINK, &pass.to_wire(), session::REPLY_LIMIT).await?;
-        let Reply { mut edits, .. } = Reply::from_wire(&card)?;
-        // a card carries vault logs, and nothing else
-        edits.retain(of_a_vault);
-        if edits.is_empty() {
-            return Ok(None);
+        let mut handed = None;
+        for pass in passes {
+            let card = session::exchange(&peer.conn, session::LINK, &pass.to_wire(), session::REPLY_LIMIT).await?;
+            let Reply { mut edits, .. } = Reply::from_wire(&card)?;
+            // a card carries vault logs, and nothing else
+            edits.retain(of_a_vault);
+            if !edits.is_empty() {
+                handed = Some((pass, edits));
+                break;
+            }
         }
+        let Some((pass, edits)) = handed else { return Ok(None) };
         if !linking {
             progress.step("pass");
         }
@@ -1178,9 +1194,16 @@ impl Node {
         let claim = move |lab: &mut Lab, me| -> Result<(VaultId, Vec<Signed>), Refusal> {
             lab.receive(me, edits, Vec::new());
             let vault = lab.vault_of(me).ok_or(Refusal::NotActing)?;
-            let key = lab.invite_key(secret);
-            let claimed = lab.claim_invite(me, share, vault, key);
-            lab.lose(key);
+            // the key in each suite, as an invite made before the key move names it in SLH-DSA: the one it names signs
+            let mut claimed = Err(Refusal::NoConsent);
+            for suite in SUITES {
+                let key = lab.invite_key_in(secret, suite);
+                claimed = lab.claim_invite(me, share, vault, key);
+                lab.lose(key);
+                if claimed.is_ok() {
+                    break;
+                }
+            }
             claimed?;
             Ok((vault, lab.sign_up_card(me)))
         };

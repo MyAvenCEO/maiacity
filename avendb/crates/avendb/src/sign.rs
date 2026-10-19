@@ -75,9 +75,53 @@ pub enum Suite {
     MlDsa = 2,
 }
 
-/// The suite new signers are made in. Every device reads and checks both suites; new signers sign with ML-DSA-65 once
-/// every app that reads edits checks it (the key move, K3), as an older app would refuse their edits.
-pub const SIGNING: Suite = Suite::SlhDsa;
+/// The suite new signers are made in: ML-DSA-65, since every app that reads edits checks it (the key move, K3, Samuel
+/// 2026-10-19). A signer made before keeps its own suite, SLH-DSA, until it moves.
+pub const SIGNING: Suite = Suite::MlDsa;
+
+/// Every suite, the one new signers are made in first: whoever holds a key's secret makes it in each, as a signer it
+/// meets may be in either (the key move).
+pub const SUITES: [Suite; 2] = [SIGNING, Suite::SlhDsa];
+
+impl Suite {
+    /// Its byte, as a signer's id hashes it and a device's kept secret names it (`kept_secret`).
+    pub fn byte(self) -> u8 {
+        self as u8
+    }
+
+    /// The suite whose byte is `byte`, if any.
+    pub fn of_byte(byte: u8) -> Option<Suite> {
+        SUITES.into_iter().find(|s| s.byte() == byte)
+    }
+
+    /// Its signature's name, as the History view shows it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Suite::SlhDsa => "SLH-DSA",
+            Suite::MlDsa => "ML-DSA-65",
+        }
+    }
+}
+
+/// A device's secret as the device keeps it where nothing else says its suite, on the server's or an agent's shelf or
+/// in a cloud agent's key (`avendb_net::server`): the 32 bytes alone for a device in SLH-DSA, made before the key move,
+/// as every one of those was kept; else its suite's byte, then the 32.
+pub fn kept_secret(secret: &[u8; 32], suite: Suite) -> Zeroizing<Vec<u8>> {
+    Zeroizing::new(match suite {
+        Suite::SlhDsa => secret.to_vec(),
+        Suite::MlDsa => [&[suite.byte()][..], &secret[..]].concat(),
+    })
+}
+
+/// The secret and suite `kept_secret` kept as `bytes`, if they are such.
+pub fn kept_secret_of(bytes: &[u8]) -> Option<(Zeroizing<[u8; 32]>, Suite)> {
+    let (suite, secret) = match bytes.len() {
+        32 => (Suite::SlhDsa, bytes),
+        33 => (Suite::of_byte(bytes[0]).filter(|&s| s != Suite::SlhDsa)?, &bytes[1..]),
+        _ => return None,
+    };
+    Some((Zeroizing::new(secret.try_into().ok()?), suite))
+}
 
 /// An SLH-DSA-SHA2-128f signature's size.
 pub const PQ_SIGNATURE_BYTES: usize = 17_088;
@@ -734,7 +778,7 @@ impl Ceremony {
 
     /// The keys of its passkey, whose P-256 key is `p256`, in whichever suite they are signer `id`'s: `None` if neither.
     pub fn keys_of(&self, p256: [u8; 33], id: SignerId) -> Option<SignerKeys> {
-        [Suite::MlDsa, Suite::SlhDsa].into_iter().map(|suite| self.keys_in(p256, suite)).find(|k| k.id() == id)
+        SUITES.into_iter().map(|suite| self.keys_in(p256, suite)).find(|k| k.id() == id)
     }
 
     /// The keys of its Touch ID key, in the suite new signers are made in: `None` for a passkey's ceremony, whose P-256
@@ -828,6 +872,14 @@ impl Ceremony {
     /// passkey's ceremony over their `pass_challenge`, as the one that unlocks a new device is.
     pub fn pass(&self, device: SignerKeys, made: u64) -> Option<RelayPass> {
         self.pass_in(device, made, SIGNING)
+    }
+
+    /// Its passkey's pass for the device whose keys are `device`, made at `made`, in each suite, the one new signers
+    /// are made in first (`SUITES`): a new device doesn't know which suite its person's vault knows their passkey in
+    /// (the key move), so it shows both (`avendb_net::passes_token`, `avendb_net::Node::link_by_pass`). Empty unless
+    /// they are a device's and this is a passkey's ceremony over their `pass_challenge`.
+    pub fn passes(&self, device: SignerKeys, made: u64) -> Vec<RelayPass> {
+        SUITES.into_iter().filter_map(|suite| self.pass_in(device, made, suite)).collect()
     }
 
     /// `pass`, signed by its passkey's post-quantum key in suite `suite`.
@@ -1025,7 +1077,7 @@ impl DeviceKey {
 
     /// The keys of device `id` from 32 secret bytes, in whichever suite they are its: `None` if neither.
     pub fn of(secret: [u8; 32], id: SignerId) -> Option<Self> {
-        [Suite::MlDsa, Suite::SlhDsa].into_iter().map(|suite| Self::from_secret_in(secret, suite)).find(|k| k.id() == id)
+        SUITES.into_iter().map(|suite| Self::from_secret_in(secret, suite)).find(|k| k.id() == id)
     }
 
     pub fn keys(&self) -> SignerKeys {
@@ -1377,7 +1429,8 @@ mod tests {
         let edit = edit(key.id(), vec![]);
         let signed = Signed { edit: edit.clone(), sigs: vec![key.sign(edit.id())] };
         assert!(signed.verify().is_ok());
-        assert_eq!(signed.sigs[0].pq.len(), PQ_SIGNATURE_BYTES);
+        let ml = ML_DSA_PUBLIC_BYTES + ML_DSA_SIGNATURE_BYTES;
+        assert_eq!(signed.sigs[0].pq.len(), ml, "its ML-DSA-65 key and its signature");
         assert_eq!(signed.sigs[0].webauthn, None, "a device signs with its post-quantum key alone");
         // the same signature on a changed edit, or claimed by another signer, is refused
         let other = Edit { parents: vec![EditId::from_u64(1)], ..edit.clone() };
@@ -1591,7 +1644,7 @@ mod tests {
         let (exporter, other) = ([1; 32], [2; 32]);
         let hello = key.hello(&exporter, true);
         assert_eq!(hello.verify(&exporter, true, &endpoint), Some(key.id()));
-        assert_eq!(hello.sig.len(), PQ_SIGNATURE_BYTES);
+        assert_eq!(hello.sig.len(), ML_DSA_PUBLIC_BYTES + ML_DSA_SIGNATURE_BYTES);
         // another connection, sent back by the other end, or under another endpoint key: refused
         assert_eq!(hello.verify(&other, true, &endpoint), None);
         assert_eq!(hello.verify(&exporter, false, &endpoint), None);
@@ -1614,7 +1667,7 @@ mod tests {
         let device = passkey.device([5; 32]).keys();
         let made = 1_791_500_000;
         let pass = passkey.pass(device, made);
-        assert_eq!(pass.sig.len(), PQ_SIGNATURE_BYTES);
+        assert_eq!(pass.sig.len(), ML_DSA_PUBLIC_BYTES + ML_DSA_SIGNATURE_BYTES);
         let SignerKeys::Device { ed25519, .. } = device else { unreachable!() };
         assert_eq!(pass.endpoint(), Some(ed25519), "it lets in the device's endpoint");
         // from when it was made, or a little before by a device whose clock runs fast, for ten minutes: the passkey is
@@ -1863,6 +1916,22 @@ mod tests {
 
     /// The signer ids of signers made before the key move, as avenDB computed them before it read ML-DSA-65 (main at
     /// 5308b60, 2026-10-19): every vault names its signers by them, so they never change.
+    #[test]
+    fn a_devices_kept_secret_says_its_suite_but_for_one_made_before_the_key_move() {
+        let secret = [7; 32];
+        let old = kept_secret(&secret, Suite::SlhDsa);
+        assert_eq!(&old[..], &secret[..], "the 32 bytes alone, as every one kept before");
+        let new = kept_secret(&secret, Suite::MlDsa);
+        assert_eq!((new.len(), new[0]), (33, 2), "its suite's byte first");
+        for (kept, suite) in [(old, Suite::SlhDsa), (new, Suite::MlDsa)] {
+            let (back, read) = kept_secret_of(&kept).expect("it reads");
+            assert_eq!((*back, read), (secret, suite));
+        }
+        assert!(kept_secret_of(&[1; 33]).is_none(), "SLH-DSA is never named");
+        assert!(kept_secret_of(&[9; 33]).is_none(), "no such suite");
+        assert!(kept_secret_of(&[7; 31]).is_none());
+    }
+
     #[test]
     fn a_signer_made_before_the_key_move_keeps_its_id() {
         let ids = [

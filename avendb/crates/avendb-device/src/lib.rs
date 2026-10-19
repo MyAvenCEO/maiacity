@@ -761,7 +761,7 @@ impl Service {
         let relay: RelayUrl = meta.relay.parse().map_err(|_| anyhow!("the relay's URL isn't one"))?;
         let (name, secret) = (agent::device_name(agent::CLOUD), Zeroizing::new(random()?));
         let opts = Options { bind: None, direct: self.config.direct, relay: Some(relay), ..Options::local() };
-        let node = avendb_net::server::open_agent_with(None, &name, &secret, opts).await?;
+        let node = avendb_net::server::open_agent_with(None, &name, &secret, sign::SIGNING, opts).await?;
         d.node().know(node.addr());
         let added = async {
             let approver = self.approver().await?;
@@ -773,7 +773,9 @@ impl Service {
         let device = node.device();
         node.shutdown().await.ok();
         added.context("the cloud agent isn't added")?;
-        Ok(json!({ "device": hex(&device.0), "name": name, "aven": hex(&aven.0), "key": hex(&*secret),
+        // its secret with its suite (`sign::kept_secret`), as the cloud session reads it back (`agent::KEY_VAR`)
+        let key = Zeroizing::new(hex(&sign::kept_secret(&secret, sign::SIGNING)));
+        Ok(json!({ "device": hex(&device.0), "name": name, "aven": hex(&aven.0), "key": key.as_str(),
             "variable": agent::KEY_VAR }))
     }
 

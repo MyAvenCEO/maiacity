@@ -84,10 +84,11 @@ cargo run --release -p avendb --bin master-key -- id ~/Desktop/master-recovery.p
 ```
 
 `new` prints the secret in the terminal, 64 hex digits to copy and keep offline, and writes it nowhere. Its one file is
-`master-recovery.pub`, the public half every vault needs: its P-256 and SLH-DSA keys, its X-Wing and Classic McEliece
-keys, a megabyte, and its standing consent to be added as an owner. `new` never writes over a file. `pub` asks for the
-secret and makes the `.pub` file again, over one of an older format alone; `id` names the key a `.pub` file holds, or,
-with no file, the secret it asks for. Whoever holds the secret owns every vault that added the key: only the `.pub` file
+`master-recovery.pub`, the public half every vault needs: its P-256 and post-quantum signing keys (SLH-DSA for the key
+made before the key move, ML-DSA-65 for a new one), its X-Wing and Classic McEliece keys, a megabyte, and its standing
+consent to be added as an owner. `new` never writes over a file. `pub` asks for the secret and makes the `.pub` file
+again, over one of an older format alone, never over the SLH-DSA key's; `id` names the key a `.pub` file holds, or,
+with no file, the keys the secret it asks for makes in each suite. Whoever holds the secret owns every vault that added the key: only the `.pub` file
 is handed on.
 
 The key's file is built in (`crates/avendb/master-recovery.pub`, `recovery::master`); an empty file builds avenDB

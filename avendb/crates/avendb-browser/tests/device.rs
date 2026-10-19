@@ -8,7 +8,7 @@
 //! in one more ceremony: her browser acts as each of them, and what each shares, a note by its id, its todos by their
 //! type, or the whole of it, decides what the others may read and write. Her browser brings a film into her vault, a
 //! megabyte at a time, and her Mac reads any range of it. Every device, the server too, trusts no curve: every edit
-//! is SLH-DSA signed.
+//! is ML-DSA-65 signed, as every signer here is made after the key move (Gina's is made before it, in SLH-DSA).
 //!
 //! Every read and change goes through one entry point, as the page's does (V2, `Device::run`,
 //! `docs/ARCHITECTURE.md` §8): a JSON op, answered done, refused, or, where the vault's owners approve it, signed in
@@ -33,7 +33,7 @@ use avendb::slice::Selector;
 use avendb::recovery::RecoveryKey;
 use avendb::rules::ops_to_json;
 use avendb::sealed::FileRoot;
-use avendb::sign::{Ceremony, Passkey, device_salt};
+use avendb::sign::{Ceremony, ML_DSA_PUBLIC_BYTES, ML_DSA_SIGNATURE_BYTES, Passkey, Suite, device_salt};
 use avendb::world;
 use avendb_browser::{DELETED, Device, Fresh, Meta, Start, Unlock};
 use avendb_net::{Admission, Authenticator, NoBytes, NoCeremony, Node, Offer, Options, Progress, Step, disk};
@@ -1205,7 +1205,7 @@ async fn a_note_takes_proposals_merges_and_forks_and_the_database_shows_every_re
     let got: Vec<_> = lenses.iter().map(|l| (hex(l, "from"), hex(l, "to"))).collect();
     assert_eq!(got, shipped, "the lenses avenDB ships, from article, spark, function, view and post v1 to v2");
     // her database's history, every edit her browser holds, in the order it took them: her vault's genesis, her
-    // browser added to it, avenCEO's relay on the whole of it, and each write, every one counted and SLH-DSA signed
+    // browser added to it, avenCEO's relay on the whole of it, and each write, every one counted and ML-DSA-65 signed
     let log = run(&first, json!({ "op": "log" })).await.expect("its log");
     let edits = log["edits"].as_array().expect("its edits");
     assert_eq!(edits.len(), first.node().read(|lab, me| lab.size(me).0).await, "every edit it holds");
@@ -1216,7 +1216,9 @@ async fn a_note_takes_proposals_merges_and_forks_and_the_database_shows_every_re
     assert_eq!(genesis["fields"]["vaultKind"].as_str(), Some("human"));
     assert_eq!(genesis["fields"]["root"].as_str(), Some(first.passkey().to_hex().as_str()), "her passkey roots it");
     let sigs = genesis["sigs"].as_array().expect("its signatures");
-    let passkey = |s: &Value| s["by"] == "passkey" && s["webauthn"] == "batch" && s["pq"].as_u64() == Some(17_088);
+    // an ML-DSA-65 signature carries its key beside it
+    let ml = (ML_DSA_PUBLIC_BYTES + ML_DSA_SIGNATURE_BYTES) as u64;
+    let passkey = |s: &Value| s["by"] == "passkey" && s["webauthn"] == "batch" && s["pq"].as_u64() == Some(ml);
     assert!(sigs.iter().any(passkey), "{sigs:?}");
     let browser = first.node().device().to_hex();
     assert!(of("addDevice").iter().any(|o| o["fields"]["device"].as_str() == Some(browser.as_str())));
@@ -1237,10 +1239,10 @@ async fn a_note_takes_proposals_merges_and_forks_and_the_database_shows_every_re
     let hers = json!(v.to_hex());
     assert!(writes.iter().all(|o| o["vaults"].as_array().is_some_and(|vs| vs.contains(&hers))));
     assert!(!of("keys").is_empty());
-    let slh = |s: &Value| s["alg"] == "SLH-DSA" && s["pq"].as_u64() == Some(17_088);
+    let ml_dsa = |s: &Value| s["alg"] == "ML-DSA-65" && s["pq"].as_u64() == Some(ml);
     let signed_all = |o: &Value| {
         let sigs = o["sigs"].as_array().unwrap();
-        o["bytes"].as_u64().is_some_and(|n| n > 0) && !sigs.is_empty() && sigs.iter().all(slh)
+        o["bytes"].as_u64().is_some_and(|n| n > 0) && !sigs.is_empty() && sigs.iter().all(ml_dsa)
     };
     assert!(edits.iter().all(signed_all));
     let text = log.to_string();
@@ -1393,4 +1395,52 @@ async fn a_gated_server_takes_a_newcomers_vault_only_with_the_invite_maia_city_g
     // the invite is spent: Frank's browser claims it no more, and his vault stays out
     assert!(franks.node().claim_invite(&server.offer(), share, secret).await.is_err(), "a claimed invite");
     assert!(!holds(&server, fv).await, "the server leaves out a vault that came with no invite");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn ginas_keys_from_before_the_key_move_link_a_new_browser_that_opens_again_as_her_vault_knows_her() {
+    let admission = Admission::open();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url: RelayUrl = relay.url();
+    // Gina's passkey and Mac, made before the key move: SLH-DSA
+    let mut lab = Lab::new();
+    let passkey = lab.passkey_from_in("Gina", [41; 32], Suite::SlhDsa);
+    let mac_g = lab.device_of(passkey, "Gina's Mac");
+    let gina = human_on(&mut lab, passkey, &[mac_g]);
+    let pass = lab.relay_pass(mac_g, passkey, now()).expect("her passkey's pass for her Mac");
+    let opts = Options { relay: Some(url.clone()), relay_passes: vec![pass], ..Options::local() };
+    let mac = Node::spawn(lab.split(mac_g, &[], [1; 32]), mac_g, opts).await.expect("her Mac's node");
+    until("the relay serves her Mac", || async { relay.serves(&mac.id()) }).await;
+    // her new browser: the unlock makes its passkey's pass in each suite, and her Mac hands her vault over for the
+    // one in SLH-DSA, which also signs the browser's join
+    let ginas = Browser::new(Passkey::from_seed([41; 32]));
+    let shelf = Folder::new("gina");
+    let browser = link(start_on(&shelf.0, "Gina's browser", &url, 7), &mac.offer(), &ginas, [1; 32]).await;
+    let browser = browser.expect("it links through her Mac");
+    assert!(ginas.steps().is_empty(), "no ceremony but the unlock");
+    assert_eq!(browser.vault().await, Some(gina));
+    assert_eq!(browser.passkey(), passkey, "her passkey as her vault knows it, in SLH-DSA");
+    let me = browser.node().device();
+    let suite = move |lab: &Lab, _| lab.keys_of(me).map(|k| k.suite());
+    assert_eq!(browser.node().read(suite).await, Some(Suite::MlDsa), "a new device, in ML-DSA-65");
+    let both = move |lab: &Lab, me| lab.state(me).vault(gina).map(|v| v.devices.len()) == Some(2);
+    until("her Mac counts her browser among her devices", || mac.read(both)).await;
+    let note = write_note(&browser, gina, gina, titled("Bees", "Two hives."), &[]).await.expect("a note");
+    until("her Mac reads it", || mac.read(move |lab: &Lab, me| lab.reads(me, note))).await;
+    // what her vault approves, her passkey signs in SLH-DSA, as her vault knows it
+    let coop = json!({ "op": "found", "vaults": [{ "kind": "coop", "name": "Gina's Bees" }] });
+    let asked = run(&browser, coop).await.expect_err("it waits for her passkey");
+    assert_eq!(asked["approve"]["signers"], json!([passkey.to_hex()]), "{asked}");
+    // closed, it opens again from its shelf by her passkey's unlock alone: the same device, her passkey as her vault
+    // knows it
+    let meta = browser.meta([1; 32], "Z2luYQ".into());
+    browser.keep(&meta).await.expect("what opens it again, on its shelf");
+    browser.close().await.expect("it closes");
+    let again = Device::open(start_on(&shelf.0, "Gina's browser", &url, 9), &meta, ginas.unlock([1; 32], [0xaa; 32]));
+    let again = again.await.expect("it opens again");
+    assert_eq!((again.node().device(), again.passkey()), (me, passkey));
+    assert!(shows(&again, note, "Two hives.").await, "it reads what its shelf kept");
+    for n in [again.node(), &mac] {
+        n.shutdown().await.expect("the node shuts down");
+    }
 }
