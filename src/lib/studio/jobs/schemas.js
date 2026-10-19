@@ -13,11 +13,11 @@
 export const RULE = 'rule';
 export const TASK = 'task';
 
-/** The lanes a worker serves: one job at a time in each (vault/app/src/jobs.rs). */
+/** The lanes the Mac runs: one job at a time in each (vault/app/src/jobs.rs). */
 export const LANES = /** @type {const} */ (['gpu', 'speech', 'ai', 'io', 'net']);
 /** @typedef {(typeof LANES)[number]} Lane */
 
-/** Where a task is: queued, claimed by a worker (`lease_until` in force), done, failed (tried again), or held after
+/** Where a task is: queued, claimed by a device running it (`lease_until` in force), done, failed (tried again), or held after
  * three tries, until a person says again. */
 export const STATUSES = /** @type {const} */ (['queued', 'claimed', 'done', 'failed', 'held']);
 /** @typedef {(typeof STATUSES)[number]} Status */

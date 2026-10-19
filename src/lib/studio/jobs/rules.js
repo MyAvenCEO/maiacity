@@ -1,5 +1,5 @@
 /*
- * The rules of studio 2.0 (plan J0b, §1.7): what is wanted, never how. A worker maps a rule's `key` to the Rust that
+ * The rules of studio 2.0 (plan J0b, §1.7): what is wanted, never how. The Mac's runner maps a rule's `key` to the Rust that
  * does it (vault/app/src/jobs.rs); a vault turns a rule off or narrows its `when` without touching code.
  *
  * Rules are held like flows: the app's own (below), overridden by avenCEO GmbH's, overridden by the vault's, each by
@@ -34,7 +34,7 @@ export const BUILT_IN = [
 		inputs: { file: '$entry' },
 		params: [],
 		makes: [{ value: 'blake3' }],
-		about: 'The test rule: reads a file through the worker and names its BLAKE3. Only files tagged jobs:test.',
+		about: 'The test rule: reads a file through this device and names its BLAKE3. Only files tagged jobs:test.',
 		off: false
 	},
 	{

@@ -5,8 +5,8 @@
 //! answered by the device itself, with no lines of JSON between. The avenDB page calls it through `avendb`
 //! ($lib/avendb/native.js), in the calls the page's own device answers; each ceremony of the person's passkey it asks
 //! for runs in the sign-in sheet over the window that called last (passkey.rs), what comes back sealed to a key the
-//! device made for that ceremony alone. The app's own Rust takes the node of a studio worker it hosts (`worker`), to
-//! put what a job made by the worker's own key. It starts with the first call, runs on while the app does, its node
+//! device made for that ceremony alone. The app's own Rust reads a file's bytes on the device's own node (`node`).
+//! It starts with the first call, runs on while the app does, its node
 //! syncing whichever page is open, and stops as the app quits (`stop`), closing its store.
 //!
 //! A harness's agent device still runs as a process of its own, the app's binary run as `agent <harness>` (`agent`,
@@ -55,15 +55,6 @@ pub async fn avendb(
 pub async fn call(app: &tauri::AppHandle, call: &str, args: Vec<Value>) -> Result<Value, String> {
     use tauri::Manager as _;
     call_on(&app.state::<Avendb>(), None, call.to_string(), args).await
-}
-
-/// The node of the studio worker whose device is `device` (hex), which this Mac hosts, for the studio's jobs to put
-/// what they make by the worker's own key (`Host::node_of`): none where it hosts no such worker.
-pub async fn worker(app: &tauri::AppHandle, device: &str) -> Result<OpenNode, String> {
-    use tauri::Manager as _;
-    let id = ::avendb::id::SignerId::from_hex(device).ok_or_else(|| format!("{device} names no worker's device"))?;
-    let host = host_of(&app.state::<Avendb>(), None).await?;
-    host.node_of(id).ok_or_else(|| "this Mac hosts no such worker (yet): its node opens a few seconds after avenDB does".into())
 }
 
 /// The node of avenDB's device open in the app (`Host::node`), for the app's own Rust to read a file's bytes by range

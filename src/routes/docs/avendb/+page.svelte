@@ -822,7 +822,7 @@
 				<div>
 					<h3>Device vault</h3>
 					<p>
-						The keys of one agent or of a studio worker, owned by exactly one human, COOP or aven vault. Its devices act for
+						The keys of one agent, owned by exactly one human, COOP or aven vault. Its devices act for
 						it with all its rights and approve nothing. It owns nothing, and holds only what its owner gives it or passes
 						on to it.
 					</p>

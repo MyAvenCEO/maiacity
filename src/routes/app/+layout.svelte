@@ -179,15 +179,15 @@
 		done();
 	}
 
-	// on the Mac, the studio's worker (Jobs and studio 2.0) runs while the app does, once its avenDB is open: what a rule
+	// on the Mac, the job runner (Jobs and studio 2.0) runs while the app does, once its avenDB is open: what a rule
 	// wants is made whichever page is open; tried again every two minutes until avenDB opens
 	$effect(() => {
 		if (!native() || phase !== 'ready') return;
 		let stopped = false;
 		const tryStart = async () => {
-			const { macWorker } = await import('$lib/studio/jobs/mac.js');
-			const w = await macWorker().catch(() => null);
-			if (!w && !stopped) timer = setTimeout(tryStart, 120_000);
+			const { macRunner } = await import('$lib/studio/jobs/mac.js');
+			const r = await macRunner().catch(() => null);
+			if (!r && !stopped) timer = setTimeout(tryStart, 120_000);
 		};
 		// a minute after the app opens: its pages, avenDB and the dashboard's worlds load first
 		let timer = setTimeout(tryStart, 60_000);
