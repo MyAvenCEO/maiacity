@@ -626,7 +626,8 @@ impl Rehearsal {
 /// its own, so that it never stands in for the live server; the rehearsal, and the node, still running, for a device to
 /// sync from it.
 pub async fn rehearse(folder: &Folder, time: u64, dir: &Path, opts: Options) -> Result<(Rehearsal, Node)> {
-    // a folder's shelf clears it of everything else (`disk::open`): only an empty one, or none yet
+    // a shelf of its own, never beside another shelf's edits (`disk::open` opens what a folder holds): only an empty
+    // folder, or none yet
     if std::fs::read_dir(dir).is_ok_and(|mut entries| entries.next().is_some()) {
         bail!("{} isn't empty: a rehearsal restores onto a new shelf, in a folder of its own", dir.display());
     }

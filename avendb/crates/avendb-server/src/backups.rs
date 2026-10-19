@@ -340,7 +340,8 @@ pub async fn check_all(snapshots: &Snapshots, reading: Reading) -> Result<Checks
 /// `into` (`AVENDB_DATA`, with no bucket) is the same device, holding every vault as its snapshot has it, and its
 /// devices bring it what came after. The vaults restored.
 pub async fn restore(snapshots: &Snapshots, at: Option<u64>, into: &Path) -> Result<Vec<Restored>> {
-    // a folder's shelf clears it of everything else (`disk::open`): only an empty one, or none yet
+    // a shelf of its own, never beside another shelf's edits (`disk::open` opens what a folder holds): only an empty
+    // folder, or none yet
     if std::fs::read_dir(into).is_ok_and(|mut entries| entries.next().is_some()) {
         bail!("{} isn't empty: a restore goes into a folder of its own", into.display());
     }

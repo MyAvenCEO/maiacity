@@ -212,7 +212,7 @@ test("the ledger's rents in and out, the dividends to expect, and what each pay 
 import { PGlite } from "@electric-sql/pglite";
 import { useDb } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
-import { getGame, move, resetGame, takeSeat } from "../src/maiacity-v1.js";
+import { getGame, move, takeSeat } from "../src/maiacity-v1.js";
 
 test("the first two founders to sign in take seat A and seat B; each moves only their own, an admin too", async () => {
   const pg = new PGlite();
@@ -238,9 +238,11 @@ test("the first two founders to sign in take seat A and seat B; each moves only 
   expect(s.players.B.wallet.HEARTS).toBeCloseTo(STARTER + 28, 4);
   s = await getGame(null, T0 + 3 * DAY_MS);
   expect(s.month).toBe(3);
-  s = await resetGame(T0 + 3 * DAY_MS);
-  expect(s.month).toBe(0);
-  expect(s.players.B.founder).toBe("bob");
+  // a game kept by another engine version is never started again: it is refused, and stays as it was
+  await pg.query("UPDATE v1_games SET state = jsonb_set(state, '{version}', '1'::jsonb)");
+  await expect(getGame(null, T0 + 3 * DAY_MS)).rejects.toThrow(/waits, untouched, for a migration/);
+  const kept = (await pg.query("SELECT state FROM v1_games")).rows[0].state;
+  expect([kept.month, kept.players.B.founder]).toEqual([3, "bob"]);
 });
 
 test("a MIP brings a screen (a view card) with its signatures; it changes nothing of the play", async () => {

@@ -100,17 +100,17 @@ jobs:
         run: |
           # The token goes to the server over stdin, never as a process argument.
           printf '%s' "$GHCR_TOKEN" | ssh prod "docker login ghcr.io -u '${{ github.actor }}' --password-stdin >/dev/null"
-          # The bucket's settings, if every secret is set: with one missing, the server keeps its store on its volume.
-          # They go to the server over stdin too, and never into the log.
-          if [ -n "$BUCKET_ACCESS_KEY" ] && [ -n "$BUCKET_SECRET_KEY" ] && [ -n "$BUCKET_SEAL" ]; then
-            # and its bucket of snapshots (avendb/docs/BACKUP.md, avendb-backups.yml), at the same endpoint with the same
-            # key and seal: every vault backed up into it each day at 03:00 UTC
-            BUCKET_ENV=$(printf 'AVENDB_BUCKET=%s\nAVENDB_BUCKET_ENDPOINT=%s\nAVENDB_BUCKET_REGION=%s\nAVENDB_BUCKET_ACCESS_KEY=%s\nAVENDB_BUCKET_SECRET_KEY=%s\nAVENDB_BUCKET_SEAL=%s\nAVENDB_SNAPSHOTS=%s' \
-              "$BUCKET" "$S3_ENDPOINT" "$S3_REGION" "$BUCKET_ACCESS_KEY" "$BUCKET_SECRET_KEY" "$BUCKET_SEAL" "$SNAPSHOTS")
-          else
-            BUCKET_ENV=
-            echo "::warning::No bucket for avenDB's server: set HETZNER_S3_ACCESS_KEY, HETZNER_S3_SECRET_KEY and AVENDB_BUCKET_SEAL."
+          # The bucket's settings, every secret set, or no deploy at all: a server started without its bucket would be a
+          # new, empty device on its volume, every app cut off from Maia City (Samuel 2026-10-19: "so no accidental
+          # resets can happen anymore"). They go to the server over stdin too, and never into the log.
+          if [ -z "$BUCKET_ACCESS_KEY" ] || [ -z "$BUCKET_SECRET_KEY" ] || [ -z "$BUCKET_SEAL" ]; then
+            echo "::error::No bucket for avenDB's server: set HETZNER_S3_ACCESS_KEY, HETZNER_S3_SECRET_KEY and AVENDB_BUCKET_SEAL. Nothing was deployed."
+            exit 1
           fi
+          # and its bucket of snapshots (avendb/docs/BACKUP.md, avendb-backups.yml), at the same endpoint with the same key
+          # and seal: every vault backed up into it each day at 03:00 UTC, then checked
+          BUCKET_ENV=$(printf 'AVENDB_BUCKET=%s\nAVENDB_BUCKET_ENDPOINT=%s\nAVENDB_BUCKET_REGION=%s\nAVENDB_BUCKET_ACCESS_KEY=%s\nAVENDB_BUCKET_SECRET_KEY=%s\nAVENDB_BUCKET_SEAL=%s\nAVENDB_SNAPSHOTS=%s' \
+            "$BUCKET" "$S3_ENDPOINT" "$S3_REGION" "$BUCKET_ACCESS_KEY" "$BUCKET_SECRET_KEY" "$BUCKET_SEAL" "$SNAPSHOTS")
           ssh prod "cd $APP_DIR && bash -s" <<EOS
           set -e
           # api.yml rewrites this .env too: one writer at a time

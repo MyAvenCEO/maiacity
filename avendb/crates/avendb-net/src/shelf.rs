@@ -2,7 +2,7 @@
 //! on every place it runs. A page's is in OPFS, through its store's worker (avendb-browser); the Mac's in its folder
 //! (`disk`); the server's in its bucket (`bucket::shelf`), whose folder is only a cache. A place keeps its shelves side
 //! by side, a generation each, `g1`, `g2` and on (`generation`): the newest is the one in use, and every older one is
-//! put aside, never read again, until a reset clears it (`FLOOR`). A shelf holds blobs, each named by its hash once it
+//! put aside, never read again, and never deleted: avenDB is never reset (`FLOOR`). A shelf holds blobs, each named by its hash once it
 //! is finished, with its outboard, the BLAKE3 tree iroh-blobs checks it by; and named objects, each put once and never
 //! replaced (`Call::Put`): the edits its device holds, as a journal, packs and heads (`edits`), a page's or the Mac's
 //! meta, and the server's device's secret. What a shelf answered it holds, it holds for good: synced to the folder's
@@ -122,39 +122,15 @@ fn listable(prefix: &str) -> bool {
     prefix.is_empty() || named(prefix.strip_suffix('/').unwrap_or(prefix))
 }
 
-/// The generation every place's shelf is at least: avenDB's resets raise it. A place whose newest shelf is of an older
-/// one starts a new one of this generation, empty, as it opens, and clears what came before it: every older shelf and
-/// whatever else an earlier avenDB kept there (`kept`). So do the server's bucket (`bucket::shelf`, `bucket::clear`),
-/// the Mac's folder (`disk::open`, `disk::clear`) and a page's OPFS (avendb-browser's `store.worker.js`, whose `FLOOR`
-/// is this). 2 since 2026-10-14, as the claim of a server founds the seed of Maia Holding GmbH, avenCEO GmbH and the
-/// CEO Aven (`avendb::world::SEED`); 3 since later that day, as one passkey founds one human vault and the seed is
-/// named as it is founded; 4 since later still, as every device tells its jobs; 5 since later again, as the server
-/// serves its feed; 6 since later that evening, as SLH-DSA signs every edit and every record has a schema; 7 since
-/// 2026-10-15, as each device has a copy setting, a full copy or a light one; 8 since later that day, as every id and
-/// every hash of avenDB's own is BLAKE3 (edit version 10) and every shipped schema starts at v1; 9 since 2026-10-16, as
-/// the master recovery key is built in again, so every human vault is founded with it as a co-owner from the start;
-/// 10 since later that day, as a human owns at most one aven, which acts through agents in device vaults it owns, the
-/// server is a device vault avenCEO GmbH owns, and access requests are records; 11 since 2026-10-17, as Maia City
-/// comes back from the repository's seed after a reset (Samuel chose "Reset now" to check it); 12 since later that day,
-/// as there are only stories and the posts of a post type drawn from them, no articles, no notes, no templates; 13 since
-/// later still, as the seed, the asset recipes with it, is written while the account is set up (Samuel asked for it);
-/// 14 since 2026-10-18, as one passkey signs a person in to maiaCITY and opens their avenDB together, a person's profile
-/// lives in their human vault alone, public by default, and Samuel asked to sign up again through it; 15 since later
-/// that day, as an entry's id is the hash of its vault, its creator and its creation's nonce, the edit format is 11,
-/// and each asset is one entry whose versions and variants are its history (Samuel asked for both); 16 since later
-/// still, as the seed writes each skill, the theOS paper and the avenDB docs as a story of Maia City with a doc post,
-/// and Samuel asked to reset and seed again; 17 since later that day, as the seed is Maia City alone, a coop the first
-/// person's vault owns, and avenMAIA, its one aven, which lives on the server, its device: no holding, no company coop,
-/// no device vault of the server's, and an aven is a coop's, one to a coop, never a person's (Samuel asked for it); 18
-/// since that evening, as Studio 2 stands alone, the old studio's vault unwired, and the old vault's media is copied
-/// into a fresh Maia City (Samuel: "migrate everything to Studio 2, then feel free to reset again").
+/// The oldest generation of shelf this avenDB reads: a place uses its newest shelf of it or a later one, and one with
+/// none (a new place, or one whose shelves are all from before avenDB's last reset, whose edits no avenDB reads) makes
+/// one of it beside whatever it holds. avenDB is never reset (Samuel 2026-10-19: "we never want to reset at all our
+/// avenDB anymore", "drop all reset api calls and mechanisms … so no accidental resets can happen anymore"): nothing
+/// raises it, and no place deletes a shelf, of whatever generation, or anything else it finds beside its shelves; a
+/// shelf put aside (`disk::aside`, a page's "Forget") stays whole where it is. It stood at 18 when avenDB's last reset
+/// (2026-10-18 evening, Studio 2 standing alone and the old vault's media copied into Maia City) became its last, and
+/// a test holds it there (`tests/store.rs`).
 pub const FLOOR: u64 = 18;
-
-/// Whether a place keeps what is under `name`, the first part of its names there: a shelf of generation `FLOOR` or a
-/// later one. Whatever else the place holds came before the last reset, and goes as the place opens.
-pub fn kept(name: &str) -> bool {
-    generation(name).is_some_and(|n| n >= FLOOR)
-}
 
 /// The generation a place's shelf is, by the name of its folder or prefix: `g1`, `g2` and on, written as the number
 /// is, if it is one.

@@ -59,7 +59,7 @@
 	import Signing from './Signing.svelte';
 	import { FLOW, FLOWS, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
 	import { answer, refs } from './ops.js';
-	import { beside, drafting, retiring, seeding, seedPieces, touchingUp, unseeded } from './seed.js';
+	import { beside, drafting, seeding, seedPieces, touchingUp, unseeded } from './seed.js';
 	import { capGroupOps } from './capgroups.js';
 	import { deviceName, relay as relayOf, server as serverOf } from './server.js';
 	import { asks, Here, here, session } from './session.svelte.js';
@@ -437,14 +437,6 @@
 				answer(await send(op));
 			} catch {
 				failed.push('an inspire-me or doc post');
-			}
-		}
-		// and what the repo let go (Sandboxes 7 and 8), deleted
-		for (const op of retiring(w, city)) {
-			try {
-				answer(await send(op));
-			} catch {
-				failed.push('a retired entry');
 			}
 		}
 		if (failed.length)

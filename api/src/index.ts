@@ -18,7 +18,7 @@ import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } 
 import { checkModels, pick } from "./prem";
 import { listTimelines } from "./timelines";
 import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries, fileStory, unfiledStories } from "./content";
-import { GameError, getGame, move, resetGame, takeSeat } from "./maiacity-v1.js";
+import { GameError, getGame, move, takeSeat } from "./maiacity-v1.js";
 import { loadCode } from "../../game/code/index.js";
 import { feedOf } from "../../game/code/sources/avendb.js";
 
@@ -190,18 +190,6 @@ const server = Bun.serve({
         if ("scope" in me && ["sign", "reject"].includes(body?.action?.type)) return json(req, { error: "A MIP is signed or rejected by a player, on the page." }, { status: 403 });
         try {
           return json(req, { game: await move(me, can(me, "economy:admin"), String(body?.seat ?? ""), body?.action), now: Date.now() });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/maiacity-v1/reset": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "economy:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, { game: await resetGame(), now: Date.now() });
         } catch (e) {
           return fail(req, e);
         }

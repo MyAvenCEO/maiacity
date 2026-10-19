@@ -16,8 +16,8 @@
 //! nothing is kept twice. A file it saves (`put_file`) it seals onto its own shelf, as every device does, and lets go
 //! of once the Mac's device holds it whole, as that device's holdings say (`Node::holds_whole`, `Node::let_go`): from
 //! then on the Mac's one store keeps it, and a read of it fetches it from there. Where the Mac keeps a light copy, the
-//! agent keeps its own, the one copy on the Mac. A reset clears its folder as it does the app's (`disk::open`), and it
-//! asks to join again.
+//! agent keeps its own, the one copy on the Mac. avenDB is never reset: its folder, like the app's, keeps what it holds
+//! (`disk::open`).
 //!
 //! It asks for access as anyone asks avenDB for it, and its person answers on the page's one consent screen: it leaves
 //! an access request for the Mac app (`<app's folder>-agents/<device>.request`, `asking`): who asks, by its device's
@@ -160,8 +160,8 @@ pub fn named(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// The agents' folder beside the app's `host` folder: `<host>-agents`, outside it, as the app's device clears whatever
-/// its own folder holds beside its shelves (`disk::clear`).
+/// The agents' folder beside the app's `host` folder: `<host>-agents`, outside it, so the app's own folder holds its
+/// shelves alone.
 pub fn agents(host: &Path) -> PathBuf {
     let mut name = host.file_name().unwrap_or_default().to_os_string();
     name.push("-agents");
@@ -192,7 +192,7 @@ pub fn request(host: &Path, name: &str) -> PathBuf {
 /// The file in the agents' folder beside the app's `host` folder that agent `name`'s device `device`, its key in hex,
 /// writes its key to every little while it runs (`LOOK`): the Mac's page knows by it whether the agent is there to be
 /// added under its person's aven, which its device cosigns (`online`). One a device, so that another device of the
-/// agent, as an older build's after a reset, never stands in for it.
+/// agent, as an older build's, never stands in for it.
 pub fn alive(host: &Path, name: &str, device: &str) -> PathBuf {
     agents(host).join(format!("{name}.{device}.alive"))
 }

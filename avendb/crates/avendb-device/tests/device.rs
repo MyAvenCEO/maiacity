@@ -6,7 +6,7 @@
 //! in the unlock's sheet alone, following the vaults it followed and reading as deep in a query as it did, and puts the
 //! shelf aside when she forgets it there, deleting nothing. Every read and change is an op (`run`, V2), what her
 //! vault's owners approve signed in a sheet; a file comes in a chunk at a time (`fileStart`, `fileChunk`, `fileEnd`),
-//! and any range of it back, in base64. A new device puts aside a shelf a start cut short left, and clears what an
+//! and any range of it back, in base64. A new device puts aside a shelf a start cut short left, and keeps what an
 //! earlier avenDB kept in the folder. The app may host the same device in its own process (`host`): the same calls and
 //! sheets with no lines between, and the open device's node at hand, which reads her film back by range itself; closed,
 //! it opens again from its folder. And agent devices on the Mac (`agent`), as Claude Code and Codex start them, ask
@@ -540,7 +540,7 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_new_device_puts_aside_a_shelf_cut_short_and_clears_what_an_earlier_avendb_kept() {
+async fn a_new_device_puts_aside_a_shelf_cut_short_and_keeps_what_an_earlier_avendb_kept() {
     let (_relay, url, server) = server().await;
     let folder = Folder::new("aside");
     let dir = folder.0.clone();
@@ -572,18 +572,17 @@ async fn a_new_device_puts_aside_a_shelf_cut_short_and_clears_what_an_earlier_av
     assert_eq!(app.call("open", json!([])).await, Err("this Mac holds no avenDB account yet".into()));
     let offer = server.offer().to_text();
     let device = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await.expect("her vault");
-    assert_eq!(disk::generations(&dir).expect("its shelves"), [FLOOR, FLOOR + 1], "the shelf cut short put aside");
+    assert_eq!(disk::generations(&dir).expect("its shelves"), [1, FLOOR, FLOOR + 1], "the shelf cut short put aside");
     let cut = std::fs::read(dir.join(format!("g{FLOOR}/journal/0000000000000001"))).expect("still there");
     assert_eq!(cut, b"cut short", "as it was");
     assert_eq!(objects(&dir, FLOOR + 1, "meta"), ["0000000000000001"], "what opens her device, on its own shelf");
     let status = app.call("status", json!([])).await.expect("its status");
     assert_eq!((&status["device"], &status["meta"]["name"]), (&device, &json!("Eve's Mac")));
     app.quit().await;
-    for (name, _) in earlier {
-        assert!(!dir.join(name).exists(), "{name} cleared");
+    // avenDB is never reset: what an earlier avenDB kept stays as it was
+    for (name, bytes) in earlier {
+        assert_eq!(std::fs::read(dir.join(name)).ok().as_deref(), Some(bytes), "{name} kept");
     }
-    let left: Vec<_> = std::fs::read_dir(&dir).expect("its folder").map(|e| e.expect("one").file_name()).collect();
-    assert_eq!(left.len(), 2, "its two shelves alone: {left:?}");
     server.shutdown().await.expect("the server's node stops");
 }
 
