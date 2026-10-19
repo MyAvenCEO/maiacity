@@ -17,12 +17,13 @@
 //!   entry's lines, each with its version numbers, and every write of it, each with the changes it made to the entry's
 //!   stored record (`ops::diff`), as every reader sees them alike. `schemas`: the schemas and lenses a vault's entries
 //!   are read through. `groups`: the built-in groups of ops a share names (`rules::groups`), which the page offers when
-//!   it shares. `aips` and `aip`: the AIPs the device holds, their stages, labels, reviews and what each line changes
-//!   (`aips`). `kinds`: the kind table (`Kind::rules`, `words::kinds_json`), which the page reads, as in `world`, to
-//!   say what each kind of vault may own and hold, and never decides itself. `limits`: how deep the device's queries
-//!   read. And of the device's vaults (`vaults`, V2): `world`, `database`, `note`, `log`, `creatable`, `taggable`,
-//!   `requests` (the access requests its person answers, and those its vaults made); `read_file`, whose bytes a node
-//!   reads (avendb-net's `Node::run`).
+//!   it shares; `cap_groups`: the cap groups a vault defines as entries of its own (`rules::CapGroup`). `aips` and
+//!   `aip`: the AIPs the device holds, their stages, labels, reviews and what each line changes (`aips`). `kinds`: the
+//!   kind table (`Kind::rules`, `words::kinds_json`), which the page reads, as in `world`, to say what each kind of
+//!   vault may own and hold, and never decides itself. `limits`: how deep the device's queries read. And of the
+//!   device's vaults (`vaults`, V2): `world`, `database`, `note`, `log`, `creatable`, `taggable`, `requests` (the
+//!   access requests its person answers, and those its vaults made); `read_file`, whose bytes a node reads
+//!   (avendb-net's `Node::run`).
 //! - **Changes** (`run`). `create`, of a schema or lens entry too, which holds its JSON alone (`Lab::add_schema`), or
 //!   with `draft`, a draft that starts its own line, which its vault lands by merging it (`Lab::create_draft`), as a
 //!   Suggester proposes a new entry; the record ops (`ops::RecordOp`): `set`, `unset`, `insert`, `remove`, `move`;
@@ -36,9 +37,11 @@
 //!   (`NotAllowed`) where they don't, as is a merge into main through a share on top of no accept of the vault's
 //!   (`NotAccepted`, M2): its readers wouldn't count it (`rules`, `policy::passes`). And the changes of vaults
 //!   (`vaults`), each run alone: `share`, `keep`, `revoke`, `settings`, `found`, `put_file`, `back_up`, `mark`, `card`,
-//!   `profile`, `follow`, `set_limits`, and `ask`, an access request: a record and a share. One its vault's owners
-//!   approve the device drafts for its person's passkey (`prepare`, `Prepared::Approve`): without a ceremony it answers
-//!   `approve` and makes nothing; with one, `approve` keeps it.
+//!   `profile`, `follow`, `set_limits`, `ask`, an access request: a record and a share; and `define_group`,
+//!   `redefine_group` and `share_group`, a vault's cap groups and the shares that name them, to a vault, everyone or an
+//!   invite whose link's secret the answer carries. One its vault's owners approve the device drafts for its person's
+//!   passkey (`prepare`, `Prepared::Approve`): without a ceremony it answers `approve` and makes nothing; with one,
+//!   `approve` keeps it.
 //! - **Asking** (`may`, `shares`). Whether each of some change ops would be made, by a dry run of each that checks,
 //!   proves and refuses as `run` does and makes nothing: what a page asks before it offers a button; `true`, or
 //!   `{"approve": {signers}}` where the passkey would approve it. `shares` lists the shares over a vault, owners and
@@ -198,12 +201,16 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "follow" => &["vault", "on"],
         "set_limits" => &["depth"],
         "ask" => &["to", "asks", "level", "why", "vaults", "as"],
+        "cap_groups" => &["vault"],
+        "define_group" => &["vault", "group"],
+        "redefine_group" => &["entry", "group"],
+        "share_group" => &["over", "group", "who", "what", "as"],
         _ => return None,
     })
 }
 
 /// The ops that only read what the device holds.
-const READS: [&str; 19] = [
+const READS: [&str; 20] = [
     "query",
     "get",
     "pin",
@@ -212,6 +219,7 @@ const READS: [&str; 19] = [
     "aips",
     "aip",
     "groups",
+    "cap_groups",
     "kinds",
     "world",
     "jobs",
@@ -293,6 +301,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "aips" => aips::aips(lab, me, o),
         "aip" => aips::one(lab, me, o),
         "groups" => Ok(rules::groups().iter().map(rules::Group::to_json).collect()),
+        "cap_groups" => vaults::cap_groups(lab, me, o),
         "kinds" => Ok(words::kinds_json()),
         "limits" => Ok(limits(lab.query_depth(me))),
         "database" | "note" | "log" => vaults::data(lab, me, name, o),

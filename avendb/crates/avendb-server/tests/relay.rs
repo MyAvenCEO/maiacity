@@ -132,9 +132,9 @@ async fn a_new_server_lets_in_the_devices_of_the_vaults_it_relays() {
     let dir = Folder::new("relay");
     let data = dir.path().to_path_buf();
     let (relay_url, public_addr) = (None, None);
-    let (signup, bucket, cache) = (false, None, 0);
+    let (signup, gate, bucket, cache) = (false, false, None, 0);
     let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
-    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, bucket, cache };
+    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let (server, relay) = (&started.node, &started.relay);
     let url = relay.url();
@@ -246,6 +246,7 @@ async fn the_servers_offer_names_its_public_address_and_its_relay() {
         relay_url: Some(relay_url.clone()),
         public_addr: Some(public),
         signup: true,
+        gate: false,
         bucket: None,
         cache: 0,
     };
@@ -275,9 +276,9 @@ async fn http(addr: SocketAddr, method: &str, path: &str) -> (String, String) {
 async fn the_server_serves_the_posts_everyone_reads_as_the_maia_universe_feed() {
     let dir = Folder::new("feed");
     let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
-    let (signup, bucket, cache) = (true, None, 0);
+    let (signup, gate, bucket, cache) = (true, false, None, 0);
     let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
-    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, bucket, cache };
+    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache };
     let started = avendb_server::start(&config).await.expect("the server, its relay and its feed");
     let addr = started.feed.addr();
     // a new server keeps nothing anyone published yet; any page may read its feed
@@ -359,9 +360,9 @@ async fn ran(node: &Node, op: Value) -> Value {
 async fn the_server_serves_the_code_everyone_reads_and_maia_citys_alone_for_seed_1() {
     let dir = Folder::new("code");
     let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
-    let (signup, bucket, cache) = (false, None, 0);
+    let (signup, gate, bucket, cache) = (false, false, None, 0);
     let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
-    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, bucket, cache };
+    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache };
     let started = avendb_server::start(&config).await.expect("the server, its relay and its feed");
     let (server, addr) = (&started.node, started.feed.addr());
     let mut w = world();
@@ -491,9 +492,9 @@ async fn brought(node: &Node, op: Value, text: &str) -> Value {
 async fn the_server_serves_a_public_code_entrys_newest_file_whole_as_plain_text() {
     let dir = Folder::new("source");
     let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
-    let (signup, bucket, cache) = (false, None, 0);
+    let (signup, gate, bucket, cache) = (false, false, None, 0);
     let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
-    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, bucket, cache };
+    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache };
     let started = avendb_server::start(&config).await.expect("the server, its relay and its feed");
     let (server, addr) = (&started.node, started.feed.addr());
     let mut w = world();
@@ -617,6 +618,7 @@ fn the_server_is_configured_by_its_environment() {
     assert_eq!(defaults.relay_url, None, "the relay's own socket, unless it is said where devices reach it");
     assert_eq!(defaults.public_addr, None, "its own interfaces' addresses, unless it is said where it is reached");
     assert!(defaults.signup, "sign-up is open, unless it is said closed");
+    assert!(!defaults.gate, "it takes any new vault, unless it is said gated");
     assert!(defaults.bucket.is_none(), "no bucket, unless one is said");
     assert_eq!(defaults.cache, 8 << 30, "its folder caches 8 GB of the bucket's files, unless it is said");
     let vars = HashMap::from([
@@ -627,6 +629,7 @@ fn the_server_is_configured_by_its_environment() {
         ("AVENDB_RELAY_URL", "https://avendb.maia.city"),
         ("AVENDB_PUBLIC_ADDR", "203.0.113.7:7401"),
         ("AVENDB_SIGNUP", "closed"),
+        ("AVENDB_GATE", "on"),
         ("AVENDB_BUCKET", "maiacity-avendb"),
         ("AVENDB_BUCKET_ENDPOINT", "https://hel1.your-objectstorage.com"),
         ("AVENDB_BUCKET_REGION", "hel1"),
@@ -643,6 +646,7 @@ fn the_server_is_configured_by_its_environment() {
     assert_eq!(set.relay_url, Some("https://avendb.maia.city".parse().expect("a URL")));
     assert_eq!(set.public_addr, Some("203.0.113.7:7401".parse().expect("a socket")));
     assert!(!set.signup);
+    assert!(set.gate);
     let bucket = set.bucket.expect("a bucket");
     assert_eq!((bucket.name.as_str(), bucket.region.as_str()), ("maiacity-avendb", "hel1"));
     assert_eq!(*bucket.seal, [0xab; 32], "its seal, from 64 hex digits");
@@ -656,6 +660,7 @@ fn the_server_is_configured_by_its_environment() {
         assert!(Config::from_vars(var).is_err(), "a bucket with {unsaid} unsaid, or a seal short of 32 bytes: said so");
     }
     assert!(Config::from_vars(|k| (k == "AVENDB_SIGNUP").then(|| "maybe".to_string())).is_err());
+    assert!(Config::from_vars(|k| (k == "AVENDB_GATE").then(|| "maybe".to_string())).is_err());
     let wrong = Config::from_vars(|k| (k == "AVENDB_BIND").then(|| "the server's port".to_string()));
     assert!(wrong.is_err(), "a socket that isn't one is said so, not taken for the default");
 }
@@ -797,9 +802,9 @@ async fn a_persons_first_browser_founds_their_vault_through_a_relay_open_to_sign
 async fn an_unclaimed_server_lets_in_the_browser_that_claims_it_and_then_no_strangers() {
     let dir = Folder::new("claim");
     let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
-    let (signup, bucket, cache) = (false, None, 0);
+    let (signup, gate, bucket, cache) = (false, false, None, 0);
     let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
-    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, bucket, cache };
+    let config = Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let (server, relay) = (&started.node, &started.relay);
     let url = relay.url();

@@ -56,10 +56,10 @@ pub enum LogId {
 }
 
 /// The log of edit `edit`, whose id is `id` (`Edit.log?`): a vault's genesis and settings, its owners and devices given
-/// and revoked, and a seed's key go to their vault's; a grant or a keep share, its revocation and its key to the
-/// grant's; an audience's key to the audience's; a write (of a schema or a lens entry too), a mark and an entry's key
-/// to the entry's. A signer's own key is never boxed, so a `Keys` edit naming one is of no log. The id names the log
-/// only of an edit that starts one, a genesis or a grant. The edit's kind alone says which, so a peer that knows
+/// and revoked, and a seed's key go to their vault's; a grant or a keep share, its revocation, its claim and its key to
+/// the grant's; an audience's key to the audience's; a write (of a schema or a lens entry too), a mark and an entry's
+/// key to the entry's. A signer's own key is never boxed, so a `Keys` edit naming one is of no log. The id names the
+/// log only of an edit that starts one, a genesis or a grant. The edit's kind alone says which, so a peer that knows
 /// nothing else routes it.
 pub fn log_of(edit: &Edit, id: EditId) -> Option<LogId> {
     Some(match &edit.action {
@@ -68,7 +68,7 @@ pub fn log_of(edit: &Edit, id: EditId) -> Option<LogId> {
         | Action::Share(Sharing::Owner { vault, .. } | Sharing::Device { vault, .. })
         | Action::Revoke(Revoking::Owner { vault, .. } | Revoking::Device { vault, .. }) => LogId::Vault(*vault),
         Action::Share(Sharing::Grant(..)) => LogId::Share(ShareId::from(id)),
-        Action::Revoke(Revoking::Grant { share, .. }) => LogId::Share(*share),
+        Action::Revoke(Revoking::Grant { share, .. }) | Action::Claim { share, .. } => LogId::Share(*share),
         Action::Write { entry, .. } | Action::Mark { entry, .. } => LogId::Entry(*entry),
         Action::Keys { name, .. } => match *name {
             KeyName::Signer(_) => return None,
@@ -99,7 +99,9 @@ fn vaults_named(edit: &Edit) -> Vec<VaultId> {
             std::iter::once(*actor).chain(via.iter().copied()).collect()
         }
         Action::Write { vault, actor, via, .. } => [*vault, *actor].into_iter().chain(via.iter().copied()).collect(),
-        Action::Mark { vault, via, .. } => std::iter::once(*vault).chain(via.iter().copied()).collect(),
+        Action::Mark { vault, via, .. } | Action::Claim { vault, via, .. } => {
+            std::iter::once(*vault).chain(via.iter().copied()).collect()
+        }
         _ => vec![],
     }
 }
@@ -136,7 +138,7 @@ impl<'a> Reach<'a> {
         interest.extend(follow.iter().copied());
         let names = |cp: &Issued| match cp.share.who {
             Who::Vault(g) => acts.contains(&g),
-            Who::Device(_) => false,
+            Who::Device(_) | Who::Invite(_) => false,
             Who::Everyone => interest.contains(&cp.share.over),
         };
         let mut whole = acts.clone();

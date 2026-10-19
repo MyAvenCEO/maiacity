@@ -22,7 +22,7 @@ use crate::data;
 use crate::doc::Item;
 use crate::id::{BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::KeyFam;
-use crate::lab::{Lab, NewShare, Unsigned};
+use crate::lab::{GroupShare, Lab, NewShare, Unsigned};
 use crate::lens::View;
 use crate::ops::RecordOp;
 use crate::policy::{Action, Issued, KeepMode, Kind, Level, Principal, Refusal, Revoking, Setting, Sharing, Who};
@@ -35,9 +35,9 @@ use crate::words::{self, hex, principal_json, who_json};
 use crate::world::{self, CARD, FILE, PROFILE, SyncedTo, World};
 
 /// The changes of this module: each runs alone, never in a batch.
-pub(super) const CHANGES: [&str; 14] = [
+pub(super) const CHANGES: [&str; 17] = [
     "share", "keep", "copy", "revoke", "settings", "found", "put_file", "back_up", "mark", "card", "profile", "follow",
-    "set_limits", "ask",
+    "set_limits", "ask", "define_group", "redefine_group", "share_group",
 ];
 
 /// What a change op comes to before anything is signed: made, with its answer (`Done`), or drafted for the passkey of
@@ -58,15 +58,16 @@ pub struct Approval {
 }
 
 /// What an approved op answers once its edits are kept: its edit (`{"edit": id}`), the share it issued (`{"share":
-/// id}`), or the new vaults, each with a profile of the name it was given (`{"vaults": [id, ...]}`). An owner add a
-/// request asks for (`owning`) is signed by two people one after the other: granting it, the passkey signs its part
-/// of the edit, kept nowhere but in the request `Part` names, which it answers "granted" acting for its vault asked
-/// (`{"entry": id, "part": true}`); finishing it, the passkey signs the rest of the part `Finish` holds the
-/// signatures of, and the edit is kept (`{"edit": id}`).
+/// id}`), with an invite's secret (`{"share": id, "secret": hex}`, `share_group`), or the new vaults, each with a
+/// profile of the name it was given (`{"vaults": [id, ...]}`). An owner add a request asks for (`owning`) is signed by
+/// two people one after the other: granting it, the passkey signs its part of the edit, kept nowhere but in the request
+/// `Part` names, which it answers "granted" acting for its vault asked (`{"entry": id, "part": true}`); finishing it,
+/// the passkey signs the rest of the part `Finish` holds the signatures of, and the edit is kept (`{"edit": id}`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Then {
     Edit,
     Share,
+    Invite(String),
     Found(Vec<String>),
     Part { entry: EntryId, by: VaultId },
     Finish(Vec<Signature>),
@@ -138,6 +139,7 @@ pub fn approved(lab: &mut Lab, me: SignerId, then: &Then, ids: &[EditId]) -> Res
     Ok(match then {
         Then::Edit | Then::Finish(_) => json!({ "edit": first }),
         Then::Share => json!({ "share": first }),
+        Then::Invite(secret) => json!({ "share": first, "secret": secret }),
         Then::Part { entry, .. } => json!({ "entry": entry.to_hex(), "part": true }),
         Then::Found(names) => {
             for (&id, name) in ids.iter().zip(names) {
@@ -275,6 +277,9 @@ pub(super) fn prepare(lab: &mut Lab, me: SignerId, name: &str, o: &Map<String, V
         "follow" => done(follow(lab, me, o)),
         "set_limits" => done(set_limits(lab, me, o)),
         "ask" => done(ask(lab, me, o)),
+        "define_group" => done(define_group(lab, me, o)),
+        "redefine_group" => done(redefine_group(lab, me, o)),
+        "share_group" => share_group(lab, me, o),
         _ => Err(bad(format!("no op is called {name:?}"))),
     }
 }
@@ -309,6 +314,19 @@ pub(super) fn requests(lab: &Lab, me: SignerId) -> Value {
         }
     }
     json!({ "asked": asked, "made": made })
+}
+
+/// `{"op": "cap_groups", "vault"}`: the cap groups of vault `vault` device `me` reads (`Lab::groups`), in the order
+/// their entries were created, each as the version in force now says it, `{entry, name, caps, includes}`
+/// (`rules::CapGroup::to_json`). Owner, Editor, Suggester and Viewer, fixed by the engine, are `groups`'.
+pub(super) fn cap_groups(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let vault = vault_of(o, "vault")?;
+    let row = |(entry, g): (EntryId, &rules::CapGroup)| {
+        let mut row = g.to_json();
+        row["entry"] = entry.to_hex().into();
+        row
+    };
+    Ok(lab.groups(me, vault).into_iter().map(row).collect())
 }
 
 /// `{"op": "database", "vault"}`, `{"op": "note", "entry"}` and `{"op": "log"}` (`data`).
@@ -358,9 +376,9 @@ pub(super) fn shares(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Res
     let mut rows: Vec<(Value, Value)> = vec![];
     let member = |kind: &str, who: Value, level: &str, group: Option<&str>, (recovery, root): (bool, bool)| {
         json!({
-            "kind": kind, "id": null, "over": id, "who": who, "level": level, "group": group, "name": null,
-            "drafts": null, "what": "everything", "ops": null, "above": null, "issuer": null, "parent": null,
-            "reaches": all, "recovery": recovery, "root": root,
+            "kind": kind, "id": null, "over": id, "who": who, "level": level, "group": group, "capGroup": null,
+            "name": null, "drafts": null, "what": "everything", "ops": null, "above": null, "issuer": null,
+            "parent": null, "reaches": all, "recovery": recovery, "root": root,
         })
     };
     for &p in &vault.owners {
@@ -391,7 +409,11 @@ pub(super) fn shares(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Res
             "over": id,
             "who": who_json(s.who),
             "level": words::level_name(s.level),
-            "group": world::group_of(s, slice),
+            "group": match s.group {
+                Some(g) => json!(lab.group(me, over, g).map(|x| x.name.clone())),
+                None => json!(world::group_of(s, slice)),
+            },
+            "capGroup": s.group.map(|g| g.to_hex()),
             "name": slice.map(|x| x.name.clone()),
             "drafts": slice.and_then(world::drafts),
             "what": what,
@@ -724,6 +746,87 @@ fn standing(
         }
     }
     Ok(Prepared::Done(json!({ "share": id.to_hex() })))
+}
+
+/// Op `o`'s cap group, `group`: `{name, caps, includes}` (`rules::CapGroup::of_json`).
+fn cap_group_of(o: &Map<String, Value>) -> Result<rules::CapGroup, Refused> {
+    let group = o.get("group").ok_or_else(|| bad("the cap group is group: {name, caps, includes}"))?;
+    rules::CapGroup::of_json(group).map_err(bad)
+}
+
+/// `{"op": "define_group", "vault", "group"}`: a new cap group of vault `vault`, an entry of it a device acting for
+/// it defines (`Lab::define_group`): `{"entry": id}`.
+fn define_group(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let (vault, group) = (vault_of(o, "vault")?, cap_group_of(o)?);
+    Ok(json!({ "entry": lab.define_group(me, vault, group)?.to_hex() }))
+}
+
+/// `{"op": "redefine_group", "entry", "group"}`: a new version of cap group `entry`, by a device acting for its vault
+/// (`Lab::redefine_group`), in force from there on for every share that names it, which narrowing it narrows at once:
+/// `{"edit": id}`.
+fn redefine_group(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let (entry, group) = (entry_of(o)?, cap_group_of(o)?);
+    let vault = lab.state(me).entry(entry).map(|en| en.vault).ok_or(Refused::NoEntry)?;
+    Ok(json!({ "edit": lab.redefine_group(me, vault, entry, group)?.to_hex() }))
+}
+
+/// The level a share of cap group `group` of vault `over` holds, as device `me` reads the group: what the ops of its
+/// caps, and of the groups it includes, need, read at least, as a share that reads nothing gives nothing. `None` where
+/// `me` reads no such group.
+fn group_level(lab: &Lab, me: SignerId, over: VaultId, group: EntryId) -> Option<Level> {
+    lab.group(me, over, group)?;
+    let (mut ops, mut seen, mut next) = (vec![], vec![], vec![group]);
+    while let Some(g) = next.pop() {
+        if seen.contains(&g) {
+            continue;
+        }
+        seen.push(g);
+        if let Some(cg) = lab.group(me, over, g) {
+            ops.extend(cg.caps.iter().map(|c| c.op.clone()));
+            next.extend(cg.includes.iter().copied());
+        }
+    }
+    Some(rules::level_of(&[ops, vec![Op::Read]].concat()))
+}
+
+/// `{"op": "share_group", "over", "group", "who", "what"?, "as"?}`: cap group entry `group` of vault `over` shared
+/// with `who` on what `what` picks, issued by `as` (`Lab::issue_group`): a share that names the group and copies none
+/// of its ops, at the level its caps and the groups it includes need (`group_level`), so a new version of the group
+/// narrows or widens it at once and revoking it ends it alone. `who` is a vault, `"everyone"`, or `"invite"`, a new
+/// invite key (`Lab::new_invite`): the answer carries the secret of the invite's link, 64 hex digits, which no device
+/// keeps, and the newcomer's device claims the share with it once (`Lab::claim_invite`, avendb-net's
+/// `Node::claim_invite`), with no owner signing. Resting where `as` isn't `over` on a share `as` holds
+/// (`world::parent`), approved by the owners where the rules ask that, as `share`. `{"share": id}`, with `"secret"`
+/// for an invite.
+fn share_group(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared, Refused> {
+    let (over, select, actor) = (vault_of(o, "over")?, what_of(o)?, actor_of(lab, me, o)?);
+    let group = id_of(o.get("group"), "group", EntryId::from_hex)?;
+    let level = group_level(lab, me, over, group).ok_or(Refusal::UnknownEntry)?;
+    let name = lab.group(me, over, group).map_or_else(String::new, |g| g.name.clone());
+    let (who, secret) = match o.get("who") {
+        Some(Value::String(s)) if s == "invite" => {
+            let (secret, key) = lab.new_invite();
+            (Who::Invite(key), Some(hex(&secret)))
+        }
+        _ => match whom(o)? {
+            Whom::Vault(v) => (Who::Vault(v), None),
+            Whom::Everyone => (Who::Everyone, None),
+            _ => return Err(bad("a cap group goes to {\"vault\": id}, \"everyone\" or \"invite\"")),
+        },
+    };
+    let parent = world::parent(lab.state(me), actor, over, who, level, false);
+    let share = GroupShare { over, who, name, select, group, level, parent, issuer: actor };
+    let answer = |id: ShareId| match &secret {
+        Some(secret) => json!({ "share": id.to_hex(), "secret": secret }),
+        None => json!({ "share": id.to_hex() }),
+    };
+    match lab.issue_group(me, &[me], share.clone()) {
+        Ok(id) => Ok(Prepared::Done(answer(id))),
+        Err(refused) => {
+            let then = secret.map_or(Then::Share, Then::Invite);
+            approval(lab, me, refused, None, then, |lab, signers| lab.draft_group_share(me, signers, share))
+        }
+    }
 }
 
 /// `{"op": "keep", "over", "mode", "what", "device"?, "as"?}`: a keep share `as` issues over vault `over` to `device`

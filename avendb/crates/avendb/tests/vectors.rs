@@ -9,6 +9,9 @@
 //! schema lanes, and the writes their readers count, line by line. The lens vectors hold each app's view of many stored
 //! blocks and todos, and what each edit through a view stores.
 //!
+//! A gate case's edits, held and in a batch, each at the depth the model gives it, must be taken by the server of its
+//! vault exactly as the model's gate takes them (`gate::takes`), its readings holding what every write says.
+//!
 //! A sync case's edits, each with the parents and depth the model gives it, must stand as in the model, fall into the
 //! same logs with the same closed parts and frontiers, and fork where the model says; and each device that asks a peer
 //! must name the same edits of each log and the same loose edits, and be sent the same edits in the same order, whole
@@ -27,13 +30,15 @@
 //! core's carries the boxes too, which no rule opens, so here they are empty. A creation's header names the blob it
 //! holds by a number, which only a schema or lens entry's readers read: here its content is the bytes `blob <number>`,
 //! and the lane names it by their hash. A type or a tag is a number in the model, and its digits here, but for the
-//! types of schema and lens entries, which are the core's (`slice::SCHEMA_TYPE`, `slice::LENS_TYPE`). A keep share is a
+//! types of schema, lens and cap group entries, which are the core's (`slice::SCHEMA_TYPE`, `slice::LENS_TYPE`,
+//! `slice::CAP_GROUP_TYPE`). A write of a cap group says the group it defines in its readings. A keep share is a
 //! share like any other, with no ops.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 use std::hash::Hash;
 
+use avendb::gate;
 use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient, Seal};
 use avendb::lens::{example, View};
@@ -41,8 +46,8 @@ use avendb::policy::{
     history, mk_audience, replay, tips, Action, Creation, Edit, KeepMode, Kind, Level, Line, Principal, Proposal,
     Readings, Refusal, Revoking, Setting, Share, Sharing, State, Vault, Who,
 };
-use avendb::rules::{self, ops_of_json, Grant, Proof, Touch};
-use avendb::slice::{Atom, Attrs, Header, Select, Selector, Sym, TagDelta, LENS_TYPE, SCHEMA_TYPE};
+use avendb::rules::{self, ops_of_json, Cap, CapGroup, Grant, Proof, Touch};
+use avendb::slice::{Atom, Attrs, Header, Select, Selector, Sym, TagDelta, CAP_GROUP_TYPE, LENS_TYPE, SCHEMA_TYPE};
 use avendb::sealed::FileRoot;
 use avendb::sync::{asks, closed_part, forks, frontiers, link_card, may_fetch, respond, respond_since, LogId};
 use avendb::wire::Wire;
@@ -79,11 +84,13 @@ fn entry(v: &Value) -> EntryId {
     EntryId::from_u64(num(v))
 }
 
-/// A type or a tag: the model's schema and lens types (`schemaType`, `lensType`) are the core's.
+/// A type or a tag: the model's schema, lens and cap group types (`schemaType`, `lensType`, `capGroupType`) are the
+/// core's.
 fn sym(v: &Value) -> Sym {
     match num(v) {
         900 => Sym::new(SCHEMA_TYPE),
         901 => Sym::new(LENS_TYPE),
+        902 => Sym::new(CAP_GROUP_TYPE),
         n => Sym(n.to_string()),
     }
 }
@@ -238,6 +245,7 @@ impl Names {
         match variant(v) {
             ("vault", x) => Who::Vault(self.vault(x)),
             ("device", d) => Who::Device(signer(d)),
+            ("invite", k) => Who::Invite(signer(k)),
             (other, _) => panic!("no grantee {other}"),
         }
     }
@@ -287,6 +295,20 @@ impl Names {
             parent: (!v["parent"].is_null()).then(|| self.share(&v["parent"])),
             issuer: self.vault(&v["issuer"]),
             nonce: num(&v["id"]),
+            group: v.get("group").map(entry),
+        }
+    }
+
+    /// A cap group, each cap an op over a selector.
+    fn cap_group(&self, v: &Value) -> CapGroup {
+        let cap = |c: &Value| {
+            let op = ops_of_json(&json!([c["op"]])).expect("the model's op").remove(0);
+            Cap { op, slice: self.selector(&c["slice"]) }
+        };
+        CapGroup {
+            name: v["name"].as_str().expect("a group's name").to_string(),
+            caps: list(&v["caps"]).iter().map(cap).collect(),
+            includes: list(&v["includes"]).iter().map(entry).collect(),
         }
     }
 
@@ -417,6 +439,7 @@ impl Names {
                 keep: keep(),
                 via: self.via(&x["via"]),
             },
+            "claim" => Action::Claim { share: self.share(&x["share"]), vault: vault(), via: self.via(&x["via"]) },
             "keys" => Action::Keys {
                 name: self.key_name(&x["secret"]),
                 id: KeyId([0; 32]),
@@ -475,6 +498,9 @@ impl Names {
                 if x.get("fits") == Some(&Value::Bool(false)) {
                     self.readings.unfit.insert(id);
                 }
+                if let Some(g) = x.get("defines") {
+                    self.readings.defines.insert(id, self.cap_group(g));
+                }
             }
             _ => {}
         }
@@ -512,27 +538,37 @@ impl Names {
         }
     }
 
-    /// The state a case ends with must be the model's.
-    fn check_state(&self, name: &str, case: &Value, st: &State) {
+    /// The state a case ends with must be the model's. The cap groups in force are worked out of what the readers
+    /// hold, as a reader does.
+    fn check_state(&mut self, name: &str, case: &Value, st: &State) {
+        self.readings.groups = st.read_groups(&self.readings);
         let vaults: Vec<Vault> = list(&case["vaults"]).iter().map(|v| self.vault_of(v)).collect();
         assert_eq!(st.vaults(), &vaults[..], "{name}: vaults");
-        // every share issued, live or revoked, in the order issued
-        type ShareRow = (ShareId, VaultId, Who, Level, bool, Option<ShareId>, VaultId);
+        // every share issued, live or revoked, in the order issued, with the cap group it names
+        type ShareRow = (ShareId, VaultId, Who, Level, bool, Option<ShareId>, VaultId, Option<EntryId>);
         let shares: Vec<ShareRow> = list(&case["shares"])
             .iter()
             .map(|v| {
                 let c = self.share_of(v);
-                (self.share(&v["id"]), c.over, c.who, c.level, c.wide, c.parent, c.issuer)
+                (self.share(&v["id"]), c.over, c.who, c.level, c.wide, c.parent, c.issuer, c.group)
             })
             .collect();
         let ours: Vec<ShareRow> = st
             .shares()
             .iter()
             .map(|cp| {
-                (cp.id, cp.share.over, cp.share.who, cp.share.level, cp.share.wide, cp.share.parent, cp.share.issuer)
+                let x = &cp.share;
+                (cp.id, x.over, x.who, x.level, x.wide, x.parent, x.issuer, x.group)
             })
             .collect();
         assert_eq!(ours, shares, "{name}: shares");
+        // each cap group as its readers count the writes that say it, now
+        let groups = case.get("capGroups").map_or(&[][..], list).iter();
+        let groups = groups.map(|v| (self.vault(&v["vault"]), entry(&v["entry"]), self.cap_group(&v["group"])));
+        let ours = self.readings.groups.entries().map(|(e, v)| {
+            (v, e, st.group(&self.readings, v, e).expect("a group its readers count").clone())
+        });
+        same_set(ours, groups, &format!("{name}: cap groups"));
         let revoked: Vec<ShareId> = list(&case["revoked"]).iter().map(|c| self.share(c)).collect();
         assert_eq!(st.revoked(), &revoked[..], "{name}: revoked");
         // each entry: its stays, the current one first, and what its readers see
@@ -703,7 +739,9 @@ fn each_edit_is_accepted_or_refused_as_in_the_lean_model() {
     const MARKS: &str = "marks, part by part";
     const KEEPS: &str = "keep shares: each device syncs what its keep shares pick";
     const MODES: &str = "keep shares: modes, refusals and a device that leaves";
-    for name in [KINDS, MARKS, KEEPS, MODES] {
+    const GROUPS: &str = "cap groups: a share names a group, which its vault versions";
+    const INVITES: &str = "invites: a share to a one-time key, claimed once by the vault it invites";
+    for name in [KINDS, MARKS, KEEPS, MODES, GROUPS, INVITES] {
         assert!(cases.iter().any(|c| c["name"] == name), "the model's case {name:?}");
     }
     for case in cases {
@@ -755,6 +793,16 @@ fn each_edit_is_accepted_or_refused_as_in_the_lean_model() {
         // a mark with a wide keep share, a revocation by the vault it is over, a keep share for a device that left
         if name == MODES {
             let want = [KeepNeedsDevice, KeepNeedsDevice, DeviceOnlyKeeps, BadParent, BadWants, NoCap, NotDevice];
+            assert_eq!(refused, want, "{name}: why each falls");
+        }
+        // a write by a reader of the group that would let it write: the group's caps hold only as high as its level
+        if name == GROUPS {
+            assert_eq!(refused, [NoCap], "{name}: why each falls");
+        }
+        // an owner invite; a claim the invite key doesn't sign, by a device that doesn't act for the vault, by the
+        // vault the share is over, twice, of a share to a vault, of a revoked invite
+        if name == INVITES {
+            let want = [InviteOwner, NoConsent, NotActing, CapToItself, NotInvite, NotInvite, Revoked];
             assert_eq!(refused, want, "{name}: why each falls");
         }
     }
@@ -909,6 +957,47 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
     }
     assert!(linked >= 5, "the model links passkeys that own vaults and passkeys that own none: {linked}");
     assert!(fetched >= 7, "the model hands some devices files: {fetched}");
+}
+
+#[test]
+fn the_server_takes_of_each_batch_what_the_lean_models_gate_takes() {
+    let vectors = vectors();
+    let cases = list(&vectors["gates"]);
+    assert!(cases.len() >= 7);
+    let (mut all, mut none, mut some) = (0, 0, 0);
+    for case in cases {
+        let name = case["name"].as_str().unwrap();
+        // a held edit may name a vault the batch founds: named again until every number names what it created
+        let mut names = Names::default();
+        let (held, batch) = loop {
+            let named = (names.vaults.clone(), names.shares.clone());
+            names = Names { vaults: named.0.clone(), shares: named.1.clone(), ..Names::default() };
+            let mut edits = |key: &str| -> Vec<Edit> {
+                let of = |v: &Value| {
+                    let edit = names.edit_of(v, num(&v["depth"]));
+                    names.created(v, &edit, true);
+                    edit
+                };
+                list(&case[key]).iter().map(of).collect()
+            };
+            let (held, batch) = (edits("held"), edits("batch"));
+            if (&names.vaults, &names.shares) == (&named.0, &named.1) {
+                break (held, batch);
+            }
+        };
+        let before = replay(&held).state;
+        let taken = gate::takes(names.vault(&case["home"]), &held, &before, batch.clone(), &names.readings);
+        let ids = |b: &[Edit]| b.iter().map(Edit::id).collect::<Vec<_>>();
+        let want = (!case["takes"].is_null()).then(|| list(&case["takes"]).iter().map(|i| batch[num(i) as usize].id()));
+        assert_eq!(taken.as_deref().map(ids), want.map(Iterator::collect), "{name}");
+        match taken.map(|b| b.len()) {
+            Some(n) if n == batch.len() => all += 1,
+            Some(0) | None => none += 1,
+            Some(_) => some += 1,
+        }
+    }
+    // a batch taken whole, one of which it takes nothing, and one of which it takes some
+    assert!(all > 0 && none > 0 && some > 0, "{all} {none} {some}");
 }
 
 /// `v` without its `null` fields: the model writes every field, and absent ones as `null`.

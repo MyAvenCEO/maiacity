@@ -14,14 +14,17 @@
 
 use std::collections::BTreeMap;
 
-use crate::encode::{Encode, VERSION};
+use crate::encode::{Encode, DEFINES, VERSION};
 use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
 use crate::policy::{
     Action, Creation, Edit, KeepMode, Kind, Level, Principal, Proposal, Revoking, Setting, Share, Sharing, Who,
 };
 use crate::recovery::RecoveryKey;
-use crate::rules::{Grant, On, Op, Proof, Scalar, Step, MAX_GRANTS, MAX_NAME, MAX_OPS, MAX_STEPS, MAX_VALUES};
+use crate::rules::{
+    Cap, CapGroup, Grant, On, Op, Proof, Scalar, Step, MAX_CAPS, MAX_GRANTS, MAX_INCLUDES, MAX_NAME, MAX_OPS, MAX_STEPS,
+    MAX_VALUES,
+};
 use crate::sealed::{Brought, FileKey, FileRoot};
 use crate::sign::{self, Assertion, Hello, RelayPass, Signature, SignerKeys, Signed, WebAuthn};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
@@ -607,13 +610,15 @@ impl Decode for TagDelta {
     }
 }
 
-/// A body is read whole (`Wire`), so its files, last, are there exactly when bytes are left, and then there are some.
+/// A body is read whole (`Wire`), so its files, next to last, are there exactly when bytes are left that don't start
+/// with the byte its cap group follows (`encode::DEFINES`), and then there are some; and its cap group, last, exactly
+/// when that byte is left.
 impl Decode for Body {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         let (header, tags, answers, content) = (r.option()?, TagDelta::decode(r)?, r.set(32)?, r.bytes()?);
         let proof = r.option()?;
         let mut files: Vec<Brought> = vec![];
-        if r.at < r.bytes.len() {
+        if r.at < r.bytes.len() && r.bytes[r.at] != DEFINES {
             files = r.seq(80)?;
             if files.is_empty() {
                 return Err(WireError::Unknown);
@@ -622,7 +627,32 @@ impl Decode for Body {
                 return Err(WireError::Unordered);
             }
         }
-        Ok(Body { header, tags, answers, content, proof, files })
+        let mut defines = None;
+        if r.at < r.bytes.len() {
+            if r.u8()? != DEFINES {
+                return Err(WireError::Unknown);
+            }
+            defines = Some(CapGroup::decode(r)?);
+        }
+        Ok(Body { header, tags, answers, content, proof, files, defines })
+    }
+}
+
+impl Decode for Cap {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(Cap { op: Op::decode(r)?, slice: Selector::decode(r)? })
+    }
+}
+
+/// Only with a name of at most `rules::MAX_NAME` characters, at most `rules::MAX_CAPS` caps and
+/// `rules::MAX_INCLUDES` included groups.
+impl Decode for CapGroup {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let name = String::decode(r)?;
+        if name.chars().count() > MAX_NAME {
+            return Err(WireError::Unknown);
+        }
+        Ok(CapGroup { name, caps: r.bounded(2, MAX_CAPS)?, includes: r.bounded(32, MAX_INCLUDES)? })
     }
 }
 
@@ -687,6 +717,7 @@ impl Decode for Who {
             0 => Ok(Who::Vault(VaultId::decode(r)?)),
             1 => Ok(Who::Everyone),
             2 => Ok(Who::Device(SignerId::decode(r)?)),
+            3 => Ok(Who::Invite(SignerId::decode(r)?)),
             _ => Err(WireError::Unknown),
         }
     }
@@ -703,6 +734,7 @@ impl Decode for Share {
             parent: r.option()?,
             issuer: VaultId::decode(r)?,
             nonce: u64::decode(r)?,
+            group: None,
         })
     }
 }
@@ -738,6 +770,11 @@ impl Decode for Sharing {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         match r.u8()? {
             0 => Ok(Sharing::Grant(Share::decode(r)?, r.seq(32)?)),
+            3 => {
+                let share = Share::decode(r)?;
+                let group = Some(EntryId::decode(r)?);
+                Ok(Sharing::Grant(Share { group, ..share }, r.seq(32)?))
+            }
             1 => Ok(Sharing::Owner { vault: VaultId::decode(r)?, owner: Principal::decode(r)?, seal_to: r.option()? }),
             2 => Ok(Sharing::Device { vault: VaultId::decode(r)?, device: SignerId::decode(r)?, seal_to: r.option()? }),
             _ => Err(WireError::Unknown),
@@ -806,6 +843,7 @@ impl Decode for Action {
                 boxes: r.seq(37)?,
                 clear: r.option()?,
             },
+            12 => Action::Claim { share: ShareId::decode(r)?, vault: VaultId::decode(r)?, via: r.seq(32)? },
             _ => return Err(WireError::Unknown),
         })
     }
@@ -1269,6 +1307,34 @@ mod tests {
     }
 
     #[test]
+    fn a_cap_group_its_share_to_an_invite_and_the_claim_read_back_the_same() {
+        let (v, e, k) = (VaultId([1; 32]), EntryId([2; 32]), SignerId([3; 32]));
+        let share = Share {
+            over: v,
+            who: Who::Invite(k),
+            level: Level::Read,
+            wide: false,
+            select: vec![],
+            parent: None,
+            issuer: v,
+            nonce: 0,
+            group: Some(e),
+        };
+        let edit = |action| Edit { parents: vec![], depth: 0, author: k, cosigners: vec![], action };
+        let claim = Action::Claim { share: ShareId([4; 32]), vault: VaultId([5; 32]), via: vec![VaultId([6; 32])] };
+        for action in [Action::Share(Sharing::Grant(share, vec![])), claim] {
+            let e = edit(action);
+            assert_eq!(Edit::from_wire(&e.to_wire()), Ok(e));
+        }
+        let read = Cap { op: Op::of_json(&serde_json::json!({ "op": "read" })).expect("an op"), slice: Selector::All };
+        let defines = CapGroup { name: "Traveler".into(), caps: vec![read], includes: vec![e] };
+        let body = Body { defines: Some(defines), ..Body::default() };
+        assert_eq!(Body::from_wire(&body.to_wire()), Ok(body.clone()));
+        let plain = Body::default().to_wire();
+        assert_eq!(body.to_wire()[..plain.len()], plain[..], "a body that says no group keeps its bytes");
+    }
+
+    #[test]
     fn a_signature_of_edits_signed_together_reads_back_only_in_their_order() {
         let w = world();
         let edits: Vec<Edit> = w.lab.log(w.mac_a).edits()[..2].to_vec();
@@ -1420,6 +1486,7 @@ mod tests {
             parent: None,
             issuer: v,
             nonce: 0,
+            group: None,
         };
         let edit = |action| Edit { parents: vec![], depth: 0, author: SignerId([3; 32]), cosigners: vec![], action };
         let grant = edit(Action::Share(Sharing::Grant(share.clone(), vec![])));
@@ -1447,9 +1514,11 @@ mod tests {
         for rank in [6, 255] {
             assert_eq!(with(level, rank), Err(WireError::Unknown));
         }
-        // whom a share names: a vault (0) or a device (2), each named next, or everyone (1), and nothing else
+        // whom a share names: a vault (0), a device (2) or an invite key (3), each named next, or everyone (1), and
+        // nothing else
         assert_eq!(granted(with(who, 2)), Some((Who::Device(SignerId(g.0)), Level::Read)));
-        assert_eq!(with(who, 3), Err(WireError::Unknown));
+        assert_eq!(granted(with(who, 3)), Some((Who::Invite(SignerId(g.0)), Level::Read)));
+        assert_eq!(with(who, 4), Err(WireError::Unknown));
         // keep, rank 0, and then its mode: 0 whole, 1 opened, 2 never, and no other
         let d = SignerId([4; 32]);
         let keep = |level| Share { who: Who::Device(d), level, ..share.clone() };
@@ -1463,10 +1532,11 @@ mod tests {
             bytes[level + 1] = b;
             assert_eq!(Edit::from_wire(&bytes), Err(WireError::Unknown), "mode byte {b}");
         }
-        // three sub-kinds of share and of revocation, two of settings; seven kinds and no more, as a checkpoint's tag,
-        // 7, went into the signature, a publish's, 8, into the write's, a sync rule's, 9, and its end's, 10, into the
-        // share's and the revocation's, and a pick's, 11, into the mark's
-        assert_eq!(with(at + 1, 3), Err(WireError::Unknown));
+        // four sub-kinds of share, a grant of a cap group's, 3, among them, three of revocation, two of settings; eight
+        // kinds and no more, as a checkpoint's tag, 7, went into the signature, a publish's, 8, into the write's, a
+        // sync rule's, 9, and its end's, 10, into the share's and the revocation's, and a pick's, 11, into the mark's,
+        // and a claim's is 12
+        assert_eq!(with(at + 1, 4), Err(WireError::Unknown));
         let revoke = edit(Action::Revoke(Revoking::Grant { share: ShareId(g.0), actor: v, keep: vec![], via: vec![] }));
         let mut bytes = revoke.to_wire();
         bytes[at + 1] = 3;
@@ -1474,7 +1544,7 @@ mod tests {
         let mut bytes = edit(Action::Settings { vault: v, set: Setting::Threshold(1) }).to_wire();
         bytes[at + 1 + 32] = 2;
         assert_eq!(Edit::from_wire(&bytes), Err(WireError::Unknown));
-        for tag in [8, 9, 10, 11, 12] {
+        for tag in [7, 8, 9, 10, 11, 13] {
             assert_eq!(with(at, tag), Err(WireError::Unknown), "tag {tag}");
         }
     }

@@ -70,7 +70,7 @@ use std::sync::Arc;
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::cast;
 use avendb::engine;
-use avendb::id::{SignerId, VaultId};
+use avendb::id::{ShareId, SignerId, VaultId};
 use avendb::keys;
 use avendb::lab::Lab;
 use avendb::policy::Level;
@@ -781,6 +781,22 @@ impl PageDevice {
     pub fn vault(&self) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move { Ok(device.vault().await.map(|v| hex(&v.0)).into()) })
+    }
+
+    /// Claims the invite a link names for its vault, through the server whose code reads `server`
+    /// (`avendb_net::Node::claim_invite`): `share`, the invite's id, and `secret`, its key's, each 64 hex digits, as
+    /// the link holds them. A promise of the vault, in hex, once the server took it with the claim; rejected if the
+    /// server knows no such invite, a vault claimed it already, or the server takes the vault no more.
+    pub fn claim_invite(&self, server: String, share: String, secret: String) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let server = Offer::from_text(&server).map_err(js_error)?;
+            let share = ShareId::from_hex(&share).ok_or_else(|| JsError::new("an invite's id is 64 hex digits"))?;
+            let secret = hex_bytes(&secret).and_then(|b| <[u8; 32]>::try_from(b).ok()).map(Zeroizing::new);
+            let secret = secret.ok_or_else(|| JsError::new("an invite's key is 64 hex digits"))?;
+            let vault = device.node.claim_invite(&server, share, *secret).await.map_err(js_value)?;
+            Ok(hex(&vault.0).into())
+        })
     }
 
     /// Runs op `op`, an object of the ops engine's (`Device::run`, `docs/ARCHITECTURE.md` §8): a promise of its

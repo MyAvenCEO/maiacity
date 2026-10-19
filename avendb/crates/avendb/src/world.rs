@@ -342,6 +342,7 @@ impl World {
                 "revokers": ids(&c.revokers),
                 "entries": c.entries.iter().map(|e| hex(&e.0)).collect::<Vec<_>>(),
                 "group": group_of(&c.share, c.slice.as_ref()),
+                "capGroup": c.share.group.map(|g| hex(&g.0)),
                 "drafts": c.drafts(),
                 "whole": whole,
                 "reads": !keep && level.allows(Level::Read),
@@ -1221,7 +1222,10 @@ pub fn parents(st: &State, issuer: VaultId, over: VaultId, who: Who, level: Leve
     if issuer == over {
         return vec![];
     }
-    let probe = |cp: &Issued| Share { over, who, level, wide, select: vec![], parent: Some(cp.id), issuer, nonce: 0 };
+    let probe = |cp: &Issued| {
+        let parent = Some(cp.id);
+        Share { over, who, level, wide, select: vec![], parent, issuer, nonce: 0, group: None }
+    };
     let mut held: Vec<&Issued> = st.shares_held(issuer).filter(|cp| st.share_parent_ok(&probe(cp))).collect();
     held.sort_by_key(|cp| (cp.share.level != Level::Owner, !cp.share.wide, std::cmp::Reverse(cp.share.level.rank())));
     held.into_iter().map(|cp| cp.id).collect()

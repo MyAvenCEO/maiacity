@@ -9,7 +9,7 @@ use serde_json::{json, Value};
 
 use crate::id::{EditId, EntryId, VaultId};
 use crate::keys::KeyBox;
-use crate::rules::{self, Grant, Op, Proof};
+use crate::rules::{self, CapGroup, Grant, Op, Proof};
 use crate::sealed::Brought;
 
 /// A type (`note`, `todo`, …) or a tag: a short name.
@@ -44,10 +44,26 @@ impl std::fmt::Debug for Sym {
 pub const SCHEMA_TYPE: &str = "schema";
 pub const LENS_TYPE: &str = "lens";
 
+/// The type of the entries that carry a vault's cap groups (`State.lean`'s `capGroupType`): every share over the vault
+/// selects them, so whoever reads anything of a vault reads its cap groups and judges each write alike, and every keep
+/// share that adds entries picks them too (`policy::keep_picks`).
+pub const CAP_GROUP_TYPE: &str = "capgroup";
+
 impl Sym {
     /// The type of the entries that carry a vault's schemas or its lenses.
     pub fn of_lane(&self) -> bool {
         self.0 == SCHEMA_TYPE || self.0 == LENS_TYPE
+    }
+
+    /// The type of the entries that carry a vault's cap groups.
+    pub fn is_cap_group(&self) -> bool {
+        self.0 == CAP_GROUP_TYPE
+    }
+
+    /// The type of the entries every device that syncs part of a vault syncs too (`State.lean`'s `laneTypes`): its
+    /// schemas, lenses and cap groups.
+    pub fn synced_by_all(&self) -> bool {
+        self.of_lane() || self.is_cap_group()
     }
 }
 
@@ -327,7 +343,9 @@ impl Select {
 /// What a write's ciphertext holds: the header of the entry it creates; the tags it adds and removes, which count when
 /// it acts for the entry's vault and otherwise ask the vault's stewards to; the writes whose asks it answers, a
 /// steward's; its content: a Loro update, a proposal's name, or nothing for a merge or a write of tags alone; and the
-/// proof of a write through a share (`rules::Proof`), which its readers check its touches and asks against.
+/// proof of a write through a share (`rules::Proof`), which its readers check its touches and asks against; and, of a
+/// cap group entry, the cap group its record says after it (`defines`), which counts where the vault itself writes it
+/// on its main line (`policy::Groups`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Body {
     pub header: Option<Header>,
@@ -339,6 +357,7 @@ pub struct Body {
     /// The keys and lengths of the files it brings, which it names in the clear (`Action::Write`): smallest root
     /// first, no repeats.
     pub files: Vec<Brought>,
+    pub defines: Option<CapGroup>,
 }
 
 #[cfg(test)]

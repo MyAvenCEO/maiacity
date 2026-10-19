@@ -155,7 +155,7 @@ impl Cast {
         nonce: u64,
     ) -> Result<ShareId, Refusal> {
         let wide = select == Selector::All;
-        let share = Share { over, who, level, wide, select: vec![], parent, issuer, nonce };
+        let share = Share { over, who, level, wide, select: vec![], parent, issuer, nonce, group: None };
         let id = ShareId::from(self.log.append(signer, cosigners, Action::Share(Sharing::Grant(share, vec![])))?);
         self.readings.selectors.insert(id, select);
         Ok(id)

@@ -197,13 +197,15 @@ impl Level {
     }
 }
 
-/// Whom a share names: a vault, everyone (read only, T8), or a device, which only a keep share names, one of its
-/// issuer's (T4).
+/// Whom a share names: a vault, everyone (read only, T8), a device, which only a keep share names, one of its issuer's
+/// (T4), or an invite key: a one-time signer key its inviter makes and hands on with the invite. Until a vault claims
+/// the share with that key (`Action::Claim`), nobody holds it, and from then on it names that vault.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Who {
     Vault(VaultId),
     Everyone,
     Device(SignerId),
+    Invite(SignerId),
 }
 
 /// A share: `who` may make the ops its slice names on the entries of vault `over` that its selector picks, and that
@@ -227,6 +229,10 @@ pub struct Share {
     pub issuer: VaultId,
     /// Keeps two shares that say the same apart.
     pub nonce: u64,
+    /// The cap group of `over` it grants, by its entry, in place of ops of its own (`State::ops_on`): in the clear, as
+    /// its level is, so a relay learns that two shares grant the same group, never what it grants. Its level bounds
+    /// the group's caps (`rules::Cap::holds`); its own grant names no op.
+    pub group: Option<EntryId>,
 }
 
 /// The line of an entry's history a write extends (`Proposals.lean`).
@@ -379,6 +385,11 @@ pub enum Action {
     /// `clear`. The schedule already says who may open what, so this changes nothing in it: a peer accepts it only
     /// from a signer that may open the key, and only if every box goes where the schedule seals the key.
     Keys { name: KeyName, id: KeyId, public: Option<PublicKey>, boxes: Vec<KeyBox>, clear: Option<[u8; 32]> },
+    /// Vault `vault` claims share `share`, which names an invite key, acting through the owners `via`: signed by that
+    /// key, whose secret came with the invite, and by a member of `vault` acting for it, so the newcomer's vault takes
+    /// the invite at sign-up with no tap of its inviter. From then on the share names `vault`, and its key is sealed to
+    /// `vault`'s seed (`State::targets`); a second claim finds no invite left.
+    Claim { share: ShareId, vault: VaultId, via: Vec<VaultId> },
 }
 
 impl Action {
@@ -410,7 +421,8 @@ impl Action {
             Action::Share(Sharing::Grant(_, via))
             | Action::Revoke(Revoking::Grant { via, .. })
             | Action::Write { via, .. }
-            | Action::Mark { via, .. } => Some(via),
+            | Action::Mark { via, .. }
+            | Action::Claim { via, .. } => Some(via),
             _ => None,
         }
     }
@@ -420,7 +432,8 @@ impl Action {
             Action::Share(Sharing::Grant(_, via))
             | Action::Revoke(Revoking::Grant { via, .. })
             | Action::Write { via, .. }
-            | Action::Mark { via, .. } => Some(via),
+            | Action::Mark { via, .. }
+            | Action::Claim { via, .. } => Some(via),
             _ => None,
         }
     }
@@ -454,12 +467,13 @@ impl Edit {
         std::iter::once(self.author).chain(self.cosigners.iter().copied())
     }
 
-    /// The vault an edit acts for: a grant's issuer, a revoker of a grant, a writer, a marker (the vault itself).
+    /// The vault an edit acts for: a grant's issuer, a revoker of a grant, a writer, a marker (the vault itself), a
+    /// claimer.
     pub fn actor(&self) -> Option<VaultId> {
         match &self.action {
             Action::Share(Sharing::Grant(c, _)) => Some(c.issuer),
             Action::Revoke(Revoking::Grant { actor, .. }) | Action::Write { actor, .. } => Some(*actor),
-            Action::Mark { vault, .. } => Some(*vault),
+            Action::Mark { vault, .. } | Action::Claim { vault, .. } => Some(*vault),
             _ => None,
         }
     }
@@ -689,6 +703,11 @@ pub enum Refusal {
     /// Owner of a whole vault is an owner of it (`Sharing::Owner`), which no grant makes: a grant of owner is on a
     /// slice.
     WideOwner,
+    /// An invite makes no owner: owner takes the newcomer's consent, which an invite key doesn't give.
+    InviteOwner,
+    /// A claim of a share that names no invite key: a share to a vault, to everyone or to a device, or an invite that
+    /// was claimed already.
+    NotInvite,
     /// The share rests on one that isn't a live share over the same vault held by its issuer, or is a keep share, or
     /// is at a lower level, or isn't wide where it is; or on one that is neither an owner share nor lets it go to a
     /// vault its issuer owns; or a root share is issued by another vault than the one it is over, or a keep share
@@ -913,6 +932,8 @@ enum Change {
     Share(Issued),
     /// The shares that end, in the order they were issued.
     Revoke(Vec<ShareId>),
+    /// The share at `at`, an invite, names vault `vault` from now on.
+    Claim { at: usize, vault: VaultId },
     Create(Entry, Box<Write>, Arc<[ShareId]>),
     /// A write, and whether it acts for its entry's vault, so its tags count.
     Write(Write, bool),
@@ -1043,6 +1064,12 @@ impl State {
 
     pub fn write(&self, w: EditId) -> Option<&Write> {
         self.write_at.get(&w).map(|&i| &self.writes[i])
+    }
+
+    /// The place of write `w` in the replay, the order writes were accepted in: past the last for a write not accepted
+    /// yet, as one a device drafts.
+    pub fn place(&self, w: EditId) -> usize {
+        self.write_at.get(&w).copied().unwrap_or(self.writes.len())
     }
 
     /// The accepted writes of one entry, in replay order.
@@ -1415,12 +1442,163 @@ impl State {
 
     /* The semantic layer: what only an entry's readers and its vault's stewards know. */
 
-    /// Share `cp` with its whole chain selects attributes `a`, by the selectors `r` holds (T22): every share of the
-    /// chain is wide or its selector matches. A selector `r` doesn't hold selects nothing.
+    /// Share `cp` with its whole chain selects attributes `a`, by the selectors `r` holds and the cap groups in force
+    /// now (T22, `State.lean`'s `effSelects`): every share of the chain selects them (`share_selects`).
     pub fn eff_selects(&self, cp: &Issued, a: &Attrs, r: &Readings) -> bool {
-        cp.chain.iter().all(|c| {
-            self.share(*c).is_some_and(|x| x.share.wide || r.selectors.get(c).is_some_and(|s| s.matches(a)))
-        })
+        self.eff_selects_at(cp, a, r, self.writes.len())
+    }
+
+    /// `eff_selects` with the cap groups in force before place `place` of the replay.
+    fn eff_selects_at(&self, cp: &Issued, a: &Attrs, r: &Readings, place: usize) -> bool {
+        cp.chain.iter().all(|c| self.share(*c).is_some_and(|x| self.share_selects(x, a, r, place)))
+    }
+
+    /// Share `x` on its own selects attributes `a` (`State.lean`'s `shareSelects`): it is wide; or `a` are those of a
+    /// cap group of its vault, which every share selects, so that whoever reads anything of a vault reads its cap
+    /// groups and judges each write alike (C2); or its selector, as `r` holds it, matches, and where it names a cap
+    /// group, a cap of the group in force before place `place` that it holds there does too (`rules::Cap::holds`). A
+    /// selector `r` doesn't hold selects nothing.
+    fn share_selects(&self, x: &Issued, a: &Attrs, r: &Readings, place: usize) -> bool {
+        let c = &x.share;
+        c.wide
+            || (a.ty.is_cap_group() && a.author == c.over)
+            || (r.selectors.get(&x.id).is_some_and(|s| s.matches(a))
+                && c.group.is_none_or(|g| {
+                    self.caps_of(&r.groups, c.over, g, place).iter().any(|cap| cap.holds(c.level, a))
+                }))
+    }
+
+    /* Cap groups */
+
+    /// Entry `en` carries a cap group of its vault (`isCapGroup`): its vault created it itself, and its header, as `r`
+    /// holds it, says it is of type `slice::CAP_GROUP_TYPE`.
+    pub fn is_cap_group(&self, en: &Entry, r: &Readings) -> bool {
+        en.creator == en.vault && r.headers.get(&en.creation).is_some_and(|h| h.ty.is_cap_group())
+    }
+
+    /// What cap group entry `g` of vault `v` says before place `place` of the replay, by `groups` (`groupAt`): the last
+    /// group a counted write of it accepted before that place says. None for an entry that isn't one of `v`'s cap
+    /// groups, or that no such write defined.
+    pub fn group_at<'a>(
+        &self,
+        groups: &'a Groups,
+        v: VaultId,
+        g: EntryId,
+        place: usize,
+    ) -> Option<&'a rules::CapGroup> {
+        let (u, versions) = groups.of.get(&g).filter(|(u, _)| *u == v)?;
+        debug_assert_eq!(*u, v);
+        let before = |w: &EditId| self.write_at.get(w).is_some_and(|&i| i < place);
+        versions.iter().rev().find(|(w, _)| before(w)).map(|(_, x)| &**x)
+    }
+
+    /// What cap group entry `g` of vault `v` says now, by the groups `r` holds.
+    pub fn group<'a>(&self, r: &'a Readings, v: VaultId, g: EntryId) -> Option<&'a rules::CapGroup> {
+        self.group_at(&r.groups, v, g, self.writes.len())
+    }
+
+    /// Cap group `g` of vault `v` and every group it includes, through any chain of includes, each once, as they stand
+    /// before place `place` (`groupsOf`).
+    fn groups_of(&self, groups: &Groups, v: VaultId, g: EntryId, place: usize) -> Vec<EntryId> {
+        let mut out = vec![g];
+        let mut i = 0;
+        while i < out.len() {
+            if let Some(x) = self.group_at(groups, v, out[i], place) {
+                for &y in &x.includes {
+                    if !out.contains(&y) {
+                        out.push(y);
+                    }
+                }
+            }
+            i += 1;
+        }
+        out
+    }
+
+    /// The caps cap group `g` of vault `v` grants before place `place` (`capsOf`): its own and those of every group it
+    /// includes.
+    fn caps_of<'a>(&self, groups: &'a Groups, v: VaultId, g: EntryId, place: usize) -> Vec<&'a rules::Cap> {
+        let caps = |x: EntryId| self.group_at(groups, v, x, place).into_iter().flat_map(|x| &x.caps);
+        self.groups_of(groups, v, g, place).into_iter().flat_map(caps).collect()
+    }
+
+    /// The ops share `x` grants, by the grant `grant` that opens its commitment, where `at` judges a write (`opsOn`):
+    /// its own; or, where it names a cap group of its vault, the op of each cap of the group in force there, and of the
+    /// groups it includes, that it holds on the entry's attributes (`rules::Cap::holds`), none where those are unread.
+    fn ops_on(&self, x: &Share, grant: &Grant, at: At<'_>) -> Vec<rules::Op> {
+        match (x.group, at.attrs) {
+            (None, _) => grant.ops.clone(),
+            (Some(_), None) => vec![],
+            (Some(g), Some(a)) => self
+                .caps_of(at.groups, x.over, g, at.place)
+                .into_iter()
+                .filter(|cap| cap.holds(x.level, a))
+                .map(|cap| cap.op.clone())
+                .collect(),
+        }
+    }
+
+    /// The cap groups as a reader holding `r` counts the writes that say them (`Groups`, `groupAt`): the writes of each
+    /// cap group entry judged one after the other in the order they were accepted, by every entry's readers' rules
+    /// (`counting`), each by the groups in force before it.
+    pub fn read_groups(&self, r: &Readings) -> Groups {
+        let mut out = Groups::default();
+        let entries: Vec<&Entry> = self.entries.iter().filter(|en| self.is_cap_group(en, r)).collect();
+        let mut places: Vec<usize> =
+            entries.iter().flat_map(|en| self.by_entry.get(&en.id).into_iter().flatten().copied()).collect();
+        places.sort_unstable();
+        let mut counters: HashMap<EntryId, Counter> = HashMap::new();
+        for i in places {
+            let w = &self.writes[i];
+            let Some(en) = self.entry(w.entry) else { continue };
+            let counter = counters.entry(w.entry).or_insert_with(|| Counter::new(self, en, r));
+            // a write the vault itself makes on its main line says what the group is, where its readers count it
+            if counter.judge(self, w, r, &out)
+                && w.actor == en.vault
+                && w.proposal == Proposal::Main
+                && let Some(g) = r.defines.get(&w.edit)
+            {
+                out.say(w.entry, en.vault, w.edit, g);
+            }
+        }
+        out
+    }
+
+    /// The attributes of entry `en` as its creation gave them, by the header and tags `r` holds: none where `r` doesn't
+    /// hold its header.
+    pub fn first_attrs(&self, en: &Entry, r: &Readings) -> Option<Attrs> {
+        let header = r.headers.get(&en.creation)?;
+        let tags = r.tags.get(&en.creation).map(|d| d.apply(&[])).unwrap_or_default();
+        Some(Attrs { ty: header.ty.clone(), author: en.creator, entry: en.id, created: header.created, tags })
+    }
+
+    /// Where its readers judge write `w`, by what `r` holds (`At`): its place, and its entry's attributes as they were
+    /// when it came in, those its creation gave and the tags of each write acting for its vault accepted before it,
+    /// worked out only where a share it relies on names a cap group, the only kind that asks for them.
+    pub fn at_write<'a>(&self, w: &Write, r: &'a Readings) -> (Option<Attrs>, usize) {
+        let place = self.place(w.edit);
+        let asks = w.shares.iter().any(|c| self.share(*c).is_some_and(|cp| self.names_group(cp)));
+        let attrs = asks.then(|| self.attrs_before(w.entry, place, r)).flatten();
+        (attrs, place)
+    }
+
+    /// Entry `e`'s attributes before place `place` of the replay, by what `r` holds.
+    fn attrs_before(&self, e: EntryId, place: usize, r: &Readings) -> Option<Attrs> {
+        let en = self.entry(e)?;
+        let mut a = self.first_attrs(en, r)?;
+        for w in self.entry_writes(e).take_while(|w| self.write_at[&w.edit] < place) {
+            if !w.first && w.actor == en.vault
+                && let Some(d) = r.tags.get(&w.edit)
+            {
+                a.tags = d.apply(&a.tags);
+            }
+        }
+        Some(a)
+    }
+
+    /// A share of `cp`'s chain names a cap group.
+    fn names_group(&self, cp: &Issued) -> bool {
+        cp.chain.iter().any(|c| self.share(*c).is_some_and(|x| x.share.group.is_some()))
     }
 
     /// What entry `e` means to whoever reads it, by the selectors, headers and tags `r` holds: its attributes, whether
@@ -1437,19 +1615,18 @@ impl State {
     /// stewards never mark it public (`State.lean`'s `semAudience`), and its creation is judged as made on a proposal.
     pub fn meaning_landed(&self, e: EntryId, r: &Readings, landed: bool) -> Option<Meaning> {
         let en = self.entry(e)?;
-        let header = r.headers.get(&en.creation)?;
-        let first = r.tags.get(&en.creation).map(|d| d.apply(&[])).unwrap_or_default();
-        let mut attrs =
-            Attrs { ty: header.ty.clone(), author: en.creator, entry: en.id, created: header.created, tags: first };
+        let mut attrs = self.first_attrs(en, r)?;
         // its creator was the vault, or created it in the intake audience of a share whose slice held it then, and
-        // whose ops let a creation through, on main or, for a draft, on a proposal
+        // whose ops let a creation through, on main or, for a draft, on a proposal, by the cap groups in force then
         let (proof, main) = (r.proofs.get(&en.creation), !self.is_draft(e));
-        let through = |cp: &Issued| self.lets_through(cp, proof, main, &[rules::Touch::Create]);
+        let place = self.place(en.creation);
+        let at = At { attrs: Some(&attrs), place, groups: &r.groups };
+        let through = |cp: &Issued| self.lets_through(cp, proof, main, &[rules::Touch::Create], at);
         let admitted = en.creator == en.vault
             || en
                 .intake
                 .iter()
-                .any(|&c| self.share(c).is_some_and(|cp| self.eff_selects(cp, &attrs, r) && through(cp)));
+                .any(|&c| self.share(c).is_some_and(|cp| self.eff_selects_at(cp, &attrs, r, place) && through(cp)));
         for w in &en.retags {
             if let Some(d) = r.tags.get(w) {
                 attrs.tags = d.apply(&attrs.tags);
@@ -1481,31 +1658,54 @@ impl State {
     }
 
     /// Every share of `cp`'s chain, root first, is opened by one of `grants` in turn (`State.lean`'s `chainAllows`):
-    /// each grant hashes to the commitment its share carries in the clear, its share's level is the class of its ops,
-    /// and its ops allow the touches `touches` of a write on the main line (`main`) or on a proposal.
-    pub fn chain_allows(&self, cp: &Issued, grants: &[Grant], main: bool, touches: &[rules::Touch]) -> bool {
+    /// each grant hashes to the commitment its share carries in the clear; its share's level is the class of its ops,
+    /// or the share names a cap group, whose caps its level bounds (`Share.levelOk`); and the ops it grants where `at`
+    /// judges the write (`ops_on`) allow the touches `touches` of a write on the main line (`main`) or on a proposal.
+    pub fn chain_allows(
+        &self,
+        cp: &Issued,
+        grants: &[Grant],
+        main: bool,
+        touches: &[rules::Touch],
+        at: At<'_>,
+    ) -> bool {
         cp.chain.len() == grants.len()
             && cp.chain.iter().zip(grants).all(|(c, g)| {
                 self.share(*c).is_some_and(|x| {
                     x.commitment == Some(g.commitment())
-                        && x.share.level == g.level()
-                        && rules::allows_all(&g.ops, main, touches)
+                        && (x.share.group.is_some() || x.share.level == g.level())
+                        && rules::allows_all(&self.ops_on(&x.share, g, at), main, touches)
                 })
             })
     }
 
     /// A write through share `cp` makes only ops it may, by what its proof shows (`State.lean`'s `lets`): the proof
     /// names `cp` and opens its chain's grants, which allow every touch of the write, on the main line (`main`) or on a
-    /// proposal.
-    pub fn lets_through(&self, cp: &Issued, proof: Option<&Proof>, main: bool, touches: &[rules::Touch]) -> bool {
-        proof.is_some_and(|p| p.share == cp.id && self.chain_allows(cp, &p.grants, main, touches))
+    /// proposal, where `at` judges it.
+    pub fn lets_through(
+        &self,
+        cp: &Issued,
+        proof: Option<&Proof>,
+        main: bool,
+        touches: &[rules::Touch],
+        at: At<'_>,
+    ) -> bool {
+        proof.is_some_and(|p| p.share == cp.id && self.chain_allows(cp, &p.grants, main, touches, at))
     }
 
-    /// Write `w`'s shares let it through, by its proof `proof`, its touches `touches` and the tags it asks for `asks`
-    /// (C1 to C3; `State.lean`'s `counts`, but for what it builds on): it acts for its entry's vault, so it relies on
-    /// no share (`Write::shares`), or one of the shares it was accepted through lets it. A creation touches only its
-    /// creation, and its tags are its first; touches its readers couldn't read (`None`) pass no share.
-    pub fn lets(&self, w: &Write, proof: Option<&Proof>, touches: Option<&[rules::Touch]>, asks: &TagDelta) -> bool {
+    /// Write `w`'s shares let it through, by its proof `proof`, its touches `touches` and the tags it asks for `asks`,
+    /// where `at` judges it (C1 to C3; `State.lean`'s `counts`, but for what it builds on): it acts for its entry's
+    /// vault, so it relies on no share (`Write::shares`), or one of the shares it was accepted through lets it. A
+    /// creation touches only its creation, and its tags are its first; touches its readers couldn't read (`None`) pass
+    /// no share.
+    pub fn lets(
+        &self,
+        w: &Write,
+        proof: Option<&Proof>,
+        touches: Option<&[rules::Touch]>,
+        asks: &TagDelta,
+        at: At<'_>,
+    ) -> bool {
         if w.shares.is_empty() {
             return true;
         }
@@ -1515,7 +1715,7 @@ impl State {
             None => return false,
         };
         let main = w.proposal == Proposal::Main;
-        w.shares.iter().any(|c| self.share(*c).is_some_and(|cp| self.lets_through(cp, proof, main, &touches)))
+        w.shares.iter().any(|c| self.share(*c).is_some_and(|cp| self.lets_through(cp, proof, main, &touches, at)))
     }
 
     /// The writes of entry `e` its readers don't count, by the proofs, touches, tags and fits `r` holds, in the order
@@ -1539,31 +1739,14 @@ impl State {
     }
 
     /// `uncounted` and `landed`, in one pass over entry `e`'s writes in the order they were accepted: each judged on
-    /// what came before it, as its readers judge it.
+    /// what came before it, as its readers judge it, by the cap groups `r` holds (`Counter`).
     fn counting(&self, e: EntryId, r: &Readings) -> (Vec<EditId>, bool) {
-        let (mut out, mut accepts) = (vec![], HashSet::new());
-        let none = TagDelta::default();
-        let main = |d: &EditId| self.write(*d).is_some_and(|x| x.entry == e && x.proposal == Proposal::Main);
-        // the counted writes that hold the creation, it and those that build on one
-        let (mut landed, mut holding) = (!self.is_draft(e), HashSet::new());
+        let Some(en) = self.entry(e) else { return (vec![], true) };
+        let mut counter = Counter::new(self, en, r);
         for w in self.entry_writes(e) {
-            let touches = r.touches.get(&w.edit).map(Vec::as_slice);
-            let asks = r.tags.get(&w.edit).unwrap_or(&none);
-            let lets = !r.unfit.contains(&w.edit)
-                && self.lets(w, r.proofs.get(&w.edit), touches, asks)
-                && passes(w, touches, |d| accepts.contains(d), main)
-                && (w.shares.is_empty() || w.proposal != Proposal::Main || landed);
-            if w.deps.iter().any(|d| out.contains(d)) || !lets {
-                out.push(w.edit);
-            } else if w.first || w.deps.iter().any(|d| holding.contains(d)) {
-                holding.insert(w.edit);
-                landed |= w.proposal == Proposal::Main;
-            }
-            if is_accept(w, touches, asks) {
-                accepts.insert(w.edit);
-            }
+            counter.judge(self, w, r, &r.groups);
         }
-        (out, landed)
+        (counter.out, counter.landed)
     }
 
     /// The writes of entry `e` its readers read as its vault's accepts, by the touches and tags `r` holds, in the order
@@ -1600,7 +1783,7 @@ impl State {
     }
 
     /// The write rule by meaning: vault `a` is the entry's vault, or holds a live share with write or more over it that
-    /// is wide, or whose slice holds the entry and its creation was let in.
+    /// is wide, or whose slice holds the entry and its creation was let in, by the cap groups in force now.
     pub fn sem_write(&self, a: VaultId, e: EntryId, r: &Readings) -> bool {
         let (Some(en), Some(m)) = (self.entry(e), self.meaning(e, r)) else { return false };
         a == en.vault
@@ -2065,17 +2248,19 @@ impl State {
                 }
                 // a share names a device exactly when it is a keep share (T4)
                 match (c.level.is_keep(), c.who) {
-                    (true, Who::Vault(_) | Who::Everyone) => return Err(Refusal::KeepNeedsDevice),
+                    (true, Who::Vault(_) | Who::Everyone | Who::Invite(_)) => return Err(Refusal::KeepNeedsDevice),
                     (false, Who::Device(_)) => return Err(Refusal::DeviceOnlyKeeps),
                     _ => {}
                 }
-                // grants name vaults or everyone, nor the vault they are over; everyone only reads
+                // grants name vaults, everyone or an invite key, nor the vault they are over; everyone only reads; an
+                // invite makes no owner, which takes the newcomer's consent
                 match c.who {
                     Who::Vault(x) if self.vault(x).is_none() => {
                         return Err(Refusal::UnknownVault);
                     }
                     Who::Vault(x) if x == c.over => return Err(Refusal::CapToItself),
                     Who::Everyone if c.level != Level::Read => return Err(Refusal::PublicBeyondRead),
+                    Who::Invite(_) if c.level == Level::Owner => return Err(Refusal::InviteOwner),
                     _ => {}
                 }
                 // owner of the whole vault is an owner of it, which only the vault's approval and the newcomer's
@@ -2285,6 +2470,28 @@ impl State {
                 };
                 Ok(Change::Mark { at, stay: id, to, wants })
             }
+            &Action::Claim { share, vault, ref via } => {
+                // a live share that names an invite key, which signs, claimed by a member of a vault there is acting
+                // for it, other than the vault the share is over
+                let at = self.share_at.get(&share).copied().ok_or(Refusal::UnknownCap)?;
+                let Who::Invite(k) = self.shares[at].share.who else { return Err(Refusal::NotInvite) };
+                if !self.live(share) {
+                    return Err(Refusal::Revoked);
+                }
+                if !sigs.contains(&k) {
+                    return Err(Refusal::NoConsent);
+                }
+                if !self.acts_via(edit.author, via, vault) {
+                    return Err(Refusal::NotActing);
+                }
+                if self.vault(vault).is_none() {
+                    return Err(Refusal::UnknownVault);
+                }
+                if vault == self.shares[at].share.over {
+                    return Err(Refusal::CapToItself);
+                }
+                Ok(Change::Claim { at, vault })
+            }
             Action::Keys { name, boxes, clear, .. } => {
                 self.may_box(edit.author, *name)?;
                 // a box the schedule doesn't seal would hand the key to someone who may not open it
@@ -2378,6 +2585,14 @@ impl State {
                     revoked.push(c);
                 }
                 Touch::Nothing
+            }
+            // the share names the vault now, whose seed its key is sealed to from now on
+            Change::Claim { at, vault } => {
+                let cp = &mut Arc::make_mut(&mut self.shares)[at];
+                cp.share.who = Who::Vault(vault);
+                let (c, v, read) = (cp.id, cp.share.over, cp.share.level.allows(Level::Read));
+                Arc::make_mut(&mut self.held).entry(vault).or_default().push(at);
+                Touch::Grew(if read { vec![KeyFam::Share(v, c)] } else { vec![] })
             }
             Change::Create(en, w, shares) => {
                 let (e, v, audience, i) = (en.id, en.vault, en.audience(), self.entries.len());
@@ -2714,11 +2929,76 @@ pub fn passes(
     !needs_accept(w, touches) || (w.deps.iter().any(&accept) && w.deps.iter().all(|d| accept(d) || main(d)))
 }
 
+/// Judges the writes of one entry one after the other, in the order they were accepted, each on what came before it,
+/// as its readers judge them (`State.lean`'s `counts` and `creates`): a write that doesn't fit, one no share of its
+/// lets through, a merge into the main line through a share that the vault's accepts don't let through (`passes`,
+/// M2), a write on the main line of a draft not yet landed through a share (only its vault lands it,
+/// `history::History::lands`), and every write that builds on one, they don't count.
+struct Counter {
+    vault: VaultId,
+    entry: EntryId,
+    /// The writes they don't count so far.
+    out: Vec<EditId>,
+    accepts: HashSet<EditId>,
+    /// It is no draft, or a counted write on the main line holds its creation; and the counted writes that hold it.
+    landed: bool,
+    holding: HashSet<EditId>,
+    /// Its attributes before the next write, where its readers read its header: its first ones, and the tags of each
+    /// write acting for its vault.
+    attrs: Option<Attrs>,
+}
+
+impl Counter {
+    fn new(st: &State, en: &Entry, r: &Readings) -> Counter {
+        Counter {
+            vault: en.vault,
+            entry: en.id,
+            out: vec![],
+            accepts: HashSet::new(),
+            landed: !st.is_draft(en.id),
+            holding: HashSet::new(),
+            attrs: st.first_attrs(en, r),
+        }
+    }
+
+    /// Judge the next write of the entry, `w`, by the cap groups `groups` holds: whether its readers count it.
+    fn judge(&mut self, st: &State, w: &Write, r: &Readings, groups: &Groups) -> bool {
+        let none = TagDelta::default();
+        let (touches, asks) = (r.touches.get(&w.edit).map(Vec::as_slice), r.tags.get(&w.edit).unwrap_or(&none));
+        let e = self.entry;
+        let main = |d: &EditId| st.write(*d).is_some_and(|x| x.entry == e && x.proposal == Proposal::Main);
+        let at = At { attrs: self.attrs.as_ref(), place: st.place(w.edit), groups };
+        let lets = !r.unfit.contains(&w.edit)
+            && st.lets(w, r.proofs.get(&w.edit), touches, asks, at)
+            && passes(w, touches, |d| self.accepts.contains(d), main)
+            && (w.shares.is_empty() || w.proposal != Proposal::Main || self.landed);
+        let counted = !w.deps.iter().any(|d| self.out.contains(d)) && lets;
+        if !counted {
+            self.out.push(w.edit);
+        } else if w.first || w.deps.iter().any(|d| self.holding.contains(d)) {
+            self.holding.insert(w.edit);
+            self.landed |= w.proposal == Proposal::Main;
+        }
+        if is_accept(w, touches, asks) {
+            self.accepts.insert(w.edit);
+        }
+        // its tags count from now on where it acts for the vault
+        if !w.first
+            && w.actor == self.vault
+            && let (Some(a), Some(d)) = (&mut self.attrs, r.tags.get(&w.edit))
+        {
+            a.tags = d.apply(&a.tags);
+        }
+        counted
+    }
+}
+
 /// What an entry's readers and its vault's stewards read where no relay can: each share's selector, a keep share's too,
 /// opened from its sealed `select`; each entry's header, the schema or lens a schema or lens entry's creation holds,
-/// and each write's tags and proof, from inside the writes' bodies; and what each write touches, and whether it fits
-/// the schemas its entry was written under, read off its update on the version it builds on
-/// (`history::History::reading`).
+/// and each write's tags and proof, from inside the writes' bodies; what each write touches, and whether it fits the
+/// schemas its entry was written under, read off its update on the version it builds on
+/// (`history::History::reading`); and the cap group each write of a cap group entry says, and what that makes of the
+/// vaults' cap groups (`Groups`).
 #[derive(Clone, Debug, Default)]
 pub struct Readings {
     pub selectors: HashMap<ShareId, Selector>,
@@ -2733,6 +3013,58 @@ pub struct Readings {
     pub touches: HashMap<EditId, Vec<rules::Touch>>,
     /// The writes that don't fit.
     pub unfit: HashSet<EditId>,
+    /// By the write: the cap group it says, a write of a cap group entry (`slice::Body::defines`).
+    pub defines: HashMap<EditId, rules::CapGroup>,
+    /// The cap groups in force, as the reader counts the writes that say them: worked out of the rest
+    /// (`State::read_groups`), so set it again whenever they change. Until then every share that names a cap group
+    /// grants nothing.
+    pub groups: Groups,
+}
+
+/// The cap groups as a reader reads them (`State.lean`'s `groupAt`): of each cap group entry, an entry its vault
+/// created itself of type `slice::CAP_GROUP_TYPE`, what each write of the vault's own on its main line that the reader
+/// counts says the group is, in the order they were accepted. The group in force at a place of the replay is what the
+/// last of them before it says (`State::group_at`). So a new version narrows or widens at once every share that names
+/// the group, and every write is judged by the version in force where it comes in the one replay order, which every
+/// reader reaches alike.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Groups {
+    of: HashMap<EntryId, (VaultId, Vec<(EditId, Arc<rules::CapGroup>)>)>,
+}
+
+impl Groups {
+    /// Every cap group entry that some counted write says a group of, with its vault.
+    pub fn entries(&self) -> impl Iterator<Item = (EntryId, VaultId)> + '_ {
+        self.of.iter().map(|(e, (v, _))| (*e, *v))
+    }
+
+    /// No write says a cap group.
+    pub fn is_empty(&self) -> bool {
+        self.of.is_empty()
+    }
+
+    /// Write `w` of cap group entry `e` of vault `v`, which its readers count, says the group is `g`: the group in
+    /// force past its place, until a later one says otherwise. Each in the order they were accepted.
+    pub fn say(&mut self, e: EntryId, v: VaultId, w: EditId, g: &rules::CapGroup) {
+        self.of.entry(e).or_insert_with(|| (v, vec![])).1.push((w, Arc::new(g.clone())));
+    }
+
+    /// The writes that say the groups, in a canonical order: what the groups are, as each write says one for good.
+    pub fn writes(&self) -> Vec<EditId> {
+        let mut out: Vec<EditId> = self.of.values().flat_map(|(_, xs)| xs.iter().map(|(w, _)| *w)).collect();
+        out.sort_unstable();
+        out
+    }
+}
+
+/// Where a write is judged (`State::lets`): the attributes of its entry as they were when it came in, where its readers
+/// read them, and its place in the replay, before which the cap groups in force are those `groups` says. Only a share
+/// that names a cap group asks for them: its group's caps hold where they pick those attributes (`rules::Cap::holds`).
+#[derive(Clone, Copy, Debug)]
+pub struct At<'a> {
+    pub attrs: Option<&'a Attrs>,
+    pub place: usize,
+    pub groups: &'a Groups,
 }
 
 /// What an entry means to its readers (`State::meaning`).
@@ -2762,14 +3094,14 @@ pub struct Meaning {
 }
 
 /// A keep share of mode `mode` picks attributes `a`, as a steward reads its selector `select` (`keepPicks`): a whole
-/// or an opened one picks what its selector matches and every schema and lens entry too (`slice::Sym::of_lane`), so
-/// that every device that syncs part of a vault syncs its lane; a never one picks what its selector matches but schema
-/// and lens entries. A selector the reader doesn't hold matches nothing.
+/// or an opened one picks what its selector matches and every schema, lens and cap group entry too
+/// (`slice::Sym::synced_by_all`), so that every device that syncs part of a vault syncs its lane and its cap groups; a
+/// never one picks what its selector matches but those. A selector the reader doesn't hold matches nothing.
 pub fn keep_picks(mode: KeepMode, select: Option<&Selector>, a: &Attrs) -> bool {
     let matches = select.is_some_and(|s| s.matches(a));
     match mode {
-        KeepMode::Never => matches && !a.ty.of_lane(),
-        KeepMode::Whole | KeepMode::Opened => matches || a.ty.of_lane(),
+        KeepMode::Never => matches && !a.ty.synced_by_all(),
+        KeepMode::Whole | KeepMode::Opened => matches || a.ty.synced_by_all(),
     }
 }
 

@@ -548,8 +548,9 @@ such forks (passkeys, which sign on several devices, aside). Both edits stand, a
 
 ## 5. Shares
 
-A share is `{over, who, level, wide, select, parent, issuer, nonce}` (`policy::Share`, `Share` in `Basic.lean`). Its
-id is the id of the edit that issued it. To a person it is three things: **who**, **level**, **what**.
+A share is `{over, who, level, wide, select, parent, issuer, nonce, group}` (`policy::Share`, `Share` in `Basic.lean`).
+Its id is the id of the edit that issued it. To a person it is three things: **who**, **level**, **what**. `group`,
+when there, names one of the vault's cap groups, whose caps it grants in place of ops of its own (below, Cap groups).
 
 ### Who
 
@@ -558,6 +559,7 @@ id is the id of the edit that issued it. To a person it is three things: **who**
 | A vault | 0 | Never the vault the share is over (CapToItself). A share to a vault reaches all its devices. |
 | Everyone | 1 | Read only (T8, PublicBeyondRead). Its audience's key is published in the clear. |
 | A device | 2 | Only as a keep share, and only of a device of the issuer (T4: KeepNeedsDevice, DeviceOnlyKeeps). |
+| An invite key | 3 | Never at Owner (InviteOwner). Claimed once by a newcomer's vault, which it then goes to (below, Invites). |
 
 A new phone needs no new share: a share to a vault reaches every device that acts for it.
 
@@ -630,6 +632,54 @@ Everyone gets read alone. An audience that an Everyone share reaches is public: 
 anyone who receives its edits opens them. Everyone shares reach only devices with an interest in the vault, or that
 follow it by name (section 12, interest and follow).
 
+### Cap groups
+
+A cap is one op over one slice (`rules::Cap`). A **cap group** is a named, versioned entry of its vault, of type
+`capgroup`: `{name, caps, includes}`, where `includes` names other cap groups of the same vault by their entries
+(`rules::CapGroup`, `CapGroup` in `Rules.lean`). Citizen is `{name: "Citizen", caps: [the game's moves], includes:
+[Traveler]}`. Owner, Editor, Suggester and Viewer are cap groups the engine fixes (`Group::to_cap_group`); every other
+one a vault writes, with `define_group` and `redefine_group` (section 8).
+
+- **A share names a group, never copies it.** A group share is `{over, who, group}` at the level its caps need
+  (`Lab::issue_group`). It carries no ops of its own: whoever judges a write through it reads the version of the
+  group in force where the write comes in the replay (`State::group_at`, `groupAt`), with the groups it includes.
+- **Narrowing is a new version.** A new version of the group narrows or widens every share that names it from there
+  on, at once, and the writes made before stand. Revoking ends one share and no other.
+- **Only the vault defines its groups.** A write of a cap group entry counts only as its vault's own: a share that
+  reaches the entry, as every share over the vault selects its cap groups, sets nothing of it.
+- **Who reads a group's name.** Every share over a vault selects its cap groups, so whoever holds any share of the
+  vault reads them (`Readings`). A server knows the name of a group, as the gate needs (below), through any share over
+  that vault it opens: a Read share of type `capgroup`, or a Public one.
+
+### Invites
+
+A share may go to an **invite key** (`Who::Invite`): a key made again from the 32-byte secret its link holds
+(`Lab::invite_key`, a software passkey). The issuer makes the share as any other (`share_group` with `who:
+"invite"` answers the secret, which no device keeps), and the link carries the share's id and the secret. A newcomer's
+device signs one edit with that key and its own, `Action::Claim {share, vault, via}`, that makes the newcomer's vault
+the share's grantee (`Lab::claim_invite`): with no owner of the vault it is over signing, once (G1, `claim_once`). A
+claimed invite goes to that vault from then on; a revoked one can't be claimed. A claim lives in the share's own log.
+
+### Who the server takes
+
+Anyone can make a key and sign a genesis: key generation can't be stopped. What a server takes onto what it holds can
+(`gate`, `Gate.lean`). A gated server (`AVENDB_GATE=on`, `Lab::gate`) serving vault `home`, Maia City for avenMAIA's
+server, takes a new vault only where it welcomes it once it holds the batch the vault came in:
+
+- `home` itself;
+- a human vault that holds a share of `home`, which is the invite it claimed in that batch, or that owns `home`;
+- a coop or an aven an admin owns: `home`, a vault that owns `home`, or a holder of `home`'s cap group named **Admin**
+  (`gate::ADMIN`, `is_admin`), which only admins get;
+- a device vault, which its owner governs.
+
+From a batch it drops the geneses of the new vaults it doesn't welcome, again until none is left to drop, and takes the
+rest; what rested on a dropped genesis falls in replay (G2, `takes_welcome`). A newcomer's device can't reach the
+server with a claim through sync, as the claim lies in the share's log, which nothing the server reaches yet names. So
+sign-up is two sessions of its own (`avendb-net`): `INVITE`, where the server hands whoever names an unclaimed invite
+its card (`Lab::invite_card`), and `SIGN_UP`, where the device hands the server its vault's logs and its claims at once
+(`Lab::sign_up_card`), which the server refuses unless it takes every new human vault in them (`Node::claim_invite`).
+The server must hold Backup over `home` to hold its invites. A server nobody has claimed serves no vault, and takes any.
+
 ### Servers: Relay or Backup
 
 A vault gives avenMAIA, the server's device vault, a wide Backup share at founding, so the server keeps the
@@ -687,7 +737,7 @@ whose key only the shares still live get (section 6). What the revoked read befo
 
 A refused edit is never applied, and every peer refuses the same edits for the same reason (`policy::Refusal`). The
 share refusals are UnknownCap, NoCap, BadCap, CapToItself, PublicBeyondRead, WideOwner, BadParent, Revoked,
-KeepNeedsDevice, DeviceOnlyKeeps and NotDevice. Governance has BadOwners, AlreadyMember, NotMember, NoConsent,
+KeepNeedsDevice, DeviceOnlyKeeps, NotDevice, InviteOwner and NotInvite. Governance has BadOwners, AlreadyMember, NotMember, NoConsent,
 BelowThreshold, BadThreshold, WrongOwnerKind, LastOwner, Cycle (T3), NotHuman, NoDevices and NotRoot. Marks have
 WrongVault, BadMark, BadAudience, SameAudience, BadWants and SameWants. Writes have NotActing, NotAllowed, NotAView,
 UnknownEntry, UnknownDep and NotOnProposal. The names stay those of the code (`UnknownCap`, `NoCap`, `BadCap`), which
@@ -967,6 +1017,7 @@ without padding). `share`, `revoke`, `settings` and `found` may answer `approve`
 | `history` | `entry`, `limit` | An entry's lines and every write of it, each with the changes it made and who stands behind it (`chain`) |
 | `schemas` | `vault` | The schemas and lenses the vault's entries are read through |
 | `groups` | none | The built-in groups of ops, each with its level |
+| `cap_groups` | `vault` | The vault's cap groups the device reads, each `{entry, name, caps, includes}` as its version in force says |
 | `kinds` | none | The kind table (section 3): each kind's name, `ownedBy` (`"signers"` or the kinds of vault that may own it), `most` owners (`null` for any), whether it holds `devices`, and how many of it one owner may own (`each`, `null` for any) |
 | `limits` | none | How deep the device's queries read: `{depth, default, ceiling}` (below) |
 | `world` | none | The device's world (below), or `null` while it belongs to no vault |
@@ -1042,14 +1093,17 @@ schema or a lens is created as an entry of its type (section 9).
 | `card {name}`, `profile {vault, name}` | The device's card in its person's vault; a vault's profile. `{"wrote"}` | Never |
 | `follow {vault, on}` | The vaults the device follows (section 12), kept in its shelf's meta. `{"follow"}` | Never |
 | `set_limits {depth}` | The most rows and links down the device's queries read, 1 to 256, kept in its shelf's meta. Its `limits` | Never |
+| `define_group {vault, group}` | A new cap group of `vault`, `group` being `{name, caps, includes}`, each cap an op with its `where`. `{"entry"}` | Never |
+| `redefine_group {entry, group}` | A new version of a cap group, in force from there on for every share that names it. `{"edit"}` | Never |
+| `share_group {over, group, who, what, as}` | A share of cap group entry `group`, at the level its caps need, to `{"vault": id}`, `"everyone"` or `"invite"`. `{"share"}`, and for an invite `"secret"`, the 64 hex digits its link holds | At Owner |
 
 **Who may.** `share` and `revoke` through a share need the `share` op in the chain the acting vault holds. `put_file`
 and a schema's creation are creations, under the `create` and `set` ops, and a create's file comes with its creation.
 `put_file` into an entry is a `set` of its whole record on its line, so a Suggester's empty write on main, which every
 reader counts, never gives an entry a file (`Lab::line_files`), and a Suggester's version with its file on a proposal
 is the entry's once its vault merges it into main. `read_file` needs read reach (T27). `mark`,
-`settings`, `found`, `keep`, `copy`, `back_up`, `card` and `profile` are only for devices acting for the vault itself,
-never through a share. `follow` and `set_limits` need nothing: any device follows any vault, and sets its own
+`settings`, `found`, `keep`, `copy`, `back_up`, `card`, `profile`, `define_group` and `redefine_group` are only for
+devices acting for the vault itself, never through a share. `follow` and `set_limits` need nothing: any device follows any vault, and sets its own
 limits. An agent device runs neither (section 3).
 
 ### Paths, queries and two laws
@@ -1921,7 +1975,8 @@ The full table, with each theorem's Rust guards, is `spec/README.md`.
 | `Step.lean` | The seven kinds and the rules that take or refuse each; the replay order; strong removal (`view`) |
 | `Sync.lean` | What a peer sends a device, interest and follow, the files it may fetch, the link card |
 | `Logs.lean` | Logs, frontiers, asks, forks; holdings, announcements, connections, signed statements, Synced to and the blob gate |
-| `Rules.lean`, `Ops.lean`, `Schemas.lean` | Op groups and touches; records inside records, diffs and queries at any depth; schema fit per row, the ceiling |
+| `Rules.lean`, `Ops.lean`, `Schemas.lean` | Op groups, cap groups and touches; records inside records, diffs and queries at any depth; schema fit per row, the ceiling |
+| `Gate.lean` | Who the server of a vault takes onto what it holds: a new person's vault only with the invite it claims, a coop or an aven only an admin's |
 | `Links.lean` | Links, a record read so many rows down (`Doc.cut`), and following links a level at a time (`follow`) |
 | `Lens.lean`, `Doc.lean`, `Proposals.lean` | Lenses (T9); merge of histories and the three-way merge of records (T10a to T10e); lines of history (T10f to T10h) |
 | `Props.lean`, `Theorems.lean` | The predicates the theorems use; every other theorem's statement, the proofs in the `*Lemmas.lean` files and `Schemas.lean` |
@@ -1978,6 +2033,9 @@ Each guarantee and the theorems that state it, in `Theorems.lean` unless the row
 | L1 | A hop the reader opens nothing of shows nothing, and why | `follow_refused` in `Links.lean` |
 | L2 | Every record a query shows through links is one its reader opened, and every empty hop says why | `follow_opened` in `Links.lean` |
 | L3 | A query follows links no deeper than its depth, so a cycle of links ends there | `follow_height` in `Links.lean` |
+| CG1 | A share of a cap group grants no more than its level, whatever version is in force; a new version narrows or widens it at once | `CG1_group_bounded` |
+| G1 | An invite is claimed once, with no owner signing, and makes no owner | `G1_claim_once` |
+| G2 | The server takes only new vaults it welcomes: a person's with the invite it claimed, a coop's or an aven's an admin owns | `G2_takes_welcome`, `G2_human`, `G2_founded` |
 
 T29 (marks mean what the keep rules say) is merged into T23, whose wants part it is.
 

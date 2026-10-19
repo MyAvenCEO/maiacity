@@ -116,6 +116,11 @@ A device starts in one of three ways; everything after is one op through `PageDe
   avenCEO server, a coop avenCEO GmbH owns; the server becomes avenCEO server's device
   ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3). Each seed vault then follows the person's server setting, backup or
   relay, as every vault founded under them does.
+- **Claim an invite** (`PageDevice::claim_invite`, `Node::claim_invite`): on a gated server (`AVENDB_GATE=on`) a
+  new person's vault comes in only with an invite of Maia City's. Their invite link names the share and holds the
+  secret of its one-time key: once their browser founded their vault, it asks the server for the invite, claims it
+  with that key, and hands the server its vault and the claim at once, which the server takes
+  ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §5, Invites and Who the server takes).
 - **Link** (`Device::link`, `Node::link_by_pass`): a browser of a person who has a device already links through the
   code that device shows, in one ceremony: the unlock, which is the pass and signs the join too. Of the keys the
   unlock's assertion recovers to, its passkey's is the one whose vault the peer hands over.
@@ -240,6 +245,7 @@ plain HTTP on port 3350 and the feed's on port 3351. Its environment:
 | `AVENDB_RELAY_URL` | the relay's own socket | Where devices reach the relay, `https://avendb.maia.city` once deployed |
 | `AVENDB_PUBLIC_ADDR` | its interfaces' addresses | Where devices on UDP reach it from the internet, the server's IP and port 7401, as its offer says |
 | `AVENDB_SIGNUP` | `open` | `open`: its relay lets in any passkey's pass for ten minutes, so a new person's first browser founds their vault; `closed`: only passkeys of vaults it knows |
+| `AVENDB_GATE` | `off` | `on`: it takes a new person's vault only with an invite of Maia City's it claims, and a new coop or aven only where an admin owns it (Maia City, its owner, or a holder of its cap group named Admin); `off`: any. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §5, Who the server takes |
 | `AVENDB_BUCKET` and the rest | none | Its bucket (see [Deploying the server](#deploying-the-server), step 6) |
 | `AVENDB_CACHE` | `8` | With a bucket, the gigabytes of the parts it read lately that its folder caches |
 | `RUST_LOG` | `info` | How much it logs |
