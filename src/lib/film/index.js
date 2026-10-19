@@ -129,6 +129,7 @@ export function startFilm({ base = '' } = {}) {
 	let staging = '';
 	/** the shot drawn before its world was all there (past its wait), while the rest streams in, else '' */
 	let streaming = '';
+
 	/** what has been staged and settled (loads done, shaders compiled) before: staged there again while the world
 	 * still holds it, nothing new is built, so nothing is compiled again (compiling the whole scene at every cut hitched) */
 	const settledFor = new Set();
@@ -397,7 +398,8 @@ export function startFilm({ base = '' } = {}) {
 				const v = await mounted();
 				// everything these shots need, kept built whichever shot asks last
 				v.film.keep(all.map((s) => ({ ...s.world, views: viewsOf(v, s) })));
-				for (const s of all) await stage(s, live ? STAGE_LIMIT : Infinity);
+				// a world that streams by view, holding a shot already, needs no staging for it
+				for (const s of all) if (!(v.film.streams && v.film.holds({ ...s.world, views: viewsOf(v, s) }))) await stage(s, live ? STAGE_LIMIT : Infinity);
 				if (meter) for (const s of all) if (!live || knownExposure(s) === undefined) await exposureOf(s);
 			});
 		},
@@ -410,6 +412,17 @@ export function startFilm({ base = '' } = {}) {
 		async keep(specs) {
 			const v = await mounted();
 			v.film.keep(specs.map(normal).filter(shows).map((s) => ({ ...s.world, views: viewsOf(v, s) })));
+		},
+		/**
+		 * Which of these shots the world holds now, built and ready to cut to without staging (a world that streams by
+		 * view; any other world: none). @param {any[]} specs @returns {Promise<boolean[]>}
+		 */
+		async held(specs) {
+			const v = await mounted();
+			return specs.map((raw) => {
+				const s = normal(raw);
+				return !!v.film.streams && shows(s) && v.film.holds({ ...s.world, views: viewsOf(v, s) });
+			});
 		},
 		/** the live viewer's metering ahead: a shot it knows the exposure of is not metered again @param {any} spec */
 		meter(spec) {
@@ -466,8 +479,15 @@ export function startFilm({ base = '' } = {}) {
 			const ev = known ?? (live && !meter ? lastEv : await exposureOf(spec));
 			if (live) lastEv = typeof ev === 'number' ? ev : ev.reduce((a, k) => a + k[1], 0) / ev.length;
 			const t1 = performance.now();
+			const held = streaming === key || v.film.holds({ ...spec.world, views: viewsOf(v, spec) });
+			// a world that streams by view and holds the shot already (built while the shots before it played): the cut is
+			// only a move, the frame drawn at once — no staging, no frame held
+			if (staged !== key && held && v.film.streams && live) {
+				v.film.move({ ...spec.world, name: spec.meta?.name, views: viewsOf(v, spec) });
+				staged = key;
+			}
 			// restaged in line with the prepares, never beside one (two at once pull the walker back and forth)
-			if (staged !== key || (streaming !== key && !v.film.holds({ ...spec.world, views: viewsOf(v, spec) }))) await one(() => stage(spec, quality === 'final' ? Infinity : wait));
+			if (staged !== key || !held) await one(() => stage(spec, quality === 'final' ? Infinity : wait));
 			const t2 = performance.now();
 			clock.enter();
 			w.__filmDraw = true;
