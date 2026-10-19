@@ -18,6 +18,7 @@ import { invite } from '$lib/auth/client';
 import { ADMIN, heldGroups } from '$lib/avendb/capgroups.js';
 import { session } from '$lib/avendb/session.svelte.js';
 import { seedCity, serverCity } from '$lib/avendb/vaults.js';
+import { native } from '$lib/native';
 
 export const access = $state({
 	/** the Maia City vault's id, '' while unknown */
@@ -67,8 +68,8 @@ export const invites = () => access.owner && !!access.city;
  * An invite for one new human, of cap group `name` (Traveler: nobody is invited a citizen, Samuel 2026-10-19): a
  * share of the group to a one-time key, issued as Maia City, which their vault claims at sign-up with no one signing
  * (Samuel 2026-10-19: "The invite automatically should sign that share"), and the API's sign-up code, as maiaCITY's
- * API still signs people up. The link that brings both: the code in its query, the share and its key after its `#`,
- * which never leaves the browser.
+ * API still signs people up. The link that brings both, always on the site, even made in the Mac app: the code in its
+ * query, the share and its key after its `#`, which never leaves the browser.
  * @param {string} name @returns {Promise<string>}
  */
 export async function makeInvite(name) {
@@ -79,5 +80,7 @@ export async function makeInvite(name) {
 	const made = await session.run(`Inviting a ${name.toLowerCase()}`, { op: 'share_group', over: access.city, group: group.entry, who: 'invite', as: access.city });
 	if (!made?.share || !made?.secret) throw new Error(session.error || 'The invite wasn’t made.');
 	const key = new URLSearchParams({ share: made.share, key: made.secret });
-	return `${location.origin}${base}/join/?${new URLSearchParams({ invite: code })}#${key}`;
+	// the site's, as the one invited opens it in their own browser: the Mac app's own address is the app's alone
+	const site = native() ? 'https://maia.city' : location.origin;
+	return `${site}${base}/join/?${new URLSearchParams({ invite: code })}#${key}`;
 }
