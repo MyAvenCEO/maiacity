@@ -1,13 +1,13 @@
 /*
  * Tasks: one rule applied to pinned inputs (plan J0b-J0d, §1.3-1.5). Everything here is pure: it reads the device's
- * world and answers ops, so the worker, a button, an agent and the tests all share it.
+ * world and answers ops, so the Mac's runner, a button, an agent and the tests all share it.
  *
  * The key is the task's identity: BLAKE3 of the rule and its version, every input pinned at what was read, and the
  * params that change the result. Two devices that want the same work make the same key, a key already done is never
  * made again, and doing it twice gives the same answer, so a claim lost to a sync costs only time.
  *
  * The reconciler is the guarantee: for each rule with a `when`, what it wants, less what is done or open, becomes a
- * queued task. A task is claimed with a lease the worker renews; three failures hold it for a person.
+ * queued task. A task is claimed with a lease the device running it renews; three failures hold it for a person.
  *
  * Until artifact v2 carries the made stamp on its `files` rows (content-v2 §2.11), a done task stays as the record of
  * what it made: its key, its outputs and its value. Then done tasks go (plan default 2).
@@ -202,11 +202,11 @@ export function reconcile(rules, world, vault, as, now) {
 	return ops;
 }
 
-/** Whether worker `worker` may claim task `t` now. @param {Task} t @param {number} now */
+/** Whether a device may claim task `t` now. @param {Task} t @param {number} now */
 export const claimable = (t, now) =>
 	t.status === 'queued' || (t.status === 'failed' && t.attempts < TRIES) || (t.status === 'claimed' && t.lease_until < now);
 
-/** Whether `worker` holds task `t` now. @param {Task} t @param {string} worker @param {number} now */
+/** Whether device `worker` holds task `t` now. @param {Task} t @param {string} worker @param {number} now */
 export const holds = (t, worker, now) => t.status === 'claimed' && t.worker === worker && t.lease_until >= now;
 
 /** One record write: a few fields of task `t`, acting for `as`. @param {Task} t @param {Record<string, any>} fields @param {string} as */
@@ -216,7 +216,7 @@ const writing = (t, fields, as) => ({
 	as
 });
 
-/** Claiming task `t` for `worker`, or renewing its lease. @param {Task} t @param {string} worker @param {number} now @param {string} as */
+/** Claiming task `t` for device `worker` (its `worker` field: the device running it), or renewing its lease. @param {Task} t @param {string} worker @param {number} now @param {string} as */
 export const claiming = (t, worker, now, as) => writing(t, { status: 'claimed', worker, lease_until: now + LEASE }, as);
 
 /**

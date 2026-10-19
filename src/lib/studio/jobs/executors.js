@@ -1,5 +1,5 @@
 /*
- * How the page does a rule (./worker.js): the executors that need nothing but a file's bytes (`EXECUTORS`), and on the
+ * How the page does a rule (./runner.js): the executors that need nothing but a file's bytes (`EXECUTORS`), and on the
  * Mac those that run in the app's Rust lanes (`NATIVE`: vault/app/src/aven.rs `studio_job`), which read avenDB's files
  * from its device inside the app (plan J0a).
  */
@@ -10,9 +10,9 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 /** How many bytes a read asks for at a time. */
 const STEP = 1 << 20;
 
-/** @type {Record<string, import('./worker.js').Executor>} */
+/** @type {Record<string, import('./runner.js').Executor>} */
 export const EXECUTORS = {
-	/** The test rule: each file the entry brings, read whole through the worker, named by its BLAKE3. */
+	/** The test rule: each file the entry brings, read whole through the Mac's device, named by its BLAKE3. */
 	async checksum(task, ctx) {
 		const e = ctx.entry(task.inputs[0]?.entry ?? '');
 		if (!e) throw new Error('its file is not on this device');
@@ -39,11 +39,10 @@ export const EXECUTORS = {
 
 /**
  * A rule the Mac app's Rust does: the task, the entries its inputs name and the files the rules behind its made inputs
- * made, as this device's world shows them, by entry, handed to `studio_job` with the vault the worker acts as and the
- * vault's studio worker, which puts what it makes where this Mac hosts one; it holds
- * the rule's lane while it runs and answers `{ outputs, result }`. A cut's rules (`render`, `frame`) hand it the
+ * made, as this device's world shows them, by entry, handed to `studio_job` with the vault the Mac acts as in the
+ * task's vault, where it puts what it makes; it holds the rule's lane while it runs and answers `{ outputs, result }`. A cut's rules (`render`, `frame`) hand it the
  * studio's library items of avenDB's footage too, which the cut's clips name (../aven.js `libraryOf`).
- * @param {string} rule @returns {import('./worker.js').Executor}
+ * @param {string} rule @returns {import('./runner.js').Executor}
  */
 const native = (rule) => async (task, ctx) => {
 	// a file brought from the legacy studio (plan JI) brings its words and its analysis: taken as they are, never made again
@@ -86,7 +85,7 @@ const native = (rule) => async (task, ctx) => {
 	if (!Object.keys(entries).length) throw new Error('its entry is not on this device');
 	const { command } = await import('$lib/native');
 	const library = rule === 'render' || rule === 'frame' ? (await import('../aven.js')).libraryOf(ctx.world) : null;
-	return command('studio_job', { task, entries, library, actor: ctx.as, worker: ctx.worker ?? null });
+	return command('studio_job', { task, entries, library, actor: ctx.as });
 };
 
 /**

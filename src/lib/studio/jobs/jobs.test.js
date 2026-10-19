@@ -162,15 +162,15 @@ function fakeDevice(entries, bytes) {
 	};
 }
 
-test('the worker adds the schemas, queues the checksum, claims it, reads the bytes and names their BLAKE3', async () => {
-	const { Worker } = await import('./worker.js');
+test('the runner adds the schemas, queues the checksum, claims it, reads the bytes and names their BLAKE3', async () => {
+	const { Runner } = await import('./runner.js');
 	const { EXECUTORS } = await import('./executors.js');
 	const { blake3 } = await import('@noble/hashes/blake3.js');
 	const { bytesToHex } = await import('@noble/hashes/utils.js');
 	const data = new Uint8Array(3 << 20).map((_, i) => i % 251);
 	const f = { ...file(7, 'text/plain', ['jobs:test']), files: [{ root: 'r7', size: data.length + 64, len: data.length }] };
 	const d = fakeDevice([f], { r7: data });
-	const w = new Worker({ send: (op) => d.send(op), executors: EXECUTORS, now: () => 1000 });
+	const w = new Runner({ send: (op) => d.send(op), executors: EXECUTORS, now: () => 1000 });
 	const started = await w.tick();
 	expect(started).toHaveLength(1);
 	expect(d.entries.filter((e) => e.type === 'schema').map((e) => e.title).sort()).toEqual(['Rule, v1', 'Task, v1']);
@@ -185,11 +185,11 @@ test('the worker adds the schemas, queues the checksum, claims it, reads the byt
 	expect(d.entries.filter((e) => e.type === 'task')).toHaveLength(1);
 });
 
-test('a worker whose executor fails marks the task failed, and it is tried again', async () => {
-	const { Worker } = await import('./worker.js');
+test('a runner whose executor fails marks the task failed, and it is tried again', async () => {
+	const { Runner } = await import('./runner.js');
 	const f = file(8, 'text/plain', ['jobs:test']);
 	const d = fakeDevice([f], {});
-	const w = new Worker({ send: (op) => d.send(op), executors: { checksum: async () => { throw new Error('boom'); } }, now: () => 1000 });
+	const w = new Runner({ send: (op) => d.send(op), executors: { checksum: async () => { throw new Error('boom'); } }, now: () => 1000 });
 	await w.tick();
 	await new Promise((r) => setTimeout(r, 20));
 	const t = d.entries.find((e) => e.type === 'task').record;
@@ -222,26 +222,19 @@ test('the youtube rule wants each YouTube artifact once, its url part of the key
 	expect(ops[0].value.lane).toBe('net');
 });
 
-test('in a vault whose studio worker this Mac hosts, the worker queues, claims and finishes as it, reading through the Mac', async () => {
-	const { Worker, WORKER_SHARES } = await import('./worker.js');
+test('the runner queues, claims and finishes straight in the vault, as its acting vault, through the Mac', async () => {
+	const { Runner } = await import('./runner.js');
 	const { EXECUTORS } = await import('./executors.js');
 	const data = new Uint8Array(1000).map((_, i) => i % 251);
 	const f = { ...file(9, 'text/plain', ['jobs:test']), files: [{ root: 'r9', size: data.length + 64, len: data.length }] };
 	const d = fakeDevice([f], { r9: data });
-	/** @type {{ op: any, node: string | undefined }[]} */
-	const routed = [];
-	const send = (/** @type {any} */ op, /** @type {string | undefined} */ node) => (routed.push({ op, node }), d.send(op));
-	const w = new Worker({ send, hosted: async () => [{ device: 'wk1', vault: V, hosted: true }], executors: EXECUTORS, now: () => 1000 });
-	await w.tick();
-	await new Promise((r) => setTimeout(r, 50));
+	/** @type {any[]} */
+	const sent = [];
+	const r = new Runner({ send: (/** @type {any} */ op) => (sent.push(op), d.send(op)), executors: EXECUTORS, now: () => 1000 });
+	await r.tick();
+	await new Promise((ok) => setTimeout(ok, 50));
 	const t = d.entries.find((e) => e.type === 'task').record;
-	expect([t.status, t.worker]).toEqual(['done', 'wk1']);
-	const by = (/** @type {(o: any) => boolean} */ pick) => routed.filter((r) => pick(r.op));
-	// the schemas are the vault's own; tasks go by the worker, with no `as`; reads go through the Mac
-	expect(by((o) => o.type === 'schema').every((r) => !r.node)).toBe(true);
-	expect(by((o) => o.type === 'task' || o.op === 'batch').every((r) => r.node === 'wk1' && !('as' in r.op))).toBe(true);
-	expect(by((o) => o.op === 'read_file').every((r) => !r.node)).toBe(true);
-	// its shares name only tasks and files, and nothing to share on
-	expect(WORKER_SHARES.flatMap((s) => s.where.type)).toEqual(['task', 'file']);
-	expect(WORKER_SHARES.flatMap((s) => s.ops.map((o) => o.op))).not.toContain('share');
+	expect(t.status).toBe('done');
+	// the task is written as the vault's acting vault, by this Mac's own device: there is no worker of its own
+	expect(sent.filter((o) => o.op === 'batch').every((o) => o.as === V)).toBe(true);
 });
