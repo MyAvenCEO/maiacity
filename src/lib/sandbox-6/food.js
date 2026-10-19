@@ -27,6 +27,10 @@
  *
  * Plain numbers and pure functions: the simulation (./sim.js) calls them, the page shows them.
  */
+import { configAt } from '../../../game/code/index.js';
+
+/** what people eat and drink, the rain and what food and water cost: in the valley's config (./rules.js RULES) */
+const F = /** @type {any} */ (configAt('configs/sandbox-5/rules')).food;
 
 /** the master clock's calendar, in days: a day, a week, a month of thirty days, a year of twelve months */
 export const DAY = 1, WEEK = 7 * DAY, MONTH_DAYS = 30, YEAR_MONTHS = 12, MONTH = MONTH_DAYS * DAY, YEAR = YEAR_MONTHS * MONTH;
@@ -43,18 +47,18 @@ export const SPEEDS = [
 ];
 
 /** what a person eats a week, kg (the European land-use table) */
-export const DIET = { vegetables: 4.62, fruits: 1.4, legumes: 0.7, 'seeds, nuts and oats': 2.15, eggs: 0.42, chicken: 0.2, 'fish and seafood': 0.38 };
+export const DIET = /** @type {Record<string, number>} */ (F.diet);
 /** all of it together: about 10 kg a person a week */
 export const FOOD_KG = Object.values(DIET).reduce((a, b) => a + b, 0);
 
 /** what a person uses a day, litres */
-export const WATER_USE = { drinking: 3, home: 97, crops: 50 };
+export const WATER_USE = /** @type {{ drinking: number, home: number, crops: number }} */ (F.waterUse);
 /** all of it together: 150 L a person a day */
 export const WATER_L = Object.values(WATER_USE).reduce((a, b) => a + b, 0);
 /** what a person needs a day of fresh water, litres: all of it but the crops', which take the home's greywater again */
 export const FRESH_L = WATER_L - WATER_USE.crops;
 /** rain a year, mm (round Munich), and the share of it a dome's roof catches into its tanks */
-export const RAIN_MM = 800, CATCH = 0.9;
+export const RAIN_MM = /** @type {number} */ (F.rainMm), CATCH = /** @type {number} */ (F.catch);
 /** the roof each bed has, m²: a great dome of 150 m over its 248 beds */
 export const ROOF_BED = (Math.PI * 75 ** 2) / 248;
 /** what a bed's roof catches a day, litres, over a year: about 140 L */
@@ -62,17 +66,17 @@ export const RAIN_L = (ROOF_BED * RAIN_MM * CATCH) / YEAR;
 /** the months' names: the valley's year starts in January */
 export const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 /** how much of a year's average rain falls in each month, January first (Munich: dry winters, wet summers) */
-export const RAIN_MONTH = [0.6, 0.575, 0.75, 0.85, 1.35, 1.5625, 1.5625, 1.475, 1.025, 0.8, 0.7625, 0.6875];
+export const RAIN_MONTH = /** @type {number[]} */ (F.rainMonth);
 
 /** what a kg of food costs a village, in euros (HEARTs): from another village of yours, or from the world market */
-export const PRICE = { village: 5, world: 10 };
+export const PRICE = /** @type {{ village: number, world: number }} */ (F.price);
 /** what a litre of water costs from the world market, in euros: 2 € a m³ */
-export const WATER_PRICE = 0.002;
+export const WATER_PRICE = /** @type {number} */ (F.waterPrice);
 /** weeks of food a village keeps in store before it sells to your others, and the most a store holds before the rest
  * spoils */
-export const KEEP = 2, MOST = 13;
+export const KEEP = /** @type {number} */ (F.keep), MOST = /** @type {number} */ (F.most);
 /** weeks of fresh water a village's tanks hold for each bed */
-export const TANK = 4;
+export const TANK = /** @type {number} */ (F.tank);
 /** the cistern a new village starts with, full, litres: four weeks for eight people, and the least its tanks hold */
 export const CISTERN = FRESH_L * 7 * TANK * 8;
 

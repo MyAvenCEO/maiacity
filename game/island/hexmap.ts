@@ -18,7 +18,7 @@
  * positions, scales and hue jitter all derive from it.
  */
 
-import biomesConfig from './biomes.json'
+import { configAt } from '../code/index.js'
 import { hash2, makeRng } from './rng'
 
 export const BIOME_IDS = [
@@ -35,9 +35,12 @@ export type BiomeId = (typeof BIOME_IDS)[number]
 
 export const WATER_BIOME: BiomeId = 'LAKE'
 
-/** biome -> natural resources, straight from game/config/biomes.json. */
+/** where the island's biomes are kept: a config entry of the Maia City COOP (A3), the repo's code/configs/ its seed */
+export const BIOMES_CONFIG = 'configs/sandbox-1/biomes'
+
+/** biome -> natural resources, from the island's config as the page read it (it awaits `loadCode` before the island) */
 export const BIOME_RESOURCES: Record<BiomeId, string[]> = Object.fromEntries(
-	biomesConfig.biomes.map((b) => [b.id, Object.keys(b.resources)])
+	(configAt(BIOMES_CONFIG).biomes as { id: string; resources: Record<string, number> }[]).map((b) => [b.id, Object.keys(b.resources)])
 ) as Record<BiomeId, string[]>
 
 /** All resources a tile's biomes can (potentially) output. */

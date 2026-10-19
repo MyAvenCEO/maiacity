@@ -28,7 +28,11 @@
  * request, paid from its own purse — or, when its purse is empty, a plea for help.
  */
 import { EUR_GOLD, EUR_T, LOAD_T, WARES } from './rules.js';
+import { configAt } from '../../../game/code/index.js';
 import { DAY } from './food.js';
+
+/** the market's prices, loan and HEARTS: in the valley's config (./rules.js RULES) */
+const M = /** @type {any} */ (configAt('configs/sandbox-5/rules')).market;
 
 /** what a neighbour city wants put by a head of a ware, loads a year (none play now) */
 const WANTS = { plank: 0.025, steel: 0.003 };
@@ -37,7 +41,7 @@ export const CART = 8;
 /** years of its wants a neighbour likes to have put by: a quarter */
 const PUT_BY = 0.25;
 /** a ware's usual price, in coins */
-export const BASE = { plank: 4, steel: 4, clay: 4, glass: 4, solar: 4 };
+export const BASE = /** @type {{ plank: number, steel: number, clay: number, glass: number, solar: number }} */ (M.base);
 /** euros in a gold: a HEART is a euro */
 export const EUR_PER_GOLD = EUR_GOLD;
 /**
@@ -56,14 +60,14 @@ export const WORLD = /** @type {Record<string, { eur: number, unit: string }>} *
 });
 /** electricity on the world grid, € a kWh: it buys what your villages make beyond what they use, and sells what they
  * lack, 80 € a MWh */
-export const GRID_EUR_KWH = 0.08;
+export const GRID_EUR_KWH = /** @type {number} */ (M.gridEurKwh);
 /**
  * What a treasury lacks, it borrows: an annuity loan, paid back in equal monthly payments over fifteen years at 1% a
  * month (Samuel, 2026-10-07), about 1.2% of what was borrowed each month, up to 125 gold (125,000 €) for each of its
  * villagers. A treasury holds less than nothing only when its loan is full: what it would, it borrows, and each
  * borrowing adds its own payment.
  */
-export const LOAN = { rate: 0.01, months: 180, perHead: 125000 };
+export const LOAN = /** @type {{ rate: number, months: number, perHead: number }} */ (M.loan);
 /** the share of a loan paid each month, interest and repayment together */
 export const LOAN_PAY = LOAN.rate / (1 - Math.pow(1 + LOAN.rate, -LOAN.months));
 /** months left on a loan of so much at so much a month @param {number} left @param {number} pay */
@@ -85,13 +89,13 @@ export const NEIGHBOURS = [];
  */
 export const HEARTS = {
 	/** what one settler issues, an in-game hour: 24 a day, 720 a month (game/policy.hearts.json) */
-	perHour: 1,
+	perHour: /** @type {number} */ (M.hearts.perHour),
 	/** HEARTs in one gold */
-	perGold: 1000,
+	perGold: /** @type {number} */ (M.hearts.perGold),
 	/** an in-game hour, in days of the valley's calendar (./food.js) */
 	hour: DAY / 24,
 	/** what a treasury loses in an in-game year */
-	demurrage: 0.07,
+	demurrage: /** @type {number} */ (M.hearts.demurrage),
 	/** hours in an in-game year: twelve months of thirty days */
 	yearHours: 12 * 30 * 24
 };

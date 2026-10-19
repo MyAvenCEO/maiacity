@@ -1,0 +1,380 @@
+{
+	"design": "insides",
+	"domeFactory": true,
+	"prices": {
+		"glulam": {
+			"label": "Larch/Douglas glulam blanks for the struts (the village cuts them)",
+			"unit": "m³",
+			"eur": 950,
+			"range": "800–1,200",
+			"src": "glulam",
+			"est": true,
+			"was": 1600
+		},
+		"cassette": {
+			"label": "Spruce structural timber (KVH) for the north cassettes",
+			"unit": "m³",
+			"eur": 500,
+			"range": "420–650",
+			"src": "glulam",
+			"est": true
+		},
+		"clt": {
+			"label": "CLT and glulam for floors and galleries",
+			"unit": "m³",
+			"eur": 550,
+			"range": "500–700",
+			"src": "glulam",
+			"est": true,
+			"was": 900
+		},
+		"hubs": {
+			"label": "Cast-steel hubs, ring and connectors (galvanised, machined, not erected)",
+			"unit": "t",
+			"eur": 6000,
+			"range": "4,500–9,000",
+			"src": "steel",
+			"est": true,
+			"was": 9000
+		},
+		"steel": {
+			"label": "Structural steel, fabricated, not erected",
+			"unit": "t",
+			"eur": 2300,
+			"range": "1,800–3,000",
+			"src": "steel",
+			"est": true,
+			"was": 3000
+		},
+		"glass": {
+			"label": "Laminated low-iron double glazing, low-E, with its gaskets and caps",
+			"unit": "m²",
+			"eur": 190,
+			"range": "140–250",
+			"src": "glass",
+			"est": true,
+			"was": 200
+		},
+		"pv": {
+			"label": "Solar cells laid in the glass (on top of the glazing’s price)",
+			"unit": "m²",
+			"eur": 100,
+			"range": "50–150",
+			"src": "pv",
+			"est": true,
+			"was": 150
+		},
+		"hemp": {
+			"label": "Hemp-fibre insulation",
+			"unit": "m³",
+			"eur": 115,
+			"range": "90–140",
+			"src": "hemp",
+			"est": true,
+			"was": 140
+		},
+		"lime": {
+			"label": "Lime-pozzolan concrete (footings)",
+			"unit": "m³",
+			"eur": 180,
+			"range": "140–250",
+			"src": "lime",
+			"est": true,
+			"was": 220
+		},
+		"concrete": {
+			"label": "Screed and slabs (lime/LC3 concrete)",
+			"unit": "m³",
+			"eur": 150,
+			"range": "120–200",
+			"src": "lime",
+			"est": true,
+			"was": 180
+		},
+		"land": {
+			"label": "Farmland in Bavaria",
+			"unit": "ha",
+			"eur": 78000,
+			"range": "77,700 (Bavaria 2024)–150,000 (Upper Bavaria)",
+			"src": "land"
+		}
+	},
+	"insides": {
+		"glulam": {
+			"label": "Spruce glulam blanks (GL24h) for the struts (the village cuts them)",
+			"eur": 600,
+			"range": "555–650"
+		},
+		"hubs": {
+			"label": "Steel hubs, ring and connectors welded from plate, galvanised, bought from a steel fabricator (until the village welds them)",
+			"range": "3,500–6,000"
+		}
+	},
+	"density": {
+		"glulam": {
+			"larch": 0.55,
+			"spruce": 0.47
+		},
+		"clt": 0.47,
+		"glass": 0.05,
+		"hemp": 0.035,
+		"lime": 2.2,
+		"concrete": 2.3
+	},
+	"assembly": 0.5,
+	"cells": {
+		"steepest": 45,
+		"flatKwh": 227,
+		"steepKwh": 194
+	},
+	"gfaPerson": 62,
+	"fitoutHome": 1600,
+	"fitout": {
+		"utilities": 2000,
+		"factory": 1500,
+		"park": 900,
+		"community": 2800,
+		"offices": 2800,
+		"hotel": 3000,
+		"apartments": 3200,
+		"sky": 3500
+	},
+	"floorMaterials": {
+		"timber": 0.25,
+		"longSpan": 0.4,
+		"screed": 0.06
+	},
+	"diet": {
+		"legumes": {
+			"label": "Legumes (beans, peas, lentils, lupins), dry",
+			"g": 110,
+			"kcal": 3400,
+			"protein": 220
+		},
+		"nuts": {
+			"label": "Nuts and seeds (hazel, walnut, sunflower, pumpkin, hemp), kernels",
+			"g": 75,
+			"kcal": 6000,
+			"protein": 180
+		},
+		"chestnuts": {
+			"label": "Sweet chestnuts",
+			"g": 220,
+			"kcal": 1900,
+			"protein": 24
+		},
+		"roots": {
+			"label": "Roots and tubers (potato, sweet potato, Jerusalem artichoke)",
+			"g": 550,
+			"kcal": 800,
+			"protein": 20
+		},
+		"vegetables": {
+			"label": "Vegetables and greens",
+			"g": 400,
+			"kcal": 300,
+			"protein": 15
+		},
+		"fruit": {
+			"label": "Fruit and berries",
+			"g": 550,
+			"kcal": 650,
+			"protein": 7
+		},
+		"eggs": {
+			"label": "Eggs (about 3 a week)",
+			"g": 25,
+			"kcal": 1430,
+			"protein": 125
+		},
+		"chicken": {
+			"label": "Chicken (about 210 g a week)",
+			"g": 30,
+			"kcal": 1500,
+			"protein": 200
+		}
+	},
+	"hens": {
+		"eggsFeed": 2.3,
+		"meatFeed": 5,
+		"forage": 0.3,
+		"mix": {
+			"legumes": 0.35,
+			"nuts": 0.15,
+			"roots": 0.5
+		}
+	},
+	"forest": {
+		"outdoor": {
+			"label": "Food forest outdoors",
+			"stack": 1.3,
+			"t": {
+				"legumes": 2.2,
+				"nuts": 1.2,
+				"chestnuts": 2.5,
+				"roots": 25,
+				"vegetables": 25,
+				"fruit": 15
+			}
+		},
+		"indoor": {
+			"label": "Food forest under glass",
+			"stack": 1.3,
+			"t": {
+				"legumes": 3,
+				"nuts": 1.5,
+				"chestnuts": 0,
+				"roots": 30,
+				"vegetables": 45,
+				"fruit": 35
+			}
+		}
+	},
+	"raw": {
+		"hemp": {
+			"label": "Hemp",
+			"unit": "t straw",
+			"per": 10,
+			"note": "Fibre hemp gives 5–12 t/ha of dry straw a year (TFZ Bavaria trial: 11.2 t); ~30% of it is fibre, the rest hurds, plus ~0.7 t seed",
+			"src": "yields"
+		},
+		"bamboo": {
+			"label": "Bamboo",
+			"unit": "t culms",
+			"per": 7,
+			"note": "Cold-hardy Phyllostachys in central Europe, grown in (year 6–8 on): about 4–12 t/ha dry a year (no measured European yields: estimate); Moso in Italy 8–20",
+			"src": "yields"
+		},
+		"woodland": {
+			"label": "Douglas fir and larch",
+			"unit": "m³ wood",
+			"per": 15,
+			"note": "Douglas fir grows 18.9 m³/ha a year in Germany (national forest inventory), larch 8–13: a mix about 15",
+			"src": "yields"
+		},
+		"mine": {
+			"label": "Clay, lime and gravel pits",
+			"unit": "t dug",
+			"per": 0,
+			"note": "Open pits, no dome over them: only the works that fire and burn what they dig are under glass",
+			"src": "numbers"
+		}
+	},
+	"hallPrices": {
+		"glulam": {
+			"label": "Spruce glulam (GL24h) for the halls’ frames",
+			"unit": "m³",
+			"eur": 600,
+			"range": "555–650",
+			"src": "glulam",
+			"est": true
+		},
+		"roof": {
+			"label": "Sandwich panels for the roofs, 100 mm PIR in steel skins",
+			"unit": "m²",
+			"eur": 45,
+			"range": "35–60",
+			"src": "halls",
+			"est": true
+		},
+		"wall": {
+			"label": "Sandwich panels for the walls, 80 mm PIR in steel skins",
+			"unit": "m²",
+			"eur": 40,
+			"range": "30–55",
+			"src": "halls",
+			"est": true
+		},
+		"mesh": {
+			"label": "Welded steel mesh for the slabs",
+			"unit": "t",
+			"eur": 1000,
+			"range": "850–1,300",
+			"src": "halls",
+			"est": true
+		},
+		"gravel": {
+			"label": "Gravel under the slabs",
+			"unit": "t",
+			"eur": 16,
+			"range": "10–22",
+			"src": "lime",
+			"est": true
+		},
+		"edge": {
+			"label": "The membrane under a slab and its edge insulation",
+			"unit": "m² of floor",
+			"eur": 8,
+			"range": "5–15",
+			"src": "halls",
+			"est": true
+		},
+		"doors": {
+			"label": "Doors, rooflights, gutters and downpipes",
+			"unit": "m² of floor",
+			"eur": 20,
+			"range": "12–35",
+			"src": "halls",
+			"est": true
+		},
+		"services": {
+			"label": "Services: lighting, power, heating on the heat loop, fans, fire alarm",
+			"unit": "m² of floor",
+			"eur": 60,
+			"range": "40–100",
+			"src": "halls",
+			"est": true
+		},
+		"pv": {
+			"label": "Solar on the halls’ south roofs: glass-glass modules, inverters, rails, cables",
+			"unit": "kWp",
+			"eur": 320,
+			"range": "250–450",
+			"src": "halls",
+			"est": true
+		}
+	},
+	"dfGlazing": {
+		"kg": 50,
+		"waste": 0.15,
+		"lowIron": 2,
+		"lowE": 1,
+		"pvb": 2
+	},
+	"dfLamellas": 1.2,
+	"solarMonths": [
+		0.03,
+		0.05,
+		0.08,
+		0.11,
+		0.12,
+		0.13,
+		0.13,
+		0.12,
+		0.09,
+		0.07,
+		0.04,
+		0.03
+	],
+	"energy": {
+		"person": 900,
+		"datacenterKw": 300,
+		"pue": 1.2,
+		"heatBack": 0.85,
+		"workshop": 120,
+		"waterKwhM3": 0.8,
+		"waterM3": 36,
+		"tower": {
+			"utilities": 200,
+			"factory": 220,
+			"park": 20,
+			"community": 60,
+			"offices": 70,
+			"hotel": 110,
+			"apartments": 35,
+			"sky": 150
+		},
+		"eurMWh": 90
+	},
+	"foodEurKg": 10
+}

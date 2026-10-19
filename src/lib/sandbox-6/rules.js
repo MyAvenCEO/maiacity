@@ -37,19 +37,20 @@
  * Plain data: the simulation (./sim.js) and the page read it alike.
  */
 
+import { configAt } from '../../../game/code/index.js';
 import { WEEK, YEAR } from './food.js';
 import { RING_FOOT, RING_R } from './plots.js';
+
+/** where the valley's numbers are kept: a config entry of the Maia City COOP (A3), the repo's code/configs/ its seed */
+export const RULES = 'configs/sandbox-5/rules';
+/** the valley's numbers, as the page read them: the vault's once loaded (the page awaits `loadCode` before it imports
+ * the game), else the seed's. Its words and the crafting engine stay here; every number a player could tune is there. */
+const R = /** @type {any} */ (configAt(RULES));
 
 /** @typedef {{ id: string, label: string, color: string }} Ware */
 
 /** @type {Record<string, Ware>} */
-export const WARES = {
-	plank: { id: 'plank', label: 'Planks', color: '#e0b46a' },
-	steel: { id: 'steel', label: 'Steel', color: '#8796a6' },
-	clay: { id: 'clay', label: 'Fired clay', color: '#c4734f' },
-	glass: { id: 'glass', label: 'Glass', color: '#9fd3e0' },
-	solar: { id: 'solar', label: 'Solar panels', color: '#3a5a9e' }
-};
+export const WARES = R.wares;
 export const WARE_ORDER = Object.keys(WARES);
 
 /**
@@ -59,16 +60,7 @@ export const WARE_ORDER = Object.keys(WARES);
  * A hex whose middle is under water (a lake's or the sea's) is 'lake', not land; bare mountain is 'mountain'. Read
  * from the land as the valley grew (./map.js).
  */
-export const BIOMES = {
-	meadow: { id: 'meadow', label: 'Meadow', color: '#9fc46a' },
-	forest: { id: 'forest', label: 'Forest', color: '#2f6b3a' },
-	stone: { id: 'stone', label: 'Stone', color: '#9a9a94' },
-	iron: { id: 'iron', label: 'Iron', color: '#a35b3a' },
-	sand: { id: 'sand', label: 'Sand', color: '#dcc893' },
-	water: { id: 'water', label: 'Water', color: '#4aa3df' },
-	mountain: { id: 'mountain', label: 'Mountain', color: '#8c8f96' },
-	lake: { id: 'lake', label: 'Lake', color: '#3a7fb8' }
-};
+export const BIOMES = R.biomes;
 
 /** the land a node is */
 export const GRASS = 0, WATER = 1, MOUNTAIN = 2, SAND = 3;
@@ -76,9 +68,9 @@ export const GRASS = 0, WATER = 1, MOUNTAIN = 2, SAND = 3;
 export const IRON = 2;
 
 /** settlers a house holds at each size: one dome, larger each time it is enlarged */
-export const HOUSE_BEDS = [2, 4, 8, 16, 32, 64, 128, 248];
+export const HOUSE_BEDS = /** @type {number[]} */ (R.houseBeds);
 /** a house's size as a word */
-export const HOUSE_SIZE = ['Hut', 'Cottage', 'House', 'Great house', 'Hall', 'Great hall', 'Dome', 'Great dome'];
+export const HOUSE_SIZE = /** @type {string[]} */ (R.houseSize);
 /** the largest a house gets: its size and its beds */
 export const HOUSE_TOP = HOUSE_BEDS.length;
 export const HOUSE_MOST = HOUSE_BEDS[HOUSE_TOP - 1];
@@ -87,23 +79,17 @@ export const HOUSE_MOST = HOUSE_BEDS[HOUSE_TOP - 1];
  * truckloads of 5 t (LOAD_T), and the page shows them in tonnes; euros never show, they are only how the world
  * market's real prices are read into gold.
  */
-export const UNITS = {
-	ware: '1 t',
-	food: '1 t, 1,000 kg',
-	water: '1 m³, 1,000 L',
-	energy: '1 MWh',
-	gold: '1,000 € of real prices'
-};
+export const UNITS = R.units;
 /** a load of any ware, in tonnes: a truckload, what a bus carries and the stores count */
-export const LOAD_T = 5;
+export const LOAD_T = /** @type {number} */ (R.loadT);
 /**
  * The real great dome of 248, 150 m across (our engineering research, 2026-10-07), in tonnes: its larch and Douglas
  * glulam struts, its finished steel joints (cast hubs, screws, brackets) and its laminated double glazing.
  */
-export const DOME_T = { plank: 1500, steel: 200, glass: 1000 };
+export const DOME_T = /** @type {{ plank: number, steel: number, glass: number }} */ (R.domeT);
 /** the beds from which a dome is glazed with solar panels, laminated double glazing with see-through solar cells that
  * make its power; a smaller dome with plain glass, and makes none (Samuel, 2026-10-08) */
-export const SOLAR_BEDS = 16;
+export const SOLAR_BEDS = /** @type {number} */ (R.solarBeds);
 /** what glazes a dome of so many beds: glass, or from 16 beds solar panels @param {number} beds */
 export const glazingOf = (beds) => (beds >= SOLAR_BEDS ? 'solar' : 'glass');
 /**
@@ -179,7 +165,7 @@ export const holdsLand = (/** @type {string} */ type) => type === 'centre' || ty
  * km. Its gravel bed, drains and clay seal are dug from its own trench. A world unit of the valley is about 32 m: a hex
  * about 660 m across, neighbouring village centers about 1.75 km apart.
  */
-export const ROUTE_T_KM = 36000, UNIT_M = 32;
+export const ROUTE_T_KM = /** @type {number} */ (R.routeTKm), UNIT_M = /** @type {number} */ (R.unitM);
 /**
  * The ring road round a village center (./plots.js RING_R) and the spur from its door out to it (Samuel, 2026-10-08):
  * on the ground while it is a logistics hub, where it costs nothing; growing into the village center takes it under
@@ -189,16 +175,16 @@ export const ROUTE_T_KM = 36000, UNIT_M = 32;
 export const RING_T = Math.ceil(((((2 * Math.PI * RING_R + RING_R - RING_FOOT) * UNIT_M) / 1000) * ROUTE_T_KM) / 100) * 100;
 
 /** a hex's fields and woods, besides its food forest: 10 ha of hemp and bamboo, about 15 t a hectare a year */
-export const FIELD_HA = 10, FIELD_T = 15;
+export const FIELD_HA = /** @type {number} */ (R.fieldHa), FIELD_T = /** @type {number} */ (R.fieldT);
 /** what keeping a building up takes a year, homes, factories and village centers alike: a share of what it is built
  * of, paid in gold at world prices (Samuel, 2026-10-07: upkeep is always gold) */
-export const UPKEEP = 0.02;
+export const UPKEEP = /** @type {number} */ (R.upkeep);
 /**
  * What the world market asks for a tonne of each ware, in € (./market.js WORLD says where the prices come from), and €
  * in a gold: what upkeep costs and what the world market trades at.
  */
-export const EUR_T = /** @type {Record<string, number>} */ ({ plank: 800, steel: 1000, clay: 200, glass: 1250, solar: 2500 });
-export const EUR_GOLD = 1000;
+export const EUR_T = /** @type {Record<string, number>} */ (R.eurT);
+export const EUR_GOLD = /** @type {number} */ (R.eurGold);
 
 /** what a factory takes from the land of its hex, a round at a time: in tonnes */
 export const LAND = {
@@ -210,7 +196,7 @@ export const LAND = {
 
 /** energy a building takes to build, MWh a tonne of what it is built of (its cranes, welding and presses), and what it
  * uses a year to stand, MWh a tonne for its dome's lights, fans and controls */
-export const BUILD_MWH_T = 0.1, KEEP_MWH_T = 0.2;
+export const BUILD_MWH_T = /** @type {number} */ (R.buildMwhT), KEEP_MWH_T = /** @type {number} */ (R.keepMwhT);
 
 /**
  * @typedef {{ in: Record<string, number>, out: Record<string, number> }} Craft
@@ -243,49 +229,7 @@ export const BUILD_MWH_T = 0.1, KEEP_MWH_T = 0.2;
  * the only maker of solar panels.
  * @type {Record<string, Recipe>}
  */
-export const RECIPES = /** @type {any} */ ({
-	woodcutter: {
-		biome: 'forest',
-		land: 'logs',
-		rounds: (FIELD_HA * FIELD_T) / 15,
-		stages: [
-			{ label: 'Forester', build: { plank: 10 }, make: {}, does: 'plants young trees round it and fells none' },
-			{ label: 'Woodcutter', build: { plank: 10, steel: 5 }, make: { in: { logs: 15, energy: 0.1 }, out: { plank: 5 } } },
-			{ label: 'Sawmill', build: { plank: 20, steel: 15 }, make: { in: { logs: 15, energy: 3.5 }, out: { plank: 10 } } },
-			{ label: 'Timber works', build: { plank: 30, steel: 20 }, make: { in: { logs: 15, energy: 7.5 }, out: { plank: 15 } } }
-		]
-	},
-	ironmine: {
-		biome: 'iron',
-		land: 'ore',
-		rounds: 10,
-		stages: [
-			{ label: 'Iron mine', build: { plank: 20 }, make: { in: { ore: 25, energy: 25 }, out: { steel: 5 } } },
-			{ label: 'Furnace', build: { plank: 20, steel: 10 }, make: { in: { ore: 25, energy: 42 }, out: { steel: 10 } } },
-			{ label: 'Steelworks', build: { plank: 30, steel: 15 }, make: { in: { ore: 25, energy: 54 }, out: { steel: 15 } } }
-		]
-	},
-	clayworks: {
-		biome: 'meadow',
-		land: 'loam',
-		rounds: 200,
-		stages: [
-			{ label: 'Clay pit', build: { plank: 20 }, make: { in: { loam: 20, energy: 0.05 }, out: { clay: 5 } } },
-			{ label: 'Kiln', build: { plank: 20, steel: 10 }, make: { in: { loam: 20, energy: 10 }, out: { clay: 10 } } },
-			{ label: 'Block works', build: { plank: 30, steel: 15 }, make: { in: { loam: 20, energy: 7.5 }, out: { clay: 15 } } }
-		]
-	},
-	glassworks: {
-		biome: 'sand',
-		land: 'sand',
-		rounds: 100,
-		stages: [
-			{ label: 'Sand pit', build: { plank: 20 }, make: {}, does: 'digs and washes glass sand and melts none yet' },
-			{ label: 'Glassworks', build: { plank: 30, steel: 15 }, make: { in: { sand: 12, energy: 13 }, out: { glass: 10 } } },
-			{ label: 'Solar panel works', build: { plank: 40, steel: 25 }, make: { in: { sand: 18, energy: 30 }, out: { solar: 15 } } }
-		]
-	}
-});
+export const RECIPES = /** @type {any} */ (R.recipes);
 /** what a building of so many tonnes takes to build: its wares, and its builders' energy @param {Record<string, number>} wares */
 export const buildIn = (wares) => ({ ...wares, energy: Object.values(wares).reduce((s, t) => s + t, 0) * BUILD_MWH_T });
 /** a week's share of a year: every keep and make is said a week (Samuel, 2026-10-07), the valley's year being 360 days */
@@ -351,10 +295,10 @@ export const GROWS = /** @type {Record<string, { levels: Stage[], up: Record<str
  * @type {CentreStage[]}
  */
 export const CENTRE = /** @type {any} */ ([
-	{ label: 'Logistics hub', build: { plank: 30, steel: 20, glass: 10 }, gold: 0, plant: 0, sun: 0, ring: 0, does: 'stores and trades its village’s wares; it makes no power' },
+	{ label: 'Logistics hub', build: R.hub.build, gold: 0, plant: 0, sun: 0, ring: 0, does: 'stores and trades its village’s wares; it makes no power' },
 	// its geothermal plant's gold as Samuel set it (2026-10-07; our research says 30 to 45 M € for a plant); its dome a
 	// great dome's, solar panels and all
-	{ label: 'Village center', build: domeOf(HOUSE_MOST), gold: 25000, plant: 1, sun: HOUSE_MOST, ring: RING_T, does: '' }
+	{ label: 'Village center', build: domeOf(HOUSE_MOST), gold: R.plantGold, plant: 1, sun: HOUSE_MOST, ring: RING_T, does: '' }
 ]);
 
 /**
@@ -374,21 +318,21 @@ export const CENTRE = /** @type {any} */ ([
  */
 export const ENERGY = {
 	/** a geothermal plant's net power, kW, and the share of the time it runs */
-	wellKw: 3400,
-	uptime: 0.94,
+	wellKw: /** @type {number} */ (R.energy.wellKw),
+	uptime: /** @type {number} */ (R.energy.uptime),
 	/** kWh a year a bed's share of its dome's solar cells makes, and of what its climate uses */
-	sunBed: 1300000 / HOUSE_MOST,
-	climateBed: 170000 / HOUSE_MOST,
+	sunBed: R.energy.sunDome / HOUSE_MOST,
+	climateBed: R.energy.climateDome / HOUSE_MOST,
 	/**
 	 * kWh a year a person uses at home: 900, where a German household uses about 1,500 a head. Sharing a dome saves the
 	 * rest (our estimate, Samuel 2026-10-07): hot water comes from the geothermal heat loop, not a heater; kitchens, cold
 	 * stores and laundries are shared, and clothes dry in the dome's warm air; daylight comes through the glass
 	 */
-	home: 900,
+	home: /** @type {number} */ (R.energy.home),
 	/** kWh a year a village center uses: its hall and storehouse, the lights and trains of its trade routes; and a
 	 * logistics hub, its store's lights, cold store and carts */
-	centre: 300000,
-	hub: 30000
+	centre: /** @type {number} */ (R.energy.centre),
+	hub: /** @type {number} */ (R.energy.hub)
 };
 // the village center's recipes at each stage, as a factory's: its build in tonnes with its builders' energy and its
 // geothermal plant's gold (and in loads, `up`), its keep a week in gold of all it is built of by then, the energy its
@@ -415,7 +359,7 @@ export const ENERGY = {
 export const centreStage = (level) => CENTRE[Math.min(CENTRE.length, Math.max(1, level || 1)) - 1];
 /** a dome's solar by month, in % of its year, January first (our village energy research): a month's share is its
  * part of their sum */
-export const SUN_MONTH = [2.9, 4.6, 8.0, 11.2, 13.1, 13.9, 14.2, 12.3, 8.9, 5.7, 3.0, 2.1];
+export const SUN_MONTH = /** @type {number[]} */ (R.sunMonth);
 const SUN_YEAR = SUN_MONTH.reduce((a, b) => a + b, 0);
 /** kWh a day a bed's solar glass makes in a month (1 to 12) */
 export const sunBedDay = (/** @type {number} */ month) => (ENERGY.sunBed * SUN_MONTH[month - 1]) / SUN_YEAR / 30;
@@ -424,8 +368,8 @@ export const sunBedDay = (/** @type {number} */ month) => (ENERGY.sunBed * SUN_M
 export const START = {
 	/** in loads: 120 t of planks, 60 t of steel and 50 t of glass, enough for a hut on each of your first hexes and
 	 * their first factories (the hub itself comes with your settlers) */
-	stock: { plank: 24, steel: 12, glass: 10 },
-	coins: 30,
+	stock: /** @type {Record<string, number>} */ (R.start.stock),
+	coins: /** @type {number} */ (R.start.coins),
 	/** the settlers who come with your first logistics hub, wherever you put it up */
-	settlers: 2
+	settlers: /** @type {number} */ (R.start.settlers)
 };
