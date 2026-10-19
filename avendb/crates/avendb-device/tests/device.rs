@@ -1794,6 +1794,10 @@ async fn a_cloud_agent_her_mac_adds_to_avenmaia_drafts_a_spark_through_the_serve
     let aips = json!({ "op": "share", "over": city, "who": { "vault": maia }, "level": author, "what": { "type": ["aip"] },
         "as": city });
     run(&mut app, aips).await.expect("avenMAIA an AIP author of her Maia City's AIPs");
+    // a note in her own vault, which avenMAIA may read too, and which no call touches until one names her vault
+    give(&mut app, &mine, &maia, "Viewer", &mine).await;
+    let beans = json!({ "op": "create", "vault": mine, "type": "note", "value": titled("Beans", "In May.") });
+    let beans = run(&mut app, beans).await.expect("her note")["entry"].clone();
     // a cloud session with no key yet says where one comes from, and runs no device
     let cloud = |key: &str| agent::Cloud {
         dir: folder.0.join("cloud"),
@@ -1828,6 +1832,19 @@ async fn a_cloud_agent_her_mac_adds_to_avenmaia_drafts_a_spark_through_the_serve
     assert!(!error, "{made}");
     let spark: Value = serde_json::from_str(&made).expect("JSON");
     assert_eq!((&spark["vault"], &spark["draft"]), (&city, &json!(true)), "a draft in her Maia City: {spark}");
+    // it brought her Maia City, which the spark went in, and nothing of her own vault, which no call named yet
+    let entries_of = |said: &str, vault: &Value| -> Vec<Value> {
+        let world: Value = serde_json::from_str(said).expect("JSON");
+        let entries = world["ok"]["entries"].as_array().cloned().unwrap_or_default();
+        entries.into_iter().filter(|e| e["vault"] == *vault).map(|e| e["entry"].clone()).collect()
+    };
+    let (seen, error) = session.tool("avendb_ask", json!({ "op": { "op": "world" } })).await;
+    assert!(!error, "{seen}");
+    assert!(!entries_of(&seen, &city).is_empty(), "her Maia City's entries: {seen}");
+    assert!(entries_of(&seen, &mine).is_empty(), "nothing of her own vault yet: {seen}");
+    // a call that names her vault brings it
+    let (found, error) = session.tool("avendb_ask", json!({ "op": { "op": "query", "vault": mine } })).await;
+    assert!(!error && found.contains(beans.as_str().expect("an id")), "her note: {found}");
     // its draft reaches her Mac by way of the server, and lands once her Maia City accepts the AIP the agent opens
     let open = json!({ "op": "aip_open", "vault": city, "title": "Shade", "note": "Why: hot afternoons.",
         "proposals": spark["proposals"] });

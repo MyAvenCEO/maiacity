@@ -469,9 +469,13 @@ cosigns; it shows the key once, 66 hex digits, its suite's byte and its secret, 
 (`AVENDB_AGENT_KEY`), and every session there runs `avendb-device agent cloud`, the device agentCloud: the same MCP as
 any agent, reaching the server alone, on its relay, through the environment's HTTP proxy. The relay lets in only the
 devices it knows, so a key the desktop never added reaches nothing. Every session holding the key is the same device,
-so it opens its node at its first tool call, catches up with the server before each change, and closes it after a few
-minutes with no call; two sessions working at the same moment take turns on the relay, and two edits made at once from
-one device log stand as a fork (Forks, section 4). Removing agentCloud from the aven ends it for every session.
+so it opens its node at its first tool call and closes it after a few minutes with no call; two sessions working at the
+same moment take turns on the relay, and two edits made at once from one device log stand as a fork (Forks, section 4).
+Its node asks for nothing on its own (section 12, Asking only when told): before each call it brings the vaults the
+call touches alone, by the vault or the entries the call names, else the coop, one pull at a time that no call's wait
+cuts short; a call that comes while the first pull of a big vault runs answers that it is still bringing it. So a
+fresh session never pulls what the aven may hold of every vault, as the encrypted backups its server keeps of each
+person's vault. Removing agentCloud from the aven ends it for every session.
 
 ## 4. Edits, logs and the replay
 
@@ -1746,6 +1750,7 @@ on the same stream. Every value has exactly one encoding, fuzzed and checked aga
 | 8 | State: a device's signed statement of its holdings, its own or passed on | Nothing, once kept or found older |
 | 9 | Invite: the id of an invite (section 3, Invites) | Its card, while no vault claimed it (`Lab::invite_card`) |
 | 10 | Sign up: a newcomer's vault logs and its claims (`Lab::sign_up_card`) | Nothing, once the server took every new human vault in it |
+| 11 | Ask vaults: a request for the entries of some vaults alone | A page of edits of those vaults' entries, and of every log that is no entry's |
 
 ### Frontiers per log
 
@@ -1797,6 +1802,11 @@ Announce { full: bool, logs: [(LogId, Frontier { heads, waiting })], files: [(Fi
 - **Asking.** A node that hears of a head it lacks, in a log the claimant may hold by the node's view, asks for those
   logs alone (Ask logs), naming of them only what it may name to that peer. A claim to any other log the node holds
   steers nothing. A log the node holds nothing of is still asked for, naming nothing.
+- **Asking only when told.** A node may ask for nothing on its own (`Options::lazy`), as a cloud session's agent
+  does: it hears announcements but asks nothing of them, and asks only for the vaults a call touches (Ask vaults,
+  `Node::bring`): their entries, and every vault's, share's and audience's log, which say who may do what. A peer
+  answers it as any request, less the edits of every other vault's entries. What the peer may send is the same as
+  ever (T12): the device only asks for less.
 - **Synced to.** One list for entries and files alike (`Node::synced_to`, `Holder`): the devices that hold some of
   it, this device by its own shelf, and others only by what they said themselves, on their own proven connection or
   in a statement they signed (below), and only if they may hold it by the node's view; each with how much it holds,
