@@ -1,0 +1,62 @@
+name: avenDB cloud agent
+
+# avenDB's agent for Claude Code sessions in Anthropic's cloud (avendb-device agent cloud, agentCloud): a Linux x86_64
+# build of avendb-device from avendb/ alone, put on the rolling release "avendb-agent" in place of the last one, which
+# scripts/avendb-cloud.sh downloads when a cloud session starts it, as the repository's .mcp.json says (avendb/README.md,
+# "Cloud sessions"). It holds no key: a session's key is the one The OS app showed once, in the environment's
+# AVENDB_AGENT_KEY.
+#
+# Built on Ubuntu 22.04, so its glibc is older than a cloud session's (Ubuntu 24.04), and it runs there.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'avendb/**'
+      # what the agent never holds
+      - '!avendb/spec/**'
+      - '!avendb/docs/**'
+      - '!avendb/scripts/**'
+      - '!avendb/**/*.md'
+      - '.github/workflows/avendb-agent.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: avendb-agent
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
+env:
+  TAG: avendb-agent
+  ASSET: avendb-device-x86_64-linux
+
+jobs:
+  build:
+    name: Build the cloud agent and put it on its release
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Rust builds are slow: keep the compiled dependencies between runs
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: avendb
+      - name: Build avendb-device
+        working-directory: avendb
+        run: cargo build --release --locked -p avendb-device
+      - name: Put it on the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp avendb/target/release/avendb-device "$ASSET"
+          strip "$ASSET"
+          ./"$ASSET" agent cloud < /dev/null
+          sha256sum "$ASSET" > "$ASSET.sha256"
+          notes="avendb-device agent cloud, built from ${GITHUB_SHA} on $(date -u +%F). Cloud sessions of this repository download it through scripts/avendb-cloud.sh (avendb/README.md, Cloud sessions)."
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --title "avenDB cloud agent" --notes "$notes" --prerelease --latest=false
+          fi
+          gh release upload "$TAG" "$ASSET" "$ASSET.sha256" --clobber
+          gh release edit "$TAG" --notes "$notes"

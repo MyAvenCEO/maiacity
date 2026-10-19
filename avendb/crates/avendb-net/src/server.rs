@@ -40,9 +40,17 @@ pub async fn open(shelf: Shelf, opts: Options) -> Result<Node> {
 /// own key.
 pub async fn open_agent(shelf: Shelf, name: &str, opts: Options) -> Result<Node> {
     let secret = secret(&shelf).await?;
+    open_agent_with(Some(shelf), name, &secret, opts).await
+}
+
+/// An agent device named `name` whose key is `secret`, which its person keeps elsewhere, never on `shelf`: a cloud
+/// session's agent, whose key is in its environment's secrets, as The OS showed it once; or that key as The OS makes it,
+/// on no shelf, for the moment it takes its person's Mac to add it under their aven, which it cosigns
+/// (`Node::add_device_vault_with`). Else as `open_agent`.
+pub async fn open_agent_with(shelf: Option<Shelf>, name: &str, secret: &[u8; 32], opts: Options) -> Result<Node> {
     let mut lab = Lab::with_entropy(*random()?);
     let me = lab.device_with(name, *secret);
-    Node::spawn(lab, me, Options { shelf: Some(shelf), card: true, ..opts }).await
+    Node::spawn(lab, me, Options { shelf, card: true, ..opts }).await
 }
 
 /// The vault the node's device belongs to, as its view has it: avenMAIA, once a device claimed the server; an

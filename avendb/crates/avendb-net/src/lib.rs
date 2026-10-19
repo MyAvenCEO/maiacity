@@ -244,6 +244,10 @@ pub struct Options {
     pub direct: bool,
     /// The relay it is reached through, the server's; it looks for its peers there too.
     pub relay: Option<RelayUrl>,
+    /// It reaches its relay through the HTTP proxy its environment names (`HTTPS_PROXY` and the like), as a node in a
+    /// cloud session must, whose only way out is its proxy: iroh tunnels the relay's connection through it, and the TLS
+    /// inside, X25519MLKEM768 alone, is the node's own end to end.
+    pub proxy: bool,
     /// How soon it tries again to tell a peer it couldn't reach, or to ask one it failed to ask: after `retry`, then
     /// twice as long each time the peer stays out of reach, up to a minute.
     pub retry: Duration,
@@ -284,6 +288,7 @@ impl Options {
             bind: Some(SocketAddr::from(([127, 0, 0, 1], 0))),
             direct: false,
             relay: None,
+            proxy: false,
             retry: Duration::from_secs(1),
             shelf: None,
             keep: false,
@@ -575,6 +580,10 @@ impl Node {
         }
         if let Some(relay) = &opts.relay {
             builder = builder.relay_mode(RelayMode::Custom(RelayMap::from(relay_config(relay, &opts))));
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if opts.proxy {
+            builder = builder.proxy_from_env();
         }
         let endpoint = builder.bind().await?;
         // its blob store over its shelf, which lists what it holds once its edits are taken back; else in memory

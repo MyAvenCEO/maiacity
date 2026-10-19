@@ -203,6 +203,29 @@ to hand `put_file` a file's bytes, and `drives`, `joinDrive`, `openDrive` and `e
 
 Passkeys, PRF and a device's secure boundary are in [ARCHITECTURE.md](docs/ARCHITECTURE.md) §11.
 
+### Cloud sessions
+
+A Claude Code session in Anthropic's cloud runs no Mac, so it has no agentClaude. It has agentCloud
+(`avendb-device agent cloud`), one device of avenMAIA whose key every cloud session of this repository holds:
+
+1. In The OS app, Settings, Agents, Cloud sessions: **Add a cloud agent**. The Mac's device makes a key, adds it to
+   avenMAIA as the device agentCloud in one passkey or Touch ID ceremony (`addCloudAgent`, which the new key cosigns),
+   and shows the key once. The Mac keeps no copy.
+2. Put the key in the cloud environment's environment variables as `AVENDB_AGENT_KEY` (never in a chat), and let the
+   environment's network reach `avendb.maia.city`.
+3. Each new cloud session starts it by itself: the repository's `.mcp.json` runs `scripts/avendb-cloud.sh`, which,
+   in a cloud session that holds the key alone (`CLAUDE_CODE_REMOTE`, `AVENDB_AGENT_KEY`), downloads the Linux build
+   from the release `avendb-agent` (`.github/workflows/avendb-agent.yml` builds it on every change to `avendb/` on
+   main), checks its SHA-256, keeps it in `~/.cache/avendb`, and runs it. Elsewhere it exits at once.
+
+It has agentClaude's tools and acts as avenMAIA, with avenMAIA's rights and no more: a Suggester on Maia City, whose
+drafts and AIPs a human accepts. It reaches the server alone, on its relay, through the environment's HTTP proxy
+(`Options::proxy`); the relay lets in only devices it knows, so a key The OS never added gets nowhere, and the TLS
+inside, X25519MLKEM768, is end to end. It opens its device at the first tool call, catches up with the server before
+each change, and closes it after 5 minutes with no call: two sessions using it at the same moment knock each other off
+the relay, so use one at a time. Removing agentCloud from avenMAIA's devices ends it for every session; a new key is
+another **Add a cloud agent**.
+
 ## The server
 
 `crates/avendb-server` is avenDB's server: a node on its shelf and, beside it, its relay. It holds only ciphertext and

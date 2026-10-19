@@ -960,6 +960,13 @@
 				aven may create, as an Editor may. It keeps no file of its own: once your desktop holds a file it saved whole, it
 				lets go of its copy, and it reads your files from your desktop’s one store, so nothing is kept twice.
 			</p>
+			<p class="prose-col">
+				A Claude Code session in Anthropic’s cloud has no desktop, so it runs agentCloud. Your desktop app makes its key
+				(Settings, Agents, Add a cloud agent), adds it to the aven in one passkey or Touch ID approval, and shows it once;
+				you put it in the cloud environment’s secrets. Every cloud session that holds the key is that one device, with the
+				aven’s rights and no more, and reaches the server alone, on its relay, which lets in only devices it knows. Remove
+				agentCloud from the aven and every such session loses it.
+			</p>
 			<h3>Asking for access</h3>
 			<p class="prose-col">
 				An access request is a record, not a new kind of message. The vault that asks writes a record of avenDB’s

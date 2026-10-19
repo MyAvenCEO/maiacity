@@ -115,6 +115,19 @@
 		copied = true;
 		setTimeout(() => (copied = false), 1400);
 	}
+	/** the cloud agent this page just added, its key shown this once, until the person closes it */
+	let cloud = $state(/** @type {{ device: string, name: string, key: string, variable: string } | null} */ (null));
+	let cloudCopied = $state(false);
+	/** Adds a cloud agent to avenMAIA, in one sheet, and shows its key once. */
+	async function addCloud() {
+		cloud = (await api.addCloudAgent?.()) ?? null;
+	}
+	/** Copies the cloud agent's key. */
+	async function copyCloud() {
+		await navigator.clipboard.writeText(cloud?.key ?? '');
+		cloudCopied = true;
+		setTimeout(() => (cloudCopied = false), 1400);
+	}
 
 	/** This device, as the person sees it: in the Mac app, the Mac. */
 	const [here, Here] = native() ? ['this Mac', 'This Mac'] : ['this browser', 'This browser'];
@@ -868,6 +881,27 @@
 								onfocus={(e) => e.currentTarget.select()}
 							/>
 							<button class="btn quiet" onclick={copyRunning}>{copied ? 'Copied' : 'Copy the line'}</button>
+						{/if}
+					</article>
+					<article class="card">
+						<h3>Cloud sessions</h3>
+						<p class="soft">
+							Claude Code sessions in Anthropic's cloud run no Mac. A cloud agent, agentCloud, gives them avenMAIA all the
+							same: this Mac makes a key and adds it to avenMAIA as a device in one sheet, and every cloud session that
+							holds the key acts as that one device, with avenMAIA's rights and no more, through avendb.maia.city. Remove
+							it in avenMAIA's devices to end it.
+						</p>
+						{#if cloud}
+							<p class="soft">
+								Put this key in your cloud environment's environment variables as <code>{cloud.variable}</code>. New
+								cloud sessions of this repository then start agentCloud by themselves (the repository's .mcp.json). The
+								key shows only now: this Mac keeps no copy.
+							</p>
+							<input class="field code" readonly value={cloud.key} onfocus={(e) => e.currentTarget.select()} />
+							<button class="btn quiet" onclick={copyCloud}>{cloudCopied ? 'Copied' : 'Copy the key'}</button>
+							<button class="btn quiet" onclick={() => (cloud = null)}>Done</button>
+						{:else}
+							<button class="btn" disabled={busy} onclick={addCloud}>Add a cloud agent</button>
 						{/if}
 					</article>
 				{/if}

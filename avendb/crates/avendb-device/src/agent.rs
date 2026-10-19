@@ -37,6 +37,15 @@
 //! again whatever it left unanswered; when a session of a newer build of it starts, as after the Mac app was rebuilt,
 //! the older makes way, and answers its harness through the newer from then on.
 //!
+//! A Claude Code session in Anthropic's cloud runs no Mac: `avendb-device agent cloud` (`serve_cloud`), the device
+//! agentCloud, whose key its person's Mac made and added to avenMAIA in one ceremony (The OS app's "Add a cloud agent",
+//! `add_cloud_agent` in this crate), showed once, and keeps no copy of; its person puts it in the cloud environment's
+//! secrets (`KEY_VAR`). Every session holding the key acts as that one device, reaching the server alone through the
+//! environment's HTTP proxy, on the server's relay, which lets in only devices it knows: so a key no Mac added gets
+//! nowhere. It opens its device at its first tool call, catches up with the server before each change, and closes it
+//! once no tool called it for a while (`IDLE`), so that sessions of one key rarely run its device at the same time;
+//! two at once knock each other off the relay. Removing its device from avenMAIA ends it.
+//!
 //! The MCP is JSON-RPC 2.0, a message a line (`initialize`, `tools/list`, `tools/call`, `ping`): `avendb_vaults` tells
 //! who it is, its device vault and the aven over it, and the vaults it sees, `avendb_ask` runs a read of the ops
 //! engine, `avendb_run` a change, each acting as its device vault, and `avendb_request_access` asks its person for
@@ -75,6 +84,7 @@ use avendb::wire::FileHold;
 use avendb::world;
 use avendb_net::{NoBytes, NoCeremony, Node, Offer, Options, disk, server};
 use bytes::{Bytes, BytesMut};
+use iroh::EndpointId;
 use n0_future::task::AbortOnDropHandle;
 use n0_future::{Stream, stream};
 use serde_json::{Value, json};
@@ -335,6 +345,188 @@ pub async fn serve_built(
     }
 }
 
+/// A cloud session's agent, as its harness names it: `avendb-device agent cloud`, the device agentCloud.
+pub const CLOUD: &str = "cloud";
+
+/// The environment variable a cloud session's agent reads its key from: 64 hex digits, as The OS app showed them once
+/// when it added the key to avenMAIA (`add_cloud_agent`), which its person keeps in the environment's secrets.
+pub const KEY_VAR: &str = "AVENDB_AGENT_KEY";
+
+/// The environment variable that names the server a cloud session's agent reaches, by its offer, where it isn't
+/// avenDB's own (`SERVER`).
+pub const SERVER_VAR: &str = "AVENDB_SERVER";
+
+/// avenDB's server's offer, the same as long as its shelf keeps its device's key, as the site's
+/// src/lib/avendb/server.js has it: avendb.maia.city, its relay.
+pub const SERVER: &str = "AVENDB1UAYTJU2GDDXXNHWO5YZJOJJBYJFXCKVEPNGILCF6ORDFGRZQXIYOKZOGNSNV64ZIP4VEW4HJPYXUPWZBQJWGRT75JV4CAO3N25TOCMYBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY";
+
+/// How long a cloud session's agent keeps its device open after its last tool call: then it closes it, and opens it
+/// again at the next, so that sessions of one key that don't use avenDB at the same time never run its device at once.
+const IDLE: Duration = Duration::from_secs(300);
+
+/// How long a cloud session's agent waits for the server to answer a sync.
+const SYNC: Duration = Duration::from_secs(60);
+
+/// Runs a cloud session's agent, agentCloud, answering MCP on `input` and `output` until `input` ends, its folder in
+/// `dir`. A cloud session runs no Mac and no The OS: its key is one its person made in The OS app, which added it to
+/// their coop's aven, avenMAIA, as a device beside its server, and which they keep in the environment's secrets
+/// (`KEY_VAR`), so every session of the environment acts as that one device. It reaches nobody but the server
+/// (`SERVER`, or the one `SERVER_VAR` names), through its relay alone, by way of the environment's HTTP proxy
+/// (`Options::proxy`), and syncs with it what avenMAIA may hold; a file it reads comes from the server, and one it
+/// saves it lets go of once the server holds it whole. Its device opens at the first tool call, not as it starts, and
+/// closes once no call came for a while (`IDLE`): a session that never uses avenDB never runs it, and two sessions
+/// run it at once only while both use it, when each knocks the other off the server's relay now and then, as one
+/// device of two places does. Before each change it catches up with the server (`Agent::catch_up`), so that a change
+/// builds on what the other wrote. Fails only where `input` or `output` does: a missing key, or a server that doesn't
+/// let it in, its tool calls answer, saying what to do.
+pub async fn serve_cloud(cloud: Cloud, input: impl AsyncRead + Unpin, mut output: impl AsyncWrite + Unpin) -> Result<()> {
+    let name = device_name(CLOUD);
+    let mut lines = BufReader::new(input).lines();
+    let mut open: Option<Opened> = None;
+    loop {
+        let until = open.as_ref().map(|o| o.used + IDLE);
+        let idle = async move {
+            match until {
+                Some(until) => tokio::time::sleep_until(until).await,
+                None => std::future::pending().await,
+            }
+        };
+        tokio::select! {
+            line = lines.next_line() => {
+                let Some(line) = line? else { break };
+                let Ok(message) = serde_json::from_str::<Value>(&line) else { continue };
+                let (cloud, named, opened) = (&cloud, &name, &mut open);
+                let call = move |tool: String, args: Value| async move {
+                    cloud.open(named, opened).await?.call(&tool, &args).await
+                };
+                if let Some(answer) = answer(&message, || instructions(&name, true), call).await {
+                    output.write_all(format!("{answer}\n").as_bytes()).await?;
+                    output.flush().await?;
+                }
+            }
+            () = idle => close(open.take()).await,
+        }
+    }
+    close(open.take()).await;
+    Ok(())
+}
+
+/// A cloud session's agent: the folder it keeps its own in, its key in hex as its environment holds it (`KEY_VAR`), the
+/// server's offer, and whether it reaches the server through the environment's HTTP proxy (`Options::proxy`).
+pub struct Cloud {
+    pub dir: PathBuf,
+    pub key: zeroize::Zeroizing<String>,
+    pub server: String,
+    pub proxy: bool,
+}
+
+impl Cloud {
+    /// A cloud session's agent in folder `dir`, as its environment says: its key (`KEY_VAR`), the server where one is
+    /// named (`SERVER_VAR`), else avenDB's own (`SERVER`), through the environment's proxy.
+    pub fn from_env(dir: PathBuf) -> Cloud {
+        let key = zeroize::Zeroizing::new(std::env::var(KEY_VAR).unwrap_or_default());
+        let server = std::env::var(SERVER_VAR).ok().filter(|s| !s.trim().is_empty());
+        Cloud { dir, key, server: server.unwrap_or_else(|| SERVER.into()), proxy: true }
+    }
+}
+
+/// A cloud session's agent's device, open: as its MCP answers, its look (`look_cloud`), and when a tool last called it.
+struct Opened {
+    agent: Arc<Agent>,
+    _looking: AbortOnDropHandle<()>,
+    used: tokio::time::Instant,
+}
+
+impl Cloud {
+    /// Its device, open now, or opened: by its key (`KEY_VAR`), in a folder of its own in `dir` named by the key, on
+    /// the server's relay through the environment's proxy, and caught up with the server. Fails, saying what to do,
+    /// where the key is missing or isn't one, the server's offer isn't one, or the relay doesn't let it in.
+    async fn open(&self, name: &str, open: &mut Option<Opened>) -> Result<Arc<Agent>> {
+        if let Some(o) = open {
+            o.used = tokio::time::Instant::now();
+            return Ok(o.agent.clone());
+        }
+        let secret = cloud_key(&self.key)?;
+        let server = Offer::from_text(self.server.trim()).with_context(|| format!("{SERVER_VAR} is no server's offer"))?;
+        // a folder of the key's own, by a hash of it that tells nothing of it, so that another key never opens it
+        let mark = avendb::hash::hash("a cloud agent's folder", &*secret);
+        let folder = self.dir.join(format!("{name}-{}", hex(&mark[..8])));
+        std::fs::create_dir_all(&folder).with_context(|| format!("the agent's folder {}", folder.display()))?;
+        let shelf = disk::open(&folder)?;
+        let relay = server.addr.relay_urls().next().cloned();
+        let opts = Options { bind: None, direct: false, relay, proxy: self.proxy, ..Options::local() };
+        let node = Arc::new(server::open_agent_with(Some(shelf), name, &secret, opts).await?);
+        drop(secret);
+        node.know(server.addr.clone());
+        if !node.on_relay().await {
+            node.shutdown().await.ok();
+            let host = server.addr.relay_urls().next().map_or("the server".into(), |r| r.to_string());
+            bail!(
+                "{host} doesn't let {name} in: its key may not be a device of avenMAIA yet (its person adds one in The OS \
+                 app, Settings, Agents, Add a cloud agent), or this environment's network doesn't allow \
+                 avendb.maia.city"
+            );
+        }
+        let at = server.addr.id;
+        if alone(&node).await
+            && let Ok(Err(e)) = tokio::time::timeout(SYNC, node.contact(at)).await
+        {
+            tracing::warn!("the server's card isn't read: {e:#}");
+        }
+        if let Ok(Err(e)) = tokio::time::timeout(SYNC, node.sync_with(at)).await {
+            tracing::warn!("{name} doesn't sync with the server: {e:#}");
+        }
+        let looking = AbortOnDropHandle::new(tokio::spawn(look_cloud(node.clone(), server)));
+        let agent = Arc::new(Agent { node, host: folder, name: name.to_string(), server: Some(at) });
+        let used = tokio::time::Instant::now();
+        *open = Some(Opened { agent: agent.clone(), _looking: looking, used });
+        Ok(agent)
+    }
+}
+
+/// A cloud session's agent's key, `text` as its environment holds it (`KEY_VAR`): 64 hex digits. Fails, saying where
+/// it comes from.
+fn cloud_key(text: &str) -> Result<zeroize::Zeroizing<[u8; 32]>> {
+    let text = text.trim();
+    anyhow::ensure!(
+        !text.is_empty(),
+        "{KEY_VAR} isn't set: its person adds a cloud agent in The OS app (Settings, Agents, Add a cloud agent), which \
+         shows its key once, and puts it in this environment's {KEY_VAR}; a new session reads it"
+    );
+    let mut key = zeroize::Zeroizing::new([0u8; 32]);
+    let fits = text.len() == 64 && text.is_char_boundary(64);
+    anyhow::ensure!(fits, "{KEY_VAR} holds no key: 64 hex digits, as The OS app shows it");
+    for (i, byte) in key.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&text[2 * i..2 * i + 2], 16)
+            .map_err(|_| anyhow!("{KEY_VAR} holds no key: 64 hex digits, as The OS app shows it"))?;
+    }
+    Ok(key)
+}
+
+/// Closes a cloud session's agent's device, if it is open.
+async fn close(open: Option<Opened>) {
+    let Some(Opened { agent, _looking, .. }) = open else { return };
+    drop(_looking);
+    if let Err(e) = agent.node.shutdown().await {
+        tracing::warn!("{} doesn't close: {e:#}", agent.name);
+    }
+}
+
+/// Every little while, a cloud session's agent: while its key belongs to no vault, the server's card, which tells it
+/// of a join made meanwhile; and the files it holds whole that the server holds whole too, it lets go of
+/// (`hand_over`), as the server keeps them.
+async fn look_cloud(node: Arc<Node>, server: Offer) {
+    loop {
+        tokio::time::sleep(LOOK).await;
+        if alone(&node).await
+            && let Ok(Err(e)) = tokio::time::timeout(LOOK, node.contact(server.addr.id)).await
+        {
+            tracing::debug!("the server's card isn't read: {e:#}");
+        }
+        hand_over(&node, server.device).await;
+    }
+}
+
 /// When the build this process runs was made: its program's time on disk as it starts, in nanoseconds since 1970;
 /// none where it can't tell.
 fn built() -> u64 {
@@ -380,7 +572,7 @@ impl Session<'_> {
         let opts = Options { bind: None, direct: true, relay, ..Options::local() };
         let node = Arc::new(server::open_agent(shelf, name, opts).await?);
         let looking = AbortOnDropHandle::new(tokio::spawn(look(node.clone(), host.to_path_buf(), name.to_string())));
-        let agent = Arc::new(Agent { node: node.clone(), host: host.to_path_buf(), name: name.to_string() });
+        let agent = Arc::new(Agent { node: node.clone(), host: host.to_path_buf(), name: name.to_string(), server: None });
         let (newer, count) = (Arc::new(Notify::new()), watch::channel(0));
         let sock = socket(host, name);
         // it holds the lock: a socket there is a session's before it, gone
@@ -645,54 +837,24 @@ async fn hand_over(node: &Node, mac: SignerId) {
     }
 }
 
-/// The agent's device, as its MCP answers.
-struct Agent {
-    node: Arc<Node>,
-    /// the app's folder, beside which it leaves its requests
-    host: PathBuf,
-    /// its device's name, agentClaude, which its device vault's profile reads too
-    name: String,
-}
-
-impl Agent {
-    /// The answer to MCP message `m`: none for a notification.
-    async fn answer(&self, m: &Value) -> Option<Value> {
-        let id = m.get("id")?.clone();
-        let method = m.get("method").and_then(Value::as_str).unwrap_or_default();
-        let params = m.get("params").cloned().unwrap_or(Value::Null);
-        let result = match method {
-            "initialize" => {
-                let version = params["protocolVersion"].as_str().unwrap_or(PROTOCOL);
-                json!({
-                    "protocolVersion": version,
-                    "capabilities": { "tools": {} },
-                    "serverInfo": { "name": "avendb", "version": env!("CARGO_PKG_VERSION") },
-                    "instructions": self.instructions(),
-                })
-            }
-            "ping" => json!({}),
-            "tools/list" => json!({ "tools": tools() }),
-            "tools/call" => {
-                let name = params["name"].as_str().unwrap_or_default();
-                let (text, error) = match self.call(name, &params["arguments"]).await {
-                    Ok(text) => (text, false),
-                    Err(e) => (format!("{e:#}"), true),
-                };
-                json!({ "content": [{ "type": "text", "text": text }], "isError": error })
-            }
-            _ => {
-                return Some(
-                    json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": "no method" } }),
-                );
-            }
-        };
-        Some(json!({ "jsonrpc": "2.0", "id": id, "result": result }))
-    }
-
-    fn instructions(&self) -> String {
-        format!(
-            "{name} is an agent device on this Mac: an avenDB device with a key of its own, which joins its coop's one \
-             aven, avenMAIA for Maia City, as a device beside its server, once its person approves it. An aven is a \
+/// What an agent named `name` tells its harness of itself as it starts (MCP's `instructions`): on its person's Mac,
+/// or in a cloud session (`cloud`).
+fn instructions(name: &str, cloud: bool) -> String {
+    let (who, here) = match cloud {
+        false => (
+            "an agent device on this Mac: an avenDB device with a key of its own, which joins its coop's one aven, \
+             avenMAIA for Maia City, as a device beside its server, once its person approves it",
+            "this Mac",
+        ),
+        true => (
+            "an agent device in this cloud session: an avenDB device whose key its person made in The OS app and keeps \
+             in this environment's secrets, a device of its coop's one aven, avenMAIA for Maia City, beside its server, \
+             which it reaches through avendb.maia.city",
+            "this machine",
+        ),
+    };
+    format!(
+            "{name} is {who}. An aven is a \
              coop's one AI identity, a vault the coop owns; {name} acts as it, with its rights, no more and no less. \
              Every read and change is one JSON op of avenDB's engine (avendb/docs/ARCHITECTURE.md §8). Call \
              avendb_vaults first: it says who {name} is, the aven it acts as, once its person approved it, and which \
@@ -713,7 +875,7 @@ impl Agent {
              app or at /app/aips/?aip=<entry>; an agent never \
              reviews one, since `aip_review` is the vault's own. Read them with avendb_ask, `aips` or `aip` (`entry`, \
              with its diff); after a revise, write again on the same lines and promote it again: it keeps its \
-             number. Save a file of this Mac into a vault with avendb_run: a `put_file` op (`vault`, `name`, and \
+             number. Save a file of {here} into a vault with avendb_run: a `put_file` op (`vault`, `name`, and \
              `media` and `tags` if any), and the file's absolute `path` beside the op. It makes a new entry of type \
              file, so only where its shares let it create, as an Editor's do, not where it may only suggest. Any \
              entry brings its file in its creation, one write: `create` with `file` (an object, `name` and `media` \
@@ -721,12 +883,12 @@ impl Agent {
              of type file (`value` `{{kind: \"file\", title, media}}`); `put_file` with `entry` brings a file into \
              an entry it may edit on main. Read a \
              file of a vault back with avendb_read_file, or a `get_file` op on avendb_run: the file entry's `entry`, \
-             or a `vault` and the file's `name`, and an absolute `path` on this Mac to write it to, never over a file \
+             or a `vault` and the file's `name`, and an absolute `path` on {here} to write it to, never over a file \
              there unless `overwrite` is true; a text file of at most 64 KiB comes back inline too, as `text`, and \
              with no `path` inline alone. Capture a spark, anything that might become a story (a thought, a quote, a \
              note), with avendb_add_spark: its `text`, and its `title` and `tags` if any (a link or a media file goes \
              in as an artifact of its own), and answers its entry. Add a source fact, a link, a YouTube video, a \
-             picture or a clip, with avendb_add_artifact: its `url`, or the absolute `path` of a file on this Mac, \
+             picture or a clip, with avendb_add_artifact: its `url`, or the absolute `path` of a file on {here}, \
              which it saves to the Library first, or both; its `title`, `note`, `by`, `taken`, `language` and \
              `transcript` if known; and a `spark` to put it on that spark's canvas. Each goes in the `vault` it names, \
              else in its aven's coop, {coop}, where all sparks and artifacts are seeded, where the aven's shares \
@@ -746,8 +908,88 @@ impl Agent {
              make once it lands, and the person asks it. A done task's `outputs` are file entries, read with \
              avendb_read_file. For access it lacks, ask its person with avendb_request_access, saying why: they \
              answer in The OS app.",
-            name = self.name,
             coop = world::SEED_COOP,
+        )
+}
+
+/// The answer to MCP message `m`, by an agent whose instructions `instructions` makes and whose tools `call` answers,
+/// each by its name and arguments: none for a notification.
+async fn answer<F: Future<Output = Result<String>>>(
+    m: &Value,
+    instructions: impl FnOnce() -> String,
+    call: impl FnOnce(String, Value) -> F,
+) -> Option<Value> {
+    let id = m.get("id")?.clone();
+    let method = m.get("method").and_then(Value::as_str).unwrap_or_default();
+    let params = m.get("params").cloned().unwrap_or(Value::Null);
+    let result = match method {
+        "initialize" => {
+            let version = params["protocolVersion"].as_str().unwrap_or(PROTOCOL);
+            json!({
+                "protocolVersion": version,
+                "capabilities": { "tools": {} },
+                "serverInfo": { "name": "avendb", "version": env!("CARGO_PKG_VERSION") },
+                "instructions": instructions(),
+            })
+        }
+        "ping" => json!({}),
+        "tools/list" => json!({ "tools": tools() }),
+        "tools/call" => {
+            let name = params["name"].as_str().unwrap_or_default().to_string();
+            let (text, error) = match call(name, params["arguments"].clone()).await {
+                Ok(text) => (text, false),
+                Err(e) => (format!("{e:#}"), true),
+            };
+            json!({ "content": [{ "type": "text", "text": text }], "isError": error })
+        }
+        _ => {
+            return Some(json!({ "jsonrpc": "2.0", "id": id, "error": { "code": -32601, "message": "no method" } }));
+        }
+    };
+    Some(json!({ "jsonrpc": "2.0", "id": id, "result": result }))
+}
+
+/// The agent's device, as its MCP answers.
+struct Agent {
+    node: Arc<Node>,
+    /// the app's folder, beside which it leaves its requests; a cloud session's agent's own folder
+    host: PathBuf,
+    /// its device's name, agentClaude, which its device vault's profile reads too
+    name: String,
+    /// a cloud session's agent's: the server's endpoint, which it syncs with before each change (`catch_up`)
+    server: Option<EndpointId>,
+}
+
+impl Agent {
+    /// The answer to MCP message `m`: none for a notification.
+    async fn answer(&self, m: &Value) -> Option<Value> {
+        answer(m, || self.instructions(), |name, args| async move { self.call(&name, &args).await }).await
+    }
+
+    fn instructions(&self) -> String {
+        instructions(&self.name, self.server.is_some())
+    }
+
+    /// A cloud session's agent, before a change: what the server holds that it doesn't yet, as what another session of
+    /// the same key wrote meanwhile, so that its change builds on it (`SYNC`). Nothing on a Mac, whose agent's device
+    /// is one process, its edits one after another.
+    async fn catch_up(&self) {
+        let Some(server) = self.server else { return };
+        match tokio::time::timeout(SYNC, self.node.sync_with(server)).await {
+            Ok(Ok(_)) => {}
+            Ok(Err(e)) => tracing::warn!("{} doesn't catch up with the server: {e:#}", self.name),
+            Err(_) => tracing::warn!("{} doesn't catch up with the server: it took too long", self.name),
+        }
+    }
+
+    /// Why a cloud session's agent whose key belongs to no vault does nothing.
+    fn unjoined(&self) -> String {
+        let key = hex(&self.node.device().0);
+        format!(
+            "{name}'s key ({key}) isn't a device of avenMAIA: its person adds one in The OS app (Settings, Agents, Add a \
+             cloud agent), which shows the key once, and puts it in this environment's {KEY_VAR}; a new session uses \
+             it. Where they did so just now, the server may not have it yet: call again in a moment.",
+            name = self.name
         )
     }
 
@@ -758,6 +1000,9 @@ impl Agent {
             return self.ask_access(vault, args).await;
         }
         let Some(vault) = vault else {
+            if self.server.is_some() {
+                bail!("{}", self.unjoined());
+            }
             let device = hex(&self.node.device().0);
             if std::fs::read_to_string(denied(&self.host, &self.name)).is_ok_and(|d| d.trim() == device) {
                 return Ok(format!(
@@ -856,6 +1101,7 @@ impl Agent {
             let setting = "a device's own setting, which an agent keeps nowhere";
             anyhow::bail!("{:?} isn't for an agent: {setting}", op_name(&op));
         }
+        self.catch_up().await;
         let (answer, _) = match (engine::brings(&op), path) {
             (true, Some(path)) => {
                 let (op, bytes) = with_file(op, path).await?;
@@ -1376,6 +1622,9 @@ impl Agent {
                 bail!("the request is refused ({refused}): {}", asked["why"]);
             }
             return Ok(format!("Asked its aven's coop for {level} access, as a request of the aven. {answers}"));
+        }
+        if self.server.is_some() {
+            bail!("{}", self.unjoined());
         }
         let (device, offer) = (hex(&self.node.device().0), Some(self.node.offer().to_text()));
         let ask = Asking { level: level.to_string(), why: why.to_string(), vaults };
