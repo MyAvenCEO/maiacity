@@ -14,7 +14,14 @@
  * builds every panel). The engineering thread sized Dome50/100/150 and Tower200/250; the sizes between and below scale
  * from those along the curve they make (`between`).
  */
+import { configAt } from '../../../game/code/index.js';
 import { geodesicCap, towerGrid } from './geodesic.js';
+
+/** where the hex's numbers are kept: a config entry of the Maia City COOP (A3), the repo's code/configs/ its seed */
+export const SPECS = 'configs/sandbox-6/specs';
+/** the hex's numbers, as the page read them: the vault's once loaded (the page awaits `loadCode` before it imports the
+ * hex), else the seed's. What depends on the design package, the sizes and every sum stay here. */
+const C = /** @type {any} */ (configAt(SPECS));
 
 /** @typedef {{ D: number, a: number, h: number, R: number, floor: number, shell: number, volume: number, perimeter: number, freq: number }} Cap */
 
@@ -63,7 +70,7 @@ export const PACKAGES = {
  * THE SWITCH: 'prices' | 'insides' | 'halls'. Change this line to flip the whole village to another package. A script
  * can print another package without editing it: S7_DESIGN=prices node script.mjs (the page always uses this line).
  */
-const DESIGN_DEFAULT = 'insides';
+const DESIGN_DEFAULT = PACKAGES[C.design]?.built ? C.design : 'insides';
 /** the design package in use @type {string} */
 export const DESIGN = (() => {
 	const env = typeof process !== 'undefined' ? process.env?.S7_DESIGN : undefined;
@@ -84,7 +91,7 @@ export const HALLS = PACKAGE.halls;
  * the 'insides' package (hubs welded from plate, the works in Dome120s): under 'prices' (cast hubs) and 'halls' (the
  * works in halls) it stays off.
  */
-const DOME_FACTORY_DEFAULT = true;
+const DOME_FACTORY_DEFAULT = C.domeFactory !== false;
 export const DOME_FACTORY = (() => {
 	const env = typeof process !== 'undefined' ? process.env?.S7_DOME_FACTORY : undefined;
 	const on = env === undefined || env === '' ? DOME_FACTORY_DEFAULT : !/^(0|false|off|no)$/i.test(env);
@@ -125,47 +132,34 @@ export const HUBS_WELDED = (() => {
  * `insteadOf` is the package-1 price a design choice replaces (DESIGN).
  * @type {Record<string, { label: string, unit: string, eur: number, range: string, src: string, est?: boolean, was?: number, insteadOf?: number }>}
  */
-export const PRICES = {
-	// the struts' blanks; the village cuts the struts on its own used beam centre (buildout.js KIT 'joinery'), so no CNC
-	// service is bought. Package 1: larch/Douglas, spruce glulam 555–575 €/m³ wholesale (Holzkurier 11/2025) and larch logs
-	// ~1.7× spruce's. Packages 2–4: spruce glulam itself, ~600 €/m³ delivered in lots (it resists damp less: the struts at
-	// the glazing see condensation, so they need their coating kept up)
-	glulam: INSIDES
-		? { label: 'Spruce glulam blanks (GL24h) for the struts (the village cuts them)', unit: 'm³', eur: 600, range: '555–650', src: 'glulam', est: true, was: 1600, insteadOf: 950 }
-		: { label: 'Larch/Douglas glulam blanks for the struts (the village cuts them)', unit: 'm³', eur: 950, range: '800–1,200', src: 'glulam', est: true, was: 1600 },
-	// the north shell's cassettes are plain spruce structural timber (KVH 410–430 €/m³ wholesale, Holzkurier 11/2025)
-	cassette: { label: 'Spruce structural timber (KVH) for the north cassettes', unit: 'm³', eur: 500, range: '420–650', src: 'glulam', est: true },
-	clt: { label: 'CLT and glulam for floors and galleries', unit: 'm³', eur: 550, range: '500–700', src: 'glulam', est: true, was: 900 },
-	// package 1 casts the hubs; packages 2–4 weld them from plate: bought welded until the village's steel works welds
-	// them (buildout.js OWN.steelT, then HUBS_WELDED.village)
-	hubs: INSIDES
-		? { label: 'Steel hubs, ring and connectors welded from plate, galvanised, bought from a steel fabricator (until the village welds them)', unit: 't', eur: Math.round(HUBS_WELDED.bought / 100) * 100, range: '3,500–6,000', src: 'steel', est: true, was: 9000, insteadOf: 6000 }
-		: { label: 'Cast-steel hubs, ring and connectors (galvanised, machined, not erected)', unit: 't', eur: 6000, range: '4,500–9,000', src: 'steel', est: true, was: 9000 },
-	steel: { label: 'Structural steel, fabricated, not erected', unit: 't', eur: 2300, range: '1,800–3,000', src: 'steel', est: true, was: 3000 },
-	glass: { label: 'Laminated low-iron double glazing, low-E, with its gaskets and caps', unit: 'm²', eur: 190, range: '140–250', src: 'glass', est: true, was: 200 },
-	pv: { label: 'Solar cells laid in the glass (on top of the glazing’s price)', unit: 'm²', eur: 100, range: '50–150', src: 'pv', est: true, was: 150 },
-	hemp: { label: 'Hemp-fibre insulation', unit: 'm³', eur: 115, range: '90–140', src: 'hemp', est: true, was: 140 },
-	lime: { label: 'Lime-pozzolan concrete (footings)', unit: 'm³', eur: 180, range: '140–250', src: 'lime', est: true, was: 220 },
-	concrete: { label: 'Screed and slabs (lime/LC3 concrete)', unit: 'm³', eur: 150, range: '120–200', src: 'lime', est: true, was: 180 },
-	land: { label: 'Farmland in Bavaria', unit: 'ha', eur: 78000, range: '77,700 (Bavaria 2024)–150,000 (Upper Bavaria)', src: 'land' }
-};
+export const PRICES = /** @type {any} */ (
+	Object.fromEntries(
+		Object.entries(C.prices).map(([k, v]) => {
+			// packages 2–4 (C.insides): the struts' blanks are spruce glulam itself, ~600 €/m³ delivered in lots (it resists
+			// damp less: the struts at the glazing see condensation, so they need their coating kept up); and the hubs are
+			// welded from plate, bought welded until the village's steel works welds them (buildout.js OWN.steelT, then
+			// HUBS_WELDED.village). Package 1: larch/Douglas glulam (spruce glulam 555–575 €/m³ wholesale, Holzkurier 11/2025,
+			// larch logs ~1.7× spruce's), cast hubs. The village cuts the struts on its own used beam centre (buildout.js KIT
+			// 'joinery'), so no CNC service is bought; the north shell's cassettes are plain spruce structural timber (KVH
+			// 410–430 €/m³ wholesale, Holzkurier 11/2025)
+			const instead = INSIDES ? C.insides[k] : null;
+			if (!instead) return [k, v];
+			return [k, { ...v, ...instead, ...(k === 'hubs' ? { eur: Math.round(HUBS_WELDED.bought / 100) * 100 } : {}), insteadOf: v.eur }];
+		})
+	)
+);
 
-/** densities, t a m³ (glass: t a m² of laminated double glazing) */
-export const DENSITY = {
-	glulam: INSIDES ? 0.47 : 0.55, // larch ~590, Douglas ~530 kg/m³ at 12% moisture; spruce glulam ~470 (packages 2–4)
-	clt: 0.47, // spruce CLT
-	glass: 0.05, // 8 mm toughened + 12.76 mm laminated ≈ 21 mm × 2.5 t/m³
-	hemp: 0.035, // hemp fibre batts, 35–45 kg/m³ (the engineering thread: 97.8 t in the 150 m dome's 8,509 m² at 30–35 cm)
-	lime: 2.2,
-	concrete: 2.3
-};
+/** densities, t a m³ (glass: t a m² of laminated double glazing): glulam larch ~590, Douglas ~530 kg/m³ at 12% moisture,
+ * spruce glulam ~470 (packages 2–4); spruce CLT; glass 8 mm toughened + 12.76 mm laminated ≈ 21 mm × 2.5 t/m³; hemp fibre
+ * batts, 35–45 kg/m³ (the engineering thread: 97.8 t in the 150 m dome's 8,509 m² at 30–35 cm) */
+export const DENSITY = /** @type {Record<string, number>} */ ({ ...C.density, glulam: INSIDES ? C.density.glulam.spruce : C.density.glulam.larch });
 
 /**
  * Putting it up: the shell's parts are prefabricated, so assembling, cranes, engineering and site work add about as
  * much again as half the materials (assumed: a timber gridshell's assembly is ~30–50% of its cost; glazing is fitted
  * by the panel, ~40–60 €/m²).
  */
-export const ASSEMBLY = 0.5;
+export const ASSEMBLY = /** @type {number} */ (C.assembly);
 
 // ── a dome's shell ──────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -231,7 +225,7 @@ const CASSETTE_M = 0.06;
  * where it tilts under 45° and 194 where it is steeper (the engineering thread's hourly Munich year: 0.92 GWh from
  * 4,036 m² on the 150 m cap's flatter glass, 6.63 GWh from 34,133 m² on Tower250's steep glass).
  */
-export const CELLS = { steepest: 45, flatKwh: 227, steepKwh: 194 };
+export const CELLS = /** @type {{ steepest: number, flatKwh: number, steepKwh: number }} */ (C.cells);
 /** what a set of solar panels makes a year, kWh */
 const solarOf = (/** @type {{ kind: string, area: number, tilt: number }[]} */ panels) =>
 	panels.reduce((s, p) => s + (p.kind === 'solar' ? p.area * (p.tilt < CELLS.steepest ? CELLS.flatKwh : CELLS.steepKwh) : 0), 0);
@@ -307,14 +301,14 @@ export function shellOf(D) {
 // ── what goes on inside ─────────────────────────────────────────────────────────────────────────────────────────
 
 /** floor area a resident, m² gross (rooms, baths, shared kitchens and living, stairs): ~50 m² net, the German average */
-export const GFA_PERSON = 62;
+export const GFA_PERSON = /** @type {number} */ (C.gfaPerson);
 /** timber in a gallery of homes, m³ a m² of floor (CLT floors and walls, glulam posts; mass timber runs 0.2–0.4) */
 const TIMBER_GFA = 0.28;
 /** fitting out homes inside a dome, € a m², trades and materials as a builder would charge: timber multi-family homes
  * cost 1,635–2,580 €/m² (BKI 2025, KG 300+400, gross floor, mean 2,190), with 19 % VAT, roof and façade in it; net of
  * VAT that is ~1,840, and inside a dome there is no roof and no weather façade, so about 1,600 (range 1,300–1,900,
  * estimate; was 1,800). The build-out (./buildout.js) buys half of it: the materials, not the trades. */
-export const FITOUT_HOME = 1600;
+export const FITOUT_HOME = /** @type {number} */ (C.fitoutHome);
 
 /**
  * A home dome (Samuel, 2026-10-08): the homes are one straight block across the north of the dome, east to west, its
@@ -489,13 +483,13 @@ export const DF_IMPORTS = {
  * of glass, 50 kg a m² (DENSITY.glass). 15 % of the float is cut away: the triangles are cut from rectangular jumbo
  * sheets, two panes a triangle on the Dome80s and Dome120s (estimate). No tempering furnace: both panes are laminated.
  */
-export const DF_GLAZING = { kg: 50, waste: 0.15, lowIron: 2, lowE: 1, pvb: 2 };
+export const DF_GLAZING = /** @type {{ kg: number, waste: number, lowIron: number, lowE: number, pvb: number }} */ (C.dfGlazing);
 /** glulam from lamellas: 1.14–1.22 m³ of lamellas a m³ of finished glulam (CORRIM), 1.2 used */
-export const DF_LAMELLAS = 1.2;
+export const DF_LAMELLAS = /** @type {number} */ (C.dfLamellas);
 /** lamellas from the village's own timber works, € a m³: spruce sawlogs ~100 €/m³ (BUILD_SOURCES.raw) at ~0.5 m³ of dry lamellas a m³ of logs, the kilns and wear ~20 (estimate) */
 export const DF_OWN_LAMELLA = 100 / 0.5 + 20;
 /** the Munich year's solar by month, January first (PVGIS shape, rounded; estimate): the dome factory's own cells by month */
-export const SOLAR_MONTHS = [0.03, 0.05, 0.08, 0.11, 0.12, 0.13, 0.13, 0.12, 0.09, 0.07, 0.04, 0.03];
+export const SOLAR_MONTHS = /** @type {number[]} */ (C.solarMonths);
 /**
  * The parts the dome factory makes, each a unit: what it takes from the border (`eur`, from DF_IMPORTS), what the same
  * part costs bought finished (`bought`, PRICES), the crew-hours (`h`) and the power (`kwh`) it takes, and its line.
@@ -814,9 +808,9 @@ export function towerShell(T) {
  * screed, services and finishes; the factory floor and the deck carry more (the deck a metre of soil). `utilities`:
  * workshops, halls and co-working inside a dome, net of VAT and with no roof or façade: BKI offices 3,300–5,800 €/m²
  * gross with VAT and envelope less ~45 %, workshops less, so ~2,000 (range 1,400–2,800, estimate; was 3,000). */
-export const FITOUT = { utilities: 2000, factory: 1500, park: 900, community: 2800, offices: 2800, hotel: 3000, apartments: 3200, sky: 3500 };
+export const FITOUT = /** @type {Record<string, number>} */ (C.fitout);
 /** timber (m³) and screed (m³) a m² of floor: mass-timber floors ~0.25 m³ (the deck and factory long spans 0.4), 6 cm of screed */
-export const FLOOR_MATERIALS = { timber: 0.25, longSpan: 0.4, screed: 0.06 };
+export const FLOOR_MATERIALS = /** @type {{ timber: number, longSpan: number, screed: number }} */ (C.floorMaterials);
 
 // ── food, energy and people ─────────────────────────────────────────────────────────────────────────────────────
 
@@ -829,16 +823,7 @@ export const FLOOR_MATERIALS = { timber: 0.25, longSpan: 0.4, screed: 0.06 };
  * g: fresh grams a day (legumes dry, nuts as kernels); kcal and protein (g) a kg.
  * @type {Record<string, { label: string, g: number, kcal: number, protein: number }>}
  */
-export const DIET = {
-	legumes: { label: 'Legumes (beans, peas, lentils, lupins), dry', g: 110, kcal: 3400, protein: 220 },
-	nuts: { label: 'Nuts and seeds (hazel, walnut, sunflower, pumpkin, hemp), kernels', g: 75, kcal: 6000, protein: 180 },
-	chestnuts: { label: 'Sweet chestnuts', g: 220, kcal: 1900, protein: 24 },
-	roots: { label: 'Roots and tubers (potato, sweet potato, Jerusalem artichoke)', g: 550, kcal: 800, protein: 20 },
-	vegetables: { label: 'Vegetables and greens', g: 400, kcal: 300, protein: 15 },
-	fruit: { label: 'Fruit and berries', g: 550, kcal: 650, protein: 7 },
-	eggs: { label: 'Eggs (about 3 a week)', g: 25, kcal: 1430, protein: 125 },
-	chicken: { label: 'Chicken (about 210 g a week)', g: 30, kcal: 1500, protein: 200 }
-};
+export const DIET = C.diet;
 /** a person's day, kcal and g of protein */
 export const DAY = Object.values(DIET).reduce((a, d) => ({ kcal: a.kcal + (d.g / 1000) * d.kcal, protein: a.protein + (d.g / 1000) * d.protein }), { kcal: 0, protein: 0 });
 /**
@@ -846,7 +831,7 @@ export const DAY = Object.values(DIET).reduce((a, d) => ({ kcal: a.kcal + (d.g /
  * cockerels, grown slowly, eat ~5 kg a kg of meat on the plate; three tenths of it they find themselves (grass,
  * insects, windfalls, scraps), the rest is grown for them: beans, seeds and cooked roots.
  */
-export const HENS = { eggsFeed: 2.3, meatFeed: 5, forage: 0.3, mix: { legumes: 0.35, nuts: 0.15, roots: 0.5 } };
+export const HENS = /** @type {{ eggsFeed: number, meatFeed: number, forage: number, mix: Record<string, number> }} */ (C.hens);
 /** what is grown for a person in a year, kg: what they eat of the plants, and what the hens eat for their eggs and meat */
 export const GROWN = (() => {
 	const year = (/** @type {string} */ k) => (DIET[k].g * 365) / 1000;
@@ -866,10 +851,7 @@ export const GROWN = (() => {
  * year, with half the light (glass and solar panels): bananas 30–72 t/ha, papaya 30–80, sweet potato and cassava 15–30
  * a crop, pigeon pea 1–2.5 t dry, greens three crops or more a year; no chestnuts (their calories come from roots).
  */
-export const FOREST = {
-	outdoor: { label: 'Food forest outdoors', stack: 1.3, t: { legumes: 2.2, nuts: 1.2, chestnuts: 2.5, roots: 25, vegetables: 25, fruit: 15 } },
-	indoor: { label: 'Food forest under glass', stack: 1.3, t: { legumes: 3, nuts: 1.5, chestnuts: 0, roots: 30, vegetables: 45, fruit: 35 } }
-};
+export const FOREST = /** @type {Record<'outdoor' | 'indoor', { label: string, stack: number, t: Record<string, number> }>} */ (C.forest);
 /**
  * The food forest it takes to feed one person, m², planted in the diet's proportions (under the glass the chestnuts'
  * calories as roots), with what each crop takes
@@ -890,12 +872,7 @@ export function landFor(where) {
 export const LAND_PERSON = { outdoor: landFor('outdoor'), indoor: landFor('indoor') };
 
 /** raw materials the tower hex grows, a hectare a year */
-export const RAW = {
-	hemp: { label: 'Hemp', unit: 't straw', per: 10, note: 'Fibre hemp gives 5–12 t/ha of dry straw a year (TFZ Bavaria trial: 11.2 t); ~30% of it is fibre, the rest hurds, plus ~0.7 t seed', src: 'yields' },
-	bamboo: { label: 'Bamboo', unit: 't culms', per: 7, note: 'Cold-hardy Phyllostachys in central Europe, grown in (year 6–8 on): about 4–12 t/ha dry a year (no measured European yields: estimate); Moso in Italy 8–20', src: 'yields' },
-	woodland: { label: 'Douglas fir and larch', unit: 'm³ wood', per: 15, note: 'Douglas fir grows 18.9 m³/ha a year in Germany (national forest inventory), larch 8–13: a mix about 15', src: 'yields' },
-	mine: { label: 'Clay, lime and gravel pits', unit: 't dug', per: 0, note: 'Open pits, no dome over them: only the works that fire and burn what they dig are under glass', src: 'numbers' }
-};
+export const RAW = /** @type {Record<string, { label: string, unit: string, per: number, note: string, src: string }>} */ (C.raw);
 /** the utilities' machines, € (sources in SOURCES.equipment). `range` low–high €, `est` an estimate, `was` the price
  * before the cost audit (2026-10-13). The data center is the room's power, cooling and racks, not its accelerators
  * (those are bought one by one: sandbox-9 CHIPS); the shell is the dome's, so a modular fit-out, not a Frankfurt building. */
@@ -1044,17 +1021,7 @@ export const HALL = {
  * the slab concrete (PRICES.concrete), the footings lime-pozzolan (PRICES.lime).
  * @type {Record<string, { label: string, unit: string, eur: number, range: string, src: string, est?: boolean }>}
  */
-export const HALL_PRICES = {
-	glulam: { label: 'Spruce glulam (GL24h) for the halls’ frames', unit: 'm³', eur: 600, range: '555–650', src: 'glulam', est: true },
-	roof: { label: 'Sandwich panels for the roofs, 100 mm PIR in steel skins', unit: 'm²', eur: 45, range: '35–60', src: 'halls', est: true },
-	wall: { label: 'Sandwich panels for the walls, 80 mm PIR in steel skins', unit: 'm²', eur: 40, range: '30–55', src: 'halls', est: true },
-	mesh: { label: 'Welded steel mesh for the slabs', unit: 't', eur: 1000, range: '850–1,300', src: 'halls', est: true },
-	gravel: { label: 'Gravel under the slabs', unit: 't', eur: 16, range: '10–22', src: 'lime', est: true },
-	edge: { label: 'The membrane under a slab and its edge insulation', unit: 'm² of floor', eur: 8, range: '5–15', src: 'halls', est: true },
-	doors: { label: 'Doors, rooflights, gutters and downpipes', unit: 'm² of floor', eur: 20, range: '12–35', src: 'halls', est: true },
-	services: { label: 'Services: lighting, power, heating on the heat loop, fans, fire alarm', unit: 'm² of floor', eur: 60, range: '40–100', src: 'halls', est: true },
-	pv: { label: 'Solar on the halls’ south roofs: glass-glass modules, inverters, rails, cables', unit: 'kWp', eur: 320, range: '250–450', src: 'halls', est: true }
-};
+export const HALL_PRICES = C.hallPrices;
 
 /** @type {Map<string, any>} */
 const hallCache = new Map();
@@ -1133,20 +1100,21 @@ export function worksCompare() {
 }
 
 /** energy, kWh a year (our research unless noted) */
+const E = C.energy;
 export const ENERGY = {
 	/** a person at home in a shared dome */
-	person: 900,
+	person: /** @type {number} */ (E.person),
 	/** the AI data center: 300 kW of IT running all year, PUE 1.2 (liquid-cooled); ~85% of it comes back as 45 °C heat */
-	datacenter: 300 * 8760 * 1.2,
-	datacenterHeat: 300 * 8760 * 0.85,
+	datacenter: E.datacenterKw * 8760 * E.pue,
+	datacenterHeat: E.datacenterKw * 8760 * E.heatBack,
 	/** workshops and workspaces, a m² a year (assumed) */
-	workshop: 120,
+	workshop: /** @type {number} */ (E.workshop),
 	/** cleaning a m³ of water (membrane bioreactor ~0.6–1 kWh/m³), a person's 36 m³ a year */
-	water: 0.8 * 36,
+	water: E.waterKwhM3 * E.waterM3,
 	/** the tower's floors, kWh a m² a year (assumed, German benchmarks for efficient buildings) */
-	tower: { utilities: 200, factory: 220, park: 20, community: 60, offices: 70, hotel: 110, apartments: 35, sky: 150 },
+	tower: /** @type {Record<string, number>} */ (E.tower),
 	/** what a MWh of power is worth, €: Germany's 2025 wholesale average (the settlers game uses 80) */
-	eurMWh: 90
+	eurMWh: /** @type {number} */ (E.eurMWh)
 };
 
 /**
@@ -1175,4 +1143,4 @@ export const SOURCES = {
 };
 
 /** € a person a year of food, at the settlers game's price (10 € a kg) */
-export const FOOD_EUR_KG = 10;
+export const FOOD_EUR_KG = /** @type {number} */ (C.foodEurKg);

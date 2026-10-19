@@ -4,6 +4,7 @@
 -->
 <script>
 	import FilmRoute from '$lib/film/FilmRoute.svelte';
+	import { loadCode } from '../../../../game/code/index.js';
 	import { ISLAND_SEED } from '$lib/aven-city/game/seed.js';
 
 	/** @param {HTMLElement} stage */
@@ -19,6 +20,7 @@
 	sandbox="sandbox-1"
 	to="/app/games/sandbox-1/"
 	mount={async (stage, _area, onProgress) => {
+		await loadCode();
 		const { createScene } = await import('$lib/aven-city/game/three/scene');
 		onProgress('Growing the island');
 		const canvas = canvasIn(stage);

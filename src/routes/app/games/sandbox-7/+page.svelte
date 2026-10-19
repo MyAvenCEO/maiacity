@@ -4,7 +4,11 @@
 	dimension, tonne, price and hectare on toggleable panels, for the village, the tower hex or a living hex.
 -->
 <script>
-	import HexPlan from '$lib/sandbox-7/HexPlan.svelte';
+	import { loadCode } from '../../../../../game/code/index.js';
+
+	// the hex's numbers are a config entry of the Maia City COOP (configs/sandbox-6/specs): loaded before the hex's
+	// modules are, as they read them as they load
+	const hex = loadCode().then(() => import('$lib/sandbox-7/HexPlan.svelte'));
 </script>
 
 <svelte:head>
@@ -12,4 +16,6 @@
 	<meta name="description" content="A maiaCITY village of seven hexes at its real size: the domes, the tower, their materials in tonnes, real prices and the land in hectares." />
 </svelte:head>
 
-<HexPlan />
+{#await hex then { default: HexPlan }}
+	<HexPlan />
+{/await}
