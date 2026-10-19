@@ -75,9 +75,25 @@ www.{$SITE_ADDRESS:maia.city} {
 }
 
 {$API_ADDRESS} {
-	# the site's media, from avenDB: no key goes on to it (the Mac app sends its own), as everyone may read them
+	# what a browser asks before it reads one of the site's media by Range (its CORS preflight), answered here, so the
+	# answer is the same whichever of the two below serves the file (the old vault's gateway answers no OPTIONS)
+	@media_preflight {
+		method OPTIONS
+		path_regexp ^/vault/files/[0-9a-f]{64}(\.[a-z0-9]+)?$
+	}
+	handle @media_preflight {
+		header Access-Control-Allow-Origin *
+		header Access-Control-Allow-Methods "GET, HEAD, OPTIONS"
+		header Access-Control-Allow-Headers Range
+		header Access-Control-Max-Age 86400
+		respond 204
+	}
+	# the site's media, from avenDB: no key goes on to it (the Mac app sends its own), as everyone may read them. Every
+	# answer lets any page read it, a refusal too: the old vault's gateway answers a private file's 401 without it, and
+	# a page then sees no answer at all, only a failed load (the Mac app's copy into Maia City never tried its key)
 	@media path_regexp media ^/vault/files/([0-9a-f]{64}(\.[a-z0-9]+)?)$
 	handle @media {
+		header ?Access-Control-Allow-Origin *
 		reverse_proxy avendb:3351 {
 			rewrite /feed/media/{re.media.1}
 			header_up -Authorization
@@ -91,6 +107,7 @@ www.{$SITE_ADDRESS:maia.city} {
 	handle_errors 502 503 504 {
 		@media_fallback path_regexp ^/vault/files/[0-9a-f]{64}(\.[a-z0-9]+)?$
 		handle @media_fallback {
+			header ?Access-Control-Allow-Origin *
 			reverse_proxy vault:3341
 		}
 	}
