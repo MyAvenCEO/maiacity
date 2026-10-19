@@ -2,7 +2,7 @@
 	The second seed. Day 01 says the first step is taken alone and the second is
 	somebody else saying yes — this is where that happens. Invite only (Samuel
 	2026-10-18): once the city has its admin, an invite link from one of its
-	super admins (?invite=) is the only way to sign up, used once. Signing up
+	super admins is the only way to sign up, used once. Signing up
 	makes the passkey; the app then founds the person's human vault with it in
 	avenDB, its profile named as they say here ($lib/app/entry.js): the name
 	lives there, nowhere else. After its `#` the link holds a share of one of
@@ -40,11 +40,13 @@
 
 	onMount(async () => {
 		supported = passkeysAvailable();
-		invite = new URLSearchParams(location.search).get('invite') ?? '';
-		// the share the invite gives, and its key: kept for the app, never sent anywhere from here
+		// the share the invite gives, and its key: kept for the app, the key never sent anywhere from here; the share's
+		// id is the invite the API signs up on, as avenDB's server says it is open (an older link brings a code of the
+		// API's, ?invite=)
 		const brought = new URLSearchParams(location.hash.slice(1));
 		brings = !!brought.get('share') && !!brought.get('key');
 		if (brings) invitedWith(brought.get('share') ?? '', brought.get('key') ?? '');
+		invite = new URLSearchParams(location.search).get('invite') || (brings ? (brought.get('share') ?? '') : '');
 		// Best-effort, all of them: a signed-out visitor and an API that is
 		// briefly down should see the page, not an error.
 		const counted = founderCount()

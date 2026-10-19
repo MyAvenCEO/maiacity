@@ -10,6 +10,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { sql, type Founder, type Passkey } from "./db";
 import { DEFAULT_ROLE, FIRST_SIGNUP_ROLE } from "./caps";
+import { CODE_FEED } from "../../game/code/sources/feed.js";
 
 // The page doing the WebAuthn ceremony is maia.city; this API only verifies
 // what the browser produced. So the relying party is the site, never the API
@@ -44,21 +45,36 @@ const b64url = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64url");
 
 // ---------------------------------------------------------------- signing up
 
-/** Whether invite `code` may sign one person up: one an admin made, unused, unexpired. */
+/** An invite of avenDB's, named by the id of its share: 64 hex digits, where the API's own codes were base64url. */
+const SHARE = /^[0-9a-f]{64}$/;
+
+/** Where avenDB's server says whether an invite is open, inside the compose network as the API reads its code
+ *  (AVENDB_FEED), at `<share>` after it. */
+const INVITES = new URL("/feed/invite/", process.env.AVENDB_FEED || CODE_FEED);
+
+/** Whether avenDB's server says share `share` is an invite of Maia City's that no vault claimed yet
+ *  (avendb-server's feed.rs `invite`): false too where it doesn't answer, as the person then tries again. */
+async function cityInvite(share: string): Promise<boolean> {
+  try {
+    const answer = await fetch(new URL(share, INVITES), { signal: AbortSignal.timeout(4000) });
+    return answer.ok && (await answer.json())?.open === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Whether invite `code` may sign one person up: an invite of Maia City's in avenDB, by its share's id, that no vault
+ *  claimed and nobody signed up on here yet, made by a device acting for Maia City with no passkey (Samuel 2026-10-19:
+ *  the city's admin invites, their vault signs for it); or an older code an admin made here, unused, unexpired. */
 export async function inviteOpen(code: string): Promise<boolean> {
   if (!code) return false;
+  if (SHARE.test(code)) {
+    const [used] = await sql`SELECT 1 FROM signup_invites WHERE code = ${code}`;
+    return !used && (await cityInvite(code));
+  }
   const [row] = await sql`
     SELECT 1 FROM signup_invites WHERE code = ${code} AND used_by IS NULL AND expires_at > now()`;
   return !!row;
-}
-
-/** A new invite, made by `by`: a code no one can guess, open for a week. */
-export async function makeInvite(by: string): Promise<{ code: string; expires: string }> {
-  const code = b64url(crypto.getRandomValues(new Uint8Array(18)));
-  const [row] = await sql`
-    INSERT INTO signup_invites (code, made_by, expires_at) VALUES (${code}, ${by}, now() + interval '7 days')
-    RETURNING expires_at`;
-  return { code, expires: new Date(row.expires_at).toISOString() };
 }
 
 const INVITE_ONLY = "maiaCITY is invite only: ask its admin for an invite link.";
@@ -107,6 +123,8 @@ export async function registerFinish(body: any): Promise<Result<Founder>> {
   if (!verification.verified || !verification.registrationInfo)
     return { ok: false, error: "The passkey could not be verified." };
 
+  if (pending.invite && SHARE.test(pending.invite) && !(await cityInvite(pending.invite))) return { ok: false, error: INVITE_ONLY };
+
   const { credential } = verification.registrationInfo;
   const id = randomUUID();
   // the very first signup runs the city; everyone after them starts as a citizen, with an invite they use up here, in
@@ -118,7 +136,14 @@ export async function registerFinish(body: any): Promise<Result<Founder>> {
       INSERT INTO founders (id, name, role)
       VALUES (${id}, '', ${first.first ? FIRST_SIGNUP_ROLE : DEFAULT_ROLE})
       RETURNING id, number, created`;
-    if (!first.first) {
+    // an invite of avenDB's is used up by its row here, which no one made before: one person signs up on it
+    if (!first.first && SHARE.test(pending.invite ?? "")) {
+      const [used] = await tx`
+        INSERT INTO signup_invites (code, expires_at, used_by, used_at) VALUES (${pending.invite}, now(), ${id}, now())
+        ON CONFLICT (code) DO NOTHING
+        RETURNING code`;
+      if (!used) throw new InviteUsed();
+    } else if (!first.first) {
       const [used] = await tx`
         UPDATE signup_invites SET used_by = ${id}, used_at = now()
         WHERE code = ${pending.invite} AND used_by IS NULL AND expires_at > now()

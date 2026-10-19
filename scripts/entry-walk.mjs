@@ -35,6 +35,8 @@ const out = resolve(arg('--out', 'build/entry-walk'));
 mkdirSync(out, { recursive: true });
 const { BASE: base, RELAY: relay, SERVER: server } = process.env;
 if (!base || !relay || !server) throw new Error('BASE, RELAY and SERVER: the dev server, the test server’s relay and offer');
+/** the test server's feed, where the API asks whether an invite is open (AVENDB_FEED_BIND, its default port) */
+const feed = process.env.FEED ?? 'http://127.0.0.1:3351/feed';
 const chrome =
 	process.env.CHROME ??
 	['/opt/pw-browsers/chromium', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find((p) => existsSync(p));
@@ -50,7 +52,11 @@ const check = (what, ok, found = '') => {
 
 // ─── the API's stand-in: founders, passkeys, sign-up invites and a session cookie, every ceremony verified ───
 
-const api = { founders: [], keys: new Map(), challenges: new Map(), sessions: new Map(), invites: new Map(), logins: [] };
+const api = { founders: [], keys: new Map(), challenges: new Map(), sessions: new Map(), used: new Set(), logins: [] };
+/** Whether invite `share` may sign one person up, as the API asks it: nobody signed up on it here, and the test
+ *  server says it is an invite of Maia City's that no vault claimed (api/src/passkey.ts `inviteOpen`). */
+const inviteOpen = async (share) =>
+	!!share && !api.used.has(share) && (await fetch(`${feed}/invite/${share}`).then((r) => r.json()).then((r) => r.open === true, () => false));
 const cookieOf = (req) => /maia_test=([^;]+)/.exec(req.headers.cookie ?? '')?.[1] ?? '';
 const whoOf = (req) => api.founders.find((f) => f.id === api.sessions.get(cookieOf(req))) ?? null;
 const caps = (f) => (f.role === 'admin' ? ['roles:admin', 'humans:invite', 'media:admin', 'economy:admin'] : ['hearts:mint']);
@@ -62,7 +68,7 @@ async function answer(req, body) {
 	if (path === '/api/me') return me ? [200, { ...shown(me), role: me.role, caps: caps(me) }] : [401, { error: 'not signed in' }];
 	if (path === '/api/founders/count') return [200, { count: api.founders.length, step: 1 }];
 	if (path === '/api/passkey/register/options') {
-		if (api.founders.length && !api.invites.get(body.invite)?.open) return [400, { error: 'maiaCITY is invite only' }];
+		if (api.founders.length && !(await inviteOpen(body.invite))) return [400, { error: 'maiaCITY is invite only' }];
 		const options = await webauthn.generateRegistrationOptions({
 			rpName: 'maiaCITY',
 			rpID: 'localhost',
@@ -80,9 +86,8 @@ async function answer(req, body) {
 		const v = await webauthn.verifyRegistrationResponse({ response: body, expectedChallenge: challenge, expectedOrigin: origin, expectedRPID: 'localhost', requireUserVerification: false });
 		if (!pending || !v.verified) return [400, { error: 'did not verify' }];
 		if (api.founders.length) {
-			const inv = api.invites.get(pending.invite);
-			if (!inv?.open) return [400, { error: 'maiaCITY is invite only' }];
-			inv.open = false;
+			if (!(await inviteOpen(pending.invite))) return [400, { error: 'maiaCITY is invite only' }];
+			api.used.add(pending.invite);
 		}
 		const f = { id: randomUUID(), number: api.founders.length + 1, since: new Date().toISOString(), role: api.founders.length ? 'citizen' : 'admin' };
 		api.founders.push(f);
@@ -116,13 +121,7 @@ async function answer(req, body) {
 		api.sessions.delete(cookieOf(req));
 		return [204, null];
 	}
-	if (path === '/api/invites' && req.method === 'POST') {
-		if (!me || !caps(me).includes('humans:invite')) return [403, { error: 'This needs the right to invite a new human.' }];
-		const code = randomUUID().replace(/-/g, '');
-		api.invites.set(code, { open: true });
-		return [200, { code, expires: new Date(Date.now() + 7 * 864e5).toISOString() }];
-	}
-	if (path.startsWith('/api/invites/')) return [200, { open: !!api.invites.get(path.split('/').pop())?.open }];
+	if (path.startsWith('/api/invites/')) return [200, { open: await inviteOpen(path.split('/').pop()) }];
 	return [404, { error: 'not here' }];
 }
 function signedIn(f) {
@@ -270,7 +269,7 @@ try {
 	check('the owner’s menu offers to invite a traveler', await until(inviting, 20000), await words(a.page, 'nav.pill .account'));
 	const made = await until(async () => (await inviting()) && (await until(async () => !!(await a.page.$('input.invited')), 4000)), 180000);
 	const link = made ? await a.page.$eval('input.invited', (i) => i.value) : '';
-	check('the super admin makes an invite link to a traveler, its share and key after its #', /\/join\/\?invite=\w+#share=[0-9a-f]{64}&key=[0-9a-f]{64}$/.test(link), link);
+	check('the super admin makes an invite link to a traveler, its share and key after its #, and no code of the API’s', /\/join\/#share=[0-9a-f]{64}&key=[0-9a-f]{64}$/.test(link), link);
 	await shot(a.page, '06-invite');
 	// the seed writes hundreds of entries in the background after the founding, which the server takes in turn: the
 	// invite reaches it once they did, as the admin's app shows the seed done
@@ -289,7 +288,7 @@ try {
 	await b.page.type('#name', 'Lena');
 	await click(b.page, 'Join as a founder');
 	check('the invited person sets up their human vault', await waitText(b.page, 'Your human vault.'));
-	check('the invite is used up', api.invites.get(new URL(link).searchParams.get('invite'))?.open === false);
+	check('the invite is used up', api.used.has(new URLSearchParams(new URL(link).hash.slice(1)).get('share')));
 	await click(b.page, 'Set up my human vault');
 	check('their dashboard greets them', await waitText(b.page, ', Lena.', 120000), await words(b.page, 'h1'));
 	check('their vault claimed the invite: the sandboxes open to them', await until(async () => (await games(b.page)).includes('Sandbox 1'), 60000), await games(b.page));

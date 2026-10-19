@@ -1128,6 +1128,17 @@ pub const SEED_NAMES: [&str; 2] = ["Maia City", "avenMAIA"];
 /// (`public_entries`' `seed`), whatever another vault calls itself.
 pub const SEED_COOP: &str = SEED_NAMES[0];
 
+/// Whether `share` is an invite of the seed's coop, Maia City, that a newcomer may still sign up with, by device `me`'s
+/// view: a live share over it to an invite key, which no vault claimed yet (`Lab::invite_card`, docs/ARCHITECTURE.md
+/// §5, Invites). So maiaCITY's API, which holds no device, signs up only someone an owner of Maia City invited, by
+/// the invite their link brings, which a device signed with no passkey (Samuel 2026-10-19).
+pub fn open_invite(lab: &Lab, me: SignerId, share: ShareId) -> bool {
+    let Some(&city) = seed_of(lab, me).first() else { return false };
+    let st = lab.state(me);
+    st.share(share)
+        .is_some_and(|cp| cp.share.over == city && matches!(cp.share.who, Who::Invite(_)) && st.live(share))
+}
+
 /// The seed device `me`'s person's claim of the server founded, by its view, in `SEED_NAMES`' order: Maia City and
 /// avenMAIA, its aven, the server's vault (`seeded`); for avenDB's server itself, a device of avenMAIA, the seed that
 /// ends in its vault (`seeder`). None if it founded none.
