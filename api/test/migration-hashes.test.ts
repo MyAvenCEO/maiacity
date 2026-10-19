@@ -1,17 +1,17 @@
 // Migration 0029 against real Postgres semantics (PGlite): a database as it was, naming its files by IPFS CID, comes out
 // naming each by its BLAKE3 hash — timelines, shots and their versions, the board and the render queue (the shots and the
-// queue until 0052 drops them). The old library tables are left as they were.
+// queue until 0052 drops them, the timelines and the board until 0054). The old library tables are left as they were.
 import { beforeAll, describe, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { useDb, type Db } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
 import { CID_MAP } from "../src/cid-map";
-import { listContent } from "../src/content";
 import { normalize } from "../../game/film/shot.js";
 
 const at = MIGRATIONS.findIndex((m) => m.id === "0029-hashes-not-cids");
 // 0052 drops the studio tables this checks, so the migrations after 0029 run up to it, and it is checked last
 const drop = MIGRATIONS.findIndex((m) => m.id === "0052-drop-studio-1-and-genui");
+const board = MIGRATIONS.findIndex((m) => m.id === "0054-drop-content-board-and-timelines");
 const [[C1, H1], [C2, H2], [C3, H3], [C4, H4]] = CID_MAP.slice(0, 4) as [string, string][];
 
 const dbOf = (pg: PGlite): Db => {
@@ -96,7 +96,7 @@ describe("0029: every CID becomes its hash", () => {
 
   test("the board's item: its hashes, its text, its deliveries and posts", async () => {
     // (the migrations after 0029 run too: 0032 names the old "Day 19" by the story it became)
-    const [item] = (await listContent()).filter((i) => i.project === "233 settlers, how it starts");
+    const { rows: [item] } = await pg.query<any>("SELECT hashes, body, link, deliveries, posts FROM content_items WHERE project = $1", ["233 settlers, how it starts"]);
     expect(item!.hashes).toEqual([H1, H2]);
     expect(item!.body).toBe(`![the forest](${H1}.jpg)\n\nand ${H2}, and ${H2} again; not ours: bafkreinotacidatall`);
     expect(item!.link).toBe(`https://maia.city/media/${H3}.jpg`);
@@ -133,12 +133,19 @@ describe("0029: every CID becomes its hash", () => {
   });
 
   test("0052 drops Studio 1's shots and render queue and the Generated UI's views; the timelines and the board stay", async () => {
-    await pg.exec(MIGRATIONS.slice(drop).map((m) => m.sql).join(";\n"));
-    const { rows } = await pg.query<{ relname: string }>(
-      "SELECT relname FROM pg_class WHERE relkind = 'r' AND relname IN ('shots', 'shot_versions', 'render_jobs', 'genui_views', 'timelines', 'content_items')",
-    );
-    expect(rows.map((r) => r.relname).sort()).toEqual(["content_items", "timelines"]);
+    await pg.exec(MIGRATIONS.slice(drop, board).map((m) => m.sql).join(";\n"));
+    const tables = async () =>
+      (await pg.query<{ relname: string }>(
+        "SELECT relname FROM pg_class WHERE relkind = 'r' AND relname IN ('shots', 'shot_versions', 'render_jobs', 'genui_views', 'timelines', 'content_items')",
+      )).rows.map((r) => r.relname).sort();
+    expect(await tables()).toEqual(["content_items", "timelines"]);
     expect((await pg.query("SELECT 1 FROM timelines WHERE id = $1", [timeline])).rows).toHaveLength(1);
+  });
+
+  test("0054 drops the old content board and the legacy timelines", async () => {
+    await pg.exec(MIGRATIONS.slice(board).map((m) => m.sql).join(";\n"));
+    const { rows } = await pg.query<{ relname: string }>("SELECT relname FROM pg_class WHERE relkind = 'r' AND relname IN ('timelines', 'content_items')");
+    expect(rows).toEqual([]);
   });
 });
 

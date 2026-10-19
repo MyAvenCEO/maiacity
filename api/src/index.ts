@@ -16,8 +16,6 @@ import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey
 import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice, VaultError } from "./vault";
 import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } from "./analysis";
 import { checkModels, pick } from "./prem";
-import { listTimelines } from "./timelines";
-import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries, fileStory, unfiledStories } from "./content";
 import { GameError, getGame, move, takeSeat } from "./maiacity-v1.js";
 import { loadCode } from "../../game/code/index.js";
 import { feedOf } from "../../game/code/sources/avendb.js";
@@ -106,7 +104,7 @@ async function signedIn(req: Request): Promise<{ id: string; role: string } | Re
 
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof ContentError || e instanceof VaultError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof VaultError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -501,135 +499,6 @@ const server = Bun.serve({
         }
       },
     },
-    // The legacy studio's timelines, read only: Studio 2 cuts its films in avenDB. The list stays while the board's
-    // scripts still find a film's legacy cut by its project and variant (api/scripts/day.ts, api/scripts/posts.ts).
-    "/api/timelines": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        return json(req, await listTimelines());
-      },
-    },
-
-    // A legacy cut's posts onto its film's item on the board (api/scripts/posts.ts)
-    "/api/timelines/:id/posts": {
-      OPTIONS: preflight,
-      PUT: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          const body = ((await readJson(req)) ?? {}) as { title?: string; posts?: unknown };
-          return json(req, await savePosts(me.id, req.params.id, body.posts as never, body.title));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-
-    // The days on the board, for the pipeline (publish step): where each stands and when it goes out
-    "/api/content/days": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        const items = (await listContent()).filter((i) => i.project);
-        return json(req, { items: items.map(({ project, title, status, scheduled_at, source }) => ({ project, title, status, scheduled_at, source })) });
-      },
-    },
-
-    // The stories the Mac app is to file in the media vault (past the idea, no vault story yet), and filing one
-    "/api/content/unfiled": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        return json(req, { items: await unfiledStories() });
-      },
-    },
-    "/api/content/:id/story": {
-      OPTIONS: preflight,
-      PUT: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          const b = ((await readJson(req)) ?? {}) as { story?: string };
-          return json(req, await fileStory(req.params.id, String(b.story ?? "")));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-
-    // A day, derived from its base article: written where the article is (the same key as the film pipeline)
-    "/api/content/days/:project": {
-      OPTIONS: preflight,
-      PUT: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await saveDay(me.id, decodeURIComponent(req.params.project), ((await readJson(req)) ?? {}) as never));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-
-    // The stories: the board, and every story's steps.
-    "/api/content": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "content:admin");
-        if (me instanceof Response) return me;
-        const u = new URL(req.url);
-        return json(req, { items: await listContent(u.searchParams.get("from") ?? undefined, u.searchParams.get("to") ?? undefined), kinds: KINDS, channels: CHANNELS, formats: FORMATS, statuses: STATUSES, beats: BEATS });
-      },
-      POST: async (req) => {
-        const me = await allowed(req, "content:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await createContent(me.id, (await readJson(req)) ?? {}), { status: 201 });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    // DELETE /api/content/:id/deliveries/:timeline → a render's films off the card (the rest stays)
-    "/api/content/:id/deliveries/:timeline": {
-      OPTIONS: preflight,
-      DELETE: async (req) => {
-        const me = await allowed(req, "content:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await dropDeliveries(req.params.id, req.params.timeline));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/content/:id": {
-      OPTIONS: preflight,
-      PUT: async (req) => {
-        const me = await allowed(req, "content:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await saveContent(req.params.id, (await readJson(req)) ?? {}));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-      DELETE: async (req) => {
-        const me = await allowed(req, "content:admin");
-        if (me instanceof Response) return me;
-        try {
-          await deleteContent(req.params.id);
-          return new Response(null, { status: 204, headers: cors(req) });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-
     "/api/session": {
       OPTIONS: (req) => new Response(null, { status: 204, headers: cors(req) }),
       DELETE: (req) => new Response(null, { status: 204, headers: { ...cors(req), "Set-Cookie": clearCookie() } }),

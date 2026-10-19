@@ -1046,4 +1046,14 @@ export const MIGRATIONS: Migration[] = [
       DROP TABLE IF EXISTS coops CASCADE;
     `,
   },
+  {
+    // The old content board and the legacy studio's timelines go (Samuel 2026-10-19, "Freeze, then drop"): a story and
+    // its posts live in the Maia City vault in avenDB (the story's Derivatives tab), the two legacy films come back
+    // from their frozen copies (films/legacy), and a database dump from before this is in the backup bucket
+    // (BACKUPS/pg/). No page or script reads either any more.
+    id: "0054-drop-content-board-and-timelines",
+    sql: `
+      DROP TABLE IF EXISTS content_items, timelines CASCADE;
+    `,
+  },
 ];

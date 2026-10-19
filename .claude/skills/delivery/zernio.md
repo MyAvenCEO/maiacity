@@ -2,8 +2,9 @@
 
 Zernio (zernio.com, formerly Late / getlate.dev) is the one API we publish every platform through: one request per
 moment, one entry per platform, each with its own words and its own file. Docs: https://docs.zernio.com (API
-reference under `/api-reference`, one page per operation, e.g. `/media/get-media-presigned-url`). Our dry run builds
-these requests from a day's derivatives: `bun api/scripts/zernio.ts blog/day-NN-<slug> [--local]` → `zernio.json`.
+reference under `/api-reference`, one page per operation, e.g. `/media/get-media-presigned-url`). The upload step is
+not built: when it is, it builds these requests from a story's posts in the Maia City vault (the content-derivatives
+skill). The old dry run (`api/scripts/zernio.ts`, over the content board) is gone with the board.
 
 ## The model
 

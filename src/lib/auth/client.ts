@@ -254,8 +254,7 @@ export type Chapter = { id: number; at: number; name: string };
 /**
  * Where a story stands, in the order it moves: its brainstorm pad; its journey (the arc, beat by beat); its hook (the
  * title, the intro, the description); its thumbnail (the 16:9 title card, designed in layers); the long-form master
- * article (writing); the film (movie); the article locked and the posts derived from it; dated; out. The API sends its own list with every GET /api/content — this is the
- * fallback until it has answered.
+ * article (writing); the film (movie); the article locked and the posts derived from it; dated; out.
  */
 export const STATUSES = ['idea', 'hook', 'thumbnail', 'journey', 'writing', 'movie', 'derivatives', 'scheduled', 'published'] as const;
 export type Status = (typeof STATUSES)[number];
@@ -315,49 +314,6 @@ export type Layer = {
 /** The title card as designed: its layers, and the 16:9 card rendered from them (by hash), once there is one. */
 export type Thumbnail = { layers?: Layer[]; card?: string | null };
 
-export type ContentItem = {
-	id: string;
-	title: string;
-	kind: string;
-	channels: string[];
-	status: Status;
-	scheduled_at: string | null;
-	/** the day's base article in Markdown: the long-form master every post derives from */
-	body: string;
-	/** the brainstorm pad: links, concepts, fragments (Markdown) */
-	idea: string;
-	/** the intro, the trailer: the first 3–30 s of the film (by its length), why to care and the transformation */
-	intro: string;
-	/** the description under the hook (YouTube's, the journal's lede): the overview and the detail */
-	description: string;
-	journey: Journey;
-	/** the hooks tried, the one on the card among them (its line is `hook`) */
-	hooks: HookVariant[];
-	/** the image title: the hook's catchwords for the card, even more compact, one per line ("a '1' million lives", "decision") */
-	image_title: string[];
-	/** the title card as designed, layer by layer, and the card rendered from it */
-	thumbnail: Thumbnail;
-	/** the media vault's story it is filed in, once the Mac app has made it (an iroh namespace id) */
-	story: string | null;
-	hashes: string[];
-	link: string | null;
-	tags: string[];
-	/** every file a film is delivered as, from all of its cuts (made by the render worker, never edited here) */
-	deliveries: Delivery[];
-	/** the posts derived from the base article, several a day, each at its own time (prepared elsewhere; only previewed here) */
-	posts: Post[];
-	/** the studio timeline this item was first made from, when it is a film */
-	timeline_id: string | null;
-	/** the film project it belongs to ("Day 19"): one item per project, whatever its cuts */
-	project: string | null;
-	/** where the base article (the body) lives in the repo, when it came from a file */
-	source?: string | null;
-	/** the hook: the title set into the day's title cards (its thumbnails, in every shape) */
-	hook?: string | null;
-	created: string;
-	updated: string;
-};
-
 /** One file a film is delivered as: which channels it is for, and what it is. */
 export type Delivery = {
 	channels: string[];
@@ -409,10 +365,6 @@ export type Post = {
 	url?: string;
 };
 
-export const listContent = (from?: string, to?: string) =>
-	call<{ items: ContentItem[]; kinds: string[]; channels: string[]; statuses: Status[] }>(
-		`/api/content${from ? `?${new URLSearchParams({ from, to: to ?? '' })}` : ''}`
-	);
 
 
 // ─────────────────────────────── exporting a timeline ───────────────────────────────
