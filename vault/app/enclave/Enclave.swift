@@ -57,7 +57,8 @@ func answer(to text: String) -> String {
     } catch {
         reply = ["error": "the Secure Enclave: \(error)"]
     }
-    guard let data = try? JSONSerialization.data(withJSONObject: reply), let json = String(data: data, encoding: .utf8)
+    let data = try? JSONSerialization.data(withJSONObject: reply, options: [.withoutEscapingSlashes])
+    guard let data, let json = String(data: data, encoding: .utf8)
     else { return #"{"error":"the Secure Enclave's answer isn't JSON"}"# }
     return json
 }
