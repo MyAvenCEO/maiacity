@@ -48,6 +48,13 @@ pub(crate) const INVITE: u8 = 9;
 /// made, answered by nothing once the node took every new human vault among them, and refused otherwise. The node takes
 /// them as one batch, which its gate takes a new human vault from only with the invite it claims (`Lab::gate`).
 pub(crate) const SIGN_UP: u8 = 10;
+/// A request for the entries of the vaults it names alone (`vaults_body`), answered by a reply as a request is, of
+/// those vaults' entries and of every log that is no entry's, the vaults', shares' and audiences' (`vaulted`): what a
+/// node that asks only when told (`Options::lazy`), a cloud session's agent, asks for the vaults a call touches.
+pub(crate) const ASK_VAULTS: u8 = 11;
+
+/// The most vaults an `ASK_VAULTS` names.
+const VAULTS_LIMIT: usize = 4096;
 
 /// The error code a node closes a connection or a stream with when it refuses it.
 pub(crate) const REFUSED: VarInt = VarInt::from_u32(1);
@@ -162,6 +169,54 @@ fn scoped(lab: &Lab, me: SignerId, mut request: Request) -> Request {
     request
 }
 
+/// `request`, what device `me` of `lab` asks a peer, cut to the vaults `vaults` (`ASK_VAULTS`): of the entries it
+/// holds, only what it names of those of these vaults, and of its loose edits, only those of no other vault's entry.
+pub(crate) fn of_vaults(lab: &Lab, me: SignerId, mut request: Request, vaults: &BTreeSet<VaultId>) -> Request {
+    let elsewhere = |l: &LogId| match *l {
+        LogId::Entry(e) => lab.vault_of_entry(me, e).is_none_or(|v| !vaults.contains(&v)),
+        _ => false,
+    };
+    request.ask.haves.retain(|l, _| !elsewhere(l));
+    let log = lab.log(me);
+    let other = |(edit, id): (&avendb::policy::Edit, &EditId)| log_of(edit, *id).is_some_and(|l| elsewhere(&l));
+    let others: HashSet<EditId> = log.edits().iter().zip(log.ids()).filter(|e| other(*e)).map(|(_, id)| *id).collect();
+    request.ask.loose.retain(|id| !others.contains(id));
+    request
+}
+
+/// What device `me` of `lab` answers `request` for the vaults `vaults` alone (`ASK_VAULTS`) with, as a request
+/// (`Lab::reply`): every edit it holds of an entry of any other vault, or of an entry it can't place, counted among
+/// those the asker holds. What the asker may receive is the same as ever (T12): it only asks for less.
+fn vaulted(lab: &Lab, me: SignerId, mut request: Request, vaults: &BTreeSet<VaultId>) -> Request {
+    let log = lab.log(me);
+    let elsewhere = |(edit, id): (&avendb::policy::Edit, &EditId)| match log_of(edit, *id) {
+        Some(LogId::Entry(e)) => lab.vault_of_entry(me, e).is_none_or(|v| !vaults.contains(&v)),
+        _ => false,
+    };
+    let others = log.edits().iter().zip(log.ids()).filter(|e| elsewhere(*e)).map(|(_, id)| *id);
+    request.ask.loose.extend(others);
+    request
+}
+
+/// The body of an `ASK_VAULTS`: how many vaults it names, in two bytes, each vault's id, then the request.
+pub(crate) fn vaults_body(vaults: &BTreeSet<VaultId>, request: &Request) -> Vec<u8> {
+    let mut body = (vaults.len() as u16).to_be_bytes().to_vec();
+    vaults.iter().for_each(|v| body.extend_from_slice(&v.0));
+    body.extend(request.to_wire());
+    body
+}
+
+/// The vaults and the request an `ASK_VAULTS`' body `body` names (`vaults_body`).
+fn from_vaults_body(body: &[u8]) -> Result<(BTreeSet<VaultId>, Request)> {
+    let (count, rest) = body.split_first_chunk::<2>().context("an ask for vaults names none")?;
+    let count = u16::from_be_bytes(*count) as usize;
+    anyhow::ensure!(count <= VAULTS_LIMIT, "an ask for {count} vaults");
+    anyhow::ensure!(rest.len() >= count * 32, "an ask for vaults cut short");
+    let (ids, request) = rest.split_at(count * 32);
+    let vaults = ids.chunks_exact(32).map(|c| VaultId(c.try_into().expect("32 bytes"))).collect();
+    Ok((vaults, Request::from_wire(request)?))
+}
+
 /// The answer to the message on the stream `recv`: a request gets a reply, of the logs it names alone if it asks for
 /// those (`ASK_LOGS`); an announcement of the peer's holdings nothing, but the node keeps them, as the device whose
 /// hello proved it on this connection holds them, and asks the peer for the logs where it holds what the node lacks;
@@ -187,6 +242,17 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
             shared.follows(peer, &request);
             let reply = move |lab: &mut Lab, me| {
                 let request = scoped(lab, me, request);
+                lab.reply(me, device, &request, page)
+            };
+            let (edits, ids, more) = shared.lab(reply).await;
+            let blobs = shared.offer(ids).await?;
+            Ok(Reply { edits, blobs, more }.to_wire())
+        }
+        ASK_VAULTS => {
+            let ((vaults, request), page) = (from_vaults_body(body)?, shared.opts.page);
+            shared.follows(peer, &request);
+            let reply = move |lab: &mut Lab, me| {
+                let request = vaulted(lab, me, request, &vaults);
                 lab.reply(me, device, &request, page)
             };
             let (edits, ids, more) = shared.lab(reply).await;

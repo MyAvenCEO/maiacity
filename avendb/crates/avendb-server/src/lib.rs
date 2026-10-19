@@ -267,6 +267,7 @@ pub async fn start(config: &Config) -> Result<Running> {
         direct: false,
         relay: Some(url),
         proxy: false,
+        lazy: false,
         retry: Duration::from_secs(1),
         shelf: None,
         keep: false,

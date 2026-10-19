@@ -1102,7 +1102,10 @@
 				lets in the devices the server knows and, for ten minutes, a new device that shows a passkey’s pass: of a passkey
 				that roots a vault the server knows, or, while sign-up is open, as it is by default, of any. A cloud session
 				shows no pass, so a key no Mac added gets nowhere. Two sessions running it at once knock each other off the
-				relay, and it closes after a while with no call. Remove agentCloud from the aven and every such session loses it.
+				relay, and it closes after a while with no call. It asks the server for nothing on its own: before each call it
+				brings only the vaults the call touches, the vault or the entries it names, else the coop, one pull at a time.
+				So a new session never pulls everything the aven may hold, such as the encrypted backups its server keeps of
+				each person’s vault. Remove agentCloud from the aven and every such session loses it.
 			</p>
 			<h3>Asking for access</h3>
 			<p class="prose-col">

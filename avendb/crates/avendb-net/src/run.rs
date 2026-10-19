@@ -201,6 +201,9 @@ impl Shared {
     /// Asks every peer it is connected to again, as once the vaults its device follows changed: each request names
     /// them (`sync::Ask::follow`).
     fn ask_all(self: &Arc<Self>) {
+        if self.opts.lazy {
+            return;
+        }
         let peers: Vec<EndpointId> = self.peers.lock().expect("peers").keys().copied().collect();
         for endpoint in peers {
             let shared = self.clone();
