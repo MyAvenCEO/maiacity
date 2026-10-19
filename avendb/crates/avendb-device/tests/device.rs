@@ -6,7 +6,7 @@
 //! in the unlock's sheet alone, following the vaults it followed and reading as deep in a query as it did, and puts the
 //! shelf aside when she forgets it there, deleting nothing. Every read and change is an op (`run`, V2), what her
 //! vault's owners approve signed in a sheet; a file comes in a chunk at a time (`fileStart`, `fileChunk`, `fileEnd`),
-//! and any range of it back, in base64. A new device puts aside a shelf a start cut short left, and clears what an
+//! and any range of it back, in base64. A new device puts aside a shelf a start cut short left, and keeps what an
 //! earlier avenDB kept in the folder. The app may host the same device in its own process (`host`): the same calls and
 //! sheets with no lines between, and the open device's node at hand, which reads her film back by range itself; closed,
 //! it opens again from its folder. And agent devices on the Mac (`agent`), as Claude Code and Codex start them, ask
@@ -581,7 +581,7 @@ async fn the_mac_founds_eves_vault_opens_it_again_from_its_folder_and_forgets_it
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_new_device_puts_aside_a_shelf_cut_short_and_clears_what_an_earlier_avendb_kept() {
+async fn a_new_device_puts_aside_a_shelf_cut_short_and_keeps_what_an_earlier_avendb_kept() {
     let (_relay, url, server) = server().await;
     let folder = Folder::new("aside");
     let dir = folder.0.clone();
@@ -613,18 +613,17 @@ async fn a_new_device_puts_aside_a_shelf_cut_short_and_clears_what_an_earlier_av
     assert_eq!(app.call("open", json!([])).await, Err("this Mac holds no avenDB account yet".into()));
     let offer = server.offer().to_text();
     let device = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await.expect("her vault");
-    assert_eq!(disk::generations(&dir).expect("its shelves"), [FLOOR, FLOOR + 1], "the shelf cut short put aside");
+    assert_eq!(disk::generations(&dir).expect("its shelves"), [1, FLOOR, FLOOR + 1], "the shelf cut short put aside");
     let cut = std::fs::read(dir.join(format!("g{FLOOR}/journal/0000000000000001"))).expect("still there");
     assert_eq!(cut, b"cut short", "as it was");
     assert_eq!(objects(&dir, FLOOR + 1, "meta"), ["0000000000000001"], "what opens her device, on its own shelf");
     let status = app.call("status", json!([])).await.expect("its status");
     assert_eq!((&status["device"], &status["meta"]["name"]), (&device, &json!("Eve's Mac")));
     app.quit().await;
-    for (name, _) in earlier {
-        assert!(!dir.join(name).exists(), "{name} cleared");
+    // avenDB is never reset: what an earlier avenDB kept stays as it was
+    for (name, bytes) in earlier {
+        assert_eq!(std::fs::read(dir.join(name)).ok().as_deref(), Some(bytes), "{name} kept");
     }
-    let left: Vec<_> = std::fs::read_dir(&dir).expect("its folder").map(|e| e.expect("one").file_name()).collect();
-    assert_eq!(left.len(), 2, "its two shelves alone: {left:?}");
     server.shutdown().await.expect("the server's node stops");
 }
 
@@ -1289,6 +1288,16 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
         let (no, error) = claude.tool("avendb_run", json!({ "op": op, "path": bad })).await;
         assert!(error && no.contains(why), "{no}");
     }
+    // never a file in a folder that keeps her Mac's keys, its avenDB folder or its agents', nor through a link to one
+    std::os::unix::fs::symlink(&dir, folder.0.join("Keys")).expect("a link to her avenDB folder");
+    let kept = [dir.join("key"), agent::folder(&dir, "agentClaude").join("key"), folder.0.join("Keys").join("key")];
+    for kept in &kept {
+        let (no, error) = claude.tool("avendb_run", json!({ "op": op, "path": at(kept) })).await;
+        assert!(error && no.contains("keeps this Mac's keys"), "{no}");
+        let artifact = json!({ "path": at(kept), "title": "A key" });
+        let (no, error) = claude.tool("avendb_add_artifact", artifact).await;
+        assert!(error && no.contains("keeps this Mac's keys"), "{no}");
+    }
     let create = json!({ "op": "create", "vault": mine, "type": "note", "value": titled("Beans", "In May.") });
     let (no, error) = claude.tool("avendb_run", json!({ "op": create, "path": at(&path) })).await;
     assert!(error && no.contains("beside put_file, a create with a file or get_file alone"), "{no}");
@@ -1322,6 +1331,12 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     assert_eq!(said, (&file, &json!("Harvest.csv"), &json!("text/csv"), &json!(harvest.len()), &at(&back)));
     assert!(read.get("text").is_none(), "nothing inline past 64 KiB: {read}");
     assert_eq!(std::fs::read(&back).expect("read back"), harvest, "every byte");
+    // nor written into a folder that keeps her Mac's keys
+    for kept in &kept {
+        let (no, error) = claude.tool("avendb_read_file", json!({ "entry": file, "path": at(kept) })).await;
+        assert!(error && no.contains("keeps this Mac's keys"), "{no}");
+        assert!(!kept.exists(), "nothing written at {}", kept.display());
+    }
     // never over a file there, unless it says so, as a get_file op on avendb_run by the file's vault and name does
     std::fs::write(&back, b"hers").expect("a file of hers");
     let (no, error) = claude.tool("avendb_read_file", json!({ "entry": file, "path": at(&back) })).await;

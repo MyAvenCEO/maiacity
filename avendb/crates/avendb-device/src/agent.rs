@@ -16,8 +16,8 @@
 //! nothing is kept twice. A file it saves (`put_file`) it seals onto its own shelf, as every device does, and lets go
 //! of once the Mac's device holds it whole, as that device's holdings say (`Node::holds_whole`, `Node::let_go`): from
 //! then on the Mac's one store keeps it, and a read of it fetches it from there. Where the Mac keeps a light copy, the
-//! agent keeps its own, the one copy on the Mac. A reset clears its folder as it does the app's (`disk::open`), and it
-//! asks to join again.
+//! agent keeps its own, the one copy on the Mac. avenDB is never reset: its folder, like the app's, keeps what it holds
+//! (`disk::open`).
 //!
 //! It asks for access as anyone asks avenDB for it, and its person answers on the page's one consent screen: it leaves
 //! an access request for the Mac app (`<app's folder>-agents/<device>.request`, `asking`): who asks, by its device's
@@ -54,7 +54,8 @@
 //! shares let it add or draft one there. Where they let
 //! it only suggest, as a Suggester's do, which an agent is on Maia City by its standing rule, it is a draft, and its
 //! file a draft Library file of its own that brings it in its creation, which the vault's owners land by accepting an
-//! AIP the agent opens over them. `avendb_read_file` is `get_file`.
+//! AIP the agent opens over them. `avendb_read_file` is `get_file`. No path in a folder that keeps this Mac's keys is
+//! read or written, whatever its harness names (`fenced`): an agent acts through its aven's vault caps alone.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -160,8 +161,8 @@ pub fn named(name: &str) -> Result<()> {
     Ok(())
 }
 
-/// The agents' folder beside the app's `host` folder: `<host>-agents`, outside it, as the app's device clears whatever
-/// its own folder holds beside its shelves (`disk::clear`).
+/// The agents' folder beside the app's `host` folder: `<host>-agents`, outside it, so the app's own folder holds its
+/// shelves alone.
 pub fn agents(host: &Path) -> PathBuf {
     let mut name = host.file_name().unwrap_or_default().to_os_string();
     name.push("-agents");
@@ -192,7 +193,7 @@ pub fn request(host: &Path, name: &str) -> PathBuf {
 /// The file in the agents' folder beside the app's `host` folder that agent `name`'s device `device`, its key in hex,
 /// writes its key to every little while it runs (`LOOK`): the Mac's page knows by it whether the agent is there to be
 /// added under its person's aven, which its device cosigns (`online`). One a device, so that another device of the
-/// agent, as an older build's after a reset, never stands in for it.
+/// agent, as an older build's, never stands in for it.
 pub fn alive(host: &Path, name: &str, device: &str) -> PathBuf {
     agents(host).join(format!("{name}.{device}.alive"))
 }
@@ -850,6 +851,9 @@ impl Agent {
     /// own setting, which an agent keeps nowhere, and for a path or `overwrite` beside an op that takes none.
     async fn run(&self, op: Value, beside: Beside) -> Result<Value> {
         let Beside { path, overwrite } = beside;
+        if let Some(path) = &path {
+            outside(&self.host, path)?;
+        }
         if op_name(&op) == Some("get_file") {
             return self.get_file(&op, path, overwrite).await;
         }
@@ -1108,6 +1112,7 @@ impl Agent {
         };
         if let Some(path) = &path {
             anyhow::ensure!(path.is_absolute(), "{} isn't an absolute path", path.display());
+            outside(&self.host, path)?;
             let meta = tokio::fs::metadata(path).await.with_context(|| format!("no file at {}", path.display()))?;
             anyhow::ensure!(meta.is_file(), "{} is no file", path.display());
         }
@@ -1623,6 +1628,46 @@ struct Found {
     root: String,
     size: u64,
     len: u64,
+}
+
+/// The folders an agent never reads a file from or writes one to, whatever path its harness names: those that keep
+/// this Mac's keys. The app's avenDB folder `host` and its agents' beside it (each device's key, offer, lock and
+/// socket), The OS's own folder (its API key and settings) and its media vault's, the terminals' keys, and the
+/// person's SSH, GPG, cloud and Keychain folders. Its harness may reach them by tools of its own; the MCP never
+/// carries their bytes into a vault, nor writes over them (Samuel 2026-10-19: an agent acts through vault caps alone).
+fn fenced(host: &Path) -> Vec<PathBuf> {
+    let mut out = vec![host.to_path_buf(), agents(host)];
+    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+        let kept = [
+            "Library/Application Support/city.maia.studio",
+            "Library/Application Support/city.maia.vault",
+            "Library/Keychains",
+            ".config/maiacity",
+            ".ssh",
+            ".gnupg",
+            ".aws",
+        ];
+        out.extend(kept.iter().map(|k| home.join(k)));
+    }
+    out
+}
+
+/// Fails where `path` is in a folder that keeps this Mac's keys (`fenced`), as the file system resolves it: its links
+/// followed, and for a file not there yet, its folder's. A path whose folder can't be resolved is left to the caller,
+/// which says it isn't there.
+fn outside(host: &Path, path: &Path) -> Result<()> {
+    let real = std::fs::canonicalize(path).ok().or_else(|| {
+        let name = path.file_name()?;
+        Some(std::fs::canonicalize(path.parent()?).ok()?.join(name))
+    });
+    let Some(real) = real else { return Ok(()) };
+    for kept in fenced(host) {
+        let kept = std::fs::canonicalize(&kept).unwrap_or(kept);
+        if real.starts_with(&kept) {
+            bail!("{} is in {}, which keeps this Mac's keys: an agent reads and writes no file there", path.display(), kept.display());
+        }
+    }
+    Ok(())
 }
 
 /// Whether get_file may write a file at `path`: an absolute path that names a file, in a folder that is there, with

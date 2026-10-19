@@ -8,7 +8,7 @@ import { native } from '$lib/native';
 /** The server's relay. */
 export const RELAY = 'https://avendb.maia.city';
 
-/** The server's offer, the same as long as its shelf (g18, since the reset that Studio 2 standing alone brought) keeps its device's key. */
+/** The server's offer, the same as long as its shelf (g18, for good: avenDB is never reset) keeps its device's key. */
 export const SERVER =
 	'AVENDB1UAYTJU2GDDXXNHWO5YZJOJJBYJFXCKVEPNGILCF6ORDFGRZQXIYOKZOGNSNV64ZIP4VEW4HJPYXUPWZBQJWGRT75JV4CAO3N25TOCMYBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
 

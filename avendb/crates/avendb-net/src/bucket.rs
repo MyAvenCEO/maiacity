@@ -3,9 +3,8 @@
 //! is given (`Sealed`), as the bucket's TLS isn't post-quantum, and bound to its name, so an object read back under
 //! another name doesn't open. The bucket holds a shelf for each generation (`shelf::generation`), each under a prefix
 //! of its own, `g1/`, `g2/` and on, with a marker for each, `generations/g<n>`: the newest is the one in use, and
-//! every older one is put aside, never read again (`aside`). As the server starts, the bucket is cleared of what came
-//! before the last reset (`clear`): shelves older than `shelf::FLOOR`, and whatever else it holds, as an earlier
-//! avenDB's store. Under a generation's prefix:
+//! every older one is never read again, and never deleted: avenDB is never reset (`shelf::FLOOR`), and the server
+//! deletes nothing it finds in the bucket beside its shelf. Under a generation's prefix:
 //!
 //! - `blobs/<hash>/<n>`: the parts of each blob, `PART` bytes each but a blob's last, and `outboards/<hash>-<size>` its
 //!   outboard, put once its parts are all in the bucket: a blob counts once its outboard is there;
@@ -18,9 +17,9 @@
 //!
 //! One server writes a bucket. It puts a named object only where the bucket holds none, and the bucket keeps every
 //! version of an object for 7 days (Object Lock). Nothing deletes an object but the files a node lets go of
-//! (`Call::Drop`), a blob's outboard first, then its parts, and a reset (`clear`).
+//! (`Call::Drop`), a blob's outboard first, then its parts.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
 use std::io::{self, ErrorKind};
@@ -33,7 +32,6 @@ use anyhow::{Context as _, Result, anyhow, ensure};
 use avendb::keys::{self, Secret, SeededRng};
 use bytes::Bytes;
 use iroh_blobs::Hash;
-use n0_future::{BufferedStreamExt as _, StreamExt as _, stream};
 
 use crate::shelf::{self, Call, FLOOR, Shelf, generation, hash_of};
 
@@ -49,8 +47,6 @@ const OUTBOARDS: &str = "outboards/";
 const PART: u64 = 8 << 20;
 /// The most bytes of parts a node's folder keeps by default.
 pub const CACHE: u64 = 8 << 30;
-/// The objects a reset deletes from the bucket at once (`clear`).
-const CLEARING: usize = 16;
 
 /// What `Bucket`'s calls return.
 pub type Fut<'a, T> = Pin<Box<dyn Future<Output = Result<T>> + Send + 'a>>;
@@ -158,6 +154,12 @@ impl Sealed {
         Sealed { bucket: Arc::new(bucket), key: Arc::new(Secret::derive(SEAL, seal)) }
     }
 
+    /// `bucket`, each object sealed under a key derived from `seal` for `purpose`: the bucket of snapshots seals each
+    /// vault's folder under a key of its own (`backup`).
+    pub(crate) fn derived(bucket: Arc<dyn Bucket>, purpose: &str, seal: &[u8; 32]) -> Sealed {
+        Sealed { bucket, key: Arc::new(Secret::derive(purpose, seal)) }
+    }
+
     /// Puts `plain` under `name`, sealed.
     pub async fn put(&self, name: &str, plain: &[u8]) -> Result<()> {
         let mut rng = SeededRng::new("avenDB bucket nonce", &*crate::server::random()?);
@@ -192,40 +194,6 @@ pub async fn generations(bucket: &Sealed) -> Result<Vec<u64>> {
     Ok(found)
 }
 
-/// Puts the shelf in `bucket` in use aside: a new generation marked beside it, empty, which the next `shelf` uses.
-/// Its number.
-pub async fn aside(bucket: &Sealed) -> Result<u64> {
-    let n = generations(bucket).await?.last().map_or(FLOOR, |n| (n + 1).max(FLOOR));
-    mark(bucket, n).await?;
-    Ok(n)
-}
-
-/// Clears `bucket` of what came before the last reset: every object but the shelves of generation `shelf::FLOOR` and
-/// later and their markers (`shelf::kept`), as older shelves and an earlier avenDB's store, `CLEARING` at a time. Each
-/// version it deletes the bucket keeps 7 more days (Object Lock), then lets go. How many objects it deleted.
-pub async fn clear(bucket: &Sealed) -> Result<usize> {
-    let gone: Vec<String> = bucket.list("").await?.into_iter().filter(|name| !kept(name)).collect();
-    let deleting = gone.into_iter().map(|name| {
-        let bucket = bucket.clone();
-        async move { bucket.delete(&name).await }
-    });
-    let mut deleting = stream::iter(deleting).buffered_unordered(CLEARING);
-    let mut deleted = 0;
-    while let Some(done) = deleting.next().await {
-        match done {
-            Ok(()) => deleted += 1,
-            Err(e) => tracing::warn!("avendb: {e:#}"),
-        }
-    }
-    Ok(deleted)
-}
-
-/// Whether the bucket keeps object `name` at a reset: one of a shelf `shelf::FLOOR` or later keeps, or its marker.
-fn kept(name: &str) -> bool {
-    let name = name.strip_prefix(GENERATIONS).unwrap_or(name);
-    shelf::kept(name.split_once('/').map_or(name, |(first, _)| first))
-}
-
 /// Marks generation `n` in `bucket`, with when, in seconds since 1970.
 async fn mark(bucket: &Sealed, n: u64) -> Result<()> {
     bucket.put(&format!("{GENERATIONS}g{n}"), crate::unix_now().to_string().as_bytes()).await
@@ -242,10 +210,10 @@ fn failed(e: anyhow::Error) -> io::Error {
 }
 
 /// The shelf of a node whose shelf is a bucket: the bucket's generation in use, with what it writes staged in the
-/// node's folder and what it read of late cached there.
+/// node's folder and what it read of late cached there; or a vault's folder in the bucket of snapshots (`backup`).
 struct BucketShelf {
     bucket: Sealed,
-    /// The prefix of the generation in use, `g<n>/`.
+    /// The prefix of the generation in use, `g<n>/`, or of the vault's folder, `vaults/<vault>/`.
     root: String,
     staging: PathBuf,
     cache: PathBuf,
@@ -290,10 +258,10 @@ impl Cached {
 }
 
 /// The shelf of a node whose shelf is `bucket`, beside its folder `dir`, which caches `budget` bytes of parts at most:
-/// the bucket's newest generation's, or, with none there yet or only older ones than `shelf::FLOOR`, a new one of that
-/// generation. What came before the last reset, it clears from the folder as it starts (`disk::clear`) and from the
-/// bucket while it runs (`clear`); and what the folder staged of blobs never finished, it drops. Fails if the bucket's
-/// marker of its generation doesn't open: a bucket sealed under another seal.
+/// the bucket's newest generation's, or, with none there yet of `shelf::FLOOR` or later, a new one of that generation
+/// beside whatever the bucket holds. It deletes nothing it finds in the bucket or the folder but what the folder staged
+/// of blobs never finished. Fails if the bucket's marker of its generation doesn't open: a bucket sealed under another
+/// seal.
 pub async fn shelf(bucket: Sealed, dir: &Path, budget: u64) -> Result<Shelf> {
     let n = match generations(&bucket).await?.last() {
         Some(&n) if n >= FLOOR => n,
@@ -303,16 +271,14 @@ pub async fn shelf(bucket: Sealed, dir: &Path, budget: u64) -> Result<Shelf> {
         }
     };
     bucket.get(&format!("{GENERATIONS}g{n}")).await?.context("the bucket's generation, marked and gone")?;
-    crate::disk::clear(dir);
-    let clearing = bucket.clone();
-    tokio::spawn(async move {
-        match clear(&clearing).await {
-            Ok(0) => {}
-            Ok(n) => tracing::info!("avendb: cleared {n} objects from before generation {FLOOR} from the bucket"),
-            Err(e) => tracing::warn!("avendb: the bucket isn't cleared of what came before generation {FLOOR}: {e:#}"),
-        }
-    });
-    let local = dir.join(format!("g{n}"));
+    shelf_at(bucket, format!("g{n}/"), &dir.join(format!("g{n}")), budget)
+}
+
+/// A shelf whose blobs and named objects are those in `bucket` under the prefix `root`, which ends in `/`, beside the
+/// folder `local`, which stages what it writes and caches `budget` bytes of parts at most: a generation's (`shelf`),
+/// or a vault's folder in the bucket of snapshots (`backup`), which is never cleared either. What the folder staged of
+/// blobs never finished, it drops.
+pub(crate) fn shelf_at(bucket: Sealed, root: String, local: &Path, budget: u64) -> Result<Shelf> {
     let (staging, cache) = (local.join("new"), local.join("cache"));
     if staging.exists() {
         fs::remove_dir_all(&staging)?;
@@ -333,7 +299,7 @@ pub async fn shelf(bucket: Sealed, dir: &Path, budget: u64) -> Result<Shelf> {
     }
     let on = Arc::new(BucketShelf {
         bucket,
-        root: format!("g{n}/"),
+        root,
         staging,
         cache,
         sizes: Mutex::default(),
@@ -410,7 +376,7 @@ impl BucketShelf {
 
     /// The name of part `n` of blob `hash`.
     fn part_name(&self, hash: &Hash, n: u64) -> String {
-        format!("{}{BLOBS}{}/{n:06x}", self.root, hash.to_hex())
+        part_name(&self.root, hash, n)
     }
 
     /// The name of blob `hash`'s outboard, of a blob of `size` bytes.
@@ -617,6 +583,38 @@ impl BucketShelf {
             None => self.bucket.put(&name, bytes).await.map_err(failed),
         }
     }
+}
+
+/// The name of part `n` of blob `hash` on the shelf under `root`.
+fn part_name(root: &str, hash: &Hash, n: u64) -> String {
+    format!("{root}{BLOBS}{}/{n:06x}", hash.to_hex())
+}
+
+/// How many parts a blob of `size` bytes is kept in.
+pub(crate) fn parts(size: u64) -> u64 {
+    size.div_ceil(PART)
+}
+
+/// The parts the shelf under `root` in `bucket` holds of each blob, by the bucket's listing alone.
+pub(crate) async fn parts_held(bucket: &Sealed, root: &str) -> Result<HashMap<Hash, HashSet<u64>>> {
+    let prefix = format!("{root}{BLOBS}");
+    let mut held: HashMap<Hash, HashSet<u64>> = HashMap::new();
+    for name in bucket.list(&prefix).await? {
+        let part = name.strip_prefix(&prefix).and_then(|rest| rest.split_once('/'));
+        match part.and_then(|(hash, n)| Some((hash_of(hash)?, u64::from_str_radix(n, 16).ok()?))) {
+            Some((hash, n)) => {
+                held.entry(hash).or_default().insert(n);
+            }
+            None => tracing::warn!("avendb: {name} in the bucket is no blob's part"),
+        }
+    }
+    Ok(held)
+}
+
+/// Part `n` of blob `hash` on the shelf under `root` in `bucket`, opened, read from the bucket and never cached: none
+/// if the bucket holds none.
+pub(crate) async fn part_of(bucket: &Sealed, root: &str, hash: &Hash, n: u64) -> Result<Option<Vec<u8>>> {
+    bucket.get(&part_name(root, hash, n)).await
 }
 
 /// The blob an outboard's name says it is of: its hash and size.

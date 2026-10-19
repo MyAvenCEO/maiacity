@@ -184,4 +184,13 @@ describe("a game's settings", () => {
 		const r = avendb.use([withData('configs/sandbox-4/garden', { ...garden, outside: { ...garden.outside, canopy: [plain] } })], viewOfEntry);
 		expect(r.refused).toEqual([]);
 	});
+	test("each of the island's biomes names its own resources; a yield must stay a number", () => {
+		const isle = seed('configs/sandbox-1/biomes');
+		const sand = { ...isle, biomes: [...isle.biomes, { id: 'SALTFLAT', resources: { SALT: 3 } }] };
+		expect(avendb.use([withData('configs/sandbox-1/biomes', sand)], viewOfEntry).refused).toEqual([]);
+		const bad = { ...isle, biomes: [{ id: 'LAKE', resources: { WATER: 'lots' } }] };
+		expect(avendb.use([withData('configs/sandbox-1/biomes', bad)], viewOfEntry).refused.join('\n')).toMatch(
+			/biomes: the config holds a string at biomes\[0\]\.resources\.WATER, where the game reads a number/
+		);
+	});
 });

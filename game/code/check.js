@@ -118,7 +118,8 @@ export function shapeOf(seed, value, path = '') {
 	return '';
 }
 
-/** an item of a list whose seed items are objects: the keys all of them have, and the others of the kind one has */
+/** an item of a list whose seed items are objects: the keys all of them have, and the others of the kind one has; and
+ * so on down, where they all hold an object at a key */
 function itemShape(items, value, path) {
 	if (kindOf(value) !== 'object') return `holds a ${kindOf(value)} at ${path}, where the game reads an object`;
 	const keys = new Set(items.flatMap((x) => Object.keys(x)));
@@ -128,7 +129,10 @@ function itemShape(items, value, path) {
 			if (has.length === items.length) return `has no ${path}.${k}, which the game reads`;
 			continue;
 		}
-		const p = shapeOf(has[0][k], value[k], `${path}.${k}`);
+		// what the items hold at k, objects all, is read the same way: the keys every one has, the others as one has them
+		const p = has.every((x) => kindOf(x[k]) === 'object')
+			? itemShape(has.map((x) => x[k]), value[k], `${path}.${k}`)
+			: shapeOf(has[0][k], value[k], `${path}.${k}`);
 		if (p) return p;
 	}
 	return '';

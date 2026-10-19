@@ -50,7 +50,7 @@ Local setup: the site with `bun run dev` (:5173), The OS app open with avenDB un
    the hash of what they are made of); then the timeline goes into every shape (16:9 4K HEVC Main10 master + 1080
    H.264 in one pass, 9:16, 1:1, 4:5), the hook text over the social copies' first seconds, the sound mixed (voice
    ducks the music) and levelled to −14 LUFS / −1 dBTP (`LOUDNESS` in render.rs), and each file into the vault as a
-   delivery (in the timeline's story) and onto the content board; the timeline's stage becomes "rendered".
+   delivery (in the timeline's story); the timeline's stage becomes "rendered".
    Colour-managed: each picture clip — the conformed original, never the proxy — goes through its journey into ACEScct
    (vault-media's cst, the same maths as the proxies), its grade and the film's look, the ACES 2.0 output transform to
    Rec.709 (vault-media's aces2, a 129³ cube), then the captions. EXR sequences render frame by frame from their tar,

@@ -23,7 +23,6 @@ export const CAPABILITIES: Record<string, string> = {
   "humans:invite": "Invite a new human: once the city has its admin, an invite is the only way to sign up",
   "ideas:admin": "Write down ideas and notes in the admin notebook",
   "media:admin": "Work with the media vault and the studio: every image, sound and video, known by its hash",
-  "content:admin": "Plan what we publish: the content calendar",
   "economy:admin": "Act as MaiaCity V1's admin: settle its MIPs, the improvement proposals that change the game",
 };
 

@@ -1,7 +1,7 @@
 // Bake MaiaCity V1's intro times: open each seat's film page (/games/maiacity-v1/?film&area=A|B), let the world time
 // every step of the intro afresh (&remeasure), and write what it measured to src/lib/maiacity-v1/intro/<seat>.json:
-// each step's segments, where its shots cut, when its lines are told, its hours. The film page, the studio's intros
-// ($lib/studio/intros.js) and the game (./intro.js `reelFor`) read them; a step whose words or moment changed since is
+// each step's segments, where its shots cut, when its lines are told, its hours. The film page and the game
+// (./intro.js `reelFor`) read them; a step whose words or moment changed since is
 // timed again by the page itself until this is run again.
 //
 //   VITE_RECIPE_FEED=dev npx vite dev --port 5197      (in another shell)

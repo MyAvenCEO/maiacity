@@ -1,6 +1,7 @@
-//! The repo seed of the Maia City vault (the page's `src/lib/avendb/seed.js`) through the ops engine: every op the page
-//! would write into a vault that holds none of it yet, piece by piece, each `"$n"` naming the entry op n of its piece
-//! made (and `"$n.line"` the line it started), as the page's `refs` resolves it. Every create must fit its schema; each article links its story, which reads
+//! The repo seed's top-up of the Maia City vault (the page's `src/lib/avendb/seed.js`: the code, games, settings, docs
+//! and recipes the repository adds) through the ops engine: every op the page would write into a vault that holds none of
+//! it yet, piece by piece, each `"$n"` naming the entry op n of its piece made (and `"$n.line"` the line it started),
+//! as the page's `refs` resolves it. Every create must fit its schema; each doc post links its story, which reads
 //! back; and each code entry reads back with its `ref:` tag. The ops come from the repository as it is
 //! (`node scripts/seed-ops.mjs <vault> <out.json>`), so the test runs where they are given, by the path in `SEED_OPS`:
 //!
@@ -56,11 +57,6 @@ fn the_repo_seed_fits_its_schemas() {
         let mut done: Vec<Value> = vec![];
         for op in p["ops"].as_array().unwrap() {
             let mut op = refs(&swapped(op, &from, &alice), &done);
-            // the share is an owner's change, approved with the passkey: the page's ceremony, not the seed's records
-            if op["op"] == "share" {
-                done.push(json!({}));
-                continue;
-            }
             op.as_object_mut().unwrap().remove("as");
             let answer = match engine::len_of(&op) {
                 Ok(len) if engine::brings(&op) => engine::put_file(&mut w.lab, mac, &op, file_of(&op, len)),
@@ -93,7 +89,8 @@ fn the_repo_seed_fits_its_schemas() {
         let tags = got["ok"]["tags"].as_array().cloned().unwrap_or_default();
         assert!(tags.contains(&json!(format!("ref:{}", key.as_str().unwrap()))), "{key}: its ref tag: {got}");
     }
-    let told = pieces.iter().filter(|p| ["journal", "inspire", "doc"].contains(&p["kind"].as_str().unwrap_or(""))).count();
-    assert!(told >= 18 + 50 + 3, "the journal days, the inspire-me reports and the docs: {told}");
-    assert_eq!(posts.len(), told, "each journal day, inspire-me report and doc is a post of its story");
+    let docs = pieces.iter().filter(|p| p["kind"] == "doc").count();
+    assert!(docs >= 3, "the skills, the theOS paper and the avenDB architecture: {docs}");
+    assert_eq!(posts.len(), docs, "each doc is a post of its story");
+    assert!(!code.is_empty(), "the seed writes the code of code/");
 }

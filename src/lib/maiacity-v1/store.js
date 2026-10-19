@@ -12,4 +12,3 @@ const named = () => (session.name ? `?${new URLSearchParams({ name: session.name
 export const loadGame = () => apiCall(`/api/maiacity-v1${named()}`);
 export const takeSeat = (seat) => post('/api/maiacity-v1/seat', { seat, name: session.name });
 export const sendMove = (seat, action) => post('/api/maiacity-v1/move', { seat, action });
-export const resetGame = () => post('/api/maiacity-v1/reset', {});

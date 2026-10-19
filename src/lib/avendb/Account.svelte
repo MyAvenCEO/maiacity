@@ -39,11 +39,6 @@
 	let bringing = false;
 	const seededInto = new Set();
 	const seedFailed = /** @type {Map<string, string>} */ (new Map());
-	/** whether the device is bringing the studio's films into Maia City after the seed, and whether it tried this
-	 *  visit; what it is at, for the corner pill (Samuel 2026-10-18: the studio's footage seeded the same way) */
-	let filming = false;
-	let filmed = false;
-	let filmAt = $state('');
 	/** how far the repo seed has come, the pieces written of those it is writing, while it writes them in the
 	 *  background: a corner pill shows it, and nothing waits for it */
 	let seedAt = $state(/** @type {{ done: number, of: number } | null} */ (null));
@@ -57,14 +52,14 @@
 	import AccessRequest from './AccessRequest.svelte';
 	import Shell from './Shell.svelte';
 	import Signing from './Signing.svelte';
-	import { FLOW, FLOWS, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
+	import { FLOW, FLOWS, FUNCTION, FUNCTIONS } from './flows.js';
 	import { answer, refs } from './ops.js';
-	import { beside, drafting, retiring, seeding, seedPieces, touchingUp, unseeded } from './seed.js';
+	import { beside, seeding, seedPieces, unseeded } from './seed.js';
 	import { capGroupOps } from './capgroups.js';
 	import { deviceName, relay as relayOf, server as serverOf } from './server.js';
 	import { asks, Here, here, session } from './session.svelte.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
-	import { EVERYONE, nameShare, nameShared, plain, seeded, standingOps } from './vaults.js';
+	import { nameShare, nameShared, plain, seeded, standingOps } from './vaults.js';
 
 	// the tab's device, as the session holds it (./session.svelte.js): what it is now, and what it shows of its world
 	const phase = $derived(session.phase);
@@ -340,15 +335,15 @@
 				.catch((/** @type {Error} */ e) => (session.error = `Adding avenCEO’s schemas failed: ${plain(e.message)}`))
 				.finally(() => (standardizing = false));
 		}
-		// the repo seed (./seed.js): the code, templates, stories and their deliveries the repository holds, each
-		// written into Maia City once it holds the standard schemas, by the person's first device alone: one that joins
-		// later might not have synced what the first wrote yet, and would write it all again
+		// the repo seed's top-up (./seed.js): the code, games, settings, docs and recipes the repository adds that Maia
+		// City never held, deleted or not, written into it once it holds the standard schemas, by the person's first device
+		// alone: one that joins later might not have synced what the first wrote yet, and would write it all again
 		const city = seeded(w)[0]?.[0];
 		const first = mine?.devices[0]?.me === true;
 		const tried = seededInto.has(city?.id) || seedFailed.has(city?.id ?? '');
 		if (city && company && first && standardized.has(company.id) && !bringing && !tried) {
 			bringing = true;
-			const left = unseeded(w, city.id, seedPieces(seeded(w)[1]?.[0]?.id ?? null));
+			const left = unseeded(w, city.id, seedPieces());
 			// a background job (Samuel 2026-10-18): nothing waits for it, the setup is over without it, and the corner
 			// shows how far it is while it has pieces to write
 			seed(w, city.id, left)
@@ -361,26 +356,8 @@
 				.finally(() => {
 					bringing = false;
 					seedAt = null;
-					films();
 				});
 		}
-	}
-
-	/**
-	 * The studio's films (the legacy timelines, with exactly the footage they play) brought into Maia City once the repo
-	 * seed's run is over, whether or not each piece went in, in the background too, once a visit, on the Mac alone ($lib/studio/legacyfilms.js): the studio,
-	 * opening meanwhile, joins this run.
-	 */
-	function films() {
-		if (filming || filmed) return;
-		filming = filmed = true;
-		import('$lib/studio/legacyfilms.js')
-			.then(({ bringFilms }) => bringFilms({ tell: (f, line) => (filmAt = `${f.name}: ${line}`) }))
-			.catch((/** @type {Error} */ e) => (session.error = `Bringing the studio’s films into Maia City failed: ${plain(e.message)}`))
-			.finally(() => {
-				filming = false;
-				filmAt = '';
-			});
 	}
 
 	/**
@@ -425,31 +402,6 @@
 			}
 			seedAt = { done: (seedAt?.done ?? 0) + 1, of: left.length };
 		}
-		// the inspire-me sources it copied before, brought up to date as their report cards show them
-		for (const ops of await touchingUp(w, city)) {
-			try {
-				for (const op of ops) answer(await send(op));
-			} catch {
-				failed.push('an inspire-me source');
-			}
-		}
-		// the inspire and doc posts an earlier seed published, drafted (Samuel 2026-10-18: every inspire-me piece
-		// unpublished, the docs kept in avenDB alone)
-		for (const op of drafting(w, city)) {
-			try {
-				answer(await send(op));
-			} catch {
-				failed.push('an inspire-me or doc post');
-			}
-		}
-		// and what the repo let go (Sandboxes 7 and 8), deleted
-		for (const op of retiring(w, city)) {
-			try {
-				answer(await send(op));
-			} catch {
-				failed.push('a retired entry');
-			}
-		}
 		if (failed.length)
 			throw new Error(`Maia City refused ${failed.length} of them: ${failed.join(', ')}. Why: ${[...reasons].slice(0, 3).join(' · ')}`);
 	}
@@ -457,9 +409,8 @@
 	/**
 	 * Each of avenDB's standard schemas and lenses that vault `company` doesn't hold an entry of yet, added as its own:
 	 * the schemas first, so each lens joins two it holds. Then the flows and functions every app knows (./flows.js)
-	 * that it doesn't hold yet, by their key and their name, and the app's code for each it holds whose code is one
-	 * the app ran before (`RETIRED`), not one changed by hand; and a Public share of its flows and functions, where it
-	 * gives none yet, so every app may read them as they read its schemas.
+	 * that it doesn't hold yet, by their key and their name. It never writes over an entry, nor shares anything
+	 * (Samuel 2026-10-19: Maia City as it is is the truth): its flows and functions are Public already.
 	 * @param {import('./vaults.js').WorldView} w @param {string} company
 	 */
 	async function standardize(w, company) {
@@ -482,24 +433,7 @@
 			...FUNCTIONS.filter((f) => !fns.includes(`${f.flow}\n${f.name}`)).map((f) => [FUNCTION, f])
 		];
 		for (const [type, value] of made) answer(await send({ op: 'create', vault: company, type, value, as: company }));
-		const fnEntries = w.entries.filter((e) => e.vault === company && e.type === FUNCTION && !e.deleted && e.record);
-		for (const e of fnEntries) {
-			const app = FUNCTIONS.find((f) => f.flow === e.record?.flow && f.name === e.record?.name);
-			if (!app || !(RETIRED[app.name] ?? []).includes(e.record?.code)) continue;
-			for (const [path, value] of [[['code'], app.code], [['about'], app.about]]) {
-				answer(await send({ op: 'set', entry: e.entry, path, value, as: company }));
-			}
-		}
-		const types = (/** @type {any} */ c) => [...(c.slice?.where?.type ?? [])].sort().join();
-		const open = w.shares.some((c) => c.over === company && c.who === EVERYONE && types(c) === SHARED.join());
-		if (!open) {
-			const share = { op: 'share', over: company, who: EVERYONE, level: 'Public', what: { type: SHARED }, as: company };
-			answer(await send(share));
-		}
 	}
-
-	/** The types of avenCEO GmbH's entries every app reads, as it reads their schemas. */
-	const SHARED = [FLOW, FUNCTION];
 
 	/** What the vaults' screens do, each acting for the vault it names; each resolves to whether it went through: the
 	 *  session's (./session.svelte.js), and what this page does besides. */
@@ -733,10 +667,10 @@
 	</div>
 {/if}
 
-{#if (seedAt && seedAt.of) || filmAt}
-	<p class="seeding" role="status" title="Maia City’s seed: code, stories, asset recipes and the studio’s films, written in the background">
+{#if seedAt && seedAt.of}
+	<p class="seeding" role="status" title="Maia City’s seed: what the repository adds that Maia City never held, written in the background">
 		<span class="spin" aria-hidden="true"></span>
-		{#if seedAt && seedAt.of}Bringing Maia City’s seed · {seedAt.done} of {seedAt.of}{:else}Bringing the studio’s films · {filmAt}{/if}
+		Bringing Maia City’s seed · {seedAt.done} of {seedAt.of}
 	</p>
 {/if}
 

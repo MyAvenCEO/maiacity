@@ -1,0 +1,440 @@
+{
+	"wares": {
+		"plank": {
+			"id": "plank",
+			"label": "Planks",
+			"color": "#e0b46a"
+		},
+		"steel": {
+			"id": "steel",
+			"label": "Steel",
+			"color": "#8796a6"
+		},
+		"clay": {
+			"id": "clay",
+			"label": "Fired clay",
+			"color": "#c4734f"
+		},
+		"glass": {
+			"id": "glass",
+			"label": "Glass",
+			"color": "#9fd3e0"
+		},
+		"solar": {
+			"id": "solar",
+			"label": "Solar panels",
+			"color": "#3a5a9e"
+		}
+	},
+	"biomes": {
+		"meadow": {
+			"id": "meadow",
+			"label": "Meadow",
+			"color": "#9fc46a"
+		},
+		"forest": {
+			"id": "forest",
+			"label": "Forest",
+			"color": "#2f6b3a"
+		},
+		"stone": {
+			"id": "stone",
+			"label": "Stone",
+			"color": "#9a9a94"
+		},
+		"iron": {
+			"id": "iron",
+			"label": "Iron",
+			"color": "#a35b3a"
+		},
+		"sand": {
+			"id": "sand",
+			"label": "Sand",
+			"color": "#dcc893"
+		},
+		"water": {
+			"id": "water",
+			"label": "Water",
+			"color": "#4aa3df"
+		},
+		"mountain": {
+			"id": "mountain",
+			"label": "Mountain",
+			"color": "#8c8f96"
+		},
+		"lake": {
+			"id": "lake",
+			"label": "Lake",
+			"color": "#3a7fb8"
+		}
+	},
+	"houseBeds": [
+		2,
+		4,
+		8,
+		16,
+		32,
+		64,
+		128,
+		248
+	],
+	"houseSize": [
+		"Hut",
+		"Cottage",
+		"House",
+		"Great house",
+		"Hall",
+		"Great hall",
+		"Dome",
+		"Great dome"
+	],
+	"units": {
+		"ware": "1 t",
+		"food": "1 t, 1,000 kg",
+		"water": "1 m³, 1,000 L",
+		"energy": "1 MWh",
+		"gold": "1,000 € of real prices"
+	},
+	"loadT": 5,
+	"domeT": {
+		"plank": 1500,
+		"steel": 200,
+		"glass": 1000
+	},
+	"solarBeds": 16,
+	"routeTKm": 36000,
+	"unitM": 32,
+	"fieldHa": 10,
+	"fieldT": 15,
+	"upkeep": 0.02,
+	"eurT": {
+		"plank": 800,
+		"steel": 1000,
+		"clay": 200,
+		"glass": 1250,
+		"solar": 2500
+	},
+	"eurGold": 1000,
+	"buildMwhT": 0.1,
+	"keepMwhT": 0.2,
+	"recipes": {
+		"woodcutter": {
+			"biome": "forest",
+			"land": "logs",
+			"rounds": 10,
+			"stages": [
+				{
+					"label": "Forester",
+					"build": {
+						"plank": 10
+					},
+					"make": {},
+					"does": "plants young trees round it and fells none"
+				},
+				{
+					"label": "Woodcutter",
+					"build": {
+						"plank": 10,
+						"steel": 5
+					},
+					"make": {
+						"in": {
+							"logs": 15,
+							"energy": 0.1
+						},
+						"out": {
+							"plank": 5
+						}
+					}
+				},
+				{
+					"label": "Sawmill",
+					"build": {
+						"plank": 20,
+						"steel": 15
+					},
+					"make": {
+						"in": {
+							"logs": 15,
+							"energy": 3.5
+						},
+						"out": {
+							"plank": 10
+						}
+					}
+				},
+				{
+					"label": "Timber works",
+					"build": {
+						"plank": 30,
+						"steel": 20
+					},
+					"make": {
+						"in": {
+							"logs": 15,
+							"energy": 7.5
+						},
+						"out": {
+							"plank": 15
+						}
+					}
+				}
+			]
+		},
+		"ironmine": {
+			"biome": "iron",
+			"land": "ore",
+			"rounds": 10,
+			"stages": [
+				{
+					"label": "Iron mine",
+					"build": {
+						"plank": 20
+					},
+					"make": {
+						"in": {
+							"ore": 25,
+							"energy": 25
+						},
+						"out": {
+							"steel": 5
+						}
+					}
+				},
+				{
+					"label": "Furnace",
+					"build": {
+						"plank": 20,
+						"steel": 10
+					},
+					"make": {
+						"in": {
+							"ore": 25,
+							"energy": 42
+						},
+						"out": {
+							"steel": 10
+						}
+					}
+				},
+				{
+					"label": "Steelworks",
+					"build": {
+						"plank": 30,
+						"steel": 15
+					},
+					"make": {
+						"in": {
+							"ore": 25,
+							"energy": 54
+						},
+						"out": {
+							"steel": 15
+						}
+					}
+				}
+			]
+		},
+		"clayworks": {
+			"biome": "meadow",
+			"land": "loam",
+			"rounds": 200,
+			"stages": [
+				{
+					"label": "Clay pit",
+					"build": {
+						"plank": 20
+					},
+					"make": {
+						"in": {
+							"loam": 20,
+							"energy": 0.05
+						},
+						"out": {
+							"clay": 5
+						}
+					}
+				},
+				{
+					"label": "Kiln",
+					"build": {
+						"plank": 20,
+						"steel": 10
+					},
+					"make": {
+						"in": {
+							"loam": 20,
+							"energy": 10
+						},
+						"out": {
+							"clay": 10
+						}
+					}
+				},
+				{
+					"label": "Block works",
+					"build": {
+						"plank": 30,
+						"steel": 15
+					},
+					"make": {
+						"in": {
+							"loam": 20,
+							"energy": 7.5
+						},
+						"out": {
+							"clay": 15
+						}
+					}
+				}
+			]
+		},
+		"glassworks": {
+			"biome": "sand",
+			"land": "sand",
+			"rounds": 100,
+			"stages": [
+				{
+					"label": "Sand pit",
+					"build": {
+						"plank": 20
+					},
+					"make": {},
+					"does": "digs and washes glass sand and melts none yet"
+				},
+				{
+					"label": "Glassworks",
+					"build": {
+						"plank": 30,
+						"steel": 15
+					},
+					"make": {
+						"in": {
+							"sand": 12,
+							"energy": 13
+						},
+						"out": {
+							"glass": 10
+						}
+					}
+				},
+				{
+					"label": "Solar panel works",
+					"build": {
+						"plank": 40,
+						"steel": 25
+					},
+					"make": {
+						"in": {
+							"sand": 18,
+							"energy": 30
+						},
+						"out": {
+							"solar": 15
+						}
+					}
+				}
+			]
+		}
+	},
+	"hub": {
+		"build": {
+			"plank": 30,
+			"steel": 20,
+			"glass": 10
+		}
+	},
+	"plantGold": 25000,
+	"energy": {
+		"wellKw": 3400,
+		"uptime": 0.94,
+		"sunDome": 1300000,
+		"climateDome": 170000,
+		"home": 900,
+		"centre": 300000,
+		"hub": 30000
+	},
+	"sunMonth": [
+		2.9,
+		4.6,
+		8,
+		11.2,
+		13.1,
+		13.9,
+		14.2,
+		12.3,
+		8.9,
+		5.7,
+		3,
+		2.1
+	],
+	"start": {
+		"stock": {
+			"plank": 24,
+			"steel": 12,
+			"glass": 10
+		},
+		"coins": 30,
+		"settlers": 2
+	},
+	"food": {
+		"diet": {
+			"vegetables": 4.62,
+			"fruits": 1.4,
+			"legumes": 0.7,
+			"seeds, nuts and oats": 2.15,
+			"eggs": 0.42,
+			"chicken": 0.2,
+			"fish and seafood": 0.38
+		},
+		"waterUse": {
+			"drinking": 3,
+			"home": 97,
+			"crops": 50
+		},
+		"rainMm": 800,
+		"catch": 0.9,
+		"rainMonth": [
+			0.6,
+			0.575,
+			0.75,
+			0.85,
+			1.35,
+			1.5625,
+			1.5625,
+			1.475,
+			1.025,
+			0.8,
+			0.7625,
+			0.6875
+		],
+		"price": {
+			"village": 5,
+			"world": 10
+		},
+		"waterPrice": 0.002,
+		"keep": 2,
+		"most": 13,
+		"tank": 4
+	},
+	"market": {
+		"base": {
+			"plank": 4,
+			"steel": 4,
+			"clay": 4,
+			"glass": 4,
+			"solar": 4
+		},
+		"gridEurKwh": 0.08,
+		"loan": {
+			"rate": 0.01,
+			"months": 180,
+			"perHead": 125000
+		},
+		"hearts": {
+			"perHour": 1,
+			"perGold": 1000,
+			"demurrage": 0.07
+		}
+	}
+}

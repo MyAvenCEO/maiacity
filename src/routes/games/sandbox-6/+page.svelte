@@ -5,10 +5,11 @@
 -->
 <script>
 	import FilmRoute from '$lib/film/FilmRoute.svelte';
+	import { loadCode } from '../../../../game/code/index.js';
 </script>
 
 <FilmRoute
 	sandbox="sandbox-6"
 	to="/app/games/sandbox-6/"
-	mount={async (stage, _area, onProgress) => (await import('$lib/sandbox-6/game.js')).mountGame(stage, { film: true, onProgress })}
+	mount={async (stage, _area, onProgress) => (await loadCode(), await import('$lib/sandbox-6/game.js')).mountGame(stage, { film: true, onProgress })}
 />

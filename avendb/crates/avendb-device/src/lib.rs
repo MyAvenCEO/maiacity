@@ -44,8 +44,8 @@
 //! its salt, which only its passkey computes again, and its passkey's credential and P-256 key; the vaults it follows,
 //! and the query limit the person set in Settings, how deep its queries read, `set_limits`), laid out as a page's
 //! shelf in OPFS is; its keys come back at every unlock. A shelf no device opens any more, as one forgotten here, is
-//! put aside in the folder, a new generation made beside it (`avendb_net::disk::aside`); and what came before the last
-//! reset, older shelves and an earlier avenDB's store, is cleared as the device opens its folder (`disk::clear`).
+//! put aside in the folder, a new generation made beside it (`avendb_net::disk::aside`), and never deleted: avenDB is
+//! never reset, and nothing the device finds in its folder beside its shelves is removed (`avendb_net::shelf::FLOOR`).
 //!
 //! Each external drive the person uses for avenDB is a device of their vault of its own, which the Mac's device hosts
 //! as a second node while the drive is plugged in (`drive`): the page lists the volumes and the drives (`drives`), uses

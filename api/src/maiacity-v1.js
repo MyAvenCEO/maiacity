@@ -13,14 +13,17 @@ export { GameError };
 const GAME = "main";
 const json = (v) => JSON.stringify(v ?? null);
 
+/**
+ * The game, locked for the move: the one kept, or, where none is kept yet, a new one from year 0. Nothing ever starts
+ * the kept game again (Samuel 2026-10-19: "drop all reset api calls and mechanisms … so no accidental resets can happen
+ * anymore"; its ledger and COOPs are what the database keeps): a game the engine of another version kept is refused,
+ * untouched, until a migration brings it to this version.
+ */
 async function load(tx, now) {
   const { rows } = await tx.query("SELECT state FROM v1_games WHERE id = $1 FOR UPDATE", [GAME]);
   const old = rows[0]?.state;
   if (old && (old.version ?? 1) === VERSION) return old;
-  if (old) {
-    // a game of an older shape starts again from year 0 with both seats free: the next founders to sign in take them
-    return newGame(now);
-  }
+  if (old) throw new GameError(`MaiaCity V1's game was kept by engine version ${old.version ?? 1}, and this is version ${VERSION}: it waits, untouched, for a migration.`, 503);
   const state = newGame(now);
   await tx.query("INSERT INTO v1_games (id, state) VALUES ($1, ($2::text)::jsonb) ON CONFLICT (id) DO NOTHING", [GAME, json(state)]);
   return state;
@@ -70,17 +73,6 @@ export function move(founder, admin, _seat, action, now = Date.now()) {
     if (!seat && admin && action?.type === "propose" && action?.mip?.via === "mcp") seat = "A";
     if (!seat) throw new GameError("You have no seat in this game.", 403);
     const state = act(before, seat, action, now);
-    await save(tx, state);
-    return state;
-  });
-}
-
-/** start again from virtual year 0 (an admin's): the seats stay with their founders and names (VERSION frees them) */
-export function resetGame(now = Date.now()) {
-  return db.transaction(async (tx) => {
-    const old = await load(tx, now);
-    const state = newGame(now, old.settings);
-    for (const s of SEATS) Object.assign(state.players[s], { founder: old.players[s].founder, name: old.players[s].name });
     await save(tx, state);
     return state;
   });

@@ -5,6 +5,10 @@
  * link, and waits; the admin opens the link on maia.city, sees what is asked, and approves it with their passkey
  * session. The terminal then receives a key — shown once, kept only as its hash — that can do exactly the
  * capabilities it asked for and the admin holds, never more. Revoked keys stop at once.
+ *
+ * A key reaches the media vault alone (KEY_CAPS), until that vault retires (Samuel 2026-10-19: agents reach the city
+ * only through avenDB vault caps). A key sits in a file any program of its person can read, an agent's too; so the
+ * game, roles, invites and the notebook are a person's, signed in with their passkey, and no key ever holds them.
  */
 import { createHash, randomBytes } from "node:crypto";
 import { db } from "./pg";
@@ -17,6 +21,11 @@ export class KeyError extends Error {
   }
 }
 
+/** What a key may ever hold: the media vault's work (the Mac app's library, its analysis). Nothing else, whatever it asks. */
+export const KEY_CAPS = ["media:admin"];
+/** A key's scope, as far as keys may reach now: one given more before keeps only this. */
+const reach = (caps: string[]) => caps.filter((c) => KEY_CAPS.includes(c));
+
 const TTL_MIN = 10;
 const ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // no 0/O, 1/I
 const hash = (key: string) => createHash("sha256").update(key).digest("hex");
@@ -26,10 +35,11 @@ const userCode = () => {
   return `${c.slice(0, 4)}-${c.slice(4)}`;
 };
 
-/** A terminal asks: here is its code, the link to approve it, and how long it has. */
+/** A terminal asks: here is its code, the link to approve it, and how long it has. What it asks beyond what a key may
+ *  hold is left out (an older Mac app still asks for more), and a code for none of it is refused. */
 export async function startDevice(scope: unknown, label: unknown) {
-  const caps = String(scope ?? "").split(",").map((c) => c.trim()).filter(Boolean);
-  if (!caps.length || caps.some((c) => !(c in CAPABILITIES))) throw new KeyError("Ask for known capabilities.");
+  const caps = reach(String(scope ?? "").split(",").map((c) => c.trim()));
+  if (!caps.length) throw new KeyError(`A key can only work with the media vault (${KEY_CAPS.join(", ")}): the rest is a person's, signed in with their passkey.`);
   const device_code = randomBytes(32).toString("base64url");
   const user_code = userCode();
   await db.query(
@@ -75,7 +85,8 @@ export async function redeemDevice(device_code: unknown): Promise<{ key: string 
   return { key };
 }
 
-/** Who a bearer key speaks for, and what it may do: the key's scope, and never more than their role holds now. */
+/** Who a bearer key speaks for, and what it may do: the key's scope as far as keys reach now, and never more than their
+ *  role holds now. */
 export async function keyHolder(req: Request): Promise<{ id: string; role: string; scope: string[] } | null> {
   const auth = req.headers.get("authorization") ?? "";
   const key = /^Bearer (mck_[\w-]+)$/.exec(auth)?.[1];
@@ -86,7 +97,7 @@ export async function keyHolder(req: Request): Promise<{ id: string; role: strin
       RETURNING f.id, f.role, k.scope`,
     [hash(key)],
   );
-  return rows[0] ? { id: rows[0].id, role: rows[0].role, scope: rows[0].scope.split(",") } : null;
+  return rows[0] ? { id: rows[0].id, role: rows[0].role, scope: reach(rows[0].scope.split(",")) } : null;
 }
 
 export async function revokeKey(req: Request): Promise<boolean> {
