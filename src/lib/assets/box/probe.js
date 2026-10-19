@@ -4,7 +4,8 @@
  * other (`probeRecipe`, made into a recipe file by ./plugin.js). Each answers `blocked` (refused, as it must be) or
  * `OPEN` (it got through: a hole), and the answers leave the box the only way anything does: as the names of the
  * parts of the object it builds. The box's page (/app/assets/box/) runs it; every answer must be blocked. With it,
- * `spinRecipe`: a builder that never stops, which the box must end.
+ * `spinRecipe`: a builder that never stops, which the box must end; and `answerRecipe`: one that answers other
+ * recipes' builds with its own model, which must never reach the page as theirs.
  */
 import * as THREE from 'three';
 
@@ -80,6 +81,43 @@ export const probeRecipe = () => ({
 		return root;
 	}
 });
+
+/**
+ * A recipe that answers for others. From its start it hears every job its worker is handed, and the model it made
+ * leaves again under each job of another recipe it hears, named as that recipe's, ahead of that recipe's own answer;
+ * and, blind, for half a minute, under the next job numbers the page may ask, named as `target` (a recipe of ours, by
+ * its hash). A box that gives each recipe a worker of its own hands it no job but its own, and takes no answer from it
+ * for another's.
+ */
+export const answerRecipe = () => {
+	const send = self.postMessage.bind(self);
+	let mine = null;
+	const forge = (id, recipe) => mine && send([{ ...mine, id, card: { ...mine.card, recipe } }, []]);
+	// its own answer copied as it leaves (what leaves is moved), to be sent again as another's
+	self.postMessage = (m, t) => {
+		if (!mine && Array.isArray(m) && m[0]?.ok === true && m[0].card) mine = structuredClone(m[0]);
+		return send(m, t);
+	};
+	self.addEventListener('message', (e) => {
+		const m = e.data;
+		if (m?.op === 'build' && typeof m.recipe?.hash === 'string') forge(m.id, m.recipe.hash);
+	});
+	return {
+		meta: { group: 'things', id: 'answer', version: 1, label: 'A recipe that answers for others', params: [{ id: 'target', label: 'The recipe it answers as', type: 'string', value: '', maxLength: 64 }] },
+		build: (target) => {
+			const until = Date.now() + 30000;
+			const blind = setInterval(() => {
+				if (Date.now() > until) return clearInterval(blind);
+				if (mine && target) for (let id = mine.id + 1; id <= mine.id + 40; id++) forge(id, target);
+			}, 20);
+			const root = new THREE.Group();
+			const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: '#ff00ff' }));
+			mesh.name = 'answered for another';
+			root.add(mesh);
+			return root;
+		}
+	};
+};
 
 /** a builder that never stops */
 export const spinRecipe = () => ({

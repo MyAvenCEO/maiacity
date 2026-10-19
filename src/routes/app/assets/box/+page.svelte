@@ -4,7 +4,8 @@
 	back, as an asset no one trusts would be. Every build is named by its recipe's BLAKE3 hash and the values it takes
 	(`<hash>?seed=maia&stage=9`); a label such as plants/apple@2 only points at a hash. One button runs every check: each
 	frozen engine checked against its hash and engine 1 still building as it did, what the box cannot reach (tried by a recipe), assets built in the box against the
-	same built in the page, a recipe that never stops, a recipe whose bytes are not its name, data and cards out of shape,
+	same built in the page, a recipe that answers another's build, a recipe that never stops, a recipe whose bytes are not
+	its name, data and cards out of shape,
 	each recipe's parameters, and each asset loaded again from this device's cache the same, with no box started. A
 	second button builds every asset of ours (every version and variant, phase 3) in the box and in the page, compares
 	the two and times both.
@@ -223,6 +224,23 @@
 					out.assets.push({ label, name: n, error: e.message });
 					add(`${label} comes out the same`, false, e.message);
 				}
+			}
+
+			// a recipe that answers others' builds with its model, heard or guessed (TRIALS.answer), built first in the box
+			// the bell tent is built in next: the tent must come out as the page builds it, never as the trial's model
+			line = 'A recipe that answers for another…';
+			const tentAt = buildAt('things/bell-tent');
+			try {
+				const trial = await box.build(checked(TRIALS.answer), { target: tentAt.slice(0, 64) });
+				const tent = await inBox(tentAt);
+				const page = await objectAt('things/bell-tent');
+				const forged = tent.data.nodes.some((n) => n.name === 'answered for another');
+				out.answered = { trial: trial.card.recipe, tent: tent.card.recipe, forged, tris: [tris(tent.obj), tris(page)] };
+				const kept = !forged && tent.card.recipe === tentAt.slice(0, 64) && out.answered.tris[0] === out.answered.tris[1];
+				add('A recipe can’t answer another’s build', kept, kept ? `a recipe that hears every job of its worker and answers as the bell tent, by every job number it may guess, was built first: the tent still came out as the page builds it (${out.answered.tris[0].toLocaleString('en')} triangles), as each recipe builds in a worker of its own` : `the bell tent came out as ${forged ? 'the trial’s model' : `${out.answered.tris[0]} triangles, not ${out.answered.tris[1]}`}`);
+			} catch (e) {
+				out.answered = { error: e.message };
+				add('A recipe can’t answer another’s build', false, e.message);
 			}
 
 			line = 'A recipe that never stops…';

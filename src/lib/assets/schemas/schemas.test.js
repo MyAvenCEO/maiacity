@@ -52,8 +52,8 @@ test('a card made to do harm is refused', async () => {
 }, 60000);
 
 test('the schemas name every group the box builds, and avenDB’s entry schema every group there is', () => {
-	expect(CARD.properties.group.enum.sort()).toEqual(Object.keys(OBJECT_GROUPS).sort());
-	expect(ASSET.properties.group.enum.sort()).toEqual(Object.keys(GROUPS).sort());
+	expect([...CARD.properties.group.enum].sort()).toEqual(Object.keys(OBJECT_GROUPS).sort());
+	expect([...ASSET.properties.group.enum].sort()).toEqual(Object.keys(GROUPS).sort());
 	expect(checkText(CARD, JSON.stringify(CARD)).ok).toBe(false); // a schema is no card
 });
 

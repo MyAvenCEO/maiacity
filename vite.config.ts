@@ -1,9 +1,11 @@
 /// <reference types="node" />
+import { createHash } from 'node:crypto';
 import adapter from '@sveltejs/adapter-static';
 import tailwindcss from '@tailwindcss/vite';
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import { assetBox } from './src/lib/assets/box/plugin.js';
+import { pageCsp } from './src/lib/sandbox/policy.js';
 
 export default defineConfig({
 	plugins: [
@@ -30,7 +32,12 @@ export default defineConfig({
 					if (/^\/blog\/day-/.test(path)) return console.warn(`not published yet: ${path} (linked from ${referrer})`);
 					throw new Error(message);
 				}
-			}
+			},
+
+			// every page's own policy (src/lib/sandbox/policy.js): the scripts it may run, its own start script by its
+			// hash, written into each page as a <meta>, as a prerendered page has no headers of its own (deploy/Caddyfile
+			// sends what a <meta> can't hold, frame-ancestors; the Mac app sends it with its own, vault/app/tauri.conf.json)
+			csp: { mode: 'hash', directives: pageCsp((text) => createHash('sha256').update(text).digest('base64')) }
 		})
 	],
 	server: {
