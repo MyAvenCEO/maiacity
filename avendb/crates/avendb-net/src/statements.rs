@@ -85,7 +85,8 @@ fn shelved_as(device: SignerId, checked: u64) -> String {
     format!("{STATED}{}/{checked:016x}", device.to_hex())
 }
 
-/// Its device, if `statement` proves it: off the async threads, where it has them, as SLH-DSA takes a millisecond.
+/// Its device, if `statement` proves it: off the async threads, where it has them, as SLH-DSA takes a millisecond
+/// (ML-DSA-65 a tenth of one).
 async fn verified(statement: Statement) -> Option<(SignerId, Statement)> {
     let work = move || statement.verify().map(|d| (d, statement));
     #[cfg(not(target_arch = "wasm32"))]

@@ -1,13 +1,13 @@
 //! Signatures: what makes an edit's signers its signers. A signature signs the edit's id, which hashes everything the
 //! edit says, so the rules (`policy`) only ever see edits whose author and cosigners really signed them.
 //!
-//! Every signature on every edit is post-quantum, over the edit's id, in its signer's suite (`Suite`): ML-DSA-65
-//! (FIPS 204), the suite of every signer made since the key move (Samuel, 2026-10-19), or SLH-DSA-SHA2-128f (FIPS 205),
-//! a hash-based signature, the suite of every signer made before. ML-DSA-65 signs in a millisecond or two where
-//! SLH-DSA takes ten, verifies four times faster, and its signature with its key is a third of SLH-DSA's 17 KB. A
-//! signer's id is the hash of its suite and its public keys, so it names each of them, and a signer's new key is a new
-//! signer, which its vault takes in as it takes any. Every edit made before the move keeps its SLH-DSA signature, which
-//! every device checks as it always has.
+//! Every signature on every edit is post-quantum, over the edit's id, in its signer's suite (`Suite`): ML-DSA-65 (FIPS
+//! 204), the suite every signer moves to (the key move, Samuel 2026-10-19; `SIGNING` is the suite new signers are made
+//! in), or SLH-DSA-SHA2-128f (FIPS 205), a hash-based signature, the suite of every signer made before. ML-DSA-65 signs
+//! in a millisecond or two where SLH-DSA takes ten, verifies four times faster, and its signature with its key is a
+//! third of SLH-DSA's 17 KB. A signer's id is the hash of its suite and its public keys, so it names each of them, and
+//! a signer's new key is a new signer, which its vault takes in as it takes any. Every edit made before the move keeps
+//! its SLH-DSA signature, which every device checks as it always has.
 //!
 //! - A device signs with its post-quantum key alone. Its ed25519 key is its iroh endpoint's, which TLS proves on a
 //!   connection beside its hello (`Hello`); it signs no edit. A person's device derives all its keys from their

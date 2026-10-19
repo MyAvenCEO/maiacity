@@ -68,11 +68,11 @@ fn alices_passkey_and_mac_move_to_ml_dsa_65_and_keep_her_vault() {
     assert_eq!(lab.draft(mac, &[passkey], add.clone()).err(), Some(Refusal::NoConsent), "not without the new key");
     let added = by_passkey(&mut lab, mac, &[passkey, next], add, &mut authenticator);
     assert_eq!(checks_out(&lab, mac, added), Some(vec![PQ_SIGNATURE_BYTES, ml]));
-    // 2. it hands the root on, the new key signing too; the new key may not take it itself, nor the old one hand it to
-    // a key that doesn't sign
+    // 2. it hands the root on, the new key signing too: not to a key that doesn't sign (every owner being equal, the
+    // new key might as well take it itself)
     let hand_on = Action::Settings { vault, set: Setting::Root { root: Some(next), keep: vec![] } };
-    assert_eq!(lab.draft(mac, &[next], hand_on.clone()).err(), Some(Refusal::NotRoot));
     assert_eq!(lab.draft(mac, &[passkey], hand_on.clone()).err(), Some(Refusal::NoConsent));
+    assert!(lab.draft(mac, &[next], hand_on.clone()).is_ok());
     let handed = by_passkey(&mut lab, mac, &[passkey, next], hand_on, &mut authenticator);
     assert_eq!(checks_out(&lab, mac, handed), Some(vec![PQ_SIGNATURE_BYTES, ml]));
     // 3. the new key removes the old one

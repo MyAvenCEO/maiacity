@@ -1720,7 +1720,7 @@ def sAdmin : List Edit := sInvite ++ chain 620 [
 
 avenDB signs with ML-DSA-65 where it signed with SLH-DSA (Samuel, 2026-10-19). A signer's id hashes its keys, so a
 signer's new key is a new signer, and a vault moves to it with the edits it already has: the old key adds the new one,
-which signs too, hands the root on to it where it is the root, and the new key removes the old. Alice moves her passkey
+which signs too, hands the root on to it where it is the root (the new key signing), and the new key removes the old. Alice moves her passkey
 and her Mac, Bob his after her; Alice's iPhone stays as it is for now. No rule changes, as the model abstracts how each
 signer signs: every edit the old keys made still stands and counts, the new keys read and approve all the old ones did,
 and the old keys approve and open nothing more. -/
@@ -1761,9 +1761,12 @@ def keyMove : List Edit := allTodos' ++ chain 720 [
 #guard !accepted keyMove (attempt passkeyA [78] (.share (.device alice 78)))
 #guard accepted keyMove (attempt macA' [] (create alice 30 alice [] todo))
 #guard !accepted keyMove (attempt macA [] (create alice 30 alice [] todo))
--- the new key joins only with its own signature, and takes the root only from the root
+-- the new key joins only with its own signature, and the root goes to it only with its signature; every owner being
+-- equal, it may as well take the root itself once it is an owner
 #guard !accepted allTodos' (attempt passkeyA [] (.share (.owner alice (.signer passkeyA'))))
 #guard !accepted (keyMove.take (allTodos'.length + 1))
+  (attempt passkeyA [] (.settings alice (.root (some passkeyA') [])))
+#guard accepted (keyMove.take (allTodos'.length + 1))
   (attempt passkeyA' [] (.settings alice (.root (some passkeyA') [])))
 
 end AvenDB.Examples

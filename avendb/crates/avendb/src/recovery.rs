@@ -60,7 +60,14 @@ impl RecoveryKey {
     /// (`Passkey::from_seed`), the same a Lab takes it in as (`Lab::passkey_from`). Makes its McEliece pair, which
     /// takes about a second.
     pub fn of(secret: [u8; 32]) -> RecoveryKey {
-        let mut passkey = Passkey::from_seed(secret);
+        Self::of_in(secret, sign::SIGNING)
+    }
+
+    /// `of`, its passkey's post-quantum key in suite `suite`: the same secret makes the key in either suite, two
+    /// signers, the second its next key (the key move). Its file is laid out the same either way, its keys' tag naming
+    /// their suite.
+    pub fn of_in(secret: [u8; 32], suite: sign::Suite) -> RecoveryKey {
+        let mut passkey = Passkey::from_seed_in(secret, suite);
         let seal = passkey.seal_secret();
         let consent = passkey.consent();
         RecoveryKey { keys: passkey.keys(), seal: seal.public(), mceliece: seal.mceliece_public(), consent }
@@ -204,5 +211,27 @@ mod tests {
         let mut lab = Lab::with_entropy([1; 32]);
         let passkey = lab.passkey_from("the master recovery", [7; 32]);
         assert_eq!(passkey, key.id(), "the Lab that holds its secret signs as it");
+    }
+
+    #[test]
+    fn a_recovery_key_in_ml_dsa_65_reads_back_from_its_bytes_alone() {
+        use crate::sign::Suite;
+        let (old, new) = (RecoveryKey::of_in([7; 32], Suite::SlhDsa), RecoveryKey::of_in([7; 32], Suite::MlDsa));
+        assert_ne!(old.id(), new.id(), "its next key is another signer");
+        assert_eq!((old.seal.clone(), old.mceliece.clone()), (new.seal.clone(), new.mceliece.clone()), "sealed to alike");
+        assert_eq!(RecoveryKey::from_bytes(&new.to_bytes()), Some(new.clone()), "its file holds it whole");
+        assert_eq!(new.keys.suite(), Suite::MlDsa);
+        assert_eq!(Lab::with_entropy([1; 32]).passkey_from_in("the master recovery", [7; 32], Suite::MlDsa), new.id());
+        // the old key's consent is no consent of the new one's
+        let mut other = new.clone();
+        other.consent = old.consent.clone();
+        assert!(RecoveryKey::from_bytes(&other.to_bytes()).is_none());
+    }
+
+    #[test]
+    fn the_built_in_master_key_keeps_its_signer() {
+        // `master-key pub` of 2026-10-16, made before the key move: SLH-DSA, signer 05e5bd92…
+        let Some(master) = master() else { return };
+        assert_eq!(master.id().to_hex(), "05e5bd92c466dabee2b19d6a41d6a1168c772c6de49863ff57b956dd7901f4ad");
     }
 }

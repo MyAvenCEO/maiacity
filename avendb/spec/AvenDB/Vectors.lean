@@ -303,7 +303,7 @@ def cases : List Case := [
     -- the passkey's new key joins as an owner, only with its own signature
     (1, [], .share (.owner 100 (.signer 81))),
     (1, [81], .share (.owner 100 (.signer 81))),
-    -- it takes the root only from the root, and signs for it
+    -- every owner being equal, it may take the root itself; no one hands it the root without its signature
     (81, [], .settings 100 (.root (some 81) [])),
     (1, [], .settings 100 (.root (some 81) [])),
     (1, [81], .settings 100 (.root (some 81) [])),

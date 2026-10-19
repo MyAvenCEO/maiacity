@@ -249,7 +249,7 @@
   {"author": 81, "cosigners": [82], "action": {"share": {"device": {"vault": 100, "device": 82}}}},
   {"author": 81, "cosigners": [], "action": {"revoke": {"device": {"vault": 100, "device": 2, "keep": []}}}},
   {"author": 2, "cosigners": [], "action": {"revoke": {"device": {"vault": 100, "device": 2, "keep": []}}}}],
- "accepted": [true, true, false, true, false, false, true, true, false, true, true, false],
+ "accepted": [true, true, false, true, true, false, true, true, false, true, true, false],
  "vaults": [{"id": 100, "kind": "human", "owners": [{"signer": 81}], "threshold": 1, "devices": [82], "root": 81}],
  "shares": [],
  "revoked": [],
