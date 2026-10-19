@@ -24,8 +24,12 @@ import { DENY, SANDBOX, SHELL_SCRIPT } from './policy.js';
  *   so a job is answered only from the room it was asked in: code in one room can neither see another's jobs nor
  *   answer them. A host may ask for a spare, a worker made ahead with nothing run in it, which the next new room
  *   takes while the frame makes the next one.
- * - Out comes plain data only, which the page checks before it uses it. A job that runs too long is ended by removing
- *   the frame (the worker goes with it); the next job starts a new shell.
+ * - Out comes plain data only, which the page checks before it uses it. A job that runs too long, or whose worker
+ *   crashes, ends alone in a host that keeps its rooms apart (`apart`, the asset box): its room is let go, its worker
+ *   ended, every job open in it failed, and every other room goes on in the same frame; the room's next job starts in
+ *   a fresh worker. In a host of one room (the logic host) it is ended by removing the frame (the worker goes with
+ *   it), and the next job starts a new shell. A crash before any room (the spare, nothing run in it yet) is the
+ *   engine's own, and the shell goes too.
  */
 
 /** The frame's policy: nothing in or out but its own script, its worker's blob and, if `wasm`, WebAssembly. */
@@ -54,15 +58,17 @@ export const TIMEOUT = 20000;
 
 export class Shell {
 	/**
-	 * @param {{ code: () => Promise<string>, wasm?: boolean, timeout?: number, spare?: boolean }} o `code`: the engine
-	 *   the workers run, checked (`frozen`); `wasm`: whether that engine compiles WebAssembly; `spare`: a worker kept
-	 *   made ahead for the next new room (a host of many rooms)
+	 * @param {{ code: () => Promise<string>, wasm?: boolean, timeout?: number, spare?: boolean, apart?: boolean }} o
+	 *   `code`: the engine the workers run, checked (`frozen`); `wasm`: whether that engine compiles WebAssembly;
+	 *   `spare`: a worker kept made ahead for the next new room (a host of many rooms); `apart`: a room whose job runs
+	 *   too long, or whose worker crashes, ends alone, and the others go on (a host whose rooms hold code apart)
 	 */
-	constructor({ code, wasm = false, timeout = TIMEOUT, spare = false }) {
+	constructor({ code, wasm = false, timeout = TIMEOUT, spare = false, apart = false }) {
 		this.code = code;
 		this.policy = csp({ wasm });
 		this.timeout = timeout;
 		this.spare = spare;
+		this.apart = apart;
 		this.frame = null;
 		this.ready = null;
 		this.jobs = new Map();
@@ -105,7 +111,9 @@ export class Shell {
 		const [msg, room] = Array.isArray(e.data) ? e.data : [];
 		if (!msg || typeof msg !== 'object') return;
 		if (msg.op === 'ready') return this.started?.();
-		if (msg.op === 'crash') return this.stop(`the box crashed: ${msg.error}`);
+		// a room's worker that crashed ends alone where rooms are kept apart; one in no room yet (the spare: nothing but
+		// the engine ran in it) failed as the engine, and the shell goes
+		if (msg.op === 'crash') return this.apart && room != null ? this.leave(room, `its worker crashed: ${msg.error}`) : this.stop(`the box crashed: ${msg.error}`);
 		const job = this.jobs.get(msg.id);
 		// a job is answered only from the room it was asked in, whatever number another room's code guesses
 		if (!job || job.room !== room) return;
@@ -118,9 +126,9 @@ export class Shell {
 	/**
 	 * one job: { op, …args } answered with the engine's answer, in `room` (its worker; a host of one room leaves it),
 	 * or in the room a function names once the job's turn comes (a host that keeps few rooms names it then). One that
-	 * runs longer than `timeout` tears the shell down, unless it is `soft`: a step waiting behind a build is late, not
-	 * lost, so only it fails and the shell goes on. The jobs that are not soft go in one at a time, whatever their
-	 * room, so each one's time is its own and not the jobs' asked before it.
+	 * runs longer than `timeout` ends its room where rooms are kept apart, else tears the shell down, unless it is
+	 * `soft`: a step waiting behind a build is late, not lost, so only it fails and its room goes on. The jobs that are
+	 * not soft go in one at a time, whatever their room, so each one's time is its own and not the jobs' asked before it.
 	 */
 	ask(op, payload = {}, { timeout = this.timeout, soft = false, room = 0 } = {}) {
 		if (soft) return this.#post(op, payload, timeout, soft, room);
@@ -143,22 +151,26 @@ export class Shell {
 				last = t;
 				if (had < timeout) return;
 				clearInterval(timer);
-				if (!soft) return this.stop(`${op} ran longer than ${timeout} ms`);
+				const why = `${op} ran longer than ${timeout} ms`;
+				if (!soft) return this.apart ? this.leave(room, why) : this.stop(why);
 				this.jobs.delete(id);
-				no(new Error(`${op} ran longer than ${timeout} ms`));
+				no(new Error(why));
 			}, Math.min(1000, timeout));
 			this.jobs.set(id, { ok, no, timer, room });
 			this.frame.contentWindow.postMessage({ op: 'job', room, job: { id, op, ...payload } }, '*');
 		});
 	}
 
-	/** a room let go: its worker ended, any job open in it failed; a job asked in it again starts in a fresh worker */
-	leave(room) {
+	/**
+	 * a room let go: its worker ended, any job open in it failed with `why`; a job asked in it again starts in a fresh
+	 * worker. The other rooms, and the jobs open in them, go on.
+	 */
+	leave(room, why = 'its room was let go') {
 		for (const [id, job] of this.jobs) {
 			if (job.room !== room) continue;
 			clearInterval(job.timer);
 			this.jobs.delete(id);
-			job.no(new Error('its room was let go'));
+			job.no(new Error(why));
 		}
 		this.frame?.contentWindow?.postMessage({ op: 'leave', room }, '*');
 	}

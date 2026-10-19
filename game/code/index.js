@@ -73,17 +73,26 @@ export const loadCode = (opts) => (opts ? load(viewOfEntry, opts) : (loading ??=
 const json = (e, name, fallback) => (e.files[name] != null ? JSON.parse(e.files[name]) : fallback);
 const idOf = (e) => e.ref.split('/').at(-1);
 
-/** a view entry as a Generated UI view: { id, title, note, kind, spec } */
+/**
+ * The view engine a vault's entry names (its `engine`, ./sources/avendb.js): the view host runs it there, never below
+ * the floor (src/lib/sandbox/engines.js `engineFor`). The repo's own entries name none.
+ */
+const engineOf = (e) => (Number.isInteger(e.engine) ? { engine: e.engine } : {});
+
+/** a view entry as a Generated UI view: { id, title, note, kind, spec, engine? } */
 export function viewOfEntry(e) {
 	const logic = e.files['logic.js'];
 	const spec =
 		e.kind === 'a2ui'
 			? { ...json(e, 'a2ui.json', {}), data: json(e, 'data.json', {}), ...(logic ? { logic } : {}) }
 			: { html: e.files['view.html'] ?? '', libs: e.libs ?? [], height: e.height ?? 420, data: json(e, 'data.json', {}), input: json(e, 'input.json', {}), ...(logic ? { logic } : {}) };
-	return { id: idOf(e), title: e.title, note: e.note ?? '', kind: e.kind ?? 'html', spec };
+	return { id: idOf(e), title: e.title, note: e.note ?? '', kind: e.kind ?? 'html', spec, ...engineOf(e) };
 }
 
-/** a view entry as a game's view card: { id, kind: 'view', name, description, values, data: { slot, libs, height }, code } */
+/**
+ * a view entry as a game's view card: { id, kind: 'view', name, description, values, data: { slot, libs, height }, code,
+ * engine? }
+ */
 export function cardOfEntry(e) {
-	return { id: idOf(e), kind: 'view', name: e.title, description: e.note ?? '', values: {}, data: { slot: e.slot ?? 'panel', libs: e.libs ?? [], height: e.height ?? 520 }, code: e.files['view.html'] ?? '' };
+	return { id: idOf(e), kind: 'view', name: e.title, description: e.note ?? '', values: {}, data: { slot: e.slot ?? 'panel', libs: e.libs ?? [], height: e.height ?? 520 }, code: e.files['view.html'] ?? '', ...engineOf(e) };
 }

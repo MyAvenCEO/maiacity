@@ -125,10 +125,10 @@ export function createAssets(o) {
 			let lent = false;
 			const box = {
 				engine: INDEX.engine,
-				build: (recipe, given) =>
+				build: (recipe, given, o) =>
 					new Promise((ok, no) => {
 						if (!lent) (lent = true), reading--;
-						line.push({ rank: job.rank, recipe, given, ok, no });
+						line.push({ rank: job.rank, recipe, given, o, ok, no });
 						pump();
 					})
 			};
@@ -162,7 +162,7 @@ export function createAssets(o) {
 			const b = take(line);
 			p.busy = true;
 			p.box
-				.build(b.recipe, b.given)
+				.build(b.recipe, b.given, b.o)
 				.then(b.ok, b.no)
 				.finally(() => {
 					p.busy = false;
