@@ -124,7 +124,8 @@ export function entryOf(row) {
 		for (const [name, v] of [['data.json', textOf(r.data)], ['input.json', textOf(r.input)], ['logic.js', r.logic || undefined]]) if (v != null) files[name] = v;
 	}
 	const hash = hashOf(canonical({ entry: JSON.parse(JSON.stringify(entry)), files }));
-	return { entry: { ref, ...JSON.parse(JSON.stringify(entry)), files, hash, source: 'avendb', vault: row.vault, entry: row.entry, heads: row.heads } };
+	// the engine it names, beside where it is (not part of what the repo hashes): its host runs it there (H4)
+	return { entry: { ref, ...JSON.parse(JSON.stringify(entry)), files, hash, source: 'avendb', vault: row.vault, entry: row.entry, heads: row.heads, engine: r.engine.version } };
 }
 
 /**

@@ -175,7 +175,7 @@ export async function bundleAsset(group, id, whole, { minify = true, plugins = [
 async function bundleTrials({ minify = true } = {}) {
 	const out = {};
 	const files = new Set();
-	for (const name of ['probe', 'spin', 'answer']) {
+	for (const name of ['probe', 'spin', 'answer', 'crash']) {
 		const code = `import { ${name}Recipe } from ${JSON.stringify(PROBE)};\nexport const recipe = () => ${name}Recipe();\n`;
 		const b = await bundle({ code, format: 'cjs', minify, external: isThree });
 		b.files.forEach((f) => files.add(f));

@@ -426,6 +426,15 @@ export function heldAt(hash) {
 export const cardOf = (hash) => (recipeInfo(hash) ? source?.rowOf(hash)?.record?.card : undefined);
 
 /**
+ * What the vault's entry declares beside a recipe (Recipe, v1's `manifest` and `contract`), which ../load.js holds its
+ * builds to; undefined if none.
+ */
+export const declaredOf = (hash) => {
+	const r = recipeInfo(hash) ? source?.rowOf(hash)?.record : undefined;
+	return r ? { manifest: r.manifest, contract: r.contract } : undefined;
+};
+
+/**
  * A build's page: on the root, its recipe's hash as an address reads it ($lib/ids.js), its label in words (`?t=`,
  * never one of its values), then its values, sorted ($lib/assets/AssetPage.svelte).
  * @param {string} base the site's base path @param {string} hash @param {Record<string, unknown>} [values]

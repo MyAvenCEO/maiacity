@@ -4,7 +4,8 @@
  * pull request and before every deploy (.github/workflows/kernel.yml); a failure stops the deploy.
  *
  * - The box: its lab (/app/assets/box/) runs every check, the box's probe among them (src/lib/assets/box/probe.js, a
- *   recipe that tries every way out, and one that never stops). Every check must pass.
+ *   recipe that tries every way out, one that crashes its worker and one that never stops, each ended alone). Every
+ *   check must pass.
  * - The views: /app/views/probe/ shows views made to do harm in the real view host (src/lib/sandbox/view/probe.js).
  *   Every attempt aims at a canary this script listens on: anything that arrives there got out, whatever the view was
  *   told. While the views run, this script clicks every link and button the hostile view drew and presses Enter in its
@@ -118,8 +119,26 @@ async function feed() {
  */
 async function warm(path) {
 	const page = await signedIn();
-	await page.goto(`${base}${path}`, { waitUntil: 'networkidle2', timeout: 120000 }).catch(() => {});
+	// a dependency it bundles only once the page has run reloads the page a little later: asked again until it stays put
+	for (let i = 0; i < 4; i++) {
+		let reloaded = false;
+		const moved = (f) => f === page.mainFrame() && (reloaded = true);
+		await page.goto(`${base}${path}`, { waitUntil: 'networkidle2', timeout: 120000 }).catch(() => {});
+		page.on('framenavigated', moved);
+		await sleep(4000);
+		page.off('framenavigated', moved);
+		if (!reloaded) break;
+	}
 	await page.close();
+}
+
+/** a frame's element, or null: a frame the page dropped (a reload) answers nothing rather than throwing */
+async function find(frame, sel) {
+	try {
+		return await frame.$(sel);
+	} catch {
+		return null;
+	}
 }
 
 async function viewProbe() {
@@ -144,13 +163,13 @@ async function viewProbe() {
 	const deadline = Date.now() + 60000;
 	let frame = null;
 	while (!frame && Date.now() < deadline) {
-		for (const f of page.frames()) if (await f.$('#probe-mark').catch(() => null)) frame = f;
+		for (const f of page.frames()) if (await find(f, '#probe-mark')) frame = f;
 		if (!frame) await sleep(200);
 	}
 	check('the hostile view is drawn in its frame', !!frame);
 	const clicked = [];
 	for (const sel of frame ? CLICKS : []) {
-		const el = await frame.$(sel).catch(() => null);
+		const el = await find(frame, sel);
 		if (!el) continue;
 		await el.click().catch(() => {});
 		if (sel === '#probe-text') await page.keyboard.press('Enter');
@@ -217,8 +236,11 @@ async function boxLab() {
 	const open = probes.filter(([, v]) => !String(v).startsWith('blocked'));
 	check(`box: every way out refused (${probes.length} tried)`, probes.length > 10 && !open.length, open.map(([k, v]) => `${k}: ${v}`).join('; '));
 	for (const [what, said] of probes) console.log(`    ${what}: ${said}`);
-	const ended = !!r.kill?.stopped && String(r.kill?.after).startsWith('a new box');
-	check('box: a recipe that never stops is ended, and a new box builds', ended, ended ? `${r.kill.stopped}, after ${r.kill.ms} ms` : JSON.stringify(r.kill));
+	// each ended alone: the same box goes on, the recipe behind it built in its own room, a machine kept running
+	for (const [what, got] of [['a recipe that never stops', r.kill], ['a recipe that crashes its worker', r.crash]]) {
+		const alone = got?.alone === true && !!got?.stopped;
+		check(`box: ${what} is ended alone, and the box goes on`, alone, alone ? `${got.stopped}, after ${got.ms} ms` : JSON.stringify(got));
+	}
 	const lab = await page.$$eval('ul.checks li', (ls) => ls.map((l) => ({ ok: !l.classList.contains('bad'), text: l.querySelector('b')?.textContent ?? '', note: l.querySelector('small')?.textContent ?? '' })));
 	check('box: the lab ran its checks', lab.length >= 10, `${lab.length} checks`);
 	for (const c of lab) check(`box: ${c.text.replace(/^[✓✗]\s*/, '')}`, c.ok, c.ok ? '' : c.note);

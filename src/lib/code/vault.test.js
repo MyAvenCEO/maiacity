@@ -3,12 +3,17 @@
 // copy writes comes back as the same entry; what the vault hands out is checked and held to the engines the repo
 // ships; the loader prefers what it loaded and keeps the seed for the rest.
 // Run: bun test src/lib/code
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, mock, test } from 'bun:test';
 import { avendb, copyOf, entryOf, feedOf, recordOf } from '../../../game/code/sources/avendb.js';
 import { codeAt, codeIn, loadCode, viewOfEntry } from '../../../game/code/index.js';
 import { ENTRIES } from '../../../code/index.js';
 import { defaultViews } from '../../../game/maiacity-v1/views.js';
 import { examples } from '../../../game/genui/examples.js';
+import { FLOOR, engineFor, enginesOf, latestOf } from '../sandbox/engines.js';
+
+// the view host's page side, outside a page
+mock.module('$app/paths', () => ({ base: '' }));
+const { viewOf, viewOfCard } = await import('../sandbox/view-host.js');
 
 const VAULT = 'a'.repeat(64);
 const all = Object.values(ENTRIES);
@@ -16,7 +21,7 @@ const all = Object.values(ENTRIES);
 const repo = all.filter((e) => e.type !== 'config');
 /** the rows the vault would hand out after the copy: each create, as read back */
 const rowsOf = (entries) => entries.map((e, i) => ({ entry: `e${String(i).padStart(11, '0')}`, vault: VAULT, heads: `${String(i).padStart(8, '0')}cafe`, ...recordOf(e), record: recordOf(e).value }));
-const strip = ({ source, vault, entry, heads, ...e }) => e;
+const strip = ({ source, vault, entry, heads, engine, ...e }) => e;
 
 afterEach(() => avendb.use([], viewOfEntry));
 
@@ -27,6 +32,8 @@ describe('the copy', () => {
 			const { entry, error } = entryOf(row);
 			expect(error).toBeUndefined();
 			expect(strip(entry)).toEqual(ENTRIES[entry.ref]);
+			// and the engine it was written for, beside it: the latest of its kind at the copy; a config runs on none
+			expect(entry.engine).toBe(entry.type === 'config' ? undefined : latestOf(entry.type).v);
 		}
 	});
 	test('is one batch acting as the vault: the Public share first, then a create per entry, tagged by path, game and the repo hash', () => {
@@ -94,6 +101,22 @@ describe('loaded entries', () => {
 		expect(r.refused.join('\n')).toMatch(/views\/coop-chart: written for view engine 99, which the repo does not ship/);
 		expect(r.refused.join('\n')).toMatch(/held twice/);
 		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
+	});
+	test('a loaded view runs on the view engine it names, never below the floor (H4)', () => {
+		// as the copy of 2026-10-17 wrote them: for view engine 2, the latest then
+		const old = changed('views/view-holders', { engine: { host: 'view', version: 2, hash: enginesOf('view')[1].blake3 } });
+		const scene = changed('views/village-scene', { engine: { host: 'view', version: 2, hash: enginesOf('view')[1].blake3 } });
+		expect(avendb.use([old, scene], viewOfEntry).refused).toEqual([]);
+		expect(codeAt('views/view-holders').engine).toBe(2);
+		const card = defaultViews()[0];
+		const view = examples()[0];
+		expect([card.engine, view.engine, viewOfCard(card).engine, viewOf(view).engine]).toEqual([2, 2, 2, 2]);
+		// which, older than the floor, runs there, with every wall its versions added
+		expect(engineFor('view', viewOf(view).engine).v).toBe(FLOOR.view);
+		// the seed's entries name none, and run on the floor too
+		expect(viewOf(examples()[1]).engine).toBeUndefined();
+		expect(engineFor('view', viewOf(examples()[1]).engine).v).toBe(FLOOR.view);
+		// one that names an engine the repo doesn't ship is never loaded (above), so no page tries to run it
 	});
 	test('a vault ref is served at the heads it names, and only then', () => {
 		const r = row('views/village-scene');

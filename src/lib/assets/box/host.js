@@ -15,7 +15,9 @@ import { Shell, TIMEOUT, frozen } from '../../sandbox/frame.js';
  *   hash keeps them apart. The box keeps the rooms of the last ROOMS recipes asked of it and of every build it keeps
  *   running, and one worker made ahead, nothing run in it, for the next: it loads three.js while the last builds.
  * - Out comes plain data only (./serialize.js), which the page checks and builds its own objects from (./rebuild.js).
- * - A job that runs too long is ended by removing the frame (its workers go with it); the next job starts a new box.
+ * - A recipe dies alone (the shell's `apart`): one whose build runs past its time, or whose worker crashes, has its
+ *   room let go, its worker ended and the builds kept running in it gone with it, while every other recipe's room, and
+ *   the machines running there, go on in the same box. Its next build starts in a fresh worker.
  */
 
 export { TIMEOUT };
@@ -46,7 +48,7 @@ export function engineCode(v) {
 export class AssetBox extends Shell {
 	/** @param {{ engine?: number, timeout?: number }} [o] the engine it runs (the latest) */
 	constructor({ engine = LATEST.v, timeout = TIMEOUT } = {}) {
-		super({ code: () => engineCode(engine), timeout, spare: true });
+		super({ code: () => engineCode(engine), timeout, spare: true, apart: true });
 		this.engine = engine;
 		/** @type {{ room: number, code: string }[]} the recipes' rooms, the one asked of last at the end */
 		this.rooms = [];
@@ -122,6 +124,13 @@ export class AssetBox extends Shell {
 		const ended = this.#onSession(session, 'end', {}, { timeout: 5000, soft: true }).catch(() => {});
 		this.sessions.delete(session);
 		return ended;
+	}
+
+	/** a recipe's room let go (kept too many, or it crashed or ran too long): the builds kept running in it go with it */
+	leave(room, why) {
+		this.rooms = this.rooms.filter((r) => r.room !== room);
+		for (const [session, s] of this.sessions) if (s.room === room) this.sessions.delete(session);
+		super.leave(room, why);
 	}
 
 	/** tears the box down: its rooms, and the builds kept running in them, go with it */

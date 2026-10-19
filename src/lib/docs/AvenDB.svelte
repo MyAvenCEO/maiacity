@@ -557,7 +557,7 @@
 			'View worker',
 			'A view’s own script',
 			'A worker the view engine starts in the frame',
-			'A stand-in DOM, up to eight canvases, Three.js, d3, the MCP Apps client, and eight MCP Apps messages to the page',
+			'A stand-in DOM, up to eight canvases, Three.js, d3, the MCP Apps client, and eight MCP Apps messages to the page; five seconds of work in hand, refilled by half the time that passes',
 			'The network, storage, the frame’s real DOM, the page, tools, resources, links'
 		]
 	];
@@ -1804,8 +1804,14 @@
 			<p class="prose-col">
 				The engine that runs the code is a file we froze, one per version, served from our own site. The page checks its
 				BLAKE3 hash before it starts it, and nothing comes from a CDN. A new engine is a new version beside the old ones,
-				and pages run the latest of each kind. A build or a call that runs past its time, 20 seconds in the asset box and
-				10 in the logic box, ends with the frame and its worker removed.
+				and every old one stays loadable. Code runs on the version it names, so a new engine never changes what older
+				code does: a view or logic on the engine its entry names, a recipe on the box engine its card names. A view or
+				logic never runs below its kind’s floor, though. A version that closes a hole raises the floor, so code that
+				names an older engine still gets every wall. The floor is view engine 4 and logic engine 1, so the views the
+				vault holds, written for an older view engine, run on 4. Code that names no engine runs on the floor. A call that runs past its 10 seconds in the logic box ends with the frame
+				and its worker removed. In the asset box a recipe dies alone: a build that runs past its 20 seconds, or a recipe
+				that crashes, ends that recipe’s worker only. The other recipes in the box go on building, and the next build of
+				that recipe starts in a new worker.
 			</p>
 			<p class="prose-col">
 				Code hands back plain data, never code, and the page checks it again. The asset box sends a model as numbers and
@@ -1846,7 +1852,12 @@
 				engine starts, against a stand-in DOM it can’t see past; the engine cleans each picture the worker sends before
 				it draws it, and lends it at most eight canvases. The worker gets Three.js, d3 and the MCP Apps client from frozen
 				files of ours, and nothing else. One that doesn’t answer for four seconds is stopped, and so is a view whose frame
-				loads a second page. A view is handed only the data its page passes it, and a page never puts one where a person
+				loads a second page. A view’s script also has a budget of work. A worker of ours beside it, which nothing of the
+				view’s can reach, sends the view’s worker a number no one can guess, at moments the script can’t foresee, and the
+				worker sends it back as soon as it is free. How long that takes is how long the script was at work. The script
+				starts with five seconds of work in hand and gets back half of the time that passes. Once it has spent half of
+				it, its animation frames come further apart, so a scene too heavy for the device slows down and goes on. Once it
+				has spent all of it, its worker is ended. A view is handed only the data its page passes it, and a page never puts one where a person
 				decides: the page’s own buttons stay outside it, and its own panel is one tap away.
 			</p>
 			<p class="note prose-col">
@@ -1865,11 +1876,21 @@
 				the checker: the box holds whatever it misses.
 			</p>
 			<p class="prose-col">
+				What an entry declares is held where it runs. A view gets only the libraries its manifest names: an import of
+				any other fails in its worker. A recipe is held to its manifest and its contract before it builds. Every module
+				its file requires must be one its manifest names and its engine has. Every check its contract names must be one
+				the page runs on every build anyway. Its file and its build stay within the bytes and the time its contract
+				gives, where those are less than the box’s own. Otherwise it is refused.
+			</p>
+			<p class="prose-col">
 				The kernel, which is the boxes, the engines, the checker, the render core and the Markdown engine, changes only
 				with its tests green. A gate runs them on every pull request and before every deploy, and the deploy stops if they fail. It also runs
 				two probes in headless Chromium: code made to do harm tries every way out of the asset box and of a view, through
 				the network, storage, the page, its links and its markup, aiming at a canary server that hears anything that gets
-				out, and code that never stops or eats its memory must be stopped.
+				out. Code that never stops, that works in bursts without end, or that eats its memory must be stopped, and a
+				recipe that crashes or never stops must be stopped alone, with the other recipes still building. A scene too
+				heavy for the device must slow down and go on. A script that names a view engine from before the budget must be
+				held to it all the same, and a view made for an engine no page has must not start.
 			</p>
 			<h3>Where it runs today</h3>
 			<p class="prose-col">
@@ -1923,16 +1944,17 @@
 					all of it or the newest: the server can leave an entry out, or serve an older version Maia City signed.
 				</li>
 				<li>
-					<b>One recipe’s crash.</b> A recipe that crashes or runs out of time still takes down its whole box, so the
-					other builds in it start again: a delay, never another recipe’s model.
+					<b>Memory, and work between builds.</b> Only QuickJS has a memory cap. A browser gives a worker none, so a
+					recipe or a view’s script that eats memory is stopped only by the browser, which may close the tab. A view’s
+					budget misses part of the work done in slices of a few milliseconds with a pause after each. A recipe is held
+					to 20 seconds a build, but work its worker goes on with between builds is not counted.
 				</li>
 				<li>
-					<b>Memory and time.</b> Only QuickJS has a memory cap, and a view’s script is stopped only once it stops
-					answering.
-				</li>
-				<li>
-					<b>What code declares.</b> An entry’s manifest and contract aren’t enforced, and its engine version isn’t
-					pinned: a view or logic runs on the latest engine of its kind.
+					<b>What code declares.</b> The rest of a manifest (kit, presets, controls, messages, events, hooks and ops)
+					and a contract’s memory and ops are not read: each host holds every entry to its own fixed lists and limits
+					instead, which nothing an entry declares can widen. A recipe that computes a module’s name reaches any of
+					its engine’s modules. A recipe made for an older box engine is still refused rather than run there, and a
+					function runs on the logic floor whatever engine it names.
 				</li>
 				<li>
 					<b>What a function makes.</b> A function may make entries of any type in its vault, flows and functions among
