@@ -367,8 +367,7 @@
 		// the site's media (./sitemedia-copy.js, Samuel 2026-10-19: "copy everything for me"): what Maia City lacks of
 		// the pictures, sounds and films the site shows from the old media vault, copied into it in the background once
 		// the seed's top-up is over (or another device brings it), once a visit, by an owner's Mac app alone, as it
-		// copies the private ones too, with its key (a browser has the Library's card); it works only while avenDB's
-		// pages are in front and pauses while a world, a game or the studio draws (`calm`)
+		// copies the private ones too, with its key (a browser has the Library's card), as fast as it goes, on any page
 		const seedOver = !bringing && (!first || seededInto.has(city?.id) || seedFailed.has(city?.id ?? ''));
 		const owns = !!city?.owners.some((o) => 'vault' in o && o.vault === mine?.id);
 		if (native() && city && owns && seedOver && !copyingMedia && !mediaTried.has(city.id) && siteLeft(w, city.id).length) {

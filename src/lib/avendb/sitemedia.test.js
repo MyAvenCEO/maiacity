@@ -5,7 +5,7 @@
 import { expect, test } from 'bun:test';
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { bringing, copyAll, inAvenDB, LEGACY, marking, nameOf, SITE, source, uncopied } from './sitemedia.js';
+import { bringing, copyAll, LEGACY, marking, nameOf, SITE, source, uncopied } from './sitemedia.js';
 
 const hex = (b) => bytesToHex(blake3(b));
 const h = (c) => c.repeat(64);
@@ -214,7 +214,7 @@ test('copying everything marks what Maia City holds, brings the rest each as the
 	expect(seen.at(-1)).toBe(4);
 });
 
-test('copying waits for a calm page before each file and each megabyte, and leaves a file another device copied meanwhile', async () => {
+test('copying leaves a file another device copied meanwhile', async () => {
 	const [one, two] = [bytesOf(900), bytesOf(1200).map((b) => b ^ 3)];
 	const pieces = [
 		{ hash: hex(one), name: `${hex(one)}.jpg`, media: 'image/jpeg', title: 'one' },
@@ -239,16 +239,9 @@ test('copying waits for a calm page before each file and each megabyte, and leav
 		asked: [],
 		urlsOf: (hash) => [`p/${hash}`],
 		get: addresses({ [`p/${hex(one)}`]: server(one), [`p/${hex(two)}`]: server(two) }).get,
-		calm: async () => void log.push('calm'),
 		held: (p) => p.hash === h('7')
 	});
 	expect({ done: out.done, of: out.of, failed: out.failed }).toEqual({ done: 3, of: 3, failed: [] });
-	// one wait before each file, then one before each of the device's reads (two readings of 4 and 5 slices of 256)
-	expect(log).toEqual(['calm', ...Array(8).fill('calm'), 'brought jpg', 'calm', 'calm', ...Array(10).fill('calm'), 'brought mp3']);
+	expect(log).toEqual(['brought jpg', 'brought mp3']);
 });
 
-test('the copy works on avenDB’s dashboard and pages, and waits on every other', () => {
-	for (const path of ['/app', '/app/', '/app/avendb', '/app/avendb/', '/app/avendb/sheet/x']) expect(inAvenDB(path)).toBe(true);
-	for (const path of ['/app/games/sandbox-6/', '/app/worlds/', '/app/studio/', '/app/avendbx', '/', '/universe/'])
-		expect(inAvenDB(path)).toBe(false);
-});
