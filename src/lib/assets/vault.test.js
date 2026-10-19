@@ -105,8 +105,8 @@ function boxOf() {
 	return {
 		engine: made.index.engine,
 		asked,
-		async build(recipe, given) {
-			asked.push({ recipe, given });
+		async build(recipe, given, o) {
+			asked.push({ recipe, given, ...(o ? { o } : {}) });
 			const { meta, build } = recipeOfFile(recipe.code);
 			let cast = null;
 			const keep = async (...a) => {
@@ -247,6 +247,59 @@ test("a recipe's source is its entry's file, fetched only when this device's cac
 	expect(fresh.files()).toEqual([]);
 	expect(box.asked.length).toBe(1);
 }, 120000);
+
+test("what a recipe's entry declares is held: the modules it requires, the checks its contract names, its bytes, its time and its engine", async () => {
+	const tent = rowAt('things/bell-tent@1');
+	const name = () => vault.buildAt('things/bell-tent@1');
+	/** the tent built as the vault holds it once its row is changed by `f`: the box it was asked of, and why it was refused */
+	const built = async (f) => {
+		await loaded({ rows: FEED.rows.map((x) => (x === tent ? changed(x, f) : x)) });
+		const box = boxOf();
+		const err = await thrown(() => loadAsset(name(), { box, store: storeOf(), cache: false }));
+		return { box, err };
+	};
+	// as the seed writes it: every module its file names, the checks the page runs on every build, the box's own 20 s
+	expect(tent.record.manifest.libs).toContain('three');
+	expect(tent.record.contract).toEqual({ budgets: { ms: 20000 }, invariants: ['hash', 'card', 'budget'] });
+	let { box, err } = await built(() => {});
+	expect(err).toBeNull();
+	expect(box.asked.map((a) => a.o)).toEqual([{ timeout: 20000 }]);
+	// a shorter time its contract gives is its build's
+	({ box, err } = await built((c) => (c.record.contract.budgets.ms = 1500)));
+	expect(err).toBeNull();
+	expect(box.asked.map((a) => a.o)).toEqual([{ timeout: 1500 }]);
+	// a module its file requires that its manifest doesn't name, a module its engine lacks, a check the page doesn't run,
+	// a file past its bytes: refused, and nothing built
+	for (const [f, said] of [
+		[(c) => (c.record.manifest.libs = c.record.manifest.libs.filter((l) => l !== 'three')), /requires three, which its manifest doesn't name/],
+		[(c) => c.record.manifest.libs.push('three/addons/loaders/GLTFLoader.js'), new RegExp(`names three/addons/loaders/GLTFLoader.js, which box engine ${made.index.engine} doesn't have`)],
+		[(c) => c.record.contract.invariants.push('proven'), /asks for proven, a check the page doesn't run/],
+		[(c) => (c.record.contract.budgets.bytes = 100), /bigger than the 100 bytes its contract gives it/]
+	]) {
+		({ box, err } = await built(f));
+		expect(err?.message).toMatch(said);
+		expect(box.asked).toEqual([]);
+	}
+	// an entry that declares nothing is held to its engine alone
+	({ box, err } = await built((c) => (delete c.record.manifest, delete c.record.contract)));
+	expect(err).toBeNull();
+	expect(box.asked.map((a) => a.o)).toEqual([{ timeout: 20000 }]);
+	// it runs on the box engine its card names, and a box handed in for another engine is not asked
+	await loaded();
+	expect(canonical(name()).engine.v).toBe(tent.record.card.engine);
+	const other = { ...boxOf(), engine: made.index.engine - 1, build: async () => Promise.reject(new Error('asked of the wrong engine')) };
+	const fine = boxOf();
+	const { boxOf: pageBox } = await import('./load.js');
+	const real = pageBox(made.index.engine);
+	const was = real.build;
+	real.build = fine.build;
+	try {
+		expect((await loadAsset(name(), { box: other, store: storeOf(), cache: false })).from).toBe('box');
+		expect(fine.asked.length).toBe(1);
+	} finally {
+		real.build = was;
+	}
+}, 60000);
 
 test("a recipe's file read off the feed is kept on this device under its hash: a page loaded afresh reads it there, a spoiled copy off the feed again", async () => {
 	const held = new Map();

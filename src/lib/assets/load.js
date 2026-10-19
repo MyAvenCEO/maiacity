@@ -7,13 +7,19 @@
  * is the only truth, and it is the Maia City vault's (./vault.js): its index names the hash, and its entry's file, read
  * off avenDB's feed and held to that hash, is what the box runs. What it made stays on this device, so a page that
  * finds it in the cache reads no recipe's file and starts no box.
+ *
+ * What a recipe's entry declares is held (H4, `heldTo`): it runs on the box engine its card names (`engineOf`), in a
+ * box of that engine's; it requires of the engine only the modules its manifest names; its contract names only checks
+ * the page runs on every build anyway; and its file and its build stay within the bytes and the time its contract
+ * gives, where those are less than the box's own.
  */
-import { AssetBox } from './box/host.js';
+import { AssetBox, TIMEOUT } from './box/host.js';
 import { rebuild } from './box/rebuild.js';
 import * as cache from './cache.js';
 import { engineAt } from './engines.js';
 import { valuesOf } from './params.js';
-import { INDEX, buildOf, heldAt, loadRecipes, parseBuild, recipeAt } from './vault.js';
+import { INDEX, buildOf, cardOf, declaredOf, heldAt, loadRecipes, parseBuild, recipeAt } from './vault.js';
+import { libsOf } from './sources/avendb.js';
 import { checkCard } from './schemas/index.js';
 
 const boxes = new Map();
@@ -33,9 +39,52 @@ export const liveBoxOf = (v = INDEX.engine) => {
 };
 
 /**
+ * The frozen box engine a recipe runs on: the one its card names (the card its entry keeps), the index's where it
+ * names none. Throws for one that is not frozen. @param {string} hash
+ */
+export function engineOf(hash) {
+	const v = cardOf(hash)?.engine ?? INDEX.engine;
+	const e = engineAt(v);
+	if (!e) throw new Error(`${heldAt(hash).label} is made for box engine ${String(v).slice(0, 12)}, which is not frozen`);
+	return e;
+}
+
+/** the checks the page runs on every build of every recipe (./sources/avendb.js `recipeEntryOf`) */
+export const CHECKS = {
+	hash: 'its file hashes to the name its card gives it',
+	card: 'its card fits the card schema and names that recipe',
+	budget: 'what the box hands back stays within the budget of nodes, triangles, pictures, lights and bones'
+};
+
+/**
+ * A recipe's file held to what its entry declares (`declared`: its manifest and contract), on box engine `engine`: the
+ * time its build has (ms), or throws why it is refused. Its manifest's `libs` are the modules it requires: every one
+ * its file names (a name it computes reaches only the engine's own modules), and each a module of the engine. Its
+ * contract's `invariants` are checks the page runs on every build anyway (`CHECKS`), never one it doesn't; its
+ * `budgets.bytes` bounds its file and `budgets.ms` its build, where less than the box's own 20 s. Its `memory` and
+ * `ops` no box can hold: they are not read. An entry that declares nothing is held to the engine alone.
+ * @param {string} code @param {{ manifest?: any, contract?: any } | undefined} declared @param {{ v: number, modules: string[] }} engine
+ */
+export function heldTo(code, declared, engine) {
+	const libs = declared?.manifest?.libs;
+	if (Array.isArray(libs)) {
+		const unnamed = libsOf(code).filter((l) => !libs.includes(l));
+		if (unnamed.length) throw new Error(`refused: it requires ${unnamed.slice(0, 3).join(', ')}, which its manifest doesn't name`);
+		const none = libs.filter((l) => !engine.modules.includes(l));
+		if (none.length) throw new Error(`refused: its manifest names ${none.slice(0, 3).join(', ')}, which box engine ${engine.v} doesn't have`);
+	}
+	const c = declared?.contract ?? {};
+	const unknown = (Array.isArray(c.invariants) ? c.invariants : []).filter((i) => !Object.hasOwn(CHECKS, i));
+	if (unknown.length) throw new Error(`refused: its contract asks for ${unknown.slice(0, 3).join(', ')}, a check the page doesn't run`);
+	const b = c.budgets ?? {};
+	if (Number.isInteger(b.bytes) && new TextEncoder().encode(code).length > b.bytes) throw new Error(`refused: its file is bigger than the ${b.bytes} bytes its contract gives it`);
+	return Number.isInteger(b.ms) ? Math.min(TIMEOUT, Math.max(0, b.ms)) : TIMEOUT;
+}
+
+/**
  * A build of one of the vault's recipes, named as it is kept: its hash and every value it takes, its own where not
- * given, so two names of one build are one. Throws for a value its recipe does not take, and NotInVault for a hash the
- * vault doesn't hold (or while its recipes aren't in: ./vault.js `loadRecipes`).
+ * given, so two names of one build are one; and the engine it runs on. Throws for a value its recipe does not take,
+ * and NotInVault for a hash the vault doesn't hold (or while its recipes aren't in: ./vault.js `loadRecipes`).
  * @param {string} name `<hash>?its=values`
  */
 export function canonical(name) {
@@ -43,7 +92,7 @@ export function canonical(name) {
 	const at = heldAt(hash);
 	const values = at.params?.length ? valuesOf(at.params, params) : undefined;
 	if (params && !values) throw new Error(`${at.label} takes no parameters`);
-	return { hash, at, values, name: buildOf(hash, values), engine: engineAt(INDEX.engine) };
+	return { hash, at, values, name: buildOf(hash, values), engine: engineOf(hash) };
 }
 
 /** the cache key of a build @param {string} name */
@@ -119,9 +168,11 @@ export async function loadAsset(name, { box, cache: useCache = true, store = cac
 	}
 	const making = (async () => {
 		const recipe = await recipeAt(c.hash);
+		const timeout = heldTo(recipe.code, declaredOf(c.hash), c.engine);
 		const t2 = now();
 		const given = c.values && Object.fromEntries(Object.entries(c.values).map(([k, v]) => [k, String(v)]));
-		const built = await (box ?? boxOf(INDEX.engine)).build(recipe, given);
+		// a box handed in builds only what its engine runs: a recipe made for another builds in a box of its own engine
+		const built = await (box?.engine === c.engine.v ? box : boxOf(c.engine.v)).build(recipe, given, { timeout });
 		const stored = useCache ? store.put(key, built).catch(() => false) : Promise.resolve(false);
 		return { built, stored, t2 };
 	})();

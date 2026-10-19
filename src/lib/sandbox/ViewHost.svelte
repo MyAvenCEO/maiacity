@@ -7,7 +7,8 @@
 	  but our engine's (by a nonce) and the blob: URLs it makes.
 	- Its first document holds nothing of the view's: one script takes our view engine (./view/engine.js, frozen, its
 	  bytes checked here against their BLAKE3 hash) and a MessageChannel port from this page, and starts it. From then
-	  on only that engine writes the frame's DOM, from the view's HTML made safe (./view/sanitize.js).
+	  on only that engine writes the frame's DOM, from the view's HTML made safe (./view/sanitize.js). The engine is the
+	  version the view names (its `engine`), never one below the floor (./engines.js `engineFor`).
 	- A view's own script never runs in a window: the engine starts it in a worker inside the frame (./view/worker.js),
 	  on a copy of the DOM, with its libraries (three, d3, the MCP Apps SDK) from frozen files of ours. No CDN.
 	- Logic that decides (a view's `logic`) runs in QuickJS in the logic host ($lib/genui/logic.js); the frame only
@@ -23,11 +24,14 @@
 	import { MCP_STYLES } from './view/theme.js';
 	import { DENY, SANDBOX } from './policy.js';
 	import { bootDoc, engineCode, hasScript, viewOf, workerOf } from './view-host.js';
+	import { engineFor } from './engines.js';
 
 	// `data`, when given, is the view's input as it moves on (a game's state): drawn again whenever it changes
 	let { view, data = undefined, onevent = () => {}, onerror = () => {} } = $props();
 	const v = $derived(viewOf(view));
 	const scripted = $derived(hasScript(v.html));
+	// the view engine it runs on: the one it names, never below the floor; none, for one that names an engine not frozen
+	const engine = $derived(engineFor('view', v.engine));
 
 	let frame = $state();
 	let stopped = $state('');
@@ -144,7 +148,7 @@
 	async function start() {
 		try {
 			if (v.logic) logic = await loadLogic(v.logic);
-			const worker = scripted ? await workerOf(v) : null;
+			const worker = scripted ? await workerOf(v, engine.v) : null;
 			const first = input();
 			if (data !== undefined) sent = JSON.stringify(first);
 			if (logic) {
@@ -171,7 +175,8 @@
 			return;
 		}
 		try {
-			const code = await engineCode('view');
+			if (!engine) throw new Error(`it is made for view engine ${String(v.engine).slice(0, 12)}, which this page does not have`);
+			const code = await engineCode('view', engine.v);
 			const ch = new MessageChannel();
 			port = ch.port1;
 			port.onmessage = fromEngine;
