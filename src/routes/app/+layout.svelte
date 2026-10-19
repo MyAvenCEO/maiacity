@@ -16,7 +16,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { approveDeviceWithPasskey, loginOptions, me, signOut, type Founder } from '$lib/auth/client';
+	import { approveDeviceWithPasskey, me, sheetAssertion, signOut, type Founder } from '$lib/auth/client';
 	import { claimInvite, failure, later, open, signIn, signUpName, waits } from '$lib/app/entry.js';
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import { session } from '$lib/avendb/session.svelte.js';
@@ -237,17 +237,10 @@
 				settle();
 				if (phase === 'locked' && !naming) void avendb();
 			});
-			const { SHEET } = await import('$lib/avendb/device/passkey.js');
 			const { user_code } = await command<{ user_code: string }>('auth_start');
-			const options = await loginOptions();
-			const back = await command<string>('passkey_sheet', {
-				url: `${SHEET}#${new URLSearchParams({ what: 'signin', options: JSON.stringify(options) })}`
-			});
-			const answer = new URLSearchParams(back.split('#')[1] ?? '');
-			const assertion = answer.get('assertion');
-			if (!assertion) throw new Error(answer.get('error') || 'The sign-in sheet brought nothing back.');
+			const assertion = await sheetAssertion();
 			// the key arrives through `auth`, once the app's wait for it sees the approval
-			await approveDeviceWithPasskey(user_code, JSON.parse(assertion));
+			await approveDeviceWithPasskey(user_code, assertion);
 		} catch (e) {
 			stop();
 			error = e instanceof Error ? e.message : String(e);

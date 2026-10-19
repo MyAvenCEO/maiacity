@@ -27,6 +27,7 @@
 		approve: 'to approve what your vault changes',
 		drive: 'to use a drive for avenDB as one of your devices',
 		signin: 'to sign The OS in to maiaCITY on this Mac',
+		invite: 'to invite a new traveler to Maia City',
 		touch: 'to let Touch ID open avenDB on this Mac'
 	};
 
@@ -41,7 +42,8 @@
 	let module = null;
 	/** @type {{ challenge: Uint8Array, salt: Uint8Array, device?: Uint8Array, id?: string, key: Uint8Array } | null} */
 	let ask = null;
-	/** a sign-in's options (WebAuthn's JSON), when The OS signs in to the API */
+	/** a sign-in's options (WebAuthn's JSON), when The OS signs in to the API, or makes an invite, which only a person
+	 *  may (the API takes no key for it) */
 	let signin = $state('');
 	/** what the sheet runs, and again on "Try again" */
 	let run = go;
@@ -55,7 +57,7 @@
 		const q = new URLSearchParams(location.hash.slice(1));
 		const [challenge, salt, key] = ['challenge', 'salt', 'key'].map((k) => q.get(k));
 		what = q.get('what') ?? '';
-		signin = what === 'signin' ? (q.get('options') ?? '') : '';
+		signin = what === 'signin' || what === 'invite' ? (q.get('options') ?? '') : '';
 		if (signin) return void (run = signIn)();
 		if (!challenge || !salt || !key) return void (phase = 'lost');
 		const device = q.get('device');
@@ -125,7 +127,9 @@
 			<p>This page opens from maiaCITY Studio, the Mac app, when it asks for your passkey.</p>
 		{:else}
 			<h1>Confirm with your passkey</h1>
-			{#if signin}
+			{#if what === 'invite'}
+				<p>The OS asks for your passkey {purpose}. Only you can invite someone, never the app’s key. Your passkey stays in its prompt.</p>
+			{:else if signin}
 				<p>The OS asks for your passkey {purpose}. It stays in your passkey prompt: the app gets a key of its own, for the studio and nothing else.</p>
 			{:else}
 				<p>The app asks for your passkey {purpose}. It stays in your passkey prompt; what the app gets back is sealed to it alone.</p>
