@@ -60,6 +60,7 @@
 	import { FLOW, FLOWS, FUNCTION, FUNCTIONS, RETIRED } from './flows.js';
 	import { answer, refs } from './ops.js';
 	import { beside, drafting, retiring, seeding, seedPieces, touchingUp, unseeded } from './seed.js';
+	import { capGroupOps } from './capgroups.js';
 	import { deviceName, relay as relayOf, server as serverOf } from './server.js';
 	import { asks, Here, here, session } from './session.svelte.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
@@ -380,7 +381,8 @@
 	}
 
 	/**
-	 * Each piece of the repo seed vault `city` holds no copy of yet (./seed.js), `left`, written into it acting for it,
+	 * Maia City's cap groups where it holds none of their names yet (./capgroups.js), then
+	 * each piece of the repo seed vault `city` holds no copy of yet (./seed.js), `left`, written into it acting for it,
 	 * one piece after another, each op of a piece naming the entries the ones before it made (`refs`); a recipe's create
 	 * with its file beside it, as the session brings one (`beside`). A piece the vault refuses is left out, and the rest
 	 * go on: what was left out is said at the end, and the next visit tries it again.
@@ -392,6 +394,17 @@
 		const failed = [];
 		/** why each piece that failed did, the first time a reason comes up */
 		const reasons = new Set();
+		// first the cap groups every invite and grant names (Samuel 2026-10-19: Traveler, Citizen), so invites can be
+		// made at once: each defined where Maia City holds none of its name yet (./capgroups.js), a group it includes
+		// just before it
+		try {
+			/** @type {any[]} */
+			const made = [];
+			for (const op of capGroupOps(answer(await send({ op: 'cap_groups', vault: city })), city)) made.push(answer(await send(refs(op, made))));
+		} catch (e) {
+			failed.push('the cap groups');
+			reasons.add(`the cap groups: ${/** @type {Error} */ (e)?.message ?? e}`);
+		}
 		seedAt = { done: 0, of: left.length };
 		for (const p of left) {
 			/** @type {any[]} */

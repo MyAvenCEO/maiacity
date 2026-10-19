@@ -5,7 +5,11 @@
 	super admins (?invite=) is the only way to sign up, used once. Signing up
 	makes the passkey; the app then founds the person's human vault with it in
 	avenDB, its profile named as they say here ($lib/app/entry.js): the name
-	lives there, nowhere else.
+	lives there, nowhere else. After its `#` the link holds a share of one of
+	Maia City's cap groups, Traveler or Citizen, and the key that claims it
+	(Samuel 2026-10-19): kept in this tab until the person's vault claims it in
+	the app, the newcomer's as it is founded, a founder's from before as they
+	open it. That share is what opens the sandboxes, worlds and games to them.
 
 	Everything here runs in the browser. The page itself is prerendered like the
 	rest of the journal; only the passkey ceremony and the four API calls need a
@@ -17,7 +21,7 @@
 	import { onMount } from 'svelte';
 	import { remember } from '$lib/app/session';
 	import { founderCount, inviteOpen, me, passkeysAvailable, signOut, signUp, type Founder } from '$lib/auth/client';
-	import { signingUp } from '$lib/app/entry.js';
+	import { invitedWith, signingUp } from '$lib/app/entry.js';
 
 	let founder = $state<Founder | null>(null);
 	let count = $state<{ count: number; step: number } | null>(null);
@@ -29,12 +33,18 @@
 	/** the invite this link brings, and whether it may still sign one person up */
 	let invite = $state('');
 	let invited = $state(false);
+	/** whether the link brings a share of Maia City's, which the app claims for the person's vault */
+	let brings = $state(false);
 	/** the first person runs the city and needs no invite; everyone after them does */
 	const open = $derived(count?.count === 0 || invited);
 
 	onMount(async () => {
 		supported = passkeysAvailable();
 		invite = new URLSearchParams(location.search).get('invite') ?? '';
+		// the share the invite gives, and its key: kept for the app, never sent anywhere from here
+		const brought = new URLSearchParams(location.hash.slice(1));
+		brings = !!brought.get('share') && !!brought.get('key');
+		if (brings) invitedWith(brought.get('share') ?? '', brought.get('key') ?? '');
 		// Best-effort, all of them: a signed-out visitor and an API that is
 		// briefly down should see the page, not an error.
 		const counted = founderCount()
@@ -89,7 +99,9 @@
 				its About page. Nothing about you is stored anywhere else.
 			</p>
 
-			<p class="already"><a class="pill-btn" href="{base}/app/">Open your dashboard →</a></p>
+			{#if brings}<p class="lede">This link brings an invite to Maia City: your human vault takes it as your dashboard opens.</p>{/if}
+
+			<p class="already"><a class="pill-btn" href="{base}/app/">{brings ? 'Take the invite →' : 'Open your dashboard →'}</a></p>
 
 			<button class="quiet" onclick={leave}>Sign out on this device</button>
 		{:else}

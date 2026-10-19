@@ -32,9 +32,10 @@
 //              (./Docs.svelte); ./Account.svelte drafts those an earlier seed published (`drafting`)
 //   pads       the journal's sources and each story's idea pad, sparks as ./legacy.js copies them
 //   games      the Games area (game/games.js): the vault's own schema "Game, v1", then each game's entry, of type `game`,
-//              tagged `game` and `game:<id>`; a game the repo released (places.ts, no `release: 'draft'`) also gets
-//              the Public share on its tag that publishes it, written with its entry, once: a game its owner withdrew
-//              later is never published again by a seed
+//              tagged `game` and `game:<id>`; MaiaCity V1 (`RELEASED`) also gets the Public share on its tag that lets
+//              everyone watch it and read its proposals, written with its entry, once. Who plays a game is the vault's
+//              cap groups' to say (./capgroups.js), which ./Account.svelte defines after the pieces where Maia City
+//              holds none of their names yet
 //   retire     every entry of a game the repo let go (`RETIRED`: Sandboxes 7 and 8), deleted
 //   recipes    last, as their files are most of the seed's bytes (V5 of the avenDB migration): one Public share of the
 //              vault's recipes, by type, so the server's feed serves them and their files; then each asset of the
@@ -107,7 +108,7 @@ export const GAME_V1 = JSON.stringify({
 	required: ['kind', 'id', 'title']
 });
 
-/** The games the repository released, by id: those every founder plays today (places.ts), published at the seed. */
+/** The games everyone may watch, signed out too, by id: a Public share on each one's tag, written at the seed. */
 const RELEASED = new Set(['maiacity-v1']);
 
 const POSTS = /** @type {Record<string, () => Promise<string>>} */ (

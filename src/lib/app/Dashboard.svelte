@@ -2,11 +2,11 @@
 	The dashboard, the one place everything starts from (Samuel 2026-10-18: one dashboard, no group pages, no avenDB page
 	of its own, the same for every vault, a coop's and a person's): the home of avenDB's Shell (./Shell.svelte, no
 	address or `#home`), which src/routes/app/+page.svelte opens at /app; a greeting;
-	the Game Worlds, every game (MaiaCity V1, the sandboxes) as the Maia City COOP vault serves it, published or, for an
-	admin, a draft, which whoever's device acts for that vault publishes or withdraws right here
-	($lib/app/games.svelte.js); the founder's apps (Ledger, Coops, Proposals, the Universe); then avenDB's apps (the
-	game assets among them, in its Assets), the vault's pages ($lib/avendb/VaultApps.svelte), each opening right here in
-	the vault picked in the nav pill.
+	the Game Worlds, every game (MaiaCity V1, the sandboxes) the Maia City cap groups the person holds open: the
+	sandboxes to every Traveler, V1 to every Citizen ($lib/app/access.svelte.js; Samuel 2026-10-19: no draft stage);
+	the founder's apps (Ledger, Coops, Proposals, the Universe); the Game Assets, Maia City's own in avenDB's Assets and
+	the Worlds, read only, for every Traveler; then for an admin avenDB's apps, the vault's pages
+	($lib/avendb/VaultApps.svelte), each opening right here in the vault picked in the nav pill.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
@@ -18,8 +18,9 @@
 	import { nameOf } from '$lib/avendb/vaults.js';
 	import VaultApps from '$lib/avendb/VaultApps.svelte';
 	import Icon from '$lib/app/Icon.svelte';
-	import { APPS, GAME_WORLDS, holds, isAdmin, published, released } from '$lib/app/places';
-	import { cityOf, publish } from '$lib/app/games.svelte.js';
+	import { APPS, GAME_WORLDS, holds, isAdmin, opens } from '$lib/app/places';
+	import { access, holdsGroup } from '$lib/app/access.svelte.js';
+	import { TRAVELER } from '$lib/avendb/capgroups.js';
 	import { asset } from '$lib/media/url';
 
 	/** what the vault's home shows above its apps: the consent screen, while a request waits */
@@ -35,11 +36,11 @@
 	const hour = new Date().getHours();
 	const hello = hour < 5 ? 'Good night' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
 	const admin = $derived(isAdmin(founder));
-	// the games this founder may open: the published ones, and for an admin the drafts too
-	const games = $derived(GAME_WORLDS.filter((g) => released(founder, g)));
+	// the games this founder opens, by the cap groups of Maia City they hold
+	const games = $derived(GAME_WORLDS.filter((g) => opens(founder, g)));
 	const apps = $derived(APPS.filter((t) => holds(founder, t)));
-	// the Maia City COOP vault, where this device acts for it: only then a game can be published or withdrawn here
-	const city = $derived(admin ? cityOf(session.world) : null);
+	// the game assets, read only, for every traveler: Maia City's, in avenDB's Assets, and the worlds
+	const traveler = $derived(!!access.city && holdsGroup(TRAVELER));
 	// the vault avenDB's apps open in: the one picked in the nav pill
 	const vault = $derived(session.world?.vaults.find((v: { id: string }) => v.id === session.vault) ?? null);
 </script>
@@ -56,20 +57,18 @@
 	<p class="divider">Game Worlds</p>
 	<div class="games">
 		{#each games as g (g.href)}
-			{@const on = published(g)}
 			<div class="game">
 				<a href={g.href}>
 					{#if g.cover}<img src={asset(g.cover)} alt="" loading="lazy" />{:else}<span class="nocover"></span>{/if}
 					<span class="label"><b>{g.label}</b><span>{g.note}</span></span>
 				</a>
-				{#if !on}<span class="draft">Draft</span>{/if}
-				{#if city && g.game}
-					<button class="publish" class:on disabled={!!session.doing} onclick={() => publish(g.game!, !on)} title={on ? 'Everyone may watch and read it: withdraw it' : 'Only the admins open it: publish it to everyone'}>{on ? 'Withdraw' : 'Publish'}</button>
-				{/if}
 			</div>
+		{:else}
+			{#if access.known || session.phase !== 'open'}
+				<p class="none">{session.phase === 'open' ? 'An invite to Maia City opens the sandboxes: ask for one.' : 'Unlock your avenDB to see the games your invite opens.'}</p>
+			{/if}
 		{/each}
 	</div>
-	{#if city && session.error}<p class="err">{session.error}</p>{/if}
 
 	<p class="divider">Your apps</p>
 	<div class="tiles">
@@ -77,6 +76,14 @@
 			<a class="tile" href={t.href}><Icon name={t.icon} size={34} /><b>{t.label}</b><span>{t.note}</span></a>
 		{/each}
 	</div>
+
+	{#if traveler}
+		<p class="divider">Game Assets</p>
+		<div class="tiles">
+			<a class="tile" href="{base}/app/#assets" onclick={() => (session.vault = access.city)}><Icon name="leaf" size={34} /><b>Assets</b><span>Maia City’s machines, actors, buildings, things, biomes and plants</span></a>
+			<a class="tile" href="{base}/app/worlds/"><Icon name="play" size={34} /><b>Worlds</b><span>Real places as 3D worlds, and the sandboxes</span></a>
+		</div>
+	{/if}
 
 	{#if admin}
 		<VaultApps>
@@ -156,46 +163,11 @@
 		text-decoration: none;
 	}
 
-	.draft {
-		position: absolute;
-		top: 0.7rem;
-		left: 0.7rem;
-		padding: 0.15rem 0.55rem;
-		border-radius: 999px;
-		background: var(--mustard);
-		color: var(--ink);
-		font-size: 0.68rem;
-		font-weight: 600;
-		letter-spacing: 0.1em;
-		text-transform: uppercase;
-		pointer-events: none;
-	}
-
-	.publish {
-		position: absolute;
-		top: 0.6rem;
-		right: 0.6rem;
-		padding: 0.3rem 0.8rem;
-		border: 1px solid var(--line);
-		border-radius: 999px;
-		background: var(--paper);
-		color: var(--ink);
-		font: inherit;
-		font-size: 0.78rem;
-		cursor: pointer;
-	}
-
-	.publish:not(.on) {
-		border-color: var(--mustard);
-		background: var(--mustard);
-	}
-
-	.publish:disabled {
-		opacity: 0.5;
-	}
-
-	.err {
-		color: #a03224;
+	/* no game opens yet: what opens them */
+	.none {
+		grid-column: 1 / -1;
+		margin: 0;
+		color: var(--ink-soft);
 	}
 
 	.game img {

@@ -4,7 +4,7 @@
 	in for the app and their own database together, never a second sign-in on avenDB's pages ($lib/app/entry.js); a
 	browser new to them joins their human vault, and a person new to avenDB, as everyone just signed up, founds it,
 	named as they say. While avenDB starts, a sheet shows each step, the passkey's prompts among them, with its seconds
-	(Samuel 2026-10-18: what happens while the passkey's window is open or the device works). Then the dashboard, the games and — for whoever holds them — the admin's tools. One nav pill at the foot of every page is the only way round ($lib/app/NavPill.svelte: back, home,
+	(Samuel 2026-10-18: what happens while the passkey's window is open or the device works). Then the dashboard; the games, worlds and game assets, each opened by the cap group of the Maia City vault it needs, which the person holds in their avenDB ($lib/app/access.svelte.js); and for whoever holds them, the admin's tools. One nav pill at the foot of every page is the only way round ($lib/app/NavPill.svelte: back, home,
 	you): no top bar, and no page has a back button of its own. A sandbox, a world and the studio's editor run full
 	screen, the pill over them — and so does a game gone full screen over its own page (Sandbox 3's domes). A page that
 	builds assets (a world, a viewer, the box's lab: $lib/assets/vault.js ASSET_PAGES) opens once the Maia City vault's
@@ -17,7 +17,7 @@
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { approveDeviceWithPasskey, loginOptions, me, signOut, type Founder } from '$lib/auth/client';
-	import { failure, later, open, signIn, signUpName, waits } from '$lib/app/entry.js';
+	import { claimInvite, failure, later, open, signIn, signUpName, waits } from '$lib/app/entry.js';
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import { pillVaults, seeded } from '$lib/avendb/vaults.js';
@@ -26,14 +26,15 @@
 	import NavPill from '$lib/app/NavPill.svelte';
 	import AskModal from '$lib/app/AskModal.svelte';
 	import { immersive as fullScreen } from '$lib/app/immersive.svelte';
-	import { gameAt, released } from '$lib/app/places';
-	import { loadGames } from '$lib/app/games.svelte.js';
+	import { gameAt, opens } from '$lib/app/places';
+	import { access, readAccess } from '$lib/app/access.svelte.js';
 	import { loadCode } from '../../../game/code/index.js';
 	import VaultRecipes from '$lib/assets/VaultRecipes.svelte';
 	import { ASSET_PAGES } from '$lib/assets/vault.js';
 	import Signing from '$lib/avendb/Signing.svelte';
 	import { asks, here, type Steps } from '$lib/avendb/session.svelte.js';
 	import { plan, reported, rows, stepWords, type Report, type Stage } from '$lib/avendb/steps.js';
+	import { CITIZEN } from '$lib/avendb/capgroups.js';
 
 	let { children } = $props();
 
@@ -45,6 +46,8 @@
 	let error = $state('');
 	/** avenDB didn't open: the person may go on without it in this tab */
 	let stuck = $state(false);
+	/** why the invite a link brought didn't go through, if it didn't */
+	let invited = $state('');
 	/** the passkey roots no human vault yet, or the person just signed up: the name its profile takes, to found it */
 	let naming = $state(false);
 	let name = $state('');
@@ -74,7 +77,6 @@
 	);
 
 	onMount(async () => {
-		void loadGames();
 		// the views and logic modules from the Maia City vault (C10), loaded beside the sign-in check so the app's pages
 		// run them from the start; it never throws, and offline the repo's seed runs. This browser's avenDB too, whose
 		// passkey the way in asks for
@@ -96,12 +98,14 @@
 		else done();
 	}
 
-	/** In: what avenDB shows of the person is read once (their name, their vaults); a vault just founded with the
-	 *  server's claim opens on avenDB's page, which brings the repo's seed into the Maia City it founded. */
+	/** In: what avenDB shows of the person is read once (their name, their vaults); the invite a link brought them
+	 *  claimed, a newcomer's or theirs from before ($lib/app/entry.js); a vault just founded with the server's claim
+	 *  opens on avenDB's page, which brings the repo's seed into the Maia City it founded. */
 	async function done(founded = false) {
 		phase = 'ready';
 		if (session.phase !== 'open') return;
 		await session.refresh().catch(() => {});
+		invited = await claimInvite();
 		if (founded && session.world && seeded(session.world)[0]?.[0]) await goto(`${base}/app/`);
 	}
 
@@ -289,9 +293,17 @@
 	// full screen: a sandbox (Sandbox 3 is a page of cards), a world, the turntables ($lib/app/Turntable.svelte), a
 	// factory's hall, and the studio's editor
 	const immersive = $derived(/^\/app\/(games\/(?!sandbox-3\/?$)[^/]+|worlds\/[^/]+|maiacity-v1|factories|biomes)\/?$/.test(rel) || rel.startsWith('/app/studio') || fullScreen.on);
-	// a draft game is the admins' only; anyone else with its link is told so
+	// a game, world or game asset page opens by the Maia City cap group it needs ($lib/app/access.svelte.js), read from
+	// the person's avenDB as it shows its world anew; until that is read it waits, and anyone without it is told what
+	// opens it
 	const game = $derived(gameAt(page.url.pathname));
-	const closed = $derived(!!game && !released(founder, game));
+	$effect(() => {
+		if (phase !== 'ready') return;
+		void session.world;
+		readAccess();
+	});
+	const waiting = $derived(!!game?.needs && !access.owner && !access.known && session.phase === 'open');
+	const closed = $derived(!!game && !waiting && !opens(founder, game));
 	// the Proposals app is open signed out too: public is watch and read only (Samuel 2026-10-17), so it shows the
 	// proposals of the published games, and nothing there writes without a sign-in
 	const watching = $derived(phase === 'signed-out' && rel.startsWith('/app/aips/'));
@@ -322,7 +334,7 @@
 
 <svelte:head>
 	<meta name="robots" content="noindex" />
-	{#if phase !== 'ready' && !watching}<title>{phase === 'locked' ? 'Unlock' : 'Sign in'} · maiaCITY</title>{:else if closed}<title>Not released yet · maiaCITY</title>{/if}
+	{#if phase !== 'ready' && !watching}<title>{phase === 'locked' ? 'Unlock' : 'Sign in'} · maiaCITY</title>{:else if closed}<title>Not open to you yet · maiaCITY</title>{/if}
 </svelte:head>
 
 <!-- pinned to the home screen: a dark strip behind the status bar's white words, except over a world in full screen -->
@@ -359,12 +371,20 @@
 		{#if (phase === 'signed-out' || (phase === 'locked' && !naming)) && !native()}<p class="fine">New here? maiaCITY is invite only: an invite link from its admin <a href="{base}/join/">lets you join →</a></p>{/if}
 	</div>
 {:else}
-	{#if closed}
+	{#if waiting}
+		<div class="gate"><p class="quiet">One moment…</p></div>
+	{:else if closed}
 		<div class="gate">
-			<h1>Not released yet.</h1>
-			<p class="lede">{game?.label} is still being built. It opens to every founder once it is released.</p>
+			<h1>Not open to you yet.</h1>
+			<p class="lede">
+				{#if game?.admin}{game.label} is the admins’ own.
+				{:else if session.phase !== 'open'}{game?.label} opens with your avenDB, which holds what your invite gave you: unlock it with your passkey.
+				{:else if game?.needs === CITIZEN}{game.label} is for citizens: ask Maia City to make you one.
+				{:else}{game?.label} opens to every traveler, as everyone invited to Maia City is: ask for an invite.{/if}
+			</p>
 		</div>
 	{:else}
+		{#if invited}<p class="invite-note" role="status">{invited} <button class="quiet later" onclick={() => (invited = '')}>OK</button></p>{/if}
 		<div class="app" class:immersive>
 			<VaultRecipes hold={assetPage}>{@render children()}</VaultRecipes>
 		</div>
@@ -432,6 +452,23 @@
 		font: inherit;
 		text-decoration: underline;
 		cursor: pointer;
+	}
+
+	/* why the invite a link brought didn't go through */
+	.invite-note {
+		position: fixed;
+		z-index: 30;
+		top: calc(0.8rem + env(safe-area-inset-top, 0px));
+		left: 50%;
+		max-width: min(36rem, calc(100% - 2rem));
+		margin: 0;
+		padding: 0.6rem 1rem;
+		border-radius: 14px;
+		background: var(--paper);
+		box-shadow: 0 6px 24px rgb(0 0 0 / 0.18);
+		color: var(--terracotta);
+		font-size: 0.9rem;
+		transform: translateX(-50%);
 	}
 
 	/* the name a new human vault takes */

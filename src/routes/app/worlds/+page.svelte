@@ -1,7 +1,7 @@
 <!--
 	Worlds: real places made into 3D worlds — measured from photos, walked like every sandbox, and shot by the studio's
 	film camera like every sandbox (game/film/worlds.js) — and the sandboxes. Each with its version and history
-	($lib/app/versions.js), and what it is anchored to. An admin's.
+	($lib/app/versions.js), and what it is anchored to. Every traveler's, read only ($lib/app/access.svelte.js).
 -->
 <script lang="ts">
 	import Icon from '$lib/app/Icon.svelte';

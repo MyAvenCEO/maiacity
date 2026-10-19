@@ -8,7 +8,9 @@
  * in a ceremony of its own (a new device's unlock is over the device's own challenge). Signing up is the same way in:
  * the join page makes the passkey, and the gate founds the person's human vault with it, its profile named as they
  * signed up and public, so every person has one; a passkey that has none yet founds one the same way, named as the person says.
- * A person's profile lives in their human vault alone (session.name), none of it in maiaCITY's database.
+ * A person's profile lives in their human vault alone (session.name), none of it in maiaCITY's database. The invite
+ * that brought them (the join page's link) is claimed once their vault is open (`claimInvite`): a share of Maia City's
+ * Traveler or Citizen cap group, which is what opens the sandboxes, worlds, game assets and games to them.
  *
  * In the Mac app the app signs in with its own key, approved in the browser, and each ceremony runs in its sign-in
  * sheet. avenDB failing never keeps anyone out of the app: the gate says why and lets them go on without it in this
@@ -18,7 +20,7 @@ import { loginFinish, loginOptions, signIn as apiSignIn } from '$lib/auth/client
 import { native } from '$lib/native';
 import { deviceName, relay, server } from '$lib/avendb/server.js';
 import { session } from '$lib/avendb/session.svelte.js';
-import { nameShare, nameShared } from '$lib/avendb/vaults.js';
+import { nameShare, nameShared, plain, seedCity } from '$lib/avendb/vaults.js';
 
 /**
  * How the gate shows a start of avenDB's step by step while it runs ($lib/avendb/steps.js, Signing.svelte): called as
@@ -34,6 +36,9 @@ const LATER = 'avendb:later';
 const NO_PRF = 'avendb:no-prf';
 /** sessionStorage: the name the person just signed up with, for their human vault's profile */
 const SIGNUP = 'maia:signup';
+/** sessionStorage: the invite the join page's link brought, `{ share, key }`, until the person's human vault claims it */
+const INVITE = 'maia:invite';
+const HEX = /^[0-9a-f]{64}$/;
 
 /** @param {() => Storage} at @param {string} key */
 const flag = (at, key) => {
@@ -58,6 +63,44 @@ export const signUpName = () => flag(() => sessionStorage, SIGNUP);
 
 /** Remembers the name the person signs up with, until their human vault takes it. @param {string} name */
 export const signingUp = (name) => keep(() => sessionStorage, SIGNUP, name.trim());
+
+/**
+ * Remembers the invite a link brought (Samuel 2026-10-19: "The invite automatically should sign that share"): its
+ * share of one of Maia City's cap groups, Traveler or Citizen ($lib/avendb/capgroups.js), and the key that claims it,
+ * until the person's human vault claims it as they come into the app (`claimInvite`).
+ * @param {string} share @param {string} key
+ */
+export const invitedWith = (share, key) =>
+	keep(() => sessionStorage, INVITE, HEX.test(share) && HEX.test(key) ? JSON.stringify({ share, key }) : null);
+
+/** The invite a link brought in this tab that no vault claimed yet, or null. @returns {{ share: string, key: string } | null} */
+export function invitation() {
+	try {
+		const got = JSON.parse(flag(() => sessionStorage, INVITE) || 'null');
+		return HEX.test(got?.share ?? '') && HEX.test(got?.key ?? '') ? got : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Claims the invite a link brought in this tab, if any, for the person's human vault, once avenDB is open: just
+ * founded, as they signed up with it, or theirs from before ($lib/avendb/session.svelte.js `claim`). What it gives
+ * them is theirs from then on, with no owner of Maia City signing. Its owners' own devices claim none: they run the
+ * city, and the invite stays for whoever it was made for. Why it didn't go through, in the person's words, or ''.
+ */
+export async function claimInvite() {
+	const got = invitation();
+	if (!got || session.phase !== 'open') return '';
+	keep(() => sessionStorage, INVITE, null);
+	if (session.world && seedCity(session.world)) return 'You run Maia City: the invite you opened stays for whoever it was made for.';
+	try {
+		await session.claim(server(), got.share, got.key);
+		return '';
+	} catch (e) {
+		return `Your invite didn’t go through: ${plain(String(/** @type {Error} */ (e)?.message ?? e))} Ask for a new one.`;
+	}
+}
 
 /** Whether avenDB waits for the passkey before the app opens: where this browser holds the person's account, locked,
  *  or none, and may hold one; unless this tab goes on without it. Once the session loaded (`session.load`). */

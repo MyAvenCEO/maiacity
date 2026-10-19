@@ -5,8 +5,11 @@
  * person signs up on the join page with no invite, and the app founds their human vault with that passkey, named as
  * they signed up, its profile the name the nav pill shows; a reload unlocks it in one ceremony; signed out and in
  * again, ONE ceremony signs them in to the API and unlocks avenDB together, the API getting the assertion without
- * its PRF outputs. Once the city has its admin, the join page wants an invite: the admin makes one in the nav pill,
- * and a second person signs up with it, used once. avenDB's home is screenshot with its app grid.
+ * its PRF outputs. Once the city has its admin, the join page wants an invite: the admin makes one to a traveler in
+ * the nav pill, a share of Maia City's Traveler cap group to a one-time key, its link carrying the share and the key
+ * after its `#`, and a second person signs up with it, used once: their new vault claims the share, so the dashboard
+ * opens the sandboxes and the Game Assets to them, and MaiaCity V1, a citizen's, stays closed. avenDB's home is
+ * screenshot with its app grid.
  *
  * Build and start as scripts/avendb-account.mjs says (a device and a server with `localhost-passkeys`, the device
  * copied into src/lib/avendb/device for the dev server, and `git checkout src/lib/avendb/device` after), then:
@@ -164,6 +167,8 @@ async function tab(auth = null, own = false) {
 		server
 	);
 	page.on('pageerror', (e) => check(`no error on the page: ${e.message}`, false));
+	// an invite made before Maia City holds its groups says so in an alert: dismissed, and tried again
+	page.on('dialog', (d) => void d.dismiss());
 	const cdp = await page.createCDPSession();
 	await cdp.send('WebAuthn.enable', { enableUI: false });
 	const options = { protocol: 'ctap2', ctap2Version: 'ctap2_1', transport: 'internal', hasResidentKey: true };
@@ -244,15 +249,25 @@ try {
 	await click(a.page, 'Unlock with your passkey');
 	check('unlocked, the dashboard greets them by their profile name', await waitText(a.page, ', Samuel.', 60000), await words(a.page, 'h1'));
 	check('in one ceremony', a.asserted() - before === 1, `${a.asserted() - before}`);
+	const games = (page) => words(page, '.games');
+	check('Maia City’s owner opens every game, MaiaCity V1 and the sandboxes', await until(async () => /MaiaCity V1.*Sandbox 1/.test(await games(a.page)), 30000), await games(a.page));
 
 	// 3. the vault switcher is the You item: their vaults, their own first, and the invite for a new human
 	await click(a.page, 'Samuel', 'nav.pill button.item');
 	const menu = await words(a.page, 'nav.pill .account');
 	check('You lists their vaults, their own first', /Your vaults\s*\S*\s*Samuel/.test(menu) || menu.includes('Your vaults'), menu);
 	await shot(a.page, '05-you-menu');
-	await click(a.page, 'Invite a new human', 'nav.pill .account button');
-	const link = await until(async () => !!(await a.page.$('input.invited')), 10000).then(() => a.page.$eval('input.invited', (i) => i.value));
-	check('the super admin makes an invite link', /\/join\/\?invite=/.test(link ?? ''), link);
+	// the invite is made once the seed defined Maia City's groups, in the background after the founding: tried until then
+	const inviting = () =>
+		a.page.evaluate(() => {
+			const b = [...document.querySelectorAll('nav.pill .account button')].find((e) => e.textContent?.includes('Invite a new traveler'));
+			if (b instanceof HTMLElement) b.click();
+			return !!b;
+		});
+	check('the owner’s menu offers to invite a traveler', await until(inviting, 20000), await words(a.page, 'nav.pill .account'));
+	const made = await until(async () => (await inviting()) && (await until(async () => !!(await a.page.$('input.invited')), 4000)), 180000);
+	const link = made ? await a.page.$eval('input.invited', (i) => i.value) : '';
+	check('the super admin makes an invite link to a traveler, its share and key after its #', /\/join\/\?invite=\w+#share=[0-9a-f]{64}&key=[0-9a-f]{64}$/.test(link), link);
 	await shot(a.page, '06-invite');
 
 	// 4. signed out and in again: ONE ceremony signs in to the API and unlocks avenDB together
@@ -286,6 +301,16 @@ try {
 	await click(b.page, 'Join as a founder');
 	check('the invited person sets up their human vault', await waitText(b.page, 'Your human vault.'));
 	check('the invite is used up', api.invites.get(new URL(link).searchParams.get('invite'))?.open === false);
+	await click(b.page, 'Set up my human vault');
+	check('their dashboard greets them', await waitText(b.page, ', Lena.', 120000), await words(b.page, 'h1'));
+	check('their vault claimed the invite: the sandboxes open to them', await until(async () => (await games(b.page)).includes('Sandbox 1'), 60000), await games(b.page));
+	check('no word of an invite that didn’t go through', !(await b.page.$('.invite-note')), await words(b.page, '.invite-note'));
+	check('MaiaCity V1 stays a citizen’s', !(await games(b.page)).includes('MaiaCity V1'), await games(b.page));
+	check('the Game Assets are theirs to look at', (await words(b.page)).includes('Game Assets'));
+	await shot(b.page, '09-traveler-dashboard');
+	await b.page.goto(`${base}/app/maiacity-v1/`, { waitUntil: 'domcontentloaded' });
+	check('a traveler is told MaiaCity V1 is for citizens', await waitText(b.page, 'is for citizens', 60000), (await words(b.page)).slice(0, 300));
+	await shot(b.page, '10-traveler-v1');
 	const c = await tab(null, true);
 	await c.page.goto(link, { waitUntil: 'domcontentloaded' });
 	check('a used invite opens nothing', await waitText(c.page, 'used up or expired'));
