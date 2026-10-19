@@ -2,6 +2,7 @@ import AvenDB.Step
 import AvenDB.Logs
 import AvenDB.Lens
 import AvenDB.Proposals
+import AvenDB.Gate
 
 /-!
 # Test vectors for the Rust core
@@ -113,6 +114,13 @@ def newShare (id over : Nat) (to : Who) (r : Level) (issuer : VaultId) (select :
     (ops : Option (List Op) := none) : Action :=
   .share (.grant { id, over, who := to, level := r, wide, select, ops := ops.getD r.ops, parent, issuer } via)
 
+/-- Share `id` over vault `over` with level `r`, issued by it, of its cap group `g`: no ops of its own, and a selector
+    that holds every entry, so what it grants is what the group's caps hold. -/
+def groupShare (id over : Nat) (to : Who) (r : Level) (g : EntryId) (via : List VaultId := []) : Action :=
+  let c : Share := { id, over, who := to, level := r, wide := false, select := .anyOf [[]], ops := [], parent := none,
+                     issuer := over, group := some g }
+  .share (.grant c via)
+
 /-- Keep share `id` over vault `over`: device `d` of vault `issuer` syncs what `select` picks, or all of `over`
     (`wide`), as mode `m` says. -/
 def keepShare (id over : Nat) (d : SignerId) (m : KeepMode) (issuer : VaultId) (select : Selector := .all)
@@ -121,20 +129,22 @@ def keepShare (id over : Nat) (d : SignerId) (m : KeepMode) (issuer : VaultId) (
 
 /-- A write that creates entry `e` of vault `v` in audience `x`, holding the content `blob`, with the proof `proof`,
     whose record fits its schemas or not (`fits`), on the main line or, as a draft, starting a line of its own
-    (`proposal`). -/
+    (`proposal`); of a cap group entry, the cap group its record says (`defines`). -/
 def newEntry (v e : Nat) (actor : VaultId) (x : Audience) (type : Sym) (created : Nat := 0) (tags : List Sym := [])
     (via : List VaultId := []) (epoch : Nat := 0) (proof : Option ShareId := none) (fits : Bool := true)
-    (blob : BlobId := 0) (proposal : Proposal := .main) : Action :=
+    (blob : BlobId := 0) (proposal : Proposal := .main) (defines : Option CapGroup := none) : Action :=
   .write v e actor none epoch (proposal := proposal) (via := via) (create := some (x, ⟨type, created, blob⟩))
-    (tags := { add := tags }) (proof := proof) (fits := fits)
+    (tags := { add := tags }) (proof := proof) (fits := fits) (defines := defines)
 
 /-- A write of entry `e`, in its stay `stay` at epoch `epoch` of that stay's audience, with the proof `proof`, touching
-    `touches`, whose result fits the entry's schemas or not (`fits`). -/
+    `touches`, whose result fits the entry's schemas or not (`fits`); of a cap group entry, the cap group its record
+    says after it (`defines`). -/
 def wr (v e : Nat) (actor : VaultId) (deps : List EditId := []) (stay : Option EditId := none) (epoch : Nat := 0)
     (proposal : Proposal := .main) (via : List VaultId := []) (add : List Sym := []) (remove : List Sym := [])
-    (proof : Option ShareId := none) (touches : List Touch := []) (fits : Bool := true) : Action :=
+    (proof : Option ShareId := none) (touches : List Touch := []) (fits : Bool := true)
+    (defines : Option CapGroup := none) : Action :=
   .write v e actor stay epoch deps proposal via (tags := { add, remove }) (proof := proof) (touches := touches)
-    (fits := fits)
+    (fits := fits) (defines := defines)
 
 /-- Setting a todo's field `f` to the text `x`. -/
 def sets (f x : String) : Touch := .set [.field f] (some (.str x))
@@ -156,6 +166,10 @@ def oldSuggester : List Op := [.read, .set [] none (some .proposals), .propose, 
 /-- A tuner's ops: write on proposals, start them, and merge into main what changes the defaults of params alone. -/
 def tuner : List Op :=
   [.read, .set [] none (some .proposals), .propose, .merge (some .main) [.field "params", .any, .field "default"]]
+
+/-- Traveler: reads the todos. Citizen: sets their status besides, to open or done, including Traveler. -/
+def travelerG : CapGroup := { name := "Traveler", caps := [⟨.read, todos⟩] }
+def citizenG : CapGroup := { name := "Citizen", caps := [⟨statusOp, todos⟩], includes := [50] }
 
 def seedKey (v ε : Nat) : KeyName := .scoped (.seed v) ε
 def shareKey (v c ε : Nat) : KeyName := .scoped (.share v c) ε
@@ -985,7 +999,57 @@ def cases : List Case := [
     (2, [], keepShare 45 100 77 .whole 100 todos),
     -- Carol's Mac keeps a full copy: a wide whole keep share over her own vault, its copy setting, stands for every
     -- vault where it has no keep share of its own, so it keeps Alice's notes whole now that hers there is revoked
-    (7, [], keepShare 50 102 7 .whole 102 (wide := true))] }]
+    (7, [], keepShare 50 102 7 .whole 102 (wide := true))] },
+  { name := "cap groups: a share names a group, which its vault versions", edits := humans ++ [
+    -- Alice's cap groups, entries of her own: Traveler reads the todos, Citizen sets their status besides
+    (2, [], newEntry 100 50 100 [] capGroupType (defines := some travelerG)),
+    (2, [], newEntry 100 51 100 [] capGroupType (defines := some citizenG)),
+    -- Bob holds Citizen with write, Carol with read, which bounds it to reading
+    (2, [], groupShare 30 100 (toVault 101) .write 51),
+    (2, [], groupShare 31 100 (toVault 102) .read 51),
+    (2, [], newEntry 100 21 100 [30, 31] todo),
+    (2, [], newEntry 100 3 100 [] note),
+    -- every share selects the vault's cap groups: a steward marks them into both audiences
+    (2, [], .move 100 50 [30, 31] [6]),
+    (2, [], .move 100 51 [30, 31] [7]),
+    -- Bob's status counts; a title, or a status Citizen doesn't list, is accepted and counted by no reader
+    (5, [], wr 100 21 101 [10] (proof := some 30) (touches := [sets "status" "done"])),
+    (5, [], wr 100 21 101 [10] (proof := some 30) (touches := [sets "title" "Lamp"])),
+    (5, [], wr 100 21 101 [10] (proof := some 30) (touches := [sets "status" "lost"])),
+    -- Carol's share is read: no peer takes her write
+    (6, [], wr 100 21 102 [10] (proof := some 31) (touches := [sets "status" "done"])),
+    -- Bob reaches Citizen's entry, but a version he writes counts nowhere and makes no new version
+    (5, [], wr 100 51 101 [7] (stay := some 13) (proof := some 30) (touches := [.set [] none])
+      (defines := some { citizenG with caps := [⟨.set [] none none, .all⟩] })),
+    -- Alice narrows Citizen to Traveler alone, and Bob's next status counts no more
+    (2, [], wr 100 51 100 [7] (stay := some 13) (touches := [sets "caps" "none"]) (defines := some { citizenG with caps := [] })),
+    (5, [], wr 100 21 101 [14] (proof := some 30) (touches := [sets "status" "open"])),
+    -- a version on a proposal changes nothing until it lands on main
+    (2, [], wr 100 51 100 [19] (stay := some 13) (proposal := .new) (touches := [.propose]) (defines := some citizenG)),
+    (5, [], wr 100 21 101 [14] (proof := some 30) (touches := [sets "status" "done"])),
+    -- an entry of the cap group type Bob creates is no cap group of Alice's, and Citizen lets him create nothing
+    (5, [], newEntry 100 52 101 [30] capGroupType (proof := some 30)
+      (defines := some { name := "Mine", caps := [⟨.set [] none none, .all⟩] }))] },
+  { name := "invites: a share to a one-time key, claimed once by the vault it invites", edits := humans ++ [
+    (2, [], newEntry 100 50 100 [] capGroupType (defines := some travelerG)),
+    -- Alice invites with Traveler; an invite makes no owner
+    (2, [], groupShare 31 100 (.invite 700) .read 50),
+    (2, [], groupShare 32 100 (.invite 701) .owner 50),
+    (2, [], newEntry 100 21 100 [31] todo),
+    (2, [], .move 100 50 [31] [6]),
+    -- a claim takes the invite key's signature and a member of the vault that claims; nor does Alice claim her own
+    (6, [], .claim 31 102),
+    (4, [700], .claim 31 102),
+    (2, [700], .claim 31 100),
+    -- Carol claims it: the share names her vault from now on, and nobody claims it again
+    (6, [700], .claim 31 102),
+    (8, [700], .claim 31 103),
+    -- a share that names a vault is no invite, and a revoked invite is claimed by nobody
+    (2, [], newShare 33 100 (toVault 103) .read 100 todos),
+    (6, [700], .claim 33 102),
+    (2, [], groupShare 34 100 (.invite 702) .read 50),
+    (2, [], .revoke (.grant 34 100 [])),
+    (8, [702], .claim 34 103)] }]
 
 /-- Alice's, Bob's, Carol's and Dave's vaults, one edit per depth. -/
 def humansV : List (Nat × SignerId × List SignerId × Action) := humans.zipIdx.map fun ((a, co, act), i) => (i, a, co, act)
@@ -1394,6 +1458,69 @@ def syncs : List SyncCase := [
     asks := [(5, [], none, []), (7, [], none, []), (7, [], none, [100]), (555, [], none, []),
       (555, [], none, [100, 101])] }]
 
+/-! ## Gate cases
+
+What the server of a vault (`home`) takes of a batch of edits, holding others (`takes`, `Gate.lean`): the batch without
+the geneses of new vaults it doesn't welcome, or nothing where a vault it would take stays unwelcome. Each edit claims a
+depth, as in a view case; ids count through the held edits and then the batch. The model's answer is the positions in
+the batch of the edits it takes, or `null`. Maia City is coop 200, which Alice's vault owns; its Traveler group is entry
+50 and its Admin group entry 52, which Bob holds; invite keys from 700; Eve's passkey 12 founds vault 104. -/
+
+structure GateCase where
+  name  : String
+  home  : VaultId
+  held  : List (Nat × SignerId × List SignerId × Action)
+  batch : List (Nat × SignerId × List SignerId × Action)
+
+def GateCase.edits (c : GateCase) : List Edit × List Edit :=
+  let mk := fun (i : Nat) ((depth, author, co, a) : Nat × SignerId × List SignerId × Action) =>
+    ({ id := i, depth, author, cosigners := co, action := a } : Edit)
+  (c.held.zipIdx.map fun (x, i) => mk i x, c.batch.zipIdx.map fun (x, i) => mk (c.held.length + i) x)
+
+/-- The positions in the batch of what the server takes of it, or none. -/
+def GateCase.takes (c : GateCase) : Option (List Nat) :=
+  let (held, batch) := c.edits
+  (AvenDB.takes c.home held batch).map fun b => (batch.zipIdx.filter fun (o, _) => b.any (·.id == o.id)).map (·.2)
+
+/-- Each step at the depth after the one before, from `start`. -/
+def deep (start : Nat) (steps : List (SignerId × List SignerId × Action)) : List (Nat × SignerId × List SignerId × Action) :=
+  steps.zipIdx.map fun ((a, co, act), i) => (start + i, a, co, act)
+
+/-- What the server of Maia City holds: the four people's vaults, Maia City, its Traveler group with an invite to it,
+    its Admin group, which Bob holds, and an invite to Alice's own vault. -/
+def gateHeld : List (Nat × SignerId × List SignerId × Action) := deep 0 (humans ++ [
+  (1, [], .genesis 200 .coop [.vault 100] 1),
+  (2, [], newEntry 200 50 200 [] capGroupType (via := [100]) (defines := some travelerG)),
+  (2, [], groupShare 31 200 (.invite 700) .read 50 (via := [100])),
+  (2, [], newEntry 200 52 200 [] capGroupType (via := [100]) (defines := some { name := "Admin" })),
+  (2, [], groupShare 32 200 (toVault 101) .read 52 (via := [100])),
+  (2, [], newShare 33 100 (.invite 703) .read 100 todos)])
+
+def eveFounds : SignerId × List SignerId × Action := (12, [], .genesis 104 .human [.signer 12] 1 (some 12))
+
+def gates : List GateCase := [
+  { name := "a new human vault comes with the invite it claims", home := 200, held := gateHeld,
+    batch := deep 100 [eveFounds, (12, [700], .claim 31 104)] },
+  { name := "without a claim, the server leaves a new human vault out", home := 200, held := gateHeld,
+    batch := deep 100 [eveFounds] },
+  { name := "an invite to another vault lets no human vault in", home := 200, held := gateHeld,
+    batch := deep 100 [eveFounds, (12, [703], .claim 33 104)] },
+  { name := "a coop founded by a citizen who is no admin stays out", home := 200, held := gateHeld,
+    batch := deep 100 [(6, [], .genesis 210 .coop [.vault 102] 1)] },
+  { name := "a holder of the Admin group founds a coop and its aven", home := 200, held := gateHeld,
+    batch := deep 100 [(4, [], .genesis 210 .coop [.vault 101] 1), (4, [], .genesis 310 .aven [.vault 210] 1)] },
+  { name := "Maia City's owner founds a coop", home := 200, held := gateHeld,
+    batch := deep 100 [(1, [], .genesis 211 .coop [.vault 100] 1)] },
+  { name := "a held genesis the batch lets stand, unwelcome, refuses the whole batch", home := 200,
+    held := gateHeld ++ [(200, 12, [], .genesis 220 .coop [.vault 104] 1)],
+    batch := deep 100 [eveFounds, (12, [700], .claim 31 104)] }]
+
+-- the gate takes a whole batch, part of one, none of one, and refuses one
+#guard gates.any (fun c => c.takes == some (List.range c.batch.length))
+#guard gates.any (fun c => c.takes == some [])
+#guard gates.any (fun c => (c.takes.map fun t => !t.isEmpty && t.length < c.batch.length) == some true)
+#guard gates.any (·.takes == none)
+
 /-! ## JSON -/
 
 def str (s : String) : String := "\"" ++ s ++ "\""
@@ -1449,6 +1576,7 @@ def who : Who → String
   | .vault v  => obj [("vault", nat v)]
   | .everyone => str "everyone"
   | .device d => obj [("device", nat d)]
+  | .invite k => obj [("invite", nat k)]
 
 def atom : Atom → String
   | .typeIn ts       => obj [("typeIn", ids ts)]
@@ -1522,9 +1650,18 @@ def touch : Touch → String
 
 /-- A share, with its ops. -/
 def shareJson (c : Share) : String :=
-  obj [("id", nat c.id), ("over", nat c.over), ("who", who c.who), ("level", level c.level),
+  obj ([("id", nat c.id), ("over", nat c.over), ("who", who c.who), ("level", level c.level),
        ("wide", bool c.wide), ("select", selector c.select), ("ops", arr (c.ops.map opJson)),
-       ("parent", opt nat c.parent), ("issuer", nat c.issuer)]
+       ("parent", opt nat c.parent), ("issuer", nat c.issuer)] ++ match c.group with
+         | some g => [("group", nat g)]
+         | none => [])
+
+/-- A cap: an op over a slice. -/
+def capJson (c : Cap) : String := obj [("op", opJson c.op), ("slice", selector c.slice)]
+
+/-- A cap group, as a cap group entry's record says it. -/
+def capGroupJson (g : CapGroup) : String :=
+  obj [("name", str g.name), ("caps", arr (g.caps.map capJson)), ("includes", ids g.includes)]
 
 /-- A built-in group. -/
 def group (g : Group) : String :=
@@ -1568,17 +1705,20 @@ def action : Action → String
       ("keep", ids keep)])])]
   | .revoke (.device v d keep) => obj [("revoke", obj [("device", obj [("vault", nat v), ("device", nat d),
       ("keep", ids keep)])])]
-  | .write v e a s g deps p via create tags pr ts ft => obj [("write", obj ([("vault", nat v), ("entry", nat e),
+  | .write v e a s g deps p via create tags pr ts ft df => obj [("write", obj ([("vault", nat v), ("entry", nat e),
       ("actor", nat a), ("stay", opt nat s), ("epoch", nat g), ("deps", ids deps), ("proposal", proposal p),
       ("via", ids via), ("create", opt (fun (x, h) => obj [("audience", ids x), ("header", header h)]) create),
       ("tags", tagDelta tags)] ++ (match pr with
         | some c => [("proof", nat c)]
         | none => []) ++ (if ts.isEmpty then [] else [("touches", arr (ts.map touch))]) ++
-        if ft then [] else [("fits", bool false)]))]
+        (if ft then [] else [("fits", bool false)]) ++ match df with
+          | some g => [("defines", capGroupJson g)]
+          | none => []))]
   | .mark v e caps wants keep via => obj [("mark", obj ([("vault", nat v), ("entry", nat e)] ++ markJson caps wants ++
       [("keep", ids keep), ("via", ids via)]))]
   | .keys secret to pub => obj [("keys", obj [("secret", keyName secret), ("to", arr (to.map keyName)),
       ("public", bool pub)])]
+  | .claim c v via => obj [("claim", obj [("share", nat c), ("vault", nat v), ("via", ids via)])]
 
 def vault (vt : Vault) : String :=
   obj [("id", nat vt.id), ("kind", kind vt.kind), ("owners", arr (vt.owners.map principal)),
@@ -1621,6 +1761,14 @@ def lines (st : State) : String :=
       obj [("entry", nat en.id), ("line", opt nat l), ("history", ids ((history st.counted en.id l).map (·.edit))),
            ("heads", ids (heads st.counted en.id l))])
 
+/-- The cap groups in force, each cap group entry with what its readers read it says now (`groupAt`); left out of a
+    state that has none. -/
+def capGroups (st : State) : String :=
+  match st.entries.filter fun en => isCapGroup en.vault en with
+  | [] => ""
+  | gs => ",\n " ++ str "capGroups" ++ ": " ++ arr (gs.map fun en =>
+    obj [("vault", nat en.vault), ("entry", nat en.id), ("group", opt capGroupJson (groupAt st en.vault en.id))])
+
 def state (st : State) : String :=
   ",\n ".intercalate [
     str "vaults" ++ ": " ++ arr (st.vaults.map vault),
@@ -1636,7 +1784,7 @@ def state (st : State) : String :=
       obj [("vault", nat vt.id), ("blob", nat b)]),
     str "uncounted" ++ ": " ++ ids st.uncounted,
     str "accepts" ++ ": " ++ ids st.accepts,
-    str "lines" ++ ": " ++ lines st]
+    str "lines" ++ ": " ++ lines st] ++ capGroups st
 
 def case (c : Case) : String :=
   let (accepted, st) := run c.edits
@@ -1682,11 +1830,21 @@ def syncCase (c : SyncCase) : String :=
     arr ((allForks edits).map fun (a, b) => ids [a, b]) ++ ",\n " ++ str "asks" ++ ": [\n  " ++
     ",\n  ".intercalate asks ++ "],\n " ++ str "links" ++ ": " ++ arr links ++ "}"
 
+def gateCase (c : GateCase) : String :=
+  let (held, batch) := c.edits
+  let editJson := fun (o : Edit) =>
+    obj [("depth", nat o.depth), ("author", nat o.author), ("cosigners", arr (o.cosigners.map nat)),
+      ("action", action o.action)]
+  "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "home" ++ ": " ++ nat c.home ++ ",\n " ++ str "held" ++
+    ": [\n  " ++ ",\n  ".intercalate (held.map editJson) ++ "],\n " ++ str "batch" ++ ": [\n  " ++
+    ",\n  ".intercalate (batch.map editJson) ++ "],\n " ++ str "takes" ++ ": " ++ opt ids c.takes ++ "}"
+
 def render : String :=
   "{\"groups\": [\n" ++ ",\n".intercalate (groups.map group) ++ "\n],\n\"kinds\": [\n" ++
     ",\n".intercalate (allKinds.map kindRules) ++ "\n],\n\"cases\": [\n" ++
     ",\n".intercalate (cases.map case) ++ "\n],\n\"views\": [\n" ++ ",\n".intercalate (views.map viewCase) ++
-    "\n],\n\"syncs\": [\n" ++ ",\n".intercalate (syncs.map syncCase) ++ "\n]}\n"
+    "\n],\n\"syncs\": [\n" ++ ",\n".intercalate (syncs.map syncCase) ++
+    "\n],\n\"gates\": [\n" ++ ",\n".intercalate (gates.map gateCase) ++ "\n]}\n"
 
 /-- What an edit creates, by the model's number: a vault or a grant. -/
 def created : Action → Option (Nat × Nat)
@@ -1708,7 +1866,7 @@ def audiencesOf : Action → List Audience :=
 /-- Every action of every case. -/
 def allActions : List Action :=
   cases.flatMap (·.edits.map (·.2.2)) ++ views.flatMap (·.edits.map (·.2.2.2)) ++
-    syncs.flatMap (·.edits.map (·.action))
+    syncs.flatMap (·.edits.map (·.action)) ++ gates.flatMap fun c => (c.held ++ c.batch).map (·.2.2.2)
 
 -- every case refuses some edits and accepts others, so neither side can pass by always saying the same thing
 #guard cases.all fun c => let (acc, _) := run c.edits; acc.any id && acc.any (!·)
@@ -1719,6 +1877,9 @@ def allActions : List Action :=
 #guard views.all fun c => nodup (c.toEdits.map fun o => (o.depth, o.rank))
 -- in a step case, shares too
 #guard cases.all fun c => nodup (c.edits.filterMap fun (_, _, a) => (created a).filter (·.1 != 0))
+-- in a gate case, every vault and share number is created once, and no two edits share a depth and a rank
+#guard gates.all fun c => let (h, b) := c.edits; nodup ((h ++ b).filterMap fun o => created o.action)
+#guard gates.all fun c => let (h, b) := c.edits; nodup ((h ++ b).map fun o => (o.depth, o.rank))
 -- every audience a case names is in the model's order, so it names one set of shares whatever order the Rust core keeps
 #guard allActions.all fun a => (audiencesOf a).all fun x => x == mkAudience x
 -- each kind of settings, share and revocation is accepted or refused as its comment says, wide owner grants and

@@ -50,6 +50,9 @@ structure Share where
   /-- The share its issuer passes on part of (`shareParentOk`); `none` when the vault itself issued it. -/
   parent  : Option ShareId
   issuer  : VaultId
+  /-- The cap group of `over` it grants, by its entry, in place of ops of its own (`opsOn`); in the clear, as its level
+      is: a relay learns that two shares grant the same group, never what it grants. -/
+  group   : Option EntryId := none
   deriving DecidableEq, Repr
 
 /-- An entry of a vault: a note, a todo, a profile. -/
@@ -148,6 +151,9 @@ structure State where
   accepts   : List EditId := []
   /-- The keep shares that pick each entry, as its vault's stewards last marked them (`mark`): its wants. -/
   marks     : List (EntryId × List ShareId) := []
+  /-- What each write a vault makes on the main line of one of its own entries says its cap group is, where it says one
+      (`groupAt`): read off its record, so known to the entry's readers only. -/
+  defs      : List (EditId × CapGroup) := []
   deriving Repr
 
 namespace State
@@ -300,27 +306,86 @@ def authorized (st : State) (w : Write) : Bool :=
     | some en => mayWrite st w.actor { en with stays := [(w.stay, w.audience)] }
     | none    => false
 
+/-! ## Cap groups
+
+A cap group is an entry its vault creates itself, of type `capGroupType`, whose record says a `CapGroup` (`Rules.lean`).
+Its readers read what each of the vault's own writes on its main line makes of the record (`State.defs`); the group in
+force is what the last of them that they count left it. So a new version narrows or widens at once every share that
+names the group, and every write is judged by the version in force where it comes in the one replay order (`counts`),
+which every reader reaches alike. A group includes others of its vault, through any chain of includes. -/
+
+/-- The type of the entries that carry a vault's cap groups. -/
+def capGroupType : Sym := 902
+
+/-- Entry `en` carries a cap group of vault `v`: `v` created it itself, of type `capGroupType`. -/
+def isCapGroup (v : VaultId) (en : Entry) : Bool :=
+  en.vault == v && en.attrs.author == v && en.attrs.type == capGroupType
+
+/-- What cap group entry `g` of vault `v` says now: what the last write of it that its readers count, of those that say
+    one, made of it. None for an entry that isn't one of `v`'s cap groups, or that no counted write defined. -/
+def groupAt (st : State) (v : VaultId) (g : EntryId) : Option CapGroup :=
+  if (st.entry? g).any (isCapGroup v) then
+    ((st.counted.filter (·.entry == g)).filterMap fun w => (st.defs.find? (·.1 == w.edit)).map (·.2)).getLast?
+  else none
+
+/-- The cap groups `gs` of vault `v` and those they include, each once. -/
+def includeStep (st : State) (v : VaultId) (gs : List EntryId) : List EntryId :=
+  (gs ++ gs.flatMap fun g => ((groupAt st v g).map (·.includes)).getD []).eraseDups
+
+def includesN (st : State) (v : VaultId) : Nat → List EntryId → List EntryId
+  | 0, gs => gs
+  | n + 1, gs => includesN st v n (includeStep st v gs)
+
+/-- Cap group `g` of vault `v` and every group it includes, through any chain of includes: no chain is longer than the
+    entries. -/
+def groupsOf (st : State) (v : VaultId) (g : EntryId) : List EntryId := includesN st v st.entries.length [g]
+
+/-- The caps cap group `g` of vault `v` grants: its own and those of every group it includes. -/
+def capsOf (st : State) (v : VaultId) (g : EntryId) : List Cap :=
+  (groupsOf st v g).flatMap fun x => ((groupAt st v x).map (·.caps)).getD []
+
+/-- A cap a share with level `r` holds on an entry with attributes `a`: its class is no higher than `r`, and its slice
+    holds the entry. -/
+def Cap.holds (r : Level) (a : Attrs) (cap : Cap) : Bool := decide (cap.op.level.rank ≤ r.rank) && cap.slice.matches a
+
+/-- The ops share `c` grants on an entry with attributes `a`: its own; or, where it names a cap group of its vault, the
+    op of each cap of the group in force, and of the groups it includes, that it holds there (`Cap.holds`). -/
+def opsOn (st : State) (c : Share) (a : Attrs) : List Op :=
+  match c.group with
+  | none => c.ops
+  | some g => ((capsOf st c.over g).filter (Cap.holds c.level a)).map (·.op)
+
+/-- Share `c` is what its level says: its level is the class of its ops, or it names a cap group, whose ops its level
+    bounds (`opsOn`). -/
+def Share.levelOk (c : Share) : Bool := c.group.isSome || c.level == levelOf c.ops
+
 /-! ## What only readers see
 
 The stewards (the devices acting for a vault) read every selector of the vault's shares and every entry's attributes.
 They work out each entry's semantic audience and mark the entry with it whenever its audience differs (`desired`): that
 is the upkeep an honest device does after each batch of edits it takes in, and nothing here is checked by a relay. -/
 
-/-- Share `cp` on its own selects attributes `a`: it is wide, or its selector matches. -/
-def shareSelects (cp : Share) (a : Attrs) : Bool := cp.wide || cp.select.matches a
+/-- Share `cp` on its own selects attributes `a`: it is wide; or `a` are those of a cap group of its vault, which every
+    share selects, so that whoever reads anything of a vault reads its cap groups and judges each write alike (C2); or
+    its selector matches, and, where it names a cap group, a cap of the group that it holds there does too
+    (`Cap.holds`). -/
+def shareSelects (st : State) (cp : Share) (a : Attrs) : Bool :=
+  cp.wide || (a.type == capGroupType && a.author == cp.over) || (cp.select.matches a && match cp.group with
+    | none => true
+    | some g => (capsOf st cp.over g).any (Cap.holds cp.level a))
 
 /-- The slice share `cp` really grants: what every share of its chain selects (T22). -/
-def effSelects (st : State) (cp : Share) (a : Attrs) : Bool := (chain st cp).all (shareSelects · a)
+def effSelects (st : State) (cp : Share) (a : Attrs) : Bool := (chain st cp).all (shareSelects st · a)
 
-/-- Every share of `cp`'s chain is what its level says, the class of its ops, and allows the touches `ts` of a write on
-    the main line (`main`) or on a proposal. -/
-def chainAllows (st : State) (cp : Share) (main : Bool) (ts : List Touch) : Bool :=
-  (chain st cp).all fun c => c.level == levelOf c.ops && allowsAll c.ops main ts
+/-- Every share of `cp`'s chain is what its level says (`Share.levelOk`) and allows, on an entry with attributes `a`, the
+    touches `ts` of a write on the main line (`main`) or on a proposal (`opsOn`). -/
+def chainAllows (st : State) (cp : Share) (a : Attrs) (main : Bool) (ts : List Touch) : Bool :=
+  (chain st cp).all fun c => c.levelOk && allowsAll (opsOn st c a) main ts
 
-/-- A write through share `cp` makes only ops it may, by what its proof shows: the proof names `cp`, and `cp`'s chain
-    allows the write's touches. -/
-def lets (st : State) (cp : Share) (proof : Option ShareId) (main : Bool) (ts : List Touch) : Bool :=
-  proof == some cp.id && chainAllows st cp main ts
+/-- A write through share `cp` to an entry with attributes `a` makes only ops it may, by what its proof shows: the proof
+    names `cp`, and `cp`'s chain allows the write's touches. -/
+def lets (st : State) (cp : Share) (proof : Option ShareId) (a : Attrs) (main : Bool) (ts : List Touch) : Bool :=
+  proof == some cp.id && chainAllows st cp a main ts
 
 /-! ## Lines and drafts
 
@@ -380,16 +445,17 @@ def counts (st : State) (a : VaultId) (en : Entry) (deps : List EditId) (proof :
     (ts : List Touch) (fits : Bool) : Bool :=
   fits && deps.all (fun d => !st.uncounted.contains d) && (!(main && !landed st en) || a == en.vault) &&
     (a == en.vault || (st.shares.any fun cp =>
-      holdsShare st a cp .write && inAudience st cp en && lets st cp proof main ts) &&
+      holdsShare st a cp .write && inAudience st cp en && lets st cp proof en.attrs main ts) &&
       (!(main && ts.contains .merge) || accepted st en deps))
 
-/-- The readers of an entry of vault `v` count its creation in audience `x` by vault `a`, with the proof `proof`, on
-    the main line (`main`) or as a draft starting a line of its own, whose record fits its schemas or not (`fits`): it
-    fits, and `a` is `v`, or `x` is the intake audience of a share over `v` that `a` holds with write or more whose ops
-    let a creation on that line through. -/
-def creates (st : State) (a v : VaultId) (x : Audience) (proof : Option ShareId) (main : Bool) (fits : Bool) : Bool :=
+/-- The readers of an entry of vault `v` with attributes `attrs` count its creation in audience `x` by vault `a`, with
+    the proof `proof`, on the main line (`main`) or as a draft starting a line of its own, whose record fits its schemas
+    or not (`fits`): it fits, and `a` is `v`, or `x` is the intake audience of a share over `v` that `a` holds with
+    write or more whose ops let a creation on that line through. -/
+def creates (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs) (proof : Option ShareId) (main : Bool)
+    (fits : Bool) : Bool :=
   fits && (a == v || st.shares.any fun cp =>
-    cp.over == v && holdsShare st a cp .write && intake st cp == x && lets st cp proof main [.create])
+    cp.over == v && holdsShare st a cp .write && intake st cp == x && lets st cp proof attrs main [.create])
 
 /-- Vault `a` creating an entry of vault `v` in audience `x` with attributes `attrs`, with the proof `proof`, on the
     main line (`main`) or as a draft, stays inside its own slice: it is `v`, or `x` is the intake audience of a share
@@ -399,7 +465,7 @@ def admits (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs) (proof : 
     Bool :=
   a == v || st.shares.any fun cp =>
     cp.over == v && holdsShare st a cp .write && intake st cp == x && effSelects st cp attrs &&
-      lets st cp proof main [.create]
+      lets st cp proof attrs main [.create]
 
 /-- An entry's semantic audience: the live shares over its vault that aren't wide nor keep shares and whose slice holds
     it, but a share to everyone while the entry is a draft that hasn't landed; none for an entry whose creator made it
@@ -493,11 +559,15 @@ def schemaType : Sym := 900
 def lensType : Sym := 901
 def schemaTypes : List Sym := [schemaType, lensType]
 
-/-- Keep share `k` picks attributes `a`, as a steward reads it: whole and opened shares pick every schema and lens entry
-    too, so that every device that syncs part of a vault syncs its lane, and a never share picks none of them. -/
+/-- The types of the entries that every device syncing part of a vault syncs too: its schemas, lenses and cap groups. -/
+def laneTypes : List Sym := schemaTypes ++ [capGroupType]
+
+/-- Keep share `k` picks attributes `a`, as a steward reads it: whole and opened shares pick every schema, lens and cap
+    group entry too, so that every device that syncs part of a vault syncs its lane and its cap groups, and a never
+    share picks none of them. -/
 def keepPicks (k : Share) (a : Attrs) : Bool :=
-  if k.never then k.select.matches a && !schemaTypes.contains a.type
-  else k.select.matches a || schemaTypes.contains a.type
+  if k.never then k.select.matches a && !laneTypes.contains a.type
+  else k.select.matches a || laneTypes.contains a.type
 
 /-- The keep shares that pick entry `en`: the live keep shares over its vault that aren't wide and pick its attributes,
     each once, smallest first. -/

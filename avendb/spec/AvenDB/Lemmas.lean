@@ -1,4 +1,4 @@
-import AvenDB.Props
+import AvenDB.Claims
 
 /-!
 # Vaults and writes
@@ -266,6 +266,10 @@ theorem apply_vaults {st post : State} {edit : Edit} (h : apply st edit = some p
       simp at h
       obtain ⟨⟨hroot, hnew⟩, rfl⟩ := h
       exact .inr (.inr ⟨v, vt, _, hv, .settingsRoot r hroot hnew, rfl⟩)
+  case h_13 =>
+    -- a claim changes one share alone
+    obtain ⟨-, -, -, -, -, -, -, -, -, rfl⟩ := applyClaim_some h
+    exact .inl rfl
   -- every other edit leaves the vaults alone
   all_goals
     dsimp only at h
@@ -755,7 +759,8 @@ state that keeps all of these keeps every write authorized. -/
 structure Keeps (st st' : State) : Prop where
   vaults : ∀ x vt, st.vault? x = some vt → ∃ vt', st'.vault? x = some vt' ∧
     (∀ p ∈ vt.owners, p ∈ vt'.owners) ∧ ∀ d ∈ vt.devices, d ∈ vt'.devices
-  shares : ∀ c ∈ st.shares, c ∈ st'.shares
+  /-- Every share but one naming an invite key, which a claim may turn into a vault's. -/
+  shares : ∀ c ∈ st.shares, c.who.invite? = none → c ∈ st'.shares
   revoked : ∀ c ∈ st'.revoked, c ∈ st.revoked
   narrow : ∀ x ∈ st'.narrow, x ∈ st.narrow
   entries : ∀ e en, st.entry? e = some en →
@@ -767,7 +772,7 @@ theorem Keeps.trans {a b c : State} (h₁ : Keeps a b) (h₂ : Keeps b c) : Keep
     obtain ⟨vt₁, hx₁, ho₁, hd₁⟩ := h₁.vaults x vt hx
     obtain ⟨vt₂, hx₂, ho₂, hd₂⟩ := h₂.vaults x vt₁ hx₁
     exact ⟨vt₂, hx₂, fun p hp => ho₂ p (ho₁ p hp), fun d hd => hd₂ d (hd₁ d hd)⟩
-  shares c hc := h₂.shares c (h₁.shares c hc)
+  shares c hc hi := h₂.shares c (h₁.shares c hc hi) hi
   revoked c hc := h₁.revoked c (h₂.revoked c hc)
   narrow x hx := h₁.narrow x (h₂.narrow x hx)
   entries e en h := by
@@ -780,7 +785,7 @@ theorem Keeps.of_entries {st st' : State} (hv : st'.vaults = st.vaults) (hc : st
     (hr : st'.revoked = st.revoked) (hn : st'.narrow = st.narrow)
     (he : ∀ e en, st.entry? e = some en → st'.entry? e = some en) : Keeps st st' where
   vaults x vt hx := ⟨vt, by rw [vault?_congr hv]; exact hx, fun _ h => h, fun _ h => h⟩
-  shares _ h := hc ▸ h
+  shares _ h _ := hc ▸ h
   revoked _ h := hr ▸ h
   narrow _ h := hn ▸ h
   entries e en h := ⟨en, he e en h, rfl, rfl⟩
@@ -799,7 +804,7 @@ theorem Keeps.settle (pre post : State) : Keeps post (settle pre post) :=
 theorem Keeps.addVault (st : State) (vt : Vault) : Keeps st { st with vaults := st.vaults ++ [vt] } where
   vaults x y hy := ⟨y, by simp only [State.vault?, List.find?_append] at hy ⊢; rw [hy]; rfl,
     fun _ h => h, fun _ h => h⟩
-  shares _ h := h
+  shares _ h _ := h
   revoked _ h := h
   narrow _ h := h
   entries _ en h := ⟨en, h, rfl, rfl⟩
@@ -818,7 +823,7 @@ theorem Keeps.setVault {st : State} {v : VaultId} {vt vt' : Vault} (hv : st.vaul
       cases hy
       exact ⟨vt', by simp [hyv], ho, hd⟩
     · exact ⟨y, by simp [hyv], fun _ h => h, fun _ h => h⟩
-  shares _ h := h
+  shares _ h _ := h
   revoked _ h := h
   narrow _ h := h
   entries _ en h := ⟨en, h, rfl, rfl⟩
@@ -826,16 +831,31 @@ theorem Keeps.setVault {st : State} {v : VaultId} {vt vt' : Vault} (hv : st.vaul
 /-- A new share keeps the others. -/
 theorem Keeps.addShare (st : State) (c : Share) : Keeps st { st with shares := st.shares ++ [c] } where
   vaults _ vt hx := ⟨vt, hx, fun _ h => h, fun _ h => h⟩
-  shares _ h := List.mem_append_left _ h
+  shares _ h _ := List.mem_append_left _ h
   revoked _ h := h
   narrow _ h := h
   entries _ en h := ⟨en, h, rfl, rfl⟩
+
+/-- A claim keeps every share but the invite it turns into a vault's. -/
+theorem Keeps.claim (st : State) (c : ShareId) (v : VaultId) : Keeps st (st.claimShare c v) where
+  vaults _ vt hx := ⟨vt, hx, fun _ h => h, fun _ h => h⟩
+  shares x hx hi := List.mem_map.2 ⟨x, hx, claimed_self hi⟩
+  revoked _ h := h
+  narrow _ h := h
+  entries _ en h := ⟨en, h, rfl, rfl⟩
+
+/-- A share a vault holds names that vault, and no invite key. -/
+theorem holdsShare_invite {st : State} {a : VaultId} {cp : Share} {r : Level} (h : holdsShare st a cp r = true) :
+    cp.who.invite? = none := by
+  unfold holdsShare at h
+  simp only [Bool.and_eq_true, beq_iff_eq] at h
+  rw [h.1.2]; rfl
 
 /-- Changing an entry keeps the entries when it keeps its vault and its audience. -/
 theorem Keeps.setEntry {st : State} {en en' : Entry} (hen : st.entry? en'.id = some en) (hv : en'.vault = en.vault)
     (hc : en'.audience = en.audience) : Keeps st (setEntry st en') where
   vaults _ vt hx := ⟨vt, hx, fun _ h => h, fun _ h => h⟩
-  shares _ h := h
+  shares _ h _ := h
   revoked _ h := h
   narrow _ h := h
   entries e y hy := by
@@ -896,7 +916,7 @@ theorem holdsShare_keeps {st st' : State} (hk : Keeps st st') {a : VaultId} {cp 
   unfold holdsShare State.live at h ⊢
   simp only [Bool.and_eq_true, Bool.not_eq_true', List.any_eq_true, beq_iff_eq] at h ⊢
   obtain ⟨⟨⟨-, hrev⟩, hg⟩, hr⟩ := h
-  refine ⟨⟨⟨⟨cp, hk.shares cp hcp, rfl⟩, ?_⟩, hg⟩, hr⟩
+  refine ⟨⟨⟨⟨cp, hk.shares cp hcp (by rw [hg]; rfl), rfl⟩, ?_⟩, hg⟩, hr⟩
   cases hc : st'.revoked.contains cp.id with
   | false => rfl
   | true =>
@@ -931,7 +951,7 @@ theorem authorized_keeps {st st' : State} (hk : Keeps st st') {w : Write} (h : a
     unfold mayWrite at h ⊢
     simp only [Bool.or_eq_true, beq_iff_eq, List.any_eq_true, Bool.and_eq_true] at h ⊢
     exact h.2.imp (fun h => h.trans hv.symm) fun ⟨cp, hcp, hh, hin⟩ =>
-      ⟨cp, hk.shares cp hcp, holdsShare_keeps hk hcp hh,
+      ⟨cp, hk.shares cp hcp (holdsShare_invite hh), holdsShare_keeps hk hcp hh,
         inAudience_keeps (en := { en with stays := [(w.stay, w.audience)] })
           (en' := { en' with stays := [(w.stay, w.audience)] }) hk hid hv rfl hin⟩
 
@@ -1168,7 +1188,7 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
       obtain ⟨-, -, rfl⟩ := h
       exact .inr (.inr (.inr ⟨keep, _, by rw [heq]; rfl, rfl, rfl, same st⟩))
   · -- write
-    rename_i v e actor stay epoch deps proposal via create tags proof touches fits heq
+    rename_i v e actor stay epoch deps proposal via create tags proof touches fits defines heq
     dsimp only at h
     split at h
     · cases h
@@ -1235,6 +1255,9 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨-, -, -, rfl⟩ := h
     exact .inl ⟨rfl, .of_eq rfl rfl rfl rfl rfl, same st⟩
+  · -- a claim changes one share alone
+    obtain ⟨-, -, -, -, -, -, -, -, -, rfl⟩ := applyClaim_some h
+    exact .inl ⟨rfl, .claim _ _ _, same st⟩
 
 /-- Every write's entry exists, and every entry's first write is accepted. -/
 def EntriesWhole (st : State) : Prop :=
@@ -1303,17 +1326,23 @@ theorem entriesWhole_step {st st' : State} {edit : Edit} (hinv : EntriesWhole st
 theorem apply_shares {st post : State} {edit : Edit} (h : apply st edit = some post) :
     post.shares = st.shares ∨
     (∃ c, post.shares = st.shares ++ [c] ∧ c.who.isDevice = c.level.isKeep ∧
-      (∀ d, c.who = .device d → isDevice st d c.issuer = true) ∧ (c.who = .everyone → c.level = .read)) := by
+      (∀ d, c.who = .device d → isDevice st d c.issuer = true) ∧ (c.who = .everyone → c.level = .read)) ∨
+    (∃ c v, post.shares = st.shares.map (Share.claimed c v)) := by
   unfold apply at h
   split at h
   case h_8 c via _ =>
     simp only [Option.ite_none_left_eq_some, Option.some.injEq] at h
     obtain ⟨-, hkd, hname, -, hdev, -, -, rfl⟩ := h
-    refine .inr ⟨c, rfl, (by simpa using hkd : c.level.isKeep = c.who.isDevice).symm, fun d hd => ?_, fun hp => ?_⟩
+    refine .inr (.inl ⟨c, rfl, (by simpa using hkd : c.level.isKeep = c.who.isDevice).symm, fun d hd => ?_,
+      fun hp => ?_⟩)
     · rw [hd] at hdev
       simpa [Who.device?] using hdev
     · rw [hp] at hname
       simpa using hname
+  case h_13 =>
+    -- a claim turns one invite into a vault's share
+    obtain ⟨-, -, -, -, -, -, -, -, -, rfl⟩ := applyClaim_some h
+    exact .inr (.inr ⟨_, _, rfl⟩)
   -- every other edit leaves the shares alone
   all_goals
     dsimp only at h
@@ -1368,11 +1397,13 @@ theorem laneOf_settle (pre post : State) : laneOf (settle pre post) = laneOf pos
   laneOf_congr (settle_entries pre post) (settle_writes pre post) (settle_uncounted pre post)
 
 /-- A write that isn't a first write, with a new id, leaves every lane alone, whether its readers count it or not. -/
-theorem laneOf_addWrite {st : State} {w : Write} {ok : Bool} {i : EditId} {acc : List EditId} (hf : w.first = false)
-    (hfresh : ∀ x ∈ st.writes, x.edit ≠ i) :
-    laneOf { st with writes := st.writes ++ [w], uncounted := st.counting ok i, accepts := acc } = laneOf st := by
-  have hin : ∀ v, inLane { st with writes := st.writes ++ [w], uncounted := st.counting ok i, accepts := acc } v =
-      inLane st v := by
+theorem laneOf_addWrite {st : State} {w : Write} {ok : Bool} {i : EditId} {acc : List EditId}
+    {df : List (EditId × CapGroup)} (hf : w.first = false) (hfresh : ∀ x ∈ st.writes, x.edit ≠ i) :
+    laneOf { st with writes := st.writes ++ [w], uncounted := st.counting ok i, accepts := acc, defs := df } =
+      laneOf st := by
+  have hin : ∀ v,
+      inLane { st with writes := st.writes ++ [w], uncounted := st.counting ok i, accepts := acc, defs := df } v =
+        inLane st v := by
     intro v
     funext en
     apply Bool.eq_iff_iff.2
@@ -1465,9 +1496,9 @@ theorem LaneKeeps.setEntry {st : State} {en en' : Entry} (hen : st.entry? en'.id
   counted _ hw _ := hw
 
 /-- A write that isn't a first write keeps what the lane reads, while readers keep not counting what they didn't. -/
-theorem LaneKeeps.addWrite {st : State} {w : Write} {u acc : List EditId} (hf : w.first = false)
-    (hu : ∀ d ∈ st.uncounted, d ∈ u) :
-    LaneKeeps st { st with writes := st.writes ++ [w], uncounted := u, accepts := acc } where
+theorem LaneKeeps.addWrite {st : State} {w : Write} {u acc : List EditId} {df : List (EditId × CapGroup)}
+    (hf : w.first = false) (hu : ∀ d ∈ st.uncounted, d ∈ u) :
+    LaneKeeps st { st with writes := st.writes ++ [w], uncounted := u, accepts := acc, defs := df } where
   entries en hen := ⟨en, hen, rfl, rfl, rfl, rfl⟩
   counted x hx hxf := by
     rw [mem_counted] at hx
@@ -1483,16 +1514,17 @@ theorem LaneKeeps.addWrite {st : State} {w : Write} {u acc : List EditId} (hf : 
     starting its own line, whose author acted for its actor, while readers keep not counting what they didn't. -/
 theorem apply_lane {st post : State} {edit : Edit} (h : apply st edit = some post) :
     LaneKeeps st post ∨
-    ∃ v e actor epoch proposal via x hdr tags proof touches fits,
-      edit.action = .write v e actor none epoch [] proposal via (some (x, hdr)) tags proof touches fits ∧
+    ∃ v e actor epoch proposal via x hdr tags proof touches fits defines,
+      edit.action = .write v e actor none epoch [] proposal via (some (x, hdr)) tags proof touches fits defines ∧
       proposal.isOn = false ∧ actsVia st edit.author via actor = true ∧ st.entry? e = none ∧
       (∃ en : Entry, en.id = e ∧ en.vault = v ∧ en.attrs.type = hdr.type ∧ en.blob = hdr.blob ∧
         post.entries = st.entries ++ [en]) ∧
       post.writes = st.writes ++ [⟨edit.id, edit.author, actor, e, none, epoch, [], proposal, via, true, x⟩] ∧
-      post.uncounted = st.counting (creates st actor v x proof (proposal == .main) fits) edit.id := by
+      post.uncounted = st.counting (creates st actor v x ⟨hdr.type, actor, e, hdr.created, tags.apply []⟩ proof
+        (proposal == .main) fits) edit.id := by
   unfold apply at h
   split at h
-  case h_10 v e actor stay epoch deps proposal via create tags proof touches fits heq =>
+  case h_10 v e actor stay epoch deps proposal via create tags proof touches fits defines heq =>
     dsimp only at h
     split at h
     · cases h
@@ -1525,7 +1557,7 @@ theorem apply_lane {st post : State} {edit : Edit} (h : apply st edit = some pos
         · rfl
         · simp [hp] at hnew
       subst hstay hdeps
-      exact .inr ⟨v, e, actor, epoch, proposal, via, x, hdr, tags, proof, touches, fits, heq, hprop, hact, hnone,
+      exact .inr ⟨v, e, actor, epoch, proposal, via, x, hdr, tags, proof, touches, fits, defines, heq, hprop, hact, hnone,
         ⟨_, rfl, rfl, rfl, rfl, rfl⟩, rfl, rfl⟩
     · -- a write to an existing entry: it sets no type nor blob, and isn't a first write
       split at h
@@ -1555,6 +1587,10 @@ theorem apply_lane {st post : State} {edit : Edit} (h : apply st edit = some pos
       | (refine .inl (LaneKeeps.trans ?_ (.drop _ _ _)); exact .setEntry hen' rfl rfl rfl)
       | (refine .inl (((LaneKeeps.trans ?_ (.setEntry (en := en) ?_ (by rfl) (by rfl) (by rfl)))).trans (.drop _ _ _)))
           <;> first | exact .of_eq rfl rfl rfl | exact hen'
+  case h_13 =>
+    -- a claim changes one share alone
+    obtain ⟨-, -, -, -, -, -, -, -, -, rfl⟩ := applyClaim_some h
+    exact .inl (.of_eq rfl rfl rfl)
   -- every other edit leaves the entries and the writes alone, or is a removal
   all_goals
     dsimp only at h
@@ -1910,7 +1946,7 @@ theorem T4_shares_name_vaults {st st' : State} {edit : Edit} (hinv : SharesNameV
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   unfold SharesNameVaults
   simp only [settle_shares]
-  rcases apply_shares hpost with hcs | ⟨c', hcs, hname, hdev, -⟩
+  rcases apply_shares hpost with hcs | ⟨c', hcs, hname, hdev, -⟩ | ⟨cid, v, hcs⟩
   · rw [hcs]
     exact ⟨hinv, fun c hc hn => absurd hc hn⟩
   · rw [hcs]
@@ -1925,6 +1961,14 @@ theorem T4_shares_name_vaults {st st' : State} {edit : Edit} (hinv : SharesNameV
       · rw [List.mem_singleton] at hc
         subst hc
         exact hdev
+  · -- a claim names a vault, so it changes no share that names a device
+    rw [hcs]
+    refine ⟨fun c hc => ?_, fun c hc hn d hd => ?_⟩
+    · obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hc
+      rw [claimed_isDevice, claimed_level]
+      exact hinv x hx
+    · obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hc
+      exact absurd (by rw [claimed_device hd]; exact hx) hn
 
 theorem T8_everyone_read_only {st st' : State} {edit : Edit} (hinv : EveryoneReadOnly st)
     (h : step st edit = some st') : EveryoneReadOnly st' := by
@@ -1932,7 +1976,7 @@ theorem T8_everyone_read_only {st st' : State} {edit : Edit} (hinv : EveryoneRea
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   intro c hc
   rw [settle_shares] at hc
-  rcases apply_shares hpost with hcs | ⟨c', hcs, -, -, hpub⟩
+  rcases apply_shares hpost with hcs | ⟨c', hcs, -, -, hpub⟩ | ⟨cid, v, hcs⟩
   · exact hinv c (hcs ▸ hc)
   · rw [hcs] at hc
     rcases List.mem_append.1 hc with hc | hc
@@ -1940,6 +1984,13 @@ theorem T8_everyone_read_only {st st' : State} {edit : Edit} (hinv : EveryoneRea
     · rw [List.mem_singleton] at hc
       subst hc
       exact hpub
+  · -- a claim names a vault, so it changes no share to everyone
+    rw [hcs] at hc
+    obtain ⟨x, hx, rfl⟩ := List.mem_map.1 hc
+    intro he
+    have hx' := claimed_everyone he
+    rw [hx'] at he ⊢
+    exact hinv x hx he
 
 theorem T14_causally_closed {st st' : State} {edit : Edit} (hinv : CausallyClosed st) (h : step st edit = some st') :
     CausallyClosed st' := by
@@ -1983,13 +2034,14 @@ theorem T14_entries_whole {st : State} (hr : Reachable st) :
 
 theorem T17_lane_from_creations {st st' : State} (hr : Reachable st) {edit : Edit} (h : step st edit = some st')
     {v : VaultId} {b : BlobId} (hb : b ∈ laneOf st' v) :
-    b ∈ laneOf st v ∨ ∃ e epoch via x hdr tags proof touches,
-      edit.action = .write v e v none epoch [] .main via (some (x, hdr)) tags proof touches true ∧
+    b ∈ laneOf st v ∨ ∃ e epoch via x hdr tags proof touches defines,
+      edit.action = .write v e v none epoch [] .main via (some (x, hdr)) tags proof touches true defines ∧
       hdr.type ∈ schemaTypes ∧ hdr.blob = b ∧ actsVia st edit.author via v = true := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   rw [laneOf_settle] at hb
-  rcases apply_lane hpost with hk | ⟨v', e, actor, epoch, proposal, via, x, hdr, tags, proof, touches, fits, hact, -,
+  rcases apply_lane hpost with hk | ⟨v', e, actor, epoch, proposal, via, x, hdr, tags, proof, touches, fits, defines,
+      hact, -,
       hacts, hnone, ⟨en, hid, hv, ht, hbl, hes⟩, hws, hus⟩
   · exact .inl (hk.mem_lane hb)
   -- a creation: the blob is of an entry whose first write readers count
@@ -2017,8 +2069,8 @@ theorem T17_lane_from_creations {st st' : State} (hr : Reachable st) {edit : Edi
       cases hz
     · -- its readers count it, so it fits
       subst hwm
-      have hc : creates st actor v' x proof true fits = true := by
-        cases hcr : creates st actor v' x proof true fits
+      have hc : creates st actor v' x ⟨hdr.type, actor, e, hdr.created, tags.apply []⟩ proof true fits = true := by
+        cases hcr : creates st actor v' x ⟨hdr.type, actor, e, hdr.created, tags.apply []⟩ proof true fits
         · rw [hus] at hwu
           simp only [beq_self_eq_true, hcr] at hwu
           exact absurd (by simp [State.counting]) hwu
@@ -2028,11 +2080,11 @@ theorem T17_lane_from_creations {st st' : State} (hr : Reachable st) {edit : Edi
         exact hc.1
       have hvv : v' = v := hv.symm.trans hyv
       subst hfits hvv hwa
-      exact .inr ⟨e, epoch, via, x, hdr, tags, proof, touches, hact, ht ▸ hyt, hbl.symm, hacts⟩
+      exact .inr ⟨e, epoch, via, x, hdr, tags, proof, touches, defines, hact, ht ▸ hyt, hbl.symm, hacts⟩
 
 theorem T17_writes_ignored {st st' : State} (hone : ∀ x ∈ st.entries, ∀ y ∈ st.entries, x.id = y.id → x = y)
-    {edit : Edit} (h : step st edit = some st') {v e actor stay epoch deps proposal via tags proof touches fits}
-    (ha : edit.action = .write v e actor stay epoch deps proposal via none tags proof touches fits) :
+    {edit : Edit} (h : step st edit = some st') {v e actor stay epoch deps proposal via tags proof touches fits defines}
+    (ha : edit.action = .write v e actor stay epoch deps proposal via none tags proof touches fits defines) :
     laneOf st' = laneOf st := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h

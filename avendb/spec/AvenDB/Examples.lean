@@ -1,5 +1,6 @@
 import AvenDB.Props
 import AvenDB.Lens
+import AvenDB.Gate
 
 /-!
 # The plan's scenarios, run on the model
@@ -89,12 +90,12 @@ def publicShare (id : ShareId) (over : VaultId) (sel : Selector) : Share :=
 /-- Vault `actor` creates entry `e` of vault `v`, of type `t` with tags `tags`, in audience `x`, through the share
     `proof` names, if it isn't the vault, holding the content `blob` (for a schema or a lens entry, the schema or the
     lens), whose record fits its schemas or not (`fits`), on the main line or, as a draft, on a line of its own
-    (`proposal`). -/
+    (`proposal`); for a cap group entry, the cap group its record says (`defines`). -/
 def create (v : VaultId) (e : EntryId) (actor : VaultId) (x : Audience) (t : Sym) (tags : List Sym := [])
     (via : List VaultId := []) (proof : Option ShareId := none) (blob : BlobId := 0) (fits : Bool := true)
-    (proposal : Proposal := .main) : Action :=
+    (proposal : Proposal := .main) (defines : Option CapGroup := none) : Action :=
   .write v e actor none 0 (proposal := proposal) (via := via) (create := some (x, ⟨t, 0, blob⟩))
-    (tags := { add := tags }) (proof := proof) (fits := fits)
+    (tags := { add := tags }) (proof := proof) (fits := fits) (defines := defines)
 
 /-- Edits in sequence: each builds on the one before, ids count from `start`. -/
 def chain (start : Nat) (steps : List (SignerId × List SignerId × Action)) : List Edit :=
@@ -1509,5 +1510,156 @@ def alicesMacLater : Node := { alicesMac with heard := [], stated := [bobAt100, 
 -- a statement of an older shelf: Bob's Mac before its shelf took Welcome's lines states some of it
 #guard { alicesMacLater with stated := [bobsShelfBehind.states macB macA 400] }.syncedToAt macA []
   (.entry welcome) == [(macA, true, none), (macB, false, some 400)]
+
+/-! ## Cap groups: a share names a group, which its vault versions
+
+Maia City defines its cap groups as entries of its own: Traveler reads the game entries, and Citizen sets the `move` of
+a game entry besides, including Traveler. A share names a group and copies none of its ops; its level bounds what the
+group grants it. Every share selects the vault's cap groups, so whoever reads anything of Maia City reads them and judges
+each write alike. Only Maia City's own writes on the main line make a new version: narrowing Citizen narrows every share
+that names it at once. -/
+
+def game : Sym := 31
+def games : Selector := .anyOf [[.typeIn [game]]]
+def traveler := 50
+def citizen := 51
+def adminG := 52
+def gameMap := 60
+def memo := 61
+
+def travelerG : CapGroup := { name := "Traveler", caps := [⟨.read, games⟩] }
+def citizenG : CapGroup := { name := "Citizen", caps := [⟨.set [.field "move"] none none, games⟩], includes := [traveler] }
+
+/-- Share `id` over vault `over`: vault `who` holds cap group `g` of `over`, bounded by `level`, on whatever the group's
+    caps hold. -/
+def groupShare (id : ShareId) (over who : VaultId) (level : Level) (g : EntryId) : Share :=
+  { shareOf id over who level (.anyOf [[]]) with ops := [], group := some g }
+
+def sCaps : List Edit := sServer ++ chain 600 [
+  (macA, [], create city traveler city [] capGroupType (via := [alice]) (defines := some travelerG)),
+  (macA, [], create city citizen city [] capGroupType (via := [alice]) (defines := some citizenG)),
+  (macA, [], .share (.grant (groupShare 30 city bob .write citizen) [alice])),
+  -- a steward creates the map straight in the audience Bob's share selects, and a memo, which no share selects
+  (macA, [], create city gameMap city [30] game (via := [alice])),
+  (macA, [], create city memo city [] doc (via := [alice]))]
+#guard refused sCaps == []
+
+-- every share selects the vault's cap groups: a steward moves them to Bob's share's audience too
+#guard upkeep sCaps traveler == some [30] && upkeep sCaps citizen == some [30] && upkeep sCaps memo == none
+def sCaps' : List Edit := sCaps ++ chain 605 [
+  (macA, [], .move city traveler [30] [600] [alice]),
+  (macA, [], .move city citizen [30] [601] [alice])]
+#guard refused sCaps' == [] && tidy sCaps'
+#guard reads sCaps' macB gameMap && reads sCaps' macB citizen && !reads sCaps' macB memo
+
+-- Citizen grants its own cap and Traveler's on a game entry, nothing on the memo; a read share naming it, only read
+#guard ((view sCaps').entry? gameMap).map (fun en => opsOn (view sCaps') (groupShare 30 city bob .write citizen) en.attrs)
+  == some [.set [.field "move"] none none, .read]
+#guard ((view sCaps').entry? memo).map (fun en => opsOn (view sCaps') (groupShare 30 city bob .write citizen) en.attrs)
+  == some []
+#guard ((view sCaps').entry? gameMap).map (fun en => opsOn (view sCaps') (groupShare 30 city bob .read citizen) en.attrs)
+  == some [.read]
+
+def bobMoves (n : Nat) (deps : List EditId) : Action :=
+  .write city gameMap bob none 0 deps (proof := some 30) (touches := [.set [.field "move"] (some (.int n))])
+
+-- Bob's move counts; a title he sets is accepted, as his share reaches the map, but nobody counts it
+#guard counted sCaps' (attempt macB [] (bobMoves 4 [603]))
+#guard accepted sCaps' (attempt macB [] (.write city gameMap bob none 0 [603] (proof := some 30)
+  (touches := [.set [.field "title"] (some (.str "Mine"))])))
+#guard !counted sCaps' (attempt macB [] (.write city gameMap bob none 0 [603] (proof := some 30)
+  (touches := [.set [.field "title"] (some (.str "Mine"))])))
+
+-- Bob reaches Citizen's entry too, but a version he writes widening it counts nowhere and changes nothing
+def bobWidens : Action :=
+  .write city citizen bob (some 606) 0 [601] (proof := some 30) (touches := [.set [] none])
+    (defines := some { citizenG with caps := [⟨.set [] none none, .all⟩] })
+#guard accepted sCaps' (attempt macB [] bobWidens) && !counted sCaps' (attempt macB [] bobWidens)
+#guard ((step (view sCaps') (attempt macB [] bobWidens)).map fun st => groupAt st city citizen) == some (some citizenG)
+
+-- Maia City narrows Citizen to Traveler alone, a new version of its entry: Bob's next move counts no more, and he
+-- still reads the map
+def sNarrow : List Edit := sCaps' ++ chain 607 [
+  (macA, [], .write city citizen city (some 606) 0 [601] (via := [alice]) (touches := [.set [.field "caps"] none])
+    (defines := some { citizenG with caps := [] }))]
+#guard refused sNarrow == []
+#guard groupAt (view sNarrow) city citizen == some { citizenG with caps := [] }
+#guard !counted sNarrow (attempt macB [] (bobMoves 5 [603])) && reads sNarrow macB gameMap
+-- a version written on a proposal, or by anyone but Maia City, changes nothing until it lands on main
+#guard ((step (view sCaps') (attempt macA [] (.write city citizen city (some 606) 0 [601] (proposal := .new)
+  (via := [alice]) (touches := [.propose]) (defines := some { citizenG with caps := [] })))).map fun st =>
+  groupAt st city citizen) == some (some citizenG)
+
+/-! ## Invite shares: one key, claimed once
+
+Maia City signs a share of Traveler to an invite key, a one-time key it hands the newcomer with the invite. Nobody holds
+the share until a vault claims it, signed by that key and by a member of the vault: then it names that vault, which reads
+what Traveler holds, with no tap of Maia City's. An invite makes no owner, and a share is claimed once. -/
+
+def inviteKey := 700
+def inviteShare (id : ShareId) (over : VaultId) (k : SignerId) (level : Level) (g : EntryId) : Share :=
+  { groupShare id over over level g with who := .invite k }
+
+def sInvite : List Edit := sCaps' ++ chain 610 [
+  (macA, [], .share (.grant (inviteShare 31 city inviteKey .read traveler) [alice])),
+  -- a steward moves the map and the groups into the invite's audience too
+  (macA, [], .move city gameMap [30, 31] [603] [alice]),
+  (macA, [], .move city traveler [30, 31] [600] [alice]),
+  (macA, [], .move city citizen [30, 31] [601] [alice])]
+#guard refused sInvite == [] && tidy sInvite
+-- before the claim, Carol reads nothing of it
+#guard !reads sInvite macC gameMap
+
+-- an invite makes no owner
+#guard !accepted sCaps' (attempt passkeyA [] (.share (.grant (inviteShare 32 city inviteKey .owner traveler) [alice])))
+-- a claim takes the invite key's signature and a member of the claiming vault
+#guard !accepted sInvite (attempt passkeyC [] (.claim 31 carol))
+#guard !accepted sInvite (attempt passkeyB [inviteKey] (.claim 31 carol))
+-- nor does Maia City claim its own invite
+#guard !accepted sInvite (attempt passkeyA [inviteKey] (.claim 31 city))
+
+def sClaimed : List Edit := sInvite ++ chain 614 [(passkeyC, [inviteKey], .claim 31 carol)]
+#guard refused sClaimed == []
+#guard ((view sClaimed).share? 31).map (·.who) == some (.vault carol)
+-- Carol reads the map and the groups, and nothing more; Traveler sets nothing
+#guard reads sClaimed macC gameMap && reads sClaimed macC traveler && !reads sClaimed macC memo
+#guard !counted sClaimed (attempt macC [] (.write city gameMap carol none 0 [603] (proof := some 31)
+  (touches := [.set [.field "move"] (some (.int 1))])))
+-- the invite is used up: no second claim, by anyone
+#guard !accepted sClaimed (attempt passkeyD [inviteKey] (.claim 31 dave))
+#guard !accepted sClaimed (attempt passkeyC [inviteKey] (.claim 31 carol))
+
+/-! ## The server takes a new vault only by invite or from an admin
+
+Anyone can sign a genesis, but the server of Maia City takes a new human vault onto what it holds only with the invite it
+claims in the same batch, and a new coop or aven only where an admin owns it: Maia City, its owner Alice, or a holder of
+its Admin cap group, which only admins get. -/
+
+def eve := 104
+def passkeyE := 41
+def eveJoins : List Edit := chain 700 [
+  (passkeyE, [], .genesis eve .human [.signer passkeyE] 1 (some passkeyE)),
+  (passkeyE, [inviteKey], .claim 31 eve)]
+
+-- Eve's vault comes with the invite it claims: the server takes the batch whole
+#guard takes city sInvite eveJoins == some eveJoins
+-- without the claim, the server leaves her genesis out
+#guard takes city sInvite eveJoins.dropLast == some []
+-- and once the invite is used up, her claim stands no more, so her genesis stays out too
+#guard (takes city sClaimed eveJoins).map (·.length) == some 1
+
+-- a coop Bob founds alone, a citizen but no admin, the server leaves out; one Alice founds, it takes
+def bobsCoop : List Edit := chain 710 [(passkeyB, [], .genesis 220 .coop [.vault bob] 1)]
+#guard takes city sInvite bobsCoop == some []
+#guard takes city sInvite (chain 710 [(passkeyA, [], .genesis 220 .coop [.vault alice] 1)]) ==
+  some (chain 710 [(passkeyA, [], .genesis 220 .coop [.vault alice] 1)])
+
+-- Maia City's Admin group, granted to Bob: now the server takes his coop
+def sAdmin : List Edit := sInvite ++ chain 620 [
+  (macA, [], create city adminG city [30, 31] capGroupType (via := [alice]) (defines := some { name := "Admin" })),
+  (macA, [], .share (.grant (groupShare 32 city bob .read adminG) [alice]))]
+#guard refused sAdmin == []
+#guard isAdmin (view sAdmin) city bob && !isAdmin (view sInvite) city bob
+#guard takes city sAdmin bobsCoop == some bobsCoop
 
 end AvenDB.Examples

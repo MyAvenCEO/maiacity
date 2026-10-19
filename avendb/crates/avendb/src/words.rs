@@ -89,22 +89,24 @@ pub fn hex(b: &[u8; 32]) -> String {
     BlobId(*b).to_hex()
 }
 
-/// A share's grantee as the world names it (`grantee`): `"everyone"` for `Who::Everyone`, else the vault's or the
-/// device's id.
+/// A share's grantee as the world names it (`grantee`): `"everyone"` for `Who::Everyone`, else the vault's, the
+/// device's or the invite key's id.
 pub fn who_name(g: Who) -> String {
     match g {
         Who::Everyone => "everyone".to_string(),
         Who::Vault(v) => hex(&v.0),
-        Who::Device(s) => hex(&s.0),
+        Who::Device(s) | Who::Invite(s) => hex(&s.0),
     }
 }
 
-/// A share's grantee as the `shares` op and a `share` op write it: `"everyone"`, `{"vault": id}` or `{"device": id}`.
+/// A share's grantee as the `shares` op and a `share` op write it: `"everyone"`, `{"vault": id}`, `{"device": id}` or
+/// `{"invite": key}`, an invite not yet claimed.
 pub fn who_json(g: Who) -> Value {
     match g {
         Who::Everyone => "everyone".into(),
         Who::Vault(v) => json!({ "vault": hex(&v.0) }),
         Who::Device(d) => json!({ "device": hex(&d.0) }),
+        Who::Invite(k) => json!({ "invite": hex(&k.0) }),
     }
 }
 

@@ -51,7 +51,8 @@ fn met(logs: &[&Log]) -> State {
 /// A share over vault `over` naming vault `who`, resting on `parent` and issued by `issuer`: what `Cast::issue_on`
 /// appends, to check without appending. Its selector travels sealed, and no rule reads it.
 fn share_edit(over: VaultId, who: VaultId, level: Level, parent: Option<ShareId>, issuer: VaultId) -> Action {
-    let share = Share { over, who: vault(who), level, wide: false, select: vec![], parent, issuer, nonce: 7 };
+    let (who, wide, group) = (vault(who), false, None);
+    let share = Share { over, who, level, wide, select: vec![], parent, issuer, nonce: 7, group };
     Action::Share(Sharing::Grant(share, vec![]))
 }
 

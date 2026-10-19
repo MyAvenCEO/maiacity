@@ -102,8 +102,8 @@ def KeyFam.vault : KeyFam → VaultId
 /-! ## Relays
 
 A relay reads no selector, no type, no tag, no op and no record: it sees a share, a keep share too, without its
-selector and ops (only its level, their class, and a keep share's mode), and a write without its header, tags, proof,
-touches and whether it fits its schemas. What it then works out of the edits is the operational part of the state. -/
+selector and ops (only its level, their class, a keep share's mode, and the cap group it names, but not what that
+grants), and a write without its header, tags, proof, touches, whether it fits its schemas and the cap group it says. What it then works out of the edits is the operational part of the state. -/
 
 /-- A share as a relay sees it. -/
 def Share.blind (c : Share) : Share := { c with select := .all, ops := [] }
@@ -111,8 +111,8 @@ def Share.blind (c : Share) : Share := { c with select := .all, ops := [] }
 /-- An action as a relay sees it. A mark is in the clear: a relay reads its audience and its wants as they are. -/
 def Action.blind : Action → Action
   | .share (.grant c via) => .share (.grant c.blind via)
-  | .write v e a s g deps p via create _ _ _ _ =>
-    .write v e a s g deps p via (create.map fun (x, _) => (x, ⟨0, 0, 0⟩)) {} none [] true
+  | .write v e a s g deps p via create _ _ _ _ _ =>
+    .write v e a s g deps p via (create.map fun (x, _) => (x, ⟨0, 0, 0⟩)) {} none [] true none
   | a => a
 
 def Edit.blind (o : Edit) : Edit := { o with action := o.action.blind }
@@ -121,6 +121,6 @@ def Edit.blind (o : Edit) : Edit := { o with action := o.action.blind }
 def State.ops (st : State) : State :=
   { st with shares := st.shares.map Share.blind,
             entries := st.entries.map fun en => { en with attrs := ⟨0, 0, 0, 0, []⟩, admitted := false, blob := 0 },
-            uncounted := [], accepts := [] }
+            uncounted := [], accepts := [], defs := [] }
 
 end AvenDB

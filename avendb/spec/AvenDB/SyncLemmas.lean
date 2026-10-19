@@ -1,4 +1,4 @@
-import AvenDB.Props
+import AvenDB.Claims
 
 /-!
 # Convergence and sync
@@ -256,6 +256,7 @@ theorem T12_interest (st : State) (d : SignerId) (v : VaultId) (x : Audience) (f
       simp only [mayReceiveAudience, Bool.or_eq_true, List.any_eq_true, Bool.and_eq_true, beq_iff_eq]
       exact .inr ⟨cp, hcp, ⟨⟨⟨hov, hlive⟩, hin⟩, hlev⟩, by simp [hw, hi]⟩
   | device _ => simp [hw] at hwho
+  | invite _ => simp [hw] at hwho
 
 /-- A device that acts for no vault has an interest in none. -/
 theorem interested_stranger {st : State} {d : SignerId} (h : ∀ v, actsFor st d v = false) (v : VaultId) :

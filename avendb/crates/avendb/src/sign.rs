@@ -939,6 +939,7 @@ mod tests {
             parent: None,
             issuer: v,
             nonce: 0,
+            group: None,
         };
         for action in [
             add(other.id()),

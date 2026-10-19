@@ -299,8 +299,12 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
                 "parent": c.parent.map(|p| hex(&p.0)),
                 "via": vias(via),
                 "sealed": c.select.len(),
+                "group": c.group.map(|g| hex(&g.0)),
             }),
         ),
+        Action::Claim { share, vault, via } => {
+            ("claim", json!({ "share": hex(&share.0), "vault": hex(&vault.0), "via": vias(via) }))
+        }
         Action::Revoke(Revoking::Grant { share, actor, keep, via }) => (
             "revoke",
             json!({ "share": hex(&share.0), "actor": hex(&actor.0), "keep": keep.len(), "via": vias(via) }),
@@ -401,6 +405,9 @@ fn concerns(st: &State, id: EditId, a: &Action, shares: &HashMap<ShareId, VaultI
         }
         Action::Revoke(Revoking::Grant { share, actor, .. }) => {
             [Some(*actor), shares.get(share).copied()].into_iter().flatten().collect()
+        }
+        Action::Claim { share, vault, .. } => {
+            [Some(*vault), shares.get(share).copied()].into_iter().flatten().collect()
         }
         Action::Write { vault, actor, .. } => vec![*actor, *vault],
         Action::Keys { name, .. } => match *name {

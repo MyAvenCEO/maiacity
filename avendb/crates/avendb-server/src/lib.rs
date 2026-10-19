@@ -75,6 +75,10 @@ pub struct Config {
     /// whose pass any passkey signed (`avendb_net::Admission::open`), not only one whose passkey roots a vault the
     /// server knows. A device on UDP reaches the server without the relay anyway.
     pub signup: bool,
+    /// It takes a new vault only where it welcomes it (`AVENDB_GATE`, `off` by default, or `on`; `avendb::gate`): a
+    /// person's only with the invite of the vault it serves it claims, a coop or an aven only where an admin of that
+    /// vault owns it. Until its first human vault claims it, it serves no vault, and takes any.
+    pub gate: bool,
     /// The bucket that is its shelf (`AVENDB_BUCKET` and the rest of `BucketConfig`), if any; else its folder is.
     pub bucket: Option<BucketConfig>,
     /// The most bytes of the files in its bucket its folder caches (`AVENDB_CACHE`, in gigabytes, 8 by default).
@@ -132,6 +136,11 @@ impl Config {
                 Some("closed") => false,
                 Some(v) => return Err(anyhow!("AVENDB_SIGNUP: {v} is neither open nor closed")),
             },
+            gate: match var("AVENDB_GATE").as_deref() {
+                None | Some("off") => false,
+                Some("on") => true,
+                Some(v) => return Err(anyhow!("AVENDB_GATE: {v} is neither on nor off")),
+            },
             bucket: var("AVENDB_BUCKET").map(|name| bucket_config(name, &var)).transpose()?,
             cache: match var("AVENDB_CACHE") {
                 Some(v) => v.parse::<u64>().map(|g| g << 30).with_context(|| format!("AVENDB_CACHE: {v} isn't one"))?,
@@ -181,7 +190,8 @@ impl Running {
 const ONLINE: Duration = Duration::from_secs(30);
 
 /// Starts the server as `config` says: its relay, then its node on its shelf, its bucket's or its folder's, made at
-/// its first start, which is reached through that relay and tells it whom to let in, then the feed of what it keeps.
+/// its first start, which is reached through that relay and tells it whom to let in, gated or not, then the feed of
+/// what it keeps.
 pub async fn start(config: &Config) -> Result<Running> {
     let admission = if config.signup { Admission::open() } else { Admission::default() };
     let relay = Relay::spawn(config.relay_bind, admission.clone()).await?;
@@ -208,6 +218,7 @@ pub async fn start(config: &Config) -> Result<Running> {
         progress: avendb_net::Progress::new(),
     };
     let node = Arc::new(server::open(shelf, opts).await?);
+    node.gate(config.gate).await;
     // on its relay before it says its offer: its endpoint joins the relay once its first net report is done, a few
     // seconds in, and until then the relay drops what devices send it
     if tokio::time::timeout(ONLINE, node.endpoint().online()).await.is_err() {

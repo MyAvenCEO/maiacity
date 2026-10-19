@@ -159,14 +159,14 @@ fn proxies() -> Slice {
 fn door_created() -> Body {
     let header = Some(Header { ty: Sym::new("todo"), created: 1_791_500_000 });
     let tags = TagDelta { add: vec![Sym::new("work")], remove: vec![] };
-    Body { header, tags, answers: vec![], content: b"Fix the door".to_vec(), proof: None, files: vec![] }
+    Body { header, tags, answers: vec![], content: b"Fix the door".to_vec(), proof: None, files: vec![], defines: None }
 }
 
 /// The body of a write of tags alone, by a steward answering what two writes asked for.
 fn door_retagged() -> Body {
     let tags = TagDelta { add: vec![Sym::new("done")], remove: vec![Sym::new("work")] };
     let answers = vec![EditId::from_u64(4), EditId::from_u64(6)];
-    Body { header: None, tags, answers, content: vec![], proof: None, files: vec![] }
+    Body { header: None, tags, answers, content: vec![], proof: None, files: vec![], defines: None }
 }
 
 /// Alice's work todos as a narrower share shares them (`rules`): its own ops, to draft a todo, tick one done on the
@@ -316,14 +316,15 @@ fn signed_edits() -> Edits {
     };
     let write = by_device(seal_body(edit(3, write), &door_retagged(), &k.door, &mut rng));
     let (who, level, issuer) = (Who::Vault(BOB), Level::Write, ALICE);
-    let mut share = Share { over: ALICE, who, level, wide: false, select: vec![], parent: None, issuer, nonce: 7 };
+    let (wide, parent, group) = (false, None, None);
+    let mut share = Share { over: ALICE, who, level, wide, select: vec![], parent, issuer, nonce: 7, group };
     share.select = seal_select(&share, &work_todos(), &k, &mut rng);
     let share = by_device(edit(4, Action::Share(Sharing::Grant(share, vec![]))));
     let keep = vec![create.edit.id(), write.edit.id()];
     let (caps, wants) = (Some(vec![ShareId::from_u64(9)]), Some(vec![ShareId::from_u64(5)]));
     let marked = by_device(edit(5, Action::Mark { vault: ALICE, entry: door(), caps, wants, keep, via: vec![] }));
     let (who, level) = (Who::Device(device.id()), Level::Keep(KeepMode::Whole));
-    let mut keep = Share { over: BOB, who, level, wide: false, select: vec![], parent: None, issuer: ALICE, nonce: 3 };
+    let mut keep = Share { over: BOB, who, level, wide, select: vec![], parent, issuer: ALICE, nonce: 3, group };
     keep.select = seal_select(&keep, &proxies(), &k, &mut rng);
     let keep = by_device(edit(6, Action::Share(Sharing::Grant(keep, vec![]))));
     let share_id = ShareId::from(keep.edit.id());

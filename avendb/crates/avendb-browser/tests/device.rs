@@ -25,10 +25,11 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use avendb::cast::*;
-use avendb::id::{BlobId, EntryId, SignerId, VaultId};
+use avendb::id::{BlobId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::policy::{Kind, Level, Principal};
+use avendb::slice::Selector;
 use avendb::recovery::RecoveryKey;
 use avendb::rules::ops_to_json;
 use avendb::sealed::FileRoot;
@@ -558,7 +559,7 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     assert_eq!(both, (ids(&standard["schemas"]), ids(&standard["lenses"])), "the app's own, by their ids");
     let own = "its own kinds, the article's, the spark's, the function's and the view's two versions, and the lenses \
         between";
-    assert_eq!((both.0.len(), both.1.len()), (27, 6), "{own}");
+    assert_eq!((both.0.len(), both.1.len()), (28, 6), "{own}");
     let public = |w: &Value| -> usize {
         let es = w["entries"].as_array().into_iter().flatten();
         es.filter(|e| e["vault"] == company.as_str() && e["kind"] == "schema" && e["public"] == true).count()
@@ -1171,8 +1172,8 @@ async fn a_note_takes_proposals_merges_and_forks_and_the_database_shows_every_re
         .collect();
     let own = "documents, todos, articles (v1 and v2), flows, functions (v1 and v2), recipes, views (v1 and v2), logic, \
         reviews, bundles, policies, AIPs, posts, cards, profiles, files, stories, sparks (v1 and v2), requests, artifacts, \
-        artworks";
-    assert_eq!(schemas.len(), 27, "{own}");
+        artworks, cap groups";
+    assert_eq!(schemas.len(), 28, "{own}");
     let lenses = db["builtIn"]["lenses"].as_array().map(Vec::len);
     assert_eq!(lenses, Some(6), "the lenses from article, spark, function, view, post and story v1 to v2");
     assert!(schemas.contains(&avendb::lens::ARTICLE_V1.id().to_hex()));
@@ -1331,4 +1332,65 @@ async fn a_browser_brings_a_film_into_her_vault_and_her_mac_reads_any_range_of_i
     for n in [browser.node(), &mac, &server] {
         n.shutdown().await.expect("the node shuts down");
     }
+}
+
+/// Whether the server's node `server` holds vault `v`.
+async fn holds(server: &Node, v: VaultId) -> bool {
+    server.read(move |lab: &Lab, me| lab.state(me).vault(v).is_some()).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_gated_server_takes_a_newcomers_vault_only_with_the_invite_maia_city_gave() {
+    let admission = Admission::open();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url: RelayUrl = relay.url();
+    let mut lab = Lab::with_entropy([3; 32]);
+    let me = lab.device_with("the server", [7; 32]);
+    let (relay, admits) = (Some(url.clone()), Some(admission.clone()));
+    let opts = Options { relay, admission: admits, card: true, ..Options::local() };
+    let server = Node::spawn(lab, me, opts).await.expect("the server's node");
+    // Eve claims the server: it is avenMAIA's device, which Maia City owns, and Maia City gives it backup, so it
+    // holds Maia City's invites and their claims
+    let eve = Browser::new(Passkey::from_seed([5; 32]));
+    let first = start("Eve's browser", &url, 7);
+    let first = found(first, &server.offer(), None, &eve, [1; 32]).await.expect("her vault claims the server");
+    let avenceo = server.read(|lab, me| lab.vault_of(me)).await.expect("avenMAIA");
+    let coop = move |lab: &Lab, me| match lab.state(me).vault(avenceo)?.owners[..] {
+        [Principal::Vault(v)] => Some(v),
+        _ => None,
+    };
+    let maia = server.read(coop).await.expect("Maia City");
+    let backup = avendb::cast::share(maia, vault(avenceo), Level::Backup, Selector::All);
+    let backup = move |lab: &mut Lab, me| lab.issue(me, &[me], backup);
+    first.node().act(backup).await.expect("Maia City gives its server backup");
+    server.gate(true).await;
+    // Maia City defines Traveler and invites a traveler: the answer carries the secret the invite's link holds
+    let company = maia.to_hex();
+    let traveler = json!({ "name": "Traveler", "caps": [{ "op": "read" }] });
+    let defined = run(&first, json!({ "op": "define_group", "vault": company, "group": traveler })).await;
+    let group = defined.expect("Traveler")["entry"].clone();
+    let invite = json!({ "op": "share_group", "over": company, "group": group, "who": "invite", "as": company });
+    let invited = run(&first, invite).await.expect("an invite");
+    let share = ShareId::from_hex(invited["share"].as_str().expect("its share")).expect("a share's id");
+    let secret = BlobId::from_hex(invited["secret"].as_str().expect("its secret")).expect("64 hex digits").0;
+    let known = || server.read(move |lab: &Lab, me| lab.state(me).share(share).is_some());
+    until("the server holds the invite", known).await;
+    // Frank founds his vault through the server with no invite: his browser has it, the server doesn't take it
+    let frank = Browser::new(Passkey::from_seed([6; 32]));
+    let franks = found(start("Frank's browser", &url, 9), &server.offer(), None, &frank, [3; 32]).await;
+    let franks = franks.expect("his vault, on his browser");
+    let fv = franks.vault().await.expect("his vault");
+    // Erin founds hers, then her browser claims the invite her link names and hands the server her vault and the
+    // claim at once, which it takes
+    let erin = Browser::new(Passkey::from_seed([8; 32]));
+    let erins = found(start("Erin's browser", &url, 10), &server.offer(), None, &erin, [4; 32]).await;
+    let erins = erins.expect("her vault, on her browser");
+    let ev = erins.vault().await.expect("her vault");
+    assert!(!holds(&server, ev).await, "a vault with no invite claimed stays out");
+    let claimed = erins.node().claim_invite(&server.offer(), share, secret).await.expect("her invite brings her in");
+    assert_eq!(claimed, ev);
+    assert!(holds(&server, ev).await, "the server takes her vault with the invite it claimed");
+    // the invite is spent: Frank's browser claims it no more, and his vault stays out
+    assert!(franks.node().claim_invite(&server.offer(), share, secret).await.is_err(), "a claimed invite");
+    assert!(!holds(&server, fv).await, "the server leaves out a vault that came with no invite");
 }

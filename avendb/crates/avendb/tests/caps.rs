@@ -65,7 +65,7 @@ fn share_edit(
     parent: Option<ShareId>,
     issuer: VaultId,
 ) -> Action {
-    let share = Share { over, who: vault(who), level, wide, select: vec![], parent, issuer, nonce: 7 };
+    let share = Share { over, who: vault(who), level, wide, select: vec![], parent, issuer, nonce: 7, group: None };
     Action::Share(Sharing::Grant(share, vec![]))
 }
 

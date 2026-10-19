@@ -31,9 +31,9 @@ use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient};
 use avendb::lens::example::{self, DOCUMENT_V0, TODO_V0};
 use avendb::lens::{DocV1, Lane, Schema, View, DOCUMENT_V1, TODO_V1};
 use avendb::policy::{
-    is_accept, keep_picks, mk_audience, order, passes, removes, replay, trace, view, Action, Creation, Edit, Entry, Fact, Holder,
-    Issued, KeepMode, Kind, Level, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share,
-    Sharing, State, Vault, Who, Write,
+    is_accept, keep_picks, mk_audience, order, passes, removes, replay, trace, view, Action, At, Creation, Edit, Entry,
+    Fact, Holder, Issued, KeepMode, Kind, Level, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Revoking,
+    Setting, Share, Sharing, State, Vault, Who, Write,
 };
 use avendb::rules::Grant;
 use avendb::slice::{Atom, Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, LENS_TYPE, SCHEMA_TYPE};
@@ -577,7 +577,7 @@ fn a_share(rng: &mut Rng, h: &History, st: &State) -> Attempt {
     let grant = Grant { ops: level.ops(), salt: [0; 32] };
     let slice = Slice { name: level.group().into(), select: select.clone(), grant, above: vec![] };
     let bytes = Select::Clear(slice).to_wire();
-    let share = Share { over, who, level, wide, select: bytes, parent, issuer, nonce: rng.next() };
+    let share = Share { over, who, level, wide, select: bytes, parent, issuer, nonce: rng.next(), group: None };
     let (author, cosigners) = signers_for(rng, st, issuer, level == Level::Owner);
     Attempt { author, cosigners, action: Action::Share(Sharing::Grant(share, vec![])), said: Said::Selector(select) }
 }
@@ -652,7 +652,7 @@ fn a_keep(rng: &mut Rng, h: &History, st: &State) -> Attempt {
     let grant = Grant { ops: vec![], salt: [0; 32] };
     let slice = Slice { name: level.group().into(), select: select.clone(), grant, above: vec![] };
     let (wide, bytes) = (select == Selector::All, Select::Clear(slice).to_wire());
-    let share = Share { over, who, level, wide, select: bytes, parent, issuer, nonce: rng.next() };
+    let share = Share { over, who, level, wide, select: bytes, parent, issuer, nonce: rng.next(), group: None };
     let action = Action::Share(Sharing::Grant(share, vec![]));
     Attempt { author: author_for(rng, st, issuer), cosigners: vec![], action, said: Said::Selector(select) }
 }
@@ -1252,7 +1252,7 @@ fn interested(st: &State, d: SignerId, v: VaultId) -> bool {
 fn may_receive_audience(st: &State, d: SignerId, v: VaultId, shares: &[ShareId], follow: &[VaultId]) -> bool {
     let names = |g: Who| match g {
         Who::Vault(g) => st.acts_for(d, g),
-        Who::Device(_) => false,
+        Who::Device(_) | Who::Invite(_) => false,
         Who::Everyone => follow.contains(&v) || interested(st, d, v),
     };
     let keeps = |cp: &Issued| cp.share.level.allows(Level::Backup);
@@ -1890,8 +1890,10 @@ fn uncounted_before_drafts(st: &State, e: EntryId, r: &Readings) -> Vec<EditId> 
     for w in st.entry_writes(e) {
         let touches = r.touches.get(&w.edit).map(Vec::as_slice);
         let asks = r.tags.get(&w.edit).unwrap_or(&none);
+        let (attrs, place) = st.at_write(w, r);
+        let at = At { attrs: attrs.as_ref(), place, groups: &r.groups };
         let lets = !r.unfit.contains(&w.edit)
-            && st.lets(w, r.proofs.get(&w.edit), touches, asks)
+            && st.lets(w, r.proofs.get(&w.edit), touches, asks, at)
             && passes(w, touches, |d| accepts.contains(d), main);
         if w.deps.iter().any(|d| out.contains(d)) || !lets {
             out.push(w.edit);
@@ -2060,6 +2062,9 @@ impl Twin {
             Action::Revoke(Revoking::Grant { share, actor, keep, via }) => {
                 let (keep, via) = (self.edits(&keep), self.vaults(&via));
                 Action::Revoke(Revoking::Grant { share: self.share(share), actor: self.vault(actor), keep, via })
+            }
+            Action::Claim { share, vault, via } => {
+                Action::Claim { share: self.share(share), vault: self.vault(vault), via: self.vaults(&via) }
             }
             Action::Write { vault, entry, actor, stay, epoch, deps, proposal, via, create, files, .. } => {
                 let header = create.is_some().then(|| Header { ty: Sym::new(""), created: 0 });

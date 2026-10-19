@@ -1048,7 +1048,7 @@ impl View {
 
     /// The app of built-in kind `kind`, of its newest shipped schema alone (`blobs::SHIPPED`): a document's, a todo's,
     /// an article's, a flow's, a function's, a recipe's, a view's, a logic's, a post's, a card's, a profile's, a file's,
-    /// a story's, a spark's, an access request's, an artifact's or an artwork's.
+    /// a story's, a spark's, an access request's, an artifact's, an artwork's or a cap group's.
     pub fn built_in(kind: &str) -> Option<&'static View> {
         BUILT_IN.iter().find(|(k, _)| *k == kind).map(|(_, v)| v)
     }
@@ -1337,7 +1337,7 @@ pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
     /// of its vault's lane. Maia City, the seed's coop, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 27] = [
+    pub const SHIPPED: [&str; 28] = [
         DOCUMENT_V1,
         TODO_V1,
         ARTICLE_V1,
@@ -1365,6 +1365,7 @@ pub mod blobs {
         REQUEST_V1,
         ARTIFACT_V1,
         ARTWORK_V1,
+        CAPGROUP_V1,
     ];
 
     /// The lenses between the versions of a kind avenDB ships, each from an older version to the newest, so a record
@@ -2024,6 +2025,24 @@ pub mod blobs {
 }
 "#;
 
+    /// A cap group (docs/ARCHITECTURE.md §5, "Cap groups"): its name, its caps, each an op with the slice it holds on
+    /// (`where`, left out for the whole vault), and the groups it includes, by their entries' ids, each one value. The
+    /// record shows the group (`rules::CapGroup::record`); what a share of it grants is what the vault's own write on
+    /// the main line says beside it (`slice::Body::defines`), which every reader judges the share's writes by.
+    pub const CAPGROUP_V1: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cap group, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "capgroup" },
+    "name": { "type": "string", "maxLength": 64 },
+    "caps": { "type": "array", "default": [], "maxItems": 64, "items": { "type": "object" } },
+    "includes": { "type": "array", "default": [], "maxItems": 64, "items": { "type": "string", "maxLength": 64 } }
+  },
+  "required": ["kind", "name"]
+}
+"#;
+
     /// A title card or a thumbnail of one shape, in layers, as a story's Thumbnail step designs it: a picture (the
     /// background), a cut-out (a transparent picture laid over it), words (empty: the hook it carries), a badge; each
     /// place a percent of the shape's canvas, a text's size a percent of its width. Each picture is a Library file, by
@@ -2260,6 +2279,7 @@ pub static SPARK_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::
 pub static REQUEST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::REQUEST_V1));
 pub static ARTIFACT_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTIFACT_V1));
 pub static ARTWORK_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTWORK_V1));
+pub static CAPGROUP_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::CAPGROUP_V1));
 pub static ARTICLE_LENS: LazyLock<Lens> =
     LazyLock::new(|| Lens::parse(blobs::ARTICLE_LENS.as_bytes()).expect("a built-in lens parses"));
 pub static SPARK_LENS: LazyLock<Lens> =
@@ -2297,6 +2317,7 @@ static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
         &*REQUEST_V1,
         &*ARTIFACT_V1,
         &*ARTWORK_V1,
+        &*CAPGROUP_V1,
     ];
     shipped.map(|s| (s.kind().expect("a shipped schema names its kind"), View::plain(s))).to_vec()
 });

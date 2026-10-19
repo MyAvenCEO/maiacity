@@ -7,7 +7,7 @@ use crate::keys::{KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient};
 use crate::policy::{
     Action, Creation, Edit, KeepMode, Kind, Level, Principal, Proposal, Revoking, Setting, Share, Sharing, Who,
 };
-use crate::rules::{Grant, On, Op, Proof, Scalar, Step};
+use crate::rules::{Cap, CapGroup, Grant, On, Op, Proof, Scalar, Step};
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 
@@ -48,6 +48,10 @@ pub fn share_context(share: &Share) -> Vec<u8> {
     let mut out = vec![VERSION];
     out.extend_from_slice(b"share");
     Share { select: vec![], ..share.clone() }.encode(&mut out);
+    if let Some(g) = &share.group {
+        out.extend_from_slice(b"group");
+        g.encode(&mut out);
+    }
     out
 }
 
@@ -458,7 +462,9 @@ impl Encode for TagDelta {
     }
 }
 
-/// Its files come last, and only when it brings some, so every body written before files keeps its bytes.
+/// Its files come next to last, and only when it brings some, so every body written before files keeps its bytes; the
+/// cap group it says (`Body::defines`) last, behind a byte no count of files starts with (`DEFINES`), and only when it
+/// says one, so every body written before cap groups keeps its bytes too.
 impl Encode for Body {
     fn encode(&self, out: &mut Vec<u8>) {
         self.header.encode(out);
@@ -469,6 +475,28 @@ impl Encode for Body {
         if !self.files.is_empty() {
             self.files.encode(out);
         }
+        if let Some(g) = &self.defines {
+            out.push(DEFINES);
+            g.encode(out);
+        }
+    }
+}
+
+/// The byte a body's cap group follows: no count of files a body can hold starts with it.
+pub(crate) const DEFINES: u8 = 0xff;
+
+impl Encode for Cap {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.op.encode(out);
+        self.slice.encode(out);
+    }
+}
+
+impl Encode for CapGroup {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.name.encode(out);
+        self.caps.encode(out);
+        self.includes.encode(out);
     }
 }
 
@@ -539,10 +567,15 @@ impl Encode for Who {
                 out.push(2);
                 d.encode(out);
             }
+            Who::Invite(k) => {
+                out.push(3);
+                k.encode(out);
+            }
         }
     }
 }
 
+/// All but the cap group it names, which the share edit carries beside it, under a sub-kind of its own (`Sharing`).
 impl Encode for Share {
     fn encode(&self, out: &mut Vec<u8>) {
         self.over.encode(out);
@@ -593,12 +626,20 @@ impl Encode for Setting {
     }
 }
 
+/// Each by its sub-kind: 0 a grant, 1 an owner, 2 a device, 3 a grant of a cap group, which names the group's entry
+/// after the share, so every grant made before cap groups keeps its bytes.
 impl Encode for Sharing {
     fn encode(&self, out: &mut Vec<u8>) {
         match self {
             Sharing::Grant(c, via) => {
-                out.push(0);
+                match c.group {
+                    None => out.push(0),
+                    Some(_) => out.push(3),
+                }
                 c.encode(out);
+                if let Some(g) = &c.group {
+                    g.encode(out);
+                }
                 via.encode(out);
             }
             Sharing::Owner { vault, owner, seal_to } => {
@@ -643,10 +684,10 @@ impl Encode for Revoking {
     }
 }
 
-/// Each kind by its tag: 0 genesis, 1 settings, 2 share, 3 revoke, 4 write, 5 mark, 6 keys. 7, a checkpoint, went with
-/// the classical half of a signature, as every signature is SLH-DSA; 8, a publish into a vault's schema lane, went into
-/// the write, as a schema or lens entry; 9, a sync rule, and 10, its end, into the share and the revoke, as a keep
-/// share and its revocation; 11, a pick, into the mark. No tag is used again. A settings, share or revoke edit's
+/// Each kind by its tag: 0 genesis, 1 settings, 2 share, 3 revoke, 4 write, 5 mark, 6 keys, 12 claim. 7, a checkpoint,
+/// went with the classical half of a signature, as every signature is SLH-DSA; 8, a publish into a vault's schema lane,
+/// went into the write, as a schema or lens entry; 9, a sync rule, and 10, its end, into the share and the revoke, as a
+/// keep share and its revocation; 11, a pick, into the mark. No tag is used again. A settings, share or revoke edit's
 /// sub-kind follows in a byte of its own.
 impl Encode for Action {
     fn encode(&self, out: &mut Vec<u8>) {
@@ -705,6 +746,12 @@ impl Encode for Action {
                 public.encode(out);
                 boxes.encode(out);
                 clear.encode(out);
+            }
+            Action::Claim { share, vault, via } => {
+                out.push(12);
+                share.encode(out);
+                vault.encode(out);
+                via.encode(out);
             }
         }
     }
@@ -834,6 +881,7 @@ mod tests {
             parent: None,
             issuer: v,
             nonce: 0,
+            group: None,
         };
         let root = Setting::Root { root: None, keep: vec![] };
         let keep = Share { who: Who::Device(d), level: Level::Keep(KeepMode::Whole), ..share.clone() };
@@ -924,7 +972,7 @@ mod tests {
         let keep = |mode| {
             let level = Level::Keep(mode);
             let (wide, select, parent) = (false, vec![7], None);
-            Share { over: v, who: Who::Device(d), level, wide, select, parent, issuer: v, nonce: 9 }
+            Share { over: v, who: Who::Device(d), level, wide, select, parent, issuer: v, nonce: 9, group: None }
         };
         let n = |x: u32| x.to_be_bytes();
         // the share's tag and sub-kind, the vault it is over, the device it names, keep's rank and its mode, not wide,
@@ -960,6 +1008,7 @@ mod tests {
                 parent: None,
                 issuer: VaultId::from_u64(1),
                 nonce: 0,
+                group: None,
             };
             edit_id(&Edit { action: Action::Share(Sharing::Grant(c, vec![])), ..genesis(0) })
         };

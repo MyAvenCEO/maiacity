@@ -6,8 +6,9 @@ use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use avendb::id::{EditId, SignerId};
+use avendb::id::{EditId, ShareId, SignerId, VaultId};
 use avendb::lab::Lab;
+use avendb::policy::{Action, Kind};
 use avendb::sign::{Hello, RelayPass};
 use avendb::sync::{LogId, log_of};
 use avendb::wire::{Announce, Claim, Join, Reply, Request, Statement, Wire};
@@ -40,6 +41,13 @@ pub(crate) const ASK_LOGS: u8 = 7;
 /// A device's signed statement of its holdings (H2, `wire::Statement`), its own or another device's passed on,
 /// answered by nothing once the node keeps it or finds it older than the one it keeps (`Shared::keep_statement`).
 pub(crate) const STATE: u8 = 8;
+/// The id of an invite, a share to an invite key, answered by its card if the node holds it and no vault claimed it yet
+/// (`Lab::invite_card`): what a newcomer's device needs to claim it, which only the invite's link names.
+pub(crate) const INVITE: u8 = 9;
+/// A newcomer's sign-up card (`Lab::sign_up_card`): the logs of its vault and the claims of the invites its vaults
+/// made, answered by nothing once the node took every new human vault among them, and refused otherwise. The node takes
+/// them as one batch, which its gate takes a new human vault from only with the invite it claims (`Lab::gate`).
+pub(crate) const SIGN_UP: u8 = 10;
 
 /// The error code a node closes a connection or a stream with when it refuses it.
 pub(crate) const REFUSED: VarInt = VarInt::from_u32(1);
@@ -235,6 +243,32 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
             tracing::info!("avendb: claimed by {device:?}, a device of its owner's; its device vault is {vault:?}");
             shared.changed.notify_one();
             Ok(join.to_wire())
+        }
+        INVITE if shared.opts.card => {
+            let share = ShareId(<[u8; 32]>::try_from(body).context("an invite's id")?);
+            let card = shared.lab(move |lab, me| lab.invite_card(me, share)).await;
+            let edits = card.map_err(|why| anyhow!("no invite: {why:?}"))?;
+            Ok(Reply { edits, ..Reply::default() }.to_wire())
+        }
+        SIGN_UP if shared.opts.card => {
+            let Reply { mut edits, .. } = Reply::from_wire(body)?;
+            // a sign-up card carries vault logs and claims, and nothing else
+            edits.retain(|s| crate::of_a_vault(s) || matches!(s.edit.action, Action::Claim { .. }));
+            let human = |s: &avendb::sign::Signed| match s.edit.action {
+                Action::Genesis { kind: Kind::Human, .. } => Some(VaultId::from(s.edit.id())),
+                _ => None,
+            };
+            let humans: Vec<VaultId> = edits.iter().filter_map(human).collect();
+            let take = move |lab: &mut Lab, me| {
+                lab.receive(me, edits, Vec::new());
+                humans.iter().all(|&v| lab.state(me).vault(v).is_some())
+            };
+            let took = shared.lab(take).await;
+            shared.changed.notify_one();
+            if !took {
+                bail!("the server takes a new vault only with an invite it claims");
+            }
+            Ok(Vec::new())
         }
         _ => bail!("no message of kind {kind}"),
     }

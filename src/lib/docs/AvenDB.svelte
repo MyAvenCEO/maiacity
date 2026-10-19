@@ -352,7 +352,8 @@
 			'It reaches every device that acts for that vault, so a new phone needs no new share.'
 		],
 		['Everyone', 'Read only. Its key is published in the clear, and it goes only to devices with a reason to ask.'],
-		['One of your own devices', 'Only as a keep share: what that device syncs. It grants nothing.']
+		['One of your own devices', 'Only as a keep share: what that device syncs. It grants nothing.'],
+		['An invite key', 'A one-time key: the newcomer’s vault claims the share once at sign-up, with no owner tap.']
 	];
 
 	const groups = [
@@ -594,6 +595,12 @@
 		[
 			'A merge through a share brings in only the places its merge op names, and into main only what the vault accepted',
 			'M1, M2'
+		],
+		['A share of a cap group never grants an op above its level, whatever version of the group is in force', 'CG1'],
+		['An invite is claimed once, and from then on its share names the vault that claimed it', 'G1'],
+		[
+			'A gated server takes a new human vault only with its invite, and a new COOP or aven only from Maia City’s Admins',
+			'G2'
 		]
 	];
 </script>
@@ -617,7 +624,7 @@
 		{#if !embedded}<a class="back" href="{base}/docs">← Docs</a>{/if}
 
 		<header class="intro">
-			<p class="eyebrow">avenDB&ensp;·&ensp;architecture&ensp;·&ensp;updated 16 October 2026</p>
+			<p class="eyebrow">avenDB&ensp;·&ensp;architecture&ensp;·&ensp;updated 19 October 2026</p>
 			<h1>avenDB Architecture</h1>
 			<p class="lede">
 				A user-owned, local-first database with post-quantum security. Every write happens on your device first and merges
@@ -1224,9 +1231,9 @@
 			<p class="prose-col">
 				<b>What</b> is everything in the vault, or a selector over an entry’s labels: its type, the vault that created it,
 				its id, when it was created, and its tags. Tags change, so a share reaches every entry tagged so, now and later. A
-				share is also a named group of JSON ops, and its <b>level</b> is the class of its strongest op. Anyone may name a
-				group of their own. In the app, one Share form makes every share, wherever a page offers to share, and a vault’s
-				Sharing page is the one place that says who has it.
+				share is also a group of JSON ops, and its <b>level</b> is the class of its strongest op. It carries its own ops, or
+				names a cap group the vault defines. In the app, one Share form makes every share, wherever a page offers to share,
+				and a vault’s Sharing page is the one place that says who has it.
 			</p>
 			<figure>
 				<pre><code>{SHARE}</code></pre>
@@ -1256,6 +1263,23 @@
 				The selector, the name and the ops travel sealed, to the vault, the holder and whoever gave the share. In the clear
 				a share shows only who holds it and at which level, so the server learns nothing of what it picks or allows. A
 				share may rest on another, and a chain of shares allows only what every share of it allows.
+			</p>
+			<h3>Cap groups</h3>
+			<p class="prose-col">
+				A cap is one op over one slice. A cap group is an entry of its vault with a name, its caps, and the groups it
+				includes. A share of a cap group names the group and holds no copy of its ops, so a new version of the group reaches
+				every share naming it at once. Revoke ends one share. To narrow what many hold, change the group. Owner, Editor,
+				Suggester and Viewer are fixed in the engine. Maia City defines Traveler (read the games, worlds and asset recipes),
+				Citizen (Traveler and the MaiaCity V1 moves) and Admin. A group share’s level is what its caps need, and it never
+				grants an op above that level, whatever a later version of the group says.
+			</p>
+			<h3>Invites, and who the server takes</h3>
+			<p class="prose-col">
+				An owner of Maia City signs a group share to a one-time invite key, and the invite link carries the share and the
+				key. At sign-up the newcomer’s new vault claims it, signed with that key, and the share is theirs: no owner taps
+				anything. A claimed invite can’t be claimed again. With its gate on, the server takes a new human vault only
+				together with the invite it claims, and a new COOP or aven only from a holder of Maia City’s Admin cap group. Anyone
+				may still make a vault on their own devices, but the server keeps none it hasn’t taken.
 			</p>
 			<h3>Passing a share on</h3>
 			<p class="prose-col">

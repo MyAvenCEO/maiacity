@@ -30,10 +30,10 @@
 
 use serde_json::{json, Map, Value};
 
-use crate::id::ShareId;
+use crate::id::{EntryId, ShareId};
 use crate::ops::{Loc, Seg};
 use crate::policy::{KeepMode, Level};
-use crate::slice::{Sym, TagDelta};
+use crate::slice::{Attrs, Selector, Sym, TagDelta};
 
 /// The most ops a share names, steps a pattern has, and values an op may set a place to or tags it may ask for: so
 /// judging a write stays linear in it, and ops fit in a sealed slice. The most shares a proof opens: a write through a
@@ -45,6 +45,9 @@ pub const MAX_STEPS: usize = 64;
 pub const MAX_VALUES: usize = 64;
 pub const MAX_GRANTS: usize = 16;
 pub const MAX_NAME: usize = 64;
+/// The most caps a cap group names, and cap groups it includes.
+pub const MAX_CAPS: usize = 64;
+pub const MAX_INCLUDES: usize = 64;
 
 /// A step of an op's path: a field, a row of a list of records by its id, or any one step.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -516,6 +519,97 @@ impl Group {
     pub fn to_json(&self) -> Value {
         let (ops, level) = (ops_to_json(&self.ops), crate::words::level_name(level_of(&self.ops)));
         json!({ "name": self.name, "hint": self.hint, "ops": ops, "everyone": self.everyone, "level": level })
+    }
+}
+
+/// One op over the entries a selector picks (`Rules.lean`'s `Cap`).
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Cap {
+    pub op: Op,
+    pub slice: Selector,
+}
+
+/// A cap group, as the record of its entry says (`Rules.lean`'s `CapGroup`): its name, its caps, and the cap groups of
+/// its vault it includes, by their entries. An entry of its vault of type `slice::CAP_GROUP_TYPE`, versioned as every
+/// entry is, which a share names in place of ops of its own (`policy::Share::group`): so Citizen is the Traveler group
+/// and the moves of a game, and a new version of a group narrows or widens every share that names it at once.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct CapGroup {
+    pub name: String,
+    pub caps: Vec<Cap>,
+    pub includes: Vec<EntryId>,
+}
+
+impl Cap {
+    /// A share with level `r` holds it on an entry with attributes `a` (`Cap.holds`): its op's class is no higher than
+    /// `r`, and its slice picks the entry.
+    pub fn holds(&self, r: Level, a: &Attrs) -> bool {
+        self.op.level().rank() <= r.rank() && self.slice.matches(a)
+    }
+
+    /// `{"op": .., "where": ..}` as an op's JSON with the selector of its slice beside, left out for the whole vault
+    /// (`Op::to_json`, `slice::Selector::to_json`).
+    pub fn to_json(&self) -> Value {
+        let mut o = self.op.to_json();
+        if self.slice != Selector::All {
+            o["where"] = self.slice.to_json();
+        }
+        o
+    }
+
+    pub fn of_json(v: &Value) -> Result<Cap, String> {
+        let mut o = v.as_object().ok_or("a cap is an op with where it holds")?.clone();
+        let slice = o.remove("where").map_or(Ok(Selector::All), |w| Selector::of_json(&w))?;
+        Ok(Cap { op: Op::of_json(&Value::Object(o))?, slice })
+    }
+}
+
+impl CapGroup {
+    /// `{"name", "caps", "includes"}`, each included group by its entry's id in hex.
+    pub fn to_json(&self) -> Value {
+        let includes: Vec<String> = self.includes.iter().map(EntryId::to_hex).collect();
+        let caps: Vec<Value> = self.caps.iter().map(Cap::to_json).collect();
+        json!({ "name": self.name, "caps": caps, "includes": includes })
+    }
+
+    /// The record of its entry, which shows it (`lens::blobs::CAPGROUP_V1`): its JSON, of kind `capgroup`.
+    pub fn record(&self) -> Value {
+        let mut r = self.to_json();
+        r["kind"] = crate::slice::CAP_GROUP_TYPE.into();
+        r
+    }
+
+    /// From its JSON (`to_json`): a name of 1 to `MAX_NAME` characters, at most `MAX_CAPS` caps and `MAX_INCLUDES`
+    /// included groups, `caps` and `includes` left out for none.
+    pub fn of_json(v: &Value) -> Result<CapGroup, String> {
+        let o = v.as_object().ok_or("a cap group is {name, caps, includes}")?;
+        if let Some(k) = o.keys().find(|k| !matches!(k.as_str(), "name" | "caps" | "includes")) {
+            return Err(format!("a cap group takes no field {k:?}: it is {{name, caps, includes}}"));
+        }
+        let name = o.get("name").and_then(Value::as_str).ok_or("a cap group has a name")?;
+        name_ok(name)?;
+        let list = |k: &str| match o.get(k) {
+            None => Ok(&[][..]),
+            Some(x) => x.as_array().map(Vec::as_slice).ok_or(format!("{k} is a list")),
+        };
+        let caps = list("caps")?.iter().map(Cap::of_json).collect::<Result<Vec<_>, _>>()?;
+        let includes = list("includes")?
+            .iter()
+            .map(|x| x.as_str().and_then(EntryId::from_hex).ok_or("a cap group includes others by their entry's id"))
+            .collect::<Result<Vec<_>, _>>()?;
+        if caps.len() > MAX_CAPS || includes.len() > MAX_INCLUDES {
+            return Err(format!("a cap group names at most {MAX_CAPS} caps and includes at most {MAX_INCLUDES} groups"));
+        }
+        Ok(CapGroup { name: name.to_string(), caps, includes })
+    }
+}
+
+impl Group {
+    /// A built-in group as a cap group of the same kind, fixed by the engine (`Group.toCapGroup`): each of its ops over
+    /// the whole vault.
+    pub fn to_cap_group(&self) -> CapGroup {
+        let caps = self.ops.iter().map(|op| Cap { op: op.clone(), slice: Selector::All }).collect();
+        CapGroup { name: self.name.to_string(), caps, includes: vec![] }
     }
 }
 

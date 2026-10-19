@@ -123,7 +123,7 @@ use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::engine::follow_standing;
-use avendb::id::{BlobId, EditId, SignerId, VaultId};
+use avendb::id::{BlobId, EditId, ShareId, SignerId, VaultId};
 use avendb::keys::PublicKey;
 use avendb::lab::{Backup, Drafting, Lab, Unsigned};
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
@@ -1101,6 +1101,39 @@ impl Node {
     /// vault's log before a vault gives the server relay on its entries. How many edits were new.
     pub async fn contact(&self, peer: EndpointId) -> Result<usize> {
         self.shared.contact(peer).await
+    }
+
+    /// Its device, a server, takes a new vault from its peers only where it welcomes it, or again any (`Lab::gate`): a
+    /// person's with the invite it claims, a coop or an aven an admin of the vault it serves owns.
+    pub async fn gate(&self, on: bool) {
+        self.shared.lab(move |lab, me| lab.gate(me, on)).await;
+    }
+
+    /// Claim the invite a link names for this device's vault, through the server `offer` names, which takes a new
+    /// person's vault only with the invite it claims (`Lab::gate`): the server hands the invite, share `share`, to
+    /// whoever names it (`Lab::invite_card`); the key made again from `secret`, the link's other half, and this device
+    /// sign its claim (`Lab::claim_invite`), with no owner of the vault it is over signing; and this device hands the
+    /// server the logs of its vault and the claim at once (`Lab::sign_up_card`), which the server takes. The key is
+    /// forgotten once it signed. Fails if this device belongs to no vault, the server knows no such invite or a vault
+    /// claimed it already, or the server takes the vault no more.
+    pub async fn claim_invite(&self, offer: &Offer, share: ShareId, secret: [u8; 32]) -> Result<VaultId> {
+        let peer = self.shared.connection(offer.addr.id).await?;
+        let reply = session::exchange(&peer.conn, session::INVITE, &share.0, session::REPLY_LIMIT).await;
+        let Reply { edits, .. } = Reply::from_wire(&reply.context("the server knows no such invite")?)?;
+        let claim = move |lab: &mut Lab, me| -> Result<(VaultId, Vec<Signed>), Refusal> {
+            lab.receive(me, edits, Vec::new());
+            let vault = lab.vault_of(me).ok_or(Refusal::NotActing)?;
+            let key = lab.invite_key(secret);
+            let claimed = lab.claim_invite(me, share, vault, key);
+            lab.lose(key);
+            claimed?;
+            Ok((vault, lab.sign_up_card(me)))
+        };
+        let (vault, edits) = self.shared.lab(claim).await.map_err(|why| anyhow!("the invite is refused: {why:?}"))?;
+        self.shared.changed.notify_one();
+        let card = Reply { edits, ..Reply::default() }.to_wire();
+        session::exchange(&peer.conn, session::SIGN_UP, &card, 0).await.context("the server takes no such sign-up")?;
+        Ok(vault)
     }
 
     /// Marks each change of what its device holds: how many edits and McEliece keys (`Lab::size`), after every act of
