@@ -7,8 +7,9 @@
  * capabilities it asked for and the admin holds, never more. Revoked keys stop at once.
  *
  * A key reaches the media vault alone (KEY_CAPS), until that vault retires (Samuel 2026-10-19: agents reach the city
- * only through avenDB vault caps). A key sits in a file any program of its person can read, an agent's too; so the
- * game, roles, invites and the notebook are a person's, signed in with their passkey, and no key ever holds them.
+ * only through avenDB vault caps). A key sits in a file any program of its person can read, an agent's too; so roles,
+ * invites and the notebook are a person's, signed in with their passkey, and no key ever holds them. (MaiaCity V1 is
+ * played with any signed-in key, the Mac app's, by Samuel's choice 2026-10-19; a MIP is signed in the browser.)
  */
 import { createHash, randomBytes } from "node:crypto";
 import { db } from "./pg";
