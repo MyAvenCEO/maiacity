@@ -6,8 +6,8 @@
  * `/feed/media/`), and api.maia.city's `/vault/files/<hash>` asks it first, the old gateway only for what it has none
  * of yet (deploy/Caddyfile): the site's addresses stay as they are. A file the old vault keeps private (it answers
  * 401 without the Mac app's key) is copied as it is there, private: tagged `legacy:media` alone, which no share
- * reaches. The copy runs by itself in the background as an owner of Maia City opens avenDB (./Account.svelte, Samuel
- * 2026-10-19: "copy everything for me"), and ./SiteMedia.svelte offers it on Maia City's Library besides (`copyAll`).
+ * reaches. ./SiteMedia.svelte offers the copy on Maia City's Library (`copyAll`), and it runs only as someone presses
+ * it: nothing writes into a vault by itself on a person's behalf (Samuel 2026-10-19, after the copy was done).
  */
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
@@ -67,34 +67,6 @@ export function uncopied(world, vault, manifest) {
 		left.push({ hash, name, media: p.mime, title: p.title || name, ...(e ? { entry: e.entry } : {}) });
 	}
 	return left;
-}
-
-/**
- * The copies of the site's files `manifest` (by hash) vault `vault` holds more than once, in world `world`, as the
- * iPad and the Mac copied the same files at once (2026-10-19): of the live file entries of each name, all copied
- * (`legacy:media`), all the site's or none, all bringing the same file, every one but the first made, by entry, to
- * delete (Samuel 2026-10-19: "Remove doubles"). Names whose entries differ in any of that are left as they are.
- * @param {import('./vaults.js').WorldView} world @param {string} vault @param {Record<string, Published>} manifest
- * @returns {{ entry: string, name: string }[]}
- */
-export function doubled(world, vault, manifest) {
-	const names = new Set(Object.entries(manifest).map(([hash, p]) => nameOf(hash, p.mime)));
-	/** @type {Map<string, import('./vaults.js').EntryView[]>} */
-	const by = new Map();
-	for (const e of world.entries) {
-		if (e.vault !== vault || e.type !== 'file' || e.deleted || !e.title || !names.has(e.title)) continue;
-		if (e.tags?.includes(LEGACY) && e.files?.[0]) by.set(e.title, [...(by.get(e.title) ?? []), e]);
-	}
-	/** @type {{ entry: string, name: string }[]} */
-	const out = [];
-	for (const [name, es] of by) {
-		const same = (/** @type {(e: import('./vaults.js').EntryView) => unknown} */ f) => new Set(es.map(f)).size === 1;
-		if (es.length < 2 || !same((e) => e.files[0].root) || !same((e) => !!e.tags?.includes(SITE))) continue;
-		/** @param {import('./vaults.js').EntryView} a @param {import('./vaults.js').EntryView} b */
-		const first = (a, b) => (a.created ?? Infinity) - (b.created ?? Infinity) || a.entry.localeCompare(b.entry);
-		for (const e of [...es].sort(first).slice(1)) out.push({ entry: e.entry, name });
-	}
-	return out;
 }
 
 /**
