@@ -1,7 +1,10 @@
 ---
 title: Five decisions at 90% make a 59% video
+originalTitle: Give Me 15 Minutes and I'll Make You Disgustingly Good at YouTube
 source: https://www.youtube.com/watch?v=Dx-c19qXdxM
 type: video
+author: Jake Trinder
+authorUrl: https://www.youtube.com/@jaketrinder
 added: 2026-10-18
 categories: [filmmaking]
 hook: >-
@@ -51,7 +54,6 @@ Failures still happen. But if you know why each decision was right or wrong, eve
 
 ## Open questions
 
-- The host's name is spelled "Jake Trinda" by the captions, and the video's title and channel aren't in the transcript. Check the channel before adding an author.
 - Every result here comes from the host's own channels: 800,000 views, 12% average retention, $200,000 a month in recurring revenue, 473,000 views for the cold-email video. None has a source outside the video.
 - The 59% figure assumes the five decisions are independent and that each one either works or doesn't. The host says it is only an illustration. Are decisions in a real film correlated, so that one good research step lifts all the rest?
 - What is the persona for a maiaCITY film? The four-P hook needs one, and the Days don't name it yet.
