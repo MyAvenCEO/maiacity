@@ -245,10 +245,10 @@ try {
 
 	// 2. a reload: signed in still, avenDB locked; one ceremony unlocks it
 	await a.page.goto(`${base}/app/`, { waitUntil: 'domcontentloaded' });
-	check('reloaded, the app asks to unlock', await waitText(a.page, 'Unlock with your passkey'));
+	check('reloaded, the app asks to unlock', await waitText(a.page, 'Unlock now'));
 	await shot(a.page, '04-unlock');
 	before = a.asserted();
-	await click(a.page, 'Unlock with your passkey');
+	await click(a.page, 'Unlock now');
 	check('unlocked, the dashboard greets them by their profile name', await waitText(a.page, ', Samuel.', 60000), await words(a.page, 'h1'));
 	check('in one ceremony', a.asserted() - before === 1, `${a.asserted() - before}`);
 	const games = (page) => words(page, '.games');
@@ -298,7 +298,7 @@ try {
 	await shot(b.page, '09-traveler-dashboard');
 	await b.page.goto(`${base}/app/maiacity-v1/`, { waitUntil: 'domcontentloaded' });
 	// a page loaded anew opens avenDB with the passkey again, as every one does
-	if (await waitText(b.page, 'Unlock with your passkey', 20000)) await click(b.page, 'Unlock with your passkey');
+	if (await waitText(b.page, 'Unlock now', 20000)) await click(b.page, 'Unlock now');
 	check('a traveler is told MaiaCity V1 is for citizens', await waitText(b.page, 'is for citizens', 60000), (await words(b.page)).slice(0, 300));
 	await shot(b.page, '10-traveler-v1');
 	const c = await tab(null, true);
