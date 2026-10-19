@@ -119,8 +119,26 @@ async function feed() {
  */
 async function warm(path) {
 	const page = await signedIn();
-	await page.goto(`${base}${path}`, { waitUntil: 'networkidle2', timeout: 120000 }).catch(() => {});
+	// a dependency it bundles only once the page has run reloads the page a little later: asked again until it stays put
+	for (let i = 0; i < 4; i++) {
+		let reloaded = false;
+		const moved = (f) => f === page.mainFrame() && (reloaded = true);
+		await page.goto(`${base}${path}`, { waitUntil: 'networkidle2', timeout: 120000 }).catch(() => {});
+		page.on('framenavigated', moved);
+		await sleep(4000);
+		page.off('framenavigated', moved);
+		if (!reloaded) break;
+	}
 	await page.close();
+}
+
+/** a frame's element, or null: a frame the page dropped (a reload) answers nothing rather than throwing */
+async function find(frame, sel) {
+	try {
+		return await frame.$(sel);
+	} catch {
+		return null;
+	}
 }
 
 async function viewProbe() {
@@ -145,13 +163,13 @@ async function viewProbe() {
 	const deadline = Date.now() + 60000;
 	let frame = null;
 	while (!frame && Date.now() < deadline) {
-		for (const f of page.frames()) if (await f.$('#probe-mark').catch(() => null)) frame = f;
+		for (const f of page.frames()) if (await find(f, '#probe-mark')) frame = f;
 		if (!frame) await sleep(200);
 	}
 	check('the hostile view is drawn in its frame', !!frame);
 	const clicked = [];
 	for (const sel of frame ? CLICKS : []) {
-		const el = await frame.$(sel).catch(() => null);
+		const el = await find(frame, sel);
 		if (!el) continue;
 		await el.click().catch(() => {});
 		if (sel === '#probe-text') await page.keyboard.press('Enter');
