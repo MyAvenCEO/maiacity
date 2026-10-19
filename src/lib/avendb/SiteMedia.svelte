@@ -4,9 +4,8 @@
 	homepage, the Maia Universe and the sandboxes show by its hash, named so, tagged `site:media`, which one Public share
 	lets everyone read; a file Maia City holds already under that name (an article's picture) only gets the tag, and one
 	the old vault keeps private goes in private (./sitemedia-copy.js). Each file's bytes are checked against its hash as
-	they come in, so nothing else goes in under its name. The old vault keeps its copies. The same copy runs by itself
-	as an owner opens avenDB in the Mac app (./Account.svelte); this is the way to run it by hand, in a browser too.
-	What is copied already is left
+	they come in, so nothing else goes in under its name. The old vault keeps its copies. It runs only as someone
+	presses it, in the Mac app or a browser: nothing copies by itself (Samuel 2026-10-19). What is copied already is left
 	out, so it shows only while something is left, and copying again goes on from there. "Not now" hides it in this
 	browser for this vault.
 -->
