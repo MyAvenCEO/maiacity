@@ -193,6 +193,13 @@ export function place(o, force) {
 		else o.matrixWorld.multiplyMatrices(o.parent.matrixWorld, o.matrix);
 		o.matrixWorldNeedsUpdate = false;
 		force = true;
+		// and what three.js's own updateMatrixWorld does past the matrix for these two: a skinned mesh's bind (the
+		// village's hens and goats were skinned against where they stood when built, and drawn there, out of sight) and a
+		// camera's view
+		if (/** @type {any} */ (o).isSkinnedMesh) {
+			const m = /** @type {THREE.SkinnedMesh} */ (o);
+			m.bindMatrixInverse.copy(m.bindMode === THREE.AttachedBindMode ? m.matrixWorld : m.bindMatrix).invert();
+		} else if (/** @type {any} */ (o).isCamera) /** @type {THREE.Camera} */ (o).matrixWorldInverse.copy(o.matrixWorld).invert();
 	}
 	const kids = o.children;
 	for (let i = 0; i < kids.length; i++) {
