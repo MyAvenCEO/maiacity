@@ -86,7 +86,7 @@ pub(crate) fn logs_of(edits: &[Edit], ids: &[EditId]) -> Vec<Option<LogId>> {
 }
 
 /// The vaults an edit names (`Edit.vaultsNamed`): what it acts for, through, or about.
-fn vaults_named(edit: &Edit) -> Vec<VaultId> {
+pub(crate) fn vaults_named(edit: &Edit) -> Vec<VaultId> {
     match &edit.action {
         Action::Share(Sharing::Grant(c, via)) => {
             let who = match c.who {
@@ -501,6 +501,40 @@ pub(crate) fn asks_ids(edits: &[Edit], ids: &[EditId], follow: &[VaultId]) -> As
     ask.loose.sort();
     ask.loose.dedup();
     ask
+}
+
+/// What a device holding `edits` sends when it asks by frontiers alone (`Logs.lean`'s `⟨frontiers, loose, []⟩`): of
+/// each log its frontier, and its loose edits. A peer that holds all it holds, as the node a backup is made of holds
+/// what its last snapshot held, sends back exactly what it lacks (T19). What a backup's manifest names (`backup`).
+pub fn asks_by_frontiers(edits: &[Edit]) -> Ask {
+    let ids: Vec<EditId> = edits.iter().map(Edit::id).collect();
+    let logs = logs_of(edits, &ids);
+    let mut ask = Ask::default();
+    let mut closed: HashSet<EditId> = HashSet::new();
+    for (l, log) in LogEdits::all(edits, &ids, &logs) {
+        let c = log.closed();
+        ask.haves.insert(l, log.frontier_in(&c));
+        closed.extend(c);
+    }
+    ask.loose = ids.iter().copied().filter(|id| !closed.contains(id)).collect();
+    ask.loose.sort();
+    ask.loose.dedup();
+    ask
+}
+
+/// Of the edits `edits` (`ids[i]` being `edits[i]`'s id and `logs[i]` its log), every id at or below what `asked`
+/// names: its loose edits, and of each log the edits it names there and every edit of the log they build on. What a
+/// peer would send it none of (`beyond`); of a log the peer holds none of, the ids named alone.
+pub(crate) fn named_below(edits: &[Edit], ids: &[EditId], logs: &[Option<LogId>], asked: &Ask) -> HashSet<EditId> {
+    let all = LogEdits::all(edits, ids, logs);
+    let mut below: HashSet<EditId> = asked.loose.iter().copied().collect();
+    for (l, named) in &asked.haves {
+        match all.get(l) {
+            Some(log) => below.extend(log.ancestors(named)),
+            None => below.extend(named.iter().copied()),
+        }
+    }
+    below
 }
 
 /// What a peer holding `edits` sends device `d` that asked with `asked` (`asks`): what `respond` sends it, following
