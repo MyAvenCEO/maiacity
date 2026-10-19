@@ -355,7 +355,7 @@
 			{#if phase !== 'locked'}
 				<p class="lede">The city’s own rooms — the games, your avenDB, what we build with — open to its founders, with one passkey.</p>
 			{/if}
-			<button class="pill-btn" disabled={!!busy} onclick={enter}>{busy ? `${busy}…` : phase === 'locked' ? 'Unlock with your passkey' : 'Sign in with your passkey'}</button>
+			<button class="pill-btn" disabled={!!busy} onclick={enter}>{busy ? `${busy}…` : phase === 'locked' ? 'Unlock now' : 'Sign in with your passkey'}</button>
 			<a class="back" href="{base}/">← Back to the homepage</a>
 		{/if}
 		{#if error}<p class="bad">{error}</p>{/if}
