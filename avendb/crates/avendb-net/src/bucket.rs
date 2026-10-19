@@ -20,7 +20,7 @@
 //! version of an object for 7 days (Object Lock). Nothing deletes an object but the files a node lets go of
 //! (`Call::Drop`), a blob's outboard first, then its parts, and a reset (`clear`).
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
 use std::io::{self, ErrorKind};
@@ -423,7 +423,7 @@ impl BucketShelf {
 
     /// The name of part `n` of blob `hash`.
     fn part_name(&self, hash: &Hash, n: u64) -> String {
-        format!("{}{BLOBS}{}/{n:06x}", self.root, hash.to_hex())
+        part_name(&self.root, hash, n)
     }
 
     /// The name of blob `hash`'s outboard, of a blob of `size` bytes.
@@ -630,6 +630,38 @@ impl BucketShelf {
             None => self.bucket.put(&name, bytes).await.map_err(failed),
         }
     }
+}
+
+/// The name of part `n` of blob `hash` on the shelf under `root`.
+fn part_name(root: &str, hash: &Hash, n: u64) -> String {
+    format!("{root}{BLOBS}{}/{n:06x}", hash.to_hex())
+}
+
+/// How many parts a blob of `size` bytes is kept in.
+pub(crate) fn parts(size: u64) -> u64 {
+    size.div_ceil(PART)
+}
+
+/// The parts the shelf under `root` in `bucket` holds of each blob, by the bucket's listing alone.
+pub(crate) async fn parts_held(bucket: &Sealed, root: &str) -> Result<HashMap<Hash, HashSet<u64>>> {
+    let prefix = format!("{root}{BLOBS}");
+    let mut held: HashMap<Hash, HashSet<u64>> = HashMap::new();
+    for name in bucket.list(&prefix).await? {
+        let part = name.strip_prefix(&prefix).and_then(|rest| rest.split_once('/'));
+        match part.and_then(|(hash, n)| Some((hash_of(hash)?, u64::from_str_radix(n, 16).ok()?))) {
+            Some((hash, n)) => {
+                held.entry(hash).or_default().insert(n);
+            }
+            None => tracing::warn!("avendb: {name} in the bucket is no blob's part"),
+        }
+    }
+    Ok(held)
+}
+
+/// Part `n` of blob `hash` on the shelf under `root` in `bucket`, opened, read from the bucket and never cached: none
+/// if the bucket holds none.
+pub(crate) async fn part_of(bucket: &Sealed, root: &str, hash: &Hash, n: u64) -> Result<Option<Vec<u8>>> {
+    bucket.get(&part_name(root, hash, n)).await
 }
 
 /// The blob an outboard's name says it is of: its hash and size.

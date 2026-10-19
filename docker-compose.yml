@@ -115,6 +115,8 @@ services:
       # at AVENDB_SNAPSHOTS_AT (03:00 UTC by default), at its bucket's endpoint with its key, sealed under its seal
       AVENDB_SNAPSHOTS: ${AVENDB_SNAPSHOTS:-}
       AVENDB_SNAPSHOTS_AT: ${AVENDB_SNAPSHOTS_AT:-}
+      # then checks every folder, reading each file's bytes once in AVENDB_SNAPSHOTS_READ_DAYS (30 by default)
+      AVENDB_SNAPSHOTS_READ_DAYS: ${AVENDB_SNAPSHOTS_READ_DAYS:-}
       RUST_LOG: ${AVENDB_LOG:-info}
       # plain log lines: the deploy reads its offer from them
       NO_COLOR: "1"

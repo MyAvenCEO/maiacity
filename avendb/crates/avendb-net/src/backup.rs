@@ -21,7 +21,10 @@
 //! shelf with the first head of its edits, so a node started there takes back every edit, each checked again
 //! (`Lab::restore_backup`); a rehearsal (`rehearse`) starts one and checks it holds each log as the manifest names it
 //! (B9) and every file whole. Retention (`Folder::retain`) lets go of the snapshots the policy drops, then of the blobs
-//! no snapshot kept names; the bucket keeps every version it deletes 7 more days (Object Lock).
+//! no snapshot kept names; the bucket keeps every version it deletes 7 more days (Object Lock). A check
+//! (`Folder::check`), each day after the backup, restores nothing: it lists the bucket for every blob the snapshots
+//! name, reads their manifests, roots and the newest snapshot's edits, each checked again, and of the files' blobs
+//! those due that day (`Reading`), so that a folder of terabytes is read through once a month, a little each day.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -29,13 +32,15 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow, bail, ensure};
-use avendb::backup::{self as core, Keep};
+use avendb::backup::{self as core, DAY, Keep};
 use avendb::id::{BlobId, VaultId};
+use avendb::lab::Lab;
 use avendb::policy::Edit;
 use avendb::sealed::{FileRoot, PIECE};
 use avendb::sign::Signed;
 use avendb::sync::{Ask, asks_by_frontiers};
 use avendb::wire::Wire;
+use bao_tree::blake3;
 use bytes::Bytes;
 use iroh_blobs::Hash;
 use iroh_blobs::api::Store;
@@ -44,7 +49,7 @@ use n0_future::{BufferedStreamExt as _, StreamExt as _, stream};
 use tokio::io::AsyncReadExt as _;
 use zeroize::Zeroizing;
 
-use crate::bucket::{Bucket, Sealed, shelf_at};
+use crate::bucket::{self, Bucket, Sealed, shelf_at};
 use crate::edits::{self, Blob, Key, key_blob};
 use crate::shelf::{Shelf, fresh};
 use crate::tree::Outboarder;
@@ -638,4 +643,208 @@ pub async fn rehearse(folder: &Folder, time: u64, dir: &Path, opts: Options) -> 
     }
     let same = ask == manifest.ask;
     Ok((Rehearsal { manifest, restore: restored, start: started, edits, files, same }, node))
+}
+
+/// Which blobs of a folder a check reads whole (`Folder::check`): each on one day in every `days`, by its hash, so that
+/// a check each day reads every blob once in `days` days, about a `days`th of the folder's bytes a day; with `days` 1,
+/// every blob, and with 0, none.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Reading {
+    pub days: u64,
+    /// The day it is, in days since 1970.
+    pub day: u64,
+}
+
+impl Reading {
+    /// Every blob.
+    pub const ALL: Reading = Reading { days: 1, day: 0 };
+    /// No blob.
+    pub const NONE: Reading = Reading { days: 0, day: 0 };
+
+    /// The blobs due on the day of `time`, in seconds since 1970, each read once in `days` days.
+    pub fn at(days: u64, time: u64) -> Reading {
+        Reading { days, day: time / DAY }
+    }
+
+    /// It reads blob `hash`.
+    pub fn reads(&self, hash: &Hash) -> bool {
+        let first: [u8; 8] = hash.as_bytes()[..8].try_into().expect("8 bytes of 32");
+        self.days > 0 && u64::from_le_bytes(first) % self.days == self.day % self.days
+    }
+}
+
+/// What a check of a folder found (`Folder::check`): its snapshots, and those whose manifest or root doesn't read whole
+/// or names other blobs than the other, by when each was taken; the blobs they name, roots and all, each once, with
+/// their bytes, those the bucket doesn't hold whole by its listing, those it read, with their bytes, and those that
+/// didn't read as what their hash says; and of the newest snapshot that reads whole, when it was taken, how many edits
+/// it holds and how many its packs give back, each checked again, and whether those hold each log as its manifest
+/// names it (B9). How long it took.
+#[derive(Clone, Debug, Default)]
+pub struct Checked {
+    pub snapshots: usize,
+    pub unreadable: Vec<u64>,
+    pub blobs: usize,
+    pub bytes: u64,
+    pub missing: Vec<Hash>,
+    pub read: usize,
+    pub read_bytes: u64,
+    pub corrupt: Vec<Hash>,
+    pub newest: Option<u64>,
+    pub expected: u64,
+    pub edits: u64,
+    pub same: bool,
+    pub took: Duration,
+}
+
+impl Checked {
+    /// Each snapshot reads whole, the bucket holds every blob they name, each blob read is what its hash says, and the
+    /// newest gives back every edit it holds, each log as its manifest names it: every snapshot restores, as far as
+    /// the bytes read show.
+    pub fn whole(&self) -> bool {
+        let clean = self.unreadable.is_empty() && self.missing.is_empty() && self.corrupt.is_empty();
+        clean && self.newest.is_some() && self.same && self.edits == self.expected
+    }
+}
+
+impl Folder {
+    /// Checks the folder from the bucket alone, without restoring a snapshot onto a shelf or starting a node: that the
+    /// manifest and root of each snapshot read whole and name the same blobs; that the bucket holds each blob they
+    /// name, by its listing alone, its outboard and every part; that each blob `reading` names reads as what its hash
+    /// says, a part at a time, past the folder's cache; and that the newest snapshot's packs and McEliece keys give
+    /// back every edit it holds, each checked again as a node checks what it takes back as it starts
+    /// (`Lab::restore_backup`), holding each log as its manifest names it (B9). It reads the manifests, the roots,
+    /// the newest snapshot's packs and keys, and only those blobs of the files `reading` names: a check each day reads
+    /// a few bytes of a folder of terabytes, and every byte of it in `Reading::days` days.
+    pub async fn check(&self, reading: Reading) -> Result<Checked> {
+        let began = Instant::now();
+        let mut checked = Checked::default();
+        let times = self.times().await?;
+        checked.snapshots = times.len();
+        let mut manifests = Vec::with_capacity(times.len());
+        for t in times {
+            match self.manifest(t).await {
+                Ok(m) => manifests.push(m),
+                Err(e) => {
+                    tracing::warn!("avendb: snapshot {t} of vault {}: {e:#}", self.vault.to_hex());
+                    checked.unreadable.push(t);
+                }
+            }
+        }
+        // each blob once: each root, then the blobs it names
+        let (mut named, mut seen) = (Vec::new(), HashSet::new());
+        for m in &manifests {
+            let root = (m.root, 32 * m.named().len() as u64);
+            named.extend([root].into_iter().chain(m.named()).filter(|(h, _)| seen.insert(*h)));
+        }
+        (checked.blobs, checked.bytes) = (named.len(), named.iter().map(|(_, size)| size).sum());
+        let listed: HashMap<Hash, u64> = self.shelf.list().await?.into_iter().collect();
+        let parts = bucket::parts_held(&self.sealed, &self.root).await?;
+        let held = |&(hash, size): &Blob| {
+            let of = parts.get(&hash);
+            listed.get(&hash) == Some(&size) && (0..bucket::parts(size)).all(|n| of.is_some_and(|p| p.contains(&n)))
+        };
+        checked.missing = named.iter().filter(|b| !held(b)).map(|(h, _)| *h).collect();
+        let missing: HashSet<Hash> = checked.missing.iter().copied().collect();
+        let mut read = HashSet::new();
+        // the roots, every day: each names its manifest's blobs
+        let (mut good, mut roots) = (Vec::with_capacity(manifests.len()), HashMap::new());
+        for m in manifests {
+            let seq: Vec<u8> = m.named().iter().map(|(h, _)| *h).collect::<HashSeq>().into_inner().into();
+            let root = (m.root, seq.len() as u64);
+            if !missing.contains(&m.root) && read.insert(m.root) {
+                (checked.read, checked.read_bytes) = (checked.read + 1, checked.read_bytes + root.1);
+                let got = self.read_whole(root).await;
+                if let Err(e) = &got {
+                    let v = self.vault.to_hex();
+                    tracing::warn!("avendb: the root of snapshot {} of vault {v}: {e:#}", m.time);
+                    checked.corrupt.push(m.root);
+                }
+                roots.insert(m.root, got.ok());
+            }
+            match roots.get(&m.root).is_some_and(|got| got.as_ref() == Some(&seq)) {
+                true => good.push(m),
+                false => checked.unreadable.push(m.time),
+            }
+        }
+        checked.unreadable.sort();
+        // the newest snapshot's edits, every day: given back by its packs and keys, each checked again
+        if let Some(m) = good.last() {
+            let (mut signed, mut keys, mut ids) = (Vec::new(), Vec::new(), HashSet::new());
+            let keys_of = m.keys.iter().map(|&(id, size)| ((key_blob(id), size), false));
+            let blobs = m.packs.iter().map(|&p| (p, true)).chain(keys_of);
+            for (blob, pack) in blobs {
+                if missing.contains(&blob.0) || !read.insert(blob.0) {
+                    continue;
+                }
+                (checked.read, checked.read_bytes) = (checked.read + 1, checked.read_bytes + blob.1);
+                let bytes = match self.read_whole(blob).await {
+                    Ok(bytes) => bytes,
+                    Err(e) => {
+                        tracing::warn!("avendb: blob {} of vault {}: {e:#}", blob.0, self.vault.to_hex());
+                        checked.corrupt.push(blob.0);
+                        continue;
+                    }
+                };
+                match pack {
+                    true => match edits::unpack(&bytes) {
+                        Some(edits) => signed.extend(edits.into_iter().filter(|s| ids.insert(s.edit.id()))),
+                        None => {
+                            let v = self.vault.to_hex();
+                            tracing::warn!("avendb: pack {} of vault {v} is no pack of edits", blob.0);
+                            checked.corrupt.push(blob.0);
+                        }
+                    },
+                    false => keys.push(Arc::<[u8]>::from(bytes)),
+                }
+            }
+            let seed = *server::random()?;
+            let taken = tokio::task::spawn_blocking(move || {
+                let mut lab = Lab::with_entropy(seed);
+                let me = lab.device("a check of the snapshots");
+                lab.restore_backup(me, &avendb::lab::Backup::new(signed, keys));
+                (lab.size(me).0 as u64, asks_by_frontiers(lab.log(me).edits()))
+            });
+            let (edits, ask) = taken.await?;
+            (checked.newest, checked.expected) = (Some(m.time), m.edits);
+            (checked.edits, checked.same) = (edits, ask == m.ask);
+        }
+        // the files' blobs, those due today
+        let due: Vec<Blob> = named.into_iter().filter(|(h, _)| !missing.contains(h) && !read.contains(h)).collect();
+        let reads = due.into_iter().filter(|(h, _)| reading.reads(h)).map(|blob| async move {
+            (blob, self.read_through(blob, |_| {}).await)
+        });
+        let mut reading = stream::iter(reads).buffered_unordered(COPYING);
+        while let Some(((hash, size), got)) = reading.next().await {
+            (checked.read, checked.read_bytes) = (checked.read + 1, checked.read_bytes + size);
+            if let Err(e) = got {
+                tracing::warn!("avendb: blob {hash} of vault {}: {e:#}", self.vault.to_hex());
+                checked.corrupt.push(hash);
+            }
+        }
+        checked.took = began.elapsed();
+        Ok(checked)
+    }
+
+    /// Blob `blob`, read whole from the bucket past the folder's cache (`read_through`).
+    async fn read_whole(&self, blob: Blob) -> Result<Vec<u8>> {
+        let mut bytes = Vec::with_capacity(blob.1 as usize);
+        self.read_through(blob, |part| bytes.extend_from_slice(part)).await?;
+        Ok(bytes)
+    }
+
+    /// Reads blob `hash` of `size` bytes from the bucket a part at a time, each opened and never cached, and hands each
+    /// part to `each`: fails unless the bucket holds every part, and they read as what its hash says.
+    async fn read_through(&self, (hash, size): Blob, mut each: impl FnMut(&[u8])) -> Result<()> {
+        let (mut hasher, mut len) = (blake3::Hasher::new(), 0);
+        for n in 0..bucket::parts(size) {
+            let part = bucket::part_of(&self.sealed, &self.root, &hash, n).await?;
+            let part = part.with_context(|| format!("no part {n} of blob {hash} in the bucket"))?;
+            hasher.update(&part);
+            each(&part);
+            len += part.len() as u64;
+        }
+        let got = Hash::from(hasher.finalize());
+        ensure!(got == hash && len == size, "blob {hash} of {size} bytes reads as {got} of {len}");
+        Ok(())
+    }
 }

@@ -1,12 +1,13 @@
 //! The server's backups (`docs/BACKUP.md`, `avendb_net::backup`): every day at the time its environment says
 //! (`SnapshotsConfig::at`), and whenever it is told to (SIGUSR1, `Backups::now`), it takes a snapshot of every vault
 //! it knows into the bucket of snapshots, a folder for each, then lets go of what retention drops (`Keep`), and keeps
-//! its device's secret there too. Each run says in the log what it did for each vault, and sums it up at its end.
+//! its device's secret there too; then it checks every folder (`check_all`), restoring nothing: the bucket's listing,
+//! the newest snapshot's edits, and the files' blobs due that day, each once a month by default. Each run says in the
+//! log what it did for each vault, as an error a folder that isn't whole, and sums it up at its end.
 //!
-//! From the bucket alone, without a running server: `drill` rehearses a restore of every vault, each in a node of its
-//! own, and says whether each came back whole (B9); `restore` restores every vault into a new folder, with the
-//! server's device's secret, so that a server started there is the same device, as it was then. Nothing here ever
-//! touches the live server's shelf.
+//! From the bucket alone, without a running server: `check_all`, as the daily run does, or reading every blob; and
+//! `restore`, which restores every vault into a new folder, with the server's device's secret, so that a server
+//! started there is the same device, as it was then. Nothing here ever touches the live server's shelf.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -15,8 +16,8 @@ use std::time::{Duration, Instant, SystemTime};
 use anyhow::{Context as _, Result, bail};
 use avendb::backup::{DAY, Keep};
 use avendb::id::VaultId;
-use avendb_net::backup::{self, Snapshots};
-use avendb_net::{Node, Options, Shelf, server};
+use avendb_net::backup::{self, Checked, Reading, Snapshots};
+use avendb_net::{Node, Shelf, server};
 use tokio::sync::Notify;
 
 use crate::{Abort, SnapshotsConfig, bucket};
@@ -125,9 +126,10 @@ pub struct Backups {
 
 impl Backups {
     /// Backs up every vault `node` knows each day at `config.at`, keeping what `keep` keeps, and its device's secret,
-    /// from `shelf`, the server's.
+    /// from `shelf`, the server's; then checks every folder, reading each file's blobs once in `config.read_days`.
     pub fn spawn(node: Arc<Node>, shelf: Shelf, config: &SnapshotsConfig, keep: Keep) -> Result<Backups> {
-        let (snapshots, at, wake) = (snapshots(config)?, config.at, Arc::new(Notify::new()));
+        let (snapshots, wake) = (snapshots(config)?, Arc::new(Notify::new()));
+        let (at, read_days) = (config.at, config.read_days);
         let woken = wake.clone();
         let task = tokio::spawn(async move {
             loop {
@@ -145,7 +147,11 @@ impl Backups {
                     Ok(None) => tracing::warn!("avenDB backups: the server's shelf holds no secret"),
                     Err(e) => tracing::warn!("avenDB backups: the server's secret doesn't read: {e:#}"),
                 }
-                back_up_all(&node, &snapshots, &keep, now(), false).await;
+                let time = now();
+                back_up_all(&node, &snapshots, &keep, time, false).await;
+                if let Err(e) = check_all(&snapshots, Reading::at(read_days, time)).await {
+                    tracing::error!("avenDB check: the bucket of snapshots isn't checked: {e:#}");
+                }
             }
         });
         Ok(Backups { wake, _task: Abort(task) })
@@ -213,52 +219,76 @@ fn now() -> u64 {
     SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
-/// What a drill found of one vault: when its snapshot was taken, the rehearsal, and how long it took.
+/// A check of every vault's folder (`check_all`): what it found of each, the vaults it couldn't check, with why, and
+/// how long it took.
 #[derive(Clone, Debug)]
-pub struct Drilled {
-    pub vault: VaultId,
-    pub rehearsal: backup::Rehearsal,
+pub struct Checks {
+    pub checked: Vec<(VaultId, Checked)>,
+    pub failed: Vec<Failed>,
+    pub took: Duration,
 }
 
-/// Rehearses a restore of every vault of `snapshots`, each as its newest snapshot taken at `at` or before, or its
-/// newest with `at` unsaid: each into a node of its own, in a folder of its own under `dir`, which it removes after.
-/// Each vault's rehearsal, and the vaults whose rehearsal failed, with why.
-pub async fn drill(snapshots: &Snapshots, at: Option<u64>, dir: &Path) -> Result<(Vec<Drilled>, Vec<Failed>)> {
-    let (mut drilled, mut failed) = (Vec::new(), Vec::new());
+impl Checks {
+    /// Every vault checked, each whole.
+    pub fn whole(&self) -> bool {
+        !self.checked.is_empty() && self.failed.is_empty() && self.checked.iter().all(|(_, c)| c.whole())
+    }
+}
+
+/// Checks every vault's folder of `snapshots` from the bucket alone, reading of the files' blobs those `reading` names
+/// (`Folder::check`): each vault one at a time, and one that fails doesn't hold up the rest. Says in the log what it
+/// found of each, as an error each folder that isn't whole.
+pub async fn check_all(snapshots: &Snapshots, reading: Reading) -> Result<Checks> {
+    let began = Instant::now();
+    let (mut checked, mut failed) = (Vec::new(), Vec::new());
     for v in snapshots.vaults().await? {
-        let folder = snapshots.folder(v).await?;
-        let Some(m) = folder.as_of(at).await? else { continue };
-        let into = dir.join(v.to_hex());
-        let rehearsed = async {
-            let (rehearsal, node) = backup::rehearse(&folder, m.time, &into, Options::local()).await?;
-            node.shutdown().await?;
-            Ok::<_, anyhow::Error>(rehearsal)
-        };
-        match rehearsed.await {
-            Ok(r) => {
-                tracing::info!(
-                    "avenDB drill: vault {} at {}: {} of {} edits, {} of {} files, logs {}; restored in {:?}, \
-                     started in {:?}",
+        match snapshots.folder(v).await?.check(reading).await {
+            Ok(c) => {
+                let said = format!(
+                    "vault {}: {} snapshots, {} unreadable; {} blobs, {} bytes, {} missing; {} read, {} bytes, {} \
+                     corrupt; the newest, {}: {} of {} edits back, logs {}; in {:?}",
                     v.to_hex(),
-                    m.time,
-                    r.edits,
-                    r.manifest.edits,
-                    r.files,
-                    r.manifest.files.len(),
-                    if r.same { "as the manifest names them" } else { "NOT as the manifest names them" },
-                    r.restore,
-                    r.start
+                    c.snapshots,
+                    c.unreadable.len(),
+                    c.blobs,
+                    c.bytes,
+                    c.missing.len(),
+                    c.read,
+                    c.read_bytes,
+                    c.corrupt.len(),
+                    c.newest.map_or("none".into(), when),
+                    c.edits,
+                    c.expected,
+                    if c.same { "as its manifest names them" } else { "NOT as its manifest names them" },
+                    c.took
                 );
-                drilled.push(Drilled { vault: v, rehearsal: r });
+                match c.whole() {
+                    true => tracing::info!("avenDB check: {said}"),
+                    false => tracing::error!(
+                        "avenDB check: NOT WHOLE: {said}; unreadable {:?}, missing {:?}, corrupt {:?}",
+                        c.unreadable,
+                        c.missing,
+                        c.corrupt
+                    ),
+                }
+                checked.push((v, c));
             }
             Err(e) => {
-                tracing::warn!("avenDB drill: vault {} doesn't come back: {e:#}", v.to_hex());
+                tracing::error!("avenDB check: vault {} isn't checked: {e:#}", v.to_hex());
                 failed.push((v, format!("{e:#}")));
             }
         }
-        std::fs::remove_dir_all(&into).ok();
     }
-    Ok((drilled, failed))
+    let checks = Checks { checked, failed, took: began.elapsed() };
+    let read: u64 = checks.checked.iter().map(|(_, c)| c.read_bytes).sum();
+    let whole = checks.checked.iter().filter(|(_, c)| c.whole()).count();
+    tracing::info!(
+        "avenDB check: {} vaults checked, {whole} whole, {} failed, {read} bytes read, in {:?}",
+        checks.checked.len(),
+        checks.failed.len(),
+        checks.took
+    );
+    Ok(checks)
 }
 
 /// Restores every vault of `snapshots` into folder `into`, which must be empty or not there yet, after a disaster: a

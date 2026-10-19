@@ -1,8 +1,10 @@
 //! The full recovery test (`docs/BACKUP.md`): the server backs up every vault it knows into a bucket of snapshots over
-//! three days, a quiet day putting no blob and a busy one the pack of what is new and the file it brings; a drill
-//! rehearses every vault back from the bucket alone, each whole, and the first day's without what came after; and a
-//! restore after a disaster brings the server back on a new shelf as the same device, holding every file whole, from
-//! which Carol's Mac reads Welcome's files over iroh. Each step timed. The film is 20 MB in a folder, and on a real
+//! three days, a quiet day putting no blob and a busy one the pack of what is new and the file it brings; the daily
+//! check finds every vault whole from the bucket alone, restoring nothing, reading every blob and then none of the
+//! files'; a rehearsal brings the coop back in a node of its own, whole, and the first day's without what came after;
+//! a restore after a disaster brings the server back on a new shelf as the same device, holding every file whole, from
+//! which Carol's Mac reads Welcome's files over iroh; and a part of the film gone from the bucket, the day's check
+//! finds by the listing alone. Each step timed. The film is 20 MB in a folder, and on a real
 //! bucket a film of two pieces, a gigabyte and 64 MiB, as the studio's are (`AVENDB_TEST_FILM_MB` says otherwise).
 //!
 //! On a real bucket when the environment names one (`AVENDB_TEST_BUCKET`, with `AVENDB_TEST_BUCKET_ENDPOINT`,
@@ -25,7 +27,7 @@ use avendb::cast::*;
 use avendb::id::SignerId;
 use avendb::policy::Level;
 use avendb::sealed::{PIECE, PIECE_SEGMENTS, SEGMENT};
-use avendb_net::backup::Snapshots;
+use avendb_net::backup::{self, Reading, Snapshots};
 use avendb_net::bucket::{self, Bucket, Fut};
 use avendb_net::{Node, Options, disk, server};
 use avendb_server::backups::{self, Run};
@@ -195,24 +197,39 @@ async fn the_server_comes_back_whole_from_its_snapshots() {
     assert!(coop_busy.bytes < scan_len + film_len / 10, "not the film again: {} bytes", coop_busy.bytes);
     eprintln!("day 3, busy: {} blobs, {} bytes, in {:?}", put(&busy).0, put(&busy).1, busy.took);
 
-    // the drill: every vault back from the bucket alone, each whole; the first day's without the scan
-    let drills = Folder::new("drills");
+    // the daily check, from the bucket alone and restoring nothing: every vault whole, reading every blob, then as on
+    // a day no file's blob is due
     let began = Instant::now();
-    let (drilled, failed) = backups::drill(&snapshots, None, drills.path()).await.expect("a drill");
+    let checks = backups::check_all(&snapshots, Reading::ALL).await.expect("a check");
     let took = began.elapsed();
-    assert!(failed.is_empty(), "every vault comes back: {failed:?}");
-    assert_eq!(drilled.len(), vaults.len());
-    assert!(drilled.iter().all(|d| d.rehearsal.whole()), "each whole");
-    let coop_drill = drilled.iter().find(|d| d.vault == coop).expect("the coop's");
+    assert!(checks.whole(), "every vault whole: {checks:?}");
+    assert_eq!(checks.checked.len(), vaults.len(), "each vault's folder");
+    let read = |checks: &backups::Checks| checks.checked.iter().map(|(_, c)| c.read_bytes).sum::<u64>();
+    let all = read(&checks);
     let film_bytes = film_len + scan_len;
-    let r = &coop_drill.rehearsal;
-    let (vaults_back, files_rate) = (drilled.len(), rate(film_bytes, r.restore));
-    eprintln!("drill: {vaults_back} vaults whole in {took:?}; the coop's restored in {:?} ({files_rate:.1} MB/s of its \
-        files) and started in {:?}", r.restore, r.start);
-    let (older, _) = backups::drill(&snapshots, Some(day(0) + HOUR), drills.path()).await.expect("a drill of day 1");
-    let coop_older = older.iter().find(|d| d.vault == coop).expect("the coop's");
-    assert_eq!(coop_older.rehearsal.manifest.time, day(0), "the first day's snapshot");
-    assert!(coop_older.rehearsal.whole() && coop_older.rehearsal.files == 1, "the film, and no scan");
+    assert!(all > film_bytes, "every byte of the files read: {all}");
+    let (n, all_rate) = (vaults.len(), rate(all, took));
+    eprintln!("check, reading every blob: {n} vaults whole, {all} bytes in {took:?}, {all_rate:.1} MB/s");
+    let began = Instant::now();
+    let daily = backups::check_all(&snapshots, Reading::NONE).await.expect("a day's check");
+    let took = began.elapsed();
+    assert!(daily.whole(), "every vault whole: {daily:?}");
+    assert!(read(&daily) < all - film_bytes, "the listing and the edits, none of the files' bytes");
+    eprintln!("check, as on a day no file's blob is due: {} bytes in {took:?}", read(&daily));
+
+    // a rehearsal: the coop's newest snapshot in a node of its own, whole; and its first day's, without the scan
+    let folder = snapshots.folder(coop).await.expect("the coop's folder");
+    let (rehearsing, older_dir) = (Folder::new("rehearsal"), Folder::new("rehearsal-older"));
+    let (r, at_once) = backup::rehearse(&folder, day(2), rehearsing.path(), Options::local()).await.expect("rehearsed");
+    assert!(r.whole() && r.files == 2, "the coop's newest snapshot comes back whole: {r:?}");
+    let files_rate = rate(film_bytes, r.restore);
+    let (restored_in, started_in) = (r.restore, r.start);
+    eprintln!("rehearsal: the coop restored in {restored_in:?} ({files_rate:.1} MB/s), started in {started_in:?}");
+    at_once.shutdown().await.expect("it stops");
+    let (older, then) = backup::rehearse(&folder, day(0), older_dir.path(), Options::local()).await.expect("day 1's");
+    assert_eq!(older.manifest.time, day(0), "the first day's snapshot");
+    assert!(older.whole() && older.files == 1, "the film, and no scan");
+    then.shutdown().await.expect("it stops");
 
     // a disaster: the server's shelf lost; a server restored from the snapshots is the same device
     let fresh = Folder::new("fresh");
@@ -261,6 +278,13 @@ async fn the_server_comes_back_whole_from_its_snapshots() {
     for n in [carol, restarted] {
         n.shutdown().await.expect("the node shuts down");
     }
+
+    // a part of the film gone from the bucket: the day's check finds it by the listing alone, reading none of it
+    let newest = folder.newest().await.expect("its snapshots").expect("the newest");
+    let (piece, _) = *newest.blobs.iter().max_by_key(|(_, size)| *size).expect("the film's blobs");
+    objects.delete(&format!("vaults/{}/blobs/{}/000001", coop.to_hex(), piece.to_hex())).await.expect("deleted");
+    let broken = folder.check(Reading::NONE).await.expect("a check");
+    assert!(!broken.whole() && broken.missing == vec![piece], "the film's blob is missing: {broken:?}");
 
     // what the run wrote, deleted: on a real bucket, Object Lock keeps each version until its days are up
     let names = objects.list("").await.expect("the run's objects");

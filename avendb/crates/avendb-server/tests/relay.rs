@@ -672,6 +672,7 @@ fn the_server_is_configured_by_its_environment() {
     // a bucket of snapshots, at the server's bucket's endpoint with its key unless its own are said, under its seal
     let mut backed = vars.clone();
     backed.extend([("AVENDB_SNAPSHOTS", "maiacity-avendb-snapshots"), ("AVENDB_SNAPSHOTS_AT", "04:30")]);
+    backed.insert("AVENDB_SNAPSHOTS_READ_DAYS", "90");
     backed.insert("AVENDB_SNAPSHOTS_ACCESS_KEY", "a key of its own");
     let set = Config::from_vars(|k| backed.get(k).map(|v| v.to_string())).expect("a bucket of snapshots");
     let snapshots = set.snapshots.expect("its backups");
@@ -682,14 +683,17 @@ fn the_server_is_configured_by_its_environment() {
     assert_eq!((b.access_key.as_str(), b.secret_key.as_str()), ("a key of its own", "a secret key"));
     assert_eq!((*b.seal, snapshots.at), ([0xab; 32], 4 * 3600 + 30 * 60), "the server's seal, at half past four");
     assert_eq!(snapshots.dir, std::env::temp_dir().join("avendb-snapshots"));
-    let at_three = |k: &str| (k != "AVENDB_SNAPSHOTS_AT").then(|| backed.get(k).map(|v| v.to_string())).flatten();
-    assert_eq!(Config::from_vars(at_three).expect("by default").snapshots.expect("its backups").at, 3 * 3600);
-    for (k, v) in [("AVENDB_SNAPSHOTS", "maiacity-avendb"), ("AVENDB_SNAPSHOTS_AT", "4h"), ("AVENDB_BUCKET_SEAL", "")] {
+    assert_eq!(snapshots.read_days, 90, "each file's blobs read once in 90 days");
+    let by_default = |k: &str| (!k.starts_with("AVENDB_SNAPSHOTS_")).then(|| backed.get(k).map(|v| v.to_string()));
+    let by_default = Config::from_vars(|k| by_default(k).flatten()).expect("by default").snapshots.expect("backups");
+    assert_eq!((by_default.at, by_default.read_days), (3 * 3600, 30), "at three, each blob read once in 30 days");
+    let wrong = [("AVENDB_SNAPSHOTS", "maiacity-avendb"), ("AVENDB_SNAPSHOTS_AT", "4h"), ("AVENDB_BUCKET_SEAL", "")];
+    for (k, v) in wrong.into_iter().chain([("AVENDB_SNAPSHOTS_READ_DAYS", "monthly")]) {
         let var = |n: &str| match n == k {
             true => Some(v.to_string()).filter(|v| !v.is_empty()),
             false => backed.get(n).map(|v| v.to_string()),
         };
-        assert!(Config::from_vars(var).is_err(), "{k} as {v:?}: the server's own bucket, no time, or no seal");
+        assert!(Config::from_vars(var).is_err(), "{k} as {v:?}: the server's own bucket, no time, no seal or no days");
     }
     assert!(Config::from_vars(|k| (k == "AVENDB_SIGNUP").then(|| "maybe".to_string())).is_err());
     assert!(Config::from_vars(|k| (k == "AVENDB_GATE").then(|| "maybe".to_string())).is_err());

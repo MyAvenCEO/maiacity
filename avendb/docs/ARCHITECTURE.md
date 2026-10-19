@@ -1977,9 +1977,12 @@ of its own, `maiacity-avendb-snapshots` ([BACKUP.md](BACKUP.md), `spec/AvenDB/Ba
   keeps its own edits in. It copies only the keys and file blobs the folder lacks. Each snapshot is one manifest and
   one HashSeq root of every blob it names. At 64 packs, the next is made whole.
 - **Back as a node.** A restore copies a snapshot's blobs onto a new shelf and puts the first head of its packs, so a
-  node started there takes back every edit, each checked again. A drill checks each log against the manifest (B9) and
-  every file whole; a restore after a disaster brings every vault and the server's secret back on a new shelf, in a
-  new folder, never the live server's.
+  node started there takes back every edit, each checked again, each log as the manifest names it (B9); a restore
+  after a disaster brings every vault and the server's secret back on a new shelf, in a new folder, never the live
+  server's.
+- **Checked each day, restoring nothing.** After each backup the server lists the bucket for every blob its snapshots
+  name, gives the newest snapshot's edits back to a device in memory, each checked again (B9), and reads each file's
+  blobs on one day in 30, so terabytes are read through once a month.
 
 ## 15. The Lean model: what guards what
 

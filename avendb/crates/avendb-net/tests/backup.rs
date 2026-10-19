@@ -3,7 +3,8 @@
 //! new and the file it brings; every object sealed. Each snapshot rehearsed in a new node of its own comes back as it
 //! was, every edit and every file: Carol's Mac, which may read Welcome, syncs from the newest over iroh and reads both
 //! its files, and the oldest holds the photo and no scan. A snapshot made whole names one pack of all of it; retention
-//! lets go of the snapshots it drops and of the blobs only they named, and the snapshot it keeps still comes back.
+//! lets go of the snapshots it drops and of the blobs only they named, and the snapshot it keeps still comes back. A
+//! check from the bucket alone, restoring nothing, finds each snapshot whole, and then a blob gone and two changed.
 
 mod common;
 
@@ -16,10 +17,11 @@ use avendb::backup::{DAY, HOUR, Keep};
 use avendb::cast::*;
 use avendb::id::SignerId;
 use avendb::policy::Level;
-use avendb_net::backup::{self, Snapshots};
+use avendb_net::backup::{self, Reading, Snapshots};
 use avendb_net::{Node, Options, bucket, disk};
 use bytes::Bytes;
 use common::Folder;
+use iroh_blobs::Hash;
 use n0_future::{Stream, stream};
 
 /// The seal the bucket of snapshots is sealed under.
@@ -130,6 +132,18 @@ async fn a_vault_comes_back_from_each_snapshot_it_keeps() {
         assert!(sealed, "{name} is sealed: no header of avenDB's, no Welcome");
     }
 
+    // a check from the bucket alone, restoring nothing: each snapshot whole, every blob there, and every one read
+    let all = folder.check(Reading::ALL).await.expect("a check");
+    assert!(all.whole(), "every snapshot whole: {all:?}");
+    assert_eq!((all.snapshots, all.newest, all.edits), (3, Some(day(2)), busy.manifest.edits));
+    assert_eq!((all.read, all.read_bytes), (all.blobs, all.bytes), "every blob read");
+    // a day's check: the roots, packs and keys, and neither file's blob unless it is due
+    let daily = folder.check(Reading::NONE).await.expect("a check");
+    assert!(daily.whole() && daily.read == all.read - 2, "all but the photo and the scan: {daily:?}");
+    for (hash, _) in busy.manifest.named() {
+        assert_eq!((0..30).filter(|&d| Reading::at(30, day(d)).reads(&hash)).count(), 1, "read on one day of 30");
+    }
+
     // the busy day's snapshot in a new node: every edit, both files, and Carol's Mac reads them from it over iroh
     let (newest_dir, oldest_dir) = (Folder::new("rehearsal-newest"), Folder::new("rehearsal-oldest"));
     let (newest, restored) =
@@ -173,6 +187,33 @@ async fn a_vault_comes_back_from_each_snapshot_it_keeps() {
     let kept_dir = Folder::new("rehearsal-kept");
     let (kept, last) = backup::rehearse(&folder, day(3), kept_dir.path(), Options::local()).await.expect("a rehearsal");
     assert!(kept.whole() && kept.files == 2, "the one it keeps comes back whole");
+    assert!(folder.check(Reading::ALL).await.expect("a check").whole(), "and checks whole");
+
+    // a blob gone from the bucket, and two changed there: a check finds each, and the folder isn't whole
+    let at = bucket_dir.path().join("vaults").join(coop.to_hex());
+    let (photo, scan) = (Hash::from_bytes(photo_root.hash), Hash::from_bytes(scan_root.hash));
+    let pack = whole.manifest.packs[0].0;
+    let mut outboards = std::fs::read_dir(at.join("outboards")).expect("its outboards").flatten().map(|e| e.path());
+    let outboard = outboards.find(|p| p.to_string_lossy().contains(&photo.to_hex())).expect("the photo's");
+    std::fs::remove_file(outboard).expect("the photo's outboard deleted");
+    for changed in [scan, pack] {
+        let part = at.join("blobs").join(changed.to_hex()).join("000000");
+        let mut bytes = std::fs::read(&part).expect("its first part");
+        bytes[100] ^= 1;
+        std::fs::write(&part, bytes).expect("changed");
+    }
+    let broken = folder.check(Reading::ALL).await.expect("a check");
+    assert!(!broken.whole(), "not whole: {broken:?}");
+    assert_eq!(broken.missing, vec![photo], "the photo's blob, missing by the listing alone");
+    let mut corrupt = broken.corrupt.clone();
+    corrupt.sort();
+    let mut changed = vec![scan, pack];
+    changed.sort();
+    assert_eq!(corrupt, changed, "the scan and the pack, each read past the cache");
+    assert!(broken.edits < broken.expected, "the pack's edits not given back");
+    let daily = folder.check(Reading::NONE).await.expect("a check");
+    assert!(!daily.whole() && daily.missing == vec![photo], "the listing, every day");
+    assert_eq!(daily.corrupt, vec![pack], "and the newest snapshot's edits, every day");
     for n in [restored, older, last, carol, server] {
         n.shutdown().await.expect("the node shuts down");
     }

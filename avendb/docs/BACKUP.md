@@ -73,14 +73,35 @@ Each backup is followed by retention (`keeps`, B5), counted in UTC from 1970:
 Retention deletes the manifests it lets go of, then every blob no kept snapshot names. Every snapshot it keeps restores
 exactly as before (B4). The deleted versions stay 7 more days by Object Lock.
 
+## The daily check
+
+The snapshots will hold terabytes, so nothing restores them all to check them: that would read every byte each time,
+from Hetzner to wherever it runs, and need room for all of it. After each day's backup the server checks every folder
+from the bucket alone, restoring nothing (`Folder::check`):
+
+1. **The listing, every day.** Each kept snapshot's manifest and root read whole and name the same blobs, and the
+   bucket holds every blob they name, its outboard and each of its parts, by listing the bucket alone: a blob gone
+   shows the same day, and costs no read of its bytes.
+2. **The edits, every day.** The newest snapshot's packs and McEliece keys are read and given back to a new device in
+   memory, each edit checked again as a node checks what it takes back as it starts (`Lab::restore_backup`): it must
+   give back every edit the manifest holds, each log as the manifest names it (B9). This is the part of a restore that
+   could go wrong in ways a listing can't see, and it reads megabytes, not the files.
+3. **The files, a little each day.** Each blob of the files is read on one day in 30 (`AVENDB_SNAPSHOTS_READ_DAYS`),
+   by its hash, part by part past the cache, and checked against its BLAKE3 hash: every byte is read once a month, a
+   thirtieth of it each day.
+
+A folder that isn't whole is said as an error in the server's log, with what is missing or changed. A blob deleted by
+mistake shows in the next day's listing, while the bucket still keeps its version (Object Lock, 7 days). A full restore
+is rehearsed by the recovery test (below), on test data.
+
 ## When it runs
 
 | How | What it does |
 |---|---|
-| Each day at 03:00 UTC | The server backs up every vault it knows, then runs retention. |
+| Each day at 03:00 UTC | The server backs up every vault it knows, runs retention, then checks every folder. |
 | `docker kill -s USR1 maia-city-avendb` | The same, now (or as soon as the run under way ends). |
 | `avendb-server snapshots` | Lists each vault's snapshots, from the bucket alone. |
-| `avendb-server drill [--at <time>]` | Rehearses a restore of every vault, each into a new node of its own, from the bucket alone. Fails unless each comes back whole. |
+| `avendb-server check [--read-all]` | Checks every folder as the daily run does, or reading every blob. Fails unless each is whole. |
 | `avendb-server restore --into <folder> [--at <time>]` | After a disaster: restores every vault into a new, empty folder, with the server's device secret. It never touches the live server's shelf. |
 
 A time is seconds since 1970, or a day, `YYYY-MM-DD`, meaning the end of that day in UTC. Each vault then comes back as
@@ -93,6 +114,7 @@ The server's environment:
 | `AVENDB_SNAPSHOTS` | unset (no backups) | The bucket of snapshots. |
 | `AVENDB_SNAPSHOTS_ENDPOINT`, `_REGION`, `_ACCESS_KEY`, `_SECRET_KEY` | the server's bucket's | Where it is, and the key to it. |
 | `AVENDB_SNAPSHOTS_AT` | `03:00` | When each day the backup runs, in UTC. |
+| `AVENDB_SNAPSHOTS_READ_DAYS` | `30` | In how many days the check reads every blob of the files once; `0` reads none. |
 | `AVENDB_SNAPSHOTS_DIR` | `avendb-snapshots` in the temporary folder | Where uploads are staged. |
 
 The seal is always the server's (`AVENDB_BUCKET_SEAL`), so there is nothing new to keep safe. The server refuses a
@@ -100,8 +122,8 @@ bucket of snapshots that is its own bucket: the snapshots always live apart from
 
 ## Restoring
 
-- **A drill** (`rehearse`) restores a snapshot onto a new shelf and starts a node on it as a new device, so it never
-  stands in for the live server. It checks that the node took back every edit, each signature and chain checked again
+- **A rehearsal** (`rehearse`) restores a snapshot onto a new shelf and starts a node on it as a new device, so it
+  never stands in for the live server. It checks that the node took back every edit, each signature and chain checked again
   as at any start (`Lab::restore_backup`), that it holds every log as the manifest names it (B9), and every file
   whole.
 - **A restore after a disaster** (`restore_all`) puts every vault's snapshot onto one new shelf, in a new, empty
@@ -110,21 +132,20 @@ bucket of snapshots that is its own bucket: the snapshots always live apart from
   server's shelf, so it can't wipe or roll back what the live server holds by accident: switching the server over is
   a deliberate step of its own.
 - **Jumping back.** An entry already keeps every write, so one entry's old version is one click in the app. A snapshot
-  jumps the whole vault back: read it as it was in a drill, or restore it after a disaster. Rolling a live vault back
+  jumps the whole vault back: read it as it was in a rehearsal, or restore it after a disaster. Rolling a live vault back
   for everyone needs the owner's keys (the server is blind), so that is a later owner action in the app.
 
 ## Tests
 
 - `crates/avendb`: the snapshot, the plan by frontiers and retention, against `vectors/backups.json`.
-- `crates/avendb-net/tests/backup.rs`: three days of backups, each snapshot rehearsed in a node of its own, Carol's Mac
-  reading both files from the restored node over iroh, the oldest snapshot without what came after, a backup made
-  whole, and retention.
-- `crates/avendb-server/tests/backup.rs`, the full recovery test: every vault over three days, a drill, a restore as
-  the same device and a device reading the files from it, each step timed. It runs against the real test bucket
-  (`maiacity-avendb-snapshots-test`, hel1) from `.github/workflows/avendb-backups.yml`, under a prefix and a seal of
-  its own, with a film of two pieces (a gigabyte and 64 MiB); without that bucket, in a folder.
-- The same workflow drills every vault of the live bucket of snapshots on a GitHub runner each Monday, from the bucket
-  alone. It only reads.
+- `crates/avendb-net/tests/backup.rs`: three days of backups, the check, each snapshot rehearsed in a node of its
+  own, Carol's Mac reading both files from the restored node over iroh, the oldest snapshot without what came after, a
+  backup made whole, retention, and the check finding a blob gone and two changed.
+- `crates/avendb-server/tests/backup.rs`, the full recovery test: every vault over three days, the check, a rehearsal,
+  a restore as the same device and a device reading the files from it, and a part gone that the day's check finds by
+  the listing, each step timed. It runs against the real test bucket (`maiacity-avendb-snapshots-test`, hel1) from
+  `.github/workflows/avendb-backups.yml`, under a prefix and a seal of its own, with a film of two pieces (a gigabyte
+  and 64 MiB); without that bucket, in a folder. No live snapshot ever leaves Hetzner.
 
 ## Not in this build
 

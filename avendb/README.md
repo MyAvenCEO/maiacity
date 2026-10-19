@@ -291,9 +291,10 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
    `bucket` job makes it with Object Lock, every object version locked for 7 days, or checks the one there.
 7. **Its backups** ([docs/BACKUP.md](docs/BACKUP.md)): `avendb.yml` also writes `AVENDB_SNAPSHOTS`, the bucket of
    snapshots `maiacity-avendb-snapshots` beside it, which `avendb-backups.yml` makes with Object Lock. The server backs
-   up every vault into it each day at 03:00 UTC, and on `docker kill -s USR1 maia-city-avendb`; `avendb-server drill`
-   rehearses a restore of every vault from it, and `avendb-server restore --into <folder>` restores every vault into a
-   new folder after a disaster, for a server started there to run as the same device. Neither touches the live shelf.
+   up every vault into it each day at 03:00 UTC, and on `docker kill -s USR1 maia-city-avendb`, then checks every
+   folder from the bucket alone, each file's bytes once in 30 days; `avendb-server check` checks the same by hand, and
+   `avendb-server restore --into <folder>` restores every vault into a new folder after a disaster, for a server
+   started there to run as the same device. Neither touches the live shelf.
 
 Its shelf and its device's secret live in its bucket, or on the Hetzner volume where it keeps none, so a rebuilt server
 is still the same device, even with its folder lost; the database backups don't hold them. Losing them makes a new

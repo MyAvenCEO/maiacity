@@ -5,16 +5,15 @@ name: avenDB backups
 #   buckets  – make sure the bucket of snapshots (SNAPSHOTS, which the server backs up every vault into each day) and
 #              the test bucket (TEST_BUCKET) are there in hel1, beside the server's own bucket, with Object Lock
 #   recovery – the full recovery test (avendb-server's tests/backup.rs) against the test bucket: three days of backups,
-#              a drill of every vault, a restore after a disaster as the same device, and a device reading the files
-#              from the restored server, each step timed; each run under a prefix and a seal of its own
-#   drill    – each Monday, and by hand: every vault of the live bucket of snapshots rehearsed back on the runner from
-#              the bucket alone (`avendb-server drill`), which fails unless each comes back whole; it only reads
+#              the daily check of every vault, a rehearsal of the coop, a restore after a disaster as the same device,
+#              and a device reading the files from the restored server, each step timed; each run under a prefix and a
+#              seal of its own, on test data alone: no live snapshot ever leaves Hetzner
 #
 # Both buckets get Object Lock as they are made, as no bucket can get it later. Every object version in the bucket of
 # snapshots is locked in compliance mode for 7 days, so a snapshot retention lets go of, or anything deleted by
 # mistake or by a stolen key, stays 7 more days; the test bucket's for 1 day, and what a run leaves goes after 2. They
-# are made with the project's S3 keys (HETZNER_S3_*), as the server's bucket was, and the seal is the server's
-# (AVENDB_BUCKET_SEAL): there is nothing new to keep safe.
+# are made with the project's S3 keys (HETZNER_S3_*), as the server's bucket was; the test runs seal under a seal of
+# their own, so the server's seal (AVENDB_BUCKET_SEAL) never reaches a runner.
 on:
   pull_request:
     paths:
@@ -33,9 +32,6 @@ on:
       - 'avendb/crates/avendb-net/src/backup.rs'
       - 'avendb/crates/avendb-server/**'
       - '.github/workflows/avendb-backups.yml'
-  schedule:
-    # Mondays, after the server's 03:00 backup
-    - cron: '30 4 * * 1'
   workflow_dispatch:
 
 concurrency:
@@ -107,7 +103,6 @@ jobs:
   recovery:
     name: Full recovery test on the test bucket
     needs: buckets
-    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -116,7 +111,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: avendb
-      - name: Back up, drill and restore against the test bucket
+      - name: Back up, check, rehearse and restore against the test bucket
         working-directory: avendb
         env:
           AVENDB_TEST_BUCKET: ${{ env.TEST_BUCKET }}
@@ -125,32 +120,3 @@ jobs:
           AVENDB_TEST_BUCKET_ACCESS_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
           AVENDB_TEST_BUCKET_SECRET_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
         run: cargo test --locked -p avendb-server --test backup -- --nocapture
-
-  drill:
-    name: Drill every vault back from the live snapshots
-    needs: buckets
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: avendb
-      - name: Build the server
-        working-directory: avendb
-        run: cargo build --locked -p avendb-server
-      - name: Rehearse a restore of every vault, from the bucket alone
-        working-directory: avendb
-        env:
-          AVENDB_SNAPSHOTS: ${{ env.SNAPSHOTS }}
-          AVENDB_SNAPSHOTS_ENDPOINT: ${{ env.S3_ENDPOINT }}
-          AVENDB_SNAPSHOTS_REGION: ${{ env.S3_REGION }}
-          AVENDB_SNAPSHOTS_ACCESS_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
-          AVENDB_SNAPSHOTS_SECRET_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
-          AVENDB_BUCKET_SEAL: ${{ secrets.AVENDB_BUCKET_SEAL }}
-          NO_COLOR: '1'
-        run: |
-          target/debug/avendb-server snapshots | head -60
-          target/debug/avendb-server drill

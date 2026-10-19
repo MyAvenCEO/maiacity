@@ -90,8 +90,8 @@ pub struct Config {
     pub snapshots: Option<SnapshotsConfig>,
 }
 
-/// The server's backups (`backups`, `docs/BACKUP.md`): the bucket of snapshots, with a folder for each vault, and when
-/// each day it backs up every vault.
+/// The server's backups (`backups`, `docs/BACKUP.md`): the bucket of snapshots, with a folder for each vault, when
+/// each day it backs up every vault, and how much of it each day's check reads.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SnapshotsConfig {
     /// The bucket (`AVENDB_SNAPSHOTS`, its name), at `AVENDB_SNAPSHOTS_ENDPOINT` and `AVENDB_SNAPSHOTS_REGION`, with
@@ -103,6 +103,9 @@ pub struct SnapshotsConfig {
     /// The folder where what it puts in the bucket is staged and what it reads cached (`AVENDB_SNAPSHOTS_DIR`,
     /// `avendb-snapshots` in the system's temporary folder by default): not the server's own, which holds its shelf.
     pub dir: PathBuf,
+    /// In how many days the check after each day's backup reads every blob of the files once, a few each day
+    /// (`AVENDB_SNAPSHOTS_READ_DAYS`, 30 by default; 0 reads none, `avendb_net::backup::Reading`).
+    pub read_days: u64,
 }
 
 /// The bucket that is the server's shelf (blobs B3a), its folder only a cache of it.
@@ -196,7 +199,11 @@ fn snapshots_config(name: String, var: &impl Fn(&str) -> Option<String>) -> Resu
         None => 3 * 3600,
     };
     let dir = var("AVENDB_SNAPSHOTS_DIR").map_or_else(|| std::env::temp_dir().join("avendb-snapshots"), PathBuf::from);
-    Ok(SnapshotsConfig { bucket, at, dir })
+    let read_days = match var("AVENDB_SNAPSHOTS_READ_DAYS") {
+        Some(v) => v.trim().parse().with_context(|| format!("AVENDB_SNAPSHOTS_READ_DAYS: {v} is no number of days"))?,
+        None => 30,
+    };
+    Ok(SnapshotsConfig { bucket, at, dir, read_days })
 }
 
 /// The bucket named `name`, as `var` says the rest of it is: every part must be said.

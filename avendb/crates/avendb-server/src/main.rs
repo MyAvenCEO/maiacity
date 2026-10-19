@@ -3,16 +3,18 @@
 //!
 //! - `avendb-server`: runs the server; SIGUSR1 has it back up every vault now (`docker kill -s USR1 maia-city-avendb`);
 //! - `avendb-server snapshots`: lists each vault's snapshots;
-//! - `avendb-server drill [--at <time>]`: rehearses a restore of every vault, each into a node of its own, and fails
-//!   unless each comes back whole;
+//! - `avendb-server check [--read-all]`: checks every vault's folder as the daily run does (`backups::check_all`),
+//!   reading the files' blobs due today, or with `--read-all` every one, and fails unless each is whole;
 //! - `avendb-server restore --into <folder> [--at <time>]`: restores every vault into a new, empty folder, a shelf
 //!   for a server started on it to run as the same device; never into the live server's.
 //!
 //! A time is seconds since 1970, or a day, `YYYY-MM-DD`, to its end in UTC: each vault as its newest snapshot then.
+//! `snapshots` and `check` only read the bucket of snapshots, and `restore` writes only into its new folder.
 
 use std::process::ExitCode;
 
 use anyhow::{Context as _, Result, anyhow, bail};
+use avendb_net::backup::Reading;
 use avendb_server::backups::{self, time_said, when};
 use avendb_server::{Config, start};
 use tracing_subscriber::EnvFilter;
@@ -33,17 +35,34 @@ async fn main() -> Result<ExitCode> {
         }
         None => None,
     };
-    match args.first().map(String::as_str) {
+    match args.first() {
         None => serve(&config).await.map(|()| ExitCode::SUCCESS),
-        Some("snapshots") => list(&config).await.map(|()| ExitCode::SUCCESS),
-        Some("drill") => drill(&config, at).await,
-        Some("restore") => {
+        Some(command) => {
+            let done = by_hand(&config, command, &args, at).await;
+            std::fs::remove_dir_all(staging()).ok();
+            done
+        }
+    }
+}
+
+/// Runs `command`, said by hand with `args`, on the bucket of snapshots alone.
+async fn by_hand(config: &Config, command: &str, args: &[String], at: Option<u64>) -> Result<ExitCode> {
+    match command {
+        "snapshots" => list(config).await.map(|()| ExitCode::SUCCESS),
+        "check" => check(config, args.iter().any(|a| a == "--read-all")).await,
+        "restore" => {
             let into = args.iter().position(|a| a == "--into").and_then(|i| args.get(i + 1));
             let into = into.context("restore: --into <folder>, a new, empty folder, must be said")?;
-            restore(&config, at, std::path::Path::new(into)).await.map(|()| ExitCode::SUCCESS)
+            restore(config, at, std::path::Path::new(into)).await.map(|()| ExitCode::SUCCESS)
         }
-        Some(other) => bail!("{other}: avendb-server runs the server, or says snapshots, drill or restore"),
+        other => bail!("{other}: avendb-server runs the server, or says snapshots, check or restore"),
     }
+}
+
+/// Where a command run by hand stages what it reads of the bucket of snapshots: a folder of its own, as a shelf clears
+/// its folder's staging as it opens, and the running server's backups stage in theirs (`AVENDB_SNAPSHOTS_DIR`).
+fn staging() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("avendb-snapshots-by-hand-{}", std::process::id()))
 }
 
 /// Runs the server until it is told to stop.
@@ -81,9 +100,10 @@ async fn serve(config: &Config) -> Result<()> {
     running.shutdown().await
 }
 
-/// The bucket of snapshots `config` names.
+/// The bucket of snapshots `config` names, staging in a folder of this command's own (`staging`).
 fn snapshots(config: &Config) -> Result<avendb_net::backup::Snapshots> {
-    backups::snapshots(config.snapshots.as_ref().context("AVENDB_SNAPSHOTS: unsaid, so there are no snapshots")?)
+    let said = config.snapshots.as_ref().context("AVENDB_SNAPSHOTS: unsaid, so there are no snapshots")?;
+    backups::snapshots(&avendb_server::SnapshotsConfig { dir: staging(), ..said.clone() })
 }
 
 /// Lists each vault's snapshots, and what the newest holds.
@@ -102,23 +122,24 @@ async fn list(config: &Config) -> Result<()> {
     Ok(())
 }
 
-/// Rehearses a restore of every vault: fails unless each comes back whole.
-async fn drill(config: &Config, at: Option<u64>) -> Result<ExitCode> {
+/// Checks every vault's folder as the daily run does, or reading every blob: fails unless each is whole.
+async fn check(config: &Config, read_all: bool) -> Result<ExitCode> {
     let snapshots = snapshots(config)?;
-    let dir = std::env::temp_dir().join(format!("avendb-drill-{}", std::process::id()));
-    let (drilled, failed) = backups::drill(&snapshots, at, &dir).await?;
-    std::fs::remove_dir_all(&dir).ok();
-    let broken: Vec<_> = drilled.iter().filter(|d| !d.rehearsal.whole()).collect();
-    let (all, not) = (drilled.len(), broken.len());
-    println!("{all} vaults rehearsed, {} whole, {not} not whole, {} failed", all - not, failed.len());
-    for d in &broken {
-        println!("  not whole: vault {}: {:?}", d.vault.to_hex(), d.rehearsal);
+    let read_days = config.snapshots.as_ref().map_or(30, |s| s.read_days);
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
+    let reading = if read_all { Reading::ALL } else { Reading::at(read_days, now) };
+    let checks = backups::check_all(&snapshots, reading).await?;
+    let broken: Vec<_> = checks.checked.iter().filter(|(_, c)| !c.whole()).collect();
+    let (all, not) = (checks.checked.len(), broken.len());
+    let (failed, took) = (checks.failed.len(), checks.took);
+    println!("{all} vaults checked, {} whole, {not} not whole, {failed} failed, in {took:?}", all - not);
+    for (v, c) in &broken {
+        println!("  not whole: vault {}: {c:?}", v.to_hex());
     }
-    for (v, why) in &failed {
+    for (v, why) in &checks.failed {
         println!("  failed: vault {}: {why}", v.to_hex());
     }
-    let whole = broken.is_empty() && failed.is_empty() && !drilled.is_empty();
-    Ok(if whole { ExitCode::SUCCESS } else { ExitCode::FAILURE })
+    Ok(if checks.whole() { ExitCode::SUCCESS } else { ExitCode::FAILURE })
 }
 
 /// Restores every vault from the bucket of snapshots into folder `into`, never the live server's.

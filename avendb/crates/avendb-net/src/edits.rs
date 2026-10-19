@@ -419,6 +419,11 @@ pub(crate) fn pack_of<'a>(signed: impl IntoIterator<Item = &'a Signed>) -> Bytes
     out.into()
 }
 
+/// The edits of `pack`, a pack (`pack_of`), every one of which must decode whole.
+pub(crate) fn unpack(pack: &[u8]) -> Option<Vec<Signed>> {
+    edits_of(pack.strip_prefix(PACK)?)
+}
+
 /// Puts the first head on `shelf`, a new node's: of `packs` and the McEliece keys `keys`, each a blob the shelf holds.
 /// A node started on it takes back their edits and keys (`Edits::open`), each checked again: a restored snapshot.
 pub(crate) async fn put_first_head(shelf: &Shelf, packs: Vec<Blob>, keys: Vec<Key>) -> Result<()> {
