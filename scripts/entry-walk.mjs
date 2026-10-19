@@ -283,6 +283,8 @@ try {
 	await b.page.goto(`${base}/join/`, { waitUntil: 'domcontentloaded' });
 	check('without an invite, joining is closed', await waitText(b.page, 'invite only'));
 	await shot(b.page, '07-invite-only');
+	// the link differs from the page only after its `#`: from another page, so that it loads anew, as a link opens
+	await b.page.goto('about:blank');
 	await b.page.goto(link, { waitUntil: 'domcontentloaded' });
 	check('with the invite, the join page offers to sign up', await waitText(b.page, 'Join as a founder'));
 	await b.page.type('#name', 'Lena');
