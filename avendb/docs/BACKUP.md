@@ -57,7 +57,8 @@ vault's id, and every object is bound to its name: nothing opens in another vaul
 the folders are sealed apart, blobs are deduplicated inside a folder, never across folders.
 
 The bucket has Object Lock, in compliance mode for 7 days: every version of every object stays at least 7 days, even
-if a key is stolen. No reset of the server's shelf (`shelf::FLOOR`) touches the bucket of snapshots.
+if a key is stolen. Nothing the server does to its own shelf touches the bucket of snapshots, and nothing deletes in
+it but retention.
 
 ## Retention
 
@@ -80,7 +81,7 @@ exactly as before (B4). The deleted versions stay 7 more days by Object Lock.
 | `docker kill -s USR1 maia-city-avendb` | The same, now (or as soon as the run under way ends). |
 | `avendb-server snapshots` | Lists each vault's snapshots, from the bucket alone. |
 | `avendb-server drill [--at <time>]` | Rehearses a restore of every vault, each into a new node of its own, from the bucket alone. Fails unless each comes back whole. |
-| `avendb-server restore [--at <time>]` | After a disaster, with the server stopped: puts its shelf aside and restores every vault onto a new one, with its device secret. |
+| `avendb-server restore --into <folder> [--at <time>]` | After a disaster: restores every vault into a new, empty folder, with the server's device secret. It never touches the live server's shelf. |
 
 A time is seconds since 1970, or a day, `YYYY-MM-DD`, meaning the end of that day in UTC. Each vault then comes back as
 its newest snapshot at that time.
@@ -95,7 +96,7 @@ The server's environment:
 | `AVENDB_SNAPSHOTS_DIR` | `avendb-snapshots` in the temporary folder | Where uploads are staged. |
 
 The seal is always the server's (`AVENDB_BUCKET_SEAL`), so there is nothing new to keep safe. The server refuses a
-bucket of snapshots that is its own bucket, as it clears that one of everything but its shelf.
+bucket of snapshots that is its own bucket: the snapshots always live apart from what they back up.
 
 ## Restoring
 
@@ -103,9 +104,11 @@ bucket of snapshots that is its own bucket, as it clears that one of everything 
   stands in for the live server. It checks that the node took back every edit, each signature and chain checked again
   as at any start (`Lab::restore_backup`), that it holds every log as the manifest names it (B9), and every file
   whole.
-- **A restore after a disaster** (`restore_all`) puts every vault's snapshot onto one new shelf with the server's
-  device secret, so the server starts again as the same device. Its devices then bring it whatever came after the
-  snapshot, as they sync.
+- **A restore after a disaster** (`restore_all`) puts every vault's snapshot onto one new shelf, in a new, empty
+  folder, with the server's device secret. A server started on that folder (`AVENDB_DATA`, with no bucket) is the same
+  device. Its devices then bring it whatever came after the snapshot, as they sync. A restore never writes to the live
+  server's shelf, so it can't wipe or roll back what the live server holds by accident: switching the server over is
+  a deliberate step of its own.
 - **Jumping back.** An entry already keeps every write, so one entry's old version is one click in the app. A snapshot
   jumps the whole vault back: read it as it was in a drill, or restore it after a disaster. Rolling a live vault back
   for everyone needs the owner's keys (the server is blind), so that is a later owner action in the app.

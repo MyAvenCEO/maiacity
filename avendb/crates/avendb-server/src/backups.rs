@@ -4,8 +4,9 @@
 //! its device's secret there too. Each run says in the log what it did for each vault, and sums it up at its end.
 //!
 //! From the bucket alone, without a running server: `drill` rehearses a restore of every vault, each in a node of its
-//! own, and says whether each came back whole (B9); `restore` puts the server's shelf aside and restores every vault
-//! onto a new one, with its device's secret, so that the server, started again, is the same device, as it was then.
+//! own, and says whether each came back whole (B9); `restore` restores every vault into a new folder, with the
+//! server's device's secret, so that a server started there is the same device, as it was then. Nothing here ever
+//! touches the live server's shelf.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -15,11 +16,10 @@ use anyhow::{Context as _, Result, bail};
 use avendb::backup::{DAY, Keep};
 use avendb::id::VaultId;
 use avendb_net::backup::{self, Snapshots};
-use avendb_net::bucket::Sealed;
 use avendb_net::{Node, Options, Shelf, server};
 use tokio::sync::Notify;
 
-use crate::{Abort, Config, SnapshotsConfig, bucket};
+use crate::{Abort, SnapshotsConfig, bucket};
 
 /// The bucket of snapshots `config` names, staging in its folder.
 pub fn snapshots(config: &SnapshotsConfig) -> Result<Snapshots> {
@@ -261,32 +261,20 @@ pub async fn drill(snapshots: &Snapshots, at: Option<u64>, dir: &Path) -> Result
     Ok((drilled, failed))
 }
 
-/// Restores the server `config` says after a disaster, which must not be running: its shelf, its bucket's or its
-/// folder's, put aside, and on a new one every vault of `snapshots`, each as its newest snapshot taken at `at` or
-/// before, or its newest with `at` unsaid, and the server's device's secret kept with them. Started again, the server
-/// is the same device, holding every vault as its snapshot has it; its devices bring it what came after. The vaults
-/// restored.
-pub async fn restore(config: &Config, snapshots: &Snapshots, at: Option<u64>) -> Result<Vec<Restored>> {
+/// Restores every vault of `snapshots` into folder `into`, which must be empty or not there yet, after a disaster: a
+/// server's shelf of every vault, each as its newest snapshot taken at `at` or before, or its newest with `at` unsaid,
+/// and the server's device's secret kept with them. It never touches the live server's shelf: a server started on
+/// `into` (`AVENDB_DATA`, with no bucket) is the same device, holding every vault as its snapshot has it, and its
+/// devices bring it what came after. The vaults restored.
+pub async fn restore(snapshots: &Snapshots, at: Option<u64>, into: &Path) -> Result<Vec<Restored>> {
+    // a folder's shelf clears it of everything else (`disk::open`): only an empty one, or none yet
+    if std::fs::read_dir(into).is_ok_and(|mut entries| entries.next().is_some()) {
+        bail!("{} isn't empty: a restore goes into a folder of its own", into.display());
+    }
     let Some(secret) = snapshots.secret().await? else {
         bail!("the bucket of snapshots holds no secret of the server's: a restore would make it another device");
     };
-    let shelf = match &config.bucket {
-        Some(b) => {
-            let sealed = Sealed::new(bucket::S3::new(b)?, &b.seal);
-            let n = avendb_net::bucket::aside(&sealed).await?;
-            tracing::info!("avenDB restore: the server's shelf put aside, generation {n} anew in bucket {}", b.name);
-            avendb_net::bucket::shelf(sealed, &config.data, config.cache).await?
-        }
-        None => {
-            let n = avendb_net::disk::aside(&config.data)?;
-            let data = config.data.display();
-            tracing::info!("avenDB restore: the server's shelf put aside, generation {n} anew in {data}");
-            avendb_net::disk::open(&config.data)?
-        }
-    };
-    if !shelf.names("").await?.is_empty() {
-        bail!("the server's new shelf isn't empty");
-    }
+    let shelf = avendb_net::disk::open(into)?;
     let restored = backup::restore_all(snapshots, at, &shelf).await?;
     shelf.put(server::SECRET, bytes::Bytes::copy_from_slice(&secret[..])).await.context("the server's secret")?;
     Ok(restored)

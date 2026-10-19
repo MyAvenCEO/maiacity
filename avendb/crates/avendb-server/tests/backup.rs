@@ -17,7 +17,6 @@ use std::collections::hash_map::RandomState;
 use std::future::Future;
 use std::hash::{BuildHasher as _, Hasher as _};
 use std::io;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -30,14 +29,11 @@ use avendb_net::backup::Snapshots;
 use avendb_net::bucket::{self, Bucket, Fut};
 use avendb_net::{Node, Options, disk, server};
 use avendb_server::backups::{self, Run};
-use avendb_server::{BucketConfig, Config};
+use avendb_server::BucketConfig;
 use bytes::Bytes;
 use common::Folder;
 use n0_future::{Stream, stream};
 use zeroize::Zeroizing;
-
-/// A socket of the system's choosing on this machine.
-const LOOPBACK: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST), 0);
 
 /// A node for device `d`, split off `w`'s Lab with the keys of `with`, its randomness drawn from `seed`.
 async fn node(w: &mut World, d: SignerId, with: &[SignerId], seed: u8, opts: Options) -> Node {
@@ -230,23 +226,11 @@ async fn the_server_comes_back_whole_from_its_snapshots() {
     mac.shutdown().await.expect("and Alice's Mac goes away");
     drop((server, mac));
     let again = Folder::new("restored");
-    let config = Config {
-        data: again.path().to_path_buf(),
-        bind: LOOPBACK,
-        relay_bind: LOOPBACK,
-        feed_bind: LOOPBACK,
-        relay_url: None,
-        public_addr: None,
-        signup: false,
-        gate: false,
-        bucket: None,
-        cache: 0,
-        snapshots: None,
-    };
     let began = Instant::now();
-    let restored = backups::restore(&config, &snapshots, None).await.expect("a restore");
+    let restored = backups::restore(&snapshots, None, again.path()).await.expect("a restore");
     let took = began.elapsed();
     assert_eq!(restored.len(), vaults.len(), "every vault");
+    assert!(backups::restore(&snapshots, None, again.path()).await.is_err(), "never into a folder that isn't empty");
     let shelf = disk::open(again.path()).expect("its shelf");
     let restarted = server::open(shelf, Options::local()).await.expect("started");
     eprintln!("restore: {} vaults in {took:?}, started in {:?}", restored.len(), began.elapsed() - took);

@@ -5,8 +5,8 @@
 //! - `avendb-server snapshots`: lists each vault's snapshots;
 //! - `avendb-server drill [--at <time>]`: rehearses a restore of every vault, each into a node of its own, and fails
 //!   unless each comes back whole;
-//! - `avendb-server restore [--at <time>]`: with the server stopped, puts its shelf aside and restores every vault onto
-//!   a new one, as the server, the same device.
+//! - `avendb-server restore --into <folder> [--at <time>]`: restores every vault into a new, empty folder, a shelf
+//!   for a server started on it to run as the same device; never into the live server's.
 //!
 //! A time is seconds since 1970, or a day, `YYYY-MM-DD`, to its end in UTC: each vault as its newest snapshot then.
 
@@ -37,7 +37,11 @@ async fn main() -> Result<ExitCode> {
         None => serve(&config).await.map(|()| ExitCode::SUCCESS),
         Some("snapshots") => list(&config).await.map(|()| ExitCode::SUCCESS),
         Some("drill") => drill(&config, at).await,
-        Some("restore") => restore(&config, at).await.map(|()| ExitCode::SUCCESS),
+        Some("restore") => {
+            let into = args.iter().position(|a| a == "--into").and_then(|i| args.get(i + 1));
+            let into = into.context("restore: --into <folder>, a new, empty folder, must be said")?;
+            restore(&config, at, std::path::Path::new(into)).await.map(|()| ExitCode::SUCCESS)
+        }
         Some(other) => bail!("{other}: avendb-server runs the server, or says snapshots, drill or restore"),
     }
 }
@@ -117,14 +121,19 @@ async fn drill(config: &Config, at: Option<u64>) -> Result<ExitCode> {
     Ok(if whole { ExitCode::SUCCESS } else { ExitCode::FAILURE })
 }
 
-/// Restores the server from the bucket of snapshots, which must not be running.
-async fn restore(config: &Config, at: Option<u64>) -> Result<()> {
-    tracing::warn!("avenDB restore: the server must be stopped; its shelf is put aside, not deleted");
-    let restored = backups::restore(config, &snapshots(config)?, at).await?;
+/// Restores every vault from the bucket of snapshots into folder `into`, never the live server's.
+async fn restore(config: &Config, at: Option<u64>, into: &std::path::Path) -> Result<()> {
+    let real = |p: &std::path::Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    if real(into).starts_with(real(&config.data)) {
+        bail!("{} is the live server's folder: a restore goes into a new one", into.display());
+    }
+    let restored = backups::restore(&snapshots(config)?, at, into).await?;
     for (v, m) in &restored {
         println!("vault {}: the snapshot of {} ({} edits, {} files)", v.to_hex(), when(m.time), m.edits, m.files.len());
     }
-    println!("{} vaults restored: start the server again", restored.len());
+    let shown = into.display();
+    println!("{} vaults restored into {shown}", restored.len());
+    println!("a server started with AVENDB_DATA={shown} and no AVENDB_BUCKET runs on them, as the same device");
     Ok(())
 }
 

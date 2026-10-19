@@ -3,7 +3,7 @@
 //! (`shelf`, `bucket::shelf_at`): blobs by their BLAKE3 hash with their outboards, as iroh-blobs keeps them, and named
 //! objects, each put once. Each folder is sealed under a key of its own, derived from the seal the server is given and
 //! the vault, and every object is bound to its name, so nothing opens in another vault's folder or under another
-//! name. No reset clears the bucket: snapshots of an older generation stay until retention lets them go. In a folder:
+//! name. Nothing deletes in the bucket but retention (`Folder::retain`). In a folder:
 //!
 //! - packs of edits, each a blob, in the very format a node keeps its own edits in (`edits`), so a restored snapshot's
 //!   packs are its node's own;

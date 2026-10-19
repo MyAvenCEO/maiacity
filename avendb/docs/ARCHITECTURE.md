@@ -1978,7 +1978,8 @@ of its own, `maiacity-avendb-snapshots` ([BACKUP.md](BACKUP.md), `spec/AvenDB/Ba
   one HashSeq root of every blob it names. At 64 packs, the next is made whole.
 - **Back as a node.** A restore copies a snapshot's blobs onto a new shelf and puts the first head of its packs, so a
   node started there takes back every edit, each checked again. A drill checks each log against the manifest (B9) and
-  every file whole; a restore after a disaster brings every vault and the server's secret back on a new shelf.
+  every file whole; a restore after a disaster brings every vault and the server's secret back on a new shelf, in a
+  new folder, never the live server's.
 
 ## 15. The Lean model: what guards what
 

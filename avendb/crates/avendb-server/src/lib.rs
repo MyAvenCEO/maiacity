@@ -101,8 +101,7 @@ pub struct SnapshotsConfig {
     /// When each day it backs up every vault (`AVENDB_SNAPSHOTS_AT`, `03:00` by default), in seconds into the day, UTC.
     pub at: u64,
     /// The folder where what it puts in the bucket is staged and what it reads cached (`AVENDB_SNAPSHOTS_DIR`,
-    /// `avendb-snapshots` in the system's temporary folder by default): not the server's own, which it clears of all
-    /// but its shelf as it starts.
+    /// `avendb-snapshots` in the system's temporary folder by default): not the server's own, which holds its shelf.
     pub dir: PathBuf,
 }
 
@@ -172,12 +171,12 @@ impl Config {
         .and_then(Config::checked)
     }
 
-    /// It, if its buckets are two: the server clears its own of all but its shelf (`avendb_net::bucket::clear`).
+    /// It, if its buckets are two: the snapshots live apart from what they back up.
     fn checked(self) -> Result<Config> {
         if let (Some(b), Some(s)) = (&self.bucket, &self.snapshots)
             && (b.name == s.bucket.name && b.endpoint == s.bucket.endpoint)
         {
-            bail!("AVENDB_SNAPSHOTS: {} is the server's own bucket, which it clears of all but its shelf", b.name);
+            bail!("AVENDB_SNAPSHOTS: {} is the server's own bucket; snapshots go into a bucket of their own", b.name);
         }
         Ok(self)
     }
