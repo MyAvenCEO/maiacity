@@ -48,7 +48,7 @@ const loads = new Map();
  * @param {string} ref @param {number} detail
  */
 function built(ref, detail) {
-	const label = detail < 1 ? `${ref}?detail=${detail}` : ref;
+	const label = labelOf(ref, detail);
 	if (!loads.has(label))
 		loads.set(
 			label,
@@ -58,9 +58,14 @@ function built(ref, detail) {
 					console.warn(`a crowd's ${ref} at ${detail} was not built: ${e?.message ?? e}`);
 					return null;
 				})
+				.finally(() => done.add(label))
 		);
 	return loads.get(label);
 }
+/** a build's name: its ref at a detail @param {string} ref @param {number} detail */
+const labelOf = (ref, detail) => (detail < 1 ? `${ref}?detail=${detail}` : ref);
+/** the builds here (or failed): what `nearReady` asks without waiting */
+const done = new Set();
 
 /** every crowd made, held weakly (a dome's crowds go with it): what `wantNear` asks */
 const crowds = new Set();
@@ -71,11 +76,27 @@ const crowds = new Set();
  * @param {{ x: number, y?: number, z: number, frustum?: { containsPoint(p: { x: number, y: number, z: number }): boolean } | null }[]} points
  */
 export function wantNear(points) {
+	const labels = needed(points, true);
+	return Promise.all(labels.map((l) => loads.get(l))).then(() => undefined);
+}
+/**
+ * Whether every build the actors these views will see need is here (or failed), asking nothing: a world that holds a
+ * shot only once its actors are built says so with it (the cut then never waits for one).
+ * @param {Parameters<typeof wantNear>[0]} points
+ */
+export function nearReady(points) {
+	return needed(points, false).every((l) => done.has(l) || !loads.has(l));
+}
+/** the builds the actors round `points` need, asked for when `ask` @param {Parameters<typeof wantNear>[0]} points @param {boolean} ask */
+function needed(points, ask) {
+	/** @type {string[]} */
+	const out = [];
 	for (const ref of crowds) {
 		const c = ref.deref();
-		if (c) c.want(points);
+		if (c) out.push(...c.want(points, ask));
 		else crowds.delete(ref);
 	}
+	return out;
 }
 
 /** every build a crowd asked for, here (or failed) */
@@ -187,15 +208,29 @@ export function crowd(refs, counts, o) {
 		object,
 		/**
 		 * The near builds of the coats with an actor within `near` (and a margin, they move) of any of these points,
-		 * asked for (`wantNear`).
-		 * @param {{ x: number, z: number }[]} points
+		 * asked for when `ask` (`wantNear`); answers the builds they need.
+		 * @param {{ x: number, y?: number, z: number, frustum?: any }[]} points @param {boolean} [ask]
 		 */
-		want(points) {
+		want(points, ask = true) {
 			const r2 = (near * 1.5) ** 2, s2 = seen * seen;
+			const farOf = counts.map(() => false), nearOf = counts.map(() => false);
 			for (const en of last) {
-				if (!askedFar[en.coat] && points.some((pt) => (pt.x - en.x) ** 2 + ((pt.y ?? en.y) - en.y) ** 2 + (pt.z - en.z) ** 2 < s2 && (!pt.frustum || pt.frustum.containsPoint(en)))) askFar(en.coat);
-				if (!asked[en.coat] && points.some((pt) => (pt.x - en.x) ** 2 + (pt.z - en.z) ** 2 < r2)) askNear(en.coat);
+				if (!farOf[en.coat] && points.some((pt) => (pt.x - en.x) ** 2 + ((pt.y ?? en.y) - en.y) ** 2 + (pt.z - en.z) ** 2 < s2 && (!pt.frustum || pt.frustum.containsPoint(en)))) farOf[en.coat] = true;
+				if (!nearOf[en.coat] && points.some((pt) => (pt.x - en.x) ** 2 + (pt.z - en.z) ** 2 < r2)) nearOf[en.coat] = true;
 			}
+			/** @type {string[]} */
+			const labels = [];
+			refs.forEach((ref, c) => {
+				if (farOf[c] && !o.farShape) {
+					if (ask) askFar(c);
+					labels.push(labelOf(ref, detail));
+				}
+				if (nearOf[c]) {
+					if (ask) askNear(c);
+					labels.push(labelOf(ref, 1));
+				}
+			});
+			return labels;
 		},
 		/** each coat's clips, by name, once its near build is here: (t, motion) → pose */
 		clips,
