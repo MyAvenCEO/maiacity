@@ -103,6 +103,28 @@ describe('templates put values in as text', () => {
 		div.append(render(document, body, { rows: [{ id: 3, name: 'Ada' }] }));
 		expect(div.innerHTML).toBe('<button data-value="3" data-event="select" type="button">Ada</button><b>some</b>');
 	});
+	test("a value the state fills into an attribute is held to the sanitizer's rules again", () => {
+		const body = tpl('<div style="{{css}}" title="{{t}}" class="c {{k}}"><svg viewBox="0 0 1 1"><rect fill="{{paint}}"></rect><rect fill="{{ok}}"></rect></svg><img src="data:image/png;base64,{{b64}}" alt="{{alt}}"><maia-card label="{{label}}" note="{{t}}"></maia-card><span data-x="{{x}}">s</span></div>');
+		sanitize(body);
+		const state = {
+			css: 'color:red;background:url(https://evil.example/x)',
+			t: 'javascript:alert(1)',
+			k: 'on',
+			paint: 'url(https://evil.example/x)',
+			ok: 'url(#g)',
+			b64: 'AA==',
+			alt: 'a picture',
+			label: 'Domes',
+			x: 'data:text/html,<script>alert(1)</script>'
+		};
+		const div = document.createElement('div');
+		div.append(render(document, body, state));
+		const out = div.innerHTML;
+		expect(problems(out)).toEqual([]);
+		for (const s of ['style="color:red;background:none"', 'class="c on"', 'fill="url(#g)"', 'src="data:image/png;base64,AA=="', 'alt="a picture"', 'label="Domes"']) expect(out).toContain(s);
+		for (const s of ['title=', 'note=', 'data-x=', 'evil']) expect(out).not.toContain(s);
+		expect(div.querySelectorAll('rect')[0].hasAttribute('fill')).toBe(false);
+	});
 	test('an event: a button names it, a range hands its number', () => {
 		const body = tpl('<button data-event="dome" data-value="&quot;Small&quot;"><span>Small</span></button><input type="range" data-event="people" value="24">');
 		expect(eventOf(body.querySelector('span'), 'click')).toEqual({ name: 'dome', value: 'Small' });

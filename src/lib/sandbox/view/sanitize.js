@@ -114,6 +114,16 @@ function allowed(el, name, value, svg) {
 }
 
 /**
+ * Attribute `name` of element `el` with value `value`, as the sanitizer lets it stay: the value (CSS cleaned), or null
+ * where it may not stay. How a template (./template.js) holds a value it filled from the state to the rules again.
+ * @param {Element} el @param {string} name @param {string} value
+ */
+export function cleanAttr(el, name, value) {
+	const keep = allowed(el, name, value, el.namespaceURI === SVG_NS);
+	return !keep ? null : keep === 'style' ? cleanCss(value) : value;
+}
+
+/**
  * `root`'s children made safe, in place: every element and attribute outside the lists dropped (an input of a kind
  * not listed is dropped, a button that isn't type=button becomes one). Elements are adopted as they are, so their
  * order and text stay.
