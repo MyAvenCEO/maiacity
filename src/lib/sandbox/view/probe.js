@@ -12,7 +12,9 @@
  *   (`HTML_TRIES`): what comes of those only the canary can tell, so each aims at its own address there.
  * - `spinView()`: a draw script that never yields, which the engine must stop.
  * - `burnView()`: a draw script that works without end in bursts, answering every ping between them and whatever else
- *   it hears, which its budget of work (./watch.js) must stop.
+ *   it hears, which its budget of work (./watch.js) must stop. It names view engine 2, from before the budget, as code
+ *   that would step around a wall would: it runs on the floor all the same (../engines.js `engineFor`).
+ * - `unknownEngineView()`: a view made for a view engine that was never frozen, which must not start.
  * - `heavyView()`: a draw script whose every animation frame holds its worker 300 ms, which its budget of work must
  *   slow down, never stop.
  * - `logicViews()`: a view's logic that never returns and one that eats its memory, which QuickJS must stop.
@@ -312,7 +314,8 @@ export const spinView = () => ({ id: 'probe-spin', title: 'A script that never y
 /**
  * A draw script that works without end, in bursts of 400 ms with a break after each, so its worker answers every ping
  * (the engine's four seconds never see it). It answers at once whatever it hears on any port it can find, and sends
- * numbers of its own ahead, as answers to asks not made yet. Its budget of work must stop it all the same.
+ * numbers of its own ahead, as answers to asks not made yet; and it names view engine 2, which had no budget. Its
+ * budget of work must stop it all the same.
  */
 const BURN = `
 'use strict';
@@ -338,7 +341,7 @@ const busy = (ms) => {
 };
 setInterval(() => busy(400), 0);
 `;
-export const burnView = () => ({ id: 'probe-burn', title: 'A script that works without end, in bursts', kind: 'html', spec: { html: `<p>This script works in bursts, a break after each, and answers whatever it hears.</p><script>${BURN}</script>`, height: 160 } });
+export const burnView = () => ({ id: 'probe-burn', title: 'A script that works without end, in bursts', kind: 'html', engine: 2, spec: { html: `<p>This script works in bursts, a break after each, and answers whatever it hears.</p><script>${BURN}</script>`, height: 160 } });
 
 /**
  * A draw script whose every animation frame holds its worker 300 ms, as a scene a slow graphics card can't keep up
@@ -367,6 +370,10 @@ function draw() {
 requestAnimationFrame(draw);
 `;
 export const heavyView = () => ({ id: 'probe-heavy', title: 'A scene too heavy for the device', kind: 'html', spec: { html: `<p>Each of this script’s frames holds its worker 300 ms.</p><script>${HEAVY_SCRIPT}</script>`, height: 160 } });
+
+/** a view made for a view engine that was never frozen: no page has it, so it must not start */
+export const UNKNOWN_ENGINE = 99;
+export const unknownEngineView = () => ({ id: 'probe-engine', title: 'A view made for an engine that does not exist', kind: 'html', engine: UNKNOWN_ENGINE, spec: { html: '<p>This view names view engine 99.</p>', height: 80 } });
 
 /** a view's logic that never returns, and one that eats its memory: QuickJS must stop both */
 export const logicViews = () => [

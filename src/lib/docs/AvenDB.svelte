@@ -1801,7 +1801,11 @@
 			<p class="prose-col">
 				The engine that runs the code is a file we froze, one per version, served from our own site. The page checks its
 				BLAKE3 hash before it starts it, and nothing comes from a CDN. A new engine is a new version beside the old ones,
-				and pages run the latest of each kind. A call that runs past its 10 seconds in the logic box ends with the frame
+				and every old one stays loadable. Code runs on the version it names, so a new engine never changes what older
+				code does: a view or logic on the engine its entry names, a recipe on the box engine its card names. A view or
+				logic never runs below its kind’s floor, though. A version that closes a hole raises the floor, so code that
+				names an older engine still gets every wall. The floor is view engine 4 and logic engine 1, so the views the
+				vault holds, written for an older view engine, run on 4. Code that names no engine runs on the floor. A call that runs past its 10 seconds in the logic box ends with the frame
 				and its worker removed. In the asset box a recipe dies alone: a build that runs past its 20 seconds, or a recipe
 				that crashes, ends that recipe’s worker only. The other recipes in the box go on building, and the next build of
 				that recipe starts in a new worker.
@@ -1869,13 +1873,21 @@
 				the checker: the box holds whatever it misses.
 			</p>
 			<p class="prose-col">
+				What an entry declares is held where it runs. A view gets only the libraries its manifest names: an import of
+				any other fails in its worker. A recipe is held to its manifest and its contract before it builds. Every module
+				its file requires must be one its manifest names and its engine has. Every check its contract names must be one
+				the page runs on every build anyway. Its file and its build stay within the bytes and the time its contract
+				gives, where those are less than the box’s own. Otherwise it is refused.
+			</p>
+			<p class="prose-col">
 				The kernel, which is the boxes, the engines, the checker, the render core and the Markdown engine, changes only
 				with its tests green. A gate runs them on every pull request and before every deploy, and the deploy stops if they fail. It also runs
 				two probes in headless Chromium: code made to do harm tries every way out of the asset box and of a view, through
 				the network, storage, the page, its links and its markup, aiming at a canary server that hears anything that gets
 				out. Code that never stops, that works in bursts without end, or that eats its memory must be stopped, and a
 				recipe that crashes or never stops must be stopped alone, with the other recipes still building. A scene too
-				heavy for the device must slow down and go on.
+				heavy for the device must slow down and go on. A script that names a view engine from before the budget must be
+				held to it all the same, and a view made for an engine no page has must not start.
 			</p>
 			<h3>Where it runs today</h3>
 			<p class="prose-col">
@@ -1918,8 +1930,11 @@
 					to 20 seconds a build, but work its worker goes on with between builds is not counted.
 				</li>
 				<li>
-					<b>What code declares.</b> An entry’s manifest and contract aren’t enforced, and its engine version isn’t
-					pinned: a view or logic runs on the latest engine of its kind.
+					<b>What code declares.</b> The rest of a manifest (kit, presets, controls, messages, events, hooks and ops)
+					and a contract’s memory and ops are not read: each host holds every entry to its own fixed lists and limits
+					instead, which nothing an entry declares can widen. A recipe that computes a module’s name reaches any of
+					its engine’s modules. A recipe made for an older box engine is still refused rather than run there, and a
+					function runs on the logic floor whatever engine it names.
 				</li>
 				<li>
 					<b>What a function makes.</b> A function may make entries of any type in its vault, flows and functions among

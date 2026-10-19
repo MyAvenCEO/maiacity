@@ -402,7 +402,7 @@
 				const textValues = c.values && Object.fromEntries(Object.entries(c.values).map(([k, v]) => [k, String(v)]));
 				const code = await recipeAt(c.hash).catch(() => null);
 				forStage(got.obj);
-				const h = heroOf(got, { start: code ? runner(liveBoxOf(), code, textValues) : undefined });
+				const h = heroOf(got, { start: code ? runner(liveBoxOf(c.engine.v), code, textValues) : undefined });
 				if (mine !== asked) return void letGo(h);
 				walkOut?.();
 				const was = hero;

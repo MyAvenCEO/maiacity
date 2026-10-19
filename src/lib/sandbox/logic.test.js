@@ -111,4 +111,10 @@ describe('the host, outside a page: the core in the process', () => {
 		expect(a.x).toBe(1);
 		await p.end();
 	});
+	test('code runs on the logic engine it names, or the floor; one naming an engine not frozen runs nowhere (H4)', async () => {
+		const run = (engine) => runOnce({ code: 'export const run = (x) => x.n + 1;', kind: 'call', name: 'run', json: '{"n":1}', engine });
+		for (const engine of [undefined, 1]) expect(await run(engine)).toEqual({ exports: ['run'], out: '2' });
+		expect(await run(99)).toEqual({ exports: [], error: 'it is made for logic engine 99, which this page does not have' });
+		await expect(load([{ code: 'export const init = (d) => d;' }], { engine: 99 })).rejects.toThrow(/logic engine 99/);
+	});
 });
