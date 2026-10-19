@@ -39,7 +39,7 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 use std::net::SocketAddr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result};
@@ -56,6 +56,7 @@ use hyper::{Method, Request, Response, StatusCode};
 use hyper_util::rt::{TokioIo, TokioTimer};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
+use tokio::sync::Mutex;
 
 use crate::Abort;
 
@@ -107,7 +108,7 @@ const FRESH: Duration = Duration::from_secs(5);
 /// The most posts the feed holds, the newest.
 const MOST: usize = 200;
 
-/// What the server last worked out of a feed: when, and what.
+/// What the server last worked out of a feed: when, and what. Held while it is worked out anew (`fresh_or`).
 type Kept<T> = Arc<Mutex<Option<(Instant, T)>>>;
 
 /// What the server last worked out of each: the feed's JSON, the entries everyone may read (`Listed`), and the site's
@@ -226,14 +227,17 @@ fn by_root(at: &str) -> Option<(&str, &str)> {
     at.split_once(OF_ROOT).filter(|(_, root)| !root.contains('/'))
 }
 
-/// What `kept` holds, if the server worked it out a moment ago (`FRESH`), else what `work` works out anew, kept.
+/// What `kept` holds, if the server worked it out a moment ago (`FRESH`), else what `work` works out anew, kept. One
+/// works it out at a time, holding `kept`, and those asking meanwhile wait and take what it worked out: a page that
+/// asks for a world's hundred files at once had the server work out every entry everyone may read a hundred times
+/// over at once, and it stopped answering (2026-10-19).
 async fn fresh_or<T: Clone>(kept: &Kept<T>, work: impl Future<Output = T>) -> T {
-    let fresh = kept.lock().expect("the feed").as_ref().filter(|(at, _)| at.elapsed() < FRESH).map(|k| k.1.clone());
-    if let Some(t) = fresh {
-        return t;
+    let mut held = kept.lock().await;
+    if let Some((_, t)) = held.as_ref().filter(|(at, _)| at.elapsed() < FRESH) {
+        return t.clone();
     }
     let t = work.await;
-    *kept.lock().expect("the feed") = Some((Instant::now(), t.clone()));
+    *held = Some((Instant::now(), t.clone()));
     t
 }
 
@@ -637,6 +641,31 @@ fn plain(status: StatusCode, why: &'static str) -> Response<Full<Bytes>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[tokio::test]
+    async fn a_feed_asked_many_times_at_once_is_worked_out_once() {
+        let kept: Kept<usize> = Kept::default();
+        let worked = Arc::new(AtomicUsize::new(0));
+        let ask = || {
+            let (kept, worked) = (kept.clone(), worked.clone());
+            tokio::spawn(async move {
+                let work = async {
+                    tokio::time::sleep(Duration::from_millis(50)).await;
+                    worked.fetch_add(1, Ordering::SeqCst) + 1
+                };
+                fresh_or(&kept, work).await
+            })
+        };
+        let asked: Vec<_> = (0..100).map(|_| ask()).collect();
+        for one in asked {
+            assert_eq!(one.await.expect("asked"), 1);
+        }
+        assert_eq!(worked.load(Ordering::SeqCst), 1);
+        // once it is no longer fresh, worked out anew
+        *kept.lock().await = Some((Instant::now() - FRESH, 1));
+        assert_eq!(ask().await.expect("asked"), 2);
+    }
 
     #[test]
     fn a_range_asks_one_window_of_a_medium() {
