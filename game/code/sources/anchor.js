@@ -5,7 +5,8 @@
  * page and the API both import it. Nobody who holds the server, its .env or a deploy variable can choose it, and
  * changing it is a commit, reviewed as code is.
  *
- * TODO(H2): set it to Maia City's vault id, from the Mac app, before H2 merges. Until then no vault code runs: views,
- * logic and configs run the repo's seed, and the asset pages refuse, saying the anchor is not set.
+ * The id is the one the Mac's agent device (avenMAIA's, synced and checked there) lists for the vault named Maia City
+ * (2026-10-19). Left empty, no vault code would run: views, logic and configs would run the repo's seed, and the asset
+ * pages would refuse, saying the anchor is not set.
  */
-export const MAIA_CITY = '';
+export const MAIA_CITY = 'aee573fef57a2ad10e13989356025a50355df7eb7bc40120e838dd949f876725';
