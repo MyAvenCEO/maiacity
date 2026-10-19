@@ -32,7 +32,8 @@
 	encode zstd gzip
 	# the page's own walls (code-architecture/security-audit.md F3): no other site may frame us (a click on Accept in a
 	# frame we can't see), no file is read as another type than it says, no plugin objects, no <base> moving our links.
-	# A strict script-src follows once every sandboxed frame is its own document (plan milestone C2).
+	# Which scripts a page may run comes in the page itself, a <meta> SvelteKit writes with each page's own hashes
+	# (src/lib/sandbox/policy.js pageCsp): frame-ancestors can't be said in a <meta>, so it stays here.
 	header {
 		Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'self'"
 		X-Frame-Options SAMEORIGIN
