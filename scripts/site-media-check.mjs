@@ -4,7 +4,8 @@
 // film, and hashed (BLAKE3): it must come back whole and its own. A picture is asked whole too, as a page's <img> asks
 // it, a sound or a film a range from its middle, as a player seeking asks. It counts how many avenDB served
 // (`x-served-by: avenDB`), lists apart those the old vault keeps private (401: Maia City keeps them private too, so
-// they are no failure), and asks once what a browser asks before a range (its CORS preflight).
+// they are no failure, as long as a page can read the 401), and asks once what a browser asks before a range (its CORS
+// preflight).
 //
 //   bun scripts/site-media-check.mjs                    check them all, list what failed, and fail if any did
 //   ALL_FROM_AVENDB=1 bun scripts/site-media-check.mjs  fail too while any still comes from the old media vault
@@ -45,7 +46,9 @@ class Private extends Error {}
 /** Bytes `at` to `to` (past its last) of `url`: they, the file's length its Content-Range names, and who served them. */
 async function range(url, at, to) {
 	const res = await get(url, { range: `bytes=${at}-${to - 1}` });
-	if (res.status === 401) throw new Private('private in the old media vault');
+	// a page can read the refusal only with Access-Control-Allow-Origin: else it sees a failed load, and the Mac app's
+	// copy into Maia City never tries its key (deploy/Caddyfile)
+	if (res.status === 401) throw new Private(res.headers.get('access-control-allow-origin') ? '' : 'no page can read its 401');
 	if (res.status !== 206) throw new Error(`answered ${res.status} for bytes ${at}-${to - 1}`);
 	const part = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(res.headers.get('content-range') ?? '');
 	if (!part || Number(part[1]) !== at) throw new Error(`named ${res.headers.get('content-range')} for bytes ${at}-${to - 1}`);
@@ -108,7 +111,7 @@ await Promise.all(
 				results.set(hash, { title, mime, ...(await check(hash, mime)) });
 			} catch (e) {
 				const why = e?.message ?? String(e);
-				results.set(hash, { title, mime, ...(e instanceof Private ? { private: why } : { failed: why }) });
+				results.set(hash, { title, mime, ...(e instanceof Private ? { private: true, ...(why && { failed: why }) } : { failed: why }) });
 			}
 		}
 	})
@@ -118,7 +121,7 @@ const flight = await preflight(files[0][0]).catch((e) => `the preflight failed: 
 const all = [...results.values()];
 const failed = [...results].filter(([, r]) => r.failed);
 const fromAvenDB = all.filter((r) => r.by === 'avenDB');
-const kept = all.filter((r) => r.private);
+const kept = all.filter((r) => r.private && !r.failed);
 const fromOld = all.filter((r) => r.by && r.by !== 'avenDB');
 const bytes = all.reduce((n, r) => n + (r.len ?? 0), 0);
 const lines = [
