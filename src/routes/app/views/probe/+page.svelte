@@ -5,8 +5,10 @@
 	(/app/assets/box/) does the same for the box. Every attempt must be refused or stopped:
 	- what the view's script tries in its worker (the network, storage, cookies, code from strings, the page's DOM,
 	  navigating, opening windows, the MCP Apps methods a view is refused) it says itself, as a view may;
-	- what reaches the page outside the view's port, what the page keeps of it, a frame that loads again, and a script or
-	  logic that never stops, the page sees for itself;
+	- what reaches the page outside the view's port, what the page keeps of it, a frame that loads again, a script or
+	  logic that never stops, a script that works without end in bursts (past its budget of work, though it names an
+	  engine from before the budget), a scene too heavy for the device (its frames spaced out, never stopped), and a
+	  view made for an engine no page has (never started), the page sees for itself;
 	- what its markup reaches out to only the canary can tell: `?canary=<address>` aims every attempt there, and
 	  scripts/probes.mjs (headless Chromium, in CI before every deploy) listens there, clicks what the view drew, and
 	  fails on anything that arrived. Opened by hand, the attempts aim at this site's /__view-probe/, which counts nothing.
@@ -15,10 +17,10 @@
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
 	import ViewHost from '$lib/sandbox/ViewHost.svelte';
-	import { CLICKS, HTML_TRIES, PAGE_SAYS, SECRET, WORKER_TRIES, hostileView, logicViews, spinView } from '$lib/sandbox/view/probe.js';
+	import { CLICKS, HEAVY, HTML_TRIES, PAGE_SAYS, SECRET, UNKNOWN_ENGINE, WORKER_TRIES, burnView, heavyView, hostileView, logicViews, spinView, unknownEngineView } from '$lib/sandbox/view/probe.js';
 
 	/** how long the views have to say everything and be stopped (ms), and how long stray effects have to land after */
-	const DEADLINE = 20000;
+	const DEADLINE = 40000;
 	const SETTLE = 1000;
 	// where every attempt aims: the runner's canary (a plain web address), else this site's own
 	const given = new URLSearchParams(location.search).get('canary') ?? '';
@@ -26,8 +28,11 @@
 
 	const hostile = hostileView(canary);
 	const spin = spinView();
+	const burn = burnView();
+	const heavy = heavyView();
+	const unknown = unknownEngineView();
 	const logic = logicViews();
-	const VIEWS = [hostile, spin, ...logic];
+	const VIEWS = [hostile, spin, burn, heavy, unknown, ...logic];
 
 	// the page's own secret, in its cookie and its DOM: a view that reads either reached the page
 	const secret = crypto.randomUUID();
@@ -48,6 +53,25 @@
 	const ms = () => Math.round(performance.now() - t0);
 	const passed = $derived(checks.filter((c) => c.ok).length);
 	const has = (id, re) => errors[id].find((e) => re.test(e.message));
+	/** what the engine says of a view's script past its budget of work */
+	const BUDGET = /kept its worker at work/;
+	/** the heavy scene's frames: how many it drew, how many came spaced out, and how far apart two came at most (ms) */
+	const heavyFrames = () => {
+		try {
+			return JSON.parse(said[HEAVY] ?? '{}');
+		} catch {
+			return {};
+		}
+	};
+	/** its frames spaced out: five of them (one by chance, as the machine waits, is no pace) */
+	const PACED = 5;
+	/**
+	 * what the logic host says of logic it stopped: QuickJS's own limits (its work, its memory, its time), or the box's
+	 * ten seconds, where one native step of it (a big array filled while its memory runs out) outlasts them
+	 */
+	const LOGIC_STOPPED = /ran too long|took more than|ran longer than|out of memory/;
+	/** what the host says of a view made for an engine no page has */
+	const NO_ENGINE = new RegExp(`made for view engine ${UNKNOWN_ENGINE}, which this page does not have`);
 
 	const onevent = (e) => {
 		if (e?.name === 'log' && typeof e.value?.probe === 'string') said[e.value.probe] = String(e.value.said);
@@ -60,7 +84,7 @@
 
 	/** whether the views are through: every attempt said, and the views that never stop stopped */
 	const through = () =>
-		WORKER_TRIES.every((t) => said[t]) && said['(done)'] && has(spin.id, /held its worker/) && logic.every((v) => has(v.id, /ran too long|took more than|out of memory/));
+		WORKER_TRIES.every((t) => said[t]) && said['(done)'] && has(spin.id, /held its worker/) && has(burn.id, BUDGET) && heavyFrames().spaced >= PACED && has(unknown.id, NO_ENGINE) && logic.every((v) => has(v.id, LOGIC_STOPPED));
 
 	/** what of the views this page keeps: its cookies, its storage, its databases and caches */
 	async function kept() {
@@ -86,8 +110,19 @@
 		add('No view’s frame loads again', !left.length, left.length ? `left its box: ${left.map((v) => v.title).join(', ')}` : 'each frame loaded once, its engine alone');
 		const stopped = has(spin.id, /held its worker/);
 		add('A script that never yields is stopped', !!stopped, stopped ? `after ${(stopped.at / 1000).toFixed(1)} s: ${stopped.message}` : 'it was never stopped');
+		// it answers every ping between its bursts, so only its budget of work can stop it
+		const spent = has(burn.id, BUDGET);
+		const held = has(burn.id, /held its worker/);
+		// and it names view engine 2, from before the budget: it runs on the floor all the same
+		add('A script that works without end, in bursts, is stopped by its budget', !!spent && !held, spent ? `after ${(spent.at / 1000).toFixed(1)} s, though it names view engine ${burn.engine}: ${spent.message}${held ? `; but first: ${held.message}` : ''}` : held ? `only as one that held its worker: ${held.message}` : 'it was never stopped');
+		const none = has(unknown.id, NO_ENGINE);
+		add('A view made for an engine no page has does not start', !!none, none ? none.message : 'it was never refused');
+		// its frames spaced out past half its budget, never stopped
+		const frames = heavyFrames();
+		const ended = has(heavy.id, BUDGET) ?? has(heavy.id, /held its worker/);
+		add('A scene too heavy for the device slows down and goes on', frames.spaced >= PACED && !ended, ended ? `it was stopped after ${(ended.at / 1000).toFixed(1)} s: ${ended.message}` : frames.frames ? `${frames.frames} frames of 300 ms of work each, ${frames.spaced} of them spaced out (400 ms or more apart, at most ${frames.widest})` : 'it never drew');
 		for (const v of logic) {
-			const e = has(v.id, /ran too long|took more than|out of memory/);
+			const e = has(v.id, LOGIC_STOPPED);
 			add(`${v.title} is stopped`, !!e, e ? `after ${(e.at / 1000).toFixed(1)} s: ${e.message}` : 'it was never stopped');
 		}
 		add('The page goes on meanwhile', gap < 1000, `the page’s clock never waited more than ${Math.round(gap)} ms`);
@@ -142,7 +177,9 @@
 		<p class="dim">
 			Views made to do harm, each in the real view host as a vault's view would be: a frame with no origin running our
 			frozen view engine, its script in a worker. Its script tries every way out; its markup reaches out every way
-			markup can; one script never yields and two views' logic never stops. Every attempt aims at
+			markup can; one script never yields, one works without end in bursts (naming an engine from before the budget),
+			one draws frames too heavy for the device (which must slow down, not stop), one names an engine no page has, and
+			two views' logic never stops. Every attempt aims at
 			<code>{canary}/…</code>.
 		</p>
 		<p class="dim" data-line>{line}</p>
@@ -181,10 +218,12 @@
 
 	<section class="views" bind:this={holder}>
 		<h2>The views</h2>
+		<!-- the heavy scene stays in sight (a frame out of sight draws no animation frames), in a corner the runner's
+		     clicks, each in the middle of the window, never land on -->
 		{#each VIEWS as v (v.id)}
-			<figure>
+			<figure class:pinned={v === heavy}>
 				<figcaption>{v.title}{#if errors[v.id].length}<small> · {errors[v.id].at(-1).message}</small>{/if}</figcaption>
-				<ViewHost view={v} onevent={v === hostile ? onevent : () => {}} onerror={onerror(v.id)} />
+				<ViewHost view={v} onevent={v === hostile || v === heavy ? onevent : () => {}} onerror={onerror(v.id)} />
 			</figure>
 		{/each}
 	</section>
@@ -262,6 +301,18 @@
 	}
 	figure {
 		margin: 0 0 1rem;
+	}
+	figure.pinned {
+		position: fixed;
+		left: 1rem;
+		bottom: 1rem;
+		z-index: 5;
+		width: min(18rem, calc(100vw - 2rem));
+		margin: 0;
+		padding: 0.5rem;
+		border: 1px solid var(--line);
+		border-radius: 0.5rem;
+		background: var(--paper);
 	}
 	figcaption {
 		margin-bottom: 0.3rem;

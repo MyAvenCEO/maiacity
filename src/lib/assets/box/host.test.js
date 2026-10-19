@@ -4,7 +4,9 @@
 // another recipe's build. The shell runs here as in a page, with its frame's own script (read out of the frame's
 // document, ../../sandbox/policy.js SHELL_SCRIPT) and real workers; the engine is a stand-in that runs a recipe as
 // the box's does (./engine.js: its code once in the worker's global scope, then its build), and the recipes are made
-// to do harm. The box's lab (/app/assets/box/) tries the same with the real engine (./probe.js `answerRecipe`).
+// to do harm. A recipe whose worker crashes, or that never stops, dies alone: its room is let go, and every other
+// room of the box, and the machines running there, go on in the same frame. The box's lab (/app/assets/box/) tries the
+// same with the real engine (./probe.js `answerRecipe`, `crashRecipe`, `spinRecipe`).
 // Run: bun test src/lib/assets/box/host.test.js
 import { afterAll, afterEach, expect, mock, test } from 'bun:test';
 
@@ -94,6 +96,12 @@ return () => 'hostile';`
 };
 /** recipe `i`, which builds into how many recipes its worker has started, itself among them */
 const counting = (i) => ({ hash: `counting-${i}`, code: `/* ${i} */ self.ran = (self.ran ?? 0) + 1; const ran = self.ran; return () => ran;` });
+/** a recipe that counts its own builds in its worker: 1 in a fresh one, then 2, 3… while that worker lives */
+const KEPT = { hash: 'kept', code: 'let n = 0; return () => ++n;' };
+/** a recipe that crashes its worker: an error thrown where nothing catches it, and its build never answered */
+const CRASH = { hash: 'crash', code: "setTimeout(() => { throw new Error('this recipe crashed its worker'); }); return () => new Promise(() => {});" };
+/** a recipe that never stops building */
+const SPIN = { hash: 'spin', code: 'return () => { for (;;); };' };
 
 const boxes = [];
 const shellOf = () => {
@@ -172,4 +180,58 @@ test('builds kept running are stepped in their own recipe’s room, whatever ses
 	await expect(box.tick(a.session, {})).rejects.toThrow(/no session/);
 	box.stop();
 	await expect(box.tick(b.session, {})).rejects.toThrow(/no session/);
+});
+
+test('a recipe that crashes its worker dies alone: the other rooms, and the builds kept running in them, go on', async () => {
+	const box = boxOf();
+	expect((await box.build(KEPT)).data).toBe(1);
+	const running = await box.live({ hash: 'a', code: 'return () => 1;' }, undefined, 0);
+	const frame = box.frame;
+	// asked at once: the crash fails its own build alone, and the build asked after it still comes
+	const [crashed, after] = await Promise.allSettled([box.build(CRASH), box.build(KEPT)]);
+	expect(crashed.status).toBe('rejected');
+	expect(crashed.reason.message).toMatch(/crashed/);
+	expect(after.value?.data).toBe(2);
+	// the same frame, the same worker for the recipe built before (its count goes on), the machine still running
+	expect(box.frame).toBe(frame);
+	expect((await box.build(KEPT)).data).toBe(3);
+	expect((await box.tick(running.session, {})).recipe).toBe('a');
+	// the crashed recipe's room is gone; built again, it starts in a fresh worker, and crashes alone again
+	expect(box.rooms.some((r) => r.code === CRASH.code)).toBe(false);
+	await expect(box.build(CRASH)).rejects.toThrow(/crashed/);
+	expect(box.frame).toBe(frame);
+	expect((await box.build(KEPT)).data).toBe(4);
+});
+
+test('a recipe that never stops is ended alone: its worker goes, the box and every other room go on', async () => {
+	const box = boxOf();
+	expect((await box.build(KEPT)).data).toBe(1);
+	const running = await box.live({ hash: 'a', code: 'return () => 1;' }, undefined, 0);
+	const frame = box.frame;
+	const workers = frame.workers.size;
+	await expect(box.build(SPIN, undefined, { timeout: 300 })).rejects.toThrow(/ran longer than 300 ms/);
+	await new Promise((ok) => setTimeout(ok, 50));
+	// its worker was ended (the spare it took was made again for the next new room)
+	expect(frame.workers.size).toBe(workers);
+	expect(box.frame).toBe(frame);
+	expect((await box.build(KEPT)).data).toBe(2);
+	expect((await box.tick(running.session, {})).recipe).toBe('a');
+	expect(box.rooms.some((r) => r.code === SPIN.code)).toBe(false);
+});
+
+test('a running build whose worker crashes goes with it, and only that one', async () => {
+	const box = boxOf();
+	const doomed = await box.live({ hash: 'doomed', code: "self.addEventListener('message', (e) => e.data?.op === 'tick' && setTimeout(() => { throw new Error('a step that crashes'); })); return () => 1;" }, undefined, 0);
+	const kept = await box.live({ hash: 'kept', code: 'return () => 2;' }, undefined, 0);
+	expect((await box.tick(doomed.session, {})).recipe).toBe('doomed');
+	await new Promise((ok) => setTimeout(ok, 50));
+	await expect(box.tick(doomed.session, {})).rejects.toThrow(/no session/);
+	expect((await box.tick(kept.session, {})).recipe).toBe('kept');
+});
+
+test('a host of one room (the logic host) is still torn down whole by a crash, and starts again', async () => {
+	const shell = shellOf();
+	await expect(shell.ask('build', { recipe: CRASH })).rejects.toThrow(/crashed/);
+	expect(shell.frame).toBe(null);
+	expect((await shell.ask('build', { recipe: HONEST })).data).toBe('honest');
 });

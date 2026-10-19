@@ -13,6 +13,10 @@
  * - with one, the script runs in a worker inside this frame (./worker.js) on a copy of the DOM, never in this window:
  *   each picture of that DOM it sends is made safe and laid over the frame's (kept elements stay), its canvases come
  *   as pictures (ImageBitmap), and the events it listens for go to it as plain data;
+ * - that worker is held to a budget of work (version 4): a script that holds it four seconds without a break is
+ *   stopped, and so is one that works in bursts more than half the time, once it has spent the work it had in hand,
+ *   as the watch (./watch.js), a worker of ours beside it that nothing of the view's reaches, counts it; on the way,
+ *   its animation frames are spaced out, so a scene that only draws too often for the machine slows down and lives;
  * - our components (./components.js) and look (./theme.js) are here for every view.
  *
  * The page and the engine speak over a MessageChannel port handed in at boot:
@@ -24,6 +28,7 @@ import { defineComponents } from './components.js';
 import { sanitize } from './sanitize.js';
 import { eventOf, render } from './template.js';
 import { BASE, fontFaces } from './theme.js';
+import { WATCH } from './watch.js';
 import { DM_SANS, FRAUNCES } from 'virtual:view-fonts';
 
 const port = self.__maiaPort;
@@ -310,9 +315,21 @@ function start(view) {
 	const ch = new MessageChannel();
 	wport = ch.port1;
 	wport.onmessage = (e) => fromWorker(e.data);
+	// a script that works in bursts, a break between each, is held to its budget of work by the watch, a worker of our
+	// own beside it (./watch.js), which asks the view's worker on a channel of its own; past its budget, it is ended
+	const beat = new MessageChannel();
+	const watch = new Worker(URL.createObjectURL(new Blob([WATCH], { type: 'text/javascript' })));
+	watch.onmessage = (e) => {
+		const m = e.data;
+		if (m?.op === 'spent') stop(`this view's script kept its worker at work more than ${BUDGET.share * 100}% of the time, past the ${BUDGET.hand / 1000} seconds of work it had in hand, so it was stopped`);
+		// its animation frames spaced out on the way there, and closer again as its hand fills
+		else if (m?.op === 'pace' && Number.isFinite(m.ms)) wport?.postMessage({ op: 'pace', ms: m.ms });
+	};
+	watch.onerror = (e) => (e.preventDefault(), stop("this view's script could not be held to its budget, so it was stopped"));
+	watch.postMessage({ op: 'watch', port: beat.port1, budget: BUDGET }, [beat.port1]);
 	const r = document.body.getBoundingClientRect();
 	const canvases = lend(2);
-	worker.postMessage({ op: 'boot', port: ch.port2, html: doc.body.innerHTML, mid, scripts, libs: view.worker.libs ?? {}, canvases, size: [innerWidth, innerHeight, devicePixelRatio], body: [r.left, r.top, r.width, r.height] }, [ch.port2, ...canvases.map((c) => c.canvas)]);
+	worker.postMessage({ op: 'boot', port: ch.port2, beat: beat.port2, html: doc.body.innerHTML, mid, scripts, libs: view.worker.libs ?? {}, canvases, size: [innerWidth, innerHeight, devicePixelRatio], body: [r.left, r.top, r.width, r.height] }, [ch.port2, beat.port2, ...canvases.map((c) => c.canvas)]);
 	requestAnimationFrame(rects);
 	remeasure();
 	// whether the view is in sight, for a worker that draws its frames by a timer
@@ -322,19 +339,31 @@ function start(view) {
 	document.addEventListener('visibilitychange', seen);
 	// a script that holds its worker for seconds on end (a loop that never ends) is stopped: it would only burn the
 	// person's battery. Asked once a second; a timer a hidden page slows down only asks less often.
-	const watch = setInterval(() => {
-		if (asked && performance.now() - asked > HELD) {
-			clearInterval(watch);
-			worker.terminate();
-			wport.close();
-			wport = null;
-			return fail(`this view's script held its worker for more than ${HELD / 1000} seconds, so it was stopped`);
-		}
+	const held = setInterval(() => {
+		if (asked && performance.now() - asked > HELD) return stop(`this view's script held its worker for more than ${HELD / 1000} seconds, so it was stopped`);
 		if (!asked) (asked = performance.now()), wport.postMessage({ op: 'ping' });
 	}, 1000);
+	/** the view's script stopped: its worker and the watch ended, and the page told why */
+	stop = (why) => {
+		if (stopped) return;
+		stopped = true;
+		clearInterval(held);
+		worker.terminate();
+		watch.terminate();
+		wport?.close();
+		wport = null;
+		fail(why);
+	};
 }
 let asked = 0;
 const HELD = 4000;
+let stopped = false;
+let stop = () => {};
+/**
+ * A view's script's budget of work (./watch.js): `hand` ms in hand to start with (its start, a heavy redraw), refilled
+ * by `share` of the time that passes; an ask's wait counts as work past `free` ms; asks come `gap` ms apart on average.
+ */
+const BUDGET = { hand: 5000, share: 0.5, free: 4, gap: 15 };
 
 port.onmessage = (e) => {
 	const m = e.data;

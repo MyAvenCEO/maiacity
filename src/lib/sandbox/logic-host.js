@@ -7,24 +7,33 @@
  *
  * Outside a page (our scripts and tests) there is no frame to make, and the core runs in the process itself.
  *
- *   runOnce({ code, kind, name, json, seed?, now? })   code loaded, called once and gone: { exports, out?, error? }
- *   load(units, { seed?, now? })                        code kept loaded: { units, call(i, kind, name, json), end() }
+ * Code runs on the logic engine it names (`engine`, a code entry's version: ./engines.js `engineFor`), never one below
+ * the floor; code that names none runs on the floor. Each version has a shell of its own.
+ *
+ *   runOnce({ code, kind, name, json, seed?, now?, engine? })   code loaded, called once and gone: { exports, out?, error? }
+ *   load(units, { seed?, now?, engine? })                        code kept loaded: { units, call(i, kind, name, json), end() }
  */
 import { open, quickjs } from './logic.js';
-import { latestOf, pathOf } from './engines.js';
+import { engineFor, pathOf } from './engines.js';
 
 /** how long one job may hold the shell before it is torn down (ms): far past the core's own limits */
 const TIMEOUT = 10000;
 
-let shell = null;
-/** the page's one logic shell, started on first use */
-async function shellOf() {
-	if (shell) return shell;
-	const { Shell, frozen } = await import('./frame.js');
-	const e = latestOf('logic');
-	if (!e) throw new Error('no logic engine is frozen yet');
-	shell ??= new Shell({ code: () => frozen(pathOf('logic', e.v), e.blake3, `logic engine ${e.v}`), wasm: true, timeout: TIMEOUT });
-	return shell;
+/** why code naming logic engine `named` runs nowhere: one that is not frozen @param {unknown} named */
+const notFrozen = (named) => `it is made for logic engine ${String(named).slice(0, 12)}, which this page does not have`;
+
+/** the page's logic shells, one for each engine version that ran code, each started on first use */
+const shells = new Map();
+/** the shell of the logic engine code naming version `named` runs on @param {unknown} named */
+async function shellOf(named) {
+	const e = engineFor('logic', named);
+	if (!e) throw new Error(notFrozen(named));
+	if (!shells.has(e.v)) {
+		const started = import('./frame.js').then(({ Shell, frozen }) => new Shell({ code: () => frozen(pathOf('logic', e.v), e.blake3, `logic engine ${e.v}`), wasm: true, timeout: TIMEOUT }));
+		started.catch(() => shells.delete(e.v));
+		shells.set(e.v, started);
+	}
+	return shells.get(e.v);
 }
 
 const inPage = () => typeof document !== 'undefined' && typeof window !== 'undefined';
@@ -32,13 +41,14 @@ const inPage = () => typeof document !== 'undefined' && typeof window !== 'undef
 /**
  * Code `code` loaded, export `name` called once the way `kind` says (./logic.js GLUE) with JSON text `json`, and the
  * engine gone: `{ exports, out }` (out: the JSON text it handed back, or undefined), or `{ exports, error }`.
- * @param {{ code: string, file?: string, kind: string, name: string | null, json: string, seed?: number, now?: number }} o
+ * @param {{ code: string, file?: string, kind: string, name: string | null, json: string, seed?: number, now?: number, engine?: number }} o
  * @returns {Promise<{ exports: string[], out?: string, error?: string }>}
  */
-export async function runOnce(o) {
+export async function runOnce({ engine, ...o }) {
+	if (!engineFor('logic', engine)) return { exports: [], error: notFrozen(engine) };
 	if (inPage()) {
 		try {
-			const { exports, out, error } = await (await shellOf()).ask('run', o);
+			const { exports, out, error } = await (await shellOf(engine)).ask('run', o);
 			return error ? { exports, error } : { exports, out };
 		} catch (e) {
 			return { exports: [], error: e.message || String(e) };
@@ -59,12 +69,13 @@ export async function runOnce(o) {
 /**
  * Pieces of code, each a JS module, loaded and kept: `units` (each `{ exports, error }`), `call(i, kind, name, json)`
  * (unit `i`'s export `name`, the way `kind` says: the JSON text it hands back, or throws why it was stopped) and
- * `end()`. All share `seed` and `now`.
- * @param {{ code: string, file?: string }[]} units @param {{ seed?: number, now?: number }} [o]
+ * `end()`. All share `seed` and `now`, and the engine `engine` names.
+ * @param {{ code: string, file?: string }[]} units @param {{ seed?: number, now?: number, engine?: number }} [o]
  */
-export async function load(units, { seed = 0, now = 0 } = {}) {
+export async function load(units, { seed = 0, now = 0, engine } = {}) {
+	if (!engineFor('logic', engine)) throw new Error(notFrozen(engine));
 	if (inPage()) {
-		const s = await shellOf();
+		const s = await shellOf(engine);
 		const { session, units: loaded } = await s.ask('open', { units, seed, now });
 		const generation = s.generation;
 		return {
