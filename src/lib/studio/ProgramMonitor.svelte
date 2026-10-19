@@ -29,8 +29,23 @@
 
 	const pic = $derived(s.picture);
 	const spec = $derived(isWorld(pic) ? s.specOf(pic) : null);
-	/** the live world is showing this frame */
-	const live = $derived(!!spec && s.world.isLive(spec));
+	/**
+	 * a cut while it plays, to a shot of the world in the viewer: its last frame stays up until the new shot's first is
+	 * drawn (a frame or three), never a stand-in or a proxy still loading between them; a shot not drawn within BRIDGE
+	 * shows its proxy or stand-in after all
+	 */
+	let bridge = $state(false);
+	const BRIDGE = 1000;
+	$effect(() => {
+		// (only straight after a world frame: a frame from before a clip of footage is never shown again)
+		const cut = s.playing && !!spec && s.world.state === 'ready' && s.world.holds(spec) && !!s.world.drawn && !s.world.isLive(spec) && performance.now() - s.world.drawnAt < 250;
+		if (!cut) return void (bridge = false);
+		bridge = true;
+		const t = setTimeout(() => (bridge = false), BRIDGE);
+		return () => clearTimeout(t);
+	});
+	/** the live world is showing this frame (or, at a cut, the last until this one's is drawn) */
+	const live = $derived(!!spec && (s.world.isLive(spec) || bridge));
 	/** the world is readied for this frame: its first frame is asked for at once (paused, nothing else would ask) */
 	const ready = $derived(!!spec && s.world.isReady(spec));
 	const worldVideo = $derived(isWorld(pic) && !live ? (s.reelVideos[pic?.id ?? ''] ?? null) : null);

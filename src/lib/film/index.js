@@ -7,6 +7,7 @@
 //
 //   await __film.ready(spec?)                          the world up, the shot's dome and set built, nothing streaming
 //   await __film.prepare(specs)                        every area, dome and set these shots need, built and kept
+//   __film.keep(specs)                                 what these shots will see kept built, nothing staged (the shots ahead)
 //   await __film.show({ spec, t, shape, width, height, view: { lut, grade }, quality })  that frame, on the canvas
 //   await __film.capture({ spec, t, shape, width, height, oversample })  → ArrayBuffer: the frame as 10-bit ACEScct,
 //                                                      packed x2bgr10le, top row first (width·height·4 bytes)
@@ -399,6 +400,16 @@ export function startFilm({ base = '' } = {}) {
 				for (const s of all) await stage(s, live ? STAGE_LIMIT : Infinity);
 				if (meter) for (const s of all) if (!live || knownExposure(s) === undefined) await exposureOf(s);
 			});
+		},
+		/**
+		 * Keeps built what these shots will see, nothing staged and nothing waited on (outside the line: the walker
+		 * stays where the shot drawn now stands): while the timeline plays, the live viewer keeps the shots ahead, and the
+		 * world builds what their cameras see as it can, so their cuts find it there.
+		 * @param {any[]} specs
+		 */
+		async keep(specs) {
+			const v = await mounted();
+			v.film.keep(specs.map(normal).filter(shows).map((s) => ({ ...s.world, views: viewsOf(v, s) })));
 		},
 		/** the live viewer's metering ahead: a shot it knows the exposure of is not metered again @param {any} spec */
 		meter(spec) {

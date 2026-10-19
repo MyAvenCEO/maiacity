@@ -24,6 +24,7 @@ import { filmPath } from '../../../game/film/worlds.js';
  * @typedef {{
  *   ready(): Promise<void>,
  *   prepare(specs: ShotSpec[], opts?: { live?: boolean, meter?: boolean }): Promise<void>,
+ *   keep?(specs: ShotSpec[]): void | Promise<void>,
  *   show(o: ShowArgs): void | boolean | Promise<void | boolean>,
  *   capture?(o: { spec: ShotSpec, t: number, shape: Shape, width: number, height: number }): Promise<ArrayBuffer>,
  *   meter?(spec: ShotSpec): Promise<number>,
@@ -120,6 +121,8 @@ export class WorldViewer {
 	 * shown it was a black frame under "live world"
 	 */
 	drawn = $state('');
+	/** when a world frame was last drawn on the canvas (performance.now) */
+	drawnAt = -Infinity;
 	/** how often the page in the iframe was loaded again because it never came up */
 	reloads = 0;
 	/** the shots whose exposure film mode has metered (or is metering), by the whole shot */
@@ -153,7 +156,19 @@ export class WorldViewer {
 		this.state = 'loading';
 		// the Mac's jobs render no world proxy while this world is open (./jobs/mac.js)
 		void import('./jobs/mac.js').then((m) => m.studioWorld(true));
-		if (iframe.getAttribute('src') !== url) iframe.src = url;
+		if (iframe.getAttribute('src') !== url) {
+			// the world's page going is never taken for the one coming: until the new page replaces it (a while later) it
+			// still answers with its own `__film`, and taken, the viewer was "ready" on a page about to go — every prepare
+			// and frame asked of it never answered, and Player 2's intro, opened after Player 1's, showed its stand-in for good
+			try {
+				const old = /** @type {(Window & { __film?: Film, __lost?: boolean }) | null} */ (iframe.contentWindow);
+				// (only a film page: the empty first page's window is the one the next page keeps)
+				if (old?.__film) old.__lost = true;
+			} catch {
+				/* another origin */
+			}
+			iframe.src = url;
+		}
 		const t0 = performance.now();
 		while (performance.now() - t0 < patience && this.iframe === iframe && this.url === url) {
 			/** @type {Film | undefined} */
@@ -169,7 +184,8 @@ export class WorldViewer {
 				forwardConsole(/** @type {Window} */ (iframe.contentWindow), 'world');
 				this.forwardKeys(/** @type {Window} */ (iframe.contentWindow));
 				try {
-					await film.ready();
+					// a page that goes meanwhile never answers: looked for again, never waited on for ever
+					if (!(await this.whileThere(iframe, url, film, film.ready()))) continue;
 					if (this.url !== url) return;
 					// once the world is up: its canvas is there
 					this.watchLoss(/** @type {Window} */ (iframe.contentWindow), iframe, url);
@@ -206,6 +222,30 @@ export class WorldViewer {
 		}
 		iframe.src = 'about:blank';
 		void this.attach(iframe, url, wait, patience);
+	}
+
+	/**
+	 * Whether `p` answered while the iframe still held the page of `film` (and the viewer still wants `url` there):
+	 * false as soon as that page is gone or going.
+	 * @param {HTMLIFrameElement} iframe @param {string} url @param {Film} film @param {Promise<unknown>} p
+	 * @returns {Promise<boolean>}
+	 */
+	whileThere(iframe, url, film, p) {
+		return new Promise((resolve, reject) => {
+			const there = () => {
+				try {
+					const win = /** @type {(Window & { __film?: Film, __lost?: boolean }) | null} */ (iframe.contentWindow);
+					return this.iframe === iframe && this.url === url && !win?.__lost && win?.__film === film;
+				} catch {
+					return false;
+				}
+			};
+			const id = setInterval(() => there() || (clearInterval(id), resolve(false)), 250);
+			p.then(
+				() => (clearInterval(id), resolve(there())),
+				(e) => (clearInterval(id), reject(e))
+			);
+		});
 	}
 
 	/**
@@ -283,8 +323,13 @@ export class WorldViewer {
 
 	/** @param {ShotSpec} spec */
 	isReady = (spec) => this.state === 'ready' && this.holds(spec) && this.readyShots.has(specKey(spec));
-	/** the live world shows this shot: ready, and a frame of it drawn on the canvas @param {ShotSpec} spec */
-	isLive = (spec) => this.isReady(spec) && this.drawn === specKey(spec);
+	/**
+	 * the live world shows this shot: a frame of its world drawn on the canvas. Drawn is enough: a cut while the
+	 * timeline plays draws its shot as the world has it (the rest streaming in), and waiting for a prepare to say it is
+	 * ready as well showed the stand-in or a proxy still loading at every cut to a new stand
+	 * @param {ShotSpec} spec
+	 */
+	isLive = (spec) => this.state === 'ready' && !!this.film && this.holds(spec) && this.drawn === specKey(spec);
 
 	/** whether the world in the iframe is the one this shot is in (only its shots are prepared and drawn there) @param {ShotSpec} spec */
 	holds = (spec) => !!this.url && (this.url.endsWith(pathOf(spec)) || !this.url.includes('/games/'));
@@ -316,6 +361,27 @@ export class WorldViewer {
 		}
 		return Promise.all(specs.map((s) => this.preparing.get(specKey(s)) ?? Promise.resolve())).then(() => {});
 	}
+
+	/**
+	 * Keeps built what these shots will see, nothing staged: while the timeline plays, the shots ahead (the world builds
+	 * them as it can, never moving away from the shot on screen).
+	 * @param {ShotSpec[]} specs
+	 */
+	keep(specs) {
+		const film = this.film;
+		if (!film?.keep) return;
+		const mine = specs.filter((s) => this.holds(s));
+		// asked every frame: said to the world only when the shots ahead change
+		const key = mine.map(wholeKey).join('\n');
+		if (key === this.kept && film === this.keptBy) return;
+		this.kept = key;
+		this.keptBy = film;
+		void Promise.resolve(film.keep(mine)).catch(() => {});
+	}
+	/** the shots ahead last kept (by the whole shot), and by which film page */
+	kept = '';
+	/** @type {Film | null} */
+	keptBy = null;
 
 	/** stands the world where this shot is staged, nothing metered @param {ShotSpec} spec @returns {Promise<void>} */
 	standAt(spec) {
@@ -359,7 +425,11 @@ export class WorldViewer {
 		const k = this.scale * Math.min(1, Math.max(320, this.px) / Math.max(o.width, o.height));
 		const w = Math.round(o.width * k), h = Math.round(o.height * k);
 		Promise.resolve(this.film.show({ ...o, width: w, height: h }))
-			.then((drew) => void (drew !== false && this.film && (this.drawn = specKey(o.spec))))
+			.then((drew) => {
+				if (drew === false || !this.film) return;
+				this.drawn = specKey(o.spec);
+				this.drawnAt = performance.now();
+			})
 			.catch((/** @type {Error} */ e) => void (this.error = `show: ${e?.message ?? e}`))
 			.finally(() => {
 				// the resolution steps (1, ¾, ½, ⅓) on the median of the last frames: each step reallocates the targets,

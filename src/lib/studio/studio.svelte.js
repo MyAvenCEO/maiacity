@@ -78,8 +78,6 @@ export const liveTab = (tab) => tab === '3d' || tab === 'edit';
  * draws it as the world has it, the rest streaming in as in the game: waiting the whole move out (0.5 s and more in
  * Sandbox 3's village, whose shots stand all over the cell) hitched every cut. Stopped, a shot waits until it is staged. */
 const CUT_WAIT = 50;
-/** where a shot has its world staged (src/lib/film `keyOf`): its stand, dome and set @param {ShotSpec} s */
-const stageKey = (s) => JSON.stringify([s.world?.stand ?? null, s.world?.dome ?? null, s.world?.props ?? null]);
 /** @param {string} shape */
 export const ratio = (shape) => {
 	const [w, h] = shape.split(':').map(Number);
@@ -1533,14 +1531,14 @@ export class Studio {
 		if (this.world.state !== 'ready') return;
 		const upcoming = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start).slice(0, 3);
 		const specs = upcoming.map((w) => this.specOf(w)).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
-		// while it plays, only the shots staged where the one on screen is: preparing one that stands elsewhere moved the
-		// world there under the playing shot (its frames held, then staged back, then again at the cut: no clean
-		// playback in a world of many stands, Sandbox 3's village); those are prepared before the play and at their cut.
-		// Playing, they are staged only: metering one renders it at five moments (metered once stopped, below)
+		// while it plays nothing is staged but the shot on screen, by its own frame at its cut (within CUT_WAIT, the rest
+		// streaming in): a prepare is staged in line before any frame, so one under way held the cut for the whole of its
+		// staging — the stand-in, or a proxy still loading, at every cut to a new stand — and one for a shot ahead moved
+		// the world under the shot playing. The shots ahead are kept only: the world builds what they will see as it can.
+		// Stopped, they are prepared (staged and metered)
 		const still = !this.playing && !this.starting;
-		const here = this.playing && c && isWorld(c) ? this.specOf(c) : null;
-		const ready = here ? specs.filter((x) => stageKey(x) === stageKey(here)) : specs;
-		if (ready.length) void this.world.prepare(ready, { meter: still });
+		if (still) void this.world.prepare(specs);
+		else this.world.keep(specs);
 		// stopped: every world shot from the playhead on metered ahead, so playing never stops at a cut to meter one
 		if (still) {
 			const ahead = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start);
