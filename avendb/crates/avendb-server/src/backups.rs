@@ -17,15 +17,58 @@ use anyhow::{Context as _, Result, bail};
 use avendb::backup::{DAY, Keep};
 use avendb::id::VaultId;
 use avendb_net::backup::{self, Checked, Reading, Snapshots};
+use avendb_net::bucket::{Bucket, Fut};
 use avendb_net::{Node, Shelf, server};
 use tokio::sync::Notify;
 
 use crate::{Abort, SnapshotsConfig, bucket};
 
-/// The bucket of snapshots `config` names, staging in its folder.
+/// The bucket of snapshots `config` names, each call tried again if it fails (`Retrying`), staging in its folder.
 pub fn snapshots(config: &SnapshotsConfig) -> Result<Snapshots> {
-    let bucket = bucket::S3::new(&config.bucket)?;
+    let bucket = Retrying(bucket::S3::new(&config.bucket)?);
     Ok(Snapshots::new(bucket, &config.bucket.seal, &config.dir))
+}
+
+/// How many times in all a call to the bucket of snapshots is tried (`Retrying`).
+const TRIES: u32 = 4;
+
+/// A bucket whose every call is tried again when it fails, `TRIES` times in all, a second later, then two, then four:
+/// Hetzner fails a request now and then, and a backup or a check that fails on one request waits a day. Each call may
+/// be made again: a put puts the same sealed bytes under the same name, and the bucket keeps both versions.
+pub struct Retrying<B>(pub B);
+
+impl<B: Bucket> Retrying<B> {
+    /// What `call` answers, tried again as `Retrying` says; each failure but the last said in the log, of `what`.
+    async fn tried<'a, T>(&'a self, what: &str, call: impl Fn() -> Fut<'a, T>) -> Result<T> {
+        let mut wait = Duration::from_secs(1);
+        for n in 1..TRIES {
+            match call().await {
+                Ok(answer) => return Ok(answer),
+                Err(e) => tracing::warn!("avenDB backups: {what} in the bucket, try {n} of {TRIES}: {e:#}"),
+            }
+            tokio::time::sleep(wait).await;
+            wait *= 2;
+        }
+        call().await
+    }
+}
+
+impl<B: Bucket> Bucket for Retrying<B> {
+    fn put<'a>(&'a self, name: &'a str, bytes: Vec<u8>) -> Fut<'a, ()> {
+        Box::pin(self.tried(name, move || self.0.put(name, bytes.clone())))
+    }
+
+    fn get<'a>(&'a self, name: &'a str) -> Fut<'a, Option<Vec<u8>>> {
+        Box::pin(self.tried(name, move || self.0.get(name)))
+    }
+
+    fn list<'a>(&'a self, prefix: &'a str) -> Fut<'a, Vec<String>> {
+        Box::pin(self.tried(prefix, move || self.0.list(prefix)))
+    }
+
+    fn delete<'a>(&'a self, name: &'a str) -> Fut<'a, ()> {
+        Box::pin(self.tried(name, move || self.0.delete(name)))
+    }
 }
 
 /// A vault a run failed, with why.

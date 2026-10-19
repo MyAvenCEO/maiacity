@@ -56,6 +56,9 @@ Each vault's folder is sealed under a key of its own, derived from the server's 
 vault's id, and every object is bound to its name: nothing opens in another vault's folder or under another name. As
 the folders are sealed apart, blobs are deduplicated inside a folder, never across folders.
 
+Hetzner fails a request now and then, so the server tries each request to the bucket of snapshots up to 4 times, a
+second apart, then two, then four, and says each failure in its log.
+
 The bucket has Object Lock, in compliance mode for 7 days: every version of every object stays at least 7 days, even
 if a key is stolen. Nothing the server does to its own shelf touches the bucket of snapshots, and nothing deletes in
 it but retention.

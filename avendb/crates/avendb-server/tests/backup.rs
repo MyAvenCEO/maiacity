@@ -120,7 +120,7 @@ fn the_bucket(folder: &Folder) -> (Arc<dyn Bucket>, String) {
         secret_key: said("AVENDB_TEST_BUCKET_SECRET_KEY"),
         seal: Zeroizing::new([0; 32]),
     };
-    let s3 = avendb_server::bucket::S3::new(&config).expect("the test bucket");
+    let s3 = backups::Retrying(avendb_server::bucket::S3::new(&config).expect("the test bucket"));
     let prefix = format!("runs/{}/", data_encoding::HEXLOWER.encode(&random()[..8]));
     let at = format!("bucket {name} at {}, under {prefix}", config.endpoint);
     (Arc::new(Prefixed { bucket: Arc::new(s3), prefix }), at)
@@ -138,6 +138,10 @@ fn rate(bytes: u64, took: Duration) -> f64 {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_server_comes_back_whole_from_its_snapshots() {
+    // what the backups say as they go, such as a request to the bucket tried again
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env();
+    let filter = filter.unwrap_or_else(|_| "avendb_net=warn,avendb_server=info".into());
+    tracing_subscriber::fmt().with_env_filter(filter).with_test_writer().try_init().ok();
     let mut w = world();
     let h = handbook(&mut w);
     let read = share(h.coop, vault(w.carol), Level::Read, by_id(h.welcome));
@@ -181,7 +185,9 @@ async fn the_server_comes_back_whole_from_its_snapshots() {
     assert_eq!((coop_first.base, coop_first.files), (None, 1), "the coop, all of it, with the film");
     // a quiet day: nothing put but each vault's manifest
     let quiet = backups::back_up_all(&server, &snapshots, &keep, day(1), false).await;
-    assert!(quiet.failed.is_empty() && quiet.done.iter().all(|d| d.base == Some(day(0)) && d.news == 0));
+    assert!(quiet.failed.is_empty(), "every vault backed up: {:?}", quiet.failed);
+    let busy_quiet: Vec<_> = quiet.done.iter().filter(|d| d.base != Some(day(0)) || d.news != 0).collect();
+    assert!(busy_quiet.is_empty(), "each built on the first day's, with nothing new: {busy_quiet:?}");
     assert_eq!(put(&quiet), (0, 0), "no blob on a quiet day");
     eprintln!("day 2, quiet: {} manifests in {:?}", quiet.done.len(), quiet.took);
     // a busy day: Alice's Mac brings a scan into Welcome
