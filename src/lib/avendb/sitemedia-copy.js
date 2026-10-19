@@ -8,12 +8,16 @@ import published from '$lib/media/manifest.json';
 import { GATEWAY } from '$lib/media/url';
 import { APP_API, native } from '$lib/native';
 import { publicShare } from './flows.js';
-import { creatable } from './ops.js';
-import { copyAll, SITE, uncopied } from './sitemedia.js';
+import { creatable, deleting } from './ops.js';
+import { copyAll, doubled, SITE, uncopied } from './sitemedia.js';
 
 /** The pieces of the site's media vault `vault` doesn't hold yet, in world `world`. @param {import('./vaults.js').WorldView}
  *  world @param {string} vault */
 export const siteLeft = (world, vault) => uncopied(world, vault, /** @type {any} */ (published));
+
+/** The second copies of the site's media vault `vault` holds, in world `world` (./sitemedia.js `doubled`). @param
+ *  {import('./vaults.js').WorldView} world @param {string} vault */
+export const siteDoubled = (world, vault) => doubled(world, vault, /** @type {any} */ (published));
 
 /** Where file `hash` is read from in the old media vault, in order. @param {string} hash */
 export const addressesOf = (hash) => [`${GATEWAY}/${hash}`, ...(native() ? [`${APP_API}/vault/files/${hash}`] : [])];
@@ -21,15 +25,17 @@ export const addressesOf = (hash) => [`${GATEWAY}/${hash}`, ...(native() ? [`${A
 /** @typedef {Awaited<ReturnType<typeof copyAll>>} Copied */
 /** the copy under way in this tab, if one is: one at a time, so the card and the background job never write a file
  *  twice */
-let running = /** @type {Promise<Copied> | null} */ (null);
+let running = /** @type {Promise<Copied & { tidied: number }> | null} */ (null);
 
 /**
  * Copies what vault `vault` lacks of the site's media into it, acting for `actor`, through the vault screens' `api`,
- * telling `progress` how far it is (./sitemedia.js `copyAll`), a file the world as it is `now` holds by then left be: what it copied, or it throws where nothing lets `actor` add a file there, or the
- * vault refuses the share or the tags. While one runs in the tab, another waits for it.
+ * telling `progress` how far it is (./sitemedia.js `copyAll`), a file the world as it is `now` holds by then left be,
+ * then deletes the second copies it holds of any (`siteDoubled`), so that each is in it once: what it copied and how
+ * many copies it deleted (`tidied`), or it throws where nothing lets `actor` add a file there, or the vault refuses the
+ * share, the tags or a delete. While one runs in the tab, another waits for it.
  * @param {any} api @param {() => import('./vaults.js').WorldView} now @param {string} vault @param {string} actor
  * @param {(at: { done: number, of: number, now: string, bytes: number }) => void} [progress]
- * @returns {Promise<Copied>}
+ * @returns {Promise<Copied & { tidied: number }>}
  */
 export function copySiteMedia(api, now, vault, actor, progress) {
 	running ??= (async () => {
@@ -39,7 +45,13 @@ export function copySiteMedia(api, now, vault, actor, progress) {
 		const left = siteLeft(world, vault);
 		const held = (/** @type {import('./sitemedia.js').Piece} */ p) => !siteLeft(now(), vault).some((q) => q.hash === p.hash);
 		const shared = !!publicShare(world, vault, SITE);
-		return copyAll({ api, left, vault, actor, shared, asked, urlsOf: addressesOf, progress, held });
+		const out = await copyAll({ api, left, vault, actor, shared, asked, urlsOf: addressesOf, progress, held });
+		const twice = siteDoubled(now(), vault);
+		const deletes = twice.map((d) => ({ ...deleting(d.entry), as: actor }));
+		if (deletes.length && !(await api.runAll(`Deleting ${deletes.length} second copies of the site’s media`, deletes))) {
+			throw new Error('Maia City didn’t take the deletes of the second copies');
+		}
+		return { ...out, tidied: deletes.length };
 	})().finally(() => (running = null));
 	return running;
 }

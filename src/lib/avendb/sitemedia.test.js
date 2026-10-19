@@ -5,7 +5,7 @@
 import { expect, test } from 'bun:test';
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { bringing, copyAll, LEGACY, marking, nameOf, SITE, source, uncopied } from './sitemedia.js';
+import { bringing, copyAll, doubled, LEGACY, marking, nameOf, SITE, source, uncopied } from './sitemedia.js';
 
 const hex = (b) => bytesToHex(blake3(b));
 const h = (c) => c.repeat(64);
@@ -245,3 +245,35 @@ test('copying leaves a file another device copied meanwhile', async () => {
 	expect(log).toEqual(['brought jpg', 'brought mp3']);
 });
 
+
+test('of a file copied twice the first made stays, and only where both are copies of the same file, the site\'s or not', () => {
+	const file = (entry, title, created, extra = {}) => ({
+		entry, vault: 'city', type: 'file', title, created, tags: [SITE, LEGACY], deleted: false, files: [{ root: 'r1' }], ...extra
+	});
+	const world = {
+		entries: [
+			file('a2', `${h('a')}.jpg`, 20),
+			file('a1', `${h('a')}.jpg`, 10),
+			file('b1', `${h('b')}.mp3`, 10, { tags: [LEGACY] }),
+			file('b2', `${h('b')}.mp3`, 30, { tags: [LEGACY] }),
+			file('b3', `${h('b')}.mp3`, 20, { tags: [LEGACY] }),
+			file('c1', `${h('c')}.jpg`, 10),
+			file('c2', `${h('c')}.jpg`, 20, { files: [{ root: 'r2' }] }),
+			file('d1', `${h('d')}.jpg`, 10, { tags: [LEGACY] }),
+			file('d2', `${h('d')}.jpg`, 20),
+			file('e1', `${h('e')}.jpg`, 10),
+			file('e2', `${h('e')}.jpg`, 20, { deleted: true }),
+			file('f1', `${h('f')}.jpg`, 10),
+			file('f2', `${h('f')}.jpg`, 20, { tags: ['journal'] }),
+			file('g1', `${h('a')}.png`, 10),
+			file('g2', `${h('a')}.png`, 20)
+		]
+	};
+	const manifest = Object.fromEntries(['a', 'b', 'c', 'd', 'e', 'f'].map((c) => [h(c), { mime: c === 'b' ? 'audio/mpeg' : 'image/jpeg' }]));
+	expect(doubled(world, 'city', manifest)).toEqual([
+		{ entry: 'a2', name: `${h('a')}.jpg` },
+		{ entry: 'b3', name: `${h('b')}.mp3` },
+		{ entry: 'b2', name: `${h('b')}.mp3` }
+	]);
+	expect(doubled(world, 'alice', manifest)).toEqual([]);
+});

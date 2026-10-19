@@ -70,6 +70,34 @@ export function uncopied(world, vault, manifest) {
 }
 
 /**
+ * The copies of the site's files `manifest` (by hash) vault `vault` holds more than once, in world `world`, as the
+ * iPad and the Mac copied the same files at once (2026-10-19): of the live file entries of each name, all copied
+ * (`legacy:media`), all the site's or none, all bringing the same file, every one but the first made, by entry, to
+ * delete (Samuel 2026-10-19: "Remove doubles"). Names whose entries differ in any of that are left as they are.
+ * @param {import('./vaults.js').WorldView} world @param {string} vault @param {Record<string, Published>} manifest
+ * @returns {{ entry: string, name: string }[]}
+ */
+export function doubled(world, vault, manifest) {
+	const names = new Set(Object.entries(manifest).map(([hash, p]) => nameOf(hash, p.mime)));
+	/** @type {Map<string, import('./vaults.js').EntryView[]>} */
+	const by = new Map();
+	for (const e of world.entries) {
+		if (e.vault !== vault || e.type !== 'file' || e.deleted || !e.title || !names.has(e.title)) continue;
+		if (e.tags?.includes(LEGACY) && e.files?.[0]) by.set(e.title, [...(by.get(e.title) ?? []), e]);
+	}
+	/** @type {{ entry: string, name: string }[]} */
+	const out = [];
+	for (const [name, es] of by) {
+		const same = (/** @type {(e: import('./vaults.js').EntryView) => unknown} */ f) => new Set(es.map(f)).size === 1;
+		if (es.length < 2 || !same((e) => e.files[0].root) || !same((e) => !!e.tags?.includes(SITE))) continue;
+		/** @param {import('./vaults.js').EntryView} a @param {import('./vaults.js').EntryView} b */
+		const first = (a, b) => (a.created ?? Infinity) - (b.created ?? Infinity) || a.entry.localeCompare(b.entry);
+		for (const e of [...es].sort(first).slice(1)) out.push({ entry: e.entry, name });
+	}
+	return out;
+}
+
+/**
  * What copying pieces `left` into vault `vault` takes besides their bytes, acting for `actor`: the Public share on the
  * site's tag, where `shared` says the vault gives none yet, and the tag on each piece the vault holds already.
  * @param {Piece[]} left @param {string} vault @param {string} actor @param {boolean} shared
