@@ -849,7 +849,8 @@ peer that hasn't seen it yet. It can't be the hash of the creating write itself:
 entry's key, which its id names. Its first write creates it and carries its header, which never changes: its type and
 when it was created. Its author is the vault the creating write
 acted for. Its tags are a set of symbols that writes change by deltas. Header, tags and content all travel in the
-write's encrypted body (`slice::Body`): `{header, tags, answers, content, proof, files}`. No relay sees a type or a tag.
+write's encrypted body (`slice::Body`): `{header, tags, answers, content, proof, files, defines}`, `defines` a cap
+group entry's group. No relay sees a type or a tag.
 
 **Loro.** Each entry is a Loro document, a CRDT. Two devices that hold the same writes read the same entry, whatever
 order they came in. Text merges character by character. A list of records merges row by row, matched by id, and a
@@ -981,7 +982,7 @@ Every caller goes through `Node::run`:
 | The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileAgain [n]` for the second pass, `fileEnd [n]` and `fileDrop [n]` for `put_file` and a `create` with a `file`; `agents` (the access requests), `grant [name, device, shares, avenName]`, `deny [name, device]` and `agentCommand [harness?]` for the agent devices on the desktop; `drives`, `joinDrive [path, name]`, `openDrive [path]` and `ejectDrive [path]` for the drives plugged into it; `addWorker [vault, name, shares]` (each share `{name, where, ops}`, and `over` for one over another vault) and `workers` for the studio workers it hosts, and `run [op, node]`, an op run on the worker whose device `node` names, as that worker (section 3). Its ceremonies run in the app's sign-in sheet (section 11). |
 | The desktop app, in its own process | The same device hosted in the app's process in place of the sidecar (`avendb_device::host`), on one code path with it: the same calls through `Host::call(call, args)`, each answering `{"ok"}` or `{"error"}` as its line would with no id; each sheet to show on its `Lines`, answered by `Host::answer`; and `Host::node()`, the open device's node, for the app's own Rust to `read_file` by range and post `jobs()` with no JSON or base64; `Host::node_of(device)` the same of a studio worker it hosts, by that worker's own key and shares, never the desktop's. |
 | A studio worker on the desktop | Its own node, hosted by the desktop app beside its own (section 3): `run [op, node]` through the app's lines, or `Host::node_of(device)` in its process, each acting for its device vault, whose shares decide. It has no passkey, so a change the owners approve answers `approve`. |
-| An agent harness on the desktop | Its agent device, as its MCP server (`avendb-device agent <harness>`, section 3): `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change, `put_file` and a `create` with a `file` too with the absolute `path` of a file on the desktop beside the op, and its own `get_file {entry}` or `{vault, name}`, which reads a file back through `read_file` to the `path` beside the op (never over a file there unless `overwrite`), each acting for its device vault, whose shares decide; `avendb_add_spark` for a spark, the page's `create`; `avendb_add_artifact` for an artifact, a link or a file of the desktop saved by `put_file` first, put on a spark's canvas where it names one; and `avendb_read_file` for `get_file`; and `avendb_request_access` for more. It has no passkey, so a change the owners approve answers `approve`. |
+| An agent harness on the desktop | Its agent device, as its MCP server (`avendb-device agent <harness>`, section 3): `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change, `put_file` and a `create` with a `file` too with the absolute `path` of a file on the desktop beside the op, and its own `get_file {entry}` or `{vault, name}`, which reads a file back through `read_file` to the `path` beside the op (never over a file there unless `overwrite`), each acting as its coop's aven, of which it is a device, whose shares decide; `avendb_add_spark` for a spark, the page's `create`; `avendb_add_artifact` for an artifact, a link or a file of the desktop saved by `put_file` first, put on a spark's canvas where it names one; and `avendb_read_file` for `get_file`; and `avendb_request_access` for more. It has no passkey, so a change the owners approve answers `approve`. |
 | No passkey at hand | `Node::run` with no authenticator (`NoCeremony`): a change the owners approve answers `approve` and makes nothing. |
 
 A device's lifecycle stays outside `run`: founding, linking and opening a device (`Device.found`, `Device.link`,
@@ -1004,19 +1005,20 @@ the master recovery key by its standing consent (`engine::prepare`). With a cere
 `challenge` and the device keeps the edits (`engine::approve`). Without one, the answer hands out `challenge` (the 32
 bytes the passkey signs: the edit's id, or the batch challenge of edits drafted together), `signers` (the passkey
 first) and `draft` (the drafted edits on the wire, each behind its length in four bytes little-endian, in base64url
-without padding). `share`, `revoke`, `settings` and `found` may answer `approve`; no other op does.
+without padding). `share`, `share_group`, `revoke`, `settings` and `found` may answer `approve`; no other op does.
 
 ### Reads and asks
 
 | Op | Fields | Answer |
 |---|---|---|
 | `query` | `vault`, `where`, `schema`, `select`, `order`, `limit`, `offset`, `depth`, `follow` | The entries the `where` holds of, picked by its labels' selector first, a page at a time, each read `depth` rows down, the links at the places `follow` names followed (below) |
-| `get` | `entry`, `schema`, `line`, `at` | One entry on a line, or at a version |
+| `get` | `entry`, `schema`, `line`, `at`, `version` | One entry on a line, at a version, or at a release of its line by its number |
+| `pin` | `entry`, `at` | What a pin of the entry at a version names: its line, its number, the title there and the entry's short id (section 7) |
 | `history` | `entry`, `limit` | An entry's lines and every write of it, each with the changes it made and who stands behind it (`chain`) |
 | `schemas` | `vault` | The schemas and lenses the vault's entries are read through |
 | `groups` | none | The built-in groups of ops, each with its level |
 | `cap_groups` | `vault` | The vault's cap groups the device reads, each `{entry, name, caps, includes}` as its version in force says |
-| `kinds` | none | The kind table (section 3): each kind's name, `ownedBy` (`"signers"` or the kinds of vault that may own it), `most` owners (`null` for any), whether it holds `devices`, and how many of it one owner may own (`each`, `null` for any) |
+| `kinds` | none | The kind table (section 3): each kind's name (`kind`), `ownedBy` (`"signers"` or the kinds of vault that may own it), `most` owners (`null` for any), whether it holds `devices`, and how many of it one owner may own (`each`, `null` for any) |
 | `limits` | none | How deep the device's queries read: `{depth, default, ceiling}` (below) |
 | `world` | none | The device's world (below), or `null` while it belongs to no vault |
 | `database` | `vault` | A vault's database as the device holds it: its tables, audiences, schemas, lenses and counts |
@@ -1024,7 +1026,7 @@ without padding). `share`, `revoke`, `settings` and `found` may answer `approve`
 | `log` | none | Every signed edit the device holds, in words, each that acts for a vault with its `chain` |
 | `read_file` | `root`, `size`, `from`, `to` | `{root, from, to, len}` and the bytes beside; `NoCap` for a file the device doesn't open |
 | `jobs` | none | What the node does in the background (`Node::jobs`): `{running, ended}`, the last 200 that ended, newest first |
-| `creatable` | `vault`, `type`, `tags`, `as` | The tags a new entry needs to land where vault `as` may create it, or `NoCap` |
+| `creatable` | `vault`, `type`, `tags`, `draft`, `as` | The tags a new entry, or with `draft` a draft, needs to land where vault `as` may create it, or `NoCap` |
 | `taggable` | `entry`, `as` | The tags `as` may add or take off: `"any"`, or a list |
 | `may` | `ops`, `as` | For each change op: `true`, `{"approve": {signers}}`, or the refusal |
 | `shares` | `over`, `as` | Every share over a vault, owners and devices among them, each with `may` of its revocation |
@@ -1061,18 +1063,18 @@ reads a kind's rules and never decides them. Its JSON names everything as the co
 
 ### Changes
 
-**Entries.** `create {vault, type, tags, schema, value, draft, file, as}`, where `file` is `{len, name, media}` and
+**Entries.** `create {vault, type, tags, schema, value, draft, file, as}`, where `file` is `{len, name?, media?}` and
 the file's bytes come beside the op, as `put_file`'s do: the entry and its file are one signed edit, its creation's
 write brings it (`Lab::create_bringing`), alone, never in a batch, and it answers `{"entry", "root", "size"}`; a schema
-or a lens brings none. The record ops `set`, `unset`, `insert`, `remove`,
-`move` `{entry, line, schema, path, value, at, to, as}`; `tag {entry, add, remove, as}`; `propose`;
-`merge {entry, from, into, take, as}`, `take` the conflicts where the target takes the other line's value, each
-`{at: path, what: value | row | order}`, as `note` lists a proposal's `conflicts`; `review {entry, line, verdict,
-text, as}`, the vault's answer to a proposal (below, "Merges by policy"); the AIP ops `aip_open {vault, title, note,
-proposals, tags, as}`, `aip_promote {entry, as}`, `aip_withdraw {entry, why, as}` and `aip_review {entry, verdict, text,
-as}` (below, "AIPs"); `variant {entry, from, name, as}`, a living variant (above); `restore`, `undo`, `fork {entry,
-line, into, schema, ops, as}`; and `batch {ops, as}`, whose record ops in a row on one entry's line make one write. A
-schema or a lens is created as an entry of its type (section 9).
+or a lens brings none. The record ops `set`, `unset`, `insert`, `remove`, `move` `{entry, line, schema, path, value, at,
+to, as}`; `tag {entry, add, remove, as}`; `propose {entry, from, name, as}`; `merge {entry, from, into, take, as}`,
+`take` the conflicts where the target takes the other line's value, each `{at: path, what: value | row | order}`, as
+`note` lists a proposal's `conflicts`; `review {entry, line, verdict, text, as}`, the vault's answer to a proposal
+(below, "Merges by policy"); the AIP ops `aip_open {vault, title, note, proposals, tags, as}`, `aip_promote {entry,
+as}`, `aip_withdraw {entry, why, as}` and `aip_review {entry, verdict, text, heads, as}` (below, "AIPs"); `variant
+{entry, from, name, as}`, a living variant (above); `restore {entry, line, at, as}`, `undo {entry, line, edit, as}`,
+`fork {entry, line, into, schema, ops, as}`; and `batch {ops, as}`, whose record ops in a row on one entry's line make
+one write. A schema or a lens is created as an entry of its type (section 9).
 
 **Vaults.** Each runs alone, never in a batch, and `may` covers each:
 
@@ -1083,7 +1085,7 @@ schema or a lens is created as an entry of its type (section 9).
 | `copy {device, full}` | The copy setting of one of the person's devices, this one unless named: a wide keep share their vault issues over itself, Whole when `full`, else Opened; the device's other copy shares are revoked. `{"share"}` | Never |
 | `revoke {share, as}`, `{vault, owner}` or `{vault, device}` | `Revoking::Grant`, `Owner` or `Device`. A keep share is revoked acting as its issuer. `{"edit"}`; with `"standing": true`, a standing grant on every vault it reached, `{"edits"}` | Owner shares, owners, devices; not a device leaving |
 | `settings {vault, threshold}` or `{vault, root}` | A threshold, or handing the root on. `{"edit"}` | Always |
-| `found {vaults: [{kind, name}]}` or `{kind, name}` | New vaults the person's vault founds and owns, in one ceremony, each of a kind by its name in the kind table (coops, one aven, device vaults); then the person's standing grants, avenMAIA's share among them, and a profile on each. `{"vaults"}` | Always |
+| `found {vaults: [{kind, name, under}]}` or `{kind, name}` | New vaults the person's vault founds and owns, in one ceremony, or that one named before it in the list owns (`under`, its place there), each of a kind by its name in the kind table (coops, one aven, device vaults); then the person's standing grants, avenMAIA's share among them, and a profile on each. `{"vaults"}` | Always |
 | `put_file {vault, name, media, tags, len, as}` | The bytes sealed into the store as they come, then an entry of type `file` that brings them (section 13). `{"entry", "root", "size"}`. With `entry` in place of `vault` and `tags`, `put_file {entry, name, media, len, as}` brings them into that entry instead, landed on its main line, by one write there (`Lab::bring_into`), as a new default of a recipe's source; with `line`, on that line of it, a proposal or a variant, and with `value` (and `schema`), the write sets the whole record too: a version and its file in one write (`Lab::bring_on`), as each version and variant of an asset is. `{"entry", "line", "edit", "root", "size"}` | Never |
 | `ask {to, asks, level, why, vaults, as}` | An access request (section 3): a `request` record in the acting vault, asking vault `to` for `level` (Viewer, Suggester or Editor) and why, in 500 characters, and the vault ids in `vaults`, if any; or, `asks` `"owner"`, to co-own `to`, or `"invite"`, for `to` to co-own the acting vault, at Owner, as the kind table lets it; and the `Answer` share of that one record to `to`. `{"entry", "share"}` | Never |
 | `back_up {on}` | avenMAIA's share on the person's vault and the vaults it acts for: Backup, or Relay alone. `{"changed"}` | Never |
@@ -1347,10 +1349,9 @@ but one kind of grant op: an edit's `New` was already a proposal byte.
   and lens entries created on main (T17).
 - **Shares made before drafts.** A Suggester's share made before drafts lacks `create` on proposals. It still reads as
   a Suggester's (`world::group_of`), and still allows all it did, but drafts nothing (`drafts: false` in the world and
-  in `shares`; the page names it "Suggester (before drafts)"). The Mac's agent grant passes its agents' Suggester
-  shares on again in the new form, the aven's own first where it lacks the op, each resting on a share that gives all
-  its ops (`agent::pass_on`); standing Suggester grants and the vaults that follow them are given again the same way,
-  the later grant of one name standing for the earlier. None of this needs a passkey, as these shares are below Owner.
+  in `shares`; the page names it "Suggester (before drafts)"). A standing Suggester grant made before drafts, given
+  again, is issued in the new form, resting on a share that gives all its ops (`world::parent_giving`); the vaults that
+  follow it are given it again the same way (`follow_one`), the later grant of one name standing for the earlier. None of this needs a passkey, as these shares are below Owner.
   The old shares aren't revoked, which would rotate keys: they stay, drafting nothing.
 
 A plain creation, on main, counts exactly as it did before drafts: landing reads only drafts, and counting gains one
