@@ -1022,4 +1022,14 @@ export const MIGRATIONS: Migration[] = [
       DELETE FROM secrets WHERE key = 'premai_client_kek';
     `,
   },
+  {
+    // The tables nothing reads any more go (Samuel 2026-10-19: "Drop them"): Studio 1's shots, their versions and its
+    // render queue, as Studio 2 cuts, renders and shoots in avenDB alone and the two legacy films come back from their
+    // frozen copies (films/legacy); and the Generated UI's views, a test. `timelines` stays: the content scripts still
+    // find a film by its variant there (api/scripts/day.ts).
+    id: "0052-drop-studio-1-and-genui",
+    sql: `
+      DROP TABLE IF EXISTS render_jobs, shot_versions, shots, genui_views CASCADE;
+    `,
+  },
 ];
