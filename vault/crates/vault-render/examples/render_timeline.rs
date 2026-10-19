@@ -3,9 +3,9 @@
 //!   cargo run --release -p vault-render --example render_timeline -- <timeline.json> <out.mp4> [options]
 //!   cargo run --release -p vault-render --example render_timeline -- --probe <file>…
 //!
-//! The timeline is the API's JSON (`GET /api/timelines/:id`). Its clips name files by hash; without the vault, the
-//! JSON may carry `"files": { "<hash>": "/path/to/file" }` and `"media": { "<hash>": { "kind", "title", "meta" } }`
-//! beside the timeline's own fields (a hash that is itself a path to a file works too).
+//! The timeline is the studio's JSON (a cut, as vault/app/src/aven.rs `cut_json` gives it). Its clips name files by
+//! hash; without the vault, the JSON may carry `"files": { "<hash>": "/path/to/file" }` and `"media": { "<hash>":
+//! { "kind", "title", "meta" } }` beside the timeline's own fields (a hash that is itself a path to a file works too).
 //!
 //! Options:
 //!   --shape 9:16     the shape to render (default: the timeline's own); --all: every shape, as the worker

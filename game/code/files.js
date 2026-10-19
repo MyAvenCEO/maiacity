@@ -5,8 +5,7 @@
  *
  *   views/<id>/                        a view: entry.json, view.html or a2ui.json, data.json, input.json, logic.js
  *
- * Nothing here touches a disk: scripts/code-index.mjs
- * and scripts/code-land.mjs read and write, game/code/land.js decides what to write.
+ * Nothing here touches a disk: scripts/code-index.mjs reads and writes.
  */
 
 /** JSON as we write it into code/: tabs, a closing newline */

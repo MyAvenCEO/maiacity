@@ -35,9 +35,7 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 blake3.workspace = true
 iroh.workspace = true
-axum = "0.8"
 trash = "5"
-futures-lite.workspace = true
 vault-media = { path = "../crates/vault-media" }
 # speech to text, on-device: Phonon-2 through ONNX Runtime (transcripts.rs)
 vault-asr = { path = "../crates/vault-asr" }

@@ -7,10 +7,10 @@
  * They are part of Maia City's seed (Samuel 2026-10-18): the account page brings them in the background right after
  * the repo seed, on the Mac, as it writes the rest ($lib/avendb/Account.svelte), and the studio brings them too
  * whenever it opens there and the Maia City vault lacks one (`bringFilms`), one run for both, so after a reset of
- * avenDB they come back by themselves; a film already there (its story and its cut carry the film's tag) costs no
- * call to the legacy API. A film frozen (into the repo, or the Mac's film seed ~/maiaCITY-seed/films, ./frozen.js) comes
- * from there alone (Samuel 2026-10-18 13:29: both must come back after the old studio is gone); the old studio is
- * asked only for one not frozen yet. The legacy timelines and Postgres stay as they are until J15.
+ * avenDB they come back by themselves; a film already there (its story and its cut carry the film's tag) is left as
+ * it is. A film comes from its frozen copy alone (into the repo, or the Mac's film seed ~/maiaCITY-seed/films,
+ * ./frozen.js; Samuel 2026-10-18 13:29: both must come back after the old studio is gone); the old studio's API is
+ * never asked. The legacy timelines and Postgres stay as they are until J15.
  *
  * The repo's frozen copy is the films' seed, so a shot changed there comes to a film already brought too
  * (`retunedOf`): as the shot's next version, the cut playing it, unless the shot was tuned in the studio since.
@@ -23,9 +23,9 @@ import { answer } from '$lib/avendb/ops.js';
 import { sameSpec } from '../../../game/film/shot.js';
 import { saveAvenShot, versionEntry } from './avenshots.js';
 import { CUT, device, getCut, saveCut, worldOf } from './cuts.js';
-import { FILMS, legacyOf } from './filmlist.js';
+import { FILMS } from './filmlist.js';
 
-export { FILMS, legacyOf } from './filmlist.js';
+export { FILMS } from './filmlist.js';
 /** @typedef {import('./filmlist.js').Film} Film */
 
 /** The story flow's Movie stage, as $lib/avendb/flows.js `stageTag('story', 'movie')` names it. */
@@ -118,7 +118,7 @@ async function retune(call, city, f, frozen) {
 /**
  * Every film the Maia City vault lacks, brought into it one after another: `tell` hearing how far each is (its story
  * made first, so the studio shows it as it comes), `arrived` each as its cut is made, with the files that could not
- * come (./importer.js), or why it can't be (`missing`: the old studio has no such timeline). The films brought, each with those. Nothing where this isn't the Mac app with avenDB open, or
+ * come (./importer.js). The films brought, each with those. Nothing where this isn't the Mac app with avenDB open, or
  * the Maia City vault isn't reached here.
  * Then every intro of MaiaCity V1 it lacks (./intros.js), heard the same way.
  * @param {{ tell?: (f: Brought, line: string, at?: import('./importer.js').Progress) => void,
@@ -152,10 +152,11 @@ async function bringing() {
 	let world = await worldOf(call);
 	const city = cityOf(world);
 	if (!city) return [];
-	const wanted = FILMS.filter((f) => !heldOf(world, city.vault, f).cut);
 	const { frozenFilm } = await import('./frozen.js');
-	// the repo's frozen copy first, with the Mac's film seed (./frozen.js), the old studio only for one it lacks
+	// the repo's frozen copy first, with the Mac's film seed (./frozen.js)
 	const frozenOf = new Map(await Promise.all(FILMS.map(async (f) => /** @type {const} */ ([f.key, await frozenFilm(f)]))));
+	// a film frozen in neither is simply not offered
+	const wanted = FILMS.filter((f) => frozenOf.get(f.key) && !heldOf(world, city.vault, f).cut);
 	// a film that came before its proxies did: its footage's (the old studio's HD proxies) and those of its shots whose
 	// world is gone, from the film seed now
 	if (FILMS.some((f) => heldOf(world, city.vault, f).cut)) {
@@ -173,26 +174,19 @@ async function bringing() {
 	const intros = async () => (await import('./intros.js')).bringIntros(call, city, { tell, arrived });
 	if (!wanted.length) return intros();
 	// each shows in the aside at once
-	for (const f of wanted) tell(f, frozenOf.get(f.key) ? 'Starting…' : 'Asking the old studio…');
-	const { listTimelines } = await import('$lib/auth/client');
-	const { importTimeline, legacyCall } = await import('./importer.js');
-	const legacy = wanted.every((f) => frozenOf.get(f.key)) ? [] : /** @type {any[]} */ (await legacyCall(listTimelines()));
+	for (const f of wanted) tell(f, 'Starting…');
+	const { importTimeline } = await import('./importer.js');
 	const brought = [];
 	for (const f of wanted) {
-		const frozen = frozenOf.get(f.key);
-		const t = frozen ? { id: frozen.timeline.id, description: frozen.story.description } : legacyOf(f, legacy);
-		if (!t) {
-			await arrived(f, [], `no timeline "${f.timeline}" of "${f.project}" in the old studio`);
-			continue;
-		}
+		const frozen = /** @type {import('./frozen.js').Frozen} */ (frozenOf.get(f.key));
 		tell(f, 'Starting…');
 		world = await worldOf(call);
 		let story = heldOf(world, city.vault, f).story?.entry;
 		if (!story) {
-			const value = { kind: 'story', title: f.name, text: '', description: t.description ?? '', series: 'Films', sparks: [], tags: [] };
+			const value = { kind: 'story', title: f.name, text: '', description: frozen.story.description ?? '', series: 'Films', sparks: [], tags: [] };
 			story = answer(await call('run', { op: 'create', vault: city.vault, type: 'story', tags: [MOVIE, filmTag(f)], value, as: city.as })).entry;
 		}
-		const cut = await importTimeline(t.id, (line, at) => tell(f, line, at), { ...city, name: f.name, project: f.name, story: { vault: city.vault, entry: /** @type {string} */ (story) }, tags: [filmTag(f)], ...(frozen ? { frozen } : {}) });
+		const cut = await importTimeline(frozen.timeline.id, (line, at) => tell(f, line, at), { ...city, name: f.name, project: f.name, story: { vault: city.vault, entry: /** @type {string} */ (story) }, tags: [filmTag(f)], frozen });
 		const failed = cut.failed ?? [];
 		await arrived(f, failed);
 		brought.push({ film: f, failed });

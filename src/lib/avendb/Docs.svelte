@@ -5,8 +5,12 @@
 	(./seed.js, ./docs.js): the skills of .claude/skills, the theOS paper and the avenDB architecture. On the left each
 	doc by its section, with a search; in the middle the one picked (`#docs/` and its entry), its text as it reads on the
 	line picked; on the right its history and versions (./Lines.svelte) and its outline. Edit opens its text as a note.
+	The two docs that are pages of the site, the theOS paper and the avenDB architecture, show on main as their pages do,
+	figures and all (Samuel 2026-10-19: the docs' own layout in the middle, avenDB's version control on the right), with
+	their text a tab away; on another line, their text.
 -->
 <script>
+	import { tick } from 'svelte';
 	import { render } from './article.js';
 	import { readable } from './docs.js';
 	import Frame from './Frame.svelte';
@@ -79,13 +83,63 @@
 	const onLine = $derived(note?.lines?.find((/** @type {any} */ l) => l.line === line) ?? note?.lines?.[0]);
 	const text = $derived(/** @type {string} */ (onLine?.record?.text ?? /** @type {any} */ (picked?.e.record)?.text ?? ''));
 	const html = $derived(render((skill ? readable(text) : text).replace(/^\s*# .+\n+/, ''), () => ''));
-	const outline = $derived(
-		[...(skill ? readable(text) : text).matchAll(/^(#{2,3}) (.+)$/gm)].map((m) => ({ deep: m[1].length === 3, text: m[2].replace(/[*`]/g, '') }))
-	);
+
+	/** the docs that are pages of the site, each drawn here as its page draws it, by its key */
+	const PAGES = /** @type {Record<string, () => Promise<{ default: any }>>} */ ({
+		'paper/theos': () => import('$lib/theos/Paper.svelte'),
+		'docs/avendb': () => import('$lib/docs/AvenDB.svelte')
+	});
+	/** the doc picked as its page, or as its text */
+	let view = $state(/** @type {'page' | 'text'} */ ('page'));
+	/** the page of the doc picked, once loaded, if it has one */
+	let Page = $state.raw(/** @type {any} */ (null));
+	$effect(() => {
+		const load = picked ? PAGES[picked.key] : undefined;
+		Page = null;
+		if (!load) return;
+		let gone = false;
+		load().then(
+			(m) => !gone && (Page = m.default),
+			() => {}
+		);
+		return () => {
+			gone = true;
+		};
+	});
+	/** its page shows on main alone: a proposal or a variant reads as its text */
+	const paged = $derived(!!picked && !!PAGES[picked.key] && view === 'page' && (onLine?.line ?? null) === null);
+
 	/** @type {HTMLElement | undefined} */
 	let article = $state();
+	/** its headings as they are drawn, a page's or the text's, those of its own contents left out */
+	let headings = $state.raw(/** @type {HTMLElement[]} */ ([]));
+	$effect(() => {
+		void [html, paged, Page, article];
+		let gone = false;
+		tick().then(() => {
+			if (!gone) headings = [...(article?.querySelectorAll('h2, h3') ?? [])].filter((h) => !h.closest('nav')).map((h) => /** @type {HTMLElement} */ (h));
+		});
+		return () => {
+			gone = true;
+		};
+	});
+	// a section's number stays apart from its title, as the paper sets it in a span of its own
+	const outline = $derived(headings.map((h) => ({ deep: h.tagName === 'H3', text: (h.textContent ?? '').replace(/^(\d+(?:\.\d+)*)(?=[^\s\d.])/, '$1 ').trim() })));
 	/** A heading of the outline, by its place among the article's headings, brought into view. @param {number} i */
-	const goTo = (i) => article?.querySelectorAll('h2, h3')[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	const goTo = (i) => headings[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	/**
+	 * A link to a place in the doc, as a page's contents and its references are, scrolls to it: the address's `#` names
+	 * avenDB's views, so it stays as it is.
+	 * @param {MouseEvent} e
+	 */
+	function within(e) {
+		const a = e.target instanceof Element ? e.target.closest('a[href^="#"]') : null;
+		const id = decodeURIComponent(a?.getAttribute('href')?.slice(1) ?? '');
+		const to = id ? article?.querySelector(`[id="${CSS.escape(id)}"]`) : null;
+		if (!to) return;
+		e.preventDefault();
+		to.scrollIntoView({ behavior: 'smooth', block: 'start' });
+	}
 </script>
 
 {#snippet list()}
@@ -133,17 +187,28 @@
 				share its docs in <button class="link" onclick={onaccess}>Sharing</button>.{/if}
 		</p>
 	{:else if picked}
-		<article class="doc" bind:this={article}>
-			<p class="eyebrow soft">
+		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+		<article class="doc" class:paged bind:this={article} onclick={within}>
+			<p class="eyebrow soft" class:gone={paged}>
 				{skill ? 'Skill' : picked.key.startsWith('paper/') ? 'Paper' : 'Architecture'}{#if onLine && onLine.line !== null}
 					· on “{onLine.name ?? 'a line'}”{/if}{#if note} · {count(note.edits?.length ?? 0, 'edit')}{/if}
 			</p>
-			<h1>{picked.key.split('/').at(-1) || picked.e.title}</h1>
+			{#if !paged}<h1>{picked.key.split('/').at(-1) || picked.e.title}</h1>{/if}
 			<p class="tools">
 				<a class="btn" href="#stories/{picked.e.entry}/edit">Edit</a>
+				{#if PAGES[picked.key] && (onLine?.line ?? null) === null}
+					<span class="seg" role="group" aria-label="Show it as">
+						<button class:on={view === 'page'} aria-pressed={view === 'page'} onclick={() => (view = 'page')}>Page</button>
+						<button class:on={view === 'text'} aria-pressed={view === 'text'} onclick={() => (view = 'text')}>Text</button>
+					</span>
+				{/if}
 				{#if post?.page}<a class="btn quiet" href={post.page} target="_blank" rel="noopener">Its live page</a>{/if}
 			</p>
-			<div class="body">{@html html}</div>
+			{#if paged}
+				{#if Page}<Page embedded />{:else}<p class="soft">Opening its page…</p>{/if}
+			{:else}
+				<div class="body">{@html html}</div>
+			{/if}
 		</article>
 	{/if}
 </Frame>
@@ -151,6 +216,38 @@
 <style>
 	.doc {
 		max-width: 48rem;
+	}
+
+	/* a page of the site, drawn as it is there: as wide as the column, its own measure inside */
+	.doc.paged {
+		max-width: none;
+	}
+
+	.seg {
+		display: inline-flex;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		overflow: hidden;
+	}
+
+	.seg button {
+		padding: 0.3rem 0.8rem;
+		border: 0;
+		background: none;
+		font: inherit;
+		font-size: 0.85rem;
+		color: var(--soft);
+		cursor: pointer;
+	}
+
+	.seg button.on {
+		background: var(--edge);
+		color: inherit;
+	}
+
+	/* a page names itself, so none over it */
+	.eyebrow.gone {
+		display: none;
 	}
 
 	.eyebrow {

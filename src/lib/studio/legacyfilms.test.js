@@ -1,20 +1,6 @@
 // @ts-nocheck
 import { expect, test } from 'bun:test';
-import { FILMS, cityOf, filmTag, heldOf, legacyOf } from './legacyfilms.js';
-
-const legacy = [
-	{ id: 'a', name: 'Day 01 · Opening', project: 'The 1 million decision', variant: 'opening' },
-	{ id: 'b', name: 'Day 01 · Rough', project: 'The 1 million decision', variant: 'rough' },
-	{ id: 'c', name: 'World', project: '233 settlers, how it starts', variant: 'W' },
-	{ id: 'd', name: 'Trailer', project: 'Trailer', variant: null }
-];
-
-test('each film finds its one legacy timeline, by its story and its name', () => {
-	expect(legacyOf(FILMS[0], legacy)?.id).toBe('a');
-	expect(legacyOf(FILMS[1], legacy)?.id).toBe('c');
-	expect(legacyOf(FILMS[1], [{ id: 'x', name: 'World v2', project: '233 Settlers, how it starts' }])?.id).toBe('x');
-	expect(legacyOf(FILMS[0], [{ id: 'y', name: 'Other', project: 'The 1 million decision' }, { id: 'z', name: 'More', project: 'The 1 million decision' }])).toBe(null);
-});
+import { FILMS, cityOf, filmTag, heldOf } from './legacyfilms.js';
 
 test('only the Maia City vault takes them, and a film there is found by its tag', () => {
 	const world = {

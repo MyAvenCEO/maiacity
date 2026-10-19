@@ -19,7 +19,7 @@
 //! `meta/` is editorial (people and agents); what a machine derives from a file lives under its own key per concern,
 //! keyed by the same hash, a small JSON blob synced exactly like `meta/`. Nobody writes derived data into `meta/`:
 //! a Mac rewriting a description can never lose a transcript, and the server never overwrites what a person wrote.
-//! What the app serves (the studio, the MCP, the local routes) is the *view* (`list_view`, `meta_view`): the
+//! What the app serves the studio is the *view* (`list_view`, `meta_view`): the
 //! description with its derived records merged into `meta` — `meta.transcript`, `meta.transcript_state`,
 //! `meta.transcript_progress`, `meta.audio`, `meta.analysis`, `meta.analysis_state`, `meta.analysis_progress`,
 //! `meta.hero` (`with_derived`).

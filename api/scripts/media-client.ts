@@ -7,8 +7,8 @@ import { join } from "node:path";
 
 export const ROOT = join(import.meta.dir, "../..");
 export const local = process.argv.includes("--local");
-// MAIACITY_API (or MAIA_API) points a terminal, the render worker or a script at another API — a test server, a
-// second local one on its own port for a parallel checkout
+// MAIACITY_API (or MAIA_API) points a terminal or a script at another API — a test server, a second local one on its
+// own port for a parallel checkout
 export const API = process.env.MAIACITY_API ?? process.env.MAIA_API ?? (local ? "http://localhost:3100" : "https://api.maia.city");
 export const SITE = local ? "http://localhost:5173" : "https://maia.city";
 export const CONFIG = join(homedir(), ".config", "maiacity");
@@ -34,7 +34,7 @@ export async function saveKey(key: string | null) {
 }
 
 export async function keyFor(): Promise<string> {
-  // MAIACITY_KEY: a key given outright (a test run, a worker started with its own key)
+  // MAIACITY_KEY: a key given outright (a test run, a script started with its own key)
   const k = process.env.MAIACITY_KEY ?? (await readJson<Record<string, string>>(KEYS, {}))[API];
   if (!k) throw new Error(`Not signed in to ${API}: set MAIACITY_KEY, or keep the key in ${KEYS} (bun media login is gone with the legacy vault)`);
   return k;
