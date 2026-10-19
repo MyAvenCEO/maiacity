@@ -178,7 +178,8 @@ async fn a_server_whose_folder_is_lost_is_the_same_device_again() {
     drop(first);
     let secret = sealed.get(&format!("g{FLOOR}/{}", server::SECRET)).await.expect("the bucket opens");
     let secret = secret.expect("its secret in the bucket");
-    assert_eq!(secret.len(), 32, "a 32-byte secret");
+    assert_eq!(secret.len(), 33, "its suite's byte, then its 32-byte secret (`sign::kept_secret`)");
+    let secret = &secret[1..];
     for (name, bytes) in files(cache.path()) {
         assert!(!bytes.windows(32).any(|w| w == secret), "{name} in the folder doesn't hold the secret");
     }

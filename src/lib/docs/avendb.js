@@ -10,7 +10,7 @@ export const TRIPS = [
 	{
 		title: 'You write a note',
 		caption:
-			'If the desktop and the phone reach each other, they sync directly too, and the server only catches up. The server says it holds an edit only once the bucket does, so its holdings are the receipt: until then the desktop sees the server lacks it, keeps it and offers it again. Only logs that changed are named, so a quiet vault costs nothing.',
+			'If the desktop and the phone reach each other, they sync directly too, and the server only catches up. The server says it holds an edit only once the bucket does, so its holdings are the receipt: until then the desktop sees the server lacks it, and the server keeps trying to save it. Only logs that changed are named, so a quiet vault costs nothing.',
 		spec: {
 			actors: [you, desktop, server, bucket, phone],
 			steps: [
@@ -35,14 +35,15 @@ export const TRIPS = [
 	{
 		title: 'You add a 2 TB film on your desktop',
 		caption:
-			'Your uplink sets the pace: at 54 Mbit/s a terabyte takes about 41 hours, at 1 Gbit/s about 2.2 hours. The desktop keeps working the whole time, and the film plays on it from the first second. A piece counts on the server once its outboard is in the bucket, written after every part.',
+			'Your uplink sets the pace: at 54 Mbit/s a terabyte takes about 41 hours, at 1 Gbit/s about 2.2 hours. The desktop keeps working the whole time. The film is in your vault once the desktop has read it twice, once for its key and once to seal it, and the upload starts then. A piece counts on the server once its outboard is in the bucket, written after every part.',
 		spec: {
 			actors: [you, desktop, server, bucket],
 			steps: [
 				{ from: 'you', to: 'M', text: 'drop the film into a vault' },
+				{ from: 'M', to: 'M', text: 'read the whole film once, to derive its key' },
 				{
 					group: 'loop',
-					label: 'every 1 GiB piece, as it is read',
+					label: 'every 1 GiB piece, as it is read again',
 					steps: [{ from: 'M', to: 'M', text: 'seal 64 KiB segments, hash with BLAKE3, shelve it' }]
 				},
 				{ from: 'M', to: 'M', text: 'write the HashSeq root, sign one write that brings it' },
@@ -90,8 +91,7 @@ export const TRIPS = [
 						]
 					}
 				},
-				{ from: 'P', to: 'P', text: 'open the segments, hand them to the player' },
-				{ note: ['P'], text: 'playback starts after one window' }
+				{ from: 'P', to: 'P', text: 'open the segments, hand them to the player' }
 			]
 		}
 	},
@@ -108,7 +108,7 @@ export const TRIPS = [
 			],
 			steps: [
 				{ note: ['M', 'P'], text: 'same café wifi' },
-				{ from: 'M', to: 'P', text: 'hello, proven by a hash-based signature' },
+				{ from: 'M', to: 'P', text: 'hello, proven by a post-quantum signature' },
 				{ from: 'P', to: 'M', text: 'hello', reply: true },
 				{ from: 'M', to: 'P', text: 'holdings: each log’s frontier' },
 				{ from: 'P', to: 'M', text: 'holdings, and ask the logs that differ' },
@@ -130,7 +130,7 @@ export const TRIPS = [
 	{
 		title: 'A new phone signs in with your passkey alone',
 		caption:
-			'The link card holds the logs of the vaults your passkey owns and nothing of an entry, so the pass alone reads nothing. History then comes in pages of about 4 MiB, each edit after its past, so a vault of any size arrives a page at a time, never one round trip per edit. With every other device lost, this is how a vault comes back. Setting up on a second device with the same passkey takes this same path, and founds nothing new.',
+			'The link card holds the logs of the vaults your passkey owns and nothing of an entry, so the pass alone reads nothing. History then comes in pages of about 4 MiB, each edit after its past, so a vault of any size arrives a page at a time, never one round trip per edit. With every other device lost, this is how a vault comes back. Signing in on a second device with the same passkey takes this same path, and founds nothing new.',
 		spec: {
 			actors: [you, { id: 'N', label: 'New phone' }, server],
 			steps: [
@@ -143,14 +143,14 @@ export const TRIPS = [
 				{ from: 'N', to: 'S', text: 'ask for every log it may receive' },
 				{ from: 'S', to: 'N', text: 'pages of history', reply: true },
 				{ note: ['N'], text: 'notes and todos are there' },
-				{ from: 'N', to: 'S', text: 'pieces of a file, only when you open it' }
+				{ from: 'N', to: 'S', text: 'pieces of a file as you open it, or whole by your copy setting' }
 			]
 		}
 	},
 	{
 		title: 'The server is lost and rebuilt',
 		caption:
-			"The bucket holds every edit and key the server took, and the server's own device secret, all sealed. Only the seal key sits apart, in the deploy's secrets with a copy kept offline. So a new server on an empty disk is the same device again, and nothing changes for your vaults. File parts come back from the bucket as they are read.",
+			'The bucket holds every edit and key the server took, and the server’s own device secret, all sealed. Only the seal key sits apart, in the deploy’s secrets. So a new server on an empty disk is the same device again, and nothing changes for your vaults. File parts come back from the bucket as they are read. Were the bucket itself lost, the nightly snapshots in the second bucket bring the server back: a restore puts every vault into a new, empty folder with the server’s device secret, and a server started there is the same device.',
 		spec: {
 			actors: [{ id: 'S', label: 'New server' }, bucket, { id: 'D', label: 'Any of your devices' }],
 			steps: [
@@ -158,9 +158,9 @@ export const TRIPS = [
 				{ from: 'B', to: 'S', text: 'sealed', reply: true },
 				{ from: 'S', to: 'S', text: 'open it with the seal key: the same device again' },
 				{ from: 'S', to: 'B', text: 'the newest head, and the journal after it' },
-				{ from: 'B', to: 'S', text: 'a few dozen sealed objects', reply: true },
-				{ from: 'S', to: 'B', text: 'the packs they name' },
-				{ from: 'B', to: 'S', text: 'sealed packs', reply: true },
+				{ from: 'B', to: 'S', text: 'a head and up to 63 entries, sealed', reply: true },
+				{ from: 'S', to: 'B', text: 'the packs and McEliece keys they name' },
+				{ from: 'B', to: 'S', text: 'up to 64 sealed packs, and the keys', reply: true },
 				{ from: 'S', to: 'S', text: 'open each, check every edit again' },
 				{ note: ['S'], text: 'its holdings name only what the bucket holds' },
 				{ from: 'D', to: 'S', text: 'hello and holdings, as usual' },

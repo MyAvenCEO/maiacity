@@ -14,6 +14,7 @@ import { LIBS } from '../../../game/genui/views.js';
 import { fromA2ui } from './view/a2ui.js';
 import { latestOf, pathOf } from './engines.js';
 import { frozen } from './frame.js';
+import { VIEW_SCRIPT } from './policy.js';
 
 /**
  * A view as the host shows it: `{ id, title, html, libs, height (0: as high as what it shows), data, input, logic? }`.
@@ -80,18 +81,11 @@ export const viewCsp = (nonce) =>
 
 /**
  * The frame's first document: nothing of a view's in it, only the script that takes our engine (and the port it
- * speaks over) from this page, once, and starts it from a blob: URL.
+ * speaks over) from this page, once, and starts it from a blob: URL (./policy.js VIEW_SCRIPT, the same text in every
+ * frame, which the page's own policy names by its hash). The key it must be handed with is the document's own.
  * @param {string} key @param {string} nonce
  */
-export const bootDoc = (key, nonce) => `<!doctype html><html><head><meta charset="utf-8">
+export const bootDoc = (key, nonce) => `<!doctype html><html data-key="${key}"><head><meta charset="utf-8">
 <meta http-equiv="Content-Security-Policy" content="${viewCsp(nonce)}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script nonce="${nonce}">addEventListener('message', function boot(e) {
-	const m = e.data;
-	if (e.source !== parent || !m || m.maiaView !== '${key}' || !e.ports[0]) return;
-	removeEventListener('message', boot);
-	self.__maiaPort = e.ports[0];
-	const s = document.createElement('script');
-	s.src = URL.createObjectURL(new Blob([m.code], { type: 'text/javascript' }));
-	document.head.append(s);
-});<\/script></head><body></body></html>`;
+<script nonce="${nonce}">${VIEW_SCRIPT}<\/script></head><body></body></html>`;

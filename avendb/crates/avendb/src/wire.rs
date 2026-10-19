@@ -1408,7 +1408,7 @@ mod tests {
         let bytes = passkey.sign(edits[0].id()).to_wire();
         assert_eq!(Signature::from_wire(&bytes).map(|s| s.enclave), Ok(None));
         let bytes = alone.sigs[0].to_wire();
-        let at = 1 + 64 + 1;
+        let at = touch.keys().to_wire().len() + 1;
         assert_eq!(bytes[at], 2, "after its keys and no assertion");
         let mut other = bytes.clone();
         other[at] = 3;

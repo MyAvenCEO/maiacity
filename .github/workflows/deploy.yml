@@ -22,8 +22,14 @@ env:
   API_HOST: api.maia.city
 
 jobs:
+  # the kernel gate (kernel.yml): its tests and both probes in Chromium; nothing goes on the server unless they pass
+  kernel:
+    name: Kernel
+    uses: ./.github/workflows/kernel.yml
+
   site:
     name: Check, build and put on the server
+    needs: kernel
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -2,7 +2,8 @@
 /*
  * A VIEW'S TEMPLATE — how a view without a draw script shows its state: plain HTML (already sanitized, ./sanitize.js)
  * with a few marks our engine fills in from the state the page hands it (the view's data, or what its logic made of
- * it). Every value goes in as text or as an attribute's text, never as markup.
+ * it). Every value goes in as text or as an attribute's text, never as markup, and an attribute's text filled from the
+ * state passes the sanitizer's rules for that attribute again (./sanitize.js `cleanAttr`).
  *
  *   {{a.b}}                       the value at a.b (numbers as the page shows them: 1,234.5)
  *   attr="{{a.b}}"                an attribute's value; alone in it, a list or an object goes in as JSON (for our
@@ -14,6 +15,8 @@
  *   data-on="a.b"                 the element gets the class `on` where a.b equals its data-value (`*`: any value at
  *                                 the top of the state)
  */
+
+import { cleanAttr } from './sanitize.js';
 
 const MARK = /\{\{\s*([^{}]*?)\s*\}\}/g;
 
@@ -66,7 +69,11 @@ export function render(doc, source, state) {
 			const el = node.namespaceURI && node.namespaceURI !== 'http://www.w3.org/1999/xhtml' ? doc.createElementNS(node.namespaceURI, node.localName) : doc.createElement(node.localName);
 			for (const a of node.attributes) {
 				const m = /^\{\{\s*([^{}]*?)\s*\}\}$/.exec(a.value);
-				el.setAttribute(a.name, m ? attrOf(valueAt(scope, m[1]), true) : fill(a.value, scope));
+				const value = m ? attrOf(valueAt(scope, m[1]), true) : fill(a.value, scope);
+				// the markup was made safe before it was a template; a value the state filled in is held to the same
+				// rules again, before the element has it: a script, a handler or an address it may not name is dropped
+				const kept = value === a.value ? value : cleanAttr(el, a.name, value);
+				if (kept != null) el.setAttribute(a.name, kept);
 			}
 			const on = el.getAttribute('data-on');
 			if (on != null) {

@@ -84,10 +84,11 @@ cargo run --release -p avendb --bin master-key -- id ~/Desktop/master-recovery.p
 ```
 
 `new` prints the secret in the terminal, 64 hex digits to copy and keep offline, and writes it nowhere. Its one file is
-`master-recovery.pub`, the public half every vault needs: its P-256 and SLH-DSA keys, its X-Wing and Classic McEliece
-keys, a megabyte, and its standing consent to be added as an owner. `new` never writes over a file. `pub` asks for the
-secret and makes the `.pub` file again, over one of an older format alone; `id` names the key a `.pub` file holds, or,
-with no file, the secret it asks for. Whoever holds the secret owns every vault that added the key: only the `.pub` file
+`master-recovery.pub`, the public half every vault needs: its P-256 and post-quantum signing keys (SLH-DSA for the key
+made before the key move, ML-DSA-65 for a new one), its X-Wing and Classic McEliece keys, a megabyte, and its standing
+consent to be added as an owner. `new` never writes over a file. `pub` asks for the secret and makes the `.pub` file
+again, over one of an older format alone, never over the SLH-DSA key's; `id` names the key a `.pub` file holds, or,
+with no file, the keys the secret it asks for makes in each suite. Whoever holds the secret owns every vault that added the key: only the `.pub` file
 is handed on.
 
 The key's file is built in (`crates/avendb/master-recovery.pub`, `recovery::master`); an empty file builds avenDB
@@ -221,9 +222,12 @@ A Claude Code session in Anthropic's cloud runs no Mac, so it has no agentClaude
 It has agentClaude's tools and acts as avenMAIA, with avenMAIA's rights and no more: a Suggester on Maia City, whose
 drafts and AIPs a human accepts. It reaches the server alone, on its relay, through the environment's HTTP proxy
 (`Options::proxy`); the relay lets in only devices it knows, so a key The OS never added gets nowhere, and the TLS
-inside, X25519MLKEM768, is end to end. It opens its device at the first tool call, catches up with the server before
-each change, and closes it after 5 minutes with no call: two sessions using it at the same moment knock each other off
-the relay, so use one at a time. Removing agentCloud from avenMAIA's devices ends it for every session; a new key is
+inside, X25519MLKEM768, is end to end. It opens its device at the first tool call and closes it after 5 minutes with
+no call: two sessions using it at the same moment knock each other off the relay, so use one at a time. It asks the
+server for nothing on its own (`Options::lazy`): before each call it brings only the vaults the call touches (the
+vault or the entries it names, else Maia City) with every vault's and share's log, one pull at a time
+(`Node::bring`, ASK_VAULTS). A fresh session's first call on Maia City brings Maia City whole, its history too; while
+that runs, a call answers that avenDB is still bringing it, and the next call goes on where it got to. Removing agentCloud from avenMAIA's devices ends it for every session; a new key is
 another **Add a cloud agent**.
 
 ## The server

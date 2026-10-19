@@ -14,6 +14,8 @@
  *   view       a Generated UI view: { id, title, note?, kind: a2ui | html, spec }      (game/genui/views.js)
  *   view-card  a game's screen: { id, kind: 'view', name, data: { slot, libs, height }, code }, with `slots`
  *   logic      a bare logic module: { code, hooks?, max? }
+ *   function   an avenDB function's code, run in QuickJS as an entry moves through a flow: a module that exports
+ *              run(event) (src/lib/avendb/functions.js), checked as each one loads to run
  *   config     a game's settings: plain JSON, held to the shape of the repo's seed of it (`seed`), so a config from
  *              the vault can change what a game's numbers are, never what the game finds where
  */
@@ -24,6 +26,8 @@ const verdict = (value, errors = [], notes = []) => (errors.length ? { ok: false
 
 /** the hooks a view's logic answers (src/lib/genui/logic.js) */
 export const VIEW_HOOKS = ['init', 'on'];
+/** the hook an avenDB function answers (src/lib/avendb/functions.js) */
+export const FUNCTION_HOOKS = ['run'];
 
 export const TYPES = {
 	view: {
@@ -69,6 +73,14 @@ export const TYPES = {
 			const hooks = Array.isArray(raw?.hooks) ? raw.hooks : [];
 			const l = logicSource(code, { hooks, needs: hooks.length > 0, max: raw?.max ?? 20_000 });
 			return verdict({ code, ...(hooks.length ? { hooks } : {}) }, l.errors, l.notes);
+		}
+	},
+	function: {
+		what: 'An avenDB function, run in QuickJS as an entry moves through a flow: exports run(event)',
+		check(raw) {
+			const code = typeof raw === 'string' ? raw : raw?.code;
+			const l = logicSource(code, { what: 'its code', hooks: FUNCTION_HOOKS, needs: true });
+			return verdict({ code }, l.errors, l.notes);
 		}
 	},
 	config: {

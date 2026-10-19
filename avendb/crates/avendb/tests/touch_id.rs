@@ -20,7 +20,7 @@ use avendb::wire::Wire;
 fn mac(authenticator: &mut Passkey, enclave: &EnclaveKey) -> (Lab, SignerId, SignerId, SignerId, VaultId) {
     let mut lab = Lab::with_entropy([7; 32]);
     let passkey = lab.web_passkey("Alice", authenticator.public(), &authenticator.ceremony([1; 32]));
-    let passkey = passkey.expect("the passkey's own ceremony");
+    let [passkey, _] = passkey.expect("the passkey's own ceremony");
     let mac = lab.device_with("Alice's Mac", *authenticator.prf(&device_salt(&[5; 32])));
     let touch = lab.web_enclave("Alice's Mac", &enclave.ceremony([1; 32])).expect("the Enclave's own ceremony");
     assert_eq!((passkey, touch), (authenticator.id(), enclave.id()), "the ceremonies show their keys");

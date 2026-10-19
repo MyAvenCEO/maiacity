@@ -225,8 +225,8 @@ copy of a row. A write is judged by what it changed alone (S1), so a record that
 fit counts for no reader, nor anything built on it (S3), so every device keeps the last record that fit, whatever a
 patched app writes; and relays, which open no write, judge none (S4).
 
-Every edit is named by a BLAKE3 hash, and every signature on it is hash-based (SLH-DSA), a write's too, so nothing
-counts on the curves: whoever breaks a device's ed25519 key, or a passkey's P-256 key, signs no edit. A passkey's
+Every edit is named by a BLAKE3 hash, and every signature on it is post-quantum (ML-DSA-65, or SLH-DSA from a signer
+made before the key move), a write's too, so nothing counts on the curves: whoever breaks a device's ed25519 key, or a passkey's P-256 key, signs no edit. A passkey's
 signature also carries its WebAuthn assertion, the proof that its person took part, which adds nothing against a
 quantum computer. The model leaves signatures abstract: an edit's signers are its author and cosigners.
 
@@ -320,8 +320,8 @@ fetch (T27).
 The theorems take signatures and encryption as given. What devices say to each other on the network is modeled apart,
 in [Verifpal](https://verifpal.com) (`protocol/`), against an active attacker who also breaks the curves from the
 start: X25519, ed25519 and the passkey's P-256 give up their private keys (`PUBKEY[weak]`, or are left out where a
-curve only signs, as its signatures then prove nothing), and only ML-KEM-768, Classic McEliece and SLH-DSA hold, the
-schemes chosen because they would. Each model states the result it expects in its header, one letter and digit per
+curve only signs, as its signatures then prove nothing), and only ML-KEM-768, Classic McEliece, ML-DSA-65 and SLH-DSA
+hold, the schemes chosen because they would. Each model states the result it expects in its header, one letter and digit per
 query, 0 where the query holds and 1 where Verifpal finds an attack; each also holds a value that a weaker design
 would give away, so that it shows the attack it rules out. `protocol/check.sh` runs them all and fails on any other
 result.
@@ -342,7 +342,7 @@ None are axioms; each is part of the model:
 
 - Signatures can't be forged: an edit's signers, and the device a statement of holdings verifies under
   (`Statement.signer`), are the keys that signed them. Where the curves fall, the Rust core keeps this true for every
-  edit and statement, as each signature is SLH-DSA.
+  edit and statement, as each signature is ML-DSA-65 or SLH-DSA.
 - A hello proves its device: whatever comes on a sync connection comes from the device whose hello proved it (`Conn`);
   `hello.vp` checks the hello itself.
 - Sealed or encrypted data reveals nothing without its key: a key is learned only through `Knows`.

@@ -2,7 +2,7 @@
 import { base } from '$app/paths';
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { DENY, SANDBOX } from './policy.js';
+import { DENY, SANDBOX, SHELL_SCRIPT } from './policy.js';
 /*
  * THE SHELL — where code we cannot trust runs in a page: a worker inside a frame with no origin. One shell for every
  * host: the asset box (recipes, ../assets/box/host.js), the logic host (rules, view logic, functions, ./logic-host.js)
@@ -17,8 +17,13 @@ import { DENY, SANDBOX } from './policy.js';
  * - The worker is a frozen engine, its bytes checked against its BLAKE3 hash before it starts, and handed in whole:
  *   the shell can load nothing. Its first act is the second lock (./lockdown.js): every way out a worker has is
  *   taken off its global scope.
- * - The frame does nothing but start the worker and pass messages, so code that never stops cannot freeze the page,
- *   not even in Safari, where a sandboxed frame shares the page's thread.
+ * - The frame does nothing but start workers and pass messages, so code that never stops cannot freeze the page, not
+ *   even in Safari, where a sandboxed frame shares the page's thread.
+ * - Rooms keep code apart inside one shell (the asset box gives each recipe its own). A room is a worker of its own
+ *   that no other room's job ever reaches, and the frame names each message by the room of the worker that sent it,
+ *   so a job is answered only from the room it was asked in: code in one room can neither see another's jobs nor
+ *   answer them. A host may ask for a spare, a worker made ahead with nothing run in it, which the next new room
+ *   takes while the frame makes the next one.
  * - Out comes plain data only, which the page checks before it uses it. A job that runs too long is ended by removing
  *   the frame (the worker goes with it); the next job starts a new shell.
  */
@@ -27,21 +32,8 @@ import { DENY, SANDBOX } from './policy.js';
 export const csp = ({ wasm = false } = {}) =>
 	["default-src 'none'", `script-src 'unsafe-inline' blob:${wasm ? " 'wasm-unsafe-eval'" : ''}`, 'worker-src blob:', "connect-src 'none'", "img-src 'none'", "style-src 'none'", "font-src 'none'", "media-src 'none'", "frame-src 'none'", "object-src 'none'", "form-action 'none'", "base-uri 'none'"].join('; ');
 
-// the frame: starts the worker from the code it is handed, then passes messages both ways, the arrays moved
-const frameOf = (policy) => `<!doctype html><meta http-equiv="Content-Security-Policy" content="${policy}"><script>
-let w;
-addEventListener('message', (e) => {
-	if (e.source !== parent) return;
-	const m = e.data;
-	if (m && m.op === 'boot' && !w) {
-		w = new Worker(URL.createObjectURL(new Blob([m.code], { type: 'text/javascript' })));
-		w.onmessage = (x) => parent.postMessage(x.data, '*', x.data[1]);
-		w.onerror = (x) => { x.preventDefault(); parent.postMessage([{ op: 'crash', error: String(x.message) }, []], '*'); };
-		return;
-	}
-	if (w) w.postMessage(m);
-});
-<\/script>`;
+// the frame: its policy, and its one script (./policy.js SHELL_SCRIPT), which the page's own policy names by its hash
+const frameOf = (policy) => `<!doctype html><meta http-equiv="Content-Security-Policy" content="${policy}"><script>${SHELL_SCRIPT}<\/script>`;
 
 /**
  * A frozen engine's code, fetched from `path` (under the site's base path) and its bytes checked against `hash`.
@@ -62,13 +54,15 @@ export const TIMEOUT = 20000;
 
 export class Shell {
 	/**
-	 * @param {{ code: () => Promise<string>, wasm?: boolean, timeout?: number }} o `code`: the engine the worker runs,
-	 *   checked (`frozen`); `wasm`: whether that engine compiles WebAssembly
+	 * @param {{ code: () => Promise<string>, wasm?: boolean, timeout?: number, spare?: boolean }} o `code`: the engine
+	 *   the workers run, checked (`frozen`); `wasm`: whether that engine compiles WebAssembly; `spare`: a worker kept
+	 *   made ahead for the next new room (a host of many rooms)
 	 */
-	constructor({ code, wasm = false, timeout = TIMEOUT }) {
+	constructor({ code, wasm = false, timeout = TIMEOUT, spare = false }) {
 		this.code = code;
 		this.policy = csp({ wasm });
 		this.timeout = timeout;
+		this.spare = spare;
 		this.frame = null;
 		this.ready = null;
 		this.jobs = new Map();
@@ -98,7 +92,7 @@ export class Shell {
 			const loaded = new Promise((ok) => frame.addEventListener('load', ok, { once: true }));
 			document.body.append(frame);
 			await loaded;
-			frame.contentWindow.postMessage({ op: 'boot', code }, '*');
+			frame.contentWindow.postMessage({ op: 'boot', code, spare: this.spare }, '*');
 			await up;
 		})();
 		this.ready.catch(() => this.stop('the box did not start'));
@@ -107,12 +101,14 @@ export class Shell {
 
 	#message(e) {
 		if (!this.frame || e.source !== this.frame.contentWindow) return;
-		const msg = Array.isArray(e.data) ? e.data[0] : null;
+		// [what a worker said, the room of that worker], the room named by the frame
+		const [msg, room] = Array.isArray(e.data) ? e.data : [];
 		if (!msg || typeof msg !== 'object') return;
 		if (msg.op === 'ready') return this.started?.();
 		if (msg.op === 'crash') return this.stop(`the box crashed: ${msg.error}`);
 		const job = this.jobs.get(msg.id);
-		if (!job) return;
+		// a job is answered only from the room it was asked in, whatever number another room's code guesses
+		if (!job || job.room !== room) return;
 		this.jobs.delete(msg.id);
 		clearInterval(job.timer);
 		if (msg.ok === true) job.ok(msg);
@@ -120,19 +116,22 @@ export class Shell {
 	}
 
 	/**
-	 * one job: { op, …args } answered with the engine's answer. One that runs longer than `timeout` tears the shell
-	 * down, unless it is `soft`: a step waiting behind a build is late, not lost, so only it fails and the shell goes on.
-	 * The jobs that are not soft go in one at a time, so each one's time is its own and not the jobs' asked before it.
+	 * one job: { op, …args } answered with the engine's answer, in `room` (its worker; a host of one room leaves it),
+	 * or in the room a function names once the job's turn comes (a host that keeps few rooms names it then). One that
+	 * runs longer than `timeout` tears the shell down, unless it is `soft`: a step waiting behind a build is late, not
+	 * lost, so only it fails and the shell goes on. The jobs that are not soft go in one at a time, whatever their
+	 * room, so each one's time is its own and not the jobs' asked before it.
 	 */
-	ask(op, payload = {}, { timeout = this.timeout, soft = false } = {}) {
-		if (soft) return this.#post(op, payload, timeout, soft);
-		const turn = (this.queue ?? Promise.resolve()).then(() => this.#post(op, payload, timeout, soft));
+	ask(op, payload = {}, { timeout = this.timeout, soft = false, room = 0 } = {}) {
+		if (soft) return this.#post(op, payload, timeout, soft, room);
+		const turn = (this.queue ?? Promise.resolve()).then(() => this.#post(op, payload, timeout, soft, room));
 		this.queue = turn.catch(() => {});
 		return turn;
 	}
 
-	async #post(op, payload, timeout, soft) {
+	async #post(op, payload, timeout, soft, room) {
 		await this.start();
+		if (typeof room === 'function') room = room();
 		const id = this.next++;
 		return new Promise((ok, no) => {
 			// its time counted a second at a time, and at most a second and a half for each: a page too busy to listen
@@ -148,12 +147,23 @@ export class Shell {
 				this.jobs.delete(id);
 				no(new Error(`${op} ran longer than ${timeout} ms`));
 			}, Math.min(1000, timeout));
-			this.jobs.set(id, { ok, no, timer });
-			this.frame.contentWindow.postMessage({ id, op, ...payload }, '*');
+			this.jobs.set(id, { ok, no, timer, room });
+			this.frame.contentWindow.postMessage({ op: 'job', room, job: { id, op, ...payload } }, '*');
 		});
 	}
 
-	/** tears the shell down: the frame and its worker are gone, every job open fails with `why` */
+	/** a room let go: its worker ended, any job open in it failed; a job asked in it again starts in a fresh worker */
+	leave(room) {
+		for (const [id, job] of this.jobs) {
+			if (job.room !== room) continue;
+			clearInterval(job.timer);
+			this.jobs.delete(id);
+			job.no(new Error('its room was let go'));
+		}
+		this.frame?.contentWindow?.postMessage({ op: 'leave', room }, '*');
+	}
+
+	/** tears the shell down: the frame and its workers are gone, every job open fails with `why` */
 	stop(why = 'the box was stopped') {
 		removeEventListener('message', this.onmessage);
 		this.frame?.remove();

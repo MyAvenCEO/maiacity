@@ -3,13 +3,14 @@
 //! and stays as it is.
 //!
 //! - **Who**: a node's endpoint key is its device's ed25519 key, so iroh's TLS proves the endpoint. Each connection
-//!   then opens with a hello each way (`sign::Hello`): the device's SLH-DSA signature over the connection's TLS
+//!   then opens with a hello each way (`sign::Hello`): the device's post-quantum signature over the connection's TLS
 //!   exporter, which proves the device itself, by both its keys, on this connection alone. The listener checks the
 //!   dialer's hello before it sends its own and closes a connection without one; the dialer checks the listener's.
 //! - **Key exchange**: X25519MLKEM768 is the only group either end offers (`pq_provider`): ML-KEM-768 agrees the keys
 //!   of every connection along with X25519, and a peer that offers only classical groups doesn't connect.
-//! - **No curve trusted**: every signature on every edit is SLH-DSA, so neither ed25519 nor P-256 makes an edit count;
-//!   a passkey's WebAuthn assertion beside it only proves its person took part.
+//! - **No curve trusted**: every signature on every edit is ML-DSA-65, or SLH-DSA from a signer made before the key
+//!   move (`sign::Suite`), so neither ed25519 nor P-256 makes an edit count; a passkey's WebAuthn assertion beside it
+//!   only proves its person took part.
 //! - **Sync**: either end asks the other on the connection (`wire::Request`) and is answered with the edits it may
 //!   receive by the other's view and the McEliece keys they name (`wire::Reply`), each key by its id and BLAKE3 hash
 //!   alone. The asker fetches the keys it lacks over iroh-blobs, where a node hands a key out only to a device a hello
@@ -77,7 +78,8 @@
 //! - **Linking** (P8c): a device shows its offer as a QR code (`Node::offer`, `Offer::to_text`): its endpoint, its
 //!   device and where it is reached. A new device of the same person scans it and links through it (`Node::link`):
 //!   once the hellos proved both devices, the new device shows its person's passkey's pass for it on the connection
-//!   (`sign::RelayPass`), an assertion and an SLH-DSA signature over the new device's id and when the pass was made;
+//!   (`sign::RelayPass`), an assertion and a post-quantum signature over the new device's id and when the pass was made
+//!   (it shows one in each suite, one after the other, as its person's vault may know the passkey in either);
 //!   the peer checks it is for the device whose hello proved it, and hands back the logs of the vaults the passkey owns,
 //!   and nothing else (`Lab::link_card`); the new device adds itself to the vault whose root is the passkey, signed by
 //!   the passkey and by itself (`Lab::join`), and the peer accepts that edit alone, for that device alone
@@ -134,7 +136,7 @@ use avendb::keys::PublicKey;
 use avendb::lab::{Backup, Drafting, Lab, Unsigned};
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
 use avendb::sealed::{FileRoot, PIECE};
-use avendb::sign::{Ceremony, RelayPass, Signed, SignerKeys};
+use avendb::sign::{Ceremony, RelayPass, SUITES, Signed, SignerKeys};
 use avendb::sync::{log_of, place, LogId};
 use avendb::wire::{Announce, Claim, FileHold, Join, Reply, Request, Statement, Wire};
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
@@ -248,6 +250,10 @@ pub struct Options {
     /// cloud session must, whose only way out is its proxy: iroh tunnels the relay's connection through it, and the TLS
     /// inside, X25519MLKEM768 alone, is the node's own end to end.
     pub proxy: bool,
+    /// It asks its peers for nothing on its own, as a cloud session's agent does: not what a peer announces it holds,
+    /// nor again once the vaults it follows change; only what it is told to bring (`Node::bring`, `Node::sync_with`),
+    /// so a fresh one never pulls all its device may hold, but the vaults a tool call touches.
+    pub lazy: bool,
     /// How soon it tries again to tell a peer it couldn't reach, or to ask one it failed to ask: after `retry`, then
     /// twice as long each time the peer stays out of reach, up to a minute.
     pub retry: Duration,
@@ -290,6 +296,7 @@ impl Options {
             direct: false,
             relay: None,
             proxy: false,
+            lazy: false,
             retry: Duration::from_secs(1),
             shelf: None,
             keep: false,
@@ -718,31 +725,39 @@ impl Node {
         let now = unix_now();
         let pass = self.shared.lab(move |lab, me| lab.relay_pass(me, passkey, now)).await;
         let pass = pass.context("the passkey isn't at hand")?;
-        let (_, vault) = self.link_with(offer, &pass, &InLab(self.shared.clone(), passkey)).await?;
+        let passes = std::slice::from_ref(&pass);
+        let (_, vault) = self.link_with(offer, passes, &InLab(self.shared.clone(), passkey)).await?;
         Ok(vault)
     }
 
-    /// `link`, with its person's passkey in the platform's authenticator (P8e): `pass` is the passkey's pass for this
-    /// device, the ceremony that unlocked it, which the peer takes in place of a ceremony of the passkey's on their
-    /// connection, and `authenticator` signs the one more ceremony linking takes, the edit that adds this device to its
-    /// person's vault. The pass may be from any of a few passkeys, as this device may not know its passkey's P-256 key
-    /// yet (`RelayPass::candidates`): the one whose vault the peer hands over is its person's, and its keys must be at
-    /// hand in the Lab (`Lab::web_passkey`), as those of the others may be. That passkey and the vault it joined.
+    /// `link`, with its person's passkey in the platform's authenticator (P8e): `passes` are the passkey's pass for
+    /// this device, the ceremony that unlocked it, which the peer takes in place of a ceremony of the passkey's on
+    /// their connection, and `authenticator` signs the one more ceremony linking takes, the edit that adds this device
+    /// to its person's vault. A pass may be from any of a few passkeys, as this device may not know its passkey's P-256
+    /// key yet (`RelayPass::candidates`): the one whose vault the peer hands over is its person's, and its keys must be
+    /// at hand in the Lab (`Lab::web_passkey`), as those of the others may be. It shows the peer one pass after
+    /// another, one in each suite (`sign::Ceremony::passes`), until the peer hands a vault over: their vault may know
+    /// their passkey in either (the key move). That passkey and the vault it joined.
     pub async fn link_with(
         &self,
         offer: &Offer,
-        pass: &RelayPass,
+        passes: &[RelayPass],
         authenticator: &impl Authenticator,
     ) -> Result<(SignerId, VaultId)> {
-        self.linking(offer, pass, Joins::By(authenticator)).await
+        self.linking(offer, passes, Joins::By(authenticator)).await
     }
 
     /// `link_with`, in the one ceremony that unlocked this device, `unlock`, which is the passkey's pass for it: that
     /// ceremony signs the edit adding the device too, as the pass (`sign::WebAuthn::Pass`), its PRF output making the
     /// SLH-DSA signature over the edit itself, so that a browser signs in to its person's vault in one ceremony. That
     /// passkey and the vault it joined.
-    pub async fn link_by_pass(&self, offer: &Offer, pass: &RelayPass, unlock: Ceremony) -> Result<(SignerId, VaultId)> {
-        self.linking(offer, pass, Joins::<InLab>::Pass(unlock)).await
+    pub async fn link_by_pass(
+        &self,
+        offer: &Offer,
+        passes: &[RelayPass],
+        unlock: Ceremony,
+    ) -> Result<(SignerId, VaultId)> {
+        self.linking(offer, passes, Joins::<InLab>::Pass(unlock)).await
     }
 
     /// `link_by_pass` through the server `offer` names, only if the pass's passkey roots a vault the server knows: one
@@ -752,30 +767,31 @@ impl Node {
     pub async fn rejoin_by_pass(
         &self,
         offer: &Offer,
-        pass: &RelayPass,
+        passes: &[RelayPass],
         unlock: Ceremony,
     ) -> Result<Option<(SignerId, VaultId)>> {
-        self.join_through(offer, pass, Joins::<InLab>::Pass(unlock), false).await
+        self.join_through(offer, passes, Joins::<InLab>::Pass(unlock), false).await
     }
 
     async fn linking<A: Authenticator>(
         &self,
         offer: &Offer,
-        pass: &RelayPass,
+        passes: &[RelayPass],
         joins: Joins<'_, A>,
     ) -> Result<(SignerId, VaultId)> {
         self.on_relay().await;
         self.shared.opts.progress.step("server");
-        self.join_through(offer, pass, joins, true).await?.context("no vault of this passkey to join")
+        self.join_through(offer, passes, joins, true).await?.context("no vault of this passkey to join")
     }
 
-    /// Join the vault the pass's passkey roots, through device `offer`, which hands over its log for the pass: `None`
-    /// if it hands over none. `linking` marks the pass step as it shows the pass; a device that founds its vault, only
-    /// once the server handed one over.
+    /// Join the vault a pass's passkey roots, through device `offer`, which hands over its log for the pass: `None`
+    /// if it hands over none for any of `passes`, which it shows one after another, the next only if the peer handed
+    /// nothing over for the one before (a pass in each suite, the key move). `linking` marks the pass step as it shows
+    /// the passes; a device that founds its vault, only once the server handed one over.
     async fn join_through<A: Authenticator>(
         &self,
         offer: &Offer,
-        pass: &RelayPass,
+        passes: &[RelayPass],
         joins: Joins<'_, A>,
         linking: bool,
     ) -> Result<Option<(SignerId, VaultId)>> {
@@ -784,13 +800,18 @@ impl Node {
         if linking {
             progress.step("pass");
         }
-        let card = session::exchange(&peer.conn, session::LINK, &pass.to_wire(), session::REPLY_LIMIT).await?;
-        let Reply { mut edits, .. } = Reply::from_wire(&card)?;
-        // a card carries vault logs, and nothing else
-        edits.retain(of_a_vault);
-        if edits.is_empty() {
-            return Ok(None);
+        let mut handed = None;
+        for pass in passes {
+            let card = session::exchange(&peer.conn, session::LINK, &pass.to_wire(), session::REPLY_LIMIT).await?;
+            let Reply { mut edits, .. } = Reply::from_wire(&card)?;
+            // a card carries vault logs, and nothing else
+            edits.retain(of_a_vault);
+            if !edits.is_empty() {
+                handed = Some((pass, edits));
+                break;
+            }
         }
+        let Some((pass, edits)) = handed else { return Ok(None) };
         if !linking {
             progress.step("pass");
         }
@@ -1152,6 +1173,19 @@ impl Node {
         self.shared.ask(peer).await
     }
 
+    /// Ask the device at endpoint `peer` now for the entries of the vaults `vaults` alone (`session::ASK_VAULTS`), and
+    /// for the logs that are no entry's, the vaults', shares' and audiences', which say who may do what: what a node
+    /// that asks only when told (`Options::lazy`) brings for a call that touches those vaults. How many edits were new.
+    pub async fn bring(&self, peer: EndpointId, vaults: BTreeSet<VaultId>) -> Result<usize> {
+        self.shared.asking(peer, Scope::Vaults(vaults)).await
+    }
+
+    /// Ask the device at endpoint `peer` now for the logs `logs` alone (`session::ASK_LOGS`), as an entry a call names
+    /// that the node holds nothing of yet. How many edits were new.
+    pub async fn bring_logs(&self, peer: EndpointId, logs: BTreeSet<LogId>) -> Result<usize> {
+        self.shared.asking(peer, Scope::Logs(logs)).await
+    }
+
     /// Ask the device at endpoint `peer` for its contact card (`Lab::card`), as a device asks the server for its
     /// vault's log before a vault gives the server relay on its entries. How many edits were new.
     pub async fn contact(&self, peer: EndpointId) -> Result<usize> {
@@ -1178,9 +1212,16 @@ impl Node {
         let claim = move |lab: &mut Lab, me| -> Result<(VaultId, Vec<Signed>), Refusal> {
             lab.receive(me, edits, Vec::new());
             let vault = lab.vault_of(me).ok_or(Refusal::NotActing)?;
-            let key = lab.invite_key(secret);
-            let claimed = lab.claim_invite(me, share, vault, key);
-            lab.lose(key);
+            // the key in each suite, as an invite made before the key move names it in SLH-DSA: the one it names signs
+            let mut claimed = Err(Refusal::NoConsent);
+            for suite in SUITES {
+                let key = lab.invite_key_in(secret, suite);
+                claimed = lab.claim_invite(me, share, vault, key);
+                lab.lose(key);
+                if claimed.is_ok() {
+                    break;
+                }
+            }
             claimed?;
             Ok((vault, lab.sign_up_card(me)))
         };
@@ -1383,6 +1424,14 @@ impl<'a> Cursor<'a> {
     fn array<const N: usize>(&mut self) -> Option<[u8; N]> {
         self.take(N)?.try_into().ok()
     }
+}
+
+/// What a node asks a peer for: all the peer may send it (`session::REQUEST`), the logs it names alone
+/// (`session::ASK_LOGS`), or the entries of the vaults it names alone (`session::ASK_VAULTS`).
+enum Scope {
+    All,
+    Logs(BTreeSet<LogId>),
+    Vaults(BTreeSet<VaultId>),
 }
 
 /// A connection to a peer, dialed or accepted, with the device its hello proved.
@@ -1618,15 +1667,15 @@ impl Shared {
     /// lacks: a page at a time, each taken as it comes, asking on after the last edit a page brought until the peer has
     /// no more. How many edits were new.
     async fn ask(self: &Arc<Self>, endpoint: EndpointId) -> Result<usize> {
-        self.asking(endpoint, None).await
+        self.asking(endpoint, Scope::All).await
     }
 
-    /// `ask`, of the logs `logs` alone, if given (`session::ASK_LOGS`): once connected, a `pull` job of the peer's
-    /// device, forgotten if it took nothing.
-    async fn asking(self: &Arc<Self>, endpoint: EndpointId, logs: Option<BTreeSet<LogId>>) -> Result<usize> {
+    /// `ask`, of what `scope` names alone: once connected, a `pull` job of the peer's device, forgotten if it took
+    /// nothing.
+    async fn asking(self: &Arc<Self>, endpoint: EndpointId, scope: Scope) -> Result<usize> {
         let peer = self.connection(endpoint).await?;
         let mut job = self.jobs.begin("pull", peer.device.to_hex(), String::new(), 0, "edits");
-        let asked = self.pages(endpoint, peer, logs, &mut job).await;
+        let asked = self.pages(endpoint, peer, scope, &mut job).await;
         if matches!(asked, Ok(0)) { job.forget() } else { job.ended(&asked) }
         asked
     }
@@ -1637,25 +1686,32 @@ impl Shared {
         self: &Arc<Self>,
         endpoint: EndpointId,
         peer: Peer,
-        logs: Option<BTreeSet<LogId>>,
+        scope: Scope,
         job: &mut Running,
     ) -> Result<usize> {
         let device = peer.device;
-        let kind = if logs.is_some() { session::ASK_LOGS } else { session::REQUEST };
-        let logs = logs.map(Arc::new);
+        let kind = match scope {
+            Scope::All => session::REQUEST,
+            Scope::Logs(_) => session::ASK_LOGS,
+            Scope::Vaults(_) => session::ASK_VAULTS,
+        };
+        let scope = Arc::new(scope);
         let (mut after, mut new, mut pages) = (None, 0, 0);
         let (mut vaults, mut entries) = (BTreeMap::<String, u64>::new(), BTreeMap::<String, u64>::new());
         loop {
-            let logs = logs.clone();
+            let scope = scope.clone();
             let request = move |lab: &mut Lab, me| {
                 let request = lab.request(me, device);
-                let request = match &logs {
-                    Some(logs) => session::only(lab, me, request, logs),
-                    None => request,
-                };
-                Request { after, ..request }
+                match &*scope {
+                    Scope::All => Request { after, ..request }.to_wire(),
+                    Scope::Logs(logs) => Request { after, ..session::only(lab, me, request, logs) }.to_wire(),
+                    Scope::Vaults(vaults) => {
+                        let request = Request { after, ..session::of_vaults(lab, me, request, vaults) };
+                        session::vaults_body(vaults, &request)
+                    }
+                }
             };
-            let request = self.lab(request).await.to_wire();
+            let request = self.lab(request).await;
             let reply = session::exchange(&peer.conn, kind, &request, session::REPLY_LIMIT).await?;
             self.sent.requests.fetch_add(1, Ordering::Relaxed);
             let Reply { edits, blobs, more } = Reply::from_wire(&reply)?;
@@ -1707,7 +1763,7 @@ impl Shared {
     /// and once more after the asking under way if there is one; if the asking fails, again once its wait is over
     /// (`Backoff`).
     fn ask_soon(self: &Arc<Self>, endpoint: EndpointId) {
-        if !self.start_asking(endpoint) {
+        if self.opts.lazy || !self.start_asking(endpoint) {
             return;
         }
         let shared = self.clone();
@@ -1947,7 +2003,7 @@ impl Shared {
         if logs.is_empty() {
             return Ok(0);
         }
-        self.asking(endpoint, Some(logs)).await
+        self.asking(endpoint, Scope::Logs(logs)).await
     }
 
     /// `Node::synced_to`: this device and each device on a live connection or of which the node keeps no statement, by

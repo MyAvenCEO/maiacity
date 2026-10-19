@@ -386,9 +386,9 @@ impl Device {
     ) -> Result<Device> {
         let progress = &start.progress;
         progress.step("keys");
-        let (lab, me, passkeys, pass) = passed(&start, p256, &fresh, &unlock)?;
+        let Passed { lab, me, passkeys, new, passes } = passed(&start, p256, &fresh, &unlock)?;
         let mask = fresh.mask(&unlock);
-        let node = Device::spawn(lab, me, &start, Some(pass.clone())).await?;
+        let node = Device::spawn(lab, me, &start, passes.clone()).await?;
         node.on_relay().await;
         progress.step("server");
         node.know(server.addr.clone());
@@ -401,10 +401,11 @@ impl Device {
             sleep(Duration::from_millis(500)).await;
         }
         // one passkey, one human vault: a passkey whose vault the server knows signs in to it, as `link` does
-        if let Some((passkey, _)) = node.rejoin_by_pass(server, &pass, unlock.ceremony).await? {
+        if let Some((passkey, _)) = node.rejoin_by_pass(server, &passes, unlock.ceremony).await? {
             return Device::of(node, passkey, &passkeys, mask, &start).await;
         }
-        let (passkey, vault, avenceo) = node.found_with(server, &passkeys, authenticator).await?;
+        // a new vault knows its passkey in the suite new signers are made in
+        let (passkey, vault, avenceo) = node.found_with(server, &new, authenticator).await?;
         progress.step("settle");
         let device = Device::of(node, passkey, &passkeys, mask, &start).await?;
         let name = start.name.clone();
@@ -437,10 +438,10 @@ impl Device {
     /// handed over.
     pub async fn link(start: Start, offer: &Offer, fresh: Fresh, unlock: Unlock) -> Result<Device> {
         start.progress.step("keys");
-        let (lab, me, passkeys, pass) = passed(&start, None, &fresh, &unlock)?;
+        let Passed { lab, me, passkeys, passes, .. } = passed(&start, None, &fresh, &unlock)?;
         let mask = fresh.mask(&unlock);
-        let node = Device::spawn(lab, me, &start, Some(pass.clone())).await?;
-        let (passkey, _) = node.link_by_pass(offer, &pass, unlock.ceremony).await?;
+        let node = Device::spawn(lab, me, &start, passes.clone()).await?;
+        let (passkey, _) = node.link_by_pass(offer, &passes, unlock.ceremony).await?;
         Device::of(node, passkey, &passkeys, mask, &start).await
     }
 
@@ -452,11 +453,8 @@ impl Device {
     /// another device's secret; and if the device then belongs to no vault, as one taken out of its vault.
     pub async fn open(start: Start, meta: &Meta, unlock: Unlock) -> Result<Device> {
         start.progress.step("keys");
-        let (lab, passkey, me) = lab(&start, meta.p256, meta.mask, &unlock)?;
-        if me != meta.device {
-            bail!("the unlock opens another device than the one this shelf keeps");
-        }
-        Device::reopen(start, meta, lab, passkey).await
+        let (lab, passkeys) = lab(&start, meta, &unlock)?;
+        Device::reopen(start, meta, lab, &passkeys).await
     }
 
     /// The device made here before, opened again from its shelf as `open` opens it, by its Mac's Touch ID key
@@ -476,24 +474,26 @@ impl Device {
         let key = lab.web_enclave("the person", ceremony).filter(|_| theirs);
         key.context("the touch's ceremony isn't of this Mac's Touch ID key")?;
         let pad = ceremony.device_mask().context("the touch's ceremony isn't of this Mac's Touch ID key")?;
-        let me = lab.device_with(&start.name, *xor(&touch.mask, &pad));
-        if me != meta.device {
-            bail!("the touch opens another device than the one this shelf keeps");
-        }
-        Device::reopen(start, meta, lab, touch.passkey).await
+        let me = lab.device_as(&start.name, *xor(&touch.mask, &pad), meta.device);
+        me.context("the touch opens another device than the one this shelf keeps")?;
+        Device::reopen(start, meta, lab, &[touch.passkey]).await
     }
 
-    /// Device `me` of `lab`, unlocked as its shelf's `meta` names it, its person's passkey `passkey`, opened again
-    /// (`open`, `open_by_touch`): it follows what it followed and reads as deep as it did, its node takes back what the
-    /// shelf kept, and it must still belong to a vault.
-    async fn reopen(start: Start, meta: &Meta, mut lab: Lab, passkey: SignerId) -> Result<Device> {
+    /// Device `me` of `lab`, unlocked as its shelf's `meta` names it, opened again (`open`, `open_by_touch`): it
+    /// follows what it followed and reads as deep as it did, its node takes back what the shelf kept, and it must still
+    /// belong to a vault. Its person's passkey is the one of `passkeys` their vault knows, the first if it knows none:
+    /// the Lab may hold it in each suite (`Lab::web_passkey`), and the vault knows one (the key move).
+    async fn reopen(start: Start, meta: &Meta, mut lab: Lab, passkeys: &[SignerId]) -> Result<Device> {
         let me = meta.device;
         lab.follow(me, &meta.follow);
         if let Some(depth) = meta.query_depth {
             lab.set_query_depth(me, depth);
         }
         start.progress.step("restore");
-        let node = Device::spawn(lab, me, &start, None).await?;
+        let node = Device::spawn(lab, me, &start, Vec::new()).await?;
+        let held = passkeys.to_vec();
+        let owner = node.read(move |lab, me| lab.owner_among(me, &held)).await;
+        let passkey = owner.unwrap_or(passkeys[0]);
         let (shelf, name, relay) = (start.shelf.clone(), start.name.clone(), start.relay.clone());
         let (p256, mask) = (meta.p256, meta.mask);
         let device = Device { node, passkey, p256, mask, shelf, name, relay, closed: watch::Sender::new(false) };
@@ -556,26 +556,32 @@ impl Device {
         Ok(())
     }
 
-    /// A node for device `me` of `lab`, which reaches its peers through the relay, let in by `pass` if the relay
-    /// doesn't know it yet, and directly too if it binds a socket; on its shelf, if it keeps one.
-    async fn spawn(lab: Lab, me: SignerId, start: &Start, pass: Option<RelayPass>) -> Result<Node> {
+    /// A node for device `me` of `lab`, which reaches its peers through the relay, let in by one of `relay_passes` if
+    /// the relay doesn't know it yet, and directly too if it binds a socket; on its shelf, if it keeps one.
+    async fn spawn(lab: Lab, me: SignerId, start: &Start, relay_passes: Vec<RelayPass>) -> Result<Node> {
         let (direct, relay, shelf, progress) =
             (start.direct, Some(start.relay.clone()), start.shelf.clone(), start.progress.clone());
-        let relay_passes = pass.into_iter().collect();
         let opts = Options { bind: None, direct, relay, relay_passes, shelf, progress, ..Options::local() };
         Node::spawn(lab, me, opts).await
     }
 
     /// The new device whose node is `node`, of the person whose passkey turned out to be `passkey`, of `passkeys`,
     /// those its unlock may have been from (`passed`), its secret kept under `mask`, started at `start`: it forgets the
-    /// others' keys, which nobody holds.
+    /// keys of the others, which nobody holds, and keeps the passkey's own in the other suite, its next key (the key
+    /// move).
     async fn of(node: Node, passkey: SignerId, passkeys: &[SignerId], mask: [u8; 32], start: &Start) -> Result<Device> {
-        let others: Vec<SignerId> = passkeys.iter().copied().filter(|&p| p != passkey).collect();
+        let held = passkeys.to_vec();
         let forget = move |lab: &mut Lab, _| {
+            let p256 = |lab: &Lab, p| match lab.keys_of(p) {
+                Some(SignerKeys::Passkey { p256, .. }) => Some(p256),
+                _ => None,
+            };
+            let theirs = p256(lab, passkey)?;
+            let others: Vec<SignerId> = held.into_iter().filter(|&p| p256(lab, p) != Some(theirs)).collect();
             others.into_iter().for_each(|p| lab.lose(p));
-            lab.keys_of(passkey)
+            Some(theirs)
         };
-        let Some(SignerKeys::Passkey { p256, .. }) = node.act(forget).await else { bail!("the passkey's keys") };
+        let Some(p256) = node.act(forget).await else { bail!("the passkey's keys") };
         let (shelf, name, relay) = (start.shelf.clone(), start.name.clone(), start.relay.clone());
         Ok(Device { node, passkey, p256, mask, shelf, name, relay, closed: watch::Sender::new(false) })
     }
@@ -723,41 +729,55 @@ pub fn steps_json(steps: &Steps) -> Value {
 }
 
 /// A browser's device's Lab as it opens again: its person's passkey, by its P-256 key and the ceremony that unlocked
-/// the device, and the device, its keys from its secret, which the PRF output on its salt unmasks from `mask`
-/// (`Fresh::mask`).
-fn lab(start: &Start, p256: [u8; 33], mask: [u8; 32], unlock: &Unlock) -> Result<(Lab, SignerId, SignerId)> {
+/// the device, held in each suite (`Lab::web_passkey`), their ids; and the device its shelf keeps (`meta`), in its own
+/// suite, its keys from its secret, which the PRF output on its salt unmasks from its mask (`Fresh::mask`). Fails if
+/// the ceremony isn't that passkey's or unmasks another device's secret.
+fn lab(start: &Start, meta: &Meta, unlock: &Unlock) -> Result<(Lab, [SignerId; 2])> {
     let mut lab = Lab::with_entropy(start.entropy);
     start.recovery.clone().map(|key| lab.set_recovery(key));
-    let passkey = lab.web_passkey("the person", p256, &unlock.ceremony);
-    let passkey = passkey.context("the unlock's ceremony isn't of the passkey with this P-256 key")?;
-    let me = lab.device_with(&start.name, *xor(&mask, &unlock.device));
-    Ok((lab, passkey, me))
+    let passkeys = lab.web_passkey("the person", meta.p256, &unlock.ceremony);
+    let passkeys = passkeys.context("the unlock's ceremony isn't of the passkey with this P-256 key")?;
+    let me = lab.device_as(&start.name, *xor(&meta.mask, &unlock.device), meta.device);
+    me.context("the unlock opens another device than the one this shelf keeps")?;
+    Ok((lab, passkeys))
 }
 
-/// A new device's Lab and the device, `fresh`; the passkeys its person's may be, each with its keys in the Lab; and the
-/// passkey's pass for the device, the unlock, whose ceremony is over `fresh`'s challenge at `start.now`. The passkey
-/// is the one whose P-256 key is `p256` if the page knows it, from the public key info of a passkey it just made; else,
-/// for a passkey made before (on another device, or at maiaCITY's sign-up, for the same relying party), one of the
-/// keys the unlock's assertion recovers to (`sign::RelayPass::candidates`), each of them a passkey here.
-fn passed(
-    start: &Start,
-    p256: Option<[u8; 33]>,
-    fresh: &Fresh,
-    unlock: &Unlock,
-) -> Result<(Lab, SignerId, Vec<SignerId>, RelayPass)> {
-    let pass = unlock.ceremony.pass(fresh.keys(), start.now);
-    let pass = pass.context("the unlock's ceremony isn't over this new device's challenge")?;
+/// A new device as its unlock starts it (`passed`).
+struct Passed {
+    /// Its Lab, the device in it, in the suite new signers are made in.
+    lab: Lab,
+    me: SignerId,
+    /// The passkeys its person's may be, each in each suite, with its keys in the Lab (`Lab::web_passkey`).
+    passkeys: Vec<SignerId>,
+    /// Of them, those in the suite new signers are made in, as a new vault knows its passkey.
+    new: Vec<SignerId>,
+    /// The passkey's pass for the device in each suite (`sign::Ceremony::passes`), as its person's vault may know
+    /// their passkey in either (the key move).
+    passes: Vec<RelayPass>,
+}
+
+/// A new device's Lab and the device, `fresh`; the passkeys its person's may be; and the passkey's pass for the device,
+/// the unlock, whose ceremony is over `fresh`'s challenge at `start.now` (`Passed`). The passkey is the one whose P-256
+/// key is `p256` if the page knows it, from the public key info of a passkey it just made; else, for a passkey made
+/// before (on another device, or at maiaCITY's sign-up, for the same relying party), one of the keys the unlock's
+/// assertion recovers to (`sign::RelayPass::candidates`), each of them a passkey here.
+fn passed(start: &Start, p256: Option<[u8; 33]>, fresh: &Fresh, unlock: &Unlock) -> Result<Passed> {
+    let passes = unlock.ceremony.passes(fresh.keys(), start.now);
+    if passes.is_empty() {
+        bail!("the unlock's ceremony isn't over this new device's challenge");
+    }
     let mut lab = Lab::with_entropy(start.entropy);
     start.recovery.clone().map(|key| lab.set_recovery(key));
     let me = lab.device_with(&start.name, *fresh.secret);
     let recover = || unlock.ceremony.assertion().map(|a| a.recover()).unwrap_or_default();
     let keys = p256.map_or_else(recover, |p256| vec![p256]);
     let passkey = |p256| lab.web_passkey("the person", p256, &unlock.ceremony);
-    let passkeys: Vec<SignerId> = keys.into_iter().filter_map(passkey).collect();
-    if passkeys.is_empty() {
+    let held: Vec<[SignerId; 2]> = keys.into_iter().filter_map(passkey).collect();
+    if held.is_empty() {
         bail!("the unlock's ceremony isn't of the passkey with this P-256 key");
     }
-    Ok((lab, me, passkeys, pass))
+    let new = held.iter().map(|[new, _]| *new).collect();
+    Ok(Passed { lab, me, passkeys: held.concat(), new, passes })
 }
 
 /// Report a panic on the page's console: the device can't go on after one, and the page starts over.
@@ -1408,12 +1428,21 @@ mod tests {
         let fresh = Fresh::from_secret([9; 32]);
         let mask = fresh.mask(&unlock);
         assert_ne!(mask, [9; 32], "the mask is no secret of the device's");
-        let (_, _, me) = lab(&start, passkey.public(), mask, &unlock).expect("it opens");
-        assert_eq!(me, fresh.keys().id());
+        let (credential, p256, device_id) = ("Y3JlZGVudGlhbA".into(), passkey.public(), fresh.keys().id());
+        let (name, relay, nonce, follow) = ("Eve's browser".into(), "http://localhost:3340".into(), [1; 32], vec![]);
+        let (device, query_depth, touch) = (device_id, None, None);
+        let meta = Meta { name, relay, nonce, mask, credential, p256, device, follow, query_depth, touch };
+        let (opened, passkeys) = lab(&start, &meta, &unlock).expect("it opens");
+        assert!(opened.keys_of(device_id).is_some(), "as the device its shelf keeps");
+        // its passkey in each suite, the one new signers are made in first (the key move)
+        let suites = passkeys.map(|p| opened.keys_of(p).expect("the passkey's keys").suite());
+        assert_eq!(suites, avendb::sign::SUITES);
         // without its mask, the unlock opens some other device, never this one
-        let (_, _, other) = lab(&start, passkey.public(), [0; 32], &unlock).expect("some device opens");
-        assert_ne!(other, me, "another device's");
-        assert_eq!(other, DeviceKey::from_secret(*device).id());
+        assert!(lab(&start, &Meta { mask: [0; 32], ..meta.clone() }, &unlock).is_err(), "another device's");
+        // and a device made before the key move opens as itself, in SLH-DSA
+        let old = DeviceKey::from_secret_in([9; 32], avendb::sign::Suite::SlhDsa).id();
+        let (opened, _) = lab(&start, &Meta { device: old, ..meta.clone() }, &unlock).expect("it opens");
+        assert_eq!(opened.keys_of(old).map(|k| k.suite()), Some(avendb::sign::Suite::SlhDsa));
     }
 
     #[test]

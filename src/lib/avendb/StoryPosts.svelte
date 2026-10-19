@@ -105,7 +105,8 @@
 		const { ops, errors } = await moving(world, actor, p, flow, on ? 'draft' : 'published');
 		problem = errors.join(' · ');
 		const day = on || /** @type {any} */ (p.record)?.published ? [] : [{ op: 'set', entry: p.entry, path: ['published'], value: new Date().toISOString().slice(0, 10), as: actor }];
-		await api.runAll(on ? 'Taking it off the stream' : 'Publishing it on the stream', [...day, ...ops]);
+		// the move's ops first, as `moving` counts them: each `$n` in them is the entry its op n created
+		await api.runAll(on ? 'Taking it off the stream' : 'Publishing it on the stream', [...ops, ...day]);
 	}
 </script>
 

@@ -1,16 +1,17 @@
 <!--
 	A vault's functions, in the layout every avenDB view has (./Frame.svelte): on the left each of them, by the flow it
-	hangs on: the vault's own, avenCEO GmbH's, then the app's; in the middle the one picked and how it is wired, the
+	hangs on: the vault's own, Maia City's, then the app's; in the middle the one picked and how it is wired, the
 	flow and the stage it hangs on, whether it runs as an entry enters that stage or leaves it, and for which kinds of
 	entries, then its code (./flows.js, ./functions.js), and under it what every function is given, may hand back and
 	its limits; on the right whose it is, whether it is on, the flow it is wired to, the entry that keeps it and its
-	version. One whose flow this device doesn't know is wired to nothing and never runs.
+	version. One whose flow this device doesn't know is wired to nothing and never runs, nor does one whose code the one
+	checker refuses.
 -->
 <script>
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import { ASKS, everyFunction, stageTag } from './flows.js';
-	import { RUN } from './functions.js';
+	import { RUN, refusal } from './functions.js';
 	import { ago, list, nameOf, short } from './vaults.js';
 
 	/** @type {{ world: import('./vaults.js').WorldView, vault: string }} */
@@ -55,6 +56,7 @@
 		['from, to', 'the stage the entry leaves and the one it enters'],
 		['item', 'the entry moved: entry, vault, type, title, text, tags'],
 		['posts', 'the posts about it its vault holds'],
+		['pictures', 'the pictures it shows that go public with it, or private again, as it moves'],
 		['now', 'the time, in seconds']
 	];
 </script>
@@ -86,6 +88,7 @@
 			<dt>It is</dt>
 			<dd>
 				{#if !fn.wired}<span class="chip">Not wired</span>
+				{:else if refusal(fn.code)}<span class="chip">Refused</span>
 				{:else if fn.enabled === false}<span class="chip">Off</span>
 				{:else}<span class="chip ok">On</span>{/if}
 			</dd>
@@ -129,6 +132,7 @@
 
 	{#if fn}
 		{@const f = fn}
+		{@const refused = refusal(f.code)}
 		<section class="fn">
 			<h3>
 				<Icon name="fn" size={18} />
@@ -137,6 +141,7 @@
 				{:else if f.enabled === false}<span class="chip">Off</span>{/if}
 			</h3>
 			{#if f.about}<p class="soft about">{f.about}</p>{/if}
+			{#if refused}<p class="soft about">It never runs: {refused}</p>{/if}
 
 			{#if f.wired}
 				{@const w = f.wired}
@@ -181,10 +186,18 @@
 					{#each EVENT as [k, v] (k)}<li><code>{k}</code> <span class="soft">{v}</span></li>{/each}
 				</ul>
 			</dd>
+			<dt>Its code</dt>
+			<dd class="soft">
+				A module that exports <code>run(event)</code> and imports nothing. The one checker reads it before it runs, and
+				one it refuses never runs.
+			</dd>
 			<dt>May hand back</dt>
 			<dd>
 				{#each ASKS as a (a)}<code class="op">{a}</code>{/each}
-				<span class="soft">on the entry it moves, its posts and the entries it creates; a share is Public alone.</span>
+				<span class="soft"
+					>on the entry it moves, its posts, its pictures and the entries it creates; a share is Public, and on those
+					entries alone.</span
+				>
 			</dd>
 			<dt>Its limits</dt>
 			<dd class="soft">

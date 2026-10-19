@@ -434,7 +434,8 @@ impl<'a> Book<'a> {
     }
 
     /// Every open proposal line of an entry device `me` reads that no AIP names, as an idea of its own: its title the
-    /// line's name, or the entry's title on it, so nothing written before AIPs is left out. Of vault `vault` alone, if
+    /// line's name, or the entry's title on it, so nothing written before AIPs is left out. A variant is no idea: it
+    /// stays open beside main by design, and merging it would put the variant over main. Of vault `vault` alone, if
     /// named.
     fn bare(&mut self, vault: Option<VaultId>) -> Vec<Value> {
         let (lab, me) = (self.lab, self.me);
@@ -444,7 +445,7 @@ impl<'a> Book<'a> {
             let Some(v) = lab.vault_of_entry(me, entry).filter(|v| vault.is_none_or(|x| x == *v)) else { continue };
             let (Some(h), Some(m)) = (lab.history(me, entry), lab.meaning(me, entry)) else { continue };
             for line in h.lines().into_iter().flatten() {
-                if named.contains(&(entry, line)) {
+                if named.contains(&(entry, line)) || h.is_variant(line) {
                     continue;
                 }
                 let l = Line::of(lab, me, &mut self.lanes, (entry, line));

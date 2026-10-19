@@ -17,7 +17,7 @@ const html = (body, libs = [], extra = {}) => ({ id: 'v', title: 'V', kind: 'htm
 const refused = (r) => (r.ok ? 'ACCEPTED' : r.errors[0]);
 
 describe('what we ship passes', () => {
-	test('the types', () => expect(Object.keys(TYPES).sort()).toEqual(['asset-card', 'config', 'logic', 'view', 'view-card']));
+	test('the types', () => expect(Object.keys(TYPES).sort()).toEqual(['asset-card', 'config', 'function', 'logic', 'view', 'view-card']));
 	for (const v of EXAMPLES) test(`the example view ${v.id}`, () => expect(checkCode('view', v)).toMatchObject({ ok: true }));
 	for (const c of V1_VIEWS) test(`V1's screen ${c.id}`, () => expect(checkCode('view-card', c, { slots: SLOTS })).toMatchObject({ ok: true, notes: [] }));
 	test('a template view with logic, and a script view with its libraries', () => {
@@ -94,6 +94,24 @@ describe('logic that could never run alone is refused', () => {
 		expect(refused(checkCode('logic', { code: 'export const x = 1;', hooks: ['init', 'on'] }))).toContain('exports none of init, on');
 	});
 	test('no such type', () => expect(refused(checkCode('macro', {}))).toContain('no type of code'));
+});
+
+describe("an avenDB function's code is held to the same rules, and exports run", () => {
+	const HOSTILE = {
+		'an import': 'import { x } from "./rules.js";\nexport function run(e) { return []; }',
+		'a dynamic import': 'export async function run(e) { return (await import("x")).y; }',
+		require: 'export function run(e) { return require("x"); }',
+		'no run': 'export function start(e) { return []; }',
+		'no text': { code: 42 },
+		'too long': 'export function run(e) { return []; }\n//' + 'x'.repeat(20_000)
+	};
+	for (const [what, c] of Object.entries(HOSTILE)) test(what, () => expect(refused(checkCode('function', c))).not.toBe('ACCEPTED'));
+	test('a function that exports run, as its text or as { code }', () => {
+		const code = '// As it is published: its pictures too\nexport function run(event) { return event.pictures.map((entry) => ({ op: "tag", entry, add: [event.tag] })); }';
+		expect(checkCode('function', code)).toMatchObject({ ok: true, notes: [] });
+		expect(checkCode('function', { code })).toMatchObject({ ok: true, value: { code } });
+		expect(refused(checkCode('function', 'export function start() {}'))).toContain('exports none of run');
+	});
 });
 
 describe("an asset's card: a real one passes, the asset schemas' hostile cards are refused by the one checker", async () => {

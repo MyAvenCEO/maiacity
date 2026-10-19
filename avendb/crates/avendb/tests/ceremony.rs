@@ -26,7 +26,7 @@ const NOW: u64 = 1_791_500_000;
 fn browser(authenticator: &mut Passkey, nonce: [u8; 32]) -> (Lab, SignerId, SignerId) {
     let mut lab = Lab::with_entropy([7; 32]);
     let unlock = authenticator.ceremony([1; 32]);
-    let passkey = lab.web_passkey("Alice", authenticator.public(), &unlock).expect("the passkey's own ceremony");
+    let [passkey, _] = lab.web_passkey("Alice", authenticator.public(), &unlock).expect("the passkey's own ceremony");
     let device = lab.device_with("Alice's browser", *authenticator.prf(&device_salt(&nonce)));
     (lab, passkey, device)
 }
@@ -129,7 +129,7 @@ fn the_lab_holds_no_secret_of_a_browsers_passkey() {
 /// A new browser's device and the ceremony that unlocks it, which is its passkey's pass for it made at `NOW`: the
 /// browser made the device's secret, `secret`, before the ceremony, so that its challenge names the device. With the
 /// passkey's keys for each P-256 key the ceremony's assertion recovers to, as the browser can't tell which is the
-/// passkey's yet.
+/// passkey's yet: their keys in the suite new signers are made in, as the pass is (it holds each in the other too).
 fn fresh(authenticator: &mut Passkey, secret: [u8; 32]) -> (Lab, SignerId, Vec<SignerId>, RelayPass) {
     let key = sign::DeviceKey::from_secret(secret);
     let unlock = authenticator.ceremony(pass_challenge(key.id(), NOW));
@@ -137,7 +137,8 @@ fn fresh(authenticator: &mut Passkey, secret: [u8; 32]) -> (Lab, SignerId, Vec<S
     let device = lab.device_with("Alice's browser", secret);
     let pass = unlock.pass(key.keys(), NOW).expect("the unlock is the passkey's pass for the device");
     let recovered = unlock.assertion().expect("a passkey's").recover().into_iter();
-    let passkeys: Vec<SignerId> = recovered.filter_map(|p256| lab.web_passkey("Alice", p256, &unlock)).collect();
+    let held = recovered.filter_map(|p256| lab.web_passkey("Alice", p256, &unlock));
+    let passkeys: Vec<SignerId> = held.map(|[new, _]| new).collect();
     (lab, device, passkeys, RelayPass::from_wire(&pass.to_wire()).expect("a pass"))
 }
 

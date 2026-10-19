@@ -44,7 +44,8 @@ fn alices_passkey_and_mac_move_to_ml_dsa_65_and_keep_her_vault() {
     let mut lab = Lab::with_entropy([7; 32]);
     let ceremony = authenticator.ceremony([1; 32]);
     let p256 = authenticator.public();
-    let passkey = lab.web_passkey("Alice", p256, &ceremony).expect("the passkey's own ceremony");
+    // the Lab holds it in each suite, as a device does that doesn't know which its vault knows yet
+    let [held, passkey] = lab.web_passkey("Alice", p256, &ceremony).expect("the passkey's own ceremony");
     let mac_secret = *authenticator.prf(&device_salt(&[5; 32]));
     let mac = lab.device_with_in("Alice's Mac", mac_secret, Suite::SlhDsa);
     // her vault, as made before the key move: SLH-DSA signers
@@ -62,6 +63,7 @@ fn alices_passkey_and_mac_move_to_ml_dsa_65_and_keep_her_vault() {
     let next = ceremony.keys_in(p256, Suite::MlDsa).id();
     assert_ne!(next, passkey);
     assert_eq!(next, Passkey::from_seed_in([1; 32], Suite::MlDsa).id());
+    assert_eq!(next, held, "the one the Lab holds beside it");
     let ml = ML_DSA_PUBLIC_BYTES + ML_DSA_SIGNATURE_BYTES;
     // 1. the old key adds the new one as an owner, which signs too, in the same ceremony
     let add = Action::Share(Sharing::Owner { vault, owner: Principal::Signer(next), seal_to: None });
