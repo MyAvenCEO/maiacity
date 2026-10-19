@@ -917,15 +917,16 @@ fn backup_passkey(run: &mut Run) -> Done {
         let what = format!("the new passkey removes the lost {}", named(&w.lab, lost));
         run.ok(what, w.lab.submit(new_mac, &[new_passkey], remove))?;
     }
+    // every owner is equal (Samuel, 2026-10-19): the vault's owners hand the root on, so the lost passkey is root no
+    // more (an owner still, until they remove it)
     let hand_on = Action::Settings { vault: alice, set: Setting::Root { root: Some(new_passkey), keep: vec![] } };
-    let refused = w.lab.submit(new_mac, &[backup, new_passkey], hand_on).err();
-    run.same("only the root hands the root on, so the lost passkey stays the root", refused, Some(Refusal::NotRoot));
+    run.ok("the backup hands the root on to the new passkey", w.lab.submit(new_mac, &[backup, new_passkey], hand_on))?;
     w.lab.sync_all(20);
     let v = w.lab.state(w.mac_b);
     let approve =
         v.approves(&[backup], Principal::Vault(alice)) && v.approves(&[new_passkey], Principal::Vault(alice));
     run.check("the backup and the new passkey each approve for Alice's vault", approve);
-    run.same("and the lost passkey is still its root", v.vault(alice).and_then(|x| x.root), Some(w.passkey_a));
+    run.same("and the new passkey is its root", v.vault(alice).and_then(|x| x.root), Some(new_passkey));
     recovered(run, &w, &h, new_mac);
     Ok(())
 }

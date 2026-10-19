@@ -213,7 +213,14 @@ fn approval(
     if !matches!(refused, Refusal::BelowThreshold | Refusal::NoConsent | Refusal::NotRoot) {
         return Err(refused.into());
     }
-    let root = refused == Refusal::NotRoot;
+    // the signer it names is an owner already (her passkey made root again): it approves as an owner and consents in
+    // one, its sheet bringing its keys where the device holds none (`owner_key`'s root path)
+    let owner = newcomer.is_some_and(|s| {
+        lab.vault_of(me)
+            .and_then(|v| lab.state(me).vault(v).map(|vt| vt.owners.contains(&Principal::Signer(s))))
+            .unwrap_or(false)
+    });
+    let root = refused == Refusal::NotRoot || owner;
     let Some((passkey, signers)) = approvers(lab, me, newcomer, root) else { return Err(refused.into()) };
     let drafts = vec![draft(lab, &signers)?];
     Ok(Prepared::Approve(Approval { passkey, signers, drafts, then }))
@@ -948,8 +955,8 @@ fn revoke_standing(lab: &mut Lab, me: SignerId, share: ShareId) -> Result<Value,
 }
 
 /// `{"op": "settings", "vault", "threshold"}` or `{"op": "settings", "vault", "root"}`: how many of vault `vault`'s
-/// owners approve a change, or its root, a passkey or `null`, which only the root hands on, and only a human vault
-/// has; approved by its owners, for a device acting for it. `{"edit": id}`.
+/// owners approve a change, or its root, a passkey or `null`, which its owners hand on as any change, and only a human
+/// vault has; approved by its owners, for a device acting for it. `{"edit": id}`.
 fn settings(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Result<Prepared, Refused> {
     let vault = vault_of(o, "vault")?;
     let set = match (o.get("threshold"), o.get("root")) {

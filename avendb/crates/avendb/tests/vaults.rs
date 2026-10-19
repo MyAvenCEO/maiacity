@@ -185,9 +185,9 @@ fn the_passkey_is_the_root() {
     assert!(c.log.check(PASSKEY_A, &[NEW_DEVICE], add.clone()).is_ok());
     // …and the second passkey alone is below the threshold
     assert_eq!(c.log.check(SECOND, &[NEW_DEVICE], add).err(), Some(Refusal::BelowThreshold));
-    // only the root hands the root on, and the new root signs
+    // the owners hand the root on by the vault's threshold, and the new root signs: the second alone is below it
     let hand_on = Action::Settings { vault: c.alice, set: Setting::Root { root: Some(SECOND), keep: vec![] } };
-    assert_eq!(c.log.check(SECOND, &[], hand_on.clone()).err(), Some(Refusal::NotRoot));
+    assert_eq!(c.log.check(SECOND, &[], hand_on.clone()).err(), Some(Refusal::BelowThreshold));
     assert_eq!(c.log.check(PASSKEY_A, &[], hand_on.clone()).err(), Some(Refusal::NoConsent));
     assert!(c.log.check(PASSKEY_A, &[SECOND], hand_on).is_ok());
     // a coop has no root, and a root signs the genesis that names it

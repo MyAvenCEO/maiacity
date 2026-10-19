@@ -264,7 +264,7 @@ def cases : List Case := [
     -- the second passkey alone is below the threshold; the root approves alone
     (9, [2], .share (.device 100 2)),
     (1, [2], .share (.device 100 2)),
-    -- only the root hands the root on, and the new root signs
+    -- the owners hand the root on by the threshold, and the new root signs: the second passkey alone is below it
     (9, [], .settings 100 (.root (some 9) [])),
     (1, [], .settings 100 (.root (some 9) [])),
     (1, [9], .settings 100 (.root (some 9) [])),
@@ -287,12 +287,13 @@ def cases : List Case := [
     (79, [3], .share (.device 100 3)),
     (2, [], .revoke (.device 100 3 [])),
     (79, [], .revoke (.device 100 3 [])),
-    -- it never hands the root on
+    -- an owner like the passkey, it takes the root, and hands it back, the new root signing (every owner equal)
     (79, [], .settings 100 (.root (some 79) [])),
+    (79, [1], .settings 100 (.root (some 1) [])),
     -- it takes the passkey off the owners; the passkey stays the root and approves alone
     (79, [], .revoke (.owner 100 (.signer 1) [])),
     (1, [77], .share (.device 100 77)),
-    -- the root removes the key once it is an owner again, never the last owner
+    -- the passkey removes the key once it is an owner again, never the last owner
     (1, [], .revoke (.owner 100 (.signer 79) [])),
     (1, [], .share (.owner 100 (.signer 1))),
     (1, [], .revoke (.owner 100 (.signer 79) []))] },
@@ -444,7 +445,7 @@ def cases : List Case := [
     (1, [], .revoke (.owner 100 (.signer 9) [])),
     (1, [9], .revoke (.owner 100 (.signer 9) [])),
     (1, [], .revoke (.owner 100 (.signer 1) [])),
-    -- Alice's vault has no root, so nobody hands one on
+    -- Alice's vault has no root; its owner, alone of one now, gives it one, as owners may (every owner equal)
     (1, [], .settings 100 (.root (some 1) [])),
     -- grants: to a vault, not to a device (DeviceOnlyKeeps); owner of a slice is governance; owner of the whole vault
     -- is an owner of it, which no grant makes, even with the vault's approval (WideOwner); a wide read is a grant
@@ -1102,13 +1103,13 @@ def views : List ViewCase := [
     -- Dave leaves at the same time
     (8, 8, [], .revoke (.owner 200 (.vault 103) [])),
     (9, 8, [], .settings 200 (.threshold 1))] },
-  { name := "the root outranks a stolen second passkey", edits := [
+  { name := "the first owner outranks a stolen second passkey", edits := [
     (0, 1, [], .genesis 100 .human [.signer 1] 1 (some 1)),
     (1, 1, [9], .share (.owner 100 (.signer 9))),
-    -- the thief, holding the second passkey: removes the root's passkey from the owners, adds a device of their own
+    -- the thief, holding the second passkey: removes the first passkey from the owners, adds a device of their own
     (2, 9, [], .revoke (.owner 100 (.signer 1) [])),
     (3, 9, [555], .share (.device 100 555)),
-    -- the root removes the second passkey, having seen neither
+    -- the first passkey, which joined first, removes the second, having seen neither
     (4, 1, [], .revoke (.owner 100 (.signer 9) []))] },
   { name := "a revoked writer's unseen edits are cut, with what builds on them", edits := humansV ++ [
     (6, 2, [], newEntry 100 21 100 [] todo),
@@ -1908,7 +1909,7 @@ def allActions : List Action :=
 -- grants to a device among the refused
 #guard (cases.find? (·.name == "settings, shares and revocations, kind by kind")).all fun c =>
   (run c.edits).1.drop humans.length == [false, false, false, true, true, false, true, false, true, true, true, false,
-    true, false, false, true, false, false, true, false, true, false, true, false, false, true]
+    true, false, true, true, false, false, true, false, true, false, true, false, false, true]
 -- the four kinds of vault: who may own each, how many owners it has, whether it holds devices, and who acts for it
 #guard (cases.find? (·.name == "four kinds of vault, and acts that name their chain")).all fun c =>
   (run c.edits).1.drop humans.length == [true, true, false, true, true, false, false, false, false, false, false, false,

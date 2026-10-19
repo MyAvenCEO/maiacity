@@ -1642,8 +1642,8 @@ stays its root (spec: `Examples.touch`, `tests/touch_id.rs`).
   the device's secret is also kept masked by what the touch opens (`Ceremony::device_mask`, `avendb_browser::Touch`).
 - **Opens and approves.** At each start a touch unmasks the device's secret (`Device::open_by_touch`). Where no touch
   comes, the passkey's sheet opens it as before. A touch then approves what the vault's owners approve
-  (`engine::passkey_of` picks the key first). Only the root hands the root on: on a Mac the touch opened, the passkey's
-  sheet signs that, and its ceremony brings the passkey's keys (`Lab::take_in`).
+  (`engine::passkey_of` picks the key first). Every owner is equal (2026-10-19): the key hands the root on, takes it or
+  gives it up as the passkey does, by the vault's threshold, the new root signing.
 - **What stays on the Mac.** The Enclave's blobs of both keys and the ciphertext are in `Meta::touch`. Only that
   Enclave reads them, and only after a touch. `touchOff` forgets them. The vault's owners revoke the key like any
   owner, from any device (the `revoke` op). A Mac whose fingers changed falls back to the passkey.

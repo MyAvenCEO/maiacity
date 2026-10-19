@@ -591,7 +591,7 @@ theorem apply_ops (st : State) (edit : Edit) :
       | some vt => simp only [map_ite_none, Option.map_some, setVault_ops, ops_ops]
     | root r keep =>
       simp only [Edit.blind, Action.blind]
-      simp only [apply, sigs_mk, vault?_ops]
+      simp only [apply, sigs_mk, vault?_ops, approves_ops]
       cases st.vault? v with
       | none => rfl
       | some vt => simp only [map_ite_none, Option.map_some, setVault_ops, ops_ops]
