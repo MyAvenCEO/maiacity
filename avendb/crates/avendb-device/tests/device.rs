@@ -26,7 +26,9 @@
 //! plugged into hosts it, a full copy; unplugged, its node stops and
 //! its signed holdings stay, with when it checked; plugged in again it is hosted with no sheet; ejected, nothing on it
 //! stays open, and plugged in again it is hosted with no sheet; her other Mac opens it in one; removed like a lost
-//! phone, her vault's peers refuse it.
+//! phone, her vault's peers refuse it. Ivy's passkey, Mac, Touch ID key and photo drive, made before the key move,
+//! move to ML-DSA-65 in one sheet and one touch (K3b): the Mac opens again as its next key and hosts the drive as its
+//! next key, and a touch opens it so from then on.
 
 use std::collections::HashMap;
 use std::future::Future;
@@ -40,8 +42,9 @@ use avendb::id::{EntryId, SignerId, VaultId};
 use avendb::keys::{self, SeededRng};
 use avendb::lab::Lab;
 use avendb::sealed::FileRoot;
-use avendb::policy::Principal;
-use avendb::sign::{DeviceKey, EnclaveKey, PRF_SALT, Passkey, device_salt};
+use avendb::policy::{Action, Principal, Sharing};
+use avendb::sign::{DeviceKey, EnclaveKey, PRF_SALT, Passkey, Suite, device_salt};
+use avendb_browser::{Meta, Touch};
 use avendb_device::{Config, Host, SHEET, agent, drive, host, serve};
 use avendb_net::shelf::FLOOR;
 use avendb_net::{Admission, Node, Options, disk};
@@ -203,7 +206,16 @@ struct InApp {
 impl InApp {
     /// The app hosts the device on folder `dir`, Eve's passkey answering its sheets.
     fn start(dir: &Path, passkey: Passkey) -> InApp {
-        let (host, sheets) = host(Config { dir: dir.to_path_buf(), direct: true, volumes: None }).expect("hosted");
+        InApp::with(Config { dir: dir.to_path_buf(), direct: true, volumes: None }, passkey)
+    }
+
+    /// The same, hosting the drives mounted in folder `volumes`, as macOS mounts them in /Volumes.
+    fn with_volumes(dir: &Path, volumes: &Path, passkey: Passkey) -> InApp {
+        InApp::with(Config { dir: dir.to_path_buf(), direct: true, volumes: Some(volumes.to_path_buf()) }, passkey)
+    }
+
+    fn with(config: Config, passkey: Passkey) -> InApp {
+        let (host, sheets) = host(config).expect("hosted");
         InApp { host, sheets, passkey, asked: vec![], cancel: false, enclave: [6; 32], touched: vec![], no_touch: false }
     }
 
@@ -2132,6 +2144,127 @@ async fn eves_drive_is_a_device_of_her_vault_hosted_by_the_mac_it_is_plugged_int
     assert_eq!(shelves, [FLOOR, FLOOR + 1], "what it held put aside");
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");
+}
+
+/// The volumes and drives the app's device shows (`drives`), once `check` holds of them, 60 seconds at most.
+async fn hosted(app: &mut InApp, what: &str, check: impl Fn(&Value) -> bool) -> Value {
+    let end = Instant::now() + Duration::from_secs(60);
+    loop {
+        let drives = app.call("drives", json!([])).await["ok"].clone();
+        if check(&drives) {
+            return drives;
+        }
+        assert!(Instant::now() < end, "{what}, within 60 s: {drives}");
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn ivys_mac_its_touch_id_key_and_her_drive_move_to_ml_dsa_65_with_her_passkey_in_one_sheet_and_one_touch() {
+    let relay = Relay::spawn(LOOPBACK, Admission::open()).await.expect("a relay");
+    let url = relay.url();
+    let folder = Folder::new("move");
+    let (dir, volumes) = (folder.0.join("avendb"), folder.0.join("Volumes"));
+    let photo = volumes.join("Photos");
+    std::fs::create_dir_all(photo.join(drive::STORE)).expect("the drive's store");
+    // Ivy's passkey, Mac, Touch ID key and photo drive, all made before the key move: SLH-DSA
+    let (seed, mac_secret, drive_secret, enclave_seed) = ([47; 32], [48; 32], [49; 32], [6; 32]);
+    let mut lab = Lab::new();
+    let passkey = lab.passkey_from_in("Ivy", seed, Suite::SlhDsa);
+    let mac = lab.device_with_in("Ivy's Mac", mac_secret, Suite::SlhDsa);
+    let photos = lab.device_with_in("Photos", drive_secret, Suite::SlhDsa);
+    let ivy = human_on(&mut lab, passkey, &[mac, photos]);
+    let enclave = EnclaveKey::from_seed_in(enclave_seed, Suite::SlhDsa);
+    let touch = enclave.id();
+    let add = Action::Share(Sharing::Owner { vault: ivy, owner: Principal::Signer(touch), seal_to: None });
+    let draft = lab.draft(mac, &[passkey, touch], add).expect("her passkey adds her Touch ID key");
+    let finger = enclave.ceremony(draft.challenge());
+    lab.complete(mac, draft, &[(touch, &finger)]).expect("a touch consents");
+    lab.sync_all(1);
+    // her Mac keeps her drive's key wrapped under a key of its own, as it does once it hosted it
+    let own = lab.own_key(mac, "drive key", &photos.0).expect("the Mac's own key");
+    let mut rng = SeededRng::new("the test's wrap", &[9; 32]);
+    let info = [&b"avenDB drive "[..], &photos.0].concat();
+    let wrapped = keys::wrap(&keys::Secret::from_bytes(drive_secret), &own, &info, &mut rng);
+    // each has its shelf, the relay knows each, and each keeps what opens it again
+    let ivys = Passkey::from_seed(seed);
+    let xor = |a: [u8; 32], b: &[u8]| -> [u8; 32] { std::array::from_fn(|i| a[i] ^ b[i]) };
+    let (p256, credential, relay_at) = (ivys.public(), CREDENTIAL.to_string(), url.to_string());
+    let stores = [(mac, dir.clone(), [1; 32], mac_secret), (photos, photo.join(drive::STORE), [2; 32], drive_secret)];
+    for (d, at, nonce, secret) in stores {
+        let (pass, shelf) = (lab.relay_pass(d, passkey, now()).expect("a pass"), disk::open(&at).expect("a shelf"));
+        let (through, relay_passes, on) = (Some(url.clone()), vec![pass], Some(shelf.clone()));
+        let opts = Options { relay: through, relay_passes, shelf: on, ..Options::local() };
+        let node = Node::spawn(lab.split(d, &[], [3; 32]), d, opts).await.expect("its node");
+        until("the relay serves it", || async { relay.serves(&node.id()) }).await;
+        node.shutdown().await.expect("its shelf holds what it holds");
+        let name = if d == mac { "Ivy's Mac" } else { "Photos" }.to_string();
+        let mask = xor(secret, &ivys.prf(&device_salt(&nonce))[..]);
+        let touch = (d == mac).then(|| Touch {
+            public: enclave.public(),
+            key: enclave_seed.to_vec(),
+            kem: b"the ML-KEM key's blob".to_vec(),
+            sealed: b"a ciphertext to it".to_vec(),
+            mask: xor(secret, &finger.device_mask().expect("a touch's")[..]),
+            passkey,
+        });
+        let (credential, relay, follow, query_depth) = (credential.clone(), relay_at.clone(), vec![], None);
+        let meta = Meta { name, relay, nonce, mask, credential, p256, device: d, follow, query_depth, touch };
+        meta.keep(&shelf).await.expect("what opens it again");
+        if d == mac {
+            shelf.put(&format!("drives/{}", photos.to_hex()), Bytes::from(wrapped.clone())).await.expect("its key");
+        }
+    }
+    // the app starts; no touch comes, so her passkey's sheet opens it, and it hosts her drive with no sheet
+    let mut app = InApp::with_volumes(&dir, &volumes, ivys);
+    app.no_touch = true;
+    let opened = app.call("open", json!([])).await["ok"].clone();
+    assert_eq!(opened["id"], json!(mac.to_hex()), "her Mac as her vault knows it, in SLH-DSA");
+    assert_eq!((app.asked(), app.touched()), (vec!["unlock".to_string()], vec!["open avenDB".to_string()]));
+    hosted(&mut app, "her drive hosted", |d| d["volumes"][0]["state"] == "hosted").await;
+    // the page asks once more: her passkey, her Touch ID key, her Mac and her drive move in one sheet and one touch
+    let moving = app.call("moving", json!([])).await;
+    assert_eq!(moving, json!({ "ok": { "passkey": true, "touch": true, "device": true } }));
+    let moved = app.call("moveKeys", json!([])).await["ok"].clone();
+    let touched = vec!["move your Touch ID key to ML-DSA-65".to_string()];
+    assert_eq!((app.asked(), app.touched()), (vec!["move".to_string()], touched));
+    let [mac_next, photos_next] = [mac_secret, drive_secret].map(|s| DeviceKey::from_secret_in(s, Suite::MlDsa).id());
+    let next = Passkey::from_seed_in(seed, Suite::MlDsa).id();
+    let touch_next = EnclaveKey::from_seed_in(enclave_seed, Suite::MlDsa).id();
+    assert_eq!(moved["id"], json!(mac_next.to_hex()), "it opened again as its next key");
+    let status = app.call("status", json!([])).await["ok"].clone();
+    assert_eq!((&status["meta"]["device"], &status["meta"]["touch"]), (&json!(mac_next.to_hex()), &json!(true)));
+    let node = app.host.node().expect("its node");
+    let members = move |lab: &Lab, me| {
+        let v = lab.state(me).vault(ivy)?;
+        let mut devices = v.devices.clone();
+        devices.sort();
+        Some((v.owners.clone(), v.root, devices))
+    };
+    let mut devices = vec![mac_next, photos_next];
+    devices.sort();
+    let after = (vec![Principal::Signer(next), Principal::Signer(touch_next)], Some(next), devices);
+    assert_eq!(node.read(members).await, Some(after));
+    drop(node);
+    // her drive's store names its next key, this Mac keeps its key under that, and hosts it again as that key
+    let next_hex = json!(photos_next.to_hex());
+    let drives = hosted(&mut app, "her drive hosted again", |d| {
+        d["volumes"][0]["state"] == "hosted" && d["volumes"][0]["device"] == next_hex
+    })
+    .await;
+    assert_eq!(drives["drives"][0]["device"], next_hex);
+    assert!(app.asked().is_empty() && app.touched().is_empty(), "no sheet and no touch");
+    assert_eq!(app.call("moving", json!([])).await, json!({ "ok": null }), "nothing more moves");
+    // the app quits and starts again: a touch opens it as its next key, and it hosts her drive as its next key
+    app.host.close().await;
+    drop(app);
+    let mut app = InApp::with_volumes(&dir, &volumes, Passkey::from_seed(seed));
+    let opened = app.call("open", json!([])).await["ok"].clone();
+    assert_eq!(opened["id"], json!(mac_next.to_hex()));
+    assert_eq!((app.asked(), app.touched()), (vec![], vec!["open avenDB".to_string()]));
+    hosted(&mut app, "her drive hosted as its next key", |d| d["volumes"][0]["device"] == next_hex).await;
+    assert_eq!(app.call("moving", json!([])).await, json!({ "ok": null }));
+    app.host.close().await;
 }
 
 /// Bytes as lowercase hex digits.

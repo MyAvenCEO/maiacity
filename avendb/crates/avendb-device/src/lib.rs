@@ -26,6 +26,12 @@
 //! starts (`open`, `avendb_browser::Device::open_by_touch`), its passkey's sheet only where the touch fails, and
 //! approves what their vault's owners approve (`avendb_net::Authenticator::touch`); `touchOff` forgets it here.
 //!
+//! The key move (K3b): once the device opened, the page asks `moving` what it asks of its person, and where their
+//! passkey, this Mac's Touch ID key, its device or a drive it hosts still signs in SLH-DSA, it asks them once more and
+//! calls `moveKeys`: one sheet of the passkey and one touch, the touch's prompt saying it moves the Touch ID key, sign
+//! one batch their vault approves (`avendb_browser::Device::move_keys`); each drive's store and this Mac's shelf then
+//! name the drive's next key (`drive`), and the device opens again as its next key, with no ceremony.
+//!
 //! While the device starts (`found`, `link`, `open`), the page asks `steps` for each step of its start so far,
 //! with how long it took (`avendb_browser::steps_json`), and shows them as they happen.
 //!
@@ -67,7 +73,7 @@ use avendb::engine;
 use avendb::id::SignerId;
 use avendb::keys;
 use avendb::sign::{self, Assertion, Ceremony};
-use avendb_browser::{Device, Fresh, Meta, Start, Touch, Unlock, steps_json};
+use avendb_browser::{Device, Fresh, Meta, Moving, Signing, Start, Touch, Unlock, steps_json};
 use avendb_net::{Authenticator, Ending, NoBytes, NoCeremony, Node, Offer, Options, Place, Progress, Shelf, Step, disk};
 use bytes::Bytes;
 use data_encoding::{BASE64, BASE64URL_NOPAD};
@@ -83,6 +89,9 @@ pub const SHEET: &str = "https://maia.city/app/avendb/sheet/";
 
 /// The longest a call waits for the device to change (`changed`): then it answers `null`, and the page asks again.
 const CHANGED: Duration = Duration::from_secs(50);
+
+/// What the Touch ID prompt says the key move's touch is for (`Service::move_keys`).
+const MOVE_TOUCH: &str = "move your Touch ID key to ML-DSA-65";
 
 /// How the device runs: the folder it keeps its account in, on its shelves (`avendb_net::disk`), whether its node
 /// reaches its peers directly too (`avendb_net::Options::direct`), as the app's does, where a test's may run on its
@@ -331,6 +340,7 @@ impl Service {
     /// `drives` the volumes plugged in and the drives joined here, `joinDrive [volume, name]` a drive used for avenDB as
     /// a device of the person's vault, `openDrive [volume]` one another Mac of theirs joined, opened here, and
     /// `ejectDrive [volume]` one hosted here, its node stopped and the volume ejected (`drive`).
+    /// `moving` what the key move asks of its person now, and `moveKeys` the move (K3b, `move_keys`).
     async fn on_device(self: &Arc<Self>, call: &str, a: Args<'_>) -> Result<Value> {
         let d = self.device()?;
         let number = |i: usize| a.get(i).as_u64().with_context(|| format!("argument {} is a file's number", i + 1));
@@ -372,6 +382,8 @@ impl Service {
             "openDrive" => self.open_drive(&a.text(0)?).await?,
             "ejectDrive" => self.eject_drive(&a.text(0)?).await?,
             "touchSetup" => self.touch_setup(&d).await?,
+            "moving" => self.moving(&d).await?,
+            "moveKeys" => self.move_keys().await?,
             "touchOff" => {
                 d.forget_touch().await?;
                 Value::Null
@@ -706,9 +718,11 @@ impl Service {
     /// its coop's one aven, avenMAIA, which Maia City owns and the seed founded (`agent::aven_of`), as a device of it
     /// beside its server, in one ceremony of their passkey in the sheet, which the agent's device cosigns
     /// (`Node::add_device_vault_with` at `Place::Vault`): from then on it acts as avenMAIA, with avenMAIA's rights, no
-    /// more and no less (Samuel 2026-10-18: no agent vaults under an aven, no sub caps; by default a Suggester on Maia
-    /// City). One already a device of it, as the same harness asking again, is granted at once. `shares` and
-    /// `aven_name` name nothing any more. `{aven, vault}`: the aven both, as the agent acts as the aven itself.
+    /// more and no less (Samuel 2026-10-18: no agent vaults under an aven, no sub caps). Maia City decides what
+    /// avenMAIA holds: given Suggester and an AIP author's share, an agent proposes, drafts and opens AIPs, which a
+    /// human of Maia City accepts. One already a device of it, as the same harness asking again, is granted at once.
+    /// `shares` and `aven_name` name nothing any more. `{aven, vault}`: the aven both, as the agent acts as the aven
+    /// itself.
     async fn grant(
         self: &Arc<Self>,
         d: &Arc<Device>,
@@ -828,6 +842,65 @@ impl Service {
         let touch = d.add_touch(first, keys, sign).await?;
         let id = d.node().read(move |lab, me| owner_touch(lab, me, &touch.public)).await;
         Ok(json!({ "touch": id.map(|id| id.to_hex()) }))
+    }
+
+    /// `moving`: what the key move asks of its person now (K3b, `Device::moving`), with the drives this Mac hosts held
+    /// beside its device in each suite, so they move with it (`hold_drives`): `{passkey, touch, device}`, or null once
+    /// nothing moves.
+    async fn moving(self: &Arc<Self>, d: &Arc<Device>) -> Result<Value> {
+        self.look().await.ok();
+        self.hold_drives(d).await;
+        Ok(d.moving().await?.map_or(Value::Null, |m| m.to_json()))
+    }
+
+    /// `moveKeys`: the key move (K3b, `Device::move_keys`). Its person's passkey, this Mac's Touch ID key, its device
+    /// and the drives it hosts move to ML-DSA-65, in one ceremony of the passkey in the sheet and one touch, each
+    /// where `moving` asks for it, the drives' nodes stopped first; each drive's store then names its next key, and
+    /// this Mac's shelf keeps the drive's key under that key (`moved_drives`); and the device opens again as its next
+    /// key, with no ceremony, and hosts its drives again as theirs. The device as `open` answers it.
+    async fn move_keys(self: &Arc<Self>) -> Result<Value> {
+        let _life = self.life.lock().await;
+        let d = self.device()?;
+        let meta = Meta::load(&self.shelf()).await?.context("this Mac holds no avenDB account")?;
+        self.look().await.ok();
+        let drives = self.hold_drives(&d).await;
+        self.drives.stop().await;
+        let (start, _ending) = self.start(&meta.name, &meta.relay)?;
+        let (service, sheets) = (self.clone(), Sheets::new(self.clone(), Some(meta.credential.clone())));
+        let touch = meta.touch.clone();
+        let sign = move |challenge, moving: Moving| async move {
+            let passkey = match moving.passkey {
+                true => {
+                    let brought = sheets.ask("move", challenge, None).await?;
+                    Some(Ceremony::new(brought.assertion, *brought.prf))
+                }
+                false => None,
+            };
+            let touch = match (moving.touch, &touch) {
+                (true, Some(touch)) => Some(service.touch(touch, MOVE_TOUCH, challenge).await?),
+                (true, None) => bail!("this Mac keeps no Touch ID key"),
+                (false, _) => None,
+            };
+            Ok(Signing { passkey, touch })
+        };
+        let (service, mac) = (self.clone(), d.clone());
+        let keep = move |moves| async move { service.moved_drives(&mac, drives, moves).await };
+        match d.move_keys(start, sign, keep).await {
+            Ok(Some(moved)) => Ok(self.opened(moved)),
+            Ok(None) => {
+                self.watch_drives();
+                Ok(info(&d))
+            }
+            Err(e) => {
+                // closed, as it was to open again as its next key: the page opens it again from its shelf
+                if d.closed() {
+                    self.device.lock().expect("the device").take();
+                } else {
+                    self.watch_drives();
+                }
+                Err(e)
+            }
+        }
     }
 
     /// The ceremony over `challenge` of this Mac's Touch ID key `touch` (`Meta::touch`), for `why`: one touch, with
