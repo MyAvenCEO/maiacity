@@ -11,6 +11,10 @@
  *   `notifications/message`. The HTML, and a picture of its DOM the script sends, reach out every way markup can
  *   (`HTML_TRIES`): what comes of those only the canary can tell, so each aims at its own address there.
  * - `spinView()`: a draw script that never yields, which the engine must stop.
+ * - `burnView()`: a draw script that works without end in bursts, answering every ping between them and whatever else
+ *   it hears, which its budget of work (./watch.js) must stop.
+ * - `heavyView()`: a draw script whose every animation frame holds its worker 300 ms, which its budget of work must
+ *   slow down, never stop.
  * - `logicViews()`: a view's logic that never returns and one that eats its memory, which QuickJS must stop.
  *
  * `canary` is where every attempt aims (`<canary>/<attempt>`): an address only the probe's runner listens on, so a
@@ -304,6 +308,65 @@ go nowhere: click them.</p>
 
 /** a draw script that never yields: the engine must stop its worker */
 export const spinView = () => ({ id: 'probe-spin', title: 'A script that never yields', kind: 'html', spec: { html: '<p>This script never yields.</p><script>for (;;) {}</script>', height: 160 } });
+
+/**
+ * A draw script that works without end, in bursts of 400 ms with a break after each, so its worker answers every ping
+ * (the engine's four seconds never see it). It answers at once whatever it hears on any port it can find, and sends
+ * numbers of its own ahead, as answers to asks not made yet. Its budget of work must stop it all the same.
+ */
+const BURN = `
+'use strict';
+const data = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'data').get;
+const ports = new Set();
+Object.defineProperty(MessageEvent.prototype, 'data', {
+	configurable: true,
+	get() {
+		const p = this.target;
+		if (p instanceof MessagePort && !ports.has(p)) {
+			ports.add(p);
+			p.addEventListener('message', (e) => p.postMessage(data.call(e)));
+		}
+		return data.call(this);
+	}
+});
+setInterval(() => {
+	for (const p of ports) for (let i = 0; i < 20; i++) p.postMessage(String(Math.random()));
+}, 50);
+const busy = (ms) => {
+	const t = performance.now();
+	while (performance.now() - t < ms);
+};
+setInterval(() => busy(400), 0);
+`;
+export const burnView = () => ({ id: 'probe-burn', title: 'A script that works without end, in bursts', kind: 'html', spec: { html: `<p>This script works in bursts, a break after each, and answers whatever it hears.</p><script>${BURN}</script>`, height: 160 } });
+
+/**
+ * A draw script whose every animation frame holds its worker 300 ms, as a scene a slow graphics card can't keep up
+ * with does: past half its budget its frames must come further apart, and it must go on. It says, as `HEAVY`, how many
+ * frames it drew, how many of them came 400 ms or more after the one before (spaced out: 300 ms of its own work, and
+ * a pace of 100 ms or more), and how far apart two came at most.
+ */
+export const HEAVY = '(a heavy scene)';
+const HEAVY_SCRIPT = `
+'use strict';
+let [frames, spaced, last, widest] = [0, 0, 0, 0];
+const busy = (ms) => {
+	const t = performance.now();
+	while (performance.now() - t < ms);
+};
+function draw() {
+	const now = performance.now();
+	if (last) widest = Math.max(widest, now - last);
+	if (last && now - last >= 400) spaced++;
+	last = now;
+	frames++;
+	parent.postMessage({ jsonrpc: '2.0', method: 'notifications/message', params: { level: 'info', logger: 'probe', data: { probe: ${JSON.stringify(HEAVY)}, said: JSON.stringify({ frames, spaced, widest: Math.round(widest) }) } } });
+	busy(300);
+	requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+`;
+export const heavyView = () => ({ id: 'probe-heavy', title: 'A scene too heavy for the device', kind: 'html', spec: { html: `<p>Each of this script’s frames holds its worker 300 ms.</p><script>${HEAVY_SCRIPT}</script>`, height: 160 } });
 
 /** a view's logic that never returns, and one that eats its memory: QuickJS must stop both */
 export const logicViews = () => [

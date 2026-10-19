@@ -16,6 +16,9 @@
  *   source is `parent`, so MCP Apps and the official SDK run unchanged; the page answers only what it allows.
  * - Its libraries (three, d3, the MCP Apps SDK) come in as frozen files the page checked by hash; a module script
  *   imports them by name (./imports.js), and nothing else.
+ * - It answers the watch (./watch.js, a worker of the frame's beside it) at once, on a port of its own (version 2): how
+ *   long an answer waits is how long the view's script kept this worker at work, and past its budget the frame ends it.
+ *   On the way there the frame spaces its animation frames out (`pace`), so a scene that only draws too often slows.
  */
 import { load, objectUrl } from './keep.js';
 import '../lockdown.js';
@@ -23,6 +26,9 @@ import { parseHTML } from 'linkedom';
 import { classic } from './imports.js';
 
 const NativeEvent = self.Event;
+// taken before anything of the view's runs, so no script of its can bend how the watch is answered
+const echo = MessagePort.prototype.postMessage;
+const dataOf = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'data').get;
 let port = null;
 const say = (m, t) => port?.postMessage(m, t ?? []);
 const error = (e) => say({ op: 'error', message: String(e?.stack ?? e?.message ?? e).slice(0, 600) });
@@ -44,6 +50,12 @@ self.addEventListener('message', function boot(e) {
 	if (!m || m.op !== 'boot' || port) return;
 	self.removeEventListener('message', boot);
 	port = m.port;
+	// the watch's asks (./watch.js), each sent straight back: an answer leaves only once this worker is free, so how
+	// long one waits is how long the view's script kept it at work
+	if (m.beat instanceof MessagePort) {
+		const beat = m.beat;
+		beat.onmessage = (a) => echo.call(beat, dataOf.call(a));
+	}
 	try {
 		start(m);
 	} catch (err) {
@@ -106,7 +118,19 @@ function start(m) {
 	let held = [];
 	const raf = self.requestAnimationFrame?.bind(self) ?? ((cb) => (seen ? timeout(() => cb(performance.now()), 16) : (held.push(cb), 0)));
 	const caf = self.cancelAnimationFrame?.bind(self) ?? clearTimeout;
-	define('cancelAnimationFrame', caf);
+	// the frame's pace (the watch's, ./watch.js): while the script works past its share, its animation frames come
+	// `pace` ms apart. Such a frame has a number of its own (below zero), so cancelling it still holds
+	let pace = 0;
+	let spaced = 0;
+	const spacedOut = new Set();
+	const frame = (cb) => {
+		if (!pace) return raf(cb);
+		const id = --spaced;
+		spacedOut.add(id);
+		timeout(() => raf((t) => spacedOut.delete(id) && cb(t)), pace);
+		return id;
+	};
+	define('cancelAnimationFrame', (id) => void (id < 0 ? spacedOut.delete(id) : caf(id)));
 	define('alert', () => {});
 	define('confirm', () => false);
 	define('prompt', () => null);
@@ -271,7 +295,7 @@ function start(m) {
 			: cb;
 	define('setTimeout', (cb, ms, ...a) => timeout(after(cb), ms, ...a));
 	define('setInterval', (cb, ms, ...a) => interval(after(cb), ms, ...a));
-	define('requestAnimationFrame', (cb) => raf(after(cb)));
+	define('requestAnimationFrame', (cb) => frame(after(cb)));
 
 	// ---- what the frame sends: events, sizes, the page's messages ----
 	const byMid = (mid) => (mid == null || mid === 'document' ? document : document.querySelector(`[data-mid="${String(mid).replace(/[^\d]/g, '')}"]`));
@@ -279,6 +303,7 @@ function start(m) {
 		const m = e.data;
 		if (!m || typeof m !== 'object') return;
 		if (m.op === 'ping') say({ op: 'pong' });
+		else if (m.op === 'pace') pace = Math.min(2000, Math.max(0, Number(m.ms) || 0));
 		else if (m.op === 'seen') {
 			seen = Boolean(m.seen);
 			if (seen) for (const cb of held.splice(0)) raf(cb);

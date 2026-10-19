@@ -4,8 +4,9 @@
  * other (`probeRecipe`, made into a recipe file by ./plugin.js). Each answers `blocked` (refused, as it must be) or
  * `OPEN` (it got through: a hole), and the answers leave the box the only way anything does: as the names of the
  * parts of the object it builds. The box's page (/app/assets/box/) runs it; every answer must be blocked. With it,
- * `spinRecipe`: a builder that never stops, which the box must end; and `answerRecipe`: one that answers other
- * recipes' builds with its own model, which must never reach the page as theirs.
+ * `spinRecipe`: a builder that never stops, which the box must end; `crashRecipe`: one that crashes its worker; each
+ * must die alone, the box's other recipes building on; and `answerRecipe`: one that answers other recipes' builds with
+ * its own model, which must never reach the page as theirs.
  */
 import * as THREE from 'three';
 
@@ -125,4 +126,15 @@ export const spinRecipe = () => ({
 	build: () => {
 		for (;;);
 	}
+});
+
+/** a builder that crashes its worker: an error thrown where nothing catches it, and its build never answered */
+export const crashRecipe = () => ({
+	meta: { group: 'things', id: 'crash', version: 1, label: 'A builder that crashes its worker' },
+	build: () =>
+		new Promise(() => {
+			setTimeout(() => {
+				throw new Error('this recipe crashed its worker');
+			});
+		})
 });

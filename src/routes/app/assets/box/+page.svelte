@@ -4,7 +4,8 @@
 	back, as an asset no one trusts would be. Every build is named by its recipe's BLAKE3 hash and the values it takes
 	(`<hash>?seed=maia&stage=9`); a label such as plants/apple@2 only points at a hash. One button runs every check: each
 	frozen engine checked against its hash and engine 1 still building as it did, what the box cannot reach (tried by a recipe), assets built in the box against the
-	same built in the page, a recipe that answers another's build, a recipe that never stops, a recipe whose bytes are not
+	same built in the page, a recipe that answers another's build, a recipe that crashes its worker and one that never
+	stops (each ended alone, the box's other recipes building on), a recipe whose bytes are not
 	its name, data and cards out of shape,
 	each recipe's parameters, and each asset loaded again from this device's cache the same, with no box started. A
 	second button builds every asset of ours (every version and variant, phase 3) in the box and in the page, compares
@@ -243,24 +244,58 @@
 				add('A recipe can’t answer another’s build', false, e.message);
 			}
 
+			// a recipe dies alone: one that crashes its worker, then one that never stops, each built with the bell tent
+			// asked right behind it and a machine running in the same box. Each must be ended, and the box go on: the same
+			// frame, the tent out of the room it had, the machine still stepping
+			const tentRecipe = await recipeAt(tentAt.slice(0, 64));
+			const machineRecipe = await recipeAt(SAMPLES[3].name.slice(0, 64));
+			const roomOf = (code) => box.rooms.find((r) => r.code === code)?.room;
+			/** a trial built with the tent asked behind it: how it was ended, and what of the box went on */
+			async function alone(trial, o) {
+				await box.build(tentRecipe);
+				const machine = await box.live(machineRecipe, undefined);
+				const [frame, room] = [box.frame, roomOf(tentRecipe.code)];
+				const t = now();
+				let ms = 0;
+				const ended = box.build(checked(trial), undefined, o).then(
+					() => '',
+					(e) => ((ms = Math.round(now() - t)), String(e.message))
+				);
+				const tent = box.build(tentRecipe).then(
+					(b) => b.card,
+					(e) => e
+				);
+				const [stopped, card] = [await ended, await tent];
+				const stepped = await box.tick(machine.session, { dt: 0.016 }).then(
+					() => true,
+					(e) => e.message
+				);
+				await box.end(machine.session);
+				const built = card?.recipe === tentRecipe.hash ? card.triangles : null;
+				const went = { frame: box.frame === frame, room: !!room && roomOf(tentRecipe.code) === room, stepped: stepped === true };
+				return { stopped, ms, built, ...went, alone: !!stopped && built > 0 && went.frame && went.room && went.stepped, why: built ? stepped : String(card?.message ?? card) };
+			}
+			const what = (r) => (r.alone ? `the bell tent asked right behind it came out of the room it had (${r.built.toLocaleString('en')} triangles), a machine kept running, all in the same box` : `the box did not go on: ${JSON.stringify(r)}`);
+
+			line = 'A recipe that crashes its worker…';
+			try {
+				const r = await alone(TRIALS.crash);
+				out.crash = r;
+				add('One recipe’s crash leaves the others building', r.alone && /crashed/.test(r.stopped), `${r.stopped || 'it never crashed'}; ${what(r)}`);
+			} catch (e) {
+				out.crash = { error: e.message };
+				add('One recipe’s crash leaves the others building', false, e.message);
+			}
+
 			line = 'A recipe that never stops…';
-			t0 = now();
-			let stopped = '';
 			try {
-				await box.build(checked(TRIALS.spin), undefined, { timeout: 2000 });
+				const r = await alone(TRIALS.spin, { timeout: 2000 });
+				out.kill = r;
+				add('A recipe that never stops is ended alone', r.alone && /ran longer/.test(r.stopped), `${r.stopped || 'never stopped'} after ${r.ms} ms; ${what(r)}`);
 			} catch (e) {
-				stopped = e.message;
+				out.kill = { error: e.message };
+				add('A recipe that never stops is ended alone', false, e.message);
 			}
-			const killMs = Math.round(now() - t0);
-			let after = '';
-			try {
-				const again = await inBox(buildAt('things/bell-tent'));
-				after = `a new box built the bell tent again (${again.data.stats.tris.toLocaleString('en')} triangles)`;
-			} catch (e) {
-				after = `no new box: ${e.message}`;
-			}
-			out.kill = { stopped, ms: killMs, after };
-			add('A recipe that never stops is ended', !!stopped && after.startsWith('a new box'), `${stopped || 'never stopped'} after ${killMs} ms; ${after}`);
 
 			line = 'A recipe whose bytes are not its name…';
 			const real = await recipeAt(SAMPLES[2].name);

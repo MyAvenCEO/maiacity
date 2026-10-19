@@ -60,6 +60,13 @@
 			"blake3": "b655c2594bff5b54c092f8edea1f2c0a46a4801f15865aed54c7e27d9bd99041",
 			"bytes": 125559,
 			"note": "Template attributes filled from the state pass the sanitizer again: a value that names a script, a handler or an address it may not is dropped before the element has it, and style is cleaned (G8)"
+		},
+		{
+			"v": 4,
+			"date": "2026-10-19",
+			"blake3": "a72471904960f39dcca95079e5af1764dc4db314c0f877bb45677d7ed25f03b2",
+			"bytes": 127176,
+			"note": "A view's script is held to a budget of work (G7): the watch, a worker of ours beside the view's that nothing of the view's reaches, asks it at moments no script can foresee and counts how long each answer waits; 5 s of work in hand, refilled by half the time that passes. Past half of it the view's animation frames are spaced out (100 ms, 500 ms, then 2 s apart), and past all of it the view's worker is ended, as one that holds it 4 s without a break is"
 		}
 	],
 	"view-worker": [
@@ -70,6 +77,14 @@
 			"bytes": 317697,
 			"version": "0.18.13",
 			"note": "The first view worker: a draw script on a linkedom DOM mirrored into the frame, canvases as ImageBitmaps, MCP Apps over parent.postMessage, module imports as lookups"
+		},
+		{
+			"v": 2,
+			"date": "2026-10-19",
+			"blake3": "c38959780e17b33f6c9fc420e174dcb8b63422840bdf30e8927077fdd575cd9b",
+			"bytes": 318090,
+			"version": "0.18.13",
+			"note": "A view's worker answers the watch (its beat port) as soon as it is free, with nothing of the view's script able to bend the answer, and spaces its animation frames out when the frame asks it to (pace, up to 2 s apart), so a scene too heavy for the machine slows down instead of being stopped"
 		}
 	]
 }
