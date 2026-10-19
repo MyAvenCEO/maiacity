@@ -9,5 +9,5 @@
 <FilmRoute
 	sandbox="sandbox-5"
 	to="/app/games/sandbox-5/"
-	mount={async (stage, _area, onProgress) => (await import('$lib/sandbox-2/interior/village')).mountVillage(stage, onProgress, (await import('$lib/sandbox-2/interior/sandbox5.js')).SANDBOX_5)}
+	mount={async (stage, _area, onProgress) => (await import('$lib/sandbox-2/interior/village')).mountVillage(stage, onProgress, await (await import('$lib/sandbox-2/interior/sandbox5.js')).sandbox5())}
 />

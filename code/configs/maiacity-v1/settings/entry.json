@@ -1,0 +1,6 @@
+{
+	"type": "config",
+	"for": "maiacity-v1",
+	"title": "MaiaCity V1 settings",
+	"note": "What a new game starts with: the clock, minting, the pool, Law 5's dividend and the weekly rents. A running game keeps its own, changed only by its MIPs; each value is held to the game's limits (SETTING_LIMITS)."
+}

@@ -36,13 +36,13 @@ const V1 = 'game:maiacity-v1';
 
 /**
  * Each group the seed defines, in order, a group it includes named by its name: a Traveler reads the games' entries
- * (`game`), the asset recipes (`recipe`) and the views and logic modules (`view`, `logic`), which the seed also shares
- * with everyone for the server's feeds (./seed.js `CODE_TYPES`, `RECIPE_TYPES`); a Citizen reads all of V1 besides; an
- * Admin all of Maia City.
+ * (`game`), the asset recipes (`recipe`), the views and logic modules (`view`, `logic`) and the games' settings (`config`),
+ * which the seed also shares with everyone for the server's feeds (./seed.js `CODE_TYPES`, `RECIPE_TYPES`,
+ * `CONFIG_TYPES`); a Citizen reads all of V1 besides; an Admin all of Maia City.
  * @type {{ name: string, caps: { op: string, where?: object }[], includes: string[] }[]}
  */
 export const CAP_GROUPS = [
-	{ name: TRAVELER, caps: [{ op: 'read', where: { type: ['game', 'recipe', 'view', 'logic'] } }], includes: [] },
+	{ name: TRAVELER, caps: [{ op: 'read', where: { type: ['game', 'recipe', 'view', 'logic', 'config'] } }], includes: [] },
 	{ name: CITIZEN, caps: [{ op: 'read', where: { tag: V1 } }], includes: [TRAVELER] },
 	{ name: ADMIN, caps: [{ op: 'read' }], includes: [CITIZEN] }
 ];

@@ -4,8 +4,12 @@
  * run goes through avenDB, engine code only by GitHub commits). The code lives in the seed's flat "Maia City" vault, a
  * code entry per view or logic module (avenDB's shipped "View" and "Logic" schemas, #830), found by its tags:
  *
- *   ref:<code path>     the path the loader names it by: ref:views/coop-chart, ref:logic/sandbox-7/hearts
- *   game:<id>           the game it belongs to (sandbox-7, maiacity-v1); none for a Generated UI view
+ *   ref:<code path>     the path the loader names it by: ref:views/coop-chart, ref:configs/sandbox-5/rules
+ *   game:<id>           the game it belongs to (sandbox-5, maiacity-v1); none for a Generated UI view
+ *
+ * A game's settings are code entries too (A3, Samuel 2026-10-19: game settings and sandbox configs belong to the Maia
+ * City COOP): of type `config`, the vault's own "Config, v1" schema (src/lib/avendb/seed.js), their JSON as `data`;
+ * no host runs them, and each is held to the shape of the repo's seed of it (../check.js `config`).
  *   legacy:<hash>       on what was copied from the repo: the repo entry's hash at the copy
  *
  * The loader (../index.js) reads them through this source once they are loaded (`loadCode`), and the repo's code/ is
@@ -22,11 +26,14 @@ import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import { canonical, jsonFile } from '../files.js';
 import { checkCode } from '../check.js';
+import { ENTRIES as SEED } from '../../../code/index.js';
 import { CODE_FEED, seedFeedOf, seedRows } from './feed.js';
 import ENGINES from '../../../src/lib/sandbox/engines.json' with { type: 'json' };
 
 /** the kinds of code entry this source carries, and the host each runs in */
 const HOSTS = { view: 'view', logic: 'logic' };
+/** and a game's settings, which no host runs */
+const KINDS = [...Object.keys(HOSTS), 'config'];
 
 export const AVENDB_REF = /^vault:([A-Za-z0-9_-]{8,128})\/([A-Za-z0-9_-]{8,128})@([0-9a-f]{8,128}(?:,[0-9a-f]{8,128})*)$/;
 
@@ -35,9 +42,9 @@ export { CODE_FEED };
 
 /** the code entries the loader reads there: views and logic modules of the server's own seed's Maia City vault, which
  * the server names by where it sits in the seed it was founded with (`seed=1`), never by its name (./feed.js) */
-export const feedOf = (feed = CODE_FEED) => seedFeedOf(Object.keys(HOSTS), feed);
+export const feedOf = (feed = CODE_FEED) => seedFeedOf(KINDS, feed);
 
-const PATH = /^(views|logic)\/[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*$/;
+const PATH = /^(views|logic|configs)\/[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*$/;
 
 export const hashOf = (text) => bytesToHex(blake3(utf8ToBytes(text)));
 const tagged = (tags, key) => (tags ?? []).find((t) => typeof t === 'string' && t.startsWith(`${key}:`))?.slice(key.length + 1);
@@ -50,6 +57,10 @@ const shipped = (host, e) => (ENGINES[host] ?? []).some((x) => x.v === e?.versio
  * avenDB's View or Logic schema. `engine` is the engine version it is written for (the latest the repo ships).
  */
 export function recordOf(e) {
+	if (e.type === 'config') {
+		const tags = [`ref:${e.ref}`, ...(e.for ? [`game:${e.for}`] : []), ...(e.hash ? [`legacy:${e.hash}`] : [])];
+		return { type: 'config', tags, value: { kind: 'config', title: e.title ?? '', note: e.note ?? '', data: JSON.parse(e.files['config.json'] ?? '{}') } };
+	}
 	const host = HOSTS[e.type];
 	if (!host) throw new Error(`${e.ref}: only views and logic modules are code entries, not ${e.type}`);
 	const latest = (ENGINES[host] ?? []).at(-1);
@@ -78,7 +89,16 @@ export function entryOf(row) {
 	const r = row?.record ?? {};
 	const ref = tagged(row?.tags, 'ref');
 	const where = `entry ${String(row?.entry ?? '?').slice(0, 12)}…`;
-	if (!ref || !PATH.test(ref)) return { error: `${where}: no ref:<views/… or logic/…> tag` };
+	if (!ref || !PATH.test(ref)) return { error: `${where}: no ref:<views/…, logic/… or configs/…> tag` };
+	if (ref.startsWith('configs/')) {
+		if (row.type !== 'config' || r.kind !== 'config') return { error: `${ref}: a ${row.type ?? r.kind} entry under a config path` };
+		const game = tagged(row.tags, 'game');
+		if (!game) return { error: `${ref}: a config names its game (game:<id>)` };
+		const entry = { type: 'config', for: game, title: r.title ?? '', ...(r.note ? { note: r.note } : {}) };
+		const files = { 'config.json': jsonFile(r.data ?? {}) };
+		const hash = hashOf(canonical({ entry, files }));
+		return { entry: { ref, ...entry, files, hash, source: 'avendb', vault: row.vault, entry: row.entry, heads: row.heads } };
+	}
 	const type = ref.startsWith('views/') ? 'view' : 'logic';
 	if (row.type !== type || r.kind !== type) return { error: `${ref}: a ${row.type ?? r.kind} entry under a ${type} path` };
 	if (r.engine?.host !== HOSTS[type] || !shipped(HOSTS[type], r.engine)) return { error: `${ref}: written for ${HOSTS[type]} engine ${r.engine?.version ?? '?'}, which the repo does not ship` };
@@ -110,6 +130,10 @@ export function entryOf(row) {
  * the vault (avenDB keeps what fits its schema; what our hosts may run is ours to say)
  */
 function checked(e, viewOf) {
+	if (e.type === 'config') {
+		const seed = SEED[e.ref];
+		return checkCode('config', JSON.parse(e.files['config.json']), { seed: seed?.type === 'config' ? JSON.parse(seed.files['config.json']) : undefined });
+	}
 	if (e.type === 'logic') return checkCode('logic', { code: e.files['logic.js'], hooks: e.hooks });
 	return checkCode('view', viewOf(e));
 }

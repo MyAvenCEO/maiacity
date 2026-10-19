@@ -36,6 +36,10 @@
 //              everyone watch it and read its proposals, written with its entry, once. Who plays a game is the vault's
 //              cap groups' to say (./capgroups.js), which ./Account.svelte defines after the pieces where Maia City
 //              holds none of their names yet
+//   settings   each game's settings (A3, code/configs/): the vault's own schema "Config, v1", one Public share of its
+//              configs by type, so the server's code feed serves them, then each config an entry of type `config`,
+//              tagged `ref:configs/<game>/<id>` and `game:<id>`, which every game reads through game/code/index.js
+//              `configAt` (the seed's until the vault's are loaded, held to the seed's shape)
 //   retire     every entry of a game the repo let go (`RETIRED`: Sandboxes 7 and 8), deleted
 //   recipes    last, as their files are most of the seed's bytes (V5 of the avenDB migration): one Public share of the
 //              vault's recipes, by type, so the server's feed serves them and their files; then each asset of the
@@ -67,6 +71,9 @@ import { recipeEntryOf, refTag } from '../assets/sources/avendb.js';
 /** The types of the code entries the vault holds, which everyone reads, as the repo's code/ is open to everyone. */
 export const CODE_TYPES = ['view', 'logic'];
 
+/** The type of the games' settings the vault holds (A3), which everyone reads, as the repo's code/configs/ is open. */
+export const CONFIG_TYPES = ['config'];
+
 /** The types of the asset recipes the vault holds, which everyone reads, as the repo's assets are open to everyone. */
 export const RECIPE_TYPES = ['recipe'];
 
@@ -86,6 +93,28 @@ export const DRAFTED = 'seed:drafted';
 /** The tag every inspire-me piece carries, its story, post, spark and source, which everyone reads: the
  *  Universe lays an inspire post out as its report card from them all. */
 export const INSPIRE = 'inspire-me';
+
+/** The title of the Maia City vault's own schema of a game's settings. */
+export const CONFIG_SCHEMA = 'Config, v1';
+
+/**
+ * The schema of a game's settings (A3, Samuel 2026-10-19: game settings and sandbox configs belong to the Maia City
+ * COOP): its name, what it sets, and the settings themselves as JSON (`data`), which the game reads in the shape of
+ * the repo's seed of them (game/code/check.js `config`). Its path is its `ref:configs/<game>/<id>` tag, its game its
+ * `game:<id>` tag.
+ */
+export const CONFIG_V1 = JSON.stringify({
+	$schema: 'https://json-schema.org/draft/2020-12/schema',
+	title: CONFIG_SCHEMA,
+	type: 'object',
+	properties: {
+		kind: { const: 'config' },
+		title: { type: 'string', maxLength: 160 },
+		note: { type: 'string', maxLength: 2000, default: '' },
+		data: { type: 'object' }
+	},
+	required: ['kind', 'title', 'data']
+});
 
 /** The title of the Maia City vault's own schema of a game's entry. */
 export const GAME_SCHEMA = 'Game, v1';
@@ -158,7 +187,7 @@ const folderOf = (path) => path.split('/').at(-2) ?? '';
 
 /**
  * @typedef {{ key: string, kind: 'keep' | 'aven-suggests' | 'aven-aips' | 'code' | 'share' | 'post-type' | 'journal' | 'inspire' | 'pad' | 'published' |
- *   'inspire-share' | 'name-share' | 'doc' | 'game-schema' | 'game' | 'recipe-share' | 'recipe', name: string, mark: string, server?: string }} Piece
+ *   'inspire-share' | 'name-share' | 'doc' | 'game-schema' | 'game' | 'config-schema' | 'config' | 'config-share' | 'recipe-share' | 'recipe', name: string, mark: string, server?: string }} Piece
  */
 
 /**
@@ -199,11 +228,22 @@ export function seedPieces(server = null) {
 		{ key: 'game-schema', kind: /** @type {const} */ ('game-schema'), name: GAME_SCHEMA, mark: '' },
 		...GAMES.map((g) => ({ key: `game/${g.id}`, kind: /** @type {const} */ ('game'), name: g.id, mark: gameTag(g.id) }))
 	];
+	const configs = Object.values(ENTRIES)
+		.filter((e) => CONFIG_TYPES.includes(e.type))
+		.sort((a, b) => a.ref.localeCompare(b.ref))
+		.map((e) => ({ key: e.ref, kind: /** @type {const} */ ('config'), name: e.ref, mark: `ref:${e.ref}` }));
+	const settings = configs.length
+		? [
+				{ key: 'config-schema', kind: /** @type {const} */ ('config-schema'), name: CONFIG_SCHEMA, mark: '' },
+				{ key: 'config-share', kind: /** @type {const} */ ('config-share'), name: 'Everyone reads the games’ settings', mark: '' },
+				...configs
+			]
+		: [];
 	const recipes = Object.entries(assetsOf())
 		.sort(([a], [b]) => a.localeCompare(b))
 		.map(([asset, versions]) => ({ key: asset, kind: /** @type {const} */ ('recipe'), name: asset, mark: refTag(versions[versions.length - 1][0]) }));
 	const recipeShare = recipes.length ? [{ key: 'recipe-share', kind: /** @type {const} */ ('recipe-share'), name: 'Everyone reads its recipes', mark: '' }] : [];
-	return [...keep, ...code, ...share, ...types, ...published, ...games, ...journal, ...inspire, ...docs, ...pads, ...recipeShare, ...recipes];
+	return [...keep, ...code, ...share, ...types, ...published, ...games, ...settings, ...journal, ...inspire, ...docs, ...pads, ...recipeShare, ...recipes];
 }
 
 /**
@@ -337,6 +377,8 @@ export function unseeded(world, vault, all) {
 		p.kind === 'aven-aips' ? !avenHolds(world, vault, p.server ?? '', AIP_AUTHOR) :
 		p.kind === 'share' ? !codeShared(world, vault) : p.kind === 'published' ? !publishedShared(world, vault) :
 		p.kind === 'recipe-share' ? !codeShared(world, vault, RECIPE_TYPES) :
+		p.kind === 'config-share' ? !codeShared(world, vault, CONFIG_TYPES) :
+		p.kind === 'config-schema' ? !mine.some((e) => e.kind === 'schema' && e.title === CONFIG_SCHEMA) :
 		p.kind === 'inspire-share' ? !inspireShared(world, vault) :
 		p.kind === 'name-share' ? !nameShared(world, vault) :
 		p.kind === 'game-schema' ? !mine.some((e) => e.kind === 'schema' && e.title === GAME_SCHEMA) :
@@ -362,6 +404,12 @@ function journalText(fm, body) {
  */
 export async function seeding(p, vault) {
 	const as = vault;
+	if (p.kind === 'config') {
+		const { type, tags, value } = recordOf(/** @type {Record<string, any>} */ (ENTRIES)[p.key]);
+		return [{ op: 'create', vault, type, tags, value, as }];
+	}
+	if (p.kind === 'config-schema') return [{ op: 'create', vault, type: 'schema', value: CONFIG_V1, as }];
+	if (p.kind === 'config-share') return [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { type: CONFIG_TYPES }, as }];
 	if (p.kind === 'code') {
 		const { type, tags, value } = recordOf(/** @type {Record<string, any>} */ (ENTRIES)[p.key]);
 		return [{ op: 'create', vault, type, tags, schema: type, value, as }];

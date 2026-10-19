@@ -39,8 +39,8 @@ describe('the seed defines', () => {
 	test('nothing in a vault that holds them all', () =>
 		expect(capGroupOps([...groups, { entry: '3'.repeat(64), name: ADMIN, caps: [], includes: [C] }], CITY)).toEqual([]));
 
-	test('a Traveler reads the games, the recipes and the code; a Citizen all of MaiaCity V1 besides; an Admin all of it', () => {
-		expect(CAP_GROUPS[0].caps).toEqual([{ op: 'read', where: { type: ['game', 'recipe', 'view', 'logic'] } }]);
+	test('a Traveler reads the games, the recipes, the code and the settings; a Citizen all of MaiaCity V1 besides; an Admin all of it', () => {
+		expect(CAP_GROUPS[0].caps).toEqual([{ op: 'read', where: { type: ['game', 'recipe', 'view', 'logic', 'config'] } }]);
 		expect(CAP_GROUPS[1].caps).toEqual([{ op: 'read', where: { tag: 'game:maiacity-v1' } }]);
 		expect(CAP_GROUPS[2]).toEqual({ name: ADMIN, caps: [{ op: 'read' }], includes: [CITIZEN] });
 	});

@@ -4,10 +4,15 @@
  * age. Outside, under the open sky, the plants of a middle-European forest garden; inside the domes, under the glass,
  * the ones that need the warmth — the mango, the banana, the coconut palm, the coffee and the cacao.
  *
+ * Its garden is kept in the Maia City COOP's vault (A3, Samuel 2026-10-19), the repo's code/configs/sandbox-4/garden its
+ * seed: `sandbox5()` reads it there.
+ *
  * Every plant is anchored to the version it was planted with (`v`, $lib/app/versions.js): a plant changed in the
  * plants library later is a new version there, and Sandbox 5 keeps growing the one written here until it is planted
  * again on purpose.
  */
+
+import { configAt, loadCode } from '../../../../game/code/index.js';
 
 /**
  * @typedef {{ id: string, v: number, stages: number[], weight?: number }} Planting a plant of the library at its version, at
@@ -32,173 +37,51 @@ export const TIERS = {
 	look: { level: 0.5, roots: false, thin: 0.6, fill: 1.2, finest: 0.0008 }
 };
 
-/** the stages a fruit tree is planted at: young, in flower, its fruit green, ripe — the ripe ones the most */
-const TREE = [4, 5, 7, 9];
-/** a shrub's: in flower, in green fruit, ripe */
-const SHRUB = [5, 7, 9];
-/** a vegetable's or a herb's: growing, ready, and gone on to flower and fruit or seed */
-const CROP = [5, 7, 9];
+/** where Sandbox 4's garden is kept: the Maia City COOP's vault (A3), else the repo's seed (code/configs/sandbox-4/garden) */
+export const GARDEN = 'configs/sandbox-4/garden';
 
 /**
- * Outside: a temperate forest garden planted for the most it can give, layer under layer as the most productive ones
- * are (Martin Crawford's at Dartington, the syntropic plantings): a canopy of nut trees and the nitrogen-fixing alder
- * high over everything, a dense layer of fruit trees under it, shrubs packed between their trunks, every bit of soil
- * under them covered — perennial vegetables and herbs, roots, a carpet of ground cover — climbers up the trees and the
- * canes, mushrooms on the logs. Each layer has its own spacing (`OUTDOOR_SPACING`).
- * @type {Garden & { canopy: Planting[], herbs: Planting[], ground: Planting[], roots: Planting[], fungi: Planting[] }}
+ * The garden a config holds as Sandbox 4 grows it. Outside: a temperate forest garden planted for the most it can give,
+ * layer under layer (Martin Crawford's at Dartington, the syntropic plantings): a canopy of nut trees and the alder, a
+ * dense layer of fruit trees under it, shrubs between their trunks, perennial vegetables, herbs, roots and ground cover
+ * under them (`cover`), climbers, mushrooms on the logs, each layer at its own spacing (`spacing`). Inside, under the
+ * glass, the plants that need the warmth. Below the trees the plants grow in drifts (`drift`: 5 to 15 of one kind
+ * together, `gap` metres apart), and between them lie mini fields sown in rows (`fields`: each crop `size` metres, its
+ * rows `row` and its plants `gap` apart, `fields` of them, on `tilled` soil; `reach` is how far off the forest draws it).
+ * @param {any} c the config's JSON
+ * @returns {{ seed: string, outside: Garden & { canopy: Planting[], herbs: Planting[], ground: Planting[], roots: Planting[], fungi: Planting[] },
+ *   inside: Garden, spacing: Record<string, number>, drift: { least: number, most: number, gap: Record<string, number> },
+ *   fields: { id: string, v: number, stages: number[], size: [number, number], row: number, gap: number, fields: number, reach: 'cover' | 'shrub' | 'tree', tilled: boolean }[] }}
  */
-const OUTSIDE = {
-	// the tall trees, close enough that their crowns meet, nearly all of them bearing: walnuts, chestnuts, pecans,
-	// hazelnuts and pine nuts, the lime's leaves and flowers, the alder feeding the soil; big standard fruit trees with them
-	canopy: [
-		{ id: 'walnut', v: 1, stages: [7, 9], weight: 3 },
-		{ id: 'chestnut', v: 1, stages: [7, 9], weight: 3 },
-		{ id: 'linden', v: 1, stages: [9], weight: 2 },
-		{ id: 'alder', v: 1, stages: [9], weight: 2 },
-		{ id: 'pecan', v: 1, stages: [7, 9], weight: 3 },
-		{ id: 'tree-hazel', v: 1, stages: [7, 9], weight: 3 },
-		{ id: 'korean-pine', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'pear', v: 1, stages: [9] },
-		{ id: 'cherry', v: 1, stages: [9] },
-		{ id: 'mulberry', v: 1, stages: [9] }
-	],
-	// the low trees: the fruit, fewer now under the closed canopy, in its gaps
-	trees: [
-		{ id: 'apple', v: 2, stages: [4, 9], weight: 4 },
-		{ id: 'pear', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'plum', v: 1, stages: [7, 9], weight: 3 },
-		{ id: 'cherry', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'apricot', v: 1, stages: [7, 9] },
-		{ id: 'peach', v: 1, stages: [7, 9] },
-		{ id: 'persimmon', v: 1, stages: [7, 9] },
-		{ id: 'fig', v: 1, stages: [7, 9] },
-		{ id: 'quince', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'medlar', v: 1, stages: [7, 9] },
-		{ id: 'serviceberry', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'cornel', v: 1, stages: [7, 9] },
-		{ id: 'hazel', v: 1, stages: [7, 9], weight: 3 },
-		{ id: 'pawpaw', v: 1, stages: [7, 9] }
-	],
-	shrubs: [
-		{ id: 'redcurrant', v: 1, stages: [7, 9], weight: 3 },
-		{ id: 'blackcurrant', v: 1, stages: [7, 9], weight: 3 },
-		{ id: 'gooseberry', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'raspberry', v: 1, stages: [7, 9], weight: 3 },
-		{ id: 'blackberry', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'blueberry', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'aronia', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'haskap', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'elder', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'sea-buckthorn', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'rose', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'lavender', v: 1, stages: [7, 9] },
-		{ id: 'sage', v: 1, stages: [7, 9] },
-		{ id: 'rosemary', v: 1, stages: [7, 9] }
-	],
-	climbers: [
-		{ id: 'grape', v: 1, stages: [7, 9], weight: 3 },
-		{ id: 'kiwiberry', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'hop', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'beans', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'cucumber', v: 1, stages: [7, 9] }
-	],
-	// the perennial vegetables and the herbs, and the annuals sown between them
-	herbs: [
-		{ id: 'comfrey', v: 1, stages: [7, 9], weight: 3 },
-		{ id: 'rhubarb', v: 1, stages: [7, 9], weight: 3 },
-		{ id: 'sorrel', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'nettle', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'artichoke', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'asparagus', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'chard', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'kale', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'tomato', v: 1, stages: [7, 9] },
-		{ id: 'oxheart', v: 1, stages: [7, 9] },
-		{ id: 'lettuce', v: 1, stages: [7, 9] },
-		{ id: 'chives', v: 1, stages: [7, 9] },
-		{ id: 'mint', v: 1, stages: [7, 9] },
-		{ id: 'lemon-balm', v: 1, stages: [7, 9] },
-		{ id: 'parsley', v: 1, stages: [7, 9] },
-		{ id: 'dill', v: 1, stages: [7, 9] },
-		{ id: 'coriander', v: 1, stages: [7, 9] }
-	],
-	// over the soil: nothing bare
-	ground: [
-		{ id: 'strawberry', v: 1, stages: [7, 9], weight: 4 },
-		{ id: 'clover', v: 1, stages: [7, 9], weight: 3 },
-		{ id: 'wild-garlic', v: 1, stages: [7, 9], weight: 3 },
-		{ id: 'woodruff', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'nasturtium', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'thyme', v: 1, stages: [7, 9] },
-		{ id: 'oregano', v: 1, stages: [7, 9] },
-		{ id: 'pumpkin', v: 1, stages: [7, 9] },
-		{ id: 'moss', v: 1, stages: [9] }
-	],
-	roots: [
-		{ id: 'jerusalem-artichoke', v: 1, stages: [7, 9], weight: 2 },
-		{ id: 'horseradish', v: 1, stages: [7, 9] },
-		{ id: 'garlic', v: 1, stages: [7, 9] },
-		{ id: 'carrot', v: 1, stages: [7, 9] },
-		{ id: 'radish', v: 1, stages: [7, 9] }
-	],
-	fungi: [
-		{ id: 'wine-cap', v: 1, stages: [9] },
-		{ id: 'shiitake', v: 1, stages: [9] },
-		{ id: 'oyster', v: 1, stages: [9] }
-	],
-	// all the small ones together, for the guilds round the trees (and the interior's way of planting)
-	get cover() {
-		return [...this.herbs, ...this.ground, ...this.roots, ...this.fungi];
-	}
-};
+function floraOf(c) {
+	const outside = {
+		...c.outside,
+		get cover() {
+			return [...this.herbs, ...this.ground, ...this.roots, ...this.fungi];
+		}
+	};
+	return { seed: c.seed, outside, inside: c.inside, spacing: c.spacing, drift: c.drift, fields: c.fields };
+}
+
+const SEED = configAt(GARDEN);
 
 /**
  * How close each layer of the outdoor forest garden stands: a plant every so many square metres (on a jittered grid),
- * and how far it keeps from a canopy tree's trunk.
+ * and how far it keeps from a canopy tree's trunk. The seed's; a garden carries its own (`flora.spacing`).
  */
-export const OUTDOOR_SPACING = { canopy: 26, trees: 24, shrubs: 5, herbs: 3.2, ground: 2.6, roots: 12, climbers: 30, fungi: 70 };
+export const OUTDOOR_SPACING = SEED.spacing;
 
-/** @type {Garden} */
-const INSIDE = {
-	trees: [
-		{ id: 'mango', v: 1, stages: TREE, weight: 5 },
-		{ id: 'avocado', v: 1, stages: TREE, weight: 3 },
-		{ id: 'orange', v: 1, stages: TREE, weight: 2 },
-		{ id: 'lemon', v: 1, stages: TREE, weight: 2 },
-		{ id: 'king-coconut', v: 1, stages: [5, 7, 9], weight: 6 },
-		{ id: 'banana', v: 1, stages: [5, 7, 9], weight: 6 },
-		{ id: 'red-banana', v: 1, stages: [5, 7, 9], weight: 3 },
-		{ id: 'papaya', v: 1, stages: [5, 7, 9], weight: 2 },
-		{ id: 'jackfruit', v: 2, stages: TREE, weight: 3 },
-		{ id: 'durian', v: 2, stages: TREE, weight: 3 },
-		{ id: 'safou', v: 1, stages: TREE, weight: 2 },
-		{ id: 'sapodilla', v: 1, stages: TREE, weight: 2 },
-		{ id: 'soursop', v: 2, stages: TREE },
-		{ id: 'pomegranate', v: 1, stages: TREE },
-		{ id: 'olive', v: 1, stages: TREE },
-		{ id: 'cacao', v: 2, stages: TREE, weight: 2 }
-	],
-	shrubs: [
-		{ id: 'coffee', v: 1, stages: SHRUB, weight: 3 },
-		{ id: 'rosemary', v: 1, stages: SHRUB },
-		{ id: 'pepper', v: 1, stages: CROP },
-		{ id: 'eggplant', v: 1, stages: CROP }
-	],
-	climbers: [{ id: 'passion-fruit', v: 1, stages: SHRUB }],
-	cover: [
-		{ id: 'pineapple', v: 1, stages: CROP, weight: 2 },
-		{ id: 'ginger', v: 1, stages: CROP, weight: 2 },
-		{ id: 'basil', v: 1, stages: CROP },
-		{ id: 'strawberry', v: 1, stages: CROP },
-		{ id: 'clover', v: 1, stages: CROP }
-	]
-};
-
-/** Sandbox 5: the village of ./village.ts, its forest these gardens (`flora`). */
+/** Sandbox 5: the village of ./village.ts, its forest the seed's garden (`flora`). */
 export const SANDBOX_5 = {
 	sandbox: /** @type {const} */ ('sandbox-5'),
-	flora: { seed: 'sandbox-5', outside: OUTSIDE, inside: INSIDE }
+	flora: floraOf(SEED)
 };
+
+/** Sandbox 5 as it is kept now: its garden from the Maia City vault once the vault's code is loaded, else the seed's. */
+export async function sandbox5() {
+	await loadCode();
+	return { sandbox: /** @type {const} */ ('sandbox-5'), flora: floraOf(configAt(GARDEN)) };
+}
 
 /** @typedef {typeof SANDBOX_5.flora} Flora */
 
@@ -233,29 +116,10 @@ export function stageOf(p, r, seed) {
 	return { id: p.id, v: p.v, stage: p.stages[k], seed };
 }
 
-/**
- * Below the trees the plants grow in drifts, as a forest garden is planted and as they spread: 5 to 15 of one kind
- * together, closer than they would stand alone (`gap` metres apart), the drifts of a layer as many, all told, as its
- * spacing asks (OUTDOOR_SPACING).
- */
-export const DRIFT = { least: 5, most: 15, gap: { shrubs: 1.1, climbers: 0.9, herbs: 0.5, roots: 0.45, ground: 0.38, fungi: 0.3 } };
-
-/**
- * MINI FIELDS — between the forest garden's trees, small fields sown in rows the way a field is: oats (Hafer), lentils,
- * chickpeas and edamame, hemp, and a grove of bamboo. Each field one crop, sown together and so mostly at one stage,
- * `size` metres (width × length), its rows `row` apart and its plants `gap` apart along them; `fields` of each crop over
- * the cell; the row crops on `tilled` soil. A bamboo grove stands in clumps, not rows, out of the forest floor. `reach`
- * is how far off the forest draws the crop.
- * @type {{ id: string, v: number, stages: number[], size: [number, number], row: number, gap: number, fields: number, reach: 'cover' | 'shrub' | 'tree', tilled: boolean }[]}
- */
-export const FIELDS = [
-	{ id: 'oats', v: 1, stages: [6, 7, 8, 9], size: [4, 6], row: 0.24, gap: 0.2, fields: 4, reach: 'shrub', tilled: true },
-	{ id: 'lentil', v: 1, stages: [6, 7, 8, 9], size: [4, 5], row: 0.24, gap: 0.2, fields: 3, reach: 'shrub', tilled: true },
-	{ id: 'chickpea', v: 1, stages: [6, 7, 8, 9], size: [4, 6], row: 0.42, gap: 0.36, fields: 3, reach: 'shrub', tilled: true },
-	{ id: 'edamame', v: 1, stages: [5, 6, 7, 8], size: [4, 6], row: 0.45, gap: 0.38, fields: 3, reach: 'shrub', tilled: true },
-	{ id: 'hemp', v: 1, stages: [6, 7, 8, 9], size: [5, 7], row: 0.38, gap: 0.34, fields: 3, reach: 'shrub', tilled: true },
-	{ id: 'bamboo', v: 1, stages: [6, 7, 8, 9], size: [9, 10], row: 2.6, gap: 2.4, fields: 3, reach: 'tree', tilled: false }
-];
+/** the drifts and the mini fields as the seed has them; a garden carries its own (`flora.drift`, `flora.fields`) */
+export const DRIFT = SEED.drift;
+/** @type {{ id: string, v: number, stages: number[], size: [number, number], row: number, gap: number, fields: number, reach: 'cover' | 'shrub' | 'tree', tilled: boolean }[]} */
+export const FIELDS = SEED.fields;
 
 /** every plant a garden can grow, as kinds (for growing them all ahead) @param {Garden} garden @param {string} seed */
 export const kindsOf = (garden, seed) =>
