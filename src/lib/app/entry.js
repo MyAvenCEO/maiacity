@@ -98,7 +98,12 @@ export async function claimInvite() {
 		await session.claim(server(), got.share, got.key);
 		return '';
 	} catch (e) {
-		return `Your invite didn’t go through: ${plain(String(/** @type {Error} */ (e)?.message ?? e))} Ask for a new one.`;
+		const why = String(/** @type {Error} */ (e)?.message ?? e);
+		// the server hands an invite only while it holds it unclaimed: one used or revoked, or one the device that made
+		// it hasn't brought the server yet, as when its tab closed at once
+		if (why.includes('knows no such invite'))
+			return 'Maia City’s server doesn’t know your invite: it was used already, or it hasn’t reached the server yet. Open its link again later, or ask for a new one.';
+		return `Your invite didn’t go through: ${plain(why)} Ask for a new one.`;
 	}
 }
 

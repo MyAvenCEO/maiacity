@@ -168,7 +168,10 @@ async function tab(auth = null, own = false) {
 	);
 	page.on('pageerror', (e) => check(`no error on the page: ${e.message}`, false));
 	// an invite made before Maia City holds its groups says so in an alert: dismissed, and tried again
-	page.on('dialog', (d) => void d.dismiss());
+	page.on('dialog', (d) => {
+		console.log(`  (a dialog said: ${d.message()})`);
+		void d.dismiss();
+	});
 	const cdp = await page.createCDPSession();
 	await cdp.send('WebAuthn.enable', { enableUI: false });
 	const options = { protocol: 'ctap2', ctap2Version: 'ctap2_1', transport: 'internal', hasResidentKey: true };
@@ -270,27 +273,8 @@ try {
 	check('the super admin makes an invite link to a traveler, its share and key after its #', /\/join\/\?invite=\w+#share=[0-9a-f]{64}&key=[0-9a-f]{64}$/.test(link), link);
 	await shot(a.page, '06-invite');
 
-	// 4. signed out and in again: ONE ceremony signs in to the API and unlocks avenDB together
-	await click(a.page, 'Sign out', 'nav.pill .account button');
-	await a.page.goto(`${base}/app/`, { waitUntil: 'domcontentloaded' });
-	check('signed out, the app asks to sign in', await waitText(a.page, 'Sign in with your passkey'));
-	before = a.asserted();
-	const logins = api.logins.length;
-	await click(a.page, 'Sign in with your passkey');
-	check('signed in, the dashboard greets them by name', await waitText(a.page, ', Samuel.', 60000), await words(a.page, 'h1'));
-	check('in ONE ceremony for the API and avenDB together', a.asserted() - before === 1, `${a.asserted() - before}`);
-	const sent = api.logins.slice(logins);
-	check('the API got one sign-in', sent.length === 1, `${sent.length}`);
-	check('without the PRF outputs', sent.every((b) => !JSON.stringify(b).toLowerCase().includes('prf')), JSON.stringify(sent[0]?.clientExtensionResults));
-	// on into avenDB by the vault switcher, the You item: no sign-in of its own, no second ceremony
-	before = a.asserted();
-	await click(a.page, 'Samuel', 'nav.pill button.item');
-	await click(a.page, 'Samuel', 'nav.pill .account button.acct');
-	check('avenDB opens with no sign-in of its own', await waitText(a.page, 'Workspace', 60000), (await words(a.page)).slice(0, 600));
-	await shot(a.page, '08-avendb-by-the-switcher');
-	check('and no Unlock card, nor a ceremony', !(await words(a.page)).includes('Unlock your account') && a.asserted() === before);
-
-	// 5. invite only: without one, the join page offers none; with the admin's, a second person signs up, once
+	// 4. invite only: without one, the join page offers none; with the admin's, a second person signs up, once, while
+	// the admin's app is open still, so the server holds the invite their device made
 	const b = await tab(null, true);
 	await b.page.goto(`${base}/join/`, { waitUntil: 'domcontentloaded' });
 	check('without an invite, joining is closed', await waitText(b.page, 'invite only'));
@@ -309,11 +293,35 @@ try {
 	check('the Game Assets are theirs to look at', (await words(b.page)).includes('Game Assets'));
 	await shot(b.page, '09-traveler-dashboard');
 	await b.page.goto(`${base}/app/maiacity-v1/`, { waitUntil: 'domcontentloaded' });
+	// a page loaded anew opens avenDB with the passkey again, as every one does
+	if (await waitText(b.page, 'Unlock with your passkey', 20000)) await click(b.page, 'Unlock with your passkey');
 	check('a traveler is told MaiaCity V1 is for citizens', await waitText(b.page, 'is for citizens', 60000), (await words(b.page)).slice(0, 300));
 	await shot(b.page, '10-traveler-v1');
 	const c = await tab(null, true);
 	await c.page.goto(link, { waitUntil: 'domcontentloaded' });
 	check('a used invite opens nothing', await waitText(c.page, 'used up or expired'));
+
+	// 5. signed out and in again: ONE ceremony signs in to the API and unlocks avenDB together
+	await click(a.page, 'Sign out', 'nav.pill .account button');
+	// signing out locks avenDB, then the API's session, then goes home: over once it left the app
+	await until(async () => !new URL(a.page.url()).pathname.startsWith('/app'), 60000);
+	await a.page.goto(`${base}/app/`, { waitUntil: 'domcontentloaded' });
+	check('signed out, the app asks to sign in', await waitText(a.page, 'Sign in with your passkey'));
+	before = a.asserted();
+	const logins = api.logins.length;
+	await click(a.page, 'Sign in with your passkey');
+	check('signed in, the dashboard greets them by name', await waitText(a.page, ', Samuel.', 60000), await words(a.page, 'h1'));
+	check('in ONE ceremony for the API and avenDB together', a.asserted() - before === 1, `${a.asserted() - before}`);
+	const sent = api.logins.slice(logins);
+	check('the API got one sign-in', sent.length === 1, `${sent.length}`);
+	check('without the PRF outputs', sent.every((b) => !JSON.stringify(b).toLowerCase().includes('prf')), JSON.stringify(sent[0]?.clientExtensionResults));
+	// on into avenDB by the vault switcher, the You item: no sign-in of its own, no second ceremony
+	before = a.asserted();
+	await click(a.page, 'Samuel', 'nav.pill button.item');
+	await click(a.page, 'Samuel', 'nav.pill .account button.acct');
+	check('avenDB opens with no sign-in of its own', await waitText(a.page, 'Workspace', 60000), (await words(a.page)).slice(0, 600));
+	await shot(a.page, '08-avendb-by-the-switcher');
+	check('and no Unlock card, nor a ceremony', !(await words(a.page)).includes('Unlock your account') && a.asserted() === before);
 } catch (e) {
 	check(`the walk ran: ${e.message}`, false);
 } finally {
