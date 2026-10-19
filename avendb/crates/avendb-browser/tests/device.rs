@@ -559,7 +559,7 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     assert_eq!(both, (ids(&standard["schemas"]), ids(&standard["lenses"])), "the app's own, by their ids");
     let own = "its own kinds, the article's, the spark's, the function's and the view's two versions, and the lenses \
         between";
-    assert_eq!((both.0.len(), both.1.len()), (27, 6), "{own}");
+    assert_eq!((both.0.len(), both.1.len()), (28, 6), "{own}");
     let public = |w: &Value| -> usize {
         let es = w["entries"].as_array().into_iter().flatten();
         es.filter(|e| e["vault"] == company.as_str() && e["kind"] == "schema" && e["public"] == true).count()
@@ -1172,8 +1172,8 @@ async fn a_note_takes_proposals_merges_and_forks_and_the_database_shows_every_re
         .collect();
     let own = "documents, todos, articles (v1 and v2), flows, functions (v1 and v2), recipes, views (v1 and v2), logic, \
         reviews, bundles, policies, AIPs, posts, cards, profiles, files, stories, sparks (v1 and v2), requests, artifacts, \
-        artworks";
-    assert_eq!(schemas.len(), 27, "{own}");
+        artworks, cap groups";
+    assert_eq!(schemas.len(), 28, "{own}");
     let lenses = db["builtIn"]["lenses"].as_array().map(Vec::len);
     assert_eq!(lenses, Some(6), "the lenses from article, spark, function, view, post and story v1 to v2");
     assert!(schemas.contains(&avendb::lens::ARTICLE_V1.id().to_hex()));
