@@ -59,7 +59,7 @@ export const PLAY: Place[] = withVersions([
 	{ href: `${base}/app/games/sandbox-7/`, label: 'Sandbox 6', icon: 'play', note: 'One village at its real size: six living hexes of terraced Dome40 and Dome80 homes and Dome120s round the Tower180 hex, in tonnes, euros and hectares', cover: '46e52e9e393b192c0a6db481e95fbf623e8d12d2753a3e1d15d1663292d2c716.jpg' }
 ]);
 
-// the 3D worlds made from real places, to walk and to film, opened from the Worlds tile
+// the 3D worlds made from real places, to walk and to film, opened from avenDB's Worlds (Maia City's `game` entries)
 export const WORLDS: Place[] = withVersions([
 	{ href: `${base}/app/worlds/tired-land/`, label: 'The tired land', icon: 'play', note: 'Day 19 · fields of one crop, a highway, trucks' }
 ]);

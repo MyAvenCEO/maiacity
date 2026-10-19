@@ -4,14 +4,13 @@
 	address or `#home`), which src/routes/app/+page.svelte opens at /app; a greeting;
 	the Game Worlds, every game (MaiaCity V1, the sandboxes) the Maia City cap groups the person holds open: the
 	sandboxes to every Traveler, V1 to every Citizen ($lib/app/access.svelte.js; Samuel 2026-10-19: no draft stage);
-	the founder's apps (Ledger, Coops, Proposals, the Universe); the Game Assets, Maia City's own in avenDB's Assets and
-	the Worlds, read only, for every Traveler; then for an admin avenDB's apps, the vault's pages
-	($lib/avendb/VaultApps.svelte), each opening right here in the vault picked in the nav pill.
+	the founder's apps (Ledger, Coops, Proposals, the Universe); then avenDB's apps, the vault's pages
+	($lib/avendb/VaultApps.svelte), each opening right here: all of them for an admin, in the vault picked in the nav
+	pill; Maia City's Assets and Worlds, read only, for every other Traveler.
 -->
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import { onMount } from 'svelte';
-	import { base } from '$app/paths';
 	import { founderCount, me, type Founder } from '$lib/auth/client';
 	// the person's name, from their avenDB human vault's profile: none of it in maiaCITY's database
 	import { session } from '$lib/avendb/session.svelte.js';
@@ -39,7 +38,7 @@
 	// the games this founder opens, by the cap groups of Maia City they hold
 	const games = $derived(GAME_WORLDS.filter((g) => opens(g)));
 	const apps = $derived(APPS.filter((t) => holds(founder, t)));
-	// the game assets, read only, for every traveler: Maia City's, in avenDB's Assets, and the worlds
+	// Maia City's Assets and Worlds in avenDB, read only, for every traveler
 	const traveler = $derived(!!access.city && holdsGroup(TRAVELER));
 	// the vault avenDB's apps open in: the one picked in the nav pill
 	const vault = $derived(session.world?.vaults.find((v: { id: string }) => v.id === session.vault) ?? null);
@@ -77,18 +76,19 @@
 		{/each}
 	</div>
 
-	{#if traveler}
-		<p class="divider">Game Assets</p>
-		<div class="tiles">
-			<a class="tile" href="{base}/app/#assets" onclick={() => (session.vault = access.city)}><Icon name="leaf" size={34} /><b>Assets</b><span>Maia City’s machines, actors, buildings, things, biomes and plants</span></a>
-			<a class="tile" href="{base}/app/worlds/"><Icon name="play" size={34} /><b>Worlds</b><span>Real places as 3D worlds, and the sandboxes</span></a>
-		</div>
-	{/if}
-
+	<!-- avenDB's apps, the one place of the vault's pages: all of them for an admin, in the vault picked in the nav pill;
+	     for every other Traveler, Maia City's Assets and Worlds (Samuel 2026-10-19: purely from avenDB, no cards of
+	     their own) -->
 	{#if admin}
 		<VaultApps>
 			{#snippet head(name: string)}
 				<p class="divider">{name}{#if vault && name === 'Workspace'}<small> · {nameOf(vault)}</small>{/if}</p>
+			{/snippet}
+		</VaultApps>
+	{:else if traveler}
+		<VaultApps only={['assets', 'worlds']} onopen={() => (session.vault = access.city)}>
+			{#snippet head()}
+				<p class="divider">Maia City</p>
 			{/snippet}
 		</VaultApps>
 	{/if}
