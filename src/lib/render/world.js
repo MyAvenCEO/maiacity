@@ -9,7 +9,7 @@
  * (`createWorldRenderer`'s `renderer` alone, ./core.js `createRenderer` with the world's settings).
  */
 import * as THREE from 'three';
-import { createRenderer, disposeObject, disposeRenderer, fitTo } from './core.js';
+import { createRenderer, disposeObject, disposeRenderer, fitTo, placeSeenOnly } from './core.js';
 
 /**
  * @typedef {object} StageHandle
@@ -44,6 +44,8 @@ export function createWorldRenderer(container, options = {}) {
 	renderer.setSize(container.clientWidth, container.clientHeight);
 	container.appendChild(renderer.domElement);
 	const scene = new THREE.Scene();
+	// each frame only what is seen is placed (most of a world is hidden: domes away, the plants' far tiles)
+	placeSeenOnly(scene);
 	const camera = new THREE.PerspectiveCamera(fov, container.clientWidth / container.clientHeight, near, far);
 	// a phone turned on its side, or its browser's bars coming and going, can settle the container's size only after
 	// the window's resize: follow the container too, so the world always fills the screen

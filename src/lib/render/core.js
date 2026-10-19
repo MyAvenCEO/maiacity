@@ -171,6 +171,39 @@ export function fitTo(renderer, el, { camera, fit, style = true, window: win = f
 const MAPS = /** @type {const} */ (['map', 'normalMap', 'roughnessMap', 'metalnessMap', 'aoMap', 'emissiveMap', 'alphaMap', 'bumpMap', 'displacementMap', 'lightMap', 'clearcoatNormalMap', 'transmissionMap', 'thicknessMap']);
 
 /**
+ * Each frame only what is seen is placed: three.js works out every object's place in the world before each render,
+ * hidden or not — 17,489 objects in Sandbox 3's cell, 3,001 of them seen. This makes the render work out the places of
+ * the visible ones only (and of everything under them); a hidden one is marked to be placed again once it is shown, so
+ * none is ever drawn where it was. Called once on a world's scene; every render of it then does this.
+ * @param {THREE.Scene} scene
+ */
+export function placeSeenOnly(scene) {
+	scene.matrixWorldAutoUpdate = false;
+	const before = scene.onBeforeRender;
+	scene.onBeforeRender = function (...a) {
+		place(scene, false);
+		before.apply(this, a);
+	};
+}
+/** three.js's updateMatrixWorld, going no further into what is hidden @param {THREE.Object3D} o @param {boolean} force */
+export function place(o, force) {
+	if (o.matrixAutoUpdate) o.updateMatrix();
+	if (o.matrixWorldNeedsUpdate || force) {
+		if (o.parent === null) o.matrixWorld.copy(o.matrix);
+		else o.matrixWorld.multiplyMatrices(o.parent.matrixWorld, o.matrix);
+		o.matrixWorldNeedsUpdate = false;
+		force = true;
+	}
+	const kids = o.children;
+	for (let i = 0; i < kids.length; i++) {
+		const c = kids[i];
+		if (c.visible) place(c, force);
+		// hidden: placed again once shown, wherever what it hangs on has gone meanwhile
+		else if (force) c.matrixWorldNeedsUpdate = true;
+	}
+}
+
+/**
  * Let go of everything under `root` on the graphics card: its geometries and skeletons, and (unless told not to) its
  * materials and their textures. They can still be drawn again (three uploads them anew), so a material shared with
  * the next model is safe; `keep` names materials not to touch (a viewer's own highlight and ghost). `materials: false`
