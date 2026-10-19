@@ -1,5 +1,6 @@
 // Access, end to end against real Postgres semantics (PGlite): roles are rows of capabilities, seeded from
 // caps.ts, reconciled once per new capability, and edited without anyone locking the city out of itself.
+import { createHash } from "node:crypto";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { useDb, type Db } from "../src/pg";
@@ -109,7 +110,14 @@ describe("a terminal signs in with the admin's approval", () => {
     expect(await keyHolder(bearer(key))).toBeNull();
   });
 
-  test("only known capabilities can be asked for", async () => {
-    await expect(startDevice("everything", "x")).rejects.toThrow(/known capabilities/);
+  test("a key reaches the media vault alone, whatever it asks or was given before", async () => {
+    await expect(startDevice("everything", "x")).rejects.toThrow(/only work with the media vault/);
+    await expect(startDevice("economy:admin,roles:admin", "x")).rejects.toThrow(/only work with the media vault/);
+    // an older Mac app asks for more: it is given the media vault alone
+    const d = await startDevice("media:admin,content:admin,economy:admin", "The OS");
+    expect((await deviceInfo(d.user_code)).scope).toEqual(["media:admin"]);
+    // a key given more before keeps only the media vault
+    await pg.query("INSERT INTO api_keys (founder_id, hash, scope, label) VALUES ('first', $1, 'media:admin,content:admin,economy:admin', 'old Mac')", [createHash("sha256").update("mck_old_mac").digest("hex")]);
+    expect((await keyHolder(bearer("mck_old_mac")))?.scope).toEqual(["media:admin"]);
   });
 });

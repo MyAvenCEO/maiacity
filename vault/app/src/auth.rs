@@ -13,9 +13,9 @@ use serde_json::Value;
 use tauri::{AppHandle, Emitter, State};
 
 const SERVICE: &str = "city.maia.studio";
-/// What the studio needs: the media library, the content calendar it publishes to, and MaiaCity V1's admin (its MIPs:
-/// the MCP proposes; only the players sign, on the page).
-const SCOPE: &str = "media:admin,content:admin,economy:admin";
+/// What the studio needs: the media library, all a key may hold (api/src/keys.ts `KEY_CAPS`). Everything else in the
+/// city is a person's, signed in with their passkey, and an agent's goes through avenDB vault caps.
+const SCOPE: &str = "media:admin";
 /// A key must be able to do this to open the studio — the admin gate.
 const GATE: &str = "/api/vault/join";
 /// The latest sign-in: a code the person walked away from stops waiting once they start again, so its expiry never
