@@ -779,6 +779,11 @@ fn a_variant_follows_main_and_keeps_its_own_values() {
     let spring = ok(run(&mut w, mac, json!({ "op": "propose", "entry": plan, "name": "Spring" })))["line"].clone();
     ok(run(&mut w, mac, retitle(&spring, "Spring plan")));
     ok(run(&mut w, mac, json!({ "op": "insert", "entry": plan, "line": spring, "path": ["tags"], "value": "spring" })));
+    // the open proposal is a bare idea, the variant beside it is none
+    let bare = ok(run(&mut w, mac, json!({ "op": "aips" })));
+    let ideas: Vec<&Value> = list(&bare).iter().filter(|a| a["bare"] == true).flat_map(|a| list(&a["lines"])).collect();
+    assert!(ideas.iter().any(|l| l["line"] == spring), "{bare}");
+    assert!(ideas.iter().all(|l| l["line"] != silkie), "{bare}");
     let merged = ok(run(&mut w, mac, json!({ "op": "merge", "entry": plan, "from": spring })));
     assert_eq!(each(&merged["follows"], |f| &f["line"]), [silkie.as_str().unwrap()]);
     let v = lines(&mut w)[1].clone();
