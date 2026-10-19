@@ -8,7 +8,9 @@
 //! in one more ceremony: her browser acts as each of them, and what each shares, a note by its id, its todos by their
 //! type, or the whole of it, decides what the others may read and write. Her browser brings a film into her vault, a
 //! megabyte at a time, and her Mac reads any range of it. Every device, the server too, trusts no curve: every edit
-//! is ML-DSA-65 signed, as every signer here is made after the key move (Gina's is made before it, in SLH-DSA).
+//! is ML-DSA-65 signed, as every signer here is made after the key move (Gina's is made before it, in SLH-DSA). Hana's
+//! browser and passkey, made before it too, move to ML-DSA-65 after an unlock, in one ceremony more (K3b), and the
+//! browser opens again as its next key on the same shelf, with no unlock.
 //!
 //! Every read and change goes through one entry point, as the page's does (V2, `Device::run`,
 //! `docs/ARCHITECTURE.md` §8): a JSON op, answered done, refused, or, where the vault's owners approve it, signed in
@@ -35,7 +37,7 @@ use avendb::rules::ops_to_json;
 use avendb::sealed::FileRoot;
 use avendb::sign::{Ceremony, ML_DSA_PUBLIC_BYTES, ML_DSA_SIGNATURE_BYTES, Passkey, Suite, device_salt};
 use avendb::world;
-use avendb_browser::{DELETED, Device, Fresh, Meta, Start, Unlock};
+use avendb_browser::{DELETED, Device, Fresh, Meta, Moving, Signing, Start, Unlock};
 use avendb_net::{Admission, Authenticator, NoBytes, NoCeremony, Node, Offer, Options, Progress, Step, disk};
 use avendb_server::Relay;
 use bytes::Bytes;
@@ -1440,6 +1442,101 @@ async fn ginas_keys_from_before_the_key_move_link_a_new_browser_that_opens_again
     let again = again.await.expect("it opens again");
     assert_eq!((again.node().device(), again.passkey()), (me, passkey));
     assert!(shows(&again, note, "Two hives.").await, "it reads what its shelf kept");
+    for n in [again.node(), &mac] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+/// Whether node `n` reads `body` in block 2 of entry `e`, as `shows` asks a device.
+async fn node_shows(n: &Node, e: EntryId, body: &str) -> bool {
+    let get = json!({ "op": "get", "entry": e.to_hex() });
+    let Ok((out, _)) = n.run(get, None::<NoBytes>, None::<&NoCeremony>).await else { return false };
+    let blocks = out["ok"]["record"]["blocks"].as_array().cloned().unwrap_or_default();
+    blocks.iter().any(|b| b["id"] == 2 && b["text"] == body)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn hanas_browser_and_passkey_from_before_the_key_move_move_in_one_ceremony_and_it_opens_again_as_its_next_key() {
+    let admission = Admission::open();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url: RelayUrl = relay.url();
+    // Hana's passkey, Mac and browser, made before the key move: SLH-DSA. Her browser's secret is its own, kept masked
+    // by her passkey's PRF output on its salt, as a page keeps it
+    let mut lab = Lab::new();
+    let passkey = lab.passkey_from_in("Hana", [43; 32], Suite::SlhDsa);
+    let mac_h = lab.device_of(passkey, "Hana's Mac");
+    let (secret, nonce) = ([44; 32], [1; 32]);
+    let browser_h = lab.device_with_in("Hana's browser", secret, Suite::SlhDsa);
+    let hana = human_on(&mut lab, passkey, &[mac_h, browser_h]);
+    lab.sync_all(1);
+    let pass = |lab: &mut Lab, d| lab.relay_pass(d, passkey, now()).expect("her passkey's pass");
+    let opts = Options { relay: Some(url.clone()), relay_passes: vec![pass(&mut lab, mac_h)], ..Options::local() };
+    let mac = Node::spawn(lab.split(mac_h, &[], [1; 32]), mac_h, opts).await.expect("her Mac's node");
+    let shelf = Folder::new("hana");
+    let (relay_passes, on) = (vec![pass(&mut lab, browser_h)], Some(disk::open(&shelf.0).expect("its shelf")));
+    let opts = Options { relay: Some(url.clone()), relay_passes, shelf: on, ..Options::local() };
+    let browser = Node::spawn(lab.split(browser_h, &[], [2; 32]), browser_h, opts).await.expect("her browser's node");
+    until("the relay serves both", || async { relay.serves(&mac.id()) && relay.serves(&browser.id()) }).await;
+    browser.shutdown().await.expect("it closes, its shelf holding what it holds");
+    let hanas = Browser::new(Passkey::from_seed([43; 32]));
+    let (p256, pad) = {
+        let held = &hanas.0.lock().expect("the authenticator").0;
+        (held.public(), held.prf(&device_salt(&nonce)))
+    };
+    let mask: [u8; 32] = std::array::from_fn(|i| secret[i] ^ pad[i]);
+    let (name, relay_at, credential) = ("Hana's browser".to_string(), url.to_string(), "aGFuYQ".to_string());
+    let (device, follow, query_depth, touch) = (browser_h, vec![], None, None);
+    let meta = Meta { name, relay: relay_at, nonce, mask, credential, p256, device, follow, query_depth, touch };
+    meta.keep(&disk::open(&shelf.0).expect("its shelf")).await.expect("what opens it again");
+    // her browser opens by her passkey's unlock, as itself, her passkey as her vault knows it
+    let opened = Device::open(start_on(&shelf.0, "Hana's browser", &url, 3), &meta, hanas.unlock(nonce, [0xaa; 32]));
+    let opened = opened.await.expect("it opens");
+    assert_eq!((opened.node().device(), opened.passkey()), (browser_h, passkey));
+    let note = write_note(&opened, hana, hana, titled("Kites", "Red and blue."), &[]).await.expect("a note");
+    until("her Mac reads it", || node_shows(&mac, note, "Red and blue.")).await;
+    // after the unlock the page asks once more: her passkey and her browser move, in one ceremony
+    let moving = opened.moving().await.expect("what moves");
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: true }));
+    let again = start_on(&shelf.0, "Hana's browser", &url, 4);
+    let shown_steps = again.progress.clone();
+    let sign = |challenge, moving: Moving| {
+        let hanas = &hanas;
+        async move {
+            assert!(moving.passkey && !moving.touch, "her passkey alone signs");
+            Ok(Signing { passkey: Some(hanas.ceremony(challenge, Step::Approve).await?), touch: None })
+        }
+    };
+    let moved = opened.move_keys(again, sign, |_| async { Ok(()) }).await.expect("it moves");
+    let moved = moved.expect("her keys moved");
+    assert_eq!(hanas.steps(), [Step::Approve], "one ceremony");
+    assert_eq!(steps(&shown_steps), ["restore", "node", "check"], "it opened again with no unlock");
+    // her browser opened again as its next key, in ML-DSA-65, on the same shelf and the same endpoint; her passkey
+    // signs as its next key too
+    let (me, next) = (moved.node().device(), moved.passkey());
+    assert!(me != browser_h && next != passkey);
+    assert_eq!(moved.node().id(), opened.node().id(), "one secret, one endpoint, which the relay knows");
+    let suites = moved.node().read(move |lab, _| [me, next].map(|s| lab.keys_of(s).map(|k| k.suite()))).await;
+    assert_eq!(suites, [Some(Suite::MlDsa); 2]);
+    let kept = Meta::load(&disk::open(&shelf.0).expect("its shelf")).await.expect("it reads").expect("what opens it");
+    assert_eq!(kept, Meta { device: me, ..meta.clone() }, "what opens it again names its next key");
+    // her Mac sees her passkey's next key as her vault's root and its one owner, and her browser's next key in place
+    // of the old; each reads her note, and her Mac her browser's edit as its next key
+    let members = move |lab: &Lab, d| lab.state(d).vault(hana).map(|v| (v.owners.clone(), v.root, v.devices.clone()));
+    let after = Some((vec![Principal::Signer(next)], Some(next), vec![mac_h, me]));
+    until("her Mac sees the move", || async { mac.read(members).await == after }).await;
+    assert_eq!(moved.node().read(members).await, after);
+    assert!(shows(&moved, note, "Red and blue.").await, "it reads what it read");
+    run(&moved, set_text(hana, note, None, 2, "Red, blue and green.")).await.expect("it edits her note");
+    until("her Mac reads the edit", || node_shows(&mac, note, "Red, blue and green.")).await;
+    // nothing more moves here: her Mac moves at its own next unlock
+    assert_eq!(moved.moving().await.expect("what moves"), None);
+    // closed, it opens again from its shelf as its next key, by her passkey's unlock alone
+    moved.close().await.expect("it closes");
+    let again = Device::open(start_on(&shelf.0, "Hana's browser", &url, 5), &kept, hanas.unlock(nonce, [0xbb; 32]));
+    let again = again.await.expect("it opens again");
+    assert_eq!((again.node().device(), again.passkey()), (me, next));
+    assert!(shows(&again, note, "Red, blue and green.").await, "it reads what its shelf kept");
+    assert_eq!(again.moving().await.expect("what moves"), None);
     for n in [again.node(), &mac] {
         n.shutdown().await.expect("the node shuts down");
     }

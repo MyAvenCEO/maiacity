@@ -22,6 +22,10 @@
 //!   eject the volume (`diskutil eject`), so Finder never finds it in use. A volume ejected here stays unhosted until
 //!   it is unmounted, or opened here again (`open`). macOS's own Eject in Finder isn't heard: the Mac learns of it only
 //!   as the volume goes, at its next look.
+//! - **Moved** (K3b): a drive made before the key move moves to ML-DSA-65 with the Mac that hosts it, in the same
+//!   sheet and touch (`Service::hold_drives`, `Service::moved_drives`): its node stopped, it joins as its next key,
+//!   which takes over its copy setting, its old key leaves, its store and the Mac's shelf name its next key, and the
+//!   Mac hosts it as that key from then on.
 //! - **Removed** like a lost phone: the device is revoked (`{"op": "revoke", "vault", "device"}`), its peers refuse
 //!   it from then on, and the Mac hosts it no more.
 
@@ -41,7 +45,7 @@ use avendb::world;
 use avendb_browser::{Device, Fresh, Meta, Start, Unlock};
 use avendb_net::{Node, Options, Shelf, disk};
 use bytes::Bytes;
-use iroh::RelayUrl;
+use iroh::{EndpointId, RelayUrl};
 use serde_json::{Value, json};
 use tokio::task::JoinHandle;
 use zeroize::Zeroizing;
@@ -194,6 +198,14 @@ struct Hosted {
     carded: Arc<AtomicBool>,
 }
 
+/// A drive this Mac hosted as its key move began (K3b, `Service::hold_drives`): its device, its key and its store's
+/// shelf.
+pub(crate) struct Held {
+    device: SignerId,
+    secret: Zeroizing<[u8; 32]>,
+    shelf: Shelf,
+}
+
 /// A volume a join or an open is under way on, until it drops.
 struct Busy<'a>(&'a Drives, PathBuf);
 
@@ -294,7 +306,7 @@ impl Service {
     /// One look at the volumes: a drive unplugged, or taken out of the vault, stops; a volume with a store on it is
     /// read; a drive of the person's whose key this Mac holds is hosted at once; and each drive hosted settles: its
     /// copy setting, and its card.
-    async fn look(self: &Arc<Self>) -> Result<()> {
+    pub(crate) async fn look(self: &Arc<Self>) -> Result<()> {
         let (Some(root), Ok(d)) = (self.config.volumes.clone(), self.device()) else { return Ok(()) };
         let _one = self.drives.looking.lock().await;
         let mounted = volumes(&root);
@@ -569,6 +581,46 @@ impl Service {
         }
         eject(&volume).await?;
         Ok(json!({ "ejected": volume.to_string_lossy() }))
+    }
+
+    /// The drives hosted now, each held by this Mac's device in each suite (`Lab::device_keys`), so they move with it
+    /// in its key move (K3b, `Lab::moves`), once it synced with each, so it holds what each made: their devices, keys
+    /// and shelves. A drive whose key this Mac's shelf doesn't open is left as it is.
+    pub(crate) async fn hold_drives(&self, d: &Arc<Device>) -> Vec<Held> {
+        let hosted: Vec<(SignerId, EndpointId, Option<Shelf>)> = {
+            let (hosted, seen) = (self.drives.hosted.lock().expect("hosted"), self.drives.seen.lock().expect("seen"));
+            let shelf = |h: &Hosted| seen.get(&h.volume).map(|s| s.shelf.clone());
+            hosted.iter().map(|(drive, h)| (*drive, h.node.id(), shelf(h))).collect()
+        };
+        let mut held = vec![];
+        for (device, endpoint, shelf) in hosted {
+            d.node().sync_with(endpoint).await.ok();
+            let (Some(secret), Some(shelf)) = (self.unwrap_key(d, &KEY, device).await, shelf) else { continue };
+            let key = secret.clone();
+            d.node().act(move |lab, _| lab.device_keys(device, *key)).await;
+            held.push(Held { device, secret, shelf });
+        }
+        held
+    }
+
+    /// The drives of `held` that moved in this Mac's key move, each to its next key among `moves`
+    /// (`Device::move_keys`), as its own device's next key is named before the old one leaves: this Mac's shelf keeps
+    /// the drive's key under its next key (`wrap_key`), then the drive's store names that key (`Meta::device`), so
+    /// this Mac hosts it as that key from then on, with no ceremony, as it hosts it again (`look`). A drive that moved
+    /// already, as in a move cut short, stays as it is.
+    pub(crate) async fn moved_drives(
+        &self,
+        d: &Device,
+        held: Vec<Held>,
+        moves: Vec<(SignerId, SignerId)>,
+    ) -> Result<()> {
+        for Held { device, secret, shelf } in held {
+            let Some(&(_, next)) = moves.iter().find(|&&(old, _)| old == device) else { continue };
+            self.wrap_key(d, &KEY, next, &secret).await?;
+            let meta = Meta::load(&shelf).await?.context("the drive's store holds nothing that opens it")?;
+            Meta { device: next, ..meta }.keep(&shelf).await?;
+        }
+        Ok(())
     }
 
     /// Drive `meta.device` hosted here from now on: its node on its shelf on `volume`, its key `secret`.

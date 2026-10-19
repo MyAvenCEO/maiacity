@@ -33,6 +33,11 @@
  * The phase: `loading` until it knows; `new` where this browser holds no account (set one up or sign in on avenDB's
  * page); `closed` where it holds one, locked, which `unlock` opens in one ceremony; `open`; `broken` where the Mac
  * app's device didn't start, with why in `error`.
+ *
+ * Once open, the device says what its key move asks of the person (K3b, `moving`): where their passkey or this device,
+ * or in the Mac app its Touch ID key, still signs in SLH-DSA, the app asks once more, and `moveKeys` moves them to
+ * ML-DSA-65 in one ceremony (and one touch), the device opening again as its next key. A move that asks for no
+ * ceremony, as one cut short, goes on by itself.
  */
 
 import { native } from '$lib/native';
@@ -81,6 +86,10 @@ let meta = $state.raw(null);
 let world = $state.raw(/** @type {import('./vaults.js').WorldView | null} */ (null));
 /** the vault the person looks at, picked in avenDB's nav pill (./Shell.svelte): their own until they pick another */
 let vault = $state('');
+/** what the key move asks of the person (K3b, avendb-browser's `Moving`), while their passkey, this device or in the
+ *  Mac app its Touch ID key still signs in SLH-DSA: whether their passkey signs, whether Touch ID does, and whether the
+ *  device moves; null once nothing moves. @type {{ passkey: boolean, touch: boolean, device: boolean } | null} */
+let moving = $state.raw(null);
 /** what the page is doing for the person, and what went wrong last, where it shows them */
 let doing = $state('');
 let error = $state('');
@@ -361,11 +370,48 @@ async function started(d, nonce, credential, { name, relay }) {
 	meta = await d.keep(hex(nonce), credential);
 }
 
-/** Device `d` runs, for every page of the tab, and the pages holding it see what it holds. @param {any} d */
+/** Device `d` runs, for every page of the tab, and the pages holding it see what it holds; then it asks what its key
+ *  move asks of the person (`checkMove`). @param {any} d */
 function running(d) {
 	device = d;
 	phase = 'open';
 	if (holders) watch();
+	void checkMove(d);
+}
+
+/** What device `d`'s key move asks of the person (K3b), once it opened: where it asks for no ceremony, as a move cut
+ *  short, it goes on at once; otherwise the page asks once more (`moveKeys`). Never fails: a move that can't be asked
+ *  about now waits for the next unlock. @param {any} d */
+async function checkMove(d) {
+	moving = null;
+	try {
+		const asked = (mac ? await mac.call('moving') : await d.moving()) ?? null;
+		if (device !== d) return;
+		moving = asked;
+		if (asked && !asked.passkey && !asked.touch) await moveKeys();
+	} catch (e) {
+		console.warn('avenDB: the key move waits for the next unlock:', /** @type {Error} */ (e)?.message ?? e);
+	}
+}
+
+/** Moves the person's passkey and this device to ML-DSA-65 (K3b), as `moving` asks: one ceremony of their passkey, and
+ *  in the Mac app a touch of its Touch ID key, which moves too, with the drives it hosts. The device opens again as its
+ *  next key, with no ceremony, and runs on. Whether it went through, with why not shown. */
+async function moveKeys() {
+	const d = device;
+	if (!d || !moving) return false;
+	const ok = await change('Moving your keys to ML-DSA-65', async () => {
+		if (mac) return macOpened(await mac.call('moveKeys'));
+		const moved = await d.move_keys((await ceremonies(meta.credential)).sign, null);
+		if (!moved) return;
+		// the store is the new device's: the old one is freed, never closed, which would let go of it
+		watching = null;
+		running(moved);
+		d.free();
+		meta = (await avendb.storeMeta(store)) ?? meta;
+	});
+	if (ok && device === d) moving = null;
+	return ok;
 }
 
 /** How long a change waits at least before the page reads the world again, so the changes after it come along. */
@@ -643,6 +689,11 @@ export const session = {
 	set doing(what) {
 		doing = what;
 	},
+	/** what the key move asks of the person (K3b): `{ passkey, touch, device }` while anything of theirs here is to
+	 *  move to ML-DSA-65, else null */
+	get moving() {
+		return moving;
+	},
 	/** what went wrong last, in the person's words, or why the device couldn't start */
 	get error() {
 		return error;
@@ -656,6 +707,7 @@ export const session = {
 	lock,
 	touch,
 	touchState,
+	moveKeys,
 	found,
 	link,
 	claim,

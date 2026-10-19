@@ -25,6 +25,7 @@
 		found: 'to found your vault',
 		claim: 'to claim avenDB’s server',
 		approve: 'to approve what your vault changes',
+		move: 'to move your keys to ML-DSA-65',
 		drive: 'to use a drive for avenDB as one of your devices',
 		signin: 'to sign The OS in to maiaCITY on this Mac',
 		touch: 'to let Touch ID open avenDB on this Mac'

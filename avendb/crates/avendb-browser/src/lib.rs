@@ -25,6 +25,13 @@
 //! - `Device::open`: a device the page made before opens again from its shelf, in the unlock's ceremony alone; the
 //!   server's relay knows it.
 //!
+//! A device or a passkey made before the key move signs in SLH-DSA, and moves to ML-DSA-65 once (K3b): after the
+//! unlock the page asks `moving`, and where anything is to move, asks its person once more, and `move_keys` moves
+//! their passkey and the device in one ceremony of the passkey, one batch their vault approves; on a Mac its Touch ID
+//! key too, with one touch, and the drives it hosts. Each other device of theirs moves at its own next unlock. The
+//! device then opens again as its next key on the same shelf, with no ceremony, and what opens it names that key
+//! (`Meta::device`). Nothing is reset, and the old edits keep their SLH-DSA signatures.
+//!
 //! The page keeps what the device holds in the browser's private file system, OPFS, on its node's shelf (v8 phase S,
 //! `avendb_net::shelf`), laid out as every place lays out its own: its edits as a journal, packs and heads
 //! (`avendb_net` keeps them), its McEliece keys and the pieces of the files it brings or keeps, each a blob, and what
@@ -63,6 +70,7 @@
 //! The tests run natively (`tests/device.rs`) and in Chromium (`tests/page.rs`, through `scripts/test-browser.sh`),
 //! where a virtual authenticator holds the passkey.
 
+use std::collections::BTreeSet;
 use std::io;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -72,10 +80,10 @@ use avendb::cast;
 use avendb::engine;
 use avendb::id::{ShareId, SignerId, VaultId};
 use avendb::keys;
-use avendb::lab::Lab;
+use avendb::lab::{Lab, Unsigned};
 use avendb::policy::{Action, Level, Principal, Refusal, Sharing};
 use avendb::recovery::{self, RecoveryKey};
-use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, SignerKeys, pass_challenge};
+use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, SUITES, SignerKeys, pass_challenge};
 use avendb::slice::Selector;
 use avendb::words::hex;
 use avendb::world;
@@ -349,7 +357,8 @@ impl Meta {
 
 /// A device of its person in a browser: its node, its person's passkey, by its id and its P-256 key, the mask its
 /// secret is kept under (`Fresh::mask`), its shelf, if it keeps one (`Start::shelf`), the name and relay it started
-/// with, and whether it closed.
+/// with, whether it closed, and the owner key whose ceremony opened it, in each suite: its passkey, or on a Mac its
+/// Touch ID key (`open_by_touch`), which approves its key move (`move_keys`).
 pub struct Device {
     node: Node,
     passkey: SignerId,
@@ -359,6 +368,7 @@ pub struct Device {
     name: String,
     relay: RelayUrl,
     closed: watch::Sender<bool>,
+    opener: Vec<SignerId>,
 }
 
 impl Device {
@@ -454,7 +464,7 @@ impl Device {
     pub async fn open(start: Start, meta: &Meta, unlock: Unlock) -> Result<Device> {
         start.progress.step("keys");
         let (lab, passkeys) = lab(&start, meta, &unlock)?;
-        Device::reopen(start, meta, lab, &passkeys).await
+        Device::reopen(start, meta, lab, &passkeys, &passkeys).await
     }
 
     /// The device made here before, opened again from its shelf as `open` opens it, by its Mac's Touch ID key
@@ -474,16 +484,26 @@ impl Device {
         let key = lab.web_enclave("the person", ceremony).filter(|_| theirs);
         key.context("the touch's ceremony isn't of this Mac's Touch ID key")?;
         let pad = ceremony.device_mask().context("the touch's ceremony isn't of this Mac's Touch ID key")?;
-        let me = lab.device_as(&start.name, *xor(&touch.mask, &pad), meta.device);
+        let secret = xor(&touch.mask, &pad);
+        let me = lab.device_as(&start.name, *secret, meta.device);
         me.context("the touch opens another device than the one this shelf keeps")?;
-        Device::reopen(start, meta, lab, &[touch.passkey]).await
+        lab.device_keys(meta.device, *secret);
+        let opener = SUITES.map(|suite| ceremony.keys_in([0; 33], suite).id());
+        Device::reopen(start, meta, lab, &[touch.passkey], &opener).await
     }
 
-    /// Device `me` of `lab`, unlocked as its shelf's `meta` names it, opened again (`open`, `open_by_touch`): it
-    /// follows what it followed and reads as deep as it did, its node takes back what the shelf kept, and it must still
-    /// belong to a vault. Its person's passkey is the one of `passkeys` their vault knows, the first if it knows none:
-    /// the Lab may hold it in each suite (`Lab::web_passkey`), and the vault knows one (the key move).
-    async fn reopen(start: Start, meta: &Meta, mut lab: Lab, passkeys: &[SignerId]) -> Result<Device> {
+    /// Device `me` of `lab`, unlocked as its shelf's `meta` names it, opened again (`open`, `open_by_touch`,
+    /// `move_keys`): it follows what it followed and reads as deep as it did, its node takes back what the shelf kept,
+    /// and it must still belong to a vault. Its person's passkey is the one of `passkeys` their vault knows, the first
+    /// if it knows none: the Lab may hold it in each suite (`Lab::web_passkey`), and the vault knows one (the key
+    /// move). `opener` is the owner key whose ceremony opened it, in each suite.
+    async fn reopen(
+        start: Start,
+        meta: &Meta,
+        mut lab: Lab,
+        passkeys: &[SignerId],
+        opener: &[SignerId],
+    ) -> Result<Device> {
         let me = meta.device;
         lab.follow(me, &meta.follow);
         if let Some(depth) = meta.query_depth {
@@ -495,8 +515,8 @@ impl Device {
         let owner = node.read(move |lab, me| lab.owner_among(me, &held)).await;
         let passkey = owner.unwrap_or(passkeys[0]);
         let (shelf, name, relay) = (start.shelf.clone(), start.name.clone(), start.relay.clone());
-        let (p256, mask) = (meta.p256, meta.mask);
-        let device = Device { node, passkey, p256, mask, shelf, name, relay, closed: watch::Sender::new(false) };
+        let (p256, mask, opener, closed) = (meta.p256, meta.mask, opener.to_vec(), watch::Sender::new(false));
+        let device = Device { node, passkey, p256, mask, shelf, name, relay, closed, opener };
         start.progress.step("check");
         if device.vault().await.is_none() {
             device.close().await.ok();
@@ -556,6 +576,104 @@ impl Device {
         Ok(())
     }
 
+    /// What its key move asks of its person now (K3b, `move_keys`), once it caught up with its peers (`catch_up`):
+    /// whether their passkey signs, whether its Mac's Touch ID key does, with a touch, and whether a device moves.
+    /// `None` once nothing it holds is to move: their keys and its own are in ML-DSA-65, or the Lab holds no next key
+    /// of those still in SLH-DSA, as a Mac its Touch ID key opened holds none of their passkey's.
+    pub async fn moving(&self) -> Result<Option<Moving>> {
+        let touch = self.touch_key().await?;
+        catch_up(&self.node).await;
+        let opener = self.opener.clone();
+        let drafted = self.node.read(move |lab, me| drafted(lab, me, &opener, touch).map(|d| d.map(|d| d.moving)));
+        drafted.await.map_err(|why| anyhow!("its key move is refused: {why:?}"))
+    }
+
+    /// Moves its person's keys and its own to ML-DSA-65 (K3b), as `moving` says, once it caught up with its peers:
+    /// one batch the vault approves (`avendb::lab::Lab::draft_move`), which `sign` signs, given its challenge and what
+    /// it asks for, in one ceremony of their passkey and, on a Mac, one touch of its Touch ID key. Then what opens it
+    /// again names its next key, and its Touch ID key's the passkey's, kept on its shelf once the shelf holds the
+    /// batch; `keep` takes the moves, each signer with its next key, as the Mac names the next keys of the drives it
+    /// runs on theirs; each device that moves leaves, its next key taking over what it kept (`Lab::finish_move`); and
+    /// it closes and opens again as its next key on the same shelf, with no ceremony (`Lab::moved`), as `start` says,
+    /// and writes its card as that key, whose card it is. No edit is signed again, and the old edits keep their
+    /// signatures. A move cut short goes on where it stopped at its next unlock, by that key or the old one. The
+    /// device it opened again as, or `None` where nothing moved. Fails for a device that keeps no shelf, if the vault
+    /// refuses a step, or if a ceremony isn't its signer's.
+    pub async fn move_keys<S, K>(
+        &self,
+        start: Start,
+        sign: impl FnOnce([u8; 32], Moving) -> S,
+        keep: impl FnOnce(Vec<(SignerId, SignerId)>) -> K,
+    ) -> Result<Option<Device>>
+    where
+        S: Future<Output = Result<Signing>>,
+        K: Future<Output = Result<()>>,
+    {
+        let shelf = self.shelf.clone().context("this device keeps no shelf")?;
+        let meta = Meta::load(&shelf).await?.context("its shelf holds nothing that opens it")?;
+        let touch = meta.touch.as_ref().map(|t| sign::enclave_key(&t.public));
+        catch_up(&self.node).await;
+        let opener = self.opener.clone();
+        let drafted = self.node.read(move |lab, me| drafted(lab, me, &opener, touch)).await;
+        let refused = |why: Refusal| anyhow!("its key move is refused: {why:?}");
+        let Some(Drafted { moves, drafts, passkeys, touches, moving }) = drafted.map_err(refused)? else {
+            return Ok(None);
+        };
+        if let Some(first) = drafts.first() {
+            let Signing { passkey, touch } = sign(first.challenge(), moving).await?;
+            let complete = move |lab: &mut Lab, me| {
+                let by = passkeys.iter().filter_map(|&s| Some((s, passkey.as_ref()?)));
+                let ceremonies: Vec<_> = by.chain(touches.iter().filter_map(|&s| Some((s, touch.as_ref()?)))).collect();
+                lab.complete_move(me, drafts, &ceremonies)
+            };
+            self.node.act(complete).await.map_err(refused)?;
+        }
+        let next = |s: SignerId| moves.iter().find(|&&(old, _)| old == s).map_or(s, |&(_, new)| new);
+        let new = next(self.node.device());
+        // what opens it again names its next key before the old one leaves, once its shelf holds the batch
+        self.shelved().await?;
+        let (follow, query_depth) = self.node.read(settings).await;
+        let touch = meta.touch.clone().map(|t| Touch { passkey: next(t.passkey), ..t });
+        let meta = Meta { device: new, follow, query_depth, touch, ..meta };
+        meta.keep(&shelf).await?;
+        keep(moves.clone()).await?;
+        let left = moves.clone();
+        self.node.act(move |lab, me| lab.finish_move(me, &left)).await.map_err(refused)?;
+        let seed = start.entropy;
+        let lab = self.node.act(move |lab, me| lab.moved(me, new, seed)).await;
+        let lab = lab.context("its next key isn't at hand")?;
+        self.close().await?;
+        let passkeys = [next(self.passkey), self.passkey];
+        let mut opener: Vec<SignerId> = self.opener.iter().map(|&s| next(s)).chain(self.opener.clone()).collect();
+        opener.dedup();
+        let device = Device::reopen(start, &meta, lab, &passkeys, &opener).await?;
+        // a card is its device's: the next key writes its own, and a card that isn't written yet waits for the next
+        // `card` op, as the Mac's drives write theirs as they settle
+        device.op(json!({ "op": "card", "name": meta.name })).await.ok();
+        Ok(Some(device))
+    }
+
+    /// Its Mac's Touch ID key's Enclave key, as its shelf keeps it (`Meta::touch`, `sign::enclave_key`): what names
+    /// that key's next key in its key move (`Lab::moves`). None in a browser.
+    async fn touch_key(&self) -> Result<Option<[u8; 32]>> {
+        let Some(shelf) = &self.shelf else { return Ok(None) };
+        let meta = Meta::load(shelf).await?;
+        Ok(meta.and_then(|m| m.touch).map(|t| sign::enclave_key(&t.public)))
+    }
+
+    /// Waits, a few seconds at most (`SHELVED`), until its shelf holds all it holds (`behind`).
+    async fn shelved(&self) -> Result<()> {
+        let (mut waited, step) = (Duration::ZERO, Duration::from_millis(50));
+        while self.node.behind().await {
+            if waited >= SHELVED {
+                bail!("its shelf doesn't hold its key move yet");
+            }
+            sleep(step).await;
+            waited += step;
+        }
+        Ok(())
+    }
+
     /// A node for device `me` of `lab`, which reaches its peers through the relay, let in by one of `relay_passes` if
     /// the relay doesn't know it yet, and directly too if it binds a socket; on its shelf, if it keeps one.
     async fn spawn(lab: Lab, me: SignerId, start: &Start, relay_passes: Vec<RelayPass>) -> Result<Node> {
@@ -568,7 +686,7 @@ impl Device {
     /// The new device whose node is `node`, of the person whose passkey turned out to be `passkey`, of `passkeys`,
     /// those its unlock may have been from (`passed`), its secret kept under `mask`, started at `start`: it forgets the
     /// keys of the others, which nobody holds, and keeps the passkey's own in the other suite, its next key (the key
-    /// move).
+    /// move); the passkey in each suite opened it.
     async fn of(node: Node, passkey: SignerId, passkeys: &[SignerId], mask: [u8; 32], start: &Start) -> Result<Device> {
         let held = passkeys.to_vec();
         let forget = move |lab: &mut Lab, _| {
@@ -577,13 +695,15 @@ impl Device {
                 _ => None,
             };
             let theirs = p256(lab, passkey)?;
-            let others: Vec<SignerId> = held.into_iter().filter(|&p| p256(lab, p) != Some(theirs)).collect();
+            let (opener, others): (Vec<SignerId>, Vec<SignerId>) =
+                held.into_iter().partition(|&p| p256(lab, p) == Some(theirs));
             others.into_iter().for_each(|p| lab.lose(p));
-            Some(theirs)
+            Some((theirs, opener))
         };
-        let Some(p256) = node.act(forget).await else { bail!("the passkey's keys") };
+        let Some((p256, opener)) = node.act(forget).await else { bail!("the passkey's keys") };
         let (shelf, name, relay) = (start.shelf.clone(), start.name.clone(), start.relay.clone());
-        Ok(Device { node, passkey, p256, mask, shelf, name, relay, closed: watch::Sender::new(false) })
+        let closed = watch::Sender::new(false);
+        Ok(Device { node, passkey, p256, mask, shelf, name, relay, closed, opener })
     }
 
     /// What opens it again, as it started: its name and relay, its secret's mask, its passkey's P-256 key and its id,
@@ -710,6 +830,11 @@ impl Device {
         self.closed.send_replace(true);
         self.node.shutdown().await
     }
+
+    /// Whether it closed (`close`), as a key move closes it once it opened again as its next key (`move_keys`).
+    pub fn closed(&self) -> bool {
+        *self.closed.borrow()
+    }
 }
 
 /// What an op answered `ok`, or why not.
@@ -728,17 +853,111 @@ pub fn steps_json(steps: &Steps) -> Value {
     json!({ "steps": steps.steps.iter().map(stage).collect::<Vec<_>>(), "over": steps.over })
 }
 
+/// How long a device asks its peers for what they hold before its key move drafts (`catch_up`), at most.
+const CATCH_UP: Duration = Duration::from_secs(5);
+
+/// How long a key move waits for its device's shelf to hold its batch (`Device::shelved`), at most.
+const SHELVED: Duration = Duration::from_secs(10);
+
+/// What a device's key move asks of its person (K3b, `Device::moving`): whether their passkey signs, in one ceremony,
+/// as it moves to ML-DSA-65 or approves the device's next key; whether the Mac's Touch ID key signs, with one touch,
+/// as it moves; and whether a device moves, its id changing: this one, or a drive the Mac runs beside it. Where
+/// neither key signs, the device moves with no ceremony, as one cut short goes on (`Device::move_keys`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Moving {
+    pub passkey: bool,
+    pub touch: bool,
+    pub device: bool,
+}
+
+impl Moving {
+    /// As the page and the Mac app read it: `{passkey, touch, device}`.
+    pub fn to_json(&self) -> Value {
+        json!({ "passkey": self.passkey, "touch": self.touch, "device": self.device })
+    }
+}
+
+/// What signs a key move's batch (`Device::move_keys`), each over its challenge where `Moving` asks for it: a ceremony
+/// of its person's passkey, and a touch of the Mac's Touch ID key (`sign::Ceremony::enclave`).
+#[derive(Default)]
+pub struct Signing {
+    pub passkey: Option<Ceremony>,
+    pub touch: Option<Ceremony>,
+}
+
+/// A key move as its device drafts it (`drafted`).
+struct Drafted {
+    /// What moves, each signer with its next key (`Lab::moves`).
+    moves: Vec<(SignerId, SignerId)>,
+    /// The edits that move them, one batch (`Lab::draft_move`).
+    drafts: Vec<Unsigned>,
+    /// Their signers a ceremony of the person's passkey signs as, and those a touch signs as.
+    passkeys: Vec<SignerId>,
+    touches: Vec<SignerId>,
+    /// What it asks of its person.
+    moving: Moving,
+}
+
+/// The key move of device `me` of `lab` (`Device::move_keys`): what moves, the Touch ID key whose Enclave key `touch`
+/// names among it (`Lab::moves`); the batch that moves it, by which the vault's approval, the owner key of `opener`
+/// the vault knows, adds each device's next key (`Lab::draft_move`); and who signs it in a ceremony, each of its
+/// signers but a device by a touch where it, or the key it moves from, is a Touch ID key, by the passkey otherwise.
+/// `None` once nothing moves; why `me`'s view refuses a step otherwise.
+fn drafted(
+    lab: &Lab,
+    me: SignerId,
+    opener: &[SignerId],
+    touch: Option<[u8; 32]>,
+) -> Result<Option<Drafted>, Refusal> {
+    let moves = lab.moves(me, touch);
+    if moves.is_empty() {
+        return Ok(None);
+    }
+    let by = lab.owner_among(me, opener).or(opener.first().copied()).ok_or(Refusal::NotActing)?;
+    let drafts = lab.draft_move(me, &moves, by)?;
+    let mut signers: Vec<SignerId> = drafts.iter().flat_map(|d| d.edit().sigs()).collect();
+    signers.sort();
+    signers.dedup();
+    let from = |s: SignerId| moves.iter().find(|&&(_, new)| new == s).map_or(s, |&(old, _)| old);
+    let named: BTreeSet<SignerId> = signers.iter().chain(moves.iter().map(|(old, _)| old)).copied().collect();
+    let seen = lab.signers_seen(me, &named);
+    let keys = |s: SignerId| lab.keys_of(s).or_else(|| lab.keys_of(from(s))).or_else(|| seen.get(&from(s)).copied());
+    let (mut passkeys, mut touches) = (vec![], vec![]);
+    for s in signers {
+        match keys(s) {
+            Some(SignerKeys::Device { .. }) => {}
+            Some(SignerKeys::Enclave { .. }) => touches.push(s),
+            _ => passkeys.push(s),
+        }
+    }
+    let device = moves.iter().any(|&(old, _)| matches!(keys(old), Some(SignerKeys::Device { .. })));
+    let moving = Moving { passkey: !passkeys.is_empty(), touch: !touches.is_empty(), device };
+    Ok(Some(Drafted { moves, drafts, passkeys, touches, moving }))
+}
+
+/// Asks each device `node` knows for what it holds (`avendb::lab::Lab::peers`), for a few seconds at most
+/// (`CATCH_UP`): so a key move drafts on what another device of its person moved already, not over it.
+async fn catch_up(node: &Node) {
+    let peers = node.read(|lab, me| lab.peers(me)).await;
+    let endpoints = peers.into_iter().filter_map(|(_, key)| iroh::EndpointId::from_bytes(&key).ok());
+    let asks = n0_future::join_all(endpoints.map(|peer| async move { node.sync_with(peer).await.ok() }));
+    or(async move { asks.await; }, sleep(CATCH_UP)).await;
+}
+
 /// A browser's device's Lab as it opens again: its person's passkey, by its P-256 key and the ceremony that unlocked
 /// the device, held in each suite (`Lab::web_passkey`), their ids; and the device its shelf keeps (`meta`), in its own
-/// suite, its keys from its secret, which the PRF output on its salt unmasks from its mask (`Fresh::mask`). Fails if
-/// the ceremony isn't that passkey's or unmasks another device's secret.
+/// suite, its keys from its secret, which the PRF output on its salt unmasks from its mask (`Fresh::mask`), with its
+/// keys in the other suite beside it, for its key move (`Lab::device_keys`, `Device::move_keys`). Fails if the
+/// ceremony isn't that passkey's or unmasks another device's secret.
 fn lab(start: &Start, meta: &Meta, unlock: &Unlock) -> Result<(Lab, [SignerId; 2])> {
     let mut lab = Lab::with_entropy(start.entropy);
     start.recovery.clone().map(|key| lab.set_recovery(key));
     let passkeys = lab.web_passkey("the person", meta.p256, &unlock.ceremony);
     let passkeys = passkeys.context("the unlock's ceremony isn't of the passkey with this P-256 key")?;
-    let me = lab.device_as(&start.name, *xor(&meta.mask, &unlock.device), meta.device);
+    let secret = xor(&meta.mask, &unlock.device);
+    let me = lab.device_as(&start.name, *secret, meta.device);
     me.context("the unlock opens another device than the one this shelf keeps")?;
+    lab.device_keys(meta.device, *secret);
     Ok((lab, passkeys))
 }
 
@@ -909,6 +1128,41 @@ impl PageDevice {
     pub fn rename(&self, name: String) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move { Ok(device.rename(name).await.map_err(js_value)?.into()) })
+    }
+
+    /// What its key move asks of its person now (K3b, `Device::moving`): a promise of `{passkey, touch, device}`, each
+    /// whether their passkey signs, whether a Mac's Touch ID key does and whether the device moves, or of `undefined`
+    /// once nothing moves.
+    pub fn moving(&self) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let moving = device.moving().await.map_err(js_value)?;
+            moving.map_or(Ok(JsValue::UNDEFINED), |m| js_sys::JSON::parse(&m.to_json().to_string()))
+        })
+    }
+
+    /// Moves its person's passkey and the device to ML-DSA-65 (K3b, `Device::move_keys`), in one ceremony of the
+    /// passkey, `ceremony(challenge, "move")`, as a start takes it, where `moving` asks for one: a promise of the
+    /// device it opens again as, on the same store, which it goes on holding, showing the steps of that start by
+    /// `steps`, as a start does; or of `undefined` where nothing moved. Once it resolves to a device, this one is
+    /// closed, and the page frees it without closing it, as the store is the new device's.
+    pub fn move_keys(&self, ceremony: Function, steps: Option<Function>) -> Promise {
+        let (device, store) = (self.0.clone(), self.1.clone());
+        future_to_promise(async move {
+            let shelf = shelf_of(store.clone());
+            let meta = Meta::load(&shelf).await.map_err(js_value)?;
+            let meta = meta.ok_or_else(|| JsError::new("this browser holds no avenDB account"))?;
+            let start = starting(meta.name.clone(), &meta.relay, steps, shelf)?;
+            let _ending = start.progress.ending();
+            let ceremonies = Js(ceremony);
+            let sign = |challenge, moving: Moving| async move {
+                let passkey = if moving.passkey { Some(ceremonies.call(challenge, "move").await?) } else { None };
+                anyhow::ensure!(!moving.touch, "a browser holds no Touch ID key");
+                Ok(Signing { passkey, touch: None })
+            };
+            let moved = device.move_keys(start, sign, |_| async { Ok(()) }).await.map_err(js_value)?;
+            Ok(moved.map_or(JsValue::UNDEFINED, |moved| PageDevice(Rc::new(moved), store).into()))
+        })
     }
 
     /// Whether its shelf lacks something it holds (`Device::behind`): a promise.
@@ -1143,6 +1397,16 @@ fn ceremony_value(mut bytes: &[u8]) -> Result<JsValue> {
 /// The page's ceremonies (`PageDevice`'s `ceremony`).
 struct Js(Function);
 
+impl Js {
+    /// The page's ceremony over `challenge`, for `step`, which it names to its person: a start's, an approval's, or
+    /// `"move"`, the key move's (`Device::move_keys`).
+    async fn call(&self, challenge: [u8; 32], step: &str) -> Result<Ceremony> {
+        let promise = self.0.call2(&JsValue::NULL, &Uint8Array::from(&challenge[..]), &step.into());
+        let result = JsFuture::from(Promise::from(promise.map_err(js_anyhow)?)).await;
+        ceremony_of(&result.map_err(js_anyhow)?)
+    }
+}
+
 impl Authenticator for Js {
     async fn ceremony(&self, challenge: [u8; 32], step: Step) -> Result<Ceremony> {
         let step = match step {
@@ -1151,9 +1415,7 @@ impl Authenticator for Js {
             Step::Claim => "claim",
             Step::Approve => "approve",
         };
-        let promise = self.0.call2(&JsValue::NULL, &Uint8Array::from(&challenge[..]), &step.into());
-        let result = JsFuture::from(Promise::from(promise.map_err(js_anyhow)?)).await;
-        ceremony_of(&result.map_err(js_anyhow)?)
+        self.call(challenge, step).await
     }
 }
 
