@@ -12,9 +12,10 @@
 #   /vault/*               the media vault's gateway (files by BLAKE3 hash, with Range)
 #   everything else        the API
 #
-# A browser can't set headers on a WebSocket, so avenDB's relay pass (avendb::sign::RelayPass, ~23 KB) rides in the
-# URL of avendb.maia.city/relay (?token=), and a device off the browser sends it as a header as long. Since 2.11, Caddy
-# turns requests that long away (431) unless told to read more.
+# A browser can't set headers on a WebSocket, so avenDB's relay pass (avendb::sign::RelayPass, ~23 KB, or ~31 KB for
+# a pass in each signature suite during the key move) rides in the URL of avendb.maia.city/relay (?token=), and a
+# device off the browser sends it as a header as long. Since 2.11, Caddy turns requests that long away (431) unless
+# told to read more.
 #
 # HTTP/3 is off: it rides on UDP 443, which neither the compose file publishes nor the firewall opens. Caddy would
 # still offer it in every answer (Alt-Svc), and a browser that takes the offer waits on QUIC that never answers before

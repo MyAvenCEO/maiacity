@@ -470,7 +470,7 @@ impl Service {
             bind: None,
             direct: self.config.direct,
             relay: Some(relay),
-            relay_pass: Some(pass.clone()),
+            relay_passes: vec![pass.clone()],
             shelf: Some(shelf.clone()),
             ..Options::local()
         };

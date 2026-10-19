@@ -42,8 +42,9 @@ use std::time::{Duration, SystemTime};
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::backup::Keep;
 use avendb::id::SignerId;
+use avendb::sign::RelayPass;
 use avendb_net::bucket::Sealed;
-use avendb_net::{Admission, Node, Offer, Options, server, token_pass};
+use avendb_net::{Admission, Node, Offer, Options, server, token_passes};
 use data_encoding::HEXLOWER_PERMISSIVE;
 use iroh::{EndpointAddr, EndpointId, RelayUrl};
 use iroh_relay::server::{
@@ -271,7 +272,7 @@ pub async fn start(config: &Config) -> Result<Running> {
         keep: false,
         card: false,
         admission: Some(admission),
-        relay_pass: None,
+        relay_passes: Vec::new(),
         page: avendb_net::PAGE,
         // its start is nobody's to watch
         progress: avendb_net::Progress::new(),
@@ -359,17 +360,14 @@ impl Gate {
     /// When the pass the client of `request` shows runs out, if it is one the relay honours at `now`: for the client's
     /// own endpoint, by a passkey that roots a vault the server knows or by any while sign-up is open, made within its
     /// ten minutes, and signed both ways. The passkeys it may be from are checked first, the signatures, which take a
-    /// while, last: the relay honours it if it honours one of the passkeys that made it (`RelayPass::passkeys`).
+    /// while, last: the relay honours it if it honours one of the passkeys that made it (`RelayPass::passkeys`). A
+    /// client may show its passkey's pass in each suite (`token_passes`): the first the relay honours counts.
     fn pass(&self, request: &ClientRequest, now: u64) -> Option<u64> {
-        let pass = token_pass(&request.auth_token()?)?;
-        if pass.endpoint() != Some(*request.endpoint_id().as_bytes()) {
-            return None;
-        }
+        let endpoint = *request.endpoint_id().as_bytes();
         let honours = |p: &SignerId| self.admission.honours(p);
-        if !pass.candidates().iter().any(honours) {
-            return None;
-        }
-        pass.passkeys(now).iter().any(honours).then(|| pass.expires())
+        let mine = |pass: &RelayPass| pass.endpoint() == Some(endpoint) && pass.candidates().iter().any(honours);
+        let passes = token_passes(&request.auth_token()?);
+        passes.into_iter().filter(mine).find_map(|pass| pass.passkeys(now).iter().any(honours).then(|| pass.expires()))
     }
 
     /// The relay still lets `endpoint` in at `now`: the server knows it, or its pass hasn't run out.
