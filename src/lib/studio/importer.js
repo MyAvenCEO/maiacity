@@ -1,7 +1,6 @@
 /*
- * Import from the legacy studio, by hand only (plan JI): one legacy timeline brought into avenDB as a cut of its own,
- * with exactly the footage it plays. Nothing is ever imported by itself; the legacy timeline, its vault and Postgres
- * stay as they are.
+ * Import from the legacy studio (plan JI): one legacy timeline, as it is frozen (./frozen.js), brought into avenDB as a
+ * cut of its own, with exactly the footage it plays. The legacy vault and Postgres stay as they are.
  *
  * Each file a clip plays is copied, never moved: read in place from the legacy vault and put into the person's home
  * vault (vault/app/src/aven.rs `studio_import`), checked against its legacy hash, with its legacy transcript and
@@ -20,18 +19,6 @@ import { CUT, createCut, device, homeOf, schemaIn, shootable, timelineOf, worldO
 /** @typedef {import('$lib/auth/client').Timeline} Timeline */
 
 const HASH = /^[0-9a-f]{64}$/;
-
-/**
- * `p`, or why not once `ms` pass with no answer: the Mac app reaches the legacy studio's API (api.maia.city, through
- * its own `api` command), and where that doesn't answer a call can wait for ever, so the import would never say anything.
- * @template T @param {Promise<T>} p @param {number} [ms]
- */
-export function legacyCall(p, ms = 20000) {
-	/** @type {ReturnType<typeof setTimeout> | undefined} */
-	let timer;
-	const late = new Promise((_, no) => (timer = setTimeout(() => no(new Error("the old studio's API (api.maia.city) doesn't answer")), ms)));
-	return /** @type {Promise<T>} */ (Promise.race([p, late]).finally(() => clearTimeout(timer)));
-}
 
 /** The legacy vault's files timeline `t` plays, by hash, each once (a world clip's shot is no file). @param {any} t */
 export function filesOf(t) {
@@ -65,8 +52,8 @@ export function moved(t, refs, shots) {
 /**
  * Legacy timeline `id` brought into avenDB as a cut (or the cut it was brought as before), `tell` hearing how far:
  * into vault `into.vault`, acting as `into.as` (else the person's home vault, `homeOf`), named `into.name` and
- * `into.project` where given, linked to story `into.story` and tagged `into.tags` (./legacyfilms.js); from the repo's
- * frozen copy `into.frozen` (./frozen.js) where given, the old studio not asked at all. The files come
+ * `into.project` where given, linked to story `into.story` and tagged `into.tags` (./legacyfilms.js); from its frozen
+ * copy `into.frozen` (./frozen.js: the repo's, else the Mac's film seed), without which nothing comes. The files come
  * one at a time; one that can't come (not in the legacy vault on this Mac, a copy that doesn't match) is left out
  * and told (`failed`), and the cut is made of the rest, its clip keeping the legacy hash, as no file plays it.
  * @param {string} id @param {(line: string, at: Progress) => void} [tell]
@@ -81,8 +68,10 @@ export async function importTimeline(id, tell = () => {}, into = {}) {
 	if (!home) throw new Error('No avenDB vault to bring it into.');
 	const before = world.entries.find((e) => e.vault === home.vault && e.type === CUT && e.record?.legacy === id && !e.deleted && !(e.tags ?? []).includes('avendb:deleted'));
 	if (before) return timelineOf(before);
-	const { getShot, getTimeline } = await import('$lib/auth/client');
-	const t = into.frozen?.timeline ?? (await legacyCall(getTimeline(id)));
+	// only a frozen film comes: the old studio's API is no longer asked
+	const frozen = into.frozen;
+	if (!frozen) throw new Error('Only a frozen film is brought into avenDB (./frozen.js).');
+	const t = frozen.timeline;
 	const hashes = filesOf(t);
 	/** @type {Progress} */
 	const at = { done: 0, total: hashes.length, part: 0, failed: [] };
@@ -100,10 +89,8 @@ export async function importTimeline(id, tell = () => {}, into = {}) {
 		say();
 	});
 	// their proxies first, so the proxy rule finds each one there when its original comes (./jobs/executors.js)
-	if (into.frozen) {
-		tell('Bringing the footage’s proxies…', { ...at });
-		await bringFootageProxies(home.vault, home.as, [into.frozen], hashes).catch((e) => console.warn('footage proxies:', e));
-	}
+	tell('Bringing the footage’s proxies…', { ...at });
+	await bringFootageProxies(home.vault, home.as, [frozen], hashes).catch((e) => console.warn('footage proxies:', e));
 	/** @type {{ hash: string, entry: string | null, error: string | null }[]} */
 	const brought = [];
 	try {
@@ -140,14 +127,14 @@ export async function importTimeline(id, tell = () => {}, into = {}) {
 			shots.set(k, { shot: shotFrom(had).id, version: had.record?.version ?? 1 });
 			continue;
 		}
-		const s = into.frozen?.shots[k] ?? (await legacyCall(getShot(c.shot, c.shotVersion)));
+		const s = frozen.shots[k];
 		await schemaIn(call, world, home.vault, SHOT_V1, home.as);
 		const value = { kind: SHOT, shot: '', name: s.name, project: s.project ?? '', version: 1, spec: JSON.stringify(s.spec), legacy: k, at: Math.floor(Date.now() / 1000) };
 		const made = answer(await call('run', { op: 'create', vault: home.vault, type: SHOT, value, as: home.as }));
 		shots.set(k, { shot: `shot:${made.entry}`, version: 1 });
 	}
 	tell('Bringing the world shots’ proxies…', { ...at });
-	await bringProxies(home.vault, home.as, into.frozen ? [into.frozen] : []).catch((e) => console.warn('world proxies:', e));
+	await bringProxies(home.vault, home.as, [frozen]).catch((e) => console.warn('world proxies:', e));
 	tell('Making the cut…', { ...at });
 	const named = Object.fromEntries(Object.entries({ name: into.name, project: into.project, story: into.story }).filter(([, v]) => v));
 	const cut = await createCut({ ...moved(t, refs, shots), ...named, legacy: id }, { ...home, tags: into.tags ?? [] });

@@ -1,15 +1,13 @@
 // Migration 0029 against real Postgres semantics (PGlite): a database as it was, naming its files by IPFS CID, comes out
-// naming each by its BLAKE3 hash — timelines, shots and their versions, the board and the render queue — and what it
-// comes out as is what the API itself accepts. The old library tables are left as they were.
+// naming each by its BLAKE3 hash — timelines, shots and their versions, the board and the render queue. The old library
+// tables are left as they were.
 import { beforeAll, describe, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { useDb, type Db } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
 import { CID_MAP } from "../src/cid-map";
-import { getShot, saveShot } from "../src/shots";
-import { getTimeline, saveTimeline } from "../src/timelines";
 import { listContent } from "../src/content";
-import { listJobs } from "../src/renders";
+import { normalize } from "../../game/film/shot.js";
 
 const at = MIGRATIONS.findIndex((m) => m.id === "0029-hashes-not-cids");
 const [[C1, H1], [C2, H2], [C3, H3], [C4, H4]] = CID_MAP.slice(0, 4) as [string, string][];
@@ -76,25 +74,22 @@ describe("0029: every CID becomes its hash", () => {
   });
 
   test("timeline clips name their file by hash; world clips are left as they were", async () => {
-    const t = await getTimeline(timeline);
-    expect(t.clips.map((c) => [c.id, c.hash ?? null])).toEqual([["a", H1], ["w", null], ["b", H2]]);
-    expect(JSON.stringify(t.clips)).not.toMatch(/cid|baf/);
-    expect(t.clips[0]!.grade!.slope).toEqual([1.1, 1, 1]);
-    // the API takes the migrated cut back as it is — locked, so the cut must compare equal
-    const back = (await saveTimeline(timeline, { clips: t.clips })).clips;
-    const cut = (cs: any[]) => cs.map(({ grade: _g, stacks: _s, ...rest }) => rest);
-    expect(cut(back)).toEqual(cut(t.clips));
+    const { clips } = (await pg.query<{ clips: any[] }>("SELECT clips FROM timelines WHERE id = $1", [timeline])).rows[0]!;
+    expect(clips.map((c) => [c.id, c.hash ?? null])).toEqual([["a", H1], ["w", null], ["b", H2]]);
+    expect(JSON.stringify(clips)).not.toMatch(/cid|baf/);
+    expect(clips[0].grade.slope).toEqual([1.1, 1, 1]);
     // (its grade from before is the stacks migration's: scripts/film/migrate-grade-stacks.mjs)
   });
 
   test("a shot's sound cues name a hash, its build a file; both the shot and every version", async () => {
-    const s = await getShot(shot);
-    expect(s.spec.cues[0]).toEqual({ at: 0, kind: "sound", hash: H3, level: 0.5 });
-    expect(s.spec.world.build).toEqual({ commit: "abcdef1", hash: "abcdefgh", file: H4 });
-    expect(s.spec.meta.note).toBe(`cut from ${H1}`);
-    expect((await getShot(shot, 1)).spec.world.build.file).toBe(H4);
-    // the spec as the migration left it is a valid spec, and the same one: saving it makes no new version
-    expect((await saveShot(shot, "admin", { spec: s.spec })).version).toBe(2);
+    const specOf = async (q: string) => (await pg.query<{ spec: any }>(q, [shot])).rows[0]!.spec;
+    const s = await specOf("SELECT spec FROM shots WHERE id = $1");
+    expect(s.cues[0]).toEqual({ at: 0, kind: "sound", hash: H3, level: 0.5 });
+    expect(s.world.build).toEqual({ commit: "abcdef1", hash: "abcdefgh", file: H4 });
+    expect(s.meta.note).toBe(`cut from ${H1}`);
+    expect((await specOf("SELECT spec FROM shot_versions WHERE shot_id = $1 AND version = 1")).world.build.file).toBe(H4);
+    // the spec as the migration left it is a valid spec
+    expect(() => normalize(s)).not.toThrow();
   });
 
   test("the board's item: its hashes, its text, its deliveries and posts", async () => {
@@ -109,7 +104,7 @@ describe("0029: every CID becomes its hash", () => {
   });
 
   test("render jobs: their columns, reports and LUTs; a media proxy still waiting is closed", async () => {
-    const jobs = await listJobs({});
+    const { rows: jobs } = await pg.query<any>("SELECT kind, media_hash, status, note, output_hash, report FROM render_jobs");
     const proxy = jobs.find((j) => j.media_hash === H1)!;
     expect(proxy.status).toBe("failed");
     expect(proxy.note).toMatch(/Mac app/);

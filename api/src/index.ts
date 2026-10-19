@@ -19,9 +19,7 @@ import { approveDevice, deviceInfo, KeyError, keyHolder, redeemDevice, revokeKey
 import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice, VaultError } from "./vault";
 import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } from "./analysis";
 import { checkModels, pick } from "./prem";
-import { createTimeline, deleteTimeline, getTimeline, listTimelines, saveTimeline, TimelineError } from "./timelines";
-import { createShot, getShot, listShots, saveShot, ShotError, shotVersions } from "./shots";
-import { claimRender, listJobs, queueFrame, queueRender, queueStillOfFile, queueStillsOf, RenderError, rendersOf, reportRender } from "./renders";
+import { listTimelines } from "./timelines";
 import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries, fileStory, unfiledStories } from "./content";
 import { format } from "../../game/time";
 import { GameError, getGame, move, resetGame, takeSeat } from "./maiacity-v1.js";
@@ -119,16 +117,12 @@ async function signedIn(req: Request): Promise<{ id: string; role: string } | Re
 
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof TimelineError || e instanceof ShotError || e instanceof ContentError || e instanceof RenderError || e instanceof VaultError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof ContentError || e instanceof VaultError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
 
 const preflight = (req: Request) => new Response(null, { status: 204, headers: cors(req) });
-
-/** A timeline saved: the graded stills of the files whose look changed, queued (never failing the save itself). */
-const stills = (founderId: string, before: Parameters<typeof queueStillsOf>[1], after: Parameters<typeof queueStillsOf>[2]) =>
-  queueStillsOf(founderId, before, after).catch((e) => console.error("graded stills of a timeline:", e));
 
 // who signed up, as the API knows them: no profile, which lives in their avenDB human vault (Samuel 2026-10-18)
 const publicFounder = (f: { id: string; number: number | bigint; created: Date }) => ({
@@ -562,7 +556,8 @@ const server = Bun.serve({
         }
       },
     },
-    // The studio's timelines: edits over the vault's files, by hash.
+    // The legacy studio's timelines, read only: Studio 2 cuts its films in avenDB. The list stays while the board's
+    // scripts still find a film's legacy cut by its project and variant (api/scripts/day.ts, api/scripts/posts.ts).
     "/api/timelines": {
       OPTIONS: preflight,
       GET: async (req) => {
@@ -570,191 +565,9 @@ const server = Bun.serve({
         if (me instanceof Response) return me;
         return json(req, await listTimelines());
       },
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          const t = await createTimeline(me.id, (await readJson(req)) ?? {});
-          await stills(me.id, null, t);
-          return json(req, t, { status: 201 });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/timelines/:id": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await getTimeline(req.params.id));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-      PUT: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          const before = await getTimeline(req.params.id);
-          const t = await saveTimeline(req.params.id, (await readJson(req)) ?? {});
-          await stills(me.id, before, t);
-          return json(req, t);
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-      DELETE: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          await deleteTimeline(req.params.id);
-          return new Response(null, { status: 204, headers: cors(req) });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
     },
 
-    // World shots: shots of Sandbox 4 kept as data (game/film/shot.js), versioned — a world clip names one.
-    "/api/shots": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        return json(req, await listShots({ project: new URL(req.url).searchParams.get("project") }));
-      },
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          // a shot version a timeline plays gets its HD proxy from the Mac app (vault/app/src/world.rs), not a job here
-          return json(req, await createShot(me.id, (await readJson(req)) ?? {}), { status: 201 });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/shots/:id": {
-      OPTIONS: preflight,
-      // ?version=n: the shot as it was at that version
-      GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          const v = new URL(req.url).searchParams.get("version");
-          return json(req, await getShot(req.params.id, v === null ? undefined : Number(v)));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-      PUT: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await saveShot(req.params.id, me.id, (await readJson(req)) ?? {}));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/shots/:id/versions": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await shotVersions(req.params.id));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-
-    // Exporting a timeline: the studio queues a render; a worker claims it, reports, and hands back the film.
-    "/api/timelines/:id/renders": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        return json(req, await rendersOf(req.params.id));
-      },
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await queueRender(me.id, req.params.id, ((await readJson(req)) ?? {}) as { delivery?: unknown }), { status: 201 });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/renders/claim": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        const job = await claimRender();
-        return job ? json(req, job) : new Response(null, { status: 204, headers: cors(req) });
-      },
-    },
-    "/api/renders/:id": {
-      OPTIONS: preflight,
-      PUT: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await reportRender(req.params.id, (await readJson(req)) ?? {}));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-
-    // The worker's other jobs: hero frames. Proxies — a file's and a world shot's — and the viewer's LUTs are the Mac
-    // app's work, not jobs here.
-    // GET /api/film/jobs?kind=&timeline=&shot= → the latest jobs (the render queue).
-    "/api/film/jobs": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        const url = new URL(req.url);
-        const q = (k: string) => url.searchParams.get(k) ?? undefined;
-        return json(req, await listJobs({ kind: q("kind"), timeline: q("timeline"), shot: q("shot"), limit: Number(q("limit")) || undefined }));
-      },
-    },
-    // A file's grading still was made again (the Mac app, at a new moment): its graded still, made again through the
-    // clip that last graded it
-    "/api/media/:hash/still": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          const job = await queueStillOfFile(me.id, req.params.hash);
-          return job ? json(req, job, { status: 201 }) : new Response(null, { status: 204, headers: cors(req) });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    // A hero frame: one frame of the timeline at { t, shape }, rendered by the worker at full precision (Grade tab)
-    "/api/timelines/:id/frames": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await queueFrame(me.id, req.params.id, ((await readJson(req)) ?? {}) as { t?: unknown; shape?: unknown }), { status: 201 });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-
-    // A film's posts, written where the film is made (the same key as the render worker)
+    // A legacy cut's posts onto its film's item on the board (api/scripts/posts.ts)
     "/api/timelines/:id/posts": {
       OPTIONS: preflight,
       PUT: async (req) => {
