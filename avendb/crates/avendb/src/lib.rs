@@ -38,6 +38,7 @@
 //! | CG cap groups and the gate | `rules`: a cap group, a name, caps (an op over a slice each) and the groups it includes, an entry of its vault, versioned; `policy`: a share that names a cap group, judged by the version in force where each write comes, an invite key a newcomer's vault claims once (`Action::Claim`); `gate`: what a server takes of a batch, a new person's vault only with the invite it claims, a coop or an aven only an admin's; `engine`: `cap_groups`, `define_group`, `redefine_group`, `share_group` | CG1, G1, G2 |
 
 pub mod aip;
+pub mod backup;
 pub mod cast;
 pub mod data;
 pub mod doc;

@@ -1,0 +1,122 @@
+name: avenDB backups
+
+# avenDB's backups (avendb/docs/BACKUP.md), tested against Hetzner and never against the live server:
+#
+#   buckets  – make sure the bucket of snapshots (SNAPSHOTS, which the server backs up every vault into each day) and
+#              the test bucket (TEST_BUCKET) are there in hel1, beside the server's own bucket, with Object Lock
+#   recovery – the full recovery test (avendb-server's tests/backup.rs) against the test bucket: three days of backups,
+#              the daily check of every vault, a rehearsal of the coop, a restore after a disaster as the same device,
+#              and a device reading the files from the restored server, each step timed; each run under a prefix and a
+#              seal of its own, on test data alone: no live snapshot ever leaves Hetzner
+#
+# Both buckets get Object Lock as they are made, as no bucket can get it later. Every object version in the bucket of
+# snapshots is locked in compliance mode for 7 days, so a snapshot retention lets go of, or anything deleted by
+# mistake or by a stolen key, stays 7 more days; the test bucket's for 1 day, and what a run leaves goes after 2. They
+# are made with the project's S3 keys (HETZNER_S3_*), as the server's bucket was; the test runs seal under a seal of
+# their own, so the server's seal (AVENDB_BUCKET_SEAL) never reaches a runner.
+on:
+  pull_request:
+    paths:
+      - 'avendb/crates/avendb/src/backup.rs'
+      - 'avendb/crates/avendb/src/sync.rs'
+      - 'avendb/crates/avendb-net/src/backup.rs'
+      - 'avendb/crates/avendb-net/src/bucket.rs'
+      - 'avendb/crates/avendb-net/src/edits.rs'
+      - 'avendb/crates/avendb-net/src/shelf.rs'
+      - 'avendb/crates/avendb-server/**'
+      - '.github/workflows/avendb-backups.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'avendb/crates/avendb/src/backup.rs'
+      - 'avendb/crates/avendb-net/src/backup.rs'
+      - 'avendb/crates/avendb-server/**'
+      - '.github/workflows/avendb-backups.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: avendb-backups-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  SNAPSHOTS: maiacity-avendb-snapshots
+  TEST_BUCKET: maiacity-avendb-snapshots-test
+  S3_ENDPOINT: https://hel1.your-objectstorage.com
+  S3_REGION: hel1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  buckets:
+    name: Make sure the snapshot buckets are there, locked
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+      # Hetzner takes no default CRC32 checksums: one only where S3 asks for it
+      AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+      AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+    steps:
+      - name: Make each bucket with Object Lock, or check the one there
+        run: |
+          if [ -z "$AWS_ACCESS_KEY_ID" ] || [ -z "$AWS_SECRET_ACCESS_KEY" ]; then
+            echo "::error::No snapshot buckets: set HETZNER_S3_ACCESS_KEY and HETZNER_S3_SECRET_KEY."; exit 1
+          fi
+          s3() { aws s3api --endpoint-url "$S3_ENDPOINT" --region "$S3_REGION" --cli-connect-timeout 20 "$@"; }
+          locked() {
+            BUCKET=$1 DAYS=$2 LIFECYCLE=$3
+            if SAID=$(s3 head-bucket --bucket "$BUCKET" 2>&1); then
+              echo "$BUCKET is there"
+            elif printf '%s' "$SAID" | grep -q '404\|Not Found\|NoSuchBucket'; then
+              # Object Lock is chosen now or never
+              s3 create-bucket --bucket "$BUCKET" --object-lock-enabled-for-bucket >/dev/null \
+                || s3 create-bucket --bucket "$BUCKET" --object-lock-enabled-for-bucket \
+                     --create-bucket-configuration "LocationConstraint=$S3_REGION" >/dev/null
+              echo "$BUCKET is made, with Object Lock"
+            else
+              echo "::error::$BUCKET answers: $SAID (bucket names are unique across all of Hetzner: someone else's?)"; exit 1
+            fi
+            LOCK=$(s3 get-object-lock-configuration --bucket "$BUCKET" \
+              --query 'ObjectLockConfiguration.ObjectLockEnabled' --output text 2>&1 || true)
+            [ "$LOCK" = Enabled ] \
+              || { echo "::error::$BUCKET has no Object Lock ($LOCK), and no bucket can get it later: make it anew"; exit 1; }
+            s3 put-object-lock-configuration --bucket "$BUCKET" --object-lock-configuration \
+              "{\"ObjectLockEnabled\":\"Enabled\",\"Rule\":{\"DefaultRetention\":{\"Mode\":\"COMPLIANCE\",\"Days\":$DAYS}}}"
+            s3 put-bucket-lifecycle-configuration --bucket "$BUCKET" --lifecycle-configuration "$LIFECYCLE"
+            echo "What $BUCKET says:"
+            s3 get-object-lock-configuration --bucket "$BUCKET" --output json
+            s3 get-bucket-lifecycle-configuration --bucket "$BUCKET" --output json
+          }
+          # the snapshots: retention lets go of them, and what it let go of goes 7 days later
+          locked "$SNAPSHOTS" 7 '{"Rules":[
+            {"ID":"replaced-7-days","Status":"Enabled","Filter":{"Prefix":""},"NoncurrentVersionExpiration":{"NoncurrentDays":7}},
+            {"ID":"unfinished-2-days","Status":"Enabled","Filter":{"Prefix":""},"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":2}}]}'
+          # the test runs: what a run left goes after 2 days, what it deleted after 1
+          locked "$TEST_BUCKET" 1 '{"Rules":[
+            {"ID":"runs-2-days","Status":"Enabled","Filter":{"Prefix":""},"Expiration":{"Days":2}},
+            {"ID":"replaced-1-day","Status":"Enabled","Filter":{"Prefix":""},"NoncurrentVersionExpiration":{"NoncurrentDays":1}},
+            {"ID":"unfinished-1-day","Status":"Enabled","Filter":{"Prefix":""},"AbortIncompleteMultipartUpload":{"DaysAfterInitiation":1}}]}'
+
+  recovery:
+    name: Full recovery test on the test bucket
+    needs: buckets
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: avendb
+      - name: Back up, check, rehearse and restore against the test bucket
+        working-directory: avendb
+        env:
+          AVENDB_TEST_BUCKET: ${{ env.TEST_BUCKET }}
+          AVENDB_TEST_BUCKET_ENDPOINT: ${{ env.S3_ENDPOINT }}
+          AVENDB_TEST_BUCKET_REGION: ${{ env.S3_REGION }}
+          AVENDB_TEST_BUCKET_ACCESS_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+          AVENDB_TEST_BUCKET_SECRET_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+        run: cargo test --locked -p avendb-server --test backup -- --nocapture

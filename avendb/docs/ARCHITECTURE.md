@@ -1965,6 +1965,25 @@ all older than that starts a new one beside them. Tests hold `FLOOR` at 18 and t
 A server with no bucket runs on a folder shelf, laid out the same. A node with no shelf at all keeps its blobs in
 memory and nothing past its end; only tests run one.
 
+### Snapshots
+
+The server's bucket holds what is true now. Each day the server also backs up every vault into a bucket of snapshots
+of its own, `maiacity-avendb-snapshots` ([BACKUP.md](BACKUP.md), `spec/AvenDB/Backup.lean`, B1 to B9):
+
+- **A folder per vault**, `vaults/<vault>/`, laid out as a shelf (`bucket::shelf_at`), sealed under a key derived from
+  the seal and the vault. Nothing clears it; only retention deletes in it.
+- **By frontiers.** A backup asks the vault's snapshot, `respond` for the whole vault, for what lies beyond the
+  frontiers its newest manifest names, as a device asks a peer (T19), and adds one pack of that, in the format a node
+  keeps its own edits in. It copies only the keys and file blobs the folder lacks. Each snapshot is one manifest and
+  one HashSeq root of every blob it names. At 64 packs, the next is made whole.
+- **Back as a node.** A restore copies a snapshot's blobs onto a new shelf and puts the first head of its packs, so a
+  node started there takes back every edit, each checked again, each log as the manifest names it (B9); a restore
+  after a disaster brings every vault and the server's secret back on a new shelf, in a new folder, never the live
+  server's.
+- **Checked each day, restoring nothing.** After each backup the server lists the bucket for every blob its snapshots
+  name, gives the newest snapshot's edits back to a device in memory, each checked again (B9), and reads each file's
+  blobs on one day in 30, so terabytes are read through once a month.
+
 ## 15. The Lean model: what guards what
 
 The model is Lean 4 with no Mathlib (`spec/`). `lake build` checks every proof, every scenario (`#guard` in

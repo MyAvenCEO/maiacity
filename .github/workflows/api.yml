@@ -267,8 +267,9 @@ jobs:
           sudo rm -f "$DATA_MOUNT/.avendb_setup_code"
           # avenDB's image is avendb.yml's to set: kept as it is, and its server runs once there is one
           AVI=\$(grep '^AVENDB_IMAGE=' .env 2>/dev/null | cut -d= -f2- || true)
-          # and so is its bucket: without these lines its server starts on its volume, a shelf and a device nobody knows
-          AVB=\$(grep '^AVENDB_BUCKET' .env 2>/dev/null || true)
+          # and so are its bucket and its bucket of snapshots: without these lines its server starts on its volume, a
+          # shelf and a device nobody knows, and backs nothing up
+          AVB=\$(grep -E '^AVENDB_(BUCKET|SNAPSHOTS)' .env 2>/dev/null || true)
           PROFILES="${S3_ACCESS_KEY:+vault}"
           if [ -n "\$AVI" ]; then PROFILES="\${PROFILES:+\$PROFILES,}avendb"; fi
           cat > .env <<EOF2

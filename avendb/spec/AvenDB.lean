@@ -17,3 +17,5 @@ import AvenDB.Links
 import AvenDB.Rules
 import AvenDB.Schemas
 import AvenDB.OpsVectors
+import AvenDB.Backup
+import AvenDB.BackupVectors

@@ -1054,3 +1054,149 @@ fn the_lens_vectors() {
         }
     }
 }
+
+fn backup_vectors() -> Value {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../spec/vectors/backups.json");
+    serde_json::from_str(&std::fs::read_to_string(path).expect("the backup vectors: run `lake exe vectors` in avendb/spec"))
+        .unwrap()
+}
+
+/// The edits of a sync case, with its names.
+fn sync_case(case: &Value) -> (Names, Vec<Edit>) {
+    let mut names = Names::default();
+    let mut all = vec![];
+    for v in list(&case["edits"]) {
+        let mut edit = names.edit_of(v, num(&v["depth"]));
+        edit.parents = names.edits(&v["parents"]);
+        names.created(v, &edit, true);
+        all.push(edit);
+    }
+    (names, all)
+}
+
+/// The backup vectors (`spec/vectors/backups.json`, `Backup.lean`): for each sync case and each vault of its view, the
+/// vault's snapshot (`backup::snapshot`) is the model's edits, in its order, and brings the model's files (B6, B1).
+#[test]
+fn each_vault_s_snapshot_is_the_lean_model_s() {
+    let (vectors, backups) = (vectors(), backup_vectors());
+    let mut checked = 0;
+    for case in list(&vectors["syncs"]) {
+        let name = case["name"].as_str().unwrap();
+        let (names, all) = sync_case(case);
+        for s in list(&backups["snapshots"]).iter().filter(|s| s["case"] == name) {
+            let v = names.vault(&s["vault"]);
+            let snap = avendb::backup::snapshot(&all, v);
+            let what = format!("{name}: the snapshot of vault {}", s["vault"]);
+            assert_eq!(snap.iter().map(Edit::id).collect::<Vec<_>>(), names.edits(&s["edits"]), "{what}");
+            let files: Vec<FileRoot> = list(&s["files"]).iter().map(file).collect();
+            assert_eq!(avendb::backup::files(&snap), files, "{what}: its files");
+            checked += 1;
+        }
+    }
+    assert!(checked >= 30, "the model takes a snapshot of every vault of every sync case: {checked}");
+}
+
+/// A manifest as the replay keeps it: when, the packs it names, its files, and what it asks by.
+struct Manifest {
+    time: u64,
+    packs: Vec<u64>,
+    ask: avendb::sync::Ask,
+}
+
+/// The backup vectors' runs: a vault's folder through backups and retentions, each backup planned by
+/// `backup::plan` from the newest manifest's frontiers and loose edits, as the Lean model's (B1, B2, B4, B7 to B9): the
+/// manifest it builds on, the pack it adds, the manifest it writes (its packs, files, frontiers and loose edits), and
+/// after each step, the folder's packs and what each manifest restores.
+#[test]
+fn each_backup_builds_on_its_folder_as_the_lean_model_s() {
+    let (vectors, backups) = (vectors(), backup_vectors());
+    assert_eq!(num(&backups["runs"][0]["most"]) as usize, avendb::backup::MOST_PACKS, "the most packs a manifest names");
+    let mut steps = 0;
+    for run in list(&backups["runs"]) {
+        let name = run["name"].as_str().unwrap();
+        let case = list(&vectors["syncs"]).iter().find(|c| c["name"] == run["case"]).expect("the run's sync case");
+        let (names, all) = sync_case(case);
+        let (mut packs, mut manifests): (Vec<(u64, Vec<EditId>)>, Vec<Manifest>) = (vec![], vec![]);
+        for (n, step) in list(&run["steps"]).iter().enumerate() {
+            let what = format!("{name}, step {n}");
+            if let Some(b) = step["step"].get("backup") {
+                let places: HashSet<u64> = list(&b["held"]).iter().map(num).collect();
+                let held: Vec<Edit> =
+                    all.iter().enumerate().filter(|(i, _)| places.contains(&(*i as u64))).map(|(_, e)| e.clone()).collect();
+                let snap = avendb::backup::snapshot_places(&held, &avendb::policy::view(&held), names.vault(&b["vault"]));
+                let snap_edits: Vec<Edit> = snap.iter().map(|&i| held[i].clone()).collect();
+                let newest = manifests.last();
+                let compact = b["compact"].as_bool().unwrap() || newest.is_some_and(|m| avendb::backup::due(m.packs.len()));
+                let plan = avendb::backup::plan(&held, &snap, newest.map(|m| &m.ask), compact);
+                let base = plan.base.then(|| newest.expect("a manifest to build on").time);
+                assert_eq!(base, step["base"].as_u64(), "{what}: the manifest it builds on");
+                let news: Vec<EditId> = plan.news.iter().map(|&i| held[i].id()).collect();
+                let mut named: Vec<u64> = match plan.base {
+                    true => packs.iter().map(|(id, _)| *id).filter(|id| newest.unwrap().packs.contains(id)).collect(),
+                    false => vec![],
+                };
+                match &step["added"] {
+                    Value::Null => assert!(news.is_empty(), "{what}: it adds no pack"),
+                    added => {
+                        let id = packs.iter().map(|(id, _)| *id).max().unwrap_or(0) + 1;
+                        assert_eq!(id, num(&added["id"]), "{what}: the new pack's id");
+                        assert_eq!(news, names.edits(&added["edits"]), "{what}: the new pack's edits");
+                        packs.push((id, news));
+                        named.push(id);
+                    }
+                }
+                let m = &step["manifest"];
+                assert_eq!(num(&m["time"]), num(&b["time"]), "{what}");
+                assert_eq!(named, list(&m["packs"]).iter().map(num).collect::<Vec<_>>(), "{what}: the packs it names");
+                let files: Vec<FileRoot> = list(&m["files"]).iter().map(file).collect();
+                assert_eq!(avendb::backup::files(&snap_edits), files, "{what}: its files");
+                let ask = avendb::sync::asks_by_frontiers(&snap_edits);
+                let fronts = list(&m["fronts"]);
+                assert_eq!(ask.haves.len(), fronts.len(), "{what}: the logs it names");
+                for f in fronts {
+                    let l = names.log(&f["log"]);
+                    let ours = ask.haves.get(&l).unwrap_or_else(|| panic!("{what}: no frontier of {l:?}")).clone();
+                    same_set(ours, names.edits(&f["frontier"]), &format!("{what}: the frontier of {l:?}"));
+                }
+                same_set(ask.loose.clone(), names.edits(&m["loose"]), &format!("{what}: its loose edits"));
+                manifests.push(Manifest { time: num(&b["time"]), packs: named, ask });
+            } else {
+                let now = num(&step["step"]["retain"]);
+                let times: Vec<u64> = manifests.iter().map(|m| m.time).collect();
+                manifests.retain(|m| avendb::backup::keeps(&avendb::backup::Keep::default(), now, &times, m.time));
+                packs.retain(|(id, _)| manifests.iter().any(|m| m.packs.contains(id)));
+            }
+            let want: Vec<(u64, Vec<EditId>)> =
+                list(&step["packs"]).iter().map(|p| (num(&p["id"]), names.edits(&p["edits"]))).collect();
+            assert_eq!(packs, want, "{what}: the folder's packs");
+            let restores = list(&step["restores"]);
+            assert_eq!(manifests.len(), restores.len(), "{what}: the manifests kept");
+            for (m, r) in manifests.iter().zip(restores) {
+                assert_eq!(m.time, num(&r["time"]), "{what}");
+                let restored: Vec<EditId> =
+                    packs.iter().filter(|(id, _)| m.packs.contains(id)).flat_map(|(_, e)| e.iter().copied()).collect();
+                same_set(restored, names.edits(&r["edits"]), &format!("{what}: what the manifest of {} restores", m.time));
+            }
+            steps += 1;
+        }
+    }
+    assert!(steps >= 15, "the runs' steps: {steps}");
+}
+
+/// The backup vectors' retention cases: which snapshots a retention at some moment keeps (`backup::keeps`), by the
+/// default policy (B5).
+#[test]
+fn each_retention_keeps_the_snapshots_the_lean_model_keeps() {
+    let backups = backup_vectors();
+    let k = &backups["keep"];
+    let keep = avendb::backup::Keep::default();
+    assert_eq!((keep.recent, keep.days, keep.weeks), (num(&k["recent"]), num(&k["days"]), num(&k["weeks"])));
+    use avendb::backup::{DAY, MONTH, WEEK};
+    assert_eq!((DAY, WEEK, MONTH), (num(&k["day"]), num(&k["week"]), num(&k["month"])));
+    for (n, c) in list(&backups["retention"]).iter().enumerate() {
+        let times: Vec<u64> = list(&c["times"]).iter().map(num).collect();
+        let kept: Vec<bool> = times.iter().map(|&t| avendb::backup::keeps(&keep, num(&c["now"]), &times, t)).collect();
+        let want: Vec<bool> = list(&c["kept"]).iter().map(|b| b.as_bool().unwrap()).collect();
+        assert_eq!(kept, want, "retention case {n}");
+    }
+}

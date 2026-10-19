@@ -19,7 +19,7 @@
 //! version of an object for 7 days (Object Lock). Nothing deletes an object but the files a node lets go of
 //! (`Call::Drop`), a blob's outboard first, then its parts.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
 use std::io::{self, ErrorKind};
@@ -154,6 +154,12 @@ impl Sealed {
         Sealed { bucket: Arc::new(bucket), key: Arc::new(Secret::derive(SEAL, seal)) }
     }
 
+    /// `bucket`, each object sealed under a key derived from `seal` for `purpose`: the bucket of snapshots seals each
+    /// vault's folder under a key of its own (`backup`).
+    pub(crate) fn derived(bucket: Arc<dyn Bucket>, purpose: &str, seal: &[u8; 32]) -> Sealed {
+        Sealed { bucket, key: Arc::new(Secret::derive(purpose, seal)) }
+    }
+
     /// Puts `plain` under `name`, sealed.
     pub async fn put(&self, name: &str, plain: &[u8]) -> Result<()> {
         let mut rng = SeededRng::new("avenDB bucket nonce", &*crate::server::random()?);
@@ -204,10 +210,10 @@ fn failed(e: anyhow::Error) -> io::Error {
 }
 
 /// The shelf of a node whose shelf is a bucket: the bucket's generation in use, with what it writes staged in the
-/// node's folder and what it read of late cached there.
+/// node's folder and what it read of late cached there; or a vault's folder in the bucket of snapshots (`backup`).
 struct BucketShelf {
     bucket: Sealed,
-    /// The prefix of the generation in use, `g<n>/`.
+    /// The prefix of the generation in use, `g<n>/`, or of the vault's folder, `vaults/<vault>/`.
     root: String,
     staging: PathBuf,
     cache: PathBuf,
@@ -265,7 +271,14 @@ pub async fn shelf(bucket: Sealed, dir: &Path, budget: u64) -> Result<Shelf> {
         }
     };
     bucket.get(&format!("{GENERATIONS}g{n}")).await?.context("the bucket's generation, marked and gone")?;
-    let local = dir.join(format!("g{n}"));
+    shelf_at(bucket, format!("g{n}/"), &dir.join(format!("g{n}")), budget)
+}
+
+/// A shelf whose blobs and named objects are those in `bucket` under the prefix `root`, which ends in `/`, beside the
+/// folder `local`, which stages what it writes and caches `budget` bytes of parts at most: a generation's (`shelf`),
+/// or a vault's folder in the bucket of snapshots (`backup`), which is never cleared either. What the folder staged of
+/// blobs never finished, it drops.
+pub(crate) fn shelf_at(bucket: Sealed, root: String, local: &Path, budget: u64) -> Result<Shelf> {
     let (staging, cache) = (local.join("new"), local.join("cache"));
     if staging.exists() {
         fs::remove_dir_all(&staging)?;
@@ -286,7 +299,7 @@ pub async fn shelf(bucket: Sealed, dir: &Path, budget: u64) -> Result<Shelf> {
     }
     let on = Arc::new(BucketShelf {
         bucket,
-        root: format!("g{n}/"),
+        root,
         staging,
         cache,
         sizes: Mutex::default(),
@@ -363,7 +376,7 @@ impl BucketShelf {
 
     /// The name of part `n` of blob `hash`.
     fn part_name(&self, hash: &Hash, n: u64) -> String {
-        format!("{}{BLOBS}{}/{n:06x}", self.root, hash.to_hex())
+        part_name(&self.root, hash, n)
     }
 
     /// The name of blob `hash`'s outboard, of a blob of `size` bytes.
@@ -570,6 +583,38 @@ impl BucketShelf {
             None => self.bucket.put(&name, bytes).await.map_err(failed),
         }
     }
+}
+
+/// The name of part `n` of blob `hash` on the shelf under `root`.
+fn part_name(root: &str, hash: &Hash, n: u64) -> String {
+    format!("{root}{BLOBS}{}/{n:06x}", hash.to_hex())
+}
+
+/// How many parts a blob of `size` bytes is kept in.
+pub(crate) fn parts(size: u64) -> u64 {
+    size.div_ceil(PART)
+}
+
+/// The parts the shelf under `root` in `bucket` holds of each blob, by the bucket's listing alone.
+pub(crate) async fn parts_held(bucket: &Sealed, root: &str) -> Result<HashMap<Hash, HashSet<u64>>> {
+    let prefix = format!("{root}{BLOBS}");
+    let mut held: HashMap<Hash, HashSet<u64>> = HashMap::new();
+    for name in bucket.list(&prefix).await? {
+        let part = name.strip_prefix(&prefix).and_then(|rest| rest.split_once('/'));
+        match part.and_then(|(hash, n)| Some((hash_of(hash)?, u64::from_str_radix(n, 16).ok()?))) {
+            Some((hash, n)) => {
+                held.entry(hash).or_default().insert(n);
+            }
+            None => tracing::warn!("avendb: {name} in the bucket is no blob's part"),
+        }
+    }
+    Ok(held)
+}
+
+/// Part `n` of blob `hash` on the shelf under `root` in `bucket`, opened, read from the bucket and never cached: none
+/// if the bucket holds none.
+pub(crate) async fn part_of(bucket: &Sealed, root: &str, hash: &Hash, n: u64) -> Result<Option<Vec<u8>>> {
+    bucket.get(&part_name(root, hash, n)).await
 }
 
 /// The blob an outboard's name says it is of: its hash and size.
