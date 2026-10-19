@@ -101,6 +101,9 @@ How a machine moves and how it is looked at are kept apart, on the bar and in th
   `batteryPack(v)`; the Power Cube's v1 and v2 are `$lib/actors/powercube.js`). Each upgrade one step, one version;
   fingerprint the old ones.
 - When a machine carries another, each of its versions names the version it carries (cube v8 = packs v7).
+- A new version of a machine the Maia City vault already holds reaches it as a proposal, never as a second entry:
+  once merged, `node scripts/propose-version.mjs machines/<id>@<v> --run` on the Mac proposes it on the asset's entry
+  and opens its AIP, which an owner puts forward and accepts in the Proposals app (`/app/aips/`).
 - A machine that was a Thing starts at v1 in the Machines; the Thing stays as it was for the games that use it
   (the V1 travel van and pickup are Things; `machines/van` and `machines/pickup` start at v1).
 
@@ -108,8 +111,9 @@ How a machine moves and how it is looked at are kept apart, on the bar and in th
 
 - Headless first: a throwaway Bun script inside the repo builds it, ticks it once, steps its solver through slider
   settings and the break, and prints the hero's reading, the labels' values and its outer box.
-- Then the real page as a mocked admin (asset-producer's `checking.md`): the whole, every move (mid-move too, not
-  only its ends) and every view, a close cut, the back and the break, like a critic.
+- Then the pictures as asset-producer's `checking.md` takes them (a throwaway route, since every `/app` page asks for
+  a passkey): the whole, every move (mid-move too, not only its ends) and every view, a close cut, the back and the
+  break, like a critic.
 - The size test, the versions test and the type check.
 
 ## Lessons kept

@@ -208,7 +208,7 @@ test("a file this device can't hand out fails, naming its ref and why, and nothi
 
 test("rows the acting vault doesn't read, another vault's database and other types hold no recipe", () => {
 	const d = deviceOf();
-	expect(recipeRows(d.db, VAULT).length).toBe(326);
+	expect(recipeRows(d.db, VAULT).length).toBe(327);
 	expect(recipeRows(d.db, 'ef'.repeat(32))).toEqual([]);
 	expect(recipeRows(null, VAULT)).toEqual([]);
 	// another vault's own: it reads only what is shared with it, or Public
@@ -222,7 +222,7 @@ test("rows the acting vault doesn't read, another vault's database and other typ
 	const notes = { ...d.db.rows[1], type: 'note', kind: 'note' };
 	const v = vaultSource(d.world, { ...d.db, rows: [...d.db.rows, notes] }, VAULT, ACTOR, d.readFile);
 	expect(v.refused).toEqual([]);
-	expect(Object.keys(v.index.recipes).length).toBe(325);
+	expect(Object.keys(v.index.recipes).length).toBe(326);
 	expect(() => v.hashOf('plants/apple@2')).toThrow(/plants\/apple@2 is not in the Maia City vault/);
 });
 
@@ -234,7 +234,7 @@ test('the shelf lists every recipe of the vault once, by group, asset, version a
 	expect(groups).toEqual(GROUPS.filter((g) => groups.includes(g)));
 	expect(new Set(groups)).toEqual(new Set(Object.values(made.index.recipes).map((r) => r.group)));
 	const items = shelf.flatMap((g) => g.assets.flatMap((a) => a.versions.flatMap((x) => x.recipes)));
-	expect(items.length).toBe(326);
+	expect(items.length).toBe(327);
 	expect(new Set(items.map((x) => x.hash))).toEqual(new Set(HASHES));
 	const entries = new Map(d.db.rows.map((r) => [r.record.card.recipe, r.entry]));
 	for (const x of items) {

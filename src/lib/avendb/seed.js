@@ -154,15 +154,19 @@ export const GONE = 'avendb:deleted';
 /**
  * The pieces among `all` vault `vault` never held: no entry of it, deleted or not, carries the piece's tag (an entry's
  * last op makes it, so a piece cut short is written again whole), and no schema of it, deleted or not, the piece's
- * title. One the vault deleted stays deleted (Samuel 2026-10-19: Maia City as it is is the truth).
+ * title; an asset's recipes, no recipe entry of it a ref of the asset at any version (`assetOps`): a version newer
+ * than the vault's goes in as a proposal (scripts/propose-version.mjs), never as a second entry of the asset. One the
+ * vault deleted stays deleted (Samuel 2026-10-19: Maia City as it is is the truth).
  * @param {import('./vaults.js').WorldView} world @param {string} vault @param {Piece[]} all
  */
 export function unseeded(world, vault, all) {
 	const ever = world.entries.filter((e) => e.vault === vault);
 	const have = new Set(ever.flatMap((e) => e.tags ?? []));
+	const recipes = ever.filter((e) => RECIPE_TYPES.includes(e.type ?? '')).flatMap((e) => e.tags ?? []);
 	const schema = (/** @type {string} */ title) => ever.some((e) => e.kind === 'schema' && e.title === title);
 	return all.filter((p) =>
-		p.kind === 'config-schema' ? !schema(CONFIG_SCHEMA) : p.kind === 'game-schema' ? !schema(GAME_SCHEMA) : !have.has(p.mark)
+		p.kind === 'config-schema' ? !schema(CONFIG_SCHEMA) : p.kind === 'game-schema' ? !schema(GAME_SCHEMA) :
+		p.kind === 'recipe' ? !recipes.some((t) => t.startsWith(refTag(`${p.name}@`))) : !have.has(p.mark)
 	);
 }
 
@@ -237,14 +241,27 @@ async function recipeOf(label, cards) {
 }
 
 /**
+ * Version `v` of asset `asset` (`group/id`, `assetsOf`) as the entry of an asset the vault already holds takes it from
+ * a proposal (scripts/propose-version.mjs): each of its recipes, its main's first, then its other variants', as
+ * `assetOps` writes them, with its label (`recipeOf`).
+ * @param {string} asset @param {number} v
+ */
+export async function versionOf(asset, v) {
+	const labels = (assetsOf()[asset] ?? []).find((ls) => INDEX.recipes[INDEX.labels[ls[0]]].v === v);
+	if (!labels) throw new Error(`${asset}@${v}: no version of the repo's`);
+	const { cards } = await CARDS['/src/lib/assets/sources/cards.json']();
+	return Promise.all(labels.map(async (label) => ({ label, ...(await recipeOf(label, cards)) })));
+}
+
+/**
  * The ops that write asset `asset` of the asset box (`group/id`, `assetsOf`) into vault `vault`, acting for it, as one
  * `recipe` entry with its history: its first version's main recipe created with its file, in one write; each later
  * version a proposal (`propose`) whose one write is its record and its file (`put_file` with its `line` and `value`),
  * merged into main (`merge`), which every variant follows; each variant a line beside main (`variant`), started from
  * the main version it first appears in, whose own write after each version is its record and file. Each file's text
- * in `file.text`, which goes beside the op, never in it (`beside`). The entry carries the tags of every recipe it holds
- * (its group, each ref), all but `mark`, its newest version's, which its last op adds: a piece cut short is written
- * again whole (`unseeded`).
+ * in `file.text`, which goes beside the op, never in it (`beside`). The entry carries the tags of every recipe it holds:
+ * its group from its first op, each ref (`mark`, its newest version's, among them) from its last, so a piece cut short
+ * names no recipe and is written again whole (`unseeded`).
  * @param {string} asset @param {string} vault @param {string} mark
  */
 async function assetOps(asset, vault, mark) {
@@ -284,9 +301,10 @@ async function assetOps(asset, vault, mark) {
 			write(/** @type {string} */ (lines.get(name)), label, entries[i + 1]);
 		}
 	}
-	tags.delete(mark);
-	ops[0].tags = [...tags].sort();
-	ops.push({ op: 'tag', entry: '$0', add: [mark], as });
+	tags.add(mark);
+	const refs = [...tags].filter((t) => t.startsWith(refTag(''))).sort();
+	ops[0].tags = [...tags].filter((t) => !refs.includes(t)).sort();
+	ops.push({ op: 'tag', entry: '$0', add: refs, as });
 	return ops;
 }
 

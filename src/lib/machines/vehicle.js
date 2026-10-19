@@ -821,6 +821,8 @@ export function roadLoad({ m, Crr, CdA, rho = RHO_AIR }, v, grade) {
  * @property {{ wb: number, h: number, front: number, loadFront: number, k: [number, number], travel: [number, number] }} axles
  *   the wheelbase and the centre of mass's height (m), the kerb's and the load's share on the front axle, each wheel's
  *   spring rate front and rear (N/m) and how far each may rise to its bump stop from the kerb's ride height (m)
+ * @property {(s: any, inp: { vSet: number, grade: number, load: number }) => number} [grip] the most the driven wheels
+ *   can push (N) before they spin, from their load and the road (without it they never spin)
  */
 
 /** "1st", "2nd" … @param {number} n */
@@ -859,6 +861,7 @@ export function vehicleSolver(V) {
 		fuel: 0,
 		l100: 0,
 		launch: false,
+		spin: false,
 		running: true,
 		stalled: false,
 		why: '',
@@ -909,8 +912,8 @@ export function vehicleSolver(V) {
 			const aWant = clamp((vT - s.v) / 2.5, -3, 1.5);
 			let mE = mEff(s.m, s.gear);
 			if (s.stalled) {
-				// stalled: the engine dead, the driver standing on the brakes; it stops and is held
-				s.rpm = approach(s.rpm, 0, 0.12, h);
+				// stalled: the engine dead (or idling, where the wheels spun), the driver standing on the brakes; it stops and is held
+				s.rpm = approach(s.rpm, s.running ? E.idle : 0, 0.12, h);
 				s.theta = s.Te = s.Fd = 0;
 				s.v = Math.max(0, s.v - 5 * h);
 				s.Fb = s.v > 0 ? s.m * 5 : Math.max(0, rl.climb);
@@ -950,7 +953,11 @@ export function vehicleSolver(V) {
 			// the throttle for the push it wants, the engine's torque from its curve, its friction when it is shut
 			const th = clamp(((Fwant * V.r) / (i * V.eta) + Tf) / (Tm + Tf));
 			const Te = th * (Tm + Tf) - Tf;
-			const Fd = Te >= 0 ? (Te * i * V.eta) / V.r : (Te * i) / (V.eta * V.r);
+			const Fe = Te >= 0 ? (Te * i * V.eta) / V.r : (Te * i) / (V.eta * V.r);
+			// the driven wheels' grip, where the vehicle gives it: beyond it they spin and push no more
+			const Fg = V.grip ? V.grip(s, inp) : Infinity;
+			const spin = Fe > Fg;
+			const Fd = Math.min(Fe, Fg);
 			// the brakes: when even the shut throttle pushes more than the speed wants
 			const Fb = aWant < 0 ? Math.max(0, Fd - Fwant) : 0;
 			const net = Fd - Fb - rl.F;
@@ -960,16 +967,17 @@ export function vehicleSolver(V) {
 			s.Te = Te;
 			s.Fd = Fd;
 			s.Fb = Fb;
+			s.spin = spin;
 			s.rpm = s.launch ? E.launch : rpmOf(s.v, s.gear);
 			// it cannot: lugged below its stall speed in first, or it cannot pull away at all on the slipping clutch
 			const lugged = !s.launch && s.gear === 1 && s.rpm < E.stall && th > 0.9;
 			const noPull = s.launch && s.v <= 0 && net <= 0 && th > 0.99;
 			if (lugged || noPull) {
 				s.stalled = true;
-				s.running = false;
-				s.why = lugged ? 'lugged' : 'pull';
+				s.running = spin;
+				s.why = spin ? 'grip' : lugged ? 'lugged' : 'pull';
 				s.need = rl.F;
-				s.can = fMax(1, s.v);
+				s.can = spin ? Fg : fMax(1, s.v);
 				s.at = { vSet: inp.vSet, grade: inp.grade, load: inp.load };
 			}
 		}
@@ -978,7 +986,7 @@ export function vehicleSolver(V) {
 		s.Pw = s.Fd * s.v;
 		s.Pe = s.stalled ? 0 : s.Te * w;
 		const overrun = s.theta < 0.01 && s.rpm > E.idle * 1.3;
-		const indicated = s.stalled || overrun ? 0 : Math.max(0, s.Te + tfric(s.rpm)) * w;
+		const indicated = (s.stalled && !s.running) || overrun ? 0 : Math.max(0, s.Te + tfric(s.rpm)) * w;
 		s.fuel = (indicated * E.bsfc) / 3.6e6 / FUELS[E.fuel].rho * 3600; // L/h
 		s.l100 = s.v > 0.5 ? (s.fuel / (s.v * 3.6)) * 100 : 0;
 		// the axles' loads: the kerb's and the load's shares, and what the climb and the push move to the rear

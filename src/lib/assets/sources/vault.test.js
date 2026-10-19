@@ -80,7 +80,7 @@ test("the vault's index is the repo's: every version and variant, its latest, it
 	const v = vaultOf();
 	expect(v.refused).toEqual([]);
 	expect(v.index).toEqual(made.index);
-	expect(Object.keys(v.index.recipes).length).toBe(326);
+	expect(Object.keys(v.index.recipes).length).toBe(327);
 	expect(v.reads).toEqual([]);
 });
 
@@ -111,9 +111,9 @@ test('a ref names the same recipe in the vault as in the repo, however it is nam
 test("each recipe's source is its entry's file, read once and held to its hash", async () => {
 	const v = vaultOf();
 	for (const hash of Object.keys(made.index.recipes)) expect(await v.recipeAt(hash)).toEqual({ hash, code: FILES[hash] });
-	expect(v.reads.length).toBe(326);
+	expect(v.reads.length).toBe(327);
 	await v.recipeAt(hashOf('actors/stand-in@11'));
-	expect(v.reads.length).toBe(326);
+	expect(v.reads.length).toBe(327);
 	// the stand-in's head, over a code entry's 200,000 characters, comes whole from its file
 	expect((await v.recipeAt(hashOf('actors/stand-in@11'))).code.length).toBeGreaterThan(300000);
 });
@@ -240,7 +240,7 @@ test("a row that doesn't check is left out, saying why, and the ref it would nam
 		expect(err.message).toContain('plants/apple@2');
 		// the rest of the vault reads as before
 		expect(v.hashOf('plants/apple@1')).toBe(made.index.labels['plants/apple@1']);
-		expect(Object.keys(v.index.recipes).length).toBe(325);
+		expect(Object.keys(v.index.recipes).length).toBe(326);
 	}
 	// what is no row at all is left out the same way, and takes nothing with it
 	const v = vaultOf([null, 42, 'plants/apple@2', {}, { type: 'recipe', record: null }, ...ROWS]);
@@ -333,6 +333,32 @@ test('an asset is one entry: each version and variant it brought is a recipe of 
 	const w = vaultRecipes(rows.map((r) => (r === goat ? moved : r)), { read: async () => undefined });
 	expect(w.index.first['actors/goat@2']).toBeUndefined();
 	expect(w.hashOf('actors/goat@2:goat-boer')).toBe(hashOf('actors/goat@2:goat-boer'));
+});
+
+test('a version proposed and accepted onto an asset’s main line counts without a tag of its own, nowhere else', () => {
+	const { rows } = assetRows();
+	// the truck's entry as the seed wrote it at v1, its v2 then accepted onto main by a proposal (no tag op)
+	const truck = rows.find((r) => r.entry === 'asset-machines/truck');
+	expect(Math.max(...truck.brought.map((b) => b.version))).toBe(2);
+	const v2 = (t) => /^ref:machines\/truck@2(:|$)/.test(t);
+	const accepted = { ...truck, tags: truck.tags.filter((t) => !v2(t)) };
+	expect(accepted.tags.length).toBeLessThan(truck.tags.length);
+	const v = vaultRecipes(rows.map((r) => (r === truck ? accepted : r)), { read: async () => undefined });
+	expect(v.refused).toEqual([]);
+	expect(v.index).toEqual(made.index);
+	expect(v.hashOf('machines/truck')).toBe(hashOf('machines/truck@2:truck'));
+	expect(v.hashOf('machines/truck@1')).toBe(hashOf('machines/truck@1:truck'));
+	// on a variant's line, a version still needs its own tag
+	const lined = { ...accepted, brought: accepted.brought.map((b) => (b.version === 2 ? { ...b, line: 'line-x' } : b)) };
+	const w = vaultRecipes(rows.map((r) => (r === truck ? lined : r)), { read: async () => undefined });
+	expect(w.refused.some((x) => x.includes('machines/truck@2:truck') && x.includes('not tagged'))).toBe(true);
+	expect(() => w.hashOf('machines/truck@2')).toThrow(NotInVault);
+	// an asset's entry never holds another asset's recipe untagged
+	const pickup = rows.find((r) => r.entry === 'asset-machines/pickup').brought[0];
+	const smuggled = { ...accepted, brought: [...accepted.brought, { ...pickup, edit: 'w-smuggled' }] };
+	const x = vaultRecipes(rows.filter((r) => r.entry !== 'asset-machines/pickup').map((r) => (r === truck ? smuggled : r)), { read: async () => undefined });
+	expect(x.refused.some((y) => y.includes('machines/pickup@1') && y.includes('not tagged'))).toBe(true);
+	expect(() => x.hashOf('machines/pickup@1')).toThrow(NotInVault);
 });
 
 test("a vault's ref is still refused: avenDB storage is not switched on", () => {
