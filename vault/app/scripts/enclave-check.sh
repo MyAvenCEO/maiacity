@@ -37,11 +37,17 @@ fn ask(json: &str) -> String {
     }
 }
 
-/// The string at `key` in `answer`, as its JSON has it.
+/// The string at `key` in `answer`, as its JSON has it (a `/` written `\/`).
 fn field<'a>(answer: &'a str, key: &str) -> &'a str {
     let tag = format!("\"{key}\":\"");
     let Some(start) = answer.find(&tag).map(|i| i + tag.len()) else { return "" };
     answer[start..].find('"').map_or("", |end| &answer[start..start + end])
+}
+
+/// How many bytes the base64 at `key` in `answer` holds.
+fn size(answer: &str, key: &str) -> usize {
+    let text = field(answer, key).replace("\\/", "/");
+    (text.len() / 4 * 3).saturating_sub(text.chars().rev().take_while(|&c| c == '=').count())
 }
 
 fn main() {
@@ -58,9 +64,9 @@ fn main() {
     }
     let sizes: Vec<_> = ["public", "key", "kem", "sealed", "secret", "sig"]
         .iter()
-        .map(|k| format!("{k} {}", field(&made, k).len()))
+        .map(|k| format!("{k} {}", size(&made, k)))
         .collect();
-    println!("made, base64 lengths: {}", sizes.join(", "));
+    println!("made, bytes: {}", sizes.join(", "));
     let sign = |why: &str| {
         let (key, kem, sealed) = (field(&made, "key"), field(&made, "kem"), field(&made, "sealed"));
         let ask_text = format!(r#"{{"sign":"{challenge}","key":"{key}","kem":"{kem}","sealed":"{sealed}","why":"{why}"}}"#);
@@ -69,7 +75,8 @@ fn main() {
         if !ok {
             println!("{why}: FAILED: {answer}");
         }
-        ok && field(&answer, "sig").len() == field(&made, "sig").len()
+        // an ML-DSA-65 signature is 3309 bytes
+        ok && size(&answer, "sig") == 3309
     };
     let first = sign("sign with the test key on the same touch");
     let second = sign("sign with the test key again");
