@@ -484,10 +484,10 @@ standing grant that each vault founded later follows.
 ## 4. Edits, logs and the replay
 
 **An edit** is `{parents, depth, author, cosigners, action}` (`policy::Edit`). Its bytes have one canonical encoding,
-which starts with the version byte 10 (`encode::VERSION`, `crates/avendb/src/encode.rs`). Its id is the BLAKE3 hash
+which starts with the version byte 11 (`encode::VERSION`, `crates/avendb/src/encode.rs`). Its id is the BLAKE3 hash
 of those bytes, the name iroh-blobs gives the same bytes, and its signatures sign the id (`crates/avendb/src/sign.rs`).
 
-**Seven kinds.** The action's first byte is its kind (`policy::Action`, `Action` in `spec/AvenDB/Step.lean`):
+**Eight kinds.** The action's first byte is its kind (`policy::Action`, `Action` in `spec/AvenDB/Step.lean`):
 
 | Tag | Kind | What it does | Log | Removal |
 |---|---|---|---|---|
@@ -498,6 +498,7 @@ of those bytes, the name iroh-blobs gives the same bytes, and its signatures sig
 | 4 | Write | An encrypted change of one entry, and the files it brings | The entry | No |
 | 5 | Mark | An entry's audience, its wants, or both | The entry | With an audience |
 | 6 | Keys | The real boxes of one key | The key's family | No |
+| 12 | Claim | A vault takes a share made to an invite key | The share's | No |
 
 Every other tag decodes as unknown. The tags of earlier kinds (7 a checkpoint, 8 a lane publish, 9 and 10 a sync rule
 and its end, 11 a pick) went into the signature, the write, the share, the revocation and the mark, and are never used
@@ -507,9 +508,9 @@ of their own under Share and Revoke for the same reason: the functions that read
 standing consent, the pass key) find the class in the tag.
 
 **Logs.** Every edit belongs to one log (`sync::LogId`): a vault's (its genesis, settings, owners, devices and seed
-keys), a share's (the share, its revocation, its keys), an audience's (its keys) or an entry's (its writes, marks and
-keys). An edit names as its parents the frontier of its own log as its device held it. Its depth is one
-more than the deepest edit its device held, across logs, so depth is one clock for the whole replay.
+keys), a share's (the share, its revocation, its claim, its keys), an audience's (its keys) or an entry's (its writes,
+marks and keys). An edit names as its parents the frontier of its own log as its device held it. Its depth is one more
+than the deepest edit its device held, across logs, so depth is one clock for the whole replay.
 
 **Closed part and frontier.** A device's closed part of a log is the edits whose whole past it holds. Its frontier is
 the closed edits nothing else builds on. An edit whose parent hasn't arrived waits outside, with whatever builds on
@@ -580,7 +581,8 @@ slice.rs`). A share whose selector is `all` is wide. Type, author, entry and cre
 share reaches each entry tagged so now and later, and lets go of one untagged.
 
 The selector, the share's name and its ops travel **sealed** in `select`: to the seed of the vault it is over, of its
-grantee and of its issuer. In the clear, `select` carries only a salted hash of the ops (`rules::Grant::commitment`).
+grantee (at Read or more) and of its issuer. A share to Everyone or to an invite key carries them in the clear
+(`Lab::seal_select`). Else, in the clear, `select` carries only a salted hash of the ops (`rules::Grant::commitment`).
 So a relay sees who holds which level, and nothing of what it picks or allows.
 
 ### Chains (T22)
@@ -629,8 +631,9 @@ follow it by name (section 12, interest and follow).
 A cap is one op over one slice (`rules::Cap`). A **cap group** is a named, versioned entry of its vault, of type
 `capgroup`: `{name, caps, includes}`, where `includes` names other cap groups of the same vault by their entries
 (`rules::CapGroup`, `CapGroup` in `Rules.lean`). Citizen is `{name: "Citizen", caps: [the game's moves], includes:
-[Traveler]}`. Owner, Editor, Suggester and Viewer are cap groups the engine fixes (`Group::to_cap_group`); every other
-one a vault writes, with `define_group` and `redefine_group` (section 8).
+[Traveler]}`. Owner, Editor, Suggester, Viewer, Public, Backup and Relay are cap groups the engine fixes
+(`rules::groups`, `Group::to_cap_group`); every other one a vault writes, with `define_group` and `redefine_group`
+(section 8).
 
 - **A share names a group, never copies it.** A group share is `{over, who, group}` at the level its caps need
   (`Lab::issue_group`). It carries no ops of its own: whoever judges a write through it reads the version of the
@@ -665,12 +668,14 @@ server, takes a new vault only where it welcomes it once it holds the batch the 
 - a device vault, which its owner governs.
 
 From a batch it drops the geneses of the new vaults it doesn't welcome, again until none is left to drop, and takes the
-rest; what rested on a dropped genesis falls in replay (G2, `takes_welcome`). A newcomer's device can't reach the
-server with a claim through sync, as the claim lies in the share's log, which nothing the server reaches yet names. So
-sign-up is two sessions of its own (`avendb-net`): `INVITE`, where the server hands whoever names an unclaimed invite
-its card (`Lab::invite_card`), and `SIGN_UP`, where the device hands the server its vault's logs and its claims at once
-(`Lab::sign_up_card`), which the server refuses unless it takes every new human vault in them (`Node::claim_invite`).
-The server must hold Backup over `home` to hold its invites. A server nobody has claimed serves no vault, and takes any.
+rest. If a new vault it can't drop stays unwelcome, it takes nothing of the batch (`gate::takes`). What rested on a
+dropped genesis falls in replay (G2, `takes_welcome`). A newcomer's device can't reach the server with a claim through
+sync, as the claim lies in the share's log, which nothing the server reaches yet names. So sign-up is two sessions of
+its own (`avendb-net`): `INVITE`, where the server hands whoever names an unclaimed invite its card
+(`Lab::invite_card`), and `SIGN_UP`, where the device hands the server its vault's logs and its claims at once
+(`Lab::sign_up_card`), which the server refuses unless it takes every new human vault in them. A device does both in
+`Node::claim_invite`. The server must hold Backup over `home` to hold its invites. A server nobody has claimed serves no
+vault, and takes any.
 
 ### Servers: Relay or Backup
 
@@ -705,9 +710,9 @@ entries of V device `d` syncs, and how. It grants nothing, has no ops and is in 
 - **No keep share.** Where the keep shares a device syncs a vault by, its own or else its copy setting, are none or
   only Never ones, it falls back on its own setting (`Options::keep`): the server keeps every file whole, any other
   device fetches pieces as it reads them.
-- **Schemas ride along.** A Whole or Opened share also picks every schema and lens entry of V; a Never share that
-  isn't wide picks none (`keepPicks`, `policy::keep_picks`). So every reader of V syncs its schemas (section 9). A wide
-  Never share stops the device syncing V at all.
+- **Schemas ride along.** A Whole or Opened share also picks every schema, lens and cap group entry of V; a Never share
+  that isn't wide picks none (`keepPicks`, `policy::keep_picks`). So every reader of V syncs its schemas (section 9) and
+  its cap groups. A wide Never share stops the device syncing V at all.
 - **Changing one.** A keep share is never edited: it is revoked and issued again, which cuts nothing.
 - **Revoking one.** Only its issuer revokes it: not the vault it is over, which could otherwise force a device to
   sync all of it. A keep share's revocation cuts nothing: nothing rests on it, no audience holds one and no write
@@ -729,11 +734,12 @@ whose key only the shares still live get (section 6). What the revoked read befo
 
 A refused edit is never applied, and every peer refuses the same edits for the same reason (`policy::Refusal`). The
 share refusals are UnknownCap, NoCap, BadCap, CapToItself, PublicBeyondRead, WideOwner, BadParent, Revoked,
-KeepNeedsDevice, DeviceOnlyKeeps, NotDevice, InviteOwner and NotInvite. Governance has BadOwners, AlreadyMember, NotMember, NoConsent,
-BelowThreshold, BadThreshold, WrongOwnerKind, LastOwner, Cycle (T3), NotHuman, NoDevices and NotRoot. Marks have
-WrongVault, BadMark, BadAudience, SameAudience, BadWants and SameWants. Writes have NotActing, NotAllowed, NotAView,
-UnknownEntry, UnknownDep and NotOnProposal. The names stay those of the code (`UnknownCap`, `NoCap`, `BadCap`), which
-say share.
+KeepNeedsDevice, DeviceOnlyKeeps, NotDevice, InviteOwner and NotInvite. Governance has BadOwners, AlreadyMember,
+NotMember, NoConsent, BelowThreshold, BadThreshold, WrongOwnerKind, OneOwner, SecondAven, LastOwner, Cycle (T3),
+NotHuman, NoDevices and NotRoot. Marks have WrongVault, BadMark, BadAudience, SameAudience, BadWants and SameWants.
+Writes have NotActing, NotAllowed, NotAView, UnknownEntry, Reborn, NotItsId, NotFirst, UnknownStay, UnknownDep,
+NotOnProposal, NotAccepted and NotLanded. Keys have UnknownKey, FutureEpoch, NotEntitled, Unsealed and NotPublic. The
+names stay those of the code (`UnknownCap`, `NoCap`, `BadCap`), which say share.
 
 ## 6. Audiences, marks and keys
 
