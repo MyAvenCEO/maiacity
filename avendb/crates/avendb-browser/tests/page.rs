@@ -9,10 +9,10 @@
 //! world, shares a note and revokes the share, keeps her notes, makes the coop a co-owner and sets a threshold, each in
 //! a ceremony of her passkey, marks the note, asks `may` and sets how deep its queries read; her second links through
 //! the first one's code in one ceremony and edits it; both add a row three lists down in her outline at once, and each
-//! reads the other's, the two agreeing on the whole outline; the first closes, opens again from its shelf in one
-//! ceremony and edits the note once more, no other page holding its store while it runs; then she forgets it there, and
-//! its shelf is put aside, a new one in use, what the earlier avenDB kept still there. Each page reports its steps to the test
-//! over HTTP. `cargo test` skips it; the script runs it.
+//! reads the other's, the two agreeing on the whole outline; once the second read its row, the first closes, opens
+//! again from its shelf in one ceremony and edits the note once more, no other page holding its store while it runs;
+//! then she forgets it there, and its shelf is put aside, a new one in use, what the earlier avenDB kept still there.
+//! Each page reports its steps to the test over HTTP. `cargo test` skips it; the script runs it.
 
 use std::collections::VecDeque;
 use std::future::Future;
@@ -178,9 +178,12 @@ impl Tab {
         });
         let added = chromium.call(Some(&session), "WebAuthn.addVirtualAuthenticator", json!({ "options": options }));
         let authenticator = added.await["authenticatorId"].as_str().expect("an authenticator").to_owned();
+        // the site's page loaded, not the empty page a new tab holds until its first page comes, which reads as loaded
+        // too: a frame put in that one goes with it, or runs in no secure context
+        let loaded = format!("document.readyState === 'complete' && location.origin === {site:?}");
         let mut tab = Tab { chromium, session, authenticator, site, reports, early: VecDeque::new() };
         let end = Instant::now() + STEP;
-        while tab.eval("document.readyState").await != "complete" {
+        while tab.eval(&loaded).await != true {
             assert!(Instant::now() < end, "the tab loads");
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
@@ -324,7 +327,7 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     let code = server.offer().to_text();
     let params = [("store", "first"), ("name", "Eve's browser"), ("relay", &url), ("server", &code)];
     let then = [("page", "first"), ("write", MARCH), ("ops", "1"), ("reads", APRIL), ("nest", "111:Beans")];
-    let then = [&then[..], &[("close", "1")]].concat();
+    let then = [&then[..], &[("wait", "1"), ("close", "1")]].concat();
     tab.frame(&[&params[..], &then].concat()).await;
     let first = tab.expect("first", "started").await;
     eprintln!("Eve's first browser founded her vault in {} ms, in {} ceremonies", first["ms"], first["ceremonies"]);
@@ -406,6 +409,9 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     }).collect();
     rows.sort();
     assert_eq!(rows, [(111, "Beans"), (112, "Peas")], "each browser's row, three lists down: {mine}");
+    // the first closes once the second read its row too: a device closes with its edits on its shelf, and a peer that
+    // hasn't taken them yet takes them once it opens again
+    tab.eval("localStorage.setItem('go:first', '1')").await;
     let closed = tab.expect("first", "closed").await;
     eprintln!("Eve's first browser kept {} edits and {} McEliece keys in OPFS", closed["edits"], closed["keys"]);
     let shelf = closed["shelf"].as_array().expect("the names on its shelf");
