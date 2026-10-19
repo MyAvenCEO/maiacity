@@ -1,22 +1,26 @@
 #!/usr/bin/env node
-// The repo seed of the Maia City vault (src/lib/avendb/seed.js), as the ops a device would run into a vault that holds
-// none of it yet: a count of the pieces and ops by kind, and with a path, every op as JSON, each piece's ops in a list
-// of their own, `"$n"` in one naming the entry op n of its piece made. It writes nothing into any vault: the page does
+// The repo seed's top-up of the Maia City vault (src/lib/avendb/seed.js), as the ops a device would run into a vault
+// that holds none of it yet: a count of the pieces and ops by kind, and with a path, every op as JSON, each piece's ops
+// in a list of their own, `"$n"` in one naming the entry op n of its piece made. First, as a piece of kind `held`, what
+// the top-up's pieces need that Maia City holds since its first seed and the top-up never writes: the doc post type's
+// schema (src/lib/avendb/posttypes.js). It writes nothing into any vault: the page does
 // that (./src/lib/avendb/Account.svelte); avenDB's test `seed` runs these ops through the ops engine. An op that brings
 // a file (a recipe's create, a version's put_file) is the op the device takes, its length set as the session's `bring`
 // sets it, the file's text left out: the test brings that many bytes beside it, as a node does (`Node::run`).
 //
 //   node scripts/seed-ops.mjs [vault id, 64 hex] [out.json]
-import { writeFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'vite';
 
 const [vault = '0'.repeat(64), out] = process.argv.slice(2);
 const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', logLevel: 'error' });
 try {
 	const seed = await server.ssrLoadModule('/src/lib/avendb/seed.js');
+	const { POST_TYPES, postTypeSchema } = await server.ssrLoadModule('/src/lib/avendb/posttypes.js');
 	const pieces = seed.seedPieces();
+	const template = readFileSync(new URL(`..${POST_TYPES.doc.template}`, import.meta.url), 'utf8').trim();
 	/** @type {{ key: string, kind: string, ops: object[] }[]} */
-	const all = [];
+	const all = [{ key: 'post-type/doc', kind: 'held', ops: [{ op: 'create', vault, type: 'schema', value: postTypeSchema('doc', template), as: vault }] }];
 	let files = 0;
 	let bytes = 0;
 	for (const p of pieces) {

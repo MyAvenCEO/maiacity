@@ -106,55 +106,6 @@ export function run(event) {
 }
 `;
 
-/**
- * The code each of the content flow's functions ran before, by its name: avenCEO GmbH's entry of a function that
- * still holds one of these takes the app's code now (./Account.svelte), and one changed by hand keeps its own.
- * @type {Record<string, string[]>}
- */
-export const RETIRED = {
-	'Publish to Maia Universe': [
-		`// As an article enters Published: a post about it on the Maia Universe stream, and the pictures it shows that
-// go public with it. Each carries the stage's tag too, so the same Public share reaches it.
-export function run(event) {
-  const pictures = event.pictures.map((entry) => ({ op: 'tag', entry, add: [event.tag] }));
-  if (event.posts.length) return pictures;
-  const { entry, title, text } = event.item;
-  const post = { kind: 'post', title, text, channel: 'Devlog', about: entry, tags: [] };
-  return [{ op: 'create', type: 'post', tags: [event.tag], value: post }, ...pictures];
-}
-`,
-		`// As an article enters Published: a post about it on the Maia Universe stream. The post carries the stage's
-// tag too, so the same Public share reaches it.
-export function run(event) {
-  if (event.posts.length) return [];
-  const { entry, title, text } = event.item;
-  const post = { kind: 'post', title, text, channel: 'Devlog', about: entry, tags: [] };
-  return [{ op: 'create', type: 'post', tags: [event.tag], value: post }];
-}
-`
-	],
-	'Take it off Maia Universe': [
-		`// As an article leaves Published: its posts deleted, and they and the pictures only it shows no longer public.
-export function run(event) {
-  const off = (entry) => ({ op: 'tag', entry, remove: [event.tag] });
-  const posts = event.posts.flatMap((post) => [
-    { op: 'insert', entry: post, path: ['tags'], value: 'avendb:deleted' },
-    off(post)
-  ]);
-  return [...posts, ...event.pictures.map(off)];
-}
-`,
-		`// As an article leaves Published: its posts deleted, and no longer public.
-export function run(event) {
-  return event.posts.flatMap((post) => [
-    { op: 'insert', entry: post, path: ['tags'], value: 'avendb:deleted' },
-    { op: 'tag', entry: post, remove: [event.tag] }
-  ]);
-}
-`
-	]
-};
-
 /** @type {Fn[]} the content flow's functions */
 export const FUNCTIONS = [
 	{
