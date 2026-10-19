@@ -18,8 +18,8 @@
 	import { base } from '$app/paths';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { invites, makeInvite } from './access.svelte.js';
-	import { TRAVELER } from '$lib/avendb/capgroups.js';
+	import { holdsGroup, invites, makeInvite } from './access.svelte.js';
+	import { ADMIN, TRAVELER } from '$lib/avendb/capgroups.js';
 	import Icon from './Icon.svelte';
 	import { back, onDashboard, upFrom } from './back.svelte.js';
 	import { pill } from './pill.svelte.js';
@@ -126,14 +126,14 @@
 				{/each}
 				<hr />
 			{/if}
-			{#if founder.caps?.includes('humans:invite') && invites()}
+			{#if invites()}
 				<button role="menuitem" disabled={inviting} onclick={invite}>{inviting ? 'Making the invite…' : 'Invite a new traveler'}</button>
 				{#if invited}
 					<p class="group">Invite link copied</p>
 					<input class="invited" readonly value={invited} onfocus={(e) => e.currentTarget.select()} aria-label="The invite link" />
 				{/if}
 			{/if}
-			{#if founder.caps?.includes('media:admin')}<a role="menuitem" href="{base}/join/#terminal">Sign a terminal in</a>{/if}
+			{#if holdsGroup(ADMIN)}<a role="menuitem" href="{base}/join/#terminal">Sign a terminal in</a>{/if}
 			<a role="menuitem" href="{base}/">The public site</a>
 			<button role="menuitem" class="out" onclick={onsignout}>Sign out</button>
 		</div>

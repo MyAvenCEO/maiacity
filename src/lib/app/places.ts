@@ -1,21 +1,20 @@
-// The places of the signed-in app (/app/): what the dashboard shows as tiles and the nav pill links to. A place
-// with a capability is only for whoever holds it (the admin's tools). Every game, sandbox, world and game asset opens
-// by a cap group of the Maia City COOP vault the person holds in avenDB (Samuel 2026-10-19: "purely behind avenDB
-// native caps", no draft stage): the sandboxes, the worlds and the game assets to every Traveler, as every invited
-// human is, MaiaCity V1 to every Citizen, all of it to whoever acts for Maia City ($lib/app/access.svelte.js); anyone
-// else who has a link to one is told what opens it.
+// The places of the signed-in app (/app/): what the dashboard shows as tiles and the nav pill links to. Every game,
+// sandbox, world, game asset and admin's tool opens by a cap group of the Maia City COOP vault the person holds in
+// avenDB (Samuel 2026-10-19: "purely behind avenDB native caps", no draft stage, no Postgres role): the sandboxes, the
+// worlds and the game assets to every Traveler, as every invited human is, MaiaCity V1 to every Citizen, the admins'
+// own pages to every Admin, all of it to whoever acts for Maia City ($lib/app/access.svelte.js); anyone else who has
+// a link to one is told what opens it.
 import { base } from '$app/paths';
 import type { Founder } from '$lib/auth/client';
 import { FIRST, latestOf, versionsOf, type Change, type Version } from '$lib/app/versions.js';
 import { holdsGroup } from '$lib/app/access.svelte.js';
-import { CITIZEN, TRAVELER } from '$lib/avendb/capgroups.js';
+import { ADMIN, CITIZEN, TRAVELER } from '$lib/avendb/capgroups.js';
 import { gameOfRoute } from '../../../game/games.js';
 
 export type Place = {
 	href: string; label: string; icon: IconName; cap?: string; note?: string; /** a picture, by hash */ cover?: string
-	/** the cap group of the Maia City vault that opens it ($lib/avendb/capgroups.js); or, `admin`, only the API's admins
-	 *  open it: their tools, no game, sandbox or asset */
-	needs?: string; admin?: boolean
+	/** the cap group of the Maia City vault that opens it ($lib/avendb/capgroups.js): Admin for the admins' own tools */
+	needs?: string
 	/** a world's or sandbox's versions and history ($lib/app/versions.js), the latest its own; and what it is anchored to */
 	versions?: Version<string>[]; version?: number; anchors?: string
 	/** a game's id in the Maia City COOP vault (game/games.js), from its address */
@@ -76,21 +75,23 @@ export const GAME_WORLDS: Place[] = [...CITY, ...PLAY];
 
 export const holds = (founder: Founder | null, p: Place) => !p.cap || !!founder?.caps?.includes(p.cap);
 
-/** An admin: holds any of the admin's capabilities. */
-export const isAdmin = (founder: Founder | null) => !!founder?.caps?.some((c) => c.endsWith(':admin'));
+/** An admin: holds Maia City's Admin cap group, or acts for Maia City. */
+export const isAdmin = () => holdsGroup(ADMIN);
 
-/** Whether this founder opens a place: an admin's tool as the API says, the rest by the cap group it needs. */
-export const opens = (founder: Founder | null, p: Place) => (p.admin ? isAdmin(founder) : !p.needs || holdsGroup(p.needs));
+/** Whether the person opens a place: by the cap group of Maia City it needs, if any. */
+export const opens = (p: Place) => !p.needs || holdsGroup(p.needs);
 
-/** The game, world or game asset page a path is in, if any: closed to whoever doesn't hold what opens it. */
+/** The game, world, game asset or admin's page a path is in, if any: closed to whoever doesn't hold what opens it. */
 export const gameAt = (path: string) =>
-	[...CITY, ...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ??
-	(path.startsWith(`${base}/app/worlds/`) ? WORLDS_TILE : path.startsWith(`${base}/app/buildings/`) ? BUILDINGS_TILE : path.startsWith(`${base}/app/factories/`) ? FACTORIES_TILE : path.startsWith(`${base}/app/biomes/`) ? BIOMES_TILE : path.startsWith(`${base}/app/skills/`) ? SKILLS_TILE : path.startsWith(`${base}/app/avendb/`) ? AVENDB_TILE : undefined);
+	[...CITY, ...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ?? PAGES.find((p) => path.startsWith(p.href));
 /** the Worlds grid and the game assets' own pages (the Buildings, the Factories, the Biomes): every Traveler's; the
- *  Skills and avenDB's own page: the admins' */
-const WORLDS_TILE: Place = { href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', needs: TRAVELER };
-const FACTORIES_TILE: Place = { href: `${base}/app/factories/`, label: 'Factories', icon: 'gear', needs: TRAVELER };
-const BUILDINGS_TILE: Place = { href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', needs: TRAVELER };
-const BIOMES_TILE: Place = { href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', needs: TRAVELER };
-const SKILLS_TILE: Place = { href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', admin: true };
-const AVENDB_TILE: Place = { href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', admin: true };
+ *  Skills and avenDB's own page: the admins'. The studio keeps its own gate: it works on the media vault through the
+ *  API, which decides who may (`media:admin`) */
+const PAGES: Place[] = [
+	{ href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', needs: TRAVELER },
+	{ href: `${base}/app/factories/`, label: 'Factories', icon: 'gear', needs: TRAVELER },
+	{ href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', needs: TRAVELER },
+	{ href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', needs: TRAVELER },
+	{ href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', needs: ADMIN },
+	{ href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', needs: ADMIN }
+];

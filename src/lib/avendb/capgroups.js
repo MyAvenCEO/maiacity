@@ -11,10 +11,12 @@
  *   Citizen    a Traveler who plays MaiaCity V1 too (to become the paid one later), and reads all of V1, its proposals
  *              among it; V1's moves still run on maiaCITY's API, so no write of them is a cap yet. Nobody is invited
  *              a citizen (Samuel 2026-10-19): travelers become citizens by other means, later
- *   Admin      may found coops and avens through avenDB's server (avendb's `gate::ADMIN`); Maia City's own owners always
- *              may. The seed defines none: nobody holds it besides them yet
+ *   Admin      a Citizen who reads all of Maia City and opens the admins' own pages (the Skills, avenDB's own page, the
+ *              vault apps on the dashboard, signing a terminal in; Samuel 2026-10-19: no Postgres role decides it), and
+ *              may found coops and avens through avenDB's server (avendb's `gate::ADMIN`). Maia City's own owners always
+ *              may all of it; anyone else holds it by a share of it
  *
- * The repo seed defines the two groups once, on the first device of Maia City's owner (./seed.js runs in
+ * The repo seed defines the three groups once, on the first device of Maia City's owner (./seed.js runs in
  * ./Account.svelte); the app reads which the person holds ($lib/app/access.svelte.js).
  */
 import { EVERYONE } from './vaults.js';
@@ -25,7 +27,8 @@ export const TRAVELER = 'Traveler';
 /** The group that plays MaiaCity V1 too. */
 export const CITIZEN = 'Citizen';
 
-/** The group that founds coops and avens through avenDB's server, beside Maia City's own owners (avendb's `gate::ADMIN`). */
+/** The admins' group: the admins' own pages, and founding coops and avens through avenDB's server, beside Maia City's own
+ *  owners (avendb's `gate::ADMIN`, which names it exactly so). */
 export const ADMIN = 'Admin';
 
 /** MaiaCity V1's tag in the Maia City vault, which every entry of it carries (game/games.js `gameTag`). */
@@ -34,12 +37,14 @@ const V1 = 'game:maiacity-v1';
 /**
  * Each group the seed defines, in order, a group it includes named by its name: a Traveler reads the games' entries
  * (`game`), the asset recipes (`recipe`) and the views and logic modules (`view`, `logic`), which the seed also shares
- * with everyone for the server's feeds (./seed.js `CODE_TYPES`, `RECIPE_TYPES`); a Citizen reads all of V1 besides.
+ * with everyone for the server's feeds (./seed.js `CODE_TYPES`, `RECIPE_TYPES`); a Citizen reads all of V1 besides; an
+ * Admin all of Maia City.
  * @type {{ name: string, caps: { op: string, where?: object }[], includes: string[] }[]}
  */
 export const CAP_GROUPS = [
 	{ name: TRAVELER, caps: [{ op: 'read', where: { type: ['game', 'recipe', 'view', 'logic'] } }], includes: [] },
-	{ name: CITIZEN, caps: [{ op: 'read', where: { tag: V1 } }], includes: [TRAVELER] }
+	{ name: CITIZEN, caps: [{ op: 'read', where: { tag: V1 } }], includes: [TRAVELER] },
+	{ name: ADMIN, caps: [{ op: 'read' }], includes: [CITIZEN] }
 ];
 
 /**

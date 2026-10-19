@@ -35,9 +35,9 @@
 
 	const hour = new Date().getHours();
 	const hello = hour < 5 ? 'Good night' : hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
-	const admin = $derived(isAdmin(founder));
+	const admin = $derived(isAdmin());
 	// the games this founder opens, by the cap groups of Maia City they hold
-	const games = $derived(GAME_WORLDS.filter((g) => opens(founder, g)));
+	const games = $derived(GAME_WORLDS.filter((g) => opens(g)));
 	const apps = $derived(APPS.filter((t) => holds(founder, t)));
 	// the game assets, read only, for every traveler: Maia City's, in avenDB's Assets, and the worlds
 	const traveler = $derived(!!access.city && holdsGroup(TRAVELER));
