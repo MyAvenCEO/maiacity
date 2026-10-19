@@ -43,6 +43,9 @@
 //! page or maiaCITY's API takes them as a device takes a sync reply (`provenance::Observer`): every signature checked,
 //! every rule replayed, the rows it reads back those of the vault it is anchored to by its id. So which code is a
 //! vault's is proven where it runs, and no row's JSON is taken on the server's word (H2 of maiaCITY's hardening plan).
+//! A page asks for the proof of the entries it builds alone, and the next time asks for it by its tag: it is told the
+//! proof is not modified while it is the same (304). Every answer of JSON but an invite's is tagged so too, by a BLAKE3
+//! hash of its bytes, so a page that reads a listing again reads none of it while it is the same.
 //!
 //! And whether an invite is open (`GET /feed/invite/<share>`, `INVITE`, `world::open_invite`): `{"open": true}` while that
 //! share is a live invite of Maia City's that no vault claimed yet, which maiaCITY's API asks before it signs anyone up,
@@ -232,8 +235,8 @@ async fn answer(
         return Ok(media(at, range, &node, &feeds.media).await);
     }
     let query = request.uri().query().unwrap_or_default();
+    let had = request.headers().get(header::IF_NONE_MATCH).and_then(|t| t.to_str().ok());
     if path == PROOF && reads {
-        let had = request.headers().get(header::IF_NONE_MATCH).and_then(|t| t.to_str().ok());
         return Ok(proof(query, had, &node, &feeds).await);
     }
     if let Some(at) = path.strip_prefix(ENTRY).and_then(|at| at.strip_suffix(OF_ENTRY)).filter(|_| reads) {
@@ -256,17 +259,34 @@ async fn answer(
             _ => (StatusCode::NOT_FOUND, error("no such feed")),
         }
     };
-    let mut response = Response::new(Full::new(body));
-    *response.status_mut() = status;
+    // what a reader holds already, by its tag, is not modified: an invite never is
+    let tag = (status == StatusCode::OK && reads && invited.is_none()).then(|| tag_of(&body));
+    let held = tag.as_deref().is_some_and(|tag| holds(had, tag));
+    let mut response = Response::new(Full::new(if held { Bytes::new() } else { body }));
+    *response.status_mut() = if held { StatusCode::NOT_MODIFIED } else { status };
     let headers = response.headers_mut();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
     headers.insert(header::ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("GET, HEAD, OPTIONS"));
     headers.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("Range, If-None-Match"));
+    if let Some(tag) = tag {
+        headers.insert(header::ETAG, HeaderValue::from_str(&tag).expect("a tag in hex"));
+        headers.insert(header::ACCESS_CONTROL_EXPOSE_HEADERS, HeaderValue::from_static("ETag"));
+    }
     // an invite opens and closes from one moment to the next: never kept
     let kept = if invited.is_some() { "no-store" } else { "public, max-age=10" };
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(kept));
     Ok(response)
+}
+
+/// The tag of an answer of `body`: a BLAKE3 hash of its bytes in hex, quoted, as an `ETag` is.
+fn tag_of(body: &[u8]) -> String {
+    format!("\"{}\"", blake3::hash(body).to_hex())
+}
+
+/// A reader that asks with `had` (`If-None-Match`) holds what is tagged `tag`: one of the tags it names, weak or not.
+fn holds(had: Option<&str>, tag: &str) -> bool {
+    had.is_some_and(|had| had.split(',').any(|t| t.trim().trim_start_matches("W/") == tag))
 }
 
 /// The answer to a GET or HEAD of `INVITE` `<share>`: whether that share is an invite of the seed's coop, Maia City,
@@ -491,7 +511,7 @@ async fn proof(query: &str, had: Option<&str>, node: &Node, feeds: &Feeds) -> Re
     let Some(proven) = proven(&asked, node, feeds).await else {
         return plain(StatusCode::NOT_FOUND, "the server's seed has no coop yet");
     };
-    let held = had.is_some_and(|had| had.split(',').any(|t| t.trim().trim_start_matches("W/") == &*proven.tag));
+    let held = holds(had, &proven.tag);
     let mut response = match held {
         true => Response::new(Full::new(Bytes::new())),
         false => Response::new(Full::new(proven.bytes)),
@@ -516,7 +536,15 @@ async fn proven(asked: &Asked, node: &Node, feeds: &Feeds) -> Option<Proven> {
     let kept = {
         let mut proofs = feeds.proofs.lock().await;
         if proofs.len() >= MOST_PROOFS && !proofs.contains_key(&asked.key()) {
-            proofs.clear();
+            // a proof is kept a moment (`FRESH`), and asked for again after it is worked out anew: those older go
+            // first, and every one if none is
+            let fresh = |kept: &Kept<Option<Proven>>| {
+                kept.try_lock().map_or(true, |held| held.as_ref().is_some_and(|(at, _)| at.elapsed() < FRESH))
+            };
+            proofs.retain(|_, kept| fresh(kept));
+            if proofs.len() >= MOST_PROOFS {
+                proofs.clear();
+            }
         }
         proofs.entry(asked.key()).or_default().clone()
     };

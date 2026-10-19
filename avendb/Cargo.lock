@@ -364,6 +364,7 @@ dependencies = [
  "anyhow",
  "avendb",
  "avendb-net",
+ "blake3",
  "bytes",
  "data-encoding",
  "http-body-util",

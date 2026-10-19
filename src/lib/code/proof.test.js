@@ -4,12 +4,14 @@
 // WebAssembly is handed what a server could hand out in a proof's place, and the loader takes none of it: the seed
 // runs, as offline. (The recipes' loader is held to the same in ../assets/vault.test.js; that a forged edit, a record
 // the vault never signed, a write without the right or a file of other bytes proves nothing is avenDB's own test,
-// avendb/crates/avendb/tests/provenance.rs.)
+// avendb/crates/avendb/tests/provenance.rs.) And what a device proved is kept as rows, each once, never as the proof's
+// bytes, and the anchor is the repo's own.
 // Run: bun test src/lib/code/proof.test.js
 import { afterEach, describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { avendb, recordOf } from '../../../game/code/sources/avendb.js';
 import { codeAt, loadCode, viewOfEntry } from '../../../game/code/index.js';
-import { proofOf, verifyProof } from '../../../game/code/sources/feed.js';
+import { KEPT_PROOFS, MAIA_CITY, NO_ANCHOR, proofOf, provenRows, verifyProof } from '../../../game/code/sources/feed.js';
 import { ENTRIES } from '../../../code/index.js';
 
 /** the vault the loads are anchored to */
@@ -70,7 +72,7 @@ describe('the code loader takes nothing unproven', () => {
 		for (const vault of ['', 'Maia City', 'C1'.repeat(32)]) {
 			const f = served(json([row]));
 			const r = await loadCode({ url: AT, vault, fetch: f.get, verify: async () => [row], keep: keep() });
-			expect(r).toEqual({ error: "Maia City's vault id is not set (MAIA_CITY, 64 hex digits), so no code is taken from avenDB's feed" });
+			expect(r).toEqual({ error: NO_ANCHOR });
 			expect(f.asked).toEqual([]);
 		}
 		expect(codeAt('views/view-holders')).toBe(holders);
@@ -85,5 +87,64 @@ describe('the code loader takes nothing unproven', () => {
 		done();
 		await new Promise((ok) => setTimeout(ok, 5));
 		expect([...kept.kept.values()].map((k) => k.tag)).toEqual(['"x"']);
+	});
+});
+
+describe('the anchor and what is kept', () => {
+	test("the anchor is the repo's alone: no build's nor server's setting names it", () => {
+		const anchor = readFileSync(new URL('../../../game/code/sources/anchor.js', import.meta.url), 'utf8');
+		expect(anchor).toMatch(/^export const MAIA_CITY = '([0-9a-f]{64})?';$/m);
+		expect(MAIA_CITY).toMatch(/^([0-9a-f]{64})?$/);
+		const feed = readFileSync(new URL('../../../game/code/sources/feed.js', import.meta.url), 'utf8');
+		expect(feed).not.toMatch(/import\.meta\.env|process\.env/);
+		for (const file of ['.github/workflows/deploy.yml', 'docker-compose.prod.yml', 'api/src/index.ts'])
+			expect([file, readFileSync(new URL(`../../../${file}`, import.meta.url), 'utf8').includes('MAIA_CITY')]).toEqual([file, false]);
+	});
+	test("a device keeps the rows it proved, each once however many proofs hold it, and asks again by the proof's tag", async () => {
+		const storage = new Map();
+		const was = globalThis.localStorage;
+		globalThis.localStorage = { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => void storage.set(k, String(v)) };
+		try {
+			const a = { ...row, entry: 'a'.repeat(64) };
+			const b = { ...row, entry: 'b'.repeat(64) };
+			let checked = 0;
+			const verify = async (bytes) => (checked++, JSON.parse(new TextDecoder().decode(bytes)));
+			/** a feed whose proof of some entries is their rows, tagged, and not modified for a reader holding the tag */
+			const feed = (rows) => {
+				const asked = [];
+				const get = async (url, o) => {
+					const tag = `"${rows.map((r) => r.entry.slice(0, 4)).join('')}"`;
+					asked.push(o?.headers?.['if-none-match'] ?? null);
+					return o?.headers?.['if-none-match'] === tag ? new Response(null, { status: 304, headers: { etag: tag } }) : new Response(JSON.stringify(rows), { headers: { etag: tag } });
+				};
+				return { get, asked };
+			};
+			const at = (entries) => proofOf(['recipe'], { vault: CITY, entries });
+			const one = feed([a, b]);
+			expect(await provenRows(at([a.entry, b.entry]), { vault: CITY, kinds: ['recipe'], entries: [b.entry, a.entry], fetch: one.get, verify })).toEqual({ rows: [a, b] });
+			const two = feed([b]);
+			expect(await provenRows(at([b.entry]), { vault: CITY, kinds: ['recipe'], entries: [b.entry], fetch: two.get, verify })).toEqual({ rows: [b] });
+			// each row once, the records naming theirs; no proof's bytes
+			const keys = [...storage.keys()].sort();
+			expect(keys.filter((k) => k.startsWith('avendb-row:'))).toEqual([`avendb-row:${CITY}/${a.entry}`, `avendb-row:${CITY}/${b.entry}`]);
+			const records = keys.filter((k) => k.startsWith('avendb-proof:')).map((k) => JSON.parse(storage.get(k)));
+			expect(records.map((r) => r.entries.length).sort()).toEqual([1, 2]);
+			expect(records.every((r) => !('rows' in r) && typeof r.tag === 'string')).toBe(true);
+			expect(checked).toBe(2);
+			// read back on a page loaded afresh (nothing in memory): asked by the tag, not modified, nothing checked
+			const kept = { get: (k) => (storage.has(`avendb-proof:${k}`) ? KEPT_PROOFS.get(k) : undefined), put: KEPT_PROOFS.put };
+			const again = feed([a, b]);
+			expect(await provenRows(at([a.entry, b.entry]), { vault: CITY, kinds: ['recipe'], entries: [a.entry, b.entry], fetch: again.get, verify, keep: kept })).toEqual({ rows: [a, b] });
+			expect([again.asked, checked]).toEqual([['"aaaabbbb"'], 2]);
+		} finally {
+			globalThis.localStorage = was;
+		}
+	});
+	test('a proof of some entries hands out theirs alone, not the row of the entry that opened their audience', async () => {
+		const [a, b] = [{ ...row, entry: 'a'.repeat(64) }, { ...row, entry: 'b'.repeat(64) }];
+		const get = async () => new Response('a proof', { headers: { etag: '"b"' } });
+		const keep = { get: () => undefined, put: () => {} };
+		const o = { vault: CITY, kinds: ['recipe'], entries: [b.entry], fetch: get, verify: async () => [a, b], keep };
+		expect(await provenRows(proofOf(['recipe'], { vault: CITY, entries: [b.entry] }), o)).toEqual({ rows: [b] });
 	});
 });

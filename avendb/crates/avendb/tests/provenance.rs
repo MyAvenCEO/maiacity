@@ -15,7 +15,7 @@ use avendb::cast::{self, World};
 use avendb::engine;
 use avendb::id::{BlobId, EditId, EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
-use avendb::policy::{Action, Kind, Principal, Proposal};
+use avendb::policy::{Action, Kind, Principal};
 use avendb::provenance::{self, Observer, Unproven, CODE_KINDS, STRANGER};
 use avendb::sealed::{seal, Brought, FileKey, FileRoot};
 use avendb::sign::Signed;
@@ -389,19 +389,43 @@ fn what_proves_no_vault_of_its_id_is_refused() {
     assert!(!reply.more && reply.blobs.is_empty(), "no McEliece key, nothing more to ask for");
 }
 
+/// A page asks for the proof of the entries it builds alone (the feed's `entry=`): the proof of some code entries
+/// proves those, each as the feed serves it, and no other; the proof of none proves the vault and no code.
+#[test]
+fn a_proof_of_some_entries_proves_those_alone() {
+    let c = city();
+    let server = c.w.server;
+    let all = rows_on(&c.w.lab, server, c.city);
+    let code: Vec<EntryId> = c.code(server).into_iter().collect();
+    for asked in code.iter().map(|&e| vec![e]).chain([vec![c.views[0], c.lamp], vec![]]) {
+        let proof = provenance::proof(&c.w.lab, server, c.city, &asked.iter().copied().collect());
+        let rows = observed(proof, c.city).expect("it proves the vault");
+        let of = |r: &&Value| asked.iter().any(|e| r["entry"] == e.to_hex());
+        let want: Vec<Value> = all.iter().filter(of).cloned().collect();
+        assert_eq!(rows.iter().filter(of).cloned().collect::<Vec<_>>(), want, "{asked:?} alone");
+        // beside them only what opened an audience they stayed in, as it was then: code of the vault's too
+        let code: Vec<String> = code.iter().map(|e| e.to_hex()).collect();
+        assert!(rows.iter().all(|r| code.iter().any(|e| r["entry"] == e.as_str())), "{asked:?}: {rows:?}");
+    }
+}
+
 /// How big a proof of many recipes is, and how long it takes to check: `cargo test -p avendb --release --test
-/// provenance -- --ignored --nocapture measure`, `AVENDB_RECIPES` recipes (24 by default), each created with its file
-/// and given two more versions as the seed writes them (a proposal, its write, its merge), and a tag.
+/// provenance -- --ignored --nocapture measure`. `AVENDB_RECIPES` recipes (24 by default), each created with its file
+/// and given `AVENDB_VERSIONS` versions in all (3 by default), each after the first as the seed writes it (a proposal,
+/// its write, its merge), and a tag; a page's proof is of the first `AVENDB_PAGE` of them (all by default), as a world
+/// that builds them asks for it. Its bytes are written to the temporary folder, for the WebAssembly to check.
 #[test]
 #[ignore = "a measurement, run by hand"]
 fn measure() {
-    let n: usize = std::env::var("AVENDB_RECIPES").ok().and_then(|n| n.parse().ok()).unwrap_or(24);
+    let var = |name: &str, or: usize| std::env::var(name).ok().and_then(|n| n.parse().ok()).unwrap_or(or);
+    let (n, versions) = (var("AVENDB_RECIPES", 24), var("AVENDB_VERSIONS", 3) as u64);
+    let page = var("AVENDB_PAGE", n);
     let mut c = city();
     let (mac, cc) = (c.mac, c.city.to_hex());
     let card = |i: usize, v: u64| {
         let mut r = recipe(&format!("Lamp {i}"), v);
         r["card"]["id"] = json!(format!("lamp-{i}"));
-        // a card as large as the repo's are, about 3 kB (src/lib/assets/sources/cards.json)
+        // a card as large as the repo's are, about 3.5 kB (src/lib/assets/sources/cards.json)
         r["card"]["note"] = json!("x".repeat(3000));
         r
     };
@@ -411,7 +435,7 @@ fn measure() {
         let op = json!({ "op": "create", "vault": cc, "type": "recipe", "schema": "recipe", "tags": ["group:machines"],
             "value": card(i, 1), "file": { "len": one.len, "name": "x.js", "media": "text/javascript" }, "as": cc });
         let e = entry_id(&ok(engine::put_file(&mut c.w.lab, mac, &op, one)));
-        for v in 2..=3 {
+        for v in 2..=versions {
             let line = ok(run(&mut c.w, mac, &json!({ "op": "propose", "entry": e.to_hex(), "name": "v", "as": cc })));
             let (file, _) = source(&format!("export default (kit) => kit.box({i}, {v}, 1);\n"));
             let put = json!({ "op": "put_file", "entry": e.to_hex(), "line": line["line"], "value": card(i, v),
@@ -420,39 +444,52 @@ fn measure() {
             let merge = json!({ "op": "merge", "entry": e.to_hex(), "from": line["line"], "into": null, "as": cc });
             ok(run(&mut c.w, mac, &merge));
         }
-        ok(run(&mut c.w, mac, &json!({ "op": "tag", "entry": e.to_hex(), "add": [format!("ref:machines/lamp-{i}@3")],
-            "as": cc })));
+        let tag = format!("ref:machines/lamp-{i}@{versions}");
+        ok(run(&mut c.w, mac, &json!({ "op": "tag", "entry": e.to_hex(), "add": [tag], "as": cc })));
     }
-    eprintln!("made {n} recipes in {:?}", t.elapsed());
+    eprintln!("made {n} recipes of {versions} versions each in {:?}", t.elapsed());
     c.w.lab.sync_all(5);
     let server = c.w.server;
     let rows = world::public_entries(&c.w.lab, server, Some(&["recipe"]));
-    let recipes: BTreeSet<EntryId> =
-        rows.iter().filter_map(|r| EntryId::from_hex(r["entry"].as_str()?)).collect();
+    let all: Vec<EntryId> = rows.iter().filter_map(|r| EntryId::from_hex(r["entry"].as_str()?)).collect();
     let feed = serde_json::to_vec(&json!({ "code": rows })).expect("JSON").len();
-    let t = Instant::now();
-    let proof = provenance::proof(&c.w.lab, server, c.city, &recipes);
-    let made = t.elapsed();
-    let bytes = provenance::reply(proof.clone());
-    let on_main = |s: &&Signed| matches!(s.edit.action, Action::Write { proposal: Proposal::Main, .. });
-    let writes = proof.iter().filter(on_main).count();
-    let t = Instant::now();
-    let rows = provenance::verify(&bytes, c.city, &["recipe"]).expect("it proves the vault");
-    let checked = t.elapsed();
-    let one = provenance::proof(&c.w.lab, server, c.city, &recipes.iter().take(1).copied().collect());
+    eprintln!("the feed's JSON of all {} recipes: {feed} bytes", rows.len());
+    // each edit here is signed in ML-DSA-65; one Maia City's signers made before the key move signed carries SLH-DSA's
+    // 17,088 bytes in place of its 3,309
+    let slh = |edits: usize, bytes: usize| bytes + edits * (17_088 - 3_309);
+    let said = |what: &str, entries: &BTreeSet<EntryId>| {
+        let t = Instant::now();
+        let proof = provenance::proof(&c.w.lab, server, c.city, entries);
+        let made = t.elapsed();
+        let bytes = provenance::reply(proof.clone());
+        let t = Instant::now();
+        let proven = provenance::verify(&bytes, c.city, &["recipe"]).expect("it proves the vault");
+        let checked = t.elapsed();
+        // a device keeps the rows of what it asked for, not those of the entries that opened their audiences
+        let asked: Vec<&Value> = proven.iter().filter(|r| entries.iter().any(|e| r["entry"] == e.to_hex())).collect();
+        let kept = serde_json::to_vec(&asked).expect("JSON").len();
+        eprintln!(
+            "{what}: {} entries proven ({} asked for), {} edits, {} bytes ({} signed in SLH-DSA), worked out in \
+             {made:?}, checked natively in {checked:?}; the rows a device keeps {kept} bytes",
+            proven.len(),
+            asked.len(),
+            proof.len(),
+            bytes.len(),
+            slh(proof.len(), bytes.len()),
+        );
+        bytes
+    };
+    let whole = said("all", &all.iter().copied().collect());
+    let shown = said("a page's", &all.iter().take(page).copied().collect());
+    // one recipe's alone, the largest and the smallest such proof: one holds the entry that opened their audience
+    let one = |e: EntryId| provenance::reply(provenance::proof(&c.w.lab, server, c.city, &[e].into_iter().collect()));
+    let sizes: Vec<(usize, EntryId)> = all.iter().map(|&e| (one(e).len(), e)).collect();
+    let (least, most) = (sizes.iter().min().expect("a recipe"), sizes.iter().max().expect("a recipe"));
+    said("the smallest of one recipe's", &[least.1].into_iter().collect());
+    said("the largest of one recipe's", &[most.1].into_iter().collect());
     let views = provenance::proof(&c.w.lab, server, c.city, &c.views.into_iter().chain([c.config]).collect());
-    eprintln!(
-        "{} recipes: the feed's JSON {feed} bytes; the proof {} edits ({writes} writes on main), {} bytes, worked out \
-         in {made:?}, checked in {checked:?}; one recipe's proof {} edits, {} bytes; the views and config {} edits, \
-         {} bytes",
-        rows.len(),
-        proof.len(),
-        bytes.len(),
-        one.len(),
-        provenance::reply(one.clone()).len(),
-        views.len(),
-        provenance::reply(views.clone()).len(),
-    );
-    std::fs::write(std::env::temp_dir().join("avendb-proof.bin"), &bytes).expect("written");
+    eprintln!("the views and config: {} edits, {} bytes", views.len(), provenance::reply(views.clone()).len());
+    std::fs::write(std::env::temp_dir().join("avendb-proof.bin"), &whole).expect("written");
+    std::fs::write(std::env::temp_dir().join("avendb-page-proof.bin"), &shown).expect("written");
     eprintln!("city {}", c.city.to_hex());
 }

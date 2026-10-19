@@ -45,11 +45,8 @@ jobs:
       # the public files by hash (the vault's mirror); stops if a published post names a file the vault does not serve
       - run: node scripts/media-manifest.mjs
 
-      # Served from the domain root, so no base path. Maia City's vault id, the anchor the pages hold the code they run
-      # to (H2, game/code/sources/feed.js MAIA_CITY), is the repository's variable MAIA_CITY.
+      # Served from the domain root, so no base path.
       - run: bun run build
-        env:
-          VITE_MAIA_CITY: ${{ vars.MAIA_CITY }}
 
       - name: Prepare SSH
         run: |

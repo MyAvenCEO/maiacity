@@ -492,6 +492,23 @@ async fn the_server_serves_the_code_everyone_reads_and_maia_citys_alone_for_seed
     let (_, theirs) = fetched(addr, &format!("/feed/proof?vault={}", fake.to_hex()), None).await;
     let theirs = provenance::verify(&theirs, fake, &world::CODE_KINDS).expect("it proves the other coop's code");
     assert_eq!(theirs.iter().map(|r| r["entry"].clone()).collect::<Vec<_>>(), [json!(views[1])]);
+    // the proof of the entries a page builds alone: the view's, or none of the vault's
+    let one = format!("/feed/proof?vault={}&type=view&entry={}", city.to_hex(), views[0]);
+    let (_, of_one) = fetched(addr, &one, None).await;
+    let of_one = provenance::verify(&of_one, city, &world::CODE_KINDS).expect("it proves Maia City's view");
+    assert_eq!(of_one.iter().map(fields).collect::<Vec<_>>(), listed, "that entry alone");
+    let none = format!("/feed/proof?vault={}&type=view&entry={}", city.to_hex(), views[1]);
+    let (_, of_none) = fetched(addr, &none, None).await;
+    assert_eq!(provenance::verify(&of_none, city, &world::CODE_KINDS), Ok(vec![]), "the other coop's is none of it");
+    // the listing, tagged by its bytes, which a reader that holds them is told are not modified
+    let (head, body) = fetched(addr, "/feed/code?seed=1", None).await;
+    assert_eq!(serde_json::from_slice::<Value>(&body).expect("JSON"), ours, "the same listing");
+    let tag = head.lines().find_map(|l| l.strip_prefix("etag: ")).expect("its tag").to_string();
+    assert!(head.contains("access-control-expose-headers: etag"), "{head}");
+    let (head, again) = fetched(addr, "/feed/code?seed=1", Some(&tag)).await;
+    assert!(head.starts_with("http/1.1 304") && again.is_empty(), "{head}");
+    let (head, _) = fetched(addr, "/feed/code?seed=1&bare=1", Some(&tag)).await;
+    assert!(head.starts_with("http/1.1 200"), "other bytes, another tag: {head}");
     let bad = ["/feed/proof", "/feed/proof?type=view", "/feed/proof?seed=1&entry=ab", "/feed/proof?seed=1&type=story"];
     for path in bad {
         let (head, _) = fetched(addr, path, None).await;

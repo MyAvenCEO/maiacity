@@ -23,14 +23,14 @@
 //! of an entry, which the observer then doesn't see yet, or an entry, which it then reads nowhere; it can't hand out
 //! anything the vault's signers didn't sign, nor make a write count that the vault's rules refuse.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde_json::Value;
 
-use crate::id::{AudienceId, EntryId, ShareId, SignerId, VaultId};
+use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::KeyFam;
 use crate::lab::Lab;
-use crate::policy::{Entry, State};
+use crate::policy::{Edit, Entry, State};
 use crate::sealed::{seal, FileRoot};
 use crate::sign::Signed;
 use crate::sync::{self, LogId};
@@ -52,32 +52,51 @@ pub use crate::world::CODE_KINDS;
 /// every share those rest on; and of every vault all that names, up its owners. An entry of `code` that isn't the
 /// vault's, or that a stranger may not receive, is left out, as is everything else the vault holds: its other public
 /// entries, its stories and its files among them.
+///
+/// An audience's key is published as the first entry stays in it (`State::published`), and its `Keys` edit, which
+/// hands the key out in the clear, counts only after that. So for each audience those entries stayed in, the proof
+/// holds the log of the entry that stayed in it first, up to that stay (`opener`), though that entry wasn't asked for:
+/// its rows are of no use to the reader, which reads those of `code`. An audience whose key moved on emptied and took
+/// entries again; only the logs of every entry that stayed in it replay that, so then they all are held.
 pub fn proof(lab: &Lab, me: SignerId, vault: VaultId, code: &BTreeSet<EntryId>) -> Vec<Signed> {
     let log = lab.log(me);
     let (edits, ids, st) = (log.edits(), log.ids(), lab.state(me));
     let places = sync::answer(edits, st, STRANGER, &[vault]);
     let logs = sync::logs_of(edits, ids);
+    let at: HashMap<EditId, usize> = places.iter().map(|&i| (ids[i], i)).collect();
     let theirs = |en: &&Entry| en.vault == vault;
     let asked = code.iter().copied().filter(|&e| st.entry(e).is_some_and(|en| theirs(&en)));
     let mut entries: HashSet<EntryId> = asked.collect();
     entries.extend(st.entries().iter().filter(theirs).filter(|en| lab.lane_entry(me, en.id).is_some()).map(|en| en.id));
-    // the audiences and shares those entries need, and the cap groups those shares name, which are entries in turn
+    // the entries held up to one edit alone: each the first to stay in an audience the others stayed in
+    let mut upto: HashMap<EntryId, usize> = HashMap::new();
+    let first = Stays { st, edits, at: &at };
+    // the audiences and shares those entries need, the cap groups those shares name, which are entries in turn, and
+    // the entries that opened those audiences
     let (audiences, shares) = loop {
-        let (audiences, shares) = needs(st, vault, &entries);
-        let groups = shares.iter().filter_map(|&c| st.share(c)?.share.group).filter(|g| !entries.contains(g));
-        let groups: Vec<EntryId> = groups.collect();
-        if groups.is_empty() {
+        let (audiences, shares) = needs(st, vault, &entries, &first.held(&upto));
+        let groups = shares.iter().filter_map(|&c| st.share(c)?.share.group);
+        let moved = audiences.iter().filter(|&&(v, x)| st.epoch(KeyFam::Audience(v, x)) > 0);
+        let stayed = moved.flat_map(|&(v, x)| first.stayed(v, x));
+        let more: Vec<EntryId> = groups.chain(stayed).filter(|e| !entries.contains(e)).collect();
+        let later = |e: EntryId, i: usize| upto.get(&e).is_none_or(|&j| first.place(j) < first.place(i));
+        let opened = audiences.iter().filter_map(|&(v, x)| first.opener(v, x));
+        let opened: Vec<(EntryId, usize)> = opened.filter(|&(e, i)| !entries.contains(&e) && later(e, i)).collect();
+        if more.is_empty() && opened.is_empty() {
             break (audiences, shares);
         }
-        entries.extend(groups);
+        entries.extend(more);
+        upto.extend(opened);
     };
-    let keeps = |l: LogId| match l {
-        LogId::Entry(e) => entries.contains(&e),
-        LogId::Audience(v, x) => audiences.contains(&(v, x)),
-        LogId::Share(c) => shares.contains(&c),
-        LogId::Vault(_) => false,
+    let keeps = |i: usize| match logs[i] {
+        Some(LogId::Entry(e)) => {
+            entries.contains(&e) || upto.get(&e).is_some_and(|&j| first.place(i) <= first.place(j))
+        }
+        Some(LogId::Audience(v, x)) => audiences.contains(&(v, x)),
+        Some(LogId::Share(c)) => shares.contains(&c),
+        Some(LogId::Vault(_)) | None => false,
     };
-    let items: Vec<usize> = places.iter().copied().filter(|&i| logs[i].is_some_and(keeps)).collect();
+    let items: Vec<usize> = places.iter().copied().filter(|&i| keeps(i)).collect();
     let named = std::iter::once(vault).chain(items.iter().flat_map(|&i| sync::vaults_named(&edits[i])));
     let vaults: HashSet<VaultId> = sync::close_vaults(st, named.collect()).into_iter().collect();
     let of_vaults = places.iter().copied().filter(|&i| matches!(logs[i], Some(LogId::Vault(v)) if vaults.contains(&v)));
@@ -87,17 +106,68 @@ pub fn proof(lab: &Lab, me: SignerId, vault: VaultId, code: &BTreeSet<EntryId>) 
     kept.into_iter().filter_map(|i| lab.signed_edit(me, ids[i]).cloned()).collect()
 }
 
-/// What entries `entries` of vault `vault` need beside their own logs, by view `st`: every audience any of them stayed
-/// in, and the shares over the vault that are in one of those audiences, among their wants, or wide, with every share
-/// each rests on.
-fn needs(st: &State, vault: VaultId, entries: &HashSet<EntryId>) -> (HashSet<(VaultId, AudienceId)>, HashSet<ShareId>) {
-    let (mut audiences, mut stayed) = (HashSet::new(), HashSet::new());
-    for en in entries.iter().filter_map(|&e| st.entry(e)) {
-        for &(_, x) in &en.stays {
-            audiences.insert((en.vault, x));
-            stayed.extend(st.audience_shares(x).unwrap_or_default().iter().copied());
+/// The stays of a vault's entries, by view `st` of `edits`, as far as a stranger may receive the edits that began them
+/// (`at`, each edit's place in `edits`).
+struct Stays<'a> {
+    st: &'a State,
+    edits: &'a [Edit],
+    at: &'a HashMap<EditId, usize>,
+}
+
+impl Stays<'_> {
+    fn place(&self, i: usize) -> sync::Place {
+        sync::place(&self.edits[i])
+    }
+
+    /// Where in `edits` stay `s` of entry `en` began: at its mark, or at its creation.
+    fn began(&self, en: &Entry, s: Option<EditId>) -> Option<usize> {
+        self.at.get(&s.unwrap_or(en.creation)).copied()
+    }
+
+    /// The entry that stayed in audience `x` of vault `v` first, and the edit it began that stay by.
+    fn opener(&self, v: VaultId, x: AudienceId) -> Option<(EntryId, usize)> {
+        let ens = self.st.entries().iter().filter(|en| en.vault == v);
+        let stays = ens.flat_map(|en| en.stays.iter().filter(|s| s.1 == x).map(move |s| (en, s.0)));
+        let began = stays.filter_map(|(en, s)| Some((en.id, self.began(en, s)?)));
+        began.min_by_key(|&(_, i)| self.place(i))
+    }
+
+    /// Every entry of vault `v` that stayed in its audience `x`.
+    fn stayed(&self, v: VaultId, x: AudienceId) -> impl Iterator<Item = EntryId> + '_ {
+        let ens = self.st.entries().iter().filter(move |en| en.vault == v);
+        ens.filter(move |en| en.stays.iter().any(|s| s.1 == x)).map(|en| en.id)
+    }
+
+    /// The stays of the entries held up to an edit alone (`upto`), as far as that edit.
+    fn held(&self, upto: &HashMap<EntryId, usize>) -> Vec<(EntryId, VaultId, AudienceId)> {
+        let mut held = vec![];
+        for (&e, &j) in upto {
+            let Some(en) = self.st.entry(e) else { continue };
+            let within = |&&(s, _): &&(Option<EditId>, AudienceId)| {
+                self.began(en, s).is_some_and(|i| self.place(i) <= self.place(j))
+            };
+            held.extend(en.stays.iter().filter(within).map(|&(_, x)| (e, en.vault, x)));
         }
-        stayed.extend(st.wants_of(en.id).iter().copied());
+        held
+    }
+}
+
+/// What entries `entries` of vault `vault` need beside their own logs, by view `st`, with the stays `held` of the
+/// entries held in part: every audience any of them stayed in, and the shares over the vault that are in one of those
+/// audiences, among their wants, or wide, with every share each rests on.
+fn needs(
+    st: &State,
+    vault: VaultId,
+    entries: &HashSet<EntryId>,
+    held: &[(EntryId, VaultId, AudienceId)],
+) -> (HashSet<(VaultId, AudienceId)>, HashSet<ShareId>) {
+    let (mut audiences, mut stayed) = (HashSet::new(), HashSet::new());
+    let whole = entries.iter().filter_map(|&e| st.entry(e));
+    let whole = whole.flat_map(|en| en.stays.iter().map(|&(_, x)| (en.id, en.vault, x)));
+    for (e, v, x) in whole.chain(held.iter().copied()) {
+        audiences.insert((v, x));
+        stayed.extend(st.audience_shares(x).unwrap_or_default().iter().copied());
+        stayed.extend(st.wants_of(e).iter().copied());
     }
     let picks = |c: ShareId, wide: bool| wide || stayed.contains(&c);
     let over = st.shares().iter().filter(|cp| cp.share.over == vault && picks(cp.id, cp.share.wide));

@@ -122,8 +122,9 @@ useDb(fromBunSql(sql));
 // the views, logic modules and configs from the Maia City vault (C10): read once before serving, then every minute, so
 // a change accepted in the vault runs here without a deploy. Read from avenDB's own feed inside the compose network
 // (AVENDB_FEED): avendb.maia.city takes only post-quantum key exchange. What runs is what Maia City's own signed edits
-// prove, checked here by avenDB's WebAssembly against its vault id (MAIA_CITY), never the feed's JSON (H2,
-// game/code/sources/feed.js `provenRows`). A failed read or check keeps what was loaded, else the seed.
+// prove, checked here by avenDB's WebAssembly against its vault id, pinned in the repo (H2,
+// game/code/sources/anchor.js), never the feed's JSON (game/code/sources/feed.js `provenRows`). A failed read or check
+// keeps what was loaded, else the seed.
 const CODE_FEED = process.env.AVENDB_FEED || undefined;
 const loadVaultCode = () =>
   loadCode({ feed: CODE_FEED, timeout: 30_000 }).then(
