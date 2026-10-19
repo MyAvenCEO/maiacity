@@ -5,7 +5,8 @@
 	lets everyone read; a file Maia City holds already under that name (an article's picture) only gets the tag, and one
 	the old vault keeps private goes in private (./sitemedia-copy.js). Each file's bytes are checked against its hash as
 	they come in, so nothing else goes in under its name. The old vault keeps its copies. The same copy runs by itself
-	as an owner opens avenDB (./Account.svelte); this is the way to run it again by hand. What is copied already is left
+	as an owner opens avenDB in the Mac app (./Account.svelte); this is the way to run it by hand, in a browser too. It
+	works only while avenDB's pages are in front. What is copied already is left
 	out, so it shows only while something is left, and copying again goes on from there. "Not now" hides it in this
 	browser for this vault.
 -->
@@ -92,7 +93,7 @@
 		failed = '';
 		going = { done: 0, of: left.length, now: '', bytes: 0 };
 		try {
-			const out = await copySiteMedia(api, world, vault, actor, (at) => (going = at));
+			const out = await copySiteMedia(api, () => world, vault, actor, (at) => (going = at));
 			failed = leftOut(out);
 		} catch (e) {
 			failed = `${/** @type {Error} */ (e)?.message ?? e}. What was copied stays; copying again goes on from there.`;
