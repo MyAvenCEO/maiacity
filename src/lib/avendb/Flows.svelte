@@ -4,7 +4,7 @@
 	middle the one picked, its stages as nodes where they sit, an arrow to each stage one goes on to, each stage with
 	how many of the vault's entries are in it and whether it is public (one Public share of the vault on the stage's
 	tag reaches every entry in it), and under each stage the functions that run as an entry enters it or leaves it
-	(./flows.js): the vault's own, avenCEO GmbH's, then the app's, each a link to Functions, which shows how it is
+	(./flows.js): the vault's own, Maia City's, then the app's, each a link to Functions, which shows how it is
 	wired and its code (./Functions.svelte); on the right whose the flow is, the entry that keeps it and its version,
 	the kinds of entries it is for, and how many stages, entries and functions it has.
 -->

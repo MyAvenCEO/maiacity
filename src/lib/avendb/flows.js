@@ -6,18 +6,21 @@
  * the vault shares them with, published is everyone's.
  *
  * Functions (avenDB's own `function` schema) react to a move: each names a flow, a stage and whether it runs as an
- * entry enters it or leaves it, and its code, run in QuickJS on the device that moves it (./functions.js), hands back
- * the ops that move makes besides. The device makes them as the acting vault, on the entry's vault alone, so every cap
- * still holds: a function asks, the vault decides.
+ * entry enters it or leaves it, and its code, checked by the one checker and run in QuickJS on the device that moves
+ * it (./functions.js), hands back the ops that move makes besides. The device makes only those within what a function
+ * may ask (`bound`): changes to the entry moved, its posts, its pictures and the entries it creates, and Public shares
+ * of those entries by their ids, never of a wider slice; and it makes them as the acting vault, on the entry's vault
+ * alone, so every cap still holds: a function asks, the vault decides.
  *
  * Every app knows the content flow and its two functions, and the story flow, by heart (`FLOWS`, `FUNCTIONS`), as it
- * knows avenDB's own schemas, and avenCEO GmbH holds each as an entry of its own. A vault's own flows and functions come first, then
- * avenCEO GmbH's where this device knows it as the person's seed, then the app's: only those, so no one else's code
- * runs on a person's entries.
+ * knows avenDB's own schemas, and Maia City, the coop of the seed the person's claim founded, holds each as an entry
+ * of its own (./Account.svelte `standardize`). A vault's own flows and functions come first, then Maia City's where
+ * this device knows it as the person's seed (./vaults.js `seedCity`), then the app's: only those, so no one else's
+ * code runs on a person's entries.
  */
 import { fileNamed, pictures } from './article.js';
 import { runFunction } from './functions.js';
-import { EVERYONE, seeded } from './vaults.js';
+import { EVERYONE, seedCity } from './vaults.js';
 
 /** The types of entries that hold flows, functions and posts. */
 export const FLOW = 'flow';
@@ -145,13 +148,14 @@ export function stageOf(e, flow) {
 }
 
 /**
- * The vaults whose flows and functions an entry of vault `vault` follows, besides the app's: its own, then avenCEO
- * GmbH, where this device knows it as the person's seed.
+ * The vaults whose flows and functions an entry of vault `vault` follows, besides the app's: its own, then Maia City,
+ * the coop of the seed the person's claim founded, where this device knows it so (./vaults.js `seedCity`). No other
+ * vault's, whatever it names itself.
  * @param {import('./vaults.js').WorldView} world @param {string} vault
  */
 function trusted(world, vault) {
-	const company = seeded(world)[0]?.[0]?.id;
-	return company && company !== vault ? [vault, company] : [vault];
+	const city = seedCity(world)?.id;
+	return city && city !== vault ? [vault, city] : [vault];
 }
 
 /**
@@ -167,7 +171,7 @@ function held(world, vaults, type) {
 }
 
 /**
- * Each of `xs` whose key `key` gives first: a vault's own over avenCEO GmbH's, both over the app's.
+ * Each of `xs` whose key `key` gives first: a vault's own over Maia City's, both over the app's.
  * @template T @param {T[]} xs @param {(x: T) => string} key
  */
 function first(xs, key) {
@@ -265,33 +269,51 @@ function picturesOnlyIt(world, e, tag) {
 	return picturesOf(world, e).filter((f) => (f.tags ?? []).includes(tag) && !shown.has(f.title ?? ''));
 }
 
-/** What a function may ask for: changes of entries, and Public shares. */
+/** What a function may ask for: changes of entries, and Public shares of them. */
 export const ASKS = ['create', 'set', 'unset', 'insert', 'remove', 'move', 'tag', 'share'];
 
 /**
- * Op `op` a function handed back, as the device makes it: on vault `vault`, as vault `actor`, its `$n` (the entry
- * its own op n created) counted from `base`, the ops before it; or why not: an op it may not ask for, an entry not
- * the one moved, nor one of its posts or of the pictures it was handed, nor one it created, or a share that isn't
- * Public.
- * @param {any} op @param {string} vault @param {string} actor @param {string[]} entries @param {number} base
- * @returns {object | string}
+ * The ops `asked` a function handed back, as the device makes them: on vault `vault`, as vault `actor`, each `$n` in
+ * them (the entry its own op n created) counted from `base`, the ops before it; or why not, for the first it may not
+ * ask for. A function may create entries in the vault; change and tag the entry moved, its posts and the pictures it
+ * was handed (`entries`), and the entries its own ops before created; and share with Everyone, at Public, those same
+ * entries by their ids (`what: { entry: [...] }`), and nothing wider: never a tag, a type or the whole vault (a share
+ * with no `what`, or `everything`), which would reach entries the move doesn't concern.
+ * @param {any[]} asked @param {string} vault @param {string} actor @param {string[]} entries @param {number} base
+ * @returns {object[] | string}
  */
-function bound(op, vault, actor, entries, base) {
-	if (!ASKS.includes(op.op)) return `it may not ask for ${op.op}`;
-	/** @param {unknown} x */
-	const ref = (x) => (typeof x === 'string' && /^\$\d+$/.test(x) ? `$${base + Number(x.slice(1))}` : x);
-	const out = { ...op, as: actor };
-	if (op.op === 'create') return { ...out, vault };
-	if (op.op === 'share') {
-		if (op.who !== EVERYONE || op.level !== 'Public') return 'a share it asks for is Public alone';
-		const what = op.what?.entry ? { entry: op.what.entry.map(ref) } : op.what;
-		return { ...out, over: vault, what };
+function bound(asked, vault, actor, entries, base) {
+	/** Entry `x`, which op `i` names, as the device makes it: `$n` counted from `base`; `null` where it may not name it. */
+	const reach = (/** @type {unknown} */ x, /** @type {number} */ i) => {
+		if (typeof x !== 'string') return null;
+		const n = /^\$(\d+)$/.exec(x)?.[1];
+		if (n === undefined) return entries.includes(x) ? x : null;
+		return Number(n) < i && asked[Number(n)]?.op === 'create' ? `$${base + Number(n)}` : null;
+	};
+	/** @type {object[]} */
+	const made = [];
+	for (const [i, op] of asked.entries()) {
+		if (!ASKS.includes(op.op)) return `it may not ask for ${op.op}`;
+		if (op.op === 'create') {
+			// it has no bytes to bring
+			if (op.file) return 'it brings no file';
+			made.push({ ...op, as: actor, vault });
+		} else if (op.op === 'share') {
+			if (op.who !== EVERYONE || op.level !== 'Public') return 'a share it asks for is Public alone';
+			const ids = op.what?.entry;
+			const one = !!op.what && Object.keys(op.what).length === 1 && Array.isArray(ids) && ids.length > 0;
+			const named = one ? ids.map((/** @type {unknown} */ x) => reach(x, i)) : [];
+			if (!one || named.includes(null)) {
+				return 'a share it asks for is on the entry it moves, its posts, its pictures or the entries it created, by their ids';
+			}
+			made.push({ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { entry: named }, as: actor });
+		} else {
+			const entry = reach(op.entry, i);
+			if (entry === null) return 'it changes only the entry it moves, its posts, its pictures and the entries it created';
+			made.push({ ...op, as: actor, entry });
+		}
 	}
-	const entry = String(ref(op.entry));
-	if (!entries.includes(entry) && !/^\$\d+$/.test(entry)) {
-		return 'it changes only the entry it moves, its posts and its pictures';
-	}
-	return { ...out, entry };
+	return made;
 }
 
 /**
@@ -348,10 +370,9 @@ export async function moving(world, actor, e, flow, to, withPictures = true) {
 		const now = Math.floor(Date.now() / 1000);
 		const { ops: asked, error } = await runFunction(f.code, { ...event, item, posts, pictures, now });
 		if (error) errors.push(`${f.name}: ${error}`);
-		const made = asked.map((o) => bound(o, e.vault, actor, [e.entry, ...posts, ...pictures], ops.length));
-		const wrong = made.find((o) => typeof o === 'string');
-		if (wrong) errors.push(`${f.name}: ${wrong}`);
-		else ops.push(.../** @type {object[]} */ (made));
+		const made = bound(asked, e.vault, actor, [e.entry, ...posts, ...pictures], ops.length);
+		if (typeof made === 'string') errors.push(`${f.name}: ${made}`);
+		else ops.push(...made);
 	}
 	return { ops, errors };
 }

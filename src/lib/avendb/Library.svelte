@@ -9,7 +9,8 @@
 	details on the right (its kind, size, who added it and when, its tags, where it is synced to, who it is shared
 	with and its hash): a film or a song plays as the browser's player asks for it, a range at a time, streamed from
 	the device through a service worker (./files.js), or read whole where none runs; a picture, an SVG or a PDF shows
-	whole; any file saves. Files dropped on the page, or picked, go into the vault one
+	whole, a PDF in the browser's viewer in a frame whose policy lets nothing in it run, load or post (`PDF_FRAME`); any
+	file saves. Files dropped on the page, or picked, go into the vault one
 	by one: each sealed under a key of its own on this device as it is read, a megabyte at a time, then an entry that
 	brings it, which syncs as any edit does, so the person's other devices and avenDB's server fetch its sealed bytes and
 	open them with the key in the edit. A vault other than this one adds a file only through a cap with write on a
@@ -22,6 +23,7 @@
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import SiteMedia from './SiteMedia.svelte';
+	import { DENY } from '../sandbox/policy.js';
 	import { address, dataUrl, kindOf, KINDS, mediaOf, serve, whole, WHOLE } from './files.js';
 	import { familyOf } from './made.js';
 	import { allowed, creatable, deleting, may } from './ops.js';
@@ -56,6 +58,19 @@
 
 	/** The largest picture a tile previews. */
 	const THUMB = 16 << 20;
+	/**
+	 * The walls of the frame a PDF shows in, set before it loads: a policy (its `csp` attribute, which Chromium enforces
+	 * on what loads in it) and every powerful feature off (`allow`, as every sandboxed frame of ours has it). The bytes
+	 * come from a vault, typed a PDF, and Chromium's viewer draws them; but it draws nothing in a sandboxed frame,
+	 * whatever the sandbox allows (Chromium 141, 2026-10-19), so the frame holds this policy instead: whatever comes in
+	 * it, a page in the PDF's place too, runs no script, loads nothing and posts no form, and the viewer's own inline
+	 * styles still apply. A browser that doesn't read the attribute shows it as a PDF, as its type says. A link in the
+	 * PDF still takes this tab where it points, as Chromium's viewer opens links.
+	 */
+	const PDF_FRAME = {
+		csp: "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'",
+		allow: DENY
+	};
 	/** The image types a page shows as pictures. */
 	const PICTURE = /^image\/(png|jpeg|gif|webp|avif|bmp|x-icon|vnd\.microsoft\.icon)$/;
 
@@ -677,7 +692,7 @@
 				{:else if (k === 'image' || k === 'svg') && src}
 					<img src={src} alt={viewing.title} />
 				{:else if k === 'pdf' && src}
-					<iframe src={src} title={viewing.title ?? 'PDF'}></iframe>
+					<iframe {...PDF_FRAME} src={src} title={viewing.title ?? 'PDF'} referrerpolicy="no-referrer"></iframe>
 				{:else if k === 'other'}
 					<p class="note">No preview for this kind of file: save it to open it.</p>
 				{/if}
