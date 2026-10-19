@@ -6,7 +6,7 @@ with all its rights and governs nothing) and a share (a named group of ops on a 
 issuer holds). One kind table says what each kind of vault may be (`policy::Kind::rules`): a human vault is a person's,
 owned by their passkeys, with their devices; a coop vault is owned by human and coop vaults, and holds no devices; an
 aven, a coop's one AI identity, is owned by its coop alone, one to a coop, and holds devices: its server and its agents;
-and a device vault, owned by one human or coop vault, holds the keys of one machine, such as a studio worker. The server
+and a device vault, owned by one human or coop vault, holds the keys of one machine that vault runs. The server
 is a device of avenMAIA, Maia City's aven, at the end of the seed. An agent, as agentClaude, is a device of the same
 aven beside it, and acts as the aven, with its rights. A vault is a flat library of entries, each a Loro document whose
 type and tags travel sealed inside its writes. Shares give a vault, or everyone, a level on any slice of a vault: relay,
@@ -33,7 +33,7 @@ encryption and passkeys, schemas and lenses, Loro documents and their history an
 | `crates/avendb-net` | avenDB on the network: each device a node on an iroh endpoint of its own ed25519 key, X25519MLKEM768 the only key exchange, a hello that proves the device on every connection, sync by shares and keep shares, McEliece keys and file pieces in iroh-blobs behind a gate, each device's holdings told to each peer that may know them (`holdings`), and signed, kept and passed on (`statements`), linking a new device by its passkey, `Node::run`, the jobs it runs in the background (`jobs`), each place's shelf (OPFS, a folder or the server's bucket), and the server's node (`server`) |
 | `crates/avendb-server` | avenDB's server as its binary runs it: its node on its shelf, its bucket's S3 client (`bucket`), its relay, which lets in only the devices the server knows, and the Maia Universe's feed (`feed`) (see [The server](#the-server)) |
 | `crates/avendb-browser` | A device of its person in a web page: the network crate as WebAssembly, its node reaching every peer through the server's relay, `PageDevice.run` (see [A device in the browser](#a-device-in-the-browser)) |
-| `crates/avendb-device` | The same device run natively in the Mac app, hosted in the app's own process or as a sidecar, its calls in lines of JSON (see [Natively, beside the Mac app](#natively-beside-the-mac-app)); the agents' devices, each the MCP server of its harness (`agent`), and the drives and studio workers it hosts (`drive`, `worker`) |
+| `crates/avendb-device` | The same device run natively in the Mac app, hosted in the app's own process or as a sidecar, its calls in lines of JSON (see [Natively, beside the Mac app](#natively-beside-the-mac-app)); the agents' devices, each the MCP server of its harness (`agent`), and the drives it hosts (`drive`) |
 | `Dockerfile.server`, `compose.yml` | The server's image, built from `avendb/` alone, which `avendb.yml` deploys (see [Deploying the server](#deploying-the-server)), and a compose file that runs it on this machine, which is not deployed |
 | `scripts/build-web.sh` | Builds `avendb-browser` into the page's own device, `src/lib/avendb/device/` in the app (committed, so the app builds without Rust) |
 | `scripts/test-browser.sh` | Builds `avendb-browser` for the browser and runs its test page in headless Chromium |
@@ -175,9 +175,8 @@ own device, each call answered by the device itself, with no lines of JSON betwe
 in `avendb-device --dir <folder> [--volumes <folder>]`, the sidecar (`serve`), each call a line on the device's stdin,
 each answer one on its stdout; it logs on its stderr as `RUST_LOG` says, else its warnings. The app's build makes that
 sidecar too (`vault/app/build.rs`, in this workspace and lockfile, in its `app` profile, optimised). Its calls include
-`found`, `link`, `open`, `steps`, `run [op, node?]`, `fileStart`, `fileChunk`, `fileEnd`, `fileAgain` and `fileDrop`
-to hand `put_file` a file's bytes, `drives`, `joinDrive`, `openDrive` and `ejectDrive` for the drives it hosts, and
-`workers` and `addWorker` for the studio workers it hosts.
+`found`, `link`, `open`, `steps`, `run [op]`, `fileStart`, `fileChunk`, `fileEnd`, `fileAgain` and `fileDrop`
+to hand `put_file` a file's bytes, and `drives`, `joinDrive`, `openDrive` and `ejectDrive` for the drives it hosts.
 
 - **Direct.** Its node binds UDP sockets of its own on every interface, IPv4 and IPv6, and maps a port on the router
   where one lets it (UPnP, NAT-PMP, PCP: `Options::direct`), so it reaches the person's other devices directly wherever

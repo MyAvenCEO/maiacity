@@ -249,15 +249,6 @@ pub fn aven_of(st: &State, mine: VaultId) -> Option<VaultId> {
     world::seed_coop(st, mine).and_then(|coop| world::aven_of(st, coop))
 }
 
-/// The device vault of agent `name` under aven `aven`, by device `me`'s view: one the aven owns alone whose profile
-/// reads the agent's name, as the agent's device vault was named as it was founded.
-pub fn agent_vault(lab: &Lab, me: SignerId, aven: VaultId, name: &str) -> Option<VaultId> {
-    let st = lab.state(me);
-    let under = |v: &&Vault| v.kind == Kind::DeviceVault && v.owners == [Principal::Vault(aven)];
-    let named = |v: VaultId| world::profile_of(lab, me, v).is_some_and(|(_, title)| title == name);
-    st.vaults().iter().filter(under).map(|v| v.id).find(|&v| named(v))
-}
-
 
 
 
