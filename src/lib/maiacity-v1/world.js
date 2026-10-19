@@ -3314,6 +3314,9 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	// follows what the camera looks at, so the shadows fall wherever the story is
 	/** the canvas's glow by day and at night, and the lantern's own light, as the bell tent gives them */
 	const CLOTH_DAY = new THREE.Color('#5a4c34'), CLOTH_NIGHT = new THREE.Color('#ffb36a'), LANTERN = 1.4;
+	/** the ride's soft light: the sun and the sky's fill over what the hour gives them, and the light the sunlit steppe
+	 *  bounces up (into the van it lights the roof and the faces from below) */
+	const SOFT_SUN = 0.75, SOFT_FILL = 1.8, GROUND = hemi.groundColor.clone(), BOUNCE = new THREE.Color('#c2ad85');
 	/** the hour the world's light is at now: the moment's (a time-lapse moves it), the story's, else the game's */
 	const hourNow = () => moment?.hour ?? stage.hour ?? hour;
 	function light(t) {
@@ -3322,12 +3325,17 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const a = Math.PI * day;
 		// the low cut cold: a bluer, flatter light for its beat (on film, the shot's lights say it: ./intro.js COLD)
 		const cold = !film && !!moment?.cold;
+		// the ride in a soft light (Samuel 2026-10-19: the intro's first shots not so dark and contrasty, lit so their
+		// details read): more of the sky's fill, less of the hard sun. In the van only the sky's light reaches the faces
+		// (the roof shades them from the sun), so they come up towards the bright windows; outside, the shadows open
+		const soft = riding && !cold;
 		sun.target.position.copy(controls.target).setY(0);
 		sun.position.set(Math.cos(a) * 90, 8 + up * 80, -30 + Math.sin(a) * 20).add(sun.target.position);
-		sun.intensity = (0.25 + up * 2.1) * (cold ? 0.55 : 1);
+		sun.intensity = (0.25 + up * 2.1) * (cold ? 0.55 : soft ? SOFT_SUN : 1);
 		if (cold) sun.color.setHSL(0.58, 0.25, 0.8);
 		else sun.color.setHSL(0.1, 0.6 - up * 0.3, 0.75 + up * 0.15);
-		hemi.intensity = (0.35 + up * 0.85) * (cold ? 0.8 : 1);
+		hemi.intensity = (0.35 + up * 0.85) * (cold ? 0.8 : soft ? SOFT_FILL : 1);
+		hemi.groundColor.copy(soft ? BOUNCE : GROUND);
 		const c = new THREE.Color(0x1d2b3d).lerp(new THREE.Color(cold ? 0xb4c4d2 : 0xd8e2e2), Math.min(1, up * 1.6));
 		// the tent glows from within once it has power, more as the light goes: its lantern turned up, the canvas warm
 		// with it (the bell tent's own night glow); and the fire in front of it lit at dusk, flickering
