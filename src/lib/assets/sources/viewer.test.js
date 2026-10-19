@@ -24,10 +24,9 @@ const made = await bundleRecipes();
 mock.module('$app/paths', () => ({ base: '' }));
 
 const { NotInVault, recipeEntryOf } = await import('./avendb.js');
-const { GROUPS, refusedOf, shelfOf } = await import('./shelf.js');
+const { GROUPS, nameOf, refusedOf, shelfOf } = await import('./shelf.js');
 const { buildName, vaultBuild } = await import('./viewer.js');
 const { MOST, fileReader, newestFile, proposedSource, recipeRows, vaultSource } = await import('../../avendb/assets.js');
-const { vaultRecipes } = await import('./avendb.js');
 const { ENGINES, recipeFile } = await import('../engines.js');
 const { keyOf } = await import('../cache.js');
 const { recipeOfFile } = await import('./cards.js');
@@ -96,6 +95,40 @@ const of = (device, label) => {
 	const i = device.db.rows.findIndex((r) => r.record.card.recipe === LABEL[label]);
 	return { row: device.db.rows[i], entry: device.world.entries[i] };
 };
+
+/** an asset's entry id as the stand-in device makes it: a hash, as avenDB's are, of nothing a page reads */
+const assetEntry = (asset) => bytesToHex(blake3(utf8ToBytes(`entry ${asset}`)));
+
+/**
+ * This browser's device as the seed writes it since generation 15 (Samuel 2026-10-18): one entry for each asset, with
+ * no tags, its versions and variants each a write it brought (`brought`, as the device's `data::database` lists them),
+ * its main line's, each version's first variant, then each other variant's own line, each with its own file.
+ */
+function assetDeviceOf() {
+	const d = deviceOf();
+	const assets = new Map();
+	d.db.rows.forEach((row, i) => {
+		const card = row.record.card;
+		const asset = `${card.group}/${card.id}`;
+		assets.set(asset, [...(assets.get(asset) ?? []), { row, file: d.world.entries[i].files[0] }]);
+	});
+	const rows = [];
+	const entries = [];
+	for (const [asset, held] of assets) {
+		const entry = assetEntry(asset);
+		held.sort((a, b) => a.row.record.card.version - b.row.record.card.version);
+		const brought = held.map(({ row, file }) => {
+			const card = row.record.card;
+			const first = !card.variant || made.index.first[`${asset}@${card.version}`] === card.variant;
+			const line = first ? null : bytesToHex(blake3(utf8ToBytes(`line ${asset} ${card.variant}`)));
+			return { edit: bytesToHex(blake3(utf8ToBytes(`edit ${card.recipe}`))), line, version: card.version, files: [file], record: row.record };
+		});
+		const last = held.at(-1).row;
+		rows.push({ ...last, entry, tags: [], record: last.record, brought });
+		entries.push({ ...d.world.entries[0], entry, tags: [], files: held.map((x) => x.file) });
+	}
+	return { ...d, db: { vault: VAULT, rows }, world: { entries, vaults: [] } };
+}
 
 /**
  * The box as a stand-in that builds in this process as the frozen engine does (../box/engine.js `buildOne`): the
@@ -227,46 +260,62 @@ test("rows the acting vault doesn't read, another vault's database and other typ
 	expect(() => v.hashOf('plants/apple@2')).toThrow(/plants\/apple@2 is not in the Maia City vault/);
 });
 
-test('the shelf lists every recipe of the vault once, by group, asset, version and variant, from its entries alone', () => {
-	const d = deviceOf();
+test('the shelf lists every recipe of the vault once, by group, asset (its entry), version and variant, from its entries alone', () => {
+	const d = assetDeviceOf();
 	const v = vaultSource(d.world, d.db, VAULT, ACTOR, d.readFile);
+	expect(v.refused).toEqual([]);
+	expect(v.index).toEqual(made.index);
 	const shelf = shelfOf(v);
 	const groups = shelf.map((g) => g.group);
 	expect(groups).toEqual(GROUPS.filter((g) => groups.includes(g)));
 	expect(new Set(groups)).toEqual(new Set(Object.values(made.index.recipes).map((r) => r.group)));
-	const items = shelf.flatMap((g) => g.assets.flatMap((a) => a.versions.flatMap((x) => x.recipes)));
+	// one asset for each entry, named by its entry, never a slug
+	const assets = shelf.flatMap((g) => g.assets);
+	expect(assets.map((a) => a.entry).sort()).toEqual(d.db.rows.map((r) => r.entry).sort());
+	for (const a of assets) expect(Object.keys(a).sort()).toEqual(['entry', 'title', 'versions']);
+	const items = assets.flatMap((a) => a.versions.flatMap((x) => x.recipes));
 	expect(items.length).toBe(327);
 	expect(new Set(items.map((x) => x.hash))).toEqual(new Set(HASHES));
-	const entries = new Map(d.db.rows.map((r) => [r.record.card.recipe, r.entry]));
 	for (const x of items) {
-		expect(x.entry).toBe(entries.get(x.hash));
+		expect(x.entry).toBe(assetEntry(`${x.card.group}/${x.card.id}`));
 		expect([x.title, x.note]).toEqual([CARDS[x.hash].label, CARDS[x.hash].note ?? '']);
 	}
-	const asset = (ref) => shelf.flatMap((g) => g.assets).find((a) => a.ref === ref);
-	// an asset's versions, the newest first; its variants, its first first, each named as its card names it
+	const asset = (name) => assets.find((a) => a.entry === assetEntry(name));
+	// an asset's versions by its entry's own numbers, the newest first; its variants, its first first, each named as
+	// its card names it
 	expect(asset('plants/apple').versions.map((x) => x.v)).toEqual([2, 1]);
 	const ant = asset('actors/ant');
 	expect(ant.title).toBe('Ant');
 	expect(ant.versions[0].recipes[0].variant).toBe(made.index.first['actors/ant@1']);
 	expect(ant.versions[0].recipes.map((x) => x.name).sort()).toEqual(['Ant hill', 'Wood ant']);
-	for (const a of shelf.flatMap((g) => g.assets)) for (const x of a.versions) expect(x.recipes.filter((r) => r.first).length).toBeLessThanOrEqual(1);
+	for (const a of assets) for (const x of a.versions) expect(x.recipes.filter((r) => r.first).length).toBeLessThanOrEqual(1);
 	// an asset of one recipe goes by its card's label
 	expect(asset('things/bell-tent').title).toBe(CARDS[LABEL['things/bell-tent@1']].label);
+	// a version is named by avenDB alone: its title, its variant's own name, its number and its entry's short id
+	const truck = asset('machines/truck');
+	expect(nameOf(truck, truck.versions[0].recipes[0])).toBe(`${truck.title} v2 · ${truck.entry.slice(0, 8)}…`);
+	expect(nameOf(ant, ant.versions[0].recipes.find((x) => x.name === 'Ant hill'))).toBe(`Ant · Ant hill v1 · ${ant.entry.slice(0, 8)}…`);
+	// the number is the entry's own, where it says one, not its card's
+	const renumbered = { ...d.db, rows: d.db.rows.map((r) => (r.entry === truck.entry ? { ...r, brought: r.brought.map((b) => ({ ...b, version: b.version + 4 })) } : r)) };
+	const moved = shelfOf(vaultSource(d.world, renumbered, VAULT, ACTOR, d.readFile)).flatMap((g) => g.assets).find((a) => a.entry === truck.entry);
+	expect(moved.versions.map((x) => x.v)).toEqual([6, 5]);
 	// an empty vault lists nothing
 	expect(shelfOf(vaultSource(d.world, null, VAULT, ACTOR, d.readFile))).toEqual([]);
 });
 
-test('an entry the reader refused says why, naming its ref, where the shelf leaves it out', () => {
-	const d = deviceOf();
-	const { row } = of(d, 'plants/apple@2');
-	row.tags = row.tags.filter((t) => !t.startsWith('ref:'));
+test('an entry the reader refused says why, naming its entry, where the shelf leaves it out', () => {
+	const d = assetDeviceOf();
+	const row = d.db.rows.find((r) => r.entry === assetEntry('plants/apple'));
+	// its v2 made for an engine this page doesn't run
+	const v2 = row.brought.find((b) => b.version === 2);
+	v2.record = { ...v2.record, engine: { ...v2.record.engine, hash: 'f'.repeat(64) } };
 	const v = vaultSource(d.world, d.db, VAULT, ACTOR, d.readFile);
 	expect(v.refused.length).toBe(1);
 	expect(refusedOf(v, row)).toEqual(v.refused);
-	expect(refusedOf(v, row)[0]).toMatch(/^plants\/apple@2 \(entry .*\): it is not tagged ref:plants\/apple@2/);
-	expect(shelfOf(v).flatMap((g) => g.assets).find((a) => a.ref === 'plants/apple').versions.map((x) => x.v)).toEqual([1]);
+	expect(refusedOf(v, row)[0]).toMatch(new RegExp(`^plants/apple@2 \\(entry ${row.entry.slice(0, 12)}…\\): made for box engine \\d+ \\(ffffffffffff…\\)`));
+	expect(shelfOf(v).flatMap((g) => g.assets).find((a) => a.entry === row.entry).versions.map((x) => x.v)).toEqual([1]);
 	// an entry it said nothing of
-	expect(refusedOf(v, of(d, 'plants/apple@1').row)).toEqual([]);
+	expect(refusedOf(v, d.db.rows.find((r) => r.entry === assetEntry('things/bell-tent')))).toEqual([]);
 	expect(refusedOf(v, { entry: 'f'.repeat(64), record: { card: 'not a card' } })).toEqual([]);
 });
 
@@ -382,21 +431,20 @@ test("an AIP's version of an asset is read on its line and built from its own fi
 	};
 	const readFile = async (root, size, from, to) => store.get(root).slice(from, to);
 	// the truck's entry as the seed wrote it at v1, and v2 proposed on a line of it (scripts/propose-version.mjs), as
-	// `get` reads that line: the entry's tags, v2's record, and what the line brings, v1's file first
-	const row = { entry: 'e'.repeat(64), vault: VAULT, type: 'recipe', tags: entryOf(one).tags, record: entryOf(two).value, line: 'a'.repeat(64), heads: ['b'.repeat(64)], files: [fileOf(one), fileOf(two)] };
-	expect(row.tags).not.toContain('ref:machines/truck@2:truck');
-	const p = proposedSource([row], readFile);
+	// `get` reads that line: v2's record, and what the line brings, v1's file first; its tags are not read
+	const truck = { entry: 'e'.repeat(64), vault: VAULT, type: 'recipe', tags: [], record: entryOf(one).value, line: null, heads: ['c'.repeat(64)], files: [fileOf(one)] };
+	const row = { ...truck, record: entryOf(two).value, line: 'a'.repeat(64), heads: ['b'.repeat(64)], files: [fileOf(one), fileOf(two)] };
+	const p = proposedSource([row], readFile, [truck]);
 	expect(p.refused).toEqual([]);
 	expect(Object.keys(p.index.recipes)).toEqual([two]);
 	expect(await p.recipeAt(two)).toEqual({ hash: two, code: FILES[two] });
 	const built = await vaultBuild(p, two, {}, { box: boxOf(), keep: false });
 	expect(built.card.version).toBe(2);
-	// read as the vault's own, the line's version is no recipe of it: only an AIP's card shows it
-	const own = vaultRecipes([row], { read: async () => undefined });
-	expect(own.refused.some((x) => x.includes('machines/truck@2:truck') && x.includes('not tagged'))).toBe(true);
-	// nor is another asset's version on the truck's line
+	// another asset's version on the truck's line is refused: the entry's first version says it is the truck
 	const other = { ...row, record: entryOf(LABEL['machines/pickup@1:pickup']).value };
-	expect(proposedSource([other], readFile).refused.some((x) => x.includes('not tagged'))).toBe(true);
+	expect(proposedSource([other], readFile, [truck]).refused).toEqual([`machines/pickup@1:pickup (entry eeeeeeeeeeee…): its entry is machines/truck’s, and an entry is one asset`]);
+	// a new entry, which the AIP lands on Accept, has no first version yet: its line is its first
+	expect(proposedSource([other], readFile, []).refused).toEqual([]);
 	// a device older than `get`'s files says so, and a file that isn't the recipe its card names is refused
 	expect((await thrown(() => proposedSource([{ ...row, files: undefined }], readFile).recipeAt(two))).message).toMatch(/needs a newer avenDB/);
 	expect(await thrown(() => proposedSource([{ ...row, files: [fileOf(two), fileOf(one)] }], readFile).recipeAt(two))).toBeInstanceOf(NotInVault);

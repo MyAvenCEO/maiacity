@@ -170,13 +170,13 @@ const UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 /**
  * One row the vault hands out as a recipe of the index, or why not: a `recipe` entry whose card fits its schema and
- * names its recipe, tagged with its group and the ref its card names, made for the box engine pages run (the latest of
- * ../engines.json, by its hash). Its file is not read here: only when a build needs it.
- * A version on a proposal's line counts the same way where `proposed` (an AIP's line, as `get` reads it on that line,
- * shown for its vault to answer, never put in the shelf of the vault's own).
- * @param {any} row @param {boolean} [proposed] @returns {{ hash: string, label: string, card: any, first?: string } | { error: string, label?: string }}
+ * names its recipe, made for the box engine pages run (the latest of ../engines.json, by its hash). Its file is not
+ * read here: only when a build needs it. An asset is its entry, and its versions are the entry's own (Samuel
+ * 2026-10-18 and 10-19: avenDB's ids, not refs): its tags are not read, so a version accepted onto its main line, or
+ * proposed on a line of it, counts with no tag of its own; `vaultRecipes` holds every version of an entry to one asset.
+ * @param {any} row @returns {{ hash: string, label: string, card: any, first?: string } | { error: string, label?: string }}
  */
-function recipeOfRow(row, proposed = false) {
+function recipeOfRow(row) {
 	const where = whereOf(row);
 	const r = row?.record ?? {};
 	if (row?.type !== 'recipe' || r.kind !== 'recipe') return { error: `${where}: not a recipe entry` };
@@ -187,22 +187,15 @@ function recipeOfRow(row, proposed = false) {
 	/** @param {string} why */
 	const no = (why) => ({ error: `${label} (${where}): ${why}`, label });
 	if (!card.recipe) return no('its card names no recipe');
-	const tags = Array.isArray(row.tags) ? row.tags : [];
-	const onMain = row.line === null || row.line === undefined;
-	// a version proposed and accepted after its asset's entry was written (`versionsOf`) comes onto its main line
-	// without a tag of its own: it counts there where the entry is tagged as one of that asset's (`ref:group/id@…`)
-	const own = tags.includes(refTag(label));
-	const accepted = ((Object.hasOwn(row, 'main') && onMain) || proposed) && tags.some((/** @type {string} */ t) => t.startsWith(refTag(`${card.group}/${card.id}@`)));
-	if (!own && !accepted)
-		return no(`it is not tagged ${refTag(label)}, the ref its card names`);
-	if (!tags.includes(groupTag(card.group))) return no(`it is not tagged ${groupTag(card.group)}`);
 	const e = r.engine ?? {};
 	if (card.engine !== LATEST.v || e.host !== 'box' || e.version !== LATEST.v || e.hash !== LATEST.blake3)
 		return no(`made for ${e.host ?? '?'} engine ${e.version ?? '?'} (${String(e.hash ?? '?').slice(0, 12)}…), its card for ${card.engine}: pages run box engine ${LATEST.v} (${LATEST.blake3.slice(0, 12)}…)`);
-	// a kind's first variant: the one its ref names where it names no variant, on its entry's main line where it is one
-	// version of an entry of the asset's (`versionsOf`), as a variant's own line is beside it; a version accepted onto
-	// main untagged is main's, so its first
-	const first = card.variant && onMain && (!own || tags.includes(refTag(refOf(card.group, card.id, card.version)))) ? card.variant : undefined;
+	// a kind's first variant, the one a legacy ref names where it names no variant: on its entry's main line, as a
+	// variant's own line is beside it (`versionsOf`); a row that is its entry's only version, as the seed wrote one
+	// entry for each variant before generation 15, is its kind's first where its tags say so
+	const onMain = row.line === null || row.line === undefined;
+	const tags = Array.isArray(row.tags) ? row.tags : [];
+	const first = card.variant && onMain && (Object.hasOwn(row, 'main') || tags.includes(refTag(refOf(card.group, card.id, card.version)))) ? card.variant : undefined;
 	return { hash: card.recipe, label, card, ...(first ? { first } : {}) };
 }
 
@@ -242,11 +235,14 @@ export function versionsOf(row) {
  * another variant than the one it names); `recipeAt(hash)`, `{ hash, code }`, the entry's file once read, held to the
  * hash (the BLAKE3 of its bytes) and to the version and variant its card says. Each throws NotInVault, naming the ref,
  * for what the vault doesn't hold or holds otherwise.
- * With `proposed`, the rows are an AIP's lines, each as `get` reads it on its line: a version proposed on an asset's
- * entry counts where the entry is tagged as that asset, so its vault sees what it would accept ($lib/avendb/Hitl.svelte).
- * @param {any[]} rows @param {{ read: (row: any) => Promise<Uint8Array | ArrayBuffer | string | undefined>, proposed?: boolean }} o
+ * An entry is one asset: the one its first version names (its main line's oldest, as `versionsOf` lists them), and a
+ * version of it whose card names another is refused, so no entry speaks for an asset another entry holds. `assets`
+ * says which asset an entry already is (`group/id`, by its entry) where the rows don't hold its first version: a
+ * proposal's line, read alone ($lib/avendb/assets.js `proposedSource`).
+ * @param {any[]} rows
+ * @param {{ read: (row: any) => Promise<Uint8Array | ArrayBuffer | string | undefined>, assets?: Iterable<[string, string]> }} o
  */
-export function vaultRecipes(rows, { read, proposed = false }) {
+export function vaultRecipes(rows, { read, assets = [] }) {
 	/** @type {{ engine: number, recipes: Record<string, any>, labels: Record<string, string>, latest: Record<string, number>, first: Record<string, string> }} */
 	const index = { engine: LATEST.v, recipes: {}, labels: {}, latest: {}, first: {} };
 	/** @type {string[]} */
@@ -262,11 +258,20 @@ export function vaultRecipes(rows, { read, proposed = false }) {
 	const claims = new Map();
 	/** @type {Map<string, Set<string>>} */
 	const labelsOf = new Map();
+	/** the asset each entry is, by its first version that checks (`group/id`) @type {Map<string, string>} */
+	const assetOf = new Map(assets);
 	for (const row of (Array.isArray(rows) ? rows : []).flatMap(versionsOf)) {
-		const m = recipeOfRow(row, proposed);
+		const m = recipeOfRow(row);
 		if ('error' in m) {
 			if (m.label) refuse(m.label, m.error);
 			else refused.push(m.error);
+			continue;
+		}
+		const asset = `${m.card.group}/${m.card.id}`;
+		const is = assetOf.get(row.entry) ?? asset;
+		assetOf.set(row.entry, is);
+		if (is !== asset) {
+			refuse(m.label, `${m.label} (${whereOf(row)}): its entry is ${is}’s, and an entry is one asset`);
 			continue;
 		}
 		claims.set(m.label, [...(claims.get(m.label) ?? []), { ...m, row }]);

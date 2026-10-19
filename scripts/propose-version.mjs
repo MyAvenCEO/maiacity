@@ -6,8 +6,9 @@
 // file onto that line with its record (`put_file`, the file beside it, as the seed's `assetOps` writes a version), and
 // opens an AIP over the line (`aip_open`). An owner then puts it forward ("Propose it") and accepts it in the
 // Proposals app (/app/aips/); the accept merges the line into main, and every page builds the new version from the
-// vault (src/lib/assets/sources/avendb.js reads it there without a tag of its own). Without --run it only says what
-// it would do. A version with variants beyond its first is refused: an AIP lands its lines on main alone.
+// vault (src/lib/assets/sources/avendb.js reads an entry's versions by avenDB's own numbers, no tags). Without --run
+// it only says what it would do. A version with variants beyond its first is refused: an AIP lands its lines on main
+// alone.
 //
 //   node scripts/propose-version.mjs machines/truck@2 [--run] [--device <path of avendb-device>]
 //
@@ -124,7 +125,7 @@ const aipNote = [note, `Recipe ${card.recipe}, ${card.triangles?.toLocaleString?
 console.error(`${main.label}: recipe ${card.recipe.slice(0, 12)}…, ${main.file.text.length.toLocaleString('en')} characters (${path})`);
 console.error(`AIP: ${title}`);
 if (!flag('--run')) {
-	console.error('Without --run nothing is written. With it: find the entry tagged ref:' + `${asset}@1, propose v${v} on it, put the file on that line, open the AIP.`);
+	console.error(`Without --run nothing is written. With it: find the vault's entry of ${asset}, propose v${v} on it, put the file on that line, open the AIP.`);
 	process.exit(0);
 }
 
@@ -134,8 +135,12 @@ try {
 	const me = await agent.call('avendb_vaults', {});
 	const city = (me.vaults ?? []).find((/** @type {any} */ x) => x.name === 'Maia City');
 	if (!city) throw new Error(`this agent sees no Maia City: ${typeof me === 'string' ? me : JSON.stringify(me).slice(0, 400)}`);
-	const found = await agent.call('avendb_ask', { op: { op: 'query', vault: city.id, where: { all: [{ type: ['recipe'] }, { tag: `ref:${asset}@1` }] }, select: ['card'] } });
-	const rows = found.rows ?? [];
+	// the asset's entry: the recipe entry whose card is of it (an entry is one asset, by avenDB's id, not a ref tag),
+	// leaving out what the seed marked deleted
+	const found = await agent.call('avendb_ask', { op: { op: 'query', vault: city.id, where: { type: ['recipe'] }, select: ['card'] } });
+	const rows = (found.rows ?? []).filter(
+		(/** @type {any} */ r) => r.record?.card?.group === group && r.record?.card?.id === id && !(r.tags ?? []).includes('avendb:deleted')
+	);
 	if (rows.length !== 1) throw new Error(`Maia City holds ${rows.length} entries of ${asset} (${rows.map((/** @type {any} */ r) => r.entry).join(', ') || 'none'}): one is proposed to, so nothing was written`);
 	const [row] = rows;
 	const at = row.record?.card?.version ?? 0;
