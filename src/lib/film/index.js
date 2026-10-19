@@ -130,6 +130,10 @@ export function startFilm({ base = '' } = {}) {
 	/** the shot drawn before its world was all there (past its wait), while the rest streams in, else '' */
 	let streaming = '';
 
+	/** Whether the set this shot names (src/lib/film/sets.js) is built: only a staging builds it, so a shot whose set is
+	 *  not there yet is never held, however much of the world is (a cut to it moved the camera onto bare land) */
+	const dressed = (/** @type {Spec} */ spec) => !spec.world.props || !!w.__sets?.[spec.world.props];
+
 	/** what has been staged and settled (loads done, shaders compiled) before: staged there again while the world
 	 * still holds it, nothing new is built, so nothing is compiled again (compiling the whole scene at every cut hitched) */
 	const settledFor = new Set();
@@ -399,7 +403,7 @@ export function startFilm({ base = '' } = {}) {
 				// everything these shots need, kept built whichever shot asks last
 				v.film.keep(all.map((s) => ({ ...s.world, views: viewsOf(v, s) })));
 				// a world that streams by view, holding a shot already, needs no staging for it
-				for (const s of all) if (!(v.film.streams && v.film.holds({ ...s.world, views: viewsOf(v, s) }))) await stage(s, live ? STAGE_LIMIT : Infinity);
+				for (const s of all) if (!(v.film.streams && dressed(s) && v.film.holds({ ...s.world, views: viewsOf(v, s) }))) await stage(s, live ? STAGE_LIMIT : Infinity);
 				if (meter) for (const s of all) if (!live || knownExposure(s) === undefined) await exposureOf(s);
 			});
 		},
@@ -421,7 +425,7 @@ export function startFilm({ base = '' } = {}) {
 			const v = await mounted();
 			return specs.map((raw) => {
 				const s = normal(raw);
-				return !!v.film.streams && shows(s) && v.film.holds({ ...s.world, views: viewsOf(v, s) });
+				return !!v.film.streams && shows(s) && dressed(s) && v.film.holds({ ...s.world, views: viewsOf(v, s) });
 			});
 		},
 		/** the live viewer's metering ahead: a shot it knows the exposure of is not metered again @param {any} spec */
@@ -482,7 +486,7 @@ export function startFilm({ base = '' } = {}) {
 			const held = streaming === key || v.film.holds({ ...spec.world, views: viewsOf(v, spec) });
 			// a world that streams by view and holds the shot already (built while the shots before it played): the cut is
 			// only a move, the frame drawn at once — no staging, no frame held
-			if (staged !== key && held && v.film.streams && live) {
+			if (staged !== key && held && dressed(spec) && v.film.streams && live) {
 				v.film.move({ ...spec.world, name: spec.meta?.name, views: viewsOf(v, spec) });
 				staged = key;
 			}

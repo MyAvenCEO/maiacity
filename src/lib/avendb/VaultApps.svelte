@@ -20,8 +20,7 @@
 				['library', 'Library', 'library'],
 				['studio', 'Studio', 'studio'],
 				['assets', 'Assets', 'asset'],
-				['flows', 'Flows', 'flow'],
-				['functions', 'Functions', 'fn']
+				['worlds', 'Worlds', 'play']
 			]
 		],
 		[
@@ -31,6 +30,9 @@
 				['tables', 'Table editor', 'table'],
 				['schemas', 'Schemas', 'schema'],
 				['lenses', 'Lenses', 'lens'],
+				// avenDB's own `flow` and `function` schemas, as Schemas and Lenses are (Samuel 2026-10-19)
+				['flows', 'Flows', 'flow'],
+				['functions', 'Functions', 'fn'],
 				['history', 'History', 'history'],
 				['jobs', 'Jobs', 'jobs']
 			]
@@ -57,18 +59,23 @@
 	import Icon from './Icon.svelte';
 
 	/**
-	 * @type {{ at?: string, head?: import('svelte').Snippet<[string]> }} `at`: avenDB's page, before each app's `#` ('' on
-	 *   it); `head`: how a group's name is shown, else as the vault's home shows it
+	 * @type {{ at?: string, head?: import('svelte').Snippet<[string]>, only?: string[], onopen?: () => void }} `at`:
+	 *   avenDB's page, before each app's `#` ('' on it); `head`: how a group's name is shown, else as the vault's home
+	 *   shows it; `only`: the apps shown, where not all of them (a Traveler's Assets and Worlds); `onopen`: what an app
+	 *   opened does first (picks the vault it opens in)
 	 */
-	let { at = '', head } = $props();
+	let { at = '', head, only, onopen } = $props();
+	const groups = $derived(
+		NAV.map(([group, items]) => /** @type {const} */ ([group, only ? items.filter(([id]) => only.includes(id)) : items])).filter(([, items]) => items.length)
+	);
 </script>
 
-{#each NAV as [group, items] (group)}
+{#each groups as [group, items] (group)}
 	<section class="apps" aria-label={HEADS[group] ?? group}>
 		{#if head}{@render head(HEADS[group] ?? group)}{:else}<h2 class="group">{HEADS[group] ?? group}</h2>{/if}
 		<div class="grid">
 			{#each items as [id, label, icon] (id)}
-				<a class="app" href={OUT[id] ?? `${at}#${id}`}>
+				<a class="app" href={OUT[id] ?? `${at}#${id}`} onclick={() => onopen?.()}>
 					<span class="tile {TINTS[group]}"><Icon name={icon} size={34} /></span>
 					<span class="label">{label}</span>
 				</a>

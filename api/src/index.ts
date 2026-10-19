@@ -9,9 +9,6 @@ import { sql } from "./db";
 import { clearCookie, founderIdFrom, initSessions, sessionCookie, tokenFor } from "./session";
 import { inviteOpen, loginFinish, loginOptions, makeInvite, registerFinish, registerOptions } from "./passkey";
 import { fromBunSql, useDb } from "./pg";
-import { migrateLedger } from "./ledger/store";
-import { account, claim, LedgerError } from "./ledger/hearts";
-import { ledgerView } from "./ledger/view";
 import { assignRole, can, capabilities, createRole, deleteRole, initRoles, listRoles, RoleError, setRoleCaps } from "./acl";
 import { CAPABILITIES } from "./caps";
 import { addIdea, deleteIdea, IdeaError, listIdeas, updateIdea } from "./ideas";
@@ -21,7 +18,6 @@ import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } 
 import { checkModels, pick } from "./prem";
 import { listTimelines } from "./timelines";
 import { BEATS, CHANNELS, ContentError, createContent, deleteContent, FORMATS, KINDS, listContent, saveContent, saveDay, savePosts, STATUSES, dropDeliveries, fileStory, unfiledStories } from "./content";
-import { format } from "../../game/time";
 import { GameError, getGame, move, resetGame, takeSeat } from "./maiacity-v1.js";
 import { loadCode } from "../../game/code/index.js";
 import { feedOf } from "../../game/code/sources/avendb.js";
@@ -75,13 +71,6 @@ function fibonacciStep(count: number): number {
   return step;
 }
 
-/** JSON that survives bigints — the ledger counts in 18-decimal integers. */
-const big = (req: Request, body: unknown, init: ResponseInit = {}) =>
-  new Response(JSON.stringify(body, (_k, v) => (typeof v === "bigint" ? v.toString() : v)), {
-    ...init,
-    headers: { "content-type": "application/json", ...cors(req), ...(init.headers ?? {}) },
-  });
-
 /** The signed-in founder with their role, or null. */
 async function viewer(req: Request): Promise<{ id: string; role: string } | null> {
   const id = founderIdFrom(req);
@@ -117,7 +106,7 @@ async function signedIn(req: Request): Promise<{ id: string; role: string } | Re
 
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof LedgerError || e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof ContentError || e instanceof VaultError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof ContentError || e instanceof VaultError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -144,7 +133,6 @@ const loadVaultCode = () =>
   );
 await loadVaultCode();
 setInterval(loadVaultCode, 60_000);
-await migrateLedger();
 await initSessions();
 await initRoles();
 // Prem: the models this key lists, said once in the log (ids only), and each model we use checked — one not listed or
@@ -292,37 +280,6 @@ const server = Bun.serve({
       GET: async (req) => json(req, { open: await inviteOpen(req.params.code) }),
     },
 
-    // ─────────────────────────────── the hearts ───────────────────────────
-    // Minting needs an account: a founder's hearts, their income and their ledger.
-    "/api/account": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await viewer(req);
-        if (!me) return json(req, { error: "not signed in" }, { status: 401 });
-        return big(req, { ...(await account(me.id)), caps: [...capabilities(me.role)] });
-      },
-    },
-    "/api/hearts/claim": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await viewer(req);
-        if (!can(me, "hearts:mint")) return json(req, { error: "Sign up to mint your hearts." }, { status: 401 });
-        try {
-          const { claimed } = await claim(me!.id);
-          return big(req, { claimed, claimedLabel: format(claimed) });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/ledger": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await viewer(req);
-        if (!can(me, "ledger:read")) return json(req, { error: "not signed in" }, { status: 401 });
-        return big(req, await ledgerView(me!.id));
-      },
-    },
     // ─────────────────────────────── the admin ───────────────────────────
     // Who has which role, and what each role holds. Every route asks for a capability, never a role.
     "/api/citizens": {

@@ -27,7 +27,8 @@ export const READS = [
 	'requests',
 	'aips',
 	'aip',
-	'may'
+	'may',
+	'cap_groups'
 ];
 
 /** Whether op `op` only reads. @param {any} op */
@@ -54,6 +55,7 @@ const ACTING = [
 	'variant',
 	'batch',
 	'share',
+	'share_group',
 	'keep',
 	'revoke',
 	'put_file',

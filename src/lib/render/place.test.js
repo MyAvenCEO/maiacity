@@ -57,4 +57,25 @@ describe('placing what is seen', () => {
 		place(s, false);
 		expect(m.matrixWorld.elements[12]).toBe(7);
 	});
+
+	test("a skinned mesh's bind follows it, as three.js's own placing has it (else drawn where it stood when built)", () => {
+		const s = new THREE.Scene();
+		const bone = new THREE.Bone();
+		const mesh = new THREE.SkinnedMesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial());
+		mesh.add(bone);
+		mesh.bind(new THREE.Skeleton([bone]));
+		s.add(mesh);
+		mesh.position.set(48, 0, 75);
+		place(s, false);
+		const want = new THREE.Matrix4().copy(mesh.matrixWorld).invert();
+		expect(mesh.bindMatrixInverse.elements).toEqual(want.elements);
+	});
+
+	test("a camera's view follows it", () => {
+		const s = new THREE.Scene(), cam = new THREE.PerspectiveCamera();
+		s.add(cam);
+		cam.position.set(3, 4, 5);
+		place(s, false);
+		expect(cam.matrixWorldInverse.elements[12]).toBe(-3);
+	});
 });

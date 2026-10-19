@@ -50,7 +50,7 @@ export const [here, Here] = native() ? ['this Mac', 'This Mac'] : ['this browser
 
 /** The changes a vault's owners may have to approve, with the passkey: owners, devices, Owner shares, settings and
  *  new vaults (avendb/docs/ARCHITECTURE.md §8). */
-const APPROVED = ['share', 'revoke', 'settings', 'found'];
+const APPROVED = ['share', 'share_group', 'revoke', 'settings', 'found'];
 
 /** @typedef {'loading' | 'new' | 'closed' | 'open' | 'broken'} Phase */
 /**
@@ -257,6 +257,24 @@ async function link(through, { name, relay }, { step, device: shown } = QUIET) {
 	const d = await avendb.Device.link(name, relay, through, unlockNew, shown(), store).catch(noAccount);
 	step('save');
 	await started(d, nonce, held.id, { name, relay });
+}
+
+/**
+ * Claims the invite a link brought for the person's human vault through avenDB's server, whose code reads `server`:
+ * `share`, the invite's share, and `secret`, its key's, each 64 hex digits, as the link holds them
+ * ($lib/app/entry.js). The device fetches the invite from the server, claims its share with the key, with no owner
+ * signing, and hands the server the vault's logs and the claim at once, as a server that takes a new human vault only
+ * with its invite's claim wants them (avendb-net's `Node::claim_invite`); then shows what changed. The vault's id.
+ * Fails where the invite was used or revoked, or the server takes the vault no more. In a browser alone: nobody signs
+ * up in the Mac app.
+ * @param {string} server @param {string} share @param {string} secret @returns {Promise<string>}
+ */
+async function claim(server, share, secret) {
+	if (mac) throw new Error('An invite is taken in a browser, where you sign up');
+	if (!device) throw new Error('avenDB isn’t open on this page yet');
+	const vault = await device.claim_invite(server, share, secret);
+	await refresh();
+	return vault;
 }
 
 /**
@@ -619,6 +637,7 @@ export const session = {
 	lock,
 	found,
 	link,
+	claim,
 	forget,
 	rename,
 	refresh,

@@ -39,3 +39,12 @@ test('what runs comes first, then what waits, oldest first, then what ended, new
 	const j = (id, state, queued, ended = null) => ({ id, state, queued, ended });
 	expect(ordered([j('a', 'done', 1, 5), j('b', 'queued', 3), j('c', 'running', 9), j('d', 'queued', 2), j('e', 'failed', 1, 8)]).map((x) => x.id)).toEqual(['c', 'd', 'b', 'e', 'a']);
 });
+
+test('a task whose record leaves fields out (Maia City’s older tasks) still reads as a job', async () => {
+	const { tasksOf } = await import('../studio/jobs/tasks.js');
+	const world = { entries: [{ entry: 't9', vault: 'V', type: 'task', tags: [], deleted: false, record: { kind: 'task', rule: 'proxy', version: 1, key: 'k', lane: 'gpu', status: 'done', at: 5 } }] };
+	const [t] = tasksOf(world);
+	expect([t.outputs, t.inputs, t.error]).toEqual([[], [], '']);
+	const [j] = studioJobs([t], [], [], 0, named, on);
+	expect([j.state, j.amount, j.name]).toEqual(['done', 'done', 't9']);
+});

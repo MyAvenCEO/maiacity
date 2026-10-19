@@ -14,9 +14,11 @@
  *   view       a Generated UI view: { id, title, note?, kind: a2ui | html, spec }      (game/genui/views.js)
  *   view-card  a game's screen: { id, kind: 'view', name, data: { slot, libs, height }, code }, with `slots`
  *   logic      a bare logic module: { code, hooks?, max? }
+ *   config     a game's settings: plain JSON, held to the shape of the repo's seed of it (`seed`), so a config from
+ *              the vault can change what a game's numbers are, never what the game finds where
  */
 import { ViewError, check as checkView, checkViewCard } from '../genui/views.js';
-import { logicSource, plainJson, viewHtml } from './rules.js';
+import { JSON_LIMITS, logicSource, plainJson, viewHtml } from './rules.js';
 
 const verdict = (value, errors = [], notes = []) => (errors.length ? { ok: false, errors: errors.slice(0, 12) } : { ok: true, value, notes: notes.slice(0, 12) });
 
@@ -68,8 +70,69 @@ export const TYPES = {
 			const l = logicSource(code, { hooks, needs: hooks.length > 0, max: raw?.max ?? 20_000 });
 			return verdict({ code, ...(hooks.length ? { hooks } : {}) }, l.errors, l.notes);
 		}
+	},
+	config: {
+		what: "A game's settings: plain JSON in the shape of the repo's seed of them",
+		check(raw, { seed }) {
+			const plain = plainJson(raw, 'the config', CONFIG_LIMITS);
+			if (plain) return verdict(null, [plain]);
+			if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return verdict(null, ['a config is a JSON object']);
+			if (seed === undefined) return verdict(null, ['a config the repo holds no seed of: no game reads it']);
+			const shape = shapeOf(seed, raw);
+			return verdict(raw, shape ? [`the config ${shape}`] : []);
+		}
 	}
 };
+
+/** how big a game's settings may be, as JSON */
+export const CONFIG_LIMITS = { ...JSON_LIMITS, bytes: 600_000 };
+
+const kindOf = (v) => (v === null ? 'null' : Array.isArray(v) ? 'list' : typeof v);
+
+/**
+ * Where `value` is not of the shape of `seed`, in a sentence, or '': the same kind of value at every place the seed
+ * has one (a number where it has a number, a list where it has a list), every key of the seed's objects there, and each
+ * item of a list in the shape of the seed's items: the keys every one of them has, and any other key one of them has of
+ * the kind it has there. Keys the seed has not are let be (a game reads none of them).
+ */
+export function shapeOf(seed, value, path = '') {
+	const at = path ? ` at ${path}` : '';
+	if (seed === null || seed === undefined) return '';
+	if (kindOf(seed) !== kindOf(value)) return `holds a ${kindOf(value)}${at}, where the game reads a ${kindOf(seed)}`;
+	if (Array.isArray(seed)) {
+		if (!seed.length) return '';
+		const objects = seed.every((x) => kindOf(x) === 'object');
+		for (let i = 0; i < value.length; i++) {
+			const p = objects ? itemShape(seed, value[i], `${path}[${i}]`) : shapeOf(seed[0], value[i], `${path}[${i}]`);
+			if (p) return p;
+		}
+		return '';
+	}
+	if (typeof seed === 'object') {
+		for (const k of Object.keys(seed)) {
+			if (!(k in value)) return `has no ${path ? `${path}.` : ''}${k}, which the game reads`;
+			const p = shapeOf(seed[k], value[k], path ? `${path}.${k}` : k);
+			if (p) return p;
+		}
+	}
+	return '';
+}
+
+/** an item of a list whose seed items are objects: the keys all of them have, and the others of the kind one has */
+function itemShape(items, value, path) {
+	if (kindOf(value) !== 'object') return `holds a ${kindOf(value)} at ${path}, where the game reads an object`;
+	const keys = new Set(items.flatMap((x) => Object.keys(x)));
+	for (const k of keys) {
+		const has = items.filter((x) => k in x);
+		if (!(k in value)) {
+			if (has.length === items.length) return `has no ${path}.${k}, which the game reads`;
+			continue;
+		}
+		const p = shapeOf(has[0][k], value[k], `${path}.${k}`);
+		if (p) return p;
+	}
+	return '';
+}
 
 /** a type its owner adds: { what, check(raw, ctx) -> verdict } */
 export function define(type, def) {

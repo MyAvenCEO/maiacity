@@ -6,6 +6,7 @@
  */
 
 import { native } from '$lib/native';
+import { answer } from '$lib/avendb/ops.js';
 import { Runner } from './runner.js';
 import { EXECUTORS, NATIVE } from './executors.js';
 
@@ -31,11 +32,44 @@ async function device() {
 	return s?.open ? { call } : null;
 }
 
+/** The name the studio's old worker vaults went by, one a vault, before the Mac worked straight in the vaults (#1010). */
+const OLD_WORKER = 'Studio worker';
+
+/**
+ * The studio's old worker vaults let go of, once (Samuel 2026-10-19: "trigger the deleting of the 2 worker devices"):
+ * each device of a device vault named so is taken out of it, as Owners & devices' Remove does, so it syncs and acts no
+ * more and leaves the vault switcher (vaults.js `pillVaults`). Its passkey sheet comes once; a refusal isn't asked again.
+ * @param {{ call: (name: string, ...args: any[]) => Promise<any> }} d
+ */
+async function retireWorkers(d) {
+	const KEY = 'studio-workers-retired';
+	try {
+		if (localStorage.getItem(KEY)) return;
+	} catch {}
+	const world = answer(await d.call('run', { op: 'world' }));
+	const old = (world?.vaults ?? []).filter((/** @type {any} */ v) => v.kind === 'device' && v.name === OLD_WORKER && v.devices?.length);
+	for (const v of old) {
+		for (const dv of v.devices) {
+			try {
+				answer(await d.call('run', { op: 'revoke', vault: v.id, device: dv.id }));
+				lines.unshift(`${new Date().toLocaleTimeString()} removed the old studio worker ${v.id.slice(0, 8)}`);
+			} catch (e) {
+				lines.unshift(`${new Date().toLocaleTimeString()} the old studio worker ${v.id.slice(0, 8)} stays: ${e instanceof Error ? e.message : e}`);
+			}
+		}
+	}
+	try {
+		localStorage.setItem(KEY, String(Date.now()));
+	} catch {}
+}
+
 /** This Mac's runner, started; `null` where it can't run. */
 export async function macRunner() {
 	if (runner) return runner;
 	const d = await device();
 	if (!d) return null;
+	if (!runner) await retireWorkers(d).catch(() => {});
+	if (runner) return runner;
 	runner = new Runner({
 		send: (op) => d.call('run', op),
 		// every vault the person reaches but a device's: the Maia City vault's footage as much as their own

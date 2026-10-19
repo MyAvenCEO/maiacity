@@ -1032,4 +1032,18 @@ export const MIGRATIONS: Migration[] = [
       DROP TABLE IF EXISTS render_jobs, shot_versions, shots, genui_views CASCADE;
     `,
   },
+  {
+    // Sandbox 2's old economy goes (Samuel 2026-10-19: "the legacy orphaned ones remove too"): its cities and
+    // settlements (coops), their investments, invites and placements on the planet, and the HEARTS ledger with each
+    // founder's mint clock, which no page or job read any more. MaiaCity V1 keeps its own ledger in its game state
+    // (game/maiacity-v1/engine.js, held in v1_games); the app's Ledger and Coops pages read that.
+    id: "0053-drop-sandbox-2-economy",
+    sql: `
+      DROP TABLE IF EXISTS placements, investments, invites CASCADE;
+      DROP TABLE IF EXISTS ledger_tx_states, ledger_transactions, ledger_blocks, ledger_states, ledger_keys, ledger_schemas CASCADE;
+      ALTER TABLE founders DROP COLUMN IF EXISTS city_id, DROP COLUMN IF EXISTS settlement_id,
+        DROP COLUMN IF EXISTS last_claim_at, DROP COLUMN IF EXISTS stake_at;
+      DROP TABLE IF EXISTS coops CASCADE;
+    `,
+  },
 ];

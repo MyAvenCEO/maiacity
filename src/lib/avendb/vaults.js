@@ -74,10 +74,12 @@ import { fieldPaths, pathWords } from './paths.js';
  * `drafts` whether its ops let its who propose new entries (`create` on proposals, in every share of its chain),
  * `null` where the device doesn't read its slice, so a Suggester's made before drafts reads apart (`OLD_SUGGESTER`);
  * `whole` whether it is on the whole vault; `reads` whether its who reads what it reaches; `gets` whether its
- * who's devices receive it. A keep share does neither: it never counts as access.
+ * who's devices receive it. A keep share does neither: it never counts as access. `capGroup` the entry of the vault's
+ * cap group the share names, if it names one (./capgroups.js), whose version in force decides what it gives.
  * @typedef {{ id: string, over: string, issuer: string, who: string, level: Role, wide: boolean,
  *   parent: string | null, chain: string[], slice: Slice | null, revokers: string[], entries: string[],
- *   group: string | null, drafts: boolean | null, whole: boolean, reads: boolean, gets: boolean }} CapView
+ *   group: string | null, capGroup?: string | null, drafts: boolean | null, whole: boolean, reads: boolean,
+ *   gets: boolean }} CapView
  */
 /**
  * A device that gets a cell's edits: the vault it gets them through, whether it opens them, and the level it holds
@@ -344,7 +346,8 @@ export function hue(id) {
  */
 export function pillVaults(w, waiting = {}) {
 	const mine = w.vaults.find((v) => v.id === w.mine);
-	return [mine, ...w.vaults.filter((v) => v.id !== w.mine)]
+	// a device vault with no device left (its last one removed, as the studio's old workers were) acts for nobody: not one to switch to
+	return [mine, ...w.vaults.filter((v) => v.id !== w.mine && !(v.kind === 'device' && !v.devices?.length))]
 		.filter((v) => !!v)
 		.map((v) => ({
 			id: v.id,
@@ -540,6 +543,26 @@ export const seedCity = (world) => seeded(world)[0]?.[0];
 
 /** The seed's aven, avenMAIA, the server's vault, if the person's claim founded it (`seeded`). @param {WorldView} world */
 export const seedServer = (world) => seeded(world)[1]?.[0];
+
+/**
+ * Maia City as anyone's world shows it, whoever founded it (avendb's `world::avenceo` and `seeder`): the coop of the
+ * seed whose aven is the server the person's vault is kept by: an aven with a device, owned alone by a coop owned alone
+ * by a human vault, to which their vault gives relay or more on the whole of it, as it did as it was founded through
+ * the server. Never by its name, which anyone may give a vault. Undefined where the world shows no such server.
+ * @param {WorldView} world @returns {VaultView | undefined}
+ */
+export function serverCity(world) {
+	const byId = new Map(world.vaults.map((v) => [v.id, v]));
+	/** the one vault that owns `v`, if one alone does @param {VaultView | undefined} v */
+	const owner = (v) => (v?.owners.length === 1 && 'vault' in v.owners[0] ? byId.get(v.owners[0].vault) : undefined);
+	for (const c of world.shares) {
+		if (c.over !== world.mine || !c.whole || !['relay', 'backup', 'read', 'write', 'owner'].includes(c.level)) continue;
+		const server = byId.get(c.who);
+		const city = owner(server);
+		if (server?.kind === 'aven' && server.devices.length && city?.kind === 'coop' && owner(city)?.kind === 'human') return city;
+	}
+	return undefined;
+}
 
 /** The types of entries, as a person names one and many. */
 const NOUNS = /** @type {Record<string, [string, string]>} */ ({

@@ -729,7 +729,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			list.push({ x, z, r: keep })
 			trunks.set(k, list)
 		}
-		const S = OUTDOOR_SPACING
+		const S = flora!.spacing ?? OUTDOOR_SPACING, D = flora!.drift ?? DRIFT
 		/** the fields' tilled soil: one mesh for all of them, ridged along their rows, the furrows darker */
 		const soil = { pos: [] as number[], col: [] as number[], idx: [] as number[] }
 		const ridge = new THREE.Color('#7a5a3c'), furrow = new THREE.Color('#4e3826')
@@ -753,7 +753,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		}
 		// first the mini fields, in open ground between where the trees will stand: oats, lentils, chickpeas, edamame,
 		// hemp in rows, bamboo in clumps, each field sown at once and so mostly at one stage
-		for (const crop of FIELDS) {
+		for (const crop of (flora!.fields ?? FIELDS) as typeof FIELDS) {
 			for (let f = 0, tries = 0; f < crop.fields && tries < 400; tries++) {
 				const [w, l] = crop.size
 				const a = r() * Math.PI * 2, d = 40 + r() * (WORLD - 60)
@@ -819,8 +819,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		const drift = (layer: 'shrubs' | 'climbers' | 'herbs' | 'roots' | 'ground' | 'fungi', x: number, z: number, margin: number, keep: number) => {
 			const species = planting(O[layer], r)
 			const main = stageOf(species, r, seed)
-			const n = DRIFT.least + Math.floor(r() * (DRIFT.most - DRIFT.least + 1))
-			const gap = DRIFT.gap[layer], turn = r() * 6.28
+			const n = D.least + Math.floor(r() * (D.most - D.least + 1))
+			const gap = D.gap[layer], turn = r() * 6.28
 			for (let k = 0; k < n; k++) {
 				const d = gap * Math.sqrt(k + 0.3) * (0.85 + r() * 0.3), a = turn + k * 2.39996
 				const px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d
@@ -831,7 +831,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		}
 		/** a layer's drifts, as many as its spacing asks: a drift every so many plants' worth of ground */
 		const drifts = (layer: Parameters<typeof drift>[0], every: number, label: string, margin: number, keep: number) =>
-			grid(every * ((DRIFT.least + DRIFT.most) / 2), label, (x, z) => drift(layer, x, z, margin, keep))
+			grid(every * ((D.least + D.most) / 2), label, (x, z) => drift(layer, x, z, margin, keep))
 		// the shrubs, in drifts between the trunks
 		await drifts('shrubs', S.shrubs, 'Planting the shrubs', 1.4, 0.9)
 		// climbers on their own canes and posts

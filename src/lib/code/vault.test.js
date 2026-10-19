@@ -11,7 +11,9 @@ import { defaultViews } from '../../../game/maiacity-v1/views.js';
 import { examples } from '../../../game/genui/examples.js';
 
 const VAULT = 'a'.repeat(64);
-const repo = Object.values(ENTRIES);
+const all = Object.values(ENTRIES);
+/** the views and logic modules, which the copy writes (a game's settings the seed writes, src/lib/avendb/seed.js) */
+const repo = all.filter((e) => e.type !== 'config');
 /** the rows the vault would hand out after the copy: each create, as read back */
 const rowsOf = (entries) => entries.map((e, i) => ({ entry: `e${String(i).padStart(11, '0')}`, vault: VAULT, heads: `${String(i).padStart(8, '0')}cafe`, ...recordOf(e), record: recordOf(e).value }));
 const strip = ({ source, vault, entry, heads, ...e }) => e;
@@ -19,9 +21,9 @@ const strip = ({ source, vault, entry, heads, ...e }) => e;
 afterEach(() => avendb.use([], viewOfEntry));
 
 describe('the copy', () => {
-	test('every view and logic module of the repo comes back from the vault as the same entry, with the same hash', () => {
+	test('every view, logic module and config of the repo comes back from the vault as the same entry, with the same hash', () => {
 		expect(repo.length).toBeGreaterThan(3);
-		for (const row of rowsOf(repo)) {
+		for (const row of rowsOf(all)) {
 			const { entry, error } = entryOf(row);
 			expect(error).toBeUndefined();
 			expect(strip(entry)).toEqual(ENTRIES[entry.ref]);
@@ -56,13 +58,13 @@ describe('the copy', () => {
 });
 
 describe('loaded entries', () => {
-	const rows = rowsOf(repo);
+	const rows = rowsOf(all);
 	const row = (ref) => rows.find((r) => r.tags.includes(`ref:${ref}`));
 	const changed = (ref, record) => ({ ...row(ref), record: { ...row(ref).record, ...record } });
 
 	test('the whole copy loads: every entry passes the checker as at the door', () => {
 		const r = avendb.use(rows, viewOfEntry);
-		expect([r.taken.length, r.refused]).toEqual([repo.length, []]);
+		expect([r.taken.length, r.refused]).toEqual([all.length, []]);
 	});
 	test('a loaded view is what codeAt, codeIn and the defaults read; the seed serves every other path', () => {
 		const holders = changed('views/view-holders', { title: 'Holders, from the vault' });
@@ -130,8 +132,8 @@ describe('loading', () => {
 		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
 	});
 	test("the live feed is read for the seed's views and logic modules; switched off, nothing is asked and the seed runs", async () => {
-		expect(feedOf()).toBe('https://avendb.maia.city/feed/code?seed=1&type=view,logic');
-		expect(feedOf('http://avendb:3351/feed/code')).toBe('http://avendb:3351/feed/code?seed=1&type=view,logic');
+		expect(feedOf()).toBe('https://avendb.maia.city/feed/code?seed=1&type=view,logic,config');
+		expect(feedOf('http://avendb:3351/feed/code')).toBe('http://avendb:3351/feed/code?seed=1&type=view,logic,config');
 		expect(avendb.on).toBe(true);
 		avendb.on = false;
 		try {
@@ -142,5 +144,44 @@ describe('loading', () => {
 		} finally {
 			avendb.on = true;
 		}
+	});
+});
+
+describe("a game's settings", () => {
+	const rows = rowsOf(all);
+	const row = (ref) => rows.find((r) => r.tags.includes(`ref:${ref}`));
+	const withData = (ref, data) => ({ ...row(ref), record: { ...row(ref).record, data } });
+	const seed = (ref) => JSON.parse(ENTRIES[ref].files['config.json']);
+	test("a loaded config is what configAt reads; changed numbers are taken, the seed's shape is held", async () => {
+		const { configAt } = await import('../../../game/code/index.js');
+		const { defaultSettings, newGame } = await import('../../../game/maiacity-v1/engine.js');
+		const set = { ...seed('configs/maiacity-v1/settings'), heartsPerDay: 30, swapFee: 7 };
+		expect(avendb.use([withData('configs/maiacity-v1/settings', set)], viewOfEntry)).toEqual({ taken: ['configs/maiacity-v1/settings'], refused: [] });
+		expect(configAt('configs/maiacity-v1/settings').heartsPerDay).toBe(30);
+		// a value the game's limits refuse is the seed's
+		expect(defaultSettings()).toMatchObject({ heartsPerDay: 30, swapFee: seed('configs/maiacity-v1/settings').swapFee });
+		expect(newGame(0).settings.heartsPerDay).toBe(30);
+	});
+	test('a config missing a key the game reads, or of another kind there, or with no seed, is left out', () => {
+		const { hexSubRent, ...short } = seed('configs/maiacity-v1/settings');
+		const garden = seed('configs/sandbox-4/garden');
+		const r = avendb.use(
+			[
+				withData('configs/maiacity-v1/settings', short),
+				withData('configs/sandbox-4/garden', { ...garden, fields: [{ ...garden.fields[0], size: '4x6' }] }),
+				{ ...row('configs/sandbox-4/garden'), tags: ['ref:configs/sandbox-4/elsewhere', 'game:sandbox-4'] }
+			],
+			viewOfEntry
+		);
+		expect(r.taken).toEqual([]);
+		expect(r.refused.join('\n')).toMatch(/settings: the config has no hexSubRent/);
+		expect(r.refused.join('\n')).toMatch(/garden: the config holds a string at fields\[0\]\.size, where the game reads a list/);
+		expect(r.refused.join('\n')).toMatch(/elsewhere: a config the repo holds no seed of/);
+	});
+	test("a plant's weight may be left out, as the seed leaves it out of some", () => {
+		const garden = seed('configs/sandbox-4/garden');
+		const { weight, ...plain } = garden.outside.canopy[0];
+		const r = avendb.use([withData('configs/sandbox-4/garden', { ...garden, outside: { ...garden.outside, canopy: [plain] } })], viewOfEntry);
+		expect(r.refused).toEqual([]);
 	});
 });

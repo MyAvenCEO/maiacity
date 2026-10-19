@@ -1,0 +1,1081 @@
+{
+	"seed": "sandbox-5",
+	"outside": {
+		"canopy": [
+			{
+				"id": "walnut",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "chestnut",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "linden",
+				"v": 1,
+				"stages": [
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "alder",
+				"v": 1,
+				"stages": [
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "pecan",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "tree-hazel",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "korean-pine",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "pear",
+				"v": 1,
+				"stages": [
+					9
+				]
+			},
+			{
+				"id": "cherry",
+				"v": 1,
+				"stages": [
+					9
+				]
+			},
+			{
+				"id": "mulberry",
+				"v": 1,
+				"stages": [
+					9
+				]
+			}
+		],
+		"trees": [
+			{
+				"id": "apple",
+				"v": 2,
+				"stages": [
+					4,
+					9
+				],
+				"weight": 4
+			},
+			{
+				"id": "pear",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "plum",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "cherry",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "apricot",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "peach",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "persimmon",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "fig",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "quince",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "medlar",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "serviceberry",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "cornel",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "hazel",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "pawpaw",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			}
+		],
+		"shrubs": [
+			{
+				"id": "redcurrant",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "blackcurrant",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "gooseberry",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "raspberry",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "blackberry",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "blueberry",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "aronia",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "haskap",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "elder",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "sea-buckthorn",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "rose",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "lavender",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "sage",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "rosemary",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			}
+		],
+		"climbers": [
+			{
+				"id": "grape",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "kiwiberry",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "hop",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "beans",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "cucumber",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			}
+		],
+		"herbs": [
+			{
+				"id": "comfrey",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "rhubarb",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "sorrel",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "nettle",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "artichoke",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "asparagus",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "chard",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "kale",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "tomato",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "oxheart",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "lettuce",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "chives",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "mint",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "lemon-balm",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "parsley",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "dill",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "coriander",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			}
+		],
+		"ground": [
+			{
+				"id": "strawberry",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 4
+			},
+			{
+				"id": "clover",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "wild-garlic",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "woodruff",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "nasturtium",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "thyme",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "oregano",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "pumpkin",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "moss",
+				"v": 1,
+				"stages": [
+					9
+				]
+			}
+		],
+		"roots": [
+			{
+				"id": "jerusalem-artichoke",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "horseradish",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "garlic",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "carrot",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			},
+			{
+				"id": "radish",
+				"v": 1,
+				"stages": [
+					7,
+					9
+				]
+			}
+		],
+		"fungi": [
+			{
+				"id": "wine-cap",
+				"v": 1,
+				"stages": [
+					9
+				]
+			},
+			{
+				"id": "shiitake",
+				"v": 1,
+				"stages": [
+					9
+				]
+			},
+			{
+				"id": "oyster",
+				"v": 1,
+				"stages": [
+					9
+				]
+			}
+		]
+	},
+	"inside": {
+		"trees": [
+			{
+				"id": "mango",
+				"v": 1,
+				"stages": [
+					4,
+					5,
+					7,
+					9
+				],
+				"weight": 5
+			},
+			{
+				"id": "avocado",
+				"v": 1,
+				"stages": [
+					4,
+					5,
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "orange",
+				"v": 1,
+				"stages": [
+					4,
+					5,
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "lemon",
+				"v": 1,
+				"stages": [
+					4,
+					5,
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "king-coconut",
+				"v": 1,
+				"stages": [
+					5,
+					7,
+					9
+				],
+				"weight": 6
+			},
+			{
+				"id": "banana",
+				"v": 1,
+				"stages": [
+					5,
+					7,
+					9
+				],
+				"weight": 6
+			},
+			{
+				"id": "red-banana",
+				"v": 1,
+				"stages": [
+					5,
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "papaya",
+				"v": 1,
+				"stages": [
+					5,
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "jackfruit",
+				"v": 2,
+				"stages": [
+					4,
+					5,
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "durian",
+				"v": 2,
+				"stages": [
+					4,
+					5,
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "safou",
+				"v": 1,
+				"stages": [
+					4,
+					5,
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "sapodilla",
+				"v": 1,
+				"stages": [
+					4,
+					5,
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "soursop",
+				"v": 2,
+				"stages": [
+					4,
+					5,
+					7,
+					9
+				]
+			},
+			{
+				"id": "pomegranate",
+				"v": 1,
+				"stages": [
+					4,
+					5,
+					7,
+					9
+				]
+			},
+			{
+				"id": "olive",
+				"v": 1,
+				"stages": [
+					4,
+					5,
+					7,
+					9
+				]
+			},
+			{
+				"id": "cacao",
+				"v": 2,
+				"stages": [
+					4,
+					5,
+					7,
+					9
+				],
+				"weight": 2
+			}
+		],
+		"shrubs": [
+			{
+				"id": "coffee",
+				"v": 1,
+				"stages": [
+					5,
+					7,
+					9
+				],
+				"weight": 3
+			},
+			{
+				"id": "rosemary",
+				"v": 1,
+				"stages": [
+					5,
+					7,
+					9
+				]
+			},
+			{
+				"id": "pepper",
+				"v": 1,
+				"stages": [
+					5,
+					7,
+					9
+				]
+			},
+			{
+				"id": "eggplant",
+				"v": 1,
+				"stages": [
+					5,
+					7,
+					9
+				]
+			}
+		],
+		"climbers": [
+			{
+				"id": "passion-fruit",
+				"v": 1,
+				"stages": [
+					5,
+					7,
+					9
+				]
+			}
+		],
+		"cover": [
+			{
+				"id": "pineapple",
+				"v": 1,
+				"stages": [
+					5,
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "ginger",
+				"v": 1,
+				"stages": [
+					5,
+					7,
+					9
+				],
+				"weight": 2
+			},
+			{
+				"id": "basil",
+				"v": 1,
+				"stages": [
+					5,
+					7,
+					9
+				]
+			},
+			{
+				"id": "strawberry",
+				"v": 1,
+				"stages": [
+					5,
+					7,
+					9
+				]
+			},
+			{
+				"id": "clover",
+				"v": 1,
+				"stages": [
+					5,
+					7,
+					9
+				]
+			}
+		]
+	},
+	"spacing": {
+		"canopy": 26,
+		"trees": 24,
+		"shrubs": 5,
+		"herbs": 3.2,
+		"ground": 2.6,
+		"roots": 12,
+		"climbers": 30,
+		"fungi": 70
+	},
+	"drift": {
+		"least": 5,
+		"most": 15,
+		"gap": {
+			"shrubs": 1.1,
+			"climbers": 0.9,
+			"herbs": 0.5,
+			"roots": 0.45,
+			"ground": 0.38,
+			"fungi": 0.3
+		}
+	},
+	"fields": [
+		{
+			"id": "oats",
+			"v": 1,
+			"stages": [
+				6,
+				7,
+				8,
+				9
+			],
+			"size": [
+				4,
+				6
+			],
+			"row": 0.24,
+			"gap": 0.2,
+			"fields": 4,
+			"reach": "shrub",
+			"tilled": true
+		},
+		{
+			"id": "lentil",
+			"v": 1,
+			"stages": [
+				6,
+				7,
+				8,
+				9
+			],
+			"size": [
+				4,
+				5
+			],
+			"row": 0.24,
+			"gap": 0.2,
+			"fields": 3,
+			"reach": "shrub",
+			"tilled": true
+		},
+		{
+			"id": "chickpea",
+			"v": 1,
+			"stages": [
+				6,
+				7,
+				8,
+				9
+			],
+			"size": [
+				4,
+				6
+			],
+			"row": 0.42,
+			"gap": 0.36,
+			"fields": 3,
+			"reach": "shrub",
+			"tilled": true
+		},
+		{
+			"id": "edamame",
+			"v": 1,
+			"stages": [
+				5,
+				6,
+				7,
+				8
+			],
+			"size": [
+				4,
+				6
+			],
+			"row": 0.45,
+			"gap": 0.38,
+			"fields": 3,
+			"reach": "shrub",
+			"tilled": true
+		},
+		{
+			"id": "hemp",
+			"v": 1,
+			"stages": [
+				6,
+				7,
+				8,
+				9
+			],
+			"size": [
+				5,
+				7
+			],
+			"row": 0.38,
+			"gap": 0.34,
+			"fields": 3,
+			"reach": "shrub",
+			"tilled": true
+		},
+		{
+			"id": "bamboo",
+			"v": 1,
+			"stages": [
+				6,
+				7,
+				8,
+				9
+			],
+			"size": [
+				9,
+				10
+			],
+			"row": 2.6,
+			"gap": 2.4,
+			"fields": 3,
+			"reach": "tree",
+			"tilled": false
+		}
+	]
+}

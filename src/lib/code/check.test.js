@@ -17,7 +17,7 @@ const html = (body, libs = [], extra = {}) => ({ id: 'v', title: 'V', kind: 'htm
 const refused = (r) => (r.ok ? 'ACCEPTED' : r.errors[0]);
 
 describe('what we ship passes', () => {
-	test('the types', () => expect(Object.keys(TYPES).sort()).toEqual(['asset-card', 'logic', 'view', 'view-card']));
+	test('the types', () => expect(Object.keys(TYPES).sort()).toEqual(['asset-card', 'config', 'logic', 'view', 'view-card']));
 	for (const v of EXAMPLES) test(`the example view ${v.id}`, () => expect(checkCode('view', v)).toMatchObject({ ok: true }));
 	for (const c of V1_VIEWS) test(`V1's screen ${c.id}`, () => expect(checkCode('view-card', c, { slots: SLOTS })).toMatchObject({ ok: true, notes: [] }));
 	test('a template view with logic, and a script view with its libraries', () => {

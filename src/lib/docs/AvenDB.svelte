@@ -114,8 +114,8 @@
 		},
 		{
 			short: 'Agents',
-			q: 'An agent never holds more than your aven.',
-			a: 'Each agent is a device vault of your aven, and every share it holds rests on one your aven holds, no stronger and no wider. Take back the aven’s share, and every agent’s share resting on it ends too.'
+			q: 'An agent never holds more than its aven.',
+			a: 'Each agent is a device of its COOP’s aven, beside its server, and acts with exactly what the aven holds. It holds no share of its own. Take back the aven’s share, and every agent loses it at once.'
 		},
 		{
 			short: 'Offline',
@@ -198,7 +198,7 @@
 		],
 		[
 			'An agent goes wrong',
-			'Remove its device, or revoke its shares. The other agents keep theirs. Its shares rest on your aven’s, so it never held more than your aven, and a COOP that stops hiring your aven ends every agent’s share with one revocation.'
+			'Remove its device from the aven. The other agents keep working. It acts only as the aven, so it never held more than the aven, and a COOP that takes a share back from its aven takes it from every agent at once.'
 		],
 		[
 			'Two devices change the same note at once',
@@ -264,15 +264,16 @@
 	const vaultKinds = [
 		['Human', 'Your passkeys and the master recovery key', 'Any, by threshold', 'Yes: your desktops, phones, browsers and drives', 'Any number'],
 		['COOP', 'Human and COOP vaults', 'Any, by threshold', 'No', 'Any number'],
-		['Aven', 'One COOP', 'Exactly one', 'Yes: its server', 'One per COOP, none per person'],
-		['Device vault', 'One human, COOP or aven vault', 'Exactly one', 'Yes: the keys of one agent or of the server', 'Any number']
+		['Aven', 'One COOP', 'Exactly one', 'Yes: its server and its agents', 'One per COOP, none per person'],
+		['Device vault', 'One human or COOP vault', 'Exactly one', 'Yes: the keys of one studio worker', 'Any number']
 	];
 
 	// one flow adds every vault that acts by keys of its own
 	const addings = [
 		['An agent', 'Your COOP’s aven itself, avenMAIA: a device of it', 'The agent harness’s key on your Mac', 'The aven’s own, no more and no less'],
-		['The same harness on your other Mac', 'That agent’s device vault', 'That Mac’s harness key', 'What the agent holds already'],
-		['The server', 'avenMAIA itself, founded with the seed: the server is its device', 'The server’s key', 'Backup or Relay, from each vault over itself']
+		['The same harness on your other Mac', 'The aven again: one more device of it', 'That Mac’s harness key', 'The aven’s own, no more and no less'],
+		['The server', 'avenMAIA itself, founded with the seed: the server is its device', 'The server’s key', 'Backup or Relay, from each vault over itself'],
+		['A studio worker', 'A device vault under the vault whose media it works on, yours or a COOP’s', 'A key the desktop app makes and hosts', 'That vault’s shares over itself, or passed on from those it holds']
 	];
 
 	// the one rule a share rests on another by, case by case
@@ -299,7 +300,8 @@
 		['Revoke', 'Ends any of them', 'The same log as what it ends'],
 		['Write', 'An encrypted change of one entry, and the files it brings', 'The entry'],
 		['Mark', 'Which shares pick an entry, and which keep shares want it', 'The entry'],
-		['Keys', 'Sealed boxes of one key, for exactly who may open it', 'The key’s family']
+		['Keys', 'Sealed boxes of one key, for exactly who may open it', 'The key’s family'],
+		['Claim', 'A newcomer’s vault takes an invite share, signed with the invite’s key', 'The share’s log']
 	];
 
 	const merges = [
@@ -359,7 +361,7 @@
 	const groups = [
 		['Owner', 'Owner', 'Everything, and share on', 'Co-owners, on the whole vault; anyone, on a slice'],
 		['Editor', 'Write', 'Read, create, set, tag, propose, merge', 'Someone who works on the entries'],
-		['Suggester', 'Write', 'Read and propose; set and merge on proposals', 'A reviewer: main changes only when an editor merges'],
+		['Suggester', 'Write', 'Read, propose and draft new entries; set and merge on proposals', 'A reviewer: main changes only when an editor merges'],
 		['Viewer', 'Read', 'Read', 'A reader'],
 		['Public', 'Read', 'Read, for Everyone', 'Anything published: its key goes out in the clear'],
 		['Backup', 'Backup', 'Keep the ciphertext, read nothing', 'The server, by default'],
@@ -435,6 +437,7 @@
 		'history',
 		'schemas',
 		'groups',
+		'cap_groups',
 		'kinds',
 		'world',
 		'jobs',
@@ -485,7 +488,10 @@
 		'card',
 		'profile',
 		'follow',
-		'set_limits'
+		'set_limits',
+		'define_group',
+		'redefine_group',
+		'share_group'
 	];
 
 	const messages = [
@@ -504,6 +510,12 @@
 			'Claim key, Claim',
 			'Asks a device that belongs to no vault yet, an unclaimed server or a new agent, for its key, then adds it to its device vault',
 			'The key; the claim, signed by the claimed device too'
+		],
+		['Invite', 'The id of an invite a link names', 'The invite’s card, while no vault has claimed it'],
+		[
+			'Sign up',
+			'A newcomer’s vault logs and its claims of invites, at once',
+			'Nothing, once the server took every new human vault in it; refused otherwise'
 		]
 	];
 
@@ -519,6 +531,7 @@
 		['Desktop', 'A folder of the app’s own', 'What its keep shares want; files whole where they say so'],
 		['Phone or browser', 'The page’s private storage (OPFS), in a worker', 'The same; pieces read but not kept stay in memory'],
 		['Drive', 'A folder on the drive, hosted by the Mac it is plugged into', 'The same as a desktop'],
+		['Studio worker', 'A folder beside the desktop app’s, hosted by that Mac', 'What it makes; other files it reads from the Mac’s store'],
 		['Server', 'The sealed bucket; its disk is only a cache', 'Every file whole, by default']
 	];
 
@@ -529,6 +542,8 @@
   blobs/<hash>      edit packs, McEliece keys, HashSeqs and file pieces
   outboards/<hash>  each blob's BLAKE3 outboard, written last
   stated/<device>/  each device's signed holdings, named by when it checked, at most one an hour each
+  drives/<device>   a drive's key, wrapped under the desktop's own (desktop)
+  workers/<device>  a studio worker's key, wrapped the same way (desktop)
   new/              what is still being written`;
 
 	const quantum = [
@@ -568,7 +583,7 @@
 		['Frontier sync loses nothing, and two devices that synced once hold the same edits', 'T13, T19'],
 		['An edit backdated past a removal that relied on what it took is cut', 'T16'],
 		[
-			'Every vault keeps to its row of the kind table: an aven has one owner, a human vault, and a person owns one aven at most',
+			'Every vault keeps to its row of the kind table: an aven has one owner, a COOP, and a COOP owns one aven at most',
 			'T21'
 		],
 		['A share never grants more than what it rests on, and rests on another only by one rule', 'T22'],
@@ -596,6 +611,7 @@
 			'A merge through a share brings in only the places its merge op names, and into main only what the vault accepted',
 			'M1, M2'
 		],
+		['Only its vault lands a draft, and a draft that hasn’t landed is in no public audience', 'D1, D2, D3'],
 		['A share of a cap group never grants an op above its level, whatever version of the group is in force', 'CG1'],
 		['An invite is claimed once, and from then on its share names the vault that claimed it', 'G1'],
 		[
@@ -821,13 +837,13 @@
 					<p>
 						A COOP’s one AI identity, Maia City’s avenMAIA. Only its COOP owns it, one aven per COOP and none per
 						person, so only the COOP decides what it passes on. It lives on its server: the server is its device, which
-						acts for it and governs nothing. Its agents work for it with the rights it passes on to them.
+						acts for it and governs nothing. Its agents are devices of it too, and act with exactly its rights.
 					</p>
 				</div>
 				<div>
 					<h3>Device vault</h3>
 					<p>
-						The keys of one agent, owned by exactly one human, COOP or aven vault. Its devices act for
+						The keys of one studio worker, owned by exactly one human or COOP vault. Its devices act for
 						it with all its rights and approve nothing. It owns nothing, and holds only what its owner gives it or passes
 						on to it.
 					</p>
@@ -889,7 +905,7 @@
 			</p>
 			<h3>One flow adds a device vault</h3>
 			<p class="prose-col">
-				Everything that acts with keys of its own, an agent or the server, is added the same way, in three steps. First,
+				Everything that acts with keys of its own, an agent, the server or a studio worker, is added the same way, in three steps. First,
 				a device vault is founded under its parent, or the one there already is taken. Second, the device’s key is added
 				to it, and the device signs that edit too, so no key joins a vault without its own consent. Third, the device
 				vault gets its shares: its parent passes on shares it holds, or a vault gives it a share over itself. Your passkey
@@ -924,7 +940,7 @@
 			</p>
 			<p class="prose-col">
 				Each vault gives avenMAIA a share on the whole of it: Backup, so the server keeps its ciphertext, or Relay,
-				with backups off. Every vault founded under you follows your setting, your aven and your agents’ device vaults
+				with backups off. Every vault founded under you follows your setting, your COOPs and their avens
 				too: it is one of your standing grants, as “All my vaults, now and later” is, which every vault you found later
 				gives too. Your devices are often away, and the server is always there. So what your aven and its agents write,
 				a request among it, still reaches the people it is for.
@@ -975,11 +991,9 @@
 			</p>
 			<p class="prose-col">
 				An agent that belongs to no vault yet can write no record, so its first request is a file it leaves on your Mac,
-				shown on the same screen. You pick all your vaults or only some, a level each, and in the vaults of COOPs that
-				hired your aven, up to your aven’s own level there. One prompt of your passkey adds the agent, and founds your
-				aven first where you have none; the shares need no prompt. From then on the agent asks its aven with a record,
-				as any vault asks. All my vaults, now and later, is a standing grant: every vault you found afterwards gives your
-				aven and the agent the same share, and revoking it ends it on all of them.
+				shown on the same screen. Approve, and one prompt of your passkey adds the agent’s key to your COOP’s aven as a
+				device, beside its server, and the agent’s own device signs too. It gets no share of its own: it acts as the
+				aven, with what the aven holds. From then on the agent asks with a record, as any vault asks.
 			</p>
 			<p class="prose-col">
 				A new owner takes two passkeys: the vault’s approval, and the newcomer’s consent. So a request to co-own, or an
@@ -1056,9 +1070,9 @@
 
 		<section id="edits">
 			<p class="eyebrow">Edits and logs</p>
-			<h2>Seven kinds of signed edit, one log each</h2>
+			<h2>Eight kinds of signed edit, one log each</h2>
 			<p class="prose-col">
-				Every change in avenDB is an edit: signed, named by the BLAKE3 hash of its bytes, and kept for good. There are seven
+				Every change in avenDB is an edit: signed, named by the BLAKE3 hash of its bytes, and kept for good. There are eight
 				kinds. Each edit belongs to one log, a vault’s, a share’s, an audience’s or an entry’s, and its kind alone says
 				which, so a peer that can read nothing of it can still route it.
 			</p>
@@ -1150,7 +1164,8 @@
 				Nothing is overwritten: every write extends a line. Main is what everyone reads. A proposal is a line of its own
 				that starts from any version, so a change can be tried and reviewed without touching main. A variant is a line that
 				stays beside main and follows it, as breeds of one animal do: each merge into main comes into it, and it keeps its
-				own where both changed one place. A copy is a new note made from any version; it keeps its link to this history,
+				own where both changed one place. A draft is a new entry on a proposal of its own: main holds nothing of it
+				until its vault merges it, and only the vault can. A copy is a new note made from any version; it keeps its link to this history,
 				and the original lists its copies.
 			</p>
 			<p class="prose-col">
@@ -1278,7 +1293,8 @@
 				An owner of Maia City signs a group share to a one-time invite key, and the invite link carries the share and the
 				key. At sign-up the newcomer’s new vault claims it, signed with that key, and the share is theirs: no owner taps
 				anything. A claimed invite can’t be claimed again. With its gate on, the server takes a new human vault only
-				together with the invite it claims, and a new COOP or aven only from a holder of Maia City’s Admin cap group. Anyone
+				together with the invite it claims, and a new COOP or aven only where an admin owns it: Maia City, an owner
+				of it, or a holder of its Admin cap group. Anyone
 				may still make a vault on their own devices, but the server keeps none it hasn’t taken.
 			</p>
 			<h3>Passing a share on</h3>
@@ -1334,15 +1350,15 @@
 			</p>
 			<h3>The server: Backup or Relay</h3>
 			<p class="prose-col">
-				Each vault gives avenMAIA, the server’s device vault, a Backup share on everything when it is founded: the
+				Each vault gives avenMAIA, the aven the server is a device of, a Backup share on everything when it is founded: the
 				server keeps the ciphertext of every entry, and opens none. With backups off it gives Relay instead: the server
 				learns the vault’s devices, to let them through its relay, and keeps nothing of its entries. Every vault founded
 				under you follows your setting, and one switch changes it for all of them.
 			</p>
 			<h3>Revoking</h3>
 			<p class="prose-col">
-				Revoke ends a share and every share resting on it, so a COOP that revokes its share to your aven ends every
-				agent’s share resting on it. Whoever gave a share may revoke it, so may the vault it is over, and its holder may
+				Revoke ends a share and every share resting on it. An agent holds no share of its own, so a COOP that revokes
+				its share to its aven takes it from every agent at once. Whoever gave a share may revoke it, so may the vault it is over, and its holder may
 				give it up. The entries it reached move to a new key, sealed only to the shares still live. What was read stays
 				read.
 			</p>
@@ -1436,7 +1452,7 @@
 				</li>
 				<li>
 					<b>avenDB’s own schemas ship with every app</b>: documents, todos, articles, stories, sparks, artifacts, artworks, flows,
-					functions, posts, reviews, bundles of proposals, policies, AIPs, the code entries (recipes, views and logic: their
+					functions, posts, reviews, bundles of proposals, policies, AIPs, access requests, cap groups, the code entries (recipes, views and logic: their
 					source, the engine they run on, a manifest of the names they use, their params and a contract; a view also its
 					data, its input, its height, its form, HTML or A2UI, and its own logic), and a device’s
 					card, a vault’s profile and a file, each starting at version 1. A kind that grew
@@ -1446,7 +1462,7 @@
 					through its own copies. An artifact is one source standing on its own, a link, a picture, a clip or a YouTube video with its
 					chapters and words; a spark is a canvas of artifacts, sparks and free notes; an artwork is a story’s card of one
 					shape, in layers, rendered into the Library. Every vault
-					reads and writes them offline, and avenCEO GmbH holds each as a Public entry of its own, with the same bytes and so
+					reads and writes them offline, and Maia City holds each as an entry of its own, with the same bytes and so
 					the same id. The todo’s version 0 above is the lens engine’s worked example, which lives only in its tests.
 				</li>
 				<li>
@@ -1535,7 +1551,7 @@
 				whom, and nothing is made until it is signed.
 			</p>
 			<p class="prose-col">
-				An agent speaks the same ops through its MCP tools. It acts as its own device vault, so its shares decide what
+				An agent speaks the same ops through its MCP tools. It acts as its aven, so the aven’s shares decide what
 				each op may do, and it asks for more with the <code>ask</code> op, as any vault asks.
 			</p>
 		</section>
@@ -1883,7 +1899,7 @@
 			<ul class="prose-col">
 				<li>
 					<b>Put aside, clear at a reset.</b> Forgetting an account, or starting fresh, makes a new generation beside the
-					old one, which is never read again. A reset raises the lowest generation, now 10. As each place opens, it deletes
+					old one, which is never read again. A reset raises the lowest generation, now 18. As each place opens, it deletes
 					every older one: the desktop its folder, a browser its private storage, the server its folder and its bucket.
 				</li>
 				<li>
@@ -1957,7 +1973,7 @@
 		<footer class="note">
 			Sources: Ink &amp; Switch’s <i>Local-first software</i> (2019), Loro 1.16, iroh 1.3, iroh-blobs 0.103.1 and bao-tree
 			0.16.1 source, n0’s blog and docs, Hetzner Object Storage documentation, and avenDB’s code and Lean model for edit
-			format 10, as of 16 October 2026. The full reference is <code>avendb/docs/ARCHITECTURE.md</code>.
+			format 11, as of 19 October 2026. The full reference is <code>avendb/docs/ARCHITECTURE.md</code>.
 		</footer>
 	</svelte:element>
 </div>

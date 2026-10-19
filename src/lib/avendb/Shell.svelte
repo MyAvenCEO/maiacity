@@ -52,6 +52,7 @@
 	import Stories from './Stories.svelte';
 	import Story from './Story.svelte';
 	import Todos from './Todos.svelte';
+	import Worlds from './Worlds.svelte';
 	import { NAV, OUT } from './VaultApps.svelte';
 	import Dashboard from '$lib/app/Dashboard.svelte';
 	import { may } from './ops.js';
@@ -127,7 +128,9 @@
 			asset: known === 'assets' && hex(entry) ? (entry ?? '') : '',
 			recipe: known === 'assets' && hex(entry) && hex(edit) ? (edit ?? '') : '',
 			// a doc the Docs page shows (`#docs/` and its entry), in the page
-			doc: known === 'docs' && hex(entry) ? (entry ?? '') : ''
+			doc: known === 'docs' && hex(entry) ? (entry ?? '') : '',
+			// a world the Worlds page shows (`#worlds/` and its entry)
+			world: known === 'worlds' && hex(entry) ? (entry ?? '') : ''
 		};
 	}
 
@@ -328,6 +331,8 @@
 				<Library {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
 			{:else if tab === 'assets'}
 				<Assets {world} vault={context} {actor} {api} entry={route.asset} recipe={route.recipe} />
+			{:else if tab === 'worlds'}
+				<Worlds {world} vault={context} {actor} entry={route.world} />
 			{:else if tab === 'flows'}
 				<Flows {world} vault={context} {actor} />
 			{:else if tab === 'functions'}

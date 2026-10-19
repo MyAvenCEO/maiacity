@@ -1,41 +1,43 @@
 # avenDB
 
-The user-owned, end-to-end encrypted, local-first database of maia.city. Who may do what is built from four
-primitives: a vault (an identity, like a smart account), owning (who decides for a vault), a device (a key that signs
-for its vault with all its rights and governs nothing) and a share (a named group of ops on a slice of a vault, resting
-on a share its issuer holds). One kind table says what each kind of vault may be (`policy::Kind::rules`): a human vault
-is a person's, owned by their passkeys, with their devices; a coop vault is owned by human and coop vaults; an aven, the
-person's one AI identity, is owned by their human vault alone, one to a person, and holds no devices; and a device
-vault, owned by one human, coop or aven vault, holds the keys of one agent or of the server. An agent, as agentClaude,
-is a device vault under its person's aven, holding sub caps of the aven's shares; the server is the device of avenCEO
-server, the device vault at the end of the seed. A vault is a flat library of entries, each a Loro document whose type
-and tags travel sealed inside its writes. Shares give a vault, or everyone, a level on any slice of a vault: relay,
-backup, read, write or owner; a keep share tells one device what to sync; an access request is a record shared with
-the vault asked, for a share, to co-own it, or inviting it to co-own, each answered on one consent screen, where a new
-device asks to join too. Least access is the default, and the server and relays only ever see ciphertext.
+The user-owned, end-to-end encrypted, local-first database of maia.city. Who may do what is built from four primitives:
+a vault (an identity, like a smart account), owning (who decides for a vault), a device (a key that signs for its vault
+with all its rights and governs nothing) and a share (a named group of ops on a slice of a vault, resting on a share its
+issuer holds). One kind table says what each kind of vault may be (`policy::Kind::rules`): a human vault is a person's,
+owned by their passkeys, with their devices; a coop vault is owned by human and coop vaults, and holds no devices; an
+aven, a coop's one AI identity, is owned by its coop alone, one to a coop, and holds devices: its server and its agents;
+and a device vault, owned by one human or coop vault, holds the keys of one machine, such as a studio worker. The server
+is a device of avenMAIA, Maia City's aven, at the end of the seed. An agent, as agentClaude, is a device of the same
+aven beside it, and acts as the aven, with its rights. A vault is a flat library of entries, each a Loro document whose
+type and tags travel sealed inside its writes. Shares give a vault, or everyone, a level on any slice of a vault: relay,
+backup, read, write or owner; a share may name a cap group, a versioned entry of its vault, or go to a one-time invite
+key that a newcomer's vault claims once; a keep share tells one device what to sync; an access request is a record
+shared with the vault asked, for a share, to co-own it, or inviting it to co-own, each answered on one consent screen,
+where a new device asks to join too. Least access is the default, and the server and relays only ever see ciphertext.
 
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) is the one reference for how avenDB works, from first principles, and
 [`spec/README.md`](spec/README.md) lists every theorem with the Rust tests that guard it. This file says how to build,
 test, run and deploy it.
 
 avenDB is its own package in the maiacity repo, apart from the media vault in `vault/`: it has its own Cargo workspace
-and lockfile, so the two never build together, and nothing here changes what the media vault, its server or the Studio
-app run. Everything avenDB needs lives here: its encryption and passkeys, schemas and lenses, Loro documents and their
-history and proposals, and its own iroh networking (its own ALPN, its own iroh versions and TLS crypto).
+and lockfile, so the two never build together, and nothing here changes what the media vault or its server run. The
+Studio app is the one place they meet: it builds avenDB's device into itself. Everything avenDB needs lives here: its
+encryption and passkeys, schemas and lenses, Loro documents and their history and proposals, and its own iroh networking
+(its own ALPN, its own iroh versions and TLS crypto).
 
 ## Layout
 
 | Path | What it holds |
 |---|---|
-| `crates/avendb` | The core: the rules every peer applies (`policy`), shares as named groups of ops (`rules`, `slice`), keys and encryption (`keys`), files sealed as blobs (`sealed`), signatures and passkeys (`sign`), the master recovery key (`recovery`, `bin/master-key`), ids, hashes and the one encoding of an edit (`id`, `hash`, `encode`), Loro items (`doc`), schemas and lenses (`lens`), history and proposals (`history`, `merge`), sync by shares and by each log's frontier (`sync`), every message between devices as bytes (`wire`), one JSON language over records (`ops`), the one API, `run(op)` (`engine`), a device's world, database and words as its page reads them (`world`, `data`, `words`), and the Lab every device and test runs on (`lab`), with the plan's scenarios and their cast (`scenarios`, `cast`) |
+| `crates/avendb` | The core: the rules every peer applies (`policy`), shares as named groups of ops and cap groups (`rules`, `slice`), keys and encryption (`keys`), files sealed as blobs (`sealed`), signatures and passkeys (`sign`), the master recovery key (`recovery`, `bin/master-key`), ids, hashes and the one encoding of an edit (`id`, `hash`, `encode`), Loro items (`doc`), schemas and lenses (`lens`), history and proposals (`history`, `merge`), AIPs (`aip`), sync by shares and by each log's frontier (`sync`), every message between devices as bytes (`wire`), one JSON language over records (`ops`), the one API, `run(op)` (`engine`), what a server takes of a batch (`gate`), a device's world, database and words as its page reads them (`world`, `data`, `words`), and the Lab every device and test runs on (`lab`), with the plan's scenarios and their cast (`scenarios`, `cast`) |
 | `crates/avendb-net` | avenDB on the network: each device a node on an iroh endpoint of its own ed25519 key, X25519MLKEM768 the only key exchange, a hello that proves the device on every connection, sync by shares and keep shares, McEliece keys and file pieces in iroh-blobs behind a gate, each device's holdings told to each peer that may know them (`holdings`), and signed, kept and passed on (`statements`), linking a new device by its passkey, `Node::run`, the jobs it runs in the background (`jobs`), each place's shelf (OPFS, a folder or the server's bucket), and the server's node (`server`) |
 | `crates/avendb-server` | avenDB's server as its binary runs it: its node on its shelf, its bucket's S3 client (`bucket`), its relay, which lets in only the devices the server knows, and the Maia Universe's feed (`feed`) (see [The server](#the-server)) |
 | `crates/avendb-browser` | A device of its person in a web page: the network crate as WebAssembly, its node reaching every peer through the server's relay, `PageDevice.run` (see [A device in the browser](#a-device-in-the-browser)) |
-| `crates/avendb-device` | The same device run natively beside the Mac app, as its sidecar, its calls in lines of JSON (see [Natively, beside the Mac app](#natively-beside-the-mac-app)); the agents' devices, each the MCP server of its harness (`agent`), and the drives it hosts (`drive`) |
+| `crates/avendb-device` | The same device run natively in the Mac app, hosted in the app's own process or as a sidecar, its calls in lines of JSON (see [Natively, beside the Mac app](#natively-beside-the-mac-app)); the agents' devices, each the MCP server of its harness (`agent`), and the drives and studio workers it hosts (`drive`, `worker`) |
 | `Dockerfile.server`, `compose.yml` | The server's image, built from `avendb/` alone, which `avendb.yml` deploys (see [Deploying the server](#deploying-the-server)), and a compose file that runs it on this machine, which is not deployed |
 | `scripts/build-web.sh` | Builds `avendb-browser` into the page's own device, `src/lib/avendb/device/` in the app (committed, so the app builds without Rust) |
 | `scripts/test-browser.sh` | Builds `avendb-browser` for the browser and runs its test page in headless Chromium |
-| `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T28, K1, H1, H2, O1 to O3, C1 to C4, S1 to S4) and the test vectors both sides replay; and in `spec/protocol/`, Verifpal models of the hello, the link and the sealed box (see `spec/README.md`) |
+| `spec/` | The Lean model the core is built against, test-first: the rules, the theorems (T1 to T28, K1, H1, H2, O1 to O3, C1 to C4, CG1, G1, G2, M1, M2, D1 to D3, S1 to S4, L1 to L3) and the test vectors both sides replay; and in `spec/protocol/`, Verifpal models of the hello, the link and the sealed box (see `spec/README.md`) |
 | `docs/ARCHITECTURE.md` | The design as it ships, section by section, each claim tied to the code or the theorem that holds it |
 
 ## Build and test
@@ -49,10 +51,10 @@ cd spec && lake build           # the Lean model: proofs, scenario checks, test 
 cd protocol && ./check.sh       # the protocol models, against Verifpal 1.6.5 (minutes)
 ```
 
-avenDB's page (`/app/avendb/` in the app, for admins) is a device of its person, `avendb-browser` built into the app
-(see [A device in the browser](#a-device-in-the-browser)): it syncs the moment anything changes, with no button to
-press. After a change to the core, the network crate or the browser crate, build it again and check the page in a
-headless Chrome:
+avenDB's page (the app's dashboard, `/app/`, where `/app/avendb/` leads too) is a device of its person, `avendb-browser`
+built into the app (see [A device in the browser](#a-device-in-the-browser)): it syncs the moment anything changes, with
+no button to press. After a change to the core, the network crate or the browser crate, build it again and check the
+page in a headless Chrome:
 
 ```sh
 cd avendb && ./scripts/build-web.sh     # needs the wasm32-unknown-unknown target and wasm-bindgen-cli 0.2.129
@@ -105,15 +107,14 @@ A device starts in one of three ways; everything after is one op through `PageDe
 ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §8).
 
 - **Found** (`Device::found`, `Node::found_with`): a new person's first browser founds their human vault with the
-  passkey they signed up to maiaCITY with, or one it makes, gives avenCEO server, the server's vault, backup on the
-  whole of it, so the server keeps its ciphertext, or, if the person turned backups off at setup, relay, so the server
-  only lets their devices through and helps them find each other, and writes its card there, in two ceremonies: the
-  unlock, which is the pass to the relay, and one for the vault's genesis and the edit that adds the device together
+  passkey they signed up to maiaCITY with, or one it makes, gives avenMAIA, the aven the server is a device of, backup
+  on the whole of it, so the server keeps its ciphertext, or, if the person turned backups off at setup, relay, so the
+  server only lets their devices through and helps them find each other, and writes its card there, in two ceremonies:
+  the unlock, which is the pass to the relay, and one for the vault's genesis and the edit that adds the device together
   (three with a new passkey). The server's relay lets any passkey's pass in while it is open to sign-up
   (`AVENDB_SIGNUP`, open by default), so a person with no device yet gets in. The first person to found their vault
-  through a server nobody has claimed yet claims it in that same ceremony, founding the seed, Maia Holding GmbH, avenCEO
-  GmbH and avenCEO server, a device vault, each owned by the one before, the first by their vault, and Maia City beside
-  avenCEO server, a coop avenCEO GmbH owns; the server becomes avenCEO server's device
+  through a server nobody has claimed yet claims it in that same ceremony, founding the seed: Maia City, a coop their
+  vault owns alone, and avenMAIA, Maia City's one aven; the server becomes avenMAIA's device
   ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3). Each seed vault then follows the person's server setting, backup or
   relay, as every vault founded under them does.
 - **Claim an invite** (`PageDevice::claim_invite`, `Node::claim_invite`): on a gated server (`AVENDB_GATE=on`) a
@@ -136,18 +137,19 @@ A device starts in one of three ways; everything after is one op through `PageDe
   (`src/lib/avendb/Signing.svelte`): every step with its seconds, the passkey's prompts marked as the person's turn.
 
 The page opens on **Your account**, this browser as a device of its person. A new person founds their vault there, with
-the maiaCITY passkey or a new one, and claims the server if nobody has yet, so their vault owns avenCEO server. A person
+the maiaCITY passkey or a new one, and claims the server if nobody has yet, so their vault owns avenMAIA. A person
 with an account signs in on a new browser with their passkey alone, linking through the server's offer, as after
 losing every device, or links it through the code another of their devices shows (a QR code that a phone's camera
 opens as a link, `?link=`). It comes with avenDB's server's relay and code filled in (`avendb.maia.city`, see
 [Deploying the server](#deploying-the-server)); a test server's can take their place.
 
-Unlocked, the page lays out the vaults this browser knows as a chat app lays out its servers: a bar of vault marks, the
-person's own first; beside it the vault's name and its pages, as a database studio lists them (its notes, todos,
-articles, stories, Library, flows and functions, its database and jobs, its settings); and the vault the person acts
-as. The page keeps no rule: every screen draws from the device's `world` and the reads beside it, every change is one
-op the device runs as the vault it names, and the page asks `may` before it offers one (`src/lib/avendb/ops.js`). A
-change the vault's owners approve, such as a co-owner, a device or new vaults, runs the passkey's ceremony.
+Unlocked, the page opens on the vault's home, its pages as apps on a phone's home screen, by group; the vault is picked
+in the app's nav pill, the person's own or any other this browser knows. Beside it are the vault's name and its pages,
+as a database studio lists them (its sparks, artifacts, todos, stories, Library and Studio, its flows and functions, its
+database and jobs, its settings), and the vault the person acts as. The page keeps no rule: every screen draws from the
+device's `world` and the reads beside it, every change is one op the device runs as the vault it names, and the page
+asks `may` before it offers one (`src/lib/avendb/ops.js`). A change the vault's owners approve, such as a co-owner, a
+device or new vaults, runs the passkey's ceremony.
 
 `scripts/test-browser.sh` builds the device with passkeys of `localhost` (the feature `localhost-passkeys`, never in a
 build that ships; it needs the wasm32-unknown-unknown target, wasm-bindgen-cli 0.2.129 and Chromium, Playwright's or
@@ -167,12 +169,15 @@ headless Chrome, the test playing the app, against a server on this machine.
 
 ### Natively, beside the Mac app
 
-In the Mac app the device runs natively, not in the page (`crates/avendb-device`): the app builds it with itself
-(`vault/app/build.rs`, in this workspace and lockfile, in its `app` profile, optimised) and runs it beside it as its
-sidecar (`vault/app/src/avendb.rs`: `avendb-device --dir <folder>`, which logs on its stderr as `RUST_LOG` says, else
-its warnings), and the page (`src/lib/avendb/native.js`) calls it as it calls its own device, each call a line of JSON
-on the device's stdin, each answer one on its stdout. Its calls include `found`, `link`, `open`, `steps`, `run [op]`,
-and `fileStart`, `fileChunk`, `fileEnd` and `fileDrop` to hand `put_file` a file's bytes.
+In the Mac app the device runs natively, not in the page (`crates/avendb-device`): the app hosts it in its own process
+(`vault/app/src/avendb.rs`, `avendb_device::host`), and the page (`src/lib/avendb/native.js`) calls it as it calls its
+own device, each call answered by the device itself, with no lines of JSON between. The same calls run as lines of JSON
+in `avendb-device --dir <folder> [--volumes <folder>]`, the sidecar (`serve`), each call a line on the device's stdin,
+each answer one on its stdout; it logs on its stderr as `RUST_LOG` says, else its warnings. The app's build makes that
+sidecar too (`vault/app/build.rs`, in this workspace and lockfile, in its `app` profile, optimised). Its calls include
+`found`, `link`, `open`, `steps`, `run [op, node?]`, `fileStart`, `fileChunk`, `fileEnd`, `fileAgain` and `fileDrop`
+to hand `put_file` a file's bytes, `drives`, `joinDrive`, `openDrive` and `ejectDrive` for the drives it hosts, and
+`workers` and `addWorker` for the studio workers it hosts.
 
 - **Direct.** Its node binds UDP sockets of its own on every interface, IPv4 and IPv6, and maps a port on the router
   where one lets it (UPnP, NAT-PMP, PCP: `Options::direct`), so it reaches the person's other devices directly wherever
@@ -183,19 +188,19 @@ and `fileStart`, `fileChunk`, `fileEnd` and `fileDrop` to hand `put_file` a file
   does, whichever page is open, and opens again in the unlock alone.
 - **Its ceremonies** run in the same sign-in sheet, which the app shows for it: the device makes the one-time X-Wing
   key itself, names it in the sheet's URL, and opens what the sheet page sealed to it; the page sees none of it.
-- If the device didn't build with the app, the app's debug build gets a stand-in that says so, and the page runs the
-  device itself.
 - **Agents.** `avendb-device agent <harness>` runs an agent device as the MCP server of an agent harness on the Mac
-  (Claude Code, Codex, Cursor, Grok or our own native aven): agentClaude for `claude`. The app's device answers its
-  access request with `agents` (the requests agents left as files), `grant [name, device, shares, avenName]` and
-  `deny [name, device]`, and `agentCommand [harness?]` gives the command a harness's MCP settings run. Granting adds the
-  agent as a device vault under the person's one aven, founding the aven with their first agent, in one ceremony at
-  most, then has the aven pass a share on to it for each vault picked ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3). An
-  agent that is a device of its device vault asks for more with a record, which the page's consent screen answers.
-  Its tools: `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change (`put_file` saves a file of the Mac
-  by its path; `get_file` reads one back to a path, never over a file there unless `overwrite`, a small text file
-  inline too), `avendb_add_spark` to capture a spark into the person's own vault or the one named, as the Sparks page
-  does, `avendb_read_file` for `get_file`, and `avendb_request_access`.
+  (Claude Code, Codex, Cursor, Grok or our own native aven): agentClaude for `claude`; the app's own binary runs it
+  too, as `maiacity-studio agent <harness>`. The app's device answers its access request with `agents` (the requests
+  agents left as files), `grant [name, device]` and `deny [name, device]`, and `agentCommand [harness?]` gives the
+  command a harness's MCP settings run. Granting adds the agent's key as a device of its coop's one aven, avenMAIA,
+  beside the server, in one ceremony, which the agent's device cosigns (`Place::Vault`). From then on it acts as
+  avenMAIA, with avenMAIA's rights, no more and no less: by default a Suggester on Maia City, whose drafts and AIPs a
+  human of Maia City accepts ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3). One agent is taken out by removing its
+  device from the aven. Its tools: `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change (`put_file`
+  saves a file of the Mac by its path; `get_file` reads one back to a path, never over a file there unless
+  `overwrite`, a small text file inline too), `avendb_add_spark` to capture a spark and `avendb_add_artifact` to add an
+  artifact, each into the vault named or else Maia City, as the Sparks and Artifacts pages do, `avendb_read_file` for
+  `get_file`, and `avendb_request_access`.
 
 Passkeys, PRF and a device's secure boundary are in [ARCHITECTURE.md](docs/ARCHITECTURE.md) §11.
 
@@ -208,19 +213,19 @@ opens nothing but what is public.
   and belongs to no vault until a human vault claims it ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3). It logs its
   offer (`AVENDB1…`): its device, its endpoint, its public address and its relay. The app keeps it, so that devices
   reach the server, and a new device links through it with its person's passkey alone.
-- A reset raises `shelf::FLOOR` (`crates/avendb-net/src/shelf.rs`, 10 now, and `FLOOR` in
+- A reset raises `shelf::FLOOR` (`crates/avendb-net/src/shelf.rs`, 18 now, and `FLOOR` in
   `crates/avendb-browser/js/store.worker.js` with it), the generation every place's shelf is at least. What an earlier
   avenDB kept in its bucket or its folder, it clears (`bucket::clear`, `disk::clear`): its first start after a reset
   makes a new shelf generation, with a new device's secret, so a new offer, nobody's until a human vault claims it.
-- A vault gives avenCEO server backup on the whole of it, and the server keeps the vault's edits and McEliece keys and
+- A vault gives avenMAIA backup on the whole of it, and the server keeps the vault's edits and McEliece keys and
   serves them to the devices that may hold them, also while the device that wrote them is away. With relay instead
   (backups off, at setup or later with the `back_up` op), the server learns only the vault's devices, from its log, to
-  let them through its relay; it keeps none of its entries. Every vault founded under a person, their aven and its
-  agents' device vaults too, gives it the level their own vault does, as it follows every standing grant of theirs
-  ("all my vaults, now and later", `avendb::engine::follow_standing`), so what an aven or an agent writes, an access
-  request among it, reaches whoever it is for while the person's devices are away.
-- Its relay lets in only the devices the server knows: those of the vaults it relays or backs up, of avenCEO server's
-  owners, and itself; while sign-up is open, or until a human vault claims the server, also any passkey's pass, for ten
+  let them through its relay; it keeps none of its entries. Every vault founded under a person, their coops and
+  device vaults too, gives it the level their own vault does, as it follows every standing grant of theirs ("all my
+  vaults, now and later", `avendb::engine::follow_standing`), so what such a vault writes, an access request among it,
+  reaches whoever it is for while the person's devices are away.
+- Its relay lets in only the devices the server knows: those of the vaults it relays or backs up, of avenMAIA's owners,
+  and itself; while sign-up is open, or until a human vault claims the server, also any passkey's pass, for ten
   minutes. A device taken out of its vault is let go, and turned away when it tries again. A device with no UDP of its
   own, behind a strict firewall say, reaches the server and every other device through the relay alone.
 
@@ -270,12 +275,12 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
    without one it is set by hand in the Hetzner DNS console. The relay needs a host name of its own: iroh's relay path
    is `/relay`, and `api.maia.city/relay` is the media vault's relay.
 4. **Devices**: the offer it logs as it starts (`avenDB server: offer AVENDB1…`, in both workflows' logs) is filled
-   in on **Your account** (`SERVER` in `src/lib/avendb/Account.svelte`), beside its relay. It stays the same as long
+   in on **Your account** (`SERVER` in `src/lib/avendb/server.js`), beside its relay. It stays the same as long
    as the server keeps its device secret; after a reset it is a new one, filled in again once that is deployed.
 5. **The claim**: the first person to found their vault on **Your account** claims the server, founding the seed, Maia
-   Holding GmbH, avenCEO GmbH, avenCEO server and Maia City, and makes it avenCEO server's device, so whoever runs a new
-   server founds their vault there first. Every device reads the server from that seed (`avendb::world::seeder`). Both
-   workflows log whether it is claimed yet.
+   City and avenMAIA, and makes it avenMAIA's device, so whoever runs a new server founds their vault there first.
+   Every device reads the server from that seed (`avendb::world::seeder`). Both workflows log whether it is claimed
+   yet.
 6. **Its bucket** ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §14): with `AVENDB_BUCKET`, `AVENDB_BUCKET_ENDPOINT`,
    `AVENDB_BUCKET_REGION`, `AVENDB_BUCKET_ACCESS_KEY`, `AVENDB_BUCKET_SECRET_KEY` and `AVENDB_BUCKET_SEAL` (64 hex
    digits) in its environment, its shelf and its device's secret live in that bucket, every object sealed under the
@@ -292,16 +297,16 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
 
 Its shelf and its device's secret live in its bucket, or on the Hetzner volume where it keeps none, so a rebuilt server
 is still the same device, even with its folder lost; the database backups don't hold them. Losing them makes a new
-server, a device of nobody: avenCEO server's owner removes the lost device from it, then claims the new server
-(`Node::claim`), which adds it to the same device vault, as it has no device left (`Lab::unclaimed_server`), so every
-vault's share to avenCEO server stands.
+server, a device of nobody: avenMAIA's owner removes the lost device from it, then claims the new server
+(`Node::claim`), which adds it to the same aven once it has no device left, its agents' too (`Lab::unclaimed_server`),
+so every vault's share to avenMAIA stands.
 
 ## History
 
 The plan with every scenario, theorem and phase is the Claude Doc
 [avenDB: E2E reference plan](https://claude.ai/code/artifact/5e95ec82-8564-4340-8767-7b915afafe59). Each phase was one
 PR, merged when its Rust tests passed and its theorems were proven. The table says what each phase built when it
-merged, in the words of the time: caps and cells were what shares and audiences are now. Since then, edit format 8
+merged, in the words of the time: caps and cells were what shares and audiences are now. Since then, the v8 plan
 made every share a named group of ops, replaced sync rules with keep shares and the schema lane's publish with schema
 and lens entries, added holdings, one `run(op)` API and one shelf per place, as
 [ARCHITECTURE.md](docs/ARCHITECTURE.md) describes.
@@ -326,4 +331,6 @@ and lens entries, added holdings, one `run(op)` API and one shelf per place, as
 | Two prompts | Setup and sign-in in two passkey prompts each: a new device makes its own secret, kept masked by the PRF output on its salt, so the ceremony that unlocks it is its passkey's pass for it, to the relay and to the peer it links through (no hello of the passkey's any more); a device that doesn't know its passkey's key yet drafts its vault for each key the unlock recovers to, in one batch, and keeps the one the next ceremony verifies under | Merged |
 | Flat vaults | No spaces: entries straight in their vault, their type and tags sealed in their writes; caps on any slice (types, tags, authors, entries, creation time, any AND and OR of those), in chains that only narrow (T22); cells, the entries the same caps reach, one key per cell and a key per entry derived from it (T24), kept to what the caps say by the vault's own devices, who move entries as tags change and answer other vaults' tag asks (T23); relays that route by cells and never see a selector, a type or a tag (T25); the page's sharing by rule, tags, Access, Sync and Cells; the server's data started fresh | Merged |
 | A, one aven | Four primitives, vault, owns, device and share; four kinds of vault by one kind table (T21): human, coop, aven (a person's one AI identity, owned by their human vault alone, one to a person) and device vault (owned by one human, coop or aven vault; with human vaults, the only kind that holds devices); sub caps by one rule (T22), so an aven passes a coop's share on to its agents' device vaults, and a coop's revoking it ends theirs; one flow adds a device vault (`Place`, `Node::add_device_vault_with`): the server's claim, and each agent under its person's one aven, founded with their first agent, the harness naming no aven; the server the device of avenCEO server, read from the seed (`world::seeder`); every vault founded under a person following their server setting; access requests as records, each a `request` its vault writes and shares with the vault asked in the `Answer` group, answered on the page's one consent screen (`ask`, `requests`); the page's kind rules read from the kind table, and one Owned vaults view; scenarios 27 and 28; the reset to generation 10 | Merged |
+| One aven per coop | An aven is a coop's one AI identity, owned by its coop alone, one to a coop, and lives on its server, its device (T21); the seed is Maia City and avenMAIA, the server avenMAIA's device; each agent a device of avenMAIA beside it, acting with its rights, with no agent vaults under an aven; one dashboard at `/app/`; the reset to generation 18 | Merged |
+| Cap groups and the gate | A share may name a cap group, a versioned entry of its vault, judged by the version in force where each write comes (CG1); a share may go to a one-time invite key, which a newcomer's vault claims once at sign-up (G1); with `AVENDB_GATE=on` the server takes a new human vault only with its invite claim, and a coop or an aven only an admin's (G2); additive, with no reset | Merged |
 | P8f | Scenarios 5 and 17 between this Mac, a phone's browser and the server | Next |

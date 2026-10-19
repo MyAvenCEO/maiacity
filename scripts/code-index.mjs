@@ -1,7 +1,8 @@
 // @ts-nocheck — plain JS, run by node only
 // The repo's code entries (code/, the source of truth until avenDB carries them, C4) as one generated module, each
 // entry named by the BLAKE3 hash of what it holds (game/code/files.js says how files make entries):
-//   code/index.js     views/ and logic/: what the pages and the API run (the pages bundle it)
+//   code/index.js     views/, logic/ and configs/: what the pages and the API run, and every game's settings (the pages
+//                     bundle it)
 // Run it after changing anything in code/; src/lib/code/code.test.js fails while it is behind.
 //
 //   node scripts/code-index.mjs            write it
@@ -13,7 +14,7 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
 import { entriesOfFiles } from '../game/code/files.js';
 
 const ROOT = fileURLToPath(new URL('../code/', import.meta.url));
-const MODULES = { 'index.js': ['views', 'logic'] };
+const MODULES = { 'index.js': ['views', 'logic', 'configs'] };
 const NAMES = { 'index.js': 'ENTRIES' };
 
 /** every file under code/'s entry folders: { 'views/x/view.html': text } */
