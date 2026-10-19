@@ -1394,8 +1394,9 @@ thumbnail of one shape, 16:9, 9:16, 1:1, 4:5 or 5:2, in layers as rows, a pictur
 placed in percent of its canvas, its pictures and the card rendered from them Library files by link, the story it
 belongs to and the hook it carries; an A/B card is a variant of another), and an access **request** (the vault
 asked, what it asks for, a share, to co-own or an invitation, a level, why, the vaults it names and, once given, its
-answer: `"granted"` or `"denied"`, and the part of an owner add the vault asked signed, section 3), a **review**, a
-**bundle** and a **policy** (section 8, "Merges by policy"), an **AIP** (section 8, "AIPs": its key, number, title,
+answer: `"granted"` or `"denied"`, and the part of an owner add the vault asked signed, section 3), a **cap group**
+(section 5, "Cap groups": its name, its caps and the groups it includes), a **review**, a **bundle** and a **policy**
+(section 8, "Merges by policy"), an **AIP** (section 8, "AIPs": its key, number, title,
 note as Loro text, intent by link, proposal rows `{id, entry, line}` of any types, `stage` `idea`, `proposed` or
 `withdrawn`, the `why` of a withdrawal, where it `was` before, and links as rows `{id, name, url}`), and the **code
 entries** below. A note keeps its type, a document; the page lists notes among the sparks, and the world gives a spark's
@@ -1405,7 +1406,8 @@ older one still counts and opens in the newest app: the spark's v1, a document's
 board's sparks, reads as v2 with no items on its canvas (`SPARK_LENS`), and the article's v1, a title, a text and tags,
 reads as v2 as it was, with no story yet (`ARTICLE_LENS`); the function's v1 reads as v2 with no engine and no manifest
 yet (`FUNCTION_LENS`); and the view's v1 reads as v2, an HTML view with no data, no input and no logic of its own
-(`VIEW_LENS`); and the story's v1 reads as v2 with no full text yet (`STORY_LENS`).
+(`VIEW_LENS`); the post's v1 reads as v2 with no day it went out yet (`POST_LENS`); and the story's v1 reads as v2
+with no full text yet (`STORY_LENS`).
 
 **Stories and their posts.** There are only stories and the posts drawn from them (2026-10-17). A story is the single
 source of truth, its full written text (`text`) the base; each post is one way it goes out, an entry of type `post`
@@ -1435,8 +1437,8 @@ or a `type`: a string (with `maxLength`, counted in characters), an integer or a
 `minimum` and `maximum`), a boolean, an object (its own `properties`, `required` and `additionalProperties: false`,
 nested to any depth) or an array. An array of `items` is a list of values (with `minItems` and `maxItems`) or of records
 (objects with a required integer `id`); one of `prefixItems` is a tuple of so many values, a position `[x, y, z]`. A
-list of records may sit in a row of a list of records, at any depth (section 7). `$ref` names a shape of the schema's
-own `$defs`; one that names no shape makes it no schema. A shape may hold a list of rows of its own shape, an outline
+list of records may sit in a row of a list of records, up to 256 rows deep (section 7, "The ceiling"). `$ref` names a
+shape of the schema's own `$defs`; one that names no shape makes it no schema. A shape may hold a list of rows of its own shape, an outline
 whose nodes hold nodes: a `$ref` that goes round through a list of records resolves lazily, one row at a time. One that
 goes round through plain objects or values would be a value with no end, and makes it no schema. `"x-loro": "text"`
 marks free text, which its `maxLength` bounds too, and `default` what a field reads as when it is absent. `"x-link"`
@@ -1639,8 +1641,8 @@ Your passkey stands for you and is the same on every device it syncs to: its key
   as a full one (section 5, Copy setting).
 - **What opens it.** Its shelf keeps one record that opens it again (`avendb_browser::Meta`, as `meta/<n>` objects,
   put once, the newest that reads counting): its name, relay and id, the 32 bytes of its salt, the passkey's
-  credential and P-256 key, the vaults it follows, and its secret XORed with the PRF output on its salt
-  (`Fresh::mask`). None of it is a secret. A browser keeps the shelf in `maia.city`'s OPFS, the desktop app in
+  credential and P-256 key, the vaults it follows, the most rows and links down its queries read, and its secret
+  XORed with the PRF output on its salt (`Fresh::mask`). None of it is a secret. A browser keeps the shelf in `maia.city`'s OPFS, the desktop app in
   `~/avenDB/mac/`.
 - **Kept safe.** Unmasking the secret takes the PRF output on the device's salt, which only the person's
   authenticator gives, with user verification and to `maia.city` alone; the device checks that the unmasked secret
