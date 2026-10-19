@@ -646,6 +646,11 @@ device signs one edit with that key and its own, `Action::Claim {share, vault, v
 the share's grantee (`Lab::claim_invite`): with no owner of the vault it is over signing, once (G1, `claim_once`). A
 claimed invite goes to that vault from then on; a revoked one can't be claimed. A claim lives in the share's own log.
 
+maiaCITY's API, which holds no device, signs a newcomer up on an invite alone: its server's feed says whether a share
+is an invite of the seed's coop, Maia City, that no vault claimed yet (`GET /feed/invite/<share>`,
+`world::open_invite`), and the API keeps the share's id once someone signed up on it. So an invite is only the share a
+device of Maia City signs, acting through its owners, with no passkey (Samuel 2026-10-19).
+
 ### Who the server takes
 
 Anyone can make a key and sign a genesis: key generation can't be stopped. What a server takes onto what it holds can

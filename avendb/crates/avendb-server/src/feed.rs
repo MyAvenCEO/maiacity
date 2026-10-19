@@ -35,6 +35,10 @@
 //! entry whose writes bring files more than once, as an asset's versions and variants each do, lists each of those
 //! writes with the record at it (`brought`, `Lab::brought`), and any file a row lists is served by its root at `GET
 //! /feed/entry/<vault>/<entry>/file/<root>` (`OF_ROOT`).
+//!
+//! And whether an invite is open (`GET /feed/invite/<share>`, `INVITE`, `world::open_invite`): `{"open": true}` while that
+//! share is a live invite of Maia City's that no vault claimed yet, which maiaCITY's API asks before it signs anyone up,
+//! so that an invite is only the share a device of Maia City signs, with no passkey and no code of the API's.
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
@@ -43,7 +47,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result};
-use avendb::id::{BlobId, EntryId, VaultId};
+use avendb::id::{BlobId, EntryId, ShareId, VaultId};
 use avendb::sealed::FileRoot;
 use avendb::world;
 use avendb_net::Node;
@@ -89,6 +93,9 @@ pub const OF_ROOT: &str = "/file/";
 /// the seed's coop that everyone may read named so, the BLAKE3 hash its bytes had in the old media vault in 64 hex
 /// digits and its ending (`media`).
 pub const MEDIA: &str = "/feed/media/";
+
+/// Where the server says whether an invite is open, at `INVITE` `<share>`, its id in 64 hex digits (`invite`).
+pub const INVITE: &str = "/feed/invite/";
 
 /// The most bytes one answer of `MEDIA` carries of a file read by `Range`: a film is read a window at a time.
 const WINDOW: u64 = 8 << 20;
@@ -179,8 +186,8 @@ impl Feed {
 
 /// The answer to `request`: for a GET or HEAD, the feed of `PATH`, a picture of `FILES` (`picture`), a medium of `MEDIA`
 /// by the `Range` it asks (`media`), the entries of `ENTRIES` or the code of `CODE` (`listed`), an entry of `ENTRY`
-/// (`entry`), or a file of it (`OF_ENTRY`, `OF_ROOT`, `source`); nothing for a browser's OPTIONS before any of them;
-/// and not found for anything else.
+/// (`entry`), or a file of it (`OF_ENTRY`, `OF_ROOT`, `source`), or whether an invite is open (`INVITE`, `invite`);
+/// nothing for a browser's OPTIONS before any of them; and not found for anything else.
 async fn answer(
     request: Request<Incoming>,
     node: Arc<Node>,
@@ -202,13 +209,18 @@ async fn answer(
     if let Some((at, root)) = path.strip_prefix(ENTRY).and_then(by_root).filter(|_| reads) {
         return Ok(source(at, Some(root), query, &node, &feeds.entries).await);
     }
-    let ours = [PATH, ENTRIES, CODE].contains(&path) || [FILES, MEDIA, ENTRY].iter().any(|at| path.starts_with(at));
-    let (status, body) = match path.strip_prefix(ENTRY) {
-        Some(at) if reads => entry(at, query, &node, &feeds.entries).await,
-        _ if reads && path == PATH => (StatusCode::OK, posts(&node, &feeds.posts).await),
-        _ if reads && [ENTRIES, CODE].contains(&path) => listed(path == CODE, query, &node, &feeds.entries).await,
-        _ if *request.method() == Method::OPTIONS && ours => (StatusCode::NO_CONTENT, Bytes::new()),
-        _ => (StatusCode::NOT_FOUND, error("no such feed")),
+    let ours = [PATH, ENTRIES, CODE].contains(&path) || [FILES, MEDIA, ENTRY, INVITE].iter().any(|at| path.starts_with(at));
+    let invited = path.strip_prefix(INVITE).filter(|_| reads);
+    let (status, body) = if let Some(at) = invited {
+        invite(at, &node).await
+    } else {
+        match path.strip_prefix(ENTRY) {
+            Some(at) if reads => entry(at, query, &node, &feeds.entries).await,
+            _ if reads && path == PATH => (StatusCode::OK, posts(&node, &feeds.posts).await),
+            _ if reads && [ENTRIES, CODE].contains(&path) => listed(path == CODE, query, &node, &feeds.entries).await,
+            _ if *request.method() == Method::OPTIONS && ours => (StatusCode::NO_CONTENT, Bytes::new()),
+            _ => (StatusCode::NOT_FOUND, error("no such feed")),
+        }
     };
     let mut response = Response::new(Full::new(body));
     *response.status_mut() = status;
@@ -217,8 +229,21 @@ async fn answer(
     headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
     headers.insert(header::ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("GET, HEAD, OPTIONS"));
     headers.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("Range"));
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=10"));
+    // an invite opens and closes from one moment to the next: never kept
+    let kept = if invited.is_some() { "no-store" } else { "public, max-age=10" };
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(kept));
     Ok(response)
+}
+
+/// The answer to a GET or HEAD of `INVITE` `<share>`: whether that share is an invite of the seed's coop, Maia City,
+/// that a newcomer may still sign up with (`world::open_invite`), as `{"open": true}` or `{"open": false}`, and a bad
+/// request, as JSON, for what isn't a share's id. What maiaCITY's API asks before it signs someone up.
+async fn invite(at: &str, node: &Node) -> (StatusCode, Bytes) {
+    let Some(share) = ShareId::from_hex(at) else {
+        return (StatusCode::BAD_REQUEST, error("an invite is named by its share's id, 64 hex digits"));
+    };
+    let open = node.read(move |lab, me| world::open_invite(lab, me, share)).await;
+    (StatusCode::OK, Bytes::from(serde_json::to_vec(&json!({ "open": open })).expect("JSON writes")))
 }
 
 /// Place `at` after `ENTRY` as a file of an entry by its root, `<vault>/<entry>` `OF_ROOT` `<root>`: the entry's place

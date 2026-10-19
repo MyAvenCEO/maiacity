@@ -14,7 +14,6 @@
  * person holds nothing (`access.known` false).
  */
 import { base } from '$app/paths';
-import { invite } from '$lib/auth/client';
 import { ADMIN, heldGroups } from '$lib/avendb/capgroups.js';
 import { session } from '$lib/avendb/session.svelte.js';
 import { seedCity, serverCity } from '$lib/avendb/vaults.js';
@@ -67,20 +66,21 @@ export const invites = () => access.owner && !!access.city;
 /**
  * An invite for one new human, of cap group `name` (Traveler: nobody is invited a citizen, Samuel 2026-10-19): a
  * share of the group to a one-time key, issued as Maia City, which their vault claims at sign-up with no one signing
- * (Samuel 2026-10-19: "The invite automatically should sign that share"), and the API's sign-up code, as maiaCITY's
- * API still signs people up. The link that brings both, always on the site, even made in the Mac app: the code in its
- * query, the share and its key after its `#`, which never leaves the browser.
+ * (Samuel 2026-10-19: "The invite automatically should sign that share"). The device signs it as it acts for Maia
+ * City, through the person's vault that owns it, with no passkey (Samuel 2026-10-19: the city's admin invites, and
+ * their vault signs for it); maiaCITY's API signs the newcomer up on it too, as avenDB's server says it is open
+ * (/feed/invite/). The link, always on the site, even made in the Mac app: the share and its key after its `#`,
+ * which never leave the browser but for the share's id, which the API asks avenDB about.
  * @param {string} name @returns {Promise<string>}
  */
 export async function makeInvite(name) {
 	const group = access.list.find((g) => g.name === name);
 	if (!invites()) throw new Error('Only Maia City’s own devices invite.');
 	if (!group) throw new Error(`Maia City has no ${name} group yet: open the dashboard on your first device, which adds it.`);
-	const { code } = await invite();
 	const made = await session.run(`Inviting a ${name.toLowerCase()}`, { op: 'share_group', over: access.city, group: group.entry, who: 'invite', as: access.city });
 	if (!made?.share || !made?.secret) throw new Error(session.error || 'The invite wasn’t made.');
 	const key = new URLSearchParams({ share: made.share, key: made.secret });
 	// the site's, as the one invited opens it in their own browser: the Mac app's own address is the app's alone
 	const site = native() ? 'https://maia.city' : location.origin;
-	return `${site}${base}/join/?${new URLSearchParams({ invite: code })}#${key}`;
+	return `${site}${base}/join/#${key}`;
 }

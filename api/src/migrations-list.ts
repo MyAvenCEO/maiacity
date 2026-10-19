@@ -1056,4 +1056,13 @@ export const MIGRATIONS: Migration[] = [
       DROP TABLE IF EXISTS content_items, timelines CASCADE;
     `,
   },
+  {
+    // An invite is the avenDB share Maia City's device signs (Samuel 2026-10-19: no passkey for it, the city's admin
+    // invites and their vault signs for it): the API makes no code of its own any more, and keeps the share's id here
+    // once someone signed up on it, made by no founder of the API's.
+    id: "0055-avendb-invites",
+    sql: `
+      ALTER TABLE signup_invites ALTER COLUMN made_by DROP NOT NULL;
+    `,
+  },
 ];

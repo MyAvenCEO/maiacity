@@ -10,6 +10,7 @@ use avendb::lab::GroupShare;
 use avendb::policy::{Action, Kind, Level, Principal, Refusal, Who};
 use avendb::rules::{Cap, CapGroup, Op};
 use avendb::slice::{Selector, CAP_GROUP_TYPE};
+use avendb::world;
 use serde_json::json;
 
 /// The world with its server gated, Maia City's Traveler group, and an Admin group Maia City's owner gives Bob.
@@ -83,6 +84,13 @@ fn a_newcomer_comes_in_with_the_invite_it_claims_and_a_stranger_stays_out() {
     let invite = of_group(&s, Who::Invite(key), s.traveler);
     let invite = s.w.lab.issue_group(mac_a, &[mac_a], invite).expect("Maia City invites a traveler");
     s.w.lab.sync(mac_a, server);
+    // the server says the invite is open, as maiaCITY's API asks it before signing Erin up; a share of the group to a
+    // vault is no invite
+    assert!(world::open_invite(&s.w.lab, server, invite), "an unclaimed invite of Maia City is open");
+    let to_bob = of_group(&s, Who::Vault(s.w.bob), s.traveler);
+    let to_bob = s.w.lab.issue_group(mac_a, &[mac_a], to_bob).expect("Maia City makes Bob a traveler");
+    s.w.lab.sync(mac_a, server);
+    assert!(!world::open_invite(&s.w.lab, server, to_bob), "a share to a vault is no invite");
     // Erin's Mac founds her vault, and the server holds nothing of it
     let (mac_e, erin) = newcomer(&mut s.w, "Erin");
     s.w.lab.sync(mac_e, server);
@@ -94,8 +102,9 @@ fn a_newcomer_comes_in_with_the_invite_it_claims_and_a_stranger_stays_out() {
     s.w.lab.sign_up(mac_e, server);
     assert!(takes(&s.w, erin), "the server takes Erin's vault, with the invite it claimed");
     assert_eq!(s.w.lab.state(server).share(invite).map(|cp| cp.share.who), Some(Who::Vault(erin)));
-    // once claimed, nobody is handed the invite again
+    // once claimed, nobody is handed the invite again, and it is open no more
     assert_eq!(s.w.lab.invite_card(server, invite).err(), Some(Refusal::NotInvite));
+    assert!(!world::open_invite(&s.w.lab, server, invite), "a claimed invite signs nobody else up");
     // Frank comes with no invite: the server leaves his vault out, however it hears of him
     let (mac_f, frank) = newcomer(&mut s.w, "Frank");
     s.w.lab.sync(mac_f, server);

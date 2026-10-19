@@ -115,17 +115,10 @@ export async function signIn(): Promise<Founder> {
 	return loginFinish(await startAuthentication({ optionsJSON: options }));
 }
 
-/** Whether an invite may still be used to sign up with: an admin's, unused, unexpired. */
+/** Whether an invite may still be used to sign up with: an invite of Maia City's in avenDB, by its share's id, that no
+ *  vault claimed yet, or an older code of the API's, unused and unexpired. */
 export const inviteOpen = (code: string) =>
 	call<{ open: boolean }>(`/api/invites/${encodeURIComponent(code)}`).then((r) => r.open);
-
-/** A new invite, for an admin to hand one person: its code, and until when it may be used. In the Mac app, whose key
- *  may not invite, their passkey says it is them, in the app's sign-in sheet (`sheetAssertion`). */
-export const invite = async () =>
-	call<{ code: string; expires: string }>('/api/invites', {
-		method: 'POST',
-		...(native() ? { body: JSON.stringify({ assertion: await sheetAssertion('invite') }) } : {})
-	});
 
 /** Does this browser do passkeys at all? Checked before anything is promised. */
 export const passkeysAvailable = () =>
@@ -173,12 +166,12 @@ export type Cdl = { slope: [number, number, number]; offset: [number, number, nu
 
 /** In The OS, a ceremony of the person's passkey over a new sign-in's challenge, in its sign-in sheet
  *  (src/routes/app/avendb/sheet/), which brings it back to the app alone: what the API takes as the person's own word
- *  where the app's key may not act, `what` for (its sign-in, an invite). */
-export async function sheetAssertion(what: 'signin' | 'invite' = 'signin'): Promise<object> {
+ *  as it signs The OS in. */
+export async function sheetAssertion(): Promise<object> {
 	const { SHEET } = await import('$lib/avendb/device/passkey.js');
 	const options = await loginOptions();
 	const back = await command<string>('passkey_sheet', {
-		url: `${SHEET}#${new URLSearchParams({ what, options: JSON.stringify(options) })}`
+		url: `${SHEET}#${new URLSearchParams({ what: 'signin', options: JSON.stringify(options) })}`
 	});
 	const answer = new URLSearchParams(back.split('#')[1] ?? '');
 	const assertion = answer.get('assertion');
