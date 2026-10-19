@@ -312,7 +312,7 @@ theorem uncounted_closed {st : State} (hr : Reachable st) : CountsClosed st :=
 
 An invite is a share to a one-time invite key, which the vault it invites claims once, signed by that key (G1). The
 server of a vault takes a new vault onto what it holds only where it welcomes it (G2): a human vault only with a share
-of the vault it serves, the invite it claimed, and a coop or an aven only owned by a founder. -/
+of the vault it serves, the invite it claimed, and a coop or an aven only owned by an admin. -/
 
 /-- G1 (an invite is claimed once): once a claim of share `c` is accepted, the share names the claiming vault, and no
     claim of it is accepted again, whoever signs it. -/
@@ -335,11 +335,11 @@ theorem G2_human {st : State} {home v : VaultId} {vt : Vault} (hv : st.vault? v 
     (hne : v ≠ home) (h : welcomes st home v = true) : holdsAny st home v = true ∨ owns st v home = true :=
   Gating.human hv hk hne h
 
-/-- G2, a coop or an aven: the server welcomes one other than `home` only where a founder owns it: `home`, a vault that
-    owns `home`, or one holding `home`'s Founder cap group. -/
+/-- G2, a coop or an aven: the server welcomes one other than `home` only where an admin owns it: `home`, a vault that
+    owns `home`, or one holding `home`'s Admin cap group. -/
 theorem G2_founded {st : State} {home v : VaultId} {vt : Vault} (hv : st.vault? v = some vt)
     (hk : vt.kind = .coop ∨ vt.kind = .aven) (hne : v ≠ home) (h : welcomes st home v = true) :
-    ∃ u ∈ st.vaults, isFounder st home u.id = true ∧ owns st u.id v = true :=
+    ∃ u ∈ st.vaults, isAdmin st home u.id = true ∧ owns st u.id v = true :=
   Gating.founded hv hk hne h
 
 /-! ## Drafts

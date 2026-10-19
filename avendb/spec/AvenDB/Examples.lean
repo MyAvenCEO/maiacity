@@ -1523,7 +1523,7 @@ def game : Sym := 31
 def games : Selector := .anyOf [[.typeIn [game]]]
 def traveler := 50
 def citizen := 51
-def founderG := 52
+def adminG := 52
 def gameMap := 60
 def memo := 61
 
@@ -1629,11 +1629,11 @@ def sClaimed : List Edit := sInvite ++ chain 614 [(passkeyC, [inviteKey], .claim
 #guard !accepted sClaimed (attempt passkeyD [inviteKey] (.claim 31 dave))
 #guard !accepted sClaimed (attempt passkeyC [inviteKey] (.claim 31 carol))
 
-/-! ## The server takes a new vault only by invite or from a founder
+/-! ## The server takes a new vault only by invite or from an admin
 
 Anyone can sign a genesis, but the server of Maia City takes a new human vault onto what it holds only with the invite it
-claims in the same batch, and a new coop or aven only where a founder owns it: Maia City, its owner Alice, or a holder of
-its Founder cap group, which only admins get. -/
+claims in the same batch, and a new coop or aven only where an admin owns it: Maia City, its owner Alice, or a holder of
+its Admin cap group, which only admins get. -/
 
 def eve := 104
 def passkeyE := 41
@@ -1648,18 +1648,18 @@ def eveJoins : List Edit := chain 700 [
 -- and once the invite is used up, her claim stands no more, so her genesis stays out too
 #guard (takes city sClaimed eveJoins).map (·.length) == some 1
 
--- a coop Bob founds alone, a citizen but no founder, the server leaves out; one Alice founds, it takes
+-- a coop Bob founds alone, a citizen but no admin, the server leaves out; one Alice founds, it takes
 def bobsCoop : List Edit := chain 710 [(passkeyB, [], .genesis 220 .coop [.vault bob] 1)]
 #guard takes city sInvite bobsCoop == some []
 #guard takes city sInvite (chain 710 [(passkeyA, [], .genesis 220 .coop [.vault alice] 1)]) ==
   some (chain 710 [(passkeyA, [], .genesis 220 .coop [.vault alice] 1)])
 
--- Maia City's Founder group, granted to Bob: now the server takes his coop
-def sFounder : List Edit := sInvite ++ chain 620 [
-  (macA, [], create city founderG city [30, 31] capGroupType (via := [alice]) (defines := some { name := "Founder" })),
-  (macA, [], .share (.grant (groupShare 32 city bob .read founderG) [alice]))]
-#guard refused sFounder == []
-#guard isFounder (view sFounder) city bob && !isFounder (view sInvite) city bob
-#guard takes city sFounder bobsCoop == some bobsCoop
+-- Maia City's Admin group, granted to Bob: now the server takes his coop
+def sAdmin : List Edit := sInvite ++ chain 620 [
+  (macA, [], create city adminG city [30, 31] capGroupType (via := [alice]) (defines := some { name := "Admin" })),
+  (macA, [], .share (.grant (groupShare 32 city bob .read adminG) [alice]))]
+#guard refused sAdmin == []
+#guard isAdmin (view sAdmin) city bob && !isAdmin (view sInvite) city bob
+#guard takes city sAdmin bobsCoop == some bobsCoop
 
 end AvenDB.Examples

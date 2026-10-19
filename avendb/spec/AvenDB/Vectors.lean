@@ -1464,7 +1464,7 @@ What the server of a vault (`home`) takes of a batch of edits, holding others (`
 the geneses of new vaults it doesn't welcome, or nothing where a vault it would take stays unwelcome. Each edit claims a
 depth, as in a view case; ids count through the held edits and then the batch. The model's answer is the positions in
 the batch of the edits it takes, or `null`. Maia City is coop 200, which Alice's vault owns; its Traveler group is entry
-50 and its Founder group entry 52, which Bob holds; invite keys from 700; Eve's passkey 12 founds vault 104. -/
+50 and its Admin group entry 52, which Bob holds; invite keys from 700; Eve's passkey 12 founds vault 104. -/
 
 structure GateCase where
   name  : String
@@ -1487,12 +1487,12 @@ def deep (start : Nat) (steps : List (SignerId × List SignerId × Action)) : Li
   steps.zipIdx.map fun ((a, co, act), i) => (start + i, a, co, act)
 
 /-- What the server of Maia City holds: the four people's vaults, Maia City, its Traveler group with an invite to it,
-    its Founder group, which Bob holds, and an invite to Alice's own vault. -/
+    its Admin group, which Bob holds, and an invite to Alice's own vault. -/
 def gateHeld : List (Nat × SignerId × List SignerId × Action) := deep 0 (humans ++ [
   (1, [], .genesis 200 .coop [.vault 100] 1),
   (2, [], newEntry 200 50 200 [] capGroupType (via := [100]) (defines := some travelerG)),
   (2, [], groupShare 31 200 (.invite 700) .read 50 (via := [100])),
-  (2, [], newEntry 200 52 200 [] capGroupType (via := [100]) (defines := some { name := "Founder" })),
+  (2, [], newEntry 200 52 200 [] capGroupType (via := [100]) (defines := some { name := "Admin" })),
   (2, [], groupShare 32 200 (toVault 101) .read 52 (via := [100])),
   (2, [], newShare 33 100 (.invite 703) .read 100 todos)])
 
@@ -1505,9 +1505,9 @@ def gates : List GateCase := [
     batch := deep 100 [eveFounds] },
   { name := "an invite to another vault lets no human vault in", home := 200, held := gateHeld,
     batch := deep 100 [eveFounds, (12, [703], .claim 33 104)] },
-  { name := "a coop founded by a citizen who is no founder stays out", home := 200, held := gateHeld,
+  { name := "a coop founded by a citizen who is no admin stays out", home := 200, held := gateHeld,
     batch := deep 100 [(6, [], .genesis 210 .coop [.vault 102] 1)] },
-  { name := "a holder of the Founder group founds a coop and its aven", home := 200, held := gateHeld,
+  { name := "a holder of the Admin group founds a coop and its aven", home := 200, held := gateHeld,
     batch := deep 100 [(4, [], .genesis 210 .coop [.vault 101] 1), (4, [], .genesis 310 .aven [.vault 210] 1)] },
   { name := "Maia City's owner founds a coop", home := 200, held := gateHeld,
     batch := deep 100 [(1, [], .genesis 211 .coop [.vault 100] 1)] },

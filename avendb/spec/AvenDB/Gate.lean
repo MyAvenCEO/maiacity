@@ -9,8 +9,8 @@ knows once it holds the batch the vault came in (`welcomes`):
 
 - the vault it serves (`home`);
 - a human vault that holds a share of `home`, which is the invite it claimed in that batch, or that owns `home`;
-- a coop or an aven that a founder owns, directly or through its owners: `home` itself, a vault that owns `home`, or
-  one holding a share of `home`'s cap group named Founder (`isFounder`), which only admins get;
+- a coop or an aven that an admin owns, directly or through its owners: `home` itself, a vault that owns `home`, or
+  one holding a share of `home`'s cap group named Admin (`isAdmin`), which only admins get;
 - a device vault, which its owner governs and the server took before.
 
 From a batch it drops the geneses of the new vaults it doesn't welcome, again until none is left to drop, and takes the
@@ -21,7 +21,7 @@ of the batch (`takes`). G1: an invite is claimed once. G2: every vault new to wh
 namespace AvenDB
 
 /-- The name of the cap group of `home` whose holders may found coops and avens there. -/
-def founderName : String := "Founder"
+def adminName : String := "Admin"
 
 /-- Vault `u` holds a live share of vault `home`. -/
 def holdsAny (st : State) (home u : VaultId) : Bool :=
@@ -34,9 +34,9 @@ def holdsGroup (st : State) (home u : VaultId) (name : String) : Bool :=
     | none => false
 
 /-- Vault `u` may found coops and avens on the server of `home`: it is `home`, it owns `home`, or it holds `home`'s
-    Founder group. -/
-def isFounder (st : State) (home u : VaultId) : Bool :=
-  u == home || owns st u home || holdsGroup st home u founderName
+    Admin group. -/
+def isAdmin (st : State) (home u : VaultId) : Bool :=
+  u == home || owns st u home || holdsGroup st home u adminName
 
 /-- The server of `home` welcomes vault `v` in `st`. -/
 def welcomes (st : State) (home v : VaultId) : Bool :=
@@ -46,7 +46,7 @@ def welcomes (st : State) (home v : VaultId) : Bool :=
   | some vt =>
     match vt.kind with
     | .human => holdsAny st home v || owns st v home
-    | .coop | .aven => st.vaults.any fun u => isFounder st home u.id && owns st u.id v
+    | .coop | .aven => st.vaults.any fun u => isAdmin st home u.id && owns st u.id v
     | .deviceVault => true
 
 /-- The vaults a peer knows holding `edits ++ b` that it didn't know holding `edits`. -/
@@ -129,7 +129,7 @@ theorem admitN_genesis (home : VaultId) (edits : List Edit) :
 
 /-- G2 (the server takes only vaults it welcomes): what the server of `home` takes of a batch is the batch without some
     of its geneses, and every vault new to what it knows once it holds them is one it welcomes there: a human vault
-    only with a share of `home`, the invite it claimed, a coop or an aven only owned by a founder. -/
+    only with a share of `home`, the invite it claimed, a coop or an aven only owned by an admin. -/
 theorem takes_welcome {home : VaultId} {edits batch b : List Edit} (h : takes home edits batch = some b) :
     b.Sublist batch ∧ (∀ e ∈ batch, e ∉ b → ∃ v k os t r, e.action = .genesis v k os t r) ∧
       ∀ v ∈ newVaults edits b, welcomes (view (edits ++ b)) home v = true := by
@@ -151,10 +151,10 @@ theorem human {st : State} {home v : VaultId} {vt : Vault} (hv : st.vault? v = s
   simp only [hv, hk, Bool.or_eq_true, beq_iff_eq, hne, false_or] at h
   exact h
 
-/-- G2, a coop or an aven: the server welcomes one other than `home` only where a founder owns it. -/
+/-- G2, a coop or an aven: the server welcomes one other than `home` only where an admin owns it. -/
 theorem founded {st : State} {home v : VaultId} {vt : Vault} (hv : st.vault? v = some vt)
     (hk : vt.kind = .coop ∨ vt.kind = .aven) (hne : v ≠ home) (h : welcomes st home v = true) :
-    ∃ u ∈ st.vaults, isFounder st home u.id = true ∧ owns st u.id v = true := by
+    ∃ u ∈ st.vaults, isAdmin st home u.id = true ∧ owns st u.id v = true := by
   unfold welcomes at h
   simp only [hv, Bool.or_eq_true, beq_iff_eq, hne, false_or] at h
   rcases hk with hk | hk <;> rw [hk] at h <;> simpa [List.any_eq_true] using h
