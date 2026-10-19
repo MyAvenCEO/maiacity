@@ -1462,7 +1462,7 @@
 					through its own copies. An artifact is one source standing on its own, a link, a picture, a clip or a YouTube video with its
 					chapters and words; a spark is a canvas of artifacts, sparks and free notes; an artwork is a story’s card of one
 					shape, in layers, rendered into the Library. Every vault
-					reads and writes them offline, and avenCEO GmbH holds each as a Public entry of its own, with the same bytes and so
+					reads and writes them offline, and Maia City holds each as an entry of its own, with the same bytes and so
 					the same id. The todo’s version 0 above is the lens engine’s worked example, which lives only in its tests.
 				</li>
 				<li>
