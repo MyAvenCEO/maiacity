@@ -1693,9 +1693,11 @@ on the same stream. Every value has exactly one encoding, fuzzed and checked aga
 | 3 | Link: a passkey's pass for this connection's device | The link card |
 | 4 | Join: the edit that adds the new device | Nothing, once taken |
 | 5 | Claim key | The key to seal to of a device that belongs to no vault yet: an unclaimed server's, or an agent device's |
-| 6 | Claim: the edit that adds that device to its device vault (section 3, adding a device vault) | It, signed by the claimed device too |
+| 6 | Claim: the edit that adds that device to its device vault, or the server to its aven (section 3, adding a device vault) | It, signed by the claimed device too |
 | 7 | Ask logs: a request for some logs alone | A page of edits of those logs |
 | 8 | State: a device's signed statement of its holdings, its own or passed on | Nothing, once kept or found older |
+| 9 | Invite: the id of an invite (section 3, Invites) | Its card, while no vault claimed it (`Lab::invite_card`) |
+| 10 | Sign up: a newcomer's vault logs and its claims (`Lab::sign_up_card`) | Nothing, once the server took every new human vault in it |
 
 ### Frontiers per log
 
@@ -1904,6 +1906,7 @@ Over its shelf a node runs a blob store of its own (`ShelfStore`), which iroh-bl
 | Desktop | A folder (`crates/avendb-net/src/disk.rs`), on a Mac in Application Support | The folder | Memory windows |
 | Drive | A folder on the drive, `<volume>/.avendb/`, laid out as the desktop's | The folder | Memory windows |
 | Studio worker | A folder beside the desktop's, `<app folder>-workers/<device>`, laid out as the desktop's; its key on the desktop's shelf, wrapped | The folder | Memory windows |
+| Agent | A folder beside the desktop's, `<app folder>-agents/<device>`, laid out as the desktop's, its key in it | The folder | Memory windows |
 | Server | An S3 bucket, every object sealed (`crates/avendb-net/src/bucket.rs`) | The bucket | Its folder |
 
 A browser tab's worker holds the store's lock, so one device never runs in two tabs at once.
@@ -1930,6 +1933,7 @@ story of Maia City with a doc post.
   meta/<n>         what opens the device again, follow list included (browser, desktop); device.key on the server
   stated/<device>/<checked>  each device's signed statements of its holdings, at most one an hour each (H2)
   drives/<device> the key of each drive this desktop hosts, wrapped under its own device's (section 3)
+  workers/<device> the key of each studio worker this desktop hosts, wrapped the same way
 ```
 
 - **Edits** (`crates/avendb-net/src/edits.rs`). A save appends a journal entry. Every 64 entries, a pack blob takes
@@ -1973,11 +1977,11 @@ The full table, with each theorem's Rust guards, is `spec/README.md`.
 |---|---|
 | `Basic.lean` | Ids, levels and keep modes, Who, selectors, headers, audiences, key families and names |
 | `State.lean` | What a peer knows: vaults, acting via owners, shares, entries, stays, wants and keeps, the lane |
-| `Step.lean` | The seven kinds and the rules that take or refuse each; the replay order; strong removal (`view`) |
+| `Step.lean` | The eight kinds and the rules that take or refuse each; the replay order; strong removal (`view`) |
 | `Sync.lean` | What a peer sends a device, interest and follow, the files it may fetch, the link card |
 | `Logs.lean` | Logs, frontiers, asks, forks; holdings, announcements, connections, signed statements, Synced to and the blob gate |
 | `Rules.lean`, `Ops.lean`, `Schemas.lean` | Op groups, cap groups and touches; records inside records, diffs and queries at any depth; schema fit per row, the ceiling |
-| `Gate.lean` | Who the server of a vault takes onto what it holds: a new person's vault only with the invite it claims, a coop or an aven only an admin's |
+| `Claims.lean`, `Gate.lean` | What a claim of an invite changes; who the server of a vault takes onto what it holds: a new person's vault only with the invite it claims, a coop or an aven only an admin's |
 | `Links.lean` | Links, a record read so many rows down (`Doc.cut`), and following links a level at a time (`follow`) |
 | `Lens.lean`, `Doc.lean`, `Proposals.lean` | Lenses (T9); merge of histories and the three-way merge of records (T10a to T10e); lines of history (T10f to T10h) |
 | `Props.lean`, `Theorems.lean` | The predicates the theorems use; every other theorem's statement, the proofs in the `*Lemmas.lean` files and `Schemas.lean` |
@@ -1996,7 +2000,7 @@ Each guarantee and the theorems that state it, in `Theorems.lean` unless the row
 | T7 | Blind server: no key of a vault whose seed it never held, unless public | `T7_blind_server` |
 | T8 | Everyone only reads | `T8_everyone_read_only` |
 | T9 | Lens laws: round trips, edits through a view keep what it can't see | `T9_*` in `Lens.lean` |
-| T10 | Merge is the union of histories and reads as the three-way merge, keeping the target's changes; lines don't touch | `T10_*` in `Doc.lean` and `Proposals.lean`, with `writes_ordered` |
+| T10 | Merge is the union of histories and reads as the three-way merge, keeping the target's changes; lines don't touch; a version number depends on its past alone | `T10_*` in `Doc.lean` and `Proposals.lean`, with `writes_ordered` and `counted_ordered` |
 | T11 | Same edits in any order, same state | `T11_convergence`, `T11_same_standing` |
 | T12 | Sync sends what shares reach; Everyone only to interest or follow; strangers get nothing | `T12_sync_sends_only_what_shares_reach`, `T12_interest`, `T12_stranger_gets_nothing`, `T12_since` |
 | T13 | Two devices that asked each other once converge | `T13_sync_converges` |
@@ -2027,6 +2031,9 @@ Each guarantee and the theorems that state it, in `Theorems.lean` unless the row
 | C4 | Allowed writes count, and nothing built on an uncounted one does | `allowed_counts`, `allowed_creates`, `uncounted_closed` |
 | M1 | A counted merge brings in only what its merge ops' paths reach | `M1_merges_within`, with `merged_within` in `Rules.lean` |
 | M2 | A merge into main through a share counts only on top of the vault's accept; the vault's own merges count as before | `M2_merges_accepted`, `M2_owner_counts` |
+| D1 | Only the vault lands a draft | `D1_drafts_land_by_their_vault` |
+| D2 | A draft by a share counts exactly where its chain lets a creation on a proposal through | `D2_draft_creations`, `D2_draft_step` |
+| D3 | A draft that hasn't landed isn't public | `D3_drafts_not_public` |
 | S1 | A write is judged by what it changed | `S1_judged_by_changes` |
 | S2 | Records that fit stay so; no write reaches deeper than the ceiling | `S2_clean_stays_clean`, `S2_first_write`, `S2_ceiling`, with `capped_change`, `capped_fits`, `capped_deep` and `capped_clean` in `Schemas.lean` |
 | S3 | Writes that don't fit count for no reader | `S3_unfit_uncounted`, `S3_step` |
@@ -2052,7 +2059,7 @@ whose keys sign it on that connection.
 
 | Path | What it holds |
 |---|---|
-| `crates/avendb/src/policy.rs` | Edits, the seven kinds, shares, refusals, the replay, strong removal, meaning |
+| `crates/avendb/src/policy.rs` | Edits, the eight kinds, shares, refusals, the replay, strong removal, meaning |
 | `crates/avendb/src/sync.rs` | Logs, frontiers, asks, follow lists, what a peer sends (`answer`, `Reach`) |
 | `crates/avendb/src/keys.rs` | Key families, epochs, sealed boxes (X-Wing and McEliece) |
 | `crates/avendb/src/sign.rs` | SLH-DSA signatures with a passkey's WebAuthn assertion, hellos, passkey ceremonies, standing consent, the pass |
@@ -2064,6 +2071,8 @@ whose keys sign it on that connection.
 | `crates/avendb/src/lens.rs`, `doc.rs`, `history.rs`, `merge.rs` | Schemas and lenses, the ceiling, Loro items, lines of history, the three-way merge |
 | `crates/avendb/src/sealed.rs`, `slice.rs` | Sealed blob v2; selectors, headers and write bodies |
 | `crates/avendb/src/recovery.rs` | The master recovery key |
+| `crates/avendb/src/gate.rs` | Who the server takes: a new vault only where it welcomes it |
+| `crates/avendb/src/aip.rs`, `engine/aips.rs` | AIPs: their diffs and summaries, and their ops |
 | `crates/avendb-net/src/lib.rs`, `session.rs` | The node, its router and messages |
 | `crates/avendb-net/src/run.rs` | `Node::run`: an op on a node, with bytes beside it and the passkey's ceremony |
 | `crates/avendb-net/src/holdings.rs`, `blobs.rs` | Holdings, Synced to, the blob pool and gate |
@@ -2071,9 +2080,10 @@ whose keys sign it on that connection.
 | `crates/avendb-net/src/shelf.rs`, `edits.rs` | The shelf, and edits on it |
 | `crates/avendb-net/src/disk.rs`, `bucket.rs` | The folder shelf and the bucket shelf |
 | `crates/avendb-net/src/files.rs` | Bringing, reading and keeping files |
+| `crates/avendb-net/src/server.rs`, `jobs.rs` | The server's node and an agent's on their shelves; the jobs a node runs in the background |
 | `crates/avendb-server` | The server's binary, its relay and its feed |
 | `crates/avendb-browser` | A device in a web page, as WebAssembly, `PageDevice.run`, and its OPFS worker |
-| `crates/avendb-device` | The same device, native beside the desktop app, and its calls in lines of JSON; the agents' devices (`agent.rs`) and the drives' it hosts (`drive.rs`) |
+| `crates/avendb-device` | The same device, native beside the desktop app, and its calls in lines of JSON; the agents' devices (`agent.rs`), and the drives' (`drive.rs`) and studio workers' (`worker.rs`) it hosts |
 | `spec/` | The Lean model, vectors and protocol models |
 | `src/lib/avendb/` | The app's avenDB pages, which run every op through `ops.js` and `native.js` |
 | `src/routes/app/avendb/` | The avenDB page, `/app/avendb/`, and the sign-in sheet's page |
