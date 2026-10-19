@@ -479,6 +479,19 @@
 		 *  @returns {Promise<{ device: string, command: string, claude: string | null } | null>} */
 		agentCommand: async (harness) => (mac ? mac.call('agentCommand', harness) : null),
 		/**
+		 * In the Mac app: a new agent for the person's cloud sessions, agentCloud, its key made on this Mac and added to
+		 * their coop's aven, avenMAIA, as a device beside its server, in one sheet (avendb-device's `addCloudAgent`). Its
+		 * key comes back here once, for them to keep in their cloud environment's secrets, and is kept nowhere else.
+		 * @returns {Promise<{ device: string, name: string, aven: string, key: string, variable: string } | null>}
+		 */
+		addCloudAgent: async () => {
+			if (!mac) return null;
+			/** @type {{ device: string, name: string, aven: string, key: string, variable: string } | null} */
+			let added = null;
+			await act('Adding a cloud agent', async () => (added = await mac.call('addCloudAgent')));
+			return added;
+		},
+		/**
 		 * In the Mac app: uses the drive plugged in at volume `path` for avenDB, as a device of the person's vault of
 		 * its own named `name`, in one ceremony of their passkey (avendb-device's `joinDrive`).
 		 * @param {string} path @param {string} name

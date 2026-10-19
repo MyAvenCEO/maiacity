@@ -462,6 +462,17 @@ which asks no more until it asks again; a no to a record is its answer. A share 
 person's own vault reaches none of the vaults it owns, so "all my vaults" is a share of each, and "now and later" a
 standing grant that each vault founded later follows.
 
+**A cloud session's agent.** A Claude Code session in Anthropic's cloud runs no desktop, so no agent of it can leave a
+file there. The desktop app makes its key instead: `addCloudAgent` makes a fresh key, starts it as a device for a
+moment, and adds it to the coop's one aven by the flow above, at `Place::Vault`, in one ceremony that the new key
+cosigns; it shows the key once and keeps none of it. Its person puts the key in the cloud environment's secrets
+(`AVENDB_AGENT_KEY`), and every session there runs `avendb-device agent cloud`, the device agentCloud: the same MCP as
+any agent, reaching the server alone, on its relay, through the environment's HTTP proxy. The relay lets in only the
+devices it knows, so a key the desktop never added reaches nothing. Every session holding the key is the same device,
+so it opens its node at its first tool call, catches up with the server before each change, and closes it after a few
+minutes with no call; two sessions working at the same moment take turns on the relay, and two edits made at once from
+one device log stand as a fork (Forks, section 4). Removing agentCloud from the aven ends it for every session.
+
 ## 4. Edits, logs and the replay
 
 **An edit** is `{parents, depth, author, cosigners, action}` (`policy::Edit`). Its bytes have one canonical encoding,
@@ -959,7 +970,7 @@ Every caller goes through `Node::run`:
 | Caller | How it calls |
 |---|---|
 | A browser | `PageDevice.run(op, ceremony?, read?)`, WebAssembly (`crates/avendb-browser`). `ceremony(challenge, step)` runs the passkey's prompt; `read(at, n)` hands `put_file`, or a `create` with a `file`, its bytes a megabyte at a time; `read_file`'s bytes come back as `bytes`, a `Uint8Array`. |
-| The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileAgain [n]` for the second pass, `fileEnd [n]` and `fileDrop [n]` for `put_file` and a `create` with a `file`; `agents` (the access requests), `grant [name, device, shares, avenName]`, `deny [name, device]` and `agentCommand [harness?]` for the agent devices on the desktop; `drives`, `joinDrive [path, name]`, `openDrive [path]` and `ejectDrive [path]` for the drives plugged into it. Its ceremonies run in the app's sign-in sheet (section 11). |
+| The desktop app | The same device, native, beside the app (`crates/avendb-device`), in lines of JSON: `run [op]`, with `read_file`'s `bytes` in base64; `fileStart [op]`, `fileChunk [n, at, base64]` in order, `fileAgain [n]` for the second pass, `fileEnd [n]` and `fileDrop [n]` for `put_file` and a `create` with a `file`; `agents` (the access requests), `grant [name, device, shares, avenName]`, `deny [name, device]` and `agentCommand [harness?]` for the agent devices on the desktop; `addCloudAgent` for a cloud session's, agentCloud, whose key it shows once (section 3); `drives`, `joinDrive [path, name]`, `openDrive [path]` and `ejectDrive [path]` for the drives plugged into it. Its ceremonies run in the app's sign-in sheet (section 11). |
 | The desktop app, in its own process | The same device hosted in the app's process in place of the sidecar (`avendb_device::host`), on one code path with it: the same calls through `Host::call(call, args)`, each answering `{"ok"}` or `{"error"}` as its line would with no id; each sheet to show on its `Lines`, answered by `Host::answer`; and `Host::node()`, the open device's node, for the app's own Rust to `read_file` by range and post `jobs()` with no JSON or base64. |
 | An agent harness on the desktop | Its agent device, as its MCP server (`avendb-device agent <harness>`, section 3): `avendb_vaults`, `avendb_ask` for a read, `avendb_run` for a change, `put_file` and a `create` with a `file` too with the absolute `path` of a file on the desktop beside the op, and its own `get_file {entry}` or `{vault, name}`, which reads a file back through `read_file` to the `path` beside the op (never over a file there unless `overwrite`), each acting as its coop's aven, of which it is a device, whose shares decide; `avendb_add_spark` for a spark, the page's `create`; `avendb_add_artifact` for an artifact, a link or a file of the desktop saved by `put_file` first, put on a spark's canvas where it names one; and `avendb_read_file` for `get_file`; and `avendb_request_access` for more. It has no passkey, so a change the owners approve answers `approve`. |
 | No passkey at hand | `Node::run` with no authenticator (`NoCeremony`): a change the owners approve answers `approve` and makes nothing. |

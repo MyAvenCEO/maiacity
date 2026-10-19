@@ -6,6 +6,10 @@
 //! `avendb-device agent <harness> [--dir <folder>]`: a harness's agent device (agentClaude for `claude`) beside the
 //! app's folder, the app's own by default, as an MCP server on its stdin and stdout, asking to be added under its
 //! person's aven (`avendb_device::agent`).
+//!
+//! `avendb-device agent cloud [--dir <folder>]`: a cloud session's agent, agentCloud, as an MCP server on its stdin and
+//! stdout, its key from the environment (`AVENDB_AGENT_KEY`), as The OS app showed it once, reaching avenDB's server
+//! alone, its folder in `~/avenDB/cloud` unless named (`avendb_device::agent::serve_cloud`).
 
 use std::path::PathBuf;
 
@@ -31,7 +35,20 @@ async fn run() -> Result<()> {
             let volumes = volumes.or_else(|| cfg!(target_os = "macos").then(|| drive::VOLUMES.into()));
             serve(Config { dir, direct: true, volumes }, tokio::io::stdin(), tokio::io::stdout()).await
         }
-        Usage::Agent { harness, dir } => agent::serve(dir, harness, tokio::io::stdin(), tokio::io::stdout()).await,
+        Usage::Agent { harness, dir } if harness == agent::CLOUD => {
+            let dir = match dir {
+                Some(dir) => dir,
+                None => home()?.join("avenDB/cloud"),
+            };
+            agent::serve_cloud(agent::Cloud::from_env(dir), tokio::io::stdin(), tokio::io::stdout()).await
+        }
+        Usage::Agent { harness, dir } => {
+            let dir = match dir {
+                Some(dir) => dir,
+                None => app_folder()?,
+            };
+            agent::serve(dir, harness, tokio::io::stdin(), tokio::io::stdout()).await
+        }
     }
 }
 
@@ -40,22 +57,23 @@ enum Usage {
     /// The app's device, in the folder the app names, hosting the drives mounted in the folder named, if any:
     /// `--dir <folder> [--volumes <folder>]`.
     App { dir: PathBuf, volumes: Option<PathBuf> },
-    /// Harness `harness`'s agent device beside the app's folder `dir`: `agent <harness> [--dir <folder>]`.
-    Agent { harness: String, dir: PathBuf },
+    /// Harness `harness`'s agent device beside the app's folder `dir`, or the app's own: `agent <harness> [--dir
+    /// <folder>]`; a cloud session's agent in folder `dir`, or its own, for `agent cloud`.
+    Agent { harness: String, dir: Option<PathBuf> },
 }
 
 fn usage() -> Result<Usage> {
     const USAGE: &str =
-        "usage: avendb-device --dir <folder> [--volumes <folder>] | avendb-device agent <harness> [--dir <folder>]";
+        "usage: avendb-device --dir <folder> [--volumes <folder>] | avendb-device agent <harness|cloud> [--dir <folder>]";
     let args: Vec<String> = std::env::args().skip(1).collect();
     match &args[..] {
         [flag, dir] if flag == "--dir" => Ok(Usage::App { dir: dir.into(), volumes: None }),
         [flag, dir, v, volumes] if flag == "--dir" && v == "--volumes" => {
             Ok(Usage::App { dir: dir.into(), volumes: Some(volumes.into()) })
         }
-        [agent, harness] if agent == "agent" => Ok(Usage::Agent { harness: harness.clone(), dir: app_folder()? }),
+        [agent, harness] if agent == "agent" => Ok(Usage::Agent { harness: harness.clone(), dir: None }),
         [agent, harness, flag, dir] if agent == "agent" && flag == "--dir" => {
-            Ok(Usage::Agent { harness: harness.clone(), dir: dir.into() })
+            Ok(Usage::Agent { harness: harness.clone(), dir: Some(dir.into()) })
         }
         _ => bail!(USAGE),
     }
@@ -63,6 +81,10 @@ fn usage() -> Result<Usage> {
 
 /// The app's avenDB folder on this Mac, as the app names it (vault/app/src/avendb.rs): `~/avenDB/mac`.
 fn app_folder() -> Result<PathBuf> {
-    let home = std::env::var_os("HOME").context("no HOME to find the app's folder in")?;
-    Ok(PathBuf::from(home).join("avenDB/mac"))
+    Ok(home()?.join("avenDB/mac"))
+}
+
+/// Its person's home folder.
+fn home() -> Result<PathBuf> {
+    Ok(PathBuf::from(std::env::var_os("HOME").context("no HOME to find the agent's folder in")?))
 }
