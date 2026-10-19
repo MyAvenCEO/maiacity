@@ -94,13 +94,13 @@
 	const guarantees = [
 		{
 			short: 'The server',
-			q: 'The server holds ciphertext only.',
-			a: 'It relays, stays online for sync and keeps an encrypted backup, and never holds a key to your vaults. It still checks every edit exactly as an owner would, from labels that say who may write, not what is written.'
+			q: 'The server holds your vaults as ciphertext.',
+			a: 'It relays, stays online for sync and keeps an encrypted backup, and never holds your vault’s own key. It is a device of avenMAIA, Maia City’s aven, so it holds avenMAIA’s keys and reads what a vault shares with avenMAIA at Viewer or above, and it reads what is public. It still checks every edit exactly as an owner would, from labels that say who may write, not what is written.'
 		},
 		{
 			short: 'Readers',
-			q: 'Only the people you share with can read.',
-			a: 'Each entry’s key reaches only the people whose shares pick it. A Backup or Relay share, the kind the server holds, gets no key at all.'
+			q: 'Only your vault’s owners and the people you share with can read.',
+			a: 'Owners read everything of the vaults they own, down the chain: your passkeys, a Mac’s Touch ID key, and avenDB’s master recovery key while it is an owner of yours. Each entry’s key reaches only them, the vault’s devices, the vaults whose shares pick it, and anyone where a Public share picks it. A Backup or Relay share, the kind each vault gives avenMAIA, gets no key at all.'
 		},
 		{
 			short: 'Revoking',
@@ -109,8 +109,8 @@
 		},
 		{
 			short: 'A lost phone',
-			q: 'A lost or stolen device opens nothing.',
-			a: 'Your passkey is the root: a device’s keys unlock only with it, at every start. Remove the device from any other one, and your vault’s keys move on without it.'
+			q: 'A lost or stolen phone opens nothing.',
+			a: 'A browser’s or the desktop app’s keys unlock only with your passkey, or on a Mac with its Touch ID key, at every start. Remove the device from any other one, and your vault’s keys move on without it. An agent keeps its key on your Mac’s disk, readable by your user alone, so with a lost Mac, remove its agents from the aven too.'
 		},
 		{
 			short: 'Agents',
@@ -119,13 +119,13 @@
 		},
 		{
 			short: 'Offline',
-			q: 'Every edit counts the moment you make it.',
-			a: 'Online or not. Edits made at the same time on two devices merge the same way everywhere, and no server orders or approves them.'
+			q: 'Every edit counts on your device the moment you make it.',
+			a: 'Online or not. It stays, unless its device, or a share it relied on, was revoked before your other devices saw it. Edits made at the same time on two devices merge the same way everywhere, and no server orders or approves them.'
 		},
 		{
 			short: 'Strangers',
-			q: 'Connecting tells a stranger nothing.',
-			a: 'A device that acts for no vault and follows none is sent nothing at all. Even what you share with Everyone goes only to devices with a reason to ask for it.'
+			q: 'Connecting tells a stranger little.',
+			a: 'A device that acts for no vault and follows none is sent no entry and no share. It may ask the server for its card, the logs of avenMAIA and of the vaults that own it, up to the vault of the person who set the server up; and, by the id an invite’s link names, for that invite’s card, and whether it is an open invite of Maia City. What you share with Everyone syncs to any device that follows your vault, and anyone may read it on the server’s public feed.'
 		},
 		{
 			short: 'Backed up',
@@ -134,8 +134,8 @@
 		},
 		{
 			short: 'Quantum',
-			q: 'Post-quantum everywhere.',
-			a: 'Every connection, signature and sealed key has a post-quantum half, and a write counts only once a hash-based signature vouches for it.'
+			q: 'Post-quantum wherever avenDB holds both ends.',
+			a: 'Every link between devices and the server, every signature and every sealed key has a post-quantum half. The link to the bucket has none, so all that goes over it is sealed first. A write counts only once a post-quantum signature vouches for it: ML-DSA-65 for every key made since avenDB moved to it, SLH-DSA for every key made before, and every device checks both.'
 		}
 	];
 
@@ -146,18 +146,21 @@
 		'Who holds a share, and at which level',
 		'Which shares pick each entry, its size, and when it changes',
 		'Which files each edit brings, by hash and sealed size, and which pieces get read',
+		'That one person brought the same file into two vaults: it seals the same in every vault they act for',
 		'What each device holds, log by log and file by file, and when it last checked',
-		'Schemas, lenses and anything else shared with Everyone'
+		'Who signed each edit, by key',
+		'Schemas, lenses and anything else shared with Everyone',
+		'All that a vault shares with avenMAIA at Viewer or above, as avenMAIA’s device'
 	];
 	const serverNever = [
-		'Any content: notes, todos, file bytes',
-		'File names, types and tags',
-		'What a share picks, or what it allows',
-		'Any key, except those published for Everyone',
+		'Any other content: notes, todos, file bytes',
+		'Other file names, types and tags',
+		'What any other share picks, or which ops it allows beyond its level',
+		'Any key but its own, those avenMAIA holds, and those published for Everyone',
 		'Whether two people hold the same film: each person’s files are keyed by a secret of their own vault'
 	];
 	const bucketSees = [
-		'Sealed objects, their sizes, and names that are hashes',
+		'Sealed objects, their sizes, and their names: hashes and counters, and in the bucket of snapshots each vault’s id and when each snapshot was made',
 		'Not even what the server sees: every object is sealed with a 256-bit key the server keeps',
 		'Whoever records the link to it, classical TLS since Hetzner offers nothing else, sees the same noise'
 	];
@@ -167,7 +170,13 @@
 			'Your passkey',
 			'You',
 			'In your phone’s or computer’s passkey store, synced by it (iCloud Keychain, for one)',
-			'The same everywhere: its keys come from its PRF output the same way each time. It owns your vault.'
+			'The same everywhere: its keys come from its PRF output the same way each time, in either signature suite. It owns your vault.'
+		],
+		[
+			'A Touch ID key',
+			'You, on one Mac',
+			'In that Mac’s Secure Enclave, which never lets it out',
+			'Made when you turn Touch ID on, forgotten on that Mac when you turn it off. An ML-DSA-65 key that signs only after a touch, and an owner of your vault beside your passkey.'
 		],
 		[
 			'A device key',
@@ -179,7 +188,7 @@
 			'The unlock',
 			'One session',
 			'In memory only',
-			'One passkey prompt as the device starts. The key is wiped as the device closes.'
+			'One passkey prompt, or on a Mac a touch of its Touch ID key, as the device starts. The key is wiped as the device closes.'
 		]
 	];
 
@@ -206,7 +215,7 @@
 		],
 		[
 			'You lose every device',
-			'Sign in on a new one with your passkey. The server hands it your vault’s log, the new device adds itself, and your entries come back from the encrypted backup. With backups off the server kept nothing, so what only your devices held is gone with them.'
+			'Sign in on a new one with the passkey that is your vault’s root. The server hands it your vault’s log, the new device adds itself, and your entries come back from the encrypted backup. With backups off the server kept nothing, so what only your devices held is gone with them.'
 		],
 		[
 			'The server’s disk dies',
@@ -214,17 +223,20 @@
 		],
 		[
 			'The server is down',
-			'Nothing you write waits on it. Each device keeps working, and they catch up as soon as they reach each other or the server again.'
+			'Nothing you write waits on it. Each device keeps working, and they catch up as soon as they reach each other or the server again. A browser reaches every peer through the server’s relay, so it catches up only once the server is back.'
 		],
 		[
 			'Someone breaks elliptic curves',
-			'Recorded traffic stays closed, since every link and every sealed key has a post-quantum half, and every edit counts by its hash-based signature alone.'
+			'Recorded traffic stays closed: every link between devices and the server has a post-quantum half, what goes to the bucket is sealed first, and every sealed key has a post-quantum half. Every edit counts by its post-quantum signature alone, ML-DSA-65 or SLH-DSA.'
 		]
 	];
 
 	// Ink & Switch's seven ideals of local-first software, and how avenDB meets each
 	const ideals = [
-		['Fast', 'Reads and writes run on the device’s own store. No round trip to a server sits between you and your data.'],
+		[
+			'Fast',
+			'Reads and writes run on the device’s own store. No round trip to a server sits between you and your data, but a light copy, which every browser starts as, fetches the pieces of a file it reads from a peer.'
+		],
 		[
 			'Multi-device',
 			'Your desktop and phone each hold what their keep shares say of your vaults, and keep each other up to date.'
@@ -236,44 +248,48 @@
 		],
 		[
 			'Longevity',
-			'Your data is a log of signed edits in open formats (Loro documents, JSON Schema), kept on your devices. No service has to stay online for you to read it.'
+			'Your data is a log of signed edits, kept on your devices, in avenDB’s own encoding around open formats (Loro documents, JSON Schema). No service has to stay online for you to read it.'
 		],
 		[
 			'Privacy',
-			'End to end encrypted. The server and the bucket hold ciphertext only; keys stay on the devices of the people a vault shares with.'
+			'End to end encrypted. The bucket holds ciphertext only, and the server reads only what is public or shared with avenMAIA. Keys stay with a vault’s owners and devices, and with the vaults it shares with.'
 		],
 		[
 			'User control',
-			'A vault is owned by its passkeys. Shares say who may do what, and every device checks them, the server too.'
+			'Your vault is owned by your passkeys and any Touch ID key you add, and, where the app added it, by avenDB’s master recovery key until you remove it. Every other vault is owned by the vaults above it. Shares say who may do what, and every device checks them, the server too.'
 		]
 	];
 
 	// the four primitives every right is built from: what each is, and the question it answers
 	const primitives = [
 		['Vault', 'An identity of one kind: a person, a COOP, an aven or a device vault. It owns its entries.', 'Who'],
-		['Owns', 'A parent vault owns a child vault. The owner approves the child’s changes and acts for it.', 'Who decides'],
+		[
+			'Owns',
+			'A parent vault owns a child vault, and signers, your passkeys among them, own a human vault. The owner approves its changes, acts for it and reads all of it.',
+			'Who decides'
+		],
 		['Device', 'A key that signs for one vault. It acts with all its vault’s rights, and approves nothing.', 'Who signs'],
 		[
 			'Share',
-			'A named group of ops on a slice of a vault, given to a vault. It may rest on a share its giver holds.',
+			'A named group of ops on a slice of a vault, given to a vault, to Everyone, or to an invite that the first vault to claim it takes. It may rest on a share its giver holds.',
 			'Who may do what'
 		]
 	];
 
 	// the kind table, as avenDB defines it once (policy::Kind::rules); the app reads the same rows from its device
 	const vaultKinds = [
-		['Human', 'Your passkeys and the master recovery key', 'Any, by threshold', 'Yes: your desktops, phones, browsers and drives', 'Any number'],
+		['Human', 'Signers: your passkeys, a Mac’s Touch ID key, avenDB’s master recovery key', 'Any, by threshold', 'Yes: your desktops, phones, browsers and drives', 'Any number'],
 		['COOP', 'Human and COOP vaults', 'Any, by threshold', 'No', 'Any number'],
 		['Aven', 'One COOP', 'Exactly one', 'Yes: its server and its agents', 'One per COOP, none per person'],
 		['Device vault', 'One human or COOP vault', 'Exactly one', 'Yes: the keys of one machine its owner runs', 'Any number']
 	];
 
-	// one flow adds every vault that acts by keys of its own
+	// one flow adds everything that acts by keys of its own
 	const addings = [
 		['An agent', 'Your COOP’s aven itself, avenMAIA: a device of it', 'The agent harness’s key on your Mac', 'The aven’s own, no more and no less'],
 		['The same harness on your other Mac', 'The aven again: one more device of it', 'That Mac’s harness key', 'The aven’s own, no more and no less'],
 		['The server', 'avenMAIA itself, founded with the seed: the server is its device', 'The server’s key', 'Backup or Relay, from each vault over itself'],
-		['A machine a vault runs', 'A device vault under that vault, yours or a COOP’s', 'The machine’s own key', 'That vault’s shares over itself, or passed on from those it holds']
+		['A machine a vault runs', 'A device vault under that vault, yours or a COOP’s', 'The machine’s own key', 'Whatever that vault gives it later: shares over itself, or passed on from those it holds']
 	];
 
 	// the one rule a share rests on another by, case by case
@@ -643,7 +659,8 @@
 			<p class="lede">
 				A user-owned, local-first database with post-quantum security. Every write happens on your device first and merges
 				with everyone else’s without a server deciding anything. The server relays, stays online for sync and keeps an
-				encrypted backup, without ever holding a key.
+				encrypted backup. It holds no key to your vault: only avenMAIA’s, whose device it is, and so the keys of what a
+				vault lets avenMAIA read.
 			</p>
 		</header>
 
@@ -669,8 +686,9 @@
 			<p class="eyebrow">Who sees what</p>
 			<h2>What the server and the bucket can and cannot see</h2>
 			<p class="prose-col">
-				Your devices, and the devices of the people you share with, read your entries. The server reads none of them. It
-				sees enough to route edits and check them, and no more.
+				Your devices, your vault’s owners, and the devices of the vaults you share with read your entries. The server
+				reads none of them, unless you let Everyone or avenMAIA, whose device it is, read them. It sees enough to route
+				edits, check them and back them up.
 			</p>
 			<div class="split">
 				<div>
@@ -693,8 +711,10 @@
 				</div>
 			</div>
 			<p class="note prose-col">
-				With backups off, the server sees only a vault’s owners and devices, to let them through its relay. A Public share
-				is the exception by design: it publishes its key so that anyone with a reason to ask can read what it covers.
+				With backups off, the server sees only a vault’s owners and devices, to let them through its relay. Two kinds of
+				share are the exceptions by design. A Public share publishes its key, and the server serves what it covers to
+				anyone, on its public feed. A share to avenMAIA at Viewer or above gives its key to avenMAIA’s devices: the
+				server, and every agent of avenMAIA.
 			</p>
 		</section>
 
@@ -717,7 +737,7 @@
 			<p class="prose-col">
 				Every change happens on your device first: it is signed, encrypted, saved, and counts at once, online or not.
 				Devices then sync with each other, directly when they can and through the server when they can’t. The server is one
-				more peer: an always-online device of avenMAIA, a device vault, that relays, syncs and keeps an encrypted backup, under the
+				more peer: an always-online device of avenMAIA, Maia City’s aven, that relays, syncs and keeps an encrypted backup, under the
 				same rules as every other device and with no say over them.
 			</p>
 			<div class="table">
@@ -741,7 +761,7 @@
 			<p class="eyebrow">The shape</p>
 			<h2>Three parts: Entry, Share, Blob</h2>
 			<p class="prose-col">
-				Everything in avenDB is one of three things. All else is worked out from them and never typed in: whom an entry is
+				Everything a vault holds is one of three things. All else is worked out from them and never typed in: whom an entry is
 				shared with, its key, which devices it is synced to, and what a device still has to fetch.
 			</p>
 			<div class="cards">
@@ -755,14 +775,16 @@
 				<div>
 					<h3>Share: who may</h3>
 					<p>
-						Who, at which level, on what. People, Everyone, the server and each of your devices are given shares, and a
-						vault’s owners and devices are shares too. Revoke ends any of them.
+						Who, at which level, on what. A share goes to a vault, to Everyone or to an invite; one for the server goes
+						to avenMAIA, whose device it is. A device gets only a keep share, which says what it keeps. A vault’s
+						owners and devices are shares too. Revoke ends any of them.
 					</p>
 				</div>
 				<div>
 					<h3>Blob and holdings: where</h3>
 					<p>
-						All bytes are blobs named by their BLAKE3 hash, on one shelf per place. Each device tells its peers what it
+						Files and packs of edits are kept as blobs named by their BLAKE3 hash, on one shelf per place, beside a
+						few objects named by counters, such as the journal of new edits. Each device tells its peers what it
 						holds for good, and signs it with when it checked. Every “synced to” comes from that.
 					</p>
 				</div>
@@ -774,8 +796,9 @@
 			<h2>Vaults, owners, devices and shares</h2>
 			<p class="prose-col">
 				Everything belongs to a vault, the way an account belongs to a person. Who may do what is built from four things,
-				and nothing else. Each is defined once, in avenDB’s Lean model, and the code and the app read that one
-				definition. So no screen and no device adds a rule of its own.
+				and nothing else. Each is defined once, in avenDB’s Lean model. The Rust core keeps the same rules, held to the
+				model by shared test vectors, and the app asks its device. So no screen and no device adds a rule of its own. The
+				server only chooses which devices its relay lets in.
 			</p>
 			<div class="table">
 				<table>
@@ -790,10 +813,11 @@
 				</table>
 			</div>
 			<p class="prose-col">
-				Two facts follow from the four, and avenDB stores neither. The <b>acting chain</b>: a device acts for its vault,
-				and through owners for every vault they own, up to a passkey. Every edit shows this chain, so you always see whose
-				passkey stands behind it. The <b>effective right</b>: what a vault may do through a chain of shares is what every
-				share of the chain allows, and no more. Revoke a share, and every share that rests on it ends too.
+				Two facts follow from the four, and avenDB works both out. The <b>acting chain</b>: a device acts for its vault,
+				and through owners for every vault they own, up to a passkey. An edit that acts for a vault names the owners it
+				acts through, and every edit shows this chain, so you always see whose passkey stands behind it. The
+				<b>effective right</b>: what a vault may do through a chain of shares is what every share of the chain allows, and
+				no more; avenDB stores it nowhere. Revoke a share, and every share that rests on it ends too.
 			</p>
 			<h3>Four kinds of vault, one table</h3>
 			<p class="prose-col">
@@ -817,17 +841,21 @@
 				<div>
 					<h3>Human vault</h3>
 					<p>
-						Yours. Owned by your passkeys, and by the master recovery key, a way back in kept offline that you remove
-						like any owner. Its devices, your desktop and phone, act for it, and each one unlocks its keys with your
-						passkey at every start. Nothing else can unlock them.
+						Yours. Owned by your passkeys, by a Mac’s Touch ID key where you turn it on, and, while avenDB is young,
+						by its master recovery key: one key of avenDB’s, kept offline, which every human vault the apps found takes
+						as an owner. It is a way back in, and an owner equal to your passkey: it reads all of your vault, and, as
+						every vault the apps found starts at one owner’s approval, it alone approves any change. You remove it like
+						any owner. Its devices, your desktop and phone, act for it, and each one unlocks its keys with your passkey
+						at every start, or on a Mac with a touch of its Touch ID key. Nothing else can unlock them, but a drive
+						opens by the Mac that hosts it.
 					</p>
 				</div>
 				<div>
 					<h3>COOP vault</h3>
 					<p>
 						A company or a group, owned by human vaults and other COOP vaults. It has no devices of its own: its owners
-						act for it from their devices. Each COOP has one aven of its own, and may hire another COOP’s by sharing
-						with it.
+						act for it from their devices. Each COOP may have one aven of its own, never two, and may hire another
+						COOP’s by sharing with it.
 					</p>
 				</div>
 				<div>
@@ -835,21 +863,22 @@
 					<p>
 						A COOP’s one AI identity, Maia City’s avenMAIA. Only its COOP owns it, one aven per COOP and none per
 						person, so only the COOP decides what it passes on. It lives on its server: the server is its device, which
-						acts for it and governs nothing. Its agents are devices of it too, and act with exactly its rights.
+						acts for it and governs nothing. Its agents are devices of it too, and act with exactly its rights. The
+						server and every agent open its keys, so they read whatever a vault shares with it at Viewer or above.
 					</p>
 				</div>
 				<div>
 					<h3>Device vault</h3>
 					<p>
 						The keys of one machine its owner runs, owned by exactly one human or COOP vault. Its devices act for
-						it with all its rights and approve nothing. It owns nothing, and holds only what its owner gives it or passes
-						on to it.
+						it with all its rights and approve nothing. It owns nothing, and holds what its owner gives or passes on to
+						it, and whatever another vault shares with it.
 					</p>
 				</div>
 			</div>
 			<figure>
 				<div class="frame">
-					<svg class="fig" viewBox="0 0 960 520" role="img" aria-label="Samuel’s vaults: who owns which, and one share passed on">
+					<svg class="fig" viewBox="0 0 960 520" role="img" aria-label="Samuel’s vaults: who owns which, and one share">
 						<path class="own" d="M480 92 V150" />
 						<path class="own" d="M480 208 V244 H190 V280" />
 						<path class="cap" d="M350 190 H30 V266" />
@@ -857,8 +886,8 @@
 						<rect class="k-human" x="340" y="20" width="280" height="72" rx="10" />
 						<rect class="dev" x="596" y="30" width="10" height="10" rx="2" />
 						<text class="h" x="358" y="46">Samuel</text>
-						<text class="s" x="358" y="66">human vault · owned by his passkeys</text>
-						<text class="s" x="358" y="84">devices: Mac, phone, browsers</text>
+						<text class="s" x="358" y="66">human vault · owned by his keys</text>
+						<text class="s" x="358" y="84">holds his devices, which sign for it</text>
 						<rect class="k-coop" x="350" y="150" width="260" height="58" rx="10" />
 						<text class="h" x="368" y="174">Maia City</text>
 						<text class="s" x="368" y="196">COOP · the city’s content</text>
@@ -874,13 +903,13 @@
 						<rect class="dev" x="426" y="420" width="10" height="10" rx="2" />
 						<text class="h" x="268" y="434">agentCodex</text>
 						<text class="s" x="268" y="456">a device of avenMAIA · Codex</text>
-						<text class="s" x="40" y="236">Editor: Maia City shares with its aven</text>
+						<text class="s" x="40" y="236">a share: Maia City shares with its aven</text>
 						<text class="s" x="78" y="390">its agents: devices of avenMAIA, with its rights</text>
 						<g transform="translate(560 410)">
 							<line class="own" x1="0" y1="10" x2="40" y2="10" />
 							<text class="s" x="52" y="14">owns: the owner decides for it</text>
 							<line class="cap" x1="0" y1="40" x2="40" y2="40" />
-							<text class="s" x="52" y="44">a share, and a share passed on from it</text>
+							<text class="s" x="52" y="44">a share</text>
 							<rect class="dev" x="15" y="64" width="10" height="10" rx="2" />
 							<text class="s" x="52" y="74">holds devices, which sign for it</text>
 						</g>
@@ -894,21 +923,26 @@
 				</figcaption>
 			</figure>
 			<p class="prose-col">
-				A vault has two settings: how many owners must approve a change, and its root passkey, which approves anything on
-				its own. Adding or removing an owner or a device takes the vault’s approval and the newcomer’s consent; devices
-				approve nothing. An owner that is a vault approves as that vault does, so your passkey approves for every vault
-				your vault owns, down the chain, in one prompt. A new device joins with your passkey alone, through a QR code on a
-				device you have or by signing in through the server. Set up avenDB on a second device with the same passkey and it
-				joins the vault that passkey already has: one passkey, one human vault.
+				A vault has two settings: how many owners must approve a change, and, for a human vault, its root: at first
+				the passkey that founded it, a key that approves anything on its own and that a new device signs in with. Every
+				vault the apps found starts at one owner’s approval, so every owner is an equal, and the owners hand the root on as
+				any change, the new root signing too. Adding an owner or a device takes the vault’s approval and the newcomer’s
+				signature. Removing one takes the vault’s approval, or the one leaving on its own, and a vault always keeps one
+				owner. Devices approve nothing. An owner that is a vault approves as that vault does, so your passkey approves for
+				every vault your vault owns, down the chain, in one prompt. A new device joins with your vault’s root passkey
+				alone, through a QR code on a device you have or by signing in through the server. Set up avenDB on a second
+				device with the same passkey and it joins the vault whose root that passkey is: one root passkey, one human vault.
 			</p>
-			<h3>One flow adds a device vault</h3>
+			<h3>One flow adds a device of its own</h3>
 			<p class="prose-col">
 				Everything that acts with keys of its own, an agent, the server or a machine a vault runs, is added the same way, in three steps. First,
-				a device vault is founded under its parent, or the one there already is taken. Second, the device’s key is added
-				to it, and the device signs that edit too, so no key joins a vault without its own consent. Third, the device
-				vault gets its shares: its parent passes on shares it holds, or a vault gives it a share over itself. Your passkey
-				signs the first two steps in one prompt. The shares need no prompt, because a share below Owner changes nobody’s
-				control.
+				the vault it joins is founded, or taken as it is: the aven itself for an agent, the seed’s new aven for the
+				server, a device vault under its parent for a machine. Second, the device’s key is added to it, and the device
+				signs that edit too, so no key joins a vault without its own consent. Third, a machine’s device vault gets what
+				its owner passes on to it, or what a vault gives it over itself; an agent or the server gets nothing of its own,
+				as it acts as the aven. Your passkey, or your Mac’s Touch ID key, signs the first two steps in one prompt. The
+				shares need no prompt, because a share below Owner changes nobody’s control. The apps add agents and the server
+				this way; no screen adds a machine yet.
 			</p>
 			<div class="table">
 				<table>
@@ -932,9 +966,11 @@
 				A new server belongs to no vault. The first person to found a vault through it claims it, in the same prompt that
 				founds their vault. That prompt also founds the seed: Maia City, a COOP their vault owns, where the city’s content
 				lives, and avenMAIA, Maia City’s one aven, with the server as its device: an aven lives on its server. Each is
-				named as it is founded. Every device finds the server by this chain, not by a name: it is the aven, with a device,
-				of a COOP owned alone by a human vault. So an agent, a drive or a machine in a device vault never passes for the
-				server.
+				named as it is founded. Every device finds the server’s vault by this chain, not by a name: the aven, with a
+				device, of a COOP owned alone by a human vault. The server itself the app reaches by its address, built in. So a
+				drive or a machine in a device vault never passes for the server’s vault, and an agent is a device of that very
+				vault, beside the server, with the same rights. The server refuses to become a device of a human vault, which
+				would open that person’s keys.
 			</p>
 			<p class="prose-col">
 				Each vault gives avenMAIA a share on the whole of it: Backup, so the server keeps its ciphertext, or Relay,
@@ -954,18 +990,22 @@
 			</p>
 			<p class="prose-col">
 				An agent acts as the aven, with exactly what the aven holds, no more and no less: no agent vaults and no sub caps.
-				By default avenMAIA is a Suggester on Maia City and may open AIPs there, so an agent proposes and drafts and you
-				merge. Give the aven more and every agent has more; take a share back and every agent loses it; remove one agent’s
-				device from the aven and the others stay. An agent saves a file of your desktop, named by its path, where the
-				aven may create, as an Editor may. It keeps no file of its own: once your desktop holds a file it saved whole, it
-				lets go of its copy, and it reads your files from your desktop’s one store, so nothing is kept twice.
+				Maia City decides what avenMAIA holds: give it Suggester, with an AIP author’s share beside it, and an agent
+				proposes and drafts and opens AIPs, and you merge. Give the aven more and every agent has more; take a share back
+				and every agent loses it; remove one agent’s device from the aven and the others stay. An agent saves a file of
+				your desktop, named by its path, where the aven may create, as an Editor may. It keeps a file it saved only until
+				your desktop holds it whole, then lets go of its copy, and it reads your files from your desktop’s one store, so
+				nothing is kept twice. Where your desktop keeps a light copy, the agent’s copy is the one copy.
 			</p>
 			<p class="prose-col">
 				A Claude Code session in Anthropic’s cloud has no desktop, so it runs agentCloud. Your desktop app makes its key
-				(Settings, Agents, Add a cloud agent), adds it to the aven in one passkey or Touch ID approval, and shows it once;
-				you put it in the cloud environment’s secrets. Every cloud session that holds the key is that one device, with the
-				aven’s rights and no more, and reaches the server alone, on its relay, which lets in only devices it knows. Remove
-				agentCloud from the aven and every such session loses it.
+				(Settings, Owners &amp; devices, Agents on this Mac, Add a cloud agent), adds it to the aven in one passkey or Touch
+				ID approval, and shows it once; you put it in the cloud environment’s secrets. Every cloud session that holds the
+				key is that one device, with the aven’s rights and no more, and reaches the server alone, on its relay. The relay
+				lets in the devices the server knows and, for ten minutes, a new device that shows a passkey’s pass: of a passkey
+				that roots a vault the server knows, or, while sign-up is open, as it is by default, of any. A cloud session
+				shows no pass, so a key no Mac added gets nowhere. Two sessions running it at once knock each other off the
+				relay, and it closes after a while with no call. Remove agentCloud from the aven and every such session loses it.
 			</p>
 			<h3>Asking for access</h3>
 			<p class="prose-col">
@@ -976,7 +1016,7 @@
 				denied, and write its part of an owner add, and nothing else. Sync carries the record like any other, over avenDB’s own protocol: straight to the
 				devices that act for the vault asked, or through any peer that keeps it, as the server does while it backs up
 				the vault that asks. The server is one more peer, not a mailbox. So a request needs no new rule: it is a record
-				and two shares, the one that carries it and the one that grants it.
+				and two edits, the share that carries it and the share or owner add that grants it.
 			</p>
 			<div class="codes">
 				<figure>
@@ -996,9 +1036,10 @@
 			</p>
 			<p class="prose-col">
 				An agent that belongs to no vault yet can write no record, so its first request is a file it leaves on your Mac,
-				shown on the same screen. Approve, and one prompt of your passkey adds the agent’s key to your COOP’s aven as a
-				device, beside its server, and the agent’s own device signs too. It gets no share of its own: it acts as the
-				aven, with what the aven holds. From then on the agent asks with a record, as any vault asks.
+				shown on the same screen. Approve while the agent runs, and one prompt of your passkey, or a touch of your Mac’s
+				Touch ID key, adds the agent’s key to your COOP’s aven as a device, beside its server, and the agent’s own
+				device signs too. It gets no share of its own: it acts as the aven, with what the aven holds. From then on the
+				agent asks with a record, as any vault asks.
 			</p>
 			<p class="prose-col">
 				A new owner takes two passkeys: the vault’s approval, and the newcomer’s consent. So a request to co-own, or an
@@ -1014,9 +1055,11 @@
 			<p class="eyebrow">Keys</p>
 			<h2>Your passkey is you, a device key is one install</h2>
 			<p class="prose-col">
-				Two kinds of key act for a human vault. Your passkey is the root, and the same on every device it syncs to. Each
-				install of avenDB, a browser on maia.city or the desktop app, has a device key of its own, which signs what that
-				install writes.
+				Three kinds of key act for a human vault: your passkeys, a Touch ID key on a Mac where you turn it on, and each
+				install’s device key. Your passkey is the same on every device it syncs to, and the one you set up with is your
+				vault’s root, unless its owners hand that on. Each install of avenDB, a browser on maia.city or the desktop app,
+				has a device key of its own, which signs what that install writes. avenDB’s master recovery key, kept offline,
+				owns your vault too where the app added it.
 			</p>
 			<div class="table">
 				<table>
@@ -1033,10 +1076,10 @@
 			<h3>Random, not derived</h3>
 			<p class="prose-col">
 				A device key is 32 random bytes the install draws when it is made, not something derived from your passkey. So
-				it exists before the first prompt, and that one prompt both unlocks the device and vouches for it by its id: two
-				prompts to set up or sign in, where a derived key would need a third. A device key holds no data, so nothing is
-				lost with it. A wiped or new install joins with your passkey and syncs from your other devices and the server,
-				and you revoke the old one. Making an old key again would do harm: the copy would sign edits that don’t build on
+				it exists before the first prompt, and that one prompt both unlocks the device and vouches for it by its id:
+				setting up takes two prompts, three if it makes your passkey, and signing in on a new device one, where a derived
+				key would need one more each. A device key holds no data, so nothing is lost with it. A wiped or new install
+				joins with your passkey and syncs from your other devices and the server, and you revoke the old one. Making an old key again would do harm: the copy would sign edits that don’t build on
 				the old device’s own, which sync flags as a fork, as for a stolen key, and a revoked device would come back.
 			</p>
 			<h3>How long it lasts</h3>
@@ -1052,20 +1095,23 @@
 				A browser keeps its device in maia.city’s private storage (OPFS); the desktop app in its folder,
 				<code>~/avenDB/mac/</code>. Beside the signed, sealed edits, public keys
 				and file pieces, the device keeps one small record that opens it again: its name, its id, its relay, the 32
-				bytes of its salt, the passkey’s credential and public key, the vaults it follows, and its secret XORed with
-				your passkey’s PRF output on that salt. Nothing on disk is a secret: whoever copies it gets only noise, as
-				unmasking the secret takes that PRF output, which only your authenticator gives, after Face ID, Touch ID or your
-				PIN, and only to maia.city. While the device is open its key is in memory only, and wiped as it closes. What a
-				disk can’t protect against: malware on a machine while the device is open, and the site’s own scripts, which may
-				ask your passkey for a prompt as any page of maia.city may. The server is the one device whose secret is on
-				disk, sealed in its bucket, as nobody is there to unlock it.
+				bytes of its salt, the passkey’s credential and public key, the vaults it follows, how deep its queries read, on
+				a Mac its Touch ID key’s record, and its secret XORed with your passkey’s PRF output on that salt. Nothing a
+				browser or the desktop app keeps on disk is a secret: whoever copies it gets only noise, as unmasking the secret
+				takes that PRF output, which only your authenticator gives, after Face ID, Touch ID or your PIN, and only to
+				maia.city, or a touch of the Mac’s Touch ID key, which only its Secure Enclave answers. While the device is open its key is in memory
+				only, and wiped as it closes. What a disk can’t protect against: malware on a machine while the device is open,
+				and the site’s own scripts, which may ask your passkey for a prompt as any page of maia.city may. Two kinds of
+				device keep their secret on disk, as nobody is there to unlock them: the server, sealed in its bucket, and each
+				agent on your Mac, a <code>device.key</code> file in its own folder in <code>~/avenDB/mac-agents/</code>,
+				readable by your user alone. agentCloud’s key is in your cloud environment’s secrets.
 			</p>
 			<h3>A drive is a device too</h3>
 			<p class="prose-col">
 				An external drive you use for avenDB is a device of your vault of its own, as a phone is, on the same sync,
 				shares, copy setting and holdings. One prompt of your passkey adds it, in Owners and devices on the desktop app,
 				and it keeps a full copy unless you make it light. It holds only ciphertext, in <code>.avendb</code> on the
-				drive, and its key never in plain: masked by your passkey, as every device’s, and wrapped by each Mac that hosts
+				drive, and its key never in plain: masked by your passkey, as the desktop app’s, and wrapped by each Mac that hosts
 				it under that Mac’s own device key, so plugging it in again asks for nothing. While it is plugged in, the Mac’s
 				device runs it as a second node; unplugged, its last signed statement of what it holds shows when it checked.
 				Eject it in the page, which stops its node before macOS ejects it, so nothing on it is in use. A lost drive is
