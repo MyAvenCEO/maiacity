@@ -94,6 +94,20 @@ async function allowed(req: Request, cap: string): Promise<{ id: string; role: s
   return me;
 }
 
+/**
+ * The founder whose passkey made `assertion`, a ceremony over a sign-in's challenge, if they hold the capability — or
+ * the response that says why not. What no key may hold (keys.ts) a person still does from the Mac app this way: the
+ * app's sign-in sheet brings their passkey's word, and its key, which carries the call, counts for nothing.
+ */
+async function byPasskey(req: Request, assertion: unknown, cap: string): Promise<{ id: string; role: string } | Response> {
+  const signed = await loginFinish(assertion ?? {});
+  if (!signed.ok) return json(req, { error: signed.error }, { status: 401 });
+  const [me] = await sql`SELECT id, role FROM founders WHERE id = ${signed.value.id}`;
+  if (!me) return json(req, { error: "That passkey has no account behind it." }, { status: 401 });
+  if (!can(me, cap)) return json(req, { error: `This needs the right to ${(CAPABILITIES[cap] ?? cap).toLowerCase()}.` }, { status: 403 });
+  return me;
+}
+
 /** The signed-in founder (or a terminal's key holder), whatever they hold — or the response that says why not. */
 async function signedIn(req: Request): Promise<{ id: string; role: string } | Response> {
   const key = await keyHolder(req);
@@ -253,11 +267,13 @@ const server = Bun.serve({
       },
     },
 
-    // Invite only: once the city has its admin, signing up takes an invite one of its super admins made, used once
+    // Invite only: once the city has its admin, signing up takes an invite one of its super admins made, used once:
+    // signed in, or in the Mac app with the passkey's word over a sign-in's challenge (no key may invite)
     "/api/invites": {
       OPTIONS: preflight,
       POST: async (req) => {
-        const me = await allowed(req, "humans:invite");
+        const assertion = (await readJson(req))?.assertion;
+        const me = assertion ? await byPasskey(req, assertion, "humans:invite") : await allowed(req, "humans:invite");
         if (me instanceof Response) return me;
         return json(req, await makeInvite(me.id));
       },
