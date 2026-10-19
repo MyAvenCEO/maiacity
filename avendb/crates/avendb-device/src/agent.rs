@@ -42,9 +42,13 @@
 //! `add_cloud_agent` in this crate), showed once, and keeps no copy of; its person puts it in the cloud environment's
 //! secrets (`KEY_VAR`). Every session holding the key acts as that one device, reaching the server alone through the
 //! environment's HTTP proxy, on the server's relay, which lets in only devices it knows: so a key no Mac added gets
-//! nowhere. It opens its device at its first tool call, catches up with the server before each change, and closes it
-//! once no tool called it for a while (`IDLE`), so that sessions of one key rarely run its device at the same time;
-//! two at once knock each other off the relay. Removing its device from avenMAIA ends it.
+//! nowhere. It opens its device at its first tool call and closes it once no tool called it for a while (`IDLE`), so
+//! that sessions of one key rarely run its device at the same time; two at once knock each other off the relay.
+//! Removing its device from avenMAIA ends it. It asks the server for nothing on its own (`Options::lazy`): before each
+//! call it brings the vaults the call touches alone (`Agent::touches`, `Bringing`), the vaults it names, by their
+//! ids or by the entries it names, else its aven's coop, Maia City, with every vault's log and share, which say who may
+//! do what; one pull at a time, which no call's wait cuts short, so a fresh session never pulls all avenMAIA may hold,
+//! and a big vault's first pull runs once, to its end, however many calls wait on it.
 //!
 //! The MCP is JSON-RPC 2.0, a message a line (`initialize`, `tools/list`, `tools/call`, `ping`): `avendb_vaults` tells
 //! who it is, its device vault and the aven over it, and the vaults it sees, `avendb_ask` runs a read of the ops
@@ -66,6 +70,7 @@
 //! AIP the agent opens over them. `avendb_read_file` is `get_file`. No path in a folder that keeps this Mac's keys is
 //! read or written, whatever its harness names (`fenced`): an agent acts through its aven's vault caps alone.
 
+use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -75,11 +80,12 @@ use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::engine;
-use avendb::id::{SignerId, VaultId};
+use avendb::id::{EntryId, SignerId, VaultId};
 use avendb::lab::Lab;
 use avendb::policy::{Kind, Principal, State, Vault};
 use avendb::rules;
 use avendb::slice::{Atom, Selector};
+use avendb::sync::LogId;
 use avendb::wire::FileHold;
 use avendb::world;
 use avendb_net::{NoBytes, NoCeremony, Node, Offer, Options, disk, server};
@@ -366,20 +372,24 @@ pub const SERVER: &str = "AVENDB1UAYTJU2GDDXXNHWO5YZJOJJBYJFXCKVEPNGILCF6ORDFGRZ
 /// again at the next, so that sessions of one key that don't use avenDB at the same time never run its device at once.
 const IDLE: Duration = Duration::from_secs(300);
 
-/// How long a cloud session's agent waits for the server to answer a sync.
+/// How long a cloud session's agent waits for the server's card.
 const SYNC: Duration = Duration::from_secs(60);
+
+/// How long a cloud session's agent's tool call waits for what it brings (`Bringing`), before it answers that it is
+/// still bringing it: well below the minute its harness waits for a tool call.
+const BRING: Duration = Duration::from_secs(40);
 
 /// Runs a cloud session's agent, agentCloud, answering MCP on `input` and `output` until `input` ends, its folder in
 /// `dir`. A cloud session runs no Mac and no The OS: its key is one its person made in The OS app, which added it to
 /// their coop's aven, avenMAIA, as a device beside its server, and which they keep in the environment's secrets
 /// (`KEY_VAR`), so every session of the environment acts as that one device. It reaches nobody but the server
 /// (`SERVER`, or the one `SERVER_VAR` names), through its relay alone, by way of the environment's HTTP proxy
-/// (`Options::proxy`), and syncs with it what avenMAIA may hold; a file it reads comes from the server, and one it
-/// saves it lets go of once the server holds it whole. Its device opens at the first tool call, not as it starts, and
-/// closes once no call came for a while (`IDLE`): a session that never uses avenDB never runs it, and two sessions
-/// run it at once only while both use it, when each knocks the other off the server's relay now and then, as one
-/// device of two places does. Before each change it catches up with the server (`Agent::catch_up`), so that a change
-/// builds on what the other wrote. Fails only where `input` or `output` does: a missing key, or a server that doesn't
+/// (`Options::proxy`), and brings from it the vaults each call touches alone (`Bringing`), so that what it reads is
+/// the server's latest and a change builds on what another session wrote; a file it reads comes from the server, and
+/// one it saves it lets go of once the server holds it whole. Its device opens at the first tool call, not as it
+/// starts, and closes once no call came for a while (`IDLE`): a session that never uses avenDB never runs it, and two
+/// sessions run it at once only while both use it, when each knocks the other off the server's relay now and then, as
+/// one device of two places does. Fails only where `input` or `output` does: a missing key, or a server that doesn't
 /// let it in, its tool calls answer, saying what to do.
 pub async fn serve_cloud(cloud: Cloud, input: impl AsyncRead + Unpin, mut output: impl AsyncWrite + Unpin) -> Result<()> {
     let name = device_name(CLOUD);
@@ -441,8 +451,9 @@ struct Opened {
 
 impl Cloud {
     /// Its device, open now, or opened: by its key (`KEY_VAR`), in a folder of its own in `dir` named by the key, on
-    /// the server's relay through the environment's proxy, and caught up with the server. Fails, saying what to do,
-    /// where the key is missing or isn't one, the server's offer isn't one, or the relay doesn't let it in.
+    /// the server's relay through the environment's proxy, asking it for nothing on its own (`Options::lazy`): each
+    /// call brings what it touches (`Agent::bring_for`). Fails, saying what to do, where the key is missing or isn't
+    /// one, the server's offer isn't one, or the relay doesn't let it in.
     async fn open(&self, name: &str, open: &mut Option<Opened>) -> Result<Arc<Agent>> {
         if let Some(o) = open {
             o.used = tokio::time::Instant::now();
@@ -456,7 +467,7 @@ impl Cloud {
         std::fs::create_dir_all(&folder).with_context(|| format!("the agent's folder {}", folder.display()))?;
         let shelf = disk::open(&folder)?;
         let relay = server.addr.relay_urls().next().cloned();
-        let opts = Options { bind: None, direct: false, relay, proxy: self.proxy, ..Options::local() };
+        let opts = Options { bind: None, direct: false, relay, proxy: self.proxy, lazy: true, ..Options::local() };
         let node = Arc::new(server::open_agent_with(Some(shelf), name, &secret, suite, opts).await?);
         drop(secret);
         node.know(server.addr.clone());
@@ -475,11 +486,9 @@ impl Cloud {
         {
             tracing::warn!("the server's card isn't read: {e:#}");
         }
-        if let Ok(Err(e)) = tokio::time::timeout(SYNC, node.sync_with(at)).await {
-            tracing::warn!("{name} doesn't sync with the server: {e:#}");
-        }
         let looking = AbortOnDropHandle::new(tokio::spawn(look_cloud(node.clone(), server)));
-        let agent = Arc::new(Agent { node, host: folder, name: name.to_string(), server: Some(at) });
+        let cloud = Some(Arc::new(Bringing::new(at)));
+        let agent = Arc::new(Agent { node, host: folder, name: name.to_string(), cloud });
         let used = tokio::time::Instant::now();
         *open = Some(Opened { agent: agent.clone(), _looking: looking, used });
         Ok(agent)
@@ -573,7 +582,8 @@ impl Session<'_> {
         let opts = Options { bind: None, direct: true, relay, ..Options::local() };
         let node = Arc::new(server::open_agent(shelf, name, opts).await?);
         let looking = AbortOnDropHandle::new(tokio::spawn(look(node.clone(), host.to_path_buf(), name.to_string())));
-        let agent = Arc::new(Agent { node: node.clone(), host: host.to_path_buf(), name: name.to_string(), server: None });
+        let agent =
+            Arc::new(Agent { node: node.clone(), host: host.to_path_buf(), name: name.to_string(), cloud: None });
         let (newer, count) = (Arc::new(Notify::new()), watch::channel(0));
         let sock = socket(host, name);
         // it holds the lock: a socket there is a session's before it, gone
@@ -850,7 +860,9 @@ fn instructions(name: &str, cloud: bool) -> String {
         true => (
             "an agent device in this cloud session: an avenDB device whose key its person made in The OS app and keeps \
              in this environment's secrets, a device of its coop's one aven, avenMAIA for Maia City, beside its server, \
-             which it reaches through avendb.maia.city",
+             which it reaches through avendb.maia.city. It brings from there only the vaults a call names, by their \
+             ids or by the entries it names, else its aven's coop, Maia City; the first call on a big vault may \
+             answer that it is still bringing it: then call again in a moment",
             "this machine",
         ),
     };
@@ -950,6 +962,131 @@ async fn answer<F: Future<Output = Result<String>>>(
     Some(json!({ "jsonrpc": "2.0", "id": id, "result": result }))
 }
 
+/// What a cloud session's agent asks the server for before a call (`Agent::bring_for`): the entries of the vaults it
+/// names, with every log that is no entry's (`Node::bring`), or the logs it names alone (`Node::bring_logs`).
+#[derive(Clone)]
+enum Wanted {
+    Vaults(BTreeSet<VaultId>),
+    Logs(BTreeSet<LogId>),
+}
+
+impl Wanted {
+    /// Whether a pull of it brings all `other` asks for.
+    fn covers(&self, other: &Wanted) -> bool {
+        match (self, other) {
+            (Wanted::Vaults(a), Wanted::Vaults(b)) => b.is_subset(a),
+            (Wanted::Logs(a), Wanted::Logs(b)) => b.is_subset(a),
+            _ => false,
+        }
+    }
+}
+
+/// How a pull of a cloud session's agent ended: `None` while it runs, then why it failed, if it did.
+type Ended = Option<Result<(), String>>;
+
+/// What a cloud session's agent brings from the server, its endpoint `server`: one pull at a time, each in a task of
+/// its own that no call's wait cuts short (`BRING`), so that a big vault's first pull runs once, to its end, however
+/// many calls wait on it, and the server never answers the same pull twice at once, nor one dropped half way and asked
+/// again from the start.
+struct Bringing {
+    server: EndpointId,
+    /// The pull under way, if one is: what it brings, and how it ended, once it did.
+    under_way: std::sync::Mutex<Option<(Wanted, watch::Receiver<Ended>)>>,
+}
+
+impl Bringing {
+    fn new(server: EndpointId) -> Bringing {
+        Bringing { server, under_way: std::sync::Mutex::new(None) }
+    }
+
+    /// Brings `wanted` from the server onto `node`: by the pull under way where it brings that too, else by a pull of
+    /// its own once that one ended. Fails where the pull does, and where it isn't over by `until`, which leaves it
+    /// running.
+    async fn bring(self: &Arc<Self>, node: &Arc<Node>, wanted: Wanted, until: tokio::time::Instant) -> Result<()> {
+        loop {
+            let (ours, mut end) = {
+                let mut under_way = self.under_way.lock().expect("under way");
+                match &*under_way {
+                    Some((what, end)) => (what.covers(&wanted), end.clone()),
+                    None => {
+                        let (tell, end) = watch::channel(None);
+                        *under_way = Some((wanted.clone(), end.clone()));
+                        let (this, node, what) = (self.clone(), node.clone(), wanted.clone());
+                        tokio::spawn(async move {
+                            let brought = match what {
+                                Wanted::Vaults(vaults) => node.bring(this.server, vaults).await,
+                                Wanted::Logs(logs) => node.bring_logs(this.server, logs).await,
+                            };
+                            *this.under_way.lock().expect("under way") = None;
+                            tell.send_replace(Some(brought.map(drop).map_err(|e| format!("{e:#}"))));
+                        });
+                        (true, end)
+                    }
+                }
+            };
+            let waited = tokio::time::timeout_at(until, end.wait_for(Option::is_some)).await;
+            let ended: Option<Ended> = waited.ok().map(|ended| match ended {
+                Ok(ended) => ended.clone(),
+                Err(_) => Some(Err("it stopped half way".into())),
+            });
+            // a pull whose task ended without a word, as one the runtime dropped, is over too
+            if matches!(ended, Some(Some(Err(_)))) {
+                let mut under_way = self.under_way.lock().expect("under way");
+                if under_way.as_ref().is_some_and(|(_, e)| e.same_channel(&end)) {
+                    *under_way = None;
+                }
+            }
+            let ended = match ended {
+                Some(ended) => ended,
+                None => {
+                    let (held, _) = node.read(|lab, me| lab.size(me)).await;
+                    bail!(
+                        "avenDB is still bringing what this call touches from the server, one pull at a time, as a \
+                         vault's first call does ({held} edits here so far): nothing was read or changed yet, so call \
+                         again in a moment"
+                    );
+                }
+            };
+            if ours {
+                let ended = ended.unwrap_or(Ok(()));
+                return ended.map_err(|why| anyhow!("avenDB can't bring this call's vaults from the server: {why}"));
+            }
+        }
+    }
+}
+
+/// The vaults and the entries tool call args `args` name by their ids, anywhere in them: as a `vault`, `over`, `to` or
+/// `as`, or among `vaults`; as an `entry` or a `spark`, or among `entries`. What is no id names nothing.
+fn names_in(args: &Value) -> (BTreeSet<VaultId>, BTreeSet<EntryId>) {
+    let (mut vaults, mut entries) = (BTreeSet::new(), BTreeSet::new());
+    let id = |v: &Value| v.as_str().map(|t| t.trim().to_ascii_lowercase());
+    let mut left = vec![args];
+    while let Some(value) = left.pop() {
+        match value {
+            Value::Object(fields) => {
+                for (key, v) in fields {
+                    match key.as_str() {
+                        "vault" | "over" | "to" | "as" => vaults.extend(id(v).and_then(|t| VaultId::from_hex(&t))),
+                        "entry" | "spark" => entries.extend(id(v).and_then(|t| EntryId::from_hex(&t))),
+                        "vaults" => {
+                            let each = v.as_array().into_iter().flatten().filter_map(id);
+                            vaults.extend(each.filter_map(|t| VaultId::from_hex(&t)));
+                        }
+                        "entries" => {
+                            let each = v.as_array().into_iter().flatten().filter_map(id);
+                            entries.extend(each.filter_map(|t| EntryId::from_hex(&t)));
+                        }
+                        _ => left.push(v),
+                    }
+                }
+            }
+            Value::Array(items) => left.extend(items),
+            _ => {}
+        }
+    }
+    (vaults, entries)
+}
+
 /// The agent's device, as its MCP answers.
 struct Agent {
     node: Arc<Node>,
@@ -957,8 +1094,8 @@ struct Agent {
     host: PathBuf,
     /// its device's name, agentClaude, which its device vault's profile reads too
     name: String,
-    /// a cloud session's agent's: the server's endpoint, which it syncs with before each change (`catch_up`)
-    server: Option<EndpointId>,
+    /// a cloud session's agent's: what it brings from the server, before each call (`bring_for`)
+    cloud: Option<Arc<Bringing>>,
 }
 
 impl Agent {
@@ -968,19 +1105,56 @@ impl Agent {
     }
 
     fn instructions(&self) -> String {
-        instructions(&self.name, self.server.is_some())
+        instructions(&self.name, self.cloud.is_some())
     }
 
-    /// A cloud session's agent, before a change: what the server holds that it doesn't yet, as what another session of
-    /// the same key wrote meanwhile, so that its change builds on it (`SYNC`). Nothing on a Mac, whose agent's device
-    /// is one process, its edits one after another.
-    async fn catch_up(&self) {
-        let Some(server) = self.server else { return };
-        match tokio::time::timeout(SYNC, self.node.sync_with(server)).await {
-            Ok(Ok(_)) => {}
-            Ok(Err(e)) => tracing::warn!("{} doesn't catch up with the server: {e:#}", self.name),
-            Err(_) => tracing::warn!("{} doesn't catch up with the server: it took too long", self.name),
+    /// A cloud session's agent, before tool `name` with `args`: who it is, while it doesn't know yet, by every
+    /// vault's log and share it may hold; then the vaults the call touches (`touches`), their entries as the server
+    /// holds them now, so that a read shows the latest and a change builds on what another session of the same key
+    /// wrote meanwhile. Nothing on a Mac, whose agent's device is one process and syncs with the Mac as ever. Fails,
+    /// saying so, where the server can't be asked, or while what it brings takes longer than a call waits (`BRING`).
+    async fn bring_for(&self, name: &str, args: &Value) -> Result<()> {
+        let Some(cloud) = &self.cloud else { return Ok(()) };
+        let until = tokio::time::Instant::now() + BRING;
+        if self.node.read(|lab, me| lab.vault_of(me)).await.is_none() {
+            cloud.bring(&self.node, Wanted::Vaults(BTreeSet::new()), until).await?;
         }
+        // an entry it holds nothing of yet: its log first, which says whose it is
+        let (vaults, entries) = names_in(args);
+        let named = entries.clone();
+        let unplaced = move |lab: &Lab, me| -> BTreeSet<LogId> {
+            let unplaced = named.into_iter().filter(|e| lab.vault_of_entry(me, *e).is_none());
+            unplaced.map(LogId::Entry).collect()
+        };
+        let unplaced = self.node.read(unplaced).await;
+        if !unplaced.is_empty() {
+            cloud.bring(&self.node, Wanted::Logs(unplaced), until).await?;
+        }
+        let touched = self.touches(name, vaults, entries).await;
+        cloud.bring(&self.node, Wanted::Vaults(touched), until).await
+    }
+
+    /// The vaults tool `name` touches, by the vaults `vaults` and entries `entries` its args name (`names_in`): those,
+    /// and the vaults of those entries, of the ones this device knows; where it names none, but to say who it is
+    /// (`avendb_vaults`), its aven's coop, Maia City (`homes`), as a spark goes there. And its own device vault and its
+    /// aven, always.
+    async fn touches(&self, name: &str, vaults: BTreeSet<VaultId>, entries: BTreeSet<EntryId>) -> BTreeSet<VaultId> {
+        let alone = name == "avendb_vaults";
+        self.node
+            .read(move |lab, me| {
+                let st = lab.state(me);
+                let mut touched: BTreeSet<VaultId> = vaults.into_iter().filter(|v| st.vault(*v).is_some()).collect();
+                touched.extend(entries.into_iter().filter_map(|e| lab.vault_of_entry(me, e)));
+                let Some(mine) = lab.vault_of(me) else { return touched };
+                if touched.is_empty() && !alone {
+                    touched.extend(homes(st, mine));
+                }
+                touched.insert(mine);
+                let v = st.vault(mine);
+                touched.extend(v.filter(|v| v.kind != Kind::Aven).and_then(owner_of));
+                touched
+            })
+            .await
     }
 
     /// Why a cloud session's agent whose key belongs to no vault does nothing.
@@ -996,12 +1170,13 @@ impl Agent {
 
     /// Tool `name` with `args`: its text.
     async fn call(&self, name: &str, args: &Value) -> Result<String> {
+        self.bring_for(name, args).await?;
         let vault = self.node.read(|lab, me| lab.vault_of(me)).await;
         if name == "avendb_request_access" {
             return self.ask_access(vault, args).await;
         }
         let Some(vault) = vault else {
-            if self.server.is_some() {
+            if self.cloud.is_some() {
                 bail!("{}", self.unjoined());
             }
             let device = hex(&self.node.device().0);
@@ -1022,7 +1197,16 @@ impl Agent {
             "avendb_vaults" => {
                 let world = self.node.op(json!({ "op": "world" })).await?;
                 let world = &world["ok"];
-                let all = world["vaults"].as_array().cloned().unwrap_or_default();
+                let mut all = world["vaults"].as_array().cloned().unwrap_or_default();
+                // a seed's vault whose profile it doesn't hold, as a cloud session's agent before it brings the coop,
+                // by the name the seed gives it
+                let seed = self.node.read(|lab, me| world::seed_of(lab, me)).await;
+                for v in all.iter_mut().filter(|v| v["name"].is_null()) {
+                    let at = seed.iter().position(|s| v["id"].as_str() == Some(hex(&s.0).as_str()));
+                    if let Some(name) = at.and_then(|i| world::SEED_NAMES.get(i)) {
+                        v["name"] = (*name).into();
+                    }
+                }
                 let vaults: Vec<Value> =
                     all.iter().map(|v| json!({ "id": v["id"], "name": v["name"], "kind": v["kind"] })).collect();
                 // the aven it acts as: the vault its key is a device of, avenMAIA (an older agent's device vault's
@@ -1102,7 +1286,6 @@ impl Agent {
             let setting = "a device's own setting, which an agent keeps nowhere";
             anyhow::bail!("{:?} isn't for an agent: {setting}", op_name(&op));
         }
-        self.catch_up().await;
         let (answer, _) = match (engine::brings(&op), path) {
             (true, Some(path)) => {
                 let (op, bytes) = with_file(op, path).await?;
@@ -1624,7 +1807,7 @@ impl Agent {
             }
             return Ok(format!("Asked its aven's coop for {level} access, as a request of the aven. {answers}"));
         }
-        if self.server.is_some() {
+        if self.cloud.is_some() {
             bail!("{}", self.unjoined());
         }
         let (device, offer) = (hex(&self.node.device().0), Some(self.node.offer().to_text()));

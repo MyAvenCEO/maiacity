@@ -250,6 +250,10 @@ pub struct Options {
     /// cloud session must, whose only way out is its proxy: iroh tunnels the relay's connection through it, and the TLS
     /// inside, X25519MLKEM768 alone, is the node's own end to end.
     pub proxy: bool,
+    /// It asks its peers for nothing on its own, as a cloud session's agent does: not what a peer announces it holds,
+    /// nor again once the vaults it follows change; only what it is told to bring (`Node::bring`, `Node::sync_with`),
+    /// so a fresh one never pulls all its device may hold, but the vaults a tool call touches.
+    pub lazy: bool,
     /// How soon it tries again to tell a peer it couldn't reach, or to ask one it failed to ask: after `retry`, then
     /// twice as long each time the peer stays out of reach, up to a minute.
     pub retry: Duration,
@@ -292,6 +296,7 @@ impl Options {
             direct: false,
             relay: None,
             proxy: false,
+            lazy: false,
             retry: Duration::from_secs(1),
             shelf: None,
             keep: false,
@@ -1168,6 +1173,19 @@ impl Node {
         self.shared.ask(peer).await
     }
 
+    /// Ask the device at endpoint `peer` now for the entries of the vaults `vaults` alone (`session::ASK_VAULTS`), and
+    /// for the logs that are no entry's, the vaults', shares' and audiences', which say who may do what: what a node
+    /// that asks only when told (`Options::lazy`) brings for a call that touches those vaults. How many edits were new.
+    pub async fn bring(&self, peer: EndpointId, vaults: BTreeSet<VaultId>) -> Result<usize> {
+        self.shared.asking(peer, Scope::Vaults(vaults)).await
+    }
+
+    /// Ask the device at endpoint `peer` now for the logs `logs` alone (`session::ASK_LOGS`), as an entry a call names
+    /// that the node holds nothing of yet. How many edits were new.
+    pub async fn bring_logs(&self, peer: EndpointId, logs: BTreeSet<LogId>) -> Result<usize> {
+        self.shared.asking(peer, Scope::Logs(logs)).await
+    }
+
     /// Ask the device at endpoint `peer` for its contact card (`Lab::card`), as a device asks the server for its
     /// vault's log before a vault gives the server relay on its entries. How many edits were new.
     pub async fn contact(&self, peer: EndpointId) -> Result<usize> {
@@ -1408,6 +1426,14 @@ impl<'a> Cursor<'a> {
     }
 }
 
+/// What a node asks a peer for: all the peer may send it (`session::REQUEST`), the logs it names alone
+/// (`session::ASK_LOGS`), or the entries of the vaults it names alone (`session::ASK_VAULTS`).
+enum Scope {
+    All,
+    Logs(BTreeSet<LogId>),
+    Vaults(BTreeSet<VaultId>),
+}
+
 /// A connection to a peer, dialed or accepted, with the device its hello proved.
 #[derive(Clone)]
 struct Peer {
@@ -1641,15 +1667,15 @@ impl Shared {
     /// lacks: a page at a time, each taken as it comes, asking on after the last edit a page brought until the peer has
     /// no more. How many edits were new.
     async fn ask(self: &Arc<Self>, endpoint: EndpointId) -> Result<usize> {
-        self.asking(endpoint, None).await
+        self.asking(endpoint, Scope::All).await
     }
 
-    /// `ask`, of the logs `logs` alone, if given (`session::ASK_LOGS`): once connected, a `pull` job of the peer's
-    /// device, forgotten if it took nothing.
-    async fn asking(self: &Arc<Self>, endpoint: EndpointId, logs: Option<BTreeSet<LogId>>) -> Result<usize> {
+    /// `ask`, of what `scope` names alone: once connected, a `pull` job of the peer's device, forgotten if it took
+    /// nothing.
+    async fn asking(self: &Arc<Self>, endpoint: EndpointId, scope: Scope) -> Result<usize> {
         let peer = self.connection(endpoint).await?;
         let mut job = self.jobs.begin("pull", peer.device.to_hex(), String::new(), 0, "edits");
-        let asked = self.pages(endpoint, peer, logs, &mut job).await;
+        let asked = self.pages(endpoint, peer, scope, &mut job).await;
         if matches!(asked, Ok(0)) { job.forget() } else { job.ended(&asked) }
         asked
     }
@@ -1660,25 +1686,32 @@ impl Shared {
         self: &Arc<Self>,
         endpoint: EndpointId,
         peer: Peer,
-        logs: Option<BTreeSet<LogId>>,
+        scope: Scope,
         job: &mut Running,
     ) -> Result<usize> {
         let device = peer.device;
-        let kind = if logs.is_some() { session::ASK_LOGS } else { session::REQUEST };
-        let logs = logs.map(Arc::new);
+        let kind = match scope {
+            Scope::All => session::REQUEST,
+            Scope::Logs(_) => session::ASK_LOGS,
+            Scope::Vaults(_) => session::ASK_VAULTS,
+        };
+        let scope = Arc::new(scope);
         let (mut after, mut new, mut pages) = (None, 0, 0);
         let (mut vaults, mut entries) = (BTreeMap::<String, u64>::new(), BTreeMap::<String, u64>::new());
         loop {
-            let logs = logs.clone();
+            let scope = scope.clone();
             let request = move |lab: &mut Lab, me| {
                 let request = lab.request(me, device);
-                let request = match &logs {
-                    Some(logs) => session::only(lab, me, request, logs),
-                    None => request,
-                };
-                Request { after, ..request }
+                match &*scope {
+                    Scope::All => Request { after, ..request }.to_wire(),
+                    Scope::Logs(logs) => Request { after, ..session::only(lab, me, request, logs) }.to_wire(),
+                    Scope::Vaults(vaults) => {
+                        let request = Request { after, ..session::of_vaults(lab, me, request, vaults) };
+                        session::vaults_body(vaults, &request)
+                    }
+                }
             };
-            let request = self.lab(request).await.to_wire();
+            let request = self.lab(request).await;
             let reply = session::exchange(&peer.conn, kind, &request, session::REPLY_LIMIT).await?;
             self.sent.requests.fetch_add(1, Ordering::Relaxed);
             let Reply { edits, blobs, more } = Reply::from_wire(&reply)?;
@@ -1730,7 +1763,7 @@ impl Shared {
     /// and once more after the asking under way if there is one; if the asking fails, again once its wait is over
     /// (`Backoff`).
     fn ask_soon(self: &Arc<Self>, endpoint: EndpointId) {
-        if !self.start_asking(endpoint) {
+        if self.opts.lazy || !self.start_asking(endpoint) {
             return;
         }
         let shared = self.clone();
@@ -1970,7 +2003,7 @@ impl Shared {
         if logs.is_empty() {
             return Ok(0);
         }
-        self.asking(endpoint, Some(logs)).await
+        self.asking(endpoint, Scope::Logs(logs)).await
     }
 
     /// `Node::synced_to`: this device and each device on a live connection or of which the node keeps no statement, by
