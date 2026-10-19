@@ -600,7 +600,9 @@ Code in a box
 
 A vault holds code as well as data: a recipe builds an asset, a view draws a screen, a function reacts to a move, and a config sets a game’s numbers. Each is an entry like any other, with versions, proposals and shares, and none of it is trusted. A page runs it only in a box: a frame with no origin, running an engine of ours that never changes, so the code reaches neither the network, nor storage, nor the page around it. A config runs nothing: our own code reads it as data.
 
-Every box is a frame allowed only to run scripts. It has no origin, so it holds no cookie, no storage and no passkey of ours, and it can’t reach into the page. Its policy lets in no connection, no frame, no form and no plugin, and every device feature is off, from the camera to the clipboard and full screen. The code runs in a worker inside it, never in a window, and before it starts, fetch, sockets, storage, caches, channels and new workers are taken off the worker’s global scope.
+Every box is a frame allowed only to run scripts. It has no origin, so it holds no cookie, no storage and no passkey of ours, and it can’t reach into the page. Its policy lets in no connection, no frame, no form and no plugin, and every device feature is off, from the camera to the clipboard and full screen. The code runs in a worker inside it, never in a window, and before it starts, fetch, sockets, storage, caches, channels and new workers are taken off the worker’s global scope. In the asset box each recipe gets a worker of its own, which no other recipe’s code ever ran in; the frame marks every answer with the worker it came from, and the page takes an answer only from the worker it asked, so one recipe can neither hear another’s builds nor answer for them.
+
+The page around the boxes has a wall of its own. Every page of the site carries a script policy: only our own scripts, the two box frames’ scripts by their hashes, and WebAssembly run, never an inline script, an inline handler or `eval`. The OS, the Mac app, sets the same script policy and allows connections only to itself, its own protocols and our servers.
 
 The engine that runs the code is a file we froze, one per version, served from our own site. The page checks its BLAKE3 hash before it starts it, and nothing comes from a CDN. A new engine is a new version beside the old ones, and pages run the latest of each kind. A build or a call that runs past its time, 20 seconds in the asset box and 10 in the logic box, ends with the frame and its worker removed.
 
@@ -608,7 +610,7 @@ Code hands back plain data, never code, and the page checks it again. The asset 
 
 | Box | It runs | Where | It may reach | It never reaches |
 | --- | --- | --- | --- | --- |
-| **Asset box** | A recipe: an asset’s file, from a vault | A worker in a hidden frame with no origin | Three.js and four of its add-ons, its file and params; 20 seconds a build | The network, storage, cookies, the page, avenDB |
+| **Asset box** | A recipe: an asset’s file, from a vault | A worker of its own, one per recipe, in a hidden frame with no origin | Three.js and four of its add-ons, its file and params; 20 seconds a build | The network, storage, cookies, the page, avenDB |
 | **Logic** | A flow’s functions; a view’s logic, which no view shown has yet | QuickJS, in a worker in a hidden frame with no origin | The JSON it is handed; 8 MB and a set amount of work a call | Anything else: it is given no function of the host |
 | **View frame** | Our view engine alone, drawing a view’s cleaned HTML | A frame with no origin, in its place on the page | Its own DOM, the maia-* components, pictures from data: and blob:, its port to the page | The network, storage, cookies, the page, popups, forms |
 | **View worker** | A view’s own script | A worker the view engine starts in the frame | A stand-in DOM, up to eight canvases, Three.js, d3, the MCP Apps client, and eight MCP Apps messages to the page | The network, storage, the frame’s real DOM, the page, tools, resources, links |
@@ -637,10 +639,10 @@ The game sandboxes and MaiaCity V1 are our own trusted code, not boxes. From a v
 
 ### Not protected yet
 
-- **The page around the boxes.** The site sets no strict script policy, and the Mac app sets none, so the page’s own code is guarded only by how it is written.
+- **Scripts from blob: addresses.** The page’s script policy still lets in scripts from `blob:` addresses, which the box frames start their workers from, until each box is a document of its own. The OS lets pictures and media come from any https address, as people’s own files do.
 - **Changes to our own code.** A merge to main deploys the boxes, the engines, the checker and the game rules, and no test gates it.
 - **Which code is Maia City’s.** Pages and the API check hashes and shapes, not avenDB’s signatures, so they rest on the server and TLS for which code is the vault’s.
-- **Recipes in one box.** Recipes built in one box share its worker: kept from the page, not from each other.
+- **One recipe’s crash.** A recipe that crashes or runs out of time still takes down its whole box, so the other builds in it start again: a delay, never another recipe’s model.
 - **Memory and time.** Only QuickJS has a memory cap, and a view’s script is stopped only once it stops answering.
 - **What code declares.** An entry’s manifest and contract aren’t enforced, and its engine version isn’t pinned: a view or logic runs on the latest engine of its kind.
 - **What a function makes.** A function may make entries of any type in its vault, flows and functions among them. Only the functions of the entry’s own vault, Maia City’s and the app’s run, so only those vaults can.

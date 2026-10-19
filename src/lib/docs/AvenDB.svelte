@@ -535,7 +535,7 @@
 		[
 			'Asset box',
 			'A recipe: an asset’s file, from a vault',
-			'A worker in a hidden frame with no origin',
+			'A worker of its own, one per recipe, in a hidden frame with no origin',
 			'Three.js and four of its add-ons, its file and params; 20 seconds a build',
 			'The network, storage, cookies, the page, avenDB'
 		],
@@ -1785,7 +1785,15 @@
 				passkey of ours, and it can’t reach into the page. Its policy lets in no connection, no frame, no form and no
 				plugin, and every device feature is off, from the camera to the clipboard and full screen. The code runs in a
 				worker inside it, never in a window, and before it starts, fetch, sockets, storage, caches, channels and new
-				workers are taken off the worker’s global scope.
+				workers are taken off the worker’s global scope. In the asset box each recipe gets a worker of its own, which no
+				other recipe’s code ever ran in; the frame marks every answer with the worker it came from, and the page takes an
+				answer only from the worker it asked, so one recipe can neither hear another’s builds nor answer for them.
+			</p>
+			<p class="prose-col">
+				The page around the boxes has a wall of its own. Every page of the site carries a script policy: only our own
+				scripts, the two box frames’ scripts by their hashes, and WebAssembly run, never an inline script, an inline
+				handler or <code>eval</code>. The OS, the Mac app, sets the same script policy and allows connections only to
+				itself, its own protocols and our servers.
 			</p>
 			<p class="prose-col">
 				The engine that runs the code is a file we froze, one per version, served from our own site. The page checks its
@@ -1871,8 +1879,9 @@
 			<h3>Not protected yet</h3>
 			<ul class="prose-col">
 				<li>
-					<b>The page around the boxes.</b> The site sets no strict script policy, and the Mac app sets none, so the
-					page’s own code is guarded only by how it is written.
+					<b>Scripts from blob: addresses.</b> The page’s script policy still lets in scripts from <code>blob:</code>
+					addresses, which the box frames start their workers from, until each box is a document of its own. The OS
+					lets pictures and media come from any https address, as people’s own files do.
 				</li>
 				<li>
 					<b>Changes to our own code.</b> A merge to main deploys the boxes, the engines, the checker and the game rules,
@@ -1883,7 +1892,8 @@
 					rest on the server and TLS for which code is the vault’s.
 				</li>
 				<li>
-					<b>Recipes in one box.</b> Recipes built in one box share its worker: kept from the page, not from each other.
+					<b>One recipe’s crash.</b> A recipe that crashes or runs out of time still takes down its whole box, so the
+					other builds in it start again: a delay, never another recipe’s model.
 				</li>
 				<li>
 					<b>Memory and time.</b> Only QuickJS has a memory cap, and a view’s script is stopped only once it stops
