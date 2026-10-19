@@ -382,7 +382,7 @@ export async function seeding(p, vault) {
 	if (p.kind === 'game') {
 		const g = GAMES.find((x) => x.id === p.name);
 		if (!g) return [];
-		const value = { kind: GAME, id: g.id, title: g.label, route: g.route, note: '' };
+		const value = { kind: GAME, id: g.id, title: g.label, route: g.route, note: g.note ?? '' };
 		const publish = RELEASED.has(g.id) ? [{ op: 'share', over: vault, who: EVERYONE, level: 'Public', what: { tag: p.mark }, as }] : [];
 		return [...publish, { op: 'create', vault, type: GAME, tags: [GAME, p.mark], value, as }];
 	}
