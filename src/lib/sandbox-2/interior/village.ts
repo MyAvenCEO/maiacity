@@ -22,7 +22,7 @@ import { LEVELS } from '$lib/assets/render/lod.js'
 import { songbirds } from './birds.js'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
 import { antHills, apiary, fishes, herd } from './animals'
-import { settled as actorsSettled, wantNear as actorsNear } from '$lib/assets/render/crowd.js'
+import { nearReady as actorsReady, wantNear as actorsNear } from '$lib/assets/render/crowd.js'
 import { flow, pond, shore, stream } from './water'
 import { createWorldRenderer } from '$lib/render/world.js'
 import { createSky } from '$lib/sandbox-kit/sky.js'
@@ -1209,6 +1209,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	   one builds at a time. A dome not built shows its simple self. */
 	/** the domes the shot being filmed sees (its views, as it was staged): shown in full for the whole shot */
 	let filmed: Set<number> | null = null
+	/** the domes a shot's staging waits for: built in long stretches; every other build (the shots ahead, while the
+	 *  timeline plays) takes only a sliver of each frame, so the frames on screen never wait for it */
+	let rush = new Set<number>()
 	const domeStream = createStream({
 		budget: KEEP,
 		far: SHOW_NEAREST,
@@ -1241,7 +1244,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 					const mine = { i, cancelled: false }
 					building = mine
 					// on film nothing is drawn while the world is readied (__filmDraw): every dome builds in long stretches
-					mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => gapTo(i) < 12 || filmDraws(), background: () => gapTo(i) > 45 && !filmDraws(), library, flora: flora ? { garden: flora.inside, seed: flora.seed, flora: plantsIn!, drawn: library } : undefined })
+					mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => rush.has(i) || (!filmDraws() && gapTo(i) < 12), background: () => !rush.has(i) && (filmDraws() || gapTo(i) > 45), library, flora: flora ? { garden: flora.inside, seed: flora.seed, flora: plantsIn!, drawn: library } : undefined })
 						.then((h) => {
 							if (building === mine) building = null
 							if (job.cancelled || !h.embedded) {
@@ -1450,10 +1453,12 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				const missing = need.filter((i) => !built.has(i))
 				console.warn(`film: ${(w as { name?: string }).name ?? 'a shot'} waits ${Math.round((performance.now() - t) / 1000)} s for domes ${missing.join(',') || '-'} (sees ${need.join(',') || 'none'}; building ${building?.i ?? '-'})`)
 			}, 10000)
+			rush = new Set(need)
 			try {
 				await domeStream.ready(views)
 			} finally {
 				clearInterval(slow)
+				rush = new Set()
 			}
 			settle()
 			const t0 = performance.now()
@@ -1461,8 +1466,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			// the shot is drawn
 			// (two frames first: the herds say where each of them is, round where the walker now stands)
 			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-			actorsNear(views)
-			await actorsSettled()
+			await actorsNear(views)
 			const t1 = performance.now()
 			// and every shape of every plant (each kind at both its details and its picture), so no frame of the shot draws
 			// one while a finer one is still being built
@@ -1481,7 +1485,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		holds: (w) => {
 			const views = shotViews(w)
 			const need = domeStream.wanted(views) as number[]
-			if ((w.dome !== undefined && !built.has(w.dome)) || !need.every((i) => built.has(i))) return false
+			if ((w.dome !== undefined && !built.has(w.dome)) || !need.every((i) => built.has(i)) || !actorsReady(views)) return false
 			if (!filmed || filmed.size !== need.length || need.some((i) => !filmed!.has(i))) {
 				filmed = new Set(need)
 				domeStream.look(views)
@@ -1490,7 +1494,22 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			return true
 		},
 		// keep built what the shots ahead see (the stream lets go of nothing pinned, and never goes over KEEP)
-		keep: (ws) => domeStream.pin(ws.map(shotViews)),
+		keep: (ws) => {
+			const sets = ws.map(shotViews)
+			domeStream.pin(sets)
+			domeStream.tick()
+			// and the animals they will see, built ahead too (a cut to one of them then waits for none)
+			void actorsNear(sets.flat())
+		},
+		// what it holds it holds wherever the shot stands: a cut to a held shot is only a move
+		streams: true,
+		move: (w) => {
+			walker.place(w.stand[0], w.stand[1], 0, 0, 0)
+			const views = shotViews(w)
+			filmed = new Set(domeStream.wanted(views) as number[])
+			domeStream.look(views)
+			settle()
+		},
 		// the library: the film's sets put their assets in it (src/lib/film/sets.js, the tired land's trucks)
 		extra: { herds, built, shown, domes, water: waterPts, playgrounds: PLAYGROUNDS, library }
 	})

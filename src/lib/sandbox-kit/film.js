@@ -129,6 +129,8 @@ export function createCameraHold(camera) {
  *   stage?: (world: FilmWorldSpec) => Promise<void>,
  *   holds?: (world: FilmWorldSpec) => boolean,
  *   keep?: (worlds: FilmWorldSpec[]) => void,
+ *   streams?: boolean,
+ *   move?: (world: FilmWorldSpec) => void,
  *   extra?: Record<string, unknown>
  * }} o
  *   sandbox, area: which world this is (a shot of another is refused); hold: the camera controller's hold (the walker
@@ -138,7 +140,8 @@ export function createCameraHold(camera) {
  *   world's own frames a shot's camera may ride in (camera `frame`), each where it stands once animate has run; parts: the world's moving parts put where the shot has them
  *   (game/film/worlds.js `parts`; each part by its channels' values, called every frame, with {} for none); stage: build
  *   what a shot needs and resolve when it is ready (default: stand at world.stand); holds: whether the world is still
- *   staged for that (default: yes); keep: keep built what these shots need; extra: more on window.__world (debugging,
+ *   staged for that (default: yes); keep: keep built what these shots need; streams: holds is exact for any shot
+ *   wherever it stands, so a cut to a held shot only moves (src/lib/sandbox-kit/stream.js); move: stand there at once; extra: more on window.__world (debugging,
  *   sets)
  */
 export function connectFilm(o) {
@@ -210,7 +213,12 @@ export function connectFilm(o) {
 			/** @param {FilmWorldSpec} w */
 			holds: o.holds ?? (() => true),
 			/** @param {FilmWorldSpec[]} ws */
-			keep: o.keep ?? (() => {})
+			keep: o.keep ?? (() => {}),
+			/** whether `holds` is exact for any shot, wherever it stands (a world that streams by view): a cut to a shot it
+			 *  holds is then only a move of the camera, never a staging */
+			streams: o.streams ?? false,
+			/** stand where shot `w` is, at once, what it sees already built (`streams`) @param {FilmWorldSpec} w */
+			move: o.move ?? ((w) => place(w.stand[0], w.stand[1], 0, 0))
 		},
 		/** the world is going: the film (and the console) no longer find it (a world opened over another hands it back) */
 		disconnect() {

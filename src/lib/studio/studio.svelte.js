@@ -1538,7 +1538,10 @@ export class Studio {
 		// Stopped, they are prepared (staged and metered)
 		const still = !this.playing && !this.starting;
 		if (still) void this.world.prepare(specs);
-		else this.world.keep(specs);
+		else {
+			this.world.keep(specs);
+			this.world.markHeld(specs);
+		}
 		// stopped: every world shot from the playhead on metered ahead, so playing never stops at a cut to meter one
 		if (still) {
 			const ahead = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start);

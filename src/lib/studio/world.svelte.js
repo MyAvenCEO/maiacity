@@ -25,6 +25,7 @@ import { filmPath } from '../../../game/film/worlds.js';
  *   ready(): Promise<void>,
  *   prepare(specs: ShotSpec[], opts?: { live?: boolean, meter?: boolean }): Promise<void>,
  *   keep?(specs: ShotSpec[]): void | Promise<void>,
+ *   held?(specs: ShotSpec[]): Promise<boolean[]>,
  *   show(o: ShowArgs): void | boolean | Promise<void | boolean>,
  *   capture?(o: { spec: ShotSpec, t: number, shape: Shape, width: number, height: number }): Promise<ArrayBuffer>,
  *   meter?(spec: ShotSpec): Promise<number>,
@@ -378,6 +379,20 @@ export class WorldViewer {
 		this.keptBy = film;
 		void Promise.resolve(film.keep(mine)).catch(() => {});
 	}
+	/**
+	 * The shots ahead the world already holds (a world that streams by view: built while the shots before them play)
+	 * count as ready: at their cut the live world draws them at once, only a move of its camera. Asked four times a
+	 * second, not every frame. @param {ShotSpec[]} specs
+	 */
+	markHeld(specs) {
+		const film = this.film, now = performance.now();
+		if (!film?.held || now - this.heldAt < 250) return;
+		this.heldAt = now;
+		const mine = specs.filter((s) => this.holds(s));
+		void film.held(mine).then((h) => h.forEach((ok, i) => ok && this.film === film && this.readyShots.add(specKey(mine[i])))).catch(() => {});
+	}
+	/** when `markHeld` last asked */
+	heldAt = 0;
 	/** the shots ahead last kept (by the whole shot), and by which film page */
 	kept = '';
 	/** @type {Film | null} */
