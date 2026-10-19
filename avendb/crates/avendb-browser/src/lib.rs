@@ -558,7 +558,8 @@ impl Device {
     async fn spawn(lab: Lab, me: SignerId, start: &Start, pass: Option<RelayPass>) -> Result<Node> {
         let (direct, relay, shelf, progress) =
             (start.direct, Some(start.relay.clone()), start.shelf.clone(), start.progress.clone());
-        let opts = Options { bind: None, direct, relay, relay_pass: pass, shelf, progress, ..Options::local() };
+        let relay_passes = pass.into_iter().collect();
+        let opts = Options { bind: None, direct, relay, relay_passes, shelf, progress, ..Options::local() };
         Node::spawn(lab, me, opts).await
     }
 

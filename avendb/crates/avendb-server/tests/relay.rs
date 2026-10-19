@@ -19,7 +19,7 @@ use avendb::id::{SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::policy::{Action, Kind, Level, Principal, Revoking};
-use avendb::sign::PASS_LIFE;
+use avendb::sign::{PASS_LIFE, Passkey, Suite};
 use avendb::slice::Selector;
 use avendb::{engine, lens, world};
 use avendb_net::{Admission, Node, Offer, Options, server};
@@ -56,7 +56,7 @@ fn unix_now() -> u64 {
 
 /// How a new device with no UDP of its own runs, as a browser's: through `relay` alone, showing it `pass`.
 fn with_pass(relay: &RelayUrl, pass: avendb::sign::RelayPass) -> Options {
-    Options { relay_pass: Some(pass), ..relay_only(relay) }
+    Options { relay_passes: vec![pass], ..relay_only(relay) }
 }
 
 /// Waits until `check` holds, 30 seconds at most.
@@ -856,6 +856,43 @@ async fn a_new_device_with_no_udp_gets_onto_the_relay_by_its_passkeys_pass_and_l
     until("the browser reads Welcome", reads).await;
     quiet(&[&mac, &server, &browser]).await;
     for n in [mac, server, browser, eve, old, other] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_new_device_shows_its_passkeys_pass_in_each_suite_and_the_relay_takes_the_one_it_honours() {
+    let admission = Admission::default();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url = relay.url();
+    let mut w = world();
+    handbook_ready(&mut w);
+    let browser_d = w.lab.device_of(w.passkey_a, "Alice's browser");
+    let phone_d = w.lab.device_of(w.passkey_a, "Alice's phone");
+    let (passkey_a, server_d) = (w.passkey_a, w.server);
+    let opts = Options { relay: Some(url.clone()), admission: Some(admission.clone()), ..Options::local() };
+    let server = node(&mut w, server_d, &[], 2, opts).await;
+    // Alice's passkey in the suite her vault doesn't know: its pass names a passkey that roots nothing (the key move)
+    let suite = w.lab.keys_of(passkey_a).expect("Alice's passkey").suite();
+    let other = if suite == Suite::SlhDsa { Suite::MlDsa } else { Suite::SlhDsa };
+    let mut moved = Passkey::from_seed_in(*w.lab.passkey_secret(passkey_a).expect("her secret"), other);
+    let now = unix_now();
+    let device = |w: &World, d| w.lab.keys_of(d).expect("a device's keys");
+    let (browser_keys, phone_keys) = (device(&w, browser_d), device(&w, phone_d));
+    let fresh = w.lab.relay_pass(browser_d, passkey_a, now).expect("a pass");
+    let third = w.lab.relay_pass(phone_d, passkey_a, now).expect("a pass");
+    // the browser shows both, the other suite's first: the relay takes the one it honours
+    let passes = vec![moved.pass(browser_keys, now), fresh.clone()];
+    let browser = node(&mut w, browser_d, &[passkey_a], 7, Options { relay_passes: passes, ..relay_only(&url) }).await;
+    let served = || async { relay.serves(&browser.id()) };
+    until("the relay lets Alice's browser in by its pass in her vault's suite", served).await;
+    assert!(relay.passed(&browser.id()).is_some_and(|until| until == fresh.expires()), "for its ten minutes");
+    // the phone shows the other suite's alone, with a third pass that the token can't carry
+    let passes = vec![moved.pass(phone_keys, now), moved.pass(phone_keys, now), third];
+    let phone = node(&mut w, phone_d, &[passkey_a], 8, Options { relay_passes: passes, ..relay_only(&url) }).await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(!relay.serves(&phone.id()), "a passkey that roots no vault, and a third pass it never reads: turned away");
+    for n in [server, browser, phone] {
         n.shutdown().await.expect("the node shuts down");
     }
 }

@@ -84,7 +84,7 @@
 //!   (`Lab::accept_join`). Then they sync as devices of one vault. With every other device lost, a new device links
 //!   the same way through the server, whose offer the app knows: the passkey alone brings the person's vault back. A
 //!   device the server doesn't know yet makes that first contact straight, over UDP, or, with no UDP of its own,
-//!   through the relay by the same pass (`Options::relay_pass`).
+//!   through the relay by the same pass (`Options::relay_passes`).
 //! - **In a browser** (P8d): a page has no UDP, so its node reaches every peer through its relay, which lets the new
 //!   device in by its passkey's pass (`sign::RelayPass`) until it joined; its TLS is ring, with X25519MLKEM768 in pure
 //!   Rust (`kx`), and its tasks and timers run on the page's event loop.
@@ -266,9 +266,10 @@ pub struct Options {
     pub card: bool,
     /// Where it writes the endpoints of the devices it knows, for a relay to let them in: the server's.
     pub admission: Option<Admission>,
-    /// The pass it shows its relay, signed by its person's passkey (`Lab::relay_pass`): a new device with no UDP of its
-    /// own, as a browser's, which the server doesn't know until it joined, is let in by it for ten minutes.
-    pub relay_pass: Option<RelayPass>,
+    /// The passes it shows its relay, signed by its person's passkey (`Lab::relay_pass`): a new device with no UDP of
+    /// its own, as a browser's, which the server doesn't know until it joined, is let in by one for ten minutes. One,
+    /// or one in each suite while it doesn't know which its person's vault knows (the key move, `passes_token`).
+    pub relay_passes: Vec<RelayPass>,
     /// The most bytes of edits it answers a request with, but at least one edit: a peer asks on for the rest
     /// (`Lab::reply`).
     pub page: usize,
@@ -294,7 +295,7 @@ impl Options {
             keep: false,
             card: false,
             admission: None,
-            relay_pass: None,
+            relay_passes: Vec::new(),
             page: PAGE,
             progress: Progress::new(),
         }
@@ -496,24 +497,32 @@ pub(crate) fn unix_now() -> u64 {
     time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
-/// A relay pass as the token a node shows its relay as it connects: base64url without padding, which a browser's
-/// node carries in the query of the relay's URL, as a page can't set the headers of a WebSocket.
-pub fn pass_token(pass: &RelayPass) -> String {
-    BASE64URL_NOPAD.encode(&pass.to_wire())
+/// The most passes a token carries (`passes_token`): one in each suite.
+pub const TOKEN_PASSES: usize = 2;
+
+/// Relay passes as the token a node shows its relay as it connects: each in base64url without padding, joined by
+/// `.`, which a browser's node carries in the query of the relay's URL, as a page can't set the headers of a
+/// WebSocket. A new device shows its passkey's pass in each suite while it doesn't know which one its person's vault
+/// knows (the key move, Samuel 2026-10-19), the relay taking the one it honours (`token_passes`); one pass is the
+/// token it was before.
+pub fn passes_token(passes: &[RelayPass]) -> String {
+    let token = |pass: &RelayPass| BASE64URL_NOPAD.encode(&pass.to_wire());
+    passes.iter().map(token).collect::<Vec<_>>().join(".")
 }
 
-/// How a node with `opts` reaches its relay `relay`: with its pass, if it has one.
+/// How a node with `opts` reaches its relay `relay`: with its passes, if it has any.
 fn relay_config(relay: &RelayUrl, opts: &Options) -> RelayConfig {
     let config = RelayConfig::from(relay.clone());
-    match &opts.relay_pass {
-        Some(pass) => config.with_auth_token(pass_token(pass)),
-        None => config,
+    match opts.relay_passes.is_empty() {
+        true => config,
+        false => config.with_auth_token(passes_token(&opts.relay_passes)),
     }
 }
 
-/// The relay pass a token carries (`pass_token`), if it is one.
-pub fn token_pass(token: &str) -> Option<RelayPass> {
-    RelayPass::from_wire(&BASE64URL_NOPAD.decode(token.as_bytes()).ok()?).ok()
+/// The relay passes a token carries (`passes_token`): those of its first `TOKEN_PASSES` parts that are one.
+pub fn token_passes(token: &str) -> Vec<RelayPass> {
+    let pass = |part: &str| RelayPass::from_wire(&BASE64URL_NOPAD.decode(part.as_bytes()).ok()?).ok();
+    token.split('.').take(TOKEN_PASSES).filter_map(pass).collect()
 }
 
 /// A device on the network: its Lab, split off for it (`Lab::split`), behind an iroh endpoint of its own key.
