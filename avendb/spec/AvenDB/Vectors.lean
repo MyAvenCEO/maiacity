@@ -274,6 +274,28 @@ def cases : List Case := [
     (9, [], .settings 100 (.root none [])),
     (9, [77], .share (.device 100 77)),
     (9, [], .settings 100 (.root (some 9) []))] },
+  { name := "a Mac's Touch ID key as a second owner at threshold 1", edits := [
+    (1, [], .genesis 100 .human [.signer 1] 1 (some 1)),
+    (1, [2], .share (.device 100 2)),
+    -- the key joins only with its own signature, and only by the vault: not by the Mac's device, nor on its own
+    (1, [], .share (.owner 100 (.signer 79))),
+    (2, [79], .share (.owner 100 (.signer 79))),
+    (79, [], .share (.owner 100 (.signer 79))),
+    (1, [79], .share (.owner 100 (.signer 79))),
+    -- Touch ID alone adds a device and removes it; the Mac's device alone does neither
+    (2, [3], .share (.device 100 3)),
+    (79, [3], .share (.device 100 3)),
+    (2, [], .revoke (.device 100 3 [])),
+    (79, [], .revoke (.device 100 3 [])),
+    -- it never hands the root on
+    (79, [], .settings 100 (.root (some 79) [])),
+    -- it takes the passkey off the owners; the passkey stays the root and approves alone
+    (79, [], .revoke (.owner 100 (.signer 1) [])),
+    (1, [77], .share (.device 100 77)),
+    -- the root removes the key once it is an owner again, never the last owner
+    (1, [], .revoke (.owner 100 (.signer 79) [])),
+    (1, [], .share (.owner 100 (.signer 1))),
+    (1, [], .revoke (.owner 100 (.signer 79) []))] },
   { name := "four kinds of vault, and acts that name their chain", edits := humans ++ [
     -- the relay server's device vault, owned by Alice's human vault; the server joins as its device
     (1, [], .genesis 300 .deviceVault [.vault 100] 1),
