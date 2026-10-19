@@ -175,12 +175,20 @@ impl Node {
 
     /// A change: made, or drafted for the passkey to approve and, with a ceremony at hand, signed in it and made.
     async fn change<A: Authenticator>(&self, op: Value, authenticator: Option<&A>) -> Result<Value> {
-        let prepared = self.act(move |lab, me| engine::prepare(lab, me, &op)).await;
+        let prepare = move |lab: &mut Lab, me| {
+            let prepared = engine::prepare(lab, me, &op);
+            let keys = match &prepared {
+                Ok(Prepared::Approve(a)) => lab.keys_of(a.passkey),
+                _ => None,
+            };
+            (prepared, keys)
+        };
+        let (prepared, keys) = self.act(prepare).await;
         let (approval, authenticator) = match (prepared, authenticator) {
             (Ok(Prepared::Approve(a)), Some(authenticator)) => (a, authenticator),
             (prepared, _) => return Ok(engine::prepared(prepared)),
         };
-        let ceremony = authenticator.ceremony(approval.challenge(), Step::Approve).await?;
+        let ceremony = crate::ceremony_of(authenticator, keys, approval.challenge(), Step::Approve).await?;
         let approve = move |lab: &mut Lab, me| engine::approve(lab, me, approval, &ceremony);
         Ok(match self.act(approve).await {
             Ok(v) => json!({ "ok": v }),

@@ -751,6 +751,14 @@ impl Ceremony {
             Proof::Enclave { .. } => Secret::derive("enclave seal key", &self.secret),
         }
     }
+
+    /// What a Touch ID key's ceremony masks its Mac's device secret with, derived from the secret the same touch
+    /// opened, as a passkey's PRF output on the device's salt masks it: so a touch opens the Mac's device at every start
+    /// of its app, with no passkey. `None` for a passkey's ceremony.
+    pub fn device_mask(&self) -> Option<Zeroizing<[u8; 32]>> {
+        matches!(self.proof, Proof::Enclave { .. })
+            .then(|| Zeroizing::new(hash::keyed(&self.secret, "enclave device mask", b"")))
+    }
 }
 
 /// An assertion made at `origin` for the relying party whose id hashes to `rp` is ours: maia.city's, from `ORIGIN`;
@@ -1048,8 +1056,15 @@ impl EnclaveKey {
     /// Its ceremony over `challenge` (`Ceremony::enclave`): the Enclave's signature over it, and the secret, as one
     /// touch brings both.
     pub fn ceremony(&self, challenge: [u8; 32]) -> Ceremony {
+        let (sig, secret) = self.touched(challenge);
+        Ceremony::enclave(self.public(), sig, challenge, *secret)
+    }
+
+    /// What its Enclave hands back for one touch over `challenge`, as a Mac app hands it to its device: the ML-DSA-65
+    /// signature over the challenge (`ENCLAVE_CONTEXT`), and the secret the touch opened.
+    pub fn touched(&self, challenge: [u8; 32]) -> (Vec<u8>, Zeroizing<[u8; 32]>) {
         let sig = self.mldsa.expanded_key().sign_deterministic(&challenge, ENCLAVE_CONTEXT).expect("a short context");
-        Ceremony::enclave(self.public(), sig.encode().to_vec(), challenge, *self.secret)
+        (sig.encode().to_vec(), self.secret.clone())
     }
 
     /// Its signature on edit `edit`, made in a ceremony over the edit's id.
@@ -1589,6 +1604,35 @@ mod tests {
         let mut swapped = together.sign_in(touch.keys(), batch[0], &batch).expect("its signature");
         swapped.enclave.as_mut().expect("its Enclave's").edits.reverse();
         assert!(!verify(touch.id(), batch[0], &swapped));
+    }
+
+    #[test]
+    fn a_macs_secure_enclave_signature_checks_out_here() {
+        // vault/app/scripts/enclave-probe.swift --kat on an M1 with macOS 26.1 (2026-10-19): a public key and its
+        // signature over the bytes 0 to 31, with `ENCLAVE_CONTEXT`, both made in the Secure Enclave
+        let kat = include_str!("../tests/data/enclave-mac.kat");
+        let mut lines = kat.lines().map(|line| {
+            let url: String = line.trim_end_matches('=').chars().map(|c| match c { '+' => '-', '/' => '_', c => c }).collect();
+            unbase64url(&url).expect("base64")
+        });
+        let (public, sig) = (lines.next().expect("its public key"), lines.next().expect("its signature"));
+        assert_eq!((public.len(), sig.len()), (1952, 3309), "ML-DSA-65's sizes");
+        let msg: [u8; 32] = std::array::from_fn(|i| i as u8);
+        assert!(verify_mldsa(&public, &msg, &sig));
+        // another message, a byte of the signature or the key changed: no signature
+        assert!(!verify_mldsa(&public, &[0; 32], &sig));
+        let mut bent = sig.clone();
+        bent[100] ^= 1;
+        assert!(!verify_mldsa(&public, &msg, &bent));
+        let mut other = public.clone();
+        other[100] ^= 1;
+        assert!(!verify_mldsa(&other, &msg, &sig));
+        // nor without avenDB's context, as the Enclave signs for another use
+        use ml_dsa::{EncodedSignature, EncodedVerifyingKey, MlDsa65, VerifyingKey};
+        let key = VerifyingKey::<MlDsa65>::decode(&EncodedVerifyingKey::<MlDsa65>::try_from(&public[..]).expect("its size"));
+        let sig = EncodedSignature::<MlDsa65>::try_from(&sig[..]).expect("its size");
+        let sig = ml_dsa::Signature::<MlDsa65>::decode(&sig).expect("a signature");
+        assert!(key.verify_with_context(&msg, ENCLAVE_CONTEXT, &sig) && !key.verify_with_context(&msg, b"", &sig));
     }
 
     #[test]

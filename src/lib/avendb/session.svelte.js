@@ -504,6 +504,23 @@ async function forget() {
 	[device, meta, world, vault, phase] = [null, null, null, '', 'new'];
 }
 
+/** In the Mac app: whether a touch may open avenDB here, its Secure Enclave able to hold a Touch ID key (macOS 26, a
+ *  finger enrolled), and whether one does; else null. @returns {Promise<{ ready: boolean, on: boolean } | null>} */
+async function touchState() {
+	if (!mac) return null;
+	const ready = await mac.touchReady().catch(() => false);
+	return { ready, on: !!meta?.touch };
+}
+
+/** In the Mac app: its Touch ID key made in its Secure Enclave and added as an owner of the person's vault beside
+ *  their passkey, in the passkey's sheet and a touch, so a touch opens avenDB here from then on and approves what their
+ *  vault's owners approve (avendb-device's `touchSetup`); or, with `on` false, forgotten here, the passkey's sheet
+ *  opening it again (`touchOff`). @param {boolean} on */
+async function touch(on) {
+	await mac.call(on ? 'touchSetup' : 'touchOff');
+	meta = (await mac.call('status')).meta;
+}
+
 /** A QR code of `text`, as SVG, `size` pixels wide: drawn by the device's WebAssembly, or in the Mac app by the app.
  *  @param {string} text @param {number} size @returns {Promise<string>} */
 const qr = async (text, size) => (mac ? mac.call('qrSvg', text, size) : avendb.qrSvg(text, size));
@@ -635,6 +652,8 @@ export const session = {
 	load,
 	unlock,
 	lock,
+	touch,
+	touchState,
 	found,
 	link,
 	claim,

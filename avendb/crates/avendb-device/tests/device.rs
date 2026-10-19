@@ -46,7 +46,8 @@ use avendb::id::{EntryId, SignerId, VaultId};
 use avendb::keys::{self, SeededRng};
 use avendb::lab::Lab;
 use avendb::sealed::FileRoot;
-use avendb::sign::{DeviceKey, PRF_SALT, Passkey, device_salt};
+use avendb::policy::Principal;
+use avendb::sign::{DeviceKey, EnclaveKey, PRF_SALT, Passkey, device_salt};
 use avendb_device::{Config, Host, SHEET, agent, drive, host, serve, worker};
 use avendb_net::shelf::FLOOR;
 use avendb_net::{Admission, NoCeremony, Node, Options, disk};
@@ -197,13 +198,19 @@ struct InApp {
     asked: Vec<String>,
     /// Whether the person closes the next sheet instead of using their passkey.
     cancel: bool,
+    /// The seed of the Touch ID key the Mac's Secure Enclave makes, a software one here, its blob that seed.
+    enclave: [u8; 32],
+    /// What each touch was for, since the test last asked.
+    touched: Vec<String>,
+    /// Whether the person cancels the next touch.
+    no_touch: bool,
 }
 
 impl InApp {
     /// The app hosts the device on folder `dir`, Eve's passkey answering its sheets.
     fn start(dir: &Path, passkey: Passkey) -> InApp {
         let (host, sheets) = host(Config { dir: dir.to_path_buf(), direct: true, volumes: None }).expect("hosted");
-        InApp { host, sheets, passkey, asked: vec![], cancel: false }
+        InApp { host, sheets, passkey, asked: vec![], cancel: false, enclave: [6; 32], touched: vec![], no_touch: false }
     }
 
     /// Call `call` with `args` on the device, showing each sheet it asks for meanwhile: its answer, `{"ok": value}` or
@@ -218,7 +225,12 @@ impl InApp {
                 sheet = self.sheets.recv() => sheet.expect("the device's sheets"),
                 () = tokio::time::sleep_until(end.into()) => panic!("an answer within 120 s"),
             };
-            let n = sheet["sheet"].as_u64().expect("a sheet, all the device sends unprompted");
+            if let Some(n) = sheet.get("enclave").and_then(Value::as_u64) {
+                let back = self.touch(n, &sheet);
+                self.host.answer(&back);
+                continue;
+            }
+            let n = sheet["sheet"].as_u64().expect("a sheet or a touch, all the device sends unprompted");
             let asked = asked_in(sheet["url"].as_str().expect("the sheet's URL"));
             self.asked.push(asked["what"].to_string());
             let back = match std::mem::take(&mut self.cancel) {
@@ -227,6 +239,35 @@ impl InApp {
             };
             self.host.answer(&back);
         }
+    }
+
+    /// Touch `n`, as the Mac app's Secure Enclave answers `asked`, a software Touch ID key here whose blob is its seed:
+    /// made on `make`, with its blobs, a ciphertext and its secret; used on `sign`; or the person cancels.
+    fn touch(&mut self, n: u64, asked: &Value) -> Value {
+        self.touched.push(asked["why"].as_str().expect("what the touch is for").to_string());
+        if std::mem::take(&mut self.no_touch) {
+            return json!({ "enclave": n, "error": "Touch ID was cancelled." });
+        }
+        let bytes = |k: &str| BASE64.decode(asked[k].as_str().expect("base64").as_bytes()).expect("base64");
+        let (seed, challenge) = match asked.get("make") {
+            Some(_) => (self.enclave, bytes("make")),
+            None => (bytes("key").try_into().expect("a seed"), bytes("sign")),
+        };
+        let key = EnclaveKey::from_seed(seed);
+        let (sig, secret) = key.touched(challenge.try_into().expect("a 32-byte challenge"));
+        let mut back = json!({ "enclave": n, "sig": BASE64.encode(&sig), "secret": BASE64.encode(&*secret) });
+        if asked.get("make").is_some() {
+            back["public"] = BASE64.encode(&key.public()).into();
+            back["key"] = BASE64.encode(&seed).into();
+            back["kem"] = BASE64.encode(b"the ML-KEM key's blob").into();
+            back["sealed"] = BASE64.encode(b"a ciphertext to it").into();
+        }
+        back
+    }
+
+    /// What the touches since the last ask were for.
+    fn touched(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.touched)
     }
 
     /// What the sheets since the last ask were for.
@@ -653,6 +694,79 @@ async fn the_mac_app_hosts_the_device_in_its_own_process_and_reads_a_file_from_i
     let node = app.host.node().expect("its node");
     assert_eq!(node.read_file(root, 0..10).await.expect("its first bytes"), film[..10], "kept on its shelf");
     drop(node);
+    app.host.close().await;
+    server.shutdown().await.expect("the server's node stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_touch_opens_eves_mac_once_its_touch_id_key_owns_her_vault_beside_her_passkey() {
+    let (_relay, url, server) = server().await;
+    let folder = Folder::new("touch");
+    let dir = folder.0.clone();
+    let mut app = InApp::start(&dir, Passkey::from_seed([5; 32]));
+    let offer = server.offer().to_text();
+    let device = app.call("found", json!(["Eve's Mac", url.to_string(), offer])).await["ok"].clone();
+    assert_eq!(app.asked(), ["unlock", "found"]);
+    assert_eq!(app.call("status", json!([])).await["ok"]["meta"]["touch"], false, "no Touch ID key yet");
+    // she adds Touch ID: a touch as the Enclave makes the key, then her passkey's sheet and a touch over the edit that
+    // adds it as an owner of her vault, beside the passkey
+    let touch = app.call("touchSetup", json!([])).await["ok"]["touch"].clone();
+    assert!(touch.is_string(), "the key's id: {touch}");
+    assert_eq!((app.asked(), app.touched()), (vec!["touch".into()], vec![
+        "use Touch ID for avenDB".to_string(),
+        "add Touch ID to your vault".into()
+    ]));
+    assert_eq!(app.call("status", json!([])).await["ok"]["meta"]["touch"], true, "kept, its blobs not shown");
+    let again = app.call("touchSetup", json!([])).await;
+    assert_eq!(again, json!({ "error": "Touch ID opens avenDB on this Mac already" }));
+    let node = app.host.node().expect("its node");
+    let owners = |lab: &Lab, me| {
+        let st = lab.state(me);
+        st.vault(lab.vault_of(me)?).map(|v| (v.owners.clone(), v.root))
+    };
+    let (owners, root) = node.read(owners).await.expect("her vault");
+    let (touch, root) = (SignerId(id(&touch)), root.expect("her passkey roots it"));
+    assert_eq!(owners.first(), Some(&Principal::Signer(root)), "her passkey's first");
+    assert_eq!(owners.last(), Some(&Principal::Signer(touch)), "the key's last, after the master recovery key's");
+    drop(node);
+    // what her vault's owners approve takes a touch now, no sheet
+    let coop = app.call("run", json!([{ "op": "found", "kind": "coop", "name": "Eve's Workshop" }])).await;
+    assert_eq!(coop["ok"]["ok"]["vaults"].as_array().map(Vec::len), Some(1), "a new vault: {coop}");
+    assert_eq!((app.asked(), app.touched()), (vec![], vec!["approve what your vault changes".to_string()]));
+    // the app quits and starts again: a touch opens the same device, no sheet
+    app.host.close().await;
+    drop(app);
+    let mut app = InApp::start(&dir, Passkey::from_seed([5; 32]));
+    let opened = app.call("open", json!([])).await["ok"].clone();
+    assert_eq!(opened["id"], device["id"], "the same device");
+    assert_eq!((app.asked(), app.touched()), (vec![], vec!["open avenDB".to_string()]));
+    // a touch approves there too, and her passkey's sheet signs what only her vault's root does, its keys brought by
+    // that sheet's ceremony, as the touch opened the Mac with no passkey
+    let coop = app.call("run", json!([{ "op": "found", "kind": "coop", "name": "Eve's Studio" }])).await;
+    assert_eq!(coop["ok"]["ok"]["vaults"].as_array().map(Vec::len), Some(1), "a new vault: {coop}");
+    assert_eq!((app.asked(), app.touched()), (vec![], vec!["approve what your vault changes".to_string()]));
+    let mine = app.call("run", json!([{ "op": "world" }])).await["ok"]["ok"]["mine"].clone();
+    let root_on = json!([{ "op": "settings", "vault": mine, "root": hex(&root.0) }]);
+    let set = app.call("run", root_on).await;
+    assert!(set["ok"]["ok"]["edit"].is_string(), "the root hands the root on: {set}");
+    assert_eq!((app.asked(), app.touched()), (vec!["approve".to_string()], vec![]));
+    // no touch comes: her passkey's sheet opens it instead
+    app.host.close().await;
+    drop(app);
+    let mut app = InApp::start(&dir, Passkey::from_seed([5; 32]));
+    app.no_touch = true;
+    let opened = app.call("open", json!([])).await["ok"].clone();
+    assert_eq!(opened["id"], device["id"], "the same device");
+    assert_eq!((app.asked(), app.touched()), (vec!["unlock".to_string()], vec!["open avenDB".to_string()]));
+    // she turns Touch ID off here: the next start takes the sheet alone
+    assert_eq!(app.call("touchOff", json!([])).await, json!({ "ok": null }));
+    assert_eq!(app.call("status", json!([])).await["ok"]["meta"]["touch"], false);
+    app.host.close().await;
+    drop(app);
+    let mut app = InApp::start(&dir, Passkey::from_seed([5; 32]));
+    let opened = app.call("open", json!([])).await["ok"].clone();
+    assert_eq!(opened["id"], device["id"], "the same device");
+    assert_eq!((app.asked(), app.touched()), (vec!["unlock".to_string()], vec![]));
     app.host.close().await;
     server.shutdown().await.expect("the server's node stops");
 }

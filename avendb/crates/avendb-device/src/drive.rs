@@ -482,7 +482,8 @@ impl Service {
         // what opens it again, on its store, as every device keeps it; and its key, wrapped for this Mac
         let (relay, credential) = (host.relay.clone(), host.credential.clone());
         let (p256, follow, query_depth) = (d.p256(), vec![], None);
-        let meta = Meta { name: name.clone(), relay, nonce, mask, credential, p256, device: me, follow, query_depth };
+        let device = me;
+        let meta = Meta { name: name.clone(), relay, nonce, mask, credential, p256, device, follow, query_depth, touch: None };
         meta.keep(&shelf).await?;
         self.wrap_key(&d, &KEY, me, &secret).await?;
         let _one = self.drives.looking.lock().await;

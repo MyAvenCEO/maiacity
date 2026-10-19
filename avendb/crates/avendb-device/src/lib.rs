@@ -11,7 +11,20 @@
 //!   `{"id": n, "error": why}`, each call as the page's device answers it (`avendb_browser::PageDevice`), ids in hex;
 //! - the device asks the app to show the sign-in sheet `{"sheet": n, "url": url}` for each ceremony of its person's
 //!   passkey, and the app answers `{"sheet": n, "back": url}`, the URL the sheet's page sent back, or
-//!   `{"sheet": n, "error": why}`.
+//!   `{"sheet": n, "error": why}`;
+//! - the device asks the app's Secure Enclave `{"enclave": n, ...}` for each touch of the Mac's Touch ID key (`touch`),
+//!   and the app answers `{"enclave": n, ...}`, or `{"enclave": n, "error": why}`.
+//!
+//! The Mac's Touch ID key (2026-10-19) is an owner of its person's vault beside their passkey, in the Mac's Secure
+//! Enclave (macOS 26): an ML-DSA-65 key that signs a ceremony's challenge and an ML-KEM-768 key whose secret opens the
+//! key's hash-based half and the device's own secret, both behind one touch (`sign::Ceremony::enclave`). `touchSetup`
+//! makes it and adds it, in one ceremony of the passkey and a touch (`avendb_browser::Device::add_touch`): the app
+//! makes both keys on `{"make": challenge, "why"}` and answers `{public, key, kem, sealed, secret, sig}`, the public
+//! key, the Enclave's blobs of both keys, a ciphertext sealed to the ML-KEM key and its secret, and the signature over
+//! the challenge; each touch after, on `{"sign": challenge, "key", "kem", "sealed", "why"}`, it answers `{sig, secret}`,
+//! the signature and the secret the touch opened; all bytes in base64. From then on a touch opens the device as the app
+//! starts (`open`, `avendb_browser::Device::open_by_touch`), its passkey's sheet only where the touch fails, and
+//! approves what their vault's owners approve (`avendb_net::Authenticator::touch`); `touchOff` forgets it here.
 //!
 //! While the device starts (`found`, `link`, `open`), the page asks `steps` for each step of its start so far,
 //! with how long it took (`avendb_browser::steps_json`), and shows them as they happen.
@@ -62,7 +75,7 @@ use avendb::engine;
 use avendb::id::SignerId;
 use avendb::keys;
 use avendb::sign::{self, Assertion, Ceremony};
-use avendb_browser::{Device, Fresh, Meta, Start, Unlock, steps_json};
+use avendb_browser::{Device, Fresh, Meta, Start, Touch, Unlock, steps_json};
 use avendb_net::{Authenticator, Ending, NoBytes, NoCeremony, Node, Offer, Place, Progress, Shelf, Step, disk};
 use bytes::Bytes;
 use data_encoding::{BASE64, BASE64URL_NOPAD};
@@ -121,7 +134,7 @@ pub async fn serve(
             tracing::warn!("a line from the app that isn't JSON");
             continue;
         };
-        if message.get("sheet").is_some_and(Value::is_u64) {
+        if message.get("sheet").is_some_and(Value::is_u64) || message.get("enclave").is_some_and(Value::is_u64) {
             host.answer(&message);
         } else if let Some(id) = message.get("id").and_then(Value::as_u64) {
             let call = message.get("call").and_then(Value::as_str).unwrap_or_default().to_string();
@@ -163,6 +176,7 @@ pub fn host(config: Config) -> Result<(Host, Lines)> {
         shelf,
         out,
         sheets: Mutex::default(),
+        enclaves: Mutex::default(),
         next: AtomicU64::new(1),
         device: Mutex::default(),
         life: tokio::sync::Mutex::default(),
@@ -174,9 +188,9 @@ pub fn host(config: Config) -> Result<(Host, Lines)> {
     Ok((Host { service, runtime }, asks))
 }
 
-/// The lines the device sends the app unprompted (`host`), in order, each as `serve` writes it: for now, each a sheet
-/// to show, `{"sheet": n, "url": url}`, for the app to answer (`Host::answer`). They end once the host, every clone of
-/// it, and every call under way are gone.
+/// The lines the device sends the app unprompted (`host`), in order, each as `serve` writes it: a sheet to show,
+/// `{"sheet": n, "url": url}`, or a touch for the Secure Enclave, `{"enclave": n, ...}`, for the app to answer
+/// (`Host::answer`). They end once the host, every clone of it, and every call under way are gone.
 pub type Lines = mpsc::UnboundedReceiver<Value>;
 
 /// avenDB's device hosted in the app's own process (`host`): cheap to clone, each clone the same device.
@@ -203,10 +217,13 @@ impl Host {
     }
 
     /// The app's answer to a sheet, as `serve` reads its line: `{"sheet": n, "back": url}`, the URL the sheet's page
-    /// sent back, or `{"sheet": n, "error": why}`. One that names no sheet awaited is let go.
+    /// sent back, or `{"sheet": n, "error": why}`; or to a touch, `{"enclave": n, ...}` (`touch`). One that names no
+    /// sheet or touch awaited is let go.
     pub fn answer(&self, message: &Value) {
         if let Some(n) = message.get("sheet").and_then(Value::as_u64) {
             self.service.answered(n, message);
+        } else if let Some(n) = message.get("enclave").and_then(Value::as_u64) {
+            self.service.touched(n, message);
         }
     }
 
@@ -269,6 +286,8 @@ struct Service {
     out: mpsc::UnboundedSender<Value>,
     /// The sheets the app shows, each awaited by the ceremony that asked for it.
     sheets: Mutex<HashMap<u64, oneshot::Sender<Result<String, String>>>>,
+    /// The touches the app asks its Secure Enclave for, each awaited by the ceremony that asked for it (`touch`).
+    enclaves: Mutex<HashMap<u64, oneshot::Sender<Result<Value, String>>>>,
     next: AtomicU64,
     /// The device, once open.
     device: Mutex<Option<Arc<Device>>>,
@@ -394,6 +413,11 @@ impl Service {
             "openDrive" => self.open_drive(&a.text(0)?).await?,
             "ejectDrive" => self.eject_drive(&a.text(0)?).await?,
             "workers" => self.workers().await?,
+            "touchSetup" => self.touch_setup(&d).await?,
+            "touchOff" => {
+                d.forget_touch().await?;
+                Value::Null
+            }
             "addWorker" => {
                 let shares = a.get(2).as_array().cloned().unwrap_or_default();
                 self.add_worker(&d, &a.text(0)?, &a.text(1)?, &shares).await?
@@ -426,7 +450,12 @@ impl Service {
     /// Whether the folder holds an account, what opens it, and the device if it is open.
     async fn status(&self) -> Result<Value> {
         let device = self.device.lock().expect("the device").clone();
-        let meta = Meta::load(&self.shelf()).await?.map(|m| m.to_json());
+        // whether a touch opens it, not its Enclave's blobs
+        let meta = Meta::load(&self.shelf()).await?.map(|m| {
+            let mut out = m.to_json();
+            out["touch"] = m.touch.is_some().into();
+            out
+        });
         Ok(json!({ "meta": meta, "open": device.is_some(), "device": device.map(|d| info(&d)) }))
     }
 
@@ -460,8 +489,9 @@ impl Service {
         self.started(d, nonce, sheets.credential()?).await
     }
 
-    /// The device the folder holds, opened again from its shelf in the unlock's ceremony alone (`Device::open`): or
-    /// the device already open.
+    /// The device the folder holds, opened again from its shelf in the unlock's ceremony alone (`Device::open`): by a
+    /// touch, where the Mac keeps a Touch ID key (`Device::open_by_touch`), and by its passkey's sheet where it keeps
+    /// none or the touch doesn't come; or the device already open.
     async fn open(self: &Arc<Self>) -> Result<Value> {
         let _life = self.life.lock().await;
         if let Some(d) = self.device.lock().expect("the device").clone() {
@@ -469,6 +499,13 @@ impl Service {
         }
         let meta = Meta::load(&self.shelf()).await?.context("this Mac holds no avenDB account yet")?;
         let (start, _ending) = self.start(&meta.name, &meta.relay)?;
+        if let Some(touch) = &meta.touch {
+            start.progress.step("touch");
+            match self.touch(touch, "open avenDB", random()?).await {
+                Ok(ceremony) => return Ok(self.opened(Device::open_by_touch(start, &meta, &ceremony).await?)),
+                Err(e) => tracing::info!("no touch opened avenDB, so the passkey's sheet does: {e:#}"),
+            }
+        }
         let sheets = Sheets::new(self.clone(), Some(meta.credential.clone()));
         start.progress.step("unlock");
         let unlock = sheets.unlock("unlock", meta.nonce, random()?).await?;
@@ -504,6 +541,7 @@ impl Service {
             d.close().await.ok();
         }
         self.sheets.lock().expect("the sheets").clear();
+        self.enclaves.lock().expect("the touches").clear();
     }
 
     /// Op `op` that brings a file under way, a `put_file` or a `create` with a `file` (`Device::run`), its file's
@@ -748,7 +786,9 @@ impl Service {
             anyhow::ensure!(asked["online"] == true, "{name} {offline}");
             let offer = asked["offer"].as_str().context("its device is another vault's: it can't join")?;
             let (offer, approver) = (Offer::from_text(offer)?, self.approver().await?);
-            d.node().add_device_vault_with(&offer, Place::Vault(aven), d.passkey(), &approver).await?;
+            // the owner key that approves: the Mac's Touch ID key where it is one, else the passkey
+            let owner = d.node().read(engine::passkey_of).await.unwrap_or(d.passkey());
+            d.node().add_device_vault_with(&offer, Place::Vault(aven), owner, &approver).await?;
         }
         std::fs::remove_file(agent::request(&self.config.dir, name)).ok();
         Ok(json!({ "aven": hex(&aven.0), "vault": hex(&aven.0) }))
@@ -776,6 +816,73 @@ impl Service {
     async fn approver(self: &Arc<Self>) -> Result<Sheets> {
         let meta = Meta::load(&self.shelf()).await?.context("this Mac holds no avenDB account")?;
         Ok(Sheets::new(self.clone(), Some(meta.credential)))
+    }
+
+    /// `touchSetup`: this Mac's Touch ID key made in its Secure Enclave and added as an owner of its person's vault
+    /// beside their passkey, and kept to open the device with (`Device::add_touch`): one touch as the Enclave makes it,
+    /// then the passkey's ceremony in the sheet and a touch over the edit that adds it, which the app may cover with the
+    /// first touch. From then on a touch opens the device as the app starts, and approves what their vault's owners
+    /// approve. `{"touch": id}`, the key's.
+    async fn touch_setup(self: &Arc<Self>, d: &Arc<Device>) -> Result<Value> {
+        let meta = Meta::load(&self.shelf()).await?.context("this Mac holds no avenDB account")?;
+        if meta.touch.is_some() {
+            bail!("Touch ID opens avenDB on this Mac already");
+        }
+        let challenge = random()?;
+        let made = self.enclave(json!({ "make": BASE64.encode(&challenge), "why": "use Touch ID for avenDB" })).await?;
+        let public = bytes_of(&made, "public")?;
+        let (key, kem, sealed) = (bytes_of(&made, "key")?, bytes_of(&made, "kem")?, bytes_of(&made, "sealed")?);
+        let first = Ceremony::enclave(public.clone(), bytes_of(&made, "sig")?, challenge, *secret_of(&made)?);
+        let keys = Touch { public, key, kem, sealed, mask: [0; 32], passkey: d.passkey() };
+        let (service, sheets, held) = (self.clone(), Sheets::new(self.clone(), Some(meta.credential)), keys.clone());
+        let nonce = meta.nonce;
+        let sign = move |challenge: [u8; 32]| async move {
+            let unlock = sheets.unlock("touch", nonce, challenge).await?;
+            Ok((unlock, service.touch(&held, "add Touch ID to your vault", challenge).await?))
+        };
+        let touch = d.add_touch(first, keys, sign).await?;
+        let id = d.node().read(move |lab, me| owner_touch(lab, me, &touch.public)).await;
+        Ok(json!({ "touch": id.map(|id| id.to_hex()) }))
+    }
+
+    /// The ceremony over `challenge` of this Mac's Touch ID key `touch` (`Meta::touch`), for `why`: one touch, with
+    /// which its Secure Enclave signs the challenge and opens the key's secret (`sign::Ceremony::enclave`).
+    async fn touch(&self, touch: &Touch, why: &str, challenge: [u8; 32]) -> Result<Ceremony> {
+        let answer = self
+            .enclave(json!({
+                "sign": BASE64.encode(&challenge),
+                "key": BASE64.encode(&touch.key),
+                "kem": BASE64.encode(&touch.kem),
+                "sealed": BASE64.encode(&touch.sealed),
+                "why": why,
+            }))
+            .await?;
+        Ok(Ceremony::enclave(touch.public.clone(), bytes_of(&answer, "sig")?, challenge, *secret_of(&answer)?))
+    }
+
+    /// Asks the app's Secure Enclave for `ask` (`touch`, `touch_setup`), as the line `{"enclave": n, ...ask}`: its
+    /// answer.
+    async fn enclave(&self, mut ask: Value) -> Result<Value> {
+        let n = self.next.fetch_add(1, Ordering::Relaxed);
+        let (tx, rx) = oneshot::channel();
+        self.enclaves.lock().expect("the touches").insert(n, tx);
+        ask["enclave"] = n.into();
+        self.send(ask);
+        match rx.await {
+            Ok(Ok(answer)) => Ok(answer),
+            Ok(Err(why)) => Err(anyhow!(why)),
+            Err(_) => bail!("the app went away"),
+        }
+    }
+
+    /// The app's answer to touch `n`.
+    fn touched(&self, n: u64, message: &Value) {
+        let Some(tx) = self.enclaves.lock().expect("the touches").remove(&n) else { return };
+        let answer = match message.get("error").and_then(Value::as_str) {
+            Some(why) => Err(why.to_string()),
+            None => Ok(message.clone()),
+        };
+        let _ = tx.send(answer);
     }
 
     /// Shows the sign-in sheet at `url` over the app's window: the URL the sheet's page sent back.
@@ -889,6 +996,14 @@ impl Sheets {
 }
 
 impl Authenticator for Sheets {
+    /// A touch of the Mac's Touch ID key, which its vault's owners approve by where it is one of them
+    /// (`avendb::engine::passkey_of`).
+    async fn touch(&self, challenge: [u8; 32], _: Step) -> Result<Ceremony> {
+        let meta = Meta::load(&self.service.shelf()).await?.context("this Mac holds no avenDB account")?;
+        let touch = meta.touch.context("this Mac keeps no Touch ID key: its passkey approves")?;
+        self.service.touch(&touch, "approve what your vault changes", challenge).await
+    }
+
     async fn ceremony(&self, challenge: [u8; 32], step: Step) -> Result<Ceremony> {
         let what = match step {
             Step::Found => "found",
@@ -976,6 +1091,33 @@ fn unform(text: &str) -> HashMap<String, String> {
     };
     let pair = |p: &str| p.split_once('=').map_or((decode(p), String::new()), |(k, v)| (decode(k), decode(v)));
     text.split('&').filter(|p| !p.is_empty()).map(pair).collect()
+}
+
+/// The bytes the app's answer `answer` holds in base64 at `key`.
+fn bytes_of(answer: &Value, key: &str) -> Result<Vec<u8>> {
+    let text = answer.get(key).and_then(Value::as_str).with_context(|| format!("the Enclave's answer has no {key}"))?;
+    BASE64.decode(text.as_bytes()).with_context(|| format!("the Enclave's {key} in base64"))
+}
+
+/// The 32-byte secret the app's answer `answer` holds in base64 at `secret`, the one the touch opened.
+fn secret_of(answer: &Value) -> Result<Zeroizing<[u8; 32]>> {
+    let bytes = Zeroizing::new(bytes_of(answer, "secret")?);
+    let mut secret = Zeroizing::new([0; 32]);
+    secret.copy_from_slice(bytes.get(..32).filter(|_| bytes.len() == 32).context("the Enclave's secret is 32 bytes")?);
+    Ok(secret)
+}
+
+/// The owner of device `me`'s vault that is the Touch ID key whose ML-DSA-65 key is `public`, if it is one.
+fn owner_touch(lab: &avendb::lab::Lab, me: SignerId, public: &[u8]) -> Option<SignerId> {
+    let vault = lab.state(me).vault(lab.vault_of(me)?)?;
+    let mldsa = sign::enclave_key(public);
+    vault.owners.iter().find_map(|o| match o {
+        avendb::policy::Principal::Signer(s) => match lab.keys_of(*s) {
+            Some(sign::SignerKeys::Enclave { mldsa: m, .. }) if m == mldsa => Some(*s),
+            _ => None,
+        },
+        avendb::policy::Principal::Vault(_) => None,
+    })
 }
 
 /// 32 bytes of the machine's randomness.

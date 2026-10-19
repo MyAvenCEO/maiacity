@@ -807,6 +807,24 @@ impl Lab {
         Some(id)
     }
 
+    /// The keys of owner key `s`, held as `web_passkey` and `web_enclave` hold them if the Lab doesn't hold them yet and
+    /// `ceremony` is that key's: so a Mac its Touch ID key opened, with no passkey's ceremony, takes its person's passkey
+    /// in from the first ceremony it makes, as for a change only the vault's root makes (2026-10-19). A passkey's are
+    /// those of the key its assertion recovers to whose keys hash to `s`. `None` if neither is at hand.
+    pub fn take_in(&mut self, s: SignerId, ceremony: &Ceremony) -> Option<SignerKeys> {
+        if let Some(keys) = self.keys_of(s) {
+            return Some(keys);
+        }
+        let name = self.names.get(&s).cloned().unwrap_or_else(|| "the person".into());
+        let brought = match ceremony.assertion() {
+            Some(a) => a.recover().into_iter().find(|&p256| ceremony.keys(p256).id() == s).and_then(|p256| {
+                self.web_passkey(&name, p256, ceremony)
+            }),
+            None => self.web_enclave(&name, ceremony),
+        };
+        brought.filter(|&id| id == s).and_then(|id| self.keys_of(id))
+    }
+
     /// The master recovery key `key` (`recovery`): every human vault a device of this Lab founds from now on adds it as
     /// an owner, by its standing consent (`sign::standing`), and the Lab signs as it with that consent alone, on such an
     /// edit or one that adds it as an owner. A Lab that holds its secret (`passkey_from`) signs as it in full. Its id.
@@ -953,9 +971,9 @@ impl Lab {
 
     /// Signer `s`'s signature on edit `id`: by its ceremony among `ceremonies`, over the edit's id or, with the edits
     /// `batch` drafted together, over theirs (`Ceremony::sign_in`), or, with `pass`, the device an edit adds and when
-    /// the pass was made, as the passkey's pass for that device (`Ceremony::sign_adding`); or by its key at hand
-    /// (`sign_held`). `Locked` if its key isn't at hand, `BadSignature` if its ceremony isn't its own over that
-    /// challenge.
+    /// the pass was made, as the passkey's pass for that device (`Ceremony::sign_adding`), its keys taken in from that
+    /// ceremony where the Lab doesn't hold them (`take_in`); or by its key at hand (`sign_held`). `Locked` if its key isn't
+    /// at hand, `BadSignature` if its ceremony isn't its own over that challenge.
     #[allow(clippy::too_many_arguments)]
     fn sign_by(
         &mut self,
@@ -968,7 +986,7 @@ impl Lab {
     ) -> Result<Signature, Refusal> {
         match ceremonies.iter().find(|(c, _)| *c == s) {
             Some((_, c)) => {
-                let keys = self.keys_of(s).ok_or(Refusal::Locked)?;
+                let keys = self.take_in(s, c).ok_or(Refusal::Locked)?;
                 let signed = match pass {
                     Some((device, made)) => c.sign_adding(keys, id, device, made),
                     None => c.sign_in(keys, id, batch),

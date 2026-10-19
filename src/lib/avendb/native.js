@@ -28,6 +28,13 @@ export function call(name, ...args) {
 export const status = () => call('status');
 
 /**
+ * Whether this Mac may keep a Touch ID key for avenDB in its Secure Enclave: macOS 26 or later, a Secure Enclave, and
+ * a finger enrolled (vault/app/src/enclave.rs). False in an app built without its Secure Enclave bridge.
+ * @returns {Promise<boolean>}
+ */
+export const touchReady = () => command('avendb_touch_ready').then((ready) => ready === true);
+
+/**
  * The drives of the app's device (avendb-device's `drive`), as `drives` answers: each volume plugged into the Mac, by
  * its path and name, what it is to this Mac (`free` for avenDB to use, `hosted` here, `locked` for one ceremony to open
  * here, `removed` from the vault, `other` for another person's, `ejected` here and still mounted, `busy`) and the device

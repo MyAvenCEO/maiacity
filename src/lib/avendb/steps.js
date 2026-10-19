@@ -24,6 +24,7 @@ export function stepWords(here) {
 			prompt: true
 		},
 		unlock: { title: `Unlock ${here}`, does: `Your passkey signs a pass for ${here}’s new keys`, prompt: true },
+		touch: { title: 'Touch ID', does: `Your finger opens ${here}’s keys in its Secure Enclave`, prompt: true },
 		keys: { title: `Making ${here}’s keys`, does: 'Post-quantum keys from a secret your passkey unmasks' },
 		restore: { title: 'Replaying your vault', does: 'Every edit checked again and applied in order' },
 		node: { title: `Starting ${here}’s node`, does: 'Its own endpoint, quantum-proof TLS on every connection' },
@@ -58,9 +59,11 @@ export function stepWords(here) {
  * The steps each start takes, in order: those it may skip show until a later one begins. In the Mac app the app's
  * device keeps its own shelf, so the page saves nothing. The repo seed a founding that claims the server brings into
  * the Maia City it founded is no step of it: it runs in the background after (Samuel 2026-10-18), ./Account.svelte.
- * @param {'found' | 'link' | 'open'} start @param {{ mac: boolean, make?: boolean }} how
+ * An open in the Mac app that keeps a Touch ID key takes a touch first (`touch`), its passkey's sheet only where none
+ * comes.
+ * @param {'found' | 'link' | 'open'} start @param {{ mac: boolean, make?: boolean, touch?: boolean }} how
  */
-export function plan(start, { mac, make = false }) {
+export function plan(start, { mac, make = false, touch = false }) {
 	const own = (/** @type {string[]} */ steps) => (mac ? [] : steps);
 	if (start === 'found')
 		return [
@@ -70,7 +73,7 @@ export function plan(start, { mac, make = false }) {
 		];
 	if (start === 'link')
 		return ['unlock', 'keys', 'node', 'relay', 'server', 'pass', 'vault', 'join', ...own(['save'])];
-	return ['unlock', 'keys', 'restore', 'node', 'check'];
+	return [touch ? 'touch' : 'unlock', 'keys', 'restore', 'node', 'check'];
 }
 
 /**

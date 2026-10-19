@@ -94,6 +94,21 @@
 		if (!/^[A-Za-z0-9_-]+$/.test(h)) return void (running = null);
 		api.agentCommand?.(h).then((/** @type {typeof running} */ r) => (running = r), () => (running = null));
 	});
+	/** in the Mac app, whether Touch ID may open avenDB here, and whether it does (./session.svelte.js `touchState`) */
+	let touch = $state(/** @type {{ ready: boolean, on: boolean } | null} */ (null));
+	const lookTouch = () =>
+		api.touchState?.().then(
+			(/** @type {typeof touch} */ t) => (touch = t),
+			() => (touch = null)
+		);
+	$effect(() => {
+		if (sockets) lookTouch();
+	});
+	/** Turns Touch ID on or off here, then looks again. @param {boolean} on */
+	async function setTouch(on) {
+		await api.touch(on);
+		await lookTouch();
+	}
 	/** Copies the line that runs the harness's agent device. */
 	async function copyRunning() {
 		await navigator.clipboard.writeText(running?.claude ?? running?.command ?? '');
@@ -898,6 +913,25 @@
 						</p>
 						<button class="btn danger" disabled={busy} onclick={api.forget}>Forget my account on {here}</button>
 					</article>
+					{#if sockets && (touch?.ready || touch?.on)}
+						<article class="card">
+							<h3>Touch ID</h3>
+							{#if touch.on}
+								<p>
+									<span class="chip ok">On</span>
+									A touch opens avenDB on {here} as the app starts, with no sign-in sheet, and approves what your
+									vault's owners approve. Your passkey stays your vault's root.
+								</p>
+								<button class="btn quiet" disabled={busy} onclick={() => setTouch(false)}>Turn off Touch ID</button>
+							{:else}
+								<p>
+									Open avenDB on {here} with a touch instead of the sign-in sheet. A key in {here}'s Secure Enclave becomes
+									an owner of your vault beside your passkey, which stays its root; your passkey approves it once.
+								</p>
+								<button class="btn" disabled={busy} onclick={() => setTouch(true)}>Use Touch ID</button>
+							{/if}
+						</article>
+					{/if}
 				{/if}
 			{/if}
 		</div>

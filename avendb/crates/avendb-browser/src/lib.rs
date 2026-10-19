@@ -73,7 +73,7 @@ use avendb::engine;
 use avendb::id::{ShareId, SignerId, VaultId};
 use avendb::keys;
 use avendb::lab::Lab;
-use avendb::policy::Level;
+use avendb::policy::{Action, Level, Principal, Refusal, Sharing};
 use avendb::recovery::{self, RecoveryKey};
 use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, SignerKeys, pass_challenge};
 use avendb::slice::Selector;
@@ -191,7 +191,8 @@ impl Start {
 /// and the vaults the device follows (the `follow` op, `Lab::follow`), which it names in each request it makes, and
 /// follows again as it opens; and the most rows and links down its queries read (the `set_limits` op,
 /// `Lab::set_query_depth`), none while it reads as deep as any write that counts reaches (`lens::CEILING`). None of it
-/// is a secret: only the passkey unmasks the device's.
+/// is a secret: only the passkey unmasks the device's. On a Mac, its Touch ID key too, where the person added it
+/// (`Touch`, `Device::add_touch`): a touch unmasks it then, as the Mac app starts.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Meta {
     pub name: String,
@@ -203,6 +204,54 @@ pub struct Meta {
     pub device: SignerId,
     pub follow: Vec<VaultId>,
     pub query_depth: Option<usize>,
+    pub touch: Option<Touch>,
+}
+
+/// A Mac's Touch ID key (2026-10-19), an owner of its person's vault beside their passkey, which opens the Mac's device
+/// with a touch and no passkey (`Device::open_by_touch`): its ML-DSA-65 public key; the blobs its Secure Enclave made
+/// of that key and of its ML-KEM-768 key, which that Enclave alone reads and uses only after a touch; the ML-KEM
+/// ciphertext whose secret the touch opens (`sign::Ceremony::enclave`); the device's secret masked by what that secret
+/// derives (`sign::Ceremony::device_mask`); and the id of the person's passkey, whose keys its next ceremony brings
+/// (`avendb::lab::Lab::take_in`). None of it is a secret: only the Enclave opens the blobs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Touch {
+    pub public: Vec<u8>,
+    pub key: Vec<u8>,
+    pub kem: Vec<u8>,
+    pub sealed: Vec<u8>,
+    pub mask: [u8; 32],
+    pub passkey: SignerId,
+}
+
+impl Touch {
+    /// As `Meta::to_json` writes it: `{public, key, kem, sealed, mask, passkey}`, each in hex.
+    pub fn to_json(&self) -> Value {
+        let hexed = |bytes: &[u8]| bytes.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        json!({
+            "public": hexed(&self.public),
+            "key": hexed(&self.key),
+            "kem": hexed(&self.kem),
+            "sealed": hexed(&self.sealed),
+            "mask": hex(&self.mask),
+            "passkey": hex(&self.passkey.0),
+        })
+    }
+
+    /// From what `to_json` writes.
+    pub fn from_json(v: &Value) -> Result<Touch> {
+        let bytes = |k: &str| {
+            let field = v.get(k).and_then(Value::as_str);
+            field.and_then(hex_bytes).with_context(|| format!("a Touch ID key: no {k} in hex"))
+        };
+        Ok(Touch {
+            public: bytes("public")?,
+            key: bytes("key")?,
+            kem: bytes("kem")?,
+            sealed: bytes("sealed")?,
+            mask: bytes("mask")?.try_into().ok().context("a Touch ID key's mask is 32 bytes in hex")?,
+            passkey: SignerId(bytes("passkey")?.try_into().ok().context("a passkey's id is 32 bytes in hex")?),
+        })
+    }
 }
 
 /// Where a shelf keeps what opens its device again: each version an object of its own, `meta/0000000000000001` and
@@ -218,8 +267,8 @@ fn settings(lab: &Lab, me: SignerId) -> (Vec<VaultId>, Option<usize>) {
 
 impl Meta {
     /// As the page and the Mac app read it: `{name, relay, nonce, mask, credential, passkey, device, follow,
-    /// queryDepth}`, the nonce, the mask, the passkey's P-256 key, the device's id and those of the vaults it follows
-    /// in hex, `queryDepth` left out where it names none.
+    /// queryDepth, touch}`, the nonce, the mask, the passkey's P-256 key, the device's id and those of the vaults it
+    /// follows in hex, `queryDepth` left out where it names none, `touch` where it keeps no Touch ID key (`Touch`).
     pub fn to_json(&self) -> Value {
         let mut out = json!({
             "name": self.name,
@@ -233,6 +282,9 @@ impl Meta {
         });
         if let Some(depth) = self.query_depth {
             out["queryDepth"] = depth.into();
+        }
+        if let Some(touch) = &self.touch {
+            out["touch"] = touch.to_json();
         }
         out
     }
@@ -257,6 +309,7 @@ impl Meta {
                 None => None,
                 Some(d) => Some(d.as_u64().context("a query depth is a count")? as usize),
             },
+            touch: v.get("touch").map(Touch::from_json).transpose()?,
         })
     }
 
@@ -395,27 +448,109 @@ impl Device {
     /// did (`Meta::query_depth`). Fails, before it touches the shelf, if the unlock isn't that passkey's or unmasks
     /// another device's secret; and if the device then belongs to no vault, as one taken out of its vault.
     pub async fn open(start: Start, meta: &Meta, unlock: Unlock) -> Result<Device> {
-        let (p256, mask) = (meta.p256, meta.mask);
-        let progress = &start.progress;
-        progress.step("keys");
-        let (mut lab, passkey, me) = lab(&start, p256, mask, &unlock)?;
+        start.progress.step("keys");
+        let (lab, passkey, me) = lab(&start, meta.p256, meta.mask, &unlock)?;
         if me != meta.device {
             bail!("the unlock opens another device than the one this shelf keeps");
         }
+        Device::reopen(start, meta, lab, passkey).await
+    }
+
+    /// The device made here before, opened again from its shelf as `open` opens it, by its Mac's Touch ID key
+    /// (`Meta::touch`) in `ceremony`, one touch, with no passkey: the touch unmasks its secret
+    /// (`sign::Ceremony::device_mask`), and its person's passkey comes in with its next ceremony, as for a change only
+    /// their vault's root makes (`avendb::lab::Lab::take_in`). Fails, before it touches the shelf, if the shelf keeps no
+    /// Touch ID key, the ceremony isn't that key's, or it unmasks another device's secret.
+    pub async fn open_by_touch(start: Start, meta: &Meta, ceremony: &Ceremony) -> Result<Device> {
+        let touch = meta.touch.as_ref().context("this device keeps no Touch ID key")?;
+        start.progress.step("keys");
+        let mut lab = Lab::with_entropy(start.entropy);
+        start.recovery.clone().map(|key| lab.set_recovery(key));
+        let theirs = match ceremony.enclave_keys() {
+            Some(SignerKeys::Enclave { mldsa, .. }) => mldsa == sign::enclave_key(&touch.public),
+            _ => false,
+        };
+        let key = lab.web_enclave("the person", ceremony).filter(|_| theirs);
+        key.context("the touch's ceremony isn't of this Mac's Touch ID key")?;
+        let pad = ceremony.device_mask().context("the touch's ceremony isn't of this Mac's Touch ID key")?;
+        let me = lab.device_with(&start.name, *xor(&touch.mask, &pad));
+        if me != meta.device {
+            bail!("the touch opens another device than the one this shelf keeps");
+        }
+        Device::reopen(start, meta, lab, touch.passkey).await
+    }
+
+    /// Device `me` of `lab`, unlocked as its shelf's `meta` names it, its person's passkey `passkey`, opened again
+    /// (`open`, `open_by_touch`): it follows what it followed and reads as deep as it did, its node takes back what the
+    /// shelf kept, and it must still belong to a vault.
+    async fn reopen(start: Start, meta: &Meta, mut lab: Lab, passkey: SignerId) -> Result<Device> {
+        let me = meta.device;
         lab.follow(me, &meta.follow);
         if let Some(depth) = meta.query_depth {
             lab.set_query_depth(me, depth);
         }
-        progress.step("restore");
+        start.progress.step("restore");
         let node = Device::spawn(lab, me, &start, None).await?;
         let (shelf, name, relay) = (start.shelf.clone(), start.name.clone(), start.relay.clone());
+        let (p256, mask) = (meta.p256, meta.mask);
         let device = Device { node, passkey, p256, mask, shelf, name, relay, closed: watch::Sender::new(false) };
-        progress.step("check");
+        start.progress.step("check");
         if device.vault().await.is_none() {
             device.close().await.ok();
             bail!("the store holds no vault this device belongs to");
         }
         Ok(device)
+    }
+
+    /// Its Mac's Touch ID key, whose Enclave made `keys` and signed in `made` as it made them, added as an owner of its
+    /// person's vault beside their passkey and kept on its shelf (`Meta::touch`), so a touch opens it from then on
+    /// (`open_by_touch`) and approves what their vault's owners approve. `sign` makes the ceremonies over the edit that
+    /// adds it, given its challenge: the passkey's, which unlocks the device too (`Unlock`, its PRF output on the
+    /// device's salt), as the passkey approves the key and the touch masks the device's secret; and the key's own, a
+    /// touch, as it consents. The key kept. Fails for a device that keeps no shelf, if `made` isn't the Enclave's, or if
+    /// a ceremony isn't its key's or unmasks another device's secret.
+    pub async fn add_touch<S: Future<Output = Result<(Unlock, Ceremony)>>>(
+        &self,
+        made: Ceremony,
+        keys: Touch,
+        sign: impl FnOnce([u8; 32]) -> S,
+    ) -> Result<Touch> {
+        let shelf = self.shelf.as_ref().context("this device keeps no shelf")?;
+        let mut meta = Meta::load(shelf).await?.context("its shelf holds nothing that opens it")?;
+        let theirs = match made.enclave_keys() {
+            Some(SignerKeys::Enclave { mldsa, .. }) => mldsa == sign::enclave_key(&keys.public),
+            _ => false,
+        };
+        anyhow::ensure!(theirs, "the Enclave's first ceremony isn't of the key it made");
+        let (passkey, vault) = (self.passkey, self.vault().await.context("this device belongs to no vault")?);
+        let draft = move |lab: &mut Lab, me| {
+            let touch = lab.web_enclave("the person", &made).ok_or(Refusal::BadSignature)?;
+            let add = Action::Share(Sharing::Owner { vault, owner: Principal::Signer(touch), seal_to: None });
+            Ok::<_, Refusal>((touch, lab.draft(me, &[passkey, touch], add)?))
+        };
+        let (touch, draft) = self.node.act(draft).await.map_err(|why| anyhow!("the Touch ID key is refused: {why:?}"))?;
+        let (unlock, consent) = sign(draft.challenge()).await?;
+        let secret = xor(&self.mask, &unlock.device);
+        anyhow::ensure!(DeviceKey::from_secret(*secret).id() == meta.device, "the unlock is of another device");
+        let pad = consent.device_mask().context("the Touch ID key's ceremony isn't a touch")?;
+        let complete = move |lab: &mut Lab, me| lab.complete(me, draft, &[(passkey, &unlock.ceremony), (touch, &consent)]);
+        self.node.act(complete).await.map_err(|why| anyhow!("the Touch ID key isn't added: {why:?}"))?;
+        let touch = Touch { mask: *xor(&secret, &pad), passkey, ..keys };
+        meta.touch = Some(touch.clone());
+        meta.keep(shelf).await?;
+        Ok(touch)
+    }
+
+    /// Forgets its Mac's Touch ID key (`Meta::touch`): a touch opens it no more, and its passkey's unlock does again.
+    /// Its place as an owner of their vault is the vault's to end (the `revoke` op). Fails for a device that keeps no
+    /// shelf.
+    pub async fn forget_touch(&self) -> Result<()> {
+        let shelf = self.shelf.as_ref().context("this device keeps no shelf")?;
+        let mut meta = Meta::load(shelf).await?.context("its shelf holds nothing that opens it")?;
+        if meta.touch.take().is_some() {
+            meta.keep(shelf).await?;
+        }
+        Ok(())
     }
 
     /// A node for device `me` of `lab`, which reaches its peers through the relay, let in by `pass` if the relay
@@ -446,7 +581,7 @@ impl Device {
     pub fn meta(&self, nonce: [u8; 32], credential: String) -> Meta {
         let (name, relay, device) = (self.name.trim().to_string(), self.relay.to_string(), self.node.device());
         let (mask, p256) = (self.mask, self.p256);
-        Meta { name, relay, nonce, mask, credential, p256, device, follow: vec![], query_depth: None }
+        Meta { name, relay, nonce, mask, credential, p256, device, follow: vec![], query_depth: None, touch: None }
     }
 
     /// Keeps `meta` on its shelf, what opens it again (`Meta::keep`), with the vaults it follows now and how deep its
@@ -1289,8 +1424,17 @@ mod tests {
             device: SignerId([4; 32]),
             follow: vec![VaultId([5; 32]), VaultId([6; 32])],
             query_depth: Some(9),
+            touch: None,
         };
         assert_eq!(Meta::from_json(&meta.to_json()).expect("it reads"), meta);
+        assert_eq!(meta.to_json().get("touch"), None, "a browser keeps no Touch ID key");
+        // a Mac's Touch ID key, its Enclave's blobs and its mask, reads back too; a mask cut short doesn't
+        let touch = Touch { public: vec![7; 1952], key: vec![8; 9], kem: vec![9; 9], sealed: vec![10; 1088], mask: [11; 32], passkey: SignerId([12; 32]) };
+        let mac = Meta { touch: Some(touch), ..meta.clone() };
+        assert_eq!(Meta::from_json(&mac.to_json()).expect("it reads"), mac);
+        let mut cut = mac.to_json();
+        cut["touch"]["mask"] = "0b0b".into();
+        assert!(Meta::from_json(&cut).is_err(), "a Touch ID key's mask is 32 bytes");
         // as written before it followed anything, or set how deep its queries read: it follows nothing, and reads as
         // deep as any write reaches
         let mut before = meta.to_json();

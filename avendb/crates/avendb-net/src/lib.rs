@@ -351,6 +351,28 @@ impl Admission {
 pub trait Authenticator {
     /// The passkey's ceremony over `challenge` (`sign::Ceremony`), for `step`.
     fn ceremony(&self, challenge: [u8; 32], step: Step) -> impl Future<Output = Result<Ceremony>>;
+
+    /// The ceremony over `challenge` of the Mac's Touch ID key, which signs where its keys are those of the owner key
+    /// that approves (`avendb::engine::passkey_of`): one touch (`sign::Ceremony::enclave`), for `step`. None where no
+    /// Touch ID key is at hand, as in a browser.
+    fn touch(&self, challenge: [u8; 32], step: Step) -> impl Future<Output = Result<Ceremony>> {
+        let _ = (challenge, step);
+        async { Err(anyhow!("no Touch ID key here")) }
+    }
+}
+
+/// The ceremony over `challenge` of owner key `keys` (`Authenticator`): a touch for a Touch ID key's, the passkey's
+/// otherwise, as a Mac its Touch ID key opened knows its passkey's keys only from its ceremony (`Lab::take_in`).
+pub async fn ceremony_of(
+    authenticator: &impl Authenticator,
+    keys: Option<SignerKeys>,
+    challenge: [u8; 32],
+    step: Step,
+) -> Result<Ceremony> {
+    match keys {
+        Some(SignerKeys::Enclave { .. }) => authenticator.touch(challenge, step).await,
+        _ => authenticator.ceremony(challenge, step).await,
+    }
 }
 
 /// Who signs the edit adding a new device for its passkey (`Node::linking`): a ceremony of its own, or the one that
@@ -451,6 +473,10 @@ impl Authenticator for InLab {
     async fn ceremony(&self, challenge: [u8; 32], _: Step) -> Result<Ceremony> {
         let passkey = self.1;
         self.0.lab(move |lab, _| lab.ceremony(passkey, challenge)).await.context("the passkey isn't at hand")
+    }
+
+    async fn touch(&self, challenge: [u8; 32], step: Step) -> Result<Ceremony> {
+        self.ceremony(challenge, step).await
     }
 }
 
@@ -1023,14 +1049,17 @@ impl Node {
     ) -> Result<(SignerId, T, Option<Claim>)> {
         let first = sets.first().and_then(|(_, _, drafts)| drafts.first());
         let challenge = first.context("nothing to sign")?.challenge();
-        let ceremony = authenticator.ceremony(challenge, step).await?;
+        let signer = sets.first().map(|(p, _, _)| *p);
+        let keys = self.shared.lab(move |lab, _| signer.and_then(|p| lab.keys_of(p))).await;
+        let ceremony = ceremony_of(authenticator, keys, challenge, step).await?;
         let keep = move |lab: &mut Lab, me| {
-            let made = |p: SignerId| match (lab.keys_of(p), ceremony.assertion()) {
+            let mut made = |p: SignerId| match (lab.take_in(p, &ceremony), ceremony.assertion()) {
                 (Some(SignerKeys::Passkey { p256, .. }), Some(a)) => a.verify(&p256, EditId(challenge)),
                 (Some(keys @ SignerKeys::Enclave { .. }), None) => ceremony.enclave_keys() == Some(keys),
                 _ => false,
             };
-            let (passkey, out, mut drafts) = sets.into_iter().find(|(p, _, _)| made(*p)).ok_or(Refusal::BadSignature)?;
+            let at = sets.iter().position(|(p, _, _)| made(*p)).ok_or(Refusal::BadSignature)?;
+            let (passkey, out, mut drafts) = sets.into_iter().nth(at).ok_or(Refusal::BadSignature)?;
             let claim = if claiming { drafts.pop() } else { None };
             for draft in drafts {
                 lab.complete(me, draft, &[(passkey, &ceremony)])?;

@@ -26,7 +26,8 @@
 		claim: 'to claim avenDB’s server',
 		approve: 'to approve what your vault changes',
 		drive: 'to use a drive for avenDB as one of your devices',
-		signin: 'to sign The OS in to maiaCITY on this Mac'
+		signin: 'to sign The OS in to maiaCITY on this Mac',
+		touch: 'to let Touch ID open avenDB on this Mac'
 	};
 
 	/** @type {'loading' | 'asking' | 'sending' | 'failed' | 'lost'} */

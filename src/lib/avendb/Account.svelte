@@ -272,7 +272,10 @@
 	/** Opens the device this browser, or the app, holds, in the unlock alone; a store of the device taken out of its
 	 *  vault, or kept before avenDB started fresh, is put aside, and this browser signs in or sets up again (the
 	 *  session's `unlock`). */
-	const unlockHere = () => signs('Unlocking your account', plan('open', { mac: !!mac }), (at) => session.unlock(at));
+	const unlockHere = () =>
+		signs('Unlocking your account', plan('open', { mac: !!mac, touch: !!session.meta?.touch }), (at) =>
+			session.unlock(at)
+		);
 
 	// what the device shows of its world, each time it reads it again: what this page keeps up in it besides
 	$effect(() => {
@@ -505,6 +508,11 @@
 		/** @param {string} name */
 		rename: (name) => act(`Renaming ${here}`, () => session.rename(name)),
 		forget: () => forget(),
+		/** In the Mac app: whether Touch ID may open avenDB here, and whether it does; else null. */
+		touchState: () => session.touchState(),
+		/** In the Mac app: Touch ID on or off here (./session.svelte.js `touch`). @param {boolean} on */
+		touch: (/** @type {boolean} */ on) =>
+			act(on ? 'Turning on Touch ID' : 'Turning off Touch ID', () => session.touch(on)),
 		/**
 		 * In the Mac app: grants agent device `name`'s access request, the one its device `device` left: it joins the
 		 * person's one aven, named `avenName`, which the Mac founds first where their vault owns no aven yet, as a device
