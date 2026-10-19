@@ -297,6 +297,24 @@ def cases : List Case := [
     (1, [], .revoke (.owner 100 (.signer 79) [])),
     (1, [], .share (.owner 100 (.signer 1))),
     (1, [], .revoke (.owner 100 (.signer 79) []))] },
+  { name := "a key move: the passkey and the Mac to their ML-DSA-65 keys", edits := [
+    (1, [], .genesis 100 .human [.signer 1] 1 (some 1)),
+    (1, [2], .share (.device 100 2)),
+    -- the passkey's new key joins as an owner, only with its own signature
+    (1, [], .share (.owner 100 (.signer 81))),
+    (1, [81], .share (.owner 100 (.signer 81))),
+    -- it takes the root only from the root, and signs for it
+    (81, [], .settings 100 (.root (some 81) [])),
+    (1, [], .settings 100 (.root (some 81) [])),
+    (1, [81], .settings 100 (.root (some 81) [])),
+    -- it takes the old key off the owners; the old key approves nothing more
+    (81, [], .revoke (.owner 100 (.signer 1) [])),
+    (1, [82], .share (.device 100 82)),
+    -- the Mac's new key joins, and the old one goes
+    (81, [82], .share (.device 100 82)),
+    (81, [], .revoke (.device 100 2 [])),
+    -- the old Mac is no device of the vault any more: it can't even leave
+    (2, [], .revoke (.device 100 2 []))] },
   { name := "four kinds of vault, and acts that name their chain", edits := humans ++ [
     -- the relay server's device vault, owned by Alice's human vault; the server joins as its device
     (1, [], .genesis 300 .deviceVault [.vault 100] 1),
