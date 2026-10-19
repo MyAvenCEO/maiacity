@@ -2,8 +2,8 @@
  * The legacy films frozen: the timeline as the old studio had it, its world shots' specs by `<shot>@<version>`, and
  * the files it plays, by their BLAKE3 hash. Kept in the repo (films/legacy/<key>.json, scripts/freeze-films.mjs) or,
  * as now, in the film seed on the Mac (~/maiaCITY-seed/films/<key>/, the app's `film_seed`, with the files' bytes
- * beside it, which `studio_import` reads first). ./legacyfilms.js brings a film from here when it is frozen, so
- * neither an avenDB reset nor the old studio's going loses it.
+ * beside it, which `studio_import` reads first). Both films are in Maia City now, and nothing
+ * brings them from here again (Samuel 2026-10-19).
  */
 
 import { badFrozen, filesIn } from './filmlist.js';
