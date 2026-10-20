@@ -111,7 +111,7 @@ function build(commit) {
 	if (!existsSync(join(dir, '.git'))) run('git', ['worktree', 'add', '--detach', dir, commit], ROOT, 120_000);
 	else run('git', ['checkout', '--quiet', '--force', '--detach', commit], dir, 120_000);
 	run('bun', ['install', '--frozen-lockfile'], dir, 600_000);
-	run('nice', ['-n', '19', 'bun', 'run', 'build'], dir, 1_800_000);
+	run('nice', ['-n', '19', 'bun', '--bun', 'run', 'build'], dir, 1_800_000); // Vite on Bun, as the deploy builds it
 	return listOf(join(dir, 'build'), commit);
 }
 
