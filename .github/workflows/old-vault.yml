@@ -4,6 +4,8 @@ name: Old media vault
 #
 #   measure – read only: what it still stores and how big (the bucket by folder, LIBRARY/ being the vault's files; the
 #             server's vaultdata volume; its Postgres tables), beside the newest database dump and the room left
+#   list    – read only: every file of the old vault's catalog (vault_files) and every object of LIBRARY/, as one
+#             artifact of the run (old-vault-list), to tell what moved into avenDB and what not
 #   archive – copies only, nothing deleted: a full database dump and the vaultdata volume as one tar (its catalog and
 #             blobs; never its node's secret key, nor its temporary files) go to ARCHIVE/old-vault/ in the bucket, with
 #             the list of LIBRARY/'s files; nothing expires there (the 30-day rule is on BACKUPS/pg/ alone). LIBRARY/
@@ -14,9 +16,9 @@ on:
   workflow_dispatch:
     inputs:
       step:
-        description: measure (read only) or archive (copies only)
+        description: measure or list (read only), or archive (copies only)
         type: choice
-        options: [measure, archive]
+        options: [measure, list, archive]
         default: measure
 
 permissions:
@@ -94,6 +96,23 @@ jobs:
           UNION ALL SELECT 'vault_config', count(*), pg_size_pretty(pg_total_relation_size('vault_config')) FROM vault_config;
           COMMIT;
           SQL
+
+      - name: List the old vault's files
+        if: inputs.step == 'list'
+        run: |
+          mkdir -p list
+          grep ' LIBRARY/' objects.txt > list/library-objects.txt || true
+          ssh prod "docker exec -i -e PGOPTIONS='-c default_transaction_read_only=on' maia-city-db psql -U maiacity -d maiacity -v ON_ERROR_STOP=1" <<'SQL' > list/vault-files.csv
+          \copy (SELECT hash, size, mime, kind, public, stored, added::date AS added, coalesce(meta->>'class', '') AS class, coalesce(meta->>'story', '') AS story, coalesce(meta->>'original_name', '') AS original_name, array_to_string(tags, '|') AS tags, title FROM vault_files ORDER BY added, hash) TO STDOUT WITH CSV HEADER
+          SQL
+          wc -l list/*
+
+      - uses: actions/upload-artifact@v4
+        if: inputs.step == 'list'
+        with:
+          name: old-vault-list
+          path: list/
+          retention-days: 30
 
       - name: Archive the database, a full dump
         if: inputs.step == 'archive'
