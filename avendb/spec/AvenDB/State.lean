@@ -154,6 +154,9 @@ structure State where
   /-- What each write a vault makes on the main line of one of its own entries says its cap group is, where it says one
       (`groupAt`): read off its record, so known to the entry's readers only. -/
   defs      : List (EditId × CapGroup) := []
+  /-- The rows each write added, each by its place, at any depth, where it added any (`owns`): read off its Loro
+      update as what it touches is, so known to the entry's readers only. -/
+  adds      : List (EditId × List Ops.Loc) := []
   deriving Repr
 
 namespace State
@@ -180,6 +183,26 @@ def depth (st : State) : Nat := st.vaults.length + 1
 
 /-- The accepted writes the readers of their entries count: what a line's history is made of (`Proposals.lean`). -/
 def counted (st : State) : List Write := st.writes.filter fun w => !st.uncounted.contains w.edit
+
+/-- The vaults whose counted writes of entry `e` added the row at place `row` (`adds`). -/
+def addedBy (st : State) (e : EntryId) (row : Ops.Loc) : List VaultId :=
+  (st.counted.filter fun w => w.entry == e && (st.adds.lookup w.edit).any (·.contains row)).map (·.actor)
+
+/-- Place `l` of entry `e` is vault `a`'s own: the innermost row it lies in was added by `a`'s counted writes and no
+    one else's, or it lies in no row and `a`'s counted write created the entry. Every reader of the entry holds its
+    counted writes, so every reader reaches the same verdict (C2). Two vaults that add a row with one id own it
+    neither. -/
+def owns (st : State) (a : VaultId) (e : EntryId) (l : Ops.Loc) : Bool :=
+  match l.row? with
+  | some r => let vs := st.addedBy e r; !vs.isEmpty && vs.all (· == a)
+  | none => st.counted.any fun w => w.entry == e && w.first && w.actor == a
+
+/-- A write's touches as its readers judge them for vault `a` writing entry `e`: each set at a place that is `a`'s own
+    marked own (`Touch.own`), each other set not, whatever the write claims, and every other touch as it is. -/
+def mine (st : State) (a : VaultId) (e : EntryId) (ts : List Touch) : List Touch :=
+  ts.map fun t => match t with
+    | .set l v | .own l v => if st.owns a e l then .own l v else .set l v
+    | t => t
 
 end State
 
@@ -439,13 +462,13 @@ def accepted (st : State) (en : Entry) (deps : List EditId) : Bool :=
     touches `ts`, on the main line (`main`) or on a proposal, and whose result fits the entry's schemas or not
     (`fits`): it fits, they count what it builds on, a write on the main line of a draft that hasn't landed is the
     vault's own (only the vault lands a draft), and `a` is the entry's vault or holds a share with write or more
-    reaching the entry whose ops let the write through, and, for a merge into the main line, the vault accepted what
+    reaching the entry whose ops let the write through, its sets at places that are `a`'s own marked so (`mine`), and, for a merge into the main line, the vault accepted what
     it brings in (`accepted`). -/
 def counts (st : State) (a : VaultId) (en : Entry) (deps : List EditId) (proof : Option ShareId) (main : Bool)
     (ts : List Touch) (fits : Bool) : Bool :=
   fits && deps.all (fun d => !st.uncounted.contains d) && (!(main && !landed st en) || a == en.vault) &&
     (a == en.vault || (st.shares.any fun cp =>
-      holdsShare st a cp .write && inAudience st cp en && lets st cp proof en.attrs main ts) &&
+      holdsShare st a cp .write && inAudience st cp en && lets st cp proof en.attrs main (st.mine a en.id ts)) &&
       (!(main && ts.contains .merge) || accepted st en deps))
 
 /-- The readers of an entry of vault `v` with attributes `attrs` count its creation in audience `x` by vault `a`, with

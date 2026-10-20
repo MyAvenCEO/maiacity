@@ -402,6 +402,13 @@ impl Encode for Op {
                 to.as_deref().encode(out);
                 on.encode(out);
             }
+            // a set of what is the writer's own alone: one more kind, so every grant made before reads as it did
+            Op::SetOwn { path, to, on } => {
+                out.push(14);
+                path.encode(out);
+                to.as_deref().encode(out);
+                on.encode(out);
+            }
             Op::Insert { path, on } => {
                 out.push(5);
                 path.encode(out);

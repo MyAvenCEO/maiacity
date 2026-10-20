@@ -240,12 +240,13 @@ theorem creates_seen (st : State) (a v : VaultId) (x : Audience) (attrs : Attrs)
 
 /-- C3 (counted writes do what they may): a counted write whose actor isn't the entry's vault relies on the share its
     proof names, which its actor holds with write or more and which reaches the entry, and every share of that share's
-    chain is the class of its ops and allows every touch of it. -/
+    chain is the class of its ops and allows every touch of it, its sets at places that are its actor's own marked
+    so (`State.mine`). -/
 theorem counted_allowed {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option ShareId}
     {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
     (hv : a ≠ en.vault) :
     ∃ cp ∈ st.shares, proof = some cp.id ∧ holdsShare st a cp .write = true ∧ inAudience st cp en = true ∧
-      ∀ c ∈ chain st cp, c.levelOk = true ∧ allowsAll (opsOn st c en.attrs) main ts = true :=
+      ∀ c ∈ chain st cp, c.levelOk = true ∧ allowsAll (opsOn st c en.attrs) main (st.mine a en.id ts) = true :=
   Ruling.counted_allowed hc hv
 
 /-- C3, by class: each touch of such a write is allowed, in every share of the chain, by an op that writes; a read,
@@ -253,9 +254,22 @@ theorem counted_allowed {st : State} {a : VaultId} {en : Entry} {deps : List Edi
 theorem counted_writes {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option ShareId}
     {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
     (hv : a ≠ en.vault) :
-    ∃ cp ∈ st.shares, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∀ t ∈ ts, ∃ o ∈ opsOn st c en.attrs,
+    ∃ cp ∈ st.shares, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∀ t ∈ st.mine a en.id ts, ∃ o ∈ opsOn st c en.attrs,
       o.allows main t = true ∧ o.level = .write :=
   Ruling.counted_writes hc hv
+
+/-- C5 (own ops): each touch of a counted write by anyone but the entry's vault is allowed, in every share of its
+    chain, by an op that, where it is an own op (a set of what is the writer's own, Member's), allows only a set at a
+    place that is the writer's own: inside a row its vault's counted writes added and no one else's, or in no row of
+    an entry it created. So a person in a room edits and deletes their own messages, replies and reactions alone,
+    whoever's message they lie in, and every reader of the room reaches the same verdict, as each reads the room's
+    counted writes. -/
+theorem C5_own {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option ShareId}
+    {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
+    (hv : a ≠ en.vault) :
+    ∃ cp ∈ st.shares, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∀ t ∈ st.mine a en.id ts, ∃ o ∈ opsOn st c en.attrs,
+      o.allows main t = true ∧ ∀ p to on, o = .setOwn p to on → ∃ l v, t = .own l v ∧ st.owns a en.id l = true :=
+  Ruling.counted_own hc hv
 
 /-- M1 (merges by path): each place a counted merge by anyone but the entry's vault brings a change to, every place the
     line it merges in changed since their base, is reached by the path of a merge op on the write's line, in every share
@@ -283,11 +297,12 @@ theorem M2_owner_counts (st : State) (en : Entry) (deps : List EditId) (proof : 
   Ruling.owner_counts st en deps proof main ts fits
 
 /-- C4 (allowed writes count): a write that fits, builds on writes its readers count, whose proof names a share its
-    actor holds with write or more that reaches the entry, and whose chain allows every touch of it, counts, if it
+    actor holds with write or more that reaches the entry, and whose chain allows every touch of it as its readers
+    judge them (`State.mine`), counts, if it
     merges into main on top of the vault's accept (M2), and if it is on main, of an entry that has landed (D1). -/
 theorem allowed_counts {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {main : Bool} {ts : List Touch}
     {cp : Share} (hd : ∀ d ∈ deps, d ∉ st.uncounted) (hcp : cp ∈ st.shares) (hh : holdsShare st a cp .write = true)
-    (hi : inAudience st cp en = true) (ha : chainAllows st cp en.attrs main ts = true)
+    (hi : inAudience st cp en = true) (ha : chainAllows st cp en.attrs main (st.mine a en.id ts) = true)
     (hacc : main = true → Touch.merge ∈ ts → accepted st en deps = true)
     (hland : main = true → landed st en = true) :
     counts st a en deps (some cp.id) main ts true = true :=
@@ -371,8 +386,8 @@ theorem D2_draft_creations {st : State} {a v : VaultId} {x : Audience} {attrs : 
 /-- D2, a step: a step that takes in a draft records its creation as the start of its own line, and its readers count
     it exactly as `creates` says of a creation on a proposal. -/
 theorem D2_draft_step {st st' : State} {edit : Edit} (h : step st edit = some st')
-    {v e a epoch via x hdr tags proof touches fits defines}
-    (ha : edit.action = .write v e a none epoch [] .new via (some (x, hdr)) tags proof touches fits defines) :
+    {v e a epoch via x hdr tags proof touches fits defines adds}
+    (ha : edit.action = .write v e a none epoch [] .new via (some (x, hdr)) tags proof touches fits defines adds) :
     (⟨edit.id, edit.author, a, e, none, epoch, [], .new, via, true, x⟩ : Write) ∈ st'.writes ∧
       st'.uncounted = st.counting (creates st a v x ⟨hdr.type, a, e, hdr.created, tags.apply []⟩ proof false fits)
         edit.id :=
@@ -459,8 +474,8 @@ readers read off them (`laneOf`): no edit publishes into it, and no peer checks 
     adds nothing. -/
 theorem T17_lane_from_creations {st st' : State} (hr : Reachable st) {edit : Edit} (h : step st edit = some st')
     {v : VaultId} {b : BlobId} (hb : b ∈ laneOf st' v) :
-    b ∈ laneOf st v ∨ ∃ e epoch via x hdr tags proof touches defines,
-      edit.action = .write v e v none epoch [] .main via (some (x, hdr)) tags proof touches true defines ∧
+    b ∈ laneOf st v ∨ ∃ e epoch via x hdr tags proof touches defines adds,
+      edit.action = .write v e v none epoch [] .main via (some (x, hdr)) tags proof touches true defines adds ∧
       hdr.type ∈ schemaTypes ∧ hdr.blob = b ∧ actsVia st edit.author via v = true :=
   Core.T17_lane_from_creations hr h hb
 
@@ -468,8 +483,8 @@ theorem T17_lane_from_creations {st st' : State} (hr : Reachable st) {edit : Edi
     lens entry holds what its creation put in it; the lane never reads what later writes, or the tags they set, make of
     it. -/
 theorem T17_writes_ignored {st st' : State} (hr : Reachable st) {edit : Edit} (h : step st edit = some st')
-    {v e actor stay epoch deps proposal via tags proof touches fits defines}
-    (ha : edit.action = .write v e actor stay epoch deps proposal via none tags proof touches fits defines) :
+    {v e actor stay epoch deps proposal via tags proof touches fits defines adds}
+    (ha : edit.action = .write v e actor stay epoch deps proposal via none tags proof touches fits defines adds) :
     laneOf st' = laneOf st := by
   obtain ⟨edits, rfl⟩ := hr
   exact Core.T17_writes_ignored

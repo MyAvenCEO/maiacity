@@ -138,13 +138,13 @@ def newEntry (v e : Nat) (actor : VaultId) (x : Audience) (type : Sym) (created 
 
 /-- A write of entry `e`, in its stay `stay` at epoch `epoch` of that stay's audience, with the proof `proof`, touching
     `touches`, whose result fits the entry's schemas or not (`fits`); of a cap group entry, the cap group its record
-    says after it (`defines`). -/
+    says after it (`defines`); adding the rows `adds`. -/
 def wr (v e : Nat) (actor : VaultId) (deps : List EditId := []) (stay : Option EditId := none) (epoch : Nat := 0)
     (proposal : Proposal := .main) (via : List VaultId := []) (add : List Sym := []) (remove : List Sym := [])
     (proof : Option ShareId := none) (touches : List Touch := []) (fits : Bool := true)
-    (defines : Option CapGroup := none) : Action :=
+    (defines : Option CapGroup := none) (adds : List Ops.Loc := []) : Action :=
   .write v e actor stay epoch deps proposal via (tags := { add, remove }) (proof := proof) (touches := touches)
-    (fits := fits) (defines := defines)
+    (fits := fits) (defines := defines) (adds := adds)
 
 /-- Setting a todo's field `f` to the text `x`. -/
 def sets (f x : String) : Touch := .set [.field f] (some (.str x))
@@ -1090,7 +1090,35 @@ def cases : List Case := [
     (6, [700], .claim 33 102),
     (2, [], groupShare 34 100 (.invite 702) .read 50),
     (2, [], .revoke (.grant 34 100 [])),
-    (8, [702], .claim 34 103)] }]
+    (8, [702], .claim 34 103)] },
+  { name := "rooms: Member adds rows and changes only its own", edits := humans ++ [
+    -- Alice's room, shared with Bob and Carol in Member
+    (2, [], newShare 30 100 (toVault 101) .write 100 (.anyOf [[.entryIn [81]]]) (ops := some memberOps)),
+    (2, [], newShare 31 100 (toVault 102) .write 100 (.anyOf [[.entryIn [81]]]) (ops := some memberOps)),
+    (2, [], newEntry 100 81 100 [30, 31] 41),
+    -- Bob posts message 1, Carol reacts to it with reaction 2
+    (5, [], wr 100 81 101 [8] (proof := some 30) (touches := [.insert [.field "messages"]])
+      (adds := [[.field "messages", .row 1]])),
+    (6, [], wr 100 81 102 [9] (proof := some 31) (touches := [.insert [.field "messages", .row 1, .field "reactions"]])
+      (adds := [[.field "messages", .row 1, .field "reactions", .row 2]])),
+    -- Bob edits his message; Carol's edit of it counts nowhere, even where it claims to be her own
+    (5, [], wr 100 81 101 [9] (proof := some 30) (touches := [.set [.field "messages", .row 1, .field "text"] (some (.str "hi!"))])),
+    (6, [], wr 100 81 102 [9] (proof := some 31) (touches := [.set [.field "messages", .row 1, .field "text"] (some (.str "mine"))])),
+    (6, [], wr 100 81 102 [9] (proof := some 31) (touches := [.own [.field "messages", .row 1, .field "text"] (some (.str "mine"))])),
+    -- Carol takes back her reaction; Bob can't
+    (6, [], wr 100 81 102 [10] (proof := some 31)
+      (touches := [.set [.field "messages", .row 1, .field "reactions", .row 2, .field "deleted"] (some (.bool true))])),
+    (5, [], wr 100 81 101 [10] (proof := some 30)
+      (touches := [.set [.field "messages", .row 1, .field "reactions", .row 2, .field "deleted"] (some (.bool true))])),
+    -- no Member names the room; Alice does
+    (5, [], wr 100 81 101 [9] (proof := some 30) (touches := [sets "name" "Bob's"])),
+    (2, [], wr 100 81 100 [9] (touches := [sets "name" "Garden"])),
+    -- Carol adds a row with Bob's id: from then on it is neither's
+    (6, [], wr 100 81 102 [9] (proof := some 31) (touches := [.insert [.field "messages"]])
+      (adds := [[.field "messages", .row 1]])),
+    (5, [], wr 100 81 101 [9] (proof := some 30) (touches := [.set [.field "messages", .row 1, .field "text"] (some (.str "again"))])),
+    -- Dave is in no room of Alice's: no peer takes his message
+    (8, [], wr 100 81 103 [9] (touches := [.insert [.field "messages"]]) (adds := [[.field "messages", .row 3]]))] }]
 
 /-- Alice's, Bob's, Carol's and Dave's vaults, one edit per depth. -/
 def humansV : List (Nat × SignerId × List SignerId × Action) := humans.zipIdx.map fun ((a, co, act), i) => (i, a, co, act)
@@ -1663,6 +1691,10 @@ def opJson : Op → String
       (match to with
         | some vs => [("to", arr (vs.map jsonVal))]
         | none => []) ++ onJson o)
+  | .setOwn p to o => obj ([("op", str "set"), ("path", path p), ("own", bool true)] ++
+      (match to with
+        | some vs => [("to", arr (vs.map jsonVal))]
+        | none => []) ++ onJson o)
   | .insert p o => obj ([("op", str "insert"), ("path", path p)] ++ onJson o)
   | .remove p o => obj ([("op", str "remove"), ("path", path p)] ++ onJson o)
   | .move p o => obj ([("op", str "move"), ("path", path p)] ++ onJson o)
@@ -1678,6 +1710,9 @@ def list : Ops.Loc → String
 /-- What a write touches: `{"set": path, "to": v}` (no `to` where no one value was set), `{"insert": list}`, ... -/
 def touch : Touch → String
   | .set l to => obj ([("set", path l.steps)] ++ match to with
+      | some v => [("to", jsonVal v)]
+      | none => [])
+  | .own l to => obj ([("set", path l.steps), ("own", bool true)] ++ match to with
       | some v => [("to", jsonVal v)]
       | none => [])
   | .insert l => obj [("insert", list l)]
@@ -1746,13 +1781,14 @@ def action : Action → String
       ("keep", ids keep)])])]
   | .revoke (.device v d keep) => obj [("revoke", obj [("device", obj [("vault", nat v), ("device", nat d),
       ("keep", ids keep)])])]
-  | .write v e a s g deps p via create tags pr ts ft df => obj [("write", obj ([("vault", nat v), ("entry", nat e),
+  | .write v e a s g deps p via create tags pr ts ft df ad => obj [("write", obj ([("vault", nat v), ("entry", nat e),
       ("actor", nat a), ("stay", opt nat s), ("epoch", nat g), ("deps", ids deps), ("proposal", proposal p),
       ("via", ids via), ("create", opt (fun (x, h) => obj [("audience", ids x), ("header", header h)]) create),
       ("tags", tagDelta tags)] ++ (match pr with
         | some c => [("proof", nat c)]
         | none => []) ++ (if ts.isEmpty then [] else [("touches", arr (ts.map touch))]) ++
-        (if ft then [] else [("fits", bool false)]) ++ match df with
+        (if ft then [] else [("fits", bool false)]) ++ (if ad.isEmpty then [] else
+          [("adds", arr (ad.map fun l => path l.steps))]) ++ match df with
           | some g => [("defines", capGroupJson g)]
           | none => []))]
   | .mark v e caps wants keep via => obj [("mark", obj ([("vault", nat v), ("entry", nat e)] ++ markJson caps wants ++

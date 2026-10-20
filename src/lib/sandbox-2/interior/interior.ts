@@ -804,12 +804,16 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 	}
 
 	/* the land outside, seen through the glass */
-	// a ring, not a disc, so nothing lies over the master dome's sunken theatre
-	const outside = new THREE.Mesh(new THREE.RingGeometry(R * 0.5, R * 20 + 200, 96, 1), m.grass)
-	outside.rotation.x = -Math.PI / 2
-	outside.position.y = -0.02
-	outside.receiveShadow = true
-	scene.add(outside)
+	// a ring, not a disc, so nothing lies over the master dome's sunken theatre. Built into a host's world, the host's
+	// ground is the land outside: a meadow laid a hair above it would cover its floor (Sandbox 4's food forest biome)
+	// as soon as the dome joined it
+	if (!host) {
+		const outside = new THREE.Mesh(new THREE.RingGeometry(R * 0.5, R * 20 + 200, 96, 1), m.grass)
+		outside.rotation.x = -Math.PI / 2
+		outside.position.y = -0.02
+		outside.receiveShadow = true
+		scene.add(outside)
+	}
 	/* the stone arcade that carries the terrace round a big dome, and the ring
 	   where the forest starts */
 	const G = spec.gallery

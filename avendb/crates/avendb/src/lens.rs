@@ -1337,7 +1337,7 @@ pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
     /// of its vault's lane. Maia City, the seed's coop, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 28] = [
+    pub const SHIPPED: [&str; 29] = [
         DOCUMENT_V1,
         TODO_V1,
         ARTICLE_V1,
@@ -1366,6 +1366,7 @@ pub mod blobs {
         ARTIFACT_V1,
         ARTWORK_V1,
         CAPGROUP_V1,
+        ROOM_V1,
     ];
 
     /// The lenses between the versions of a kind avenDB ships, each from an older version to the newest, so a record
@@ -2043,6 +2044,60 @@ pub mod blobs {
 }
 "#;
 
+    /// A chat room (docs/ARCHITECTURE.md §5, "Rooms"): a channel, a group, a DM or a note to self, and what it is about
+    /// (any entry, at its newest), its messages, each with its thread of replies of the same shape, and their
+    /// reactions. Who may read it is its shares, never `look`; who wrote a row is the vault of the counted write that
+    /// added it, read from the history, so no row names its author. A share at Member adds rows and changes only its
+    /// own (`rules::member`); deleting a message or taking back a reaction sets `deleted`.
+    pub const ROOM_V1: &str = r##"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Room, v1",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "room" },
+    "look": { "enum": ["channel", "group", "dm", "self"], "default": "channel" },
+    "name": { "type": "string", "maxLength": 80, "default": "" },
+    "topic": { "type": "string", "maxLength": 500, "default": "" },
+    "about": { "x-link": "newest" },
+    "pins": { "type": "array", "items": { "type": "integer" }, "maxItems": 50, "default": [] },
+    "older": { "x-link": "pinned" },
+    "messages": { "type": "array", "default": [], "items": { "$ref": "#/$defs/message" } }
+  },
+  "required": ["kind"],
+  "$defs": {
+    "message": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "integer" },
+        "text": { "type": "string", "maxLength": 8000, "default": "" },
+        "at": { "type": "integer", "minimum": 0 },
+        "edited": { "type": "integer", "minimum": 0 },
+        "deleted": { "type": "boolean", "default": false },
+        "reply": { "type": "integer" },
+        "on": { "x-link": "pinned" },
+        "mentions": { "type": "array", "items": { "type": "string", "maxLength": 64 }, "maxItems": 50, "default": [] },
+        "links": { "type": "array", "items": { "x-link": "newest" }, "maxItems": 20, "default": [] },
+        "reactions": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "integer" },
+              "key": { "type": "string", "maxLength": 32 },
+              "deleted": { "type": "boolean", "default": false }
+            },
+            "required": ["id", "key"]
+          }
+        },
+        "thread": { "type": "array", "default": [], "items": { "$ref": "#/$defs/message" } }
+      },
+      "required": ["id"]
+    }
+  }
+}
+"##;
+
     /// A title card or a thumbnail of one shape, in layers, as a story's Thumbnail step designs it: a picture (the
     /// background), a cut-out (a transparent picture laid over it), words (empty: the hook it carries), a badge; each
     /// place a percent of the shape's canvas, a text's size a percent of its width. Each picture is a Library file, by
@@ -2280,6 +2335,7 @@ pub static REQUEST_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs
 pub static ARTIFACT_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTIFACT_V1));
 pub static ARTWORK_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ARTWORK_V1));
 pub static CAPGROUP_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::CAPGROUP_V1));
+pub static ROOM_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::ROOM_V1));
 pub static ARTICLE_LENS: LazyLock<Lens> =
     LazyLock::new(|| Lens::parse(blobs::ARTICLE_LENS.as_bytes()).expect("a built-in lens parses"));
 pub static SPARK_LENS: LazyLock<Lens> =
@@ -2318,6 +2374,7 @@ static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
         &*ARTIFACT_V1,
         &*ARTWORK_V1,
         &*CAPGROUP_V1,
+        &*ROOM_V1,
     ];
     shipped.map(|s| (s.kind().expect("a shipped schema names its kind"), View::plain(s))).to_vec()
 });
