@@ -1,10 +1,10 @@
 // Keeps this Mac's checkout on the latest main, so the running studio app (`bunx tauri dev` in vault/app) rebuilds
 // whenever main moves. Every minute: fetch origin/main and fast-forward, but only when the checkout is on main with
 // no changes of its own; run `bun install` when bun.lock changed; start the app when it isn't running.
-//   node scripts/watch-main.mjs             watch (what the login agent runs)
-//   node scripts/watch-main.mjs --once      one check, then exit
-//   node scripts/watch-main.mjs --install   install and start the login agent (~/Library/LaunchAgents)
-//   node scripts/watch-main.mjs --uninstall stop and remove it
+//   bun scripts/watch-main.mjs              watch (what the login agent runs)
+//   bun scripts/watch-main.mjs --once       one check, then exit
+//   bun scripts/watch-main.mjs --install    install and start the login agent (~/Library/LaunchAgents)
+//   bun scripts/watch-main.mjs --uninstall  stop and remove it
 // The log is .cargo/watch-main.log, the app's own log .cargo/studio-dev.log (.cargo is this Mac's, not in git).
 import { execFileSync, spawn } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, openSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
@@ -99,9 +99,9 @@ function safeCheck() {
 }
 
 function install() {
-	// launchd starts with a bare PATH: give it the folders node, bun, cargo and git are found in now.
+	// launchd starts with a bare PATH: give it the folders bun, cargo and git are found in now.
 	const which = (cmd) => dirname(execFileSync('which', [cmd], { encoding: 'utf8' }).trim());
-	const path = [...new Set(['node', 'bun', 'cargo', 'git'].map(which).concat(['/usr/local/bin', '/opt/homebrew/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin']))].join(':');
+	const path = [...new Set(['bun', 'cargo', 'git'].map(which).concat(['/usr/local/bin', '/opt/homebrew/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin']))].join(':');
 	mkdirSync(dirname(PLIST), { recursive: true });
 	writeFileSync(
 		PLIST,
