@@ -1,4 +1,5 @@
 /// <reference types="node" />
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import adapter from '@sveltejs/adapter-static';
 import tailwindcss from '@tailwindcss/vite';
@@ -6,6 +7,14 @@ import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
 import { assetBox } from './src/lib/assets/box/plugin.js';
 import { pageCsp } from './src/lib/sandbox/policy.js';
+
+function commit() {
+	try {
+		return execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+	} catch {
+		return 'local';
+	}
+}
 
 export default defineConfig({
 	plugins: [
@@ -33,6 +42,10 @@ export default defineConfig({
 					throw new Error(message);
 				}
 			},
+
+			// the build named by its commit, not the time it ran: the same commit builds the same bytes wherever it is
+			// built, so a Mac of Maia City can witness the live site (scripts/release.mjs)
+			version: { name: process.env.GITHUB_SHA || commit() },
 
 			// every page's own policy (src/lib/sandbox/policy.js): the scripts it may run, its own start script by its
 			// hash, written into each page as a <meta>, as a prerendered page has no headers of its own (deploy/Caddyfile

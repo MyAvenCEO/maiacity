@@ -1,40 +1,43 @@
 #!/usr/bin/env node
 // @ts-nocheck — plain JS, kept loose on purpose
-// THE SIGNED RELEASE — so a server someone broke into can't swap the site's code unseen (the stack consolidation's
-// phase 2, Samuel 2026-10-20). Each deploy signs what it built: the BLAKE3 hash of every file of build/, its commit
-// and its time, with the release key (ML-DSA-65, the key's secret only in the repo's Actions secrets, RELEASE_KEY).
-// The signed list goes up with the site as /release.json. A check reads it back from the live site, holds it to the
-// public key pinned below, and every file it names to its hash: a file changed, added in place of one, or a list
-// signed by any other key fails it. The check runs after each deploy and every day (.github/workflows/release-check.yml),
-// and on Samuel's Mac whenever the live release changes (scripts/watch-main.mjs).
+// THE RELEASE MAIA CITY ACCEPTS — so a server someone broke into can't swap the site's code unseen (the stack
+// consolidation's phase 2, Samuel 2026-10-20). No key of its own: Maia City's owners sign each release as they sign any
+// AIP, with the keys they have (Samuel 16:43 "reuse the Maia City COOP as master owner", "I don't want to handle
+// another key").
 //
-//   node scripts/release.mjs sign [build]              sign build/ (RELEASE_KEY: the key's 32-byte seed, hex)
-//   node scripts/release.mjs check [https://maia.city] [--sample N]
-//                                                      the live site against its signed list (every file, or the pages
-//                                                      and N of the hashed chunks)
-//   node scripts/release.mjs key                       the key, once: its seed straight into the repo's Actions secrets
-//                                                      (gh secret set RELEASE_KEY), its public key into this file
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
-import { randomBytes } from 'node:crypto';
+// 1. Each deploy writes /release.json beside the site: its commit and the BLAKE3 hash of every file it built. It is a
+//    claim, nothing more: whoever holds the server can write another.
+// 2. This Mac (scripts/watch-main.mjs) is the witness. When the live site names a commit Maia City hasn't accepted, it
+//    builds that commit of main itself (the build is the same, byte for byte, wherever it runs: vite.config.ts names
+//    it by its commit, not its time), fetches every file the live site serves, and only when all of them are the bytes
+//    it built does it propose the list into Maia City (avenMAIA, a Suggester: a draft file entry `maia.city release`
+//    and an AIP over it, or the open one brought up to date). An owner accepts it in The OS, with Touch ID or a passkey.
+// 3. When the live site names the commit Maia City accepted, the witness holds every file it serves to the accepted
+//    list. A file that differs, a commit main doesn't hold, or an older release served again is said in its log and a
+//    notification.
+//
+//   node scripts/release.mjs list [build]              the deploy's list, into build/release.json
+//   node scripts/release.mjs witness [--run] [--site https://maia.city] [--device <avendb-device>]
+//                                                      the witness, once (without --run it proposes nothing)
 import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { ml_dsa65 } from '@noble/post-quantum/ml-dsa.js';
-import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 import { hashBytes } from '../game/hash.js';
 
-/** the release key's public half (ML-DSA-65, hex): the only key a release may be signed with. Empty until the key is
- * made (`node scripts/release.mjs key`), and while it is, nothing is signed or checked. */
-export const RELEASE_PUBLIC_KEY = '';
-
-/** the file the signed list goes up as, beside the site; never in the list itself */
+/** the file the list goes up as, beside the site; never in the list itself */
 export const LIST = 'release.json';
-/** what a list says it is, so no other signed text of this key can stand in for one */
-const KIND = 'maia.city release v1';
+/** what a list says it is */
+export const KIND = 'maia.city release v1';
+/** the tag of Maia City's one release entry, and its AIP's title */
+export const TAG = 'release:maia.city';
+export const TITLE = 'maia.city release';
+
+const ROOT = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 
 /** every file under `dir`, by its path from there (with /), but the list */
 function filesOf(dir) {
-	/** @type {string[]} */
 	const out = [];
 	const walk = (d) => {
 		for (const e of readdirSync(d, { withFileTypes: true })) {
@@ -47,47 +50,26 @@ function filesOf(dir) {
 	return out.filter((f) => f !== LIST).sort();
 }
 
-/** the bytes a list's signature covers: its fields in one order, so the same list always signs the same */
-export const signedBytes = ({ commit, made, files }) =>
-	utf8ToBytes(JSON.stringify({ kind: KIND, commit, made, files: Object.fromEntries(Object.keys(files).sort().map((f) => [f, files[f]])) }));
-
-/** a list signed by the key of `seed`, for the files of `dir` @param {string} dir @param {Uint8Array} seed */
-export function sign(dir, seed, commit = process.env.GITHUB_SHA ?? 'local', made = new Date().toISOString()) {
-	const files = Object.fromEntries(filesOf(dir).map((f) => [f, hashBytes(readFileSync(join(dir, f)))]));
-	const { secretKey, publicKey } = ml_dsa65.keygen(seed);
-	const list = { commit, made, files };
-	return { ...list, key: bytesToHex(publicKey), sig: bytesToHex(ml_dsa65.sign(signedBytes(list), secretKey)) };
+/** the list of the site built in `dir` from `commit` */
+export function listOf(dir, commit) {
+	return { kind: KIND, commit, files: Object.fromEntries(filesOf(dir).map((f) => [f, hashBytes(readFileSync(join(dir, f)))])) };
 }
 
-/** whether `list` is signed by the key `pub` (hex) @param {any} list @param {string} pub */
-export function signed(list, pub = RELEASE_PUBLIC_KEY) {
-	if (!pub || !list || typeof list !== 'object' || list.key !== pub) return false;
-	if (typeof list.commit !== 'string' || typeof list.made !== 'string' || !list.files || typeof list.files !== 'object') return false;
-	try {
-		return ml_dsa65.verify(hexToBytes(list.sig), signedBytes(list), hexToBytes(pub));
-	} catch {
-		return false;
-	}
+/** whether `list` is a release list at all (what the site or the vault hands over is read, never trusted) */
+export const isList = (list) =>
+	!!list && list.kind === KIND && /^[0-9a-f]{40}$/.test(list.commit ?? '') && !!list.files && typeof list.files === 'object' && Object.values(list.files).every((h) => /^[0-9a-f]{64}$/.test(h));
+
+/** where `got` (the live site's own list) and `want` (a list we trust) name different files */
+export function unlike(got, want) {
+	const out = [];
+	for (const f of Object.keys(want.files)) if (!(f in got.files)) out.push(`${f}: missing from the site's list`);
+	for (const f of Object.keys(got.files)) if (!(f in want.files)) out.push(`${f}: on the site, not in the release`);
+	return out;
 }
 
-/** the files to check: all, or the pages and data (what names everything else) and `sample` of the hashed chunks */
-export function toCheck(files, sample = Infinity) {
-	const all = Object.keys(files).sort();
-	const chunks = all.filter((f) => f.startsWith('_app/immutable/'));
-	const rest = all.filter((f) => !f.startsWith('_app/immutable/'));
-	if (sample >= chunks.length) return all;
-	const picked = [...chunks].sort(() => Math.random() - 0.5).slice(0, sample);
-	return [...rest, ...picked];
-}
-
-/** the live site at `site` against its signed list: what failed, by file (an empty list: it holds) */
-export async function check(site, { sample = Infinity, pub = RELEASE_PUBLIC_KEY, get = fetch, at = 6 } = {}) {
-	const res = await get(`${site}/${LIST}`, { cache: 'no-store' });
-	if (!res.ok) return { list: null, failed: [`${LIST}: ${res.status}`] };
-	const list = await res.json();
-	if (!signed(list, pub)) return { list, failed: [`${LIST}: not signed by the release key`] };
-	const names = toCheck(list.files, sample);
-	/** @type {string[]} */
+/** every file of `want` as `site` serves it, held to its hash: what failed, by file (an empty list: it holds) */
+export async function served(site, want, { get = fetch, at = 6 } = {}) {
+	const names = Object.keys(want.files).sort();
 	const failed = [];
 	let next = 0;
 	const worker = async () => {
@@ -99,61 +81,184 @@ export async function check(site, { sample = Infinity, pub = RELEASE_PUBLIC_KEY,
 				const r = await get(url, { cache: 'no-store' });
 				const bytes = new Uint8Array(await r.arrayBuffer());
 				if (!r.ok) failed.push(`${f}: ${r.status}`);
-				else if (hashBytes(bytes) !== list.files[f]) failed.push(`${f}: not the bytes the release signed`);
+				else if (hashBytes(bytes) !== want.files[f]) failed.push(`${f}: not the bytes of the release`);
 			} catch (e) {
 				failed.push(`${f}: ${e?.message ?? e}`);
 			}
 		}
 	};
 	await Promise.all(Array.from({ length: at }, worker));
-	return { list, failed, checked: names.length };
+	return failed;
+}
+
+/**
+ * what the witness does about the live site's list `live`, given the release Maia City accepted (or null) and how the
+ * two commits stand on main (`onMain(c)`: main holds c; `before(a, b)`: a is an older commit of b's history)
+ * @returns {{ do: 'hold' | 'build' | 'alert', why?: string }}
+ */
+export function plan(live, accepted, { onMain, before }) {
+	if (!isList(live)) return { do: 'alert', why: `${LIST} is not a release list` };
+	if (accepted && live.commit === accepted.commit) return { do: 'hold' };
+	if (!onMain(live.commit)) return { do: 'alert', why: `the site names ${live.commit.slice(0, 7)}, a commit main doesn't hold` };
+	if (accepted && before(live.commit, accepted.commit)) return { do: 'alert', why: `the site serves ${live.commit.slice(0, 7)}, older than the accepted ${accepted.commit.slice(0, 7)}` };
+	return { do: 'build' };
+}
+
+/** this Mac's own build of `commit`, in a worktree of its own (.cargo/release-build), at the lowest priority */
+function build(commit) {
+	const dir = join(ROOT, '.cargo/release-build');
+	const run = (cmd, args, cwd, timeout) => execFileSync(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout, env: { ...process.env, GITHUB_SHA: '', BASE_PATH: '' } });
+	if (!existsSync(join(dir, '.git'))) run('git', ['worktree', 'add', '--detach', dir, commit], ROOT, 120_000);
+	else run('git', ['checkout', '--quiet', '--force', '--detach', commit], dir, 120_000);
+	run('bun', ['install', '--frozen-lockfile'], dir, 600_000);
+	run('nice', ['-n', '19', 'bun', 'run', 'build'], dir, 1_800_000);
+	return listOf(join(dir, 'build'), commit);
+}
+
+/** whether a site build or a Rust build runs on this machine now: the witness waits for the next round */
+function busy() {
+	for (const p of ['vite build', 'tauri build', 'cargo build', 'cargo test', 'rustc']) {
+		try {
+			execFileSync('pgrep', ['-f', p], { stdio: 'ignore' });
+			return p;
+		} catch {}
+	}
+	return '';
+}
+
+function tell(msg) {
+	console.error(msg);
+	if (process.platform !== 'darwin') return;
+	try {
+		execFileSync('osascript', ['-e', `display notification ${JSON.stringify(msg.slice(0, 180))} with title "The OS"`], { timeout: 30_000 });
+	} catch {}
+}
+
+/** Maia City's release: its entry, the accepted list on main (null before the first accept), and the open AIP */
+async function releaseOf(agent, city) {
+	const found = await agent.call('avendb_ask', { op: { op: 'query', vault: city.id, where: { type: ['file'] } } });
+	const rows = (found.rows ?? []).filter((r) => (r.tags ?? []).includes(TAG) && !(r.tags ?? []).includes('avendb:deleted'));
+	if (rows.length > 1) throw new Error(`Maia City holds ${rows.length} release entries (${rows.map((r) => r.entry).join(', ')})`);
+	const entry = rows[0]?.entry ?? null;
+	let accepted = null;
+	if (entry) {
+		const path = join(mkdtempSync(join(tmpdir(), 'release-')), LIST);
+		await agent.call('avendb_read_file', { entry, path, overwrite: true });
+		accepted = JSON.parse(readFileSync(path, 'utf8'));
+		if (!isList(accepted)) throw new Error(`Maia City's release entry ${entry} holds no release list`);
+	}
+	const open = (await agent.call('avendb_ask', { op: { op: 'aips', vault: city.id } })).filter((a) => a.title === TITLE && !a.outcome && !a.bare);
+	return { entry, accepted, open: open[0] ?? null };
+}
+
+const OBJECTIVE = [
+	'/-- maia.city serves exactly what main builds at the commit it names: every file, byte for byte, as a Mac of Maia City built it. -/',
+	'def matches : Metric := metric "Live site is this build" (equals (reading "matches") 1)',
+	'/-- The release names the site\'s files. -/',
+	'def files : Metric := metric "Files" (atLeast (reading "files") 1)',
+	''
+].join('\n');
+
+/** the list proposed into Maia City: the open AIP brought up to it, or a new one */
+async function propose(agent, city, release, list) {
+	const path = join(mkdtempSync(join(tmpdir(), 'release-')), LIST);
+	writeFileSync(path, JSON.stringify(list));
+	const value = { kind: 'file', title: TITLE, media: 'application/json' };
+	const note = 'maia.city as built from main, every file held by its BLAKE3 hash; the commit is the newest measure\'s. A Mac of Maia City built that commit itself and found every file the live site serves to be these bytes. Accepting it makes it the release the site is held to; while it waits, each newer deploy is witnessed and brought onto this same AIP.';
+	let aip = release.open;
+	if (aip) {
+		// the open AIP, brought up to this commit on its own line (a file write on the line: the record stays)
+		const line = aip.lines?.[0];
+		if (!line) throw new Error(`the open release AIP ${aip.entry} has no line`);
+		await agent.call('avendb_run', { op: { op: 'put_file', entry: line.entry, line: line.line, name: LIST, media: 'application/json' }, path });
+	} else if (release.entry) {
+		const { line } = await agent.call('avendb_run', { op: { op: 'propose', entry: release.entry, name: list.commit.slice(0, 12) } });
+		await agent.call('avendb_run', { op: { op: 'put_file', entry: release.entry, line, name: LIST, media: 'application/json' }, path });
+		aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title: TITLE, note, proposals: [{ entry: release.entry, line }], objective: OBJECTIVE } });
+	} else {
+		const made = await agent.call('avendb_run', { op: { op: 'create', vault: city.id, type: 'file', tags: [TAG], value, draft: true, file: { name: LIST, media: 'application/json' } }, path });
+		if (!made?.entry || !made?.line) throw new Error(`the draft named no entry and line (${JSON.stringify(made).slice(0, 300)})`);
+		aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title: TITLE, note, proposals: [{ entry: made.entry, line: made.line }], objective: OBJECTIVE } });
+	}
+	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'files', value: Object.keys(list.files).length, note: `commit ${list.commit}` } });
+	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'matches', value: 1, note: `every file maia.city serves is this Mac's build of ${list.commit}` } });
+	try {
+		await agent.call('avendb_run', { op: { op: 'aip_promote', entry: aip.entry } });
+	} catch (e) {
+		console.error(`not put forward: ${e.message.slice(0, 300)}`);
+	}
+	return aip;
+}
+
+/** the witness, once */
+async function witness({ site, run, named }) {
+	const res = await fetch(`${site}/${LIST}`, { cache: 'no-store' });
+	if (res.status === 404) return console.error(`${site} serves no ${LIST} yet: nothing to witness`);
+	if (!res.ok) throw new Error(`${site}/${LIST}: ${res.status}`);
+	const live = await res.json();
+	const { device, session } = await import('./agent.mjs');
+	const agent = session(device(named), 'release-witness');
+	try {
+		await agent.open();
+		const city = await agent.city();
+		const release = await releaseOf(agent, city);
+		const git = (...a) => execFileSync('git', a, { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8', timeout: 120_000 }).trim();
+		git('fetch', '--quiet', 'origin', 'main');
+		const yes = (...a) => {
+			try {
+				git(...a);
+				return true;
+			} catch {
+				return false;
+			}
+		};
+		const next = plan(live, release.accepted, {
+			onMain: (c) => yes('merge-base', '--is-ancestor', c, 'origin/main'),
+			before: (a, b) => a !== b && yes('merge-base', '--is-ancestor', a, b)
+		});
+		if (next.do === 'alert') return tell(`maia.city is NOT a release Maia City accepted: ${next.why}`);
+		const want = next.do === 'hold' ? release.accepted : null;
+		if (want) {
+			const failed = [...unlike(live, want), ...(await served(site, want))];
+			if (failed.length) return tell(`maia.city is NOT the release Maia City accepted (${want.commit.slice(0, 7)}): ${failed.slice(0, 3).join('; ')}`);
+			return console.error(`maia.city is the release Maia City accepted, ${want.commit.slice(0, 7)} (${Object.keys(want.files).length} files)`);
+		}
+		// the very first release is a draft until an owner accepts it, and a draft takes no newer file: it waits as it is
+		if (release.open && !release.entry) return console.error(`maia.city serves ${live.commit.slice(0, 7)}; the first release waits for an owner's accept, then newer ones follow`);
+		const seen = join(ROOT, '.cargo/release-witnessed');
+		const open = release.open && existsSync(seen) && readFileSync(seen, 'utf8').trim() === live.commit;
+		if (open) return console.error(`maia.city serves ${live.commit.slice(0, 7)}, proposed already and waiting for an owner's accept`);
+		const other = busy();
+		if (other) return console.error(`a build runs here (${other}): the witness builds ${live.commit.slice(0, 7)} next round`);
+		console.error(`building ${live.commit.slice(0, 7)} to witness it`);
+		const mine = build(live.commit);
+		const failed = [...unlike(live, mine), ...(await served(site, mine))];
+		if (failed.length) return tell(`maia.city does NOT serve what main builds at ${live.commit.slice(0, 7)}: ${failed.slice(0, 3).join('; ')}`);
+		console.error(`maia.city is this Mac's own build of ${live.commit.slice(0, 7)}, all ${Object.keys(mine.files).length} files`);
+		if (!run) return console.error('without --run nothing is proposed');
+		const aip = await propose(agent, city, release, mine);
+		writeFileSync(seen, live.commit);
+		console.error(`proposed into Maia City for an owner's accept: /app/aips/?aip=${aip.entry}`);
+	} finally {
+		agent.close();
+	}
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-	const [what, arg] = process.argv.slice(2);
-	if (what === 'key') {
-		// the seed goes straight into the repo's Actions secrets and is never printed or kept here; the public key
-		// goes into this file, to be committed
-		if (RELEASE_PUBLIC_KEY && !process.argv.includes('--new')) {
-			console.error('a release key exists already: --new makes another (every list signed before stops holding)');
-			process.exit(1);
-		}
-		const seed = randomBytes(32);
-		execFileSync('gh', ['secret', 'set', 'RELEASE_KEY', '--repo', 'MyAvenCEO/maiacity'], { input: bytesToHex(seed), stdio: ['pipe', 'inherit', 'inherit'] });
-		const pub = bytesToHex(ml_dsa65.keygen(seed).publicKey);
-		const me = fileURLToPath(import.meta.url);
-		writeFileSync(me, readFileSync(me, 'utf8').replace(/export const RELEASE_PUBLIC_KEY = '[0-9a-f]*';/, `export const RELEASE_PUBLIC_KEY = '${pub}';`));
-		console.log('RELEASE_KEY is set in the repo\'s Actions secrets; commit scripts/release.mjs (its new public key)');
-	} else if (what === 'sign') {
+	const args = process.argv.slice(2);
+	const option = (f) => (args.includes(f) ? args[args.indexOf(f) + 1] : undefined);
+	const [what, arg] = args;
+	if (what === 'list') {
 		const dir = arg ?? 'build';
-		const seed = process.env.RELEASE_KEY ?? '';
-		if (!seed || !RELEASE_PUBLIC_KEY) {
-			console.log('::warning::no release key yet (RELEASE_KEY, RELEASE_PUBLIC_KEY): the build goes up unsigned');
-			process.exit(0);
-		}
-		const list = sign(dir, hexToBytes(seed));
-		if (list.key !== RELEASE_PUBLIC_KEY) {
-			console.error('RELEASE_KEY is not the key RELEASE_PUBLIC_KEY names: nothing signed');
-			process.exit(1);
-		}
+		const commit = process.env.GITHUB_SHA || execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+		const list = listOf(dir, commit);
 		writeFileSync(join(dir, LIST), JSON.stringify(list));
-		console.log(`signed ${Object.keys(list.files).length} files of ${dir}/ for ${list.commit}`);
-	} else if (what === 'check') {
-		const site = (arg && !arg.startsWith('--') ? arg : 'https://maia.city').replace(/\/$/, '');
-		const at = process.argv.indexOf('--sample');
-		const sample = at > 0 ? Number(process.argv[at + 1]) : Infinity;
-		if (!RELEASE_PUBLIC_KEY) {
-			console.log('no release key yet: nothing to check');
-			process.exit(0);
-		}
-		const { list, failed, checked } = await check(site, { sample });
-		if (failed.length) {
-			console.error(`${site} does NOT hold its signed release${list ? ` (${list.commit})` : ''}:\n  ${failed.slice(0, 50).join('\n  ')}`);
-			process.exit(1);
-		}
-		console.log(`${site} holds its signed release ${list.commit} (${checked} files checked)`);
+		console.log(`listed ${Object.keys(list.files).length} files of ${dir}/ for ${commit}`);
+	} else if (what === 'witness') {
+		mkdirSync(join(ROOT, '.cargo'), { recursive: true });
+		await witness({ site: (option('--site') ?? 'https://maia.city').replace(/\/$/, ''), run: args.includes('--run'), named: option('--device') });
 	} else {
-		console.error('node scripts/release.mjs sign [build] | check [site] [--sample N] | key');
+		console.error('node scripts/release.mjs list [build] | witness [--run] [--site <url>] [--device <avendb-device>]');
 		process.exit(1);
 	}
 }
