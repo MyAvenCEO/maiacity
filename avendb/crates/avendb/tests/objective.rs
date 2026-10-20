@@ -1,7 +1,8 @@
 //! The Lean model's objective vectors (`avendb/spec/vectors/objectives.json`, written by `lake exe vectors` from
 //! `spec/AvenDB/ObjectiveVectors.lean`): each case an objective file Lean elaborated, the metrics it holds, readings,
 //! the numbers found at the paths it names (`proposed`, `current`), the measuring logic it names, and what `check`
-//! answers. The engine reads each file to the same metrics and measures and checks them to the same results.
+//! answers. The engine reads each file to the same metrics and measures and checks them to the same results, and
+//! gives each of `verdicts`' readings the same Lean verdict (`leanVerdict`, `objective::lean_verdict`).
 
 use avendb::objective::{self, Dec};
 use serde_json::Value;
@@ -54,6 +55,24 @@ fn objective_vectors() {
             assert_eq!(r.met, w["met"].as_bool().unwrap(), "{name} #{i} met");
             assert_eq!(Some(r.progress), dec(&w["progress"]), "{name} #{i} progress");
         }
+    }
+}
+
+#[test]
+fn lean_verdict_vectors() {
+    let file: Value = serde_json::from_str(&std::fs::read_to_string(VECTORS).unwrap()).unwrap();
+    let cases = file["verdicts"].as_array().unwrap();
+    assert!(cases.len() >= 4);
+    for c in cases {
+        let name = c["name"].as_str().unwrap();
+        let measured: Vec<(String, Dec)> = c["measured"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| (r["name"].as_str().unwrap().to_string(), dec(&r["value"]).unwrap()))
+            .collect();
+        let got = objective::lean_verdict(measured.iter().map(|(n, v)| (n.as_str(), *v)), c["key"].as_str().unwrap());
+        assert_eq!(got, c["verdict"].as_bool(), "{name}");
     }
 }
 

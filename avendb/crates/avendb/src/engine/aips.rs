@@ -123,8 +123,9 @@ impl Aip {
     /// Its objective as people and agents read it: the Lean, and where it reads, each metric checked against its
     /// inputs (`objective::summary_json`), its readings, those its vault's Measurers wrote, `measured` (`measured`),
     /// and the numbers its paths find in its lines, `lines`, each line's `sides` (`found`), else the error; then every
-    /// reading, a Measurer's marked `measured` with who wrote it, `by`, every path's numbers, `fields`, and the
-    /// measuring logic it names, `measures`. `null` where it has none.
+    /// reading, a Measurer's marked `measured` with who wrote it, `by`, every path's numbers, `fields`, the
+    /// measuring logic it names, `measures`, its `key` (`objective::key`) and real Lean's `verdict` on it, `{ok, by,
+    /// at, note}` or `null` (N3). `null` where it has none.
     fn objective_json(&self, lines: &[Line], sides: &[Option<Sides>], measured: &[Measured]) -> Value {
         let lean = self.lean();
         if lean.trim().is_empty() {
@@ -156,6 +157,17 @@ impl Aip {
             }
             row
         };
+        // Lean's verdict on the objective it holds now (N3, `objective::lean_verdict`): the newest a Measurer wrote
+        let key = objective::key(lean);
+        let name = objective::verdict_name(&key);
+        let ok = objective::lean_verdict(measured.iter().map(|m| (m.name.as_str(), m.value)), &key);
+        let verdict = ok.and_then(|ok| {
+            let m = measured.iter().rev().find(|m| m.name == name)?;
+            let row = rows.iter().find(|r| r["id"].as_i64() == Some(m.id))?;
+            Some(json!({ "ok": ok, "by": m.by.to_hex(), "at": row["at"], "note": row["note"] }))
+        });
+        out["key"] = key.into();
+        out["verdict"] = verdict.unwrap_or(Value::Null);
         out["lean"] = lean.into();
         out["readings"] = rows.iter().map(mark).collect();
         out
