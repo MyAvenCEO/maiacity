@@ -9,7 +9,8 @@
  * which release of the entry's main line it is and how many edits since (`version`, `edits`, as "v3 + 2 edits"), and
  * how many writes it holds, its heads and every write before them (`writes`). A version that comes after another holds
  * every write that one holds and more, so its count of writes is higher; a server that leaves writes out can only hand
- * out fewer, never more, since it can't sign any. So per vault and entry this device keeps the newest version it
+ * out fewer, never more, since it can't sign any (T10l of avenDB's Lean spec, avendb/spec/AvenDB/Writes.lean:
+ * `T10_writes_grow`, `T10_writes_left_out`). So per vault and entry this device keeps the newest version it
  * proved (`KEPT_NEWEST`: the page's storage, else memory alone, as the API has none), and a row whose version holds
  * fewer writes than that one is refused, naming the entry and both versions (`fresh`), never loaded in silence.
  *

@@ -5,6 +5,7 @@ import AvenDB.Sync
 import AvenDB.Logs
 import AvenDB.Doc
 import AvenDB.Proposals
+import AvenDB.Writes
 import AvenDB.Lens
 import AvenDB.Props
 import AvenDB.Claims

@@ -1072,7 +1072,8 @@ fn public_row(
     // which release of main the row is (`engine::described`), and how many writes its version holds, its heads and all
     // before them: a version that comes after another holds every write that one holds and more, so a reader that
     // already proved a newer version of the entry tells an older one handed out after it by its fewer writes, as a
-    // server that leaves out an entry's newest writes hands one out (maiaCITY's game/code/fresh.js)
+    // server that leaves out an entry's newest writes hands one out (T10l, the spec's `writesAt`; maiaCITY's
+    // game/code/fresh.js)
     let mut version = engine::described(history, MAIN, &heads);
     version["writes"] = json!(history.version(&heads).len());
     let mut row = json!({

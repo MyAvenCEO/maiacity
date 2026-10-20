@@ -3,6 +3,7 @@ import AvenDB.Logs
 import AvenDB.Lens
 import AvenDB.Proposals
 import AvenDB.Gate
+import AvenDB.Writes
 
 /-!
 # Test vectors for the Rust core
@@ -34,7 +35,9 @@ they read as the vault's accepts of a proposal (`accepts`); and each line of eac
 count: its writes and its heads, the main line first and then each proposal in the order it started, a draft's own
 line among them. A write carries its proof
 and its touches, as its readers read them off its body, and a share its ops.
-The file starts with the built-in groups (`groups`), which the Rust core offers as they are.
+The file starts with the built-in groups (`groups`), which the Rust core offers as they are, and ends with the
+version cases (`versions`): how many writes a version of an entry holds at the end of a step case, by its heads, some
+writes left out (T10l, `writesAt`).
 
 `vectors/lenses.json` holds the lens cases: stored blocks and todos in every shape the lens tells apart, what each app
 reads from them (`v0`, `v1`), and what each of a few edits through each app's view stores (`putV0`, `putV1`). The Rust
@@ -1633,6 +1636,53 @@ def standings : List StandingCase := [
 #guard (standings.map (·.answer)) ==
   [some (100, true), some (101, true), some (102, false), some (101, false), none, none, none]
 
+/-! ## A version's writes (T10l)
+
+How many writes a version of an entry holds (`writesAt`), of the writes its readers count at the end of a step case,
+by the heads that name the version: a later version holds more (`T10_writes_grow`). With writes left out (`left`), as a
+server that hands out only some of them leaves them out, a version holds no more than the full one (`T10_writes_left_out`):
+what it names that was left out, it holds nothing of. The history is that of "proposals of an entry": Welcome created
+(6), a draft started from it (10) and written on (11), merged into main (19), the draft written on again (20) and
+bringing main in (21), a proposal started from the merge (22) and written on (23). -/
+
+structure VersionCase where
+  case  : String
+  entry : EntryId
+  heads : List EditId
+  left  : List EditId := []
+  deriving Inhabited
+
+def VersionCase.writes (c : VersionCase) : Nat :=
+  match cases.find? (fun (k : Case) => k.name == c.case) with
+  | none => 0
+  | some k => writesAt ((run k.edits).2.counted.filter fun w => !c.left.contains w.edit) c.entry c.heads
+
+def proposalsCase := "proposals of an entry"
+
+def versionCases : List VersionCase := [
+  -- each version holds its heads and all before them, and a later one more
+  { case := proposalsCase, entry := 1, heads := [6] },
+  { case := proposalsCase, entry := 1, heads := [11] },
+  { case := proposalsCase, entry := 1, heads := [19] },
+  { case := proposalsCase, entry := 1, heads := [6, 20] },
+  { case := proposalsCase, entry := 1, heads := [21] },
+  { case := proposalsCase, entry := 1, heads := [23] },
+  { case := proposalsCase, entry := 1, heads := [21, 23] },
+  -- the merge and all after it left out, as a server holding main back at its creation would: main's heads there are
+  -- the creation alone, the draft's its last write before; and what names a write left out holds nothing
+  { case := proposalsCase, entry := 1, heads := [6], left := [19, 21, 22, 23] },
+  { case := proposalsCase, entry := 1, heads := [20], left := [19, 21, 22, 23] },
+  { case := proposalsCase, entry := 1, heads := [21], left := [19, 21, 22, 23] },
+  -- the newest write alone left out: one less
+  { case := proposalsCase, entry := 1, heads := [21, 22], left := [23] }]
+
+#guard versionCases.map (·.writes) == [1, 3, 4, 4, 6, 6, 8, 1, 4, 0, 7]
+-- later versions hold more (T10l), and a version with writes left out no more than the full one with the same heads
+#guard versionCases[0]!.writes < versionCases[1]!.writes && versionCases[1]!.writes < versionCases[2]!.writes &&
+  versionCases[2]!.writes < versionCases[4]!.writes && versionCases[4]!.writes < versionCases[6]!.writes
+#guard versionCases[8]!.writes ≤ ({ versionCases[8]! with left := [] } : VersionCase).writes &&
+  versionCases[10]!.writes < versionCases[6]!.writes
+
 /-! ## JSON -/
 
 def str (s : String) : String := "\"" ++ s ++ "\""
@@ -1967,13 +2017,20 @@ def standingCase (c : StandingCase) : String :=
     ": [\n  " ++ ",\n  ".intercalate (c.edits.map editJson) ++ "],\n " ++ str "device" ++ ": " ++ nat c.device ++
     ",\n " ++ str "standing" ++ ": " ++ opt (fun (v, a) => obj [("vault", nat v), ("admin", bool a)]) c.answer ++ "}"
 
+/-- A version case: the step case and entry it reads, the version's heads, the writes left out, and how many writes
+    the version holds. -/
+def versionCase (c : VersionCase) : String :=
+  obj [("case", str c.case), ("entry", nat c.entry), ("heads", ids c.heads), ("left", ids c.left),
+       ("writes", nat c.writes)]
+
 def render : String :=
   "{\"groups\": [\n" ++ ",\n".intercalate (groups.map group) ++ "\n],\n\"kinds\": [\n" ++
     ",\n".intercalate (allKinds.map kindRules) ++ "\n],\n\"cases\": [\n" ++
     ",\n".intercalate (cases.map case) ++ "\n],\n\"views\": [\n" ++ ",\n".intercalate (views.map viewCase) ++
     "\n],\n\"syncs\": [\n" ++ ",\n".intercalate (syncs.map syncCase) ++
     "\n],\n\"gates\": [\n" ++ ",\n".intercalate (gates.map gateCase) ++
-    "\n],\n\"standings\": [\n" ++ ",\n".intercalate (standings.map standingCase) ++ "\n]}\n"
+    "\n],\n\"standings\": [\n" ++ ",\n".intercalate (standings.map standingCase) ++
+    "\n],\n\"versions\": [\n" ++ ",\n".intercalate (versionCases.map versionCase) ++ "\n]}\n"
 
 /-- What an edit creates, by the model's number: a vault or a grant. -/
 def created : Action → Option (Nat × Nat)
