@@ -677,6 +677,19 @@ its own (`avendb-net`): `INVITE`, where the server hands whoever names an unclai
 `Node::claim_invite`. The server must hold Backup over `home` to hold its invites. A server nobody has claimed serves no
 vault, and takes any.
 
+### A device's pass to a service
+
+A service that holds no device, maiaCITY's API, asks avenDB's server who a device is (G3, `passStanding` in
+`Gate.lean`). The device signs a short pass for that service (`sign::ApiPass`, the `api_pass` op, which keeps
+nothing): its keys, the service's name and when it was made, under a context string of its own
+(`sign::API_PASS_CONTEXT`), so it counts as nothing else, and only a device's own key makes one. The service posts it
+to the server's feed with its own name (`POST /feed/pass`, `{pass, audience}`), and the server answers, never kept,
+the vault the device is a device of and whether that vault is an admin of `home`, as the gate counts one
+(`gate::device_standing`, `world::pass_standing`): `{vault, admin}`, or `{vault: null, admin: false}` for a pass
+that isn't for that service, is older than `PASS_LIFE` (10 minutes) or made more than `PASS_SKEW` ahead, or whose
+signer is no vault's device. maiaCITY's API takes each pass once, and opens its admins' pages, its Postgres window
+among them, by that answer alone: no passkey session, role or key of its own (Samuel 2026-10-20).
+
 ### Servers: Relay or Backup
 
 A vault gives avenMAIA, the server's device vault, a wide Backup share at founding, so the server keeps the
@@ -1021,6 +1034,7 @@ without padding). `share`, `share_group`, `revoke`, `settings` and `found` may a
 | `cap_groups` | `vault` | The vault's cap groups the device reads, each `{entry, name, caps, includes}` as its version in force says |
 | `kinds` | none | The kind table (section 3): each kind's name (`kind`), `ownedBy` (`"signers"` or the kinds of vault that may own it), `most` owners (`null` for any), whether it holds `devices`, and how many of it one owner may own (`each`, `null` for any) |
 | `limits` | none | How deep the device's queries read: `{depth, default, ceiling}` (below) |
+| `api_pass` | `audience` | The device's signed pass to service `audience`, made now, which keeps nothing: `{pass, expires}`, its wire bytes in base64url (section 5, "A device's pass to a service"); `Locked` while the device is locked |
 | `world` | none | The device's world (below), or `null` while it belongs to no vault |
 | `database` | `vault` | A vault's database as the device holds it: its tables, audiences, schemas, lenses and counts |
 | `note` | `entry` | A note's page, an article's or any other record's alike: its lines, each proposal with its base and conflicts, and its edits |
@@ -2166,6 +2180,7 @@ Each guarantee and the theorems that state it, in `Theorems.lean` unless the row
 | CG1 | A share of a cap group grants no more than its level, whatever version is in force; a new version narrows or widens it at once | `CG1_group_bounded` |
 | G1 | An invite is claimed once, with no owner signing, and makes no owner | `G1_claim_once` |
 | G2 | The server takes only new vaults it welcomes: a person's with the invite it claimed, a coop's or an aven's an admin owns | `G2_takes_welcome`, `G2_human`, `G2_founded` |
+| G3 | A device's pass shows a service the server's word on that device alone, for that service, while fresh; admin only of the device's own vault, as `isAdmin` says | `G3_standing_counts`, `G3_standing_admin` |
 
 T29 (marks mean what the keep rules say) is merged into T23, whose wants part it is.
 

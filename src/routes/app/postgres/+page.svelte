@@ -1,19 +1,18 @@
 <!--
 	Postgres: the admins' window into the city's Postgres, read only (api/src/tables.ts). Every table of it with how many
 	rows it holds, and a page of one table's rows at a time; a row opens whole below. A column that keeps a secret or a
-	credential is never sent, only that it is there. The page opens for Maia City's Admin cap group ($lib/app/places),
-	the rows for `db:read`, which only a person signed in with their passkey holds: The OS's key reaches the media
-	vault alone (api/src/keys.ts KEY_CAPS), so inside The OS the page says where it opens instead.
+	credential is never sent, only that it is there. It opens by Maia City's Admin group in avenDB, in The OS as in a
+	browser (Samuel 2026-10-20: "attached to my maia city admin vault, not my passkey"): the page for whoever holds it
+	($lib/app/places), and every read of the API by a pass this device signs for it (the `api_pass` op), which avenDB's
+	server checks for the API (api/src/standing.ts). No passkey session, Postgres role or key opens it.
 -->
 <script>
-	import { onMount } from 'svelte';
 	import { apiCall } from '$lib/auth/client';
-	import { native } from '$lib/native';
+	import { session } from '$lib/avendb/session.svelte.js';
 
 	const PAGE = 50;
-	const SITE = 'https://maia.city/app/postgres/';
-	/** inside The OS: known once the page runs in it, as the prerendered shell can't tell */
-	let inApp = $state(false);
+	/** the name maiaCITY's API goes by in a pass (api/src/standing.ts `AUDIENCE`) */
+	const AUDIENCE = 'maiaCITY API';
 
 	/** @typedef {{ name: string, type: string, hidden: boolean }} Column */
 	let tables = $state(/** @type {{ name: string, rows: number, columns: Column[] }[]} */ ([]));
@@ -25,18 +24,33 @@
 	/** the row opened whole, by its place on the page */
 	let open = $state(-1);
 
-	onMount(async () => {
-		inApp = native();
-		if (inApp) return void (loaded = true);
-		try {
-			tables = await apiCall('/api/tables');
-			const asked = new URLSearchParams(location.search).get('table');
-			const first = tables.find((t) => t.name === asked) ?? tables[0];
-			if (first) await show(first.name, 0);
-		} catch (e) {
-			error = /** @type {Error} */ (e).message;
-		}
-		loaded = true;
+	/**
+	 * Asks the API, POSTing `body` to `path` with a new pass from this device: avenDB's server tells the API whether the
+	 * device's vault is an admin of Maia City, and the API takes each pass once.
+	 * @param {string} path @param {object} [body] @returns {Promise<any>}
+	 */
+	async function ask(path, body = {}) {
+		const got = await session.ask({ op: 'api_pass', audience: AUDIENCE });
+		if (!got?.ok?.pass) throw new Error(got?.why || 'This device made no pass: unlock avenDB here first.');
+		return apiCall(path, { method: 'POST', body: JSON.stringify({ ...body, pass: got.ok.pass }) });
+	}
+
+	// the tables, once avenDB is open on this device, as the layout opens the page for Maia City's admins alone
+	let started = false;
+	$effect(() => {
+		if (session.phase !== 'open' || started) return;
+		started = true;
+		(async () => {
+			try {
+				tables = await ask('/api/tables');
+				const asked = new URLSearchParams(location.search).get('table');
+				const first = tables.find((t) => t.name === asked) ?? tables[0];
+				if (first) await show(first.name, 0);
+			} catch (e) {
+				error = /** @type {Error} */ (e).message;
+			}
+			loaded = true;
+		})();
 	});
 
 	/** @param {string} name @param {number} offset */
@@ -46,7 +60,7 @@
 		busy = true;
 		error = '';
 		try {
-			data = await apiCall(`/api/tables/${encodeURIComponent(name)}?offset=${offset}&limit=${PAGE}`);
+			data = await ask(`/api/tables/${encodeURIComponent(name)}`, { offset, limit: PAGE });
 			const url = new URL(location.href);
 			url.searchParams.set('table', name);
 			history.replaceState(history.state, '', url);
@@ -87,9 +101,7 @@
 		<p class="dim">Every table of the city’s Postgres and its rows, read only. Columns that keep a secret or a credential say only that they are there.</p>
 	</header>
 
-	{#if inApp}
-		<p class="note">The tables open in your browser, signed in with your passkey: The OS’s own key reaches the media library alone. Open <a href={SITE}>{SITE}</a>.</p>
-	{:else if !loaded}
+	{#if !loaded}
 		<p class="dim">One moment…</p>
 	{:else if !tables.length}
 		<p class="note">{error || 'No tables yet.'}</p>
@@ -179,12 +191,6 @@
 	}
 	.bad {
 		color: var(--terracotta);
-	}
-	a {
-		color: var(--ink);
-		text-decoration-color: var(--mustard);
-		text-underline-offset: 3px;
-		overflow-wrap: anywhere;
 	}
 	.eyebrow {
 		margin: 0;

@@ -1716,6 +1716,26 @@ def sAdmin : List Edit := sInvite ++ chain 620 [
 #guard isAdmin (view sAdmin) city bob && !isAdmin (view sInvite) city bob
 #guard takes city sAdmin bobsCoop == some bobsCoop
 
+-- a pass Bob's Mac signs for maiaCITY's API: the server answers his vault, an admin once he holds the Admin group
+def bobsPass : ApiPass := { device := macB, audience := "maiaCITY API", made := 1000, signer := some macB }
+#guard passStanding (view sAdmin) city "maiaCITY API" 1000 bobsPass == some (bob, true)
+#guard passStanding (view sInvite) city "maiaCITY API" 1000 bobsPass == some (bob, false)
+-- Alice's Mac: her vault owns Maia City
+#guard passStanding (view sAdmin) city "maiaCITY API" 1000 { bobsPass with device := macA, signer := some macA } ==
+  some (alice, true)
+-- signed by another key, for another service, too old or made too far ahead: it counts for nothing
+#guard passStanding (view sAdmin) city "maiaCITY API" 1000 { bobsPass with signer := some macA } == none
+#guard passStanding (view sAdmin) city "another service" 1000 bobsPass == none
+#guard passStanding (view sAdmin) city "maiaCITY API" (1000 + passLife) bobsPass == none
+#guard passStanding (view sAdmin) city "maiaCITY API" (1000 + passLife - 1) bobsPass == some (bob, true)
+#guard passStanding (view sAdmin) city "maiaCITY API" (1000 - passSkew) bobsPass == some (bob, true)
+#guard passStanding (view sAdmin) city "maiaCITY API" (1000 - passSkew - 1) bobsPass == none
+-- a passkey or a stranger's key is no vault's device: nothing, whoever signs
+#guard passStanding (view sAdmin) city "maiaCITY API" 1000 { bobsPass with device := passkeyB, signer := some passkeyB } ==
+  none
+#guard passStanding (view sAdmin) city "maiaCITY API" 1000 { bobsPass with device := stranger, signer := some stranger } ==
+  none
+
 /-! ## A key move: every signer to ML-DSA-65
 
 avenDB signs with ML-DSA-65 where it signed with SLH-DSA (Samuel, 2026-10-19). A signer's id hashes its keys, so a

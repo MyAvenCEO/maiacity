@@ -102,8 +102,8 @@ use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
 use crate::sealed::{Brought, FileRoot};
 use crate::sign::{
-    self, Ceremony, DeviceKey, EnclaveKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, Suite, SUITES,
-    WebAuthn,
+    self, ApiPass, Ceremony, DeviceKey, EnclaveKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, Suite,
+    SUITES, WebAuthn,
 };
 use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, CAP_GROUP_TYPE, LENS_TYPE, SCHEMA_TYPE};
 use crate::sync::{
@@ -3218,6 +3218,21 @@ impl Lab {
         Some(Statement { keys: k.keys(), checked, logs, files, sig })
     }
 
+    /// Device `d`'s pass to service `audience`, made now by the Lab's clock (`sign::ApiPass`): `None` while it is
+    /// locked.
+    pub fn api_pass(&self, d: SignerId, audience: &str) -> Option<ApiPass> {
+        let Key::Device(k) = self.keys.get(&d)? else { return None };
+        Some(k.api_pass(audience, self.now))
+    }
+
+    /// What device `on`, the server of vault `home`, says of device `d` by its view and the cap groups it reads: the
+    /// vault `d` is a device of, and whether that vault is an admin of `home` (`gate::device_standing`).
+    pub fn device_standing(&self, on: SignerId, home: VaultId, d: SignerId) -> Option<(VaultId, bool)> {
+        let store = self.held(on);
+        let st = store.view();
+        gate::device_standing(st, &st.read_groups(&store.readings), home, d)
+    }
+
     /// The pass passkey `passkey`, used on device `d`, makes `d` at `made`, seconds since 1970 (`sign::RelayPass`): for
     /// `d` alone, which the server's relay lets in for ten minutes if the passkey roots a vault the server knows
     /// (`roots`), and which a peer hands the passkey's link card on (`link_card`). `None` unless the passkey is at hand
@@ -3597,9 +3612,15 @@ impl Lab {
     /// makes next in a log builds on the past the backup kept, so it forks from what it made there since (`forks`).
     /// A node starting again from its store on disk restores the same way.
     pub fn restore_backup(&mut self, d: SignerId, backup: &Backup) {
+        self.restore_from(d, backup.clone());
+    }
+
+    /// `restore_backup`, taking `backup`'s edits instead of a copy of them: a node starting again from its store holds
+    /// each edit once as it restores, not twice (Samuel 2026-10-20: the server's start took more than its 1 GB).
+    pub fn restore_from(&mut self, d: SignerId, backup: Backup) {
         let (follow, query_depth, gate) = (self.held(d).follow.clone(), self.held(d).query_depth, self.held(d).gate);
         self.stores.insert(d, Store { follow, query_depth, gate, ..Store::default() });
-        self.keep(d, backup.signed.clone(), &backup.blobs);
+        self.keep(d, backup.signed, &backup.blobs);
         self.refresh(d, &[]);
     }
 

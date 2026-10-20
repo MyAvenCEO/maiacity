@@ -23,6 +23,7 @@ use crate::lens::{DocV1, Lane, Lens, Schema, Status, View};
 use crate::policy::{Entry, Issued, KeepMode, Kind, Level, Line, Principal, Share, State, Vault, Who};
 use crate::rules;
 use crate::sealed::{FileRoot, PIECE};
+use crate::sign::ApiPass;
 use crate::slice::{LENS_TYPE, Selector, Slice};
 use crate::words::{hex, kind_name, kinds_json, level_name, status_name, who_name};
 
@@ -1178,6 +1179,17 @@ pub fn open_invite(lab: &Lab, me: SignerId, share: ShareId) -> bool {
     let st = lab.state(me);
     st.share(share)
         .is_some_and(|cp| cp.share.over == city && matches!(cp.share.who, Who::Invite(_)) && st.live(share))
+}
+
+/// What avenDB's server, device `me`, answers a service called `audience` that brings pass `pass`, at `now`, seconds
+/// since 1970 by its clock (G3, `Gate.lean`'s `passStanding`): if the pass counts for that service now
+/// (`sign::ApiPass::device`), the vault its device is a device of and whether that vault is an admin of the seed's
+/// coop, Maia City: Maia City itself, a vault that owns it, or one holding its Admin group (`gate::device_standing`).
+/// `None` for a pass that doesn't count, a signer that is no vault's device, or a server whose seed has no coop. So
+/// maiaCITY's API, which holds no device, opens its admins' pages by avenDB, with no passkey and no key of its own.
+pub fn pass_standing(lab: &Lab, me: SignerId, pass: &ApiPass, audience: &str, now: u64) -> Option<(VaultId, bool)> {
+    let &city = seed_of(lab, me).first()?;
+    lab.device_standing(me, city, pass.device(audience, now)?)
 }
 
 /// The seed device `me`'s person's claim of the server founded, by its view, in `SEED_NAMES`' order: Maia City and
