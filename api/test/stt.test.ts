@@ -14,7 +14,6 @@ const pg = new PGlite();
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const MEDIA_KEY = "mck_media_admin_key";
 const OTHER_KEY = "mck_ideas_only_key";
-const SERVER_TOKEN = "vst_the_vault_servers_token";
 
 beforeAll(async () => {
   for (const m of MIGRATIONS) await pg.exec(m.sql);
@@ -30,7 +29,6 @@ beforeAll(async () => {
   await initRoles();
   await pg.query("INSERT INTO founders (id, name, role) VALUES ('first', 'first', 'admin')");
   await pg.query("INSERT INTO api_keys (founder_id, hash, scope, label) VALUES ('first', $1, 'media:admin', 'Mac'), ('first', $2, 'economy:admin', 'economy')", [sha(MEDIA_KEY), sha(OTHER_KEY)]);
-  await pg.query("INSERT INTO vault_config (key, value) VALUES ('api_token', $1)", [sha(SERVER_TOKEN)]);
 });
 
 const saved = process.env.PREMAI_API_KEY;
@@ -82,17 +80,16 @@ describe("normalising Deepgram's answer", () => {
 });
 
 describe("POST /api/transcripts", () => {
-  test("nobody, a wrong server token, or a key without media:admin is turned away", async () => {
+  test("nobody, an unknown key, or a key without media:admin is turned away", async () => {
     process.env.PREMAI_API_KEY = "set";
     expect((await transcribeRoute(post())).status).toBe(401);
-    expect((await transcribeRoute(post("vst_not_it"))).status).toBe(403);
     expect((await transcribeRoute(post(OTHER_KEY))).status).toBe(403);
     expect((await transcribeRoute(post("mck_unknown"))).status).toBe(401);
   });
 
   test("without Prem's key it says so: 503, in a sentence", async () => {
     delete process.env.PREMAI_API_KEY;
-    const res = await transcribeRoute(post(SERVER_TOKEN));
+    const res = await transcribeRoute(post(MEDIA_KEY));
     expect(res.status).toBe(503);
     expect((await res.json()).error).toMatch(/PREMAI_API_KEY is missing/);
     expect(await (await statusRoute(new Request("http://api/api/transcripts", { headers: { authorization: `Bearer ${MEDIA_KEY}` } }))).json()).toMatchObject({ ready: false });
@@ -101,7 +98,7 @@ describe("POST /api/transcripts", () => {
   test("the vault server's audio goes to Prem as an m4a with diarize and smart_format; the transcript comes back", async () => {
     const asked: any[] = [];
     useSttClient({ audio: { transcriptions: { create: async (body) => (asked.push(body), fixture) } } });
-    const res = await transcribeRoute(post(SERVER_TOKEN));
+    const res = await transcribeRoute(post(MEDIA_KEY));
     expect(res.status).toBe(200);
     const t = await res.json();
     expect(t.words).toHaveLength(11);
@@ -123,10 +120,10 @@ describe("POST /api/transcripts", () => {
   test("empty and too large are refused before Prem is asked; Prem's refusals become sentences", async () => {
     let calls = 0;
     useSttClient({ audio: { transcriptions: { create: async () => (calls++, Promise.reject({ status: 429, error: "Rate limit exceeded. Please try again later." })) } } });
-    expect((await transcribeRoute(post(SERVER_TOKEN, new Uint8Array()))).status).toBe(400);
-    expect((await transcribeRoute(post(SERVER_TOKEN, new Uint8Array(MAX_BYTES + 1)))).status).toBe(413);
+    expect((await transcribeRoute(post(MEDIA_KEY, new Uint8Array()))).status).toBe(400);
+    expect((await transcribeRoute(post(MEDIA_KEY, new Uint8Array(MAX_BYTES + 1)))).status).toBe(413);
     expect(calls).toBe(0);
-    const res = await transcribeRoute(post(SERVER_TOKEN));
+    const res = await transcribeRoute(post(MEDIA_KEY));
     // Prem rate limiting pauses the model: 503 with until when, and why
     expect(res.status).toBe(503);
     const body = await res.json();

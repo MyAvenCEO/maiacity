@@ -12,7 +12,7 @@ import { call, checkModels, classify, discover, endpoints, MAX_PAUSE, paused, pi
 import { transcribeRoute, useSttClient } from "../src/stt";
 
 const pg = new PGlite();
-const SERVER_TOKEN = "vst_the_vault_servers_token_p";
+const MEDIA_KEY = "mck_media_admin_key_p";
 
 beforeAll(async () => {
   for (const m of MIGRATIONS) await pg.exec(m.sql);
@@ -26,7 +26,8 @@ beforeAll(async () => {
   };
   useDb(db);
   await initRoles();
-  await pg.query("INSERT INTO vault_config (key, value) VALUES ('api_token', $1)", [createHash("sha256").update(SERVER_TOKEN).digest("hex")]);
+  await pg.query("INSERT INTO founders (id, name, role) VALUES ('first', 'first', 'admin')");
+  await pg.query("INSERT INTO api_keys (founder_id, hash, scope, label) VALUES ('first', $1, 'media:admin', 'Mac')", [createHash("sha256").update(MEDIA_KEY).digest("hex")]);
 });
 
 afterEach(() => {
@@ -88,7 +89,7 @@ describe("an attestation failure, classified by the gateway's answer for the mod
     gateway(502, "Error code: 502");
     useSttClient({ audio: { transcriptions: { create: async () => Promise.reject(attestationError()) } } });
     const res = await transcribeRoute(
-      new Request("http://api/api/transcripts", { method: "POST", body: new Uint8Array([1, 2, 3]), headers: { "content-type": "audio/mp4", authorization: `Bearer ${SERVER_TOKEN}` } }),
+      new Request("http://api/api/transcripts", { method: "POST", body: new Uint8Array([1, 2, 3]), headers: { "content-type": "audio/mp4", authorization: `Bearer ${MEDIA_KEY}` } }),
     );
     expect(res.status).toBe(503);
     expect(await res.json()).toMatchObject({ error: expect.stringContaining("unavailable right now (gateway 502"), transient: true, pause: "provider", paused_until: expect.any(String) });
@@ -105,7 +106,7 @@ describe("an attestation failure, classified by the gateway's answer for the mod
 
 describe("never hammering Prem: the breaker and the rate limit", () => {
   const route = () =>
-    transcribeRoute(new Request("http://api/api/transcripts", { method: "POST", body: new Uint8Array([1, 2, 3]), headers: { "content-type": "audio/mp4", authorization: `Bearer ${SERVER_TOKEN}` } }));
+    transcribeRoute(new Request("http://api/api/transcripts", { method: "POST", body: new Uint8Array([1, 2, 3]), headers: { "content-type": "audio/mp4", authorization: `Bearer ${MEDIA_KEY}` } }));
 
   test("many queued files and a failing provider: exactly one Prem call per pause, the pause doubling", async () => {
     process.env.PREMAI_API_KEY ??= "set";

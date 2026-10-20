@@ -4,22 +4,33 @@ name: Old media vault
 #
 #   measure – read only: what it still stores and how big (the bucket by folder, LIBRARY/ being the vault's files; the
 #             server's vaultdata volume; its Postgres tables), beside the newest database dump and the room left
-#   archive – copies only, nothing deleted: a full database dump and the vaultdata volume as one tar go to ARCHIVE/
-#             old-vault/ in the bucket, with the list of LIBRARY/'s files; nothing expires there (the 30-day rule is on
-#             BACKUPS/pg/ alone). LIBRARY/ itself stays where it is.
+#   list    – read only: every file of the old vault's catalog (vault_files) and every object of LIBRARY/, to tell
+#             what moved into avenDB and what not, sealed to the public key `to` names (RSA, its PEM in base64) and
+#             printed in the log: this repo is public, so the list, its titles and names, is never left in the clear,
+#             nor as an artifact anyone signed in could fetch
+#   forget  – deletes the old-vault-list artifact the first list run left in the clear (Samuel's OK first)
+#   archive – copies only, nothing deleted: a full database dump and the vaultdata volume as one tar (its catalog and
+#             blobs; never its node's secret key, nor its temporary files) go to ARCHIVE/old-vault/ in the bucket, with
+#             the list of LIBRARY/'s files; nothing expires there (the 30-day rule is on BACKUPS/pg/ alone). LIBRARY/
+#             itself stays where it is.
 #
 # Deleting anything is a later step of its own, only once Samuel OKs the list with sizes.
 on:
   workflow_dispatch:
     inputs:
       step:
-        description: measure (read only) or archive (copies only)
+        description: measure or list (read only), archive (copies only), or forget (deletes the first list artifact)
         type: choice
-        options: [measure, archive]
+        options: [measure, list, archive, forget]
         default: measure
+      to:
+        description: list only — the RSA public key, its PEM in base64, the list is sealed to
+        required: false
 
 permissions:
   contents: read
+  # forget: to delete the list's artifact
+  actions: write
 
 concurrency:
   group: old-vault
@@ -94,6 +105,35 @@ jobs:
           COMMIT;
           SQL
 
+      - name: List the old vault's files, sealed
+        if: inputs.step == 'list'
+        env:
+          TO: ${{ inputs.to }}
+        run: |
+          [ -n "$TO" ] || { echo "::error::name the public key to seal the list to: to"; exit 1; }
+          mkdir -p list
+          grep ' LIBRARY/' objects.txt > list/library-objects.txt || true
+          ssh prod "docker exec -i -e PGOPTIONS='-c default_transaction_read_only=on' maia-city-db psql -U maiacity -d maiacity -v ON_ERROR_STOP=1" <<'SQL' > list/vault-files.csv
+          \copy (SELECT hash, size, mime, kind, public, stored, added::date AS added, coalesce(meta->>'class', '') AS class, coalesce(meta->>'story', '') AS story, coalesce(meta->>'original_name', '') AS original_name, array_to_string(tags, '|') AS tags, title FROM vault_files ORDER BY added, hash) TO STDOUT WITH CSV HEADER
+          SQL
+          wc -l list/*
+          # a fresh key for the list, sealed to `to`; the list under it
+          printf '%s' "$TO" | base64 -d > to.pem
+          openssl rand -hex 32 > key.txt
+          openssl pkeyutl -encrypt -pubin -inkey to.pem -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -in key.txt -out key.sealed
+          tar -czf - -C list . | openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:key.txt -out list.sealed
+          rm -rf list key.txt
+          # long lines: a job's log reads back 5,000 lines at most
+          echo '--- key'; base64 -w 2000 key.sealed; echo '--- list'; base64 -w 2000 list.sealed; echo '--- end'
+
+      - name: Forget the list's artifact
+        if: inputs.step == 'forget'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=old-vault-list&per_page=100" --jq '.artifacts[].id' |
+            while read -r id; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" && echo "deleted artifact $id"; done
+
       - name: Archive the database, a full dump
         if: inputs.step == 'archive'
         run: |
@@ -116,7 +156,8 @@ jobs:
           SIZE=$(docker run --rm -v "$VOL:/d:ro" alpine:3.20 du -sb /d | cut -f1)
           KEY="$ARCHIVE/vaultdata-$(date -u +%Y%m%dT%H%M%SZ).tar"
           echo "archive: $VOL, $SIZE bytes, to s3://$BACKUP_BUCKET/$KEY …"
-          timeout 3000 docker run --rm -v "$VOL:/d:ro" alpine:3.20 tar -C /d -cf - . \
+          # GNU tar, whose --exclude is sure to match ./secret.key
+          timeout 3000 docker run --rm -v "$VOL:/d:ro" debian:bookworm-slim tar -C /d --exclude=./secret.key --exclude=./tmp -cf - . \
             | timeout 3000 docker run --rm -i -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
                 -e AWS_DEFAULT_REGION="$BACKUP_REGION" \
                 -e AWS_REQUEST_CHECKSUM_CALCULATION=when_required -e AWS_RESPONSE_CHECKSUM_VALIDATION=when_required \

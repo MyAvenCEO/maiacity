@@ -1,17 +1,10 @@
 name: Site media check
 
 # The site's media as everyone reads them (scripts/site-media-check.mjs): every file of the media manifest by its hash
-# from api.maia.city/vault/files, read whole by ranges and hashed (BLAKE3), a picture asked whole too and a sound or a
-# film from its middle, and how many avenDB serves rather than the old media vault (deploy/Caddyfile). Run by hand,
-# after the site's media are copied into Maia City (Samuel 2026-10-19); "all from avenDB" fails it while any file
-# still comes from the old media vault.
+# from api.maia.city/vault/files, which avenDB's feed answers (deploy/Caddyfile), read whole by ranges and hashed
+# (BLAKE3), a picture asked whole too and a sound or a film from its middle. Run by hand.
 on:
   workflow_dispatch:
-    inputs:
-      all_from_avendb:
-        description: Fail while any file still comes from the old media vault
-        type: boolean
-        default: false
 
 permissions:
   contents: read
@@ -31,5 +24,3 @@ jobs:
       - run: bun install --frozen-lockfile
 
       - run: bun scripts/site-media-check.mjs
-        env:
-          ALL_FROM_AVENDB: ${{ inputs.all_from_avendb && '1' || '' }}

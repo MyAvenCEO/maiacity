@@ -2,6 +2,12 @@
 
 Decided 2026-09-29. Update this file whenever a decision changes, with the date and why.
 
+**Retired 2026-10-20 (#1112, Samuel: "get rid of old studio 1 vault and infrastructure").** Studio 2 and the site read
+every file from avenDB (Maia City's Library; the site through avenDB's feed behind `api.maia.city/vault/files`). The
+server peer `vault-server`, its relay on `api.maia.city/relay`, its gateway and UDP 7400 are gone; `LIBRARY/` in the
+bucket and the server's `vaultdata` volume stay until Samuel OKs deleting them. What follows is the history of that
+design; avenDB's own iroh use lives in `avendb/`.
+
 ## Decisions
 
 | Decision | Why |

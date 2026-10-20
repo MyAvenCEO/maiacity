@@ -2,7 +2,7 @@
 # See .claude/skills/iroh/ — maiacity.md for the design, gotchas.md for why the iroh versions are pinned exactly.
 [workspace]
 resolver = "3"
-members = ["crates/vault-core", "crates/vault-color", "crates/vault-media", "crates/vault-asr", "crates/vault-render", "crates/vault-server", "crates/vault-cli", "app"]
+members = ["crates/vault-core", "crates/vault-color", "crates/vault-media", "crates/vault-asr", "crates/vault-render", "app"]
 
 [workspace.package]
 edition = "2024"
@@ -36,7 +36,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 lto = false
 # The OS's own update (a release build on the Mac at every main) compiles again only what changed in our crates and
 # avenDB's: without it each update compiled the app and avenDB's crates whole, 2 to 6 minutes on the Mac. The
-# dependencies are never incremental; the server's image turns it off (Dockerfile.server).
+# dependencies are never incremental.
 incremental = true
 
 # Debug builds: line tables for our code (backtraces keep their lines), none for the dependencies — much smaller
