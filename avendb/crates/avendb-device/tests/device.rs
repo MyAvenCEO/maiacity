@@ -2286,7 +2286,8 @@ async fn ivys_mac_its_touch_id_key_and_her_drive_move_to_ml_dsa_65_with_her_pass
     hosted(&mut app, "her drive hosted", |d| d["volumes"][0]["state"] == "hosted").await;
     // the page asks once more: her passkey, her Touch ID key, her Mac and her drive move in one sheet and one touch
     let moving = app.call("moving", json!([])).await;
-    assert_eq!(moving, json!({ "ok": { "passkey": true, "touch": true, "device": true, "avens": 0 } }));
+    let asks = json!({ "passkey": true, "touch": true, "device": true, "avens": 0, "retire": [], "behind": false });
+    assert_eq!(moving, json!({ "ok": asks }));
     let moved = app.call("moveKeys", json!([])).await["ok"].clone();
     let touched = vec!["move your Touch ID key to ML-DSA-65".to_string()];
     assert_eq!((app.asked(), app.touched()), (vec!["move".to_string()], touched));

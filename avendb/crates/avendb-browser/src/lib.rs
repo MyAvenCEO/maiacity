@@ -70,7 +70,7 @@
 //! The tests run natively (`tests/device.rs`) and in Chromium (`tests/page.rs`, through `scripts/test-browser.sh`),
 //! where a virtual authenticator holds the passkey.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -80,7 +80,7 @@ use avendb::cast;
 use avendb::engine;
 use avendb::id::{ShareId, SignerId, VaultId};
 use avendb::keys;
-use avendb::lab::{Lab, Unsigned};
+use avendb::lab::{Lab, Retire, Unsigned};
 use avendb::policy::{Action, Level, Principal, Refusal, Sharing};
 use avendb::recovery::{self, RecoveryKey};
 use avendb::sign::{self, Assertion, Ceremony, DeviceKey, RelayPass, SUITES, SignerKeys, pass_challenge};
@@ -595,8 +595,10 @@ impl Device {
             bail!("{NOT_CAUGHT_UP}");
         }
         let avens = aven_moves(&self.node).await;
+        let peers = self.node.live_peers().await;
         let opener = self.opener.clone();
-        let drafted = move |lab: &Lab, me| drafted(lab, me, &opener, touch, &avens).map(|d| d.map(|d| d.moving));
+        let drafted =
+            move |lab: &Lab, me| drafted(lab, me, &opener, touch, &avens, &peers).map(|d| d.map(|d| d.moving));
         self.node.read(drafted).await.map_err(|why| anyhow!("its key move is refused: {why:?}"))
     }
 
@@ -612,9 +614,11 @@ impl Device {
     /// stopped at its next unlock, by that key or the old one. The server and the agents of the avens its person
     /// governs move with it, each that hands its next key in time (`aven_moves`, K3c): the edit that adds that key goes
     /// to the device, which signs it too, and the device opens as that key from its next start, as the browser's does
-    /// at once. The device it opened again as, or `None` where it didn't move itself. Fails for a device that keeps no
-    /// shelf, if the vault refuses a step, if a ceremony isn't its signer's, or, where nothing else moves, if an aven's
-    /// device doesn't take its move.
+    /// at once. Once every key of its person's moved, it retires the earlier ones instead, in one batch signed the same
+    /// way (`Moving::retire`, `avendb::lab::Lab::draft_retire`), and only while it holds what its coop's server holds;
+    /// the avens' devices move at a later move. The device it opened again as, or `None` where it didn't move itself.
+    /// Fails for a device that keeps no shelf, if the vault refuses a step, if a ceremony isn't its signer's, or, where
+    /// nothing else moves, if an aven's device doesn't take its move.
     pub async fn move_keys<S, K>(
         &self,
         start: Start,
@@ -630,13 +634,17 @@ impl Device {
         let touch = meta.touch.as_ref().map(|t| sign::enclave_key(&t.public));
         catch_up(&self.node).await;
         let avens = aven_moves(&self.node).await;
+        let peers = self.node.live_peers().await;
         let opener = self.opener.clone();
         let theirs = avens.clone();
-        let drafted = self.node.read(move |lab, me| drafted(lab, me, &opener, touch, &theirs)).await;
+        let drafted = self.node.read(move |lab, me| drafted(lab, me, &opener, touch, &theirs, &peers)).await;
         let refused = |why: Refusal| anyhow!("its key move is refused: {why:?}");
         let Some(Drafted { mut moves, drafts, passkeys, touches, moving }) = drafted.map_err(refused)? else {
             return Ok(None);
         };
+        if moving.behind {
+            bail!("{RETIRE_WAITS}");
+        }
         moves.retain(|&(old, _)| !avens.iter().any(|a| a.device == old));
         if let Some(first) = drafts.first() {
             let Signing { passkey, touch } = sign(first.challenge(), moving).await?;
@@ -900,21 +908,42 @@ const SHELVED: Duration = Duration::from_secs(10);
 /// as it moves to ML-DSA-65 or approves the device's next key; whether the Mac's Touch ID key signs, with one touch,
 /// as it moves; whether a device moves, its id changing: this one, or a drive the Mac runs beside it; and how many
 /// devices of the avens they govern move with it, the server's and the agents' (K3c). Where neither key signs, the
-/// device moves with no ceremony, as one cut short goes on (`Device::move_keys`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+/// device moves with no ceremony, as one cut short goes on (`Device::move_keys`). Once every key of theirs moved: the
+/// earlier keys and old devices it retires (`retire`, `avendb::lab::Lab::retires`), and whether that waits until the
+/// device holds what its coop's server holds (`behind`), as a removal cuts what its drafter doesn't hold (T16).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Moving {
     pub passkey: bool,
     pub touch: bool,
     pub device: bool,
     pub avens: usize,
+    pub retire: Vec<Retire>,
+    pub behind: bool,
 }
 
 impl Moving {
-    /// As the page and the Mac app read it: `{passkey, touch, device, avens}`.
+    /// As the page and the Mac app read it: `{passkey, touch, device, avens, retire, behind}`, each step of `retire`
+    /// as `{"root", "key", "next"}`, the root handed on from `key` to `next`, `{"owner", "key"}` or `{"device",
+    /// "vault", "key"}`, each id in hex.
     pub fn to_json(&self) -> Value {
-        json!({ "passkey": self.passkey, "touch": self.touch, "device": self.device, "avens": self.avens })
+        let step = |r: &Retire| match *r {
+            Retire::Root { old, new } => json!({ "kind": "root", "key": old.to_hex(), "next": new.to_hex() }),
+            Retire::Owner(s) => json!({ "kind": "owner", "key": s.to_hex() }),
+            Retire::Device { vault, device } => {
+                json!({ "kind": "device", "vault": vault.to_hex(), "key": device.to_hex() })
+            }
+        };
+        let retire: Vec<Value> = self.retire.iter().map(step).collect();
+        json!({
+            "passkey": self.passkey, "touch": self.touch, "device": self.device, "avens": self.avens,
+            "retire": retire, "behind": self.behind,
+        })
     }
 }
+
+/// Why removing the earlier keys waits (`Device::move_keys`, `Moving::behind`): this device doesn't hold what its coop's
+/// server holds yet, and a removal cuts what rests on a key that its drafter doesn't hold (T16).
+pub const RETIRE_WAITS: &str = "removing the old keys waits until this device holds what your coop's server holds";
 
 /// What signs a key move's batch (`Device::move_keys`), each over its challenge where `Moving` asks for it: a ceremony
 /// of its person's passkey, and a touch of the Mac's Touch ID key (`sign::Ceremony::enclave`).
@@ -1002,16 +1031,54 @@ fn drafted(
     opener: &[SignerId],
     touch: Option<[u8; 32]>,
     avens: &[Aven],
+    peers: &BTreeMap<SignerId, Option<usize>>,
 ) -> Result<Option<Drafted>, Refusal> {
+    let by = || lab.owner_among(me, opener).or(opener.first().copied()).ok_or(Refusal::NotActing);
     let mut moves = lab.moves(me, touch);
+    // once its person's keys moved, the earlier ones retire, before the avens' devices move on; only where its person
+    // governs a server or an agent, a device that holds all its vaults hold, which tells it it holds all too
+    if moves.is_empty() && !lab.governed_devices(me).is_empty() {
+        let live: BTreeSet<SignerId> = peers.keys().copied().collect();
+        let retires = lab.retires(me, &live);
+        if !retires.is_empty() {
+            let behind = !holds_what_servers_hold(lab, me, peers);
+            let drafts = if behind { vec![] } else { lab.draft_retire(me, &retires, by()?)? };
+            let (passkeys, touches) = ceremonies_of(lab, me, &drafts, &[]);
+            let (passkey, touch) = (!passkeys.is_empty(), !touches.is_empty());
+            let moving = Moving { passkey, touch, retire: retires, behind, ..Moving::default() };
+            return Ok(Some(Drafted { moves, drafts, passkeys, touches, moving }));
+        }
+    }
     moves.extend(avens.iter().map(|a| (a.device, a.next)));
-    // nothing moves, nothing to sign: the checkpoint over what earlier keys signed rides a move's ceremony, never one
-    // of its own
+    // nothing moves, nothing to sign: the checkpoint over what earlier keys signed rides a move's ceremony or the
+    // retire's, never one of its own
     if moves.is_empty() {
         return Ok(None);
     }
-    let by = lab.owner_among(me, opener).or(opener.first().copied()).ok_or(Refusal::NotActing)?;
-    let drafts = lab.draft_move(me, &moves, by)?;
+    let drafts = lab.draft_move(me, &moves, by()?)?;
+    let (passkeys, touches) = ceremonies_of(lab, me, &drafts, &moves);
+    let from = |s: SignerId| moves.iter().find(|&&(_, new)| new == s).map_or(s, |&(old, _)| old);
+    let named: BTreeSet<SignerId> = moves.iter().map(|&(old, _)| old).collect();
+    let seen = lab.signers_seen(me, &named);
+    let keys = |s: SignerId| lab.keys_of(s).or_else(|| lab.keys_of(from(s))).or_else(|| seen.get(&from(s)).copied());
+    let aven = |old: SignerId| avens.iter().any(|a| a.device == old);
+    let device = moves.iter().any(|&(old, _)| !aven(old) && matches!(keys(old), Some(SignerKeys::Device { .. })));
+    let avens = avens.len();
+    let (passkey, touch) = (!passkeys.is_empty(), !touches.is_empty());
+    let moving = Moving { passkey, touch, device, avens, ..Moving::default() };
+    Ok(Some(Drafted { moves, drafts, passkeys, touches, moving }))
+}
+
+/// The signers of `drafts` a ceremony of the person's passkey signs as, and those a touch of the Mac's Touch ID key
+/// signs as, as `me`'s Lab knows their keys or the keys they move from (`moves`): every one but a device, which signs
+/// with its key at hand, and the master recovery key's next key, which signs by its standing consent, which the Lab
+/// holds, in no ceremony (K4).
+fn ceremonies_of(
+    lab: &Lab,
+    me: SignerId,
+    drafts: &[Unsigned],
+    moves: &[(SignerId, SignerId)],
+) -> (Vec<SignerId>, Vec<SignerId>) {
     let mut signers: Vec<SignerId> = drafts.iter().flat_map(|d| d.edit().sigs()).collect();
     signers.sort();
     signers.dedup();
@@ -1020,7 +1087,6 @@ fn drafted(
     let seen = lab.signers_seen(me, &named);
     let keys = |s: SignerId| lab.keys_of(s).or_else(|| lab.keys_of(from(s))).or_else(|| seen.get(&from(s)).copied());
     let (mut passkeys, mut touches) = (vec![], vec![]);
-    // the master recovery key's next key signs by its standing consent, which the Lab holds, in no ceremony (K4)
     for s in signers.into_iter().filter(|&s| Some(s) != lab.recovery()) {
         match keys(s) {
             Some(SignerKeys::Device { .. }) => {}
@@ -1028,11 +1094,18 @@ fn drafted(
             _ => passkeys.push(s),
         }
     }
-    let aven = |old: SignerId| avens.iter().any(|a| a.device == old);
-    let device = moves.iter().any(|&(old, _)| !aven(old) && matches!(keys(old), Some(SignerKeys::Device { .. })));
-    let avens = avens.len();
-    let moving = Moving { passkey: !passkeys.is_empty(), touch: !touches.is_empty(), device, avens };
-    Ok(Some(Drafted { moves, drafts, passkeys, touches, moving }))
+    (passkeys, touches)
+}
+
+/// Whether device `me` holds what its coop's server holds, as `peers`, the devices it is connected to now, say
+/// (`avendb_net::Node::live_peers`): one of them is a device of an aven its person governs (`Lab::governed_devices`),
+/// and each of those told what it holds, with no edit `me` lacks. What a removal of keys waits for, as it cuts what
+/// rests on them that its drafter doesn't hold (T16; 2026-10-20, a phone that hadn't synced its coop yet erased it with
+/// its move).
+fn holds_what_servers_hold(lab: &Lab, me: SignerId, peers: &BTreeMap<SignerId, Option<usize>>) -> bool {
+    let servers = lab.governed_devices(me);
+    let mut theirs = peers.iter().filter(|(d, _)| servers.contains(d)).peekable();
+    theirs.peek().is_some() && theirs.all(|(_, &lacks)| lacks == Some(0))
 }
 
 /// Asks each device `node` knows for what it holds (`avendb::lab::Lab::peers`), for a few seconds at most

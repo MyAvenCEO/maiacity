@@ -31,7 +31,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use avendb::cast::*;
 use avendb::id::{BlobId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::KeyFam;
-use avendb::lab::Lab;
+use avendb::lab::{Lab, Retire};
 use avendb::policy::{Action, Kind, Level, Principal, Sharing};
 use avendb::slice::Selector;
 use avendb::recovery::RecoveryKey;
@@ -1499,7 +1499,7 @@ async fn hanas_browser_and_passkey_from_before_the_key_move_move_in_one_ceremony
     until("her Mac reads it", || node_shows(&mac, note, "Red and blue.")).await;
     // after the unlock the page asks once more: her passkey and her browser move, in one ceremony
     let moving = opened.moving().await.expect("what moves");
-    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: true, avens: 0 }));
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: true, avens: 0, ..Moving::default() }));
     let again = start_on(&shelf.0, "Hana's browser", &url, 4);
     let shown_steps = again.progress.clone();
     let sign = |challenge, moving: Moving| {
@@ -1531,7 +1531,8 @@ async fn hanas_browser_and_passkey_from_before_the_key_move_move_in_one_ceremony
     assert!(shows(&moved, note, "Red and blue.").await, "it reads what it read");
     run(&moved, set_text(hana, note, None, 2, "Red, blue and green.")).await.expect("it edits her note");
     until("her Mac reads the edit", || node_shows(&mac, note, "Red, blue and green.")).await;
-    // nothing more moves here: her Mac moves at its own next unlock
+    // nothing more moves here: her Mac moves at its own next unlock. Her earlier keys stay: she governs no server
+    // whose holding tells her browser it holds all, and removing them over less would cut what it lacks
     assert_eq!(moved.moving().await.expect("what moves"), None);
     // closed, it opens again from its shelf as its next key, by her passkey's unlock alone
     moved.close().await.expect("it closes");
@@ -1594,7 +1595,7 @@ async fn ivys_vault_takes_the_master_keys_next_key_at_her_browsers_unlock_by_her
     assert_eq!((opened.node().device(), opened.passkey()), (browser_i, passkey));
     // her passkey alone signs, in one ceremony: the key's next key by its standing consent, and no device moves
     let moving = opened.moving().await.expect("what moves");
-    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: false, avens: 0 }));
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: false, avens: 0, ..Moving::default() }));
     let sign = |challenge, _: Moving| {
         let ivys = &ivys;
         async move { Ok(Signing { passkey: Some(ivys.ceremony(challenge, Step::Approve).await?), touch: None }) }
@@ -1608,6 +1609,7 @@ async fn ivys_vault_takes_the_master_keys_next_key_at_her_browsers_unlock_by_her
     let after = Some(([passkey, old, new].map(Principal::Signer).to_vec(), Some(passkey)));
     until("her Mac sees the move", || async { mac.read(members).await == after }).await;
     assert_eq!(moved.node().read(members).await, after);
+    // nothing left to move, and the earlier master key stays, as she governs no server
     assert_eq!(moved.moving().await.expect("what moves"), None, "nothing left to move");
     for n in [moved.node(), &mac] {
         n.shutdown().await.expect("the node shuts down");
@@ -1654,7 +1656,7 @@ async fn hanas_ipad_away_as_her_browser_moved_learns_the_move_from_its_next_key(
     let opened = Device::open(start_on(&shelf.0, "Hana's browser", &url, 3), &meta, hanas.unlock(nonce, [0xaa; 32]));
     let opened = opened.await.expect("it opens");
     let moving = opened.moving().await.expect("what moves, once it caught up with her Mac");
-    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: true, avens: 0 }));
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: true, avens: 0, ..Moving::default() }));
     // her Mac goes away before she moves: no peer sees the move as it happens
     mac.shutdown().await.expect("her Mac's node stops");
     let again = start_on(&shelf.0, "Hana's browser", &url, 4);
@@ -1682,6 +1684,7 @@ async fn hanas_ipad_away_as_her_browser_moved_learns_the_move_from_its_next_key(
 struct Sams {
     lab: Lab,
     passkey: SignerId,
+    mac: SignerId,
     sam: VaultId,
     server: SignerId,
     maia: VaultId,
@@ -1705,7 +1708,7 @@ fn sams() -> Sams {
         assert!(avendb::engine::run(&mut lab, mac, &op).get("ok").is_some(), "{name}'s profile");
     }
     lab.sync(mac, server);
-    Sams { lab, passkey, sam, server, maia }
+    Sams { lab, passkey, mac, sam, server, maia }
 }
 
 /// Whether device `d` shows vault `v` by its name `name`.
@@ -1726,7 +1729,7 @@ async fn sams_phone_signs_in_through_the_server_moves_his_passkey_at_once_and_sh
     let admission = Admission::open();
     let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
     let url: RelayUrl = relay.url();
-    let Sams { mut lab, passkey, sam, server: server_d, maia } = sams();
+    let Sams { mut lab, passkey, sam, server: server_d, maia, .. } = sams();
     let server = server_of(&mut lab, server_d, &url, &admission).await;
     // his Mac is away. His new phone signs in through the server with his passkey alone, and knows the server from
     // then on, as avenMAIA's device, whatever the server handed it yet
@@ -1741,7 +1744,7 @@ async fn sams_phone_signs_in_through_the_server_moves_his_passkey_at_once_and_sh
     let meta = phone.meta([1; 32], "c2Ft".into());
     phone.keep(&meta).await.expect("what opens it again, on its shelf");
     let moving = phone.moving().await.expect("what moves");
-    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: false, avens: 0 }));
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: false, avens: 0, ..Moving::default() }));
     let sign = |challenge, _: Moving| {
         let sams = &sams;
         async move { Ok(Signing { passkey: Some(sams.ceremony(challenge, Step::Approve).await?), touch: None }) }
@@ -1761,7 +1764,7 @@ async fn sams_phone_moves_his_passkey_only_once_it_brought_what_the_server_keeps
     let admission = Admission::open();
     let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
     let url: RelayUrl = relay.url();
-    let Sams { mut lab, passkey, sam, server: server_d, maia } = sams();
+    let Sams { mut lab, passkey, mac, sam, server: server_d, maia } = sams();
     // his phone signed in through the server: it holds what a link hands over, his vault's link card, its own join
     // and the server's card (`Device::link`), and nothing of the rest yet
     let (secret, nonce) = ([46; 32], [1; 32]);
@@ -1797,7 +1800,7 @@ async fn sams_phone_moves_his_passkey_only_once_it_brought_what_the_server_keeps
     until("it shows his name", || shows_named(&opened, sam, "Sam")).await;
     until("it shows Maia City", || shows_named(&opened, maia, "Maia City")).await;
     let moving = opened.moving().await.expect("what moves");
-    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: false, avens: 0 }));
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: false, avens: 0, ..Moving::default() }));
     let sign = |challenge, _: Moving| {
         let sams = &sams;
         async move { Ok(Signing { passkey: Some(sams.ceremony(challenge, Step::Approve).await?), touch: None }) }
@@ -1812,6 +1815,33 @@ async fn sams_phone_moves_his_passkey_only_once_it_brought_what_the_server_keeps
     let owner = Principal::Signer(next);
     let owns = move |lab: &Lab, me| lab.state(me).vault(sam).is_some_and(|v| v.owners.contains(&owner));
     until("the server sees the move", || async { server.read(owns).await }).await;
+    // then his earlier keys retire, once the phone holds what the server holds, in one more ceremony: his passkey's
+    // earlier key hands the root on and goes, and his Mac, away and never moved, goes too (he links it again)
+    let ready = || async { moved.moving().await.ok().flatten().is_some_and(|m| !m.behind) };
+    until("it holds what the server holds", ready).await;
+    let moving = moved.moving().await.expect("what retires").expect("his earlier keys retire");
+    let (root, owner) = (Retire::Root { old: passkey, new: next }, Retire::Owner(passkey));
+    let retire = vec![root, owner, Retire::Device { vault: sam, device: mac }];
+    assert_eq!(moving, Moving { passkey: true, retire, ..Moving::default() });
+    let again = start_on(&shelf.0, "Sam's phone", &url, 6);
+    let retired = moved.move_keys(again, sign, |_| async { Ok(()) }).await.expect("they retire");
+    assert!(retired.is_none(), "the phone stays as it is");
+    assert_eq!(sams.steps(), [Step::Approve, Step::Approve], "one ceremony each");
+    // the server sees his next passkey as his vault's one owner and its root, the phone its one device; his name and
+    // his coop stay, and the server takes the phone's next edit of his vault
+    let members = move |lab: &Lab, me| lab.state(me).vault(sam).map(|v| (v.owners.clone(), v.root, v.devices.clone()));
+    let phone_d = moved.node().device();
+    let after = Some((vec![Principal::Signer(next)], Some(next), vec![phone_d]));
+    until("the server sees the old keys go", || async { server.read(members).await == after }).await;
+    assert_eq!(moved.node().read(members).await, after);
+    assert!(shows_named(&moved, sam, "Sam").await && shows_named(&moved, maia, "Maia City").await, "his coop stays");
+    let by_phone = move |lab: &Lab, me| lab.log(me).edits().iter().filter(|e| e.sigs().any(|s| s == phone_d)).count();
+    let before = server.read(by_phone).await;
+    let op = json!({ "op": "profile", "vault": sam.to_hex(), "name": "Sam S." });
+    run(&moved, op).await.expect("it still edits his vault");
+    until("the server takes the edit", || async { server.read(by_phone).await > before }).await;
+    assert!(shows_named(&moved, sam, "Sam S.").await);
+    assert_eq!(moved.moving().await.expect("what moves"), None, "nothing left");
     for n in [moved.node(), &server] {
         n.shutdown().await.expect("the node shuts down");
     }

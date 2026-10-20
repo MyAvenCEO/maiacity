@@ -17,7 +17,8 @@ use std::sync::Arc;
 
 use avendb::id::{EditId, EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
-use avendb::lab::Lab;
+use avendb::lab::{Lab, Retire};
+use std::collections::BTreeSet;
 use avendb::policy::{Action, KeepMode, Kind, Principal, Refusal, Revoking, Setting, Sharing};
 use avendb::recovery::RecoveryKey;
 use avendb::sign::{
@@ -472,5 +473,90 @@ fn the_master_recovery_key_moves_by_the_persons_ceremony_and_its_standing_consen
     assert_eq!((owners, root), (signers(&[passkey, old_master, new_master]), Some(passkey)), "the earlier one stays");
     assert!(!lab.moves(mac, None).iter().any(|&(old, _)| old == old_master), "nothing left of it to move");
     assert!(lab.draft_move(mac, &[(old_master, new_master)], passkey).expect("nothing to sign").is_empty());
+
+    // the retire step removes the earlier master key, by her passkey alone, once the new one is an owner
+    let retires = lab.retires(mac, &BTreeSet::new());
+    assert_eq!(retires, vec![Retire::Owner(old_master)]);
+    let drafts = lab.draft_retire(mac, &retires, passkey).expect("the Mac's view takes it");
+    let key = authenticator.ceremony(drafts[0].challenge());
+    lab.complete_move(mac, drafts, &[(passkey, &key)]).expect("her passkey signed it");
+    let (owners, root, _) = members(&lab, mac, vault);
+    assert_eq!((owners, root), (signers(&[passkey, new_master]), Some(passkey)));
+    assert!(lab.retires(mac, &BTreeSet::new()).is_empty());
+}
+
+/// Samuel 2026-10-20 18:56, "you should have removed all the old keys": once every key moved, one ceremony of her
+/// passkey retires the earlier ones on her Mac. The root goes to the passkey's next key, the earlier passkey and Touch
+/// ID key leave as owners, the Mac's earlier key and the phone that never moved leave as devices; her coop, its records
+/// and what she wrote stay, as the Mac holds them all.
+#[test]
+fn once_every_key_moved_one_ceremony_retires_the_earlier_keys_and_keeps_her_coop() {
+    let mut authenticator = Passkey::from_seed_in([1; 32], Suite::SlhDsa);
+    let enclave = EnclaveKey::from_seed_in([3; 32], Suite::SlhDsa);
+    let Before { mut lab, passkey, next, touch, mac, phone, vault, card } = before(&mut authenticator, &enclave);
+    let owners = vec![Principal::Vault(vault)];
+    let genesis = Action::Genesis { kind: Kind::Coop, owners, threshold: 1, root: None, nonce: 5, seal_to: vec![] };
+    let coop = VaultId::from(by_passkey(&mut lab, mac, &[passkey], genesis, &mut authenticator));
+    let record = lab.create(mac, coop, coop, world::CARD, &[], world::card("the coop's card", mac)).expect("a card");
+    let none = BTreeSet::new();
+
+    // the move first: nothing retires while the earlier keys have no next key in the vault
+    let mac_secret = *authenticator.prf(&device_salt(&MAC_SALT));
+    let [mac_next, _] = lab.device_keys(mac, mac_secret).expect("its keys");
+    let enclave_key = sign::enclave_key(&enclave.public());
+    let new_touch = SignerKeys::Enclave { mldsa: enclave_key, slh: None }.id();
+    let retires = lab.retires(mac, &none);
+    assert_eq!(retires, vec![Retire::Device { vault, device: phone }], "before the move, only the phone");
+    let moves = lab.moves(mac, Some(enclave_key));
+    let drafts = lab.draft_move(mac, &moves, passkey).expect("the Mac's view takes it");
+    let (key, finger) = (authenticator.ceremony(drafts[0].challenge()), enclave.ceremony(drafts[0].challenge()));
+    let ceremonies = [(passkey, &key), (next, &key), (touch, &finger), (new_touch, &finger)];
+    lab.complete_move(mac, drafts, &ceremonies).expect("one ceremony and one touch signed it");
+    lab.finish_move(mac, &moves).expect("its keep shares carried");
+    reopen(&mut lab, mac, mac_secret, mac_next);
+    lab.sync_all(2);
+
+    // then the retire step, in one ceremony of the passkey: the root handed on first, then the removals
+    let retires = lab.retires(mac_next, &none);
+    let expected = vec![
+        Retire::Root { old: passkey, new: next },
+        Retire::Owner(passkey),
+        Retire::Owner(touch),
+        Retire::Device { vault, device: mac },
+        Retire::Device { vault, device: phone },
+    ];
+    let sorted = |mut r: Vec<Retire>| {
+        r[1..].sort_by_key(|x| format!("{x:?}"));
+        r
+    };
+    assert_eq!(sorted(retires.clone()), sorted(expected));
+    let drafts = lab.draft_retire(mac_next, &retires, passkey).expect("the new Mac's view takes it");
+    assert_eq!(drafts.len(), 6);
+    let last = &drafts[5].edit().action;
+    assert!(matches!(last, Action::Checkpoint { vault: v, .. } if *v == vault), "last, its next key's checkpoint");
+    let challenge = drafts[0].challenge();
+    assert!(drafts.iter().all(|d| d.challenge() == challenge), "one batch");
+    let key = authenticator.ceremony(challenge);
+    let retired = lab.complete_move(mac_next, drafts, &[(passkey, &key), (next, &key)]).expect("one ceremony");
+    let ml = ML_DSA_PUBLIC_BYTES + ML_DSA_SIGNATURE_BYTES;
+    // the root hands on by the earlier passkey and its next key, whose SLH-DSA signature the checkpoint does away with
+    assert!(bare(&lab, mac_next, retired[0]), "the root hands on, held on the checkpoint's word");
+    assert_eq!(checks_out(&lab, mac_next, retired[1]), Some(vec![ml]), "its next key removes the rest");
+
+    let signers = |s: &[SignerId]| s.iter().map(|&s| Principal::Signer(s)).collect::<Vec<_>>();
+    let (owners, root, devices) = members(&lab, mac_next, vault);
+    assert_eq!((owners, root), (signers(&[next, new_touch]), Some(next)));
+    assert_eq!(devices, vec![mac_next]);
+    let st = lab.state(mac_next);
+    assert!(st.acts_for(mac_next, vault) && st.acts_for(mac_next, coop));
+    assert!(lab.holds_key(mac_next, st.current(KeyFam::Seed(vault))), "it opens her vault");
+    assert!(lab.item(mac_next, card).is_some() && lab.item(mac_next, record).is_some(), "what she wrote stays");
+    assert!(lab.retires(mac_next, &none).is_empty(), "nothing left to retire");
+    // the earlier keys sign nothing for her vault any more, the new ones do
+    let threshold = Action::Settings { vault, set: Setting::Threshold(1) };
+    for old in [passkey, touch] {
+        assert!(lab.draft(mac_next, &[old], threshold.clone()).is_err(), "{old:?}");
+    }
+    assert!(lab.draft(mac_next, &[next], threshold).is_ok());
 }
 
