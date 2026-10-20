@@ -17,6 +17,9 @@ import * as THREE from 'three';
 
 /** the layer the warming draws on (src/lib/assets/stage.js uses 1 and 30) */
 const LAYER = 31;
+/** the most things, and bytes of new buffers, the warming sends the GPU in one draw before Play */
+const LOT = 250;
+const LOT_BYTES = 8e6;
 
 /** @param {THREE.WebGLRenderer} renderer */
 export function createWarmer(renderer) {
@@ -71,6 +74,14 @@ export function createWarmer(renderer) {
 		return out;
 	};
 	const materials = (/** @type {any} */ o) => /** @type {THREE.Material[]} */ (Array.isArray(o.material) ? o.material : [o.material]).filter(Boolean);
+
+	/** the bytes of this thing's buffers not sent yet (its geometry's, its copies') @param {THREE.Object3D} o */
+	const unsent = (o) => {
+		const g = /** @type {any} */ (o).geometry, im = /** @type {any} */ (o).instanceMatrix;
+		let n = im && !counted.has(im) ? im.array.byteLength : 0;
+		if (g && !counted.has(g)) for (const a of [...Object.values(g.attributes ?? {}), g.index]) n += /** @type {any} */ (a)?.array?.byteLength ?? 0;
+		return n;
+	};
 
 	/** whether this is shown, all the way up @param {THREE.Object3D} o */
 	const shown = (o) => {
@@ -211,7 +222,20 @@ export function createWarmer(renderer) {
 			found = [];
 			ripe = [];
 			const objs = fresh(scene, camera, hidden);
-			if (objs.length) draw(scene, camera, objs);
+			// a few at a time, the GPU let take each lot before the next: sent thousands of things in one go, WebKit's
+			// GPU process fell so far behind that the page took it for gone (the village's context lost, every time,
+			// right after its animals were warmed in one draw)
+			const gl = renderer.getContext();
+			for (let i = 0; i < objs.length; ) {
+				let j = i, bytes = 0;
+				while (j < objs.length && j - i < LOT && bytes < LOT_BYTES) bytes += unsent(objs[j++]);
+				const lot = objs.slice(i, j).filter((o) => isIn(o, scene));
+				i = j;
+				if (!lot.length) continue;
+				draw(scene, camera, lot);
+				gl.getError(); // (answered once the GPU process has done all that was sent before it)
+				await new Promise((r) => setTimeout(r, 0));
+			}
 			return objs.length;
 		},
 		/**
