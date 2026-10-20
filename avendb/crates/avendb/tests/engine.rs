@@ -962,9 +962,9 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));
     let lenses = list(&schemas["lenses"]);
     let from = |l: &Value| (l["from"].clone(), l["builtIn"].clone());
-    let older = [lens::ARTICLE_V1.id(), lens::POST_V1.id(), lens::FUNCTION_V1.id(), lens::SPARK_V1.id(), lens::STORY_V1.id(), lens::VIEW_V1.id()];
+    let older = [lens::ARTICLE_V1.id(), lens::POST_V1.id(), lens::FUNCTION_V1.id(), lens::SPARK_V1.id(), lens::STORY_V1.id(), lens::AIP_V1.id(), lens::VIEW_V1.id()];
     let older = older.map(|id| (json!(id.to_hex()), json!(true)));
-    let five = "the lenses from article, post, function, spark, story and view v1 to v2";
+    let five = "the lenses from article, post, function, spark, story, AIP and view v1 to v2";
     assert_eq!(lenses.iter().map(from).collect::<Vec<_>>(), older, "{five}");
 }
 
