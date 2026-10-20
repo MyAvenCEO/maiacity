@@ -262,6 +262,25 @@ fn a_forged_edit_is_refused() {
     assert!(rows.iter().all(|r| honest.contains(r)), "nothing else changed");
 }
 
+/// A server that leaves out an entry's newest write proves an older version, validly signed: what every signature
+/// can't tell, its row's `version` does, as it holds fewer writes than the newest, so a reader that proved the newest
+/// before refuses it (maiaCITY's game/code/fresh.js).
+#[test]
+fn an_older_version_proves_fewer_writes() {
+    let c = city();
+    let proof = c.proof(c.w.server);
+    let chart_of = |rows: &[Value]| rows.iter().find(|r| r["entry"] == c.views[0].to_hex()).cloned().expect("the chart");
+    let newest = chart_of(&observed(proof.clone(), c.city).expect("it proves the vault"));
+    let last = (0..proof.len()).filter(|&i| proof[i].edit.entry() == Some(c.views[0])).last().expect("its writes");
+    let mut held_back = proof.clone();
+    held_back.remove(last);
+    let older = chart_of(&observed(held_back, c.city).expect("it proves the vault"));
+    assert_eq!(older["record"]["source"], "<p>1</p>", "its first version, signed as it was");
+    assert_ne!(older["heads"], newest["heads"]);
+    let writes = |row: &Value| row["version"]["writes"].as_u64().expect("its writes");
+    assert!(writes(&older) < writes(&newest), "{} then {}", older["version"], newest["version"]);
+}
+
 /// A record the vault never signed counts for nothing. A server that hands out rows of its own making has no
 /// signature to hand out with them; one that signs a write into Maia City's chart with its own device, acting for Maia
 /// City, which no key of its owners signed, has it refused by the rules every reader applies; and a vault Bob founds

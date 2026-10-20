@@ -21,7 +21,9 @@
 //! write there, is in no row the observer reads: a forged edit fails its signature, and the rest count for no reader.
 //! What the server still decides is which of the vault's signed edits it hands out: it can leave out a newer version
 //! of an entry, which the observer then doesn't see yet, or an entry, which it then reads nowhere; it can't hand out
-//! anything the vault's signers didn't sign, nor make a write count that the vault's rules refuse.
+//! anything the vault's signers didn't sign, nor make a write count that the vault's rules refuse. An older version
+//! holds fewer writes than a newer one (a row's `version`, `world::public_entries`), so a reader that proved the newer
+//! before refuses it (maiaCITY's game/code/fresh.js).
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 

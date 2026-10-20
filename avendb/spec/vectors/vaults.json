@@ -2554,4 +2554,17 @@
   {"depth": 11, "author": 2, "cosigners": [], "action": {"share": {"grant": {"share": {"id": 33, "over": 100, "who": {"invite": 703}, "level": "read", "wide": false, "select": {"anyOf": [[{"typeIn": [2]}]]}, "ops": [{"op": "read"}], "parent": null, "issuer": 100}, "via": []}}}}],
  "device": 555,
  "standing": null}
+],
+"versions": [
+{"case": "proposals of an entry", "entry": 1, "heads": [6], "left": [], "writes": 1},
+{"case": "proposals of an entry", "entry": 1, "heads": [11], "left": [], "writes": 3},
+{"case": "proposals of an entry", "entry": 1, "heads": [19], "left": [], "writes": 4},
+{"case": "proposals of an entry", "entry": 1, "heads": [6, 20], "left": [], "writes": 4},
+{"case": "proposals of an entry", "entry": 1, "heads": [21], "left": [], "writes": 6},
+{"case": "proposals of an entry", "entry": 1, "heads": [23], "left": [], "writes": 6},
+{"case": "proposals of an entry", "entry": 1, "heads": [21, 23], "left": [], "writes": 8},
+{"case": "proposals of an entry", "entry": 1, "heads": [6], "left": [19, 21, 22, 23], "writes": 1},
+{"case": "proposals of an entry", "entry": 1, "heads": [20], "left": [19, 21, 22, 23], "writes": 4},
+{"case": "proposals of an entry", "entry": 1, "heads": [21], "left": [19, 21, 22, 23], "writes": 0},
+{"case": "proposals of an entry", "entry": 1, "heads": [21, 22], "left": [23], "writes": 7}
 ]}

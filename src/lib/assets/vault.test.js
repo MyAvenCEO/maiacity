@@ -691,6 +691,30 @@ test("a page that holds its avenDB open reads the recipes off its own device: th
 	}
 }, 60000);
 
+test("a recipe's entry listed older than this device proved it (game/code/fresh.js) is refused where its newest is asked for, naming both versions; a version named still builds", async () => {
+	const { useDevice } = await import('../../../game/code/sources/device.js');
+	const { newestKeeper } = await import('../../../game/code/fresh.js');
+	const apple = rowAt('plants/apple@2');
+	const at = (writes) => FEED.rows.map((r) => (r === apple ? { ...r, version: { version: 2, edits: 0, writes } } : r));
+	const newest = newestKeeper({ storage: false });
+	// this device's own avenDB proved the entry at 9 writes
+	useDevice({ run: async (op) => (op.op === 'bring' ? { ok: { new: 0, peers: 1, reached: true } } : { ok: at(9) }), read: async () => new Uint8Array() });
+	try {
+		const r = await vault.loadRecipes({ feed: AT, fetch: feedOf().get, timeout: 1000, ...PROVING, proofs: keepOf(), newest });
+		expect([r.feed, r.refused]).toEqual(['this device', []]);
+	} finally {
+		useDevice(null);
+	}
+	// then the feed lists it at 5
+	const f = feedOf({ rows: at(5) });
+	const r = await vault.loadRecipes({ feed: AT, fetch: f.get, timeout: 1000, ...PROVING, proofs: keepOf(), newest });
+	expect(r.phase).toBe('ready');
+	expect(r.refused).toEqual([expect.stringMatching(/^plants\/apple@2 \(entry [0-9a-f]{8}…\) of vault [0-9a-f]{8}…: refused, the version handed out \(v2, 5 writes, .*older than the newest this device already proved \(v2, 9 writes/)]);
+	expect(() => vault.hashOf('plants/apple')).toThrow(/^plants\/apple: its newest version can't be read: plants\/apple@2 \(entry .*refused/);
+	expect(vault.hashOf('plants/apple@2')).toBe(LABEL['plants/apple@2']);
+	expect(vault.hashOf('things/bell-tent')).toBe(LABEL['things/bell-tent@1']);
+}, 60000);
+
 test("a server restarting is waited for, saying so: the listing and each file asked again together, never told missing; a file it never hands over is told unread, not missing", async () => {
 	// avenDB's server restarting for a deploy (Sandbox 4 on a phone, 2026-10-20): the listing and every file "Load
 	// failed" for a while, the proxy's 502 in between, then all of it answers
