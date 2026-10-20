@@ -40,9 +40,12 @@ inductive On where
     (what a write does inside a row it adds is part of adding it), at any depth; the entry created; a tag asked for,
     added or removed; a proposal started; another line merged in (`merge`), and each place where the writes it brings
     in, those its line's history didn't hold, changed the record (`merged`), read off those writes' touches. An op a
-    reader can't place touches the whole record (`[]`). -/
+    reader can't place touches the whole record (`[]`). A set inside a row its writer's vault added, or in no row of an
+    entry it created, is its own (`own`): readers mark it so from the entry's counted writes (`State.mine`), never the
+    writer. -/
 inductive Touch where
   | set     (l : Loc) (to : Option Val)
+  | own     (l : Loc) (to : Option Val)
   | insert  (l : Loc)
   | remove  (l : Loc)
   | move    (l : Loc)
@@ -55,7 +58,8 @@ inductive Touch where
 
 /-- An op a share names, in the order shares list them: `relay`, `backup` and `read` its slice's edits; `create`
     entries, on the main line or as drafts, each starting a line of its own; `set` any change at or under `path` (only
-    to the values `to`, if it lists them), `insert`, `remove` or `move` the rows of a list, `merge` another line whose
+    to the values `to`, if it lists them), `setOwn` the same but only of what is the writer's own (a set marked `own`:
+    inside a row its vault added, or in no row of an entry it created), `insert`, `remove` or `move` the rows of a list, `merge` another line whose
     changes since their base all lie at or under `path` (anywhere, for `[]`), each of these on the lines `on` names
     (either, if none); ask for the tags `tag` lists (any, if none); `propose`; and `share`, issue shares resting on
     it. -/
@@ -65,6 +69,7 @@ inductive Op where
   | read
   | create  (on : Option On)
   | set     (path : List Step) (to : Option (List Val)) (on : Option On)
+  | setOwn  (path : List Step) (to : Option (List Val)) (on : Option On)
   | insert  (path : List Step) (on : Option On)
   | remove  (path : List Step) (on : Option On)
   | move    (path : List Step) (on : Option On)
@@ -106,11 +111,27 @@ structure Group where
   everyone : Bool := false
   deriving DecidableEq, Repr
 
+/-- The ops of Member, the group a room gives the people in it (a chat room is an entry of type `room`, its messages
+    the rows of its `messages`, a thread's replies the rows of a message's `thread`, reactions the rows of a message's
+    `reactions`): read the room; add a message, a reply or a reaction, on the main line, at any depth under the
+    messages; and of what is its own alone, change the text of a message or a reply, mark it edited or deleted, change
+    whom it mentions and what it links, and take back a reaction (mark it deleted). Nothing of the room's own fields, no
+    row moved or removed, no tag, no proposal, no share. -/
+def memberOps : List Op :=
+  let msg : List Step := [.field "messages", .any]
+  let reply := msg ++ [.field "thread", .any]
+  let own (p : List Step) : List Op :=
+    ["text", "edited", "deleted", "mentions", "links"].map fun f => .setOwn (p ++ [.field f]) none (some .main)
+  [.read, .insert [.field "messages"] (some .main)] ++ own msg ++ own reply ++
+    [msg ++ [.field "reactions", .any, .field "deleted"], reply ++ [.field "reactions", .any, .field "deleted"]].map
+      fun p => .setOwn p none (some .main)
+
 def groups : List Group := [
   ⟨"Owner", Level.owner.ops, false⟩,
   ⟨"Editor", Level.write.ops, false⟩,
   ⟨"Suggester", [.read, .create (some .proposals), .set [] none (some .proposals), .propose,
     .merge (some .proposals) []], false⟩,
+  ⟨"Member", memberOps, false⟩,
   ⟨"Viewer", Level.read.ops, false⟩,
   ⟨"Public", Level.read.ops, true⟩,
   ⟨"Backup", Level.backup.ops, false⟩,
@@ -118,7 +139,7 @@ def groups : List Group := [
 
 -- each level's group has that level, and a public group only reads
 #guard [Level.relay, .backup, .read, .write, .owner].all fun r => levelOf r.ops == r
-#guard (groups.map fun g => levelOf g.ops) == [.owner, .write, .write, .read, .read, .backup, .relay]
+#guard (groups.map fun g => levelOf g.ops) == [.owner, .write, .write, .write, .read, .read, .backup, .relay]
 #guard groups.all fun g => !g.everyone || levelOf g.ops == .read
 
 /-! ## Cap groups
@@ -156,6 +177,17 @@ def Ops.Seg.step : Seg → Step
 /-- A place's path: its steps, a field or a row, at any depth. -/
 def Ops.Loc.steps (l : Loc) : List Step := l.map Seg.step
 
+/-- The place of the innermost row a place lies in: the place up to its last row; none for a place in no row. -/
+def Ops.Loc.row? (l : Loc) : Option Loc :=
+  match l.reverse.dropWhile (fun s => match s with | .row _ => false | .field _ => true) with
+  | [] => none
+  | r => some r.reverse
+
+#guard Ops.Loc.row? [.field "messages", .row 5, .field "text"] == some [.field "messages", .row 5]
+#guard Ops.Loc.row? [.field "messages", .row 5, .field "reactions", .row 9, .field "deleted"] ==
+  some [.field "messages", .row 5, .field "reactions", .row 9]
+#guard Ops.Loc.row? [.field "name"] == none && Ops.Loc.row? [] == none
+
 /-- A step of a pattern fits a step of a path: the same field, the same row, or any. -/
 def Step.fits : Step → Step → Bool
   | .any, _ => true
@@ -177,7 +209,8 @@ def onLine (main : Bool) : Option On → Bool
 
 /-- An op allows a touch of a write on the main line (`main`) or on a proposal. -/
 def Op.allows (main : Bool) : Op → Touch → Bool
-  | .set p to o, .set l v => onLine main o && reaches p l.steps && match to, v with
+  | .set p to o, .set l v | .set p to o, .own l v | .setOwn p to o, .own l v =>
+    onLine main o && reaches p l.steps && match to, v with
     | none, _ => true
     | some vs, some x => vs.contains x
     | some _, none => false
@@ -216,6 +249,17 @@ def Op.allows (main : Bool) : Op → Touch → Bool
 #guard (Op.merge none []).allows false (.merged [])
 #guard !(Op.set [] none none).allows true (.merged [.field "title"])
 
+-- an own set op allows only a set its readers marked own; a set op allows both
+#guard (Op.setOwn [.field "messages", .any, .field "text"] none (some .main)).allows true
+  (.own [.field "messages", .row 5, .field "text"] (some (.str "hi")))
+#guard !(Op.setOwn [.field "messages", .any, .field "text"] none (some .main)).allows true
+  (.set [.field "messages", .row 5, .field "text"] (some (.str "hi")))
+#guard !(Op.setOwn [.field "messages", .any, .field "text"] none (some .main)).allows false
+  (.own [.field "messages", .row 5, .field "text"] (some (.str "hi")))
+#guard (Op.set [] none none).allows true (.own [.field "messages", .row 5, .field "text"] none)
+#guard ![Touch.insert [.field "messages", .row 5, .field "thread"], .remove [.field "messages"],
+  .move [.field "messages"]].any fun t => (Op.setOwn [.field "messages"] none none).allows true t
+
 /-- Ops allow a write: each of its touches is allowed by one of them. -/
 def allowsAll (rs : List Op) (main : Bool) (ts : List Touch) : Bool := ts.all fun t => rs.any (·.allows main t)
 
@@ -225,6 +269,19 @@ def allowsAll (rs : List Op) (main : Bool) (ts : List Touch) : Bool := ts.all fu
   allowsAll g.ops false [.create] && !allowsAll g.ops true [.create]
 #guard (groups.find? (·.name == "Editor")).any fun g =>
   allowsAll g.ops false [.create] && allowsAll g.ops true [.create]
+
+-- a Member posts, replies and reacts on main; changes what is its own of a message, a reply or a reaction alone; and
+-- names nothing of the room itself, nor any other's message
+#guard allowsAll memberOps true [.insert [.field "messages"], .insert [.field "messages", .row 5, .field "thread"],
+  .insert [.field "messages", .row 5, .field "reactions"],
+  .own [.field "messages", .row 5, .field "text"] (some (.str "hi")),
+  .own [.field "messages", .row 5, .field "thread", .row 6, .field "deleted"] (some (.bool true)),
+  .own [.field "messages", .row 5, .field "reactions", .row 9, .field "deleted"] (some (.bool true))]
+#guard [Touch.set [.field "messages", .row 5, .field "text"] (some (.str "hi")), .own [.field "name"] none,
+  .set [.field "topic"] none, .remove [.field "messages"], .move [.field "messages"], .create, .tag 1, .propose,
+  .merge, .own [.field "messages", .row 5, .field "reactions", .row 9, .field "key"] none].all fun t =>
+  !allowsAll memberOps true [t]
+#guard !allowsAll memberOps false [.insert [.field "messages"]] && levelOf memberOps == .write
 #guard !(Op.create (some .main)).allows false .create && (Op.create (some .main)).allows true .create
 
 /-- The ops an access request goes to the vault it asks by (the Rust engine's `ask`, `world::answering`): an access
@@ -253,7 +310,7 @@ def TagDelta.touches (d : TagDelta) : List Touch := (d.add ++ d.remove).map .tag
     the whole record for a creation; none for a tag, a proposal's start or a merge itself, which change nothing of the
     record. -/
 def Touch.loc : Touch → Option Loc
-  | .set l _ => some l
+  | .set l _ | .own l _ => some l
   | .insert l | .remove l | .move l | .merged l => some l
   | .create => some []
   | .tag _ | .propose | .merge => none

@@ -64,13 +64,14 @@ inductive Action where
       (`tags`, encrypted with the rest of the body) count only when it acts for the vault, except that a new entry's
       added tags are its first tags. Its body carries a proof (`proof`) where it acts through a share: the share it
       relies on, whose chain's ops its readers then read; and its readers read off its Loro update what it touches
-      (`touches`, `Rules.lean`), besides the tags it asks for, and whether what it makes of the record fits the schemas
+      (`touches`, `Rules.lean`) and the rows it adds (`adds`, whose sets inside them are then its own), besides the tags it asks for, and whether what it makes of the record fits the schemas
       the entry was written under up to it (`fits`, `Schemas.lean`); and, of a cap group entry, the cap group its
       record says after it (`defines`), which counts where the vault itself writes it on the main line (`groupAt`). -/
   | write      (v : VaultId) (e : EntryId) (actor : VaultId) (stay : Option EditId) (epoch : Nat)
                (deps : List EditId := []) (proposal : Proposal := .main) (via : List VaultId := [])
                (create : Option (Audience × Header) := none) (tags : TagDelta := {}) (proof : Option ShareId := none)
                (touches : List Touch := []) (fits : Bool := true) (defines : Option CapGroup := none)
+               (adds : List Ops.Loc := [])
   /-- A steward, acting for vault `v`, marks its entry `e`: with the audience its shares select (`caps`), which begins a
       stay and keeps the writes it had seen (`keep`), with the keep shares that pick it (`wants`), or with both. A part
       left out (`none`) stays as it is, so a mark of the wants alone never puts back an audience that another steward
@@ -377,7 +378,7 @@ def apply (st : State) (edit : Edit) : Option State :=
       -- the share and every share resting on it end
       else some (dropUnseen st { st with revoked := st.revoked ++
         ((st.shares.filter fun x => restsOn st cid x.id && !st.revoked.contains x.id).map (·.id)) } keep)
-  | .write v e actor stay epoch deps proposal via create tags proof touches fits defines =>
+  | .write v e actor stay epoch deps proposal via create tags proof touches fits defines adds =>
     -- its epoch is its writer's to name, and no peer checks it against the epoch it holds: an audience moves on by
     -- edits of other entries too, one that empties it and one that brings it back into use, which a device the entry is
     -- shared with later never receives (T12), so such a check would refuse there what every device of the vault
@@ -397,7 +398,8 @@ def apply (st : State) (edit : Edit) : Option State :=
         some { st with entries := st.entries ++ [en], born := st.born ++ [e],
                        writes  := st.writes ++ [⟨edit.id, edit.author, actor, e, none, epoch, [], proposal, via, true, x⟩],
                        uncounted := st.counting (creates st actor v x attrs proof (proposal == .main) fits) edit.id,
-                       defs := st.defining (actor == v && proposal == .main) defines edit.id }
+                       defs := st.defining (actor == v && proposal == .main) defines edit.id,
+                       adds := st.adds ++ [(edit.id, adds)] }
     | none =>
       match st.entry? e with
       | none => none
@@ -421,7 +423,8 @@ def apply (st : State) (edit : Edit) : Option State :=
               -- the vault's own write on a proposal that touches nothing and asks for no tag is its accept
               some { st' with writes := st'.writes ++ [w], uncounted := st'.counting ok edit.id,
                               accepts := st'.accepting (isAccept actor en proposal (touches ++ tags.touches)) edit.id,
-                              defs := st'.defining (actor == v && proposal == .main) defines edit.id }
+                              defs := st'.defining (actor == v && proposal == .main) defines edit.id,
+                              adds := st'.adds ++ [(edit.id, adds)] }
   | .mark v e caps wants keep via =>
     match st.entry? e with
     | none => none
