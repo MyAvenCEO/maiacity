@@ -1035,8 +1035,9 @@ fn drafted(
 ) -> Result<Option<Drafted>, Refusal> {
     let by = || lab.owner_among(me, opener).or(opener.first().copied()).ok_or(Refusal::NotActing);
     let mut moves = lab.moves(me, touch);
-    // once its person's keys moved, the earlier ones retire, before the avens' devices move on
-    if moves.is_empty() {
+    // once its person's keys moved, the earlier ones retire, before the avens' devices move on; only where its person
+    // governs a server or an agent, a device that holds all its vaults hold, which tells it it holds all too
+    if moves.is_empty() && !lab.governed_devices(me).is_empty() {
         let live: BTreeSet<SignerId> = peers.keys().copied().collect();
         let retires = lab.retires(me, &live);
         if !retires.is_empty() {

@@ -1531,23 +1531,16 @@ async fn hanas_browser_and_passkey_from_before_the_key_move_move_in_one_ceremony
     assert!(shows(&moved, note, "Red and blue.").await, "it reads what it read");
     run(&moved, set_text(hana, note, None, 2, "Red, blue and green.")).await.expect("it edits her note");
     until("her Mac reads the edit", || node_shows(&mac, note, "Red, blue and green.")).await;
-    // nothing more moves here: her Mac moves at its own next unlock. Her passkey's earlier key and her browser's
-    // retire, her Mac's, which runs, stays; that waits for a server of hers to hold no more than her browser, and she
-    // has none here
-    let retire = vec![
-        Retire::Root { old: passkey, new: next },
-        Retire::Owner(passkey),
-        Retire::Device { vault: hana, device: browser_h },
-    ];
-    let waits = Some(Moving { retire, behind: true, ..Moving::default() });
-    assert_eq!(moved.moving().await.expect("what moves"), waits);
+    // nothing more moves here: her Mac moves at its own next unlock. Her earlier keys stay: she governs no server
+    // whose holding tells her browser it holds all, and removing them over less would cut what it lacks
+    assert_eq!(moved.moving().await.expect("what moves"), None);
     // closed, it opens again from its shelf as its next key, by her passkey's unlock alone
     moved.close().await.expect("it closes");
     let again = Device::open(start_on(&shelf.0, "Hana's browser", &url, 5), &kept, hanas.unlock(nonce, [0xbb; 32]));
     let again = again.await.expect("it opens again");
     assert_eq!((again.node().device(), again.passkey()), (me, next));
     assert!(shows(&again, note, "Red, blue and green.").await, "it reads what its shelf kept");
-    assert_eq!(again.moving().await.expect("what moves"), waits);
+    assert_eq!(again.moving().await.expect("what moves"), None);
     for n in [again.node(), &mac] {
         n.shutdown().await.expect("the node shuts down");
     }
@@ -1616,9 +1609,8 @@ async fn ivys_vault_takes_the_master_keys_next_key_at_her_browsers_unlock_by_her
     let after = Some(([passkey, old, new].map(Principal::Signer).to_vec(), Some(passkey)));
     until("her Mac sees the move", || async { mac.read(members).await == after }).await;
     assert_eq!(moved.node().read(members).await, after);
-    // nothing left to move: the earlier master key retires, which waits for a server of hers, and she has none here
-    let waits = Some(Moving { retire: vec![Retire::Owner(old)], behind: true, ..Moving::default() });
-    assert_eq!(moved.moving().await.expect("what moves"), waits);
+    // nothing left to move, and the earlier master key stays, as she governs no server
+    assert_eq!(moved.moving().await.expect("what moves"), None, "nothing left to move");
     for n in [moved.node(), &mac] {
         n.shutdown().await.expect("the node shuts down");
     }
