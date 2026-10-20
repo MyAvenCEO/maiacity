@@ -3551,7 +3551,6 @@ dependencies = [
  "png 0.18.1",
  "reqwest",
  "rustls",
- "security-framework",
  "serde",
  "serde_json",
  "tauri",

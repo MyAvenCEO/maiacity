@@ -1,6 +1,6 @@
-// The Mac app (maiaCITY Studio) and the website share these pages. Inside the app, every call to the API and every
-// library file goes out natively, with the app's own key (the passkey approved it once) — never with a browser
-// session. The studio and the admin's media functions live only there.
+// The Mac app (The OS) and the website share these pages. Inside the app, every call to the API goes out natively,
+// with the session its passkey's sign-in gave it (vault/app/src/auth.rs), as a browser's cookie would. The studio and
+// the admin's media functions live only there.
 
 /** Is this page running inside maiaCITY Studio, the Mac app? */
 export const native = (): boolean => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -48,6 +48,3 @@ export function forwardConsole(win: Window, from: string) {
 		send('error', `the script policy refused ${e.blockedURI || 'an inline script'} (${e.effectiveDirective}) at ${e.sourceFile || 'the page'}:${e.lineNumber}`)
 	);
 }
-
-/** Inside the app, library files come through the app (key and Range) instead of straight from the API. */
-export const APP_API = 'maiaapi://localhost';

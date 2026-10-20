@@ -16,13 +16,13 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { ApiError, approveDeviceWithPasskey, me, sheetAssertion, signOut, type Founder } from '$lib/auth/client';
+	import { ApiError, loginFinish, me, sheetAssertion, signOut, type Founder } from '$lib/auth/client';
 	import { claimInvite, failure, later, open, signIn, signUpName, waits } from '$lib/app/entry.js';
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import { pillVaults, seeded } from '$lib/avendb/vaults.js';
 	import { remember } from '$lib/app/session';
-	import { command, native } from '$lib/native';
+	import { native } from '$lib/native';
 	import NavPill from '$lib/app/NavPill.svelte';
 	import { immersive as fullScreen } from '$lib/app/immersive.svelte';
 	import { gameAt, opens } from '$lib/app/places';
@@ -112,7 +112,7 @@
 	});
 
 	/** Who the API says is signed in. Only its refusal (401, 403) signs out: an API that can't be reached, or answers
-	 *  anything else (mid-deploy, a restart), is waited for, so The OS's key and a browser's cookie never send their
+	 *  anything else (mid-deploy, a restart), is waited for, so The OS's session and a browser's cookie never send their
 	 *  person to the passkey's sign-in for a blip (Samuel 2026-10-20: The OS opened while the API redeployed and asked
 	 *  for a passkey it never needs). */
 	async function whoAmI(): Promise<Founder | null> {
@@ -262,35 +262,25 @@
 		};
 	});
 
-	// The OS (the Mac app) cannot use maia.city's passkey in its own web view: it asks the API for a key of its own, the
-	// passkey signs a sign-in's challenge in the app's sign-in sheet, as every other ceremony (src/routes/app/avendb/sheet/),
-	// and that answer, which reaches this app alone, approves the key: no browser and no code to compare
+	// The OS (the Mac app) cannot use maia.city's passkey in its own web view: the passkey signs a sign-in's challenge in
+	// the app's sign-in sheet, as every other ceremony (src/routes/app/avendb/sheet/), and the app signs in with that
+	// answer, which reaches it alone, as a browser does: it keeps the session the API answers with (vault/app/src/auth.rs)
 	async function enterApp() {
 		busy = 'Waiting for your passkey';
 		error = '';
-		let stop = () => {};
 		try {
-			const { listen } = await import('@tauri-apps/api/event');
-			stop = await listen<{ signed_in: boolean; reason: string | null }>('auth', async ({ payload }) => {
-				stop();
-				busy = '';
-				if (!payload.signed_in) return void (error = payload.reason ?? '');
-				founder = await me();
-				remember(true);
-				// then the Mac's avenDB, in the app's sign-in sheet, which needs no second click
-				await session.load();
-				settle();
-				if (phase === 'locked' && !naming) void avendb();
-			});
-			const { user_code } = await command<{ user_code: string }>('auth_start');
-			const assertion = await sheetAssertion();
-			// the key arrives through `auth`, once the app's wait for it sees the approval
-			await approveDeviceWithPasskey(user_code, assertion);
+			await loginFinish(await sheetAssertion());
+			founder = await me();
 		} catch (e) {
-			stop();
 			error = e instanceof Error ? e.message : String(e);
-			busy = '';
+			return void (busy = '');
 		}
+		busy = '';
+		remember(true);
+		// then the Mac's avenDB, in the app's sign-in sheet, which needs no second click
+		await session.load();
+		settle();
+		if (phase === 'locked' && !naming) void avendb();
 	}
 
 	/** The gate's one button: signs in and opens avenDB, in one ceremony of the passkey where this browser holds the

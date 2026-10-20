@@ -110,17 +110,11 @@ fn main() {
                 world::close_window(window.app_handle());
             }
         })
-        .register_asynchronous_uri_scheme_protocol("maiaapi", |ctx, request, responder| {
-            let http = ctx.app_handle().state::<auth::Auth>().http();
-            tauri::async_runtime::spawn(async move { responder.respond(auth::proxy(http, request).await) });
-        })
         .register_asynchronous_uri_scheme_protocol("aven", |ctx, request, responder| {
             let app = ctx.app_handle().clone();
             tauri::async_runtime::spawn(async move { responder.respond(aven::serve(app, request).await) });
         })
         .invoke_handler(tauri::generate_handler![
-            auth::auth_status,
-            auth::auth_start,
             auth::auth_sign_out,
             auth::api,
             passkey::passkey_sheet,

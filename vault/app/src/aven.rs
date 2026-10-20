@@ -1072,7 +1072,7 @@ async fn transcript(job: &Job<'_>, name: &str) -> Result<Value, String> {
 }
 
 /// A pass of this Mac's avenDB device for maiaCITY's API (`api_pass`, api/src/standing.ts), one per call as the API
-/// takes each once; none while the device is locked, and the app's key signs instead (#1107).
+/// takes each once; none while the device is locked, and the analysis waits for it (#1107).
 async fn api_pass(app: &AppHandle) -> Option<String> {
     let out = run(app, json!({ "op": "api_pass", "audience": "maiaCITY API" })).await.ok()?;
     out["pass"].as_str().map(String::from)

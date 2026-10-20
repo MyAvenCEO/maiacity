@@ -3,7 +3,7 @@
 // actually signs up.
 import { dev } from '$app/environment';
 import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
-import { APP_API, command, native } from '$lib/native';
+import { command, native } from '$lib/native';
 
 /** api.maia.city in production, the local container in development. */
 // 3100 locally, so it can run beside other projects' stacks on 3000.
@@ -24,7 +24,8 @@ export type Founder = {
 };
 
 /** Every call carries the session cookie, and every failure carries a sentence
- *  a person can read rather than a status code. In the Mac app the call goes out natively, with the app's key. */
+ *  a person can read rather than a status code. In the Mac app the call goes out natively, with the session its
+ *  passkey's sign-in gave it (vault/app/src/auth.rs), which it keeps as a browser keeps the cookie. */
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 	if (native()) {
 		const r = await command<{ status: number; body: any }>('api', {
@@ -120,11 +121,11 @@ export const inviteOpen = (code: string) =>
 export const passkeysAvailable = () =>
 	typeof window !== 'undefined' && !!window.PublicKeyCredential;
 
-// ─────────────────────────────── signing a terminal in ───────────────────────────────
+// ─────────────────────────────── signing The OS in ───────────────────────────────
 
 /** In The OS, a ceremony of the person's passkey over a new sign-in's challenge, in its sign-in sheet
- *  (src/routes/app/avendb/sheet/), which brings it back to the app alone: what the API takes as the person's own word
- *  as it signs The OS in. */
+ *  (src/routes/app/avendb/sheet/), which brings it back to the app alone: The OS signs in with it (`loginFinish`), as a
+ *  browser does. */
 export async function sheetAssertion(): Promise<object> {
 	const { SHEET } = await import('$lib/avendb/device/passkey.js');
 	const options = await loginOptions();
@@ -136,11 +137,6 @@ export async function sheetAssertion(): Promise<object> {
 	if (!assertion) throw new Error(answer.get('error') || 'The sign-in sheet brought nothing back.');
 	return JSON.parse(assertion);
 }
-
-/** The OS approves its own key with `assertion`, a passkey ceremony over a sign-in's challenge that its sign-in sheet
- *  brought back to it alone (src/routes/app/avendb/sheet/): no browser session, no code to compare. */
-export const approveDeviceWithPasskey = (code: string, assertion: object) =>
-	call<{ ok: true }>(`/api/device/${encodeURIComponent(code)}/passkey`, { method: 'POST', body: JSON.stringify(assertion) });
 
 /** Any API call, the same way as every helper here. */
 export const apiCall = <T>(path: string, init: RequestInit = {}) => call<T>(path, init);
