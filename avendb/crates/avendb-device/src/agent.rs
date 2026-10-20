@@ -885,8 +885,13 @@ fn instructions(name: &str, cloud: bool) -> String {
              deliver: one or more measurable metrics in Lean, `objective` on `aip_open` or `aip_objective` \
              (`entry`, `lean`), a file such as `def fps : Metric := metric \"Frames per second\" (atLeast (reading \
              \"fps\") 50)`, goals atLeast, atMost, between and equals over readings, numbers, + - * /, min and \
-             max, a doc comment above a metric its note (avendb/spec/AvenDB/Objective.lean); a file that doesn't \
-             read is refused with its line and column, and `objective_check` (`lean`, `readings`) checks one \
+             max, a doc comment above a metric its note (avendb/spec/AvenDB/Objective.lean); a metric may also \
+             read the proposal itself, no reading needed: `proposed \"params.#1.default\"` is the number its lines \
+             would put at that path (field names split by dots, `#n` the row whose id is n, an entry's first 8 hex \
+             digits and a slash first to pick its line), its baseline what main holds there, and `current \"path\"` \
+             what main holds, so `atLeast (proposed \"params.#1.default\") 0.8` reads its progress from every \
+             write on its lines; a file that doesn't read is refused with its line and column, and \
+             `objective_check` (`lean`, `readings`, `proposed` and `current`, each `{{path, value}}`) checks one \
              unsaved. While it works, it measures (a test, a count, a run) and records each reading with \
              `aip_measure` (`entry`, `name`, `value`, `note`): `aip` answers its `objective`, each metric met or \
              not and its progress from its first reading toward its target, so it reads its own progress in its \

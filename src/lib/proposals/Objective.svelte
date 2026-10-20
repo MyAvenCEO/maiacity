@@ -1,9 +1,10 @@
 <!--
 	An AIP's objective in the Proposals app: what it must deliver, metrics written in Lean (avendb/spec/AvenDB/
 	Objective.lean), each checked by avenDB's engine against the readings its author recorded while working on it
-	(`aip_measure`). Each metric: its name and note, its goal and targets, where it started (its first reading) and
-	where it stands now, a bar of its progress and whether it is met; then the Lean itself and every reading, in
-	sections that open. Read only: an objective is written and measured by its author, an agent through the MCP.
+	(`aip_measure`) and the numbers its own lines propose (`proposed "path"`, against main's, `current "path"`). Each
+	metric: its name and note, its goal and targets, where it started (its first reading, or what main holds) and
+	where it stands now, a bar of its progress and whether it is met; then the Lean itself, the numbers read from its
+	lines and every reading, in sections that open. Read only: an objective is written and measured by its author, an agent through the MCP.
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -16,6 +17,10 @@
 	const num = (v) => (v == null ? '—' : Number(v).toLocaleString('en', { maximumFractionDigits: 6 }));
 	const target = (m) => (m.goal === 'between' ? `${num(m.targets[0])} and ${num(m.targets[1])}` : num(m.targets[0]));
 	const pct = (p) => `${Math.round((p ?? 0) * 100)} %`;
+	/** What a metric still needs before it reads: its readings, or numbers its lines hold at its paths. */
+	const needs = (m) => [...m.readings, ...(m.paths ?? []).map((p) => `a number at ${p}`)].join(', ');
+	/** Whether a metric reads the proposal alone: its baseline is main's number, not a first reading. */
+	const lines = (m) => !m.readings.length && !!m.paths?.length;
 </script>
 
 {#if !o}
@@ -33,9 +38,11 @@
 						{#if m.note}<p class="note">{m.note}</p>{/if}
 						<div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow={Math.round(m.progress * 100)}><span style="width: {m.progress * 100}%"></span></div>
 						<p class="nums">
-							{#if m.value == null}Not measured yet{m.readings.length ? `: needs ${m.readings.join(', ')}` : ''}
+							{#if m.value == null}Not measured yet{needs(m) ? `: needs ${needs(m)}` : ''}
+							{:else if lines(m)}Proposed {num(m.value)}{m.baseline == null ? ', new' : m.baseline !== m.value ? `, main holds ${num(m.baseline)}` : ''} · {pct(m.progress)}
 							{:else}Now {num(m.value)}{m.baseline != null && m.baseline !== m.value ? `, from ${num(m.baseline)}` : ''} · {pct(m.progress)}{/if}
 						</p>
+						{#if m.paths?.length}<p class="paths">Reads {#each m.paths as p, i (p)}{i ? ', ' : ''}<code>{p}</code>{/each}</p>{/if}
 					</li>
 				{/each}
 			</ul>
@@ -44,6 +51,16 @@
 			<summary>The objective in Lean</summary>
 			<pre><code>{o.lean}</code></pre>
 		</details>
+		{#if o.fields?.length}
+			<details>
+				<summary>Numbers from its lines <small>{o.fields.length}</small></summary>
+				<ul class="readings">
+					{#each o.fields as f (f.path)}
+						<li><code>{f.path}</code> {f.line ? `${num(f.proposed)}, main ${num(f.current)}` : 'no line holds it'}</li>
+					{/each}
+				</ul>
+			</details>
+		{/if}
 		{#if o.readings?.length}
 			<details>
 				<summary>Readings <small>{o.readings.length}</small></summary>
@@ -116,8 +133,16 @@
 	.met .bar span {
 		background: #1baf7a;
 	}
-	.nums {
+	.nums,
+	.paths {
 		font-size: 0.8rem;
+	}
+	.paths {
+		margin: 0.15rem 0 0;
+		color: var(--muted);
+	}
+	code {
+		font-size: 0.76rem;
 	}
 	summary {
 		cursor: pointer;

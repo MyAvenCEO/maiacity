@@ -120,22 +120,62 @@ impl Aip {
         !self.lean().trim().is_empty() && objective::parse(self.lean()).is_ok()
     }
 
-    /// Its objective as people and agents read it: the Lean, and where it reads, each metric checked against the
-    /// readings (`objective::summary_json`), else the error; then every reading. `null` where it has none.
-    fn objective_json(&self) -> Value {
+    /// Its objective as people and agents read it: the Lean, and where it reads, each metric checked against its
+    /// inputs (`objective::summary_json`), its readings and the numbers its paths find in its lines, `lines`, each
+    /// line's `sides` (`found`), else the error; then every reading, and every path's numbers, `fields`. `null` where
+    /// it has none.
+    fn objective_json(&self, lines: &[Line], sides: &[Option<Sides>]) -> Value {
         let lean = self.lean();
         if lean.trim().is_empty() {
             return Value::Null;
         }
         let rows = self.record.get("readings").and_then(ops::rows).unwrap_or_default();
         let mut out = match objective::parse(lean) {
-            Ok(ms) => objective::summary_json(&ms, &self.readings()),
+            Ok(ms) => {
+                let (proposed, current, fields) = found(&objective::paths(&ms), lines, sides);
+                let inputs = objective::Inputs { readings: self.readings(), proposed, current };
+                let mut out = objective::summary_json(&ms, &inputs);
+                out["fields"] = fields.into();
+                out
+            }
             Err(e) => json!({ "error": e.to_string(), "metrics": [], "met": 0, "total": 0, "progress": 0 }),
         };
         out["lean"] = lean.into();
         out["readings"] = rows.to_vec().into();
         out
     }
+}
+
+/// The numbers objective paths `paths` find in an AIP's lines, `lines`, each line's `sides`: a path reads the first
+/// line, of its entry where it names one (`objective::entry_of`), whose record holds anything at it, on the
+/// proposal's side or main's (`objective::at_path`); there, the number the proposal would put (`proposed`) and the
+/// number main holds (`current`), none where either holds no number. Then each path as people read it, `{path,
+/// entry, line, proposed, current}`, `entry` and `line` `null` where no line holds it.
+fn found(
+    paths: &[String],
+    lines: &[Line],
+    sides: &[Option<Sides>],
+) -> (Vec<(String, Dec)>, Vec<(String, Dec)>, Vec<Value>) {
+    let (mut proposed, mut current, mut fields) = (vec![], vec![], vec![]);
+    for path in paths {
+        let (hex, _) = objective::entry_of(path);
+        let picks = |l: &Line| hex.is_none_or(|h| l.entry.to_hex().starts_with(&h.to_ascii_lowercase()));
+        let holds = |s: &Sides| objective::at_path(&s.new, path).or_else(|| objective::at_path(&s.old, path)).is_some();
+        let at = lines.iter().zip(sides).find_map(|(l, s)| s.as_ref().filter(|s| picks(l) && holds(s)).map(|s| (l, s)));
+        let number = |side: fn(&Sides) -> &Value| at.and_then(|(_, s)| objective::number_at(side(s), path));
+        let (p, c) = (number(|s| &s.new), number(|s| &s.old));
+        proposed.extend(p.map(|v| (path.clone(), v)));
+        current.extend(c.map(|v| (path.clone(), v)));
+        let opt = |d: Option<Dec>| d.map_or(Value::Null, objective::number);
+        fields.push(json!({
+            "path": path,
+            "entry": at.map(|(l, _)| l.entry.to_hex()),
+            "line": at.map(|(l, _)| l.line.to_hex()),
+            "proposed": opt(p),
+            "current": opt(c),
+        }));
+    }
+    (proposed, current, fields)
 }
 
 /// Entry `entry` as an AIP, if device `me` reads it as one.
@@ -269,10 +309,34 @@ impl Line {
     }
 }
 
-/// What line `l` changes, by its entry's own schema (`aip::diff`): what the schema's title names it by, and the parts.
-/// Open, main's record against what main would read once the vault's acceptance merged it, the proposal's side taken
-/// wherever both lines changed one place; merged, the version the proposal started from against what it reads now.
+/// Both sides of line `l`, each its record as its entry's own schema reads it: open, main's record (`old`) and what
+/// main would read once the vault's acceptance merged it (`new`), the proposal's side taken wherever both lines
+/// changed one place; merged, the version the proposal started from and what it reads now. Then what the schema's
+/// title names it by, and the schema's JSON.
+struct Sides {
+    what: String,
+    schema: Option<Value>,
+    old: Value,
+    new: Value,
+}
+
+impl Sides {
+    /// What it changes (`aip::diff`).
+    fn parts(&self) -> Vec<aip::Part> {
+        let (Value::Object(old), Value::Object(new)) = (&self.old, &self.new) else { return vec![] };
+        aip::diff(self.schema.as_ref(), old, new)
+    }
+}
+
+/// What line `l` changes, by its entry's own schema (`Sides::parts`): what the schema's title names it by, and the
+/// parts.
 fn parts_of(lab: &Lab, me: SignerId, lanes: &mut HashMap<VaultId, Lane>, l: &Line) -> Option<(String, Vec<aip::Part>)> {
+    let s = sides_of(lab, me, lanes, l)?;
+    Some((s.what.clone(), s.parts()))
+}
+
+/// Line `l`'s `Sides`, `None` where the device doesn't show it.
+fn sides_of(lab: &Lab, me: SignerId, lanes: &mut HashMap<VaultId, Lane>, l: &Line) -> Option<Sides> {
     let h = lab.history(me, l.entry).filter(|_| l.known)?;
     let vault = lab.vault_of_entry(me, l.entry)?;
     let item = lab.item_on(me, l.entry, Some(l.line))?;
@@ -296,13 +360,12 @@ fn parts_of(lab: &Lab, me: SignerId, lanes: &mut HashMap<VaultId, Lane>, l: &Lin
         };
         seen.and_then(|v| v.as_object().cloned()).unwrap_or_default()
     };
-    let json = app.as_ref().and_then(|s| serde_json::from_slice::<Value>(s.bytes()).ok());
-    let parts = aip::diff(json.as_ref(), &read(&old), &read(&new));
+    let schema = app.as_ref().and_then(|s| serde_json::from_slice::<Value>(s.bytes()).ok());
     let what = match &app {
         Some(s) => aip::what(s.title()).to_string(),
         None => l.ty.clone().unwrap_or_else(|| "entry".into()),
     };
-    Some((what, parts))
+    Some(Sides { what, schema, old: Value::Object(read(&old)), new: Value::Object(read(&new)) })
 }
 
 /// An AIP's stage and outcome, read off its lines and its reviews: applied once every line's heads are on main;
@@ -437,11 +500,14 @@ impl<'a> Book<'a> {
         let have = reviews.iter().filter(|r| r.verdict == "accepted" && r.covers(&d.lines)).count();
         let mut lines = vec![];
         let mut summary = vec![];
+        let mut sides = vec![];
         for l in &d.lines {
             let mut line = l.to_json();
-            match parts_of(lab, me, &mut self.lanes, l) {
-                Some((what, parts)) => {
-                    summary.push(l.summary(&what, &parts));
+            let s = sides_of(lab, me, &mut self.lanes, l);
+            match &s {
+                Some(s) => {
+                    let parts = s.parts();
+                    summary.push(l.summary(&s.what, &parts));
                     if diff {
                         line["diff"] = parts.iter().map(aip::Part::to_json).collect();
                     }
@@ -449,6 +515,7 @@ impl<'a> Book<'a> {
                 None => summary.push(format!("{}: unread", l.ty.as_deref().unwrap_or("entry"))),
             }
             lines.push(line);
+            sides.push(s);
         }
         let a = &self.aips[i];
         let text = |f: &str| a.text(f).map_or(Value::Null, Value::from);
@@ -469,7 +536,7 @@ impl<'a> Book<'a> {
             "author": a.attrs.author.to_hex(),
             "intent": a.record.get("intent").cloned().unwrap_or(Value::Null),
             "links": a.record.get("links").cloned().unwrap_or_else(|| json!([])),
-            "objective": a.objective_json(),
+            "objective": a.objective_json(&d.lines, &sides),
             "lines": lines,
             "reviews": reviews.iter().map(|r| r.to_json(&d.lines)).collect::<Vec<_>>(),
             "signatures": { "have": have, "need": 1, "of": "owners" },
@@ -841,6 +908,15 @@ fn answer(
     }))
 }
 
+/// AIP `entry`'s objective as `aip` reads it now (`Aip::objective_json`), `null` where it is none.
+fn objective_now(lab: &Lab, me: SignerId, entry: EntryId) -> Value {
+    let mut lanes = HashMap::new();
+    let Ok(a) = aip_of(lab, me, &mut lanes, entry) else { return Value::Null };
+    let lines: Vec<Line> = a.lines.iter().map(|&l| Line::of(lab, me, &mut lanes, l)).collect();
+    let sides: Vec<Option<Sides>> = lines.iter().map(|l| sides_of(lab, me, &mut lanes, l)).collect();
+    a.objective_json(&lines, &sides)
+}
+
 /// Lean `lean` as an objective: its metrics, or `BadOp` with where and why it doesn't read.
 fn read_lean(lean: &str) -> Result<Vec<objective::Metric>, Refused> {
     objective::parse(lean).map_err(|e| bad(format!("the objective doesn't read: {e}")))
@@ -912,22 +988,29 @@ pub(super) fn measure(
     }
     let row = row.as_object().cloned().expect("a row is an object");
     let made = edits(lab, me, actor, (entry, MAIN), &schema(), &[RecordOp::top("readings", FieldOp::Insert(row, None))])?;
-    let objective = aip_of(lab, me, &mut HashMap::new(), entry).map(|a| a.objective_json()).unwrap_or(Value::Null);
-    Ok(json!({ "entry": entry.to_hex(), "edit": made["edit"], "objective": objective }))
+    Ok(json!({ "entry": entry.to_hex(), "edit": made["edit"], "objective": objective_now(lab, me, entry) }))
 }
 
-/// `{"op": "objective_check", "lean", "readings"?}`: Lean `lean` read as an objective, as `aip_objective` would, and
-/// checked against `readings`, each `{name, value}` in the order recorded: `{ok: true, metrics, met, total, progress}`
-/// as `aip` reads an objective, or `{ok: false, error, line, col}`. Reads nothing the device holds: an editor checks a
-/// file as it is typed.
+/// `{"op": "objective_check", "lean", "readings"?, "proposed"?, "current"?}`: Lean `lean` read as an objective, as
+/// `aip_objective` would, and checked against `readings`, each `{name, value}` in the order recorded, and the numbers
+/// at its paths, `proposed` the proposal's and `current` main's, each `{path, value}`: `{ok: true, metrics, met,
+/// total, progress}` as `aip` reads an objective, or `{ok: false, error, line, col}`. Reads nothing the device
+/// holds: an editor checks a file as it is typed.
 pub(super) fn objective_check(o: &Map<String, Value>) -> Result<Value, Refused> {
     let lean = o.get("lean").and_then(Value::as_str).ok_or_else(|| bad("objective_check takes the Lean: lean"))?;
-    let rows = o.get("readings").and_then(Value::as_array).cloned().unwrap_or_default();
-    let one = |r: &Value| Some((r.get("name")?.as_str()?.to_string(), objective::dec_of(r.get("value")?)?));
-    let readings: Vec<(String, Dec)> = rows.iter().filter_map(one).collect();
+    let named = |key: &str, by: &str| -> Vec<(String, Dec)> {
+        let rows = o.get(key).and_then(Value::as_array).cloned().unwrap_or_default();
+        let one = |r: &Value| Some((r.get(by)?.as_str()?.to_string(), objective::dec_of(r.get("value")?)?));
+        rows.iter().filter_map(one).collect()
+    };
+    let inputs = objective::Inputs {
+        readings: named("readings", "name"),
+        proposed: named("proposed", "path"),
+        current: named("current", "path"),
+    };
     Ok(match objective::parse(lean) {
         Ok(ms) => {
-            let mut out = objective::summary_json(&ms, &readings);
+            let mut out = objective::summary_json(&ms, &inputs);
             out["ok"] = true.into();
             out
         }

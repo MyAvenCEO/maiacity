@@ -2,8 +2,10 @@
 //! `spec/AvenDB/Objective.lean`, and `spec/vectors/objectives.json` holds this engine to it).
 //!
 //! An objective is a file of Lean against `AvenDB.Objective`: metrics, each a name and a goal over readings, numbers
-//! an AIP records while it is worked on (`aip_measure`). This module reads the subset of Lean such a file is written
-//! in and checks its metrics against readings, as the model does, so every device answers alike:
+//! an AIP records while it is worked on (`aip_measure`), and over the numbers its proposal itself puts in records
+//! (`proposed "path"`, against what main holds there, `current "path"`). This module reads the subset of Lean such a
+//! file is written in and checks its metrics against those inputs (`Inputs`), as the model does, so every device
+//! answers alike:
 //!
 //! ```lean
 //! import AvenDB.Objective
@@ -21,8 +23,11 @@
 //!   (nested) are comments.
 //! - **Goals**: `atLeast e t`, `atMost e t`, `between e lo hi`, `equals e t`, each argument a number, a name of an
 //!   earlier `Expr`, or an expression in parentheses, as Lean applies functions.
-//! - **Expressions**: plain decimals (`1500`, `0.8`), `reading "name"`, `min a b`, `max a b`, `-x`, `* /` then `+ -`,
-//!   left to right, as Lean's precedences read them (`-` binds tighter than `*`).
+//! - **Expressions**: plain decimals (`1500`, `0.8`), `reading "name"`, `proposed "path"`, `current "path"`, `min a b`,
+//!   `max a b`, `-x`, `* /` then `+ -`, left to right, as Lean's precedences read them (`-` binds tighter than `*`).
+//! - **Paths** (`proposed`, `current`): field names split by dots, `#n` the row of a list whose id is n
+//!   (`params.#1.default`), optionally after the first 8 or more hex digits of an entry's id and a slash
+//!   (`1a2b3c4d/params.#1.default`), which picks that entry's line of the AIP (`at_path`).
 //! - **Numbers** are millionths in an `i128` (`Dec`): six places, the rest cut toward zero; a value beyond 10^24 units
 //!   is none, as the model's `bound`.
 //!
@@ -57,6 +62,10 @@ pub const MAX_DEPTH: usize = 64;
 pub enum Expr {
     Num(Dec),
     Reading(String),
+    /// The number the AIP's lines would put at a path; at the baseline, what main holds there.
+    Proposed(String),
+    /// The number main holds at a path.
+    Current(String),
     Add(Box<Expr>, Box<Expr>),
     Sub(Box<Expr>, Box<Expr>),
     Mul(Box<Expr>, Box<Expr>),
@@ -102,13 +111,22 @@ fn ok(x: Dec) -> Option<Dec> {
     (-BOUND..=BOUND).contains(&x).then_some(x)
 }
 
+/// Where an expression's names read from (`Env` in the model): readings, the proposal's numbers, main's numbers.
+pub struct Env<'a> {
+    pub reading: &'a dyn Fn(&str) -> Option<Dec>,
+    pub proposed: &'a dyn Fn(&str) -> Option<Dec>,
+    pub current: &'a dyn Fn(&str) -> Option<Dec>,
+}
+
 impl Expr {
-    /// Its value where every reading it names is in `env`, and nothing on the way leaves the bound (`Expr.eval`).
-    pub fn eval(&self, env: &dyn Fn(&str) -> Option<Dec>) -> Option<Dec> {
+    /// Its value where every name it reads is in `env`, and nothing on the way leaves the bound (`Expr.eval`).
+    pub fn eval(&self, env: &Env) -> Option<Dec> {
         let two = |a: &Expr, b: &Expr| Some((a.eval(env)?, b.eval(env)?));
         match self {
             Expr::Num(m) => ok(*m),
-            Expr::Reading(n) => env(n).and_then(ok),
+            Expr::Reading(n) => (env.reading)(n).and_then(ok),
+            Expr::Proposed(p) => (env.proposed)(p).and_then(ok),
+            Expr::Current(p) => (env.current)(p).and_then(ok),
             Expr::Add(a, b) => two(a, b).and_then(|(x, y)| ok(x + y)),
             Expr::Sub(a, b) => two(a, b).and_then(|(x, y)| ok(x - y)),
             // a product beyond i128 is beyond the bound once cut: none either way
@@ -126,6 +144,8 @@ impl Expr {
         match self {
             Expr::Num(m) => json!({ "num": serde_json::Number::from_i128(*m).map_or(Value::Null, Value::Number) }),
             Expr::Reading(n) => json!({ "reading": n }),
+            Expr::Proposed(p) => json!({ "proposed": p }),
+            Expr::Current(p) => json!({ "current": p }),
             Expr::Add(a, b) => two("add", a, b),
             Expr::Sub(a, b) => two("sub", a, b),
             Expr::Mul(a, b) => two("mul", a, b),
@@ -138,7 +158,7 @@ impl Expr {
 
     fn nodes(&self) -> usize {
         match self {
-            Expr::Num(_) | Expr::Reading(_) => 1,
+            Expr::Num(_) | Expr::Reading(_) | Expr::Proposed(_) | Expr::Current(_) => 1,
             Expr::Neg(a) => 1 + a.nodes(),
             Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) | Expr::Min(a, b) | Expr::Max(a, b) => {
                 1 + a.nodes() + b.nodes()
@@ -148,17 +168,28 @@ impl Expr {
 
     /// The readings it names, each once, in the order it names them.
     pub fn readings(&self, out: &mut Vec<String>) {
+        self.names(&mut |e| match e {
+            Expr::Reading(n) if !out.contains(n) => out.push(n.clone()),
+            _ => {}
+        })
+    }
+
+    /// The paths it reads, by `proposed` or `current`, each once, in the order it names them.
+    pub fn paths(&self, out: &mut Vec<String>) {
+        self.names(&mut |e| match e {
+            Expr::Proposed(p) | Expr::Current(p) if !out.contains(p) => out.push(p.clone()),
+            _ => {}
+        })
+    }
+
+    /// Each leaf, in the order written.
+    fn names(&self, f: &mut dyn FnMut(&Expr)) {
         match self {
-            Expr::Num(_) => {}
-            Expr::Reading(n) => {
-                if !out.contains(n) {
-                    out.push(n.clone());
-                }
-            }
-            Expr::Neg(a) => a.readings(out),
+            Expr::Num(_) | Expr::Reading(_) | Expr::Proposed(_) | Expr::Current(_) => f(self),
+            Expr::Neg(a) => a.names(f),
             Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) | Expr::Min(a, b) | Expr::Max(a, b) => {
-                a.readings(out);
-                b.readings(out);
+                a.names(f);
+                b.names(f);
             }
         }
     }
@@ -209,6 +240,11 @@ impl Goal {
     fn nodes(&self) -> usize {
         self.measured().nodes() + self.targets().iter().map(|t| t.nodes()).sum::<usize>()
     }
+
+    /// Every expression in it, the measured one first.
+    fn exprs(&self) -> impl Iterator<Item = &Expr> {
+        std::iter::once(self.measured()).chain(self.targets())
+    }
 }
 
 /// A metric as its readings read (`Result` in the model).
@@ -223,6 +259,22 @@ pub struct Checked {
 
 /// Readings, each a name and a value, in the order recorded.
 pub type Readings = [(String, Dec)];
+
+/// Numbers by path, as the engine found them in records (`Fields` in the model).
+pub type Fields = [(String, Dec)];
+
+/// What a metric is checked against (`Inputs` in the model): the readings recorded, and the numbers found at the
+/// paths the objective names, in the AIP's proposed lines and on main.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Inputs {
+    pub readings: Vec<(String, Dec)>,
+    pub proposed: Vec<(String, Dec)>,
+    pub current: Vec<(String, Dec)>,
+}
+
+fn get(fs: &Fields, p: &str) -> Option<Dec> {
+    fs.iter().find(|(k, _)| k == p).map(|(_, v)| *v)
+}
 
 fn first(rs: &Readings, n: &str) -> Option<Dec> {
     rs.iter().find(|(k, _)| k == n).map(|(_, v)| *v)
@@ -243,12 +295,16 @@ fn progress_of(met: bool, now: Option<Dec>, base: Option<Dec>) -> Dec {
 }
 
 impl Metric {
-    /// This metric against readings `rs` (`Metric.check`).
-    pub fn check(&self, rs: &Readings) -> Checked {
+    /// This metric against inputs `i` (`Metric.check`): now, the newest readings and the proposal's numbers; at the
+    /// baseline, the first readings and main's numbers where the proposal's would be.
+    pub fn check(&self, i: &Inputs) -> Checked {
+        let (rs, p, c) = (&i.readings[..], &i.proposed[..], &i.current[..]);
+        let now = Env { reading: &|n| newest(rs, n), proposed: &|x| get(p, x), current: &|x| get(c, x) };
+        let base = Env { reading: &|n| first(rs, n), proposed: &|x| get(c, x), current: &|x| get(c, x) };
         let g = &self.goal;
-        let value = g.measured().eval(&|n| newest(rs, n));
-        let baseline = g.measured().eval(&|n| first(rs, n));
-        let targets: Vec<Option<Dec>> = g.targets().iter().map(|t| t.eval(&|n| newest(rs, n))).collect();
+        let value = g.measured().eval(&now);
+        let baseline = g.measured().eval(&base);
+        let targets: Vec<Option<Dec>> = g.targets().iter().map(|t| t.eval(&now)).collect();
         let ts: Option<Vec<Dec>> = targets.iter().copied().collect();
         let now = ts.as_ref().and_then(|ts| g.distance(value?, ts));
         let base = ts.as_ref().and_then(|ts| g.distance(baseline?, ts));
@@ -266,8 +322,8 @@ pub struct Summary {
     pub progress: Dec,
 }
 
-pub fn check(metrics: &[Metric], rs: &Readings) -> Summary {
-    let results: Vec<Checked> = metrics.iter().map(|m| m.check(rs)).collect();
+pub fn check(metrics: &[Metric], i: &Inputs) -> Summary {
+    let results: Vec<Checked> = metrics.iter().map(|m| m.check(i)).collect();
     let total = results.len();
     let sum: Dec = results.iter().map(|r| r.progress).sum();
     let met = results.iter().filter(|r| r.met).count();
@@ -333,21 +389,31 @@ fn decimal(text: &str) -> Option<Dec> {
     ok(if neg { -m } else { m })
 }
 
-/// The objective as JSON, for the pages and the agents: each metric `{id, name, note, goal, readings, value,
+/// The paths an objective's metrics read, by `proposed` or `current`, each once, in the order written: what the
+/// engine looks up in the AIP's lines and on main to make its `Inputs`.
+pub fn paths(metrics: &[Metric]) -> Vec<String> {
+    let mut out = vec![];
+    for e in metrics.iter().flat_map(|m| m.goal.exprs()) {
+        e.paths(&mut out);
+    }
+    out
+}
+
+/// The objective as JSON, for the pages and the agents: each metric `{id, name, note, goal, readings, paths, value,
 /// baseline, targets, met, progress}`, numbers as people read them and progress from 0 to 1, then how many are met,
 /// of how many, and the mean progress.
-pub fn summary_json(metrics: &[Metric], rs: &Readings) -> Value {
-    let s = check(metrics, rs);
+pub fn summary_json(metrics: &[Metric], i: &Inputs) -> Value {
+    let s = check(metrics, i);
     let fraction = |p: Dec| number(p);
     let opt = |d: Option<Dec>| d.map_or(Value::Null, number);
     let items: Vec<Value> = metrics
         .iter()
         .zip(&s.results)
         .map(|(m, r)| {
-            let mut names = vec![];
-            m.goal.measured().readings(&mut names);
-            for t in m.goal.targets() {
-                t.readings(&mut names);
+            let (mut names, mut paths) = (vec![], vec![]);
+            for e in m.goal.exprs() {
+                e.readings(&mut names);
+                e.paths(&mut paths);
             }
             json!({
                 "id": m.id,
@@ -355,6 +421,7 @@ pub fn summary_json(metrics: &[Metric], rs: &Readings) -> Value {
                 "note": m.note,
                 "goal": m.goal.kind(),
                 "readings": names,
+                "paths": paths,
                 "value": opt(r.value),
                 "baseline": opt(r.baseline),
                 "targets": r.targets.iter().map(|t| opt(*t)).collect::<Vec<_>>(),
@@ -364,6 +431,56 @@ pub fn summary_json(metrics: &[Metric], rs: &Readings) -> Value {
         })
         .collect();
     json!({ "metrics": items, "met": s.met, "total": s.total, "progress": fraction(s.progress) })
+}
+
+/// A path's entry, where it names one: the hex before its slash (`1a2b3c4d/params.#1.default`), then the rest.
+pub fn entry_of(path: &str) -> (Option<&str>, &str) {
+    match path.split_once('/') {
+        Some((hex, rest)) => (Some(hex), rest),
+        None => (None, path),
+    }
+}
+
+/// What a record holds at `path` (its entry, if named, cut off first: `entry_of`): field names split by dots, `#n`
+/// the row of a list whose id is n. `None` where it holds nothing there.
+pub fn at_path<'a>(record: &'a Value, path: &str) -> Option<&'a Value> {
+    let (_, path) = entry_of(path);
+    path.split('.').try_fold(record, |at, seg| match seg.strip_prefix('#') {
+        Some(id) => {
+            let id: i64 = id.parse().ok()?;
+            at.as_array()?.iter().find(|row| row.get("id").and_then(Value::as_i64) == Some(id))
+        }
+        None => at.as_object()?.get(seg),
+    })
+}
+
+/// The number a record holds at `path` (`at_path`), in millionths: none where it holds no number there.
+pub fn number_at(record: &Value, path: &str) -> Option<Dec> {
+    at_path(record, path).and_then(dec_of)
+}
+
+/// Why `path` is no path (`Parser::path`), if it isn't one.
+fn bad_path(path: &str) -> Option<String> {
+    let (entry, rest) = entry_of(path);
+    if path.is_empty() {
+        return Some("a path needs a field name, such as params.#1.default".into());
+    }
+    if let Some(hex) = entry {
+        if hex.len() < 8 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Some(format!("{hex} is no entry: the first 8 or more hex digits of its id, then /"));
+        }
+    }
+    for seg in rest.split('.') {
+        match seg.strip_prefix('#') {
+            _ if seg.is_empty() => return Some(format!("\"{path}\" has an empty field: names split by single dots")),
+            Some(id) if id.parse::<i64>().is_err() => {
+                return Some(format!("{seg} is no row: # then its id, a whole number"));
+            }
+            _ if seg.contains('/') => return Some(format!("\"{path}\" has more than one /")),
+            _ => {}
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -520,9 +637,9 @@ fn lex(src: &str) -> Result<Vec<Token>, Error> {
 }
 
 /// Words an objective's names may not take.
-const RESERVED: [&str; 18] = [
-    "def", "import", "open", "namespace", "end", "metric", "reading", "min", "max", "atLeast", "atMost", "between",
-    "equals", "Metric", "Expr", "List", "theorem", "where",
+const RESERVED: [&str; 20] = [
+    "def", "import", "open", "namespace", "end", "metric", "reading", "proposed", "current", "min", "max", "atLeast",
+    "atMost", "between", "equals", "Metric", "Expr", "List", "theorem", "where",
 ];
 
 struct Parser {
@@ -594,6 +711,16 @@ impl Parser {
         }
     }
 
+    /// A path in quotes (`bad_path`).
+    fn path(&mut self) -> Result<String, Error> {
+        let p = self.string()?;
+        if let Some(why) = bad_path(&p) {
+            self.at -= 1;
+            return self.fail(why);
+        }
+        Ok(p)
+    }
+
     fn deep(&self, depth: usize) -> Result<(), Error> {
         match depth > MAX_DEPTH {
             true => self.fail(format!("nested more than {MAX_DEPTH} deep")),
@@ -636,7 +763,7 @@ impl Parser {
         self.app(depth + 1)
     }
 
-    /// `reading "x"`, `min a b`, `max a b`, or an argument.
+    /// `reading "x"`, `proposed "path"`, `current "path"`, `min a b`, `max a b`, or an argument.
     fn app(&mut self, depth: usize) -> Result<Expr, Error> {
         match self.peek() {
             Some(Tok::Ident(w)) if w == "reading" => {
@@ -646,6 +773,12 @@ impl Parser {
                     return self.fail("a reading needs a name");
                 }
                 Ok(Expr::Reading(n))
+            }
+            Some(Tok::Ident(w)) if w == "proposed" || w == "current" => {
+                let proposed = w == "proposed";
+                self.at += 1;
+                let p = self.path()?;
+                Ok(if proposed { Expr::Proposed(p) } else { Expr::Current(p) })
             }
             Some(Tok::Ident(w)) if w == "min" || w == "max" => {
                 let min = w == "min";
@@ -864,6 +997,27 @@ mod tests {
             wide += &format!("def e{i} : Expr := e{} + e{}\n", i - 1, i - 1);
         }
         assert!(bad(&wide).contains("parts"));
+        assert!(bad("def x : Metric := metric \"x\" (atLeast (proposed \"\") 1)").contains("field name"));
+        assert!(bad("def x : Metric := metric \"x\" (atLeast (proposed \"a..b\") 1)").contains("empty field"));
+        assert!(bad("def x : Metric := metric \"x\" (atLeast (current \"rows.#x\") 1)").contains("no row"));
+        assert!(bad("def x : Metric := metric \"x\" (atLeast (current \"1a2b/a\") 1)").contains("no entry"));
+        assert!(bad("def x : Metric := metric \"x\" (atLeast (current \"1a2b3c4d/a/b\") 1)").contains("one /"));
+        assert!(bad("def proposed : Expr := 1").contains("can't be the name"));
+    }
+
+    #[test]
+    fn reads_paths_in_records() {
+        let r = json!({"engine": {"version": 4}, "params": [{"id": 2, "default": 0.6}, {"id": 1, "default": "tall"}]});
+        assert_eq!(number_at(&r, "engine.version"), Some(4 * ONE));
+        assert_eq!(number_at(&r, "1a2b3c4d/params.#2.default"), Some(600_000));
+        assert_eq!(number_at(&r, "params.#1.default"), None);
+        assert!(at_path(&r, "params.#1.default").is_some());
+        assert_eq!(at_path(&r, "params.#3.default"), None);
+        assert_eq!(at_path(&r, "engine.version.major"), None);
+        assert_eq!(entry_of("1a2b3c4d/a.b"), (Some("1a2b3c4d"), "a.b"));
+        let ms = parse("def x : Metric := metric \"x\" (atLeast (proposed \"a.#1.b\" - current \"c\") (reading \"d\"))")
+            .unwrap();
+        assert_eq!(paths(&ms), ["a.#1.b", "c"]);
     }
 
     #[test]

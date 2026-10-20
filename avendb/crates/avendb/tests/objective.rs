@@ -1,6 +1,7 @@
 //! The Lean model's objective vectors (`avendb/spec/vectors/objectives.json`, written by `lake exe vectors` from
-//! `spec/AvenDB/ObjectiveVectors.lean`): each case an objective file Lean elaborated, the metrics it holds, readings
-//! and what `check` answers. The engine reads each file to the same metrics and checks them to the same results.
+//! `spec/AvenDB/ObjectiveVectors.lean`): each case an objective file Lean elaborated, the metrics it holds, readings,
+//! the numbers found at the paths it names (`proposed`, `current`), and what `check` answers. The engine reads each
+//! file to the same metrics and checks them to the same results.
 
 use avendb::objective::{self, Dec};
 use serde_json::Value;
@@ -15,7 +16,8 @@ fn dec(v: &Value) -> Option<Dec> {
 fn objective_vectors() {
     let file: Value = serde_json::from_str(&std::fs::read_to_string(VECTORS).unwrap()).unwrap();
     let cases = file["cases"].as_array().unwrap();
-    assert!(cases.len() >= 4);
+    assert!(cases.len() >= 6);
+    assert!(cases.iter().any(|c| c.get("proposed").is_some_and(|p| p.as_array().is_some_and(|p| !p.is_empty()))));
     for c in cases {
         let name = c["name"].as_str().unwrap();
         let metrics = objective::parse(c["lean"].as_str().unwrap()).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -25,10 +27,16 @@ fn objective_vectors() {
             assert_eq!(m.name, want["name"].as_str().unwrap(), "{name}");
             assert_eq!(m.goal.to_json(), want["goal"], "{name}: {}", m.id);
         }
-        let readings: Vec<(String, Dec)> = (c["readings"].as_array().unwrap().iter())
-            .map(|r| (r["name"].as_str().unwrap().to_string(), dec(&r["value"]).unwrap()))
-            .collect();
-        let got = objective::check(&metrics, &readings);
+        let named = |key: &str, by: &str| -> Vec<(String, Dec)> {
+            let rows = c.get(key).and_then(Value::as_array).cloned().unwrap_or_default();
+            rows.iter().map(|r| (r[by].as_str().unwrap().to_string(), dec(&r["value"]).unwrap())).collect()
+        };
+        let inputs = objective::Inputs {
+            readings: named("readings", "name"),
+            proposed: named("proposed", "path"),
+            current: named("current", "path"),
+        };
+        let got = objective::check(&metrics, &inputs);
         let want = &c["result"];
         assert_eq!(got.met as u64, want["met"].as_u64().unwrap(), "{name}");
         assert_eq!(got.total as u64, want["total"].as_u64().unwrap(), "{name}");

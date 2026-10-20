@@ -5,8 +5,12 @@
 target as one or more metrics, a file of Lean against this module, which `aip_objective` writes on the AIP. While the
 AIP is worked on, its author and its vault record readings on it (`aip_measure`), named numbers, and every reader
 evaluates the metrics against them: whether each is met, and how far the newest readings moved from the first, the
-baseline, toward its target. avenDB's engine (`crates/avendb/src/objective.rs`) runs the same subset of Lean, total
-and bounded, and replays `vectors/objectives.json` (`ObjectiveVectors.lean`) to stay this model.
+baseline, toward its target. A metric may also read the AIP's proposal itself: `proposed "path"`, the number its
+lines would put at `path` of their entries' records, its baseline what main holds there now, and `current "path"`,
+what main holds there now. The engine finds a path in the records (`params.#1.default`: field names, `#n` the row
+whose id is n); the model takes the numbers it found (`Inputs`). avenDB's engine (`crates/avendb/src/objective.rs`)
+runs the same subset of Lean, total and bounded, and replays `vectors/objectives.json` (`ObjectiveVectors.lean`) to
+stay this model.
 
 An objective file reads, in Lean:
 
@@ -25,11 +29,13 @@ def objective : List Metric := [fps]
   A value beyond `bound` is none, and so is anything a division by zero or a missing reading makes: no device may
   overflow where another doesn't (the Rust engine's 128-bit integers hold every product of two bounded values that
   stays bounded once cut).
-- **Expressions** (`Expr`): numbers, `reading "name"`, `+ - * /`, `-x`, `min`, `max`.
+- **Expressions** (`Expr`): numbers, `reading "name"`, `proposed "path"`, `current "path"`, `+ - * /`, `-x`, `min`,
+  `max`.
 - **Goals** (`Goal`): `atLeast e t`, `atMost e t`, `between e lo hi`, `equals e t`.
-- **Progress** (`Metric.check`): a metric met is done, `one`; else its distance from what meets it, at the newest
-  readings, against that distance at the first readings, both to the targets as they read now, clamped to `0..one`;
-  `0` where either is unmeasured, or the baseline was no farther. OB1 to OB3 are proved below.
+- **Progress** (`Metric.check`): a metric met is done, `one`; else its distance from what meets it, now (the newest
+  readings, the proposal's numbers), against that distance at the baseline (the first readings, main's numbers),
+  both to the targets as they read now, clamped to `0..one`; `0` where either is unmeasured, or the baseline was no
+  farther. OB1 to OB3 are proved below.
 -/
 
 namespace AvenDB.Objective
@@ -50,6 +56,8 @@ def ok (x : Int) : Option Int := if -bound ≤ x ∧ x ≤ bound then some x els
 inductive Expr where
   | num (m : Dec)
   | reading (name : String)
+  | proposed (path : String)
+  | current (path : String)
   | add (a b : Expr)
   | sub (a b : Expr)
   | mul (a b : Expr)
@@ -76,6 +84,12 @@ instance : Max Expr := ⟨.max⟩
 
 /-- The newest reading named `name`. -/
 def reading (name : String) : Expr := .reading name
+
+/-- The number the AIP's lines would put at `path`; at the baseline, what main holds there. -/
+def proposed (path : String) : Expr := .proposed path
+
+/-- The number main holds at `path` now. -/
+def current (path : String) : Expr := .current path
 
 /-- What meets a metric. -/
 inductive Goal where
@@ -109,10 +123,36 @@ def Readings.first (rs : Readings) (n : String) : Option Dec := (rs.find? (·.1 
 /-- The newest reading of each name. -/
 def Readings.newest (rs : Readings) (n : String) : Option Dec := (rs.reverse.find? (·.1 == n)).map (·.2)
 
-/-- An expression's value where every reading it names is in `env`, and nothing on the way leaves `bound`. -/
-def Expr.eval (env : String → Option Dec) : Expr → Option Dec
+/-- Numbers by path, as the engine found them in records. -/
+abbrev Fields := List (String × Dec)
+
+def Fields.get (fs : Fields) (p : String) : Option Dec := (fs.find? (·.1 == p)).map (·.2)
+
+/-- Where an expression's names read from: readings, the proposal's numbers, main's numbers. -/
+structure Env where
+  reading : String → Option Dec
+  proposed : String → Option Dec
+  current : String → Option Dec
+
+/-- What a metric is checked against: the readings recorded, and the numbers the engine found at the paths the
+    objective names, in the AIP's proposed lines and on main. -/
+structure Inputs where
+  readings : Readings := []
+  proposed : Fields := []
+  current : Fields := []
+
+/-- Now: the newest readings and the proposal's numbers. -/
+def Inputs.now (i : Inputs) : Env := ⟨i.readings.newest, i.proposed.get, i.current.get⟩
+
+/-- The baseline: the first readings, and main's numbers where the proposal's would be. -/
+def Inputs.base (i : Inputs) : Env := ⟨i.readings.first, i.current.get, i.current.get⟩
+
+/-- An expression's value where every name it reads is in `env`, and nothing on the way leaves `bound`. -/
+def Expr.eval (env : Env) : Expr → Option Dec
   | .num m => ok m
-  | .reading n => env n >>= ok
+  | .reading n => env.reading n >>= ok
+  | .proposed p => env.proposed p >>= ok
+  | .current p => env.current p >>= ok
   | .add a b => do ok ((← a.eval env) + (← b.eval env))
   | .sub a b => do ok ((← a.eval env) - (← b.eval env))
   | .mul a b => do ok (Int.tdiv ((← a.eval env) * (← b.eval env)) one)
@@ -162,12 +202,12 @@ def progressOf (met : Bool) (now base : Option Dec) : Dec :=
   | some d, some d0 => if d0 ≤ d then 0 else clamp (one - Int.tdiv (d * one) d0)
   | _, _ => 0
 
-/-- Metric `m` against readings `rs`. -/
-def Metric.check (m : Metric) (rs : Readings) : Result :=
+/-- Metric `m` against inputs `i`. -/
+def Metric.check (m : Metric) (i : Inputs) : Result :=
   let g := m.goal
-  let value := g.measured.eval rs.newest
-  let baseline := g.measured.eval rs.first
-  let targets := g.targets.map (·.eval rs.newest)
+  let value := g.measured.eval i.now
+  let baseline := g.measured.eval i.base
+  let targets := g.targets.map (·.eval i.now)
   let ts := targets.filterMap id
   let whole := ts.length == targets.length
   let now := if whole then value >>= fun v => g.distance v ts else none
@@ -175,7 +215,7 @@ def Metric.check (m : Metric) (rs : Readings) : Result :=
   let met := now == some 0
   { value, baseline, targets, met, progress := progressOf met now base }
 
-/-- An objective against readings: each metric's result, how many are met, and their mean progress. -/
+/-- An objective against inputs: each metric's result, how many are met, and their mean progress. -/
 structure Summary where
   results : List Result
   met : Nat
@@ -183,8 +223,8 @@ structure Summary where
   progress : Dec
   deriving Repr
 
-def check (ms : List Metric) (rs : Readings) : Summary :=
-  let results := ms.map (·.check rs)
+def check (ms : List Metric) (i : Inputs) : Summary :=
+  let results := ms.map (·.check i)
   let total := results.length
   let sum := (results.map (·.progress)).foldl (· + ·) 0
   { results, met := (results.filter (·.met)).length, total,
@@ -217,9 +257,9 @@ theorem met_done (now base : Option Dec) : progressOf true now base = one := by
 theorem unmeasured_none (base : Option Dec) : progressOf false none base = 0 := by
   simp [progressOf]
 
-/-- A metric met is one its readings measured: met needs a value now. -/
-theorem met_measured (m : Metric) (rs : Readings) (h : (m.check rs).met = true) :
-    (m.check rs).value ≠ none := by
+/-- A metric met is one its inputs measured: met needs a value now. -/
+theorem met_measured (m : Metric) (i : Inputs) (h : (m.check i).met = true) :
+    (m.check i).value ≠ none := by
   intro hv
   simp only [Metric.check] at h hv
   simp [hv] at h
