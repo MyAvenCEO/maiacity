@@ -109,6 +109,9 @@ const report = await page.evaluate(
 		const from = o.from, to = Math.min(at, from + o.seconds);
 		const under = (/** @type {number} */ t) => list.find((c) => t >= c.start && t < c.start + c.dur);
 		const ahead = (/** @type {number} */ t) => list.filter((c) => c.start + c.dur > t).slice(0, 3).map((c) => c.spec);
+		// the shots the studio keeps built while it plays: those of the next 20 s, at least three, at most eight
+		// (src/lib/studio/studio.svelte.js KEEP_AHEAD, KEEP_SHOTS)
+		const kept = (/** @type {number} */ t) => list.filter((c) => c.start + c.dur > t).filter((c, i) => i < 3 || (i < 8 && c.start < t + 20)).map((c) => c.spec);
 		// the views: the output LUT, and a grade for every clip (the Mac's sizes), as the studio draws them
 		const cube = (/** @type {number} */ n, /** @type {number} */ k) => {
 			const data = new Float32Array(n * n * n * 3);
@@ -188,7 +191,7 @@ const report = await page.evaluate(
 				if (t >= to) return done(null);
 				const c = under(t), specs = ahead(t);
 				traceOn();
-				viewer.keep(specs);
+				viewer.keep(kept(t));
 				viewer.markHeld(specs);
 				viewer.look?.(list.filter((x) => x.start + x.dur > t).slice(0, 3).map(viewOf));
 				if (c) viewer.show({ spec: c.spec, t: c.in + (t - c.start), shape: '16:9', width: 1920, height: 1080, view: viewOf(c), meter: false, wait: 50 });
