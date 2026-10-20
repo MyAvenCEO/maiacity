@@ -45,6 +45,7 @@ import { holds } from '../../../game/hash.js';
 import { idOf, slug } from '$lib/ids.js';
 import { CODE_FEED, KEPT_PROOFS, MAIA_CITY, NO_ANCHOR, fileOf, listedRows, listingOf, proofOf, provenRows, seedFeedOf } from '../../../game/code/sources/feed.js';
 import { READ, deviceFile, deviceRows } from '../../../game/code/sources/device.js';
+import { KEPT_NEWEST, fresh } from '../../../game/code/fresh.js';
 import { buildOf } from './builds.js';
 import * as cache from './cache.js';
 import { LATEST } from './engines.js';
@@ -410,13 +411,24 @@ function proverOf({ prove, keep, vault, pageOf = () => globalThis.location?.path
 const live = (r) => !(r?.tags ?? []).includes('avendb:deleted');
 
 /**
+ * The recipes of `rows`, read off by `read` (`vaultRecipes`), each entry held to the newest version this device
+ * proved of it (game/code/fresh.js `fresh`, kept in `newest`): a ref that names no version is refused off an entry
+ * handed out older, naming both. Rows a device checked or a proof proved (`proven`) are kept as their entries' newest;
+ * a listing on the server's word never is.
+ */
+const recipesOf = (rows, read, newest, proven) => {
+	const held = rows.filter(live);
+	return vaultRecipes(held, { read, stale: fresh(held, { proven, keep: newest }).stale });
+};
+
+/**
  * The recipes read off the page's own avenDB, where it holds one open that brought Maia City from its peers
  * (game/code/sources/device.js `deviceRows`), else off the feed: what the page knows of them after. The index is read
  * off the rows; a recipe the feed lists is built only once its entry's proof checks out (H2, `provenAt`), one the
  * device read at once, as the device checked its edits as it took them, and so on a dev server that reads its
  * stand-in, whose rows are no vault's. `device` false reads the feed whatever the page holds open.
  */
-async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = TIMEOUT.rows, kept = KEPT, again = AGAIN, patience = PATIENCE, lead = READ, vault = MAIA_CITY, verify, proofs = KEPT_PROOFS, page, device = true } = {}) {
+async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = TIMEOUT.rows, kept = KEPT, again = AGAIN, patience = PATIENCE, lead = READ, vault = MAIA_CITY, verify, proofs = KEPT_PROOFS, page, device = true, newest = KEPT_NEWEST } = {}) {
 	const how = { get, feed, kept, again, patience, lead };
 	const standIn = import.meta.env.DEV && import.meta.env.VITE_RECIPE_FEED === 'dev' && feed === feedOf();
 	const url = standIn ? seedFeedOf(['recipe'], feed) : listingOf(['recipe'], { vault, feed });
@@ -437,7 +449,7 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 	// the page's own avenDB first, its own copy of Maia City, which needs no proof
 	const local = device && !standIn ? await deviceRows(['recipe'], { vault }) : null;
 	if (local) {
-		const read = vaultRecipes(local.filter(live), { read: readerOf(how, true) });
+		const read = recipesOf(local, readerOf(how, true), newest, true);
 		if (Object.keys(read.index.recipes).length) return ready(read, null, String(local[0]?.vault ?? vault), 'this device');
 	}
 	/** @param {string[]} entries */
@@ -445,7 +457,7 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 		const proving = { vault, kinds: ['recipe'], entries, fetch: get, timeout, keep: proofs, ...(verify ? { verify } : {}) };
 		const got = await provenRows(proofOf(['recipe'], { vault, feed, entries }), proving);
 		if ('error' in got) return got;
-		const read = vaultRecipes(got.rows.filter(live), { read: readerOf(how) });
+		const read = recipesOf(got.rows, readerOf(how), newest, true);
 		for (const h of Object.keys(read.index.recipes)) hashOfRow.set(read.rowOf(h), h);
 		return { source: read };
 	};
@@ -467,7 +479,7 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 			}
 			await new Promise((r) => setTimeout(r, again[Math.min(i, again.length - 1)] ?? 0));
 			const brought = device && !standIn ? await deviceRows(['recipe'], { vault, wait: 0 }) : null;
-			const read = brought && vaultRecipes(brought.filter(live), { read: readerOf(how, true) });
+			const read = brought && recipesOf(brought, readerOf(how, true), newest, true);
 			if (read && Object.keys(read.index.recipes).length) return ready(read, null, String(brought[0]?.vault ?? vault), 'this device');
 			got = await listed();
 		}
@@ -476,7 +488,7 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 	}
 	if ('error' in got) return couldNot(got.error);
 	const rows = got.rows.filter(live);
-	const read = vaultRecipes(rows, { read: readerOf(how) });
+	const read = recipesOf(rows, readerOf(how), newest, false);
 	if (!Object.keys(read.index.recipes).length)
 		return failed(`the Maia City vault holds no asset recipes yet: ${url} listed ${rows.length ? `${rows.length} entries, none of them one` : 'none'}${read.refused.length ? ` (${read.refused.slice(0, 3).join('; ')})` : ''}`);
 	return ready(read, proving, String(rows[0]?.vault ?? ''), url);
@@ -508,8 +520,9 @@ let loading = null;
  * is asked too (ms, `READ`), `vault` the anchor (Maia City's
  * id, `MAIA_CITY`), `verify` and `proofs` how a proof is checked and where what it proved, and the proofs each page
  * asked for, are kept (game/code/sources/feed.js `provenRows`, `KEPT_PROOFS`), `page` the page's address (`location`'s
- * path): a test's, or a page's that asks again (`reloadRecipes`).
- * @param {{ feed?: string, fetch?: typeof globalThis.fetch, timeout?: number, kept?: { get: (hash: string) => any, put: (hash: string, bytes: Uint8Array) => any }, again?: number[], patience?: number, lead?: number, vault?: string, verify?: (bytes: Uint8Array, vault: string, kinds: string[]) => Promise<any[]>, proofs?: { get: (key: string) => any, put: (key: string, value: any) => void }, page?: () => string }} [o]
+ * path), `newest` where the newest version proved of each entry is kept (game/code/fresh.js `KEPT_NEWEST`): a test's,
+ * or a page's that asks again (`reloadRecipes`).
+ * @param {{ newest?: { get: (key: string) => any, put: (key: string, value: any) => void }, feed?: string, fetch?: typeof globalThis.fetch, timeout?: number, kept?: { get: (hash: string) => any, put: (hash: string, bytes: Uint8Array) => any }, again?: number[], patience?: number, lead?: number, vault?: string, verify?: (bytes: Uint8Array, vault: string, kinds: string[]) => Promise<any[]>, proofs?: { get: (key: string) => any, put: (key: string, value: any) => void }, page?: () => string }} [o]
  * @returns {Promise<typeof recipes>}
  */
 export const loadRecipes = (o) => (o ? (loading = load(o)) : (loading ??= load()));

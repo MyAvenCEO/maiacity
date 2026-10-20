@@ -1578,7 +1578,10 @@ then kind, then entry, and `?type=story,article` keeps the kinds a page asks for
 view, logic, function and config (a record of a vault's own schema whose `kind` is `config`, `world::CODE_KINDS`), is at
 `GET avendb.maia.city/feed/code`, as `{"code": [...]}`. A row's `record` is its main line as every reader counts it,
 through the newest schema of its kind in its vault's lane (`schema`, in hex), each field it leaves out at its default,
-Loro texts as plain text, and `heads` that version's heads, so a loader pins it; its `type` is its record's kind, its
+Loro texts as plain text, and `heads` that version's heads, so a loader pins it, with `version`, `{version, edits,
+writes}`, which release of main they are, the edits since, and how many writes they hold, all before them too
+(`History::describe`): a later version holds more, so a loader that proved a newer one refuses an older one a server
+hands out by leaving writes out (maiaCITY's game/code/fresh.js); its `type` is its record's kind, its
 `tags` its entry's tags, its `name` its vault's profile where everyone may read it. An entry whose record names no kind
 a schema of its vault reads, a schema's or a lens's, is in none. Each row lists `files`, `[{root, size, len}]` oldest
 first: the files its main line brings that every reader counts as the entry's (`Lab::line_files`), those of its

@@ -40,6 +40,9 @@ export function parseCodeRef(ref) {
 export function codeAt(ref) {
 	const r = parseCodeRef(ref);
 	if (r.source === 'avendb') return avendb.at(r);
+	// the vault handed out an older version of it than this device proved before (./fresh.js): refused, not the seed's
+	const older = avendb.staleAt(r.path);
+	if (older) throw new CodeError(older);
 	const e = avendb.byPath(r.path) ?? ENTRIES[r.path];
 	if (!e) throw new CodeError(`no code entry ${r.path}`);
 	if (r.hash && !e.hash.startsWith(r.hash)) throw new CodeError(`${r.path} is ${e.hash.slice(0, 12)}… now, not ${r.hash.slice(0, 12)}…`);
@@ -57,13 +60,13 @@ export function configAt(ref) {
 	return JSON.parse(e.files['config.json'] ?? '{}');
 }
 
-/** every entry under `prefix`, in the order of their refs */
+/** every entry under `prefix`, in the order of their refs, each as `codeAt` reads it */
 export const codeIn = (prefix) => {
 	const all = { ...ENTRIES, ...avendb.all() };
 	return Object.keys(all)
 		.filter((k) => k.startsWith(prefix))
 		.sort()
-		.map((k) => all[k]);
+		.map((k) => codeAt(k));
 };
 
 /**

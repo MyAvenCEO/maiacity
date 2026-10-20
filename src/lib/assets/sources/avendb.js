@@ -306,10 +306,14 @@ export function versionsOf(row) {
  * version of it whose card names another is refused, so no entry speaks for an asset another entry holds. `assets`
  * says which asset an entry already is (`group/id`, by its entry) where the rows don't hold its first version: a
  * proposal's line, read alone ($lib/avendb/assets.js `proposedSource`).
+ * `stale` are rows older than the newest version this device proved of their entries (game/code/fresh.js `fresh`,
+ * each `{ row, error }`), among `rows` too: what they hold is read as ever, so a pin by heads, or a ref that names its
+ * version, still finds that exact version, but a ref that names no version, which means the newest, is refused with
+ * that error rather than read off an entry held back at an older version, and the error is told (`refused`).
  * @param {any[]} rows
- * @param {{ read: (row: any) => Promise<Uint8Array | ArrayBuffer | string | undefined>, assets?: Iterable<[string, string]> }} o
+ * @param {{ read: (row: any) => Promise<Uint8Array | ArrayBuffer | string | undefined>, assets?: Iterable<[string, string]>, stale?: { row: any, error: string }[] }} o
  */
-export function vaultRecipes(rows, { read, assets = [] }) {
+export function vaultRecipes(rows, { read, assets = [], stale = [] }) {
 	/** @type {{ engine: number, recipes: Record<string, any>, labels: Record<string, string>, latest: Record<string, number>, first: Record<string, string> }} */
 	const index = { engine: LATEST.v, recipes: {}, labels: {}, latest: {}, first: {} };
 	/** @type {string[]} */
@@ -327,6 +331,9 @@ export function vaultRecipes(rows, { read, assets = [] }) {
 	const labelsOf = new Map();
 	/** the asset each entry is, by its first version that checks (`group/id`) @type {Map<string, string>} */
 	const assetOf = new Map(assets);
+	/** why an entry's newest version can't be read, where it was handed out older than this device proved it @type {Map<string, string>} */
+	const older = new Map(stale.map((s) => [String(s.row?.entry), s.error]));
+	refused.push(...older.values());
 	for (const row of (Array.isArray(rows) ? rows : []).flatMap(versionsOf)) {
 		const m = recipeOfRow(row);
 		if ('error' in m) {
@@ -452,6 +459,9 @@ export function vaultRecipes(rows, { read, assets = [] }) {
 			const first = variant ? undefined : own(index.first, named);
 			const hash = own(index.labels, named) ?? (first ? own(index.labels, refOf(group, id, latest, first)) : undefined);
 			if (!hash) throw missing(ref, named, why.get(named));
+			// the newest it names, off an entry handed out older than this device proved it: refused, saying both versions
+			const held = v == null ? older.get(String(rowOf.get(hash)?.entry)) : undefined;
+			if (held) throw new NotInVault(`${ref}: its newest version can't be read: ${held}`);
 			return hash;
 		},
 		/**
