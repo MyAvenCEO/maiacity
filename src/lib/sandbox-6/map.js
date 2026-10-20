@@ -10,7 +10,8 @@
  * Pure: the same seed grows the same valley.
  */
 import { GRASS, IRON, MOUNTAIN, SAND, WATER } from './rules.js';
-import { STEP, makeGrid, rng } from './hex.js';
+import { seededRandom } from '$lib/sandbox-kit/random.js';
+import { STEP, makeGrid } from './hex.js';
 import { K, makePlan } from './plots.js';
 
 /** the valley's size in nodes: room for some twenty-five villages, the sea round them */
@@ -40,7 +41,7 @@ const HS = K * STEP;
 export function growValley(seed) {
 	const g = makeGrid(W, H);
 	const N = W * H;
-	const rand = rng(seed * 7919 + 13);
+	const rand = seededRandom(seed * 7919 + 13); // the same seed, the same valley
 	// smooth value noise on the plane of the old steps
 	const lattice = Array.from({ length: 64 * 64 }, () => rand());
 	const noise = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ f) => {

@@ -27,6 +27,7 @@ import * as THREE from 'three';
 import { worldRenderer } from '$lib/render/world.js';
 import { createOrbitRig } from '$lib/sandbox-kit/orbit.js';
 import { createSky } from '$lib/sandbox-kit/sky.js';
+import { seededRandom } from '$lib/sandbox-kit/random.js'; // so everything stands in the same places for everyone
 import { blend } from '$lib/assets/clips.js';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
@@ -144,18 +145,6 @@ const nearPath = (x, z, r) => PATH.some((p) => Math.abs(p.x - x) < r + 2 && Math
 const onGravel = (x, z, pad = 0) =>
 	[LOT, YARD, STORE_YARD].some((c) => Math.hypot(x - c.x, z - c.z) < c.r + pad) || nearPath(x, z, PATH_W / 2 + pad) || (x < ROAD_END + 2 && Math.abs(z - ROAD_Z) < HIGHWAY_W / 2 + pad);
 
-/** a little seeded random, so everything stands in the same places for everyone */
-function rng(seed) {
-	let a = seed >>> 0;
-	return () => {
-		a = (a + 0x6d2b79f5) >>> 0;
-		let t = a;
-		t = Math.imul(t ^ (t >>> 15), t | 1);
-		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-	};
-}
-
 const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, flatShading: true, ...extra });
 /** a flat thing on the ground, drawn over what lies under it */
 const flat = (color, lift) => mat(color, { polygonOffset: true, polygonOffsetFactor: -lift, polygonOffsetUnits: -lift });
@@ -187,7 +176,7 @@ function land() {
 	g.add(ground);
 	const tile = new THREE.CircleGeometry(HEX_R - 0.4, 6, Math.PI / 2);
 	tile.rotateX(-Math.PI / 2);
-	const r = rng(7);
+	const r = seededRandom(7);
 	const prairie = [flat(0xc8b67c, 1), flat(0xccb882, 1), flat(0xc2b177, 1)];
 	const grass = [flat(0x93b46d, 1), flat(0x8db06a, 1), flat(0x98b872, 1)];
 	const rimHome = new THREE.LineDashedMaterial({ color: 0xf4f1e8, dashSize: 5, gapSize: 6, transparent: true, opacity: 0.85 });
@@ -224,7 +213,7 @@ function highway() {
 	strip(HIGHWAY_W, 0xb8a072, ROAD_Z, 3);
 	strip(1.1, 0x9c8660, ROAD_Z - 1.7, 4);
 	strip(1.1, 0x9c8660, ROAD_Z + 1.7, 4);
-	const r = rng(11);
+	const r = seededRandom(11);
 	const patch = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), flat(0x6f6a62, 5), 160);
 	const o = new THREE.Object3D();
 	for (let i = 0; i < 160; i++) {
@@ -256,7 +245,7 @@ function highway() {
  *  the villages' grass, the roads and the MaiaCity centre */
 function steppe() {
 	const g = new THREE.Group();
-	const r = rng(23);
+	const r = seededRandom(23);
 	const o = new THREE.Object3D();
 	const free = (x, z) => !isGrass(x, z) && !onGravel(x, z, 2) && Math.hypot(x - (CX + 2), z - CZ) > 30;
 	const spot = (reach) => {
@@ -352,7 +341,7 @@ function gravel() {
 /** our tribe's hex: grass and a few round bushes, kept off the tent, the gravel and the paths */
 function bushes() {
 	const g = new THREE.Group();
-	const r = rng(42);
+	const r = seededRandom(42);
 	const leaves = [mat(0x4f7f40), mat(0x5d8a45), mat(0x46733a)];
 	for (let i = 0, n = 0; i < 900 && n < 76; i++) {
 		const a = r() * Math.PI * 2, d = 12 + r() * (HEX_R - 18);
@@ -376,7 +365,7 @@ function bushes() {
 /** our tribe's hex in knee-high grass (Samuel 2026-10-14: you step out into it, the wind the only sound): tufts of
  *  three blades, thicker round the lot, off the tent, the gravel and the paths */
 function tallGrass() {
-	const r = rng(77);
+	const r = seededRandom(77);
 	const n = 2800;
 	const m = new THREE.InstancedMesh(new THREE.ConeGeometry(0.07, 0.62, 3).translate(0, 0.31, 0), mat(0x86a95a), n * 3);
 	const o = new THREE.Object3D();
@@ -403,7 +392,7 @@ function tallGrass() {
 /** a clump of tall grass to stand close in front of a low camera (the grass in the foreground of a shot) */
 function clump() {
 	const g = new THREE.Group();
-	const r = rng(91);
+	const r = seededRandom(91);
 	const green = [mat(0x7f9f52), mat(0x93ad62), mat(0x6f8f47)];
 	for (let i = 0; i < 26; i++) {
 		const h = 0.5 + r() * 0.45;
@@ -3544,7 +3533,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			for (const p of Object.values(people)) Object.assign(p.userData, { t: 0, walked: 0, last: null, joy: false, extra: null });
 			for (const o of van.userData.people) Object.assign(o.userData, { k: 0, to: 0, lift: 0 });
 			rand = random;
-			if (seed != null) rand = rng(seed);
+			if (seed != null) rand = seededRandom(seed);
 			lastT = t;
 			camera.clearViewOffset();
 			lensOut();

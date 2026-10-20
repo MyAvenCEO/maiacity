@@ -10,6 +10,7 @@
  * is a box as high as its ridge in another's way, and its own three points sit on its south roof, where its solar is.
  * Pure functions, in the browser or in node.
  */
+import { sunOverGround } from '$lib/sandbox-kit/universe.js';
 import { capOf, KINDS, TOWER, capHeight, siteHall, towerRadius } from './specs.js';
 
 /** the village's latitude */
@@ -19,18 +20,16 @@ export const DAYS = { winter: { label: '21 December', decl: -23.44 }, equinox: {
 const DEG = Math.PI / 180;
 const STEP_MIN = 10;
 
-/** the sun's direction (x east, y up, z south) every 10 minutes of a day while it is over 2° @returns {number[][]} */
+/** the sun's direction (x east, y up, z south) every 10 minutes of a day while it is over 2°: the universe's own sun
+ *  ($lib/sandbox-kit/universe.js `sunOverGround`), seen from the village; its noon is at twelve, the universe's at half
+ *  past, so each moment is asked for half an hour later (and a little into its ten minutes) @returns {number[][]} */
 function sunPath(/** @type {number} */ decl) {
-	const phi = LATITUDE * DEG, d = decl * DEG;
 	/** @type {number[][]} */
 	const out = [];
 	for (let m = 0; m < 24 * 60; m += STEP_MIN) {
-		const H = ((m / 60 - 12) * 15 + STEP_MIN / 8) * DEG;
-		const el = Math.asin(Math.sin(phi) * Math.sin(d) + Math.cos(phi) * Math.cos(d) * Math.cos(H));
-		if (el < 2 * DEG) continue;
-		// azimuth from north, clockwise
-		const az = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(phi) - Math.tan(d) * Math.cos(phi)) + Math.PI;
-		out.push([Math.cos(el) * Math.sin(az), Math.sin(el), -Math.cos(el) * Math.cos(az)]);
+		const s = sunOverGround(m / 60 + 0.5 + STEP_MIN / 120, LATITUDE, decl);
+		if (Math.asin(s.y) < 2 * DEG) continue;
+		out.push([s.x, s.y, s.z]);
 	}
 	return out;
 }

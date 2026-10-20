@@ -16,6 +16,7 @@
  */
 import * as THREE from 'three';
 import { Sky } from 'three/addons/objects/Sky.js';
+import { seededMinStd } from './random.js';
 
 /** Where the worlds stand on their planet: the celestial pole stands this high in the north (+z on the ground). */
 export const LATITUDE = 45;
@@ -109,15 +110,30 @@ export function horizonAt(sun, up = new THREE.Vector3(0, 1, 0)) {
  * frame: north +y, longitude 0 toward +z, east +x), and how far the stars have turned. Noon at longitude 0 is half
  * past twelve, as the local sky has it.
  * @param {number} hour
+ * @param {number} [declination] the sun's declination that day, in degrees (the worlds' early summer if not given)
  */
-export function celestial(hour) {
+export function celestial(hour, declination = DECLINATION) {
 	const turn = ((hour - 12.5) / 24) * Math.PI * 2;
-	const lat = THREE.MathUtils.degToRad(DECLINATION), lon = -turn;
+	const lat = THREE.MathUtils.degToRad(declination), lon = -turn;
 	return { sun: new THREE.Vector3(Math.cos(lat) * Math.sin(lon), Math.sin(lat), Math.cos(lat) * Math.cos(lon)), turn };
 }
 
-/** a seeded random generator: the same stars in every world, every frame, every film */
-const seeded = (/** @type {number} */ seed) => () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+/**
+ * Where the sun stands seen from the ground at a latitude, as it truly does there: the sun `celestial` puts over the
+ * planet, seen from a place on longitude 0, in a map's frame (x east, y up, z south). Its height is asin(y). Noon is
+ * half past twelve, as `celestial` has it; a place whose noon is twelve asks for half an hour later.
+ * @param {number} hour
+ * @param {number} [latitude] degrees north (the worlds' own if not given)
+ * @param {number} [declination] the sun's declination that day, in degrees (the worlds' early summer if not given)
+ */
+export function sunOverGround(hour, latitude = LATITUDE, declination = DECLINATION) {
+	const s = celestial(hour, declination).sun, phi = THREE.MathUtils.degToRad(latitude);
+	// the place's up and north, on longitude 0 (toward +z of the planet's frame); east is the planet's +x there
+	const up = s.y * Math.sin(phi) + s.z * Math.cos(phi);
+	const north = s.y * Math.cos(phi) - s.z * Math.sin(phi);
+	return new THREE.Vector3(s.x, up, -north);
+}
+
 
 /** The galactic plane's pole in the stars' own frame (the celestial pole is +y): the Milky Way crosses the sky at 63°. */
 const GALACTIC_POLE = new THREE.Vector3(Math.sin(1.1) * Math.cos(2.1), Math.cos(1.1), Math.sin(1.1) * Math.sin(2.1)).normalize();
@@ -127,7 +143,7 @@ const GALACTIC_POLE = new THREE.Vector3(Math.sin(1.1) * Math.cos(2.1), Math.cos(
  * yellow and orange, and the Milky Way's band of faint ones.
  */
 function catalogue() {
-	const r = seeded(19700101);
+	const r = seededMinStd(19700101); // the same stars in every world, every frame, every film
 	/** @type {number[]} */
 	const pos = [];
 	/** @type {number[]} */

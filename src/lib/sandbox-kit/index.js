@@ -10,6 +10,8 @@
  *   createObstacles  what stands in the walker's way, filed in 8 m cells; never a trap to whoever stands in it
  *   createOrbitRig  the map camera: WASD travels, drag turns and tilts, the wheel zooms to the cursor
  *   connectFilm   hands the world to the film camera (window.__world): the studio can shoot it
+ *   seededRandom  chance that is the same every time (./random.js), for whatever a world scatters
+ *   disposeObject a world's shapes, materials and pictures let go of, all at once ($lib/render/core.js)
  *
  * On the page (Svelte):
  *   SkyControl    the time of the sky: Auto (the in-game clock) or Manual (a slider, from noon), one state for
@@ -25,7 +27,9 @@
  */
 export { createWorldRenderer as createStage } from '$lib/render/world.js';
 export { createSky, createSkyClock, lightAt, sunAt } from './sky.js';
-export { celestial, createUniverse, horizonAt } from './universe.js';
+export { celestial, createUniverse, horizonAt, sunOverGround } from './universe.js';
+export { seededLcg, seededMinStd, seededRandom } from './random.js';
+export { disposeObject } from '$lib/render/core.js';
 export { automatic, manual, skyHour, skyTime, NOON } from './skyTime.svelte.js';
 export { createWalker, PACE } from './walker.js';
 export { createObstacles } from './obstacles.js';

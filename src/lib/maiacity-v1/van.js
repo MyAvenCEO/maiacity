@@ -20,6 +20,7 @@ import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { blend } from '$lib/assets/clips.js';
+import { seededLcg } from '$lib/sandbox-kit/random.js';
 import { standInRef } from './things.js';
 
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
@@ -35,18 +36,13 @@ export const ME_SEAT = V(0.45, FLOOR, ROW.middle);
 /** a smooth material: cloth, vinyl, plastic, steel */
 const m = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, ...o });
 
-/** a seeded random, so every van is packed alike */
-function seeded(seed) {
-	let s = seed >>> 0;
-	return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
-}
 
 /** worn bus moquette: a warm ground with stripes down it and a fleck through it */
 function moquette(ground, stripe, thin, seed) {
 	const c = document.createElement('canvas');
 	c.width = c.height = 64;
 	const x = c.getContext('2d');
-	const r = seeded(seed);
+	const r = seededLcg(seed); // seeded, so every van is packed alike
 	x.fillStyle = ground;
 	x.fillRect(0, 0, 64, 64);
 	for (let i = 0; i < 64; i += 16) {
@@ -320,7 +316,7 @@ export function packedVan(drawn, pick) {
 
 	// their bags: a duffel and a backpack on the middle bench, more under the seats; at the back, boxes tied with
 	// string, a red suitcase, a rolled striped mattress, a sack
-	const r = seeded(3);
+	const r = seededLcg(3);
 	const duffel = (x, y, z, ry, colour, len = 0.42) => {
 		add(new THREE.CapsuleGeometry(0.13, len, 6, 14).rotateZ(Math.PI / 2).scale(1, 0.8, 1), m(colour, { roughness: 1 }), x, y, z, 0, ry);
 		add(new THREE.TorusGeometry(0.1, 0.008, 6, 16, Math.PI), m(0x222222), x, y + 0.09, z, 0, ry);

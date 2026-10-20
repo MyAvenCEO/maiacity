@@ -7,6 +7,7 @@
  * building needs tinted. Only what changed is rebuilt: the state counts its changes (objV, netV, terV).
  */
 import * as THREE from 'three';
+import { disposeObject } from '$lib/render/core.js';
 import { GRASS, MOUNTAIN, SAND, WARES, WATER } from './rules.js';
 import { buildingModel, mat, recolour, scaffold, TEAM } from './models.js';
 import { ROW, SE, STEP } from './hex.js';
@@ -39,6 +40,9 @@ export function createView(scene, sim) {
 	scene.add(root);
 	const disposables = /** @type {{ dispose: () => void }[]} */ ([]);
 	const keep = (/** @type {any} */ x) => (disposables.push(x), x);
+	/** what goes, its shapes let go of (the kit's one way, $lib/render/core.js): its materials stay, the models' shared
+	 *  ones (./models.js) and the view's own, kept to the end (`keep`) */
+	const free = (/** @type {THREE.Object3D | null} */ o) => disposeObject(o, { materials: false });
 	const X = (/** @type {number} */ i) => g.x(i), Z = (/** @type {number} */ i) => g.z(i);
 	const Y = (/** @type {number} */ i) => (st.terrain[i] === WATER ? SEA - 0.9 : st.height[i]);
 	const hash = (/** @type {number} */ i) => {
@@ -339,7 +343,7 @@ export function createView(scene, sim) {
 	function syncBorder() {
 		if (terSeen === st.terV) return;
 		terSeen = st.terV;
-		borders.geometry.dispose();
+		free(borders);
 		borders.geometry = villageBand(plan.villages.map((_, v) => v).filter((v) => (st.villageOwner[v] ?? -1) >= 0), 0.1);
 	}
 
@@ -578,7 +582,7 @@ export function createView(scene, sim) {
 		netKey = key;
 		for (const m of [roadMesh, stubMesh, mouthMesh]) {
 			if (!m) continue;
-			m.geometry.dispose();
+			free(m);
 			root.remove(m);
 		}
 		// the roundabouts: a village center's ring road; a hex's ring round its domes, a door on it for each
@@ -733,7 +737,7 @@ export function createView(scene, sim) {
 		if (tunSeen === key) return;
 		tunSeen = key;
 		for (const m of tunMeshes) {
-			m.geometry.dispose();
+			free(m);
 			root.remove(m);
 		}
 		tunMeshes = [];
@@ -828,7 +832,7 @@ export function createView(scene, sim) {
 			const look = b.type === 'woodcutter' ? (b.level ? b.level : b.stage === 'live' ? 2 : 1) : grows(b.type) || b.type === 'centre' ? b.level || 1 : 0;
 			if (s && s.look !== look) {
 				root.remove(s.group);
-				s.group.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
+				free(s.group);
 				shown.delete(b.id);
 				s = undefined;
 			}
@@ -1079,7 +1083,7 @@ export function createView(scene, sim) {
 		for (const [key, grp] of fires)
 			if (!live.has(key)) {
 				root.remove(grp);
-				grp.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
+				free(grp);
 				fires.delete(key);
 			}
 	}
@@ -1142,7 +1146,7 @@ export function createView(scene, sim) {
 			// a picked village center shows its own village's border, alone
 			pickBorder.visible = !!picked && !gridOn;
 			if (picked && b) {
-				pickBorder.geometry.dispose();
+				free(pickBorder);
 				pickBorder.geometry = villageBand([plan.villageOf[plan.plotOf[b.node]]], 0.12);
 			}
 			if (node >= 0) ring.position.set(ax, Math.max(ay, SEA) + 0.08, az);
@@ -1168,7 +1172,7 @@ export function createView(scene, sim) {
 				return;
 			}
 			if (!ghost || ghostType !== type) {
-				if (ghost) root.remove(ghost);
+				if (ghost) (root.remove(ghost), free(ghost));
 				ghost = buildingModel(type, 0, type === 'ironmine' || type === 'clayworks' || type === 'glassworks' || type === 'centre' ? 1 : undefined);
 				ghostType = type;
 				root.add(ghost);
@@ -1201,13 +1205,13 @@ export function createView(scene, sim) {
 			tileMat.color.set(color);
 			if (key === tileKey) return;
 			tileKey = key;
-			tiles.geometry.dispose();
+			free(tiles);
 			tiles.geometry = sheet(hexes, 0.94);
 		},
 		/** the way a road would take @param {number[] | null} path */
 		road(path) {
 			if (preview) {
-				preview.geometry.dispose();
+				free(preview);
 				root.remove(preview);
 				preview = null;
 			}
@@ -1225,17 +1229,8 @@ export function createView(scene, sim) {
 		},
 		dispose() {
 			scene.remove(root);
-			for (const s of shown.values()) s.group.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
-			ghost?.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
-			preview?.geometry.dispose();
-			roadMesh?.geometry.dispose();
-			stubMesh?.geometry.dispose();
-			mouthMesh?.geometry.dispose();
-			tiles.geometry.dispose();
-			borders.geometry.dispose();
-			pickBorder.geometry.dispose();
-			for (const m of tunMeshes) m.geometry.dispose();
-			for (const grp of fires.values()) grp.traverse((o) => o instanceof THREE.Mesh && o.geometry.dispose());
+			// everything it drew hangs on root: the buildings, the ghost, the roads and tunnels, the hexes, the fires
+			free(root);
 			for (const d of disposables) d.dispose();
 		}
 	};

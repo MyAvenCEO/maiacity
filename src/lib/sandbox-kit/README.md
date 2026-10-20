@@ -24,6 +24,9 @@ Every world's hour is `createSkyClock()`: the time control's (`skyTime.svelte.js
 | `createWalker(camera, canvas, { canStand, floorAt })` | the first-person camera: WASD/arrows, Shift to hurry, drag to look; `move`/`look` for a phone; `keyboard: { walk, hurry }` gives the keys their own pace (the phone's joystick hurries at its rim) |
 | `createOrbitRig(camera, canvas, { … })` | the map camera: WASD travels, drag turns and tilts, the wheel zooms to the cursor, Q/E turn; `freeMove: false` is a turntable; `keys: false` leaves the keyboard to the world |
 | `connectFilm({ sandbox, area, renderer, scene, camera, hold, sky, … })` | hands the world to the studio's film camera (`window.__world`); `createCameraHold(camera)` for a world with its own camera controls |
+| `sunOverGround(hour, latitude, declination)` | where the universe's sun truly stands over a place on a day (x east, y up, z south): Sandbox 6's light reads it |
+| `seededRandom(seed)` (`./random.js`) | chance that is the same every time, for whatever a world scatters (and `seededLcg`, `seededMinStd`, the older generators a few worlds and the stars were laid out with, so nothing of theirs moves); a recipe keeps its own, frozen with it |
+| `disposeObject(root, { materials: false })` | let go of what a world drew, all at once: its shapes, and unless told not to its materials and their pictures (`$lib/render/core.js`) |
 | `<SkyControl>` | the time of the sky: **Auto** (the in-game clock) or **Manual** (a slider, from noon); one state for every sandbox |
 | `<WalkHint>` | how to walk, for keys and for fingers |
 | `<WorldBar title subtitle>` | the bar along the top: the world's name and its line, the `<SkyControl>`; slimmer on a phone, clear of the notch. The way back is the app's nav pill (`$lib/app/NavPill.svelte`); a view open over a page closes from there through `wayBack()` (`$lib/app/back.svelte.js`) |
