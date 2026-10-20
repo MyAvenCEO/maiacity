@@ -109,7 +109,7 @@ pub fn engine_name(r: &Release) -> String {
 }
 
 /// The sandbox Lean runs in (`sandbox-exec -p`): nothing allowed but reading its own folder (`ROOT`) and what the
-/// system's dynamic loader reads, writing `/dev/null`, reading the system's settings, and running `LEAN` itself; with
+/// system's dynamic loader reads and maps, writing `/dev/null`, reading the system's settings, and running `LEAN`; with
 /// `OUT`, writing that one folder too. No network, no other process, no file of the person's.
 const PROFILE: &str = r#"(version 1)
 (deny default)
@@ -127,6 +127,11 @@ const PROFILE: &str = r#"(version 1)
   (literal "/dev/null")
   (literal "/dev/random")
   (literal "/dev/urandom"))
+(allow file-map-executable
+  (subpath (param "ROOT"))
+  (subpath "/usr/lib")
+  (subpath "/System/Library")
+  (subpath "/System/Volumes/Preboot/Cryptexes"))
 (allow file-write-data (literal "/dev/null"))
 "#;
 
@@ -220,8 +225,9 @@ pub struct Found {
 }
 
 /// Reads Lean's messages (`--json`, one a line) for what a check found: accepted where Lean exited cleanly with no
-/// error, else its first error. Nothing else of what Lean wrote is kept.
-pub fn found(success: bool, stdout: &str) -> Found {
+/// error, else its first error, or where it stopped with none, the first line it wrote on its standard error. Nothing
+/// else of what Lean wrote is kept.
+pub fn found(success: bool, stdout: &str, stderr: &str) -> Found {
     let error = stdout
         .lines()
         .filter_map(|l| serde_json::from_str::<Value>(l).ok())
@@ -234,7 +240,10 @@ pub fn found(success: bool, stdout: &str) -> Found {
         });
     let error = match (success, error) {
         (true, None) => None,
-        (false, None) => Some((0, 0, "Lean stopped without a message".to_string())),
+        (false, None) => Some((0, 0, match stderr.lines().map(str::trim).find(|l| !l.is_empty()) {
+            Some(why) => format!("Lean stopped: {}", why.chars().take(160).collect::<String>()),
+            None => "Lean stopped without a message".to_string(),
+        })),
         (_, e) => e,
     };
     Found { ok: error.is_none(), error }
@@ -361,8 +370,8 @@ impl Lean {
         let part = part.canonicalize()?;
         let mut run = self.command(&part, Some(&part))?;
         run.args(["-o", "AvenDB/Objective.olean", "AvenDB/Objective.lean"]).current_dir(&part);
-        let out = within(run, None).await?;
-        let f = found(out.0, &out.1);
+        let (success, stdout, stderr) = within(run, None).await?;
+        let f = found(success, &stdout, &stderr);
         if let Some((line, column, text)) = f.error {
             bail!("Lean didn't compile the objective module: {line}:{column} {text}");
         }
@@ -421,8 +430,8 @@ impl Lean {
         let t = Instant::now();
         let mut run = self.command(&module, None)?;
         run.arg("--stdin");
-        let (success, stdout) = within(run, Some(lean.as_bytes())).await?;
-        let f = found(success, &stdout);
+        let (success, stdout, stderr) = within(run, Some(lean.as_bytes())).await?;
+        let f = found(success, &stdout, &stderr);
         Ok(json!({
             "ok": f.ok,
             "key": objective::key(lean),
@@ -433,8 +442,9 @@ impl Lean {
     }
 }
 
-/// Runs `run` on `input`, held to `CLOCK`: whether it exited cleanly, and what it wrote on its standard output.
-async fn within(mut run: tokio::process::Command, input: Option<&[u8]>) -> Result<(bool, String)> {
+/// Runs `run` on `input`, held to `CLOCK`: whether it exited cleanly, and what it wrote on its standard output and
+/// its standard error.
+async fn within(mut run: tokio::process::Command, input: Option<&[u8]>) -> Result<(bool, String, String)> {
     use tokio::io::AsyncWriteExt as _;
     run.stdin(if input.is_some() { Stdio::piped() } else { Stdio::null() })
         .stdout(Stdio::piped())
@@ -447,11 +457,11 @@ async fn within(mut run: tokio::process::Command, input: Option<&[u8]>) -> Resul
     let out = tokio::time::timeout(CLOCK, child.wait_with_output())
         .await
         .map_err(|_| anyhow!("Lean ran longer than {} s", CLOCK.as_secs()))??;
-    if !out.status.success() && out.stdout.is_empty() {
-        let why = String::from_utf8_lossy(&out.stderr);
-        tracing::warn!("Lean stopped: {}", why.trim());
+    let (stdout, stderr) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    if !out.status.success() && stdout.is_empty() {
+        tracing::warn!("Lean stopped ({}): {}", out.status, stderr.trim());
     }
-    Ok((out.status.success(), String::from_utf8_lossy(&out.stdout).into_owned()))
+    Ok((out.status.success(), stdout.into_owned(), stderr.into_owned()))
 }
 
 /// The bytes free on the disk `path` is on, where the system says.
@@ -554,15 +564,17 @@ mod tests {
 
     #[test]
     fn it_reads_lean_s_first_error() {
-        let ok = found(true, "");
+        let ok = found(true, "", "");
         assert_eq!(ok, Found { ok: true, error: None });
         let msg = r#"{"severity":"information","pos":{"line":1,"column":0},"data":"hi"}
 {"severity":"error","pos":{"line":3,"column":56},"data":"Application type mismatch: The argument\n  \"no\""}
 {"severity":"error","pos":{"line":4,"column":0},"data":"second"}"#;
-        let f = found(false, msg);
+        let f = found(false, msg, "");
         assert_eq!(f, Found { ok: false, error: Some((3, 56, "Application type mismatch: The argument".into())) });
-        assert!(!found(false, "").ok);
-        assert!(!found(true, r#"{"severity":"error","pos":{"line":1,"column":0},"data":"x"}"#).ok);
+        assert!(!found(false, "", "").ok);
+        let died = found(false, "", "\ndyld: Library not loaded\nmore");
+        assert_eq!(died.error, Some((0, 0, "Lean stopped: dyld: Library not loaded".into())));
+        assert!(!found(true, r#"{"severity":"error","pos":{"line":1,"column":0},"data":"x"}"#, "").ok);
     }
 
     #[test]
@@ -627,8 +639,8 @@ mod tests {
         let module = lean.objective().await.unwrap();
         let mut run = lean.command(&module, None).unwrap();
         run.arg("--stdin");
-        let (_, out) = within(run, Some(escape.as_bytes())).await.unwrap();
-        println!("{out}");
+        let (_, out, err) = within(run, Some(escape.as_bytes())).await.unwrap();
+        println!("{out}\n{err}");
         assert!(!out.contains("ESCAPED"), "{out}");
         assert_eq!(out.matches("stopped").count(), 4, "{out}");
         assert!(!Path::new(&home).join("lean-escaped").exists());
