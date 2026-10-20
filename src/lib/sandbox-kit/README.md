@@ -26,6 +26,7 @@ Every world's hour is `createSkyClock()`: the time control's (`skyTime.svelte.js
 | `<SkyControl>` | the time of the sky: **Auto** (the in-game clock) or **Manual** (a slider, from noon); one state for every sandbox |
 | `<WalkHint>` | how to walk, for keys and for fingers |
 | `<WorldBar title subtitle>` | the bar along the top: the world's name and its line, the `<SkyControl>`; slimmer on a phone, clear of the notch. The way back is the app's nav pill (`$lib/app/NavPill.svelte`); a view open over a page closes from there through `wayBack()` (`$lib/app/back.svelte.js`) |
+| `<WorldPage mount title subtitle cover notice>` | the whole page of a world you walk: the stage, the `<WorldBar>`, the `<WalkHint>`, the joystick, and while the world comes up a cover (photo, name, a bar step by step) or a small pill; `mount(stage, onProgress)` answers the world's `move`, `look` and `dispose`, and anything else over the world goes in as its children (Sandbox 3 and 4, the tired land) |
 | `$lib/touch/TouchStick` | the phone's joystick (already shared) |
 
 ## A new world
