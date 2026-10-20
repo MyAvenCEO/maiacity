@@ -5,7 +5,10 @@
 //
 //   node scripts/film/world/cuts.mjs --timeline v1-A|v1-B|village [--from 0] [--seconds 60] [--px 1280]
 //     [--site http://127.0.0.1:5173] [--engine chrome|webkit] [--meter all|ahead] [--grade clip|none] [--warm all|shown|off]
-//     [--out cuts.json]
+//     [--stand 180] [--out cuts.json]
+//
+// `--stand`: the most seconds it stands stopped before Play, as the studio stands while a timeline is open, for the world
+// to build what the shots played see (it plays as soon as the world holds them all).
 //
 // `--grade clip` (the default) draws every clip through a grade of its own and the output LUT, as the studio draws a
 // timeline graded clip by clip (the cubes made here at the Mac's sizes: 33³, the output 65³), the grades of the shots
@@ -139,6 +142,16 @@ const report = await page.evaluate(
 			win = /** @type {any} */ (iframe.contentWindow);
 			win.__filmTrace = [];
 		}
+		// the studio stands stopped a while before Play, building what every shot sees (`dress`): waited for here until
+		// the world holds every shot played, or `--stand` seconds; then Play draws what came since out of sight, as the
+		// studio's does
+		const played = list.filter((c) => c.start + c.dur > from && c.start < to).map((c) => c.spec);
+		for (const s0 = performance.now(); performance.now() - s0 < o.stand * 1000; ) {
+			const held = (await viewer.film?.held?.(played)) ?? [];
+			if (held.length && held.every(Boolean)) break;
+			await new Promise((r) => setTimeout(r, 1000));
+		}
+		await viewer.dress?.(list.map((c) => c.spec), { again: true });
 		await viewer.meterAhead((o.meter === 'all' ? first : first.slice(0, 3)).map((c) => c.spec), () => true);
 		await viewer.standAt(first[0].spec);
 		// and the views they are drawn through sent, as the stopped studio sends them
@@ -255,7 +268,7 @@ const report = await page.evaluate(
 			dearestFrames: [...trace].sort((x, y) => y.total + y.loop - (x.total + x.loop)).slice(0, 12).map((f) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v * 10) / 10 : v])))
 		};
 	},
-	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), meter: args.meter ?? 'ahead', grade: args.grade ?? 'clip', warm: args.warm, hitch: HITCH }
+	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), meter: args.meter ?? 'ahead', grade: args.grade ?? 'clip', warm: args.warm, stand: Number(args.stand ?? 180), hitch: HITCH }
 );
 await browser.close();
 const out = { timeline: which, engine, site, warm: args.warm ?? 'all', at: new Date().toISOString(), ...report, warnings };

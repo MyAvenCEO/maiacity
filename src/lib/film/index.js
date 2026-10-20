@@ -135,6 +135,10 @@ export function startFilm({ base = '' } = {}) {
 	let staging = '';
 	/** the shot drawn before its world was all there (past its wait), while the rest streams in, else '' */
 	let streaming = '';
+	/** what the world keeps built (`keep`): the shots ahead first (`near`), then the whole timeline's (`whole`, `dress`) @type {any[]} */
+	let near = [];
+	/** @type {any[]} */
+	let whole = [];
 	/** the views a world that streams by view was last moved to show (`move`), by the shot's camera path */
 	/** @type {unknown} */
 	let moved = null;
@@ -477,7 +481,8 @@ export function startFilm({ base = '' } = {}) {
 				const all = specs.map(normal).filter(shows);
 				const v = await mounted();
 				// everything these shots need, kept built whichever shot asks last
-				v.film.keep(all.map((s) => ({ ...s.world, views: viewsOf(v, s) })));
+				near = all.map((s) => ({ ...s.world, views: viewsOf(v, s) }));
+				v.film.keep([...near, ...whole]);
 				// a world that streams by view, holding a shot already, needs no staging for it
 				for (const s of all) if (!(v.film.streams && dressed(s) && v.film.holds({ ...s.world, views: viewsOf(v, s) }))) await stage(s, live ? STAGE_LIMIT : Infinity);
 				if (meter) for (const s of all) if (!live || knownExposure(s) === undefined) await exposureOf(s);
@@ -491,20 +496,24 @@ export function startFilm({ base = '' } = {}) {
 		 */
 		async keep(specs) {
 			const v = await mounted();
-			v.film.keep(specs.map(normal).filter(shows).map((s) => ({ ...s.world, views: viewsOf(v, s) })));
+			near = specs.map(normal).filter(shows).map((s) => ({ ...s.world, views: viewsOf(v, s) }));
+			v.film.keep([...near, ...whole]);
 		},
 		/**
-		 * Builds the sets these shots name (./sets.js), all of each, and draws them once out of sight: before the timeline
-		 * plays, nothing staged and nothing moved. Built at its first cut, a set's parts arrived while the shots after it
-		 * played (the village's tired land: its trucks, frames of 0.4–1.3 s).
+		 * The whole timeline's shots, before it plays: the sets they name built (./sets.js), all of each, and in a world
+		 * that streams by view, what their cameras see kept built after the shots ahead (`keep`), as far as the world's
+		 * budget holds; what is there drawn once out of sight. Nothing staged, nothing moved. Built while it played, a set
+		 * or a dome hitched the shots on screen as it came (the village's tired land: its trucks, frames of 0.4–1.3 s; a
+		 * dome's inside: a garbage collection of 1.6 GB).
 		 * @param {any[]} specs
 		 */
 		dress(specs) {
 			return one(async () => {
 				const v = await mounted();
-				const todo = specs.map(normal).filter((s) => shows(s) && !dressed(s));
-				if (!todo.length) return;
-				await Promise.all(todo.map((s) => sets[/** @type {keyof typeof sets} */ (s.world.props)]?.(s.world.seed)));
+				const all = specs.map(normal).filter(shows);
+				await Promise.all(all.filter((s) => !dressed(s)).map((s) => sets[/** @type {keyof typeof sets} */ (s.world.props)]?.(s.world.seed)));
+				whole = all.map((s) => ({ ...s.world, views: viewsOf(v, s) }));
+				v.film.keep([...near, ...whole]);
 				await settled(v);
 			});
 		},

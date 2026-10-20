@@ -1489,8 +1489,8 @@ export class Studio {
 		// the world under the shot playing. The shots ahead are kept only: the world builds what they will see as it can.
 		// Stopped, they are prepared (staged and metered)
 		const still = !this.playing && !this.starting;
-		// stopped: the sets of every world shot built (a set built at its first cut hitched the shots after it as its
-		// parts arrived), and the shots ahead prepared
+		// stopped: what every world shot needs built (its set, what its camera sees: built while it played, each hitched
+		// the shots on screen as it came), and the shots ahead prepared
 		if (still) void this.world.dress(this.worldSpecs());
 		if (still) void this.world.prepare(specs);
 		else {
@@ -1570,7 +1570,7 @@ export class Studio {
 		this.preparing = true;
 		// and metered before it plays, while the start waits on them (metered while playing, a shot hitched at its cut);
 		// then the world stands where the play starts again (preparing the shots after it moved it on)
-		const ready = Promise.all([this.world.dress(this.worldSpecs()), this.world.prepare(specs)])
+		const ready = Promise.all([this.world.dress(this.worldSpecs(), { again: true }), this.world.prepare(specs)])
 			.then(() => this.world.meterAhead(specs, () => this.starting))
 			.then(() => specs[0] && this.world.standAt(specs[0]));
 		await Promise.race([ready, new Promise((r) => setTimeout(r, wait))]);

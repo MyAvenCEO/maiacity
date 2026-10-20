@@ -402,28 +402,36 @@ export class WorldViewer {
 		void Promise.resolve(film.keep(mine)).catch(() => {});
 	}
 	/**
-	 * Builds the sets these shots name (src/lib/film/sets.js), each once per world page, before the timeline plays:
-	 * resolves when they are all there. Asked every frame while stopped; said to the world once per set.
-	 * @param {ShotSpec[]} specs @returns {Promise<void>}
+	 * The whole timeline's shots, before it plays (src/lib/film `dress`): the sets they name built, and what their
+	 * cameras see kept built after the shots ahead, as the world's budget holds. Asked every frame while stopped: said
+	 * to the world only when the shots change, or `again` (Play: what was built since drawn once out of sight).
+	 * @param {ShotSpec[]} specs @param {{ again?: boolean }} [opts] @returns {Promise<void>}
 	 */
-	dress(specs) {
+	dress(specs, { again = false } = {}) {
 		const film = this.film;
 		if (!film?.dress) return Promise.resolve();
-		if (film !== this.dressedBy) (this.dressing = new Map()), (this.dressedBy = film);
-		const named = specs.filter((s) => this.holds(s) && /** @type {any} */ (s.world)?.props);
-		for (const s of named) {
-			const set = /** @type {any} */ (s.world).props;
-			if (this.dressing.has(set)) continue;
-			/** @type {() => void} */
-			let end = () => {};
-			const gone = new Promise((r) => (end = () => r(undefined)));
-			this.ends.add(end);
-			this.dressing.set(set, Promise.race([Promise.resolve(film.dress([s])), gone]).catch((e) => console.warn(`world: the set ${set} was not built: ${e?.message ?? e}`)).finally(() => this.ends.delete(end)));
-		}
-		return Promise.all(named.map((s) => this.dressing.get(/** @type {any} */ (s.world).props))).then(() => {});
+		const mine = specs.filter((s) => this.holds(s));
+		// by where each shot stands, not its camera: a key moved while a shot is edited dresses nothing again
+		const keys = mine.map(specKey);
+		const same = keys.length === this.dressed.length && keys.every((k, i) => k === this.dressed[i]);
+		if (!again && same && film === this.dressedBy && this.dressing) return this.dressing;
+		this.dressed = keys;
+		this.dressedBy = film;
+		/** @type {() => void} */
+		let end = () => {};
+		const gone = new Promise((r) => (end = () => r(undefined)));
+		this.ends.add(end);
+		const p = Promise.race([Promise.resolve(film.dress(mine)), gone])
+			.then(() => {})
+			.catch((/** @type {Error} */ e) => console.warn(`world: the timeline was not dressed: ${e?.message ?? e}`))
+			.finally(() => this.ends.delete(end));
+		this.dressing = p;
+		return p;
 	}
-	/** the sets asked for (by name), and of which film page @type {Map<string, Promise<unknown>>} */
-	dressing = new Map();
+	/** that dressing, the shots it was asked for (by `specKey`) and of which film page @type {Promise<void> | null} */
+	dressing = null;
+	/** @type {string[]} */
+	dressed = [];
 	/** @type {Film | null} */
 	dressedBy = null;
 	/**
