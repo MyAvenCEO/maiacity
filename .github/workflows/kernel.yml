@@ -49,7 +49,7 @@ jobs:
       # src/lib/assets/vault.test     the recipes from the vault alone, no repo fallback
       # src/lib/assets/worlds.test    no world builds round the box
       # src/lib/assets/params.test    a recipe takes only its own parameters; one build, one name, one cache key
-      # src/lib/code/                 the one checker (game/code, game/genui): every kind of code, hostile code refused
+      # src/lib/code/                 the one checker (game/code): every kind of code, hostile code refused
       # src/lib/render/lint.test      the render core's lint: no renderer or raw WebGL context outside it
       # src/lib/markdown/             the Markdown engine against hostile Markdown; every {@html} fed by a safe engine
       # api/test/image.test           the API image holds every module game/ and code/ import, avenDB's proof checker

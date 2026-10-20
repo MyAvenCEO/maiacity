@@ -5,39 +5,19 @@
 // Run: bun test src/lib/assets/engines.test.js
 //      ALL_ASSETS=1 bun test src/lib/assets/engines.test.js   (every recipe, every version, every variant)
 import { expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 
 // outside a page: textures draw on a stand-in canvas, and a module's runes are plain values
 const noop = new Proxy(function () {}, { get: (_, k) => (k === Symbol.toPrimitive ? () => 0 : noop), apply: () => noop, set: () => true });
 globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContext: () => noop, style: {} }) };
 globalThis.$state ??= (x) => x;
-const { ENGINES, LATEST, recipeFile } = await import('./engines.js');
-const { bundleEngine, bundleRecipes, hashText } = await import('./box/plugin.js');
+const { LATEST, recipeFile } = await import('./engines.js');
+const { bundleRecipes, hashText } = await import('./box/plugin.js');
 const { MODULES } = await import('./box/modules.js');
 const { objectAt } = await import('./index.js');
 const { buildWith, refOf } = await import('./refs.js');
 const { trianglesOf } = await import('./card.js');
 
-const ROOT = new URL('../../../', import.meta.url).pathname;
-
-test('every engine is frozen: its file is the bytes its hash names, versions in order, none taken out', () => {
-	expect(ENGINES.length).toBeGreaterThan(0);
-	ENGINES.forEach((e, i) => {
-		expect(e.v).toBe(i + 1);
-		const bytes = readFileSync(`${ROOT}static/engines/engine-v${e.v}.js`);
-		expect(bytes.length).toBe(e.bytes);
-		expect(hashText(bytes.toString('utf8'))).toBe(e.blake3);
-		expect(e.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-		expect(e.note.length).toBeGreaterThan(10);
-	});
-});
-
-test('the engine as its source is now is the latest frozen one (else freeze the next: node scripts/freeze-engine.mjs "…")', async () => {
-	const { code } = await bundleEngine();
-	const now = hashText(code);
-	if (now !== LATEST.blake3) throw new Error(`the engine's source changed since engine ${LATEST.v} was frozen (${now.slice(0, 12)}… is not ${LATEST.blake3.slice(0, 12)}…): freeze engine ${LATEST.v + 1}, or undo the change`);
-	expect(Object.keys(MODULES)).toEqual(LATEST.modules);
-}, 60000);
+// every box engine frozen, and the source as it is now the latest: ../sandbox/engines.test.js, with every other kind
 
 const made = await bundleRecipes();
 

@@ -6,6 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { hashText } from '../../../game/hash.js';
+import { LIBS } from '../../../game/code/limits.js';
 import { rolldown } from 'rolldown';
 
 const LIB = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '');
@@ -17,13 +18,12 @@ export const SOURCES = {
 	logic: here('./logic-engine.js'),
 	view: here('./view/engine.js'),
 	'view-worker': here('./view/worker.js'),
-	'lib-three': here('./view/libs/three.js'),
-	'lib-d3': here('./view/libs/d3.js'),
-	'lib-mcp-apps': here('./view/libs/mcp-apps.js')
+	// the libraries a view's script may load, one engine each (game/code/limits.js LIBS)
+	...Object.fromEntries(Object.entries(LIBS).map(([name, l]) => [l.engine, here(`./view/libs/${name}.js`)]))
 };
 
 /** the npm package each library engine carries, and so its version */
-export const PACKAGES = { 'lib-three': 'three', 'lib-d3': 'd3', 'lib-mcp-apps': '@modelcontextprotocol/ext-apps', logic: 'quickjs-emscripten-core', 'view-worker': 'linkedom' };
+export const PACKAGES = { ...Object.fromEntries(Object.values(LIBS).map((l) => [l.engine, l.package])), logic: 'quickjs-emscripten-core', 'view-worker': 'linkedom' };
 export const versionOf = (kind) => (PACKAGES[kind] ? JSON.parse(readFileSync(`${ROOT}node_modules/${PACKAGES[kind]}/package.json`, 'utf8')).version : undefined);
 
 /** our two fonts, inline in the view engine (./view/theme.js) */
@@ -49,4 +49,23 @@ export async function bundleKernel(kind) {
 	} finally {
 		await b.close();
 	}
+}
+
+/**
+ * Engine `kind` as it is now, as scripts/freeze-engine.mjs freezes it: its code, and what its entry says it carries
+ * (a box engine: three.js and the modules it lends recipes; a library: its package's version; the logic engine:
+ * QuickJS's). Every kind of the one list, the box's with them (../assets/box/plugin.js bundles it).
+ * @param {string} kind @returns {Promise<{ code: string, carries: Record<string, unknown> }>}
+ */
+export async function bundleOf(kind) {
+	if (kind === 'box') {
+		const { bundleEngine } = await import('../assets/box/plugin.js');
+		const { MODULES } = await import('../assets/box/modules.js');
+		const { code } = await bundleEngine();
+		const three = JSON.parse(readFileSync(`${ROOT}node_modules/three/package.json`, 'utf8')).version;
+		return { code, carries: { three, modules: Object.keys(MODULES) } };
+	}
+	const code = await bundleKernel(/** @type {keyof typeof SOURCES} */ (kind));
+	const v = versionOf(kind);
+	return { code, carries: v ? { [kind === 'logic' ? 'quickjs' : 'version']: v } : {} };
 }

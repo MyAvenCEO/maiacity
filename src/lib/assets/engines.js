@@ -1,6 +1,7 @@
 /*
- * ENGINES AND RECIPE FILES — the frozen engines (./engines.json: each version's BLAKE3 hash and size, its file
- * static/engines/engine-v<n>.js, made by scripts/freeze-engine.mjs from ./box/engine.js), and the shape of a recipe
+ * ENGINES AND RECIPE FILES — the frozen box engines (kind `box` of the kernel's one list, ../sandbox/engines.js: each
+ * version's BLAKE3 hash and size, its file static/engines/engine-v<n>.js, made by scripts/freeze-engine.mjs from
+ * ./box/engine.js), and the shape of a recipe
  * file of ours (./recipe.js), written the same in Vite's build (./box/plugin.js) and in the page (./recipes.js), so its
  * BLAKE3 hash names the same bytes in both.
  *
@@ -10,7 +11,7 @@
  * hash moves only when the asset's own code changes, or code it shares: never with another asset's. The versions of
  * one asset share its library, so a change to one moves the hashes of all.
  */
-import manifest from './engines.json' with { type: 'json' };
+import { engineAt as frozenAt, enginesOf, pathOf } from '../sandbox/engines.js';
 
 /**
  * @typedef {{ v: number, date: string, blake3: string, bytes: number, three: string, modules: string[], note: string }} Engine
@@ -19,16 +20,16 @@ import manifest from './engines.json' with { type: 'json' };
  */
 
 /** every frozen engine, oldest first @type {Engine[]} */
-export const ENGINES = manifest.engines;
+export const ENGINES = /** @type {Engine[]} */ (/** @type {unknown} */ (enginesOf('box')));
 
 /** the latest engine: the one our recipes are made for */
 export const LATEST = ENGINES[ENGINES.length - 1];
 
 /** an engine by its version @param {number} v */
-export const engineAt = (v) => ENGINES.find((e) => e.v === v);
+export const engineAt = (v) => /** @type {Engine | undefined} */ (/** @type {unknown} */ (frozenAt('box', v)));
 
 /** where an engine's file is served, under the site's base path @param {number} v */
-export const enginePath = (v) => `/engines/engine-v${v}.js`;
+export const enginePath = (v) => pathOf('box', v);
 
 /**
  * The start of every recipe file of ours: a script that hands the engine (./box/engine.js) one function, which runs

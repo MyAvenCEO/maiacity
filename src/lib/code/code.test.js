@@ -10,7 +10,7 @@ import { ENTRIES } from '../../../code/index.js';
 import { cardOfEntry, codeAt, codeIn, parseCodeRef, viewOfEntry } from '../../../game/code/index.js';
 import { checkCode } from '../../../game/code/check.js';
 import { SLOTS } from '../../../game/maiacity-v1/views.js';
-import { examples } from '../../../game/genui/examples.js';
+import { examples } from '../../../game/code/examples.js';
 
 const ROOT = new URL('../../../', import.meta.url).pathname;
 

@@ -7,7 +7,7 @@
  * - `a2ui`: DECLARATIVE. JSON only: a flat list of components from OUR catalog (below), each with an id, the root's
  *   id, a data model, and optional logic. The page draws it with its own Svelte components; text is always text.
  *   Nothing the agent wrote runs in the page. Its logic (`logic`, a JS module exporting `init(data)` and
- *   `on(event, data)`) runs in a QuickJS engine (src/lib/genui/logic.js):
+ *   `on(event, data)`) runs in a QuickJS engine (src/lib/sandbox/view-logic.js):
  *   no page, no network, no clock, 8 MB, a few ms a call. It only ever hands back a new data model.
  * - `html`: HTML and CSS, after MCP Apps (spec 2026-01-26: text/html;profile=mcp-app), for what no catalog can hold.
  *   Without a script it is a template: {{path}} marks filled from its data (as text, always), <template each|if>,
@@ -22,10 +22,14 @@
  * as an MCP App speaks to its host: JSON-RPC (ui/initialize, then the view's `data` as its tool result), and of
  * those only the METHODS below.
 
- * The API (api/src/genui.js) and the page both check a view with `check` before keeping or drawing it.
+ * The one checker (./check.js, type `view`) checks a view with `check` before anything keeps or draws it; the libraries
+ * and limits are ./limits.js's.
  */
 
-import { viewHtml } from '../code/rules.js';
+import { LIBS, LIMITS } from './limits.js';
+import { viewHtml } from './rules.js';
+
+export { LIBS, LIMITS };
 
 /** the components an a2ui view may use, and the props each takes (anything else is dropped) */
 export const CATALOG = {
@@ -49,19 +53,6 @@ export const CATALOG = {
 /** colours a component may ask for: names, never CSS */
 export const TONES = ['default', 'accent', 'good', 'warn', 'bad', 'muted'];
 
-/**
- * The libraries an html view's script may use, each a frozen engine of ours (src/lib/sandbox/engines.json, built from
- * the npm package at this version): nothing else, and nothing from a CDN. A module script imports them by name:
- * `import * as THREE from 'three'` (addons from 'three/addons/…'), `import { App } from '@modelcontextprotocol/ext-apps'`;
- * d3 is also the global `d3`.
- */
-export const LIBS = {
-	three: { version: '0.186.0', engine: 'lib-three' },
-	d3: { version: '7.9.0', engine: 'lib-d3' },
-	// the MCP Apps SDK: import { App } from '@modelcontextprotocol/ext-apps'
-	'mcp-apps': { version: '2.0.3', engine: 'lib-mcp-apps' }
-};
-
 /** the MCP Apps version this page speaks as a host */
 export const PROTOCOL = '2026-01-26';
 
@@ -72,8 +63,6 @@ export const PROTOCOL = '2026-01-26';
  * never leaves its box, calls a tool or reads anything we did not hand it.
  */
 export const METHODS = ['ui/initialize', 'ui/notifications/initialized', 'ui/notifications/size-changed', 'notifications/message', 'ui/update-model-context', 'ui/message', 'ui/request-display-mode', 'ping'];
-
-export const LIMITS = { title: 80, note: 400, html: 200_000, components: 300, json: 100_000, logic: 20_000, height: [160, 1200] };
 
 const ID = /^[a-z0-9][a-z0-9-]{0,47}$/;
 const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');

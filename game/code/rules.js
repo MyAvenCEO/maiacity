@@ -10,6 +10,8 @@
  * No dependency: the API runs this from game/ as it is (api/Dockerfile copies game/ beside it).
  */
 
+import { LIBS, LIMITS } from './limits.js';
+
 /** what any JSON a piece of code carries may cost */
 export const JSON_LIMITS = { depth: 16, bytes: 200_000 };
 
@@ -150,7 +152,7 @@ export function importsOf(src) {
  * The problems in sentences, and notes: exports no hook calls (kept, never called).
  * @param {string} src @param {{ what?: string, max?: number, hooks?: string[], needs?: boolean }} o
  */
-export function logicSource(src, { what = 'its logic', max = 20_000, hooks = [], needs = false } = {}) {
+export function logicSource(src, { what = 'its logic', max = LIMITS.logic, hooks = [], needs = false } = {}) {
 	const errors = [];
 	const notes = [];
 	if (typeof src !== 'string') return { errors: [`${what} is JavaScript text`], notes };
@@ -168,12 +170,8 @@ export function logicSource(src, { what = 'its logic', max = 20_000, hooks = [],
 	return { errors, notes };
 }
 
-/** the module names a view's script may import, by the libraries it names (game/genui/views.js LIBS) */
-export const LIB_MODULES = {
-	three: (m) => m === 'three' || m.startsWith('three/addons/') || m.startsWith('three/examples/jsm/'),
-	d3: (m) => m === 'd3',
-	'mcp-apps': (m) => m === '@modelcontextprotocol/ext-apps' || m === '@modelcontextprotocol/ext-apps/app-with-deps'
-};
+/** the module names a view's script may import, by the libraries it names (./limits.js LIBS, their `imports`) */
+export const LIB_MODULES = Object.fromEntries(Object.entries(LIBS).map(([name, l]) => [name, l.imports]));
 
 // what in a view's markup would load from elsewhere, frame something or post a form: never possible here
 const REACH = [
@@ -192,7 +190,7 @@ const REACH = [
 
 /**
  * A view's HTML: its markup and CSS hold nothing that reaches out, and its scripts import only the libraries it names.
- * `libs` are the view's libraries (game/genui/views.js LIBS). Problems in sentences, and notes on what will not work.
+ * `libs` are the view's libraries (./limits.js LIBS). Problems in sentences, and notes on what will not work.
  * @param {string} html @param {{ what?: string, libs?: string[] }} o
  */
 export function viewHtml(html, { what = 'the view', libs = [] } = {}) {

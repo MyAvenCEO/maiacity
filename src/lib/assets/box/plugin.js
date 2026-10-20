@@ -4,7 +4,7 @@
  * `vite dev` and in the build; in dev every file they were made of is watched, so a changed builder makes them again.
  *
  * - The engine (./engine.js) is bundled only to freeze it (`bundleEngine`, scripts/freeze-engine.mjs): the page boots
- *   a frozen one, static/engines/engine-v<n>.js, checked against its hash (../engines.json).
+ *   a frozen one, static/engines/engine-v<n>.js, checked against its hash (src/lib/sandbox/engines.json).
  * - Our recipes: each asset of an object group (../groups.js) bundled as a library of its own, made of its group's
  *   list narrowed to it (./narrow.js), so it holds that asset's code and what it shares with others, never another
  *   asset's, with three.js and its addons left to the engine (`bundleAsset`). One recipe file per version and variant

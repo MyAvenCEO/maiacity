@@ -1,7 +1,8 @@
 // @ts-nocheck — plain JS
 import { base } from '$app/paths';
 import { hashBytes } from '../../../game/hash.js';
-import { DENY, SANDBOX, SHELL_SCRIPT } from './policy.js';
+import { enginesOf, latestOf, pathOf } from './engines.js';
+import { BUDGETS, DENY, SANDBOX, SHELL_SCRIPT, frameCsp } from './policy.js';
 /*
  * THE SHELL — where code we cannot trust runs in a page: a worker inside a frame with no origin. One shell for every
  * host: the asset box (recipes, ../assets/box/host.js), the logic host (rules, view logic, functions, ./logic-host.js)
@@ -32,8 +33,7 @@ import { DENY, SANDBOX, SHELL_SCRIPT } from './policy.js';
  */
 
 /** The frame's policy: nothing in or out but its own script, its worker's blob and, if `wasm`, WebAssembly. */
-export const csp = ({ wasm = false } = {}) =>
-	["default-src 'none'", `script-src 'unsafe-inline' blob:${wasm ? " 'wasm-unsafe-eval'" : ''}`, 'worker-src blob:', "connect-src 'none'", "img-src 'none'", "style-src 'none'", "font-src 'none'", "media-src 'none'", "frame-src 'none'", "object-src 'none'", "form-action 'none'", "base-uri 'none'"].join('; ');
+export const csp = ({ wasm = false } = {}) => frameCsp({ script: `'unsafe-inline' blob:${wasm ? " 'wasm-unsafe-eval'" : ''}` });
 
 // the frame: its policy, and its one script (./policy.js SHELL_SCRIPT), which the page's own policy names by its hash
 const frameOf = (policy) => `<!doctype html><meta http-equiv="Content-Security-Policy" content="${policy}"><script>${SHELL_SCRIPT}<\/script>`;
@@ -52,8 +52,27 @@ export async function frozen(path, hash, what) {
 	return new TextDecoder().decode(bytes);
 }
 
+/** each frozen engine's code as it was fetched and checked, by kind and version: once a page, for every host */
+const engines = new Map();
+
+/**
+ * Frozen engine `v` of `kind` (the latest where none is given: ./engines.js), its bytes checked against its hash
+ * (`frozen`), fetched once a page; a fetch that failed is tried again by the next ask.
+ * @param {string} kind @param {number} [v] @returns {Promise<string>}
+ */
+export function engineCode(kind, v = latestOf(kind)?.v) {
+	const k = `${kind}-v${v}`;
+	if (!engines.has(k)) {
+		const e = enginesOf(kind).find((x) => x.v === v);
+		const got = e ? frozen(pathOf(kind, e.v), e.blake3, `${kind} engine ${e.v}`) : Promise.reject(new Error(`no ${kind} engine ${v} is frozen`));
+		got.catch(() => engines.delete(k));
+		engines.set(k, got);
+	}
+	return engines.get(k);
+}
+
 /** how long a job may take before the shell is torn down (ms) */
-export const TIMEOUT = 20000;
+export const TIMEOUT = BUDGETS.job;
 
 export class Shell {
 	/**

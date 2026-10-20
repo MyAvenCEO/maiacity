@@ -8,7 +8,7 @@ import { avendb, copyOf, entryOf, feedOf, recordOf } from '../../../game/code/so
 import { codeAt, codeIn, loadCode, viewOfEntry } from '../../../game/code/index.js';
 import { ENTRIES } from '../../../code/index.js';
 import { defaultViews } from '../../../game/maiacity-v1/views.js';
-import { examples } from '../../../game/genui/examples.js';
+import { examples } from '../../../game/code/examples.js';
 import { FLOOR, engineFor, enginesOf, latestOf } from '../sandbox/engines.js';
 
 // the view host's page side, outside a page
