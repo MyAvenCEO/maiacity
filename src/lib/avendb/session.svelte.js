@@ -41,7 +41,7 @@
  * for no ceremony, as one cut short, goes on by itself.
  */
 
-import { native } from '$lib/native';
+import { command, native } from '$lib/native';
 import { allowed, answer, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
 import { useDevice } from '../../../game/code/sources/device.js';
@@ -184,22 +184,58 @@ async function macOpened(info) {
 }
 
 /**
+ * How long after the device's steps say its start is over the page waits for the call's own answer before it asks the
+ * device whether it opened (`stepping`), ms: the answer to an unlock got lost on its way to the page once, after the
+ * device had opened in 22 s, and the page waited at "Starting this Mac's node" for 13 minutes (Samuel, 2026-10-20).
+ */
+const UNANSWERED = 2000;
+
+/** A start's answer that never came, in the app's log ($lib/native's `log_js`). @param {string} what */
+function unanswered(what) {
+	console.warn(`avenDB: ${what}`);
+	void command('log_js', { level: 'warn', from: 'avendb', message: what }).catch(() => {});
+}
+
+/**
  * In the Mac app: calls `name` with `args` on its device, which starts it, showing the steps of its start by
- * `shows` as the device reports them (`steps`) while the call is under way, and once more as it ends.
+ * `shows` as the device reports them (`steps`) while the call is under way, and once more as it ends. Should the
+ * call's answer not come once the steps say the start is over (`UNANSWERED`), the device's status answers for it: its
+ * device, where it opened, else, a while later, a failure to try again.
  * @param {(report: any) => void} shows @param {string} name @param {...unknown} args
  */
 async function stepping(shows, name, ...args) {
 	let going = true;
+	/** @type {(info: any) => void} */
+	let opened = () => {};
+	/** @type {(e: Error) => void} */
+	let failed = () => {};
+	// what the device itself says once its start is over and the call still hasn't answered (`UNANSWERED`)
+	const said = new Promise((resolve, reject) => ((opened = resolve), (failed = reject)));
 	const polling = (async () => {
+		let began = false;
+		let over = 0;
 		while (going) {
 			const report = await mac.call('steps').catch(() => null);
 			// the last start's, over, until this one's begins
-			if (going && report && !report.over) shows(report);
-			await new Promise((r) => setTimeout(r, 150));
+			if (going && report && !report.over) {
+				began = true;
+				shows(report);
+			} else if (going && began && report?.over && Date.now() - (over ||= Date.now()) >= UNANSWERED) {
+				const status = await mac.call('status').catch(() => null);
+				if (going && status?.open && status.device) {
+					unanswered(`${name}: the device opened, but its answer never came; it answered by its status`);
+					opened(status.device);
+				} else if (going && Date.now() - over >= UNANSWERED * 5) {
+					unanswered(`${name}: the device's start ended, its answer never came, and it isn't open`);
+					failed(new Error(`avenDB’s start on ${here} ended without an answer. Try again.`));
+				}
+			}
+			// once the answer is late, the device is asked once a second
+			await new Promise((r) => setTimeout(r, over && Date.now() - over >= UNANSWERED ? 1000 : 150));
 		}
 	})();
 	try {
-		return await mac.call(name, ...args);
+		return await Promise.race([mac.call(name, ...args), said]);
 	} finally {
 		going = false;
 		await polling;
