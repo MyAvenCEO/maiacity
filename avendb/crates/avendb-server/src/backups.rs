@@ -29,28 +29,44 @@ pub fn snapshots(config: &SnapshotsConfig) -> Result<Snapshots> {
     Ok(Snapshots::new(bucket, &config.bucket.seal, &config.dir))
 }
 
-/// How many times in all a call to the bucket of snapshots is tried (`Retrying`).
-const TRIES: u32 = 4;
+/// How long a call to the bucket of snapshots is tried again from its first try, at most (`Retrying`).
+const PATIENCE: Duration = Duration::from_secs(10 * 60);
 
-/// A bucket whose every call is tried again when it fails, `TRIES` times in all, a second later, then two, then four:
-/// Hetzner fails a request now and then, and a backup or a check that fails on one request waits a day. Each call may
-/// be made again: a put puts the same sealed bytes under the same name, and the bucket keeps both versions.
+/// The longest wait between two tries of a call (`Retrying`).
+const LONGEST: Duration = Duration::from_secs(60);
+
+/// A bucket whose every call is tried again when it fails: a second later, then two, four and so on up to a minute,
+/// each wait up to half as long again by chance, so calls that failed together don't all come back together; for ten
+/// minutes at most from its first try (`PATIENCE`). Hetzner fails a request now and then, and on 2026-10-20 failed
+/// most for minutes on end (504s, bodies cut off), where 4 tries in 7 seconds failed the recovery test; a backup or a
+/// check that fails on one request waits a day, and a restore fails whole. Each call may be made again: a put puts the
+/// same sealed bytes under the same name, and the bucket keeps both versions.
 pub struct Retrying<B>(pub B);
 
 impl<B: Bucket> Retrying<B> {
     /// What `call` answers, tried again as `Retrying` says; each failure but the last said in the log, of `what`.
     async fn tried<'a, T>(&'a self, what: &str, call: impl Fn() -> Fut<'a, T>) -> Result<T> {
-        let mut wait = Duration::from_secs(1);
-        for n in 1..TRIES {
-            match call().await {
+        let (first, mut wait, mut n) = (tokio::time::Instant::now(), Duration::from_secs(1), 1);
+        loop {
+            let failed = match call().await {
                 Ok(answer) => return Ok(answer),
-                Err(e) => tracing::warn!("avenDB backups: {what} in the bucket, try {n} of {TRIES}: {e:#}"),
+                Err(e) => e,
+            };
+            let next = wait + wait.mul_f64(chance() / 2.0);
+            if first.elapsed() + next > PATIENCE {
+                return Err(failed);
             }
-            tokio::time::sleep(wait).await;
-            wait *= 2;
+            tracing::warn!("avenDB backups: {what} in the bucket, try {n}, again in {next:.1?}: {failed:#}");
+            tokio::time::sleep(next).await;
+            (wait, n) = ((wait * 2).min(LONGEST), n + 1);
         }
-        call().await
     }
+}
+
+/// A number from 0 to 1, by chance enough to spread retries: the clock's nanoseconds.
+fn chance() -> f64 {
+    let nanos = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
+    f64::from(nanos % 1000) / 1000.0
 }
 
 impl<B: Bucket> Bucket for Retrying<B> {
@@ -370,6 +386,49 @@ mod tests {
         assert_eq!(when(1_792_454_399), "2026-10-19 23:59:59");
         assert_eq!(when(0), "1970-01-01 00:00:00");
         assert_eq!(when(951_782_400), "2000-02-29 00:00:00");
+    }
+
+    /// A bucket whose gets fail `fails` times, then answer, counting its tries.
+    struct Flaky(u32, std::sync::atomic::AtomicU32);
+
+    impl Bucket for Flaky {
+        fn put<'a>(&'a self, _: &'a str, _: Vec<u8>) -> Fut<'a, ()> {
+            Box::pin(async { Ok(()) })
+        }
+
+        fn get<'a>(&'a self, _: &'a str) -> Fut<'a, Option<Vec<u8>>> {
+            Box::pin(async move {
+                let n = self.1.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                if n <= self.0 {
+                    bail!("the bucket answers 504 Gateway Timeout");
+                }
+                Ok(Some(b"sealed".to_vec()))
+            })
+        }
+
+        fn list<'a>(&'a self, _: &'a str) -> Fut<'a, Vec<String>> {
+            Box::pin(async { Ok(vec![]) })
+        }
+
+        fn delete<'a>(&'a self, _: &'a str) -> Fut<'a, ()> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_call_to_the_bucket_is_tried_again_for_minutes_then_given_up() {
+        // a slow spell of minutes, as Hetzner's on 2026-10-20: 8 failures, twice the 4 tries of before
+        let flaky = Retrying(Flaky(8, Default::default()));
+        let first = tokio::time::Instant::now();
+        assert_eq!(flaky.get("a").await.expect("it answers in the end"), Some(b"sealed".to_vec()));
+        assert_eq!(flaky.0.1.load(std::sync::atomic::Ordering::Relaxed), 9);
+        assert!(first.elapsed() < PATIENCE);
+        // a bucket that never answers is given up, after ten minutes at most
+        let down = Retrying(Flaky(u32::MAX, Default::default()));
+        let first = tokio::time::Instant::now();
+        assert!(down.get("a").await.is_err());
+        let took = first.elapsed();
+        assert!(took <= PATIENCE && took > PATIENCE - 2 * LONGEST, "{took:?}");
     }
 
     #[test]
