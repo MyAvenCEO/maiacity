@@ -20,7 +20,8 @@
 //!   it shares; `cap_groups`: the cap groups a vault defines as entries of its own (`rules::CapGroup`). `aips` and
 //!   `aip`: the AIPs the device holds, their stages, labels, reviews and what each line changes (`aips`). `kinds`: the
 //!   kind table (`Kind::rules`, `words::kinds_json`), which the page reads, as in `world`, to say what each kind of
-//!   vault may own and hold, and never decides itself. `limits`: how deep the device's queries read. And of the
+//!   vault may own and hold, and never decides itself. `limits`: how deep the device's queries read. `api_pass`: the
+//!   device's signed pass to a service that holds no device (`sign::ApiPass`), which keeps nothing. And of the
 //!   device's vaults (`vaults`, V2): `world`, `database`, `note`, `log`, `creatable`, `taggable`, `requests` (the
 //!   access requests its person answers, and those its vaults made); `read_file`, whose bytes a node reads
 //!   (avendb-net's `Node::run`).
@@ -72,6 +73,8 @@ use crate::merge::Place;
 use crate::ops::{self, FieldOp, Path, Record, RecordOp, Where};
 use crate::policy::{Kind, Line, Proposal, Refusal};
 use crate::rules;
+use crate::sign;
+use crate::wire::Wire as _;
 use crate::words;
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Attrs, Sym, LENS_TYPE, SCHEMA_TYPE};
@@ -163,6 +166,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "room" => &["entry", "last", "before"],
         "schemas" => &["vault"],
         "groups" | "kinds" | "limits" | "requests" => &[],
+        "api_pass" => &["audience"],
         "create" => &["vault", "type", "tags", "schema", "value", "draft", "file", "as"],
         "set" | "unset" | "insert" | "remove" | "move" => {
             &["entry", "line", "schema", "as", "path", "value", "at", "to"]
@@ -212,8 +216,8 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
     })
 }
 
-/// The ops that only read what the device holds.
-const READS: [&str; 24] = [
+/// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
+const READS: [&str; 25] = [
     "query",
     "get",
     "pin",
@@ -238,6 +242,7 @@ const READS: [&str; 24] = [
     "code",
     "bring",
     "synced",
+    "api_pass",
 ];
 
 /// The ops that change nothing but ask what changes would do, by dry runs (`Lab::dry`): `may`, and `shares`, which
@@ -312,6 +317,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "cap_groups" => vaults::cap_groups(lab, me, o),
         "kinds" => Ok(words::kinds_json()),
         "limits" => Ok(limits(lab.query_depth(me))),
+        "api_pass" => api_pass(lab, me, o),
         "database" | "note" | "log" => vaults::data(lab, me, name, o),
         "creatable" => vaults::creatable(lab, me, o),
         "taggable" => vaults::taggable(lab, me, o),
@@ -826,6 +832,20 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
         shown.push(row);
     }
     Ok(json!({ "rows": shown, "count": count, "plan": plan.to_json(), "depth": depth }))
+}
+
+/// `{"op": "api_pass", "audience"}`: the device's pass to service `audience` (`sign::ApiPass`), made now by its clock,
+/// `{"pass", "expires"}`: the pass's wire bytes in base64url, and when it stops counting, seconds since 1970. The
+/// service hands it to avenDB's server, which says which vault the device is a device of and whether that vault is an
+/// admin of the server's coop (`world::pass_standing`); maiaCITY's API asks so before it opens an admin's page. It
+/// keeps nothing. Refused while the device is locked (`Locked`), or for no service's name.
+fn api_pass(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let audience = o.get("audience").and_then(Value::as_str).unwrap_or_default();
+    if audience.is_empty() || audience.len() > sign::MAX_AUDIENCE {
+        return Err(bad(format!("api_pass names its service in 1 to {} bytes: \"audience\"", sign::MAX_AUDIENCE)));
+    }
+    let pass = lab.api_pass(me, audience).ok_or(Refusal::Locked)?;
+    Ok(json!({ "pass": sign::base64url(&pass.to_wire()), "expires": pass.expires() }))
 }
 
 /// `{"op": "limits"}`, and what `set_limits` answers: the most rows and links down a query of the device reads

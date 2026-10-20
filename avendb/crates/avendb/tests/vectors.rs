@@ -10,7 +10,9 @@
 //! blocks and todos, and what each edit through a view stores.
 //!
 //! A gate case's edits, held and in a batch, each at the depth the model gives it, must be taken by the server of its
-//! vault exactly as the model's gate takes them (`gate::takes`), its readings holding what every write says.
+//! vault exactly as the model's gate takes them (`gate::takes`), its readings holding what every write says. A
+//! standing case's server, holding its edits, must say of its device the vault and whether that vault is an admin
+//! exactly as the model says (`gate::device_standing`).
 //!
 //! A sync case's edits, each with the parents and depth the model gives it, must stand as in the model, fall into the
 //! same logs with the same closed parts and frontiers, and fork where the model says; and each device that asks a peer
@@ -1002,6 +1004,39 @@ fn the_server_takes_of_each_batch_what_the_lean_models_gate_takes() {
     }
     // a batch taken whole, one of which it takes nothing, and one of which it takes some
     assert!(all > 0 && none > 0 && some > 0, "{all} {none} {some}");
+}
+
+#[test]
+fn the_server_says_of_each_device_what_the_lean_model_says() {
+    let vectors = vectors();
+    let cases = list(&vectors["standings"]);
+    assert!(cases.len() >= 7);
+    let (mut admins, mut others, mut nobodys) = (0, 0, 0);
+    for case in cases {
+        let name = case["name"].as_str().unwrap();
+        let mut names = Names::default();
+        let held: Vec<Edit> = list(&case["held"])
+            .iter()
+            .map(|v| {
+                let edit = names.edit_of(v, num(&v["depth"]));
+                names.created(v, &edit, true);
+                edit
+            })
+            .collect();
+        let st = replay(&held).state;
+        let groups = st.read_groups(&names.readings);
+        let said = gate::device_standing(&st, &groups, names.vault(&case["home"]), signer(&case["device"]));
+        let want = &case["standing"];
+        let want = (!want.is_null()).then(|| (names.vault(&want["vault"]), want["admin"].as_bool().unwrap()));
+        assert_eq!(said, want, "{name}");
+        match said {
+            Some((_, true)) => admins += 1,
+            Some((_, false)) => others += 1,
+            None => nobodys += 1,
+        }
+    }
+    // an admin's device, a device that is no admin's, and a signer that is nobody's device
+    assert!(admins > 0 && others > 0 && nobodys > 0, "{admins} {others} {nobodys}");
 }
 
 /// `v` without its `null` fields: the model writes every field, and absent ones as `null`.
