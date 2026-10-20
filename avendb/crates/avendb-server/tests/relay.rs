@@ -343,6 +343,23 @@ async fn the_server_serves_the_posts_everyone_reads_as_the_maia_universe_feed() 
     started.shutdown().await.expect("the server stops");
 }
 
+/// What the server at `addr` answers a POST of JSON `body` to `path`: its head, lower case, and its body.
+async fn posted(addr: SocketAddr, path: &str, body: &Value) -> (String, String) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let mut stream = tokio::net::TcpStream::connect(addr).await.expect("the feed's socket");
+    let body = body.to_string();
+    let request = format!(
+        "POST {path} HTTP/1.1\r\nHost: avendb\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\
+         Connection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(request.as_bytes()).await.expect("the request");
+    let mut answer = String::new();
+    stream.read_to_string(&mut answer).await.expect("the answer");
+    let (head, body) = answer.split_once("\r\n\r\n").expect("a head and a body");
+    (head.to_lowercase(), body.to_string())
+}
+
 /// What the server at `addr` answers a GET of `path`, which must be found: its body, as JSON.
 async fn got(addr: SocketAddr, path: &str) -> Value {
     let (head, body) = http(addr, "GET", path).await;
@@ -514,6 +531,23 @@ async fn the_server_serves_the_code_everyone_reads_and_maia_citys_alone_for_seed
         let (head, _) = fetched(addr, path, None).await;
         assert!(head.starts_with("http/1.1 400"), "{path}: {head}");
     }
+    // a pass Alice's Mac signs for maiaCITY's API, as a page asks its device: the server says her vault is an admin of
+    // Maia City, which it owns, and keeps nothing of the answer
+    let api = "maiaCITY API";
+    let made = ran(&mac, json!({ "op": "api_pass", "audience": api })).await;
+    let (head, said) = posted(addr, "/feed/pass", &json!({ "pass": made["pass"], "audience": api })).await;
+    assert!(head.starts_with("http/1.1 200") && head.contains("cache-control: no-store"), "{head}");
+    let said: Value = serde_json::from_str(&said).expect("JSON");
+    assert_eq!(said, json!({ "vault": w.alice.to_hex(), "admin": true }));
+    // for another service it counts for nothing; what isn't a pass is a bad request, and a GET finds nothing
+    let (_, other) = posted(addr, "/feed/pass", &json!({ "pass": made["pass"], "audience": "another" })).await;
+    assert_eq!(serde_json::from_str::<Value>(&other).expect("JSON"), json!({ "vault": null, "admin": false }));
+    for bad in [json!({ "pass": "AAAA", "audience": api }), json!({ "audience": api }), json!([1])] {
+        let (head, _) = posted(addr, "/feed/pass", &bad).await;
+        assert!(head.starts_with("http/1.1 400"), "{bad}: {head}");
+    }
+    let (head, _) = fetched(addr, "/feed/pass", None).await;
+    assert!(head.starts_with("http/1.1 404"), "{head}");
     mac.shutdown().await.expect("Alice's Mac stops");
     started.shutdown().await.expect("the server stops");
 }

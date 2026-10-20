@@ -1,15 +1,20 @@
 //! Who the server takes (`Gate.lean`, `docs/ARCHITECTURE.md` §5, "Who the server takes"): a gated server, avenMAIA's
 //! device, serving Maia City, takes a new human vault only with the invite it claims, and a coop or an aven only where
 //! an admin of Maia City owns it: Maia City, a vault that owns it, or a holder of its cap group named Admin. Key
-//! generation can't be stopped; what the server takes onto what it holds can.
+//! generation can't be stopped; what the server takes onto what it holds can. And a service that holds no device,
+//! maiaCITY's API, learns from it by a device's pass which vault the device is a device of and whether that vault is
+//! an admin (G3).
 
 use avendb::cast::{self, World};
+use avendb::engine;
 use avendb::gate::ADMIN;
 use avendb::id::{EntryId, SignerId, VaultId};
 use avendb::lab::GroupShare;
-use avendb::policy::{Action, Kind, Level, Principal, Refusal, Who};
+use avendb::policy::{Action, Kind, Level, Principal, Refusal, Revoking, Who};
 use avendb::rules::{Cap, CapGroup, Op};
+use avendb::sign::{unbase64url, ApiPass, PASS_LIFE};
 use avendb::slice::{Selector, CAP_GROUP_TYPE};
+use avendb::wire::Wire;
 use avendb::world;
 use serde_json::json;
 
@@ -149,4 +154,64 @@ fn a_coop_comes_in_only_from_an_admin() {
     let again = coop(w, mac_b, passkey_b, bob);
     w.lab.share_contact(mac_b, server, again);
     assert!(!takes(w, again), "a coop of a vault that no longer holds Admin stays out");
+}
+
+/// The service maiaCITY's API names itself as in a device's pass.
+const API: &str = "maiaCITY API";
+
+/// The pass device `on` makes for maiaCITY's API through its engine, as a page asks its device.
+fn pass_of(w: &mut World, on: SignerId) -> ApiPass {
+    let made = engine::run(&mut w.lab, on, &json!({ "op": "api_pass", "audience": API }));
+    let text = made["ok"]["pass"].as_str().unwrap_or_else(|| panic!("a pass, not {made}"));
+    assert_eq!(made["ok"]["expires"], w.lab.now() + PASS_LIFE, "it counts for ten minutes");
+    ApiPass::from_wire(&unbase64url(text).expect("base64url")).expect("a pass's bytes")
+}
+
+#[test]
+fn a_devices_pass_shows_the_api_its_vault_and_whether_it_is_an_admin() {
+    let mut s = served();
+    let (mac_a, mac_b, server) = (s.w.mac_a, s.w.mac_b, s.w.server);
+    s.w.lab.set_now(1_791_500_000);
+    let now = s.w.lab.now();
+    let standing = |s: &Served, pass: &ApiPass, audience: &str, at: u64| {
+        world::pass_standing(&s.w.lab, server, pass, audience, at)
+    };
+    // Alice's vault owns Maia City, and Bob holds its Admin group: the server says so of their Macs' passes
+    let alices = pass_of(&mut s.w, mac_a);
+    assert_eq!(standing(&s, &alices, API, now), Some((s.w.alice, true)));
+    let bobs = pass_of(&mut s.w, mac_b);
+    assert_eq!(standing(&s, &bobs, API, now), Some((s.w.bob, true)));
+    // a pass counts for maiaCITY's API alone, for ten minutes, and its own device alone
+    assert_eq!(standing(&s, &alices, "another service", now), None);
+    assert_eq!(standing(&s, &alices, API, now + PASS_LIFE), None);
+    assert_eq!(standing(&s, &ApiPass { keys: bobs.keys.clone(), ..alices.clone() }, API, now), None);
+    // a newcomer who came in by a Traveler's invite is no admin
+    let key = s.w.lab.invite_key([7; 32]);
+    let invite = of_group(&s, Who::Invite(key), s.traveler);
+    let invite = s.w.lab.issue_group(mac_a, &[mac_a], invite).expect("Maia City invites a traveler");
+    s.w.lab.sync(mac_a, server);
+    let (mac_e, erin) = newcomer(&mut s.w, "Erin");
+    s.w.lab.hand_invite(server, mac_e, invite).expect("the server hands Erin the invite");
+    s.w.lab.claim_invite(mac_e, invite, erin, key).expect("Erin's vault claims the invite");
+    s.w.lab.sign_up(mac_e, server);
+    let erins = pass_of(&mut s.w, mac_e);
+    assert_eq!(standing(&s, &erins, API, now), Some((erin, false)));
+    // once Maia City revokes Bob's Admin share, his Mac's pass shows him no admin
+    let (maia, bob) = (s.maia, s.w.bob);
+    let st = s.w.lab.state(mac_a);
+    let to_bob = st.shares().iter().find(|cp| cp.share.over == maia && cp.share.who == Who::Vault(bob)).unwrap().id;
+    let revoke = Revoking::Grant { share: to_bob, actor: maia, keep: vec![], via: vec![s.w.alice] };
+    s.w.lab.submit(mac_a, &[mac_a], Action::Revoke(revoke)).expect("Maia City revokes Bob's Admin share");
+    s.w.lab.sync(mac_a, server);
+    assert_eq!(standing(&s, &bobs, API, now), Some((s.w.bob, false)));
+    // a passkey is no device, and a stranger's device is nobody's: none makes a pass that counts for anyone
+    let made = engine::run(&mut s.w.lab, s.w.passkey_a, &json!({ "op": "api_pass", "audience": API }));
+    assert!(made["ok"].is_null(), "a passkey makes no pass: {made}");
+    let stranger = s.w.stranger;
+    let strangers = pass_of(&mut s.w, stranger);
+    assert_eq!(standing(&s, &strangers, API, now), None);
+    // a locked device makes none, and a pass names a service
+    s.w.lab.lock(mac_b);
+    assert_eq!(engine::run(&mut s.w.lab, mac_b, &json!({ "op": "api_pass", "audience": API }))["refused"], "Locked");
+    assert_eq!(engine::run(&mut s.w.lab, mac_a, &json!({ "op": "api_pass", "audience": "" }))["refused"], "BadOp");
 }

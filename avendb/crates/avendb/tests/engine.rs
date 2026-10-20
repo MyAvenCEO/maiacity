@@ -956,7 +956,7 @@ fn reads_run_alone_and_every_op_says_only_what_it_takes() {
     let own = ["aip", "aip", "article", "article", "artifact", "artwork", "bundle", "capgroup", "card", "document", "file"];
     let own = [&own[..], &["flow", "function", "function", "logic", "policy", "post", "post", "profile"]].concat();
     let own = [&own[..], &["recipe", "request"]].concat();
-    let own = [&own[..], &["review", "spark", "spark", "story", "story", "todo", "view", "view"]].concat();
+    let own = [&own[..], &["review", "room", "spark", "spark", "story", "story", "todo", "view", "view"]].concat();
     let two = "its own kinds, each once but the AIP's, the article's, the function's, the post's, the spark's, the story's and the view's two versions";
     assert_eq!(kinds, own, "{two}");
     assert!(list(&schemas["schemas"]).iter().all(|s| s["builtIn"] == true));

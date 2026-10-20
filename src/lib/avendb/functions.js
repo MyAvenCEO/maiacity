@@ -1,4 +1,4 @@
-// @ts-nocheck — plain JS, kept loose on purpose, as the other logic of ours is ($lib/genui/logic.js)
+// @ts-nocheck — plain JS, kept loose on purpose, as the other logic of ours is ($lib/sandbox/view-logic.js)
 // A database function in a box: avenDB's own `function` schema holds its code, a JS module that exports
 // `run(event)`, given plain JSON, handing back the ops it would make as plain JSON. It runs by the logic host
 // ($lib/sandbox/logic-host.js): a fresh QuickJS engine for each call, in a sealed worker, with the core's limits and

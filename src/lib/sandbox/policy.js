@@ -20,6 +20,34 @@ export const DENY = DENIED.map((f) => `${f} 'none'`).join('; ');
 export const SANDBOX = 'allow-scripts';
 
 /**
+ * How long and how much the page lets code we cannot trust have, in one place (the page's side; what a frozen engine
+ * holds code to inside its worker is frozen with it and changes only with a new version: the logic core's ticks and
+ * memory, ./logic.js LIMITS; a view script's 4 s hold and its work budget, ./view/engine.js and ./view/watch.js).
+ * - job: how long one job may hold a shell (the asset box) before its room, or the shell, is ended (ms)
+ * - logicJob: the same for the logic host, far past the logic core's own limits (ms)
+ * - message: the most a view may send the page in one message (characters of JSON)
+ */
+export const BUDGETS = { job: 20000, logicJob: 10000, message: 4000 };
+
+/** What a frame's own policy shuts, every one of them, unless the frame's kind opens one to what it names. */
+export const SHUT = ['connect-src', 'img-src', 'style-src', 'font-src', 'media-src', 'frame-src', 'object-src', 'manifest-src', 'form-action', 'base-uri'];
+
+/** What no frame of ours may ever open, whatever its kind: no connection, no frame inside it, no plug-in, no form, no base. */
+export const NEVER = ['connect-src', 'frame-src', 'object-src', 'manifest-src', 'form-action', 'base-uri'];
+
+/**
+ * A frame's Content Security Policy, one way for every kind (the shell's, ./frame.js; a view's, ./view-host.js): it
+ * starts from nothing (default-src 'none'), runs the scripts `script` names, makes workers and children only from blob:
+ * URLs, and shuts every directive in SHUT but those `open` names. A directive in NEVER cannot be opened.
+ * @param {{ script: string, children?: boolean, open?: Record<string, string> }} o
+ */
+export function frameCsp({ script, children = false, open = {} }) {
+	const opened = NEVER.find((d) => d in open);
+	if (opened) throw new Error(`no frame of ours opens ${opened}`);
+	return ["default-src 'none'", `script-src ${script}`, 'worker-src blob:', ...(children ? ['child-src blob:'] : []), ...SHUT.map((d) => `${d} ${open[d] ?? "'none'"}`)].join('; ');
+}
+
+/**
  * The script of every shell's frame (./frame.js), the same text in each. It makes a worker of the engine it is handed
  * for each room the page names, and never puts two rooms in one worker; it passes messages both ways, the arrays
  * moved, and names each one a worker sends by that worker's room, which nothing in the worker can set. A worker made

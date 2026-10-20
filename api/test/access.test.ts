@@ -32,8 +32,8 @@ describe("roles are bundles of capabilities", () => {
   test("seeded from ROLE_CAPS: the admin holds every capability by name, a citizen only the everyday set", () => {
     expect([...capabilities("admin")].sort()).toEqual([...ALL_CAPS].sort());
     expect([...capabilities("citizen")].sort()).toEqual([...CITIZEN_CAPS].sort());
-    expect(can({ role: "citizen" }, "db:read")).toBe(false);
-    expect(can({ role: "admin" }, "db:read")).toBe(true);
+    expect(can({ role: "citizen" }, "economy:admin")).toBe(false);
+    expect(can({ role: "admin" }, "economy:admin")).toBe(true);
     expect(can(null, "hearts:mint")).toBe(false);
   });
 
@@ -44,21 +44,21 @@ describe("roles are bundles of capabilities", () => {
   });
 
   test("a capability new in ROLE_CAPS reaches the roles that name it, once", async () => {
-    await pg.query("UPDATE secrets SET value = $1 WHERE key = 'caps_reconciled'", [JSON.stringify(ALL_CAPS.filter((c) => c !== "db:read"))]);
-    await pg.query("UPDATE roles SET capabilities = replace(capabilities, ',db:read', '') WHERE name = 'admin'");
+    await pg.query("UPDATE secrets SET value = $1 WHERE key = 'caps_reconciled'", [JSON.stringify(ALL_CAPS.filter((c) => c !== "economy:admin"))]);
+    await pg.query("UPDATE roles SET capabilities = replace(capabilities, ',economy:admin', '') WHERE name = 'admin'");
     await initRoles();
-    expect(capabilities("admin").has("db:read")).toBe(true);
+    expect(capabilities("admin").has("economy:admin")).toBe(true);
   });
 
   test("nobody can take roles:admin from the admin role, or delete it", async () => {
-    await expect(setRoleCaps("admin", ["db:read"])).rejects.toThrow(/keeps the right/);
+    await expect(setRoleCaps("admin", ["economy:admin"])).rejects.toThrow(/keeps the right/);
     await expect(deleteRole("admin")).rejects.toThrow(/cannot be deleted/);
     await expect(setRoleCaps("citizen", ["everything"])).rejects.toThrow(/Not a capability/);
   });
 
   test("a new role is a row: created, given to someone, and only deletable once nobody holds it", async () => {
-    await createRole("gardener", ["ledger:read", "db:read"]);
-    expect(can({ role: "gardener" }, "db:read")).toBe(true);
+    await createRole("gardener", ["ledger:read", "economy:admin"]);
+    expect(can({ role: "gardener" }, "economy:admin")).toBe(true);
     expect(can({ role: "gardener" }, "hearts:mint")).toBe(false);
     await assignRole("second", "gardener");
     expect((await listRoles()).find((r) => r.name === "gardener")?.people).toBe(1);

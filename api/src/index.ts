@@ -12,6 +12,7 @@ import { fromBunSql, useDb } from "./pg";
 import { assignRole, can, capabilities, createRole, deleteRole, initRoles, listRoles, RoleError, setRoleCaps } from "./acl";
 import { CAPABILITIES } from "./caps";
 import { listTables, readTable, TableError } from "./tables";
+import { adminByPass } from "./standing";
 import { approveDevice, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
 import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice, VaultError } from "./vault";
 import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } from "./analysis";
@@ -329,22 +330,25 @@ const server = Bun.serve({
     },
 
     // The admin's window into this Postgres, read only: every table and its rows, secrets hidden (tables.ts).
+    // the admins' Postgres window (tables.ts), opened by Maia City's Admin standing in avenDB, as avenDB's server says
+    // of the pass the page's device signs (standing.ts): no passkey session, role or key opens it
     "/api/tables": {
       OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "db:read");
-        if (me instanceof Response) return me;
+      POST: async (req) => {
+        const body = await req.json().catch(() => ({}));
+        const admin = await adminByPass(body?.pass);
+        if ("error" in admin) return json(req, { error: admin.error }, { status: admin.status });
         return json(req, await listTables());
       },
     },
     "/api/tables/:name": {
       OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "db:read");
-        if (me instanceof Response) return me;
-        const q = new URL(req.url).searchParams;
+      POST: async (req) => {
+        const body = await req.json().catch(() => ({}));
+        const admin = await adminByPass(body?.pass);
+        if ("error" in admin) return json(req, { error: admin.error }, { status: admin.status });
         try {
-          return json(req, await readTable(req.params.name, Number(q.get("offset") ?? 0), Number(q.get("limit") ?? 50)));
+          return json(req, await readTable(req.params.name, Number(body?.offset ?? 0), Number(body?.limit ?? 50)));
         } catch (e) {
           return fail(req, e);
         }

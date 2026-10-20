@@ -111,8 +111,8 @@ def Share.blind (c : Share) : Share := { c with select := .all, ops := [] }
 /-- An action as a relay sees it. A mark is in the clear: a relay reads its audience and its wants as they are. -/
 def Action.blind : Action → Action
   | .share (.grant c via) => .share (.grant c.blind via)
-  | .write v e a s g deps p via create _ _ _ _ _ =>
-    .write v e a s g deps p via (create.map fun (x, _) => (x, ⟨0, 0, 0⟩)) {} none [] true none
+  | .write v e a s g deps p via create _ _ _ _ _ _ =>
+    .write v e a s g deps p via (create.map fun (x, _) => (x, ⟨0, 0, 0⟩)) {} none [] true none []
   | a => a
 
 def Edit.blind (o : Edit) : Edit := { o with action := o.action.blind }
@@ -121,6 +121,6 @@ def Edit.blind (o : Edit) : Edit := { o with action := o.action.blind }
 def State.ops (st : State) : State :=
   { st with shares := st.shares.map Share.blind,
             entries := st.entries.map fun en => { en with attrs := ⟨0, 0, 0, 0, []⟩, admitted := false, blob := 0 },
-            uncounted := [], accepts := [], defs := [] }
+            uncounted := [], accepts := [], defs := [], adds := [] }
 
 end AvenDB

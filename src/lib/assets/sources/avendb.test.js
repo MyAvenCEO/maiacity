@@ -31,14 +31,14 @@ const { parseCodeRef } = await import('../../../../game/code/index.js');
 const ROOT = new URL('../../../../', import.meta.url).pathname;
 // every recipe's card, as the box hands it back for a build at its own values (./cards.js)
 const CARDS = JSON.parse(readFileSync(new URL('./cards.json', import.meta.url), 'utf8')).cards;
-const V = 'ab12cd34ef56ab78';
+const V = 'ab12cd34'.repeat(8);
 const HEX = 'c0ffee'.repeat(10) + 'c0de';
 
 const GOOD = {
 	[`vault:${HEX}/plants/fern@2`]: { source: 'vault', vault: HEX, group: 'plants', id: 'fern', v: 2 },
 	[`vault:${V}/machines/pickup@1:pickup-cube`]: { source: 'vault', vault: V, group: 'machines', id: 'pickup', v: 1, variant: 'pickup-cube' },
 	[`vault:${V}/plants/apple@2?seed=maia&stage=9`]: { source: 'vault', vault: V, group: 'plants', id: 'apple', v: 2, params: { seed: 'maia', stage: '9' } },
-	'vault:Ab_-1234/things/bell-tent@100000': { source: 'vault', vault: 'Ab_-1234', group: 'things', id: 'bell-tent', v: 100000 },
+	[`vault:${HEX}/things/bell-tent@100000`]: { source: 'vault', vault: HEX, group: 'things', id: 'bell-tent', v: 100000 },
 	[`vault:${V}/factories/batterypack-line@1`]: { source: 'vault', vault: V, group: 'factories', id: 'batterypack-line', v: 1 },
 	[`vault:${V}/worlds/sandbox-5@3`]: { source: 'vault', vault: V, group: 'worlds', id: 'sandbox-5', v: 3 }
 };
@@ -136,14 +136,15 @@ test('a hostile ref is refused as no ref at all, never taken for one of the vaul
 	expect({}.seed).toBeUndefined();
 });
 
-test('a vault id reads the same in an asset ref as in a code ref (game/code/sources/avendb.js)', () => {
-	for (const id of ['ab12cd34', 'Ab_-1234', HEX, 'a'.repeat(128)]) {
+test('a vault id reads the same in an asset ref as in a code ref (game/code/ref.js): an avenDB id, 64 hex digits', () => {
+	const entry = `vault:%/${'cd'.repeat(32)}@${'ef'.repeat(32)}`;
+	for (const id of [HEX, V, 'a'.repeat(64)]) {
 		expect(readRef(`vault:${id}/plants/fern@2`).vault).toBe(id);
-		expect(parseCodeRef(`vault:${id}/entry0001abcd@0123456789abcdef`).vault).toBe(id);
+		expect(parseCodeRef(entry.replace('%', id)).vault).toBe(id);
 	}
-	for (const id of ['short', 'a'.repeat(129), 'ab12cd3!', 'ab12 cd34', '../ab12cd34', 'ab12cd34.x']) {
+	for (const id of ['ab12cd34', 'Ab_-1234', 'a'.repeat(128), 'a'.repeat(63), HEX.toUpperCase(), 'short', 'ab12cd3!', 'ab12 cd34', '../ab12cd34', 'ab12cd34.x']) {
 		expect(() => readRef(`vault:${id}/plants/fern@2`)).toThrow(/not an asset ref/);
-		expect(() => parseCodeRef(`vault:${id}/entry0001abcd@0123456789abcdef`)).toThrow();
+		expect(() => parseCodeRef(entry.replace('%', id))).toThrow();
 	}
 });
 
@@ -270,7 +271,7 @@ test('nothing here writes to avenDB: no module of the assets imports its client 
 		expect(text).not.toMatch(/avendb\.maia\.city|\/api\/avendb/i);
 	}
 	const source = readFileSync(`${lib}/sources/avendb.js`, 'utf8');
-	expect([...source.matchAll(/^import .* from ['"]([^'"]+)['"]/gm)].map((m) => m[1]).sort()).toEqual(['../engines.js', '../params.js', '../refs.js', '../schemas/asset.v1.json', '../schemas/index.js', '@noble/hashes/blake3.js', '@noble/hashes/utils.js']);
+	expect([...source.matchAll(/^import .* from ['"]([^'"]+)['"]/gm)].map((m) => m[1]).sort()).toEqual(['../../../../game/code/ref.js', '../../../../game/hash.js', '../engines.js', '../params.js', '../refs.js', '../schemas/asset.v1.json', '../schemas/index.js', '@noble/hashes/utils.js']);
 	expect(source).not.toMatch(/\bfetch\s*\(|XMLHttpRequest|WebSocket|indexedDB/);
 	expect(VAULT_REF.source.startsWith('^vault:')).toBe(true);
 });

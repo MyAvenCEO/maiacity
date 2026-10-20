@@ -49,3 +49,28 @@ for (const [whose, policy] of Object.entries(POLICIES))
 test('The OS runs the same scripts as the page', () => {
 	expect([...POLICIES['The OS’s']['script-src']].sort()).toEqual([...POLICIES['the page’s']['script-src']].sort());
 });
+
+const { csp } = await import('./frame.js');
+const { viewCsp } = await import('./view-host.js');
+const { NEVER, SHUT, frameCsp } = await import('./policy.js');
+
+describe('every frame of ours is shut the same way (./policy.js frameCsp)', () => {
+	const parse = (p) => Object.fromEntries(p.split('; ').map((d) => [d.split(' ')[0], d.split(' ').slice(1).join(' ')]));
+	const FRAMES = { 'the shell': csp(), 'the logic shell': csp({ wasm: true }), 'a view': viewCsp('n0nce') };
+	for (const [name, policy] of Object.entries(FRAMES))
+		test(`${name}: starts from nothing, names every directive it shuts, and never opens a way out`, () => {
+			const p = parse(policy);
+			expect(p['default-src']).toBe("'none'");
+			for (const d of SHUT) expect(p[d], d).toBeDefined();
+			for (const d of NEVER) expect(p[d], d).toBe("'none'");
+			expect(p['worker-src']).toBe('blob:');
+			expect(policy).not.toMatch(/'unsafe-eval'|https?:|\*/);
+		});
+	test('the shell shows nothing; a view, only pictures, fonts and media from data: and blob:', () => {
+		for (const d of ['img-src', 'style-src', 'font-src', 'media-src']) expect(parse(csp())[d]).toBe("'none'");
+		expect(parse(viewCsp('n'))['img-src']).toBe('data: blob:');
+	});
+	test('a frame may not open what none may', () => {
+		for (const d of NEVER) expect(() => frameCsp({ script: "'none'", open: { [d]: '*' } })).toThrow(/no frame of ours opens/);
+	});
+});

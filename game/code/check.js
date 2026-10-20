@@ -11,7 +11,7 @@
  * shape is checked, since what the rules refuse the engines drop anyway (safety never rests on this checker).
  *
  * The types (each type's owner may add one with `define`, as the asset schemas do for asset cards, $lib/code/check.js):
- *   view       a Generated UI view: { id, title, note?, kind: a2ui | html, spec }      (game/genui/views.js)
+ *   view       a Generated UI view: { id, title, note?, kind: a2ui | html, spec }      (./views.js)
  *   view-card  a game's screen: { id, kind: 'view', name, data: { slot, libs, height }, code }, with `slots`
  *   logic      a bare logic module: { code, hooks?, max? }
  *   function   an avenDB function's code, run in QuickJS as an entry moves through a flow: a module that exports
@@ -19,12 +19,12 @@
  *   config     a game's settings: plain JSON, held to the shape of the repo's seed of it (`seed`), so a config from
  *              the vault can change what a game's numbers are, never what the game finds where
  */
-import { ViewError, check as checkView, checkViewCard } from '../genui/views.js';
+import { ViewError, check as checkView, checkViewCard } from './views.js';
 import { JSON_LIMITS, logicSource, plainJson, viewHtml } from './rules.js';
 
 const verdict = (value, errors = [], notes = []) => (errors.length ? { ok: false, errors: errors.slice(0, 12) } : { ok: true, value, notes: notes.slice(0, 12) });
 
-/** the hooks a view's logic answers (src/lib/genui/logic.js) */
+/** the hooks a view's logic answers (src/lib/sandbox/view-logic.js) */
 export const VIEW_HOOKS = ['init', 'on'];
 /** the hook an avenDB function answers (src/lib/avendb/functions.js) */
 export const FUNCTION_HOOKS = ['run'];

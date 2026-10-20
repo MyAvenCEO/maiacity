@@ -138,13 +138,13 @@ def newEntry (v e : Nat) (actor : VaultId) (x : Audience) (type : Sym) (created 
 
 /-- A write of entry `e`, in its stay `stay` at epoch `epoch` of that stay's audience, with the proof `proof`, touching
     `touches`, whose result fits the entry's schemas or not (`fits`); of a cap group entry, the cap group its record
-    says after it (`defines`). -/
+    says after it (`defines`); adding the rows `adds`. -/
 def wr (v e : Nat) (actor : VaultId) (deps : List EditId := []) (stay : Option EditId := none) (epoch : Nat := 0)
     (proposal : Proposal := .main) (via : List VaultId := []) (add : List Sym := []) (remove : List Sym := [])
     (proof : Option ShareId := none) (touches : List Touch := []) (fits : Bool := true)
-    (defines : Option CapGroup := none) : Action :=
+    (defines : Option CapGroup := none) (adds : List Ops.Loc := []) : Action :=
   .write v e actor stay epoch deps proposal via (tags := { add, remove }) (proof := proof) (touches := touches)
-    (fits := fits) (defines := defines)
+    (fits := fits) (defines := defines) (adds := adds)
 
 /-- Setting a todo's field `f` to the text `x`. -/
 def sets (f x : String) : Touch := .set [.field f] (some (.str x))
@@ -1090,7 +1090,35 @@ def cases : List Case := [
     (6, [700], .claim 33 102),
     (2, [], groupShare 34 100 (.invite 702) .read 50),
     (2, [], .revoke (.grant 34 100 [])),
-    (8, [702], .claim 34 103)] }]
+    (8, [702], .claim 34 103)] },
+  { name := "rooms: Member adds rows and changes only its own", edits := humans ++ [
+    -- Alice's room, shared with Bob and Carol in Member
+    (2, [], newShare 30 100 (toVault 101) .write 100 (.anyOf [[.entryIn [81]]]) (ops := some memberOps)),
+    (2, [], newShare 31 100 (toVault 102) .write 100 (.anyOf [[.entryIn [81]]]) (ops := some memberOps)),
+    (2, [], newEntry 100 81 100 [30, 31] 41),
+    -- Bob posts message 1, Carol reacts to it with reaction 2
+    (5, [], wr 100 81 101 [8] (proof := some 30) (touches := [.insert [.field "messages"]])
+      (adds := [[.field "messages", .row 1]])),
+    (6, [], wr 100 81 102 [9] (proof := some 31) (touches := [.insert [.field "messages", .row 1, .field "reactions"]])
+      (adds := [[.field "messages", .row 1, .field "reactions", .row 2]])),
+    -- Bob edits his message; Carol's edit of it counts nowhere, even where it claims to be her own
+    (5, [], wr 100 81 101 [9] (proof := some 30) (touches := [.set [.field "messages", .row 1, .field "text"] (some (.str "hi!"))])),
+    (6, [], wr 100 81 102 [9] (proof := some 31) (touches := [.set [.field "messages", .row 1, .field "text"] (some (.str "mine"))])),
+    (6, [], wr 100 81 102 [9] (proof := some 31) (touches := [.own [.field "messages", .row 1, .field "text"] (some (.str "mine"))])),
+    -- Carol takes back her reaction; Bob can't
+    (6, [], wr 100 81 102 [10] (proof := some 31)
+      (touches := [.set [.field "messages", .row 1, .field "reactions", .row 2, .field "deleted"] (some (.bool true))])),
+    (5, [], wr 100 81 101 [10] (proof := some 30)
+      (touches := [.set [.field "messages", .row 1, .field "reactions", .row 2, .field "deleted"] (some (.bool true))])),
+    -- no Member names the room; Alice does
+    (5, [], wr 100 81 101 [9] (proof := some 30) (touches := [sets "name" "Bob's"])),
+    (2, [], wr 100 81 100 [9] (touches := [sets "name" "Garden"])),
+    -- Carol adds a row with Bob's id: from then on it is neither's
+    (6, [], wr 100 81 102 [9] (proof := some 31) (touches := [.insert [.field "messages"]])
+      (adds := [[.field "messages", .row 1]])),
+    (5, [], wr 100 81 101 [9] (proof := some 30) (touches := [.set [.field "messages", .row 1, .field "text"] (some (.str "again"))])),
+    -- Dave is in no room of Alice's: no peer takes his message
+    (8, [], wr 100 81 103 [9] (touches := [.insert [.field "messages"]]) (adds := [[.field "messages", .row 3]]))] }]
 
 /-- Alice's, Bob's, Carol's and Dave's vaults, one edit per depth. -/
 def humansV : List (Nat × SignerId × List SignerId × Action) := humans.zipIdx.map fun ((a, co, act), i) => (i, a, co, act)
@@ -1562,6 +1590,49 @@ def gates : List GateCase := [
 #guard gates.any (fun c => (c.takes.map fun t => !t.isEmpty && t.length < c.batch.length) == some true)
 #guard gates.any (·.takes == none)
 
+/-! ## Standing cases
+
+What the server of a vault (`home`), holding some edits, says of a device whose pass a service brings
+(`deviceStanding`, `Gate.lean`): the vault it is a device of and whether that vault is an admin of `home`, or nothing
+for a signer that is no vault's device. Each edit claims a depth, as in a gate case. The pass itself, its signature,
+service and freshness, is the core's to check (`sign::ApiPass`), as the model abstracts signatures. The model's
+answer is `{vault, admin}`, or `null`. The held edits are a gate case's: Maia City is coop 200, which Alice's vault
+owns; its Admin group is entry 52, which Bob holds. -/
+
+structure StandingCase where
+  name   : String
+  home   : VaultId
+  held   : List (Nat × SignerId × List SignerId × Action)
+  device : SignerId
+
+def StandingCase.edits (c : StandingCase) : List Edit :=
+  c.held.zipIdx.map fun ((depth, author, co, a), i) => ({ id := i, depth, author, cosigners := co, action := a } : Edit)
+
+def StandingCase.answer (c : StandingCase) : Option (VaultId × Bool) := deviceStanding (view c.edits) c.home c.device
+
+/-- What the server of Maia City holds besides: Carol's Mac a device of her vault, and her vault a Traveler. -/
+def carolTravels : List (Nat × SignerId × List SignerId × Action) := [
+  (20, 6, [7], .share (.device 102 7)),
+  (21, 2, [], groupShare 34 200 (toVault 102) .read 50 (via := [100]))]
+
+def standings : List StandingCase := [
+  { name := "Maia City's owner's Mac is an admin's", home := 200, held := gateHeld, device := 2 },
+  { name := "the Mac of a holder of the Admin group is an admin's", home := 200, held := gateHeld, device := 5 },
+  { name := "a Traveler's Mac is no admin's", home := 200, held := gateHeld ++ carolTravels, device := 7 },
+  { name := "once the Admin share is revoked, its holder's Mac is no admin's", home := 200,
+    held := gateHeld ++ [(20, 2, [], .revoke (.grant 32 200 [] [100]))], device := 5 },
+  { name := "a removed device is nobody's", home := 200, held := gateHeld ++ [(20, 4, [], .revoke (.device 101 5 []))],
+    device := 5 },
+  { name := "a passkey is no device", home := 200, held := gateHeld, device := 4 },
+  { name := "a stranger's key is nobody's device", home := 200, held := gateHeld, device := 555 }]
+
+-- an admin's device, a device that is no admin's, and a signer that is no device
+#guard standings.any (·.answer.any (·.2))
+#guard standings.any (·.answer.any (!·.2))
+#guard standings.any (·.answer.isNone)
+#guard (standings.map (·.answer)) ==
+  [some (100, true), some (101, true), some (102, false), some (101, false), none, none, none]
+
 /-! ## JSON -/
 
 def str (s : String) : String := "\"" ++ s ++ "\""
@@ -1663,6 +1734,10 @@ def opJson : Op → String
       (match to with
         | some vs => [("to", arr (vs.map jsonVal))]
         | none => []) ++ onJson o)
+  | .setOwn p to o => obj ([("op", str "set"), ("path", path p), ("own", bool true)] ++
+      (match to with
+        | some vs => [("to", arr (vs.map jsonVal))]
+        | none => []) ++ onJson o)
   | .insert p o => obj ([("op", str "insert"), ("path", path p)] ++ onJson o)
   | .remove p o => obj ([("op", str "remove"), ("path", path p)] ++ onJson o)
   | .move p o => obj ([("op", str "move"), ("path", path p)] ++ onJson o)
@@ -1678,6 +1753,9 @@ def list : Ops.Loc → String
 /-- What a write touches: `{"set": path, "to": v}` (no `to` where no one value was set), `{"insert": list}`, ... -/
 def touch : Touch → String
   | .set l to => obj ([("set", path l.steps)] ++ match to with
+      | some v => [("to", jsonVal v)]
+      | none => [])
+  | .own l to => obj ([("set", path l.steps), ("own", bool true)] ++ match to with
       | some v => [("to", jsonVal v)]
       | none => [])
   | .insert l => obj [("insert", list l)]
@@ -1746,13 +1824,14 @@ def action : Action → String
       ("keep", ids keep)])])]
   | .revoke (.device v d keep) => obj [("revoke", obj [("device", obj [("vault", nat v), ("device", nat d),
       ("keep", ids keep)])])]
-  | .write v e a s g deps p via create tags pr ts ft df => obj [("write", obj ([("vault", nat v), ("entry", nat e),
+  | .write v e a s g deps p via create tags pr ts ft df ad => obj [("write", obj ([("vault", nat v), ("entry", nat e),
       ("actor", nat a), ("stay", opt nat s), ("epoch", nat g), ("deps", ids deps), ("proposal", proposal p),
       ("via", ids via), ("create", opt (fun (x, h) => obj [("audience", ids x), ("header", header h)]) create),
       ("tags", tagDelta tags)] ++ (match pr with
         | some c => [("proof", nat c)]
         | none => []) ++ (if ts.isEmpty then [] else [("touches", arr (ts.map touch))]) ++
-        (if ft then [] else [("fits", bool false)]) ++ match df with
+        (if ft then [] else [("fits", bool false)]) ++ (if ad.isEmpty then [] else
+          [("adds", arr (ad.map fun l => path l.steps))]) ++ match df with
           | some g => [("defines", capGroupJson g)]
           | none => []))]
   | .mark v e caps wants keep via => obj [("mark", obj ([("vault", nat v), ("entry", nat e)] ++ markJson caps wants ++
@@ -1880,12 +1959,21 @@ def gateCase (c : GateCase) : String :=
     ": [\n  " ++ ",\n  ".intercalate (held.map editJson) ++ "],\n " ++ str "batch" ++ ": [\n  " ++
     ",\n  ".intercalate (batch.map editJson) ++ "],\n " ++ str "takes" ++ ": " ++ opt ids c.takes ++ "}"
 
+def standingCase (c : StandingCase) : String :=
+  let editJson := fun (o : Edit) =>
+    obj [("depth", nat o.depth), ("author", nat o.author), ("cosigners", arr (o.cosigners.map nat)),
+      ("action", action o.action)]
+  "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "home" ++ ": " ++ nat c.home ++ ",\n " ++ str "held" ++
+    ": [\n  " ++ ",\n  ".intercalate (c.edits.map editJson) ++ "],\n " ++ str "device" ++ ": " ++ nat c.device ++
+    ",\n " ++ str "standing" ++ ": " ++ opt (fun (v, a) => obj [("vault", nat v), ("admin", bool a)]) c.answer ++ "}"
+
 def render : String :=
   "{\"groups\": [\n" ++ ",\n".intercalate (groups.map group) ++ "\n],\n\"kinds\": [\n" ++
     ",\n".intercalate (allKinds.map kindRules) ++ "\n],\n\"cases\": [\n" ++
     ",\n".intercalate (cases.map case) ++ "\n],\n\"views\": [\n" ++ ",\n".intercalate (views.map viewCase) ++
     "\n],\n\"syncs\": [\n" ++ ",\n".intercalate (syncs.map syncCase) ++
-    "\n],\n\"gates\": [\n" ++ ",\n".intercalate (gates.map gateCase) ++ "\n]}\n"
+    "\n],\n\"gates\": [\n" ++ ",\n".intercalate (gates.map gateCase) ++
+    "\n],\n\"standings\": [\n" ++ ",\n".intercalate (standings.map standingCase) ++ "\n]}\n"
 
 /-- What an edit creates, by the model's number: a vault or a grant. -/
 def created : Action → Option (Nat × Nat)
@@ -1907,7 +1995,8 @@ def audiencesOf : Action → List Audience :=
 /-- Every action of every case. -/
 def allActions : List Action :=
   cases.flatMap (·.edits.map (·.2.2)) ++ views.flatMap (·.edits.map (·.2.2.2)) ++
-    syncs.flatMap (·.edits.map (·.action)) ++ gates.flatMap fun c => (c.held ++ c.batch).map (·.2.2.2)
+    syncs.flatMap (·.edits.map (·.action)) ++ gates.flatMap (fun c => (c.held ++ c.batch).map (·.2.2.2)) ++
+    standings.flatMap fun c => c.held.map (·.2.2.2)
 
 -- every case refuses some edits and accepts others, so neither side can pass by always saying the same thing
 #guard cases.all fun c => let (acc, _) := run c.edits; acc.any id && acc.any (!·)
@@ -1921,6 +2010,9 @@ def allActions : List Action :=
 -- in a gate case, every vault and share number is created once, and no two edits share a depth and a rank
 #guard gates.all fun c => let (h, b) := c.edits; nodup ((h ++ b).filterMap fun o => created o.action)
 #guard gates.all fun c => let (h, b) := c.edits; nodup ((h ++ b).map fun o => (o.depth, o.rank))
+-- in a standing case too
+#guard standings.all fun c => nodup (c.edits.filterMap fun o => created o.action)
+#guard standings.all fun c => nodup (c.edits.map fun o => (o.depth, o.rank))
 -- every audience a case names is in the model's order, so it names one set of shares whatever order the Rust core keeps
 #guard allActions.all fun a => (audiencesOf a).all fun x => x == mkAudience x
 -- each kind of settings, share and revocation is accepted or refused as its comment says, wide owner grants and

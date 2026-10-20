@@ -153,15 +153,17 @@ inductive Change (st : State) : State → Prop where
       (∀ g, c.who = .vault g → (st.vault? g).isSome = true) →
       Change st { st with shares := st.shares ++ [c] }
   | revoke (rs : List ShareId) : Change st { st with revoked := st.revoked ++ rs }
-  | create (en : Entry) (w : Write) (x : Audience) (u : List EditId) (df : List (EditId × CapGroup)) :
+  | create (en : Entry) (w : Write) (x : Audience) (u : List EditId) (df : List (EditId × CapGroup))
+      (ad : List (EditId × List Ops.Loc)) :
       st.entry? en.id = none → en.id ∉ st.born →
       (st.vault? en.vault).isSome = true → en.stays = [(none, x)] → w.entry = en.id → w.stay = none →
       Change st { st with entries := st.entries ++ [en], born := st.born ++ [en.id], writes := st.writes ++ [w],
-                          uncounted := u, defs := df }
-  | write (en : Entry) (w : Write) (st₁ : State) (u acc : List EditId) (df : List (EditId × CapGroup)) :
+                          uncounted := u, defs := df, adds := ad }
+  | write (en : Entry) (w : Write) (st₁ : State) (u acc : List EditId) (df : List (EditId × CapGroup))
+      (ad : List (EditId × List Ops.Loc)) :
       st.entry? w.entry = some en → w.stay ∈ en.stays.map (·.1) →
       (st₁ = st ∨ ∃ a, st₁ = setEntry st { en with attrs := a }) →
-      Change st { st₁ with writes := st₁.writes ++ [w], uncounted := u, accepts := acc, defs := df }
+      Change st { st₁ with writes := st₁.writes ++ [w], uncounted := u, accepts := acc, defs := df, adds := ad }
   /-- A mark that takes an entry to another audience, beginning a fresh stay, and may mark its wants too (`ms`). -/
   | mark (en : Entry) (σ : Option EditId) (x : Audience) (ms : List (EntryId × List ShareId)) :
       st.entry? en.id = some en → σ ∉ en.stays.map (·.1) →
@@ -296,16 +298,16 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
     cases h
     simp only [Bool.or_eq_true, not_or, Bool.not_eq_true, Option.isSome_eq_false_iff,
       Option.isNone_iff_eq_none, List.contains_iff_mem] at hfresh
-    exact Change.applied (.create _ _ _ _ _ hfresh.1.1.1.1.1 hfresh.1.1.1.1.2
+    exact Change.applied (.create _ _ _ _ _ _ hfresh.1.1.1.1.1 hfresh.1.1.1.1.2
       (Option.isSome_iff_ne_none.2 hfresh.1.1.1.2) rfl rfl rfl)
   · -- a write to an entry, by its own vault
     rename_i he _ _ _ hx _ _ _
     cases h
-    exact Change.applied (.write _ _ _ _ _ _ he (List.mem_map.2 ⟨_, stayAudience_mem hx, rfl⟩) (.inr ⟨_, rfl⟩))
+    exact Change.applied (.write _ _ _ _ _ _ _ he (List.mem_map.2 ⟨_, stayAudience_mem hx, rfl⟩) (.inr ⟨_, rfl⟩))
   · -- a write to an entry, by another vault
     rename_i he _ _ _ hx _ _ _
     cases h
-    exact Change.applied (.write _ _ _ _ _ _ he (List.mem_map.2 ⟨_, stayAudience_mem hx, rfl⟩) (.inl rfl))
+    exact Change.applied (.write _ _ _ _ _ _ _ he (List.mem_map.2 ⟨_, stayAudience_mem hx, rfl⟩) (.inl rfl))
   · -- a mark that takes the entry to another audience and marks its wants
     cases h
     exact Change.applied_drop (.mark _ _ _ _ (entry?_self ‹_›) (mark_fresh ‹_›)) _
@@ -458,9 +460,9 @@ theorem Sane.set_entry {st : State} (hs : Sane st) {en en' : Entry} (hen : en �
     · exact hs.writeStay w hw y hy hyw
 
 /-- Adding a write of an entry ever created, in a stay of its entry, keeps the state sane. -/
-theorem Sane.addWrite {st : State} (hs : Sane st) {w : Write} {u acc : List EditId} {df : List (EditId × CapGroup)}
+theorem Sane.addWrite {st : State} (hs : Sane st) {w : Write} {u acc : List EditId} {df : List (EditId × CapGroup)} {ad : List (EditId × List Ops.Loc)}
     (hb : w.entry ∈ st.born) (hstay : ∀ en ∈ st.entries, en.id = w.entry → w.stay ∈ en.stays.map (·.1)) :
-    Sane { st with writes := st.writes ++ [w], uncounted := u, accepts := acc, defs := df } where
+    Sane { st with writes := st.writes ++ [w], uncounted := u, accepts := acc, defs := df, adds := ad } where
   owners := hs.owners
   shareIds := hs.shareIds
   shareOver := hs.shareOver
@@ -582,7 +584,7 @@ theorem Sane.change {st mid : State} (hs : Sane st) (h : Change st mid) : Sane m
       rcases claimed_who c v x with hw | ⟨-, -, hw⟩
       · rw [hw] at hg; exact hs.shareWho x hx g hg
       · rw [hw] at hg; cases hg; exact hv
-  | create en w x _ _ hfree hnew hv hstays hwe hws =>
+  | create en w x _ _ _ hfree hnew hv hstays hwe hws =>
     have hnot : ∀ y ∈ st.entries, y.id ≠ en.id := fun y hy hid => by
       unfold State.entry? at hfree
       rw [List.find?_eq_none] at hfree
@@ -624,7 +626,7 @@ theorem Sane.change {st mid : State} (hs : Sane st) (h : Change st mid) : Sane m
         exact absurd hyx (hnot y hy)
       · rw [List.mem_singleton.1 hx, List.mem_singleton.1 hy, hws, hstays]
         simp
-  | write en w st₁ _ _ _ he hstay h₁ =>
+  | write en w st₁ _ _ _ _ he hstay h₁ =>
     have hen := entry?_mem he
     have hid := entry?_id he
     rcases h₁ with rfl | ⟨a, rfl⟩
@@ -1969,9 +1971,9 @@ theorem Change.grows {st mid : State} (h : Change st mid) :
     | none => rw [hl] at hx; cases hx
     | some _ => rfl
   | share c _ _ _ => exact ⟨hend [c] rfl, fun e he => he, fun x hx => hx⟩
-  | create en w x _ _ _ _ _ _ _ _ =>
+  | create en w x _ _ _ _ _ _ _ _ _ =>
     exact ⟨hend [] (by simp), fun e he => List.mem_append_left _ he, fun x hx => hx⟩
-  | write en w st₁ _ _ _ _ _ h₁ =>
+  | write en w st₁ _ _ _ _ _ _ h₁ =>
     rcases h₁ with rfl | ⟨a, rfl⟩
     · exact ⟨hend [] (by simp), fun e he => he, fun x hx => hx⟩
     · exact ⟨hend [] (by simp [setEntry]), fun e he => he, fun x hx => hx⟩
@@ -2015,13 +2017,13 @@ theorem Change.entries {st mid : State} (h : Change st mid) :
   | revoke _ => exact hsame
   | wants _ => exact hsame
   | claim _ _ _ => exact hsame
-  | create en w x _ _ _ hnew _ _ _ _ =>
+  | create en w x _ _ _ _ hnew _ _ _ _ =>
     intro y hy
     rcases List.mem_append.1 hy with hy | hy
     · exact hsame y hy
     · rw [List.mem_singleton.1 hy]
       exact .inr hnew
-  | write en w st₁ _ _ _ he _ h₁ =>
+  | write en w st₁ _ _ _ _ he _ h₁ =>
     rcases h₁ with rfl | ⟨a, rfl⟩
     · exact hsame
     · exact hset en _ (entry?_mem he) ⟨rfl, rfl, [], rfl⟩

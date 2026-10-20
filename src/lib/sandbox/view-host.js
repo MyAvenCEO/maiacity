@@ -14,11 +14,11 @@
  * floor), and its script in the view worker that engine was frozen with (`workerFor`).
  *   bootDoc(key, nonce) the frame's first document: its policy, and the one script that takes in our engine
  */
-import { LIBS } from '../../../game/genui/views.js';
+import { LIBS } from '../../../game/code/limits.js';
 import { fromA2ui } from './view/a2ui.js';
-import { enginesOf, latestOf, pathOf, workerFor } from './engines.js';
-import { frozen } from './frame.js';
-import { VIEW_SCRIPT } from './policy.js';
+import { workerFor } from './engines.js';
+import { engineCode } from './frame.js';
+import { VIEW_SCRIPT, frameCsp } from './policy.js';
 
 /**
  * A view as the host shows it: `{ id, title, html, libs, height (0: as high as what it shows), data, input, logic?,
@@ -49,21 +49,8 @@ export function viewOfCard(c, height = 400) {
 /** whether a view's HTML carries a script of its own (its draw script, run in the frame's worker) */
 export const hasScript = (html) => /<script[\s>]/i.test(String(html ?? ''));
 
-const engines = new Map();
-/**
- * frozen engine `v` of `kind` (the latest where none is given), its bytes checked against its hash (once a page)
- * @param {string} kind @param {number} [v]
- */
-export function engineCode(kind, v = latestOf(kind)?.v) {
-	const k = `${kind}-v${v}`;
-	if (!engines.has(k)) {
-		const e = enginesOf(kind).find((x) => x.v === v);
-		const got = e ? frozen(pathOf(kind, e.v), e.blake3, `${kind} engine ${e.v}`) : Promise.reject(new Error(`no ${kind} engine ${v} is frozen`));
-		got.catch(() => engines.delete(k));
-		engines.set(k, got);
-	}
-	return engines.get(k);
-}
+/** frozen engine `v` of `kind`, checked (./frame.js, one loader for every host) */
+export { engineCode };
 
 /**
  * what the frame needs for a view with a draw script: the view worker view engine `engine` starts it in, and the
@@ -80,22 +67,7 @@ export async function workerOf(view, engine) {
 
 /** the frame's policy: our engine's script by its nonce and blob: URLs it makes, nothing in or out */
 export const viewCsp = (nonce) =>
-	[
-		"default-src 'none'",
-		`script-src 'nonce-${nonce}' blob:`,
-		'worker-src blob:',
-		'child-src blob:',
-		"style-src 'unsafe-inline'",
-		'img-src data: blob:',
-		'font-src data:',
-		'media-src data: blob:',
-		"connect-src 'none'",
-		"frame-src 'none'",
-		"object-src 'none'",
-		"manifest-src 'none'",
-		"base-uri 'none'",
-		"form-action 'none'"
-	].join('; ');
+	frameCsp({ script: `'nonce-${nonce}' blob:`, children: true, open: { 'style-src': "'unsafe-inline'", 'img-src': 'data: blob:', 'font-src': 'data:', 'media-src': 'data: blob:' } });
 
 /**
  * The frame's first document: nothing of a view's in it, only the script that takes our engine (and the port it

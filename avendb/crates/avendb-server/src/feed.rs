@@ -50,20 +50,28 @@
 //! And whether an invite is open (`GET /feed/invite/<share>`, `INVITE`, `world::open_invite`): `{"open": true}` while that
 //! share is a live invite of Maia City's that no vault claimed yet, which maiaCITY's API asks before it signs anyone up,
 //! so that an invite is only the share a device of Maia City signs, with no passkey and no code of the API's.
+//!
+//! And who a device is (`POST /feed/pass`, `PASS`, `world::pass_standing`, G3): a service that holds no device,
+//! maiaCITY's API, posts the pass a device signed for it (`sign::ApiPass`, base64url) and its own name, `{"pass",
+//! "audience"}`, and the server answers the vault the pass's device is a device of and whether that vault is an admin
+//! of Maia City, `{"vault", "admin"}`: `{"vault": null, "admin": false}` for a pass that doesn't count for that service
+//! now, or a signer that is no vault's device. So the API opens its admins' pages by avenDB's own word, never kept.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result};
 use avendb::id::{BlobId, EntryId, ShareId, VaultId};
 use avendb::provenance;
 use avendb::sealed::FileRoot;
+use avendb::sign::{self, ApiPass};
+use avendb::wire::Wire as _;
 use avendb::world;
 use avendb_net::Node;
-use http_body_util::Full;
+use http_body_util::{BodyExt as _, Full, Limited};
 use hyper::body::{Bytes, Incoming};
 use hyper::header::{self, HeaderValue};
 use hyper::server::conn::http1;
@@ -75,6 +83,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 use crate::Abort;
+use crate::health::Health;
 
 /// Where the feed is served.
 pub const PATH: &str = "/feed/posts";
@@ -108,6 +117,16 @@ pub const MEDIA: &str = "/feed/media/";
 
 /// Where the server says whether an invite is open, at `INVITE` `<share>`, its id in 64 hex digits (`invite`).
 pub const INVITE: &str = "/feed/invite/";
+
+/// Where the server says how it is doing (`crate::health`): when it started, the memory it holds, and how the run
+/// before it ended, never kept by a cache.
+pub const HEALTH: &str = "/feed/health";
+
+/// Where a service asks who the device of a pass is (`pass`), by a POST of `{"pass", "audience"}`.
+pub const PASS: &str = "/feed/pass";
+
+/// The most bytes a POST of `PASS` brings: a pass is some 5 KiB of keys and signature, in base64url.
+const MOST_POSTED: usize = 64 << 10;
 
 /// Where the proof of one vault's public code is served (`proof`): `PROOF?vault=<64 hex>` or `PROOF?seed=1`, and the
 /// kinds (`type=`) and entries (`entry=`) it proves.
@@ -179,7 +198,7 @@ pub struct Feed {
 
 impl Feed {
     /// The feed of what `node` keeps, served on socket `bind`.
-    pub async fn spawn(bind: SocketAddr, node: Arc<Node>) -> Result<Feed> {
+    pub async fn spawn(bind: SocketAddr, node: Arc<Node>, health: Arc<Health>) -> Result<Feed> {
         let listener = TcpListener::bind(bind).await.with_context(|| format!("the feed on {bind}"))?;
         let addr = listener.local_addr().context("the feed's socket")?;
         let feeds = Feeds::default();
@@ -194,9 +213,10 @@ impl Feed {
                         continue;
                     }
                 };
-                let (node, feeds) = (node.clone(), feeds.clone());
+                let (node, feeds, health) = (node.clone(), feeds.clone(), health.clone());
                 tokio::spawn(async move {
-                    let service = service_fn(move |request| answer(request, node.clone(), feeds.clone()));
+                    let service =
+                        service_fn(move |request| answer(request, node.clone(), feeds.clone(), health.clone()));
                     let mut http = http1::Builder::new();
                     // a client that never finishes its request's head is let go, as the timer says (30 s)
                     http.timer(TokioTimer::new());
@@ -218,15 +238,23 @@ impl Feed {
 /// The answer to `request`: for a GET or HEAD, the feed of `PATH`, a picture of `FILES` (`picture`), a medium of `MEDIA`
 /// by the `Range` it asks (`media`), the entries of `ENTRIES` or the code of `CODE` (`listed`), an entry of `ENTRY`
 /// (`entry`), or a file of it (`OF_ENTRY`, `OF_ROOT`, `source`), the proof of some code (`PROOF`, `proof`), or whether
-/// an invite is open (`INVITE`, `invite`); nothing for a browser's OPTIONS before any of them; and not found for
-/// anything else.
+/// an invite is open (`INVITE`, `invite`); for a POST of `PASS`, whom a pass names (`pass`); nothing for a browser's
+/// OPTIONS before any of them; and not found for anything else.
 async fn answer(
     request: Request<Incoming>,
     node: Arc<Node>,
     feeds: Feeds,
+    health: Arc<Health>,
 ) -> Result<Response<Full<Bytes>>, Infallible> {
+    if request.uri().path() == PASS && *request.method() == Method::POST {
+        return Ok(pass(request, &node).await);
+    }
     let path = request.uri().path();
     let reads = matches!(*request.method(), Method::GET | Method::HEAD);
+    // how the server is doing, without asking its node, so that it answers while the node is busy
+    if path == HEALTH && reads {
+        return Ok(well(&health));
+    }
     if let Some(at) = path.strip_prefix(FILES).filter(|_| reads) {
         return Ok(picture(at, &node).await);
     }
@@ -279,6 +307,17 @@ async fn answer(
     Ok(response)
 }
 
+/// The answer to a GET or HEAD of `HEALTH`: how the server is doing (`Health::json`), as JSON, never kept.
+fn well(health: &Health) -> Response<Full<Bytes>> {
+    let body = Bytes::from(serde_json::to_vec(&health.json()).expect("JSON writes"));
+    let mut response = Response::new(Full::new(body));
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
+}
+
 /// The tag of an answer of `body`: a BLAKE3 hash of its bytes in hex, quoted, as an `ETag` is.
 fn tag_of(body: &[u8]) -> String {
     format!("\"{}\"", blake3::hash(body).to_hex())
@@ -298,6 +337,39 @@ async fn invite(at: &str, node: &Node) -> (StatusCode, Bytes) {
     };
     let open = node.read(move |lab, me| world::open_invite(lab, me, share)).await;
     (StatusCode::OK, Bytes::from(serde_json::to_vec(&json!({ "open": open })).expect("JSON writes")))
+}
+
+/// The answer to a POST of `PASS`: of the pass it brings for the service it names, `{"pass", "audience"}`, the vault
+/// its device is a device of and whether that vault is an admin of Maia City (`world::pass_standing`), checked now by
+/// the server's clock, `{"vault", "admin"}`, never kept; a bad request, as JSON, for a body that is no such pass.
+async fn pass(request: Request<Incoming>, node: &Node) -> Response<Full<Bytes>> {
+    let posted = match Limited::new(request.into_body(), MOST_POSTED).collect().await {
+        Ok(body) => body.to_bytes(),
+        Err(_) => return no_store(StatusCode::PAYLOAD_TOO_LARGE, error("a pass is a few kilobytes")),
+    };
+    let asked: Value = serde_json::from_slice(&posted).unwrap_or_default();
+    let text = |key: &str| asked.get(key).and_then(Value::as_str).map(str::to_owned);
+    let (Some(pass), Some(audience)) = (text("pass"), text("audience")) else {
+        return no_store(StatusCode::BAD_REQUEST, error("post {\"pass\", \"audience\"}"));
+    };
+    let Some(pass) = sign::unbase64url(&pass).and_then(|bytes| ApiPass::from_wire(&bytes).ok()) else {
+        return no_store(StatusCode::BAD_REQUEST, error("a pass is a device's ApiPass in base64url"));
+    };
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let said = node.read(move |lab, me| world::pass_standing(lab, me, &pass, &audience, now)).await;
+    let (vault, admin) = said.map_or((Value::Null, false), |(v, admin)| (json!(v.to_hex()), admin));
+    let body = serde_json::to_vec(&json!({ "vault": vault, "admin": admin })).expect("JSON writes");
+    no_store(StatusCode::OK, Bytes::from(body))
+}
+
+/// An answer of JSON `body` with `status` that nobody keeps: whom a pass names changes from one moment to the next.
+fn no_store(status: StatusCode, body: Bytes) -> Response<Full<Bytes>> {
+    let mut response = Response::new(Full::new(body));
+    *response.status_mut() = status;
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 
 /// Place `at` after `ENTRY` as a file of an entry by its root, `<vault>/<entry>` `OF_ROOT` `<root>`: the entry's place

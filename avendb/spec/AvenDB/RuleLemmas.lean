@@ -251,7 +251,7 @@ theorem counted_allowed {st : State} {a : VaultId} {en : Entry} {deps : List Edi
     {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
     (hv : a ≠ en.vault) :
     ∃ cp ∈ st.shares, proof = some cp.id ∧ holdsShare st a cp .write = true ∧ inAudience st cp en = true ∧
-      ∀ c ∈ chain st cp, c.levelOk = true ∧ allowsAll (opsOn st c en.attrs) main ts = true := by
+      ∀ c ∈ chain st cp, c.levelOk = true ∧ allowsAll (opsOn st c en.attrs) main (st.mine a en.id ts) = true := by
   unfold counts at hc
   simp only [Bool.and_eq_true, Bool.or_eq_true, beq_iff_eq] at hc
   obtain ⟨-, hc | ⟨hany, -⟩⟩ := hc
@@ -268,7 +268,7 @@ theorem counted_allowed {st : State} {a : VaultId} {en : Entry} {deps : List Edi
 theorem counted_writes {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option ShareId}
     {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
     (hv : a ≠ en.vault) :
-    ∃ cp ∈ st.shares, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∀ t ∈ ts, ∃ o ∈ opsOn st c en.attrs,
+    ∃ cp ∈ st.shares, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∀ t ∈ st.mine a en.id ts, ∃ o ∈ opsOn st c en.attrs,
       o.allows main t = true ∧ o.level = .write := by
   obtain ⟨cp, hcp, hp, -, -, hall⟩ := counted_allowed hc hv
   refine ⟨cp, hcp, hp, fun c hc' t ht => ?_⟩
@@ -276,6 +276,50 @@ theorem counted_writes {st : State} {a : VaultId} {en : Entry} {deps : List Edit
   simp only [allowsAll, List.all_eq_true, List.any_eq_true] at this
   obtain ⟨o, ho, hoa⟩ := this t ht
   exact ⟨o, ho, hoa, level_of_allows hoa⟩
+
+/-! ## C5: own ops change only the writer's own rows -/
+
+/-- Readers mark a set own only where the place is the writer's own. -/
+theorem owns_of_mine {st : State} {a : VaultId} {e : EntryId} {ts : List Touch} {l : Ops.Loc} {v : Option Ops.Val}
+    (h : Touch.own l v ∈ st.mine a e ts) : st.owns a e l = true := by
+  obtain ⟨t, -, ht⟩ := List.mem_map.1 h
+  cases t with
+  | set l' v' | own l' v' =>
+    simp only at ht
+    split at ht
+    · rename_i ho
+      cases ht
+      exact ho
+    · cases ht
+  | _ => cases ht
+
+/-- A merge's places stay among the touches readers judge. -/
+theorem mem_mine_of_merged {st : State} {a : VaultId} {e : EntryId} {ts : List Touch} {l : Ops.Loc}
+    (h : Touch.merged l ∈ ts) : Touch.merged l ∈ st.mine a e ts :=
+  List.mem_map.2 ⟨_, h, rfl⟩
+
+/-- An own op allows only a set readers marked own. -/
+theorem setOwn_allows {main : Bool} {p : List Step} {to : Option (List Ops.Val)} {o : Option On} {t : Touch}
+    (h : (Op.setOwn p to o).allows main t = true) : ∃ l v, t = .own l v := by
+  cases t with
+  | own l v => exact ⟨l, v, rfl⟩
+  | _ => simp [Op.allows] at h
+
+/-- C5: every touch of a counted write by anyone but the entry's vault is allowed by a write op of each share of its
+    chain, and where that op is an own op, the touch is a set at a place that is the writer's own: inside a row its
+    vault's counted writes added and no one else's, or in no row of an entry it created. -/
+theorem counted_own {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {proof : Option ShareId}
+    {main : Bool} {ts : List Touch} {fits : Bool} (hc : counts st a en deps proof main ts fits = true)
+    (hv : a ≠ en.vault) :
+    ∃ cp ∈ st.shares, proof = some cp.id ∧ ∀ c ∈ chain st cp, ∀ t ∈ st.mine a en.id ts, ∃ o ∈ opsOn st c en.attrs,
+      o.allows main t = true ∧ ∀ p to on, o = .setOwn p to on → ∃ l v, t = .own l v ∧ st.owns a en.id l = true := by
+  obtain ⟨cp, hcp, hp, hall⟩ := counted_writes hc hv
+  refine ⟨cp, hcp, hp, fun c hc' t ht => ?_⟩
+  obtain ⟨o, ho, hoa, -⟩ := hall c hc' t ht
+  refine ⟨o, ho, hoa, fun p to on hpo => ?_⟩
+  subst hpo
+  obtain ⟨l, v, rfl⟩ := setOwn_allows hoa
+  exact ⟨l, v, rfl, owns_of_mine ht⟩
 
 /-! ## M1: a counted merge brings in only what its merge ops' paths reach -/
 
@@ -290,7 +334,7 @@ theorem counted_merges_within {st : State} {a : VaultId} {en : Entry} {deps : Li
   refine ⟨cp, hcp, hp, fun c hc' => ?_⟩
   have := (hall c hc').2
   simp only [allowsAll, List.all_eq_true, List.any_eq_true] at this
-  obtain ⟨r, hr, hra⟩ := this _ hl
+  obtain ⟨r, hr, hra⟩ := this _ (mem_mine_of_merged hl)
   obtain ⟨o, p, rfl, ho, hp'⟩ := merged_within hra
   exact ⟨o, p, hr, ho, hp'⟩
 
@@ -298,7 +342,7 @@ theorem counted_merges_within {st : State} {a : VaultId} {en : Entry} {deps : Li
 
 theorem allowed_counts {st : State} {a : VaultId} {en : Entry} {deps : List EditId} {main : Bool} {ts : List Touch}
     {cp : Share} (hd : ∀ d ∈ deps, d ∉ st.uncounted) (hcp : cp ∈ st.shares) (hh : holdsShare st a cp .write = true)
-    (hi : inAudience st cp en = true) (ha : chainAllows st cp en.attrs main ts = true)
+    (hi : inAudience st cp en = true) (ha : chainAllows st cp en.attrs main (st.mine a en.id ts) = true)
     (hacc : main = true → Touch.merge ∈ ts → accepted st en deps = true)
     (hland : main = true → landed st en = true) :
     counts st a en deps (some cp.id) main ts true = true := by
@@ -405,7 +449,7 @@ theorem apply_countsClosed {st post : State} {edit : Edit} (hcc : CausallyClosed
   unfold apply at h
   dsimp only at h
   split at h
-  case h_10 v e actor stay epoch deps proposal via create tags proof touches fits defines hact =>
+  case h_10 v e actor stay epoch deps proposal via create tags proof touches fits defines adds hact =>
     split at h
     · cases h
     rename_i hok
@@ -539,8 +583,8 @@ theorem draft_creations {st : State} {a v : VaultId} {x : Audience} {attrs : Att
 /-- An accepted creation, on the main line or a draft's own, records its first write on that line, building on
     nothing, and its readers count it exactly as `creates` says of a creation on that line. -/
 theorem apply_creation {st post : State} {edit : Edit} (h : apply st edit = some post)
-    {v e actor stay epoch deps proposal via x hdr tags proof touches fits defines}
-    (ha : edit.action = .write v e actor stay epoch deps proposal via (some (x, hdr)) tags proof touches fits defines) :
+    {v e actor stay epoch deps proposal via x hdr tags proof touches fits defines adds}
+    (ha : edit.action = .write v e actor stay epoch deps proposal via (some (x, hdr)) tags proof touches fits defines adds) :
     proposal.isOn = false ∧
       post.writes = st.writes ++ [⟨edit.id, edit.author, actor, e, none, epoch, [], proposal, via, true, x⟩] ∧
       post.uncounted = st.counting (creates st actor v x ⟨hdr.type, actor, e, hdr.created, tags.apply []⟩ proof
@@ -564,8 +608,8 @@ theorem apply_creation {st post : State} {edit : Edit} (h : apply st edit = some
 /-- D2, a step: a draft's creation is recorded as the start of its own line, and its readers count it exactly as
     `creates` says of a creation on a proposal. -/
 theorem draft_step {st st' : State} {edit : Edit} (h : step st edit = some st')
-    {v e a epoch via x hdr tags proof touches fits defines}
-    (ha : edit.action = .write v e a none epoch [] .new via (some (x, hdr)) tags proof touches fits defines) :
+    {v e a epoch via x hdr tags proof touches fits defines adds}
+    (ha : edit.action = .write v e a none epoch [] .new via (some (x, hdr)) tags proof touches fits defines adds) :
     (⟨edit.id, edit.author, a, e, none, epoch, [], .new, via, true, x⟩ : Write) ∈ st'.writes ∧
       st'.uncounted = st.counting (creates st a v x ⟨hdr.type, a, e, hdr.created, tags.apply []⟩ proof false fits)
         edit.id := by

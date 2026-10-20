@@ -20,7 +20,8 @@
 //!   it shares; `cap_groups`: the cap groups a vault defines as entries of its own (`rules::CapGroup`). `aips` and
 //!   `aip`: the AIPs the device holds, their stages, labels, reviews and what each line changes (`aips`). `kinds`: the
 //!   kind table (`Kind::rules`, `words::kinds_json`), which the page reads, as in `world`, to say what each kind of
-//!   vault may own and hold, and never decides itself. `limits`: how deep the device's queries read. And of the
+//!   vault may own and hold, and never decides itself. `limits`: how deep the device's queries read. `api_pass`: the
+//!   device's signed pass to a service that holds no device (`sign::ApiPass`), which keeps nothing. And of the
 //!   device's vaults (`vaults`, V2): `world`, `database`, `note`, `log`, `creatable`, `taggable`, `requests` (the
 //!   access requests its person answers, and those its vaults made); `read_file`, whose bytes a node reads
 //!   (avendb-net's `Node::run`).
@@ -71,8 +72,10 @@ use crate::lab::Lab;
 use crate::lens::{self, Lane, Lens, Schema, View};
 use crate::merge::Place;
 use crate::ops::{self, FieldOp, Path, Record, RecordOp, Where};
-use crate::policy::{Line, Proposal, Refusal};
+use crate::policy::{Kind, Line, Proposal, Refusal};
 use crate::rules;
+use crate::sign;
+use crate::wire::Wire as _;
 use crate::words;
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Attrs, Sym, LENS_TYPE, SCHEMA_TYPE};
@@ -161,8 +164,10 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "get" => &["entry", "schema", "line", "at", "version"],
         "pin" => &["entry", "at"],
         "history" => &["entry", "limit"],
+        "room" => &["entry", "last", "before"],
         "schemas" => &["vault"],
         "groups" | "kinds" | "limits" | "requests" => &[],
+        "api_pass" => &["audience"],
         "create" => &["vault", "type", "tags", "schema", "value", "draft", "file", "as"],
         "set" | "unset" | "insert" | "remove" | "move" => {
             &["entry", "line", "schema", "as", "path", "value", "at", "to"]
@@ -215,13 +220,14 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
     })
 }
 
-/// The ops that only read what the device holds.
-const READS: [&str; 24] = [
+/// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
+const READS: [&str; 26] = [
     "query",
     "objective_check",
     "get",
     "pin",
     "history",
+    "room",
     "schemas",
     "aips",
     "aip",
@@ -241,6 +247,7 @@ const READS: [&str; 24] = [
     "code",
     "bring",
     "synced",
+    "api_pass",
 ];
 
 /// The ops that change nothing but ask what changes would do, by dry runs (`Lab::dry`): `may`, and `shares`, which
@@ -307,6 +314,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "get" => get(lab, me, o),
         "pin" => pin(lab, me, o),
         "history" => history(lab, me, o),
+        "room" => room(lab, me, o),
         "schemas" => schemas(lab, me, o),
         "aips" => aips::aips(lab, me, o),
         "aip" => aips::one(lab, me, o),
@@ -315,6 +323,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "cap_groups" => vaults::cap_groups(lab, me, o),
         "kinds" => Ok(words::kinds_json()),
         "limits" => Ok(limits(lab.query_depth(me))),
+        "api_pass" => api_pass(lab, me, o),
         "database" | "note" | "log" => vaults::data(lab, me, name, o),
         "creatable" => vaults::creatable(lab, me, o),
         "taggable" => vaults::taggable(lab, me, o),
@@ -831,6 +840,20 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
     Ok(json!({ "rows": shown, "count": count, "plan": plan.to_json(), "depth": depth }))
 }
 
+/// `{"op": "api_pass", "audience"}`: the device's pass to service `audience` (`sign::ApiPass`), made now by its clock,
+/// `{"pass", "expires"}`: the pass's wire bytes in base64url, and when it stops counting, seconds since 1970. The
+/// service hands it to avenDB's server, which says which vault the device is a device of and whether that vault is an
+/// admin of the server's coop (`world::pass_standing`); maiaCITY's API asks so before it opens an admin's page. It
+/// keeps nothing. Refused while the device is locked (`Locked`), or for no service's name.
+fn api_pass(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let audience = o.get("audience").and_then(Value::as_str).unwrap_or_default();
+    if audience.is_empty() || audience.len() > sign::MAX_AUDIENCE {
+        return Err(bad(format!("api_pass names its service in 1 to {} bytes: \"audience\"", sign::MAX_AUDIENCE)));
+    }
+    let pass = lab.api_pass(me, audience).ok_or(Refusal::Locked)?;
+    Ok(json!({ "pass": sign::base64url(&pass.to_wire()), "expires": pass.expires() }))
+}
+
 /// `{"op": "limits"}`, and what `set_limits` answers: the most rows and links down a query of the device reads
 /// (`depth`, `Lab::query_depth`, which `set_limits` sets and a node keeps with what opens its device again), how deep a
 /// query reads that names no depth of its own (`default`, `QUERY_DEPTH`), and the most a device may read (`ceiling`,
@@ -1098,6 +1121,83 @@ fn history(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Ref
         "vault": vault,
         "lines": h.lines().into_iter().map(line).collect::<Vec<_>>(),
         "edits": h.changes().iter().enumerate().map(edit).collect::<Vec<_>>(),
+    }))
+}
+
+/// How many messages `room` shows where it is asked for no number.
+const ROOM_SHOWN: usize = 50;
+
+/// `{"op": "room", "entry", "last"?, "before"?}`: room `entry` as its main line holds it, its last `last` messages (50
+/// where it names none), those before message `before` where it names one, in the list's order, the same on every
+/// device; `count`, how many it holds in all; and `more`, whether older ones are left. Each message, thread reply and
+/// reaction carries who added it, read off the room's history and never off the row (`policy::Mine`): `by`, the person,
+/// as `authors` names one (the human vault or the aven the device that wrote it belongs to, `{vault, name, kind}`), and
+/// `actor`, the vault it acted for, as an agent's device vault; both `null` where no counted write, or more than one
+/// vault, added it.
+fn room(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let entry = entry_of(o)?;
+    let last = count_of(o, "last")?.unwrap_or(ROOM_SHOWN);
+    let h = lab.history(me, entry).ok_or(Refused::NoEntry)?;
+    let item = lab.item_on(me, entry, MAIN).ok_or(Refused::NoEntry)?;
+    let vault = lab.vault_of_entry(me, entry).ok_or(Refused::NoEntry)?;
+    let seen = see(&lane(lab, me, vault), item, &Named::Own).ok_or_else(|| unseen(&Named::Own))?;
+    let mut record = Value::Object(seen.record.clone());
+    if record["kind"] != "room" {
+        return Err(bad("the entry is no room"));
+    }
+    let st = lab.state(me);
+    // who added each row, by its place, as `policy::Mine` reads it: one vault, or none where two did
+    let mut adders: HashMap<String, Option<(VaultId, VaultId)>> = HashMap::new();
+    for c in h.changes().iter().filter(|c| c.counted) {
+        let signed = c.write.via.last().copied().unwrap_or(c.write.actor);
+        for l in &c.adds {
+            let by = (c.write.actor, signed);
+            adders.entry(l.to_json().to_string()).and_modify(|x| *x = x.filter(|x| x.0 == by.0)).or_insert(Some(by));
+        }
+    }
+    let person = |v: VaultId| st.vault(v).is_some_and(|v| matches!(v.kind, Kind::Human | Kind::Aven));
+    fn mark(
+        rows: &mut Value,
+        at: &[Value],
+        field: &str,
+        adders: &HashMap<String, Option<(VaultId, VaultId)>>,
+        by: &dyn Fn(VaultId) -> Value,
+    ) {
+        let Some(rows) = rows.get_mut(field).and_then(Value::as_array_mut) else { return };
+        for row in rows {
+            let Some(id) = row.get("id").and_then(Value::as_i64) else { continue };
+            let place = [at, &[json!(field), json!({ "id": id })]].concat();
+            let who = adders.get(&Value::Array(place.clone()).to_string()).copied().flatten();
+            row["by"] = who.map_or(Value::Null, |(_, signed)| by(signed));
+            row["actor"] = who.map_or(Value::Null, |(actor, _)| actor.to_hex().into());
+            for inner in ["thread", "reactions"] {
+                mark(row, &place, inner, adders, by);
+            }
+        }
+    }
+    let by = |v: VaultId| match person(v) {
+        true => authors_json(lab, me, &[v])[0].clone(),
+        false => json!({ "vault": v.to_hex(), "name": null, "kind": null }),
+    };
+    mark(&mut record, &[], "messages", &adders, &by);
+    let messages = record["messages"].as_array().cloned().unwrap_or_default();
+    let end = match o.get("before") {
+        None => messages.len(),
+        Some(b) => {
+            let b = b.as_i64().ok_or_else(|| bad("before is a message's id"))?;
+            messages.iter().position(|m| m["id"].as_i64() == Some(b)).ok_or_else(|| bad("no message has that id"))?
+        }
+    };
+    let start = end.saturating_sub(last);
+    record["messages"] = messages[start..end].to_vec().into();
+    Ok(json!({
+        "entry": entry.to_hex(),
+        "vault": vault.to_hex(),
+        "heads": ids(&h.heads(MAIN)),
+        "read_only": seen.read_only,
+        "room": record,
+        "count": messages.len(),
+        "more": start > 0,
     }))
 }
 

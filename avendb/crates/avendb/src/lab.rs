@@ -102,8 +102,8 @@ use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
 use crate::sealed::{Brought, FileRoot};
 use crate::sign::{
-    self, Ceremony, DeviceKey, EnclaveKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, Suite, SUITES,
-    WebAuthn,
+    self, ApiPass, Ceremony, DeviceKey, EnclaveKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, Suite,
+    SUITES, WebAuthn,
 };
 use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, CAP_GROUP_TYPE, LENS_TYPE, SCHEMA_TYPE};
 use crate::sync::{
@@ -2037,7 +2037,8 @@ impl Lab {
         let readings = &self.held(on).readings;
         let lane = Lane::with_built_ins(view.lane_of(vault, readings));
         let read = h.reading(w, Some(content), on, &lane);
-        let touches = read.touches.as_deref().map(|ts| [ts, needs].concat());
+        // each set marked own or not as its readers will mark it, by whose each row is (`policy::Mine`)
+        let touches = read.touches.as_deref().map(|ts| h.mine().mark(w.actor, &[ts, needs].concat()));
         let attrs = if w.first { first.cloned() } else { view.at_write(w, readings).0 };
         let proof = self.prove(on, view, w, (touches.as_deref(), asks), attrs.as_ref())?;
         if !(read.fits || self.lawless) {
@@ -3217,6 +3218,21 @@ impl Lab {
         Some(Statement { keys: k.keys(), checked, logs, files, sig })
     }
 
+    /// Device `d`'s pass to service `audience`, made now by the Lab's clock (`sign::ApiPass`): `None` while it is
+    /// locked.
+    pub fn api_pass(&self, d: SignerId, audience: &str) -> Option<ApiPass> {
+        let Key::Device(k) = self.keys.get(&d)? else { return None };
+        Some(k.api_pass(audience, self.now))
+    }
+
+    /// What device `on`, the server of vault `home`, says of device `d` by its view and the cap groups it reads: the
+    /// vault `d` is a device of, and whether that vault is an admin of `home` (`gate::device_standing`).
+    pub fn device_standing(&self, on: SignerId, home: VaultId, d: SignerId) -> Option<(VaultId, bool)> {
+        let store = self.held(on);
+        let st = store.view();
+        gate::device_standing(st, &st.read_groups(&store.readings), home, d)
+    }
+
     /// The pass passkey `passkey`, used on device `d`, makes `d` at `made`, seconds since 1970 (`sign::RelayPass`): for
     /// `d` alone, which the server's relay lets in for ten minutes if the passkey roots a vault the server knows
     /// (`roots`), and which a peer hands the passkey's link card on (`link_card`). `None` unless the passkey is at hand
@@ -3596,9 +3612,15 @@ impl Lab {
     /// makes next in a log builds on the past the backup kept, so it forks from what it made there since (`forks`).
     /// A node starting again from its store on disk restores the same way.
     pub fn restore_backup(&mut self, d: SignerId, backup: &Backup) {
+        self.restore_from(d, backup.clone());
+    }
+
+    /// `restore_backup`, taking `backup`'s edits instead of a copy of them: a node starting again from its store holds
+    /// each edit once as it restores, not twice (Samuel 2026-10-20: the server's start took more than its 1 GB).
+    pub fn restore_from(&mut self, d: SignerId, backup: Backup) {
         let (follow, query_depth, gate) = (self.held(d).follow.clone(), self.held(d).query_depth, self.held(d).gate);
         self.stores.insert(d, Store { follow, query_depth, gate, ..Store::default() });
-        self.keep(d, backup.signed.clone(), &backup.blobs);
+        self.keep(d, backup.signed, &backup.blobs);
         self.refresh(d, &[]);
     }
 
@@ -4210,13 +4232,16 @@ struct Judging<'a> {
     history: History,
     scratch: Option<Scratch>,
     attrs: Option<Attrs>,
+    /// Whose each row is, by the writes counted so far (`policy::Mine`).
+    mine: crate::policy::Mine,
 }
 
 impl<'a> Judging<'a> {
     fn new(st: &State, en: &Entry, r: &Readings, lane: &'a Lane) -> Judging<'a> {
         let of_lane = r.headers.get(&en.creation).is_some_and(|h| h.ty.of_lane());
         let attrs = st.first_attrs(en, r);
-        Judging { vault: en.vault, of_lane, lane, history: History::default(), scratch: None, attrs }
+        let mine = Default::default();
+        Judging { vault: en.vault, of_lane, lane, history: History::default(), scratch: None, attrs, mine }
     }
 
     /// Judge the next write of the entry, `w`, on device `d`, by what it reads (`r`), the bodies it opened, and the cap
@@ -4235,26 +4260,29 @@ impl<'a> Judging<'a> {
         groups: &Groups,
     ) -> bool {
         let none = TagDelta::default();
-        let Judging { vault, of_lane, lane, history, scratch, attrs } = self;
+        let Judging { vault, of_lane, lane, history, scratch, attrs, mine } = self;
         let body = bodies.get(&w.edit);
         let (proof, content) = (body.and_then(|b| b.proof.as_ref()), body.map(|b| &b.content[..]));
         let asks = body.map(|b| &b.tags).unwrap_or(&none);
         let counts = |d: &EditId| history.get(*d).is_some_and(|c| c.counted);
         let read = w.deps.iter().all(counts).then(|| match *of_lane && w.first {
-            true => Reading { touches: Some(vec![Touch::Create]), fits: !r.unfit.contains(&w.edit) },
+            true => Reading { touches: Some(vec![Touch::Create]), adds: vec![], fits: !r.unfit.contains(&w.edit) },
             false => history.reading_on(scratch, w, content, d, lane),
         });
         let fits = read.as_ref().is_none_or(|r| r.fits);
         let at = At { attrs: attrs.as_ref(), place: st.place(w.edit), groups };
         let counted = read.as_ref().is_some_and(|r| {
+            let marked = r.touches.as_deref().map(|ts| mine.mark(w.actor, ts));
             r.fits
-                && st.lets(w, proof, r.touches.as_deref(), asks, at)
+                && st.lets(w, proof, marked.as_deref(), asks, at)
                 && history.passes(w, r.touches.as_deref())
                 && history.lands(w)
         });
+        let adds = read.as_ref().map(|r| r.adds.clone()).unwrap_or_default();
+        mine.note(w, &adds, counted);
         // what it touches and asks for, as a merge that brings it in reads it
         let touches = read.and_then(|r| r.touches).map(|ts| ts.into_iter().chain(rules::asked(asks)).collect());
-        let change = Change { write: w.clone(), body: content.map(<[u8]>::to_vec), fits, touches, counted };
+        let change = Change { write: w.clone(), body: content.map(<[u8]>::to_vec), fits, touches, counted, adds };
         history.push(change).expect("the view's writes are causally closed");
         // its tags count from now on where it acts for the vault
         if !w.first

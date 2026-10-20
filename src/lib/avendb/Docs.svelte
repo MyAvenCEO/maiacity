@@ -2,10 +2,10 @@
 	A vault's docs, in the layout every avenDB view has (./Frame.svelte) (Samuel 2026-10-18: the docs live in avenDB
 	alone, not on the public site; every skill one item of them, picked on the left, its history on the right as in
 	every other view). Each doc is a story tagged `doc` and its doc post (`post:doc`), both as the seed writes them
-	(./seed.js, ./docs.js): the skills of .claude/skills, the theOS paper and the avenDB architecture. On the left each
+	(./seed.js, ./docs.js): the skills of .claude/skills, the theOS paper and the avenDB and avenBRAIN architectures. On the left each
 	doc by its section, with a search; in the middle the one picked (`#docs/` and its entry), its text as it reads on the
 	line picked; on the right its history and versions (./Lines.svelte) and its outline. Edit opens its text as a note.
-	The two docs that are pages of the site, the theOS paper and the avenDB architecture, show on main as their pages do,
+	The docs that are pages of the site, the theOS paper and the avenDB and avenBRAIN architectures, show on main as their pages do,
 	figures and all (Samuel 2026-10-19: the docs' own layout in the middle, avenDB's version control on the right), with
 	their text a tab away; on another line, their text.
 -->
@@ -41,7 +41,7 @@
 				.map((e) => [/** @type {any} */ (e.record)?.story?.entry ?? '', e])
 		)
 	);
-	/** A doc's key, `skill/<name>`, `paper/theos` or `docs/avendb`, from its post's tag `doc:<key>`. @param {string} story */
+	/** A doc's key, `skill/<name>`, `paper/theos`, `docs/avendb` or `docs/avenbrain`, from its post's tag `doc:<key>`. @param {string} story */
 	const keyOf = (story) => (posts.get(story)?.tags ?? []).find((t) => t.startsWith('doc:'))?.slice(4) ?? '';
 	const docs = $derived(
 		seen
@@ -87,7 +87,8 @@
 	/** the docs that are pages of the site, each drawn here as its page draws it, by its key */
 	const PAGES = /** @type {Record<string, () => Promise<{ default: any }>>} */ ({
 		'paper/theos': () => import('$lib/theos/Paper.svelte'),
-		'docs/avendb': () => import('$lib/docs/AvenDB.svelte')
+		'docs/avendb': () => import('$lib/docs/AvenDB.svelte'),
+		'docs/avenbrain': () => import('$lib/docs/AvenBrain.svelte')
 	});
 	/** the doc picked as its page, or as its text */
 	let view = $state(/** @type {'page' | 'text'} */ ('page'));

@@ -562,7 +562,7 @@ A level's byte on the wire is its rank, and each level includes those below it, 
 | 1 | Relay | Relay | Learn the vault's devices from its log, so a server lets them through. Receive no entry. |
 | 2 | Backup | Backup | Keep and pass on the ciphertext of the entries it reaches. No key. |
 | 3 | Read | Viewer, Public | Open the entries it reaches. |
-| 4 | Write | Editor, Suggester | Also write them, as its ops allow, and create entries through it. |
+| 4 | Write | Editor, Suggester, Member | Also write them, as its ops allow, and create entries through it. |
 | 5 | Owner | Owner | Also issue shares resting on it. Governance. |
 
 A share's level is never chosen apart from its ops: it is the class of its strongest op (section 8). A rank of 6 or
@@ -676,6 +676,19 @@ its own (`avendb-net`): `INVITE`, where the server hands whoever names an unclai
 (`Lab::sign_up_card`), which the server refuses unless it takes every new human vault in them. A device does both in
 `Node::claim_invite`. The server must hold Backup over `home` to hold its invites. A server nobody has claimed serves no
 vault, and takes any.
+
+### A device's pass to a service
+
+A service that holds no device, maiaCITY's API, asks avenDB's server who a device is (G3, `passStanding` in
+`Gate.lean`). The device signs a short pass for that service (`sign::ApiPass`, the `api_pass` op, which keeps
+nothing): its keys, the service's name and when it was made, under a context string of its own
+(`sign::API_PASS_CONTEXT`), so it counts as nothing else, and only a device's own key makes one. The service posts it
+to the server's feed with its own name (`POST /feed/pass`, `{pass, audience}`), and the server answers, never kept,
+the vault the device is a device of and whether that vault is an admin of `home`, as the gate counts one
+(`gate::device_standing`, `world::pass_standing`): `{vault, admin}`, or `{vault: null, admin: false}` for a pass
+that isn't for that service, is older than `PASS_LIFE` (10 minutes) or made more than `PASS_SKEW` ahead, or whose
+signer is no vault's device. maiaCITY's API takes each pass once, and opens its admins' pages, its Postgres window
+among them, by that answer alone: no passkey session, role or key of its own (Samuel 2026-10-20).
 
 ### Servers: Relay or Backup
 
@@ -1015,11 +1028,13 @@ without padding). `share`, `share_group`, `revoke`, `settings` and `found` may a
 | `get` | `entry`, `schema`, `line`, `at`, `version` | One entry on a line, at a version, or at a release of its line by its number |
 | `pin` | `entry`, `at` | What a pin of the entry at a version names: its line, its number, the title there and the entry's short id (section 7) |
 | `history` | `entry`, `limit` | An entry's lines and every write of it, each with the changes it made and who stands behind it (`chain`) |
+| `room` | `entry`, `last`, `before` | A room's record on main, its last `last` messages or those before `before`, each row with who added it (`by`, `actor`), and `more` (section 8, "Rooms") |
 | `schemas` | `vault` | The schemas and lenses the vault's entries are read through |
 | `groups` | none | The built-in groups of ops, each with its level |
 | `cap_groups` | `vault` | The vault's cap groups the device reads, each `{entry, name, caps, includes}` as its version in force says |
 | `kinds` | none | The kind table (section 3): each kind's name (`kind`), `ownedBy` (`"signers"` or the kinds of vault that may own it), `most` owners (`null` for any), whether it holds `devices`, and how many of it one owner may own (`each`, `null` for any) |
 | `limits` | none | How deep the device's queries read: `{depth, default, ceiling}` (below) |
+| `api_pass` | `audience` | The device's signed pass to service `audience`, made now, which keeps nothing: `{pass, expires}`, its wire bytes in base64url (section 5, "A device's pass to a service"); `Locked` while the device is locked |
 | `world` | none | The device's world (below), or `null` while it belongs to no vault |
 | `database` | `vault` | A vault's database as the device holds it: its tables, audiences, schemas, lenses and counts |
 | `note` | `entry` | A note's page, an article's or any other record's alike: its lines, each proposal with its base and conflicts, and its edits |
@@ -1204,6 +1219,7 @@ owner (`share`). A keep share has no ops. The built-in groups (`rules::groups`):
 | Owner | Everything, and share on | Owner |
 | Editor | Read, create (on either line, so it drafts too), set, any tag, propose, merge | Write |
 | Suggester | Read, create on proposals (drafts alone), set on proposals, propose, merge on proposals | Write |
+| Member | Read, insert under `messages` on main, and set only its own rows' text, edited, deleted, mentions and links, and its own reactions' deleted, at both a message's and a thread reply's level (setOwn) | Write |
 | Viewer | Read | Read |
 | Public | Read, to Everyone | Read |
 | Backup | Keep and pass on the ciphertext | Backup |
@@ -1228,9 +1244,34 @@ A device refuses to make a write its chain doesn't allow (NotAllowed), as its re
 - **C2** readers agree: whether a write counts reads no selector, type or tag.
 - **C3** counted writes do what they may.
 - **C4** allowed writes count, and nothing built on an uncounted write does.
+- **C5** a member changes only its own: a counted setOwn touch is at a place whose innermost row the writer's own
+  counted writes added, and no one else's (below, "Rooms").
 - **M1** a counted merge brings in only what its merge ops' paths reach.
 - **M2** a merge into main through a share counts only on top of the vault's accept; the vault's own merges count as
   any write of its does.
+
+### Rooms: rows a member owns
+
+A room is an entry of type `room` (`lens::blobs::ROOM_V1`): a channel, a group, a DM or a note to self (`look`), what
+it is about (`about`, any entry, at its newest), its messages, each with its thread of replies of the same shape, and
+their reactions. Who may read it is its shares, never `look`: its members are the vaults it is shared with at
+**Member**, scoped to that entry (`{"entry": [id]}`); a DM is a room shared with one other vault, a note to self a room
+shared with no one. Nothing in the record names who wrote a row.
+
+**Whose a row is** is read off the room's history, never off the row (`policy::Mine`, `State.lean`'s `owns`): each
+counted write's readers note the rows it added (`doc::Footprint::adds`, the rows its after-record holds more often than
+its before-record), and a place inside a row is a vault's own where the innermost row it lies in was added by that
+vault's counted writes and no one else's; a place in no row, where its counted creation was that vault's. Every reader
+marks each set touch of a write `own` where its place is the writer's own, `set` where it isn't
+(`rules::Touch::Own`), whatever the write claims, before judging it, so every reader reaches the same verdict (C2). The
+op **setOwn** (`{"op": "set", .., "own": true}`, wire kind 14) allows only an `own` touch; a plain set allows both. Two
+vaults that add a row of one id own it neither: an edit is blocked, never forged. A device refuses to make a write
+whose set touches its readers won't mark own (NotAllowed), as it marks them on the history it holds
+(`History::mine`). Deleting a message or taking back a reaction sets its `deleted`; a member removes no row.
+
+`room {entry, last, before}` reads a room: its last `last` messages (50 by default), or those before message `before`,
+and `more`; each message, reply and reaction with `by`, the person who added it, and `actor`, the vault it acted for
+(an agent's device vault, say), both read off the history.
 
 ### Merges by policy: accepts and reviews
 
@@ -2156,6 +2197,7 @@ Each guarantee and the theorems that state it, in `Theorems.lean` unless the row
 | CG1 | A share of a cap group grants no more than its level, whatever version is in force; a new version narrows or widens it at once | `CG1_group_bounded` |
 | G1 | An invite is claimed once, with no owner signing, and makes no owner | `G1_claim_once` |
 | G2 | The server takes only new vaults it welcomes: a person's with the invite it claimed, a coop's or an aven's an admin owns | `G2_takes_welcome`, `G2_human`, `G2_founded` |
+| G3 | A device's pass shows a service the server's word on that device alone, for that service, while fresh; admin only of the device's own vault, as `isAdmin` says | `G3_standing_counts`, `G3_standing_admin` |
 
 T29 (marks mean what the keep rules say) is merged into T23, whose wants part it is.
 

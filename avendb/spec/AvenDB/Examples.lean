@@ -1716,6 +1716,26 @@ def sAdmin : List Edit := sInvite ++ chain 620 [
 #guard isAdmin (view sAdmin) city bob && !isAdmin (view sInvite) city bob
 #guard takes city sAdmin bobsCoop == some bobsCoop
 
+-- a pass Bob's Mac signs for maiaCITY's API: the server answers his vault, an admin once he holds the Admin group
+def bobsPass : ApiPass := { device := macB, audience := "maiaCITY API", made := 1000, signer := some macB }
+#guard passStanding (view sAdmin) city "maiaCITY API" 1000 bobsPass == some (bob, true)
+#guard passStanding (view sInvite) city "maiaCITY API" 1000 bobsPass == some (bob, false)
+-- Alice's Mac: her vault owns Maia City
+#guard passStanding (view sAdmin) city "maiaCITY API" 1000 { bobsPass with device := macA, signer := some macA } ==
+  some (alice, true)
+-- signed by another key, for another service, too old or made too far ahead: it counts for nothing
+#guard passStanding (view sAdmin) city "maiaCITY API" 1000 { bobsPass with signer := some macA } == none
+#guard passStanding (view sAdmin) city "another service" 1000 bobsPass == none
+#guard passStanding (view sAdmin) city "maiaCITY API" (1000 + passLife) bobsPass == none
+#guard passStanding (view sAdmin) city "maiaCITY API" (1000 + passLife - 1) bobsPass == some (bob, true)
+#guard passStanding (view sAdmin) city "maiaCITY API" (1000 - passSkew) bobsPass == some (bob, true)
+#guard passStanding (view sAdmin) city "maiaCITY API" (1000 - passSkew - 1) bobsPass == none
+-- a passkey or a stranger's key is no vault's device: nothing, whoever signs
+#guard passStanding (view sAdmin) city "maiaCITY API" 1000 { bobsPass with device := passkeyB, signer := some passkeyB } ==
+  none
+#guard passStanding (view sAdmin) city "maiaCITY API" 1000 { bobsPass with device := stranger, signer := some stranger } ==
+  none
+
 /-! ## A key move: every signer to ML-DSA-65
 
 avenDB signs with ML-DSA-65 where it signed with SLH-DSA (Samuel, 2026-10-19). A signer's id hashes its keys, so a
@@ -1768,5 +1788,81 @@ def keyMove : List Edit := allTodos' ++ chain 720 [
   (attempt passkeyA [] (.settings alice (.root (some passkeyA') [])))
 #guard accepted (keyMove.take (allTodos'.length + 1))
   (attempt passkeyA' [] (.settings alice (.root (some passkeyA') [])))
+
+/-! ## Chat rooms: a room is an entry, its messages rows, and Member edits only its own
+
+Alice's vault holds a room, an entry of type `room`, which it shares with Bob and Carol in Member. Each of them posts,
+replies and reacts by adding rows under `messages`, and changes only what is their own: a message, a reply or a
+reaction is its adder's, by the room's counted writes, which every reader holds alike. Nobody but Alice's vault changes
+the room's own fields; Alice's vault changes anything. -/
+
+def roomType : Sym := 41
+def room := 81
+def bobMember : Share := { shareOf 72 alice bob .write (byId room) with ops := memberOps }
+def carolMember : Share := { shareOf 73 alice carol .write (byId room) with ops := memberOps }
+
+def msg (i : Int) : Ops.Loc := [.field "messages", .row i]
+def at' (l : Ops.Loc) (f : String) : Ops.Loc := l ++ [.field f]
+def reaction (i j : Int) : Ops.Loc := at' (msg i) "reactions" ++ [.row j]
+
+/-- Vault `a` writes the room through share `c`, building on `deps`, with the touches `ts` and the rows `adds`. -/
+def roomWrite (a : VaultId) (c : ShareId) (deps : List EditId) (ts : List Touch) (adds : List Ops.Loc := []) :
+    Action :=
+  .write alice room a none 0 deps (proof := some c) (touches := ts) (adds := adds)
+
+def sRoom : List Edit := s2 ++ chain 650 [
+  (macA, [], .share (.grant bobMember)),
+  (macA, [], .share (.grant carolMember)),
+  -- a steward creates the room straight in the audience its shares select
+  (macA, [], create alice room alice [72, 73] roomType),
+  -- Bob posts message 1, Carol reacts to it with reaction 2 and replies in its thread with reply 3
+  (macB, [], roomWrite bob 72 [652] [.insert [.field "messages"]] [msg 1]),
+  (macC, [], roomWrite carol 73 [653] [.insert (at' (msg 1) "reactions")] [reaction 1 2]),
+  (macC, [], roomWrite carol 73 [654] [.insert (at' (msg 1) "thread")] [at' (msg 1) "thread" ++ [.row 3]])]
+#guard refused sRoom == [] && tidy sRoom
+#guard (view sRoom).uncounted == []
+#guard reads sRoom macB room && reads sRoom macC room && !reads sRoom macD room
+
+-- Bob edits his message, and deletes it; Carol takes back her reaction and edits her reply, inside Bob's message
+#guard counted sRoom (attempt macB [] (roomWrite bob 72 [655] [.set (at' (msg 1) "text") (some (.str "hi!"))]))
+#guard counted sRoom (attempt macB [] (roomWrite bob 72 [655] [.set (at' (msg 1) "deleted") (some (.bool true)),
+  .set (at' (msg 1) "text") (some (.str ""))]))
+#guard counted sRoom (attempt macC [] (roomWrite carol 73 [655] [.set (at' (reaction 1 2) "deleted") (some (.bool true))]))
+#guard counted sRoom (attempt macC [] (roomWrite carol 73 [655]
+  [.set (at' (at' (msg 1) "thread" ++ [.row 3]) "text") (some (.str "yes"))]))
+-- Carol's edit of Bob's message is accepted, as her share reaches the room, but nobody counts it, even where her write
+-- claims it is her own; nor Bob's of Carol's reaction or reply
+#guard accepted sRoom (attempt macC [] (roomWrite carol 73 [655] [.set (at' (msg 1) "text") (some (.str "mine"))]))
+#guard !counted sRoom (attempt macC [] (roomWrite carol 73 [655] [.set (at' (msg 1) "text") (some (.str "mine"))]))
+#guard !counted sRoom (attempt macC [] (roomWrite carol 73 [655] [.own (at' (msg 1) "text") (some (.str "mine"))]))
+#guard !counted sRoom (attempt macB [] (roomWrite bob 72 [655] [.set (at' (reaction 1 2) "deleted") (some (.bool true))]))
+#guard !counted sRoom (attempt macB [] (roomWrite bob 72 [655]
+  [.set (at' (at' (msg 1) "thread" ++ [.row 3]) "deleted") (some (.bool true))]))
+-- no Member names the room, removes or moves a row, nor writes on a proposal; Alice's vault changes anything
+#guard !counted sRoom (attempt macB [] (roomWrite bob 72 [655] [.set [.field "name"] (some (.str "Bob's"))]))
+#guard !counted sRoom (attempt macB [] (roomWrite bob 72 [655] [.remove [.field "messages"]]))
+#guard !counted sRoom (attempt macB [] (roomWrite bob 72 [655] [.move [.field "messages"]]))
+#guard counted sRoom (attempt macA [] (.write alice room alice none 0 [655]
+  (touches := [.set [.field "name"] (some (.str "Garden")), .set (at' (msg 1) "deleted") (some (.bool true))])))
+
+-- a row is its adder's by the counted writes alone: a row Bob added through a write nobody counts is nobody's, and a
+-- row two vaults added with one id is neither's
+def sRoomTwice : List Edit := sRoom ++ chain 656 [
+  (macC, [], roomWrite carol 73 [655] [.insert [.field "messages"]] [msg 1])]
+#guard refused sRoomTwice == [] && (view sRoomTwice).uncounted == []
+#guard !counted sRoomTwice (attempt macB [] (roomWrite bob 72 [656] [.set (at' (msg 1) "text") (some (.str "hi!"))]))
+#guard !counted sRoomTwice (attempt macC [] (roomWrite carol 73 [656] [.set (at' (msg 1) "text") (some (.str "hi!"))]))
+def sRoomUncounted : List Edit := sRoom ++ chain 656 [
+  (macB, [], roomWrite bob 72 [655] [.insert [.field "messages"], .set [.field "name"] none] [msg 4])]
+#guard refused sRoomUncounted == [] && (view sRoomUncounted).uncounted == [656]
+#guard !counted sRoomUncounted (attempt macB [] (roomWrite bob 72 [655] [.set (at' (msg 4) "text") (some (.str "x"))]))
+
+-- a newcomer reads the room's history: Alice adds Dave, and a steward moves the room to the audience with his share
+def sRoomDave : List Edit := sRoom ++ chain 656 [
+  (macA, [], .share (.grant { shareOf 74 alice dave .write (byId room) with ops := memberOps })),
+  (macA, [], .move alice room [72, 73, 74] [655])]
+#guard refused sRoomDave == [] && tidy sRoomDave && reads sRoomDave macD room
+#guard counted sRoomDave (attempt macD [] (.write alice room dave (some 657) 0 [655] (proof := some 74)
+  (touches := [.insert [.field "messages"]]) (adds := [msg 5])))
 
 end AvenDB.Examples

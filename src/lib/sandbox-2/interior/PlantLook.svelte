@@ -130,7 +130,7 @@
 
 	// another plant picked while the card is open: grow that one
 	$effect(() => {
-		const k = { id: kind.id, v: kind.v, stage: kind.stage, seed: kind.seed };
+		const k = { id: kind.id, v: kind.v, ...(kind.pin ? { pin: kind.pin } : {}), stage: kind.stage, seed: kind.seed };
 		show?.(k);
 	});
 </script>

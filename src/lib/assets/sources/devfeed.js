@@ -10,8 +10,8 @@
  * `VITE_RECIPE_FEED=dev` (../box/plugin.js), and only a dev server's page asks for it (`import.meta.env.DEV` is false
  * in a build, ../vault.js `feedOf`). The tests make their fake vault with it.
  */
-import { blake3 } from '@noble/hashes/blake3.js';
-import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
+import { utf8ToBytes } from '@noble/hashes/utils.js';
+import { hashBytes, hashText } from '../../../../game/hash.js';
 import { recipeFile } from '../engines.js';
 import { recipeEntryOf } from './avendb.js';
 
@@ -38,8 +38,8 @@ export function devFeedOf({ index, libraries }, cards, { vault = DEV_VAULT } = {
 			const first = !!at.variant && index.first[`${at.group}/${at.id}@${at.v}`] === at.variant;
 			const { type, tags, value, file } = recipeEntryOf({ code, card, first });
 			const bytes = utf8ToBytes(file.text);
-			const entry = bytesToHex(blake3(utf8ToBytes(`maiaCITY dev feed: ${at.label}`)));
-			rows.push({ entry, vault, name: 'Maia City', seed: 'Maia City', type, schema: '', tags, heads: [hash], created: 0, record: value, files: [{ root: bytesToHex(blake3(bytes)), size: bytes.length, len: bytes.length }] });
+			const entry = hashText(`maiaCITY dev feed: ${at.label}`);
+			rows.push({ entry, vault, name: 'Maia City', seed: 'Maia City', type, schema: '', tags, heads: [hash], created: 0, record: value, files: [{ root: hashBytes(bytes), size: bytes.length, len: bytes.length }] });
 			files.set(entry, bytes);
 		} catch (e) {
 			missing.push(`${at.label}: ${e instanceof Error ? e.message : String(e)}`);

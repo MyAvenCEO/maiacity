@@ -802,7 +802,7 @@ impl Folder {
             let taken = tokio::task::spawn_blocking(move || {
                 let mut lab = Lab::with_entropy(seed);
                 let me = lab.device("a check of the snapshots");
-                lab.restore_backup(me, &avendb::lab::Backup::new(signed, keys));
+                lab.restore_from(me, avendb::lab::Backup::new(signed, keys));
                 (lab.size(me).0 as u64, asks_by_frontiers(lab.log(me).edits()))
             });
             let (edits, ask) = taken.await?;

@@ -20,14 +20,16 @@ export type Place = {
 	/** a game's id in the Maia City COOP vault (game/games.js), from its address */
 	game?: string
 };
-export type IconName = 'back' | 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key' | 'ledger' | 'coops' | 'proposals' | 'leaf' | 'database' | 'universe' | 'gear';
+export type IconName = 'back' | 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key' | 'ledger' | 'coops' | 'proposals' | 'leaf' | 'database' | 'universe' | 'gear' | 'chat';
 
 // a founder's own apps: their money and the COOPs, read from MaiaCity V1's one game, the proposals of every game
-// (AIPs), which live only here, never on a game's own screens (Samuel 2026-10-17), and the Universe.
+// (AIPs), which live only here, never on a game's own screens (Samuel 2026-10-17), the chat, and the Universe.
 // Every sandbox draws the same ones.
 export const APPS: Place[] = [
 	{ href: `${base}/app/ledger/`, label: 'Ledger', icon: 'ledger', note: 'Your HEARTS and MINDs, every rent and pay day, every transaction' },
 	{ href: `${base}/app/coops/`, label: 'Coops', icon: 'coops', note: 'The three COOPs: treasuries, holders, assets, rents' },
+	// chat rooms on avenDB: notes to self, DMs, groups and a coop's channels, every signed-in person's
+	{ href: `${base}/app/chat/`, label: 'Chat', icon: 'chat', note: 'Notes to self, direct messages, groups and channels, end to end encrypted' },
 	{ href: `${base}/app/aips/`, label: 'Proposals', icon: 'proposals', note: 'Every game’s proposals: ideas, proposed, applied or rejected' },
 	// the Universe stream, on the public site (the navbar's Universe tab): the journal and Inspire me are its channels
 	{ href: `${base}/universe/`, label: 'Universe', icon: 'universe', note: 'What happens in maiaCITY, as it happens' }
@@ -86,7 +88,8 @@ export const gameAt = (path: string) =>
 	[...CITY, ...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ?? PAGES.find((p) => path.startsWith(p.href));
 /** the Worlds grid and the game assets' own pages (the Buildings, the Factories, the Biomes): every Traveler's; the
  *  Skills, the Postgres window and avenDB's own page: the admins'. The studio keeps its own gate: it works on the
- *  media vault through the API, which decides who may (`media:admin`), as the Postgres window's rows do (`db:read`) */
+ *  media vault through the API, which decides who may (`media:admin`). The Postgres window's rows open by the same
+ *  Admin group, as avenDB's server tells the API of the pass the page's device signs (api/src/standing.ts) */
 const PAGES: Place[] = [
 	{ href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', needs: TRAVELER },
 	{ href: `${base}/app/factories/`, label: 'Factories', icon: 'gear', needs: TRAVELER },

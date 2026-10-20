@@ -34,7 +34,7 @@
  * reloads). Every function here is pure: it takes a state and returns a new one.
  */
 
-import { checkViewCard } from '../genui/views.js';
+import { checkViewCard } from '../code/views.js';
 import { configAt } from '../code/index.js';
 import { SLOTS, SLOT_NAMES } from './views.js';
 
@@ -530,7 +530,7 @@ function checkMip(s, mip) {
 		}
 		if (Object.keys(change).length) coops[id] = change;
 	}
-	// the game's screens (Samuel, 2026-10-13): view cards, MCP Apps the page runs sandboxed (game/genui/views.js); a MIP
+	// the game's screens (Samuel, 2026-10-13): view cards, MCP Apps the page runs sandboxed (game/code/views.js); a MIP
 	// puts them in (a card with an id already there replaces it) or takes them out, beside the rules it changes
 	const views = (Array.isArray(mip.views) ? mip.views : []).slice(0, 10).map((v) => {
 		const r = checkViewCard(v, SLOTS);

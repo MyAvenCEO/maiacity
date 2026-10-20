@@ -249,12 +249,12 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
     post.writes = st.writes ∨
     (∃ w, post.writes = st.writes ++ [w] ∧ w.edit = edit.id ∧ w.author = edit.author ∧
       (∀ x ∈ st.writes, x.edit ≠ w.edit) ∧ depsIn st.writes w = true ∧
-      ∃ v e a s g d p via cr tg pr tc ft df, edit.action = .write v e a s g d p via cr tg pr tc ft df) ∨
+      ∃ v e a s g d p via cr tg pr tc ft df ad, edit.action = .write v e a s g d p via cr tg pr tc ft df ad) ∨
     (post.writes.Sublist st.writes ∧ ∀ w ∈ post.writes, depsIn post.writes w = true) := by
   unfold apply at h
   dsimp only at h
   split at h
-  case h_10 v e actor stay epoch deps proposal via create tags proof touches fits defines hact =>
+  case h_10 v e actor stay epoch deps proposal via create tags proof touches fits defines adds hact =>
     split at h
     · cases h
     rename_i hok
@@ -263,8 +263,8 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
       intro x hx hxe
       simp only [Bool.or_eq_true, List.any_eq_true, beq_iff_eq] at hok
       exact hok (.inl ⟨x, hx, hxe⟩)
-    have hw : ∃ v e a s g d p via cr tg pr tc ft df, edit.action = .write v e a s g d p via cr tg pr tc ft df :=
-      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, hact⟩
+    have hw : ∃ v e a s g d p via cr tg pr tc ft df ad, edit.action = .write v e a s g d p via cr tg pr tc ft df ad :=
+      ⟨_, _, _, _, _, _, _, _, _, _, _, _, _, _, _, hact⟩
     split at h
     · -- a new entry: its first write builds on nothing
       repeat' split at h
@@ -737,7 +737,7 @@ theorem resolve_stands (edits : List Edit) :
 theorem replay_writes_from :
     ∀ (l : List Edit) (st : State) (w : Write), w ∈ (replay st l).writes → w ∈ st.writes ∨
       ∃ o ∈ l, o.id = w.edit ∧ o.author = w.author ∧
-        ∃ v e a s g d p via cr tg pr tc ft df, o.action = .write v e a s g d p via cr tg pr tc ft df
+        ∃ v e a s g d p via cr tg pr tc ft df ad, o.action = .write v e a s g d p via cr tg pr tc ft df ad
   | [], _, _, h => .inl h
   | edit :: edits, st, w, h => by
     change w ∈ (replay ((step st edit).getD st) edits).writes at h

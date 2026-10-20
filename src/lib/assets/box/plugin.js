@@ -4,7 +4,7 @@
  * `vite dev` and in the build; in dev every file they were made of is watched, so a changed builder makes them again.
  *
  * - The engine (./engine.js) is bundled only to freeze it (`bundleEngine`, scripts/freeze-engine.mjs): the page boots
- *   a frozen one, static/engines/engine-v<n>.js, checked against its hash (../engines.json).
+ *   a frozen one, static/engines/engine-v<n>.js, checked against its hash (src/lib/sandbox/engines.json).
  * - Our recipes: each asset of an object group (../groups.js) bundled as a library of its own, made of its group's
  *   list narrowed to it (./narrow.js), so it holds that asset's code and what it shares with others, never another
  *   asset's, with three.js and its addons left to the engine (`bundleAsset`). One recipe file per version and variant
@@ -33,6 +33,7 @@ import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
+import { hashText } from '../../../../game/hash.js';
 import { rolldown } from 'rolldown';
 import { LATEST, RECIPE_END, RECIPE_HEAD, recipeTail } from '../engines.js';
 import { listsKeyOf, narrowTo } from './narrow.js';
@@ -90,8 +91,8 @@ async function bundle({ input, code, format, minify, external, plugins = [], own
 /** the engine as one script, three.js in it @returns {Promise<{ code: string, files: string[] }>} */
 export const bundleEngine = ({ minify = true } = {}) => bundle({ input: ENGINE, format: 'iife', minify });
 
-/** BLAKE3 of a text, in hex @param {string} text */
-export const hashText = (text) => bytesToHex(blake3(utf8ToBytes(text)));
+/** BLAKE3 of a text, in hex (game/hash.js, the one hash) */
+export { hashText };
 
 /** the code a library is bundled from: its group's list, and the two functions a recipe file and the listing call */
 async function entryOf(group, { ids = false } = {}) {

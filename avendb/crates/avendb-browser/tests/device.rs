@@ -564,7 +564,7 @@ async fn the_first_person_to_found_their_vault_through_a_new_server_owns_it() {
     assert_eq!(both, (ids(&standard["schemas"]), ids(&standard["lenses"])), "the app's own, by their ids");
     let own = "its own kinds, the article's, the spark's, the function's, the view's and the AIP's two versions, and the \
         lenses between";
-    assert_eq!((both.0.len(), both.1.len()), (29, 7), "{own}");
+    assert_eq!((both.0.len(), both.1.len()), (30, 7), "{own}");
     let public = |w: &Value| -> usize {
         let es = w["entries"].as_array().into_iter().flatten();
         es.filter(|e| e["vault"] == company.as_str() && e["kind"] == "schema" && e["public"] == true).count()
@@ -1177,8 +1177,8 @@ async fn a_note_takes_proposals_merges_and_forks_and_the_database_shows_every_re
         .collect();
     let own = "documents, todos, articles (v1 and v2), flows, functions (v1 and v2), recipes, views (v1 and v2), logic, \
         reviews, bundles, policies, AIPs (v1 and v2), posts, cards, profiles, files, stories, sparks (v1 and v2), requests, artifacts, \
-        artworks, cap groups";
-    assert_eq!(schemas.len(), 29, "{own}");
+        artworks, cap groups, rooms";
+    assert_eq!(schemas.len(), 30, "{own}");
     let lenses = db["builtIn"]["lenses"].as_array().map(Vec::len);
     assert_eq!(lenses, Some(7), "the lenses from article, spark, function, view, post, story and AIP v1 to v2");
     assert!(schemas.contains(&avendb::lens::ARTICLE_V1.id().to_hex()));
@@ -1541,6 +1541,69 @@ async fn hanas_browser_and_passkey_from_before_the_key_move_move_in_one_ceremony
     assert!(shows(&again, note, "Red, blue and green.").await, "it reads what its shelf kept");
     assert_eq!(again.moving().await.expect("what moves"), None);
     for n in [again.node(), &mac] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn hanas_ipad_away_as_her_browser_moved_learns_the_move_from_its_next_key() {
+    let admission = Admission::open();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url: RelayUrl = relay.url();
+    // Hana's passkey, Mac, iPad and browser, made before the key move: SLH-DSA
+    let mut lab = Lab::new();
+    let passkey = lab.passkey_from_in("Hana", [43; 32], Suite::SlhDsa);
+    let mac_h = lab.device_of(passkey, "Hana's Mac");
+    let ipad_h = lab.device_of(passkey, "Hana's iPad");
+    let (secret, nonce) = ([44; 32], [1; 32]);
+    let browser_h = lab.device_with_in("Hana's browser", secret, Suite::SlhDsa);
+    let hana = human_on(&mut lab, passkey, &[mac_h, ipad_h, browser_h]);
+    lab.sync_all(1);
+    let pass = |lab: &mut Lab, d| lab.relay_pass(d, passkey, now()).expect("her passkey's pass");
+    let opts = Options { relay: Some(url.clone()), relay_passes: vec![pass(&mut lab, mac_h)], ..Options::local() };
+    let mac = Node::spawn(lab.split(mac_h, &[], [1; 32]), mac_h, opts).await.expect("her Mac's node");
+    // her iPad is away all along, as a server restarts or a phone sleeps: it holds what she had before the move
+    let relay_passes = vec![pass(&mut lab, ipad_h)];
+    let ipad_opts = Options { relay: Some(url.clone()), relay_passes, ..Options::local() };
+    let ipad_lab = lab.split(ipad_h, &[], [5; 32]);
+    let shelf = Folder::new("hana-away");
+    let (relay_passes, on) = (vec![pass(&mut lab, browser_h)], Some(disk::open(&shelf.0).expect("its shelf")));
+    let opts = Options { relay: Some(url.clone()), relay_passes, shelf: on, ..Options::local() };
+    let browser = Node::spawn(lab.split(browser_h, &[], [2; 32]), browser_h, opts).await.expect("her browser's node");
+    until("the relay serves both", || async { relay.serves(&mac.id()) && relay.serves(&browser.id()) }).await;
+    browser.shutdown().await.expect("it closes, its shelf holding what it holds");
+    let hanas = Browser::new(Passkey::from_seed([43; 32]));
+    let (p256, pad) = {
+        let held = &hanas.0.lock().expect("the authenticator").0;
+        (held.public(), held.prf(&device_salt(&nonce)))
+    };
+    let mask: [u8; 32] = std::array::from_fn(|i| secret[i] ^ pad[i]);
+    let (name, relay_at, credential) = ("Hana's browser".to_string(), url.to_string(), "aGFuYQ".to_string());
+    let (device, follow, query_depth, touch) = (browser_h, vec![], None, None);
+    let meta = Meta { name, relay: relay_at, nonce, mask, credential, p256, device, follow, query_depth, touch };
+    meta.keep(&disk::open(&shelf.0).expect("its shelf")).await.expect("what opens it again");
+    let opened = Device::open(start_on(&shelf.0, "Hana's browser", &url, 3), &meta, hanas.unlock(nonce, [0xaa; 32]));
+    let opened = opened.await.expect("it opens");
+    let moving = opened.moving().await.expect("what moves, once it caught up with her Mac");
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: true }));
+    // her Mac goes away before she moves: no peer sees the move as it happens
+    mac.shutdown().await.expect("her Mac's node stops");
+    let again = start_on(&shelf.0, "Hana's browser", &url, 4);
+    let sign = |challenge, _: Moving| {
+        let hanas = &hanas;
+        async move { Ok(Signing { passkey: Some(hanas.ceremony(challenge, Step::Approve).await?), touch: None }) }
+    };
+    let moved = opened.move_keys(again, sign, |_| async { Ok(()) }).await.expect("it moves");
+    let moved = moved.expect("her keys moved");
+    let (me, next) = (moved.node().device(), moved.passkey());
+    // her iPad, which never saw the move, comes on: it learns it from her browser's next key
+    let ipad = Node::spawn(ipad_lab, ipad_h, ipad_opts).await.expect("her iPad's node");
+    let owns = move |lab: &Lab, d| {
+        let vault = lab.state(d).vault(hana);
+        vault.is_some_and(|v| v.owners.contains(&Principal::Signer(next)) && v.devices.contains(&me))
+    };
+    until("her iPad sees the move", || async { ipad.read(owns).await }).await;
+    for n in [moved.node(), &ipad] {
         n.shutdown().await.expect("the node shuts down");
     }
 }

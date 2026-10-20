@@ -2951,6 +2951,60 @@ struct Counter {
     /// Its attributes before the next write, where its readers read its header: its first ones, and the tags of each
     /// write acting for its vault.
     attrs: Option<Attrs>,
+    /// Whose each row is, by the writes counted so far.
+    mine: Mine,
+}
+
+/// Whose the places of an entry are, by its writes its readers counted so far, one after the other in the order they
+/// were accepted (`State.lean`'s `owns`): a place inside a row is the writer's own where the innermost row it lies in
+/// was added by that vault's counted writes and no one else's; a place in no row, where its counted creation was that
+/// vault's. Every reader of the entry counts the same writes, so every reader reaches the same verdict (C2). Two vaults
+/// that add a row with one id own it neither.
+#[derive(Clone, Debug, Default)]
+pub struct Mine {
+    adders: HashMap<crate::ops::Loc, Vec<VaultId>>,
+    creator: Option<VaultId>,
+}
+
+impl Mine {
+    /// Place `l` is vault `a`'s own.
+    pub fn owns(&self, a: VaultId, l: &crate::ops::Loc) -> bool {
+        match l.row() {
+            Some(r) => self.adders.get(&r).is_some_and(|vs| !vs.is_empty() && vs.iter().all(|v| *v == a)),
+            None => self.creator == Some(a),
+        }
+    }
+
+    /// Touches `ts` of a write by vault `a` as its readers judge them (`State.lean`'s `mine`): each set at a place that
+    /// is `a`'s own marked own (`rules::Touch::Own`), each other set not, whatever the write claims, the rest as they
+    /// are.
+    pub fn mark(&self, a: VaultId, ts: &[rules::Touch]) -> Vec<rules::Touch> {
+        use rules::Touch;
+        let set = |l: &crate::ops::Loc, v: &Option<rules::Scalar>| match self.owns(a, l) {
+            true => Touch::Own(l.clone(), v.clone()),
+            false => Touch::Set(l.clone(), v.clone()),
+        };
+        ts.iter()
+            .map(|t| match t {
+                Touch::Set(l, v) | Touch::Own(l, v) => set(l, v),
+                t => t.clone(),
+            })
+            .collect()
+    }
+
+    /// Write `w`, which added the rows `adds`, was judged: where its readers count it, those rows are its actor's too,
+    /// and a creation makes its actor the entry's creator.
+    pub fn note(&mut self, w: &Write, adds: &[crate::ops::Loc], counted: bool) {
+        if !counted {
+            return;
+        }
+        if w.first {
+            self.creator = Some(w.actor);
+        }
+        for l in adds {
+            self.adders.entry(l.clone()).or_default().push(w.actor);
+        }
+    }
 }
 
 impl Counter {
@@ -2963,6 +3017,7 @@ impl Counter {
             landed: !st.is_draft(en.id),
             holding: HashSet::new(),
             attrs: st.first_attrs(en, r),
+            mine: Mine::default(),
         }
     }
 
@@ -2973,11 +3028,13 @@ impl Counter {
         let e = self.entry;
         let main = |d: &EditId| st.write(*d).is_some_and(|x| x.entry == e && x.proposal == Proposal::Main);
         let at = At { attrs: self.attrs.as_ref(), place: st.place(w.edit), groups };
+        let marked = touches.map(|ts| self.mine.mark(w.actor, ts));
         let lets = !r.unfit.contains(&w.edit)
-            && st.lets(w, r.proofs.get(&w.edit), touches, asks, at)
+            && st.lets(w, r.proofs.get(&w.edit), marked.as_deref(), asks, at)
             && passes(w, touches, |d| self.accepts.contains(d), main)
             && (w.shares.is_empty() || w.proposal != Proposal::Main || self.landed);
         let counted = !w.deps.iter().any(|d| self.out.contains(d)) && lets;
+        self.mine.note(w, r.adds.get(&w.edit).map_or(&[][..], Vec::as_slice), counted);
         if !counted {
             self.out.push(w.edit);
         } else if w.first || w.deps.iter().any(|d| self.holding.contains(d)) {
@@ -3016,6 +3073,8 @@ pub struct Readings {
     pub tags: HashMap<EditId, TagDelta>,
     pub proofs: HashMap<EditId, Proof>,
     pub touches: HashMap<EditId, Vec<rules::Touch>>,
+    /// By the write: the rows it added, each by its place (`doc::Footprint::adds`), where it added any.
+    pub adds: HashMap<EditId, Vec<crate::ops::Loc>>,
     /// The writes that don't fit.
     pub unfit: HashSet<EditId>,
     /// By the write: the cap group it says, a write of a cap group entry (`slice::Body::defines`).
