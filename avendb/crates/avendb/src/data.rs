@@ -169,7 +169,7 @@ fn counts(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
             Action::Write { vault: v, .. } if *v == vault => writes += 1,
             Action::Mark { vault: v, caps: Some(_), .. } if *v == vault => moves += 1,
             Action::Keys { name: KeyName::Scoped(k, _), .. } if k.vault() == vault => keys += 1,
-            Action::Keys { name: KeyName::Entry(e, ..), .. } if of(e) => keys += 1,
+            Action::Keys { name: KeyName::Entry(e, ..), .. } | Action::Wraps { entry: e, .. } if of(e) => keys += 1,
             Action::Revoke(Revoking::Grant { share, .. }) if shares.contains(share) => revokes += 1,
             _ => {}
         }
@@ -310,6 +310,20 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
         Action::Claim { share, vault, via } => {
             ("claim", json!({ "share": hex(&share.0), "vault": hex(&vault.0), "via": vias(via) }))
         }
+        Action::Wraps { entry, wraps } => (
+            "wraps",
+            json!({
+                "entry": hex(&entry.0),
+                "wraps": wraps.iter().map(|w| json!({
+                    "key": key_name(w.name),
+                    "id": hex(&w.id.0),
+                    "to": recipient(&w.boxed.to),
+                })).collect::<Vec<_>>(),
+            }),
+        ),
+        Action::Checkpoint { vault, covers } => {
+            ("checkpoint", json!({ "vault": hex(&vault.0), "covers": covers.len() }))
+        }
         Action::Revoke(Revoking::Grant { share, actor, keep, via }) => (
             "revoke",
             json!({ "share": hex(&share.0), "actor": hex(&actor.0), "keep": keep.len(), "via": vias(via) }),
@@ -426,6 +440,8 @@ fn concerns(st: &State, id: EditId, a: &Action, shares: &HashMap<ShareId, VaultI
             KeyName::Scoped(k, _) => vec![k.vault()],
             KeyName::Entry(e, ..) => of(&e).into_iter().collect(),
         },
+        Action::Wraps { entry, .. } => of(entry).into_iter().collect(),
+        Action::Checkpoint { vault, .. } => vec![*vault],
     };
     vaults.extend(a.via().unwrap_or_default());
     let mut seen = HashSet::new();

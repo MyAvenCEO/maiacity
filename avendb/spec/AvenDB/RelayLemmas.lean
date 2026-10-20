@@ -572,6 +572,11 @@ theorem map_ite_none {α β : Type} (f : α → β) (c : Prop) [Decidable c] (x 
     Option.map f (if c then none else x) = if c then none else Option.map f x := by
   split <;> rfl
 
+/-- Whether a signer may wrap a key reads nothing a relay's state lacks. -/
+theorem wrapOk_ops (st : State) (d : SignerId) (e : EntryId) : wrapOk st.ops d e = wrapOk st d e := by
+  funext w
+  simp only [wrapOk, mayBox_ops, ops_seals]
+
 /-- Checking a relay's copy of an edit on the operational part of a state accepts it exactly when checking the edit on
     the state does, and the results have the same operational part. -/
 theorem apply_ops (st : State) (edit : Edit) :
@@ -703,6 +708,14 @@ theorem apply_ops (st : State) (edit : Edit) :
     simp only [Edit.blind, Action.blind]
     simp only [apply, sigs_mk]
     simp only [applyClaim_ops, Option.map_map, Function.comp_def, ops_ops]
+  | checkpoint v covers =>
+    simp only [Edit.blind, Action.blind]
+    simp only [apply, sigs_mk, vault?_ops, approves_ops]
+    split <;> simp only [Option.map_some, Option.map_none, ops_ops]
+  | wraps e ws =>
+    simp only [Edit.blind, Action.blind]
+    simp only [apply, wrapOk_ops]
+    split <;> simp only [Option.map_some, Option.map_none, ops_ops]
 
 /-! ## A relay's copy of an edit -/
 

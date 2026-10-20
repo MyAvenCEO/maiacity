@@ -323,6 +323,12 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
   · -- a claim
     obtain ⟨-, -, -, -, -, -, -, hv, -, rfl⟩ := applyClaim_some h
     exact Change.applied (.claim _ _ hv)
+  · -- a checkpoint changes nothing
+    cases h
+    exact Change.applied .same
+  · -- wraps
+    cases h
+    exact Change.applied .same
 
 /-! ## What exists
 

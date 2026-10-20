@@ -390,9 +390,35 @@ pub enum Action {
     /// the invite at sign-up with no tap of its inviter. From then on the share names `vault`, and its key is sealed to
     /// `vault`'s seed (`State::targets`); a second claim finds no invite left.
     Claim { share: ShareId, vault: VaultId, via: Vec<VaultId> },
+    /// The keys of entry `entry`'s earlier stays, each wrapped under the key the schedule links it to: what a move
+    /// leaves to do, in one edit and one signature rather than a `Keys` edit a key (`Wraps.lean`). Accepted where each
+    /// wrap would be as a `Keys` edit of its own, the entry's own keys alone; it changes nothing in the schedule.
+    Wraps { entry: EntryId, wraps: Vec<Wrap> },
+    /// Vault `vault`'s owners' word, by its root or its threshold, that each edit of `covers` carried its signers'
+    /// signatures when it stood (`Checkpoint.lean`): a device may then hold a covered edit without its signatures,
+    /// while the checkpoint stands and the edit's signers acted for the vault. It changes nothing in the state.
+    Checkpoint { vault: VaultId, covers: Vec<EditId> },
+}
+
+/// One key of an entry's earlier stays, `name` and its `id`, wrapped under the key the schedule links it to: one of a
+/// `Wraps` edit's.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Wrap {
+    pub name: KeyName,
+    pub id: KeyId,
+    pub boxed: KeyBox,
 }
 
 impl Action {
+    /// The boxes of keys it carries, each with the key's name and id: a `Keys` edit's, or a `Wraps` edit's.
+    pub fn key_boxes(&self) -> Vec<(KeyName, KeyId, &KeyBox)> {
+        match self {
+            Action::Keys { name, id, boxes, .. } => boxes.iter().map(|b| (*name, *id, b)).collect(),
+            Action::Wraps { wraps, .. } => wraps.iter().map(|w| (w.name, w.id, &w.boxed)).collect(),
+            _ => vec![],
+        }
+    }
+
     /// The edits a removal had seen and keeps, for removals: every revocation, handing the root on, and a mark that
     /// takes an entry to an audience.
     pub fn keep(&self) -> Option<&[EditId]> {
@@ -771,6 +797,8 @@ pub enum Refusal {
     /// Not a rule of the edits but of a server: a claim of it (`Lab::accept_claim`) doesn't add the server itself as a
     /// device of a device vault.
     NotClaiming,
+    /// A `Wraps` edit wraps nothing, or a key that isn't one of its entry's.
+    BadWraps,
 }
 
 /// What a removal takes away.
@@ -2506,6 +2534,26 @@ impl State {
                     return Err(Refusal::CapToItself);
                 }
                 Ok(Change::Claim { at, vault })
+            }
+            Action::Wraps { entry, wraps } => {
+                // each of the entry's own keys, wrapped where the schedule seals it, by a signer that may open it
+                if wraps.is_empty() || !wraps.iter().all(|w| matches!(w.name, KeyName::Entry(e, ..) if e == *entry)) {
+                    return Err(Refusal::BadWraps);
+                }
+                for w in wraps {
+                    self.may_box(edit.author, w.name)?;
+                    if !self.sealed(w.name, w.boxed.to.name()) {
+                        return Err(Refusal::Unsealed);
+                    }
+                }
+                Ok(Change::Nothing)
+            }
+            &Action::Checkpoint { vault, .. } => {
+                vault_at(vault)?;
+                if !approves(Principal::Vault(vault)) {
+                    return Err(Refusal::BelowThreshold);
+                }
+                Ok(Change::Nothing)
             }
             Action::Keys { name, boxes, clear, .. } => {
                 self.may_box(edit.author, *name)?;

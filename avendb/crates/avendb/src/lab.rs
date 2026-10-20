@@ -396,6 +396,8 @@ struct Store {
     gate: bool,
     /// What its work costs (`perf`): its own, never an edit's, and kept across a restore.
     perf: Perf,
+    /// Each file its opened bodies bring, by its root (`Lab::file`): worked out once, again after a body comes or goes.
+    files_at: OnceLock<HashMap<FileRoot, Brought>>,
 }
 
 impl Default for Store {
@@ -420,6 +422,7 @@ impl Default for Store {
             query_depth: lens::CEILING,
             gate: false,
             perf: Perf::default(),
+            files_at: OnceLock::new(),
         }
     }
 }
@@ -436,6 +439,7 @@ impl Store {
         self.slices.clear();
         self.unreadable.clear();
         self.bodies.clear();
+        self.files_at = OnceLock::new();
         self.spoilt.clear();
         self.readings = Readings::default();
         self.shown.clear();
@@ -487,15 +491,17 @@ impl KeyIndex {
     fn of(r: &Replay) -> KeyIndex {
         let mut ix = KeyIndex::default();
         for (edit, _) in r.edits.iter().zip(&r.stood).filter(|(_, stood)| **stood) {
-            if let Action::Keys { name, id, public, boxes, clear } = &edit.action {
+            // a `Keys` edit's boxes, or a `Wraps` edit's
+            for (name, id, b) in edit.action.key_boxes() {
+                ix.exists.insert(name);
+                ix.exists.insert(b.to.name());
+                ix.boxed.insert((name, id, b.to.name()));
+                ix.boxes.push((name, id, b.clone()));
+            }
+            if let Action::Keys { name, id, public, clear, .. } = &edit.action {
                 ix.exists.insert(*name);
                 if let Some(p) = public {
                     ix.made.entry(*name).or_default().push((*id, p.clone()));
-                }
-                for b in boxes {
-                    ix.exists.insert(b.to.name());
-                    ix.boxed.insert((*name, *id, b.to.name()));
-                    ix.boxes.push((*name, *id, b.clone()));
                 }
                 if let Some(c) = clear {
                     ix.clear.push((*name, *id, *c));
@@ -2918,6 +2924,7 @@ impl Lab {
         self.keep(on, vec![signed], &Blobs::new());
         let store = self.stores.get_mut(&on).expect("a device");
         store.bodies.insert(id, body);
+        store.files_at = OnceLock::new();
         Ok(id)
     }
 
@@ -3727,12 +3734,21 @@ impl Lab {
     /// with. Only a write that names the file in the clear counts, and only with the length its sealed size says.
     pub fn file(&self, d: SignerId, root: &FileRoot) -> Option<Brought> {
         let store = self.held(d);
-        let mut writes: Vec<(&EditId, &Body)> = store.bodies.iter().collect();
-        writes.sort_by_key(|(id, _)| **id);
-        writes.into_iter().find_map(|(id, body)| {
-            let named = store.signed.get(id).is_some_and(|s| s.edit.files().contains(root));
-            body.files.iter().find(|f| named && f.root == *root && f.fits()).cloned()
-        })
+        // the first write by id that names the file and holds its key, each file once, rather than every body sorted
+        // again at every file asked for (an entry list asks for thousands)
+        let at = store.files_at.get_or_init(|| {
+            let mut writes: Vec<(&EditId, &Body)> = store.bodies.iter().collect();
+            writes.sort_by_key(|(id, _)| **id);
+            let mut at = HashMap::new();
+            for (id, body) in writes {
+                let Some(named) = store.signed.get(id).map(|s| s.edit.files()) else { continue };
+                for f in body.files.iter().filter(|f| named.contains(&f.root) && f.fits()) {
+                    at.entry(f.root).or_insert_with(|| f.clone());
+                }
+            }
+            at
+        });
+        at.get(root).cloned()
     }
 
     /// The McEliece key `b` as device `d` holds it.
@@ -4031,6 +4047,7 @@ fn read(d: SignerId, store: &mut Store) {
             match keys::open_edit(key, body, &write_context(edit)).and_then(|plain| Body::from_wire(&plain).ok()) {
                 Some(b) => {
                     store.bodies.insert(id, b);
+                    store.files_at = OnceLock::new();
                 }
                 None => {
                     store.spoilt.insert(id);

@@ -455,6 +455,12 @@ impl Decode for KeyBox {
     }
 }
 
+impl Decode for crate::policy::Wrap {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(crate::policy::Wrap { name: KeyName::decode(r)?, id: KeyId::decode(r)?, boxed: KeyBox::decode(r)? })
+    }
+}
+
 /// A name: UTF-8 behind its length.
 impl Decode for Sym {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
@@ -848,6 +854,8 @@ impl Decode for Action {
                 clear: r.option()?,
             },
             12 => Action::Claim { share: ShareId::decode(r)?, vault: VaultId::decode(r)?, via: r.seq(32)? },
+            15 => Action::Wraps { entry: EntryId::decode(r)?, wraps: r.seq(70)? },
+            16 => Action::Checkpoint { vault: VaultId::decode(r)?, covers: r.seq(32)? },
             _ => return Err(WireError::Unknown),
         })
     }
@@ -1376,7 +1384,16 @@ mod tests {
         };
         let edit = |action| Edit { parents: vec![], depth: 0, author: k, cosigners: vec![], action };
         let claim = Action::Claim { share: ShareId([4; 32]), vault: VaultId([5; 32]), via: vec![VaultId([6; 32])] };
-        for action in [Action::Share(Sharing::Grant(share, vec![])), claim] {
+        // a move's wraps in one edit, and a checkpoint of a vault's owners (2026-10-20)
+        let entry = EntryId([7; 32]);
+        let wrap = crate::policy::Wrap {
+            name: KeyName::Entry(entry, None, 0),
+            id: KeyId([8; 32]),
+            boxed: KeyBox { to: Recipient::Key { name: KeyName::Entry(entry, Some(EditId([9; 32])), 0), id: KeyId([10; 32]) }, bytes: vec![1, 2, 3] },
+        };
+        let wraps = Action::Wraps { entry, wraps: vec![wrap.clone(), wrap] };
+        let checkpoint = Action::Checkpoint { vault: VaultId([5; 32]), covers: vec![EditId([11; 32]), EditId([12; 32])] };
+        for action in [Action::Share(Sharing::Grant(share, vec![])), claim, wraps, checkpoint] {
             let e = edit(action);
             assert_eq!(Edit::from_wire(&e.to_wire()), Ok(e));
         }
