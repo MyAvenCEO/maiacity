@@ -3,14 +3,21 @@
  * OUR RECIPES, FROM THE MAIA CITY VAULT — where every page that builds an asset reads its recipes (V5 of the avenDB
  * migration; Samuel 2026-10-17, "Ok do it!"): the sandboxes and the worlds, MaiaCity V1, the Things, Machines, Actors,
  * Plants, Buildings, Biomes and Factories, an asset's own page and the box's lab. The index (each recipe's hash, what it
- * builds and takes, the labels at it), `hashOf`, `recipeAt` and each recipe's card come from the `recipe` entries of the
- * server's own seed's coop, Maia City, on avenDB's feed, read as the code our hosts run is read (C10,
- * game/code/sources/feed.js: `seed=1`, one vault only, the seed's), and checked as ./sources/avendb.js `vaultRecipes`
- * checks them (each card, its tags and its engine; a file held to its ref's hash, as UTF-8, its last line the version
- * and variant its card says):
+ * builds and takes, the labels at it), `hashOf` and each recipe's card come from the `recipe` entries of the coop Maia
+ * City, of its vault by its id (game/code/sources/anchor.js `MAIA_CITY`), as avenDB's feed lists them, checked as
+ * ./sources/avendb.js `vaultRecipes` checks them (each card, its tags and its engine). Nothing of a recipe is built on
+ * that word alone (H2, game/code/sources/feed.js `provenRows`): before a page builds a recipe, from the box or from
+ * this device's cache, the proof of its entry, Maia City's own signed edits, is checked by avenDB's WebAssembly, every
+ * signature and rule, and it must name that recipe by the label the index does (`provenAt`). A page asks for the
+ * proofs of the entries it builds alone, together, one proof at a time (`proverOf`), and its file is held to the hash
+ * the proven card names, as UTF-8, its last line the version and variant its card says:
  *
- *   <feed>/code?seed=1&type=recipe                 the rows, each with its record and its card: once a page, the
- *                                                  first that builds an asset
+ *   <feed>/code?vault=<Maia City>&type=recipe      the index's rows, each with its record and its card: once a page,
+ *                                                  the first that builds an asset, as JSON
+ *   <feed>/proof?vault=<Maia City>&type=recipe     the proof of the entries a page builds: what it asked for before
+ *     &entry=<entry>,…                             at once, the rest as they are wanted; checked once a device while
+ *                                                  it is unchanged, the rows it proved kept, and asked again by its
+ *                                                  tag (304)
  *   <feed>/entry/<vault>/<entry>/file?seed=1       a recipe's source, its entry's newest file: only when this device's
  *                                                  cache lacks the build and the file (./cache.js `fileAt`), which
  *                                                  then keeps it under its hash, held to it again when read back
@@ -32,7 +39,7 @@
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { idOf, slug } from '$lib/ids.js';
-import { CODE_FEED, fileOf, seedFeedOf, seedRows } from '../../../game/code/sources/feed.js';
+import { CODE_FEED, KEPT_PROOFS, MAIA_CITY, NO_ANCHOR, fileOf, listedRows, listingOf, proofOf, provenRows, seedFeedOf } from '../../../game/code/sources/feed.js';
 import { buildOf } from './builds.js';
 import * as cache from './cache.js';
 import { LATEST } from './engines.js';
@@ -61,8 +68,20 @@ export const feedOf = () => (import.meta.env.DEV && import.meta.env.VITE_RECIPE_
 /** the most a recipe's file may be (the stand-in's, the largest, is 315 kB), as the avenDB app's Assets read one */
 export const MOST = 16_000_000;
 
-/** how long the feed may take to answer, and a recipe's file once it is asked for (ms) */
-const TIMEOUT = { rows: 15000, file: 30000 };
+/** how long the index's rows may take, a proof fetched and checked, and a recipe's file once it is asked for (ms) */
+const TIMEOUT = { rows: 30000, file: 30000 };
+
+/** the most entries one proof asks for: its address stays under 16 kB, each entry's id 65 characters of it */
+const MOST_IN_ONE = 200;
+
+/**
+ * How long the entries a page wants wait to be asked for together (ms): until none was wanted for `quiet`, and no
+ * longer than `most` after the first, so the kinds a world sets up one after another go in one proof.
+ */
+const BATCH = { quiet: 100, most: 1000 };
+
+/** how many proofs a page remembers it asked for (`proverOf`): the oldest beyond them are forgotten */
+const MOST_BATCHES = 8;
 
 /**
  * How many recipe files a page asks the feed for at once: a world asks for dozens together, and a phone's network or
@@ -170,8 +189,11 @@ function noted(e) {
 	return e;
 }
 
-/** the vault's recipes as ./sources/avendb.js `vaultRecipes` reads them, once they are in */
+/** the vault's recipes as ./sources/avendb.js `vaultRecipes` reads them off the index's rows, once they are in */
 let source = null;
+
+/** how the page proves the recipes it builds (`proverOf`): none on the dev server's stand-in */
+let prover = null;
 
 /** the index filled in place with what the vault holds (empty for nothing) */
 function fill(index) {
@@ -185,8 +207,8 @@ function fill(index) {
 /** where a recipe's file read off the feed is kept on this device, by the recipe's hash (./cache.js) */
 const KEPT = { get: cache.fileAt, put: cache.keepFile };
 
-/** the recipe each row of the feed is, by its hash, once the rows are read: its file is kept on the device by it */
-let hashOfRow = new WeakMap();
+/** the recipe each row of the feed is, by its hash, once the rows are proven: its file is kept on the device by it */
+const hashOfRow = new WeakMap();
 
 /** whether bytes hash to a recipe's hash @param {Uint8Array} bytes @param {string} hash */
 const holds = (bytes, hash) => bytes instanceof Uint8Array && bytesToHex(blake3(bytes)) === hash;
@@ -212,14 +234,103 @@ const readerOf = (get, feed, kept, again) => async (row) => {
 	return bytes;
 };
 
-/** the recipes read off the feed: what the page knows of them after */
-async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = TIMEOUT.rows, kept = KEPT, again = AGAIN } = {}) {
-	const url = seedFeedOf(['recipe'], feed);
+/**
+ * How a page proves the recipes it builds (H2). Each recipe's entry is asked for once the page wants it (`want`), and
+ * the entries wanted together go in one proof: one proof at a time, never one for each entry, nor many at once (the
+ * feed stopped answering at a hundred reads at once, 2026-10-19). The proofs a page asked for are remembered, by the
+ * page (`MOST_BATCHES`), and asked for first, as they were, the next time it loads: the same entries are the same
+ * proof, which the server answers unchanged (304) while it is, and the rows this device proved of it are read back
+ * with no WebAssembly run. `prove(entries)` is `{ source }` (`vaultRecipes` of the rows proved) or `{ error }`; `keep`
+ * where the page's proofs are remembered (game/code/sources/feed.js `KEPT_PROOFS`), and `pageOf` the page's address.
+ * @param {{ prove: (entries: string[]) => Promise<any>, keep: { get: (key: string) => any, put: (key: string, value: any) => void }, vault: string, pageOf?: () => string }} o
+ */
+function proverOf({ prove, keep, vault, pageOf = () => globalThis.location?.pathname ?? '' }) {
+	/** each entry's proof, once wanted or asked for: a promise of `{ source }` or `{ error }` @type {Map<string, Promise<any>>} */
+	const proofs = new Map();
+	/** how each entry's proof settles, while it waits */
+	const settle = new Map();
+	/** the proofs a page asked for before, waiting to be asked for again, in order */
+	const queue = [];
+	/** the entries wanted since, not asked for yet, and when the first and the latest were wanted */
+	const open = new Set();
+	let since = 0, latest = 0;
+	let flying = false, timer = null, page = null;
+	const waiting = (entry) => {
+		if (!proofs.has(entry)) proofs.set(entry, new Promise((ok) => settle.set(entry, ok)));
+		return proofs.get(entry);
+	};
+	const remembered = (at) => keep.get(`page:${vault}:${at}`)?.batches ?? [];
+	/** the next proof asked for, once none is: one the page asked for before at once, the entries wanted since once quiet */
+	function pump() {
+		if (flying) return;
+		clearTimeout(timer);
+		const again = queue.shift();
+		if (again) return void send(again, null);
+		if (!open.size) return;
+		const wait = Math.min(latest + BATCH.quiet, since + BATCH.most) - Date.now();
+		if (wait > 0) return void (timer = setTimeout(pump, wait));
+		const entries = [...open].sort().slice(0, MOST_IN_ONE);
+		for (const e of entries) open.delete(e);
+		since = latest = Date.now();
+		send(entries, page);
+	}
+	/** the proof of `entries` asked for, and each settled; remembered by page `at`, a proof it asked for afresh */
+	async function send(entries, at) {
+		flying = true;
+		const got = await prove(entries).catch((e) => ({ error: e?.message || String(e) }));
+		for (const e of entries) {
+			settle.get(e)?.(got);
+			settle.delete(e);
+		}
+		if (at !== null && 'source' in got) keep.put(`page:${vault}:${at}`, { batches: [...remembered(at), entries].slice(-MOST_BATCHES) });
+		flying = false;
+		pump();
+	}
+	/** the proofs the page at `at` asked for before, asked for again, each as it was, before any it wants now */
+	function recall(at) {
+		page = at;
+		for (const entries of remembered(at)) {
+			if (!Array.isArray(entries) || entries.every((e) => proofs.has(e))) continue;
+			for (const e of entries) {
+				waiting(e);
+				open.delete(e);
+			}
+			queue.push(entries);
+		}
+		pump();
+	}
+	return {
+		recall,
+		/** entry `entry`'s proof, asked for with the others wanted meanwhile: `{ source }` or `{ error }` */
+		want(entry) {
+			if (pageOf() !== page) recall(pageOf());
+			if (proofs.has(entry)) return proofs.get(entry);
+			const proof = waiting(entry);
+			if (!open.size) since = Date.now();
+			open.add(entry);
+			latest = Date.now();
+			pump();
+			return proof;
+		}
+	};
+}
+
+/** a row the vault deleted (tagged so: src/lib/avendb/seed.js GONE) is no recipe of it */
+const live = (r) => !(r?.tags ?? []).includes('avendb:deleted');
+
+/**
+ * The recipes read off the feed: what the page knows of them after. The index is read off the rows the feed lists;
+ * a recipe is built only once its entry's proof checks out (H2, `provenAt`), but on a dev server that reads its
+ * stand-in, whose rows are no vault's.
+ */
+async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = TIMEOUT.rows, kept = KEPT, again = AGAIN, vault = MAIA_CITY, verify, proofs = KEPT_PROOFS, page } = {}) {
+	const standIn = import.meta.env.DEV && import.meta.env.VITE_RECIPE_FEED === 'dev' && feed === feedOf();
+	const url = standIn ? seedFeedOf(['recipe'], feed) : listingOf(['recipe'], { vault, feed });
 	source = null;
+	prover = null;
 	fill(null);
 	Object.assign(recipes, { phase: 'loading', feed: url, vault: '', count: 0, error: '', refused: [], missed: [] });
 	tell();
-	const got = await seedRows(url, { fetch: get, timeout });
 	/** @param {string} error */
 	const failed = (error) => {
 		Object.assign(recipes, { phase: 'failed', error });
@@ -227,14 +338,30 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 		tell();
 		return recipes;
 	};
-	if ('error' in got) return failed(`the asset recipes could not be loaded from the Maia City vault: ${got.error}`);
-	// an entry the vault deleted (tagged so: src/lib/avendb/seed.js GONE) is no recipe of it
-	const rows = got.rows.filter((r) => !(r?.tags ?? []).includes('avendb:deleted'));
+	const couldNot = (why) => failed(`the asset recipes could not be loaded from the Maia City vault: ${why}`);
+	if (!standIn && !/^[0-9a-f]{64}$/.test(String(vault))) return couldNot(NO_ANCHOR);
+	/** @param {string[]} entries */
+	const prove = async (entries) => {
+		const proving = { vault, kinds: ['recipe'], entries, fetch: get, timeout, keep: proofs, ...(verify ? { verify } : {}) };
+		const got = await provenRows(proofOf(['recipe'], { vault, feed, entries }), proving);
+		if ('error' in got) return got;
+		const read = vaultRecipes(got.rows.filter(live), { read: readerOf(get, feed, kept, again) });
+		for (const h of Object.keys(read.index.recipes)) hashOfRow.set(read.rowOf(h), h);
+		return { source: read };
+	};
+	// the proofs this page asked for before go at once, beside the index's rows
+	const pageOf = page ?? (() => globalThis.location?.pathname ?? '');
+	const proving = standIn ? null : proverOf({ prove, keep: proofs, vault, pageOf });
+	proving?.recall(pageOf());
+	const got = standIn ? await listedRows(url, { fetch: get, timeout }) : await listedRows(url, { vault, fetch: get, timeout });
+	if ('error' in got) return couldNot(got.error);
+	const rows = got.rows.filter(live);
 	const read = vaultRecipes(rows, { read: readerOf(get, feed, kept, again) });
-	hashOfRow = new WeakMap(Object.keys(read.index.recipes).map((h) => [read.rowOf(h), h]));
+	if (standIn) for (const h of Object.keys(read.index.recipes)) hashOfRow.set(read.rowOf(h), h);
 	if (!Object.keys(read.index.recipes).length)
 		return failed(`the Maia City vault holds no asset recipes yet: ${url} listed ${rows.length ? `${rows.length} entries, none of them one` : 'none'}${read.refused.length ? ` (${read.refused.slice(0, 3).join('; ')})` : ''}`);
 	source = read;
+	prover = proving;
 	fill(read.index);
 	Object.assign(recipes, { phase: 'ready', vault: String(rows[0]?.vault ?? ''), count: Object.keys(INDEX.recipes).length, refused: [...read.refused] });
 	for (const r of read.refused) console.error(`asset recipes: refused, ${r}`);
@@ -247,9 +374,11 @@ let loading = null;
  * The vault's recipes, loaded once a page (and shared by every module of it): resolves to what the page knows of them
  * (`recipes`), ready or failed; never throws. With options, loaded again from there: `feed` where /feed/code is,
  * `fetch`, `timeout`, `kept` where the files are kept on the device (`{ get(hash), put(hash, bytes) }`, ./cache.js's
- * by default), `again` the waits before a dropped file is asked again (ms, `AGAIN`): a test's, or a page's that asks
- * again (`reloadRecipes`).
- * @param {{ feed?: string, fetch?: typeof globalThis.fetch, timeout?: number, kept?: { get: (hash: string) => any, put: (hash: string, bytes: Uint8Array) => any }, again?: number[] }} [o]
+ * by default), `again` the waits before a dropped file is asked again (ms, `AGAIN`), `vault` the anchor (Maia City's
+ * id, `MAIA_CITY`), `verify` and `proofs` how a proof is checked and where what it proved, and the proofs each page
+ * asked for, are kept (game/code/sources/feed.js `provenRows`, `KEPT_PROOFS`), `page` the page's address (`location`'s
+ * path): a test's, or a page's that asks again (`reloadRecipes`).
+ * @param {{ feed?: string, fetch?: typeof globalThis.fetch, timeout?: number, kept?: { get: (hash: string) => any, put: (hash: string, bytes: Uint8Array) => any }, again?: number[], vault?: string, verify?: (bytes: Uint8Array, vault: string, kinds: string[]) => Promise<any[]>, proofs?: { get: (key: string) => any, put: (key: string, value: any) => void }, page?: () => string }} [o]
  * @returns {Promise<typeof recipes>}
  */
 export const loadRecipes = (o) => (o ? (loading = load(o)) : (loading ??= load()));
@@ -316,16 +445,46 @@ export const pageOf = (base, hash, values) => {
 };
 
 /**
- * A recipe of the vault by its hash: `{ hash, code }`, its entry's file read off the feed once a page and held to its
- * hash, its version and its variant (./sources/avendb.js `vaultRecipes`). Rejects with NotInVault naming its ref for
- * one the vault doesn't hold, or holds otherwise, or whose file can't be read; told, as `hashOf` tells one.
+ * That recipe `hash` is about to be built (../load.js `canonical`): its entry's proof is asked for with the others the
+ * page wants meanwhile, so a world's kinds go in one proof (`provenAt`). Nothing for a hash the index doesn't hold.
+ * @param {string} hash
+ */
+export function wants(hash) {
+	const entry = prover && recipeInfo(hash) ? source?.rowOf(hash)?.entry : undefined;
+	if (entry) prover.want(entry);
+}
+
+/**
+ * What proves recipe `hash` (H2): the recipes its entry's proof proves (a ./sources/avendb.js `vaultRecipes`), once
+ * the proof the page asked for it with is checked and names that recipe by the label the index does; on the dev
+ * server's stand-in, its rows, which prove nothing. Every build waits for it (../load.js `loadAsset`, `recipeAt`).
+ * Rejects with NotInVault naming its ref, told as `hashOf` tells one, for a recipe the vault doesn't hold, whose proof
+ * failed, or that Maia City's signed edits don't hold as the index says.
+ * @param {string} hash
+ */
+export async function provenAt(hash) {
+	await loadRecipes();
+	const at = recipeInfo(hash);
+	if (!source || !at) throw noted(source ? new NotInVault(`no recipe ${String(hash).slice(0, 12)}… is in the Maia City vault`) : notIn(`recipe ${String(hash).slice(0, 12)}…`));
+	if (!prover) return source;
+	const got = await prover.want(source.rowOf(hash).entry);
+	if ('error' in got) throw noted(new NotInVault(`${at.label}: not built, as its proof didn't check out: ${got.error}`));
+	if (got.source.index.recipes[hash]?.label !== at.label)
+		throw noted(new NotInVault(`${at.label}: refused, Maia City's signed edits don't hold recipe ${hash.slice(0, 12)}… as ${at.label}, as the listing says`));
+	return got.source;
+}
+
+/**
+ * A recipe of the vault by its hash: `{ hash, code }`, once its entry's proof checks out (`provenAt`), its file read
+ * off the feed once a page and held to the hash, the version and the variant its proven card names
+ * (./sources/avendb.js `vaultRecipes`). Rejects with NotInVault naming its ref for one the vault doesn't hold, or holds
+ * otherwise, whose proof fails or whose file can't be read; told, as `hashOf` tells one.
  * @param {string} hash @returns {Promise<{ hash: string, code: string }>}
  */
 export async function recipeAt(hash) {
-	await loadRecipes();
-	if (!source) throw noted(notIn(`recipe ${String(hash).slice(0, 12)}…`));
+	const proven = await provenAt(hash);
 	try {
-		return await source.recipeAt(hash);
+		return await proven.recipeAt(hash);
 	} catch (e) {
 		throw noted(e);
 	}

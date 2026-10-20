@@ -1678,12 +1678,15 @@
 					(<code>/feed/code</code>), any one of them whole (<code>/feed/entry/&lt;vault&gt;/&lt;entry&gt;</code>), and
 					the files a code entry brings, as plain text no page runs as a script
 					(<code>/feed/entry/&lt;vault&gt;/&lt;entry&gt;/file</code>). <code>vault=</code> keeps one vault’s, and
-					<code>bare=1</code> leaves the records out. Beside them it serves the public posts
+					<code>bare=1</code> leaves the records out. It also proves a vault’s code: the signed edits that make some of
+					its code entries, or all of one kind (<code>/feed/proof?vault=&lt;vault&gt;&amp;type=recipe&amp;entry=…</code>),
+					which a device checks itself. Beside them it serves the public posts
 					(<code>/feed/posts</code>), the pictures they show (<code>/feed/files</code>), the site’s media
 					(<code>/feed/media</code>), and whether an invite is open (<code>/feed/invite/&lt;share&gt;</code>). Anyone
 					can call a vault Maia City, so the feed names Maia City only where it stands in the server’s seed, and
 					<code>?seed=1</code> keeps its entries alone. Every page, signed in or not, and the API, every minute, read
-					code and configs from it, and check them again as they load (<a href="#code">Code in a box</a>).
+					code and configs from it by Maia City’s vault id, run only what its proof proves, and check them again as
+					they load (<a href="#code">Code in a box</a>).
 				</li>
 			</ul>
 		</section>
@@ -1891,8 +1894,8 @@
 			</p>
 			<h3>Where it runs today</h3>
 			<p class="prose-col">
-				Most code that runs from a vault is Maia City’s, read from the feed with <code>?seed=1</code>: the recipes of
-				every 3D world, MaiaCity V1’s default screen, and the configs the games read. avenDB’s Assets page builds the
+				Most code that runs from a vault is Maia City’s, read from the feed by its vault id: the recipes of every 3D
+				world, MaiaCity V1’s default screen, and the configs the games read. avenDB’s Assets page builds the
 				recipes of any vault the person reads, and the recipes an AIP proposes build in a box too, before anyone accepts
 				them. Functions come from the entry’s vault, from Maia City where the person’s vault owns it, and from the app.
 				The OS, the Mac app, runs the same pages and boxes in macOS’s WebKit.
@@ -1907,6 +1910,23 @@
 				add live in maiaCITY’s Postgres, outside avenDB’s shares, history and proposals. Each screen still shows in a
 				view frame, and its events change nothing.
 			</p>
+			<h3>Proven to be Maia City’s</h3>
+			<p class="prose-col">
+				A page and the API run only the code Maia City’s own signed edits prove, checked on the device that runs it.
+				Maia City’s vault id is written in the repo, not set by a server or a deploy. Beside its list of code, the feed
+				hands out a proof: the signed edits that made the code, with the shares and devices that let its signers write
+				it, and nothing private. The device takes them as any device takes a sync: avenDB’s WebAssembly checks every
+				signature, replays the vault’s rules, and reads back the code of that one vault, by its id, never by its name. A
+				row the server made up or changed, or a write the vault never signed or its shares don’t allow, is in none of
+				it, and doesn’t run.
+			</p>
+			<p class="prose-col">
+				Views, logic and configs come in one small proof. A world’s recipes come in one proof for the whole page, of the
+				recipes it builds and no others, asked for once, never one at a time. A recipe builds only once its proof checks
+				out and holds the same hash under the same name as the list says. A device keeps the code it proved, not the
+				proof, and on its next visit only asks whether the proof changed. Until the vault id is set, pages and the API
+				run the repo’s own views, logic and configs, and the 3D worlds build nothing and say why.
+			</p>
 			<h3>Not protected yet</h3>
 			<ul class="prose-col">
 				<li>
@@ -1920,8 +1940,8 @@
 					in WebKit, which The OS and Safari use.
 				</li>
 				<li>
-					<b>Which code is Maia City’s.</b> Pages and the API check hashes and shapes, not avenDB’s signatures, so they
-					rest on the server and TLS for which code is the vault’s.
+					<b>The newest of Maia City’s code.</b> A device checks that the code it runs is Maia City’s, not that it is
+					all of it or the newest: the server can leave an entry out, or serve an older version Maia City signed.
 				</li>
 				<li>
 					<b>Memory, and work between builds.</b> Only QuickJS has a memory cap. A browser gives a worker none, so a

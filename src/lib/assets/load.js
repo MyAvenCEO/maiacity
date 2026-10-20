@@ -4,9 +4,10 @@
  * anyone's would be got: from this device's cache (./cache.js) when it was built here before, else from the asset box
  * (./box/host.js), which runs the recipe on the frozen engine it was made for. Either way it is checked (its card
  * against the card's schema, its data by ./box/rebuild.js) and built into three.js objects by our own code. The recipe
- * is the only truth, and it is the Maia City vault's (./vault.js): its index names the hash, and its entry's file, read
- * off avenDB's feed and held to that hash, is what the box runs. What it made stays on this device, so a page that
- * finds it in the cache reads no recipe's file and starts no box.
+ * is the only truth, and it is the Maia City vault's (./vault.js): its index names the hash, Maia City's own signed edits
+ * prove it (./vault.js `provenAt`), and its entry's file, read off avenDB's feed and held to that hash, is what the box
+ * runs. A build waits for that proof, from the box or the cache alike. What it made stays on this device, so a page
+ * that finds it in the cache reads no recipe's file and starts no box.
  *
  * What a recipe's entry declares is held (H4, `heldTo`): it runs on the box engine its card names (`engineOf`), in a
  * box of that engine's; it requires of the engine only the modules its manifest names; its contract names only checks
@@ -18,7 +19,7 @@ import { rebuild } from './box/rebuild.js';
 import * as cache from './cache.js';
 import { engineAt } from './engines.js';
 import { valuesOf } from './params.js';
-import { INDEX, buildOf, cardOf, declaredOf, heldAt, loadRecipes, parseBuild, recipeAt } from './vault.js';
+import { INDEX, buildOf, cardOf, declaredOf, heldAt, loadRecipes, parseBuild, provenAt, recipeAt, wants } from './vault.js';
 import { libsOf } from './sources/avendb.js';
 import { checkCard } from './schemas/index.js';
 
@@ -84,12 +85,15 @@ export function heldTo(code, declared, engine) {
 /**
  * A build of one of the vault's recipes, named as it is kept: its hash and every value it takes, its own where not
  * given, so two names of one build are one; and the engine it runs on. Throws for a value its recipe does not take,
- * and NotInVault for a hash the vault doesn't hold (or while its recipes aren't in: ./vault.js `loadRecipes`).
+ * and NotInVault for a hash the vault doesn't hold (or while its recipes aren't in: ./vault.js `loadRecipes`). A build
+ * named is one the page is about to make: its recipe's proof is asked for, with the others named meanwhile (./vault.js
+ * `wants`).
  * @param {string} name `<hash>?its=values`
  */
 export function canonical(name) {
 	const { hash, params } = parseBuild(name);
 	const at = heldAt(hash);
+	wants(hash);
 	const values = at.params?.length ? valuesOf(at.params, params) : undefined;
 	if (params && !values) throw new Error(`${at.label} takes no parameters`);
 	return { hash, at, values, name: buildOf(hash, values), engine: engineOf(hash) };
@@ -141,6 +145,8 @@ export async function loadAsset(name, { box, cache: useCache = true, store = cac
 	parseBuild(name);
 	await loadRecipes();
 	const c = canonical(name);
+	// nothing of a recipe is shown, from the cache or the box, before Maia City's signed edits prove it (H2)
+	await provenAt(c.hash);
 	const key = cache.keyOf({ engine: c.engine.blake3, recipe: c.hash, params: c.values });
 	const said = { name: c.name, key, label: c.at.label };
 	if (useCache) {

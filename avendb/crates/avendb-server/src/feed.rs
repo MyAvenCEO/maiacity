@@ -36,11 +36,22 @@
 //! writes with the record at it (`brought`, `Lab::brought`), and any file a row lists is served by its root at `GET
 //! /feed/entry/<vault>/<entry>/file/<root>` (`OF_ROOT`).
 //!
+//! And the proof of a vault's public code (`GET /feed/proof`, `PROOF`, `avendb::provenance`): the signed edits that
+//! prove the code entries `/feed/code` lists of one vault (`vault=<64 hex>`, or `seed=1` for Maia City's), of the kinds
+//! and entries a query names (`type=`, `entry=<64 hex>,…`), as one avenDB `wire::Reply`, its `ETag` the hash of their
+//! ids (`provenance::frontier`). They are of what a stranger that follows the vault may receive, nothing more, and a
+//! page or maiaCITY's API takes them as a device takes a sync reply (`provenance::Observer`): every signature checked,
+//! every rule replayed, the rows it reads back those of the vault it is anchored to by its id. So which code is a
+//! vault's is proven where it runs, and no row's JSON is taken on the server's word (H2 of maiaCITY's hardening plan).
+//! A page asks for the proof of the entries it builds alone, and the next time asks for it by its tag: it is told the
+//! proof is not modified while it is the same (304). Every answer of JSON but an invite's is tagged so too, by a BLAKE3
+//! hash of its bytes, so a page that reads a listing again reads none of it while it is the same.
+//!
 //! And whether an invite is open (`GET /feed/invite/<share>`, `INVITE`, `world::open_invite`): `{"open": true}` while that
 //! share is a live invite of Maia City's that no vault claimed yet, which maiaCITY's API asks before it signs anyone up,
 //! so that an invite is only the share a device of Maia City signs, with no passkey and no code of the API's.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -48,6 +59,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result};
 use avendb::id::{BlobId, EntryId, ShareId, VaultId};
+use avendb::provenance;
 use avendb::sealed::FileRoot;
 use avendb::world;
 use avendb_net::Node;
@@ -97,11 +109,21 @@ pub const MEDIA: &str = "/feed/media/";
 /// Where the server says whether an invite is open, at `INVITE` `<share>`, its id in 64 hex digits (`invite`).
 pub const INVITE: &str = "/feed/invite/";
 
+/// Where the proof of one vault's public code is served (`proof`): `PROOF?vault=<64 hex>` or `PROOF?seed=1`, and the
+/// kinds (`type=`) and entries (`entry=`) it proves.
+pub const PROOF: &str = "/feed/proof";
+
 /// The most bytes one answer of `MEDIA` carries of a file read by `Range`: a film is read a window at a time.
 const WINDOW: u64 = 8 << 20;
 
 /// The most kinds one query names.
 const MOST_KINDS: usize = 16;
+
+/// The most entries one query names (`entry=`).
+const MOST_ENTRIES: usize = 512;
+
+/// The most proofs the server keeps worked out, each of one query (`proven`): past that, it forgets them all.
+const MOST_PROOFS: usize = 64;
 
 /// The most bytes of a picture or of a code entry's file the feed serves, which it reads whole.
 const LARGEST: u64 = 32 << 20;
@@ -118,13 +140,22 @@ const MOST: usize = 200;
 /// What the server last worked out of a feed: when, and what. Held while it is worked out anew (`fresh_or`).
 type Kept<T> = Arc<Mutex<Option<(Instant, T)>>>;
 
-/// What the server last worked out of each: the feed's JSON, the entries everyone may read (`Listed`), and the site's
-/// media (`Media`).
+/// What the server last worked out of each: the feed's JSON, the entries everyone may read (`Listed`), the site's
+/// media (`Media`), and the proofs of code it was asked for (`Proven`), by what each asks (`Asked`).
 #[derive(Clone, Default)]
 struct Feeds {
     posts: Kept<Bytes>,
     entries: Kept<Listed>,
     media: Kept<Media>,
+    proofs: Arc<Mutex<BTreeMap<String, Kept<Option<Proven>>>>>,
+}
+
+/// A proof of a vault's code, as the server worked it out (`proven`): its bytes, one `wire::Reply`, and its tag, the
+/// hash of its edits' ids in hex, quoted, as an `ETag` is.
+#[derive(Clone)]
+struct Proven {
+    bytes: Bytes,
+    tag: Arc<str>,
 }
 
 /// The site's media, as the server worked them out (`site_media`): each file of the seed's coop everyone may read that
@@ -186,8 +217,9 @@ impl Feed {
 
 /// The answer to `request`: for a GET or HEAD, the feed of `PATH`, a picture of `FILES` (`picture`), a medium of `MEDIA`
 /// by the `Range` it asks (`media`), the entries of `ENTRIES` or the code of `CODE` (`listed`), an entry of `ENTRY`
-/// (`entry`), or a file of it (`OF_ENTRY`, `OF_ROOT`, `source`), or whether an invite is open (`INVITE`, `invite`);
-/// nothing for a browser's OPTIONS before any of them; and not found for anything else.
+/// (`entry`), or a file of it (`OF_ENTRY`, `OF_ROOT`, `source`), the proof of some code (`PROOF`, `proof`), or whether
+/// an invite is open (`INVITE`, `invite`); nothing for a browser's OPTIONS before any of them; and not found for
+/// anything else.
 async fn answer(
     request: Request<Incoming>,
     node: Arc<Node>,
@@ -203,13 +235,18 @@ async fn answer(
         return Ok(media(at, range, &node, &feeds.media).await);
     }
     let query = request.uri().query().unwrap_or_default();
+    let had = request.headers().get(header::IF_NONE_MATCH).and_then(|t| t.to_str().ok());
+    if path == PROOF && reads {
+        return Ok(proof(query, had, &node, &feeds).await);
+    }
     if let Some(at) = path.strip_prefix(ENTRY).and_then(|at| at.strip_suffix(OF_ENTRY)).filter(|_| reads) {
         return Ok(source(at, None, query, &node, &feeds.entries).await);
     }
     if let Some((at, root)) = path.strip_prefix(ENTRY).and_then(by_root).filter(|_| reads) {
         return Ok(source(at, Some(root), query, &node, &feeds.entries).await);
     }
-    let ours = [PATH, ENTRIES, CODE].contains(&path) || [FILES, MEDIA, ENTRY, INVITE].iter().any(|at| path.starts_with(at));
+    let under = [FILES, MEDIA, ENTRY, INVITE].iter().any(|at| path.starts_with(at));
+    let ours = [PATH, ENTRIES, CODE, PROOF].contains(&path) || under;
     let invited = path.strip_prefix(INVITE).filter(|_| reads);
     let (status, body) = if let Some(at) = invited {
         invite(at, &node).await
@@ -222,17 +259,34 @@ async fn answer(
             _ => (StatusCode::NOT_FOUND, error("no such feed")),
         }
     };
-    let mut response = Response::new(Full::new(body));
-    *response.status_mut() = status;
+    // what a reader holds already, by its tag, is not modified: an invite never is
+    let tag = (status == StatusCode::OK && reads && invited.is_none()).then(|| tag_of(&body));
+    let held = tag.as_deref().is_some_and(|tag| holds(had, tag));
+    let mut response = Response::new(Full::new(if held { Bytes::new() } else { body }));
+    *response.status_mut() = if held { StatusCode::NOT_MODIFIED } else { status };
     let headers = response.headers_mut();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
     headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
     headers.insert(header::ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("GET, HEAD, OPTIONS"));
-    headers.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("Range"));
+    headers.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("Range, If-None-Match"));
+    if let Some(tag) = tag {
+        headers.insert(header::ETAG, HeaderValue::from_str(&tag).expect("a tag in hex"));
+        headers.insert(header::ACCESS_CONTROL_EXPOSE_HEADERS, HeaderValue::from_static("ETag"));
+    }
     // an invite opens and closes from one moment to the next: never kept
     let kept = if invited.is_some() { "no-store" } else { "public, max-age=10" };
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(kept));
     Ok(response)
+}
+
+/// The tag of an answer of `body`: a BLAKE3 hash of its bytes in hex, quoted, as an `ETag` is.
+fn tag_of(body: &[u8]) -> String {
+    format!("\"{}\"", blake3::hash(body).to_hex())
+}
+
+/// A reader that asks with `had` (`If-None-Match`) holds what is tagged `tag`: one of the tags it names, weak or not.
+fn holds(had: Option<&str>, tag: &str) -> bool {
+    had.is_some_and(|had| had.split(',').any(|t| t.trim().trim_start_matches("W/") == tag))
 }
 
 /// The answer to a GET or HEAD of `INVITE` `<share>`: whether that share is an invite of the seed's coop, Maia City,
@@ -325,14 +379,16 @@ struct Asked {
     seed: bool,
     vault: Option<String>,
     kinds: Option<Vec<String>>,
+    entries: Option<BTreeSet<String>>,
     bare: bool,
 }
 
 impl Asked {
-    /// Query `query`, `seed=1&vault=<64 hex>&type=view,logic&bare=1`, each part optional, `kind` another name for
-    /// `type`, any other part left alone (a page's cache buster, say): why not, for a vault that isn't a vault's id, more
-    /// kinds than `MOST_KINDS`, or, of the code (`code`), a kind that isn't one of code's (`world::CODE_KINDS`). No kind
-    /// at all keeps every kind.
+    /// Query `query`, `seed=1&vault=<64 hex>&type=view,logic&entry=<64 hex>,<64 hex>&bare=1`, each part optional,
+    /// `kind` another name for `type`, any other part left alone (a page's cache buster, say): why not, for a vault or
+    /// an entry that isn't an id, more kinds than `MOST_KINDS` or entries than `MOST_ENTRIES`, or, of the code
+    /// (`code`), a kind that isn't one of code's (`world::CODE_KINDS`). No kind at all keeps every kind, and no entry
+    /// every entry.
     fn of(query: &str, code: bool) -> Result<Asked, &'static str> {
         let mut asked = Asked::default();
         for (key, value) in query.split('&').filter_map(|part| part.split_once('=')) {
@@ -352,6 +408,16 @@ impl Asked {
                     }
                     asked.kinds = Some(kinds).filter(|ks| !ks.is_empty());
                 }
+                "entry" => {
+                    let named = value.split(',').filter(|e| !e.is_empty());
+                    let entries: Option<BTreeSet<String>> =
+                        named.map(|e| Some(EntryId::from_hex(e)?.to_hex())).collect();
+                    let entries = entries.ok_or("entry is a list of entries' ids, each 64 hex digits")?;
+                    if entries.len() > MOST_ENTRIES {
+                        return Err("entry is a list of at most 512 entries' ids");
+                    }
+                    asked.entries = Some(entries).filter(|es| !es.is_empty());
+                }
                 "seed" => asked.seed = value == "1" || value == "true",
                 "bare" => asked.bare = value == "1" || value == "true",
                 _ => {}
@@ -365,13 +431,22 @@ impl Asked {
         *self == Asked::default()
     }
 
-    /// Row `row` is of the seed's coop, of the vault and of a kind it asks for: of the coop by where its vault stands
-    /// in the server's seed (`world::public_entries`), never by its name.
+    /// Row `row` is of the seed's coop, of the vault, of a kind and one of the entries it asks for: of the coop by
+    /// where its vault stands in the server's seed (`world::public_entries`), never by its name.
     fn keeps(&self, row: &Value) -> bool {
         let is = |field: &str, v: &str| row[field].as_str() == Some(v);
         (!self.seed || is("seed", world::SEED_COOP))
             && self.vault.as_deref().is_none_or(|v| is("vault", v))
             && self.kinds.as_ref().is_none_or(|ks| ks.iter().any(|k| is("type", k)))
+            && self.entries.as_ref().is_none_or(|es| row["entry"].as_str().is_some_and(|e| es.contains(e)))
+    }
+
+    /// What it asks, written alike however its parts were: what a proof of it is kept by (`proven`).
+    fn key(&self) -> String {
+        let (kinds, entries) = (self.kinds.as_deref().unwrap_or_default(), self.entries.iter().flatten());
+        let entries: Vec<&str> = entries.map(String::as_str).collect();
+        let vault = self.vault.as_deref().unwrap_or_default();
+        format!("{}/{vault}/{}/{}", self.seed, kinds.join(","), entries.join(","))
     }
 
     /// Row `row` as it asks for it: without its record, for `bare`.
@@ -420,6 +495,72 @@ async fn entry(at: &str, query: &str, node: &Node, kept: &Kept<Listed>) -> (Stat
         Some(row) => (StatusCode::OK, Bytes::from(serde_json::to_vec(&asked.shown(row)).expect("JSON writes"))),
         None => (StatusCode::NOT_FOUND, error("no entry everyone may read here")),
     }
+}
+
+/// The answer to a GET or HEAD of `PROOF`, asking `query`, from a reader that holds the proof tagged `had`
+/// (`If-None-Match`): the proof of the code the same query lists at `CODE` (`proven`), one vault's, `vault=<64 hex>` or
+/// Maia City's for `seed=1`, as bytes (`application/octet-stream`), tagged (`ETag`), and not modified for a reader
+/// that holds it already, which asks again each time (`no-cache`); a bad request for a query it can't read or that
+/// names no vault, and not found while `seed=1` names none, the server's seed having no coop yet.
+async fn proof(query: &str, had: Option<&str>, node: &Node, feeds: &Feeds) -> Response<Full<Bytes>> {
+    let asked = match Asked::of(query, true) {
+        Ok(asked) if asked.seed || asked.vault.is_some() => asked,
+        Ok(_) => return plain(StatusCode::BAD_REQUEST, "a proof is of one vault's code: vault=<64 hex> or seed=1"),
+        Err(why) => return plain(StatusCode::BAD_REQUEST, why),
+    };
+    let Some(proven) = proven(&asked, node, feeds).await else {
+        return plain(StatusCode::NOT_FOUND, "the server's seed has no coop yet");
+    };
+    let held = holds(had, &proven.tag);
+    let mut response = match held {
+        true => Response::new(Full::new(Bytes::new())),
+        false => Response::new(Full::new(proven.bytes)),
+    };
+    if held {
+        *response.status_mut() = StatusCode::NOT_MODIFIED;
+    }
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/octet-stream"));
+    headers.insert(header::ETAG, HeaderValue::from_str(&proven.tag).expect("a tag in hex"));
+    headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
+    headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    headers.insert(header::ACCESS_CONTROL_EXPOSE_HEADERS, HeaderValue::from_static("ETag"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    response
+}
+
+/// The proof of what `asked` asks of the code everyone may read (`provenance::proof`): of the code entries it lists
+/// (`entries`, `of_code`, `Asked::keeps`), of its vault, or of the seed's coop for `seed`, as the server last worked it
+/// out for the same query, if that was a moment ago (`FRESH`), else anew. None while `seed` names no vault.
+async fn proven(asked: &Asked, node: &Node, feeds: &Feeds) -> Option<Proven> {
+    let kept = {
+        let mut proofs = feeds.proofs.lock().await;
+        if proofs.len() >= MOST_PROOFS && !proofs.contains_key(&asked.key()) {
+            // a proof is kept a moment (`FRESH`), and asked for again after it is worked out anew: those older go
+            // first, and every one if none is
+            let fresh = |kept: &Kept<Option<Proven>>| {
+                kept.try_lock().map_or(true, |held| held.as_ref().is_some_and(|(at, _)| at.elapsed() < FRESH))
+            };
+            proofs.retain(|_, kept| fresh(kept));
+            if proofs.len() >= MOST_PROOFS {
+                proofs.clear();
+            }
+        }
+        proofs.entry(asked.key()).or_default().clone()
+    };
+    let work = async {
+        let vault = match asked.vault.as_deref().and_then(VaultId::from_hex) {
+            Some(vault) => vault,
+            None => *node.read(world::seed_of).await.first()?,
+        };
+        let listed = entries(node, &feeds.entries).await;
+        let code = listed.rows.iter().filter(|row| of_code(row) && asked.keeps(row));
+        let code: BTreeSet<EntryId> = code.filter_map(|row| EntryId::from_hex(row["entry"].as_str()?)).collect();
+        let edits = node.read(move |lab, me| provenance::proof(lab, me, vault, &code)).await;
+        let tag: String = provenance::frontier(&edits).iter().map(|b| format!("{b:02x}")).collect();
+        Some(Proven { bytes: Bytes::from(provenance::reply(edits)), tag: format!("\"{tag}\"").into() })
+    };
+    fresh_or(&kept, work).await
 }
 
 /// An error, as JSON: `{"error": why}`.
@@ -717,6 +858,27 @@ mod tests {
             assert_eq!(played(never), None, "{never}");
         }
         assert!(hexes(&"ab".repeat(32)) && !hexes(&"AB".repeat(32)) && !hexes("ab") && !hexes(&"g".repeat(64)));
+    }
+
+    /// A query names entries by their ids, which keeps their rows alone, and what it asks is written alike however its
+    /// parts were, as a proof of it is kept by that (`Asked::key`); entries that aren't ids, or too many, are refused.
+    #[test]
+    fn a_query_names_entries_and_is_kept_by_what_it_asks() {
+        let (a, b) = ("ab".repeat(32), "cd".repeat(32));
+        let asked = Asked::of(&format!("seed=1&type=view,logic&entry={b},{a}"), true).expect("a query");
+        assert_eq!(asked.entries, Some([a.clone(), b.clone()].into_iter().collect()));
+        let row = |e: &str| json!({ "entry": e, "type": "view", "seed": world::SEED_COOP });
+        assert!(asked.keeps(&row(&a)) && asked.keeps(&row(&b)) && !asked.keeps(&row(&"ef".repeat(32))));
+        let same = Asked::of(&format!("entry={a}%2C{b}&kind=view,logic&seed=true&t=1"), true).expect("a query");
+        assert_eq!(same.key(), asked.key(), "the same query");
+        for other in ["seed=1", "seed=1&type=view,logic", &format!("vault={a}&type=view,logic&entry={a},{b}")] {
+            assert_ne!(Asked::of(other, true).expect("a query").key(), asked.key(), "{other}");
+        }
+        let many: Vec<String> = (0..=MOST_ENTRIES).map(|i| format!("{i:064x}")).collect();
+        for bad in ["entry=ab".to_string(), format!("entry={a},x"), format!("entry={}", many.join(","))] {
+            assert!(Asked::of(&bad, true).is_err(), "{}", &bad[..bad.len().min(80)]);
+        }
+        assert!(Asked::of(&format!("entry={}", many[1..].join(",")), true).is_ok(), "as many as a query may name");
     }
 
     /// A row whose files are `files`, each `(root, size, len)`.
