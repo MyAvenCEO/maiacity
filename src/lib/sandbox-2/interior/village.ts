@@ -1197,7 +1197,13 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	   about, and kept: a dome you walk up to is almost always ready long before you
 	   reach its door. A built dome is drawn once as it arrives (so the graphics card
 	   has it), then simply shown when you are near and hidden when you are not. */
-	const KEEP = 6
+	/* At most KEEP domes' worth of insides are built, counted by floor area (the master dome's is 1): a dome's gardens,
+	   most of what it holds in memory, grow with its floor. KEEP is what six domes ever held at most (the master and five
+	   medium ones), and in it the eight domes the first village's film sees fit together (the master, four medium, three
+	   small), all readied before it plays. Counted one a dome, six, two of them were built again while it played, a little
+	   every frame, and it played choppy there. */
+	const areaOf = (kind: DomeKind) => (DOMES[kind].diameter / DOMES.master.diameter) ** 2
+	const KEEP = areaOf('master') + 5 * areaOf('large')
 	// the dome you are at is drawn in full, and the nearest one in full from further off,
 	// so its forest is there as you walk up; the others show their simple selves
 	const SHOW_WITHIN = 22
@@ -1209,7 +1215,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	}
 	/* The domes' full insides are streamed by what is seen ($lib/sandbox-kit/stream, one scheduler for every world):
 	   the walker's camera wants every dome within SHOW_NEAREST, those it looks at first, the biggest on screen first;
-	   a shot wants exactly the domes its camera path sees, no more. At most KEEP are built, the longest unseen let go;
+	   a shot wants exactly the domes its camera path sees, no more. At most KEEP's worth are built, the longest unseen let go;
 	   one builds at a time. A dome not built shows its simple self. */
 	/** the domes the shot being filmed sees (its views, as it was staged): shown in full for the whole shot */
 	let filmed: Set<number> | null = null
@@ -1243,6 +1249,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			y: d.R * 0.5,
 			z: d.z,
 			r: d.ext,
+			cost: areaOf(d.kind),
 			build: (job) =>
 				new Promise<EmbeddedDome>((resolve, reject) => {
 					const mine = { i, cancelled: false }
