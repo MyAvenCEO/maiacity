@@ -17,6 +17,8 @@ mod passkey;
 mod player;
 mod proxies;
 mod render;
+#[cfg(target_os = "macos")]
+mod revive;
 mod transcripts;
 mod world;
 
@@ -351,8 +353,11 @@ fn main() {
     }
     tracing_subscriber::fmt().with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "warn".into())).init();
 
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
+    let app = tauri::Builder::default();
+    // a page whose web process died opens again, never left white (revive.rs)
+    #[cfg(target_os = "macos")]
+    let app = app.on_page_load(revive::loaded).on_web_content_process_terminate(revive::died);
+    app.plugin(tauri_plugin_dialog::init())
         .manage(auth::Auth::default())
         .manage(avendb::Avendb::default())
         .setup(|app| {
