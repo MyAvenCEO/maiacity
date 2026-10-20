@@ -1,0 +1,192 @@
+[
+  {
+    "id": "F-RUST-MIR-0001",
+    "language": "rust",
+    "category": "SECRET_COPY",
+    "severity": "high",
+    "confidence": "likely",
+    "detail": "Sensitive local 'token' is captured by move into a closure/async state in 'demo_async' \u2014 copy may outlive intended wipe scope",
+    "symbol": "token",
+    "location": {
+      "file": "fixtures/sample.mir",
+      "line": 4
+    },
+    "evidence": [
+      {
+        "source": "mir_text",
+        "detail": "Sensitive local 'token' is captured by move into a closure/async state in 'demo_async' \u2014 copy may outlive intended wipe scope"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-MIR-0002",
+    "language": "rust",
+    "category": "NOT_ON_ALL_PATHS",
+    "severity": "high",
+    "confidence": "likely",
+    "detail": "Coroutine/async fn 'demo_async' has Yield terminator with sensitive locals ['secret_key', 'token'] potentially live at suspension point \u2014 secrets stored in heap-allocated Future state machine; ZeroizeOnDrop covers stack variables only",
+    "symbol": "secret_key",
+    "location": {
+      "file": "fixtures/sample.mir",
+      "line": 1
+    },
+    "evidence": [
+      {
+        "source": "mir_text",
+        "detail": "Coroutine/async fn 'demo_async' has Yield terminator with sensitive locals ['secret_key', 'token'] potentially live at suspension point \u2014 secrets stored in heap-allocated Future state machine; ZeroizeOnDrop covers stack variables only"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-MIR-0003",
+    "language": "rust",
+    "category": "NOT_ON_ALL_PATHS",
+    "severity": "high",
+    "confidence": "likely",
+    "detail": "Potential Result::Err early-return path in 'demo_async' with sensitive locals ['secret_key', 'token'] still in scope \u2014 verify cleanup on all error exits",
+    "symbol": "secret_key",
+    "location": {
+      "file": "fixtures/sample.mir",
+      "line": 1
+    },
+    "evidence": [
+      {
+        "source": "mir_text",
+        "detail": "Potential Result::Err early-return path in 'demo_async' with sensitive locals ['secret_key', 'token'] still in scope \u2014 verify cleanup on all error exits"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-MIR-0004",
+    "language": "rust",
+    "category": "NOT_ON_ALL_PATHS",
+    "severity": "high",
+    "confidence": "likely",
+    "detail": "Secret local _5 ('secret_key') is dropped but not StorageDead on explicit return path(s) in 'drop_in_place_secret'",
+    "symbol": "secret_key",
+    "location": {
+      "file": "fixtures/sample.mir",
+      "line": 10
+    },
+    "evidence": [
+      {
+        "source": "mir_text",
+        "detail": "Secret local _5 ('secret_key') is dropped but not StorageDead on explicit return path(s) in 'drop_in_place_secret'"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-MIR-0005",
+    "language": "rust",
+    "category": "MISSING_SOURCE_ZEROIZE",
+    "severity": "high",
+    "confidence": "likely",
+    "detail": "Drop glue 'drop_in_place_secret' calls drop() but no call to zeroize:: found \u2014 secret not wiped on drop",
+    "symbol": "drop_in_place_secret",
+    "location": {
+      "file": "fixtures/sample.mir",
+      "line": 10
+    },
+    "evidence": [
+      {
+        "source": "mir_text",
+        "detail": "Drop glue 'drop_in_place_secret' calls drop() but no call to zeroize:: found \u2014 secret not wiped on drop"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-MIR-0006",
+    "language": "rust",
+    "category": "MISSING_SOURCE_ZEROIZE",
+    "severity": "medium",
+    "confidence": "likely",
+    "detail": "Secret local _6 ('secret_key') is dropped without StorageDead in 'unwind_only_secret' \u2014 verify zeroize call in drop glue",
+    "symbol": "secret_key",
+    "location": {
+      "file": "fixtures/sample.mir",
+      "line": 18
+    },
+    "evidence": [
+      {
+        "source": "mir_text",
+        "detail": "Secret local _6 ('secret_key') is dropped without StorageDead in 'unwind_only_secret' \u2014 verify zeroize call in drop glue"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-MIR-0007",
+    "language": "rust",
+    "category": "MISSING_SOURCE_ZEROIZE",
+    "severity": "medium",
+    "confidence": "likely",
+    "detail": "Panic/unwind path (resume) in 'unwind_only_secret' with sensitive locals ['secret_key'] in scope \u2014 verify these locals are dropped (and zeroed) on the unwind path",
+    "symbol": "secret_key",
+    "location": {
+      "file": "fixtures/sample.mir",
+      "line": 18
+    },
+    "evidence": [
+      {
+        "source": "mir_text",
+        "detail": "Panic/unwind path (resume) in 'unwind_only_secret' with sensitive locals ['secret_key'] in scope \u2014 verify these locals are dropped (and zeroed) on the unwind path"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-MIR-0008",
+    "language": "rust",
+    "category": "SECRET_COPY",
+    "severity": "medium",
+    "confidence": "likely",
+    "detail": "Secret local 'secret_key' moved into non-Zeroizing aggregate 'PlainBuffer' in 'wrap_secret_in_buffer' \u2014 copy now untracked",
+    "symbol": "secret_key",
+    "location": {
+      "file": "fixtures/sample.mir",
+      "line": 28
+    },
+    "evidence": [
+      {
+        "source": "mir_text",
+        "detail": "Secret local 'secret_key' moved into non-Zeroizing aggregate 'PlainBuffer' in 'wrap_secret_in_buffer' \u2014 copy now untracked"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-MIR-0009",
+    "language": "rust",
+    "category": "MISSING_SOURCE_ZEROIZE",
+    "severity": "medium",
+    "confidence": "likely",
+    "detail": "Panic/unwind path (resume) in 'call_c_encrypt' with sensitive locals ['secret_key'] in scope \u2014 verify these locals are dropped (and zeroed) on the unwind path",
+    "symbol": "secret_key",
+    "location": {
+      "file": "fixtures/sample.mir",
+      "line": 34
+    },
+    "evidence": [
+      {
+        "source": "mir_text",
+        "detail": "Panic/unwind path (resume) in 'call_c_encrypt' with sensitive locals ['secret_key'] in scope \u2014 verify these locals are dropped (and zeroed) on the unwind path"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-MIR-0010",
+    "language": "rust",
+    "category": "SECRET_COPY",
+    "severity": "high",
+    "confidence": "likely",
+    "detail": "Secret local 'secret_key' passed to potential FFI call 'c_crypto::c_encrypt' in 'call_c_encrypt' \u2014 zeroization guarantees lost in callee",
+    "symbol": "secret_key",
+    "location": {
+      "file": "fixtures/sample.mir",
+      "line": 36
+    },
+    "evidence": [
+      {
+        "source": "mir_text",
+        "detail": "Secret local 'secret_key' passed to potential FFI call 'c_crypto::c_encrypt' in 'call_c_encrypt' \u2014 zeroization guarantees lost in callee"
+      }
+    ]
+  }
+]

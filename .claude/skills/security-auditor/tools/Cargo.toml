@@ -1,0 +1,22 @@
+# The security-auditor bundle's tools: every script the security skills run, as one binary with a subcommand each
+# (`sec <command> ...`). Rust ports of Trail of Bits' Python and shell tools (trailofbits/skills, CC-BY-SA 4.0), their
+# rules unchanged; built on its own, never with avenDB or the media vault:
+#   cargo build --release --manifest-path .claude/skills/security-auditor/tools/Cargo.toml
+[package]
+name = "sec"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.91"
+license = "CC-BY-SA-4.0"
+publish = false
+
+[dependencies]
+fancy-regex = "0.14"
+indexmap = "2"
+regex = "1"
+rustc-demangle = "0.1"
+serde_json = { version = "1", features = ["preserve_order"] }
+toml = "0.8"
+
+[profile.release]
+opt-level = 2

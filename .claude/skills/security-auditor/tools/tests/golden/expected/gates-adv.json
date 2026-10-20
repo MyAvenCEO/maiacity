@@ -1,0 +1,75 @@
+{
+  "summary": {
+    "issues_found": 9,
+    "files": 3
+  },
+  "findings": [
+    {
+      "id": "a",
+      "category": "OPTIMIZED_AWAY_ZEROIZE",
+      "evidence": "MIR shows call [gated: missing IR/ASM evidence for optimized-away claim]",
+      "needs_review": true
+    },
+    {
+      "id": "b",
+      "category": "OPTIMIZED_AWAY_ZEROIZE",
+      "evidence": "x",
+      "compiler_evidence": {
+        "o0": "",
+        "o2": null,
+        "diff_summary": "gone at O2"
+      }
+    },
+    {
+      "id": "c",
+      "category": "OPTIMIZED_AWAY_ZEROIZE",
+      "compiler_evidence": {
+        "o0": [],
+        "o2": 0
+      },
+      "needs_review": true,
+      "evidence": "[gated: missing IR/ASM evidence for optimized-away claim]"
+    },
+    {
+      "id": "d",
+      "category": "STACK_RETENTION",
+      "evidence": "ASM shows sub rsp"
+    },
+    {
+      "id": "e",
+      "category": "REGISTER_SPILL",
+      "evidence": "spilled   [gated: missing assembly evidence]",
+      "needs_review": true
+    },
+    {
+      "id": "f",
+      "category": "REGISTER_SPILL",
+      "needs_review": true,
+      "evidence": "[gated: missing assembly evidence]"
+    },
+    {
+      "id": "g",
+      "category": "SECRET_COPY",
+      "evidence": "copied [gated: MCP unavailable for advanced semantic finding]",
+      "needs_review": true
+    },
+    {
+      "id": "h",
+      "category": "NOT_DOMINATING_EXITS",
+      "evidence": "\u00dcn\u00efcode \u2713 [gated: MCP unavailable for advanced semantic finding]",
+      "needs_review": true
+    },
+    {
+      "id": "i",
+      "category": "MISSING_SOURCE_ZEROIZE",
+      "evidence": "fine",
+      "extra": {
+        "k": [
+          1,
+          2.5,
+          true
+        ]
+      }
+    }
+  ]
+}

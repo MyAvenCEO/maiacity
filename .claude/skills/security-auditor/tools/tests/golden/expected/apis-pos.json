@@ -1,0 +1,192 @@
+[
+  {
+    "id": "F-RUST-SRC-0001",
+    "language": "rust",
+    "category": "MISSING_SOURCE_ZEROIZE",
+    "severity": "critical",
+    "confidence": "likely",
+    "detail": "mem::forget() prevents Drop/ZeroizeOnDrop from running \u2014 secret never wiped",
+    "symbol": "",
+    "location": {
+      "file": "fixtures/dangerous_apis_src/positive.rs",
+      "line": 17
+    },
+    "evidence": [
+      {
+        "source": "source_grep",
+        "detail": "mem::forget() prevents Drop/ZeroizeOnDrop from running \u2014 secret never wiped"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-SRC-0002",
+    "language": "rust",
+    "category": "MISSING_SOURCE_ZEROIZE",
+    "severity": "critical",
+    "confidence": "likely",
+    "detail": "ManuallyDrop::new() suppresses automatic drop \u2014 secret not wiped unless drop() called explicitly",
+    "symbol": "",
+    "location": {
+      "file": "fixtures/dangerous_apis_src/positive.rs",
+      "line": 22
+    },
+    "evidence": [
+      {
+        "source": "source_grep",
+        "detail": "ManuallyDrop::new() suppresses automatic drop \u2014 secret not wiped unless drop() called explicitly"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-SRC-0003",
+    "language": "rust",
+    "category": "MISSING_SOURCE_ZEROIZE",
+    "severity": "critical",
+    "confidence": "likely",
+    "detail": "Box::leak() \u2014 leaked allocation is never dropped or zeroed",
+    "symbol": "",
+    "location": {
+      "file": "fixtures/dangerous_apis_src/positive.rs",
+      "line": 27
+    },
+    "evidence": [
+      {
+        "source": "source_grep",
+        "detail": "Box::leak() \u2014 leaked allocation is never dropped or zeroed"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-SRC-0004",
+    "language": "rust",
+    "category": "MISSING_SOURCE_ZEROIZE",
+    "severity": "high",
+    "confidence": "likely",
+    "detail": "Box::into_raw() \u2014 raw pointer escapes Drop; must call Box::from_raw() + zeroize to reclaim",
+    "symbol": "",
+    "location": {
+      "file": "fixtures/dangerous_apis_src/positive.rs",
+      "line": 38
+    },
+    "evidence": [
+      {
+        "source": "source_grep",
+        "detail": "Box::into_raw() \u2014 raw pointer escapes Drop; must call Box::from_raw() + zeroize to reclaim"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-SRC-0005",
+    "language": "rust",
+    "category": "OPTIMIZED_AWAY_ZEROIZE",
+    "severity": "high",
+    "confidence": "likely",
+    "detail": "ptr::write_bytes() is non-volatile \u2014 LLVM may eliminate as dead store. Use zeroize crate or add compiler_fence(SeqCst) after",
+    "symbol": "",
+    "location": {
+      "file": "fixtures/dangerous_apis_src/positive.rs",
+      "line": 43
+    },
+    "evidence": [
+      {
+        "source": "source_grep",
+        "detail": "ptr::write_bytes() is non-volatile \u2014 LLVM may eliminate as dead store. Use zeroize crate or add compiler_fence(SeqCst) after"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-SRC-0006",
+    "language": "rust",
+    "category": "SECRET_COPY",
+    "severity": "high",
+    "confidence": "likely",
+    "detail": "mem::transmute creates a bitwise copy \u2014 original and transmuted value both exist on stack",
+    "symbol": "",
+    "location": {
+      "file": "fixtures/dangerous_apis_src/positive.rs",
+      "line": 48
+    },
+    "evidence": [
+      {
+        "source": "source_grep",
+        "detail": "mem::transmute creates a bitwise copy \u2014 original and transmuted value both exist on stack"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-SRC-0007",
+    "language": "rust",
+    "category": "SECRET_COPY",
+    "severity": "medium",
+    "confidence": "likely",
+    "detail": "slice::from_raw_parts creates a slice alias over raw memory \u2014 may alias a secret buffer",
+    "symbol": "",
+    "location": {
+      "file": "fixtures/dangerous_apis_src/positive.rs",
+      "line": 58
+    },
+    "evidence": [
+      {
+        "source": "source_grep",
+        "detail": "slice::from_raw_parts creates a slice alias over raw memory \u2014 may alias a secret buffer"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-SRC-0008",
+    "language": "rust",
+    "category": "MISSING_SOURCE_ZEROIZE",
+    "severity": "medium",
+    "confidence": "likely",
+    "detail": "mem::take() replaces the value in-place without zeroing the original location",
+    "symbol": "",
+    "location": {
+      "file": "fixtures/dangerous_apis_src/positive.rs",
+      "line": 53
+    },
+    "evidence": [
+      {
+        "source": "source_grep",
+        "detail": "mem::take() replaces the value in-place without zeroing the original location"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-SRC-0009",
+    "language": "rust",
+    "category": "MISSING_SOURCE_ZEROIZE",
+    "severity": "critical",
+    "confidence": "likely",
+    "detail": "mem::uninitialized() is deprecated and unsafe \u2014 may expose prior secret bytes from stack memory",
+    "symbol": "",
+    "location": {
+      "file": "fixtures/dangerous_apis_src/positive.rs",
+      "line": 33
+    },
+    "evidence": [
+      {
+        "source": "source_grep",
+        "detail": "mem::uninitialized() is deprecated and unsafe \u2014 may expose prior secret bytes from stack memory"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-SRC-0010",
+    "language": "rust",
+    "category": "NOT_ON_ALL_PATHS",
+    "severity": "high",
+    "confidence": "likely",
+    "detail": "Secret local 'secret_key' is live across an .await suspension point in an async fn \u2014 stored in the heap-allocated Future state machine; ZeroizeOnDrop covers stack variables only",
+    "symbol": "",
+    "location": {
+      "file": "fixtures/dangerous_apis_src/positive.rs",
+      "line": 65
+    },
+    "evidence": [
+      {
+        "source": "source_grep",
+        "detail": "Secret local 'secret_key' is live across an .await suspension point in an async fn \u2014 stored in the heap-allocated Future state machine; ZeroizeOnDrop covers stack variables only"
+      }
+    ]
+  }
+]

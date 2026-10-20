@@ -1,0 +1,6 @@
+#!/bin/sh
+# Runs the security tools binary, building it first when its sources changed (cargo does nothing when they did not).
+# Low priority on two cores: one Rust build at a time is the rule on a small Mac.
+here=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+nice -n 10 cargo build --release --quiet -j 2 --manifest-path "$here/Cargo.toml" --target-dir "$here/target" >&2 || exit 1
+exec "$here/target/release/sec" "$@"
