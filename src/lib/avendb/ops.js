@@ -28,7 +28,10 @@ export const READS = [
 	'aips',
 	'aip',
 	'may',
-	'cap_groups'
+	'cap_groups',
+	'code',
+	'bring',
+	'synced'
 ];
 
 /** Whether op `op` only reads. @param {any} op */

@@ -22,7 +22,12 @@
  *                                                  cache lacks the build and the file (./cache.js `fileAt`), which
  *                                                  then keeps it under its hash, held to it again when read back
  *
- * `<feed>` is avenDB's server's (game/code/sources/feed.js FEED), the one every page and build reads.
+ * `<feed>` is avenDB's server's (game/code/sources/feed.js FEED), the one every page and build reads while it holds
+ * no avenDB open. A page that holds the person's avenDB open reads the recipes off its own device instead (Samuel
+ * 2026-10-20, "all games and sandboxes should load always from local avenDB! Also the asset viewers"): the same rows,
+ * of the device's own copy of Maia City once it brought the vault from its peers, and each recipe's file off its own
+ * store (game/code/sources/device.js `deviceRows`, `deviceFile`). The device checked every signed edit as it took it,
+ * so nothing it reads needs a proof; a file it can't read in time is asked of the feed, held to the same hash.
  *
  * There is no repo fallback (Samuel 2026-10-17, 12:01): a ref the vault doesn't hold, a file that isn't the recipe its
  * ref names, a feed that can't be reached, each fails, naming the ref, so we see what still needs porting. Each is told
@@ -40,6 +45,7 @@ import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { idOf, slug } from '$lib/ids.js';
 import { CODE_FEED, KEPT_PROOFS, MAIA_CITY, NO_ANCHOR, fileOf, listedRows, listingOf, proofOf, provenRows, seedFeedOf } from '../../../game/code/sources/feed.js';
+import { deviceFile, deviceRows } from '../../../game/code/sources/device.js';
 import { buildOf } from './builds.js';
 import * as cache from './cache.js';
 import { LATEST } from './engines.js';
@@ -216,20 +222,22 @@ const holds = (bytes, hash) => bytes instanceof Uint8Array && bytesToHex(blake3(
 /**
  * How a row's file is read: this device's copy of it, where it keeps one that hashes to the recipe's hash (`kept`);
  * otherwise the newest its entry brings (the feed lists them oldest first), or for one version of an asset's entry,
- * the file of its own write (./sources/avendb.js `versionsOf`), by its root, from the feed beside the rows, whole, as
- * bytes, a few at a time and asked again where it was dropped (`fetched`), so its hash is of the bytes the server
- * holds, kept on the device once it hashes to the recipe's. Refused, saying why, where its entry brings none or one
- * larger than a recipe may be. Either way ./sources/avendb.js holds what it hands out to the ref's hash, version and
- * variant.
+ * the file of its own write (./sources/avendb.js `versionsOf`), by its root: off the page's own avenDB, for rows its
+ * device read (`local`, game/code/sources/device.js `deviceFile`), where it reads it in time and it hashes to the
+ * recipe's; else from the feed beside the rows, whole, as bytes, a few at a time and asked again where it was dropped
+ * (`fetched`), so its hash is of the bytes the server holds. Kept on the device once it hashes to the recipe's.
+ * Refused, saying why, where its entry brings none or one larger than a recipe may be. Either way ./sources/avendb.js
+ * holds what it hands out to the ref's hash, version and variant.
  */
-const readerOf = (get, feed, kept, again) => async (row) => {
+const readerOf = (get, feed, kept, again, local = false) => async (row) => {
 	const hash = hashOfRow.get(row);
 	const had = hash ? await Promise.resolve(kept.get(hash)).catch(() => undefined) : undefined;
 	if (had && holds(had, hash)) return had;
 	const file = Array.isArray(row?.files) ? row.files.at(-1) : undefined;
 	if (!file) throw new Error('its entry brings no file');
 	if (typeof file.len === 'number' && file.len > MOST) throw new Error(`its file is ${file.len.toLocaleString('en')} bytes, more than a recipe may be (${MOST.toLocaleString('en')})`);
-	const bytes = await fetched(get, fileOf(row.vault, row.entry, feed, row.edit ? file.root : undefined), again);
+	const own = local ? await deviceFile(file) : null;
+	const bytes = own && (!hash || holds(own, hash)) ? own : await fetched(get, fileOf(row.vault, row.entry, feed, row.edit ? file.root : undefined), again);
 	if (hash && holds(bytes, hash)) Promise.resolve(kept.put(hash, bytes)).catch(() => {});
 	return bytes;
 };
@@ -319,11 +327,13 @@ function proverOf({ prove, keep, vault, pageOf = () => globalThis.location?.path
 const live = (r) => !(r?.tags ?? []).includes('avendb:deleted');
 
 /**
- * The recipes read off the feed: what the page knows of them after. The index is read off the rows the feed lists;
- * a recipe is built only once its entry's proof checks out (H2, `provenAt`), but on a dev server that reads its
- * stand-in, whose rows are no vault's.
+ * The recipes read off the page's own avenDB, where it holds one open that brought Maia City from its peers
+ * (game/code/sources/device.js `deviceRows`), else off the feed: what the page knows of them after. The index is read
+ * off the rows; a recipe the feed lists is built only once its entry's proof checks out (H2, `provenAt`), one the
+ * device read at once, as the device checked its edits as it took them, and so on a dev server that reads its
+ * stand-in, whose rows are no vault's. `device` false reads the feed whatever the page holds open.
  */
-async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = TIMEOUT.rows, kept = KEPT, again = AGAIN, vault = MAIA_CITY, verify, proofs = KEPT_PROOFS, page } = {}) {
+async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = TIMEOUT.rows, kept = KEPT, again = AGAIN, vault = MAIA_CITY, verify, proofs = KEPT_PROOFS, page, device = true } = {}) {
 	const standIn = import.meta.env.DEV && import.meta.env.VITE_RECIPE_FEED === 'dev' && feed === feedOf();
 	const url = standIn ? seedFeedOf(['recipe'], feed) : listingOf(['recipe'], { vault, feed });
 	source = null;
@@ -340,6 +350,12 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 	};
 	const couldNot = (why) => failed(`the asset recipes could not be loaded from the Maia City vault: ${why}`);
 	if (!standIn && !/^[0-9a-f]{64}$/.test(String(vault))) return couldNot(NO_ANCHOR);
+	// the page's own avenDB first, its own copy of Maia City, which needs no proof
+	const local = device && !standIn ? await deviceRows(['recipe'], { vault }) : null;
+	if (local) {
+		const read = vaultRecipes(local.filter(live), { read: readerOf(get, feed, kept, again, true) });
+		if (Object.keys(read.index.recipes).length) return ready(read, null, String(local[0]?.vault ?? vault), 'this device');
+	}
 	/** @param {string[]} entries */
 	const prove = async (entries) => {
 		const proving = { vault, kinds: ['recipe'], entries, fetch: get, timeout, keep: proofs, ...(verify ? { verify } : {}) };
@@ -357,13 +373,22 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 	if ('error' in got) return couldNot(got.error);
 	const rows = got.rows.filter(live);
 	const read = vaultRecipes(rows, { read: readerOf(get, feed, kept, again) });
-	if (standIn) for (const h of Object.keys(read.index.recipes)) hashOfRow.set(read.rowOf(h), h);
 	if (!Object.keys(read.index.recipes).length)
 		return failed(`the Maia City vault holds no asset recipes yet: ${url} listed ${rows.length ? `${rows.length} entries, none of them one` : 'none'}${read.refused.length ? ` (${read.refused.slice(0, 3).join('; ')})` : ''}`);
+	return ready(read, proving, String(rows[0]?.vault ?? ''), url);
+}
+
+/**
+ * The recipes `read` in (a ./sources/avendb.js `vaultRecipes`), of vault `vault`, read from `from` (the feed's address,
+ * or this device): what the page knows of them now. `proving` proves each before it is built (`proverOf`); none for
+ * what the page's own device read, or the dev server's stand-in.
+ */
+function ready(read, proving, vault, from) {
+	if (!proving) for (const h of Object.keys(read.index.recipes)) hashOfRow.set(read.rowOf(h), h);
 	source = read;
 	prover = proving;
 	fill(read.index);
-	Object.assign(recipes, { phase: 'ready', vault: String(rows[0]?.vault ?? ''), count: Object.keys(INDEX.recipes).length, refused: [...read.refused] });
+	Object.assign(recipes, { phase: 'ready', feed: from, vault, count: Object.keys(INDEX.recipes).length, refused: [...read.refused] });
 	for (const r of read.refused) console.error(`asset recipes: refused, ${r}`);
 	tell();
 	return recipes;

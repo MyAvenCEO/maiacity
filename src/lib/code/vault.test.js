@@ -200,6 +200,40 @@ describe('loading', () => {
 			avendb.on = true;
 		}
 	});
+	test("a page that holds its avenDB open loads them off its own device once it brought Maia City: the same rows, no proof; the feed where it can't", async () => {
+		const { useDevice } = await import('../../../game/code/sources/device.js');
+		const rows = rowsOf([ENTRIES['views/view-holders']]);
+		const asked = [];
+		let brought = { ok: { new: 0, peers: 1, reached: true } };
+		let code = { ok: rows };
+		useDevice({ run: async (op) => (asked.push(op), op.op === 'bring' ? brought : code), read: async () => new Uint8Array() });
+		try {
+			proved.length = 0;
+			const f = proof(rowsOf([ENTRIES['views/coop-chart']]));
+			expect(await load(f)).toEqual({ taken: ['views/view-holders'], refused: [] });
+			expect(asked).toEqual([
+				{ op: 'bring', vaults: [VAULT] },
+				{ op: 'code', vault: VAULT, type: ['view', 'logic', 'config'] }
+			]);
+			expect([f.asked, proved]).toEqual([[], []]);
+			// brought once a page; a device that holds none of the vault's code: the feed, proven
+			code = { ok: [] };
+			expect(await load(f)).toEqual({ taken: ['views/coop-chart'], refused: [] });
+			expect(asked.filter((o) => o.op === 'bring').length).toBe(1);
+			expect(proved.length).toBe(1);
+			// a device too old for the ops, or still bringing the vault: the feed
+			useDevice({ run: async () => ({ refused: 'BadOp', why: 'no op is called "bring"' }), read: async () => new Uint8Array() });
+			expect(await load(f)).toEqual({ taken: ['views/coop-chart'], refused: [] });
+			useDevice({ run: () => new Promise(() => {}), read: async () => new Uint8Array() });
+			const { deviceRows } = await import('../../../game/code/sources/device.js');
+			expect(await deviceRows(['view'], { vault: VAULT, wait: 20 })).toBe(null);
+			// and asked not to read the device, it reads the feed
+			useDevice({ run: async (op) => (op.op === 'bring' ? brought : { ok: rows }), read: async () => new Uint8Array() });
+			expect(await load(f, { device: false })).toEqual({ taken: ['views/coop-chart'], refused: [] });
+		} finally {
+			useDevice(null);
+		}
+	});
 });
 
 describe("a game's settings", () => {

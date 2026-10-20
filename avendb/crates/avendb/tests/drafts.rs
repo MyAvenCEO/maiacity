@@ -294,6 +294,19 @@ fn a_suggester_agent_drafts_a_new_logic_and_the_vaults_aip_review_lands_it() {
     assert!(g.public(g.mac, &e));
     let code = world::public_entries(&g.w.lab, g.mac, Some(&world::CODE_KINDS[..]));
     assert!(code.iter().any(|row| row["entry"] == e.as_str()), "in the feed of code");
+    // and a device reads its own copy of her vault's code as the feed serves it, the same rows (the `code` op)
+    let a = g.alice.to_hex();
+    let hers = |kinds: &[&str]| -> Vec<Value> {
+        let of = |r: &&Value| r["vault"] == a.as_str() && kinds.iter().any(|k| r["type"] == *k);
+        code.iter().filter(of).cloned().collect()
+    };
+    let own = ok(g.run(g.mac, json!({ "op": "code", "vault": a, "type": ["logic"] })));
+    assert_eq!(list(&own), hers(&["logic"]));
+    assert!(list(&own).iter().any(|row| row["entry"] == e.as_str()), "the logic it landed");
+    let every = ok(g.run(g.mac, json!({ "op": "code", "vault": a })));
+    assert_eq!(list(&every), hers(&world::CODE_KINDS));
+    let story = g.run(g.mac, json!({ "op": "code", "vault": a, "type": ["post"] }));
+    assert_eq!(refused(&story), "BadOp", "code reads code alone");
 }
 
 /// Adversarial: a draft logic and a draft post, each picked by both Public shares, by type and by tag, show on no main

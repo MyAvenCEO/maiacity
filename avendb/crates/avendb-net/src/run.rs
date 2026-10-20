@@ -5,28 +5,37 @@
 //! file is synced to (`world`), reads and brings a file's bytes (`read_file`, and `put_file` or a `create` that brings
 //! a file: `engine::brings`), tells what it does in the
 //! background (`jobs`), has the passkey sign what its vault approves in a ceremony, and asks its peers again once the
-//! vaults it follows change (`follow`).
+//! vaults it follows change (`follow`). It asks its peers for some vaults before anything else (`bring`), as a page
+//! that reads its code off its own device does first, and tells how far it is synced with its peers (`synced`).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, bail};
 use avendb::engine::{self, Prepared, Refused};
-use avendb::id::{BlobId, EntryId};
+use avendb::id::{BlobId, EntryId, VaultId};
 use avendb::lab::Lab;
 use avendb::policy::Refusal;
 use avendb::sign::Ceremony;
 use bytes::Bytes;
 use iroh::EndpointId;
-use n0_future::{StreamExt as _, stream, task};
+use n0_future::time::{self, Duration};
+use n0_future::{FuturesUnordered, StreamExt as _, stream, task};
 use serde_json::{Value, json};
 
 use crate::{Authenticator, Node, Shared, Source, Step};
 
 /// No bytes beside an op: what `Node::run` takes for every op but one that brings a file (`engine::brings`).
 pub type NoBytes = fn() -> stream::Empty<io::Result<Bytes>>;
+
+/// How long `bring` waits for each peer to hand over what it holds of the vaults it names, at most: a peer that can't
+/// be reached is given up on then.
+const BRING: Duration = Duration::from_secs(60);
+
+/// The most vaults one `bring` names.
+const MOST_BROUGHT: usize = 64;
 
 /// No ceremony at hand, as for an agent: an op its vault's owners approve answers `approve` and makes nothing
 /// (`Node::run`). A ceremony asked of it fails.
@@ -49,7 +58,8 @@ impl Node {
     /// it reads a byte of `bytes`, which it seals into the store as they come (`store_file`), a `bring` job, then
     /// makes it: put_file's new entry, or the write that brings the file into the `entry` it names, or the creation
     /// that brings it, one write; `jobs` tells the node's jobs (`Node::jobs`); `follow`
-    /// asks every peer again once the vaults the device follows changed, each request naming them. Fails only where no
+    /// asks every peer again once the vaults the device follows changed, each request naming them; `bring` asks its
+    /// peers for the vaults it names (`bring`), and `synced` tells how far it is synced with them (`synced`). Fails only where no
     /// answer comes: a ceremony that failed, the store or the network failing, a file's bytes more or fewer than its
     /// length.
     pub async fn run<B, A>(
@@ -72,6 +82,8 @@ impl Node {
             _ if engine::brings(&op) => self.put(op, bytes).await?,
             Some("jobs") => json!({ "ok": self.jobs().to_json() }),
             Some("follow") => self.follow(op).await,
+            Some("bring") => self.bring_vaults(&op).await,
+            Some("synced") => json!({ "ok": self.synced().await }),
             _ if engine::asks(&op) => self.dry(move |lab, me| engine::run(lab, me, &op)).await,
             _ if engine::reads(&op) => self.read(move |lab, me| engine::read(lab, me, &op)).await,
             _ => self.change(op, authenticator).await?,
@@ -161,6 +173,37 @@ impl Node {
         }
         job.done();
         Ok(made)
+    }
+
+    /// `bring`, `{"op": "bring", "vaults": [...]}`: each peer its device knows (`Lab::peers`) asked at once for the
+    /// entries of the vaults it names (`Node::bring`), until one of them handed over all it holds of them, or each
+    /// failed or took longer than `BRING`. `{"ok": {"new", "peers", "reached"}}`: how many edits were new, how many
+    /// peers it asked, and whether one of them answered whole. So a page that reads a vault's code off its own device
+    /// reads what its peers hold of it, the server's, before the rest of what it syncs, and not what it held before; a
+    /// device that reaches none, offline, reads what it holds.
+    async fn bring_vaults(&self, op: &Value) -> Value {
+        let ids = op.get("vaults").and_then(Value::as_array).map(|xs| {
+            xs.iter().map(|x| x.as_str().and_then(VaultId::from_hex)).collect::<Option<BTreeSet<VaultId>>>()
+        });
+        let vaults = match ids.flatten() {
+            Some(vaults) if !vaults.is_empty() && vaults.len() <= MOST_BROUGHT => vaults,
+            _ => {
+                let why = format!("bring names 1 to {MOST_BROUGHT} vaults, each its id, 64 hex digits");
+                return Refused::BadOp(why).to_json();
+            }
+        };
+        let peers = self.read(|lab, me| lab.peers(me)).await;
+        let endpoints: Vec<EndpointId> = peers.into_iter().filter_map(|(_, key)| EndpointId::from_bytes(&key).ok()).collect();
+        let mut asks: FuturesUnordered<_> =
+            endpoints.iter().map(|&peer| time::timeout(BRING, self.bring(peer, vaults.clone()))).collect();
+        let (mut new, mut reached) = (0, false);
+        while let Some(asked) = asks.next().await {
+            if let Ok(Ok(n)) = asked {
+                (new, reached) = (n, true);
+                break;
+            }
+        }
+        json!({ "ok": { "new": new, "peers": endpoints.len(), "reached": reached } })
     }
 
     /// `follow`: run, and every peer asked again if the vaults the device follows changed.
