@@ -7,7 +7,9 @@
 	(./vault.js, loaded before this page is: src/routes/[doc=doc]/+page.js). Each value the recipe declares
 	can be changed here, and the address follows, written the one way that build is named: every value, sorted. Its
 	controls (a tent's pitch, a pickup's doors, a machine drawn apart or built up) move the build in the view, played
-	from the numbers the box wrote down when it played its builder's own (./controls.js); they change no address.
+	from the numbers the box wrote down when it played its builder's own (./controls.js); they change no address. It
+	is shown in its own light on a grid of metres, not on the asset stage, with the viewers' frame loop and their way
+	of keeping only the build last asked for (./viewer.js).
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -24,6 +26,7 @@
 	import { boxOf, canonical, loadAsset } from './load.js';
 	import { valuesOf } from './params.js';
 	import { INDEX, nameOf, pageOf } from './vault.js';
+	import { asker, loop } from './viewer.js';
 
 	let { hash } = $props();
 
@@ -82,8 +85,8 @@
 	// the build's controls, and each one's value now
 	let poser = $state.raw(null);
 	let pose = $state({});
-	let view, renderer, scene, camera, controls, grid, shown, frame;
-	let asking = 0;
+	let view, renderer, scene, camera, controls, grid, shown;
+	const asks = asker();
 
 	onMount(() => {
 		// the stage renderer ($lib/render/stage.js) on the page's canvas, fitted to it as it is drawn (below)
@@ -96,8 +99,7 @@
 		sun.position.set(4, 8, 5);
 		scene.add(sun);
 		camera.position.set(4, 3, 6);
-		const loop = () => {
-			frame = requestAnimationFrame(loop);
+		const stop = loop(() => {
 			const w = canvas.clientWidth, h = canvas.clientHeight;
 			if (canvas.width !== Math.round(w * renderer.getPixelRatio()) || canvas.height !== Math.round(h * renderer.getPixelRatio())) {
 				renderer.setSize(w, h, false);
@@ -106,13 +108,12 @@
 			}
 			controls.update();
 			renderer.render(scene, camera);
-		};
-		loop();
+		});
 		ready = true;
 		// in the browser only: on the server the page is drawn without its view
 		return () => {
-			cancelAnimationFrame(frame);
-			asking++;
+			stop();
+			asks.drop();
 			if (shown) dispose(shown);
 			grid?.geometry.dispose();
 			view.dispose();
@@ -127,21 +128,21 @@
 	});
 
 	async function load(n) {
-		const mine = ++asking;
+		const mine = asks.ask();
 		busy = true;
 		error = '';
 		try {
 			const r = await loadAsset(n);
-			if (mine !== asking) return;
+			if (!asks.is(mine)) return;
 			show(r.obj);
 			built = r;
 			draft = {};
 			poser = poserOf(r.obj);
 			pose = Object.fromEntries(poser.list.map((c) => [c.id, c.rest]));
 		} catch (e) {
-			if (mine === asking) error = e.message;
+			if (asks.is(mine)) error = e.message;
 		}
-		if (mine === asking) busy = false;
+		if (asks.is(mine)) busy = false;
 	}
 
 	const dispose = (obj) => disposeObject(obj);
