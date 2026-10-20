@@ -31,6 +31,7 @@
 pub mod backups;
 pub mod bucket;
 pub mod feed;
+pub mod health;
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -230,6 +231,9 @@ pub struct Running {
     pub relay: Relay,
     pub feed: feed::Feed,
     pub backups: Option<backups::Backups>,
+    /// How it is doing (`health`), said in its folder every few seconds for as long as it runs.
+    pub health: Arc<health::Health>,
+    _beat: Abort,
     /// What the apps know of the server (P8c), so that a new device links through it with its person's passkey alone:
     /// its device, its endpoint, where devices on UDP reach it (`Config::public_addr`) and its relay. A device it
     /// doesn't know yet reaches it straight, over UDP, as its relay lets the device in only once it joined.
@@ -249,8 +253,14 @@ const ONLINE: Duration = Duration::from_secs(30);
 
 /// Starts the server as `config` says: its relay, then its node on its shelf, its bucket's or its folder's, made at
 /// its first start, which is reached through that relay and tells it whom to let in, gated or not, then the feed of
-/// what it keeps.
+/// what it keeps; how it is doing kept in its folder (`health::Health::open`).
 pub async fn start(config: &Config) -> Result<Running> {
+    start_with(config, health::Health::open(&config.data)).await
+}
+
+/// Starts the server as `start` does, saying how it is doing as `health` does: the binary opens that first, so that
+/// a start that fails says so too.
+pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<Running> {
     let admission = if config.signup { Admission::open() } else { Admission::default() };
     let relay = Relay::spawn(config.relay_bind, admission.clone()).await?;
     let url = config.relay_url.clone().unwrap_or_else(|| relay.url());
@@ -291,9 +301,10 @@ pub async fn start(config: &Config) -> Result<Running> {
         let addr = EndpointAddr::new(node.id()).with_ip_addr(public);
         offer.addr = relays.into_iter().fold(addr, EndpointAddr::with_relay_url);
     }
-    let feed = feed::Feed::spawn(config.feed_bind, node.clone()).await?;
+    let feed = feed::Feed::spawn(config.feed_bind, node.clone(), health.clone()).await?;
     let backups = config.snapshots.as_ref().map(|s| backups::Backups::spawn(node.clone(), own, s, Keep::default()));
-    Ok(Running { node, relay, feed, backups: backups.transpose()?, offer })
+    let beat = health.beat();
+    Ok(Running { node, relay, feed, backups: backups.transpose()?, health, _beat: beat, offer })
 }
 
 /// The server's relay: iroh's, serving plain HTTP on its socket, letting in only the clients its admission admits or

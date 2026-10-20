@@ -1,0 +1,188 @@
+//! How the server is doing, for anyone to read at `GET /feed/health` (`feed::HEALTH`), so that why it stopped is seen
+//! without a way onto its machine (Samuel 2026-10-20, as it restarted every two minutes): when this run started, the
+//! memory it holds now and at most, its process's and its container's against the container's limit, its last panic,
+//! its recent starts, and how the run before it ended. Each run says it is alive in its folder every few seconds
+//! (`BEAT`, `FILE`), with the memory it held then. A run that ends by a stop or an error says so there as it ends; one
+//! that said nothing was killed from outside, as for its memory, and what it last said is what it held then. Nothing
+//! in it is secret: times, sizes and a panic's message.
+
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use serde_json::{Value, json};
+
+use crate::Abort;
+
+/// The file in the server's folder each run says how it is doing in.
+const FILE: &str = "health.json";
+
+/// How often a run says it is alive.
+const BEAT: Duration = Duration::from_secs(5);
+
+/// How many starts it keeps.
+const STARTS: usize = 50;
+
+/// How the server is doing, this run and the one before.
+pub struct Health {
+    file: PathBuf,
+    started: u64,
+    /// The starts it keeps, this one last.
+    starts: Vec<u64>,
+    /// How the run before this one ended, as it left its file, or null for the first.
+    before: Value,
+    /// This run's last panic, `{at, message}`: a task's panic leaves the process running.
+    panic: Mutex<Value>,
+}
+
+impl Health {
+    /// This run's, in folder `data`: what the run before left there read, and this start said.
+    pub fn open(data: &Path) -> Arc<Health> {
+        let file = data.join(FILE);
+        let left: Option<Value> = std::fs::read(&file).ok().and_then(|bytes| serde_json::from_slice(&bytes).ok());
+        let started = now();
+        let mut starts: Vec<u64> = left.as_ref().map_or_else(Vec::new, |l| {
+            l["starts"].as_array().into_iter().flatten().filter_map(Value::as_u64).collect()
+        });
+        starts.push(started);
+        let excess = starts.len().saturating_sub(STARTS);
+        starts.drain(..excess);
+        let before = left.map_or(Value::Null, |l| {
+            let ended = match &l["ended"] {
+                Value::Null => json!({ "how": "killed", "why": "it said nothing as it ended: killed from outside, as for its memory" }),
+                ended => ended.clone(),
+            };
+            json!({ "started": l["started"], "seen": l["seen"], "memory": l["memory"], "panic": l["panic"], "ended": ended })
+        });
+        let health = Arc::new(Health { file, started, starts, before, panic: Mutex::new(Value::Null) });
+        health.write(Value::Null);
+        health
+    }
+
+    /// Has every panic of this process kept as this run's last (`json`), then told as before.
+    pub fn hook(self: &Arc<Self>) {
+        let (health, told) = (self.clone(), std::panic::take_hook());
+        std::panic::set_hook(Box::new(move |info| {
+            let message = match (info.payload().downcast_ref::<&str>(), info.payload().downcast_ref::<String>()) {
+                (Some(s), _) => (*s).to_string(),
+                (_, Some(s)) => s.clone(),
+                _ => "a panic with no message".to_string(),
+            };
+            let at = info.location().map(|l| format!("{}:{}", l.file(), l.line()));
+            *health.panic.lock().unwrap_or_else(|e| e.into_inner()) = json!({ "at": now(), "where": at, "message": message });
+            health.write(Value::Null);
+            told(info);
+        }));
+    }
+
+    /// Says it is alive every few seconds (`BEAT`), with the memory it holds, for as long as what it returns is held.
+    pub(crate) fn beat(self: &Arc<Self>) -> Abort {
+        let health = self.clone();
+        Abort(tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(BEAT).await;
+                health.write(Value::Null);
+            }
+        }))
+    }
+
+    /// Says this run ended, and how: `stopped`, as it was told to, or an `error`, with `why`.
+    pub fn ended(&self, how: &str, why: Option<String>) {
+        self.write(json!({ "how": how, "at": now(), "why": why }));
+    }
+
+    /// How it is doing, as `GET /feed/health` says it: this run's start and how long it has run, the memory it holds,
+    /// its last panic, how many times it started in the last hour and the last few starts, and how the run before
+    /// ended.
+    pub fn json(&self) -> Value {
+        let now = now();
+        let hour = self.starts.iter().filter(|&&s| now.saturating_sub(s) < 3600).count();
+        let recent: Vec<u64> = self.starts.iter().rev().take(10).copied().collect();
+        json!({
+            "started": self.started,
+            "up": now.saturating_sub(self.started),
+            "memory": memory(),
+            "panic": *self.panic.lock().unwrap_or_else(|e| e.into_inner()),
+            "starts": { "hour": hour, "recent": recent },
+            "before": self.before,
+        })
+    }
+
+    /// Writes how this run is doing to its file, as it is now, `ended` or not (null): whole or not at all, by a file
+    /// beside it renamed over it.
+    fn write(&self, ended: Value) {
+        let state = json!({
+            "started": self.started,
+            "seen": now(),
+            "memory": memory(),
+            "panic": *self.panic.lock().unwrap_or_else(|e| e.into_inner()),
+            "starts": self.starts,
+            "ended": ended,
+        });
+        let new = self.file.with_extension("json.new");
+        let written = serde_json::to_vec(&state).map_err(std::io::Error::from).and_then(|bytes| std::fs::write(&new, bytes));
+        if let Err(e) = written.and_then(|()| std::fs::rename(&new, &self.file)) {
+            tracing::debug!("avenDB server: its health can't be written to {}: {e}", self.file.display());
+        }
+    }
+}
+
+/// Seconds since 1970.
+fn now() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
+}
+
+/// The memory the process holds now and at most (`/proc/self/status`), its container's now, at most and its limit,
+/// with how many times its container's processes were killed for memory (cgroup v2, `/sys/fs/cgroup`), and the
+/// machine's in all and free (`/proc/meminfo`, the machine's in a container too), each in bytes; null where the
+/// machine doesn't say.
+fn memory() -> Value {
+    let (status, info) = (read("/proc/self/status"), read("/proc/meminfo"));
+    let kb = |text: &str, name: &str| {
+        let line = text.lines().find(|l| l.starts_with(name))?;
+        line[name.len()..].trim().trim_end_matches("kB").trim().parse::<u64>().ok().map(|k| k * 1024)
+    };
+    let cgroup = |name: &str| std::fs::read_to_string(Path::new("/sys/fs/cgroup").join(name)).ok();
+    let bytes = |name: &str| cgroup(name).and_then(|s| s.trim().parse::<u64>().ok());
+    let kills = cgroup("memory.events").and_then(|events| {
+        let line = events.lines().find(|l| l.starts_with("oom_kill "))?;
+        line["oom_kill ".len()..].trim().parse::<u64>().ok()
+    });
+    json!({
+        "rss": kb(&status, "VmRSS:"),
+        "rss_peak": kb(&status, "VmHWM:"),
+        "container": bytes("memory.current"),
+        "container_peak": bytes("memory.peak"),
+        "limit": bytes("memory.max"),
+        "oom_kills": kills,
+        "machine": kb(&info, "MemTotal:"),
+        "machine_free": kb(&info, "MemAvailable:"),
+    })
+}
+
+/// A file of the machine's, or nothing.
+fn read(path: &str) -> String {
+    std::fs::read_to_string(path).unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_run_that_said_nothing_as_it_ended_was_killed_and_one_that_stopped_says_so() {
+        let dir = std::env::temp_dir().join(format!("avendb-health-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let first = Health::open(&dir);
+        assert!(first.json()["before"].is_null(), "the first run has none before it");
+        let second = Health::open(&dir);
+        assert_eq!(second.json()["before"]["ended"]["how"], "killed", "the first said nothing as it ended");
+        assert_eq!(second.json()["starts"]["hour"], 2);
+        second.ended("stopped", None);
+        let third = Health::open(&dir);
+        assert_eq!(third.json()["before"]["ended"]["how"], "stopped");
+        assert_eq!(third.json()["before"]["started"], second.started);
+        assert_eq!(third.json()["starts"]["recent"].as_array().map(Vec::len), Some(3));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}

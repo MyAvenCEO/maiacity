@@ -75,6 +75,7 @@ use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
 use crate::Abort;
+use crate::health::Health;
 
 /// Where the feed is served.
 pub const PATH: &str = "/feed/posts";
@@ -108,6 +109,10 @@ pub const MEDIA: &str = "/feed/media/";
 
 /// Where the server says whether an invite is open, at `INVITE` `<share>`, its id in 64 hex digits (`invite`).
 pub const INVITE: &str = "/feed/invite/";
+
+/// Where the server says how it is doing (`crate::health`): when it started, the memory it holds, and how the run
+/// before it ended, never kept by a cache.
+pub const HEALTH: &str = "/feed/health";
 
 /// Where the proof of one vault's public code is served (`proof`): `PROOF?vault=<64 hex>` or `PROOF?seed=1`, and the
 /// kinds (`type=`) and entries (`entry=`) it proves.
@@ -179,7 +184,7 @@ pub struct Feed {
 
 impl Feed {
     /// The feed of what `node` keeps, served on socket `bind`.
-    pub async fn spawn(bind: SocketAddr, node: Arc<Node>) -> Result<Feed> {
+    pub async fn spawn(bind: SocketAddr, node: Arc<Node>, health: Arc<Health>) -> Result<Feed> {
         let listener = TcpListener::bind(bind).await.with_context(|| format!("the feed on {bind}"))?;
         let addr = listener.local_addr().context("the feed's socket")?;
         let feeds = Feeds::default();
@@ -194,9 +199,10 @@ impl Feed {
                         continue;
                     }
                 };
-                let (node, feeds) = (node.clone(), feeds.clone());
+                let (node, feeds, health) = (node.clone(), feeds.clone(), health.clone());
                 tokio::spawn(async move {
-                    let service = service_fn(move |request| answer(request, node.clone(), feeds.clone()));
+                    let service =
+                        service_fn(move |request| answer(request, node.clone(), feeds.clone(), health.clone()));
                     let mut http = http1::Builder::new();
                     // a client that never finishes its request's head is let go, as the timer says (30 s)
                     http.timer(TokioTimer::new());
@@ -224,9 +230,14 @@ async fn answer(
     request: Request<Incoming>,
     node: Arc<Node>,
     feeds: Feeds,
+    health: Arc<Health>,
 ) -> Result<Response<Full<Bytes>>, Infallible> {
     let path = request.uri().path();
     let reads = matches!(*request.method(), Method::GET | Method::HEAD);
+    // how the server is doing, without asking its node, so that it answers while the node is busy
+    if path == HEALTH && reads {
+        return Ok(well(&health));
+    }
     if let Some(at) = path.strip_prefix(FILES).filter(|_| reads) {
         return Ok(picture(at, &node).await);
     }
@@ -277,6 +288,17 @@ async fn answer(
     let kept = if invited.is_some() { "no-store" } else { "public, max-age=10" };
     headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(kept));
     Ok(response)
+}
+
+/// The answer to a GET or HEAD of `HEALTH`: how the server is doing (`Health::json`), as JSON, never kept.
+fn well(health: &Health) -> Response<Full<Bytes>> {
+    let body = Bytes::from(serde_json::to_vec(&health.json()).expect("JSON writes"));
+    let mut response = Response::new(Full::new(body));
+    let headers = response.headers_mut();
+    headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    response
 }
 
 /// The tag of an answer of `body`: a BLAKE3 hash of its bytes in hex, quoted, as an `ETag` is.
