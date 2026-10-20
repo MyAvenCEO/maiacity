@@ -1,0 +1,124 @@
+name: avenDB checks
+
+# avenDB's checks for every pull request that touches it, so a thread pushes and lets them run here, in parallel,
+# instead of running them for twenty minutes in its own small container:
+#
+#   tests  – the Rust tests of avenDB's workspace (the browser page test, `--ignored`, stays scripts/test-browser.sh's)
+#   spec   – the Lean spec, the SSOT (avendb/spec): `lake build` proves it, checks its scenarios and holds the committed
+#            vectors to the model; `lake exe vectors` must write nothing new (vectors regenerated and committed)
+#   wasm   – the page's WebAssembly (src/lib/avendb/device, scripts/build-web.sh), built here from the PR's sources. When
+#            the committed one differs, this job commits the one it built to the PR's branch, so no thread rebuilds it
+#            by hand (pull before your next push)
+on:
+  pull_request:
+    paths:
+      - 'avendb/**'
+      - 'src/lib/avendb/device/**'
+      - '.github/workflows/avendb-checks.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avendb-checks-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    name: avenDB tests (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: core
+            args: -p avendb
+          - name: net, server, device
+            args: -p avendb-net -p avendb-server -p avendb-device -p avendb-browser
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: avendb -> target
+          key: tests-${{ matrix.name }}
+          cache-on-failure: true
+      - name: cargo test
+        working-directory: avendb
+        run: cargo test --locked ${{ matrix.args }}
+
+  spec:
+    name: Lean spec and vectors
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: ~/.elan
+          key: elan-${{ hashFiles('avendb/spec/lean-toolchain') }}
+      - uses: actions/cache@v4
+        with:
+          path: avendb/spec/.lake
+          key: lake-${{ hashFiles('avendb/spec/lean-toolchain') }}-${{ hashFiles('avendb/spec/**/*.lean', 'avendb/spec/vectors/**') }}
+          restore-keys: lake-${{ hashFiles('avendb/spec/lean-toolchain') }}-
+      - name: elan
+        run: |
+          if [ ! -x ~/.elan/bin/lake ]; then
+            curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          fi
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: lake build
+        working-directory: avendb/spec
+        run: lake build
+      - name: The committed vectors are the model's
+        working-directory: avendb/spec
+        run: |
+          lake exe vectors
+          if ! git diff --exit-code -- vectors; then
+            echo "::error::avendb/spec/vectors differ from what the model writes: run \`lake exe vectors\` in avendb/spec and commit them"
+            exit 1
+          fi
+
+  wasm:
+    name: The page's WebAssembly
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.129
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: avendb -> target
+          key: wasm
+          cache-on-failure: true
+      - run: avendb/scripts/build-web.sh
+      - name: Commit it where it changed
+        env:
+          SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          if git diff --quiet -- src/lib/avendb/device && [ -z "$(git ls-files --others --exclude-standard src/lib/avendb/device)" ]; then
+            echo "The committed WebAssembly is the one these sources build."
+            exit 0
+          fi
+          if [ "$SAME_REPO" != "true" ]; then
+            echo "::error::src/lib/avendb/device is stale: run avendb/scripts/build-web.sh and commit what it writes"
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898+github-actions[bot]@users.noreply.github.com'
+          git add -A src/lib/avendb/device
+          git commit -m "avenDB: the page's WebAssembly, built by CI from this branch's sources"
+          git push
+          echo "::notice::Committed the rebuilt WebAssembly to this branch: pull before your next push."
