@@ -1,13 +1,18 @@
 <!--
-	The newest days as three quiet rows — number, title, date — under the
-	pinned day on the front page and under the door at the foot of a post.
+	The newest days of the journal as three quiet rows — number, title, date — under where it starts on the front page:
+	posts of the one stream, avenDB's feed ($lib/universe/stream.svelte.js), each to its own page.
 -->
-<script lang="ts">
+<script>
+	// @ts-nocheck — plain JS, kept loose on purpose
 	import { base } from '$app/paths';
-	import { postHref } from './drafts';
-	import type { PostMeta } from './types';
+	import { postHref } from '$lib/universe/posts.js';
+	import { dayOf } from '$lib/universe/journal.js';
 
-	let { posts, title = 'Latest days' }: { posts: PostMeta[]; title?: string } = $props();
+	/** @type {{ posts: any[], title?: string }} */
+	let { posts, title = 'Latest days' } = $props();
+
+	// the day it first went out, where it says one
+	const dateOf = (p) => (p.published ? new Date(p.published).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : '');
 </script>
 
 {#if posts.length}
@@ -17,12 +22,12 @@
 			<a href="{base}/universe/?c=Journal">All days →</a>
 		</div>
 		<ul>
-			{#each posts as day (day.slug)}
+			{#each posts as p (p.id)}
 				<li>
-					<a href={postHref(day)}>
-						<span class="num">{String(day.day ?? '').padStart(2, '0')}</span>
-						<span class="title">{day.title}</span>
-						<span class="date">{new Date(day.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>
+					<a href={postHref(base, p)}>
+						<span class="num">{dayOf(p) == null ? '' : String(dayOf(p)).padStart(2, '0')}</span>
+						<span class="title">{p.title}</span>
+						<span class="date">{dateOf(p)}</span>
 						<span class="arrow" aria-hidden="true">→</span>
 					</a>
 				</li>
