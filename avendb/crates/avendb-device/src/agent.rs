@@ -326,7 +326,7 @@ pub async fn serve_built(
     host: PathBuf,
     harness: String,
     input: impl AsyncRead + Unpin,
-    mut output: impl AsyncWrite + Unpin,
+    output: impl AsyncWrite + Unpin,
     built: u64,
 ) -> Result<()> {
     serve_idle(host, harness, input, output, built, IDLE_AGENT).await
