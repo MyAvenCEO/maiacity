@@ -64,13 +64,11 @@ export function takeSeat(founder, _seat, now = Date.now()) {
   });
 }
 
-/** one move, always for the seat the founder holds: nobody moves for the other player. The one exception is an
- * admin's MIP proposed over the MCP (unsigned, both players sign it on the page), which needs no seat. */
-export function move(founder, admin, _seat, action, now = Date.now()) {
+/** one move, always for the seat the founder holds: nobody moves for the other player. */
+export function move(founder, _seat, action, now = Date.now()) {
   return db.transaction(async (tx) => {
     const before = await load(tx, now);
-    let seat = SEATS.find((s) => before.players[s].founder === founder.id);
-    if (!seat && admin && action?.type === "propose" && action?.mip?.via === "mcp") seat = "A";
+    const seat = SEATS.find((s) => before.players[s].founder === founder.id);
     if (!seat) throw new GameError("You have no seat in this game.", 403);
     const state = act(before, seat, action, now);
     await save(tx, state);

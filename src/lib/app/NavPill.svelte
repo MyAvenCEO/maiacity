@@ -18,8 +18,8 @@
 	import { base } from '$app/paths';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { holdsGroup, invites, makeInvite } from './access.svelte.js';
-	import { ADMIN, TRAVELER } from '$lib/avendb/capgroups.js';
+	import { invites, makeInvite } from './access.svelte.js';
+	import { TRAVELER } from '$lib/avendb/capgroups.js';
 	import Icon from './Icon.svelte';
 	import { back, onDashboard, upFrom } from './back.svelte.js';
 	import { pill } from './pill.svelte.js';
@@ -133,7 +133,6 @@
 					<input class="invited" readonly value={invited} onfocus={(e) => e.currentTarget.select()} aria-label="The invite link" />
 				{/if}
 			{/if}
-			{#if holdsGroup(ADMIN)}<a role="menuitem" href="{base}/join/#terminal">Sign a terminal in</a>{/if}
 			<a role="menuitem" href="{base}/">The public site</a>
 			<button role="menuitem" class="out" onclick={onsignout}>Sign out</button>
 		</div>

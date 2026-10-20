@@ -276,7 +276,7 @@ export async function proxiesOf(call, world, t) {
 		seen.add(`${c.shot}@${c.shotVersion}`);
 		const v = versionEntry(world, c.shot, c.shotVersion);
 		// one brought from the film seed or the old studio needs none rendered, nor can one whose world the camera no
-		// longer has (./importer.js `bringProxies`)
+		// longer has (each brought once, tagged proxy:<shot>:<version>)
 		const tag = `proxy:${c.shot}:${c.shotVersion}`;
 		if (v && shootable(shotFrom(v).spec) && !world.entries.some((e) => !e.deleted && (e.tags ?? []).includes(tag))) await ask(call, world, v, 'world-proxy', {}).catch(() => null);
 	}
