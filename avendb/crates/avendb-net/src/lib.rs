@@ -1999,12 +1999,20 @@ impl Shared {
     /// node holds, only those the device may hold by the node's view (`Reach`, worked out again where it may have grown
     /// since), as `synced_to` reads them: a claim to any other steers nothing, and learns nothing of what the node
     /// holds of it. A log the node holds nothing of, which its view can't place, it asks for naming nothing of it
-    /// (`session::only`), as its request on a new connection does: else it would never learn of a new entry.
+    /// (`session::only`), as its request on a new connection does: else it would never learn of a new entry. A device
+    /// the view doesn't know, on the endpoint of one it knows, is that one's next key, whose key move the node lacks
+    /// yet (`Lab::peers`: one secret, one endpoint): it may hold what that one may, so the node asks it for the move
+    /// too, as it never would otherwise (Samuel's Mac 2026-10-20 moved while the server was away, and nobody learned).
     async fn differ(self: &Arc<Self>, device: SignerId) -> BTreeSet<LogId> {
         let Some(theirs) = self.held.lock().expect("held").get(&device).map(|h| h.logs.clone()) else {
             return BTreeSet::new();
         };
         let (shared, known) = (self.clone(), self.reach.lock().expect("reach").clone());
+        let earlier = || {
+            let endpoint = self.endpoint_of(device)?;
+            known.iter().find(|(_, r)| r.endpoint == endpoint).map(|(d, _)| *d)
+        };
+        let device = if known.contains_key(&device) { device } else { earlier().unwrap_or(device) };
         self.lab(move |lab, me| {
             let mine = shared.logs_of(lab, me);
             let mut now: Option<BTreeSet<LogId>> = None;
@@ -2017,6 +2025,12 @@ impl Shared {
             lacking.filter(|l| !mine.of.contains_key(l) || within(l)).collect()
         })
         .await
+    }
+
+    /// The endpoint of the live connection whose hellos proved `device`, if there is one.
+    fn endpoint_of(&self, device: SignerId) -> Option<EndpointId> {
+        let peers = self.peers.lock().expect("peers");
+        peers.values().find(|p| p.device == device && p.conn.close_reason().is_none()).map(|p| p.endpoint)
     }
 
     /// Asks `endpoint` for the logs where the device there holds what this one lacks (`differ`), and those alone, if

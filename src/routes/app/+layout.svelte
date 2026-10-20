@@ -52,6 +52,8 @@
 	/** the key move (K3b) under way, and why it didn't go through, if it didn't */
 	let moveBusy = $state(false);
 	let moveError = $state('');
+	/** the key move went through: said once, as the banner goes (Samuel 2026-10-20: after his touch "nothing happened") */
+	let moved = $state(false);
 	/** who asks once more for the key move: the passkey's prompt, Touch ID, or both */
 	const moveAsks = $derived(
 		[session.moving?.passkey ? `${asks} once more` : '', session.moving?.touch ? 'Touch ID asks for a touch' : '']
@@ -62,7 +64,8 @@
 	/** Moves the person's keys to ML-DSA-65 now (session.moveKeys), showing why not if it didn't go through. */
 	async function moveNow() {
 		[moveBusy, moveError] = [true, ''];
-		if (!(await session.moveKeys())) moveError = session.error;
+		if (await session.moveKeys()) moved = true;
+		else moveError = session.error;
 		moveBusy = false;
 	}
 	/** the passkey roots no human vault yet, or the person just signed up: the name its profile takes, to found it */
@@ -401,6 +404,10 @@
 				Your keys move to ML-DSA-65, smaller and faster post-quantum signatures: {moveAsks}.
 				<button class="quiet later" disabled={moveBusy} onclick={moveNow}>{moveBusy ? 'Moving…' : 'Move my keys'}</button>
 				{#if moveError}<span class="bad">{moveError}</span>{/if}
+			</p>
+		{:else if moved}<p class="invite-note move-note" role="status">
+				Your keys moved to ML-DSA-65. Your other devices learn it as they sync with this one.
+				<button class="quiet later" onclick={() => (moved = false)}>OK</button>
 			</p>{/if}
 		<div class="app" class:immersive>
 			<VaultRecipes hold={assetPage}>{@render children()}</VaultRecipes>

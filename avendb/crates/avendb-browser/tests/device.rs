@@ -1545,6 +1545,69 @@ async fn hanas_browser_and_passkey_from_before_the_key_move_move_in_one_ceremony
     }
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn hanas_ipad_away_as_her_browser_moved_learns_the_move_from_its_next_key() {
+    let admission = Admission::open();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url: RelayUrl = relay.url();
+    // Hana's passkey, Mac, iPad and browser, made before the key move: SLH-DSA
+    let mut lab = Lab::new();
+    let passkey = lab.passkey_from_in("Hana", [43; 32], Suite::SlhDsa);
+    let mac_h = lab.device_of(passkey, "Hana's Mac");
+    let ipad_h = lab.device_of(passkey, "Hana's iPad");
+    let (secret, nonce) = ([44; 32], [1; 32]);
+    let browser_h = lab.device_with_in("Hana's browser", secret, Suite::SlhDsa);
+    let hana = human_on(&mut lab, passkey, &[mac_h, ipad_h, browser_h]);
+    lab.sync_all(1);
+    let pass = |lab: &mut Lab, d| lab.relay_pass(d, passkey, now()).expect("her passkey's pass");
+    let opts = Options { relay: Some(url.clone()), relay_passes: vec![pass(&mut lab, mac_h)], ..Options::local() };
+    let mac = Node::spawn(lab.split(mac_h, &[], [1; 32]), mac_h, opts).await.expect("her Mac's node");
+    // her iPad is away all along, as a server restarts or a phone sleeps: it holds what she had before the move
+    let relay_passes = vec![pass(&mut lab, ipad_h)];
+    let ipad_opts = Options { relay: Some(url.clone()), relay_passes, ..Options::local() };
+    let ipad_lab = lab.split(ipad_h, &[], [5; 32]);
+    let shelf = Folder::new("hana-away");
+    let (relay_passes, on) = (vec![pass(&mut lab, browser_h)], Some(disk::open(&shelf.0).expect("its shelf")));
+    let opts = Options { relay: Some(url.clone()), relay_passes, shelf: on, ..Options::local() };
+    let browser = Node::spawn(lab.split(browser_h, &[], [2; 32]), browser_h, opts).await.expect("her browser's node");
+    until("the relay serves both", || async { relay.serves(&mac.id()) && relay.serves(&browser.id()) }).await;
+    browser.shutdown().await.expect("it closes, its shelf holding what it holds");
+    let hanas = Browser::new(Passkey::from_seed([43; 32]));
+    let (p256, pad) = {
+        let held = &hanas.0.lock().expect("the authenticator").0;
+        (held.public(), held.prf(&device_salt(&nonce)))
+    };
+    let mask: [u8; 32] = std::array::from_fn(|i| secret[i] ^ pad[i]);
+    let (name, relay_at, credential) = ("Hana's browser".to_string(), url.to_string(), "aGFuYQ".to_string());
+    let (device, follow, query_depth, touch) = (browser_h, vec![], None, None);
+    let meta = Meta { name, relay: relay_at, nonce, mask, credential, p256, device, follow, query_depth, touch };
+    meta.keep(&disk::open(&shelf.0).expect("its shelf")).await.expect("what opens it again");
+    let opened = Device::open(start_on(&shelf.0, "Hana's browser", &url, 3), &meta, hanas.unlock(nonce, [0xaa; 32]));
+    let opened = opened.await.expect("it opens");
+    let moving = opened.moving().await.expect("what moves, once it caught up with her Mac");
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: true }));
+    // her Mac goes away before she moves: no peer sees the move as it happens
+    mac.shutdown().await.expect("her Mac's node stops");
+    let again = start_on(&shelf.0, "Hana's browser", &url, 4);
+    let sign = |challenge, _: Moving| {
+        let hanas = &hanas;
+        async move { Ok(Signing { passkey: Some(hanas.ceremony(challenge, Step::Approve).await?), touch: None }) }
+    };
+    let moved = opened.move_keys(again, sign, |_| async { Ok(()) }).await.expect("it moves");
+    let moved = moved.expect("her keys moved");
+    let (me, next) = (moved.node().device(), moved.passkey());
+    // her iPad, which never saw the move, comes on: it learns it from her browser's next key
+    let ipad = Node::spawn(ipad_lab, ipad_h, ipad_opts).await.expect("her iPad's node");
+    let owns = move |lab: &Lab, d| {
+        let vault = lab.state(d).vault(hana);
+        vault.is_some_and(|v| v.owners.contains(&Principal::Signer(next)) && v.devices.contains(&me))
+    };
+    until("her iPad sees the move", || async { ipad.read(owns).await }).await;
+    for n in [moved.node(), &ipad] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
 /// Sam's, made before the key move: his passkey and Mac in SLH-DSA, and his vault, which claimed the server, so it owns
 /// Maia City, which owns avenMAIA, the server's aven. His vault and Maia City each give avenMAIA backup and have a name.
 struct Sams {
