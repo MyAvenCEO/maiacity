@@ -5,8 +5,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { blake3 } from '@noble/hashes/blake3.js';
-import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
+import { hashText } from '../../../game/hash.js';
 import { rolldown } from 'rolldown';
 
 const LIB = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '');
@@ -38,8 +37,8 @@ const fonts = {
 	}
 };
 
-/** BLAKE3 of a text, in hex @param {string} text */
-export const hashText = (text) => bytesToHex(blake3(utf8ToBytes(text)));
+/** BLAKE3 of a text, in hex (game/hash.js, the one hash) */
+export { hashText };
 
 /** engine `kind` as one script @param {keyof typeof SOURCES} kind @returns {Promise<string>} */
 export async function bundleKernel(kind) {

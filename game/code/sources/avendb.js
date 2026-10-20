@@ -25,8 +25,7 @@
  * A ref `vault:<vault id>/<entry id>@<heads>` names one entry at one version, as avenDB pins one: it is served only
  * while the loaded entry is at those heads.
  */
-import { blake3 } from '@noble/hashes/blake3.js';
-import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
+import { hashText } from '../../hash.js';
 import { canonical, jsonFile } from '../files.js';
 import { checkCode } from '../check.js';
 import { ENTRIES as SEED } from '../../../code/index.js';
@@ -39,8 +38,6 @@ const HOSTS = { view: 'view', logic: 'logic' };
 /** and a game's settings, which no host runs */
 const KINDS = [...Object.keys(HOSTS), 'config'];
 
-export const AVENDB_REF = /^vault:([A-Za-z0-9_-]{8,128})\/([A-Za-z0-9_-]{8,128})@([0-9a-f]{8,128}(?:,[0-9a-f]{8,128})*)$/;
-
 /** where avenDB's server serves public code entries (its feed, as /feed/posts serves posts): { code: [row] } */
 export { CODE_FEED };
 
@@ -50,7 +47,7 @@ export const feedOf = (feed = CODE_FEED, vault = MAIA_CITY) => proofOf(KINDS, { 
 
 const PATH = /^(views|logic|configs)\/[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*$/;
 
-export const hashOf = (text) => bytesToHex(blake3(utf8ToBytes(text)));
+export const hashOf = hashText;
 const tagged = (tags, key) => (tags ?? []).find((t) => typeof t === 'string' && t.startsWith(`${key}:`))?.slice(key.length + 1);
 const textOf = (v) => (v == null ? undefined : typeof v === 'string' ? v : jsonFile(v));
 const objectOf = (text) => (text == null ? undefined : JSON.parse(text));
@@ -184,12 +181,12 @@ export const avendb = {
 		loaded = next;
 		return { taken: Object.keys(next).sort(), refused };
 	},
-	/** the entry a vault ref names, at its heads @param {{ vault: string, entry: string, heads: string }} ref */
+	/** the entry a vault ref names, at its heads (../ref.js `parseEntryRef`) @param {{ vault: string, entry: string, heads: string[] }} ref */
 	at(ref) {
 		const e = Object.values(loaded).find((x) => x.vault === ref.vault && x.entry === ref.entry);
 		if (!e) throw new Error(`code entry ${ref.entry.slice(0, 12)}… of vault ${ref.vault.slice(0, 12)}… is not loaded`);
 		const heads = (Array.isArray(e.heads) ? e.heads : String(e.heads ?? '').split(',')).filter(Boolean).sort().join(',');
-		if (heads !== ref.heads.split(',').sort().join(',')) throw new Error(`${e.ref} is at other heads now than ${ref.heads.slice(0, 12)}…`);
+		if (heads !== [...ref.heads].sort().join(',')) throw new Error(`${e.ref} is at other heads now than ${ref.heads[0].slice(0, 12)}…`);
 		return e;
 	}
 };

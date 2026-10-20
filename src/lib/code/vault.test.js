@@ -20,7 +20,7 @@ const all = Object.values(ENTRIES);
 /** the views and logic modules, which the copy writes (a game's settings the seed writes, src/lib/avendb/seed.js) */
 const repo = all.filter((e) => e.type !== 'config');
 /** the rows the vault would hand out after the copy: each create, as read back */
-const rowsOf = (entries) => entries.map((e, i) => ({ entry: `e${String(i).padStart(11, '0')}`, vault: VAULT, heads: `${String(i).padStart(8, '0')}cafe`, ...recordOf(e), record: recordOf(e).value }));
+const rowsOf = (entries) => entries.map((e, i) => ({ entry: `e${String(i).padStart(63, '0')}`, vault: VAULT, heads: `${String(i).padStart(60, '0')}cafe`, ...recordOf(e), record: recordOf(e).value }));
 const strip = ({ source, vault, entry, heads, engine, ...e }) => e;
 
 afterEach(() => avendb.use([], viewOfEntry));
@@ -122,7 +122,7 @@ describe('loaded entries', () => {
 		const r = row('views/village-scene');
 		avendb.use([r], viewOfEntry);
 		expect(codeAt(`vault:${VAULT}/${r.entry}@${r.heads}`).ref).toBe('views/village-scene');
-		expect(() => codeAt(`vault:${VAULT}/${r.entry}@0000000000aa`)).toThrow(/other heads/);
+		expect(() => codeAt(`vault:${VAULT}/${r.entry}@${'0'.repeat(62)}aa`)).toThrow(/other heads/);
 	});
 });
 

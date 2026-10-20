@@ -17,21 +17,23 @@
  * checker (./check.js) in a test, and a config from the vault is held to the shape of the seed's.
  */
 import { ENTRIES } from '../../code/index.js';
-import { AVENDB_REF, avendb, loadCode as load } from './sources/avendb.js';
+import { avendb, loadCode as load } from './sources/avendb.js';
+import { parseEntryRef } from './ref.js';
 import { deviceOf } from './sources/device.js';
 
 export class CodeError extends Error {}
 
 const REPO_REF = /^((?:views|logic|configs)\/[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*)(?:@([0-9a-f]{6,64}))?$/;
 
-/** a ref read: { source: 'repo', path, hash? } or { source: 'avendb', vault, entry, heads } */
+/** a ref read: { source: 'repo', path, hash? } or { source: 'avendb', vault, entry, heads } (heads sorted, ./ref.js) */
 export function parseCodeRef(ref) {
 	const s = String(ref ?? '');
 	const repo = s.match(REPO_REF);
 	if (repo) return { source: 'repo', path: repo[1], ...(repo[2] ? { hash: repo[2] } : {}) };
-	const db = s.match(AVENDB_REF);
-	if (db) return { source: 'avendb', vault: db[1], entry: db[2], heads: db[3] };
-	throw new CodeError(`"${s.slice(0, 80)}" is no code ref: views/<id>, logic/<group>/<id>, configs/<game>/<id>, optionally @<hash>`);
+	// a code entry takes no values: a ref with any names none
+	const db = s.startsWith('vault:') ? parseEntryRef(s) : null;
+	if (db && !db.query) return { source: 'avendb', vault: db.vault, entry: db.entry, heads: db.heads };
+	throw new CodeError(`"${s.slice(0, 80)}" is no code ref: views/<id>, logic/<group>/<id>, configs/<game>/<id>, optionally @<hash>, or vault:<vault>/<entry>@<heads>`);
 }
 
 /** the entry `ref` names @param {string} ref */

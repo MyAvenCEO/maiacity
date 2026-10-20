@@ -9,8 +9,7 @@
 //   node scripts/code-index.mjs --check    exit 1 if it is not what the files make
 import { readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { blake3 } from '@noble/hashes/blake3.js';
-import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
+import { hashText as hashOf } from '../game/hash.js';
 import { entriesOfFiles } from '../game/code/files.js';
 
 const ROOT = fileURLToPath(new URL('../code/', import.meta.url));
@@ -30,8 +29,6 @@ export function filesOf(root = ROOT) {
 	walk('');
 	return out;
 }
-
-const hashOf = (text) => bytesToHex(blake3(utf8ToBytes(text)));
 
 /** every entry, or only those under the top folders `tops` */
 export function entries(root = ROOT, tops = MODULES['index.js']) {
