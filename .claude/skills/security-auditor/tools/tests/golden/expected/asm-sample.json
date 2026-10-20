@@ -1,0 +1,53 @@
+[
+  {
+    "id": "F-RUST-ASM-0001",
+    "language": "rust",
+    "category": "STACK_RETENTION",
+    "severity": "high",
+    "symbol": "SecretKey_wipe",
+    "detail": "Stack frame of 64 bytes allocated at line 4 ('subq\\t$64, %rsp') but no zero-store found before return at line 7",
+    "evidence": [
+      {
+        "source": "asm",
+        "detail": "subq\t$64, %rsp at line 4; no volatile wipe before retq at line 7"
+      }
+    ],
+    "evidence_files": [
+      "fixtures/sample.s"
+    ]
+  },
+  {
+    "id": "F-RUST-ASM-0002",
+    "language": "rust",
+    "category": "REGISTER_SPILL",
+    "severity": "medium",
+    "symbol": "SecretKey_wipe",
+    "detail": "Register %rax (caller-saved) spilled to stack at line 5 in function 'SecretKey_wipe' \u2014 may expose secret value",
+    "evidence": [
+      {
+        "source": "asm",
+        "detail": "movq\t%rax, -8(%rsp) at line 5"
+      }
+    ],
+    "evidence_files": [
+      "fixtures/sample.s"
+    ]
+  },
+  {
+    "id": "F-RUST-ASM-0003",
+    "language": "rust",
+    "category": "REGISTER_SPILL",
+    "severity": "high",
+    "symbol": "SecretKey_wipe",
+    "detail": "Register %r12 (callee-saved) spilled to stack at line 6 in function 'SecretKey_wipe' \u2014 may expose secret value",
+    "evidence": [
+      {
+        "source": "asm",
+        "detail": "movq\t%r12, -16(%rsp) at line 6"
+      }
+    ],
+    "evidence_files": [
+      "fixtures/sample.s"
+    ]
+  }
+]

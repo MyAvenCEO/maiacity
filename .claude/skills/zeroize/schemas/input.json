@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "zeroize audit input (Rust)",
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "Repository root path"
+    },
+    "cargo_manifest": {
+      "type": "string",
+      "description": "The crate's Cargo.toml (a workspace member's own manifest, or the root with crate set)"
+    },
+    "crate": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null,
+      "description": "Package name (cargo -p) when the manifest is a workspace root"
+    },
+    "target": {
+      "type": "string",
+      "default": "--lib",
+      "description": "--lib or --bin <name>; needed when the package has both"
+    },
+    "config": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Path to config YAML"
+    },
+    "opt_levels": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "O0",
+          "O1",
+          "O2",
+          "O3",
+          "Os",
+          "Oz"
+        ]
+      },
+      "default": [
+        "O0",
+        "O1",
+        "O2"
+      ]
+    },
+    "enable_asm": {
+      "type": "boolean",
+      "default": true,
+      "description": "Enable assembly emission and analysis"
+    },
+    "target_dir": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null,
+      "description": "The shared nightly build folder (default: <cargo target dir>/zeroize)"
+    }
+  },
+  "required": [
+    "path",
+    "cargo_manifest"
+  ],
+  "additionalProperties": false
+}

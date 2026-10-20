@@ -1,0 +1,53 @@
+[
+  {
+    "id": "F-RUST-ASM-0001",
+    "language": "rust",
+    "category": "REGISTER_SPILL",
+    "severity": "medium",
+    "symbol": "SecretKey_leaf",
+    "detail": "Register %rdi (caller-saved) spilled to stack at line 7 in function 'SecretKey_leaf' \u2014 may expose secret value",
+    "evidence": [
+      {
+        "source": "asm",
+        "detail": "movq\t%rdi, -8(%rsp) at line 7"
+      }
+    ],
+    "evidence_files": [
+      "fixtures/sample_leaf_x86.s"
+    ]
+  },
+  {
+    "id": "F-RUST-ASM-0002",
+    "language": "rust",
+    "category": "REGISTER_SPILL",
+    "severity": "medium",
+    "symbol": "SecretKey_leaf",
+    "detail": "Register %rsi (caller-saved) spilled to stack at line 8 in function 'SecretKey_leaf' \u2014 may expose secret value",
+    "evidence": [
+      {
+        "source": "asm",
+        "detail": "movq\t%rsi, -16(%rsp) at line 8"
+      }
+    ],
+    "evidence_files": [
+      "fixtures/sample_leaf_x86.s"
+    ]
+  },
+  {
+    "id": "F-RUST-ASM-0003",
+    "language": "rust",
+    "category": "STACK_RETENTION",
+    "severity": "high",
+    "symbol": "SecretKey_leaf",
+    "detail": "Leaf function 'SecretKey_leaf' stores 16 bytes in the x86-64 red zone (below %rsp) without zeroing before return \u2014 sensitive data may persist in the 128-byte region below %rsp",
+    "evidence": [
+      {
+        "source": "asm",
+        "detail": "red zone depth -16(%rsp); no mov[qwlb] $0 or memset/zeroize call before retq"
+      }
+    ],
+    "evidence_files": [
+      "fixtures/sample_leaf_x86.s"
+    ]
+  }
+]

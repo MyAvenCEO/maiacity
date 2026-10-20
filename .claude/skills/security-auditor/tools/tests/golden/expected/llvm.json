@@ -1,0 +1,154 @@
+[
+  {
+    "id": "F-RUST-IR-0001",
+    "language": "rust",
+    "category": "OPTIMIZED_AWAY_ZEROIZE",
+    "severity": "high",
+    "confidence": "likely",
+    "detail": "Volatile store count dropped from 2 (O0) to 0 (O2) \u2014 2 volatile wipe(s) eliminated by dead-store elimination",
+    "symbol": "",
+    "location": {
+      "file": "fixtures/sample.O2.ll",
+      "line": 0
+    },
+    "evidence": [
+      {
+        "source": "llvm_ir",
+        "detail": "Volatile store count dropped from 2 (O0) to 0 (O2) \u2014 2 volatile wipe(s) eliminated by dead-store elimination"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-IR-0002",
+    "language": "rust",
+    "category": "OPTIMIZED_AWAY_ZEROIZE",
+    "severity": "high",
+    "confidence": "likely",
+    "detail": "Volatile stores to %secret_key dropped from 2 (O0) to 0 (O2) \u2014 symbol-specific wipe elimination detected",
+    "symbol": "secret_key",
+    "location": {
+      "file": "fixtures/sample.O2.ll",
+      "line": 0
+    },
+    "evidence": [
+      {
+        "source": "llvm_ir",
+        "detail": "Volatile stores to %secret_key dropped from 2 (O0) to 0 (O2) \u2014 symbol-specific wipe elimination detected"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-IR-0003",
+    "language": "rust",
+    "category": "OPTIMIZED_AWAY_ZEROIZE",
+    "severity": "high",
+    "confidence": "likely",
+    "detail": "Non-volatile @llvm.memset in O2 IR \u2014 DSE-eligible, may be removed at higher optimization. Use zeroize crate or volatile memset. IR: call void @llvm.memset.p0.i64(ptr %tmp, i8 0, i64 32, i1 false)",
+    "symbol": "",
+    "location": {
+      "file": "fixtures/sample.O2.ll",
+      "line": 10
+    },
+    "evidence": [
+      {
+        "source": "llvm_ir",
+        "detail": "Non-volatile @llvm.memset in O2 IR \u2014 DSE-eligible, may be removed at higher optimization. Use zeroize crate or volatile memset. IR: call void @llvm.memset.p0.i64(ptr %tmp, i8 0, i64 32, i1 false)"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-IR-0004",
+    "language": "rust",
+    "category": "STACK_RETENTION",
+    "severity": "high",
+    "confidence": "likely",
+    "detail": "alloca [32 x i8] %session_buf has @llvm.lifetime.end but no volatile store \u2014 stack bytes not wiped before slot is freed",
+    "symbol": "session_buf",
+    "location": {
+      "file": "fixtures/sample.O2.ll",
+      "line": 0
+    },
+    "evidence": [
+      {
+        "source": "llvm_ir",
+        "detail": "alloca [32 x i8] %session_buf has @llvm.lifetime.end but no volatile store \u2014 stack bytes not wiped before slot is freed"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-IR-0005",
+    "language": "rust",
+    "category": "OPTIMIZED_AWAY_ZEROIZE",
+    "severity": "high",
+    "confidence": "likely",
+    "detail": "alloca [32 x i8] %secret_key present at O0 but absent at O2 \u2014 SROA/mem2reg promoted it to registers; any volatile stores targeting this alloca are now unreachable",
+    "symbol": "secret_key",
+    "location": {
+      "file": "fixtures/sample.O2.ll",
+      "line": 0
+    },
+    "evidence": [
+      {
+        "source": "llvm_ir",
+        "detail": "alloca [32 x i8] %secret_key present at O0 but absent at O2 \u2014 SROA/mem2reg promoted it to registers; any volatile stores targeting this alloca are now unreachable"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-IR-0006",
+    "language": "rust",
+    "category": "REGISTER_SPILL",
+    "severity": "medium",
+    "confidence": "likely",
+    "detail": "Secret-named SSA value '%secret_val' loaded and passed directly to '@callee' \u2014 value in argument register may not be cleared after call",
+    "symbol": "secret_val",
+    "location": {
+      "file": "fixtures/sample.O2.ll",
+      "line": 12
+    },
+    "evidence": [
+      {
+        "source": "llvm_ir",
+        "detail": "Secret-named SSA value '%secret_val' loaded and passed directly to '@callee' \u2014 value in argument register may not be cleared after call"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-IR-0007",
+    "language": "rust",
+    "category": "REGISTER_SPILL",
+    "severity": "medium",
+    "confidence": "likely",
+    "detail": "Secret-named SSA value '%secret_val' is returned directly \u2014 value may persist in return registers after function exit",
+    "symbol": "secret_val",
+    "location": {
+      "file": "fixtures/sample.O2.ll",
+      "line": 15
+    },
+    "evidence": [
+      {
+        "source": "llvm_ir",
+        "detail": "Secret-named SSA value '%secret_val' is returned directly \u2014 value may persist in return registers after function exit"
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-IR-0008",
+    "language": "rust",
+    "category": "SECRET_COPY",
+    "severity": "medium",
+    "confidence": "likely",
+    "detail": "Potential by-value aggregate call argument contains secret-named data; copy may escape zeroization tracking. Args: { i8, i8 } %secret_agg",
+    "symbol": "",
+    "location": {
+      "file": "fixtures/sample.O2.ll",
+      "line": 13
+    },
+    "evidence": [
+      {
+        "source": "llvm_ir",
+        "detail": "Potential by-value aggregate call argument contains secret-named data; copy may escape zeroization tracking. Args: { i8, i8 } %secret_agg"
+      }
+    ]
+  }
+]
