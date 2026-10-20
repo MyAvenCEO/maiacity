@@ -123,7 +123,8 @@ const keepOf = () => {
 const loaded = (o) => {
 	const f = feedOf(o);
 	const proving = { ...PROVING, proofs: o?.proofs ?? keepOf(), ...(o?.vault !== undefined ? { vault: o.vault } : {}), ...(o?.verify ? { verify: o.verify } : {}), ...(o?.page ? { page: o.page } : {}) };
-	return vault.loadRecipes({ feed: AT, fetch: f.get, timeout: 1000, ...proving, ...(o?.kept ? { kept: o.kept } : {}) }).then((r) => ({ ...f, r }));
+	const waits = { ...(o?.again ? { again: o.again } : {}), ...(o?.patience !== undefined ? { patience: o.patience } : {}) };
+	return vault.loadRecipes({ feed: AT, fetch: f.get, timeout: 1000, ...proving, ...waits, ...(o?.kept ? { kept: o.kept } : {}) }).then((r) => ({ ...f, r }));
 };
 
 /** what `f` threw or rejected with, or null */
@@ -479,8 +480,8 @@ test("a feed that can't be reached, or answers otherwise, fails the page, naming
 		expect(await thrown(() => loadAsset(LABEL['things/bell-tent@1'], { box: boxOf(), store: storeOf() }))).toBeInstanceOf(NotInVault);
 		return r;
 	};
-	await down({ status: 503 }, new RegExp(`^the asset recipes could not be loaded from the Maia City vault: ${ROWS_URL.replace(/[?.]/g, '\\$&')} answered 503$`));
-	await down({ throws: 'offline' }, /^the asset recipes could not be loaded from the Maia City vault: offline$/);
+	await down({ status: 503, patience: 0 }, new RegExp(`^the asset recipes could not be loaded from the Maia City vault: ${ROWS_URL.replace(/[?.]/g, '\\$&')} answered 503$`));
+	await down({ throws: 'offline', patience: 0 }, /^the asset recipes could not be loaded from the Maia City vault: offline$/);
 	await down({ rows: [...FEED.rows.slice(0, 3), { ...FEED.rows[3], vault: 'ef'.repeat(32) }] }, /listed code of another vault than Maia City's/);
 	// no anchor: nothing is taken from the feed at all
 	const unset = await down({ vault: '' }, /Maia City's vault id is not set \(game\/code\/sources\/anchor\.js MAIA_CITY/);
@@ -519,7 +520,7 @@ test("a world's files are read a few at a time, and one the network drops, or th
 		}
 	};
 	const none = { get: async () => undefined, put: async () => true };
-	await vault.loadRecipes({ feed: AT, fetch: get, timeout: 1000, kept: none, again: [0, 0], ...PROVING, proofs: keepOf() });
+	await vault.loadRecipes({ feed: AT, fetch: get, timeout: 1000, kept: none, again: [0, 0], patience: 0, ...PROVING, proofs: keepOf() });
 	const hashes = Object.keys(made.index.recipes).filter((h) => made.index.recipes[h].group === 'plants');
 	const asked = [...hashes, LABEL['things/bell-tent@1']];
 	const got = await Promise.all(asked.map((h) => vault.recipeAt(h)));
@@ -678,6 +679,95 @@ test("a page that holds its avenDB open reads the recipes off its own device: th
 		expect(old.r.feed).toBe(ROWS_URL);
 		await vault.recipeAt(LABEL['things/bell-tent@1']);
 		expect(old.proofs().length).toBe(1);
+	} finally {
+		useDevice(null);
+	}
+}, 60000);
+
+test("a server restarting is waited for, saying so: the listing and each file asked again together, never told missing; a file it never hands over is told unread, not missing", async () => {
+	// avenDB's server restarting for a deploy (Sandbox 4 on a phone, 2026-10-20): the listing and every file "Load
+	// failed" for a while, the proxy's 502 in between, then all of it answers
+	const f = feedOf();
+	let down = true;
+	let lists = 0;
+	const asked = [];
+	const get = async (url, o) => {
+		const file = /\/file/.test(url);
+		if (!file) lists++;
+		else asked.push(url);
+		if (down && (!file || asked.length % 2)) throw new TypeError('Load failed');
+		if (down) return new Response('bad gateway', { status: 502 });
+		return f.get(url, o);
+	};
+	const none = { get: async () => undefined, put: async () => true };
+	const seen = [];
+	const stop = vault.watchRecipes((r) => seen.push(r.waiting));
+	setTimeout(() => (down = false), 60);
+	const r = await vault.loadRecipes({ feed: AT, fetch: get, timeout: 1000, kept: none, again: [5, 10, 20], ...PROVING, proofs: keepOf() });
+	expect(r.phase).toBe('ready');
+	expect(lists).toBeGreaterThan(1);
+	// the page was told it waits, and that it waits no more
+	expect(seen).toContain(1);
+	expect(r.waiting).toBe(0);
+	// now the files: down again, a world's two dozen at once; they wait together, the feed asked a few at a time
+	down = true;
+	asked.length = 0;
+	setTimeout(() => (down = false), 80);
+	const hashes = Object.keys(made.index.recipes).filter((h) => made.index.recipes[h].group === 'plants');
+	const got = await Promise.all(hashes.map((h) => vault.recipeAt(h)));
+	expect(got.map((x) => x.code)).toEqual(hashes.map((h) => FILES[h]));
+	expect(vault.recipes.missed.filter((m) => m.startsWith('plants/'))).toEqual([]);
+	expect(vault.recipes.unread).toEqual([]);
+	expect([vault.recipes.waiting, vault.recipes.reading]).toEqual([0, 0]);
+	// every file once at least, and while it was down no more than a few at each asking, not each file again and again
+	expect(asked.length).toBeGreaterThanOrEqual(hashes.length);
+	expect(asked.length).toBeLessThan(3 * hashes.length);
+	// a file that never comes, once the page waited as long as it waits: unread, it may well be there, not missing
+	await vault.loadRecipes({ feed: AT, fetch: async (url, o) => (/\/file/.test(url) ? new Response('', { status: 503 }) : f.get(url, o)), timeout: 1000, kept: none, again: [1], patience: 30, ...PROVING, proofs: keepOf() });
+	const tent = LABEL['things/bell-tent@1'];
+	const err = await thrown(() => vault.recipeAt(tent));
+	expect(err).toBeInstanceOf(vault.Unread);
+	expect(err.message).toMatch(/^things\/bell-tent@1: its file could not be read from the Maia City vault \(.* answered 503, asked \d+ times\)$/);
+	expect(vault.recipes.unread).toEqual([err.message]);
+	expect(vault.recipes.missed).toEqual([]);
+	stop();
+}, 60000);
+
+test("a file the page's device is slow to hand over is asked of the feed too, and the first to hand it over is read; the device's, where the feed doesn't answer", async () => {
+	const { useDevice } = await import('../../../game/code/sources/device.js');
+	const byRoot = new Map(FEED.rows.map((r) => [r.files.at(-1).root, FEED.files.get(r.entry)]));
+	// a light copy still bringing each file's pieces from its peers: every read takes `slow` ms
+	let slow = 0;
+	const device = {
+		run: async (op) => (op.op === 'bring' ? { ok: { new: 0, peers: 1, reached: true } } : { ok: FEED.rows }),
+		read: async (root, size, from, to) => (await new Promise((r) => setTimeout(r, slow)), byRoot.get(root).slice(from, to))
+	};
+	const none = { get: async () => undefined, put: async () => true };
+	useDevice(device);
+	try {
+		let feedDown = false;
+		const f = feedOf();
+		const get = async (url, o) => {
+			if (feedDown) throw new TypeError('Load failed');
+			return f.get(url, o);
+		};
+		const r = await vault.loadRecipes({ feed: AT, fetch: get, timeout: 1000, kept: none, lead: 20, again: [5], ...PROVING, proofs: keepOf() });
+		expect(r.feed).toBe('this device');
+		// quick: the device's, the feed never asked
+		const apple = LABEL['plants/apple@2'];
+		expect((await vault.recipeAt(apple)).code).toBe(FILES[apple]);
+		expect(f.files()).toEqual([]);
+		// slow: the feed's, asked once the device took longer than `lead`
+		slow = 400;
+		const fern = LABEL['biomes/cover@1:fern'];
+		expect((await vault.recipeAt(fern)).code).toBe(FILES[fern]);
+		expect(f.files().length).toBe(1);
+		// slow, and the feed down: the device's, once it hands it over, with no error
+		feedDown = true;
+		slow = 150;
+		const tent = LABEL['things/bell-tent@1'];
+		expect((await vault.recipeAt(tent)).code).toBe(FILES[tent]);
+		expect([vault.recipes.missed, vault.recipes.unread]).toEqual([[], []]);
 	} finally {
 		useDevice(null);
 	}
