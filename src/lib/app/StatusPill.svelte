@@ -51,7 +51,7 @@
 		[
 			sync.known &&
 				(sync.behind > 0
-					? `avenDB: ${n(Math.max(0, sync.logs - sync.behind))} of ${n(sync.logs)} logs your ${sync.peers === 1 ? 'peer holds' : `${n(sync.peers)} peers hold`}${sync.pulling ? `, bringing ${n(sync.pulling)} now` : ''}`
+					? `avenDB: ${n(Math.max(0, sync.logs - sync.behind))} of ${n(sync.logs)} logs synced from ${sync.peers === 1 ? 'your peer' : `your ${n(sync.peers)} peers`}${sync.pulling ? `, ${n(sync.pulling)} coming in now` : ''}`
 					: `avenDB: in sync with ${sync.peers === 1 ? 'your peer' : `your ${n(sync.peers)} peers`}`),
 			files.reading > 0 && `This page: ${n(files.reading)} ${files.reading === 1 ? 'file' : 'files'} on the way${files.waiting ? `, ${n(files.waiting)} waiting for avenDB's server to answer again` : ''}`
 		].filter(Boolean)
