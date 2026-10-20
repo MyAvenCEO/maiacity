@@ -123,7 +123,8 @@ jobs:
           openssl pkeyutl -encrypt -pubin -inkey to.pem -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -in key.txt -out key.sealed
           tar -czf - -C list . | openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:key.txt -out list.sealed
           rm -rf list key.txt
-          echo '--- key'; base64 -w 76 key.sealed; echo '--- list'; base64 -w 76 list.sealed; echo '--- end'
+          # long lines: a job's log reads back 5,000 lines at most
+          echo '--- key'; base64 -w 2000 key.sealed; echo '--- list'; base64 -w 2000 list.sealed; echo '--- end'
 
       - name: Forget the list's artifact
         if: inputs.step == 'forget'
