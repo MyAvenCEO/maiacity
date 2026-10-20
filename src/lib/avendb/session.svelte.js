@@ -36,8 +36,9 @@
  *
  * Once open, the device says what its key move asks of the person (K3b, `moving`): where their passkey or this device,
  * or in the Mac app its Touch ID key, still signs in SLH-DSA, the app asks once more, and `moveKeys` moves them to
- * ML-DSA-65 in one ceremony (and one touch), the device opening again as its next key. A move that asks for no
- * ceremony, as one cut short, goes on by itself.
+ * ML-DSA-65 in one ceremony (and one touch), the device opening again as its next key. The server and the agents of the
+ * aven they govern move in the same ceremony (K3c), each opening as its next key from its next start. A move that asks
+ * for no ceremony, as one cut short, goes on by itself.
  */
 
 import { native } from '$lib/native';
@@ -88,8 +89,10 @@ let world = $state.raw(/** @type {import('./vaults.js').WorldView | null} */ (nu
 /** the vault the person looks at, picked in avenDB's nav pill (./Shell.svelte): their own until they pick another */
 let vault = $state('');
 /** what the key move asks of the person (K3b, avendb-browser's `Moving`), while their passkey, this device or in the
- *  Mac app its Touch ID key still signs in SLH-DSA: whether their passkey signs, whether Touch ID does, and whether the
- *  device moves; null once nothing moves. @type {{ passkey: boolean, touch: boolean, device: boolean } | null} */
+ *  Mac app its Touch ID key still signs in SLH-DSA, or the server or an agent of the aven they govern does (K3c):
+ *  whether their passkey signs, whether Touch ID does, whether the device moves, and how many of the aven's devices
+ *  move with it; null once nothing moves.
+ *  @type {{ passkey: boolean, touch: boolean, device: boolean, avens?: number } | null} */
 let moving = $state.raw(null);
 /** what the page is doing for the person, and what went wrong last, where it shows them */
 let doing = $state('');
@@ -700,8 +703,8 @@ export const session = {
 	set doing(what) {
 		doing = what;
 	},
-	/** what the key move asks of the person (K3b): `{ passkey, touch, device }` while anything of theirs here is to
-	 *  move to ML-DSA-65, else null */
+	/** what the key move asks of the person (K3b, K3c): `{ passkey, touch, device, avens }` while anything of theirs
+	 *  here, or a device of the aven they govern, is to move to ML-DSA-65, else null */
 	get moving() {
 		return moving;
 	},

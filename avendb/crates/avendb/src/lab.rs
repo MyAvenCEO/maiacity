@@ -95,8 +95,8 @@ use crate::lens::{self, Lane, Lens, Schema, View};
 use crate::merge;
 use crate::ops::Loc;
 use crate::policy::{
-    mk_audience, replay, replay_on, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log, Meaning,
-    Principal, Proposal, Readings, Refusal, Replay, Share, Sharing, State, Who, Write,
+    mk_audience, replay, replay_on, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
+    Meaning, Principal, Proposal, Readings, Refusal, Replay, Share, Sharing, State, Vault, Who, Write,
 };
 use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
@@ -958,11 +958,38 @@ impl Lab {
         seen.into_iter().filter_map(|(s, keys)| Some((s, next(keys)?))).collect()
     }
 
+    /// The devices of each aven or device vault that the vault device `on` belongs to owns, up the chain, that sign in
+    /// another suite than new signers are made in and whose next key isn't a device beside them yet, as `on`'s view and
+    /// the signatures it holds say, each with its endpoint, its ed25519 key: the server and the agents of its person's
+    /// coop's aven, which their own move (`moves`) doesn't reach, as they belong to the aven. `on` asks each for its next
+    /// key (`move_key`) and adds it with theirs (`draft_move`; the key move, K3c). None if `on` belongs to no vault.
+    pub fn aven_devices(&self, on: SignerId) -> Vec<(SignerId, [u8; 32])> {
+        let Some(mine) = self.vault_of(on) else { return vec![] };
+        let st = self.state(on);
+        let governed: Vec<&Vault> = st.vaults().iter().filter(|v| claimable(v.kind) && st.owns(mine, v.id)).collect();
+        let devices: BTreeSet<SignerId> = governed.iter().flat_map(|v| v.devices.iter().copied()).collect();
+        let seen = self.signers_seen(on, &devices);
+        let next = |keys: &SignerKeys| seen.values().any(|k| k.suite() == sign::SIGNING && same_key(keys, k));
+        let mut out = vec![];
+        for (d, keys) in governed.iter().flat_map(|v| &v.devices).filter_map(|d| Some((*d, seen.get(d)?))) {
+            if let SignerKeys::Device { ed25519, .. } = keys
+                && keys.suite() != sign::SIGNING
+                && !next(keys)
+                && !out.iter().any(|&(o, _)| o == d)
+            {
+                out.push((d, *ed25519));
+            }
+        }
+        out
+    }
+
     /// The edits that move `moves`' signers to their next keys (`moves`) on device `on`, drafted together for one
     /// ceremony of each owner key among them (`drafting`): an owner key adds its next key as an owner, which signs too
     /// (with the root, where an owner's approval alone isn't the vault's), but `by` adds the master recovery key's,
     /// whose secret is offline and which signs by its standing consent (K4); then the vault's approval, by `by` or its
-    /// next key, adds each device's next key, which signs too. It only adds: every earlier key stays an owner or a
+    /// next key, adds each device's next key, which signs too, to the vault the device belongs to: `on`'s, or, last,
+    /// an aven or a device vault that approval governs, for its server or an agent, whose next key the device handed
+    /// (`move_key`) and signs in (`claim`, `accept_claim`; K3c). It only adds: every earlier key stays an owner or a
     /// device beside its next, the root where it was, as one secret makes both and nothing moves away from the person
     /// (Samuel 2026-10-20, "Add, never remove"). A removal cuts every edit resting on what it removes that its drafter
     /// doesn't hold (T16), so a move drafted on a device that didn't hold one of the person's vaults yet erased that
@@ -996,10 +1023,18 @@ impl Lab {
         }
         let view = drafting.log.view();
         let by = moves.iter().find(|&&(old, _)| old == by).map_or(by, |&(_, new)| new);
-        let joining = moves.iter().filter(|&&(old, new)| view.is_device(old, vault) && !view.is_device(new, vault));
-        for &(old, new) in joining {
+        // each device's next key joins the vault the device belongs to: the person's own, or an aven or a device vault
+        // they govern, its server's and its agents' (K3c), after theirs
+        let of = |old| match view.is_device(old, vault) {
+            true => Some(vault),
+            false => view.vaults().iter().find(|v| claimable(v.kind) && v.devices.contains(&old)).map(|v| v.id),
+        };
+        let joining = moves.iter().filter_map(|&(old, new)| Some((old, new, of(old)?)));
+        let mut joining: Vec<_> = joining.filter(|&(_, new, v)| !view.is_device(new, v)).collect();
+        joining.sort_by_key(|&(_, _, v)| v != vault);
+        for (old, new, v) in joining {
             let (seal_to, blobs) = self.next_seal(on, &view, old, new);
-            drafting.draft(&[by, new], Action::Share(Sharing::Device { vault, device: new, seal_to }))?;
+            drafting.draft(&[by, new], Action::Share(Sharing::Device { vault: v, device: new, seal_to }))?;
             drafting.drafts.last_mut().expect("drafted").blobs.extend(blobs);
         }
         Ok(drafting.done())
@@ -1211,22 +1246,48 @@ impl Lab {
         Some(vault.id)
     }
 
-    /// Device `d`, a server no vault has claimed yet, takes a device's claim of it (`claim`, P8f): `d` signs the
-    /// claim's edit too, in its place among the edit's signers, and keeps it, with the vault logs the claim brings,
-    /// only if every signature checks out and, with them, its view makes `d` a device of a device vault. So the first
-    /// human vault to claim the server owns its device vault, through the coops of its seed, and the server acts for
-    /// that vault but never governs it. The server's join, for the claiming device to keep too: the edit, signed, and
-    /// the McEliece key it names, the server's own. `AlreadyMember` as `claim_key` says; `NotClaiming` if the edit adds
-    /// another device, seals to another key than the one `d` handed, or adds `d` to anything but a device vault;
-    /// `BadSignature` if a signature doesn't verify, or one is missing or left over; otherwise why `d`'s view, with the
-    /// logs the claim brings, refuses the edit.
+    /// Device `d`'s next key (`next_key`), as it hands it to a device of its person's that moves it (the key move, K3c):
+    /// a server or an agent of an aven, which belongs to the aven, not to its person's vault, so that their own move
+    /// (`moves`) doesn't reach it, and whose next key the aven's owners add beside it, which `d` signs as too
+    /// (`accept_claim`). `NotActing` if `d` belongs to no vault, `Locked` if its next key isn't at hand (`device_keys`)
+    /// or it signs in that suite already, `AlreadyMember` once the next key is a device of `d`'s vault.
+    pub fn move_key(&self, d: SignerId) -> Result<SignerId, Refusal> {
+        let vault = self.vault_of(d).ok_or(Refusal::NotActing)?;
+        let next = self.next_key(d).ok_or(Refusal::Locked)?;
+        if self.state(d).is_device(next, vault) {
+            return Err(Refusal::AlreadyMember);
+        }
+        Ok(next)
+    }
+
+    /// Device `d` takes a device's claim (`claim`): a server no vault has claimed yet, of it (P8f); or a device of an
+    /// aven or a device vault, of its next key (`move_key`), as a device of its person's moves it (the key move, K3c).
+    /// `d` signs the claim's edit too, as itself or as its next key, in its place among the edit's signers, and keeps
+    /// it, with the vault logs the claim brings, only if every signature checks out and, with them, its view makes
+    /// that key a device of a device vault, for a move the one `d` belongs to. So the first human vault to claim the
+    /// server owns its device vault, through the coops of its seed, and the server acts for that vault but never
+    /// governs it; and a move only adds the next key, beside `d`, which stays (`finish_move`). The join, for the
+    /// claiming device to keep too: the edit, signed, and the McEliece key it names, `d`'s own. `AlreadyMember` as
+    /// `claim_key` or `move_key` says; `NotClaiming` if the edit adds another device, seals to another key than `d`'s,
+    /// or adds it to anything but a device vault, for a move to another vault than `d`'s; `BadSignature` if a
+    /// signature doesn't verify, or one is missing or left over; otherwise why `d`'s view, with the logs the claim
+    /// brings, refuses the edit.
     pub fn accept_claim(&mut self, d: SignerId, claim: Claim) -> Result<Join, Refusal> {
-        let key = self.claim_key(d)?;
+        // a server no vault claimed yet joins as itself, a device of a vault as its next key: one secret makes both,
+        // with the same key to seal to
+        let (signer, mine) = match self.vault_of(d) {
+            None => (d, None),
+            Some(v) => (self.move_key(d)?, Some(v)),
+        };
+        let key = match mine {
+            None => self.claim_key(d)?,
+            Some(_) => self.seal_public(signer).ok_or(Refusal::Locked)?.0,
+        };
         let Claim { card, add, sigs } = claim;
         let Action::Share(Sharing::Device { vault, device, seal_to: Some(sealed) }) = &add.action else {
             return Err(Refusal::NotClaiming);
         };
-        if *device != d || *sealed != key {
+        if *device != signer || *sealed != key || mine.is_some_and(|v| v != *vault) {
             return Err(Refusal::NotClaiming);
         }
         let vault = *vault;
@@ -1237,22 +1298,33 @@ impl Lab {
             signed.verify()?;
         }
         // its own signature in its place among the edit's signers, the others' in theirs
-        let mine = self.sign_by(d, add.id(), &[], &[], None, &[])?;
+        let own = self.sign_by(signer, add.id(), &[], &[], None, &[])?;
         let mut theirs = sigs.into_iter();
         let all: Option<Vec<Signature>> =
-            add.sigs().map(|s| if s == d { Some(mine.clone()) } else { theirs.next() }).collect();
+            add.sigs().map(|s| if s == signer { Some(own.clone()) } else { theirs.next() }).collect();
         let all = all.filter(|_| theirs.next().is_none()).ok_or(Refusal::BadSignature)?;
         let signed = Signed { edit: add, sigs: all };
         signed.verify()?;
-        // with the logs it brings, its view accepts the edit, and makes `d` a device of a device vault
-        let mut log = self.held(d).log.clone();
-        log.receive(card.iter().map(|s| s.edit.clone()));
-        log.view().step(&signed.edit)?;
-        log.receive([signed.edit.clone()]);
-        if !log.view().vault(vault).is_some_and(|v| claimable(v.kind) && v.devices.contains(&d)) {
+        // with the logs it brings, its view accepts the edit, and makes the key a device of a device vault: a server no
+        // vault claimed yet checks on a copy of the little it holds; a device of a vault may hold much, all of it on a
+        // server, and takes the vault logs first, as its sync would bring them anyway
+        let (view, card) = match mine {
+            None => {
+                let mut log = self.held(d).log.clone();
+                log.receive(card.iter().map(|s| s.edit.clone()));
+                log.view().step(&signed.edit)?;
+                log.receive([signed.edit.clone()]);
+                (log.view(), card)
+            }
+            Some(_) => {
+                self.deliver(d, card, &Blobs::new());
+                (self.held(d).view().step(&signed.edit)?, vec![])
+            }
+        };
+        if !view.vault(vault).is_some_and(|v| claimable(v.kind) && v.devices.contains(&signer)) {
             return Err(Refusal::NotClaiming);
         }
-        let blobs: Blobs = self.seal_public(d).map(|(_, blob)| (key.mceliece, blob)).into_iter().collect();
+        let blobs: Blobs = self.seal_public(signer).map(|(_, blob)| (key.mceliece, blob)).into_iter().collect();
         let join = Join { edit: signed.clone(), blobs: blobs.values().map(|b| b.to_vec()).collect() };
         self.deliver(d, card.into_iter().chain([signed]).collect(), &blobs);
         Ok(join)

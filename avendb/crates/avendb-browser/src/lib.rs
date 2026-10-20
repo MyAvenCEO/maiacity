@@ -594,9 +594,10 @@ impl Device {
         if !catch_up(&self.node).await {
             bail!("{NOT_CAUGHT_UP}");
         }
+        let avens = aven_moves(&self.node).await;
         let opener = self.opener.clone();
-        let drafted = self.node.read(move |lab, me| drafted(lab, me, &opener, touch).map(|d| d.map(|d| d.moving)));
-        drafted.await.map_err(|why| anyhow!("its key move is refused: {why:?}"))
+        let drafted = move |lab: &Lab, me| drafted(lab, me, &opener, touch, &avens).map(|d| d.map(|d| d.moving));
+        self.node.read(drafted).await.map_err(|why| anyhow!("its key move is refused: {why:?}"))
     }
 
     /// Moves its person's keys and its own to ML-DSA-65 (K3b), as `moving` says, once it caught up with its peers:
@@ -608,8 +609,12 @@ impl Device {
     /// vault beside it, as every earlier key does: the move only adds; and it closes and opens again as its next key
     /// on the same shelf, with no ceremony (`Lab::moved`), as `start` says, and writes its card as that key, whose card
     /// it is. No edit is signed again, and the old edits keep their signatures. A move cut short goes on where it
-    /// stopped at its next unlock, by that key or the old one. The device it opened again as, or `None` where nothing
-    /// moved. Fails for a device that keeps no shelf, if the vault refuses a step, or if a ceremony isn't its signer's.
+    /// stopped at its next unlock, by that key or the old one. The server and the agents of the avens its person
+    /// governs move with it, each that hands its next key in time (`aven_moves`, K3c): the edit that adds that key goes
+    /// to the device, which signs it too, and the device opens as that key from its next start, as the browser's does
+    /// at once. The device it opened again as, or `None` where it didn't move itself. Fails for a device that keeps no
+    /// shelf, if the vault refuses a step, if a ceremony isn't its signer's, or, where nothing else moves, if an aven's
+    /// device doesn't take its move.
     pub async fn move_keys<S, K>(
         &self,
         start: Start,
@@ -624,20 +629,38 @@ impl Device {
         let meta = Meta::load(&shelf).await?.context("its shelf holds nothing that opens it")?;
         let touch = meta.touch.as_ref().map(|t| sign::enclave_key(&t.public));
         catch_up(&self.node).await;
+        let avens = aven_moves(&self.node).await;
         let opener = self.opener.clone();
-        let drafted = self.node.read(move |lab, me| drafted(lab, me, &opener, touch)).await;
+        let theirs = avens.clone();
+        let drafted = self.node.read(move |lab, me| drafted(lab, me, &opener, touch, &theirs)).await;
         let refused = |why: Refusal| anyhow!("its key move is refused: {why:?}");
-        let Some(Drafted { moves, drafts, passkeys, touches, moving }) = drafted.map_err(refused)? else {
+        let Some(Drafted { mut moves, drafts, passkeys, touches, moving }) = drafted.map_err(refused)? else {
             return Ok(None);
         };
+        moves.retain(|&(old, _)| !avens.iter().any(|a| a.device == old));
         if let Some(first) = drafts.first() {
             let Signing { passkey, touch } = sign(first.challenge(), moving).await?;
-            let complete = move |lab: &mut Lab, me| {
-                let by = passkeys.iter().filter_map(|&s| Some((s, passkey.as_ref()?)));
-                let ceremonies: Vec<_> = by.chain(touches.iter().filter_map(|&s| Some((s, touch.as_ref()?)))).collect();
-                lab.complete_move(me, drafts, &ceremonies)
-            };
-            self.node.act(complete).await.map_err(refused)?;
+            let signers = Signers { passkeys, touches, passkey: passkey.map(Arc::new), touch: touch.map(Arc::new) };
+            let (theirs, ours): (Vec<Unsigned>, Vec<Unsigned>) =
+                drafts.into_iter().partition(|d| adding(d, &avens).is_some());
+            let by = signers.clone();
+            self.node.act(move |lab, me| lab.complete_move(me, ours, &by.ceremonies())).await.map_err(refused)?;
+            // each aven's device signs the edit that adds its next key last, and keeps it; one aven's chain in its log,
+            // so one that doesn't take its move holds back those after it, which a later move adds
+            for draft in theirs {
+                let at = adding(&draft, &avens).expect("an aven's device's move");
+                let by = signers.clone();
+                let claim = self.node.act(move |lab, me| lab.claim(me, draft, &by.ceremonies())).await.map_err(refused)?;
+                if let Err(e) = self.node.send_move(at, claim).await {
+                    match moves.is_empty() {
+                        true => return Err(e.context("an aven's device didn't take its key move")),
+                        false => break,
+                    }
+                }
+            }
+        }
+        if moves.is_empty() {
+            return Ok(None);
         }
         let next = |s: SignerId| moves.iter().find(|&&(old, _)| old == s).map_or(s, |&(_, new)| new);
         let new = next(self.node.device());
@@ -875,19 +898,21 @@ const SHELVED: Duration = Duration::from_secs(10);
 
 /// What a device's key move asks of its person (K3b, `Device::moving`): whether their passkey signs, in one ceremony,
 /// as it moves to ML-DSA-65 or approves the device's next key; whether the Mac's Touch ID key signs, with one touch,
-/// as it moves; and whether a device moves, its id changing: this one, or a drive the Mac runs beside it. Where
-/// neither key signs, the device moves with no ceremony, as one cut short goes on (`Device::move_keys`).
+/// as it moves; whether a device moves, its id changing: this one, or a drive the Mac runs beside it; and how many
+/// devices of the avens they govern move with it, the server's and the agents' (K3c). Where neither key signs, the
+/// device moves with no ceremony, as one cut short goes on (`Device::move_keys`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Moving {
     pub passkey: bool,
     pub touch: bool,
     pub device: bool,
+    pub avens: usize,
 }
 
 impl Moving {
-    /// As the page and the Mac app read it: `{passkey, touch, device}`.
+    /// As the page and the Mac app read it: `{passkey, touch, device, avens}`.
     pub fn to_json(&self) -> Value {
-        json!({ "passkey": self.passkey, "touch": self.touch, "device": self.device })
+        json!({ "passkey": self.passkey, "touch": self.touch, "device": self.device, "avens": self.avens })
     }
 }
 
@@ -897,6 +922,58 @@ impl Moving {
 pub struct Signing {
     pub passkey: Option<Ceremony>,
     pub touch: Option<Ceremony>,
+}
+
+/// A device of an aven its person governs that moves with their key move (K3c, `aven_moves`).
+#[derive(Clone, Copy)]
+struct Aven {
+    device: SignerId,
+    /// Its next key, as it handed it (`avendb::lab::Lab::move_key`).
+    next: SignerId,
+    /// Its endpoint, its ed25519 key.
+    at: iroh::EndpointId,
+}
+
+/// How long a key move waits for an aven's device to hand its next key (`aven_moves`), at most.
+const ASK_NEXT: Duration = Duration::from_secs(5);
+
+/// The devices of the avens its person governs that move with device `node`'s key move (K3c,
+/// `avendb::lab::Lab::aven_devices`): the server and the agents, each that hands its next key within `ASK_NEXT`
+/// (`Node::next_key_of`). One that is away moves at a later move.
+async fn aven_moves(node: &Node) -> Vec<Aven> {
+    let devices = node.read(|lab, me| lab.aven_devices(me)).await;
+    let at = devices.into_iter().filter_map(|(d, key)| Some((d, iroh::EndpointId::from_bytes(&key).ok()?)));
+    let asks = at.map(|(device, at)| async move {
+        let next = or(async { node.next_key_of(at, device).await.ok() }, async {
+            sleep(ASK_NEXT).await;
+            None
+        });
+        Some(Aven { device, next: next.await?, at })
+    });
+    n0_future::join_all(asks).await.into_iter().flatten().collect()
+}
+
+/// The endpoint of the aven's device among `avens` whose next key `draft` adds, if it adds one (K3c).
+fn adding(draft: &Unsigned, avens: &[Aven]) -> Option<iroh::EndpointId> {
+    let Action::Share(Sharing::Device { device, .. }) = &draft.edit().action else { return None };
+    avens.iter().find(|a| a.next == *device).map(|a| a.at)
+}
+
+/// Who signs a key move's batch in a ceremony (`Drafted`): its signers a ceremony of the person's passkey signs as and
+/// those a touch signs as, and those ceremonies, where the move asked for them.
+#[derive(Clone)]
+struct Signers {
+    passkeys: Vec<SignerId>,
+    touches: Vec<SignerId>,
+    passkey: Option<Arc<Ceremony>>,
+    touch: Option<Arc<Ceremony>>,
+}
+
+impl Signers {
+    fn ceremonies(&self) -> Vec<(SignerId, &Ceremony)> {
+        let by = self.passkeys.iter().filter_map(|&s| Some((s, self.passkey.as_deref()?)));
+        by.chain(self.touches.iter().filter_map(|&s| Some((s, self.touch.as_deref()?)))).collect()
+    }
 }
 
 /// A key move as its device drafts it (`drafted`).
@@ -913,7 +990,8 @@ struct Drafted {
 }
 
 /// The key move of device `me` of `lab` (`Device::move_keys`): what moves, the Touch ID key whose Enclave key `touch`
-/// names among it (`Lab::moves`); the batch that moves it, by which the vault's approval, the owner key of `opener`
+/// names among it (`Lab::moves`), and the devices of the avens its person governs that handed their next keys,
+/// `avens` (K3c); the batch that moves it, by which the vault's approval, the owner key of `opener`
 /// the vault knows, adds each device's next key (`Lab::draft_move`); and who signs it in a ceremony, each of its
 /// signers but a device by a touch where it, or the key it moves from, is a Touch ID key, by the passkey otherwise,
 /// and the master recovery key's next key by its standing consent alone.
@@ -923,8 +1001,10 @@ fn drafted(
     me: SignerId,
     opener: &[SignerId],
     touch: Option<[u8; 32]>,
+    avens: &[Aven],
 ) -> Result<Option<Drafted>, Refusal> {
-    let moves = lab.moves(me, touch);
+    let mut moves = lab.moves(me, touch);
+    moves.extend(avens.iter().map(|a| (a.device, a.next)));
     if moves.is_empty() {
         return Ok(None);
     }
@@ -946,8 +1026,10 @@ fn drafted(
             _ => passkeys.push(s),
         }
     }
-    let device = moves.iter().any(|&(old, _)| matches!(keys(old), Some(SignerKeys::Device { .. })));
-    let moving = Moving { passkey: !passkeys.is_empty(), touch: !touches.is_empty(), device };
+    let aven = |old: SignerId| avens.iter().any(|a| a.device == old);
+    let device = moves.iter().any(|&(old, _)| !aven(old) && matches!(keys(old), Some(SignerKeys::Device { .. })));
+    let avens = avens.len();
+    let moving = Moving { passkey: !passkeys.is_empty(), touch: !touches.is_empty(), device, avens };
     Ok(Some(Drafted { moves, drafts, passkeys, touches, moving }))
 }
 

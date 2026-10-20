@@ -1695,6 +1695,22 @@ the server or another of their devices (`Device::moving`, `catch_up`): a move ro
 one made before the device holds what those keys open would make them over what it doesn't hold yet. Until then the
 page asks nothing, and the next unlock asks again.
 
+The server and the agents belong to the aven, not to their person's vault, so their person's move doesn't reach them
+by itself (K3c). Each opens with its keys in both suites (`Lab::device_keys`) and hands its next key to whoever asks
+(`session::NEXT_KEY`, `Lab::move_key`). A device of a person who governs the aven, up the chain of owners, asks each
+of the aven's devices still in SLH-DSA (`Lab::aven_devices`) and adds the next keys in the same ceremony as its own
+move (`Lab::draft_move`): one edit per device, the person's approval and the next key signing it. The device signs it
+last, through the claim channel a server is claimed by (`Lab::claim`, `Lab::accept_claim`), and keeps it. Its next
+key takes the keep shares the device held (`Lab::finish_move`). Once its shelf holds the move, it names that key on
+its shelf (`server::NEXT`) and opens as it from its next start: the server at its next deploy, an agent at its next
+session. A cloud agent, whose folder lasts only as long as its session's machine, learns the move from the server's
+card and opens again as its next key at once (`server::follow`). The earlier key stays a device. Until the device
+opens again it goes by its earlier key at the same endpoint, so its peers announce to whichever key the endpoint's
+hello proves (`Shared::tell`). The offer the app and the agents carry names the server's earlier key: a hello from
+its next key at that endpoint stands for it, once the server's card shows both as devices of one vault
+(`Node::offered`). A shelf that names a next key that is no device of a vault opens as the earlier key, never as a
+device of no vault, which would take a stranger's claim.
+
 ## 11. Passkeys
 
 A person's passkey is the root of everything they hold. It stays in their platform's authenticator, used through
