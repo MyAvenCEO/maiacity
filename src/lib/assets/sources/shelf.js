@@ -12,7 +12,9 @@
  * short id (`nameOf`: `Truck v2 · eaa6e531…`).
  */
 import { refOf } from '../refs.js';
-import { labelOf } from './avendb.js';
+import { labelOf, shortId } from './avendb.js';
+
+export { shortId };
 
 /** the groups in the order the asset dashboard lists them; one it doesn't name comes after, by its name */
 export const GROUPS = ['factories', 'machines', 'actors', 'worlds', 'buildings', 'things', 'biomes', 'plants'];
@@ -33,9 +35,6 @@ export const groupName = (g) => g.charAt(0).toUpperCase() + g.slice(1);
  *   its entry, its title and its versions
  * @typedef {{ group: string, title: string, assets: ShelvedAsset[] }} Shelf
  */
-
-/** an entry's short id, its first 8 hex digits @param {string} entry */
-export const shortId = (entry) => `${String(entry).slice(0, 8)}…`;
 
 /**
  * A version as avenDB names it: the asset's title, its variant's name where it has one of its own, its number and the

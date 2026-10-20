@@ -312,6 +312,10 @@ fn an_assets_versions_and_variants_are_one_entry() {
     let lamp = g.create("Lamp", alice, one_len);
     let e = entry_id(&ok(engine::put_file(&mut g.w.lab, mac, &lamp, first)));
     let e_hex = e.to_hex();
+    // brought once, on main: the row says the heads a pin of that version names, main's version 1 (`version_heads`)
+    let v1 = ok(run(&mut g.w, mac, &json!({ "op": "get", "entry": e_hex, "version": 1 })));
+    assert_eq!(g.row(mac, e)["at"], v1["at"], "{v1}");
+    assert!(g.row(mac, e).get("brought").is_none());
     let at = |line: &Value, value: Value, len: u64, actor: VaultId| {
         json!({ "op": "put_file", "entry": e_hex, "line": line, "value": value, "len": len, "as": actor.to_hex() })
     };
@@ -392,5 +396,21 @@ fn an_assets_versions_and_variants_are_one_entry() {
             })
             .collect();
         assert_eq!(list(&row["brought"]).iter().map(read).collect::<Vec<_>>(), want, "on {d:?}");
+        // each pinned by the entry's id and the heads it lists (`at`): main's by the release of main it belongs to, a
+        // variant's by its own write, and a pin of them reads that version back
+        assert!(row.get("at").is_none(), "its versions say theirs: {row}");
+        for b in list(&row["brought"]) {
+            let pin = ok(run(&mut g.w, d, &json!({ "op": "pin", "entry": e_hex, "at": b["at"] })));
+            assert_eq!(pin["line"], b["line"], "{pin}");
+            let got = ok(run(&mut g.w, d, &json!({ "op": "get", "entry": e_hex, "line": b["line"], "at": b["at"] })));
+            assert_eq!(got["record"]["card"], b["record"]["card"], "{got}");
+            if b["line"].is_null() {
+                let release = ok(run(&mut g.w, d, &json!({ "op": "get", "entry": e_hex, "version": b["version"] })));
+                assert_eq!(b["at"], release["at"], "main's version {}", b["version"]);
+                assert_eq!(pin["version"], json!({ "version": b["version"], "edits": 0 }), "{pin}");
+            } else {
+                assert_eq!(b["at"], json!([b["edit"]]), "a variant's own write");
+            }
+        }
     }
 }

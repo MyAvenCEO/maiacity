@@ -10,13 +10,15 @@
 	import { treeOf } from './tree.js';
 
 	/**
-	 * @type {{ catalog: any, own?: string, picked?: string | null, solo?: boolean, hrefOf?: (ref: string) => string | null }}
+	 * @type {{ catalog: any, own?: string, picked?: string | null, solo?: boolean, hrefOf?: (ref: string) => string | null,
+	 *   nameOf?: (ref: string) => string }}
 	 *   `catalog` the asset's parts as built, `own` its own ref, `picked` the part picked, `solo` whether it is shown on its
-	 *   own (else in its place), `hrefOf` where a whole asset it carries is shown, by its ref
+	 *   own (else in its place), `hrefOf` where a whole asset it carries is shown, by its ref, and `nameOf` its name as
+	 *   avenDB gives it ("Power Cube v3 · 1a2b3c4d…")
 	 */
-	let { catalog, own, picked = $bindable(null), solo = $bindable(true), hrefOf = () => null } = $props();
+	let { catalog, own, picked = $bindable(null), solo = $bindable(true), hrefOf = () => null, nameOf = (ref) => ref } = $props();
 
-	const tree = $derived(treeOf(catalog, own, hrefOf));
+	const tree = $derived(treeOf(catalog, own, hrefOf, nameOf));
 	const card = $derived(picked ? (catalog?.parts.find((p) => p.id === picked) ?? null) : null);
 	const assembly = $derived(card ? catalog.assemblies?.find((a) => a.id === card.assembly) : null);
 	const choose = (id) => (picked = picked === id ? null : id);
@@ -40,7 +42,7 @@
 			{#if card.drive}<p><b>Driven by</b> {card.drive}</p>{/if}
 			{#if card.ref && card.ref !== own}
 				{@const to = hrefOf(card.ref)}
-				<p><b>Part of</b> {#if to}<a href={to}>{card.ref}</a>{:else}{card.ref}{/if}</p>
+				<p><b>Part of</b> {#if to}<a href={to}>{nameOf(card.ref)}</a>{:else}{nameOf(card.ref)}{/if}</p>
 			{/if}
 			{#if card.specs?.length}
 				<dl>
@@ -80,11 +82,11 @@
 	{#each tree.units as u (u.ref)}
 		<details class="unit" open={!!picked && u.parts.some((p) => p.id === picked)}>
 			<summary
-				><b>{u.name}</b> <small>{u.parts.length}</small>{#if u.href}<a href={u.href} title="Its own: {u.ref}" onclick={(e) => e.stopPropagation()}
+				><b>{u.name}</b> <small>{u.parts.length}</small>{#if u.href}<a href={u.href} title="Its own: {u.named}" onclick={(e) => e.stopPropagation()}
 						>Open</a
 					>{/if}</summary
 			>
-			<p class="note soft">A whole asset of its own ({u.ref}), carried here as one part</p>
+			<p class="note soft">A whole asset of its own ({u.named}), carried here as one part</p>
 			{#each u.groups as t (t.a.id)}
 				<span class="sub">{t.a.label.replace(/^[^:]*:\s*/, '')}</span>
 				<ul>

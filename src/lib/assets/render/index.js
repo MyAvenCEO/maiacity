@@ -29,8 +29,7 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import { AssetBox } from '../box/host.js';
 import { labelOf, poserOf } from '../controls.js';
 import { canonical, loadAsset } from '../load.js';
-import { INDEX, buildOf, hashOf, heldAt, parseBuild } from '../vault.js';
-import { parseRef } from '../refs.js';
+import { INDEX, buildOf, hashOf, heldAt, paramsOf, parseBuild } from '../vault.js';
 import { createImpostors } from './impostors.js';
 import { LEVELS, SMALLEST, budgetOf, choose, errorOf, sizeOn, smallestOf, thresholdsOf } from './lod.js';
 import { createLowering } from './lower.js';
@@ -54,12 +53,13 @@ function multiply(a, ai, b, bi, out, oi) {
 /**
  * What a ref names in the Maia City vault (../vault.js): a recipe's hash and the values it is built with, as text.
  * Throws NotInVault naming the ref for one the vault doesn't hold.
- * @param {string} ref a label (`plants/apple@2?stage=9`) or a build (`<hash>?stage=9`)
+ * @param {string} ref a pin (`vault:<vault>/<entry>@<heads>?stage=9`), an old ref (`plants/apple@2?stage=9`) or a
+ *   build (`<hash>?stage=9`)
  */
 function resolve(ref) {
 	if (/^[0-9a-f]{64}(\?|$)/.test(ref)) return parseBuild(ref);
 	const hash = hashOf(ref);
-	const params = parseRef(ref).params;
+	const params = paramsOf(ref);
 	return { hash, ...(params && { params }) };
 }
 

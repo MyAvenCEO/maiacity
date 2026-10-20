@@ -459,7 +459,7 @@
 
 <Turntable name="vault-asset" inline {compact} bind:canvas={canvasBox}>
 	{#snippet head()}
-		<h2 class="name">{title || at?.label || 'An asset'}{#if stageName}<small>{` · ${stageName}`}</small>{/if}</h2>
+		<h2 class="name">{title || source.nameOf?.(hash) || 'An asset'}{#if stageName}<small>{` · ${stageName}`}</small>{/if}</h2>
 		{#if hero && !error}
 			<div class="chips">
 				{#each params.filter(tabbed) as p (p.id)}

@@ -51,10 +51,10 @@ import * as cache from './cache.js';
 import { LATEST } from './engines.js';
 import { queryOf } from './params.js';
 import { parseRef } from './refs.js';
-import { NotInVault, Unread, vaultRecipes } from './sources/avendb.js';
+import { NotInVault, Unread, parsePin, pinRef, vaultRecipes } from './sources/avendb.js';
 
 export { buildOf, checked, hashText, parseBuild } from './builds.js';
-export { NotInVault, Unread };
+export { NotInVault, Unread, parsePin, pinRef };
 
 /**
  * The app's pages that build assets: the app's layout holds one until the recipes are in (./VaultRecipes.svelte), so a
@@ -530,22 +530,51 @@ const notIn = (what) =>
 	);
 
 /**
- * The hash a ref names in the Maia City vault: `plants/apple@2:variant?its=values`, its latest version when none is
- * named, its first variant when none is, never another variant than the one it names. Throws NotInVault naming the ref
- * for one the vault doesn't hold (and while the recipes aren't in), and tells it (`recipes.missed`).
- * @param {string} ref @returns {string}
+ * The hash a ref names in the Maia City vault: a pin, an asset by its entry and the heads of its version
+ * (`vault:<vault>/<entry>@<heads>?its=values`, or `{ entry, at }`, ./sources/avendb.js `PIN_REF`), or an old ref read
+ * through the entries' cards, `plants/apple@2:variant?its=values`, its latest version when none is named, its first
+ * variant when none is, never another variant than the one it names. Throws NotInVault naming the ref for one the
+ * vault doesn't hold (and while the recipes aren't in), and tells it (`recipes.missed`).
+ * @param {string | { entry: string, at: string[] }} ref @returns {string}
  */
 export function hashOf(ref) {
 	try {
-		if (!source) throw notIn(String(ref));
+		if (!source) throw notIn(typeof ref === 'string' ? ref : JSON.stringify(ref));
 		return source.hashOf(ref);
 	} catch (e) {
 		throw noted(e);
 	}
 }
 
-/** A build named from a label and its values: the hash the label names in the vault, the same values. @param {string} label */
-export const buildAt = (label) => buildOf(hashOf(label), parseRef(label).params);
+/** The values a ref names its build with, as text: a pin's, or an old ref's. @param {string | { params?: any }} ref */
+export const paramsOf = (ref) => {
+	const pin = parsePin(ref);
+	return pin ? pin.params : parseRef(/** @type {string} */ (ref)).params;
+};
+
+/** A build named from a ref and its values: the hash the ref names in the vault, the same values. @param {string} ref */
+export const buildAt = (ref) => buildOf(hashOf(ref), paramsOf(ref));
+
+/**
+ * A recipe's name, avenDB's alone ("Oats v1 · 1a2b3c4d…": its title, its version's number, its entry's short id), as
+ * every page shows it; its old ref while the recipes aren't in, or the hash's start for one the vault doesn't hold.
+ * @param {string} hash
+ */
+export const nameOf = (hash) => source?.nameOf(hash) ?? recipeInfo(hash)?.label ?? `recipe ${String(hash).slice(0, 12)}…`;
+
+/** The name of what a ref names in the vault (`nameOf`), or the ref itself where it names nothing, never told missed. */
+export function refName(ref) {
+	try {
+		const hash = source?.hashOf(ref);
+		if (hash) return nameOf(hash);
+	} catch {
+		// named as it is written
+	}
+	return typeof ref === 'string' ? ref : JSON.stringify(ref);
+}
+
+/** The pin that names a recipe of the vault, `{ vault, entry, at }`, where its rows say; undefined otherwise. */
+export const pinOf = (hash) => source?.pinOf(hash);
 
 /** What a hash names in the vault's index: its group, id, version, variant, label and parameters; undefined if none. */
 export const recipeInfo = (hash) => (typeof hash === 'string' && Object.hasOwn(INDEX.recipes, hash) ? INDEX.recipes[hash] : undefined);
@@ -570,13 +599,13 @@ export const declaredOf = (hash) => {
 };
 
 /**
- * A build's page: on the root, its recipe's hash as an address reads it ($lib/ids.js), its label in words (`?t=`,
+ * A build's page: on the root, its recipe's hash as an address reads it ($lib/ids.js), its name in words (`?t=`,
  * never one of its values), then its values, sorted ($lib/assets/AssetPage.svelte).
  * @param {string} base the site's base path @param {string} hash @param {Record<string, unknown>} [values]
  */
 export const pageOf = (base, hash, values) => {
 	const q = queryOf(values);
-	return `${base}/${idOf(hash)}/?t=${slug(recipeInfo(hash)?.label ?? '', 'asset')}${q ? `&${q}` : ''}`;
+	return `${base}/${idOf(hash)}/?t=${slug(recipeInfo(hash) ? nameOf(hash) : '', 'asset')}${q ? `&${q}` : ''}`;
 };
 
 /**
@@ -603,9 +632,9 @@ export async function provenAt(hash) {
 	if (!source || !at) throw noted(source ? new NotInVault(`no recipe ${String(hash).slice(0, 12)}… is in the Maia City vault`) : notIn(`recipe ${String(hash).slice(0, 12)}…`));
 	if (!prover) return source;
 	const got = await prover.want(source.rowOf(hash).entry);
-	if ('error' in got) throw noted(new NotInVault(`${at.label}: not built, as its proof didn't check out: ${got.error}`));
+	if ('error' in got) throw noted(new NotInVault(`${nameOf(hash)}: not built, as its proof didn't check out: ${got.error}`));
 	if (got.source.index.recipes[hash]?.label !== at.label)
-		throw noted(new NotInVault(`${at.label}: refused, Maia City's signed edits don't hold recipe ${hash.slice(0, 12)}… as ${at.label}, as the listing says`));
+		throw noted(new NotInVault(`${nameOf(hash)}: refused, Maia City's signed edits don't hold recipe ${hash.slice(0, 12)}… as the listing says`));
 	return got.source;
 }
 

@@ -960,12 +960,29 @@ pub fn described(h: &History, line: Line, heads: &[EditId]) -> Value {
 /// took in the proposal it was made on; of a variant's, the release of main it holds (`History::describe`), as the
 /// variant follows main. `null` for none.
 pub fn main_version(h: &History, edit: EditId, line: Line) -> Value {
-    let holds = |r: &history::Release| h.version(&[r.edit]).iter().any(|c| c.write.edit == edit);
     let version = match line {
-        None => h.releases(MAIN).iter().find(|r| holds(r)).map(|r| r.version),
+        None => main_release(h, edit),
         Some(_) => h.describe(MAIN, &[edit]).version,
     };
     json!(version)
+}
+
+/// The first release of main that holds write `edit`: its creation, or the merge that took in the proposal it was made
+/// on.
+fn main_release(h: &History, edit: EditId) -> Option<u64> {
+    let holds = |r: &history::Release| h.version(&[r.edit]).iter().any(|c| c.write.edit == edit);
+    h.releases(MAIN).iter().find(|r| holds(r)).map(|r| r.version)
+}
+
+/// The heads a pin of write `edit` names (`pin`, Samuel 2026-10-18: a pin is the entry's id and a version's heads,
+/// all hashes): of main's, that release of main (`main_version`), the version a world pins; of a variant's, the write
+/// itself, the variant as it stood once it brought it. Empty where main holds it in no release yet.
+pub fn version_heads(h: &History, edit: EditId, line: Line) -> Value {
+    let at = match line {
+        None => main_release(h, edit).map(|v| h.release(MAIN, v)).unwrap_or_default(),
+        Some(_) => vec![edit],
+    };
+    json!(ids(&at))
 }
 
 /// The releases of `line` (`History::releases`), each `{edit, version}`, oldest first.

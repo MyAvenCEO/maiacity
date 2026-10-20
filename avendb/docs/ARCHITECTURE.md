@@ -1534,8 +1534,11 @@ grow big. `GET avendb.maia.city/feed/entry/<vault>/<entry>` serves any one of th
 `{"error": ...}`, not found, for an entry that isn't public, that is deleted or that the server doesn't hold.
 An entry whose writes bring files more than once, as an asset does, one write for each of its versions and variants,
 also lists each such write (`brought`, `Lab::brought`), on its main line and on each of its variants, main's first:
-`{edit, line, version, files, record}`, the line whose history holds it (`null` for main's), the version of main it
-belongs to (`engine::main_version`), the files it brings and the record at it, read as the row's own is.
+`{edit, line, version, at, files, record}`, the line whose history holds it (`null` for main's), the version of main
+it belongs to (`engine::main_version`), the heads a pin of it names (`engine::version_heads`: of main's, that release
+of main; of a variant's, the write itself), the files it brings and the record at it, read as the row's own is. An
+entry that brought a file once, on its main line, lists those heads as the row's own `at`. A page pins an asset by
+the entry's id and those heads (`pin`), never by a slug its card names.
 `GET avendb.maia.city/feed/entry/<vault>/<entry>/file` serves the newest of a code row's `files` whole, a recipe's
 source, say, up to 32 MiB (`LARGEST`), as `text/plain; charset=utf-8` with `X-Content-Type-Options: nosniff`, so no
 page runs it as a script; not found, as text, for any other entry, or one that brings no file;
