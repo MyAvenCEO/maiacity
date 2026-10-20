@@ -135,6 +135,13 @@ export function startFilm({ base = '' } = {}) {
 	let staging = '';
 	/** the shot drawn before its world was all there (past its wait), while the rest streams in, else '' */
 	let streaming = '';
+	/** whether the timeline plays (`plays`): nothing staged then but the shot on screen, at its cut */
+	let rolling = false;
+	/** cuts the staging under way short (`stage`): drawn as the world has it, the rest streaming in */
+	let hurry = () => {};
+	/** the stagings the live viewer's frames asked for, by shot: one in the line per shot, however many frames ask
+	 *  @type {Map<string, Promise<void>>} */
+	const asked = new Map();
 	/** what the world keeps built (`keep`): the shots ahead first (`near`), then the whole timeline's (`whole`, `dress`) @type {any[]} */
 	let near = [];
 	/** @type {any[]} */
@@ -251,13 +258,17 @@ export function startFilm({ base = '' } = {}) {
 				}
 				settledFor.add(key);
 			})();
-			const late = limit < Infinity && (await Promise.race([done.then(() => false), sleep(limit).then(() => true)]));
+			// past the limit, or cut short as the timeline starts to play (`plays`, `hurry`)
+			const late =
+				limit < Infinity &&
+				(await Promise.race([done.then(() => ''), sleep(limit).then(() => `still loading after ${limit / 1000} s`), new Promise((r) => (hurry = () => r('cut short: the timeline plays')))]));
+			hurry = () => {};
 			if (late) {
 				// drawn as it is until the rest is in: not staged again every frame meanwhile (each would move the walker
 				// and wait once more)
 				streaming = key;
 				done.catch(() => {}).finally(() => void (streaming === key && (streaming = '')));
-				console.warn(`film: ${spec.meta?.name ?? 'a shot'} still loading after ${limit / 1000} s: drawn as it is, the rest streams in`);
+				console.warn(`film: ${spec.meta?.name ?? 'a shot'} ${late}: drawn as it is, the rest streams in`);
 			} else await done;
 			staged = key;
 		} finally {
@@ -483,10 +494,31 @@ export function startFilm({ base = '' } = {}) {
 				// everything these shots need, kept built whichever shot asks last
 				near = all.map((s) => ({ ...s.world, views: viewsOf(v, s) }));
 				v.film.keep([...near, ...whole]);
+				// the timeline plays: a live prepare asked while it stood stages and meters nothing now (each moved the world
+				// under the shot on screen, and the cut waited in the line behind it: the village's flight 28 s behind three
+				// shots' domes and shaders). What it needs stays kept; it is prepared again once the timeline stands (false)
+				const yields = () => live && rolling;
 				// a world that streams by view, holding a shot already, needs no staging for it
-				for (const s of all) if (!(v.film.streams && dressed(s) && v.film.holds({ ...s.world, views: viewsOf(v, s) }))) await stage(s, live ? STAGE_LIMIT : Infinity);
-				if (meter) for (const s of all) if (!live || knownExposure(s) === undefined) await exposureOf(s);
+				for (const s of all) {
+					if (yields()) return false;
+					if (!(v.film.streams && dressed(s) && v.film.holds({ ...s.world, views: viewsOf(v, s) }))) await stage(s, live ? STAGE_LIMIT : Infinity);
+				}
+				if (meter)
+					for (const s of all) {
+						if (yields()) return false;
+						if (!live || knownExposure(s) === undefined) await exposureOf(s);
+					}
+				return true;
 			});
+		},
+		/**
+		 * The timeline plays (`on`) or stands. While it plays nothing is staged but the shot on screen, at its cut: a
+		 * staging under way (a prepare of a shot ahead) is cut short, drawn as the world has it, and the prepares still in
+		 * the line stage nothing (`prepare`), so none holds a frame back. @param {boolean} on
+		 */
+		plays(on) {
+			rolling = on;
+			if (on) hurry();
 		},
 		/**
 		 * Keeps built what these shots will see, nothing staged and nothing waited on (outside the line: the walker
@@ -584,11 +616,18 @@ export function startFilm({ base = '' } = {}) {
 			// the world is being readied for another shot (a prepare): never draw this one with the walker elsewhere —
 			// the last frame stays up
 			const key = keyOf(spec);
-			if (staging && staging !== key) return false;
-			const t0 = clock.now();
 			const live = quality !== 'final';
-			// a timeline plays (frames asked for one after another, none metered): the world keeps its own work short
-			if (live) w.__filmPlays = !meter;
+			// a timeline plays (frames asked for one after another, none metered)
+			const playing = live && !meter;
+			if (staging && staging !== key) {
+				// a staging begun while the timeline stood (a prepare of a shot ahead) never holds the shot on screen while
+				// it plays: it is cut short, the rest of it streaming in, and this shot is staged next
+				if (playing) hurry();
+				return false;
+			}
+			const t0 = clock.now();
+			// the world keeps its own work short while a timeline plays
+			if (live) w.__filmPlays = playing;
 			const known = live ? knownExposure(spec) : undefined;
 			const ev = known ?? (live && !meter ? lastEv : await exposureOf(spec));
 			if (live) lastEv = typeof ev === 'number' ? ev : ev.reduce((a, k) => a + k[1], 0) / ev.length;
@@ -607,7 +646,18 @@ export function startFilm({ base = '' } = {}) {
 			// timeline plays, a shot staged already is not staged again because the world lacks a part of it (a dome let go
 			// or failed, an animal still coming): it is drawn as the world has it, the rest streaming in. Staged again, every
 			// frame of it waited on the world's own frames and settled its shaders once more (the village's terrace shot)
-			if (staged !== key || (!held && !(live && !meter))) await one(() => stage(spec, quality === 'final' ? Infinity : wait));
+			if (staged !== key || (!held && !playing)) {
+				const before = asked.get(key);
+				const job = before ?? one(() => stage(spec, quality === 'final' ? Infinity : wait)).finally(() => asked.delete(key));
+				asked.set(key, job);
+				// while it plays, a frame never waits in the line behind a dress or a prepare begun while the timeline stood
+				// (the village's flight waited 28 s there): the cut's first frame at most `wait`, the ones after it not at
+				// all, each drawn as the world has it until its staging comes
+				if (playing) {
+					job.catch(() => {});
+					if (!before) await Promise.race([job, sleep(wait)]);
+				} else await job;
+			}
 			const t2 = clock.now();
 			clock.enter();
 			w.__filmDraw = true;

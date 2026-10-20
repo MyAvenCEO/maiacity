@@ -23,7 +23,8 @@ import { filmPath } from '../../../game/film/worlds.js';
  * The film-mode API of a sandbox (contract C3).
  * @typedef {{
  *   ready(): Promise<void>,
- *   prepare(specs: ShotSpec[], opts?: { live?: boolean, meter?: boolean }): Promise<void>,
+ *   prepare(specs: ShotSpec[], opts?: { live?: boolean, meter?: boolean }): Promise<void | boolean>,
+ *   plays?(on: boolean): void,
  *   keep?(specs: ShotSpec[]): void | Promise<void>,
  *   dress?(specs: ShotSpec[]): Promise<void>,
  *   held?(specs: ShotSpec[]): Promise<boolean[]>,
@@ -205,6 +206,8 @@ export class WorldViewer {
 					// once the world is up: its canvas is there
 					this.watchLoss(/** @type {Window} */ (iframe.contentWindow), iframe, url);
 					this.film = film;
+					// a world page that comes while the timeline plays (a cut to another world) plays too
+					if (this.rolling) this.plays(true);
 					this.state = 'ready';
 					// loaded again after the GPU dropped it: nothing to say any more
 					if (this.error.startsWith('the GPU dropped')) this.error = '';
@@ -322,7 +325,19 @@ export class WorldViewer {
 	/** playback stopped: the frame waiting to be drawn is dropped */
 	halt() {
 		this.queued = null;
+		this.plays(false);
 	}
+
+	/**
+	 * The timeline plays (`on`) or stands, said to film mode: while it plays, nothing is staged there but the shot on
+	 * screen, so no prepare begun while it stood holds a cut back (src/lib/film `plays`). @param {boolean} on
+	 */
+	plays(on) {
+		this.rolling = on;
+		void Promise.resolve(this.film?.plays?.(on)).catch(() => {});
+	}
+	/** whether the timeline plays, as last said (`plays`) */
+	rolling = false;
 
 	detach() {
 		void import('./jobs/mac.js').then((m) => m.studioWorld(false));
@@ -369,7 +384,8 @@ export class WorldViewer {
 			const gone = new Promise((r) => (end = () => r(false)));
 			this.ends.add(end);
 			/** @type {Promise<void>} */
-			const p = Promise.race([film.prepare([s], { live: true, meter }).then(() => true), gone])
+			// prepared only where it was all done: a prepare the timeline's play cut short (false) is asked again once it stands
+			const p = Promise.race([film.prepare([s], { live: true, meter }).then((r) => r !== false), gone])
 				.then((done) => void (done && this.film === film && this.readyShots.add(k)))
 				.catch((/** @type {Error} */ e) => {
 					this.error = `prepare: ${e?.message ?? e}`;
@@ -475,7 +491,7 @@ export class WorldViewer {
 	/** stands the world where this shot is staged, nothing metered @param {ShotSpec} spec @returns {Promise<void>} */
 	standAt(spec) {
 		if (!this.film || !this.holds(spec)) return Promise.resolve();
-		return this.film.prepare([spec], { live: true, meter: false }).catch(() => {});
+		return this.film.prepare([spec], { live: true, meter: false }).then(() => {}, () => {});
 	}
 
 	/**
