@@ -348,7 +348,7 @@ async function ask(call, world, e, key, given) {
 	// a graded still still queued for an earlier look of the same clip is not made at all: this one replaces it
 	if (key === 'frame' && given.clip) {
 		const stale = tasks.filter((t) => t.rule === 'frame' && t.status === 'queued' && t.key !== value.key && t.inputs[0]?.entry === e.entry && JSON.parse(t.params || '{}').clip === given.clip);
-		for (const t of stale) await call('run', { op: 'insert', entry: t.entry, path: ['tags'], value: DELETED, as }).catch(() => null);
+		for (const t of stale) await call('run', deletedTag(t.entry, as)).catch(() => null);
 	}
 	if (known?.status === 'held') answer(await call('run', retrying(known, as)));
 	if (!known) answer(await call('run', { op: 'create', vault: e.vault, type: 'task', value, as }));
@@ -582,6 +582,13 @@ export async function setTranscript(entry, words) {
 	return next;
 }
 
+/**
+ * The op that tags entry `entry` deleted (avenDB's deleted tag: it can come back), among the entry's own tags: a cut's
+ * or a task's record has no tags field, so the tag put in the record was refused, as not fitting its schema (Samuel
+ * 2026-10-20 could not delete a timeline). @param {string} entry @param {string} as
+ */
+const deletedTag = (entry, as) => ({ op: 'tag', entry, add: [DELETED], as });
+
 /** Cut `id` deleted (avenDB's deleted tag: it can come back). @param {string} id */
 export async function deleteCut(id) {
 	const call = await device();
@@ -590,5 +597,5 @@ export async function deleteCut(id) {
 	const world = await worldOf(call);
 	const e = world.entries.find((x) => x.entry === entry);
 	if (!e) return;
-	answer(await call('run', { op: 'insert', entry, path: ['tags'], value: DELETED, as: asIn(world, e.vault) }));
+	answer(await call('run', deletedTag(entry, asIn(world, e.vault))));
 }
