@@ -22,7 +22,7 @@
 	import { LIMITS, METHODS, PROTOCOL } from '../../../game/code/views.js';
 	import { loadLogic } from './view-logic.js';
 	import { MCP_STYLES } from './view/theme.js';
-	import { DENY, SANDBOX } from './policy.js';
+	import { BUDGETS, DENY, SANDBOX } from './policy.js';
 	import { bootDoc, engineCode, hasScript, viewOf, workerOf } from './view-host.js';
 	import { engineFor } from './engines.js';
 
@@ -94,7 +94,7 @@
 		if (!m || typeof m !== 'object' || m.jsonrpc !== '2.0' || typeof m.method !== 'string') return;
 		const answer = (id, result) => id != null && rpc({ id, result });
 		const refuse = (id, code, message) => id != null && rpc({ id, error: { code, message } });
-		if (JSON.stringify(m).length > 4000) return refuse(m.id, -32600, 'Message too big.');
+		if (JSON.stringify(m).length > BUDGETS.message) return refuse(m.id, -32600, 'Message too big.');
 		if (!METHODS.includes(m.method)) return refuse(m.id, -32601, `${m.method.slice(0, 60)} is not available to a view.`);
 		const p = m.params && typeof m.params === 'object' ? m.params : {};
 		switch (m.method) {

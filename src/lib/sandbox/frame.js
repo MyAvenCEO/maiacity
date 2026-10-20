@@ -2,7 +2,7 @@
 import { base } from '$app/paths';
 import { hashBytes } from '../../../game/hash.js';
 import { enginesOf, latestOf, pathOf } from './engines.js';
-import { DENY, SANDBOX, SHELL_SCRIPT, frameCsp } from './policy.js';
+import { BUDGETS, DENY, SANDBOX, SHELL_SCRIPT, frameCsp } from './policy.js';
 /*
  * THE SHELL — where code we cannot trust runs in a page: a worker inside a frame with no origin. One shell for every
  * host: the asset box (recipes, ../assets/box/host.js), the logic host (rules, view logic, functions, ./logic-host.js)
@@ -72,7 +72,7 @@ export function engineCode(kind, v = latestOf(kind)?.v) {
 }
 
 /** how long a job may take before the shell is torn down (ms) */
-export const TIMEOUT = 20000;
+export const TIMEOUT = BUDGETS.job;
 
 export class Shell {
 	/**

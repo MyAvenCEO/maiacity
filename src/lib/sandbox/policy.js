@@ -19,6 +19,16 @@ export const DENY = DENIED.map((f) => `${f} 'none'`).join('; ');
 /** The `sandbox` attribute: scripts, and nothing else (no same origin, forms, popups, modals, downloads, top navigation). */
 export const SANDBOX = 'allow-scripts';
 
+/**
+ * How long and how much the page lets code we cannot trust have, in one place (the page's side; what a frozen engine
+ * holds code to inside its worker is frozen with it and changes only with a new version: the logic core's ticks and
+ * memory, ./logic.js LIMITS; a view script's 4 s hold and its work budget, ./view/engine.js and ./view/watch.js).
+ * - job: how long one job may hold a shell (the asset box) before its room, or the shell, is ended (ms)
+ * - logicJob: the same for the logic host, far past the logic core's own limits (ms)
+ * - message: the most a view may send the page in one message (characters of JSON)
+ */
+export const BUDGETS = { job: 20000, logicJob: 10000, message: 4000 };
+
 /** What a frame's own policy shuts, every one of them, unless the frame's kind opens one to what it names. */
 export const SHUT = ['connect-src', 'img-src', 'style-src', 'font-src', 'media-src', 'frame-src', 'object-src', 'manifest-src', 'form-action', 'base-uri'];
 

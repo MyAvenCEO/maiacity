@@ -15,9 +15,10 @@
  */
 import { open, quickjs } from './logic.js';
 import { engineFor } from './engines.js';
+import { BUDGETS } from './policy.js';
 
 /** how long one job may hold the shell before it is torn down (ms): far past the core's own limits */
-const TIMEOUT = 10000;
+const TIMEOUT = BUDGETS.logicJob;
 
 /** why code naming logic engine `named` runs nowhere: one that is not frozen @param {unknown} named */
 const notFrozen = (named) => `it is made for logic engine ${String(named).slice(0, 12)}, which this page does not have`;
