@@ -7,10 +7,11 @@
 	merges, or bring main's changes in: a merge keeps every change of both lines, and where both changed the same words,
 	main keeps its own unless the person takes the proposal's there; a conflict on a row of a record that holds rows says
 	where under it both changed it, at any depth ("the text of row 11 of its kids"); every edit of both stays in the
-	history. On the right, in two tabs, its history, every edit of that line, newest first, each with what it changed,
-	word by word, or for a record that is no document the places it changed, at any depth, who made it, and the version
-	it made, to view, restore, undo or propose from; and its versions, its main line, its proposals and its variants,
-	each a line of its own to switch to, and its copies, the notes made from it. Narrower, the right side slides in from
+	history. On the right, avenDB's one version side (./Lines.svelte), in two tabs: its history, every edit of that
+	line, newest first, each with what it changed, word by word, or for a record that is no document the places it
+	changed, at any depth, who made it, and the version it made, to view, restore, undo or propose from; and its
+	versions, its main line, its proposals and its variants, each a line of its own to switch to, and its copies, the
+	notes made from it. Narrower, the right side slides in from
 	the round button at the bottom right, and on a phone the left one from the bottom left. A variant is a line that
 	stays open beside main and follows it: each merge into main brings main into it, and it keeps its own where both
 	changed one place; its numbers are its own ("Silkie v3"), and it says which main version it holds. A copy is a new
@@ -30,6 +31,7 @@
 	import { flowsFor, stageOf } from './flows.js';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
+	import Lines from './Lines.svelte';
 	import Mark from './Mark.svelte';
 	import { allowed, blockText, deleting, may, read } from './ops.js';
 	import { at as atPath, changeWords, clashes, pathWords, valueWords } from './paths.js';
@@ -37,18 +39,15 @@
 	import SparkCanvas from './SparkCanvas.svelte';
 	import SparkShelf from './SparkShelf.svelte';
 	import Tags from './Tags.svelte';
-	import { versionWords } from './versions.js';
+	import { editWords, lineName, versionWords } from './versions.js';
 
 	/** Whether a record of kind `kind` keeps its text in one field, `text`: an article, a story or a post.
 	 *  @param {string | null | undefined} kind */
 	const textual = (kind) => kind === 'article' || kind === 'story' || !!kind?.startsWith('post');
 	import {
 		actingWords,
-		authorsLine,
-		chainSteps,
 		count,
 		hue,
-		list,
 		nameOf,
 		sharedWith,
 		sharedWords,
@@ -107,7 +106,7 @@
 	/** narrower, the side that slides in, if one does: a spark's shelf (`nav`) or the history and lines (`aside`) */
 	let open = $state(/** @type {'' | 'nav' | 'aside'} */ (''));
 	/** what the right side shows: the history, or the lines (main, the proposals, the variants) and the copies */
-	let side = $state(/** @type {'history' | 'lines'} */ ('history'));
+	let side = $state('history');
 	/** the conflicts where the person takes the proposal's value, by place (`place`) */
 	let taking = $state(/** @type {Record<string, boolean>} */ ({}));
 
@@ -192,9 +191,6 @@
 		return item && flow ? stageOf(item, flow) : null;
 	});
 	const main = $derived(lines[0]);
-	const proposals = $derived(lines.slice(1).filter((l) => !l.variant));
-	/** the variants: lines that stay open beside main and follow it */
-	const breeds = $derived(lines.slice(1).filter((l) => l.variant));
 	const k = $derived(key(here?.line ?? null));
 	/** whether the acting vault changes the note, and shares it on, as the device says */
 	const writes = $derived(!!item?.writers.includes(actor));
@@ -205,6 +201,8 @@
 	 * as what they make of it breaks its schema, and how many they don't for any other reason */
 	const counted = $derived((note?.edits ?? []).filter((e) => e.counted !== false));
 	const numbered = $derived(counted.map((e, i) => ({ ...e, n: i + 1 })));
+	/** each of them by its id, as the side (./Lines.svelte) hands an edit back */
+	const byEdit = $derived(new Map(numbered.map((e) => [e.id, e])));
 	const unfit = $derived((note?.edits ?? []).filter((e) => e.why === 'unfit').length);
 	const uncounted = $derived((note?.edits.length ?? 0) - counted.length - unfit);
 	/** the line's edits, newest first */
@@ -338,8 +336,6 @@
 		});
 	});
 
-	/** A line's name, as a person reads it. @param {{ line: string | null, name: string | null } | null | undefined} l */
-	const lineName = (l) => (!l ? 'a line' : l.line === null ? 'main' : (l.name ?? 'a line this browser can’t name'));
 	/** Line `l` of the note. @param {string | null} l @returns {{ line: string | null, name: string | null, variant?: boolean }} */
 	const lineOf = (l) => lines.find((x) => x.line === l) ?? { line: l, name: null };
 	/** Line `l` quoted, as a sentence names it. @param {string | null} l */
@@ -351,52 +347,24 @@
 	/** Who made edit `e`: its device by name, the vault it acted for and the owners it acted through. @param {EditView} e */
 	const who = (e) => actingWords(world, e.author, e.actor, e.via);
 
-	/** What edit `e` did, in words. @param {Numbered} e */
-	function what(e) {
-		const elsewhere = e.line !== here?.line ? ` on ${at(e.line)}` : '';
-		const from = e.from?.line ?? null;
-		switch (e.kind) {
-			case 'propose':
-				return `Proposed “${e.name ?? '…'}”${e.from ? ` from ${at(from)}` : ''}`;
-			case 'variant':
-				return `Started the variant “${e.name ?? '…'}”${e.from ? ` from ${at(from)}` : ''}`;
-			case 'merge':
-				if (e.line === null) return `Merged ${at(from)} into main`;
-				if (from === null && lineOf(e.line).variant) return `Brought main into ${at(e.line)}`;
-				if (from === null) return `Updated ${at(e.line)} from main`;
-				return `Merged ${at(from)} into ${at(e.line)}`;
-			case 'accept':
-				return `Accepted ${at(e.line)} as it stood`;
-			case 'sealed':
-				return `An edit this browser can’t open${elsewhere}`;
-			default: {
-				if (!e.deps.length) return `Wrote the note${elsewhere}`;
-				const before = numbered.find((x) => x.id === e.deps[0]);
-				const renamed = e.text === e.before && before && e.title !== null && before.title !== null && e.title !== before.title;
-				return renamed ? `Renamed it “${e.title}”${elsewhere}` : `Edited${elsewhere}`;
-			}
-		}
+	/**
+	 * What edit `e` did where a note says it in its own words: renamed it, its text as it was. Elsewhere avenDB's
+	 * words (./versions.js `editWords`).
+	 * @param {{ id: string }} x
+	 */
+	function renamed(x) {
+		const e = byEdit.get(x.id);
+		if (!e || e.kind !== 'edit' || !e.deps.length) return undefined;
+		const before = byEdit.get(e.deps[0]);
+		const yes = e.text === e.before && before && e.title !== null && before.title !== null && e.title !== before.title;
+		return yes ? `Renamed it “${e.title}”${e.line !== here?.line ? ` on ${at(e.line)}` : ''}` : undefined;
 	}
 
+	/** What edit `e` did, in words. @param {Numbered} e */
+	const what = (e) => renamed(e) ?? editWords(e, lines, here?.line, 'the note');
+
 	/** What edit `e` of the original did, in words, its lines named as the original names them. @param {Numbered} e */
-	function theirs(e) {
-		const name = (/** @type {string | null} */ l) =>
-			`“${lineName(original?.lines.find((x) => x.line === l) ?? { line: l, name: null })}”`;
-		switch (e.kind) {
-			case 'propose':
-				return `Proposed “${e.name ?? '…'}”`;
-			case 'variant':
-				return `Started the variant “${e.name ?? '…'}”`;
-			case 'merge':
-				return e.line === null ? `Merged ${name(e.from?.line ?? null)} into main` : `Updated ${name(e.line)} from main`;
-			case 'accept':
-				return `Accepted ${name(e.line)} as it stood`;
-			case 'sealed':
-				return 'An edit this browser can’t open';
-			default:
-				return e.deps.length ? `Edited${e.line === null ? '' : ` on ${name(e.line)}`}` : 'Wrote the note';
-		}
-	}
+	const theirs = (e) => editWords(e, original?.lines ?? [], null, 'the note');
 
 	/** Pick line `l` to show and edit. @param {string | null} l */
 	function pick(l) {
@@ -615,258 +583,175 @@
 	{/if}
 {/snippet}
 
-<!-- on the right: the line’s history, or its lines (main, the proposals, the variants) and its copies -->
+<!-- on the right: the line’s history, or its lines (main, the proposals, the variants) and its copies, avenDB's one
+	version side (./Lines.svelte) -->
 {#snippet historyAside()}
 	{#if here}
-		<div class="history">
-			<div class="sides" role="tablist" aria-label="What the side shows">
-				<button role="tab" class="side" class:on={side === 'history'} aria-selected={side === 'history'} onclick={() => (side = 'history')}
-					><Icon name="history" size={14} /> History</button
-				>
-				<button role="tab" class="side" class:on={side === 'lines'} aria-selected={side === 'lines'} onclick={() => (side = 'lines')}
-					><Icon name="proposal" size={14} /> Versions <small>{proposals.length + breeds.length + copies.length || ''}</small></button
-				>
+		<Lines
+			{world}
+			{note}
+			line={here.line}
+			at={viewing}
+			bind:tab={side}
+			thing="the note"
+			onpick={pick}
+			onopen={(e) => (viewing = viewing === e.id ? '' : e.id)}
+			opens={(e) => byEdit.get(e.id)?.text != null}
+			about={(l) => (l.variant ? undefined : (lines.find((x) => x.line === l.line)?.text ?? '') === (main.text ?? '') ? 'reads as main' : 'differs from main')}
+			said={renamed}
+			also={copies.length}
+			{adding}
+			below={changes}
+			after={inheritedHistory}
+			versions={copiesOf}
+		/>
+	{/if}
+{/snippet}
+
+<!-- under its proposals and its variants: a new one, named here first -->
+{#snippet adding(/** @type {'propose' | 'variant'} */ kind)}
+	{#if writes && here && kind === 'propose'}
+		{#if naming}
+			<div class="naming">
+				<label for="proposal-name">New {naming.kind === 'variant' ? 'variant' : 'proposal'}, from {naming.at}</label>
+				<input
+					id="proposal-name"
+					class="field"
+					placeholder="Its name"
+					bind:value={naming.name}
+					onkeydown={(e) => e.key === 'Enter' && propose()}
+				/>
+				<div class="row">
+					<button class="btn primary" disabled={busy || !naming.name.trim()} onclick={propose}
+						>{naming.kind === 'variant' ? 'Start it' : 'Propose'}</button
+					>
+					<button class="btn quiet" onclick={() => (naming = null)}>Cancel</button>
+				</div>
 			</div>
-			{#if side === 'lines'}
-			<div class="lines">
-			<section>
-				<h4>Main</h4>
+		{:else}
+			<button
+				class="btn add"
+				disabled={busy || !lets('propose')}
+				title={barred('propose')}
+				onclick={() => proposeFrom(here.heads, `the latest of ${at(here.line)}`)}
+			>
+				<Icon name="proposal" size={14} /> New proposal
+			</button>
+		{/if}
+	{:else if writes && kind === 'variant' && !naming}
+		<button
+			class="btn add"
+			disabled={busy || !lets('variant')}
+			title={barred('variant')}
+			onclick={() => varyFrom(main.heads, `the latest of main`)}
+		>
+			<Icon name="variant" size={14} /> New variant
+		</button>
+	{/if}
+{/snippet}
+
+<!-- under its lines: the note it is a copy of, its copies, and a new one -->
+{#snippet copiesOf()}
+	<div class="copies">
+		<h4>Copies <small>{copies.length || ''}</small></h4>
+		{#if origin}
+			<a class="variant" href="#notes/{origin.entry}">
+				<Icon name="back" size={13} /> <span>Copy of <b>“{origin.title}”</b></span>
+			</a>
+		{:else if item?.forkOf}
+			<p class="hint soft">A copy of a note {nameOf(as)} doesn’t read.</p>
+		{/if}
+		{#each copies as v (v.entry)}
+			<a class="variant" href="#notes/{v.entry}">
+				<Icon name="variant" size={13} />
+				<span><b>“{v.title}”</b> <small>in {vaultName(v.vault)} {madeAt(v)}</small></span>
+			</a>
+		{/each}
+		{#if targets.length && here}
+			{#if targets.length > 1}
+				<select class="field" bind:value={into} aria-label="Make the copy in">
+					{#each targets as v (v.id)}<option value={v.id}>{nameOf(v)}</option>{/each}
+				</select>
+			{/if}
+			<button class="btn add" disabled={busy} onclick={fork}>
+				<Icon name="variant" size={14} /> Make a copy
+			</button>
+			<p class="hint soft">
+				A new note{targets.length === 1 ? ` in ${nameOf(targets[0])}` : ''}, with its tags, of what {at(here.line)} reads
+				now. Its history goes on into this note's, up to this version.
+			</p>
+			{#if made}
+				<p class="made">Made a copy. <a href="#notes/{made}">Open it</a></p>
+			{/if}
+		{/if}
+	</div>
+{/snippet}
+
+<!-- under an edit of its history: what it changed, and for the one shown, what may be done with it -->
+{#snippet changes(/** @type {{ id: string }} */ x)}
+	{@const e = byEdit.get(x.id)}
+	{#if e}
+		{@const wrote = e.kind === 'edit' || e.kind === 'merge'}
+		{#if wrote && e.text !== null && (e.before ?? '') !== e.text}
+			<p class="diff edit-diff">{@render pieces(diff(e.before ?? '', e.text))}</p>
+		{:else if wrote && changed[e.id]}
+			{@const said = changed[e.id]}
+			<ul class="changes">
+				{#each said.slice(0, 4) as w, i (i)}<li>{w}</li>{/each}
+				{#if said.length > 4}<li class="soft">and {count(said.length - 4, 'change')} more</li>{/if}
+			</ul>
+		{/if}
+		{#if e.id === viewing && writes}
+			<div class="row acts">
+				{#if e.text !== null && e.id !== latest}
+					<button class="btn quiet" disabled={busy || !lets('restore')} title={barred('restore')} onclick={() => restore(e.id)}
+						>Restore</button
+					>
+				{/if}
+				{#if e.kind === 'edit' && e.deps.length}
+					<button class="btn quiet" disabled={busy || !lets('undo')} title={barred('undo')} onclick={() => undo(e.id)}>Undo</button>
+				{/if}
 				<button
-					class="line"
-					class:on={here.line === null}
-					aria-current={here.line === null ? 'true' : undefined}
-					onclick={() => pick(null)}
+					class="btn quiet"
+					disabled={busy || !lets('propose')}
+					title={barred('propose')}
+					onclick={() => proposeFrom([e.id], versionOf(e))}
 				>
-					<i class="dot main"></i>
-					<span><b>Main</b><small>{count(main.history.length, 'edit')}</small></span>
+					Propose from here
 				</button>
-			</section>
-
-			<section>
-				<h4>Proposals <small>{proposals.length || ''}</small></h4>
-				{#each proposals as l (key(l.line))}
-					<button
-						class="line"
-						class:on={l.line === here.line}
-						style:--hue={hue(l.line ?? '')}
-						aria-current={l.line === here.line ? 'true' : undefined}
-						onclick={() => pick(l.line)}
-					>
-						<i class="dot"></i>
-						<span>
-							<b>{lineName(l)}</b>
-							<small>{(l.text ?? '') === (main.text ?? '') ? 'reads as main' : 'differs from main'} · {count(l.history.length, 'edit')}</small>
-						</span>
-					</button>
-				{:else}
-					<p class="hint soft">None yet. A proposal is a line of its own, to edit apart from main and then merge into it.</p>
-				{/each}
-				{#if writes}
-					{#if naming}
-						<div class="naming">
-							<label for="proposal-name">New {naming.kind === 'variant' ? 'variant' : 'proposal'}, from {naming.at}</label>
-							<input
-								id="proposal-name"
-								class="field"
-								placeholder="Its name"
-								bind:value={naming.name}
-								onkeydown={(e) => e.key === 'Enter' && propose()}
-							/>
-							<div class="row">
-								<button class="btn primary" disabled={busy || !naming.name.trim()} onclick={propose}
-									>{naming.kind === 'variant' ? 'Start it' : 'Propose'}</button
-								>
-								<button class="btn quiet" onclick={() => (naming = null)}>Cancel</button>
-							</div>
-						</div>
-					{:else}
-						<button
-							class="btn add"
-							disabled={busy || !lets('propose')}
-							title={barred('propose')}
-							onclick={() => proposeFrom(here.heads, `the latest of ${at(here.line)}`)}
-						>
-							<Icon name="proposal" size={14} /> New proposal
-						</button>
-					{/if}
-				{/if}
-			</section>
-
-			<section>
-				<h4>Variants <small>{breeds.length || ''}</small></h4>
-				{#each breeds as l (key(l.line))}
-					<button
-						class="line"
-						class:on={l.line === here.line}
-						style:--hue={hue(l.line ?? '')}
-						aria-current={l.line === here.line ? 'true' : undefined}
-						onclick={() => pick(l.line)}
-					>
-						<i class="dot"></i>
-						<span>
-							<b>{lineName(l)}{l.version?.version ? ` v${l.version.version}` : ''}</b>
-							<small
-								>{l.behind ? 'main has changed since' : `holds main ${l.main ? versionWords(l.main) : ''}`} · {count(
-									l.history.length,
-									'edit'
-								)}</small
-							>
-						</span>
-					</button>
-				{:else}
-					<p class="hint soft">
-						None yet. A variant is a line that stays beside main, as breeds of one animal do: each merge into main comes
-						into it, and it keeps its own where both changed one place.
-					</p>
-				{/each}
-				{#if writes && !naming}
-					<button
-						class="btn add"
-						disabled={busy || !lets('variant')}
-						title={barred('variant')}
-						onclick={() => varyFrom(main.heads, `the latest of main`)}
-					>
-						<Icon name="variant" size={14} /> New variant
-					</button>
-				{/if}
-			</section>
-
-			<section class="variants">
-				<h4>Copies <small>{copies.length || ''}</small></h4>
-				{#if origin}
-					<a class="variant" href="#notes/{origin.entry}">
-						<Icon name="back" size={13} /> <span>Copy of <b>“{origin.title}”</b></span>
-					</a>
-				{:else if item?.forkOf}
-					<p class="hint soft">A copy of a note {nameOf(as)} doesn’t read.</p>
-				{/if}
-				{#each copies as v (v.entry)}
-					<a class="variant" href="#notes/{v.entry}">
-						<Icon name="variant" size={13} />
-						<span><b>“{v.title}”</b> <small>in {vaultName(v.vault)} {madeAt(v)}</small></span>
-					</a>
-				{/each}
-				{#if targets.length}
-					{#if targets.length > 1}
-						<select class="field" bind:value={into} aria-label="Make the copy in">
-							{#each targets as v (v.id)}<option value={v.id}>{nameOf(v)}</option>{/each}
-						</select>
-					{/if}
-					<button class="btn add" disabled={busy} onclick={fork}>
-						<Icon name="variant" size={14} /> Make a copy
-					</button>
-					<p class="hint soft">
-						A new note{targets.length === 1 ? ` in ${nameOf(targets[0])}` : ''}, with its tags, of what {at(here.line)} reads
-						now. Its history goes on into this note's, up to this version.
-					</p>
-					{#if made}
-						<p class="made">Made a copy. <a href="#notes/{made}">Open it</a></p>
-					{/if}
-				{/if}
-			</section>
 			</div>
+		{/if}
+	{/if}
+{/snippet}
+
+<!-- under its history, on a copy: the original's, which it goes on into -->
+{#snippet inheritedHistory()}
+	{#if item?.forkOf}
+		<section class="origin" aria-label="The history it goes on into">
+			{#if origin}
+				<p class="from">
+					<Icon name="variant" size={13} />
+					<span>
+						Made from <a href="#notes/{origin.entry}">“{origin.title}”</a>{inherited.length
+							? ` at edit #${inherited[0].n}`
+							: ''}: its history goes on there
+					</span>
+				</p>
+				<ol>
+					{#each inherited as e (e.id)}
+						<li class={e.kind}>
+							<span class="what"><b>{theirs(e)}</b> <span class="n mono">#{e.n}</span></span>
+							<small class="soft">{who(e)} · <span class="mono" title={e.id}>{short(e.id)}</span></small>
+							{#if (e.kind === 'edit' || e.kind === 'merge') && e.text !== null && (e.before ?? '') !== e.text}
+								<p class="diff">{@render pieces(diff(e.before ?? '', e.text))}</p>
+							{/if}
+						</li>
+					{/each}
+				</ol>
 			{:else}
-			<header>
-				<h4>History</h4>
-				<small class="soft">{count(history.length, 'edit')} of {at(here.line)}, newest first</small>
-			</header>
-			<ol>
-				{#each history as e (e.id)}
-					{@const wrote = e.kind === 'edit' || e.kind === 'merge'}
-					<li class={e.kind} class:on={e.id === viewing}>
-						<button
-							class="what"
-							disabled={e.kind === 'sealed' || e.text === null}
-							aria-pressed={e.id === viewing}
-							onclick={() => (viewing = viewing === e.id ? '' : e.id)}
-						>
-							<b>{what(e)}</b>
-							<span class="n mono">#{e.n}</span>
-							{#if e.version && (e.line === null || lineOf(e.line).variant)}<span
-									class="release chip"
-									title="Version {e.version} of {at(e.line)}, by {authorsLine(world, e.authors, 'whoever wrote it')}">v{e.version}</span
-								>{/if}
-						</button>
-						<small class="soft"
-							>{#if e.version && e.authors?.length}By {authorsLine(world, e.authors)} · {/if}{who(e)} · <span
-								class="mono"
-								title={e.id}>{short(e.id)}</span
-							></small
-						>
-						{#if wrote && e.text !== null && (e.before ?? '') !== e.text}
-							<p class="diff">{@render pieces(diff(e.before ?? '', e.text))}</p>
-						{:else if wrote && changed[e.id]}
-							{@const said = changed[e.id]}
-							<ul class="changes">
-								{#each said.slice(0, 4) as w, i (i)}<li>{w}</li>{/each}
-								{#if said.length > 4}<li class="soft">and {count(said.length - 4, 'change')} more</li>{/if}
-							</ul>
-						{/if}
-						{#if e.id === viewing}
-							<ol class="chain" aria-label="Who stands behind it">
-								{#each chainSteps(world, e.chain) as step, i (i)}<li>{step.says}</li>{/each}
-							</ol>
-						{/if}
-						{#if e.id === viewing && writes}
-							<div class="row actions">
-								{#if e.text !== null && e.id !== latest}
-									<button
-										class="btn quiet"
-										disabled={busy || !lets('restore')}
-										title={barred('restore')}
-										onclick={() => restore(e.id)}>Restore</button
-									>
-								{/if}
-								{#if e.kind === 'edit' && e.deps.length}
-									<button
-										class="btn quiet"
-										disabled={busy || !lets('undo')}
-										title={barred('undo')}
-										onclick={() => undo(e.id)}>Undo</button
-									>
-								{/if}
-								<button
-									class="btn quiet"
-									disabled={busy || !lets('propose')}
-									title={barred('propose')}
-									onclick={() => proposeFrom([e.id], versionOf(e))}
-								>
-									Propose from here
-								</button>
-							</div>
-						{/if}
-					</li>
-				{/each}
-			</ol>
-			{#if item?.forkOf}
-				<section class="origin" aria-label="The history it goes on into">
-					{#if origin}
-						<p class="from">
-							<Icon name="variant" size={13} />
-							<span>
-								Made from <a href="#notes/{origin.entry}">“{origin.title}”</a>{inherited.length
-									? ` at edit #${inherited[0].n}`
-									: ''}: its history goes on there
-							</span>
-						</p>
-						<ol>
-							{#each inherited as e (e.id)}
-								<li class={e.kind}>
-									<span class="what"><b>{theirs(e)}</b> <span class="n mono">#{e.n}</span></span>
-									<small class="soft">{who(e)} · <span class="mono" title={e.id}>{short(e.id)}</span></small>
-									{#if (e.kind === 'edit' || e.kind === 'merge') && e.text !== null && (e.before ?? '') !== e.text}
-										<p class="diff">{@render pieces(diff(e.before ?? '', e.text))}</p>
-									{/if}
-								</li>
-							{/each}
-						</ol>
-					{:else}
-						<p class="hint soft">Made from a note {nameOf(as)} doesn’t read: its history goes on there.</p>
-					{/if}
-				</section>
+				<p class="hint soft">Made from a note {nameOf(as)} doesn’t read: its history goes on there.</p>
 			{/if}
-			{/if}
-		</div>
+		</section>
 	{/if}
 {/snippet}
 
@@ -1314,43 +1199,6 @@
 		margin: 1.5rem;
 	}
 
-	.lines section + section {
-		margin-top: 1.3rem;
-	}
-
-	/* the right side's two tabs: the history, or the lines and copies */
-	.sides {
-		display: flex;
-		gap: 0.25rem;
-		margin: 0 0 0.8rem;
-		padding: 0.2rem;
-		border-radius: 10px;
-		background: rgb(0 0 0 / 0.05);
-	}
-
-	.side {
-		display: inline-flex;
-		flex: 1 1 0;
-		align-items: center;
-		justify-content: center;
-		gap: 0.3rem;
-		padding: 0.35rem 0.4rem;
-		border: 0;
-		border-radius: 8px;
-		background: none;
-		color: var(--soft);
-		font: inherit;
-		font-size: 0.8rem;
-		font-weight: 600;
-		cursor: pointer;
-	}
-
-	.side.on {
-		background: #fff;
-		color: inherit;
-		box-shadow: 0 1px 3px rgb(0 0 0 / 0.1);
-	}
-
 	h4 {
 		display: flex;
 		align-items: baseline;
@@ -1362,60 +1210,6 @@
 		font-weight: 650;
 		letter-spacing: 0.06em;
 		text-transform: uppercase;
-	}
-
-	.line {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.55rem;
-		width: 100%;
-		margin-bottom: 0.15rem;
-		padding: 0.45rem 0.55rem;
-		border: 0;
-		border-radius: 8px;
-		background: none;
-		font: inherit;
-		text-align: left;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	.line:hover {
-		background: rgb(0 0 0 / 0.05);
-	}
-
-	.line.on {
-		background: #fff;
-		box-shadow: 0 1px 0 rgb(0 0 0 / 0.06);
-	}
-
-	.line span {
-		display: flex;
-		flex-direction: column;
-		min-width: 0;
-	}
-
-	.line b {
-		overflow-wrap: anywhere;
-		font-size: 0.88rem;
-	}
-
-	.line small {
-		color: var(--soft);
-		font-size: 0.72rem;
-	}
-
-	.dot {
-		flex: none;
-		width: 0.62rem;
-		height: 0.62rem;
-		margin-top: 0.3rem;
-		border-radius: 50%;
-		background: hsl(var(--hue, 170) 45% 45%);
-	}
-
-	.dot.main {
-		background: var(--accent);
 	}
 
 	.hint {
@@ -1468,7 +1262,12 @@
 		color: var(--soft);
 	}
 
-	.variants select {
+	/* under its lines: its copies */
+	.copies {
+		margin-top: 1.3rem;
+	}
+
+	.copies select {
 		width: 100%;
 		margin: 0.35rem 0 0;
 	}
@@ -1682,26 +1481,21 @@
 		color: #7a2f1c;
 	}
 
-	/* right: the line's history */
-	.history header {
-		margin: 0 0 0.8rem 0.35rem;
+	/* under an edit of its history (./Lines.svelte): its words changed, and what may be done with the one shown */
+	.edit-diff {
+		font-size: 0.8rem;
 	}
 
-	.history header h4 {
-		margin: 0 0 0.15rem;
+	.acts {
+		margin: 0.35rem 0 0;
 	}
 
-	.history header small {
-		font-size: 0.74rem;
+	.acts .btn {
+		padding: 0.16rem 0.5rem;
+		font-size: 0.76rem;
 	}
 
-	.history ol {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	/* the original's history, below the variant's own, which goes on into it */
+	/* the original's history, below the copy's own, which goes on into it */
 	.origin {
 		margin-top: 0.9rem;
 		padding-top: 0.7rem;
@@ -1716,24 +1510,22 @@
 		font-size: 0.8rem;
 	}
 
+	.origin ol {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+
 	.origin li {
-		opacity: 0.8;
-	}
-
-	.origin .what {
-		display: block;
-		font-size: 0.82rem;
-	}
-
-	.history li {
 		position: relative;
 		margin-left: 0.4rem;
 		padding: 0.1rem 0 0.85rem 1.1rem;
 		border-left: 2px solid rgb(0 0 0 / 0.12);
 		font-size: 0.84rem;
+		opacity: 0.8;
 	}
 
-	.history li::before {
+	.origin li::before {
 		position: absolute;
 		top: 0.4rem;
 		left: -0.42rem;
@@ -1745,93 +1537,35 @@
 		content: '';
 	}
 
-	.history li.propose::before {
+	.origin li.propose::before,
+	.origin li.variant::before {
 		background: #8a6bb8;
 	}
 
-	.history li.merge::before {
+	.origin li.merge::before {
 		background: #c99a3a;
 	}
 
-	.history li.sealed::before {
+	.origin li.sealed::before {
 		background: rgb(0 0 0 / 0.3);
 	}
 
-	.history li.on {
-		border-radius: 0 10px 10px 0;
-		background: #fff;
+	.origin .what {
+		display: block;
+		font-size: 0.82rem;
 	}
 
-	.what {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: baseline;
-		gap: 0.4rem;
-		width: 100%;
-		padding: 0.15rem 0.3rem 0.1rem 0;
-		border: 0;
-		background: none;
-		font: inherit;
-		text-align: left;
-		color: inherit;
-		cursor: pointer;
-	}
-
-	.what:disabled {
-		cursor: default;
-	}
-
-	.what:hover:not(:disabled) b {
-		color: var(--accent);
-	}
-
-	.n {
+	.origin .n {
 		color: var(--soft);
 	}
 
-	/* a release of main: each merge into main is its next version */
-	.release {
-		margin-left: 0.3rem;
-		font-size: 0.68rem;
-		font-weight: 700;
-	}
-
-	.history small {
+	.origin small {
 		display: block;
 		font-size: 0.72rem;
 	}
 
-	.history .diff {
+	.origin .diff {
 		font-size: 0.8rem;
-	}
-
-	.history .actions {
-		margin: 0.35rem 0 0;
-	}
-
-	/* who stands behind the edit viewed, link by link back to the passkeys */
-	.history ol.chain {
-		margin: 0.35rem 0 0;
-		padding-left: 1.1rem;
-		list-style: decimal;
-		color: var(--soft);
-		font-size: 0.76rem;
-	}
-
-	.history ol.chain li {
-		margin: 0;
-		padding: 0.08rem 0;
-		border: 0;
-		font-size: inherit;
-	}
-
-	.history ol.chain li::before {
-		content: none;
-	}
-
-	.history .actions .btn {
-		padding: 0.16rem 0.5rem;
-		font-size: 0.76rem;
 	}
 
 	/* a phone: a compact head in one row, buttons by their icons */

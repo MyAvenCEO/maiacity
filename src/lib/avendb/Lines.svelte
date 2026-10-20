@@ -9,12 +9,16 @@
 	            main; under each line what it holds, where the view names it (`versionsOf`: an asset's versions)
 
 	and any tabs of the view's own beside them (`tabs`: an asset's parts). It reads and shows; picking a line
-	(`onpick`), an edit's version (`hrefOf`) and what an edit is in the view's own words (`said`) are the view's.
+	(`onpick`), an edit's version (`hrefOf`, or `onopen` where the view shows it in place, as a note does) and what an
+	edit is in the view's own words (`said`) are the view's, and so is what it does with them: what it says of a line
+	(`about`: a note's "differs from main", a story's title there), what goes beside a line (`lineEnd`: a story's
+	Merge), under each section of lines (`adding`: a note's New proposal and New variant), under each edit (`below`:
+	its words changed, Restore, Undo) and under the history (`after`: the history a note's copy goes on into).
 -->
 <script>
 	import Icon from './Icon.svelte';
-	import { actingWords, chainSteps, count, hue, short } from './vaults.js';
-	import { versionWords } from './versions.js';
+	import { actingWords, authorsLine, chainSteps, count, hue, short } from './vaults.js';
+	import { editWords, lineName, versionWords } from './versions.js';
 
 	/** @typedef {import('svelte').ComponentProps<typeof Icon>['name']} IconName */
 	/**
@@ -24,7 +28,8 @@
 	 * @typedef {{ id: string, author: string, actor: string, via: string[], chain: import('./vaults.js').Chain,
 	 *   line: string | null, deps: string[], kind: 'edit' | 'propose' | 'variant' | 'merge' | 'accept' | 'sealed',
 	 *   name: string | null, from: { line: string | null, name: string | null } | null, counted: boolean,
-	 *   version?: number | null }} EditView an edit of the entry, as the `note` op reads it
+	 *   version?: number | null, authors?: { vault: string, name: string | null, kind: string | null }[] | null }} EditView
+	 *   an edit of the entry, as the `note` op reads it: `authors` who a release is by
 	 * @typedef {EditView & { n: number }} Numbered
 	 * @typedef {{ key: string, label: string, href: string, on?: boolean, note?: string }} Held what a line holds
 	 *   that the view shows one of, to pick: its label, where it is shown, whether it is the one shown
@@ -36,9 +41,15 @@
 	 *   line?: string | null, at?: string, tab?: string, thing?: string, tabs?: Tab[],
 	 *   versionsOf?: (l: LineView) => Held[], hrefOf?: (e: Numbered) => string | undefined,
 	 *   said?: (e: Numbered) => string | undefined, onpick?: (line: string | null) => void,
-	 *   versions?: import('svelte').Snippet }}
+	 *   onopen?: (e: Numbered) => void, opens?: (e: Numbered) => boolean, about?: (l: LineView) => string | undefined,
+	 *   also?: number, versions?: import('svelte').Snippet, lineEnd?: import('svelte').Snippet<[LineView]>,
+	 *   adding?: import('svelte').Snippet<['propose' | 'variant']>, below?: import('svelte').Snippet<[Numbered]>,
+	 *   after?: import('svelte').Snippet }}
 	 *   `note` what the `note` op read of the entry, `line` the line shown (null for main), `at` the edit shown, `tab`
 	 *   the tab open, `thing` what the entry is called in a sentence ("Wrote it"), `versions` what goes under its lines
+	 *   and `also` how many it holds, counted on the Versions tab; `onopen` shows an edit's version in the view, where
+	 *   `opens` lets it (an edit this browser can't open never does); `about` the view's words for a line in place of
+	 *   avenDB's, before its edits
 	 */
 	let {
 		world,
@@ -52,7 +63,15 @@
 		hrefOf,
 		said,
 		onpick,
-		versions
+		onopen,
+		opens = () => true,
+		about,
+		also = 0,
+		versions,
+		lineEnd,
+		adding,
+		below,
+		after
 	} = $props();
 
 	const lines = $derived(note?.lines ?? []);
@@ -75,8 +94,6 @@
 	/** the edit whose chain of signers is shown */
 	let opened = $state('');
 
-	/** A line's name, as a person reads it. @param {{ line: string | null, name: string | null } | null | undefined} l */
-	const lineName = (l) => (!l ? 'a line' : l.line === null ? 'main' : (l.name ?? 'a line this browser can’t name'));
 	/** Line `l` of the entry. @param {string | null} l @returns {{ line: string | null, name: string | null, variant?: boolean }} */
 	const lineOf = (l) => lines.find((x) => x.line === l) ?? { line: l, name: null };
 	/** Line `l` quoted, as a sentence names it. @param {string | null} l */
@@ -85,33 +102,42 @@
 	const who = (e) => actingWords(world, e.author, e.actor, e.via);
 
 	/** What edit `e` did, in the view's words where it has them, else avenDB's. @param {Numbered} e */
-	function what(e) {
-		const own = said?.(e);
-		if (own) return own;
-		const elsewhere = e.line !== here?.line ? ` on ${quoted(e.line)}` : '';
-		const from = e.from?.line ?? null;
-		switch (e.kind) {
-			case 'propose':
-				return `Proposed “${e.name ?? '…'}”${e.from ? ` from ${quoted(from)}` : ''}`;
-			case 'variant':
-				return `Started the variant “${e.name ?? '…'}”${e.from ? ` from ${quoted(from)}` : ''}`;
-			case 'merge':
-				if (e.line === null) return `Merged ${quoted(from)} into main`;
-				if (from === null && lineOf(e.line).variant) return `Brought main into ${quoted(e.line)}`;
-				if (from === null) return `Updated ${quoted(e.line)} from main`;
-				return `Merged ${quoted(from)} into ${quoted(e.line)}`;
-			case 'accept':
-				return `Accepted ${quoted(e.line)} as it stood`;
-			case 'sealed':
-				return `An edit this browser can’t open${elsewhere}`;
-			default:
-				return e.deps.length ? `Edited${elsewhere}` : `Wrote ${thing}${elsewhere}`;
-		}
-	}
+	const what = (e) => said?.(e) || editWords(e, lines, here?.line, thing);
 </script>
 
-<!-- a line, to pick where the view picks lines, else leading to the first of what it holds -->
+<!-- a line, to pick where the view picks lines, else leading to the first of what it holds; beside it what the view
+	puts there, and under it what it holds -->
 {#snippet row(/** @type {LineView} */ l, /** @type {string} */ name, /** @type {string} */ sub)}
+	{#if lineEnd}
+		<div class="beside">{@render lineItself(l, name, sub)}{@render lineEnd(l)}</div>
+	{:else}
+		{@render lineItself(l, name, sub)}
+	{/if}
+	{@const held = versionsOf?.(l) ?? []}
+	{#if held.length}
+		<ol class="held" aria-label="What {lineName(l)} holds">
+			{#each held as h (h.key)}
+				<li>
+					<a class="pick" class:on={h.on} href={h.href} aria-current={h.on ? 'page' : undefined}>{h.label}</a>
+					{#if h.note}<small class="soft">{h.note}</small>{/if}
+				</li>
+			{/each}
+		</ol>
+	{/if}
+{/snippet}
+
+<!-- an edit as its history names it: what it did, its number, and its version where it is a release of its line -->
+{#snippet edit(/** @type {Numbered} */ e)}
+	<b>{what(e)}</b>
+	<span class="n mono">#{e.n}</span>
+	{#if e.version && (e.line === null || lineOf(e.line).variant)}<span
+			class="release chip"
+			title="Version {e.version} of {quoted(e.line)}, by {authorsLine(world, e.authors, 'whoever wrote it')}">v{e.version}</span
+		>{/if}
+{/snippet}
+
+<!-- the line itself: a button, a link or a row -->
+{#snippet lineItself(/** @type {LineView} */ l, /** @type {string} */ name, /** @type {string} */ sub)}
 	{@const on = l.line === here?.line}
 	{@const to = onpick ? undefined : versionsOf?.(l)[0]?.href}
 	{#if onpick}
@@ -130,17 +156,6 @@
 			<span><b>{name}</b><small>{sub}</small></span>
 		</div>
 	{/if}
-	{@const held = versionsOf?.(l) ?? []}
-	{#if held.length}
-		<ol class="held" aria-label="What {lineName(l)} holds">
-			{#each held as h (h.key)}
-				<li>
-					<a class="pick" class:on={h.on} href={h.href} aria-current={h.on ? 'page' : undefined}>{h.label}</a>
-					{#if h.note}<small class="soft">{h.note}</small>{/if}
-				</li>
-			{/each}
-		</ol>
-	{/if}
 {/snippet}
 
 <div class="lines-side">
@@ -149,7 +164,7 @@
 			><Icon name="history" size={14} /> History</button
 		>
 		<button role="tab" class="side" class:on={tab === 'versions'} aria-selected={tab === 'versions'} onclick={() => (tab = 'versions')}
-			><Icon name="proposal" size={14} /> Versions <small>{open.length + breeds.length || ''}</small></button
+			><Icon name="proposal" size={14} /> Versions <small>{open.length + breeds.length + also || ''}</small></button
 		>
 		{#each tabs as t (t.id)}
 			<button role="tab" class="side" class:on={tab === t.id} aria-selected={tab === t.id} onclick={() => (tab = t.id)}
@@ -172,7 +187,7 @@
 			<section>
 				<h4>Proposals <small>{open.length || ''}</small></h4>
 				{#each open as l (l.line)}
-					{@render row(l, lineName(l), `open, not merged yet · ${count(l.history.length, 'edit')}`)}
+					{@render row(l, lineName(l), `${about?.(l) ?? 'open, not merged yet'} · ${count(l.history.length, 'edit')}`)}
 				{:else}
 					<p class="hint soft">
 						None open.{proposals.length
@@ -180,6 +195,7 @@
 							: ' A proposal is a line of its own, to change apart from main and then merge into it.'}
 					</p>
 				{/each}
+				{@render adding?.('propose')}
 			</section>
 
 			<section>
@@ -187,8 +203,8 @@
 				{#each breeds as l (l.line)}
 					{@render row(
 						l,
-						lineName(l),
-						`${l.behind ? 'main has changed since' : `holds main ${l.main ? versionWords(l.main) : ''}`} · ${count(l.history.length, 'edit')}`
+						`${lineName(l)}${l.version?.version ? ` v${l.version.version}` : ''}`,
+						`${about?.(l) ?? (l.behind ? 'main has changed since' : `holds main ${l.main ? versionWords(l.main) : ''}`)} · ${count(l.history.length, 'edit')}`
 					)}
 				{:else}
 					<p class="hint soft">
@@ -196,6 +212,7 @@
 						it, and it keeps its own where both changed one place.
 					</p>
 				{/each}
+				{@render adding?.('variant')}
 			</section>
 
 			{#if versions}<section>{@render versions()}</section>{/if}
@@ -211,22 +228,22 @@
 					{@const to = hrefOf?.(e)}
 					<li class={e.kind} class:on={e.id === at}>
 						{#if to}
-							<a class="what" href={to} aria-current={e.id === at ? 'page' : undefined}>
-								<b>{what(e)}</b>
-								<span class="n mono">#{e.n}</span>
-								{#if e.version && (e.line === null || lineOf(e.line).variant)}<span class="release chip">v{e.version}</span>{/if}
-							</a>
+							<a class="what" href={to} aria-current={e.id === at ? 'page' : undefined}>{@render edit(e)}</a>
+						{:else if onopen}
+							<button
+								class="what"
+								disabled={e.kind === 'sealed' || !opens(e)}
+								aria-pressed={e.id === at}
+								onclick={() => onopen(e)}>{@render edit(e)}</button
+							>
 						{:else}
-							<span class="what">
-								<b>{what(e)}</b>
-								<span class="n mono">#{e.n}</span>
-								{#if e.version && (e.line === null || lineOf(e.line).variant)}<span class="release chip">v{e.version}</span>{/if}
-							</span>
+							<span class="what">{@render edit(e)}</span>
 						{/if}
 						<small class="soft"
-							><button class="who" aria-expanded={opened === e.id} onclick={() => (opened = opened === e.id ? '' : e.id)}>{who(e)}</button> ·
+							>{#if e.version && e.authors?.length}By {authorsLine(world, e.authors)} · {/if}<button class="who" aria-expanded={opened === e.id} onclick={() => (opened = opened === e.id ? '' : e.id)}>{who(e)}</button> ·
 							<span class="mono" title={e.id}>{short(e.id)}</span></small
 						>
+						{@render below?.(e)}
 						{#if opened === e.id}
 							<ol class="chain" aria-label="Who stands behind it">
 								{#each chainSteps(world, e.chain) as step, i (i)}<li>{step.says}</li>{/each}
@@ -235,6 +252,7 @@
 					</li>
 				{/each}
 			</ol>
+			{@render after?.()}
 		</div>
 	{/if}
 </div>
@@ -358,6 +376,18 @@
 		background: var(--accent);
 	}
 
+	/* a line with what the view puts beside it */
+	.beside {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+
+	.beside > .line {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+
 	/* what a line holds, newest first, each to pick */
 	.held {
 		display: flex;
@@ -474,7 +504,21 @@
 		text-decoration: none;
 	}
 
-	a.what:hover b {
+	button.what {
+		width: 100%;
+		border: 0;
+		background: none;
+		font: inherit;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	button.what:disabled {
+		cursor: default;
+	}
+
+	a.what:hover b,
+	button.what:hover:not(:disabled) b {
 		color: var(--accent);
 	}
 
