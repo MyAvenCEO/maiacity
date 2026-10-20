@@ -131,6 +131,7 @@ export function createCameraHold(camera) {
  *   keep?: (worlds: FilmWorldSpec[]) => void,
  *   streams?: boolean,
  *   move?: (world: FilmWorldSpec) => void,
+ *   progress?: () => { label: string, done?: number, total?: number } | null,
  *   extra?: Record<string, unknown>
  * }} o
  *   sandbox, area: which world this is (a shot of another is refused); hold: the camera controller's hold (the walker
@@ -141,8 +142,9 @@ export function createCameraHold(camera) {
  *   (game/film/worlds.js `parts`; each part by its channels' values, called every frame, with {} for none); stage: build
  *   what a shot needs and resolve when it is ready (default: stand at world.stand); holds: whether the world is still
  *   staged for that (default: yes); keep: keep built what these shots need; streams: holds is exact for any shot
- *   wherever it stands, so a cut to a held shot only moves (src/lib/sandbox-kit/stream.js); move: stand there at once; extra: more on window.__world (debugging,
- *   sets)
+ *   wherever it stands, so a cut to a held shot only moves (src/lib/sandbox-kit/stream.js); move: stand there at once;
+ *   progress: what its stage is doing now, and how far (`done` of `total`) when it knows (the studio's loading screen
+ *   shows it while Play readies the world; default: nothing said); extra: more on window.__world (debugging, sets)
  */
 export function connectFilm(o) {
 	const { renderer, scene, camera, hold, sky = null } = o;
@@ -218,7 +220,9 @@ export function connectFilm(o) {
 			 *  holds is then only a move of the camera, never a staging */
 			streams: o.streams ?? false,
 			/** stand where shot `w` is, at once, what it sees already built (`streams`) @param {FilmWorldSpec} w */
-			move: o.move ?? ((w) => place(w.stand[0], w.stand[1], 0, 0))
+			move: o.move ?? ((w) => place(w.stand[0], w.stand[1], 0, 0)),
+			/** what the world's stage is doing now, for the studio's loading screen (null: nothing it says) */
+			progress: o.progress ?? (() => null)
 		},
 		/** the world is going: the film (and the console) no longer find it (a world opened over another hands it back) */
 		disconnect() {

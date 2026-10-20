@@ -32,6 +32,7 @@ import { filmPath } from '../../../game/film/worlds.js';
  *   show(o: ShowArgs): void | boolean | Promise<void | boolean>,
  *   capture?(o: { spec: ShotSpec, t: number, shape: Shape, width: number, height: number }): Promise<ArrayBuffer>,
  *   meter?(spec: ShotSpec): Promise<number>,
+ *   progress?(): { label: string, done?: number, total?: number } | null,
  *   record: { start(): void, stop(): CameraKey[] | Promise<CameraKey[]> }
  * }} Film
  */
@@ -377,28 +378,59 @@ export class WorldViewer {
 		const todo = [...new Map(specs.map((s) => [specKey(s), s])).values()].filter((s) => !this.readyShots.has(specKey(s)) && !this.preparing.has(specKey(s)));
 		for (const s of todo) {
 			const k = specKey(s);
-			const t0 = performance.now();
-			const slow = setInterval(() => console.warn(`world: still preparing ${s.meta?.name ?? 'a shot'} after ${Math.round((performance.now() - t0) / 1000)} s`), 15000);
-			/** @type {() => void} */
-			let end = () => {};
-			const gone = new Promise((r) => (end = () => r(false)));
-			this.ends.add(end);
 			/** @type {Promise<void>} */
-			// prepared only where it was all done: a prepare the timeline's play cut short (false) is asked again once it stands
-			const p = Promise.race([film.prepare([s], { live: true, meter }).then((r) => r !== false), gone])
-				.then((done) => void (done && this.film === film && this.readyShots.add(k)))
-				.catch((/** @type {Error} */ e) => {
-					this.error = `prepare: ${e?.message ?? e}`;
-					console.warn(`world: ${this.error}`);
-				})
-				.finally(() => {
-					clearInterval(slow);
-					this.ends.delete(end);
-					if (this.preparing.get(k) === p) this.preparing.delete(k);
-				});
+			const p = this.prepareOne(film, s, meter).finally(() => {
+				if (this.preparing.get(k) === p) this.preparing.delete(k);
+			});
 			this.preparing.set(k, p);
 		}
 		return Promise.all(specs.map((s) => this.preparing.get(specKey(s)) ?? Promise.resolve())).then(() => {});
+	}
+
+	/**
+	 * Readies one shot whatever the viewer counts as ready (Play readying the whole world before it plays): film mode
+	 * stages it — unless the world holds all it sees already — and meters it, unless its exposure is known. Counted by
+	 * where it stands, a shot from the same stand as one ready was skipped, and the domes its own camera sees were built
+	 * while it played.
+	 * @param {ShotSpec} spec @returns {Promise<void>}
+	 */
+	readyShot(spec) {
+		const film = this.film;
+		if (!film || !this.holds(spec)) return Promise.resolve();
+		return this.prepareOne(film, spec, true);
+	}
+
+	/**
+	 * One shot prepared in film mode, its world counted ready once it was all done: a prepare the timeline's play cut
+	 * short (false) is asked again once it stands.
+	 * @param {Film} film @param {ShotSpec} s @param {boolean} meter @returns {Promise<void>}
+	 */
+	prepareOne(film, s, meter) {
+		const t0 = performance.now();
+		const slow = setInterval(() => console.warn(`world: still preparing ${s.meta?.name ?? 'a shot'} after ${Math.round((performance.now() - t0) / 1000)} s`), 15000);
+		/** @type {() => void} */
+		let end = () => {};
+		const gone = new Promise((r) => (end = () => r(false)));
+		this.ends.add(end);
+		return Promise.race([film.prepare([s], { live: true, meter }).then((r) => r !== false), gone])
+			.then((done) => void (done && this.film === film && this.readyShots.add(specKey(s))))
+			.catch((/** @type {Error} */ e) => {
+				this.error = `prepare: ${e?.message ?? e}`;
+				console.warn(`world: ${this.error}`);
+			})
+			.finally(() => {
+				clearInterval(slow);
+				this.ends.delete(end);
+			});
+	}
+
+	/** what film mode is doing now, for the loading screen (null: nothing, or no world) */
+	progress() {
+		try {
+			return this.film?.progress?.() ?? null;
+		} catch {
+			return null; // the page is going
+		}
 	}
 
 	/**

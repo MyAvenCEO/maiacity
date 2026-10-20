@@ -1396,6 +1396,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	   never from the frame before it. Players never reach any of this. ── */
 	/** what a shot sees: its camera path's views (the film knows them), else all round where it stands */
 	const shotViews = (w: { stand: [number, number]; views?: View[] }): View[] => (w.views?.length ? w.views : [{ x: w.stand[0], y: 1.7, z: w.stand[1], near: SHOW_WITHIN }])
+	/** what the film's stage is doing now (the studio's loading screen shows it), null between stagings */
+	let staging: (() => { label: string; done?: number; total?: number }) | null = null
 	/** show or hide each built dome for where the walker stands now (as the world does as you walk) */
 	const settle = () => {
 		for (const i of built.keys()) place(i)
@@ -1464,26 +1466,36 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 				frames = 0
 			}, 10000)
 			rush = new Set(need)
+			staging = () => ({ label: need.length === 1 ? 'Building the dome it sees' : 'Building the domes it sees', done: need.filter((i) => built.has(i)).length, total: need.length })
 			try {
 				await domeStream.ready(views)
 			} finally {
 				clearInterval(slow)
 				counting = false
 				rush = new Set()
+				staging = null
 			}
 			settle()
 			const t0 = performance.now()
-			// and every animal it will see: all coarse from afar, rigged those its camera path passes near — there before
-			// the shot is drawn
-			// (two frames first: the herds say where each of them is, round where the walker now stands)
-			await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
-			await actorsNear(views)
-			const t1 = performance.now()
-			// and every shape of every plant (each kind at both its details and its picture), so no frame of the shot draws
-			// one while a finer one is still being built
-			if (plantsOut) await Promise.all([plantsOut.assets.ready(undefined, true), plantsIn!.assets.ready(undefined, true)])
-			const t2 = performance.now()
-			await library.ready()
+			let t1 = t0, t2 = t0
+			try {
+				// and every animal it will see: all coarse from afar, rigged those its camera path passes near — there before
+				// the shot is drawn
+				// (two frames first: the herds say where each of them is, round where the walker now stands)
+				staging = () => ({ label: 'Bringing in the animals' })
+				await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))
+				await actorsNear(views)
+				t1 = performance.now()
+				// and every shape of every plant (each kind at both its details and its picture), so no frame of the shot draws
+				// one while a finer one is still being built
+				staging = () => ({ label: 'Growing the plants' })
+				if (plantsOut) await Promise.all([plantsOut.assets.ready(undefined, true), plantsIn!.assets.ready(undefined, true)])
+				t2 = performance.now()
+				staging = () => ({ label: 'Loading the things it shows' })
+				await library.ready()
+			} finally {
+				staging = null
+			}
 			settle()
 			// a stage that cost a cut its time says where it went (the studio's log)
 			const t3 = performance.now()
@@ -1517,6 +1529,8 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			filmed = new Set(need)
 			settle()
 		},
+		// what its stage is doing now: the domes the shot sees (how many built), its animals, plants and things
+		progress: () => staging?.() ?? null,
 		// the library: the film's sets put their assets in it (src/lib/film/sets.js, the tired land's trucks)
 		extra: { herds, built, shown, domes, water: waterPts, playgrounds: PLAYGROUNDS, library }
 	})
