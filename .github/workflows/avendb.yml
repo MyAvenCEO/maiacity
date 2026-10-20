@@ -1,12 +1,12 @@
 name: avenDB server
 
 # avenDB's server at avendb.maia.city (avendb/crates/avendb-server): built from avendb/ alone and rolled out on its own,
-# so a change to avenDB never restarts the API, and a failed avenDB build never holds up its deploy.
+# so a change to avenDB never restarts the API or the media vault, and a failed avenDB build never holds up theirs.
 #
 #   image  – build the server's image (avendb/Dockerfile.server), push to GHCR tagged with the commit
 #   deploy – over SSH: AVENDB_IMAGE, its bucket's settings and its bucket of snapshots into the server's .env, then pull
 #            and restart this one container
-#   bucket – make sure avenDB's own bucket is there (BUCKET in hel1, beside the API's), with Object Lock
+#   bucket – make sure avenDB's own bucket is there (BUCKET in hel1, beside the media vault's), with Object Lock
 #
 # The bucket gets Object Lock as it is made, as no bucket can get it later, and so keeps versioning on for good. Every
 # object version is locked in compliance mode for 7 days: no key, not even the project's, deletes or overwrites it
@@ -129,7 +129,7 @@ jobs:
           esac
           flock -u 9
           docker compose -f docker-compose.yml -f docker-compose.prod.yml pull -q avendb
-          # this one container: the API and Caddy stay as they are
+          # this one container: the API, the media vault and Caddy stay as they are
           docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps avendb
           docker logout ghcr.io >/dev/null
           docker image prune -f >/dev/null
