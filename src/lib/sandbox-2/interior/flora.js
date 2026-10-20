@@ -24,6 +24,8 @@
  * Nothing here loads the renderer: a dome's inside (./interior.ts) is handed the flora it plants in by whoever builds it.
  */
 import * as THREE from 'three';
+import { MAIA_CITY } from '../../../../game/code/sources/anchor.js';
+import { pinRef } from '../../assets/sources/avendb.js';
 import { TIERS } from './sandbox5.js';
 
 /** @typedef {import('./sandbox5.js').Kind} Kind */
@@ -57,8 +59,14 @@ export const INSIDE = /** @type {Reaches} */ ({ tree: [28, 75], shrub: [16, 40],
 
 /** A plant's key, for a forest to know it by. @param {Kind} k */
 export const keyOf = (k) => `${k.id}@${k.v}:${k.stage}:${k.seed}`;
-/** A kind as the asset it is built from: its label and its values. @param {Kind} k */
-export const refOf = (k) => `plants/${k.id}@${k.v}?stage=${k.stage}&seed=${encodeURIComponent(k.seed)}`;
+/**
+ * A kind as the asset it is built from and its values: by its pin, the plant's entry in the Maia City vault and the heads
+ * of its version (Samuel 2026-10-20), else by its card's old ref. @param {Kind} k
+ */
+export const refOf = (k) => {
+	const values = `stage=${k.stage}&seed=${encodeURIComponent(k.seed)}`;
+	return k.pin ? pinRef({ vault: MAIA_CITY, ...k.pin }, values) : `plants/${k.id}@${k.v}?${values}`;
+};
 
 /** the side of a cell of the ground the small plants are filed in, metres */
 const CELL = 8;
