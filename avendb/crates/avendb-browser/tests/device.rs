@@ -10,7 +10,9 @@
 //! megabyte at a time, and her Mac reads any range of it. Every device, the server too, trusts no curve: every edit
 //! is ML-DSA-65 signed, as every signer here is made after the key move (Gina's is made before it, in SLH-DSA). Hana's
 //! browser and passkey, made before it too, move to ML-DSA-65 after an unlock, in one ceremony more (K3b), and the
-//! browser opens again as its next key on the same shelf, with no unlock.
+//! browser opens again as its next key on the same shelf, with no unlock. Sam's new phone signs in through the server
+//! with his passkey from before it, knows the server from then on, and moves his passkey only once it caught up with
+//! one of its peers, so it reads his name and Maia City after the move as before.
 //!
 //! Every read and change goes through one entry point, as the page's does (V2, `Device::run`,
 //! `docs/ARCHITECTURE.md` §8): a JSON op, answered done, refused, or, where the vault's owners approve it, signed in
@@ -1538,6 +1540,144 @@ async fn hanas_browser_and_passkey_from_before_the_key_move_move_in_one_ceremony
     assert!(shows(&again, note, "Red, blue and green.").await, "it reads what its shelf kept");
     assert_eq!(again.moving().await.expect("what moves"), None);
     for n in [again.node(), &mac] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+/// Sam's, made before the key move: his passkey and Mac in SLH-DSA, and his vault, which claimed the server, so it owns
+/// Maia City, which owns avenMAIA, the server's aven. His vault and Maia City each give avenMAIA backup and have a name.
+struct Sams {
+    lab: Lab,
+    passkey: SignerId,
+    sam: VaultId,
+    server: SignerId,
+    maia: VaultId,
+}
+
+fn sams() -> Sams {
+    let mut lab = Lab::new();
+    let passkey = lab.passkey_from_in("Sam", [45; 32], Suite::SlhDsa);
+    let mac = lab.device_of(passkey, "Sam's Mac");
+    let server = lab.device("the server");
+    let sam = human_on(&mut lab, passkey, &[mac]);
+    let avenceo = claim_on(&mut lab, mac, passkey, sam, server);
+    let maia = match lab.state(mac).vault(avenceo).expect("avenMAIA").owners[..] {
+        [Principal::Vault(v)] => v,
+        _ => panic!("Maia City owns avenMAIA"),
+    };
+    for (v, name) in [(sam, "Sam"), (maia, "Maia City")] {
+        let backup = avendb::cast::share(v, vault(avenceo), Level::Backup, Selector::All);
+        lab.issue(mac, &[mac], backup).expect("avenMAIA keeps it");
+        let op = json!({ "op": "profile", "vault": v.to_hex(), "name": name });
+        assert!(avendb::engine::run(&mut lab, mac, &op).get("ok").is_some(), "{name}'s profile");
+    }
+    lab.sync(mac, server);
+    Sams { lab, passkey, sam, server, maia }
+}
+
+/// Whether device `d` shows vault `v` by its name `name`.
+async fn shows_named(d: &Device, v: VaultId, name: &str) -> bool {
+    let w = world_of(d).await;
+    w["vaults"].as_array().is_some_and(|vs| vs.iter().any(|x| x["id"] == v.to_hex() && x["name"] == name))
+}
+
+/// The server's node: through the relay at `url`, letting in whom `admission` names.
+async fn server_of(lab: &mut Lab, server: SignerId, url: &RelayUrl, admission: &Admission) -> Node {
+    let (relay, admission) = (Some(url.clone()), Some(admission.clone()));
+    let opts = Options { relay, admission, card: true, ..Options::local() };
+    Node::spawn(lab.split(server, &[], [2; 32]), server, opts).await.expect("the server's node")
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn sams_phone_signs_in_through_the_server_moves_his_passkey_at_once_and_shows_his_name_and_his_coop() {
+    let admission = Admission::open();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url: RelayUrl = relay.url();
+    let Sams { mut lab, passkey, sam, server: server_d, maia } = sams();
+    let server = server_of(&mut lab, server_d, &url, &admission).await;
+    // his Mac is away. His new phone signs in through the server with his passkey alone, and knows the server from
+    // then on, as avenMAIA's device, whatever the server handed it yet
+    let sams = Browser::new(Passkey::from_seed([45; 32]));
+    let shelf = Folder::new("sam");
+    let phone = link(start_on(&shelf.0, "Sam's phone", &url, 7), &server.offer(), &sams, [1; 32]).await;
+    let phone = phone.expect("it links through the server");
+    assert_eq!((phone.vault().await, phone.passkey()), (Some(sam), passkey));
+    let peers = phone.node().read(|lab: &Lab, me| lab.peers(me).into_iter().map(|(s, _)| s).collect::<Vec<_>>()).await;
+    assert!(peers.contains(&server_d), "it syncs with the server: {peers:?}");
+    // the page asks at once to move his passkey, which he does; then it shows his name and Maia City
+    let meta = phone.meta([1; 32], "c2Ft".into());
+    phone.keep(&meta).await.expect("what opens it again, on its shelf");
+    let moving = phone.moving().await.expect("what moves");
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: false }));
+    let sign = |challenge, _: Moving| {
+        let sams = &sams;
+        async move { Ok(Signing { passkey: Some(sams.ceremony(challenge, Step::Approve).await?), touch: None }) }
+    };
+    let again = start_on(&shelf.0, "Sam's phone", &url, 8);
+    let moved = phone.move_keys(again, sign, |_| async { Ok(()) }).await.expect("it moves");
+    let moved = moved.expect("his passkey moved");
+    until("it shows his name", || shows_named(&moved, sam, "Sam")).await;
+    until("it shows Maia City", || shows_named(&moved, maia, "Maia City")).await;
+    for n in [moved.node(), &server] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn sams_phone_moves_his_passkey_only_once_it_brought_what_the_server_keeps() {
+    let admission = Admission::open();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url: RelayUrl = relay.url();
+    let Sams { mut lab, passkey, sam, server: server_d, maia } = sams();
+    // his phone signed in through the server: it holds what a link hands over, his vault's link card, its own join
+    // and the server's card (`Device::link`), and nothing of the rest yet
+    let (secret, nonce) = ([46; 32], [1; 32]);
+    let phone_s = lab.device_with_in("Sam's phone", secret, Suite::MlDsa);
+    let card = lab.link_card(server_d, passkey);
+    lab.receive(phone_s, card, vec![]);
+    let join = lab.join(phone_s, passkey).expect("it joins his vault");
+    lab.accept_join(server_d, phone_s, join).expect("the server takes the join");
+    let card = lab.card(server_d);
+    lab.receive(phone_s, card, vec![]);
+    let shelf = Folder::new("sam-moves");
+    let on = Some(disk::open(&shelf.0).expect("its shelf"));
+    let phone = Node::spawn(lab.split(phone_s, &[], [3; 32]), phone_s, Options { shelf: on, ..Options::local() });
+    phone.await.expect("its node").shutdown().await.expect("it closes, its shelf holding what it holds");
+    let sams = Browser::new(Passkey::from_seed([45; 32]));
+    let (p256, pad) = {
+        let held = &sams.0.lock().expect("the authenticator").0;
+        (held.public(), held.prf(&device_salt(&nonce)))
+    };
+    let mask: [u8; 32] = std::array::from_fn(|i| secret[i] ^ pad[i]);
+    let (name, relay_at, credential) = ("Sam's phone".to_string(), url.to_string(), "c2Ft".to_string());
+    let (device, follow, query_depth, touch) = (phone_s, vec![], None, None);
+    let meta = Meta { name, relay: relay_at, nonce, mask, credential, p256, device, follow, query_depth, touch };
+    meta.keep(&disk::open(&shelf.0).expect("its shelf")).await.expect("what opens it again");
+    // it opens while the server and his Mac are away: it caught up with none of them, so nothing moves yet
+    let opened = Device::open(start_on(&shelf.0, "Sam's phone", &url, 4), &meta, sams.unlock(nonce, [0xaa; 32]));
+    let opened = opened.await.expect("it opens");
+    assert_eq!(opened.vault().await, Some(sam));
+    assert_eq!(opened.moving().await.expect("what moves"), None, "a move waits for a peer");
+    // the server is back: the phone brings his name and Maia City from it, and then moves his passkey
+    let server = server_of(&mut lab, server_d, &url, &admission).await;
+    until("it shows his name", || shows_named(&opened, sam, "Sam")).await;
+    until("it shows Maia City", || shows_named(&opened, maia, "Maia City")).await;
+    let moving = opened.moving().await.expect("what moves");
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: false }));
+    let sign = |challenge, _: Moving| {
+        let sams = &sams;
+        async move { Ok(Signing { passkey: Some(sams.ceremony(challenge, Step::Approve).await?), touch: None }) }
+    };
+    let again = start_on(&shelf.0, "Sam's phone", &url, 5);
+    let moved = opened.move_keys(again, sign, |_| async { Ok(()) }).await.expect("it moves");
+    let moved = moved.expect("his passkey moved");
+    let next = moved.passkey();
+    assert!(next != passkey);
+    assert!(shows_named(&moved, sam, "Sam").await && shows_named(&moved, maia, "Maia City").await);
+    // the server learns of the move: his passkey's next key is his vault's root
+    let root = move |lab: &Lab, me| lab.state(me).vault(sam).and_then(|v| v.root);
+    until("the server sees the move", || async { server.read(root).await == Some(next) }).await;
+    for n in [moved.node(), &server] {
         n.shutdown().await.expect("the node shuts down");
     }
 }

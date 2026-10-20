@@ -445,13 +445,17 @@ impl Device {
     /// code reads `offer` (`Node::link_by_pass`), which takes the pass and hands back the vault of the passkey it is
     /// from, and joins its person's vault by the edit that adds it, which the same ceremony signs as that pass: one
     /// ceremony in all. Its passkey is the key, of those the unlock's assertion recovers to, whose vault the peer
-    /// handed over.
+    /// handed over. Then it takes that device's card too (`avendb_net::Node::contact`), as `found` takes the server's:
+    /// linked through the server, it knows it from then on as avenMAIA's device, which keeps its vault, and syncs
+    /// with it, though it closes or moves its keys before the server handed it the rest of what it keeps (2026-10-20:
+    /// a phone that moved its passkey at once synced with its person's other devices alone, all away).
     pub async fn link(start: Start, offer: &Offer, fresh: Fresh, unlock: Unlock) -> Result<Device> {
         start.progress.step("keys");
         let Passed { lab, me, passkeys, passes, .. } = passed(&start, None, &fresh, &unlock)?;
         let mask = fresh.mask(&unlock);
         let node = Device::spawn(lab, me, &start, passes.clone()).await?;
         let (passkey, _) = node.link_by_pass(offer, &passes, unlock.ceremony).await?;
+        node.contact(offer.addr.id).await.ok();
         Device::of(node, passkey, &passkeys, mask, &start).await
     }
 
@@ -579,10 +583,15 @@ impl Device {
     /// What its key move asks of its person now (K3b, `move_keys`), once it caught up with its peers (`catch_up`):
     /// whether their passkey signs, whether its Mac's Touch ID key does, with a touch, and whether a device moves.
     /// `None` once nothing it holds is to move: their keys and its own are in ML-DSA-65, or the Lab holds no next key
-    /// of those still in SLH-DSA, as a Mac its Touch ID key opened holds none of their passkey's.
+    /// of those still in SLH-DSA, as a Mac its Touch ID key opened holds none of their passkey's. `None` too while it
+    /// caught up with none of its peers: the move waits for an unlock that does. The page moves only what this asked
+    /// (`move_keys`), so this alone holds the move back: a Mac stops the nodes of the drives it hosts before it moves,
+    /// and they may be all the peers it has.
     pub async fn moving(&self) -> Result<Option<Moving>> {
         let touch = self.touch_key().await?;
-        catch_up(&self.node).await;
+        if !catch_up(&self.node).await {
+            return Ok(None);
+        }
         let opener = self.opener.clone();
         let drafted = self.node.read(move |lab, me| drafted(lab, me, &opener, touch).map(|d| d.map(|d| d.moving)));
         drafted.await.map_err(|why| anyhow!("its key move is refused: {why:?}"))
@@ -936,12 +945,25 @@ fn drafted(
 }
 
 /// Asks each device `node` knows for what it holds (`avendb::lab::Lab::peers`), for a few seconds at most
-/// (`CATCH_UP`): so a key move drafts on what another device of its person moved already, not over it.
-async fn catch_up(node: &Node) {
+/// (`CATCH_UP`): so a key move drafts on what another device of its person moved already, not over it. Whether one of
+/// them handed over all it holds for it in that time. A device that caught up with none, its peers all away or its
+/// vaults still coming from the server, holds too little to move on: the keys its move rotates would be made over
+/// what it doesn't hold yet (2026-10-20: a phone that moved its passkey at once, before the server handed it the
+/// rest, never read its coop again).
+async fn catch_up(node: &Node) -> bool {
     let peers = node.read(|lab, me| lab.peers(me)).await;
     let endpoints = peers.into_iter().filter_map(|(_, key)| iroh::EndpointId::from_bytes(&key).ok());
-    let asks = n0_future::join_all(endpoints.map(|peer| async move { node.sync_with(peer).await.ok() }));
+    let caught = std::sync::atomic::AtomicBool::new(false);
+    let asks = n0_future::join_all(endpoints.map(|peer| {
+        let caught = &caught;
+        async move {
+            if node.sync_with(peer).await.is_ok() {
+                caught.store(true, std::sync::atomic::Ordering::Relaxed);
+            }
+        }
+    }));
     or(async move { asks.await; }, sleep(CATCH_UP)).await;
+    caught.into_inner()
 }
 
 /// A browser's device's Lab as it opens again: its person's passkey, by its P-256 key and the ceremony that unlocked

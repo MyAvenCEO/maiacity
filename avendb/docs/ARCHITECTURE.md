@@ -1592,7 +1592,10 @@ knows signs (`Lab::web_passkey`, `Lab::owner_among`); a new device shows its pas
 person's vault may know either; an invite made before claims in SLH-DSA; and the server's and agents' kept secret
 names its suite (`sign::kept_secret`: the 32 bytes alone for SLH-DSA, as every one kept before, else its suite's byte
 first, so a cloud agent's key is 66 hex digits). The spec's `keyMove` example shows a vault moving to new keys with
-the edits it already has.
+the edits it already has. A device moves its person's keys and its own only once it caught up with one of its peers,
+the server or another of their devices (`Device::moving`, `catch_up`): a move rotates the keys of their vaults, and
+one made before the device holds what those keys open would make them over what it doesn't hold yet. Until then the
+page asks nothing, and the next unlock asks again.
 
 ## 11. Passkeys
 
@@ -1886,6 +1889,10 @@ A new device links by its passkey alone:
 4. The new device adds itself to the vault whose root is the passkey, a Device share signed by the passkey and by
    itself, from the same ceremony as its pass (Join). The peer takes that edit only for the device on the connection
    (`Lab::accept_join`). Then they sync.
+5. A browser takes the peer's card too (`Device::link`, `Lab::card`): linked through the server, it knows the server
+   from then on as avenMAIA's device, the vault that keeps its person's, and syncs with it even if it closes, or moves
+   its keys, before the server handed over the rest (2026-10-20: a phone that moved its passkey at once synced with
+   its person's other devices alone, all away).
 
 With every other device lost, the server's offer brings the vault back. The Verifpal model `link.vp` covers this.
 
