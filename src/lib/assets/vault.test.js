@@ -636,6 +636,53 @@ test('a page loaded again asks for the proofs it asked for before at once, by th
 	expect(proofs.get(`page:${DEV_VAULT}:/app/worlds/tired-land/`).batches.length).toBe(2);
 }, 60000);
 
+test("a page that holds its avenDB open reads the recipes off its own device: the same rows, no proof, each file off its store, the feed only where the device can't", async () => {
+	const { useDevice } = await import('../../../game/code/sources/device.js');
+	const byRoot = new Map(FEED.rows.map((r) => [r.files.at(-1).root, FEED.files.get(r.entry)]));
+	const asked = [];
+	const reads = [];
+	let failing = false;
+	const device = {
+		run: async (op) => (asked.push(op), op.op === 'bring' ? { ok: { new: 0, peers: 1, reached: true } } : { ok: FEED.rows }),
+		read: async (root, size, from, to) => {
+			reads.push(root);
+			if (failing) throw new Error('no peer hands it over');
+			return byRoot.get(root).slice(from, to);
+		}
+	};
+	const held = new Map();
+	const kept = { get: async (h) => held.get(h), put: async (h, b) => (held.set(h, b), true) };
+	useDevice(device);
+	try {
+		const f = feedOf();
+		const r = await vault.loadRecipes({ feed: AT, fetch: f.get, timeout: 1000, ...PROVING, proofs: keepOf(), kept });
+		expect([r.phase, r.feed, r.count]).toEqual(['ready', 'this device', Object.keys(made.index.recipes).length]);
+		expect(asked).toEqual([
+			{ op: 'bring', vaults: [DEV_VAULT] },
+			{ op: 'code', vault: DEV_VAULT, type: ['recipe'] }
+		]);
+		// a recipe built off the device's own copy: its file off its store, no listing, proof or file off the feed
+		const apple = LABEL['plants/apple@2'];
+		expect(await vault.recipeAt(apple)).toEqual(await repo.recipeAt(apple));
+		expect(reads.length).toBe(1);
+		expect(f.asked).toEqual([]);
+		expect(new TextDecoder().decode(held.get(apple))).toBe(FILES[apple]);
+		// a file the device can't read: off the feed, held to the same hash
+		failing = true;
+		const fern = LABEL['biomes/cover@1:fern'];
+		expect((await vault.recipeAt(fern)).code).toBe(FILES[fern]);
+		expect([reads.length, f.files().length, f.proofs().length]).toEqual([2, 1, 0]);
+		// a device too old for the ops: the feed, every recipe proven before it is built
+		useDevice({ run: async () => ({ refused: 'BadOp', why: 'no op is called "bring"' }), read: device.read });
+		const old = await loaded();
+		expect(old.r.feed).toBe(ROWS_URL);
+		await vault.recipeAt(LABEL['things/bell-tent@1']);
+		expect(old.proofs().length).toBe(1);
+	} finally {
+		useDevice(null);
+	}
+}, 60000);
+
 test("the dev server's stand-in serves the feed as avenDB's server does: the rows, and each entry's file as plain text", async () => {
 	const serve = serveDevFeed('/__recipe-feed', async () => FEED);
 	const ask = (url) =>

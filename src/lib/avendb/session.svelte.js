@@ -43,6 +43,7 @@
 import { native } from '$lib/native';
 import { allowed, answer, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
+import { useDevice } from '../../../game/code/sources/device.js';
 
 /** The name of this browser's shelf in OPFS (./device/store.js). */
 const STORE = 'avendb-browser';
@@ -370,11 +371,13 @@ async function started(d, nonce, credential, { name, relay }) {
 	meta = await d.keep(hex(nonce), credential);
 }
 
-/** Device `d` runs, for every page of the tab, and the pages holding it see what it holds; then it asks what its key
- *  move asks of the person (`checkMove`). @param {any} d */
+/** Device `d` runs, for every page of the tab, and the pages holding it see what it holds, and read the code they run
+ *  off it, the games' and the assets' (game/code/sources/device.js); then it asks what its key move asks of the person
+ *  (`checkMove`). @param {any} d */
 function running(d) {
 	device = d;
 	phase = 'open';
+	useDevice({ run: send, read: api.readFile });
 	if (holders) watch();
 	void checkMove(d);
 }
@@ -536,6 +539,7 @@ async function lock() {
 	if (mac) return;
 	const d = device;
 	watching = null;
+	useDevice(null);
 	[device, world, vault] = [null, null, ''];
 	if (meta) phase = 'closed';
 	await d?.close().catch(() => {});
@@ -546,6 +550,7 @@ async function lock() {
 async function forget() {
 	await device?.close();
 	watching = null;
+	useDevice(null);
 	await (mac ? mac.call('forget') : store.aside());
 	[device, meta, world, vault, phase] = [null, null, null, '', 'new'];
 }

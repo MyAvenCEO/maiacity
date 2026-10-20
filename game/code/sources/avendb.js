@@ -16,7 +16,8 @@
  * the seed: what every page and the API run offline, before the first load, and for any path the vault does not hold.
  * What is loaded is what Maia City's own signed edits prove, checked by avenDB's WebAssembly where it runs, and nothing
  * the server says otherwise (H2, ./feed.js `provenRows`): a proof that doesn't check out loads nothing, and the seed
- * runs, as offline. Each entry comes back in the repo entry's own shape ({ ref, type, for, title, ..., files, hash }),
+ * runs, as offline. A page that holds the person's avenDB open loads them off its own device instead, which checked
+ * every edit as it took it, once it brought Maia City from its peers (./device.js `deviceRows`), the same rows. Each entry comes back in the repo entry's own shape ({ ref, type, for, title, ..., files, hash }),
  * with its vault, entry and heads beside, checked by the one checker and held to an engine version the repo ships;
  * what fails either is left out and the seed's stays. Nothing here writes: `copyOf` makes the one batch the vault's
  * owner runs to copy the repo in.
@@ -30,6 +31,7 @@ import { canonical, jsonFile } from '../files.js';
 import { checkCode } from '../check.js';
 import { ENTRIES as SEED } from '../../../code/index.js';
 import { CODE_FEED, MAIA_CITY, proofOf, provenRows } from './feed.js';
+import { deviceRows } from './device.js';
 import ENGINES from '../../../src/lib/sandbox/engines.json' with { type: 'json' };
 
 /** the kinds of code entry this source carries, and the host each runs in */
@@ -193,14 +195,18 @@ export const avendb = {
 };
 
 /**
- * Load the vault's code entries, as Maia City's own signed edits prove them (H2, ./feed.js `provenRows`): { taken,
- * refused } or { error } (no anchor, offline, a proof that doesn't check out), and on any failure what was loaded
- * before stays, else the seed: never a row the proof didn't prove. `viewOf` is ../index.js `viewOfEntry`; `feed` where
- * /feed/code is, on the API the server's own feed inside (AVENDB_FEED); `vault` the anchor, Maia City's id
- * (`MAIA_CITY`); `url` the proof's address (`feedOf`); `verify` and `keep` as `provenRows` takes them (a test's).
+ * Load the vault's code entries, off the page's own avenDB where it holds one open that brought Maia City from its
+ * peers (./device.js `deviceRows`), else as Maia City's own signed edits prove them (H2, ./feed.js `provenRows`): {
+ * taken, refused } or { error } (no anchor, offline, a proof that doesn't check out), and on any failure what was
+ * loaded before stays, else the seed: never a row the proof didn't prove, nor one the device didn't check. `viewOf` is
+ * ../index.js `viewOfEntry`; `feed` where /feed/code is, on the API the server's own feed inside (AVENDB_FEED); `vault`
+ * the anchor, Maia City's id (`MAIA_CITY`); `url` the proof's address (`feedOf`); `verify` and `keep` as `provenRows`
+ * takes them (a test's); `device` false reads the feed whatever the page holds open.
  */
-export async function loadCode(viewOf, { feed = CODE_FEED, vault = MAIA_CITY, url = feedOf(feed, vault), fetch: get = globalThis.fetch, timeout = 4000, verify, keep } = {}) {
+export async function loadCode(viewOf, { feed = CODE_FEED, vault = MAIA_CITY, url = feedOf(feed, vault), fetch: get = globalThis.fetch, timeout = 4000, verify, keep, device = true } = {}) {
 	if (!avendb.on) return { error: 'code from avenDB is switched off' };
+	const local = device ? await deviceRows(KINDS, { vault }) : null;
+	if (local) return avendb.use(local, viewOf);
 	const got = await provenRows(url, { vault, kinds: KINDS, fetch: get, timeout, ...(verify ? { verify } : {}), ...(keep ? { keep } : {}) });
 	return 'error' in got ? got : avendb.use(got.rows, viewOf);
 }

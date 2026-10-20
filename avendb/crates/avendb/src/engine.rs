@@ -75,7 +75,7 @@ use crate::rules;
 use crate::words;
 use crate::sealed::{Brought, FileRoot};
 use crate::slice::{Attrs, Sym, LENS_TYPE, SCHEMA_TYPE};
-use crate::world::{FORK, SyncedTo, authors, authors_json, fork_mark};
+use crate::world::{self, FORK, SyncedTo, authors, authors_json, fork_mark};
 
 pub use vaults::{approve, approved, follow_standing, passkey_of, world, Approval, Prepared, Then};
 
@@ -180,7 +180,9 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "undo" => &["entry", "line", "edit", "as"],
         "fork" => &["entry", "line", "into", "schema", "ops", "as"],
         "batch" | "may" => &["ops", "as"],
-        "world" | "log" | "jobs" => &[],
+        "world" | "log" | "jobs" | "synced" => &[],
+        "code" => &["vault", "type"],
+        "bring" => &["vaults"],
         "shares" => &["over", "as"],
         "database" => &["vault"],
         "note" => &["entry"],
@@ -210,7 +212,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds.
-const READS: [&str; 20] = [
+const READS: [&str; 23] = [
     "query",
     "get",
     "pin",
@@ -231,6 +233,9 @@ const READS: [&str; 20] = [
     "taggable",
     "limits",
     "requests",
+    "code",
+    "bring",
+    "synced",
 ];
 
 /// The ops that change nothing but ask what changes would do, by dry runs (`Lab::dry`): `may`, and `shares`, which
@@ -308,8 +313,11 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "creatable" => vaults::creatable(lab, me, o),
         "taggable" => vaults::taggable(lab, me, o),
         "requests" => Ok(vaults::requests(lab, me)),
+        "code" => code(lab, me, o),
         "read_file" => Err(bad("read_file reads a file's bytes from a node's store: a node runs it (Node::run)")),
         "jobs" => Err(bad("jobs tells what a node does in the background: a node runs it (Node::run)")),
+        "bring" => Err(bad("bring asks a node's peers for vaults: a node runs it (Node::run)")),
+        "synced" => Err(bad("synced tells what a node's peers hold: a node runs it (Node::run)")),
         _ if ASKS.contains(&name) => Err(bad(format!("{name} asks by dry runs: run it, don't read it"))),
         _ => Err(bad(format!("{name} changes what the device holds: run it, don't read it"))),
     });
@@ -395,6 +403,22 @@ pub fn put_file(lab: &mut Lab, me: SignerId, v: &Value, brought: Brought) -> Val
         }
         _ => Err(bad(format!("{name} brings no file"))),
     }))
+}
+
+/// `{"op": "code", "vault", "type"?}`: the public code of vault `vault` that device `me` holds, of the kinds `type`
+/// names (`world::CODE_KINDS`, every one of them for none), as avenDB's server's feed serves it (`/feed/code`,
+/// `world::public_entries_of`): each entry everyone may read that its vault landed, its record as its main line holds it
+/// and the files it brings. So a page that holds a device reads the code it runs off its own copy of the vault, which it
+/// checked edit by edit as it took it, in the shape it reads the feed's, with no proof (H2 is the feed's).
+fn code(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let vault = vault_of(o, "vault")?;
+    let kinds = texts_of(o, "type")?;
+    if let Some(k) = kinds.iter().find(|k| !world::CODE_KINDS.contains(&k.as_str())) {
+        let of = world::CODE_KINDS.join(", ");
+        return Err(bad(format!("code reads code alone: {k:?} is none of its kinds ({of})")));
+    }
+    let kinds = if kinds.is_empty() { world::CODE_KINDS.to_vec() } else { strs(&kinds) };
+    Ok(Value::Array(world::public_entries_of(lab, me, Some(vault), Some(&kinds))))
 }
 
 // The fields ops share.

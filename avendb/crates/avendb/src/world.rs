@@ -997,12 +997,20 @@ pub const CODE_KINDS: [&str; 5] = ["recipe", "view", "logic", "function", "confi
 /// is one of the seed's, `null` for any other. A page that loads code reads Maia City's alone (`SEED_COOP`). A draft
 /// its vault hasn't landed is never among them (`Lab::landed`), so no agent's new code runs before the vault took it.
 pub fn public_entries(lab: &Lab, me: SignerId, kinds: Option<&[&str]>) -> Vec<Value> {
+    public_entries_of(lab, me, None, kinds)
+}
+
+/// `public_entries` of vault `vault` alone, or of every vault for none: what a device reads back of one vault's code as
+/// avenDB's server serves it (the `code` op, `engine`), the same rows, so a page that holds a device reads its own copy
+/// of a vault's code as it would read the feed's.
+pub fn public_entries_of(lab: &Lab, me: SignerId, vault: Option<VaultId>, kinds: Option<&[&str]>) -> Vec<Value> {
     let st = lab.state(me);
     let seed: Vec<(VaultId, &str)> = seed_of(lab, me).into_iter().zip(SEED_NAMES).collect();
     let of = |kind: &str| kinds.is_none_or(|ks| ks.contains(&kind));
     let mut vaults = BTreeMap::new();
     let mut rows = vec![];
-    for en in st.entries().iter().filter(|en| lab.landed(me, en.id) && everyone_reads(st, en)) {
+    let public = |en: &&Entry| vault.is_none_or(|v| en.vault == v) && lab.landed(me, en.id) && everyone_reads(st, en);
+    for en in st.entries().iter().filter(public) {
         let Some((kind, false, row)) = public_row(lab, me, en, &seed, &mut vaults, of) else { continue };
         rows.push(((en.vault, kind, en.id), row));
     }

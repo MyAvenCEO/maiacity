@@ -30,6 +30,7 @@
 	import { access, readAccess } from '$lib/app/access.svelte.js';
 	import { loadCode } from '../../../game/code/index.js';
 	import VaultRecipes from '$lib/assets/VaultRecipes.svelte';
+	import SyncBar from '$lib/avendb/SyncBar.svelte';
 	import { ASSET_PAGES } from '$lib/assets/vault.js';
 	import Signing from '$lib/avendb/Signing.svelte';
 	import { asks, here, type Steps } from '$lib/avendb/session.svelte.js';
@@ -120,6 +121,8 @@
 	async function done(founded = false) {
 		phase = 'ready';
 		if (session.phase !== 'open') return;
+		// the views, logic and configs again, off this device's own copy of Maia City now that it is open
+		void loadCode();
 		await session.refresh().catch(() => {});
 		invited = await claimInvite();
 		if (founded && session.world && seeded(session.world)[0]?.[0]) await goto(`${base}/app/`);
@@ -404,6 +407,7 @@
 		</div>
 	{/if}
 	<NavPill {founder} name={session.name} onsignout={leave} />
+	<SyncBar />
 {/if}
 {#if native() && phase === 'ready'}<AskModal />{/if}
 <!-- what the passkey's prompt and avenDB's start are doing, step by step, at the way in and as it hands over to the app -->
