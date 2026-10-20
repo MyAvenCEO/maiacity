@@ -136,7 +136,7 @@ static TURNS: tokio::sync::Notify = tokio::sync::Notify::const_new();
 const KEEP: usize = 400;
 
 fn now() -> String {
-    vault_core::ingest::now_iso()
+    crate::files::now_iso()
 }
 
 fn history_file() -> std::path::PathBuf {

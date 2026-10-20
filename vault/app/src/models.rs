@@ -2,20 +2,17 @@
 //! src/lib/models/models.json (the one list, which the avenDB app's Models page reads too) and kept on this Mac in
 //! `~/Library/Application Support/city.maia.studio/models/<blake3>`, from where ONNX Runtime loads them
 //! (`vault_asr::ModelBytes`). A file not there yet is brought once from Maia City in avenDB, where each is a file entry
-//! tagged `blake3:<its pin>` (scripts/propose-models.mjs), read a window at a time; else, until that is there, out of
-//! the legacy vault's store, where the Models story kept them. Either way its BLAKE3 is checked against the pin before
-//! it counts, and again each time it is read: a copy that is not the pinned file is never loaded. A file can also be put
+//! tagged `blake3:<its pin>` (scripts/propose-models.mjs, AIP-17), read a window at a time. Its BLAKE3 is checked against
+//! the pin before it counts, and again each time it is read: a copy that is not the pinned file is never loaded. A file can also be put
 //! there by hand (named by its hash): it is checked the same way. Nothing is fetched from the internet by a device.
 
 use std::io::Write as _;
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
-use iroh_blobs::{Hash, api::proto::BlobStatus};
 use serde::Deserialize;
 use serde_json::Value;
 use tauri::AppHandle;
-use vault_core::Vault;
 
 /// One file of a model: its name in the model's folder, where it was published (an https URL; else it is made here,
 /// and `source` says by what), its size and BLAKE3 hash (pinned).
@@ -121,36 +118,29 @@ async fn from_avendb(app: &AppHandle, f: &ModelFile, part: &PathBuf) -> Result<O
     Ok(None)
 }
 
-/// Model file `f` on this Mac (`models_dir`): there and whole already, else brought from Maia City in avenDB, else
-/// copied out of the legacy vault's store (its BLAKE3 checked against the pin before it counts). Its path.
-async fn kept(app: &AppHandle, vault: &Vault, f: &ModelFile) -> Result<PathBuf, String> {
+/// Model file `f` on this Mac (`models_dir`): there and whole already, else brought from Maia City in avenDB (its
+/// BLAKE3 checked against the pin before it counts). Its path.
+async fn kept(app: &AppHandle, f: &ModelFile) -> Result<PathBuf, String> {
     let path = models_dir().join(&f.blake3);
     if std::fs::metadata(&path).is_ok_and(|m| m.len() == f.size) {
         return Ok(path);
     }
     std::fs::create_dir_all(models_dir()).map_err(|e| e.to_string())?;
     let part = path.with_extension("part");
-    let avendb = match from_avendb(app, f, &part).await {
-        Ok(Some(())) => keep(part.clone(), &path, f, "from avenDB").await,
-        Ok(None) => Err(format!("{}: Maia City holds no copy of it", f.name)),
+    let why = match from_avendb(app, f, &part).await {
+        Ok(Some(())) => return keep(part, &path, f, "from avenDB").await.map(|()| path),
+        Ok(None) => "Maia City holds no copy of it".to_string(),
         Err(why) => {
             std::fs::remove_file(&part).ok();
-            Err(why)
+            why
         }
     };
-    let Err(why) = avendb else { return Ok(path) };
-    let h: Hash = f.blake3.parse().map_err(|e| format!("{e}"))?;
-    if !matches!(vault.store.blobs().status(h).await, Ok(BlobStatus::Complete { .. })) {
-        return Err(format!("the speech model's {} is not on this Mac ({why}): put it in {} as {}", f.name, models_dir().display(), f.blake3));
-    }
-    vault.store.blobs().export(h, &part).await.map_err(|e| format!("{}: out of the legacy vault: {e}", f.name))?;
-    keep(part, &path, f, "out of the legacy vault").await?;
-    Ok(path)
+    Err(format!("the speech model's {} is not on this Mac ({why}): put it in {} as {}", f.name, models_dir().display(), f.blake3))
 }
 
 /// Model file `f`, read whole from where this Mac keeps it, checked against its pin.
-async fn read(app: &AppHandle, vault: &Vault, f: &ModelFile) -> Result<Vec<u8>, String> {
-    let path = kept(app, vault, f).await?;
+async fn read(app: &AppHandle, f: &ModelFile) -> Result<Vec<u8>, String> {
+    let path = kept(app, f).await?;
     let bytes = std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     if blake3::hash(&bytes).to_hex().as_str() != f.blake3 {
         return Err(format!("{}: {} is not the pinned file", f.name, path.display()));
@@ -160,14 +150,14 @@ async fn read(app: &AppHandle, vault: &Vault, f: &ModelFile) -> Result<Vec<u8>, 
 
 /// The speech models, ready on this Mac: every pinned file kept here (`kept`), read whole. `progress` says how far
 /// ("the speech model is read").
-pub async fn ready(app: &AppHandle, vault: &Vault, progress: &mut (dyn FnMut(&str, f64) + Send)) -> Result<vault_asr::ModelBytes, String> {
+pub async fn ready(app: &AppHandle, progress: &mut (dyn FnMut(&str, f64) + Send)) -> Result<vault_asr::ModelBytes, String> {
     progress("the speech model is read", 0.0);
     let bytes = vault_asr::ModelBytes {
-        features: read(app, vault, pinned("phonon-2", "nemo128.onnx")?).await?,
-        encoder: read(app, vault, pinned("phonon-2", "encoder-model.int8.onnx")?).await?,
-        joint: read(app, vault, pinned("phonon-2", "decoder_joint-model.onnx")?).await?,
-        vocab: String::from_utf8(read(app, vault, pinned("phonon-2", "vocab.txt")?).await?).map_err(|e| format!("vocab.txt: {e}"))?,
-        vad: read(app, vault, pinned("silero-vad-5", "silero_vad.onnx")?).await?,
+        features: read(app, pinned("phonon-2", "nemo128.onnx")?).await?,
+        encoder: read(app, pinned("phonon-2", "encoder-model.int8.onnx")?).await?,
+        joint: read(app, pinned("phonon-2", "decoder_joint-model.onnx")?).await?,
+        vocab: String::from_utf8(read(app, pinned("phonon-2", "vocab.txt")?).await?).map_err(|e| format!("vocab.txt: {e}"))?,
+        vad: read(app, pinned("silero-vad-5", "silero_vad.onnx")?).await?,
     };
     progress("the speech model is read", 1.0);
     Ok(bytes)

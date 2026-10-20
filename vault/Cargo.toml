@@ -1,8 +1,8 @@
-# The media vault: every file known by its BLAKE3 hash, kept and moved by iroh.
-# See .claude/skills/iroh/ — maiacity.md for the design, gotchas.md for why the iroh versions are pinned exactly.
+# The OS, the Mac app (app/), and its native media crates: colour, pictures and sound, speech, the render. Its files are
+# avenDB's (avendb/, linked by path); the old iroh media vault and its crates retired (#1112).
 [workspace]
 resolver = "3"
-members = ["crates/vault-core", "crates/vault-color", "crates/vault-media", "crates/vault-asr", "crates/vault-render", "app"]
+members = ["crates/vault-color", "crates/vault-media", "crates/vault-asr", "crates/vault-render", "app"]
 
 [workspace.package]
 edition = "2024"
@@ -11,22 +11,12 @@ license = "UNLICENSED"
 publish = false
 
 [workspace.dependencies]
-# iroh-blobs is pre-1.0 ("not yet production quality"): pinned exactly, upgraded on purpose
-# no default features: each crate names its TLS (vault-core: ring by default, aws-lc-rs in the Mac app beside avenDB)
-iroh = { version = "=1.3.0", default-features = false }
-# iroh's QUIC; only for its congestion controllers (BBR), as iroh's own docs pair them with QuicTransportConfig
-noq-proto = { version = "=1.3.0", default-features = false }
-iroh-blobs = "=0.103.1"
-iroh-docs = "=0.101.0"
-iroh-gossip = "=0.101.0"
 blake3 = { version = "1.8", features = ["rayon"] }
 tokio = { version = "1", features = ["full"] }
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-futures-lite = "2"
 libc = "0.2"
-clap = { version = "4.6", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
