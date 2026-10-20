@@ -169,6 +169,14 @@
 			return null;
 		}
 	};
+	/** a whole asset another carries, as avenDB names it ("Power Cube v3 · 1a2b3c4d…"), by its ref @param {string} ref */
+	const unitName = (ref) => {
+		try {
+			return source.nameOf(source.hashOf(String(ref))) ?? String(ref);
+		} catch {
+			return String(ref);
+		}
+	};
 	/** the entry the address names, where the vault hands out no recipe of it: its row, and why not */
 	const unnamed = $derived.by(() => {
 		if (!entry || chosen || !held) return null;
@@ -262,7 +270,7 @@
 <!-- its parts: the part picked, shown on its own, and the tree to pick from -->
 {#snippet partsTab()}
 	{#await partsList then { default: Parts }}
-		<Parts {catalog} own={chosen?.card.ref} bind:picked bind:solo hrefOf={unitHref} />
+		<Parts {catalog} own={chosen?.card.ref} bind:picked bind:solo hrefOf={unitHref} nameOf={unitName} />
 	{/await}
 {/snippet}
 

@@ -47,6 +47,7 @@ const { bake } = await import('./box/bake.js');
 const { catalogOf, viewOf } = await import('./box/view.js');
 const { serialize } = await import('./box/serialize.js');
 const { CODE_FEED, fileOf, listingOf, proofOf, seedFeedOf, verifyProof } = await import('../../../game/code/sources/feed.js');
+const { slug } = await import('$lib/ids.js');
 const { blake3 } = await import('@noble/hashes/blake3.js');
 const { bytesToHex, utf8ToBytes } = await import('@noble/hashes/utils.js');
 
@@ -259,7 +260,10 @@ test('a ref names the same build, the same page and the same cache key as the re
 			expect([ref, name]).toEqual([ref, repo.buildAt(ref)]);
 			const c = canonical(name);
 			expect([ref, keyOf(name)]).toEqual([ref, repoKey(want, parseRef(ref).params)]);
-			expect([ref, vault.pageOf('/base', want, c.values)]).toEqual([ref, repo.pageOf('/base', want, c.values)]);
+			// the same page, its words (`?t=`) the name avenDB gives it, never its old ref
+			const page = vault.pageOf('/base', want, c.values);
+			expect([ref, page.replace(/\?t=[^&]*/, '')]).toEqual([ref, repo.pageOf('/base', want, c.values).replace(/\?t=[^&]*/, '')]);
+			expect([ref, new URL(page, 'https://x').searchParams.get('t')]).toEqual([ref, slug(vault.nameOf(want), 'asset')]);
 			n++;
 		} else {
 			// a variant its latest version doesn't have: the repo's index named its first variant instead, the vault nothing
@@ -378,7 +382,8 @@ test("a recipe's file read off the feed is kept on this device under its hash: a
 	const files = new Map(FEED.files);
 	files.set(rowAt('biomes/cover@1:fern').entry, new TextEncoder().encode('not the recipe'));
 	await loaded({ files, kept });
-	expect(String((await thrown(() => vault.recipeAt(fern)))?.message)).toContain('biomes/cover@1:fern: refused');
+	expect(vault.nameOf(fern)).toMatch(/^Biome cover · Fern v1 · [0-9a-f]{8}…$/);
+	expect(String((await thrown(() => vault.recipeAt(fern)))?.message)).toContain(`${vault.nameOf(fern)}: refused`);
 	expect(held.has(fern)).toBe(false);
 }, 60000);
 
@@ -420,7 +425,7 @@ test('a recipe the vault does not hold, or holds otherwise, fails naming its ref
 		await loaded(o);
 		const err = await thrown(() => loadAsset(vault.buildAt('plants/apple@2'), { box, store: storeOf() }));
 		expect(err).toBeInstanceOf(NotInVault);
-		expect(err.message).toContain('plants/apple@2');
+		expect(err.message.startsWith(`${vault.nameOf(hash)}: `)).toBe(true);
 		expect(err.message).toMatch(pattern);
 		expect(vault.recipes.missed).toContain(err.message);
 	};
@@ -533,7 +538,7 @@ test("a world's files are read a few at a time, and one the network drops, or th
 	expect([...tries].filter(([e]) => e !== apple && e !== tent).every(([, n]) => n === 1)).toBe(true);
 	const err = await thrown(() => vault.recipeAt(LABEL['actors/ant@1:ant']));
 	expect(err).toBeInstanceOf(NotInVault);
-	expect(err.message).toBe('actors/ant@1:ant: its file could not be read from the Maia City vault (Load failed, asked 3 times)');
+	expect(err.message).toBe(`${vault.nameOf(LABEL['actors/ant@1:ant'])}: its file could not be read from the Maia City vault (Load failed, asked 3 times)`);
 	expect(tries.get(ant)).toBe(3);
 	// a file the server hasn't got is no passing failure: asked once
 	const lost = feedOf({ files: new Map([...FEED.files].filter(([e]) => e !== tent)) });
@@ -585,7 +590,7 @@ test("nothing is built, from the box or this device's cache, that Maia City's si
 	const told = await loaded({ proven });
 	const err = await thrown(() => loadAsset(name, { box, store }));
 	expect(err).toBeInstanceOf(NotInVault);
-	expect(err.message).toBe(`${tent}: refused, Maia City's signed edits don't hold recipe ${LABEL[tent].slice(0, 12)}… as ${tent}, as the listing says`);
+	expect(err.message).toBe(`${vault.nameOf(LABEL[tent])}: refused, Maia City's signed edits don't hold recipe ${LABEL[tent].slice(0, 12)}… as the listing says`);
 	expect(vault.recipes.missed).toContain(err.message);
 	expect(String((await thrown(() => vault.recipeAt(LABEL[tent])))?.message)).toBe(err.message);
 	expect([box.asked.length, store.asked.get, told.files()]).toEqual([1, 1, []]);
@@ -596,9 +601,11 @@ test("nothing is built, from the box or this device's cache, that Maia City's si
 	// build waiting on it is refused, saying why, and the index stays
 	const down = await loaded({ proving: 503 });
 	expect(down.r.phase).toBe('ready');
-	expect((await thrown(() => loadAsset(name, { box, store })))?.message).toBe(`${tent}: not built, as its proof didn't check out: ${proofAt([lie.entry])} answered 503`);
+	expect((await thrown(() => loadAsset(name, { box, store })))?.message).toBe(`${vault.nameOf(LABEL[tent])}: not built, as its proof didn't check out: ${proofAt([lie.entry])} answered 503`);
 	await loaded({ verify: verifyProof });
-	expect((await thrown(() => vault.recipeAt(LABEL[tent])))?.message).toMatch(/^things\/bell-tent@1: not built, as its proof didn't check out: the proof at .* doesn't check out: what the server handed out is no avenDB reply/);
+	const said = String((await thrown(() => vault.recipeAt(LABEL[tent])))?.message);
+	expect(said.startsWith(`${vault.nameOf(LABEL[tent])}: not built, as its proof didn't check out: the proof at `)).toBe(true);
+	expect(said).toMatch(/doesn't check out: what the server handed out is no avenDB reply/);
 	expect([box.asked.length, store.asked.get]).toEqual([1, 1]);
 	// and proven as listed, it is built again, from the cache
 	await loaded();
@@ -727,7 +734,8 @@ test("a server restarting is waited for, saying so: the listing and each file as
 	const tent = LABEL['things/bell-tent@1'];
 	const err = await thrown(() => vault.recipeAt(tent));
 	expect(err).toBeInstanceOf(vault.Unread);
-	expect(err.message).toMatch(/^things\/bell-tent@1: its file could not be read from the Maia City vault \(.* answered 503, asked \d+ times\)$/);
+	expect(err.message.startsWith(`${vault.nameOf(tent)}: its file could not be read from the Maia City vault (`)).toBe(true);
+	expect(err.message).toMatch(/ answered 503, asked \d+ times\)$/);
 	expect(vault.recipes.unread).toEqual([err.message]);
 	expect(vault.recipes.missed).toEqual([]);
 	stop();

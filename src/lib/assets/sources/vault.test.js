@@ -22,7 +22,7 @@ mock.module('$app/paths', () => ({ base: '' }));
 mock.module('virtual:asset-recipes', () => ({ default: made.index }));
 mock.module('virtual:asset-recipes/libraries', () => ({ default: Object.fromEntries(Object.entries(made.libraries).map(([k, text]) => [k, async () => ({ default: text })])) }));
 
-const { NotInVault, StorageOff, recipeEntryOf, vaultRecipes, versionsOf } = await import('./avendb.js');
+const { NotInVault, StorageOff, parsePin, pinRef, recipeEntryOf, vaultRecipes, versionsOf } = await import('./avendb.js');
 const { hashOf } = await import('../recipes.js');
 const { ENGINES, recipeFile } = await import('../engines.js');
 const { parseRef } = await import('../refs.js');
@@ -177,7 +177,7 @@ test("a file that is not the recipe its ref names is refused, naming the ref, an
 	const refused = async (v, h, pattern) => {
 		const err = await thrown(() => v.recipeAt(h));
 		expect(err).toBeInstanceOf(NotInVault);
-		expect(err.message).toContain('plants/apple@2');
+		expect(err.message.startsWith(`${v.nameOf(h)}: `)).toBe(true);
 		expect(err.message).toMatch(pattern);
 	};
 	await refused(served(utf8ToBytes(`${FILES[hash]} `)), hash, /hashes to .*not to/);
@@ -387,4 +387,84 @@ test("a vault's ref is still refused: avenDB storage is not switched on", () => 
 	}
 	expect(err).toBeInstanceOf(StorageOff);
 	expect(() => v.hashOf('not a ref')).toThrow(/not an asset ref/);
+});
+
+/** a hash of the test's own, 64 hex digits, for an id avenDB would give @param {string} what */
+const idOf = (what) => bytesToHex(blake3(utf8ToBytes(what)));
+
+/**
+ * Our recipes as the seed writes them, by avenDB's own ids (N6, Samuel 2026-10-20): each asset's entry a hash, and each
+ * version it brought listing the heads a pin of it names (`at`, avenDB's `engine::version_heads`): of main's, the
+ * release of main that took it in; of a variant's, its own write. An asset that brought one version says them itself.
+ */
+function pinnedRows() {
+	const { rows, files } = assetRows();
+	const out = rows.map((r) => {
+		const entry = idOf(r.entry);
+		const brought = r.brought.map((b) => ({ ...b, at: [idOf(`${r.entry} ${b.line ?? 'main'} v${b.version}`)] }));
+		const one = brought.length === 1 ? { at: brought[0].at } : {};
+		return { ...r, entry, ...(brought.length === 1 ? { files: brought[0].files, record: brought[0].record, brought: [] } : { brought }), ...one };
+	});
+	return { rows: out, files };
+}
+
+test('a pin names an asset by its entry and the heads of its version, whatever its card says, and avenDB names it', async () => {
+	const { rows, files } = pinnedRows();
+	const v = vaultRecipes(rows, { read: async (row) => files.get(row.edit ?? row.files.at(-1)?.root) });
+	expect(v.refused).toEqual([]);
+	expect(v.index).toEqual(made.index);
+	let n = 0;
+	for (const hash of Object.keys(v.index.recipes)) {
+		const pin = v.pinOf(hash);
+		expect(pin?.entry).toMatch(/^[0-9a-f]{64}$/);
+		// as a string and as stored, each the same recipe as the old ref named
+		expect(v.hashOf(pinRef(pin))).toBe(hash);
+		expect(v.hashOf({ entry: pin.entry, at: pin.at })).toBe(hash);
+		// named by avenDB alone: its title, its entry's version number and its short id
+		const row = v.rowOf(hash);
+		expect(v.nameOf(hash).endsWith(` v${row.main ?? row.record.card.version} · ${pin.entry.slice(0, 8)}…`)).toBe(true);
+		expect(row.record.title.startsWith(v.nameOf(hash).replace(/ v\d+ · [0-9a-f]{8}…$/, '').split(' · ')[0])).toBe(true);
+		n++;
+	}
+	expect(n).toBe(327);
+	// one asset's versions, by the heads each names
+	const truck = rows.find((r) => r.entry === idOf('asset-machines/truck'));
+	const [one, two] = [1, 2].map((x) => truck.brought.find((b) => b.version === x && b.line === null));
+	expect(v.hashOf({ entry: truck.entry, at: one.at })).toBe(hashOf('machines/truck@1:truck'));
+	expect(v.hashOf({ entry: truck.entry, at: two.at })).toBe(hashOf('machines/truck@2:truck'));
+	expect(v.nameOf(hashOf('machines/truck@2:truck'))).toMatch(/^Truck v2 · [0-9a-f]{8}…$/);
+	expect(v.nameOf(hashOf('actors/goat@2:goat-boer'))).toMatch(/^Goat · Boer v2 · [0-9a-f]{8}…$/);
+	// with the values it is built with, read as a ref's
+	const apple = v.pinOf(hashOf('plants/apple@2'));
+	const ref = pinRef(apple, 'stage=9&seed=maia');
+	expect(parsePin(ref)).toEqual({ ...apple, params: { stage: '9', seed: 'maia' } });
+	expect(v.hashOf(ref)).toBe(hashOf('plants/apple@2'));
+	// its heads in any order are one version
+	expect(v.hashOf({ entry: apple.entry, at: [...apple.at].reverse() })).toBe(hashOf('plants/apple@2'));
+	expect(await v.recipeAt(v.hashOf(ref))).toEqual({ hash: hashOf('plants/apple@2'), code: FILES[hashOf('plants/apple@2')] });
+});
+
+test('a pin the vault holds no version of fails, saying what it holds of that entry instead', () => {
+	const { rows } = pinnedRows();
+	const v = vaultRecipes(rows, { read: async () => undefined });
+	const apple = v.pinOf(hashOf('plants/apple@2'));
+	const said = (ref) => {
+		try {
+			v.hashOf(ref);
+		} catch (e) {
+			expect(e).toBeInstanceOf(NotInVault);
+			return e.message;
+		}
+		throw new Error('it named a recipe');
+	};
+	const elsewhere = idOf('another version');
+	expect(said({ entry: apple.entry, at: [elsewhere] })).toBe(`${[1, 2].map((x) => v.nameOf(hashOf(`plants/apple@${x}`))).join(', ')}: no version of entry ${apple.entry.slice(0, 8)}… at ${elsewhere.slice(0, 8)}… is in the Maia City vault`);
+	expect(said({ entry: elsewhere, at: apple.at })).toBe(`entry ${elsewhere.slice(0, 8)}… is not in the Maia City vault`);
+	expect(said(pinRef({ ...apple, vault: 'ef'.repeat(32) }))).toBe(`entry ${apple.entry.slice(0, 8)}… is in vault ${VAULT.slice(0, 8)}…, not in vault efefefef…`);
+	// nothing else is a pin: an old ref, a vault's group ref, a short id, a pin with no heads
+	expect(parsePin('plants/apple@2')).toBeNull();
+	expect(parsePin(`vault:${VAULT}/plants/apple@2`)).toBeNull();
+	expect(parsePin(`vault:${VAULT}/${apple.entry.slice(0, 8)}@${apple.at[0]}`)).toBeNull();
+	expect(parsePin({ entry: apple.entry, at: [] })).toBeNull();
+	expect(() => v.hashOf({ entry: 'x', at: ['y'] })).toThrow(/not an asset ref/);
 });

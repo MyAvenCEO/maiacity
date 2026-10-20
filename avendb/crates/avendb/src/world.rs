@@ -1037,9 +1037,11 @@ fn everyone_reads(st: &State, en: &Entry) -> bool {
 /// deleted (`DELETED`). None where `me` opens none of it, or no schema reads it. `vaults` holds each vault's lane and
 /// name, read once however many of its entries are shown. An entry whose writes bring files more than once, as an
 /// asset's versions and variants do, each a record and its file in one write (`Lab::brought`), lists each of them
-/// too (`brought`): `{edit, line, version, files, record}`, the line whose history holds it (`null` for main's), the
-/// version of main it belongs to (`engine::main_version`), the files it brings, as `files` lists them, and the record
-/// at it, read as the entry's own is: so a reader finds every version of it, and its file by its root.
+/// too (`brought`): `{edit, line, version, at, files, record}`, the line whose history holds it (`null` for main's),
+/// the version of main it belongs to (`engine::main_version`), the heads a pin of it names (`engine::version_heads`),
+/// the files it brings, as `files` lists them, and the record at it, read as the entry's own is: so a reader finds
+/// every version of it, and its file by its root, and pins it by the entry's id and those heads. One that brought a
+/// file once, on its main line, says the heads a pin of that version names itself (`at`).
 fn public_row(
     lab: &Lab,
     me: SignerId,
@@ -1078,6 +1080,9 @@ fn public_row(
         "files": lab.line_files(me, en.id, MAIN).into_iter().filter_map(file_json).collect::<Vec<_>>(),
     });
     let brought = lab.brought(me, en.id);
+    if let [(edit, None, _)] = brought.as_slice() {
+        row["at"] = engine::version_heads(history, *edit, None);
+    }
     if brought.len() > 1 {
         let version = |(edit, line, files): (EditId, Line, Vec<(FileRoot, Option<u64>)>)| {
             let item = history.item_at(&[edit], me, line);
@@ -1087,6 +1092,7 @@ fn public_row(
                 "edit": edit.to_hex(),
                 "line": line.map(|b| b.to_hex()),
                 "version": engine::main_version(history, edit, line),
+                "at": engine::version_heads(history, edit, line),
                 "authors": authors_json(lab, me, &authors(lab, me, en.id, &[edit])),
                 "files": files.into_iter().filter_map(file_json).collect::<Vec<_>>(),
                 "record": record,

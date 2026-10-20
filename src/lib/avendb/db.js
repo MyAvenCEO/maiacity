@@ -30,8 +30,9 @@ import {
  * @typedef {{ entry: string, type: string | null, tags: string[] | null, kind: string, title: string | null,
  *   record: any, authored: string[], edits: number, held: number, lines: number, proposals: (string | null)[],
  *   audience: string, epoch: number, bytes: number, author: string | null, actor: string | null, public: boolean,
- *   levels: Record<string, import('./vaults.js').Role>, brought?: { edit: string, line: string | null,
- *   version: number | null, files: { root: string, size: number, len: number | null }[], record: any }[] }} RowView
+ *   levels: Record<string, import('./vaults.js').Role>, at?: string[], brought?: { edit: string, line: string | null,
+ *   version: number | null, at: string[], files: { root: string, size: number, len: number | null }[], record: any }[]
+ *   }} RowView
  * @typedef {{ id: string, shares: string[], epoch: number, entries: number }} CellRow
  * @typedef {{ founded: number, writes: number, moves: number, keys: number, shares: number, revokes: number }} EditCounts
  * @typedef {{ vault: string, held: { edits: number, keys: number },

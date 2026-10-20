@@ -26,7 +26,7 @@ export const recipeRows = (db, vault, opens = () => true) =>
 	db?.vault === vault
 		? db.rows
 				.filter((r) => r.type === RECIPE && r.record !== null && r.record !== undefined && opens(r))
-				.map((r) => ({ vault, entry: r.entry, type: r.type, tags: r.tags, record: r.record, brought: r.brought }))
+				.map((r) => ({ vault, entry: r.entry, type: r.type, tags: r.tags, record: r.record, brought: r.brought, ...(Array.isArray(r.at) ? { at: r.at } : {}) }))
 		: [];
 
 /** The newest file entry `e` brings, as the device's world lists them, oldest first. @param {import('./vaults.js').EntryView | undefined} e */

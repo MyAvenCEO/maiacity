@@ -36,7 +36,7 @@
 	import { growth, stageAt } from './grow.js';
 	import { forStage, heroOf, runner, walkOf } from './hero.js';
 	import { boxOf, canonical, liveBoxOf, loadAsset } from './load.js';
-	import { INDEX, buildOf, hashOf, pageOf, recipeAt } from './vault.js';
+	import { INDEX, buildOf, hashOf, pageOf, recipeAt, refName } from './vault.js';
 	import { parseRef, refOf } from './refs.js';
 	import { soilOf } from './soil.js';
 	import { treeOf } from './tree.js';
@@ -181,7 +181,7 @@
 	/** the views that apply to it */
 	const views = $derived(hero ? VIEWS.filter(([k]) => (k === 'explode' ? hero.explodes || !!rigApart : k === 'xray' ? hero.shells.length > 0 : k === 'labels' ? hero.labels.length > 0 : k === 'slow' ? !!hero.view.ticks : true)) : []);
 	/** its parts tree (./tree.js): its own parts by assembly, then each whole asset it carries, linked to its own page */
-	const tree = $derived(treeOf(catalog, hero?.card?.ref, hrefOf));
+	const tree = $derived(treeOf(catalog, hero?.card?.ref, hrefOf, refName));
 	const stageOf = $derived(chosen.stages && Number.isFinite(values.stage) ? chosen.stages[Math.min(chosen.stages.length - 1, Math.round(values.stage))] : null);
 
 	/** a whole asset's own page, by its ref (`machines/powercube@3`) */
@@ -866,8 +866,8 @@
 				{/each}
 				{#each tree.units as u (u.ref)}
 					<details class="unit" open={!!picked && u.parts.some((p) => p.id === picked)}>
-						<summary><b>{u.name}</b> <small>{u.parts.length}</small>{#if u.href}<a href={u.href} title="Its own page: {u.ref}" onclick={(e) => e.stopPropagation()}>Open ↗</a>{/if}</summary>
-						<p class="note">A whole asset of its own ({u.ref}), carried here as one part</p>
+						<summary><b>{u.name}</b> <small>{u.parts.length}</small>{#if u.href}<a href={u.href} title="Its own page: {u.named}" onclick={(e) => e.stopPropagation()}>Open ↗</a>{/if}</summary>
+						<p class="note">A whole asset of its own ({u.named}), carried here as one part</p>
 						{#each u.groups as t (t.a.id)}
 							<span class="sub">{t.a.label.replace(/^[^:]*:\s*/, '')}</span>
 							<ul>
@@ -938,7 +938,7 @@
 				{#if card.what}<p>{card.what}</p>{/if}
 				{#if card.moves}<p><span class="tag">Moves</span> {card.moves}</p>{/if}
 				{#if card.drive}<p><span class="tag">Driven by</span> {card.drive}</p>{/if}
-				{#if card.ref}<p><span class="tag">Part of</span> {#if hrefOf(card.ref)}<a href={hrefOf(card.ref)}>{card.ref} ↗</a>{:else}{card.ref}{/if}</p>{/if}
+				{#if card.ref}<p><span class="tag">Part of</span> {#if hrefOf(card.ref)}<a href={hrefOf(card.ref)}>{refName(card.ref)} ↗</a>{:else}{refName(card.ref)}{/if}</p>{/if}
 				{#if card.specs?.length}
 					<dl>
 						{#each card.specs as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}

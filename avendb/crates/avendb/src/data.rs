@@ -13,7 +13,7 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use serde_json::{Map, Value, json};
 
 use crate::doc::Item;
-use crate::engine::{SHOWN, Wrote, described, line_name, main_version, numbered, releases, wrote};
+use crate::engine::{SHOWN, Wrote, described, line_name, main_version, numbered, releases, version_heads, wrote};
 use crate::history::{Change, History, MAIN};
 use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName, Recipient};
@@ -126,8 +126,12 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
         "levels": levels,
     });
     // an entry whose writes bring files more than once, as an asset's versions and variants do: each, with the record
-    // at it, as avenDB's server's feed lists them (`world::public_entries`)
+    // at it, as avenDB's server's feed lists them (`world::public_entries`); one that brought a file once on its main
+    // line, the heads a pin of that version names (`at`)
     let brought = lab.brought(me, entry);
+    if let (Some(h), [(edit, None, _)]) = (history, brought.as_slice()) {
+        row["at"] = version_heads(h, *edit, None);
+    }
     if let (Some(h), true) = (history, brought.len() > 1) {
         let version = |(edit, line, files): (EditId, Line, Vec<(FileRoot, Option<u64>)>)| {
             let file = |(root, len): (FileRoot, Option<u64>)| {
@@ -137,6 +141,7 @@ fn row(lab: &Lab, me: SignerId, en: &Entry) -> Value {
                 "edit": hex(&edit.0),
                 "line": line.map(|b| hex(&b.0)),
                 "version": main_version(h, edit, line),
+                "at": version_heads(h, edit, line),
                 "files": files.into_iter().map(file).collect::<Vec<_>>(),
                 "record": h.item_at(&[edit], me, line).record(),
             })
