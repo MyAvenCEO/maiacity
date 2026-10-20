@@ -361,6 +361,10 @@
 			'Put it in an AIP',
 			'Every change is put to a vault the same way, whatever entries it touches: an AIP, an Aven Improvement Proposal, names proposals on the vault’s entries, of any types, with a title and a note on why. Promoted, it takes the vault’s next number as the device counts them, AIP-1, AIP-2; two promoted apart on one number read as AIP-3 and AIP-3.2. One owner’s review answers every proposal in it at once, and a review that names the versions it saw is refused if any moved since: accepted merges them all into main, declined or withdrawn merges nothing, and revise sends it back as an idea that keeps its number. What it changes is read off its proposals through each entry’s schema, never typed. Each merge still counts on its own, so a device that holds only some of them shows only those.'
 		],
+		[
+			'State its objective',
+			'Before it is proposed, an AIP states what it must deliver: one or more measurable metrics, written in Lean against the model avenDB’s spec defines (atLeast, atMost, between or equals over readings and numbers). A file that doesn’t read is refused with its line and column. While its author works on it, every reading it records is checked against the metrics on every device alike, exact to six places: each metric met or not, and how far it moved from its first reading toward its target. An AIP is proposed only once it holds an objective; the objective then stays as proposed, and the readings go on.'
+		],
 		['Update from main', 'The same merge the other way: brings what main gained since into the proposal.'],
 		['Restore', 'Puts back any older version, as a new write.'],
 		[
@@ -501,6 +505,8 @@
 		'merge',
 		'review',
 		'aip_open',
+		'aip_objective',
+		'aip_measure',
 		'aip_promote',
 		'aip_withdraw',
 		'aip_review',

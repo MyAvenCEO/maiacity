@@ -1,15 +1,17 @@
 <!--
-	One avenDB AIP in the Proposals app: the assets it proposes, in 3D, built from the files on their lines
+	One avenDB AIP in the Proposals app: where it stands, idea → objective → proposed → archived; its objective, what
+	it must deliver as metrics in Lean, each measured against the readings recorded on it (./Objective.svelte); the assets it proposes, in 3D, built from the files on their lines
 	($lib/avendb/ProposedAssets.svelte); then, in a section that opens, what it changes, a line per part, and every line
 	it bundles (a note, an asset, a view, a game config, any type of entry), each with what it changes field by field as
-	its schema reads it (the `aip` read's diff, derived, never typed); the reviews so far, and what the person may do with it, acting as the vault the device says: promote an idea
-	and withdraw it (its author or its vault), and accept, decline or ask for a revision of a proposed one (its vault
+	its schema reads it (the `aip` read's diff, derived, never typed); the reviews so far, and what the person may do with it, acting as the vault the device says: promote it once it holds an objective
+	(the objective stage) and withdraw it (its author or its vault), and accept, decline or ask for a revision of a proposed one (its vault
 	alone, and only that review counts). Accepting merges every line at once; a new entry's line (a draft) lands in main
 	only then, every field of it shown as added.
 -->
 <script>
 	// @ts-nocheck — plain JS
 	import ProposedAssets from '$lib/avendb/ProposedAssets.svelte';
+	import Objective from './Objective.svelte';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import { acting, authorsLine, nameOf } from '$lib/avendb/vaults.js';
 	import { when } from './aips.js';
@@ -52,9 +54,28 @@
 	const key = $derived(`${aip.entry ?? ''}/${aip.lines.map((l) => l.heads.join()).join(';')}`);
 	const readFile = (root, size, from, to) => session.api.readFile(root, size, from, to);
 	const VERDICT = { accepted: 'Accepted', declined: 'Declined', revise: 'Asked for a revision' };
+	// the four stages, and how far this AIP is along them
+	const STEPS = [
+		{ id: 'idea', label: 'Idea' },
+		{ id: 'objective', label: 'Objective' },
+		{ id: 'proposed', label: 'Proposed' },
+		{ id: 'archived', label: 'Archived' }
+	];
+	const at = $derived(STEPS.findIndex((s) => s.id === aip.stage));
 </script>
 
 <div class="av">
+	{#if !aip.bare}
+		<ol class="steps" aria-label="Stage">
+			{#each STEPS as s, i (s.id)}
+				<li class:done={i < at} class:now={i === at}>{s.id === 'archived' && aip.outcome ? (aip.outcome === 'applied' ? 'Applied' : 'Rejected') : s.label}</li>
+			{/each}
+		</ol>
+		<section class="target">
+			<h3>Objective</h3>
+			<Objective o={aip.objective} />
+		</section>
+	{/if}
 	<ProposedAssets lines={aip.lines} ask={(op) => session.ask(op)} read={readFile} {key} />
 
 	<details class="changes">
@@ -106,8 +127,10 @@
 				<button disabled={!!session.doing} onclick={() => review('Declining the AIP', 'declined')}>Decline</button>
 				<button disabled={!!session.doing || !text.trim()} onclick={() => review('Asking for a revision', 'revise')}>Revise</button>
 			{/if}
-			{#if aip.stage === 'idea' && (mine || ownVault)}
+			{#if aip.stage === 'objective' && (mine || ownVault)}
 				<button class="go" disabled={!!session.doing} onclick={() => act('Promoting the AIP', { op: 'aip_promote' })}>Propose it</button>
+			{:else if aip.stage === 'idea' && (mine || ownVault)}
+				<small class="dim">It is proposed once it states its objective.</small>
 			{/if}
 			{#if mine || ownVault}
 				<button disabled={!!session.doing} onclick={() => act('Withdrawing the AIP', { op: 'aip_withdraw' })}>Withdraw</button>
@@ -124,6 +147,38 @@
 <style>
 	.av {
 		font-size: 0.88rem;
+	}
+	.steps {
+		display: flex;
+		gap: 0.3rem;
+		list-style: none;
+		margin: 0.6rem 0 0.4rem;
+		padding: 0;
+		counter-reset: step;
+	}
+	.steps li {
+		flex: 1;
+		padding: 0.3rem 0.4rem 0.35rem;
+		border-top: 3px solid #1f2a2314;
+		color: var(--muted);
+		font-size: 0.78rem;
+		counter-increment: step;
+	}
+	.steps li::before {
+		content: counter(step) ' ';
+		font-weight: 600;
+	}
+	.steps li.done {
+		border-color: #24452f;
+		color: #24452f;
+	}
+	.steps li.now {
+		border-color: #eda100;
+		color: #1f2a23;
+		font-weight: 600;
+	}
+	.target {
+		margin: 0.4rem 0 0.8rem;
 	}
 	.changes {
 		margin: 0.6rem 0;

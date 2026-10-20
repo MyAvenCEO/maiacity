@@ -14,6 +14,10 @@ use avendb::policy::{Action, Kind, Level, Principal};
 use avendb::slice::{Atom, Selector};
 use serde_json::{Value, json};
 
+/// What every AIP here must deliver: the corn ripe by day 120.
+const OBJECTIVE: &str = "import AvenDB.Objective\nopen AvenDB.Objective\n\n/-- Ripe by day 120. -/\n\
+    def ripe : Metric := metric \"Day the corn is ripe\" (atMost (reading \"ripe_day\") 120)\n";
+
 fn run(w: &mut World, d: SignerId, op: Value) -> Value {
     engine::run(&mut w.lab, d, &op)
 }
@@ -120,7 +124,7 @@ impl Gate {
         let proposals: Vec<Value> = lines.iter().map(|(e, l)| json!({ "entry": e, "line": l })).collect();
         let op = json!({ "op": "aip_open", "vault": self.alice.to_hex(), "title": title, "proposals": proposals,
             "note": "Why: the corn grows earlier.\n\nWhat changes: the dates.", "tags": ["game:sandbox-7"],
-            "as": self.aven.to_hex() });
+            "objective": OBJECTIVE, "as": self.aven.to_hex() });
         let made = ok(run(&mut self.w, self.mac, op));
         (made["entry"].as_str().expect("its entry").into(), made["key"].as_str().expect("its key").into())
     }
@@ -209,7 +213,7 @@ fn one_aip_over_two_types_derives_its_diff_and_one_review_applies_every_line() {
     let idea = &all[0];
     assert_eq!(
         (&idea["stage"], &idea["label"], &idea["number"], &idea["key"]),
-        (&json!("idea"), &Value::Null, &Value::Null, &json!(key))
+        (&json!("objective"), &Value::Null, &Value::Null, &json!(key))
     );
     assert_eq!((&idea["tags"], &idea["author"]), (&json!(["game:sandbox-7"]), &json!(g.aven.to_hex())));
     // promoted, it is AIP-1, and a second AIP is AIP-2
@@ -354,7 +358,8 @@ fn a_revised_aip_keeps_its_number_and_is_accepted_once_written_again() {
     assert_eq!(list(&revised["accepts"]).len(), 0);
     let read = g.aip(g.mac, &aip);
     let said = (&read["stage"], &read["number"], &read["label"], &read["outcome"]);
-    assert_eq!(said, (&json!("idea"), &json!(1), &Value::Null, &Value::Null), "an idea again, with its number");
+    let again = (&json!("objective"), &json!(1), &Value::Null, &Value::Null);
+    assert_eq!(said, again, "an idea again, with its number and its objective");
     assert_eq!(
         (&read["reviews"][0]["verdict"], &read["reviews"][0]["text"]),
         (&json!("revise"), &json!("Not so tall"))
@@ -455,7 +460,7 @@ fn a_suggester_agent_given_an_aip_author_share_opens_aips_and_a_viewer_opens_non
     let title = json!({ "op": "set", "entry": n, "line": line, "path": ["title"], "value": "Corn first" });
     ok(run(&mut w, claude, json!({ "op": "batch", "as": c, "ops": [title] })));
     let open = json!({ "op": "aip_open", "vault": a, "title": "Earlier corn", "note": "Why: it grows earlier.",
-        "proposals": [{ "entry": n, "line": line }], "tags": ["game:sandbox-7"], "as": c });
+        "proposals": [{ "entry": n, "line": line }], "tags": ["game:sandbox-7"], "objective": OBJECTIVE, "as": c });
     refused(&run(&mut w, claude, open.clone()));
     // the AIP author's share, as the page writes it: her vault's to the agent
     let author = json!({ "name": "AIP author", "ops": [{ "op": "create" }, { "op": "set", "path": [] }] });
@@ -463,6 +468,13 @@ fn a_suggester_agent_given_an_aip_author_share_opens_aips_and_a_viewer_opens_non
     share(&mut w, json!({ "op": "share", "over": a, "who": { "vault": c }, "level": author, "what": aips, "as": a }));
     w.lab.sync_all(2);
     let aip = ok(run(&mut w, claude, open))["entry"].clone();
+    // it measures its own progress while it works: its AIP author's share lets it record readings
+    for day in [140, 118] {
+        let measure = json!({ "op": "aip_measure", "entry": aip, "name": "ripe_day", "value": day, "as": c });
+        ok(run(&mut w, claude, measure));
+    }
+    let read = ok(run(&mut w, claude, json!({ "op": "aip", "entry": aip })));
+    assert_eq!((&read["stage"], &read["objective"]["met"]), (&json!("objective"), &json!(1)));
     let promoted = ok(run(&mut w, claude, json!({ "op": "aip_promote", "entry": aip, "as": c })));
     assert_eq!(promoted["number"], 1);
     // it may change its AIP, but no note on main, and reviews nothing
@@ -486,4 +498,70 @@ fn a_suggester_agent_given_an_aip_author_share_opens_aips_and_a_viewer_opens_non
         let record = ok(run(&mut w, d, json!({ "op": "get", "entry": n })))["record"].clone();
         assert_eq!(record["title"], "Corn first", "on {d:?}");
     }
+}
+
+/// The objective stage (`spec/AvenDB/Objective.lean`): an idea holds no objective and is promoted no more until it
+/// does; a file that doesn't read is refused with where and why; one that reads makes the idea an objective, whose
+/// metrics every `aip` read checks against the readings recorded on it, the first of each name its baseline; it is
+/// fixed once proposed, while readings go on; an archived AIP records none; `objective_check` reads a file unsaved.
+#[test]
+fn an_aip_states_its_objective_in_lean_and_measures_its_progress() {
+    let mut g = gate();
+    let n = g.create("note", note());
+    g.sync(1);
+    let line = g.propose(&n, "Earlier", vec![set(json!(["title"]), json!("Corn first"))]);
+    let aven = g.aven.to_hex();
+    let op = json!({ "op": "aip_open", "vault": g.alice.to_hex(), "title": "Earlier corn", "as": aven,
+        "proposals": [{ "entry": n, "line": line }] });
+    let aip = ok(run(&mut g.w, g.mac, op))["entry"].as_str().expect("its entry").to_string();
+    let read = g.aip(g.mac, &aip);
+    assert_eq!((&read["stage"], &read["objective"]), (&json!("idea"), &Value::Null));
+    let promote = json!({ "op": "aip_promote", "entry": aip, "as": aven });
+    let why = run(&mut g.w, g.mac, promote.clone());
+    assert!(why["why"].as_str().unwrap_or_default().contains("no objective"), "{why}");
+    // a file that doesn't read: refused, with where
+    let bad = json!({ "op": "aip_objective", "entry": aip, "as": aven,
+        "lean": "def ripe : Metric := metric \"Ripe\" (atMost (reading \"ripe_day\") -3)" });
+    let why = run(&mut g.w, g.mac, bad);
+    assert!(why["why"].as_str().unwrap_or_default().contains("line 1"), "{why}");
+    // two metrics, the second over two readings
+    let lean = format!("{OBJECTIVE}\n/-- More cobs. -/\ndef cobs : Metric := metric \"Cobs a plant\" \
+        (atLeast (reading \"cobs\" / reading \"plants\") 2.5)\n");
+    let set = ok(run(&mut g.w, g.mac, json!({ "op": "aip_objective", "entry": aip, "lean": lean, "as": aven })));
+    assert_eq!(set["metrics"], json!([{ "id": "ripe", "name": "Day the corn is ripe" }, { "id": "cobs", "name": "Cobs a plant" }]));
+    let read = g.aip(g.mac, &aip);
+    assert_eq!((&read["stage"], &read["objective"]["total"], &read["objective"]["met"]), (&json!("objective"), &json!(2), &json!(0)));
+    assert_eq!(read["objective"]["metrics"][0]["note"], "Ripe by day 120.");
+    for (name, value) in [("ripe_day", json!(140)), ("cobs", json!(150)), ("plants", json!(100)), ("ripe_day", json!(119.5)), ("cobs", json!(200))] {
+        ok(run(&mut g.w, g.mac, json!({ "op": "aip_measure", "entry": aip, "name": name, "value": value, "as": aven })));
+    }
+    let o = g.aip(g.mac, &aip)["objective"].clone();
+    assert_eq!((&o["metrics"][0]["met"], &o["metrics"][0]["value"], &o["metrics"][0]["baseline"]), (&json!(true), &json!(119.5), &json!(140)));
+    // cobs a plant: 1.5 at first, 2 now, 2.5 wanted: half way
+    assert_eq!((&o["metrics"][1]["met"], &o["metrics"][1]["progress"]), (&json!(false), &json!(0.5)));
+    assert_eq!((&o["met"], &o["progress"]), (&json!(1), &json!(0.75)));
+    assert_eq!(list(&o["readings"]).len(), 5);
+    // every reader reads the same progress
+    g.sync(2);
+    assert_eq!(g.aip(g.readers[2], &aip)["objective"]["progress"], json!(0.75));
+    // not a number: refused
+    let nan = json!({ "op": "aip_measure", "entry": aip, "name": "cobs", "value": "many", "as": aven });
+    assert_eq!(refused(&run(&mut g.w, g.mac, nan)), "BadOp");
+    // proposed: the objective is fixed, the readings go on
+    assert_eq!(ok(run(&mut g.w, g.mac, promote))["number"], 1);
+    let change = json!({ "op": "aip_objective", "entry": aip, "lean": OBJECTIVE, "as": aven });
+    assert_eq!(refused(&run(&mut g.w, g.mac, change)), "BadOp");
+    ok(run(&mut g.w, g.mac, json!({ "op": "aip_measure", "entry": aip, "name": "cobs", "value": 250, "as": aven })));
+    let o = g.aip(g.mac, &aip)["objective"].clone();
+    assert_eq!((&o["met"], &o["progress"]), (&json!(2), &json!(1)));
+    // archived: no more readings
+    g.review(&aip, "accepted", "Yes");
+    let late = json!({ "op": "aip_measure", "entry": aip, "name": "cobs", "value": 1, "as": aven });
+    assert_eq!(refused(&run(&mut g.w, g.mac, late)), "BadOp");
+    // an editor checks a file as it is typed
+    let check = ok(run(&mut g.w, g.mac, json!({ "op": "objective_check", "lean": OBJECTIVE,
+        "readings": [{ "name": "ripe_day", "value": 125 }] })));
+    assert_eq!((&check["ok"], &check["metrics"][0]["value"]), (&json!(true), &json!(125)));
+    let check = ok(run(&mut g.w, g.mac, json!({ "op": "objective_check", "lean": "def x : Metric := 1" })));
+    assert_eq!((&check["ok"], &check["line"]), (&json!(false), &json!(1)));
 }
