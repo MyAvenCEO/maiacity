@@ -1,9 +1,10 @@
 name: Deploy the site
 
 # maia.city is served by our own server: its Caddy serves the built site from /opt/maia-city/site (and the API, and the
-# media vault's gateway). Each build goes up beside the last and a link switches to it, so a page never points at
-# chunks that are gone; the last few builds stay for a quick way back. Media never ships with the site: every file
-# comes from the vault's gateway by its BLAKE3 hash. maia.city and www point at the server (A records, Hetzner DNS).
+# site's media from avenDB's feed). Each build goes up beside the last and a link switches to it, so a page never points
+# at chunks that are gone; the last few builds stay for a quick way back. Media never ships with the site: every file
+# comes from avenDB's feed (api.maia.city/vault/files) by its BLAKE3 hash. maia.city and www point at the server (A
+# records, Hetzner DNS).
 on:
   push:
     branches: [main]

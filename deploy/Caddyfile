@@ -5,11 +5,9 @@
 # and switches a link, so a page never points at chunks that are gone). www goes to the bare name.
 #
 # The API (api.maia.city):
-#   /relay, /generate_204  the iroh relay inside vault-server (paired devices only)
 #   /vault/files/<hash>    the site's media (src/lib/media/url.ts): Maia City's public files from avenDB's feed
-#                          (/feed/media/<hash>, with Range), by the BLAKE3 hash the old media vault named them by; one
-#                          avenDB doesn't serve (yet) comes from the old vault's gateway, until that vault retires
-#   /vault/*               the media vault's gateway (files by BLAKE3 hash, with Range)
+#                          (/feed/media/<hash>, with Range), by the BLAKE3 hash the old media vault named them by (that
+#                          vault and its gateway retired 2026-10-20, #1112)
 #   everything else        the API
 #
 # A browser can't set headers on a WebSocket, so avenDB's relay pass (avendb::sign::RelayPass, ~23 KB, or ~31 KB for
@@ -77,8 +75,8 @@ www.{$SITE_ADDRESS:maia.city} {
 }
 
 {$API_ADDRESS} {
-	# what a browser asks before it reads one of the site's media by Range (its CORS preflight), answered here, so the
-	# answer is the same whichever of the two below serves the file (the old vault's gateway answers no OPTIONS)
+	# what a browser asks before it reads one of the site's media by Range (its CORS preflight), answered here, as
+	# avenDB's feed answers no OPTIONS
 	@media_preflight {
 		method OPTIONS
 		path_regexp ^/vault/files/[0-9a-f]{64}(\.[a-z0-9]+)?$
@@ -90,37 +88,15 @@ www.{$SITE_ADDRESS:maia.city} {
 		header Access-Control-Max-Age 86400
 		respond 204
 	}
-	# the site's media, from avenDB: no key goes on to it (the Mac app sends its own), as everyone may read them. Every
-	# answer lets any page read it, a refusal too: the old vault's gateway answers a private file's 401 without it, and
-	# a page then sees no answer at all, only a failed load (the Mac app's copy into Maia City never tried its key)
+	# the site's media, from avenDB: no key goes on to it, as everyone may read them. Every answer lets any page read
+	# it, a refusal too, so a page sees why a file did not load
 	@media path_regexp media ^/vault/files/([0-9a-f]{64}(\.[a-z0-9]+)?)$
 	handle @media {
 		header ?Access-Control-Allow-Origin *
 		reverse_proxy avendb:3351 {
 			rewrite /feed/media/{re.media.1}
 			header_up -Authorization
-			@missing status 404 503
-			handle_response @missing {
-				reverse_proxy vault:3341
-			}
 		}
-	}
-	# and while avenDB doesn't answer at all (as it restarts), from the old vault's gateway
-	handle_errors 502 503 504 {
-		@media_fallback path_regexp ^/vault/files/[0-9a-f]{64}(\.[a-z0-9]+)?$
-		handle @media_fallback {
-			header ?Access-Control-Allow-Origin *
-			reverse_proxy vault:3341
-		}
-	}
-	handle /relay* {
-		reverse_proxy vault:3340
-	}
-	handle /generate_204 {
-		reverse_proxy vault:3340
-	}
-	handle /vault/* {
-		reverse_proxy vault:3341
 	}
 	handle {
 		encode zstd gzip
