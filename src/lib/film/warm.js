@@ -20,6 +20,8 @@ const LAYER = 31;
 /** the most things, and bytes of new buffers, the warming sends the GPU in one draw before Play */
 const LOT = 250;
 const LOT_BYTES = 8e6;
+/** the most bytes of new buffers it sends the GPU in one frame while the timeline plays */
+const FRAME_BYTES = 4e6;
 
 /** @param {THREE.WebGLRenderer} renderer */
 export function createWarmer(renderer) {
@@ -248,7 +250,11 @@ export function createWarmer(renderer) {
 		some(scene, camera, budget, every = 500, hidden = true) {
 			const t0 = performance.now();
 			let n = 0;
-			const here = ripe.splice(0, batch).filter((o) => isIn(o, scene));
+			// a batch within its bytes as well: WebKit sends the GPU its buffers later, so the time a batch took here says
+			// nothing of what it cost there
+			let k = 0;
+			for (let bytes = 0; k < ripe.length && k < batch && (k === 0 || bytes < FRAME_BYTES); k++) bytes += unsent(ripe[k]);
+			const here = ripe.splice(0, k).filter((o) => isIn(o, scene));
 			if (here.length) {
 				draw(scene, camera, here);
 				n = here.length;
