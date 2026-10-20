@@ -8,15 +8,16 @@
 // it in the Proposals app (/app/aips/), and the files land in Maia City. A file Maia City holds already (by its tag) is
 // left as it is. Without --run it only says what it would do.
 //
-//   bun scripts/propose-models.mjs [--run] [--from <folder>] [--device <path of avendb-device>]
+//   bun scripts/propose-models.mjs --from <folder> [--run] [--device <path of avendb-device>]
 //
-// The files are read from The OS's own models folder (~/Library/Application Support/city.maia.studio/models, each named
-// by its hash), else --from, a folder of them by hash or by name. The agent device is the one ~/.claude.json starts as
+// The files are read from --from, a folder of them by hash or by name. The agent device reads no file inside The OS's
+// own folder (~/Library/Application Support/city.maia.studio, which holds the Mac's keys), so copy its models/ out first
+// (`cp -c` clones them on APFS, no extra disk). The agent device is the one ~/.claude.json starts as
 // the `avendb` MCP server, else `--device` or AVENDB_DEVICE.
 import { spawn } from 'node:child_process';
 import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
@@ -25,7 +26,9 @@ const args = process.argv.slice(2);
 const flag = (/** @type {string} */ f) => args.includes(f);
 const option = (/** @type {string} */ f) => (args.includes(f) ? args[args.indexOf(f) + 1] : undefined);
 const { models } = JSON.parse(readFileSync(new URL('../src/lib/models/models.json', import.meta.url), 'utf8'));
-const folders = [option('--from'), join(homedir(), 'Library/Application Support/city.maia.studio/models')].filter(Boolean);
+if (!option('--from')) throw new Error(`give --from <folder of the model files>: the agent reads nothing inside ${join(homedir(), 'Library/Application Support/city.maia.studio')}, so copy its models/ out first (cp -c)`);
+// the agent takes only absolute paths
+const folders = [resolve(/** @type {string} */ (option('--from')))];
 
 /** what a file's bytes are, for the Library */
 const mediaOf = (/** @type {string} */ name) => (name.endsWith('.txt') ? 'text/plain' : 'application/octet-stream');
