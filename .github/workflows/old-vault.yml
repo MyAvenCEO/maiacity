@@ -4,8 +4,11 @@ name: Old media vault
 #
 #   measure – read only: what it still stores and how big (the bucket by folder, LIBRARY/ being the vault's files; the
 #             server's vaultdata volume; its Postgres tables), beside the newest database dump and the room left
-#   list    – read only: every file of the old vault's catalog (vault_files) and every object of LIBRARY/, as one
-#             artifact of the run (old-vault-list), to tell what moved into avenDB and what not
+#   list    – read only: every file of the old vault's catalog (vault_files) and every object of LIBRARY/, to tell
+#             what moved into avenDB and what not, sealed to the public key `to` names (RSA, its PEM in base64) and
+#             printed in the log: this repo is public, so the list, its titles and names, is never left in the clear,
+#             nor as an artifact anyone signed in could fetch
+#   forget  – deletes the old-vault-list artifact the first list run left in the clear (Samuel's OK first)
 #   archive – copies only, nothing deleted: a full database dump and the vaultdata volume as one tar (its catalog and
 #             blobs; never its node's secret key, nor its temporary files) go to ARCHIVE/old-vault/ in the bucket, with
 #             the list of LIBRARY/'s files; nothing expires there (the 30-day rule is on BACKUPS/pg/ alone). LIBRARY/
@@ -16,13 +19,18 @@ on:
   workflow_dispatch:
     inputs:
       step:
-        description: measure or list (read only), or archive (copies only)
+        description: measure or list (read only), archive (copies only), or forget (deletes the first list artifact)
         type: choice
-        options: [measure, list, archive]
+        options: [measure, list, archive, forget]
         default: measure
+      to:
+        description: list only — the RSA public key, its PEM in base64, the list is sealed to
+        required: false
 
 permissions:
   contents: read
+  # forget: to delete the list's artifact
+  actions: write
 
 concurrency:
   group: old-vault
@@ -97,22 +105,33 @@ jobs:
           COMMIT;
           SQL
 
-      - name: List the old vault's files
+      - name: List the old vault's files, sealed
         if: inputs.step == 'list'
+        env:
+          TO: ${{ inputs.to }}
         run: |
+          [ -n "$TO" ] || { echo "::error::name the public key to seal the list to: to"; exit 1; }
           mkdir -p list
           grep ' LIBRARY/' objects.txt > list/library-objects.txt || true
           ssh prod "docker exec -i -e PGOPTIONS='-c default_transaction_read_only=on' maia-city-db psql -U maiacity -d maiacity -v ON_ERROR_STOP=1" <<'SQL' > list/vault-files.csv
           \copy (SELECT hash, size, mime, kind, public, stored, added::date AS added, coalesce(meta->>'class', '') AS class, coalesce(meta->>'story', '') AS story, coalesce(meta->>'original_name', '') AS original_name, array_to_string(tags, '|') AS tags, title FROM vault_files ORDER BY added, hash) TO STDOUT WITH CSV HEADER
           SQL
           wc -l list/*
+          # a fresh key for the list, sealed to `to`; the list under it
+          printf '%s' "$TO" | base64 -d > to.pem
+          openssl rand -hex 32 > key.txt
+          openssl pkeyutl -encrypt -pubin -inkey to.pem -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -in key.txt -out key.sealed
+          tar -czf - -C list . | openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:key.txt -out list.sealed
+          rm -rf list key.txt
+          echo '--- key'; base64 -w 76 key.sealed; echo '--- list'; base64 -w 76 list.sealed; echo '--- end'
 
-      - uses: actions/upload-artifact@v4
-        if: inputs.step == 'list'
-        with:
-          name: old-vault-list
-          path: list/
-          retention-days: 30
+      - name: Forget the list's artifact
+        if: inputs.step == 'forget'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=old-vault-list&per_page=100" --jq '.artifacts[].id' |
+            while read -r id; do gh api -X DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id" && echo "deleted artifact $id"; done
 
       - name: Archive the database, a full dump
         if: inputs.step == 'archive'
