@@ -1,6 +1,5 @@
-// The words of the site's document pages as Markdown, for the Maia City vault's seed (src/lib/avendb/docs.js): the
-// theOS paper (/theos/) into docs/theos.md, the avenDB architecture (/docs/avendb/) into docs/avendb.md and the
-// avenBRAIN architecture (/docs/avenbrain/) into docs/avenbrain.md. Run after a build, whenever one of them changes:
+// The words of the site's document pages as Markdown, for the Maia City vault (src/lib/avendb/docs.js): the theOS
+// paper (/theos/) into docs/theos.md. Run after a build, whenever it changes:
 //
 //   npx vite build && node scripts/docs-markdown.mjs
 //
@@ -13,9 +12,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { parseHTML } from 'linkedom';
 
 const PAGES = [
-	{ from: 'build/theos/index.html', to: 'docs/theos.md', page: '/theos/' },
-	{ from: 'build/docs/avendb/index.html', to: 'docs/avendb.md', page: '/docs/avendb/' },
-	{ from: 'build/docs/avenbrain/index.html', to: 'docs/avenbrain.md', page: '/docs/avenbrain/' }
+	{ from: 'build/theos/index.html', to: 'docs/theos.md', page: '/theos/' }
 ];
 
 const SKIP = new Set(['SCRIPT', 'STYLE', 'BUTTON', 'NAV', 'INPUT', 'SELECT', 'LABEL', 'NOSCRIPT', 'TEMPLATE']);

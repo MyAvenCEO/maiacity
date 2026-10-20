@@ -108,6 +108,14 @@ describe('our own Markdown reads as before', () => {
 		expect(markdown(`![A tree](${hash}.png)`, { picture })).toBe(`<figure><img src="https://api.maia.city/vault/files/${hash}.png" alt="A tree" loading="lazy" /><figcaption>A tree</figcaption></figure>\n`);
 		expect(markdown('![A tree](tree.png)', { picture })).toContain('<span class="unshown">A tree</span>');
 	});
+	test('an SVG shows only as an image, from a data URL, its markup never in the page', () => {
+		const svg = markdown('![A round](d.svg)', { picture: () => 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' });
+		expect(svg).toContain('<img src="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=" alt="A round"');
+		const raw = markdown('![x](d.svg)', { picture: () => 'data:image/svg+xml;utf8,<svg onload=alert(1)>' });
+		expect(scan(raw)).toEqual([]);
+		expect(raw).not.toMatch(/<\s*svg/i);
+		expect(markdown('![x](d.svg)', { picture: () => 'data:image/svg+xml,<svg/>' })).toContain('<span class="unshown">x</span>');
+	});
 	test('raw HTML shows only its words', () => {
 		expect(markdown('a <b>b</b> c')).toBe('<p>a b c</p>\n');
 		expect(markdown('<h1 align="center">Title</h1>\n\n<!-- note -->')).toBe('<p>Title</p>\n');
