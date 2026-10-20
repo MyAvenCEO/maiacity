@@ -1045,6 +1045,7 @@ without padding). `share`, `share_group`, `revoke`, `settings` and `found` may a
 | `cap_groups` | `vault` | The vault's cap groups the device reads, each `{entry, name, caps, includes}` as its version in force says |
 | `kinds` | none | The kind table (section 3): each kind's name (`kind`), `ownedBy` (`"signers"` or the kinds of vault that may own it), `most` owners (`null` for any), whether it holds `devices`, and how many of it one owner may own (`each`, `null` for any) |
 | `limits` | none | How deep the device's queries read: `{depth, default, ceiling}` (below) |
+| `perf` | none | What the device's work cost since it started, kept on the device alone and never written to a vault: `{timers, counts, held}`, each timer `{count, total_ms, mean_ms, max_ms}` (check, keep, replay, refresh, open keys, read, show items, upkeep), each count a number (edits offered and checked, refresh rounds), and what it holds (`edits`, `bodies`, `shown`, `blobs`, `blob_bytes`) |
 | `api_pass` | `audience` | The device's signed pass to service `audience`, made now, which keeps nothing: `{pass, expires}`, its wire bytes in base64url (section 5, "A device's pass to a service"); `Locked` while the device is locked |
 | `world` | none | The device's world (below), or `null` while it belongs to no vault |
 | `database` | `vault` | A vault's database as the device holds it: its tables, audiences, schemas, lenses and counts |

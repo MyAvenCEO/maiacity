@@ -4,19 +4,49 @@
 // on while the app does, whichever page is open. Each ceremony of the person's passkey it asks for runs in the app's
 // sign-in sheet, which the app shows for it: the page sees none of it. `NativeDevice` answers the page as the page's
 // own device does (avendb-browser's `PageDevice`): every read and change one op through `run`, each one of the app's
-// calls (avendb/docs/ARCHITECTURE.md §8).
+// calls (avendb/docs/ARCHITECTURE.md §8). A file's bytes cross between the page and the app as they are, never in
+// base64 in JSON: a `read_file`'s come back raw (`avendb_read`), a file's chunks go raw (`avendb_chunk`).
 
 import { command } from '$lib/native';
 import { brings } from './ops.js';
 
+/** Throws an error from the app, as an Error. @param {unknown} e @returns {never} */
+const why = (e) => {
+	throw e instanceof Error ? e : new Error(String(e));
+};
+
 /**
- * Calls `name` with `args` on the app's device: what it answered, or an error saying why not.
+ * Calls `name` with `args` on the app's device: what it answered, or an error saying why not. A `run` of a `read_file`
+ * op answers its bytes as `bytes`, a `Uint8Array` (`readFile`).
  * @param {string} name @param {...unknown} args @returns {Promise<any>}
  */
 export function call(name, ...args) {
-	return command('avendb', { call: name, args }).catch((e) => {
-		throw e instanceof Error ? e : new Error(String(e));
-	});
+	if (name === 'run' && /** @type {any} */ (args[0])?.op === 'read_file') return readFile(args[0]);
+	return command('avendb', { call: name, args }).catch(why);
+}
+
+/**
+ * Raw call `name` of the app, its body `body` (bytes, or an object of arguments) and its headers `headers`: its answer,
+ * an ArrayBuffer where the app answers bytes.
+ * @param {string} name @param {Uint8Array | Record<string, unknown>} body @param {Record<string, string>} [headers]
+ * @returns {Promise<any>}
+ */
+async function raw(name, body, headers) {
+	const { invoke } = await import('@tauri-apps/api/core');
+	return invoke(name, body, headers && { headers }).catch(why);
+}
+
+/**
+ * `read_file` op `op` on the app's device, its bytes handed over raw (vault/app/src/avendb.rs `avendb_read`): the op's
+ * answer as JSON after its length (four bytes, little-endian), `bytes` in it how many follow, then those bytes, which
+ * come back as `bytes`, a `Uint8Array`.
+ * @param {any} op @returns {Promise<any>}
+ */
+async function readFile(op) {
+	const all = new Uint8Array(await raw('avendb_read', { op }));
+	const n = new DataView(all.buffer, all.byteOffset, all.byteLength).getUint32(0, true);
+	const out = JSON.parse(new TextDecoder().decode(all.subarray(4, 4 + n)));
+	return typeof out?.bytes === 'number' ? { ...out, bytes: all.subarray(4 + n, 4 + n + out.bytes) } : out;
 }
 
 /**
@@ -47,21 +77,6 @@ export const touchReady = () => command('avendb_touch_ready').then((ready) => re
  *   Drive
  * @typedef {{ volumes: Volume[], drives: Drive[] }} Drives
  */
-
-/** Bytes as base64, as the app's device takes a file's chunks. @param {Uint8Array} bytes */
-export function base64(bytes) {
-	let text = '';
-	for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-	return btoa(text);
-}
-
-/** Base64 as bytes, as the app's device hands a file's over. @param {string} text */
-export function unbase64(text) {
-	const raw = atob(text);
-	const bytes = new Uint8Array(raw.length);
-	for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-	return bytes;
-}
 
 /** How many bytes of a file the page hands the app's device at a time. */
 const CHUNK = 1 << 20;
@@ -116,16 +131,14 @@ export class NativeDevice {
 	 * Op `op`, any read or change of the database (avendb/docs/ARCHITECTURE.md §8): its answer, `{ ok }` or
 	 * `{ refused, why }`; the passkey's ceremonies, where its vault's owners approve it, run in the app's sheet, so
 	 * `ceremony` goes unused. The bytes of a `put_file` op's file, or of the file a `create` op brings (its `file`),
-	 * come from `read(at, n)`, a megabyte at a time, each in base64 to the app's device, which reads them twice, for the
-	 * file's key and to seal them into its store; a `read_file` op's come back as `bytes`, as the page's device hands
-	 * them.
+	 * come from `read(at, n)`, a megabyte at a time, each raw to the app's device, which reads them twice, for the
+	 * file's key and to seal them into its store; a `read_file` op's come back raw as `bytes`, as the page's device
+	 * hands them.
 	 * @param {any} op @param {unknown} [ceremony] @param {(at: number, n: number) => Promise<Uint8Array>} [read]
 	 */
 	async run(op, ceremony, read) {
 		if (brings(op) && read) return this.putFile(op, read);
-		const out = await call('run', op);
-		if (op?.op === 'read_file' && typeof out?.bytes === 'string') return { ...out, bytes: unbase64(out.bytes) };
-		return out;
+		return call('run', op);
 	}
 
 	/**
@@ -141,7 +154,7 @@ export class NativeDevice {
 				for (let at = 0; at < len; ) {
 					const bytes = await read(at, Math.min(CHUNK, len - at));
 					if (!bytes.length) throw new Error('the file ends early');
-					await call('fileChunk', n, at, base64(bytes));
+					await raw('avendb_chunk', bytes, { 'x-file': String(n), 'x-at': String(at) });
 					at += bytes.length;
 				}
 			} while (await call('fileAgain', n));
