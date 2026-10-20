@@ -46,6 +46,12 @@ jobs:
           \echo '== media devices of founders after the first'
           SELECT f.number, v.label, v.created::date, v.revoked_at::date FROM vault_devices v
           JOIN founders f ON f.id = v.founder_id WHERE f.number > 1 ORDER BY f.number, v.created;
+          \echo '== every table that points at a founder: its rows of each founder after the first, and what a delete does'
+          SELECT format('SELECT %L AS "table", %L AS "column", %L AS on_delete, f.number, count(*) AS rows FROM %s t JOIN founders f ON f.id = t.%I WHERE f.number > 1 GROUP BY f.number ORDER BY f.number',
+            c.conrelid::regclass, a.attname, CASE c.confdeltype WHEN 'c' THEN 'cascade' WHEN 'n' THEN 'set null' ELSE 'blocks' END,
+            c.conrelid::regclass, a.attname)
+          FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+          WHERE c.contype = 'f' AND c.confrelid = 'founders'::regclass ORDER BY c.conrelid::regclass::text \gexec
           \echo '== MaiaCity V1 seats'
           SELECT g.id, s.seat, s.p->>'founder' AS founder, left(coalesce(s.p->>'name', ''), 40) AS name,
             (SELECT f.number FROM founders f WHERE f.id = s.p->>'founder') AS number
