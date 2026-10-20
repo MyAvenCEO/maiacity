@@ -15,7 +15,7 @@ use avendb::lab::Lab;
 use avendb::policy::{Level, Who};
 use avendb::sealed::FileRoot;
 use avendb::sync::{LogId, asks, frontiers, log_of};
-use avendb::wire::{Announce, FileHold, Frontier, Reply, Request, Wire};
+use avendb::wire::{Announce, FileHold, Frontier, Packed, Reply, Request, Wire};
 use avendb_net::{ALPN, Holder, Node, Options, exporter, pq_provider};
 use bytes::Bytes;
 use iroh::endpoint::{Connection, presets};
@@ -31,6 +31,8 @@ const REQUEST: u8 = 0;
 const ANNOUNCE: u8 = 1;
 /// A request for the logs it names alone (`session::ASK_LOGS`).
 const ASK_LOGS: u8 = 7;
+/// The bit a request sets to have its reply packed (`session::PACKED`, K5).
+const PACKED: u8 = 0x80;
 /// A signed statement of holdings (`session::STATE`), which the tests here by hand let pass.
 const STATE: u8 = 8;
 
@@ -76,8 +78,9 @@ async fn say(conn: &Connection, kind: u8, body: &[u8]) {
     recv.read_to_end(16 << 20).await.expect("its answer");
 }
 
-/// The next message the node sends on `conn` other than an announcement, answered by `answer`; and the
-/// announcements before it, each answered by nothing, as a node answers them.
+/// The next message the node sends on `conn` other than an announcement, answered by `answer`, packed where the node
+/// asks for it packed, as a node answers; and the announcements before it, each answered by nothing, as a node
+/// answers them.
 async fn next(conn: &Connection, kind: u8, answer: impl FnOnce(&[u8]) -> Vec<u8>) -> (Vec<u8>, Vec<Announce>) {
     let mut heard = Vec::new();
     loop {
@@ -91,8 +94,11 @@ async fn next(conn: &Connection, kind: u8, answer: impl FnOnce(&[u8]) -> Vec<u8>
             send.finish().expect("nothing back");
             continue;
         }
-        assert_eq!(k, kind, "a message of kind {kind}");
-        send.write_all(&answer(body)).await.expect("the answer goes out");
+        assert_eq!(k & !PACKED, kind, "a message of kind {kind}");
+        let whole = answer(body);
+        let reply = || Packed(Reply::from_wire(&whole).expect("a reply")).to_wire();
+        let answer = if k & PACKED != 0 { reply() } else { whole.clone() };
+        send.write_all(&answer).await.expect("the answer goes out");
         send.finish().expect("and ends");
         return (body.to_vec(), heard);
     }
