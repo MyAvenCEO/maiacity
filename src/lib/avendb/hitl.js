@@ -73,9 +73,11 @@ export const REVIEW_V1 = `{
  * number, its targets, met, progress from 0 to 1), how many are met, the mean progress, every reading (a
  * Measurer's marked `measured`, with who wrote it, `by`; `measured "x"` counts those alone), and each
  * path's numbers, `fields` (the line that holds it, the proposal's number and main's), and the measuring logic it
- * names, `measures` (`logic "name"`, which those who accept it run on its lines, on their own device); `error` where
- * the Lean doesn't read.
+ * names, `measures` (`logic "name"`, which those who accept it run on its lines, on their own device); its `key`, and
+ * real Lean's `verdict` on it (N3: whether Lean, run by one who accepts it on their Mac, accepted the file, who said so,
+ * when, and the Lean in its note), `null` until one did; `error` where the Lean doesn't read.
  * @typedef {{ lean: string, error?: string, met: number, total: number, progress: number, measures?: string[],
+ *   key?: string, verdict?: { ok: boolean, by: string, at: number | null, note: string | null } | null,
  *   metrics: { id: string, name: string, note: string | null, goal: 'atLeast' | 'atMost' | 'between' | 'equals',
  *     readings: string[], measured?: string[], paths?: string[], value: number | null, baseline: number | null,
  *     targets: (number | null)[], met: boolean, progress: number }[],
@@ -86,14 +88,16 @@ export const REVIEW_V1 = `{
  */
 
 /**
- * One line on what an AIP's objective says now: "Objective: 1 of 2 met · 75 %", or null where it has none.
+ * One line on what an AIP's objective says now: "Objective: 1 of 2 met · 75 %", and real Lean's verdict where one gave
+ * it, or null where it has none.
  * @param {{ objective?: Objective | null }} aip @returns {string | null}
  */
 export function objectiveLine(aip) {
 	const o = aip.objective;
 	if (!o) return null;
 	if (o.error) return 'Objective: its Lean does not read';
-	return `Objective: ${o.met} of ${o.total} met · ${Math.round(o.progress * 100)} %`;
+	const lean = o.verdict ? (o.verdict.ok ? ' · Lean accepts it' : ' · Lean rejects it') : '';
+	return `Objective: ${o.met} of ${o.total} met · ${Math.round(o.progress * 100)} %${lean}`;
 }
 
 /** Whether two lists of heads name the same version. @param {string[]} a @param {string[]} b */

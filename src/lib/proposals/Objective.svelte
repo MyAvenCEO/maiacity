@@ -4,7 +4,8 @@
 	(`aip_measure`), those a Measurer of the vault wrote (`measured "name"`: the vault itself or an owner, who accept
 	it, or a holder of its Measurer group, never its author), and the numbers its own lines propose (`proposed "path"`,
 	against main's, `current "path"`), and the measuring logic it names, which those who accept it run on their own
-	device (`logic "name"`, ./measure.js). Each
+	device (`logic "name"`, ./measure.js), and real Lean's verdict on it, where one of them checked it with Lean in The OS
+	(./lean.js). Each
 	metric: its name and note, its goal and targets, where it started (its first reading, or what main holds) and
 	where it stands now, a bar of its progress and whether it is met; then the Lean itself, the numbers read from its
 	lines and every reading, in sections that open. Read only: an objective is written and measured by its author, an agent through the MCP.
@@ -12,6 +13,7 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { when } from './aips.js';
+	import { verdictLine } from './lean.js';
 
 	/** o: the objective as the `aip` read gives it ($lib/avendb/hitl.js `Objective`), or null */
 	let { o } = $props();
@@ -38,6 +40,12 @@
 			<p class="err">Its Lean does not read: {o.error}</p>
 		{:else}
 			<p class="total"><b>{o.met} of {o.total} met</b> · {pct(o.progress)} of the way</p>
+			{#if o.verdict}
+				<p class="lean" class:ok={o.verdict.ok}>
+					<span class="tick" aria-hidden="true">{o.verdict.ok ? '✓' : '✗'}</span>{verdictLine(o.verdict)}
+					<small class="dim">{o.verdict.note?.split(': ')[0] ?? ''}{o.verdict.at ? ` · ${when(o.verdict.at)}` : ''}</small>
+				</p>
+			{/if}
 			{#if o.measures?.length}<p class="paths">Measured by {#each o.measures as n, i (n)}{i ? ', ' : ''}the logic <code>{n}</code>{/each}, which those who accept it run on its lines, on their own device</p>{/if}
 			<ul class="metrics">
 				{#each o.metrics as m (m.id)}
@@ -90,6 +98,19 @@
 	.total {
 		margin: 0;
 		color: #24452f;
+	}
+	.lean {
+		margin: 0;
+		color: #8a3b00;
+	}
+	.lean .tick {
+		color: inherit;
+	}
+	.lean.ok {
+		color: #136b4b;
+	}
+	.lean small {
+		margin-left: 0.35rem;
 	}
 	.metrics {
 		list-style: none;

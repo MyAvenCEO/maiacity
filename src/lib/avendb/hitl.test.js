@@ -115,5 +115,12 @@ test('the review schema keeps the bytes avenDB ships, so its id', () => {
 test("an AIP's objective in one line", () => {
 	expect(objectiveLine({ objective: null })).toBe(null);
 	expect(objectiveLine({ objective: { met: 1, total: 2, progress: 0.75, metrics: [], readings: [], lean: '' } })).toBe('Objective: 1 of 2 met · 75 %');
+	const verdict = (ok) => ({ ok, by: 'aa', at: 1, note: 'lean-4.35.0' });
+	expect(objectiveLine({ objective: { met: 1, total: 1, progress: 1, metrics: [], readings: [], lean: '', verdict: verdict(true) } })).toBe(
+		'Objective: 1 of 1 met · 100 % · Lean accepts it'
+	);
+	expect(objectiveLine({ objective: { met: 0, total: 1, progress: 0, metrics: [], readings: [], lean: '', verdict: verdict(false) } })).toBe(
+		'Objective: 0 of 1 met · 0 % · Lean rejects it'
+	);
 	expect(objectiveLine({ objective: { error: 'line 1', met: 0, total: 0, progress: 0, metrics: [], readings: [], lean: 'x' } })).toBe('Objective: its Lean does not read');
 });
