@@ -44,6 +44,13 @@ const loaderOf = () =>
 /** every build asked for, by its name: the one load of it */
 const loads = new Map();
 /**
+ * After how long (ms) a build that failed only in passing (`Unread`: its recipe's proof or file wasn't handed over,
+ * as the vault's server restarted) is forgotten, so the next view that needs it asks again: it comes once the server
+ * is back, never missing for as long as the page is open (the village's animals, 2026-10-20). One that failed for good
+ * stays failed.
+ */
+const AGAIN_AFTER = 60_000;
+/**
  * A build of an actor, once: its ref at a detail (1: as it is).
  * @param {string} ref @param {number} detail
  */
@@ -56,12 +63,22 @@ function built(ref, detail) {
 				.then((L) => L.loadAsset(L.buildAt(label), { box: L.box() }))
 				.catch((e) => {
 					console.warn(`a crowd's ${ref} at ${detail} was not built: ${e?.message ?? e}`);
+					if (e?.name === 'Unread') again.add(label);
+					setTimeout(() => {
+						if (!again.has(label)) return;
+						loads.delete(label);
+						done.delete(label);
+					}, AGAIN_AFTER);
 					return null;
 				})
 				.finally(() => done.add(label))
 		);
 	return loads.get(label);
 }
+/** the builds that failed only in passing, asked for again after `AGAIN_AFTER` */
+const again = new Set();
+/** whether a build that failed is asked for again (`AGAIN_AFTER`) @param {string} ref @param {number} detail */
+const retried = (ref, detail) => again.has(labelOf(ref, detail));
 /** a build's name: its ref at a detail @param {string} ref @param {number} detail */
 const labelOf = (ref, detail) => (detail < 1 ? `${ref}?detail=${detail}` : ref);
 /** the builds here (or failed): what `nearReady` asks without waiting */
@@ -155,7 +172,8 @@ export function crowd(refs, counts, o) {
 		if (asked[c]) return;
 		asked[c] = true;
 		void built(refs[c], 1).then((got) => {
-			if (!got) return;
+			// asked again once the build that failed is forgotten (`AGAIN_AFTER`), by the next frame or view near it
+			if (!got) return void (retried(refs[c], 1) && setTimeout(() => (asked[c] = false), AGAIN_AFTER));
 			const view = got.obj.userData.view;
 			models[c] = got.obj;
 			clips[c] = playerOf(view?.clips?.motion, view?.clips?.bones ?? []);
@@ -168,7 +186,8 @@ export function crowd(refs, counts, o) {
 		askedFar[c] = true;
 		if (o.farShape) return void farMesh(c, o.farShape(c));
 		void built(refs[c], detail).then((got) => {
-			const m = got && meshOf(got.obj);
+			if (!got) return void (retried(refs[c], detail) && setTimeout(() => (askedFar[c] = false), AGAIN_AFTER));
+			const m = meshOf(got.obj);
 			if (m) farMesh(c, { geometry: m.geometry, material: m.material });
 		});
 	};

@@ -599,7 +599,7 @@ test("nothing is built, from the box or this device's cache, that Maia City's si
 	expect((await thrown(() => loadAsset(name, { box, store })))?.message).toContain("refused, Maia City's signed edits don't hold recipe");
 	// a proof that fails, or the rows as the feed lists them, which avenDB's own WebAssembly takes for no proof: every
 	// build waiting on it is refused, saying why, and the index stays
-	const down = await loaded({ proving: 503 });
+	const down = await loaded({ proving: 503, patience: 0 });
 	expect(down.r.phase).toBe('ready');
 	expect((await thrown(() => loadAsset(name, { box, store })))?.message).toBe(`${vault.nameOf(LABEL[tent])}: not built, as its proof didn't check out: ${proofAt([lie.entry])} answered 503`);
 	await loaded({ verify: verifyProof });
@@ -611,6 +611,33 @@ test("nothing is built, from the box or this device's cache, that Maia City's si
 	await loaded();
 	expect((await loadAsset(name, { box, store })).from).toBe('cache');
 }, 60000);
+
+test("a proof the server can't give yet (restarting) is asked again, the page told it waits; one that failed is asked again by the next build", async () => {
+	// avenDB's server restarting for a deploy (the village's animals, 2026-10-20): the proxy's 502 twice, then the proof
+	const f = feedOf();
+	let down = 2;
+	const waited = [];
+	const stop = vault.watchRecipes((r) => waited.push(r.waiting));
+	const get = async (url, o) => (url.includes('/feed/proof') && down-- > 0 ? new Response('bad gateway', { status: 502 }) : f.get(url, o));
+	try {
+		await vault.loadRecipes({ feed: AT, fetch: get, timeout: 1000, again: [0], ...PROVING, proofs: keepOf() });
+		const apple = LABEL['plants/apple@2'];
+		expect((await vault.recipeAt(apple)).code).toBe(FILES[apple]);
+		expect(down).toBe(-1);
+		expect(waited).toContain(1);
+	} finally {
+		stop();
+	}
+	// asked for no longer than the page's patience: refused, saying why, and not kept, so the next build asks again
+	const g = feedOf();
+	let off = 1;
+	const once = async (url, o) => (url.includes('/feed/proof') && off-- > 0 ? new Response('bad gateway', { status: 502 }) : g.get(url, o));
+	await vault.loadRecipes({ feed: AT, fetch: once, timeout: 1000, again: [0], patience: 0, ...PROVING, proofs: keepOf() });
+	const tent = LABEL['things/bell-tent@1'];
+	expect((await thrown(() => vault.recipeAt(tent)))?.message).toMatch(/answered 502$/);
+	expect((await vault.recipeAt(tent)).code).toBe(FILES[tent]);
+	expect(g.proofs().length).toBe(1);
+});
 
 test('a page loaded again asks for the proofs it asked for before at once, by their tags: not modified, nothing checked', async () => {
 	const proofs = keepOf();
@@ -689,6 +716,30 @@ test("a page that holds its avenDB open reads the recipes off its own device: th
 	} finally {
 		useDevice(null);
 	}
+}, 60000);
+
+test("a recipe's entry listed older than this device proved it (game/code/fresh.js) is refused where its newest is asked for, naming both versions; a version named still builds", async () => {
+	const { useDevice } = await import('../../../game/code/sources/device.js');
+	const { newestKeeper } = await import('../../../game/code/fresh.js');
+	const apple = rowAt('plants/apple@2');
+	const at = (writes) => FEED.rows.map((r) => (r === apple ? { ...r, version: { version: 2, edits: 0, writes } } : r));
+	const newest = newestKeeper({ storage: false });
+	// this device's own avenDB proved the entry at 9 writes
+	useDevice({ run: async (op) => (op.op === 'bring' ? { ok: { new: 0, peers: 1, reached: true } } : { ok: at(9) }), read: async () => new Uint8Array() });
+	try {
+		const r = await vault.loadRecipes({ feed: AT, fetch: feedOf().get, timeout: 1000, ...PROVING, proofs: keepOf(), newest });
+		expect([r.feed, r.refused]).toEqual(['this device', []]);
+	} finally {
+		useDevice(null);
+	}
+	// then the feed lists it at 5
+	const f = feedOf({ rows: at(5) });
+	const r = await vault.loadRecipes({ feed: AT, fetch: f.get, timeout: 1000, ...PROVING, proofs: keepOf(), newest });
+	expect(r.phase).toBe('ready');
+	expect(r.refused).toEqual([expect.stringMatching(/^plants\/apple@2 \(entry [0-9a-f]{8}…\) of vault [0-9a-f]{8}…: refused, the version handed out \(v2, 5 writes, .*older than the newest this device already proved \(v2, 9 writes/)]);
+	expect(() => vault.hashOf('plants/apple')).toThrow(/^plants\/apple: its newest version can't be read: plants\/apple@2 \(entry .*refused/);
+	expect(vault.hashOf('plants/apple@2')).toBe(LABEL['plants/apple@2']);
+	expect(vault.hashOf('things/bell-tent')).toBe(LABEL['things/bell-tent@1']);
 }, 60000);
 
 test("a server restarting is waited for, saying so: the listing and each file asked again together, never told missing; a file it never hands over is told unread, not missing", async () => {

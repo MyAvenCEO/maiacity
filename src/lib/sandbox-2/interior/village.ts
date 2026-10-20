@@ -14,7 +14,7 @@
  * out of a door and you are in the village again, outside it.
  */
 import * as THREE from 'three'
-import { DOMES, DOORS, adiff, bake, box, geodesic, glassSheen, lantern, mats, mountInterior, polar, portal, sofa, table, type DomeKind, type EmbeddedDome } from './interior'
+import { DOMES, DOORS, adiff, bake, box, breath, geodesic, glassSheen, lantern, mats, mountInterior, polar, portal, sofa, table, type DomeKind, type EmbeddedDome } from './interior'
 import { cafes, coops, coopsAround, henPatches, rabbitPatches, squaresAround, type Kit } from './spaces'
 import { water } from './textures'
 import { groundMaterial } from '$lib/biomes'
@@ -89,7 +89,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const flora = opts.flora
 	const pause = async (label: string) => {
 		onProgress(label)
-		await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
+		await breath()
 	}
 	// the canvas, the camera and the sky are every sandbox's own ($lib/sandbox-kit)
 	const stage = createWorldRenderer(container)
@@ -1453,15 +1453,22 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			filmed = new Set(need)
 			domeStream.look(views)
 			const t = performance.now()
+			// the frames the page drew meanwhile: none, and it is held back as unseen (a dome builds on all the same, `breath`)
+			let frames = 0, counting = true
+			const count = () => counting && (frames++, requestAnimationFrame(count))
+			requestAnimationFrame(count)
 			const slow = setInterval(() => {
 				const missing = need.filter((i) => !built.has(i))
-				console.warn(`film: ${(w as { name?: string }).name ?? 'a shot'} waits ${Math.round((performance.now() - t) / 1000)} s for domes ${missing.join(',') || '-'} (sees ${need.join(',') || 'none'}; building ${building?.i ?? '-'})`)
+				const slices = (window as unknown as { __prof?: { slices: number } }).__prof?.slices ?? '-'
+				console.warn(`film: ${(w as { name?: string }).name ?? 'a shot'} waits ${Math.round((performance.now() - t) / 1000)} s for domes ${missing.join(',') || '-'} (sees ${need.join(',') || 'none'}; building ${building?.i ?? '-'}, ${slices} slices in; ${frames} frames drawn in 10 s, page ${document.visibilityState})`)
+				frames = 0
 			}, 10000)
 			rush = new Set(need)
 			try {
 				await domeStream.ready(views)
 			} finally {
 				clearInterval(slow)
+				counting = false
 				rush = new Set()
 			}
 			settle()

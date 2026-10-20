@@ -316,6 +316,11 @@ fn an_assets_versions_and_variants_are_one_entry() {
     let v1 = ok(run(&mut g.w, mac, &json!({ "op": "get", "entry": e_hex, "version": 1 })));
     assert_eq!(g.row(mac, e)["at"], v1["at"], "{v1}");
     assert!(g.row(mac, e).get("brought").is_none());
+    // and which release of main it is, with the writes it holds, which grow with every version after it
+    let first_version = g.row(mac, e)["version"].clone();
+    assert_eq!((&first_version["version"], &first_version["edits"]), (&json!(1), &json!(0)), "{first_version}");
+    let writes = |row: &Value| row["version"]["writes"].as_u64().unwrap_or(0);
+    assert!(writes(&g.row(mac, e)) >= 1, "{first_version}");
     let at = |line: &Value, value: Value, len: u64, actor: VaultId| {
         json!({ "op": "put_file", "entry": e_hex, "line": line, "value": value, "len": len, "as": actor.to_hex() })
     };
@@ -340,6 +345,8 @@ fn an_assets_versions_and_variants_are_one_entry() {
     assert_eq!(on(&mut g.w, mac, &Value::Null)["files"], json!([file(one, one_len)]), "main's alone");
     ok(run(&mut g.w, mac, &json!({ "op": "merge", "entry": e_hex, "from": proposal, "into": null })));
     assert_eq!(g.record(mac, e)["card"]["version"], json!(2), "main is version 2");
+    assert_eq!(g.row(mac, e)["version"]["version"], json!(2), "the row says so");
+    assert!(writes(&g.row(mac, e)) > writes(&json!({ "version": first_version })), "and holds more writes than version 1");
     assert_eq!(g.w.lab.line_files(mac, e, MAIN), [(one, Some(one_len)), (two, Some(two_len))]);
     // a variant of it, brass: a line beside main whose one write is its record and its file
     let variant = start(&mut g.w, mac, "variant", "brass", alice);

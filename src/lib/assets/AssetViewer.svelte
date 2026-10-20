@@ -13,9 +13,11 @@
 	           pickup) under that asset, linked to its own page; tap one, on it or in the list, for its card
 
 	Every build comes from the asset box or this device's cache, checked ($lib/assets/load.js), and is shown from its
-	data alone ($lib/assets/hero.js): what moves by itself runs in the box, and only numbers come back. Its recipe is the
-	Maia City vault's ($lib/assets/vault.js), with no repo fallback: a version whose recipe the vault doesn't hold, or
-	holds otherwise, says so on the stage, naming its ref. Drag to turn round it, scroll to come closer. An admin's.
+	data alone ($lib/assets/hero.js): what moves by itself runs in the box, and only numbers come back. The stage, the
+	camera's work and what is drawn round it are every asset viewer's (./viewer.js, ./ViewerParts.svelte), the vault's
+	(./VaultAsset.svelte) too. Its recipe is the Maia City vault's ($lib/assets/vault.js), with no repo fallback: a
+	version whose recipe the vault doesn't hold, or holds otherwise, says so on the stage, naming its ref. Drag to turn
+	round it, scroll to come closer. An admin's.
 
 	The Buildings add three things: every building stands on the same round ground ($lib/buildings/ground.js, `round`)
 	and is walked there, the list kept beside it (`inPlace`); and an item that is a world in disguise (a dome: Sandbox
@@ -27,9 +29,8 @@
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { base } from '$app/paths';
 	import Turntable from '$lib/app/Turntable.svelte';
-	import { fit } from '$lib/app/turntable.js';
 	import { atOrLatest } from '$lib/app/versions.js';
-	import { adaptiveResolution, disposeObject, lowPower, topPixelRatio } from '$lib/render/core.js';
+	import { disposeObject } from '$lib/render/core.js';
 	import TouchStick from '$lib/touch/TouchStick.svelte';
 	import WalkHint from '$lib/sandbox-kit/WalkHint.svelte';
 	import { walk } from './controls.js';
@@ -40,20 +41,11 @@
 	import { parseRef, refOf } from './refs.js';
 	import { soilOf } from './soil.js';
 	import { treeOf } from './tree.js';
+	import { VIEWS, asker, camerawork, letGoOf, loop, measure, movesOf, onTap, openStage, safeArea, tabbed, viewsOf } from './viewer.js';
+	import { builtRows, heroReading, labRows, longNote, moveChips, paramTabs, scaleBar, slider, tagLines, viewChips } from './ViewerParts.svelte';
 
 	/** how many steps a world in disguise reports while it is built ($lib/buildings/inside.js) */
 	const STEPS = 5;
-
-	/** the stage's views (how it is looked at, any at once), as the bar names them */
-	const VIEWS = /** @type {const} */ ([
-		['explode', 'Explode'],
-		['cut', 'Cut away'],
-		['xray', 'X-ray'],
-		['labels', 'Labels'],
-		['slow', 'Slow']
-	]);
-	/** what the bar shows as tabs of a parameter rather than a slider: one with named steps (a plant's stages) */
-	const tabbed = (p) => Array.isArray(p.names) && p.names.length > 1 && p.names.length <= 12;
 
 	/**
 	 * @type {{ name: string, title: string, lede: string, group: string, items: any[], where?: (item: any) => string, heading?: (item: any) => string, soil?: boolean, round?: boolean, inPlace?: boolean, inside?: { is: (item: any) => boolean, raise: Function } | null }}
@@ -167,19 +159,9 @@
 	/** the parameter it grows by, stage by stage (a plant's stage), if it has one */
 	const staged = $derived(params.find((p) => p.id === 'stage' && tabbed(p)) ?? null);
 	/** the moves it plays: Grow (stage after stage), Run, its own, an actor's clips, Assemble (its build or pitch) */
-	const moves = $derived.by(() => {
-		if (!hero) return [];
-		const out = [];
-		if (staged) out.push(['grow', growing ? 'Growing…' : 'Grow']);
-		if (lab) out.push(['run', 'Run'], ...Object.entries(lab.moves ?? {}).map(([k, m]) => [k, m.label]));
-		// a rig's own assemble is its Assemble; its explode is the Explode view, not a move
-		for (const c of clips?.clips ?? []) if (!(rigApart && c === 'explode')) out.push([`clip:${c}`, c === 'assemble' ? 'Assemble' : c]);
-		if (hero.buildBy) out.push(['assemble', hero.buildBy.id === 'pitch' ? 'Pitch it' : catalog?.play && catalog.play !== 'Build it' ? catalog.play : 'Assemble']);
-		if (!lab && hero.buildBy && !clips?.clips?.length) out.unshift(['run', 'Still']);
-		return out;
-	});
+	const moves = $derived(movesOf(hero, { staged, growing, rigApart, play: catalog?.play }));
 	/** the views that apply to it */
-	const views = $derived(hero ? VIEWS.filter(([k]) => (k === 'explode' ? hero.explodes || !!rigApart : k === 'xray' ? hero.shells.length > 0 : k === 'labels' ? hero.labels.length > 0 : k === 'slow' ? !!hero.view.ticks : true)) : []);
+	const views = $derived(viewsOf(hero, rigApart));
 	/** its parts tree (./tree.js): its own parts by assembly, then each whole asset it carries, linked to its own page */
 	const tree = $derived(treeOf(catalog, hero?.card?.ref, hrefOf, refName));
 	const stageOf = $derived(chosen.stages && Number.isFinite(values.stage) ? chosen.stages[Math.min(chosen.stages.length - 1, Math.round(values.stage))] : null);
@@ -194,21 +176,6 @@
 		}
 	}
 
-	/** the part of the canvas no card covers, so the labels' text stays in view */
-	function safeArea(box) {
-		const b = box.getBoundingClientRect();
-		const safe = { left: 0, right: b.width, top: 0, bottom: b.height };
-		for (const el of (box.closest('.view') ?? box.parentElement)?.querySelectorAll('.card') ?? []) {
-			const r = el.getBoundingClientRect();
-			if (!r.width || !r.height) continue;
-			const l = r.left - b.left, t = r.top - b.top;
-			if (r.width > b.width * 0.6) safe.top = Math.max(safe.top, t + r.height);
-			else if (l > b.width / 2) safe.right = Math.min(safe.right, l);
-			else if (t > b.height / 2) safe.bottom = Math.min(safe.bottom, t);
-		}
-		return safe;
-	}
-
 	let stage = null;
 	let show = null;
 	let raiseWorld = null;
@@ -219,17 +186,12 @@
 	let dispose = null;
 
 	onMount(async () => {
-		const THREE = await import('three');
-		const { createStageRenderer } = await import('$lib/render/stage.js');
-		const { Stage } = await import('./stage.js');
-		const { createWalker, PACE } = await import('$lib/sandbox-kit/walker.js');
 		const box = canvasBox;
-		const low = lowPower();
-		// the stage renderer ($lib/render/stage.js): the canvas in the box, the camera (its field of view widened on an
-		// upright canvas, $lib/app/turntable.js), the controls; the canvas kept to the box, and the studio with it
-		const view = createStageRenderer(box, { pixelRatio: topPixelRatio(low), shadows: 'soft', onLost: () => (lost = true), fov: 40, turntable: true, fit, onResize: (w, h) => stage.resize(w, h) });
-		const { renderer, camera, controls } = view;
-		stage = new Stage(renderer, camera, { low });
+		// the stage renderer and the paper studio on it (./viewer.js `openStage`)
+		const up = await openStage(box, { onLost: () => (lost = true), hold: () => building });
+		const { createWalker, PACE } = await import('$lib/sandbox-kit/walker.js');
+		const { THREE, view, renderer, camera, controls, low, resize, adapt } = up;
+		stage = up.stage;
 		const earth = soil ? soilOf() : null;
 		// the Buildings' round ground, laid under each build as it is shown
 		const grounds = round ? await import('$lib/buildings/ground.js') : null;
@@ -239,73 +201,22 @@
 		window.__viewer = { stage, get hero() { return hero; }, get building() { return building; }, get error() { return error; }, get world() { return world; } };
 		if (earth) stage.scene.add(earth.group);
 
-		let aim = null;
-		lookAt = (id) => (aim = stage.partCentre(id));
-		/** @type {{ x: number, y: number } | null} */
-		let down = null;
-		renderer.domElement.addEventListener('pointerdown', (e) => (down = { x: e.clientX, y: e.clientY }));
-		renderer.domElement.addEventListener('pointerup', (e) => {
-			// a tap, not a drag round it, picks the part under it (or, on nothing, lets go)
-			if (!down || walking || Math.hypot(e.clientX - down.x, e.clientY - down.y) > 6 || !catalog) return;
-			down = null;
-			const r = renderer.domElement.getBoundingClientRect();
-			const part = stage.pick(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+		/** the camera on what is shown: framed, gliding, following a plant, turned to a part, backed off while drawn apart */
+		const cam = camerawork(THREE, camera, controls);
+		const frame = (smooth = false) => cam.frame(smooth);
+		lookAt = (id) => cam.aimAt(stage.partCentre(id));
+		// a tap, not a drag round it, picks the part under it (or, on nothing, lets go)
+		onTap(renderer.domElement, (x, y) => {
+			if (walking || !catalog) return;
+			const part = stage.pick(x, y);
 			picked = part;
 			if (part) lookAt(part);
 			else alone = false;
 		});
 
-		/** the build shown: let go of, on the stage and on the graphics card */
-		const letGo = (h) => {
-			if (!h) return;
-			h.dispose();
-			if (stage.root === h.root) stage.clear();
-			disposeObject(h.root, { textures: false });
-		};
-		let asked = 0;
+		const letGo = letGoOf(stage);
+		const asks = asker();
 		let shownHash = null;
-		let framed = null;
-		// how far the camera has backed off for an asset drawn apart (1: not at all), and how far it wants to
-		const apart = { now: 1, want: 1, since: 0 };
-		const spread = new THREE.Box3(), spreadSize = new THREE.Vector3(), bonePoint = new THREE.Vector3();
-		/** how far it spreads now: its meshes, and a rig's bones where they stand (a skin's own bounds stay as bound) */
-		const spreadOf = (root) => {
-			spread.setFromObject(root);
-			root.traverse((o) => o.isBone && spread.expandByPoint(bonePoint.setFromMatrixPosition(o.matrixWorld)));
-			return spread.getSize(spreadSize).length();
-		};
-		/** the camera gliding to a new framing (a plant grown a stage), from where it was */
-		let glide = null;
-		/** the camera following a plant as it grows: where it aims and how far back it stands, the way it looks kept */
-		let follow = null;
-		/** where the camera stands from what it aims at, for each metre of an asset's reach */
-		const BACK = new THREE.Vector3(1.5, 0.7, 1.9);
-		/** a framing's aim: a little under its middle, clear of the readout at the foot; its reach, and how far back the camera stands */
-		const aimOf = ({ centre, size: s }) => {
-			const reach = Math.max(s.x, s.y, s.z, 0.01) * 1.15;
-			return { at: centre.clone().add(new THREE.Vector3(0, -0.12 * s.y, 0)), reach, back: reach * BACK.length() };
-		};
-		/**
-		 * The camera on the asset shown, as built: aimed a little under its middle, clear of the readout at the foot;
-		 * there at once, or `smooth`ly from where it is.
-		 */
-		const frame = (smooth = false) => {
-			if (!framed) return;
-			Object.assign(apart, { now: 1, want: 1, since: 0 });
-			const { at, reach } = aimOf(framed);
-			const to = at.clone().addScaledVector(BACK, reach);
-			aim = null;
-			follow = null;
-			glide = smooth ? { t: 0, from: [camera.position.clone(), controls.target.clone()], to: [to, at] } : null;
-			if (!smooth) {
-				controls.target.copy(at);
-				camera.position.copy(to);
-			}
-			// while it glides, near and far hold both framings
-			camera.near = smooth ? Math.min(camera.near, reach / 300) : reach / 300;
-			camera.far = smooth ? Math.max(camera.far, reach * 80) : reach * 80;
-			camera.updateProjectionMatrix();
-		};
 		/** the round ground under a build of this measure (the Buildings'), as large as it needs, the stage's floor under it @param {THREE.Box3} b */
 		const layGround = (b) => {
 			if (ground) {
@@ -339,7 +250,7 @@
 		 * stand at once, its steps told while it is built, measured and walkable once it stands.
 		 */
 		raiseWorld = (item, v) => {
-			const mine = ++asked;
+			const mine = asks.ask();
 			building = true;
 			error = '';
 			walkOut?.();
@@ -358,13 +269,13 @@
 				box,
 				low,
 				onStep: (label, done) => {
-					if (mine !== asked) return;
+					if (!asks.is(mine)) return;
 					step = label;
 					steps = done;
 				},
 				onGhost: (b) => {
-					if (mine !== asked) return;
-					framed = { centre: b.getCenter(new THREE.Vector3()), size: b.getSize(new THREE.Vector3()) };
+					if (!asks.is(mine)) return;
+					cam.framed = { centre: b.getCenter(new THREE.Vector3()), size: b.getSize(new THREE.Vector3()) };
 					frame();
 				}
 			});
@@ -372,38 +283,38 @@
 			raisedAt = performance.now();
 			w.ready.then(
 				(got) => {
-					if (mine !== asked || world !== w) return;
+					if (!asks.is(mine) || world !== w) return;
 					building = false;
 					step = '';
 					if (!got) return void (error = `The ${item.label} could not be built`);
 					const s = got.measured.getSize(new THREE.Vector3());
 					size = [s.x, s.y, s.z];
-					framed = { centre: got.measured.getCenter(new THREE.Vector3()), size: s };
+					cam.framed = { centre: got.measured.getCenter(new THREE.Vector3()), size: s };
 					frame();
 					worldUp = true;
 				},
 				(e) => {
-					if (mine !== asked) return;
+					if (!asks.is(mine)) return;
 					building = false;
 					error = String(e?.message ?? e);
 				}
 			);
 		};
 		show = async (name, reframe) => {
-			const mine = ++asked;
+			const mine = asks.ask();
 			building = true;
 			error = '';
 			dropWorld();
 			try {
 				// a plant growing is built where it has grown to, mostly between two of its stages: none of it kept
 				const got = await loadAsset(name, { cache: !growing });
-				if (mine !== asked) return void letGo(heroOf(got));
+				if (!asks.is(mine)) return void letGo(heroOf(got));
 				const c = canonical(name);
 				const textValues = c.values && Object.fromEntries(Object.entries(c.values).map(([k, v]) => [k, String(v)]));
 				const code = await recipeAt(c.hash).catch(() => null);
 				forStage(got.obj);
 				const h = heroOf(got, { start: code ? runner(liveBoxOf(c.engine.v), code, textValues) : undefined });
-				if (mine !== asked) return void letGo(h);
+				if (!asks.is(mine)) return void letGo(h);
 				walkOut?.();
 				const was = hero;
 				const bounds = new THREE.Box3().setFromObject(got.obj);
@@ -413,7 +324,7 @@
 				const { centre, size: s } = stage.show(got.obj, { asset: h, ground: soiled ? -earth.fit(bounds) : grounds ? Math.min(bounds.min.y, 0) - 0.01 : undefined, keep: shownHash === c.hash });
 				if (grounds) layGround(bounds);
 				await stage.compile();
-				if (mine !== asked) {
+				if (!asks.is(mine)) {
 					stage.clear();
 					return void letGo(h);
 				}
@@ -435,19 +346,13 @@
 				readValues();
 				readModes();
 				// framed on it as built when it is a new asset; the same one built anew keeps the camera where it is,
-				// unless it grew or shrank by much (a plant a stage on, its fruit alone): then the camera glides there;
-				// a plant growing, the camera follows it as it grows, looking from where it looks
-				const before = framed?.size, big = (v) => Math.max(v.x, v.y, v.z, 1e-6);
-				const grew = before ? big(s) / big(before) : 1;
-				framed = { centre, size: s };
-				if (reframe || shownHash !== c.hash) frame();
-				else if (growing) follow = aimOf(framed);
-				else if (grew > 1.25 || grew < 0.8) frame(true);
+				// unless it grew or shrank by much; a plant growing, the camera follows it
+				cam.reframe(centre, s, { fresh: reframe || shownHash !== c.hash, growing });
 				shownHash = c.hash;
 			} catch (e) {
-				if (mine === asked) error = String(e?.message ?? e);
+				if (asks.is(mine)) error = String(e?.message ?? e);
 			}
-			if (mine === asked) building = false;
+			if (asks.is(mine)) building = false;
 		};
 
 		// walked in: the sandboxes' walker, on the floors and between the walls its own shape has (a world in disguise: its
@@ -502,59 +407,22 @@
 			frame();
 		};
 
-		const resize = view.resize;
-		resize();
-		const adapt = adaptiveResolution(renderer, { top: topPixelRatio(low), hold: () => building, onChange: resize });
 		shown = build ?? '';
 		if (build) show(build, true);
 		else if (worldly) {
 			shownWorld = `${chosen.id}@${version}`;
 			raiseWorld(chosen, version);
 		}
-		let raf = 0, last = performance.now(), slow = 0;
-		const look = new THREE.Vector3();
-		const tick = () => {
-			// the stage eases by the wall clock; so do the camera's own eases, however slow the frames
-			const now = performance.now(), wall = Math.min(1, (now - last) / 1000), dt = Math.min(0.05, wall);
-			last = now;
+		let slow = 0;
+		// the stage eases by the wall clock; so do the camera's own eases, however slow the frames
+		const stop = loop((wall, dt, now) => {
 			adapt(now);
 			stage.update(dt);
 			world?.frame((now - raisedAt) / 1000);
 			if (walker) walker.update(dt);
 			else {
-				if (glide) {
-					const k = Math.min(1, (glide.t += wall) / 0.9), e = k * k * (3 - 2 * k);
-					camera.position.lerpVectors(glide.from[0], glide.to[0], e);
-					controls.target.lerpVectors(glide.from[1], glide.to[1], e);
-					if (k >= 1) glide = null;
-				}
-				if (follow) {
-					const k = 1 - Math.exp(-wall * 4);
-					look.copy(camera.position).sub(controls.target);
-					controls.target.lerp(follow.at, k);
-					const d = look.length();
-					look.setLength(d + (follow.back - d) * k);
-					camera.position.copy(controls.target).add(look);
-					camera.near = Math.min(camera.near, follow.reach / 300);
-					camera.far = Math.max(camera.far, follow.reach * 80);
-					camera.updateProjectionMatrix();
-					if (!growing && Math.abs(follow.back - d) < follow.back * 0.01 && controls.target.distanceTo(follow.at) < follow.reach * 0.01) follow = null;
-				}
-				if (aim) {
-					controls.target.lerp(aim, 0.12);
-					if (controls.target.distanceTo(aim) < 0.002) aim = null;
-				}
 				// drawn apart, it backs off so every part stays in view, and comes back as they close
-				const spreadOut = stage.state.explode > 0.001 || drawnApart;
-				if (hero && framed && (spreadOut || apart.now !== 1)) {
-					if ((apart.since += wall) > 0.25) {
-						apart.since = 0;
-						apart.want = spreadOut ? Math.max(1, spreadOf(hero.root) / Math.max(1e-3, framed.size.length())) : 1;
-					}
-					const next = apart.now + (apart.want - apart.now) * Math.min(1, wall * 3);
-					camera.position.sub(controls.target).multiplyScalar(next / apart.now).add(controls.target);
-					apart.now = apart.want === 1 && Math.abs(next - 1) < 1e-3 ? 1 : next;
-				}
+				cam.step(wall, growing, hero ? { root: hero.root, out: stage.state.explode > 0.001 || drawnApart } : null);
 				controls.update();
 			}
 			// growing on: built where it has grown to, each time its last build is shown
@@ -580,11 +448,9 @@
 					if (stage.move !== 'run') readValues();
 				}
 			}
-			raf = requestAnimationFrame(tick);
-		};
-		tick();
+		});
 		dispose = () => {
-			cancelAnimationFrame(raf);
+			stop();
 			walkOut?.();
 			dropWorld();
 			letGo(hero);
@@ -741,8 +607,6 @@
 		copied = true;
 		setTimeout(() => (copied = false), 1500);
 	};
-	const num = (v, digits = 0) => v.toLocaleString('en-GB', { minimumFractionDigits: digits, maximumFractionDigits: digits });
-	const measure = (v) => (v < 0.01 ? `${Math.round(v * 10000) / 10} mm` : v < 1 ? `${Math.round(v * 1000) / 10} cm` : `${Math.round(v * 100) / 100} m`);
 </script>
 
 <svelte:window onkeydown={key} />
@@ -767,18 +631,8 @@
 			{/if}
 		{:else if hero}
 			<div class="chips">
-				{#each params.filter(tabbed) as p (p.id)}
-					<span class="label">{p.label}</span>
-					{#each p.names as n, k (k)}
-						<button class="chip" class:on={Math.round(values[p.id]) === p.min + k} onclick={() => ((growing = false), setParam(p.id, p.min + k))}>{n}</button>
-					{/each}
-				{/each}
-				{#if moves.length}
-					<span class="label">Moves</span>
-					{#each moves as [k, label] (k)}
-						<button class="chip" class:on={k === 'grow' ? growing : moving === k} title={lab?.moves?.[k]?.note} onclick={() => playMove(k)}>{label}</button>
-					{/each}
-				{/if}
+				{@render paramTabs(params, values, (id, v) => ((growing = false), setParam(id, v)))}
+				{@render moveChips(moves, (k) => (k === 'grow' ? growing : moving === k), lab, playMove)}
 				{#if clips?.poses?.length}
 					<span class="label">Poses</span>
 					{#each clips.poses.filter((x) => x !== rigApart) as p (p)}
@@ -787,10 +641,7 @@
 				{/if}
 				{#if lab?.breakIt}<button class="chip break" class:on={modes.break} onclick={() => setMode('break')}>{modes.break ? 'Take it back' : lab.breakIt.label}</button>{/if}
 				{#if hero.view.ticks || hero.buildBy}<button class="chip" class:on={!modes.run} onclick={() => setMode('run')}>{modes.run ? 'Pause' : 'Play'}</button>{/if}
-				<span class="label">Views</span>
-				{#each views as [k, label] (k)}
-					<button class="chip" class:on={k === 'explode' && rigApart ? drawnApart : modes[k]} onclick={() => setMode(k)}>{label}</button>
-				{/each}
+				{@render viewChips(views, (k) => (k === 'explode' && rigApart ? drawnApart : modes[k]), setMode)}
 				{#if hero.view.roof && !walking}<button class="chip" class:on={roofOff} onclick={toggleRoof}>{roofOff ? 'Put the roof on' : 'Lift the roof'}</button>{/if}
 				{#if hero.view.walk}<button class="chip dark" onclick={() => (walking ? walkOut?.() : walkIn?.())}>{walking ? 'Step outside' : 'Step inside'}</button>{/if}
 			</div>
@@ -808,41 +659,20 @@
 		{#if params.some((p) => !tabbed(p))}
 			<div class="built">
 				<span class="label">Built with</span>
-				{#each params.filter((p) => !tabbed(p)) as p (p.id)}
-					{#if p.type === 'string'}
-						<label class="param">
-							<span>{p.label}</span>
-							<input value={values[p.id] ?? p.value} maxlength={p.maxLength ?? 80} onchange={(e) => setParam(p.id, e.currentTarget.value.trim() || p.value)} />
-							{#if p.id === 'seed'}<button class="chip" onclick={freshSeed}>New seed</button>{/if}
-						</label>
-					{:else}
-						<label class="slider">
-							<span>{p.label}</span>
-							<output>{values[p.id]}</output>
-							<input type="range" min={p.min} max={p.max} step={p.step ?? (p.type === 'integer' ? 1 : 'any')} value={values[p.id] ?? p.value} onchange={(e) => setParam(p.id, e.currentTarget.value)} />
-						</label>
-					{/if}
-				{/each}
+				{@render builtRows(params, values, setParam, freshSeed, false)}
 			</div>
 		{/if}
 		{#if hero?.buildBy || hero?.controls.length}
 			<div class="lab">
 				{#if hero.buildBy}
-					<label class="slider">
-						<span>{hero.buildBy.label}</span>
-						<output>{Math.round(builtNow * 100)} %</output>
-						<input type="range" min="0" max="1" step="0.001" value={builtNow} oninput={(e) => scrub(+e.currentTarget.value)} />
-					</label>
+					{@render slider(hero.buildBy.label, `${Math.round(builtNow * 100)} %`, { min: '0', max: '1', step: '0.001', value: builtNow, oninput: (e) => scrub(+e.currentTarget.value) })}
 				{/if}
 				{#each hero.controls as c (c.id)}
 					{#if c.choice}
 						<label class="check"><input type="checkbox" checked={controlValues[c.id] >= 0.5} onchange={(e) => setControl(c.id, e.currentTarget.checked ? c.to : c.from)} /> {c.label}</label>
 					{:else}
-						<label class="slider">
-							<span>{c.label}</span>
-							<output>{Math.round(((controlValues[c.id] - c.from) / (c.to - c.from)) * 100)} %</output>
-							<input type="range" min={Math.min(c.from, c.to)} max={Math.max(c.from, c.to)} step="any" value={controlValues[c.id]} oninput={(e) => setControl(c.id, +e.currentTarget.value)} />
-						</label>
+						{@const at = Math.round(((controlValues[c.id] - c.from) / (c.to - c.from)) * 100)}
+						{@render slider(c.label, `${at} %`, { min: Math.min(c.from, c.to), max: Math.max(c.from, c.to), step: 'any', value: controlValues[c.id], oninput: (e) => setControl(c.id, +e.currentTarget.value) })}
 					{/if}
 				{/each}
 			</div>
@@ -889,23 +719,7 @@
 			</div>
 		{/if}
 		{#if lab}
-			<div class="lab">
-				{#each Object.entries(lab.controls) as [k, c] (k)}
-					<label class="slider">
-						<span>{c.label}</span>
-						<output>{num(sliders[k] ?? c.value, c.digits ?? 0)} {c.unit ?? ''}</output>
-						<input type="range" min={c.min} max={c.max} step={c.step ?? 'any'} value={sliders[k] ?? c.value} oninput={(e) => slide(k, +e.currentTarget.value)} />
-						{#if c.ends}<small><span>{c.ends[0]}</span><span>{c.ends[1]}</span></small>{/if}
-					</label>
-				{/each}
-				{#if lab.how}
-					<details class="how">
-						<summary><b>How it is computed</b></summary>
-						<p>{lab.how.text}</p>
-						{#each lab.how.eqs ?? [] as q (q)}<code>{q}</code>{/each}
-					</details>
-				{/if}
-			</div>
+			<div class="lab">{@render labRows(lab, sliders, slide)}</div>
 		{/if}
 		{#if holding && clips?.bones?.length}
 			<div class="joints">
@@ -952,22 +766,10 @@
 				</div>
 			</div>
 		{:else}
-			{#if lab}
-				<div class="hero" class:bad={reading.bad}>
-					<span class="label">{lab.hero.label}</span>
-					<b>{num(reading.value, lab.hero.digits ?? 0)}<small> {lab.hero.unit}</small></b>
-					<i class="meter"><i style:width="{Math.min(100, (Math.max(0, reading.value) / (lab.hero.max || 1)) * 100)}%"></i></i>
-					<span class="state">{reading.state}</span>
-					<small>{reading.sub}</small>
-				</div>
-			{/if}
+			{#if lab}{@render heroReading(lab, reading)}{/if}
 			<b>{variants.length > 1 && variant ? `${chosen.label} · ${variant.label}` : chosen.label}{#if stageOf}{` · ${stageOf.name}`}{/if}{#if chosen.latin}{' '}<em>{chosen.latin}</em>{/if}</b>
 			{@const note = hero?.view.note ?? stageOf?.note ?? (variants.length > 1 ? variant?.note : null) ?? atOrLatest(chosen.versions, version)?.note ?? chosen.note ?? ''}
-			{#if note.length > 160}
-				<button class="note" class:more title={more ? 'Show less' : 'Show all of it'} onclick={() => (more = !more)}>{note}</button>
-			{:else}
-				<small>{note}</small>
-			{/if}
+			{@render longNote(note, more, () => (more = !more), true)}
 			{#if typeof chosen.size === 'string'}<span>{chosen.size}</span>{/if}
 			{#if worldly}
 				{#if building}<span class="soft">{step || 'Opening the doors'}…</span>{:else if size}<span>{measure(Math.max(size[0], size[2]))} across · {measure(size[1])} high</span>{/if}
@@ -978,24 +780,12 @@
 			{:else if size}
 				<span>{#if rise}{measure(rise[0])} above the soil · {measure(rise[1])} below · {measure(Math.max(size[0], size[2]))} across{:else}{measure(Math.max(size[0], size[2]))} long · {measure(size[1])} high{/if}{#if catalog}{` · ${catalog.parts.length} parts`}{/if}{#if hero && !running && hero.view.ticks}{' · starting its moves…'}{/if}</span>
 			{/if}
-			{#if scale[0] > 0 && !walking}<span class="scale"><i style:width="{scale[0]}px"></i>{scale[1]}</span>{/if}
+			{#if scale[0] > 0 && !walking}{@render scaleBar(scale)}{/if}
 			{#if hash && build}<a class="own" href={pageOf(base, hash, values)}>Its own page ↗</a>{/if}
 			{#if !walking}<small>Drag to turn round it · pinch or scroll to come closer{catalog ? ' · tap any part for its card' : holding ? ' · turn any joint by hand' : ''}</small>{/if}
 		{/if}
 	{/snippet}
-	{#if tags.length}
-		<svg class="tags" aria-hidden="true">
-			{#each tags as t, i (i)}
-				{@const left = t.side === 'left'}
-				<g opacity={t.on}>
-					<polyline points="{t.x},{t.y} {t.lx + (left ? 16 : -16)},{t.ly} {t.lx},{t.ly}" />
-					<circle cx={t.x} cy={t.y} r="2.6" />
-					<text x={t.lx + (left ? -5 : 5)} y={t.ly - 2} text-anchor={left ? 'end' : 'start'} class="name">{t.text}</text>
-					{#if t.value}<text x={t.lx + (left ? -5 : 5)} y={t.ly + 12} text-anchor={left ? 'end' : 'start'} class="value">{t.value}</text>{/if}
-				</g>
-			{/each}
-		</svg>
-	{/if}
+	{#if tags.length}{@render tagLines(tags)}{/if}
 	{#if lost}
 		<button class="canvas-note lost" onclick={() => location.reload()}>This device’s graphics ran out of room. Tap to load it again.</button>
 	{:else if error}
@@ -1040,154 +830,10 @@
 		padding-top: 0.8rem;
 	}
 
-	.param {
-		display: grid;
-		grid-template-columns: auto minmax(0, 1fr) auto;
-		gap: 0.4rem;
-		align-items: center;
-	}
-
-	.param input {
-		min-width: 0;
-		font: inherit;
-		padding: 0.2rem 0.4rem;
-	}
-
 	.check {
 		display: flex;
 		gap: 0.4rem;
 		align-items: center;
-	}
-
-	.slider {
-		display: grid;
-		grid-template-columns: minmax(0, 1fr) auto;
-		gap: 0.15rem 0.5rem;
-		align-items: baseline;
-	}
-
-	.slider input {
-		grid-column: 1 / -1;
-		width: 100%;
-		accent-color: #ff7a1a;
-	}
-
-	.slider output {
-		font-variant-numeric: tabular-nums;
-		font-weight: 600;
-	}
-
-	.slider small {
-		grid-column: 1 / -1;
-		display: flex;
-		justify-content: space-between;
-		font-size: 0.7rem;
-		opacity: 0.55;
-	}
-
-	button.note {
-		all: unset;
-		display: -webkit-box;
-		-webkit-box-orient: vertical;
-		-webkit-line-clamp: 3;
-		line-clamp: 3;
-		overflow: hidden;
-		font-size: 0.78rem;
-		line-height: 1.45;
-		opacity: 0.7;
-		cursor: pointer;
-	}
-
-	button.note.more {
-		display: block;
-	}
-
-	.how summary {
-		cursor: pointer;
-	}
-
-	.how p {
-		margin: 0.35rem 0;
-		font-size: 0.78rem;
-		line-height: 1.45;
-		opacity: 0.8;
-	}
-
-	.how code {
-		display: block;
-		font-size: 0.72rem;
-		padding: 0.12rem 0;
-		white-space: pre-wrap;
-		opacity: 0.85;
-	}
-
-	.hero {
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-		padding-bottom: 0.5rem;
-		margin-bottom: 0.3rem;
-		border-bottom: 1px solid rgb(0 0 0 / 0.08);
-	}
-
-	.hero b {
-		font-size: 2rem;
-		line-height: 1.05;
-		font-variant-numeric: tabular-nums;
-	}
-
-	.hero b small {
-		font-size: 0.9rem;
-		font-weight: 500;
-		opacity: 0.6;
-	}
-
-	.hero .meter {
-		display: block;
-		height: 4px;
-		border-radius: 2px;
-		background: rgb(0 0 0 / 0.08);
-		overflow: hidden;
-	}
-
-	.hero .meter i {
-		display: block;
-		height: 100%;
-		background: #ff7a1a;
-		transition: width 0.12s linear;
-	}
-
-	.hero .state {
-		font-weight: 600;
-	}
-
-	.hero.bad .state,
-	.hero.bad b {
-		color: #b3261e;
-	}
-
-	.hero.bad .meter i {
-		background: #b3261e;
-	}
-
-	.hero small {
-		font-variant-numeric: tabular-nums;
-		opacity: 0.7;
-	}
-
-	.scale {
-		display: flex;
-		align-items: center;
-		gap: 0.4rem;
-		font-size: 0.72rem;
-		opacity: 0.7;
-	}
-
-	.scale i {
-		display: block;
-		height: 6px;
-		border: 1.5px solid currentColor;
-		border-top: 0;
 	}
 
 	.own {
@@ -1247,46 +893,6 @@
 	.canvas-note.error,
 	.missing {
 		color: #b3261e;
-	}
-
-	.tags {
-		position: absolute;
-		inset: 0;
-		width: 100%;
-		height: 100%;
-		pointer-events: none;
-		overflow: visible;
-	}
-
-	.tags polyline {
-		fill: none;
-		stroke: #1f2a23;
-		stroke-width: 1;
-		opacity: 0.7;
-	}
-
-	.tags circle {
-		fill: #ff7a1a;
-		stroke: #fff;
-		stroke-width: 1.2;
-	}
-
-	.tags text {
-		font-size: 12px;
-		fill: #1f2a23;
-		paint-order: stroke;
-		stroke: rgb(243 242 238 / 0.9);
-		stroke-width: 3px;
-	}
-
-	.tags .name {
-		font-weight: 600;
-	}
-
-	.tags .value {
-		font-size: 11px;
-		font-variant-numeric: tabular-nums;
-		opacity: 0.8;
 	}
 
 	.parts details {

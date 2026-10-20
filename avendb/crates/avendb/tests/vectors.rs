@@ -41,6 +41,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 use avendb::gate;
+use avendb::history::{Change, History};
 use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient, Seal};
 use avendb::lens::{example, View};
@@ -811,6 +812,49 @@ fn each_edit_is_accepted_or_refused_as_in_the_lean_model() {
             let want = [InviteOwner, NoConsent, NotActing, CapToItself, NotInvite, NotInvite, Revoked];
             assert_eq!(refused, want, "{name}: why each falls");
         }
+    }
+}
+
+/// A step case's edits applied one after the other from the empty state, as the model applies them: the names they
+/// made, and the state at the end.
+fn replayed(case: &Value) -> (Names, State) {
+    let mut names = Names::default();
+    let mut st = State::default();
+    for (i, v) in list(&case["edits"]).iter().enumerate() {
+        let edit = names.edit_of(v, step_depth(v, i));
+        let got = st.step(&edit);
+        names.created(v, &edit, got.is_ok());
+        if let Ok(next) = got {
+            st = next;
+        }
+    }
+    names.readings.groups = st.read_groups(&names.readings);
+    (names, st)
+}
+
+/// T10l: how many writes a version of an entry holds, its heads and every write they build on (`History::version`,
+/// what a public row says as `version.writes`, `world::public_row`), of the writes its readers count at the end of a
+/// step case, with some left out as a server that hands out only some of them leaves them out: exactly the model's
+/// count (`Writes.lean`'s `writesAt`), a later version more, a version with writes left out no more.
+#[test]
+fn each_version_holds_as_many_writes_as_in_the_lean_model() {
+    let vectors = vectors();
+    let (cases, versions) = (list(&vectors["cases"]), list(&vectors["versions"]));
+    assert!(versions.len() >= 8, "the model's version cases");
+    for v in versions {
+        let case = cases.iter().find(|c| c["name"] == v["case"]).expect("the version's case");
+        let (names, st) = replayed(case);
+        let e = entry(&v["entry"]);
+        let uncounted: HashSet<EditId> = st.uncounted(e, &names.readings).into_iter().collect();
+        let left: HashSet<EditId> = names.edits(&v["left"]).into_iter().collect();
+        let mut history = History::default();
+        let kept = st.all_writes().iter().filter(|w| w.entry == e && !uncounted.contains(&w.edit) && !left.contains(&w.edit));
+        for w in kept {
+            let change = Change { write: w.clone(), body: None, fits: true, touches: None, counted: true, adds: vec![] };
+            history.push(change).expect("what is kept builds on what is kept");
+        }
+        let heads = names.edits(&v["heads"]);
+        assert_eq!(history.version(&heads).len() as u64, num(&v["writes"]), "{v}");
     }
 }
 

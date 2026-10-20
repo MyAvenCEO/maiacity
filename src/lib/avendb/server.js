@@ -26,6 +26,9 @@ const testing = (key) => {
 /** The relay the app reaches avenDB's server by. */
 export const relay = () => testing('avendb:relay') || RELAY;
 
+/** Where the server's feed answers, beside its relay: its public reads, and what it tells an admin's pass (`/vaults`). */
+export const feed = () => testing('avendb:feed') || `${RELAY}/feed`;
+
 /** The server's offer the app joins and founds through. */
 export const server = () => testing('avendb:server') || SERVER;
 

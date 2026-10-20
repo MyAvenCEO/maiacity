@@ -26,6 +26,8 @@ export function stepWords(here) {
 		unlock: { title: `Unlock ${here}`, does: `Your passkey signs a pass for ${here}’s new keys`, prompt: true },
 		touch: { title: 'Touch ID', does: `Your finger opens ${here}’s keys in its Secure Enclave`, prompt: true },
 		keys: { title: `Making ${here}’s keys`, does: 'Post-quantum keys from a secret your passkey unmasks' },
+		// the same step after Touch ID (`touch`): the secret is the one the Secure Enclave's key opens at the touch
+		touchKeys: { title: `Making ${here}’s keys`, does: 'Post-quantum keys from a secret the Secure Enclave opens at your touch' },
 		restore: { title: 'Replaying your vault', does: 'Every edit checked again and applied in order' },
 		node: { title: `Starting ${here}’s node`, does: 'Its own endpoint, quantum-proof TLS on every connection' },
 		relay: {
@@ -107,9 +109,11 @@ export function rows(stages, planned, words, { now, ended, failed }) {
 	const next = planned
 		.slice(last + 1)
 		.filter((step) => !begun.some((s) => s.step === step) && !(joins && FOUNDING.includes(step)));
+	// after Touch ID, this device's keys come from the secret the Secure Enclave opened, not from the passkey
+	const touched = planned.includes('touch') || begun.some((s) => s.step === 'touch');
 	/** @param {string} step @param {Row['state']} state @param {number} ms @returns {Row} */
 	const row = (step, state, ms) => {
-		const w = words[step];
+		const w = step === 'keys' && touched ? words.touchKeys : words[step];
 		return { step, title: w?.title ?? step, does: w?.does ?? '', prompt: !!w?.prompt, state, ms };
 	};
 	return [

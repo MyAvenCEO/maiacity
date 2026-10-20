@@ -94,3 +94,42 @@ export function heldGroups(world, city, groups) {
 	}
 	return /** @type {Set<string>} */ (names);
 }
+
+/**
+ * Who holds which of vault `city`'s cap groups, and the invites open, as the `shares` op's rows over it list them
+ * (`rows`): by each vault, the shares in force to it that name a group, each `{share, group, name}`; and each invite no
+ * vault claimed yet, a share to an invite key that names a group. What the Vaults app (./Vaults.svelte) shows and
+ * changes. @param {import('./vaults.js').ShareRow[]} rows
+ * @returns {{ held: Map<string, { share: string, group: string, name: string }[]>,
+ *   invites: { share: string, group: string, name: string, issuer: string | null }[] }}
+ */
+export function groupHolders(rows) {
+	const held = new Map();
+	const invites = [];
+	for (const r of rows) {
+		if (r.kind !== 'grant' || !r.id || !r.capGroup) continue;
+		const one = { share: r.id, group: r.capGroup, name: r.group ?? r.name ?? '' };
+		const who = /** @type {any} */ (r.who);
+		if (who && typeof who === 'object' && 'vault' in who) held.set(who.vault, [...(held.get(who.vault) ?? []), one]);
+		else if (who && typeof who === 'object' && 'invite' in who) invites.push({ ...one, issuer: r.issuer });
+	}
+	return { held, invites };
+}
+
+/**
+ * The ops that make human vault `vault` a `to` of vault `city`, Traveler or Citizen (Samuel 2026-10-20: an admin moves
+ * travelers to citizens and back), as `city` itself: a share of group `to` first, so they never stand with neither,
+ * then the revocation of each share of the other of the two that they hold (`held`, as `groupHolders` lists them); none
+ * where they hold `to` alone already. An Admin share stays as it is: the app changes no admin's roles.
+ * @param {string} city @param {string} vault @param {'Traveler' | 'Citizen'} to @param {CapGroup[]} groups
+ * @param {{ share: string, name: string }[]} held
+ */
+export function moveOps(city, vault, to, groups, held) {
+	const group = groups.find((g) => g.name === to);
+	if (!group) throw new Error(`Maia City has no ${to} group yet.`);
+	const other = to === TRAVELER ? CITIZEN : TRAVELER;
+	const drop = held.filter((h) => h.name === other).map((h) => ({ op: 'revoke', share: h.share, as: city }));
+	const has = held.some((h) => h.name === to);
+	if (has && !drop.length) return [];
+	return [...(has ? [] : [{ op: 'share_group', over: city, group: group.entry, who: { vault }, as: city }]), ...drop];
+}

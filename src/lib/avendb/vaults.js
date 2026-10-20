@@ -129,9 +129,11 @@ import { fieldPaths, pathWords } from './paths.js';
  * group, whether it lets its who propose new entries (`drafts`, as a CapView's), what it is on (`"everything"`, a
  * `where`, or `null` where the device doesn't read it), how many entries it reaches now, and whether the acting vault
  * may revoke it.
+ * A grant's `capGroup` is the entry of the vault's cap group it names, if it names one, and `who` an invite key where no
+ * vault claimed that invite yet.
  * @typedef {{ kind: 'owner' | 'device' | 'grant' | 'keep', id: string | null, over: string,
- *   who: { vault: string } | { signer: string } | { device: string } | 'everyone', level: Role | 'actsFor',
- *   group: string | null, name: string | null, drafts: boolean | null, what: 'everything' | Where | null,
+ *   who: { vault: string } | { signer: string } | { device: string } | { invite: string } | 'everyone',
+ *   level: Role | 'actsFor', group: string | null, capGroup?: string | null, name: string | null, drafts: boolean | null, what: 'everything' | Where | null,
  *   ops: Op[] | null, above: Op[][] | null, issuer: string | null, parent: string | null, reaches: number,
  *   recovery: boolean, root: boolean, revoke: Verdict }} ShareRow
  */
@@ -802,6 +804,7 @@ export const granteeOf = (c, world) => whoName(c.who, world);
 export function whoOf(who, world) {
 	if (who === EVERYONE) return 'Everyone';
 	if ('vault' in who) return nameOf(world.vaults.find((v) => v.id === who.vault));
+	if ('invite' in who) return 'An invite no one claimed yet';
 	return signerName(world, 'signer' in who ? who.signer : who.device, true);
 }
 

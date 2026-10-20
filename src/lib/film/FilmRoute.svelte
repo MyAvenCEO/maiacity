@@ -9,6 +9,7 @@
 	import { onMount } from 'svelte';
 	import FilmWorld from './FilmWorld.svelte';
 	import VaultRecipes from '$lib/assets/VaultRecipes.svelte';
+	import { localDevice } from '$lib/avendb/local.js';
 	import { WORLDS } from '../../../game/film/worlds.js';
 
 	/**
@@ -28,7 +29,10 @@
 	onMount(() => {
 		const q = new URLSearchParams(location.search);
 		area = q.get('area') ?? WORLDS[sandbox]?.areas?.[0];
-		film = q.has('film');
+		if (!q.has('film')) return void (film = false);
+		// the person's own avenDB first: the Mac's world renderer is a window of its own (vault/app/src/world.rs), whose
+		// page finds the app's device only once it asks
+		void localDevice().then(() => (film = true));
 	});
 	const known = $derived(!area || !!WORLDS[sandbox]?.areas?.includes(area));
 </script>

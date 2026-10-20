@@ -17,7 +17,9 @@
  * What is loaded is what Maia City's own signed edits prove, checked by avenDB's WebAssembly where it runs, and nothing
  * the server says otherwise (H2, ./feed.js `provenRows`): a proof that doesn't check out loads nothing, and the seed
  * runs, as offline. A page that holds the person's avenDB open loads them off its own device instead, which checked
- * every edit as it took it, once it brought Maia City from its peers (./device.js `deviceRows`), the same rows. Each entry comes back in the repo entry's own shape ({ ref, type, for, title, ..., files, hash }),
+ * every edit as it took it, once it brought Maia City from its peers (./device.js `deviceRows`), the same rows. Either
+ * way, an entry handed out at an older version than this device proved of it before is refused, saying so (../fresh.js):
+ * a signature proves who wrote a version, not that it is the newest. Each entry comes back in the repo entry's own shape ({ ref, type, for, title, ..., files, hash }),
  * with its vault, entry and heads beside, checked by the one checker and held to an engine version the repo ships;
  * what fails either is left out and the seed's stays. Nothing here writes: `copyOf` makes the one batch the vault's
  * owner runs to copy the repo in.
@@ -31,6 +33,7 @@ import { checkCode } from '../check.js';
 import { ENTRIES as SEED } from '../../../code/index.js';
 import { CODE_FEED, MAIA_CITY, proofOf, provenRows } from './feed.js';
 import { deviceRows } from './device.js';
+import { KEPT_NEWEST, fresh } from '../fresh.js';
 import { isFrozen, latestOf } from '../../engines.js';
 
 /** the kinds of code entry this source carries, and the host each runs in */
@@ -142,6 +145,8 @@ function checked(e, viewOf) {
 
 /** the loaded entries, by path; empty until `use` or `loadCode` fills them */
 let loaded = {};
+/** why a path runs nothing, where its row was older than the newest this device proved of it (../fresh.js) */
+let stale = {};
 
 export const avendb = {
 	/**
@@ -151,13 +156,22 @@ export const avendb = {
 	on: true,
 	/** the loaded entry at `path`, or null @param {string} path */
 	byPath: (path) => loaded[path] ?? null,
+	/**
+	 * why the vault's entry at `path` runs nowhere, where the version handed out of it was older than the newest this
+	 * device proved (../fresh.js) and none of it was loaded before: the loader refuses the path, saying so, rather than
+	 * run the seed's or an older one in silence; undefined otherwise @param {string} path
+	 */
+	staleAt: (path) => (loaded[path] ? undefined : stale[path]),
 	/** every loaded entry @returns {Record<string, any>} */
 	all: () => loaded,
 	/**
 	 * Take in the rows the vault handed out: each becomes a repo-shaped entry if it maps, checks and names an engine the
 	 * repo ships; returns what was taken and what was left out (and why). `viewOf` is ../index.js `viewOfEntry`.
+	 * `older` are rows held back as older than the newest this device proved of their entries (../fresh.js `fresh`,
+	 * each `{ row, error }`): what was loaded of such a path before stays, a version at least as new, else the path
+	 * runs nothing and says why (`staleAt`).
 	 */
-	use(rows, viewOf) {
+	use(rows, viewOf, older = []) {
 		const next = {};
 		const twice = new Set();
 		const refused = [];
@@ -178,7 +192,16 @@ export const avendb = {
 				delete next[m.entry.ref];
 			} else next[m.entry.ref] = m.entry;
 		}
+		const held = {};
+		for (const { row, error } of older) {
+			refused.push(error);
+			const path = tagged(row?.tags, 'ref');
+			if (!path || next[path] || twice.has(path)) continue;
+			if (loaded[path]?.entry === row.entry) next[path] = loaded[path];
+			else held[path] = error;
+		}
 		loaded = next;
+		stale = held;
 		return { taken: Object.keys(next).sort(), refused };
 	},
 	/** the entry a vault ref names, at its heads (../ref.js `parseEntryRef`) @param {{ vault: string, entry: string, heads: string[] }} ref */
@@ -198,14 +221,21 @@ export const avendb = {
  * loaded before stays, else the seed: never a row the proof didn't prove, nor one the device didn't check. `viewOf` is
  * ../index.js `viewOfEntry`; `feed` where /feed/code is, on the API the server's own feed inside (AVENDB_FEED); `vault`
  * the anchor, Maia City's id (`MAIA_CITY`); `url` the proof's address (`feedOf`); `verify` and `keep` as `provenRows`
- * takes them (a test's); `device` false reads the feed whatever the page holds open.
+ * takes them (a test's); `device` false reads the feed whatever the page holds open. Either way, an entry whose version
+ * is older than the newest this device proved of it before is refused, naming both (../fresh.js `fresh`, the newest
+ * kept in `newest`), and what is taken is kept as its newest.
  */
-export async function loadCode(viewOf, { feed = CODE_FEED, vault = MAIA_CITY, url = feedOf(feed, vault), fetch: get = globalThis.fetch, timeout = 4000, verify, keep, device = true } = {}) {
+export async function loadCode(viewOf, { feed = CODE_FEED, vault = MAIA_CITY, url = feedOf(feed, vault), fetch: get = globalThis.fetch, timeout = 4000, verify, keep, device = true, newest = KEPT_NEWEST } = {}) {
 	if (!avendb.on) return { error: 'code from avenDB is switched off' };
+	/** rows a device checked or a proof proved, held to the newest of each entry proved before, and kept as it */
+	const taken = (rows) => {
+		const f = fresh(rows, { proven: true, keep: newest });
+		return avendb.use(f.rows, viewOf, f.stale);
+	};
 	const local = device ? await deviceRows(KINDS, { vault }) : null;
-	if (local) return avendb.use(local, viewOf);
+	if (local) return taken(local);
 	const got = await provenRows(url, { vault, kinds: KINDS, fetch: get, timeout, ...(verify ? { verify } : {}), ...(keep ? { keep } : {}) });
-	return 'error' in got ? got : avendb.use(got.rows, viewOf);
+	return 'error' in got ? got : taken(got.rows);
 }
 
 /**

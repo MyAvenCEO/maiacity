@@ -125,6 +125,10 @@ pub const HEALTH: &str = "/feed/health";
 /// Where a service asks who the device of a pass is (`pass`), by a POST of `{"pass", "audience"}`.
 pub const PASS: &str = "/feed/pass";
 
+/// Where an admin of Maia City asks for the vaults the server knows (`vaults`, `world::kept_vaults`, G4), by a POST of
+/// `{"pass"}`: a pass its device made for `world::VAULTS_AUDIENCE`.
+pub const VAULTS: &str = "/feed/vaults";
+
 /// The most bytes a POST of `PASS` brings: a pass is some 5 KiB of keys and signature, in base64url.
 const MOST_POSTED: usize = 64 << 10;
 
@@ -249,6 +253,14 @@ async fn answer(
     if request.uri().path() == PASS && *request.method() == Method::POST {
         return Ok(pass(request, &node).await);
     }
+    // an admin's page asks it from the browser: its POST of JSON is asked about first (OPTIONS), and both are answered
+    if request.uri().path() == VAULTS {
+        return Ok(match *request.method() {
+            Method::POST => vaults(request, &node).await,
+            Method::OPTIONS => opened(no_store(StatusCode::NO_CONTENT, Bytes::new())),
+            _ => opened(no_store(StatusCode::METHOD_NOT_ALLOWED, error("post {\"pass\"}"))),
+        });
+    }
     let path = request.uri().path();
     let reads = matches!(*request.method(), Method::GET | Method::HEAD);
     // how the server is doing, without asking its node, so that it answers while the node is busy
@@ -360,6 +372,36 @@ async fn pass(request: Request<Incoming>, node: &Node) -> Response<Full<Bytes>> 
     let (vault, admin) = said.map_or((Value::Null, false), |(v, admin)| (json!(v.to_hex()), admin));
     let body = serde_json::to_vec(&json!({ "vault": vault, "admin": admin })).expect("JSON writes");
     no_store(StatusCode::OK, Bytes::from(body))
+}
+
+/// The answer to a POST of `VAULTS`: of the pass it brings, `{"pass"}`, made for `world::VAULTS_AUDIENCE`, the vaults the
+/// server knows, `{"vaults": [...]}` (`world::kept_vaults`), where its device's vault is an admin of Maia City, checked
+/// now by the server's clock, never kept; forbidden for any other pass, and a bad request for a body that is no pass.
+async fn vaults(request: Request<Incoming>, node: &Node) -> Response<Full<Bytes>> {
+    let posted = match Limited::new(request.into_body(), MOST_POSTED).collect().await {
+        Ok(body) => body.to_bytes(),
+        Err(_) => return opened(no_store(StatusCode::PAYLOAD_TOO_LARGE, error("a pass is a few kilobytes"))),
+    };
+    let asked: Value = serde_json::from_slice(&posted).unwrap_or_default();
+    let pass = asked.get("pass").and_then(Value::as_str).and_then(sign::unbase64url);
+    let Some(pass) = pass.and_then(|bytes| ApiPass::from_wire(&bytes).ok()) else {
+        return opened(no_store(StatusCode::BAD_REQUEST, error("post {\"pass\"}, a device's ApiPass in base64url")));
+    };
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let (status, body) = match node.read(move |lab, me| world::kept_vaults(lab, me, &pass, now)).await {
+        Some(vaults) => (StatusCode::OK, Bytes::from(serde_json::to_vec(&json!({ "vaults": vaults })).expect("JSON writes"))),
+        None => (StatusCode::FORBIDDEN, error("the vaults are listed to an admin of Maia City alone")),
+    };
+    opened(no_store(status, body))
+}
+
+/// Answer `response` readable by any page, for its POST of JSON: what an admin's page in a browser asks of `VAULTS`.
+fn opened(mut response: Response<Full<Bytes>>) -> Response<Full<Bytes>> {
+    let headers = response.headers_mut();
+    headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+    headers.insert(header::ACCESS_CONTROL_ALLOW_METHODS, HeaderValue::from_static("POST, OPTIONS"));
+    headers.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("Content-Type"));
+    response
 }
 
 /// An answer of JSON `body` with `status` that nobody keeps: whom a pass names changes from one moment to the next.

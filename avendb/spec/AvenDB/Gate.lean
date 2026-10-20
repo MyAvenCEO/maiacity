@@ -16,7 +16,8 @@ knows once it holds the batch the vault came in (`welcomes`):
 From a batch it drops the geneses of the new vaults it doesn't welcome, again until none is left to drop, and takes the
 rest; where a vault it would take stays unwelcome, a genesis it held already that the batch lets stand, it takes nothing
 of the batch (`takes`). G1: an invite is claimed once. G2: every vault new to what the server knows is one it welcomes.
-G3: a device's pass to a service shows its own vault alone, an admin only by `isAdmin` (`passStanding`).
+G3: a device's pass to a service shows its own vault alone, an admin only by `isAdmin` (`passStanding`). G4: the server
+lists the vaults it knows only to an admin's device, by a pass made for that listing (`keptVaults`).
 -/
 
 namespace AvenDB
@@ -82,6 +83,18 @@ def deviceStanding (st : State) (home : VaultId) (d : SignerId) : Option (VaultI
     if the pass counts; nothing otherwise (`world::pass_standing`). -/
 def passStanding (st : State) (home : VaultId) (audience : String) (now : Nat) (p : ApiPass) : Option (VaultId × Bool) :=
   if p.counts audience now then deviceStanding st home p.device else none
+
+/-- The service a device's pass names to have the server list the vaults it knows (`world::VAULTS_AUDIENCE`): a name of
+    its own, so a pass the device made for another service, maiaCITY's API say, never lists them. -/
+def vaultsAudience : String := "avenDB vaults"
+
+/-- What the server of `home`, knowing `st`, answers pass `p` asking at `now` for the vaults it knows, as the Vaults app
+    of its admins lists them: every one, where the pass counts for `vaultsAudience` and its device's vault is an admin of
+    `home`; nothing otherwise (`world::kept_vaults`). -/
+def keptVaults (st : State) (home : VaultId) (now : Nat) (p : ApiPass) : Option (List VaultId) :=
+  match passStanding st home vaultsAudience now p with
+  | some (_, true) => some (st.vaults.map (·.id))
+  | _ => none
 
 /-- The server of `home` welcomes vault `v` in `st`. -/
 def welcomes (st : State) (home v : VaultId) : Bool :=
@@ -245,6 +258,23 @@ theorem standing_admin {st : State} {home v : VaultId} {aud : String} {now : Nat
       obtain ⟨rfl, ha⟩ := h
       exact ha
   · simp at h
+
+/-! ## G4: the server lists the vaults it knows to an admin alone -/
+
+/-- G4 (an admin's device alone): where the server lists the vaults it knows for a pass, the pass was made for that
+    listing, by a device of a vault that is an admin of `home`: `home` itself, a vault that owns it, or one holding its
+    Admin group. -/
+theorem kept_admin {st : State} {home : VaultId} {now : Nat} {p : ApiPass} {xs : List VaultId}
+    (h : keptVaults st home now p = some xs) :
+    ∃ v, isDevice st p.device v = true ∧ isAdmin st home v = true ∧ p.audience = vaultsAudience := by
+  unfold keptVaults at h
+  cases hs : passStanding st home vaultsAudience now p with
+  | none => simp [hs] at h
+  | some x =>
+    obtain ⟨v, b⟩ := x
+    cases b with
+    | false => simp [hs] at h
+    | true => exact ⟨v, (standing_admin hs).1, (standing_admin hs).2, (standing_counts hs).2.1⟩
 
 end Gating
 

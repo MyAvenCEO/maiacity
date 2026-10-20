@@ -1,8 +1,9 @@
 <!--
 	PLANT LOOK — the picked plant alone, small, at the top of its card in Sandbox 5: the same plant (its id, version,
 	stage and seed) as it stands in the forest, built a little finer in the asset box ($lib/assets/load.js, at the
-	`look` tier's detail of ./sandbox5.js `TIERS`), what is under the soil cut away, turning slowly on a patch of soil.
-	Drag to turn it round yourself.
+	`look` tier's detail of ./sandbox5.js `TIERS`), what is under the soil cut away, turning slowly on a patch of soil,
+	in its own light, with the asset viewers' frame loop and their way of keeping only the plant last asked for
+	($lib/assets/viewer.js). Drag to turn it round yourself.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
@@ -22,7 +23,7 @@
 		let gone = false;
 		(async () => {
 			const THREE = await import('three');
-			const [{ createStageRenderer }, { disposeObject }] = await Promise.all([import('$lib/render/stage.js'), import('$lib/render/core.js')]);
+			const [{ createStageRenderer }, { disposeObject }, { asker, loop }] = await Promise.all([import('$lib/render/stage.js'), import('$lib/render/core.js'), import('$lib/assets/viewer.js')]);
 			const [{ loadAsset }, { buildAt, loadRecipes }, { refOf }, { TIERS }] = await Promise.all([import('$lib/assets/load.js'), import('$lib/assets/vault.js'), import('./flora.js'), import('./sandbox5.js')]);
 			// the plant's recipe is the Maia City vault's ($lib/assets/vault.js)
 			await loadRecipes();
@@ -70,10 +71,10 @@
 				return { height, reach };
 			};
 
-			let job = 0;
+			const asks = asker();
 			show = async (k) => {
 				growing = true;
-				const mine = ++job;
+				const mine = asks.ask();
 				let got;
 				try {
 					got = await loadAsset(buildAt(`${refOf(k)}&detail=${TIERS.look.level}`));
@@ -81,7 +82,7 @@
 					console.warn('plant look: not built', err);
 					return;
 				}
-				if (mine !== job || gone) return letGo(got.obj);
+				if (!asks.is(mine) || gone) return letGo(got.obj);
 				if (plant) {
 					letGo(plant);
 					scene.remove(plant);
@@ -108,16 +109,13 @@
 			show($state.snapshot(kind));
 
 			view.resize();
-			let frame = 0;
-			const tick = () => {
-				frame = requestAnimationFrame(tick);
+			const halt = loop(() => {
 				controls.update();
 				renderer.render(scene, camera);
-			};
-			tick();
+			});
 			stop = () => {
-				cancelAnimationFrame(frame);
-				job++;
+				halt();
+				asks.drop();
 				if (plant) letGo(plant);
 				soil.geometry.dispose();
 				soil.material.dispose();

@@ -9,7 +9,6 @@
  *   ./stage.js    createStageRenderer: asset viewers (the paper studio on top: ../assets/stage.js)
  *   ./preview.js  picture: one frame on demand, offscreen
  *   ./film.js     the film camera's hold on a world (filmDraws, worldTime, filmHoldsSize; the darkroom)
- *   ./diagram.js  createDiagram: explainers' figures (theOS)
  *
  * Each is imported by its own path, so a page loads only what it draws with.
  */

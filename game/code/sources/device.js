@@ -11,12 +11,17 @@
  * `world::public_entries`: the public entries of Maia City that its vault landed), so every reader takes them as it takes
  * the feed's, and runs only what everyone may read, as before.
  *
- * Before it reads them, the device asks its peers for what they hold of Maia City, before anything else it syncs
- * (avendb's `bring` op): so it reads what the server holds, not what it held when it last synced. Rows are read off the
- * device only once one of its peers handed it all it holds of the vault (`reached`), or where none can be reached at
- * all (offline, which it then reads as it is). A device still bringing the vault after `BRING` (a first sync) is read
- * from the feed this time, while its bring goes on, so the next page reads it. A device that holds none of the vault,
- * or whose avenDB is older than the ops, is read from the feed too.
+ * Local first (Samuel 2026-10-20: "everything should be offline / local first loading … ensure our whole app respects
+ * this local first pattern"): what the device holds of Maia City is read at once, whether its peers can be reached or
+ * not, and the device asks them for what they hold meanwhile (avendb's `bring` op, before anything else it syncs), so
+ * the next page reads that; The OS's device keeps syncing anyway. Only a device that holds none of the vault yet (a
+ * first sync) waits for its bring, up to `BRING`, and is read from the feed this time where it is still bringing it. A
+ * device whose avenDB is older than the ops is read from the feed too. (Until 2026-10-20 every page waited for the
+ * bring first, and a server that hung sent it to the feed, which hung as well: the village's live world never stood
+ * while avenDB's server restarted.)
+ *
+ * A page of ours framed by another (the studio's world, /games/<world>/?film) opens no avenDB of its own: it reads its
+ * parent's device (`deviceOf`), the same person's, on the same origin. A frame of another origin, or none, reads none.
  */
 import { MAIA_CITY } from './anchor.js';
 
@@ -33,6 +38,12 @@ export const BRING = 8000;
  */
 export const READ = 6000;
 
+/**
+ * How long a page waits for its device to read back what it holds of a vault (ms): a local read answers in a moment,
+ * and one that doesn't (a device stuck) sends the page to the feed rather than leave it waiting.
+ */
+export const ANSWER = 5000;
+
 /** How many bytes a page asks its device for at a time, as the Library reads a file ($lib/avendb/files.js). */
 const WINDOW = 4 << 20;
 
@@ -43,17 +54,48 @@ const WINDOW = 4 << 20;
  */
 let device = null;
 
-/** each vault's bring, once a page holds a device: the answer, or null where it took longer than `BRING` @type {Map<string, Promise<any>>} */
-let brought = new Map();
+/** each device's bring of each vault, asked for once: the answer @type {WeakMap<object, Map<string, Promise<any>>>} */
+let brought = new WeakMap();
+
+/** where a page leaves its device for the pages it frames (`deviceOf`) */
+const SHARED = Symbol.for('maiacity.avendb.device');
 
 /** The device the page holds open now, or `null` to read the feed again; each vault is brought again once. */
 export function useDevice(d) {
 	device = d ?? null;
-	brought = new Map();
+	brought = new WeakMap();
+	if (typeof window !== 'undefined') /** @type {any} */ (window)[SHARED] = device;
 }
 
-/** The device the page holds open, if any. */
-export const deviceOf = () => device;
+/** The device the page holds open, else the one its parent page holds (a frame of ours, same origin), if any. */
+export function deviceOf() {
+	if (device || typeof window === 'undefined') return device;
+	try {
+		return window.parent !== window ? (/** @type {any} */ (window.parent)[SHARED] ?? null) : null;
+	} catch {
+		// a parent of another origin: none
+		return null;
+	}
+}
+
+/** device `d`'s bring of vault `vault`, asked for once @param {any} d @param {string} vault */
+function bringOf(d, vault) {
+	let of = brought.get(d);
+	if (!of) brought.set(d, (of = new Map()));
+	if (!of.has(vault)) of.set(vault, d.run({ op: 'bring', vaults: [vault] }));
+	return of.get(vault);
+}
+
+/**
+ * What the device the page reads (`deviceOf`) brought of vault `vault` from its peers, once it has: `{ ok: { new, peers,
+ * reached } }` (how many edits were new), or null with no device. A page that read the device's rows at once reads them
+ * again where it brought something new.
+ * @param {string} [vault]
+ */
+export async function whenBrought(vault = MAIA_CITY) {
+	const d = deviceOf();
+	return d ? bringOf(d, vault).catch(() => null) : null;
+}
 
 /** `p`, or null once `ms` passed. @param {Promise<any>} p @param {number} ms */
 function within(p, ms) {
@@ -63,22 +105,28 @@ function within(p, ms) {
 }
 
 /**
- * The rows of vault `vault`'s public code of kinds `kinds`, as the device the page holds reads them, in the feed's
- * shape (`/feed/code`), once it brought the vault from its peers (`BRING`); `null` where the feed is read instead: no
- * device is open, it is still bringing the vault, it holds none of its code, or it doesn't know the ops.
- * @param {string[]} kinds @param {{ vault?: string, wait?: number }} [o]
+ * The rows of vault `vault`'s public code of kinds `kinds`, as the device the page holds (or its parent page) reads
+ * them, in the feed's shape (`/feed/code`): at once where it holds the vault's code, its bring going on beside; where
+ * it holds none yet, once it brought the vault from its peers (`BRING`). `null` where the feed is read instead: no
+ * device is open, it holds none of the vault's code and is still bringing it, or it doesn't know the ops.
+ * `wait` is how long it waits for the bring, `answer` how long for the device to read its rows back (`ANSWER`).
+ * @param {string[]} kinds @param {{ vault?: string, wait?: number, answer?: number }} [o]
  * @returns {Promise<any[] | null>}
  */
-export async function deviceRows(kinds, { vault = MAIA_CITY, wait = BRING } = {}) {
-	const d = device;
+export async function deviceRows(kinds, { vault = MAIA_CITY, wait = BRING, answer = ANSWER } = {}) {
+	const d = deviceOf();
 	if (!d || !/^[0-9a-f]{64}$/.test(String(vault))) return null;
-	if (!brought.has(vault)) brought.set(vault, d.run({ op: 'bring', vaults: [vault] }));
-	const bring = await within(brought.get(vault), wait);
-	// still bringing it, or a device whose avenDB knows no `bring` yet: the feed, this time
-	if (!bring?.ok) return null;
-	const got = await d.run({ op: 'code', vault, type: kinds }).catch(() => null);
-	if (d !== device || !Array.isArray(got?.ok) || !got.ok.length) return null;
-	return got.ok;
+	const bring = bringOf(d, vault);
+	const code = async () => {
+		const got = await within(d.run({ op: 'code', vault, type: kinds }), answer);
+		return d === deviceOf() && Array.isArray(got?.ok) && got.ok.length ? got.ok : null;
+	};
+	const held = await code();
+	if (held) return held;
+	// none held yet: its bring first, then what it brought; still bringing it, or a device whose avenDB knows no
+	// `bring` yet: the feed, this time
+	if (!(await within(bring, wait))?.ok) return null;
+	return code();
 }
 
 /**
@@ -89,7 +137,7 @@ export async function deviceRows(kinds, { vault = MAIA_CITY, wait = BRING } = {}
  * @returns {Promise<Uint8Array | null>}
  */
 export async function deviceFile(file, { wait = READ } = {}) {
-	const d = device;
+	const d = deviceOf();
 	if (!d || typeof file?.len !== 'number') return null;
 	const read = async () => {
 		const out = new Uint8Array(file.len);

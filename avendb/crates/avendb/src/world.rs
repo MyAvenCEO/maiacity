@@ -1034,9 +1034,11 @@ fn everyone_reads(st: &State, en: &Entry) -> bool {
 }
 
 /// Entry `en` as the feed serves it (`public_entries`), where its record is of a kind `of` takes:
-/// `{entry, vault, name, seed, type, schema, tags, heads, created, record, files}`, its vault's name as its profile
-/// reads (`null` where it has none) and as the seed names it (`seed`: its name in `SEED_NAMES`, of the seed's vaults
-/// alone), its type the kind of its record, the schema it reads through and the heads of its main line in hex, its tags
+/// `{entry, vault, name, seed, type, schema, tags, heads, version, created, record, files}`, its vault's name as its
+/// profile reads (`null` where it has none) and as the seed names it (`seed`: its name in `SEED_NAMES`, of the seed's
+/// vaults alone), its type the kind of its record, the schema it reads through and the heads of its main line in hex,
+/// which release of main they are and how many writes they hold, those before them too (`version`, `{version, edits,
+/// writes}`, `History::describe`), its tags
 /// as its header reads them, when it was created, in seconds since 1970, its record as device `me` counts it on its
 /// main line, the version every reader agrees on, its Loro texts plain text, and the files that line brings that `me`
 /// counts as the entry's and opens (`Lab::line_files`), oldest first, each `{root, size, len}`, its root in hex, its
@@ -1075,6 +1077,14 @@ fn public_row(
     let kind = app.kind()?.to_string();
     let tags = record.get("tags").and_then(Value::as_array);
     let deleted = tags.is_some_and(|ts| ts.iter().any(|t| t.as_str() == Some(DELETED)));
+    let heads = history.heads(MAIN);
+    // which release of main the row is (`engine::described`), and how many writes its version holds, its heads and all
+    // before them: a version that comes after another holds every write that one holds and more, so a reader that
+    // already proved a newer version of the entry tells an older one handed out after it by its fewer writes, as a
+    // server that leaves out an entry's newest writes hands one out (T10l, the spec's `writesAt`; maiaCITY's
+    // game/code/fresh.js)
+    let mut version = engine::described(history, MAIN, &heads);
+    version["writes"] = json!(history.version(&heads).len());
     let mut row = json!({
         "entry": en.id.to_hex(),
         "vault": en.vault.to_hex(),
@@ -1083,8 +1093,9 @@ fn public_row(
         "type": kind,
         "schema": app.id().to_hex(),
         "tags": meaning.attrs.tags.iter().map(|t| t.as_str()).collect::<Vec<_>>(),
-        "heads": history.heads(MAIN).iter().map(EditId::to_hex).collect::<Vec<_>>(),
-        "authors": authors_json(lab, me, &authors(lab, me, en.id, &history.heads(MAIN))),
+        "heads": heads.iter().map(EditId::to_hex).collect::<Vec<_>>(),
+        "version": version,
+        "authors": authors_json(lab, me, &authors(lab, me, en.id, &heads)),
         "created": meaning.attrs.created,
         "record": record,
         "files": lab.line_files(me, en.id, MAIN).into_iter().filter_map(file_json).collect::<Vec<_>>(),
@@ -1199,6 +1210,42 @@ pub fn open_invite(lab: &Lab, me: SignerId, share: ShareId) -> bool {
 pub fn pass_standing(lab: &Lab, me: SignerId, pass: &ApiPass, audience: &str, now: u64) -> Option<(VaultId, bool)> {
     let &city = seed_of(lab, me).first()?;
     lab.device_standing(me, city, pass.device(audience, now)?)
+}
+
+/// The service a device's pass names to have avenDB's server list the vaults it knows (G4, `Gate.lean`'s
+/// `vaultsAudience`): a name of its own, so a pass made for maiaCITY's API never lists them.
+pub const VAULTS_AUDIENCE: &str = "avenDB vaults";
+
+/// What avenDB's server, device `me`, answers pass `pass` asking at `now` for the vaults it knows (G4, `Gate.lean`'s
+/// `keptVaults`), as the Vaults app of Maia City's admins lists them: where the pass counts for `VAULTS_AUDIENCE` and
+/// its device's vault is an admin of Maia City (`pass_standing`), every vault the server knows, in the order they were
+/// founded, each `{id, kind, name, owners, devices, entries, keeps}`: its name where the server reads it, its owners
+/// (`{"vault"}` or `{"signer"}`), how many devices act for it, how many of its entries the server holds, and what the
+/// server keeps of it, `"backup"` (an encrypted copy of the whole), `"relay"` (it passes its edits on) or `"known"` (it
+/// knows the vault alone, from another's edits). `None` for any other pass.
+pub fn kept_vaults(lab: &Lab, me: SignerId, pass: &ApiPass, now: u64) -> Option<Vec<Value>> {
+    let (_, true) = pass_standing(lab, me, pass, VAULTS_AUDIENCE, now)? else { return None };
+    let (st, mine) = (lab.state(me), lab.vault_of(me)?);
+    let keeps = |v: VaultId| {
+        let wide = |level: Level| st.shares_over(v).any(|cp| cp.share.wide && st.holds(mine, cp, level));
+        if v == mine || wide(Level::Backup) { "backup" } else if wide(Level::Relay) { "relay" } else { "known" }
+    };
+    let mut entries: BTreeMap<VaultId, usize> = BTreeMap::new();
+    for en in st.entries() {
+        *entries.entry(en.vault).or_default() += 1;
+    }
+    let row = |v: &Vault| {
+        json!({
+            "id": hex(&v.id.0),
+            "kind": kind_name(v.kind),
+            "name": profile_of(lab, me, v.id).map(|(_, name)| name),
+            "owners": v.owners.iter().map(|&p| crate::words::principal_json(p)).collect::<Vec<_>>(),
+            "devices": v.devices.len(),
+            "entries": entries.get(&v.id).copied().unwrap_or(0),
+            "keeps": keeps(v.id),
+        })
+    };
+    Some(st.vaults().iter().map(row).collect())
 }
 
 /// The seed device `me`'s person's claim of the server founded, by its view, in `SEED_NAMES`' order: Maia City and

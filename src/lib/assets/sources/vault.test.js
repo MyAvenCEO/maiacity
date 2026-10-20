@@ -468,3 +468,21 @@ test('a pin the vault holds no version of fails, saying what it holds of that en
 	expect(parsePin({ entry: apple.entry, at: [] })).toBeNull();
 	expect(() => v.hashOf({ entry: 'x', at: ['y'] })).toThrow(/not an asset ref/);
 });
+
+test("an entry handed out older than this device proved it (game/code/fresh.js): its newest is refused, saying why, its exact versions still read", async () => {
+	const { rows, files } = pinnedRows();
+	const apple = rows.find((r) => r.entry === idOf('asset-plants/apple'));
+	const error = 'plants/apple: refused, the version handed out (v2, 5 writes, at aaaaaaaa…) is older than the newest this device already proved (v3, 7 writes, at bbbbbbbb…)';
+	const v = vaultRecipes(rows, { read: async (row) => files.get(row.edit ?? row.files.at(-1)?.root), stale: [{ row: apple, error }] });
+	expect(v.refused).toEqual([error]);
+	// the newest, which a ref that names no version means, is not read off it
+	expect(() => v.hashOf('plants/apple')).toThrow(NotInVault);
+	expect(() => v.hashOf('plants/apple?stage=9')).toThrow(`plants/apple?stage=9: its newest version can't be read: ${error}`);
+	// a version it names, or a pin by heads, is that version whatever is newer
+	expect(v.hashOf('plants/apple@2')).toBe(hashOf('plants/apple@2'));
+	const pin = v.pinOf(hashOf('plants/apple@1'));
+	expect(v.hashOf(pin)).toBe(hashOf('plants/apple@1'));
+	expect(await v.recipeAt(v.hashOf(pinRef(pin)))).toEqual({ hash: hashOf('plants/apple@1'), code: FILES[hashOf('plants/apple@1')] });
+	// and every other asset as ever
+	expect(v.hashOf('machines/truck')).toBe(hashOf('machines/truck'));
+});

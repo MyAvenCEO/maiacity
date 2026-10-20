@@ -694,6 +694,13 @@ that isn't for that service, is older than `PASS_LIFE` (10 minutes) or made more
 signer is no vault's device. maiaCITY's API takes each pass once, and opens its admins' pages, its Postgres window
 among them, by that answer alone: no passkey session, role or key of its own (Samuel 2026-10-20).
 
+The same pass lists the vaults the server knows to an admin (G4, `keptVaults` in `Gate.lean`): an admin's page posts a
+pass its device made for the service `avenDB vaults` (`world::VAULTS_AUDIENCE`) to `POST /feed/vaults` (`{pass}`), and
+the server answers every vault it knows, `{vaults: [{id, kind, name, owners, devices, entries, keeps}]}`
+(`world::kept_vaults`; `keeps` is `backup`, `relay` or `known`), where the pass counts and its device's vault is an
+admin of `home`, and 403 otherwise. A pass made for maiaCITY's API never lists them. maiaCITY's Vaults app shows them,
+beside who holds which of Maia City's cap groups (Samuel 2026-10-20).
+
 ### Servers: Relay or Backup
 
 A vault gives avenMAIA, the server's device vault, a wide Backup share at founding, so the server keeps the
@@ -1582,7 +1589,10 @@ then kind, then entry, and `?type=story,article` keeps the kinds a page asks for
 view, logic, function and config (a record of a vault's own schema whose `kind` is `config`, `world::CODE_KINDS`), is at
 `GET avendb.maia.city/feed/code`, as `{"code": [...]}`. A row's `record` is its main line as every reader counts it,
 through the newest schema of its kind in its vault's lane (`schema`, in hex), each field it leaves out at its default,
-Loro texts as plain text, and `heads` that version's heads, so a loader pins it; its `type` is its record's kind, its
+Loro texts as plain text, and `heads` that version's heads, so a loader pins it, with `version`, `{version, edits,
+writes}`, which release of main they are, the edits since, and how many writes they hold, all before them too
+(`History::describe`): a later version holds more, so a loader that proved a newer one refuses an older one a server
+hands out by leaving writes out (maiaCITY's game/code/fresh.js); its `type` is its record's kind, its
 `tags` its entry's tags, its `name` its vault's profile where everyone may read it. An entry whose record names no kind
 a schema of its vault reads, a schema's or a lens's, is in none. Each row lists `files`, `[{root, size, len}]` oldest
 first: the files its main line brings that every reader counts as the entry's (`Lab::line_files`), those of its
