@@ -4,7 +4,8 @@
 // moment, rendered, viewed, staged; the world's own frames between two draws). A smooth cut costs what any frame does.
 //
 //   node scripts/film/world/cuts.mjs --timeline v1-A|v1-B|village [--from 0] [--seconds 60] [--px 1280]
-//     [--site http://127.0.0.1:5173] [--engine chrome|webkit] [--meter all|ahead] [--grade clip|none] [--out cuts.json]
+//     [--site http://127.0.0.1:5173] [--engine chrome|webkit] [--meter all|ahead] [--grade clip|none] [--warm all|shown|off]
+//     [--out cuts.json]
 //
 // `--grade clip` (the default) draws every clip through a grade of its own and the output LUT, as the studio draws a
 // timeline graded clip by clip (the cubes made here at the Mac's sizes: 33³, the output 65³), the grades of the shots
@@ -89,6 +90,8 @@ const report = await page.evaluate(
 		document.body.innerHTML = '<iframe id="world" style="position:fixed;inset:0;width:100%;height:100%;border:0;background:#000"></iframe>';
 		const { WorldViewer } = await import('/src/lib/studio/world.svelte.js');
 		const iframe = /** @type {HTMLIFrameElement} */ (document.getElementById('world'));
+		// what the film's warming draws (src/lib/film/warm.js): a trial's switch, read from this page
+		if (o.warm) /** @type {any} */ (window).__filmWarm = o.warm;
 		const viewer = new WorldViewer();
 		viewer.px = o.px;
 		const t0 = performance.now();
@@ -248,9 +251,9 @@ const report = await page.evaluate(
 			dearestFrames: [...trace].sort((x, y) => y.total + y.loop - (x.total + x.loop)).slice(0, 12).map((f) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v * 10) / 10 : v])))
 		};
 	},
-	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), meter: args.meter ?? 'ahead', grade: args.grade ?? 'clip', hitch: HITCH }
+	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), meter: args.meter ?? 'ahead', grade: args.grade ?? 'clip', warm: args.warm, hitch: HITCH }
 );
 await browser.close();
-const out = { timeline: which, engine, site, at: new Date().toISOString(), ...report, warnings };
+const out = { timeline: which, engine, site, warm: args.warm ?? 'all', at: new Date().toISOString(), ...report, warnings };
 if (args.out) writeFileSync(args.out, JSON.stringify(out, null, 1));
 console.log(JSON.stringify(out, null, 1));

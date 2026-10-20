@@ -24,8 +24,10 @@ export function createWarmer(renderer) {
 	const done = new WeakMap();
 	/** the materials whose shaders were set compiling @type {WeakSet<THREE.Material>} */
 	const compiling = new WeakSet();
-	/** what the warming sent the GPU so far: things drawn, and the bytes of their buffers (each geometry once) */
-	const stats = { things: 0, bytes: 0 };
+	/** what the warming sent the GPU so far: things drawn, the bytes of their buffers (each geometry once) and of their
+	 * textures (each once, as uploaded: four bytes a texel, a third more for its mipmaps), and how many it showed that
+	 * the world kept hidden */
+	const stats = { things: 0, bytes: 0, textureBytes: 0, hidden: 0 };
 	/** @type {WeakSet<object>} */
 	const counted = new WeakSet();
 	const rt = new THREE.WebGLRenderTarget(64, 64, { type: THREE.HalfFloatType, depthBuffer: true, generateMipmaps: false });
@@ -70,17 +72,24 @@ export function createWarmer(renderer) {
 	};
 	const materials = (/** @type {any} */ o) => /** @type {THREE.Material[]} */ (Array.isArray(o.material) ? o.material : [o.material]).filter(Boolean);
 
+	/** whether this is shown, all the way up @param {THREE.Object3D} o */
+	const shown = (o) => {
+		for (let p = /** @type {THREE.Object3D | null} */ (o); p; p = p.parent) if (!p.visible) return false;
+		return true;
+	};
+
 	/**
-	 * What the camera could draw and has not been warmed as it is now.
-	 * @param {THREE.Scene} scene @param {THREE.Camera} camera @returns {THREE.Object3D[]}
+	 * What the camera could draw and has not been warmed as it is now (`hidden` false: only what the world shows now).
+	 * @param {THREE.Scene} scene @param {THREE.Camera} camera @param {boolean} [hidden] @returns {THREE.Object3D[]}
 	 */
-	function fresh(scene, camera) {
+	function fresh(scene, camera, hidden = true) {
 		/** @type {THREE.Object3D[]} */
 		const out = [];
 		scene.traverse((o) => {
 			const r = /** @type {any} */ (o);
 			// (an instanced drawing of no copies yet too: drawn, it is sent and compiled, and draws nothing)
 			if (!(r.isMesh || r.isLine || r.isPoints || r.isSprite) || !o.layers.test(camera.layers)) return;
+			if (!hidden && !shown(o)) return;
 			const was = done.get(o);
 			if (!was || was[0] !== r.geometry || was[1] !== r.material) out.push(o);
 		});
@@ -122,6 +131,7 @@ export function createWarmer(renderer) {
 		}
 		for (const o of objs) {
 			mark(o);
+			if (!shown(o)) stats.hidden++;
 			if (o.frustumCulled) set(o, 'frustumCulled', false);
 			// a hidden thing, or one inside a hidden group, shown for this draw; a level of detail keeps its levels shown
 			for (let p = /** @type {THREE.Object3D | null} */ (o); p; p = p.parent) {
@@ -169,6 +179,13 @@ export function createWarmer(renderer) {
 			}
 			const im = /** @type {any} */ (o).instanceMatrix;
 			if (im && !counted.has(im)) (counted.add(im), (stats.bytes += im.array.byteLength));
+			for (const m of materials(o))
+				for (const v of Object.values(m)) {
+					if (!v?.isTexture || counted.has(v) || v.isRenderTargetTexture) continue;
+					counted.add(v);
+					const im = v.image ?? {}, w = im.width ?? im[0]?.width ?? 0, h = im.height ?? im[0]?.height ?? 0;
+					stats.textureBytes += w * h * (im.depth ?? 1) * 4 * (v.generateMipmaps || v.mipmaps?.length > 1 ? 4 / 3 : 1);
+				}
 		}
 	}
 
@@ -186,13 +203,14 @@ export function createWarmer(renderer) {
 		/**
 		 * Everything the world holds that is not warmed yet: every shader compiled (beside the page where the GPU can),
 		 * then all of it drawn once. Before a timeline plays.
-		 * @param {THREE.Scene} scene @param {THREE.Camera} camera @returns {Promise<number>} how many were drawn
+		 * @param {THREE.Scene} scene @param {THREE.Camera} camera @param {boolean} [hidden] what the world keeps hidden too
+		 * @returns {Promise<number>} how many were drawn
 		 */
-		async all(scene, camera) {
+		async all(scene, camera, hidden = true) {
 			await renderer.compileAsync(scene, camera);
 			found = [];
 			ripe = [];
-			const objs = fresh(scene, camera);
+			const objs = fresh(scene, camera, hidden);
 			if (objs.length) draw(scene, camera, objs);
 			return objs.length;
 		},
@@ -200,10 +218,10 @@ export function createWarmer(renderer) {
 		 * While a timeline plays: what the world has built since, a batch a frame within about `budget` ms: its shaders
 		 * set compiling on one frame, the things drawn on a later one (the world is looked through every `every` ms; a
 		 * thing gone from it meanwhile is let go).
-		 * @param {THREE.Scene} scene @param {THREE.Camera} camera @param {number} budget @param {number} [every]
+		 * @param {THREE.Scene} scene @param {THREE.Camera} camera @param {number} budget @param {number} [every] @param {boolean} [hidden]
 		 * @returns {number} how many were drawn
 		 */
-		some(scene, camera, budget, every = 500) {
+		some(scene, camera, budget, every = 500, hidden = true) {
 			const t0 = performance.now();
 			let n = 0;
 			const here = ripe.splice(0, batch).filter((o) => isIn(o, scene));
@@ -215,7 +233,7 @@ export function createWarmer(renderer) {
 			}
 			if (!found.length && !ripe.length && t0 - lookedAt >= every) {
 				lookedAt = t0;
-				found = fresh(scene, camera);
+				found = fresh(scene, camera, hidden);
 			}
 			// the next batch's shaders set compiling now (only materials never compiled: most new things share theirs)
 			const next = found.splice(0, batch);

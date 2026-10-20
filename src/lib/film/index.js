@@ -161,6 +161,11 @@ export function startFilm({ base = '' } = {}) {
 		}
 		if (!warmer) {
 			warmer = createWarmer(world().renderer);
+			// the GPU dropping the world says what it held then (the studio loads the page again)
+			world().renderer.domElement.addEventListener('webglcontextlost', () => {
+				const r = world().renderer, s = /** @type {ReturnType<typeof createWarmer>} */ (warmer).stats;
+				console.warn(`film: the GPU dropped the world holding ${r.info.memory.geometries} geometries, ${r.info.memory.textures} textures, ${r.info.programs?.length ?? 0} shaders; warmed ${s.things} things (${s.hidden} hidden; ${Math.round(s.bytes / 1e6)} MB of buffers, ${Math.round(s.textureBytes / 1e6)} MB of textures)`);
+			});
 			// the shadows' share of a frame: drawn again at a cut, they are the one pass a frame redraws whole
 			const shadows = world().renderer.shadowMap, draw = shadows.render;
 			shadows.render = function (/** @type {any[]} */ ...a) {
@@ -315,12 +320,24 @@ export function startFilm({ base = '' } = {}) {
 		// world holds drawn once out of sight, so no cut is the first to send a thing to the GPU
 		gpu().warm();
 		cost.track = Array.isArray(w.__filmTrace);
-		const W = /** @type {ReturnType<typeof createWarmer>} */ (warmer), w0 = performance.now(), b0 = W.stats.bytes;
-		const warmed = W.all(v.scene, v.camera);
+		const W = /** @type {ReturnType<typeof createWarmer>} */ (warmer), w0 = performance.now(), { bytes: b0, textureBytes: x0, hidden: h0 } = W.stats;
+		if (warming() === 'off') return;
+		const warmed = W.all(v.scene, v.camera, warming() === 'all');
 		const n = await Promise.race([warmed, sleep(LOAD_WAIT).then(() => -1)]);
 		if (n < 0) console.warn(`film: the shaders still compiling after ${LOAD_WAIT / 1000} s: going on`);
-		else if (n) console.warn(`film: warmed ${n} things (${Math.round((W.stats.bytes - b0) / 1e6)} MB of buffers) in ${Math.round(performance.now() - w0)} ms`);
+		else if (n) console.warn(`film: warmed ${n} things (${W.stats.hidden - h0} of them hidden; ${Math.round((W.stats.bytes - b0) / 1e6)} MB of buffers, ${Math.round((W.stats.textureBytes - x0) / 1e6)} MB of textures) in ${Math.round(performance.now() - w0)} ms`);
 	}
+	/**
+	 * what the warming draws (a trial's switch, `__filmWarm` on this page or the one holding it): everything the world
+	 * holds (all), only what it shows now (shown), nothing (off) @returns {'all' | 'shown' | 'off'}
+	 */
+	const warming = () => {
+		try {
+			return w.__filmWarm ?? w.parent?.__filmWarm ?? 'all';
+		} catch {
+			return w.__filmWarm ?? 'all'; // held by a page of another origin
+		}
+	};
 	/** how long a shot waits for the world's loads and shaders before it goes on without them (ms) */
 	const LOAD_WAIT = 20000;
 
@@ -589,7 +606,7 @@ export function startFilm({ base = '' } = {}) {
 			// timeline played): the frame is up, and the cut that first shows it finds it on the GPU
 			const { set: costSet, render, shadow, dearest, drew, firsts } = cost;
 			cost.timing = false;
-			const warmed = live ? /** @type {ReturnType<typeof createWarmer>} */ (warmer).some(v.scene, v.camera, meter ? 50 : 4) : 0;
+			const warmed = live && warming() !== 'off' ? /** @type {ReturnType<typeof createWarmer>} */ (warmer).some(v.scene, v.camera, meter ? 50 : 4, 500, warming() === 'all') : 0;
 			const t4 = clock.now();
 			if (live && Array.isArray(w.__filmTrace)) w.__filmTrace.push({ at: t3, name: spec.meta?.name ?? '', t, total: t3 - t0, exposure: t1 - t0, staging: t2 - t1, set: costSet, render, shadow, dearest, drew, firsts, view: t3 - tv, compiled: made[0], buffers: made[1], textures: made[2], warm: t4 - t3, warmed, heap: (/** @type {any} */ (performance).memory?.usedJSHeapSize ?? 0) / 1e6, ...clock.spent() });
 			// the frame is drawn: the page's clock runs again until the next, so the world keeps building what the
