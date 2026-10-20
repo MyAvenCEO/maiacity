@@ -281,9 +281,18 @@ impl Auth {
 
     /// An API call from the app's own Rust side, with its key: the status and the JSON body.
     pub async fn call(&self, method: &str, path: &str, body: Option<Value>) -> Result<(u16, Value), String> {
-        let key = load_key().ok_or("Please sign in.")?;
+        self.call_as(method, path, body, None).await
+    }
+
+    /// `call`, signed by this Mac's avenDB device pass `pass` where it has one (`X-Avendb-Pass`: an admin of Maia City,
+    /// as avenDB's server says, api/src/standing.ts), else by the app's key (#1107).
+    pub async fn call_as(&self, method: &str, path: &str, body: Option<Value>, pass: Option<&str>) -> Result<(u16, Value), String> {
         let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| e.to_string())?;
-        let mut req = self.http.request(method, format!("{}{path}", api_base())).bearer_auth(key);
+        let req = self.http.request(method, format!("{}{path}", api_base()));
+        let mut req = match pass {
+            Some(pass) => req.header("x-avendb-pass", pass),
+            None => req.bearer_auth(load_key().ok_or("Please sign in.")?),
+        };
         if let Some(b) = body {
             req = req.json(&b);
         }

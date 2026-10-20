@@ -1312,8 +1312,15 @@ async fn transcript(job: &Job<'_>, name: &str) -> Result<Value, String> {
     Ok(json!({ "outputs": [], "result": record }))
 }
 
+/// A pass of this Mac's avenDB device for maiaCITY's API (`api_pass`, api/src/standing.ts), one per call as the API
+/// takes each once; none while the device is locked, and the app's key signs instead (#1107).
+async fn api_pass(app: &AppHandle) -> Option<String> {
+    let out = run(app, json!({ "op": "api_pass", "audience": "maiaCITY API" })).await.ok()?;
+    out["pass"].as_str().map(String::from)
+}
+
 /// The `analysis` rule (plan J6): the original's tags, cues, takes, summary and hero frame, by Prem's Qwen through our
-/// API (the app's own key; no model key on a Mac), from frames of its proxy and the words of its transcript; as the
+/// API (the device's pass, else the app's key; no model key on a Mac), from frames of its proxy and the words of its transcript; as the
 /// legacy studio analyses (analyse/mod.rs `analyse`, whose record shape its value keeps), without the legacy catalog.
 /// A pause or a model not set up fails it with why; it is tried again on the next lease, up to the rule's tries.
 async fn analysis(job: &Job<'_>, name: &str) -> Result<Value, String> {
@@ -1356,7 +1363,7 @@ async fn analysis(job: &Job<'_>, name: &str) -> Result<Value, String> {
         let words = plan::words_in(transcript, *a, *b);
         let before = answers.last().map(|(_, _, p)| p["summary"].clone()).unwrap_or(Value::Null);
         let st = crate::analyse::prem::Stretch { file: &info, s: *a, e: *b, index: n, of: parts.len(), frames: &frames, words: &words, before: &before };
-        let answer = prem().frames(&auth, &st).await.map_err(|e| e.to_string())?;
+        let answer = prem().frames(&auth, api_pass(job.app).await, &st).await.map_err(|e| e.to_string())?;
         if model.is_null() {
             model = answer["model"].clone();
             vocabulary = answer["vocabulary"].clone();
@@ -1377,7 +1384,7 @@ async fn analysis(job: &Job<'_>, name: &str) -> Result<Value, String> {
         .collect();
     let said: String = transcript.and_then(|t| t["text"].as_str()).unwrap_or("").chars().take(24_000).collect();
     // a failed reduce keeps the stretches' work: only the takes are not grouped across them
-    let reduce = prem().reduce(&auth, &info, &json!(stretches), &said).await.ok();
+    let reduce = prem().reduce(&auth, api_pass(job.app).await, &info, &json!(stretches), &said).await.ok();
     let mut record = plan::finish(merged, reduce.as_ref());
     let cues = record["cues"].as_array().cloned().unwrap_or_default();
     let t = plan::thumbnail_time(reduce.as_ref(), &picks, &cues, &times, seconds);
