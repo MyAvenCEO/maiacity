@@ -34,7 +34,11 @@ export const MOVED = /** @type {const} */ ({
 	// Sandbox 3 inside the domes: its tent and domes are the Buildings' now, and the sandboxes after it moved down one
 	'/app/games/sandbox-3/': '/app/buildings/',
 	// the skills' own wiki: avenDB's Docs view shows every skill (2026-10-20)
-	'/app/skills/': '/app/#docs'
+	'/app/skills/': '/app/#docs',
+	// the avenDB and avenBRAIN architectures' own pages: their docs live in Maia City alone, drawn by avenDB's Docs view
+	// (Samuel 2026-10-20: served from avenDB only)
+	'/docs/avendb/': '/app/#docs',
+	'/docs/avenbrain/': '/app/#docs'
 });
 
 /** An address as the list keys it: a leading and a trailing slash. @param {string} path */

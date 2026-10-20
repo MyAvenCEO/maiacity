@@ -8,8 +8,8 @@ crates in `avendb/crates` build it. Shared test vectors (`avendb/spec/vectors`) 
 by edit. Where this file and the model disagree, the model is right and this file is wrong.
 
 The other documents each hold one thing. `spec/README.md` lists every theorem with the Rust tests that guard it.
-`README.md` says how to build, test, run and deploy avenDB. The page `/docs/avendb/` in the app tells this file's story
-for people. Many module doc comments name the section of this file they build.
+`README.md` says how to build, test, run and deploy avenDB. The avenDB doc in avenDB's Docs view (Maia City's doc
+`docs/avendb`) tells this file's story for people. Many module doc comments name the section of this file they build.
 
 Paths below are relative to `avendb/` unless they start with `src/` or `static/`, which are the app's.
 
@@ -2241,4 +2241,3 @@ whose keys sign it on that connection.
 | `spec/` | The Lean model, vectors and protocol models |
 | `src/lib/avendb/` | The app's avenDB pages, which run every op through `ops.js` and `native.js` |
 | `src/routes/app/avendb/` | The avenDB page, `/app/avendb/`, and the sign-in sheet's page |
-| `src/routes/docs/avendb/` | The public architecture page |

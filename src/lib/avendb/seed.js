@@ -22,7 +22,7 @@
 // The legacy content (the journal days, the inspire-me reports, the idea pads), the post types and the vault's shares
 // came in once and live in Maia City alone now (Samuel 2026-10-19: drop the legacy seedings).
 //
-// The docs of ./docs.js (the skills, the theOS paper, the avenDB and avenBRAIN architectures) are no piece of it: each
+// The docs of ./docs.js (the skills, the theOS paper) are no piece of it: each
 // goes into Maia City as an AIP its owners accept (Samuel 2026-10-20: a new doc goes in as a proposal), drafted by
 // scripts/propose-doc.mjs as a story with its full text and its doc post (`docRecords`), and every newer text of it a
 // proposal on both. The ones an earlier seed wrote stay as they are.

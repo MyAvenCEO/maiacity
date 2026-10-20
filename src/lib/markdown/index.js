@@ -53,8 +53,9 @@ const SAFE = /^(https?:\/\/|mailto:|\/(?![/\\])|#|\?|[^:/?#\\]*(?:[/?#]|$))/i;
 /** Whether `href` is an address a link may lead to. */
 export const safeHref = (href) => SAFE.test(decoded(href));
 /** Where a picture may be shown from: the web over https, this site, the Mac app's own files, a page-made blob or an
- * inline picture. */
-const PICTURE_SRC = /^(https:\/\/|\/(?![/\\])|maiaapi:\/\/localhost\/|blob:|data:image\/(png|jpe?g|gif|webp|avif);)/i;
+ * inline picture, an SVG among them (in an image a browser runs none of its scripts and loads nothing for it, and a
+ * data URL never opens as a page of this site). */
+const PICTURE_SRC = /^(https:\/\/|\/(?![/\\])|maiaapi:\/\/localhost\/|blob:|data:image\/(png|jpe?g|gif|webp|avif|svg\+xml);)/i;
 /** Whether `href` leads off this site. */
 const away = (href) => /^https?:/i.test(decoded(href));
 
