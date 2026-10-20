@@ -11,10 +11,14 @@
 	article's (./article.js: its own HTML shown as text, links only to the web, mail or this site, pictures only the
 	vault's own files), and its diagrams are SVG files of the vault's Library, named by their hashes, each shown as a
 	data URL in an image, where the browser runs no script of it and loads nothing, never as a page of this site, as
-	the Library shows an SVG.
+	the Library shows an SVG. Its maths (`$…$`, `$$…$$`: the paper's) the Markdown engine leaves as its LaTeX source, and
+	the math host typesets after, off the page ($lib/sandbox/math-host.js: KaTeX in a worker of the shell, with no
+	origin and no network), each formula's MathML drawn only as its checker passed it, element by element, never as
+	HTML; until then, or where it can't, the source is what shows.
 -->
 <script>
 	import { tick } from 'svelte';
+	import { typesetIn } from '$lib/sandbox/math-host.js';
 	import { DOC_PICTURE, fileNamed, pictures, render } from './article.js';
 	import { readable } from './docs.js';
 	import { dataUrl, mediaOf, whole } from './files.js';
@@ -104,7 +108,21 @@
 		}
 	});
 	$effect(() => () => Object.values(urls).forEach((u) => u.startsWith('blob:') && URL.revokeObjectURL(u)));
-	const html = $derived(render((skill ? readable(text) : text).replace(/^\s*# .+\n+/, ''), (name) => urls[name] ?? '', DOC_PICTURE));
+	const html = $derived(render((skill ? readable(text) : text).replace(/^\s*# .+\n+/, ''), (name) => urls[name] ?? '', DOC_PICTURE, { math: true }));
+
+	/** @type {HTMLElement | undefined} */
+	let body = $state();
+	// its maths typeset once it is drawn, each formula's source swapped for its MathML (none: the source stays)
+	$effect(() => {
+		void [html, body];
+		let gone = false;
+		tick().then(() => {
+			if (!gone && body) typesetIn(body).catch(() => {});
+		});
+		return () => {
+			gone = true;
+		};
+	});
 
 	/** @type {HTMLElement | undefined} */
 	let article = $state();
@@ -193,7 +211,7 @@
 			<p class="tools">
 				<a class="btn" href="#stories/{picked.e.entry}/edit">Edit</a>
 			</p>
-			<div class="body">{@html html}</div>
+			<div class="body" bind:this={body}>{@html html}</div>
 		</article>
 	{/if}
 </Frame>
@@ -274,6 +292,50 @@
 		margin-top: 0.5rem;
 		font-size: 0.85rem;
 		color: var(--soft);
+	}
+
+	/* maths: the browser's own MathML, in its own maths font, none loaded; a display formula centred on its line, and
+	   sideways scroll where it is wider than the screen */
+	.body :global(.math[data-math='display']) {
+		display: block;
+		margin: 1rem 0;
+		overflow-x: auto;
+		overflow-y: hidden;
+		text-align: center;
+	}
+
+	.body :global(.math > math[display='block']) {
+		margin: 0 auto;
+		padding: 0.15rem 0;
+	}
+
+	/* a numbered formula (\tag): its number at the right edge, as KaTeX lays it out, in a table the full width of the
+	   line (MathML Core reads no width attribute: the browser has to be told, and the frame round the table too) */
+	.body :global(.math > math > semantics:has(> mtable[width='100%'])),
+	.body :global(.math mtable[width='100%']) {
+		width: 100%;
+	}
+
+	.body :global(.math mtd[width='50%']) {
+		width: 50%;
+	}
+
+	/* a formula's source, until it is typeset or where it can't be */
+	.body :global(.math:not(:has(> math))) {
+		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+		font-size: 0.85em;
+		color: var(--soft);
+		white-space: pre-wrap;
+	}
+
+	.body :global(.math[data-math='inline']:not(:has(> math))::before),
+	.body :global(.math[data-math='inline']:not(:has(> math))::after) {
+		content: '$';
+	}
+
+	.body :global(.math[data-math='display']:not(:has(> math))::before),
+	.body :global(.math[data-math='display']:not(:has(> math))::after) {
+		content: '$$';
 	}
 
 	.body :global(hr) {

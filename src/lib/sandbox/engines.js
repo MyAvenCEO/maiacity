@@ -2,9 +2,9 @@
  * THE KERNEL'S FROZEN ENGINES, ONE LIST — every engine a host of ours runs code we cannot trust on, by kind: the asset
  * box's (`box`, ../assets/box/engine.js), the logic engine (./logic-engine.js), the view engine (./view/engine.js),
  * the worker a view's draw script runs in (./view/worker.js) and the libraries it may import (./view/libs/: three,
- * d3, the MCP Apps SDK). Each version's BLAKE3 hash and size are in ./engines.json, its file is
- * static/engines/<kind>-v<n>.js (a box engine's engine-v<n>.js, as it was first frozen), made by
- * scripts/freeze-engine.mjs; a frozen engine never changes or goes (./engines.test.js).
+ * d3, the MCP Apps SDK), and the math engine that reads a doc's LaTeX (./math-engine.js: KaTeX). Each version's BLAKE3
+ * hash and size are in ./engines.json, its file is static/engines/<kind>-v<n>.js (a box engine's engine-v<n>.js, as it
+ * was first frozen), made by scripts/freeze-engine.mjs; a frozen engine never changes or goes (./engines.test.js).
  *
  * Which one runs a piece of code (`engineFor`, gap G6): the version it names, as a code entry names it (its `engine`),
  * so a new engine never changes what older code does. But never one below the kind's FLOOR: a version that closes a
@@ -31,9 +31,10 @@ export { engineAt, isFrozen, latestOf, pathOf };
  *   budget of work (G7), with view worker 2 answering its watch; view worker 3 takes WebAssembly off a view's
  *   script, which WebKit compiled despite the frame's policy (the probes in WebKit, 2026-10-20).
  * - logic 1: the first, and so far the only one.
+ * - math 1: the first, and so far the only one. A formula names no engine: the math host typesets with the latest.
  */
 /** @type {Record<string, number>} */
-export const FLOOR = { box: 1, view: 4, 'view-worker': 3, logic: 1 };
+export const FLOOR = { box: 1, view: 4, 'view-worker': 3, logic: 1, math: 1 };
 
 /** the view worker each view engine starts a view's script in (view 4's watch asks a question only worker 2 and later answer) */
 /** @type {Record<number, number>} */

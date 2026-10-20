@@ -1,15 +1,16 @@
 name: Kernel
 
 # The kernel gate (hardening H7 and H8, gaps G2 and G9): the code that holds what we can't trust (the shell and its
-# lockdown, the frozen engines, the asset box, the view host and its engine, the logic host, the one checker, the render
-# core and the Markdown engine) changes only with its tests green and every way out of its boxes refused, in a real
+# lockdown, the frozen engines, the asset box, the view host and its engine, the logic host, the math host and its
+# MathML checker, the one checker, the render core and the Markdown engine) changes only with its tests green and every way out of its boxes refused, in a real
 # browser. It runs on every pull request, and before every deploy: deploy.yml calls it, and puts nothing on the server
 # unless it passed. A frozen engine is never changed: a new version goes beside it (node scripts/freeze-engine.mjs).
 #
 #   tests  – the kernel's tests (bun test, the list below)
-#   probes – every way out of the asset box and of a view, tried from inside each by code made to do harm, in headless
-#            Chromium against the dev server (scripts/probes.mjs: the box's lab, /app/assets/box/, and the view probe,
-#            /app/views/probe/, with a canary that hears anything that got out)
+#   probes – every way out of the asset box, of a view and of the math host, tried from inside each by code made to do
+#            harm, in headless Chromium against the dev server (scripts/probes.mjs: the box's lab, /app/assets/box/, the
+#            view probe, /app/views/probe/, and the math probe, /app/math/probe/, with a canary that hears anything that
+#            got out)
 #   probes-webkit – the same probes in WebKit (Playwright's), the engine Samuel's Mac app, The OS, shows the site in
 #            (Tauri is WebKit): a wall that holds in Chromium is not taken to hold there
 on:
@@ -43,7 +44,8 @@ jobs:
       - run: bunx svelte-kit sync
 
       # src/lib/sandbox/              the kernel's engines frozen (bytes = their hashes, sources = the latest, no CDN),
-      #                               the logic core (QuickJS, its limits), the view engine's sanitizer and templates
+      #                               the logic core (QuickJS, its limits), the view engine's sanitizer and templates,
+      #                               the math engine against hostile LaTeX and its MathML checker against hostile MathML
       # src/lib/assets/engines.test   the box's engines frozen; our recipes build on the latest as in the page
       # src/lib/assets/box/           what leaves the box: plain data, checked and rebuilt in the page
       # src/lib/assets/schemas/       every card fits its frozen schema; a card made to do harm is refused
@@ -53,7 +55,8 @@ jobs:
       # src/lib/assets/params.test    a recipe takes only its own parameters; one build, one name, one cache key
       # src/lib/code/                 the one checker (game/code): every kind of code, hostile code refused
       # src/lib/render/lint.test      the render core's lint: no renderer or raw WebGL context outside it
-      # src/lib/markdown/             the Markdown engine against hostile Markdown; every {@html} fed by a safe engine
+      # src/lib/markdown/             the Markdown engine against hostile Markdown (its maths among it, pandoc's rules);
+      #                               every {@html} fed by a safe engine
       # api/test/image.test           the API image holds every module game/ and code/ import, avenDB's proof checker
       #                               among them (H2), and .dockerignore lets in all it copies
       - run: >-
