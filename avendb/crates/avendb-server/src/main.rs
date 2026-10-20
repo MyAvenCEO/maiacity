@@ -80,6 +80,17 @@ async fn serve(config: &Config) -> Result<()> {
 }
 
 /// Runs the server until it is told to stop.
+/// Hands back to the machine the memory its allocator kept of what the start let go of (glibc's `malloc_trim`): a
+/// start reads its whole shelf, decoded and checked, and the heap it needed for that, which glibc keeps, would count
+/// against the container's limit as the server runs (2026-10-20: 720 MB held of 420 MB in use, for Maia City alone).
+fn give_back() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: malloc_trim only returns free heap pages to the system; it touches no memory in use
+    unsafe {
+        libc::malloc_trim(0);
+    }
+}
+
 async fn run(config: &Config, health: std::sync::Arc<Health>) -> Result<()> {
     let before = health.json()["before"].clone();
     if !before.is_null() {
@@ -87,6 +98,7 @@ async fn run(config: &Config, health: std::sync::Arc<Health>) -> Result<()> {
         tracing::info!("avenDB server: its run before ended {how}, holding {} bytes then", memory["rss"]);
     }
     let running = start_with(config, health).await?;
+    give_back();
     let node = &running.node;
     let (device, vault) = (node.device(), avendb_net::server::vault(node).await);
     match vault {

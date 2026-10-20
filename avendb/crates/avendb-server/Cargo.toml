@@ -35,6 +35,8 @@ http-body-util = "0.1.5"
 serde_json.workspace = true
 # the tag of each answer of the feed (`feed::tag_of`)
 blake3 = "1.8.7"
+# glibc's malloc_trim, which hands back what the start let go of (`main::give_back`)
+libc = "0.2"
 
 [dev-dependencies]
 # the recovery test's files, read a megabyte at a time (`tests/backup.rs`)
