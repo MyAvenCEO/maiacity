@@ -3426,6 +3426,7 @@ fn resolve(edits: &[Edit], ids: &[EditId]) -> HashSet<EditId> {
 }
 
 /// A peer's replay of the edits it holds: the one order, which edits stand, and what it knows.
+#[derive(Debug, PartialEq)]
 pub struct Replay {
     pub edits: Vec<Edit>,
     /// Each edit's id, `ids[i]` being `edits[i]`'s.
@@ -3443,6 +3444,35 @@ impl Replay {
 
 pub fn replay(edits: &[Edit]) -> Replay {
     replay_ids(edits, &ids(edits))
+}
+
+/// `replay` of `edits`, given `was`, the replay of the first `held` of them: the rest stepped on it, one by one, where
+/// each is a write, no removal, deeper than every edit before it and built on none of its own depth, so it sorts after
+/// all of them and no removal's standing or cut turns on it (`run`, `resolve`); else every edit replayed again.
+pub fn replay_on(was: Replay, edits: &[Edit], held: usize) -> Replay {
+    let Some(fresh) = edits.get(held..) else { return replay(edits) };
+    let deepest = edits[..held].iter().map(|e| e.depth).max();
+    let ids_fresh = ids(fresh);
+    let by_id: HashMap<EditId, &Edit> = ids_fresh.iter().copied().zip(fresh).collect();
+    let steps = |e: &Edit| {
+        matches!(e.action, Action::Write { .. })
+            && !e.is_removal()
+            && deepest.is_none_or(|d| d < e.depth)
+            && e.parents.iter().all(|p| by_id.get(p).is_none_or(|parent| parent.depth < e.depth))
+    };
+    if !fresh.iter().all(steps) {
+        return replay(edits);
+    }
+    let mut order: Vec<(u64, u8, EditId, &Edit)> = by_id.iter().map(|(&id, &e)| (e.depth, e.rank(), id, e)).collect();
+    order.sort_by_key(|a| (a.0, a.1, a.2));
+    let mut out = was;
+    for (.., id, e) in order {
+        let stands = out.state.step_mut(e, id).is_ok();
+        out.edits.push(e.clone());
+        out.ids.push(id);
+        out.stood.push(stands);
+    }
+    out
 }
 
 /// `replay`, given each edit's id.

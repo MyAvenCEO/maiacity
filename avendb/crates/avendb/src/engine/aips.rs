@@ -784,36 +784,54 @@ fn answer(
     verdict: &str,
     text: &str,
 ) -> Result<Value, Refused> {
+    // every line's accept first, then every line's merge and the review, each round caught up once
+    // (`Lab::together`): a merge builds on its line's accept, and lines of one entry merge one after another
     let (mut accepts, mut merges) = (vec![], vec![]);
     if verdict == "accepted" {
-        for &(e, line, _) in lines {
-            accepts.push(lab.accept(me, actor, e, line)?);
-            let h = lab.history(me, e).ok_or(Refused::NoEntry)?;
-            let take =
-                h.merged(Some(line), MAIN, me, &BTreeSet::new()).conflicts.into_iter().map(|c| c.place).collect();
-            merges.push(lab.merge(me, actor, e, Some(line), MAIN, &take)?);
-        }
+        lab.together(|lab| -> Result<(), Refused> {
+            for &(e, line, _) in lines {
+                accepts.push(lab.accept(me, actor, e, line)?);
+            }
+            Ok(())
+        })?;
     }
-    let heads = match verdict {
-        "accepted" => hexes(accepts.iter().copied()),
-        _ => hexes(lines.iter().flat_map(|(_, _, heads)| heads.iter().copied())),
+    let mut entries = BTreeSet::new();
+    let apart = lines.iter().all(|(e, _, _)| entries.insert(*e));
+    let mut merge = |lab: &mut Lab, e: EntryId, line: EditId| -> Result<(), Refused> {
+        let h = lab.history(me, e).ok_or(Refused::NoEntry)?;
+        let take = h.merged(Some(line), MAIN, me, &BTreeSet::new()).conflicts.into_iter().map(|c| c.place).collect();
+        merges.push(lab.merge(me, actor, e, Some(line), MAIN, &take)?);
+        Ok(())
     };
-    let value = json!({
-        "kind": REVIEW,
-        "entry": a.entry.to_hex(),
-        "line": "",
-        "heads": heads,
-        "by": a.attrs.author.to_hex(),
-        "verdict": verdict,
-        "text": text,
-        "at": lab.now(),
-    });
-    let (vault, ty, tags) = (a.vault, REVIEW.into(), vec![]);
-    let create = Step::Create { vault, ty, tags, schema: Named::Own, value, draft: false, file: None };
-    let made = step(lab, me, actor, create)?;
-    if verdict == "revise" {
-        edits(lab, me, actor, (a.entry, MAIN), &schema(), &[set("stage", "idea")])?;
+    if verdict == "accepted" && !apart {
+        lines.iter().try_for_each(|&(e, line, _)| merge(lab, e, line))?;
     }
+    let made = lab.together(|lab| -> Result<Value, Refused> {
+        if verdict == "accepted" && apart {
+            lines.iter().try_for_each(|&(e, line, _)| merge(lab, e, line))?;
+        }
+        let heads = match verdict {
+            "accepted" => hexes(accepts.iter().copied()),
+            _ => hexes(lines.iter().flat_map(|(_, _, heads)| heads.iter().copied())),
+        };
+        let value = json!({
+            "kind": REVIEW,
+            "entry": a.entry.to_hex(),
+            "line": "",
+            "heads": heads,
+            "by": a.attrs.author.to_hex(),
+            "verdict": verdict,
+            "text": text,
+            "at": lab.now(),
+        });
+        let (vault, ty, tags) = (a.vault, REVIEW.into(), vec![]);
+        let create = Step::Create { vault, ty, tags, schema: Named::Own, value, draft: false, file: None };
+        let made = step(lab, me, actor, create)?;
+        if verdict == "revise" {
+            edits(lab, me, actor, (a.entry, MAIN), &schema(), &[set("stage", "idea")])?;
+        }
+        Ok(made)
+    })?;
     Ok(json!({
         "entry": a.entry.to_hex(),
         "review": made["entry"],
