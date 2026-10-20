@@ -14,7 +14,6 @@ import { CAPABILITIES } from "./caps";
 import { listTables, readTable, TableError } from "./tables";
 import { adminByPass } from "./standing";
 import { approveDevice, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
-import { joinInfo, listVaultFiles } from "./vault";
 import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } from "./analysis";
 import { checkModels, pick } from "./prem";
 import { GameError, getGame, move, takeSeat } from "./maiacity-v1.js";
@@ -162,7 +161,9 @@ const server = Bun.serve({
           // a read seats nobody: a seat goes to a person on the page, who asks for it, named as their avenDB profile names
           // them (the page says so: no name of theirs is kept here)
           const name = new URL(req.url).searchParams.get("name") ?? "";
-          return json(req, { game: await getGame("scope" in me ? null : { id: me.id, name }), me: me.id, admin: can(me, "economy:admin"), now: Date.now() });
+          // the admin's growth preview is a person's: the Mac app's key never counts as V1's admin
+          const admin = !("scope" in me) && can(me, "economy:admin");
+          return json(req, { game: await getGame("scope" in me ? null : { id: me.id, name }), me: me.id, admin, now: Date.now() });
         } catch (e) {
           return fail(req, e);
         }
@@ -191,7 +192,7 @@ const server = Bun.serve({
         // the Mac app's key plays, but never signs or rejects a MIP: that is a player's own, in the browser
         if ("scope" in me && ["sign", "reject"].includes(body?.action?.type)) return json(req, { error: "A MIP is signed or rejected by a player, in the browser." }, { status: 403 });
         try {
-          return json(req, { game: await move(me, can(me, "economy:admin"), String(body?.seat ?? ""), body?.action), now: Date.now() });
+          return json(req, { game: await move(me, String(body?.seat ?? ""), body?.action), now: Date.now() });
         } catch (e) {
           return fail(req, e);
         }
@@ -289,28 +290,7 @@ const server = Bun.serve({
       },
     },
 
-    // ── the media vault (vault/): joining the catalog, and the catalog's mirror. The routes that paired a Mac's iroh
-    // node and listed or revoked them went, as nothing called them: vault-server still lets in the nodes of
-    // vault_devices (vault/crates/vault-server/src/allow.rs), a row of which is now written by hand ──
-    "/api/vault/join": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        return json(req, await joinInfo());
-      },
-    },
-    "/api/vault/files": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        const url = new URL(req.url);
-        return json(req, await listVaultFiles({ kind: url.searchParams.get("kind") ?? undefined, tag: url.searchParams.get("tag") ?? undefined }));
-      },
-    },
-
-    // the shot analysis (analysis.ts): the vault server sends a proxy's frames (display-referred) and the words said,
+    // the shot analysis (analysis.ts): The OS sends a proxy's frames (display-referred) and the words said,
     // Prem's confidential Qwen answers tags, cues and a summary in the vocabulary (game/film/vocabulary.json)
     "/api/analysis": {
       GET: analysisStatus,

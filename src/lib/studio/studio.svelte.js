@@ -76,6 +76,13 @@ export const liveTab = (tab) => tab === '3d' || tab === 'edit';
  * draws it as the world has it, the rest streaming in as in the game: waiting the whole move out (0.5 s and more in
  * Sandbox 3's village, whose shots stand all over the cell) hitched every cut. Stopped, a shot waits until it is staged. */
 const CUT_WAIT = 50;
+/**
+ * while it plays, the world builds what the shots of this many seconds ahead will see (at least the next three, at
+ * most KEEP_SHOTS): a build takes seconds, and the next three shots, when short, left it too little — a cut found its
+ * dome still being built, and the shot drew it as it came, the build's work and its garbage in every frame
+ */
+const KEEP_AHEAD = 20;
+const KEEP_SHOTS = 8;
 /** @param {string} shape */
 export const ratio = (shape) => {
 	const [w, h] = shape.split(':').map(Number);
@@ -1468,7 +1475,8 @@ export class Studio {
 	driveWorld() {
 		const c = this.picture;
 		if (this.world.state !== 'ready') return;
-		const upcoming = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start).slice(0, 3);
+		const ahead = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start);
+		const upcoming = ahead.slice(0, 3);
 		const specs = upcoming.map((w) => this.specOf(w)).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
 		// while it plays nothing is staged but the shot on screen, by its own frame at its cut (within CUT_WAIT, the rest
 		// streaming in): a prepare is staged in line before any frame, so one under way held the cut for the whole of its
@@ -1476,16 +1484,26 @@ export class Studio {
 		// the world under the shot playing. The shots ahead are kept only: the world builds what they will see as it can.
 		// Stopped, they are prepared (staged and metered)
 		const still = !this.playing && !this.starting;
+		// stopped: what every world shot needs built (its set, what its camera sees: built while it played, each hitched
+		// the shots on screen as it came), and the shots ahead prepared
+		if (still) void this.world.dress(this.worldSpecs());
 		if (still) void this.world.prepare(specs);
 		else {
-			this.world.keep(specs);
+			const kept = ahead.filter((w, i) => i < 3 || (i < KEEP_SHOTS && w.start < this.time + KEEP_AHEAD));
+			this.world.keep(kept.map((w) => this.specOf(w)).filter(/** @returns {s is ShotSpec} */ (s) => !!s));
 			this.world.markHeld(specs);
 		}
 		// stopped: every world shot from the playhead on metered ahead, so playing never stops at a cut to meter one
 		if (still) {
-			const ahead = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start);
 			void this.world.meterAhead(ahead.map((w) => this.specOf(w)).filter(/** @returns {s is ShotSpec} */ (s) => !!s), () => !this.playing && !this.starting);
 		}
+		// the grades of the shots ahead baked by the Mac and sent to the GPU before their cuts: a cut never draws its first
+		// frames ungraded while its cube is baked, nor makes the cube's texture at the cut
+		const odt = filmLut(this.luts['odt-rec709'] ?? null);
+		this.world.look(upcoming.map((w) => {
+			const stacks = this.stacksOf(w);
+			return { lut: odt, grade: filmLut(stacks.length ? this.cubeFor(stacks) : null) };
+		}));
 		// while a move is flown by hand the world has its canvas and clock back (film mode's record): no frames asked
 		if (this.world.recording) return;
 		if (!c || !isWorld(c)) return;
@@ -1528,6 +1546,11 @@ export class Studio {
 		this.frame = requestAnimationFrame(this.tick);
 	};
 
+	/** every world clip's shot, in timeline order @returns {ShotSpec[]} */
+	worldSpecs() {
+		return this.worldClips.map((c) => this.specOf(c)).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
+	}
+
 	/** prepare playback: what the world is loading before the timeline plays */
 	preparing = $state(false);
 	/**
@@ -1542,8 +1565,7 @@ export class Studio {
 		this.preparing = true;
 		// and metered before it plays, while the start waits on them (metered while playing, a shot hitched at its cut);
 		// then the world stands where the play starts again (preparing the shots after it moved it on)
-		const ready = this.world
-			.prepare(specs)
+		const ready = Promise.all([this.world.dress(this.worldSpecs(), { again: true }), this.world.prepare(specs)])
 			.then(() => this.world.meterAhead(specs, () => this.starting))
 			.then(() => specs[0] && this.world.standAt(specs[0]));
 		await Promise.race([ready, new Promise((r) => setTimeout(r, wait))]);

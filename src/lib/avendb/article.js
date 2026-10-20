@@ -14,17 +14,27 @@ export const ARTICLE = 'article';
 export const PICTURE = /^[0-9a-f]{64}\.(jpe?g|png|webp|gif|avif)$/;
 
 /**
+ * A picture's name in a doc (./Docs.svelte): an article's, or a diagram, an SVG file named the same way. An SVG can
+ * hold scripts, so it is shown only as a data URL in an image, never as a page of this site (as the Library shows one).
+ */
+export const DOC_PICTURE = /^[0-9a-f]{64}\.(jpe?g|png|webp|gif|avif|svg)$/;
+
+/**
  * Article text `md` as HTML, safe to show whoever wrote it, by the one Markdown engine ($lib/markdown): its own HTML
  * shown as text, links only to the web, mail or this site, and pictures only the vault's own files, each shown from
  * `src(name)` (`''` while it isn't read yet); a picture alone in its paragraph is a figure, its words its caption.
- * @param {string} md @param {(name: string) => string} src
+ * `named` is which names are pictures: an article's (`PICTURE`), or a doc's (`DOC_PICTURE`). `math`: its `$$…$$` and
+ * `$…$` are maths, each left as a placeholder holding its source, for the math host to typeset in the page
+ * ($lib/sandbox/math-host.js `typesetIn`); off, a `$` is a dollar.
+ * @param {string} md @param {(name: string) => string} src @param {RegExp} [named] @param {{ math?: boolean }} [o]
  */
-export function render(md, src) {
+export function render(md, src, named = PICTURE, { math = false } = {}) {
 	return markdown(md, {
 		picture: (href) => {
 			const name = href.trim();
-			return PICTURE.test(name) ? { src: src(name) ?? '', name } : null;
-		}
+			return named.test(name) ? { src: src(name) ?? '', name } : null;
+		},
+		math
 	});
 }
 
@@ -155,10 +165,10 @@ export function bodyText(parts) {
 /** About how long text `md` takes to read, in minutes, as the journal counts: 200 words a minute. @param {string} md */
 export const readingMinutes = (md) => Math.max(1, Math.round((md ?? '').split(/\s+/).filter(Boolean).length / 200));
 
-/** The pictures article text `md` names, each once, in the order it shows them. @param {string} md */
-export function pictures(md) {
+/** The pictures article text `md` names, each once, in the order it shows them. @param {string} md @param {RegExp} [named] */
+export function pictures(md, named = PICTURE) {
 	const names = [...(md ?? '').matchAll(/!\[[^\]]*\]\(\s*([^)\s]+)/g)].map((m) => m[1]);
-	return names.filter((n, i) => PICTURE.test(n) && names.indexOf(n) === i);
+	return names.filter((n, i) => named.test(n) && names.indexOf(n) === i);
 }
 
 /**

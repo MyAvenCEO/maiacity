@@ -1,5 +1,5 @@
 <!--
-	A sandbox's old address (/games/<sandbox>/): it passes on to the sandbox in the app — except with ?film, when it is
+	A sandbox's old address (/games/<sandbox>/, src/routes/games/[world=world]): it passes on to the sandbox in the app — except with ?film, when it is
 	the film camera (FilmWorld): the world alone, for the area the address names (&area=…, game/film/worlds.js), under
 	the film's clocks, for the studio's world viewer and the plate renderers. Its assets' recipes are the Maia City
 	vault's: the world is raised once they are in, and a film says so when they can't be ($lib/assets/VaultRecipes.svelte).
@@ -14,13 +14,12 @@
 	/**
 	 * @type {{
 	 *   sandbox: import('../../../game/film/worlds.js').Sandbox,
-	 *   to?: string,
 	 *   mount: (stage: HTMLElement, area: string | undefined, onProgress: (label: string) => void) => Promise<{ dispose: () => void }>
 	 * }}
 	 */
-	let { sandbox, to: toGiven, mount } = $props();
-	/** where the address passes on to: the world's own page in the app (the registry's route), unless given */
-	const to = $derived(toGiven ?? WORLDS[sandbox]?.route ?? '/app/');
+	let { sandbox, mount } = $props();
+	/** where the address passes on to: the world's own page in the app (the registry's route) */
+	const to = $derived(WORLDS[sandbox]?.route ?? '/app/');
 
 	/** null until the page knows its own address (it is prerendered without one) */
 	let film = $state(/** @type {boolean | null} */ (null));

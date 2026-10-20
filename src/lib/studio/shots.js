@@ -1,7 +1,7 @@
 // World shots as data (contract C2): the records a world clip names, their versions, and what a shot is at a moment.
 // Every save of a changed spec is a new version; a clip names the version it was cut with and follows a new one only
 // when the studio says so. Every shot is avenDB's (`shot:<entry>`, ./avenshots.js), read and saved there; the legacy
-// API's shots came over with the films that play them (./importer.js) and are never read here.
+// API's shots came over once with the films that play them (2026-10-19) and are never read here.
 import { missing } from '$lib/auth/client';
 import { createAvenShot, getAvenShot, isAvenShot, listAvenShots, saveAvenShot } from './avenshots.js';
 

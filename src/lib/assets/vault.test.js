@@ -225,10 +225,10 @@ test('before the recipes are in, nothing is built, and a ref says why', () => {
 
 test("loaded once from the feed, the vault's index is the repo's: every version and variant, its latest, its first variant, its parameters", async () => {
 	expect(FEED.missing).toEqual([]);
-	expect(FEED.rows.length).toBe(327);
+	expect(FEED.rows.length).toBe(333);
 	const { r, asked, files } = await loaded();
 	expect(r.phase).toBe('ready');
-	expect([r.feed, r.vault, r.count, r.refused, r.missed, r.error]).toEqual([ROWS_URL, DEV_VAULT, 327, [], [], '']);
+	expect([r.feed, r.vault, r.count, r.refused, r.missed, r.error]).toEqual([ROWS_URL, DEV_VAULT, 333, [], [], '']);
 	// the index alone: no proof is asked for before a build
 	expect(asked).toEqual([ROWS_URL]);
 	expect(vault.INDEX).toEqual(made.index);
@@ -392,7 +392,7 @@ test('a recipe the vault does not hold, or holds otherwise, fails naming its ref
 	const stop = vault.watchRecipes((r) => told.push([...r.missed]));
 	const apple = rowAt('plants/apple@2');
 	const { r, files } = await loaded({ rows: FEED.rows.filter((x) => x !== apple) });
-	expect([r.phase, r.count]).toEqual(['ready', 326]);
+	expect([r.phase, r.count]).toEqual(['ready', 332]);
 	const missing = (f, ...said) => {
 		let err = null;
 		try {
@@ -445,7 +445,7 @@ test("an entry the reader refuses, or the vault deleted, is none of its recipes,
 		rows: FEED.rows.map((x) => (x === tent ? changed(x, (c) => (c.record.engine.version = 1)) : x === rowAt('plants/apple@1') ? changed(x, (c) => c.tags.push('avendb:deleted')) : x))
 	});
 	expect(r.phase).toBe('ready');
-	expect(r.count).toBe(325);
+	expect(r.count).toBe(331);
 	expect(r.refused.length).toBe(1);
 	expect(r.refused[0]).toMatch(/^things\/bell-tent@1 \(entry .*\): made for box engine 1/);
 	expect(() => vault.hashOf('things/bell-tent@1')).toThrow(/things\/bell-tent@1 is not in the Maia City vault: things\/bell-tent@1 \(entry/);
@@ -492,7 +492,7 @@ test("a feed that can't be reached, or answers otherwise, fails the page, naming
 	const unset = await down({ vault: '' }, /Maia City's vault id is not set \(game\/code\/sources\/anchor\.js MAIA_CITY/);
 	expect(unset.feed).toBe('https://feed.example/feed/code?vault=&type=recipe');
 	await down({ rows: [] }, /^the Maia City vault holds no asset recipes yet: .* listed none$/);
-	await down({ rows: FEED.rows.map((x) => changed(x, (c) => (c.record.engine.version = 1))) }, /holds no asset recipes yet: .* listed 327 entries, none of them one \(.*made for box engine 1/);
+	await down({ rows: FEED.rows.map((x) => changed(x, (c) => (c.record.engine.version = 1))) }, /holds no asset recipes yet: .* listed 333 entries, none of them one \(.*made for box engine 1/);
 	// and once it answers, the page asks again and builds
 	const { r } = await loaded();
 	expect(r.phase).toBe('ready');
@@ -790,7 +790,7 @@ test("the dev server's stand-in serves the feed as avenDB's server does: the row
 		});
 	const rows = await ask('/__recipe-feed/code?seed=1&type=recipe');
 	expect([rows.statusCode, rows.headers['content-type']]).toEqual([200, 'application/json']);
-	expect(JSON.parse(rows.body).code.length).toBe(327);
+	expect(JSON.parse(rows.body).code.length).toBe(333);
 	expect(JSON.parse((await ask('/__recipe-feed/code?seed=1&type=view,logic')).body)).toEqual({ code: [] });
 	const apple = rowAt('plants/apple@2');
 	const file = await ask(`/__recipe-feed/entry/${DEV_VAULT}/${apple.entry}/file?seed=1`);
@@ -922,7 +922,8 @@ test("no page reaches the repo's index but through the seed", () => {
 test('every page that builds assets waits for the vault\'s recipes before its first build', () => {
 	const VAULT_JS = 'src/lib/assets/vault.js';
 	const pages = ROUTES.filter((r) => r.path.includes('/+page.') && reach(r.path).has(VAULT_JS));
-	expect(pages.length).toBeGreaterThan(15);
+	// (the film's eight pages are one now, src/routes/games/[world=world])
+	expect(pages.length).toBeGreaterThan(10);
 	const waits = (r) =>
 		// the app's layout holds these (./VaultRecipes.svelte), an asset's own page loads them first (its +page.js), and a
 		// film's world is raised once they are in ($lib/film/FilmRoute.svelte)

@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// One of the repository's documents (src/lib/avendb/docs.js `DOCS`: the avenDB and avenBRAIN docs, the theOS paper, a
-// skill), proposed into the Maia City vault as an AIP by this Mac's agent (the device of avenMAIA Claude Code starts as
+// One of the repository's documents (src/lib/avendb/docs.js `DOCS`: the theOS paper, a skill), proposed into the Maia City vault as an AIP by this Mac's agent (the device of avenMAIA Claude Code starts as
 // its MCP server: `avendb-device agent claude`). A document goes into the vault only so (Samuel 2026-10-20: a new doc
 // goes in as a proposal; the seed writes none). It finds the doc post by its `doc:<key>` tag and the story it names.
 // None yet: it drafts both (`create` with `draft: true`, the records of src/lib/avendb/seed.js `docRecords`, the post
@@ -10,7 +9,7 @@
 // An owner then puts it forward ("Propose it") and accepts it in the Proposals app (/app/aips/); the accept merges the
 // lines into main. Without --run it only says what it would do.
 //
-//   node scripts/propose-doc.mjs docs/avendb [--run] [--title <AIP title>] [--note <AIP note>] [--device <path>]
+//   node scripts/propose-doc.mjs skill/editor [--run] [--title <AIP title>] [--note <AIP note>] [--device <path>]
 //
 // The agent device is the one ~/.claude.json starts as the `avendb` MCP server, else `--device` or AVENDB_DEVICE.
 import { spawn } from 'node:child_process';
@@ -26,7 +25,7 @@ const option = (/** @type {string} */ f) => (args.includes(f) ? args[args.indexO
 const valued = ['--device', '--title', '--note'];
 const key = args.find((a, i) => !a.startsWith('--') && !valued.includes(args[i - 1]));
 if (!key) {
-	console.error('usage: node scripts/propose-doc.mjs <doc key, e.g. docs/avendb> [--run] [--title <t>] [--note <n>] [--device <avendb-device>]');
+	console.error('usage: node scripts/propose-doc.mjs <doc key, e.g. skill/editor> [--run] [--title <t>] [--note <n>] [--device <avendb-device>]');
 	process.exit(2);
 }
 

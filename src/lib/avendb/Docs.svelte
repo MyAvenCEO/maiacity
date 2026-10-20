@@ -2,17 +2,26 @@
 	A vault's docs, in the layout every avenDB view has (./Frame.svelte) (Samuel 2026-10-18: the docs live in avenDB
 	alone, not on the public site; every skill one item of them, picked on the left, its history on the right as in
 	every other view). Each doc is a story tagged `doc` and its doc post (`post:doc`), both as an accepted AIP brings them
-	(scripts/propose-doc.mjs, ./seed.js `docRecords`, ./docs.js): the skills of .claude/skills, the theOS paper and the avenDB and avenBRAIN architectures. On the left each
-	doc by its section, with a search; in the middle the one picked (`#docs/` and its entry), its text as it reads on the
-	line picked; on the right its history and versions (./Lines.svelte) and its outline. Edit opens its text as a note.
-	The docs that are pages of the site, the theOS paper and the avenDB and avenBRAIN architectures, show on main as their pages do,
-	figures and all (Samuel 2026-10-19: the docs' own layout in the middle, avenDB's version control on the right), with
-	their text a tab away; on another line, their text.
+	(scripts/propose-doc.mjs, ./seed.js `docRecords`, ./docs.js): the skills of .claude/skills, the theOS paper and the
+	avenDB and avenBRAIN architectures. On the left each doc by its section, with a search; in the middle the one picked
+	(`#docs/` and its entry), its text as it reads on the line picked; on the right its history and versions
+	(./Lines.svelte) and its outline. Edit opens its text as a note.
+	Every doc is drawn from its vault's text alone, never from a page of the repository (Samuel 2026-10-20: docs are
+	served from avenDB only), and nothing of it runs here: its text goes through the one Markdown engine, as an
+	article's (./article.js: its own HTML shown as text, links only to the web, mail or this site, pictures only the
+	vault's own files), and its diagrams are SVG files of the vault's Library, named by their hashes, each shown as a
+	data URL in an image, where the browser runs no script of it and loads nothing, never as a page of this site, as
+	the Library shows an SVG. Its maths (`$…$`, `$$…$$`: the paper's) the Markdown engine leaves as its LaTeX source, and
+	the math host typesets after, off the page ($lib/sandbox/math-host.js: KaTeX in a worker of the shell, with no
+	origin and no network), each formula's MathML drawn only as its checker passed it, element by element, never as
+	HTML; until then, or where it can't, the source is what shows.
 -->
 <script>
 	import { tick } from 'svelte';
-	import { render } from './article.js';
+	import { typesetIn } from '$lib/sandbox/math-host.js';
+	import { DOC_PICTURE, fileNamed, pictures, render } from './article.js';
 	import { readable } from './docs.js';
+	import { dataUrl, mediaOf, whole } from './files.js';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import Lines from './Lines.svelte';
@@ -58,7 +67,6 @@
 	);
 	const picked = $derived(docs.find((d) => d.e.entry === entry) ?? docs[0]);
 	const skill = $derived(!!picked?.key.startsWith('skill/'));
-	const post = $derived(picked ? /** @type {any} */ (posts.get(picked.e.entry)?.record) : null);
 
 	/** what the `note` op reads of the doc picked: its lines and every edit */
 	let note = $state(/** @type {any} */ (null));
@@ -82,40 +90,46 @@
 	let tab = $state('history');
 	const onLine = $derived(note?.lines?.find((/** @type {any} */ l) => l.line === line) ?? note?.lines?.[0]);
 	const text = $derived(/** @type {string} */ (onLine?.record?.text ?? /** @type {any} */ (picked?.e.record)?.text ?? ''));
-	const html = $derived(render((skill ? readable(text) : text).replace(/^\s*# .+\n+/, ''), () => ''));
 
-	/** the docs that are pages of the site, each drawn here as its page draws it, by its key */
-	const PAGES = /** @type {Record<string, () => Promise<{ default: any }>>} */ ({
-		'paper/theos': () => import('$lib/theos/Paper.svelte'),
-		'docs/avendb': () => import('$lib/docs/AvenDB.svelte'),
-		'docs/avenbrain': () => import('$lib/docs/AvenBrain.svelte')
-	});
-	/** the doc picked as its page, or as its text */
-	let view = $state(/** @type {'page' | 'text'} */ ('page'));
-	/** the page of the doc picked, once loaded, if it has one */
-	let Page = $state.raw(/** @type {any} */ (null));
+	/** Bytes `from` to `to` of a file, as the device reads them. @type {import('./files.js').Read} */
+	const read = (root, size, from, to) => api.readFile(root, size, from, to);
+	/** the doc's pictures, by their names, once read: a diagram (an SVG) as a data URL, any other as a blob URL */
+	let urls = $state(/** @type {Record<string, string>} */ ({}));
+	const reading = new Set();
 	$effect(() => {
-		const load = picked ? PAGES[picked.key] : undefined;
-		Page = null;
-		if (!load) return;
+		for (const name of pictures(text, DOC_PICTURE)) {
+			const file = reading.has(name) ? undefined : fileNamed(world, vault, name)?.files?.[0];
+			if (!file || file.len === null) continue;
+			reading.add(name);
+			whole(read, file, mediaOf({ name, type: '' }))
+				.then((blob) => (name.endsWith('.svg') ? dataUrl(blob) : URL.createObjectURL(blob)))
+				.then((url) => (urls = { ...urls, [name]: url }))
+				.catch(() => reading.delete(name));
+		}
+	});
+	$effect(() => () => Object.values(urls).forEach((u) => u.startsWith('blob:') && URL.revokeObjectURL(u)));
+	const html = $derived(render((skill ? readable(text) : text).replace(/^\s*# .+\n+/, ''), (name) => urls[name] ?? '', DOC_PICTURE, { math: true }));
+
+	/** @type {HTMLElement | undefined} */
+	let body = $state();
+	// its maths typeset once it is drawn, each formula's source swapped for its MathML (none: the source stays)
+	$effect(() => {
+		void [html, body];
 		let gone = false;
-		load().then(
-			(m) => !gone && (Page = m.default),
-			() => {}
-		);
+		tick().then(() => {
+			if (!gone && body) typesetIn(body).catch(() => {});
+		});
 		return () => {
 			gone = true;
 		};
 	});
-	/** its page shows on main alone: a proposal or a variant reads as its text */
-	const paged = $derived(!!picked && !!PAGES[picked.key] && view === 'page' && (onLine?.line ?? null) === null);
 
 	/** @type {HTMLElement | undefined} */
 	let article = $state();
-	/** its headings as they are drawn, a page's or the text's, those of its own contents left out */
+	/** its headings as they are drawn, those of its own contents left out */
 	let headings = $state.raw(/** @type {HTMLElement[]} */ ([]));
 	$effect(() => {
-		void [html, paged, Page, article];
+		void [html, article];
 		let gone = false;
 		tick().then(() => {
 			if (!gone) headings = [...(article?.querySelectorAll('h2, h3') ?? [])].filter((h) => !h.closest('nav')).map((h) => /** @type {HTMLElement} */ (h));
@@ -129,8 +143,7 @@
 	/** A heading of the outline, by its place among the article's headings, brought into view. @param {number} i */
 	const goTo = (i) => headings[i]?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 	/**
-	 * A link to a place in the doc, as a page's contents and its references are, scrolls to it: the address's `#` names
-	 * avenDB's views, so it stays as it is.
+	 * A link to a place in the doc scrolls to it: the address's `#` names avenDB's views, so it stays as it is.
 	 * @param {MouseEvent} e
 	 */
 	function within(e) {
@@ -189,27 +202,16 @@
 		</p>
 	{:else if picked}
 		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-		<article class="doc" class:paged bind:this={article} onclick={within}>
-			<p class="eyebrow soft" class:gone={paged}>
+		<article class="doc" bind:this={article} onclick={within}>
+			<p class="eyebrow soft">
 				{skill ? 'Skill' : picked.key.startsWith('paper/') ? 'Paper' : 'Architecture'}{#if onLine && onLine.line !== null}
 					· on “{onLine.name ?? 'a line'}”{/if}{#if note} · {count(note.edits?.length ?? 0, 'edit')}{/if}
 			</p>
-			{#if !paged}<h1>{picked.key.split('/').at(-1) || picked.e.title}</h1>{/if}
+			<h1>{picked.key.split('/').at(-1) || picked.e.title}</h1>
 			<p class="tools">
 				<a class="btn" href="#stories/{picked.e.entry}/edit">Edit</a>
-				{#if PAGES[picked.key] && (onLine?.line ?? null) === null}
-					<span class="seg" role="group" aria-label="Show it as">
-						<button class:on={view === 'page'} aria-pressed={view === 'page'} onclick={() => (view = 'page')}>Page</button>
-						<button class:on={view === 'text'} aria-pressed={view === 'text'} onclick={() => (view = 'text')}>Text</button>
-					</span>
-				{/if}
-				{#if post?.page}<a class="btn quiet" href={post.page} target="_blank" rel="noopener">Its live page</a>{/if}
 			</p>
-			{#if paged}
-				{#if Page}<Page embedded />{:else}<p class="soft">Opening its page…</p>{/if}
-			{:else}
-				<div class="body">{@html html}</div>
-			{/if}
+			<div class="body" bind:this={body}>{@html html}</div>
 		</article>
 	{/if}
 </Frame>
@@ -217,38 +219,6 @@
 <style>
 	.doc {
 		max-width: 48rem;
-	}
-
-	/* a page of the site, drawn as it is there: as wide as the column, its own measure inside */
-	.doc.paged {
-		max-width: none;
-	}
-
-	.seg {
-		display: inline-flex;
-		border: 1px solid var(--edge);
-		border-radius: 999px;
-		overflow: hidden;
-	}
-
-	.seg button {
-		padding: 0.3rem 0.8rem;
-		border: 0;
-		background: none;
-		font: inherit;
-		font-size: 0.85rem;
-		color: var(--soft);
-		cursor: pointer;
-	}
-
-	.seg button.on {
-		background: var(--edge);
-		color: inherit;
-	}
-
-	/* a page names itself, so none over it */
-	.eyebrow.gone {
-		display: none;
 	}
 
 	.eyebrow {
@@ -295,6 +265,77 @@
 		border-bottom: 1px solid var(--edge);
 		text-align: left;
 		vertical-align: top;
+	}
+
+	.body :global(figure) {
+		margin: 1.6rem 0;
+	}
+
+	.body :global(figure img) {
+		display: block;
+		max-width: 100%;
+		height: auto;
+	}
+
+	/* a diagram keeps a size its words read at: on a narrow screen it scrolls sideways */
+	.body :global(figure:has(img[data-picture$='.svg'])) {
+		overflow-x: auto;
+	}
+
+	.body :global(img[data-picture$='.svg']) {
+		width: 100%;
+		min-width: 40rem;
+		max-width: none;
+	}
+
+	.body :global(figcaption) {
+		margin-top: 0.5rem;
+		font-size: 0.85rem;
+		color: var(--soft);
+	}
+
+	/* maths: the browser's own MathML, in its own maths font, none loaded; a display formula centred on its line, and
+	   sideways scroll where it is wider than the screen */
+	.body :global(.math[data-math='display']) {
+		display: block;
+		margin: 1rem 0;
+		overflow-x: auto;
+		overflow-y: hidden;
+		text-align: center;
+	}
+
+	.body :global(.math > math[display='block']) {
+		margin: 0 auto;
+		padding: 0.15rem 0;
+	}
+
+	/* a numbered formula (\tag): its number at the right edge, as KaTeX lays it out, in a table the full width of the
+	   line (MathML Core reads no width attribute: the browser has to be told, and the frame round the table too) */
+	.body :global(.math > math > semantics:has(> mtable[width='100%'])),
+	.body :global(.math mtable[width='100%']) {
+		width: 100%;
+	}
+
+	.body :global(.math mtd[width='50%']) {
+		width: 50%;
+	}
+
+	/* a formula's source, until it is typeset or where it can't be */
+	.body :global(.math:not(:has(> math))) {
+		font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+		font-size: 0.85em;
+		color: var(--soft);
+		white-space: pre-wrap;
+	}
+
+	.body :global(.math[data-math='inline']:not(:has(> math))::before),
+	.body :global(.math[data-math='inline']:not(:has(> math))::after) {
+		content: '$';
+	}
+
+	.body :global(.math[data-math='display']:not(:has(> math))::before),
+	.body :global(.math[data-math='display']:not(:has(> math))::after) {
+		content: '$$';
 	}
 
 	.body :global(hr) {

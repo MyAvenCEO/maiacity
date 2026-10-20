@@ -193,14 +193,30 @@ export function createPipeline(renderer) {
 		renderer.autoClear = auto;
 	};
 
-	/** @type {THREE.Data3DTexture | null} */
-	let lutTex = null;
-	/** @type {unknown} */
-	let lutOf = null;
-	/** @type {THREE.Data3DTexture | null} */
-	let gradeTex = null;
-	/** @type {Lut | null} */
-	let gradeOf = null;
+	// the LUTs as textures, the last few kept by the LUT they are of: a cut between two grades sends none again (each
+	// was 33³ or 65³ texels made into half floats on the page's thread, at the cut)
+	/** @type {Map<unknown, { tex: THREE.Data3DTexture, size: number }>} */
+	const textures = new Map();
+	const KEEP_LUTS = 8;
+	/** @param {Lut | string} l @returns {{ tex: THREE.Data3DTexture, size: number }} */
+	const textureOf = (l) => {
+		let t = textures.get(l);
+		if (t) {
+			// the newest used last, so the oldest goes first
+			textures.delete(l);
+			textures.set(l, t);
+			return t;
+		}
+		const lut = typeof l === 'string' ? parseCube(l) : l;
+		t = { tex: lutTexture(lut), size: lut.size };
+		textures.set(l, t);
+		if (textures.size > KEEP_LUTS) {
+			const [first, old] = textures.entries().next().value ?? [];
+			textures.delete(first);
+			old?.tex.dispose();
+		}
+		return t;
+	};
 
 	return {
 		samples,
@@ -272,32 +288,38 @@ export function createPipeline(renderer) {
 			u.taps.value = taps;
 			u.flip.value = false;
 			u.gain.value = gain;
-			if (look.grade && look.grade !== gradeOf) {
-				gradeTex?.dispose();
-				gradeTex = lutTexture(look.grade);
-				gradeOf = look.grade;
-				u.gradeSize.value = look.grade.size;
-			}
-			u.hasGrade.value = !!look.grade && !!gradeTex;
-			u.gradeLut.value = gradeTex;
-			if (look.lut && look.lut !== lutOf) {
-				const l = typeof look.lut === 'string' ? parseCube(look.lut) : look.lut;
-				lutTex?.dispose();
-				lutTex = lutTexture(l);
-				lutOf = look.lut;
-				u.lutSize.value = l.size;
-			}
-			u.hasLut.value = !!look.lut && !!lutTex;
-			u.lut.value = lutTex;
+			const grade = look.grade ? textureOf(look.grade) : null, lut = look.lut ? textureOf(look.lut) : null;
+			u.hasGrade.value = !!grade;
+			u.gradeLut.value = grade?.tex ?? null;
+			if (grade) u.gradeSize.value = grade.size;
+			u.hasLut.value = !!lut;
+			u.lut.value = lut?.tex ?? null;
+			if (lut) u.lutSize.value = lut.size;
 			renderer.setPixelRatio(1);
 			renderer.setSize(w, h, false);
 			renderer.setViewport(0, 0, w, h);
 			pass(view, null);
 		},
+		/**
+		 * The view's LUTs made into textures and sent to the GPU now, before the frame that first shows them (a cut to
+		 * another grade). @param {{ grade?: Lut | null, lut?: Lut | string | null }} look
+		 */
+		look(look) {
+			for (const l of [look.grade, look.lut]) if (l) renderer.initTexture(textureOf(l).tex);
+		},
+		/** the passes' shaders compiled now, not at the first frame drawn through them */
+		warm() {
+			const was = quad.material;
+			for (const m of [view, encode, accumulate, accumulateAdd, meterMat]) {
+				quad.material = m;
+				renderer.compile(qscene, qcam);
+			}
+			quad.material = was;
+		},
 		dispose() {
 			for (const rt of targets.values()) rt.dispose();
 			meterRT.dispose();
-			lutTex?.dispose();
+			for (const t of textures.values()) t.tex.dispose();
 		}
 	};
 }

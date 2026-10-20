@@ -54,7 +54,7 @@ const native = (rule) => async (task, ctx) => {
 			if (v) return { outputs: [kept.entry], result: { file: kept.entry, state: v.state ?? 'done', hero: v.hero ?? null, language: v.language ?? null, seconds: v.seconds ?? null } };
 		}
 	}
-	// and the HD proxy the old studio played it from (../importer.js `bringFootageProxies`), while its journey is the one
+	// and the HD proxy the old studio played it from, brought into avenDB once (2026-10-19), while its journey is the one
 	// found in the file: remaking it from the 4K original took the 8 GB Mac a long while, the footage playing from its
 	// originals until then. A profile set by hand makes a new one.
 	if (rule === 'proxy') {
@@ -62,7 +62,7 @@ const native = (rule) => async (task, ctx) => {
 		const journey = paramsOf(task)['probe.journey'];
 		if (kept && !journey?.override) return { outputs: [kept.entry], result: { profile: journey?.profile ?? null, legacy: true } };
 	}
-	// a world shot version whose proxy is here already (the old studio's, ../importer.js `bringProxies`), asked for
+	// a world shot version whose proxy is here already (the old studio's, brought once), asked for
 	// before it came: taken, never rendered again (rendering one ran the heavy world a second time)
 	if (rule === 'world-proxy') {
 		const v = ctx.entry(task.inputs[0]?.entry ?? '');
@@ -90,7 +90,7 @@ const native = (rule) => async (task, ctx) => {
 
 /**
  * The JSON file of the value rule `rule` would make that original `o` brought from the legacy studio
- * (vault/app/src/aven.rs `studio_import`: tagged `media:<rule>` and the original's `legacy:<hash>`).
+ * (the old studio's import, gone with the old media vault: tagged `media:<rule>` and the original's `legacy:<hash>`).
  * @param {string} rule @param {import('../../avendb/vaults.js').EntryView | undefined} o @param {import('../../avendb/vaults.js').WorldView} world
  */
 export function legacyValue(rule, o, world) {

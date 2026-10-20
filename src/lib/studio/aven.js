@@ -107,7 +107,7 @@ export function libraryOf(world) {
 		const m = fileOf(t.outputs?.[0]);
 		if (m && v?.shot) out.push(itemOf(m, 'proxy', { role: 'proxy', shot: v.shot, shotVersion: v.shotVersion, shape: v.shape, width: v.width, height: v.height, fps: v.fps, duration_s: v.seconds, color: { profile: 'acescct', from: 'our own tag' } }, ['proxy', 'world shot']));
 	}
-	// each legacy world shot's proxy brought from the legacy vault (./importer.js `bringProxies`), by its tag
+	// each legacy world shot's proxy, brought into avenDB once from the old vault, by its tag
 	for (const e of world.entries) {
 		const tag = (e.tags ?? []).find((t) => t.startsWith('proxy:shot:'));
 		const m = tag && (e.tags ?? []).includes('media:proxy') ? fileOf(e.entry) : null;

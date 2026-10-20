@@ -17,7 +17,8 @@ import * as THREE from 'three'
 import { DOMES, DOORS, adiff, bake, box, geodesic, glassSheen, lantern, mats, mountInterior, polar, portal, sofa, table, type DomeKind, type EmbeddedDome } from './interior'
 import { cafes, coops, coopsAround, henPatches, rabbitPatches, squaresAround, type Kit } from './spaces'
 import { water } from './textures'
-import { BIOMES, groundMaterial } from '$lib/biomes'
+import { groundMaterial } from '$lib/biomes'
+import { biomeOr } from '$lib/assets/sources/biome.js'
 import { LEVELS } from '$lib/assets/render/lod.js'
 import { songbirds } from './birds.js'
 import { appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, fruitTree, ginger, herb, papaya, passionVine, seeded, smallFruitTree, squash, strawberries, tropicalShrub, forestFloor, FLOOR_KINDS, floorPick, grassTuft, type Plant } from './plants'
@@ -28,7 +29,7 @@ import { createWorldRenderer } from '$lib/render/world.js'
 import { createSky } from '$lib/sandbox-kit/sky.js'
 import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
-import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
+import { connectFilm, filmDraws, filmHoldsSize, filmPlays, worldTime } from '$lib/sandbox-kit/film.js'
 import { createStream, type View } from '$lib/sandbox-kit/stream.js'
 import { ambience, levelsAt } from './ambience'
 import { createForest, INSIDE, type Forest } from './flora.js'
@@ -160,10 +161,12 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		else hexShape.lineTo(Math.cos(a) * WORLD, Math.sin(a) * WORLD)
 	}
 	hexShape.holes.push(new THREE.Path().absarc(0, 0, Math.max(4.5, domes[0]!.R * 0.22) + 0.3, 0, Math.PI * 2, true))
-	// Sandbox 5: the cell is a forest garden to its edges, its soil never bare — its floor is the food forest biome's
-	// ($lib/biomes): a living mat of clover and grasses in the light, leaf litter, humus and moss under the trees
-	const FLOOR_BIOME = BIOMES.find((b) => b.id === 'food-forest')!
-	const hex = new THREE.Mesh(new THREE.ShapeGeometry(hexShape, 48), opts.flora ? groundMaterial(FLOOR_BIOME.surface) : m.grass)
+	// Sandbox 5: the cell is a forest garden to its edges, its soil never bare — its floor is the food forest biome's,
+	// as the Maia City vault keeps it ($lib/assets/sources/biome.js, its newest version): a living mat of clover and
+	// grasses in the light, leaf litter, humus and moss under the trees. Where the vault holds none, the ground lies bare
+	// (said on the page's banner), never a floor of the repo's
+	const FLOOR_BIOME = opts.flora ? biomeOr('biomes/food-forest') : null
+	const hex = new THREE.Mesh(new THREE.ShapeGeometry(hexShape, 48), opts.flora ? groundMaterial(FLOOR_BIOME?.surface ?? { soil: 1 }) : m.grass)
 	hex.rotation.x = -Math.PI / 2
 	hex.receiveShadow = true
 	scene.add(hex)
@@ -422,8 +425,9 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const crownGeo = new THREE.IcosahedronGeometry(1, 1)
 	const treeTrunkMat = new THREE.MeshStandardMaterial({ color: '#6d5238', roughness: 0.9 })
 	const treeCrownMat = new THREE.MeshStandardMaterial({ color: '#4f8a38', roughness: 0.8, flatShading: true })
-	/** Sandbox 5: the simple insides' floor, the warm food forest biome's, as the full insides' is (interior.ts) */
-	const warmFloor = flora ? groundMaterial(BIOMES.find((b) => b.id === 'warm-food-forest')!.surface) : null
+	/** Sandbox 5: the simple insides' floor, the warm food forest biome's from the vault, as the full insides' is
+	 *  (interior.ts); bare where the vault holds none */
+	const warmFloor = flora ? groundMaterial(biomeOr('biomes/warm-food-forest')?.surface ?? { soil: 1 }) : null
 	/** Sandbox 5: the warm garden's trees for the simple insides, each ripe (one kind a tree, few to grow) */
 	const RIPE = flora ? flora.inside.trees.map((p) => ({ ...p, stages: [p.stages[p.stages.length - 1]!] })) : []
 	/** each dome's simple version, all of it, so it can step aside for the full one */
@@ -852,7 +856,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	// each in its colonies, laid out in tiles round you as you go ($lib/biomes/stream.js) — too dense for the whole cell;
 	// all of it near you, thinning out further off, each plant growing out of the ground as you come (so it has no edge)
 	// ($lib/biomes/stream.js lays it; each kind built in the box and drawn by the renderer, ./cover.js)
-	const floorCover = flora ? createCover({ drawn: library, recipe: FLOOR_BIOME, open: (x, z) => floorOpen(x, z), tile: 10, reach: 28, near: 7, thin: 0.2, density: 3.4, seed: 505 }) : null
+	const floorCover = flora && FLOOR_BIOME ? createCover({ drawn: library, recipe: FLOOR_BIOME, open: (x, z) => floorOpen(x, z), tile: 10, reach: 28, near: 7, thin: 0.2, density: 3.4, seed: 505 }) : null
 	const TILE = 70
 	type Tile = { cx: number; cz: number; main: THREE.Matrix4[][]; under: THREE.Matrix4[][]; floor: THREE.Matrix4[][]; far: THREE.Matrix4[]; farCrowns: THREE.Matrix4[]; farColors: THREE.Color[]; dense: THREE.Matrix4[]; denseCrowns: THREE.Matrix4[]; denseColors: THREE.Color[]; near?: THREE.Group; farMesh?: THREE.Group; ground?: THREE.Group }
 	const tiles = new Map<string, Tile>()
@@ -1244,7 +1248,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 					const mine = { i, cancelled: false }
 					building = mine
 					// on film nothing is drawn while the world is readied (__filmDraw): every dome builds in long stretches
-					mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => rush.has(i) || (!filmDraws() && gapTo(i) < 12), background: () => !rush.has(i) && (filmDraws() || gapTo(i) > 45), library, flora: flora ? { garden: flora.inside, seed: flora.seed, flora: plantsIn!, drawn: library } : undefined })
+					mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => !filmPlays() && (rush.has(i) || (!filmDraws() && gapTo(i) < 12)), background: () => filmPlays() || (!rush.has(i) && (filmDraws() || gapTo(i) > 45)), library, flora: flora ? { garden: flora.inside, seed: flora.seed, flora: plantsIn!, drawn: library } : undefined })
 						.then((h) => {
 							if (building === mine) building = null
 							if (job.cancelled || !h.embedded) {
@@ -1478,20 +1482,13 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const t3 = performance.now()
 			if (t3 - t0 > 300) console.warn(`film: ${(w as { name?: string }).name ?? 'a shot'} staged: animals ${Math.round(t1 - t0)} ms, plants ${Math.round(t2 - t1)} ms, library ${Math.round(t3 - t2)} ms`)
 		},
-		// still staged for a shot while every dome its camera sees is shown in full (another shot from the same stand that
-		// sees others is staged again)
-		// (another shot from the same stand that sees other domes: when they are built it is held at once, the domes it
-		// sees shown in full and the rest their simple selves — no staging; when not, it is staged)
+		// whether everything a shot's camera sees is built (every dome it sees, its animals): asked of the shot drawn now
+		// and, four times a second while the timeline plays, of the shots ahead, so it only answers and changes nothing (it
+		// once showed the domes the shot it was asked about sees, and the shot on screen had its domes taken away and put
+		// back four times a second, the shadows drawn again each time). What a shot shows is `move`'s, as it is drawn
 		holds: (w) => {
 			const views = shotViews(w)
-			const need = domeStream.wanted(views) as number[]
-			if ((w.dome !== undefined && !built.has(w.dome)) || !need.every((i) => built.has(i)) || !actorsReady(views)) return false
-			if (!filmed || filmed.size !== need.length || need.some((i) => !filmed!.has(i))) {
-				filmed = new Set(need)
-				domeStream.look(views)
-				settle()
-			}
-			return true
+			return (w.dome === undefined || built.has(w.dome)) && (domeStream.wanted(views) as number[]).every((i) => built.has(i)) && actorsReady(views)
 		},
 		// keep built what the shots ahead see (the stream lets go of nothing pinned, and never goes over KEEP)
 		keep: (ws) => {
@@ -1503,11 +1500,14 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		},
 		// what it holds it holds wherever the shot stands: a cut to a held shot is only a move
 		streams: true,
+		// stand where the shot stands and show what its camera sees: the domes it sees in full, the rest their simple selves
 		move: (w) => {
 			walker.place(w.stand[0], w.stand[1], 0, 0, 0)
 			const views = shotViews(w)
-			filmed = new Set(domeStream.wanted(views) as number[])
+			const need = domeStream.wanted(views) as number[]
 			domeStream.look(views)
+			if (filmed && filmed.size === need.length && need.every((i) => filmed!.has(i))) return
+			filmed = new Set(need)
 			settle()
 		},
 		// the library: the film's sets put their assets in it (src/lib/film/sets.js, the tired land's trucks)

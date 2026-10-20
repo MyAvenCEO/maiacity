@@ -22,14 +22,6 @@ services:
       # post-quantum TLS)
       AVENDB_FEED: http://avendb:3351/feed/code
 
-  # the vault's peer: its image from GHCR; UDP 7400 open to the Macs, the relay and gateway only through Caddy
-  vault:
-    image: ${VAULT_IMAGE:-ghcr.io/myavenceo/maiacity-vault:latest}
-    build: !reset null
-    expose:
-      - "3340"
-      - "3341"
-
   # avenDB's server: its image from GHCR; UDP 7401 open to devices, its relay only through Caddy (avendb.maia.city).
   # Its device's secret and its store live on the Hetzner volume, so a rebuilt server is still the same device.
   avendb:

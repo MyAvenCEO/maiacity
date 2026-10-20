@@ -17,6 +17,8 @@
  *   WalkHint      how to walk, for keys and for fingers
  *   WorldBar      the bar along the top: the world's name, its SkyControl; slimmer on a phone (the way back is the
  *                 app's nav pill)
+ *   WorldPage     the whole page of a world you walk: the stage, the bar, the hint, the joystick and the cover while
+ *                 it comes up; the page hands it `mount`
  *   …and $lib/touch/TouchStick, the phone's joystick, hands `move` and `look` to the walker.
  *
  * How to build a new sandbox with it: ./README.md.
@@ -33,3 +35,4 @@ export { createTimeline } from './timeline.js';
 export { default as SkyControl } from './SkyControl.svelte';
 export { default as WalkHint } from './WalkHint.svelte';
 export { default as WorldBar } from './WorldBar.svelte';
+export { default as WorldPage } from './WorldPage.svelte';

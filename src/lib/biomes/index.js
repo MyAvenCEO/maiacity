@@ -34,6 +34,8 @@ export { SURFACE, SURFACES, groundMaterial, surfacesAt } from './surfaces.js';
  * @property {number} spread how much of the ground its colonies take (0…1)
  * @property {Surface} [on] the surface it grows on (it is met there, and seldom elsewhere)
  * @property {number} [fill] how full its colonies are (0…1, 0.85 if not said)
+ * @property {string} [ref] the asset it is, as a biome's card names it (./card.js): the cover's kind at its seed; where a
+ *   biome says none, ./built.js `coverRef` of its kind and ./index.js `coverSeed`
  */
 /**
  * @typedef {object} Recipe a biome

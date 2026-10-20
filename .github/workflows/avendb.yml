@@ -26,6 +26,9 @@ on:
       - '!avendb/scripts/**'
       - '!avendb/**/*.md'
       - '!avendb/crates/avendb-browser/**'
+      # nor the Mac's native device, which the server's crates never link, nor any crate's tests (avendb/.dockerignore)
+      - '!avendb/crates/avendb-device/**'
+      - '!avendb/crates/*/tests/**'
       - '.github/workflows/avendb.yml'
   workflow_dispatch:
 

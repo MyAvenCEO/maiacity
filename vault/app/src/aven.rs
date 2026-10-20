@@ -1,6 +1,6 @@
 //! avenDB's files for the studio's Rust (Jobs and studio 2.0): the bytes of a file of the person's vaults, read in
 //! place by range from avenDB's device inside the app (avendb.rs), as the byte source every reader of vault-media and
-//! vault-render takes (`Source::Blob`, as blob.rs gives the legacy vault's); and a file on this Mac brought into a vault
+//! vault-render takes (`Source::Blob`); and a file on this Mac brought into a vault
 //! (`put_path`), read back and compared before it counts. Every read and write is one op the device runs, the same the
 //! page sends (avendb/docs/ARCHITECTURE.md §8), so the keys never leave the device; a read runs on its node itself, its
 //! bytes handed over with no JSON between (`read`).
@@ -207,8 +207,7 @@ pub async fn put_path(app: &AppHandle, op: Value, path: &Path, done: impl Fn(u64
     put_source(app, op, &Source::from(path), done).await
 }
 
-/// `n` bytes of `src` from `at` (fewer at its end), read on a thread of the blocking pool (a legacy vault file is read
-/// in place, by waiting on its store).
+/// `n` bytes of `src` from `at` (fewer at its end), read on a thread of the blocking pool.
 async fn chunk_of(src: &Source, at: u64, n: usize) -> Result<Vec<u8>, String> {
     use std::io::{Seek as _, SeekFrom};
     let src = src.clone();
@@ -232,7 +231,7 @@ async fn chunk_of(src: &Source, at: u64, n: usize) -> Result<Vec<u8>, String> {
     .map_err(|e| format!("{e}"))
 }
 
-/// `put_path` for any source: a file on this Mac, or a legacy vault file read in place (`studio_import`).
+/// `put_path` for any source.
 pub async fn put_source(app: &AppHandle, mut op: Value, src: &Source, done: impl Fn(u64)) -> Result<Value, String> {
     let len = {
         let s = src.clone();
@@ -321,13 +320,13 @@ pub async fn studio_ingest(
 ) -> Result<Vec<Brought>, String> {
     let mut files = vec![];
     for p in &paths {
-        files.extend(vault_core::ingest::walk(Path::new(p)).map_err(|e| format!("{p}: {e:#}"))?);
+        files.extend(crate::files::walk(Path::new(p)).map_err(|e| format!("{p}: {e:#}"))?);
     }
     let mut out = vec![];
     for path in files {
         let p = path.display().to_string();
         let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| p.clone());
-        let media = vault_core::ingest::mime_of(&path);
+        let media = crate::files::mime_of(&path);
         let mut all = vec!["media:original".to_string()];
         all.extend(tags.iter().filter(|t| *t != "media:original").cloned());
         let mut op = json!({ "op": "put_file", "vault": vault, "name": name, "media": media, "tags": all });
@@ -486,245 +485,6 @@ impl Job<'_> {
             }
         }
     }
-}
-
-/// What became of one legacy vault file brought over (`studio_import`): its new entry, the entries of the values it
-/// brought beside it (`transcript`, `analysis`), or why not.
-#[derive(serde::Serialize)]
-pub struct Imported {
-    hash: String,
-    entry: Option<String>,
-    made: serde_json::Map<String, Value>,
-    error: Option<String>,
-}
-
-/// Brings the legacy vault's files `hashes` into vault `vault` (plan JI: by hand only, never by itself), acting as
-/// `actor`: each read from the film seed on this Mac (`seeded_file`) and put as an original, tagged `media:original` and
-/// `legacy:<hash>`, its bytes read back and their BLAKE3 compared with the legacy hash (the BLAKE3 of the same bytes);
-/// its legacy transcript and analysis put beside it as the JSON files a task keeps a long value in
-/// (`<stem>.transcript.json`, tagged `media:transcript` and `legacy:<hash>`), which the rules take as they are instead
-/// of hearing and watching it again (src/lib/studio/jobs/executors.js). A file brought before (an original tagged
-/// `legacy:<hash>`) is not brought again. It copies, never moves: the legacy vault is left as it is.
-/// With `tags`, each file is put with those in place of `media:original` (a legacy world shot's proxy, as
-/// `media:proxy` and the shot it stands for: src/lib/studio/importer.js `bringProxies`), and nothing beside it; a
-/// file brought before is then one tagged `legacy:<hash>` and the first of them.
-#[tauri::command]
-pub async fn studio_import(app: AppHandle, vault: String, hashes: Vec<String>, actor: Option<String>, tags: Option<Vec<String>>) -> Result<Vec<Imported>, String> {
-    use crate::jobs::Kind;
-    let world = world(&app).await?;
-    let entries = world["entries"].as_array().cloned().unwrap_or_default();
-    let tagged = |e: &Value, t: &str| e["tags"].as_array().is_some_and(|ts| ts.iter().any(|x| x == t));
-    let mut out = vec![];
-    for hash in hashes {
-        let hash = hash.to_lowercase();
-        let mark = format!("legacy:{hash}");
-        let mut made = serde_json::Map::new();
-        let role = tags.as_ref().and_then(|t| t.first()).map(String::as_str).unwrap_or("media:original");
-        if let Some(e) = entries.iter().find(|e| e["vault"] == vault.as_str() && e["deleted"] != json!(true) && tagged(e, &mark) && tagged(e, role)) {
-            out.push(Imported { hash, entry: e["entry"].as_str().map(str::to_string), made, error: None });
-            continue;
-        }
-        let brought = async {
-            // from the film seed on this Mac (the legacy vault is not read); the copy's BLAKE3 is checked against the
-            // hash below. Its name and type: the seed's record (or the record it wraps), else read off its first
-            // bytes, so a film never comes in as a nameless `.bin` the players can't open (2026-10-18: Day 1's did)
-            if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
-                return Err(format!("{hash} is no BLAKE3 hash"));
-            }
-            let (path, record) = seeded_file(&hash).ok_or("it is not in the film seed")?;
-            let record = if record["record"].is_object() { record["record"].clone() } else { record };
-            let said = |k: &str| record[k].as_str().filter(|v| !v.is_empty() && *v != "application/octet-stream").map(str::to_string);
-            let meta = record["meta"].clone();
-            let src = Source::from(path.as_path());
-            let mime = match said("mime") {
-                Some(m) => m,
-                None => sniff(&chunk_of(&src, 0, 16).await.unwrap_or_default()).to_string(),
-            };
-            let ext = ext_of_mime(&mime);
-            let name = said("original_name").or_else(|| said("title")).unwrap_or_else(|| format!("{}.{ext}", &hash[..12]));
-            // a name without its type's extension gets it (the players tell a movie by it)
-            let name = if crate::blob::ext_of(&name) == "bin" && ext != "bin" { format!("{}.{ext}", stem(&name)) } else { name };
-            let subject = format!("aven:legacy:{hash}");
-            crate::jobs::queue(Kind::Ingest, &subject, &name);
-            let total = 3 * src.reader().and_then(|mut r| r.len()).unwrap_or(1).max(1);
-            let (app2, h2, s2) = (app.clone(), hash.clone(), subject.clone());
-            let told = move |moved: u64| {
-                crate::jobs::stage(Kind::Ingest, &s2, "bringing it into avenDB", moved as f64 / total as f64);
-                app2.emit("studio-import", json!({ "hash": h2, "done": moved, "len": total })).ok();
-            };
-            let mut put_tags = tags.clone().unwrap_or_else(|| vec!["media:original".to_string()]);
-            put_tags.push(mark.clone());
-            let mut op = json!({ "op": "put_file", "vault": vault, "name": name, "media": mime, "tags": put_tags });
-            if let Some(actor) = &actor {
-                op["as"] = json!(actor);
-            }
-            let put = put_source(&app, op, &src, told).await;
-            crate::jobs::end(Kind::Ingest, &subject, put.as_ref().map(|_| ()).map_err(Clone::clone));
-            let put = put?;
-            let entry = put["entry"].as_str().ok_or("the device named no entry")?.to_string();
-            if put["blake3"].as_str() != Some(hash.as_str()) {
-                let op = json!({ "op": "insert", "entry": entry, "path": ["tags"], "value": DELETED, "as": actor.clone().unwrap_or_else(|| vault.clone()) });
-                run(&app, op).await.ok();
-                return Err(format!("its copy's BLAKE3 is {}, not its legacy hash: not counted", put["blake3"]));
-            }
-            // its words and its analysis beside it, as the rules keep a long value (an original's only)
-            for k in ["transcript", "analysis"].into_iter().filter(|_| tags.is_none()) {
-                let Some(v) = meta.get(k).filter(|v| v.is_object()) else { continue };
-                let file = format!("{}.{k}.json", stem(&name));
-                let path = work(&format!("legacy-{hash}"))?.join(&file);
-                std::fs::write(&path, v.to_string()).map_err(|e| format!("{}: {e}", path.display()))?;
-                let mut op = json!({ "op": "put_file", "vault": vault, "name": file, "media": "application/json", "tags": [format!("media:{k}"), mark] });
-                if let Some(actor) = &actor {
-                    op["as"] = json!(actor);
-                }
-                let put = put_path(&app, op, &path, |_| {}).await;
-                std::fs::remove_file(&path).ok();
-                made.insert(k.to_string(), put?["entry"].clone());
-            }
-            Ok::<_, String>(entry)
-        }
-        .await;
-        std::fs::remove_dir_all(std::env::temp_dir().join("maiacity-jobs").join(format!("legacy-{hash}"))).ok();
-        match brought {
-            Ok(entry) => out.push(Imported { hash, entry: Some(entry), made, error: None }),
-            Err(e) => out.push(Imported { hash, entry: None, made, error: Some(e) }),
-        }
-    }
-    Ok(out)
-}
-
-/// What a file is, from its first bytes, where nothing says: the media the studio plays, else unknown.
-fn sniff(b: &[u8]) -> &'static str {
-    match b {
-        [_, _, _, _, b'f', b't', b'y', b'p', b'q', b't', ..] => "video/quicktime",
-        [_, _, _, _, b'f', b't', b'y', b'p', b'M', b'4', b'A', ..] => "audio/mp4",
-        [_, _, _, _, b'f', b't', b'y', b'p', ..] => "video/mp4",
-        [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'A', b'V', b'E', ..] => "audio/wav",
-        [b'I', b'D', b'3', ..] | [0xFF, 0xFB | 0xF3 | 0xF2, ..] => "audio/mpeg",
-        [b'O', b'g', b'g', b'S', ..] => "audio/ogg",
-        [b'f', b'L', b'a', b'C', ..] => "audio/flac",
-        [0xFF, 0xD8, 0xFF, ..] => "image/jpeg",
-        [0x89, b'P', b'N', b'G', ..] => "image/png",
-        _ => "application/octet-stream",
-    }
-}
-
-/// The extension a file of type `mime` is named with.
-fn ext_of_mime(mime: &str) -> &'static str {
-    match mime {
-        "video/quicktime" => "mov",
-        "video/mp4" => "mp4",
-        "audio/mp4" | "audio/x-m4a" => "m4a",
-        "audio/wav" | "audio/x-wav" | "audio/wave" => "wav",
-        "audio/mpeg" => "mp3",
-        "audio/ogg" => "ogg",
-        "audio/flac" => "flac",
-        "audio/aac" => "aac",
-        "image/jpeg" => "jpg",
-        "image/png" => "png",
-        "image/webp" => "webp",
-        _ => "bin",
-    }
-}
-
-/// The film seed on this Mac (Samuel 2026-10-18): each legacy film frozen into `~/maiaCITY-seed/films/<key>/`, its
-/// timeline (`timeline.json`, as the legacy API gave it), its world shots (`shots.json`, by `<shot>@<version>`), its
-/// files' catalog records (`files.json`) and their bytes (`files/<blake3>`), outside avenDB and the legacy vault, so
-/// both films come back after every avenDB reset, with or without the old studio.
-fn film_seeds() -> std::path::PathBuf {
-    std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default().join("maiaCITY-seed/films")
-}
-
-/// File `hash` in the film seed: where its bytes are and its catalog record (`{}` where `files.json` has none).
-fn seeded_file(hash: &str) -> Option<(std::path::PathBuf, Value)> {
-    for film in std::fs::read_dir(film_seeds()).ok()?.flatten() {
-        let path = film.path().join("files").join(hash);
-        if !path.is_file() {
-            continue;
-        }
-        let records = std::fs::read(film.path().join("files.json")).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).unwrap_or_default();
-        let record = records.as_array().and_then(|l| l.iter().find(|r| r["hash"] == hash)).cloned().unwrap_or_else(|| json!({}));
-        return Some((path, record));
-    }
-    None
-}
-
-/// Film `key`'s timeline and world shots from the film seed (`{ timeline, shots }`), `null` where it isn't there.
-#[tauri::command]
-pub async fn film_seed(key: String) -> Result<Option<Value>, String> {
-    if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
-        return Err(format!("{key:?} is no film key"));
-    }
-    let dir = film_seeds().join(&key);
-    let read = |f: &str| -> Result<Value, String> {
-        let path = dir.join(f);
-        serde_json::from_slice(&std::fs::read(&path).map_err(|e| format!("{}: {e}", path.display()))?).map_err(|e| format!("{}: {e}", path.display()))
-    };
-    if !dir.join("timeline.json").is_file() {
-        return Ok(None);
-    }
-    // its world proxies (`proxies.json`, `<shot>@<version>` → hash), where it keeps any yet
-    let proxies = if dir.join("proxies.json").is_file() { read("proxies.json")? } else { json!({}) };
-    Ok(Some(json!({ "timeline": read("timeline.json")?, "shots": read("shots.json")?, "proxies": proxies })))
-}
-
-/// World proxies of film `key` kept in its film seed (`proxies`: `<shot>@<version>` → hash): each one's bytes copied
-/// out of the legacy vault into `files/<hash>` (checked against its hash, never moved), its catalog record into
-/// `files.json`, and the pair into `proxies.json`, so the film's proxies come from the seed once the legacy vault is
-/// gone (src/lib/studio/importer.js `bringProxies`). How many it copied; one already there costs nothing.
-#[tauri::command]
-pub async fn film_seed_keep(app: AppHandle, key: String, proxies: std::collections::BTreeMap<String, String>) -> Result<usize, String> {
-    use tauri::Manager as _;
-    if key.is_empty() || !key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
-        return Err(format!("{key:?} is no film key"));
-    }
-    let dir = film_seeds().join(&key);
-    if !dir.join("timeline.json").is_file() {
-        return Err(format!("{key} has no film seed on this Mac"));
-    }
-    let legacy = app.state::<crate::App>().vault.clone();
-    let files = dir.join("files");
-    std::fs::create_dir_all(&files).map_err(|e| format!("{}: {e}", files.display()))?;
-    let read = |f: &str, empty: Value| std::fs::read(dir.join(f)).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).unwrap_or(empty);
-    let mut records = read("files.json", json!([]));
-    let mut kept = read("proxies.json", json!({}));
-    let mut n = 0;
-    for (shot, hash) in proxies {
-        let h: iroh_blobs::Hash = hash.to_lowercase().parse().map_err(|e| format!("{hash} is no vault hash: {e}"))?;
-        let hash = h.to_hex().to_string();
-        let path = files.join(&hash);
-        if !path.is_file() {
-            let m = legacy.catalog.meta(h).await.map_err(|e| e.to_string())?.ok_or_else(|| format!("{hash} is not in the legacy vault's catalog"))?;
-            let part = files.join(format!(".{hash}.part"));
-            legacy.store.blobs().export(h, &part).await.map_err(|e| format!("out of the legacy vault: {e}"))?;
-            let check = part.clone();
-            let got = tauri::async_runtime::spawn_blocking(move || -> std::io::Result<String> {
-                let mut hasher = blake3::Hasher::new();
-                hasher.update_reader(std::fs::File::open(&check)?)?;
-                Ok(hasher.finalize().to_hex().to_string())
-            })
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| e.to_string())?;
-            if got != hash {
-                std::fs::remove_file(&part).ok();
-                return Err(format!("{hash}: its copy's BLAKE3 is {got}: not kept"));
-            }
-            std::fs::rename(&part, &path).map_err(|e| format!("{}: {e}", path.display()))?;
-            if let Some(list) = records.as_array_mut().filter(|l| !l.iter().any(|r| r["hash"] == hash.as_str())) {
-                list.push(serde_json::to_value(&m).map_err(|e| e.to_string())?);
-            }
-            n += 1;
-        }
-        kept[shot.as_str()] = json!(hash);
-    }
-    let write = |f: &str, v: &Value| {
-        let path = dir.join(f);
-        std::fs::write(&path, serde_json::to_vec_pretty(v).unwrap_or_default()).map_err(|e| format!("{}: {e}", path.display()))
-    };
-    write("files.json", &records)?;
-    write("proxies.json", &kept)?;
-    Ok(n)
 }
 
 /// A folder of its own on this Mac for what task `id` makes, before it goes into avenDB.
@@ -1166,7 +926,7 @@ async fn probe(job: &Job<'_>, name: &str) -> Result<Value, String> {
     let e = job.input("original")?;
     let src = source(job.app, job.file("original")?, name);
     let movie = e["media"].as_str().or(e["record"]["media"].as_str()).unwrap_or_default().starts_with("video/");
-    let at = vault_core::ingest::now_iso();
+    let at = crate::files::now_iso();
     job.stage("reading it", 0.0);
     tauri::async_runtime::spawn_blocking(move || {
         objc2::rc::autoreleasepool(|_| -> Result<Value, String> {
@@ -1257,17 +1017,16 @@ async fn still(job: &Job<'_>, id: &str, name: &str) -> Result<Value, String> {
 }
 
 /// The `transcript` rule (plan J5): the original's words with their times, heard on this Mac by the speech model
-/// (vault-asr, the model the legacy vault keeps); none where it has no sound track or no speech. Its value is the
-/// transcript as the legacy studio records it (`words`, `utterances`, `language`, `model`, `seconds`, `state`).
+/// (vault-asr, the model kept in The OS's own folder: models.rs); none where it has no sound track or no speech. Its
+/// value is the transcript as the legacy studio recorded it (`words`, `utterances`, `language`, `model`, `seconds`,
+/// `state`).
 async fn transcript(job: &Job<'_>, name: &str) -> Result<Value, String> {
-    use tauri::Manager as _;
-    let vault = job.app.state::<crate::App>().vault.clone();
     let (subject, kind) = (job.subject.clone(), job.kind);
     let tell = move |stage: &str, done: f64| crate::jobs::stage(kind, &subject, stage, done);
     tell("the speech model", 0.0);
     let models = if crate::transcripts::RECOGNIZER.lock().unwrap_or_else(|p| p.into_inner()).is_none() {
         let told = tell.clone();
-        Some(crate::models::ready(&vault, &mut move |stage, done| told(stage, done)).await?)
+        Some(crate::models::ready(job.app, &mut move |stage, done| told(stage, done)).await?)
     } else {
         None
     };
@@ -1279,7 +1038,7 @@ async fn transcript(job: &Job<'_>, name: &str) -> Result<Value, String> {
     .await
     .map_err(|e| e.to_string())?
     .map_err(|e| format!("{e:#}"))?;
-    let at = vault_core::ingest::now_iso();
+    let at = crate::files::now_iso();
     let Some(samples) = samples else {
         return Ok(json!({ "outputs": [], "result": { "state": "none: no sound track", "model": vault_asr::MODEL, "at": at } }));
     };
@@ -1312,8 +1071,15 @@ async fn transcript(job: &Job<'_>, name: &str) -> Result<Value, String> {
     Ok(json!({ "outputs": [], "result": record }))
 }
 
+/// A pass of this Mac's avenDB device for maiaCITY's API (`api_pass`, api/src/standing.ts), one per call as the API
+/// takes each once; none while the device is locked, and the analysis waits for it (#1107).
+async fn api_pass(app: &AppHandle) -> Option<String> {
+    let out = run(app, json!({ "op": "api_pass", "audience": "maiaCITY API" })).await.ok()?;
+    out["pass"].as_str().map(String::from)
+}
+
 /// The `analysis` rule (plan J6): the original's tags, cues, takes, summary and hero frame, by Prem's Qwen through our
-/// API (the app's own key; no model key on a Mac), from frames of its proxy and the words of its transcript; as the
+/// API (the device's pass, else the app's key; no model key on a Mac), from frames of its proxy and the words of its transcript; as the
 /// legacy studio analyses (analyse/mod.rs `analyse`, whose record shape its value keeps), without the legacy catalog.
 /// A pause or a model not set up fails it with why; it is tried again on the next lease, up to the rule's tries.
 async fn analysis(job: &Job<'_>, name: &str) -> Result<Value, String> {
@@ -1356,7 +1122,7 @@ async fn analysis(job: &Job<'_>, name: &str) -> Result<Value, String> {
         let words = plan::words_in(transcript, *a, *b);
         let before = answers.last().map(|(_, _, p)| p["summary"].clone()).unwrap_or(Value::Null);
         let st = crate::analyse::prem::Stretch { file: &info, s: *a, e: *b, index: n, of: parts.len(), frames: &frames, words: &words, before: &before };
-        let answer = prem().frames(&auth, &st).await.map_err(|e| e.to_string())?;
+        let answer = prem().frames(&auth, api_pass(job.app).await, &st).await.map_err(|e| e.to_string())?;
         if model.is_null() {
             model = answer["model"].clone();
             vocabulary = answer["vocabulary"].clone();
@@ -1377,7 +1143,7 @@ async fn analysis(job: &Job<'_>, name: &str) -> Result<Value, String> {
         .collect();
     let said: String = transcript.and_then(|t| t["text"].as_str()).unwrap_or("").chars().take(24_000).collect();
     // a failed reduce keeps the stretches' work: only the takes are not grouped across them
-    let reduce = prem().reduce(&auth, &info, &json!(stretches), &said).await.ok();
+    let reduce = prem().reduce(&auth, api_pass(job.app).await, &info, &json!(stretches), &said).await.ok();
     let mut record = plan::finish(merged, reduce.as_ref());
     let cues = record["cues"].as_array().cloned().unwrap_or_default();
     let t = plan::thumbnail_time(reduce.as_ref(), &picks, &cues, &times, seconds);
@@ -1394,7 +1160,7 @@ async fn analysis(job: &Job<'_>, name: &str) -> Result<Value, String> {
         o.insert("version".into(), json!(plan::VERSION));
         o.insert("model".into(), model);
         o.insert("vocabulary".into(), vocabulary);
-        o.insert("at".into(), json!(vault_core::ingest::now_iso()));
+        o.insert("at".into(), json!(crate::files::now_iso()));
         o.insert("seconds".into(), json!((seconds * 1000.0).round() / 1000.0));
         o.insert("frames".into(), json!(times.len()));
     }

@@ -228,13 +228,19 @@
 			}
 
 			// a recipe that answers others' builds with its model, heard or guessed (TRIALS.answer), built first in the box
-			// the bell tent is built in next: the tent must come out as the page builds it, never as the trial's model
+			// the bell tent is built in next: the tent must come out as the page builds it, never as the trial's model.
+			// The page's tent is built before the trial starts, and the trial's room let go once the box's tent is out: the
+			// trial floods the page with forged answers for half a minute, and a build in the page meanwhile waited on
+			// them (70 s of the lab's 140)
 			line = 'A recipe that answers for another…';
 			const tentAt = buildAt('things/bell-tent');
 			try {
-				const trial = await box.build(checked(TRIALS.answer), { target: tentAt.slice(0, 64) });
-				const tent = await inBox(tentAt);
 				const page = await objectAt('things/bell-tent');
+				const answer = checked(TRIALS.answer);
+				const trial = await box.build(answer, { target: tentAt.slice(0, 64) });
+				const tent = await inBox(tentAt);
+				const trialRoom = box.rooms.find((r) => r.code === answer.code)?.room;
+				if (trialRoom) box.leave(trialRoom, 'the trial is over');
 				const forged = tent.data.nodes.some((n) => n.name === 'answered for another');
 				out.answered = { trial: trial.card.recipe, tent: tent.card.recipe, forged, tris: [tris(tent.obj), tris(page)] };
 				const kept = !forged && tent.card.recipe === tentAt.slice(0, 64) && out.answered.tris[0] === out.answered.tris[1];

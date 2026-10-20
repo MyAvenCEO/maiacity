@@ -28,7 +28,9 @@ describe('the old addresses', () => {
 			'/app/plants/': '/app/#assets',
 			'/app/worlds/': '/app/#worlds',
 			'/app/games/sandbox-3/': '/app/buildings/',
-			'/app/skills/': '/app/#docs'
+			'/app/skills/': '/app/#docs',
+			'/docs/avendb/': '/app/#docs',
+			'/docs/avenbrain/': '/app/#docs'
 		});
 	});
 

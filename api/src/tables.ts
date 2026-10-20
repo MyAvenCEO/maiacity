@@ -17,7 +17,6 @@ export type Table = { name: string; rows: number; columns: Column[] };
 /** The columns that keep a secret, a bearer code or a credential, by table: never sent. */
 const SECRET: Record<string, string[]> = {
   secrets: ["value"],
-  vault_config: ["value"],
   api_keys: ["hash"],
   device_codes: ["device_code", "user_code"],
   passkeys: ["public_key"],

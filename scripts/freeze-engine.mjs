@@ -8,9 +8,9 @@
 //                                                                          kind box, static/engines/engine-v<n>.js
 //   node scripts/freeze-engine.mjs --logic "what the new engine brings"    a kernel engine (src/lib/sandbox/bundle.js SOURCES):
 //                                                                          static/engines/<kind>-v<n>.js
-//     kinds: --box (the same as none), --logic (the logic host), --view (the view engine in a view's frame),
-//     --view-worker (the worker a view's draw script runs in), --lib-three, --lib-d3, --lib-mcp-apps (the libraries a
-//     draw script may import)
+//     kinds: --box (the same as none), --logic (the logic host), --math (the math host: KaTeX), --view (the view engine
+//     in a view's frame), --view-worker (the worker a view's draw script runs in), --lib-three, --lib-d3, --lib-mcp-apps
+//     (the libraries a draw script may import)
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 

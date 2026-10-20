@@ -1,23 +1,22 @@
 /**
  * Speech to text: every recording's words, with their times — Deepgram Nova 3, through Prem's encrypted API.
  *
- * The vault server (vault/crates/vault-server/src/transcribe.rs) extracts a recording's speech track when the file
- * reaches Object Storage and sends it here; this route hands it to Prem and answers the words, normalised to what the
- * catalog keeps in the original's `meta.transcript` (times in seconds of the audio sent — the server shifts a chunk's
- * words by the chunk's start). Prem's SDK encrypts in this process (ML-KEM with Prem's attested enclave, XChaCha20):
- * neither Prem's gateway nor anyone on the way reads the audio or the words, and Prem keeps neither.
+ * The routes take a recording's speech track and answer its words, normalised as a transcript keeps them (times in
+ * seconds of the audio sent). They are not mounted: the old media vault's server, which sent the tracks, retired
+ * (#1112), and every recording's words are now made on the Mac (vault/app transcripts.rs). Prem's SDK encrypts in this
+ * process (ML-KEM with Prem's attested enclave, XChaCha20): neither Prem's gateway nor anyone on the way reads the
+ * audio or the words, and Prem keeps neither.
  *
  * Prem's client, its key and endpoints, and how its failures read: prem.ts (shared with the shot analysis). A failure
  * that is Prem's for now (its attestation report for the model unavailable, a 5xx, rate limiting) answers 503 with
- * `transient: true`: the vault server keeps the recording queued and tries again later, without using up a try.
+ * `transient: true`: the caller keeps the recording queued and tries again later, without using up a try.
  *
- * Who may ask: the vault server (its own token, whose hash it publishes in vault_config as `api_token`), or a key the
- * admin approved with `media:admin` (the Mac app's).
+ * Who may ask: The OS by its avenDB device's pass (an admin of Maia City), or a key the admin approved with
+ * `media:admin` (the Mac app's) until The OS sends only its pass (#1107).
  */
-import { createHash } from "node:crypto";
-import { db } from "./pg";
 import { can } from "./acl";
 import { keyHolder } from "./keys";
+import { adminByPass } from "./standing";
 import { call, failure, paused, pick, prem, PremError, resetPrem } from "./prem";
 
 export const MODEL = "deepgram/general-nova-3";
@@ -124,28 +123,21 @@ export async function transcribe(bytes: Uint8Array, mime = "audio/mp4", name = "
 }
 
 // ── who may ask ──
-const sha256 = (s: string) => createHash("sha256").update(s).digest("hex");
-
-/** The vault server's token (`vst_…`), checked against the hash it published — or null when the request has none. */
-async function isVaultServer(req: Request): Promise<boolean | null> {
-  const token = /^Bearer (vst_[\w-]+)$/.exec(req.headers.get("authorization") ?? "")?.[1];
-  if (!token) return null;
-  const { rows } = await db.query<{ value: string }>("SELECT value FROM vault_config WHERE key = 'api_token'");
-  return !!rows[0] && rows[0].value === sha256(token);
-}
-
-/** The vault server, or a key the admin approved for the media vault — else the response that says why not. */
+/** The OS by its avenDB device's pass in `X-Avendb-Pass`, an admin of Maia City as avenDB's server says (standing.ts),
+ *  or by the key the admin approved for the media library (the Mac app's) — else the response that says why not. */
 export async function authorize(req: Request): Promise<true | Response> {
-  const server = await isVaultServer(req);
-  if (server === true) return true;
-  if (server === false) return Response.json({ error: "This vault server token is not the one the server published." }, { status: 403 });
+  const pass = req.headers.get("x-avendb-pass");
+  if (pass) {
+    const admin = await adminByPass(pass);
+    return "error" in admin ? Response.json({ error: admin.error }, { status: admin.status }) : true;
+  }
   const key = await keyHolder(req);
-  if (!key) return Response.json({ error: "Speech to text and the shot analysis need the vault server's token or the app's key." }, { status: 401 });
+  if (!key) return Response.json({ error: "Speech to text and the shot analysis need The OS's avenDB pass or its key." }, { status: 401 });
   if (!(key.scope.includes("media:admin") && can(key, "media:admin"))) return Response.json({ error: "This key cannot work with the media vault." }, { status: 403 });
   return true;
 }
 
-/** GET /api/transcripts — is speech to text set up here? (The vault server asks before it starts a round.) */
+/** GET /api/transcripts — is speech to text set up here? (Asked before a round starts.) */
 export async function statusRoute(req: Request): Promise<Response> {
   const ok = await authorize(req);
   if (ok !== true) return ok;

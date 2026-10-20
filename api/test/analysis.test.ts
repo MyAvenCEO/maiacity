@@ -1,7 +1,7 @@
 // The shot analysis: Qwen's answers validated into the vocabulary (game/film/vocabulary.json), the requests it gets
 // (frames as data URIs, the JSON schema), the repair of an unusable answer, and who may ask — against fixtures in the
 // shape of Prem's chat completions (test/fixtures/qwen-*.json, written by hand: Prem is not called here).
-import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import { useDb, type Db } from "../src/pg";
@@ -17,7 +17,6 @@ const pg = new PGlite();
 const sha = (s: string) => createHash("sha256").update(s).digest("hex");
 const MEDIA_KEY = "mck_media_admin_key_a";
 const OTHER_KEY = "mck_ideas_only_key_a";
-const SERVER_TOKEN = "vst_the_vault_servers_token_a";
 
 beforeAll(async () => {
   for (const m of MIGRATIONS) await pg.exec(m.sql);
@@ -33,7 +32,6 @@ beforeAll(async () => {
   await initRoles();
   await pg.query("INSERT INTO founders (id, name, role) VALUES ('first', 'first', 'admin')");
   await pg.query("INSERT INTO api_keys (founder_id, hash, scope, label) VALUES ('first', $1, 'media:admin', 'Mac'), ('first', $2, 'economy:admin', 'economy')", [sha(MEDIA_KEY), sha(OTHER_KEY)]);
-  await pg.query("INSERT INTO vault_config (key, value) VALUES ('api_token', $1)", [sha(SERVER_TOKEN)]);
 });
 
 const saved = process.env.PREMAI_API_KEY;
@@ -53,7 +51,7 @@ const framesBody = {
   words: [{ s: 0.4, e: 3.8, text: "Day twenty. The city starts with one street." }],
 };
 const reduceBody = { mode: "reduce", file: { name: "C0042.MP4", kind: "video", seconds: 30 }, stretches: [{ s: 0, e: 12, summary: "x", tags: {}, cues: [] }], text: "Day twenty." };
-const post = (body: unknown, auth = SERVER_TOKEN) =>
+const post = (body: unknown, auth = MEDIA_KEY) =>
   new Request("http://api/api/analysis", { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json", ...(auth ? { authorization: `Bearer ${auth}` } : {}) } });
 const answering = (...answers: unknown[]) => {
   const asked: any[] = [];
@@ -126,17 +124,44 @@ describe("validating an answer", () => {
 });
 
 describe("POST /api/analysis", () => {
-  test("nobody, a wrong server token, or a key without media:admin is turned away", async () => {
+  test("nobody, an unknown key, or a key without media:admin is turned away", async () => {
     process.env.PREMAI_API_KEY = "set";
     expect((await analyseRoute(post(framesBody, ""))).status).toBe(401);
-    expect((await analyseRoute(post(framesBody, "vst_not_it"))).status).toBe(403);
+    expect((await analyseRoute(post(framesBody, "mck_unknown"))).status).toBe(401);
     expect((await analyseRoute(post(framesBody, OTHER_KEY))).status).toBe(403);
+  });
+
+  describe("The OS's avenDB device pass", () => {
+    // avenDB's server, stood in for: an admin of Maia City's pass, and anyone else's
+    const feed = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const { pass } = await req.json();
+        return Response.json(pass.startsWith("admin") ? { vault: "ab".repeat(32), admin: true } : { vault: "cd".repeat(32), admin: false });
+      },
+    });
+    const was = process.env.AVENDB_FEED;
+    process.env.AVENDB_FEED = `http://127.0.0.1:${feed.port}/feed/code`;
+    afterAll(() => {
+      feed.stop(true);
+      process.env.AVENDB_FEED = was;
+    });
+    const ask = (pass: string) => statusRoute(new Request("http://api/api/analysis", { headers: { "x-avendb-pass": pass } }));
+
+    test("an admin of Maia City's pass opens it, once; anyone else's, or a pass that is no pass, opens nothing", async () => {
+      delete process.env.PREMAI_API_KEY;
+      const admin = `admin${"A".repeat(80)}`;
+      expect((await ask(admin)).status).toBe(200);
+      expect((await ask(admin)).status).toBe(401);
+      expect((await ask(`other${"A".repeat(80)}`)).status).toBe(403);
+      expect((await ask("short")).status).toBe(401);
+    });
   });
 
   test("without Prem's key it says so: 503 — and the status route tells the vault server", async () => {
     delete process.env.PREMAI_API_KEY;
     expect((await analyseRoute(post(framesBody))).status).toBe(503);
-    const st = await (await statusRoute(new Request("http://api/api/analysis", { headers: { authorization: `Bearer ${SERVER_TOKEN}` } }))).json();
+    const st = await (await statusRoute(new Request("http://api/api/analysis", { headers: { authorization: `Bearer ${MEDIA_KEY}` } }))).json();
     expect(st).toEqual({ ready: false, model: MODEL, vocabulary: VOCAB.version });
   });
 

@@ -214,7 +214,7 @@ import { useDb } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
 import { getGame, move, takeSeat } from "../src/maiacity-v1.js";
 
-test("the first two founders to sign in take seat A and seat B; each moves only their own, an admin too", async () => {
+test("the first two founders to sign in take seat A and seat B; each moves only their own", async () => {
   const pg = new PGlite();
   for (const m of MIGRATIONS) await pg.exec(m.sql);
   const wrap = (q) => ({ query: async (text, params = []) => { const r = await q.query(text, params); return { rows: r.rows, affectedRows: r.affectedRows ?? 0 }; } });
@@ -228,12 +228,12 @@ test("the first two founders to sign in take seat A and seat B; each moves only 
   g = await getGame({ id: "bob", name: "Bob" }, T0);
   expect([g.players.B.founder, g.players.B.name]).toEqual(["bob", "Bob"]);
   await expect(takeSeat({ id: "eve", name: "Eve" }, "A", T0)).rejects.toThrow(/taken/);
-  let s = await move({ id: "sam" }, false, "B", { type: "mint" }, T0 + 3600e3);
+  let s = await move({ id: "sam" }, "B", { type: "mint" }, T0 + 3600e3);
   // the seat asked for does not matter: a founder always moves for their own
   expect(s.players.A.wallet.HEARTS).toBeGreaterThan(0);
   expect(s.players.B.wallet.HEARTS).toBe(0);
-  await expect(move({ id: "eve" }, true, "B", { type: "mint" }, T0 + 3600e3)).rejects.toThrow(/no seat/);
-  s = await move({ id: "bob" }, false, "", { type: "mint" }, T0 + 3600e3);
+  await expect(move({ id: "eve" }, "B", { type: "mint" }, T0 + 3600e3)).rejects.toThrow(/no seat/);
+  s = await move({ id: "bob" }, "", { type: "mint" }, T0 + 3600e3);
   // a real hour is 28/24 game days: 28 HEARTS
   expect(s.players.B.wallet.HEARTS).toBeCloseTo(STARTER + 28, 4);
   s = await getGame(null, T0 + 3 * DAY_MS);

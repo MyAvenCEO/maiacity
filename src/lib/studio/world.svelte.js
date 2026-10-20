@@ -25,7 +25,9 @@ import { filmPath } from '../../../game/film/worlds.js';
  *   ready(): Promise<void>,
  *   prepare(specs: ShotSpec[], opts?: { live?: boolean, meter?: boolean }): Promise<void>,
  *   keep?(specs: ShotSpec[]): void | Promise<void>,
+ *   dress?(specs: ShotSpec[]): Promise<void>,
  *   held?(specs: ShotSpec[]): Promise<boolean[]>,
+ *   look?(view: FilmView): void,
  *   show(o: ShowArgs): void | boolean | Promise<void | boolean>,
  *   capture?(o: { spec: ShotSpec, t: number, shape: Shape, width: number, height: number }): Promise<ArrayBuffer>,
  *   meter?(spec: ShotSpec): Promise<number>,
@@ -94,6 +96,18 @@ export class WorldViewer {
 	readyShots = new SvelteSet();
 	/** @type {Map<string, Promise<void>>} */
 	preparing = new Map();
+	/**
+	 * each prepare's end, for when the page it was asked of goes (the GPU dropped it, another world came): that page
+	 * never answers, and whoever waited on it waited for ever, told every 15 s that the shot was still preparing
+	 * @type {Set<() => void>}
+	 */
+	ends = new Set();
+	/** every prepare under way given up: the page it was asked of is gone */
+	forget() {
+		for (const end of this.ends) end();
+		this.ends.clear();
+		this.preparing.clear();
+	}
 	/** how far the world's resolution is stepped down to keep up (1 = full proxy HD): drop resolution, never frames */
 	scale = $state(1);
 	/** the last frames' times (ms): the resolution steps on their median, so one slow frame (a cut, a restage) moves nothing */
@@ -148,7 +162,7 @@ export class WorldViewer {
 			this.reloads = 0;
 			this.metered.clear();
 			this.readyShots.clear();
-			this.preparing.clear();
+			this.forget();
 			this.queued = null;
 			this.busy = false;
 		}
@@ -273,7 +287,7 @@ export class WorldViewer {
 			this.drawn = '';
 			this.metered.clear();
 			this.readyShots.clear();
-			this.preparing.clear();
+			this.forget();
 			this.queued = null;
 			this.busy = false;
 			if (!again) return void (this.state = 'unavailable');
@@ -319,7 +333,7 @@ export class WorldViewer {
 		this.url = '';
 		this.state = 'off';
 		this.readyShots.clear();
-		this.preparing.clear();
+		this.forget();
 	}
 
 	/** @param {ShotSpec} spec */
@@ -350,14 +364,22 @@ export class WorldViewer {
 			const k = specKey(s);
 			const t0 = performance.now();
 			const slow = setInterval(() => console.warn(`world: still preparing ${s.meta?.name ?? 'a shot'} after ${Math.round((performance.now() - t0) / 1000)} s`), 15000);
-			const p = film
-				.prepare([s], { live: true, meter })
-				.then(() => void this.readyShots.add(k))
+			/** @type {() => void} */
+			let end = () => {};
+			const gone = new Promise((r) => (end = () => r(false)));
+			this.ends.add(end);
+			/** @type {Promise<void>} */
+			const p = Promise.race([film.prepare([s], { live: true, meter }).then(() => true), gone])
+				.then((done) => void (done && this.film === film && this.readyShots.add(k)))
 				.catch((/** @type {Error} */ e) => {
 					this.error = `prepare: ${e?.message ?? e}`;
 					console.warn(`world: ${this.error}`);
 				})
-				.finally(() => (clearInterval(slow), this.preparing.delete(k)));
+				.finally(() => {
+					clearInterval(slow);
+					this.ends.delete(end);
+					if (this.preparing.get(k) === p) this.preparing.delete(k);
+				});
 			this.preparing.set(k, p);
 		}
 		return Promise.all(specs.map((s) => this.preparing.get(specKey(s)) ?? Promise.resolve())).then(() => {});
@@ -380,6 +402,39 @@ export class WorldViewer {
 		void Promise.resolve(film.keep(mine)).catch(() => {});
 	}
 	/**
+	 * The whole timeline's shots, before it plays (src/lib/film `dress`): the sets they name built, and what their
+	 * cameras see kept built after the shots ahead, as the world's budget holds. Asked every frame while stopped: said
+	 * to the world only when the shots change, or `again` (Play: what was built since drawn once out of sight).
+	 * @param {ShotSpec[]} specs @param {{ again?: boolean }} [opts] @returns {Promise<void>}
+	 */
+	dress(specs, { again = false } = {}) {
+		const film = this.film;
+		if (!film?.dress) return Promise.resolve();
+		const mine = specs.filter((s) => this.holds(s));
+		// by where each shot stands, not its camera: a key moved while a shot is edited dresses nothing again
+		const keys = mine.map(specKey);
+		const same = keys.length === this.dressed.length && keys.every((k, i) => k === this.dressed[i]);
+		if (!again && same && film === this.dressedBy && this.dressing) return this.dressing;
+		this.dressed = keys;
+		this.dressedBy = film;
+		/** @type {() => void} */
+		let end = () => {};
+		const gone = new Promise((r) => (end = () => r(undefined)));
+		this.ends.add(end);
+		const p = Promise.race([Promise.resolve(film.dress(mine)), gone])
+			.then(() => {})
+			.catch((/** @type {Error} */ e) => console.warn(`world: the timeline was not dressed: ${e?.message ?? e}`))
+			.finally(() => this.ends.delete(end));
+		this.dressing = p;
+		return p;
+	}
+	/** that dressing, the shots it was asked for (by `specKey`) and of which film page @type {Promise<void> | null} */
+	dressing = null;
+	/** @type {string[]} */
+	dressed = [];
+	/** @type {Film | null} */
+	dressedBy = null;
+	/**
 	 * The shots ahead the world already holds (a world that streams by view: built while the shots before them play)
 	 * count as ready: at their cut the live world draws them at once, only a move of its camera. Asked four times a
 	 * second, not every frame. @param {ShotSpec[]} specs
@@ -391,6 +446,25 @@ export class WorldViewer {
 		const mine = specs.filter((s) => this.holds(s));
 		void film.held(mine).then((h) => h.forEach((ok, i) => ok && this.film === film && this.readyShots.add(specKey(mine[i])))).catch(() => {});
 	}
+	/**
+	 * The views the shots ahead are drawn through (their grades, the output), sent to the GPU before their cuts.
+	 * @param {FilmView[]} views
+	 */
+	look(views) {
+		const film = this.film;
+		if (!film?.look) return;
+		if (film !== this.lookedBy) (this.looked = new WeakSet()), (this.lookedBy = film);
+		for (const v of views) {
+			const k = v.grade ?? v.lut;
+			if (!k || this.looked.has(k)) continue;
+			this.looked.add(k);
+			film.look(v);
+		}
+	}
+	/** the views sent (by their grade), not sent again every frame, and to which film page @type {WeakSet<object>} */
+	looked = new WeakSet();
+	/** @type {Film | null} */
+	lookedBy = null;
 	/** when `markHeld` last asked */
 	heldAt = 0;
 	/** the shots ahead last kept (by the whole shot), and by which film page */

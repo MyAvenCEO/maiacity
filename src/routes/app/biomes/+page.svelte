@@ -4,29 +4,39 @@
 	growing and lying on them in colonies. Every layer to show or hide; and mixed with a second biome, as far as the
 	slider says. Drag to turn round it, scroll to come closer. An admin's.
 
-	The cover is drawn by the universal renderer ($lib/assets/render): each kind built in the asset box at its seed
-	(`biomes/cover:fern?seed=7139`, $lib/biomes/built.js), laid where the biome's stream lays it round an eye that stays
-	in the middle ($lib/biomes/stream.js `coverLaid`), every copy at its finest shape. The biome itself, a recipe of
-	numbers, and the ground its shader paints, stay the page's.
+	The biomes are the Maia City vault's, each at its newest version, read off the card the vault keeps beside its recipe
+	($lib/assets/sources/biome.js), never the repo's list: what the worlds lay is what is shown here. The cover is drawn
+	by the universal renderer ($lib/assets/render): each kind the asset its biome's card names, built in the asset box
+	at its seed (`biomes/cover@1:fern?seed=7139`, $lib/biomes/built.js), laid where the biome's stream lays it round an
+	eye that stays in the middle ($lib/biomes/stream.js `coverLaid`), every copy at its finest shape. The ground its
+	shader paints stays the page's.
 -->
 <script>
 	import { onDestroy, onMount } from 'svelte';
-	import { BIOMES, COVER, SURFACE, SURFACES, coverSeed, groundMaterial, mix } from '$lib/biomes';
+	import { COVER, SURFACE, SURFACES, coverSeed, groundMaterial, mix } from '$lib/biomes';
 	import { coverRef } from '$lib/biomes/built.js';
 	import { coverLaid } from '$lib/biomes/stream.js';
+	import { INDEX } from '$lib/assets/vault.js';
+	import { biomeOr } from '$lib/assets/sources/biome.js';
 	import Turntable from '$lib/app/Turntable.svelte';
 	import { fit } from '$lib/app/turntable.js';
 
-	/** @typedef {(typeof BIOMES)[number]} Biome */
+	/** @typedef {import('$lib/biomes').Recipe & { version: number }} Biome */
 	/** @typedef {import('$lib/biomes').Recipe} Recipe */
+
+	/** every biome the Maia City vault holds (the app's layout let the page in once its recipes were), each its newest
+	 *  version as its card says it; the one a card is no floor's is left out (said on the console) */
+	const BIOMES = /** @type {Biome[]} */ (Object.keys(INDEX.latest).filter((n) => n.startsWith('biomes/') && n !== 'biomes/cover').map((n) => biomeOr(n)).filter(Boolean));
+	/** where the vault holds none: bare ground, no cover */
+	const NONE = /** @type {Biome} */ ({ id: 'none', version: 0, label: 'No biome', note: 'The Maia City vault holds no biome yet.', from: '', surface: { soil: 1 }, density: 1, cover: [] });
 
 	const SIZE = 16;
 	/** @type {HTMLDivElement | undefined} */
 	let canvasBox = $state();
 	/** @type {Biome} */
-	let chosen = $state(BIOMES[0]);
+	let chosen = $state(BIOMES[0] ?? NONE);
 	/** the biome mixed in, and how far */
-	let other = $state(BIOMES[1]?.id ?? BIOMES[0].id);
+	let other = $state(BIOMES[1]?.id ?? BIOMES[0]?.id ?? NONE.id);
 	let amount = $state(0);
 	/** the layers hidden: surfaces by name, cover by its index in the recipe shown */
 	let hiddenSurfaces = $state(/** @type {string[]} */ ([]));
@@ -98,7 +108,7 @@
 				const want = new Map();
 				r.cover.forEach((c, i) => {
 					const m = /** @type {Float32Array} */ (places[i]);
-					if (m.length) want.set(coverRef(c.kind, coverSeed(i, c.kind)), m);
+					if (m.length) want.set(c.ref ?? coverRef(c.kind, coverSeed(i, c.kind)), m);
 				});
 				for (const [ref, copies] of laid) if (!want.has(ref)) for (const c of copies) assets.move(c, away);
 				const kinds = [];
@@ -203,9 +213,11 @@
 <Turntable
 	name="biomes"
 	bind:canvas={canvasBox}
-	picks={{ title: 'Biomes', lede: 'The floors the worlds stand on: their surfaces and what grows on them, in layers that mix.', items: BIOMES, chosen, where: (/** @type {Biome} */ b) => b.from, onpick: pick }}
+	picks={{ title: 'Biomes', lede: 'The floors the worlds stand on: their surfaces and what grows on them, in layers that mix.', items: BIOMES, chosen, where: (/** @type {Biome} */ b) => `Version ${b.version}`, onpick: pick }}
 >
-	{#if failed}
+	{#if !BIOMES.length}
+		<div class="canvas-note" role="status">{NONE.note}</div>
+	{:else if failed}
 		<div class="canvas-note error" role="alert">{failed}</div>
 	{:else if coming}
 		<div class="canvas-note" role="status">Growing the cover… {coming.done} of {coming.of}</div>
@@ -236,7 +248,7 @@
 	{/snippet}
 	{#snippet readout()}
 		<b>{chosen.label}</b>
-		<small>{chosen.note}</small>
+		<small>{chosen.version ? `Version ${chosen.version}: ${chosen.note}` : chosen.note}</small>
 		<small>Drag to turn round it · pinch or scroll to come closer · 16 m across</small>
 	{/snippet}
 </Turntable>

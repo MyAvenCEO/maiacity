@@ -40,7 +40,8 @@ import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
 import { createForest, type FloraDrawn, type Forest } from './flora.js'
-import { BIOMES, groundMaterial } from '$lib/biomes'
+import { groundMaterial } from '$lib/biomes'
+import { biomeOr } from '$lib/assets/sources/biome.js'
 import { createCover, type Cover } from './cover.js'
 import type { Drawn } from './drawn.js'
 import { standThings, workshopsOf } from './things.js'
@@ -72,8 +73,6 @@ export const tankLine = (kind: DomeKind, R: number) => (kind === 'grand' ? R - (
 /** A door's half-width, and its height at the top of the arch (the glamping door is square-headed). */
 const doorSize = (kind: DomeKind) => (kind === 'tent' ? { dw: 0.55, dh: 1.8, top: 1.8 } : kind === 'glamp' ? { dw: 0.75, dh: 2.5, top: 2.5 } : { dw: 1.3, dh: 3, top: 3 + 1.3 * 0.4 })
 /** The signed difference between two angles, in -π..π. */
-/** Sandbox 5: the biome of the floor under the glass ($lib/biomes) */
-const WARM_BIOME = BIOMES.find((b) => b.id === 'warm-food-forest')!
 export const adiff = (a: number, b: number) => Math.atan2(Math.sin(a - b), Math.cos(a - b))
 
 /** A texture tiled to a world size: `metres` of surface per repeat of the image. */
@@ -232,61 +231,127 @@ export function box(w: number, h: number, d: number, mat: THREE.Material, x = 0,
 	return m
 }
 
+/** what of a mesh's geometry a bake keeps, and each one's size */
+const KEPT = { position: 3, normal: 3, uv: 2 } as const
+type Kept = keyof typeof KEPT
+const _v = new THREE.Vector3(), _nm = new THREE.Matrix3()
+
+/**
+ * A run of meshes of one material merged into one geometry, each where it stands: unindexed, its position, normal and uv
+ * only, as `mergeGeometries` made it of their clones — but written straight into one array per attribute, with no clone
+ * of each (a dome's garden is hundreds of thousands of leaves, and their clones held more than a gigabyte until the
+ * whole garden was merged). `add` writes the next mesh; null where they do not all carry the same of those three (as
+ * `mergeGeometries` answered), or one has morphs (made the old way).
+ */
+function merging(list: THREE.Mesh[]): { add: (o: THREE.Mesh) => void; done: () => THREE.BufferGeometry | null } {
+	const names = (g: THREE.BufferGeometry) => (Object.keys(KEPT) as Kept[]).filter((k) => g.attributes[k])
+	const first = names(list[0]!.geometry), same = first.join()
+	if (list.some((o) => names(o.geometry).join() !== same || Object.keys(o.geometry.morphAttributes).length)) {
+		const geos: THREE.BufferGeometry[] = []
+		return { add: (o) => void geos.push(cloned(o)), done: () => mergeGeometries(geos) }
+	}
+	let n = 0
+	for (const o of list) n += o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position!.count
+	const out = Object.fromEntries(first.map((k) => [k, new Float32Array(n * KEPT[k])])) as Partial<Record<Kept, Float32Array>>
+	let at = 0
+	return {
+		add: (o) => {
+			const g = o.geometry, index = g.index, count = index ? index.count : g.attributes.position!.count
+			const p = g.attributes.position!, nrm = g.attributes.normal, uv = g.attributes.uv
+			const P = out.position!, N = out.normal, U = out.uv
+			_nm.getNormalMatrix(o.matrixWorld)
+			for (let j = 0; j < count; j++, at++) {
+				const a = index ? index.getX(j) : j
+				_v.fromBufferAttribute(p, a).applyMatrix4(o.matrixWorld)
+				P[at * 3] = _v.x
+				P[at * 3 + 1] = _v.y
+				P[at * 3 + 2] = _v.z
+				if (nrm && N) {
+					_v.fromBufferAttribute(nrm, a).applyNormalMatrix(_nm)
+					N[at * 3] = _v.x
+					N[at * 3 + 1] = _v.y
+					N[at * 3 + 2] = _v.z
+				}
+				if (uv && U) {
+					U[at * 2] = uv.getX(a)
+					U[at * 2 + 1] = uv.getY(a)
+				}
+			}
+		},
+		done: () => {
+			const merged = new THREE.BufferGeometry()
+			for (const k of first) merged.setAttribute(k, new THREE.BufferAttribute(out[k]!, KEPT[k]))
+			return merged
+		}
+	}
+}
+/** a mesh's geometry where it stands, as a bake keeps it: a clone, unindexed, its position, normal and uv only */
+function cloned(o: THREE.Mesh): THREE.BufferGeometry {
+	const g = o.geometry.clone().applyMatrix4(o.matrixWorld)
+	for (const k of Object.keys(g.attributes)) if (!(k in KEPT)) g.deleteAttribute(k)
+	return g.index ? g.toNonIndexed() : g
+}
+/** a group's meshes by their material, in the order they come */
+function byMaterial(group: THREE.Group): Map<THREE.Material, THREE.Mesh[]> {
+	group.updateMatrixWorld(true)
+	const byMat = new Map<THREE.Material, THREE.Mesh[]>()
+	group.traverse((o) => {
+		if (!(o instanceof THREE.Mesh)) return
+		const list = byMat.get(o.material as THREE.Material) ?? []
+		list.push(o)
+		byMat.set(o.material as THREE.Material, list)
+	})
+	return byMat
+}
+/**
+ * What a bake was made of, let go: the group emptied. A build's closures outlive it (its floors' and lamps' checks, its
+ * animations) and hold every group it made in the same block, so a baked group kept its meshes as long as the dome stood:
+ * a dome's garden is hundreds of thousands of them (half a million kept after a village's domes were built).
+ */
+function letGo(group: THREE.Group) {
+	for (const o of group.children) o.parent = null
+	group.children.length = 0
+}
+/** a merged geometry as a baked mesh */
+function bakedMesh(merged: THREE.BufferGeometry, mat: THREE.Material, shadows: boolean): THREE.Mesh {
+	merged.userData.baked = true
+	const m = new THREE.Mesh(merged, mat)
+	m.castShadow = shadows
+	m.receiveShadow = true
+	return m
+}
+
 /**
  * bake(), a slice at a time: the same meshes, but the page gets a frame back every few
  * milliseconds while it works, and big materials are merged in chunks rather than all at once.
  */
 export async function bakeSliced(group: THREE.Group, shadows: boolean, slice: () => Promise<void>): Promise<THREE.Group> {
-	group.updateMatrixWorld(true)
-	const meshes: THREE.Mesh[] = []
-	group.traverse((o) => o instanceof THREE.Mesh && meshes.push(o))
-	const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>()
-	for (let i = 0; i < meshes.length; i++) {
-		const o = meshes[i]!
-		const g = o.geometry.clone().applyMatrix4(o.matrixWorld)
-		for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k)
-		const list = byMat.get(o.material as THREE.Material) ?? []
-		list.push(g.index ? g.toNonIndexed() : g)
-		byMat.set(o.material as THREE.Material, list)
-		if (i % 32 === 0) await slice()
-	}
 	const out = new THREE.Group()
-	for (const [mat, geos] of byMat)
-		for (let i = 0; i < geos.length; i += 400) {
-			const merged = mergeGeometries(geos.slice(i, i + 400))
+	for (const [mat, list] of byMaterial(group))
+		for (let i = 0; i < list.length; i += 400) {
+			const chunk = list.slice(i, i + 400), m = merging(chunk)
+			for (let j = 0; j < chunk.length; j++) {
+				m.add(chunk[j]!)
+				if (j % 32 === 31) await slice()
+			}
+			const merged = m.done()
 			await slice()
-			if (!merged) continue
-			merged.userData.baked = true
-			const m = new THREE.Mesh(merged, mat)
-			m.castShadow = shadows
-			m.receiveShadow = true
-			out.add(m)
+			if (merged) out.add(bakedMesh(merged, mat, shadows))
 		}
+	letGo(group)
 	return out
 }
 
-/** Bakes a group into one mesh per material, so a forest costs a handful of draw calls. */
+/** Bakes a group into one mesh per material, so a forest costs a handful of draw calls; the group is left empty. */
 export function bake(group: THREE.Group, shadows = true): THREE.Group {
-	group.updateMatrixWorld(true)
-	const byMat = new Map<THREE.Material, THREE.BufferGeometry[]>()
-	group.traverse((o) => {
-		if (!(o instanceof THREE.Mesh)) return
-		const g = o.geometry.clone().applyMatrix4(o.matrixWorld)
-		for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k)
-		const list = byMat.get(o.material as THREE.Material) ?? []
-		list.push(g.index ? g.toNonIndexed() : g)
-		byMat.set(o.material as THREE.Material, list)
-	})
 	const out = new THREE.Group()
-	for (const [mat, geos] of byMat) {
-		const merged = mergeGeometries(geos)
-		if (!merged) continue
-		merged.userData.baked = true
-		const m = new THREE.Mesh(merged, mat)
-		m.castShadow = shadows
-		m.receiveShadow = true
-		out.add(m)
+	for (const [mat, list] of byMaterial(group)) {
+		const m = merging(list)
+		for (const o of list) m.add(o)
+		const merged = m.done()
+		if (merged) out.add(bakedMesh(merged, mat, shadows))
 	}
+	letGo(group)
 	return out
 }
 
@@ -1275,9 +1340,11 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		/* ground: soil, a stone plaza, a ring path and spokes */
 		// the master dome's centre is a theatre sunk into the ground, so its floor is a ring round the bowl
 		const theatre = kind === 'master'
-		// Sandbox 5: the floor under the glass is the warm food forest biome's ($lib/biomes): big fallen leaves, humus,
-		// moss and a living mat, run into each other in patches; its cover streamed round you (below)
-		const warmFloor = opts.flora ? groundMaterial(WARM_BIOME.surface) : null
+		// Sandbox 5: the floor under the glass is the warm food forest biome's, as the Maia City vault keeps it
+		// ($lib/assets/sources/biome.js, its newest version): big fallen leaves, humus, moss and a living mat, run into
+		// each other in patches; its cover streamed round you (below). Bare soil where the vault holds none, no cover
+		const warmBiome = opts.flora ? biomeOr('biomes/warm-food-forest') : null
+		const warmFloor = opts.flora ? groundMaterial(warmBiome?.surface ?? { soil: 1 }) : null
 		const groundWithPond = () => {
 			const sh = new THREE.Shape().absarc(0, 0, R, 0, TAU, false)
 			sh.holes.push(new THREE.Path(pondShapeAt(0).getPoints()))
@@ -1729,7 +1796,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 				return !onStone(rr, a, 0.1) && !nearStream(x, z, width / 2 + 0.3) && !inTrunk(x, z)
 			}
 			// in the dome's own ground, which lies where the dome stands (a hair above the host's ground); hidden until it joins
-			floorCover = createCover({ drawn: flora.drawn, recipe: WARM_BIOME, open, tile: 8, reach: 24, near: 9, thin: 0.25, density: 3.8, seed: 707 + kind.length, origin: host ? [host.x, host.z] : [0, 0], at: host ? [host.x, 0.03, host.z] : [0, 0, 0], hidden: !!host })
+			if (warmBiome) floorCover = createCover({ drawn: flora.drawn, recipe: warmBiome, open, tile: 8, reach: 24, near: 9, thin: 0.25, density: 3.8, seed: 707 + kind.length, origin: host ? [host.x, host.z] : [0, 0], at: host ? [host.x, 0.03, host.z] : [0, 0, 0], hidden: !!host })
 			drop.push(() => floorCover?.dispose())
 		}
 		await pause('Planting the forest inside')

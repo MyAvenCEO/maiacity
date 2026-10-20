@@ -1,7 +1,7 @@
 [package]
 name = "maiacity-studio"
 version = "0.1.0"
-description = "maiaCITY Studio — the Mac app: the media vault, ingest, and every admin and studio function, native"
+description = "maiaCITY Studio — the Mac app: avenDB's device, ingest, and every admin and studio function, native"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -11,7 +11,6 @@ publish.workspace = true
 tauri-build = { version = "2.5", features = [] }
 
 [dependencies]
-vault-core = { path = "../crates/vault-core", default-features = false, features = ["tls-aws-lc-rs"] }
 # avenDB's device, in the app's own process (avendb.rs): its node, its store in ~/avenDB/mac and its drives
 avendb-device = { path = "../../avendb/crates/avendb-device" }
 # a studio worker's node, which the studio's jobs put what they make on by the worker's own key (aven.rs)
@@ -29,12 +28,9 @@ anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 libc.workspace = true
-iroh-blobs.workspace = true
-iroh-docs.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 blake3.workspace = true
-iroh.workspace = true
 trash = "5"
 vault-media = { path = "../crates/vault-media" }
 # speech to text, on-device: Phonon-2 through ONNX Runtime (transcripts.rs)
@@ -56,9 +52,8 @@ objc2-core-foundation = "0.3"
 objc2-core-media = "0.3"
 # avenDB's passkey in a sign-in sheet on maia.city (passkey.rs)
 objc2-authentication-services = { version = "0.3", default-features = false, features = ["std", "block2", "ASWebAuthenticationSession", "ASFoundation"] }
-# native-tls = the macOS Security framework, like the Keychain
+# native-tls = the macOS Security framework
 reqwest = { version = "0.13", default-features = false, features = ["json", "native-tls", "http2", "charset"] }
-security-framework = "3.7"
 
 [features]
 # The app's own pages, embedded (build/): what `tauri build` turns on. Without it the window loads the dev server

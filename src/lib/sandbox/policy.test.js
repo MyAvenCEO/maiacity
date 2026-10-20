@@ -53,10 +53,13 @@ test('The OS runs the same scripts as the page', () => {
 const { csp } = await import('./frame.js');
 const { viewCsp } = await import('./view-host.js');
 const { NEVER, SHUT, frameCsp } = await import('./policy.js');
+// the math host's shell (./math-host.js): the shell's own policy, no WebAssembly
+const mathShell = await (await import('./math-host.js')).mathShell(async () => '');
 
 describe('every frame of ours is shut the same way (./policy.js frameCsp)', () => {
 	const parse = (p) => Object.fromEntries(p.split('; ').map((d) => [d.split(' ')[0], d.split(' ').slice(1).join(' ')]));
-	const FRAMES = { 'the shell': csp(), 'the logic shell': csp({ wasm: true }), 'a view': viewCsp('n0nce') };
+	const FRAMES = { 'the shell': csp(), 'the logic shell': csp({ wasm: true }), 'the math shell': mathShell.policy, 'a view': viewCsp('n0nce') };
+	test('the math shell is the shell, with no WebAssembly', () => expect(mathShell.policy).toBe(csp()));
 	for (const [name, policy] of Object.entries(FRAMES))
 		test(`${name}: starts from nothing, names every directive it shuts, and never opens a way out`, () => {
 			const p = parse(policy);

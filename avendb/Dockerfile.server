@@ -2,7 +2,8 @@
 # nothing of the media vault (vault/) is compiled here. Build it from avendb/: docker build -f Dockerfile.server .
 # .github/workflows/avendb.yml builds it, pushes it to GHCR and restarts the server with it (README.md, "Deploying the
 # server").
-# cargo-chef keeps the compiled dependencies in their own layer, so a change to our code rebuilds only our crates.
+# cargo-chef keeps the compiled dependencies in their own layer, so a change to our code rebuilds only our crates, in
+# the `server` profile (Cargo.toml).
 FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS chef
 WORKDIR /src
 
@@ -12,9 +13,9 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS build
 COPY --from=planner /src/recipe.json recipe.json
-RUN cargo chef cook --release --locked --package avendb-server --recipe-path recipe.json
+RUN cargo chef cook --profile server --locked --package avendb-server --recipe-path recipe.json
 COPY . ./
-RUN cargo build --release --locked -p avendb-server && cp target/release/avendb-server /avendb-server
+RUN cargo build --profile server --locked -p avendb-server && cp target/server/avendb-server /avendb-server
 
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*

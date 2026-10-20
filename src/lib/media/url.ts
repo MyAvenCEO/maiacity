@@ -1,9 +1,8 @@
-// Where the site loads a media file from. Every file is known by its BLAKE3 hash (64 hex) — the vault's; there are
-// no paths. The manifest is the vault's public files by hash, with their titles, descriptions and tags (for sorting,
-// never for finding a file). The bytes come from the vault's gateway (vault-server behind api.maia.city, with Range);
-// in maiaCITY Studio through the app, with its key.
+// Where the site loads a media file from. Every file is known by its BLAKE3 hash (64 hex), the one the old media vault
+// named it by; there are no paths. The manifest is the site's files by hash, with their titles, descriptions and tags
+// (for sorting, never for finding a file). The bytes come from avenDB's feed of Maia City's public files, behind
+// api.maia.city/vault/files (with Range; deploy/Caddyfile), in The OS too.
 import published from './manifest.json';
-import { APP_API, native } from '$lib/native';
 
 export type MediaEntry = { url: string | null; mime: string; title: string; description: string; tags: string[]; stream?: string };
 
@@ -14,7 +13,7 @@ const known = published as Record<string, MediaEntry>;
 const HASH = /^([0-9a-f]{64})(\.[a-z0-9]+)?$/;
 /** Is this file in the vault (named by its hash)? */
 export const inVault = (ref: string | undefined | null) => !!ref && HASH.test(ref);
-/** The vault's gateway (vault-server behind api.maia.city): every file by its hash, with Range. */
+/** Maia City's public files from avenDB's feed, behind api.maia.city: every file by its hash, with Range. */
 export const GATEWAY = 'https://api.maia.city/vault/files';
 
 /** The address of a file: by its hash, from the gateway. A full URL, or anything else, is left as it is. */
@@ -22,7 +21,7 @@ export function asset(ref: string): string;
 export function asset(ref: string | undefined | null): string | undefined;
 export function asset(ref: string | undefined | null) {
 	if (!ref) return undefined;
-	if (HASH.test(ref)) return native() ? `${APP_API}/vault/files/${ref}` : `${GATEWAY}/${ref}`;
+	if (HASH.test(ref)) return `${GATEWAY}/${ref}`;
 	return ref;
 }
 

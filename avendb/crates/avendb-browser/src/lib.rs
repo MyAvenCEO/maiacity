@@ -915,7 +915,8 @@ struct Drafted {
 /// The key move of device `me` of `lab` (`Device::move_keys`): what moves, the Touch ID key whose Enclave key `touch`
 /// names among it (`Lab::moves`); the batch that moves it, by which the vault's approval, the owner key of `opener`
 /// the vault knows, adds each device's next key (`Lab::draft_move`); and who signs it in a ceremony, each of its
-/// signers but a device by a touch where it, or the key it moves from, is a Touch ID key, by the passkey otherwise.
+/// signers but a device by a touch where it, or the key it moves from, is a Touch ID key, by the passkey otherwise,
+/// and the master recovery key's next key by its standing consent alone.
 /// `None` once nothing moves; why `me`'s view refuses a step otherwise.
 fn drafted(
     lab: &Lab,
@@ -937,7 +938,8 @@ fn drafted(
     let seen = lab.signers_seen(me, &named);
     let keys = |s: SignerId| lab.keys_of(s).or_else(|| lab.keys_of(from(s))).or_else(|| seen.get(&from(s)).copied());
     let (mut passkeys, mut touches) = (vec![], vec![]);
-    for s in signers {
+    // the master recovery key's next key signs by its standing consent, which the Lab holds, in no ceremony (K4)
+    for s in signers.into_iter().filter(|&s| Some(s) != lab.recovery()) {
         match keys(s) {
             Some(SignerKeys::Device { .. }) => {}
             Some(SignerKeys::Enclave { .. }) => touches.push(s),

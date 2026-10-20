@@ -26,19 +26,16 @@ export { readRef, repoRef } from './sources/index.js';
 /** @typedef {import('./groups.js').Item} Item an asset as its group lists it */
 
 /**
- * Every group: the ones built as one object (./groups.js, which the asset box loads too) and what is not (a factory's
- * spec, a biome's recipe, a dome's interior kind, a world's page).
+ * Every group: the ones built as one object (./groups.js, which the asset box loads too: every biome among them, a patch
+ * of its floor) and what is not (a factory's spec, a dome's interior kind, a world's page).
  * @type {Record<string, import('./groups.js').Group>}
  */
 export const GROUPS = {
-	// a factory is its spec, not an object: objectAt throws for it as for a biome ($lib/factories/index.js)
+	// a factory is its spec, not an object: objectAt throws for it ($lib/factories/index.js)
 	factories: { label: 'Factories', list: async () => (await import('$lib/factories/index.js')).FACTORIES },
 	...OBJECT_GROUPS,
-	// every biome: its recipe of numbers (objectAt throws for one, as for a factory) and the cover it is laid with, the
-	// kinds built as one object, which the box builds (./groups.js)
-	biomes: { ...OBJECT_GROUPS.biomes, list: async () => /** @type {Item[]} */ (/** @type {unknown} */ ([...(await import('$lib/biomes')).BIOMES, ...(await import('$lib/biomes/built.js')).BUILT])) },
 	// every building: the ones built as one object, which the box builds (./groups.js), and the tent and the domes, worlds
-	// in disguise built by Sandbox 3's interiors (objectAt throws for one of them, as for a biome)
+	// in disguise built by Sandbox 3's interiors (objectAt throws for one of them, as for a factory)
 	buildings: { ...OBJECT_GROUPS.buildings, list: async () => /** @type {Item[]} */ (/** @type {unknown} */ ((await import('$lib/buildings')).BUILDINGS)) },
 	worlds: {
 		label: 'Worlds',

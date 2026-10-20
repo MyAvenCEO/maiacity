@@ -1,9 +1,10 @@
 name: Deploy the site
 
 # maia.city is served by our own server: its Caddy serves the built site from /opt/maia-city/site (and the API, and the
-# media vault's gateway). Each build goes up beside the last and a link switches to it, so a page never points at
-# chunks that are gone; the last few builds stay for a quick way back. Media never ships with the site: every file
-# comes from the vault's gateway by its BLAKE3 hash. maia.city and www point at the server (A records, Hetzner DNS).
+# site's media from avenDB's feed). Each build goes up beside the last and a link switches to it, so a page never points
+# at chunks that are gone; the last few builds stay for a quick way back. Media never ships with the site: every file
+# comes from avenDB's feed (api.maia.city/vault/files) by its BLAKE3 hash. maia.city and www point at the server (A
+# records, Hetzner DNS).
 on:
   push:
     branches: [main]
@@ -27,26 +28,46 @@ jobs:
     name: Kernel
     uses: ./.github/workflows/kernel.yml
 
-  site:
-    name: Check, build and put on the server
-    needs: kernel
+  # checked and built beside the kernel gate, not after it: the build waits for nothing, and only `site` below, which
+  # puts it on the server, waits for the gate
+  build:
+    name: Check and build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: .bun-version
 
       - run: bun install --frozen-lockfile
 
       - run: bun run check
 
-      # the public files by hash (the vault's mirror); stops if a published post names a file the vault does not serve
+      # stops if a published post names a file the site's media list (src/lib/media/manifest.json) does not hold
       - run: node scripts/media-manifest.mjs
 
       # Served from the domain root, so no base path.
       - run: bun run build
+
+      - run: tar -C build -czf site.tgz .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: site.tgz
+          retention-days: 1
+          compression-level: 0
+
+  site:
+    name: Put on the server
+    # nothing goes on the server unless the kernel gate passed, and the build that goes is this commit's
+    needs: [kernel, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
 
       - name: Prepare SSH
         run: |
@@ -60,7 +81,6 @@ jobs:
 
       - name: Put the build on the server and switch to it
         run: |
-          tar -C build -czf site.tgz .
           ssh prod "mkdir -p $APP_DIR/site/releases/$GITHUB_SHA"
           ssh prod "tar -xzf - -C $APP_DIR/site/releases/$GITHUB_SHA" < site.tgz
           ssh prod "bash -s" <<EOS
