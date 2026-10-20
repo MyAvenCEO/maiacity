@@ -24,6 +24,7 @@ export const CAPABILITIES: Record<string, string> = {
   "ideas:admin": "Write down ideas and notes in the admin notebook",
   "media:admin": "Work with the media vault and the studio: every image, sound and video, known by its hash",
   "economy:admin": "Act as MaiaCity V1's admin: settle its MIPs, the improvement proposals that change the game",
+  "db:read": "See every table of the city's Postgres and its rows, read only, secrets hidden",
 };
 
 /** Every capability, written out — the bundle of the admin role (never '*'). */

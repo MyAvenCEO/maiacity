@@ -23,14 +23,17 @@ export type Place = {
 export type IconName = 'back' | 'home' | 'play' | 'board' | 'calendar' | 'media' | 'studio' | 'journal' | 'spark' | 'user' | 'key' | 'ledger' | 'coops' | 'proposals' | 'leaf' | 'database' | 'universe' | 'gear';
 
 // a founder's own apps: their money and the COOPs, read from MaiaCity V1's one game, the proposals of every game
-// (AIPs), which live only here, never on a game's own screens (Samuel 2026-10-17), and the Universe.
+// (AIPs), which live only here, never on a game's own screens (Samuel 2026-10-17), and the Universe; and for an admin,
+// the city's Postgres.
 // Every sandbox draws the same ones.
 export const APPS: Place[] = [
 	{ href: `${base}/app/ledger/`, label: 'Ledger', icon: 'ledger', note: 'Your HEARTS and MINDs, every rent and pay day, every transaction' },
 	{ href: `${base}/app/coops/`, label: 'Coops', icon: 'coops', note: 'The three COOPs: treasuries, holders, assets, rents' },
 	{ href: `${base}/app/aips/`, label: 'Proposals', icon: 'proposals', note: 'Every game’s proposals: ideas, proposed, applied or rejected' },
 	// the Universe stream, on the public site (the navbar's Universe tab): the journal and Inspire me are its channels
-	{ href: `${base}/universe/`, label: 'Universe', icon: 'universe', note: 'What happens in maiaCITY, as it happens' }
+	{ href: `${base}/universe/`, label: 'Universe', icon: 'universe', note: 'What happens in maiaCITY, as it happens' },
+	// the admins' alone: the city's Postgres, read only (api/src/tables.ts)
+	{ href: `${base}/app/postgres/`, label: 'Postgres', icon: 'database', needs: ADMIN, note: 'Every table of the city’s Postgres and its rows, read only' }
 ];
 
 /** the worlds' and sandboxes' older versions, by address, each with what it was */
@@ -85,13 +88,14 @@ export const opens = (p: Place) => !p.needs || holdsGroup(p.needs);
 export const gameAt = (path: string) =>
 	[...CITY, ...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ?? PAGES.find((p) => path.startsWith(p.href));
 /** the Worlds grid and the game assets' own pages (the Buildings, the Factories, the Biomes): every Traveler's; the
- *  Skills and avenDB's own page: the admins'. The studio keeps its own gate: it works on the media vault through the
- *  API, which decides who may (`media:admin`) */
+ *  Skills, the Postgres window and avenDB's own page: the admins'. The studio keeps its own gate: it works on the
+ *  media vault through the API, which decides who may (`media:admin`), as the Postgres window's rows do (`db:read`) */
 const PAGES: Place[] = [
 	{ href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', needs: TRAVELER },
 	{ href: `${base}/app/factories/`, label: 'Factories', icon: 'gear', needs: TRAVELER },
 	{ href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', needs: TRAVELER },
 	{ href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', needs: TRAVELER },
 	{ href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', needs: ADMIN },
+	{ href: `${base}/app/postgres/`, label: 'Postgres', icon: 'database', needs: ADMIN },
 	{ href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', needs: ADMIN }
 ];
