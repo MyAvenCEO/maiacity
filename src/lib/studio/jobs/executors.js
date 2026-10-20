@@ -90,7 +90,7 @@ const native = (rule) => async (task, ctx) => {
 
 /**
  * The JSON file of the value rule `rule` would make that original `o` brought from the legacy studio
- * (vault/app/src/aven.rs `studio_import`: tagged `media:<rule>` and the original's `legacy:<hash>`).
+ * (the old studio's import, gone with the old media vault: tagged `media:<rule>` and the original's `legacy:<hash>`).
  * @param {string} rule @param {import('../../avendb/vaults.js').EntryView | undefined} o @param {import('../../avendb/vaults.js').WorldView} world
  */
 export function legacyValue(rule, o, world) {

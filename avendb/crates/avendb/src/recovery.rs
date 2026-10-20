@@ -1,7 +1,7 @@
 //! The master recovery key (Samuel, 2026-10-13): while avenDB is bootstrapped, one key that every human vault adds as
 //! an owner, for emergencies, and removes like any other owner once it is no longer wanted. It is a signer like any
 //! other: a passkey kept in software (`sign::Passkey`), all of whose keys derive from 32 secret bytes. Its P-256 and
-//! SLH-DSA keys sign, and its seal key, X-Wing and Classic McEliece, is what a vault seals its keys to, as to any
+//! ML-DSA-65 keys sign (SLH-DSA before the key move, K4), and its seal key, X-Wing and Classic McEliece, is what a vault seals its keys to, as to any
 //! owner. Through its human vaults it owns the coop and aven vaults they own.
 //!
 //! Its person makes it on a machine of their own (`src/bin/master-key.rs`) and keeps the secret offline. What every
@@ -23,8 +23,10 @@ use crate::wire::Wire;
 const MAGIC: &[u8] = b"avenDB master recovery key 3\n";
 
 /// The file of avenDB's master recovery key, its public half, as its person made it from its secret (`master-key pub`,
-/// again on 2026-10-16, as every key of it is derived with BLAKE3 since edit version 10): signer 05e5bd92…. An empty
-/// file builds avenDB without one.
+/// again on 2026-10-20, in ML-DSA-65, the key move's K4): signer 29ee5fe7…, the same key as signer 05e5bd92… of
+/// 2026-10-16 in SLH-DSA, by its P-256 and McEliece keys, which every human vault made before the move has among its
+/// owners: the move adds this one beside it at the next unlock (`Lab::moves`), and the old one is listed as legacy
+/// (`Lab::is_recovery`). An empty file builds avenDB without one.
 const MASTER: &[u8] = include_bytes!("../master-recovery.pub");
 
 /// avenDB's master recovery key, which every human vault adds as an owner while avenDB is bootstrapped (`MASTER`):
@@ -230,8 +232,9 @@ mod tests {
 
     #[test]
     fn the_built_in_master_key_keeps_its_signer() {
-        // `master-key pub` of 2026-10-16, made before the key move: SLH-DSA, signer 05e5bd92…
+        // `master-key pub` of 2026-10-20, the key move's K4: ML-DSA-65, signer 29ee5fe7…
         let Some(master) = master() else { return };
-        assert_eq!(master.id().to_hex(), "05e5bd92c466dabee2b19d6a41d6a1168c772c6de49863ff57b956dd7901f4ad");
+        assert_eq!(master.id().to_hex(), "29ee5fe7f4b012249393449113eacca176b69dde38509d4b4eb71371f33dccf2");
+        assert_eq!(master.keys.suite(), sign::Suite::MlDsa);
     }
 }

@@ -228,7 +228,11 @@ among the owners as "Master recovery key" and is removed like any owner, and add
 `share` and `revoke`). Whoever holds the secret signs as an owner in full: alone, it adds a device to a vault whose
 person lost every passkey and device, and that device opens the vault, as its keys were sealed to the master key as to
 every owner. So only the `.pub` file is handed on. The tool is `cargo run -p avendb --bin master-key`
-(`crates/avendb/src/bin/master-key.rs`).
+(`crates/avendb/src/bin/master-key.rs`). The key moved to ML-DSA-65 with every other signer (K4, 2026-10-20): the
+built-in file is the same secret's key in ML-DSA-65, a signer of its own with the same P-256 and McEliece keys. A
+vault founded before the move has the SLH-DSA one among its owners; its person's next key move adds the new one beside
+it, by their passkey and the new key's standing consent, never by the offline secret (`Lab::moves`,
+`Lab::draft_move`), and the old one stays, shown as "Old/legacy recovery" (`Lab::is_recovery`).
 
 ### Devices
 

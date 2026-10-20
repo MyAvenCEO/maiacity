@@ -11,9 +11,9 @@
 
 	It also signs The OS itself in to maiaCITY's API, in the same sheet as every other ceremony, so the app needs no
 	browser and no code to compare (Samuel 2026-10-18: one way in): given a sign-in's challenge the app fetched, the
-	passkey signs it here and the sheet hands the answer back to the app alone, which approves its own key's code with
-	it (src/routes/app/+layout.svelte `enterApp`, the API's /api/device/:code/passkey). The sheet approves nothing
-	itself: a link that opens it in a browser gets nothing a stranger can use.
+	passkey signs it here and the sheet hands the answer back to the app alone, which signs in with it as a browser does
+	(src/routes/app/+layout.svelte `enterApp`, the API's /api/passkey/login/finish). The sheet signs nothing in itself: a
+	link that opens it in a browser gets nothing a stranger can use.
 -->
 <script>
 	import { onMount } from 'svelte';

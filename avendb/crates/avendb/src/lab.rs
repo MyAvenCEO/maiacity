@@ -931,7 +931,8 @@ impl Lab {
 
     /// What device `on` moves to ML-DSA-65 now (the key move, K3b), each signer with its next key: each owner key of
     /// the vault it belongs to that signs in SLH-DSA and whose next key is at hand (`next_key`), and the Touch ID key
-    /// whose Enclave's key `touch` names (`sign::enclave_key`), as a touch of it signs as its next key too; and each
+    /// whose Enclave's key `touch` names (`sign::enclave_key`), as a touch of it signs as its next key too; the master
+    /// recovery key made before the move, whose next key is the one the Lab adds (`set_recovery`, K4); and each
     /// device of that vault whose next key the Lab holds (`device_keys`): `on`, or the key `on` moved from, where it
     /// is in the vault still, and any device `on` runs beside it, as the Mac runs its drives. A signer whose next key
     /// is in the vault already moved: the move keeps the earlier key beside it (`draft_move`). Nothing once they all
@@ -953,7 +954,8 @@ impl Lab {
 
     /// The edits that move `moves`' signers to their next keys (`moves`) on device `on`, drafted together for one
     /// ceremony of each owner key among them (`drafting`): an owner key adds its next key as an owner, which signs too
-    /// (with the root, where an owner's approval alone isn't the vault's); then the vault's approval, by `by` or its
+    /// (with the root, where an owner's approval alone isn't the vault's), but `by` adds the master recovery key's,
+    /// whose secret is offline and which signs by its standing consent (K4); then the vault's approval, by `by` or its
     /// next key, adds each device's next key, which signs too. It only adds: every earlier key stays an owner or a
     /// device beside its next, the root where it was, as one secret makes both and nothing moves away from the person
     /// (Samuel 2026-10-20, "Add, never remove"). A removal cuts every edit resting on what it removes that its drafter
@@ -977,8 +979,9 @@ impl Lab {
         let view = drafting.log.view();
         let owners = moves.iter().copied().filter(|&(old, new)| owner(&view, old) && !owner(&view, new));
         for (old, new) in owners {
-            let mut signers = vec![old];
-            signers.extend(root(&view).filter(|&r| r != old && !approves(&view, &[old])));
+            let adder = if Some(new) == self.recovery() { by } else { old };
+            let mut signers = vec![adder];
+            signers.extend(root(&view).filter(|&r| r != adder && !approves(&view, &[adder])));
             signers.push(new);
             let (seal_to, blobs) = self.next_seal(on, &view, old, new);
             let add = Sharing::Owner { vault, owner: Principal::Signer(new), seal_to };
@@ -1094,6 +1097,12 @@ impl Lab {
     /// The master recovery key this Lab adds (`set_recovery`), if any.
     pub fn recovery(&self) -> Option<SignerId> {
         self.recovery.as_ref().map(|k| k.id())
+    }
+
+    /// Whether the signer whose keys are `keys` is a master recovery key: the one this Lab adds (`set_recovery`), or
+    /// that key made from the same secret in the other suite, as it was before the key move (K4), by its P-256 key.
+    pub fn is_recovery(&self, keys: &SignerKeys) -> bool {
+        self.recovery.as_ref().is_some_and(|r| same_key(&r.keys, keys))
     }
 
     /// The first owners of a human vault the passkey `passkey` founds, its root, and the signers of its genesis: the

@@ -4,11 +4,8 @@ name: Old media vault
 #
 #   measure – read only: what it still stores and how big (the bucket by folder, LIBRARY/ being the vault's files; the
 #             server's vaultdata volume; its Postgres tables), beside the newest database dump and the room left
-#   list    – read only: every file of the old vault's catalog (vault_files) and every object of LIBRARY/, to tell
-#             what moved into avenDB and what not, sealed to the public key `to` names (RSA, its PEM in base64) and
-#             printed in the log: this repo is public, so the list, its titles and names, is never left in the clear,
-#             nor as an artifact anyone signed in could fetch
-#   forget  – deletes the old-vault-list artifact the first list run left in the clear (Samuel's OK first)
+#   forget  – deletes the old-vault-list artifact an early list run left in the clear (Samuel's OK first); the list
+#             step went with the catalog's table (migration 0058), whose rows are in the archive's dump
 #   archive – copies only, nothing deleted: a full database dump and the vaultdata volume as one tar (its catalog and
 #             blobs; never its node's secret key, nor its temporary files) go to ARCHIVE/old-vault/ in the bucket, with
 #             the list of LIBRARY/'s files; nothing expires there (the 30-day rule is on BACKUPS/pg/ alone). LIBRARY/
@@ -19,13 +16,10 @@ on:
   workflow_dispatch:
     inputs:
       step:
-        description: measure or list (read only), archive (copies only), or forget (deletes the first list artifact)
+        description: measure (read only), archive (copies only), or forget (deletes the early list artifact)
         type: choice
-        options: [measure, list, archive, forget]
+        options: [measure, archive, forget]
         default: measure
-      to:
-        description: list only — the RSA public key, its PEM in base64, the list is sealed to
-        required: false
 
 permissions:
   contents: read
@@ -98,33 +92,11 @@ jobs:
           BEGIN READ ONLY;
           \echo '== the database'
           SELECT pg_size_pretty(pg_database_size(current_database())) AS size;
-          \echo '== the old vault''s tables'
-          SELECT 'vault_files' AS "table", count(*) AS rows, pg_size_pretty(pg_total_relation_size('vault_files')) AS size FROM vault_files
-          UNION ALL SELECT 'vault_devices', count(*), pg_size_pretty(pg_total_relation_size('vault_devices')) FROM vault_devices
-          UNION ALL SELECT 'vault_config', count(*), pg_size_pretty(pg_total_relation_size('vault_config')) FROM vault_config;
+          \echo '== the old vault''s tables (none once 0058 dropped them)'
+          SELECT relname AS "table", n_live_tup AS rows, pg_size_pretty(pg_total_relation_size(relid)) AS size
+          FROM pg_stat_user_tables WHERE relname IN ('vault_files', 'vault_devices', 'vault_config') ORDER BY relname;
           COMMIT;
           SQL
-
-      - name: List the old vault's files, sealed
-        if: inputs.step == 'list'
-        env:
-          TO: ${{ inputs.to }}
-        run: |
-          [ -n "$TO" ] || { echo "::error::name the public key to seal the list to: to"; exit 1; }
-          mkdir -p list
-          grep ' LIBRARY/' objects.txt > list/library-objects.txt || true
-          ssh prod "docker exec -i -e PGOPTIONS='-c default_transaction_read_only=on' maia-city-db psql -U maiacity -d maiacity -v ON_ERROR_STOP=1" <<'SQL' > list/vault-files.csv
-          \copy (SELECT hash, size, mime, kind, public, stored, added::date AS added, coalesce(meta->>'class', '') AS class, coalesce(meta->>'story', '') AS story, coalesce(meta->>'original_name', '') AS original_name, array_to_string(tags, '|') AS tags, title FROM vault_files ORDER BY added, hash) TO STDOUT WITH CSV HEADER
-          SQL
-          wc -l list/*
-          # a fresh key for the list, sealed to `to`; the list under it
-          printf '%s' "$TO" | base64 -d > to.pem
-          openssl rand -hex 32 > key.txt
-          openssl pkeyutl -encrypt -pubin -inkey to.pem -pkeyopt rsa_padding_mode:oaep -pkeyopt rsa_oaep_md:sha256 -in key.txt -out key.sealed
-          tar -czf - -C list . | openssl enc -aes-256-cbc -pbkdf2 -salt -pass file:key.txt -out list.sealed
-          rm -rf list key.txt
-          # long lines: a job's log reads back 5,000 lines at most
-          echo '--- key'; base64 -w 2000 key.sealed; echo '--- list'; base64 -w 2000 list.sealed; echo '--- end'
 
       - name: Forget the list's artifact
         if: inputs.step == 'forget'

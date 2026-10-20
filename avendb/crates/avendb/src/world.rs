@@ -128,6 +128,9 @@ pub struct World {
     pub mine: VaultId,
     /// The master recovery key it adds (`Lab::set_recovery`), if any.
     pub recovery: Option<SignerId>,
+    /// Each owner of its vaults that is the master recovery key as it was before the key move (`Lab::is_recovery`,
+    /// K4): an old, legacy one, listed beside the one it adds, never folded into it.
+    pub legacy: BTreeSet<SignerId>,
     /// What kind of signer each owner of its vaults that is one is (`SignerKeys::kind`), of those it saw sign
     /// (`Lab::signers_seen`): the master recovery key, which never signs, among none.
     pub signers: BTreeMap<SignerId, &'static str>,
@@ -284,10 +287,11 @@ impl World {
     /// device doesn't read them and its levels by vault; the built-in groups of ops the page offers when it shares
     /// (`rules::groups`), each with its level; the kind table, what each kind of vault may be owned by and hold
     /// (`kinds`, `words::kinds_json`); and the master recovery key it adds, `recovery`, `null` for none, which a
-    /// vault's owners mark as such, each other signer among them with its kind, `by` (`signers`: `device`, `passkey`
-    /// or `touch`, `null` where the device never saw it sign), and each owner key and device with `next`, its next key
-    /// where the key move kept it beside that key (`earlier`), `null` otherwise. As the device works it out, so the
-    /// page keeps no rule:
+    /// vault's owners mark as such, `recovery`, as they mark the one from before the key move, `recovery` and `legacy`
+    /// (`legacy`), each other signer among them with its kind, `by` (`signers`: `device`, `passkey` or `touch`, `null`
+    /// where the device never saw it sign), and each owner key and device with `next`, its next key where the key move
+    /// kept it beside that key (`earlier`), `null` otherwise, the legacy master recovery key never. As the device
+    /// works it out, so the page keeps no rule:
     ///
     /// - `ownsServer` and `backsUp` (`owns_server`, `backs_up`, `null` while it knows no avenMAIA);
     /// - each vault's `acting`: `{as, reaches, shares}` (`Acting`);
@@ -322,8 +326,9 @@ impl World {
         let owner = |p: &Principal| match p {
             Principal::Vault(v) => json!({ "vault": hex(&v.0) }),
             Principal::Signer(s) => {
-                let (recovery, by) = (Some(*s) == self.recovery, self.signers.get(s));
-                json!({ "signer": hex(&s.0), "recovery": recovery, "by": by, "next": self.next_of(s) })
+                let (legacy, by) = (self.legacy.contains(s), self.signers.get(s));
+                let recovery = legacy || Some(*s) == self.recovery;
+                json!({ "signer": hex(&s.0), "recovery": recovery, "legacy": legacy, "by": by, "next": self.next_of(s) })
             }
         };
         let vault = |v: &VaultView| {
@@ -552,16 +557,20 @@ pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
         owners.filter(|&s| Some(s) != recovery).collect::<BTreeSet<SignerId>>()
     };
     let owners: BTreeSet<SignerId> = st.vaults().iter().flat_map(signers_of).collect();
-    let signers = lab.signers_seen(me, &owners).into_iter().map(|(s, keys)| (s, keys.kind())).collect();
+    let seen = lab.signers_seen(me, &owners);
+    let legacy: BTreeSet<SignerId> = seen.iter().filter(|(_, keys)| lab.is_recovery(keys)).map(|(&s, _)| s).collect();
+    let signers = seen.into_iter().filter(|(s, _)| !legacy.contains(s)).map(|(s, keys)| (s, keys.kind())).collect();
     let earlier = st
         .vaults()
         .iter()
         .flat_map(|v| lab.earlier_keys(me, &signers_of(v).into_iter().chain(v.devices.iter().copied()).collect()))
+        .filter(|(s, _)| !legacy.contains(s))
         .collect();
     let synced_to = SyncedTo::default();
     Some(World {
         mine,
         recovery,
+        legacy,
         signers,
         earlier,
         owns_server,
