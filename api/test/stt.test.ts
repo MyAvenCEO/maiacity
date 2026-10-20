@@ -1,7 +1,6 @@
 // Speech to text: Deepgram's answer normalised into the catalog's transcript, and who may ask the route — against a
 // recorded Nova 3 response (test/fixtures/deepgram-nova3.json); Prem itself is stood in for.
-import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { useDb, type Db } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
@@ -9,13 +8,14 @@ import { initRoles } from "../src/acl";
 import { useClock } from "../src/prem";
 import { MAX_BYTES, normalize, statusRoute, transcribeRoute, useSttClient, type DeepgramResponse } from "../src/stt";
 import fixture from "./fixtures/deepgram-nova3.json";
+import { avendbStandIn, pass } from "./fixtures/avendb";
 
 const pg = new PGlite();
-const sha = (s: string) => createHash("sha256").update(s).digest("hex");
-const MEDIA_KEY = "mck_media_admin_key";
-const OTHER_KEY = "mck_ideas_only_key";
+const avendb = avendbStandIn();
+afterAll(avendb.stop);
 
 beforeAll(async () => {
+  avendb.start();
   for (const m of MIGRATIONS) await pg.exec(m.sql);
   const db: Db = {
     query: async (text, params = []) => {
@@ -28,7 +28,6 @@ beforeAll(async () => {
   useDb(db);
   await initRoles();
   await pg.query("INSERT INTO founders (id, name, role) VALUES ('first', 'first', 'admin')");
-  await pg.query("INSERT INTO api_keys (founder_id, hash, scope, label) VALUES ('first', $1, 'media:admin', 'Mac'), ('first', $2, 'economy:admin', 'economy')", [sha(MEDIA_KEY), sha(OTHER_KEY)]);
 });
 
 const saved = process.env.PREMAI_API_KEY;
@@ -40,8 +39,8 @@ afterEach(() => {
 });
 
 const audio = new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112, 77, 52, 65, 32]); // an m4a's first bytes: enough for a stand-in
-const post = (auth?: string, body: BodyInit = audio, type = "audio/mp4") =>
-  new Request("http://api/api/transcripts", { method: "POST", body, headers: { "content-type": type, ...(auth ? { authorization: `Bearer ${auth}` } : {}) } });
+const post = (by: string | null = pass(), body: BodyInit = audio, type = "audio/mp4") =>
+  new Request("http://api/api/transcripts", { method: "POST", body, headers: { "content-type": type, ...(by ? { "x-avendb-pass": by } : {}) } });
 
 describe("normalising Deepgram's answer", () => {
   const t = normalize(fixture as DeepgramResponse);
@@ -80,25 +79,26 @@ describe("normalising Deepgram's answer", () => {
 });
 
 describe("POST /api/transcripts", () => {
-  test("nobody, an unknown key, or a key without media:admin is turned away", async () => {
+  test("nobody, an old key, or anyone not an admin of Maia City is turned away", async () => {
     process.env.PREMAI_API_KEY = "set";
-    expect((await transcribeRoute(post())).status).toBe(401);
-    expect((await transcribeRoute(post(OTHER_KEY))).status).toBe(403);
-    expect((await transcribeRoute(post("mck_unknown"))).status).toBe(401);
+    expect((await transcribeRoute(post(null))).status).toBe(401);
+    expect((await transcribeRoute(post(pass("other")))).status).toBe(403);
+    const key = new Request("http://api/api/transcripts", { method: "POST", body: audio, headers: { "content-type": "audio/mp4", authorization: "Bearer mck_old_mac" } });
+    expect((await transcribeRoute(key)).status).toBe(401);
   });
 
   test("without Prem's key it says so: 503, in a sentence", async () => {
     delete process.env.PREMAI_API_KEY;
-    const res = await transcribeRoute(post(MEDIA_KEY));
+    const res = await transcribeRoute(post());
     expect(res.status).toBe(503);
     expect((await res.json()).error).toMatch(/PREMAI_API_KEY is missing/);
-    expect(await (await statusRoute(new Request("http://api/api/transcripts", { headers: { authorization: `Bearer ${MEDIA_KEY}` } }))).json()).toMatchObject({ ready: false });
+    expect(await (await statusRoute(new Request("http://api/api/transcripts", { headers: { "x-avendb-pass": pass() } }))).json()).toMatchObject({ ready: false });
   });
 
   test("the vault server's audio goes to Prem as an m4a with diarize and smart_format; the transcript comes back", async () => {
     const asked: any[] = [];
     useSttClient({ audio: { transcriptions: { create: async (body) => (asked.push(body), fixture) } } });
-    const res = await transcribeRoute(post(MEDIA_KEY));
+    const res = await transcribeRoute(post());
     expect(res.status).toBe(200);
     const t = await res.json();
     expect(t.words).toHaveLength(11);
@@ -109,21 +109,21 @@ describe("POST /api/transcripts", () => {
     expect(new Uint8Array(await asked[0].file.arrayBuffer())).toEqual(audio);
   });
 
-  test("the app's key may ask too, as multipart", async () => {
+  test("The OS may ask as multipart too", async () => {
     useSttClient({ audio: { transcriptions: { create: async () => fixture } } });
     const form = new FormData();
     form.set("file", new File([audio], "take.m4a", { type: "audio/mp4" }));
-    const res = await transcribeRoute(new Request("http://api/api/transcripts", { method: "POST", body: form, headers: { authorization: `Bearer ${MEDIA_KEY}` } }));
+    const res = await transcribeRoute(new Request("http://api/api/transcripts", { method: "POST", body: form, headers: { "x-avendb-pass": pass() } }));
     expect(res.status).toBe(200);
   });
 
   test("empty and too large are refused before Prem is asked; Prem's refusals become sentences", async () => {
     let calls = 0;
     useSttClient({ audio: { transcriptions: { create: async () => (calls++, Promise.reject({ status: 429, error: "Rate limit exceeded. Please try again later." })) } } });
-    expect((await transcribeRoute(post(MEDIA_KEY, new Uint8Array()))).status).toBe(400);
-    expect((await transcribeRoute(post(MEDIA_KEY, new Uint8Array(MAX_BYTES + 1)))).status).toBe(413);
+    expect((await transcribeRoute(post(pass(), new Uint8Array()))).status).toBe(400);
+    expect((await transcribeRoute(post(pass(), new Uint8Array(MAX_BYTES + 1)))).status).toBe(413);
     expect(calls).toBe(0);
-    const res = await transcribeRoute(post(MEDIA_KEY));
+    const res = await transcribeRoute(post());
     // Prem rate limiting pauses the model: 503 with until when, and why
     expect(res.status).toBe(503);
     const body = await res.json();

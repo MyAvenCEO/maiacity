@@ -48,12 +48,12 @@ fn write_sessions(map: &serde_json::Map<String, Value>) -> Result<(), String> {
     std::fs::rename(&tmp, &file).map_err(|e| e.to_string())
 }
 
-/// This Mac's session with the API, while it lasts. A key from before (`mck_…`, the device flow's) is no session: the
-/// API revokes it once, and it is forgotten.
+/// This Mac's session with the API, while it lasts. A key from before (`mck_…`, the device flow's, which the API no
+/// longer knows) is no session, and is forgotten.
 fn load_session() -> Option<String> {
     let held = sessions().get(&account()).and_then(|v| v.as_str()).map(String::from)?;
     if held.starts_with("mck_") {
-        retire(held);
+        forget_session();
         return None;
     }
     // founderId.expiry.signature (api/src/session.ts): one past its expiry opens nothing
@@ -73,14 +73,6 @@ fn forget_session() {
     if map.remove(&account()).is_some() {
         write_sessions(&map).ok();
     }
-}
-
-/// The app's key from the device flow, revoked at the API and forgotten here.
-fn retire(key: String) {
-    forget_session();
-    tauri::async_runtime::spawn(async move {
-        reqwest::Client::new().delete(format!("{}/api/device/key", api_base())).bearer_auth(key).send().await.ok();
-    });
 }
 
 /// What an answer of the API says of the session, as a browser's cookie jar hears it: a sign-in's new one is kept, a

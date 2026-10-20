@@ -41,8 +41,8 @@ function join(state, founder) {
   if (founder.name) state.players[seat].name = `${founder.name}`.trim().slice(0, 40);
 }
 
-/** the game as it stands now (advanced and kept, so month ends are booked once); a founder signing in (not an app
- * key) joins it on the first free seat
+/** the game as it stands now (advanced and kept, so month ends are booked once); a founder signing in joins it on
+ * the first free seat
  * @param {{ id: string, name?: string } | null} [founder] @param {number} [now] */
 export function getGame(founder = null, now = Date.now()) {
   return db.transaction(async (tx) => {

@@ -13,7 +13,6 @@ import { can, capabilities, initRoles } from "./acl";
 import { CAPABILITIES } from "./caps";
 import { listTables, readTable, TableError } from "./tables";
 import { adminByPass } from "./standing";
-import { approveDevice, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
 import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } from "./analysis";
 import { checkModels, pick } from "./prem";
 import { GameError, getGame, move, takeSeat } from "./maiacity-v1.js";
@@ -81,29 +80,22 @@ async function viewer(req: Request): Promise<{ id: string; role: string } | null
  * Every admin route starts here, so none of them ever asks for a role by name.
  */
 async function allowed(req: Request, cap: string): Promise<{ id: string; role: string } | Response> {
-  // a terminal signs in with a key the admin approved: it may do what the key was given, and the person still holds
-  const key = await keyHolder(req);
-  if (key) {
-    if (key.scope.includes(cap) && can(key, cap)) return key;
-    return json(req, { error: `This key cannot ${(CAPABILITIES[cap] ?? cap).toLowerCase()}.` }, { status: 403 });
-  }
   const me = await viewer(req);
   if (!me) return json(req, { error: "Please sign in." }, { status: 401 });
   if (!can(me, cap)) return json(req, { error: `This needs the right to ${(CAPABILITIES[cap] ?? cap).toLowerCase()}.` }, { status: 403 });
   return me;
 }
 
-/** The signed-in founder (or a terminal's key holder), whatever they hold — or the response that says why not. */
+/** The signed-in founder (a browser's session, or The OS's, which keeps it as a browser does), whatever they hold — or
+ *  the response that says why not. */
 async function signedIn(req: Request): Promise<{ id: string; role: string } | Response> {
-  const key = await keyHolder(req);
-  if (key) return key;
   const me = await viewer(req);
   return me ?? json(req, { error: "Please sign in." }, { status: 401 });
 }
 
-/** Turn a thrown table, key or game error into a response a person can read. */
+/** Turn a thrown table or game error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof TableError || e instanceof KeyError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof TableError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -150,8 +142,8 @@ const server = Bun.serve({
     "/api/health": (req) => json(req, { ok: true }),
 
     // MaiaCity V1 (api/src/maiacity-v1.js): one shared game for two players. Any signed-in founder reads it; the first
-    // two to sign in take seat A and seat B, and only the founder in a seat moves for it. The Mac app plays it with its
-    // key (Samuel 2026-10-19: "Play in The OS"), but a MIP is signed or rejected by a player in the browser.
+    // two to sign in take seat A and seat B, and only the founder in a seat moves for it. The OS plays it signed in as
+    // its person, as a browser does (Samuel 2026-10-19: "Play in The OS").
     "/api/maiacity-v1": {
       OPTIONS: preflight,
       GET: async (req) => {
@@ -161,9 +153,8 @@ const server = Bun.serve({
           // a read seats nobody: a seat goes to a person on the page, who asks for it, named as their avenDB profile names
           // them (the page says so: no name of theirs is kept here)
           const name = new URL(req.url).searchParams.get("name") ?? "";
-          // the admin's growth preview is a person's: the Mac app's key never counts as V1's admin
-          const admin = !("scope" in me) && can(me, "economy:admin");
-          return json(req, { game: await getGame("scope" in me ? null : { id: me.id, name }), me: me.id, admin, now: Date.now() });
+          const admin = can(me, "economy:admin");
+          return json(req, { game: await getGame({ id: me.id, name }), me: me.id, admin, now: Date.now() });
         } catch (e) {
           return fail(req, e);
         }
@@ -189,8 +180,6 @@ const server = Bun.serve({
         const me = await signedIn(req);
         if (me instanceof Response) return me;
         const body = await readJson(req);
-        // the Mac app's key plays, but never signs or rejects a MIP: that is a player's own, in the browser
-        if ("scope" in me && ["sign", "reject"].includes(body?.action?.type)) return json(req, { error: "A MIP is signed or rejected by a player, in the browser." }, { status: 403 });
         try {
           return json(req, { game: await move(me, String(body?.seat ?? ""), body?.action), now: Date.now() });
         } catch (e) {
@@ -244,15 +233,12 @@ const server = Bun.serve({
     "/api/me": {
       OPTIONS: (req) => new Response(null, { status: 204, headers: cors(req) }),
       GET: async (req) => {
-        // maiaCITY Studio (the Mac app) signs in with a key the admin approved: it speaks for them, but may only
-        // what the key was given — so its capabilities are the key's scope, never more than the role holds now
-        const key = await keyHolder(req);
-        const id = key?.id ?? founderIdFrom(req);
+        const id = founderIdFrom(req);
         if (!id) return json(req, { error: "not signed in" }, { status: 401 });
         const [founder] = await sql`SELECT id, number, created, role FROM founders WHERE id = ${id}`;
         if (!founder) return json(req, { error: "not signed in" }, { status: 401 });
         // what they may do comes with who they are, so the site can show them only what they can use
-        const caps = [...capabilities(founder.role)].filter((c) => !key || key.scope.includes(c));
+        const caps = [...capabilities(founder.role)];
         return json(req, { ...publicFounder(founder), role: founder.role, caps });
       },
     },
@@ -301,50 +287,6 @@ const server = Bun.serve({
       },
     },
 
-    // ── the Mac app signs in with the admin's passkey: it asks for a key and approves it in its sign-in sheet (below) ──
-    "/api/device/start": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        try {
-          const body = await readJson(req);
-          return json(req, await startDevice(body?.scope, body?.label));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/device/token": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        try {
-          const r = await redeemDevice((await readJson(req))?.device_code);
-          return "pending" in r ? json(req, r, { status: 428 }) : json(req, r);
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/device/key": {
-      OPTIONS: preflight,
-      DELETE: async (req) => (await revokeKey(req)) ? new Response(null, { status: 204, headers: cors(req) }) : json(req, { error: "No such key." }, { status: 404 }),
-    },
-    // The OS approves its own key's code with a passkey sign-in its sheet brought back (src/routes/app/avendb/sheet/):
-    // the sheet hands the passkey's answer only to the app that opened it, so no one compares a code
-    "/api/device/:code/passkey": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const signed = await loginFinish((await readJson(req)) ?? {});
-        if (!signed.ok) return json(req, { error: signed.error }, { status: 401 });
-        const [me] = await sql`SELECT id, role FROM founders WHERE id = ${signed.value.id}`;
-        if (!me) return json(req, { error: "That passkey has no account behind it." }, { status: 401 });
-        try {
-          await approveDevice(req.params.code, me);
-          return json(req, { ok: true });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
     "/api/session": {
       OPTIONS: (req) => new Response(null, { status: 204, headers: cors(req) }),
       DELETE: (req) => new Response(null, { status: 204, headers: { ...cors(req), "Set-Cookie": clearCookie() } }),
