@@ -90,7 +90,7 @@ const ALLOWED = {
 		owner: ASSET
 	},
 	'src/lib/buildings/inside.js': { imports: { '$lib/sandbox-2/interior/interior': "the Buildings' domes: Sandbox 3's, raised in the page" }, owner: ASSET },
-	'src/routes/games/sandbox-3/+page.svelte': { imports: { '$lib/sandbox-2/interior/interior': "Sandbox 3's domes on film: each raised in the page" }, owner: ASSET },
+	'src/routes/games/[world=world]/mounts.js': { imports: { '$lib/sandbox-2/interior/interior': "Sandbox 3's domes on film: each raised in the page" }, owner: ASSET },
 	'src/lib/sandbox-2/interior/spaces.ts': {
 		imports: {
 			'./plants': `the squares' shrubs: ${WHY.plants}`,
