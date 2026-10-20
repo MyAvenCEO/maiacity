@@ -134,7 +134,8 @@ const RAW_HTML = {
 	'src/routes/[doc=doc]/+page.svelte': "avenDB's escaping article renderer (render)",
 	'src/lib/theos/Tex.svelte': "KaTeX's own output for the paper's formulas (no \\href, no HTML extension)",
 	'src/lib/aven-city/components/ResourceIcon.svelte': 'our own SVG icons (ICONS)',
-	'src/lib/avendb/Settings.svelte': 'a QR code drawn here as SVG'
+	'src/lib/avendb/Settings.svelte': 'a QR code drawn here as SVG',
+	'src/lib/chat/Message.svelte': "a chat message's text through $lib/markdown"
 };
 describe('raw HTML on our pages', () => {
 	test('every {@html} is fed by a safe engine or our own strings', async () => {
