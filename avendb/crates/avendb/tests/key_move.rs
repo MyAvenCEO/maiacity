@@ -13,10 +13,13 @@
 mod common;
 
 use avendb::cast;
+use std::sync::Arc;
+
 use avendb::id::{EditId, EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::policy::{Action, KeepMode, Kind, Principal, Refusal, Revoking, Setting, Sharing};
+use avendb::recovery::RecoveryKey;
 use avendb::sign::{
     self, EnclaveKey, ML_DSA_PUBLIC_BYTES, ML_DSA_SIGNATURE_BYTES, PQ_SIGNATURE_BYTES, Passkey, Signed, SignerKeys,
     Suite, device_salt,
@@ -396,5 +399,45 @@ fn a_move_from_a_phone_that_holds_none_of_her_coop_leaves_the_coop_on_her_mac() 
     let signers = [passkey, touch, next].map(Principal::Signer).to_vec();
     assert_eq!((owners, root), (signers, Some(passkey)));
     assert_eq!(devices, vec![mac, phone, phone_next]);
+}
+
+#[test]
+fn the_master_recovery_key_moves_by_the_persons_ceremony_and_its_standing_consent() {
+    // Alice's vault, founded before the key move with the master recovery key among its owners, in SLH-DSA (K4)
+    let mut authenticator = Passkey::from_seed_in([1; 32], Suite::SlhDsa);
+    let mut lab = Lab::with_entropy([9; 32]);
+    let (old, new) = (RecoveryKey::of_in([7; 32], Suite::SlhDsa), RecoveryKey::of_in([7; 32], Suite::MlDsa));
+    let old_master = lab.set_recovery(Arc::new(old));
+    let ceremony = authenticator.ceremony([1; 32]);
+    let [next, passkey] = lab.web_passkey("Alice", authenticator.public(), &ceremony).expect("its own ceremony");
+    let mac = lab.device_with_in("Alice's Mac", *authenticator.prf(&device_salt(&MAC_SALT)), Suite::SlhDsa);
+    let (owners, signers) = lab.human_owners(passkey);
+    assert_eq!(signers, [passkey, old_master]);
+    let genesis =
+        Action::Genesis { kind: Kind::Human, owners, threshold: 1, root: Some(passkey), nonce: 0, seal_to: vec![] };
+    // the passkey's ceremony and the master key's standing consent, as `Node::found_with` signs it
+    let draft = lab.draft(mac, &signers, genesis).expect("the device's view takes it");
+    let founding = authenticator.ceremony(draft.challenge());
+    let vault = VaultId::from(lab.complete(mac, draft, &[(passkey, &founding)]).expect("both signed it"));
+    let add = Action::Share(Sharing::Device { vault, device: mac, seal_to: None });
+    by_passkey(&mut lab, mac, &[passkey, mac], add, &mut authenticator);
+
+    // avenDB's next build carries the key in ML-DSA-65, from the same secret: the master key moves with the person's
+    // next ceremony, never by its offline secret, and only where the earlier key is an owner still
+    let new_master = lab.set_recovery(Arc::new(new));
+    assert_ne!(new_master, old_master);
+    let moves = lab.moves(mac, None);
+    assert!(moves.contains(&(old_master, new_master)), "{moves:?}");
+    assert!(moves.contains(&(passkey, next)));
+    let drafts = lab.draft_move(mac, &[(old_master, new_master)], passkey).expect("the Mac's view takes it");
+    assert_eq!(drafts.len(), 1);
+    let key = authenticator.ceremony(drafts[0].challenge());
+    let moved = lab.complete_move(mac, drafts, &[(passkey, &key)]).expect("her passkey and its consent signed it");
+    assert!(checks_out(&lab, mac, moved[0]).is_some());
+    let (owners, root, _) = members(&lab, mac, vault);
+    let signers = |s: &[SignerId]| s.iter().map(|&s| Principal::Signer(s)).collect::<Vec<_>>();
+    assert_eq!((owners, root), (signers(&[passkey, old_master, new_master]), Some(passkey)), "the earlier one stays");
+    assert!(!lab.moves(mac, None).iter().any(|&(old, _)| old == old_master), "nothing left of it to move");
+    assert!(lab.draft_move(mac, &[(old_master, new_master)], passkey).expect("nothing to sign").is_empty());
 }
 

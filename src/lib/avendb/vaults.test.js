@@ -11,6 +11,7 @@ import {
 	levelName,
 	newest,
 	newestKey,
+	signerName,
 	OLD_SUGGESTER,
 	opsWords,
 	opWords,
@@ -104,6 +105,25 @@ test('a Suggester proposes new entries; one given before drafts is named apart a
 	expect(rowHint({ ...row, drafts: false }, w)).toContain('may not propose new entries yet');
 	expect(rowHint({ ...row, group: null, name: 'Drafts only' }, w)).toBe('May propose new entries');
 	expect(rowHint({ ...row, group: null, name: 'Tick done', drafts: false }, w)).toBeUndefined();
+});
+
+test('the master recovery key from before the key move stays listed, as the old one, beside the new', () => {
+	const [old, now, pass] = [1, 2, 3].map(hex);
+	const v = {
+		id: hex(9),
+		kind: 'human',
+		name: 'Ivy',
+		root: pass,
+		devices: [],
+		owners: [
+			{ signer: pass, recovery: false, by: 'passkey', next: null },
+			{ signer: old, recovery: true, legacy: true, by: null, next: null },
+			{ signer: now, recovery: true, legacy: false, by: null, next: null }
+		]
+	};
+	const world = { recovery: now, vaults: [v] };
+	expect(newest(v.owners)).toEqual(v.owners);
+	expect([now, old].map((k) => signerName(world, k))).toEqual(['the master recovery key', 'the old/legacy recovery key']);
 });
 
 test('a key the key move kept beside its next is listed once, by its newest', () => {
