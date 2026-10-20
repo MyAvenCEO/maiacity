@@ -1,3 +1,4 @@
+// @ts-nocheck — plain JS
 import { describe, expect, test } from 'bun:test';
 import { plan, rows, stepWords } from './steps.js';
 
