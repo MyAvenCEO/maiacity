@@ -80,7 +80,7 @@ test("the vault's index is the repo's: every version and variant, its latest, it
 	const v = vaultOf();
 	expect(v.refused).toEqual([]);
 	expect(v.index).toEqual(made.index);
-	expect(Object.keys(v.index.recipes).length).toBe(327);
+	expect(Object.keys(v.index.recipes).length).toBe(333);
 	expect(v.reads).toEqual([]);
 });
 
@@ -111,9 +111,9 @@ test('a ref names the same recipe in the vault as in the repo, however it is nam
 test("each recipe's source is its entry's file, read once and held to its hash", async () => {
 	const v = vaultOf();
 	for (const hash of Object.keys(made.index.recipes)) expect(await v.recipeAt(hash)).toEqual({ hash, code: FILES[hash] });
-	expect(v.reads.length).toBe(327);
+	expect(v.reads.length).toBe(333);
 	await v.recipeAt(hashOf('actors/stand-in@11'));
-	expect(v.reads.length).toBe(327);
+	expect(v.reads.length).toBe(333);
 	// the stand-in's head, over a code entry's 200,000 characters, comes whole from its file
 	expect((await v.recipeAt(hashOf('actors/stand-in@11'))).code.length).toBeGreaterThan(300000);
 });
@@ -237,7 +237,7 @@ test("a row that doesn't check is left out, saying why, and the ref it would nam
 		expect(err.message).toContain('plants/apple@2');
 		// the rest of the vault reads as before
 		expect(v.hashOf('plants/apple@1')).toBe(made.index.labels['plants/apple@1']);
-		expect(Object.keys(v.index.recipes).length).toBe(326);
+		expect(Object.keys(v.index.recipes).length).toBe(332);
 	}
 	// one made for an older frozen engine, by its hash, is one of the recipes, made for that engine
 	const older = vaultOf([
@@ -321,7 +321,7 @@ function assetRows() {
 
 test('an asset is one entry: each version and variant it brought is a recipe of the index, its file its own', async () => {
 	const { rows, files } = assetRows();
-	expect(rows.length).toBe(192);
+	expect(rows.length).toBe(198);
 	const reads = [];
 	const v = vaultRecipes(rows, {
 		read: async (row) => {
@@ -426,7 +426,7 @@ test('a pin names an asset by its entry and the heads of its version, whatever i
 		expect(row.record.title.startsWith(v.nameOf(hash).replace(/ v\d+ · [0-9a-f]{8}…$/, '').split(' · ')[0])).toBe(true);
 		n++;
 	}
-	expect(n).toBe(327);
+	expect(n).toBe(333);
 	// one asset's versions, by the heads each names
 	const truck = rows.find((r) => r.entry === idOf('asset-machines/truck'));
 	const [one, two] = [1, 2].map((x) => truck.brought.find((b) => b.version === x && b.line === null));

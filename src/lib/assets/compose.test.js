@@ -23,7 +23,9 @@ test('an asset built by its ref knows its ref', async () => {
 	const cube = await objectAt('machines/powercube@3');
 	expect(cube.userData.ref).toBe('machines/powercube@3');
 	expect(cube.userData.asset.parts.length).toBeGreaterThan(40);
-	await expect(objectAt('biomes/meadow@1')).rejects.toThrow('not built as one object');
+	// a biome too: a patch of its floor
+	expect((await objectAt('biomes/meadow@1')).userData.ref).toBe('biomes/meadow@1');
+	await expect(objectAt('buildings/dome-grand@2')).rejects.toThrow('not built as one object');
 });
 
 test('a carried asset brings its parts, each naming the asset it came with', async () => {

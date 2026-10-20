@@ -128,7 +128,9 @@ version of the host.
   The versions go in in order, each as its recipe file reads in the repo, so a frozen version builds what it always
   built. The seed writes an asset once; a newer version of one the vault holds goes in as an AIP over a proposal on
   its entry (`node scripts/propose-version.mjs <group>/<id>@<v> --run`, by the Mac's agent), and lands on main when an
-  owner accepts it. A variant is an avenDB variant, an entry linked to the version it came from. A change is a proposal merged
+  owner accepts it. A new asset goes in the same way, drafted (`node scripts/propose-new.mjs <group>/<id>@1 ...
+  --title "..." --run`, one AIP for all of them), accepted before the PR that adds it merges, or the seed's top-up
+  writes it itself. A variant is an avenDB variant, an entry linked to the version it came from. A change is a proposal merged
   under the vault's policy. Only a new engine capability (a kit op, a material preset, a control kind, a budget) still
   goes in by repo PR.
 - **Nothing built is stored.** No meshes and no pictures go into avenDB. A device reads the recipe entry, synced from

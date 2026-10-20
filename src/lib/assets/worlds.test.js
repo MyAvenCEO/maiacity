@@ -69,7 +69,7 @@ const WHY = {
 	squares: `its café squares, each built at its own seed where the library's four square Things have one each: ${LOOKS} (a v2 of each with a seed would move their v1 recipes' hashes; Sandbox 4 trades their shrubs, stand-ins, for our plants)`,
 	coops: "its timber coops and hutches in the dome's colours, which the library's v1 coops are not (Sandbox 4's are the library's mini domes, ../sandbox-2/interior/things.js)",
 	rooms: `its gallery rooms and terraces, furnished per floor at that floor's radii and seed, where the library's private rooms and terrace sets are one each: ${LOOKS}`,
-	ground: "the biomes' ground by name (groundMaterial, BIOMES): its surface painted in the page, as a ground is not a build of the box"
+	ground: "the biomes' ground shader (groundMaterial): the surfaces a biome's card in the vault names painted in the page, as a ground is not a build of the box"
 };
 
 /**
