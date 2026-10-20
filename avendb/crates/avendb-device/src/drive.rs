@@ -29,7 +29,7 @@
 //! - **Removed** like a lost phone: the device is revoked (`{"op": "revoke", "vault", "device"}`), its peers refuse
 //!   it from then on, and the Mac hosts it no more.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -389,7 +389,8 @@ impl Service {
     /// The volumes mounted and the drives joined here, for the page: each volume by its path and name, what it is to
     /// this Mac (`state_of`) and the device on it, if any; each drive whose key this Mac holds and that is a device of
     /// the person's vault still, whether it is plugged in, on which volume, its name there, and when it last checked
-    /// what it holds, by its newest signed statement this Mac's device keeps.
+    /// what it holds, by its newest signed statement this Mac's device keeps. A drive the key move kept beside its next
+    /// key (`Lab::earlier_keys`) is listed once, as its next key, where this Mac holds that.
     pub(crate) async fn drives(self: &Arc<Self>) -> Result<Value> {
         let d = self.device()?;
         let Some(root) = self.config.volumes.clone() else { return Ok(json!({ "volumes": [], "drives": [] })) };
@@ -413,6 +414,11 @@ impl Service {
             }));
         }
         let known: Vec<SignerId> = KEY.on(&self.shelf()).await?.into_iter().filter(|id| mine.contains(id)).collect();
+        let earlier = {
+            let known: BTreeSet<SignerId> = known.iter().copied().collect();
+            d.node().read(move |lab, me| lab.earlier_keys(me, &known)).await
+        };
+        let known = known.iter().copied().filter(|id| earlier.get(id).is_none_or(|next| !known.contains(next)));
         let mut drives_json = vec![];
         for drive in known {
             let on = seen.iter().find(|(_, s)| s.meta.as_ref().is_some_and(|m| m.device == drive));
