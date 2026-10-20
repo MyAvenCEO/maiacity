@@ -6,7 +6,8 @@
 import { buildTiredLand, libraryLorry } from '../worlds/tiredLandSet.js';
 
 /** The tired land (src/lib/worlds/tiredLandSet.js), built into Sandbox 4's scene for the shots that name it; its trucks
- *  the library's, drawn by Sandbox 4's renderer of the library (`library`, sandbox-2/interior/village.ts). */
+ *  the library's, drawn by Sandbox 4's renderer of the library (`library`, sandbox-2/interior/village.ts). Resolves once
+ *  its trucks are built too (a set says when all of it is there: the film builds every set before the timeline plays). */
 export function tiredLand(seed = 1) {
 	if (window.__props) return;
 	const v = window.__world ?? window.__village;
@@ -26,6 +27,7 @@ export function tiredLand(seed = 1) {
 			if (!on) for (const t of trucks) v.library.assets.move(t, away);
 		}
 	};
+	return v.library.ready?.();
 }
 
 export const sets = { 'tired-land': tiredLand };

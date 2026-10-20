@@ -25,6 +25,7 @@ import { filmPath } from '../../../game/film/worlds.js';
  *   ready(): Promise<void>,
  *   prepare(specs: ShotSpec[], opts?: { live?: boolean, meter?: boolean }): Promise<void>,
  *   keep?(specs: ShotSpec[]): void | Promise<void>,
+ *   dress?(specs: ShotSpec[]): Promise<void>,
  *   held?(specs: ShotSpec[]): Promise<boolean[]>,
  *   look?(view: FilmView): void,
  *   show(o: ShowArgs): void | boolean | Promise<void | boolean>,
@@ -400,6 +401,31 @@ export class WorldViewer {
 		this.keptBy = film;
 		void Promise.resolve(film.keep(mine)).catch(() => {});
 	}
+	/**
+	 * Builds the sets these shots name (src/lib/film/sets.js), each once per world page, before the timeline plays:
+	 * resolves when they are all there. Asked every frame while stopped; said to the world once per set.
+	 * @param {ShotSpec[]} specs @returns {Promise<void>}
+	 */
+	dress(specs) {
+		const film = this.film;
+		if (!film?.dress) return Promise.resolve();
+		if (film !== this.dressedBy) (this.dressing = new Map()), (this.dressedBy = film);
+		const named = specs.filter((s) => this.holds(s) && /** @type {any} */ (s.world)?.props);
+		for (const s of named) {
+			const set = /** @type {any} */ (s.world).props;
+			if (this.dressing.has(set)) continue;
+			/** @type {() => void} */
+			let end = () => {};
+			const gone = new Promise((r) => (end = () => r(undefined)));
+			this.ends.add(end);
+			this.dressing.set(set, Promise.race([Promise.resolve(film.dress([s])), gone]).catch((e) => console.warn(`world: the set ${set} was not built: ${e?.message ?? e}`)).finally(() => this.ends.delete(end)));
+		}
+		return Promise.all(named.map((s) => this.dressing.get(/** @type {any} */ (s.world).props))).then(() => {});
+	}
+	/** the sets asked for (by name), and of which film page @type {Map<string, Promise<unknown>>} */
+	dressing = new Map();
+	/** @type {Film | null} */
+	dressedBy = null;
 	/**
 	 * The shots ahead the world already holds (a world that streams by view: built while the shots before them play)
 	 * count as ready: at their cut the live world draws them at once, only a move of its camera. Asked four times a

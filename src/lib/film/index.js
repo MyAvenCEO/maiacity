@@ -494,6 +494,21 @@ export function startFilm({ base = '' } = {}) {
 			v.film.keep(specs.map(normal).filter(shows).map((s) => ({ ...s.world, views: viewsOf(v, s) })));
 		},
 		/**
+		 * Builds the sets these shots name (./sets.js), all of each, and draws them once out of sight: before the timeline
+		 * plays, nothing staged and nothing moved. Built at its first cut, a set's parts arrived while the shots after it
+		 * played (the village's tired land: its trucks, frames of 0.4–1.3 s).
+		 * @param {any[]} specs
+		 */
+		dress(specs) {
+			return one(async () => {
+				const v = await mounted();
+				const todo = specs.map(normal).filter((s) => shows(s) && !dressed(s));
+				if (!todo.length) return;
+				await Promise.all(todo.map((s) => sets[/** @type {keyof typeof sets} */ (s.world.props)]?.(s.world.seed)));
+				await settled(v);
+			});
+		},
+		/**
 		 * The view a shot ahead is drawn through (its grade, the output) sent to the GPU now, not at its cut.
 		 * @param {{ lut?: Lut | string | null, grade?: Lut | null }} view
 		 */

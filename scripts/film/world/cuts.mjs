@@ -131,7 +131,8 @@ const report = await page.evaluate(
 		// (a world that loses its GPU meanwhile is loaded again: its shots prepared again, a few times)
 		for (let k = 0; k < 3; k++) {
 			const film = viewer.film;
-			await viewer.prepare(first.slice(0, 3).map((c) => c.spec));
+			// (the sets of every shot built too, as the stopped studio builds them: `dress`)
+			await Promise.all([viewer.dress?.(list.map((c) => c.spec)), viewer.prepare(first.slice(0, 3).map((c) => c.spec))]);
 			if (viewer.film === film && viewer.state === 'ready') break;
 			log('the world was loaded again while its shots were prepared: preparing them again');
 			while (viewer.state !== 'ready' && performance.now() - p0 < 900000) await new Promise((r) => setTimeout(r, 250));
