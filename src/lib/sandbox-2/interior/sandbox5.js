@@ -7,16 +7,19 @@
  * Its garden is kept in the Maia City COOP's vault (A3, Samuel 2026-10-19), the repo's code/configs/sandbox-4/garden its
  * seed: `sandbox5()` reads it there.
  *
- * Every plant is anchored to the version it was planted with (`v`, $lib/app/versions.js): a plant changed in the
- * plants library later is a new version there, and Sandbox 5 keeps growing the one written here until it is planted
- * again on purpose.
+ * Every plant is anchored to the version it was planted with: its pin, the plant's avenDB entry and the heads of that
+ * version (`pin`, $lib/assets/sources/avendb.js `PIN_REF`; Samuel 2026-10-20), or, in a garden not pinned yet, the
+ * version its card numbers (`v`). A plant changed later is a new version of its entry, and Sandbox 5 keeps growing the
+ * one written here until it is planted again on purpose.
  */
 
 import { configAt, loadCode } from '../../../../game/code/index.js';
 
+/** @typedef {{ entry: string, at: string[] }} Pin a version of a plant by avenDB's ids: its entry, the heads of the version */
 /**
- * @typedef {{ id: string, v: number, stages: number[], weight?: number }} Planting a plant of the library at its version, at
- *   one of `stages` (the stage indices 0 … 9; 9 the ripe fruit), drawn `weight` times as often as a plant of weight 1
+ * @typedef {{ id: string, v: number, pin?: Pin, stages: number[], weight?: number }} Planting a plant of the library at its
+ *   version (its `pin`, else `v`), at one of `stages` (the stage indices 0 … 9; 9 the ripe fruit), drawn `weight` times as
+ *   often as a plant of weight 1
  */
 /**
  * @typedef {{ trees: Planting[], shrubs: Planting[], climbers: Planting[], cover: Planting[] }} Garden
@@ -24,7 +27,10 @@ import { configAt, loadCode } from '../../../../game/code/index.js';
  *   (herbs, vegetables, the ground layer and the fungi)
  */
 
-/** @typedef {{ id: string, v: number, stage: number, seed: string }} Kind a plant at its version, stage and seed */
+/** @typedef {{ id: string, v: number, pin?: Pin, stage: number, seed: string }} Kind a plant at its version, stage and seed */
+
+/** A planting's plant as a kind is anchored to it: its pin where it has one. @param {{ pin?: Pin }} p */
+export const pinOf = (p) => (p.pin ? { pin: p.pin } : {});
 
 /**
  * How finely Sandbox 4 has always grown its plants (DETAIL in $lib/plants/grow.js: `detailAt` of each level is these):
@@ -51,7 +57,7 @@ export const GARDEN = 'configs/sandbox-4/garden';
  * @param {any} c the config's JSON
  * @returns {{ seed: string, outside: Garden & { canopy: Planting[], herbs: Planting[], ground: Planting[], roots: Planting[], fungi: Planting[] },
  *   inside: Garden, spacing: Record<string, number>, drift: { least: number, most: number, gap: Record<string, number> },
- *   fields: { id: string, v: number, stages: number[], size: [number, number], row: number, gap: number, fields: number, reach: 'cover' | 'shrub' | 'tree', tilled: boolean }[] }}
+ *   fields: { id: string, v: number, pin?: Pin, stages: number[], size: [number, number], row: number, gap: number, fields: number, reach: 'cover' | 'shrub' | 'tree', tilled: boolean }[] }}
  */
 function floraOf(c) {
 	const outside = {
@@ -113,14 +119,14 @@ export function planting(layer, r) {
 export function stageOf(p, r, seed) {
 	// the later stages a little more often: a food forest is mostly grown
 	const k = Math.min(p.stages.length - 1, Math.floor(Math.pow(r(), 0.8) * p.stages.length));
-	return { id: p.id, v: p.v, stage: p.stages[k], seed };
+	return { id: p.id, v: p.v, ...pinOf(p), stage: p.stages[k], seed };
 }
 
 /** the drifts and the mini fields as the seed has them; a garden carries its own (`flora.drift`, `flora.fields`) */
 export const DRIFT = SEED.drift;
-/** @type {{ id: string, v: number, stages: number[], size: [number, number], row: number, gap: number, fields: number, reach: 'cover' | 'shrub' | 'tree', tilled: boolean }[]} */
+/** @type {{ id: string, v: number, pin?: Pin, stages: number[], size: [number, number], row: number, gap: number, fields: number, reach: 'cover' | 'shrub' | 'tree', tilled: boolean }[]} */
 export const FIELDS = SEED.fields;
 
 /** every plant a garden can grow, as kinds (for growing them all ahead) @param {Garden} garden @param {string} seed */
 export const kindsOf = (garden, seed) =>
-	Object.values(garden).flatMap((layer) => layer.flatMap((/** @type {Planting} */ p) => p.stages.map((stage) => ({ id: p.id, v: p.v, stage, seed }))));
+	Object.values(garden).flatMap((layer) => layer.flatMap((/** @type {Planting} */ p) => p.stages.map((stage) => ({ id: p.id, v: p.v, ...pinOf(p), stage, seed }))));
