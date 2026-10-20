@@ -2,19 +2,21 @@
 // gateway's attestation route for that model (stood in for here) — 5xx: Prem's report is unavailable for now
 // (transient, the file waits), 401/403: our key, 200 while the SDK's verification failed: a genuine failure. And the
 // endpoints Prem publishes, and the models this key lists.
-import { afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { createHash } from "node:crypto";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { useDb, type Db } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
 import { initRoles } from "../src/acl";
 import { call, checkModels, classify, discover, endpoints, MAX_PAUSE, paused, pick, PremError, useClock, useModels, useProbe } from "../src/prem";
 import { transcribeRoute, useSttClient } from "../src/stt";
+import { avendbStandIn, pass } from "./fixtures/avendb.js";
 
 const pg = new PGlite();
-const MEDIA_KEY = "mck_media_admin_key_p";
+const avendb = avendbStandIn();
+afterAll(avendb.stop);
 
 beforeAll(async () => {
+  avendb.start();
   for (const m of MIGRATIONS) await pg.exec(m.sql);
   const db: Db = {
     query: async (text, params = []) => {
@@ -27,7 +29,6 @@ beforeAll(async () => {
   useDb(db);
   await initRoles();
   await pg.query("INSERT INTO founders (id, name, role) VALUES ('first', 'first', 'admin')");
-  await pg.query("INSERT INTO api_keys (founder_id, hash, scope, label) VALUES ('first', $1, 'media:admin', 'Mac')", [createHash("sha256").update(MEDIA_KEY).digest("hex")]);
 });
 
 afterEach(() => {
@@ -89,7 +90,7 @@ describe("an attestation failure, classified by the gateway's answer for the mod
     gateway(502, "Error code: 502");
     useSttClient({ audio: { transcriptions: { create: async () => Promise.reject(attestationError()) } } });
     const res = await transcribeRoute(
-      new Request("http://api/api/transcripts", { method: "POST", body: new Uint8Array([1, 2, 3]), headers: { "content-type": "audio/mp4", authorization: `Bearer ${MEDIA_KEY}` } }),
+      new Request("http://api/api/transcripts", { method: "POST", body: new Uint8Array([1, 2, 3]), headers: { "content-type": "audio/mp4", "x-avendb-pass": pass() } }),
     );
     expect(res.status).toBe(503);
     expect(await res.json()).toMatchObject({ error: expect.stringContaining("unavailable right now (gateway 502"), transient: true, pause: "provider", paused_until: expect.any(String) });
@@ -106,7 +107,7 @@ describe("an attestation failure, classified by the gateway's answer for the mod
 
 describe("never hammering Prem: the breaker and the rate limit", () => {
   const route = () =>
-    transcribeRoute(new Request("http://api/api/transcripts", { method: "POST", body: new Uint8Array([1, 2, 3]), headers: { "content-type": "audio/mp4", authorization: `Bearer ${MEDIA_KEY}` } }));
+    transcribeRoute(new Request("http://api/api/transcripts", { method: "POST", body: new Uint8Array([1, 2, 3]), headers: { "content-type": "audio/mp4", "x-avendb-pass": pass() } }));
 
   test("many queued files and a failing provider: exactly one Prem call per pause, the pause doubling", async () => {
     process.env.PREMAI_API_KEY ??= "set";

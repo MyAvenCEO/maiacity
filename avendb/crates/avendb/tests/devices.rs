@@ -123,7 +123,8 @@ fn a_server_takes_only_a_claim_that_makes_it_a_device_of_a_device_vault() {
     let join = lab.accept_claim(server, claim.clone()).expect("the claim");
     assert_eq!(join.blobs.len(), 1, "the server's join brings its McEliece key");
     assert_eq!(lab.vault_of(server), Some(avenceo));
-    assert!(matches!(lab.accept_claim(server, claim), Err(Refusal::AlreadyMember)), "once");
+    // once: claimed, the server takes a claim only for its next key (the key move, `move_key`), none at hand here
+    assert!(matches!(lab.accept_claim(server, claim), Err(Refusal::Locked)), "once");
 }
 
 #[test]

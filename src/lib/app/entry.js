@@ -1,22 +1,21 @@
 /*
  * The one way into the app (Samuel 2026-10-18: "one unified unlock/signin on opening any protected routes … not a
- * separate sub signin at avenDB"): the app's gate (src/routes/app/+layout.svelte) signs the person in to maiaCITY's
- * API and opens their avenDB together, with the one passkey that roots both. Where this browser holds their account,
- * one ceremony does both: the unlock is over the API's challenge, and its assertion goes to the API without the PRF
- * outputs, which never leave the page ($lib/avendb/session.svelte.js `unlock`). Where it holds none, the sign-in comes
- * first, then this browser joins their human vault through avenDB's server, which hands it over for the passkey alone,
- * in a ceremony of its own (a new device's unlock is over the device's own challenge). Signing up is the same way in:
- * the join page makes the passkey, and the gate founds the person's human vault with it, its profile named as they
- * signed up and public, so every person has one; a passkey that has none yet founds one the same way, named as the person says.
- * A person's profile lives in their human vault alone (session.name), none of it in maiaCITY's database. The invite
- * that brought them (the join page's link) is claimed once their vault is open (`claimInvite`): a share of Maia City's
- * Traveler or Citizen cap group, which is what opens the sandboxes, worlds, game assets and games to them.
+ * separate sub signin at avenDB"; 2026-10-20: the door opens on the person's vault alone): the app's gate
+ * (src/routes/app/+layout.svelte) opens their avenDB, and nothing else. maiaCITY's API holds no sign-in of its own: it
+ * knows the person by their vault, from the pass their device signs for each call (api/src/founders.js). Where this
+ * browser holds their account, the passkey unlocks it, and in the Mac app Touch ID, where the person set it up. Where
+ * it holds none, this browser joins their human vault through avenDB's server, which hands it over for the passkey
+ * alone. Signing up is the same way in: the join page makes the passkey, and the gate founds the person's human vault
+ * with it, its profile named as they signed up and public, so every person has one; a passkey that has none yet founds
+ * one the same way, named as the person says. A person's profile lives in their human vault alone (session.name), none
+ * of it in maiaCITY's database. The invite that brought them (the join page's link) is claimed once their vault is
+ * open (`claimInvite`): a share of Maia City's Traveler or Citizen cap group, which is what opens the sandboxes,
+ * worlds, game assets and games to them.
  *
- * In the Mac app the app signs in with its own key, approved in the browser, and each ceremony runs in its sign-in
- * sheet. avenDB failing never keeps anyone out of the app: the gate says why and lets them go on without it in this
- * tab (`later`); a passkey without PRF, from which avenDB derives the keys, isn't asked again on this browser.
+ * In the Mac app each ceremony runs in its sign-in sheet. avenDB failing never keeps anyone out of the app: the gate
+ * says why and lets them go on without it in this tab (`later`); a passkey without PRF, from which avenDB derives the
+ * keys, isn't asked again on this browser.
  */
-import { loginFinish, loginOptions, signIn as apiSignIn } from '$lib/auth/client';
 import { native } from '$lib/native';
 import { deviceName, relay, server } from '$lib/avendb/server.js';
 import { session } from '$lib/avendb/session.svelte.js';
@@ -136,43 +135,7 @@ export function failure(e) {
 }
 
 /**
- * Signs the person in to the API: where this browser holds their account, locked, in the ceremony that unlocks it too,
- * which `say` names as it begins. Their founder, and why avenDB didn't open, if it was to open and didn't; a passkey the
- * API doesn't know (one made for avenDB alone) signs in with a ceremony of its own after. The unlock shows its steps by
- * `starts`.
- * @param {(what: string) => void} say @param {Starts} [starts]
- * @returns {Promise<{ founder: import('$lib/auth/client').Founder, why: unknown }>}
- */
-export async function signIn(say, starts = UNSHOWN) {
-	await session.load();
-	if (native() || session.phase !== 'closed' || flag(() => sessionStorage, LATER)) {
-		say('Signing in');
-		return { founder: await apiSignIn(), why: null };
-	}
-	say('Signing in and unlocking avenDB');
-	const options = await loginOptions();
-	/** @type {Promise<import('$lib/auth/client').Founder | null> | null} */
-	let signed = null;
-	const finish = (/** @type {object} */ assertion) => {
-		signed = loginFinish(assertion).catch(() => null);
-	};
-	/** @type {unknown} */
-	let why = null;
-	try {
-		await session.unlock(starts('open'), { challenge: options.challenge, finish });
-	} catch (e) {
-		// no ceremony, or none that finished: the sign-in alone, unless the person closed the prompt
-		if (!signed && failure(e).kind !== 'held') throw e;
-		why = e;
-	}
-	const founder = signed ? await signed : null;
-	if (founder) return { founder, why };
-	say('Signing in');
-	return { founder: await apiSignIn(), why };
-}
-
-/**
- * Opens avenDB once the person is signed in, naming each step by `say`: unlocks the account this browser holds, or
+ * Opens the person's avenDB, naming each step by `say`: unlocks the account this browser holds, or
  * where it holds none, joins their human vault through avenDB's server; and where their passkey has none yet, or they
  * just signed up, founds it, its profile named `name` (or as they signed up). Whether it founded the vault. Fails with
  * `failure`'s kinds: `no-account` asks for the name the new vault's profile takes. Each start shows its steps by

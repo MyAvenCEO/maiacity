@@ -1099,4 +1099,12 @@ export const MIGRATIONS: Migration[] = [
       DROP TABLE IF EXISTS vault_files, vault_devices, vault_config CASCADE;
     `,
   },
+  {
+    // A founder is known by their avenDB vault (Samuel 2026-10-20: the app's door opens on the vault alone): the vault a
+    // device's pass names, linked to the founder whose passkey owns it the first time one comes (founders.js).
+    id: "0059-founder-vault",
+    sql: `
+      ALTER TABLE founders ADD COLUMN IF NOT EXISTS vault TEXT UNIQUE;
+    `,
+  },
 ];

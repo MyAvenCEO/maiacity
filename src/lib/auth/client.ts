@@ -2,7 +2,7 @@
 // site on the CDN; only these calls reach a server, and only when somebody
 // actually signs up.
 import { dev } from '$app/environment';
-import { startAuthentication, startRegistration } from '@simplewebauthn/browser';
+import { startRegistration } from '@simplewebauthn/browser';
 import { command, native } from '$lib/native';
 
 /** api.maia.city in production, the local container in development. */
@@ -23,9 +23,16 @@ export type Founder = {
 	role?: string;
 };
 
-/** Every call carries the session cookie, and every failure carries a sentence
- *  a person can read rather than a status code. In the Mac app the call goes out natively, with the session its
- *  passkey's sign-in gave it (vault/app/src/auth.rs), which it keeps as a browser keeps the cookie. */
+/** Where each call's pass comes from: the page's avenDB device, once the app has it open (`passBy`). */
+let passFor: (() => Promise<string | null>) | null = null;
+
+/** The app's way in hands over how its avenDB device signs a pass for each call: the API knows the person by their
+ *  vault, as avenDB's server names the device's (api/src/founders.js), with no sign-in of its own. */
+export const passBy = (fn: () => Promise<string | null>) => void (passFor = fn);
+
+/** Every call carries a pass of the person's avenDB device (`X-Avendb-Pass`), a new one each time, as the API takes a
+ *  pass once, and every failure carries a sentence a person can read rather than a status code. In the Mac app the
+ *  call goes out natively, and the app's own Rust adds its device's pass (vault/app/src/auth.rs). */
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 	if (native()) {
 		const r = await command<{ status: number; body: any }>('api', {
@@ -36,12 +43,17 @@ async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
 		if (r.status >= 400) throw new ApiError(r.body?.error ?? 'Something went wrong. Please try again.', r.status);
 		return r.body as T;
 	}
+	const pass = passFor ? await passFor().catch(() => null) : null;
 	const res = await fetch(`${API}${path}`, {
 		...init,
 		credentials: 'include',
-		// a JSON body says so; a plain GET sends no header of its own, so it needs no CORS preflight (a route an older
-		// API does not have then answers a readable 404, instead of failing its preflight)
-		headers: { ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers ?? {}) }
+		// a JSON body says so; a plain GET without a pass sends no header of its own, so it needs no CORS preflight (a
+		// route an older API does not have then answers a readable 404, instead of failing its preflight)
+		headers: {
+			...(init.body ? { 'content-type': 'application/json' } : {}),
+			...(pass ? { 'x-avendb-pass': pass } : {}),
+			...(init.headers ?? {})
+		}
 	});
 	const body = await res.json().catch(() => null);
 	if (!res.ok) throw new ApiError(body?.error ?? 'Something went wrong. Please try again.', res.status);
@@ -98,20 +110,6 @@ function forAvenDB(options: any) {
 	};
 }
 
-/** A sign-in's options: its challenge among them, which the passkey's assertion must be over. */
-export const loginOptions = () => call<any>('/api/passkey/login/options', { method: 'POST' });
-
-/** Signs in with `assertion`, a ceremony over a sign-in's challenge (WebAuthn's JSON): here, or in the ceremony that
- *  unlocks the person's avenDB on this browser too ($lib/app/entry.js). */
-export const loginFinish = (assertion: object) =>
-	call<Founder>('/api/passkey/login/finish', { method: 'POST', body: JSON.stringify(assertion) });
-
-/** Sign in: no username field anywhere — the passkey already knows who it is. */
-export async function signIn(): Promise<Founder> {
-	const options = await loginOptions();
-	return loginFinish(await startAuthentication({ optionsJSON: options }));
-}
-
 /** Whether an invite may still be used to sign up with: an invite of Maia City's in avenDB, by its share's id, that no
  *  vault claimed yet, or an older code of the API's, unused and unexpired. */
 export const inviteOpen = (code: string) =>
@@ -120,23 +118,6 @@ export const inviteOpen = (code: string) =>
 /** Does this browser do passkeys at all? Checked before anything is promised. */
 export const passkeysAvailable = () =>
 	typeof window !== 'undefined' && !!window.PublicKeyCredential;
-
-// ─────────────────────────────── signing The OS in ───────────────────────────────
-
-/** In The OS, a ceremony of the person's passkey over a new sign-in's challenge, in its sign-in sheet
- *  (src/routes/app/avendb/sheet/), which brings it back to the app alone: The OS signs in with it (`loginFinish`), as a
- *  browser does. */
-export async function sheetAssertion(): Promise<object> {
-	const { SHEET } = await import('$lib/avendb/device/passkey.js');
-	const options = await loginOptions();
-	const back = await command<string>('passkey_sheet', {
-		url: `${SHEET}#${new URLSearchParams({ what: 'signin', options: JSON.stringify(options) })}`
-	});
-	const answer = new URLSearchParams(back.split('#')[1] ?? '');
-	const assertion = answer.get('assertion');
-	if (!assertion) throw new Error(answer.get('error') || 'The sign-in sheet brought nothing back.');
-	return JSON.parse(assertion);
-}
 
 /** Any API call, the same way as every helper here. */
 export const apiCall = <T>(path: string, init: RequestInit = {}) => call<T>(path, init);

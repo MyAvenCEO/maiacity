@@ -14,6 +14,7 @@
 //! from main.rs), the command the device names for it (`agentCommand`).
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -23,6 +24,15 @@ use tokio::sync::oneshot;
 
 /// The window the sheets show over.
 type Window = Arc<Mutex<Option<tauri::WebviewWindow>>>;
+
+/// Whether this Mac's avenDB device is open, as the last call to it left it (`is_open`).
+static OPEN: AtomicBool = AtomicBool::new(false);
+
+/// Whether this Mac's avenDB device is open, its person having unlocked it: the door the app opens on, and the studio's
+/// (main.rs `gate`).
+pub fn is_open() -> bool {
+    OPEN.load(Ordering::Relaxed)
+}
 
 /// avenDB's device in the app, once a call started it.
 #[derive(Default)]
@@ -73,6 +83,7 @@ async fn call_on(
 ) -> Result<Value, String> {
     let host = host_of(state, window).await?;
     let answer = host.call(&call, args).await;
+    OPEN.store(host.node().is_some(), Ordering::Relaxed);
     match answer.get("ok") {
         Some(ok) => Ok(ok.clone()),
         None => Err(answer.get("error").and_then(Value::as_str).unwrap_or("no answer").to_string()),
@@ -96,6 +107,7 @@ async fn host_of(state: &Avendb, window: Option<tauri::WebviewWindow>) -> Result
 /// Stops avenDB's device as the app quits: it closes its drives, node and store, for five seconds at most;
 /// then the app quits whether it is done or not.
 pub async fn stop(state: &Avendb) {
+    OPEN.store(false, Ordering::Relaxed);
     let Some(hosted) = state.0.lock().await.take() else { return };
     let closed = async {
         hosted.host.close().await;

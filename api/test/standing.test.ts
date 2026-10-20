@@ -41,6 +41,7 @@ describe("avenDB's server, as the API asks it", () => {
       const body = await req.json();
       asked.push(body);
       if (body.pass === "down") return new Response("{}", { status: 500 });
+      if (body.passkeys) return Response.json({ vault: "ef".repeat(32), admin: false, passkeys: [`02${"ab".repeat(32)}`, "not a key", 7] });
       return Response.json(body.pass === "admin" ? { vault: "ef".repeat(32), admin: true } : { vault: null, admin: false });
     },
   });
@@ -55,6 +56,11 @@ describe("avenDB's server, as the API asks it", () => {
     expect(await askServer("admin")).toEqual({ vault: "ef".repeat(32), admin: true });
     expect(await askServer("stranger")).toEqual({ vault: null, admin: false });
     expect(asked[0]).toEqual({ pass: "admin", audience: AUDIENCE });
+  });
+
+  test("asks for the vault's owner passkeys where the API needs them, and keeps only P-256 keys", async () => {
+    expect(await askServer("someone", true)).toEqual({ vault: "ef".repeat(32), admin: false, passkeys: [`02${"ab".repeat(32)}`] });
+    expect(asked.at(-1)).toEqual({ pass: "someone", audience: AUDIENCE, passkeys: true });
   });
 
   test("a server that fails answers nothing", async () => {

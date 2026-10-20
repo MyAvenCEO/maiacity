@@ -10,8 +10,7 @@
 	import SiteFooter from '$lib/SiteFooter.svelte';
 	import logo from '$lib/images/maiacity-logo.png';
 	import SocialIcon from '$lib/SocialIcon.svelte';
-	import { me } from '$lib/auth/client';
-	import { remember, signedInHere } from '$lib/app/session';
+	import { signedInHere } from '$lib/app/session';
 
 	let { children } = $props();
 
@@ -33,20 +32,12 @@
 		menuOpen = false;
 	});
 
-	// Whoever is signed in on this browser gets the way into the app (Sign in) in the nav, everyone else the way to join. The site stays
-	// static for a visitor: the API is only asked once this browser has been signed in before (a hint, checked here).
+	// Whoever opened the app on this browser gets the way into it (Sign in) in the nav, everyone else the way to join. The
+	// site stays static: it asks no API, as the app's door is the person's avenDB on this browser, which the app marks.
 	let signedIn = $state(false);
 	$effect(() => {
 		void page.url.pathname;
 		signedIn = signedInHere();
-		if (!signedIn) return;
-		me()
-			.then(() => true)
-			.catch(() => false)
-			.then((yes) => {
-				signedIn = yes;
-				remember(yes);
-			});
 	});
 
 	// a Maia Universe post lives on the root (/<doc>/?t=…), and still belongs to the Universe tab; an asset's build there

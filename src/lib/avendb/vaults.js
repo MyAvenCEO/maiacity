@@ -27,8 +27,10 @@ import { fieldPaths, pathWords } from './paths.js';
 /**
  * A device of a vault: its name, by its card; whether it is this one; and its copy setting, what it keeps of every vault
  * it syncs: `full`, every entry and file, or `light`, every entry and a file as it is opened, `null` where it set none;
- * and `next`, its next key, where the key move kept it beside that key (an owner key too), `null` otherwise.
- * @typedef {{ id: string, name?: string | null, me: boolean, copy?: 'full' | 'light' | null, next?: string | null }} DeviceView
+ * `next`, its next key, where the key move kept it beside that key (an owner key too), `null` otherwise; and `old`,
+ * whether it still signs as before the key move, never unlocked since its person's keys moved.
+ * @typedef {{ id: string, name?: string | null, me: boolean, copy?: 'full' | 'light' | null, next?: string | null,
+ *   old?: boolean }} DeviceView
  */
 /**
  * What the person may do in a vault, as the device says: the vault they act as in it (the vault itself where theirs
@@ -421,6 +423,25 @@ export const heldWords = (h) =>
 	[h.has >= h.of ? '' : `${h.has} of ${h.of}`, h.checked == null ? '' : `checked ${ago(h.checked)}`]
 		.filter(Boolean)
 		.join(', ') || null;
+
+/**
+ * When each device last said what it holds, by the entries and files it holds (`syncedTo`): `null` for this one and one
+ * connected now, else its newest signed statement's time, seconds since 1970. A device that never said is in none.
+ * @param {WorldView} world @returns {Map<string, number | null>}
+ */
+export function lastSaid(world) {
+	/** @type {Map<string, number | null>} */
+	const out = new Map();
+	const take = (/** @type {Holder} */ h) => {
+		const was = out.get(h.device);
+		if (was !== null) out.set(h.device, h.checked == null ? null : Math.max(was ?? 0, h.checked));
+	};
+	for (const e of world.entries) {
+		e.syncedTo?.forEach(take);
+		for (const f of e.files ?? []) f.syncedTo?.forEach(take);
+	}
+	return out;
+}
 
 /**
  * Where an entry or a file is synced to, in words, one wording for both: each device by name, with how much of it it

@@ -56,6 +56,8 @@
 //! "audience"}`, and the server answers the vault the pass's device is a device of and whether that vault is an admin
 //! of Maia City, `{"vault", "admin"}`: `{"vault": null, "admin": false}` for a pass that doesn't count for that service
 //! now, or a signer that is no vault's device. So the API opens its admins' pages by avenDB's own word, never kept.
+//! Asked with `"passkeys": true`, it adds the P-256 keys of that vault's owner passkeys, `"passkeys"`
+//! (`world::vault_passkeys`): the API knows a person by the human vault the passkey they signed up with roots.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
@@ -353,7 +355,8 @@ async fn invite(at: &str, node: &Node) -> (StatusCode, Bytes) {
 
 /// The answer to a POST of `PASS`: of the pass it brings for the service it names, `{"pass", "audience"}`, the vault
 /// its device is a device of and whether that vault is an admin of Maia City (`world::pass_standing`), checked now by
-/// the server's clock, `{"vault", "admin"}`, never kept; a bad request, as JSON, for a body that is no such pass.
+/// the server's clock, `{"vault", "admin"}`, never kept, with its owner passkeys' P-256 keys, `"passkeys"`, where the
+/// body asks `"passkeys": true` (`world::vault_passkeys`); a bad request, as JSON, for a body that is no such pass.
 async fn pass(request: Request<Incoming>, node: &Node) -> Response<Full<Bytes>> {
     let posted = match Limited::new(request.into_body(), MOST_POSTED).collect().await {
         Ok(body) => body.to_bytes(),
@@ -367,11 +370,23 @@ async fn pass(request: Request<Incoming>, node: &Node) -> Response<Full<Bytes>> 
     let Some(pass) = sign::unbase64url(&pass).and_then(|bytes| ApiPass::from_wire(&bytes).ok()) else {
         return no_store(StatusCode::BAD_REQUEST, error("a pass is a device's ApiPass in base64url"));
     };
+    let passkeys = asked.get("passkeys").and_then(Value::as_bool).unwrap_or(false);
     let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
-    let said = node.read(move |lab, me| world::pass_standing(lab, me, &pass, &audience, now)).await;
-    let (vault, admin) = said.map_or((Value::Null, false), |(v, admin)| (json!(v.to_hex()), admin));
-    let body = serde_json::to_vec(&json!({ "vault": vault, "admin": admin })).expect("JSON writes");
-    no_store(StatusCode::OK, Bytes::from(body))
+    let said = node
+        .read(move |lab, me| {
+            let (v, admin) = world::pass_standing(lab, me, &pass, &audience, now)?;
+            Some((v, admin, if passkeys { world::vault_passkeys(lab, me, v) } else { vec![] }))
+        })
+        .await;
+    let answer = match said {
+        None => json!({ "vault": null, "admin": false }),
+        Some((v, admin, keys)) if passkeys => {
+            let keys: Vec<String> = keys.iter().map(|k| k.iter().map(|b| format!("{b:02x}")).collect()).collect();
+            json!({ "vault": v.to_hex(), "admin": admin, "passkeys": keys })
+        }
+        Some((v, admin, _)) => json!({ "vault": v.to_hex(), "admin": admin }),
+    };
+    no_store(StatusCode::OK, Bytes::from(serde_json::to_vec(&answer).expect("JSON writes")))
 }
 
 /// The answer to a POST of `VAULTS`: of the pass it brings, `{"pass"}`, made for `world::VAULTS_AUDIENCE`, the vaults the

@@ -327,26 +327,19 @@ async function claim(server, share, secret) {
 }
 
 /**
- * A sign-in to maiaCITY's API in the ceremony that unlocks this browser's account ($lib/app/entry.js): the API's
- * challenge, base64url, which the unlock is over, and what takes the ceremony's assertion, as the API takes a sign-in.
- * @typedef {{ challenge: string, finish: (assertion: object) => void }} Login
- */
-
-/**
  * Opens the account this browser, or the app, holds, in the one ceremony of the passkey that unlocks it, only where it
- * is closed: it shows its steps by `at`, and a second call while it is under way joins it. With `login`, the same
- * ceremony signs the person in to the app too (in a browser: the Mac app signs in with its own key). A store another
- * tab holds open fails before the passkey is asked (`code` 'held'). A store of the device taken out of its vault, or
+ * is closed: it shows its steps by `at`, and a second call while it is under way joins it. A store another tab holds
+ * open fails before the passkey is asked (`code` 'held'). A store of the device taken out of its vault, or
  * kept before avenDB started fresh, opens nothing: it is put aside, never deleted, the account is new here again, and
  * it fails saying so. Fails with why not.
- * @param {Steps} [at] @param {Login | null} [login]
+ * @param {Steps} [at]
  * @returns {Promise<void>}
  */
-function unlock(at = QUIET, login = null) {
+function unlock(at = QUIET) {
 	if (phase !== 'closed') return unlocking ?? Promise.resolve();
 	unlocking ??= (async () => {
 		try {
-			await opening(at, login);
+			await opening(at);
 		} catch (e) {
 			if (!String(/** @type {Error} */ (e)?.message ?? e).includes('holds no vault this device belongs to')) throw e;
 			await (mac ? mac.call('forget') : store.aside());
@@ -361,45 +354,26 @@ function unlock(at = QUIET, login = null) {
 	return unlocking;
 }
 
-/** Opens the device this browser, or the app, holds, in the unlock alone, over the API's challenge with `login`, whose
- *  assertion it hands over before the device opens: it marks its own steps with `step` and hands the device the
- *  function it shows its own by with `device`. @param {Steps} at @param {Login | null} login */
-async function opening({ step, device: shown }, login) {
+/** Opens the device this browser, or the app, holds, in the unlock alone: it marks its own steps with `step` and hands
+ *  the device the function it shows its own by with `device`. @param {Steps} at */
+async function opening({ step, device: shown }) {
 	if (mac) return macOpened(await stepping(shown(), 'open'));
 	// the store first, so that a tab that can't open it never asks for the passkey: one tab at a time holds it
 	await store.hold().catch(() => {
 		const why = new Error(`avenDB is open in another tab of ${here}: it opens in one tab at a time`);
 		throw Object.assign(why, { code: 'held' });
 	});
-	const { passkey, unlock } = await ceremonies(meta.credential);
+	const { unlock } = await ceremonies(meta.credential);
 	step('unlock');
 	let unlocked;
 	try {
-		unlocked = await unlock(unhex(meta.nonce), login ? passkey.unbase64url(login.challenge) : undefined);
+		unlocked = await unlock(unhex(meta.nonce));
 	} catch (e) {
 		await store.release().catch(() => {});
 		throw e;
 	}
-	login?.finish(signedIn(passkey, unlocked));
 	running(await avendb.Device.open(unlocked, shown(), store));
 }
-
-/**
- * Ceremony `c` as maiaCITY's API takes a sign-in (WebAuthn's JSON, as @simplewebauthn/browser hands it over): its
- * assertion alone. Its PRF outputs, from which the device's keys come, never leave the page.
- * @param {any} passkey ./device/passkey.js @param {any} c
- */
-const signedIn = (passkey, c) => ({
-	id: c.id,
-	rawId: c.id,
-	type: 'public-key',
-	response: {
-		clientDataJSON: passkey.base64url(c.clientDataJSON),
-		authenticatorData: passkey.base64url(c.authenticatorData),
-		signature: passkey.base64url(c.signature)
-	},
-	clientExtensionResults: {}
-});
 
 /** The device runs from here on, its shelf keeping what opens it again, even should that fail: it can still show
  *  its code, for the person's next device to link through. @param {any} d @param {Uint8Array} nonce
