@@ -11,7 +11,8 @@
 //   what was wanted longest ago, never something pinned (the shots ahead) or wanted now.
 // - One build at a time (`concurrency`): a build is a burst of work on the page's thread; two at once halve each
 //   other's speed and double the peak memory. A build nobody wants any more finishes, unless something wanted waits
-//   for its turn; while nothing wanted waits, the nearest is built ahead into spare room (`ahead`).
+//   for its turn; while nothing wanted waits, the nearest is built ahead into spare room (`ahead`) — unless shots are
+//   pinned: a film knows every view it will need, and a build none of them wants is only work and garbage while it plays.
 // - `ready(views)`: a film shot waits for exactly what its camera path sees, and nothing else.
 //
 // Plain JavaScript and no THREE of its own: a view's frustum is anything with `intersectsSphere` (THREE.Frustum),
@@ -178,7 +179,7 @@ export function createStream(o = {}) {
 			running++;
 			start(e);
 		}
-		if (!o.ahead) return;
+		if (!o.ahead || pinned.length) return;
 		for (const e of ahead()) {
 			if (running >= concurrency || spent + cost(e.item) > budget) break;
 			spent += cost(e.item);

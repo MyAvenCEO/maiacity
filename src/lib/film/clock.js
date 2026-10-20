@@ -13,7 +13,9 @@
  *   virtual: boolean, t: number,
  *   enter: () => void, leave: () => void, step: (ms: number) => void,
  *   world: (seconds: number | undefined) => void,
- *   pending: () => number
+ *   pending: () => number,
+ *   now: () => number,
+ *   spent: () => { loop: number, worst: number }
  * }} FilmClock
  */
 
@@ -27,6 +29,20 @@ export function installClock() {
 	/** @type {Map<number, FrameRequestCallback>} */
 	const queue = new Map();
 	let id = 1;
+	// what the world's own frames cost on the page's thread (ms) since `spent` was last asked, and the dearest of them:
+	// the work it does between two of the film's draws (what it builds, what it streams in), which the studio's next
+	// frame waits for
+	let loop = 0, worst = 0;
+	const timed = (/** @type {FrameRequestCallback} */ cb) => (/** @type {number} */ t) => {
+		const a = realNow();
+		try {
+			cb(t);
+		} finally {
+			const d = realNow() - a;
+			loop += d;
+			if (d > worst) worst = d;
+		}
+	};
 	/** @type {FilmClock} */
 	const C = {
 		virtual: false,
@@ -43,7 +59,7 @@ export function installClock() {
 			C.virtual = false;
 			const q = [...queue.values()];
 			queue.clear();
-			q.forEach((cb) => realRaf(cb));
+			q.forEach((cb) => realRaf(timed(cb)));
 		},
 		/** move the held clock on by ms and run every frame callback that was waiting */
 		step(ms) {
@@ -57,11 +73,18 @@ export function installClock() {
 			if (seconds === undefined) delete w.__worldTime;
 			else w.__worldTime = seconds;
 		},
-		pending: () => queue.size
+		pending: () => queue.size,
+		/** the real time (ms), held or not: what a frame costs is measured on it */
+		now: realNow,
+		spent() {
+			const o = { loop, worst };
+			loop = worst = 0;
+			return o;
+		}
 	};
 	performance.now = () => (C.virtual ? C.t : realNow());
 	window.requestAnimationFrame = (cb) => {
-		if (!C.virtual) return realRaf(cb);
+		if (!C.virtual) return realRaf(timed(cb));
 		const n = id++;
 		queue.set(n, cb);
 		return -n;
