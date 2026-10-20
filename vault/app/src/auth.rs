@@ -16,8 +16,10 @@ const SERVICE: &str = "city.maia.studio";
 /// What the studio needs: the media library, all a key may hold (api/src/keys.ts `KEY_CAPS`). Everything else in the
 /// city is a person's, signed in with their passkey, and an agent's goes through avenDB vault caps.
 const SCOPE: &str = "media:admin";
-/// A key must be able to do this to open the studio — the admin gate.
-const GATE: &str = "/api/vault/join";
+/// Who the key speaks for: it opens the studio only while the caps it answers (the key's scope, never more than the
+/// role holds now) hold SCOPE — the admin gate. (It was the old media vault's join, which went with that vault's server
+/// in #1116: its 404 sent The OS back to the passkey sign-in.)
+const GATE: &str = "/api/me";
 /// The latest sign-in: a code the person walked away from stops waiting once they start again, so its expiry never
 /// reaches the new one's window.
 static ROUND: AtomicU64 = AtomicU64::new(0);
@@ -121,12 +123,18 @@ impl Auth {
         let Some(key) = load_key() else {
             return AuthState { signed_in: false, api, reason: None };
         };
+        let revoked = |api: String| {
+            forget_key();
+            AuthState { signed_in: false, api, reason: Some("This Mac's key no longer opens the studio.".into()) }
+        };
         match self.http.get(format!("{api}{GATE}")).bearer_auth(&key).send().await {
-            Ok(r) if r.status().is_success() => AuthState { signed_in: true, api, reason: None },
-            Ok(r) if r.status() == 401 || r.status() == 403 => {
-                forget_key();
-                AuthState { signed_in: false, api, reason: Some("This Mac's key no longer opens the studio.".into()) }
-            }
+            Ok(r) if r.status().is_success() => match r.json::<Value>().await.ok().and_then(|me| me["caps"].as_array().cloned()) {
+                Some(caps) if caps.iter().any(|c| c.as_str() == Some(SCOPE)) => AuthState { signed_in: true, api, reason: None },
+                // the key speaks for someone who may not run the studio (any more)
+                Some(_) => revoked(api),
+                None => AuthState { signed_in: false, api, reason: Some("The API answered without saying who this key is.".into()) },
+            },
+            Ok(r) if r.status() == 401 || r.status() == 403 => revoked(api),
             Ok(r) => AuthState { signed_in: false, api, reason: Some(format!("The API answered {}.", r.status())) },
             // offline: a key we hold stays good until the API says otherwise
             Err(_) => AuthState { signed_in: true, api, reason: Some("Offline — working from this Mac only.".into()) },
@@ -227,8 +235,15 @@ pub async fn api(auth: State<'_, Auth>, method: String, path: String, body: Opti
     if let Some(body) = body {
         req = req.json(&body);
     }
-    let res = req.send().await.map_err(|e| format!("The API cannot be reached: {e}"))?;
+    // what the page can't show once it has moved on: a call that never reached the API, or one the API failed
+    let res = req.send().await.map_err(|e| {
+        tracing::warn!("api {path}: the API cannot be reached: {e}");
+        format!("The API cannot be reached: {e}")
+    })?;
     let status = res.status().as_u16();
+    if status >= 500 {
+        tracing::warn!("api {path}: the API answered {status}");
+    }
     let body = res.json::<Value>().await.unwrap_or(Value::Null);
     Ok(Answer { status, body })
 }

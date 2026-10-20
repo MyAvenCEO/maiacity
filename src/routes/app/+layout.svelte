@@ -16,7 +16,7 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { approveDeviceWithPasskey, me, sheetAssertion, signOut, type Founder } from '$lib/auth/client';
+	import { ApiError, approveDeviceWithPasskey, me, sheetAssertion, signOut, type Founder } from '$lib/auth/client';
 	import { claimInvite, failure, later, open, signIn, signUpName, waits } from '$lib/app/entry.js';
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import { session } from '$lib/avendb/session.svelte.js';
@@ -45,6 +45,8 @@
 	/** what the way in is doing, while it does it */
 	let busy = $state('');
 	let error = $state('');
+	/** the API couldn't say who this is yet, and why: the way in waits for it */
+	let reaching = $state('');
 	/** avenDB didn't open: the person may go on without it in this tab */
 	let stuck = $state(false);
 	/** why the invite a link brought didn't go through, if it didn't */
@@ -102,13 +104,35 @@
 		// passkey the way in asks for
 		const code = loadCode();
 		const avendb = session.load();
-		founder = await me().catch(() => null);
+		founder = await whoAmI();
 		await code;
 		remember(!!founder);
 		if (!founder) return void (phase = 'signed-out');
 		await avendb;
 		settle();
 	});
+
+	/** Who the API says is signed in. Only its refusal (401, 403) signs out: an API that can't be reached, or answers
+	 *  anything else (mid-deploy, a restart), is waited for, so The OS's key and a browser's cookie never send their
+	 *  person to the passkey's sign-in for a blip (Samuel 2026-10-20: The OS opened while the API redeployed and asked
+	 *  for a passkey it never needs). */
+	async function whoAmI(): Promise<Founder | null> {
+		for (let tries = 1, wait = 1000; ; tries++, wait = Math.min(wait * 2, 15000)) {
+			try {
+				const who = await me();
+				reaching = '';
+				return who;
+			} catch (e) {
+				if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+					reaching = '';
+					return null;
+				}
+				const why = e instanceof ApiError ? `it answered ${e.status}` : String((e as Error)?.message ?? e);
+				reaching = `maiaCITY can't be reached (${why}): trying again${tries > 1 ? `, ${tries} tries so far` : ''}`;
+				await new Promise((r) => setTimeout(r, wait));
+			}
+		}
+	}
 
 	/** Signed in: in, or avenDB waiting for the passkey first, with the name a new human vault takes where it founds one. */
 	function settle() {
@@ -355,7 +379,7 @@
 <!-- pinned to the home screen: a dark strip behind the status bar's white words, except over a world in full screen -->
 {#if !(phase === 'ready' && immersive && !closed)}<div class="status-strip" aria-hidden="true"></div>{/if}
 {#if phase === 'loading'}
-	<div class="gate"><p class="quiet">One moment…</p></div>
+	<div class="gate"><p class="quiet">{reaching ? `${reaching}…` : 'One moment…'}</p></div>
 {:else if watching}
 	<div class="app">
 		{@render children()}
