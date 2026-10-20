@@ -3,6 +3,9 @@ open AvenDB.Objective
 
 namespace Objectives.Measured
 
+/-- The valley sim, a logic module on the vault's main line, measures it. -/
+def sim : Measure := logic "valley-sim"
+
 /-- The valley sim, run on the proposal by a Measurer of the vault, never the author: at least 50 frames a second. -/
 def fps : Metric := metric "Frames per second, measured" (atLeast (measured "fps") 50)
 

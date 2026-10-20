@@ -23,9 +23,10 @@ export function device(named = process.env.AVENDB_DEVICE) {
 	throw new Error('no agent device: give --device <The OS app’s avendb-device>, or add it to Claude Code (claude mcp add --scope user avendb -- <avendb-device> agent claude)');
 }
 
-/** an MCP session with the agent: `call(tool, args)` answers its tool's text, read as JSON (an op's `ok`) */
-export function session({ command, args }, name = 'script') {
-	const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'inherit'] });
+/** an MCP session with the agent (`env`, where given, its environment): `call(tool, args)` answers its tool's text,
+ * read as JSON (an op's `ok`) */
+export function session({ command, args, env }, name = 'script') {
+	const child = spawn(command, args, { stdio: ['pipe', 'pipe', 'inherit'], ...(env ? { env } : {}) });
 	const waiting = new Map();
 	let n = 0;
 	createInterface({ input: child.stdout }).on('line', (line) => {

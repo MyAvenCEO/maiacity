@@ -2,7 +2,8 @@
 	An AIP's objective in the Proposals app: what it must deliver, metrics written in Lean (avendb/spec/AvenDB/
 	Objective.lean), each checked by avenDB's engine against the readings its author recorded while working on it
 	(`aip_measure`), those a Measurer of the vault wrote (`measured "name"`, never its author), and the numbers its own
-	lines propose (`proposed "path"`, against main's, `current "path"`). Each
+	lines propose (`proposed "path"`, against main's, `current "path"`), and the measuring logic it names, which a
+	Measurer runs on its lines (`logic "name"`, src/lib/proposals/measure.js). Each
 	metric: its name and note, its goal and targets, where it started (its first reading, or what main holds) and
 	where it stands now, a bar of its progress and whether it is met; then the Lean itself, the numbers read from its
 	lines and every reading, in sections that open. Read only: an objective is written and measured by its author, an agent through the MCP.
@@ -36,6 +37,7 @@
 			<p class="err">Its Lean does not read: {o.error}</p>
 		{:else}
 			<p class="total"><b>{o.met} of {o.total} met</b> · {pct(o.progress)} of the way</p>
+			{#if o.measures?.length}<p class="paths">Measured by {#each o.measures as n, i (n)}{i ? ', ' : ''}the logic <code>{n}</code>{/each}, which a Measurer of the vault runs on its lines</p>{/if}
 			<ul class="metrics">
 				{#each o.metrics as m (m.id)}
 					<li class:met={m.met}>

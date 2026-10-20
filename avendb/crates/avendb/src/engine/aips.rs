@@ -123,21 +123,22 @@ impl Aip {
     /// Its objective as people and agents read it: the Lean, and where it reads, each metric checked against its
     /// inputs (`objective::summary_json`), its readings, those its vault's Measurers wrote, `measured` (`measured`),
     /// and the numbers its paths find in its lines, `lines`, each line's `sides` (`found`), else the error; then every
-    /// reading, a Measurer's marked `measured` with who wrote it, `by`, and every path's numbers, `fields`. `null`
-    /// where it has none.
+    /// reading, a Measurer's marked `measured` with who wrote it, `by`, every path's numbers, `fields`, and the
+    /// measuring logic it names, `measures`. `null` where it has none.
     fn objective_json(&self, lines: &[Line], sides: &[Option<Sides>], measured: &[Measured]) -> Value {
         let lean = self.lean();
         if lean.trim().is_empty() {
             return Value::Null;
         }
         let rows = self.record.get("readings").and_then(ops::rows).unwrap_or_default();
-        let mut out = match objective::parse(lean) {
-            Ok(ms) => {
-                let (proposed, current, fields) = found(&objective::paths(&ms), lines, sides);
+        let mut out = match objective::read(lean) {
+            Ok(o) => {
+                let (proposed, current, fields) = found(&objective::paths(&o.metrics), lines, sides);
                 let measured = measured.iter().map(|m| (m.name.clone(), m.value)).collect();
                 let inputs = objective::Inputs { readings: self.readings(), measured, proposed, current };
-                let mut out = objective::summary_json(&ms, &inputs);
+                let mut out = objective::summary_json(&o.metrics, &inputs);
                 out["fields"] = fields.into();
+                out["measures"] = o.measures.into();
                 out
             }
             Err(e) => json!({ "error": e.to_string(), "metrics": [], "met": 0, "total": 0, "progress": 0 }),
@@ -686,6 +687,28 @@ pub(super) fn aips(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Va
     Ok(out.into())
 }
 
+/// `{"op": "aip_records", "entry"}`: the records of AIP `entry`'s lines, the two its objective's paths read (`Sides`)
+/// and what a Measurer's measuring logic is given (`src/lib/proposals/measure.js`): each line as `aip` lists it, with
+/// `main`, main's record, and `proposed`, what main would read once the vault's acceptance merged it, the proposal's
+/// side taken wherever both changed one place (once merged, the version it started from and what it reads now), each
+/// as its entry's schema reads it, `null` both where the device doesn't show the line. `NoEntry` where the device
+/// shows no such entry, `BadOp` where it is no AIP.
+pub(super) fn records(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let entry = entry_of(o)?;
+    let mut lanes = HashMap::new();
+    let a = aip_of(lab, me, &mut lanes, entry)?;
+    let mut rows = vec![];
+    for &l in &a.lines {
+        let line = Line::of(lab, me, &mut lanes, l);
+        let sides = sides_of(lab, me, &mut lanes, &line);
+        let mut row = line.to_json();
+        row["main"] = sides.as_ref().map_or(Value::Null, |s| s.old.clone());
+        row["proposed"] = sides.map_or(Value::Null, |s| s.new);
+        rows.push(row);
+    }
+    Ok(json!({ "entry": entry.to_hex(), "lines": rows }))
+}
+
 /// `{"op": "aip", "entry"}`: AIP `entry` as `aips` lists it, and each line with its `diff`, each part `{path, label,
 /// kind, old, new}` (`aip::diff`). `NoEntry` where the device shows no such entry, `BadOp` where it is no AIP.
 pub(super) fn one(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
@@ -1051,7 +1074,7 @@ pub(super) fn measure(
 /// objective, as `aip_objective` would, and checked against `readings`, each `{name, value}` in the order recorded,
 /// `measured`, those a Measurer wrote, alike, and the numbers at its paths, `proposed` the proposal's and `current`
 /// main's, each `{path, value}`: `{ok: true, metrics, met,
-/// total, progress}` as `aip` reads an objective, or `{ok: false, error, line, col}`. Reads nothing the device
+/// total, progress, measures}` as `aip` reads an objective, or `{ok: false, error, line, col}`. Reads nothing the device
 /// holds: an editor checks a file as it is typed.
 pub(super) fn objective_check(o: &Map<String, Value>) -> Result<Value, Refused> {
     let lean = o.get("lean").and_then(Value::as_str).ok_or_else(|| bad("objective_check takes the Lean: lean"))?;
@@ -1066,9 +1089,10 @@ pub(super) fn objective_check(o: &Map<String, Value>) -> Result<Value, Refused> 
         proposed: named("proposed", "path"),
         current: named("current", "path"),
     };
-    Ok(match objective::parse(lean) {
-        Ok(ms) => {
-            let mut out = objective::summary_json(&ms, &inputs);
+    Ok(match objective::read(lean) {
+        Ok(o) => {
+            let mut out = objective::summary_json(&o.metrics, &inputs);
+            out["measures"] = o.measures.into();
             out["ok"] = true.into();
             out
         }

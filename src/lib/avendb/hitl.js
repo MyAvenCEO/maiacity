@@ -72,9 +72,9 @@ export const REVIEW_V1 = `{
  * numbers its lines propose at the paths it names (its value now and at the baseline, the first reading or main's
  * number, its targets, met, progress from 0 to 1), how many are met, the mean progress, every reading (a
  * Measurer's marked `measured`, with who wrote it, `by`; `measured "x"` counts those alone), and each
- * path's numbers, `fields` (the line that holds it, the proposal's number and main's); `error` where the Lean
- * doesn't read.
- * @typedef {{ lean: string, error?: string, met: number, total: number, progress: number,
+ * path's numbers, `fields` (the line that holds it, the proposal's number and main's), and the measuring logic it
+ * names, `measures` (`logic "name"`, which a Measurer runs on its lines); `error` where the Lean doesn't read.
+ * @typedef {{ lean: string, error?: string, met: number, total: number, progress: number, measures?: string[],
  *   metrics: { id: string, name: string, note: string | null, goal: 'atLeast' | 'atMost' | 'between' | 'equals',
  *     readings: string[], measured?: string[], paths?: string[], value: number | null, baseline: number | null,
  *     targets: (number | null)[], met: boolean, progress: number }[],
