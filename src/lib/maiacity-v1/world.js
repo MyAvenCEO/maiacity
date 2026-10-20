@@ -47,10 +47,15 @@ const K = HEX_R / 76.5;
 const SEAT_COLOUR = { A: 0x3f6f9a, B: 0xd7a53a };
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
 /** V1's lens under the kit's sky, by day and by night: its own colours as they were (it was drawn without tone mapping
- *  before it came under the one sky, by a softer sun), metered against screenshots of it at noon and at dusk */
-const EXPOSURE = { day: 0.42, night: 2 };
-/** how much of the sky's own light falls on V1's things, of what the kit gives every world */
-const SKY_LIGHT = 0.3;
+ *  before it came under the one sky), metered against screenshots of it at noon, at dusk and at night */
+const EXPOSURE = { day: 0.55, night: 1.5 };
+/** how much of the sky's own light falls on V1's things, of what the kit gives every world, by day and by night: a
+ *  little of its blue by day, more at night, so the steppe is dark olive under the stars and not teal */
+const SKY_LIGHT = { day: 0.1, night: 4 };
+/** and in its films none by day: the van's ceiling and the faces in it stay as warm as they always were */
+const FILM_SKY_LIGHT = { day: 0, night: 4 };
+/** V1's fill: a warm pale sky over the warm steppe by day, a greyer mauve at night */
+const FILL_DAY = new THREE.Color('#f6f2ea'), FILL_NIGHT = new THREE.Color('#b8a8b8');
 
 /** Hexes point north (+z): axial (q, r) sits at x = √3·R·(q + r/2), z = 1.5·R·r; a hex is one tribe, seven are a
  *  village, seven villages the city. Our tribe's hex is the origin; its village's centre hex is the next one west,
@@ -3317,16 +3322,19 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		fog: { near: 380, far: 2200 },
 		exposure: EXPOSURE,
 		onHour(l, { sun, fill, scene }) {
-			// V1's own light, where the kit's sun and moon stand: its warm sun, low and warmer at the ends, and its fill,
-			// pale from the sky and warm from the steppe, as strong as they always were at the hour; and less of the blue
-			// sky's own light on everything than other worlds take, so its colours stay as they were
+			// V1's own light, where the kit's sun and moon stand: its warm sun, low and warmer at the ends and warm at night
+			// too (never the kit's blue moon), and its fill, pale from the sky and warm from the steppe, a little stronger
+			// than they were without tone mapping; and less of the blue sky's own light on everything than other worlds
+			// take, so its colours stay as they were
 			const up = Math.max(0, l.e);
-			if (l.e > -0.02) sun.color.setHSL(0.1, 0.6 - up * 0.3, 0.75 + up * 0.15);
-			sun.intensity = 0.25 + up * 2.1;
-			fill.color.set(0xeef4ff);
+			const night = l.night;
+			sun.color.setHSL(0.1, 0.6 - up * 0.3, 0.75 + up * 0.15);
+			sun.intensity = 0.28 + up * 2.3;
+			fill.color.copy(FILL_DAY).lerp(FILL_NIGHT, night);
 			fill.groundColor.set(0x7a6b4a);
-			fill.intensity = 0.35 + up * 0.85;
-			scene.environmentIntensity *= SKY_LIGHT;
+			fill.intensity = 0.45 + up * 1.1;
+			const own = film ? FILM_SKY_LIGHT : SKY_LIGHT;
+			scene.environmentIntensity *= own.day + (own.night - own.day) * night;
 			if (!isCold()) return;
 			sun.intensity *= 0.55;
 			sun.color.setHSL(0.58, 0.25, 0.8);
