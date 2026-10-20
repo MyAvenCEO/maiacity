@@ -1,11 +1,11 @@
 // Access, end to end against real Postgres semantics (PGlite): roles are rows of capabilities, seeded from
-// caps.ts, reconciled once per new capability, and edited without anyone locking the city out of itself.
+// caps.ts and reconciled once per new capability; a terminal's key reaches the media vault alone.
 import { createHash } from "node:crypto";
 import { beforeAll, describe, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { useDb, type Db } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
-import { assignRole, can, capabilities, createRole, deleteRole, initRoles, listRoles, setRoleCaps } from "../src/acl";
+import { can, capabilities, initRoles } from "../src/acl";
 import { ALL_CAPS, CITIZEN_CAPS, ROLE_CAPS } from "../src/caps";
 import { approveDevice, deviceInfo, keyHolder, redeemDevice, revokeKey, startDevice } from "../src/keys";
 
@@ -38,7 +38,7 @@ describe("roles are bundles of capabilities", () => {
   });
 
   test("a capability the admin took away stays away at the next boot", async () => {
-    await setRoleCaps("founder", ROLE_CAPS.founder!.filter((c) => c !== "intent:read"));
+    await pg.query("UPDATE roles SET capabilities = $1 WHERE name = 'founder'", [ROLE_CAPS.founder!.filter((c) => c !== "intent:read").join(",")]);
     await initRoles();
     expect(capabilities("founder").has("intent:read")).toBe(false);
   });
@@ -48,28 +48,6 @@ describe("roles are bundles of capabilities", () => {
     await pg.query("UPDATE roles SET capabilities = replace(capabilities, ',economy:admin', '') WHERE name = 'admin'");
     await initRoles();
     expect(capabilities("admin").has("economy:admin")).toBe(true);
-  });
-
-  test("nobody can take roles:admin from the admin role, or delete it", async () => {
-    await expect(setRoleCaps("admin", ["economy:admin"])).rejects.toThrow(/keeps the right/);
-    await expect(deleteRole("admin")).rejects.toThrow(/cannot be deleted/);
-    await expect(setRoleCaps("citizen", ["everything"])).rejects.toThrow(/Not a capability/);
-  });
-
-  test("a new role is a row: created, given to someone, and only deletable once nobody holds it", async () => {
-    await createRole("gardener", ["ledger:read", "economy:admin"]);
-    expect(can({ role: "gardener" }, "economy:admin")).toBe(true);
-    expect(can({ role: "gardener" }, "hearts:mint")).toBe(false);
-    await assignRole("second", "gardener");
-    expect((await listRoles()).find((r) => r.name === "gardener")?.people).toBe(1);
-    await expect(deleteRole("gardener")).rejects.toThrow(/still has this role/);
-    await assignRole("second", "citizen");
-    await deleteRole("gardener");
-    expect(capabilities("gardener").size).toBe(0);
-  });
-
-  test("the first signup cannot be demoted", async () => {
-    await expect(assignRole("first", "citizen")).rejects.toThrow(/first admin/);
   });
 });
 

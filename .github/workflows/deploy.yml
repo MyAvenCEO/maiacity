@@ -22,7 +22,7 @@ env:
   API_HOST: api.maia.city
 
 jobs:
-  # the kernel gate (kernel.yml): its tests and both probes in Chromium; nothing goes on the server unless they pass
+  # the kernel gate (kernel.yml): its tests and both probes, in Chromium and in WebKit; nothing goes on the server unless they pass
   kernel:
     name: Kernel
     uses: ./.github/workflows/kernel.yml

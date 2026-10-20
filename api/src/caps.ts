@@ -45,6 +45,3 @@ export const ROLE_CAPS: Record<string, string[]> = {
   founder: [...CITIZEN_CAPS, "coop:manage", "intent:read"],
   citizen: CITIZEN_CAPS,
 };
-
-/** Roles that cannot be deleted: the one everybody gets, and the one that manages the rest. */
-export const PROTECTED_ROLES = [DEFAULT_ROLE, FIRST_SIGNUP_ROLE];

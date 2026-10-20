@@ -7,7 +7,7 @@
 	import { remakeProxy } from './cuts.js';
 	import { PROFILE_CHOICES, colorOf, isVideo, profileFor, profileInfo, short } from './color.js';
 
-	/** @type {{ s: import('./studio.svelte.js').Studio, m: import('$lib/auth/client').MediaItem, compact?: boolean }} */
+	/** @type {{ s: import('./studio.svelte.js').Studio, m: import('./types.js').MediaItem, compact?: boolean }} */
 	let { s, m, compact = false } = $props();
 	let open = $state(false);
 	/** where the menu opens: fixed on the page, beside the badge, never cut off by the panel it is in */

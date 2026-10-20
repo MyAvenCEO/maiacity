@@ -15,7 +15,7 @@
 	import { nativeFrame } from './luts.js';
 	import { placeholder, worldUrl } from './world.svelte.js';
 
-	/** @typedef {import('$lib/auth/client').Shape} Shape */
+	/** @typedef {import('./types.js').Shape} Shape */
 	/** @type {{ s: import('./studio.svelte.js').Studio, label?: string }} */
 	let { s, label = 'Program' } = $props();
 
