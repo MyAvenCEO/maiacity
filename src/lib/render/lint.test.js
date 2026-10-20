@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS
 // The render core's lint (plan C5): every three.js renderer, orbit controls and post stack of the app is made in
 // src/lib/render, and every raw WebGL context is one of the few listed below. A page mounts a purpose renderer
-// (./world.js, ./stage.js, ./preview.js, ./film.js, ./diagram.js); it never makes its own.
+// (./world.js, ./stage.js, ./preview.js, ./film.js); it never makes its own.
 // Run: bun test src/lib/render/lint.test.js
 import { expect, test } from 'bun:test';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';

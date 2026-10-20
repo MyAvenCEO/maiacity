@@ -38,7 +38,10 @@ export const MOVED = /** @type {const} */ ({
 	// the avenDB and avenBRAIN architectures' own pages: their docs live in Maia City alone, drawn by avenDB's Docs view
 	// (Samuel 2026-10-20: served from avenDB only)
 	'/docs/avendb/': '/app/#docs',
-	'/docs/avenbrain/': '/app/#docs'
+	'/docs/avenbrain/': '/app/#docs',
+	// the theOS paper's own page: its text and figures live in Maia City alone since AIP-19, and the Docs view opens on
+	// it by its story's entry (`#docs/` and its entry, $lib/avendb/Docs.svelte), whatever anchor the old link had
+	'/theos/': '/app/#docs/5c38946e391378e9bedd2021b042e7cde5990b0bd38919d81495b7ed6b51f218'
 });
 
 /** An address as the list keys it: a leading and a trailing slash. @param {string} path */

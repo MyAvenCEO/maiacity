@@ -1,6 +1,7 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 // The numbers behind the theOS paper: every figure and every number quoted in its text is computed here, so the
-// prose and the charts can never drift apart.
+// prose and the charts can never drift apart. The paper itself lives in Maia City alone (its doc `paper/theos`, read
+// in avenDB's Docs view); `refs.js <key>` below names one of its references by the key its old page cited it by.
 
 /** the Universal Intent Allocation: HEARTS minted for every human, a day */
 export const UIA_DAY = 24;
@@ -22,7 +23,7 @@ export const SECONDS_YEAR = 31_536_000;
 
 /** a number in words, en-GB, with d decimals */
 export const fmt = (n, d = 0) => n.toLocaleString('en-GB', { minimumFractionDigits: d, maximumFractionDigits: d });
-// a share (0.07) as a percentage (7 %), for labels built here; the page has its own pc()
+// a share (0.07) as a percentage (7 %), for labels built here
 const pcs = (v, d = 0) => `${fmt(v * 100, d)} %`;
 
 /** the city's pools (Section 6): the fee of each swap, how many MINDs a basket holds, and how many basket partners a
@@ -330,7 +331,7 @@ export const giniRest = (sigma, r = RATE, mu = 0) => {
 	return a <= 1 ? 1 : Math.exp(lgamma(a - 0.5) - lgamma(a)) / Math.sqrt(Math.PI);
 };
 
-// a small seeded random source, so the page and the server draw the same simulation
+// a small seeded random source, so every run draws the same simulation
 function rng(seed) {
 	let s = seed >>> 0;
 	const u = () => {
@@ -915,7 +916,7 @@ export const COMPETITION = [
 export const SELLER_MIN = 0.05;
 /** the goods (water aside) that one COOP made alone, or almost alone (no other seller with SELLER_MIN or more), in year 60 */
 export const soleMakers = () => COMPETITION.filter((g) => g.good !== 'water' && (g.y60 === 1 || g.sellers60 === 1)).map((g) => g.good);
-/** the failures on the main seed: none (D5: "Failures (0): none"). coop / year / second: the first two, as the page
+/** the failures on the main seed: none (D5: "Failures (0): none"). coop / year / second: the first two, as the paper
  *  names them (null: none); list: all of them in order, with what the City COOP did with the plant. source: D5 */
 export const FAILURE = { coop: null, good: null, year: null, count: 0, food: 0, scrapped: 0, leased: 0, second: null, list: [] };
 /** the energy COOPs founded later, each of which exited within this many years (D5: ENERGY2, founded in year 4,
@@ -1465,7 +1466,7 @@ const rentTargets = [UPGRADES.notKept.rentLaw5].flatMap((r) => [
  *  update them. The evidence is the economic model's: each part of Proposition 3 counts the 8-seed check of its main
  *  run (SEEDS.new); `model` is [held, of]. Part 3 and "all three" are judged by YARDSTICK, and part 2 by the normal
  *  test. A hypothesis that no simulation tests yet comes out 'open' through statusOf, with `untested` saying why. The
- *  words of each hypothesis are in the page (Section 10) */
+ *  words of each hypothesis are in the paper (Section 10) */
 export const HYPOTHESES = {
 	H1: { status: 'proven' }, // Proposition 1, Section 5.3
 	H2: { status: 'proven' }, // Proposition 2, Section 9.2 (its condition is H4)
