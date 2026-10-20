@@ -196,6 +196,12 @@ const report = await page.evaluate(
 				/* not Chrome */
 			}
 		}
+		// the page's JS heap (MB; Chrome only), as it starts to play and as it ends
+		const heapNow = () => {
+			const m = /** @type {any} */ (performance).memory;
+			return m ? Math.round(m.usedJSHeapSize / 1e6) : null;
+		};
+		const heapAtPlay = heapNow();
 		const play0 = performance.now();
 		let prev = play0;
 		await new Promise((done) => {
@@ -215,6 +221,7 @@ const report = await page.evaluate(
 			};
 			requestAnimationFrame(tick);
 		});
+		const heapAtEnd = heapNow();
 		const trace = traced.map((f) => ({ ...f, at: f.at - play0 }));
 		const long = longFrames.map((f) => ({ ...f, at: Math.round(f.at - play0) })).filter((f) => f.at >= 0);
 		/** @type {any} */ (iframe.contentWindow).__filmTrace = undefined;
@@ -258,6 +265,8 @@ const report = await page.evaluate(
 			hitches: frames.filter((f) => f.gap > o.hitch).length,
 			hitchesAwayFromCuts: outside.filter((f) => f.gap > o.hitch).length,
 			reloads,
+			heapAtPlay,
+			heapAtEnd,
 			compiledWhilePlaying: trace.reduce((a, f) => a + (f.compiled ?? 0), 0),
 			firstShaderDraws: trace.reduce((a, f) => a + (f.firsts ?? 0), 0),
 			warmedWhilePlaying: trace.reduce((a, f) => a + (f.warmed ?? 0), 0),
