@@ -1343,8 +1343,20 @@ of the edits is new, nothing new is on the wire, and every write counts as any w
   agent reads its own progress in its loop. Numbers are exact decimals, millionths, the same on every device; the
   evaluator is total and bounded (no loops, no IO, at most 32 metrics of 4,096 parts), so an objective, data, never
   reaches the device that reads it. The objective is fixed once proposed (a revision opens it again); the readings go
-  on. `objective_check {lean, readings}` reads a file unsaved. AIP, v2 (shipped, lens from v1) holds `objective` and
-  `readings`; v1 records read on unchanged.
+  on. `objective_check {lean, readings, proposed, current}` reads a file unsaved. AIP, v2 (shipped, lens from v1)
+  holds `objective` and `readings`; v1 records read on unchanged.
+- **Metrics read from the proposal itself** (N1, Samuel 2026-10-20 16:21; `spec/AvenDB/Objectives/Lines.lean`).
+  `proposed "path"` is the number the AIP's lines would put at `path` of their entries' records, its baseline what
+  main holds there now; `current "path"` is what main holds there. A path is field names split by dots, `#n` the row
+  of a list whose id is n (`params.#1.default`), optionally after 8 or more hex digits of an entry's id and a slash,
+  which picks that entry's line. It reads the first line (of that entry) whose record holds anything there, on the
+  proposal's side (main's record once the vault's acceptance merged the line, the proposal's side taken wherever both
+  changed one place, as the diff reads it) or main's; not a number there is unmeasured, and a field main lacks has no
+  baseline. Once applied, both sides read against the version the proposal started from, so the objective reads as
+  it was accepted. No reading is needed: every device computes it from signed data. `aip` answers each path's numbers
+  as `objective.fields` (`{path, entry, line, proposed, current}`) and each metric's `paths`. In the model the engine
+  hands these numbers in (`Inputs`: readings, proposed and current fields; now = the newest readings and the
+  proposal's numbers, the baseline = the first readings and main's numbers).
 - **Numbers count per vault.** Promote gives one more than the highest number of the vault's AIPs the device holds,
   and a revised AIP keeps its own. Two devices that promote while apart may give one number twice; once they sync,
   every reader labels them alike, by where the write that set each number stands in the one order every device

@@ -179,7 +179,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "aip_open" => &["vault", "title", "note", "proposals", "tags", "objective", "as"],
         "aip_objective" => &["entry", "lean", "as"],
         "aip_measure" => &["entry", "name", "value", "note", "as"],
-        "objective_check" => &["lean", "readings"],
+        "objective_check" => &["lean", "readings", "proposed", "current"],
         "aip_promote" => &["entry", "as"],
         "aip_withdraw" => &["entry", "why", "as"],
         "aip_review" => &["entry", "verdict", "text", "heads", "as"],

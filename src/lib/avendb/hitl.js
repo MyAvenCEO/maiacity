@@ -68,14 +68,18 @@ export const REVIEW_V1 = `{
 
 /**
  * An AIP's objective as the `aips` read gives it (avendb's `objective::summary_json`, the model
- * avendb/spec/AvenDB/Objective.lean): its Lean, each metric checked against the readings recorded on the AIP (its
- * value now and at its first reading, its targets, met, progress from 0 to 1), how many are met, the mean progress,
- * and every reading; `error` where the Lean doesn't read.
+ * avendb/spec/AvenDB/Objective.lean): its Lean, each metric checked against the readings recorded on the AIP and the
+ * numbers its lines propose at the paths it names (its value now and at the baseline, the first reading or main's
+ * number, its targets, met, progress from 0 to 1), how many are met, the mean progress, every reading, and each
+ * path's numbers, `fields` (the line that holds it, the proposal's number and main's); `error` where the Lean
+ * doesn't read.
  * @typedef {{ lean: string, error?: string, met: number, total: number, progress: number,
  *   metrics: { id: string, name: string, note: string | null, goal: 'atLeast' | 'atMost' | 'between' | 'equals',
- *     readings: string[], value: number | null, baseline: number | null, targets: (number | null)[], met: boolean,
- *     progress: number }[],
- *   readings: { id: number, name: string, value: number, at?: number, note?: string }[] }} Objective
+ *     readings: string[], paths?: string[], value: number | null, baseline: number | null, targets: (number | null)[],
+ *     met: boolean, progress: number }[],
+ *   readings: { id: number, name: string, value: number, at?: number, note?: string }[],
+ *   fields?: { path: string, entry: string | null, line: string | null, proposed: number | null,
+ *     current: number | null }[] }} Objective
  */
 
 /**

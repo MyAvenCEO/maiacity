@@ -565,3 +565,76 @@ fn an_aip_states_its_objective_in_lean_and_measures_its_progress() {
     let check = ok(run(&mut g.w, g.mac, json!({ "op": "objective_check", "lean": "def x : Metric := 1" })));
     assert_eq!((&check["ok"], &check["line"]), (&json!(false), &json!(1)));
 }
+
+/// N1 (`spec/AvenDB/Objectives/Lines.lean`): an objective reads the numbers the AIP's own lines propose, no reading
+/// needed. `proposed "path"` is what the lines would put there, its baseline what main holds; `current "path"` what
+/// main holds; a path picks the first line whose record holds it, or the line of the entry it names; a field main
+/// doesn't hold yet has no baseline; each write on a line moves the progress at once, on every reader; applied, the
+/// AIP reads against the version it started from.
+#[test]
+fn an_objective_reads_the_numbers_its_lines_propose() {
+    let mut g = gate();
+    let a = g.create("logic", logic());
+    let mut tall = logic();
+    tall["params"][0]["default"] = json!(1.0);
+    let b = g.create("logic", tall);
+    g.sync(1);
+    let mut engine = logic()["engine"].clone();
+    engine["version"] = json!(5);
+    let height = |v: f64| set(json!(["params", { "id": 1 }, "default"]), json!(v));
+    let on_a = g.propose(&a, "Taller", vec![height(0.7), set(json!(["engine"]), engine)]);
+    let water = json!({ "id": 2, "name": "water", "kind": "number", "range": { "min": 0, "max": 50, "step": 1 },
+        "default": 15 });
+    let insert = json!({ "op": "insert", "path": ["params"], "value": water });
+    let on_b = g.propose(&b, "Taller still", vec![height(1.2), insert]);
+    let aven = g.aven.to_hex();
+    let lean = format!(
+        "def height : Metric := metric \"Corn height, m\" (atLeast (proposed \"params.#1.default\") 0.8)\n\
+         def step : Expr := proposed \"engine.version\" - current \"engine.version\"\n\
+         def engine : Metric := metric \"Engine versions up\" (equals step 1)\n\
+         def other : Metric := metric \"The other corn, m\" (atLeast (proposed \"{}/params.#1.default\") 1.4)\n\
+         def water : Metric := metric \"Water a week, l\" (between (proposed \"params.#2.default\") 10 20)\n",
+        &b[..8]
+    );
+    let op = json!({ "op": "aip_open", "vault": g.alice.to_hex(), "title": "Taller corn", "as": aven,
+        "proposals": [{ "entry": a, "line": on_a }, { "entry": b, "line": on_b }], "objective": lean });
+    let aip = ok(run(&mut g.w, g.mac, op))["entry"].as_str().expect("its entry").to_string();
+    let o = g.aip(g.mac, &aip)["objective"].clone();
+    let m = |o: &Value, i: usize| {
+        let m = &o["metrics"][i];
+        (m["value"].clone(), m["baseline"].clone(), m["met"].clone(), m["progress"].clone())
+    };
+    assert_eq!(m(&o, 0), (json!(0.7), json!(0.6), json!(false), json!(0.5)), "{o}");
+    assert_eq!(m(&o, 1), (json!(1), json!(0), json!(true), json!(1)));
+    assert_eq!(m(&o, 2), (json!(1.2), json!(1), json!(false), json!(0.5)));
+    assert_eq!(m(&o, 3), (json!(15), Value::Null, json!(true), json!(1)));
+    assert_eq!(o["metrics"][1]["paths"], json!(["engine.version"]));
+    let fields = list(&o["fields"]);
+    assert_eq!(fields.len(), 4);
+    let first = json!({ "path": "params.#1.default", "entry": a, "line": on_a, "proposed": 0.7, "current": 0.6 });
+    assert_eq!(fields[0], first);
+    assert_eq!((&fields[2]["entry"], &fields[2]["proposed"]), (&json!(b), &json!(1.2)));
+    assert_eq!((&fields[3]["line"], &fields[3]["current"]), (&json!(on_b), &Value::Null));
+    // a write on the line moves it at once, and every reader reads it alike
+    g.write(&a, &on_a, vec![height(0.8)]);
+    g.sync(2);
+    for d in g.readers {
+        let o = g.aip(d, &aip)["objective"].clone();
+        assert_eq!(m(&o, 0), (json!(0.8), json!(0.6), json!(true), json!(1)), "on {d:?}");
+        assert_eq!((&o["met"], &o["progress"]), (&json!(3), &json!(0.875)), "on {d:?}");
+    }
+    // applied: main holds the proposal now, and the objective reads against the version it started from
+    assert_eq!(ok(run(&mut g.w, g.mac, json!({ "op": "aip_promote", "entry": aip, "as": aven })))["number"], 1);
+    g.review(&aip, "accepted", "Yes");
+    let read = g.aip(g.mac, &aip);
+    assert_eq!(read["outcome"], "applied");
+    assert_eq!(m(&read["objective"], 0), (json!(0.8), json!(0.6), json!(true), json!(1)));
+    // an editor checks a file as it is typed, with the numbers it names
+    let check = ok(run(&mut g.w, g.mac, json!({ "op": "objective_check", "lean": lean,
+        "proposed": [{ "path": "params.#1.default", "value": 0.7 }],
+        "current": [{ "path": "params.#1.default", "value": 0.6 }] })));
+    assert_eq!((&check["ok"], &check["metrics"][0]["progress"]), (&json!(true), &json!(0.5)));
+    let bad = json!({ "op": "aip_objective", "entry": aip, "as": aven,
+        "lean": "def x : Metric := metric \"x\" (atLeast (proposed \"params..default\") 1)" });
+    assert!(run(&mut g.w, g.mac, bad)["why"].as_str().unwrap_or_default().contains("empty field"));
+}
