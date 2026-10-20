@@ -159,9 +159,11 @@
 	/** its owners and devices, each key once, by its newest (`newest`), this device first */
 	const owners = $derived(newest(v.owners));
 	const devices = $derived(newest(v.devices).sort((a, b) => Number(b.me) - Number(a.me)));
-	/** A signer owner, by the kind of key it is, never ranked: every owner is equal (Samuel 2026-10-19).
-	 *  @param {{ signer: string, recovery: boolean, by: string | null }} o */
-	const ownerLabel = (o) => (o.recovery ? 'Master recovery key' : o.by === 'touch' ? 'Mac Touch ID key' : 'Passkey');
+	/** A signer owner, by the kind of key it is, never ranked: every owner is equal (Samuel 2026-10-19); the master
+	 *  recovery key from before the key move as the old one (Samuel 2026-10-20).
+	 *  @param {{ signer: string, recovery: boolean, legacy?: boolean, by: string | null }} o */
+	const ownerLabel = (o) =>
+		o.legacy ? 'Old/legacy recovery' : o.recovery ? 'Master recovery key' : o.by === 'touch' ? 'Mac Touch ID key' : 'Passkey';
 	/** An owner as its Remove names it. @param {{ vault: string } | { signer: string, recovery: boolean, by: string | null }} o */
 	const ownerName = (o) => ('vault' in o ? nameOf(byId.get(o.vault)) : ownerLabel(o).replace(/^\w/, (c) => c.toLowerCase()));
 	/** An owner's key in the page's dry runs. @param {{ vault: string } | { signer: string }} o */

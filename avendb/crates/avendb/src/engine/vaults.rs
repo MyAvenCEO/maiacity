@@ -398,6 +398,10 @@ pub(super) fn shares(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Res
         st.entries().iter().filter(|en| en.vault == over && lab.landed(me, en.id)).collect();
     let all = entries.len();
     let (id, recovery) = (over.to_hex(), lab.recovery());
+    // the master recovery key as it was before the key move is one too (K4)
+    let signers = vault.owners.iter().filter_map(|p| if let Principal::Signer(s) = *p { Some(s) } else { None });
+    let seen = lab.signers_seen(me, &signers.collect());
+    let legacy: Vec<SignerId> = seen.iter().filter(|(_, keys)| lab.is_recovery(keys)).map(|(&s, _)| s).collect();
     // each row, and the revocation that ends it, which `may` judges
     let mut rows: Vec<(Value, Value)> = vec![];
     let member = |kind: &str, who: Value, level: &str, group: Option<&str>, (recovery, root): (bool, bool)| {
@@ -409,7 +413,7 @@ pub(super) fn shares(lab: &mut Lab, me: SignerId, o: &Map<String, Value>) -> Res
     };
     for &p in &vault.owners {
         let (recovery, root) = match p {
-            Principal::Signer(s) => (Some(s) == recovery, Some(s) == vault.root),
+            Principal::Signer(s) => (Some(s) == recovery || legacy.contains(&s), Some(s) == vault.root),
             Principal::Vault(_) => (false, false),
         };
         let row = member("owner", principal_json(p), "owner", Some("Owner"), (recovery, root));

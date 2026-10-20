@@ -38,8 +38,8 @@ import { fieldPaths, pathWords } from './paths.js';
  */
 /**
  * @typedef {{ id: string, kind: Kind, name: string | null,
- *   owners: ({ vault: string } | { signer: string, recovery: boolean, by: 'device' | 'passkey' | 'touch' | null,
- *     next: string | null })[],
+ *   owners: ({ vault: string } | { signer: string, recovery: boolean, legacy?: boolean,
+ *     by: 'device' | 'passkey' | 'touch' | null, next: string | null })[],
  *   threshold: number, root: string | null, devices: DeviceView[], via: string[] | null, acting: Acting }} VaultView
  */
 /**
@@ -461,7 +461,8 @@ export const acting = (world, v) =>
 /**
  * Who signer `id` is, as a person reads it: a device by its card's name, else as a device of its vault, a device
  * vault's by the vault's own name, as avenMAIA's server or agentClaude's agent; a vault's root as its passkey;
- * the master recovery key; a Mac's Touch ID key or a passkey that owns a vault; else a key by the start of its id.
+ * the master recovery key, and the one from before the key move as the old one; a Mac's Touch ID key or a passkey
+ * that owns a vault; else a key by the start of its id.
  * `lead` capitalises what
  * starts a line, where it isn't a name.
  * @param {WorldView} world @param {string} id @param {boolean} [lead]
@@ -469,6 +470,8 @@ export const acting = (world, v) =>
 export function signerName(world, id, lead = false) {
 	const say = (/** @type {string} */ s) => (lead ? s[0].toUpperCase() + s.slice(1) : s);
 	if (id === world.recovery) return say('the master recovery key');
+	const legacy = (/** @type {VaultView} */ v) => v.owners.some((o) => 'signer' in o && o.signer === id && o.legacy);
+	if (world.vaults.some(legacy)) return say('the old/legacy recovery key');
 	for (const v of world.vaults) {
 		const d = v.devices.find((x) => x.id === id);
 		if (d) return d.name ?? (v.kind === 'device' && v.name ? v.name : say(`a device of ${nameOf(v)}`));

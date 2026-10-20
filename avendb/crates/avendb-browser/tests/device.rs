@@ -32,7 +32,7 @@ use avendb::cast::*;
 use avendb::id::{BlobId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
-use avendb::policy::{Kind, Level, Principal};
+use avendb::policy::{Action, Kind, Level, Principal, Sharing};
 use avendb::slice::Selector;
 use avendb::recovery::RecoveryKey;
 use avendb::rules::ops_to_json;
@@ -1541,6 +1541,75 @@ async fn hanas_browser_and_passkey_from_before_the_key_move_move_in_one_ceremony
     assert!(shows(&again, note, "Red, blue and green.").await, "it reads what its shelf kept");
     assert_eq!(again.moving().await.expect("what moves"), None);
     for n in [again.node(), &mac] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn ivys_vault_takes_the_master_keys_next_key_at_her_browsers_unlock_by_her_passkey_and_its_consent() {
+    let admission = Admission::open();
+    let relay = Relay::spawn(LOOPBACK, admission.clone()).await.expect("a relay");
+    let url: RelayUrl = relay.url();
+    // Ivy's passkey, Mac and browser in ML-DSA-65 already, her vault founded with the master recovery key among its
+    // owners as it was before the key moved, in SLH-DSA (K4)
+    let mut lab = Lab::new();
+    let (secret_key, suite) = ([21; 32], Suite::SlhDsa);
+    let old = lab.set_recovery(Arc::new(RecoveryKey::of_in(secret_key, suite)));
+    let passkey = lab.passkey_from("Ivy", [48; 32]);
+    let mac_i = lab.device_of(passkey, "Ivy's Mac");
+    let (secret, nonce) = ([49; 32], [3; 32]);
+    let browser_i = lab.device_with("Ivy's browser", secret);
+    let (owners, signers) = lab.human_owners(passkey);
+    let genesis = Action::Genesis { kind: Kind::Human, owners, threshold: 1, root: Some(passkey), nonce: 0, seal_to: vec![] };
+    let ivy = VaultId::from(lab.submit(mac_i, &signers, genesis).expect("her passkey and the key's consent"));
+    for d in [mac_i, browser_i] {
+        let add = Action::Share(Sharing::Device { vault: ivy, device: d, seal_to: None });
+        lab.submit(mac_i, &[passkey, d], add).expect("her passkey adds its device");
+    }
+    lab.sync_all(1);
+    let pass = |lab: &mut Lab, d| lab.relay_pass(d, passkey, now()).expect("her passkey's pass");
+    let opts = Options { relay: Some(url.clone()), relay_passes: vec![pass(&mut lab, mac_i)], ..Options::local() };
+    let mac = Node::spawn(lab.split(mac_i, &[], [1; 32]), mac_i, opts).await.expect("her Mac's node");
+    let shelf = Folder::new("ivy");
+    let (relay_passes, on) = (vec![pass(&mut lab, browser_i)], Some(disk::open(&shelf.0).expect("its shelf")));
+    let opts = Options { relay: Some(url.clone()), relay_passes, shelf: on, ..Options::local() };
+    let browser = Node::spawn(lab.split(browser_i, &[], [2; 32]), browser_i, opts).await.expect("her browser's node");
+    until("the relay serves both", || async { relay.serves(&mac.id()) && relay.serves(&browser.id()) }).await;
+    browser.shutdown().await.expect("it closes, its shelf holding what it holds");
+    let ivys = Browser::new(Passkey::from_seed([48; 32]));
+    let (p256, pad) = {
+        let held = &ivys.0.lock().expect("the authenticator").0;
+        (held.public(), held.prf(&device_salt(&nonce)))
+    };
+    let mask: [u8; 32] = std::array::from_fn(|i| secret[i] ^ pad[i]);
+    let (name, relay_at, credential) = ("Ivy's browser".to_string(), url.to_string(), "aXZ5".to_string());
+    let (device, follow, query_depth, touch) = (browser_i, vec![], None, None);
+    let meta = Meta { name, relay: relay_at, nonce, mask, credential, p256, device, follow, query_depth, touch };
+    meta.keep(&disk::open(&shelf.0).expect("its shelf")).await.expect("what opens it again");
+    // avenDB's next build carries the master key in ML-DSA-65, from the same secret
+    let master = Arc::new(RecoveryKey::of(secret_key));
+    let new = master.id();
+    let with_master = |seed| Start { recovery: Some(master.clone()), ..start_on(&shelf.0, "Ivy's browser", &url, seed) };
+    let opened = Device::open(with_master(3), &meta, ivys.unlock(nonce, [0xaa; 32])).await.expect("it opens");
+    assert_eq!((opened.node().device(), opened.passkey()), (browser_i, passkey));
+    // her passkey alone signs, in one ceremony: the key's next key by its standing consent, and no device moves
+    let moving = opened.moving().await.expect("what moves");
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: false }));
+    let sign = |challenge, _: Moving| {
+        let ivys = &ivys;
+        async move { Ok(Signing { passkey: Some(ivys.ceremony(challenge, Step::Approve).await?), touch: None }) }
+    };
+    let moved = opened.move_keys(with_master(4), sign, |_| async { Ok(()) }).await.expect("it moves");
+    let moved = moved.expect("the master key moved");
+    assert_eq!(ivys.steps(), [Step::Approve], "one ceremony");
+    assert_eq!((moved.node().device(), moved.passkey()), (browser_i, passkey), "her own keys stay");
+    // her Mac sees the master key's next key as an owner beside the earlier one, which stays, her passkey the root
+    let members = move |lab: &Lab, d| lab.state(d).vault(ivy).map(|v| (v.owners.clone(), v.root));
+    let after = Some(([passkey, old, new].map(Principal::Signer).to_vec(), Some(passkey)));
+    until("her Mac sees the move", || async { mac.read(members).await == after }).await;
+    assert_eq!(moved.node().read(members).await, after);
+    assert_eq!(moved.moving().await.expect("what moves"), None, "nothing left to move");
+    for n in [moved.node(), &mac] {
         n.shutdown().await.expect("the node shuts down");
     }
 }
