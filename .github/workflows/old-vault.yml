@@ -4,9 +4,10 @@ name: Old media vault
 #
 #   measure – read only: what it still stores and how big (the bucket by folder, LIBRARY/ being the vault's files; the
 #             server's vaultdata volume; its Postgres tables), beside the newest database dump and the room left
-#   archive – copies only, nothing deleted: a full database dump and the vaultdata volume as one tar go to ARCHIVE/
-#             old-vault/ in the bucket, with the list of LIBRARY/'s files; nothing expires there (the 30-day rule is on
-#             BACKUPS/pg/ alone). LIBRARY/ itself stays where it is.
+#   archive – copies only, nothing deleted: a full database dump and the vaultdata volume as one tar (its catalog and
+#             blobs; never its node's secret key, nor its temporary files) go to ARCHIVE/old-vault/ in the bucket, with
+#             the list of LIBRARY/'s files; nothing expires there (the 30-day rule is on BACKUPS/pg/ alone). LIBRARY/
+#             itself stays where it is.
 #
 # Deleting anything is a later step of its own, only once Samuel OKs the list with sizes.
 on:
@@ -116,7 +117,8 @@ jobs:
           SIZE=$(docker run --rm -v "$VOL:/d:ro" alpine:3.20 du -sb /d | cut -f1)
           KEY="$ARCHIVE/vaultdata-$(date -u +%Y%m%dT%H%M%SZ).tar"
           echo "archive: $VOL, $SIZE bytes, to s3://$BACKUP_BUCKET/$KEY …"
-          timeout 3000 docker run --rm -v "$VOL:/d:ro" alpine:3.20 tar -C /d -cf - . \
+          # GNU tar, whose --exclude is sure to match ./secret.key
+          timeout 3000 docker run --rm -v "$VOL:/d:ro" debian:bookworm-slim tar -C /d --exclude=./secret.key --exclude=./tmp -cf - . \
             | timeout 3000 docker run --rm -i -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
                 -e AWS_DEFAULT_REGION="$BACKUP_REGION" \
                 -e AWS_REQUEST_CHECKSUM_CALCULATION=when_required -e AWS_RESPONSE_CHECKSUM_VALIDATION=when_required \
