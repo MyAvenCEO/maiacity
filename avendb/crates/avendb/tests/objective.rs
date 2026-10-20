@@ -1,7 +1,7 @@
 //! The Lean model's objective vectors (`avendb/spec/vectors/objectives.json`, written by `lake exe vectors` from
 //! `spec/AvenDB/ObjectiveVectors.lean`): each case an objective file Lean elaborated, the metrics it holds, readings,
-//! the numbers found at the paths it names (`proposed`, `current`), and what `check` answers. The engine reads each
-//! file to the same metrics and checks them to the same results.
+//! the numbers found at the paths it names (`proposed`, `current`), the measuring logic it names, and what `check`
+//! answers. The engine reads each file to the same metrics and measures and checks them to the same results.
 
 use avendb::objective::{self, Dec};
 use serde_json::Value;
@@ -18,9 +18,13 @@ fn objective_vectors() {
     let cases = file["cases"].as_array().unwrap();
     assert!(cases.len() >= 6);
     assert!(cases.iter().any(|c| c.get("proposed").is_some_and(|p| p.as_array().is_some_and(|p| !p.is_empty()))));
+    assert!(cases.iter().any(|c| c["measures"].as_array().is_some_and(|m| !m.is_empty())));
     for c in cases {
         let name = c["name"].as_str().unwrap();
-        let metrics = objective::parse(c["lean"].as_str().unwrap()).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let read = objective::read(c["lean"].as_str().unwrap()).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let measures: Vec<String> = serde_json::from_value(c["measures"].clone()).unwrap();
+        assert_eq!(read.measures, measures, "{name}: the measuring logic it names");
+        let metrics = read.metrics;
         let model: Vec<Value> = c["metrics"].as_array().unwrap().clone();
         assert_eq!(metrics.len(), model.len(), "{name}");
         for (m, want) in metrics.iter().zip(&model) {

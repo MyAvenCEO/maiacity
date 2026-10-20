@@ -615,6 +615,16 @@ fn an_objective_reads_the_numbers_its_lines_propose() {
     assert_eq!(fields[0], first);
     assert_eq!((&fields[2]["entry"], &fields[2]["proposed"]), (&json!(b), &json!(1.2)));
     assert_eq!((&fields[3]["line"], &fields[3]["current"]), (&json!(on_b), &Value::Null));
+    // the records the paths read, which a Measurer's logic is given: main's and the proposal's, each line's
+    let records = ok(run(&mut g.w, g.mac, json!({ "op": "aip_records", "entry": aip })));
+    let lines = list(&records["lines"]);
+    assert_eq!((lines.len(), &lines[0]["entry"], &lines[0]["line"]), (2, &json!(a), &json!(on_a)));
+    assert_eq!(lines[0]["main"]["params"][0]["default"], json!(0.6));
+    assert_eq!(lines[0]["proposed"]["params"][0]["default"], json!(0.7));
+    let version = |side: &str| lines[0][side]["engine"]["version"].clone();
+    assert_eq!((version("main"), version("proposed")), (json!(4), json!(5)));
+    assert_eq!(list(&lines[1]["proposed"]["params"]).len(), 2);
+    assert_eq!(lines[1]["type"], "logic");
     // a write on the line moves it at once, and every reader reads it alike
     g.write(&a, &on_a, vec![height(0.8)]);
     g.sync(2);
@@ -650,7 +660,8 @@ fn a_measurer_of_the_vault_measures_an_aip_and_its_author_never_does() {
     g.sync(1);
     let line = g.propose(&n, "Earlier", vec![set(json!(["title"]), json!("Corn first"))]);
     let (aven, alice, bob, mac_b) = (g.aven.to_hex(), g.alice.to_hex(), g.w.bob.to_hex(), g.w.mac_b);
-    let lean = "/-- The sim, as a Measurer runs it. -/\n\
+    let lean = "def sim : Measure := logic \"valley-sim\"\n\
+                /-- The sim, as a Measurer runs it. -/\n\
                 def fps : Metric := metric \"Frames, measured\" (atLeast (measured \"fps\") 50)\n\
                 def any : Metric := metric \"Frames, any reading\" (atLeast (reading \"fps\") 50)\n";
     let op = json!({ "op": "aip_open", "vault": alice, "title": "Faster corn", "as": aven, "objective": lean,
@@ -678,6 +689,7 @@ fn a_measurer_of_the_vault_measures_an_aip_and_its_author_never_does() {
         assert_eq!(o["metrics"][0]["progress"], json!(0.5));
         assert_eq!(m(1), (json!(40), json!(60)), "every reading counts as a reading");
         assert_eq!(o["metrics"][0]["measured"], json!(["fps"]));
+        assert_eq!(o["measures"], json!(["valley-sim"]), "the logic a Measurer runs");
         let rows = list(&o["readings"]);
         let marks: Vec<(&Value, &Value)> = rows.iter().map(|r| (&r["value"], &r["by"])).collect();
         assert_eq!(marks, [(&json!(60), &Value::Null), (&json!(30), &json!(bob)), (&json!(40), &json!(bob))]);

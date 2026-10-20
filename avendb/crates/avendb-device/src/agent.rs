@@ -900,7 +900,11 @@ fn instructions(name: &str, cloud: bool) -> String {
              digits and a slash first to pick its line), its baseline what main holds there, and `current \"path\"` \
              what main holds, so `atLeast (proposed \"params.#1.default\") 0.8` reads its progress from every \
              write on its lines; `measured \"fps\"` reads only the readings a Measurer of the vault wrote, its \
-             measuring job, never its author, so an agent's own reading counts as a `reading` alone; a file that \
+             measuring job, never its author, so an agent's own reading counts as a `reading` alone; the \
+             objective names the measuring logic that job runs, `def sim : Measure := logic \"valley-sim\"`, a \
+             logic module on the vault's main line tagged `ref:logic/measures/valley-sim` that exports \
+             `measure(input)`, given `{{lines}}`, each line's `entry`, `type`, `tags` and `record` on one side \
+             (`aip_records` (`entry`) reads both, `main` and `proposed`), and hands back named numbers; a file that \
              doesn't read is refused with its line and column, and `objective_check` (`lean`, `readings`, \
              `measured`, `proposed` and `current`, each `{{path, value}}`) checks one unsaved. While it works, \
              it measures (a test, a count, a run) and records each reading with \

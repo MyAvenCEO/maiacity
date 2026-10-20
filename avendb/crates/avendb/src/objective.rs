@@ -4,9 +4,9 @@
 //! An objective is a file of Lean against `AvenDB.Objective`: metrics, each a name and a goal over readings, numbers
 //! an AIP records while it is worked on (`aip_measure`), those of them a Measurer of its vault wrote (`measured
 //! "name"`, `spec/AvenDB/Measurers.lean`), and over the numbers its proposal itself puts in records (`proposed "path"`,
-//! against what main holds there, `current "path"`). This module reads the subset of Lean such a
-//! file is written in and checks its metrics against those inputs (`Inputs`), as the model does, so every device
-//! answers alike:
+//! against what main holds there, `current "path"`), and names the measuring logic a Measurer runs on its proposal
+//! (`def sim : Measure := logic "valley-sim"`). This module reads the subset of Lean such a file is written in and
+//! checks its metrics against those inputs (`Inputs`), as the model does, so every device answers alike:
 //!
 //! ```lean
 //! import AvenDB.Objective
@@ -19,9 +19,9 @@
 //! ```
 //!
 //! - **Items**: `import AvenDB.Objective`, `open AvenDB.Objective`, `namespace N` … `end N`, `def x : Metric := metric
-//!   "name" (goal)`, `def x : Expr := expr`, and `def objective : List Metric := [x, …]`, the metrics in their order
-//!   (without it, every metric in file order). A doc comment `/-- … -/` above a metric is its note; `--` and `/- … -/`
-//!   (nested) are comments.
+//!   "name" (goal)`, `def x : Expr := expr`, `def x : Measure := logic "name"`, and `def objective : List Metric :=
+//!   [x, …]`, the metrics in their order (without it, every metric in file order). A doc comment `/-- … -/` above a
+//!   metric is its note, above any other def a comment; `--` and `/- … -/` (nested) are comments.
 //! - **Goals**: `atLeast e t`, `atMost e t`, `between e lo hi`, `equals e t`, each argument a number, a name of an
 //!   earlier `Expr`, or an expression in parentheses, as Lean applies functions.
 //! - **Expressions**: plain decimals (`1500`, `0.8`), `reading "name"`, `measured "name"`, `proposed "path"`, `current
@@ -30,6 +30,9 @@
 //! - **Paths** (`proposed`, `current`): field names split by dots, `#n` the row of a list whose id is n
 //!   (`params.#1.default`), optionally after the first 8 or more hex digits of an entry's id and a slash
 //!   (`1a2b3c4d/params.#1.default`), which picks that entry's line of the AIP (`at_path`).
+//! - **Measures** (`Measure` in the model): `logic "name"`, the logic module on the vault's main line tagged
+//!   `ref:logic/measures/<name>` that a Measurer runs on the AIP's lines; at most `MAX_MEASURES`, each name 1 to 64 of
+//!   a-z, 0-9 and `-` (`Measure.named`). Checking never runs one: its numbers come back as readings.
 //! - **Numbers** are millionths in an `i128` (`Dec`): six places, the rest cut toward zero; a value beyond 10^24 units
 //!   is none, as the model's `bound`.
 //!
@@ -54,6 +57,8 @@ pub const BOUND: Dec = 1_000_000_000_000_000_000_000_000_000_000;
 pub const MAX_LEN: usize = 20_000;
 /// The most metrics an objective holds.
 pub const MAX_METRICS: usize = 32;
+/// The most measuring logic an objective names.
+pub const MAX_MEASURES: usize = 8;
 /// The most nodes a metric's goal holds once every name is put in.
 pub const MAX_NODES: usize = 4096;
 /// How deep parentheses and operators may nest.
@@ -666,9 +671,9 @@ fn lex(src: &str) -> Result<Vec<Token>, Error> {
 }
 
 /// Words an objective's names may not take.
-const RESERVED: [&str; 21] = [
+const RESERVED: [&str; 23] = [
     "def", "import", "open", "namespace", "end", "metric", "reading", "measured", "proposed", "current", "min", "max",
-    "atLeast", "atMost", "between", "equals", "Metric", "Expr", "List", "theorem", "where",
+    "atLeast", "atMost", "between", "equals", "Metric", "Expr", "List", "theorem", "where", "logic", "Measure",
 ];
 
 struct Parser {
@@ -866,8 +871,25 @@ impl Parser {
     }
 }
 
-/// The metrics of an objective file, in their order: `Error` with where and why for anything else.
+/// An objective file as it reads: its metrics, in their order, and the measuring logic it names, in file order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Objective {
+    pub metrics: Vec<Metric>,
+    pub measures: Vec<String>,
+}
+
+/// Whether `name` may name a measuring logic, the last part of a ref (`Measure.named`): 1 to 64 of a-z, 0-9 and `-`.
+pub fn measure_named(name: &str) -> bool {
+    (1..=64).contains(&name.len()) && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+}
+
+/// The metrics of an objective file, in their order: `Error` with where and why for anything else (`read`).
 pub fn parse(src: &str) -> Result<Vec<Metric>, Error> {
+    read(src).map(|o| o.metrics)
+}
+
+/// An objective file, its metrics and the measuring logic it names: `Error` with where and why for anything else.
+pub fn read(src: &str) -> Result<Objective, Error> {
     if src.len() > MAX_LEN {
         return err(1, 1, format!("an objective of at most {MAX_LEN} bytes"));
     }
@@ -875,6 +897,7 @@ pub fn parse(src: &str) -> Result<Vec<Metric>, Error> {
     let end = toks.last().map_or((1, 1), |t| (t.line, t.col));
     let mut p = Parser { toks, at: 0, exprs: HashMap::new(), end };
     let mut metrics: Vec<Metric> = vec![];
+    let mut measures: Vec<String> = vec![];
     let mut order: Option<Vec<String>> = None;
     let mut spaces: Vec<String> = vec![];
     let mut names: Vec<String> = vec![];
@@ -941,6 +964,23 @@ pub fn parse(src: &str) -> Result<Vec<Metric>, Error> {
                         }
                         p.exprs.insert(name.clone(), e);
                     }
+                    "Measure" => {
+                        p.sym(":=")?;
+                        p.word("logic")?;
+                        let logic = p.string()?;
+                        if !measure_named(&logic) {
+                            p.at -= 1;
+                            return p.fail(format!("{logic:?} names no logic: 1 to 64 of a-z, 0-9 and -"));
+                        }
+                        if measures.contains(&logic) {
+                            p.at -= 1;
+                            return p.fail(format!("logic {logic:?} is named twice"));
+                        }
+                        if measures.len() == MAX_MEASURES {
+                            return p.fail(format!("an objective names at most {MAX_MEASURES} measuring logic"));
+                        }
+                        measures.push(logic);
+                    }
                     "List" => {
                         p.word("Metric")?;
                         if name != "objective" {
@@ -966,7 +1006,8 @@ pub fn parse(src: &str) -> Result<Vec<Metric>, Error> {
                     }
                     _ => {
                         p.at -= 1;
-                        return p.fail(format!("a def here is a Metric, an Expr or `objective`, never a {ty}"));
+                        let why = format!("a def here is a Metric, an Expr, a Measure or `objective`, never a {ty}");
+                        return p.fail(why);
                     }
                 }
                 names.push(name);
@@ -987,7 +1028,7 @@ pub fn parse(src: &str) -> Result<Vec<Metric>, Error> {
     if metrics.is_empty() {
         return err(p.end.0, p.end.1, "an objective holds at least one metric");
     }
-    Ok(metrics)
+    Ok(Objective { metrics, measures })
 }
 
 #[cfg(test)]
@@ -1055,6 +1096,28 @@ mod tests {
         ms[0].goal.measured().readings(&mut all);
         ms[0].goal.measured().measured(&mut measured);
         assert_eq!((all, measured), (vec!["fps".to_string(), "cpu".into()], vec!["fps".to_string()]));
+    }
+
+    #[test]
+    fn reads_the_measuring_logic_it_names() {
+        let head = "import AvenDB.Objective\nopen AvenDB.Objective\n";
+        let fps = "def fps : Metric := metric \"F\" (atLeast (measured \"fps\") 50)\n";
+        let sim = "/-- The sim. -/\ndef sim : Measure := logic \"valley-sim\"\n";
+        let src = format!("{head}{sim}{fps}def b : Measure := logic \"b2\"");
+        let o = read(&src).unwrap();
+        assert_eq!(o.measures, vec!["valley-sim".to_string(), "b2".into()]);
+        assert_eq!(o.metrics.len(), 1);
+        assert_eq!(read(&format!("{head}{fps}")).unwrap().measures, Vec::<String>::new());
+        for bad in ["Valley", "", "a/b", "a b", &"x".repeat(65)] {
+            let src = format!("{head}{fps}def sim : Measure := logic {bad:?}");
+            assert!(read(&src).unwrap_err().why.contains("names no logic"), "{bad}");
+        }
+        let twice = format!("{head}{fps}def a : Measure := logic \"s\"\ndef b : Measure := logic \"s\"");
+        assert!(read(&twice).unwrap_err().why.contains("twice"));
+        let many: String = (0..=MAX_MEASURES).map(|i| format!("def m{i} : Measure := logic \"m{i}\"\n")).collect();
+        assert!(read(&format!("{head}{fps}{many}")).unwrap_err().why.contains("at most"));
+        assert!(read(&format!("{head}def sim : Measure := logic \"s\"")).unwrap_err().why.contains("one metric"));
+        assert!(read(&format!("{head}{fps}def logic : Expr := 1")).is_err());
     }
 
     #[test]

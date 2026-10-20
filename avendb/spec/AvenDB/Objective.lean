@@ -10,8 +10,9 @@ lines would put at `path` of their entries' records, its baseline what main hold
 what main holds there now. The engine finds a path in the records (`params.#1.default`: field names, `#n` the row
 whose id is n); the model takes the numbers it found (`Inputs`). And `measured "name"` reads only the readings a
 Measurer of the AIP's vault wrote, never its author (`AvenDB.Measurers`), where `reading "name"` reads every one.
-avenDB's engine (`crates/avendb/src/objective.rs`) runs the same subset of Lean, total and bounded, and replays
-`vectors/objectives.json` (`ObjectiveVectors.lean`) to stay this model.
+What a Measurer runs to measure it, the objective names too: `def sim : Measure := logic "valley-sim"`, a logic module
+on the vault's main line (`Measure`). avenDB's engine (`crates/avendb/src/objective.rs`) runs the same subset of
+Lean, total and bounded, and replays `vectors/objectives.json` (`ObjectiveVectors.lean`) to stay this model.
 
 An objective file reads, in Lean:
 
@@ -33,6 +34,8 @@ def objective : List Metric := [fps]
 - **Expressions** (`Expr`): numbers, `reading "name"`, `measured "name"`, `proposed "path"`, `current "path"`,
   `+ - * /`, `-x`, `min`, `max`.
 - **Goals** (`Goal`): `atLeast e t`, `atMost e t`, `between e lo hi`, `equals e t`.
+- **Measures** (`Measure`): `logic "name"`, the measuring logic a Measurer runs on the AIP's proposal; its numbers
+  reach the metrics as readings, so checking never runs it.
 - **Progress** (`Metric.check`): a metric met is done, `one`; else its distance from what meets it, now (the newest
   readings and measured readings, the proposal's numbers), against that distance at the baseline (the first readings
   and measured readings, main's numbers),
@@ -117,6 +120,21 @@ structure Metric where
   deriving Repr, BEq, Inhabited
 
 def metric (name : String) (goal : Goal) : Metric := ⟨name, goal⟩
+
+/-- What measures an AIP: the measuring logic named `logic`, the logic module on the main line of the AIP's vault
+    tagged `ref:logic/measures/<logic>`, which its owners accepted, so trusted code. A Measurer of the vault
+    (`AvenDB.Measurers`) runs it in the vault's sandboxed logic host on the records of the AIP's lines, main's side once
+    as the baseline and the proposal's side whenever its lines change, and records each number it answers as a reading,
+    which `measured "name"` then reads. Checking never runs it: its numbers are inputs, as every reading is. -/
+structure Measure where
+  logic : String
+  deriving Repr, BEq, Inhabited
+
+def logic (name : String) : Measure := ⟨name⟩
+
+/-- How a measuring logic may be named: 1 to 64 lower-case letters, digits and dashes, as the last part of a ref. -/
+def Measure.named (m : Measure) : Bool :=
+  0 < m.logic.length && m.logic.length ≤ 64 && m.logic.all fun c => c.isLower || c.isDigit || c == '-'
 
 /-! ## Evaluation -/
 

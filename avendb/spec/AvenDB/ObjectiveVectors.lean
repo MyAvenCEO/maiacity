@@ -12,7 +12,7 @@ import AvenDB.Objectives.Measured
 file of Lean, its text as `include_str` reads it, the very file Lean elaborated here, so the text and the metrics are
 one; the metrics as the model holds them (`Expr`, `Goal`, `Metric`, numbers in millionths); readings, each a name and
 a value in millionths, in the order recorded, and those of them a Measurer wrote; the numbers found at the paths it
-names in the proposal and on main; and what `check` answers.
+names in the proposal and on main; the measuring logic it names, in file order; and what `check` answers.
 -/
 
 namespace AvenDB.ObjectiveVectors
@@ -79,6 +79,7 @@ structure Case where
   measured : Readings := []
   proposed : Fields := []
   current : Fields := []
+  measures : List Measure := []
 
 def named (key : String) (xs : List (String × Int)) : String :=
   arr (xs.map fun (n, v) => obj [(key, jstr n), ("value", int v)])
@@ -87,6 +88,7 @@ def case (c : Case) : String :=
   obj [("name", jstr c.name), ("lean", jstr c.lean), ("metrics", arr (c.metrics.map metric)),
        ("readings", named "name" c.readings), ("measured", named "name" c.measured),
        ("proposed", named "path" c.proposed), ("current", named "path" c.current),
+       ("measures", arr (c.measures.map (jstr ·.logic))),
        ("result", summary (check c.metrics ⟨c.readings, c.measured, c.proposed, c.current⟩))]
 
 def cases : List Case := [
@@ -125,12 +127,17 @@ def cases : List Case := [
     lean := include_str "Objectives/Measured.lean",
     metrics := Objectives.Measured.objective,
     readings := [("fps", u 60), ("fps", u 30), ("fps", u 40)],
-    measured := [("fps", u 30), ("fps", u 40)] },
+    measured := [("fps", u 30), ("fps", u 40)],
+    measures := [Objectives.Measured.sim] },
   { name := "measured: no Measurer has measured yet",
     lean := include_str "Objectives/Measured.lean",
     metrics := Objectives.Measured.objective,
-    readings := [("fps", u 60)] }
+    readings := [("fps", u 60)],
+    measures := [Objectives.Measured.sim] }
 ]
+
+-- Every vector names its measuring logic as a ref may (`Measure.named`).
+#guard cases.all (·.measures.all Measure.named)
 
 def render : String := obj [("cases", arr (cases.map case))] ++ "\n"
 

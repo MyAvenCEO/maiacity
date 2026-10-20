@@ -184,7 +184,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "aip_withdraw" => &["entry", "why", "as"],
         "aip_review" => &["entry", "verdict", "text", "heads", "as"],
         "aips" => &["vault"],
-        "aip" => &["entry"],
+        "aip" | "aip_records" => &["entry"],
         "restore" => &["entry", "line", "at", "as"],
         "undo" => &["entry", "line", "edit", "as"],
         "fork" => &["entry", "line", "into", "schema", "ops", "as"],
@@ -221,7 +221,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
-const READS: [&str; 26] = [
+const READS: [&str; 27] = [
     "query",
     "objective_check",
     "get",
@@ -231,6 +231,7 @@ const READS: [&str; 26] = [
     "schemas",
     "aips",
     "aip",
+    "aip_records",
     "groups",
     "cap_groups",
     "kinds",
@@ -318,6 +319,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "schemas" => schemas(lab, me, o),
         "aips" => aips::aips(lab, me, o),
         "aip" => aips::one(lab, me, o),
+        "aip_records" => aips::records(lab, me, o),
         "objective_check" => aips::objective_check(o),
         "groups" => Ok(rules::groups().iter().map(rules::Group::to_json).collect()),
         "cap_groups" => vaults::cap_groups(lab, me, o),

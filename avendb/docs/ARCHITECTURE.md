@@ -1343,7 +1343,7 @@ of the edits is new, nothing new is on the wire, and every write counts as any w
   agent reads its own progress in its loop. Numbers are exact decimals, millionths, the same on every device; the
   evaluator is total and bounded (no loops, no IO, at most 32 metrics of 4,096 parts), so an objective, data, never
   reaches the device that reads it. The objective is fixed once proposed (a revision opens it again); the readings go
-  on. `objective_check {lean, readings, measured, proposed, current}` reads a file unsaved. AIP, v2 (shipped, lens from v1)
+  on. `objective_check {lean, readings, measured, proposed, current}` reads a file unsaved, and names its `measures`. AIP, v2 (shipped, lens from v1)
   holds `objective` and `readings`; v1 records read on unchanged.
 - **Metrics read from the proposal itself** (N1, Samuel 2026-10-20 16:21; `spec/AvenDB/Objectives/Lines.lean`).
   `proposed "path"` is the number the AIP's lines would put at `path` of their entries' records, its baseline what
@@ -1367,6 +1367,18 @@ of the edits is new, nothing new is on the wire, and every write counts as any w
   author does (its group gives it read and `insert ["readings"]` on main of type aip). `reading "name"` still counts
   every reading. `aip` marks each reading row a Measurer wrote `measured`, with `by`, and each metric lists the
   readings it counts only as measured, `measured`.
+- **What a Measurer runs** (N2, `Measure` in `spec/AvenDB/Objective.lean`, `src/lib/proposals/measure.js`). An
+  objective names the measuring logic that measures it, `def sim : Measure := logic "valley-sim"`: the logic module on
+  the vault's main line tagged `ref:logic/measures/valley-sim`, which the vault's owners accepted, so trusted code,
+  exporting `measure(input)`. Checking never runs it (`aip` answers the names as `objective.measures`, at most 8, each 1
+  to 64 of a-z, 0-9 and -): the Measurer's job does, in the sandboxed logic host (`src/lib/sandbox/logic-host.js`, a
+  fresh QuickJS engine, no page, network, keys or clock, its work counted in ticks, its random seeded by its input),
+  on the records of the AIP's lines, the input nobody trusts: `aip_records {entry}` answers each line's `{entry, line,
+  type, tags, heads, merged, new, main, proposed}`, `main` and `proposed` the two records `proposed "path"` reads.
+  Main's side once, as the baseline, then the proposal's whenever its lines or the logic change; each number it hands
+  back is an `aip_measure` reading, its note naming the logic, a hash of its code and the side. Every run is a pure
+  function of the logic and the records, so anyone who reads both can run it again and compare. The job runs as a
+  device of a vault holding the Measurer group (`scripts/measure.mjs`, on avenDB's server), never on a Mac.
 - **Numbers count per vault.** Promote gives one more than the highest number of the vault's AIPs the device holds,
   and a revised AIP keeps its own. Two devices that promote while apart may give one number twice; once they sync,
   every reader labels them alike, by where the write that set each number stands in the one order every device
