@@ -1,6 +1,6 @@
 //! The shot analysis' model, asked through our server: the Mac samples the frames (natively, from the vault in
 //! place) and sends them — with the words said in the stretch — to the API (`POST /api/analysis`, by the Mac's avenDB
-//! device pass, else the app's own key),
+//! device pass),
 //! which asks Prem's confidential Qwen with the server's key: the prompt, the vocabulary, the JSON schemas, the
 //! validation and repair of every answer, the model's pick, the rate limit and the pause after a Prem failure all live
 //! there (api/src/analysis.ts, api/src/prem.ts), once. No LLM key is ever on a Mac.
@@ -80,11 +80,14 @@ pub fn prem() -> &'static Prem {
 
 impl Prem {
     async fn call(&self, auth: &Auth, pass: Option<String>, method: &str, body: Option<Value>) -> Result<Value, Ask> {
-        let (status, body) = auth.call_as(method, "/api/analysis", body, pass.as_deref()).await.map_err(|e| wait(e))?;
+        // the API takes the shot analysis by the Mac's avenDB device pass alone: while the device is locked, the files wait
+        let pass = pass.ok_or_else(|| wait("This Mac's avenDB is locked: the shot analysis waits for it to open."))?;
+        let (status, body) = auth.call_as(method, "/api/analysis", body, &pass).await.map_err(|e| wait(e))?;
         read(status, body)
     }
 
-    /// One stretch of frames → its tags, cues, summary and thumbnail pick; `pass` the device's for this call, if any.
+    /// One stretch of frames → its tags, cues, summary and thumbnail pick; `pass` the device's for this call, none while
+    /// it is locked.
     pub async fn frames(&self, auth: &Auth, pass: Option<String>, st: &Stretch<'_>) -> Result<Value, Ask> {
         if st.frames.is_empty() {
             return Err(Ask::Fail("No frames in the request.".into()));
@@ -118,7 +121,7 @@ mod tests {
         assert!(matches!(read(503, json!({ "error": "PREMAI_API_KEY is missing" })), Err(Ask::Wait { until: None, .. })));
         assert!(matches!(read(429, json!({})), Err(Ask::Wait { .. })));
         assert!(matches!(read(502, json!({ "error": "x", "transient": true })), Err(Ask::Wait { .. })));
-        assert!(matches!(read(403, json!({ "error": "This key cannot work with the media vault." })), Err(Ask::Wait { .. })));
+        assert!(matches!(read(403, json!({ "error": "This needs Maia City’s Admin group in avenDB." })), Err(Ask::Wait { .. })));
         // the file's own: it fails (a try used up)
         assert_eq!(read(413, json!({ "error": "too large" })), Err(Ask::Fail("too large".into())));
         assert_eq!(read(422, json!({})), Err(Ask::Fail("the API answered 422".into())));

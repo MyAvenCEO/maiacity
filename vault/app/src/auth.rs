@@ -1,45 +1,31 @@
-//! Signing the app in with the admin's passkey — the device flow the terminals already use (api/src/keys.ts).
+//! Signing the app in with the person's passkey, as a browser signs in (#1107).
 //!
-//! Passkeys belong to maia.city, so the app cannot use one itself. It asks the API for a device code, the page approves
-//! it with the passkey in the app's sign-in sheet (`passkey_sheet`), and the app receives a key — its session, kept in a
-//! file only this user can read, never shown. Every API call the app makes goes out from here with that key, so the
-//! studio's admin functions never run from a web page.
+//! Passkeys belong to maia.city, so the app's web view cannot use one itself: the passkey signs a sign-in's challenge in
+//! the app's sign-in sheet (`passkey_sheet`, src/routes/app/avendb/sheet/), the page hands that answer to the API's
+//! sign-in through `api`, and the session the API answers with, the same one a browser keeps in its cookie, is kept here
+//! in a file only this user can read, never shown. Every API call the page makes goes out from here with it. No key of
+//! the app's own: what the person may do is theirs in avenDB, and the shot analysis goes by the Mac's avenDB device pass.
 
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde::{Deserialize, Serialize};
+use reqwest::header::{COOKIE, SET_COOKIE};
+use serde::Serialize;
 use serde_json::Value;
-use tauri::{AppHandle, Emitter, State};
+use tauri::State;
 
-const SERVICE: &str = "city.maia.studio";
-/// What the studio needs: the media library, all a key may hold (api/src/keys.ts `KEY_CAPS`). Everything else in the
-/// city is a person's, signed in with their passkey, and an agent's goes through avenDB vault caps.
-const SCOPE: &str = "media:admin";
-/// Who the key speaks for: it opens the studio only while the caps it answers (the key's scope, never more than the
-/// role holds now) hold SCOPE — the admin gate. (It was the old media vault's join, which went with that vault's server
-/// in #1116: its 404 sent The OS back to the passkey sign-in.)
-const GATE: &str = "/api/me";
-/// The latest sign-in: a code the person walked away from stops waiting once they start again, so its expiry never
-/// reaches the new one's window.
-static ROUND: AtomicU64 = AtomicU64::new(0);
+/// The API's session cookie (api/src/session.ts `COOKIE`).
+const SESSION: &str = "maia_session";
 
 pub fn api_base() -> String {
     std::env::var("MAIACITY_API").unwrap_or_else(|_| "https://api.maia.city".into())
 }
 
-fn site_base() -> String {
-    std::env::var("MAIACITY_SITE").unwrap_or_else(|_| "https://maia.city".into())
-}
-
-/// One key per API: production and a local API never share one.
+/// One session per API: production and a local API never share one.
 fn account() -> String {
     api_base()
 }
 
-/// The session — the key the passkey approved — lives in the app's own folder, readable by this user only, like the
-/// CLI's (~/.config/maiacity/media-keys.json). One key per API. (It was in the Keychain; every unsigned build made
-/// macOS ask again, so it moves out once.)
+/// The session lives in the app's own folder, readable by this user only. One per API.
 fn session_file() -> std::path::PathBuf {
     let home = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default();
     home.join("Library/Application Support/city.maia.studio/session.json")
@@ -62,30 +48,56 @@ fn write_sessions(map: &serde_json::Map<String, Value>) -> Result<(), String> {
     std::fs::rename(&tmp, &file).map_err(|e| e.to_string())
 }
 
-fn load_key() -> Option<String> {
-    if let Some(k) = sessions().get(&account()).and_then(|v| v.as_str()) {
-        return Some(k.to_string());
+/// This Mac's session with the API, while it lasts. A key from before (`mck_…`, the device flow's) is no session: the
+/// API revokes it once, and it is forgotten.
+fn load_session() -> Option<String> {
+    let held = sessions().get(&account()).and_then(|v| v.as_str()).map(String::from)?;
+    if held.starts_with("mck_") {
+        retire(held);
+        return None;
     }
-    // once: a key still in the Keychain moves into the file, and the Keychain entry goes
-    let bytes = security_framework::passwords::get_generic_password(SERVICE, &account()).ok()?;
-    let key = String::from_utf8(bytes).ok()?;
-    if save_key(&key).is_ok() {
-        security_framework::passwords::delete_generic_password(SERVICE, &account()).ok();
-    }
-    Some(key)
+    // founderId.expiry.signature (api/src/session.ts): one past its expiry opens nothing
+    let expiry = held.split('.').nth(1).and_then(|e| e.parse::<u128>().ok())?;
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_millis();
+    (expiry > now).then_some(held)
 }
 
-fn save_key(key: &str) -> Result<(), String> {
+fn save_session(token: &str) -> Result<(), String> {
     let mut map = sessions();
-    map.insert(account(), Value::String(key.to_string()));
+    map.insert(account(), Value::String(token.to_string()));
     write_sessions(&map)
 }
 
-fn forget_key() {
+fn forget_session() {
     let mut map = sessions();
-    map.remove(&account());
-    write_sessions(&map).ok();
-    security_framework::passwords::delete_generic_password(SERVICE, &account()).ok();
+    if map.remove(&account()).is_some() {
+        write_sessions(&map).ok();
+    }
+}
+
+/// The app's key from the device flow, revoked at the API and forgotten here.
+fn retire(key: String) {
+    forget_session();
+    tauri::async_runtime::spawn(async move {
+        reqwest::Client::new().delete(format!("{}/api/device/key", api_base())).bearer_auth(key).send().await.ok();
+    });
+}
+
+/// What an answer of the API says of the session, as a browser's cookie jar hears it: a sign-in's new one is kept, a
+/// sign-out's empty one forgets it.
+fn hear(res: &reqwest::Response) {
+    for cookie in res.headers().get_all(SET_COOKIE) {
+        let pair = cookie.to_str().ok().and_then(|c| c.split(';').next()).map(str::trim);
+        match pair.and_then(|p| p.strip_prefix(SESSION)).and_then(|p| p.strip_prefix('=')) {
+            Some("") => forget_session(),
+            Some(token) => {
+                if let Err(e) = save_session(token) {
+                    tracing::warn!("the API's session could not be kept: {e}");
+                }
+            }
+            None => {}
+        }
+    }
 }
 
 #[derive(Default, Clone)]
@@ -93,125 +105,11 @@ pub struct Auth {
     http: reqwest::Client,
 }
 
-#[derive(Serialize, Clone)]
-pub struct AuthState {
-    pub signed_in: bool,
-    pub api: String,
-    /// why not, in a sentence a person can read
-    pub reason: Option<String>,
-}
-
-#[derive(Serialize, Clone)]
-pub struct DeviceStart {
-    pub user_code: String,
-    pub url: String,
-    pub expires_in: u64,
-}
-
-#[derive(Deserialize)]
-struct Started {
-    device_code: String,
-    user_code: String,
-    expires_in: u64,
-    interval: u64,
-}
-
-impl Auth {
-    /// Does the key in the Keychain still open the studio? A revoked or foreign key is forgotten.
-    async fn state(&self) -> AuthState {
-        let api = api_base();
-        let Some(key) = load_key() else {
-            return AuthState { signed_in: false, api, reason: None };
-        };
-        let revoked = |api: String| {
-            forget_key();
-            AuthState { signed_in: false, api, reason: Some("This Mac's key no longer opens the studio.".into()) }
-        };
-        match self.http.get(format!("{api}{GATE}")).bearer_auth(&key).send().await {
-            Ok(r) if r.status().is_success() => match r.json::<Value>().await.ok().and_then(|me| me["caps"].as_array().cloned()) {
-                Some(caps) if caps.iter().any(|c| c.as_str() == Some(SCOPE)) => AuthState { signed_in: true, api, reason: None },
-                // the key speaks for someone who may not run the studio (any more)
-                Some(_) => revoked(api),
-                None => AuthState { signed_in: false, api, reason: Some("The API answered without saying who this key is.".into()) },
-            },
-            Ok(r) if r.status() == 401 || r.status() == 403 => revoked(api),
-            Ok(r) => AuthState { signed_in: false, api, reason: Some(format!("The API answered {}.", r.status())) },
-            // offline: a key we hold stays good until the API says otherwise
-            Err(_) => AuthState { signed_in: true, api, reason: Some("Offline — working from this Mac only.".into()) },
-        }
-    }
-}
-
+/// Sign this Mac out: it forgets its session (which the API keeps nowhere: it is signed, and runs out by itself).
 #[tauri::command]
-pub async fn auth_status(auth: State<'_, Auth>) -> Result<AuthState, String> {
-    Ok(auth.state().await)
-}
-
-/// Start the device flow: get a code, which the page approves with the passkey in the app's sign-in sheet (its
-/// `passkey_sheet`, src/routes/app/avendb/sheet/), and wait for the key in the background. No browser, and no code to
-/// compare (Samuel 2026-10-18: one way in). The window hears `auth` when it arrives (or when the code expires).
-#[tauri::command]
-pub async fn auth_start(handle: AppHandle, auth: State<'_, Auth>) -> Result<DeviceStart, String> {
-    let api = api_base();
-    let label = format!("The OS · {}", host_name());
-    let started: Started = auth
-        .http
-        .post(format!("{api}/api/device/start"))
-        .json(&serde_json::json!({ "scope": SCOPE, "label": label }))
-        .send()
-        .await
-        .map_err(|e| format!("The API cannot be reached: {e}"))?
-        .error_for_status()
-        .map_err(|e| e.to_string())?
-        .json()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let url = format!("{}/app/device/?code={}", site_base(), started.user_code);
-
-    let http = auth.http.clone();
-    let (device_code, interval, expires) = (started.device_code.clone(), started.interval.max(2), started.expires_in);
-    let round = ROUND.fetch_add(1, Ordering::SeqCst) + 1;
-    tauri::async_runtime::spawn(async move {
-        let deadline = std::time::Instant::now() + Duration::from_secs(expires);
-        while std::time::Instant::now() < deadline {
-            tokio::time::sleep(Duration::from_secs(interval)).await;
-            if ROUND.load(Ordering::SeqCst) != round {
-                return; // a newer sign-in waits instead
-            }
-            let Ok(r) = http.post(format!("{api}/api/device/token")).json(&serde_json::json!({ "device_code": device_code })).send().await
-            else {
-                continue;
-            };
-            match r.status().as_u16() {
-                428 => continue, // not approved yet
-                200 => {
-                    let key = r.json::<Value>().await.ok().and_then(|v| v["key"].as_str().map(String::from));
-                    let result = key.ok_or_else(|| "The API sent no key.".to_string()).and_then(|k| save_key(&k));
-                    let state = match result {
-                        Ok(()) => AuthState { signed_in: true, api: api.clone(), reason: None },
-                        Err(e) => AuthState { signed_in: false, api: api.clone(), reason: Some(e) },
-                    };
-                    handle.emit("auth", state).ok();
-                    return;
-                }
-                _ => break, // used, expired, unknown
-            }
-        }
-        handle.emit("auth", AuthState { signed_in: false, api, reason: Some("The code expired. Start again.".into()) }).ok();
-    });
-
-    Ok(DeviceStart { user_code: started.user_code, url, expires_in: started.expires_in })
-}
-
-/// Sign this Mac out: the API revokes the key, and the Keychain forgets it.
-#[tauri::command]
-pub async fn auth_sign_out(auth: State<'_, Auth>) -> Result<AuthState, String> {
-    if let Some(key) = load_key() {
-        auth.http.delete(format!("{}/api/device/key", api_base())).bearer_auth(key).send().await.ok();
-    }
-    forget_key();
-    Ok(auth.state().await)
+pub async fn auth_sign_out() -> Result<(), String> {
+    forget_session();
+    Ok(())
 }
 
 /// What the API answered: its status and its JSON body — the page turns a refusal into the same error it always shows.
@@ -221,7 +119,8 @@ pub struct Answer {
     pub body: Value,
 }
 
-/// The studio's calls to the API, made natively with the app's key (no browser cookie, no CORS).
+/// The page's calls to the API, made natively with this Mac's session (no browser cookie, no CORS); a sign-in's answer
+/// brings the session, a sign-out's takes it.
 #[tauri::command]
 pub async fn api(auth: State<'_, Auth>, method: String, path: String, body: Option<Value>) -> Result<Answer, String> {
     if !path.starts_with("/api/") {
@@ -229,8 +128,8 @@ pub async fn api(auth: State<'_, Auth>, method: String, path: String, body: Opti
     }
     let method = reqwest::Method::from_bytes(method.to_uppercase().as_bytes()).map_err(|e| e.to_string())?;
     let mut req = auth.http.request(method, format!("{}{path}", api_base()));
-    if let Some(key) = load_key() {
-        req = req.bearer_auth(key);
+    if let Some(token) = load_session() {
+        req = req.header(COOKIE, format!("{SESSION}={token}"));
     }
     if let Some(body) = body {
         req = req.json(&body);
@@ -240,6 +139,7 @@ pub async fn api(auth: State<'_, Auth>, method: String, path: String, body: Opti
         tracing::warn!("api {path}: the API cannot be reached: {e}");
         format!("The API cannot be reached: {e}")
     })?;
+    hear(&res);
     let status = res.status().as_u16();
     if status >= 500 {
         tracing::warn!("api {path}: the API answered {status}");
@@ -248,51 +148,12 @@ pub async fn api(auth: State<'_, Auth>, method: String, path: String, body: Opti
     Ok(Answer { status, body })
 }
 
-/// `maiaapi://localhost/api/…` — a library file (or any GET) from the API with the app's key, Range passed through,
-/// so <img>, <video> and fetch in the studio read the originals and proxies without a browser session.
-pub async fn proxy(http: reqwest::Client, request: tauri::http::Request<Vec<u8>>) -> tauri::http::Response<Vec<u8>> {
-    use tauri::http::{Response, StatusCode, header};
-    let fail = |status: StatusCode, msg: &str| Response::builder().status(status).body(msg.as_bytes().to_vec()).unwrap_or_default();
-    let path = request.uri().path_and_query().map(|p| p.as_str().to_string()).unwrap_or_default();
-    // the API, and the vault's gateway (files by hash)
-    if !path.starts_with("/api/") && !path.starts_with("/vault/files/") {
-        return fail(StatusCode::BAD_REQUEST, "only the API and the vault");
-    }
-    let Some(key) = load_key() else { return fail(StatusCode::UNAUTHORIZED, "sign in first") };
-    let mut req = http.get(format!("{}{path}", api_base())).bearer_auth(key);
-    if let Some(range) = request.headers().get(header::RANGE) {
-        req = req.header(header::RANGE, range.clone());
-    }
-    let Ok(res) = req.send().await else { return fail(StatusCode::BAD_GATEWAY, "the API cannot be reached") };
-    let mut out = Response::builder().status(res.status().as_u16()).header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
-    for name in [header::CONTENT_TYPE, header::CONTENT_LENGTH, header::CONTENT_RANGE, header::ACCEPT_RANGES, header::CACHE_CONTROL, header::ETAG] {
-        if let Some(v) = res.headers().get(&name) {
-            out = out.header(name, v.clone());
-        }
-    }
-    let body = res.bytes().await.map(|b| b.to_vec()).unwrap_or_default();
-    out.body(body).unwrap_or_default()
-}
-
 impl Auth {
-    pub fn http(&self) -> reqwest::Client {
-        self.http.clone()
-    }
-
-    /// An API call from the app's own Rust side, with its key: the status and the JSON body.
-    pub async fn call(&self, method: &str, path: &str, body: Option<Value>) -> Result<(u16, Value), String> {
-        self.call_as(method, path, body, None).await
-    }
-
-    /// `call`, signed by this Mac's avenDB device pass `pass` where it has one (`X-Avendb-Pass`: an admin of Maia City,
-    /// as avenDB's server says, api/src/standing.ts), else by the app's key (#1107).
-    pub async fn call_as(&self, method: &str, path: &str, body: Option<Value>, pass: Option<&str>) -> Result<(u16, Value), String> {
+    /// An API call from the app's own Rust side, signed by this Mac's avenDB device pass `pass` (`X-Avendb-Pass`: an
+    /// admin of Maia City, as avenDB's server says, api/src/standing.ts): the status and the JSON body.
+    pub async fn call_as(&self, method: &str, path: &str, body: Option<Value>, pass: &str) -> Result<(u16, Value), String> {
         let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(|e| e.to_string())?;
-        let req = self.http.request(method, format!("{}{path}", api_base()));
-        let mut req = match pass {
-            Some(pass) => req.header("x-avendb-pass", pass),
-            None => req.bearer_auth(load_key().ok_or("Please sign in.")?),
-        };
+        let mut req = self.http.request(method, format!("{}{path}", api_base())).header("x-avendb-pass", pass);
         if let Some(b) = body {
             req = req.json(&b);
         }
@@ -302,18 +163,7 @@ impl Auth {
     }
 }
 
-/// Only the admin passes: every vault and studio command checks this first.
+/// Only a Mac its person signed in to: every studio command checks this first.
 pub fn signed_in() -> bool {
-    load_key().is_some()
-}
-
-pub fn host_name() -> String {
-    std::process::Command::new("/usr/sbin/scutil")
-        .args(["--get", "ComputerName"])
-        .output()
-        .ok()
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "this Mac".into())
+    load_session().is_some()
 }
