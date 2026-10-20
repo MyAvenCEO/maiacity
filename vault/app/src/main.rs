@@ -32,6 +32,11 @@ fn gate() -> Res<()> {
     if auth::signed_in() { Ok(()) } else { Err("Sign in with your passkey first.".into()) }
 }
 
+/// An error as the page shows it, its causes after it: the player's, the render's and the world's commands answer so.
+fn err(e: impl std::fmt::Display) -> String {
+    format!("{e:#}")
+}
+
 /// The web view's warnings and errors (the studio's, the world frame's), into the app's log — its console is not
 /// open to anyone.
 #[tauri::command]

@@ -621,6 +621,27 @@ export type EmbeddedDome = {
 	dispose: () => void
 }
 
+/** How long (ms) a build waits for the page's next frame before it goes on all the same (`breath`). */
+const HELD = 100
+
+/**
+ * The page handed back for a frame, then a turn of it: where the page draws no frames (WebKit holds them back from a
+ * page it takes for unseen, as The OS's window covered or on another space), a turn after `HELD` ms all the same, so a
+ * dome built a little each frame never stalls on frames that don't come (a world's shot waiting for it for ever).
+ */
+export const breath = () =>
+	new Promise<void>((r) => {
+		const go = () => {
+			clearTimeout(t)
+			setTimeout(r, 0)
+		}
+		const id = requestAnimationFrame(go)
+		const t = setTimeout(() => {
+			cancelAnimationFrame(id)
+			r()
+		}, HELD)
+	})
+
 export async function mountInterior(container: HTMLElement, kind: DomeKind, onProgress?: (label: string) => void, opts: InteriorOptions = {}): Promise<InteriorHandle> {
 	/** what it put into the host's renderers, taken out again if it never stands (a build cancelled, or failed) */
 	const drop: (() => void)[] = []
@@ -646,7 +667,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		const w = window as unknown as { __buildLog?: string[] }
 		w.__buildLog?.push(`${kind} ${label}: work ${Math.round(prof.work + performance.now() - lastYield)}ms in ${prof.slices} slices, wall ${Math.round(performance.now() - prof.t0)}ms`)
 		onProgress?.(label)
-		await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
+		await breath()
 		lastYield = performance.now()
 		stopIfCancelled()
 	}
@@ -662,7 +683,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		if (performance.now() - lastYield < (host ? (opts.hurry?.() ? 70 : opts.background?.() ? 7 : 24) : 60)) return
 		prof.work += performance.now() - lastYield
 		prof.slices++
-		await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)))
+		await breath()
 		lastYield = performance.now()
 		stopIfCancelled()
 	}

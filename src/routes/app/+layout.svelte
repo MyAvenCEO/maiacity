@@ -111,24 +111,81 @@
 		settle();
 	});
 
-	/** Who the API says is signed in. Only its refusal (401, 403) signs out: an API that can't be reached, or answers
-	 *  anything else (mid-deploy, a restart), is waited for, so The OS's session and a browser's cookie never send their
-	 *  person to the passkey's sign-in for a blip (Samuel 2026-10-20: The OS opened while the API redeployed and asked
-	 *  for a passkey it never needs). */
+	/** how long the way in waits for the API to say who this is before it goes on without it (ms) */
+	const ME_WAIT = 8000;
+	/** who signed in here last, as the API said it: who the app opens for while the API can't be reached */
+	const LAST = 'maia:founder';
+	const lastFounder = (): Founder | null => {
+		try {
+			return JSON.parse(localStorage.getItem(LAST) ?? 'null');
+		} catch {
+			return null;
+		}
+	};
+	const keepFounder = (f: Founder | null) => {
+		try {
+			if (f) localStorage.setItem(LAST, JSON.stringify(f));
+			else localStorage.removeItem(LAST);
+		} catch {
+			/* no storage */
+		}
+	};
+	/** the API's word on who this is, or a failure once it took longer than `ME_WAIT` */
+	const askMe = () =>
+		Promise.race([me(), new Promise<never>((_, no) => setTimeout(() => no(new Error(`no answer within ${ME_WAIT / 1000} s`)), ME_WAIT))]);
+	const refused = (e: unknown) => e instanceof ApiError && (e.status === 401 || e.status === 403);
+
+	/**
+	 * Who the API says is signed in. Only its refusal (401, 403) signs out: an API that can't be reached, or answers
+	 * anything else (mid-deploy, a restart), never sends the person to the passkey's sign-in for a blip (Samuel
+	 * 2026-10-20: The OS opened while the API redeployed and asked for a passkey it never needs). Local first (Samuel
+	 * 2026-10-20: "everything should be offline / local first"): where someone signed in here before, the app opens for
+	 * them at once and asks the API again meanwhile (`askAgain`), their avenDB opening on this device as ever; the first
+	 * sign-in on a device waits for the API.
+	 */
 	async function whoAmI(): Promise<Founder | null> {
 		for (let tries = 1, wait = 1000; ; tries++, wait = Math.min(wait * 2, 15000)) {
 			try {
-				const who = await me();
+				const who = await askMe();
 				reaching = '';
+				keepFounder(who);
 				return who;
 			} catch (e) {
-				if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+				if (refused(e)) {
 					reaching = '';
+					keepFounder(null);
 					return null;
+				}
+				const last = lastFounder();
+				if (last) {
+					void askAgain(wait);
+					return last;
 				}
 				const why = e instanceof ApiError ? `it answered ${e.status}` : String((e as Error)?.message ?? e);
 				reaching = `maiaCITY can't be reached (${why}): trying again${tries > 1 ? `, ${tries} tries so far` : ''}`;
 				await new Promise((r) => setTimeout(r, wait));
+			}
+		}
+	}
+
+	/** The API asked again while the app runs on who signed in here last: its word kept once it has one, and its refusal
+	 *  (the session ran out meanwhile) asks them to sign in again. @param {number} wait */
+	async function askAgain(wait: number) {
+		for (;;) {
+			await new Promise((r) => setTimeout(r, wait));
+			wait = Math.min(wait * 2, 60000);
+			try {
+				const who = await askMe();
+				keepFounder(who);
+				founder = who;
+				return;
+			} catch (e) {
+				if (!refused(e)) continue;
+				keepFounder(null);
+				remember(false);
+				founder = null;
+				phase = 'signed-out';
+				return;
 			}
 		}
 	}
@@ -271,6 +328,7 @@
 		try {
 			await loginFinish(await sheetAssertion());
 			founder = await me();
+			keepFounder(founder);
 		} catch (e) {
 			error = e instanceof Error ? e.message : String(e);
 			return void (busy = '');
@@ -294,6 +352,7 @@
 			ended(signed.why ?? undefined);
 			// the sign-in answers who they are; their role and caps (the admin's tools, a draft game) come with /api/me
 			founder = (await me().catch(() => null)) ?? signed.founder;
+			keepFounder(founder);
 			remember(true);
 			if (signed.why) return failed(signed.why);
 			settle();
@@ -312,6 +371,7 @@
 		await signOut();
 		remember(false);
 		founder = null;
+		keepFounder(null);
 		// the Mac app has no public site to go back to: it waits at its own sign-in
 		if (native()) return void (phase = 'signed-out');
 		await goto(`${base}/`);

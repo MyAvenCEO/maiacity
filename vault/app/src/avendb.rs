@@ -79,14 +79,15 @@ async fn call_on(
     }
 }
 
-/// The device's host, started if it isn't; the window that called kept for its sheets.
+/// The device's host, started if it isn't; the window that called kept for its sheets, never the world renderer's,
+/// which reads off the device unseen (world.rs).
 async fn host_of(state: &Avendb, window: Option<tauri::WebviewWindow>) -> Result<Host, String> {
     let mut held = state.0.lock().await;
     if held.is_none() {
         *held = Some(start()?);
     }
     let hosted = held.as_ref().expect("started");
-    if let Some(window) = window {
+    if let Some(window) = window.filter(|w| w.label() != crate::world::LABEL) {
         *hosted.window.lock().expect("the window") = Some(window);
     }
     Ok(hosted.host.clone())

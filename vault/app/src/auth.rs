@@ -100,9 +100,18 @@ fn hear(res: &reqwest::Response) {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Auth {
     http: reqwest::Client,
+}
+
+impl Default for Auth {
+    /// An API that can't be reached says so within seconds, not after the system's own wait for a connection (over a
+    /// minute), so the page goes on from this Mac meanwhile.
+    fn default() -> Self {
+        let http = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(10)).build().unwrap_or_default();
+        Self { http }
+    }
 }
 
 /// Sign this Mac out: it forgets its session (which the API keeps nowhere: it is signed, and runs out by itself).
