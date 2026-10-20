@@ -88,6 +88,31 @@ function check() {
 		}
 	}
 	if (!appRunning()) startApp();
+	checkRelease();
+}
+
+// the signed release (scripts/release.mjs): whenever maia.city serves a new one, this Mac holds it to the release key
+// and checks its pages and a sample of its chunks; a site that doesn't hold says so here and in a notification
+let releaseSeen = '';
+let releaseAt = 0;
+function checkRelease() {
+	if (Date.now() - releaseAt < 10 * EVERY) return;
+	releaseAt = Date.now();
+	try {
+		const live = JSON.parse(execFileSync('curl', ['-fsS', '--max-time', '20', 'https://maia.city/release.json'], { encoding: 'utf8', timeout: NETWORK })).commit;
+		if (!live || live === releaseSeen) return;
+		execFileSync('node', ['scripts/release.mjs', 'check', 'https://maia.city', '--sample', '40'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: NETWORK });
+		releaseSeen = live;
+		log(`maia.city holds its signed release ${live.slice(0, 7)}`);
+	} catch (e) {
+		// no list yet (404, unsigned builds), or the network: nothing to say; anything else is the site not holding
+		const why = String(e?.stderr || e?.message || e).trim().split('\n').slice(0, 4).join(' / ');
+		if (/returned error|Could not resolve|timed out|ETIMEDOUT|JSON/.test(why)) return;
+		log(`maia.city does NOT hold its signed release: ${why}`);
+		try {
+			execFileSync('osascript', ['-e', 'display notification "maia.city does not hold its signed release: see .cargo/watch-main.log" with title "The OS"'], { timeout: QUICK });
+		} catch {}
+	}
 }
 
 function safeCheck() {

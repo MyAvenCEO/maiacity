@@ -50,6 +50,12 @@ jobs:
       # Served from the domain root, so no base path.
       - run: bun run build
 
+      # the signed release (scripts/release.mjs): the hash of every file built, signed with the release key, goes up
+      # as /release.json; release-check.yml holds the live site to it after this deploy and every day
+      - run: node scripts/release.mjs sign build
+        env:
+          RELEASE_KEY: ${{ secrets.RELEASE_KEY }}
+
       - run: tar -C build -czf site.tgz .
 
       - uses: actions/upload-artifact@v4
