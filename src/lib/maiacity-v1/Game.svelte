@@ -420,7 +420,8 @@
 		['rules', '⚙', 'Rules']
 	];
 	/** the Proposals app, on this game's AIPs; with `draft`, on a new one for it (a payout already filled in) */
-	const aipsLink = (draft) => `${base}/app/aips/?game=maiacity-v1${draft ? `&new=1${draft.from ? `&from=${encodeURIComponent(draft.from)}&to=${encodeURIComponent(draft.to)}&token=${draft.token}&amount=${draft.amount}` : ''}` : ''}`;
+	// proposals are made by agents through the MCP for now (Samuel 2026-10-20): the game only links to the app
+	const aipsLink = () => `${base}/app/aips/`;
 	// the game's screens (game/maiacity-v1/views.js): view cards a MIP brings, each a tool of its own, run sandboxed
 	const screens = $derived(view ? viewsOf(view).filter((v) => (v.data?.slot ?? 'panel') === 'panel') : []);
 	// a screen a MIP stood in one of the page's panels (views.js SLOTS): it replaces a panel that only shows and stands
@@ -808,7 +809,6 @@
 					</dl>
 					<div class="buttons">
 						{#if canMove}<button class="primary" onclick={() => openWallet('invest', panel)}>Invest</button>{/if}
-						{#if canMove}<a class="button" href={aipsLink({ from: panel, to: `player:${seat}`, token: c.mind, amount: 1 })}>Propose a payout</a>{/if}
 						<button onclick={() => openWallet('home', panel)}>Its wallet</button>
 						{#if c.id === 'maia'}<button onclick={() => openWallet('swap', '')}>Swap in the pool</button><button onclick={() => openWallet('home', 'pool')}>The pool’s wallet</button>{/if}
 					</div>
@@ -829,10 +829,7 @@
 					<dl class="settings">
 						{#each Object.keys(SETTING_LIMITS) as k (k)}<dt>{SETTING_NAMES[k]}</dt><dd>{view.settings[k]}</dd>{/each}
 					</dl>
-					<p class="about">One game month {view.settings.hoursPerMonth === 24 ? 'a real day' : `every ${hrs(view.settings.hoursPerMonth)}`}, from year 0, on the 13-month calendar: 13 months of 28 days, Sol first (it begins on 21 March, the new year) and March last. Every month starts on a Sunday. Every balance melts continuously at {f(view.settings.demurrage * 100, 0)} % a year. Every game week ends in a pay day (the 8th, 15th, 22nd and the next 1st, each a Sunday): every rent is paid, a quarter of a month’s, and a payer short of a MIND swaps its others through the pool on its own; what is still missing is owed and paid first next pay day. Every sale pays its owners: {f(view.settings.dividendShare * 100, 0)} % of every rent a COOP is paid goes at once to the holders of its MIND, pro rata. Every setting and every COOP changes only through a proposal with {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'}, made and signed in the Proposals app.</p>
-					<div class="buttons">
-						{#if canMove}<a class="button primary" href={aipsLink({})}>Propose a change</a>{/if}
-					</div>
+					<p class="about">One game month {view.settings.hoursPerMonth === 24 ? 'a real day' : `every ${hrs(view.settings.hoursPerMonth)}`}, from year 0, on the 13-month calendar: 13 months of 28 days, Sol first (it begins on 21 March, the new year) and March last. Every month starts on a Sunday. Every balance melts continuously at {f(view.settings.demurrage * 100, 0)} % a year. Every game week ends in a pay day (the 8th, 15th, 22nd and the next 1st, each a Sunday): every rent is paid, a quarter of a month’s, and a payer short of a MIND swaps its others through the pool on its own; what is still missing is owed and paid first next pay day. Every sale pays its owners: {f(view.settings.dividendShare * 100, 0)} % of every rent a COOP is paid goes at once to the holders of its MIND, pro rata. Every setting and every COOP changes only through a proposal with {signaturesOf(view)} signature{signaturesOf(view) === 1 ? '' : 's'}, made by an agent and signed in the Proposals app.</p>
 				{/if}
 			</ViewSlot>
 			{#if error}<p class="error">{error}</p>{/if}
@@ -1462,19 +1459,13 @@
 		flex-direction: column;
 	}
 	.buttons button,
-	.buttons a.button,
 	.row button {
 		padding: 0.5rem 0.8rem;
 		border: 1px solid rgb(31 42 35 / 0.15);
 		border-radius: 999px;
 		background: #fff;
 	}
-	.buttons a.button {
-		color: inherit;
-		text-decoration: none;
-	}
-	.buttons button.primary,
-	.buttons a.button.primary {
+	.buttons button.primary {
 		background: #24452f;
 		border-color: #24452f;
 		color: #f4f1e8;

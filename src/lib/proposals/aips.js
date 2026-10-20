@@ -1,13 +1,13 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 // AIPs, Aven Improvement Proposals (Samuel 2026-10-17; /mnt/project-files/game-caps/plan.md): one proposal flow for
-// every vault and every game, idea → propose → archive (applied | rejected), each a readable text plus the changes it
+// every vault and every game, idea → objective → propose → archive (applied | rejected), each a readable text plus the changes it
 // makes. The Proposals app reads them from two sources and each turns its own into the same shape here: avenDB's
 // AIPs (the `aips` read, every vault this tab's device holds), and, until games keep their configs in avenDB, today's
 // MIPs where they are kept: MaiaCity V1's, from its one game.
 import { describe, signaturesOf } from '../../../game/maiacity-v1/engine.js';
 import { nameOf } from '$lib/avendb/vaults.js';
 
-/** the games that have proposals, by their id in the Maia City COOP vault (game/games.js): the game filter's names */
+/** the games that have proposals, by their id in the Maia City COOP vault (game/games.js): the names they show under */
 export const GAMES = {
 	'maiacity-v1': { label: 'MaiaCity V1', href: '/app/maiacity-v1/' }
 };
@@ -15,6 +15,7 @@ export const GAMES = {
 /** the stages, in the app's tab order */
 export const STAGES = [
 	{ id: 'idea', label: 'Ideas' },
+	{ id: 'objective', label: 'Objective' },
 	{ id: 'proposed', label: 'Proposed' },
 	{ id: 'archived', label: 'Archive' }
 ];
@@ -70,7 +71,7 @@ export function fromAvendb(a, world) {
 		game,
 		vault: a.vault,
 		where: GAMES[game]?.label ?? nameOf(vault),
-		label: a.label ?? (a.bare ? 'Proposal' : `Idea ${a.key}`),
+		label: a.label ?? (a.bare ? 'Proposal' : `${a.stage === 'objective' ? 'Objective' : 'Idea'} ${a.key}`),
 		was: a.was,
 		title: a.title || (a.bare ? `A change to ${a.lines[0]?.title ?? a.lines[0]?.name ?? 'an entry'}` : 'Untitled'),
 		text: a.note ?? '',

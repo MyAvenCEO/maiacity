@@ -254,13 +254,16 @@ function temp(name, value) {
 }
 
 /**
- * The drafts and proposals `lines` put to vault `vault` in one AIP, opened and promoted: its entry, or null where
- * there is nothing to put.
+ * The drafts and proposals `lines` put to vault `vault` in one AIP, opened with its objective, measured and promoted:
+ * its entry, or null where there is nothing to put. Its objective (avendb/spec/AvenDB/Objective.lean): every line it
+ * puts lands, measured as it is opened, so the reviewer reads what it brings.
  * @param {string} vault @param {Line[]} lines @param {string} title @param {string} note
  */
 async function aip(vault, lines, title, note) {
 	if (!lines.length) return null;
-	const opened = ok(await session().run({ op: 'aip_open', vault, title: title.slice(0, 200), note, proposals: lines }), 'opening its AIP');
+	const objective = `/-- Every file and record this AIP puts lands in the vault. -/\ndef lines : Metric := metric "Lines it brings" (atLeast (reading "lines") ${lines.length})\n`;
+	const opened = ok(await session().run({ op: 'aip_open', vault, title: title.slice(0, 200), note, proposals: lines, objective }), 'opening its AIP');
+	ok(await session().run({ op: 'aip_measure', entry: opened.entry, name: 'lines', value: lines.length }), 'measuring its AIP');
 	ok(await session().run({ op: 'aip_promote', entry: opened.entry }), 'promoting its AIP');
 	return /** @type {string} */ (opened.entry);
 }

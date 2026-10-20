@@ -64,7 +64,9 @@ there as its shares allow:
   `avendb_run` `{ op: "propose", entry, from: <heads>, name: "Beats: <angle>" }` answers its `line`; then one
   `{ op: "batch", ops: [...] }` of `{ op: "set", entry, line, path: ["from"], value }` and the like, and
   `{ op: "insert", entry, line, path: ["beats"], value: <row> }` for every beat, in order. Then put the line to the
-  person in an AIP (`aip_open` with `proposals: [{ entry, line }]`, then `aip_promote`): they see the proposed beats
+  person in an AIP (`aip_open` with `proposals: [{ entry, line }]` and an `objective`, metrics in Lean such as
+  `def beats : Metric := metric "Beats" (between (reading "beats") 5 9)`, measured with `aip_measure`, then
+  `aip_promote`, which needs the objective): they see the proposed beats
   above their own on the Journey tab and accept the AIP.
 
 ## In avenDB: a story's Writing tab

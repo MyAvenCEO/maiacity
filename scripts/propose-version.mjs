@@ -4,7 +4,7 @@
 // once (src/lib/avendb/seed.js `unseeded`); every version after that goes in as a proposal the vault's owners accept.
 // It finds the vault's entry of the asset, starts a proposal on it (`propose`, named v<n>), brings the version's recipe
 // file onto that line with its record (`put_file`, the file beside it, as the seed's `assetOps` writes a version), and
-// opens an AIP over the line (`aip_open`). An owner then puts it forward ("Propose it") and accepts it in the
+// opens an AIP over the line (`aip_open`) with its objective (the version, a mesh), measured off the card. An owner then puts it forward ("Propose it") and accepts it in the
 // Proposals app (/app/aips/); the accept merges the line into main, and every page builds the new version from the
 // vault (src/lib/assets/sources/avendb.js reads an entry's versions by avenDB's own numbers, no tags). Without --run
 // it only says what it would do. A version with variants beyond its first is refused: an AIP lands its lines on main
@@ -147,13 +147,24 @@ try {
 	if (at >= v) throw new Error(`Maia City's ${asset} is at v${at} already: nothing was written`);
 	if (at !== v - 1) console.error(`note: Maia City's ${asset} is at v${at}, this proposes v${v}`);
 	const open = (await agent.call('avendb_ask', { op: { op: 'aips', vault: city.id } })).filter(
-		(/** @type {any} */ a) => !a.bare && ['idea', 'proposed'].includes(a.stage) && !a.outcome && (a.lines ?? []).some((/** @type {any} */ l) => l.entry === row.entry)
+		(/** @type {any} */ a) => !a.bare && ['idea', 'objective', 'proposed'].includes(a.stage) && !a.outcome && (a.lines ?? []).some((/** @type {any} */ l) => l.entry === row.entry)
 	);
 	if (open.length && !flag('--again')) throw new Error(`an AIP over ${asset} is open already (${open.map((/** @type {any} */ a) => `${a.title} ${a.entry}`).join('; ')}): nothing was written (--again proposes all the same)`);
 	const { line } = await agent.call('avendb_run', { op: { op: 'propose', entry: row.entry, name: `v${v}` } });
 	if (!line) throw new Error('the proposal started no line');
 	const put = await agent.call('avendb_run', { op: { op: 'put_file', entry: row.entry, line, value: main.value, schema: main.type, name: `${main.label}.js`, media: main.file.media }, path });
-	const aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title, note: aipNote, proposals: [{ entry: row.entry, line }] } });
+	// its objective, what it must deliver: the version itself, built, measured here off the card it was made from
+	const objective = [
+		`/-- ${asset} reaches v${v}. -/`,
+		`def version : Metric := metric "Version" (equals (reading "version") ${v})`,
+		`/-- The recipe builds a mesh. -/`,
+		`def triangles : Metric := metric "Triangles" (atLeast (reading "triangles") 1)`,
+		''
+	].join('\n');
+	const aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title, note: aipNote, proposals: [{ entry: row.entry, line }], objective } });
+	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'version', value: at, note: 'Maia City before this AIP' } });
+	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'version', value: v, note: 'the card of the proposed recipe' } });
+	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'triangles', value: Number(card.triangles) || 0, note: `recipe ${card.recipe}` } });
 	console.log(JSON.stringify({ vault: city.id, entry: row.entry, line, put, aip }, null, 2));
 	console.error(`Opened. An owner puts it forward ("Propose it") and accepts it in the Proposals app: /app/aips/?aip=${aip.entry}`);
 } finally {

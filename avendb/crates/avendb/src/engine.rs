@@ -30,7 +30,8 @@
 //!   `tag`; `propose`; `variant`, a line that stays open beside main and follows it (`History::variant`); `merge`, and
 //!   a merge into main brings main into every variant too (`follow`); `review` (the vault's answer to a proposal, its
 //!   accept with it: `review`), `restore`, `undo`, `fork` (a copy of an entry as a new one); the AIP ops, `aip_open`,
-//!   `aip_promote`, `aip_withdraw` and `aip_review`, the vault's answer over every line (`aips`); and `batch`, whose
+//!   `aip_objective`, `aip_measure`, `aip_promote`, `aip_withdraw` and `aip_review`, the vault's answer over every line
+//!   (`aips`), and `objective_check`, which reads an objective file and checks it against readings; and `batch`, whose
 //!   record ops in a row on one entry's line make one write. Each acts for a vault (`"as"`, the device's own by
 //!   default), as every edit does, and the rules judge it as they judge any peer's. A write through a share carries the
 //!   proof that the ops of the shares of its chain allow what it touches and the tags it asks for, and is refused
@@ -170,7 +171,10 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "propose" | "variant" => &["entry", "from", "name", "as"],
         "merge" => &["entry", "from", "into", "take", "as"],
         "review" => &["entry", "line", "verdict", "text", "as"],
-        "aip_open" => &["vault", "title", "note", "proposals", "tags", "as"],
+        "aip_open" => &["vault", "title", "note", "proposals", "tags", "objective", "as"],
+        "aip_objective" => &["entry", "lean", "as"],
+        "aip_measure" => &["entry", "name", "value", "note", "as"],
+        "objective_check" => &["lean", "readings"],
         "aip_promote" => &["entry", "as"],
         "aip_withdraw" => &["entry", "why", "as"],
         "aip_review" => &["entry", "verdict", "text", "heads", "as"],
@@ -212,8 +216,9 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds.
-const READS: [&str; 23] = [
+const READS: [&str; 24] = [
     "query",
+    "objective_check",
     "get",
     "pin",
     "history",
@@ -305,6 +310,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "schemas" => schemas(lab, me, o),
         "aips" => aips::aips(lab, me, o),
         "aip" => aips::one(lab, me, o),
+        "objective_check" => aips::objective_check(o),
         "groups" => Ok(rules::groups().iter().map(rules::Group::to_json).collect()),
         "cap_groups" => vaults::cap_groups(lab, me, o),
         "kinds" => Ok(words::kinds_json()),
@@ -525,7 +531,7 @@ fn named(o: &Map<String, Value>) -> Result<Named, Refused> {
             "review" => Named::Id(lens::REVIEW_V1.id()),
             "bundle" => Named::Id(lens::BUNDLE_V1.id()),
             "policy" => Named::Id(lens::POLICY_V1.id()),
-            "aip" => Named::Id(lens::AIP_V1.id()),
+            "aip" => Named::Id(lens::AIP_V2.id()),
             "post" => Named::Id(lens::POST_V2.id()),
             "card" => Named::Id(lens::CARD_V1.id()),
             "profile" => Named::Id(lens::PROFILE_V1.id()),
@@ -1172,7 +1178,18 @@ enum Step {
     /// The vault's answer to proposal `line` of `entry` (`review`).
     Review { entry: EntryId, line: EditId, verdict: String, text: String },
     /// A new AIP in `vault`, an idea over the proposal lines `proposals` (`aip_open`).
-    AipOpen { vault: VaultId, title: String, note: String, proposals: Vec<(EntryId, EditId)>, tags: Vec<String> },
+    AipOpen {
+        vault: VaultId,
+        title: String,
+        note: String,
+        proposals: Vec<(EntryId, EditId)>,
+        tags: Vec<String>,
+        objective: Option<String>,
+    },
+    /// AIP `entry`'s objective, a file of Lean (`aip_objective`, `crate::objective`).
+    AipObjective { entry: EntryId, lean: String },
+    /// A reading recorded on AIP `entry`: a name, a value and a note (`aip_measure`).
+    AipMeasure { entry: EntryId, name: String, value: Value, note: Option<String> },
     /// AIP `entry` proposed, with its number (`aip_promote`).
     AipPromote { entry: EntryId },
     /// AIP `entry` withdrawn, and why (`aip_withdraw`).
@@ -1306,7 +1323,14 @@ fn act_of(v: &Value) -> Result<Act, Refused> {
                 }
             };
             let (vault, tags) = (vault_of(o, "vault")?, texts_of(o, "tags")?);
-            Step::AipOpen { vault, title: text("title")?, note, proposals: lines, tags }
+            let objective = optional_text(o, name, "objective")?;
+            Step::AipOpen { vault, title: text("title")?, note, proposals: lines, tags, objective }
+        }
+        "aip_objective" => Step::AipObjective { entry: entry_of(o)?, lean: text("lean")? },
+        "aip_measure" => {
+            let value = o.get("value").filter(|v| v.is_number()).cloned();
+            let value = value.ok_or_else(|| bad("aip_measure takes the number it read: value"))?;
+            Step::AipMeasure { entry: entry_of(o)?, name: text("name")?, value, note: optional_text(o, name, "note")? }
         }
         "aip_promote" => Step::AipPromote { entry: entry_of(o)? },
         "aip_withdraw" => Step::AipWithdraw { entry: entry_of(o)?, why: optional_text(o, name, "why")? },
@@ -1496,9 +1520,11 @@ fn step(lab: &mut Lab, me: SignerId, actor: VaultId, s: Step) -> Result<Value, R
             Ok(json!({ "entry": entry.to_hex(), "edit": edit.to_hex(), "line": line_json(into), "follows": follows }))
         }
         Step::Review { entry, line, verdict, text } => review(lab, me, actor, (entry, line), &verdict, text),
-        Step::AipOpen { vault, title, note, proposals, tags } => {
-            aips::open(lab, me, actor, vault, (title, note), &proposals, tags)
+        Step::AipOpen { vault, title, note, proposals, tags, objective } => {
+            aips::open(lab, me, actor, vault, (title, note), &proposals, tags, objective)
         }
+        Step::AipObjective { entry, lean } => aips::objective(lab, me, actor, entry, lean),
+        Step::AipMeasure { entry, name, value, note } => aips::measure(lab, me, actor, entry, name, &value, note),
         Step::AipPromote { entry } => aips::promote(lab, me, actor, entry),
         Step::AipWithdraw { entry, why } => aips::withdraw(lab, me, actor, entry, why),
         Step::AipReview { entry, verdict, text, heads } => {

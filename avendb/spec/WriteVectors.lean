@@ -1,6 +1,7 @@
 import AvenDB.Vectors
 import AvenDB.OpsVectors
 import AvenDB.BackupVectors
+import AvenDB.ObjectiveVectors
 
 /-- `lake exe vectors`: write the test vectors the Rust core checks itself against. -/
 def main : IO Unit := do
@@ -9,4 +10,5 @@ def main : IO Unit := do
   IO.FS.writeFile "vectors/lenses.json" AvenDB.Vectors.renderLenses
   IO.FS.writeFile "vectors/ops.json" AvenDB.OpsVectors.render
   IO.FS.writeFile "vectors/backups.json" AvenDB.BackupVectors.render
-  IO.println "wrote vectors/vaults.json, vectors/lenses.json, vectors/ops.json and vectors/backups.json"
+  IO.FS.writeFile "vectors/objectives.json" AvenDB.ObjectiveVectors.render
+  IO.println "wrote vectors/vaults.json, vectors/lenses.json, vectors/ops.json, vectors/backups.json and vectors/objectives.json"

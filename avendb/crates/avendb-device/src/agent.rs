@@ -282,7 +282,8 @@ const AIP: &str = "aip";
 
 /// What an AIP author's share gives (`AIP_AUTHOR`): its ops, adding an entry and setting any of its fields, with a
 /// writer's read; and what it is on, the vault's AIPs alone. So an agent that may only suggest elsewhere in the vault
-/// opens an AIP over its own proposal lines (the ops engine's `aip_open`), promotes it and withdraws it as its author
+/// opens an AIP over its own proposal lines (the ops engine's `aip_open`), states its objective and records readings
+/// on it (`aip_objective`, `aip_measure`, sets and inserts on its own AIP), promotes it and withdraws it as its author
 /// (`aip_promote`, `aip_withdraw`), and changes nothing else: the vault alone reviews it, and its acceptance merges the
 /// lines.
 pub fn aip_author() -> (Vec<rules::Op>, Selector) {
@@ -880,10 +881,20 @@ fn instructions(name: &str, cloud: bool) -> String {
              with avendb_run: `aip_open` (`vault`, `title`, a `note` saying why and what changes, and `proposals`, \
              each `{{entry, line}}` of that vault; it makes an entry of type aip, so only where its shares let it \
              create: a Suggester may, as its coop gives its aven an AIP author's share on the vault's AIPs beside \
-             its Suggester's, and an Editor may), then `aip_promote` (`entry`), which gives it the vault's next \
-             number, AIP-n. To propose a new entry where it may only suggest, draft it: `create` with `draft: true` \
+             its Suggester's, and an Editor may). Before it is proposed, an AIP states its objective, what it must \
+             deliver: one or more measurable metrics in Lean, `objective` on `aip_open` or `aip_objective` \
+             (`entry`, `lean`), a file such as `def fps : Metric := metric \"Frames per second\" (atLeast (reading \
+             \"fps\") 50)`, goals atLeast, atMost, between and equals over readings, numbers, + - * /, min and \
+             max, a doc comment above a metric its note (avendb/spec/AvenDB/Objective.lean); a file that doesn't \
+             read is refused with its line and column, and `objective_check` (`lean`, `readings`) checks one \
+             unsaved. While it works, it measures (a test, a count, a run) and records each reading with \
+             `aip_measure` (`entry`, `name`, `value`, `note`): `aip` answers its `objective`, each metric met or \
+             not and its progress from its first reading toward its target, so it reads its own progress in its \
+             loop. Then `aip_promote` (`entry`), refused until it holds an objective, which gives it the vault's \
+             next number, AIP-n. To propose a new entry where it may only suggest, draft it: `create` with `draft: true` \
              (`vault`, `type`, `tags`, `value`) answers its `entry` and `line`, a line of its own; write on that line \
-             as on any proposal, then name it in `aip_open`'s `proposals` as `{{entry, line}}` and `aip_promote`. A \
+             as on any proposal, then name it in `aip_open`'s `proposals` as `{{entry, line}}` with its `objective` \
+             and `aip_promote`. A \
              draft shows nowhere on the vault's main line, nor to everyone, until its person accepts the AIP; a \
              schema or lens is never a draft. Only a promoted AIP reaches a person, who answers it whole in The OS \
              app or at /app/aips/?aip=<entry>; an agent never \
@@ -1833,8 +1844,8 @@ struct Adding {
 /// proposals to name in an AIP (`lands`).
 const LANDS: &str = "A draft, on a line of its own: it shows nowhere on the vault's main line until the vault's owners \
                      land it, accepting an AIP that names it. Put it to them with avendb_run: aip_open (vault, title, \
-                     a note saying why, and proposals, these, with any other drafts and proposals of that vault), then \
-                     aip_promote (entry).";
+                     a note saying why, proposals, these, with any other drafts and proposals of that vault, and an \
+                     objective, its metrics in Lean), then aip_promote (entry).";
 
 /// The answer `made` of a draft avendb_add_spark or avendb_add_artifact made, the create answers `drafted` of its
 /// entry and of the drafts it brought, its file's, each `{entry, line}`: with `"draft": true`, its `line`, the
@@ -1960,10 +1971,12 @@ fn tools() -> Value {
             "name": "avendb_run",
             "description": "Run a change op of avenDB's engine as this agent, as its shares allow: create, set, unset, \
                             insert, remove, move, tag, propose, variant, merge, restore, undo, fork, batch, aip_open, \
-                            aip_promote, aip_withdraw, put_file, get_file. Where it may only suggest, write on a \
-                            proposal, or draft a new entry: create with draft: true, which answers its entry and the \
-                            line it starts; put proposals and drafts to its person in an AIP: aip_open over their \
-                            lines, then aip_promote. put_file saves a file of this Mac into a vault as a new entry of \
+                            aip_objective, aip_measure, aip_promote, aip_withdraw, put_file, get_file. Where it may \
+                            only suggest, write on a proposal, or draft a new entry: create with draft: true, which \
+                            answers its entry and the line it starts; put proposals and drafts to its person in an \
+                            AIP: aip_open over their lines with its objective, what it must deliver as metrics in \
+                            Lean (or aip_objective after), record readings with aip_measure (entry, name, value, note) \
+                            as it works, its progress in the aip read, then aip_promote, which needs the objective. put_file saves a file of this Mac into a vault as a new entry of \
                             type file, where the agent may create: the op names its vault and name, and media and tags \
                             if any, and the file's absolute path goes beside the op as path; its len is the file's \
                             size unless the op gives one. A create with file (an object, name and media if any) and \
