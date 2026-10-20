@@ -92,8 +92,8 @@
 		if (!top || busy) return;
 		if (verdict === 'revise' && !revising) return void (revising = true);
 		if (verdict === 'revise' && !words.trim()) return;
-		const what = { accepted: 'Accepting the AIP', declined: 'Declining the AIP', revise: 'Asking for a revision' };
-		await api.runAll(what[verdict], answering(top, verdict, words.trim(), vault));
+		const what = { accepted: 'Accepting', declined: 'Declining', revise: 'Asking for a revision of' };
+		await api.runAll(`${what[verdict]} ${top.label ?? 'the idea'}`, answering(top, verdict, words.trim(), vault));
 	}
 
 	/** What an AIP is called on a card: its label, else its number, else its title alone. @param {import('./hitl.js').Aip} a */

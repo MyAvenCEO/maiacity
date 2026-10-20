@@ -1,5 +1,5 @@
 <!--
-	The vaults a vault owns, one component for every parent, as Owners & devices shows them ($lib/avendb/Settings.svelte):
+	The vaults a vault owns, one component for every parent, as the settings' Owners show them ($lib/avendb/Settings.svelte):
 	first those wholly its own, of a kind that takes one owner alone (the kind table's `most`), each with its devices
 	and the shares it holds, by name, over which vault and at what level, and under it the vaults it owns in turn that
 	hold devices; then, in one line, the other vaults it owns. So it is "Agents" on an aven, whose agents are devices
@@ -10,14 +10,13 @@
 	run of it (`may`): a device taken out of its vault as a lost one is, and a share given up by the vault that holds
 	it, which ends every share resting on it. A standing grant, "all my vaults, now and later" (avendb's `world::STANDING`), shows as one
 	line however many vaults it reached, and Revoke ends it for each of them (the `revoke` op's `standing`), so no vault
-	founded later follows it. Its title, or none where it shows nothing, is `ownedTitle`, which the settings' left side
-	lists it by.
+	founded later follows it. Its title, or none where it shows nothing, is `ownedTitle`.
 -->
 <script module>
 	import { ownedBy, seeded } from './vaults.js';
 
 	/**
-	 * What Owners & devices calls the vaults vault `vault` owns: '' where it shows none, as on a vault that owns none,
+	 * What the settings call the vaults vault `vault` owns: '' where it shows none, as on a vault that owns none,
 	 * unless it is the person's own or an aven.
 	 * @param {import('./vaults.js').WorldView} world @param {string} vault
 	 */
@@ -40,6 +39,7 @@
 		kindRules,
 		levelName,
 		nameOf,
+		newest,
 		oneOwner,
 		order,
 		plainName,
@@ -114,7 +114,7 @@
 	$effect(() => {
 		/** @type {[string, object][]} */
 		const asks = listed.flatMap((x) => [
-			...x.devices.map((d) => /** @type {[string, object]} */ ([`device ${x.id} ${d.id}`, { op: 'revoke', vault: x.id, device: d.id }])),
+			...newest(x.devices).map((d) => /** @type {[string, object]} */ ([`device ${x.id} ${d.id}`, { op: 'revoke', vault: x.id, device: d.id }])),
 			...held(x).map((c) => /** @type {[string, object]} */ ([`share ${c.id}`, { op: 'revoke', share: c.id, as: x.id }])),
 			...standing(x).map(
 				({ share: c }) =>
@@ -143,7 +143,7 @@
 		<p class="soft">Legacy: the studio no longer uses it, as the Mac runs its jobs as you. Revoke its shares and it leaves this list.</p>
 	{/if}
 	<ul class="rows">
-		{#each x.devices.filter((d) => !d.next) as d (d.id)}
+		{#each newest(x.devices) as d (d.id)}
 			{@const name = d.name ?? `${nameOf(x)}’s device`}
 			<li>
 				<span><span class="chip">Device</span> {name} <span class="soft mono">{short(d.id)}</span></span>

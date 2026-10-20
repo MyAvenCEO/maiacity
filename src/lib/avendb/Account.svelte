@@ -12,7 +12,7 @@
 	here alone (none of it in maiaCITY's database), the seed's by theirs. In the Mac app the device runs
 	natively beside the app ($lib/avendb/native.js): its node on UDP sockets of its own, its shelf in a folder on the
 	Mac; and it hosts each of the person's drives plugged into the Mac, a device of their vault of its own, which the
-	page lists and joins in Owners & devices ($lib/avendb/Settings.svelte), where alone the person forgets their
+	page lists and joins in Settings, under Devices ($lib/avendb/Settings.svelte), where alone the person forgets their
 	account here. A device forgotten there, one taken out of its vault, or what an earlier avenDB kept, is put aside and
 	never read again. A new person
 	founds their vault with the passkey they signed up to maiaCITY with (the same relying party, maia.city), as they
@@ -59,7 +59,7 @@
 	import { deviceName, relay as relayOf, server as serverOf } from './server.js';
 	import { asks, Here, here, session } from './session.svelte.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
-	import { nameShare, nameShared, plain, seeded, standingOps } from './vaults.js';
+	import { nameShare, nameShared, newest, plain, seeded, standingOps } from './vaults.js';
 
 	// the tab's device, as the session holds it (./session.svelte.js): what it is now, and what it shows of its world
 	const phase = $derived(session.phase);
@@ -531,7 +531,7 @@
 	const forget = async () => {
 		const mine = world?.vaults.find((v) => v.id === world?.mine);
 		const ask =
-			mine && mine.devices.filter((d) => !d.next).length > 1
+			mine && newest(mine.devices).length > 1
 				? `Forget your account on ${here}? Your vault and your other devices keep everything, and you can sign in here again.`
 				: `Forget your account on ${here}? Your vault stays yours: sign in with your passkey on any device, and avenDB’s server hands it back.`;
 		if (!(await sure(ask))) return;
@@ -601,7 +601,7 @@
 						<h3>New to avenDB?</h3>
 						<p>
 							Set up your human vault: a vault that only you hold. The passkey you signed up to maiaCITY with becomes its
-							root, and {here} its first device. The master recovery key can also recover it while avenDB is young.
+							owner, and {here} its first device. The master recovery key can also recover it while avenDB is young.
 						</p>
 						<label class="name">
 							<span class="soft">Your name, which your vault's profile keeps: the city knows you by it</span>
@@ -658,7 +658,7 @@
 								{full
 									? 'Every entry and every file, kept here: it works offline and is one more backup.'
 									: 'Every entry, and a file only once you open it: it takes little space.'}
-								You can change it later in Owners and devices.
+								You can change it later in Settings, under Devices.
 							</span>
 						</span>
 					</label>

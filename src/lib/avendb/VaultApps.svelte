@@ -40,9 +40,8 @@
 		[
 			'Settings',
 			[
-				['about', 'About', 'info'],
-				['members', 'Owners & devices', 'users'],
-				['sharing', 'Sharing', 'share'],
+				// one page, each concept once: profile, owners, devices, sharing, backup and security (Samuel 2026-10-20)
+				['settings', 'Settings', 'settings'],
 				// the city's Postgres, read only, the admins' (Samuel 2026-10-20): a page of the app's own
 				['postgres', 'Postgres', 'database']
 			]
