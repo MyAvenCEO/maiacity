@@ -30,7 +30,7 @@
 	import { access, readAccess } from '$lib/app/access.svelte.js';
 	import { loadCode } from '../../../game/code/index.js';
 	import VaultRecipes from '$lib/assets/VaultRecipes.svelte';
-	import SyncBar from '$lib/avendb/SyncBar.svelte';
+	import StatusPill from '$lib/app/StatusPill.svelte';
 	import { ASSET_PAGES } from '$lib/assets/vault.js';
 	import Signing from '$lib/avendb/Signing.svelte';
 	import { asks, here, type Steps } from '$lib/avendb/session.svelte.js';
@@ -407,7 +407,7 @@
 		</div>
 	{/if}
 	<NavPill {founder} name={session.name} onsignout={leave} />
-	<SyncBar />
+	<StatusPill />
 {/if}
 {#if native() && phase === 'ready'}<AskModal />{/if}
 <!-- what the passkey's prompt and avenDB's start are doing, step by step, at the way in and as it hands over to the app -->

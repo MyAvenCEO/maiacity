@@ -846,7 +846,7 @@ impl Service {
 
     /// `moving`: what the key move asks of its person now (K3b, `Device::moving`), with the drives this Mac hosts held
     /// beside its device in each suite, so they move with it (`hold_drives`): `{passkey, touch, device}`, or null once
-    /// nothing moves.
+    /// nothing moves; it fails while the device caught up with none of its peers, and the page asks again.
     async fn moving(self: &Arc<Self>, d: &Arc<Device>) -> Result<Value> {
         self.look().await.ok();
         self.hold_drives(d).await;

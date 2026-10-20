@@ -159,6 +159,15 @@ export class NotInVault extends Error {
 	name = 'NotInVault';
 }
 
+/**
+ * What a page is refused for a recipe the vault lists whose file neither the page's device nor the feed handed over,
+ * however long the page waited for it ($lib/assets/vault.js `PATIENCE`): it may well be in the vault, so the page tells
+ * it apart from one that isn't.
+ */
+export class Unread extends NotInVault {
+	name = 'Unread';
+}
+
 /** a value an object holds of its own, never one it inherits (`constructor`, `__proto__`) @param {Record<string, any>} o @param {string} k */
 const own = (o, k) => (Object.hasOwn(o, k) ? o[k] : undefined);
 
@@ -317,7 +326,9 @@ export function vaultRecipes(rows, { read, assets = [] }) {
 		try {
 			got = await read(rowOf.get(hash));
 		} catch (e) {
-			throw new NotInVault(`${at.label}: its file could not be read from the Maia City vault (${e instanceof Error ? e.message : String(e)})`);
+			// a file asked for in vain only in passing (the network, a server restarting) may well be there: told apart
+			const Failed = /** @type {any} */ (e)?.passing ? Unread : NotInVault;
+			throw new Failed(`${at.label}: its file could not be read from the Maia City vault (${e instanceof Error ? e.message : String(e)})`);
 		}
 		const bytes = typeof got === 'string' ? utf8ToBytes(got) : got instanceof ArrayBuffer ? new Uint8Array(got) : got;
 		if (!(bytes instanceof Uint8Array)) throw new NotInVault(`${at.label}: the Maia City vault handed out no file for it`);

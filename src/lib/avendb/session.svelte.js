@@ -382,9 +382,14 @@ function running(d) {
 	void checkMove(d);
 }
 
+/** How long a device that can't say yet what its key move asks waits before it is asked again (ms). */
+const MOVE_AGAIN = 30000;
+
 /** What device `d`'s key move asks of the person (K3b), once it opened: where it asks for no ceremony, as a move cut
- *  short, it goes on at once; otherwise the page asks once more (`moveKeys`). Never fails: a move that can't be asked
- *  about now waits for the next unlock. @param {any} d */
+ *  short, it goes on at once; otherwise the page asks once more (`moveKeys`). Never fails: a device that can't say yet,
+ *  as one still bringing what its peers hold (it caught up with none of them), is asked again `MOVE_AGAIN` later, for
+ *  as long as it is the page's (Samuel 2026-10-20: a phone that unlocked mid-sync never showed "Move my keys").
+ *  @param {any} d */
 async function checkMove(d) {
 	moving = null;
 	try {
@@ -393,7 +398,8 @@ async function checkMove(d) {
 		moving = asked;
 		if (asked && !asked.passkey && !asked.touch) await moveKeys();
 	} catch (e) {
-		console.warn('avenDB: the key move waits for the next unlock:', /** @type {Error} */ (e)?.message ?? e);
+		console.warn('avenDB: the key move is asked about again in a moment:', /** @type {Error} */ (e)?.message ?? e);
+		setTimeout(() => device === d && !moving && void checkMove(d), MOVE_AGAIN);
 	}
 }
 

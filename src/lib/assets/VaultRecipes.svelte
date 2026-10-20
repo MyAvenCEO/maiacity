@@ -2,9 +2,11 @@
 	THE MAIA CITY VAULT'S RECIPES ON A PAGE — what a page that builds assets shows of where its recipes come from
 	($lib/assets/vault.js, with no repo fallback: Samuel 2026-10-17). While they load, that they do, the page held back
 	(`hold`), so a world's first build finds them; a feed that can't be reached, or a vault that holds none, in the page's
-	place, saying why, with a way to ask again; and once the page stands, a small banner over it, naming every ref a
-	build asked for that the vault doesn't hold or holds otherwise, and every entry of it the reader refused, so we see
-	what still needs porting. The app's layout holds every asset page behind it (`ASSET_PAGES`); a film's world and an
+	place, saying why, with a way to ask again; and once the page stands, one line over it, naming every ref a build
+	asked for that the vault doesn't hold or holds otherwise, every one whose file never came however long the page
+	waited for it (with a way to load the page again), and every entry of it the reader refused, so we see what still
+	needs porting. A file still on its way is none of them: the app's status pill shows it loading
+	($lib/app/StatusPill.svelte). The app's layout holds every asset page behind it (`ASSET_PAGES`); a film's world and an
 	asset's own page are held behind it too.
 -->
 <script>
@@ -18,7 +20,7 @@
 	 */
 	let { children, hold = true } = $props();
 
-	const copy = (/** @type {typeof recipes} */ r) => ({ ...r, refused: [...r.refused], missed: [...r.missed] });
+	const copy = (/** @type {typeof recipes} */ r) => ({ ...r, refused: [...r.refused], missed: [...r.missed], unread: [...r.unread] });
 	let state = $state.raw(copy(recipes));
 	let open = $state(false);
 	onMount(() => watchRecipes((r) => (state = copy(r))));
@@ -26,9 +28,10 @@
 		if (hold) void loadRecipes();
 	});
 
-	const told = $derived(hold ? [...state.missed, ...state.refused.map((r) => `refused: ${r}`)] : []);
+	const told = $derived(hold ? [...state.missed, ...state.unread, ...state.refused.map((r) => `refused: ${r}`)] : []);
+	const failed = $derived(state.missed.length + state.unread.length);
 	const said = $derived(
-		[state.missed.length && `${state.missed.length} not in it`, state.refused.length && `${state.refused.length} ${state.refused.length === 1 ? 'entry' : 'entries'} refused`].filter(Boolean).join(' · ')
+		[failed && `${failed} ${failed === 1 ? 'asset' : 'assets'} couldn't load`, state.refused.length && `${state.refused.length} ${state.refused.length === 1 ? 'entry' : 'entries'} refused`].filter(Boolean).join(' · ')
 	);
 </script>
 
@@ -42,15 +45,18 @@
 		<button class="pill-btn" onclick={() => reloadRecipes()}>Try again</button>
 	</div>
 {:else}
-	<div class="gate" role="status"><p class="soft">Loading the asset recipes from the Maia City vault…</p></div>
+	<div class="gate" role="status">
+		<p class="soft">{state.waiting ? "Waiting for avenDB's server to answer, to load the asset recipes…" : 'Loading the asset recipes from the Maia City vault…'}</p>
+	</div>
 {/if}
 {#if told.length}
 	<aside class="banner" role="alert" aria-label="Recipes the Maia City vault could not give">
-		<button onclick={() => (open = !open)} aria-expanded={open}>Maia City vault: {said} {open ? '▴' : '▾'}</button>
+		<button onclick={() => (open = !open)} aria-expanded={open}>{said} · {open ? 'hide' : 'details'}</button>
 		{#if open}
 			<ul>
 				{#each told as t (t)}<li>{t}</li>{/each}
 			</ul>
+			{#if state.unread.length}<button class="again" onclick={() => location.reload()}>Load the page again</button>{/if}
 		{/if}
 	</aside>
 {/if}
@@ -105,7 +111,7 @@
 	.banner button {
 		display: block;
 		width: 100%;
-		padding: 0.45rem 0.9rem;
+		padding: 0.35rem 0.9rem;
 		border: 0;
 		background: none;
 		color: inherit;
@@ -125,5 +131,13 @@
 
 	.banner li + li {
 		margin-top: 0.3rem;
+	}
+
+	.banner .again {
+		width: auto;
+		margin: 0 0.9rem 0.6rem;
+		padding: 0.3rem 0.8rem;
+		border: 1px solid rgb(179 38 30 / 0.3);
+		border-radius: 999px;
 	}
 </style>

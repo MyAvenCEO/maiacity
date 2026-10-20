@@ -1658,7 +1658,8 @@ async fn sams_phone_moves_his_passkey_only_once_it_brought_what_the_server_keeps
     let opened = Device::open(start_on(&shelf.0, "Sam's phone", &url, 4), &meta, sams.unlock(nonce, [0xaa; 32]));
     let opened = opened.await.expect("it opens");
     assert_eq!(opened.vault().await, Some(sam));
-    assert_eq!(opened.moving().await.expect("what moves"), None, "a move waits for a peer");
+    let waits = opened.moving().await.expect_err("a move waits for a peer");
+    assert_eq!(waits.to_string(), avendb_browser::NOT_CAUGHT_UP);
     // the server is back: the phone brings his name and Maia City from it, and then moves his passkey
     let server = server_of(&mut lab, server_d, &url, &admission).await;
     until("it shows his name", || shows_named(&opened, sam, "Sam")).await;

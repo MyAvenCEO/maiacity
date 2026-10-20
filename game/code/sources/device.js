@@ -26,7 +26,11 @@ import { MAIA_CITY } from './anchor.js';
  */
 export const BRING = 8000;
 
-/** How long a page waits for its device to read a recipe's file before it asks the feed for it (ms). */
+/**
+ * How long a page waits for its device to read a recipe's file before it asks the feed for it too (ms): the device
+ * reads on beside the feed, and the first to hand it over is read ($lib/assets/vault.js `eitherOf`), so a light copy
+ * still bringing the file's pieces from its peers is never given up on.
+ */
 export const READ = 6000;
 
 /** How many bytes a page asks its device for at a time, as the Library reads a file ($lib/avendb/files.js). */
@@ -80,7 +84,7 @@ export async function deviceRows(kinds, { vault = MAIA_CITY, wait = BRING } = {}
 /**
  * File `file` of a row the device read (`{ root, size, len }`), whole, as bytes, read off the device a window at a
  * time: from its own store, or else fetched from a peer that may hand it over and kept. Null where no device is open,
- * it can't read it, or it takes longer than `wait` (the reader asks the feed then).
+ * it can't read it, or it takes longer than `wait` (the reader has asked the feed meanwhile, after `READ`).
  * @param {{ root: string, size: number, len: number }} file @param {{ wait?: number }} [o]
  * @returns {Promise<Uint8Array | null>}
  */
