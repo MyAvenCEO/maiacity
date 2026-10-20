@@ -199,7 +199,7 @@
 	const held = $derived(world.shares.filter((c) => c.who === vault && c.over !== vault));
 	/** A row's who: a vault's id, a signer's, a device's, or `"everyone"`. @param {ShareRow} r */
 	const whoOf = (r) =>
-		r.who === EVERYONE ? EVERYONE : 'vault' in r.who ? r.who.vault : 'signer' in r.who ? r.who.signer : r.who.device;
+		r.who === EVERYONE ? EVERYONE : 'vault' in r.who ? r.who.vault : 'signer' in r.who ? r.who.signer : 'device' in r.who ? r.who.device : r.who.invite;
 	/** The entries a share on chosen entries picks, or none for any other share. @param {ShareRow} r */
 	const entriesOf = (r) => {
 		const w = /** @type {any} */ (r.what);

@@ -1,3 +1,4 @@
+// @ts-nocheck — plain JS, kept loose on purpose
 // The signed release (scripts/release.mjs): a list signed by the release key holds; one signed by any other key, or
 // changed after signing, does not; and the live check names every file whose bytes are not the ones signed.
 import { describe, expect, test } from 'bun:test';

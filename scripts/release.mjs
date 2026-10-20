@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-nocheck — plain JS, kept loose on purpose
 // THE SIGNED RELEASE — so a server someone broke into can't swap the site's code unseen (the stack consolidation's
 // phase 2, Samuel 2026-10-20). Each deploy signs what it built: the BLAKE3 hash of every file of build/, its commit
 // and its time, with the release key (ML-DSA-65, the key's secret only in the repo's Actions secrets, RELEASE_KEY).
