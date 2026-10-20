@@ -18,6 +18,7 @@
  */
 import { ENTRIES } from '../../code/index.js';
 import { AVENDB_REF, avendb, loadCode as load } from './sources/avendb.js';
+import { deviceOf } from './sources/device.js';
 
 export class CodeError extends Error {}
 
@@ -65,10 +66,18 @@ export const codeIn = (prefix) => {
 
 /**
  * Load the vault's code entries once (./sources/avendb.js `loadCode`); every later codeAt and codeIn reads them, the
- * seed's where they are not. Resolves to what was taken and left out, or why nothing was loaded; never throws.
+ * seed's where they are not. Once more where the device of the person's avenDB the page holds open changed since
+ * (./sources/device.js `deviceOf`): what was read off the feed before the device opened gives way to the device's own
+ * copy of Maia City, and what was read off a device gives way to the feed once it closes. Resolves to what was taken
+ * and left out, or why nothing was loaded; never throws.
  */
 let loading = null;
-export const loadCode = (opts) => (opts ? load(viewOfEntry, opts) : (loading ??= load(viewOfEntry)));
+let loadedOff = null;
+export function loadCode(opts) {
+	if (opts) return load(viewOfEntry, opts);
+	if (!loading || loadedOff !== deviceOf()) [loading, loadedOff] = [load(viewOfEntry), deviceOf()];
+	return loading;
+}
 
 const json = (e, name, fallback) => (e.files[name] != null ? JSON.parse(e.files[name]) : fallback);
 const idOf = (e) => e.ref.split('/').at(-1);

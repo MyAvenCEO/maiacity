@@ -202,15 +202,16 @@ test('the newest file an entry brings is its source, and one that is not the rec
 	const v = vaultSource(d.world, d.db, VAULT, ACTOR, d.readFile);
 	expect((await v.recipeAt(LABEL['plants/apple@2'])).code).toBe(FILES[LABEL['plants/apple@2']]);
 	expect(d.reads.some((r) => r.root === wrong.root)).toBe(false);
-	// a newer file that is another recipe: refused, naming the ref, and the older right one is no fallback
+	// a newer file that is another recipe: refused, naming it as avenDB does, and the older right one is no fallback
 	entry.files = [right, wrong];
 	const w = vaultSource(d.world, d.db, VAULT, ACTOR, d.readFile);
 	const err = await thrown(() => w.recipeAt(LABEL['plants/apple@2']));
 	expect(err).toBeInstanceOf(NotInVault);
-	expect(err.message).toMatch(/^plants\/apple@2: refused, its file in the Maia City vault hashes to/);
+	expect(w.nameOf(LABEL['plants/apple@2'])).toMatch(/^Apple v2 · [0-9a-f]{8}…$/);
+	expect(err.message.startsWith(`${w.nameOf(LABEL['plants/apple@2'])}: refused, its file in the Maia City vault hashes to`)).toBe(true);
 });
 
-test("a file this device can't hand out fails, naming its ref and why, and nothing stands in for it", async () => {
+test("a file this device can't hand out fails, naming it and why, and nothing stands in for it", async () => {
 	const label = 'things/bell-tent@1';
 	const hash = LABEL[label];
 	/** the reader's error for the bell tent's file when its entry is changed by `f` */
@@ -221,7 +222,7 @@ test("a file this device can't hand out fails, naming its ref and why, and nothi
 		expect(v.hashOf(label)).toBe(hash);
 		const err = await thrown(() => v.recipeAt(hash));
 		expect(err).toBeInstanceOf(NotInVault);
-		expect(err.message.startsWith(`${label}: `)).toBe(true);
+		expect(err.message.startsWith(`${v.nameOf(hash)}: `)).toBe(true);
 		return err.message;
 	};
 	expect(await failing((e) => (e.files = []))).toMatch(/could not be read from the Maia City vault \(its entry brings no file\)/);
@@ -342,9 +343,10 @@ test("a build is its entry's file, run in the box, checked; the cache only once 
 	const lost = deviceOf([hash]);
 	lost.world.entries[0].files = [];
 	const gets = store.asked.get;
-	const err = await thrown(() => vaultBuild(vaultSource(lost.world, lost.db, VAULT, ACTOR, lost.readFile), hash, {}, { box, store }));
+	const gone = vaultSource(lost.world, lost.db, VAULT, ACTOR, lost.readFile);
+	const err = await thrown(() => vaultBuild(gone, hash, {}, { box, store }));
 	expect(err).toBeInstanceOf(NotInVault);
-	expect(err.message).toMatch(/^things\/bell-tent@1: its file could not be read/);
+	expect(err.message.startsWith(`${gone.nameOf(hash)}: its file could not be read`)).toBe(true);
 	expect([store.asked.get, box.asked.length]).toEqual([gets, 1]);
 	// a spoiled build in the cache is dropped and built again
 	store.kept.set(key, { data: null, card: { nope: true } });

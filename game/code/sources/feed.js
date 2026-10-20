@@ -195,18 +195,20 @@ export async function provenRows(url, { vault = MAIA_CITY, kinds, entries, fetch
 /**
  * The rows the feed at `url` lists (`listingOf`), all of vault `vault`, or without one all of the server's seed's Maia
  * City: { rows } or { error } (offline, a feed that answers something else, rows of another vault or of more than
- * one). Never throws. `timeout` (ms) is how long the feed may take to answer. Unproven, on the server's word: the
+ * one), with `passing` where asking again may help (the network dropped it, it took too long, or the server or a
+ * proxy before it couldn't answer yet: 429, 502, 503, 504). Never throws. `timeout` (ms) is how long the feed may take
+ * to answer. Unproven, on the server's word: the
  * asset recipes' index is read off them, each recipe proven before it runs ($lib/assets/vault.js), and the dev
  * server's stand-in reads code so (never in a build); everything else that runs reads `provenRows`.
  * @param {string} url @param {{ vault?: string, fetch?: typeof globalThis.fetch, timeout?: number }} [o]
- * @returns {Promise<{ rows: any[] } | { error: string }>}
+ * @returns {Promise<{ rows: any[] } | { error: string, passing?: true }>}
  */
 export async function listedRows(url, { vault, fetch: get = globalThis.fetch, timeout = 4000 } = {}) {
 	try {
 		const ctl = new AbortController();
 		const t = setTimeout(() => ctl.abort(), timeout);
 		const res = await get(url, { signal: ctl.signal }).finally(() => clearTimeout(t));
-		if (!res.ok) return { error: `${url} answered ${res.status}` };
+		if (!res.ok) return { error: `${url} answered ${res.status}`, ...([429, 502, 503, 504].includes(res.status) ? { passing: true } : {}) };
 		const body = await res.json();
 		const rows = Array.isArray(body) ? body : (body?.code ?? body?.entries);
 		if (!Array.isArray(rows)) return { error: `${url} answered no rows` };
@@ -217,6 +219,6 @@ export async function listedRows(url, { vault, fetch: get = globalThis.fetch, ti
 		if (vault === undefined && rows.some((r) => r && 'seed' in r && r.seed !== 'Maia City')) return { error: `${url} handed out code of a vault that is not the seed's Maia City` };
 		return { rows };
 	} catch (e) {
-		return { error: e?.message || String(e) };
+		return { error: e?.message || String(e), passing: true };
 	}
 }

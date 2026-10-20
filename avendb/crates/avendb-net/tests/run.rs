@@ -219,3 +219,44 @@ async fn once_it_follows_a_vault_a_node_asks_again_and_is_sent_what_everyone_rea
         n.shutdown().await.expect("the node shuts down");
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_node_brings_the_vaults_a_page_reads_its_code_from_first_and_tells_how_far_it_is_synced() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    let (mac_a, phone_a, coop) = (w.mac_a, w.phone_a, h.coop);
+    // a note Alice's Mac writes in the coop that her phone doesn't hold yet
+    let notes = document("Notes", "Bring me first.", mac_a);
+    let notes = w.lab.create(mac_a, coop, coop, "doc", &[], notes).expect("Notes");
+    let mac = node(&mut w, mac_a, &[], 1).await;
+    // her phone asks its peers only when told, as a page that reads its code off its device asks first
+    let lazy = Options { lazy: true, ..Options::local() };
+    let phone = Node::spawn(w.lab.split(phone_a, &[], [2; 32]), phone_a, lazy).await.expect("a node");
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    until("the two meet", || async { phone.proven(mac.id()).is_some() }).await;
+    let reads = move |lab: &Lab, me| text(lab, me, notes, 2).is_some();
+    assert!(!phone.read(reads).await, "not asked for it yet");
+    // the Mac told the phone what it holds: the phone lacks a log of it
+    let told = || async { run(&phone, json!({ "op": "synced" })).await.expect("synced")["behind"] != 0 };
+    until("the phone hears it is behind", told).await;
+    let synced = run(&phone, json!({ "op": "synced" })).await.expect("synced");
+    assert_eq!(synced["peers"], 1);
+    assert!(synced["logs"].as_u64() > synced["behind"].as_u64(), "{synced}");
+    // a bring of the coop: each device it knows asked at once, the Mac, the one it reaches, answers whole, and the
+    // phone reads Notes
+    let known = phone.read(|lab, me| lab.peers(me).len()).await;
+    let brought = run(&phone, json!({ "op": "bring", "vaults": [coop.to_hex()] })).await.expect("brought");
+    assert_eq!((&brought["peers"], &brought["reached"]), (&json!(known), &json!(true)), "{brought}");
+    assert!(brought["new"].as_u64() > Some(0), "{brought}");
+    assert!(phone.read(reads).await, "brought first");
+    let caught = || async { run(&phone, json!({ "op": "synced" })).await.expect("synced")["behind"] == 0 };
+    until("the phone is synced with its peer", caught).await;
+    // a bring names 1 to 64 vaults, each by its id
+    for bad in [json!({ "op": "bring", "vaults": [] }), json!({ "op": "bring", "vaults": ["coop"] })] {
+        assert_eq!(run(&phone, bad).await.expect_err("refused")["refused"], "BadOp");
+    }
+    for n in [&mac, &phone] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}

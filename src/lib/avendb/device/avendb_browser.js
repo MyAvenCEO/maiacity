@@ -194,7 +194,7 @@ export class Device {
     /**
      * What its key move asks of its person now (K3b, `Device::moving`): a promise of `{passkey, touch, device}`, each
      * whether their passkey signs, whether a Mac's Touch ID key does and whether the device moves, or of `undefined`
-     * once nothing moves.
+     * once nothing moves; rejected while it caught up with none of its peers (`NOT_CAUGHT_UP`), to be asked again.
      * @returns {Promise<any>}
      */
     moving() {

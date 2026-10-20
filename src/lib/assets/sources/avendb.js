@@ -46,6 +46,52 @@ export const MAX_REF = 512;
  */
 export const VAULT_REF = /^vault:([A-Za-z0-9_-]{8,128})\/([a-z]+)\/([a-z0-9][a-z0-9-]{0,79})@([1-9][0-9]{0,5})(?::([a-z0-9][a-z0-9-]{0,79}))?(?:\?([^#\s]*))?$/;
 
+/**
+ * A pin (N6 of the avenDB versions plan, Samuel 2026-10-18 and 10-20: "why does it still reference by the old ref keys
+ * instead of its avenDB internal ids?"): an asset named by avenDB's ids alone, its entry and the heads of the version
+ * it names, every part a hash, as a code ref names an entry (game/code/sources/avendb.js `AVENDB_REF`), and the values
+ * it is built with:
+ *
+ *   vault:<vault id>/<entry>@<head>[,<head>…][?its=values]       vault:3f2a…/9be0…@5e6f…?stage=9
+ *
+ * Stored as `{ entry, at }` where code keeps it as data; shown as avenDB names it ("Oats v1 · 1a2b3c4d…", `nameOf`).
+ * A row lists the heads a pin of each version names (`at`, avenDB's `engine::version_heads`).
+ */
+export const PIN_REF = /^vault:([A-Za-z0-9_-]{8,128})\/([0-9a-f]{64})@([0-9a-f]{64}(?:,[0-9a-f]{64}){0,15})(?:\?([^#\s]*))?$/;
+
+/** how long a pin may be, its heads and values with it */
+const MAX_PIN = 2048;
+
+/**
+ * A pin as its parts, `{ vault, entry, at, params? }` (`params` as text), from its string (`PIN_REF`) or as stored
+ * (`{ entry, at, vault?, params? }`); null for anything else, a repo ref or a vault's group ref among them.
+ * @param {unknown} ref @returns {{ vault: string | null, entry: string, at: string[], params?: Record<string, string> } | null}
+ */
+export function parsePin(ref) {
+	if (ref && typeof ref === 'object') {
+		const { entry, at, vault, params } = /** @type {any} */ (ref);
+		const hex = (/** @type {unknown} */ x) => typeof x === 'string' && /^[0-9a-f]{64}$/.test(x);
+		if (!hex(entry) || !Array.isArray(at) || !at.length || at.length > 16 || !at.every(hex)) return null;
+		return { vault: typeof vault === 'string' ? vault : null, entry, at: [...at], ...(params && typeof params === 'object' ? { params } : {}) };
+	}
+	const m = typeof ref === 'string' && ref.length <= MAX_PIN ? PIN_REF.exec(ref) : null;
+	if (!m) return null;
+	const params = paramsIn(m[4]);
+	return { vault: m[1], entry: m[2], at: m[3].split(','), ...(params ? { params } : {}) };
+}
+
+/**
+ * A pin written as a string (`PIN_REF`), its heads sorted, so one version is one string.
+ * @param {{ vault: string, entry: string, at: string[] }} pin @param {string} [query] its values, as a ref's (`stage=9`)
+ */
+export const pinRef = ({ vault, entry, at }, query = '') => `vault:${vault}/${entry}@${[...at].sort().join(',')}${query ? `?${query}` : ''}`;
+
+/** the key a pin is found by: its entry and its heads, sorted @param {{ entry: string, at: string[] }} p */
+const pinKey = (p) => `${p.entry}@${[...p.at].sort().join(',')}`;
+
+/** an entry's short id, its first 8 hex digits, as avenDB names it @param {string} entry */
+export const shortId = (entry) => `${String(entry).slice(0, 8)}…`;
+
 /** the groups an asset in a vault may be of: those of the asset entry's schema */
 const GROUPS = new Set(ASSET.properties.group.enum);
 
@@ -159,6 +205,15 @@ export class NotInVault extends Error {
 	name = 'NotInVault';
 }
 
+/**
+ * What a page is refused for a recipe the vault lists whose file neither the page's device nor the feed handed over,
+ * however long the page waited for it ($lib/assets/vault.js `PATIENCE`): it may well be in the vault, so the page tells
+ * it apart from one that isn't.
+ */
+export class Unread extends NotInVault {
+	name = 'Unread';
+}
+
 /** a value an object holds of its own, never one it inherits (`constructor`, `__proto__`) @param {Record<string, any>} o @param {string} k */
 const own = (o, k) => (Object.hasOwn(o, k) ? o[k] : undefined);
 
@@ -202,11 +257,27 @@ function recipeOfRow(row) {
 }
 
 /**
+ * A recipe's name as avenDB names a version (`pin` op, $lib/avendb/versions.js `pinLabel`), as the avenDB app's Assets
+ * lists it (./shelf.js `nameOf`): its title there, a variant's own name after the asset's ("Goat · Boer" of "Goat:
+ * Boer", "Truck" of "Truck: Truck"), the number of the version of its entry's main line it is (`main`, else its
+ * card's) and its entry's short id: "Oats v1 · 1a2b3c4d…".
+ * @param {any} row @param {any} card
+ */
+function nameOfRow(row, card) {
+	const v = Number.isInteger(row?.main) && row.main > 0 ? row.main : card.version;
+	const title = String(row?.record?.title || card.label || `${card.group}/${card.id}`);
+	const cut = card.variant ? title.indexOf(': ') : -1;
+	const [asset, own] = cut > 0 ? [title.slice(0, cut), title.slice(cut + 2)] : [title, ''];
+	return `${asset}${own && own !== asset ? ` · ${own}` : ''} v${v} · ${shortId(row?.entry ?? '')}`;
+}
+
+/**
  * The rows one row of the vault stands for: itself, or, where its entry brought files more than once, as an asset's
  * versions and variants each do (one entry for the asset, each version a record and its file in one write on main or
  * on a variant's line, avenDB's `Lab::brought`), one row for each: the row with that version's record, its files, its
- * write (`edit`, its `heads` too), the line whose history holds it (`line`, null for main's) and the version of main
- * it belongs to (`main`), as the feed (`world::public_row`) and the device (`data::database`) list them (`brought`).
+ * write (`edit`, its `heads` too), the line whose history holds it (`line`, null for main's), the version of main
+ * it belongs to (`main`) and the heads a pin of it names (`at`), as the feed (`world::public_row`) and the device
+ * (`data::database`) list them (`brought`).
  * @param {any} row @returns {any[]}
  */
 export function versionsOf(row) {
@@ -220,7 +291,8 @@ export function versionsOf(row) {
 		heads: typeof b?.edit === 'string' ? [b.edit] : [],
 		edit: b?.edit,
 		line: b?.line ?? null,
-		main: b?.version ?? null
+		main: b?.version ?? null,
+		at: Array.isArray(b?.at) ? b.at : []
 	}));
 }
 
@@ -233,10 +305,12 @@ export function versionsOf(row) {
  * a recipe two refs claim, names nothing.
  *
  * It reads as ../recipes.js reads the repo's index: `index`, the shape of `virtual:asset-recipes`; `hashOf(ref)`, the
- * hash a ref names (its latest version where it names none, its kind's first variant where it names none, and never
- * another variant than the one it names); `recipeAt(hash)`, `{ hash, code }`, the entry's file once read, held to the
- * hash (the BLAKE3 of its bytes) and to the version and variant its card says. Each throws NotInVault, naming the ref,
- * for what the vault doesn't hold or holds otherwise.
+ * hash a ref names: a pin by its entry and version's heads (`PIN_REF`), or an old ref through the cards (its latest
+ * version where it names none, its kind's first variant where it names none, and never another variant than the one
+ * it names); `recipeAt(hash)`, `{ hash, code }`, the entry's file once read, held to the hash (the BLAKE3 of its
+ * bytes) and to the version and variant its card says; `nameOf(hash)`, its name as avenDB gives it, which every error
+ * about a recipe it holds says, and `pinOf(hash)`, the pin that names it. Each throws NotInVault, naming the ref, or
+ * the recipe by its name, for what the vault doesn't hold or holds otherwise.
  * An entry is one asset: the one its first version names (its main line's oldest, as `versionsOf` lists them), and a
  * version of it whose card names another is refused, so no entry speaks for an asset another entry holds. `assets`
  * says which asset an entry already is (`group/id`, by its entry) where the rows don't hold its first version: a
@@ -281,6 +355,12 @@ export function vaultRecipes(rows, { read, assets = [] }) {
 	}
 	/** each recipe's row, by its hash @type {Map<string, any>} */
 	const rowOf = new Map();
+	/** each recipe's name, as avenDB names it, by its hash @type {Map<string, string>} */
+	const names = new Map();
+	/** the recipe each pin names, by its entry and heads (`pinKey`) @type {Map<string, string>} */
+	const pins = new Map();
+	/** each entry's vault and the versions it holds, as its rows say @type {Map<string, { vault: unknown, held: string[] }>} */
+	const entries = new Map();
 	/** the variants that say they are their kind's first, by the ref that names no variant @type {Map<string, Set<string>>} */
 	const firsts = new Map();
 	for (const [label, held] of claims) {
@@ -300,6 +380,14 @@ export function vaultRecipes(rows, { read, assets = [] }) {
 		index.labels[label] = hash;
 		index.latest[name] = Math.max(own(index.latest, name) ?? 0, card.version);
 		rowOf.set(hash, row);
+		names.set(hash, nameOfRow(row, card));
+		for (const x of held) {
+			if (typeof x.row.entry !== 'string') continue;
+			const e = entries.get(x.row.entry) ?? { vault: x.row.vault, held: /** @type {string[]} */ ([]) };
+			entries.set(x.row.entry, e);
+			e.held.push(names.get(hash) ?? label);
+			if (Array.isArray(x.row.at) && x.row.at.length) pins.set(pinKey({ entry: x.row.entry, at: x.row.at }), hash);
+		}
 		if (first) {
 			const at = refOf(card.group, card.id, card.version);
 			firsts.set(at, new Set([...(firsts.get(at) ?? []), first]));
@@ -311,27 +399,43 @@ export function vaultRecipes(rows, { read, assets = [] }) {
 	}
 	/** the error for a ref the vault doesn't hold @param {string} ref @param {string} [named] @param {string} [also] */
 	const missing = (ref, named, also) => new NotInVault(`${ref}${named && named !== ref ? ` (${named})` : ''} is not in the Maia City vault${also ? `: ${also}` : ''}`);
+	/**
+	 * The recipe a pin names, or NotInVault saying what the vault holds of its entry instead.
+	 * @param {NonNullable<ReturnType<typeof parsePin>>} pin
+	 */
+	const pinned = (pin) => {
+		const e = entries.get(pin.entry);
+		const hash = e && (!pin.vault || typeof e.vault !== 'string' || e.vault === pin.vault) ? pins.get(pinKey(pin)) : undefined;
+		if (hash) return hash;
+		const at = pin.at.map((h) => h.slice(0, 8)).join(', ');
+		if (!e) throw new NotInVault(`entry ${shortId(pin.entry)} is not in the Maia City vault`);
+		if (pin.vault && typeof e.vault === 'string' && e.vault !== pin.vault) throw new NotInVault(`entry ${shortId(pin.entry)} is in vault ${shortId(e.vault)}, not in vault ${shortId(pin.vault)}`);
+		throw new NotInVault(`${[...new Set(e.held)].join(', ')}: no version of entry ${shortId(pin.entry)} at ${at}… is in the Maia City vault`);
+	};
 	/** a recipe's file, read from the vault and held to its hash and to its card @param {any} at @param {string} hash */
 	async function fileOf(at, hash) {
+		const named = names.get(hash) ?? at.label;
 		let got;
 		try {
 			got = await read(rowOf.get(hash));
 		} catch (e) {
-			throw new NotInVault(`${at.label}: its file could not be read from the Maia City vault (${e instanceof Error ? e.message : String(e)})`);
+			// a file asked for in vain only in passing (the network, a server restarting) may well be there: told apart
+			const Failed = /** @type {any} */ (e)?.passing ? Unread : NotInVault;
+			throw new Failed(`${named}: its file could not be read from the Maia City vault (${e instanceof Error ? e.message : String(e)})`);
 		}
 		const bytes = typeof got === 'string' ? utf8ToBytes(got) : got instanceof ArrayBuffer ? new Uint8Array(got) : got;
-		if (!(bytes instanceof Uint8Array)) throw new NotInVault(`${at.label}: the Maia City vault handed out no file for it`);
-		const named = bytesToHex(blake3(bytes));
-		if (named !== hash) throw new NotInVault(`${at.label}: refused, its file in the Maia City vault hashes to ${named.slice(0, 12)}…, not to ${hash.slice(0, 12)}…, the recipe its ref names`);
+		if (!(bytes instanceof Uint8Array)) throw new NotInVault(`${named}: the Maia City vault handed out no file for it`);
+		const hashed = bytesToHex(blake3(bytes));
+		if (hashed !== hash) throw new NotInVault(`${named}: refused, its file in the Maia City vault hashes to ${hashed.slice(0, 12)}…, not to ${hash.slice(0, 12)}…, the recipe it names`);
 		let code;
 		try {
 			code = typeof got === 'string' ? got : UTF8.decode(bytes);
 		} catch {
-			throw new NotInVault(`${at.label}: refused, its file in the Maia City vault is not UTF-8 text`);
+			throw new NotInVault(`${named}: refused, its file in the Maia City vault is not UTF-8 text`);
 		}
 		// the file's last line says which version and variant it builds (../engines.js recipeTail): the one its card says
 		if (!code.endsWith(recipeTail(at.id, at.v, at.variant)))
-			throw new NotInVault(`${at.label}: refused, its file in the Maia City vault is the recipe of another version or variant than its card says`);
+			throw new NotInVault(`${named}: refused, its file in the Maia City vault is the recipe of another version or variant than its card says`);
 		return { hash, code };
 	}
 	/** @type {Map<string, Promise<{ hash: string, code: string }>>} */
@@ -340,11 +444,16 @@ export function vaultRecipes(rows, { read, assets = [] }) {
 		index,
 		refused,
 		/**
-		 * The hash a ref names in the vault (`group/id[@v][:variant][?values]`; a vault's ref is still refused).
-		 * @param {string} ref @returns {string}
+		 * The hash a ref names in the vault: a pin, by its entry and the heads of its version (`PIN_REF`, or `{ entry,
+		 * at }`), or an old ref read through what the entries' cards say (`group/id[@v][:variant][?values]`); a vault's
+		 * group ref is still refused.
+		 * @param {string | { entry: string, at: string[] }} ref @returns {string}
 		 */
 		hashOf(ref) {
-			if (typeof ref === 'string' && ref.startsWith(VAULT)) throw refusal(parseVaultRef(ref));
+			const pin = parsePin(ref);
+			if (pin) return pinned(pin);
+			if (typeof ref !== 'string') throw new NotInVault(`not an asset ref: ${JSON.stringify(ref)?.slice(0, 80)}`);
+			if (ref.startsWith(VAULT)) throw refusal(parseVaultRef(ref));
 			const { group, id, v, variant } = parseRef(ref);
 			const latest = v ?? own(index.latest, `${group}/${id}`);
 			if (!latest) throw missing(ref);
@@ -361,6 +470,21 @@ export function vaultRecipes(rows, { read, assets = [] }) {
 		 * @param {string} hash @returns {any}
 		 */
 		rowOf: (hash) => (typeof hash === 'string' && own(index.recipes, hash) ? rowOf.get(hash) : undefined),
+		/**
+		 * A recipe's name, avenDB's alone: its title, its version's number and its entry's short id ("Oats v1 ·
+		 * 1a2b3c4d…"); undefined for a hash it doesn't hold.
+		 * @param {string} hash @returns {string | undefined}
+		 */
+		nameOf: (hash) => (typeof hash === 'string' && own(index.recipes, hash) ? names.get(hash) : undefined),
+		/**
+		 * The pin that names a recipe, `{ vault, entry, at }`, where its row lists the heads of its version; undefined
+		 * otherwise.
+		 * @param {string} hash @returns {{ vault: string, entry: string, at: string[] } | undefined}
+		 */
+		pinOf(hash) {
+			const row = typeof hash === 'string' && own(index.recipes, hash) ? rowOf.get(hash) : undefined;
+			return row && Array.isArray(row.at) && row.at.length ? { vault: row.vault, entry: row.entry, at: [...row.at].sort() } : undefined;
+		},
 		/**
 		 * A recipe of the vault by its hash, `{ hash, code }`: its file, read once and checked.
 		 * @param {string} hash @returns {Promise<{ hash: string, code: string }>}

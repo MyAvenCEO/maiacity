@@ -583,14 +583,16 @@ impl Device {
     /// What its key move asks of its person now (K3b, `move_keys`), once it caught up with its peers (`catch_up`):
     /// whether their passkey signs, whether its Mac's Touch ID key does, with a touch, and whether a device moves.
     /// `None` once nothing it holds is to move: their keys and its own are in ML-DSA-65, or the Lab holds no next key
-    /// of those still in SLH-DSA, as a Mac its Touch ID key opened holds none of their passkey's. `None` too while it
-    /// caught up with none of its peers: the move waits for an unlock that does. The page moves only what this asked
+    /// of those still in SLH-DSA, as a Mac its Touch ID key opened holds none of their passkey's. Fails while it
+    /// caught up with none of its peers (`NOT_CAUGHT_UP`): its sync goes on, and the page asks again a moment later, so
+    /// a phone that opened while it still brought what its peers hold asks for the move once it holds it (Samuel
+    /// 2026-10-20: no button, as it asked once, at its unlock, mid-sync). The page moves only what this asked
     /// (`move_keys`), so this alone holds the move back: a Mac stops the nodes of the drives it hosts before it moves,
     /// and they may be all the peers it has.
     pub async fn moving(&self) -> Result<Option<Moving>> {
         let touch = self.touch_key().await?;
         if !catch_up(&self.node).await {
-            return Ok(None);
+            bail!("{NOT_CAUGHT_UP}");
         }
         let opener = self.opener.clone();
         let drafted = self.node.read(move |lab, me| drafted(lab, me, &opener, touch).map(|d| d.map(|d| d.moving)));
@@ -864,6 +866,9 @@ pub fn steps_json(steps: &Steps) -> Value {
 
 /// How long a device asks its peers for what they hold before its key move drafts (`catch_up`), at most.
 const CATCH_UP: Duration = Duration::from_secs(5);
+
+/// Why `Device::moving` says nothing yet: it caught up with none of its peers within `CATCH_UP`.
+pub const NOT_CAUGHT_UP: &str = "its key move waits until it caught up with one of its peers";
 
 /// How long a key move waits for its device's shelf to hold its batch (`Device::shelved`), at most.
 const SHELVED: Duration = Duration::from_secs(10);
@@ -1154,7 +1159,7 @@ impl PageDevice {
 
     /// What its key move asks of its person now (K3b, `Device::moving`): a promise of `{passkey, touch, device}`, each
     /// whether their passkey signs, whether a Mac's Touch ID key does and whether the device moves, or of `undefined`
-    /// once nothing moves.
+    /// once nothing moves; rejected while it caught up with none of its peers (`NOT_CAUGHT_UP`), to be asked again.
     pub fn moving(&self) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move {

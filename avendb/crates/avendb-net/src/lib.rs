@@ -151,6 +151,7 @@ use iroh_blobs::api::Store;
 use iroh_blobs::util::connection_pool::{self, ConnectionPool};
 #[cfg(not(target_arch = "wasm32"))]
 use iroh_blobs::store::mem::MemStore;
+use serde_json::{Value, json};
 use rustls::crypto::CryptoProvider;
 use n0_future::task::{self, JoinHandle};
 use n0_future::{FuturesUnordered, StreamExt as _, future};
@@ -1281,6 +1282,29 @@ impl Node {
     /// under way and the last that ended (`jobs`), as its `jobs` op tells them.
     pub fn jobs(&self) -> &Jobs {
         &self.shared.jobs
+    }
+
+    /// How far its device is synced with the peers it is connected to, by what each told it it holds (`Holdings`), as
+    /// the `synced` op tells it: `{"peers", "logs", "behind", "pulling"}`, how many of them told it, how many logs they
+    /// hold between them that this device may hold, how many of those hold edits this device lacks (`differ`), which it
+    /// asks them for, and how many pulls from them run now (`jobs`). What a page's sync bar shows.
+    pub async fn synced(&self) -> Value {
+        let live: BTreeSet<SignerId> = {
+            let peers = self.shared.peers.lock().expect("peers");
+            peers.values().filter(|p| p.conn.close_reason().is_none()).map(|p| p.device).collect()
+        };
+        let heard: Vec<(SignerId, Vec<LogId>)> = {
+            let held = self.shared.held.lock().expect("held");
+            live.iter().filter_map(|d| Some((*d, held.get(d)?.logs.keys().copied().collect()))).collect()
+        };
+        let (mut logs, mut behind) = (BTreeSet::new(), BTreeSet::new());
+        for (device, theirs) in &heard {
+            logs.extend(theirs.iter().copied());
+            behind.extend(self.shared.differ(*device).await);
+        }
+        let (running, _) = self.jobs().snapshot();
+        let pulling = running.iter().filter(|j| j.kind == "pull").count();
+        json!({ "peers": heard.len(), "logs": logs.len(), "behind": behind.len(), "pulling": pulling })
     }
 
     /// How many requests and announcements it has sent so far.

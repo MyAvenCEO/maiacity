@@ -43,6 +43,7 @@
 import { native } from '$lib/native';
 import { allowed, answer, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
+import { useDevice } from '../../../game/code/sources/device.js';
 
 /** The name of this browser's shelf in OPFS (./device/store.js). */
 const STORE = 'avendb-browser';
@@ -370,18 +371,25 @@ async function started(d, nonce, credential, { name, relay }) {
 	meta = await d.keep(hex(nonce), credential);
 }
 
-/** Device `d` runs, for every page of the tab, and the pages holding it see what it holds; then it asks what its key
- *  move asks of the person (`checkMove`). @param {any} d */
+/** Device `d` runs, for every page of the tab, and the pages holding it see what it holds, and read the code they run
+ *  off it, the games' and the assets' (game/code/sources/device.js); then it asks what its key move asks of the person
+ *  (`checkMove`). @param {any} d */
 function running(d) {
 	device = d;
 	phase = 'open';
+	useDevice({ run: send, read: api.readFile });
 	if (holders) watch();
 	void checkMove(d);
 }
 
+/** How long a device that can't say yet what its key move asks waits before it is asked again (ms). */
+const MOVE_AGAIN = 30000;
+
 /** What device `d`'s key move asks of the person (K3b), once it opened: where it asks for no ceremony, as a move cut
- *  short, it goes on at once; otherwise the page asks once more (`moveKeys`). Never fails: a move that can't be asked
- *  about now waits for the next unlock. @param {any} d */
+ *  short, it goes on at once; otherwise the page asks once more (`moveKeys`). Never fails: a device that can't say yet,
+ *  as one still bringing what its peers hold (it caught up with none of them), is asked again `MOVE_AGAIN` later, for
+ *  as long as it is the page's (Samuel 2026-10-20: a phone that unlocked mid-sync never showed "Move my keys").
+ *  @param {any} d */
 async function checkMove(d) {
 	moving = null;
 	try {
@@ -390,7 +398,8 @@ async function checkMove(d) {
 		moving = asked;
 		if (asked && !asked.passkey && !asked.touch) await moveKeys();
 	} catch (e) {
-		console.warn('avenDB: the key move waits for the next unlock:', /** @type {Error} */ (e)?.message ?? e);
+		console.warn('avenDB: the key move is asked about again in a moment:', /** @type {Error} */ (e)?.message ?? e);
+		setTimeout(() => device === d && !moving && void checkMove(d), MOVE_AGAIN);
 	}
 }
 
@@ -536,6 +545,7 @@ async function lock() {
 	if (mac) return;
 	const d = device;
 	watching = null;
+	useDevice(null);
 	[device, world, vault] = [null, null, ''];
 	if (meta) phase = 'closed';
 	await d?.close().catch(() => {});
@@ -546,6 +556,7 @@ async function lock() {
 async function forget() {
 	await device?.close();
 	watching = null;
+	useDevice(null);
 	await (mac ? mac.call('forget') : store.aside());
 	[device, meta, world, vault, phase] = [null, null, null, '', 'new'];
 }

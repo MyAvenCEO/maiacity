@@ -22,7 +22,12 @@
  *                                                  cache lacks the build and the file (./cache.js `fileAt`), which
  *                                                  then keeps it under its hash, held to it again when read back
  *
- * `<feed>` is avenDB's server's (game/code/sources/feed.js FEED), the one every page and build reads.
+ * `<feed>` is avenDB's server's (game/code/sources/feed.js FEED), the one every page and build reads while it holds
+ * no avenDB open. A page that holds the person's avenDB open reads the recipes off its own device instead (Samuel
+ * 2026-10-20, "all games and sandboxes should load always from local avenDB! Also the asset viewers"): the same rows,
+ * of the device's own copy of Maia City once it brought the vault from its peers, and each recipe's file off its own
+ * store (game/code/sources/device.js `deviceRows`, `deviceFile`). The device checked every signed edit as it took it,
+ * so nothing it reads needs a proof; a file it can't read in time is asked of the feed, held to the same hash.
  *
  * There is no repo fallback (Samuel 2026-10-17, 12:01): a ref the vault doesn't hold, a file that isn't the recipe its
  * ref names, a feed that can't be reached, each fails, naming the ref, so we see what still needs porting. Each is told
@@ -40,15 +45,16 @@ import { blake3 } from '@noble/hashes/blake3.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import { idOf, slug } from '$lib/ids.js';
 import { CODE_FEED, KEPT_PROOFS, MAIA_CITY, NO_ANCHOR, fileOf, listedRows, listingOf, proofOf, provenRows, seedFeedOf } from '../../../game/code/sources/feed.js';
+import { READ, deviceFile, deviceRows } from '../../../game/code/sources/device.js';
 import { buildOf } from './builds.js';
 import * as cache from './cache.js';
 import { LATEST } from './engines.js';
 import { queryOf } from './params.js';
 import { parseRef } from './refs.js';
-import { NotInVault, vaultRecipes } from './sources/avendb.js';
+import { NotInVault, Unread, parsePin, pinRef, vaultRecipes } from './sources/avendb.js';
 
 export { buildOf, checked, hashText, parseBuild } from './builds.js';
-export { NotInVault };
+export { NotInVault, Unread, parsePin, pinRef };
 
 /**
  * The app's pages that build assets: the app's layout holds one until the recipes are in (./VaultRecipes.svelte), so a
@@ -90,8 +96,23 @@ const MOST_BATCHES = 8;
 const AT_ONCE = 6;
 
 /** after how long (ms) a file the network dropped, that took too long, or that the server couldn't hand out yet is
- *  asked again: twice, then it fails */
-const AGAIN = [1000, 4000];
+ *  asked again: these waits, then the last of them again and again, until `PATIENCE` passed since it was first asked */
+const AGAIN = [1000, 2000, 4000, 8000, 15000];
+
+/**
+ * How long a page keeps asking for a file the feed doesn't hand out yet (ms). A server that restarts for a deploy answers
+ * again within a minute or two, and a page waits for it, saying so (`recipes.waiting`), rather than tell a file missing
+ * that is only late (Sandbox 4 on a phone, 2026-10-20: 53 plants "not in it", "Load failed, asked 3 times", while
+ * avenDB's server restarted).
+ */
+const PATIENCE = 10 * 60_000;
+
+/**
+ * Until when the feed is not asked for a file, since one it was asked for failed in passing (ms since the epoch): every
+ * file waits for it, so a feed that doesn't answer is asked a few files at a time (`AT_ONCE`), after each wait, never
+ * once for every file a world wants (a server coming back stalled under a burst, 2026-10-19). A file it hands out ends it.
+ */
+let calm = 0;
 
 /** the files being read, and those waiting their turn @type {{ running: number, waiting: (() => void)[] }} */
 const turns = { running: 0, waiting: [] };
@@ -104,35 +125,71 @@ const done = () => {
 	else turns.running--;
 };
 
-/** an answer the server may give otherwise when asked again: it couldn't read the file yet, or a proxy before it failed */
-const passing = (/** @type {number} */ status) => status === 502 || status === 503 || status === 504;
+/** an answer the server may give otherwise when asked again: it couldn't read the file yet, it was asked too much, or
+ *  a proxy before it failed (a server restarting) */
+const passing = (/** @type {number} */ status) => status === 429 || status === 502 || status === 503 || status === 504;
+
+/** a turn to read a file off the feed, once the feed may be asked again (`calm`): one taken while a file failed
+ *  meanwhile is handed on, and waits again */
+async function calmTurn() {
+	for (;;) {
+		while (calm > Date.now()) await new Promise((r) => setTimeout(r, calm - Date.now()));
+		await turn();
+		if (calm <= Date.now()) return;
+		done();
+	}
+}
+
+/** how many files wait for the feed to answer again (`recipes.waiting`), told as it changes @param {number} n */
+function waits(n) {
+	recipes.waiting = Math.max(0, recipes.waiting + n);
+	tell();
+}
 
 /**
  * A file's bytes off the feed at `url`, in its turn (`AT_ONCE`), within `TIMEOUT.file` from when it is asked: asked
- * again (`again`, the waits between) where the network dropped it, it took too long, or the server couldn't hand it out
- * yet; what failed the last time is said, and how often it was asked.
- * @param {typeof globalThis.fetch} get @param {string} url @param {number[]} again
+ * again (`again`, the waits between, the last again and again) where the network dropped it, it took too long, or the
+ * server couldn't hand it out yet, until `patience` passed since it was first asked; meanwhile the page is told it waits
+ * (`recipes.waiting`), and every file holds back with it (`calm`). What failed the last time is said, and how often it
+ * was asked, and whether it failed only in passing (`passing`).
+ * @param {typeof globalThis.fetch} get @param {string} url @param {number[]} again @param {number} [patience]
  */
-async function fetched(get, url, again) {
-	for (let i = 0; ; i++) {
-		/** what failed this time, and whether asking again may help */
-		let failed, retry;
-		await turn();
-		const ctl = new AbortController();
-		const t = setTimeout(() => ctl.abort(), TIMEOUT.file);
-		try {
-			const res = await get(url, { signal: ctl.signal });
-			if (res.ok) return new Uint8Array(await res.arrayBuffer());
-			[failed, retry] = [new Error(`${url} answered ${res.status}`), passing(res.status)];
-		} catch (e) {
-			// the network dropped it, or it took too long
-			[failed, retry] = [e instanceof Error ? e : new Error(String(e)), true];
-		} finally {
-			clearTimeout(t);
-			done();
+async function fetched(get, url, again, patience = PATIENCE) {
+	const first = Date.now();
+	let waiting = false;
+	try {
+		for (let i = 0; ; i++) {
+			/** what failed this time, and whether asking again may help */
+			let failed, retry;
+			await calmTurn();
+			const ctl = new AbortController();
+			const t = setTimeout(() => ctl.abort(), TIMEOUT.file);
+			try {
+				const res = await get(url, { signal: ctl.signal });
+				if (res.ok) {
+					const bytes = new Uint8Array(await res.arrayBuffer());
+					calm = 0;
+					return bytes;
+				}
+				[failed, retry] = [new Error(`${url} answered ${res.status}`), passing(res.status)];
+			} catch (e) {
+				// the network dropped it, it took too long, or a proxy's answer bore no leave to read it ("Load failed")
+				[failed, retry] = [e instanceof Error ? e : new Error(String(e)), true];
+			} finally {
+				clearTimeout(t);
+				done();
+			}
+			if (!retry || (i >= again.length && Date.now() - first >= patience)) {
+				const out = i ? new Error(`${failed.message}, asked ${i + 1} times`) : failed;
+				// failed in passing however long it was asked: the file may well be there (./sources/avendb.js `Unread`)
+				if (retry) Object.assign(out, { passing: true });
+				throw out;
+			}
+			calm = Math.max(calm, Date.now() + (again[Math.min(i, again.length - 1)] ?? 0));
+			if (!waiting) waits(+(waiting = true));
 		}
-		if (!retry || i >= again.length) throw i ? new Error(`${failed.message}, asked ${i + 1} times`) : failed;
-		await new Promise((r) => setTimeout(r, again[i]));
+	} finally {
+		if (waiting) waits(-1);
 	}
 }
 
@@ -145,10 +202,12 @@ export const INDEX = { engine: LATEST.v, recipes: {}, labels: {}, latest: {}, fi
 
 /**
  * What the page knows of the vault's recipes: `phase` (idle, loading, ready, failed), the `feed` they are read from,
- * the `vault`, how many (`count`), why none were (`error`), the entries the reader refused (`refused`) and every ref
- * a build asked for that the vault couldn't give (`missed`), each saying why.
+ * the `vault`, how many (`count`), why none were (`error`), the entries the reader refused (`refused`), every ref a
+ * build asked for that the vault doesn't give (`missed`) and every one whose file wasn't handed over, after the page
+ * waited for it (`unread`: it may well be in the vault), each saying why; and how many files are being read now
+ * (`reading`) and how many of them wait for the feed to answer again (`waiting`).
  */
-export const recipes = { phase: 'idle', feed: '', vault: '', count: 0, error: '', refused: [], missed: [] };
+export const recipes = { phase: 'idle', feed: '', vault: '', count: 0, error: '', refused: [], missed: [], unread: [], reading: 0, waiting: 0 };
 
 /** @type {Set<(r: typeof recipes) => void>} */
 const watchers = new Set();
@@ -179,10 +238,12 @@ export function watchRecipes(f) {
 
 /** the most refs told missed (a world that asks for hundreds of one ref tells it once) */
 const MOST_MISSED = 200;
-/** a ref the vault couldn't give, told on the page and in the console, once @param {Error} e */
+/** a ref the vault couldn't give, or whose file wasn't handed over (`Unread`), told on the page and in the console,
+ *  once @param {Error} e */
 function noted(e) {
-	if (e instanceof NotInVault && !recipes.missed.includes(e.message) && recipes.missed.length < MOST_MISSED) {
-		recipes.missed = [...recipes.missed, e.message];
+	const list = e instanceof Unread ? 'unread' : 'missed';
+	if (e instanceof NotInVault && !recipes[list].includes(e.message) && recipes[list].length < MOST_MISSED) {
+		recipes[list] = [...recipes[list], e.message];
 		console.error(`asset recipes: ${e.message}`);
 		tell();
 	}
@@ -213,25 +274,59 @@ const hashOfRow = new WeakMap();
 /** whether bytes hash to a recipe's hash @param {Uint8Array} bytes @param {string} hash */
 const holds = (bytes, hash) => bytes instanceof Uint8Array && bytesToHex(blake3(bytes)) === hash;
 
+/** how many files are read now (`recipes.reading`), told as it changes @param {number} n */
+function reads(n) {
+	recipes.reading = Math.max(0, recipes.reading + n);
+	tell();
+}
+
+/**
+ * A file the page's own device reads (`own`), or the feed's (`off`) where the device hasn't handed it over within
+ * `READ`, or failed: a light copy still bringing the file's pieces from its peers reads on, beside the feed, and the
+ * first to hand over bytes that hold to the recipe's hash (`fits`) is the file, so a page never gives up on a device
+ * still syncing, nor waits on it alone. Fails as the feed fails, once the device failed too.
+ * @param {Promise<Uint8Array | null>} own @param {() => Promise<Uint8Array>} off @param {(b: any) => boolean} fits
+ * @param {number} lead how long the device reads alone (ms, `READ`)
+ */
+async function eitherOf(own, off, fits, lead) {
+	const mine = own.then((b) => (fits(b) ? b : Promise.reject(new Error('this device handed over no such file'))));
+	let t;
+	const late = new Promise((r) => (t = setTimeout(() => r(null), lead)));
+	const first = await Promise.race([mine.catch(() => null), late]).finally(() => clearTimeout(t));
+	if (first) return first;
+	const theirs = off();
+	return Promise.any([mine, theirs]).catch(() => theirs);
+}
+
 /**
  * How a row's file is read: this device's copy of it, where it keeps one that hashes to the recipe's hash (`kept`);
  * otherwise the newest its entry brings (the feed lists them oldest first), or for one version of an asset's entry,
- * the file of its own write (./sources/avendb.js `versionsOf`), by its root, from the feed beside the rows, whole, as
- * bytes, a few at a time and asked again where it was dropped (`fetched`), so its hash is of the bytes the server
- * holds, kept on the device once it hashes to the recipe's. Refused, saying why, where its entry brings none or one
- * larger than a recipe may be. Either way ./sources/avendb.js holds what it hands out to the ref's hash, version and
- * variant.
+ * the file of its own write (./sources/avendb.js `versionsOf`), by its root: off the page's own avenDB, for rows its
+ * device read (`local`, game/code/sources/device.js `deviceFile`), the feed's beside it once that takes longer than
+ * `READ` (`eitherOf`); else from the feed beside the rows, whole, as bytes, a few at a time and asked again where it
+ * was dropped, for as long as `patience` (`fetched`), so its hash is of the bytes the server holds. Kept on the device
+ * once it hashes to the recipe's. Refused, saying why, where its entry brings none or one larger than a recipe may be.
+ * Either way ./sources/avendb.js holds what it hands out to the ref's hash, version and variant. `how` is the load's:
+ * `get` its fetch, and its `feed`, `kept`, `again`, `patience` and `lead`.
+ * @param {{ get: typeof globalThis.fetch, feed: string, kept: { get: (hash: string) => any, put: (hash: string, bytes: Uint8Array) => any }, again: number[], patience: number, lead: number }} how
  */
-const readerOf = (get, feed, kept, again) => async (row) => {
+const readerOf = ({ get, feed, kept, again, patience, lead }, local = false) => async (row) => {
 	const hash = hashOfRow.get(row);
 	const had = hash ? await Promise.resolve(kept.get(hash)).catch(() => undefined) : undefined;
 	if (had && holds(had, hash)) return had;
 	const file = Array.isArray(row?.files) ? row.files.at(-1) : undefined;
 	if (!file) throw new Error('its entry brings no file');
 	if (typeof file.len === 'number' && file.len > MOST) throw new Error(`its file is ${file.len.toLocaleString('en')} bytes, more than a recipe may be (${MOST.toLocaleString('en')})`);
-	const bytes = await fetched(get, fileOf(row.vault, row.entry, feed, row.edit ? file.root : undefined), again);
-	if (hash && holds(bytes, hash)) Promise.resolve(kept.put(hash, bytes)).catch(() => {});
-	return bytes;
+	const off = () => fetched(get, fileOf(row.vault, row.entry, feed, row.edit ? file.root : undefined), again, patience);
+	const fits = (/** @type {any} */ b) => b instanceof Uint8Array && (!hash || holds(b, hash));
+	reads(+1);
+	try {
+		const bytes = local ? await eitherOf(deviceFile(file, { wait: patience }), off, fits, lead) : await off();
+		if (hash && holds(bytes, hash)) Promise.resolve(kept.put(hash, bytes)).catch(() => {});
+		return bytes;
+	} finally {
+		reads(-1);
+	}
 };
 
 /**
@@ -319,17 +414,20 @@ function proverOf({ prove, keep, vault, pageOf = () => globalThis.location?.path
 const live = (r) => !(r?.tags ?? []).includes('avendb:deleted');
 
 /**
- * The recipes read off the feed: what the page knows of them after. The index is read off the rows the feed lists;
- * a recipe is built only once its entry's proof checks out (H2, `provenAt`), but on a dev server that reads its
- * stand-in, whose rows are no vault's.
+ * The recipes read off the page's own avenDB, where it holds one open that brought Maia City from its peers
+ * (game/code/sources/device.js `deviceRows`), else off the feed: what the page knows of them after. The index is read
+ * off the rows; a recipe the feed lists is built only once its entry's proof checks out (H2, `provenAt`), one the
+ * device read at once, as the device checked its edits as it took them, and so on a dev server that reads its
+ * stand-in, whose rows are no vault's. `device` false reads the feed whatever the page holds open.
  */
-async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = TIMEOUT.rows, kept = KEPT, again = AGAIN, vault = MAIA_CITY, verify, proofs = KEPT_PROOFS, page } = {}) {
+async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = TIMEOUT.rows, kept = KEPT, again = AGAIN, patience = PATIENCE, lead = READ, vault = MAIA_CITY, verify, proofs = KEPT_PROOFS, page, device = true } = {}) {
+	const how = { get, feed, kept, again, patience, lead };
 	const standIn = import.meta.env.DEV && import.meta.env.VITE_RECIPE_FEED === 'dev' && feed === feedOf();
 	const url = standIn ? seedFeedOf(['recipe'], feed) : listingOf(['recipe'], { vault, feed });
 	source = null;
 	prover = null;
 	fill(null);
-	Object.assign(recipes, { phase: 'loading', feed: url, vault: '', count: 0, error: '', refused: [], missed: [] });
+	Object.assign(recipes, { phase: 'loading', feed: url, vault: '', count: 0, error: '', refused: [], missed: [], unread: [] });
 	tell();
 	/** @param {string} error */
 	const failed = (error) => {
@@ -340,12 +438,18 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 	};
 	const couldNot = (why) => failed(`the asset recipes could not be loaded from the Maia City vault: ${why}`);
 	if (!standIn && !/^[0-9a-f]{64}$/.test(String(vault))) return couldNot(NO_ANCHOR);
+	// the page's own avenDB first, its own copy of Maia City, which needs no proof
+	const local = device && !standIn ? await deviceRows(['recipe'], { vault }) : null;
+	if (local) {
+		const read = vaultRecipes(local.filter(live), { read: readerOf(how, true) });
+		if (Object.keys(read.index.recipes).length) return ready(read, null, String(local[0]?.vault ?? vault), 'this device');
+	}
 	/** @param {string[]} entries */
 	const prove = async (entries) => {
 		const proving = { vault, kinds: ['recipe'], entries, fetch: get, timeout, keep: proofs, ...(verify ? { verify } : {}) };
 		const got = await provenRows(proofOf(['recipe'], { vault, feed, entries }), proving);
 		if ('error' in got) return got;
-		const read = vaultRecipes(got.rows.filter(live), { read: readerOf(get, feed, kept, again) });
+		const read = vaultRecipes(got.rows.filter(live), { read: readerOf(how) });
 		for (const h of Object.keys(read.index.recipes)) hashOfRow.set(read.rowOf(h), h);
 		return { source: read };
 	};
@@ -353,17 +457,46 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 	const pageOf = page ?? (() => globalThis.location?.pathname ?? '');
 	const proving = standIn ? null : proverOf({ prove, keep: proofs, vault, pageOf });
 	proving?.recall(pageOf());
-	const got = standIn ? await listedRows(url, { fetch: get, timeout }) : await listedRows(url, { vault, fetch: get, timeout });
+	const listed = () => (standIn ? listedRows(url, { fetch: get, timeout }) : listedRows(url, { vault, fetch: get, timeout }));
+	let got = await listed();
+	// a feed that doesn't answer yet (a server restarting) is asked again, the page told it waits, for `patience`; the
+	// page's device may bring Maia City meanwhile, and is read then
+	const first = Date.now();
+	let held = false;
+	try {
+		for (let i = 0; 'error' in got && got.passing && Date.now() - first < patience; i++) {
+			if (!held) {
+				held = true;
+				waits(1);
+			}
+			await new Promise((r) => setTimeout(r, again[Math.min(i, again.length - 1)] ?? 0));
+			const brought = device && !standIn ? await deviceRows(['recipe'], { vault, wait: 0 }) : null;
+			const read = brought && vaultRecipes(brought.filter(live), { read: readerOf(how, true) });
+			if (read && Object.keys(read.index.recipes).length) return ready(read, null, String(brought[0]?.vault ?? vault), 'this device');
+			got = await listed();
+		}
+	} finally {
+		if (held) waits(-1);
+	}
 	if ('error' in got) return couldNot(got.error);
 	const rows = got.rows.filter(live);
-	const read = vaultRecipes(rows, { read: readerOf(get, feed, kept, again) });
-	if (standIn) for (const h of Object.keys(read.index.recipes)) hashOfRow.set(read.rowOf(h), h);
+	const read = vaultRecipes(rows, { read: readerOf(how) });
 	if (!Object.keys(read.index.recipes).length)
 		return failed(`the Maia City vault holds no asset recipes yet: ${url} listed ${rows.length ? `${rows.length} entries, none of them one` : 'none'}${read.refused.length ? ` (${read.refused.slice(0, 3).join('; ')})` : ''}`);
+	return ready(read, proving, String(rows[0]?.vault ?? ''), url);
+}
+
+/**
+ * The recipes `read` in (a ./sources/avendb.js `vaultRecipes`), of vault `vault`, read from `from` (the feed's address,
+ * or this device): what the page knows of them now. `proving` proves each before it is built (`proverOf`); none for
+ * what the page's own device read, or the dev server's stand-in.
+ */
+function ready(read, proving, vault, from) {
+	if (!proving) for (const h of Object.keys(read.index.recipes)) hashOfRow.set(read.rowOf(h), h);
 	source = read;
 	prover = proving;
 	fill(read.index);
-	Object.assign(recipes, { phase: 'ready', vault: String(rows[0]?.vault ?? ''), count: Object.keys(INDEX.recipes).length, refused: [...read.refused] });
+	Object.assign(recipes, { phase: 'ready', feed: from, vault, count: Object.keys(INDEX.recipes).length, refused: [...read.refused] });
 	for (const r of read.refused) console.error(`asset recipes: refused, ${r}`);
 	tell();
 	return recipes;
@@ -374,11 +507,13 @@ let loading = null;
  * The vault's recipes, loaded once a page (and shared by every module of it): resolves to what the page knows of them
  * (`recipes`), ready or failed; never throws. With options, loaded again from there: `feed` where /feed/code is,
  * `fetch`, `timeout`, `kept` where the files are kept on the device (`{ get(hash), put(hash, bytes) }`, ./cache.js's
- * by default), `again` the waits before a dropped file is asked again (ms, `AGAIN`), `vault` the anchor (Maia City's
+ * by default), `again` the waits before a dropped file is asked again (ms, `AGAIN`), `patience` how long it is asked
+ * again at most (ms, `PATIENCE`), `lead` how long a file the page's device reads is read off it alone before the feed
+ * is asked too (ms, `READ`), `vault` the anchor (Maia City's
  * id, `MAIA_CITY`), `verify` and `proofs` how a proof is checked and where what it proved, and the proofs each page
  * asked for, are kept (game/code/sources/feed.js `provenRows`, `KEPT_PROOFS`), `page` the page's address (`location`'s
  * path): a test's, or a page's that asks again (`reloadRecipes`).
- * @param {{ feed?: string, fetch?: typeof globalThis.fetch, timeout?: number, kept?: { get: (hash: string) => any, put: (hash: string, bytes: Uint8Array) => any }, again?: number[], vault?: string, verify?: (bytes: Uint8Array, vault: string, kinds: string[]) => Promise<any[]>, proofs?: { get: (key: string) => any, put: (key: string, value: any) => void }, page?: () => string }} [o]
+ * @param {{ feed?: string, fetch?: typeof globalThis.fetch, timeout?: number, kept?: { get: (hash: string) => any, put: (hash: string, bytes: Uint8Array) => any }, again?: number[], patience?: number, lead?: number, vault?: string, verify?: (bytes: Uint8Array, vault: string, kinds: string[]) => Promise<any[]>, proofs?: { get: (key: string) => any, put: (key: string, value: any) => void }, page?: () => string }} [o]
  * @returns {Promise<typeof recipes>}
  */
 export const loadRecipes = (o) => (o ? (loading = load(o)) : (loading ??= load()));
@@ -395,22 +530,51 @@ const notIn = (what) =>
 	);
 
 /**
- * The hash a ref names in the Maia City vault: `plants/apple@2:variant?its=values`, its latest version when none is
- * named, its first variant when none is, never another variant than the one it names. Throws NotInVault naming the ref
- * for one the vault doesn't hold (and while the recipes aren't in), and tells it (`recipes.missed`).
- * @param {string} ref @returns {string}
+ * The hash a ref names in the Maia City vault: a pin, an asset by its entry and the heads of its version
+ * (`vault:<vault>/<entry>@<heads>?its=values`, or `{ entry, at }`, ./sources/avendb.js `PIN_REF`), or an old ref read
+ * through the entries' cards, `plants/apple@2:variant?its=values`, its latest version when none is named, its first
+ * variant when none is, never another variant than the one it names. Throws NotInVault naming the ref for one the
+ * vault doesn't hold (and while the recipes aren't in), and tells it (`recipes.missed`).
+ * @param {string | { entry: string, at: string[] }} ref @returns {string}
  */
 export function hashOf(ref) {
 	try {
-		if (!source) throw notIn(String(ref));
+		if (!source) throw notIn(typeof ref === 'string' ? ref : JSON.stringify(ref));
 		return source.hashOf(ref);
 	} catch (e) {
 		throw noted(e);
 	}
 }
 
-/** A build named from a label and its values: the hash the label names in the vault, the same values. @param {string} label */
-export const buildAt = (label) => buildOf(hashOf(label), parseRef(label).params);
+/** The values a ref names its build with, as text: a pin's, or an old ref's. @param {string | { params?: any }} ref */
+export const paramsOf = (ref) => {
+	const pin = parsePin(ref);
+	return pin ? pin.params : parseRef(/** @type {string} */ (ref)).params;
+};
+
+/** A build named from a ref and its values: the hash the ref names in the vault, the same values. @param {string} ref */
+export const buildAt = (ref) => buildOf(hashOf(ref), paramsOf(ref));
+
+/**
+ * A recipe's name, avenDB's alone ("Oats v1 · 1a2b3c4d…": its title, its version's number, its entry's short id), as
+ * every page shows it; its old ref while the recipes aren't in, or the hash's start for one the vault doesn't hold.
+ * @param {string} hash
+ */
+export const nameOf = (hash) => source?.nameOf(hash) ?? recipeInfo(hash)?.label ?? `recipe ${String(hash).slice(0, 12)}…`;
+
+/** The name of what a ref names in the vault (`nameOf`), or the ref itself where it names nothing, never told missed. */
+export function refName(ref) {
+	try {
+		const hash = source?.hashOf(ref);
+		if (hash) return nameOf(hash);
+	} catch {
+		// named as it is written
+	}
+	return typeof ref === 'string' ? ref : JSON.stringify(ref);
+}
+
+/** The pin that names a recipe of the vault, `{ vault, entry, at }`, where its rows say; undefined otherwise. */
+export const pinOf = (hash) => source?.pinOf(hash);
 
 /** What a hash names in the vault's index: its group, id, version, variant, label and parameters; undefined if none. */
 export const recipeInfo = (hash) => (typeof hash === 'string' && Object.hasOwn(INDEX.recipes, hash) ? INDEX.recipes[hash] : undefined);
@@ -435,13 +599,13 @@ export const declaredOf = (hash) => {
 };
 
 /**
- * A build's page: on the root, its recipe's hash as an address reads it ($lib/ids.js), its label in words (`?t=`,
+ * A build's page: on the root, its recipe's hash as an address reads it ($lib/ids.js), its name in words (`?t=`,
  * never one of its values), then its values, sorted ($lib/assets/AssetPage.svelte).
  * @param {string} base the site's base path @param {string} hash @param {Record<string, unknown>} [values]
  */
 export const pageOf = (base, hash, values) => {
 	const q = queryOf(values);
-	return `${base}/${idOf(hash)}/?t=${slug(recipeInfo(hash)?.label ?? '', 'asset')}${q ? `&${q}` : ''}`;
+	return `${base}/${idOf(hash)}/?t=${slug(recipeInfo(hash) ? nameOf(hash) : '', 'asset')}${q ? `&${q}` : ''}`;
 };
 
 /**
@@ -468,9 +632,9 @@ export async function provenAt(hash) {
 	if (!source || !at) throw noted(source ? new NotInVault(`no recipe ${String(hash).slice(0, 12)}… is in the Maia City vault`) : notIn(`recipe ${String(hash).slice(0, 12)}…`));
 	if (!prover) return source;
 	const got = await prover.want(source.rowOf(hash).entry);
-	if ('error' in got) throw noted(new NotInVault(`${at.label}: not built, as its proof didn't check out: ${got.error}`));
+	if ('error' in got) throw noted(new NotInVault(`${nameOf(hash)}: not built, as its proof didn't check out: ${got.error}`));
 	if (got.source.index.recipes[hash]?.label !== at.label)
-		throw noted(new NotInVault(`${at.label}: refused, Maia City's signed edits don't hold recipe ${hash.slice(0, 12)}… as ${at.label}, as the listing says`));
+		throw noted(new NotInVault(`${nameOf(hash)}: refused, Maia City's signed edits don't hold recipe ${hash.slice(0, 12)}… as the listing says`));
 	return got.source;
 }
 

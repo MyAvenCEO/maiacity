@@ -971,8 +971,9 @@ asks `may` before it shows a button, and words what comes back.
 - **On a node.** `Node::run(op, bytes, authenticator)` (`crates/avendb-net/src/run.rs`) runs it on a node, and does
   what a Lab alone can't: `world` adds where each entry and file is synced to, `read_file`, `put_file` and a `create`
   with a `file` (`engine::brings`) carry the file's bytes beside the op, `jobs` tells its background work, a change the
-  vault's owners approve has the passkey sign it in a ceremony, every change is told to the device's peers, and `follow`
-  asks every peer again at once.
+  vault's owners approve has the passkey sign it in a ceremony, every change is told to the device's peers, `follow`
+  asks every peer again at once, `bring` asks them for some vaults before the rest, and `synced` tells how far the
+  device is synced with them.
 
 Every caller goes through `Node::run`:
 
@@ -1026,6 +1027,9 @@ without padding). `share`, `share_group`, `revoke`, `settings` and `found` may a
 | `log` | none | Every signed edit the device holds, in words, each that acts for a vault with its `chain` |
 | `read_file` | `root`, `size`, `from`, `to` | `{root, from, to, len}` and the bytes beside; `NoCap` for a file the device doesn't open |
 | `jobs` | none | What the node does in the background (`Node::jobs`): `{running, ended}`, the last 200 that ended, newest first |
+| `code` | `vault`, `type` | The vault's public code the device holds, of the kinds `type` names (`world::CODE_KINDS`, all for none), in the rows avenDB's server's feed serves (`/feed/code`, `world::public_entries_of`): what a page that holds a device runs its games, sandboxes and asset recipes from, checked edit by edit as the device took them, with no proof |
+| `bring` | `vaults` | Each peer the device knows asked at once for the entries of 1 to 64 vaults (`Node::bring`), until one answers whole: `{new, peers, reached}`, how many edits were new, how many peers it asked, and whether one answered whole |
+| `synced` | none | How far the device is synced with the peers it is connected to, by the holdings each told it: `{peers, logs, behind, pulling}`, how many told it, how many logs they hold between them, how many of those hold edits the device lacks, and how many pulls run now |
 | `creatable` | `vault`, `type`, `tags`, `draft`, `as` | The tags a new entry, or with `draft` a draft, needs to land where vault `as` may create it, or `NoCap` |
 | `taggable` | `entry`, `as` | The tags `as` may add or take off: `"any"`, or a list |
 | `may` | `ops`, `as` | For each change op: `true`, `{"approve": {signers}}`, or the refusal |
@@ -1557,8 +1561,11 @@ grow big. `GET avendb.maia.city/feed/entry/<vault>/<entry>` serves any one of th
 `{"error": ...}`, not found, for an entry that isn't public, that is deleted or that the server doesn't hold.
 An entry whose writes bring files more than once, as an asset does, one write for each of its versions and variants,
 also lists each such write (`brought`, `Lab::brought`), on its main line and on each of its variants, main's first:
-`{edit, line, version, files, record}`, the line whose history holds it (`null` for main's), the version of main it
-belongs to (`engine::main_version`), the files it brings and the record at it, read as the row's own is.
+`{edit, line, version, at, files, record}`, the line whose history holds it (`null` for main's), the version of main
+it belongs to (`engine::main_version`), the heads a pin of it names (`engine::version_heads`: of main's, that release
+of main; of a variant's, the write itself), the files it brings and the record at it, read as the row's own is. An
+entry that brought a file once, on its main line, lists those heads as the row's own `at`. A page pins an asset by
+the entry's id and those heads (`pin`), never by a slug its card names.
 `GET avendb.maia.city/feed/entry/<vault>/<entry>/file` serves the newest of a code row's `files` whole, a recipe's
 source, say, up to 32 MiB (`LARGEST`), as `text/plain; charset=utf-8` with `X-Content-Type-Options: nosniff`, so no
 page runs it as a script; not found, as text, for any other entry, or one that brings no file;

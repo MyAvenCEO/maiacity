@@ -1,8 +1,8 @@
 <!--
-	AN ASSET'S BUILD ON ITS OWN PAGE — /<its recipe's hash>/?t=<its label>&its=values, on the root as a Universe post is
+	AN ASSET'S BUILD ON ITS OWN PAGE — /<its recipe's hash>/?t=<its name>&its=values, on the root as a Universe post is
 	(src/routes/[doc=doc], $lib/ids.js). The address names the build and nothing else: the recipe by the BLAKE3 hash of
-	its bytes, read in base32, and the values it is built with; `?t=` is only its label (plants/apple@2) in words, so
-	the address reads, and is never one of its values. The build loads as every build does (./load.js): from this
+	its bytes, read in base32, and the values it is built with; `?t=` is only its name as avenDB gives it (Apple v2 ·
+	1a2b3c4d…) in words, so the address reads, and is never one of its values. The build loads as every build does (./load.js): from this
 	device's cache when it was built here before, else in the box, checked either way, its recipe the Maia City vault's
 	(./vault.js, loaded before this page is: src/routes/[doc=doc]/+page.js). Each value the recipe declares
 	can be changed here, and the address follows, written the one way that build is named: every value, sorted. Its
@@ -23,7 +23,7 @@
 	import { OBJECT_GROUPS } from './groups.js';
 	import { boxOf, canonical, loadAsset } from './load.js';
 	import { valuesOf } from './params.js';
-	import { INDEX, pageOf } from './vault.js';
+	import { INDEX, nameOf, pageOf } from './vault.js';
 
 	let { hash } = $props();
 
@@ -32,7 +32,7 @@
 
 	const hrefOf = (h, values) => pageOf(base, h, values);
 
-	// the values the address gives, as text: every one but the label
+	// the values the address gives, as text: every one but its words (`t`)
 	const given = $derived(Object.fromEntries([...page.url.searchParams].filter(([k]) => k !== 't')));
 	const asked = $derived.by(() => {
 		const q = new URLSearchParams([...page.url.searchParams].filter(([k]) => k !== 't')).toString();
@@ -204,8 +204,8 @@
 </script>
 
 <svelte:head>
-	<title>{built?.card.label ?? at.label} · Game Assets · maiaCITY</title>
-	<meta name="description" content="{at.label}: a build of its recipe, named by its BLAKE3 hash." />
+	<title>{built?.card.label ?? nameOf(hash)} · Game Assets · maiaCITY</title>
+	<meta name="description" content="{nameOf(hash)}: a build of its recipe, named by its BLAKE3 hash." />
 </svelte:head>
 
 <main class="wrap asset">
@@ -213,7 +213,7 @@
 
 	<header>
 		<p class="eyebrow">{OBJECT_GROUPS[at.group]?.label ?? at.group}</p>
-		<h1>{built?.card.label ?? at.label}</h1>
+		<h1>{built?.card.label ?? nameOf(hash)}</h1>
 		{#if built?.card.note}<p class="note">{built.card.note}</p>{/if}
 	</header>
 
@@ -277,8 +277,8 @@
 			<section>
 				<h2>This build</h2>
 				<dl>
-					<dt>Label</dt>
-					<dd><code>{at.label}</code></dd>
+					<dt>Name</dt>
+					<dd>{nameOf(hash)}</dd>
 					<dt>Recipe</dt>
 					<dd><code class="hash">{hash}</code><small>the BLAKE3 hash of its bytes</small></dd>
 					{#if built}
@@ -299,7 +299,7 @@
 					<h2>Other builds of it</h2>
 					<ul class="kin">
 						{#each kin as k (k.hash)}
-							<li><a href={k.href} aria-current={k.here ? 'page' : undefined}>{k.at.label.slice(k.at.label.indexOf('@'))}</a></li>
+							<li><a href={k.href} aria-current={k.here ? 'page' : undefined}>{nameOf(k.hash)}</a></li>
 						{/each}
 					</ul>
 				</section>
