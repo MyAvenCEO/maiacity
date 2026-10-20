@@ -44,7 +44,7 @@
 import { holds } from '../../../game/hash.js';
 import { idOf, slug } from '$lib/ids.js';
 import { CODE_FEED, KEPT_PROOFS, MAIA_CITY, NO_ANCHOR, fileOf, listedRows, listingOf, proofOf, provenRows, seedFeedOf } from '../../../game/code/sources/feed.js';
-import { READ, deviceFile, deviceRows, whenBrought } from '../../../game/code/sources/device.js';
+import { READ, deviceFile, deviceOf, deviceRows, whenBrought } from '../../../game/code/sources/device.js';
 import { KEPT_NEWEST, fresh } from '../../../game/code/fresh.js';
 import { buildOf } from './builds.js';
 import * as cache from './cache.js';
@@ -152,9 +152,11 @@ function waits(n) {
  * server couldn't hand it out yet, until `patience` passed since it was first asked; meanwhile the page is told it waits
  * (`recipes.waiting`), and every file holds back with it (`calm`). What failed the last time is said, and how often it
  * was asked, and whether it failed only in passing (`passing`).
+ * `signal` stops it (the page's device handed the file over meanwhile: `eitherOf`).
  * @param {typeof globalThis.fetch} get @param {string} url @param {number[]} again @param {number} [patience]
+ * @param {AbortSignal} [signal]
  */
-async function fetched(get, url, again, patience = PATIENCE) {
+async function fetched(get, url, again, patience = PATIENCE, signal) {
 	const first = Date.now();
 	let waiting = false;
 	try {
@@ -162,8 +164,14 @@ async function fetched(get, url, again, patience = PATIENCE) {
 			/** what failed this time, and whether asking again may help */
 			let failed, retry;
 			await calmTurn();
+			if (signal?.aborted) {
+				done();
+				throw new Error('read off this device instead');
+			}
 			const ctl = new AbortController();
 			const t = setTimeout(() => ctl.abort(), TIMEOUT.file);
+			const stop = () => ctl.abort();
+			signal?.addEventListener('abort', stop, { once: true });
 			try {
 				const res = await get(url, { signal: ctl.signal });
 				if (res.ok) {
@@ -177,8 +185,11 @@ async function fetched(get, url, again, patience = PATIENCE) {
 				[failed, retry] = [e instanceof Error ? e : new Error(String(e)), true];
 			} finally {
 				clearTimeout(t);
+				signal?.removeEventListener('abort', stop);
 				done();
 			}
+			// stopped, not failed: the feed is none the worse for it
+			if (signal?.aborted) throw new Error('read off this device instead');
 			if (!retry || (i >= again.length && Date.now() - first >= patience)) {
 				const out = i ? new Error(`${failed.message}, asked ${i + 1} times`) : failed;
 				// failed in passing however long it was asked: the file may well be there (./sources/avendb.js `Unread`)
@@ -291,7 +302,10 @@ async function eitherOf(own, off, fits, lead) {
 	const late = new Promise((r) => (t = setTimeout(() => r(null), lead)));
 	const first = await Promise.race([mine.catch(() => null), late]).finally(() => clearTimeout(t));
 	if (first) return first;
-	const theirs = off();
+	// the feed's read stops once the device handed the file over: never asked again in the background, nor a turn held
+	const stop = new AbortController();
+	const theirs = off(stop.signal);
+	mine.then(() => stop.abort(), () => {});
 	return Promise.any([mine, theirs]).catch(() => theirs);
 }
 
@@ -314,7 +328,7 @@ const readerOf = ({ get, feed, kept, again, patience, lead }, local = false) => 
 	const file = Array.isArray(row?.files) ? row.files.at(-1) : undefined;
 	if (!file) throw new Error('its entry brings no file');
 	if (typeof file.len === 'number' && file.len > MOST) throw new Error(`its file is ${file.len.toLocaleString('en')} bytes, more than a recipe may be (${MOST.toLocaleString('en')})`);
-	const off = () => fetched(get, fileOf(row.vault, row.entry, feed, row.edit ? file.root : undefined), again, patience);
+	const off = (/** @type {AbortSignal | undefined} */ signal) => fetched(get, fileOf(row.vault, row.entry, feed, row.edit ? file.root : undefined), again, patience, signal);
 	const fits = (/** @type {any} */ b) => b instanceof Uint8Array && (!hash || holds(b, hash));
 	reads(+1);
 	try {
@@ -564,10 +578,19 @@ let loading = null;
  * @param {{ newest?: { get: (key: string) => any, put: (key: string, value: any) => void }, feed?: string, fetch?: typeof globalThis.fetch, timeout?: number, kept?: { get: (hash: string) => any, put: (hash: string, bytes: Uint8Array) => any }, again?: number[], patience?: number, lead?: number, vault?: string, verify?: (bytes: Uint8Array, vault: string, kinds: string[]) => Promise<any[]>, proofs?: { get: (key: string) => any, put: (key: string, value: any) => void }, page?: () => string }} [o]
  * @returns {Promise<typeof recipes>}
  */
-export const loadRecipes = (o) => (o ? (loading = load(o)) : (loading ??= load()));
+export function loadRecipes(o) {
+	const d = deviceOf();
+	if (o) return ((loadedWith = d), (loading = load(o)));
+	// a device the page opened since they were read off the feed (or failed to be): read again, off it (local first)
+	if (loading && d && d !== loadedWith && recipes.feed !== 'this device') loading = null;
+	loadedWith = d;
+	return (loading ??= load());
+}
+/** the device the recipes were last asked for with (game/code/sources/device.js `deviceOf`) */
+let loadedWith = /** @type {any} */ (undefined);
 
 /** the recipes loaded again, from the feed they were loaded from (a page whose load failed asks again) */
-export const reloadRecipes = () => (loading = load());
+export const reloadRecipes = () => ((loadedWith = deviceOf()), (loading = load()));
 
 /** why a ref can't be built while the recipes aren't in @param {string} what */
 const notIn = (what) =>
@@ -680,7 +703,9 @@ export async function provenAt(hash) {
 	if (!source || !at) throw noted(source ? new NotInVault(`no recipe ${String(hash).slice(0, 12)}… is in the Maia City vault`) : notIn(`recipe ${String(hash).slice(0, 12)}…`));
 	if (!prover) return source;
 	const got = await prover.want(source.rowOf(hash).entry);
-	if ('error' in got) throw noted(new NotInVault(`${nameOf(hash)}: not built, as its proof didn't check out: ${got.error}`));
+	// a proof the server couldn't give, however long the page asked (`prove`), may well be there: told apart (`Unread`),
+	// and a world asks again for what waited on it
+	if ('error' in got) throw noted(new (got.passing ? Unread : NotInVault)(`${nameOf(hash)}: not built, as its proof didn't check out: ${got.error}`));
 	if (got.source.index.recipes[hash]?.label !== at.label)
 		throw noted(new NotInVault(`${nameOf(hash)}: refused, Maia City's signed edits don't hold recipe ${hash.slice(0, 12)}… as the listing says`));
 	return got.source;

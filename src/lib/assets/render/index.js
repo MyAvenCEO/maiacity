@@ -39,6 +39,9 @@ import { createPresets } from './presets.js';
 /** the details a recipe that takes one is built at, its finest level first (plants: Sandbox 4's two and the whole) */
 export const DETAILS = [1, 0.25, 0.1];
 
+/** after how long (ms) a kind that failed only in passing (`Unread`) is asked for again (`settle`) */
+const AGAIN_AFTER = 60_000;
+
 /** a = a × b, 4 × 4 matrices as three.js keeps them (by column), each at its offset in its array */
 function multiply(a, ai, b, bi, out, oi) {
 	for (let c = 0; c < 4; c++) {
@@ -235,7 +238,16 @@ export function createAssets(o) {
 			rank: opts?.rank ?? null
 		};
 		kinds.set(key, k);
-		// the coarsest shape built first: its measure is the kind's, and its picture is taken from it
+		settle(k);
+		return k;
+	}
+
+	/**
+	 * A kind's coarsest shape built first: its measure is the kind's, and its picture is taken from it. One that failed
+	 * only in passing (`Unread`: its recipe's proof or file wasn't handed over, as the vault's server restarted) is asked
+	 * again after `AGAIN_AFTER`, so it comes once the server is back, never missing for as long as the world is open.
+	 */
+	function settle(k) {
 		k.ready = want(k, k.base, true).then(
 			() => {
 				const L = k.levels[k.base].level;
@@ -250,11 +262,17 @@ export function createAssets(o) {
 			},
 			(err) => {
 				k.error = String(err?.message ?? err);
-				console.warn(`assets: ${at.label} did not load: ${k.error}`);
+				console.warn(`assets: ${k.label} did not load: ${k.error}`);
+				if (err?.name === 'Unread')
+					setTimeout(() => {
+						if (gone) return;
+						for (const lv of k.levels) if (lv.state === 'failed') lv.state = 'idle';
+						k.error = null;
+						settle(k);
+					}, AGAIN_AFTER);
 				return k;
 			}
 		);
-		return k;
 	}
 
 	/** a kind's thresholds by its coarsest shape: as it came, or, while it is being made, by what it may cost */

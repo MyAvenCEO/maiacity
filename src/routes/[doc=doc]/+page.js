@@ -12,6 +12,8 @@ export const load = async ({ params }) => {
 	// a recipe of the Maia City vault, by its BLAKE3 hash ($lib/assets/vault.js, its recipes loaded first); only then the
 	// asset's page and three.js load. A vault whose recipes can't be loaded says so on the page, where no post is found
 	const { INDEX, loadRecipes } = await import('$lib/assets/vault.js');
+	// read off the person's own avenDB first: in the Mac app the app's device, which a page outside /app/ finds once it asks
+	if (hash) await import('$lib/avendb/local.js').then(({ localDevice }) => localDevice());
 	const recipes = hash ? await loadRecipes() : null;
 	if (!hash || !INDEX.recipes[hash]) return { doc: params.doc, ...(recipes?.phase === 'failed' ? { recipes: recipes.error } : {}) };
 	const { default: AssetPage } = await import('$lib/assets/AssetPage.svelte');
