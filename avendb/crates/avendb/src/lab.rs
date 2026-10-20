@@ -95,7 +95,7 @@ use crate::lens::{self, Lane, Lens, Schema, View};
 use crate::merge;
 use crate::ops::Loc;
 use crate::policy::{
-    mk_audience, replay, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log, Meaning,
+    mk_audience, replay, replay_on, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log, Meaning,
     Principal, Proposal, Readings, Refusal, Replay, Share, Sharing, State, Who, Write,
 };
 use crate::recovery::RecoveryKey;
@@ -344,6 +344,8 @@ struct Store {
     blobs: Blobs,
     /// The replay of its edits as it last brought itself up to date: which stand, and what it knows.
     replay: Replay,
+    /// How many of its edits that replay is of, the first of its log: those after it step on it (`replay_on`).
+    replayed: usize,
     /// What its edits say now, those it kept since that replay too (`Lab::latest`): replayed once for the edits it
     /// holds now, not on every ask, announce and fetch.
     latest: OnceLock<State>,
@@ -380,6 +382,7 @@ impl Default for Store {
             signed: HashMap::new(),
             blobs: HashMap::new(),
             replay: replay(&[]),
+            replayed: 0,
             latest: OnceLock::new(),
             keys: Keyring::default(),
             derived: HashSet::new(),
@@ -617,6 +620,8 @@ pub struct Lab {
     now: u64,
     /// A dry run (`dry`): a write is checked, proven and refused as ever, and then not made.
     dry: bool,
+    /// The devices whose writes were kept while catching up was held back (`together`): each catches up once it ends.
+    held_back: Option<BTreeSet<SignerId>>,
     /// Its devices are a patched app's (`patched`): they ignore the ops of the shares they write through, and the
     /// schemas of what they write.
     lawless: bool,
@@ -656,6 +661,7 @@ impl Lab {
             offline: HashSet::new(),
             now: 0,
             dry: false,
+            held_back: None,
             lawless: false,
             recovery: None,
         };
@@ -1478,6 +1484,12 @@ impl Lab {
     /// name. True if there were any.
     fn keep_fresh(&mut self, to: SignerId, fresh: Vec<Signed>, blobs: &Blobs) -> bool {
         let Some(store) = self.stores.get_mut(&to) else { return false };
+        // its own write, one, drafted on everything it holds: what its edits say now is what they said, that write
+        // stepped on, with no replay (`latest`)
+        let stepped = match &fresh[..] {
+            [one] => store.latest.get().and_then(|was| stepped_on(was, store.log.edits(), to, &one.edit)),
+            _ => None,
+        };
         let mut new = false;
         for signed in fresh {
             let id = signed.edit.id();
@@ -1493,6 +1505,10 @@ impl Lab {
         if new {
             store.digests = None;
             store.latest = OnceLock::new();
+            if let Some(state) = stepped {
+                debug_assert!(state == store.log.view(), "a write stepped on differs from the replay");
+                let _ = store.latest.set(state);
+            }
         }
         new
     }
@@ -1928,7 +1944,11 @@ impl Lab {
         for round in 0.. {
             let Lab { stores, rng, spares, .. } = self;
             let Some(store) = stores.get_mut(&d) else { return };
-            store.replay = replay(store.log.edits());
+            let was = std::mem::replace(&mut store.replay, replay(&[]));
+            store.replay = replay_on(was, store.log.edits(), store.replayed);
+            store.replayed = store.log.edits().len();
+            debug_assert!(store.replay == replay(store.log.edits()), "a replay stepped on differs from the whole");
+            store.latest = OnceLock::from(store.replay.state.clone());
             // a locked device holds no key, and opens nothing
             if !unlocked {
                 return;
@@ -2065,6 +2085,22 @@ impl Lab {
         let was = std::mem::replace(&mut self.dry, true);
         let out = f(self);
         self.dry = was;
+        out
+    }
+
+    /// Run `f` with each device's catching up after its writes (`refresh`) held back until `f` ends, then done once:
+    /// for an op that makes several writes none of which reads what another made, as an AIP's review accepting each
+    /// of its lines in turn, the whole log replayed once instead of once a write. Within `f` a device's histories and
+    /// items are as before its first write; what it checks a write by (`latest`) has every write it kept.
+    pub fn together<T>(&mut self, f: impl FnOnce(&mut Lab) -> T) -> T {
+        if self.held_back.is_some() {
+            return f(self);
+        }
+        self.held_back = Some(BTreeSet::new());
+        let out = f(self);
+        for d in self.held_back.take().unwrap_or_default() {
+            self.refresh(d, &[]);
+        }
         out
     }
 
@@ -2733,7 +2769,10 @@ impl Lab {
             return Ok(edit.id());
         }
         let id = self.seal_write(on, edit, body, x)?;
-        self.refresh(on, &[]);
+        match &mut self.held_back {
+            Some(devices) => _ = devices.insert(on),
+            None => self.refresh(on, &[]),
+        }
         Ok(id)
     }
 
@@ -3181,6 +3220,7 @@ impl Lab {
             offline: HashSet::new(),
             now: self.now,
             dry: false,
+            held_back: None,
             lawless: false,
             recovery: self.recovery.clone(),
         }
@@ -4313,6 +4353,19 @@ impl<'a> Judging<'a> {
         let items = lines.filter_map(|l| Some((l, history.item(l, d)?))).collect();
         Shown { history, items, print }
     }
+}
+
+/// What `was`, the replay of `held`, says once `edit` steps on it, where that is the replay of `held` and `edit`: a write
+/// device `on` authored, deeper than every edit held, so it sorts last, and no removal, so it cuts nothing before it
+/// and no removal's standing turns on it (`policy::replay`). None for any other edit, or one `was` refuses.
+fn stepped_on(was: &State, held: &[Edit], on: SignerId, edit: &Edit) -> Option<State> {
+    let last = held.iter().all(|e| e.depth < edit.depth);
+    if edit.author != on || !matches!(edit.action, Action::Write { .. }) || edit.is_removal() || !last {
+        return None;
+    }
+    let mut state = was.clone();
+    state.step_mut(edit, edit.id()).ok()?;
+    Some(state)
 }
 
 /// A vault of kind `kind` takes a device by a claim (`Lab::claim`, `Lab::accept_claim`): a device vault, an agent's or
