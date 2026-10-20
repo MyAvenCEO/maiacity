@@ -4,7 +4,7 @@
 // (./vaults.js `serverCity`).
 // Run: bun test src/lib/avendb/capgroups.test.js
 import { describe, expect, test } from 'bun:test';
-import { ADMIN, CAP_GROUPS, CITIZEN, TRAVELER, capGroupOps, heldGroups } from './capgroups.js';
+import { ADMIN, CAP_GROUPS, CITIZEN, TRAVELER, capGroupOps, groupHolders, heldGroups, moveOps } from './capgroups.js';
 import { refs } from './ops.js';
 import { serverCity } from './vaults.js';
 
@@ -93,5 +93,39 @@ describe('Maia City, to anyone', () => {
 		expect(serverCity({ mine: ME, vaults, shares: [keeps(SERVER, { whole: false })] })).toBeUndefined();
 		expect(serverCity({ mine: ME, vaults, shares: [keeps(FAKE_AVEN)] })).toBeUndefined();
 		expect(serverCity({ mine: ME, vaults, shares: [keeps(SERVER, { over: SAM })] })).toBeUndefined();
+	});
+});
+
+describe('the Vaults app', () => {
+	const [BOB, KEY] = ['b'.repeat(64), 'k'.repeat(64)];
+	const row = (o) => ({ kind: 'grant', id: 's1', over: CITY, who: { vault: BOB }, group: TRAVELER, capGroup: T, issuer: CITY, ...o });
+
+	test('reads who holds which group, and the invites still open', () => {
+		const { held, invites } = groupHolders([
+			{ kind: 'owner', id: null, who: { vault: ME }, group: 'Owner', capGroup: null },
+			row({}),
+			row({ id: 's2', group: 'Public', capGroup: null, who: 'everyone' }),
+			row({ id: 's3', who: { invite: KEY } })
+		]);
+		expect([...held]).toEqual([[BOB, [{ share: 's1', group: T, name: TRAVELER }]]]);
+		expect(invites).toEqual([{ share: 's3', group: T, name: TRAVELER, issuer: CITY }]);
+	});
+
+	test('makes a traveler a citizen: the Citizen share first, then the Traveler one revoked', () =>
+		expect(moveOps(CITY, BOB, CITIZEN, groups, [{ share: 's1', name: TRAVELER }])).toEqual([
+			{ op: 'share_group', over: CITY, group: C, who: { vault: BOB }, as: CITY },
+			{ op: 'revoke', share: 's1', as: CITY }
+		]));
+
+	test('and back, and nothing where they hold it alone already', () => {
+		expect(moveOps(CITY, BOB, TRAVELER, groups, [{ share: 's2', name: CITIZEN }])).toEqual([
+			{ op: 'share_group', over: CITY, group: T, who: { vault: BOB }, as: CITY },
+			{ op: 'revoke', share: 's2', as: CITY }
+		]);
+		expect(moveOps(CITY, BOB, TRAVELER, groups, [{ share: 's1', name: TRAVELER }])).toEqual([]);
+		// holding both, the other is revoked alone
+		expect(moveOps(CITY, BOB, CITIZEN, groups, [{ share: 's1', name: TRAVELER }, { share: 's2', name: CITIZEN }])).toEqual([
+			{ op: 'revoke', share: 's1', as: CITY }
+		]);
 	});
 });

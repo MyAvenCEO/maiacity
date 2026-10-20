@@ -1201,6 +1201,42 @@ pub fn pass_standing(lab: &Lab, me: SignerId, pass: &ApiPass, audience: &str, no
     lab.device_standing(me, city, pass.device(audience, now)?)
 }
 
+/// The service a device's pass names to have avenDB's server list the vaults it knows (G4, `Gate.lean`'s
+/// `vaultsAudience`): a name of its own, so a pass made for maiaCITY's API never lists them.
+pub const VAULTS_AUDIENCE: &str = "avenDB vaults";
+
+/// What avenDB's server, device `me`, answers pass `pass` asking at `now` for the vaults it knows (G4, `Gate.lean`'s
+/// `keptVaults`), as the Vaults app of Maia City's admins lists them: where the pass counts for `VAULTS_AUDIENCE` and
+/// its device's vault is an admin of Maia City (`pass_standing`), every vault the server knows, in the order they were
+/// founded, each `{id, kind, name, owners, devices, entries, keeps}`: its name where the server reads it, its owners
+/// (`{"vault"}` or `{"signer"}`), how many devices act for it, how many of its entries the server holds, and what the
+/// server keeps of it, `"backup"` (an encrypted copy of the whole), `"relay"` (it passes its edits on) or `"known"` (it
+/// knows the vault alone, from another's edits). `None` for any other pass.
+pub fn kept_vaults(lab: &Lab, me: SignerId, pass: &ApiPass, now: u64) -> Option<Vec<Value>> {
+    let (_, true) = pass_standing(lab, me, pass, VAULTS_AUDIENCE, now)? else { return None };
+    let (st, mine) = (lab.state(me), lab.vault_of(me)?);
+    let keeps = |v: VaultId| {
+        let wide = |level: Level| st.shares_over(v).any(|cp| cp.share.wide && st.holds(mine, cp, level));
+        if v == mine || wide(Level::Backup) { "backup" } else if wide(Level::Relay) { "relay" } else { "known" }
+    };
+    let mut entries: BTreeMap<VaultId, usize> = BTreeMap::new();
+    for en in st.entries() {
+        *entries.entry(en.vault).or_default() += 1;
+    }
+    let row = |v: &Vault| {
+        json!({
+            "id": hex(&v.id.0),
+            "kind": kind_name(v.kind),
+            "name": profile_of(lab, me, v.id).map(|(_, name)| name),
+            "owners": v.owners.iter().map(|&p| crate::words::principal_json(p)).collect::<Vec<_>>(),
+            "devices": v.devices.len(),
+            "entries": entries.get(&v.id).copied().unwrap_or(0),
+            "keeps": keeps(v.id),
+        })
+    };
+    Some(st.vaults().iter().map(row).collect())
+}
+
 /// The seed device `me`'s person's claim of the server founded, by its view, in `SEED_NAMES`' order: Maia City and
 /// avenMAIA, its aven, the server's vault (`seeded`); for avenDB's server itself, a device of avenMAIA, the seed that
 /// ends in its vault (`seeder`). None if it founded none.
