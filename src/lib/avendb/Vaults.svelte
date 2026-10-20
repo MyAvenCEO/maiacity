@@ -8,7 +8,8 @@
 
 	The server lists its vaults to an admin of Maia City alone, by a pass this device signs for that listing (the
 	`api_pass` op, `POST /feed/vaults`, avendb/spec/AvenDB/Gate.lean G4), never by a key of the page's. The roles are
-	the shares over Maia City that name a cap group (the `shares` op, ./capgroups.js `groupHolders`), changed as Maia City
+	the shares over Maia City that name a cap group, as the device's world shows them (./capgroups.js `groupHolders`;
+	the `shares` op dry-runs a revocation of every row, too slow over a vault Maia City's size), changed as Maia City
 	itself, through the person's vault that owns it: a share of the new group first, then the old one revoked
 	(`moveOps`), so nobody stands with neither. An invite is a share to a one-time key ($lib/app/access.svelte.js
 	`makeInvite`), cancelled by revoking it. The admin's own vault, Maia City's owners and every Admin holder keep their
@@ -45,9 +46,10 @@
 	 */
 	let kept = $state(/** @type {Kept[] | null} */ (null));
 	let why = $state('');
-	let loading = $state(false);
-	/** the shares over Maia City, as the `shares` op lists them, for the roles and the invites */
-	let rows = $state(/** @type {import('./vaults.js').ShareRow[]} */ ([]));
+	/** what the page waits on now, as the person reads it, '' for nothing */
+	let step = $state('');
+	/** How long the page waits on the device's pass, and on the server's answer, before it says which didn't answer (ms). */
+	const WAIT = 20000;
 
 	/** what the left side picked: a kind, every kind (''), or the invites */
 	let view = $state(/** @type {'' | 'invites' | (typeof ORDER)[number]} */ (''));
@@ -61,7 +63,9 @@
 	const city = $derived(access.city);
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const keptById = $derived(new Map((kept ?? []).map((v) => [v.id, v])));
-	const holders = $derived(groupHolders(rows));
+	/** a vault's id, by what this device or the server knows: any other share's grantee is an invite's key */
+	const known = $derived(new Set([...byId.keys(), ...keptById.keys()]));
+	const holders = $derived(groupHolders(world.shares, city, access.list, (id) => known.has(id)));
 	/** the vaults whose roles stay as they are: the person's own, Maia City, and the vaults that own it */
 	const ours = $derived(
 		new Set([world.mine, city, ...(byId.get(city)?.owners ?? []).flatMap((o) => ('vault' in o ? [o.vault] : []))])
@@ -100,47 +104,50 @@
 	);
 	const vault = $derived(all.find((v) => v.id === picked));
 
-	/** Reads the server's vaults with a pass this device signs for it, and the shares over Maia City. */
-	async function load() {
-		if (session.phase !== 'open' || loading) return;
-		[loading, why] = [true, ''];
-		try {
-			await Promise.all([readShares(), readKept()]);
-		} finally {
-			loading = false;
-		}
+	/** `promise`, or after `WAIT` an error saying that `who` didn't answer. @template T
+	 *  @param {string} who @param {Promise<T>} promise @returns {Promise<T>} */
+	function within(who, promise) {
+		/** @type {ReturnType<typeof setTimeout> | undefined} */
+		let timer;
+		const late = new Promise((_, no) => {
+			timer = setTimeout(() => no(new Error(`${who} didn’t answer in ${WAIT / 1000} seconds.`)), WAIT);
+		});
+		return /** @type {Promise<T>} */ (Promise.race([promise, late])).finally(() => clearTimeout(timer));
 	}
 
-	async function readKept() {
+	/** Reads the server's vaults with a pass this device signs for it, each step given `WAIT` to answer. */
+	async function load() {
+		if (session.phase !== 'open' || step) return;
+		why = '';
 		try {
-			const got = await session.ask({ op: 'api_pass', audience: AUDIENCE });
+			step = 'Asking this device for a pass';
+			const got = await within('This device', session.ask({ op: 'api_pass', audience: AUDIENCE }));
 			if (!got?.ok?.pass) throw new Error(got?.why || 'This device made no pass.');
-			const r = await fetch(`${feed()}/vaults`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ pass: got.ok.pass })
-			});
+			step = 'Asking the server for its vaults';
+			const r = await within(
+				'avenDB’s server',
+				fetch(`${feed()}/vaults`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({ pass: got.ok.pass })
+				})
+			);
 			const body = await r.json().catch(() => ({}));
 			if (r.status === 403) throw new Error('The server lists its vaults to an admin of Maia City alone.');
 			if (!r.ok || !Array.isArray(body.vaults)) throw new Error(body.error || `The server answered ${r.status}.`);
 			kept = body.vaults;
 		} catch (e) {
 			why = `${/** @type {Error} */ (e).message} Below are the vaults this device knows.`;
+		} finally {
+			step = '';
 		}
-	}
-
-	async function readShares() {
-		if (!city) return void (rows = []);
-		const got = await session.ask({ op: 'shares', over: city, as: city });
-		rows = got?.ok?.rows ?? [];
 	}
 
 	/** Makes human vault `id` a `to` of Maia City, Traveler or Citizen. @param {string} id @param {'Traveler' | 'Citizen'} to */
 	async function move(id, to) {
 		const ops = moveOps(city, id, to, access.list, holders.held.get(id) ?? []);
 		if (!ops.length) return;
-		const done = await api.runAll(`Making ${name(id)} a ${to.toLowerCase()}`, ops);
-		if (done) await readShares();
+		await api.runAll(`Making ${name(id)} a ${to.toLowerCase()}`, ops);
 	}
 
 	/** Makes an invite for one new human, a traveler of Maia City, its link copied to hand them. */
@@ -152,24 +159,21 @@
 		} catch (e) {
 			session.error = /** @type {Error} */ (e).message;
 		}
-		await readShares();
 	}
 
 	/** Cancels the invite of share `share`: revoked, its link opens nothing. @param {string} share */
 	async function cancel(share) {
-		const done = await api.run('Cancelling the invite', { op: 'revoke', share, as: city });
-		if (done) await readShares();
+		await api.run('Cancelling the invite', { op: 'revoke', share, as: city });
 	}
 
 	onMount(() => {
 		readAccess();
 	});
-	// once avenDB is open and Maia City is known, and again as the world the device shows changes Maia City's shares
-	let read = '';
+	// once avenDB is open: the roles and invites are the device's world's own shares, read as it changes
+	let read = false;
 	$effect(() => {
-		const at = `${session.phase}:${city}`;
-		if (session.phase !== 'open' || at === read) return;
-		read = at;
+		if (session.phase !== 'open' || read) return;
+		read = true;
 		load();
 	});
 </script>
@@ -258,12 +262,12 @@
 		{#if mayInvite()}
 			<div class="row make">
 				<button class="btn primary" disabled={busy} onclick={invite}><Icon name="plus" size={14} /> New traveler invite</button>
-				<button class="btn quiet" disabled={loading} onclick={load}>Read again</button>
+				
 			</div>
 			{#if invited}
 				<label class="link">
 					<span class="soft">{copied ? 'Copied. Hand it to one person:' : 'Hand this link to one person:'}</span>
-					<input class="field" readonly value={invited} onfocus={(e) => e.currentTarget.select()} />
+					<input class="field invited" readonly value={invited} onfocus={(e) => e.currentTarget.select()} />
 				</label>
 			{/if}
 		{:else}
@@ -294,7 +298,7 @@
 			them a citizen or a traveler.
 		</p>
 		{#if why}<p class="error" role="alert">{why}</p>{/if}
-		{#if loading && !kept}<p class="soft">Asking the server for its vaults…</p>{/if}
+		{#if step}<p class="soft">{step}…</p>{:else if why}<button class="btn quiet" onclick={load}>Ask the server again</button>{/if}
 		{#if shown.length}
 			<table class="list">
 				<thead><tr><th>Vault</th><th>Kind</th><th>Role</th><th class="wide">Kept</th><th class="wide">Entries</th></tr></thead>
@@ -314,7 +318,7 @@
 					{/each}
 				</tbody>
 			</table>
-		{:else if !loading}
+		{:else if !step}
 			<p class="empty">No vault of this kind{query ? ' by that name' : ''}.</p>
 		{/if}
 	{/if}

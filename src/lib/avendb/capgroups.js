@@ -96,22 +96,25 @@ export function heldGroups(world, city, groups) {
 }
 
 /**
- * Who holds which of vault `city`'s cap groups, and the invites open, as the `shares` op's rows over it list them
- * (`rows`): by each vault, the shares in force to it that name a group, each `{share, group, name}`; and each invite no
- * vault claimed yet, a share to an invite key that names a group. What the Vaults app (./Vaults.svelte) shows and
- * changes. @param {import('./vaults.js').ShareRow[]} rows
+ * Who holds which of vault `city`'s cap groups, and the invites open, as a device's world shows the shares in force over
+ * it (`shares`, its world's `shares`) and the vault's groups (`groups`, the `cap_groups` op's rows): by each vault, the
+ * shares to it that name a group, each `{share, group, name}`; and each invite no vault claimed yet, a share that names a
+ * group to a key that is no vault's (`isVault` tells a vault's id from an invite key's, which a world writes alike). What
+ * the Vaults app (./Vaults.svelte) shows and changes.
+ * @param {import('./vaults.js').CapView[]} shares @param {string} city @param {CapGroup[]} groups
+ * @param {(id: string) => boolean} isVault
  * @returns {{ held: Map<string, { share: string, group: string, name: string }[]>,
  *   invites: { share: string, group: string, name: string, issuer: string | null }[] }}
  */
-export function groupHolders(rows) {
+export function groupHolders(shares, city, groups, isVault) {
+	const names = new Map(groups.map((g) => [g.entry, g.name]));
 	const held = new Map();
 	const invites = [];
-	for (const r of rows) {
-		if (r.kind !== 'grant' || !r.id || !r.capGroup) continue;
-		const one = { share: r.id, group: r.capGroup, name: r.group ?? r.name ?? '' };
-		const who = /** @type {any} */ (r.who);
-		if (who && typeof who === 'object' && 'vault' in who) held.set(who.vault, [...(held.get(who.vault) ?? []), one]);
-		else if (who && typeof who === 'object' && 'invite' in who) invites.push({ ...one, issuer: r.issuer });
+	for (const c of shares) {
+		if (c.over !== city || !c.capGroup || c.who === EVERYONE) continue;
+		const one = { share: c.id, group: c.capGroup, name: names.get(c.capGroup) ?? '' };
+		if (isVault(c.who)) held.set(c.who, [...(held.get(c.who) ?? []), one]);
+		else invites.push({ ...one, issuer: c.issuer });
 	}
 	return { held, invites };
 }

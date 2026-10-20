@@ -5,9 +5,8 @@
 	bar or a back button of its own, and everything else — the games, the worlds, the admin's tools — is a tile on the
 	dashboard. You is the person's vault switcher too (Samuel 2026-10-18): their avenDB vaults, their own first, which
 	is their profile (their name lives there alone), and the one picked shown on the item, with how many changes wait
-	in the others; then the public site, inviting a new human as a traveler (Maia City's own devices alone,
-	$lib/app/access.svelte.js: the link brings a share of its Traveler cap group, which their vault claims as they sign
-	up; Samuel 2026-10-19: nobody is invited a citizen, travelers become citizens by other means later) and signing out. A page may add a
+	in the others; then the public site and signing out. Invites live in avenDB's Vaults app alone ($lib/avendb/Vaults.svelte,
+	Samuel 2026-10-20), beside the roles they give. A page may add a
 	green "+" between Home and You that opens its main sheet, and the accounts it can be looked at as, listed in the You
 	menu ($lib/app/pill.svelte.js: MaiaCity V1's wallet and its COOPs).
 
@@ -18,8 +17,6 @@
 	import { base } from '$app/paths';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { invites, makeInvite } from './access.svelte.js';
-	import { TRAVELER } from '$lib/avendb/capgroups.js';
 	import Icon from './Icon.svelte';
 	import { back, onDashboard, upFrom } from './back.svelte.js';
 	import { pill } from './pill.svelte.js';
@@ -34,9 +31,6 @@
 	let open = $state(false);
 	/** the vault picked, as the You item shows it: the person's own until they pick another */
 	const here = $derived(pill.context ? (pill.context.list.find((a) => a.id === pill.context?.current) ?? null) : null);
-	/** the invite link made last, to hand one person, and what it makes them */
-	let invited = $state('');
-	let inviting = $state(false);
 	/** what waits in the context's other entries (avenDB: the changes waiting for each other vault's yes) */
 	const elsewhere = $derived(
 		pill.context?.list.reduce((n, a) => n + (a.id === pill.context?.current ? 0 : (a.badge ?? 0)), 0) ?? 0
@@ -57,20 +51,6 @@
 		void path;
 		open = false;
 	});
-
-	/** Makes an invite for one new human, a traveler of Maia City, its link copied to hand them. */
-	async function invite() {
-		inviting = true;
-		try {
-			invited = await makeInvite(TRAVELER);
-			await navigator.clipboard?.writeText(invited).catch(() => {});
-		} catch (e) {
-			invited = '';
-			alert(/** @type {Error} */ (e).message);
-		} finally {
-			inviting = false;
-		}
-	}
 </script>
 
 <svelte:window onkeydown={(e) => e.key === 'Escape' && (open = false)} onhashchange={() => (hash = location.hash)} />
@@ -126,13 +106,6 @@
 					</button>
 				{/each}
 				<hr />
-			{/if}
-			{#if invites()}
-				<button role="menuitem" disabled={inviting} onclick={invite}>{inviting ? 'Making the invite…' : 'Invite a new traveler'}</button>
-				{#if invited}
-					<p class="group">Invite link copied</p>
-					<input class="invited" readonly value={invited} onfocus={(e) => e.currentTarget.select()} aria-label="The invite link" />
-				{/if}
 			{/if}
 			<a role="menuitem" href="{base}/">The public site</a>
 			{#if onsignout}<button role="menuitem" class="out" onclick={onsignout}>Sign out</button>{/if}
@@ -323,17 +296,6 @@
 	.who span {
 		font-size: 0.78rem;
 		color: var(--muted);
-	}
-
-	/* the invite link just made, to copy and hand one person */
-	.invited {
-		margin: 0.1rem 0.4rem 0.4rem;
-		padding: 0.35rem 0.5rem;
-		border: 1px solid var(--line);
-		border-radius: 8px;
-		background: var(--cream);
-		font: inherit;
-		font-size: 0.72rem;
 	}
 
 	.account a,

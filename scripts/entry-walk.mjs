@@ -254,19 +254,23 @@ try {
 	const games = (page) => words(page, '.games');
 	check('Maia City’s owner opens every game, MaiaCity V1 and the sandboxes', await until(async () => /MaiaCity V1.*Sandbox 1/.test(await games(a.page)), 30000), await games(a.page));
 
-	// 3. the vault switcher is the You item: their vaults, their own first, and the invite for a new human
+	// 3. the vault switcher is the You item: their vaults, their own first
 	await click(a.page, 'Samuel', 'nav.pill button.item');
 	const menu = await words(a.page, 'nav.pill .account');
 	check('You lists their vaults, their own first', /Your vaults\s*\S*\s*Samuel/.test(menu) || menu.includes('Your vaults'), menu);
 	await shot(a.page, '05-you-menu');
-	// the invite is made once the seed defined Maia City's groups, in the background after the founding: tried until then
+	// the invite for a new human is made in avenDB's Vaults app alone (Samuel 2026-10-20), once the seed defined Maia
+	// City's groups, in the background after the founding: tried until then
+	await a.page.evaluate(() => (location.hash = '#vaults'));
 	const inviting = () =>
 		a.page.evaluate(() => {
-			const b = [...document.querySelectorAll('nav.pill .account button')].find((e) => e.textContent?.includes('Invite a new traveler'));
+			const tab = [...document.querySelectorAll('button.nav-item')].find((e) => e.textContent?.includes('Open invites'));
+			if (tab instanceof HTMLElement) tab.click();
+			const b = [...document.querySelectorAll('button')].find((e) => e.textContent?.includes('New traveler invite'));
 			if (b instanceof HTMLElement) b.click();
 			return !!b;
 		});
-	check('the owner’s menu offers to invite a traveler', await until(inviting, 20000), await words(a.page, 'nav.pill .account'));
+	check('the Vaults app offers to invite a traveler', await until(inviting, 20000), await words(a.page, 'main'));
 	const made = await until(async () => (await inviting()) && (await until(async () => !!(await a.page.$('input.invited')), 4000)), 180000);
 	const link = made ? await a.page.$eval('input.invited', (i) => i.value) : '';
 	check('the super admin makes an invite link to a traveler, its share and key after its #, and no code of the API’s', /\/join\/#share=[0-9a-f]{64}&key=[0-9a-f]{64}$/.test(link), link);
