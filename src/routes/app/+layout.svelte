@@ -24,7 +24,6 @@
 	import { remember } from '$lib/app/session';
 	import { command, native } from '$lib/native';
 	import NavPill from '$lib/app/NavPill.svelte';
-	import AskModal from '$lib/app/AskModal.svelte';
 	import { immersive as fullScreen } from '$lib/app/immersive.svelte';
 	import { gameAt, opens } from '$lib/app/places';
 	import { access, readAccess } from '$lib/app/access.svelte.js';
@@ -440,7 +439,6 @@
 	<NavPill {founder} name={session.name} onsignout={leave} />
 	<StatusPill />
 {/if}
-{#if native() && phase === 'ready'}<AskModal />{/if}
 <!-- what the passkey's prompt and avenDB's start are doing, step by step, at the way in and as it hands over to the app -->
 {#if start}
 	<div class="sheet">

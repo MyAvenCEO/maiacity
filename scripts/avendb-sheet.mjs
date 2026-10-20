@@ -83,8 +83,6 @@ await page.evaluateOnNewDocument(() => {
 			invoke: async (/** @type {string} */ cmd, /** @type {any} */ args) => {
 				if (cmd === 'api') return args.path === '/api/me' ? { status: 200, body: founder } : { status: 404, body: { error: 'not here' } };
 				if (cmd === 'passkey_sheet') return sheet(args.url);
-				// the vault's open questions (AskModal): none
-				if (cmd === 'asks_open') return [];
 				return null;
 			},
 			transformCallback: (/** @type {Function} */ callback) => {
