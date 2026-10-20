@@ -1870,8 +1870,8 @@
 				config, which it holds to the shape of the repo’s own, so a config from a vault changes a game’s numbers, never
 				what the game finds where. Nothing checks code on its way into a vault, so a page and the API check each view,
 				logic and config as they load it, and MaiaCity V1 checks each screen a proposal brings. A recipe loads only if it
-				was made for the newest box engine, its file hashes to the name its card gives, and its last line names the
-				version its card says; a build this device kept is held to its card again when read back. A function is checked
+				was made for one of the frozen box engines, by its hash, its file hashes to the name its card gives, and its last
+				line names the version its card says; a build this device kept is held to its card again when read back. A function is checked
 				before it runs: it imports nothing and hands back its <code>run</code>, or it doesn’t run. Safety never rests on
 				the checker: the box holds whatever it misses.
 			</p>
@@ -1953,8 +1953,7 @@
 					<b>What code declares.</b> The rest of a manifest (kit, presets, controls, messages, events, hooks and ops)
 					and a contract’s memory and ops are not read: each host holds every entry to its own fixed lists and limits
 					instead, which nothing an entry declares can widen. A recipe that computes a module’s name reaches any of
-					its engine’s modules. A recipe made for an older box engine is still refused rather than run there, and a
-					function runs on the logic floor whatever engine it names.
+					its engine’s modules. A function runs on the logic floor whatever engine it names.
 				</li>
 				<li>
 					<b>What a function makes.</b> A function may make entries of any type in its vault, flows and functions among

@@ -216,8 +216,8 @@ test("a row that doesn't check is left out, saying why, and the ref it would nam
 		'a card naming no recipe': changed(row, (r) => delete r.record.card.recipe),
 		'an engine of another host': changed(row, (r) => (r.record.engine.host = 'logic')),
 		'an engine never frozen': changed(row, (r) => (r.record.engine.hash = 'c0ffee'.repeat(10) + 'c0de')),
-		'an older engine than pages run': changed(row, (r) => {
-			r.record.engine = { host: 'box', version: ENGINES.at(-2).v, hash: ENGINES.at(-2).blake3 };
+		'an older engine named by the newest one\'s hash': changed(row, (r) => {
+			r.record.engine = { host: 'box', version: ENGINES.at(-2).v, hash: latest.blake3 };
 			r.record.card.engine = ENGINES.at(-2).v;
 		}),
 		'a card made for another engine than its entry': changed(row, (r) => (r.record.card.engine = ENGINES.at(-2).v))
@@ -239,6 +239,16 @@ test("a row that doesn't check is left out, saying why, and the ref it would nam
 		expect(v.hashOf('plants/apple@1')).toBe(made.index.labels['plants/apple@1']);
 		expect(Object.keys(v.index.recipes).length).toBe(326);
 	}
+	// one made for an older frozen engine, by its hash, is one of the recipes, made for that engine
+	const older = vaultOf([
+		...ROWS.filter((x) => x !== row),
+		changed(row, (r) => {
+			r.record.engine = { host: 'box', version: ENGINES.at(-2).v, hash: ENGINES.at(-2).blake3 };
+			r.record.card.engine = ENGINES.at(-2).v;
+		})
+	]);
+	expect(older.refused).toEqual([]);
+	expect(older.hashOf('plants/apple@2')).toBe(made.index.labels['plants/apple@2']);
 	// its tags are not read: an asset is its entry, its versions the entry's (avenDB's ids, not refs)
 	for (const tags of [[], ['group:plants', 'ref:plants/apple@1'], ['ref:things/bell-tent@1']]) {
 		const v = vaultOf([...ROWS.filter((x) => x !== row), changed(row, (r) => (r.tags = tags))]);

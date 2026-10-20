@@ -170,10 +170,11 @@ const UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 /**
  * One row the vault hands out as a recipe of the index, or why not: a `recipe` entry whose card fits its schema and
- * names its recipe, made for the box engine pages run (the latest of ../engines.json, by its hash). Its file is not
- * read here: only when a build needs it. An asset is its entry, and its versions are the entry's own (Samuel
- * 2026-10-18 and 10-19: avenDB's ids, not refs): its tags are not read, so a version accepted onto its main line, or
- * proposed on a line of it, counts with no tag of its own; `vaultRecipes` holds every version of an entry to one asset.
+ * names its recipe, made for one of the frozen box engines (../engines.json, by its hash), the one it then builds on
+ * (../load.js `engineOf`): code runs on the engine it names (H4). Its file is not read here: only when a build needs
+ * it. An asset is its entry, and its versions are the entry's own (Samuel 2026-10-18 and 10-19: avenDB's ids, not
+ * refs): its tags are not read, so a version accepted onto its main line, or proposed on a line of it, counts with no
+ * tag of its own; `vaultRecipes` holds every version of an entry to one asset.
  * @param {any} row @returns {{ hash: string, label: string, card: any, first?: string } | { error: string, label?: string }}
  */
 function recipeOfRow(row) {
@@ -188,8 +189,9 @@ function recipeOfRow(row) {
 	const no = (why) => ({ error: `${label} (${where}): ${why}`, label });
 	if (!card.recipe) return no('its card names no recipe');
 	const e = r.engine ?? {};
-	if (card.engine !== LATEST.v || e.host !== 'box' || e.version !== LATEST.v || e.hash !== LATEST.blake3)
-		return no(`made for ${e.host ?? '?'} engine ${e.version ?? '?'} (${String(e.hash ?? '?').slice(0, 12)}…), its card for ${card.engine}: pages run box engine ${LATEST.v} (${LATEST.blake3.slice(0, 12)}…)`);
+	const at = e.host === 'box' && card.engine === e.version ? engineAt(e.version) : undefined;
+	if (!at || e.hash !== at.blake3)
+		return no(`made for ${e.host ?? '?'} engine ${e.version ?? '?'} (${String(e.hash ?? '?').slice(0, 12)}…), its card for ${card.engine}: pages run only the frozen box engines 1 to ${LATEST.v}, each by its hash`);
 	// a kind's first variant, the one a legacy ref names where it names no variant: on its entry's main line, as a
 	// variant's own line is beside it (`versionsOf`); a row that is its entry's only version, as the seed wrote one
 	// entry for each variant before generation 15, is its kind's first where its tags say so
