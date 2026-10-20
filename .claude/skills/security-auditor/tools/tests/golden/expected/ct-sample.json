@@ -1,0 +1,12 @@
+{
+  "architecture": "x86_64",
+  "compiler": "unknown",
+  "optimization": "unknown",
+  "source_file": "fixtures/sample.s",
+  "total_functions": 2,
+  "total_instructions": 4,
+  "error_count": 0,
+  "warning_count": 0,
+  "passed": true,
+  "violations": []
+}

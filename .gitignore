@@ -68,3 +68,7 @@ static/**/*.pdf
 # the background build streams' own working copies (Claude Code worktrees), and Python's cache
 /.claude/worktrees/
 __pycache__/
+
+# The security tools' build (.claude/skills/security-auditor/tools) and rust-security's scratch results
+/.claude/skills/security-auditor/tools/target/
+.rust-review-results/

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "F-RUST-SRC-0001",
+    "language": "rust",
+    "category": "PARTIAL_WIPE",
+    "severity": "medium",
+    "confidence": "likely",
+    "evidence_strength": [
+      "unavailable",
+      "trait_impl"
+    ],
+    "detail": "Drop impl for 'ApiSecret' does not zero all secret fields: missing ['nonce']",
+    "symbol": "ApiSecret",
+    "object": {
+      "name": "ApiSecret"
+    },
+    "location": {
+      "file": "plugins/zeroize-audit/tests/rust-regression/fixtures/semantic_positive.rs",
+      "line": 1
+    },
+    "evidence": [
+      {
+        "source": "rustdoc_json",
+        "detail": "Drop impl for 'ApiSecret' does not zero all secret fields: missing ['nonce']",
+        "strength": [
+          "unavailable",
+          "trait_impl"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "F-RUST-SRC-0002",
+    "language": "rust",
+    "category": "MISSING_SOURCE_ZEROIZE",
+    "severity": "high",
+    "confidence": "likely",
+    "evidence_strength": [
+      "trait_impl",
+      "sensitive_name_or_field"
+    ],
+    "detail": "Sensitive type 'SecretToken' has no Zeroize, ZeroizeOnDrop, or Drop implementation",
+    "symbol": "SecretToken",
+    "object": {
+      "name": "SecretToken"
+    },
+    "location": {
+      "file": "plugins/zeroize-audit/tests/rust-regression/fixtures/semantic_positive.rs",
+      "line": 6
+    },
+    "evidence": [
+      {
+        "source": "rustdoc_json",
+        "detail": "Sensitive type 'SecretToken' has no Zeroize, ZeroizeOnDrop, or Drop implementation",
+        "strength": [
+          "trait_impl",
+          "sensitive_name_or_field"
+        ]
+      }
+    ]
+  }
+]

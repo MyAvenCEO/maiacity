@@ -1,0 +1,53 @@
+[
+  {
+    "id": "F-RUST-ASM-0001",
+    "language": "rust",
+    "category": "STACK_RETENTION",
+    "severity": "high",
+    "symbol": "SecretKey_wipe",
+    "detail": "[EXPERIMENTAL] AArch64 stack frame of 64 bytes allocated at line 4 ('stp\\tx29, x30, [sp, #-64]!') but no zero-store (str xzr / stp xzr,xzr / movi+stp / zeroize call) found before return at line 8",
+    "evidence": [
+      {
+        "source": "asm",
+        "detail": "stp\tx29, x30, [sp, #-64]! at line 4; no str/stp xzr or zeroize call before ret at line 8"
+      }
+    ],
+    "evidence_files": [
+      "fixtures/sample_aarch64.s"
+    ]
+  },
+  {
+    "id": "F-RUST-ASM-0002",
+    "language": "rust",
+    "category": "REGISTER_SPILL",
+    "severity": "high",
+    "symbol": "SecretKey_wipe",
+    "detail": "[EXPERIMENTAL] AArch64 register x29 (callee-saved) spilled to stack at line 4 in function 'SecretKey_wipe' \u2014 may expose secret value",
+    "evidence": [
+      {
+        "source": "asm",
+        "detail": "stp\tx29, x30, [sp, #-64]! at line 4 (seen in 2 monomorphized instances)"
+      }
+    ],
+    "evidence_files": [
+      "fixtures/sample_aarch64.s"
+    ]
+  },
+  {
+    "id": "F-RUST-ASM-0003",
+    "language": "rust",
+    "category": "REGISTER_SPILL",
+    "severity": "high",
+    "symbol": "SecretKey_wipe",
+    "detail": "[EXPERIMENTAL] AArch64 register x19 (callee-saved) spilled to stack at line 6 in function 'SecretKey_wipe' \u2014 may expose secret value",
+    "evidence": [
+      {
+        "source": "asm",
+        "detail": "str\tx19, [sp, #16] at line 6"
+      }
+    ],
+    "evidence_files": [
+      "fixtures/sample_aarch64.s"
+    ]
+  }
+]

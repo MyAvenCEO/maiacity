@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "zeroize audit output (Rust)",
+  "type": "object",
+  "properties": {
+    "tool": {
+      "type": "string",
+      "const": "zeroize-audit"
+    },
+    "version": {
+      "type": "string"
+    },
+    "summary": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "files_scanned": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "translation_units_analyzed": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Crates analyzed (Rust compiles a crate as one unit)"
+        },
+        "issues_found": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "by_category": {
+          "type": "object",
+          "properties": {
+            "MISSING_SOURCE_ZEROIZE": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "OPTIMIZED_AWAY_ZEROIZE": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "PARTIAL_WIPE": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "NOT_ON_ALL_PATHS": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "STACK_RETENTION": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "REGISTER_SPILL": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "SECRET_COPY": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "MISSING_SOURCE_ZEROIZE",
+            "OPTIMIZED_AWAY_ZEROIZE",
+            "PARTIAL_WIPE",
+            "NOT_ON_ALL_PATHS",
+            "STACK_RETENTION",
+            "REGISTER_SPILL",
+            "SECRET_COPY"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "path",
+        "files_scanned",
+        "translation_units_analyzed",
+        "issues_found",
+        "by_category"
+      ],
+      "additionalProperties": false
+    },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "MISSING_SOURCE_ZEROIZE",
+              "OPTIMIZED_AWAY_ZEROIZE",
+              "PARTIAL_WIPE",
+              "NOT_ON_ALL_PATHS",
+              "STACK_RETENTION",
+              "REGISTER_SPILL",
+              "SECRET_COPY"
+            ]
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "critical"
+            ]
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "confirmed",
+              "likely",
+              "needs_review"
+            ]
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "rust"
+            ]
+          },
+          "file": {
+            "type": "string"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "0 when the evidence is an IR or assembly file rather than a source line"
+          },
+          "symbol": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "evidence": {
+            "type": "string",
+            "description": "Every evidence item as one string, \"[source] detail; [ir] detail; ...\", so sec zeroize-gates can read and extend it"
+          },
+          "compiler_evidence": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "opt_levels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "o0": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "o1": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "o2": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "o3": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "diff_summary": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "opt_levels"
+            ],
+            "additionalProperties": false
+          },
+          "suggested_fix": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "category",
+          "severity",
+          "confidence",
+          "language",
+          "file",
+          "line",
+          "evidence",
+          "suggested_fix"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "tool",
+    "version",
+    "summary",
+    "findings"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,88 @@
+=== DIFF File 1 (sample.mir) vs File 2 (sample_clean.mir) ===
+--- sample.mir
++++ sample_clean.mir
+@@ -1,29 +1,6 @@
+-fn demo_async() -> Result<(), ()> {
+-    debug secret_key => _1;
+-    debug token => _2;
+-    _3 = <closure_capture as closure>::new(move _2);
+-    _4 = Err(());
+-    yield();
+-    return;
+-}
+-fn drop_in_place_secret() {
+-    debug secret_key => _5;
+-    drop(_5);
+-    return;
+-}
+-fn unwind_only_secret() {
+-    debug secret_key => _6;
+-    drop(_6);
+-    resume;
+-}
+-fn wrap_secret_in_buffer() {
+-    debug secret_key => _7;
+-    _8 = PlainBuffer { data: move _7 };
+-    return;
+-}
+-fn call_c_encrypt() {
+-    debug secret_key => _9;
+-    call c_crypto::c_encrypt(_9) -> [return: bb1, unwind: resume];
+-    bb1:
++fn process_data() {
++    debug payload => _1;
++    debug counter => _2;
++    drop(_1);
+     return;
+ }
+
+=== DIFF File 2 (sample_clean.mir) vs File 3 (sample.mir) ===
+--- sample_clean.mir
++++ sample.mir
+@@ -1,6 +1,29 @@
+-fn process_data() {
+-    debug payload => _1;
+-    debug counter => _2;
+-    drop(_1);
++fn demo_async() -> Result<(), ()> {
++    debug secret_key => _1;
++    debug token => _2;
++    _3 = <closure_capture as closure>::new(move _2);
++    _4 = Err(());
++    yield();
++    return;
++}
++fn drop_in_place_secret() {
++    debug secret_key => _5;
++    drop(_5);
++    return;
++}
++fn unwind_only_secret() {
++    debug secret_key => _6;
++    drop(_6);
++    resume;
++}
++fn wrap_secret_in_buffer() {
++    debug secret_key => _7;
++    _8 = PlainBuffer { data: move _7 };
++    return;
++}
++fn call_c_encrypt() {
++    debug secret_key => _9;
++    call c_crypto::c_encrypt(_9) -> [return: bb1, unwind: resume];
++    bb1:
+     return;
+ }
+
+=== ZEROIZE PATTERN SUMMARY ===
+  File 1 (sample.mir): ZEROIZE CALLS PRESENT
+  File 2 (sample_clean.mir): ZEROIZE CALLS ABSENT
+  File 3 (sample.mir): ZEROIZE CALLS PRESENT
+
+=== DROP GLUE SUMMARY ===
+  File 1 (sample.mir): DROP GLUE PRESENT
+  File 2 (sample_clean.mir): DROP GLUE PRESENT
+  File 3 (sample.mir): DROP GLUE PRESENT
+
+WARNING: Zeroize patterns first disappear at File 2 (sample_clean.mir).
+  Evidence: OPTIMIZED_AWAY_ZEROIZE — zeroize calls present at lower opt level(s) but absent here.
