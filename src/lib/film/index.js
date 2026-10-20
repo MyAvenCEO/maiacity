@@ -129,6 +129,9 @@ export function startFilm({ base = '' } = {}) {
 	let staging = '';
 	/** the shot drawn before its world was all there (past its wait), while the rest streams in, else '' */
 	let streaming = '';
+	/** the views a world that streams by view was last moved to show (`move`), by the shot's camera path */
+	/** @type {unknown} */
+	let moved = null;
 
 	/** Whether the set this shot names (src/lib/film/sets.js) is built: only a staging builds it, so a shot whose set is
 	 *  not there yet is never held, however much of the world is (a cut to it moved the camera onto bare land) */
@@ -168,8 +171,11 @@ export function startFilm({ base = '' } = {}) {
 		if (!shows(spec)) throw new Error(`this shot is in ${spec.world.sandbox}${spec.world.area ? ` (${spec.world.area})` : ''}, and this page is ${here.sandbox}${here.area ? ` (${here.area})` : ''}: open ${filmPath(spec.world)}`);
 		const v = await mounted();
 		const key = keyOf(spec);
-		const held = v.film.holds({ ...spec.world, views: viewsOf(v, spec) });
-		if (key === staged && held) return;
+		const views = viewsOf(v, spec);
+		const held = v.film.holds({ ...spec.world, views });
+		// staged here already: a world that streams by view shows what this shot sees (another shot from the same stand
+		// may see other domes)
+		if (key === staged && held) return void (v.film.streams && v.film.move({ ...spec.world, name: spec.meta?.name, views }));
 		const known = held && settledFor.has(key);
 		// the walker leaves the shot staged last: no frame of that shot is drawn until it stands there again
 		staged = '';
@@ -489,12 +495,15 @@ export function startFilm({ base = '' } = {}) {
 			const ev = known ?? (live && !meter ? lastEv : await exposureOf(spec));
 			if (live) lastEv = typeof ev === 'number' ? ev : ev.reduce((a, k) => a + k[1], 0) / ev.length;
 			const t1 = clock.now();
-			const held = streaming === key || v.film.holds({ ...spec.world, views: viewsOf(v, spec) });
+			const views = viewsOf(v, spec);
+			const held = streaming === key || v.film.holds({ ...spec.world, views });
 			// a world that streams by view and holds the shot already (built while the shots before it played): the cut is
-			// only a move, the frame drawn at once — no staging, no frame held
-			if (staged !== key && held && dressed(spec) && v.film.streams && live) {
-				v.film.move({ ...spec.world, name: spec.meta?.name, views: viewsOf(v, spec) });
+			// only a move, the frame drawn at once — no staging, no frame held; and a cut to another shot from the same
+			// stand shows what that one sees
+			if ((staged !== key || moved !== views) && held && dressed(spec) && v.film.streams && live) {
+				v.film.move({ ...spec.world, name: spec.meta?.name, views });
 				staged = key;
+				moved = views;
 			}
 			// restaged in line with the prepares, never beside one (two at once pull the walker back and forth)
 			if (staged !== key || !held) await one(() => stage(spec, quality === 'final' ? Infinity : wait));
