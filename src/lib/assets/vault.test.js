@@ -446,6 +446,26 @@ test("an entry the reader refuses, or the vault deleted, is none of its recipes,
 	expect(() => vault.hashOf('plants/apple@1')).toThrow(NotInVault);
 });
 
+test('a recipe made for an older frozen box engine is one of the recipes and runs on that engine; one naming an engine otherwise is refused', async () => {
+	const tent = rowAt('things/bell-tent@1');
+	const older = made.index.engine - 1;
+	/** the tent's row made for box engine `v`, its hash `hash`, its card for `card` */
+	const madeFor = (v, hash, card = v) => changed(tent, (c) => ((c.record.engine = { host: 'box', version: v, hash }), (c.record.card.engine = card)));
+	const { r } = await loaded({ rows: FEED.rows.map((x) => (x === tent ? madeFor(older, engineAt(older).blake3) : x)) });
+	expect(r.refused).toEqual([]);
+	expect(canonical(vault.buildAt('things/bell-tent@1')).engine).toEqual(engineAt(older));
+	for (const [row, said] of [
+		[madeFor(older, engineAt(made.index.engine).blake3), `made for box engine ${older} \\(${engineAt(made.index.engine).blake3.slice(0, 12)}…\\)`],
+		[madeFor(older, engineAt(older).blake3, made.index.engine), `made for box engine ${older} .*, its card for ${made.index.engine}`],
+		[madeFor(99, 'f'.repeat(64)), 'made for box engine 99'],
+		[changed(tent, (c) => (c.record.engine.host = 'view')), `made for view engine ${made.index.engine}`]
+	]) {
+		const { r: no } = await loaded({ rows: FEED.rows.map((x) => (x === tent ? row : x)) });
+		expect(no.refused.length).toBe(1);
+		expect(no.refused[0]).toMatch(new RegExp(`^things/bell-tent@1 \\(entry .*\\): ${said}`));
+	}
+});
+
 test("a feed that can't be reached, or answers otherwise, fails the page, naming the feed, and nothing is built: never the repo's", async () => {
 	const down = async (o, pattern) => {
 		const { r } = await loaded(o);
