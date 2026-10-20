@@ -1,7 +1,6 @@
 // @ts-nocheck — plain JS
 import { base } from '$app/paths';
-import { blake3 } from '@noble/hashes/blake3.js';
-import { bytesToHex } from '@noble/hashes/utils.js';
+import { hashBytes } from '../../../game/hash.js';
 import { DENY, SANDBOX, SHELL_SCRIPT } from './policy.js';
 /*
  * THE SHELL — where code we cannot trust runs in a page: a worker inside a frame with no origin. One shell for every
@@ -48,7 +47,7 @@ export async function frozen(path, hash, what) {
 	const res = await fetch(`${base}${path}`);
 	if (!res.ok) throw new Error(`${what}: ${res.status}`);
 	const bytes = new Uint8Array(await res.arrayBuffer());
-	const named = bytesToHex(blake3(bytes));
+	const named = hashBytes(bytes);
 	if (named !== hash) throw new Error(`refused: ${what} hashes to ${named.slice(0, 12)}…, not ${hash.slice(0, 12)}…`);
 	return new TextDecoder().decode(bytes);
 }

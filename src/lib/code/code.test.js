@@ -44,9 +44,22 @@ describe('one loader', () => {
 		for (const bad of ['views/../game/x', '/etc/passwd', 'views/village-scene/../../x', 'https://cdn.example/x', 'views/Village']) expect(() => codeAt(bad)).toThrow(/no code ref/);
 	});
 	test('avenDB refs are read, and refused while that entry is not loaded (src/lib/code/vault.test.js loads some)', () => {
-		const ref = 'vault:ab12cd34ef56gh78/entry0001abcd@0123456789abcdef';
-		expect(parseCodeRef(ref)).toEqual({ source: 'avendb', vault: 'ab12cd34ef56gh78', entry: 'entry0001abcd', heads: '0123456789abcdef' });
+		const [v, e, h1, h2] = ['ab', 'cd', 'ef', '01'].map((x) => x.repeat(32));
+		const ref = `vault:${v}/${e}@${h2},${h1}`;
+		expect(parseCodeRef(ref)).toEqual({ source: 'avendb', vault: v, entry: e, heads: [h2, h1] });
 		expect(() => codeAt(ref)).toThrow(/is not loaded/);
+	});
+	test('an avenDB ref names avenDB ids alone, 64 hex digits each, and a code entry takes no values', () => {
+		const [v, e, h] = ['ab', 'cd', 'ef'].map((x) => x.repeat(32));
+		for (const bad of [
+			'vault:ab12cd34ef56gh78/entry0001abcd@0123456789abcdef', // ids looser than avenDB's
+			`vault:${v}/${e}@${h.slice(2)}`, // a head too short
+			`vault:${v.toUpperCase()}/${e}@${h}`, // not as avenDB writes them
+			`vault:${v}/${e}@${Array(17).fill(h).join(',')}`, // more heads than a version has
+			`vault:${v}/${e}@${h}?stage=9`, // values, which no code entry takes
+			`vault:${v}/../${e}@${h}`
+		])
+			expect(() => parseCodeRef(bad)).toThrow(/no code ref/);
 	});
 	test("the games' defaults come from code/", () => {
 		expect(examples().map((v) => v.id)).toEqual(['village-scene', 'coop-chart', 'dome-planner']);
