@@ -28,7 +28,7 @@ def eblind (en : Entry) : Entry := { en with attrs := ⟨0, 0, 0, 0, []⟩, admi
 /-- The operational part blinds the shares and the entries and keeps the rest. -/
 theorem ops_eq (st : State) :
     st.ops = { st with shares := st.shares.map Share.blind, entries := st.entries.map eblind,
-                       uncounted := [], accepts := [], defs := [] } :=
+                       uncounted := [], accepts := [], defs := [], adds := [] } :=
   rfl
 
 /-- The operational part keeps the vaults. -/
@@ -432,8 +432,10 @@ theorem ops_with_counted (s : State) (W : List Write) (U : List EditId) :
   cases s; rfl
 
 /-- The same, where the write's readers read an accept too. -/
-theorem ops_with_accepts (s : State) (W : List Write) (U A : List EditId) (D : List (EditId × CapGroup)) :
-    ({ s with writes := W, uncounted := U, accepts := A, defs := D } : State).ops = { s.ops with writes := W } := by
+theorem ops_with_accepts (s : State) (W : List Write) (U A : List EditId) (D : List (EditId × CapGroup))
+    (R : List (EditId × List Ops.Loc)) :
+    ({ s with writes := W, uncounted := U, accepts := A, defs := D, adds := R } : State).ops =
+      { s.ops with writes := W } := by
   cases s; rfl
 
 /-- A claim commutes with taking the operational part: a relay sees which share names which grantee. -/
@@ -641,7 +643,7 @@ theorem apply_ops (st : State) (edit : Edit) :
       cases st.vault? v with
       | none => rfl
       | some vt => simp only [map_ite_none, Option.map_some, dropUnseen_ops, setVault_ops, ops_ops]
-  | write v e actor stay epoch deps proposal via create tags =>
+  | write v e actor stay epoch deps proposal via create tags _ _ _ _ adds =>
     -- the header and the tags reach only the entry's attributes and whether it was let in
     simp only [Edit.blind, Action.blind]
     cases create with

@@ -40,6 +40,8 @@
 		<circle cx="8" cy="14" r="4" /><path d="m11 11 8.5-8.5M16 6l2.5 2.5M13.5 8.5 16 11" />
 	{:else if name === 'database'}
 		<ellipse cx="12" cy="6" rx="7" ry="2.5" /><path d="M5 6v12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6" /><path d="M5 12c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5" />
+	{:else if name === 'chat'}
+		<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z" /><path d="M8 10.5h8M8 14h5" />
 	{:else if name === 'universe'}
 		<circle cx="12" cy="12" r="3.2" /><ellipse cx="12" cy="12" rx="9" ry="4" transform="rotate(-25 12 12)" /><circle cx="19.2" cy="8.3" r="0.9" fill="currentColor" />
 	{/if}

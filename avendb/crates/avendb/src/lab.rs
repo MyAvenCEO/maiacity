@@ -2037,7 +2037,8 @@ impl Lab {
         let readings = &self.held(on).readings;
         let lane = Lane::with_built_ins(view.lane_of(vault, readings));
         let read = h.reading(w, Some(content), on, &lane);
-        let touches = read.touches.as_deref().map(|ts| [ts, needs].concat());
+        // each set marked own or not as its readers will mark it, by whose each row is (`policy::Mine`)
+        let touches = read.touches.as_deref().map(|ts| h.mine().mark(w.actor, &[ts, needs].concat()));
         let attrs = if w.first { first.cloned() } else { view.at_write(w, readings).0 };
         let proof = self.prove(on, view, w, (touches.as_deref(), asks), attrs.as_ref())?;
         if !(read.fits || self.lawless) {
@@ -4210,13 +4211,16 @@ struct Judging<'a> {
     history: History,
     scratch: Option<Scratch>,
     attrs: Option<Attrs>,
+    /// Whose each row is, by the writes counted so far (`policy::Mine`).
+    mine: crate::policy::Mine,
 }
 
 impl<'a> Judging<'a> {
     fn new(st: &State, en: &Entry, r: &Readings, lane: &'a Lane) -> Judging<'a> {
         let of_lane = r.headers.get(&en.creation).is_some_and(|h| h.ty.of_lane());
         let attrs = st.first_attrs(en, r);
-        Judging { vault: en.vault, of_lane, lane, history: History::default(), scratch: None, attrs }
+        let mine = Default::default();
+        Judging { vault: en.vault, of_lane, lane, history: History::default(), scratch: None, attrs, mine }
     }
 
     /// Judge the next write of the entry, `w`, on device `d`, by what it reads (`r`), the bodies it opened, and the cap
@@ -4235,26 +4239,29 @@ impl<'a> Judging<'a> {
         groups: &Groups,
     ) -> bool {
         let none = TagDelta::default();
-        let Judging { vault, of_lane, lane, history, scratch, attrs } = self;
+        let Judging { vault, of_lane, lane, history, scratch, attrs, mine } = self;
         let body = bodies.get(&w.edit);
         let (proof, content) = (body.and_then(|b| b.proof.as_ref()), body.map(|b| &b.content[..]));
         let asks = body.map(|b| &b.tags).unwrap_or(&none);
         let counts = |d: &EditId| history.get(*d).is_some_and(|c| c.counted);
         let read = w.deps.iter().all(counts).then(|| match *of_lane && w.first {
-            true => Reading { touches: Some(vec![Touch::Create]), fits: !r.unfit.contains(&w.edit) },
+            true => Reading { touches: Some(vec![Touch::Create]), adds: vec![], fits: !r.unfit.contains(&w.edit) },
             false => history.reading_on(scratch, w, content, d, lane),
         });
         let fits = read.as_ref().is_none_or(|r| r.fits);
         let at = At { attrs: attrs.as_ref(), place: st.place(w.edit), groups };
         let counted = read.as_ref().is_some_and(|r| {
+            let marked = r.touches.as_deref().map(|ts| mine.mark(w.actor, ts));
             r.fits
-                && st.lets(w, proof, r.touches.as_deref(), asks, at)
+                && st.lets(w, proof, marked.as_deref(), asks, at)
                 && history.passes(w, r.touches.as_deref())
                 && history.lands(w)
         });
+        let adds = read.as_ref().map(|r| r.adds.clone()).unwrap_or_default();
+        mine.note(w, &adds, counted);
         // what it touches and asks for, as a merge that brings it in reads it
         let touches = read.and_then(|r| r.touches).map(|ts| ts.into_iter().chain(rules::asked(asks)).collect());
-        let change = Change { write: w.clone(), body: content.map(<[u8]>::to_vec), fits, touches, counted };
+        let change = Change { write: w.clone(), body: content.map(<[u8]>::to_vec), fits, touches, counted, adds };
         history.push(change).expect("the view's writes are causally closed");
         // its tags count from now on where it acts for the vault
         if !w.first

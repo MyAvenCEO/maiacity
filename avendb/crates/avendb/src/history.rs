@@ -74,6 +74,8 @@ pub struct Change {
     pub fits: bool,
     pub touches: Option<Vec<Touch>>,
     pub counted: bool,
+    /// The rows it added, as its readers read them off it (`Reading::adds`): whose each row is (`History::mine`).
+    pub adds: Vec<crate::ops::Loc>,
 }
 
 impl AsRef<Write> for Change {
@@ -135,10 +137,13 @@ impl Scratch {
 }
 
 /// What a write's readers read off what it carries (`History::reading`): what it touches (`rules::Touch`), `None` where
-/// they can't read it; and whether it fits the schemas its entry was written under (`lens::Lane::fits`).
+/// they can't read it; the rows its update added, each by its place (`doc::Footprint::adds`), which are its writer's
+/// own once they count it (`policy::Mine`); and whether it fits the schemas its entry was written under
+/// (`lens::Lane::fits`).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Reading {
     pub touches: Option<Vec<Touch>>,
+    pub adds: Vec<Loc>,
     pub fits: bool,
 }
 
@@ -168,6 +173,16 @@ impl History {
 
     pub fn changes(&self) -> &[Change] {
         &self.changes
+    }
+
+    /// Whose each row of the entry is, by the writes it counts (`policy::Mine`): what a write on top of them is judged
+    /// by, as its readers will judge it.
+    pub fn mine(&self) -> policy::Mine {
+        let mut mine = policy::Mine::default();
+        for c in &self.changes {
+            mine.note(&c.write, &c.adds, c.counted);
+        }
+        mine
     }
 
     /// The writes the entry's readers count, in replay order.
@@ -324,7 +339,7 @@ impl History {
         lane: &Lane,
     ) -> Reading {
         if w.proposal == Proposal::New && !w.first {
-            return Reading { touches: Some(vec![Touch::Propose]), fits: true };
+            return Reading { touches: Some(vec![Touch::Propose]), adds: vec![], fits: true };
         }
         let mut out = vec![];
         if w.first {
@@ -334,10 +349,10 @@ impl History {
             out.extend(self.brought(w));
         }
         // a creation touches its creation alone, whatever it holds
-        let unread = |out: Vec<Touch>| Reading { touches: w.first.then_some(out), fits: false };
+        let unread = |out: Vec<Touch>| Reading { touches: w.first.then_some(out), adds: vec![], fits: false };
         let Some(update) = body else { return unread(out) };
         if update.is_empty() {
-            return Reading { touches: Some(out), fits: true };
+            return Reading { touches: Some(out), adds: vec![], fits: true };
         }
         let s = match at.take() {
             // it holds the version `w` builds on, and nothing else
@@ -370,7 +385,7 @@ impl History {
         if !w.first {
             out.extend(footprint.touches);
         }
-        Reading { touches: Some(rules::dedup(out)), fits }
+        Reading { touches: Some(rules::dedup(out)), adds: footprint.adds, fits }
     }
 
     /// What merge `w` brings in, place by place (`Touch::Merged`), each place once: every place a write it builds on,
@@ -390,7 +405,9 @@ impl History {
             };
             let draft = c.write.proposal == Proposal::New;
             out.extend(ts.iter().filter_map(|t| match t {
-                Touch::Set(l, _) | Touch::Insert(l) | Touch::Remove(l) | Touch::Move(l) => Some(Touch::Merged(l.clone())),
+                Touch::Set(l, _) | Touch::Own(l, _) | Touch::Insert(l) | Touch::Remove(l) | Touch::Move(l) => {
+                    Some(Touch::Merged(l.clone()))
+                }
                 Touch::Create if draft => Some(Touch::Merged(Loc::root())),
                 Touch::Merged(_) | Touch::Merge | Touch::Propose | Touch::Tag(_) | Touch::Create => None,
             }));
@@ -766,7 +783,7 @@ impl Repo {
         let (stay, epoch, audience, first) = (None, 0, AudienceId::of(actor, &[]), self.history.changes.is_empty());
         let (deps, proposal, via, shares) = (d.deps, d.proposal, vec![], vec![]);
         let write = Write { edit, author, actor, entry, stay, epoch, deps, proposal, via, first, audience, shares };
-        self.history.push(Change { write, body: Some(d.body), fits: true, touches: None, counted: true })?;
+        self.history.push(Change { write, body: Some(d.body), fits: true, touches: None, counted: true, adds: vec![] })?;
         Ok(edit)
     }
 }

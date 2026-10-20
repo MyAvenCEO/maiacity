@@ -1190,7 +1190,7 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
       obtain ⟨-, -, rfl⟩ := h
       exact .inr (.inr (.inr ⟨keep, _, by rw [heq]; rfl, rfl, rfl, same st⟩))
   · -- write
-    rename_i v e actor stay epoch deps proposal via create tags proof touches fits defines heq
+    rename_i v e actor stay epoch deps proposal via create tags proof touches fits defines adds heq
     dsimp only at h
     split at h
     · cases h
@@ -1400,11 +1400,11 @@ theorem laneOf_settle (pre post : State) : laneOf (settle pre post) = laneOf pos
 
 /-- A write that isn't a first write, with a new id, leaves every lane alone, whether its readers count it or not. -/
 theorem laneOf_addWrite {st : State} {w : Write} {ok : Bool} {i : EditId} {acc : List EditId}
-    {df : List (EditId × CapGroup)} (hf : w.first = false) (hfresh : ∀ x ∈ st.writes, x.edit ≠ i) :
-    laneOf { st with writes := st.writes ++ [w], uncounted := st.counting ok i, accepts := acc, defs := df } =
+    {df : List (EditId × CapGroup)} {ad : List (EditId × List Ops.Loc)} (hf : w.first = false) (hfresh : ∀ x ∈ st.writes, x.edit ≠ i) :
+    laneOf { st with writes := st.writes ++ [w], uncounted := st.counting ok i, accepts := acc, defs := df, adds := ad } =
       laneOf st := by
   have hin : ∀ v,
-      inLane { st with writes := st.writes ++ [w], uncounted := st.counting ok i, accepts := acc, defs := df } v =
+      inLane { st with writes := st.writes ++ [w], uncounted := st.counting ok i, accepts := acc, defs := df, adds := ad } v =
         inLane st v := by
     intro v
     funext en
@@ -1498,9 +1498,9 @@ theorem LaneKeeps.setEntry {st : State} {en en' : Entry} (hen : st.entry? en'.id
   counted _ hw _ := hw
 
 /-- A write that isn't a first write keeps what the lane reads, while readers keep not counting what they didn't. -/
-theorem LaneKeeps.addWrite {st : State} {w : Write} {u acc : List EditId} {df : List (EditId × CapGroup)}
+theorem LaneKeeps.addWrite {st : State} {w : Write} {u acc : List EditId} {df : List (EditId × CapGroup)} {ad : List (EditId × List Ops.Loc)}
     (hf : w.first = false) (hu : ∀ d ∈ st.uncounted, d ∈ u) :
-    LaneKeeps st { st with writes := st.writes ++ [w], uncounted := u, accepts := acc, defs := df } where
+    LaneKeeps st { st with writes := st.writes ++ [w], uncounted := u, accepts := acc, defs := df, adds := ad } where
   entries en hen := ⟨en, hen, rfl, rfl, rfl, rfl⟩
   counted x hx hxf := by
     rw [mem_counted] at hx
@@ -1516,8 +1516,8 @@ theorem LaneKeeps.addWrite {st : State} {w : Write} {u acc : List EditId} {df : 
     starting its own line, whose author acted for its actor, while readers keep not counting what they didn't. -/
 theorem apply_lane {st post : State} {edit : Edit} (h : apply st edit = some post) :
     LaneKeeps st post ∨
-    ∃ v e actor epoch proposal via x hdr tags proof touches fits defines,
-      edit.action = .write v e actor none epoch [] proposal via (some (x, hdr)) tags proof touches fits defines ∧
+    ∃ v e actor epoch proposal via x hdr tags proof touches fits defines adds,
+      edit.action = .write v e actor none epoch [] proposal via (some (x, hdr)) tags proof touches fits defines adds ∧
       proposal.isOn = false ∧ actsVia st edit.author via actor = true ∧ st.entry? e = none ∧
       (∃ en : Entry, en.id = e ∧ en.vault = v ∧ en.attrs.type = hdr.type ∧ en.blob = hdr.blob ∧
         post.entries = st.entries ++ [en]) ∧
@@ -1526,7 +1526,7 @@ theorem apply_lane {st post : State} {edit : Edit} (h : apply st edit = some pos
         (proposal == .main) fits) edit.id := by
   unfold apply at h
   split at h
-  case h_10 v e actor stay epoch deps proposal via create tags proof touches fits defines heq =>
+  case h_10 v e actor stay epoch deps proposal via create tags proof touches fits defines adds heq =>
     dsimp only at h
     split at h
     · cases h
@@ -1559,7 +1559,8 @@ theorem apply_lane {st post : State} {edit : Edit} (h : apply st edit = some pos
         · rfl
         · simp [hp] at hnew
       subst hstay hdeps
-      exact .inr ⟨v, e, actor, epoch, proposal, via, x, hdr, tags, proof, touches, fits, defines, heq, hprop, hact, hnone,
+      exact .inr ⟨v, e, actor, epoch, proposal, via, x, hdr, tags, proof, touches, fits, defines, adds, heq, hprop, hact,
+        hnone,
         ⟨_, rfl, rfl, rfl, rfl, rfl⟩, rfl, rfl⟩
     · -- a write to an existing entry: it sets no type nor blob, and isn't a first write
       split at h
@@ -2036,14 +2037,14 @@ theorem T14_entries_whole {st : State} (hr : Reachable st) :
 
 theorem T17_lane_from_creations {st st' : State} (hr : Reachable st) {edit : Edit} (h : step st edit = some st')
     {v : VaultId} {b : BlobId} (hb : b ∈ laneOf st' v) :
-    b ∈ laneOf st v ∨ ∃ e epoch via x hdr tags proof touches defines,
-      edit.action = .write v e v none epoch [] .main via (some (x, hdr)) tags proof touches true defines ∧
+    b ∈ laneOf st v ∨ ∃ e epoch via x hdr tags proof touches defines adds,
+      edit.action = .write v e v none epoch [] .main via (some (x, hdr)) tags proof touches true defines adds ∧
       hdr.type ∈ schemaTypes ∧ hdr.blob = b ∧ actsVia st edit.author via v = true := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h
   rw [laneOf_settle] at hb
   rcases apply_lane hpost with hk | ⟨v', e, actor, epoch, proposal, via, x, hdr, tags, proof, touches, fits, defines,
-      hact, -,
+      adds, hact, -,
       hacts, hnone, ⟨en, hid, hv, ht, hbl, hes⟩, hws, hus⟩
   · exact .inl (hk.mem_lane hb)
   -- a creation: the blob is of an entry whose first write readers count
@@ -2082,11 +2083,11 @@ theorem T17_lane_from_creations {st st' : State} (hr : Reachable st) {edit : Edi
         exact hc.1
       have hvv : v' = v := hv.symm.trans hyv
       subst hfits hvv hwa
-      exact .inr ⟨e, epoch, via, x, hdr, tags, proof, touches, defines, hact, ht ▸ hyt, hbl.symm, hacts⟩
+      exact .inr ⟨e, epoch, via, x, hdr, tags, proof, touches, defines, adds, hact, ht ▸ hyt, hbl.symm, hacts⟩
 
 theorem T17_writes_ignored {st st' : State} (hone : ∀ x ∈ st.entries, ∀ y ∈ st.entries, x.id = y.id → x = y)
-    {edit : Edit} (h : step st edit = some st') {v e actor stay epoch deps proposal via tags proof touches fits defines}
-    (ha : edit.action = .write v e actor stay epoch deps proposal via none tags proof touches fits defines) :
+    {edit : Edit} (h : step st edit = some st') {v e actor stay epoch deps proposal via tags proof touches fits defines adds}
+    (ha : edit.action = .write v e actor stay epoch deps proposal via none tags proof touches fits defines adds) :
     laneOf st' = laneOf st := by
   unfold step at h
   obtain ⟨post, hpost, rfl⟩ := Option.map_eq_some_iff.1 h

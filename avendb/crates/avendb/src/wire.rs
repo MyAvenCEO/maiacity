@@ -584,6 +584,7 @@ impl Decode for Op {
             })? },
             // a creation's lines, named: one with none is the creation of kind 3
             13 => Op::Create { on: Some(On::decode(r)?) },
+            14 => Op::SetOwn { path: path(r)?, to: values(r, 1)?, on: r.option()? },
             _ => return Err(WireError::Unknown),
         })
     }
@@ -1718,12 +1719,16 @@ mod tests {
         for ops in [suggester, crate::rules::suggester_before_drafts()] {
             assert_eq!(read(&bytes(&grant(ops.clone()))), Ok(grant(ops)));
         }
-        // a line the format lacks is no grant, and nor is a kind past 13
+        // the Member group, its setOwn ops kind 14, reads back
+        let member = crate::rules::member();
+        assert!(bytes(&grant(member.clone())).contains(&14));
+        assert_eq!(read(&bytes(&grant(member.clone()))), Ok(grant(member)));
+        // a line the format lacks is no grant, and nor is a kind past 14 (setOwn, the rooms' own edits)
         let mut b = bytes(&grant(vec![Op::Create { on: Some(On::Proposals) }]));
         b[5] = 2;
         assert_eq!(read(&b), Err(WireError::Unknown));
         b[5] = 1;
-        b[4] = 14;
+        b[4] = 15;
         assert_eq!(read(&b), Err(WireError::Unknown));
     }
 

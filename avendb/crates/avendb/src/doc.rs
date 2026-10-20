@@ -79,11 +79,13 @@ pub enum DocError {
     WrongPeer,
 }
 
-/// What an update does to the item it imports into (`Item::footprint`): what its ops touch, and the record before and
-/// after it.
+/// What an update does to the item it imports into (`Item::footprint`): what its ops touch, the rows it added (each by
+/// its place, at any depth: a row its after holds more often than its before, `ops::row_places`), and the record before
+/// and after it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Footprint {
     pub touches: Vec<Touch>,
+    pub adds: Vec<Loc>,
     pub before: Value,
     pub after: Value,
 }
@@ -480,7 +482,8 @@ impl Item {
                 out.push(Touch::Set(l, None));
             }
         }
-        Some(Footprint { touches: crate::rules::dedup(out), before, after })
+        let adds = added(&before, &after);
+        Some(Footprint { touches: crate::rules::dedup(out), adds, before, after })
     }
 
     /// The history up to `frontiers` and nothing after, as before an import that went wrong.
@@ -492,6 +495,22 @@ impl Item {
     fn root(&self) -> LoroMap {
         self.doc.get_map(ROOT)
     }
+}
+
+/// The rows record `after` holds more often than record `before`, each by its place, once per copy more.
+fn added(before: &Value, after: &Value) -> Vec<Loc> {
+    let mut had: HashMap<Loc, usize> = HashMap::new();
+    for l in crate::ops::row_places(before) {
+        *had.entry(l).or_default() += 1;
+    }
+    let mut out = vec![];
+    for l in crate::ops::row_places(after) {
+        match had.get_mut(&l) {
+            Some(n) if *n > 0 => *n -= 1,
+            _ => out.push(l),
+        }
+    }
+    out
 }
 
 /// A deep copy that edits as the same device: only one of the two may edit from then on, or two different ops would

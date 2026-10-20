@@ -72,6 +72,26 @@ pub fn rows(v: &Value) -> Option<&[Value]> {
     xs.iter().all(|x| x.get("id").and_then(Value::as_i64).is_some()).then_some(xs.as_slice())
 }
 
+/// The place of every row of every list of records in record `v`, at any depth, once per copy (two rows with one id
+/// in one list name one place twice): what a write added is what its after holds more often than its before
+/// (`doc::Footprint::adds`).
+pub fn row_places(v: &Value) -> Vec<Loc> {
+    fn walk(v: &Value, at: &Loc, out: &mut Vec<Loc>) {
+        let Some(o) = v.as_object() else { return };
+        for (f, x) in o {
+            let Some(rs) = rows(x) else { continue };
+            for r in rs {
+                let place = at.and(f, r["id"].as_i64());
+                walk(r, &place, out);
+                out.push(place);
+            }
+        }
+    }
+    let mut out = vec![];
+    walk(v, &Loc::root(), &mut out);
+    out
+}
+
 /// Each row of a list of records with its key.
 pub fn keyed(rows: &[Value]) -> Vec<(Key, &Record)> {
     let mut seen: HashMap<i64, usize> = HashMap::new();
@@ -650,6 +670,13 @@ impl Loc {
             Change::Set(p, _) => self.above(p),
             Change::Order(q, _) => self.above(q) || self.row_of(q),
         }
+    }
+
+    /// The place of the innermost row it lies in: the place up to its last row; none for a place in no row
+    /// (`Loc.row?`).
+    pub fn row(&self) -> Option<Loc> {
+        let end = self.0.iter().rposition(|s| matches!(s, Seg::Row(_)))?;
+        Some(Loc(self.0[..=end].to_vec()))
     }
 
     /// It names a list: its last step is a field.
