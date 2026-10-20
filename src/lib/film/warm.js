@@ -1,12 +1,13 @@
 // WARMING — whatever a world holds, drawn once out of sight before any shot shows it. The first time the GPU draws a
 // thing it is sent the thing's buffers and textures and compiles its shaders, and that first frame took what tens of
 // frames do (measured on the Mac: 300 ms to 2 s at a cut whose camera first sees a dome's insides, a plant, the land
-// ahead of the van). Drawn here first, into a target four pixels wide, with nothing culled and the hidden things shown
-// for the moment, a cut finds it all on the GPU: its first frame costs what any frame does. Nothing in the world knows:
-// every flag touched is put back, the shadows are not drawn again, and the canvas is not drawn on.
+// ahead of the van). Drawn here first, seen from above into a target 64 pixels wide, with nothing culled and the hidden
+// things shown for the moment, a cut finds it all on the GPU: its first frame costs what any frame does. Nothing in the
+// world knows: every flag touched is put back, the shadows are not drawn again, and the canvas is not drawn on.
 //
 // The shaders are compiled as the film draws (into a half-float target: no tone mapping, linear), not as the canvas
-// would, and set compiling a frame before their first draw, so a GPU that compiles beside the page has them ready.
+// would — the world's own compiles too —, and set compiling a frame before their first draw, so a GPU that compiles
+// beside the page has them ready.
 // Only what is new is drawn (a renderable not warmed with its geometry and material yet): the whole world as the shots
 // are prepared, and while a timeline plays, what the world builds for the shots ahead, a few at a time.
 import * as THREE from 'three';
@@ -41,6 +42,17 @@ export function createWarmer(renderer) {
 		} finally {
 			renderer.setRenderTarget(before);
 		}
+	};
+	// and whatever the world compiles itself (a dome as it is built, a level of a library asset), compiled as the film
+	// draws: in film mode the canvas only ever shows the view (./pipeline.js), so a variant for the canvas is never used,
+	// and the first frame that drew the thing compiled it again, at the cut
+	const compile = renderer.compile;
+	renderer.compile = function (/** @type {any[]} */ ...a) {
+		if (renderer.getRenderTarget() !== null) return compile.apply(this, /** @type {any} */ (a));
+		/** @type {any} */
+		let out;
+		onTarget(() => void (out = compile.apply(this, /** @type {any} */ (a))));
+		return out;
 	};
 	const materials = (/** @type {any} */ o) => /** @type {THREE.Material[]} */ (Array.isArray(o.material) ? o.material : [o.material]).filter(Boolean);
 
@@ -144,10 +156,7 @@ export function createWarmer(renderer) {
 		 * @param {THREE.Scene} scene @param {THREE.Camera} camera @returns {Promise<number>} how many were drawn
 		 */
 		async all(scene, camera) {
-			/** @type {Promise<unknown>} */
-			let compiled = Promise.resolve();
-			onTarget(() => void (compiled = renderer.compileAsync(scene, camera)));
-			await compiled;
+			await renderer.compileAsync(scene, camera);
 			found = [];
 			ripe = [];
 			const objs = fresh(scene, camera);
@@ -179,7 +188,7 @@ export function createWarmer(renderer) {
 			const next = found.splice(0, batch);
 			for (const o of next) {
 				const mats = materials(o).filter((m) => !compiling.has(m));
-				if (mats.length && isIn(o, scene)) onTarget(() => renderer.compile(o, camera, scene));
+				if (mats.length && isIn(o, scene)) renderer.compile(o, camera, scene);
 				for (const m of mats) compiling.add(m);
 			}
 			ripe.push(...next);
