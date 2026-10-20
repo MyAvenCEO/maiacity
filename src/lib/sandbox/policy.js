@@ -19,6 +19,24 @@ export const DENY = DENIED.map((f) => `${f} 'none'`).join('; ');
 /** The `sandbox` attribute: scripts, and nothing else (no same origin, forms, popups, modals, downloads, top navigation). */
 export const SANDBOX = 'allow-scripts';
 
+/** What a frame's own policy shuts, every one of them, unless the frame's kind opens one to what it names. */
+export const SHUT = ['connect-src', 'img-src', 'style-src', 'font-src', 'media-src', 'frame-src', 'object-src', 'manifest-src', 'form-action', 'base-uri'];
+
+/** What no frame of ours may ever open, whatever its kind: no connection, no frame inside it, no plug-in, no form, no base. */
+export const NEVER = ['connect-src', 'frame-src', 'object-src', 'manifest-src', 'form-action', 'base-uri'];
+
+/**
+ * A frame's Content Security Policy, one way for every kind (the shell's, ./frame.js; a view's, ./view-host.js): it
+ * starts from nothing (default-src 'none'), runs the scripts `script` names, makes workers and children only from blob:
+ * URLs, and shuts every directive in SHUT but those `open` names. A directive in NEVER cannot be opened.
+ * @param {{ script: string, children?: boolean, open?: Record<string, string> }} o
+ */
+export function frameCsp({ script, children = false, open = {} }) {
+	const opened = NEVER.find((d) => d in open);
+	if (opened) throw new Error(`no frame of ours opens ${opened}`);
+	return ["default-src 'none'", `script-src ${script}`, 'worker-src blob:', ...(children ? ['child-src blob:'] : []), ...SHUT.map((d) => `${d} ${open[d] ?? "'none'"}`)].join('; ');
+}
+
 /**
  * The script of every shell's frame (./frame.js), the same text in each. It makes a worker of the engine it is handed
  * for each room the page names, and never puts two rooms in one worker; it passes messages both ways, the arrays

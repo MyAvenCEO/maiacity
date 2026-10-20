@@ -18,7 +18,7 @@ import { LIBS } from '../../../game/code/limits.js';
 import { fromA2ui } from './view/a2ui.js';
 import { workerFor } from './engines.js';
 import { engineCode } from './frame.js';
-import { VIEW_SCRIPT } from './policy.js';
+import { VIEW_SCRIPT, frameCsp } from './policy.js';
 
 /**
  * A view as the host shows it: `{ id, title, html, libs, height (0: as high as what it shows), data, input, logic?,
@@ -67,22 +67,7 @@ export async function workerOf(view, engine) {
 
 /** the frame's policy: our engine's script by its nonce and blob: URLs it makes, nothing in or out */
 export const viewCsp = (nonce) =>
-	[
-		"default-src 'none'",
-		`script-src 'nonce-${nonce}' blob:`,
-		'worker-src blob:',
-		'child-src blob:',
-		"style-src 'unsafe-inline'",
-		'img-src data: blob:',
-		'font-src data:',
-		'media-src data: blob:',
-		"connect-src 'none'",
-		"frame-src 'none'",
-		"object-src 'none'",
-		"manifest-src 'none'",
-		"base-uri 'none'",
-		"form-action 'none'"
-	].join('; ');
+	frameCsp({ script: `'nonce-${nonce}' blob:`, children: true, open: { 'style-src': "'unsafe-inline'", 'img-src': 'data: blob:', 'font-src': 'data:', 'media-src': 'data: blob:' } });
 
 /**
  * The frame's first document: nothing of a view's in it, only the script that takes our engine (and the port it

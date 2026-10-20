@@ -2,7 +2,7 @@
 import { base } from '$app/paths';
 import { hashBytes } from '../../../game/hash.js';
 import { enginesOf, latestOf, pathOf } from './engines.js';
-import { DENY, SANDBOX, SHELL_SCRIPT } from './policy.js';
+import { DENY, SANDBOX, SHELL_SCRIPT, frameCsp } from './policy.js';
 /*
  * THE SHELL — where code we cannot trust runs in a page: a worker inside a frame with no origin. One shell for every
  * host: the asset box (recipes, ../assets/box/host.js), the logic host (rules, view logic, functions, ./logic-host.js)
@@ -33,8 +33,7 @@ import { DENY, SANDBOX, SHELL_SCRIPT } from './policy.js';
  */
 
 /** The frame's policy: nothing in or out but its own script, its worker's blob and, if `wasm`, WebAssembly. */
-export const csp = ({ wasm = false } = {}) =>
-	["default-src 'none'", `script-src 'unsafe-inline' blob:${wasm ? " 'wasm-unsafe-eval'" : ''}`, 'worker-src blob:', "connect-src 'none'", "img-src 'none'", "style-src 'none'", "font-src 'none'", "media-src 'none'", "frame-src 'none'", "object-src 'none'", "form-action 'none'", "base-uri 'none'"].join('; ');
+export const csp = ({ wasm = false } = {}) => frameCsp({ script: `'unsafe-inline' blob:${wasm ? " 'wasm-unsafe-eval'" : ''}` });
 
 // the frame: its policy, and its one script (./policy.js SHELL_SCRIPT), which the page's own policy names by its hash
 const frameOf = (policy) => `<!doctype html><meta http-equiv="Content-Security-Policy" content="${policy}"><script>${SHELL_SCRIPT}<\/script>`;
