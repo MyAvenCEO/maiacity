@@ -10,10 +10,13 @@
  * Code runs on the logic engine it names (`engine`, a code entry's version: ./engines.js `engineFor`), never one below
  * the floor; code that names none runs on the floor. Each version has a shell of its own.
  *
- *   runOnce({ code, kind, name, json, seed?, now?, engine? })   code loaded, called once and gone: { exports, out?, error? }
+ *   runOnce({ code, kind, name, json, seed?, now?, limits?, engine? })
+ *                                                                 code loaded, called once and gone: { exports, out?, error? };
+ *                                                                 `limits` held to the core's MOST (./logic.js `within`),
+ *                                                                 from logic engine 2 on (engine 1 runs on the core's own)
  *   load(units, { seed?, now?, engine? })                        code kept loaded: { units, call(i, kind, name, json), end() }
  */
-import { open, quickjs } from './logic.js';
+import { LIMITS, open, quickjs, within } from './logic.js';
 import { engineFor } from './engines.js';
 import { BUDGETS } from './policy.js';
 
@@ -42,20 +45,25 @@ const inPage = () => typeof document !== 'undefined' && typeof window !== 'undef
 /**
  * Code `code` loaded, export `name` called once the way `kind` says (./logic.js GLUE) with JSON text `json`, and the
  * engine gone: `{ exports, out }` (out: the JSON text it handed back, or undefined), or `{ exports, error }`.
- * @param {{ code: string, file?: string, kind: string, name: string | null, json: string, seed?: number, now?: number, engine?: number }} o
+ * @param {{ code: string, file?: string, kind: string, name: string | null, json: string, seed?: number, now?: number, limits?: object, engine?: number }} o
  * @returns {Promise<{ exports: string[], out?: string, error?: string }>}
  */
 export async function runOnce({ engine, ...o }) {
-	if (!engineFor('logic', engine)) return { exports: [], error: notFrozen(engine) };
+	const e = engineFor('logic', engine);
+	if (!e) return { exports: [], error: notFrozen(engine) };
+	// what the run may use, as the engine it names takes it: engine 1 takes no limits of a run's own
+	const limits = e.v >= 2 ? within(o.limits) : LIMITS;
 	if (inPage()) {
 		try {
-			const { exports, out, error } = await (await shellOf(engine)).ask('run', o);
+			// the shell waits past the run's own backstops before it tears down
+			const timeout = Math.max(TIMEOUT, 2 * (limits.load.ms + limits.call.ms));
+			const { exports, out, error } = await (await shellOf(engine)).ask('run', { ...o, limits }, { timeout });
 			return error ? { exports, error } : { exports, out };
 		} catch (e) {
 			return { exports: [], error: e.message || String(e) };
 		}
 	}
-	const unit = open(await quickjs(), o);
+	const unit = open(await quickjs(), { ...o, limits });
 	try {
 		if (unit.error) return { exports: [], error: unit.error };
 		if (o.name != null && !unit.exports.includes(o.name)) return { exports: unit.exports, error: `it exports no ${o.name}` };

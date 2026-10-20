@@ -12,11 +12,14 @@
  *
  * Messages: { id, op: 'open', units: [{ code, file? }], seed?, now? } is answered with { id, ok: true, session,
  * units: [{ exports, error }] }; { id, op: 'call', session, unit, kind, name, json } with { id, ok: true, out } or
- * { id, ok: false, error }; { id, op: 'run', code, file?, seed?, now?, kind, name, json } (open, one call, gone) with
- * { id, ok: true, exports, out?, error? }; { id, op: 'end', session } with { id, ok: true }.
+ * { id, ok: false, error }; { id, op: 'run', code, file?, seed?, now?, limits?, kind, name, json } (open, one call,
+ * gone) with { id, ok: true, exports, out?, error? }; { id, op: 'end', session } with { id, ok: true }.
+ *
+ * Version 2: a run may name its own `limits`, held to the core's `MOST` (`within`), a measurement's (an AIP's measuring
+ * logic, src/lib/proposals/measure.js); without them, the core's own. Version 1 ran every run on the core's own.
  */
 import './lockdown.js';
-import { open, quickjs } from './logic.js';
+import { open, quickjs, within } from './logic.js';
 
 const sessions = new Map();
 let next = 1;
@@ -37,7 +40,7 @@ async function handle(m) {
 		return { out: unit.call(m.kind, m.name ?? null, String(m.json)) };
 	}
 	if (m.op === 'run') {
-		const unit = open(await quickjs(), { code: String(m.code ?? ''), file: m.file, seed: m.seed, now: m.now });
+		const unit = open(await quickjs(), { code: String(m.code ?? ''), file: m.file, seed: m.seed, now: m.now, limits: within(m.limits) });
 		try {
 			if (unit.error) return { exports: [], error: unit.error };
 			if (m.name != null && !unit.exports.includes(m.name)) return { exports: unit.exports, error: `it exports no ${m.name}` };

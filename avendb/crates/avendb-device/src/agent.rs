@@ -899,9 +899,9 @@ fn instructions(name: &str, cloud: bool) -> String {
              would put at that path (field names split by dots, `#n` the row whose id is n, an entry's first 8 hex \
              digits and a slash first to pick its line), its baseline what main holds there, and `current \"path\"` \
              what main holds, so `atLeast (proposed \"params.#1.default\") 0.8` reads its progress from every \
-             write on its lines; `measured \"fps\"` reads only the readings a Measurer of the vault wrote, its \
-             measuring job, never its author, so an agent's own reading counts as a `reading` alone; the \
-             objective names the measuring logic that job runs, `def sim : Measure := logic \"valley-sim\"`, a \
+             write on its lines; `measured \"fps\"` reads only the readings a Measurer of the vault wrote, those who \
+             accept its AIPs on their own devices, never its author, so an agent's own reading counts as a \
+             `reading` alone; the objective names the measuring logic they run, `def sim : Measure := logic \"valley-sim\"`, a \
              logic module on the vault's main line tagged `ref:logic/measures/valley-sim` that exports \
              `measure(input)`, given `{{lines}}`, each line's `entry`, `type`, `tags` and `record` on one side \
              (`aip_records` (`entry`) reads both, `main` and `proposed`), and hands back named numbers; a file that \

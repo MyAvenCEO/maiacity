@@ -1739,9 +1739,10 @@ def bobsPass : ApiPass := { device := macB, audience := "maiaCITY API", made := 
 
 /-! ## Measurers of Maia City's AIPs (`AvenDB.Measurers`)
 
-Alice, who owns Maia City, defines its Measurer group and hands it to Bob: Bob measures the AIPs of Maia City, save
-one he started himself, and nobody else does, Alice, who holds no share of it, among them; of an AIP Alice started,
-only what Bob's writes added counts as measured. -/
+Alice owns Maia City, so she measures its AIPs, as Maia City itself does, as those who accept them, with no share; she
+defines its Measurer group and hands it to Bob: then Bob measures them too, save one he started himself; Bob's Admin
+group alone makes him no Measurer. Of an AIP Alice started, only what Bob's writes added counts as measured; of one Bob
+started, only what Alice's did. -/
 
 def measurerG := 53
 def sMeasurer : List Edit := sAdmin ++ chain 630 [
@@ -1749,10 +1750,11 @@ def sMeasurer : List Edit := sAdmin ++ chain 630 [
     (defines := some { name := "Measurer" })),
   (macA, [], .share (.grant (groupShare 33 city bob .read measurerG) [alice]))]
 #guard refused sMeasurer == []
+#guard measures (view sAdmin) city bob alice && measures (view sAdmin) city bob city && !measures (view sAdmin) city city city
 #guard measures (view sMeasurer) city alice bob && !measures (view sAdmin) city alice bob
-#guard !measures (view sMeasurer) city bob bob && !measures (view sMeasurer) city bob alice
+#guard !measures (view sMeasurer) city bob bob && !measures (view sMeasurer) city alice alice
 #guard measuredBy (view sMeasurer) city alice [(alice, [1, 2]), (bob, [3]), (alice, [4]), (bob, [5])] == [3, 5]
-#guard measuredBy (view sMeasurer) city bob [(alice, [1, 2]), (bob, [3])] == ([] : List Nat)
+#guard measuredBy (view sMeasurer) city bob [(alice, [1, 2]), (bob, [3])] == [1, 2]
 
 /-! ## A key move: every signer to ML-DSA-65
 
