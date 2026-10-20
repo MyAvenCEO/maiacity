@@ -11,10 +11,12 @@
  * that is Prem's for now (its attestation report for the model unavailable, a 5xx, rate limiting) answers 503 with
  * `transient: true`: the caller keeps the recording queued and tries again later, without using up a try.
  *
- * Who may ask: a key the admin approved with `media:admin` (the Mac app's).
+ * Who may ask: The OS by its avenDB device's pass (an admin of Maia City), or a key the admin approved with
+ * `media:admin` (the Mac app's) until The OS sends only its pass (#1107).
  */
 import { can } from "./acl";
 import { keyHolder } from "./keys";
+import { adminByPass } from "./standing";
 import { call, failure, paused, pick, prem, PremError, resetPrem } from "./prem";
 
 export const MODEL = "deepgram/general-nova-3";
@@ -121,10 +123,16 @@ export async function transcribe(bytes: Uint8Array, mime = "audio/mp4", name = "
 }
 
 // ── who may ask ──
-/** A key the admin approved for the media library (the Mac app's) — else the response that says why not. */
+/** The OS by its avenDB device's pass in `X-Avendb-Pass`, an admin of Maia City as avenDB's server says (standing.ts),
+ *  or by the key the admin approved for the media library (the Mac app's) — else the response that says why not. */
 export async function authorize(req: Request): Promise<true | Response> {
+  const pass = req.headers.get("x-avendb-pass");
+  if (pass) {
+    const admin = await adminByPass(pass);
+    return "error" in admin ? Response.json({ error: admin.error }, { status: admin.status }) : true;
+  }
   const key = await keyHolder(req);
-  if (!key) return Response.json({ error: "Speech to text and the shot analysis need the app's key." }, { status: 401 });
+  if (!key) return Response.json({ error: "Speech to text and the shot analysis need The OS's avenDB pass or its key." }, { status: 401 });
   if (!(key.scope.includes("media:admin") && can(key, "media:admin"))) return Response.json({ error: "This key cannot work with the media vault." }, { status: 403 });
   return true;
 }

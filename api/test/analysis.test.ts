@@ -1,7 +1,7 @@
 // The shot analysis: Qwen's answers validated into the vocabulary (game/film/vocabulary.json), the requests it gets
 // (frames as data URIs, the JSON schema), the repair of an unusable answer, and who may ask — against fixtures in the
 // shape of Prem's chat completions (test/fixtures/qwen-*.json, written by hand: Prem is not called here).
-import { afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { PGlite } from "@electric-sql/pglite";
 import { useDb, type Db } from "../src/pg";
@@ -129,6 +129,33 @@ describe("POST /api/analysis", () => {
     expect((await analyseRoute(post(framesBody, ""))).status).toBe(401);
     expect((await analyseRoute(post(framesBody, "mck_unknown"))).status).toBe(401);
     expect((await analyseRoute(post(framesBody, OTHER_KEY))).status).toBe(403);
+  });
+
+  describe("The OS's avenDB device pass", () => {
+    // avenDB's server, stood in for: an admin of Maia City's pass, and anyone else's
+    const feed = Bun.serve({
+      port: 0,
+      async fetch(req) {
+        const { pass } = await req.json();
+        return Response.json(pass.startsWith("admin") ? { vault: "ab".repeat(32), admin: true } : { vault: "cd".repeat(32), admin: false });
+      },
+    });
+    const was = process.env.AVENDB_FEED;
+    process.env.AVENDB_FEED = `http://127.0.0.1:${feed.port}/feed/code`;
+    afterAll(() => {
+      feed.stop(true);
+      process.env.AVENDB_FEED = was;
+    });
+    const ask = (pass: string) => statusRoute(new Request("http://api/api/analysis", { headers: { "x-avendb-pass": pass } }));
+
+    test("an admin of Maia City's pass opens it, once; anyone else's, or a pass that is no pass, opens nothing", async () => {
+      delete process.env.PREMAI_API_KEY;
+      const admin = `admin${"A".repeat(80)}`;
+      expect((await ask(admin)).status).toBe(200);
+      expect((await ask(admin)).status).toBe(401);
+      expect((await ask(`other${"A".repeat(80)}`)).status).toBe(403);
+      expect((await ask("short")).status).toBe(401);
+    });
   });
 
   test("without Prem's key it says so: 503 — and the status route tells the vault server", async () => {
