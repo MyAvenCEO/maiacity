@@ -32,7 +32,7 @@ beforeAll(async () => {
   useDb(db);
   await initRoles();
   await pg.query("INSERT INTO founders (id, name, role) VALUES ('first', 'first', 'admin')");
-  await pg.query("INSERT INTO api_keys (founder_id, hash, scope, label) VALUES ('first', $1, 'media:admin', 'Mac'), ('first', $2, 'ideas:admin', 'notes')", [sha(MEDIA_KEY), sha(OTHER_KEY)]);
+  await pg.query("INSERT INTO api_keys (founder_id, hash, scope, label) VALUES ('first', $1, 'media:admin', 'Mac'), ('first', $2, 'db:read', 'tables')", [sha(MEDIA_KEY), sha(OTHER_KEY)]);
   await pg.query("INSERT INTO vault_config (key, value) VALUES ('api_token', $1)", [sha(SERVER_TOKEN)]);
 });
 

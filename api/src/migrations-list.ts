@@ -1065,4 +1065,17 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE signup_invites ALTER COLUMN made_by DROP NOT NULL;
     `,
   },
+  {
+    // the admin's notebook (Samuel 2026-10-20: "the idea table is empty so you can drop it"): its routes are gone;
+    // dropped only while it is empty, so no idea is ever lost to it
+    id: "0056-drop-ideas",
+    sql: `
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM ideas) THEN
+          DROP TABLE ideas;
+        END IF;
+      END $$;
+    `,
+  },
 ];

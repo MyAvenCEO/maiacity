@@ -42,13 +42,15 @@
 			[
 				['about', 'About', 'info'],
 				['members', 'Owners & devices', 'users'],
-				['sharing', 'Sharing', 'share']
+				['sharing', 'Sharing', 'share'],
+				// the city's Postgres, read only, the admins' (Samuel 2026-10-20): a page of the app's own
+				['postgres', 'Postgres', 'database']
 			]
 		]
 	]);
 	/** the apps that open a page of the app's own, not one of the vault's: the studio, which cuts the vaults' footage
-	 *  into films (Samuel 2026-10-18) */
-	export const OUT = /** @type {Record<string, string>} */ ({ studio: `${base}/app/studio/` });
+	 *  into films (Samuel 2026-10-18), and the city's Postgres (src/routes/app/postgres/) */
+	export const OUT = /** @type {Record<string, string>} */ ({ studio: `${base}/app/studio/`, postgres: `${base}/app/postgres/` });
 	/** each group's name, where every group has one */
 	export const HEADS = /** @type {Record<string, string>} */ ({ '': 'Workspace' });
 	/** each group's colour: its apps' icons, on light tiles (Samuel 2026-10-18) */

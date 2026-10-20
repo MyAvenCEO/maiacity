@@ -37,7 +37,7 @@
 	const admin = $derived(isAdmin());
 	// the games this founder opens, by the cap groups of Maia City they hold
 	const games = $derived(GAME_WORLDS.filter((g) => opens(g)));
-	const apps = $derived(APPS.filter((t) => holds(founder, t) && opens(t)));
+	const apps = $derived(APPS.filter((t) => holds(founder, t)));
 	// Maia City's Assets and Worlds in avenDB, read only, for every traveler
 	const traveler = $derived(!!access.city && holdsGroup(TRAVELER));
 	// the vault avenDB's apps open in: the one picked in the nav pill

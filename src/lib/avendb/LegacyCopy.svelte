@@ -1,13 +1,11 @@
 <!--
 	What maiaCITY kept before avenDB, offered on the Sparks page (./Sparks.svelte) of the Maia City COOP alone, where the
 	acting vault may add sparks and artifacts to it (Samuel 2026-10-18: a person's own vault gets no sparks, artifacts or
-	the like from the seed; they all go into Maia City), to copy in once (./legacy.js): the inspire-me reports with their sources, the journal's
-	sources and idea pads, and the admin's notebook where the person signed in to maia.city holds it. The originals stay
-	where they are. Each piece copies as its artifacts and then its spark, one after another; what is copied already is
+	the like from the seed; they all go into Maia City), to copy in once (./legacy.js): the inspire-me reports with their
+	sources, the journal's sources and idea pads. The originals stay where they are. Each piece copies as its artifacts and then its spark, one after another; what is copied already is
 	left out, so it shows only while something is left. "Not now" hides it in this browser for this vault.
 -->
 <script>
-	import { apiCall } from '$lib/auth/client';
 	import { ARTIFACT } from './artifacts.js';
 	import { copying, pieces, uncopied } from './legacy.js';
 	import { creatable } from './ops.js';
@@ -17,35 +15,19 @@
 	/** @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, api: any, busy: boolean }} */
 	let { world, vault, actor, api, busy } = $props();
 
-	/** the notebook's ideas, once the server gave them; why not, where it didn't */
-	let ideas = $state(/** @type {{ id: string, body: string, done: boolean }[]} */ ([]));
-	let noIdeas = $state('');
-	$effect(() => {
-		let gone = false;
-		apiCall('/api/ideas').then(
-			(got) => !gone && Array.isArray(got) && (ideas = /** @type {any} */ (got)),
-			() => !gone && (noIdeas = 'The notebook’s ideas come along when you’re signed in to maia.city as its admin.')
-		);
-		return () => {
-			gone = true;
-		};
-	});
-
 	/** whether this is the Maia City COOP of the person's seed: the one vault the copy goes into */
 	const city = $derived(seeded(world)[0]?.[0]?.id === vault);
-	const left = $derived(city ? uncopied(world, vault, pieces(ideas)) : []);
+	const left = $derived(city ? uncopied(world, vault, pieces()) : []);
 	const by = $derived({
 		report: left.filter((p) => p.kind === 'report').length,
 		journal: left.filter((p) => p.kind === 'journal').length,
-		pad: left.filter((p) => p.kind === 'pad').length,
-		idea: left.filter((p) => p.kind === 'idea').length
+		pad: left.filter((p) => p.kind === 'pad').length
 	});
 	const what = $derived(
 		[
 			by.report && `${count(by.report, 'inspire-me report')} with ${by.report === 1 ? 'its source' : 'their sources'}`,
 			by.journal && 'the journal’s sources',
-			by.pad && count(by.pad, 'story idea pad'),
-			by.idea && count(by.idea, 'notebook idea')
+			by.pad && count(by.pad, 'story idea pad')
 		].filter(Boolean)
 	);
 
@@ -94,7 +76,7 @@
 		failed = '';
 		for (const p of todo) {
 			const ops = await copying(p, vault, actor, t).catch(() => null);
-			const got = ops && (await api.runAll(`Copying ${p.kind === 'idea' ? 'an idea' : `“${p.name}”`} (${going.done + 1} of ${going.of})`, ops));
+			const got = ops && (await api.runAll(`Copying “${p.name}” (${going.done + 1} of ${going.of})`, ops));
 			if (!got) {
 				failed = `Stopped at “${p.name}”. What was copied stays; copying again goes on from there.`;
 				break;
@@ -117,7 +99,6 @@
 					>{what.join(', ')}. Copying makes each a spark in {nameOf(world.vaults.find((v) => v.id === vault))}, its sources artifacts on
 					it; the originals stay where they are.</span
 				>
-				{#if noIdeas}<small class="soft">{noIdeas}</small>{/if}
 				{#if failed}<small class="warn">{failed}</small>{/if}
 			{/if}
 		</div>
