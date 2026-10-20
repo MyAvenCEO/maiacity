@@ -5,15 +5,27 @@
 # (the layers are cached between CI runs).
 FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS chef
 WORKDIR /src
+# each build here is a fresh one: the incremental cache the Mac's release builds keep (Cargo.toml) would only grow the layer
+ENV CARGO_INCREMENTAL=0
+
+# avenDB's crates as cargo reads them to load the workspace, and no more: each manifest, the lockfile and every
+# target's root, emptied. vault-server links none of them, so an avenDB change (most days several) leaves this the
+# same and the compiled dependencies cached, where the whole of avendb/ made them build again (6 minutes) each time.
+FROM chef AS avendb
+COPY avendb/ /avendb/
+RUN cd /avendb \
+ && find . -type f ! -name Cargo.toml ! -name Cargo.lock ! -path '*/src/lib.rs' ! -path '*/src/main.rs' ! -path '*/src/bin/*.rs' -delete \
+ && find . -name '*.rs' -exec truncate -s 0 {} + \
+ && find . -type d -empty -delete
 
 FROM chef AS planner
-COPY avendb/ /avendb/
+COPY --from=avendb /avendb/ /avendb/
 COPY vault/ ./
 RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS build
 COPY --from=planner /src/recipe.json recipe.json
-COPY avendb/ /avendb/
+COPY --from=avendb /avendb/ /avendb/
 RUN cargo chef cook --release --locked --package vault-server --recipe-path recipe.json
 COPY vault/ ./
 RUN cargo build --release --locked -p vault-server && cp target/release/vault-server /vault-server

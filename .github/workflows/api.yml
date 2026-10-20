@@ -23,6 +23,8 @@ on:
       - 'deploy/**'
       - 'docker-compose*.yml'
       - 'vault/**'
+      # the Mac app (The OS), which no server image holds: its changes reach the Mac, never the server
+      - '!vault/app/**'
       # what else the API image copies (api/Dockerfile), and the allow list that lets it into the build (.dockerignore)
       - 'src/lib/sandbox/engines.json'
       - 'src/lib/avendb/device/avendb_browser.js'
