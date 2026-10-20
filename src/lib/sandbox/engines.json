@@ -162,6 +162,14 @@
 			"bytes": 318090,
 			"version": "0.18.13",
 			"note": "A view's worker answers the watch (its beat port) as soon as it is free, with nothing of the view's script able to bend the answer, and spaces its animation frames out when the frame asks it to (pace, up to 2 s apart), so a scene too heavy for the machine slows down instead of being stopped"
+		},
+		{
+			"v": 3,
+			"date": "2026-10-20",
+			"blake3": "89a402eac7d4ca94aa996c8a30c796585ef5a36c007239f2bdf75fb86db7b407",
+			"bytes": 318219,
+			"version": "0.18.13",
+			"note": "takes WebAssembly off the view's worker: WebKit compiled it despite the frame's policy"
 		}
 	]
 }
