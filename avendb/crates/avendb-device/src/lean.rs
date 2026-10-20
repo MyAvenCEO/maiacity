@@ -413,7 +413,11 @@ impl Lean {
         objective::read(lean).map_err(|e| anyhow!("avenDB's engine doesn't read it, so Lean won't: {e}"))?;
         let r = release().context("Lean has no release for this Mac")?;
         ensure!(self.here(), "Lean isn't on this Mac yet");
-        let module = self.objective().await?;
+        // one compile of the objective module at a time, as a getting compiles it too
+        let module = {
+            let _one = self.once.lock().await;
+            self.objective().await?
+        };
         let t = Instant::now();
         let mut run = self.command(&module, None)?;
         run.arg("--stdin");
