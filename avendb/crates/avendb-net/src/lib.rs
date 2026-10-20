@@ -1366,6 +1366,23 @@ impl Node {
         json!({ "peers": heard.len(), "logs": logs.len(), "behind": behind.len(), "pulling": pulling })
     }
 
+    /// The devices it is connected to now, as their hellos proved them, each with how many logs it holds edits in that
+    /// this device lacks (`differ`), as `synced` counts them, or `None` until it told what it holds: what a removal of
+    /// keys waits for, as it cuts what rests on them that its drafter doesn't hold (T16; the key move's retire step).
+    pub async fn live_peers(&self) -> BTreeMap<SignerId, Option<usize>> {
+        let live: BTreeSet<SignerId> = {
+            let peers = self.shared.peers.lock().expect("peers");
+            peers.values().filter(|p| p.conn.close_reason().is_none()).map(|p| p.device).collect()
+        };
+        let mut out = BTreeMap::new();
+        for device in live {
+            let told = self.shared.held.lock().expect("held").contains_key(&device);
+            let lacks = if told { Some(self.shared.differ(device).await.len()) } else { None };
+            out.insert(device, lacks);
+        }
+        out
+    }
+
     /// How many requests and announcements it has sent so far.
     pub fn sent(&self) -> (usize, usize) {
         (self.shared.sent.requests.load(Ordering::Relaxed), self.shared.sent.announcements.load(Ordering::Relaxed))
