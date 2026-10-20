@@ -1050,6 +1050,8 @@ fn drafted(
         }
     }
     moves.extend(avens.iter().map(|a| (a.device, a.next)));
+    // nothing moves, nothing to sign: the checkpoint over what earlier keys signed rides a move's ceremony or the
+    // retire's, never one of its own
     if moves.is_empty() {
         return Ok(None);
     }

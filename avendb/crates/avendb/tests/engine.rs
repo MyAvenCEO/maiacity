@@ -2050,3 +2050,28 @@ fn a_coops_entry_is_written_by_its_aven_and_the_people_who_signed_its_writes() {
     let first = list(&history["edits"]).iter().find(|e| e["version"] == 1).expect("its first release");
     assert_eq!(names(&first["authors"]), [aven, alice.to_hex()], "its first version, before Bob wrote");
 }
+
+/// What a device's work cost is its own (`Lab::perf`): `perf` reads it like any read, writes nothing, takes no field,
+/// and says what the device holds as it holds it.
+#[test]
+fn perf_reads_what_the_devices_work_cost_and_writes_nothing() {
+    let mut w = cast::world();
+    cast::library(&mut w);
+    w.lab.sync_all(5);
+    let mac = w.mac_a;
+    let op = json!({ "op": "perf" });
+    assert!(engine::reads(&op), "a read");
+    let edits = w.lab.log(mac).edits().len();
+    let perf = ok(run(&mut w, mac, op.clone()));
+    assert!(perf["timers"].is_object() && perf["counts"].is_object(), "{perf}");
+    assert_eq!(perf["held"]["edits"], edits, "the edits it holds");
+    let replay = &perf["timers"]["replay"];
+    assert!(replay["count"].as_u64().is_some_and(|n| n > 0), "it replayed: {perf}");
+    assert!(replay["max_ms"].as_f64() <= replay["total_ms"].as_f64(), "{replay}");
+    // it changes nothing: no edit made, and asked again it answers the same of what it holds
+    assert_eq!(w.lab.log(mac).edits().len(), edits, "nothing written");
+    assert_eq!(ok(run(&mut w, mac, op.clone()))["held"], perf["held"]);
+    let alice = w.alice.to_hex();
+    assert_eq!(refused(&run(&mut w, mac, json!({ "op": "perf", "vault": alice }))), "BadOp", "it takes no field");
+    assert!(engine::prepare(&mut w.lab, mac, &op).is_err(), "read it, don't run it");
+}

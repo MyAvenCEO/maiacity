@@ -3,7 +3,8 @@
 //! sockets of its own, and keeps their vault in a folder on this Mac (~/avenDB/mac/, where the person finds all of
 //! avenDB's data), not in the web view's IndexedDB. Each call the app makes is
 //! answered by the device itself, with no lines of JSON between. The avenDB page calls it through `avendb`
-//! ($lib/avendb/native.js), in the calls the page's own device answers; each ceremony of the person's passkey it asks
+//! ($lib/avendb/native.js), in the calls the page's own device answers, a file's bytes both ways as they are, never in
+//! base64 in JSON (`avendb_read`, `avendb_chunk`); each ceremony of the person's passkey it asks
 //! for runs in the sign-in sheet over the window that called last (passkey.rs), what comes back sealed to a key the
 //! device made for that ceremony alone; each touch of the Mac's Touch ID key it asks for, the Secure Enclave answers
 //! (enclave.rs). The app's own Rust reads a file's bytes on the device's own node (`node`).
@@ -60,6 +61,45 @@ pub async fn avendb(
     call_on(&state, Some(window), call, args).await
 }
 
+/// Runs op `op` on avenDB's device as `avendb` runs it (`run`), a `read_file`'s bytes handed to the page as they are,
+/// not in base64 in JSON: the op's answer as JSON after its length (four bytes, little-endian), `bytes` in it the
+/// number of bytes read, then those bytes ($lib/avendb/native.js `readFile`). A call that fails answers why, as
+/// `avendb`'s do.
+#[tauri::command]
+pub async fn avendb_read(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Avendb>,
+    op: Value,
+) -> Result<tauri::ipc::Response, String> {
+    let (mut answer, bytes) = run_on(&state, Some(window), op).await?;
+    if let (Some(bytes), Some(out)) = (&bytes, answer.as_object_mut()) {
+        out.insert("bytes".to_string(), bytes.len().into());
+    }
+    let bytes = bytes.unwrap_or_default();
+    let json = serde_json::to_vec(&answer).map_err(|e| e.to_string())?;
+    let mut body = Vec::with_capacity(4 + json.len() + bytes.len());
+    body.extend_from_slice(&(json.len() as u32).to_le_bytes());
+    body.extend_from_slice(&json);
+    body.extend_from_slice(&bytes);
+    Ok(tauri::ipc::Response::new(body))
+}
+
+/// Hands avenDB's device a chunk of a file on its way in (`fileStart`), its bytes the call's raw body, as they are,
+/// not in base64 in JSON: the file's number in header `x-file` and where the chunk starts in `x-at`
+/// ($lib/avendb/native.js `putFile`).
+#[tauri::command]
+pub async fn avendb_chunk(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, Avendb>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<(), String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else { return Err("a chunk comes as raw bytes".into()) };
+    let header = |k: &str| request.headers().get(k).and_then(|v| v.to_str().ok()).and_then(|v| v.parse::<u64>().ok());
+    let n = header("x-file").ok_or("which file?")?;
+    let at = header("x-at").ok_or("where does the chunk start?")?;
+    chunk_on(&state, Some(window), n, at, bytes.clone()).await
+}
+
 /// Calls `call` with `args` on avenDB's device from the app's own Rust (the studio's jobs, `aven`), starting it if it
 /// isn't running: what it answered. A call that asks for the person's passkey shows its sheet over the window that
 /// called last, and fails if no page has called yet.
@@ -75,6 +115,41 @@ pub async fn node(app: &tauri::AppHandle) -> Result<Option<OpenNode>, String> {
     Ok(host_of(&app.state::<Avendb>(), None).await?.node())
 }
 
+/// Runs op `op` on avenDB's device from the app's own Rust (`run_on`): its answer, and a `read_file`'s bytes beside.
+pub async fn run(app: &tauri::AppHandle, op: Value) -> Result<(Value, Option<Vec<u8>>), String> {
+    use tauri::Manager as _;
+    run_on(&app.state::<Avendb>(), None, op).await
+}
+
+/// Hands avenDB's device chunk `bytes` of file `n` from `at` on, from the app's own Rust (`chunk_on`).
+pub async fn chunk(app: &tauri::AppHandle, n: u64, at: u64, bytes: Vec<u8>) -> Result<(), String> {
+    use tauri::Manager as _;
+    chunk_on(&app.state::<Avendb>(), None, n, at, bytes).await
+}
+
+/// What the device answered, `{"ok": value}`: the value, or why not.
+fn ok_of(answer: Value) -> Result<Value, String> {
+    match answer.get("ok") {
+        Some(ok) => Ok(ok.clone()),
+        None => Err(answer.get("error").and_then(Value::as_str).unwrap_or("no answer").to_string()),
+    }
+}
+
+/// Op `op` run on the device (`Host::run`), as `run` calls it but its bytes beside as they are: its answer, and a
+/// `read_file`'s bytes.
+async fn run_on(state: &Avendb, window: Option<tauri::WebviewWindow>, op: Value) -> Result<(Value, Option<Vec<u8>>), String> {
+    let host = host_of(state, window).await?;
+    let (answer, bytes) = host.run(op).await;
+    OPEN.store(host.node().is_some(), Ordering::Relaxed);
+    Ok((ok_of(answer)?, bytes))
+}
+
+/// Chunk `bytes` of file `n` from `at` on handed to the device (`Host::chunk`), as `fileChunk` hands it but as it is.
+async fn chunk_on(state: &Avendb, window: Option<tauri::WebviewWindow>, n: u64, at: u64, bytes: Vec<u8>) -> Result<(), String> {
+    let host = host_of(state, window).await?;
+    ok_of(host.chunk(n, at, bytes).await).map(drop)
+}
+
 async fn call_on(
     state: &Avendb,
     window: Option<tauri::WebviewWindow>,
@@ -84,10 +159,7 @@ async fn call_on(
     let host = host_of(state, window).await?;
     let answer = host.call(&call, args).await;
     OPEN.store(host.node().is_some(), Ordering::Relaxed);
-    match answer.get("ok") {
-        Some(ok) => Ok(ok.clone()),
-        None => Err(answer.get("error").and_then(Value::as_str).unwrap_or("no answer").to_string()),
-    }
+    ok_of(answer)
 }
 
 /// The device's host, started if it isn't; the window that called kept for its sheets, never the world renderer's,

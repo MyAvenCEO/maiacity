@@ -125,6 +125,8 @@ fn main() {
             auth::api,
             passkey::passkey_sheet,
             avendb::avendb,
+            avendb::avendb_read,
+            avendb::avendb_chunk,
             enclave::avendb_touch_ready,
             aven::studio_ingest,
             aven::studio_job,
