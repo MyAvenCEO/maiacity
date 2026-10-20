@@ -3293,5 +3293,41 @@
 			"role:cue",
 			"scene:breakfast"
 		]
+	},
+	"5ddd7dc657e28a84e7ef48b8064dafe5698791950dea387e7059b1c41e5d2fc1": {
+		"url": null,
+		"mime": "image/jpeg",
+		"title": "sandbox 5",
+		"description": "",
+		"tags": [
+			"game:sandbox-5",
+			"games",
+			"role:game-cover",
+			"site"
+		]
+	},
+	"a36f799daadadb75a3d845776dc8ee9730f8fd92fb1458edff5d9819c155a7c8": {
+		"url": null,
+		"mime": "image/jpeg",
+		"title": "sandbox 6",
+		"description": "",
+		"tags": [
+			"game:sandbox-6",
+			"games",
+			"role:game-cover",
+			"site"
+		]
+	},
+	"46e52e9e393b192c0a6db481e95fbf623e8d12d2753a3e1d15d1663292d2c716": {
+		"url": null,
+		"mime": "image/jpeg",
+		"title": "sandbox 7",
+		"description": "",
+		"tags": [
+			"game:sandbox-7",
+			"games",
+			"role:game-cover",
+			"site"
+		]
 	}
 }
