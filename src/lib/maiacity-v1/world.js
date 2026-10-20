@@ -24,8 +24,9 @@
  * film's clock, is the film world of /games/maiacity-v1/?film (`clock`, `own: false`, `tick`, `film`).
  */
 import * as THREE from 'three';
-import { createControls } from '$lib/render/core.js';
 import { worldRenderer } from '$lib/render/world.js';
+import { createOrbitRig } from '$lib/sandbox-kit/orbit.js';
+import { createSky } from '$lib/sandbox-kit/sky.js';
 import { blend } from '$lib/assets/clips.js';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
@@ -44,6 +45,11 @@ const HEX_R = 114.75;
 const K = HEX_R / 76.5;
 const SEAT_COLOUR = { A: 0x3f6f9a, B: 0xd7a53a };
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
+/** V1's lens under the kit's sky, by day and by night: its own colours as they were (it was drawn without tone mapping
+ *  before it came under the one sky, by a softer sun), metered against screenshots of it at noon and at dusk */
+const EXPOSURE = { day: 0.42, night: 2 };
+/** how much of the sky's own light falls on V1's things, of what the kit gives every world */
+const SKY_LIGHT = 0.3;
 
 /** Hexes point north (+z): axial (q, r) sits at x = √3·R·(q + r/2), z = 1.5·R·r; a hex is one tribe, seven are a
  *  village, seven villages the city. Our tribe's hex is the origin; its village's centre hex is the next one west,
@@ -677,32 +683,23 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the world's clock, in seconds */
 	const now = clockOf ?? (() => performance.now() / 1000);
 	let rand = random;
-	// the world renderer ($lib/render/world.js): soft shadows, V1's own colours (no tone mapping), at most 1.5 pixels
-	// per CSS pixel
-	const renderer = worldRenderer({ canvas, maxPixelRatio: 1.5, toneMapping: 'none' });
+	// the world renderer ($lib/render/world.js): ACES and soft shadows, as every world under the kit's sky, at most 1.5
+	// pixels per CSS pixel
+	const renderer = worldRenderer({ canvas, maxPixelRatio: 1.5 });
 	const scene = new THREE.Scene();
-	const sky = new THREE.Color(0xd8e2e2);
-	scene.background = sky;
-	scene.fog = new THREE.Fog(sky, 380, 2200);
 	const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 6400);
 	camera.position.set(138, 118, 170);
-	const controls = createControls(camera, canvas, { target: new THREE.Vector3(2, 1, 3), minDistance: 12 });
+	// the kit's map camera ($lib/sandbox-kit/orbit.js): drag turns and tilts, right-drag slides, the wheel zooms; the
+	// keys are the world's own (they walk the player and drive the pickup); out far enough to see the whole city plot
+	const rig = createOrbitRig(camera, canvas, { target: new THREE.Vector3(2, 1, 3), minDistance: 12, maxDistance: 2700, keys: false });
+	const controls = rig.controls;
 	/** how close the orbit may come at a place: 12 m, or nearer where the place is seen close */
 	const nearest = (offset) => Math.min(12, offset.length() * 0.8);
-	controls.maxDistance = 2700; // far enough out to see the whole city plot
 	controls.maxPolarAngle = Math.PI * 0.44;
 	controls.autoRotateSpeed = 0.25;
 	let goal = null; // where the camera eases to: { target, offset }
 	let drift = true; // the slow orbit round the place; a drag stops it until the story moves on
 	controls.addEventListener('start', () => ((drift = false), (goal = null)));
-
-	const hemi = new THREE.HemisphereLight(0xeef4ff, 0x7a6b4a, 1.1);
-	scene.add(hemi);
-	const sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
-	sun.castShadow = true;
-	sun.shadow.mapSize.set(2048, 2048);
-	Object.assign(sun.shadow.camera, { left: -110, right: 110, top: 110, bottom: -110, near: 1, far: 500 });
-	scene.add(sun, sun.target);
 
 	const world = new THREE.Group();
 	scene.add(world);
@@ -3310,25 +3307,52 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		}
 	}
 
-	// the sun by the virtual hour: up from 6 to 18, low and warm at the ends, a cool night with a moonlight; it
-	// follows what the camera looks at, so the shadows fall wherever the story is
+	// the kit's one sky ($lib/sandbox-kit/sky.js) on the story's own day: its hours run from sunrise at six to sunset at
+	// six (`day`), so the sun is as high at an hour of the story as it always was, low and warm at the ends, the moon and
+	// the stars at night; the haze takes the horizon's colour, and the sun's shadows (a box 220 m across) follow what the
+	// camera looks at, so they fall wherever the story is
 	/** the canvas's glow by day and at night, and the lantern's own light, as the bell tent gives them */
 	const CLOTH_DAY = new THREE.Color('#5a4c34'), CLOTH_NIGHT = new THREE.Color('#ffb36a'), LANTERN = 1.4;
 	/** the hour the world's light is at now: the moment's (a time-lapse moves it), the story's, else the game's */
 	const hourNow = () => moment?.hour ?? stage.hour ?? hour;
+	/** the low cut cold: a bluer, flatter light for its beat (on film, the shot's lights say it: ./intro.js COLD) */
+	const isCold = () => !film && !!moment?.cold;
+	const sky = createSky(renderer, scene, {
+		day: [6, 18],
+		shadowReach: 110,
+		shadowMap: 2048,
+		shadowNear: 1,
+		shadowFar: 500,
+		shadowBias: { bias: 0, normal: 0 },
+		lightDistance: 250,
+		fog: { near: 380, far: 2200 },
+		exposure: EXPOSURE,
+		onHour(l, { sun, fill, scene }) {
+			// V1's own light, where the kit's sun and moon stand: its warm sun, low and warmer at the ends, and its fill,
+			// pale from the sky and warm from the steppe, as strong as they always were at the hour; and less of the blue
+			// sky's own light on everything than other worlds take, so its colours stay as they were
+			const up = Math.max(0, l.e);
+			if (l.e > -0.02) sun.color.setHSL(0.1, 0.6 - up * 0.3, 0.75 + up * 0.15);
+			sun.intensity = 0.25 + up * 2.1;
+			fill.color.set(0xeef4ff);
+			fill.groundColor.set(0x7a6b4a);
+			fill.intensity = 0.35 + up * 0.85;
+			scene.environmentIntensity *= SKY_LIGHT;
+			if (!isCold()) return;
+			sun.intensity *= 0.55;
+			sun.color.setHSL(0.58, 0.25, 0.8);
+			fill.intensity *= 0.8;
+		}
+	});
+	// the players, the pickup and the van move every frame: their shadows are drawn again every frame
+	renderer.shadowMap.autoUpdate = true;
 	function light(t) {
-		const day = ((hourOf() ?? hourNow()) - 6) / 12;
-		const up = Math.sin(Math.PI * Math.min(1, Math.max(0, day)));
-		const a = Math.PI * day;
-		// the low cut cold: a bluer, flatter light for its beat (on film, the shot's lights say it: ./intro.js COLD)
-		const cold = !film && !!moment?.cold;
-		sun.target.position.copy(controls.target).setY(0);
-		sun.position.set(Math.cos(a) * 90, 8 + up * 80, -30 + Math.sin(a) * 20).add(sun.target.position);
-		sun.intensity = (0.25 + up * 2.1) * (cold ? 0.55 : 1);
-		if (cold) sun.color.setHSL(0.58, 0.25, 0.8);
-		else sun.color.setHSL(0.1, 0.6 - up * 0.3, 0.75 + up * 0.15);
-		hemi.intensity = (0.35 + up * 0.85) * (cold ? 0.8 : 1);
-		const c = new THREE.Color(0x1d2b3d).lerp(new THREE.Color(cold ? 0xb4c4d2 : 0xd8e2e2), Math.min(1, up * 1.6));
+		// set again every frame drawn: a time-lapse moves the hour, the cold beat comes and goes, and a shot scales the
+		// lights over what the hour gives them (filmHold.lights)
+		sky.set(hourOf() ?? hourNow());
+		sky.follow(controls.target.x, controls.target.z);
+		const up = Math.max(0, sky.light().e);
+		const cold = isCold();
 		// the tent glows from within once it has power, more as the light goes: its lantern turned up, the canvas warm
 		// with it (the bell tent's own night glow); and the fire in front of it lit at dusk, flickering
 		const glow = (lit ? Math.min(1, Math.max(0, (0.8 - up) / 0.55)) : 0) * (cold ? 0.35 : 1);
@@ -3345,8 +3369,6 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const burns = hearth.built >= 1 ? hearth.lit : 0;
 		hearth.hero?.tick(burns > 0.01 && fire.visible ? Math.min(0.25, Math.max(0, t - (hearth.t ?? t))) : 0);
 		hearth.t = t;
-		scene.background.copy(c);
-		scene.fog.color.copy(c);
 		// the haze keeps its distance from the camera, so the far view of the whole city still reads
 		const d = camera.position.distanceTo(controls.target);
 		scene.fog.near = Math.max(260, d * 0.75);
@@ -3456,7 +3478,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			}
 			controls.autoRotate = drift && !goal;
 			controls.autoRotateSpeed = tourOn ? 0.45 : 0.25;
-			controls.update();
+			rig.update(step);
 			if (roam && inTent) camera.position.copy(inTentAt(camera.position)); // never out through the canvas
 		}
 		// the players posed after the moment has said where they are and what they do, so a cut never shows the last
@@ -3535,8 +3557,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		hour: () => hourNow(),
 		/** the world's own lights a shot scales and colours over what the hour gives them (game/film/shot.js LIGHTS) */
 		lights: {
-			sun: (k, color) => ((sun.intensity *= k), color && sun.color.set(color)),
-			fill: (k, color) => ((hemi.intensity *= k), color && hemi.color.set(color)),
+			sun: (k, color) => ((sky.sun.intensity *= k), color && sky.sun.color.set(color)),
+			fill: (k, color) => ((sky.fill.intensity *= k), color && sky.fill.color.set(color)),
 			glow: (k, color) => {
 				if (pitched?.lamp) pitched.lamp.intensity *= k;
 				if (pitched?.canvas) (pitched.canvas.emissiveIntensity *= k), color && pitched.canvas.emissive.set(color);
@@ -3592,7 +3614,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			canvas.removeEventListener('pointerup', onUp);
 			window.removeEventListener('keydown', onKey);
 			window.removeEventListener('keyup', onKey);
-			controls.dispose();
+			rig.dispose();
+			sky.dispose();
 			renderer.dispose();
 		}
 	};

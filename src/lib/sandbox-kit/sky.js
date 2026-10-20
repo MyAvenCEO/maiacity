@@ -89,6 +89,7 @@ import { skyHour, skyTime } from './skyTime.svelte.js';
  *   clouds?: number,
  *   north?: number,
  *   map?: boolean,
+ *   day?: [number, number],
  *   onHour?: (light: SkyLight, parts: SkyParts) => void
  * }} SkyOptions
  *   view: 'ground' (the default), or 'planet' (the universe round a planet, at the origin); clock: the hour, 0…24
@@ -104,9 +105,26 @@ import { skyHour, skyTime } from './skyTime.svelte.js';
  *   the east, standing in the south at noon and setting in the west, the stars turning round the pole in the north.
  *   The sky's own frame is that sky's mirror image, which an invented world never knows and a real one would (the
  *   sun setting over the wrong bank); with `map`, `north` turns true north from −z towards +x, as a survey's grid
- *   north is turned from it. onHour: everything else in the world that changes with the hour (called once already as the sky is made, so it must not need the sky — the sun and the fill are
- *   handed to it)
+ *   north is turned from it. day: the hours this world's sun rises and sets, where its day is not the sky's own (five to
+ *   eight): every hour the world gives (its clock's, a film's) is laid on the sky's own day, so the sun rises at the
+ *   first and sets at the second, the night in between as long as it is (MaiaCity V1's story is told on a day from six
+ *   to six); the light's `hour` stays the world's. onHour: everything else in the world that changes with the hour
+ *   (called once already as the sky is made, so it must not need the sky — the sun and the fill are handed to it)
  */
+
+/** The sky's own day: the sun rises at five and sets at eight (sunAt). */
+const SUNRISE = 5, SUNSET = 20;
+
+/**
+ * An hour of a world whose day runs from `rise` to `set`, as the hour of the sky's own day: sunrise to sunrise, sunset
+ * to sunset, and in between in proportion.
+ * @param {number} hour @param {[number, number]} day
+ */
+export function onSkyDay(hour, [rise, set]) {
+	const h = (((hour - rise) % 24) + 24) % 24, light = set - rise;
+	const into = h <= light ? (h / light) * (SUNSET - SUNRISE) : SUNSET - SUNRISE + ((h - light) / (24 - light)) * (24 - (SUNSET - SUNRISE));
+	return (SUNRISE + into) % 24;
+}
 
 /**
  * The hour's sun over the ground: where it stands in the sky (a unit vector) and how high, -1…1. It rises in the
@@ -185,6 +203,7 @@ export function createSky(renderer, scene, options = {}) {
 		clouds = planet ? 0 : 0.4,
 		north = 0,
 		map = false,
+		day: worldDay = null,
 		onHour
 	} = options;
 	const turn = north ? new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), map ? -north : north) : null;
@@ -267,12 +286,12 @@ export function createSky(renderer, scene, options = {}) {
 	/** @type {SkyLight} */
 	let light = { hour: 0, e: 0, day: 0, low: 0, night: 0 };
 	const setGround = (/** @type {number} */ hour) => {
-		const l = lightAt(hour);
+		const l = lightAt(worldDay ? onSkyDay(hour, worldDay) : hour);
 		// a real place's sky: the sky's own, mirrored north for south, the stars with it (their sphere drawn mirrored)
 		if (map) for (const v of [l.dir, l.moon, l.from]) v.z = -v.z;
 		// the sky turned to where this world's north is: the sun, the moon and the stars with it
 		if (turn) for (const v of [l.dir, l.moon, l.from]) v.applyQuaternion(turn);
-		const stars = groundStars(hour);
+		const stars = groundStars(worldDay ? onSkyDay(hour, worldDay) : hour);
 		if (map) stars.set(-stars.x, -stars.y, stars.z, stars.w);
 		if (turn) stars.premultiply(turn);
 		const view = { sun: l.dir, moon: l.moon, up: new THREE.Vector3(0, 1, 0), atmosphere: 1, stars };
@@ -300,7 +319,7 @@ export function createSky(renderer, scene, options = {}) {
 		}
 	};
 	const setPlanet = (/** @type {number} */ hour) => {
-		const c = celestial(hour);
+		const c = celestial(worldDay ? onSkyDay(hour, worldDay) : hour);
 		const stars = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -c.turn);
 		planetSky = { sun: c.sun, moon: c.sun.clone().negate().applyAxisAngle(new THREE.Vector3(1, 0, 0), 0.09), stars };
 		showPlanet();
