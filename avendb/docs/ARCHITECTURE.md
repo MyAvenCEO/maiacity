@@ -694,6 +694,13 @@ that isn't for that service, is older than `PASS_LIFE` (10 minutes) or made more
 signer is no vault's device. maiaCITY's API takes each pass once, and opens its admins' pages, its Postgres window
 among them, by that answer alone: no passkey session, role or key of its own (Samuel 2026-10-20).
 
+The same pass lists the vaults the server knows to an admin (G4, `keptVaults` in `Gate.lean`): an admin's page posts a
+pass its device made for the service `avenDB vaults` (`world::VAULTS_AUDIENCE`) to `POST /feed/vaults` (`{pass}`), and
+the server answers every vault it knows, `{vaults: [{id, kind, name, owners, devices, entries, keeps}]}`
+(`world::kept_vaults`; `keeps` is `backup`, `relay` or `known`), where the pass counts and its device's vault is an
+admin of `home`, and 403 otherwise. A pass made for maiaCITY's API never lists them. maiaCITY's Vaults app shows them,
+beside who holds which of Maia City's cap groups (Samuel 2026-10-20).
+
 ### Servers: Relay or Backup
 
 A vault gives avenMAIA, the server's device vault, a wide Backup share at founding, so the server keeps the

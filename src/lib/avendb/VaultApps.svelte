@@ -43,6 +43,8 @@
 			[
 				// one page, each concept once: profile, owners, devices, sharing, backup and security (Samuel 2026-10-20)
 				['settings', 'Settings', 'settings'],
+				// every vault the server syncs, and who holds which of Maia City's cap groups: invites and roles (Samuel 2026-10-20)
+				['vaults', 'Vaults', 'vault'],
 				// the city's Postgres, read only, the admins' (Samuel 2026-10-20): a page of the app's own
 				['postgres', 'Postgres', 'database']
 			]

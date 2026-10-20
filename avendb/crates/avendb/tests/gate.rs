@@ -161,7 +161,12 @@ const API: &str = "maiaCITY API";
 
 /// The pass device `on` makes for maiaCITY's API through its engine, as a page asks its device.
 fn pass_of(w: &mut World, on: SignerId) -> ApiPass {
-    let made = engine::run(&mut w.lab, on, &json!({ "op": "api_pass", "audience": API }));
+    pass_for(w, on, API)
+}
+
+/// The pass device `on` makes for service `audience` through its engine, as a page asks its device.
+fn pass_for(w: &mut World, on: SignerId, audience: &str) -> ApiPass {
+    let made = engine::run(&mut w.lab, on, &json!({ "op": "api_pass", "audience": audience }));
     let text = made["ok"]["pass"].as_str().unwrap_or_else(|| panic!("a pass, not {made}"));
     assert_eq!(made["ok"]["expires"], w.lab.now() + PASS_LIFE, "it counts for ten minutes");
     ApiPass::from_wire(&unbase64url(text).expect("base64url")).expect("a pass's bytes")
@@ -214,4 +219,41 @@ fn a_devices_pass_shows_the_api_its_vault_and_whether_it_is_an_admin() {
     s.w.lab.lock(mac_b);
     assert_eq!(engine::run(&mut s.w.lab, mac_b, &json!({ "op": "api_pass", "audience": API }))["refused"], "Locked");
     assert_eq!(engine::run(&mut s.w.lab, mac_a, &json!({ "op": "api_pass", "audience": "" }))["refused"], "BadOp");
+}
+
+#[test]
+fn the_server_lists_the_vaults_it_knows_to_an_admins_pass_for_that_alone() {
+    let mut s = served();
+    let (mac_a, mac_b, server) = (s.w.mac_a, s.w.mac_b, s.w.server);
+    s.w.lab.set_now(1_791_500_000);
+    let now = s.w.lab.now();
+    // Alice owns Maia City and Bob holds its Admin group: each of their passes for the listing lists every vault
+    let alices = pass_for(&mut s.w, mac_a, world::VAULTS_AUDIENCE);
+    let listed = world::kept_vaults(&s.w.lab, server, &alices, now).expect("Alice's pass lists the vaults");
+    let ids: Vec<&str> = listed.iter().map(|v| v["id"].as_str().expect("an id")).collect();
+    let known: Vec<String> = s.w.lab.state(server).vaults().iter().map(|v| v.id.to_hex()).collect();
+    assert_eq!(ids, known, "every vault the server knows, in the order they were founded");
+    let maia = listed.iter().find(|v| v["id"] == s.maia.to_hex()).expect("Maia City is listed");
+    assert_eq!(maia["kind"], "coop");
+    assert_eq!(maia["owners"], json!([{ "vault": s.w.alice.to_hex() }]));
+    let alice = listed.iter().find(|v| v["id"] == s.w.alice.to_hex()).expect("Alice's vault is listed");
+    assert_eq!(alice["kind"], "human");
+    assert!(["backup", "relay", "known"].contains(&alice["keeps"].as_str().unwrap()), "what it keeps: {alice}");
+    let bobs = pass_for(&mut s.w, mac_b, world::VAULTS_AUDIENCE);
+    assert!(world::kept_vaults(&s.w.lab, server, &bobs, now).is_some(), "an Admin holder's pass lists them");
+    // a pass made for maiaCITY's API never lists them, nor one gone stale
+    let for_api = pass_of(&mut s.w, mac_a);
+    assert_eq!(world::kept_vaults(&s.w.lab, server, &for_api, now), None);
+    assert_eq!(world::kept_vaults(&s.w.lab, server, &alices, now + PASS_LIFE), None);
+    // a traveler's pass lists nothing
+    let key = s.w.lab.invite_key([9; 32]);
+    let invite = of_group(&s, Who::Invite(key), s.traveler);
+    let invite = s.w.lab.issue_group(mac_a, &[mac_a], invite).expect("Maia City invites a traveler");
+    s.w.lab.sync(mac_a, server);
+    let (mac_e, erin) = newcomer(&mut s.w, "Erin");
+    s.w.lab.hand_invite(server, mac_e, invite).expect("the server hands Erin the invite");
+    s.w.lab.claim_invite(mac_e, invite, erin, key).expect("Erin's vault claims the invite");
+    s.w.lab.sign_up(mac_e, server);
+    let erins = pass_for(&mut s.w, mac_e, world::VAULTS_AUDIENCE);
+    assert_eq!(world::kept_vaults(&s.w.lab, server, &erins, now), None);
 }

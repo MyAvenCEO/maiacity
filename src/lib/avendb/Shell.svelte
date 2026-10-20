@@ -53,6 +53,7 @@
 	import Stories from './Stories.svelte';
 	import Story from './Story.svelte';
 	import Todos from './Todos.svelte';
+	import Vaults from './Vaults.svelte';
 	import Worlds from './Worlds.svelte';
 	import Models from './Models.svelte';
 	import { NAV, OUT } from './VaultApps.svelte';
@@ -341,6 +342,8 @@
 				<Functions {world} vault={context} />
 			{:else if tab === 'jobs'}
 				<Jobs {world} vault={context} {actor} {api} />
+			{:else if tab === 'vaults'}
+				<Vaults {world} {api} {busy} />
 			{:else if tab === 'settings'}
 				<Settings {world} vault={context} {actor} {api} {busy} section={route.section} {thisName} {link} {qr} {sockets} {drives} {asks} />
 			{:else if tab !== 'studio' && tab !== 'postgres'}
