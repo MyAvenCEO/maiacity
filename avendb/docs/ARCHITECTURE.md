@@ -1736,6 +1736,16 @@ its next key at that endpoint stands for it, once the server's card shows both a
 (`Node::offered`). A shelf that names a next key that is no device of a vault opens as the earlier key, never as a
 device of no vault, which would take a stranger's claim.
 
+The earlier keys go in a last step, once every key of the person's moved (Samuel 2026-10-20, "you should have
+removed all the old keys"; `Lab::retires`, `Lab::draft_retire`): the root is handed on to its next key, signed by both;
+each earlier owner key whose next key is an owner goes, and the master recovery key from before K4 beside the Lab's;
+each earlier device key whose next key is a device goes, and each old device of the person's that never moved and
+doesn't run now; and each earlier key of the server and the agents once its next key answers as a live peer, so none
+is cut off while it still runs as the earlier one. As every removal cuts what rests on it that its drafter doesn't
+hold (T16), a device drafts them only while it is connected to a device of the aven its person governs and holds all
+that device told it holds (`Node::live_peers`, `Moving::behind`); the page says it waits meanwhile and asks again. One
+ceremony of the passkey signs the batch (`Device::move_keys`), and each removal keeps every edit its drafter holds.
+
 ## 11. Passkeys
 
 A person's passkey is the root of everything they hold. It stays in their platform's authenticator, used through

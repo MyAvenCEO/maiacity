@@ -96,7 +96,8 @@ use crate::merge;
 use crate::ops::Loc;
 use crate::policy::{
     mk_audience, replay, replay_on, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
-    Meaning, Principal, Proposal, Readings, Refusal, Replay, Share, Sharing, State, Vault, Who, Write,
+    Meaning, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share, Sharing, State, Vault, Who,
+    Write,
 };
 use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
@@ -983,6 +984,15 @@ impl Lab {
         out
     }
 
+    /// Every device of each aven or device vault the vault device `on` belongs to governs, up the chain, whichever
+    /// suite it signs in: its person's coop's server and agents (`aven_devices`). None if `on` belongs to no vault.
+    pub fn governed_devices(&self, on: SignerId) -> BTreeSet<SignerId> {
+        let Some(mine) = self.vault_of(on) else { return BTreeSet::new() };
+        let st = self.state(on);
+        let governed = st.vaults().iter().filter(|v| claimable(v.kind) && st.owns(mine, v.id));
+        governed.flat_map(|v| v.devices.iter().copied()).collect()
+    }
+
     /// The edits that move `moves`' signers to their next keys (`moves`) on device `on`, drafted together for one
     /// ceremony of each owner key among them (`drafting`): an owner key adds its next key as an owner, which signs too
     /// (with the root, where an owner's approval alone isn't the vault's), but `by` adds the master recovery key's,
@@ -1102,6 +1112,90 @@ impl Lab {
             self.issue(on, &[new], cast::keep(vault, new, over, mode, select))?;
         }
         Ok(())
+    }
+
+    /// What device `on`'s person retires now, once their keys moved (`moves` names none): the key move's last part
+    /// (Samuel 2026-10-20 18:56, "you should have removed all the old keys"), the steps the move itself no longer takes
+    /// (`draft_move`, "Add, never remove"). In the vault `on` belongs to: the root, where it signs in another suite
+    /// than new signers are made in and its next key is an owner, handed on to that key; each other owner key in that
+    /// suite whose next key is an owner, and the master recovery key from before the move (`is_recovery`) beside the
+    /// one the Lab adds; each device in that suite but `on` whose next key is a device beside it, or that never moved
+    /// and isn't among `live`, its person's own browser or Mac that hasn't opened since (one that runs now moves at its
+    /// unlock). In each aven or device vault it governs, the server's and the agents': each device in that suite whose
+    /// next key is a device beside it and among `live`, those that answer as that key now, so none is cut off while it
+    /// still runs as the earlier one; one that never moved stays. A removal cuts what rests on it that its drafter
+    /// doesn't hold (T16): the caller drafts them (`draft_retire`) only once `on` holds what its peers hold. Nothing if
+    /// `on` belongs to no vault.
+    pub fn retires(&self, on: SignerId, live: &BTreeSet<SignerId>) -> Vec<Retire> {
+        let Some(mine) = self.vault_of(on) else { return vec![] };
+        let st = self.state(on);
+        let Some(vault) = st.vault(mine) else { return vec![] };
+        let signer = |p: &Principal| if let Principal::Signer(s) = *p { Some(s) } else { None };
+        let owners: BTreeSet<SignerId> = vault.owners.iter().filter_map(signer).collect();
+        let governed: Vec<&Vault> = st.vaults().iter().filter(|v| claimable(v.kind) && st.owns(mine, v.id)).collect();
+        let devices: BTreeSet<SignerId> =
+            vault.devices.iter().chain(governed.iter().flat_map(|v| &v.devices)).copied().collect();
+        let all: BTreeSet<SignerId> = owners.union(&devices).copied().collect();
+        let seen = self.signers_seen(on, &all);
+        let old = |s: &SignerId| seen.get(s).is_some_and(|k| k.suite() != sign::SIGNING);
+        let next = self.earlier_keys(on, &all);
+        let legacy = |s: &SignerId| seen.get(s).is_some_and(|k| self.is_recovery(k));
+        let mut out = vec![];
+        if let Some(r) = vault.root.filter(old)
+            && let Some(&n) = next.get(&r).filter(|n| owners.contains(n))
+        {
+            out.push(Retire::Root { old: r, new: n });
+        }
+        for s in owners.iter().filter(|s| old(s)) {
+            let moved = next.get(s).is_some_and(|n| owners.contains(n));
+            let replaced = legacy(s) && self.recovery().is_some_and(|m| m != *s && owners.contains(&m));
+            if moved || replaced {
+                out.push(Retire::Owner(*s));
+            }
+        }
+        for &d in vault.devices.iter().filter(|&&d| d != on && old(&d)) {
+            if next.get(&d).map_or(!live.contains(&d), |n| vault.devices.contains(n)) {
+                out.push(Retire::Device { vault: mine, device: d });
+            }
+        }
+        for v in governed {
+            for &d in v.devices.iter().filter(|d| old(d)) {
+                if next.get(&d).is_some_and(|n| v.devices.contains(n) && live.contains(n)) {
+                    out.push(Retire::Device { vault: v.id, device: d });
+                }
+            }
+        }
+        out
+    }
+
+    /// The edits that retire `retires` (`retires`) on device `on`, drafted together for one ceremony of each owner key
+    /// among them (`drafting`): the root first, handed on by itself and its next key, which signs too; then each owner
+    /// key and each device removed by the vault's approval, by `by`, the owner key the person opened with, or its next
+    /// key, with the root where `by`'s approval alone isn't the vault's. Each removal names every edit `on` holds that
+    /// stands, so it cuts nothing `on` holds. `NotActing` if `on` belongs to no vault; otherwise why `on`'s view
+    /// refuses a step.
+    pub fn draft_retire(&self, on: SignerId, retires: &[Retire], by: SignerId) -> Result<Vec<Unsigned>, Refusal> {
+        let vault = self.vault_of(on).ok_or(Refusal::NotActing)?;
+        let mut drafting = self.drafting(on);
+        let mut by = by;
+        for retire in retires {
+            let view = drafting.log.view();
+            let root = view.vault(vault).and_then(|v| v.root);
+            let mut signers = vec![by];
+            signers.extend(root.filter(|&r| r != by && !view.approves(&[by], Principal::Vault(vault))));
+            let action = match *retire {
+                Retire::Root { old, new } => {
+                    let hand_on = Setting::Root { root: Some(new), keep: vec![] };
+                    drafting.draft(&[old, new], Action::Settings { vault, set: hand_on })?;
+                    by = if by == old { new } else { by };
+                    continue;
+                }
+                Retire::Owner(s) => Revoking::Owner { vault, owner: Principal::Signer(s), keep: vec![] },
+                Retire::Device { vault: v, device } => Revoking::Device { vault: v, device, keep: vec![] },
+            };
+            drafting.draft(&signers, Action::Revoke(action))?;
+        }
+        Ok(drafting.done())
     }
 
     /// Device `d`, its keys moved (`finish_move`), to open again as `new`, its next key or itself, on the same shelf as
@@ -3818,6 +3912,15 @@ impl Lab {
         self.deliver(to, vec![signed], &Blobs::new());
         Ok(edit.id())
     }
+}
+
+/// A step of the key move's last part (`Lab::retires`): the root handed on from `old` to its next key `new`, an
+/// earlier owner key removed, or a device removed from vault `vault`, the person's own or an aven they govern.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Retire {
+    Root { old: SignerId, new: SignerId },
+    Owner(SignerId),
+    Device { vault: VaultId, device: SignerId },
 }
 
 /// `a` and `b` are keys of one signer in two suites (`Lab::next_key`), or the same keys: one passkey, by its P-256

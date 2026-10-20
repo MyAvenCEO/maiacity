@@ -91,8 +91,10 @@ let vault = $state('');
 /** what the key move asks of the person (K3b, avendb-browser's `Moving`), while their passkey, this device or in the
  *  Mac app its Touch ID key still signs in SLH-DSA, or the server or an agent of the aven they govern does (K3c):
  *  whether their passkey signs, whether Touch ID does, whether the device moves, and how many of the aven's devices
- *  move with it; null once nothing moves.
- *  @type {{ passkey: boolean, touch: boolean, device: boolean, avens?: number } | null} */
+ *  move with it; once all of it moved, the earlier keys and the old devices to remove (`retire`), which waits while
+ *  this device doesn't hold what the coop's server holds (`behind`); null once nothing moves.
+ *  @type {{ passkey: boolean, touch: boolean, device: boolean, avens?: number,
+ *    retire?: { kind: 'root' | 'owner' | 'device', key: string, next?: string, vault?: string }[], behind?: boolean } | null} */
 let moving = $state.raw(null);
 /** what the page is doing for the person, and what went wrong last, where it shows them */
 let doing = $state('');
@@ -401,15 +403,17 @@ const MOVE_AGAIN = 30000;
 /** What device `d`'s key move asks of the person (K3b), once it opened: where it asks for no ceremony, as a move cut
  *  short, it goes on at once; otherwise the page asks once more (`moveKeys`). Never fails: a device that can't say yet,
  *  as one still bringing what its peers hold (it caught up with none of them), is asked again `MOVE_AGAIN` later, for
- *  as long as it is the page's (Samuel 2026-10-20: a phone that unlocked mid-sync never showed "Move my keys").
- *  @param {any} d */
-async function checkMove(d) {
-	moving = null;
+ *  as long as it is the page's (Samuel 2026-10-20: a phone that unlocked mid-sync never showed "Move my keys"). So is
+ *  one whose old keys' removal waits until it holds what its coop's server holds (`behind`), the banner saying so
+ *  meanwhile (`again`). @param {any} d @param {boolean} [again] */
+async function checkMove(d, again = false) {
+	if (!again) moving = null;
 	try {
 		const asked = (mac ? await mac.call('moving') : await d.moving()) ?? null;
 		if (device !== d) return;
 		moving = asked;
-		if (asked && !asked.passkey && !asked.touch) await moveKeys();
+		if (asked?.behind) setTimeout(() => device === d && void checkMove(d, true), MOVE_AGAIN);
+		else if (asked && !asked.passkey && !asked.touch) await moveKeys();
 	} catch (e) {
 		console.warn('avenDB: the key move is asked about again in a moment:', /** @type {Error} */ (e)?.message ?? e);
 		setTimeout(() => device === d && !moving && void checkMove(d), MOVE_AGAIN);
@@ -422,7 +426,8 @@ async function checkMove(d) {
 async function moveKeys() {
 	const d = device;
 	if (!d || !moving) return false;
-	const ok = await change('Moving your keys to ML-DSA-65', async () => {
+	const what = moving.retire?.length ? 'Removing your old keys' : 'Moving your keys to ML-DSA-65';
+	const ok = await change(what, async () => {
 		if (mac) return macOpened(await mac.call('moveKeys'));
 		const moved = await d.move_keys((await ceremonies(meta.credential)).sign, null);
 		if (!moved) return;
@@ -432,7 +437,8 @@ async function moveKeys() {
 		d.free();
 		meta = (await avendb.storeMeta(store)) ?? meta;
 	});
-	if (ok && device === d) moving = null;
+	// a device that stays as it was, as after its old keys' removal, says what is left: the avens' move, or nothing
+	if (ok && device === d) void checkMove(d);
 	return ok;
 }
 
@@ -713,8 +719,9 @@ export const session = {
 	set doing(what) {
 		doing = what;
 	},
-	/** what the key move asks of the person (K3b, K3c): `{ passkey, touch, device, avens }` while anything of theirs
-	 *  here, or a device of the aven they govern, is to move to ML-DSA-65, else null */
+	/** what the key move asks of the person (K3b, K3c): `{ passkey, touch, device, avens, retire, behind }` while
+	 *  anything of theirs here, or a device of the aven they govern, is to move to ML-DSA-65, or once it all moved, the
+	 *  earlier keys and old devices to remove (`retire`, waiting while `behind`), else null */
 	get moving() {
 		return moving;
 	},
