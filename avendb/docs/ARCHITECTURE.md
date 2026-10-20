@@ -1343,7 +1343,7 @@ of the edits is new, nothing new is on the wire, and every write counts as any w
   agent reads its own progress in its loop. Numbers are exact decimals, millionths, the same on every device; the
   evaluator is total and bounded (no loops, no IO, at most 32 metrics of 4,096 parts), so an objective, data, never
   reaches the device that reads it. The objective is fixed once proposed (a revision opens it again); the readings go
-  on. `objective_check {lean, readings, proposed, current}` reads a file unsaved. AIP, v2 (shipped, lens from v1)
+  on. `objective_check {lean, readings, measured, proposed, current}` reads a file unsaved. AIP, v2 (shipped, lens from v1)
   holds `objective` and `readings`; v1 records read on unchanged.
 - **Metrics read from the proposal itself** (N1, Samuel 2026-10-20 16:21; `spec/AvenDB/Objectives/Lines.lean`).
   `proposed "path"` is the number the AIP's lines would put at `path` of their entries' records, its baseline what
@@ -1357,6 +1357,16 @@ of the edits is new, nothing new is on the wire, and every write counts as any w
   as `objective.fields` (`{path, entry, line, proposed, current}`) and each metric's `paths`. In the model the engine
   hands these numbers in (`Inputs`: readings, proposed and current fields; now = the newest readings and the
   proposal's numbers, the baseline = the first readings and main's numbers).
+- **Readings a Measurer signs** (N2, `spec/AvenDB/Measurers.lean`). `measured "name"` reads only the readings a
+  Measurer of the AIP's vault wrote: a vault holding a share of the vault's cap group named Measurer (`gate::MEASURER`,
+  `gate::measures`), which only those who share the vault hand out, as Maia City does to a device vault it owns for a
+  measuring job on its server, and never the AIP's author (M1), so an agent acting as the coop's aven can't measure
+  its own AIP. Who wrote a reading is never a typed field: of each write the AIP's main line counts, oldest first,
+  the engine reads its actor and the rows it added, as written then (`measuredBy`, M2, M3), so no later write changes
+  a measured reading. A Measurer records with `aip_measure` on any AIP of the vault, worked on or proposed, as its
+  author does (its group gives it read and `insert ["readings"]` on main of type aip). `reading "name"` still counts
+  every reading. `aip` marks each reading row a Measurer wrote `measured`, with `by`, and each metric lists the
+  readings it counts only as measured, `measured`.
 - **Numbers count per vault.** Promote gives one more than the highest number of the vault's AIPs the device holds,
   and a revised AIP keeps its own. Two devices that promote while apart may give one number twice; once they sync,
   every reader labels them alike, by where the write that set each number stands in the one order every device

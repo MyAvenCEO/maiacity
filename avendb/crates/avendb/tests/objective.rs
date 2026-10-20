@@ -33,6 +33,7 @@ fn objective_vectors() {
         };
         let inputs = objective::Inputs {
             readings: named("readings", "name"),
+            measured: named("measured", "name"),
             proposed: named("proposed", "path"),
             current: named("current", "path"),
         };

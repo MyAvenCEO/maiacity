@@ -121,10 +121,11 @@ impl Aip {
     }
 
     /// Its objective as people and agents read it: the Lean, and where it reads, each metric checked against its
-    /// inputs (`objective::summary_json`), its readings and the numbers its paths find in its lines, `lines`, each
-    /// line's `sides` (`found`), else the error; then every reading, and every path's numbers, `fields`. `null` where
-    /// it has none.
-    fn objective_json(&self, lines: &[Line], sides: &[Option<Sides>]) -> Value {
+    /// inputs (`objective::summary_json`), its readings, those its vault's Measurers wrote, `measured` (`measured`),
+    /// and the numbers its paths find in its lines, `lines`, each line's `sides` (`found`), else the error; then every
+    /// reading, a Measurer's marked `measured` with who wrote it, `by`, and every path's numbers, `fields`. `null`
+    /// where it has none.
+    fn objective_json(&self, lines: &[Line], sides: &[Option<Sides>], measured: &[Measured]) -> Value {
         let lean = self.lean();
         if lean.trim().is_empty() {
             return Value::Null;
@@ -133,17 +134,68 @@ impl Aip {
         let mut out = match objective::parse(lean) {
             Ok(ms) => {
                 let (proposed, current, fields) = found(&objective::paths(&ms), lines, sides);
-                let inputs = objective::Inputs { readings: self.readings(), proposed, current };
+                let measured = measured.iter().map(|m| (m.name.clone(), m.value)).collect();
+                let inputs = objective::Inputs { readings: self.readings(), measured, proposed, current };
                 let mut out = objective::summary_json(&ms, &inputs);
                 out["fields"] = fields.into();
                 out
             }
             Err(e) => json!({ "error": e.to_string(), "metrics": [], "met": 0, "total": 0, "progress": 0 }),
         };
+        let mark = |row: &Value| {
+            let mut row = row.clone();
+            let same = |m: &&Measured| {
+                Some(m.id) == row["id"].as_i64()
+                    && row["name"].as_str() == Some(m.name.as_str())
+                    && objective::dec_of(&row["value"]) == Some(m.value)
+            };
+            if let Some(m) = measured.iter().find(same) {
+                row["measured"] = true.into();
+                row["by"] = m.by.to_hex().into();
+            }
+            row
+        };
         out["lean"] = lean.into();
-        out["readings"] = rows.to_vec().into();
+        out["readings"] = rows.iter().map(mark).collect();
         out
     }
+}
+
+/// A reading a Measurer of an AIP's vault wrote (`measured`): its row's id, who wrote it, its name and its value, as
+/// that Measurer wrote them.
+struct Measured {
+    id: i64,
+    by: VaultId,
+    name: String,
+    value: Dec,
+}
+
+/// What the Measurers of AIP `a`'s vault added to its readings, as device `me` reads its main line (`Lab::measured_by`,
+/// `Measurers.lean`'s `measuredBy`): of each write the line counts, oldest first, its actor and the rows it added, as
+/// it wrote them, so no later write changes a measured reading. Who wrote one is the write's actor, signed as every
+/// write is, never a typed field. Only the writes of a vault that measures it are read row by row.
+fn measured(lab: &Lab, me: SignerId, a: &Aip) -> Vec<Measured> {
+    let Some(h) = lab.history(me, a.entry) else { return vec![] };
+    let (vault, author) = (a.vault, a.attrs.author);
+    let mut measures: HashMap<VaultId, bool> = HashMap::new();
+    let rows = |version: &[EditId]| -> Vec<Value> {
+        let record = h.item_at(version, me, MAIN).record();
+        record.get("readings").and_then(ops::rows).map(<[Value]>::to_vec).unwrap_or_default()
+    };
+    let mut added = vec![];
+    for c in h.history(MAIN) {
+        let by = c.write.actor;
+        if !*measures.entry(by).or_insert_with(|| lab.measures(me, vault, author, by)) {
+            continue;
+        }
+        let before: HashSet<i64> = rows(&c.write.deps).iter().filter_map(|r| r["id"].as_i64()).collect();
+        let one = |r: &Value| {
+            let id = r["id"].as_i64().filter(|id| !before.contains(id))?;
+            Some(Measured { id, by, name: r["name"].as_str()?.to_string(), value: objective::dec_of(&r["value"])? })
+        };
+        added.push((by, rows(&[c.write.edit]).iter().filter_map(one).collect::<Vec<_>>()));
+    }
+    lab.measured_by(me, vault, author, added)
 }
 
 /// The numbers objective paths `paths` find in an AIP's lines, `lines`, each line's `sides`: a path reads the first
@@ -536,7 +588,7 @@ impl<'a> Book<'a> {
             "author": a.attrs.author.to_hex(),
             "intent": a.record.get("intent").cloned().unwrap_or(Value::Null),
             "links": a.record.get("links").cloned().unwrap_or_else(|| json!([])),
-            "objective": a.objective_json(&d.lines, &sides),
+            "objective": a.objective_json(&d.lines, &sides, &measured(lab, me, a)),
             "lines": lines,
             "reviews": reviews.iter().map(|r| r.to_json(&d.lines)).collect::<Vec<_>>(),
             "signatures": { "have": have, "need": 1, "of": "owners" },
@@ -914,7 +966,7 @@ fn objective_now(lab: &Lab, me: SignerId, entry: EntryId) -> Value {
     let Ok(a) = aip_of(lab, me, &mut lanes, entry) else { return Value::Null };
     let lines: Vec<Line> = a.lines.iter().map(|&l| Line::of(lab, me, &mut lanes, l)).collect();
     let sides: Vec<Option<Sides>> = lines.iter().map(|l| sides_of(lab, me, &mut lanes, l)).collect();
-    a.objective_json(&lines, &sides)
+    a.objective_json(&lines, &sides, &measured(lab, me, &a))
 }
 
 /// Lean `lean` as an objective: its metrics, or `BadOp` with where and why it doesn't read.
@@ -923,17 +975,20 @@ fn read_lean(lean: &str) -> Result<Vec<objective::Metric>, Refused> {
 }
 
 /// AIP `entry`, for `actor` to write on before it is proposed or archived: its author or its vault (`NoCap` else),
-/// `BadOp` once archived, or once proposed unless `proposed` lets it.
-fn open_for(lab: &Lab, me: SignerId, actor: VaultId, entry: EntryId, proposed: bool) -> Result<Aip, Refused> {
+/// `BadOp` once archived, or once proposed unless `measuring`: a reading, which a Measurer of its vault records too
+/// (`Lab::measures`), while it is worked on or proposed.
+fn open_for(lab: &Lab, me: SignerId, actor: VaultId, entry: EntryId, measuring: bool) -> Result<Aip, Refused> {
     let mut lanes = HashMap::new();
     let a = aip_of(lab, me, &mut lanes, entry)?;
-    author_or_vault(&a, actor)?;
+    if !(measuring && lab.measures(me, a.vault, a.attrs.author, actor)) {
+        author_or_vault(&a, actor)?;
+    }
     let book = Book::new(lab, me);
     let d = derive(lab, me, &mut lanes, &a, book.reviews_of(entry, ""));
     if let Some(outcome) = d.outcome {
         return Err(bad(format!("the AIP is archived, {outcome}: it changes no more")));
     }
-    if d.stage == "proposed" && !proposed {
+    if d.stage == "proposed" && !measuring {
         return Err(bad("the AIP is proposed: its objective is what its reviewers judge, so it changes only once they ask for a revision"));
     }
     Ok(a)
@@ -953,10 +1008,11 @@ pub(super) fn objective(lab: &mut Lab, me: SignerId, actor: VaultId, entry: Entr
 }
 
 /// `{"op": "aip_measure", "entry", "name", "value", "note"?, "as"?}`: a reading recorded on AIP `entry` by `actor`,
-/// its author or its vault, while it is worked on or proposed: `name` (at most 160 characters), the number it read,
-/// `value`, within 10^24, and a note (at most 2,000 characters); `at`, the device's clock. Its metrics read the first
-/// reading of each name as their baseline and the newest as where they stand. `BadOp` once archived, or past
-/// `MAX_READINGS`. Answers `{entry, edit, objective}`, the objective as `aip` reads it now.
+/// its author, its vault or a Measurer of its vault (`Lab::measures`, whose readings `measured "name"` counts), while
+/// it is worked on or proposed: `name` (at most 160 characters), the number it read, `value`, within 10^24, and a note
+/// (at most 2,000 characters); `at`, the device's clock. Its metrics read the first reading of each name as their
+/// baseline and the newest as where they stand. `BadOp` once archived, or past `MAX_READINGS`. Answers `{entry, edit,
+/// objective}`, the objective as `aip` reads it now.
 pub(super) fn measure(
     lab: &mut Lab,
     me: SignerId,
@@ -991,9 +1047,10 @@ pub(super) fn measure(
     Ok(json!({ "entry": entry.to_hex(), "edit": made["edit"], "objective": objective_now(lab, me, entry) }))
 }
 
-/// `{"op": "objective_check", "lean", "readings"?, "proposed"?, "current"?}`: Lean `lean` read as an objective, as
-/// `aip_objective` would, and checked against `readings`, each `{name, value}` in the order recorded, and the numbers
-/// at its paths, `proposed` the proposal's and `current` main's, each `{path, value}`: `{ok: true, metrics, met,
+/// `{"op": "objective_check", "lean", "readings"?, "measured"?, "proposed"?, "current"?}`: Lean `lean` read as an
+/// objective, as `aip_objective` would, and checked against `readings`, each `{name, value}` in the order recorded,
+/// `measured`, those a Measurer wrote, alike, and the numbers at its paths, `proposed` the proposal's and `current`
+/// main's, each `{path, value}`: `{ok: true, metrics, met,
 /// total, progress}` as `aip` reads an objective, or `{ok: false, error, line, col}`. Reads nothing the device
 /// holds: an editor checks a file as it is typed.
 pub(super) fn objective_check(o: &Map<String, Value>) -> Result<Value, Refused> {
@@ -1005,6 +1062,7 @@ pub(super) fn objective_check(o: &Map<String, Value>) -> Result<Value, Refused> 
     };
     let inputs = objective::Inputs {
         readings: named("readings", "name"),
+        measured: named("measured", "name"),
         proposed: named("proposed", "path"),
         current: named("current", "path"),
     };

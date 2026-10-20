@@ -41,6 +41,27 @@ pub fn is_admin(st: &State, groups: &Groups, home: VaultId, u: VaultId) -> bool 
     u == home || st.owns(u, home) || holds_group(st, groups, home, u, ADMIN)
 }
 
+/// The name of the cap group of a vault whose holders measure its AIPs (`Measurers.lean`'s `measurerName`).
+pub const MEASURER: &str = "Measurer";
+
+/// Vault `u` measures the AIPs of vault `v` that `author` started, the cap groups in force by `groups`: it holds `v`'s
+/// Measurer group, and it isn't `author`, so no author measures its own AIP (`measures`, M1).
+pub fn measures(st: &State, groups: &Groups, v: VaultId, author: VaultId, u: VaultId) -> bool {
+    u != author && holds_group(st, groups, v, u, MEASURER)
+}
+
+/// What the Measurers of vault `v` added to an AIP `author` started: of each write, its actor and what it added, in
+/// order, what the writes of a vault that `measures` added (`measuredBy`, M2 and M3).
+pub fn measured_by<T>(
+    st: &State,
+    groups: &Groups,
+    v: VaultId,
+    author: VaultId,
+    added: impl IntoIterator<Item = (VaultId, Vec<T>)>,
+) -> Vec<T> {
+    added.into_iter().filter(|(u, _)| measures(st, groups, v, author, *u)).flat_map(|(_, xs)| xs).collect()
+}
+
 /// The vault signer `d` is a device of, by `st`: the first that lists it, none if none does (`deviceVault`).
 pub fn device_vault(st: &State, d: SignerId) -> Option<VaultId> {
     st.vaults().iter().find(|vt| st.is_device(d, vt.id)).map(|vt| vt.id)

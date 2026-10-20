@@ -638,3 +638,59 @@ fn an_objective_reads_the_numbers_its_lines_propose() {
         "lean": "def x : Metric := metric \"x\" (atLeast (proposed \"params..default\") 1)" });
     assert!(run(&mut g.w, g.mac, bad)["why"].as_str().unwrap_or_default().contains("empty field"));
 }
+
+/// N2 (`spec/AvenDB/Measurers.lean`): `measured "fps"` counts only the readings a Measurer of the AIP's vault wrote,
+/// read off who signed each write, never a typed field. Bob, no Measurer yet, records nothing on the aven's AIP; once
+/// Alice hands him her vault's Measurer group, he does, and his readings count as measured on every reader; the aven's
+/// own reading counts as a reading alone; and nothing the aven writes makes it a Measurer of its own AIP.
+#[test]
+fn a_measurer_of_the_vault_measures_an_aip_and_its_author_never_does() {
+    let mut g = gate();
+    let n = g.create("note", note());
+    g.sync(1);
+    let line = g.propose(&n, "Earlier", vec![set(json!(["title"]), json!("Corn first"))]);
+    let (aven, alice, bob, mac_b) = (g.aven.to_hex(), g.alice.to_hex(), g.w.bob.to_hex(), g.w.mac_b);
+    let lean = "/-- The sim, as a Measurer runs it. -/\n\
+                def fps : Metric := metric \"Frames, measured\" (atLeast (measured \"fps\") 50)\n\
+                def any : Metric := metric \"Frames, any reading\" (atLeast (reading \"fps\") 50)\n";
+    let op = json!({ "op": "aip_open", "vault": alice, "title": "Faster corn", "as": aven, "objective": lean,
+        "proposals": [{ "entry": n, "line": line }] });
+    let aip = ok(run(&mut g.w, g.mac, op))["entry"].as_str().expect("its entry").to_string();
+    g.sync(2);
+    let measure = |by: &str, v: u64| json!({ "op": "aip_measure", "entry": aip, "name": "fps", "value": v, "as": by });
+    assert_eq!(refused(&run(&mut g.w, mac_b, measure(&bob, 30))), "NoCap", "no Measurer yet");
+    // Alice's vault's Measurer group: read its AIPs, add readings on their main line; Bob holds it
+    let aips = json!({ "type": ["aip"] });
+    let group = json!({ "name": "Measurer", "caps": [{ "op": "read", "where": aips },
+        { "op": "insert", "path": ["readings"], "on": "main", "where": aips }] });
+    let defined = ok(run(&mut g.w, g.mac, json!({ "op": "define_group", "vault": alice, "group": group })));
+    let to_bob = json!({ "op": "share_group", "over": alice, "group": defined["entry"], "who": { "vault": bob } });
+    ok(run(&mut g.w, g.mac, to_bob));
+    ok(run(&mut g.w, g.mac, measure(&aven, 60)));
+    g.sync(3);
+    ok(run(&mut g.w, mac_b, measure(&bob, 30)));
+    ok(run(&mut g.w, mac_b, measure(&bob, 40)));
+    g.sync(4);
+    for d in g.readers {
+        let o = g.aip(d, &aip)["objective"].clone();
+        let m = |i: usize| (o["metrics"][i]["value"].clone(), o["metrics"][i]["baseline"].clone());
+        assert_eq!(m(0), (json!(40), json!(30)), "Bob's alone count as measured, on {d:?}: {o}");
+        assert_eq!(o["metrics"][0]["progress"], json!(0.5));
+        assert_eq!(m(1), (json!(40), json!(60)), "every reading counts as a reading");
+        assert_eq!(o["metrics"][0]["measured"], json!(["fps"]));
+        let rows = list(&o["readings"]);
+        let marks: Vec<(&Value, &Value)> = rows.iter().map(|r| (&r["value"], &r["by"])).collect();
+        assert_eq!(marks, [(&json!(60), &Value::Null), (&json!(30), &json!(bob)), (&json!(40), &json!(bob))]);
+    }
+    // the aven gives itself no group, so its readings stay its own
+    ok(run(&mut g.w, g.mac, measure(&aven, 70)));
+    let o = g.aip(g.mac, &aip)["objective"].clone();
+    assert_eq!((&o["metrics"][0]["value"], &o["metrics"][1]["value"]), (&json!(40), &json!(70)));
+    // proposed, a Measurer still measures it
+    ok(run(&mut g.w, g.mac, json!({ "op": "aip_promote", "entry": aip, "as": aven })));
+    g.sync(5);
+    ok(run(&mut g.w, mac_b, measure(&bob, 55)));
+    g.sync(6);
+    let o = g.aip(g.mac, &aip)["objective"].clone();
+    assert_eq!((&o["metrics"][0]["met"], &o["met"]), (&json!(true), &json!(2)));
+}

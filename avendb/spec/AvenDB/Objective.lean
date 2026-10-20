@@ -8,9 +8,10 @@ evaluates the metrics against them: whether each is met, and how far the newest 
 baseline, toward its target. A metric may also read the AIP's proposal itself: `proposed "path"`, the number its
 lines would put at `path` of their entries' records, its baseline what main holds there now, and `current "path"`,
 what main holds there now. The engine finds a path in the records (`params.#1.default`: field names, `#n` the row
-whose id is n); the model takes the numbers it found (`Inputs`). avenDB's engine (`crates/avendb/src/objective.rs`)
-runs the same subset of Lean, total and bounded, and replays `vectors/objectives.json` (`ObjectiveVectors.lean`) to
-stay this model.
+whose id is n); the model takes the numbers it found (`Inputs`). And `measured "name"` reads only the readings a
+Measurer of the AIP's vault wrote, never its author (`AvenDB.Measurers`), where `reading "name"` reads every one.
+avenDB's engine (`crates/avendb/src/objective.rs`) runs the same subset of Lean, total and bounded, and replays
+`vectors/objectives.json` (`ObjectiveVectors.lean`) to stay this model.
 
 An objective file reads, in Lean:
 
@@ -29,11 +30,12 @@ def objective : List Metric := [fps]
   A value beyond `bound` is none, and so is anything a division by zero or a missing reading makes: no device may
   overflow where another doesn't (the Rust engine's 128-bit integers hold every product of two bounded values that
   stays bounded once cut).
-- **Expressions** (`Expr`): numbers, `reading "name"`, `proposed "path"`, `current "path"`, `+ - * /`, `-x`, `min`,
-  `max`.
+- **Expressions** (`Expr`): numbers, `reading "name"`, `measured "name"`, `proposed "path"`, `current "path"`,
+  `+ - * /`, `-x`, `min`, `max`.
 - **Goals** (`Goal`): `atLeast e t`, `atMost e t`, `between e lo hi`, `equals e t`.
 - **Progress** (`Metric.check`): a metric met is done, `one`; else its distance from what meets it, now (the newest
-  readings, the proposal's numbers), against that distance at the baseline (the first readings, main's numbers),
+  readings and measured readings, the proposal's numbers), against that distance at the baseline (the first readings
+  and measured readings, main's numbers),
   both to the targets as they read now, clamped to `0..one`; `0` where either is unmeasured, or the baseline was no
   farther. OB1 to OB3 are proved below.
 -/
@@ -56,6 +58,7 @@ def ok (x : Int) : Option Int := if -bound ≤ x ∧ x ≤ bound then some x els
 inductive Expr where
   | num (m : Dec)
   | reading (name : String)
+  | measured (name : String)
   | proposed (path : String)
   | current (path : String)
   | add (a b : Expr)
@@ -84,6 +87,9 @@ instance : Max Expr := ⟨.max⟩
 
 /-- The newest reading named `name`. -/
 def reading (name : String) : Expr := .reading name
+
+/-- The newest reading named `name` a Measurer of the AIP's vault wrote, never its author (`AvenDB.measures`). -/
+def measured (name : String) : Expr := .measured name
 
 /-- The number the AIP's lines would put at `path`; at the baseline, what main holds there. -/
 def proposed (path : String) : Expr := .proposed path
@@ -128,29 +134,32 @@ abbrev Fields := List (String × Dec)
 
 def Fields.get (fs : Fields) (p : String) : Option Dec := (fs.find? (·.1 == p)).map (·.2)
 
-/-- Where an expression's names read from: readings, the proposal's numbers, main's numbers. -/
+/-- Where an expression's names read from: readings, measured readings, the proposal's numbers, main's numbers. -/
 structure Env where
   reading : String → Option Dec
+  measured : String → Option Dec
   proposed : String → Option Dec
   current : String → Option Dec
 
-/-- What a metric is checked against: the readings recorded, and the numbers the engine found at the paths the
-    objective names, in the AIP's proposed lines and on main. -/
+/-- What a metric is checked against: the readings recorded, those of them a Measurer wrote (`AvenDB.measuredBy`), and
+    the numbers the engine found at the paths the objective names, in the AIP's proposed lines and on main. -/
 structure Inputs where
   readings : Readings := []
+  measured : Readings := []
   proposed : Fields := []
   current : Fields := []
 
 /-- Now: the newest readings and the proposal's numbers. -/
-def Inputs.now (i : Inputs) : Env := ⟨i.readings.newest, i.proposed.get, i.current.get⟩
+def Inputs.now (i : Inputs) : Env := ⟨i.readings.newest, i.measured.newest, i.proposed.get, i.current.get⟩
 
 /-- The baseline: the first readings, and main's numbers where the proposal's would be. -/
-def Inputs.base (i : Inputs) : Env := ⟨i.readings.first, i.current.get, i.current.get⟩
+def Inputs.base (i : Inputs) : Env := ⟨i.readings.first, i.measured.first, i.current.get, i.current.get⟩
 
 /-- An expression's value where every name it reads is in `env`, and nothing on the way leaves `bound`. -/
 def Expr.eval (env : Env) : Expr → Option Dec
   | .num m => ok m
   | .reading n => env.reading n >>= ok
+  | .measured n => env.measured n >>= ok
   | .proposed p => env.proposed p >>= ok
   | .current p => env.current p >>= ok
   | .add a b => do ok ((← a.eval env) + (← b.eval env))
