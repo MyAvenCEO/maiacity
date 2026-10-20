@@ -198,7 +198,9 @@ export class Stage {
 		};
 		const floor = new THREE.Mesh(new THREE.CircleGeometry(40 * s, 96), fm);
 		floor.rotation.x = -Math.PI / 2;
-		floor.position.set(centre.x, this.groundY, centre.z);
+		// a hair under the asset's lowest point when the floor is its own: an asset whose bottom is a ground facing up (a
+		// biome's patch, a meadow with nothing lying below it) would otherwise share the floor's plane and flicker with it
+		floor.position.set(centre.x, this.groundY - (ground === undefined ? 0.004 * s : 0), centre.z);
 		floor.receiveShadow = true;
 		floor.userData.studio = true;
 		this.scene.add(floor);
