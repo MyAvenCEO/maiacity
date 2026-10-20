@@ -10,9 +10,9 @@ import { clearCookie, founderIdFrom, initSessions, sessionCookie, tokenFor } fro
 import { inviteOpen, loginFinish, loginOptions, registerFinish, registerOptions } from "./passkey";
 import { fromBunSql, useDb } from "./pg";
 import { can, capabilities, initRoles } from "./acl";
-import { CAPABILITIES } from "./caps";
 import { listTables, readTable, TableError } from "./tables";
-import { adminByPass } from "./standing";
+import { adminByPass, type Refused } from "./standing";
+import { founderByPass, type Founder } from "./founders.js";
 import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } from "./analysis";
 import { checkModels, pick } from "./prem";
 import { GameError, getGame, move, takeSeat } from "./maiacity-v1.js";
@@ -33,7 +33,7 @@ function cors(req: Request): Record<string, string> {
   return {
     "Access-Control-Allow-Origin": origin,
     "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Headers": "content-type, authorization",
+    "Access-Control-Allow-Headers": "content-type, authorization, x-avendb-pass",
     "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
     Vary: "Origin",
   };
@@ -67,30 +67,25 @@ function fibonacciStep(count: number): number {
   return step;
 }
 
-/** The signed-in founder with their role, or null. */
-async function viewer(req: Request): Promise<{ id: string; role: string } | null> {
-  const id = founderIdFrom(req);
-  if (!id) return null;
-  const [row] = await sql`SELECT id, role FROM founders WHERE id = ${id}`;
-  return row ?? null;
-}
-
 /**
- * The signed-in founder, if they hold the capability — or the response that says why not.
- * Every admin route starts here, so none of them ever asks for a role by name.
+ * Who asks: the founder the pass their avenDB device signed for this call names, by its vault (`X-Avendb-Pass`,
+ * founders.js); else, while it lasts, a session a passkey's sign-up or sign-in left in a browser's cookie. Or why not.
  */
-async function allowed(req: Request, cap: string): Promise<{ id: string; role: string } | Response> {
-  const me = await viewer(req);
-  if (!me) return json(req, { error: "Please sign in." }, { status: 401 });
-  if (!can(me, cap)) return json(req, { error: `This needs the right to ${(CAPABILITIES[cap] ?? cap).toLowerCase()}.` }, { status: 403 });
-  return me;
+async function viewer(req: Request): Promise<Founder | Refused> {
+  const pass = req.headers.get("x-avendb-pass");
+  if (pass) {
+    const who = await founderByPass(pass);
+    return "error" in who ? who : who.founder;
+  }
+  const id = founderIdFrom(req);
+  const [row] = id ? await sql`SELECT id, number, created, role FROM founders WHERE id = ${id}` : [];
+  return row ?? { status: 401, error: "Please open your avenDB first." };
 }
 
-/** The signed-in founder (a browser's session, or The OS's, which keeps it as a browser does), whatever they hold — or
- *  the response that says why not. */
-async function signedIn(req: Request): Promise<{ id: string; role: string } | Response> {
+/** The founder who asks (`viewer`), whatever they hold — or the response that says why not. */
+async function signedIn(req: Request): Promise<Founder | Response> {
   const me = await viewer(req);
-  return me ?? json(req, { error: "Please sign in." }, { status: 401 });
+  return "error" in me ? json(req, { error: me.error }, { status: me.status }) : me;
 }
 
 /** Turn a thrown table or game error into a response a person can read. */
@@ -233,10 +228,8 @@ const server = Bun.serve({
     "/api/me": {
       OPTIONS: (req) => new Response(null, { status: 204, headers: cors(req) }),
       GET: async (req) => {
-        const id = founderIdFrom(req);
-        if (!id) return json(req, { error: "not signed in" }, { status: 401 });
-        const [founder] = await sql`SELECT id, number, created, role FROM founders WHERE id = ${id}`;
-        if (!founder) return json(req, { error: "not signed in" }, { status: 401 });
+        const founder = await signedIn(req);
+        if (founder instanceof Response) return founder;
         // what they may do comes with who they are, so the site can show them only what they can use
         const caps = [...capabilities(founder.role)];
         return json(req, { ...publicFounder(founder), role: founder.role, caps });

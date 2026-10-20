@@ -5,6 +5,8 @@
 //! maiaCITY's API, learns from it by a device's pass which vault the device is a device of and whether that vault is
 //! an admin (G3).
 
+use std::collections::BTreeSet;
+
 use avendb::cast::{self, World};
 use avendb::engine;
 use avendb::gate::ADMIN;
@@ -12,7 +14,7 @@ use avendb::id::{EntryId, SignerId, VaultId};
 use avendb::lab::GroupShare;
 use avendb::policy::{Action, Kind, Level, Principal, Refusal, Revoking, Who};
 use avendb::rules::{Cap, CapGroup, Op};
-use avendb::sign::{unbase64url, ApiPass, PASS_LIFE};
+use avendb::sign::{unbase64url, ApiPass, SignerKeys, PASS_LIFE};
 use avendb::slice::{Selector, CAP_GROUP_TYPE};
 use avendb::wire::Wire;
 use avendb::world;
@@ -184,6 +186,14 @@ fn a_devices_pass_shows_the_api_its_vault_and_whether_it_is_an_admin() {
     // Alice's vault owns Maia City, and Bob holds its Admin group: the server says so of their Macs' passes
     let alices = pass_of(&mut s.w, mac_a);
     assert_eq!(standing(&s, &alices, API, now), Some((s.w.alice, true)));
+    // and, asked, the P-256 key of the passkey that roots her vault, by which the API knows her
+    let passkey = BTreeSet::from([s.w.passkey_a]);
+    let p256 = match s.w.lab.signers_seen(server, &passkey).into_values().next() {
+        Some(SignerKeys::Passkey { p256, .. }) => p256,
+        keys => panic!("Alice's passkey, not {keys:?}"),
+    };
+    assert_eq!(world::vault_passkeys(&s.w.lab, server, s.w.alice), vec![p256]);
+    assert!(world::vault_passkeys(&s.w.lab, server, s.maia).is_empty(), "Maia City's owner is a vault, no passkey");
     let bobs = pass_of(&mut s.w, mac_b);
     assert_eq!(standing(&s, &bobs, API, now), Some((s.w.bob, true)));
     // a pass counts for maiaCITY's API alone, for ten minutes, and its own device alone

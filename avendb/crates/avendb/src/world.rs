@@ -23,7 +23,7 @@ use crate::lens::{DocV1, Lane, Lens, Schema, Status, View};
 use crate::policy::{Entry, Issued, KeepMode, Kind, Level, Line, Principal, Share, State, Vault, Who};
 use crate::rules;
 use crate::sealed::{FileRoot, PIECE};
-use crate::sign::ApiPass;
+use crate::sign::{ApiPass, SignerKeys};
 use crate::slice::{LENS_TYPE, Selector, Slice};
 use crate::words::{hex, kind_name, kinds_json, level_name, status_name, who_name};
 
@@ -1210,6 +1210,26 @@ pub fn open_invite(lab: &Lab, me: SignerId, share: ShareId) -> bool {
 pub fn pass_standing(lab: &Lab, me: SignerId, pass: &ApiPass, audience: &str, now: u64) -> Option<(VaultId, bool)> {
     let &city = seed_of(lab, me).first()?;
     lab.device_standing(me, city, pass.device(audience, now)?)
+}
+
+/// The P-256 keys (SEC1 compressed) of the passkeys among vault `v`'s owners, its root among them, each once, as device
+/// `me` saw them sign: what avenDB's server tells maiaCITY's API beside a pass's standing when it asks (`/feed/pass`
+/// with `passkeys`). The passkey a person signed up to the API with is the one that roots their human vault (one
+/// passkey), so the API knows them by that vault, with no sign-in of its own. Public keys alone, never a secret.
+pub fn vault_passkeys(lab: &Lab, me: SignerId, v: VaultId) -> Vec<[u8; 33]> {
+    let st = lab.state(me);
+    let Some(vault) = st.vault(v) else { return vec![] };
+    let signer = |p: &Principal| match *p {
+        Principal::Signer(s) => Some(s),
+        Principal::Vault(_) => None,
+    };
+    let owners: BTreeSet<SignerId> = vault.owners.iter().filter_map(signer).chain(vault.root).collect();
+    let passkey = |keys: SignerKeys| match keys {
+        SignerKeys::Passkey { p256, .. } => Some(p256),
+        SignerKeys::Device { .. } | SignerKeys::Enclave { .. } => None,
+    };
+    let keys: BTreeSet<[u8; 33]> = lab.signers_seen(me, &owners).into_values().filter_map(passkey).collect();
+    keys.into_iter().collect()
 }
 
 /// The service a device's pass names to have avenDB's server list the vaults it knows (G4, `Gate.lean`'s

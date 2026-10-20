@@ -8,7 +8,7 @@ import { initRoles } from "../src/acl";
 import { useClock } from "../src/prem";
 import { MAX_BYTES, normalize, statusRoute, transcribeRoute, useSttClient, type DeepgramResponse } from "../src/stt";
 import fixture from "./fixtures/deepgram-nova3.json";
-import { avendbStandIn, pass } from "./fixtures/avendb";
+import { avendbStandIn, pass } from "./fixtures/avendb.js";
 
 const pg = new PGlite();
 const avendb = avendbStandIn();

@@ -1,9 +1,9 @@
 <!--
-	The signed-in app (/app/): its own place, apart from the public site — no public header, no footer. Whoever opens it
-	is asked who they are first, with their passkey, which in the same touch opens their avenDB on this browser: one way
-	in for the app and their own database together, never a second sign-in on avenDB's pages ($lib/app/entry.js); a
-	browser new to them joins their human vault, and a person new to avenDB, as everyone just signed up, founds it,
-	named as they say. While avenDB starts, a sheet shows each step, the passkey's prompts among them, with its seconds
+	The signed-in app (/app/): its own place, apart from the public site — no public header, no footer. Its door opens on
+	the person's avenDB vault alone (Samuel 2026-10-20): their passkey unlocks it on this browser, Touch ID in the Mac app
+	where they set it up, and nothing else signs them in ($lib/app/entry.js): maiaCITY's API knows them by their vault,
+	from the pass their device signs for each call (api/src/founders.js). A browser new to them joins their human vault,
+	and a person new to avenDB, as everyone just signed up, founds it, named as they say. While avenDB starts, a sheet shows each step, the passkey's prompts among them, with its seconds
 	(Samuel 2026-10-18: what happens while the passkey's window is open or the device works). Then the dashboard; the games, worlds and game assets, each opened by the cap group of the Maia City vault it needs, which the person holds in their avenDB ($lib/app/access.svelte.js); and for whoever holds them, the admin's tools. One nav pill at the foot of every page is the only way round ($lib/app/NavPill.svelte: back, home,
 	you): no top bar, and no page has a back button of its own. A sandbox, a world and the studio's editor run full
 	screen, the pill over them — and so does a game gone full screen over its own page (Sandbox 3's domes). A page that
@@ -16,8 +16,8 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
-	import { ApiError, loginFinish, me, sheetAssertion, signOut, type Founder } from '$lib/auth/client';
-	import { claimInvite, failure, later, open, signIn, signUpName, waits } from '$lib/app/entry.js';
+	import { ApiError, me, passBy, signOut, type Founder } from '$lib/auth/client';
+	import { claimInvite, failure, later, open, signUpName, waits } from '$lib/app/entry.js';
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import { pillVaults, seeded } from '$lib/avendb/vaults.js';
@@ -38,14 +38,13 @@
 
 	let { children } = $props();
 
+	/** the founder the person's vault is, as maiaCITY's API says (their number in the nav pill), if any */
 	let founder = $state<Founder | null>(null);
-	// signed out; signed in, avenDB waiting for the passkey (`locked`); or in
-	let phase = $state<'loading' | 'signed-out' | 'locked' | 'ready'>('loading');
+	// avenDB starting; to unlock, or to sign in with the passkey where this browser holds no account (`locked`); or in
+	let phase = $state<'loading' | 'locked' | 'ready'>('loading');
 	/** what the way in is doing, while it does it */
 	let busy = $state('');
 	let error = $state('');
-	/** the API couldn't say who this is yet, and why: the way in waits for it */
-	let reaching = $state('');
 	/** avenDB didn't open: the person may go on without it in this tab */
 	let stuck = $state(false);
 	/** why the invite a link brought didn't go through, if it didn't */
@@ -108,22 +107,24 @@
 	);
 
 	onMount(async () => {
-		// the views and logic modules from the Maia City vault (C10), loaded beside the sign-in check so the app's pages
-		// run them from the start; it never throws, and offline the repo's seed runs. This browser's avenDB too, whose
-		// passkey the way in asks for
+		// the views and logic modules from the Maia City vault (C10), loaded beside avenDB's start so the app's pages run
+		// them from the start; it never throws, and offline the repo's seed runs
 		const code = loadCode();
-		const avendb = session.load();
-		founder = await whoAmI();
+		// each call to maiaCITY's API brings a pass this device signs for it, a new one each time: the API knows the person
+		// by their vault (api/src/founders.js), with no sign-in of its own
+		passBy(async () => {
+			if (session.phase !== 'open') return null;
+			const got = await session.ask({ op: 'api_pass', audience: API_AUDIENCE });
+			return got?.ok?.pass ?? null;
+		});
+		await session.load();
 		await code;
-		remember(!!founder);
-		if (!founder) return void (phase = 'signed-out');
-		await avendb;
 		settle();
 	});
 
-	/** how long the way in waits for the API to say who this is before it goes on without it (ms) */
-	const ME_WAIT = 8000;
-	/** who signed in here last, as the API said it: who the app opens for while the API can't be reached */
+	/** The service maiaCITY's API names itself as in a device's pass (api/src/standing.ts `AUDIENCE`). */
+	const API_AUDIENCE = 'maiaCITY API';
+	/** the founder the API said this vault is, last time: shown while it is asked again (local first) */
 	const LAST = 'maia:founder';
 	const lastFounder = (): Founder | null => {
 		try {
@@ -140,67 +141,23 @@
 			/* no storage */
 		}
 	};
-	/** the API's word on who this is, or a failure once it took longer than `ME_WAIT` */
-	const askMe = () =>
-		Promise.race([me(), new Promise<never>((_, no) => setTimeout(() => no(new Error(`no answer within ${ME_WAIT / 1000} s`)), ME_WAIT))]);
 	const refused = (e: unknown) => e instanceof ApiError && (e.status === 401 || e.status === 403);
 
-	/**
-	 * Who the API says is signed in. Only its refusal (401, 403) signs out: an API that can't be reached, or answers
-	 * anything else (mid-deploy, a restart), never sends the person to the passkey's sign-in for a blip (Samuel
-	 * 2026-10-20: The OS opened while the API redeployed and asked for a passkey it never needs). Local first (Samuel
-	 * 2026-10-20: "everything should be offline / local first"): where someone signed in here before, the app opens for
-	 * them at once and asks the API again meanwhile (`askAgain`), their avenDB opening on this device as ever; the first
-	 * sign-in on a device waits for the API.
-	 */
-	async function whoAmI(): Promise<Founder | null> {
-		for (let tries = 1, wait = 1000; ; tries++, wait = Math.min(wait * 2, 15000)) {
-			try {
-				const who = await askMe();
-				reaching = '';
-				keepFounder(who);
-				return who;
-			} catch (e) {
-				if (refused(e)) {
-					reaching = '';
-					keepFounder(null);
-					return null;
-				}
-				const last = lastFounder();
-				if (last) {
-					void askAgain(wait);
-					return last;
-				}
-				const why = e instanceof ApiError ? `it answered ${e.status}` : String((e as Error)?.message ?? e);
-				reaching = `maiaCITY can't be reached (${why}): trying again${tries > 1 ? `, ${tries} tries so far` : ''}`;
-				await new Promise((r) => setTimeout(r, wait));
-			}
+	/** The founder the person's vault is, as the API says by this device's pass: the last one it said meanwhile, and
+	 *  none where it says no founder's passkey owns the vault. It keeps nobody out: the vault is the way in. */
+	async function loadFounder() {
+		founder = lastFounder();
+		try {
+			founder = await me();
+			keepFounder(founder);
+		} catch (e) {
+			if (!refused(e)) return;
+			founder = null;
+			keepFounder(null);
 		}
 	}
 
-	/** The API asked again while the app runs on who signed in here last: its word kept once it has one, and its refusal
-	 *  (the session ran out meanwhile) asks them to sign in again. @param {number} wait */
-	async function askAgain(wait: number) {
-		for (;;) {
-			await new Promise((r) => setTimeout(r, wait));
-			wait = Math.min(wait * 2, 60000);
-			try {
-				const who = await askMe();
-				keepFounder(who);
-				founder = who;
-				return;
-			} catch (e) {
-				if (!refused(e)) continue;
-				keepFounder(null);
-				remember(false);
-				founder = null;
-				phase = 'signed-out';
-				return;
-			}
-		}
-	}
-
-	/** Signed in: in, or avenDB waiting for the passkey first, with the name a new human vault takes where it founds one. */
+	/** In, or avenDB waiting to be opened first, with the name a new human vault takes where it founds one. */
 	function settle() {
 		name = signUpName();
 		naming = !!name && session.phase === 'new';
@@ -214,6 +171,8 @@
 	async function done(founded = false) {
 		phase = 'ready';
 		if (session.phase !== 'open') return;
+		remember(true);
+		void loadFounder();
 		// the views, logic and configs again, off this device's own copy of Maia City now that it is open
 		void loadCode();
 		await session.refresh().catch(() => {});
@@ -273,7 +232,7 @@
 		[stuck, error] = [true, f.message];
 	}
 
-	/** Opens avenDB, the person signed in: the human vault founded named `named` where it takes one. */
+	/** Opens avenDB, the way in: the human vault founded named `named` where it takes one. */
 	async function avendb(named = '') {
 		[error, stuck] = ['', false];
 		try {
@@ -329,61 +288,17 @@
 		};
 	});
 
-	// The OS (the Mac app) cannot use maia.city's passkey in its own web view: the passkey signs a sign-in's challenge in
-	// the app's sign-in sheet, as every other ceremony (src/routes/app/avendb/sheet/), and the app signs in with that
-	// answer, which reaches it alone, as a browser does: it keeps the session the API answers with (vault/app/src/auth.rs)
-	async function enterApp() {
-		busy = 'Waiting for your passkey';
-		error = '';
-		try {
-			await loginFinish(await sheetAssertion());
-			founder = await me();
-			keepFounder(founder);
-		} catch (e) {
-			error = e instanceof Error ? e.message : String(e);
-			return void (busy = '');
-		}
-		busy = '';
-		remember(true);
-		// then the Mac's avenDB, in the app's sign-in sheet, which needs no second click
-		await session.load();
-		settle();
-		if (phase === 'locked' && !naming) void avendb();
-	}
+	/** The gate's one button: opens the person's avenDB, which is the whole way in. */
+	const enter = () => avendb(naming ? name.trim() : '');
 
-	/** The gate's one button: signs in and opens avenDB, in one ceremony of the passkey where this browser holds the
-	 *  person's account; avenDB alone where they are signed in already. */
-	async function enter() {
-		if (founder) return avendb(naming ? name.trim() : '');
-		if (native()) return enterApp();
-		[error, stuck] = ['', false];
-		try {
-			const signed = await signIn(say, starts);
-			ended(signed.why ?? undefined);
-			// the sign-in answers who they are; their role and caps (the admin's tools, a draft game) come with /api/me
-			founder = (await me().catch(() => null)) ?? signed.founder;
-			keepFounder(founder);
-			remember(true);
-			if (signed.why) return failed(signed.why);
-			settle();
-			if (phase === 'locked' && !naming) await avendb();
-		} catch (e) {
-			ended(e);
-			error = failure(e).message;
-		} finally {
-			busy = '';
-		}
-	}
-
+	/** Signs out of this browser: it locks avenDB here, so the next way in asks for the passkey again, and a session an
+	 *  API sign-in of before left here goes too. The OS has none: its avenDB runs while the app does. */
 	async function leave() {
-		// signing out locks avenDB on this browser too: the next way in asks for the passkey again
 		await session.lock();
-		await signOut();
+		await signOut().catch(() => {});
 		remember(false);
 		founder = null;
 		keepFounder(null);
-		// the Mac app has no public site to go back to: it waits at its own sign-in
-		if (native()) return void (phase = 'signed-out');
 		await goto(`${base}/`);
 	}
 
@@ -404,7 +319,7 @@
 	const closed = $derived(!!game && !waiting && !opens(game));
 	// the Proposals app is open signed out too: public is watch and read only (Samuel 2026-10-17), so it shows the
 	// proposals of the published games, and nothing there writes without a sign-in
-	const watching = $derived(phase === 'signed-out' && rel.startsWith('/app/aips/'));
+	const watching = $derived(phase === 'locked' && session.phase === 'new' && rel.startsWith('/app/aips/'));
 	// a page that builds assets waits for the Maia City vault's recipes, loaded once, the first time one is opened
 	const assetPage = $derived(ASSET_PAGES.test(rel));
 
@@ -432,18 +347,18 @@
 
 <svelte:head>
 	<meta name="robots" content="noindex" />
-	{#if phase !== 'ready' && !watching}<title>{phase === 'locked' ? 'Unlock' : 'Sign in'} · maiaCITY</title>{:else if closed}<title>Not open to you yet · maiaCITY</title>{/if}
+	{#if phase !== 'ready' && !watching}<title>{session.phase === 'new' ? 'Sign in' : 'Unlock'} · maiaCITY</title>{:else if closed}<title>Not open to you yet · maiaCITY</title>{/if}
 </svelte:head>
 
 <!-- pinned to the home screen: a dark strip behind the status bar's white words, except over a world in full screen -->
 {#if !(phase === 'ready' && immersive && !closed)}<div class="status-strip" aria-hidden="true"></div>{/if}
 {#if phase === 'loading'}
-	<div class="gate"><p class="quiet">{reaching ? `${reaching}…` : 'One moment…'}</p></div>
+	<div class="gate"><p class="quiet">One moment…</p></div>
 {:else if watching}
 	<div class="app">
 		{@render children()}
 	</div>
-{:else if phase !== 'ready' || !founder}
+{:else if phase !== 'ready'}
 	<div class="gate">
 		<a class="logo" href="{base}/">maia<strong>CITY</strong></a>
 		{#if naming}
@@ -457,16 +372,16 @@
 			<p class="fine">{native() ? 'The sign-in sheet asks' : 'Your browser asks'} for your passkey twice.</p>
 		{:else}
 			<h1>Welcome back.</h1>
-			{#if phase !== 'locked'}
+			{#if session.phase === 'new'}
 				<p class="lede">The city’s own rooms — the games, your avenDB, what we build with — open to its founders, with one passkey.</p>
 			{/if}
-			<button class="pill-btn" disabled={!!busy} onclick={enter}>{busy ? `${busy}…` : phase === 'locked' ? 'Unlock now' : 'Sign in with your passkey'}</button>
+			<button class="pill-btn" disabled={!!busy} onclick={enter}>{busy ? `${busy}…` : session.phase === 'new' ? 'Sign in with your passkey' : 'Unlock now'}</button>
 			<a class="back" href="{base}/">← Back to the homepage</a>
 		{/if}
 		{#if error}<p class="bad">{error}</p>{/if}
 		{#if phase === 'locked' && (stuck || naming) && !busy}<button class="quiet later" onclick={without}>Go on without avenDB for now</button>{/if}
 		<!-- for a newcomer, signed out or at a browser that holds someone's account, in the browser alone -->
-		{#if (phase === 'signed-out' || (phase === 'locked' && !naming)) && !native()}<p class="fine">New here? maiaCITY is invite only: an invite link from its admin <a href="{base}/join/">lets you join →</a></p>{/if}
+		{#if phase === 'locked' && !naming && !native()}<p class="fine">New here? maiaCITY is invite only: an invite link from its admin <a href="{base}/join/">lets you join →</a></p>{/if}
 	</div>
 {:else}
 	{#if waiting}
@@ -497,7 +412,7 @@
 			<VaultRecipes hold={assetPage}>{@render children()}</VaultRecipes>
 		</div>
 	{/if}
-	<NavPill {founder} name={session.name} onsignout={leave} />
+	<NavPill {founder} name={session.name} onsignout={native() ? undefined : leave} />
 	<StatusPill />
 {/if}
 <!-- what the passkey's prompt and avenDB's start are doing, step by step, at the way in and as it hands over to the app -->

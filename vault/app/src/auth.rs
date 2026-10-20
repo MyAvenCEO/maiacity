@@ -1,10 +1,9 @@
-//! Signing the app in with the person's passkey, as a browser signs in (#1107).
-//!
-//! Passkeys belong to maia.city, so the app's web view cannot use one itself: the passkey signs a sign-in's challenge in
-//! the app's sign-in sheet (`passkey_sheet`, src/routes/app/avendb/sheet/), the page hands that answer to the API's
-//! sign-in through `api`, and the session the API answers with, the same one a browser keeps in its cookie, is kept here
-//! in a file only this user can read, never shown. Every API call the page makes goes out from here with it. No key of
-//! the app's own: what the person may do is theirs in avenDB, and the shot analysis goes by the Mac's avenDB device pass.
+//! The app's calls to maiaCITY's API, which knows the person by their avenDB vault (#1107; Samuel 2026-10-20: the door
+//! opens on the vault alone). Every call the page makes goes out from here with a pass this Mac's avenDB device signs
+//! for it, a new one each time (`aven::api_pass`, `X-Avendb-Pass`): the API asks avenDB's server whose vault the device
+//! is a device of, and knows its founder by it (api/src/founders.js). No sign-in and no key of the app's own: a device
+//! its person removes from their vault stops counting, and while avenDB is locked no call carries a pass. A session an
+//! API sign-in of before left here, in a file only this user can read, still goes along until it runs out.
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -120,15 +119,24 @@ pub struct Answer {
     pub body: Value,
 }
 
-/// The page's calls to the API, made natively with this Mac's session (no browser cookie, no CORS); a sign-in's answer
-/// brings the session, a sign-out's takes it.
+/// The page's calls to the API, made natively with a pass of this Mac's avenDB device (no browser cookie, no CORS); a
+/// sign-out's answer takes a session held from before.
 #[tauri::command]
-pub async fn api(auth: State<'_, Auth>, method: String, path: String, body: Option<Value>) -> Result<Answer, String> {
+pub async fn api(
+    app: tauri::AppHandle,
+    auth: State<'_, Auth>,
+    method: String,
+    path: String,
+    body: Option<Value>,
+) -> Result<Answer, String> {
     if !path.starts_with("/api/") {
         return Err("Only the maiaCITY API.".into());
     }
     let method = reqwest::Method::from_bytes(method.to_uppercase().as_bytes()).map_err(|e| e.to_string())?;
     let mut req = auth.http.request(method, format!("{}{path}", api_base()));
+    if let Some(pass) = crate::aven::api_pass(&app).await {
+        req = req.header("x-avendb-pass", pass);
+    }
     if let Some(token) = load_session() {
         req = req.header(COOKIE, format!("{SESSION}={token}"));
     }
@@ -164,7 +172,3 @@ impl Auth {
     }
 }
 
-/// Only a Mac its person signed in to: every studio command checks this first.
-pub fn signed_in() -> bool {
-    load_session().is_some()
-}

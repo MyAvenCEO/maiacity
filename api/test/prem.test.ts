@@ -9,7 +9,7 @@ import { MIGRATIONS } from "../src/migrations-list";
 import { initRoles } from "../src/acl";
 import { call, checkModels, classify, discover, endpoints, MAX_PAUSE, paused, pick, PremError, useClock, useModels, useProbe } from "../src/prem";
 import { transcribeRoute, useSttClient } from "../src/stt";
-import { avendbStandIn, pass } from "./fixtures/avendb";
+import { avendbStandIn, pass } from "./fixtures/avendb.js";
 
 const pg = new PGlite();
 const avendb = avendbStandIn();

@@ -27,9 +27,10 @@ use tauri::Manager;
 
 type Res<T> = Result<T, String>;
 
-/// The admin gate: nothing in the studio answers until this Mac is signed in with the admin's passkey.
+/// The studio's gate: nothing in it answers until this Mac's avenDB is open, its person having unlocked it with Touch ID
+/// or their passkey, the door the app opens on (#1107).
 fn gate() -> Res<()> {
-    if auth::signed_in() { Ok(()) } else { Err("Sign in with your passkey first.".into()) }
+    if avendb::is_open() { Ok(()) } else { Err("Open your avenDB first: Touch ID or your passkey unlocks it.".into()) }
 }
 
 /// An error as the page shows it, its causes after it: the player's, the render's and the world's commands answer so.

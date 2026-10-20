@@ -11,7 +11,7 @@ import { analyseRoute, canonical, cleanCues, MODEL, parseAnswer, SCHEMAS, status
 import VOCAB from "../../game/film/vocabulary.json";
 import frames from "./fixtures/qwen-frames.json";
 import reduce from "./fixtures/qwen-reduce.json";
-import { avendbStandIn, pass } from "./fixtures/avendb";
+import { avendbStandIn, pass } from "./fixtures/avendb.js";
 
 const pg = new PGlite();
 const avendb = avendbStandIn();
@@ -137,10 +137,10 @@ describe("POST /api/analysis", () => {
 
     test("an admin of Maia City's pass opens it, once; anyone else's, or a pass that is no pass, opens nothing", async () => {
       delete process.env.PREMAI_API_KEY;
-      const admin = `admin${"A".repeat(80)}`;
+      const admin = pass();
       expect((await ask(admin)).status).toBe(200);
       expect((await ask(admin)).status).toBe(401);
-      expect((await ask(`other${"A".repeat(80)}`)).status).toBe(403);
+      expect((await ask(pass("other"))).status).toBe(403);
       expect((await ask("short")).status).toBe(401);
     });
   });

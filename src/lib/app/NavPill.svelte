@@ -25,8 +25,9 @@
 	import { pill } from './pill.svelte.js';
 	import { shaped } from './shapes.js';
 
-	/** @type {{ founder: import('$lib/auth/client').Founder, name?: string, onsignout: () => void }} the person's name
-	 *  from their avenDB human vault's profile, '' until avenDB shows it */
+	/** @type {{ founder: import('$lib/auth/client').Founder | null, name?: string, onsignout?: () => void }} the person's
+	 *  name from their avenDB human vault's profile, '' until avenDB shows it; no "Sign out" without `onsignout`, as in
+	 *  The OS, whose avenDB runs while the app does */
 	let { founder, name = '', onsignout } = $props();
 
 	const home = `${base}/app/`;
@@ -98,7 +99,7 @@
 	</button>
 	{#if open}
 		<div class="account" role="menu">
-			<p class="who"><b>{who}</b><span>Founder {String(founder.number).padStart(3, '0')}</span></p>
+			<p class="who"><b>{who}</b>{#if founder}<span>Founder {String(founder.number).padStart(3, '0')}</span>{/if}</p>
 			{#if pill.context}
 				<p class="group">{pill.context.title}</p>
 				{#each pill.context.list as a (a.id)}
@@ -134,7 +135,7 @@
 				{/if}
 			{/if}
 			<a role="menuitem" href="{base}/">The public site</a>
-			<button role="menuitem" class="out" onclick={onsignout}>Sign out</button>
+			{#if onsignout}<button role="menuitem" class="out" onclick={onsignout}>Sign out</button>{/if}
 		</div>
 	{/if}
 </nav>
