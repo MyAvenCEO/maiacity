@@ -1,8 +1,8 @@
 <!--
 	A vault's docs, in the layout every avenDB view has (./Frame.svelte) (Samuel 2026-10-18: the docs live in avenDB
 	alone, not on the public site; every skill one item of them, picked on the left, its history on the right as in
-	every other view). Each doc is a story tagged `doc` and its doc post (`post:doc`), both as the seed writes them
-	(./seed.js, ./docs.js): the skills of .claude/skills, the theOS paper and the avenDB and avenBRAIN architectures. On the left each
+	every other view). Each doc is a story tagged `doc` and its doc post (`post:doc`), both as an accepted AIP brings them
+	(scripts/propose-doc.mjs, ./seed.js `docRecords`, ./docs.js): the skills of .claude/skills, the theOS paper and the avenDB and avenBRAIN architectures. On the left each
 	doc by its section, with a search; in the middle the one picked (`#docs/` and its entry), its text as it reads on the
 	line picked; on the right its history and versions (./Lines.svelte) and its outline. Edit opens its text as a note.
 	The docs that are pages of the site, the theOS paper and the avenDB and avenBRAIN architectures, show on main as their pages do,
@@ -183,8 +183,8 @@
 	{#if !docs.length}
 		<p class="soft empty">
 			<Icon name="article" size={18} />
-			{#if seen.length}No doc in {nameOf(byId.get(vault))} yet. The seed writes the skills, the theOS paper and the avenDB
-				docs into Maia City.{:else}{nameOf(byId.get(actor))} sees nothing in {nameOf(byId.get(vault))}. A vault that owns it can
+			{#if seen.length}No doc in {nameOf(byId.get(vault))} yet. Each doc goes into Maia City as an AIP its owners
+				accept.{:else}{nameOf(byId.get(actor))} sees nothing in {nameOf(byId.get(vault))}. A vault that owns it can
 				share its docs in <button class="link" onclick={onaccess}>Sharing</button>.{/if}
 		</p>
 	{:else if picked}

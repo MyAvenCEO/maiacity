@@ -335,7 +335,7 @@
 				.catch((/** @type {Error} */ e) => (session.error = `Adding avenCEO’s schemas failed: ${plain(e.message)}`))
 				.finally(() => (standardizing = false));
 		}
-		// the repo seed's top-up (./seed.js): the code, games, settings, docs and recipes the repository adds that Maia
+		// the repo seed's top-up (./seed.js): the code, games, settings and recipes the repository adds that Maia
 		// City never held, deleted or not, written into it once it holds the standard schemas, by the person's first device
 		// alone: one that joins later might not have synced what the first wrote yet, and would write it all again
 		const city = seeded(w)[0]?.[0];
