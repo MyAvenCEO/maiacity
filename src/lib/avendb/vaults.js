@@ -26,8 +26,9 @@ import { fieldPaths, pathWords } from './paths.js';
  */
 /**
  * A device of a vault: its name, by its card; whether it is this one; and its copy setting, what it keeps of every vault
- * it syncs: `full`, every entry and file, or `light`, every entry and a file as it is opened, `null` where it set none.
- * @typedef {{ id: string, name?: string | null, me: boolean, copy?: 'full' | 'light' | null }} DeviceView
+ * it syncs: `full`, every entry and file, or `light`, every entry and a file as it is opened, `null` where it set none;
+ * and `next`, its next key, where the key move kept it beside that key (an owner key too), `null` otherwise.
+ * @typedef {{ id: string, name?: string | null, me: boolean, copy?: 'full' | 'light' | null, next?: string | null }} DeviceView
  */
 /**
  * What the person may do in a vault, as the device says: the vault they act as in it (the vault itself where theirs
@@ -37,7 +38,8 @@ import { fieldPaths, pathWords } from './paths.js';
  */
 /**
  * @typedef {{ id: string, kind: Kind, name: string | null,
- *   owners: ({ vault: string } | { signer: string, recovery: boolean, by: 'device' | 'passkey' | 'touch' | null })[],
+ *   owners: ({ vault: string } | { signer: string, recovery: boolean, by: 'device' | 'passkey' | 'touch' | null,
+ *     next: string | null })[],
  *   threshold: number, root: string | null, devices: DeviceView[], via: string[] | null, acting: Acting }} VaultView
  */
 /**

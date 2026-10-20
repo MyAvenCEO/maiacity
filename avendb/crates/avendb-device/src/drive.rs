@@ -24,8 +24,8 @@
 //!   as the volume goes, at its next look.
 //! - **Moved** (K3b): a drive made before the key move moves to ML-DSA-65 with the Mac that hosts it, in the same
 //!   sheet and touch (`Service::hold_drives`, `Service::moved_drives`): its node stopped, it joins as its next key,
-//!   which takes over its copy setting, its old key leaves, its store and the Mac's shelf name its next key, and the
-//!   Mac hosts it as that key from then on.
+//!   which takes over its copy setting, its old key stays in the vault beside it, its store and the Mac's shelf name
+//!   its next key, and the Mac hosts it as that key from then on.
 //! - **Removed** like a lost phone: the device is revoked (`{"op": "revoke", "vault", "device"}`), its peers refuse
 //!   it from then on, and the Mac hosts it no more.
 
@@ -604,7 +604,7 @@ impl Service {
     }
 
     /// The drives of `held` that moved in this Mac's key move, each to its next key among `moves`
-    /// (`Device::move_keys`), as its own device's next key is named before the old one leaves: this Mac's shelf keeps
+    /// (`Device::move_keys`), as its own device's next key is named before it opens again: this Mac's shelf keeps
     /// the drive's key under its next key (`wrap_key`), then the drive's store names that key (`Meta::device`), so
     /// this Mac hosts it as that key from then on, with no ceremony, as it hosts it again (`look`). A drive that moved
     /// already, as in a move cut short, stays as it is.

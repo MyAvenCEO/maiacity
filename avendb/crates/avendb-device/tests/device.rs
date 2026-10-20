@@ -2258,9 +2258,10 @@ async fn ivys_mac_its_touch_id_key_and_her_drive_move_to_ml_dsa_65_with_her_pass
         devices.sort();
         Some((v.owners.clone(), v.root, devices))
     };
-    let mut devices = vec![mac_next, photos_next];
+    // the move only adds: each earlier key stays beside its next
+    let mut devices = vec![mac, photos, mac_next, photos_next];
     devices.sort();
-    let after = (vec![Principal::Signer(next), Principal::Signer(touch_next)], Some(next), devices);
+    let after = ([passkey, touch, next, touch_next].map(Principal::Signer).to_vec(), Some(passkey), devices);
     assert_eq!(node.read(members).await, Some(after));
     drop(node);
     // her drive's store names its next key, this Mac keeps its key under that, and hosts it again as that key

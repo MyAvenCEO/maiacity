@@ -602,12 +602,12 @@ impl Device {
     /// it asks for, in one ceremony of their passkey and, on a Mac, one touch of its Touch ID key. Then what opens it
     /// again names its next key, and its Touch ID key's the passkey's, kept on its shelf once the shelf holds the
     /// batch; `keep` takes the moves, each signer with its next key, as the Mac names the next keys of the drives it
-    /// runs on theirs; each device that moves leaves, its next key taking over what it kept (`Lab::finish_move`); and
-    /// it closes and opens again as its next key on the same shelf, with no ceremony (`Lab::moved`), as `start` says,
-    /// and writes its card as that key, whose card it is. No edit is signed again, and the old edits keep their
-    /// signatures. A move cut short goes on where it stopped at its next unlock, by that key or the old one. The
-    /// device it opened again as, or `None` where nothing moved. Fails for a device that keeps no shelf, if the vault
-    /// refuses a step, or if a ceremony isn't its signer's.
+    /// runs on theirs; each device that moves hands its next key what it kept (`Lab::finish_move`), and stays in the
+    /// vault beside it, as every earlier key does: the move only adds; and it closes and opens again as its next key
+    /// on the same shelf, with no ceremony (`Lab::moved`), as `start` says, and writes its card as that key, whose card
+    /// it is. No edit is signed again, and the old edits keep their signatures. A move cut short goes on where it
+    /// stopped at its next unlock, by that key or the old one. The device it opened again as, or `None` where nothing
+    /// moved. Fails for a device that keeps no shelf, if the vault refuses a step, or if a ceremony isn't its signer's.
     pub async fn move_keys<S, K>(
         &self,
         start: Start,
@@ -639,7 +639,7 @@ impl Device {
         }
         let next = |s: SignerId| moves.iter().find(|&&(old, _)| old == s).map_or(s, |&(_, new)| new);
         let new = next(self.node.device());
-        // what opens it again names its next key before the old one leaves, once its shelf holds the batch
+        // what opens it again names its next key, once its shelf holds the batch
         self.shelved().await?;
         let (follow, query_depth) = self.node.read(settings).await;
         let touch = meta.touch.clone().map(|t| Touch { passkey: next(t.passkey), ..t });

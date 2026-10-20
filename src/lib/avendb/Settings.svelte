@@ -146,6 +146,10 @@
 	);
 	/** whether the vault has the master recovery key among its owners */
 	const recovers = $derived(v.owners.some((o) => 'signer' in o && o.recovery));
+	/** its owners and devices as the lists show them: a key the key move kept beside its next (`next`) is that key, the
+	 *  same passkey, Touch ID key or device, so it is listed once, and never offered for removal */
+	const listedOwners = $derived(v.owners.filter((o) => !('signer' in o && o.next)));
+	const listedDevices = $derived(v.devices.filter((d) => !d.next));
 	/**
 	 * A signer owner, as the owners list labels it, by the kind of key it is, never ranked: every owner is equal
 	 * (Samuel 2026-10-19). @param {{ signer: string, recovery: boolean, by: string | null }} o
@@ -323,7 +327,7 @@
 		if (recoveryMissing && world.recovery)
 			asks.recovery = { op: 'share', over: vault, who: { signer: world.recovery }, level: 'Owner', what: 'everything' };
 		if (vault === world.mine && backs != null) asks.backUp = { op: 'back_up', on: !backs };
-		const other = v.devices.find((d) => !d.me) ?? v.devices[0];
+		const other = listedDevices.find((d) => !d.me) ?? listedDevices[0];
 		if (vault === world.mine && other) asks.copy = { op: 'copy', device: other.id, full: other.copy !== 'full' };
 		const names = Object.keys(asks);
 		let gone = false;
@@ -446,9 +450,9 @@
 				{ key: 'backup', name: 'Backup', icon: 'upload', when: own && backs != null }
 			],
 			members: [
-				{ key: 'owners', name: 'Owners', icon: 'key', n: v.owners.length },
+				{ key: 'owners', name: 'Owners', icon: 'key', n: listedOwners.length },
 				{ key: 'owned', name: owned, icon: 'users', when: owned },
-				{ key: 'devices', name: 'Devices', icon: 'sync', n: v.devices.length },
+				{ key: 'devices', name: 'Devices', icon: 'sync', n: listedDevices.length },
 				{ key: 'drives', name: 'Drives', icon: 'file', n: drives?.drives.length, when: own && drives },
 				{ key: 'link', name: 'Link another device', icon: 'link', when: own },
 				{ key: 'agents', name: `Agents on ${here}`, icon: 'code', when: own && sockets },
@@ -545,7 +549,7 @@
 					{#if barred('threshold')}<small class="soft">It can’t: {barred('threshold')}.</small>{/if}
 				{/if}
 			{:else}
-				{v.root ? 'its root, or ' : ''}{v.threshold} of its {count(v.owners.length, 'owner')} to approve.
+				{v.root ? 'its root, or ' : ''}{v.threshold} of its {count(listedOwners.length, 'owner')} to approve.
 			{/if}
 		</dd>
 		<dt>{Here}</dt>
@@ -644,7 +648,7 @@
 				<article class="card">
 					<h3>Owners</h3>
 					<ul class="list grants">
-						{#each v.owners as o (('vault' in o ? o.vault : o.signer))}
+						{#each listedOwners as o (('vault' in o ? o.vault : o.signer))}
 							{@const row = ownerRow(o)}
 							<li>
 								<span class="cap">
@@ -664,7 +668,7 @@
 							</li>
 						{/each}
 					</ul>
-					<p class="soft">{v.threshold} of {count(v.owners.length, 'owner')} approve{v.owners.length === 1 ? 's' : ''} a change.</p>
+					<p class="soft">{v.threshold} of {count(listedOwners.length, 'owner')} approve{listedOwners.length === 1 ? 's' : ''} a change.</p>
 					{#if actor === vault && takesOwner}
 						<div class="add-owner">
 							<select class="field" bind:value={newOwner} aria-label="A vault to make an owner too">
@@ -731,13 +735,13 @@
 					<h3>Devices</h3>
 					{#if !holds}
 						<p class="soft">{actsWords(world, v.kind)}</p>
-					{:else if !v.devices.length}
+					{:else if !listedDevices.length}
 						<p class="soft">
 							No device of its own yet: {v.via ? `${here} acts for it through its owners` : 'its owners act for it'}.
 						</p>
 					{/if}
 					<ul class="list">
-						{#each v.devices as d (d.id)}
+						{#each listedDevices as d (d.id)}
 							<li class="device">
 								{#if d.me && renaming !== null}
 									<input class="field" bind:value={renaming} aria-label={`${Here}'s name`} />
@@ -775,7 +779,7 @@
 							</li>
 						{/each}
 					</ul>
-					{#if vault === world.mine && v.devices.length}
+					{#if vault === world.mine && listedDevices.length}
 						<p class="soft">
 							A full copy keeps every entry and every file of every vault the device syncs, so it works offline and is one
 							more backup. A light one keeps every entry, and a file only once it is opened there.

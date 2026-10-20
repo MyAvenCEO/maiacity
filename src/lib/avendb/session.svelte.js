@@ -379,18 +379,11 @@ function running(d) {
 	void checkMove(d);
 }
 
-/** Whether the key move (K3b) waits, on every device, the Mac app's page too (2026-10-20): a move removes the person's
- *  old passkey, and a removal cuts every edit the moving device didn't hold that rested on that key, so a move from a
- *  device that didn't hold one of their vaults yet erased that vault on every device it reached. No page asks until a
- *  move cuts nothing. */
-const MOVE_PAUSED = true;
-
 /** What device `d`'s key move asks of the person (K3b), once it opened: where it asks for no ceremony, as a move cut
  *  short, it goes on at once; otherwise the page asks once more (`moveKeys`). Never fails: a move that can't be asked
- *  about now waits for the next unlock. Nothing while the move waits (`MOVE_PAUSED`). @param {any} d */
+ *  about now waits for the next unlock. @param {any} d */
 async function checkMove(d) {
 	moving = null;
-	if (MOVE_PAUSED) return;
 	try {
 		const asked = (mac ? await mac.call('moving') : await d.moving()) ?? null;
 		if (device !== d) return;

@@ -1592,7 +1592,14 @@ knows signs (`Lab::web_passkey`, `Lab::owner_among`); a new device shows its pas
 person's vault may know either; an invite made before claims in SLH-DSA; and the server's and agents' kept secret
 names its suite (`sign::kept_secret`: the 32 bytes alone for SLH-DSA, as every one kept before, else its suite's byte
 first, so a cloud agent's key is 66 hex digits). The spec's `keyMove` example shows a vault moving to new keys with
-the edits it already has. A device moves its person's keys and its own only once it caught up with one of its peers,
+the edits it already has. A device's move (K3b) only adds (Samuel 2026-10-20, "Add, never remove"): each next key
+joins as an owner or a device beside its earlier key, which stays, and the root stays where it was
+(`Lab::draft_move`). A removal cuts every edit resting on what it removes that its drafter doesn't hold (T16), so a
+move that removed the old passkey, drafted on a phone that didn't hold its person's coop yet, erased the coop wherever
+it spread; an addition cuts nothing, whatever its drafter holds. A device acts as the passkey's next key where that
+key alone approves for the vault, else as its root (`Lab::owner_among`). The device opens again as its next key; its
+earlier key, on the same endpoint, is no peer of its own (`Lab::peers`), and the world marks each earlier key with its
+`next`, so the page lists each passkey, Touch ID key and device once (`Lab::earlier_keys`). A device moves its person's keys and its own only once it caught up with one of its peers,
 the server or another of their devices (`Device::moving`, `catch_up`): a move rotates the keys of their vaults, and
 one made before the device holds what those keys open would make them over what it doesn't hold yet. Until then the
 page asks nothing, and the next unlock asks again.
