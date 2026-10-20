@@ -24,7 +24,7 @@
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
 	import ProposedAssets from './ProposedAssets.svelte';
-	import { answering, asksOf, countsOf, detail, lead, newsOf, revisionsOf, signed, top as topOf } from './hitl.js';
+	import { answering, asksOf, countsOf, detail, lead, newsOf, objectiveLine, revisionsOf, signed, top as topOf } from './hitl.js';
 	import { nameOf } from './vaults.js';
 
 	/**
@@ -168,6 +168,7 @@
 							{#if parts.more}<li class="soft">+{parts.more} more</li>{/if}
 						</ul>
 					{/if}
+					{#if objectiveLine(top)}<p class="objective">{objectiveLine(top)}</p>{/if}
 					<a class="link" href={detail(top.entry ?? '')}>More detail</a>
 				</div>
 
@@ -342,6 +343,12 @@
 	}
 
 	/* what it changes, a line per part, each as its entry's schema derives it */
+	.objective {
+		margin: 0 0 0.6rem;
+		font-size: 0.84rem;
+		font-weight: 600;
+		color: #24452f;
+	}
 	.parts {
 		margin: 0 0 0.6rem;
 		padding-left: 1.1rem;

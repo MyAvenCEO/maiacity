@@ -11,7 +11,7 @@
  *   Citizen    a Traveler who plays MaiaCity V1 too (to become the paid one later), and reads all of V1, its proposals
  *              among it; V1's moves still run on maiaCITY's API, so no write of them is a cap yet. Nobody is invited
  *              a citizen (Samuel 2026-10-19): travelers become citizens by other means, later
- *   Admin      a Citizen who reads all of Maia City and opens the admins' own pages (the Skills, avenDB's own page, the
+ *   Admin      a Citizen who reads all of Maia City and opens the admins' own pages (avenDB's own page, the
  *              vault apps on the dashboard, signing a terminal in; Samuel 2026-10-19: no Postgres role decides it), and
  *              may found coops and avens through avenDB's server (avendb's `gate::ADMIN`). Maia City's own owners always
  *              may all of it; anyone else holds it by a share of it

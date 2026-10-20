@@ -8,8 +8,8 @@
 	import { EQ_TYPES, MAX_BANDS, bandLabel, cleanEq } from '../../../game/film/sound.js';
 	import { fine } from './fine.js';
 
-	/** @typedef {import('$lib/auth/client').EqBand} EqBand */
-	/** @type {{ s: import('./studio.svelte.js').Studio, clip: import('$lib/auth/client').TimelineClip, ro?: boolean }} */
+	/** @typedef {import('./types.js').EqBand} EqBand */
+	/** @type {{ s: import('./studio.svelte.js').Studio, clip: import('./types.js').TimelineClip, ro?: boolean }} */
 	let { s, clip, ro = false } = $props();
 
 	const bands = $derived(cleanEq(clip.eq));

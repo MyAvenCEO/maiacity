@@ -5,14 +5,13 @@
 // own pages to every Admin, all of it to whoever acts for Maia City ($lib/app/access.svelte.js); anyone else who has
 // a link to one is told what opens it.
 import { base } from '$app/paths';
-import type { Founder } from '$lib/auth/client';
 import { FIRST, latestOf, versionsOf, type Change, type Version } from '$lib/app/versions.js';
 import { holdsGroup } from '$lib/app/access.svelte.js';
 import { ADMIN, CITIZEN, TRAVELER } from '$lib/avendb/capgroups.js';
 import { gameOfRoute } from '../../../game/games.js';
 
 export type Place = {
-	href: string; label: string; icon: IconName; cap?: string; note?: string; /** a picture, by hash */ cover?: string
+	href: string; label: string; icon: IconName; note?: string; /** a picture, by hash */ cover?: string
 	/** the cap group of the Maia City vault that opens it ($lib/avendb/capgroups.js): Admin for the admins' own tools */
 	needs?: string
 	/** a world's or sandbox's versions and history ($lib/app/versions.js), the latest its own; and what it is anchored to */
@@ -75,8 +74,6 @@ export const CITY: Place[] = ([
 /** every game, on the dashboard's Game Worlds: MaiaCity V1 first, then the sandboxes */
 export const GAME_WORLDS: Place[] = [...CITY, ...PLAY];
 
-export const holds = (founder: Founder | null, p: Place) => !p.cap || !!founder?.caps?.includes(p.cap);
-
 /** An admin: holds Maia City's Admin cap group, or acts for Maia City. */
 export const isAdmin = () => holdsGroup(ADMIN);
 
@@ -87,15 +84,16 @@ export const opens = (p: Place) => !p.needs || holdsGroup(p.needs);
 export const gameAt = (path: string) =>
 	[...CITY, ...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ?? PAGES.find((p) => path.startsWith(p.href));
 /** the Worlds grid and the game assets' own pages (the Buildings, the Factories, the Biomes): every Traveler's; the
- *  Skills, the Postgres window and avenDB's own page: the admins'. The studio keeps its own gate: it works on the
- *  media vault through the API, which decides who may (`media:admin`). The Postgres window's rows open by the same
- *  Admin group, as avenDB's server tells the API of the pass the page's device signs (api/src/standing.ts) */
+ *  The studio, the Postgres window and avenDB's own page: the admins'. One gate for every page, this one: no
+ *  page asks the API's Postgres roles any more. The studio works on avenDB alone (its cuts, the vaults' Library, its
+ *  jobs), by the person's own shares; the Postgres window's rows open by the same Admin group, as avenDB's server
+ *  tells the API of the pass the page's device signs (api/src/standing.ts) */
 const PAGES: Place[] = [
 	{ href: `${base}/app/worlds/`, label: 'Worlds', icon: 'play', needs: TRAVELER },
 	{ href: `${base}/app/factories/`, label: 'Factories', icon: 'gear', needs: TRAVELER },
 	{ href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', needs: TRAVELER },
 	{ href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', needs: TRAVELER },
-	{ href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', needs: ADMIN },
+	{ href: `${base}/app/studio/`, label: 'Studio', icon: 'studio', needs: ADMIN },
 	{ href: `${base}/app/postgres/`, label: 'Postgres', icon: 'database', needs: ADMIN },
 	{ href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', needs: ADMIN }
 ];

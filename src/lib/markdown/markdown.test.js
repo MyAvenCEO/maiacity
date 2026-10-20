@@ -126,8 +126,7 @@ describe('our own Markdown reads as before', () => {
 // is named here with what feeds it. A new {@html} fails until its HTML comes through one of these (for Markdown:
 // $lib/markdown) and is added below.
 const RAW_HTML = {
-	'src/lib/blog/PostLayout.svelte': 'its html prop: blog posts through journalHtml ($lib/markdown, $lib/server/blog.ts)',
-	'src/routes/app/skills/+page.svelte': '$lib/markdown, our links around its <code>',
+	'src/lib/blog/PostLayout.svelte': "its html prop: an avenDB article through avenDB's escaping article renderer (render, $lib/avendb/ArticleView.svelte)",
 	'src/lib/avendb/ArticleView.svelte': "avenDB's escaping article renderer (render)",
 	'src/lib/avendb/Docs.svelte': "avenDB's escaping article renderer (render), a doc's or a skill's text",
 	'src/lib/universe/InspirePost.svelte': "an inspire post's report and source through journalHtml ($lib/markdown), its shifts split into spans of ours (./inspire.js)",

@@ -7,12 +7,16 @@
 	server checks for the API (api/src/standing.ts). No passkey session, Postgres role or key opens it.
 -->
 <script>
+	import { onMount } from 'svelte';
 	import { apiCall } from '$lib/auth/client';
-	import { session } from '$lib/avendb/session.svelte.js';
+	import { Here, here, session } from '$lib/avendb/session.svelte.js';
+	import Unlock from '$lib/avendb/Unlock.svelte';
 
 	const PAGE = 50;
 	/** the name maiaCITY's API goes by in a pass (api/src/standing.ts `AUDIENCE`) */
 	const AUDIENCE = 'maiaCITY API';
+	/** How long the page waits on the device's pass, and on the API's answer, before it says which didn't answer (ms). */
+	const WAIT = 20000;
 
 	/** @typedef {{ name: string, type: string, hidden: boolean }} Column */
 	let tables = $state(/** @type {{ name: string, rows: number, columns: Column[] }[]} */ ([]));
@@ -23,6 +27,19 @@
 	let busy = $state(false);
 	/** the row opened whole, by its place on the page */
 	let open = $state(-1);
+	/** what the page waits on now, as the person reads it */
+	let step = $state('');
+
+	/** `promise`, or after `WAIT` an error saying that `who` didn't answer. @template T
+	 *  @param {string} who @param {Promise<T>} promise @returns {Promise<T>} */
+	function within(who, promise) {
+		/** @type {ReturnType<typeof setTimeout> | undefined} */
+		let timer;
+		const late = new Promise((_, no) => {
+			timer = setTimeout(() => no(new Error(`${who} didn’t answer in ${WAIT / 1000} seconds. Please try again.`)), WAIT);
+		});
+		return /** @type {Promise<T>} */ (Promise.race([promise, late])).finally(() => clearTimeout(timer));
+	}
 
 	/**
 	 * Asks the API, POSTing `body` to `path` with a new pass from this device: avenDB's server tells the API whether the
@@ -30,27 +47,38 @@
 	 * @param {string} path @param {object} [body] @returns {Promise<any>}
 	 */
 	async function ask(path, body = {}) {
-		const got = await session.ask({ op: 'api_pass', audience: AUDIENCE });
-		if (!got?.ok?.pass) throw new Error(got?.why || 'This device made no pass: unlock avenDB here first.');
-		return apiCall(path, { method: 'POST', body: JSON.stringify({ ...body, pass: got.ok.pass }) });
+		try {
+			step = `Asking ${here}’s avenDB for a pass`;
+			const got = await within(`${Here}’s avenDB`, session.ask({ op: 'api_pass', audience: AUDIENCE }));
+			if (!got?.ok?.pass) throw new Error(got?.why || `${Here} made no pass: open avenDB here first.`);
+			step = 'Asking the API';
+			return await within('The API', apiCall(path, { method: 'POST', body: JSON.stringify({ ...body, pass: got.ok.pass }) }));
+		} finally {
+			step = '';
+		}
+	}
+
+	/** The tables, and the first one's rows: the one the address names, else the first. */
+	async function load() {
+		[loaded, error] = [false, ''];
+		try {
+			tables = await ask('/api/tables');
+			const asked = new URLSearchParams(location.search).get('table');
+			const first = tables.find((t) => t.name === asked) ?? tables[0];
+			if (first) await show(first.name, 0);
+		} catch (e) {
+			error = /** @type {Error} */ (e).message;
+		}
+		loaded = true;
 	}
 
 	// the tables, once avenDB is open on this device, as the layout opens the page for Maia City's admins alone
+	onMount(() => session.boot());
 	let started = false;
 	$effect(() => {
 		if (session.phase !== 'open' || started) return;
 		started = true;
-		(async () => {
-			try {
-				tables = await ask('/api/tables');
-				const asked = new URLSearchParams(location.search).get('table');
-				const first = tables.find((t) => t.name === asked) ?? tables[0];
-				if (first) await show(first.name, 0);
-			} catch (e) {
-				error = /** @type {Error} */ (e).message;
-			}
-			loaded = true;
-		})();
+		void load();
 	});
 
 	/** @param {string} name @param {number} offset */
@@ -101,10 +129,13 @@
 		<p class="dim">Every table of the city’s Postgres and its rows, read only. Columns that keep a secret or a credential say only that they are there.</p>
 	</header>
 
-	{#if !loaded}
-		<p class="dim">One moment…</p>
+	{#if session.phase !== 'open'}
+		<Unlock why="to read the city’s tables" />
+	{:else if !loaded}
+		<p class="dim" role="status">{step ? `${step}…` : 'One moment…'}</p>
 	{:else if !tables.length}
 		<p class="note">{error || 'No tables yet.'}</p>
+		{#if error}<button class="btn" onclick={load}>Try again</button>{/if}
 	{:else}
 		<div class="cols">
 			<nav>

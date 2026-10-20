@@ -1,26 +1,26 @@
-<script lang="ts">
-	import { asset } from '$lib/media/url';
+<script>
+	// @ts-nocheck — plain JS, kept loose on purpose
+	// The front door: the manifesto, then the journal where it starts, the day after it and the newest days. The journal
+	// is one stream, avenDB's feed, the same posts and the same cards as Maia Universe ($lib/universe/stream.svelte.js),
+	// taken in in the browser once the page is open, so the site is built without it.
+	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
 	import LatestList from '$lib/blog/LatestList.svelte';
-	import NextCard from '$lib/blog/NextCard.svelte';
 	import Manifesto from '$lib/Manifesto.svelte';
-	import { postHref } from '$lib/blog/drafts';
-	import { categoryById } from '$lib/inspire-me/categories';
+	import PostCard from '$lib/universe/PostCard.svelte';
+	import { postHref } from '$lib/universe/posts.js';
+	import { dayOf, frontOf } from '$lib/universe/journal.js';
+	import { loadFeed, stream } from '$lib/universe/stream.svelte.js';
 
 	let { data } = $props();
 
-	const post = $derived(data.pinned);
-	const next = $derived(data.next);
-	const latest = $derived(data.latest);
-	const formatted = $derived(
-		post?.date
-			? new Date(post.date).toLocaleDateString('en-GB', {
-					day: 'numeric',
-					month: 'long',
-					year: 'numeric'
-				})
-			: ''
-	);
+	onMount(() => {
+		loadFeed();
+	});
+
+	const front = $derived(frontOf(stream.posts));
+	const post = $derived(front.pinned);
+	const waiting = $derived(!post && (stream.feed === 'idle' || stream.feed === 'loading'));
 </script>
 
 <svelte:head>
@@ -31,43 +31,33 @@
 <main class="wrap">
 	<Manifesto banner={data.banner} />
 
+	<p class="start eyebrow">Where it starts</p>
 	{#if post}
-		<p class="start eyebrow">Where it starts</p>
-		<article class="pinned">
-			<div class="body">
-				<p class="eyebrow">
-					{#if post.day != null}Day {String(post.day).padStart(2, '0')}&ensp;·&ensp;{/if}{formatted}
-				</p>
-				<h2><a href={postHref(post)}>{post.title}</a></h2>
-				<p class="excerpt">{post.excerpt}</p>
-
-				<div class="foot">
-					{#if post.authorImage}
-						<img class="avatar" src={asset(post.authorImage)} alt="" />
-					{/if}
-					<span>{post.author}</span>
-					<ul class="tag-list">
-						{#each post.categories as id (id)}
-							<li style:--c={categoryById(id).color}>{categoryById(id).label}</li>
-						{/each}
-					</ul>
-				</div>
-
-				<div class="actions">
-					<a class="pill-btn" href={postHref(post)}>Read day {post.day ?? ''} →</a>
-					<a class="ghost-btn" href="{base}/universe/?c=Journal">All days</a>
-				</div>
+		<div class="pinned">
+			<PostCard {post} />
+			<div class="actions">
+				<a class="pill-btn" href={postHref(base, post)}>Read{dayOf(post) == null ? '' : ` day ${dayOf(post)}`} →</a>
+				<a class="ghost-btn" href="{base}/universe/?c=Journal">All days</a>
 			</div>
-		</article>
+		</div>
+	{:else}
+		<p class="empty">
+			{#if waiting}
+				Taking in the journal from avenDB…
+			{:else}
+				The journal can't be reached just now. <a href="{base}/universe/?c=Journal">Read it on Maia Universe →</a>
+			{/if}
+		</p>
 	{/if}
 
-	{#if next}
+	{#if front.next}
 		<section class="onward">
-			<NextCard post={next} label="Then" />
+			<p class="eyebrow">Then</p>
+			<PostCard post={front.next} />
 		</section>
 	{/if}
 
-	<div class="latest"><LatestList posts={latest} /></div>
+	<div class="latest"><LatestList posts={front.latest} /></div>
 </main>
 
 <style>
@@ -80,77 +70,39 @@
 		text-align: center;
 	}
 
-	/* the door to day 02, as wide as the pinned card */
-	.onward {
-		margin: 1rem 0 0;
-	}
-
-	/* three quiet rows under the pinned day: number, title, date */
-	.latest {
-		max-width: 52rem;
-		margin: 3rem auto 0;
-	}
-
-	/* the words only: the landing page shows no film */
-	.pinned {
-		display: grid;
-		grid-template-columns: 1fr;
+	/* where it starts, the day after it and the newest days, in one column as wide as a post card on Maia Universe */
+	.pinned,
+	.onward,
+	.latest,
+	.empty {
 		max-width: 46rem;
-		margin: 0 auto;
-		align-items: center;
-		gap: 2.5rem;
-		padding: 1.25rem 1.5rem;
-		border-radius: var(--radius);
-		background: var(--paper);
-		/* the film sits inside the card, so its corners follow the card's */
-		--player-radius: calc(var(--radius) - 8px);
+		margin-inline: auto;
 	}
 
-	.pinned :global(.player) {
-		margin: 0;
+	.onward {
+		margin-top: 2.5rem;
 	}
 
-	.body {
-		display: flex;
-		flex-direction: column;
-		gap: 1rem;
-		padding: 0.5rem 1rem 1rem 0;
+	.onward .eyebrow {
+		margin: 0 0 0.75rem;
 	}
 
-	h2 {
-		font-size: clamp(1.8rem, 3.2vw, 2.6rem);
+	.latest {
+		margin-top: 3rem;
 	}
 
-	h2 a {
-		text-decoration: none;
-	}
-
-	.excerpt {
-		margin: 0;
+	.empty {
+		padding: 2rem 1rem;
+		text-align: center;
 		color: var(--ink-soft);
-	}
-
-	.foot {
-		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.6rem;
-		font-size: 0.9rem;
-		color: var(--ink-soft);
-	}
-
-	.avatar {
-		width: 1.9rem;
-		height: 1.9rem;
-		border-radius: 50%;
-		object-fit: cover;
 	}
 
 	.actions {
 		display: flex;
 		flex-wrap: wrap;
+		justify-content: center;
 		gap: 0.6rem;
-		margin-top: 0.25rem;
+		margin-top: 1rem;
 	}
 
 	.ghost-btn {
@@ -168,16 +120,5 @@
 	.ghost-btn:hover {
 		color: var(--ink);
 		background: var(--cream);
-	}
-
-	@media (max-width: 860px) {
-		.pinned {
-			grid-template-columns: 1fr;
-			gap: 1.25rem;
-		}
-
-		.body {
-			padding: 0 0.5rem 0.75rem;
-		}
 	}
 </style>

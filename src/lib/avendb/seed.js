@@ -12,10 +12,6 @@
 //   settings   each game's settings (A3, code/configs/): the vault's own schema "Config, v1", then each config an entry
 //              of type `config`, tagged `ref:configs/<game>/<id>` and `game:<id>`, which every game reads through
 //              game/code/index.js `configAt`
-//   docs       each document of ./docs.js: each skill of .claude/skills (which agents read in the repository), the
-//              theOS paper and the avenDB architecture, a story with its full text, and its doc post (`post:doc`), both
-//              drafts (Samuel 2026-10-18: docs live in avenDB alone, not on the public site), which avenDB's Docs view
-//              lists (./Docs.svelte), found by its `doc:<key>` tag
 //   recipes    last, as their files are most of the seed's bytes: each asset of the asset box
 //              (src/lib/assets/box/plugin.js) one `recipe` entry with its history: its first version created with its
 //              file, the recipe byte for byte, in one write (`beside`), each later one a proposal whose one write is its
@@ -25,6 +21,11 @@
 //
 // The legacy content (the journal days, the inspire-me reports, the idea pads), the post types and the vault's shares
 // came in once and live in Maia City alone now (Samuel 2026-10-19: drop the legacy seedings).
+//
+// The docs of ./docs.js (the skills, the theOS paper, the avenDB and avenBRAIN architectures) are no piece of it: each
+// goes into Maia City as an AIP its owners accept (Samuel 2026-10-20: a new doc goes in as a proposal), drafted by
+// scripts/propose-doc.mjs as a story with its full text and its doc post (`docRecords`), and every newer text of it a
+// proposal on both. The ones an earlier seed wrote stay as they are.
 
 import { parse as parseYaml } from 'yaml';
 import { ENTRIES } from '../../../code/index.js';
@@ -49,11 +50,8 @@ export const RECIPE_TYPES = ['recipe'];
 /** The tag of the content flow's draft stage, which only those its vault shares it with read. */
 const DRAFT = stageTag('content', 'draft');
 
-/** The tag of the doc post of document `key` (./docs.js `DOCS`), by which the seed finds it. @param {string} key */
+/** The tag of the doc post of document `key` (./docs.js `DOCS`), by which scripts/propose-doc.mjs finds it. @param {string} key */
 export const docTag = (key) => `doc:${key}`;
-
-/** The tag every doc post the seed made carries, as a draft from the start (Samuel 2026-10-18). */
-const DRAFTED = 'seed:drafted';
 
 /** The title of the Maia City vault's own schema of a game's settings. */
 export const CONFIG_SCHEMA = 'Config, v1';
@@ -123,7 +121,7 @@ const filled = (o) =>
 	Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && !v.length)));
 
 /**
- * @typedef {{ key: string, kind: 'code' | 'game-schema' | 'game' | 'config-schema' | 'config' | 'doc' | 'recipe', name: string, mark: string }} Piece
+ * @typedef {{ key: string, kind: 'code' | 'game-schema' | 'game' | 'config-schema' | 'config' | 'recipe', name: string, mark: string }} Piece
  */
 
 /** Every piece of the repo seed's top-up, each with the tag its copy carries (`mark`). @returns {Piece[]} */
@@ -141,11 +139,10 @@ export function seedPieces() {
 		.sort((a, b) => a.ref.localeCompare(b.ref))
 		.map((e) => ({ key: e.ref, kind: /** @type {const} */ ('config'), name: e.ref, mark: `ref:${e.ref}` }));
 	const settings = configs.length ? [{ key: 'config-schema', kind: /** @type {const} */ ('config-schema'), name: CONFIG_SCHEMA, mark: '' }, ...configs] : [];
-	const docs = DOCS.map((d) => ({ key: d.key, kind: /** @type {const} */ ('doc'), name: d.key, mark: docTag(d.key) }));
 	const recipes = Object.entries(assetsOf())
 		.sort(([a], [b]) => a.localeCompare(b))
 		.map(([asset, versions]) => ({ key: asset, kind: /** @type {const} */ ('recipe'), name: asset, mark: refTag(versions[versions.length - 1][0]) }));
-	return [...code, ...games, ...settings, ...docs, ...recipes];
+	return [...code, ...games, ...settings, ...recipes];
 }
 
 /** The tag a deleted entry carries among its own tags: no feed reader takes it in (game/code/sources/avendb.js, game/games.js). */
@@ -189,7 +186,6 @@ export async function seeding(p, vault) {
 	}
 	if (p.kind === 'recipe') return assetOps(p.name, vault, p.mark);
 	if (p.kind === 'game-schema') return [{ op: 'create', vault, type: 'schema', value: GAME_V1, as }];
-	if (p.kind === 'doc') return docOps(p.name, vault, p.mark);
 	const g = GAMES.find((x) => x.id === p.name);
 	if (!g) return [];
 	const value = { kind: GAME, id: g.id, title: g.label, route: g.route, note: g.note ?? '' };
@@ -324,13 +320,15 @@ export function beside(op) {
 }
 
 /**
- * The ops that write document `key` of ./docs.js into vault `vault`, acting for it: a story with its full text, and
- * its doc post, both drafts, the post tagged `mark`, its last op.
- * @param {string} key @param {string} vault @param {string} mark
+ * Document `key` of ./docs.js as it goes into a vault (scripts/propose-doc.mjs drafts both): a story with its full
+ * text, and its doc post, a draft of the content flow, tagged `doc:<key>`, its `story` the one the caller names once
+ * the story's entry exists. Nothing when ./docs.js has no such document.
+ * @param {string} key
+ * @returns {Promise<{ story: { type: string, tags: string[], value: Record<string, any> }, post: { type: string, tags: string[], value: Record<string, any> } } | null>}
  */
-async function docOps(key, vault, mark) {
+export async function docRecords(key) {
 	const d = DOCS.find((x) => x.key === key);
-	if (!d) return [];
+	if (!d) return null;
 	const text = await d.read();
 	const fm = d.section === 'skill' ? frontmatter(text) : {};
 	const title = str(fm.name) || d.title;
@@ -340,13 +338,12 @@ async function docOps(key, vault, mark) {
 		kind: postTag('doc'),
 		title,
 		text: d.section === 'skill' ? readable(text) : text,
-		story: { vault, entry: '$0' },
 		channel: POST_TYPES.doc.channel,
 		...filled({ excerpt, language: 'en', section: d.section, slug: d.slug, page: d.page }),
 		tags: []
 	});
-	return [
-		{ op: 'create', vault, type: 'story', tags: [stageTag('story', 'writing'), 'doc'], value: story, as: vault },
-		{ op: 'create', vault, type: 'post', tags: [DRAFT, DRAFTED, postTag('doc'), mark], value, as: vault }
-	];
+	return {
+		story: { type: 'story', tags: [stageTag('story', 'writing'), 'doc'], value: story },
+		post: { type: 'post', tags: [DRAFT, postTag('doc'), docTag(key)], value }
+	};
 }

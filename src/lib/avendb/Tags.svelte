@@ -26,7 +26,7 @@
 			gone = true;
 		};
 	});
-	// the mark a copy from before avenDB carries (./legacy.js) is bookkeeping, not a tag to show
+	// the mark a copy from before avenDB carries (`legacy:…`, the one-time copies of 2026-10-19) is bookkeeping, not a tag to show
 	const tags = $derived((entry.tags ?? []).filter((t) => !t.startsWith('legacy:')));
 	const asks = $derived(entry.vault !== actor);
 	let adding = $state(false);

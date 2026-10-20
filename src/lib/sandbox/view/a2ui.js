@@ -1,6 +1,6 @@
 // @ts-nocheck — plain JS
 /*
- * THE A2UI LENS — a declarative view as the agents wrote it until now (game/genui/views.js, kind `a2ui`: a flat list
+ * THE A2UI LENS — a declarative view as the agents wrote it until now (game/code/views.js, kind `a2ui`: a flat list
  * of catalog components bound to a data model, with logic in QuickJS) read as a view of the one kind: HTML with our
  * components and template marks (./template.js), the same data and the same logic. Every string an agent wrote goes
  * in as escaped text or an attribute's text; a binding {$data: 'a.b'} becomes {{a.b}}.

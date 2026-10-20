@@ -18,8 +18,7 @@
  * any file its row lists by its root; its loader holds it to the hash the proven record names.
  */
 
-import { blake3 } from '@noble/hashes/blake3.js';
-import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
+import { hashText } from '../../hash.js';
 import { MAIA_CITY } from './anchor.js';
 
 /** avenDB's server, as browsers reach it (post-quantum key exchange only; the API reads its own feed inside, AVENDB_FEED) */
@@ -147,7 +146,7 @@ export const KEPT_PROOFS = {
 
 /** what a query is kept by: its anchor, its kinds and, for some entries alone, a hash of them, sorted */
 const keyOf = (vault, kinds, entries) =>
-	`${vault}/${kinds.join(',')}${entries ? `/${bytesToHex(blake3(utf8ToBytes([...entries].sort().join(',')))).slice(0, 32)}` : ''}`;
+	`${vault}/${kinds.join(',')}${entries ? `/${hashText([...entries].sort().join(',')).slice(0, 32)}` : ''}`;
 
 /**
  * The rows of vault `vault`'s public code of kinds `kinds`, of `entries` alone if given, that the proof at `url`

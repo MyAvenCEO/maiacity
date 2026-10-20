@@ -10,7 +10,7 @@
 
 	/**
 	 * @type {{
-	 *   m: import('$lib/auth/client').MediaItem | undefined,
+	 *   m: import('./types.js').MediaItem | undefined,
 	 *   range?: { from: number, to: number } | null,
 	 *   onseek?: (t: number) => void,
 	 *   onmark?: (from: number, to: number) => void,

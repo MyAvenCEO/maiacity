@@ -3,8 +3,8 @@
 // Stories board's Writing step, so both show the same script: the timeline is its one truth.
 import { captionWordsOf, lineWords } from './transcript.js';
 
-/** @typedef {import('$lib/auth/client').TimelineClip} Clip */
-/** @typedef {import('$lib/auth/client').MediaItem} MediaItem */
+/** @typedef {import('./types.js').TimelineClip} Clip */
+/** @typedef {import('./types.js').MediaItem} MediaItem */
 /** A shot of the script: its clip, how far it is (words, a storyboard still, the footage, a world shot), what is said under it. @typedef {{ clip: Clip, stage: 'text' | 'storyboard' | 'footage' | 'world', lines: Clip[] }} ScriptShot */
 /** @typedef {{ scene: string, shots: ScriptShot[] }} ScriptScene */
 /** @typedef {{ shot: ScriptShot, scene: string, part: Clip | null, newPart: boolean, newScene: boolean }} ScriptPage */

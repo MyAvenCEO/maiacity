@@ -860,7 +860,8 @@ const isRepoIndex = (to) => REPO_INDEX.includes(to) || to === 'virtual:asset-rec
 const MAY = {
 	'src/lib/avendb/seed.js': { 'src/lib/assets/recipes.js': 'the seed writes the repo\'s recipes into the Maia City vault', 'src/lib/assets/sources/cards.json': "and each one's card beside it" },
 	'src/lib/assets/recipes.js': { 'virtual:asset-recipes': 'the repo\'s index itself', 'virtual:asset-recipes/libraries': "the repo's index itself: each asset's library" },
-	'vite.config.ts': { 'src/lib/assets/box/plugin.js': 'the build makes the repo\'s recipes for the seed (and serves the box its trials)' }
+	'vite.config.ts': { 'src/lib/assets/box/plugin.js': 'the build makes the repo\'s recipes for the seed (and serves the box its trials)' },
+	'src/lib/sandbox/bundle.js': { 'src/lib/assets/box/plugin.js': 'freezing a box engine bundles it as the build does (scripts/freeze-engine.mjs), never in a page' }
 };
 const mayRead = (path, to) => isTest(path) || path.startsWith('scripts/') || !!MAY[path]?.[to];
 

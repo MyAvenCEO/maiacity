@@ -3,7 +3,7 @@
 // JPEG — what goes into avenDB as the card, and what YouTube gets. Every picture comes from `src` (avenDB's Story
 // Thumbnail hands over its files' addresses, which answer CORS so the canvas stays exportable); the font is the page's
 // own Fraunces, loaded before drawing.
-/** @typedef {import('$lib/auth/client').Layer} Layer */
+/** @typedef {import('$lib/studio/types.js').Layer} Layer */
 
 /** the colours a text can be, by name; anything else is taken as written — as Card.svelte */
 const COLOR = { white: '#ffffff', gold: '#f6c75a', ink: '#1d2b22', alert: '#e0352b', marine: '#14304f' };

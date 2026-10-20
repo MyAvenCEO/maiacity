@@ -1,4 +1,81 @@
 {
+	"box": [
+		{
+			"v": 1,
+			"date": "2026-10-15",
+			"blake3": "712314345c4cfb6adf643017825ba39e78801fd6b4b82c9c947c1b629fed45a4",
+			"bytes": 768650,
+			"three": "0.186.0",
+			"modules": [
+				"three",
+				"three/addons/geometries/RoundedBoxGeometry.js",
+				"three/addons/objects/Reflector.js",
+				"three/addons/utils/BufferGeometryUtils.js",
+				"three/addons/utils/SkeletonUtils.js"
+			],
+			"note": "The first engine: three.js r186 with RoundedBoxGeometry, Reflector, BufferGeometryUtils and SkeletonUtils; the box's second lock; recipes as scripts named by their BLAKE3 hash, built with their declared parameters, handed back as plain data (format 0) and a card (v1)"
+		},
+		{
+			"v": 2,
+			"date": "2026-10-15",
+			"blake3": "c1b42a6ab3dab6f865cc72a27f10a8cae281a4f94f28a64f3c149c2a07288770",
+			"bytes": 768813,
+			"three": "0.186.0",
+			"modules": [
+				"three",
+				"three/addons/geometries/RoundedBoxGeometry.js",
+				"three/addons/objects/Reflector.js",
+				"three/addons/utils/BufferGeometryUtils.js",
+				"three/addons/utils/SkeletonUtils.js"
+			],
+			"note": "Each picture goes out once (box data format 1): textures name the picture they show in images, so a picture shared by many textures, as the kit's are, crosses once and is kept once"
+		},
+		{
+			"v": 3,
+			"date": "2026-10-16",
+			"blake3": "d84f7358fcad594561d046513ea5fe8fa1e52180e5e7e3f97cc8b2ab51e0e0c7",
+			"bytes": 773907,
+			"three": "0.186.0",
+			"modules": [
+				"three",
+				"three/addons/geometries/RoundedBoxGeometry.js",
+				"three/addons/objects/Reflector.js",
+				"three/addons/utils/BufferGeometryUtils.js",
+				"three/addons/utils/SkeletonUtils.js"
+			],
+			"note": "Controls: each control a built object offers (a tent's pitch, a pickup's doors and tailgate, a bag's open, a fire lit, a sealed asset's explode and build) is played in the box from 0 to 1 and leaves as numbers (box data format 2), with the object as built put back first; and each material with the kit's section caps says how its cut face looks (its colour, roughness and metalness)"
+		},
+		{
+			"v": 4,
+			"date": "2026-10-16",
+			"blake3": "6c7d7dcd2e5b409cb4697a1acd7755023e6e4b566b045308f3ec0148fca0f53b",
+			"bytes": 783291,
+			"three": "0.186.0",
+			"modules": [
+				"three",
+				"three/addons/geometries/RoundedBoxGeometry.js",
+				"three/addons/objects/Reflector.js",
+				"three/addons/utils/BufferGeometryUtils.js",
+				"three/addons/utils/SkeletonUtils.js"
+			],
+			"note": "Engine 4: what a viewer needs of a build as data (format 3: parts, labels, shells, cut, solver readings and moves, clips and poses), skinned actors with their skins, builds kept running in the box (live, tick, break, mend, end), rig catalogs on cards (their ids written as a card's); each control set back to its rest after its bake, so a mesh it reshapes leaves as built"
+		},
+		{
+			"v": 5,
+			"date": "2026-10-16",
+			"blake3": "5b5da70cccf275e1ea1d8c39175524568551584915bff6b087badfa42bb6990d",
+			"bytes": 800991,
+			"three": "0.186.0",
+			"modules": [
+				"three",
+				"three/addons/geometries/RoundedBoxGeometry.js",
+				"three/addons/objects/Reflector.js",
+				"three/addons/utils/BufferGeometryUtils.js",
+				"three/addons/utils/SkeletonUtils.js"
+			],
+			"note": "Engine 5 (format 4): an actor's clips played in the box and written down as tables on its view (box/clips.js: clips in time over 32 s, gaits by pace, distance and turn), for the page to play any number of copies by (../clips.js playerOf); lights leave as lights; and what else a control or a running build's step changes, only where it changes: the meshes it reshapes (positions and normals), material looks (colour, glow, opacity, roughness, metalness) and lights (colour, brightness, reach, fall-off); a dug patch's setWet a control (wet)"
+		}
+	],
 	"logic": [
 		{
 			"v": 1,
@@ -85,6 +162,14 @@
 			"bytes": 318090,
 			"version": "0.18.13",
 			"note": "A view's worker answers the watch (its beat port) as soon as it is free, with nothing of the view's script able to bend the answer, and spaces its animation frames out when the frame asks it to (pace, up to 2 s apart), so a scene too heavy for the machine slows down instead of being stopped"
+		},
+		{
+			"v": 3,
+			"date": "2026-10-20",
+			"blake3": "89a402eac7d4ca94aa996c8a30c796585ef5a36c007239f2bdf75fb86db7b407",
+			"bytes": 318219,
+			"version": "0.18.13",
+			"note": "takes WebAssembly off the view's worker: WebKit compiled it despite the frame's policy"
 		}
 	]
 }

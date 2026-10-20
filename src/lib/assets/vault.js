@@ -41,8 +41,7 @@
  * the feed (./sources/devfeed.js: `VITE_RECIPE_FEED=dev bun run dev`, never in a build) and the tests; ./vault.test.js
  * holds every other module to that.
  */
-import { blake3 } from '@noble/hashes/blake3.js';
-import { bytesToHex } from '@noble/hashes/utils.js';
+import { holds } from '../../../game/hash.js';
 import { idOf, slug } from '$lib/ids.js';
 import { CODE_FEED, KEPT_PROOFS, MAIA_CITY, NO_ANCHOR, fileOf, listedRows, listingOf, proofOf, provenRows, seedFeedOf } from '../../../game/code/sources/feed.js';
 import { READ, deviceFile, deviceRows } from '../../../game/code/sources/device.js';
@@ -270,9 +269,6 @@ const KEPT = { get: cache.fileAt, put: cache.keepFile };
 
 /** the recipe each row of the feed is, by its hash, once the rows are proven: its file is kept on the device by it */
 const hashOfRow = new WeakMap();
-
-/** whether bytes hash to a recipe's hash @param {Uint8Array} bytes @param {string} hash */
-const holds = (bytes, hash) => bytes instanceof Uint8Array && bytesToHex(blake3(bytes)) === hash;
 
 /** how many files are read now (`recipes.reading`), told as it changes @param {number} n */
 function reads(n) {

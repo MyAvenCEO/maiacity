@@ -1,32 +1,25 @@
 <!--
-	Proposals: the AIPs, Aven Improvement Proposals, of every game, in one app of their own next to Ledger and Coops
-	(Samuel 2026-10-17: proposals leave the game and sandbox screens completely). Every AIP goes the same way: an idea,
-	then proposed (waiting for the signatures its game's policy asks for), then archived as applied or rejected; each is
-	a readable text plus the changes it makes. Until they live in avenDB (plan: /mnt/project-files/game-caps/plan.md),
-	the app reads today's MIPs where they are kept ($lib/proposals/aips.js) and shows each the AIP way, with the number
-	it had ("was MIP-42"). A game links here; its own screens show no proposal.
+	Proposals: the AIPs, Aven Improvement Proposals, of every vault and game, in one app of their own next to Ledger and
+	Coops (Samuel 2026-10-17: proposals leave the game and sandbox screens completely). Every AIP goes the same way: an
+	idea, then its objective (what it must deliver, metrics in Lean, measured as it is worked on), then proposed
+	(waiting for its vault's yes), then archived as applied or rejected. Samuel 2026-10-20: the page is the four stages
+	as one tab bar and nothing else, no filter and no way to write one here: agents make proposals through the MCP for
+	now. MaiaCity V1's MIPs ($lib/proposals/aips.js) show the AIP way among them.
 -->
 <script>
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
-	import { base } from '$app/paths';
 	import { me } from '$lib/auth/client';
 	import { liveGame } from '$lib/maiacity-v1/live.svelte.js';
-	import { GAMES, STAGES, allOf, when } from '$lib/proposals/aips.js';
+	import { STAGES, allOf, when } from '$lib/proposals/aips.js';
 	import V1Aip from '$lib/proposals/V1Aip.svelte';
-	import V1Draft from '$lib/proposals/V1Draft.svelte';
 	import AvendbAip from '$lib/proposals/AvendbAip.svelte';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import Unlock from '$lib/avendb/Unlock.svelte';
-	import { nameOf } from '$lib/avendb/vaults.js';
 
 	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
-	let game = $state(q.get('game') ?? '');
-	let stage = $state(q.get('stage') ?? 'proposed');
+	let stage = $state(STAGES.some((s) => s.id === q.get('stage')) ? q.get('stage') : 'proposed');
 	let open = $state(q.get('aip') ?? '');
-	// "Propose a change" or "Propose a payout" in MaiaCity V1 lands here on a new proposal
-	let drafting = $state(q.get('new') === '1' && q.get('game') === 'maiacity-v1');
-	const payout = q.get('from') ? { from: q.get('from'), to: q.get('to'), token: q.get('token'), amount: Number(q.get('amount') ?? 1) } : null;
 
 	const g = liveGame();
 	let acct = $state({ id: null });
@@ -51,33 +44,35 @@
 	});
 
 	const all = $derived(allOf(g.view, avendb, session.world));
-	// the filter: a game ('maiacity-v1'), or an avenDB vault ('vault:<id>') for AIPs about anything
-	const inGame = $derived(all.filter((a) => !game || (game.startsWith('vault:') ? a.vault === game.slice(6) : a.game === game)));
-	const vaults = $derived([...new Set(avendb.map((a) => a.vault))].map((id) => ({ id, name: nameOf(session.world?.vaults.find((v) => v.id === id)) })));
-	const shown = $derived(inGame.filter((a) => a.stage === stage));
-	const count = (id) => inGame.filter((a) => a.stage === id).length;
+	const shown = $derived(all.filter((a) => a.stage === stage));
+	const count = (id) => all.filter((a) => a.stage === id).length;
 	const current = $derived(all.find((a) => a.key === open) ?? null);
 	const loading = $derived(acct.id && !g.loaded);
 
-	// the filter, the tab and the AIP open are kept in the address, so a link (a game's, a HITL card's) opens on them
+	// the tab and the AIP open are kept in the address, so a link (a HITL card's) opens on them
 	$effect(() => {
 		const p = new URLSearchParams();
-		if (game) p.set('game', game);
 		if (stage !== 'proposed') p.set('stage', stage);
 		if (open) p.set('aip', open);
 		history.replaceState(history.state, '', `${location.pathname}${p.size ? `?${p}` : ''}`);
+	});
+	// an AIP opened by a link shows under its own stage's tab
+	$effect(() => {
+		if (current && current.stage !== stage) stage = current.stage;
 	});
 	function show(a) {
 		open = a.key;
 		stage = a.stage;
 		scrollTo({ top: 0 });
 	}
-	const outcome = (a) => (a.stage !== 'archived' ? (a.stage === 'proposed' ? 'proposed' : 'idea') : a.outcome === 'applied' ? 'applied' : a.why === 'withdrawn' ? 'withdrawn' : 'rejected');
-	const canDraft = $derived(!!g.view && !!g.mySeat && (!game || game === 'maiacity-v1'));
-	function drafted(done) {
-		drafting = false;
-		if (done) (game = 'maiacity-v1'), (stage = 'proposed');
-	}
+	const outcome = (a) => (a.stage !== 'archived' ? a.stage : a.outcome === 'applied' ? 'applied' : a.why === 'withdrawn' ? 'withdrawn' : 'rejected');
+	const progress = (a) => (a.aip?.objective && !a.aip.objective.error ? ` · ${a.aip.objective.met} of ${a.aip.objective.total} met` : '');
+	const EMPTY = {
+		idea: 'No ideas. An idea is an AIP an agent opened over its proposals through the MCP, before it states its objective.',
+		objective: 'Nothing at the objective stage. Here an AIP states what it must deliver, metrics in Lean, and measures its own progress while its agent works on it.',
+		proposed: 'Nothing waits for a yes.',
+		archived: 'Nothing archived yet.'
+	};
 </script>
 
 <svelte:head>
@@ -85,27 +80,10 @@
 </svelte:head>
 
 <main class="app-page">
-	<header>
-		<p class="eyebrow">AIPs · Aven Improvement Proposals</p>
-		<h1>Proposals</h1>
-		<p class="dim">Every change to a game's rules, settings or screens is a proposal: a text to read, plus exactly what it changes. It starts as an idea, is proposed and waits for the signatures its game asks for, and ends in the archive, applied or rejected. Today's MIPs are shown here the same way, each with the number it had.</p>
-	</header>
-
-	<nav class="filters" aria-label="Game">
-		<button class:on={!game} onclick={() => ((game = ''), (open = ''))}>All games</button>
-		{#each Object.entries(GAMES) as [id, x] (id)}<button class:on={game === id} onclick={() => ((game = id), (open = ''))}>{x.label}</button>{/each}
-		{#each vaults as v (v.id)}<button class:on={game === `vault:${v.id}`} onclick={() => ((game = `vault:${v.id}`), (open = ''))}>{v.name}</button>{/each}
-		{#if canDraft && !drafting}<button class="new" onclick={() => ((drafting = true), (open = ''))}>New proposal</button>{/if}
+	<h1 class="sr">Proposals</h1>
+	<nav class="tabs" aria-label="Stage">
+		{#each STAGES as s (s.id)}<button class:on={stage === s.id} onclick={() => ((stage = s.id), (open = ''))}>{s.label} <small>{count(s.id)}</small></button>{/each}
 	</nav>
-
-	{#if drafting && g.view && g.mySeat}
-		<section class="detail">
-			<p class="eyebrow">New proposal · MaiaCity V1</p>
-			<V1Draft {g} {payout} ondone={drafted} />
-		</section>
-	{:else if drafting && g.loaded}
-		<p class="dim">Only the two players of MaiaCity V1 propose for it. Take a seat in <a href="{base}/app/maiacity-v1/">the game</a> first.</p>
-	{/if}
 
 	{#if current}
 		<section class="detail">
@@ -125,31 +103,26 @@
 				<V1Aip m={current.mip} {g} />
 			{/if}
 		</section>
-	{:else if !drafting}
-		<nav class="tabs" aria-label="Stage">
-			{#each STAGES as s (s.id)}<button class:on={stage === s.id} onclick={() => (stage = s.id)}>{s.label} <small>{count(s.id)}</small></button>{/each}
-		</nav>
+	{:else}
 		{#if loading}
 			<p class="dim">One moment…</p>
-		{:else if stage === 'idea' && !shown.length}
-			<p class="dim">No ideas yet. An idea is an AIP in avenDB not yet proposed: anyone with a share to suggest in a vault, and their agents, gather and edit it freely under an id of its own until it is proposed and gets its number. Today's MIPs have no ideas: MaiaCity V1's are proposed straight away.</p>
 		{:else}
 			<ul class="list">
 				{#each shown as a (a.key)}
 					<li>
 						<button onclick={() => show(a)}>
 							<span class="head"><b>{a.title}</b><span class="status {outcome(a)}">{outcome(a)}</span></span>
-							<span class="meta">{a.where} · {a.label}{a.source === 'avendb' ? '' : ` (was ${a.was})`} · by {a.author}{a.decided || a.created ? ` · ${when(a.decided || a.created)}` : ''}{a.stage === 'proposed' ? ` · ${a.signed} of ${a.needs} signatures` : ''}</span>
+							<span class="meta">{a.where} · {a.label}{a.source === 'avendb' ? '' : ` (was ${a.was})`} · by {a.author}{a.decided || a.created ? ` · ${when(a.decided || a.created)}` : ''}{progress(a)}{a.stage === 'proposed' ? ` · ${a.signed} of ${a.needs} signatures` : ''}</span>
 							{#if a.changes.length}<span class="sum">{a.changes.slice(0, 3).join(' · ')}{a.changes.length > 3 ? ` · +${a.changes.length - 3} more` : ''}</span>{/if}
 						</button>
 					</li>
 				{:else}
-					<li class="dim">Nothing here{game && GAMES[game] ? ` for ${GAMES[game].label}` : ''}.</li>
+					<li class="dim empty">{EMPTY[stage]}</li>
 				{/each}
 			</ul>
 		{/if}
 		{#if session.phase !== 'open' && session.phase !== 'loading'}<div class="unlock"><p class="dim small">The AIPs of your avenDB vaults show here once avenDB is open in this tab.</p><Unlock /></div>{/if}
-		{#if g.error && (!game || game === 'maiacity-v1')}<p class="dim small">MaiaCity V1: {g.error}</p>{/if}
+		{#if g.error}<p class="dim small">MaiaCity V1: {g.error}</p>{/if}
 	{/if}
 </main>
 
@@ -164,11 +137,6 @@
 	}
 	.small {
 		font-size: 0.85rem;
-	}
-	a {
-		color: var(--ink);
-		text-decoration-color: var(--mustard);
-		text-underline-offset: 3px;
 	}
 	.eyebrow {
 		margin: 0;
@@ -196,28 +164,28 @@
 		color: inherit;
 		cursor: pointer;
 	}
-	.filters,
+	.sr {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		white-space: nowrap;
+	}
 	.tabs {
 		display: flex;
 		flex-wrap: wrap;
+		justify-content: center;
 		gap: 0.4rem;
-		margin: 1.2rem 0 0.4rem;
+		margin: 0.4rem 0 1rem;
 	}
-	.filters button,
 	.tabs button {
 		padding: 0.4rem 0.85rem;
 		border: 1px solid rgb(31 42 35 / 0.15);
 		border-radius: 999px;
 		background: #fff;
 	}
-	.filters button.on,
 	.tabs button.on {
-		background: #24452f;
-		border-color: #24452f;
-		color: #f4f1e8;
-	}
-	.filters .new {
-		margin-left: auto;
 		background: #24452f;
 		border-color: #24452f;
 		color: #f4f1e8;
@@ -276,6 +244,10 @@
 		background: #1baf7a22;
 		color: #136b4b;
 	}
+	.status.objective {
+		background: #24452f18;
+		color: #24452f;
+	}
 	.status.rejected,
 	.status.withdrawn {
 		background: #1f2a2314;
@@ -314,9 +286,8 @@
 	.unlock {
 		margin-top: 1.2rem;
 	}
-	@media (max-width: 600px) {
-		.filters .new {
-			margin-left: 0;
-		}
+	.empty {
+		text-align: center;
+		padding: 1.4rem 0;
 	}
 </style>

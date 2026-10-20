@@ -136,8 +136,11 @@ proposes and drafts and never lands anything itself. Call `avendb_vaults` first;
 - **Draft a new cut** (a variant, a Reel cut): `avendb_run` `{"op": "create", "draft": true, "vault": <Maia City>,
   "type": "cut", "value": {"kind": "cut", "name", "project", "variant", "stage": "edit", "version": 1, "timeline":
   "<JSON>", "at": <unix seconds>}}` answers its `entry` and `line`.
-- **Put it to Maia City:** `{"op": "aip_open", "vault", "title", "note", "proposals": [{"entry", "line"}, …]}`, then
-  `{"op": "aip_promote", "entry": <the aip>}` (AIP-n). The note says why, what changes, and what to make once it lands
+- **Put it to Maia City:** `{"op": "aip_open", "vault", "title", "note", "proposals": [{"entry", "line"}, …],
+  "objective"}`, the objective what the AIP must deliver as metrics in Lean (avendb/spec/AvenDB/Objective.lean: e.g.
+  `def length : Metric := metric "Length, s" (between (reading "seconds") 60 90)`), each measured with
+  `{"op": "aip_measure", "entry", "name", "value"}` as the work goes (the `aip` read shows its progress), then
+  `{"op": "aip_promote", "entry": <the aip>}` (AIP-n; refused without an objective). The note says why, what changes, and what to make once it lands
   (a render, hero frames). Samuel answers it whole in The OS app (/app/aips/?aip=<entry>); an agent never reviews or
   merges. After a revise, write again on the same lines and promote again.
 - **Renders, hero frames, stills, proxies** are `task` entries the rules make (`src/lib/studio/jobs/rules.js`, done by

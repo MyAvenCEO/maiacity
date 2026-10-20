@@ -10,10 +10,10 @@ import { SvelteSet } from 'svelte/reactivity';
 import { forwardConsole } from '$lib/native';
 import { filmPath } from '../../../game/film/worlds.js';
 
-/** @typedef {import('$lib/auth/client').Cdl} Cdl */
-/** @typedef {import('$lib/auth/client').CameraKey} CameraKey */
-/** @typedef {import('$lib/auth/client').Shape} Shape */
-/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
+/** @typedef {import('./types.js').Cdl} Cdl */
+/** @typedef {import('./types.js').CameraKey} CameraKey */
+/** @typedef {import('./types.js').Shape} Shape */
+/** @typedef {import('./types.js').ShotSpec} ShotSpec */
 /** What film mode draws a frame through: the clip's grade and the output LUT, cubes the Mac bakes (RGB triples, red fastest). */
 /** @typedef {{ lut: { size: number, data: Float32Array } | null, grade: { size: number, data: Float32Array } | null }} FilmView */
 /** `meter: false` while the timeline plays: a shot not metered yet is not metered at its cut (film mode draws it at the exposure drawn last);

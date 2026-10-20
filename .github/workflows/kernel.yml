@@ -10,6 +10,8 @@ name: Kernel
 #   probes – every way out of the asset box and of a view, tried from inside each by code made to do harm, in headless
 #            Chromium against the dev server (scripts/probes.mjs: the box's lab, /app/assets/box/, and the view probe,
 #            /app/views/probe/, with a canary that hears anything that got out)
+#   probes-webkit – the same probes in WebKit (Playwright's), the engine Samuel's Mac app, The OS, shows the site in
+#            (Tauri is WebKit): a wall that holds in Chromium is not taken to hold there
 on:
   pull_request:
   workflow_call:
@@ -49,7 +51,7 @@ jobs:
       # src/lib/assets/vault.test     the recipes from the vault alone, no repo fallback
       # src/lib/assets/worlds.test    no world builds round the box
       # src/lib/assets/params.test    a recipe takes only its own parameters; one build, one name, one cache key
-      # src/lib/code/                 the one checker (game/code, game/genui): every kind of code, hostile code refused
+      # src/lib/code/                 the one checker (game/code): every kind of code, hostile code refused
       # src/lib/render/lint.test      the render core's lint: no renderer or raw WebGL context outside it
       # src/lib/markdown/             the Markdown engine against hostile Markdown; every {@html} fed by a safe engine
       # api/test/image.test           the API image holds every module game/ and code/ import, avenDB's proof checker
@@ -86,3 +88,23 @@ jobs:
       - run: npx --yes playwright@1.56.1 install --with-deps chromium
 
       - run: node scripts/probes.mjs
+
+  probes-webkit:
+    name: Every way out, tried in WebKit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - run: bun install --frozen-lockfile
+
+      # Playwright's WebKit, of the Playwright in package.json (the version the probes drive it with), and the system
+      # libraries it needs
+      - run: bunx playwright install --with-deps webkit
+
+      # the probes as in Chromium; a way out WebKit itself lacks is named in the log, refused and green
+      - run: node scripts/probes.mjs --browser webkit

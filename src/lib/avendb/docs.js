@@ -1,16 +1,18 @@
-// The documents the repository seeds into the Maia City vault (Samuel 2026-10-18: "each skill can become its own
+// The documents the repository puts into the Maia City vault (Samuel 2026-10-18: "each skill can become its own
 // story, and the theOS paper as well and the avenDB docs too", all owned by the Maia City COOP and published on the
-// website's Docs page; since the same day in avenDB alone, as drafts): each a story, its full text the source of
-// truth, and its doc post (`post:doc`, ./posttypes.js), which avenDB's Docs view lists (./Docs.svelte).
+// website's Docs page; since the same day in avenDB alone, as drafts; since 2026-10-20 each as an AIP its owners
+// accept, scripts/propose-doc.mjs): each a story, its full text the source of truth, and its doc post (`post:doc`,
+// ./posttypes.js), which avenDB's Docs view lists (./Docs.svelte).
 //
 //   skill   each skill of .claude/skills/<name>/: its SKILL.md first, then each other Markdown file of the skill
 //           (references, notes), each after a line that names its path (`FILE`), so the skill can be written back to
 //           its files whole (`filesOf`)
 //   paper   the theOS paper (docs/theos.md), the words of its page (/theos/) as Markdown, its figures named
-//   docs    the avenDB architecture (docs/avendb.md), the words of its page (/docs/avendb/) as Markdown
+//   docs    the avenDB architecture (docs/avendb.md), the words of its page (/docs/avendb/) as Markdown, and the
+//           avenBRAIN architecture (docs/avenbrain.md), its page (/docs/avenbrain/), a design not built yet
 //
-// The two pages stay where they are, with their live figures: their doc posts point at them (`page`). The Markdown of
-// both is made from the built pages by scripts/docs-markdown.mjs, again whenever a page changes.
+// The pages stay where they are, with their live figures: their doc posts point at them (`page`). The Markdown of
+// each is made from the built pages by scripts/docs-markdown.mjs, again whenever a page changes.
 
 const SKILLS = /** @type {Record<string, () => Promise<string>>} */ (
 	import.meta.glob('/.claude/skills/*/**/*.md', { query: '?raw', import: 'default' })
@@ -61,7 +63,7 @@ function skills() {
 		});
 }
 
-/** The pages of the site written down as Markdown: the theOS paper and the avenDB architecture. @returns {Doc[]} */
+/** The pages of the site written down as Markdown: the theOS paper, the avenDB and avenBRAIN architectures. @returns {Doc[]} */
 function pages() {
 	/** @type {Doc[]} */
 	const all = [
@@ -83,6 +85,16 @@ function pages() {
 			excerpt:
 				'The user-owned, local-first, post-quantum database under maiaCITY: what the server can and cannot see, vaults, CRDT entries with history, shares, schemas and lenses, sync between your devices, and terabytes of media backed up to a sealed bucket.',
 			page: '/docs/avendb/',
+			read: async () => ''
+		},
+		{
+			key: 'docs/avenbrain',
+			section: 'architecture',
+			slug: 'avenbrain',
+			title: 'avenBRAIN',
+			excerpt:
+				'avenMAIA’s own harness, as designed: its skills, memory and scripts kept as avenDB entries, and a loop after Google Research’s harness2 that improves them from real work, measures each change by a Lean objective and puts it to a person as one AIP.',
+			page: '/docs/avenbrain/',
 			read: async () => ''
 		}
 	];

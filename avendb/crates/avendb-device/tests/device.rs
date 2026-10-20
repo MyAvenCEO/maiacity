@@ -1758,7 +1758,7 @@ async fn a_suggester_agent_drafts_sparks_and_artifacts_in_her_maia_city_which_la
     let proposals = [spark["proposals"].as_array(), artifact["proposals"].as_array()];
     let proposals: Vec<&Value> = proposals.into_iter().flatten().flatten().collect();
     let open = json!({ "op": "aip_open", "vault": city, "title": "Morning light", "note": "Why: the light at six.",
-        "proposals": proposals });
+        "objective": "def sparks : Metric := metric \"Sparks\" (atLeast (reading \"sparks\") 1)", "proposals": proposals });
     let (opened, error) = claude.tool("avendb_run", json!({ "op": open })).await;
     assert!(!error, "{opened}");
     let aip = serde_json::from_str::<Value>(&opened).expect("JSON")["ok"]["entry"].clone();
@@ -1859,7 +1859,7 @@ async fn a_cloud_agent_her_mac_adds_to_avenmaia_drafts_a_spark_through_the_serve
     assert!(!error && found.contains(beans.as_str().expect("an id")), "her note: {found}");
     // its draft reaches her Mac by way of the server, and lands once her Maia City accepts the AIP the agent opens
     let open = json!({ "op": "aip_open", "vault": city, "title": "Shade", "note": "Why: hot afternoons.",
-        "proposals": spark["proposals"] });
+        "objective": "def sparks : Metric := metric \"Sparks\" (atLeast (reading \"sparks\") 1)", "proposals": spark["proposals"] });
     let (opened, error) = session.tool("avendb_run", json!({ "op": open })).await;
     assert!(!error, "{opened}");
     let aip = serde_json::from_str::<Value>(&opened).expect("JSON")["ok"]["entry"].clone();

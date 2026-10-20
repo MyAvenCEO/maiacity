@@ -5,10 +5,10 @@
 import { missing } from '$lib/auth/client';
 import { createAvenShot, getAvenShot, isAvenShot, listAvenShots, saveAvenShot } from './avenshots.js';
 
-/** @typedef {import('$lib/auth/client').CameraKey} CameraKey */
-/** @typedef {import('$lib/auth/client').Shape} Shape */
-/** @typedef {import('$lib/auth/client').Shot} Shot */
-/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
+/** @typedef {import('./types.js').CameraKey} CameraKey */
+/** @typedef {import('./types.js').Shape} Shape */
+/** @typedef {import('./types.js').Shot} Shot */
+/** @typedef {import('./types.js').ShotSpec} ShotSpec */
 /** @typedef {[number, number, number, number, number]} Pose */
 /** @typedef {{ pose: Pose, fov: number, hour: number, stops: number, lights: { id: string, intensity: number }[], cues: ShotSpec['cues'] }} Evaluated */
 
@@ -37,7 +37,7 @@ export function toKeys(spec) {
 
 /**
  * An empty shot to start from: noon, a still camera over the city, metered and locked.
- * @param {import('$lib/auth/client').Shape} [aspect] @returns {ShotSpec}
+ * @param {import('./types.js').Shape} [aspect] @returns {ShotSpec}
  */
 export const blankSpec = (aspect = '16:9', seconds = 6) => ({
 	world: { sandbox: 'sandbox-4', build: null, seed: 1, stand: [0, 0], clock: 0 },

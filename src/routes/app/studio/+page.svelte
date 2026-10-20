@@ -16,7 +16,6 @@
 	there), its jobs in avenDB's Jobs app; the legacy Data, Library and Jobs tabs are gone, and the Deliverables placeholder too (a film's posts are made in the story's Movie tab).
 -->
 <script lang="ts">
-	import { base } from '$app/paths';
 	import { onDestroy, onMount } from 'svelte';
 	import Deliveries from '$lib/studio/Deliveries.svelte';
 	import Inspector from '$lib/studio/Inspector.svelte';
@@ -132,14 +131,8 @@
 {:else if s.phase !== 'ready'}
 	<main class="wrap gate">
 		<h1>Studio</h1>
-		{#if s.phase === 'loading'}
-			<p>One moment…</p>
-			{#if s.failed}<pre class="failed">{s.failed}</pre>{/if}
-		{:else if s.phase === 'signed-out'}
-			<p>The studio belongs to the admin. <a href="{base}/join/">Sign in</a> first.</p>
-		{:else}
-			<p>The studio belongs to the admin, and your account is not one.</p>
-		{/if}
+		<p>One moment…</p>
+		{#if s.failed}<pre class="failed">{s.failed}</pre>{/if}
 	</main>
 {:else}
 	<section class="studio tab-{s.tab}" bind:this={studio} aria-label="Studio">
@@ -217,10 +210,6 @@
 <style>
 	.gate {
 		padding-block: 3rem 6rem;
-	}
-
-	.gate a {
-		color: var(--terracotta);
 	}
 
 	.failed {

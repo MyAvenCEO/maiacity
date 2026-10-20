@@ -5,13 +5,12 @@
  * index: the Maia City vault's recipes, which every page reads (./vault.js), and the repo's, which only the seed and the
  * tests read (./recipes.js), name their builds the same way, so the same bytes are the same build either way.
  */
-import { blake3 } from '@noble/hashes/blake3.js';
-import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
+import { hashText } from '../../../game/hash.js';
 import { paramsIn, queryOf } from './params.js';
 import { VAULT, parseVaultRef, refusal } from './sources/avendb.js';
 
-/** the BLAKE3 hash of a text, in hex @param {string} text */
-export const hashText = (text) => bytesToHex(blake3(utf8ToBytes(text)));
+/** the BLAKE3 hash of a text, in hex (game/hash.js, the one hash) */
+export { hashText };
 
 /**
  * A build's name as its parts: the recipe's hash and the values, as text. Throws for anything else; a vault's ref with

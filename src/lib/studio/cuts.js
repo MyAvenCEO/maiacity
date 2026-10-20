@@ -42,7 +42,7 @@ export const CUT_V1 = `{
 }
 `;
 
-/** @typedef {import('$lib/auth/client').Timeline} Timeline */
+/** @typedef {import('./types.js').Timeline} Timeline */
 
 /** Whether timeline `id` is a cut in avenDB. @param {unknown} id */
 export const isCut = (id) => typeof id === 'string' && id.startsWith('cut:');
@@ -357,7 +357,7 @@ async function ask(call, world, e, key, given) {
 	return known?.key ?? value.key;
 }
 
-/** @typedef {import('$lib/auth/client').RenderJob} RenderJob */
+/** @typedef {import('./types.js').RenderJob} RenderJob */
 
 /** Cut `id`'s entry. @param {import('../avendb/vaults.js').WorldView} world @param {string} id */
 function cutIn(world, id) {

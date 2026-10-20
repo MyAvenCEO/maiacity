@@ -54,6 +54,7 @@ pub mod keys;
 pub mod lab;
 pub mod lens;
 pub mod merge;
+pub mod objective;
 pub mod ops;
 pub mod policy;
 pub mod provenance;

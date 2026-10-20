@@ -1,19 +1,10 @@
-import { listPosts } from '$lib/server/blog';
 import { media } from '$lib/media/url';
 import type { PageServerLoad } from './$types';
 
-// Day 01 is the front door: the intro video stays pinned to the root page.
-export const load: PageServerLoad = () => {
-	const posts = listPosts();
-	const pinned = posts.find((post) => post.day === 1) ?? posts[0] ?? null;
-	return {
-		pinned,
-		// the day after the front door: the first real step in
-		next: posts.find((post) => post.day === (pinned?.day ?? 0) + 1) ?? null,
-		// the newest days, so the front door also shows where the journal is now
-		latest: posts.filter((post) => post.slug !== pinned?.slug).slice(0, 3),
-		// checked at build time: a prerendered page can't catch a missing image
-		// before it has already painted the gap
-		banner: Boolean(media('a78e789f5d7c92310ebaac44368dd1c3ab6e65efcdee67f148649b3965a03f69.jpg'))
-	};
-};
+// The journal on the front page is avenDB's feed, taken in in the browser as /universe takes it in
+// ($lib/universe/stream.svelte.js), so the build never waits on it. Only the banner is known as the site is built.
+export const load: PageServerLoad = () => ({
+	// checked at build time: a prerendered page can't catch a missing image
+	// before it has already painted the gap
+	banner: Boolean(media('a78e789f5d7c92310ebaac44368dd1c3ab6e65efcdee67f148649b3965a03f69.jpg'))
+});

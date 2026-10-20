@@ -9,12 +9,12 @@ import { sql } from "./db";
 import { clearCookie, founderIdFrom, initSessions, sessionCookie, tokenFor } from "./session";
 import { inviteOpen, loginFinish, loginOptions, registerFinish, registerOptions } from "./passkey";
 import { fromBunSql, useDb } from "./pg";
-import { assignRole, can, capabilities, createRole, deleteRole, initRoles, listRoles, RoleError, setRoleCaps } from "./acl";
+import { can, capabilities, initRoles } from "./acl";
 import { CAPABILITIES } from "./caps";
 import { listTables, readTable, TableError } from "./tables";
 import { adminByPass } from "./standing";
 import { approveDevice, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
-import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice, VaultError } from "./vault";
+import { joinInfo, listVaultFiles } from "./vault";
 import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } from "./analysis";
 import { checkModels, pick } from "./prem";
 import { GameError, getGame, move, takeSeat } from "./maiacity-v1.js";
@@ -102,9 +102,9 @@ async function signedIn(req: Request): Promise<{ id: string; role: string } | Re
   return me ?? json(req, { error: "Please sign in." }, { status: 401 });
 }
 
-/** Turn a thrown role, table, key, vault or game error into a response a person can read. */
+/** Turn a thrown table, key or game error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof RoleError || e instanceof TableError || e instanceof KeyError || e instanceof VaultError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof TableError || e instanceof KeyError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -263,72 +263,6 @@ const server = Bun.serve({
       GET: async (req) => json(req, { open: await inviteOpen(req.params.code) }),
     },
 
-    // ─────────────────────────────── the admin ───────────────────────────
-    // Who has which role, and what each role holds. Every route asks for a capability, never a role.
-    "/api/citizens": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "roles:admin");
-        if (me instanceof Response) return me;
-        const rows = await sql`SELECT id, number, role, created FROM founders ORDER BY number`;
-        return json(req, rows.map((r: any) => ({ ...r, number: Number(r.number) })));
-      },
-    },
-    "/api/citizens/:id/role": {
-      OPTIONS: preflight,
-      POST: async (req) => {
-        const me = await allowed(req, "roles:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await assignRole(req.params.id, (await readJson(req))?.role));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/roles": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "roles:admin");
-        if (me instanceof Response) return me;
-        return json(req, { roles: await listRoles(), catalogue: CAPABILITIES });
-      },
-      POST: async (req) => {
-        const me = await allowed(req, "roles:admin");
-        if (me instanceof Response) return me;
-        try {
-          const body = await readJson(req);
-          await createRole(body?.name, body?.capabilities ?? []);
-          return json(req, { roles: await listRoles() }, { status: 201 });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/roles/:name": {
-      OPTIONS: preflight,
-      PATCH: async (req) => {
-        const me = await allowed(req, "roles:admin");
-        if (me instanceof Response) return me;
-        try {
-          await setRoleCaps(req.params.name, (await readJson(req))?.capabilities);
-          return json(req, { roles: await listRoles() });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-      DELETE: async (req) => {
-        const me = await allowed(req, "roles:admin");
-        if (me instanceof Response) return me;
-        try {
-          await deleteRole(req.params.name);
-          return json(req, { roles: await listRoles() });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-
     // The admin's window into this Postgres, read only: every table and its rows, secrets hidden (tables.ts).
     // the admins' Postgres window (tables.ts), opened by Maia City's Admin standing in avenDB, as avenDB's server says
     // of the pass the page's device signs (standing.ts): no passkey session, role or key opens it
@@ -355,35 +289,9 @@ const server = Bun.serve({
       },
     },
 
-    // ── the media vault (vault/): pairing a Mac's iroh node, joining the catalog, and the catalog's mirror ──
-    "/api/vault/devices": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        return json(req, await listDevices());
-      },
-      POST: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        try {
-          const body = await readJson(req);
-          return json(req, await pairDevice(me.id, body?.endpoint_id, body?.label));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/vault/devices/:id": {
-      OPTIONS: preflight,
-      DELETE: async (req) => {
-        const me = await allowed(req, "media:admin");
-        if (me instanceof Response) return me;
-        return (await revokeDevice(req.params.id))
-          ? new Response(null, { status: 204, headers: cors(req) })
-          : json(req, { error: "No such device." }, { status: 404 });
-      },
-    },
+    // ── the media vault (vault/): joining the catalog, and the catalog's mirror. The routes that paired a Mac's iroh
+    // node and listed or revoked them went, as nothing called them: vault-server still lets in the nodes of
+    // vault_devices (vault/crates/vault-server/src/allow.rs), a row of which is now written by hand ──
     "/api/vault/join": {
       OPTIONS: preflight,
       GET: async (req) => {

@@ -1078,4 +1078,16 @@ export const MIGRATIONS: Migration[] = [
       END $$;
     `,
   },
+  {
+    // Founders 2 and 3 go (Samuel 2026-10-20: "remove founder n2 and founder n3 from pg ... while ensure our samuel f1
+    // stays intact"), each named by its number and its id together, never an admin: their passkeys go with them (ON
+    // DELETE CASCADE); the invite founder 3 signed up on keeps its row, without them (ON DELETE SET NULL). Nothing else
+    // pointed at them, and neither held a MaiaCity V1 seat (the Founders workflow's listing that day).
+    id: "0057-drop-founders-2-and-3",
+    sql: `
+      DELETE FROM founders
+      WHERE (number, id) IN ((2, 'de5116b9-8d50-45e0-b3f7-0092edc0e287'), (3, 'd2e14742-b0dc-4425-90da-8537dccef51e'))
+        AND role <> 'admin';
+    `,
+  },
 ];

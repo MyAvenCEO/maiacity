@@ -23,12 +23,12 @@ export const isSequence = (m) => m?.meta?.sequence === 'exr';
  */
 export const asStudio = (media) => media.map((m) => (m.kind !== 'video' && isVideo(m) ? { ...m, kind: 'video' } : m));
 
-/** @typedef {import('$lib/auth/client').Cdl} Cdl */
-/** @typedef {import('$lib/auth/client').ColorInfo} ColorInfo */
-/** @typedef {import('$lib/auth/client').MediaItem} MediaItem */
-/** @typedef {import('$lib/auth/client').Timeline} Timeline */
-/** @typedef {import('$lib/auth/client').TimelineClip} TimelineClip */
-/** @typedef {import('$lib/auth/client').RenderJob} RenderJob */
+/** @typedef {import('./types.js').Cdl} Cdl */
+/** @typedef {import('./types.js').ColorInfo} ColorInfo */
+/** @typedef {import('./types.js').MediaItem} MediaItem */
+/** @typedef {import('./types.js').Timeline} Timeline */
+/** @typedef {import('./types.js').TimelineClip} TimelineClip */
+/** @typedef {import('./types.js').RenderJob} RenderJob */
 /** @typedef {{ label: string, idt: string | null, log: boolean }} ProfileInfo */
 /** @typedef {'ready' | 'none' | 'queued' | 'rendering' | 'failed' | 'n/a'} ProxyState */
 

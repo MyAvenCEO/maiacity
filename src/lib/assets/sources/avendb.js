@@ -11,7 +11,7 @@
  *
  * Switching it on (C10 of the code architecture plan, the Maia City COOP's vault) is the one change here: `recipeAt`
  * reads the vault's `recipe` entry (`recipeEntryOf` below) for that group and id at that version, holds its file, the
- * recipe's source, to the hash its card names and its engine to ../engines.json, and hands back what ../recipes.js
+ * recipe's source, to the hash its card names and its engine to the frozen box engines (src/lib/sandbox/engines.json), and hands back what ../recipes.js
  * `recipeAt` hands back for a repo recipe, `{ hash, code }`. The box, the checks after it and the device's cache stay
  * as they are.
  *
@@ -23,16 +23,14 @@
  * come from is the caller's, the server's feed or the person's device; nothing reads them yet, until avenDB's feed
  * serves a recipe entry's file and the seed has written them.
  */
-import { blake3 } from '@noble/hashes/blake3.js';
-import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js';
+import { utf8ToBytes } from '@noble/hashes/utils.js';
+import { hashBytes, hashText } from '../../../../game/hash.js';
+import { ENTRY_REF, entryRef, parseEntryRef } from '../../../../game/code/ref.js';
 import ASSET from '../schemas/asset.v1.json';
 import { checkCard } from '../schemas/index.js';
 import { LATEST, engineAt, recipeTail } from '../engines.js';
 import { paramsIn } from '../params.js';
 import { parseRef, refOf } from '../refs.js';
-
-/** the BLAKE3 hash of a text, in hex, as ../recipes.js names a recipe by it @param {string} text */
-const hashText = (text) => bytesToHex(blake3(utf8ToBytes(text)));
 
 /** what a vault ref starts with */
 export const VAULT = 'vault:';
@@ -41,15 +39,16 @@ export const VAULT = 'vault:';
 export const MAX_REF = 512;
 
 /**
- * A vault ref: the vault (read as a code ref's vault is, game/code/sources/avendb.js), the group, the id, the version
- * (1 to 100,000, as a card's), a variant, the values. Ids and variants as a card's (../schemas/card.v1.json).
+ * A vault ref: the vault (an avenDB id, 64 hex digits, as the one entry ref reads it, game/code/ref.js), the group, the
+ * id, the version (1 to 100,000, as a card's), a variant, the values. Ids and variants as a card's
+ * (../schemas/card.v1.json).
  */
-export const VAULT_REF = /^vault:([A-Za-z0-9_-]{8,128})\/([a-z]+)\/([a-z0-9][a-z0-9-]{0,79})@([1-9][0-9]{0,5})(?::([a-z0-9][a-z0-9-]{0,79}))?(?:\?([^#\s]*))?$/;
+export const VAULT_REF = /^vault:([0-9a-f]{64})\/([a-z]+)\/([a-z0-9][a-z0-9-]{0,79})@([1-9][0-9]{0,5})(?::([a-z0-9][a-z0-9-]{0,79}))?(?:\?([^#\s]*))?$/;
 
 /**
  * A pin (N6 of the avenDB versions plan, Samuel 2026-10-18 and 10-20: "why does it still reference by the old ref keys
  * instead of its avenDB internal ids?"): an asset named by avenDB's ids alone, its entry and the heads of the version
- * it names, every part a hash, as a code ref names an entry (game/code/sources/avendb.js `AVENDB_REF`), and the values
+ * it names, every part a hash, read as a code ref is (the one entry ref, game/code/ref.js `ENTRY_REF`), and the values
  * it is built with:
  *
  *   vault:<vault id>/<entry>@<head>[,<head>…][?its=values]       vault:3f2a…/9be0…@5e6f…?stage=9
@@ -57,10 +56,7 @@ export const VAULT_REF = /^vault:([A-Za-z0-9_-]{8,128})\/([a-z]+)\/([a-z0-9][a-z
  * Stored as `{ entry, at }` where code keeps it as data; shown as avenDB names it ("Oats v1 · 1a2b3c4d…", `nameOf`).
  * A row lists the heads a pin of each version names (`at`, avenDB's `engine::version_heads`).
  */
-export const PIN_REF = /^vault:([A-Za-z0-9_-]{8,128})\/([0-9a-f]{64})@([0-9a-f]{64}(?:,[0-9a-f]{64}){0,15})(?:\?([^#\s]*))?$/;
-
-/** how long a pin may be, its heads and values with it */
-const MAX_PIN = 2048;
+export const PIN_REF = ENTRY_REF;
 
 /**
  * A pin as its parts, `{ vault, entry, at, params? }` (`params` as text), from its string (`PIN_REF`) or as stored
@@ -68,23 +64,18 @@ const MAX_PIN = 2048;
  * @param {unknown} ref @returns {{ vault: string | null, entry: string, at: string[], params?: Record<string, string> } | null}
  */
 export function parsePin(ref) {
-	if (ref && typeof ref === 'object') {
-		const { entry, at, vault, params } = /** @type {any} */ (ref);
-		const hex = (/** @type {unknown} */ x) => typeof x === 'string' && /^[0-9a-f]{64}$/.test(x);
-		if (!hex(entry) || !Array.isArray(at) || !at.length || at.length > 16 || !at.every(hex)) return null;
-		return { vault: typeof vault === 'string' ? vault : null, entry, at: [...at], ...(params && typeof params === 'object' ? { params } : {}) };
-	}
-	const m = typeof ref === 'string' && ref.length <= MAX_PIN ? PIN_REF.exec(ref) : null;
-	if (!m) return null;
-	const params = paramsIn(m[4]);
-	return { vault: m[1], entry: m[2], at: m[3].split(','), ...(params ? { params } : {}) };
+	const r = parseEntryRef(ref);
+	if (!r) return null;
+	const given = ref && typeof ref === 'object' ? /** @type {any} */ (ref).params : undefined;
+	const params = typeof ref === 'string' ? paramsIn(r.query) : given && typeof given === 'object' ? given : undefined;
+	return { vault: r.vault, entry: r.entry, at: r.heads, ...(params ? { params } : {}) };
 }
 
 /**
  * A pin written as a string (`PIN_REF`), its heads sorted, so one version is one string.
  * @param {{ vault: string, entry: string, at: string[] }} pin @param {string} [query] its values, as a ref's (`stage=9`)
  */
-export const pinRef = ({ vault, entry, at }, query = '') => `vault:${vault}/${entry}@${[...at].sort().join(',')}${query ? `?${query}` : ''}`;
+export const pinRef = (pin, query = '') => entryRef(pin, query);
 
 /** the key a pin is found by: its entry and its heads, sorted @param {{ entry: string, at: string[] }} p */
 const pinKey = (p) => `${p.entry}@${[...p.at].sort().join(',')}`;
@@ -225,7 +216,7 @@ const UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 /**
  * One row the vault hands out as a recipe of the index, or why not: a `recipe` entry whose card fits its schema and
- * names its recipe, made for one of the frozen box engines (../engines.json, by its hash), the one it then builds on
+ * names its recipe, made for one of the frozen box engines (kind `box` of src/lib/sandbox/engines.json, by its hash), the one it then builds on
  * (../load.js `engineOf`): code runs on the engine it names (H4). Its file is not read here: only when a build needs
  * it. An asset is its entry, and its versions are the entry's own (Samuel 2026-10-18 and 10-19: avenDB's ids, not
  * refs): its tags are not read, so a version accepted onto its main line, or proposed on a line of it, counts with no
@@ -425,7 +416,7 @@ export function vaultRecipes(rows, { read, assets = [] }) {
 		}
 		const bytes = typeof got === 'string' ? utf8ToBytes(got) : got instanceof ArrayBuffer ? new Uint8Array(got) : got;
 		if (!(bytes instanceof Uint8Array)) throw new NotInVault(`${named}: the Maia City vault handed out no file for it`);
-		const hashed = bytesToHex(blake3(bytes));
+		const hashed = hashBytes(bytes);
 		if (hashed !== hash) throw new NotInVault(`${named}: refused, its file in the Maia City vault hashes to ${hashed.slice(0, 12)}…, not to ${hash.slice(0, 12)}…, the recipe it names`);
 		let code;
 		try {

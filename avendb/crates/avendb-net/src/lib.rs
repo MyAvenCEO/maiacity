@@ -1349,7 +1349,7 @@ impl Drop for Node {
 fn restore(mut lab: Lab, me: SignerId, (signed, keys): edits::Stored) -> (Lab, Vec<EditId>) {
     let stored = signed.iter().map(|s| s.edit.id()).collect();
     if !signed.is_empty() {
-        lab.restore_backup(me, &Backup::new(signed, keys));
+        lab.restore_from(me, Backup::new(signed, keys));
     }
     (lab, stored)
 }

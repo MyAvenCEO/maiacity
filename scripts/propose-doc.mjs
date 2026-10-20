@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// The repository's newer text of one of its documents (src/lib/avendb/docs.js `DOCS`: the avenDB doc, the theOS
-// paper, a skill), proposed into the Maia City vault as an AIP by this Mac's agent (the device of avenMAIA Claude Code
-// starts as its MCP server: `avendb-device agent claude`). The seed writes a document into the vault once, as a story
-// and its doc post (src/lib/avendb/seed.js `docOps`); every text after that goes in as a proposal the vault's owners
-// accept. It finds the doc post by its `doc:<key>` tag and the story it names, starts a proposal on each whose text
-// differs (`propose`, or the same day's line a failed run left with no AIP over it), sets the new text on that line
-// (`set` at `text`, through the record's own schema, as the app edits it), and opens one AIP over the lines
-// (`aip_open`).
+// One of the repository's documents (src/lib/avendb/docs.js `DOCS`: the avenDB and avenBRAIN docs, the theOS paper, a
+// skill), proposed into the Maia City vault as an AIP by this Mac's agent (the device of avenMAIA Claude Code starts as
+// its MCP server: `avendb-device agent claude`). A document goes into the vault only so (Samuel 2026-10-20: a new doc
+// goes in as a proposal; the seed writes none). It finds the doc post by its `doc:<key>` tag and the story it names.
+// None yet: it drafts both (`create` with `draft: true`, the records of src/lib/avendb/seed.js `docRecords`, the post
+// naming the story drafted), each its own line. One there: it starts a proposal on each whose text differs (`propose`,
+// or the same day's line a failed run left with no AIP over it) and sets the new text on that line (`set` at `text`,
+// through the record's own schema, as the app edits it). Either way it opens one AIP over the lines (`aip_open`).
 // An owner then puts it forward ("Propose it") and accepts it in the Proposals app (/app/aips/); the accept merges the
 // lines into main. Without --run it only says what it would do.
 //
@@ -106,15 +106,18 @@ let doc;
 let story = '';
 let post = '';
 let tag = '';
+/** @type {any} */
+let records = null;
 try {
 	const { DOCS, readable } = await server.ssrLoadModule('/src/lib/avendb/docs.js');
-	const { docTag } = await server.ssrLoadModule('/src/lib/avendb/seed.js');
+	const { docTag, docRecords } = await server.ssrLoadModule('/src/lib/avendb/seed.js');
 	doc = DOCS.find((/** @type {any} */ d) => d.key === key);
 	if (!doc) throw new Error(`no document ${key}: one of ${DOCS.map((/** @type {any} */ d) => d.key).join(', ')}`);
-	// as the seed's docOps writes them: the story holds the text, the doc post its readable form
+	// as docRecords drafts them: the story holds the text, the doc post its readable form
 	story = await doc.read();
 	post = doc.section === 'skill' ? readable(story) : story;
 	tag = docTag(key);
+	records = await docRecords(key);
 } finally {
 	await server.close();
 }
@@ -124,10 +127,12 @@ if (!story.trim()) {
 }
 const title = option('--title') ?? `${doc.title} doc: the repository's text (${key})`;
 const note = option('--note') ?? `The text of ${key} as the repository has it now, so the vault's copy says what the page shows.`;
+const newTitle = option('--title') ?? `${doc.title} doc, new (${key})`;
+const newNote = option('--note') ?? `${doc.title} as a new doc of Maia City: its story with the repository's text, and its doc post, a draft, which avenDB's Docs view lists.`;
 console.error(`${key}: ${story.length.toLocaleString('en')} characters, the doc post tagged ${tag} and its story`);
 console.error(`AIP: ${title}`);
 if (!flag('--run')) {
-	console.error('Without --run nothing is written. With it: find the doc post and its story in Maia City, propose the new text on each that differs, open the AIP.');
+	console.error('Without --run nothing is written. With it: find the doc post and its story in Maia City, propose the new text on each that differs (or draft both, if Maia City holds none), open the AIP.');
 	process.exit(0);
 }
 
@@ -141,7 +146,22 @@ try {
 	const where = { all: [{ type: ['post'] }, { tag }] };
 	const found = await agent.call('avendb_ask', { op: { op: 'query', vault: city.id, where, select: ['text', 'story'] } });
 	const posts = (found.rows ?? []).filter((/** @type {any} */ r) => !(r.tags ?? []).includes('avendb:deleted'));
-	if (posts.length !== 1) throw new Error(`Maia City holds ${posts.length} doc posts tagged ${tag} (${posts.map((/** @type {any} */ r) => r.entry).join(', ') || 'none'}): one is proposed to, so nothing was written`);
+	if (!posts.length) {
+		const drafted = await agent.call('avendb_ask', { op: { op: 'aips', vault: city.id } });
+		const open = drafted.filter((/** @type {any} */ a) => ['idea', 'proposed'].includes(a.stage) && !a.outcome && a.title === newTitle);
+		if (open.length && !flag('--again')) throw new Error(`an AIP drafting ${key} is open already (${open.map((/** @type {any} */ a) => a.entry).join(', ')}): nothing was written (--again drafts it all the same)`);
+		const storyDraft = await agent.call('avendb_run', { op: { op: 'create', vault: city.id, draft: true, ...records.story } });
+		const value = { ...records.post.value, story: { vault: city.id, entry: storyDraft.entry } };
+		const postDraft = await agent.call('avendb_run', { op: { op: 'create', vault: city.id, draft: true, ...records.post, value } });
+		const proposals = [storyDraft, postDraft].map((d) => ({ entry: d.entry, line: d.line }));
+		const aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title: newTitle, note: newNote, proposals } });
+		console.log(JSON.stringify({ vault: city.id, proposals, aip }, null, 2));
+		console.error(`Opened. An owner puts it forward ("Propose it") and accepts it in the Proposals app: /app/aips/?aip=${aip.entry}`);
+		done = true;
+		agent.close();
+		process.exit(0);
+	}
+	if (posts.length !== 1) throw new Error(`Maia City holds ${posts.length} doc posts tagged ${tag} (${posts.map((/** @type {any} */ r) => r.entry).join(', ')}): one is proposed to, so nothing was written`);
 	const [p] = posts;
 	const at = p.record?.story?.entry;
 	if (!at || p.record?.story?.vault !== city.id) throw new Error(`the doc post ${p.entry} names no story of Maia City: nothing was written`);

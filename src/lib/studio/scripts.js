@@ -461,10 +461,10 @@ const nameIn = (xs, key) => xs.find(([k]) => k === key)?.[1] ?? '';
  * one over the line before it), each as long as it takes to say; a scene with no shots one slate of what happens in it.
  * The cut names the script and the story it is of (`script`, `story`), so the story lists its cuts.
  * @param {any} s @param {string} vault @param {string} script
- * @returns {Partial<import('$lib/auth/client').Timeline> & { script: { vault: string, entry: string }, story: any }}
+ * @returns {Partial<import('./types.js').Timeline> & { script: { vault: string, entry: string }, story: any }}
  */
 export function cutFrom(s, vault, script) {
-	/** @type {import('$lib/auth/client').TimelineClip[]} */
+	/** @type {import('./types.js').TimelineClip[]} */
 	const clips = [];
 	const round = (/** @type {number} */ x) => Math.round(x * 10) / 10;
 	let t = 0;
@@ -491,7 +491,7 @@ export function cutFrom(s, vault, script) {
 			const notes = [sh.angle && sh.angle !== 'eye' ? `${nameIn(ANGLES, sh.angle)} angle` : '', sh.move && sh.move !== 'static' ? nameIn(MOVES, sh.move) : '']
 				.filter(Boolean)
 				.join(', ');
-			/** @type {import('$lib/auth/client').ClipScript} */
+			/** @type {import('./types.js').ClipScript} */
 			const where = { scene: sc.name || `Scene ${k + 1}`, label: sh.plain ? `${k + 1}` : `${k + 1}.${j + 1}`, description: sh.shows ?? '' };
 			if (sh.size) where.size = sizeName(sh.size);
 			if (notes) where.notes = notes;

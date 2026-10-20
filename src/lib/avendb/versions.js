@@ -26,3 +26,43 @@ export function pinLabel(pin) {
 	const line = pin.line !== null && pin.name ? ` · ${pin.name}` : '';
 	return `${title} ${versionWords(pin.version)}${line} · ${pin.short}…`;
 }
+
+/** A line of an entry as words name it: `line` null for main, else its first edit's id, and its name.
+ *  @typedef {{ line: string | null, name: string | null, variant?: boolean }} Named */
+
+/** A line's name, as a person reads it. @param {{ line: string | null, name: string | null } | null | undefined} l */
+export const lineName = (l) => (!l ? 'a line' : l.line === null ? 'main' : (l.name ?? 'a line this browser can’t name'));
+
+/**
+ * What an edit did, in avenDB's words, as the history of line `shown` of an entry whose lines are `lines` says it
+ * (./Lines.svelte, and a note's banner over the version it shows): "Proposed “Warmer” from “main”", "Merged “Warmer”
+ * into main", "Edited on “Silkie”"; the first of all, "Wrote `thing`".
+ * @param {{ kind: string, line: string | null, deps: string[], name: string | null,
+ *   from: { line: string | null } | null }} e
+ * @param {Named[]} lines @param {string | null | undefined} shown @param {string} [thing]
+ */
+export function editWords(e, lines, shown, thing = 'it') {
+	/** @param {string | null} l @returns {Named} */
+	const lineOf = (l) => lines.find((x) => x.line === l) ?? { line: l, name: null };
+	/** @param {string | null} l */
+	const quoted = (l) => `“${lineName(lineOf(l))}”`;
+	const elsewhere = e.line !== shown ? ` on ${quoted(e.line)}` : '';
+	const from = e.from?.line ?? null;
+	switch (e.kind) {
+		case 'propose':
+			return `Proposed “${e.name ?? '…'}”${e.from ? ` from ${quoted(from)}` : ''}`;
+		case 'variant':
+			return `Started the variant “${e.name ?? '…'}”${e.from ? ` from ${quoted(from)}` : ''}`;
+		case 'merge':
+			if (e.line === null) return `Merged ${quoted(from)} into main`;
+			if (from === null && lineOf(e.line).variant) return `Brought main into ${quoted(e.line)}`;
+			if (from === null) return `Updated ${quoted(e.line)} from main`;
+			return `Merged ${quoted(from)} into ${quoted(e.line)}`;
+		case 'accept':
+			return `Accepted ${quoted(e.line)} as it stood`;
+		case 'sealed':
+			return `An edit this browser can’t open${elsewhere}`;
+		default:
+			return e.deps.length ? `Edited${elsewhere}` : `Wrote ${thing}${elsewhere}`;
+	}
+}
