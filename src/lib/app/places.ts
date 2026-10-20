@@ -87,7 +87,7 @@ export const opens = (p: Place) => !p.needs || holdsGroup(p.needs);
 export const gameAt = (path: string) =>
 	[...CITY, ...PLAY, ...WORLDS].find((p) => path.startsWith(p.href)) ?? PAGES.find((p) => path.startsWith(p.href));
 /** the Worlds grid and the game assets' own pages (the Buildings, the Factories, the Biomes): every Traveler's; the
- *  Skills, the Postgres window and avenDB's own page: the admins'. The studio keeps its own gate: it works on the
+ *  Postgres window and avenDB's own page: the admins'. The studio keeps its own gate: it works on the
  *  media vault through the API, which decides who may (`media:admin`). The Postgres window's rows open by the same
  *  Admin group, as avenDB's server tells the API of the pass the page's device signs (api/src/standing.ts) */
 const PAGES: Place[] = [
@@ -95,7 +95,6 @@ const PAGES: Place[] = [
 	{ href: `${base}/app/factories/`, label: 'Factories', icon: 'gear', needs: TRAVELER },
 	{ href: `${base}/app/buildings/`, label: 'Buildings', icon: 'home', needs: TRAVELER },
 	{ href: `${base}/app/biomes/`, label: 'Biomes', icon: 'leaf', needs: TRAVELER },
-	{ href: `${base}/app/skills/`, label: 'Skills', icon: 'journal', needs: ADMIN },
 	{ href: `${base}/app/postgres/`, label: 'Postgres', icon: 'database', needs: ADMIN },
 	{ href: `${base}/app/avendb/`, label: 'avenDB', icon: 'database', needs: ADMIN }
 ];

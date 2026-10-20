@@ -15,7 +15,6 @@
 	import { mediaOf } from './files.js';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
-	import LegacyCopy from './LegacyCopy.svelte';
 	import { allowed, creatable, may } from './ops.js';
 	import SparkRow from './SparkRow.svelte';
 	import { addingSpark, addingStory, fromLine, grownFrom, isOldNote, isSpark, linkIn, newId, placing, SPARK, sparkRecord, titleOf } from './sparks.js';
@@ -218,7 +217,6 @@
 {/snippet}
 
 <Frame nav={listed ? narrow : undefined} navLabel="Narrow the sparks" navIcon="spark">
-<LegacyCopy {world} {vault} {actor} {api} {busy} />
 
 {#if binned}
 	<p class="soft binned">Deleted sparks keep every edit. Open one to bring it back.</p>

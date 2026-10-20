@@ -22,7 +22,6 @@
 	import { onDestroy } from 'svelte';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
-	import SiteMedia from './SiteMedia.svelte';
 	import { DENY } from '../sandbox/policy.js';
 	import { address, dataUrl, kindOf, KINDS, mediaOf, serve, whole, WHOLE } from './files.js';
 	import { familyOf } from './made.js';
@@ -509,7 +508,6 @@
 	asideIcon="info"
 >
 	{#if !viewing}
-		<SiteMedia {world} {vault} {actor} {api} {busy} />
 		<div
 			class="library"
 			class:dropping

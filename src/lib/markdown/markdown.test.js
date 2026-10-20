@@ -127,7 +127,6 @@ describe('our own Markdown reads as before', () => {
 // $lib/markdown) and is added below.
 const RAW_HTML = {
 	'src/lib/blog/PostLayout.svelte': 'its html prop: blog posts through journalHtml ($lib/markdown, $lib/server/blog.ts)',
-	'src/routes/app/skills/+page.svelte': '$lib/markdown, our links around its <code>',
 	'src/lib/avendb/ArticleView.svelte': "avenDB's escaping article renderer (render)",
 	'src/lib/avendb/Docs.svelte': "avenDB's escaping article renderer (render), a doc's or a skill's text",
 	'src/lib/universe/InspirePost.svelte': "an inspire post's report and source through journalHtml ($lib/markdown), its shifts split into spans of ours (./inspire.js)",
