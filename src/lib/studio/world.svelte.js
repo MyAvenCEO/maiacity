@@ -95,6 +95,18 @@ export class WorldViewer {
 	readyShots = new SvelteSet();
 	/** @type {Map<string, Promise<void>>} */
 	preparing = new Map();
+	/**
+	 * each prepare's end, for when the page it was asked of goes (the GPU dropped it, another world came): that page
+	 * never answers, and whoever waited on it waited for ever, told every 15 s that the shot was still preparing
+	 * @type {Set<() => void>}
+	 */
+	ends = new Set();
+	/** every prepare under way given up: the page it was asked of is gone */
+	forget() {
+		for (const end of this.ends) end();
+		this.ends.clear();
+		this.preparing.clear();
+	}
 	/** how far the world's resolution is stepped down to keep up (1 = full proxy HD): drop resolution, never frames */
 	scale = $state(1);
 	/** the last frames' times (ms): the resolution steps on their median, so one slow frame (a cut, a restage) moves nothing */
@@ -149,7 +161,7 @@ export class WorldViewer {
 			this.reloads = 0;
 			this.metered.clear();
 			this.readyShots.clear();
-			this.preparing.clear();
+			this.forget();
 			this.queued = null;
 			this.busy = false;
 		}
@@ -274,7 +286,7 @@ export class WorldViewer {
 			this.drawn = '';
 			this.metered.clear();
 			this.readyShots.clear();
-			this.preparing.clear();
+			this.forget();
 			this.queued = null;
 			this.busy = false;
 			if (!again) return void (this.state = 'unavailable');
@@ -320,7 +332,7 @@ export class WorldViewer {
 		this.url = '';
 		this.state = 'off';
 		this.readyShots.clear();
-		this.preparing.clear();
+		this.forget();
 	}
 
 	/** @param {ShotSpec} spec */
@@ -351,14 +363,22 @@ export class WorldViewer {
 			const k = specKey(s);
 			const t0 = performance.now();
 			const slow = setInterval(() => console.warn(`world: still preparing ${s.meta?.name ?? 'a shot'} after ${Math.round((performance.now() - t0) / 1000)} s`), 15000);
-			const p = film
-				.prepare([s], { live: true, meter })
-				.then(() => void this.readyShots.add(k))
+			/** @type {() => void} */
+			let end = () => {};
+			const gone = new Promise((r) => (end = () => r(false)));
+			this.ends.add(end);
+			/** @type {Promise<void>} */
+			const p = Promise.race([film.prepare([s], { live: true, meter }).then(() => true), gone])
+				.then((done) => void (done && this.film === film && this.readyShots.add(k)))
 				.catch((/** @type {Error} */ e) => {
 					this.error = `prepare: ${e?.message ?? e}`;
 					console.warn(`world: ${this.error}`);
 				})
-				.finally(() => (clearInterval(slow), this.preparing.delete(k)));
+				.finally(() => {
+					clearInterval(slow);
+					this.ends.delete(end);
+					if (this.preparing.get(k) === p) this.preparing.delete(k);
+				});
 			this.preparing.set(k, p);
 		}
 		return Promise.all(specs.map((s) => this.preparing.get(specKey(s)) ?? Promise.resolve())).then(() => {});

@@ -95,7 +95,7 @@ const report = await page.evaluate(
 		await viewer.attach(iframe, o.path, 600000, 900000);
 		if (viewer.state !== 'ready') return { error: `the world is ${viewer.state}: ${viewer.error}` };
 		log(`the world is up after ${Math.round(performance.now() - t0)} ms`);
-		const win = /** @type {any} */ (iframe.contentWindow);
+		let win = /** @type {any} */ (iframe.contentWindow);
 		// the timeline: the clips back to back, each its shot from `in` for `dur`
 		let at = 0;
 		const list = (o.clips ?? win.__world.intro.shots().map((/** @type {any} */ spec) => ({ spec, in: 0, dur: spec.seconds }))).map((/** @type {any} */ c, /** @type {number} */ i) => {
@@ -122,7 +122,16 @@ const report = await page.evaluate(
 		// counted as first drawn at a cut
 		win.__filmTrace = [];
 		const p0 = performance.now();
-		await viewer.prepare(first.slice(0, 3).map((c) => c.spec));
+		// (a world that loses its GPU meanwhile is loaded again: its shots prepared again, a few times)
+		for (let k = 0; k < 3; k++) {
+			const film = viewer.film;
+			await viewer.prepare(first.slice(0, 3).map((c) => c.spec));
+			if (viewer.film === film && viewer.state === 'ready') break;
+			log('the world was loaded again while its shots were prepared: preparing them again');
+			while (viewer.state !== 'ready' && performance.now() - p0 < 900000) await new Promise((r) => setTimeout(r, 250));
+			win = /** @type {any} */ (iframe.contentWindow);
+			win.__filmTrace = [];
+		}
 		await viewer.meterAhead((o.meter === 'all' ? first : first.slice(0, 3)).map((c) => c.spec), () => true);
 		await viewer.standAt(first[0].spec);
 		// and the views they are drawn through sent, as the stopped studio sends them
