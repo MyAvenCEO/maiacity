@@ -27,6 +27,7 @@ use avendb::sign::{
 use avendb::slice::Selector;
 use avendb::wire::Wire;
 use avendb::world;
+use serde_json::Value;
 
 /// `action` signed by `signers` on device `on`, the passkey's signers among them, old and new, in one ceremony of
 /// `authenticator`.
@@ -399,6 +400,14 @@ fn a_move_from_a_phone_that_holds_none_of_her_coop_leaves_the_coop_on_her_mac() 
     let signers = [passkey, touch, next].map(Principal::Signer).to_vec();
     assert_eq!((owners, root), (signers, Some(passkey)));
     assert_eq!(devices, vec![mac, phone, phone_next]);
+    // the page tells the Mac, which hasn't moved yet, from the phone, which moved, as the Mac's world says
+    let json = world::world(&lab, mac).expect("its world").to_json(mac);
+    let hers = json["vaults"].as_array().and_then(|vs| vs.iter().find(|v| v["id"] == vault.to_hex())).expect("hers");
+    let device = |d: SignerId| hers["devices"].as_array().and_then(|ds| ds.iter().find(|x| x["id"] == d.to_hex()));
+    let said = |d| device(d).map(|x| (x["old"].clone(), x["next"].clone()));
+    assert_eq!(said(mac), Some((true.into(), Value::Null)), "the Mac: an old key");
+    assert_eq!(said(phone), Some((false.into(), phone_next.to_hex().into())), "the phone's earlier key: moved");
+    assert_eq!(said(phone_next), Some((false.into(), Value::Null)), "its next key: new");
 }
 
 #[test]

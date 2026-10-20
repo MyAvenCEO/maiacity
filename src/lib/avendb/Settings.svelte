@@ -1,6 +1,6 @@
 <!--
 	A vault's settings, one page (Samuel 2026-10-20, #1106: "a single hierarchic settings page", each concept once), in
-	the layout every avenDB view has (./Frame.svelte): on the left its five sections, each a link that scrolls to it
+	the layout every avenDB view has (./Frame.svelte): on the left its sections, each a link that scrolls to it
 	(`#settings/devices`), in the middle all of them, one after another.
 
 	Profile: what it is, by the kind table, its name and who sees it, its id, and how this device acts for it. Owners:
@@ -9,8 +9,9 @@
 	Remove on every one but this; for the person's own vault this device itself (its name, Touch ID in the Mac app, how
 	deep its queries read, forgetting it), its drives, linking the next device, and the agents that act as the coop's
 	aven. Sharing: who has it, each vault and Everyone with its shares and the devices of theirs it is on, the one Share
-	form, what others share with it, and asking for access (./Ask.svelte). Backup and security: whether avenDB's server
-	keeps an encrypted copy, and how it is quantum-proof.
+	form, what others share with it, and asking for access (./Ask.svelte). Backup, for the person's own vault: whether
+	avenDB's server keeps an encrypted copy. Each device says when it was last seen and whether it is an old one, not
+	unlocked since its person's keys moved (Samuel 2026-10-20: "which Safari devices are the old ones we can kick?").
 
 	All of it is the device's: its world (avendb-browser's `World`) and the shares over the vault (the `shares` op). A
 	button shows only where the device answers a dry run of its op (`may`), and every change goes out as one op, acting
@@ -43,6 +44,7 @@
 		kindRules,
 		KINDS,
 		levelName,
+		lastSaid,
 		list,
 		mayCoOwn,
 		nameOf,
@@ -90,7 +92,7 @@
 		['owners', 'Owners', 'key'],
 		['devices', 'Devices', 'sync'],
 		['sharing', 'Sharing', 'share'],
-		['security', 'Backup & security', 'lock']
+		['security', 'Backup', 'lock']
 	]);
 	/** Scrolls the page to section `id`. @param {string} id */
 	const scrollTo = (id) => document.getElementById(`settings-${id}`)?.scrollIntoView({ block: 'start', behavior: 'smooth' });
@@ -325,11 +327,15 @@
 	 * What the device would make, as it answers a dry run of each (`may`): the vault's name (`profile`), the master
 	 * recovery key as an owner (`recovery`), backups on or off (`backUp`), what a device of the vault keeps (`copy`),
 	 * and removing each owner (`owner <id>`) and each device but this one (`device <id>`): `true`, `{ approve }` where
-	 * the vault's owners approve it, or why not.
+	 * the vault's owners approve it, or why not. Asked again only once what it asks changes, or who asks, or how the
+	 * vault is governed: a vault that syncs on changes its world faster than a device with a big vault answers, and an
+	 * answer thrown away at each change left every Remove hidden (Samuel 2026-10-20: no Remove on any owner).
 	 */
 	let can = $state(/** @type {Record<string, Verdict>} */ ({}));
+	/** what `can` answers, or is being asked: this device, the acting vault, the vault's root and threshold, and the
+	 *  ops, as JSON */
+	let asked = '';
 	$effect(() => {
-		void world;
 		/** @type {Record<string, object>} */
 		const asks = { profile: { op: 'profile', vault, name: naming?.trim() || nameOf(v) } };
 		if (recoveryMissing && world.recovery)
@@ -341,16 +347,27 @@
 			asks[ownerKey(o)] = { op: 'revoke', vault, owner: 'vault' in o ? { vault: o.vault } : { signer: o.signer } };
 		for (const d of devices) if (!d.me) asks[`device ${d.id}`] = { op: 'revoke', vault, device: d.id };
 		const names = Object.keys(asks);
-		let gone = false;
+		const now = JSON.stringify([world.me, actor, v.root, v.threshold, asks]);
+		if (now === asked) return;
+		asked = now;
 		may(api, actor, Object.values(asks)).then((answers) => {
-			if (!gone) can = Object.fromEntries(names.map((n, i) => [n, answers[i]]));
+			if (asked === now) can = Object.fromEntries(names.map((n, i) => [n, answers[i]]));
 		});
-		return () => {
-			gone = true;
-		};
 	});
 	/** Whether the device would make `what` (`can`). @param {string} what */
 	const lets = (what) => allowed(can[what]);
+
+	/** when each device last said what it holds (`lastSaid`) */
+	const said = $derived(lastSaid(world));
+	/** When device `id` was last seen, in words. @param {string} id */
+	const seen = (id) => {
+		const at = said.get(id);
+		return at === undefined ? 'not seen yet' : at === null ? 'online now' : `last seen ${ago(at)}`;
+	};
+	const OLD =
+		'Not unlocked since your keys moved to ML-DSA-65: it moves at its next unlock. Remove it if you no longer use it.';
+	/** Whether device `id` is an old one, not unlocked since the key move. @param {string} id */
+	const isOld = (id) => world.vaults.some((x) => x.devices.some((d) => d.id === id && d.old));
 
 	/** A device's name, to start a line: its card's, or what it is. @param {string} id */
 	const deviceName = (id) => signerName(world, id, true);
@@ -461,8 +478,10 @@
 			sharing: people.length
 		})
 	);
+	/** the sections it shows: Backup only for the person's own vault, once the device knows how it is backed up */
+	const shown = $derived(SECTIONS.filter(([id]) => id !== 'security' || (own && backs != null)));
 	/** the section the address names, else the first */
-	const at = $derived(SECTIONS.some(([id]) => id === section) ? section : 'profile');
+	const at = $derived(shown.some(([id]) => id === section) ? section : 'profile');
 </script>
 
 <!-- what a device keeps, one switch: the chosen half filled -->
@@ -483,7 +502,7 @@
 <!-- down the left, the page's sections, each scrolling to it -->
 {#snippet menu()}
 	<h3 class="nav-group">Settings</h3>
-	{#each SECTIONS as [id, label, icon] (id)}
+	{#each shown as [id, label, icon] (id)}
 		<a
 			class="nav-item"
 			class:on={at === id}
@@ -668,7 +687,9 @@
 							<span class="meta">
 								{#if d.me}<span class="chip accent">{here}</span>{/if}
 								{#if drivesById.has(d.id)}<span class="chip">Drive</span>{/if}
+								{#if d.old}<span class="chip warn" title={OLD}>Old key</span>{/if}
 								<span class="soft mono">{short(d.id)}</span>
+								{#if !d.me}<span class="soft">{seen(d.id)}</span>{/if}
 							</span>
 						</span>
 						{#if own}{@render keeps(d)}{/if}
@@ -946,7 +967,9 @@
 							<span class="on">
 								<small class="soft">On</small>
 								{#each on as d (d.device)}
-									<span class="chip" class:ok={d.opens} title={gets(d)}>{deviceName(d.device)}</span>
+									<span class="chip" class:ok={d.opens} title={gets(d)}
+										>{deviceName(d.device)}{isOld(d.device) ? ' · old key' : ''}</span
+									>
 								{/each}
 							</span>
 						{/if}
@@ -987,36 +1010,24 @@
 {/snippet}
 
 {#snippet security()}
-	{#if own && backs != null}
-		<article class="card">
-			<h3>Backup</h3>
-			<p>
-				<span class="chip" class:ok={backs}>{backs ? 'Backed up' : 'Relay only'}</span>
-			</p>
-			<p class="soft">
-				{backs
-					? "avenDB's server keeps your vault encrypted, which it can never open, so your passkey alone brings it back with every device lost."
-					: "avenDB's server only helps your devices find and reach each other and keeps nothing: your vault lives on your devices alone, so losing them all loses it."}
-				Turning it off keeps what the server holds already; it just stops taking more.
-			</p>
-			<button
-				class="btn"
-				disabled={busy || !lets('backUp')}
-				onclick={() => api.run(backs ? 'Turning backups off' : 'Turning backups on', { op: 'back_up', on: !backs })}
-			>
-				{backs ? 'Turn backups off' : 'Turn backups on'}
-			</button>
-		</article>
-	{/if}
 	<article class="card">
-		<h3>Quantum-proof</h3>
-		<p><span class="chip ok">Post-quantum only</span></p>
-		<p class="soft">
-			Every edit carries an ML-DSA-65 signature, or an SLH-DSA one from a key made before the key move, and only that
-			signature counts: a passkey's WebAuthn assertion beside it only shows a person was there. Keys are sealed with
-			X-Wing and Classic McEliece, every connection agrees its keys with X25519MLKEM768, and every edit, vault, share,
-			signer and file is named by a BLAKE3 hash.
+		<h3>Backup</h3>
+		<p>
+			<span class="chip" class:ok={backs}>{backs ? 'Backed up' : 'Relay only'}</span>
 		</p>
+		<p class="soft">
+			{backs
+				? "avenDB's server keeps your vault encrypted, which it can never open, so your passkey alone brings it back with every device lost."
+				: "avenDB's server only helps your devices find and reach each other and keeps nothing: your vault lives on your devices alone, so losing them all loses it."}
+			Turning it off keeps what the server holds already; it just stops taking more.
+		</p>
+		<button
+			class="btn"
+			disabled={busy || !lets('backUp')}
+			onclick={() => api.run(backs ? 'Turning backups off' : 'Turning backups on', { op: 'back_up', on: !backs })}
+		>
+			{backs ? 'Turn backups off' : 'Turn backups on'}
+		</button>
 	</article>
 {/snippet}
 
@@ -1026,7 +1037,7 @@
 		{@render part('owners', ownership)}
 		{@render part('devices', hardware)}
 		{@render part('sharing', sharing)}
-		{@render part('security', security)}
+		{#if own && backs != null}{@render part('security', security)}{/if}
 	</div>
 </Frame>
 

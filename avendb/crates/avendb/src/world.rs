@@ -23,7 +23,7 @@ use crate::lens::{DocV1, Lane, Lens, Schema, Status, View};
 use crate::policy::{Entry, Issued, KeepMode, Kind, Level, Line, Principal, Share, State, Vault, Who};
 use crate::rules;
 use crate::sealed::{FileRoot, PIECE};
-use crate::sign::{ApiPass, SignerKeys};
+use crate::sign::{ApiPass, SIGNING, SignerKeys};
 use crate::slice::{LENS_TYPE, Selector, Slice};
 use crate::words::{hex, kind_name, kinds_json, level_name, status_name, who_name};
 
@@ -137,6 +137,9 @@ pub struct World {
     /// Each owner key and each device of its vaults the key move kept beside its next key, which is an owner or a
     /// device of the same vault too, with that key (`Lab::earlier_keys`).
     pub earlier: BTreeMap<SignerId, SignerId>,
+    /// Each device of its vaults that signs in the suite from before the key move and that no next key was kept beside
+    /// (`earlier`), of those it saw sign: a device not unlocked since its person's keys moved, an old one.
+    pub unmoved: BTreeSet<SignerId>,
     /// Its vault owns avenMAIA (`owns_server`).
     pub owns_server: bool,
     /// avenMAIA keeps a backup of its vault (`backs_up`).
@@ -290,8 +293,9 @@ impl World {
     /// vault's owners mark as such, `recovery`, as they mark the one from before the key move, `recovery` and `legacy`
     /// (`legacy`), each other signer among them with its kind, `by` (`signers`: `device`, `passkey` or `touch`, `null`
     /// where the device never saw it sign), and each owner key and device with `next`, its next key where the key move
-    /// kept it beside that key (`earlier`), `null` otherwise, the legacy master recovery key never. As the device
-    /// works it out, so the page keeps no rule:
+    /// kept it beside that key (`earlier`), `null` otherwise, the legacy master recovery key never; each device `old`
+    /// where it signs as before the key move and never moved (`unmoved`). As the device works it out, so the page keeps
+    /// no rule:
     ///
     /// - `ownsServer` and `backsUp` (`owns_server`, `backs_up`, `null` while it knows no avenMAIA);
     /// - each vault's `acting`: `{as, reaches, shares}` (`Acting`);
@@ -335,7 +339,8 @@ impl World {
             let device = |d: &SignerId| {
                 let copy = v.copies.get(d).map(|&full| if full { "full" } else { "light" });
                 let (name, next) = (v.names.get(d), self.next_of(d));
-                json!({ "id": hex(&d.0), "name": name, "me": *d == me, "copy": copy, "next": next })
+                let old = self.unmoved.contains(d);
+                json!({ "id": hex(&d.0), "name": name, "me": *d == me, "copy": copy, "next": next, "old": old })
             };
             let a = &v.acting;
             json!({
@@ -560,12 +565,15 @@ pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
     let seen = lab.signers_seen(me, &owners);
     let legacy: BTreeSet<SignerId> = seen.iter().filter(|(_, keys)| lab.is_recovery(keys)).map(|(&s, _)| s).collect();
     let signers = seen.into_iter().filter(|(s, _)| !legacy.contains(s)).map(|(s, keys)| (s, keys.kind())).collect();
-    let earlier = st
+    let earlier: BTreeMap<SignerId, SignerId> = st
         .vaults()
         .iter()
         .flat_map(|v| lab.earlier_keys(me, &signers_of(v).into_iter().chain(v.devices.iter().copied()).collect()))
         .filter(|(s, _)| !legacy.contains(s))
         .collect();
+    let all: BTreeSet<SignerId> = st.vaults().iter().flat_map(|v| v.devices.iter().copied()).collect();
+    let old = |(s, keys): &(SignerId, SignerKeys)| keys.suite() != SIGNING && !earlier.contains_key(s);
+    let unmoved = lab.signers_seen(me, &all).into_iter().filter(old).map(|(s, _)| s).collect();
     let synced_to = SyncedTo::default();
     Some(World {
         mine,
@@ -573,6 +581,7 @@ pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
         legacy,
         signers,
         earlier,
+        unmoved,
         owns_server,
         backs_up,
         vaults,
