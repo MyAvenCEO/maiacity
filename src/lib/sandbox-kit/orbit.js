@@ -38,10 +38,12 @@ const TURN_SPEED = 1.4;
 /**
  * @param {THREE.PerspectiveCamera} camera
  * @param {HTMLElement} dom
- * @param {{ minDistance?: number, maxDistance?: number, moveSpeed?: number, target?: THREE.Vector3, floorY?: number, freeMove?: boolean }} [options]
+ * @param {{ minDistance?: number, maxDistance?: number, moveSpeed?: number, target?: THREE.Vector3, floorY?: number, freeMove?: boolean, keys?: boolean }} [options]
  *   minDistance, maxDistance: how near and far the camera may be from what it looks at; moveSpeed: world units per
  *   second of keyboard travel; target: where it looks as it starts; floorY: the camera never drops below this height —
- *   no going under the board; freeMove: false locks the view to orbiting one fixed point (a turntable)
+ *   no going under the board; freeMove: false locks the view to orbiting one fixed point (a turntable); keys: false
+ *   leaves the keyboard to the world (MaiaCity V1 walks its player with WASD and the arrows), the mouse, the wheel and
+ *   the fingers still turn, slide and zoom the map
  * @returns {OrbitRig}
  */
 export function createOrbitRig(camera, dom, options = {}) {
@@ -50,6 +52,7 @@ export function createOrbitRig(camera, dom, options = {}) {
 	const freeMove = options.freeMove ?? true;
 	const floorY = options.floorY ?? 0;
 	const speed = options.moveSpeed ?? 26;
+	const keys = options.keys ?? true;
 
 	const controls = createControls(camera, dom, {
 		dampingFactor: 0.08,
@@ -93,7 +96,7 @@ export function createOrbitRig(camera, dom, options = {}) {
 
 	/** @param {KeyboardEvent} e */
 	function onKeyDown(e) {
-		if (e.metaKey || e.ctrlKey || e.altKey) return;
+		if (!keys || e.metaKey || e.ctrlKey || e.altKey) return;
 		const target = /** @type {HTMLElement | null} */ (e.target);
 		if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) return;
 		const k = e.key.toLowerCase();

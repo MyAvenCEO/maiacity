@@ -17,6 +17,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { materialCache } from '$lib/render/core.js';
+import { seededLcg as rng } from '$lib/sandbox-kit/random.js';
 import { BATTERY_KWH, capOf, CORE_R, DF, FACADE, FACTORIES, INSIDES, KINDS, POND_BAND, POND_HALF, POND_IN, geodesicOf, siteHall, towerGridOf, towerLevels, towerRadius } from './specs.js';
 import { CELL, HEX_S, HEX_W, USES, USE_IDS, corners, landOf } from './layout.js';
 
@@ -49,14 +50,6 @@ function part(geo, m, x = 0, y = 0, z = 0, shadow = true) {
 	return mesh;
 }
 
-/** a random number generator from a seed */
-function rng(seed = 1) {
-	let s = seed >>> 0;
-	return () => {
-		s = (s * 1664525 + 1013904223) >>> 0;
-		return s / 4294967296;
-	};
-}
 
 /**
  * A sector of an annulus standing on the floor, `y0` to `y1`, from bearing `b0` to `b1` (degrees, clockwise from

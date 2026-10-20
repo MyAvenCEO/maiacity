@@ -41,8 +41,8 @@ const BUILDERS = [
 const WORLDS = [
 	'src/lib/aven-city/',
 	'src/lib/sandbox-2/',
+	'src/lib/sandbox-5/',
 	'src/lib/sandbox-6/',
-	'src/lib/sandbox-7/',
 	'src/lib/maiacity-v1/',
 	'src/lib/worlds/',
 	'src/lib/factories/',

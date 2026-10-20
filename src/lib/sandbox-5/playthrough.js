@@ -3,7 +3,7 @@
  * long as it is given, saving and loading it on the way, and says how far it got (nothing is won). Proof that every
  * chain runs end to end, the market's included:
  *
- *   node src/lib/sandbox-6/playthrough.js [seed] [seconds]
+ *   node src/lib/sandbox-5/playthrough.js [seed] [seconds]
  */
 import { loadGame, newGame } from './sim.js';
 import { createAutoplay } from './autoplay.js';

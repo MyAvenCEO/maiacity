@@ -24,8 +24,10 @@
  * film's clock, is the film world of /games/maiacity-v1/?film (`clock`, `own: false`, `tick`, `film`).
  */
 import * as THREE from 'three';
-import { createControls } from '$lib/render/core.js';
 import { worldRenderer } from '$lib/render/world.js';
+import { createOrbitRig } from '$lib/sandbox-kit/orbit.js';
+import { createSky } from '$lib/sandbox-kit/sky.js';
+import { seededRandom } from '$lib/sandbox-kit/random.js'; // so everything stands in the same places for everyone
 import { blend } from '$lib/assets/clips.js';
 import { SPEED } from '$lib/models/units.js';
 import { lineDur } from './tour.js';
@@ -44,6 +46,16 @@ const HEX_R = 114.75;
 const K = HEX_R / 76.5;
 const SEAT_COLOUR = { A: 0x3f6f9a, B: 0xd7a53a };
 const V = (x, y, z) => new THREE.Vector3(x, y, z);
+/** V1's lens under the kit's sky, by day and by night: its own colours as they were (it was drawn without tone mapping
+ *  before it came under the one sky), metered against screenshots of it at noon, at dusk and at night */
+const EXPOSURE = { day: 0.55, night: 1.5 };
+/** how much of the sky's own light falls on V1's things, of what the kit gives every world, by day and by night: a
+ *  little of its blue by day, more at night, so the steppe is dark olive under the stars and not teal */
+const SKY_LIGHT = { day: 0.1, night: 4 };
+/** and in its films none by day: the van's ceiling and the faces in it stay as warm as they always were */
+const FILM_SKY_LIGHT = { day: 0, night: 4 };
+/** V1's fill: a warm pale sky over the warm steppe by day, a greyer mauve at night */
+const FILL_DAY = new THREE.Color('#f6f2ea'), FILL_NIGHT = new THREE.Color('#b8a8b8');
 
 /** Hexes point north (+z): axial (q, r) sits at x = √3·R·(q + r/2), z = 1.5·R·r; a hex is one tribe, seven are a
  *  village, seven villages the city. Our tribe's hex is the origin; its village's centre hex is the next one west,
@@ -138,18 +150,6 @@ const nearPath = (x, z, r) => PATH.some((p) => Math.abs(p.x - x) < r + 2 && Math
 const onGravel = (x, z, pad = 0) =>
 	[LOT, YARD, STORE_YARD].some((c) => Math.hypot(x - c.x, z - c.z) < c.r + pad) || nearPath(x, z, PATH_W / 2 + pad) || (x < ROAD_END + 2 && Math.abs(z - ROAD_Z) < HIGHWAY_W / 2 + pad);
 
-/** a little seeded random, so everything stands in the same places for everyone */
-function rng(seed) {
-	let a = seed >>> 0;
-	return () => {
-		a = (a + 0x6d2b79f5) >>> 0;
-		let t = a;
-		t = Math.imul(t ^ (t >>> 15), t | 1);
-		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-	};
-}
-
 const mat = (color, extra = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.9, flatShading: true, ...extra });
 /** a flat thing on the ground, drawn over what lies under it */
 const flat = (color, lift) => mat(color, { polygonOffset: true, polygonOffsetFactor: -lift, polygonOffsetUnits: -lift });
@@ -181,7 +181,7 @@ function land() {
 	g.add(ground);
 	const tile = new THREE.CircleGeometry(HEX_R - 0.4, 6, Math.PI / 2);
 	tile.rotateX(-Math.PI / 2);
-	const r = rng(7);
+	const r = seededRandom(7);
 	const prairie = [flat(0xc8b67c, 1), flat(0xccb882, 1), flat(0xc2b177, 1)];
 	const grass = [flat(0x93b46d, 1), flat(0x8db06a, 1), flat(0x98b872, 1)];
 	const rimHome = new THREE.LineDashedMaterial({ color: 0xf4f1e8, dashSize: 5, gapSize: 6, transparent: true, opacity: 0.85 });
@@ -218,7 +218,7 @@ function highway() {
 	strip(HIGHWAY_W, 0xb8a072, ROAD_Z, 3);
 	strip(1.1, 0x9c8660, ROAD_Z - 1.7, 4);
 	strip(1.1, 0x9c8660, ROAD_Z + 1.7, 4);
-	const r = rng(11);
+	const r = seededRandom(11);
 	const patch = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), flat(0x6f6a62, 5), 160);
 	const o = new THREE.Object3D();
 	for (let i = 0; i < 160; i++) {
@@ -250,7 +250,7 @@ function highway() {
  *  the villages' grass, the roads and the MaiaCity centre */
 function steppe() {
 	const g = new THREE.Group();
-	const r = rng(23);
+	const r = seededRandom(23);
 	const o = new THREE.Object3D();
 	const free = (x, z) => !isGrass(x, z) && !onGravel(x, z, 2) && Math.hypot(x - (CX + 2), z - CZ) > 30;
 	const spot = (reach) => {
@@ -346,7 +346,7 @@ function gravel() {
 /** our tribe's hex: grass and a few round bushes, kept off the tent, the gravel and the paths */
 function bushes() {
 	const g = new THREE.Group();
-	const r = rng(42);
+	const r = seededRandom(42);
 	const leaves = [mat(0x4f7f40), mat(0x5d8a45), mat(0x46733a)];
 	for (let i = 0, n = 0; i < 900 && n < 76; i++) {
 		const a = r() * Math.PI * 2, d = 12 + r() * (HEX_R - 18);
@@ -370,7 +370,7 @@ function bushes() {
 /** our tribe's hex in knee-high grass (Samuel 2026-10-14: you step out into it, the wind the only sound): tufts of
  *  three blades, thicker round the lot, off the tent, the gravel and the paths */
 function tallGrass() {
-	const r = rng(77);
+	const r = seededRandom(77);
 	const n = 2800;
 	const m = new THREE.InstancedMesh(new THREE.ConeGeometry(0.07, 0.62, 3).translate(0, 0.31, 0), mat(0x86a95a), n * 3);
 	const o = new THREE.Object3D();
@@ -397,7 +397,7 @@ function tallGrass() {
 /** a clump of tall grass to stand close in front of a low camera (the grass in the foreground of a shot) */
 function clump() {
 	const g = new THREE.Group();
-	const r = rng(91);
+	const r = seededRandom(91);
 	const green = [mat(0x7f9f52), mat(0x93ad62), mat(0x6f8f47)];
 	for (let i = 0; i < 26; i++) {
 		const h = 0.5 + r() * 0.45;
@@ -677,32 +677,23 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	/** the world's clock, in seconds */
 	const now = clockOf ?? (() => performance.now() / 1000);
 	let rand = random;
-	// the world renderer ($lib/render/world.js): soft shadows, V1's own colours (no tone mapping), at most 1.5 pixels
-	// per CSS pixel
-	const renderer = worldRenderer({ canvas, maxPixelRatio: 1.5, toneMapping: 'none' });
+	// the world renderer ($lib/render/world.js): ACES and soft shadows, as every world under the kit's sky, at most 1.5
+	// pixels per CSS pixel
+	const renderer = worldRenderer({ canvas, maxPixelRatio: 1.5 });
 	const scene = new THREE.Scene();
-	const sky = new THREE.Color(0xd8e2e2);
-	scene.background = sky;
-	scene.fog = new THREE.Fog(sky, 380, 2200);
 	const camera = new THREE.PerspectiveCamera(42, 1, 0.5, 6400);
 	camera.position.set(138, 118, 170);
-	const controls = createControls(camera, canvas, { target: new THREE.Vector3(2, 1, 3), minDistance: 12 });
+	// the kit's map camera ($lib/sandbox-kit/orbit.js): drag turns and tilts, right-drag slides, the wheel zooms; the
+	// keys are the world's own (they walk the player and drive the pickup); out far enough to see the whole city plot
+	const rig = createOrbitRig(camera, canvas, { target: new THREE.Vector3(2, 1, 3), minDistance: 12, maxDistance: 2700, keys: false });
+	const controls = rig.controls;
 	/** how close the orbit may come at a place: 12 m, or nearer where the place is seen close */
 	const nearest = (offset) => Math.min(12, offset.length() * 0.8);
-	controls.maxDistance = 2700; // far enough out to see the whole city plot
 	controls.maxPolarAngle = Math.PI * 0.44;
 	controls.autoRotateSpeed = 0.25;
 	let goal = null; // where the camera eases to: { target, offset }
 	let drift = true; // the slow orbit round the place; a drag stops it until the story moves on
 	controls.addEventListener('start', () => ((drift = false), (goal = null)));
-
-	const hemi = new THREE.HemisphereLight(0xeef4ff, 0x7a6b4a, 1.1);
-	scene.add(hemi);
-	const sun = new THREE.DirectionalLight(0xfff1d6, 2.2);
-	sun.castShadow = true;
-	sun.shadow.mapSize.set(2048, 2048);
-	Object.assign(sun.shadow.camera, { left: -110, right: 110, top: 110, bottom: -110, near: 1, far: 500 });
-	scene.add(sun, sun.target);
 
 	const world = new THREE.Group();
 	scene.add(world);
@@ -3310,25 +3301,55 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		}
 	}
 
-	// the sun by the virtual hour: up from 6 to 18, low and warm at the ends, a cool night with a moonlight; it
-	// follows what the camera looks at, so the shadows fall wherever the story is
+	// the kit's one sky ($lib/sandbox-kit/sky.js) on the story's own day: its hours run from sunrise at six to sunset at
+	// six (`day`), so the sun is as high at an hour of the story as it always was, low and warm at the ends, the moon and
+	// the stars at night; the haze takes the horizon's colour, and the sun's shadows (a box 220 m across) follow what the
+	// camera looks at, so they fall wherever the story is
 	/** the canvas's glow by day and at night, and the lantern's own light, as the bell tent gives them */
 	const CLOTH_DAY = new THREE.Color('#5a4c34'), CLOTH_NIGHT = new THREE.Color('#ffb36a'), LANTERN = 1.4;
 	/** the hour the world's light is at now: the moment's (a time-lapse moves it), the story's, else the game's */
 	const hourNow = () => moment?.hour ?? stage.hour ?? hour;
+	/** the low cut cold: a bluer, flatter light for its beat (on film, the shot's lights say it: ./intro.js COLD) */
+	const isCold = () => !film && !!moment?.cold;
+	const sky = createSky(renderer, scene, {
+		day: [6, 18],
+		shadowReach: 110,
+		shadowMap: 2048,
+		shadowNear: 1,
+		shadowFar: 500,
+		shadowBias: { bias: 0, normal: 0 },
+		lightDistance: 250,
+		fog: { near: 380, far: 2200 },
+		exposure: EXPOSURE,
+		onHour(l, { sun, fill, scene }) {
+			// V1's own light, where the kit's sun and moon stand: its warm sun, low and warmer at the ends and warm at night
+			// too (never the kit's blue moon), and its fill, pale from the sky and warm from the steppe, a little stronger
+			// than they were without tone mapping; and less of the blue sky's own light on everything than other worlds
+			// take, so its colours stay as they were
+			const up = Math.max(0, l.e);
+			const night = l.night;
+			sun.color.setHSL(0.1, 0.6 - up * 0.3, 0.75 + up * 0.15);
+			sun.intensity = 0.28 + up * 2.3;
+			fill.color.copy(FILL_DAY).lerp(FILL_NIGHT, night);
+			fill.groundColor.set(0x7a6b4a);
+			fill.intensity = 0.45 + up * 1.1;
+			const own = film ? FILM_SKY_LIGHT : SKY_LIGHT;
+			scene.environmentIntensity *= own.day + (own.night - own.day) * night;
+			if (!isCold()) return;
+			sun.intensity *= 0.55;
+			sun.color.setHSL(0.58, 0.25, 0.8);
+			fill.intensity *= 0.8;
+		}
+	});
+	// the players, the pickup and the van move every frame: their shadows are drawn again every frame
+	renderer.shadowMap.autoUpdate = true;
 	function light(t) {
-		const day = ((hourOf() ?? hourNow()) - 6) / 12;
-		const up = Math.sin(Math.PI * Math.min(1, Math.max(0, day)));
-		const a = Math.PI * day;
-		// the low cut cold: a bluer, flatter light for its beat (on film, the shot's lights say it: ./intro.js COLD)
-		const cold = !film && !!moment?.cold;
-		sun.target.position.copy(controls.target).setY(0);
-		sun.position.set(Math.cos(a) * 90, 8 + up * 80, -30 + Math.sin(a) * 20).add(sun.target.position);
-		sun.intensity = (0.25 + up * 2.1) * (cold ? 0.55 : 1);
-		if (cold) sun.color.setHSL(0.58, 0.25, 0.8);
-		else sun.color.setHSL(0.1, 0.6 - up * 0.3, 0.75 + up * 0.15);
-		hemi.intensity = (0.35 + up * 0.85) * (cold ? 0.8 : 1);
-		const c = new THREE.Color(0x1d2b3d).lerp(new THREE.Color(cold ? 0xb4c4d2 : 0xd8e2e2), Math.min(1, up * 1.6));
+		// set again every frame drawn: a time-lapse moves the hour, the cold beat comes and goes, and a shot scales the
+		// lights over what the hour gives them (filmHold.lights)
+		sky.set(hourOf() ?? hourNow());
+		sky.follow(controls.target.x, controls.target.z);
+		const up = Math.max(0, sky.light().e);
+		const cold = isCold();
 		// the tent glows from within once it has power, more as the light goes: its lantern turned up, the canvas warm
 		// with it (the bell tent's own night glow); and the fire in front of it lit at dusk, flickering
 		const glow = (lit ? Math.min(1, Math.max(0, (0.8 - up) / 0.55)) : 0) * (cold ? 0.35 : 1);
@@ -3345,8 +3366,6 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const burns = hearth.built >= 1 ? hearth.lit : 0;
 		hearth.hero?.tick(burns > 0.01 && fire.visible ? Math.min(0.25, Math.max(0, t - (hearth.t ?? t))) : 0);
 		hearth.t = t;
-		scene.background.copy(c);
-		scene.fog.color.copy(c);
 		// the haze keeps its distance from the camera, so the far view of the whole city still reads
 		const d = camera.position.distanceTo(controls.target);
 		scene.fog.near = Math.max(260, d * 0.75);
@@ -3456,7 +3475,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			}
 			controls.autoRotate = drift && !goal;
 			controls.autoRotateSpeed = tourOn ? 0.45 : 0.25;
-			controls.update();
+			rig.update(step);
 			if (roam && inTent) camera.position.copy(inTentAt(camera.position)); // never out through the canvas
 		}
 		// the players posed after the moment has said where they are and what they do, so a cut never shows the last
@@ -3522,7 +3541,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			for (const p of Object.values(people)) Object.assign(p.userData, { t: 0, walked: 0, last: null, joy: false, extra: null });
 			for (const o of van.userData.people) Object.assign(o.userData, { k: 0, to: 0, lift: 0 });
 			rand = random;
-			if (seed != null) rand = rng(seed);
+			if (seed != null) rand = seededRandom(seed);
 			lastT = t;
 			camera.clearViewOffset();
 			lensOut();
@@ -3535,8 +3554,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		hour: () => hourNow(),
 		/** the world's own lights a shot scales and colours over what the hour gives them (game/film/shot.js LIGHTS) */
 		lights: {
-			sun: (k, color) => ((sun.intensity *= k), color && sun.color.set(color)),
-			fill: (k, color) => ((hemi.intensity *= k), color && hemi.color.set(color)),
+			sun: (k, color) => ((sky.sun.intensity *= k), color && sky.sun.color.set(color)),
+			fill: (k, color) => ((sky.fill.intensity *= k), color && sky.fill.color.set(color)),
 			glow: (k, color) => {
 				if (pitched?.lamp) pitched.lamp.intensity *= k;
 				if (pitched?.canvas) (pitched.canvas.emissiveIntensity *= k), color && pitched.canvas.emissive.set(color);
@@ -3592,7 +3611,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			canvas.removeEventListener('pointerup', onUp);
 			window.removeEventListener('keydown', onKey);
 			window.removeEventListener('keyup', onKey);
-			controls.dispose();
+			rig.dispose();
+			sky.dispose();
 			renderer.dispose();
 		}
 	};

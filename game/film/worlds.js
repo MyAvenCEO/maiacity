@@ -45,7 +45,7 @@ export const WORLDS = {
 	// the same dome cell, its food forest grown from our plants (src/lib/sandbox-2/interior/sandbox5.js)
 	'sandbox-5': { label: 'Sandbox 4 · a dome cell grown from our plants', route: '/app/games/sandbox-5/', areas: null, domes: 13, sets: ['tired-land'], parts: [] },
 	// a valley of settlers, played by its autoplayer from the same seed: roads, carriers, workshops
-	// (src/lib/sandbox-6)
+	// (src/lib/sandbox-5)
 	'sandbox-6': { label: 'Sandbox 5 · a valley of settlers', route: '/app/games/sandbox-6/', areas: null, parts: [] },
 	// the tired land on its own: the fields, the highway, the trucks (src/lib/worlds/tired-land.ts; the same set as
 	// Sandbox 4's `tired-land`)
