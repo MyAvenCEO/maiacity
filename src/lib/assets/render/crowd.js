@@ -44,6 +44,12 @@ const loaderOf = () =>
 /** every build asked for, by its name: the one load of it */
 const loads = new Map();
 /**
+ * After how long (ms) a build that failed is forgotten, so the next view that needs it asks again: one that failed as
+ * the vault's server restarted comes once the server is back, never missing for as long as the page is open (the
+ * village's animals, 2026-10-20).
+ */
+const AGAIN_AFTER = 60_000;
+/**
  * A build of an actor, once: its ref at a detail (1: as it is).
  * @param {string} ref @param {number} detail
  */
@@ -56,6 +62,10 @@ function built(ref, detail) {
 				.then((L) => L.loadAsset(L.buildAt(label), { box: L.box() }))
 				.catch((e) => {
 					console.warn(`a crowd's ${ref} at ${detail} was not built: ${e?.message ?? e}`);
+					setTimeout(() => {
+						loads.delete(label);
+						done.delete(label);
+					}, AGAIN_AFTER);
 					return null;
 				})
 				.finally(() => done.add(label))
@@ -155,7 +165,8 @@ export function crowd(refs, counts, o) {
 		if (asked[c]) return;
 		asked[c] = true;
 		void built(refs[c], 1).then((got) => {
-			if (!got) return;
+			// asked again once the build that failed is forgotten (`AGAIN_AFTER`), by the next frame or view near it
+			if (!got) return void setTimeout(() => (asked[c] = false), AGAIN_AFTER);
 			const view = got.obj.userData.view;
 			models[c] = got.obj;
 			clips[c] = playerOf(view?.clips?.motion, view?.clips?.bones ?? []);
@@ -168,7 +179,8 @@ export function crowd(refs, counts, o) {
 		askedFar[c] = true;
 		if (o.farShape) return void farMesh(c, o.farShape(c));
 		void built(refs[c], detail).then((got) => {
-			const m = got && meshOf(got.obj);
+			if (!got) return void setTimeout(() => (askedFar[c] = false), AGAIN_AFTER);
+			const m = meshOf(got.obj);
 			if (m) farMesh(c, { geometry: m.geometry, material: m.material });
 		});
 	};

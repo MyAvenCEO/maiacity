@@ -144,6 +144,10 @@ export const KEPT_PROOFS = {
 	}
 };
 
+/** what the server, or a proxy before it, answers while it can't yet (asked too much, restarting): asked again, it may
+ *  answer */
+const PASSING = [429, 502, 503, 504];
+
 /** what a query is kept by: its anchor, its kinds and, for some entries alone, a hash of them, sorted */
 const keyOf = (vault, kinds, entries) =>
 	`${vault}/${kinds.join(',')}${entries ? `/${hashText([...entries].sort().join(',')).slice(0, 32)}` : ''}`;
@@ -151,13 +155,15 @@ const keyOf = (vault, kinds, entries) =>
 /**
  * The rows of vault `vault`'s public code of kinds `kinds`, of `entries` alone if given, that the proof at `url`
  * (`proofOf`) proves, and nothing else: { rows } or { error } (no anchor, offline, a proof that doesn't check out or
- * proves no such vault). Never throws, and never hands out a row it didn't prove. `verify` checks a proof
+ * proves no such vault), with `passing` where asking again may help, as `listedRows` says it (the network dropped it,
+ * it took too long, or the server or a proxy before it couldn't answer yet). Never throws, and never hands out a row it
+ * didn't prove. `verify` checks a proof
  * (`verifyProof`); `keep` holds what was proved by the proof's tag (`KEPT_PROOFS`), which the server answers unchanged
  * (304) or alike for a proof it already handed out, so a proof is checked once a device. `timeout` (ms) is how long
  * the proof may take, fetched and checked; a check that runs past it still keeps what it proves, for the next load.
  * @param {string} url
  * @param {{ vault?: string, kinds: string[], entries?: string[], fetch?: typeof globalThis.fetch, timeout?: number, verify?: typeof verifyProof, keep?: typeof KEPT_PROOFS }} o
- * @returns {Promise<{ rows: any[] } | { error: string }>}
+ * @returns {Promise<{ rows: any[] } | { error: string, passing?: true }>}
  */
 export async function provenRows(url, { vault = MAIA_CITY, kinds, entries, fetch: get = globalThis.fetch, timeout = 4000, verify = verifyProof, keep = KEPT_PROOFS }) {
 	if (!ID.test(String(vault))) return { error: NO_ANCHOR };
@@ -169,10 +175,17 @@ export async function provenRows(url, { vault = MAIA_CITY, kinds, entries, fetch
 		const asks = had?.tag && typeof window === 'undefined' ? { headers: { 'if-none-match': had.tag } } : {};
 		const ctl = new AbortController();
 		const t = setTimeout(() => ctl.abort(), timeout);
-		const res = await get(url, { ...asks, signal: ctl.signal }).finally(() => clearTimeout(t));
+		const res = await get(url, { ...asks, signal: ctl.signal })
+			.catch((e) => ({ dropped: e }))
+			.finally(() => clearTimeout(t));
+		// the network dropped it, or it took too long: asking again may help
+		if ('dropped' in res) {
+			const e = res.dropped;
+			return { error: e?.name === 'AbortError' ? `${url} took longer than ${timeout} ms` : `${url} could not be reached: ${e?.message || String(e)}`, passing: true };
+		}
 		const tag = res.headers?.get?.('etag') ?? '';
 		if (had && (res.status === 304 || (res.ok && tag && tag === had.tag))) return { rows: had.rows };
-		if (!res.ok) return { error: `${url} answered ${res.status}` };
+		if (!res.ok) return { error: `${url} answered ${res.status}`, ...(PASSING.includes(res.status) ? { passing: true } : {}) };
 		const proved = await verify(new Uint8Array(await res.arrayBuffer()), vault, kinds);
 		if (!Array.isArray(proved)) return { error: `the proof at ${url} proved no rows` };
 		// what avenDB's WebAssembly reads back is the anchor's alone; held to it again here all the same
@@ -187,7 +200,7 @@ export async function provenRows(url, { vault = MAIA_CITY, kinds, entries, fetch
 	const failed = (e) => ({ error: e?.name === 'AbortError' ? `${url} took longer than ${timeout} ms` : `the proof at ${url} doesn't check out: ${e?.message || String(e)}` });
 	const proving = work().catch(failed);
 	let late;
-	const timer = new Promise((ok) => (late = setTimeout(() => ok({ error: `${url} took longer than ${timeout} ms to prove` }), timeout)));
+	const timer = new Promise((ok) => (late = setTimeout(() => ok({ error: `${url} took longer than ${timeout} ms to prove`, passing: true }), timeout)));
 	return Promise.race([proving, timer]).finally(() => clearTimeout(late));
 }
 
@@ -207,7 +220,7 @@ export async function listedRows(url, { vault, fetch: get = globalThis.fetch, ti
 		const ctl = new AbortController();
 		const t = setTimeout(() => ctl.abort(), timeout);
 		const res = await get(url, { signal: ctl.signal }).finally(() => clearTimeout(t));
-		if (!res.ok) return { error: `${url} answered ${res.status}`, ...([429, 502, 503, 504].includes(res.status) ? { passing: true } : {}) };
+		if (!res.ok) return { error: `${url} answered ${res.status}`, ...(PASSING.includes(res.status) ? { passing: true } : {}) };
 		const body = await res.json();
 		const rows = Array.isArray(body) ? body : (body?.code ?? body?.entries);
 		if (!Array.isArray(rows)) return { error: `${url} answered no rows` };

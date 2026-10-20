@@ -82,7 +82,7 @@ describe('the code loader takes nothing unproven', () => {
 		const slow = (bytes) => new Promise((ok) => (done = () => ok([{ ...row, record: recordOf(holders).value }])));
 		const kept = keep();
 		const r = await loadCode({ url: AT, vault: CITY, fetch: served(json([row])).get, verify: slow, keep: kept, timeout: 20 });
-		expect(r).toEqual({ error: `${AT} took longer than 20 ms to prove` });
+		expect(r).toEqual({ error: `${AT} took longer than 20 ms to prove`, passing: true });
 		expect(codeAt('views/view-holders')).toBe(holders);
 		done();
 		await new Promise((ok) => setTimeout(ok, 5));

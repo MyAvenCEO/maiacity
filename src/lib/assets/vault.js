@@ -44,7 +44,7 @@
 import { holds } from '../../../game/hash.js';
 import { idOf, slug } from '$lib/ids.js';
 import { CODE_FEED, KEPT_PROOFS, MAIA_CITY, NO_ANCHOR, fileOf, listedRows, listingOf, proofOf, provenRows, seedFeedOf } from '../../../game/code/sources/feed.js';
-import { READ, deviceFile, deviceRows } from '../../../game/code/sources/device.js';
+import { READ, deviceFile, deviceRows, whenBrought } from '../../../game/code/sources/device.js';
 import { KEPT_NEWEST, fresh } from '../../../game/code/fresh.js';
 import { buildOf } from './builds.js';
 import * as cache from './cache.js';
@@ -373,6 +373,8 @@ function proverOf({ prove, keep, vault, pageOf = () => globalThis.location?.path
 		for (const e of entries) {
 			settle.get(e)?.(got);
 			settle.delete(e);
+			// a proof that failed is not kept: the next build that wants its entry asks again (the server may be back)
+			if ('error' in got) proofs.delete(e);
 		}
 		if (at !== null && 'source' in got) keep.put(`page:${vault}:${at}`, { batches: [...remembered(at), entries].slice(-MOST_BATCHES) });
 		flying = false;
@@ -446,16 +448,37 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 	};
 	const couldNot = (why) => failed(`the asset recipes could not be loaded from the Maia City vault: ${why}`);
 	if (!standIn && !/^[0-9a-f]{64}$/.test(String(vault))) return couldNot(NO_ANCHOR);
-	// the page's own avenDB first, its own copy of Maia City, which needs no proof
+	// the page's own avenDB first, its own copy of Maia City, which needs no proof: read at once, whatever its peers
+	// answer (local first), and read again once they brought it something new (`fresher`)
 	const local = device && !standIn ? await deviceRows(['recipe'], { vault }) : null;
 	if (local) {
 		const read = recipesOf(local, readerOf(how, true), newest, true);
-		if (Object.keys(read.index.recipes).length) return ready(read, null, String(local[0]?.vault ?? vault), 'this device');
+		if (Object.keys(read.index.recipes).length) {
+			void fresher(vault, how, newest);
+			return ready(read, null, String(local[0]?.vault ?? vault), 'this device');
+		}
 	}
-	/** @param {string[]} entries */
+	/**
+	 * The proof of `entries`, asked again as a file is (`fetched`) where the server couldn't give it yet, until `patience`
+	 * passed, the page told it waits: a world whose kinds' proof failed while avenDB's server restarted never built them,
+	 * and its shots never stood (the village's animals, 2026-10-20).
+	 * @param {string[]} entries
+	 */
 	const prove = async (entries) => {
 		const proving = { vault, kinds: ['recipe'], entries, fetch: get, timeout, keep: proofs, ...(verify ? { verify } : {}) };
-		const got = await provenRows(proofOf(['recipe'], { vault, feed, entries }), proving);
+		const at = proofOf(['recipe'], { vault, feed, entries });
+		const first = Date.now();
+		let got = await provenRows(at, proving);
+		let held = false;
+		try {
+			for (let i = 0; 'error' in got && got.passing && Date.now() - first < patience; i++) {
+				if (!held) waits(+(held = true));
+				await new Promise((r) => setTimeout(r, again[Math.min(i, again.length - 1)] ?? 0));
+				got = await provenRows(at, proving);
+			}
+		} finally {
+			if (held) waits(-1);
+		}
 		if ('error' in got) return got;
 		const read = recipesOf(got.rows, readerOf(how), newest, true);
 		for (const h of Object.keys(read.index.recipes)) hashOfRow.set(read.rowOf(h), h);
@@ -492,6 +515,22 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 	if (!Object.keys(read.index.recipes).length)
 		return failed(`the Maia City vault holds no asset recipes yet: ${url} listed ${rows.length ? `${rows.length} entries, none of them one` : 'none'}${read.refused.length ? ` (${read.refused.slice(0, 3).join('; ')})` : ''}`);
 	return ready(read, proving, String(rows[0]?.vault ?? ''), url);
+}
+
+/**
+ * The recipes read again off the page's device once its peers brought it new edits of vault `vault` (its bring, which
+ * goes on while the page reads what the device held): the builds asked for from then on read the vault as they hold it.
+ * Nothing where the page has moved on to another source meanwhile.
+ * @param {string} vault @param {Parameters<typeof readerOf>[0]} how @param {typeof KEPT_NEWEST} newest
+ */
+async function fresher(vault, how, newest) {
+	const was = source;
+	const b = await whenBrought(vault);
+	if (!b?.ok?.new || source !== was) return;
+	const rows = await deviceRows(['recipe'], { vault });
+	if (!rows || source !== was) return;
+	const read = recipesOf(rows, readerOf(how, true), newest, true);
+	if (Object.keys(read.index.recipes).length) ready(read, null, String(rows[0]?.vault ?? vault), 'this device');
 }
 
 /**

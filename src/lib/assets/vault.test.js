@@ -599,7 +599,7 @@ test("nothing is built, from the box or this device's cache, that Maia City's si
 	expect((await thrown(() => loadAsset(name, { box, store })))?.message).toContain("refused, Maia City's signed edits don't hold recipe");
 	// a proof that fails, or the rows as the feed lists them, which avenDB's own WebAssembly takes for no proof: every
 	// build waiting on it is refused, saying why, and the index stays
-	const down = await loaded({ proving: 503 });
+	const down = await loaded({ proving: 503, patience: 0 });
 	expect(down.r.phase).toBe('ready');
 	expect((await thrown(() => loadAsset(name, { box, store })))?.message).toBe(`${vault.nameOf(LABEL[tent])}: not built, as its proof didn't check out: ${proofAt([lie.entry])} answered 503`);
 	await loaded({ verify: verifyProof });
@@ -611,6 +611,33 @@ test("nothing is built, from the box or this device's cache, that Maia City's si
 	await loaded();
 	expect((await loadAsset(name, { box, store })).from).toBe('cache');
 }, 60000);
+
+test("a proof the server can't give yet (restarting) is asked again, the page told it waits; one that failed is asked again by the next build", async () => {
+	// avenDB's server restarting for a deploy (the village's animals, 2026-10-20): the proxy's 502 twice, then the proof
+	const f = feedOf();
+	let down = 2;
+	const waited = [];
+	const stop = vault.watchRecipes((r) => waited.push(r.waiting));
+	const get = async (url, o) => (url.includes('/feed/proof') && down-- > 0 ? new Response('bad gateway', { status: 502 }) : f.get(url, o));
+	try {
+		await vault.loadRecipes({ feed: AT, fetch: get, timeout: 1000, again: [0], ...PROVING, proofs: keepOf() });
+		const apple = LABEL['plants/apple@2'];
+		expect((await vault.recipeAt(apple)).code).toBe(FILES[apple]);
+		expect(down).toBe(-1);
+		expect(waited).toContain(1);
+	} finally {
+		stop();
+	}
+	// asked for no longer than the page's patience: refused, saying why, and not kept, so the next build asks again
+	const g = feedOf();
+	let off = 1;
+	const once = async (url, o) => (url.includes('/feed/proof') && off-- > 0 ? new Response('bad gateway', { status: 502 }) : g.get(url, o));
+	await vault.loadRecipes({ feed: AT, fetch: once, timeout: 1000, again: [0], patience: 0, ...PROVING, proofs: keepOf() });
+	const tent = LABEL['things/bell-tent@1'];
+	expect((await thrown(() => vault.recipeAt(tent)))?.message).toMatch(/answered 502$/);
+	expect((await vault.recipeAt(tent)).code).toBe(FILES[tent]);
+	expect(g.proofs().length).toBe(1);
+});
 
 test('a page loaded again asks for the proofs it asked for before at once, by their tags: not modified, nothing checked', async () => {
 	const proofs = keepOf();

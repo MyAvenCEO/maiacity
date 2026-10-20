@@ -180,7 +180,7 @@ describe('loading', () => {
 	});
 	test('no feed, or no network: the seed stays, and nothing throws', async () => {
 		expect(await load(proof([], { status: 404 }))).toEqual({ error: `${AT} answered 404` });
-		expect(await load({ get: async () => { throw new Error('offline'); } })).toEqual({ error: `the proof at ${AT} doesn't check out: offline` });
+		expect(await load({ get: async () => { throw new Error('offline'); } })).toEqual({ error: `${AT} could not be reached: offline`, passing: true });
 		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
 	});
 	test('an empty vault (one reset and not seeded yet): the seed runs', async () => {
@@ -226,12 +226,50 @@ describe('loading', () => {
 			expect(await load(f)).toEqual({ taken: ['views/coop-chart'], refused: [] });
 			useDevice({ run: () => new Promise(() => {}), read: async () => new Uint8Array() });
 			const { deviceRows } = await import('../../../game/code/sources/device.js');
-			expect(await deviceRows(['view'], { vault: VAULT, wait: 20 })).toBe(null);
+			expect(await deviceRows(['view'], { vault: VAULT, wait: 20, answer: 20 })).toBe(null);
 			// and asked not to read the device, it reads the feed
 			useDevice({ run: async (op) => (op.op === 'bring' ? brought : { ok: rows }), read: async () => new Uint8Array() });
 			expect(await load(f, { device: false })).toEqual({ taken: ['views/coop-chart'], refused: [] });
 		} finally {
 			useDevice(null);
+		}
+	});
+	test('local first: a device that holds Maia City is read at once, though its peers never answer; a frame of ours reads its parent page\'s device', async () => {
+		const { deviceRows, useDevice, whenBrought } = await import('../../../game/code/sources/device.js');
+		const rows = rowsOf([ENTRIES['views/view-holders']]);
+		// avenDB's server hanging (restarting for a deploy, 2026-10-20): the bring never answers
+		const hanging = { run: async (op) => (op.op === 'bring' ? new Promise(() => {}) : { ok: rows }), read: async () => new Uint8Array() };
+		useDevice(hanging);
+		try {
+			const f = proof(rowsOf([ENTRIES['views/coop-chart']]));
+			const t = Date.now();
+			expect(await load(f)).toEqual({ taken: ['views/view-holders'], refused: [] });
+			expect(Date.now() - t).toBeLessThan(1000);
+			expect(f.asked).toEqual([]);
+			// one that holds none of it yet waits for its bring, and reads the feed where it doesn't come
+			useDevice({ run: async (op) => (op.op === 'bring' ? new Promise(() => {}) : { ok: [] }), read: async () => new Uint8Array() });
+			expect(await deviceRows(['view'], { vault: VAULT, wait: 20 })).toBe(null);
+		} finally {
+			useDevice(null);
+		}
+		// a page framed by one of ours that holds its device open: the parent's, read as its own
+		const SHARED = Symbol.for('maiacity.avendb.device');
+		const had = globalThis.window;
+		const brought = { ok: { new: 2, peers: 1, reached: true } };
+		const parent = { [SHARED]: { run: async (op) => (op.op === 'bring' ? brought : { ok: rows }), read: async () => new Uint8Array() } };
+		globalThis.window = { parent };
+		try {
+			expect(await deviceRows(['view'], { vault: VAULT })).toEqual(rows);
+			expect(await whenBrought(VAULT)).toEqual(brought);
+			// a parent of another origin: none, the feed
+			globalThis.window = {
+				get parent() {
+					return new Proxy({}, { get: () => { throw new DOMException('Blocked a frame', 'SecurityError'); } });
+				}
+			};
+			expect(await deviceRows(['view'], { vault: VAULT })).toBe(null);
+		} finally {
+			globalThis.window = had;
 		}
 	});
 });
