@@ -6,7 +6,8 @@
 #   avendb/scripts/build-web.sh
 #
 # Needs the wasm32 target (rustup target add wasm32-unknown-unknown) and the wasm-bindgen CLI of the version
-# avendb-browser pins (cargo install wasm-bindgen-cli --version 0.2.129).
+# avendb-browser pins (cargo install wasm-bindgen-cli --version 0.2.129); binaryen's wasm-opt, if installed, optimizes
+# what it writes.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -22,6 +23,11 @@ cargo build -p avendb-browser --target wasm32-unknown-unknown --release
 device=../src/lib/avendb/device
 rm -rf "$device"
 wasm-bindgen --target web --no-typescript --out-dir "$device" "${CARGO_TARGET_DIR:-target}/wasm32-unknown-unknown/release/avendb_browser.wasm"
+# smaller and quicker where binaryen's wasm-opt is installed (the features Rust's wasm32 target uses, which it reads
+# from the module itself); left as wasm-bindgen wrote it where it isn't
+if command -v wasm-opt >/dev/null 2>&1; then
+	wasm-opt -O "$device/avendb_browser_bg.wasm" -o "$device/avendb_browser_bg.wasm"
+fi
 modules=crates/avendb-browser/js
 for js in "$device/avendb_browser.js" "$modules/passkey.js" "$modules/store.js" "$modules/store.worker.js"; do
 	{ printf '// @ts-nocheck: written by avendb/scripts/build-web.sh from avenDB\n'; cat "$js"; } > "$js.new"
