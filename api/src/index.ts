@@ -12,6 +12,7 @@ import { fromBunSql, useDb } from "./pg";
 import { assignRole, can, capabilities, createRole, deleteRole, initRoles, listRoles, RoleError, setRoleCaps } from "./acl";
 import { CAPABILITIES } from "./caps";
 import { addIdea, deleteIdea, IdeaError, listIdeas, updateIdea } from "./ideas";
+import { listTables, readTable, TableError } from "./tables";
 import { approveDevice, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
 import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice, VaultError } from "./vault";
 import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } from "./analysis";
@@ -103,7 +104,7 @@ async function signedIn(req: Request): Promise<{ id: string; role: string } | Re
 
 /** Turn a thrown ledger, role or notebook error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof RoleError || e instanceof IdeaError || e instanceof KeyError || e instanceof VaultError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof RoleError || e instanceof IdeaError || e instanceof TableError || e instanceof KeyError || e instanceof VaultError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -363,6 +364,29 @@ const server = Bun.serve({
         try {
           await deleteIdea(req.params.id);
           return new Response(null, { status: 204, headers: cors(req) });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+
+    // The admin's window into this Postgres, read only: every table and its rows, secrets hidden (tables.ts).
+    "/api/tables": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "db:read");
+        if (me instanceof Response) return me;
+        return json(req, await listTables());
+      },
+    },
+    "/api/tables/:name": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await allowed(req, "db:read");
+        if (me instanceof Response) return me;
+        const q = new URL(req.url).searchParams;
+        try {
+          return json(req, await readTable(req.params.name, Number(q.get("offset") ?? 0), Number(q.get("limit") ?? 50)));
         } catch (e) {
           return fail(req, e);
         }
