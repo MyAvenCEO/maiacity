@@ -11,7 +11,7 @@
  *
  * Switching it on (C10 of the code architecture plan, the Maia City COOP's vault) is the one change here: `recipeAt`
  * reads the vault's `recipe` entry (`recipeEntryOf` below) for that group and id at that version, holds its file, the
- * recipe's source, to the hash its card names and its engine to ../engines.json, and hands back what ../recipes.js
+ * recipe's source, to the hash its card names and its engine to the frozen box engines (src/lib/sandbox/engines.json), and hands back what ../recipes.js
  * `recipeAt` hands back for a repo recipe, `{ hash, code }`. The box, the checks after it and the device's cache stay
  * as they are.
  *
@@ -216,7 +216,7 @@ const UTF8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 /**
  * One row the vault hands out as a recipe of the index, or why not: a `recipe` entry whose card fits its schema and
- * names its recipe, made for one of the frozen box engines (../engines.json, by its hash), the one it then builds on
+ * names its recipe, made for one of the frozen box engines (kind `box` of src/lib/sandbox/engines.json, by its hash), the one it then builds on
  * (../load.js `engineOf`): code runs on the engine it names (H4). Its file is not read here: only when a build needs
  * it. An asset is its entry, and its versions are the entry's own (Samuel 2026-10-18 and 10-19: avenDB's ids, not
  * refs): its tags are not read, so a version accepted onto its main line, or proposed on a line of it, counts with no

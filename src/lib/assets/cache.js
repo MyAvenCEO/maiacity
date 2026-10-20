@@ -14,7 +14,7 @@
  *
  *   key = BLAKE3 in its key-derivation mode, context CONTEXT, of [engine, recipe, values]
  *
- * engine: the frozen engine's hash (./engines.json), recipe: the recipe file's hash (./recipes.js), values: what it is
+ * engine: the frozen engine's hash (src/lib/sandbox/engines.json), recipe: the recipe file's hash (./recipes.js), values: what it is
  * built with, sorted (`seed=maia&stage=9`). The same recipe with the same values on the same engine is the same build,
  * so it is kept once; a recipe changed is another hash, so another build, and the old ones fade out by LIMIT.
  *

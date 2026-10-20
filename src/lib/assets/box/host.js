@@ -1,12 +1,12 @@
 // @ts-nocheck — plain JS
-import { LATEST, engineAt, enginePath } from '../engines.js';
-import { Shell, TIMEOUT, frozen } from '../../sandbox/frame.js';
+import { LATEST, engineAt } from '../engines.js';
+import { Shell, TIMEOUT, engineCode as frozenCode } from '../../sandbox/frame.js';
 /*
  * THE ASSET BOX — where an asset's builder runs when we cannot trust it: the shell (../../sandbox/frame.js, a worker
  * inside a frame with no origin, the same for every host of code we cannot trust) running the asset engine.
  *
  * - The worker is a frozen engine (./engine.js, static/engines/engine-v<n>.js), its bytes checked against its BLAKE3
- *   hash (../engines.json) before it starts, and handed in whole: the box can load nothing. Each build hands it its
+ *   hash (src/lib/sandbox/engines.json, kind box) before it starts, and handed in whole: the box can load nothing. Each build hands it its
  *   recipe as code (../recipes.js), which the page checked against the recipe's hash as well.
  * - Each recipe runs in a worker of its own (a room of the shell, ../../sandbox/frame.js), one that no other recipe's
  *   code ever ran in: a recipe sees only its own jobs, and the shell takes an answer only from the room its job was
@@ -26,23 +26,14 @@ export { TIMEOUT };
  *  it, is always kept) */
 export const ROOMS = 4;
 
-/** each engine's code as it was fetched and checked, once for every box of the page that runs it */
-const codes = new Map();
-
 /**
- * A frozen engine's code, its bytes checked against its hash (once a page: the boxes that run it share the checked
- * text). @param {number} v
+ * A frozen box engine's code, its bytes checked against its hash (once a page: the boxes that run it share the checked
+ * text, ../../sandbox/frame.js `engineCode`). @param {number} v
  * @returns {Promise<string>}
  */
 export function engineCode(v) {
 	if (!engineAt(v)) return Promise.reject(new Error(`no engine ${v}`));
-	if (!codes.has(v)) {
-		const code = frozen(enginePath(v), engineAt(v).blake3, `engine ${v}`);
-		codes.set(v, code);
-		// (a fetch that failed is tried again by the next box)
-		code.catch(() => codes.delete(v));
-	}
-	return codes.get(v);
+	return frozenCode('box', v);
 }
 
 export class AssetBox extends Shell {

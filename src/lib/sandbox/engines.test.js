@@ -1,5 +1,6 @@
 // @ts-nocheck — plain JS
-// Every kernel engine (./engines.json: logic, view, view-worker and the libraries a draw script may use) is frozen:
+// Every kernel engine (./engines.json, one list: the asset box's, logic, view, view-worker and the libraries a draw
+// script may use) is frozen:
 // each version's file is the bytes its BLAKE3 hash names, and the source as it is now is the latest version, so a
 // change to what runs untrusted code never ships without a new, reviewed version. A page refuses an engine whose
 // bytes are not the ones named, and no source anywhere loads code from a CDN. Code runs on the engine it names, never
@@ -7,19 +8,25 @@
 // Run: bun test src/lib/sandbox/engines.test.js
 import { describe, expect, mock, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
-import { FLOOR, WORKERS, engineFor, enginesOf, latestOf, workerFor } from './engines.js';
-import { SOURCES, bundleKernel, hashText, versionOf } from './bundle.js';
+import MANIFEST from './engines.json' with { type: 'json' };
+import { FLOOR, WORKERS, engineFor, enginesOf, isFrozen, latestOf, pathOf, workerFor } from './engines.js';
+import { SOURCES, bundleOf, hashText, versionOf } from './bundle.js';
 
 const ROOT = new URL('../../../', import.meta.url).pathname;
 
-for (const kind of Object.keys(SOURCES))
+test('the one list holds every kind the kernel bundles, the box\'s among them, and nothing else', () => {
+	expect(Object.keys(MANIFEST).sort()).toEqual(['box', ...Object.keys(SOURCES)].sort());
+});
+
+for (const kind of Object.keys(MANIFEST))
 	describe(`the ${kind} engine is frozen`, () => {
 		test('every version: its file is the bytes its hash names, versions in order', () => {
 			const list = enginesOf(kind);
 			expect(list.length).toBeGreaterThan(0);
 			list.forEach((e, i) => {
 				expect(e.v).toBe(i + 1);
-				const bytes = readFileSync(`${ROOT}static/engines/${kind}-v${e.v}.js`);
+				const bytes = readFileSync(`${ROOT}static${pathOf(kind, e.v)}`);
+				expect(isFrozen(kind, e.v, e.blake3)).toBe(true);
 				expect(bytes.length).toBe(e.bytes);
 				expect(hashText(bytes.toString('utf8'))).toBe(e.blake3);
 				expect(e.note.length).toBeGreaterThan(10);
@@ -27,10 +34,12 @@ for (const kind of Object.keys(SOURCES))
 		});
 		test(`the source as it is now is the latest version (else: node scripts/freeze-engine.mjs --${kind} "…")`, async () => {
 			const latest = latestOf(kind);
-			const now = hashText(await bundleKernel(kind));
+			const { code, carries } = await bundleOf(kind);
+			const now = hashText(code);
 			if (now !== latest.blake3) throw new Error(`the ${kind} engine's source changed since v${latest.v} was frozen: freeze v${latest.v + 1}, or undo the change`);
 			const version = versionOf(kind);
 			if (version && kind !== 'logic') expect(latest.version).toBe(version);
+			if (kind === 'box') expect(carries.modules).toEqual(latest.modules);
 		}, 120000);
 	});
 

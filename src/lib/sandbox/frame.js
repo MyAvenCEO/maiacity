@@ -1,6 +1,7 @@
 // @ts-nocheck — plain JS
 import { base } from '$app/paths';
 import { hashBytes } from '../../../game/hash.js';
+import { enginesOf, latestOf, pathOf } from './engines.js';
 import { DENY, SANDBOX, SHELL_SCRIPT } from './policy.js';
 /*
  * THE SHELL — where code we cannot trust runs in a page: a worker inside a frame with no origin. One shell for every
@@ -50,6 +51,25 @@ export async function frozen(path, hash, what) {
 	const named = hashBytes(bytes);
 	if (named !== hash) throw new Error(`refused: ${what} hashes to ${named.slice(0, 12)}…, not ${hash.slice(0, 12)}…`);
 	return new TextDecoder().decode(bytes);
+}
+
+/** each frozen engine's code as it was fetched and checked, by kind and version: once a page, for every host */
+const engines = new Map();
+
+/**
+ * Frozen engine `v` of `kind` (the latest where none is given: ./engines.js), its bytes checked against its hash
+ * (`frozen`), fetched once a page; a fetch that failed is tried again by the next ask.
+ * @param {string} kind @param {number} [v] @returns {Promise<string>}
+ */
+export function engineCode(kind, v = latestOf(kind)?.v) {
+	const k = `${kind}-v${v}`;
+	if (!engines.has(k)) {
+		const e = enginesOf(kind).find((x) => x.v === v);
+		const got = e ? frozen(pathOf(kind, e.v), e.blake3, `${kind} engine ${e.v}`) : Promise.reject(new Error(`no ${kind} engine ${v} is frozen`));
+		got.catch(() => engines.delete(k));
+		engines.set(k, got);
+	}
+	return engines.get(k);
 }
 
 /** how long a job may take before the shell is torn down (ms) */

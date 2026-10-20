@@ -16,8 +16,8 @@
  */
 import { LIBS } from '../../../game/genui/views.js';
 import { fromA2ui } from './view/a2ui.js';
-import { enginesOf, latestOf, pathOf, workerFor } from './engines.js';
-import { frozen } from './frame.js';
+import { workerFor } from './engines.js';
+import { engineCode } from './frame.js';
 import { VIEW_SCRIPT } from './policy.js';
 
 /**
@@ -49,21 +49,8 @@ export function viewOfCard(c, height = 400) {
 /** whether a view's HTML carries a script of its own (its draw script, run in the frame's worker) */
 export const hasScript = (html) => /<script[\s>]/i.test(String(html ?? ''));
 
-const engines = new Map();
-/**
- * frozen engine `v` of `kind` (the latest where none is given), its bytes checked against its hash (once a page)
- * @param {string} kind @param {number} [v]
- */
-export function engineCode(kind, v = latestOf(kind)?.v) {
-	const k = `${kind}-v${v}`;
-	if (!engines.has(k)) {
-		const e = enginesOf(kind).find((x) => x.v === v);
-		const got = e ? frozen(pathOf(kind, e.v), e.blake3, `${kind} engine ${e.v}`) : Promise.reject(new Error(`no ${kind} engine ${v} is frozen`));
-		got.catch(() => engines.delete(k));
-		engines.set(k, got);
-	}
-	return engines.get(k);
-}
+/** frozen engine `v` of `kind`, checked (./frame.js, one loader for every host) */
+export { engineCode };
 
 /**
  * what the frame needs for a view with a draw script: the view worker view engine `engine` starts it in, and the

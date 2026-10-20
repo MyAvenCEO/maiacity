@@ -31,7 +31,7 @@ import { checkCode } from '../check.js';
 import { ENTRIES as SEED } from '../../../code/index.js';
 import { CODE_FEED, MAIA_CITY, proofOf, provenRows } from './feed.js';
 import { deviceRows } from './device.js';
-import ENGINES from '../../../src/lib/sandbox/engines.json' with { type: 'json' };
+import { isFrozen, latestOf } from '../../engines.js';
 
 /** the kinds of code entry this source carries, and the host each runs in */
 const HOSTS = { view: 'view', logic: 'logic' };
@@ -51,7 +51,7 @@ export const hashOf = hashText;
 const tagged = (tags, key) => (tags ?? []).find((t) => typeof t === 'string' && t.startsWith(`${key}:`))?.slice(key.length + 1);
 const textOf = (v) => (v == null ? undefined : typeof v === 'string' ? v : jsonFile(v));
 const objectOf = (text) => (text == null ? undefined : JSON.parse(text));
-const shipped = (host, e) => (ENGINES[host] ?? []).some((x) => x.v === e?.version && x.blake3 === e?.hash);
+const shipped = (host, e) => isFrozen(host, e?.version, e?.hash);
 
 /**
  * A repo entry as the record, type and tags the vault keeps it under: { type, tags, value }, value a code entry of
@@ -64,7 +64,7 @@ export function recordOf(e) {
 	}
 	const host = HOSTS[e.type];
 	if (!host) throw new Error(`${e.ref}: only views and logic modules are code entries, not ${e.type}`);
-	const latest = (ENGINES[host] ?? []).at(-1);
+	const latest = latestOf(host);
 	const tags = [`ref:${e.ref}`, ...(e.for && e.for !== 'genui' ? [`game:${e.for}`] : []), ...(e.hash ? [`legacy:${e.hash}`] : [])];
 	const base = { kind: e.type, title: e.title ?? '', note: e.note ?? '', engine: { host, version: latest.v, hash: latest.blake3 } };
 	if (e.type === 'logic') return { type: 'logic', tags, value: { ...base, source: e.files['logic.js'] ?? '', manifest: { hooks: e.hooks ?? [] } } };

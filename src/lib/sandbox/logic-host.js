@@ -14,7 +14,7 @@
  *   load(units, { seed?, now?, engine? })                        code kept loaded: { units, call(i, kind, name, json), end() }
  */
 import { open, quickjs } from './logic.js';
-import { engineFor, pathOf } from './engines.js';
+import { engineFor } from './engines.js';
 
 /** how long one job may hold the shell before it is torn down (ms): far past the core's own limits */
 const TIMEOUT = 10000;
@@ -29,7 +29,7 @@ async function shellOf(named) {
 	const e = engineFor('logic', named);
 	if (!e) throw new Error(notFrozen(named));
 	if (!shells.has(e.v)) {
-		const started = import('./frame.js').then(({ Shell, frozen }) => new Shell({ code: () => frozen(pathOf('logic', e.v), e.blake3, `logic engine ${e.v}`), wasm: true, timeout: TIMEOUT }));
+		const started = import('./frame.js').then(({ Shell, engineCode }) => new Shell({ code: () => engineCode('logic', e.v), wasm: true, timeout: TIMEOUT }));
 		started.catch(() => shells.delete(e.v));
 		shells.set(e.v, started);
 	}
