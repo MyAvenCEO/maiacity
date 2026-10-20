@@ -1090,4 +1090,13 @@ export const MIGRATIONS: Migration[] = [
         AND role <> 'admin';
     `,
   },
+  {
+    // The old iroh media vault's catalog, its devices and its node's settings (#1112, Samuel 2026-10-20 14:06: "Keep
+    // the files", delete these once the archive is in): every row is in the full dump in ARCHIVE/old-vault/, and its
+    // files stay in the bucket's LIBRARY/. Nothing reads them since its server retired (#1116).
+    id: "0058-drop-old-vault-tables",
+    sql: `
+      DROP TABLE IF EXISTS vault_files, vault_devices, vault_config CASCADE;
+    `,
+  },
 ];
