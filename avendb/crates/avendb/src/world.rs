@@ -1309,7 +1309,7 @@ pub fn gives(lab: &Lab, me: SignerId, share: ShareId, ops: &[rules::Op]) -> bool
     use rules::Op;
     let widest = |o: &Op| match o {
         Op::Create { .. } => Op::Create { on: None },
-        Op::Set { .. } => Op::Set { path: vec![], to: None, on: None },
+        Op::Set { .. } | Op::SetOwn { .. } => Op::Set { path: vec![], to: None, on: None },
         Op::Insert { .. } => Op::Insert { path: vec![], on: None },
         Op::Remove { .. } => Op::Remove { path: vec![], on: None },
         Op::Move { .. } => Op::Move { path: vec![], on: None },

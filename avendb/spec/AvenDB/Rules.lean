@@ -122,9 +122,9 @@ def memberOps : List Op :=
   let reply := msg ++ [.field "thread", .any]
   let own (p : List Step) : List Op :=
     ["text", "edited", "deleted", "mentions", "links"].map fun f => .setOwn (p ++ [.field f]) none (some .main)
-  [.read, .insert [.field "messages"] (some .main)] ++ own msg ++ own reply ++
+  [.read] ++ own msg ++ own reply ++
     [msg ++ [.field "reactions", .any, .field "deleted"], reply ++ [.field "reactions", .any, .field "deleted"]].map
-      fun p => .setOwn p none (some .main)
+      (fun p => .setOwn p none (some .main)) ++ [.insert [.field "messages"] (some .main)]
 
 def groups : List Group := [
   ⟨"Owner", Level.owner.ops, false⟩,

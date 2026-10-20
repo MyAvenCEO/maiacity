@@ -42,6 +42,7 @@ use avendb::gate;
 use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient, Seal};
 use avendb::lens::{example, View};
+use avendb::ops::Loc;
 use avendb::policy::{
     history, mk_audience, replay, tips, Action, Creation, Edit, KeepMode, Kind, Level, Line, Principal, Proposal,
     Readings, Refusal, Revoking, Setting, Share, Sharing, State, Vault, Who,
@@ -495,6 +496,9 @@ impl Names {
                 }
                 let touches = x.get("touches").map_or(&[][..], list).iter().map(|t| Touch::of_json(t).unwrap());
                 self.readings.touches.insert(id, touches.collect());
+                if let Some(xs) = x.get("adds") {
+                    self.readings.adds.insert(id, list(xs).iter().map(|l| Loc::of_json(l).unwrap()).collect());
+                }
                 if x.get("fits") == Some(&Value::Bool(false)) {
                     self.readings.unfit.insert(id);
                 }

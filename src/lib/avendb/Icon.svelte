@@ -7,6 +7,7 @@
 	let { name, size = 16 } = $props();
 
 	const PATHS = /** @type {const} */ ({
+		chat: ['M7.9 20A9 9 0 1 0 4 16.1L2 22Z'],
 		note: ['M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z', 'M14 2v4a2 2 0 0 0 2 2h4', 'M10 9H8', 'M16 13H8', 'M16 17H8'],
 		todo: ['m3 17 2 2 4-4', 'm3 7 2 2 4-4', 'M13 6h8', 'M13 12h8', 'M13 18h8'],
 		article: [

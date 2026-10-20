@@ -21,6 +21,7 @@
 //! {"op": "relay" | "backup" | "read" | "propose" | "share"}
 //! {"op": "create", "on": On?}                                create entries; on proposals: drafts alone
 //! {"op": "set", "path": Pattern, "to": [v]?, "on": On?}     any change at or under the path; to: only to these values
+//! {"op": "set", "own": true, ...}                           the same, of what is the writer's own alone (`Touch::Own`)
 //! {"op": "insert" | "remove" | "move", "path": Pattern?, "on": On?}   rows of a list of records
 //! {"op": "tag", "tags": [tag]?}                              ask for these tags, added or removed; left out: any
 //! {"op": "merge", "on": On?, "path": Pattern?}              a line whose changes all lie at or under the path; left out: any
@@ -79,10 +80,13 @@ pub enum Scalar {
 /// added, deleted or moved, the list named by its place, at any depth (what a write does inside a row it adds is part
 /// of adding it); the entry created; a tag asked for, added or removed; a proposal started; another line merged in,
 /// and each place where the writes it brings in changed the record (`Merged`, `history::History::reading`). An op a
-/// reader can't place touches the whole record (`Loc::root`).
+/// reader can't place touches the whole record (`Loc::root`). A set at a place that is the writer's own, inside a row
+/// its vault's counted writes added and no one else's, or in no row of an entry it created, is `Own`: readers mark it
+/// so as they count the entry's writes (`policy::Mine`), never the writer.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Touch {
     Set(Loc, Option<Scalar>),
+    Own(Loc, Option<Scalar>),
     Insert(Loc),
     Remove(Loc),
     Move(Loc),
@@ -96,7 +100,8 @@ pub enum Touch {
 /// An op a share names, in the order shares list them (`normalize`): `Relay`, `Backup` and `Read` its slice's edits;
 /// `Create` entries, on the lines `on` names: on main a plain creation, on proposals a draft, which starts its own line
 /// and lands only as its vault merges it (`policy::Proposal::New`, `history::History::landed`); `Set` any change at or
-/// under `path` (only to the values `to`, if it lists them), `Insert`,
+/// under `path` (only to the values `to`, if it lists them), `SetOwn` the same of what is the writer's own alone
+/// (`Touch::Own`), `Insert`,
 /// `Remove` or `Move` the rows of a list, `Merge` another line whose changes since their base all lie at or under
 /// `path` (anywhere, for `[]`), each on the lines `on` names (either, if none); ask for the tags `Tag` lists (any, if
 /// none); `Propose`; and `Share`, issue shares resting on it. A share with `Share` is an
@@ -108,6 +113,7 @@ pub enum Op {
     Read,
     Create { on: Option<On> },
     Set { path: Vec<Step>, to: Option<Vec<Scalar>>, on: Option<On> },
+    SetOwn { path: Vec<Step>, to: Option<Vec<Scalar>>, on: Option<On> },
     Insert { path: Vec<Step>, on: Option<On> },
     Remove { path: Vec<Step>, on: Option<On> },
     Move { path: Vec<Step>, on: Option<On> },
@@ -253,20 +259,22 @@ impl Op {
             Op::Read => 2,
             Op::Create { .. } => 3,
             Op::Set { .. } => 4,
-            Op::Insert { .. } => 5,
-            Op::Remove { .. } => 6,
-            Op::Move { .. } => 7,
-            Op::Tag(_) => 8,
-            Op::Propose => 9,
-            Op::Merge { .. } => 10,
-            Op::Share => 11,
+            Op::SetOwn { .. } => 5,
+            Op::Insert { .. } => 6,
+            Op::Remove { .. } => 7,
+            Op::Move { .. } => 8,
+            Op::Tag(_) => 9,
+            Op::Propose => 10,
+            Op::Merge { .. } => 11,
+            Op::Share => 12,
         }
     }
 
     /// The op allows touch `t` of a write on the main line (`main`) or on a proposal.
     pub fn allows(&self, main: bool, t: &Touch) -> bool {
         match (self, t) {
-            (Op::Set { path, to, on }, Touch::Set(l, v)) => {
+            (Op::Set { path, to, on }, Touch::Set(l, v) | Touch::Own(l, v))
+            | (Op::SetOwn { path, to, on }, Touch::Own(l, v)) => {
                 on_line(main, *on)
                     && reaches(path, &steps(l))
                     && match (to, v) {
@@ -290,8 +298,11 @@ impl Op {
     pub fn to_json(&self) -> Value {
         let path = |p: &[Step]| Value::Array(p.iter().map(Step::to_json).collect());
         let mut out = match self {
-            Op::Set { path: p, to, .. } => {
+            Op::Set { path: p, to, .. } | Op::SetOwn { path: p, to, .. } => {
                 let mut o = json!({ "op": "set", "path": path(p) });
+                if matches!(self, Op::SetOwn { .. }) {
+                    o["own"] = true.into();
+                }
                 if let Some(vs) = to {
                     o["to"] = vs.iter().map(Scalar::to_json).collect();
                 }
@@ -315,6 +326,7 @@ impl Op {
         };
         if let Op::Create { on: Some(on) }
         | Op::Set { on: Some(on), .. }
+        | Op::SetOwn { on: Some(on), .. }
         | Op::Insert { on: Some(on), .. }
         | Op::Remove { on: Some(on), .. }
         | Op::Move { on: Some(on), .. }
@@ -333,7 +345,7 @@ impl Op {
         let o = v.as_object().ok_or("an op is an object")?;
         let name = o.get("op").and_then(Value::as_str).ok_or("an op names itself: \"op\"")?;
         let fields: &[&str] = match name {
-            "set" => &["op", "path", "to", "on"],
+            "set" => &["op", "path", "to", "on", "own"],
             "insert" | "remove" | "move" => &["op", "path", "on"],
             "merge" => &["op", "on", "path"],
             "tag" => &["op", "tags"],
@@ -377,7 +389,11 @@ impl Op {
                         ));
                     }
                 };
-                Op::Set { path: path(true)?, to, on }
+                match o.get("own") {
+                    None | Some(Value::Bool(false)) => Op::Set { path: path(true)?, to, on },
+                    Some(Value::Bool(true)) => Op::SetOwn { path: path(true)?, to, on },
+                    Some(x) => return Err(format!("own is true or false, not {x}")),
+                }
             }
             "insert" => Op::Insert { path: path(false)?, on },
             "remove" => Op::Remove { path: path(false)?, on },
@@ -455,11 +471,35 @@ pub fn groups() -> Vec<Group> {
         level(Level::Owner, "Reads, edits and shares it on"),
         level(Level::Write, "Reads and edits it"),
         g("Suggester", "Reads it, suggests changes and new entries to merge", suggester, false),
+        g("Member", "Reads the room, posts, replies and reacts, edits their own", member(), false),
         level(Level::Read, "Reads it"),
         g("Public", "Everyone reads it", Level::Read.ops(), true),
         level(Level::Backup, "Keeps it encrypted, reads nothing"),
         level(Level::Relay, "Finds its devices, keeps nothing"),
     ]
+}
+
+/// The ops of Member, the group a room gives the people in it (`Rules.lean`'s `memberOps`): a room is an entry of type
+/// `room`, its messages the rows of its `messages`, a thread's replies the rows of a message's `thread`, its reactions
+/// the rows of a message's `reactions`. Read the room; add a message, a reply or a reaction, on the main line, at any
+/// depth under the messages; and of what is its own alone, change a message's or a reply's text, mark it edited or
+/// deleted, change whom it mentions and what it links, and take back a reaction (mark it deleted). Nothing of the
+/// room's own fields, no row moved or removed, no tag, no proposal, no share.
+pub fn member() -> Vec<Op> {
+    let f = |s: &str| Step::Field(s.into());
+    let msg = vec![f("messages"), Step::Any];
+    let reply = [msg.clone(), vec![f("thread"), Step::Any]].concat();
+    let main = Some(On::Main);
+    let own = |p: &[Step], tail: &[Step]| Op::SetOwn { path: [p, tail].concat(), to: None, on: main };
+    let mut ops = vec![Op::Read];
+    for p in [&msg, &reply] {
+        ops.extend(["text", "edited", "deleted", "mentions", "links"].map(|x| own(p, &[f(x)])));
+    }
+    for p in [&msg, &reply] {
+        ops.push(own(p, &[f("reactions"), Step::Any, f("deleted")]));
+    }
+    ops.push(Op::Insert { path: vec![f("messages")], on: main });
+    ops
 }
 
 /// The ops a Suggester's share named before drafts, read, write on proposals, start them and merge between them: such a
@@ -638,7 +678,8 @@ pub fn asked(d: &TagDelta) -> impl Iterator<Item = Touch> + '_ {
 }
 
 impl Touch {
-    /// `{"set": path, "to": v}` (no `to` where no one plain value was set), `{"insert": list}`, `{"remove": list}`,
+    /// `{"set": path, "to": v}` (no `to` where no one plain value was set; `"own": true` where it is the writer's own),
+    /// `{"insert": list}`, `{"remove": list}`,
     /// `{"move": list}` (a list of the record by its field, one in a row by its path), `"create"`, `{"tag": tag}`,
     /// `"propose"`, `"merge"` or `{"merged": path}`.
     pub fn to_json(&self) -> Value {
@@ -649,6 +690,8 @@ impl Touch {
         match self {
             Touch::Set(l, None) => json!({ "set": l.to_json() }),
             Touch::Set(l, Some(v)) => json!({ "set": l.to_json(), "to": v.to_json() }),
+            Touch::Own(l, None) => json!({ "set": l.to_json(), "own": true }),
+            Touch::Own(l, Some(v)) => json!({ "set": l.to_json(), "to": v.to_json(), "own": true }),
             Touch::Insert(f) => json!({ "insert": list(f) }),
             Touch::Remove(f) => json!({ "remove": list(f) }),
             Touch::Move(f) => json!({ "move": list(f) }),
@@ -665,7 +708,7 @@ impl Touch {
     /// which change nothing of the record.
     pub fn loc(&self) -> Option<Loc> {
         match self {
-            Touch::Set(l, _) => Some(l.clone()),
+            Touch::Set(l, _) | Touch::Own(l, _) => Some(l.clone()),
             Touch::Insert(f) | Touch::Remove(f) | Touch::Move(f) | Touch::Merged(f) => Some(f.clone()),
             Touch::Create => Some(Loc::root()),
             Touch::Tag(_) | Touch::Propose | Touch::Merge => None,
@@ -688,9 +731,14 @@ impl Touch {
                 "merge" => Ok(Touch::Merge),
                 _ => Err(format!("{v} is no touch")),
             },
-            Value::Object(o) if o.contains_key("set") && o.keys().all(|k| k == "set" || k == "to") => {
+            Value::Object(o) if o.contains_key("set") && o.keys().all(|k| ["set", "to", "own"].contains(&k.as_str())) => {
                 let to = o.get("to").map(|v| Scalar::of_json(v).ok_or(format!("{v} is no plain value"))).transpose()?;
-                Ok(Touch::Set(Loc::of_json(&o["set"])?, to))
+                let l = Loc::of_json(&o["set"])?;
+                match o.get("own") {
+                    None | Some(Value::Bool(false)) => Ok(Touch::Set(l, to)),
+                    Some(Value::Bool(true)) => Ok(Touch::Own(l, to)),
+                    Some(x) => Err(format!("own is true or false, not {x}")),
+                }
             }
             Value::Object(o) if o.len() == 1 && o.contains_key("insert") => Ok(Touch::Insert(field(o, "insert")?)),
             Value::Object(o) if o.len() == 1 && o.contains_key("remove") => Ok(Touch::Remove(field(o, "remove")?)),
@@ -932,12 +980,10 @@ mod tests {
     fn the_built_in_groups_are_their_levels_and_suggester() {
         let gs = groups();
         let names: Vec<&str> = gs.iter().map(|g| g.name).collect();
-        assert_eq!(names, ["Owner", "Editor", "Suggester", "Viewer", "Public", "Backup", "Relay"]);
+        assert_eq!(names, ["Owner", "Editor", "Suggester", "Member", "Viewer", "Public", "Backup", "Relay"]);
         let levels: Vec<Level> = gs.iter().map(|g| level_of(&g.ops)).collect();
-        assert_eq!(
-            levels,
-            [Level::Owner, Level::Write, Level::Write, Level::Read, Level::Read, Level::Backup, Level::Relay]
-        );
+        let (owner, write, read) = (Level::Owner, Level::Write, Level::Read);
+        assert_eq!(levels, [owner, write, write, write, read, read, Level::Backup, Level::Relay]);
         for g in &gs {
             assert_eq!(normalize(g.ops.clone()).as_ref(), Ok(&g.ops), "{} is in order", g.name);
             assert!(!g.everyone || level_of(&g.ops) == Level::Read, "{} goes to everyone only to read", g.name);
