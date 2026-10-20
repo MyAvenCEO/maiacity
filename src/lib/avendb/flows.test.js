@@ -179,6 +179,18 @@ describe('function code is checked as it loads', () => {
 	});
 });
 
+describe('a function runs on the logic engine its record names', () => {
+	const code = 'export function run(e) { return []; }';
+	test('one that names a frozen logic engine, or none, runs', async () => {
+		expect(await runFunction(code, {}, { host: 'logic', version: 2 })).toEqual({ ops: [] });
+		expect(await runFunction(code, {})).toEqual({ ops: [] });
+	});
+	test('one made for another host, or a logic engine this page does not have, runs nowhere', async () => {
+		expect((await runFunction(code, {}, { host: 'view', version: 1 })).error).toMatch(/made for the view engine/);
+		expect((await runFunction(code, {}, { host: 'logic', version: 999 })).error).toMatch(/logic engine 999/);
+	});
+});
+
 describe('whose functions run', () => {
 	test("the entry's own vault's and Maia City's, the seed the person's claim founded; never another vault's", () => {
 		const w = world({ fns: { [CITY]: [fn('The city’s', 'export const run = () => [];')], [ALICE]: [fn('Alice’s', 'export const run = () => [];')] } });
