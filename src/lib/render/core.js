@@ -1,9 +1,8 @@
 /*
  * THE RENDER CORE — the plumbing under every three.js canvas of the app, written once (plan C5, section 4.4 of
- * code-architecture/plan.md). The purpose renderers beside it (./world.js, ./stage.js, ./preview.js, ./film.js,
- * ./diagram.js) add only what their job needs; a page mounts one of them and never makes a WebGLRenderer itself (a
- * lint test, ./lint.test.js, holds every `new WebGLRenderer`, `new OrbitControls` and `new EffectComposer` to this
- * folder).
+ * code-architecture/plan.md). The purpose renderers beside it (./world.js, ./stage.js, ./preview.js, ./film.js) add
+ * only what their job needs; a page mounts one of them and never makes a WebGLRenderer itself (a lint test,
+ * ./lint.test.js, holds every `new WebGLRenderer`, `new OrbitControls` and `new EffectComposer` to this folder).
  *
  *   createRenderer   the one way to make a renderer: its canvas, pixels, colour space, tone mapping, shadows, clipping
  *   lowPower, topPixelRatio, adaptiveResolution, precompile   how much a device draws, and keeping it smooth

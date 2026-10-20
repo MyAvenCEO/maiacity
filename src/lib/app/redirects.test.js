@@ -30,7 +30,8 @@ describe('the old addresses', () => {
 			'/app/games/sandbox-3/': '/app/buildings/',
 			'/app/skills/': '/app/#docs',
 			'/docs/avendb/': '/app/#docs',
-			'/docs/avenbrain/': '/app/#docs'
+			'/docs/avenbrain/': '/app/#docs',
+			'/theos/': '/app/#docs/5c38946e391378e9bedd2021b042e7cde5990b0bd38919d81495b7ed6b51f218'
 		});
 	});
 
@@ -39,6 +40,7 @@ describe('the old addresses', () => {
 		expect(movedTo('/app/board/')).toBe('/app/#stories');
 		expect(movedTo('admin')).toBe('/app/');
 		expect(movedTo('app/games/sandbox-3')).toBe('/app/buildings/');
+		expect(movedTo('theos')).toBe('/app/#docs/5c38946e391378e9bedd2021b042e7cde5990b0bd38919d81495b7ed6b51f218');
 	});
 
 	test('an address with a page of its own is not caught', () => {
@@ -59,5 +61,6 @@ describe('the old addresses', () => {
 		expect(landing('/app/buildings/', '', '')).toBe('/app/buildings/');
 		expect(landing('/app/#stories', '?id=7', '#old')).toBe('/app/?id=7#stories');
 		expect(landing('/app/#docs', '', '')).toBe('/app/#docs');
+		expect(landing('/app/#docs/5c38946e391378e9bedd2021b042e7cde5990b0bd38919d81495b7ed6b51f218', '', '#sec-3')).toBe('/app/#docs/5c38946e391378e9bedd2021b042e7cde5990b0bd38919d81495b7ed6b51f218');
 	});
 });

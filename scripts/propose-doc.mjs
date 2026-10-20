@@ -1,7 +1,8 @@
 #!/usr/bin/env node
-// One of the repository's documents (src/lib/avendb/docs.js `DOCS`: the theOS paper, a skill), proposed into the Maia City vault as an AIP by this Mac's agent (the device of avenMAIA Claude Code starts as
-// its MCP server: `avendb-device agent claude`). A document goes into the vault only so (Samuel 2026-10-20: a new doc
-// goes in as a proposal; the seed writes none). It finds the doc post by its `doc:<key>` tag and the story it names.
+// One of the repository's documents (src/lib/avendb/docs.js `DOCS`: a skill), proposed into the Maia City vault as an
+// AIP by this Mac's agent (the device of avenMAIA Claude Code starts as its MCP server: `avendb-device agent claude`).
+// A document goes into the vault only so (Samuel 2026-10-20: a new doc goes in as a proposal; the seed writes none).
+// It finds the doc post by its `doc:<key>` tag and the story it names.
 // None yet: it drafts both (`create` with `draft: true`, the records of src/lib/avendb/seed.js `docRecords`, the post
 // naming the story drafted), each its own line. One there: it starts a proposal on each whose text differs (`propose`,
 // or the same day's line a failed run left with no AIP over it) and sets the new text on that line (`set` at `text`,
@@ -125,7 +126,7 @@ if (!story.trim()) {
 	process.exit(1);
 }
 const title = option('--title') ?? `${doc.title} doc: the repository's text (${key})`;
-const note = option('--note') ?? `The text of ${key} as the repository has it now, so the vault's copy says what the page shows.`;
+const note = option('--note') ?? `The text of ${key} as the repository has it now, so the vault's copy says what its files say.`;
 const newTitle = option('--title') ?? `${doc.title} doc, new (${key})`;
 const newNote = option('--note') ?? `${doc.title} as a new doc of Maia City: its story with the repository's text, and its doc post, a draft, which avenDB's Docs view lists.`;
 console.error(`${key}: ${story.length.toLocaleString('en')} characters, the doc post tagged ${tag} and its story`);

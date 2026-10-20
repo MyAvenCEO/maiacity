@@ -212,7 +212,6 @@ const RAW_HTML = {
 	'src/lib/universe/InspirePost.svelte': "an inspire post's report and source through journalHtml ($lib/markdown), its shifts split into spans of ours (./inspire.js)",
 	'src/routes/[doc=doc]/+page.svelte': "avenDB's escaping article renderer (render)",
 	'src/routes/app/math/probe/+page.svelte': "the math probe's doc through avenDB's escaping article renderer (render), as the docs draw one, its maths drawn after by the checker",
-	'src/lib/theos/Tex.svelte': "KaTeX's own output for the paper's formulas (no \\href, no HTML extension)",
 	'src/lib/aven-city/components/ResourceIcon.svelte': 'our own SVG icons (ICONS)',
 	'src/lib/avendb/Settings.svelte': 'a QR code drawn here as SVG',
 	'src/lib/chat/Message.svelte': "a chat message's text through $lib/markdown"
