@@ -304,6 +304,15 @@ function byMaterial(group: THREE.Group): Map<THREE.Material, THREE.Mesh[]> {
 	})
 	return byMat
 }
+/**
+ * What a bake was made of, let go: the group emptied. A build's closures outlive it (its floors' and lamps' checks, its
+ * animations) and hold every group it made in the same block, so a baked group kept its meshes as long as the dome stood:
+ * a dome's garden is hundreds of thousands of them (half a million kept after a village's domes were built).
+ */
+function letGo(group: THREE.Group) {
+	for (const o of group.children) o.parent = null
+	group.children.length = 0
+}
 /** a merged geometry as a baked mesh */
 function bakedMesh(merged: THREE.BufferGeometry, mat: THREE.Material, shadows: boolean): THREE.Mesh {
 	merged.userData.baked = true
@@ -330,10 +339,11 @@ export async function bakeSliced(group: THREE.Group, shadows: boolean, slice: ()
 			await slice()
 			if (merged) out.add(bakedMesh(merged, mat, shadows))
 		}
+	letGo(group)
 	return out
 }
 
-/** Bakes a group into one mesh per material, so a forest costs a handful of draw calls. */
+/** Bakes a group into one mesh per material, so a forest costs a handful of draw calls; the group is left empty. */
 export function bake(group: THREE.Group, shadows = true): THREE.Group {
 	const out = new THREE.Group()
 	for (const [mat, list] of byMaterial(group)) {
@@ -342,6 +352,7 @@ export function bake(group: THREE.Group, shadows = true): THREE.Group {
 		const merged = m.done()
 		if (merged) out.add(bakedMesh(merged, mat, shadows))
 	}
+	letGo(group)
 	return out
 }
 
