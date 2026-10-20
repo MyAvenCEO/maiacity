@@ -162,7 +162,9 @@ const server = Bun.serve({
           // a read seats nobody: a seat goes to a person on the page, who asks for it, named as their avenDB profile names
           // them (the page says so: no name of theirs is kept here)
           const name = new URL(req.url).searchParams.get("name") ?? "";
-          return json(req, { game: await getGame("scope" in me ? null : { id: me.id, name }), me: me.id, admin: can(me, "economy:admin"), now: Date.now() });
+          // the admin's growth preview is a person's: the Mac app's key never counts as V1's admin
+          const admin = !("scope" in me) && can(me, "economy:admin");
+          return json(req, { game: await getGame("scope" in me ? null : { id: me.id, name }), me: me.id, admin, now: Date.now() });
         } catch (e) {
           return fail(req, e);
         }
@@ -191,7 +193,7 @@ const server = Bun.serve({
         // the Mac app's key plays, but never signs or rejects a MIP: that is a player's own, in the browser
         if ("scope" in me && ["sign", "reject"].includes(body?.action?.type)) return json(req, { error: "A MIP is signed or rejected by a player, in the browser." }, { status: 403 });
         try {
-          return json(req, { game: await move(me, can(me, "economy:admin"), String(body?.seat ?? ""), body?.action), now: Date.now() });
+          return json(req, { game: await move(me, String(body?.seat ?? ""), body?.action), now: Date.now() });
         } catch (e) {
           return fail(req, e);
         }

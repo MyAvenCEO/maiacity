@@ -42,7 +42,7 @@ jobs:
 
       - run: bun run check
 
-      # the public files by hash (the vault's mirror); stops if a published post names a file the vault does not serve
+      # stops if a published post names a file the site's media list (src/lib/media/manifest.json) does not hold
       - run: node scripts/media-manifest.mjs
 
       # Served from the domain root, so no base path.
