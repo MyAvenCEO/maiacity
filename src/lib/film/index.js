@@ -579,8 +579,11 @@ export function startFilm({ base = '' } = {}) {
 				staged = key;
 				moved = views;
 			}
-			// restaged in line with the prepares, never beside one (two at once pull the walker back and forth)
-			if (staged !== key || !held) await one(() => stage(spec, quality === 'final' ? Infinity : wait));
+			// restaged in line with the prepares, never beside one (two at once pull the walker back and forth). While the
+			// timeline plays, a shot staged already is not staged again because the world lacks a part of it (a dome let go
+			// or failed, an animal still coming): it is drawn as the world has it, the rest streaming in. Staged again, every
+			// frame of it waited on the world's own frames and settled its shaders once more (the village's terrace shot)
+			if (staged !== key || (!held && !(live && !meter))) await one(() => stage(spec, quality === 'final' ? Infinity : wait));
 			const t2 = clock.now();
 			clock.enter();
 			w.__filmDraw = true;
