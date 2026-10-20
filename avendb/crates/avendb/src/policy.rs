@@ -3435,9 +3435,35 @@ struct Run {
     stood: Vec<bool>,
     state: State,
     states: Vec<State>,
+    /// Of the edits a checkpoint covers (`watch`), each with a vault every signer of it acted for just before it or
+    /// just after it (`vouched` in `Checkpoint.lean`).
+    acts: HashSet<(EditId, VaultId)>,
+}
+
+/// The vaults whose checkpoints among `edits` cover each edit, by its id: the edits a replay watches for `acts`.
+fn watched(edits: &[Edit]) -> HashMap<EditId, Vec<VaultId>> {
+    let mut out: HashMap<EditId, Vec<VaultId>> = HashMap::new();
+    for e in edits {
+        if let Action::Checkpoint { vault, covers } = &e.action {
+            for c in covers {
+                out.entry(*c).or_default().push(*vault);
+            }
+        }
+    }
+    out
 }
 
 fn run(edits: &[Edit], ids: &[EditId], rem: &HashSet<EditId>, states: bool) -> Run {
+    run_watching(edits, ids, rem, states, &HashMap::new())
+}
+
+fn run_watching(
+    edits: &[Edit],
+    ids: &[EditId],
+    rem: &HashSet<EditId>,
+    states: bool,
+    watch: &HashMap<EditId, Vec<VaultId>>,
+) -> Run {
     let shares = std::cell::OnceCell::new();
     let shares = || shares.get_or_init(|| shares_issued(edits.iter().zip(ids.iter().copied()))).clone();
     // the moves apart, looked up by entry: an edit is checked again with them hidden only where one would answer
@@ -3459,12 +3485,17 @@ fn run(edits: &[Edit], ids: &[EditId], rem: &HashSet<EditId>, states: bool) -> R
         }
     }
     let moves = (!moves.0.is_empty()).then(|| Arc::new(moves));
-    let mut out = Run { stood: Vec::with_capacity(edits.len()), state: State::default(), states: vec![] };
+    let mut out =
+        Run { stood: Vec::with_capacity(edits.len()), state: State::default(), states: vec![], acts: HashSet::new() };
     if states {
         out.states.push(State::default());
     }
     for (i, edit) in edits.iter().enumerate() {
         let id = ids[i];
+        // which of the vaults whose checkpoints cover it each signer acts for just before it
+        let before: Vec<(VaultId, Vec<bool>)> = watch.get(&id).into_iter().flatten().map(|&v| {
+            (v, edit.sigs().map(|s| out.state.acts_for(s, v)).collect())
+        }).collect();
         let mut stands = !edit.is_removal() || rem.contains(&id);
         if stands {
             let cut = cuts.iter().filter(|c| c.at > i && !c.keep.contains(&id));
@@ -3487,6 +3518,11 @@ fn run(edits: &[Edit], ids: &[EditId], rem: &HashSet<EditId>, states: bool) -> R
             };
         }
         out.stood.push(stands);
+        for (v, pre) in before {
+            if edit.sigs().zip(pre).all(|(s, pre)| pre || out.state.acts_for(s, v)) {
+                out.acts.insert((id, v));
+            }
+        }
         if states {
             out.states.push(out.state.clone());
         }
@@ -3570,9 +3606,33 @@ pub struct Replay {
     pub ids: Vec<EditId>,
     pub stood: Vec<bool>,
     pub state: State,
+    /// Of the edits a checkpoint covers, each with a vault every signer of it acted for just before or just after it.
+    pub acts: HashSet<(EditId, VaultId)>,
 }
 
 impl Replay {
+    /// The edits the checkpoints that stand vouch for (`vouched` in `Checkpoint.lean`): each edit before a checkpoint
+    /// that stands, that stands itself, that the checkpoint covers, and whose signers all acted for the checkpoint's
+    /// vault just before or just after it.
+    pub fn vouched(&self) -> HashSet<EditId> {
+        let mut out = HashSet::new();
+        if self.acts.is_empty() {
+            return out;
+        }
+        let at: HashMap<EditId, usize> = self.ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+        for (j, e) in self.edits.iter().enumerate().filter(|(j, _)| self.stood[*j]) {
+            if let Action::Checkpoint { vault, covers } = &e.action {
+                for c in covers {
+                    let before = at.get(c).is_some_and(|&i| i < j && self.stood[i]);
+                    if before && self.acts.contains(&(*c, *vault)) {
+                        out.insert(*c);
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// The ids of the edits that stand, in replay order.
     pub fn standing(&self) -> Vec<EditId> {
         self.ids.iter().zip(&self.stood).filter(|(_, s)| **s).map(|(id, _)| *id).collect()
@@ -3616,8 +3676,18 @@ pub fn replay_on(was: Replay, edits: &[Edit], held: usize) -> Replay {
 fn replay_ids(edits: &[Edit], ids: &[EditId]) -> Replay {
     let (edits, ids) = order_ids(edits, ids);
     let rem = resolve(&edits, &ids);
-    let Run { stood, state, .. } = run(&edits, &ids, &rem, false);
-    Replay { edits, ids, stood, state }
+    let Run { stood, state, acts, .. } = run_watching(&edits, &ids, &rem, false, &watched(&edits));
+    Replay { edits, ids, stood, state, acts }
+}
+
+/// Of the edits `watch` names, those that stand among `edits`, each with a vault `watch` names for it that every signer
+/// of it acted for just before or just after it: what a checkpoint over that vault may cover (`vouched`).
+pub fn acting(edits: &[Edit], watch: &HashMap<EditId, Vec<VaultId>>) -> HashSet<(EditId, VaultId)> {
+    let (edits, ids) = order_ids(edits, &ids(edits));
+    let rem = resolve(&edits, &ids);
+    let Run { stood, acts, .. } = run_watching(&edits, &ids, &rem, false, watch);
+    let stands: HashSet<EditId> = ids.iter().zip(&stood).filter(|(_, s)| **s).map(|(id, _)| *id).collect();
+    acts.into_iter().filter(|(id, _)| stands.contains(id)).collect()
 }
 
 /// What a peer holding `edits` knows: their replay in `order` from the empty state, refused edits skipped, every
@@ -3790,6 +3860,44 @@ impl Log {
             }
         }
     }
+
+    /// Let go of the edits `ids`: a device holding them on a checkpoint's word that no checkpoint vouches for any more.
+    pub fn let_go(&mut self, ids: &HashSet<EditId>) {
+        let keep: Vec<bool> = self.ids.iter().map(|id| !ids.contains(id)).collect();
+        let mut keeps = keep.iter();
+        self.edits.retain(|_| *keeps.next().expect("one per edit"));
+        self.ids.retain(|id| !ids.contains(id));
+        self.held.retain(|id| !ids.contains(id));
+    }
+
+    /// The log holding `bare`'s edits only where the checkpoints vouch for them (`trusted` in `Checkpoint.lean`): it
+    /// lets go of those no checkpoint that stands vouches for, and replays again, until every one left is vouched for.
+    /// The edits it let go of.
+    pub fn trust(&mut self, bare: &HashSet<EditId>) -> HashSet<EditId> {
+        let mut gone = HashSet::new();
+        loop {
+            let vouched = self.replay().vouched();
+            let out: HashSet<EditId> =
+                self.ids.iter().filter(|id| bare.contains(id) && !vouched.contains(id)).copied().collect();
+            if out.is_empty() {
+                return gone;
+            }
+            self.let_go(&out);
+            gone.extend(out);
+        }
+    }
+}
+
+/// The edits the checkpoints among `edits` cover: those a device may hold without their signatures, on a checkpoint's
+/// word, while one that stands vouches for them (`Replay::vouched`).
+pub fn covered<'a>(edits: impl IntoIterator<Item = &'a Edit>) -> HashSet<EditId> {
+    let mut out = HashSet::new();
+    for e in edits {
+        if let Action::Checkpoint { covers, .. } = &e.action {
+            out.extend(covers.iter().copied());
+        }
+    }
+    out
 }
 
 #[cfg(test)]

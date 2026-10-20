@@ -1007,9 +1007,14 @@ impl Encode for Signed {
     }
 }
 
+/// The fewest bytes a signature takes on the wire: a Touch ID key's keys, its ML-DSA-65 key's hash alone, held on a
+/// checkpoint's word with no signature (`Lab::trust`): its suite, 32 bytes, no assertion, no Enclave signature and
+/// no post-quantum one, behind its length.
+const SIGNATURE_MIN: usize = 1 + 32 + 1 + 1 + 4;
+
 impl Decode for Signed {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Signed { edit: versioned(r)?, sigs: r.seq(79)? })
+        Ok(Signed { edit: versioned(r)?, sigs: r.seq(SIGNATURE_MIN)? })
     }
 }
 
@@ -1159,7 +1164,7 @@ impl Encode for Claim {
 
 impl Decode for Claim {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Claim { card: r.seq(76)?, add: versioned(r)?, sigs: r.seq(79)? })
+        Ok(Claim { card: r.seq(76)?, add: versioned(r)?, sigs: r.seq(SIGNATURE_MIN)? })
     }
 }
 

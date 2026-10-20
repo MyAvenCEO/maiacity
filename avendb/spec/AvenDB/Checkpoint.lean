@@ -197,6 +197,16 @@ def bare (ids : List EditId) : EditId → Bool := fun i => !ids.contains i
 #guard vouched (standing sOverBob) == [1, 2, 3]
 #guard !(trusted (bare [10]) sOverBob).any (·.id == 10)
 
+/-- A key move (`Lab::draft_move`): Alice's passkey adds its next key, which then signs a checkpoint over every edit
+    before it, the one adding it too, so none of them needs the old key's signature again. -/
+def sMoved : List Edit :=
+  s1 ++ chain 30 [(passkeyA, [passkeyA'], .share (.owner alice (.signer passkeyA'))),
+    (passkeyA', [], .checkpoint alice [1, 2, 3, 30])]
+
+-- every edit the old keys signed held bare, the next key's checkpoint vouches for all of them
+#guard (trusted (bare [1, 2, 3, 30]) sMoved).map (·.id) == [1, 2, 3, 30, 31]
+#guard actsFor (trustedView (bare [1, 2, 3, 30]) sMoved) macA alice
+
 end Examples
 
 end AvenDB

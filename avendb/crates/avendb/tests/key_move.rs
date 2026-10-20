@@ -52,6 +52,13 @@ fn checks_out(lab: &Lab, on: SignerId, id: EditId) -> Option<Vec<usize>> {
     Some(read.sigs.iter().map(|s| s.pq.len()).collect())
 }
 
+/// Device `on` holds edit `id` on a checkpoint's word: it stands, its signers' keys kept and no signature.
+fn bare(lab: &Lab, on: SignerId, id: EditId) -> bool {
+    let signed = lab.signed_edit(on, id).expect("kept");
+    let read = Signed::from_wire(&signed.to_wire()).expect("it reads back");
+    read.sigs.iter().all(|s| s.pq.is_empty()) && lab.replay(on).standing().contains(&id)
+}
+
 #[test]
 fn alices_passkey_and_mac_move_to_ml_dsa_65_and_keep_her_vault() {
     let mut authenticator = Passkey::from_seed_in([1; 32], Suite::SlhDsa);
@@ -238,16 +245,21 @@ fn one_ceremony_and_one_touch_move_alices_keys_and_her_mac() {
     // one batch: each owner key adds its next key, and the passkey's next key adds the Mac's, signed by one ceremony
     // of the passkey and one touch, both over the batch; nothing is removed
     let drafts = lab.draft_move(mac, &moves, passkey).expect("the Mac's view takes it");
-    assert_eq!(drafts.len(), 3);
+    // and last, by the passkey's next key, a checkpoint over her vault: every edit an SLH-DSA key signed
+    assert_eq!(drafts.len(), 4);
+    assert!(matches!(drafts[3].edit().action, Action::Checkpoint { vault: v, .. } if v == vault));
     let challenge = drafts[0].challenge();
     assert!(drafts.iter().all(|d| d.challenge() == challenge), "one batch");
     let (key, finger) = (authenticator.ceremony(challenge), enclave.ceremony(challenge));
     let ceremonies = [(passkey, &key), (next, &key), (touch, &finger), (new_touch, &finger)];
     let moved = lab.complete_move(mac, drafts, &ceremonies).expect("one ceremony and one touch signed it");
     let ml = ML_DSA_PUBLIC_BYTES + ML_DSA_SIGNATURE_BYTES;
-    assert_eq!(checks_out(&lab, mac, moved[0]), Some(vec![PQ_SIGNATURE_BYTES, ml]), "the old key adds the new");
+    assert!(bare(&lab, mac, moved[0]), "the old key adds the new, held on the checkpoint's word");
+    assert!(made.iter().all(|&id| bare(&lab, mac, id)), "and everything before");
     assert_eq!(checks_out(&lab, mac, moved[2]), Some(vec![ml, ml]), "the new key adds the Mac's");
-    assert!(lab.draft_move(mac, &moves, passkey).expect("nothing left to sign").is_empty());
+    // nothing left to move: only a checkpoint over what the Mac's earlier key signed since, at its next unlock
+    let again = lab.draft_move(mac, &moves, passkey).expect("nothing left to move");
+    assert!(again.iter().all(|d| matches!(d.edit().action, Action::Checkpoint { .. })), "{again:?}");
     assert!(lab.moves(mac, Some(enclave_key)).is_empty(), "every next key is in the vault");
     // then the Mac's next key takes over its keep shares, and the Mac stays in the vault beside it
     lab.finish_move(mac, &moves).expect("its keep shares carried");
@@ -270,7 +282,7 @@ fn one_ceremony_and_one_touch_move_alices_keys_and_her_mac() {
     assert!(lab.holds_key(mac_next, st.current(KeyFam::Seed(vault))), "it opens the vault");
     assert!(lab.item(mac_next, card).is_some(), "and reads what it wrote before");
     for id in made.iter().chain(&moved) {
-        assert!(checks_out(&lab, mac_next, *id).is_some(), "{id:?}");
+        assert!(checks_out(&lab, mac_next, *id).is_some() || bare(&lab, mac_next, *id), "{id:?}");
     }
     // nothing more moves here: the phone moves at its own unlock. Its earlier keys show as such, and it syncs with
     // the phone alone, not with its own earlier key, whose endpoint is its own
@@ -290,12 +302,13 @@ fn one_ceremony_and_one_touch_move_alices_keys_and_her_mac() {
     let moves = lab.moves(phone, None);
     assert_eq!(moves, vec![(phone, phone_next)]);
     let drafts = lab.draft_move(phone, &moves, next).expect("the phone's view takes it");
-    assert_eq!(drafts.len(), 1);
+    assert_eq!(drafts.len(), 2, "and a checkpoint over what the Mac's earlier key signed after its move");
     let key = authenticator.ceremony(drafts[0].challenge());
     lab.complete_move(phone, drafts, &[(next, &key)]).expect("its next key joined");
     reopen(&mut lab, phone, phone_secret, phone_next);
     assert!(lab.moves(phone_next, None).is_empty(), "the old phone stays beside its next key");
-    assert!(lab.draft_move(phone_next, &moves, next).expect("nothing to sign").is_empty());
+    let left = lab.draft_move(phone_next, &moves, next).expect("nothing to move");
+    assert!(left.iter().all(|d| matches!(d.edit().action, Action::Checkpoint { .. })), "{left:?}");
     lab.finish_move(phone_next, &moves).expect("its keep shares carried");
     lab.sync_all(3);
     for d in [mac_next, phone_next] {
@@ -306,6 +319,17 @@ fn one_ceremony_and_one_touch_move_alices_keys_and_her_mac() {
     }
     assert!(lab.item(phone_next, card).is_some());
     assert!(lab.moves(phone_next, None).is_empty());
+    // with every device on its next key, one more checkpoint covers what their earlier keys signed after they moved:
+    // then no edit any device holds rests on an SLH-DSA signature
+    let last = lab.draft_move(phone_next, &[], next).expect("a checkpoint");
+    if !last.is_empty() {
+        let key = authenticator.ceremony(last[0].challenge());
+        lab.complete_move(phone_next, last, &[(next, &key)]).expect("her passkey's next key signed it");
+        lab.sync_all(4);
+    }
+    for d in [mac_next, phone_next] {
+        assert!(lab.draft_move(d, &[], next).expect("nothing left").is_empty(), "{d:?}");
+    }
     // each key of her passkey signs for the vault, its owners being equal: one secret makes both
     let threshold = Action::Settings { vault, set: Setting::Threshold(1) };
     for key in [passkey, next] {
@@ -330,7 +354,7 @@ fn a_touch_alone_moves_the_mac_and_its_touch_id_key_and_the_passkey_moves_at_its
     // the Touch ID key approves for the vault, its owners being equal: it adds its next key, which adds the Mac's
     // next key, all in one touch
     let drafts = lab.draft_move(mac, &moves, touch).expect("the Mac's view takes it");
-    assert_eq!(drafts.len(), 2);
+    assert_eq!(drafts.len(), 3, "and a checkpoint by the Touch ID key's next key");
     let finger = enclave.ceremony(drafts[0].challenge());
     lab.complete_move(mac, drafts, &[(touch, &finger), (new_touch, &finger)]).expect("one touch signed it");
     lab.finish_move(mac, &moves).expect("its keep shares carried");
@@ -355,7 +379,7 @@ fn a_touch_alone_moves_the_mac_and_its_touch_id_key_and_the_passkey_moves_at_its
     let moves = alone.moves(mac_next, None);
     assert_eq!(moves, vec![(passkey, next)]);
     let drafts = alone.draft_move(mac_next, &moves, passkey).expect("the new Mac's view takes it");
-    assert_eq!(drafts.len(), 1);
+    assert_eq!(drafts.len(), 2, "and a checkpoint over the old passkey's edit adding its next key");
     let key = authenticator.ceremony(drafts[0].challenge());
     alone.complete_move(mac_next, drafts, &[(passkey, &key), (next, &key)]).expect("one ceremony signed it");
     alone.finish_move(mac_next, &moves).expect("no device moved");

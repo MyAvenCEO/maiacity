@@ -96,8 +96,8 @@ use crate::merge;
 use crate::ops::Loc;
 use crate::perf::Perf;
 use crate::policy::{
-    mk_audience, replay, replay_on, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
-    Meaning, Principal, Proposal, Readings, Refusal, Replay, Share, Sharing, State, Vault, Who, Write,
+    acting, covered, mk_audience, replay, replay_on, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
+    Meaning, Principal, Proposal, Readings, Refusal, Replay, Share, Sharing, State, Vault, Who, Wrap, Write,
 };
 use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
@@ -117,6 +117,9 @@ use crate::world;
 /// entries, one to seal the keys of the audiences they moved to and link their history, one to answer what moved, one
 /// to find nothing left. More means an edit the rules refuse, made again and again.
 const ROUNDS: usize = 10;
+
+/// The most edits one checkpoint covers: a key move's covers more as several, each a few hundred kilobytes at most.
+const CHECKPOINT_COVERS: usize = 4096;
 
 /// Blobs by id: the McEliece public keys a device holds, or sends beside its edits.
 type Blobs = HashMap<BlobId, Arc<[u8]>>;
@@ -357,6 +360,46 @@ fn checked_all(signed: &[Signed]) -> Vec<bool> {
     signed.iter().map(one).collect()
 }
 
+/// Device `store`'s edits held on a checkpoint's word (`Store::bare`), after a replay: each one a checkpoint that
+/// stands vouches for keeps only its signers' keys, its signatures let go of; each it doesn't keeps its signatures,
+/// held as any other edit, where they check out; and the store lets go of the rest, to replay again. True if it let go
+/// of any.
+fn trust(store: &mut Store) -> bool {
+    let vouched = store.replay.vouched();
+    let out: Vec<EditId> = store.bare.iter().filter(|id| !vouched.contains(id)).copied().collect();
+    let mut gone = HashSet::new();
+    for id in out {
+        store.bare.remove(&id);
+        if store.signed.get(&id).is_none_or(|s| s.verify().is_err()) {
+            gone.insert(id);
+        }
+    }
+    for id in &store.bare {
+        if let Some(signed) = store.signed.get_mut(id) {
+            for sig in signed.sigs.iter_mut().filter(|s| !s.pq.is_empty() || s.webauthn.is_some() || s.enclave.is_some()) {
+                sig.pq = vec![];
+                sig.webauthn = None;
+                sig.enclave = None;
+            }
+        }
+    }
+    if gone.is_empty() {
+        return false;
+    }
+    store.log.let_go(&gone);
+    for id in &gone {
+        store.signed.remove(id);
+        store.bodies.remove(id);
+        store.spoilt.remove(id);
+    }
+    store.replay = replay(&[]);
+    store.replayed = 0;
+    store.latest = OnceLock::new();
+    store.digests = None;
+    store.files_at = OnceLock::new();
+    true
+}
+
 /// What one device holds: its edits, each with its signatures, to pass on, and the blobs they name; what it makes of
 /// them; the keys it holds; what it read with them; and the entries it shows.
 struct Store {
@@ -398,6 +441,11 @@ struct Store {
     perf: Perf,
     /// Each file its opened bodies bring, by its root (`Lab::file`): worked out once, again after a body comes or goes.
     files_at: OnceLock<HashMap<FileRoot, Brought>>,
+    /// The edits the checkpoints it holds cover (`covered`), and those of them it holds on a checkpoint's word: their
+    /// signatures never checked, and let go of once one that stands vouches for them (`Replay::vouched`), a signer's
+    /// keys kept.
+    covers: HashSet<EditId>,
+    bare: HashSet<EditId>,
 }
 
 impl Default for Store {
@@ -423,6 +471,8 @@ impl Default for Store {
             gate: false,
             perf: Perf::default(),
             files_at: OnceLock::new(),
+            covers: HashSet::new(),
+            bare: HashSet::new(),
         }
     }
 }
@@ -1067,7 +1117,48 @@ impl Lab {
             drafting.draft(&[by, new], Action::Share(Sharing::Device { vault: v, device: new, seal_to }))?;
             drafting.drafts.last_mut().expect("drafted").blobs.extend(blobs);
         }
+        // last, by the next key (never an SLH-DSA key, whose signature it does away with), a checkpoint over each vault
+        // that approval governs: the edits `on` holds that carry
+        // an SLH-DSA signature, whose signers acted for that vault, held from then on without their signatures
+        // (`Checkpoint.lean`), so no device checks an SLH-DSA signature again
+        let next = moves.iter().any(|&(_, new)| new == by) || self.keys_of(by).is_some_and(|k| k.suite() != Suite::SlhDsa);
+        let covering = if next { self.uncovered(on, &drafting.log, by) } else { vec![] };
+        for (vault, covers) in covering {
+            for part in covers.chunks(CHECKPOINT_COVERS) {
+                drafting.draft(&[by], Action::Checkpoint { vault, covers: part.to_vec() })?;
+            }
+        }
         Ok(drafting.done())
+    }
+
+    /// For each vault `by` approves in `log`, `on`'s edits, drafted moves among them, a checkpoint over it would cover
+    /// that none covers yet: those that stand and carry an SLH-DSA signature, every signer of which acted for the vault
+    /// just before or just after it (`acting`). Each edit under the first vault, in `log`'s order, that may cover it.
+    fn uncovered(&self, on: SignerId, log: &Log, by: SignerId) -> Vec<(VaultId, Vec<EditId>)> {
+        let store = self.held(on);
+        let view = log.view();
+        let vaults: Vec<VaultId> =
+            view.vaults().iter().map(|v| v.id).filter(|&v| view.approves(&[by], Principal::Vault(v))).collect();
+        // signed by an SLH-DSA key: as its signatures say, or, for an edit of the move not signed yet, its keys at hand
+        let slh = |id: &EditId, e: &Edit| match store.signed.get(id) {
+            Some(s) => s.sigs.iter().any(|x| x.keys.suite() == Suite::SlhDsa),
+            None => e.sigs().any(|s| self.keys_of(s).is_some_and(|k| k.suite() == Suite::SlhDsa)),
+        };
+        let edits = log.ids().iter().zip(log.edits());
+        let watch: HashMap<EditId, Vec<VaultId>> =
+            edits.filter(|(id, e)| !store.covers.contains(id) && slh(id, e)).map(|(&id, _)| (id, vaults.clone())).collect();
+        if watch.is_empty() {
+            return vec![];
+        }
+        let acts = acting(log.edits(), &watch);
+        let mut out: Vec<(VaultId, Vec<EditId>)> = vaults.iter().map(|&v| (v, vec![])).collect();
+        for id in log.ids().iter().filter(|id| watch.contains_key(id)) {
+            if let Some((_, covers)) = out.iter_mut().find(|(v, _)| acts.contains(&(*id, *v))) {
+                covers.push(*id);
+            }
+        }
+        out.retain(|(_, covers)| !covers.is_empty());
+        out
     }
 
     /// The key to seal to of `new`, the next key of `old` (`draft_move`), for the edit that adds it: its own where
@@ -1324,7 +1415,9 @@ impl Lab {
         // the claim brings vault logs, and nothing else, each edit signed
         let vault_log = |s: &Signed| matches!(log_of(&s.edit, s.edit.id()), Some(LogId::Vault(_)));
         let card: Vec<Signed> = card.into_iter().filter(vault_log).collect();
-        for signed in &card {
+        // each signed, or covered by a checkpoint it brings, held on its word where one that stands vouches for it
+        let bare = covered(card.iter().map(|s| &s.edit));
+        for signed in card.iter().filter(|s| !bare.contains(&s.edit.id())) {
             signed.verify()?;
         }
         // its own signature in its place among the edit's signers, the others' in theirs
@@ -1342,6 +1435,7 @@ impl Lab {
             None => {
                 let mut log = self.held(d).log.clone();
                 log.receive(card.iter().map(|s| s.edit.clone()));
+                log.trust(&bare);
                 log.view().step(&signed.edit)?;
                 log.receive([signed.edit.clone()]);
                 (log.view(), card)
@@ -1583,7 +1677,9 @@ impl Lab {
     }
 
     /// Of `edits`, those device `to` doesn't hold yet whose signatures check out, each once: an edit it holds was
-    /// checked when it arrived, and a copy with other signatures adds nothing.
+    /// checked when it arrived, and a copy with other signatures adds nothing. An edit a checkpoint it holds or one
+    /// among `edits` covers comes unchecked, on that checkpoint's word, its signatures or none: its replay lets go of
+    /// it unless one that stands vouches for it (`refresh`).
     fn fresh(&self, to: SignerId, edits: Vec<Signed>) -> Vec<Signed> {
         let Some(store) = self.stores.get(&to) else { return vec![] };
         let mut seen = HashSet::new();
@@ -1592,8 +1688,14 @@ impl Lab {
             !store.signed.contains_key(&id) && seen.insert(id)
         };
         let new: Vec<Signed> = edits.into_iter().filter(new).collect();
-        let ok = checked_all(&new);
-        new.into_iter().zip(ok).filter_map(|(s, ok)| ok.then_some(s)).collect()
+        let batch = covered(new.iter().map(|s| &s.edit));
+        let on_word = |s: &Signed| {
+            let id = s.edit.id();
+            store.covers.contains(&id) || batch.contains(&id)
+        };
+        let (bare, rest): (Vec<Signed>, Vec<Signed>) = new.into_iter().partition(on_word);
+        let ok = checked_all(&rest);
+        bare.into_iter().chain(rest.into_iter().zip(ok).filter_map(|(s, ok)| ok.then_some(s))).collect()
     }
 
     /// Device `to` keeps `fresh`, new edits whose signatures checked out (`fresh`), and the blobs among `blobs` they
@@ -1608,8 +1710,16 @@ impl Lab {
             _ => None,
         };
         let mut new = false;
+        // what the checkpoints among them cover first: an edit `fresh` took on their word is held bare, and so is one it
+        // held already, signed, that they cover
+        let more = covered(fresh.iter().map(|s| &s.edit));
+        store.bare.extend(more.iter().filter(|id| store.signed.contains_key(id)));
+        store.covers.extend(more);
         for signed in fresh {
             let id = signed.edit.id();
+            if store.covers.contains(&id) {
+                store.bare.insert(id);
+            }
             for b in signed.edit.blobs() {
                 if let Some(bytes) = blobs.get(&b) {
                     store.blobs.entry(b).or_insert_with(|| bytes.clone());
@@ -2071,6 +2181,11 @@ impl Lab {
             debug_assert!(store.replay == replay(store.log.edits()), "a replay stepped on differs from the whole");
             store.latest = OnceLock::from(store.replay.state.clone());
             store.perf.add("replay", at);
+            // the edits it holds on a checkpoint's word: those one that stands vouches for lose their signatures, the
+            // rest keep theirs where they check out, and it lets go of the others and replays again (`trusted`)
+            if !store.bare.is_empty() && trust(store) {
+                continue;
+            }
             // a locked device holds no key, and opens nothing
             if !unlocked {
                 store.perf.add("refresh", began);
@@ -4198,6 +4313,8 @@ fn upkeep(
             continue;
         }
         let epoch = st.epoch(KeyFam::Audience(en.vault, en.audience()));
+        // every wrap of the entry in one edit, one signature however many writes it had (`Wraps.lean`)
+        let mut wraps = vec![];
         let mut seen = HashSet::new();
         for w in st.entry_writes(en.id).filter(|w| w.stay != en.stay()) {
             let name = w.key();
@@ -4214,9 +4331,11 @@ fn upkeep(
                 }
                 let to = Recipient::Key { name: to_name, id: under.id() };
                 let bytes = keys::wrap(secret, &under, &box_info(name, id, &to), rng);
-                let boxes = vec![KeyBox { to, bytes }];
-                out.push(Work::Edit(Action::Keys { name, id, public: None, boxes, clear: None }));
+                wraps.push(Wrap { name, id, boxed: KeyBox { to, bytes } });
             }
+        }
+        if !wraps.is_empty() {
+            out.push(Work::Edit(Action::Wraps { entry: en.id, wraps }));
         }
     }
     for vt in st.vaults().iter().filter(|vt| st.acts_for(d, vt.id)) {
