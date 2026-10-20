@@ -28,7 +28,7 @@ import { createWorldRenderer } from '$lib/render/world.js'
 import { createSky } from '$lib/sandbox-kit/sky.js'
 import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
-import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
+import { connectFilm, filmDraws, filmHoldsSize, filmPlays, worldTime } from '$lib/sandbox-kit/film.js'
 import { createStream, type View } from '$lib/sandbox-kit/stream.js'
 import { ambience, levelsAt } from './ambience'
 import { createForest, INSIDE, type Forest } from './flora.js'
@@ -1244,7 +1244,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 					const mine = { i, cancelled: false }
 					building = mine
 					// on film nothing is drawn while the world is readied (__filmDraw): every dome builds in long stretches
-					mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => rush.has(i) || (!filmDraws() && gapTo(i) < 12), background: () => !rush.has(i) && (filmDraws() || gapTo(i) > 45), library, flora: flora ? { garden: flora.inside, seed: flora.seed, flora: plantsIn!, drawn: library } : undefined })
+					mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => !filmPlays() && (rush.has(i) || (!filmDraws() && gapTo(i) < 12)), background: () => filmPlays() || (!rush.has(i) && (filmDraws() || gapTo(i) > 45)), library, flora: flora ? { garden: flora.inside, seed: flora.seed, flora: plantsIn!, drawn: library } : undefined })
 						.then((h) => {
 							if (building === mine) building = null
 							if (job.cancelled || !h.embedded) {

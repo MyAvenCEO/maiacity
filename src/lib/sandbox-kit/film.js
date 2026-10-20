@@ -51,7 +51,7 @@ import * as THREE from 'three';
  */
 
 // the three rules of a world under the film camera are the film renderer's
-export { filmDraws, filmHoldsSize, worldTime } from '$lib/render/film.js';
+export { filmDraws, filmHoldsSize, filmPlays, worldTime } from '$lib/render/film.js';
 
 /**
  * A pose in a frame (an object of the world: its place and its turn now) as a pose in the world.

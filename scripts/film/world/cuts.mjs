@@ -106,26 +106,6 @@ const report = await page.evaluate(
 		const from = o.from, to = Math.min(at, from + o.seconds);
 		const under = (/** @type {number} */ t) => list.find((c) => t >= c.start && t < c.start + c.dur);
 		const ahead = (/** @type {number} */ t) => list.filter((c) => c.start + c.dur > t).slice(0, 3).map((c) => c.spec);
-		// stopped first, as the studio is before Play: the shots from the playhead prepared and metered, the world stood
-		// where the play starts (src/lib/studio/studio.svelte.js `preparePlayback`, `meterAhead`)
-		const first = list.filter((c) => c.start + c.dur > from);
-		const p0 = performance.now();
-		await viewer.prepare(first.slice(0, 3).map((c) => c.spec));
-		await viewer.meterAhead((o.meter === 'all' ? first : first.slice(0, 3)).map((c) => c.spec), () => true);
-		await viewer.standAt(first[0].spec);
-		log(`${first.length} shots from ${from} s; the first prepared and metered in ${Math.round(performance.now() - p0)} ms; playing ${from}–${to.toFixed(1)} s`);
-		// play: the timeline's clock is the page's own (the audio clock in the studio), the world driven every frame as
-		// the studio's driveWorld does
-		// the trace kept here: a world that loses its GPU is loaded again, in a new window
-		/** @type {any[]} */
-		const traced = [];
-		let reloads = 0, page = win;
-		const traceOn = () => {
-			const now = /** @type {any} */ (iframe.contentWindow);
-			if (now && now !== page) (page = now), reloads++;
-			if (now && now.__filmTrace !== traced) now.__filmTrace = traced;
-		};
-		traceOn();
 		// the views: the output LUT, and a grade for every clip (the Mac's sizes), as the studio draws them
 		const cube = (/** @type {number} */ n, /** @type {number} */ k) => {
 			const data = new Float32Array(n * n * n * 3);
@@ -135,6 +115,27 @@ const report = await page.evaluate(
 		const odt = o.grade === 'none' ? null : cube(65, 0);
 		const grades = list.map((/** @type {any} */ c) => (o.grade === 'none' ? null : cube(33, c.i + 1)));
 		const viewOf = (/** @type {any} */ c) => ({ lut: odt, grade: grades[c.i] });
+		// stopped first, as the studio is before Play: the shots from the playhead prepared and metered, the world stood
+		// where the play starts (src/lib/studio/studio.svelte.js `preparePlayback`, `meterAhead`)
+		const first = list.filter((c) => c.start + c.dur > from);
+		const p0 = performance.now();
+		await viewer.prepare(first.slice(0, 3).map((c) => c.spec));
+		await viewer.meterAhead((o.meter === 'all' ? first : first.slice(0, 3)).map((c) => c.spec), () => true);
+		await viewer.standAt(first[0].spec);
+		// and the views they are drawn through sent, as the stopped studio sends them
+		viewer.look?.(first.slice(0, 3).map(viewOf));
+		log(`${first.length} shots from ${from} s; the first prepared and metered in ${Math.round(performance.now() - p0)} ms; playing ${from}–${to.toFixed(1)} s`);
+		// play: the timeline's clock is the page's own (the audio clock in the studio), the world driven every frame as
+		// the studio's driveWorld does; the trace kept here (a world that loses its GPU is loaded again, in a new window)
+		/** @type {any[]} */
+		const traced = [];
+		let reloads = 0, page = win;
+		const traceOn = () => {
+			const now = /** @type {any} */ (iframe.contentWindow);
+			if (now && now !== page) (page = now), reloads++;
+			if (now && now.__filmTrace !== traced) now.__filmTrace = traced;
+		};
+		traceOn();
 		/** @type {{ now: number, gap: number, t: number, clip: number, drawnAt: number, live: boolean }[]} */
 		const frames = [];
 		const play0 = performance.now();
@@ -162,7 +163,7 @@ const report = await page.evaluate(
 		const costs = (/** @type {number} */ a, /** @type {number} */ b) => trace.filter((f) => f.at >= a && f.at < b);
 		const top = (/** @type {any[]} */ fs) => {
 			const worst = fs.reduce((m, f) => (!m || f.total + f.loop > m.total + m.loop ? f : m), null);
-			return worst && Object.fromEntries(['total', 'exposure', 'staging', 'set', 'render', 'shadow', 'view', 'compiled', 'buffers', 'textures', 'warm', 'warmed', 'loop', 'worst'].map((k) => [k, Math.round(worst[k] ?? 0)]));
+			return worst && Object.fromEntries(['total', 'exposure', 'staging', 'set', 'render', 'shadow', 'dearest', 'view', 'compiled', 'buffers', 'textures', 'warm', 'warmed', 'loop', 'worst'].map((k) => [k, Math.round(worst[k] ?? 0)]));
 		};
 		const cuts = list
 			.filter((c) => c.start > from && c.start < to)

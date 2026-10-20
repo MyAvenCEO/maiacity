@@ -166,6 +166,18 @@ export function startFilm({ base = '' } = {}) {
 					cost.shadow += clock.now() - t;
 				}
 			};
+			// while a trace is read (the cut probe), each draw timed and the dearest named: what a dear frame drew first
+			const renderer = world().renderer, one = renderer.renderBufferDirect;
+			renderer.renderBufferDirect = function (/** @type {any[]} */ ...a) {
+				if (!cost.timing) return one.apply(this, /** @type {any} */ (a));
+				const t = clock.now();
+				try {
+					return one.apply(this, /** @type {any} */ (a));
+				} finally {
+					const d = clock.now() - t;
+					if (d > cost.dearest) (cost.dearest = d), (cost.drew = `${a[4]?.name || a[4]?.type || '?'} (${a[3]?.type ?? '?'}${a[3]?.transmission > 0 ? ', glass' : ''}, ${a[4]?.geometry?.attributes?.position?.count ?? 0} vertices)`);
+				}
+			};
 		}
 		return world();
 	};
@@ -345,7 +357,7 @@ export function startFilm({ base = '' } = {}) {
 		return { frame, at: /** @type {ReturnType<typeof evaluate>} */ (first) };
 	}
 	/** what the frame being drawn spent on setting the world to its moment and on rendering it (ms) */
-	const cost = { set: 0, render: 0, shadow: 0 };
+	const cost = { set: 0, render: 0, shadow: 0, timing: false, dearest: 0, drew: '' };
 
 	/** The log-average luminance of the shot at t, at the meter's fixed size, framed as composed. */
 	function lumAt(/** @type {any} */ v, /** @type {Spec} */ spec, /** @type {number} */ t) {
@@ -521,6 +533,8 @@ export function startFilm({ base = '' } = {}) {
 			if (staging && staging !== key) return false;
 			const t0 = clock.now();
 			const live = quality !== 'final';
+			// a timeline plays (frames asked for one after another, none metered): the world keeps its own work short
+			if (live) w.__filmPlays = !meter;
 			const known = live ? knownExposure(spec) : undefined;
 			const ev = known ?? (live && !meter ? lastEv : await exposureOf(spec));
 			if (live) lastEv = typeof ev === 'number' ? ev : ev.reduce((a, k) => a + k[1], 0) / ev.length;
@@ -542,7 +556,9 @@ export function startFilm({ base = '' } = {}) {
 			w.__filmDraw = true;
 			const os = quality === 'final' ? 1.5 : 1;
 			const W = Math.round(width * os), H = Math.round(height * os);
-			cost.set = cost.render = cost.shadow = 0;
+			cost.set = cost.render = cost.shadow = cost.dearest = 0;
+			cost.drew = '';
+			cost.timing = live && Array.isArray(w.__filmTrace);
 			// what the GPU was sent while this frame was drawn: shaders compiled, buffers and textures made (none, warmed)
 			const info = v.renderer.info, made0 = [info.programs?.length ?? 0, info.memory.geometries, info.memory.textures];
 			const { frame, at } = linear(v, spec, t, to, W, H, quality === 'final', quality !== 'final');
@@ -559,7 +575,7 @@ export function startFilm({ base = '' } = {}) {
 			// timeline played): the frame is up, and the cut that first shows it finds it on the GPU
 			const warmed = live ? /** @type {ReturnType<typeof createWarmer>} */ (warmer).some(v.scene, v.camera, meter ? 50 : 4) : 0;
 			const t4 = clock.now();
-			if (live && Array.isArray(w.__filmTrace)) w.__filmTrace.push({ at: t3, name: spec.meta?.name ?? '', t, total: t3 - t0, exposure: t1 - t0, staging: t2 - t1, set: cost.set, render: cost.render, shadow: cost.shadow, view: t3 - tv, compiled: made[0], buffers: made[1], textures: made[2], warm: t4 - t3, warmed, ...clock.spent() });
+			if (live && Array.isArray(w.__filmTrace)) w.__filmTrace.push({ at: t3, name: spec.meta?.name ?? '', t, total: t3 - t0, exposure: t1 - t0, staging: t2 - t1, set: cost.set, render: cost.render, shadow: cost.shadow, dearest: cost.dearest, drew: cost.drew, view: t3 - tv, compiled: made[0], buffers: made[1], textures: made[2], warm: t4 - t3, warmed, ...clock.spent() });
 			// the frame is drawn: the page's clock runs again until the next, so the world keeps building what the
 			// shots ahead need while the timeline plays (held, every dome build would wait for a step that never comes)
 			clock.leave();
