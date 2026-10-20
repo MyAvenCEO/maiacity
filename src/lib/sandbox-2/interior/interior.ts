@@ -40,7 +40,8 @@ import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
 import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
 import { createForest, type FloraDrawn, type Forest } from './flora.js'
-import { BIOMES, groundMaterial } from '$lib/biomes'
+import { groundMaterial } from '$lib/biomes'
+import { biomeOr } from '$lib/assets/sources/biome.js'
 import { createCover, type Cover } from './cover.js'
 import type { Drawn } from './drawn.js'
 import { standThings, workshopsOf } from './things.js'
@@ -72,8 +73,6 @@ export const tankLine = (kind: DomeKind, R: number) => (kind === 'grand' ? R - (
 /** A door's half-width, and its height at the top of the arch (the glamping door is square-headed). */
 const doorSize = (kind: DomeKind) => (kind === 'tent' ? { dw: 0.55, dh: 1.8, top: 1.8 } : kind === 'glamp' ? { dw: 0.75, dh: 2.5, top: 2.5 } : { dw: 1.3, dh: 3, top: 3 + 1.3 * 0.4 })
 /** The signed difference between two angles, in -π..π. */
-/** Sandbox 5: the biome of the floor under the glass ($lib/biomes) */
-const WARM_BIOME = BIOMES.find((b) => b.id === 'warm-food-forest')!
 export const adiff = (a: number, b: number) => Math.atan2(Math.sin(a - b), Math.cos(a - b))
 
 /** A texture tiled to a world size: `metres` of surface per repeat of the image. */
@@ -1275,9 +1274,11 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		/* ground: soil, a stone plaza, a ring path and spokes */
 		// the master dome's centre is a theatre sunk into the ground, so its floor is a ring round the bowl
 		const theatre = kind === 'master'
-		// Sandbox 5: the floor under the glass is the warm food forest biome's ($lib/biomes): big fallen leaves, humus,
-		// moss and a living mat, run into each other in patches; its cover streamed round you (below)
-		const warmFloor = opts.flora ? groundMaterial(WARM_BIOME.surface) : null
+		// Sandbox 5: the floor under the glass is the warm food forest biome's, as the Maia City vault keeps it
+		// ($lib/assets/sources/biome.js, its newest version): big fallen leaves, humus, moss and a living mat, run into
+		// each other in patches; its cover streamed round you (below). Bare soil where the vault holds none, no cover
+		const warmBiome = opts.flora ? biomeOr('biomes/warm-food-forest') : null
+		const warmFloor = opts.flora ? groundMaterial(warmBiome?.surface ?? { soil: 1 }) : null
 		const groundWithPond = () => {
 			const sh = new THREE.Shape().absarc(0, 0, R, 0, TAU, false)
 			sh.holes.push(new THREE.Path(pondShapeAt(0).getPoints()))
@@ -1729,7 +1730,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 				return !onStone(rr, a, 0.1) && !nearStream(x, z, width / 2 + 0.3) && !inTrunk(x, z)
 			}
 			// in the dome's own ground, which lies where the dome stands (a hair above the host's ground); hidden until it joins
-			floorCover = createCover({ drawn: flora.drawn, recipe: WARM_BIOME, open, tile: 8, reach: 24, near: 9, thin: 0.25, density: 3.8, seed: 707 + kind.length, origin: host ? [host.x, host.z] : [0, 0], at: host ? [host.x, 0.03, host.z] : [0, 0, 0], hidden: !!host })
+			if (warmBiome) floorCover = createCover({ drawn: flora.drawn, recipe: warmBiome, open, tile: 8, reach: 24, near: 9, thin: 0.25, density: 3.8, seed: 707 + kind.length, origin: host ? [host.x, host.z] : [0, 0], at: host ? [host.x, 0.03, host.z] : [0, 0, 0], hidden: !!host })
 			drop.push(() => floorCover?.dispose())
 		}
 		await pause('Planting the forest inside')

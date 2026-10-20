@@ -3,7 +3,8 @@
 // (./serialize.js, format 3), checked and rebuilt in the page (./rebuild.js); a skinned actor bound to its own bones;
 // and a build kept running in the box (./live.js), its steps handed back as numbers the page's copy follows; a
 // building's roof and walk, and every building built as one object (the domes are not: worlds in disguise); a biome's
-// cover, each kind built as one object and laid where the biome's stream lays it (a biome itself is not: data).
+// cover, each kind built as one object and laid where the biome's stream lays it, and each biome a patch of its floor
+// whose card is its numbers.
 // Run: bun test src/lib/assets/box/view.test.js
 import { expect, test } from 'bun:test';
 
@@ -250,14 +251,14 @@ test('every building built as one object: built through the box’s side and the
 	await expect(objectAt('buildings/dome-tent@1')).rejects.toThrow(/not built as one object/);
 }, 600000);
 
-test('a biome’s cover: every kind built through the box’s side and the page’s as its builder builds it, casting its shadow; a biome itself is never a recipe', async () => {
+test('a biome’s cover: every kind built through the box’s side and the page’s as its builder builds it, casting its shadow; each biome a patch of its floor, its card its numbers', async () => {
 	const THREE = await import('three');
 	const { COVER } = await import('$lib/biomes/cover.js');
 	const { BIOMES, coverSeed } = await import('$lib/biomes');
 	const { coverRef } = await import('$lib/biomes/built.js');
 	const list = await OBJECT_GROUPS.biomes.list();
-	expect(list.map((x) => x.id)).toEqual(['cover']);
-	expect(list[0].versions.at(-1).build.map((k) => k.id)).toEqual(Object.keys(COVER));
+	expect(list.map((x) => x.id)).toEqual([...BIOMES.map((b) => b.id), 'cover']);
+	expect(list.at(-1).versions.at(-1).build.map((k) => k.id)).toEqual(Object.keys(COVER));
 	/** every mesh's corners, in the order the tree holds them */
 	const corners = (root) => {
 		const out = [];
@@ -279,10 +280,31 @@ test('a biome’s cover: every kind built through the box’s side and the page�
 		expect(obj.userData.ref).toBe(`biomes/cover@1:${kind}?seed=${seed}`);
 	}
 	expect(failed).toEqual([]);
-	// a biome is its recipe of numbers, in the page's group beside its cover, and not built as one object
+	// each biome: a patch of its floor through the box, within its budgets, and a card a world reads its numbers back
+	// off: its surfaces, its density and its cover, each kind the cover's asset at its seed
+	const { biomeOfCard } = await import('$lib/biomes/card.js');
+	const { RADIUS } = await import('$lib/biomes/patch.js');
+	for (const b of BIOMES) {
+		const label = `biomes/${b.id}@1`;
+		const { obj, cast, meta } = await made(label);
+		const { data } = await serialize(obj, { controls: bake(obj).controls, view: viewOf(obj, cast) });
+		const root = rebuild(data);
+		const box = new THREE.Box3().setFromObject(root);
+		expect(box.isEmpty()).toBe(false);
+		// its plants stand on it, their leaves reaching a little past their feet
+		expect(Math.max(box.max.x, -box.min.x, box.max.z, -box.min.z)).toBeLessThanOrEqual(RADIUS + 0.5);
+		expect(root.getObjectByName('ground')).toBeTruthy();
+		const card = cardOf(obj, meta, { recipe: 'ab'.repeat(32), engine: 4 });
+		const verdict = checkCard(card);
+		expect(verdict.errors ?? []).toEqual([]);
+		const back = biomeOfCard(card);
+		expect(back.surface).toEqual(Object.fromEntries(Object.entries(b.surface).filter(([, w]) => w > 0)));
+		expect(back.density).toBe(b.density);
+		expect(back.cover).toEqual(b.cover.map((c, i) => ({ ...c, ref: `biomes/cover@1:${c.kind}?seed=${coverSeed(i, c.kind)}` })));
+	}
+	// the group the pages list: the biomes and their cover, each built as one object
 	const { GROUPS, objectAt } = await import('../index.js');
 	expect((await GROUPS.biomes.list()).map((b) => b.id)).toEqual([...BIOMES.map((b) => b.id), 'cover']);
-	await expect(objectAt('biomes/meadow@1')).rejects.toThrow(/not built as one object/);
 	expect(new THREE.Box3().setFromObject(await objectAt(coverRef('fern', 7139))).isEmpty()).toBe(false);
 }, 600000);
 

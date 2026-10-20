@@ -1,18 +1,22 @@
 /*
- * A BIOME'S COVER, BUILT IN THE BOX — what stands on a biome's floor (./cover.js: a grass clump, a fern, a wood
- * anemone, a fallen branch…), each kind one shape a builder hands back as one three.js object, so each is a recipe of
- * the `biomes` group the asset box builds ($lib/assets/groups.js): one asset, the cover, its kinds its variants, built
- * at a seed, `biomes/cover@1:fern?seed=7139`. The Biomes explorer (/app/biomes/) draws a floor's cover from these
- * through the universal renderer ($lib/assets/render), laid out where ./stream.js lays it (`coverLaid`).
+ * THE BIOMES AND THEIR COVER, BUILT IN THE BOX — the `biomes` group the asset box builds ($lib/assets/groups.js), kept
+ * in the Maia City vault as every other asset is:
  *
- * The biome itself stays a recipe of numbers (./index.js): which surfaces, which kinds, how big their colonies, how
- * dense. It is not one object: it is a floor without an edge, laid out round wherever the eye is, its ground painted by
- * a shader of the page's; and its layout is plain sums, the same every time, with no code of anyone's to keep apart.
+ *   each biome   a patch of its floor, its card its numbers: what a world reads from the vault to lay that floor round
+ *                you (./floors.js; Samuel 2026-10-20: biomes as dynamic as every other asset, from avenDB)
+ *   the cover    what stands on a biome's floor (./cover.js: a grass clump, a fern, a wood anemone, a fallen branch…),
+ *                each kind one shape a builder hands back as one three.js object: one asset, its kinds its variants,
+ *                built at a seed, `biomes/cover@1:fern?seed=7139`. The worlds and the Biomes explorer (/app/biomes/)
+ *                draw a floor's cover from these through the universal renderer ($lib/assets/render), laid out where
+ *                ./stream.js lays it (`coverLaid`)
  *
- * The kinds cast shadows, as the cover streamed on a page with shadows always has (./stream.js `shadows`). Each
- * version is kept in HISTORY below (all at v1 so far).
+ * A world lays a biome as a floor without an edge, round wherever the eye is, its ground painted by a shader of the
+ * page's (./surfaces.js `groundMaterial`); its layout is plain sums, the same every time. The kinds cast shadows, as
+ * the cover streamed on a page with shadows always has (./stream.js `shadows`). Each version is kept in HISTORY below
+ * (all at v1 so far).
  */
 import { COVER } from './cover.js';
+import { FLOORS } from './floors.js';
 import { versioned } from '../app/versions.js';
 
 /**
@@ -34,6 +38,7 @@ const casting = (build) => (/** @type {number} */ seed) => {
 const KINDS = Object.entries(COVER).map(([id, c]) => ({ id, label: c.label, make: casting(c.build) }));
 
 const LIST = [
+	...FLOORS,
 	{
 		id: 'cover',
 		label: 'Biome cover',
@@ -44,7 +49,7 @@ const LIST = [
 	}
 ];
 
-/** the cover, its version and history ($lib/app/versions.js): the `biomes` group's recipes */
+/** the biomes and the cover, their versions and history ($lib/app/versions.js): the `biomes` group's recipes */
 export const BUILT = versioned(LIST, 'make', HISTORY);
 
 /**
