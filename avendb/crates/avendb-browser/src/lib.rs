@@ -1005,17 +1005,13 @@ fn drafted(
 ) -> Result<Option<Drafted>, Refusal> {
     let mut moves = lab.moves(me, touch);
     moves.extend(avens.iter().map(|a| (a.device, a.next)));
-    // with nothing left to move, a checkpoint over what earlier keys signed since (`Lab::draft_move`), where its
-    // person's next key approves for the vault; nothing where it doesn't
-    let by = lab.owner_among(me, opener).or(opener.first().copied());
-    let drafts = match by.ok_or(Refusal::NotActing).and_then(|by| lab.draft_move(me, &moves, by)) {
-        Ok(drafts) => drafts,
-        Err(_) if moves.is_empty() => return Ok(None),
-        Err(why) => return Err(why),
-    };
-    if drafts.is_empty() {
+    // nothing moves, nothing to sign: the checkpoint over what earlier keys signed rides a move's ceremony, never one
+    // of its own
+    if moves.is_empty() {
         return Ok(None);
     }
+    let by = lab.owner_among(me, opener).or(opener.first().copied()).ok_or(Refusal::NotActing)?;
+    let drafts = lab.draft_move(me, &moves, by)?;
     let mut signers: Vec<SignerId> = drafts.iter().flat_map(|d| d.edit().sigs()).collect();
     signers.sort();
     signers.dedup();
