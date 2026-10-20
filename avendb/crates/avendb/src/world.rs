@@ -130,6 +130,9 @@ pub struct World {
     /// What kind of signer each owner of its vaults that is one is (`SignerKeys::kind`), of those it saw sign
     /// (`Lab::signers_seen`): the master recovery key, which never signs, among none.
     pub signers: BTreeMap<SignerId, &'static str>,
+    /// Each owner key and each device of its vaults the key move kept beside its next key, which is an owner or a
+    /// device of the same vault too, with that key (`Lab::earlier_keys`).
+    pub earlier: BTreeMap<SignerId, SignerId>,
     /// Its vault owns avenMAIA (`owns_server`).
     pub owns_server: bool,
     /// avenMAIA keeps a backup of its vault (`backs_up`).
@@ -281,7 +284,9 @@ impl World {
     /// (`rules::groups`), each with its level; the kind table, what each kind of vault may be owned by and hold
     /// (`kinds`, `words::kinds_json`); and the master recovery key it adds, `recovery`, `null` for none, which a
     /// vault's owners mark as such, each other signer among them with its kind, `by` (`signers`: `device`, `passkey`
-    /// or `touch`, `null` where the device never saw it sign). As the device works it out, so the page keeps no rule:
+    /// or `touch`, `null` where the device never saw it sign), and each owner key and device with `next`, its next key
+    /// where the key move kept it beside that key (`earlier`), `null` otherwise. As the device works it out, so the
+    /// page keeps no rule:
     ///
     /// - `ownsServer` and `backsUp` (`owns_server`, `backs_up`, `null` while it knows no avenMAIA);
     /// - each vault's `acting`: `{as, reaches, shares}` (`Acting`);
@@ -301,6 +306,11 @@ impl World {
     /// `{device, has, of, checked}` (`Holder`): of an entry, edits of its log; of a file, its pieces; `checked` when
     /// the device said so in its signed statement, `null` for this device and one on a live connection. This device is
     /// among them once its shelf holds some of it.
+    /// The next key the key move kept signer `s` beside (`earlier`), in 64 hex digits.
+    fn next_of(&self, s: &SignerId) -> Option<String> {
+        self.earlier.get(s).map(|n| hex(&n.0))
+    }
+
     pub fn to_json(&self, me: SignerId) -> Value {
         let ids = |xs: &[VaultId]| xs.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
         let holders = |hs: Option<&Vec<Holder>>| {
@@ -311,13 +321,15 @@ impl World {
         let owner = |p: &Principal| match p {
             Principal::Vault(v) => json!({ "vault": hex(&v.0) }),
             Principal::Signer(s) => {
-                json!({ "signer": hex(&s.0), "recovery": Some(*s) == self.recovery, "by": self.signers.get(s) })
+                let (recovery, by) = (Some(*s) == self.recovery, self.signers.get(s));
+                json!({ "signer": hex(&s.0), "recovery": recovery, "by": by, "next": self.next_of(s) })
             }
         };
         let vault = |v: &VaultView| {
             let device = |d: &SignerId| {
                 let copy = v.copies.get(d).map(|&full| if full { "full" } else { "light" });
-                json!({ "id": hex(&d.0), "name": v.names.get(d), "me": *d == me, "copy": copy })
+                let (name, next) = (v.names.get(d), self.next_of(d));
+                json!({ "id": hex(&d.0), "name": name, "me": *d == me, "copy": copy, "next": next })
             };
             let a = &v.acting;
             json!({
@@ -533,17 +545,32 @@ pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
     }
     let entries = shown.iter().map(|en| entry(lab, me, en)).collect();
     let (owns_server, backs_up) = (owns_server(lab, me), backs_up(lab, me));
-    let synced_to = SyncedTo::default();
     let recovery = lab.recovery();
-    let owners: BTreeSet<SignerId> = st
+    let signers_of = |v: &Vault| {
+        let owners = v.owners.iter().filter_map(|p| if let Principal::Signer(s) = p { Some(*s) } else { None });
+        owners.filter(|&s| Some(s) != recovery).collect::<BTreeSet<SignerId>>()
+    };
+    let owners: BTreeSet<SignerId> = st.vaults().iter().flat_map(signers_of).collect();
+    let signers = lab.signers_seen(me, &owners).into_iter().map(|(s, keys)| (s, keys.kind())).collect();
+    let earlier = st
         .vaults()
         .iter()
-        .flat_map(|v| &v.owners)
-        .filter_map(|p| if let Principal::Signer(s) = p { Some(*s) } else { None })
-        .filter(|&s| Some(s) != recovery)
+        .flat_map(|v| lab.earlier_keys(me, &signers_of(v).into_iter().chain(v.devices.iter().copied()).collect()))
         .collect();
-    let signers = lab.signers_seen(me, &owners).into_iter().map(|(s, keys)| (s, keys.kind())).collect();
-    Some(World { mine, recovery, signers, owns_server, backs_up, vaults, shares, audiences, entries, synced_to })
+    let synced_to = SyncedTo::default();
+    Some(World {
+        mine,
+        recovery,
+        signers,
+        earlier,
+        owns_server,
+        backs_up,
+        vaults,
+        shares,
+        audiences,
+        entries,
+        synced_to,
+    })
 }
 
 /// As which vault device `me`, of vault `mine`, has its person act in vault `v`, and what that vault may there: the

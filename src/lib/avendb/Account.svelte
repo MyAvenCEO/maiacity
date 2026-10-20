@@ -531,7 +531,7 @@
 	const forget = async () => {
 		const mine = world?.vaults.find((v) => v.id === world?.mine);
 		const ask =
-			mine && mine.devices.length > 1
+			mine && mine.devices.filter((d) => !d.next).length > 1
 				? `Forget your account on ${here}? Your vault and your other devices keep everything, and you can sign in here again.`
 				: `Forget your account on ${here}? Your vault stays yours: sign in with your passkey on any device, and avenDB’s server hands it back.`;
 		if (!(await sure(ask))) return;

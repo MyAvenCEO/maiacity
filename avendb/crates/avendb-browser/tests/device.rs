@@ -316,7 +316,8 @@ async fn eves_first_browser_founds_her_vault_her_second_links_through_it_and_the
     // her vault, her passkey its root, and her browser, by the name on its card
     let mine = shown(&seen, vault);
     assert_eq!((&mine["kind"], &mine["root"]), (&json!("human"), &json!(first.passkey().to_hex())));
-    let me = json!({ "id": first.node().device().to_hex(), "name": "Eve's browser", "me": true, "copy": null });
+    let first_d = first.node().device().to_hex();
+    let me = json!({ "id": first_d, "name": "Eve's browser", "me": true, "copy": null, "next": null });
     assert_eq!(mine["devices"], json!([me]));
     let note = write_note(&first, vault, vault, titled("Seeds", "Tomatoes in March."), &[]).await.expect("a note");
     let holds = move |lab: &Lab, me| lab.fetched(me, note) > 0;
@@ -1521,10 +1522,10 @@ async fn hanas_browser_and_passkey_from_before_the_key_move_move_in_one_ceremony
     assert_eq!(suites, [Some(Suite::MlDsa); 2]);
     let kept = Meta::load(&disk::open(&shelf.0).expect("its shelf")).await.expect("it reads").expect("what opens it");
     assert_eq!(kept, Meta { device: me, ..meta.clone() }, "what opens it again names its next key");
-    // her Mac sees her passkey's next key as her vault's root and its one owner, and her browser's next key in place
-    // of the old; each reads her note, and her Mac her browser's edit as its next key
+    // her Mac sees her passkey's next key as an owner beside the old, which stays her vault's root, and her
+    // browser's next key beside the old; each reads her note, and her Mac her browser's edit as its next key
     let members = move |lab: &Lab, d| lab.state(d).vault(hana).map(|v| (v.owners.clone(), v.root, v.devices.clone()));
-    let after = Some((vec![Principal::Signer(next)], Some(next), vec![mac_h, me]));
+    let after = Some(([passkey, next].map(Principal::Signer).to_vec(), Some(passkey), vec![mac_h, browser_h, me]));
     until("her Mac sees the move", || async { mac.read(members).await == after }).await;
     assert_eq!(moved.node().read(members).await, after);
     assert!(shows(&moved, note, "Red and blue.").await, "it reads what it read");
@@ -1674,9 +1675,10 @@ async fn sams_phone_moves_his_passkey_only_once_it_brought_what_the_server_keeps
     let next = moved.passkey();
     assert!(next != passkey);
     assert!(shows_named(&moved, sam, "Sam").await && shows_named(&moved, maia, "Maia City").await);
-    // the server learns of the move: his passkey's next key is his vault's root
-    let root = move |lab: &Lab, me| lab.state(me).vault(sam).and_then(|v| v.root);
-    until("the server sees the move", || async { server.read(root).await == Some(next) }).await;
+    // the server learns of the move: his passkey's next key is an owner of his vault
+    let owner = Principal::Signer(next);
+    let owns = move |lab: &Lab, me| lab.state(me).vault(sam).is_some_and(|v| v.owners.contains(&owner));
+    until("the server sees the move", || async { server.read(owns).await }).await;
     for n in [moved.node(), &server] {
         n.shutdown().await.expect("the node shuts down");
     }

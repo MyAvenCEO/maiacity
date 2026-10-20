@@ -24,12 +24,12 @@
 //!   as the volume goes, at its next look.
 //! - **Moved** (K3b): a drive made before the key move moves to ML-DSA-65 with the Mac that hosts it, in the same
 //!   sheet and touch (`Service::hold_drives`, `Service::moved_drives`): its node stopped, it joins as its next key,
-//!   which takes over its copy setting, its old key leaves, its store and the Mac's shelf name its next key, and the
-//!   Mac hosts it as that key from then on.
+//!   which takes over its copy setting, its old key stays in the vault beside it, its store and the Mac's shelf name
+//!   its next key, and the Mac hosts it as that key from then on.
 //! - **Removed** like a lost phone: the device is revoked (`{"op": "revoke", "vault", "device"}`), its peers refuse
 //!   it from then on, and the Mac hosts it no more.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -389,7 +389,8 @@ impl Service {
     /// The volumes mounted and the drives joined here, for the page: each volume by its path and name, what it is to
     /// this Mac (`state_of`) and the device on it, if any; each drive whose key this Mac holds and that is a device of
     /// the person's vault still, whether it is plugged in, on which volume, its name there, and when it last checked
-    /// what it holds, by its newest signed statement this Mac's device keeps.
+    /// what it holds, by its newest signed statement this Mac's device keeps. A drive the key move kept beside its next
+    /// key (`Lab::earlier_keys`) is listed once, as its next key, where this Mac holds that.
     pub(crate) async fn drives(self: &Arc<Self>) -> Result<Value> {
         let d = self.device()?;
         let Some(root) = self.config.volumes.clone() else { return Ok(json!({ "volumes": [], "drives": [] })) };
@@ -413,6 +414,11 @@ impl Service {
             }));
         }
         let known: Vec<SignerId> = KEY.on(&self.shelf()).await?.into_iter().filter(|id| mine.contains(id)).collect();
+        let earlier = {
+            let known: BTreeSet<SignerId> = known.iter().copied().collect();
+            d.node().read(move |lab, me| lab.earlier_keys(me, &known)).await
+        };
+        let known = known.iter().copied().filter(|id| earlier.get(id).is_none_or(|next| !known.contains(next)));
         let mut drives_json = vec![];
         for drive in known {
             let on = seen.iter().find(|(_, s)| s.meta.as_ref().is_some_and(|m| m.device == drive));
@@ -604,7 +610,7 @@ impl Service {
     }
 
     /// The drives of `held` that moved in this Mac's key move, each to its next key among `moves`
-    /// (`Device::move_keys`), as its own device's next key is named before the old one leaves: this Mac's shelf keeps
+    /// (`Device::move_keys`), as its own device's next key is named before it opens again: this Mac's shelf keeps
     /// the drive's key under its next key (`wrap_key`), then the drive's store names that key (`Meta::device`), so
     /// this Mac hosts it as that key from then on, with no ceremony, as it hosts it again (`look`). A drive that moved
     /// already, as in a move cut short, stays as it is.

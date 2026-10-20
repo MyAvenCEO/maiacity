@@ -143,7 +143,7 @@
 		<p class="soft">Legacy: the studio no longer uses it, as the Mac runs its jobs as you. Revoke its shares and it leaves this list.</p>
 	{/if}
 	<ul class="rows">
-		{#each x.devices as d (d.id)}
+		{#each x.devices.filter((d) => !d.next) as d (d.id)}
 			{@const name = d.name ?? `${nameOf(x)}’s device`}
 			<li>
 				<span><span class="chip">Device</span> {name} <span class="soft mono">{short(d.id)}</span></span>
