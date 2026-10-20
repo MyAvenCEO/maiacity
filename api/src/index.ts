@@ -11,7 +11,6 @@ import { inviteOpen, loginFinish, loginOptions, registerFinish, registerOptions 
 import { fromBunSql, useDb } from "./pg";
 import { assignRole, can, capabilities, createRole, deleteRole, initRoles, listRoles, RoleError, setRoleCaps } from "./acl";
 import { CAPABILITIES } from "./caps";
-import { addIdea, deleteIdea, IdeaError, listIdeas, updateIdea } from "./ideas";
 import { listTables, readTable, TableError } from "./tables";
 import { approveDevice, KeyError, keyHolder, redeemDevice, revokeKey, startDevice } from "./keys";
 import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice, VaultError } from "./vault";
@@ -102,9 +101,9 @@ async function signedIn(req: Request): Promise<{ id: string; role: string } | Re
   return me ?? json(req, { error: "Please sign in." }, { status: 401 });
 }
 
-/** Turn a thrown ledger, role or notebook error into a response a person can read. */
+/** Turn a thrown role, table, key, vault or game error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof RoleError || e instanceof IdeaError || e instanceof TableError || e instanceof KeyError || e instanceof VaultError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof RoleError || e instanceof TableError || e instanceof KeyError || e instanceof VaultError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -323,47 +322,6 @@ const server = Bun.serve({
         try {
           await deleteRole(req.params.name);
           return json(req, { roles: await listRoles() });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-
-    // The admin's notebook: ideas and notes, written down the moment they come.
-    "/api/ideas": {
-      OPTIONS: preflight,
-      GET: async (req) => {
-        const me = await allowed(req, "ideas:admin");
-        if (me instanceof Response) return me;
-        return json(req, await listIdeas());
-      },
-      POST: async (req) => {
-        const me = await allowed(req, "ideas:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await addIdea(me.id, (await readJson(req))?.body), { status: 201 });
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-    },
-    "/api/ideas/:id": {
-      OPTIONS: preflight,
-      PATCH: async (req) => {
-        const me = await allowed(req, "ideas:admin");
-        if (me instanceof Response) return me;
-        try {
-          return json(req, await updateIdea(req.params.id, (await readJson(req)) ?? {}));
-        } catch (e) {
-          return fail(req, e);
-        }
-      },
-      DELETE: async (req) => {
-        const me = await allowed(req, "ideas:admin");
-        if (me instanceof Response) return me;
-        try {
-          await deleteIdea(req.params.id);
-          return new Response(null, { status: 204, headers: cors(req) });
         } catch (e) {
           return fail(req, e);
         }

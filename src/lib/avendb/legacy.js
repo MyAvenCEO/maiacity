@@ -1,10 +1,10 @@
 // What maiaCITY kept before avenDB, copied into a vault once as sparks and artifacts (content-v2 M1d,
 // ./LegacyCopy.svelte): each inspire-me report (/inspire-me/<slug>/README.md) a spark that holds its source as an
 // artifact (/inspire-me/<slug>/source.md, its words as rows); the journal's sources (/sources/*) artifacts on one spark;
-// each story's idea pad (/blog/<slug>/idea.md) a spark with its links as artifacts; and each idea of the admin's
-// notebook (the server's /api/ideas) a spark. It only copies: the files, the rows and the pages that show them stay as
-// they are. Each copy carries a tag that names what it was copied from (`legacy:…`), so copying again copies only what
-// is new, and the tag stays out of the tag chips, as every tag with a colon does.
+// and each story's idea pad (/blog/<slug>/idea.md) a spark with its links as artifacts. (The admin's notebook, the
+// server's ideas, held none when it was dropped, 2026-10-20.) It only copies: the files, the rows and the pages that
+// show them stay as they are. Each copy carries a tag that names what it was copied from (`legacy:…`), so copying again
+// copies only what is new, and the tag stays out of the tag chips, as every tag with a colon does.
 
 import { parse as parseYaml } from 'yaml';
 import { addingArtifact, ARTIFACT, fromLink, youtubeId } from './artifacts.js';
@@ -31,17 +31,14 @@ export const legacyTag = (key) => `legacy:${key}`;
 const nameAt = (path, up = 1) => (path.split('/').at(-up) ?? '').replace(/\.[a-z0-9]+$/i, '');
 
 /**
- * What is there to copy, with or without the notebook's ideas (read from the server first): each piece its key, what
- * it is, and its name.
- * @param {{ id: string, body: string, done: boolean }[]} ideas
- * @returns {{ key: string, kind: 'report' | 'journal' | 'pad' | 'idea', name: string, idea?: any }[]}
+ * What is there to copy: each piece its key, what it is, and its name.
+ * @returns {{ key: string, kind: 'report' | 'journal' | 'pad', name: string }[]}
  */
-export function pieces(ideas) {
+export function pieces() {
 	return [
 		...Object.keys(REPORTS).map((p) => ({ key: `inspire-${nameAt(p, 2)}`, kind: /** @type {const} */ ('report'), name: nameAt(p, 2) })),
 		...(Object.keys(JOURNAL).length ? [{ key: 'journal-sources', kind: /** @type {const} */ ('journal'), name: 'Journal sources' }] : []),
-		...Object.keys(PADS).map((p) => ({ key: `pad-${nameAt(p, 2)}`, kind: /** @type {const} */ ('pad'), name: nameAt(p, 2) })),
-		...ideas.map((i) => ({ key: `idea-${i.id}`, kind: /** @type {const} */ ('idea'), name: titleOf(i.body.split('\n')[0] ?? ''), idea: i }))
+		...Object.keys(PADS).map((p) => ({ key: `pad-${nameAt(p, 2)}`, kind: /** @type {const} */ ('pad'), name: nameAt(p, 2) }))
 	];
 }
 
@@ -177,7 +174,7 @@ export async function copying(p, vault, actor, tags) {
 		holds();
 		spark = sparkRecord('Journal sources', 'The sources the journal was written from, kept in the repository before avenDB.', items);
 		more = ['journal'];
-	} else if (p.kind === 'pad') {
+	} else {
 		const raw = await PADS[`/blog/${p.name}/idea.md`]();
 		const title = (/^#\s+(.+)$/m.exec(raw)?.[1] ?? p.name).trim();
 		const urls = [...new Set(raw.match(/https?:\/\/[^\s)>\]]+/g) ?? [])].map(linkIn).filter((u) => u !== null);
@@ -186,12 +183,6 @@ export async function copying(p, vault, actor, tags) {
 		note(raw.trim());
 		spark = sparkRecord(title, `The idea pad of ${p.name}, from before avenDB.`, items);
 		more = ['journal'];
-	} else {
-		const body = String(p.idea?.body ?? '').trim();
-		const title = titleOf(body.split('\n')[0] ?? '');
-		if (title !== body) note(body);
-		spark = sparkRecord(title, '', items);
-		more = ['notebook', ...(p.idea?.done ? ['done'] : [])];
 	}
 	return [...arts, { ...addingSpark(vault, spark, [...new Set([...tags.spark, ...more, mark])]), as: actor }];
 }

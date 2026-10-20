@@ -21,7 +21,6 @@ export const CAPABILITIES: Record<string, string> = {
   "roles:admin": "Manage roles: what each role holds, and who has which role",
   // the super admin's alone: once the city has its admin, signing up takes an invite (Samuel 2026-10-18)
   "humans:invite": "Invite a new human: once the city has its admin, an invite is the only way to sign up",
-  "ideas:admin": "Write down ideas and notes in the admin notebook",
   "media:admin": "Work with the media vault and the studio: every image, sound and video, known by its hash",
   "economy:admin": "Act as MaiaCity V1's admin: settle its MIPs, the improvement proposals that change the game",
   "db:read": "See every table of the city's Postgres and its rows, read only, secrets hidden",

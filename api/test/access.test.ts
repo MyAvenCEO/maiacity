@@ -7,7 +7,6 @@ import { useDb, type Db } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
 import { assignRole, can, capabilities, createRole, deleteRole, initRoles, listRoles, setRoleCaps } from "../src/acl";
 import { ALL_CAPS, CITIZEN_CAPS, ROLE_CAPS } from "../src/caps";
-import { addIdea, deleteIdea, listIdeas, updateIdea } from "../src/ideas";
 import { approveDevice, deviceInfo, keyHolder, redeemDevice, revokeKey, startDevice } from "../src/keys";
 
 const pg = new PGlite();
@@ -33,8 +32,8 @@ describe("roles are bundles of capabilities", () => {
   test("seeded from ROLE_CAPS: the admin holds every capability by name, a citizen only the everyday set", () => {
     expect([...capabilities("admin")].sort()).toEqual([...ALL_CAPS].sort());
     expect([...capabilities("citizen")].sort()).toEqual([...CITIZEN_CAPS].sort());
-    expect(can({ role: "citizen" }, "ideas:admin")).toBe(false);
-    expect(can({ role: "admin" }, "ideas:admin")).toBe(true);
+    expect(can({ role: "citizen" }, "db:read")).toBe(false);
+    expect(can({ role: "admin" }, "db:read")).toBe(true);
     expect(can(null, "hearts:mint")).toBe(false);
   });
 
@@ -45,21 +44,21 @@ describe("roles are bundles of capabilities", () => {
   });
 
   test("a capability new in ROLE_CAPS reaches the roles that name it, once", async () => {
-    await pg.query("UPDATE secrets SET value = $1 WHERE key = 'caps_reconciled'", [JSON.stringify(ALL_CAPS.filter((c) => c !== "ideas:admin"))]);
-    await pg.query("UPDATE roles SET capabilities = replace(capabilities, ',ideas:admin', '') WHERE name = 'admin'");
+    await pg.query("UPDATE secrets SET value = $1 WHERE key = 'caps_reconciled'", [JSON.stringify(ALL_CAPS.filter((c) => c !== "db:read"))]);
+    await pg.query("UPDATE roles SET capabilities = replace(capabilities, ',db:read', '') WHERE name = 'admin'");
     await initRoles();
-    expect(capabilities("admin").has("ideas:admin")).toBe(true);
+    expect(capabilities("admin").has("db:read")).toBe(true);
   });
 
   test("nobody can take roles:admin from the admin role, or delete it", async () => {
-    await expect(setRoleCaps("admin", ["ideas:admin"])).rejects.toThrow(/keeps the right/);
+    await expect(setRoleCaps("admin", ["db:read"])).rejects.toThrow(/keeps the right/);
     await expect(deleteRole("admin")).rejects.toThrow(/cannot be deleted/);
     await expect(setRoleCaps("citizen", ["everything"])).rejects.toThrow(/Not a capability/);
   });
 
   test("a new role is a row: created, given to someone, and only deletable once nobody holds it", async () => {
-    await createRole("gardener", ["ledger:read", "ideas:admin"]);
-    expect(can({ role: "gardener" }, "ideas:admin")).toBe(true);
+    await createRole("gardener", ["ledger:read", "db:read"]);
+    expect(can({ role: "gardener" }, "db:read")).toBe(true);
     expect(can({ role: "gardener" }, "hearts:mint")).toBe(false);
     await assignRole("second", "gardener");
     expect((await listRoles()).find((r) => r.name === "gardener")?.people).toBe(1);
@@ -71,22 +70,6 @@ describe("roles are bundles of capabilities", () => {
 
   test("the first signup cannot be demoted", async () => {
     await expect(assignRole("first", "citizen")).rejects.toThrow(/first admin/);
-  });
-});
-
-describe("the admin's notebook", () => {
-  test("write, edit, tick off and delete an idea", async () => {
-    const a = await addIdea("first", "  Rooftop orchards on every large dome  ");
-    expect(a.body).toBe("Rooftop orchards on every large dome");
-    expect(a.author).toBe("first");
-    const b = await addIdea("first", "A night market by the master dome");
-    await updateIdea(a.id, { done: true });
-    const list = await listIdeas();
-    expect(list.map((i) => i.id)).toEqual([b.id, a.id]); // open first
-    expect((await updateIdea(b.id, { body: "A night market on Fridays" })).body).toBe("A night market on Fridays");
-    await expect(addIdea("first", "   ")).rejects.toThrow(/Write something/);
-    await deleteIdea(a.id);
-    expect((await listIdeas()).length).toBe(1);
   });
 });
 

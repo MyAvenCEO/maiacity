@@ -341,7 +341,7 @@
 				<Jobs {world} vault={context} {actor} {api} />
 			{:else if tab === 'about' || tab === 'members' || tab === 'sharing'}
 				<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} {drives} {asks} />
-			{:else if tab !== 'studio'}
+			{:else if tab !== 'studio' && tab !== 'postgres'}
 				<Database {world} vault={context} {actor} {api} view={tab} onopen={open} onview={go} />
 			{/if}
 			{#snippet failed(e, reset)}
