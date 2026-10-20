@@ -52,7 +52,7 @@
 	const WAIT = 20000;
 
 	/** what the left side picked: a kind, every kind (''), or the invites */
-	let view = $state(/** @type {'' | 'invites' | (typeof ORDER)[number]} */ (''));
+	let view = $state(/** @type {'' | 'invites' | 'retired' | (typeof ORDER)[number]} */ (''));
 	let query = $state('');
 	/** the vault picked, by its id */
 	let picked = $state('');
@@ -98,9 +98,19 @@
 				world.vaults.map((v) => ({ id: v.id, kind: v.kind, name: v.name, owners: v.owners, devices: v.devices.length, entries: -1, keeps: '' }))
 		)
 	);
-	const count = $derived(Object.fromEntries(ORDER.map((k) => [k, all.filter((v) => v.kind === k).length])));
+	/** A device vault no device acts for any more, as the studio's old workers once their devices were taken out
+	 *  (#1010): avenDB never deletes a vault, so the server still knows it, but it syncs and acts no more. Listed apart.
+	 *  @param {Kept} v */
+	const retired = (v) => v.kind === 'device' && v.devices === 0;
+	const live = $derived(all.filter((v) => !retired(v)));
+	const gone = $derived(all.filter(retired));
+	const count = $derived(Object.fromEntries(ORDER.map((k) => [k, live.filter((v) => v.kind === k).length])));
 	const shown = $derived(
-		all.filter((v) => (!view || v.kind === view) && (!query || `${name(v.id)} ${v.id}`.toLowerCase().includes(query.toLowerCase())))
+		(view === 'retired' ? gone : live).filter(
+			(v) =>
+				(!view || view === 'retired' || v.kind === view) &&
+				(!query || `${name(v.id)} ${v.id}`.toLowerCase().includes(query.toLowerCase()))
+		)
 	);
 	const vault = $derived(all.find((v) => v.id === picked));
 
@@ -182,7 +192,7 @@
 	<input class="nav-search" type="search" placeholder="Find a vault" aria-label="Find a vault" bind:value={query} />
 	<h3 class="nav-group">The server’s vaults</h3>
 	<button class="nav-item" class:on={view === ''} aria-pressed={view === ''} data-pick onclick={() => (view = '')}
-		><Icon name="vault" size={16} /><span>All vaults</span><small>{all.length}</small></button
+		><Icon name="vault" size={16} /><span>All vaults</span><small>{live.length}</small></button
 	>
 	{#each ORDER as k (k)}
 		<button class="nav-item" class:on={view === k} aria-pressed={view === k} data-pick onclick={() => (view = k)}
@@ -191,6 +201,11 @@
 			></button
 		>
 	{/each}
+	{#if gone.length}
+		<button class="nav-item" class:on={view === 'retired'} aria-pressed={view === 'retired'} data-pick onclick={() => (view = 'retired')}
+			><Icon name="trash" size={16} /><span>Retired</span><small>{gone.length}</small></button
+		>
+	{/if}
 	<h3 class="nav-group">Maia City</h3>
 	<button class="nav-item" class:on={view === 'invites'} aria-pressed={view === 'invites'} data-pick onclick={() => (view = 'invites')}
 		><Icon name="share" size={16} /><span>Open invites</span><small>{holders.invites.length}</small></button
@@ -220,7 +235,7 @@
 				<dd>{v.entries}</dd>
 			{/if}
 			<dt>Devices</dt>
-			<dd>{v.devices}</dd>
+			<dd>{v.devices}{#if retired(v)} <span class="soft">· retired: it syncs and acts no more, and avenDB keeps its history</span>{/if}</dd>
 			<dt>Owners</dt>
 			<dd>
 				{#each v.owners as o, i ('vault' in o ? o.vault : o.signer)}
