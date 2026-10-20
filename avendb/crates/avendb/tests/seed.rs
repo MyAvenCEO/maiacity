@@ -1,6 +1,6 @@
-//! The repo seed's top-up of the Maia City vault (the page's `src/lib/avendb/seed.js`: the code, games, settings, docs
-//! and recipes the repository adds) through the ops engine: every op the page would write into a vault that holds none of
-//! it yet, piece by piece, each `"$n"` naming the entry op n of its piece made (and `"$n.line"` the line it started),
+//! The repo seed's top-up of the Maia City vault (the page's `src/lib/avendb/seed.js`: the code, games, settings and
+//! recipes the repository adds) through the ops engine, with the docs as `scripts/propose-doc.mjs` drafts them for an
+//! AIP: every op the page would write into a vault that holds none of it yet, piece by piece, each `"$n"` naming the entry op n of its piece made (and `"$n.line"` the line it started),
 //! as the page's `refs` resolves it. Every create must fit its schema; each doc post links its story, which reads
 //! back; and each code entry reads back with its `ref:` tag. The ops come from the repository as it is
 //! (`node scripts/seed-ops.mjs <vault> <out.json>`), so the test runs where they are given, by the path in `SEED_OPS`:
