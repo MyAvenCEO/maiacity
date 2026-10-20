@@ -36,7 +36,9 @@
 //! (`<device>.sock`), each of which relays its harness's lines (`serve`). One device is one node, one shelf and one
 //! endpoint, never two of the same key at once. When it goes away, one of the others takes its place, and asks it
 //! again whatever it left unanswered; when a session of a newer build of it starts, as after the Mac app was rebuilt,
-//! the older makes way, and answers its harness through the newer from then on.
+//! the older makes way, and answers its harness through the newer from then on. Once its own harness has gone and no
+//! session used it for a while (`IDLE_AGENT`), the one that runs it closes its device and ends, letting go of its lock,
+//! and a session still connected takes its place, so that none idles on, holding a device in memory.
 //!
 //! A Claude Code session in Anthropic's cloud runs no Mac: `avendb-device agent cloud` (`serve_cloud`), the device
 //! agentCloud, whose key its person's Mac made and added to avenMAIA in one ceremony (The OS app's "Add a cloud agent",
@@ -113,6 +115,11 @@ const WAIT: Duration = Duration::from_secs(30);
 
 /// How long a session that made way for a newer build leaves the lock to it, rather than take it back at once.
 const YIELD: Duration = Duration::from_secs(5);
+
+/// How long the session that runs an agent's device runs it on once its own harness has gone (its stdin ended) and no
+/// other session asked it anything, nor connected: then it closes its device and lets go of its lock, and a session
+/// still connected takes its place (`serve`), so that no process idles on, holding a device in memory.
+pub const IDLE_AGENT: Duration = Duration::from_secs(600);
 
 /// The key of a session's first line to the one that runs its agent's device: the build it runs (`built`).
 const HELLO: &str = "avendb-agent";
@@ -322,6 +329,19 @@ pub async fn serve_built(
     mut output: impl AsyncWrite + Unpin,
     built: u64,
 ) -> Result<()> {
+    serve_idle(host, harness, input, output, built, IDLE_AGENT).await
+}
+
+/// `serve_built`, where the session that runs the device, its own harness gone, runs it on for `idle` after it was
+/// last used (`IDLE_AGENT`).
+pub async fn serve_idle(
+    host: PathBuf,
+    harness: String,
+    input: impl AsyncRead + Unpin,
+    mut output: impl AsyncWrite + Unpin,
+    built: u64,
+    idle: Duration,
+) -> Result<()> {
     named(&harness)?;
     let name = device_name(&harness);
     let dir = folder(&host, &name);
@@ -334,7 +354,7 @@ pub async fn serve_built(
             && let Some(held) = hold(&lock(&host, &name))?
         {
             since = None;
-            let session = Session { host: &host, name: &name, built };
+            let session = Session { host: &host, name: &name, built, idle };
             if session.run(held, &mut lines, &mut waiting, &mut output).await? {
                 return Ok(());
             }
@@ -571,19 +591,39 @@ fn hold(file: &Path) -> Result<Option<std::fs::File>> {
     }
 }
 
-/// The one session that runs an agent's device: the app's `host` folder, the agent's `name`, and the `built` of its
-/// build.
+/// The one session that runs an agent's device: the app's `host` folder, the agent's `name`, the `built` of its
+/// build, and how long it runs on unused once its own harness has gone (`IDLE_AGENT`).
 struct Session<'a> {
     host: &'a Path,
     name: &'a str,
     built: u64,
+    idle: Duration,
+}
+
+/// When the device a session runs was last used: a line asked of it, here or on its socket, or a session connecting.
+#[derive(Clone)]
+struct Used(Arc<std::sync::Mutex<tokio::time::Instant>>);
+
+impl Used {
+    fn new() -> Used {
+        Used(Arc::new(std::sync::Mutex::new(tokio::time::Instant::now())))
+    }
+
+    fn now(&self) {
+        *self.0.lock().expect("used") = tokio::time::Instant::now();
+    }
+
+    fn last(&self) -> tokio::time::Instant {
+        *self.0.lock().expect("used")
+    }
 }
 
 impl Session<'_> {
     /// Runs the agent's device while it holds its lock file, `held`: its node on its shelf, and its looks (`look`); it
     /// answers on its socket the other sessions (`others`), and here, the lines its harness left `waiting` first, then
-    /// each of `lines`. Whether `lines` ended, once no other session goes on through it, or as it made way for a newer
-    /// build; false where it made way with `lines` going on, to answer through that one from then on.
+    /// each of `lines`. Whether `lines` ended, once no other session goes on through it, or none used it for `idle`,
+    /// when those still connected take its place, or as it made way for a newer build; false where it made way with
+    /// `lines` going on, to answer through that one from then on.
     async fn run(
         &self,
         held: std::fs::File,
@@ -605,7 +645,8 @@ impl Session<'_> {
         // it holds the lock: a socket there is a session's before it, gone
         std::fs::remove_file(&sock).ok();
         let listener = UnixListener::bind(&sock).with_context(|| format!("the agent's socket {}", sock.display()))?;
-        let others = others(listener, agent.clone(), self.built, newer.clone(), count.0);
+        let used = Used::new();
+        let others = others(listener, agent.clone(), self.built, newer.clone(), count.0, used.clone());
         let others = AbortOnDropHandle::new(tokio::spawn(others));
         for line in waiting.take() {
             reply(&agent, &line, output).await?;
@@ -616,11 +657,21 @@ impl Session<'_> {
                 biased;
                 () = newer.notified() => break,
                 line = lines.next_line(), if !ended => match line? {
-                    Some(line) => reply(&agent, &line, output).await?,
-                    // the others' sessions go on through it, until they end too
+                    Some(line) => {
+                        used.now();
+                        reply(&agent, &line, output).await?;
+                        used.now();
+                    }
+                    // the others' sessions go on through it, until they end too, or leave it unused
                     None => ended = true,
                 },
                 () = async { _ = count.wait_for(|n| *n == 0).await; }, if ended => break,
+                () = tokio::time::sleep_until(used.last() + self.idle), if ended => {
+                    if used.last() + self.idle <= tokio::time::Instant::now() {
+                        tracing::info!("{name} unused for {:?}: it closes, a session still on takes over", self.idle);
+                        break;
+                    }
+                }
             }
         }
         drop(others);
@@ -634,14 +685,23 @@ impl Session<'_> {
 }
 
 /// The other sessions of an agent, on `listener`, each as it comes, which `agent` answers (`other`), however many at
-/// once, as many as `count` says; one of a newer build than `built` it lets know of through `newer`.
-async fn others(listener: UnixListener, agent: Arc<Agent>, built: u64, newer: Arc<Notify>, count: watch::Sender<usize>) {
+/// once, as many as `count` says, each connecting and each line it asks counted in `used`; one of a newer build than
+/// `built` it lets know of through `newer`.
+async fn others(
+    listener: UnixListener,
+    agent: Arc<Agent>,
+    built: u64,
+    newer: Arc<Notify>,
+    count: watch::Sender<usize>,
+    used: Used,
+) {
     let mut sessions = JoinSet::new();
     loop {
         tokio::select! {
             accepted = listener.accept() => match accepted {
                 Ok((stream, _)) => {
-                    sessions.spawn(other(stream, agent.clone(), built, newer.clone()));
+                    used.now();
+                    sessions.spawn(other(stream, agent.clone(), built, newer.clone(), used.clone()));
                 }
                 Err(e) => {
                     tracing::warn!("a session of {} isn't taken: {e}", agent.name);
@@ -655,8 +715,9 @@ async fn others(listener: UnixListener, agent: Arc<Agent>, built: u64, newer: Ar
 }
 
 /// Another session of an agent on `stream`: its first line says its build (`HELLO`); one newer than `built` it lets
-/// know of through `newer`, and answers nothing, as it takes this one's place; any other, `agent` answers line by line.
-async fn other(stream: UnixStream, agent: Arc<Agent>, built: u64, newer: Arc<Notify>) {
+/// know of through `newer`, and answers nothing, as it takes this one's place; any other, `agent` answers line by line,
+/// each counted in `used`.
+async fn other(stream: UnixStream, agent: Arc<Agent>, built: u64, newer: Arc<Notify>, used: Used) {
     let (read, mut write) = stream.into_split();
     let mut lines = BufReader::new(read).lines();
     let Ok(Some(hello)) = lines.next_line().await else { return };
@@ -668,7 +729,10 @@ async fn other(stream: UnixStream, agent: Arc<Agent>, built: u64, newer: Arc<Not
         return;
     }
     while let Ok(Some(line)) = lines.next_line().await {
-        if let Some(answer) = answer_line(&agent, &line).await
+        used.now();
+        let answer = answer_line(&agent, &line).await;
+        used.now();
+        if let Some(answer) = answer
             && write.write_all(answer.as_bytes()).await.is_err()
         {
             return;
