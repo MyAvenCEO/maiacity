@@ -76,7 +76,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result, anyhow, bail};
@@ -457,6 +457,11 @@ impl Cloud {
     /// call brings what it touches (`Agent::bring_for`). Fails, saying what to do, where the key is missing or isn't
     /// one, the server's offer isn't one, or the relay doesn't let it in.
     async fn open(&self, name: &str, open: &mut Option<Opened>) -> Result<Arc<Agent>> {
+        // a device whose last pull failed is opened anew: a server that restarted meanwhile leaves its relay link and
+        // its connection behind, which a fresh endpoint doesn't carry over
+        if open.as_ref().is_some_and(|o| o.agent.cloud.as_ref().is_some_and(|c| c.failed.load(Ordering::Relaxed))) {
+            close(open.take()).await;
+        }
         if let Some(o) = open {
             o.used = tokio::time::Instant::now();
             return Ok(o.agent.clone());
@@ -1024,11 +1029,13 @@ struct Bringing {
     server: EndpointId,
     /// The pull under way, if one is: what it brings, and how it ended, once it did.
     under_way: std::sync::Mutex<Option<(Wanted, watch::Receiver<Ended>)>>,
+    /// Whether a pull failed: the device is opened anew at the next call (`Cloud::open`).
+    failed: AtomicBool,
 }
 
 impl Bringing {
     fn new(server: EndpointId) -> Bringing {
-        Bringing { server, under_way: std::sync::Mutex::new(None) }
+        Bringing { server, under_way: std::sync::Mutex::new(None), failed: AtomicBool::new(false) }
     }
 
     /// Brings `wanted` from the server onto `node`: by the pull under way where it brings that too, else by a pull of
@@ -1081,6 +1088,9 @@ impl Bringing {
             };
             if ours {
                 let ended = ended.unwrap_or(Ok(()));
+                if ended.is_err() {
+                    self.failed.store(true, Ordering::Relaxed);
+                }
                 return ended.map_err(|why| anyhow!("avenDB can't bring this call's vaults from the server: {why}"));
             }
         }
