@@ -12,7 +12,6 @@ use std::io::{self, Read as _};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use serde_json::{Value, json};
 use tauri::{AppHandle, Emitter as _};
 use vault_media::{ByteSource, Source};
@@ -65,9 +64,9 @@ pub async fn world(app: &AppHandle) -> Result<Value, String> {
 }
 
 /// File `f`'s plain bytes from `from` to `to`: from the open device's node itself, the bytes handed over as it read
-/// them. The call through the device (`run`, as the page sends it) puts them in base64 in its JSON answer, copied
-/// twice more on the way, every window of every movie the player, the sound and the page read (2026-10-18: The OS
-/// grew to 12.8 GB); it is taken only until a page has opened the device.
+/// them. The device's `run` call, as the page sends it, put them in base64 in its JSON answer, copied twice more on
+/// the way, every window of every movie the player, the sound and the page read (2026-10-18: The OS grew to 12.8 GB);
+/// until a page has opened the device, the host's own `run` answers, the bytes beside as they are.
 pub async fn read(app: &AppHandle, f: &File, from: u64, to: u64) -> Result<Vec<u8>, String> {
     use avendb_net::{NoBytes, NoCeremony};
     let op = json!({ "op": "read_file", "root": f.root, "size": f.size, "from": from, "to": to });
@@ -76,10 +75,9 @@ pub async fn read(app: &AppHandle, f: &File, from: u64, to: u64) -> Result<Vec<u
         answer(out)?;
         return bytes.ok_or_else(|| "the device gave no bytes".into());
     }
-    let out = crate::avendb::call(app, "run", vec![op]).await?;
-    let bytes = out.get("bytes").and_then(Value::as_str).map(str::to_string);
+    let (out, bytes) = crate::avendb::run(app, op).await?;
     answer(out)?;
-    BASE64.decode(bytes.ok_or("the device gave no bytes")?).map_err(|e| format!("the device's bytes: {e}"))
+    bytes.ok_or_else(|| "the device gave no bytes".into())
 }
 
 /// File `f`'s plain bytes, all of them, a window at a time.
@@ -251,9 +249,10 @@ pub async fn put_source(app: &AppHandle, mut op: Value, src: &Source, done: impl
                     return Err(format!("{src} ends early: it changed while it came in"));
                 }
                 hash.update(&buf);
-                crate::avendb::call(app, "fileChunk", vec![n.clone(), json!(at), json!(BASE64.encode(&buf))]).await?;
-                at += buf.len() as u64;
-                moved += buf.len() as u64;
+                let k = buf.len() as u64;
+                crate::avendb::chunk(app, n.as_u64().ok_or("the device gave no file's number")?, at, buf).await?;
+                at += k;
+                moved += k;
                 done(moved);
             }
             let this = hash.finalize();
