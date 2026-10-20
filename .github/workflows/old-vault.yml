@@ -1,0 +1,135 @@
+name: Old media vault
+
+# The old iroh media vault ("Studio 1"), on its way out (#1112, Samuel 2026-10-20 13:21). Run by hand only.
+#
+#   measure – read only: what it still stores and how big (the bucket by folder, LIBRARY/ being the vault's files; the
+#             server's vaultdata volume; its Postgres tables), beside the newest database dump and the room left
+#   archive – copies only, nothing deleted: a full database dump and the vaultdata volume as one tar go to ARCHIVE/
+#             old-vault/ in the bucket, with the list of LIBRARY/'s files; nothing expires there (the 30-day rule is on
+#             BACKUPS/pg/ alone). LIBRARY/ itself stays where it is.
+#
+# Deleting anything is a later step of its own, only once Samuel OKs the list with sizes.
+on:
+  workflow_dispatch:
+    inputs:
+      step:
+        description: measure (read only) or archive (copies only)
+        type: choice
+        options: [measure, archive]
+        default: measure
+
+permissions:
+  contents: read
+
+concurrency:
+  group: old-vault
+  cancel-in-progress: false
+
+env:
+  API_HOST: api.maia.city
+  APP_DIR: /opt/maia-city
+  S3_BUCKET: maiacity
+  S3_ENDPOINT: https://hel1.your-objectstorage.com
+  ARCHIVE: ARCHIVE/old-vault
+  AWS_ACCESS_KEY_ID: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
+  AWS_DEFAULT_REGION: hel1
+  # Hetzner takes no default CRC32 checksums: one only where S3 asks for it
+  AWS_REQUEST_CHECKSUM_CALCULATION: when_required
+  AWS_RESPONSE_CHECKSUM_VALIDATION: when_required
+
+jobs:
+  vault:
+    name: Old media vault (${{ inputs.step }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Prepare SSH
+        run: |
+          HOST=$(getent ahostsv4 "$API_HOST" | awk '{print $1; exit}')
+          [ -n "$HOST" ] || { echo "::error::$API_HOST does not resolve"; exit 1; }
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -T 10 -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          printf 'Host prod\n  HostName %s\n  User deploy\n  IdentityFile ~/.ssh/id_ed25519\n  StrictHostKeyChecking yes\n' "$HOST" > ~/.ssh/config
+
+      - name: Measure the bucket
+        run: |
+          [ -n "$AWS_ACCESS_KEY_ID" ] || { echo "::error::set HETZNER_S3_ACCESS_KEY and HETZNER_S3_SECRET_KEY"; exit 1; }
+          aws --endpoint-url "$S3_ENDPOINT" --cli-connect-timeout 20 s3 ls "s3://$S3_BUCKET/" --recursive > objects.txt
+          {
+            echo '== the bucket by its first two folders'
+            # a key is everything after the size, spaces and all
+            awk '{ k = substr($0, index($0, $4)); n = split(k, p, "/");
+                   f = n > 2 ? p[1] "/" p[2] "/" : (n > 1 ? p[1] "/" : "(top)"); s[f] += $3; c[f]++; S += $3; C++ }
+                 END { for (f in s) printf "%-44s %7d files %12.3f GB\n", f, c[f], s[f] / 1e9;
+                       printf "%-44s %7d files %12.3f GB\n", "(all)", C, S / 1e9 }' objects.txt | sort
+            echo '== the newest database dumps'
+            { grep ' BACKUPS/pg/' objects.txt || true; } | sort | tail -n 3
+            echo '== what ARCHIVE/old-vault/ holds'
+            grep " $ARCHIVE/" objects.txt || echo '(nothing yet)'
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Measure the server
+        run: |
+          ssh prod 'bash -s' <<'SH' | tee -a "$GITHUB_STEP_SUMMARY"
+          set -euo pipefail
+          echo '== room on the server'
+          df -h / /var/lib/docker 2>/dev/null | uniq
+          echo '== the vault container'
+          docker ps -a --filter name=maia-city-vault --format '{{.Names}} {{.Image}} {{.Status}}'
+          VOL=$(docker volume ls -q | grep -E '(^|_)vaultdata$' | head -n 1 || true)
+          [ -n "$VOL" ] || { echo 'no vaultdata volume'; exit 0; }
+          echo "== the volume $VOL"
+          docker run --rm -v "$VOL:/d:ro" alpine:3.20 sh -c 'du -sb /d; du -sh /d/* 2>/dev/null; find /d -type f | wc -l'
+          SH
+          ssh prod 'docker exec -i maia-city-db psql -U maiacity -d maiacity -v ON_ERROR_STOP=1 -P pager=off' <<'SQL' | tee -a "$GITHUB_STEP_SUMMARY"
+          BEGIN READ ONLY;
+          \echo '== the database'
+          SELECT pg_size_pretty(pg_database_size(current_database())) AS size;
+          \echo '== the old vault''s tables'
+          SELECT 'vault_files' AS "table", count(*) AS rows, pg_size_pretty(pg_total_relation_size('vault_files')) AS size FROM vault_files
+          UNION ALL SELECT 'vault_devices', count(*), pg_size_pretty(pg_total_relation_size('vault_devices')) FROM vault_devices
+          UNION ALL SELECT 'vault_config', count(*), pg_size_pretty(pg_total_relation_size('vault_config')) FROM vault_config;
+          COMMIT;
+          SQL
+
+      - name: Archive the database, a full dump
+        if: inputs.step == 'archive'
+        run: |
+          OUT=$(ssh prod "timeout 3000 bash $APP_DIR/deploy/backup.sh old-vault-archive </dev/null")
+          printf '%s\n' "$OUT"
+          KEY=$(printf '%s\n' "$OUT" | sed -n 's|^backup: s3://[^/]*/\(BACKUPS/pg/[^ ]*\) .*|\1|p' | tail -n 1)
+          [ -n "$KEY" ] || { echo "::error::the dump named no key"; exit 1; }
+          aws --endpoint-url "$S3_ENDPOINT" --cli-connect-timeout 20 \
+            s3 cp "s3://$S3_BUCKET/$KEY" "s3://$S3_BUCKET/$ARCHIVE/${KEY##*/}" --only-show-errors
+
+      - name: Archive the vaultdata volume, one tar
+        if: inputs.step == 'archive'
+        run: |
+          # from the server straight to the bucket with its backup key, as the dumps go: the volume never passes this runner
+          ssh prod "ARCHIVE=$ARCHIVE APP_DIR=$APP_DIR bash -s" <<'SH'
+          set -euo pipefail
+          cd "$APP_DIR"
+          set -a; . ./backup.env; set +a
+          VOL=$(docker volume ls -q | grep -E '(^|_)vaultdata$' | head -n 1)
+          SIZE=$(docker run --rm -v "$VOL:/d:ro" alpine:3.20 du -sb /d | cut -f1)
+          KEY="$ARCHIVE/vaultdata-$(date -u +%Y%m%dT%H%M%SZ).tar"
+          echo "archive: $VOL, $SIZE bytes, to s3://$BACKUP_BUCKET/$KEY …"
+          timeout 3000 docker run --rm -v "$VOL:/d:ro" alpine:3.20 tar -C /d -cf - . \
+            | timeout 3000 docker run --rm -i -e AWS_ACCESS_KEY_ID -e AWS_SECRET_ACCESS_KEY \
+                -e AWS_DEFAULT_REGION="$BACKUP_REGION" \
+                -e AWS_REQUEST_CHECKSUM_CALCULATION=when_required -e AWS_RESPONSE_CHECKSUM_VALIDATION=when_required \
+                amazon/aws-cli --endpoint-url "$BACKUP_ENDPOINT" --cli-connect-timeout 20 --cli-read-timeout 120 \
+                s3 cp - "s3://$BACKUP_BUCKET/$KEY" --expected-size "$SIZE" --only-show-errors
+          echo "archive: s3://$BACKUP_BUCKET/$KEY"
+          SH
+
+      - name: Archive the list of LIBRARY/'s files, and show the archive
+        if: inputs.step == 'archive'
+        run: |
+          grep ' LIBRARY/' objects.txt > library-objects.txt || true
+          s3() { aws --endpoint-url "$S3_ENDPOINT" --cli-connect-timeout 20 "$@"; }
+          s3 s3 cp library-objects.txt "s3://$S3_BUCKET/$ARCHIVE/library-objects.txt" --only-show-errors
+          { echo '== ARCHIVE/old-vault/ now'; s3 s3 ls "s3://$S3_BUCKET/$ARCHIVE/" --recursive --human-readable --summarize; } \
+            | tee -a "$GITHUB_STEP_SUMMARY"
