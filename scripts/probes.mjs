@@ -1,9 +1,9 @@
 /*
- * Both probes in a real browser (hardening H8, gap G9): every way out of the asset box and of a view, tried from inside
- * each by code made to do harm, in headless Chromium, against the site as it is in this checkout. CI runs it on every
- * pull request and before every deploy (.github/workflows/kernel.yml); a failure stops the deploy. CI runs it again in
- * WebKit (--browser webkit, on Playwright), the engine Samuel's Mac app, The OS, shows the site in (Tauri is WebKit):
- * a wall that holds in Chromium is not taken to hold there.
+ * The probes in a real browser (hardening H8, gap G9): every way out of the asset box, of a view and of the math host,
+ * tried from inside each by code made to do harm, in headless Chromium, against the site as it is in this checkout. CI
+ * runs it on every pull request and before every deploy (.github/workflows/kernel.yml); a failure stops the deploy. CI
+ * runs it again in WebKit (--browser webkit, on Playwright), the engine Samuel's Mac app, The OS, shows the site in
+ * (Tauri is WebKit): a wall that holds in Chromium is not taken to hold there.
  *
  * - The box: its lab (/app/assets/box/) runs every check, the box's probe among them (src/lib/assets/box/probe.js, a
  *   recipe that tries every way out, one that crashes its worker and one that never stops, each ended alone). Every
@@ -13,6 +13,10 @@
  *   told. While the views run, this script clicks every link and button the hostile view drew and presses Enter in its
  *   field; after, it reads the frame's DOM for anything the engine should have cleaned (a script, a handler, an address
  *   that leads out), and checks the page is where it was and opened no window. Every check must pass.
+ * - The maths: /app/math/probe/ runs formulas made to do harm in the real math host (src/lib/sandbox/math-probe.js): a
+ *   doc whose formulas reach out, blow up or are unknown, drawn the docs' way; the engine's worker trying every way out;
+ *   and a batch that never returns, whose worker must be ended. Every attempt aims at the canary too; after, this
+ *   script reads the doc as drawn for anything outside MathML Core and the Markdown engine's tags. Every check must pass.
  *
  * The site is the dev server's, with the repo's own recipes standing in for the Maia City vault's feed
  * (VITE_RECIPE_FEED=dev), so nothing here needs avenDB's server; the app's sign-in is answered here (/api/me).
@@ -20,7 +24,7 @@
  *   node scripts/probes.mjs                                            starts its own dev server
  *   BASE=http://localhost:5173 node scripts/probes.mjs                 a running one (VITE_RECIPE_FEED=dev bun run dev)
  *   CHROME=/path/to/chrome node scripts/probes.mjs                     else Playwright's Chromium, or Chrome on a Mac
- *   node scripts/probes.mjs --only view|box
+ *   node scripts/probes.mjs --only view|box|math
  *   node scripts/probes.mjs --browser webkit                           in Playwright's WebKit (bunx playwright install webkit)
  *   node scripts/probes.mjs --playwright                               Chromium driven by Playwright, as WebKit is: the
  *                                                                      WebKit run's own code, checked where WebKit is not
@@ -33,9 +37,13 @@ import { existsSync, readdirSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
 import { CLICKS, HTML_TRIES } from '../src/lib/sandbox/view/probe.js';
+import { WORKER_TRIES as MATH_TRIES } from '../src/lib/sandbox/math-probe.js';
 
 const arg = (name) => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : null);
 const only = arg('--only');
+if (only && !['view', 'box', 'math'].includes(only)) throw new Error(`--only view|box|math, not ${only}`);
+/** whether probe `what` runs: every one, or the one asked for */
+const runs = (what) => !only || only === what;
 /** chromium (the default) or webkit; Playwright drives anything but Chromium, and Chromium too when asked */
 const browserName = arg('--browser') ?? 'chromium';
 if (!['chromium', 'webkit'].includes(browserName)) throw new Error(`--browser chromium|webkit, not ${browserName}`);
@@ -349,6 +357,56 @@ async function viewProbe() {
 	await page.close();
 }
 
+async function mathProbe() {
+	// the browser reaches the canary (as the views showed, if they ran): nothing arriving means nothing got out
+	const control = await driver.newPage();
+	await control.goto(`${CANARY}/control`).catch(() => {});
+	await sleep(500);
+	await control.close();
+	check('the browser reaches the canary', hits.includes('GET /control'), hits.join(', '));
+	hits.length = 0;
+	connections = 0;
+
+	const page = await signedIn();
+	const pages = await driver.pages();
+	let popups = 0;
+	driver.onWindow(() => popups++);
+	const url = `${base}/app/math/probe/?canary=${encodeURIComponent(`${CANARY}/m`)}`;
+	await page.goto(url, { waitUntil: 'domcontentloaded' });
+	const results = await resultsOf(page, 120000).catch((e) => (check(`the math probe finishes: ${e.message}`, false), null));
+	await sleep(1000);
+	if (results) {
+		check('the math probe checks everything it tries', results.checks.length >= 10, `${results.checks.length} checks`);
+		for (const c of results.checks) check(`maths: ${c.name}`, c.ok, c.ok ? '' : c.note);
+	}
+
+	// the doc as drawn: MathML elements only in MathML's namespace, and nothing that leads out or runs
+	const left = await page
+		.evaluate(() => {
+			const bad = [];
+			const doc = document.querySelector('.doc');
+			if (!doc) return ['no doc'];
+			for (const el of doc.querySelectorAll('*')) {
+				if (/^(script|iframe|frame|object|embed|link|base|form|a|style|svg|image|use|video|audio|source)$/.test(el.localName)) bad.push(`<${el.localName}>`);
+				for (const a of el.attributes) if (/^(on|href$|src$|srcset$|style$|xlink:|action$|formaction$|id$)/i.test(a.name)) bad.push(`${el.localName}[${a.name}]`);
+			}
+			const maths = doc.querySelectorAll('math');
+			if (!maths.length) bad.push('no formula typeset');
+			for (const m of maths) if (m.namespaceURI !== 'http://www.w3.org/1998/Math/MathML') bad.push(`<math> in ${m.namespaceURI}`);
+			return bad;
+		})
+		.catch((e) => [`unreadable: ${e.message}`]);
+	check('the doc holds nothing but maths and the Markdown engine’s tags', !left.length, left.join(', '));
+
+	check(`nothing reached the canary (${results?.formulas?.length ?? 0} formulas, every attempt of its worker)`, !hits.length && !connections, hits.length ? hits.join('; ') : connections ? `${connections} connections with no request` : '');
+	check('the page is where it was', page.url() === url, page.url() === url ? '' : page.url());
+	const windows = (await driver.pages()) - pages;
+	check('no window opened', !popups && !windows, popups || windows ? `${Math.max(popups, windows)} opened` : '');
+	if (results) for (const what of MATH_TRIES) console.log(`    ${what}: ${results.said[what] ?? '(no word)'}`);
+	if (results) absent('maths', results.said);
+	await page.close();
+}
+
 async function boxLab() {
 	const page = await signedIn();
 	await page.goto(`${base}/app/assets/box/`, { waitUntil: 'domcontentloaded' });
@@ -378,17 +436,23 @@ async function boxLab() {
 
 const t0 = Date.now();
 try {
-	const fed = only === 'view' ? null : feed();
+	const fed = runs('box') ? feed() : null;
 	const took = (t) => `${((Date.now() - t) / 1000).toFixed(0)} s`;
 	await nativeWorker();
 	console.log(lacks?.length ? `a plain worker of ${browserName} has no ${[...new Set(lacks.map((k) => NEEDS[k]))].join(', ')}` : `a plain worker of ${browserName} has every thing the probes try`);
-	if (only !== 'box') {
+	if (runs('view')) {
 		const t = Date.now();
 		await warm('/app/views/probe/');
 		await viewProbe();
 		console.log(`the views: ${took(t)}`);
 	}
-	if (only !== 'view') {
+	if (runs('math')) {
+		const t = Date.now();
+		await warm('/app/math/probe/');
+		await mathProbe();
+		console.log(`the maths: ${took(t)}`);
+	}
+	if (runs('box')) {
 		await fed;
 		const t = Date.now();
 		await warm('/app/assets/box/');

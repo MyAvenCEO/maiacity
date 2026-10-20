@@ -23,15 +23,18 @@ export const DOC_PICTURE = /^[0-9a-f]{64}\.(jpe?g|png|webp|gif|avif|svg)$/;
  * Article text `md` as HTML, safe to show whoever wrote it, by the one Markdown engine ($lib/markdown): its own HTML
  * shown as text, links only to the web, mail or this site, and pictures only the vault's own files, each shown from
  * `src(name)` (`''` while it isn't read yet); a picture alone in its paragraph is a figure, its words its caption.
- * `named` is which names are pictures: an article's (`PICTURE`), or a doc's (`DOC_PICTURE`).
- * @param {string} md @param {(name: string) => string} src @param {RegExp} [named]
+ * `named` is which names are pictures: an article's (`PICTURE`), or a doc's (`DOC_PICTURE`). `math`: its `$$…$$` and
+ * `$…$` are maths, each left as a placeholder holding its source, for the math host to typeset in the page
+ * ($lib/sandbox/math-host.js `typesetIn`); off, a `$` is a dollar.
+ * @param {string} md @param {(name: string) => string} src @param {RegExp} [named] @param {{ math?: boolean }} [o]
  */
-export function render(md, src, named = PICTURE) {
+export function render(md, src, named = PICTURE, { math = false } = {}) {
 	return markdown(md, {
 		picture: (href) => {
 			const name = href.trim();
 			return named.test(name) ? { src: src(name) ?? '', name } : null;
-		}
+		},
+		math
 	});
 }
 
