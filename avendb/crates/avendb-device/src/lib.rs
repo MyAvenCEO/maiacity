@@ -60,6 +60,7 @@
 
 pub mod agent;
 pub mod drive;
+pub mod lean;
 
 use std::collections::HashMap;
 use std::io;
@@ -172,6 +173,7 @@ pub fn host(config: Config) -> Result<(Host, Lines)> {
     let runtime = tokio::runtime::Handle::try_current().context("avenDB's device is hosted on a tokio runtime")?;
     let (out, asks) = mpsc::unbounded_channel();
     let shelf = Mutex::new(disk::open(&config.dir)?);
+    let lean = lean::Lean::new(config.dir.join("lean"));
     let service = Arc::new(Service {
         config,
         shelf,
@@ -184,6 +186,7 @@ pub fn host(config: Config) -> Result<(Host, Lines)> {
         progress: Mutex::default(),
         files: Mutex::default(),
         drives: drive::Drives::default(),
+        lean,
     });
     Ok((Host { service, runtime }, asks))
 }
@@ -279,6 +282,8 @@ struct Service {
     files: Mutex<HashMap<u64, Incoming>>,
     /// The drives it hosts, and the volumes it looks at (`drive`).
     drives: drive::Drives,
+    /// Lean, where the person got it, which checks an AIP's objective (`lean`).
+    lean: lean::Lean,
 }
 
 /// A file on its way in from the page, a chunk at a time (`fileChunk`), into the device's blob store and the write that
@@ -321,6 +326,9 @@ impl Service {
             "forget" => self.forget().await.map(|()| Value::Null),
             "rename" => self.rename(a.text(0)?).await.map(Value::from),
             "qrSvg" => qr_svg(&a.text(0)?, u32::try_from(a.count(1)?)?).map(Value::from),
+            "leanEngine" => Ok(self.lean.engine()),
+            "leanGet" => self.lean.get().await,
+            "leanCheck" => self.lean.check(&a.text(0)?).await,
             _ => self.on_device(call, a).await,
         }
     }
