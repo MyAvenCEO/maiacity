@@ -1,5 +1,6 @@
 //! The shot analysis' model, asked through our server: the Mac samples the frames (natively, from the vault in
-//! place) and sends them — with the words said in the stretch — to the API (`POST /api/analysis`, the app's own key),
+//! place) and sends them — with the words said in the stretch — to the API (`POST /api/analysis`, by the Mac's avenDB
+//! device pass, else the app's own key),
 //! which asks Prem's confidential Qwen with the server's key: the prompt, the vocabulary, the JSON schemas, the
 //! validation and repair of every answer, the model's pick, the rate limit and the pause after a Prem failure all live
 //! there (api/src/analysis.ts, api/src/prem.ts), once. No LLM key is ever on a Mac.
@@ -78,25 +79,25 @@ pub fn prem() -> &'static Prem {
 }
 
 impl Prem {
-    async fn call(&self, auth: &Auth, method: &str, body: Option<Value>) -> Result<Value, Ask> {
-        let (status, body) = auth.call(method, "/api/analysis", body).await.map_err(|e| wait(e))?;
+    async fn call(&self, auth: &Auth, pass: Option<String>, method: &str, body: Option<Value>) -> Result<Value, Ask> {
+        let (status, body) = auth.call_as(method, "/api/analysis", body, pass.as_deref()).await.map_err(|e| wait(e))?;
         read(status, body)
     }
 
-    /// One stretch of frames → its tags, cues, summary and thumbnail pick.
-    pub async fn frames(&self, auth: &Auth, st: &Stretch<'_>) -> Result<Value, Ask> {
+    /// One stretch of frames → its tags, cues, summary and thumbnail pick; `pass` the device's for this call, if any.
+    pub async fn frames(&self, auth: &Auth, pass: Option<String>, st: &Stretch<'_>) -> Result<Value, Ask> {
         if st.frames.is_empty() {
             return Err(Ask::Fail("No frames in the request.".into()));
         }
         let frames: Vec<Value> = st.frames.iter().map(|(t, jpeg)| json!({ "t": t, "jpeg": jpeg })).collect();
         let body = json!({ "mode": "frames", "file": st.file, "stretch": { "s": st.s, "e": st.e, "index": st.index, "of": st.of },
                            "frames": frames, "words": st.words, "before": st.before });
-        self.call(auth, "POST", Some(body)).await
+        self.call(auth, pass, "POST", Some(body)).await
     }
 
     /// Every stretch's answer → the file's tags, summary, takes and thumbnail.
-    pub async fn reduce(&self, auth: &Auth, file: &Value, stretches: &Value, said_text: &str) -> Result<Value, Ask> {
-        self.call(auth, "POST", Some(json!({ "mode": "reduce", "file": file, "stretches": stretches, "text": said_text }))).await
+    pub async fn reduce(&self, auth: &Auth, pass: Option<String>, file: &Value, stretches: &Value, said_text: &str) -> Result<Value, Ask> {
+        self.call(auth, pass, "POST", Some(json!({ "mode": "reduce", "file": file, "stretches": stretches, "text": said_text }))).await
     }
 }
 
