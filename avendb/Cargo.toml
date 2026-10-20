@@ -39,6 +39,14 @@ opt-level = 3
 codegen-units = 1
 lto = true
 
+# The server's image (Dockerfile.server): optimised as a release, but in parallel codegen units and with thin LTO, as
+# the one codegen unit and full LTO above, which make the tile's WebAssembly small, made each image build of our
+# crates take minutes on one core of the runner
+[profile.server]
+inherits = "release"
+codegen-units = 16
+lto = "thin"
+
 # The Mac app's native device (avendb-device, built by vault/app/build.rs as the app's sidecar): optimised as a
 # release, but in parallel codegen units, without LTO and incrementally, so the app's build doesn't wait long on it
 [profile.app]

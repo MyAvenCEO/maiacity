@@ -34,6 +34,10 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # and cross-crate optimisation at link time cost minutes on every build of the app for little.
 [profile.release]
 lto = false
+# The OS's own update (a release build on the Mac at every main) compiles again only what changed in our crates and
+# avenDB's: without it each update compiled the app and avenDB's crates whole, 2 to 6 minutes on the Mac. The
+# dependencies are never incremental; the server's image turns it off (Dockerfile.server).
+incremental = true
 
 # Debug builds: line tables for our code (backtraces keep their lines), none for the dependencies — much smaller
 # objects, faster links; the dependencies optimised, so a debug app against the dev server (Svelte changes live, no
