@@ -143,3 +143,20 @@ test('the cache keeps a build and its recipe file in its folder, reads them back
 	expect(await cache.usage()).toEqual({ count: 0, bytes: 0, kept: true });
 	expect(root.files.size).toBe(0);
 });
+
+test('a browser that writes no file of the cache keeps nothing, and every asset builds', async () => {
+	// OPFS a page reads but writes no file in (a WebKit with none in its workers, and no writable files of the page's)
+	const bare = folderOf();
+	const getFileHandle = bare.getFileHandle;
+	bare.getFileHandle = async (...a) => ({ ...(await getFileHandle.apply(bare, a)), createWritable: undefined });
+	Object.defineProperty(globalThis.navigator, 'storage', { value: { getDirectory: async () => bare }, configurable: true });
+	const none = await import('./cache.js?none');
+	expect(await none.keeps()).toBe(false);
+	expect(await none.usage()).toEqual({ count: 0, bytes: 0, kept: false });
+	const key = 'c'.repeat(64);
+	expect(await none.put(key, { data: { format: 4 }, card: {} })).toBe(false);
+	expect(await none.keepFile('d'.repeat(64), new Uint8Array(3))).toBe(false);
+	expect(await none.get(key)).toBeUndefined();
+	expect(bare.files.size).toBe(0);
+	expect(await cache.keeps()).toBe(true);
+});

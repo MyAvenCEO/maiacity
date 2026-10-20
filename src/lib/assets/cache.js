@@ -372,16 +372,53 @@ async function read(d, name) {
 	}
 }
 
+/** the file written, and taken away again, to learn how this page writes the cache's files */
+const CAN = 'can';
+let writer;
+/**
+ * How this page writes the cache's files, learnt once by writing one: 'worker', in the cache's worker, where it has
+ * OPFS's synchronous files; else 'page', here, where this browser writes a file from the page; else null, where it can
+ * do neither (no folder of the cache, or a WebKit with no OPFS in its workers and no file it writes from the page): it
+ * keeps nothing, and every asset builds.
+ */
+function writerOf() {
+	return (writer ??= (async () => {
+		const d = await folder();
+		if (!d) return null;
+		const w = workerOf();
+		// (a worker that never answers is one that can't)
+		const can = w && Promise.race([ask(w, { op: 'can', dir: DIR, name: CAN }, []), new Promise((ok) => setTimeout(ok, 5000, {}))]);
+		if (can && (await can.then((a) => a.can === true, () => false))) return 'worker';
+		try {
+			const file = await (await d.getFileHandle(CAN, { create: true })).createWritable();
+			await file.write(new Uint8Array(1));
+			await file.close();
+			await removed(d, CAN);
+			return 'page';
+		} catch {
+			return null;
+		}
+	})());
+}
+
+/**
+ * Whether this device keeps builds at all: a folder of the cache, and a way to write its files (`writerOf`). Where it
+ * doesn't, nothing is kept, nothing is found, and every asset builds in the box.
+ */
+export const keeps = async () => !!(await writerOf());
+
 /**
  * Writes `bytes` as the file `name` of the folder `d`, whole: in the cache's worker (handed over to it, so the caller
- * keeps no use of them), else here where this browser can write a file from the page.
+ * keeps no use of them), else here where this browser can write a file from the page (`writerOf`).
  */
 async function write(d, name, bytes) {
-	const w = workerOf();
+	const how = await writerOf();
+	const w = how === 'worker' && workerOf();
 	if (w) {
 		await ask(w, { op: 'write', dir: DIR, name, bytes }, [bytes.buffer]);
 		return;
 	}
+	if (!how) throw new Error('this browser writes no file of the cache');
 	const file = await (await d.getFileHandle(name, { create: true })).createWritable();
 	try {
 		await file.write(bytes);
@@ -501,8 +538,8 @@ let held = null;
  */
 export function put(key, { data, card }) {
 	const plain = quiet()
-		.then(() => folder())
-		.then((d) => d && storable(data));
+		.then(() => keeps())
+		.then((yes) => yes && storable(data));
 	plain.catch(() => {});
 	const turn = line.then(() => keep(key, plain, card));
 	line = turn.catch(() => {});
@@ -599,10 +636,10 @@ export async function keepFile(hash, bytes) {
 	}
 }
 
-/** how many builds (and recipe files) the cache holds, and their bytes */
+/** how many builds (and recipe files) the cache holds, and their bytes; `kept`: whether this device keeps any (`keeps`) */
 export async function usage() {
 	const d = await folder();
-	if (!d) return { count: 0, bytes: 0, kept: false };
+	if (!d || !(await writerOf())) return { count: 0, bytes: 0, kept: false };
 	const files = await entries(d);
 	return { count: files.length, bytes: files.reduce((n, f) => n + f.bytes, 0), kept: true };
 }

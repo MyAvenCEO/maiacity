@@ -381,7 +381,11 @@
 			add('A recipe’s parameters are its own', wrong.length === 0 && sorted, wrong.length ? `taken: ${wrong.map(([k]) => k).join(', ')}` : `the apple takes ${apple.params.map((x) => x.id).join(' and ')}; ${Object.keys(tries).length} wrong ones refused; the same values name the same build in any order or left at its own, another seed another`);
 
 			out.cache = [];
-			for (const { label, name: n } of SAMPLES) {
+			// a browser that keeps no build (Playwright's WebKit has no OPFS) builds every asset in the box: it is named,
+			// and the cache is checked in a browser that keeps one
+			const keeps = (out.keeps = await cache.keeps());
+			if (!keeps) add('This browser keeps no build, so every asset builds in the box', true, 'it has no OPFS to keep the cache in: the cache’s checks are left to a browser that has one');
+			for (const { label, name: n } of keeps ? SAMPLES : []) {
 				line = `${label}: built cold, then from the cache…`;
 				try {
 					await cache.drop(keyOf(n));
@@ -406,24 +410,26 @@
 				}
 			}
 
-			line = 'A spoiled cache entry…';
-			const tentName = SAMPLES[2].name;
-			const tent = keyOf(tentName);
-			const good = await loadAsset(tentName, { box });
-			await good.stored;
-			const spoilt = await cache.storable(good.data);
-			const d = structuredClone(spoilt);
-			d.geometries[0].attributes.position.array[0] = NaN;
-			await cache.putRaw(tent, { data: d, card: good.card });
-			const after1 = await loadAsset(tentName, { box });
-			await after1.stored;
-			await cache.putRaw(tent, { data: spoilt, card: { ...good.card, ref: 'javascript:alert(1)' } });
-			const after2 = await loadAsset(tentName, { box });
-			await after2.stored;
-			const again = await loadAsset(tentName, { box });
-			const refused = after1.from === 'box' && after2.from === 'box' && again.from === 'cache';
-			out.spoiled = { data: after1.from, card: after2.from, after: again.from };
-			add('A spoiled cache entry is refused and built again', refused, refused ? 'a position that is no number, then a card naming a script: each dropped, built in the box again, and kept right' : `loaded from ${after1.from} and ${after2.from}, then ${again.from}`);
+			if (keeps) {
+				line = 'A spoiled cache entry…';
+				const tentName = SAMPLES[2].name;
+				const tent = keyOf(tentName);
+				const good = await loadAsset(tentName, { box });
+				await good.stored;
+				const spoilt = await cache.storable(good.data);
+				const d = structuredClone(spoilt);
+				d.geometries[0].attributes.position.array[0] = NaN;
+				await cache.putRaw(tent, { data: d, card: good.card });
+				const after1 = await loadAsset(tentName, { box });
+				await after1.stored;
+				await cache.putRaw(tent, { data: spoilt, card: { ...good.card, ref: 'javascript:alert(1)' } });
+				const after2 = await loadAsset(tentName, { box });
+				await after2.stored;
+				const again = await loadAsset(tentName, { box });
+				const refused = after1.from === 'box' && after2.from === 'box' && again.from === 'cache';
+				out.spoiled = { data: after1.from, card: after2.from, after: again.from };
+				add('A spoiled cache entry is refused and built again', refused, refused ? 'a position that is no number, then a card naming a script: each dropped, built in the box again, and kept right' : `loaded from ${after1.from} and ${after2.from}, then ${again.from}`);
+			}
 			await count();
 		} catch (e) {
 			add('The checks ran', false, e.message);

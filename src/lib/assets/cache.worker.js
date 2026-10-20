@@ -1,6 +1,6 @@
 // @ts-nocheck — plain JS, trusted: the device cache's own worker (./cache.js)
 /*
- * THE CACHE'S WORKER — what the device cache writes, done beside the page. Two jobs, each asked by a message `{id, op}`
+ * THE CACHE'S WORKER — what the device cache writes, done beside the page. Its jobs, each asked by a message `{id, op}`
  * and answered `{id, ...}` or `{id, error}`:
  *
  * - `png`: a build's picture written as a PNG file. It comes in as an ImageBitmap of its own (a copy, handed over), is
@@ -9,7 +9,10 @@
  *   never the page's: a world loading its assets keeps its frames.
  * - `write`: a file of the cache's folder in the origin private file system (OPFS) written whole, `bytes` (handed
  *   over) as the file `name` of the folder `dir`, flushed. A worker, because only a worker has OPFS's synchronous
- *   files, which every browser the app runs in has; one file after another, so the same file is never open twice.
+ *   files; one file after another, so the same file is never open twice.
+ * - `can`: whether it can write them (`can`): the file `name` of the folder `dir` written as `write` writes, then taken
+ *   away again. Not every browser's workers have OPFS (Playwright's WebKit has none): the page then writes the cache's
+ *   files itself, where it can.
  *
  * Nothing of an asset runs here: only the browser's own encoder, on a picture the page already holds, and the
  * browser's own files.
@@ -49,7 +52,12 @@ async function pngOf(bitmap) {
 self.onmessage = async (e) => {
 	const { id, op } = e.data;
 	try {
-		if (op === 'write') {
+		if (op === 'can') {
+			const { dir, name } = e.data;
+			const can = await write({ dir, name, bytes: new Uint8Array(1) }).then(() => true, () => false);
+			if (can) await (await folderOf(dir)).removeEntry(name).catch(() => {});
+			self.postMessage({ id, can });
+		} else if (op === 'write') {
 			const turn = writing.then(() => write(e.data));
 			writing = turn.catch(() => {});
 			await turn;
