@@ -54,6 +54,7 @@
 	import Story from './Story.svelte';
 	import Todos from './Todos.svelte';
 	import Worlds from './Worlds.svelte';
+	import Models from './Models.svelte';
 	import { NAV, OUT } from './VaultApps.svelte';
 	import Dashboard from '$lib/app/Dashboard.svelte';
 	import { may } from './ops.js';
@@ -134,7 +135,9 @@
 			// a world the Worlds page shows (`#worlds/` and its entry)
 			world: known === 'worlds' && hex(entry) ? (entry ?? '') : '',
 			// the section of the settings it opens at (`#settings/devices`)
-			section: known === 'settings' ? (entry ?? '') : ''
+			section: known === 'settings' ? (entry ?? '') : '',
+			// a model the Models page shows (`#models/` and its id)
+			model: known === 'models' && /^[a-z0-9-]+$/.test(entry ?? '') ? (entry ?? '') : ''
 		};
 	}
 
@@ -330,6 +333,8 @@
 				<Assets {world} vault={context} {actor} {api} entry={route.asset} recipe={route.recipe} />
 			{:else if tab === 'worlds'}
 				<Worlds {world} vault={context} {actor} entry={route.world} />
+			{:else if tab === 'models'}
+				<Models {world} vault={context} {actor} entry={route.model} />
 			{:else if tab === 'flows'}
 				<Flows {world} vault={context} {actor} />
 			{:else if tab === 'functions'}

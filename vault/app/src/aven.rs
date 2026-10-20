@@ -1267,7 +1267,7 @@ async fn transcript(job: &Job<'_>, name: &str) -> Result<Value, String> {
     tell("the speech model", 0.0);
     let models = if crate::transcripts::RECOGNIZER.lock().unwrap_or_else(|p| p.into_inner()).is_none() {
         let told = tell.clone();
-        Some(crate::models::ready(&vault, &mut move |stage, done| told(stage, done)).await?)
+        Some(crate::models::ready(job.app, &vault, &mut move |stage, done| told(stage, done)).await?)
     } else {
         None
     };
