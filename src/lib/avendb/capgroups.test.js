@@ -98,15 +98,15 @@ describe('Maia City, to anyone', () => {
 
 describe('the Vaults app', () => {
 	const [BOB, KEY] = ['b'.repeat(64), 'k'.repeat(64)];
-	const row = (o) => ({ kind: 'grant', id: 's1', over: CITY, who: { vault: BOB }, group: TRAVELER, capGroup: T, issuer: CITY, ...o });
+	const cap = (o) => ({ id: 's1', over: CITY, who: BOB, capGroup: T, issuer: CITY, ...o });
 
 	test('reads who holds which group, and the invites still open', () => {
-		const { held, invites } = groupHolders([
-			{ kind: 'owner', id: null, who: { vault: ME }, group: 'Owner', capGroup: null },
-			row({}),
-			row({ id: 's2', group: 'Public', capGroup: null, who: 'everyone' }),
-			row({ id: 's3', who: { invite: KEY } })
-		]);
+		const { held, invites } = groupHolders(
+			[cap({}), cap({ id: 's2', capGroup: null, who: 'everyone' }), cap({ id: 's3', who: KEY }), cap({ id: 's4', over: ME })],
+			CITY,
+			groups,
+			(id) => id === BOB
+		);
 		expect([...held]).toEqual([[BOB, [{ share: 's1', group: T, name: TRAVELER }]]]);
 		expect(invites).toEqual([{ share: 's3', group: T, name: TRAVELER, issuer: CITY }]);
 	});
