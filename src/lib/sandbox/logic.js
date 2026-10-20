@@ -25,6 +25,23 @@
  */
 export const LIMITS = { memory: 8 << 20, stack: 256 << 10, load: { ticks: 800, ms: 2000 }, call: { ticks: 120, ms: 250 } };
 
+/**
+ * The most a run may be given (logic engine 2 on): a measurement's, which may run a whole sim (an AIP's measuring
+ * logic, src/lib/proposals/measure.js), still counted in ticks, the clock only a backstop well past them.
+ */
+export const MOST = { memory: 64 << 20, stack: 1 << 20, load: { ticks: 2000, ms: 5000 }, call: { ticks: 20_000, ms: 120_000 } };
+
+/**
+ * Limits `asked` held to `MOST`: each number it names that is a whole number from 1 up, at most `MOST`'s, the rest the
+ * core's own `LIMITS`.
+ * @param {any} asked @returns {typeof LIMITS}
+ */
+export function within(asked) {
+	const one = (x, most, own) => (Number.isSafeInteger(x) && x > 0 ? Math.min(x, most) : own);
+	const step = (k) => ({ ticks: one(asked?.[k]?.ticks, MOST[k].ticks, LIMITS[k].ticks), ms: one(asked?.[k]?.ms, MOST[k].ms, LIMITS[k].ms) });
+	return { memory: one(asked?.memory, MOST.memory, LIMITS.memory), stack: one(asked?.stack, MOST.stack, LIMITS.stack), load: step('load'), call: step('call') };
+}
+
 let lib = null;
 /** a fresh QuickJS module (its own wasm memory); the library is loaded once, on first use (one file of about 1 MB) */
 export async function quickjs() {

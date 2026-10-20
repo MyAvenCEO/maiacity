@@ -84,6 +84,14 @@
 			"bytes": 739906,
 			"quickjs": "0.32.0",
 			"note": "The first logic engine: QuickJS (quickjs-emscripten, single file) and the logic core, behind the shell's second lock; code as a JS module with no buffers, a seeded Math.random and a frozen Date, work counted in ticks, called as call, see, hook or view with one JSON text in and out"
+		},
+		{
+			"v": 2,
+			"date": "2026-10-20",
+			"blake3": "c3e694cf38d67a11a91aa39633dc66c9efb1f479646286a9d7153832203a8f14",
+			"bytes": 740290,
+			"quickjs": "0.32.0",
+			"note": "A run may name its own limits, held to the core's MOST: a measurement's (64 MB, 20,000 ticks a call), for the measuring logic of an AIP that the admins' own devices run (src/lib/proposals/measure.js); without them, the core's own, as before"
 		}
 	],
 	"lib-three": [

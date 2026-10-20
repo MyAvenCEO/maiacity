@@ -6,7 +6,9 @@
 	its schema reads it (the `aip` read's diff, derived, never typed); the reviews so far, and what the person may do with it, acting as the vault the device says: promote it once it holds an objective
 	(the objective stage) and withdraw it (its author or its vault), and accept, decline or ask for a revision of a proposed one (its vault
 	alone, and only that review counts). Accepting merges every line at once; a new entry's line (a draft) lands in main
-	only then, every field of it shown as added.
+	only then, every field of it shown as added. Who accepts it measures it too, on this device: where its objective
+	names measuring logic, Measure runs that logic on its lines here and records the numbers as the vault's readings
+	(./measure.js), which its `measured "name"` metrics count.
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -15,6 +17,7 @@
 	import { session } from '$lib/avendb/session.svelte.js';
 	import { acting, authorsLine, nameOf } from '$lib/avendb/vaults.js';
 	import { when } from './aips.js';
+	import { measureAip, readingsOf } from './measure.js';
 
 	/** a: the AIP in the app's shape (./aips.js fromAvendb); onchanged: after a change, to read the list again */
 	let { a, onchanged } = $props();
@@ -63,6 +66,31 @@
 		{ id: 'archived', label: 'Archived' }
 	];
 	const at = $derived(STEPS.findIndex((s) => s.id === aip.stage));
+
+	// measuring it here: its vault, as the person acts for it, never its author, while it is worked on or proposed
+	const measurable = $derived(
+		!aip.bare && ownVault && as !== aip.author && !!aip.objective?.measures?.length && ['objective', 'proposed'].includes(aip.stage)
+	);
+	/** what the last Measure found: a line per logic and side, or that nothing was new */
+	let found = $state(null);
+	const asked = async (op) => {
+		const r = await session.ask(op);
+		if (!r || !('ok' in r)) throw new Error(r?.why ?? 'avenDB didn’t answer');
+		return r.ok;
+	};
+	async function measure() {
+		const label = aip.label ?? 'the idea';
+		let rows = [];
+		const ran = await session.attempt(`Measuring ${label} on this device`, async () => {
+			rows = await measureAip({ ask: asked, a: aip, vault: aip.vault, me: as });
+		});
+		if (!ran) return;
+		found = rows.length
+			? rows.map((r) => `${r.logic}${r.side ? ` on ${r.side === 'main' ? 'main' : 'the proposal'}` : ''}: ${r.error ?? r.readings.map(([n, v]) => `${n} ${v}`).join(', ')}`)
+			: ['Nothing new to measure: it was measured on these lines already.'];
+		const ops = readingsOf(aip.entry, rows, as);
+		if (ops.length && (await session.runAll(`Recording what ${label} measured`, ops))) onchanged();
+	}
 </script>
 
 <div class="av">
@@ -75,6 +103,13 @@
 		<section class="target">
 			<h3>Objective</h3>
 			<Objective o={aip.objective} />
+			{#if measurable}
+				<div class="measure">
+					<button disabled={!!session.doing} onclick={measure}>Measure</button>
+					<small class="dim">Runs its measuring logic on its lines here, on this device, and records the numbers.</small>
+				</div>
+				{#if found}<ul class="found">{#each found as f, i (i)}<li>{f}</li>{/each}</ul>{/if}
+			{/if}
 		</section>
 	{/if}
 	<ProposedAssets lines={aip.lines} ask={(op) => session.ask(op)} read={readFile} {key} />
@@ -180,6 +215,20 @@
 	}
 	.target {
 		margin: 0.4rem 0 0.8rem;
+	}
+	.measure {
+		display: flex;
+		gap: 0.5rem;
+		align-items: center;
+		flex-wrap: wrap;
+		margin-top: 0.5rem;
+	}
+	.found {
+		margin: 0.4rem 0 0;
+		padding-left: 1.1rem;
+		font-size: 0.82rem;
+		color: var(--muted);
+		overflow-wrap: anywhere;
 	}
 	.changes {
 		margin: 0.6rem 0;

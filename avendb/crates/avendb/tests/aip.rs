@@ -649,6 +649,33 @@ fn an_objective_reads_the_numbers_its_lines_propose() {
     assert!(run(&mut g.w, g.mac, bad)["why"].as_str().unwrap_or_default().contains("empty field"));
 }
 
+/// N2, M4 (`spec/AvenDB/Measurers.lean`): those who accept an AIP measure it themselves, with no share: Alice's vault,
+/// as her Mac acts for it, records a reading on the aven's AIP, and it counts as measured on every reader.
+#[test]
+fn the_vault_that_accepts_an_aip_measures_it_itself() {
+    let mut g = gate();
+    let n = g.create("note", note());
+    g.sync(1);
+    let line = g.propose(&n, "Earlier", vec![set(json!(["title"]), json!("Corn first"))]);
+    let (aven, alice) = (g.aven.to_hex(), g.alice.to_hex());
+    let lean = "def fps : Metric := metric \"Frames, measured\" (atLeast (measured \"fps\") 50)\n";
+    let op = json!({ "op": "aip_open", "vault": alice, "title": "Faster corn", "as": aven, "objective": lean,
+        "proposals": [{ "entry": n, "line": line }] });
+    let aip = ok(run(&mut g.w, g.mac, op))["entry"].as_str().expect("its entry").to_string();
+    g.sync(2);
+    let measure = |by: &str, v: u64| json!({ "op": "aip_measure", "entry": aip, "name": "fps", "value": v, "as": by });
+    ok(run(&mut g.w, g.mac, measure(&aven, 70)));
+    ok(run(&mut g.w, g.mac, measure(&alice, 55)));
+    g.sync(3);
+    for d in g.readers {
+        let o = g.aip(d, &aip)["objective"].clone();
+        assert_eq!((&o["metrics"][0]["value"], &o["metrics"][0]["met"]), (&json!(55), &json!(true)), "on {d:?}: {o}");
+        let rows = list(&o["readings"]);
+        let marks: Vec<(&Value, &Value)> = rows.iter().map(|r| (&r["value"], &r["by"])).collect();
+        assert_eq!(marks, [(&json!(70), &Value::Null), (&json!(55), &json!(alice))], "the author's reading is its own");
+    }
+}
+
 /// N2 (`spec/AvenDB/Measurers.lean`): `measured "fps"` counts only the readings a Measurer of the AIP's vault wrote,
 /// read off who signed each write, never a typed field. Bob, no Measurer yet, records nothing on the aven's AIP; once
 /// Alice hands him her vault's Measurer group, he does, and his readings count as measured on every reader; the aven's

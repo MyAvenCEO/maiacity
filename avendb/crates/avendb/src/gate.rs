@@ -44,10 +44,11 @@ pub fn is_admin(st: &State, groups: &Groups, home: VaultId, u: VaultId) -> bool 
 /// The name of the cap group of a vault whose holders measure its AIPs (`Measurers.lean`'s `measurerName`).
 pub const MEASURER: &str = "Measurer";
 
-/// Vault `u` measures the AIPs of vault `v` that `author` started, the cap groups in force by `groups`: it holds `v`'s
-/// Measurer group, and it isn't `author`, so no author measures its own AIP (`measures`, M1).
+/// Vault `u` measures the AIPs of vault `v` that `author` started, the cap groups in force by `groups`: it accepts
+/// them, as `v` itself (its owners' devices acting for it) or a vault that owns `v`, or it holds `v`'s Measurer group;
+/// and it isn't `author`, so no author measures its own AIP (`measures`, M1, M4).
 pub fn measures(st: &State, groups: &Groups, v: VaultId, author: VaultId, u: VaultId) -> bool {
-    u != author && holds_group(st, groups, v, u, MEASURER)
+    u != author && (u == v || st.owns(u, v) || holds_group(st, groups, v, u, MEASURER))
 }
 
 /// What the Measurers of vault `v` added to an AIP `author` started: of each write, its actor and what it added, in

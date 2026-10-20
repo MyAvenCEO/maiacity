@@ -1358,27 +1358,30 @@ of the edits is new, nothing new is on the wire, and every write counts as any w
   hands these numbers in (`Inputs`: readings, proposed and current fields; now = the newest readings and the
   proposal's numbers, the baseline = the first readings and main's numbers).
 - **Readings a Measurer signs** (N2, `spec/AvenDB/Measurers.lean`). `measured "name"` reads only the readings a
-  Measurer of the AIP's vault wrote: a vault holding a share of the vault's cap group named Measurer (`gate::MEASURER`,
-  `gate::measures`), which only those who share the vault hand out, as Maia City does to a device vault it owns for a
-  measuring job on its server, and never the AIP's author (M1), so an agent acting as the coop's aven can't measure
-  its own AIP. Who wrote a reading is never a typed field: of each write the AIP's main line counts, oldest first,
-  the engine reads its actor and the rows it added, as written then (`measuredBy`, M2, M3), so no later write changes
-  a measured reading. A Measurer records with `aip_measure` on any AIP of the vault, worked on or proposed, as its
-  author does (its group gives it read and `insert ["readings"]` on main of type aip). `reading "name"` still counts
-  every reading. `aip` marks each reading row a Measurer wrote `measured`, with `by`, and each metric lists the
-  readings it counts only as measured, `measured`.
+  Measurer of the AIP's vault wrote. Those who accept its AIPs measure them, on their own devices, with no server
+  between them and the vault (avenDB is local first and user owned): the vault itself, as its owners' devices act for
+  it, and each vault that owns it (M4); beside them, a vault holding a share of the vault's cap group named Measurer
+  (`gate::MEASURER`, `gate::measures`), which only those who share the vault hand out. Never the AIP's author (M1), so
+  an agent acting as the coop's aven can't measure its own AIP. Who wrote a reading is never a typed field: of each
+  write the AIP's main line counts, oldest first, the engine reads its actor and the rows it added, as written then
+  (`measuredBy`, M2, M3), so no later write changes a measured reading. A Measurer records with `aip_measure` on any
+  AIP of the vault, worked on or proposed, as its author does (a Measurer group gives read and `insert ["readings"]`
+  on main of type aip). `reading "name"` still counts every reading. `aip` marks each reading row a Measurer wrote
+  `measured`, with `by`, and each metric lists the readings it counts only as measured, `measured`.
 - **What a Measurer runs** (N2, `Measure` in `spec/AvenDB/Objective.lean`, `src/lib/proposals/measure.js`). An
   objective names the measuring logic that measures it, `def sim : Measure := logic "valley-sim"`: the logic module on
   the vault's main line tagged `ref:logic/measures/valley-sim`, which the vault's owners accepted, so trusted code,
-  exporting `measure(input)`. Checking never runs it (`aip` answers the names as `objective.measures`, at most 8, each 1
-  to 64 of a-z, 0-9 and -): the Measurer's job does, in the sandboxed logic host (`src/lib/sandbox/logic-host.js`, a
-  fresh QuickJS engine, no page, network, keys or clock, its work counted in ticks, its random seeded by its input),
-  on the records of the AIP's lines, the input nobody trusts: `aip_records {entry}` answers each line's `{entry, line,
-  type, tags, heads, merged, new, main, proposed}`, `main` and `proposed` the two records `proposed "path"` reads.
-  Main's side once, as the baseline, then the proposal's whenever its lines or the logic change; each number it hands
-  back is an `aip_measure` reading, its note naming the logic, a hash of its code and the side. Every run is a pure
-  function of the logic and the records, so anyone who reads both can run it again and compare. The job runs as a
-  device of a vault holding the Measurer group (`scripts/measure.mjs`, on avenDB's server), never on a Mac.
+  exporting `measure(input)`, made for logic engine 2 or later. Checking never runs it (`aip` answers the names as
+  `objective.measures`, at most 8, each 1 to 64 of a-z, 0-9 and -): whoever accepts the AIP does, with Measure on it in
+  the Proposals app, on their own device, in our own host code, the sandboxed logic host
+  (`src/lib/sandbox/logic-host.js`, a fresh QuickJS engine in the shell's worker, no page, network, keys or clock, its
+  work counted in ticks, its random seeded by its input), on a measurement's budget (`MOST` in
+  `src/lib/sandbox/logic.js`, 64 MB, 20,000 ticks a call, which a run names from logic engine 2 on), on the records of
+  the AIP's lines, the input nobody trusts: `aip_records {entry}` answers each line's `{entry, line, type, tags, heads,
+  merged, new, main, proposed}`, `main` and `proposed` the two records `proposed "path"` reads. Main's side once, as
+  the baseline, then the proposal's whenever its lines or the logic change; each number it hands back is an
+  `aip_measure` reading, written as the vault, its note naming the logic, a hash of its code and the side. Every run
+  is a pure function of the logic and the records, so anyone who reads both can run it again and compare.
 - **Numbers count per vault.** Promote gives one more than the highest number of the vault's AIPs the device holds,
   and a revised AIP keeps its own. Two devices that promote while apart may give one number twice; once they sync,
   every reader labels them alike, by where the write that set each number stands in the one order every device
