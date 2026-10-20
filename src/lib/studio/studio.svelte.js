@@ -1475,6 +1475,10 @@ export class Studio {
 	driveWorld() {
 		const c = this.picture;
 		if (this.world.state !== 'ready') return;
+		// Play readying the world (`preparePlayback`): it stages, meters and stands the world itself, and nothing else asks
+		// anything of it meanwhile. A frame asked then was a playing one (none metered), and cut the staging of the shot
+		// being readied short ("cut short: the timeline plays"), the village's domes left to build while it played
+		if (this.starting && !this.playing) return;
 		const ahead = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start);
 		const upcoming = ahead.slice(0, 3);
 		const specs = upcoming.map((w) => this.specOf(w)).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
@@ -1483,7 +1487,7 @@ export class Studio {
 		// staging — the stand-in, or a proxy still loading, at every cut to a new stand — and one for a shot ahead moved
 		// the world under the shot playing. The shots ahead are kept only: the world builds what they will see as it can.
 		// Stopped, they are prepared (staged and metered)
-		const still = !this.playing && !this.starting;
+		const still = !this.playing;
 		// stopped: what every world shot needs built (its set, what its camera sees: built while it played, each hitched
 		// the shots on screen as it came), and the shots ahead prepared
 		if (still) void this.world.dress(this.worldSpecs());
@@ -1554,22 +1558,98 @@ export class Studio {
 	/** prepare playback: what the world is loading before the timeline plays */
 	preparing = $state(false);
 	/**
-	 * Loads the world shots playback starts with — the one at the playhead and the two after it (waits a little, then
-	 * plays regardless: the proxies cover). The rest are readied ahead as it plays (driveWorld): readying all of a
-	 * timeline's shots first put the one on screen behind every other. `all`: every one (the Prepare button).
+	 * What Play (or Prepare) readies before the timeline plays, on the player's loading screen: the step it is on (the
+	 * sound, the world coming up, its sets, each world shot in turn, `k` of `n`, `shot` its name), what film mode says
+	 * it is doing (`detail`) and how far that is when it knows (`done` of `total`); null while nothing is. `from` is how
+	 * much of the readying lies behind this step and `span` how much the step is (0–1: the loading bar). `play`: the
+	 * timeline plays once it is ready (Play), else the world is only readied (Prepare).
+	 * @type {{ step: string, shot: string, k: number, n: number, detail: string, done: number, total: number, from: number, span: number, play: boolean } | null}
 	 */
-	async preparePlayback(wait = 4000, all = false) {
-		if (this.world.state !== 'ready' || !this.worldClips.length) return;
-		const ahead = all ? this.worldClips : this.worldClips.filter((c) => c.start + c.dur > this.time).sort((a, b) => a.start - b.start).slice(0, 3);
-		const specs = ahead.map((c) => cached(c.shot, c.shotVersion)?.spec).filter(/** @returns {s is ShotSpec} */ (s) => !!s);
-		this.preparing = true;
-		// and metered before it plays, while the start waits on them (metered while playing, a shot hitched at its cut);
-		// then the world stands where the play starts again (preparing the shots after it moved it on)
-		const ready = Promise.all([this.world.dress(this.worldSpecs(), { again: true }), this.world.prepare(specs)])
-			.then(() => this.world.meterAhead(specs, () => this.starting))
-			.then(() => specs[0] && this.world.standAt(specs[0]));
-		await Promise.race([ready, new Promise((r) => setTimeout(r, wait))]);
-		this.preparing = false;
+	loading = $state(null);
+	/**
+	 * The readying under way: `over` once Play now or Stop ended it (`end`: true plays now, as the world has it; false
+	 * stops), and `ended` resolving then.
+	 * @type {{ over: boolean, ended: Promise<boolean>, end: (go: boolean) => void }}
+	 */
+	readying = { over: true, ended: Promise.resolve(false), end: () => {} };
+	/** A readying begins: the loading screen up, and an end of its own for Play now and Stop. @param {boolean} play */
+	beginLoading(play) {
+		// (one at a time: a Play pressed while Prepare readies the world takes over from it)
+		this.readying.end(false);
+		/** @type {(go: boolean) => void} */
+		let said = () => {};
+		const it = { over: false, ended: new Promise((r) => (said = r)), end: (/** @type {boolean} */ go) => ((it.over = true), said(go)) };
+		this.readying = /** @type {Studio['readying']} */ (it);
+		this.loading = { step: '', shot: '', k: 0, n: 0, detail: '', done: 0, total: 0, from: 0, span: 0, play };
+	}
+	/** @param {Partial<NonNullable<Studio['loading']>>} at */
+	patchLoading(at) {
+		if (this.loading) this.loading = { ...this.loading, ...at };
+	}
+	/** Play now (the loading screen): the timeline plays at once, the rest of the world streaming in as it plays */
+	playNow = () => this.readying.end(true);
+	/**
+	 * Readies the world before the timeline plays, all of it: every world shot from the playhead on (`all`: every one,
+	 * the Prepare button) readied in turn, as the render readies them — its set, every dome, animal and plant its camera
+	 * sees built, its files loaded and its shaders compiled, its light metered — then the world stands where the play
+	 * starts. The player's loading screen shows each step as it goes (`loading`); Play now ends it there (the rest
+	 * streams in as it plays), and so does Stop. Readied in part (the three shots ahead, at most 4 s), the village
+	 * played on while its domes were still being built, a little every frame, choppy at every cut.
+	 */
+	async preparePlayback(all = false) {
+		// Play's readying is its start's (the sound came first); Prepare's is its own
+		const own = !this.loading;
+		if (own) this.beginLoading(false);
+		const run = this.run, it = this.readying;
+		const going = () => !it.over && run === this.run;
+		/** a step on the loading screen, given up as soon as Play now or Stop ends the readying */
+		const step = async (/** @type {Partial<NonNullable<Studio['loading']>>} */ at, /** @type {() => Promise<unknown>} */ job) => {
+			if (!going()) return;
+			this.patchLoading({ detail: '', done: 0, total: 0, ...at });
+			await Promise.race([job(), it.ended]);
+		};
+		try {
+			// the world's own page, still coming up (Play pressed as the studio opened)
+			if (this.world.state === 'loading') await step({ step: 'Starting the world', from: 0, span: 0 }, () => this.until(() => this.world.state !== 'loading' || !going()));
+			if (this.world.state !== 'ready' || !this.worldClips.length) return;
+			const shots = (all ? [...this.worldClips] : this.worldClips.filter((c) => c.start + c.dur > this.time))
+				.sort((a, b) => a.start - b.start)
+				.map((c) => ({ name: this.clipName(c), spec: this.specOf(c) }))
+				.filter((x) => !!x.spec && this.world.holds(x.spec));
+			if (!shots.length) return;
+			this.preparing = true;
+			// what film mode is doing, said as it goes
+			const said = setInterval(() => {
+				const p = this.world.progress();
+				if (going()) this.patchLoading({ detail: p?.label ?? '', done: p?.done ?? 0, total: p?.total ?? 0 });
+			}, 200);
+			try {
+				// the bar: the sets a twentieth of it, the shots most of it, the stand at the start the last twentieth
+				const n = shots.length, each = 0.9 / n;
+				// how long each part took, said in the app's log (what a Play waited on, and where)
+				const t0 = performance.now(), took = /** @type {string[]} */ ([]);
+				const timed = async (/** @type {string} */ what, /** @type {Promise<unknown>} */ p) => {
+					const t = performance.now();
+					await p;
+					if (performance.now() - t > 1000) took.push(`${what} ${((performance.now() - t) / 1000).toFixed(1)} s`);
+				};
+				await step({ step: 'Building the sets', n, from: 0, span: 0.05 }, () => timed('sets', this.world.dress(this.worldSpecs(), { again: true })));
+				for (const [i, x] of shots.entries()) await step({ step: 'Readying the shots', k: i + 1, shot: x.name, from: 0.05 + i * each, span: each }, () => timed(x.name, this.world.readyShot(/** @type {ShotSpec} */ (x.spec))));
+				await step({ step: 'Standing where it starts', k: 0, shot: shots[0].name, from: 0.95, span: 0.05 }, () => timed('the stand', this.world.standAt(/** @type {ShotSpec} */ (shots[0].spec))));
+				console.warn(`play: ${going() ? 'readied' : 'cut short readying'} the world for ${n} shot(s) in ${((performance.now() - t0) / 1000).toFixed(1)} s${took.length ? ` (${took.join(', ')})` : ''}`);
+			} finally {
+				clearInterval(said);
+				this.preparing = false;
+			}
+		} finally {
+			if (own && run === this.run) this.loading = null;
+		}
+	}
+	/** resolves once `done()` holds (asked five times a second) @param {() => boolean} done @returns {Promise<void>} */
+	until(done) {
+		return new Promise((r) => {
+			const id = setInterval(() => done() && (clearInterval(id), r()), 200);
+		});
 	}
 
 	async play() {
@@ -1606,20 +1686,37 @@ export class Studio {
 	async start(run) {
 		if (this.time >= this.end - 0.02) this.time = 0;
 		await this.running();
-		await Promise.all(
-			[...this.clips, ...this.cueClips].map((c) =>
-				c.hash
-					? (onSoundTrack(c) ? this.sound(c.hash) : this.source(c.hash)).catch((e) => {
-							// a sound that cannot load plays as silence — say so, never in silence
-							console.warn(`sound ${c.hash?.slice(0, 12)} (${c.track}):`, /** @type {Error} */ (e).message);
-							return null;
-						})
-					: null
-			)
-		);
-		const mute = this.clips.filter((c) => onSoundTrack(c) && c.hash && this.byHash.get(c.hash)?.kind === 'video' && this.soundState[c.hash] !== 'ready');
-		if (mute.length) console.warn(`${mute.length} video sound clip(s) play silent until their sound is decoded:`, mute.map((c) => `${this.clipName(c)} (${this.soundState[c.hash ?? '']})`).join(', '));
-		await this.preparePlayback();
+		// what it loads before it plays, on the player's loading screen: the sound, counted, then the world (Play now
+		// plays at once, a sound not decoded yet silent until it is)
+		this.beginLoading(true);
+		try {
+			const sounding = [...this.clips, ...this.cueClips].filter((c) => c.hash);
+			let heard = 0;
+			const counted = () => {
+				heard++;
+				if (run === this.run && this.loading?.step === 'Loading the sound') this.patchLoading({ done: heard });
+			};
+			this.patchLoading({ step: 'Loading the sound', total: sounding.length, from: 0, span: 1 });
+			await Promise.race([
+				Promise.all(
+					sounding.map((c) =>
+						(onSoundTrack(c) ? this.sound(/** @type {string} */ (c.hash)) : this.source(/** @type {string} */ (c.hash)))
+							.catch((e) => {
+								// a sound that cannot load plays as silence — say so, never in silence
+								console.warn(`sound ${c.hash?.slice(0, 12)} (${c.track}):`, /** @type {Error} */ (e).message);
+								return null;
+							})
+							.finally(counted)
+					)
+				),
+				this.readying.ended
+			]);
+			const mute = this.clips.filter((c) => onSoundTrack(c) && c.hash && this.byHash.get(c.hash)?.kind === 'video' && this.soundState[c.hash] !== 'ready');
+			if (mute.length) console.warn(`${mute.length} video sound clip(s) play silent until their sound is decoded:`, mute.map((c) => `${this.clipName(c)} (${this.soundState[c.hash ?? '']})`).join(', '));
+			if (run === this.run) await this.preparePlayback();
+		} finally {
+			if (run === this.run) this.loading = null;
+		}
 		// stopped (or started again) while it loaded: this start is over
 		if (run !== this.run) return;
 		this.playing = true;
@@ -1643,6 +1740,9 @@ export class Studio {
 
 	stop() {
 		this.run++;
+		// a readying under way ends with it (the loading screen's Stop, or Play's own button)
+		this.readying.end(false);
+		this.loading = null;
 		this.starting = false;
 		this.playing = false;
 		void import('./jobs/mac.js').then((m) => m.studioPlaying(false));

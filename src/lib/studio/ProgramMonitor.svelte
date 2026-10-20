@@ -303,6 +303,12 @@
 					? 'world: HD proxy (live world not ready)'
 					: 'world: stand-in'
 	);
+	/** how far the readying before Play is (the loading screen's bar, %): the step's share, and its own count when it has one */
+	const loadPct = $derived.by(() => {
+		const l = s.loading;
+		if (!l) return 0;
+		return Math.round(100 * Math.min(1, l.from + l.span * (l.total ? Math.min(1, l.done / l.total) : 0)));
+	});
 	const fileNote = $derived.by(() => {
 		if (!pic || isWorld(pic) || s.pictureItem?.kind !== 'video') return null;
 		if (still) return `grading still · original at ${still.t.toFixed(1)} s${still.inside ? '' : ' (outside this cut)'}`;
@@ -317,7 +323,6 @@
 	<div class="badges">
 		{#if fileNote && (s.tab !== 'grade' || fileNote.startsWith('no proxy'))}<span class="b" class:warn={fileNote.startsWith('no proxy') || fileNote.includes('outside')}>{fileNote}</span>{/if}
 		{#if worldNote}<span class="b world">{worldNote}</span>{/if}
-		{#if s.preparing}<span class="b warn">preparing the world…</span>{/if}
 		{#if isWorld(pic) && s.world.error}<span class="b warn" title={s.world.error}>world: {s.world.error}</span>{/if}
 		{#if gl && plan?.note && pic}<span class="b warn" title={plan.note}>{plan.note}</span>{/if}
 		{#if !gl}<span class="b warn">No WebGL2: colour not managed</span>{/if}
@@ -379,6 +384,24 @@
 			</p>
 		{/if}
 		<span class="tc">{clockText(s.time)}</span>
+		{#if s.loading}
+			{@const l = s.loading}
+			<!-- what Play readies before the timeline plays: the sound, then the whole world, shot by shot, as film mode says
+			     it goes (the domes a shot sees, its animals, files and shaders) -->
+			<div class="loading" role="status" aria-live="polite">
+				<div class="lcard">
+					<span class="lkick">{l.play ? 'Getting ready to play' : 'Preparing the world'}</span>
+					<p class="lstep">{l.step || 'Getting ready'}</p>
+					{#if l.shot}<p class="lshot">{#if l.k}Shot {l.k} of {l.n} · {/if}{l.shot}</p>{/if}
+					<p class="ldetail">{l.detail}{l.total ? `${l.detail ? ' · ' : ''}${l.done} of ${l.total}` : ''}</p>
+					<div class="lbar" class:busy={!l.total}><i style:width="{loadPct}%"></i></div>
+					<div class="lacts">
+						{#if l.play}<button class="lgo" onclick={s.playNow} title="Play at once: what is not ready yet loads while it plays, and may stutter">Play now</button>{/if}
+						<button onclick={() => s.stop()}>Stop</button>
+					</div>
+				</div>
+			</div>
+		{/if}
 	</div>
 	<!-- full screen: play and pause, and the playhead to move by hand -->
 	<div class="fsbar">
@@ -679,6 +702,130 @@
 
 	.caption .lit {
 		color: #fff;
+	}
+
+	/* the loading screen: over the picture (and the world under it, readied meanwhile), fading in only once a readying
+	   takes a moment, so a Play that is ready at once never flashes it */
+	.loading {
+		position: absolute;
+		inset: 0;
+		z-index: 6;
+		display: grid;
+		place-items: center;
+		background: rgb(8 12 10 / 0.74);
+		backdrop-filter: blur(6px);
+		animation: loading-in 240ms ease 250ms both;
+	}
+
+	@keyframes loading-in {
+		from {
+			opacity: 0;
+		}
+		to {
+			opacity: 1;
+		}
+	}
+
+	.lcard {
+		display: grid;
+		gap: 0.3rem;
+		width: min(26rem, 82%);
+		text-align: center;
+	}
+
+	.lkick {
+		font-size: 0.64rem;
+		font-weight: 600;
+		letter-spacing: 0.14em;
+		text-transform: uppercase;
+		color: var(--dim);
+	}
+
+	.lstep {
+		margin: 0;
+		font-family: var(--font-display);
+		font-size: clamp(1rem, 6cqh, 1.6rem);
+		color: var(--ink);
+	}
+
+	.lshot,
+	.ldetail {
+		overflow: hidden;
+		margin: 0;
+		white-space: nowrap;
+		text-overflow: ellipsis;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.lshot {
+		font-size: 0.84rem;
+		color: var(--ink-soft);
+	}
+
+	.ldetail {
+		min-height: 1.2em;
+		font-size: 0.74rem;
+		color: var(--dim);
+	}
+
+	.lbar {
+		overflow: hidden;
+		height: 4px;
+		margin: 0.45rem 0 0.25rem;
+		border-radius: 999px;
+		background: rgb(255 255 255 / 0.12);
+	}
+
+	.lbar i {
+		display: block;
+		height: 100%;
+		border-radius: inherit;
+		background: #f3c768;
+		transition: width 300ms ease;
+	}
+
+	/* a step with no count of its own: still going, said by a shimmer */
+	.lbar.busy i {
+		background: linear-gradient(90deg, #f3c768 0%, #fff1c9 50%, #f3c768 100%) 0 0 / 200% 100%;
+		animation: shimmer 1.4s linear infinite;
+	}
+
+	@keyframes shimmer {
+		to {
+			background-position: -200% 0;
+		}
+	}
+
+	@media (prefers-reduced-motion: reduce) {
+		.lbar.busy i {
+			animation: none;
+		}
+	}
+
+	.lacts {
+		display: flex;
+		justify-content: center;
+		gap: 0.5rem;
+		margin-top: 0.35rem;
+	}
+
+	.lacts button {
+		padding: 0.3rem 0.95rem;
+		border: 1px solid var(--edge);
+		border-radius: 999px;
+		background: var(--raised);
+		font-size: 0.78rem;
+		color: var(--ink);
+		cursor: pointer;
+	}
+
+	.lacts button:hover {
+		background: var(--hover);
+	}
+
+	.lacts .lgo {
+		border-color: #f3c768;
+		color: #f3c768;
 	}
 
 	.tc {

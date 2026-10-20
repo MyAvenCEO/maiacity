@@ -209,6 +209,26 @@ export function startFilm({ base = '' } = {}) {
 		return world();
 	};
 
+	/**
+	 * What film mode is doing now, the newest last: the studio's loading screen shows the newest (`progress`) while Play
+	 * readies the world. A staging that goes on streaming after its limit keeps its own place until it is done.
+	 * @type {(() => { label: string, done?: number, total?: number })[]}
+	 */
+	const doings = [];
+	/**
+	 * `job`, said to be `what` while it runs.
+	 * @template T @param {() => { label: string, done?: number, total?: number }} what @param {() => Promise<T>} job
+	 * @returns {Promise<T>}
+	 */
+	async function doing(what, job) {
+		doings.push(what);
+		try {
+			return await job();
+		} finally {
+			doings.splice(doings.indexOf(what), 1);
+		}
+	}
+
 	// One thing at a time: every staging moves the walker (the world builds the domes near where it stands), so two
 	// shots staged at once pull it back and forth and neither world ever gets built. Callers queue.
 	/** @type {Promise<unknown>} */
@@ -246,7 +266,8 @@ export function startFilm({ base = '' } = {}) {
 			const done = (async () => {
 				const slow = setTimeout(() => console.warn(`film: ${spec.meta?.name ?? 'a shot'} still being staged after ${LOAD_WAIT / 1000} s (frames drawn: ${frames})`), LOAD_WAIT);
 				try {
-					await v.film.stage({ ...spec.world, name: spec.meta?.name, views: viewsOf(v, spec) });
+					// (the world says what its stage is doing, when it says: the domes it builds, its animals)
+					await doing(() => v.film.progress?.() ?? { label: 'Setting up the shot' }, () => v.film.stage({ ...spec.world, name: spec.meta?.name, views: viewsOf(v, spec) }));
 				} finally {
 					clearTimeout(slow);
 				}
@@ -324,13 +345,18 @@ export function startFilm({ base = '' } = {}) {
 		const T = v.THREE, m = T.DefaultLoadingManager, t0 = performance.now();
 		// a load that never ends (a file the page cannot read) holds no shot back for ever: after LOAD_WAIT it is said and
 		// the world goes on with what it has
-		while (m.itemsLoaded < m.itemsTotal) {
-			if (performance.now() - t0 > LOAD_WAIT) {
-				console.warn(`film: ${m.itemsTotal - m.itemsLoaded} of ${m.itemsTotal} loads still open after ${LOAD_WAIT / 1000} s: going on without them`);
-				break;
+		await doing(
+			() => ({ label: 'Loading its files', done: m.itemsLoaded, total: m.itemsTotal }),
+			async () => {
+				while (m.itemsLoaded < m.itemsTotal) {
+					if (performance.now() - t0 > LOAD_WAIT) {
+						console.warn(`film: ${m.itemsTotal - m.itemsLoaded} of ${m.itemsTotal} loads still open after ${LOAD_WAIT / 1000} s: going on without them`);
+						break;
+					}
+					await sleep(100);
+				}
 			}
-			await sleep(100);
-		}
+		);
 		// every shader compiled as the film draws (not as the canvas would: those were never used), and everything the
 		// world holds drawn once out of sight, so no cut is the first to send a thing to the GPU
 		gpu().warm();
@@ -338,7 +364,7 @@ export function startFilm({ base = '' } = {}) {
 		const W = /** @type {ReturnType<typeof createWarmer>} */ (warmer), w0 = performance.now(), { bytes: b0, textureBytes: x0, hidden: h0 } = W.stats;
 		if (warming() === 'off') return;
 		const warmed = W.all(v.scene, v.camera, warming() === 'all');
-		const n = await Promise.race([warmed, sleep(LOAD_WAIT).then(() => -1)]);
+		const n = await doing(() => ({ label: 'Compiling shaders, sending it to the GPU' }), () => Promise.race([warmed, sleep(LOAD_WAIT).then(() => -1)]));
 		if (n < 0) console.warn(`film: the shaders still compiling after ${LOAD_WAIT / 1000} s: going on`);
 		else if (n) console.warn(`film: warmed ${n} things (${W.stats.hidden - h0} of them hidden; ${Math.round((W.stats.bytes - b0) / 1e6)} MB of buffers, ${Math.round((W.stats.textureBytes - x0) / 1e6)} MB of textures) in ${Math.round(performance.now() - w0)} ms`);
 	}
@@ -518,6 +544,9 @@ export function startFilm({ base = '' } = {}) {
 		 */
 		plays(on) {
 			rolling = on;
+			// the world keeps its own work short while it plays, and builds in a hurry again once it stands (a Play right
+			// after a Stop, before any frame said so, readied the world as slowly as while it played)
+			w.__filmPlays = on;
 			if (on) hurry();
 		},
 		/**
@@ -543,7 +572,8 @@ export function startFilm({ base = '' } = {}) {
 			return one(async () => {
 				const v = await mounted();
 				const all = specs.map(normal).filter(shows);
-				await Promise.all(all.filter((s) => !dressed(s)).map((s) => sets[/** @type {keyof typeof sets} */ (s.world.props)]?.(s.world.seed)));
+				const bare = all.filter((s) => !dressed(s));
+				if (bare.length) await doing(() => ({ label: 'Building the sets' }), () => Promise.all(bare.map((s) => sets[/** @type {keyof typeof sets} */ (s.world.props)]?.(s.world.seed))));
 				whole = all.map((s) => ({ ...s.world, views: viewsOf(v, s) }));
 				v.film.keep([...near, ...whole]);
 				await settled(v);
@@ -567,6 +597,20 @@ export function startFilm({ base = '' } = {}) {
 				const s = normal(raw);
 				return !!v.film.streams && shows(s) && dressed(s) && v.film.holds({ ...s.world, views: viewsOf(v, s) });
 			});
+		},
+		/**
+		 * What film mode is doing now — the step, and how far it is (`done` of `total`) when it knows — else null: the
+		 * studio's loading screen shows it while Play readies the world.
+		 * @returns {{ label: string, done?: number, total?: number } | null}
+		 */
+		progress() {
+			const what = doings.at(-1);
+			if (!what) return null;
+			try {
+				return what();
+			} catch {
+				return null;
+			}
 		},
 		/** the live viewer's metering ahead: a shot it knows the exposure of is not metered again @param {any} spec */
 		meter(spec) {
