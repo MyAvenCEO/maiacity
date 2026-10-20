@@ -26,6 +26,7 @@ import { filmPath } from '../../../game/film/worlds.js';
  *   prepare(specs: ShotSpec[], opts?: { live?: boolean, meter?: boolean }): Promise<void>,
  *   keep?(specs: ShotSpec[]): void | Promise<void>,
  *   held?(specs: ShotSpec[]): Promise<boolean[]>,
+ *   look?(view: FilmView): void,
  *   show(o: ShowArgs): void | boolean | Promise<void | boolean>,
  *   capture?(o: { spec: ShotSpec, t: number, shape: Shape, width: number, height: number }): Promise<ArrayBuffer>,
  *   meter?(spec: ShotSpec): Promise<number>,
@@ -391,6 +392,25 @@ export class WorldViewer {
 		const mine = specs.filter((s) => this.holds(s));
 		void film.held(mine).then((h) => h.forEach((ok, i) => ok && this.film === film && this.readyShots.add(specKey(mine[i])))).catch(() => {});
 	}
+	/**
+	 * The views the shots ahead are drawn through (their grades, the output), sent to the GPU before their cuts.
+	 * @param {FilmView[]} views
+	 */
+	look(views) {
+		const film = this.film;
+		if (!film?.look) return;
+		if (film !== this.lookedBy) (this.looked = new WeakSet()), (this.lookedBy = film);
+		for (const v of views) {
+			const k = v.grade ?? v.lut;
+			if (!k || this.looked.has(k)) continue;
+			this.looked.add(k);
+			film.look(v);
+		}
+	}
+	/** the views sent (by their grade), not sent again every frame, and to which film page @type {WeakSet<object>} */
+	looked = new WeakSet();
+	/** @type {Film | null} */
+	lookedBy = null;
 	/** when `markHeld` last asked */
 	heldAt = 0;
 	/** the shots ahead last kept (by the whole shot), and by which film page */

@@ -22,6 +22,7 @@ import { filmPath, worldOfPath } from '../../../game/film/worlds.js';
 import { installClock } from './clock.js';
 import { createPipeline } from './pipeline.js';
 import { sets } from './sets.js';
+import { createWarmer } from './warm.js';
 
 /** @typedef {import('../../../game/film/shot.js').Spec} Spec @typedef {import('../../../game/film/shot.js').Shape} Shape */
 /** @typedef {import('./pipeline.js').Lut} Lut */
@@ -68,6 +69,9 @@ export function startFilm({ base = '' } = {}) {
 
 	/** @type {ReturnType<typeof createPipeline> | null} */
 	let pipe = null;
+	/** what the world holds, drawn once out of sight before a shot shows it (./warm.js) */
+	/** @type {ReturnType<typeof createWarmer> | null} */
+	let warmer = null;
 	const gpu = () => {
 		if (!pipe) throw new Error('the world is not up yet');
 		return pipe;
@@ -150,6 +154,19 @@ export function startFilm({ base = '' } = {}) {
 	const mounted = async () => {
 		while (!world()?.film) await sleep(100);
 		if (!pipe) pipe = createPipeline(world().renderer);
+		if (!warmer) {
+			warmer = createWarmer(world().renderer);
+			// the shadows' share of a frame: drawn again at a cut, they are the one pass a frame redraws whole
+			const shadows = world().renderer.shadowMap, draw = shadows.render;
+			shadows.render = function (/** @type {any[]} */ ...a) {
+				const t = clock.now();
+				try {
+					return draw.apply(this, a);
+				} finally {
+					cost.shadow += clock.now() - t;
+				}
+			};
+		}
 		return world();
 	};
 
@@ -271,8 +288,14 @@ export function startFilm({ base = '' } = {}) {
 			}
 			await sleep(100);
 		}
-		const compiled = v.renderer.compileAsync(v.scene, v.camera);
-		if ((await Promise.race([compiled.then(() => true), sleep(LOAD_WAIT).then(() => false)])) === false) console.warn(`film: the shaders still compiling after ${LOAD_WAIT / 1000} s: going on`);
+		// every shader compiled as the film draws (not as the canvas would: those were never used), and everything the
+		// world holds drawn once out of sight, so no cut is the first to send a thing to the GPU
+		gpu().warm();
+		const W = /** @type {ReturnType<typeof createWarmer>} */ (warmer), w0 = performance.now(), b0 = W.stats.bytes;
+		const warmed = W.all(v.scene, v.camera);
+		const n = await Promise.race([warmed, sleep(LOAD_WAIT).then(() => -1)]);
+		if (n < 0) console.warn(`film: the shaders still compiling after ${LOAD_WAIT / 1000} s: going on`);
+		else if (n) console.warn(`film: warmed ${n} things (${Math.round((W.stats.bytes - b0) / 1e6)} MB of buffers) in ${Math.round(performance.now() - w0)} ms`);
 	}
 	/** how long a shot waits for the world's loads and shaders before it goes on without them (ms) */
 	const LOAD_WAIT = 20000;
@@ -322,7 +345,7 @@ export function startFilm({ base = '' } = {}) {
 		return { frame, at: /** @type {ReturnType<typeof evaluate>} */ (first) };
 	}
 	/** what the frame being drawn spent on setting the world to its moment and on rendering it (ms) */
-	const cost = { set: 0, render: 0 };
+	const cost = { set: 0, render: 0, shadow: 0 };
 
 	/** The log-average luminance of the shot at t, at the meter's fixed size, framed as composed. */
 	function lumAt(/** @type {any} */ v, /** @type {Spec} */ spec, /** @type {number} */ t) {
@@ -430,6 +453,13 @@ export function startFilm({ base = '' } = {}) {
 			v.film.keep(specs.map(normal).filter(shows).map((s) => ({ ...s.world, views: viewsOf(v, s) })));
 		},
 		/**
+		 * The view a shot ahead is drawn through (its grade, the output) sent to the GPU now, not at its cut.
+		 * @param {{ lut?: Lut | string | null, grade?: Lut | null }} view
+		 */
+		look(view) {
+			pipe?.look(view);
+		},
+		/**
 		 * Which of these shots the world holds now, built and ready to cut to without staging (a world that streams by
 		 * view; any other world: none). @param {any[]} specs @returns {Promise<boolean[]>}
 		 */
@@ -512,17 +542,24 @@ export function startFilm({ base = '' } = {}) {
 			w.__filmDraw = true;
 			const os = quality === 'final' ? 1.5 : 1;
 			const W = Math.round(width * os), H = Math.round(height * os);
-			cost.set = cost.render = 0;
+			cost.set = cost.render = cost.shadow = 0;
+			// what the GPU was sent while this frame was drawn: shaders compiled, buffers and textures made (none, warmed)
+			const info = v.renderer.info, made0 = [info.programs?.length ?? 0, info.memory.geometries, info.memory.textures];
 			const { frame, at } = linear(v, spec, t, to, W, H, quality === 'final', quality !== 'final');
+			const made = [info.programs?.length ?? 0, info.memory.geometries, info.memory.textures].map((n, i) => n - made0[i]);
 			const tv = clock.now();
 			gpu().view(frame, width, height, 2 ** (evAt(ev, t) + at.stops), os > 1 ? 3 : 1, view);
 			// a frame that took a hitch's time says what it spent it on (the studio's log): a cut's first frame should cost
 			// what any other does, all its work done in the prepare (measured on the real clock: the page's is held now)
 			const t3 = clock.now();
-			if (quality !== 'final' && t3 - t0 > 100) console.warn(`film: ${spec.meta?.name ?? 'a shot'} at ${t.toFixed(2)} s took ${Math.round(t3 - t0)} ms — exposure ${Math.round(t1 - t0)}, staging ${Math.round(t2 - t1)}, drawing ${Math.round(t3 - t2)} (the world set ${Math.round(cost.set)}, rendered ${Math.round(cost.render)}, viewed ${Math.round(t3 - tv)})`);
+			if (quality !== 'final' && t3 - t0 > 100) console.warn(`film: ${spec.meta?.name ?? 'a shot'} at ${t.toFixed(2)} s took ${Math.round(t3 - t0)} ms — exposure ${Math.round(t1 - t0)}, staging ${Math.round(t2 - t1)}, drawing ${Math.round(t3 - t2)} (the world set ${Math.round(cost.set)}, rendered ${Math.round(cost.render)} of it shadows ${Math.round(cost.shadow)}, viewed ${Math.round(t3 - tv)})`);
 			// what each live frame cost, for whoever reads it (the cut probe, scripts/film/world/cuts.mjs): its parts, and
 			// what the world's own frames spent on the page's thread since the frame before
-			if (quality !== 'final' && Array.isArray(w.__filmTrace)) w.__filmTrace.push({ at: t3, name: spec.meta?.name ?? '', t, total: t3 - t0, exposure: t1 - t0, staging: t2 - t1, set: cost.set, render: cost.render, view: t3 - tv, ...clock.spent() });
+			// what the world built since is drawn out of sight now, a little a frame (all of it waited for before the
+			// timeline played): the frame is up, and the cut that first shows it finds it on the GPU
+			const warmed = live ? /** @type {ReturnType<typeof createWarmer>} */ (warmer).some(v.scene, v.camera, meter ? 50 : 4) : 0;
+			const t4 = clock.now();
+			if (live && Array.isArray(w.__filmTrace)) w.__filmTrace.push({ at: t3, name: spec.meta?.name ?? '', t, total: t3 - t0, exposure: t1 - t0, staging: t2 - t1, set: cost.set, render: cost.render, shadow: cost.shadow, view: t3 - tv, compiled: made[0], buffers: made[1], textures: made[2], warm: t4 - t3, warmed, ...clock.spent() });
 			// the frame is drawn: the page's clock runs again until the next, so the world keeps building what the
 			// shots ahead need while the timeline plays (held, every dome build would wait for a step that never comes)
 			clock.leave();

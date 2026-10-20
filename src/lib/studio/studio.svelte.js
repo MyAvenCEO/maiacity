@@ -1491,6 +1491,13 @@ export class Studio {
 			const ahead = this.worldClips.filter((w) => w.start + w.dur > this.time).sort((a, b) => a.start - b.start);
 			void this.world.meterAhead(ahead.map((w) => this.specOf(w)).filter(/** @returns {s is ShotSpec} */ (s) => !!s), () => !this.playing && !this.starting);
 		}
+		// the grades of the shots ahead baked by the Mac and sent to the GPU before their cuts: a cut never draws its first
+		// frames ungraded while its cube is baked, nor makes the cube's texture at the cut
+		const odt = filmLut(this.luts['odt-rec709'] ?? null);
+		this.world.look(upcoming.map((w) => {
+			const stacks = this.stacksOf(w);
+			return { lut: odt, grade: filmLut(stacks.length ? this.cubeFor(stacks) : null) };
+		}));
 		// while a move is flown by hand the world has its canvas and clock back (film mode's record): no frames asked
 		if (this.world.recording) return;
 		if (!c || !isWorld(c)) return;

@@ -4,7 +4,11 @@
 // moment, rendered, viewed, staged; the world's own frames between two draws). A smooth cut costs what any frame does.
 //
 //   node scripts/film/world/cuts.mjs --timeline v1-A|v1-B|village [--from 0] [--seconds 60] [--px 1280]
-//     [--site http://127.0.0.1:5173] [--engine chrome|webkit] [--meter all|ahead] [--out cuts.json]
+//     [--site http://127.0.0.1:5173] [--engine chrome|webkit] [--meter all|ahead] [--grade clip|none] [--out cuts.json]
+//
+// `--grade clip` (the default) draws every clip through a grade of its own and the output LUT, as the studio draws a
+// timeline graded clip by clip (the cubes made here at the Mac's sizes: 33³, the output 65³), the grades of the shots
+// ahead sent before their cuts as the studio sends them.
 //
 // The site is a dev server (the viewer is imported from its sources): `VITE_RECIPE_FEED=dev bun run dev`. The V1
 // intros' shots are the world's own (`__world.intro.shots()`); the first village's are films/legacy/the-first-village.json.
@@ -112,7 +116,25 @@ const report = await page.evaluate(
 		log(`${first.length} shots from ${from} s; the first prepared and metered in ${Math.round(performance.now() - p0)} ms; playing ${from}–${to.toFixed(1)} s`);
 		// play: the timeline's clock is the page's own (the audio clock in the studio), the world driven every frame as
 		// the studio's driveWorld does
-		win.__filmTrace = [];
+		// the trace kept here: a world that loses its GPU is loaded again, in a new window
+		/** @type {any[]} */
+		const traced = [];
+		let reloads = 0, page = win;
+		const traceOn = () => {
+			const now = /** @type {any} */ (iframe.contentWindow);
+			if (now && now !== page) (page = now), reloads++;
+			if (now && now.__filmTrace !== traced) now.__filmTrace = traced;
+		};
+		traceOn();
+		// the views: the output LUT, and a grade for every clip (the Mac's sizes), as the studio draws them
+		const cube = (/** @type {number} */ n, /** @type {number} */ k) => {
+			const data = new Float32Array(n * n * n * 3);
+			for (let b = 0, i = 0; b < n; b++) for (let g = 0; g < n; g++) for (let r = 0; r < n; r++, i += 3) (data[i] = (r / (n - 1)) ** (1 + k * 0.01)), (data[i + 1] = g / (n - 1)), (data[i + 2] = b / (n - 1));
+			return { size: n, data };
+		};
+		const odt = o.grade === 'none' ? null : cube(65, 0);
+		const grades = list.map((/** @type {any} */ c) => (o.grade === 'none' ? null : cube(33, c.i + 1)));
+		const viewOf = (/** @type {any} */ c) => ({ lut: odt, grade: grades[c.i] });
 		/** @type {{ now: number, gap: number, t: number, clip: number, drawnAt: number, live: boolean }[]} */
 		const frames = [];
 		const play0 = performance.now();
@@ -123,22 +145,24 @@ const report = await page.evaluate(
 				const t = from + (now - play0) / 1000;
 				if (t >= to) return done(null);
 				const c = under(t), specs = ahead(t);
+				traceOn();
 				viewer.keep(specs);
 				viewer.markHeld(specs);
-				if (c) viewer.show({ spec: c.spec, t: c.in + (t - c.start), shape: '16:9', width: 1920, height: 1080, view: { lut: null, grade: null }, meter: false, wait: 50 });
+				viewer.look?.(list.filter((x) => x.start + x.dur > t).slice(0, 3).map(viewOf));
+				if (c) viewer.show({ spec: c.spec, t: c.in + (t - c.start), shape: '16:9', width: 1920, height: 1080, view: viewOf(c), meter: false, wait: 50 });
 				frames.push({ now: now - play0, gap: now - prev, t, clip: c?.i ?? -1, drawnAt: viewer.drawnAt - play0, live: !!c && viewer.isLive(c.spec) });
 				prev = now;
 				requestAnimationFrame(tick);
 			};
 			requestAnimationFrame(tick);
 		});
-		const trace = /** @type {any[]} */ (win.__filmTrace).map((f) => ({ ...f, at: f.at - play0 }));
-		win.__filmTrace = undefined;
+		const trace = traced.map((f) => ({ ...f, at: f.at - play0 }));
+		/** @type {any} */ (iframe.contentWindow).__filmTrace = undefined;
 		/** the frames from a to b (ms of the play) and what they cost */
 		const costs = (/** @type {number} */ a, /** @type {number} */ b) => trace.filter((f) => f.at >= a && f.at < b);
 		const top = (/** @type {any[]} */ fs) => {
 			const worst = fs.reduce((m, f) => (!m || f.total + f.loop > m.total + m.loop ? f : m), null);
-			return worst && Object.fromEntries(['total', 'exposure', 'staging', 'set', 'render', 'view', 'loop', 'worst'].map((k) => [k, Math.round(worst[k])]));
+			return worst && Object.fromEntries(['total', 'exposure', 'staging', 'set', 'render', 'shadow', 'view', 'compiled', 'buffers', 'textures', 'warm', 'warmed', 'loop', 'worst'].map((k) => [k, Math.round(worst[k] ?? 0)]));
 		};
 		const cuts = list
 			.filter((c) => c.start > from && c.start < to)
@@ -169,12 +193,16 @@ const report = await page.evaluate(
 			worst: Math.round(gaps.at(-1) ?? 0),
 			hitches: frames.filter((f) => f.gap > o.hitch).length,
 			hitchesAwayFromCuts: outside.filter((f) => f.gap > o.hitch).length,
+			reloads,
+			compiledWhilePlaying: trace.reduce((a, f) => a + (f.compiled ?? 0), 0),
+			warmedWhilePlaying: trace.reduce((a, f) => a + (f.warmed ?? 0), 0),
+			warmTime: Math.round(trace.reduce((a, f) => a + (f.warm ?? 0), 0)),
 			scale: viewer.scale,
 			cuts,
 			dearestFrames: [...trace].sort((x, y) => y.total + y.loop - (x.total + x.loop)).slice(0, 12).map((f) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v * 10) / 10 : v])))
 		};
 	},
-	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), meter: args.meter ?? 'ahead', hitch: HITCH }
+	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), meter: args.meter ?? 'ahead', grade: args.grade ?? 'clip', hitch: HITCH }
 );
 await browser.close();
 const out = { timeline: which, engine, site, at: new Date().toISOString(), ...report, warnings };
