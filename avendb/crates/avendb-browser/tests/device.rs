@@ -1499,7 +1499,7 @@ async fn hanas_browser_and_passkey_from_before_the_key_move_move_in_one_ceremony
     until("her Mac reads it", || node_shows(&mac, note, "Red and blue.")).await;
     // after the unlock the page asks once more: her passkey and her browser move, in one ceremony
     let moving = opened.moving().await.expect("what moves");
-    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: true }));
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: true, avens: 0 }));
     let again = start_on(&shelf.0, "Hana's browser", &url, 4);
     let shown_steps = again.progress.clone();
     let sign = |challenge, moving: Moving| {
@@ -1594,7 +1594,7 @@ async fn ivys_vault_takes_the_master_keys_next_key_at_her_browsers_unlock_by_her
     assert_eq!((opened.node().device(), opened.passkey()), (browser_i, passkey));
     // her passkey alone signs, in one ceremony: the key's next key by its standing consent, and no device moves
     let moving = opened.moving().await.expect("what moves");
-    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: false }));
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: false, avens: 0 }));
     let sign = |challenge, _: Moving| {
         let ivys = &ivys;
         async move { Ok(Signing { passkey: Some(ivys.ceremony(challenge, Step::Approve).await?), touch: None }) }
@@ -1654,7 +1654,7 @@ async fn hanas_ipad_away_as_her_browser_moved_learns_the_move_from_its_next_key(
     let opened = Device::open(start_on(&shelf.0, "Hana's browser", &url, 3), &meta, hanas.unlock(nonce, [0xaa; 32]));
     let opened = opened.await.expect("it opens");
     let moving = opened.moving().await.expect("what moves, once it caught up with her Mac");
-    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: true }));
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: true, avens: 0 }));
     // her Mac goes away before she moves: no peer sees the move as it happens
     mac.shutdown().await.expect("her Mac's node stops");
     let again = start_on(&shelf.0, "Hana's browser", &url, 4);
@@ -1741,7 +1741,7 @@ async fn sams_phone_signs_in_through_the_server_moves_his_passkey_at_once_and_sh
     let meta = phone.meta([1; 32], "c2Ft".into());
     phone.keep(&meta).await.expect("what opens it again, on its shelf");
     let moving = phone.moving().await.expect("what moves");
-    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: false }));
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: false, avens: 0 }));
     let sign = |challenge, _: Moving| {
         let sams = &sams;
         async move { Ok(Signing { passkey: Some(sams.ceremony(challenge, Step::Approve).await?), touch: None }) }
@@ -1797,7 +1797,7 @@ async fn sams_phone_moves_his_passkey_only_once_it_brought_what_the_server_keeps
     until("it shows his name", || shows_named(&opened, sam, "Sam")).await;
     until("it shows Maia City", || shows_named(&opened, maia, "Maia City")).await;
     let moving = opened.moving().await.expect("what moves");
-    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: false }));
+    assert_eq!(moving, Some(Moving { passkey: true, touch: false, device: false, avens: 0 }));
     let sign = |challenge, _: Moving| {
         let sams = &sams;
         async move { Ok(Signing { passkey: Some(sams.ceremony(challenge, Step::Approve).await?), touch: None }) }

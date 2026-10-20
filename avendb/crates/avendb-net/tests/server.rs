@@ -404,3 +404,90 @@ async fn a_server_made_before_the_key_move_opens_as_itself_and_a_new_one_in_ml_d
     assert_eq!(again.device(), id, "the same device");
     again.shutdown().await.expect("it shuts down");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_persons_mac_moves_the_avens_server_and_agent_from_before_the_key_move_and_they_open_as_their_next_keys() {
+    // a server and an agent made before the key move kept the 32 bytes of their secrets alone: SLH-DSA
+    let (server_dir, claude_dir) = (Folder::new("aven server"), Folder::new("aven claude"));
+    let secrets = [[11; 32], [12; 32]];
+    for (dir, secret) in [&server_dir, &claude_dir].into_iter().zip(secrets) {
+        let shelf = disk::open(dir.path()).expect("its shelf");
+        shelf.put(server::SECRET, bytes::Bytes::copy_from_slice(&secret)).await.expect("its secret, as it kept it");
+    }
+    let [earlier, next] = [Suite::SlhDsa, Suite::MlDsa].map(|suite| secrets.map(|s| DeviceKey::from_secret_in(s, suite).id()));
+    let admission = Admission::default();
+    let server = open(&server_dir, &admission).await.expect("the server");
+    let claude = agent(&claude_dir, "agentClaude").await;
+    assert_eq!([server.device(), claude.device()], earlier, "each in SLH-DSA, as itself");
+    let mut w = world();
+    let (mac_b, passkey_b) = (w.mac_b, w.passkey_b);
+    let bobs = node(&mut w, mac_b, &[passkey_b], 2).await;
+    let offer = server.offer();
+    let aven = bobs.claim(&offer, passkey_b).await.expect("Bob's vault claims the server");
+    bobs.know(claude.addr());
+    claude.know(bobs.addr());
+    bobs.add_device_vault(&claude.offer(), Place::Vault(aven), passkey_b).await.expect("agentClaude joins avenMAIA");
+    // a device of no vault, and one whose key hasn't moved, hands no next key
+    assert!(bobs.next_key_of(bobs.id(), mac_b).await.is_err(), "Bob's Mac answers no claims");
+    // Bob's Mac sees the aven's two devices in SLH-DSA, and each hands its next key, from the same secret
+    let mut found = bobs.read(|lab, me| lab.aven_devices(me)).await;
+    found.sort();
+    let mut expected = vec![(earlier[0], *server.id().as_bytes()), (earlier[1], *claude.id().as_bytes())];
+    expected.sort();
+    assert_eq!(found, expected, "the server and agentClaude, at their endpoints");
+    for (d, n) in earlier.into_iter().zip(next) {
+        let at = EndpointId::from_bytes(&found.iter().find(|f| f.0 == d).expect("found").1).expect("an endpoint");
+        assert_eq!(bobs.next_key_of(at, d).await.expect("its next key"), n);
+    }
+    // his passkey adds each next key to the aven, beside the earlier, which each device signs too and keeps
+    let moves: Vec<(SignerId, SignerId)> = earlier.into_iter().zip(next).collect();
+    let by_move = moves.clone();
+    let drafts = bobs.read(move |lab, me| lab.draft_move(me, &by_move, passkey_b)).await.expect("the move's edits");
+    assert_eq!(drafts.len(), 2, "one edit each");
+    for (draft, at) in drafts.into_iter().zip([server.id(), claude.id()]) {
+        let claim = bobs.act(move |lab, me| lab.claim(me, draft, &[])).await.expect("its claim");
+        bobs.send_move(at, claim).await.expect("the device takes its key move");
+    }
+    let devices = move |lab: &Lab, me| lab.state(me).vault(aven).map(|v| v.devices.clone());
+    let all = Some(vec![earlier[0], earlier[1], next[0], next[1]]);
+    assert_eq!(bobs.read(devices).await, all, "each next key beside the earlier, which stays");
+    until("the server sees both moves", || async { server.read(devices).await == all }).await;
+    assert!(bobs.read(|lab, me| lab.aven_devices(me)).await.is_empty(), "nothing left to move");
+    assert_eq!(server::moved(&server).await, Some(next[0]), "the server knows its next key");
+    // each names its next key on its shelf once the shelf holds the move, and opens as it from its next start
+    let named = |dir: &Folder| {
+        let dir = dir.path().to_path_buf();
+        async move { disk::open(&dir).expect("its shelf").get(server::NEXT).await.expect("it reads").is_some() }
+    };
+    until("the server names its next key", || named(&server_dir)).await;
+    until("agentClaude names its next key", || named(&claude_dir)).await;
+    for n in [server, claude] {
+        n.shutdown().await.expect("it stops");
+    }
+    let server = open(&server_dir, &admission).await.expect("the server again");
+    let claude = agent(&claude_dir, "agentClaude").await;
+    assert_eq!([server.device(), claude.device()], next, "each in ML-DSA-65, as its next key");
+    assert_eq!(server::vault(&server).await, Some(aven), "the server still avenMAIA's");
+    assert_eq!(server::vault(&claude).await, Some(aven), "and agentClaude");
+    assert_eq!(*server.id().as_bytes(), found.iter().find(|f| f.0 == earlier[0]).expect("the server").1, "same endpoint");
+    // the offer the app carries names the server's earlier key: its next key at the same endpoint stands for it
+    bobs.know(server.addr());
+    assert_eq!(bobs.claim(&offer, passkey_b).await.expect("the same server"), aven);
+    for n in [bobs, server, claude] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_server_whose_shelf_names_a_next_key_of_no_vault_opens_as_its_earlier_key() {
+    // a shelf that names a next key whose move it doesn't hold: the server doesn't open as a device of no vault, which
+    // would take a stranger's claim, but as its earlier key
+    let dir = Folder::new("lost move");
+    let shelf = disk::open(dir.path()).expect("its shelf");
+    shelf.put(server::SECRET, bytes::Bytes::copy_from_slice(&[13; 32])).await.expect("its secret");
+    let next = DeviceKey::from_secret_in([13; 32], Suite::MlDsa).id();
+    shelf.put(server::NEXT, bytes::Bytes::copy_from_slice(&next.0)).await.expect("a next key");
+    let node = open(&dir, &Admission::default()).await.expect("the server");
+    assert_eq!(node.device(), DeviceKey::from_secret_in([13; 32], Suite::SlhDsa).id(), "as its earlier key");
+    node.shutdown().await.expect("it stops");
+}

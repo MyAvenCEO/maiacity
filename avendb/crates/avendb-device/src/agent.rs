@@ -470,24 +470,33 @@ impl Cloud {
         let shelf = disk::open(&folder)?;
         let relay = server.addr.relay_urls().next().cloned();
         let opts = Options { bind: None, direct: false, relay, proxy: self.proxy, lazy: true, ..Options::local() };
-        let node = Arc::new(server::open_agent_with(Some(shelf), name, &secret, suite, opts).await?);
-        drop(secret);
-        node.know(server.addr.clone());
-        if !node.on_relay().await {
-            node.shutdown().await.ok();
-            let host = server.addr.relay_urls().next().map_or("the server".into(), |r| r.to_string());
-            bail!(
-                "{host} doesn't let {name} in: its key may not be a device of avenMAIA yet (its person adds one in The OS \
-                 app, Settings, Agents, Add a cloud agent), or this environment's network doesn't allow \
-                 avendb.maia.city"
-            );
-        }
+        let mut node = Arc::new(server::open_agent_with(Some(shelf.clone()), name, &secret, suite, opts.clone()).await?);
         let at = server.addr.id;
-        if alone(&node).await
-            && let Ok(Err(e)) = tokio::time::timeout(SYNC, node.contact(at)).await
-        {
-            tracing::warn!("the server's card isn't read: {e:#}");
+        // a folder of its own lasts as long as its session's machine: a new one learns from the server's card that its
+        // key moved (K3c), names its next key there, and opens again as it
+        for again in [false, true] {
+            node.know(server.addr.clone());
+            if !node.on_relay().await {
+                node.shutdown().await.ok();
+                let host = server.addr.relay_urls().next().map_or("the server".into(), |r| r.to_string());
+                bail!(
+                    "{host} doesn't let {name} in: its key may not be a device of avenMAIA yet (its person adds one in \
+                     The OS app, Settings, Agents, Add a cloud agent), or this environment's network doesn't allow \
+                     avendb.maia.city"
+                );
+            }
+            if alone(&node).await
+                && let Ok(Err(e)) = tokio::time::timeout(SYNC, node.contact(at)).await
+            {
+                tracing::warn!("the server's card isn't read: {e:#}");
+            }
+            if again || !server::follow(&node).await {
+                break;
+            }
+            node.shutdown().await.ok();
+            node = Arc::new(server::open_agent_with(Some(shelf.clone()), name, &secret, suite, opts.clone()).await?);
         }
+        drop(secret);
         let looking = AbortOnDropHandle::new(tokio::spawn(look_cloud(node.clone(), server)));
         let cloud = Some(Arc::new(Bringing::new(at)));
         let agent = Arc::new(Agent { node, host: folder, name: name.to_string(), cloud });
