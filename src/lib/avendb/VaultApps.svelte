@@ -20,7 +20,8 @@
 				['library', 'Library', 'library'],
 				['studio', 'Studio', 'studio'],
 				['assets', 'Assets', 'asset'],
-				['worlds', 'Worlds', 'play']
+				['worlds', 'Worlds', 'play'],
+				['models', 'Models', 'audio']
 			]
 		],
 		[

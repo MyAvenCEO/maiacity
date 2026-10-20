@@ -1,0 +1,28 @@
+{
+	"about": "The speech models The OS runs on the Mac (vault/app/src/models.rs), each file pinned by the BLAKE3 hash of its bytes. Maia City keeps them as file entries tagged `model:<id>` and `blake3:<hash>` (scripts/propose-models.mjs proposes them); the avenDB app's Models page (src/lib/avendb/Models.svelte) shows them. A copy whose bytes don't hash to the pin is never loaded.",
+	"models": [
+		{
+			"id": "phonon-2",
+			"label": "Phonon-2",
+			"task": "Speech to text, English",
+			"version": "FermionResearch/Phonon-2@main 2026-09-30, int8",
+			"note": "Parakeet TDT 0.6B v3's graph as istupakov exported it, with Phonon's weights: made once by vault/tools/phonon2_onnx.py --int8 from phonon-2.bps.tar.zst (sha256 98125795…) and istupakov/parakeet-tdt-0.6b-v3-onnx; the preprocessor and the vocabulary are the export's own.",
+			"files": [
+				{ "name": "nemo128.onnx", "source": "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/nemo128.onnx", "size": 139764, "blake3": "45c31fc9296461324ce2788deb5e0a00b1d9879db27c6816d5a8e65ffb629cee" },
+				{ "name": "vocab.txt", "source": "https://huggingface.co/istupakov/parakeet-tdt-0.6b-v3-onnx/resolve/main/vocab.txt", "size": 93939, "blake3": "2609f23eb2e123e568f7bfa26ca772c053856733a255a95080cde91cd1af2bbc" },
+				{ "name": "decoder_joint-model.onnx", "source": "vault/tools/phonon2_onnx.py: decoder_joint-model.onnx", "size": 72520893, "blake3": "e51a6521eb2a061e84debac32f6dbce474f876c678f969abd6e68c75984387c1" },
+				{ "name": "encoder-model.int8.onnx", "source": "vault/tools/phonon2_onnx.py --int8: encoder-model.int8.onnx", "size": 654033351, "blake3": "4860a3feb477f45f31058fa170a470ab08a5eeaf5b77df620b41d686e0a585b1" }
+			]
+		},
+		{
+			"id": "silero-vad-5",
+			"label": "Silero VAD 5",
+			"task": "Finds the speech in a recording",
+			"version": "snakers4/silero-vad@master 2026-09-30",
+			"note": "Silero VAD v5 (snakers4/silero-vad): the model reads only the stretches it marks as speech.",
+			"files": [
+				{ "name": "silero_vad.onnx", "source": "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx", "size": 2327524, "blake3": "bd861b19a51c83ee067b54d7d8b7f40bc11bafcc526506edc00b163e1c53bb8e" }
+			]
+		}
+	]
+}
