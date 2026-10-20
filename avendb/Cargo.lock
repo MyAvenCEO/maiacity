@@ -283,6 +283,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "slh-dsa",
+ "web-time",
  "x-wing",
  "zeroize",
 ]

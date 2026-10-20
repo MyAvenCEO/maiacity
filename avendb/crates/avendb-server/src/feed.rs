@@ -282,10 +282,10 @@ async fn answer(
         return Ok(proof(query, had, &node, &feeds).await);
     }
     if let Some(at) = path.strip_prefix(ENTRY).and_then(|at| at.strip_suffix(OF_ENTRY)).filter(|_| reads) {
-        return Ok(source(at, None, query, &node, &feeds.entries).await);
+        return Ok(source(at, None, query, had, &node, &feeds.entries).await);
     }
     if let Some((at, root)) = path.strip_prefix(ENTRY).and_then(by_root).filter(|_| reads) {
-        return Ok(source(at, Some(root), query, &node, &feeds.entries).await);
+        return Ok(source(at, Some(root), query, had, &node, &feeds.entries).await);
     }
     let under = [FILES, MEDIA, ENTRY, INVITE].iter().any(|at| path.starts_with(at));
     let ours = [PATH, ENTRIES, CODE, PROOF].contains(&path) || under;
@@ -338,8 +338,14 @@ fn tag_of(body: &[u8]) -> String {
 }
 
 /// A reader that asks with `had` (`If-None-Match`) holds what is tagged `tag`: one of the tags it names, weak or not.
+/// Caddy compresses the feed (`encode zstd gzip`) and marks what it compressed in the tag it passes on, `"<tag>-gzip"`
+/// for `"<tag>"`, so a reader asks again with that: the same tag (2026-10-20, every revisit took the whole body again).
 fn holds(had: Option<&str>, tag: &str) -> bool {
-    had.is_some_and(|had| had.split(',').any(|t| t.trim().trim_start_matches("W/") == tag))
+    let plain = |t: &str| {
+        let t = t.trim().trim_start_matches("W/");
+        ["-gzip\"", "-zstd\"", "-br\""].iter().find_map(|end| Some(format!("{}\"", t.strip_suffix(end)?))).unwrap_or(t.to_string())
+    };
+    had.is_some_and(|had| had.split(',').any(|t| plain(t) == tag))
 }
 
 /// The answer to a GET or HEAD of `INVITE` `<share>`: whether that share is an invite of the seed's coop, Maia City,
@@ -864,7 +870,15 @@ async fn media(at: &str, range: Option<&str>, node: &Node, kept: &Kept<Media>) -
 /// lists (`listed_file`) instead. A bad request for a query it can't read; not found for any other entry, one that
 /// brings no file (or none of that root) or whose file is larger than `LARGEST`; and unavailable while the server can't
 /// read its bytes.
-async fn source(at: &str, root: Option<&str>, query: &str, node: &Node, kept: &Kept<Listed>) -> Response<Full<Bytes>> {
+async fn source(
+    at: &str,
+    root: Option<&str>,
+    query: &str,
+    had: Option<&str>,
+    node: &Node,
+    kept: &Kept<Listed>,
+) -> Response<Full<Bytes>> {
+    let by_root = root.is_some();
     let asked = match Asked::of(query, false) {
         Ok(asked) => asked,
         Err(why) => return plain(StatusCode::BAD_REQUEST, why),
@@ -883,6 +897,14 @@ async fn source(at: &str, root: Option<&str>, query: &str, node: &Node, kept: &K
     let Some((root, len)) = file else {
         return plain(StatusCode::NOT_FOUND, "no file of an entry everyone may read here");
     };
+    // a file is named by its root, the hash of its bytes: its tag, which a reader that holds it asks again with
+    let tag = format!("\"{}\"", blake3::Hash::from_bytes(root.hash).to_hex());
+    if holds(had, &tag) {
+        let mut response = Response::new(Full::new(Bytes::new()));
+        *response.status_mut() = StatusCode::NOT_MODIFIED;
+        source_headers(response.headers_mut(), &tag, by_root);
+        return response;
+    }
     let bytes = match node.read_file(root, 0..len).await {
         Ok(bytes) => bytes,
         Err(e) => {
@@ -891,12 +913,21 @@ async fn source(at: &str, root: Option<&str>, query: &str, node: &Node, kept: &K
         }
     };
     let mut response = Response::new(Full::new(Bytes::from(bytes)));
-    let headers = response.headers_mut();
+    source_headers(response.headers_mut(), &tag, by_root);
+    response
+}
+
+/// The headers of a file `source` serves, tagged `tag`: one asked for by its root never changes, so it is kept for a
+/// year; an entry's newest file may, so it is kept 10 s and asked again by its tag after.
+fn source_headers(headers: &mut hyper::HeaderMap<HeaderValue>, tag: &str, named: bool) {
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("text/plain; charset=utf-8"));
     headers.insert(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff"));
     headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
-    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static("public, max-age=10"));
-    response
+    headers.insert(header::ACCESS_CONTROL_ALLOW_HEADERS, HeaderValue::from_static("Range, If-None-Match"));
+    headers.insert(header::ACCESS_CONTROL_EXPOSE_HEADERS, HeaderValue::from_static("ETag"));
+    headers.insert(header::ETAG, HeaderValue::from_str(tag).expect("a tag in hex"));
+    let kept = if named { "public, max-age=31536000, immutable" } else { "public, max-age=10" };
+    headers.insert(header::CACHE_CONTROL, HeaderValue::from_static(kept));
 }
 
 /// The newest file of row `row` (`world::public_entries`), as the feed serves it (`source`): the last of its `files`,
@@ -960,6 +991,17 @@ mod tests {
         // once it is no longer fresh, worked out anew
         *kept.lock().await = Some((Instant::now() - FRESH, 1));
         assert_eq!(ask().await.expect("asked"), 2);
+    }
+
+    #[test]
+    fn a_tag_caddy_marked_as_compressed_is_the_same_tag() {
+        let tag = tag_of(b"rows");
+        let bare = tag.trim_matches('"');
+        for had in [tag.clone(), format!("\"{bare}-gzip\""), format!("W/\"{bare}-zstd\""), format!("\"x\", \"{bare}-br\"")] {
+            assert!(holds(Some(&had), &tag), "{had}");
+        }
+        assert!(!holds(Some("\"other-gzip\""), &tag));
+        assert!(!holds(None, &tag));
     }
 
     #[test]

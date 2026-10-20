@@ -94,6 +94,7 @@ use crate::keys::{self, KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient, Se
 use crate::lens::{self, Lane, Lens, Schema, View};
 use crate::merge;
 use crate::ops::Loc;
+use crate::perf::Perf;
 use crate::policy::{
     mk_audience, replay, replay_on, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
     Meaning, Principal, Proposal, Readings, Refusal, Replay, Share, Sharing, State, Vault, Who, Write,
@@ -336,6 +337,26 @@ impl Keyring {
     }
 }
 
+/// Whether each of `signed`'s signatures check out, in order: on every core the machine has, as each check stands
+/// alone (a restore of Maia City's 18,955 edits spent 11.2 s of its 13.5 s checking them on one core, 2026-10-20); on
+/// one in a browser, which has no threads to spare.
+fn checked_all(signed: &[Signed]) -> Vec<bool> {
+    let one = |s: &Signed| s.verify().is_ok();
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let cores = std::thread::available_parallelism().map_or(1, |n| n.get());
+        if cores > 1 && signed.len() > 1 {
+            let size = signed.len().div_ceil(cores);
+            return std::thread::scope(|scope| {
+                let parts: Vec<_> =
+                    signed.chunks(size).map(|part| scope.spawn(move || part.iter().map(one).collect::<Vec<_>>())).collect();
+                parts.into_iter().flat_map(|part| part.join().expect("a signature check")).collect()
+            });
+        }
+    }
+    signed.iter().map(one).collect()
+}
+
 /// What one device holds: its edits, each with its signatures, to pass on, and the blobs they name; what it makes of
 /// them; the keys it holds; what it read with them; and the entries it shows.
 struct Store {
@@ -373,6 +394,8 @@ struct Store {
     query_depth: usize,
     /// It is a server that takes a new vault only where it welcomes it (`Lab::gate`). Its own too.
     gate: bool,
+    /// What its work costs (`perf`): its own, never an edit's, and kept across a restore.
+    perf: Perf,
 }
 
 impl Default for Store {
@@ -396,6 +419,7 @@ impl Default for Store {
             follow: vec![],
             query_depth: lens::CEILING,
             gate: false,
+            perf: Perf::default(),
         }
     }
 }
@@ -1521,15 +1545,27 @@ impl Lab {
     /// signature checks out. Whether the edits stand is for its replay to say; a blob is checked against its id before
     /// anything is sealed with it (`key_box`). True if any edit was new.
     fn keep(&mut self, to: SignerId, edits: Vec<Signed>, blobs: &Blobs) -> bool {
-        let fresh = self.fresh(to, edits);
+        let fresh = self.checked(to, edits);
         self.keep_fresh(to, fresh, blobs)
+    }
+
+    /// `fresh`, timed on device `to` (`perf`).
+    fn checked(&mut self, to: SignerId, edits: Vec<Signed>) -> Vec<Signed> {
+        let (at, offered) = (Perf::start(), edits.len() as u64);
+        let fresh = self.fresh(to, edits);
+        if let Some(store) = self.stores.get_mut(&to) {
+            store.perf.add("check", at);
+            store.perf.count("edits offered", offered);
+            store.perf.count("edits checked", fresh.len() as u64);
+        }
+        fresh
     }
 
     /// `keep`, of edits from a peer: where `to` is a gated server (`gate`), only what its gate takes of the new edits
     /// whose signatures check out (`gate::takes`), the vault it serves its device vault's one owner; nothing of them if
     /// it takes nothing.
     fn take(&mut self, to: SignerId, edits: Vec<Signed>, blobs: &Blobs) -> bool {
-        let mut fresh = self.fresh(to, edits);
+        let mut fresh = self.checked(to, edits);
         if let Some(home) = self.home(to).filter(|_| !fresh.is_empty()) {
             let store = self.held(to);
             let batch = fresh.iter().map(|s| s.edit.clone()).collect();
@@ -1547,15 +1583,18 @@ impl Lab {
         let mut seen = HashSet::new();
         let new = |s: &Signed| {
             let id = s.edit.id();
-            !store.signed.contains_key(&id) && seen.insert(id) && s.verify().is_ok()
+            !store.signed.contains_key(&id) && seen.insert(id)
         };
-        edits.into_iter().filter(new).collect()
+        let new: Vec<Signed> = edits.into_iter().filter(new).collect();
+        let ok = checked_all(&new);
+        new.into_iter().zip(ok).filter_map(|(s, ok)| ok.then_some(s)).collect()
     }
 
     /// Device `to` keeps `fresh`, new edits whose signatures checked out (`fresh`), and the blobs among `blobs` they
     /// name. True if there were any.
     fn keep_fresh(&mut self, to: SignerId, fresh: Vec<Signed>, blobs: &Blobs) -> bool {
         let Some(store) = self.stores.get_mut(&to) else { return false };
+        let at = Perf::start();
         // its own write, one, drafted on everything it holds: what its edits say now is what they said, that write
         // stepped on, with no replay (`latest`)
         let stepped = match &fresh[..] {
@@ -1581,6 +1620,7 @@ impl Lab {
                 debug_assert!(state == store.log.view(), "a write stepped on differs from the replay");
                 let _ = store.latest.set(state);
             }
+            store.perf.add("keep", at);
         }
         new
     }
@@ -2013,25 +2053,39 @@ impl Lab {
         let own = self.keys.get(&d).and_then(Key::seal_secret);
         let unlocked = own.is_some();
         let mine: Vec<(SignerId, Secret)> = own.map(|o| (d, o)).into_iter().chain(lent.iter().cloned()).collect();
+        let began = Perf::start();
         for round in 0.. {
             let Lab { stores, rng, spares, .. } = self;
             let Some(store) = stores.get_mut(&d) else { return };
+            store.perf.count("refresh rounds", 1);
+            let at = Perf::start();
             let was = std::mem::replace(&mut store.replay, replay(&[]));
             store.replay = replay_on(was, store.log.edits(), store.replayed);
             store.replayed = store.log.edits().len();
             debug_assert!(store.replay == replay(store.log.edits()), "a replay stepped on differs from the whole");
             store.latest = OnceLock::from(store.replay.state.clone());
+            store.perf.add("replay", at);
             // a locked device holds no key, and opens nothing
             if !unlocked {
+                store.perf.add("refresh", began);
                 return;
             }
+            let at = Perf::start();
             let ix = KeyIndex::of(&store.replay);
             open_keys(store, &ix, &mine);
+            store.perf.add("open keys", at);
+            let at = Perf::start();
             read(d, store);
+            store.perf.add("read", at);
             // what it shows, every write counted or not, before its upkeep: its stewards grant counted asks alone
+            let at = Perf::start();
             show_items(d, store);
+            store.perf.add("show items", at);
+            let at = Perf::start();
             let work = upkeep(d, store, &ix, &mine, rng, spares);
+            store.perf.add("upkeep", at);
             if work.is_empty() {
+                store.perf.add("refresh", began);
                 return;
             }
             assert!(round < ROUNDS, "{d:?} keeps making edits its own view refuses: {work:?}");
@@ -3075,6 +3129,21 @@ impl Lab {
         &self.held(d).replay
     }
 
+    /// What device `d`'s work cost since it started (`perf`), and how much it holds: its edits, the bodies it opened,
+    /// the entries it shows and the blobs it keeps.
+    pub fn perf(&self, d: SignerId) -> Value {
+        let store = self.held(d);
+        let mut out = store.perf.to_json();
+        out["held"] = serde_json::json!({
+            "edits": store.log.edits().len(),
+            "bodies": store.bodies.len(),
+            "shown": store.shown.len(),
+            "blobs": store.blobs.len(),
+            "blob_bytes": store.blobs.values().map(|b| b.len()).sum::<usize>(),
+        });
+        out
+    }
+
     /// The signed edit device `d` holds with id `edit`, as it would send it.
     pub fn signed_edit(&self, d: SignerId, edit: EditId) -> Option<&Signed> {
         self.held(d).signed.get(&edit)
@@ -3761,8 +3830,9 @@ impl Lab {
     /// `restore_backup`, taking `backup`'s edits instead of a copy of them: a node starting again from its store holds
     /// each edit once as it restores, not twice (Samuel 2026-10-20: the server's start took more than its 1 GB).
     pub fn restore_from(&mut self, d: SignerId, backup: Backup) {
-        let (follow, query_depth, gate) = (self.held(d).follow.clone(), self.held(d).query_depth, self.held(d).gate);
-        self.stores.insert(d, Store { follow, query_depth, gate, ..Store::default() });
+        let held = self.held(d);
+        let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
+        self.stores.insert(d, Store { follow, query_depth, gate, perf, ..Store::default() });
         self.keep(d, backup.signed, &backup.blobs);
         self.refresh(d, &[]);
     }

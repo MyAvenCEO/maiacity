@@ -914,6 +914,10 @@ pub struct State {
     /// Only while checking an edit that a mark after it hadn't seen (`hide`): each entry such a mark took to an
     /// audience, and that audience's shares. A write must be allowed there too.
     narrow: Vec<(EntryId, Arc<[ShareId]>)>,
+    /// Only while `run` checks an edit against the state before it: the moves after it, looked up by the entry each
+    /// moved, with the edit's place and id. Nothing is hidden by them; `in_audience` only notes when one that hadn't
+    /// seen the edit would have answered otherwise, and only then is the edit checked again with them hidden.
+    late: Option<Late>,
     /// The keep shares that pick each entry, as its vault's stewards last marked them: its wants.
     marks: Arc<HashMap<EntryId, Arc<[ShareId]>>>,
 }
@@ -1247,6 +1251,7 @@ impl State {
             && (cp.share.wide
                 || (audience.contains(&cp.id)
                     && self.narrow.iter().all(|(x, shares)| *x != e || shares.contains(&cp.id))))
+            && self.late.as_ref().is_none_or(|l| l.allows(cp, e))
     }
 
     /// Vault `a` may write entry `e` of vault `v` in the audience of the shares `audience`: it is the vault, or it
@@ -2049,13 +2054,18 @@ impl State {
     /// `step` in place, for edit `edit` whose id is `id`: a refused edit leaves the state as it was.
     pub fn step_mut(&mut self, edit: &Edit, id: EditId) -> Result<(), Refusal> {
         let change = self.check(edit, id)?;
+        self.apply(change, edit, id);
+        Ok(())
+    }
+
+    /// The change `check` worked out for edit `edit`, whose id is `id`, made.
+    fn apply(&mut self, change: Change, edit: &Edit, id: EditId) {
         if change.removes() {
             self.remove(change, edit, id);
         } else {
             let touch = self.commit(change);
             self.settle(touch, id);
         }
-        Ok(())
     }
 
     /// `step_mut` the way the model words it, whatever the edit: every write judged again after it (`drop_unseen`) and
@@ -3311,6 +3321,65 @@ struct Cut {
     facts: Vec<Fact>,
 }
 
+/// The moves among the edits being replayed, by the entry each takes to an audience: each one's place, the edits it
+/// keeps and the audience's shares.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Moves(HashMap<EntryId, Vec<(usize, Arc<HashSet<EditId>>, Arc<[ShareId]>)>>);
+
+impl Moves {
+    /// The audience facts of the moves after place `at` that hadn't seen edit `id`.
+    fn unseen(&self, at: usize, id: EditId) -> impl Iterator<Item = Fact> + '_ {
+        self.0.iter().flat_map(move |(e, ms)| {
+            ms.iter().filter(move |m| m.0 > at && !m.1.contains(&id)).map(move |m| Fact::Audience(*e, m.2.clone()))
+        })
+    }
+}
+
+/// The moves after the edit `run` checks (`State::late`): they hide nothing, and only note in `differs` whether any
+/// that hadn't seen the edit would have kept a share out of an entry's audience. Every check's answer depends on the
+/// moves hidden only through `in_audience`, so a check none of whose calls was answered otherwise answers as it would
+/// with them hidden.
+#[derive(Debug)]
+struct Late {
+    moves: Arc<Moves>,
+    at: usize,
+    id: EditId,
+    differs: std::sync::atomic::AtomicBool,
+}
+
+impl Late {
+    /// Share `cp`, in entry `e`'s audience, answered as it is; noting whether a move that hadn't seen the edit would
+    /// have kept it out.
+    fn allows(&self, cp: &Issued, e: EntryId) -> bool {
+        let out = self.moves.0.get(&e).into_iter().flatten().any(|m| {
+            m.0 > self.at && !m.1.contains(&self.id) && !m.2.contains(&cp.id)
+        });
+        if out {
+            self.differs.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        true
+    }
+}
+
+impl Clone for Late {
+    fn clone(&self) -> Self {
+        Late {
+            moves: self.moves.clone(),
+            at: self.at,
+            id: self.id,
+            differs: std::sync::atomic::AtomicBool::new(self.differs.load(std::sync::atomic::Ordering::Relaxed)),
+        }
+    }
+}
+
+impl PartialEq for Late {
+    fn eq(&self, other: &Self) -> bool {
+        self.moves == other.moves && self.at == other.at && self.id == other.id
+    }
+}
+
+impl Eq for Late {}
+
 /// One replay of edits already in `order`, with the removals `rem` and no others: an edit stands if the state before it
 /// accepts it, and again with what each later removal that hadn't seen it takes away hidden. Which edits stood, and the
 /// state at the end; with `states`, every state along the way too.
@@ -3323,15 +3392,25 @@ struct Run {
 fn run(edits: &[Edit], ids: &[EditId], rem: &HashSet<EditId>, states: bool) -> Run {
     let shares = std::cell::OnceCell::new();
     let shares = || shares.get_or_init(|| shares_issued(edits.iter().zip(ids.iter().copied()))).clone();
-    let cuts: Vec<Cut> = edits
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| rem.contains(&ids[*i]))
-        .map(|(at, r)| {
-            let keep = r.action.keep().unwrap_or(&[]).iter().copied().collect();
-            Cut { at, keep, facts: removes_among(r, shares) }
-        })
-        .collect();
+    // the moves apart, looked up by entry: an edit is checked again with them hidden only where one would answer
+    // otherwise (`Late`), not scanned for at every edit
+    let mut cuts: Vec<Cut> = vec![];
+    let mut moves = Moves::default();
+    for (at, r) in edits.iter().enumerate().filter(|(i, _)| rem.contains(&ids[*i])) {
+        let keep: HashSet<EditId> = r.action.keep().unwrap_or(&[]).iter().copied().collect();
+        let facts = removes_among(r, shares);
+        if !facts.is_empty() && facts.iter().all(|f| matches!(f, Fact::Audience(..))) {
+            let keep = Arc::new(keep);
+            for f in facts {
+                if let Fact::Audience(e, to) = f {
+                    moves.0.entry(e).or_default().push((at, keep.clone(), to));
+                }
+            }
+        } else {
+            cuts.push(Cut { at, keep, facts });
+        }
+    }
+    let moves = (!moves.0.is_empty()).then(|| Arc::new(moves));
     let mut out = Run { stood: Vec::with_capacity(edits.len()), state: State::default(), states: vec![] };
     if states {
         out.states.push(State::default());
@@ -3341,13 +3420,23 @@ fn run(edits: &[Edit], ids: &[EditId], rem: &HashSet<EditId>, states: bool) -> R
         let mut stands = !edit.is_removal() || rem.contains(&id);
         if stands {
             let cut = cuts.iter().filter(|c| c.at > i && !c.keep.contains(&id));
-            let hidden: Vec<Fact> = cut.flat_map(|c| c.facts.iter().cloned()).collect();
-            if !hidden.is_empty() {
-                stands = out.state.hide(&hidden).check(edit, id).is_ok();
-            }
-            if stands {
-                stands = out.state.step_mut(edit, id).is_ok();
-            }
+            let mut hidden: Vec<Fact> = cut.flat_map(|c| c.facts.iter().cloned()).collect();
+            out.state.late = moves.clone().map(|moves| Late { moves, at: i, id, differs: false.into() });
+            let checked = out.state.check(edit, id);
+            let late = out.state.late.take();
+            stands = match checked {
+                Err(_) => false,
+                Ok(change) => {
+                    if let Some(l) = late.filter(|l| !hidden.is_empty() || l.differs.load(std::sync::atomic::Ordering::Relaxed)) {
+                        hidden.extend(l.moves.unseen(i, id));
+                    }
+                    let ok = hidden.is_empty() || out.state.hide(&hidden).check(edit, id).is_ok();
+                    if ok {
+                        out.state.apply(change, edit, id);
+                    }
+                    ok
+                }
+            };
         }
         out.stood.push(stands);
         if states {
@@ -3503,6 +3592,9 @@ pub struct Log {
     edits: Vec<Edit>,
     /// Each edit's id, hashed once.
     ids: Vec<EditId>,
+    /// The same ids, to tell at once whether it holds an edit: a search of `ids` for each edit received made a restore
+    /// of n edits cost n²/2 compares.
+    held: HashSet<EditId>,
 }
 
 impl Log {
@@ -3531,7 +3623,8 @@ impl Log {
     /// A log holding `edits`, as a peer that received them.
     pub fn from_edits(edits: Vec<Edit>) -> Self {
         let ids = ids(&edits);
-        Self { edits, ids }
+        let held = ids.iter().copied().collect();
+        Self { edits, ids, held }
     }
 
     /// The edit `author` and `cosigners` would sign here, unchecked: what a peer that skips the rules would send. It
@@ -3635,6 +3728,7 @@ impl Log {
         let id = edit.id();
         self.edits.push(edit);
         self.ids.push(id);
+        self.held.insert(id);
         Ok(id)
     }
 
@@ -3642,7 +3736,7 @@ impl Log {
     pub fn receive(&mut self, edits: impl IntoIterator<Item = Edit>) {
         for edit in edits {
             let id = edit.id();
-            if !self.ids.contains(&id) {
+            if self.held.insert(id) {
                 self.edits.push(edit);
                 self.ids.push(id);
             }
