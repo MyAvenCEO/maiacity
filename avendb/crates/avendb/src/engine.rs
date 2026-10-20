@@ -166,7 +166,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "history" => &["entry", "limit"],
         "room" => &["entry", "last", "before"],
         "schemas" => &["vault"],
-        "groups" | "kinds" | "limits" | "requests" => &[],
+        "groups" | "kinds" | "limits" | "requests" | "perf" => &[],
         "api_pass" => &["audience"],
         "create" => &["vault", "type", "tags", "schema", "value", "draft", "file", "as"],
         "set" | "unset" | "insert" | "remove" | "move" => {
@@ -221,7 +221,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
-const READS: [&str; 27] = [
+const READS: [&str; 28] = [
     "query",
     "objective_check",
     "get",
@@ -244,6 +244,7 @@ const READS: [&str; 27] = [
     "creatable",
     "taggable",
     "limits",
+    "perf",
     "requests",
     "code",
     "bring",
@@ -325,6 +326,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "cap_groups" => vaults::cap_groups(lab, me, o),
         "kinds" => Ok(words::kinds_json()),
         "limits" => Ok(limits(lab.query_depth(me))),
+        "perf" => Ok(lab.perf(me)),
         "api_pass" => api_pass(lab, me, o),
         "database" | "note" | "log" => vaults::data(lab, me, name, o),
         "creatable" => vaults::creatable(lab, me, o),

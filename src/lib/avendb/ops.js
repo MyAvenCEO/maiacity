@@ -24,6 +24,7 @@ export const READS = [
 	'creatable',
 	'taggable',
 	'limits',
+	'perf',
 	'requests',
 	'aips',
 	'aip',

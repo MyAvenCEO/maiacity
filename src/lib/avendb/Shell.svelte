@@ -8,7 +8,8 @@
 	content piece from its idea to every platform, on a board by stage), its Library of files, films, pictures, PDFs and
 	songs, the Studio (the app's studio, which cuts the footage into films), its flows, the stages its entries go through, and its functions, what runs as an entry moves from one to the
 	next; its database (the query console, the table editor, its schemas and lenses, its history, every signed edit, and
-	the device's jobs, what it syncs in the background); then its settings, one page (`#settings`, a section of it
+	the device's jobs, what it syncs in the background, and its performance, what its work costs and how the server is
+	doing); then its settings, one page (`#settings`, a section of it
 	`#settings/devices`), the one place that says who owns it, which devices act for it and who it is shared with; and
 	the page picked in the middle. Each page has an address of its own
 	(`#todos`), and so has each spark and note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole
@@ -48,6 +49,7 @@
 	import NewVaults from './NewVaults.svelte';
 	import Note from './Note.svelte';
 	import Panel from './Panel.svelte';
+	import Performance from './Performance.svelte';
 	import Settings from './Settings.svelte';
 	import Sparks from './Sparks.svelte';
 	import Stories from './Stories.svelte';
@@ -135,8 +137,8 @@
 			doc: known === 'docs' && hex(entry) ? (entry ?? '') : '',
 			// a world the Worlds page shows (`#worlds/` and its entry)
 			world: known === 'worlds' && hex(entry) ? (entry ?? '') : '',
-			// the section of the settings it opens at (`#settings/devices`)
-			section: known === 'settings' ? (entry ?? '') : '',
+			// the section of the settings, or of the device's performance, it opens at (`#settings/devices`)
+			section: known === 'settings' || known === 'performance' ? (entry ?? '') : '',
 			// a model the Models page shows (`#models/` and its id)
 			model: known === 'models' && /^[a-z0-9-]+$/.test(entry ?? '') ? (entry ?? '') : ''
 		};
@@ -342,6 +344,8 @@
 				<Functions {world} vault={context} />
 			{:else if tab === 'jobs'}
 				<Jobs {world} vault={context} {actor} {api} />
+			{:else if tab === 'performance'}
+				<Performance {api} section={route.section} {thisName} />
 			{:else if tab === 'vaults'}
 				<Vaults {world} {api} {busy} />
 			{:else if tab === 'settings'}
