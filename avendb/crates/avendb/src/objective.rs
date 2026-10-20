@@ -2,8 +2,9 @@
 //! `spec/AvenDB/Objective.lean`, and `spec/vectors/objectives.json` holds this engine to it).
 //!
 //! An objective is a file of Lean against `AvenDB.Objective`: metrics, each a name and a goal over readings, numbers
-//! an AIP records while it is worked on (`aip_measure`), and over the numbers its proposal itself puts in records
-//! (`proposed "path"`, against what main holds there, `current "path"`). This module reads the subset of Lean such a
+//! an AIP records while it is worked on (`aip_measure`), those of them a Measurer of its vault wrote (`measured
+//! "name"`, `spec/AvenDB/Measurers.lean`), and over the numbers its proposal itself puts in records (`proposed "path"`,
+//! against what main holds there, `current "path"`). This module reads the subset of Lean such a
 //! file is written in and checks its metrics against those inputs (`Inputs`), as the model does, so every device
 //! answers alike:
 //!
@@ -23,8 +24,9 @@
 //!   (nested) are comments.
 //! - **Goals**: `atLeast e t`, `atMost e t`, `between e lo hi`, `equals e t`, each argument a number, a name of an
 //!   earlier `Expr`, or an expression in parentheses, as Lean applies functions.
-//! - **Expressions**: plain decimals (`1500`, `0.8`), `reading "name"`, `proposed "path"`, `current "path"`, `min a b`,
-//!   `max a b`, `-x`, `* /` then `+ -`, left to right, as Lean's precedences read them (`-` binds tighter than `*`).
+//! - **Expressions**: plain decimals (`1500`, `0.8`), `reading "name"`, `measured "name"`, `proposed "path"`, `current
+//!   "path"`, `min a b`, `max a b`, `-x`, `* /` then `+ -`, left to right, as Lean's precedences read them (`-` binds
+//!   tighter than `*`).
 //! - **Paths** (`proposed`, `current`): field names split by dots, `#n` the row of a list whose id is n
 //!   (`params.#1.default`), optionally after the first 8 or more hex digits of an entry's id and a slash
 //!   (`1a2b3c4d/params.#1.default`), which picks that entry's line of the AIP (`at_path`).
@@ -62,6 +64,8 @@ pub const MAX_DEPTH: usize = 64;
 pub enum Expr {
     Num(Dec),
     Reading(String),
+    /// The newest reading of a name a Measurer of the AIP's vault wrote, never its author.
+    Measured(String),
     /// The number the AIP's lines would put at a path; at the baseline, what main holds there.
     Proposed(String),
     /// The number main holds at a path.
@@ -111,9 +115,11 @@ fn ok(x: Dec) -> Option<Dec> {
     (-BOUND..=BOUND).contains(&x).then_some(x)
 }
 
-/// Where an expression's names read from (`Env` in the model): readings, the proposal's numbers, main's numbers.
+/// Where an expression's names read from (`Env` in the model): readings, measured readings, the proposal's numbers,
+/// main's numbers.
 pub struct Env<'a> {
     pub reading: &'a dyn Fn(&str) -> Option<Dec>,
+    pub measured: &'a dyn Fn(&str) -> Option<Dec>,
     pub proposed: &'a dyn Fn(&str) -> Option<Dec>,
     pub current: &'a dyn Fn(&str) -> Option<Dec>,
 }
@@ -125,6 +131,7 @@ impl Expr {
         match self {
             Expr::Num(m) => ok(*m),
             Expr::Reading(n) => (env.reading)(n).and_then(ok),
+            Expr::Measured(n) => (env.measured)(n).and_then(ok),
             Expr::Proposed(p) => (env.proposed)(p).and_then(ok),
             Expr::Current(p) => (env.current)(p).and_then(ok),
             Expr::Add(a, b) => two(a, b).and_then(|(x, y)| ok(x + y)),
@@ -144,6 +151,7 @@ impl Expr {
         match self {
             Expr::Num(m) => json!({ "num": serde_json::Number::from_i128(*m).map_or(Value::Null, Value::Number) }),
             Expr::Reading(n) => json!({ "reading": n }),
+            Expr::Measured(n) => json!({ "measured": n }),
             Expr::Proposed(p) => json!({ "proposed": p }),
             Expr::Current(p) => json!({ "current": p }),
             Expr::Add(a, b) => two("add", a, b),
@@ -158,7 +166,7 @@ impl Expr {
 
     fn nodes(&self) -> usize {
         match self {
-            Expr::Num(_) | Expr::Reading(_) | Expr::Proposed(_) | Expr::Current(_) => 1,
+            Expr::Num(_) | Expr::Reading(_) | Expr::Measured(_) | Expr::Proposed(_) | Expr::Current(_) => 1,
             Expr::Neg(a) => 1 + a.nodes(),
             Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) | Expr::Min(a, b) | Expr::Max(a, b) => {
                 1 + a.nodes() + b.nodes()
@@ -166,10 +174,18 @@ impl Expr {
         }
     }
 
-    /// The readings it names, each once, in the order it names them.
+    /// The readings it names, by `reading` or `measured`, each once, in the order it names them.
     pub fn readings(&self, out: &mut Vec<String>) {
         self.names(&mut |e| match e {
-            Expr::Reading(n) if !out.contains(n) => out.push(n.clone()),
+            Expr::Reading(n) | Expr::Measured(n) if !out.contains(n) => out.push(n.clone()),
+            _ => {}
+        })
+    }
+
+    /// The readings it names by `measured`, each once, in the order it names them.
+    pub fn measured(&self, out: &mut Vec<String>) {
+        self.names(&mut |e| match e {
+            Expr::Measured(n) if !out.contains(n) => out.push(n.clone()),
             _ => {}
         })
     }
@@ -185,7 +201,7 @@ impl Expr {
     /// Each leaf, in the order written.
     fn names(&self, f: &mut dyn FnMut(&Expr)) {
         match self {
-            Expr::Num(_) | Expr::Reading(_) | Expr::Proposed(_) | Expr::Current(_) => f(self),
+            Expr::Num(_) | Expr::Reading(_) | Expr::Measured(_) | Expr::Proposed(_) | Expr::Current(_) => f(self),
             Expr::Neg(a) => a.names(f),
             Expr::Add(a, b) | Expr::Sub(a, b) | Expr::Mul(a, b) | Expr::Div(a, b) | Expr::Min(a, b) | Expr::Max(a, b) => {
                 a.names(f);
@@ -263,11 +279,12 @@ pub type Readings = [(String, Dec)];
 /// Numbers by path, as the engine found them in records (`Fields` in the model).
 pub type Fields = [(String, Dec)];
 
-/// What a metric is checked against (`Inputs` in the model): the readings recorded, and the numbers found at the
-/// paths the objective names, in the AIP's proposed lines and on main.
+/// What a metric is checked against (`Inputs` in the model): the readings recorded, those of them a Measurer wrote,
+/// and the numbers found at the paths the objective names, in the AIP's proposed lines and on main.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Inputs {
     pub readings: Vec<(String, Dec)>,
+    pub measured: Vec<(String, Dec)>,
     pub proposed: Vec<(String, Dec)>,
     pub current: Vec<(String, Dec)>,
 }
@@ -298,9 +315,19 @@ impl Metric {
     /// This metric against inputs `i` (`Metric.check`): now, the newest readings and the proposal's numbers; at the
     /// baseline, the first readings and main's numbers where the proposal's would be.
     pub fn check(&self, i: &Inputs) -> Checked {
-        let (rs, p, c) = (&i.readings[..], &i.proposed[..], &i.current[..]);
-        let now = Env { reading: &|n| newest(rs, n), proposed: &|x| get(p, x), current: &|x| get(c, x) };
-        let base = Env { reading: &|n| first(rs, n), proposed: &|x| get(c, x), current: &|x| get(c, x) };
+        let (rs, ms, p, c) = (&i.readings[..], &i.measured[..], &i.proposed[..], &i.current[..]);
+        let now = Env {
+            reading: &|n| newest(rs, n),
+            measured: &|n| newest(ms, n),
+            proposed: &|x| get(p, x),
+            current: &|x| get(c, x),
+        };
+        let base = Env {
+            reading: &|n| first(rs, n),
+            measured: &|n| first(ms, n),
+            proposed: &|x| get(c, x),
+            current: &|x| get(c, x),
+        };
         let g = &self.goal;
         let value = g.measured().eval(&now);
         let baseline = g.measured().eval(&base);
@@ -399,9 +426,9 @@ pub fn paths(metrics: &[Metric]) -> Vec<String> {
     out
 }
 
-/// The objective as JSON, for the pages and the agents: each metric `{id, name, note, goal, readings, paths, value,
-/// baseline, targets, met, progress}`, numbers as people read them and progress from 0 to 1, then how many are met,
-/// of how many, and the mean progress.
+/// The objective as JSON, for the pages and the agents: each metric `{id, name, note, goal, readings, measured, paths,
+/// value, baseline, targets, met, progress}`, `measured` the readings it counts only as a Measurer wrote them, numbers
+/// as people read them and progress from 0 to 1, then how many are met, of how many, and the mean progress.
 pub fn summary_json(metrics: &[Metric], i: &Inputs) -> Value {
     let s = check(metrics, i);
     let fraction = |p: Dec| number(p);
@@ -410,9 +437,10 @@ pub fn summary_json(metrics: &[Metric], i: &Inputs) -> Value {
         .iter()
         .zip(&s.results)
         .map(|(m, r)| {
-            let (mut names, mut paths) = (vec![], vec![]);
+            let (mut names, mut measured, mut paths) = (vec![], vec![], vec![]);
             for e in m.goal.exprs() {
                 e.readings(&mut names);
+                e.measured(&mut measured);
                 e.paths(&mut paths);
             }
             json!({
@@ -421,6 +449,7 @@ pub fn summary_json(metrics: &[Metric], i: &Inputs) -> Value {
                 "note": m.note,
                 "goal": m.goal.kind(),
                 "readings": names,
+                "measured": measured,
                 "paths": paths,
                 "value": opt(r.value),
                 "baseline": opt(r.baseline),
@@ -637,9 +666,9 @@ fn lex(src: &str) -> Result<Vec<Token>, Error> {
 }
 
 /// Words an objective's names may not take.
-const RESERVED: [&str; 20] = [
-    "def", "import", "open", "namespace", "end", "metric", "reading", "proposed", "current", "min", "max", "atLeast",
-    "atMost", "between", "equals", "Metric", "Expr", "List", "theorem", "where",
+const RESERVED: [&str; 21] = [
+    "def", "import", "open", "namespace", "end", "metric", "reading", "measured", "proposed", "current", "min", "max",
+    "atLeast", "atMost", "between", "equals", "Metric", "Expr", "List", "theorem", "where",
 ];
 
 struct Parser {
@@ -763,16 +792,17 @@ impl Parser {
         self.app(depth + 1)
     }
 
-    /// `reading "x"`, `proposed "path"`, `current "path"`, `min a b`, `max a b`, or an argument.
+    /// `reading "x"`, `measured "x"`, `proposed "path"`, `current "path"`, `min a b`, `max a b`, or an argument.
     fn app(&mut self, depth: usize) -> Result<Expr, Error> {
         match self.peek() {
-            Some(Tok::Ident(w)) if w == "reading" => {
+            Some(Tok::Ident(w)) if w == "reading" || w == "measured" => {
+                let measured = w == "measured";
                 self.at += 1;
                 let n = self.string()?;
                 if n.is_empty() {
                     return self.fail("a reading needs a name");
                 }
-                Ok(Expr::Reading(n))
+                Ok(if measured { Expr::Measured(n) } else { Expr::Reading(n) })
             }
             Some(Tok::Ident(w)) if w == "proposed" || w == "current" => {
                 let proposed = w == "proposed";
@@ -1003,6 +1033,8 @@ mod tests {
         assert!(bad("def x : Metric := metric \"x\" (atLeast (current \"1a2b/a\") 1)").contains("no entry"));
         assert!(bad("def x : Metric := metric \"x\" (atLeast (current \"1a2b3c4d/a/b\") 1)").contains("one /"));
         assert!(bad("def proposed : Expr := 1").contains("can't be the name"));
+        assert!(bad("def measured : Expr := 1").contains("can't be the name"));
+        assert!(bad("def x : Metric := metric \"x\" (atLeast (measured \"\") 1)").contains("needs a name"));
     }
 
     #[test]
@@ -1018,6 +1050,11 @@ mod tests {
         let ms = parse("def x : Metric := metric \"x\" (atLeast (proposed \"a.#1.b\" - current \"c\") (reading \"d\"))")
             .unwrap();
         assert_eq!(paths(&ms), ["a.#1.b", "c"]);
+        let ms = parse("def x : Metric := metric \"x\" (atLeast (measured \"fps\" + reading \"cpu\") 1)").unwrap();
+        let (mut all, mut measured) = (vec![], vec![]);
+        ms[0].goal.measured().readings(&mut all);
+        ms[0].goal.measured().measured(&mut measured);
+        assert_eq!((all, measured), (vec!["fps".to_string(), "cpu".into()], vec!["fps".to_string()]));
     }
 
     #[test]

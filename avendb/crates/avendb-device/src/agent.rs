@@ -890,9 +890,11 @@ fn instructions(name: &str, cloud: bool) -> String {
              would put at that path (field names split by dots, `#n` the row whose id is n, an entry's first 8 hex \
              digits and a slash first to pick its line), its baseline what main holds there, and `current \"path\"` \
              what main holds, so `atLeast (proposed \"params.#1.default\") 0.8` reads its progress from every \
-             write on its lines; a file that doesn't read is refused with its line and column, and \
-             `objective_check` (`lean`, `readings`, `proposed` and `current`, each `{{path, value}}`) checks one \
-             unsaved. While it works, it measures (a test, a count, a run) and records each reading with \
+             write on its lines; `measured \"fps\"` reads only the readings a Measurer of the vault wrote, its \
+             measuring job, never its author, so an agent's own reading counts as a `reading` alone; a file that \
+             doesn't read is refused with its line and column, and `objective_check` (`lean`, `readings`, \
+             `measured`, `proposed` and `current`, each `{{path, value}}`) checks one unsaved. While it works, \
+             it measures (a test, a count, a run) and records each reading with \
              `aip_measure` (`entry`, `name`, `value`, `note`): `aip` answers its `objective`, each metric met or \
              not and its progress from its first reading toward its target, so it reads its own progress in its \
              loop. Then `aip_promote` (`entry`), refused until it holds an objective, which gives it the vault's \

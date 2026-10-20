@@ -1,7 +1,8 @@
 <!--
 	An AIP's objective in the Proposals app: what it must deliver, metrics written in Lean (avendb/spec/AvenDB/
 	Objective.lean), each checked by avenDB's engine against the readings its author recorded while working on it
-	(`aip_measure`) and the numbers its own lines propose (`proposed "path"`, against main's, `current "path"`). Each
+	(`aip_measure`), those a Measurer of the vault wrote (`measured "name"`, never its author), and the numbers its own
+	lines propose (`proposed "path"`, against main's, `current "path"`). Each
 	metric: its name and note, its goal and targets, where it started (its first reading, or what main holds) and
 	where it stands now, a bar of its progress and whether it is met; then the Lean itself, the numbers read from its
 	lines and every reading, in sections that open. Read only: an objective is written and measured by its author, an agent through the MCP.
@@ -18,7 +19,11 @@
 	const target = (m) => (m.goal === 'between' ? `${num(m.targets[0])} and ${num(m.targets[1])}` : num(m.targets[0]));
 	const pct = (p) => `${Math.round((p ?? 0) * 100)} %`;
 	/** What a metric still needs before it reads: its readings, or numbers its lines hold at its paths. */
-	const needs = (m) => [...m.readings, ...(m.paths ?? []).map((p) => `a number at ${p}`)].join(', ');
+	const needs = (m) =>
+		[
+			...m.readings.map((r) => (m.measured?.includes(r) ? `${r}, by a Measurer` : r)),
+			...(m.paths ?? []).map((p) => `a number at ${p}`)
+		].join(', ');
 	/** Whether a metric reads the proposal alone: its baseline is main's number, not a first reading. */
 	const lines = (m) => !m.readings.length && !!m.paths?.length;
 </script>
@@ -66,7 +71,7 @@
 				<summary>Readings <small>{o.readings.length}</small></summary>
 				<ul class="readings">
 					{#each [...o.readings].reverse() as r (r.id)}
-						<li><b>{r.name}</b> {num(r.value)}{r.at ? ` · ${when(r.at)}` : ''}{#if r.note}<span class="dim"> · {r.note}</span>{/if}</li>
+						<li><b>{r.name}</b> {num(r.value)}{r.at ? ` · ${when(r.at)}` : ''}{#if r.measured}<span class="measured" title="Written by a Measurer of the vault, not the AIP's author"> · measured</span>{/if}{#if r.note}<span class="dim"> · {r.note}</span>{/if}</li>
 					{/each}
 				</ul>
 			</details>
@@ -169,6 +174,10 @@
 	}
 	.dim {
 		color: var(--muted);
+	}
+	.measured {
+		color: #136b4b;
+		font-weight: 600;
 	}
 	.err {
 		color: #a03224;

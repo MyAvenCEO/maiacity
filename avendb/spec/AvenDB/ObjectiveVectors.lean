@@ -3,6 +3,7 @@ import AvenDB.Objectives.Start
 import AvenDB.Objectives.Memory
 import AvenDB.Objectives.Unmeasured
 import AvenDB.Objectives.Lines
+import AvenDB.Objectives.Measured
 
 /-!
 # Objective vectors
@@ -10,8 +11,8 @@ import AvenDB.Objectives.Lines
 `vectors/objectives.json`, the cases the Rust engine replays (`crates/avendb/tests/objective.rs`): each an objective
 file of Lean, its text as `include_str` reads it, the very file Lean elaborated here, so the text and the metrics are
 one; the metrics as the model holds them (`Expr`, `Goal`, `Metric`, numbers in millionths); readings, each a name and
-a value in millionths, in the order recorded; the numbers found at the paths it names in the proposal and on main;
-and what `check` answers.
+a value in millionths, in the order recorded, and those of them a Measurer wrote; the numbers found at the paths it
+names in the proposal and on main; and what `check` answers.
 -/
 
 namespace AvenDB.ObjectiveVectors
@@ -40,6 +41,7 @@ def opt (f : α → String) : Option α → String
 def expr : Expr → String
   | .num m => obj [("num", int m)]
   | .reading n => obj [("reading", jstr n)]
+  | .measured n => obj [("measured", jstr n)]
   | .proposed p => obj [("proposed", jstr p)]
   | .current p => obj [("current", jstr p)]
   | .add a b => obj [("add", arr [expr a, expr b])]
@@ -74,6 +76,7 @@ structure Case where
   lean : String
   metrics : List Metric
   readings : Readings
+  measured : Readings := []
   proposed : Fields := []
   current : Fields := []
 
@@ -82,9 +85,9 @@ def named (key : String) (xs : List (String × Int)) : String :=
 
 def case (c : Case) : String :=
   obj [("name", jstr c.name), ("lean", jstr c.lean), ("metrics", arr (c.metrics.map metric)),
-       ("readings", named "name" c.readings), ("proposed", named "path" c.proposed),
-       ("current", named "path" c.current),
-       ("result", summary (check c.metrics ⟨c.readings, c.proposed, c.current⟩))]
+       ("readings", named "name" c.readings), ("measured", named "name" c.measured),
+       ("proposed", named "path" c.proposed), ("current", named "path" c.current),
+       ("result", summary (check c.metrics ⟨c.readings, c.measured, c.proposed, c.current⟩))]
 
 def cases : List Case := [
   { name := "a start: one met, one on its way",
@@ -117,7 +120,16 @@ def cases : List Case := [
     metrics := Objectives.Lines.objective,
     readings := [],
     proposed := [("engine.version", u 6)],
-    current := [("params.#1.default", 600000), ("engine.version", u 4)] }
+    current := [("params.#1.default", 600000), ("engine.version", u 4)] },
+  { name := "measured: the author's reading counts as a reading, never as measured",
+    lean := include_str "Objectives/Measured.lean",
+    metrics := Objectives.Measured.objective,
+    readings := [("fps", u 60), ("fps", u 30), ("fps", u 40)],
+    measured := [("fps", u 30), ("fps", u 40)] },
+  { name := "measured: no Measurer has measured yet",
+    lean := include_str "Objectives/Measured.lean",
+    metrics := Objectives.Measured.objective,
+    readings := [("fps", u 60)] }
 ]
 
 def render : String := obj [("cases", arr (cases.map case))] ++ "\n"

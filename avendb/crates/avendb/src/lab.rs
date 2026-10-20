@@ -3282,6 +3282,28 @@ impl Lab {
         gate::device_standing(st, &st.read_groups(&store.readings), home, d)
     }
 
+    /// Whether vault `u` measures the AIPs of vault `v` that `author` started, by device `on`'s view and the cap groups
+    /// it reads (`gate::measures`).
+    pub fn measures(&self, on: SignerId, v: VaultId, author: VaultId, u: VaultId) -> bool {
+        let store = self.held(on);
+        let st = store.view();
+        gate::measures(st, &st.read_groups(&store.readings), v, author, u)
+    }
+
+    /// Of each write `added` names, its actor and what it added to an AIP of vault `v` that `author` started, in order,
+    /// what the vault's Measurers added, by device `on`'s view and the cap groups it reads (`gate::measured_by`).
+    pub fn measured_by<T>(
+        &self,
+        on: SignerId,
+        v: VaultId,
+        author: VaultId,
+        added: impl IntoIterator<Item = (VaultId, Vec<T>)>,
+    ) -> Vec<T> {
+        let store = self.held(on);
+        let st = store.view();
+        gate::measured_by(st, &st.read_groups(&store.readings), v, author, added)
+    }
+
     /// The pass passkey `passkey`, used on device `d`, makes `d` at `made`, seconds since 1970 (`sign::RelayPass`): for
     /// `d` alone, which the server's relay lets in for ten minutes if the passkey roots a vault the server knows
     /// (`roots`), and which a peer hands the passkey's link card on (`link_card`). `None` unless the passkey is at hand
