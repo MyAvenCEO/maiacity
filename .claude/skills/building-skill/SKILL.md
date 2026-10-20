@@ -51,7 +51,7 @@ inside to be walked. The laws, the shared core (`$lib/assets`, refs, one version
 - The engineered 150 m dome (research): a 50 m high geodesic cap of about 6 m struts (frequency 16, 2,390 struts,
   830 hubs), larch or Douglas glulam struts, recycled cast-steel hubs, all joints steel, mineral glass, a hemp-fibre
   north shell, the floor at ground level.
-- The one-village sandbox (`src/lib/sandbox-7`, label Sandbox 6) builds hexes 665.6 m across flats at real scale, with
+- The one-village sandbox (`src/lib/sandbox-6`, label Sandbox 6) builds hexes 665.6 m across flats at real scale, with
   Dome40/80/120 and one tower; its numbers and their sources are in `specs.js`.
 
 ## Composable

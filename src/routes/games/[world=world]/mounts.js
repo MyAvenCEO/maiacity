@@ -67,7 +67,7 @@ export const MOUNTS = {
 		(await import('$lib/sandbox-2/interior/village')).mountVillage(stage, onProgress, await (await import('$lib/sandbox-2/interior/sandbox5.js')).sandbox5()),
 
 	// the valley (Sandbox 5 in the app), played by its autoplayer
-	'sandbox-6': async (stage, _area, onProgress) => (await loadCode(), await import('$lib/sandbox-6/game.js')).mountGame(stage, { film: true, onProgress }),
+	'sandbox-6': async (stage, _area, onProgress) => (await loadCode(), await import('$lib/sandbox-5/game.js')).mountGame(stage, { film: true, onProgress }),
 
 	// the fields and the highway alone
 	'tired-land': async (stage, _area, onProgress) => (await import('$lib/worlds/tired-land')).mountTiredLand(stage, onProgress),

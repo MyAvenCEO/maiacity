@@ -10,7 +10,7 @@
  * The domes are glazed geodesic caps, all of one shape: a cap a third as high as it is wide, as the dome engineering
  * research settled on (glulam struts, steel hubs, laminated glass, a hemp-fibre north shell, a 3 m fish pond at ground
  * level along the north). Since Samuel's change of 2026-10-08 the village has three sizes: Dome40 and Dome80 homes, and
- * Dome120 for the food forests, the utilities and the factories, round one Tower180 (src/lib/sandbox-7/geodesic.js
+ * Dome120 for the food forests, the utilities and the factories, round one Tower180 (src/lib/sandbox-6/geodesic.js
  * builds every panel). The engineering thread sized Dome50/100/150 and Tower200/250; the sizes between and below scale
  * from those along the curve they make (`between`).
  */
