@@ -314,7 +314,7 @@
 		['Genesis', 'A new vault: its kind, owners, threshold and root', 'Its vault'],
 		[
 			'Settings',
-			'How many owners must approve, or a human vault’s root: the passkey that approves alone, set or cleared by the vault’s approval',
+			'How many owners must approve, or a human vault’s root, the key a new device finds it by, set or cleared by the vault’s approval',
 			'The vault'
 		],
 		['Share', 'A share, an owner or a device', 'Its own log, or the vault’s for owners and devices'],
@@ -1102,7 +1102,7 @@
 			</p>
 			<p class="prose-col">
 				A Claude Code session in Anthropic’s cloud has no desktop, so it runs agentCloud. Your desktop app makes its key
-				(Settings, Owners &amp; devices, Agents on this Mac, Add a cloud agent), adds it to the aven in one passkey or Touch
+				(Settings, Devices, Agents, Add a cloud agent), adds it to the aven in one passkey or Touch
 				ID approval, and shows it once; you put it in the cloud environment’s secrets. Every cloud session that holds the
 				key is that one device, with the aven’s rights and no more, and reaches the server alone, on its relay. The relay
 				lets in the devices the server knows and, for ten minutes, a new device that shows a passkey’s pass: of a passkey
@@ -1215,7 +1215,7 @@
 			<h3>A drive is a device too</h3>
 			<p class="prose-col">
 				An external drive you use for avenDB is a device of your vault of its own, as a phone is, on the same sync,
-				shares, copy setting and holdings. One prompt of your passkey adds it, in Owners and devices on the desktop app,
+				shares, copy setting and holdings. One prompt of your passkey adds it, in Settings under Devices on the desktop app,
 				and it keeps a full copy unless you make it light. It holds only ciphertext, in <code>.avendb</code> on the
 				drive, and its key never in plain: masked by your passkey, as the desktop app’s, and wrapped by each Mac that hosts
 				it under that Mac’s own device key, so plugging it in again asks for nothing. While it is plugged in, the Mac’s
@@ -1412,7 +1412,7 @@
 				share is also a group of JSON ops, and its <b>level</b> is the class of its strongest op. It carries its own ops, or
 				names a cap group the vault defines. In the app, one Share form makes a share wherever a page offers to share; an
 				invite, a stage made public, the answer to an access request and each device’s copy setting are made where they
-				happen. A vault’s Sharing page is the one place that says who has it.
+				happen. The Sharing section of a vault’s Settings is the one place that says who has it.
 			</p>
 			<figure>
 				<pre><code>{SHARE}</code></pre>
@@ -1499,9 +1499,10 @@
 			<h3>Owners and devices</h3>
 			<p class="prose-col">
 				An owner is “Owner on Everything”: a co-owner who approves changes to the vault. Only signers own a human vault:
-				its person’s passkeys, a Mac’s Touch ID key, and the master recovery key it is founded with. Its root, the
-				passkey it is founded with, approves any change alone. The vault’s approval, with the new root signing too, sets
-				another root, or none, and in a clash between owners the root ranks as any owner. An aven and a device vault
+				its person’s passkeys, a Mac’s Touch ID key, and the master recovery key it is founded with. Every owner is
+				equal: with the threshold at one, as every vault has it now, any of them approves a change alone. Its root, the
+				passkey it is founded with, is only the key a new device finds it by; any owner may hand it on, and in a clash
+				between owners the root ranks as any owner. An aven and a device vault
 				take exactly one owner. An Owner share on a slice, one todo or one tag, is something else: its holder may share
 				that slice on. A device “acts for” its vault: it writes as the vault and approves nothing.
 			</p>
@@ -1527,7 +1528,7 @@
 				Each device also has one copy setting, a keep share over its whole vault that also stands for every other vault
 				it syncs and has no keep share over: a full copy keeps every entry and file whole, a light copy syncs every entry
 				and fetches a file only when it is opened. You pick it when the device joins, the desktop app full and any
-				browser light by default, and change it in Owners and devices; the app makes no other keep share yet. With
+				browser light by default, and change it in Settings under Devices; the app makes no other keep share yet. With
 				neither, the server keeps every file whole and any other device fetches pieces as it reads them. A keep share
 				that syncs anything always brings the vault’s schemas, lenses and cap groups along. Only the vault that made it
 				can end it, so nobody else can force your phone to sync more.

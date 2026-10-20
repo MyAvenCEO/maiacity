@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS
 // The ops the page grants an agent by (./vaults.js): a standing grant, and the AIP author's shares a Suggester gets
 // beside its Suggester's, as the Mac's grant passes them on (avendb-device's `agent::pass_on_aips`); and how a
-// Suggester's share reads since drafts, one given before them told apart.
+// Suggester's share reads since drafts, one given before them told apart; and each key the key move kept listed once.
 // Run: bun test src/lib/avendb/vaults.test.js
 import { expect, test } from 'bun:test';
 import {
@@ -9,6 +9,8 @@ import {
 	AIPS,
 	aipAuthorOps,
 	levelName,
+	newest,
+	newestKey,
 	OLD_SUGGESTER,
 	opsWords,
 	opWords,
@@ -102,4 +104,25 @@ test('a Suggester proposes new entries; one given before drafts is named apart a
 	expect(rowHint({ ...row, drafts: false }, w)).toContain('may not propose new entries yet');
 	expect(rowHint({ ...row, group: null, name: 'Drafts only' }, w)).toBe('May propose new entries');
 	expect(rowHint({ ...row, group: null, name: 'Tick done', drafts: false }, w)).toBeUndefined();
+});
+
+test('a key the key move kept beside its next is listed once, by its newest', () => {
+	const [old, now, phone, pass, next] = [1, 2, 3, 4, 5].map(hex);
+	const v = {
+		id: hex(9),
+		owners: [
+			{ signer: pass, recovery: false, by: 'passkey', next },
+			{ signer: next, recovery: false, by: 'passkey', next: null },
+			{ vault: hex(8) }
+		],
+		devices: [
+			{ id: old, me: true, next: now },
+			{ id: now, me: true, next: null },
+			{ id: phone, me: false }
+		]
+	};
+	const world = { vaults: [v] };
+	expect(newest(v.devices).map((d) => d.id)).toEqual([now, phone]);
+	expect(newest(v.owners)).toEqual([v.owners[1], v.owners[2]]);
+	expect([old, now, phone, pass, hex(7)].map((k) => newestKey(world, k))).toEqual([now, now, phone, next, hex(7)]);
 });

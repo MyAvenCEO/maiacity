@@ -198,8 +198,7 @@ const KIND_WORDS = /** @type {Record<string, string>} */ ({ human: 'human', coop
 
 /** What each kind is for, before the kind table's rules for it. */
 const KIND_IS = /** @type {Record<string, string>} */ ({
-	human:
-		"A person's vault. Its root is their passkey, which approves every change to it; the master recovery key can also recover it while avenDB is young.",
+	human: "A person's vault: the identity everything they do starts from.",
 	coop: 'A coop: a company or a group, which hires avens by sharing with them.',
 	aven: "A person's aven: the one identity their agents act as, which coops hire by sharing with it.",
 	device: 'A device vault: the keys of one agent, server or drive, with only the rights its owner passes on to it.'
@@ -264,13 +263,34 @@ export function kindHint(world, kind) {
 	const by = r.ownedBy === 'signers' ? [] : r.ownedBy.map((k) => KIND_WORDS[k] ?? k);
 	const owners =
 		r.ownedBy === 'signers'
-			? 'Owned by its passkeys'
+			? 'Owned by its keys: passkeys, a Mac’s Touch ID key, the master recovery key'
 			: r.most === 1
 				? `Owned by one ${list(by, 'or')} vault alone`
 				: `Owned by ${list(by, 'or')} vaults${r.most == null ? '' : `, ${r.most} at most`}`;
 	const each = r.each == null ? '' : `; a vault owns ${r.each === 1 ? 'one' : r.each} of them at most`;
 	const owns = world.kinds.some((k) => k.ownedBy !== 'signers' && k.ownedBy.includes(r.kind)) ? '' : ' It owns no vault.';
 	return `${KIND_IS[kind] ?? ''} ${owners}${each}. ${actsWords(world, kind)}${owns}`.trim();
+}
+
+/**
+ * Owners or devices as a list shows them: a key the key move kept beside its next (`next`) is that same passkey,
+ * Touch ID key or device, so each is listed once, by its newest key.
+ * @template {object} T @param {T[]} xs @returns {T[]}
+ */
+export const newest = (xs) => xs.filter((x) => !('next' in x && x.next));
+
+/**
+ * Key `id` as a list shows it: its next key where the key move kept it beside one (`next`), else itself.
+ * @param {WorldView} world @param {string} id
+ */
+export function newestKey(world, id) {
+	for (const v of world.vaults) {
+		const d = v.devices.find((x) => x.id === id);
+		if (d) return d.next ?? id;
+		const o = v.owners.find((x) => 'signer' in x && x.signer === id);
+		if (o && 'next' in o && o.next) return o.next;
+	}
+	return id;
 }
 
 /**
@@ -1037,14 +1057,14 @@ const WHY = /** @type {Record<string, string>} */ ({
 	AlreadyMember: 'it is an owner or a device of it already',
 	NotMember: 'it isn’t an owner or a device of it',
 	BadThreshold: 'a vault needs at least one approval, and no more than it has owners',
-	NotRoot: 'only the vault’s root hands the root on',
+	NotRoot: 'it needs one of the vault’s owners',
 	ReadOnly: 'this device opens it read-only',
 	Locked: 'this device is locked',
 	BadSignature: 'a signature didn’t check',
 	WrongOwnerKind: 'that vault may not own it',
 	OneOwner: 'an aven or a device vault has one owner alone',
 	SecondAven: 'that vault owns as many of its kind as one owner may: a person owns one aven',
-	NoDevices: 'only a human or a device vault holds devices: a coop or an aven acts through others',
+	NoDevices: 'a coop holds no devices: its owners act for it',
 	NotHuman: 'only a person’s vault has a root passkey',
 	Cycle: 'a vault would own itself'
 });

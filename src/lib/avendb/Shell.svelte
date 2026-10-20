@@ -8,8 +8,9 @@
 	content piece from its idea to every platform, on a board by stage), its Library of files, films, pictures, PDFs and
 	songs, the Studio (the app's studio, which cuts the footage into films), its flows, the stages its entries go through, and its functions, what runs as an entry moves from one to the
 	next; its database (the query console, the table editor, its schemas and lenses, its history, every signed edit, and
-	the device's jobs, what it syncs in the background); then its settings (About, Owners and devices, and Sharing, the
-	one place that says who it is shared with); and the page picked in the middle. Each page has an address of its own
+	the device's jobs, what it syncs in the background); then its settings, one page (`#settings`, a section of it
+	`#settings/devices`), the one place that says who owns it, which devices act for it and who it is shared with; and
+	the page picked in the middle. Each page has an address of its own
 	(`#todos`), and so has each spark and note (`#notes/` and its entry), which opens as a docs app opens a document, on the whole
 	screen, each artifact (`#artifacts/` and its entry), and each story (`#stories/` and its entry), its text edited as a note
 	(`/edit`). The device picks
@@ -57,7 +58,7 @@
 	import Dashboard from '$lib/app/Dashboard.svelte';
 	import { may } from './ops.js';
 	import { session } from './session.svelte.js';
-	import { acting, count, KINDS, list, nameOf, pillVaults, signerName } from './vaults.js';
+	import { acting, count, KINDS, nameOf, pillVaults } from './vaults.js';
 	import { wordsFilling } from './youtube.js';
 
 	/**
@@ -92,14 +93,15 @@
 	/** @typedef {(typeof NAV)[number][1][number]} PageItem */
 	const PAGES = NAV.flatMap(([, items]) => /** @type {readonly PageItem[]} */ (items));
 	/** @typedef {PageItem[0]} Page */
-	/** the pages that show a vault as its owners see it, whoever acts */
-	const SETTINGS = /** @type {Page[]} */ (['about', 'members', 'sharing']);
-	/** the pages older addresses name, by the page that shows the same now */
+	/** the pages older addresses name, by the page, and the settings' section, that show the same now */
 	const MOVED = /** @type {Record<string, string>} */ ({
-		access: 'sharing',
-		sync: 'sharing',
-		cells: 'sharing',
-		shares: 'sharing',
+		about: 'settings/profile',
+		members: 'settings/owners',
+		sharing: 'settings/sharing',
+		access: 'settings/sharing',
+		sync: 'settings/sharing',
+		cells: 'settings/sharing',
+		shares: 'settings/sharing',
 		notes: 'sparks',
 		articles: 'stories'
 	});
@@ -112,8 +114,8 @@
 	 * @param {string} hash
 	 */
 	function parse(hash) {
-		const [at, entry, edit] = hash.replace(/^#/, '').split('/');
-		const page = MOVED[at] ?? at;
+		const [first, ...rest] = hash.replace(/^#/, '').split('/');
+		const [page, entry, edit] = [...(MOVED[first] ?? first).split('/'), ...rest];
 		const known = /** @type {Page | 'home'} */ (PAGES.find(([id]) => id === page && !OUT[id])?.[0] ?? 'home');
 		const hex = (/** @type {string | undefined} */ x) => /^[0-9a-f]{64}$/.test(x ?? '');
 		const opens = ['sparks', 'artifacts', 'stories'].includes(known) && hex(entry);
@@ -130,7 +132,9 @@
 			// a doc the Docs page shows (`#docs/` and its entry), in the page
 			doc: known === 'docs' && hex(entry) ? (entry ?? '') : '',
 			// a world the Worlds page shows (`#worlds/` and its entry)
-			world: known === 'worlds' && hex(entry) ? (entry ?? '') : ''
+			world: known === 'worlds' && hex(entry) ? (entry ?? '') : '',
+			// the section of the settings it opens at (`#settings/devices`)
+			section: known === 'settings' ? (entry ?? '') : ''
 		};
 	}
 
@@ -253,13 +257,6 @@
 			return head;
 		}
 	});
-
-	/** Who owns vault `v`, as a line. @param {import('./vaults.js').VaultView} v */
-	function owners(v) {
-		if (v.id === world.mine) return 'Your vault: your passkey is its root.';
-		const names = v.owners.map((o) => ('vault' in o ? nameOf(byId.get(o.vault)) : signerName(world, o.signer)));
-		return `Owned by ${list(names)}.`;
-	}
 </script>
 
 <svelte:window onhashchange={() => (route = parse(location.hash))} />
@@ -273,7 +270,7 @@
 				As <b>{nameOf(mine)}</b>.
 			{:else if actor === context}
 				As <b>{nameOf(mine)}</b>, its owner: you see and change all of it.
-			{:else if !SETTINGS.includes(/** @type {Page} */ (tab))}
+			{:else if tab !== 'settings'}
 				As <b>{nameOf(as)}</b>: you see what {nameOf(here)} shares with {nameOf(as)}.
 				{#if !here.via}<button class="link" onclick={() => (asking = true)}>Ask for access</button>{/if}
 			{:else}
@@ -318,17 +315,17 @@
 			}}
 		>
 			{#if tab === 'sparks'}
-				<Sparks {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} onstory={openStory} />
+				<Sparks {world} vault={context} {actor} {api} {busy} onaccess={() => go('settings/sharing')} onopen={open} onstory={openStory} />
 			{:else if tab === 'stories'}
-				<Stories {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={openStory} />
+				<Stories {world} vault={context} {actor} {api} {busy} onaccess={() => go('settings/sharing')} onopen={openStory} />
 			{:else if tab === 'todos'}
-				<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
+				<Todos {world} vault={context} {actor} {api} {busy} onaccess={() => go('settings/sharing')} />
 			{:else if tab === 'artifacts'}
-				<Artifacts {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} onopen={open} />
+				<Artifacts {world} vault={context} {actor} {api} {busy} onaccess={() => go('settings/sharing')} onopen={open} />
 			{:else if tab === 'docs'}
-				<Docs {world} vault={context} {actor} {api} entry={route.doc} onaccess={() => go('sharing')} />
+				<Docs {world} vault={context} {actor} {api} entry={route.doc} onaccess={() => go('settings/sharing')} />
 			{:else if tab === 'library'}
-				<Library {world} vault={context} {actor} {api} {busy} onaccess={() => go('sharing')} />
+				<Library {world} vault={context} {actor} {api} {busy} onaccess={() => go('settings/sharing')} />
 			{:else if tab === 'assets'}
 				<Assets {world} vault={context} {actor} {api} entry={route.asset} recipe={route.recipe} />
 			{:else if tab === 'worlds'}
@@ -339,8 +336,8 @@
 				<Functions {world} vault={context} />
 			{:else if tab === 'jobs'}
 				<Jobs {world} vault={context} {actor} {api} />
-			{:else if tab === 'about' || tab === 'members' || tab === 'sharing'}
-				<Settings {world} vault={context} {actor} {api} {busy} {tab} {thisName} {link} {qr} {sockets} {drives} {asks} />
+			{:else if tab === 'settings'}
+				<Settings {world} vault={context} {actor} {api} {busy} section={route.section} {thisName} {link} {qr} {sockets} {drives} {asks} />
 			{:else if tab !== 'studio' && tab !== 'postgres'}
 				<Database {world} vault={context} {actor} {api} view={tab} onopen={open} onview={go} />
 			{/if}

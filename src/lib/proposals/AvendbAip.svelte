@@ -43,8 +43,9 @@
 	const shown = $derived(lines ?? aip.lines);
 
 	let text = $state('');
+	// what it does, as the page's toast says it, names the AIP (AIP-n), so a toast that stays shows which one waits
 	async function act(what, op) {
-		const done = await session.run(what, { ...op, entry: aip.entry, as });
+		const done = await session.run(`${what} ${aip.label ?? 'the idea'}`, { ...op, entry: aip.entry, as });
 		if (done) (text = ''), onchanged();
 	}
 	// a review names every line's heads as the page shows them, so a line written after it was drawn is never accepted unseen
@@ -123,17 +124,17 @@
 		<div class="actions">
 			{#if aip.stage === 'proposed' && ownVault}
 				<input placeholder="A note (needed for a revision)" bind:value={text} />
-				<button class="go" disabled={!!session.doing} onclick={() => review('Accepting the AIP', 'accepted')}>Accept</button>
-				<button disabled={!!session.doing} onclick={() => review('Declining the AIP', 'declined')}>Decline</button>
-				<button disabled={!!session.doing || !text.trim()} onclick={() => review('Asking for a revision', 'revise')}>Revise</button>
+				<button class="go" disabled={!!session.doing} onclick={() => review('Accepting', 'accepted')}>Accept</button>
+				<button disabled={!!session.doing} onclick={() => review('Declining', 'declined')}>Decline</button>
+				<button disabled={!!session.doing || !text.trim()} onclick={() => review('Asking for a revision of', 'revise')}>Revise</button>
 			{/if}
 			{#if aip.stage === 'objective' && (mine || ownVault)}
-				<button class="go" disabled={!!session.doing} onclick={() => act('Promoting the AIP', { op: 'aip_promote' })}>Propose it</button>
+				<button class="go" disabled={!!session.doing} onclick={() => act('Proposing', { op: 'aip_promote' })}>Propose it</button>
 			{:else if aip.stage === 'idea' && (mine || ownVault)}
 				<small class="dim">It is proposed once it states its objective.</small>
 			{/if}
 			{#if mine || ownVault}
-				<button disabled={!!session.doing} onclick={() => act('Withdrawing the AIP', { op: 'aip_withdraw' })}>Withdraw</button>
+				<button disabled={!!session.doing} onclick={() => act('Withdrawing', { op: 'aip_withdraw' })}>Withdraw</button>
 			{/if}
 			{#if aip.stage === 'proposed' && !ownVault}<small class="dim">Only {vaultName(aip.vault)} accepts it, acting as itself.</small>{/if}
 		</div>

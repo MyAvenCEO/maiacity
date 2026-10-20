@@ -433,7 +433,7 @@
 
 		<p class="says">
 			One touch of your passkey adds it: the touch unlocks it and signs the edit that adds it to your vault. Your other
-			devices list it under Owners & devices, and remove it there as they would a lost one.
+			devices list it in Settings, under Devices, and remove it there as they would a lost one.
 		</p>
 		<div class="actions">
 			<button class="btn quiet danger" disabled={busy} onclick={() => j.ondeny()}>Deny</button>
@@ -540,7 +540,7 @@
 			One touch of your passkey signs your part. Then {byId.get(q.from)?.kind === 'human'
 				? `${from} finishes it with their own passkey`
 				: `${from}’s owners finish it with their passkey`}, once your answer reaches them: an owner is added only with
-			both. Owners & devices lists the new owner, and removes it there.
+			both. Settings lists the new owner under Owners, and removes it there.
 		</p>
 		<div class="actions">
 			<button class="btn quiet" disabled={busy} onclick={() => (later = [...later, q.entry])}>Later</button>
