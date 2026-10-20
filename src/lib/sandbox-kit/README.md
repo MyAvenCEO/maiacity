@@ -134,4 +134,4 @@ A world is filmable once it does four things:
 3. **Run its animations on the shot's clock**: `const t = worldTime() ?? (now - start) / 1000`.
 4. **Keep its resolution while a film holds it**: `stage.adapt(now, filmHoldsSize())`.
 
-Then add its film page: `src/routes/games/<sandbox>/+page.svelte` with `<FilmRoute sandbox to mount />` (`src/lib/film/FilmRoute.svelte`), and its entry in `game/film/worlds.js`. The sky reads the film's hour (`window.__interiorHour`) and lens (`window.__exposure`) by itself. Nothing in the world may depend on the browser's storage or the live server on film: a shot must render the same every time.
+Then add its entry in `game/film/worlds.js` and how its film page raises it, its `mount` in `src/routes/games/[world=world]/mounts.js`: the one film page of every world (`/games/<sandbox>/`, `src/lib/film/FilmRoute.svelte`) is made for each entry of the registry. The sky reads the film's hour (`window.__interiorHour`) and lens (`window.__exposure`) by itself. Nothing in the world may depend on the browser's storage or the live server on film: a shot must render the same every time.

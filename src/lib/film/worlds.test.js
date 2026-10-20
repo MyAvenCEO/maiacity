@@ -4,7 +4,7 @@
 // timeline ($lib/sandbox-kit/timeline.js).
 // Run: bun test src/lib/film/worlds.test.js
 import { describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { WORLDS, filmPath, isWorld, partsOf, worldOfPath } from '../../../game/film/worlds.js';
 import { ShotError, evaluate, fingerprint, normalize } from '../../../game/film/shot.js';
@@ -16,11 +16,17 @@ const v1 = (o = {}) => ({ world: { sandbox: 'maiacity-v1', area: 'A', stand: [0,
 
 describe('the one registry of worlds', () => {
 	test('every world has its label, its page in the app, its film page and its parts', () => {
+		// the film page is one for every world (src/routes/games/[world=world]), raising each by its own mount (read as
+		// text: the mounts load the worlds' code, which only the site's bundler resolves)
+		expect(existsSync(join(ROOT, 'src/routes/games/[world=world]/+page.svelte'))).toBe(true);
+		const mounts = readFileSync(join(ROOT, 'src/routes/games/[world=world]/mounts.js'), 'utf8');
+		const MOUNTS = Object.fromEntries([...mounts.matchAll(/^\t'([a-z0-9-]+)': async \(/gm)].map((m) => [m[1], () => {}]));
+		expect(Object.keys(MOUNTS).sort()).toEqual(Object.keys(WORLDS).sort());
 		for (const [id, w] of Object.entries(WORLDS)) {
 			expect(isWorld(id)).toBe(true);
 			expect(w.label.length).toBeGreaterThan(3);
 			expect(w.route).toMatch(/^\/app\/.+\/$/);
-			expect(existsSync(join(ROOT, `src/routes/games/${id}/+page.svelte`)), id).toBe(true);
+			expect(typeof MOUNTS[id], id).toBe('function');
 			expect(Array.isArray(w.parts)).toBe(true);
 			for (const p of w.parts) for (const ch of Object.values(p.channels)) expect(ch.range[0]).toBeLessThan(ch.range[1]);
 		}

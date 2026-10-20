@@ -922,7 +922,8 @@ test("no page reaches the repo's index but through the seed", () => {
 test('every page that builds assets waits for the vault\'s recipes before its first build', () => {
 	const VAULT_JS = 'src/lib/assets/vault.js';
 	const pages = ROUTES.filter((r) => r.path.includes('/+page.') && reach(r.path).has(VAULT_JS));
-	expect(pages.length).toBeGreaterThan(15);
+	// (the film's eight pages are one now, src/routes/games/[world=world])
+	expect(pages.length).toBeGreaterThan(10);
 	const waits = (r) =>
 		// the app's layout holds these (./VaultRecipes.svelte), an asset's own page loads them first (its +page.js), and a
 		// film's world is raised once they are in ($lib/film/FilmRoute.svelte)

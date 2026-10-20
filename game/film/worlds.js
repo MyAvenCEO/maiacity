@@ -1,8 +1,9 @@
 // THE WORLDS A SHOT CAN BE IN — every world the film camera can shoot, and where its film page is: the one registry
 // of them (Samuel 2026-10-18: every world, sandbox, game and the studio's 3D view built from one pattern). The shot's
 // validation (./shot.js), the studio's world picker (src/lib/studio/Inspector.svelte), its ShotSpec type
-// (src/lib/studio/types.js reads `Sandbox` from here), the film pages (src/lib/film/FilmRoute.svelte) and the shoot
-// scripts all read this list and nothing else.
+// (src/lib/studio/types.js reads `Sandbox` from here), the film pages (one page made for every world here,
+// src/routes/games/[world=world], each world raised by its mount in mounts.js beside it) and the shoot scripts all
+// read this list and nothing else.
 //
 // A shot names its world (`spec.world.sandbox`) and, where a sandbox has more than one place, which (`world.area`;
 // its first is the default). Each world's film page, `/games/<sandbox>/?film&area=<area>`, mounts that world alone
