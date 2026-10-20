@@ -34,7 +34,7 @@ export const SHOT_V1 = `{
 }
 `;
 
-/** @typedef {import('$lib/auth/client').Shot} Shot */
+/** @typedef {import('./types.js').Shot} Shot */
 /** @typedef {import('../avendb/vaults.js').EntryView} EntryView */
 
 /** Whether shot `id` is avenDB's. @param {unknown} id */

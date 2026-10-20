@@ -10,7 +10,7 @@
 import { BUNDLES, cleanStack, stackText } from '../../../game/film/grade-tools.js';
 
 /** @typedef {'timeline' | 'scene' | 'clip' | 'base'} Layer */
-/** @typedef {import('$lib/auth/client').GradeStack} GradeStack */
+/** @typedef {import('./types.js').GradeStack} GradeStack */
 /** @typedef {import('./studio.svelte.js').Clip} Clip */
 /** @typedef {import('./studio.svelte.js').Studio} Studio */
 

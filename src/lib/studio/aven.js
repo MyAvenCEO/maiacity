@@ -1,7 +1,7 @@
 /*
  * The studio's footage from avenDB (Jobs and studio 2.0, J1-J7 in the studio's views): every original a vault of the
  * person holds, with what the rules made of it (./jobs/rules.js: probe, proxy, still, transcript, analysis), as the
- * studio's library items (`MediaItem`, src/lib/auth/client.ts), beside the legacy vault's.
+ * studio's library items (`MediaItem`, ./types.js), beside the legacy vault's.
  *
  * An avenDB file is named where the legacy studio names a vault file by its hash, by a reference that carries what reading
  * it takes: `aven:<root>:<sealed size>:<length>:<media type>` (`avenRef`). The Mac app's Rust reads it in place through
@@ -31,7 +31,7 @@ const kindOf = (media) => (media.startsWith('video/') ? 'video' : media.startsWi
  * as an item of class `proxy` that names what it stands for, so the views show originals and play their proxies.
  * Only files this device can open.
  * @param {import('../avendb/vaults.js').WorldView} world
- * @returns {import('$lib/auth/client').MediaItem[]}
+ * @returns {import('./types.js').MediaItem[]}
  */
 export function libraryOf(world) {
 	const byId = new Map(world.entries.map((e) => [e.entry, e]));
@@ -54,7 +54,7 @@ export function libraryOf(world) {
 	};
 	/** @param {string} rule @param {string} id */
 	const task = (rule, id) => made.get(`${rule}:${id}`);
-	/** @type {import('$lib/auth/client').MediaItem[]} */
+	/** @type {import('./types.js').MediaItem[]} */
 	const out = [];
 	const added = (/** @type {any} */ e) => new Date((e.created ?? 0) * 1000).toISOString();
 	for (const e of world.entries) {
@@ -134,7 +134,7 @@ export function libraryOf(world) {
  * A file a rule made, as a library item of class `cls`.
  * @param {{ e: import('../avendb/vaults.js').EntryView, f: any, ref: string }} m @param {string} cls
  * @param {Record<string, unknown>} meta @param {string[]} [tags]
- * @returns {import('$lib/auth/client').MediaItem}
+ * @returns {import('./types.js').MediaItem}
  */
 function itemOf(m, cls, meta, tags = []) {
 	const media = m.e.media ?? m.e.record?.media ?? 'application/octet-stream';
@@ -146,7 +146,7 @@ function itemOf(m, cls, meta, tags = []) {
 /**
  * The library with each graded still a cut made of a legacy vault's file set as that file's preview, as the legacy
  * render worker set it (`meta.preview`).
- * @param {import('$lib/auth/client').MediaItem[]} items
+ * @param {import('./types.js').MediaItem[]} items
  */
 export function withGraded(items) {
 	const byHash = new Map(items.map((m) => [m.hash, m]));

@@ -21,7 +21,7 @@
 	import { nativeFrame } from './luts.js';
 	import { bandLabel, cleanEq, cleanKeys } from '../../../game/film/sound.js';
 
-	/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
+	/** @typedef {import('./types.js').ShotSpec} ShotSpec */
 	/** @typedef {import('./studio.svelte.js').Clip} Clip */
 	/** @typedef {import('./studio.svelte.js').Track} Track */
 	/** @type {{ s: import('./studio.svelte.js').Studio }} */
@@ -201,7 +201,7 @@
 	}
 
 	/** a chapter flag on the ruler: a click goes to it, a drag moves it (on an editable cut)
-	 * @param {PointerEvent} e @param {import('$lib/auth/client').Chapter} c */
+	 * @param {PointerEvent} e @param {import('./types.js').Chapter} c */
 	function moveChapter(e, c) {
 		e.stopPropagation();
 		s.seek(c.at);
@@ -377,7 +377,7 @@
 	/**
 	 * The words of a clip's file within the part it plays, placed in the clip (px), those that would overlap the one
 	 * before left out.
-	 * @param {Clip} c @param {import('$lib/auth/client').MediaItem | undefined} m
+	 * @param {Clip} c @param {import('./types.js').MediaItem | undefined} m
 	 */
 	function clipWords(c, m) {
 		if (s.pxPerSec < WORD_ZOOM || !m || isWorld(c)) return [];
@@ -400,7 +400,7 @@
 	/**
 	 * The analysis cues of a picture clip's file within the part it plays: placed in the clip (px), longest first so a
 	 * point sits on top of a stretch.
-	 * @param {Clip} c @param {import('$lib/auth/client').MediaItem | undefined} m
+	 * @param {Clip} c @param {import('./types.js').MediaItem | undefined} m
 	 */
 	function clipCues(c, m) {
 		if (c.track !== 'V1' || isWorld(c)) return [];
@@ -505,7 +505,7 @@
 		const at = (e.clientX - s.lanes.getBoundingClientRect().left) / s.pxPerSec;
 		const t = Math.min(wc.in + wc.dur, Math.max(wc.in, wc.in + (at - wc.start)));
 		const ev = evaluate(spec, t);
-		/** @type {import('$lib/auth/client').CameraKey} */
+		/** @type {import('./types.js').CameraKey} */
 		const k = { t: Math.round(t * 30) / 30, position: [ev.pose[0], ev.pose[1], ev.pose[2]], yaw: ev.pose[3], pitch: ev.pose[4], fov: ev.fov };
 		s.editSpec(wc, (sp) => {
 			const list = sp.camera.kind === 'keys' ? (sp.camera.keys ?? []) : (toKeys(sp) ?? []);

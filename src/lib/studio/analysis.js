@@ -20,13 +20,13 @@ export const CUE_MEANING = /** @type {Record<string, string>} */ ({
 	problem: 'Something to avoid: shake, blur, noise, a fluff'
 });
 
-/** A file's analysis, when it has one. @param {import('$lib/auth/client').MediaItem | undefined} m @returns {Analysis | null} */
+/** A file's analysis, when it has one. @param {import('./types.js').MediaItem | undefined} m @returns {Analysis | null} */
 export function analysisOf(m) {
 	const a = m?.meta?.analysis;
 	return a && typeof a === 'object' ? /** @type {Analysis} */ (a) : null;
 }
 
-/** Its cues, in order. @param {import('$lib/auth/client').MediaItem | undefined} m @returns {Cue[]} */
+/** Its cues, in order. @param {import('./types.js').MediaItem | undefined} m @returns {Cue[]} */
 export function cuesOf(m) {
 	const c = analysisOf(m)?.cues;
 	return Array.isArray(c) ? c.filter((q) => typeof q.s === 'number') : [];
@@ -34,7 +34,7 @@ export function cuesOf(m) {
 
 /**
  * Its tags: the base labels, then the free ones — each once (the analysis often names a label among its free tags
- * too, and a tag shown twice broke the list drawing them). @param {import('$lib/auth/client').MediaItem | undefined} m
+ * too, and a tag shown twice broke the list drawing them). @param {import('./types.js').MediaItem | undefined} m
  */
 export function tagsOf(m) {
 	const a = analysisOf(m);

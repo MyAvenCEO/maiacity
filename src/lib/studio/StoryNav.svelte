@@ -10,7 +10,7 @@
 	/** @type {{ s: import('./studio.svelte.js').Studio }} */
 	let { s } = $props();
 
-	/** @typedef {import('$lib/auth/client').Timeline} Timeline */
+	/** @typedef {import('./types.js').Timeline} Timeline */
 	/** @param {Timeline} t */
 	const storyOf = (t) => /** @type {any} */ (t).story?.entry ?? '';
 
@@ -31,7 +31,7 @@
 	/** the chapter being renamed, and its name as typed */
 	let naming = $state(/** @type {number | null} */ (null));
 	let typed = $state('');
-	/** @param {import('$lib/auth/client').Chapter} c */
+	/** @param {import('./types.js').Chapter} c */
 	function rename(c) {
 		if (!s.canEdit) return;
 		naming = c.id;

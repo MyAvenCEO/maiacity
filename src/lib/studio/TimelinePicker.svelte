@@ -24,7 +24,7 @@
 		addEventListener('pointerdown', away);
 		return () => removeEventListener('pointerdown', away);
 	});
-	/** @param {import('$lib/auth/client').Timeline} t */
+	/** @param {import('./types.js').Timeline} t */
 	async function pick(t) {
 		open = false;
 		if (t.id !== s.current?.id) await s.openTimeline(t);

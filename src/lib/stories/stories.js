@@ -1,6 +1,6 @@
 // The kinds of beat a story's journey is made of, each with its name, what it is for and its own colour (avenDB's
 // Story Journey and Story Movie).
-/** @typedef {import('$lib/auth/client').BeatType} BeatType */
+/** @typedef {import('$lib/studio/types.js').BeatType} BeatType */
 
 /** @type {Record<BeatType, string>} */
 export const BEAT_LABEL = {

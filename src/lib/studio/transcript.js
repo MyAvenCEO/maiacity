@@ -3,7 +3,7 @@
 // the program monitor read it). Its sound, for a video: the audio proxy (meta.audio — an audio-only .m4a on the
 // original's clock). And its timecode (meta.probe.timecode + timecode_fps, on camera files).
 
-/** @typedef {import('$lib/auth/client').MediaItem} MediaItem */
+/** @typedef {import('./types.js').MediaItem} MediaItem */
 /** @typedef {{ w: string, s: number, e: number, c?: number, sp?: string | number }} Word */
 /** @typedef {{ s: number, e: number, text: string, sp?: string | number }} Utterance */
 /**

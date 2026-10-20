@@ -2,7 +2,7 @@
 // hand — and, when a LUT is missing, a clear fallback that says so instead of showing something wrong in silence.
 import { ODT, profileInfo } from './color.js';
 
-/** @typedef {import('$lib/auth/client').Cdl} Cdl */
+/** @typedef {import('./types.js').Cdl} Cdl */
 /** @typedef {import('./luts.js').Lut} Lut */
 /**
  * note: shown on the viewer when the picture is not what the render will make of it; exact: the view is exact (LUTs,

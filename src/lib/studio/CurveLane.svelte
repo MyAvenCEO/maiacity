@@ -9,7 +9,7 @@
 
 	/**
 	 * @type {{ s: import('./studio.svelte.js').Studio, clip: import('./studio.svelte.js').Clip,
-	 *   spec: import('$lib/auth/client').ShotSpec, lane: import('./lanes.js').Lane }}
+	 *   spec: import('./types.js').ShotSpec, lane: import('./lanes.js').Lane }}
 	 */
 	let { s, clip, spec, lane } = $props();
 

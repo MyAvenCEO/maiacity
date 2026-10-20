@@ -21,7 +21,7 @@
 	const layer = $derived(LAYERS.find((l) => l.id === s.gradeLayer) ?? LAYERS[LAYERS.length - 1]);
 	const needsShot = $derived(ofShot(layer.id) || layer.id === 'scene');
 	const stack = $derived(stackOf(s, layer.id, clip));
-	/** @param {import('$lib/auth/client').GradeTool[]} tools */
+	/** @param {import('./types.js').GradeTool[]} tools */
 	const putTools = (tools) => setStack(s, layer.id, clip, { ...(stack?.strength !== undefined ? { strength: stack.strength } : {}), tools });
 	/** @param {number} k */
 	const putStrength = (k) => setStack(s, layer.id, clip, { strength: k, tools: stack?.tools ?? [] });

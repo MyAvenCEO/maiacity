@@ -17,7 +17,7 @@
 	import { nameOf } from '$lib/avendb/vaults.js';
 	import VaultApps from '$lib/avendb/VaultApps.svelte';
 	import Icon from '$lib/app/Icon.svelte';
-	import { APPS, GAME_WORLDS, holds, isAdmin, opens } from '$lib/app/places';
+	import { APPS, GAME_WORLDS, isAdmin, opens } from '$lib/app/places';
 	import { access, holdsGroup } from '$lib/app/access.svelte.js';
 	import { TRAVELER } from '$lib/avendb/capgroups.js';
 	import { asset } from '$lib/media/url';
@@ -37,7 +37,6 @@
 	const admin = $derived(isAdmin());
 	// the games this founder opens, by the cap groups of Maia City they hold
 	const games = $derived(GAME_WORLDS.filter((g) => opens(g)));
-	const apps = $derived(APPS.filter((t) => holds(founder, t)));
 	// Maia City's Assets and Worlds in avenDB, read only, for every traveler
 	const traveler = $derived(!!access.city && holdsGroup(TRAVELER));
 	// the vault avenDB's apps open in: the one picked in the nav pill
@@ -71,7 +70,7 @@
 
 	<p class="divider">Your apps</p>
 	<div class="tiles">
-		{#each apps as t (t.href)}
+		{#each APPS as t (t.href)}
 			<a class="tile" href={t.href}><Icon name={t.icon} size={34} /><b>{t.label}</b><span>{t.note}</span></a>
 		{/each}
 	</div>

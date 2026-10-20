@@ -9,7 +9,7 @@
 	slider writes once it is let go of.
 -->
 <script>
-	import { BEATS } from '$lib/auth/client';
+	import { BEATS } from '$lib/studio/types.js';
 	import { BEAT_COLOR, BEAT_LABEL, BEAT_NOTE } from '$lib/stories/stories.js';
 	import { allowed, may } from './ops.js';
 	import { newId } from './sparks.js';
