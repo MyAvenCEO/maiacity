@@ -69,7 +69,8 @@ pub fn log_of(edit: &Edit, id: EditId) -> Option<LogId> {
         | Action::Revoke(Revoking::Owner { vault, .. } | Revoking::Device { vault, .. }) => LogId::Vault(*vault),
         Action::Share(Sharing::Grant(..)) => LogId::Share(ShareId::from(id)),
         Action::Revoke(Revoking::Grant { share, .. }) | Action::Claim { share, .. } => LogId::Share(*share),
-        Action::Write { entry, .. } | Action::Mark { entry, .. } => LogId::Entry(*entry),
+        Action::Write { entry, .. } | Action::Mark { entry, .. } | Action::Wraps { entry, .. } => LogId::Entry(*entry),
+        Action::Checkpoint { vault, .. } => LogId::Vault(*vault),
         Action::Keys { name, .. } => match *name {
             KeyName::Signer(_) => return None,
             KeyName::Scoped(KeyFam::Seed(v), _) => LogId::Vault(v),

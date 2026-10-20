@@ -48,5 +48,8 @@
 		"quickjs-emscripten-core": "^0.32.0",
 		"three": "^0.186.0",
 		"yaml": "^2.9.0"
+	},
+	"patchedDependencies": {
+		"@sveltejs/kit@2.70.3": "patches/@sveltejs%2Fkit@2.70.3.patch"
 	}
 }

@@ -104,6 +104,8 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod backup;
+#[cfg(test)]
+mod bench;
 mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bucket;

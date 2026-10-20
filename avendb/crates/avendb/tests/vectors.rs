@@ -48,7 +48,7 @@ use avendb::lens::{example, View};
 use avendb::ops::Loc;
 use avendb::policy::{
     history, mk_audience, replay, tips, Action, Creation, Edit, KeepMode, Kind, Level, Line, Principal, Proposal,
-    Readings, Refusal, Revoking, Setting, Share, Sharing, State, Vault, Who,
+    Readings, Refusal, Revoking, Setting, Share, Sharing, State, Vault, Who, Wrap,
 };
 use avendb::rules::{self, ops_of_json, Cap, CapGroup, Grant, Proof, Touch};
 use avendb::slice::{Atom, Attrs, Header, Select, Selector, Sym, TagDelta, CAP_GROUP_TYPE, LENS_TYPE, SCHEMA_TYPE};
@@ -450,6 +450,21 @@ impl Names {
                 public: None,
                 boxes: list(&x["to"]).iter().map(|t| KeyBox { to: self.recipient(t), bytes: vec![] }).collect(),
                 clear: x["public"].as_bool().unwrap().then_some([0; 32]),
+            },
+            "wraps" => Action::Wraps {
+                entry: entry(&x["entry"]),
+                wraps: list(&x["wraps"])
+                    .iter()
+                    .map(|w| Wrap {
+                        name: self.key_name(&w["secret"]),
+                        id: KeyId([0; 32]),
+                        boxed: KeyBox { to: self.recipient(&w["to"]), bytes: vec![] },
+                    })
+                    .collect(),
+            },
+            "checkpoint" => Action::Checkpoint {
+                vault: vault(),
+                covers: list(&x["covers"]).iter().map(|c| self.edit(c)).collect(),
             },
             other => panic!("no action {other}"),
         }
