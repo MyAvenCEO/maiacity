@@ -16,6 +16,7 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 /** each kernel engine's source */
 export const SOURCES = {
 	logic: here('./logic-engine.js'),
+	math: here('./math-engine.js'),
 	view: here('./view/engine.js'),
 	'view-worker': here('./view/worker.js'),
 	// the libraries a view's script may load, one engine each (game/code/limits.js LIBS)
@@ -23,7 +24,7 @@ export const SOURCES = {
 };
 
 /** the npm package each library engine carries, and so its version */
-export const PACKAGES = { ...Object.fromEntries(Object.values(LIBS).map((l) => [l.engine, l.package])), logic: 'quickjs-emscripten-core', 'view-worker': 'linkedom' };
+export const PACKAGES = { ...Object.fromEntries(Object.values(LIBS).map((l) => [l.engine, l.package])), logic: 'quickjs-emscripten-core', math: 'katex', 'view-worker': 'linkedom' };
 export const versionOf = (kind) => (PACKAGES[kind] ? JSON.parse(readFileSync(`${ROOT}node_modules/${PACKAGES[kind]}/package.json`, 'utf8')).version : undefined);
 
 /** our two fonts, inline in the view engine (./view/theme.js) */
@@ -53,8 +54,9 @@ export async function bundleKernel(kind) {
 
 /**
  * Engine `kind` as it is now, as scripts/freeze-engine.mjs freezes it: its code, and what its entry says it carries
- * (a box engine: three.js and the modules it lends recipes; a library: its package's version; the logic engine:
- * QuickJS's). Every kind of the one list, the box's with them (../assets/box/plugin.js bundles it).
+ * (a box engine: three.js and the modules it lends recipes; a library or the math engine: its package's version, KaTeX's
+ * for math; the logic engine: QuickJS's). Every kind of the one list, the box's with them (../assets/box/plugin.js
+ * bundles it).
  * @param {string} kind @returns {Promise<{ code: string, carries: Record<string, unknown> }>}
  */
 export async function bundleOf(kind) {

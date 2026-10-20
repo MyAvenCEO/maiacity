@@ -171,5 +171,15 @@
 			"version": "0.18.13",
 			"note": "takes WebAssembly off the view's worker: WebKit compiled it despite the frame's policy"
 		}
+	],
+	"math": [
+		{
+			"v": 1,
+			"date": "2026-10-20",
+			"blake3": "c49aa09a9034daf1523da6c30ed92b54709751239fae6234965f370741503aa0",
+			"bytes": 265244,
+			"version": "0.16.22",
+			"note": "The first math engine: KaTeX 0.16.22 behind the shell's second lock, LaTeX in and MathML out, nothing else: MathML only (no styles, fonts, SVG or CSS), trust off, strict, a command it doesn't know or refuses (\\href, \\url, \\includegraphics, \\html…) and any error making no formula; each formula with macros of its own, at most 200 expansions and sizes of 10 em; 4,000 characters a formula, 1,000 formulas and 4 s of work a batch"
+		}
 	]
 }

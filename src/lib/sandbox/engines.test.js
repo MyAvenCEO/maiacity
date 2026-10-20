@@ -1,6 +1,6 @@
 // @ts-nocheck — plain JS
-// Every kernel engine (./engines.json, one list: the asset box's, logic, view, view-worker and the libraries a draw
-// script may use) is frozen:
+// Every kernel engine (./engines.json, one list: the asset box's, logic, math, view, view-worker and the libraries a
+// draw script may use) is frozen:
 // each version's file is the bytes its BLAKE3 hash names, and the source as it is now is the latest version, so a
 // change to what runs untrusted code never ships without a new, reviewed version. A page refuses an engine whose
 // bytes are not the ones named, and no source anywhere loads code from a CDN. Code runs on the engine it names, never
@@ -57,6 +57,7 @@ describe('code runs on the engine it names (H4)', () => {
 		for (const [kind, v] of Object.entries(FLOOR)) expect(enginesOf(kind).some((e) => e.v === v)).toBe(true);
 		expect(engineFor('view', undefined).v).toBe(FLOOR.view);
 		expect(engineFor('logic', undefined).v).toBe(FLOOR.logic);
+		expect(engineFor('math', latestOf('math').v).v).toBeGreaterThanOrEqual(FLOOR.math);
 		// the views the vault holds name view engine 2: they run on the floor, with its walls (G7, G8)
 		expect(engineFor('view', 2).v).toBe(FLOOR.view);
 		for (const e of enginesOf('view')) {
@@ -70,7 +71,7 @@ describe('code runs on the engine it names (H4)', () => {
 		const { frozen } = await import('./frame.js');
 		const real = globalThis.fetch;
 		try {
-			for (const kind of ['view', 'view-worker', 'logic'])
+			for (const kind of ['view', 'view-worker', 'logic', 'math'])
 				for (const e of enginesOf(kind)) {
 					globalThis.fetch = async (url) => new Response(readFileSync(`${ROOT}static${url}`));
 					expect(hashText(await frozen(`/engines/${kind}-v${e.v}.js`, e.blake3, `${kind} engine ${e.v}`))).toBe(e.blake3);
