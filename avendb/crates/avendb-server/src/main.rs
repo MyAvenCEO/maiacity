@@ -16,12 +16,13 @@ use std::process::ExitCode;
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb_net::backup::Reading;
 use avendb_server::backups::{self, time_said, when};
-use avendb_server::health::Health;
+use avendb_server::health::{self, Health};
 use avendb_server::{Config, start_with};
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<ExitCode> {
+    health::few_heaps();
     let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     tracing_subscriber::fmt().with_env_filter(filter).init();
     // the TLS of whatever doesn't name its own: avenDB's, X25519MLKEM768 only, never iroh-relay's ring
@@ -79,18 +80,7 @@ async fn serve(config: &Config) -> Result<()> {
     served
 }
 
-/// Runs the server until it is told to stop.
-/// Hands back to the machine the memory its allocator kept of what the start let go of (glibc's `malloc_trim`): a
-/// start reads its whole shelf, decoded and checked, and the heap it needed for that, which glibc keeps, would count
-/// against the container's limit as the server runs (2026-10-20: 720 MB held of 420 MB in use, for Maia City alone).
-fn give_back() {
-    #[cfg(all(target_os = "linux", target_env = "gnu"))]
-    // SAFETY: malloc_trim only returns free heap pages to the system; it touches no memory in use
-    unsafe {
-        libc::malloc_trim(0);
-    }
-}
-
+/// Runs the server until it is told to stop, handing back as it started what its start let go of (`give_back`).
 async fn run(config: &Config, health: std::sync::Arc<Health>) -> Result<()> {
     let before = health.json()["before"].clone();
     if !before.is_null() {
@@ -98,7 +88,7 @@ async fn run(config: &Config, health: std::sync::Arc<Health>) -> Result<()> {
         tracing::info!("avenDB server: its run before ended {how}, holding {} bytes then", memory["rss"]);
     }
     let running = start_with(config, health).await?;
-    give_back();
+    health::give_back();
     let node = &running.node;
     let (device, vault) = (node.device(), avendb_net::server::vault(node).await);
     match vault {

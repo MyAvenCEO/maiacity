@@ -5,6 +5,10 @@
 //! (`BEAT`, `FILE`), with the memory it held then. A run that ends by a stop or an error says so there as it ends; one
 //! that said nothing was killed from outside, as for its memory, and what it last said is what it held then. Nothing
 //! in it is secret: times, sizes and a panic's message.
+//!
+//! Its allocator's heap is in it too, in use and kept free, as the server's memory crept up as it ran
+//! (2026-10-20, 896 to 964 MB in 16 minutes of a 1 GB limit): it hands back what it keeps free each minute
+//! (`give_back`), in few heaps (`few_heaps`).
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -22,6 +26,14 @@ const BEAT: Duration = Duration::from_secs(5);
 
 /// How many starts it keeps.
 const STARTS: usize = 50;
+
+/// Every how many beats it hands back what its allocator keeps free (`give_back`): each minute.
+const TRIM: u32 = 12;
+
+/// How many heaps (arenas) glibc's allocator keeps at most: by default up to 8 for each core, a thread's own, each
+/// keeping what it let go of for that thread alone.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+const ARENAS: libc::c_int = 2;
 
 /// How the server is doing, this run and the one before.
 pub struct Health {
@@ -79,8 +91,13 @@ impl Health {
     pub(crate) fn beat(self: &Arc<Self>) -> Abort {
         let health = self.clone();
         Abort(tokio::spawn(async move {
+            let mut beats = 0;
             loop {
                 tokio::time::sleep(BEAT).await;
+                beats = (beats + 1) % TRIM;
+                if beats == 0 {
+                    give_back();
+                }
                 health.write(Value::Null);
             }
         }))
@@ -132,10 +149,32 @@ fn now() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs())
 }
 
-/// The memory the process holds now and at most (`/proc/self/status`), its container's now, at most and its limit,
-/// with how many times its container's processes were killed for memory (cgroup v2, `/sys/fs/cgroup`), and the
-/// machine's in all and free (`/proc/meminfo`, the machine's in a container too), each in bytes; null where the
-/// machine doesn't say.
+/// Has the allocator keep its heap in few places (`ARENAS`), so what one thread let go of is there for the others and
+/// handed back with the rest (`give_back`): said before the server's threads allocate.
+pub fn few_heaps() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: mallopt only sets how the allocator chooses its heaps; it touches no memory in use
+    unsafe {
+        libc::mallopt(libc::M_ARENA_MAX, ARENAS);
+    }
+}
+
+/// Hands back to the machine the memory its allocator kept of what the server let go of (glibc's `malloc_trim`): a
+/// start reads its whole shelf, decoded and checked, and the heap it needed for that, which glibc keeps, would count
+/// against the container's limit as the server runs (2026-10-20: 720 MB held of 420 MB in use, for Maia City alone);
+/// so, each minute, does what its syncs let go of.
+pub fn give_back() {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    // SAFETY: malloc_trim only returns free heap pages to the system; it touches no memory in use
+    unsafe {
+        libc::malloc_trim(0);
+    }
+}
+
+/// The memory the process holds now and at most (`/proc/self/status`), of it its allocator's heap in use and kept free
+/// (glibc's `mallinfo2`), its container's now, at most and its limit, with how many times its container's processes
+/// were killed for memory (cgroup v2, `/sys/fs/cgroup`), and the machine's in all and free (`/proc/meminfo`, the
+/// machine's in a container too), each in bytes; null where the machine doesn't say.
 fn memory() -> Value {
     let (status, info) = (read("/proc/self/status"), read("/proc/meminfo"));
     let kb = |text: &str, name: &str| {
@@ -151,6 +190,7 @@ fn memory() -> Value {
     json!({
         "rss": kb(&status, "VmRSS:"),
         "rss_peak": kb(&status, "VmHWM:"),
+        "heap": heap(),
         "container": bytes("memory.current"),
         "container_peak": bytes("memory.peak"),
         "limit": bytes("memory.max"),
@@ -158,6 +198,19 @@ fn memory() -> Value {
         "machine": kb(&info, "MemTotal:"),
         "machine_free": kb(&info, "MemAvailable:"),
     })
+}
+
+/// The allocator's heap, `{in_use, free}`: what the server holds of it, its mapped blocks too, and what it keeps free
+/// of it; null but on glibc.
+fn heap() -> Value {
+    #[cfg(all(target_os = "linux", target_env = "gnu"))]
+    {
+        // SAFETY: mallinfo2 only reads the allocator's counts
+        let info = unsafe { libc::mallinfo2() };
+        json!({ "in_use": info.uordblks + info.hblkhd, "free": info.fordblks })
+    }
+    #[cfg(not(all(target_os = "linux", target_env = "gnu")))]
+    Value::Null
 }
 
 /// A file of the machine's, or nothing.
@@ -175,6 +228,8 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("a folder");
         let first = Health::open(&dir);
         assert!(first.json()["before"].is_null(), "the first run has none before it");
+        #[cfg(all(target_os = "linux", target_env = "gnu"))]
+        assert!(first.json()["memory"]["heap"]["in_use"].as_u64() > Some(0), "its heap in use is told");
         let second = Health::open(&dir);
         assert_eq!(second.json()["before"]["ended"]["how"], "killed", "the first said nothing as it ended");
         assert_eq!(second.json()["starts"]["hour"], 2);
