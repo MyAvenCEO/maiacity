@@ -27,7 +27,7 @@ use crate::rules::{
 };
 use crate::sealed::{Brought, FileKey, FileRoot};
 use crate::sign::{
-    self, Assertion, EnclaveSig, Hello, PqKey, RelayPass, Signature, SignerKeys, Signed, Suite, WebAuthn,
+    self, ApiPass, Assertion, EnclaveSig, Hello, PqKey, RelayPass, Signature, SignerKeys, Signed, Suite, WebAuthn,
     PQ_SIGNATURE_BYTES,
 };
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
@@ -83,7 +83,7 @@ macro_rules! wire {
     )*};
 }
 
-wire!(Signed, Signature, SignerKeys, Ask, Hello, Request, Reply, Announce, Statement, Join, RelayPass, Claim, PublicKey, Slice, Select, Body, RecoveryKey);
+wire!(Signed, Signature, SignerKeys, Ask, Hello, Request, Reply, Announce, Statement, Join, RelayPass, ApiPass, Claim, PublicKey, Slice, Select, Body, RecoveryKey);
 
 /// An edit on the wire is the bytes its id hashes (`encode::bytes`): the format's version, then the edit.
 impl Wire for Edit {
@@ -1107,6 +1107,25 @@ impl Decode for RelayPass {
     }
 }
 
+impl Encode for ApiPass {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.keys.encode(out);
+        self.audience.encode(out);
+        self.made.encode(out);
+        self.sig.encode(out);
+    }
+}
+
+impl Decode for ApiPass {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let (keys, audience) = (SignerKeys::decode(r)?, String::decode(r)?);
+        if audience.len() > sign::MAX_AUDIENCE {
+            return Err(WireError::Unknown);
+        }
+        Ok(ApiPass { keys, audience, made: u64::decode(r)?, sig: r.bytes()? })
+    }
+}
+
 impl Encode for Join {
     fn encode(&self, out: &mut Vec<u8>) {
         self.edit.encode(out);
@@ -1770,6 +1789,20 @@ mod tests {
         let mut flagged = bytes.clone();
         flagged[0] = 2;
         assert_eq!(Announce::from_wire(&flagged), Err(WireError::Unknown), "full is a flag");
+    }
+
+    #[test]
+    fn a_devices_pass_reads_back_only_from_its_own_bytes() {
+        let mac = DeviceKey::from_secret([7; 32]);
+        let pass = mac.api_pass("maiaCITY API", 1_791_500_000);
+        let bytes = pass.to_wire();
+        assert_eq!(ApiPass::from_wire(&bytes), Ok(pass.clone()));
+        assert_eq!(ApiPass::from_wire(&bytes).unwrap().device("maiaCITY API", 1_791_500_000), Some(mac.id()));
+        assert_eq!(ApiPass::from_wire(&bytes[..bytes.len() - 1]), Err(WireError::Short));
+        assert_eq!(ApiPass::from_wire(&[&bytes[..], &[0]].concat()), Err(WireError::Trailing));
+        // a name longer than any service's is no pass
+        let long = mac.api_pass(&"a".repeat(crate::sign::MAX_AUDIENCE + 1), 1_791_500_000);
+        assert_eq!(ApiPass::from_wire(&long.to_wire()), Err(WireError::Unknown));
     }
 
     #[test]

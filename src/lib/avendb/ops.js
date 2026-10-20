@@ -31,7 +31,8 @@ export const READS = [
 	'cap_groups',
 	'code',
 	'bring',
-	'synced'
+	'synced',
+	'api_pass'
 ];
 
 /** Whether op `op` only reads. @param {any} op */

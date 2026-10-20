@@ -16,6 +16,7 @@ knows once it holds the batch the vault came in (`welcomes`):
 From a batch it drops the geneses of the new vaults it doesn't welcome, again until none is left to drop, and takes the
 rest; where a vault it would take stays unwelcome, a genesis it held already that the batch lets stand, it takes nothing
 of the batch (`takes`). G1: an invite is claimed once. G2: every vault new to what the server knows is one it welcomes.
+G3: a device's pass to a service shows its own vault alone, an admin only by `isAdmin` (`passStanding`).
 -/
 
 namespace AvenDB
@@ -37,6 +38,50 @@ def holdsGroup (st : State) (home u : VaultId) (name : String) : Bool :=
     Admin group. -/
 def isAdmin (st : State) (home u : VaultId) : Bool :=
   u == home || owns st u home || holdsGroup st home u adminName
+
+/-! ## A device's pass to a service
+
+A service that holds no device, as maiaCITY's API, asks the server of `home` who a device is: the device signs a short
+pass for that service (`sign::ApiPass`), naming the service and when it made it, under a context of its own, so that
+it counts as that pass alone, never as an edit, a hello, a statement or a relay pass. The server answers the vault the
+device is a device of, by what it knows, and whether that vault is an admin of `home` (`passStanding`). The model
+abstracts the signature as `signer`, whose key it verifies under, if anyone's, which only that device's key can make.
+G3: a pass counts only for its own device, for the service it names, while it is fresh; and the server says admin
+only of the vault the device is a device of, where that vault is an admin of `home`. -/
+
+/-- How long a pass counts: seconds from when it was made (`sign::PASS_LIFE`). -/
+def passLife : Nat := 600
+
+/-- How far ahead of the checker's clock a pass may say it was made, as a device's clock may run fast: seconds
+    (`sign::PASS_SKEW`). -/
+def passSkew : Nat := 300
+
+/-- A device's pass to service `audience`, made at `made`, in seconds since 1970 by the device's clock. -/
+structure ApiPass where
+  device   : SignerId
+  audience : String
+  made     : Nat
+  signer   : Option SignerId
+  deriving DecidableEq, Repr
+
+/-- Pass `p` counts for service `audience` at `now`, by the checker's clock: its own device signed it, for that
+    service, in the `passLife` seconds before `now` or at most `passSkew` after (`ApiPass::device`). -/
+def ApiPass.counts (p : ApiPass) (audience : String) (now : Nat) : Bool :=
+  p.signer == some p.device && p.audience == audience && p.made ≤ now + passSkew && now < p.made + passLife
+
+/-- The vault device `d` is a device of, by `st`: the first that lists it, none if none does. -/
+def deviceVault (st : State) (d : SignerId) : Option VaultId :=
+  (st.vaults.find? fun vt => isDevice st d vt.id).map (·.id)
+
+/-- What the server of `home`, knowing `st`, says of device `d`: the vault it is a device of, and whether that vault is
+    an admin of `home`; nothing for a signer that is no vault's device (`gate::device_standing`). -/
+def deviceStanding (st : State) (home : VaultId) (d : SignerId) : Option (VaultId × Bool) :=
+  (deviceVault st d).map fun v => (v, isAdmin st home v)
+
+/-- What the server of `home`, knowing `st`, answers service `audience` at `now` of pass `p`: its device's standing,
+    if the pass counts; nothing otherwise (`world::pass_standing`). -/
+def passStanding (st : State) (home : VaultId) (audience : String) (now : Nat) (p : ApiPass) : Option (VaultId × Bool) :=
+  if p.counts audience now then deviceStanding st home p.device else none
 
 /-- The server of `home` welcomes vault `v` in `st`. -/
 def welcomes (st : State) (home v : VaultId) : Bool :=
@@ -158,6 +203,48 @@ theorem founded {st : State} {home v : VaultId} {vt : Vault} (hv : st.vault? v =
   unfold welcomes at h
   simp only [hv, Bool.or_eq_true, beq_iff_eq, hne, false_or] at h
   rcases hk with hk | hk <;> rw [hk] at h <;> simpa [List.any_eq_true] using h
+
+/-! ## G3: a pass shows a service the server's word on its own device alone -/
+
+/-- G3 (a pass counts for its own device alone): where the server answers a pass anything, its own device signed it,
+    for the service that asks, in the `passLife` seconds before now or at most `passSkew` after. -/
+theorem standing_counts {st : State} {home : VaultId} {aud : String} {now : Nat} {p : ApiPass} {x : VaultId × Bool}
+    (h : passStanding st home aud now p = some x) :
+    p.signer = some p.device ∧ p.audience = aud ∧ p.made ≤ now + passSkew ∧ now < p.made + passLife := by
+  unfold passStanding at h
+  split at h
+  · rename_i hc
+    simpa [ApiPass.counts, and_assoc] using hc
+  · simp at h
+
+/-- G3 (a vault's device alone): where the server answers a pass with a vault, the pass's device is a device of it, so
+    a signer no vault lists as its device, a passkey say, gets nothing. -/
+theorem standing_device {st : State} {home : VaultId} {aud : String} {now : Nat} {p : ApiPass} {x : VaultId × Bool}
+    (h : passStanding st home aud now p = some x) : isDevice st p.device x.1 = true := by
+  unfold passStanding deviceStanding deviceVault at h
+  split at h
+  · cases hf : st.vaults.find? (fun vt => isDevice st p.device vt.id) with
+    | none => simp [hf] at h
+    | some vt =>
+      simp only [hf, Option.map_some, Option.some.injEq] at h
+      subst h
+      simpa using List.find?_some hf
+  · simp at h
+
+/-- G3 (admin only by `isAdmin`): where the server answers a pass that its device's vault is an admin of `home`, the
+    device is a device of that vault, and the vault is `home`, owns it, or holds its Admin group. -/
+theorem standing_admin {st : State} {home v : VaultId} {aud : String} {now : Nat} {p : ApiPass}
+    (h : passStanding st home aud now p = some (v, true)) : isDevice st p.device v = true ∧ isAdmin st home v = true := by
+  refine ⟨standing_device h, ?_⟩
+  unfold passStanding deviceStanding at h
+  split at h
+  · cases hf : deviceVault st p.device with
+    | none => simp [hf] at h
+    | some u =>
+      simp only [hf, Option.map_some, Option.some.injEq, Prod.mk.injEq] at h
+      obtain ⟨rfl, ha⟩ := h
+      exact ha
+  · simp at h
 
 end Gating
 

@@ -567,6 +567,72 @@ pub fn pass_challenge(device: SignerId, made: u64) -> [u8; 32] {
     h.finalize()
 }
 
+/// The context of a device's post-quantum signature on its pass to a service (`ApiPass`): what it signs counts as that
+/// pass alone, never as an edit, a hello, a statement or a relay pass.
+pub const API_PASS_CONTEXT: &[u8] = b"avenDB 2026-10-20 api pass";
+
+/// The longest name of a service a pass names, in bytes.
+pub const MAX_AUDIENCE: usize = 255;
+
+/// A device's pass to a service that holds no device, maiaCITY's API say (G3, `Gate.lean`'s `ApiPass`): the device's
+/// keys, the service it is for, when it was made, and the device's post-quantum signature over a hash of those
+/// (`api_pass_challenge`), under its own context (`API_PASS_CONTEXT`). The service hands it to avenDB's server, which
+/// checks it (`device`) and says which vault the device is a device of and whether that vault is an admin of the vault
+/// it serves (`world::pass_standing`); a pass names its service, so another service takes nothing from it, and it
+/// counts for `PASS_LIFE` seconds.
+#[derive(Clone, PartialEq, Eq)]
+pub struct ApiPass {
+    /// The device's keys, which its signature verifies under.
+    pub keys: SignerKeys,
+    /// The service it is for, by the name that service checks.
+    pub audience: String,
+    /// When it was made, by the device's clock: seconds since 1970.
+    pub made: u64,
+    /// The device's post-quantum signature, as a hello's (`Hello::sig`).
+    pub sig: Vec<u8>,
+}
+
+/// The signature shows only its size.
+impl fmt::Debug for ApiPass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ApiPass")
+            .field("device", &self.keys.id())
+            .field("audience", &self.audience)
+            .field("made", &self.made)
+            .field("sig", &format!("{} bytes", self.sig.len()))
+            .finish()
+    }
+}
+
+impl ApiPass {
+    /// Its device, if it counts for service `audience` at `now`, seconds since 1970 by the checker's clock: its keys
+    /// are a device's, it names that service, it was made in the `PASS_LIFE` seconds before `now` (or at most
+    /// `PASS_SKEW` after), and its signature checks out (`ApiPass.counts`). `None` otherwise.
+    pub fn device(&self, audience: &str, now: u64) -> Option<SignerId> {
+        let SignerKeys::Device { pq, .. } = &self.keys else { return None };
+        let fresh = self.made <= now.saturating_add(PASS_SKEW) && now < self.expires();
+        if self.audience != audience || audience.len() > MAX_AUDIENCE || !fresh {
+            return None;
+        }
+        let device = self.keys.id();
+        pq.verifies(&api_pass_challenge(device, audience, self.made), API_PASS_CONTEXT, &self.sig).then_some(device)
+    }
+
+    /// When it stops counting: seconds since 1970.
+    pub fn expires(&self) -> u64 {
+        self.made.saturating_add(PASS_LIFE)
+    }
+}
+
+/// What a device's pass to a service signs: a hash of the device's id, which names both its keys, the service's name
+/// and when the pass was made. Its own hash, so no edit's id, relay pass's challenge or consent's is ever one.
+pub fn api_pass_challenge(device: SignerId, audience: &str, made: u64) -> [u8; 32] {
+    let mut h = Hasher::new("api pass for a service");
+    let len = audience.len() as u64;
+    h.update(&device.0).update(&len.to_be_bytes()).update(audience.as_bytes()).update(&made.to_be_bytes());
+    h.finalize()
+}
+
 /// What a signer signs to consent for good to be added as an owner (`standing`): a hash of its id alone.
 /// Its own hash, so it is never an edit's id, nor a batch's, a hello's or a pass's challenge.
 pub fn consent_challenge(signer: SignerId) -> [u8; 32] {
@@ -1103,6 +1169,12 @@ impl DeviceKey {
     /// (`wire::Statement::body`).
     pub fn state(&self, body: &[u8]) -> Vec<u8> {
         self.pq.sign(body, STATEMENT_CONTEXT)
+    }
+
+    /// The device's pass to service `audience`, made at `made`, seconds since 1970 (`ApiPass`).
+    pub fn api_pass(&self, audience: &str, made: u64) -> ApiPass {
+        let challenge = api_pass_challenge(self.id(), audience, made);
+        ApiPass { keys: self.keys(), audience: audience.into(), made, sig: self.pq.sign(&challenge, API_PASS_CONTEXT) }
     }
 
     /// The secret of the device's iroh endpoint: its ed25519 key's, as iroh takes it.
@@ -1659,6 +1731,41 @@ mod tests {
         assert_eq!(edit.verify(&exporter, true, &endpoint), None);
         let passkey = Passkey::from_seed([1; 32]);
         assert_eq!(Hello { keys: passkey.keys(), sig: hello.sig.clone() }.verify(&exporter, true, &endpoint), None);
+    }
+
+    #[test]
+    fn a_devices_pass_counts_for_its_service_alone_for_ten_minutes() {
+        let key = DeviceKey::from_secret([7; 32]);
+        let made = 1_791_500_000;
+        let pass = key.api_pass("maiaCITY API", made);
+        for now in [made, made + PASS_LIFE - 1, made - PASS_SKEW] {
+            assert_eq!(pass.device("maiaCITY API", now), Some(key.id()), "at {now}");
+        }
+        for now in [made + PASS_LIFE, made - PASS_SKEW - 1, 0, u64::MAX] {
+            assert_eq!(pass.device("maiaCITY API", now), None, "at {now}");
+        }
+        // for another service, made at another time or for another name than it signed: nothing
+        assert_eq!(pass.device("another service", made), None);
+        assert_eq!(ApiPass { audience: "another service".into(), ..pass.clone() }.device("another service", made), None);
+        assert_eq!(ApiPass { made: made + 1, ..pass.clone() }.device("maiaCITY API", made), None);
+        // under another device's keys, or a passkey's: nothing
+        let other = DeviceKey::from_secret([8; 32]);
+        assert_eq!(ApiPass { keys: other.keys(), ..pass.clone() }.device("maiaCITY API", made), None);
+        let passkey = Passkey::from_seed([1; 32]);
+        assert_eq!(ApiPass { keys: passkey.keys(), ..pass.clone() }.device("maiaCITY API", made), None);
+        // whoever signs with a key of their own makes a pass of their own device alone
+        let theirs = other.api_pass("maiaCITY API", made);
+        assert_eq!(ApiPass { keys: key.keys(), ..theirs.clone() }.device("maiaCITY API", made), None);
+        assert_eq!(theirs.device("maiaCITY API", made), Some(other.id()));
+        // the device's signature on an edit, a hello or a statement over the same challenge is no pass: another context
+        let challenge = api_pass_challenge(key.id(), "maiaCITY API", made);
+        let edit = key.sign(EditId(challenge));
+        assert_eq!(ApiPass { sig: edit.pq, ..pass.clone() }.device("maiaCITY API", made), None);
+        assert_eq!(ApiPass { sig: key.hello(&challenge, true).sig, ..pass.clone() }.device("maiaCITY API", made), None);
+        assert_eq!(ApiPass { sig: key.state(&challenge), ..pass.clone() }.device("maiaCITY API", made), None);
+        // and a name longer than a service's counts for nothing, even signed
+        let long = "a".repeat(MAX_AUDIENCE + 1);
+        assert_eq!(key.api_pass(&long, made).device(&long, made), None);
     }
 
     #[test]

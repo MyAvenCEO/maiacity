@@ -16,7 +16,7 @@
 //! knows a group's name as its readers count the writes that say it, through any share over `home` it opens, a public
 //! one among them, as every share selects its vault's cap groups.
 
-use crate::id::VaultId;
+use crate::id::{SignerId, VaultId};
 use crate::policy::{replay, Action, Edit, Groups, Issued, Kind, Level, Readings, State};
 
 /// The name of the cap group of `home` whose holders may found coops and avens on its server (`adminName`).
@@ -39,6 +39,19 @@ pub fn holds_group(st: &State, groups: &Groups, home: VaultId, u: VaultId, name:
 /// Admin group (`isAdmin`).
 pub fn is_admin(st: &State, groups: &Groups, home: VaultId, u: VaultId) -> bool {
     u == home || st.owns(u, home) || holds_group(st, groups, home, u, ADMIN)
+}
+
+/// The vault signer `d` is a device of, by `st`: the first that lists it, none if none does (`deviceVault`).
+pub fn device_vault(st: &State, d: SignerId) -> Option<VaultId> {
+    st.vaults().iter().find(|vt| st.is_device(d, vt.id)).map(|vt| vt.id)
+}
+
+/// What the server of `home` says of device `d` in `st`, the cap groups in force by `groups`: the vault it is a device
+/// of, and whether that vault is an admin of `home` (`is_admin`); nothing for a signer that is no vault's device
+/// (`deviceStanding`). A service that holds no device asks it by the device's pass (`sign::ApiPass`,
+/// `world::pass_standing`).
+pub fn device_standing(st: &State, groups: &Groups, home: VaultId, d: SignerId) -> Option<(VaultId, bool)> {
+    device_vault(st, d).map(|v| (v, is_admin(st, groups, home, v)))
 }
 
 /// The server of `home` welcomes vault `v` in `st`, the cap groups in force by `groups` (`welcomes`).

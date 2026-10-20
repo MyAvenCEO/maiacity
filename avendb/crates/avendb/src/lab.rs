@@ -102,8 +102,8 @@ use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
 use crate::sealed::{Brought, FileRoot};
 use crate::sign::{
-    self, Ceremony, DeviceKey, EnclaveKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, Suite, SUITES,
-    WebAuthn,
+    self, ApiPass, Ceremony, DeviceKey, EnclaveKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, Suite,
+    SUITES, WebAuthn,
 };
 use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, CAP_GROUP_TYPE, LENS_TYPE, SCHEMA_TYPE};
 use crate::sync::{
@@ -3216,6 +3216,21 @@ impl Lab {
         let Key::Device(k) = self.keys.get(&d)? else { return None };
         let sig = k.state(&Statement::body(d, checked, &logs, &files));
         Some(Statement { keys: k.keys(), checked, logs, files, sig })
+    }
+
+    /// Device `d`'s pass to service `audience`, made now by the Lab's clock (`sign::ApiPass`): `None` while it is
+    /// locked.
+    pub fn api_pass(&self, d: SignerId, audience: &str) -> Option<ApiPass> {
+        let Key::Device(k) = self.keys.get(&d)? else { return None };
+        Some(k.api_pass(audience, self.now))
+    }
+
+    /// What device `on`, the server of vault `home`, says of device `d` by its view and the cap groups it reads: the
+    /// vault `d` is a device of, and whether that vault is an admin of `home` (`gate::device_standing`).
+    pub fn device_standing(&self, on: SignerId, home: VaultId, d: SignerId) -> Option<(VaultId, bool)> {
+        let store = self.held(on);
+        let st = store.view();
+        gate::device_standing(st, &st.read_groups(&store.readings), home, d)
     }
 
     /// The pass passkey `passkey`, used on device `d`, makes `d` at `made`, seconds since 1970 (`sign::RelayPass`): for

@@ -327,7 +327,9 @@ theorem uncounted_closed {st : State} (hr : Reachable st) : CountsClosed st :=
 
 An invite is a share to a one-time invite key, which the vault it invites claims once, signed by that key (G1). The
 server of a vault takes a new vault onto what it holds only where it welcomes it (G2): a human vault only with a share
-of the vault it serves, the invite it claimed, and a coop or an aven only owned by an admin. -/
+of the vault it serves, the invite it claimed, and a coop or an aven only owned by an admin. A service that holds no
+device asks the server who a device is by the device's pass to it (G3): the server's answer counts for that device
+alone, and says admin only of its own vault, as `isAdmin` says. -/
 
 /-- G1 (an invite is claimed once): once a claim of share `c` is accepted, the share names the claiming vault, and no
     claim of it is accepted again, whoever signs it. -/
@@ -356,6 +358,19 @@ theorem G2_founded {st : State} {home v : VaultId} {vt : Vault} (hv : st.vault? 
     (hk : vt.kind = .coop ∨ vt.kind = .aven) (hne : v ≠ home) (h : welcomes st home v = true) :
     ∃ u ∈ st.vaults, isAdmin st home u.id = true ∧ owns st u.id v = true :=
   Gating.founded hv hk hne h
+
+/-- G3 (a pass counts for its own device alone): where the server of `home` answers a device's pass to a service
+    anything, that device signed it, for that service, while it was fresh. -/
+theorem G3_standing_counts {st : State} {home : VaultId} {aud : String} {now : Nat} {p : ApiPass}
+    {x : VaultId × Bool} (h : passStanding st home aud now p = some x) :
+    p.signer = some p.device ∧ p.audience = aud ∧ p.made ≤ now + passSkew ∧ now < p.made + passLife :=
+  Gating.standing_counts h
+
+/-- G3 (admin only by `isAdmin`): where the server answers a pass that its device's vault is an admin of `home`, the
+    device is a device of that vault, and the vault is `home`, owns it, or holds `home`'s Admin cap group. -/
+theorem G3_standing_admin {st : State} {home v : VaultId} {aud : String} {now : Nat} {p : ApiPass}
+    (h : passStanding st home aud now p = some (v, true)) : isDevice st p.device v = true ∧ isAdmin st home v = true :=
+  Gating.standing_admin h
 
 /-! ## Drafts
 
