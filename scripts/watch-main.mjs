@@ -88,31 +88,25 @@ function check() {
 		}
 	}
 	if (!appRunning()) startApp();
-	checkRelease();
+	witnessRelease();
 }
 
-// the signed release (scripts/release.mjs): whenever maia.city serves a new one, this Mac holds it to the release key
-// and checks its pages and a sample of its chunks; a site that doesn't hold says so here and in a notification
-let releaseSeen = '';
-let releaseAt = 0;
-function checkRelease() {
-	if (Date.now() - releaseAt < 10 * EVERY) return;
-	releaseAt = Date.now();
-	try {
-		const live = JSON.parse(execFileSync('curl', ['-fsS', '--max-time', '20', 'https://maia.city/release.json'], { encoding: 'utf8', timeout: NETWORK })).commit;
-		if (!live || live === releaseSeen) return;
-		execFileSync('node', ['scripts/release.mjs', 'check', 'https://maia.city', '--sample', '40'], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: NETWORK });
-		releaseSeen = live;
-		log(`maia.city holds its signed release ${live.slice(0, 7)}`);
-	} catch (e) {
-		// no list yet (404, unsigned builds), or the network: nothing to say; anything else is the site not holding
-		const why = String(e?.stderr || e?.message || e).trim().split('\n').slice(0, 4).join(' / ');
-		if (/returned error|Could not resolve|timed out|ETIMEDOUT|JSON/.test(why)) return;
-		log(`maia.city does NOT hold its signed release: ${why}`);
-		try {
-			execFileSync('osascript', ['-e', 'display notification "maia.city does not hold its signed release: see .cargo/watch-main.log" with title "The OS"'], { timeout: QUICK });
-		} catch {}
-	}
+// the release Maia City accepts (scripts/release.mjs): every 10 minutes this Mac witnesses maia.city, building a commit
+// the site names that Maia City hasn't accepted and proposing it when the site is exactly that build, else holding the
+// site to the accepted one; what doesn't hold, it says in its own log and a notification. One run at a time, apart.
+let witnessAt = 0;
+let witnessing = false;
+function witnessRelease() {
+	if (witnessing || Date.now() - witnessAt < 10 * EVERY) return;
+	witnessAt = Date.now();
+	witnessing = true;
+	const out = openSync(join(LOGS, 'release-witness.log'), 'a');
+	spawn(process.execPath, ['scripts/release.mjs', 'witness', '--run'], { cwd: ROOT, stdio: ['ignore', out, out] })
+		.on('error', (e) => log(`the release witness did not start: ${e.message}`))
+		.on('exit', (code) => {
+			witnessing = false;
+			if (code) log(`the release witness stopped (${code}): see .cargo/release-witness.log`);
+		});
 }
 
 function safeCheck() {

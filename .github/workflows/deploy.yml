@@ -50,11 +50,9 @@ jobs:
       # Served from the domain root, so no base path.
       - run: bun run build
 
-      # the signed release (scripts/release.mjs): the hash of every file built, signed with the release key, goes up
-      # as /release.json; release-check.yml holds the live site to it after this deploy and every day
-      - run: node scripts/release.mjs sign build
-        env:
-          RELEASE_KEY: ${{ secrets.RELEASE_KEY }}
+      # the release list (scripts/release.mjs): the commit and the hash of every file built, up as /release.json, which
+      # a Mac of Maia City witnesses and proposes into Maia City for its owners to accept
+      - run: node scripts/release.mjs list build
 
       - run: tar -C build -czf site.tgz .
 
