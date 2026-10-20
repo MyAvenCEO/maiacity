@@ -591,7 +591,7 @@ export function startFilm({ base = '' } = {}) {
 			cost.timing = false;
 			const warmed = live ? /** @type {ReturnType<typeof createWarmer>} */ (warmer).some(v.scene, v.camera, meter ? 50 : 4) : 0;
 			const t4 = clock.now();
-			if (live && Array.isArray(w.__filmTrace)) w.__filmTrace.push({ at: t3, name: spec.meta?.name ?? '', t, total: t3 - t0, exposure: t1 - t0, staging: t2 - t1, set: costSet, render, shadow, dearest, drew, firsts, view: t3 - tv, compiled: made[0], buffers: made[1], textures: made[2], warm: t4 - t3, warmed, ...clock.spent() });
+			if (live && Array.isArray(w.__filmTrace)) w.__filmTrace.push({ at: t3, name: spec.meta?.name ?? '', t, total: t3 - t0, exposure: t1 - t0, staging: t2 - t1, set: costSet, render, shadow, dearest, drew, firsts, view: t3 - tv, compiled: made[0], buffers: made[1], textures: made[2], warm: t4 - t3, warmed, heap: (/** @type {any} */ (performance).memory?.usedJSHeapSize ?? 0) / 1e6, ...clock.spent() });
 			// the frame is drawn: the page's clock runs again until the next, so the world keeps building what the
 			// shots ahead need while the timeline plays (held, every dome build would wait for a step that never comes)
 			clock.leave();

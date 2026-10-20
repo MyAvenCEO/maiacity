@@ -136,6 +136,10 @@ const report = await page.evaluate(
 		await viewer.standAt(first[0].spec);
 		// and the views they are drawn through sent, as the stopped studio sends them
 		viewer.look?.(first.slice(0, 3).map(viewOf));
+		// and the frame at the playhead drawn, as the stopped studio draws it (its first frame is never the play's)
+		const shown0 = viewer.drawnAt;
+		viewer.show({ spec: first[0].spec, t: first[0].in + Math.max(0, from - first[0].start), shape: '16:9', width: 1920, height: 1080, view: viewOf(first[0]), meter: true });
+		for (const s0 = performance.now(); viewer.drawnAt === shown0 && performance.now() - s0 < 60000; ) await new Promise((r) => setTimeout(r, 50));
 		log(`${first.length} shots from ${from} s; the first prepared and metered in ${Math.round(performance.now() - p0)} ms; playing ${from}–${to.toFixed(1)} s`);
 		// play: the timeline's clock is the page's own (the audio clock in the studio), the world driven every frame as
 		// the studio's driveWorld does; the trace kept here (a world that loses its GPU is loaded again, in a new window)
@@ -150,6 +154,28 @@ const report = await page.evaluate(
 		traceOn();
 		/** @type {{ now: number, gap: number, t: number, clip: number, drawnAt: number, live: boolean }[]} */
 		const frames = [];
+		// the page's long frames, and what ran in them (Chrome's long animation frames: the scripts, by function and file;
+		// what is left of a long frame ran outside any script — a garbage collection, the GPU waited on)
+		/** @type {{ at: number, ms: number, scripts: number, top: string[] }[]} */
+		const longFrames = [];
+		for (const wnd of [window, win]) {
+			try {
+				new wnd.PerformanceObserver((/** @type {any} */ list) => {
+					for (const e of list.getEntries()) {
+						if (e.duration < o.hitch) continue;
+						const scripts = [...(e.scripts ?? [])].sort((x, y) => y.duration - x.duration);
+						longFrames.push({
+							at: e.startTime + wnd.performance.timeOrigin - performance.timeOrigin,
+							ms: Math.round(e.duration),
+							scripts: Math.round(scripts.reduce((a, x) => a + x.duration, 0)),
+							top: scripts.slice(0, 4).map((x) => `${Math.round(x.duration)} ms ${x.invokerType ?? ''} ${x.sourceFunctionName || x.invoker || '?'} ${String(x.sourceURL ?? '').replace(/^.*\/(src|node_modules)\//, '$1/').replace(/\?.*$/, '')}:${x.sourceCharPosition ?? ''}`)
+						});
+					}
+				}).observe({ type: 'long-animation-frame', buffered: false });
+			} catch {
+				/* not Chrome */
+			}
+		}
 		const play0 = performance.now();
 		let prev = play0;
 		await new Promise((done) => {
@@ -170,6 +196,7 @@ const report = await page.evaluate(
 			requestAnimationFrame(tick);
 		});
 		const trace = traced.map((f) => ({ ...f, at: f.at - play0 }));
+		const long = longFrames.map((f) => ({ ...f, at: Math.round(f.at - play0) })).filter((f) => f.at >= 0);
 		/** @type {any} */ (iframe.contentWindow).__filmTrace = undefined;
 		/** the frames from a to b (ms of the play) and what they cost */
 		const costs = (/** @type {number} */ a, /** @type {number} */ b) => trace.filter((f) => f.at >= a && f.at < b);
@@ -193,7 +220,11 @@ const report = await page.evaluate(
 					still: Math.round(still),
 					hitches: near.filter((f) => f.gap > o.hitch).length,
 					notLive: near.filter((f) => f.clip === c.i && !f.live).length,
-					dearest: top(costs(a, b))
+					dearest: top(costs(a, b)),
+					// the longest frame of the page there, and what ran in it
+					longFrame: long.filter((f) => f.at >= a && f.at < b).sort((x, y) => y.ms - x.ms)[0] ?? null,
+					// a garbage collection there: the most the page's heap shrank between two frames drawn (MB)
+					heapFreed: Math.round(costs(a, b).reduce((m, f, i, fs) => (i && fs[i - 1].heap && f.heap ? Math.max(m, fs[i - 1].heap - f.heap) : m), 0))
 				};
 			});
 		const gaps = frames.map((f) => f.gap).sort((x, y) => x - y);
@@ -213,6 +244,7 @@ const report = await page.evaluate(
 			warmTime: Math.round(trace.reduce((a, f) => a + (f.warm ?? 0), 0)),
 			scale: viewer.scale,
 			cuts,
+			longFrames: [...long].sort((x, y) => y.ms - x.ms).slice(0, 15),
 			dearestFrames: [...trace].sort((x, y) => y.total + y.loop - (x.total + x.loop)).slice(0, 12).map((f) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v * 10) / 10 : v])))
 		};
 	},
