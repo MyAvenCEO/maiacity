@@ -3,7 +3,7 @@
 	loads, a quiet line; where this browser holds the person's account, locked, the one button that unlocks it with
 	their passkey, which lasts the tab for every page; where it holds none, a line and the way to avenDB's own page
 	(./Account.svelte), where they set one up or sign in; and why not, where the device couldn't start. Forgetting the
-	account here is Settings' alone (Owners & devices). It boots the session itself, so a page may show it alone.
+	account here is Settings' alone (Devices). It boots the session itself, so a page may show it alone.
 -->
 <script>
 	import { onMount } from 'svelte';

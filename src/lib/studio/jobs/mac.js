@@ -37,7 +37,7 @@ const OLD_WORKER = 'Studio worker';
 
 /**
  * The studio's old worker vaults let go of, once (Samuel 2026-10-19: "trigger the deleting of the 2 worker devices"):
- * each device of a device vault named so is taken out of it, as Owners & devices' Remove does, so it syncs and acts no
+ * each device of a device vault named so is taken out of it, as the settings' Remove does, so it syncs and acts no
  * more and leaves the vault switcher (vaults.js `pillVaults`). Its passkey sheet comes once; a refusal isn't asked again.
  * @param {{ call: (name: string, ...args: any[]) => Promise<any> }} d
  */
