@@ -52,6 +52,8 @@ jobs:
       # src/lib/code/                 the one checker (game/code, game/genui): every kind of code, hostile code refused
       # src/lib/render/lint.test      the render core's lint: no renderer or raw WebGL context outside it
       # src/lib/markdown/             the Markdown engine against hostile Markdown; every {@html} fed by a safe engine
+      # api/test/image.test           the API image holds every module game/ and code/ import, avenDB's proof checker
+      #                               among them (H2), and .dockerignore lets in all it copies
       - run: >-
           bun test
           ./src/lib/sandbox/
@@ -65,6 +67,7 @@ jobs:
           ./src/lib/code/
           ./src/lib/render/lint.test.js
           ./src/lib/markdown/
+          ./api/test/image.test.js
 
   probes:
     name: Every way out, tried in Chromium

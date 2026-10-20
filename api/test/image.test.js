@@ -10,9 +10,10 @@ import { dirname, join, relative, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "../..");
 const deps = Object.keys(JSON.parse(readFileSync(join(ROOT, "api/package.json"), "utf8")).dependencies ?? {});
-/** what the Dockerfile copies from the repo beside api/: its COPY sources outside api/ */
-const copied = [...readFileSync(join(ROOT, "api/Dockerfile"), "utf8").matchAll(/^COPY\s+(\S+)\s+\S+\s*$/gm)]
-  .map((m) => m[1].replace(/\/$/, ""))
+/** what the Dockerfile copies from the repo beside api/: the sources of each COPY (all but its last word) outside api/ */
+const copied = [...readFileSync(join(ROOT, "api/Dockerfile"), "utf8").matchAll(/^COPY\s+(.+?)\s*$/gm)]
+  .flatMap((m) => m[1].split(/\s+/).filter((w) => !w.startsWith("--")).slice(0, -1))
+  .map((src) => src.replace(/\/$/, ""))
   .filter((src) => !src.startsWith("api/"));
 /** what .dockerignore lets into the build context: it leaves everything out (`*`) but the paths it names with `!` */
 const sent = readFileSync(join(ROOT, ".dockerignore"), "utf8").split("\n").filter((l) => l.startsWith("!")).map((l) => l.slice(1).trim());
