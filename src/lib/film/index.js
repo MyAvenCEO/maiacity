@@ -305,12 +305,18 @@ export function startFilm({ base = '' } = {}) {
 		/** @type {any} */
 		let frame = null, first = null;
 		for (const [i, ts] of times.entries()) {
+			const a = clock.now();
 			const e = set(v, spec, ts, shape, W / H, live);
+			const b = clock.now();
 			first ??= e;
 			frame = gpu().sample(v.scene, v.camera, W, H, i, times.length, !live);
+			cost.set += b - a;
+			cost.render += clock.now() - b;
 		}
 		return { frame, at: /** @type {ReturnType<typeof evaluate>} */ (first) };
 	}
+	/** what the frame being drawn spent on setting the world to its moment and on rendering it (ms) */
+	const cost = { set: 0, render: 0 };
 
 	/** The log-average luminance of the shot at t, at the meter's fixed size, framed as composed. */
 	function lumAt(/** @type {any} */ v, /** @type {Spec} */ spec, /** @type {number} */ t) {
@@ -477,12 +483,12 @@ export function startFilm({ base = '' } = {}) {
 			// the last frame stays up
 			const key = keyOf(spec);
 			if (staging && staging !== key) return false;
-			const t0 = performance.now();
+			const t0 = clock.now();
 			const live = quality !== 'final';
 			const known = live ? knownExposure(spec) : undefined;
 			const ev = known ?? (live && !meter ? lastEv : await exposureOf(spec));
 			if (live) lastEv = typeof ev === 'number' ? ev : ev.reduce((a, k) => a + k[1], 0) / ev.length;
-			const t1 = performance.now();
+			const t1 = clock.now();
 			const held = streaming === key || v.film.holds({ ...spec.world, views: viewsOf(v, spec) });
 			// a world that streams by view and holds the shot already (built while the shots before it played): the cut is
 			// only a move, the frame drawn at once — no staging, no frame held
@@ -492,17 +498,22 @@ export function startFilm({ base = '' } = {}) {
 			}
 			// restaged in line with the prepares, never beside one (two at once pull the walker back and forth)
 			if (staged !== key || !held) await one(() => stage(spec, quality === 'final' ? Infinity : wait));
-			const t2 = performance.now();
+			const t2 = clock.now();
 			clock.enter();
 			w.__filmDraw = true;
 			const os = quality === 'final' ? 1.5 : 1;
 			const W = Math.round(width * os), H = Math.round(height * os);
+			cost.set = cost.render = 0;
 			const { frame, at } = linear(v, spec, t, to, W, H, quality === 'final', quality !== 'final');
+			const tv = clock.now();
 			gpu().view(frame, width, height, 2 ** (evAt(ev, t) + at.stops), os > 1 ? 3 : 1, view);
 			// a frame that took a hitch's time says what it spent it on (the studio's log): a cut's first frame should cost
-			// what any other does, all its work done in the prepare
-			const t3 = performance.now();
-			if (quality !== 'final' && t3 - t0 > 100) console.warn(`film: ${spec.meta?.name ?? 'a shot'} at ${t.toFixed(2)} s took ${Math.round(t3 - t0)} ms — exposure ${Math.round(t1 - t0)}, staging ${Math.round(t2 - t1)}, drawing ${Math.round(t3 - t2)}`);
+			// what any other does, all its work done in the prepare (measured on the real clock: the page's is held now)
+			const t3 = clock.now();
+			if (quality !== 'final' && t3 - t0 > 100) console.warn(`film: ${spec.meta?.name ?? 'a shot'} at ${t.toFixed(2)} s took ${Math.round(t3 - t0)} ms — exposure ${Math.round(t1 - t0)}, staging ${Math.round(t2 - t1)}, drawing ${Math.round(t3 - t2)} (the world set ${Math.round(cost.set)}, rendered ${Math.round(cost.render)}, viewed ${Math.round(t3 - tv)})`);
+			// what each live frame cost, for whoever reads it (the cut probe, scripts/film/world/cuts.mjs): its parts, and
+			// what the world's own frames spent on the page's thread since the frame before
+			if (quality !== 'final' && Array.isArray(w.__filmTrace)) w.__filmTrace.push({ at: t3, name: spec.meta?.name ?? '', t, total: t3 - t0, exposure: t1 - t0, staging: t2 - t1, set: cost.set, render: cost.render, view: t3 - tv, ...clock.spent() });
 			// the frame is drawn: the page's clock runs again until the next, so the world keeps building what the
 			// shots ahead need while the timeline plays (held, every dome build would wait for a step that never comes)
 			clock.leave();

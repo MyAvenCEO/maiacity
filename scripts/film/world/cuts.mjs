@@ -1,0 +1,182 @@
+// THE CUT PROBE — plays a world timeline through the studio's own world viewer (src/lib/studio/world.svelte.js), as the
+// studio's Edit tab plays it, and says what every cut between two world shots costs: the longest the picture stood
+// still around it, and what the frames there spent their time on (src/lib/film `__filmTrace`: the world set to its
+// moment, rendered, viewed, staged; the world's own frames between two draws). A smooth cut costs what any frame does.
+//
+//   node scripts/film/world/cuts.mjs --timeline v1-A|v1-B|village [--from 0] [--seconds 60] [--px 1280]
+//     [--site http://127.0.0.1:5173] [--engine chrome|webkit] [--meter all|ahead] [--out cuts.json]
+//
+// The site is a dev server (the viewer is imported from its sources): `VITE_RECIPE_FEED=dev bun run dev`. The V1
+// intros' shots are the world's own (`__world.intro.shots()`); the first village's are films/legacy/the-first-village.json.
+// Engines: chrome (puppeteer-core; CHROME, by default Google Chrome on a Mac, the container's Chromium elsewhere) or
+// webkit (Playwright's, the engine of the Mac app; PLAYWRIGHT names the module where it is installed). Timings mean
+// something only on a real GPU: on a Mac, never in a software renderer.
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '../../..');
+const args = Object.fromEntries(
+	process.argv
+		.slice(2)
+		.join(' ')
+		.split(/\s*--/)
+		.filter(Boolean)
+		.map((a) => {
+			const [k, ...v] = a.split(/\s+/);
+			return [k, v.join(' ') || 'true'];
+		})
+);
+const site = (args.site ?? 'http://127.0.0.1:5173').replace(/\/$/, '');
+const which = args.timeline ?? 'v1-A';
+const engine = args.engine ?? 'chrome';
+/** a frame that stands longer than this is a hitch (ms): two frames at 60 Hz, and a little */
+const HITCH = 40;
+
+/** @returns {{ path: string, clips: { spec: any, in: number, dur: number }[] | null }} */
+function timeline() {
+	if (which.startsWith('v1-')) return { path: `/games/maiacity-v1/?film&area=${which.slice(3)}`, clips: null };
+	if (which !== 'village') throw new Error(`--timeline v1-A, v1-B or village, not ${which}`);
+	const film = JSON.parse(readFileSync(join(root, 'films/legacy/the-first-village.json'), 'utf8'));
+	const clips = film.timeline.clips
+		.filter((/** @type {any} */ c) => c.track === 'V1' && c.kind === 'world')
+		.sort((/** @type {any} */ a, /** @type {any} */ b) => a.start - b.start)
+		.map((/** @type {any} */ c) => ({ spec: film.shots[`${c.shot}@${c.shotVersion}`]?.spec, in: c.in ?? 0, dur: c.dur }))
+		.filter((/** @type {any} */ c) => c.spec);
+	return { path: '/games/sandbox-4/?film', clips };
+}
+
+async function launch() {
+	if (engine === 'webkit') {
+		const { webkit } = await import(process.env.PLAYWRIGHT ?? 'playwright');
+		const browser = await webkit.launch({ headless: true });
+		const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
+		return { browser, page };
+	}
+	const { default: puppeteer } = await import('puppeteer-core');
+	const mac = process.platform === 'darwin';
+	const chromium = '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
+	const executablePath = process.env.CHROME ?? (mac ? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome' : chromium);
+	if (!existsSync(executablePath)) throw new Error(`no browser at ${executablePath} (CHROME names one)`);
+	const gl = mac ? ['--use-gl=angle', '--use-angle=metal'] : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'];
+	const browser = await puppeteer.launch({ executablePath, headless: true, protocolTimeout: 0, args: [...gl, '--no-sandbox', '--ignore-gpu-blocklist', '--window-size=1280,800', '--autoplay-policy=no-user-gesture-required'] });
+	const page = await browser.newPage();
+	await page.setViewport({ width: 1280, height: 800 });
+	return { browser, page };
+}
+
+const { path, clips } = timeline();
+const { browser, page } = await launch();
+const started = Date.now();
+const say = (/** @type {string} */ s) => console.error(`[${((Date.now() - started) / 1000).toFixed(1)} s] ${s}`);
+/** @type {string[]} */
+const warnings = [];
+page.on('console', (/** @type {any} */ m) => {
+	const t = m.text();
+	if (t.startsWith('probe: ')) say(t.slice(7));
+	else if (/^(film|world):/.test(t)) warnings.push(t.slice(0, 400));
+});
+page.on('pageerror', (/** @type {any} */ e) => warnings.push(`page error: ${e.message}`));
+// a page of the site (any: a missing one) to hold the viewer and the world's iframe, of the same origin
+await page.goto(`${site}/__cuts`, { waitUntil: 'domcontentloaded' });
+const report = await page.evaluate(
+	async (/** @type {any} */ o) => {
+		const log = (/** @type {string} */ s) => console.log(`probe: ${s}`);
+		document.body.innerHTML = '<iframe id="world" style="position:fixed;inset:0;width:100%;height:100%;border:0;background:#000"></iframe>';
+		const { WorldViewer } = await import('/src/lib/studio/world.svelte.js');
+		const iframe = /** @type {HTMLIFrameElement} */ (document.getElementById('world'));
+		const viewer = new WorldViewer();
+		viewer.px = o.px;
+		const t0 = performance.now();
+		await viewer.attach(iframe, o.path, 600000, 900000);
+		if (viewer.state !== 'ready') return { error: `the world is ${viewer.state}: ${viewer.error}` };
+		log(`the world is up after ${Math.round(performance.now() - t0)} ms`);
+		const win = /** @type {any} */ (iframe.contentWindow);
+		// the timeline: the clips back to back, each its shot from `in` for `dur`
+		let at = 0;
+		const list = (o.clips ?? win.__world.intro.shots().map((/** @type {any} */ spec) => ({ spec, in: 0, dur: spec.seconds }))).map((/** @type {any} */ c, /** @type {number} */ i) => {
+			const clip = { i, start: at, in: c.in, dur: c.dur, spec: c.spec, name: c.spec.meta?.name ?? `shot ${i + 1}` };
+			at += c.dur;
+			return clip;
+		});
+		const from = o.from, to = Math.min(at, from + o.seconds);
+		const under = (/** @type {number} */ t) => list.find((c) => t >= c.start && t < c.start + c.dur);
+		const ahead = (/** @type {number} */ t) => list.filter((c) => c.start + c.dur > t).slice(0, 3).map((c) => c.spec);
+		// stopped first, as the studio is before Play: the shots from the playhead prepared and metered, the world stood
+		// where the play starts (src/lib/studio/studio.svelte.js `preparePlayback`, `meterAhead`)
+		const first = list.filter((c) => c.start + c.dur > from);
+		const p0 = performance.now();
+		await viewer.prepare(first.slice(0, 3).map((c) => c.spec));
+		await viewer.meterAhead((o.meter === 'all' ? first : first.slice(0, 3)).map((c) => c.spec), () => true);
+		await viewer.standAt(first[0].spec);
+		log(`${first.length} shots from ${from} s; the first prepared and metered in ${Math.round(performance.now() - p0)} ms; playing ${from}–${to.toFixed(1)} s`);
+		// play: the timeline's clock is the page's own (the audio clock in the studio), the world driven every frame as
+		// the studio's driveWorld does
+		win.__filmTrace = [];
+		/** @type {{ now: number, gap: number, t: number, clip: number, drawnAt: number, live: boolean }[]} */
+		const frames = [];
+		const play0 = performance.now();
+		let prev = play0;
+		await new Promise((done) => {
+			const tick = () => {
+				const now = performance.now();
+				const t = from + (now - play0) / 1000;
+				if (t >= to) return done(null);
+				const c = under(t), specs = ahead(t);
+				viewer.keep(specs);
+				viewer.markHeld(specs);
+				if (c) viewer.show({ spec: c.spec, t: c.in + (t - c.start), shape: '16:9', width: 1920, height: 1080, view: { lut: null, grade: null }, meter: false, wait: 50 });
+				frames.push({ now: now - play0, gap: now - prev, t, clip: c?.i ?? -1, drawnAt: viewer.drawnAt - play0, live: !!c && viewer.isLive(c.spec) });
+				prev = now;
+				requestAnimationFrame(tick);
+			};
+			requestAnimationFrame(tick);
+		});
+		const trace = /** @type {any[]} */ (win.__filmTrace).map((f) => ({ ...f, at: f.at - play0 }));
+		win.__filmTrace = undefined;
+		/** the frames from a to b (ms of the play) and what they cost */
+		const costs = (/** @type {number} */ a, /** @type {number} */ b) => trace.filter((f) => f.at >= a && f.at < b);
+		const top = (/** @type {any[]} */ fs) => {
+			const worst = fs.reduce((m, f) => (!m || f.total + f.loop > m.total + m.loop ? f : m), null);
+			return worst && Object.fromEntries(['total', 'exposure', 'staging', 'set', 'render', 'view', 'loop', 'worst'].map((k) => [k, Math.round(worst[k])]));
+		};
+		const cuts = list
+			.filter((c) => c.start > from && c.start < to)
+			.map((c) => {
+				const a = (c.start - from) * 1000 - 200, b = (c.start - from) * 1000 + 1500;
+				const near = frames.filter((f) => f.now >= a && f.now < b);
+				// the longest the picture stood still: between two new frames drawn
+				let still = 0, last = null, lastAt = a;
+				for (const f of near) if (f.drawnAt !== last) (still = Math.max(still, f.now - lastAt)), (last = f.drawnAt), (lastAt = f.now);
+				return {
+					at: +c.start.toFixed(2),
+					to: c.name,
+					from: list[c.i - 1]?.name ?? '',
+					longest: Math.round(Math.max(0, ...near.map((f) => f.gap))),
+					still: Math.round(still),
+					hitches: near.filter((f) => f.gap > o.hitch).length,
+					notLive: near.filter((f) => f.clip === c.i && !f.live).length,
+					dearest: top(costs(a, b))
+				};
+			});
+		const gaps = frames.map((f) => f.gap).sort((x, y) => x - y);
+		const pct = (/** @type {number} */ p) => +gaps[Math.min(gaps.length - 1, Math.floor(gaps.length * p))].toFixed(1);
+		const outside = frames.filter((f) => !cuts.some((c) => f.t >= c.at - 0.2 && f.t < c.at + 1.5));
+		return {
+			frames: frames.length,
+			median: pct(0.5),
+			p95: pct(0.95),
+			worst: Math.round(gaps.at(-1) ?? 0),
+			hitches: frames.filter((f) => f.gap > o.hitch).length,
+			hitchesAwayFromCuts: outside.filter((f) => f.gap > o.hitch).length,
+			scale: viewer.scale,
+			cuts,
+			dearestFrames: [...trace].sort((x, y) => y.total + y.loop - (x.total + x.loop)).slice(0, 12).map((f) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v * 10) / 10 : v])))
+		};
+	},
+	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), meter: args.meter ?? 'ahead', hitch: HITCH }
+);
+await browser.close();
+const out = { timeline: which, engine, site, at: new Date().toISOString(), ...report, warnings };
+if (args.out) writeFileSync(args.out, JSON.stringify(out, null, 1));
+console.log(JSON.stringify(out, null, 1));
