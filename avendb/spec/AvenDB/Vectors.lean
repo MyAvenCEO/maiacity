@@ -607,6 +607,18 @@ def cases : List Case := [
     -- no key of the audience it left
     (6, [], .keys (.entry 1 none 0) [.entry 1 (some 21) 0]),
     (6, [], .keys (audienceKey 200 [] 0) []),
+    -- a move's wraps in one edit (`Wraps.lean`): accepted where each would be as a keys edit; not empty, not another
+    -- entry's, not where the schedule doesn't seal it, and one wrap it may not make refuses all of it
+    (6, [], .wraps 1 [(.entry 1 none 0, .entry 1 (some 21) 0)]),
+    (6, [], .wraps 1 []),
+    (6, [], .wraps 3 [(.entry 1 none 0, .entry 1 (some 21) 0)]),
+    (6, [], .wraps 1 [(.entry 1 none 0, .entry 1 (some 21) 0), (.entry 1 none 0, .signer 6)]),
+    -- a checkpoint (`Checkpoint.lean`) only by the vault's approval: Alice's passkey for her vault, not her Mac; the
+    -- threshold-2 coop with both passkeys, not one
+    (2, [], .checkpoint 100 [0, 1, 2]),
+    (1, [], .checkpoint 100 [0, 1, 2]),
+    (1, [], .checkpoint 200 [3, 4]),
+    (1, [4], .checkpoint 200 [3, 4]),
     -- Welcome goes public: its audience's key is published
     (2, [], newShare 31 200 .everyone .read 200 (only 1) (via := [100])),
     (2, [], .move 200 1 [30, 31] [] [100]),
@@ -1889,6 +1901,9 @@ def action : Action → String
   | .keys secret to pub => obj [("keys", obj [("secret", keyName secret), ("to", arr (to.map keyName)),
       ("public", bool pub)])]
   | .claim c v via => obj [("claim", obj [("share", nat c), ("vault", nat v), ("via", ids via)])]
+  | .checkpoint v covers => obj [("checkpoint", obj [("vault", nat v), ("covers", ids covers)])]
+  | .wraps e ws => obj [("wraps", obj [("entry", nat e),
+      ("wraps", arr (ws.map fun (s, t) => obj [("secret", keyName s), ("to", keyName t)]))])]
 
 def vault (vt : Vault) : String :=
   obj [("id", nat vt.id), ("kind", kind vt.kind), ("owners", arr (vt.owners.map principal)),
@@ -2047,6 +2062,7 @@ def audiencesOf : Action → List Audience :=
   | .write _ _ _ _ _ _ _ _ (some (x, _)) _ _ _ => [x]
   | .mark _ _ (some to) _ _ _ => [to]
   | .keys s to _ => named s ++ to.flatMap named
+  | .wraps _ ws => ws.flatMap fun (s, t) => named s ++ named t
   | _ => []
 
 /-- Every action of every case. -/

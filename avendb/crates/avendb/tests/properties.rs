@@ -33,7 +33,7 @@ use avendb::lens::{DocV1, Lane, Schema, View, DOCUMENT_V1, TODO_V1};
 use avendb::policy::{
     is_accept, keep_picks, mk_audience, order, passes, removes, replay, trace, view, Action, At, Creation, Edit, Entry,
     Fact, Holder, Issued, KeepMode, Kind, Level, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Revoking,
-    Setting, Share, Sharing, State, Vault, Who, Write,
+    Setting, Share, Sharing, State, Vault, Who, Wrap, Write,
 };
 use avendb::rules::Grant;
 use avendb::slice::{Atom, Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, LENS_TYPE, SCHEMA_TYPE};
@@ -2096,6 +2096,22 @@ impl Twin {
                 };
                 let boxes = boxes.into_iter().map(|b| KeyBox { to: to(b.to), bytes: b.bytes }).collect();
                 Action::Keys { name: self.key(name), id, public, boxes, clear }
+            }
+            Action::Wraps { entry, wraps } => {
+                let wraps = wraps
+                    .into_iter()
+                    .map(|w| {
+                        let to = match w.boxed.to {
+                            Recipient::Key { name, id } => Recipient::Key { name: self.key(name), id },
+                            r => r,
+                        };
+                        Wrap { name: self.key(w.name), id: w.id, boxed: KeyBox { to, bytes: w.boxed.bytes } }
+                    })
+                    .collect();
+                Action::Wraps { entry, wraps }
+            }
+            Action::Checkpoint { vault, covers } => {
+                Action::Checkpoint { vault: self.vault(vault), covers: self.edits(&covers) }
             }
         }
     }
