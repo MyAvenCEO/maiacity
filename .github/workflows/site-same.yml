@@ -11,6 +11,7 @@ on:
       - 'bun.lock'
       - '.bun-version'
       - 'vite.config.ts'
+      - 'patches/**'
       - 'scripts/release.mjs'
       - '.github/workflows/site-same.yml'
   workflow_dispatch:

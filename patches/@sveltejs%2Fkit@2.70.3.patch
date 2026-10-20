@@ -1,0 +1,23 @@
+diff --git a/src/core/sync/create_manifest_data/index.js b/src/core/sync/create_manifest_data/index.js
+index 6e97903682f448a9c95a01527530bd0bdb545174..a06b1f590cf5454aaac367c9b82231f1d4731c77 100644
+--- a/src/core/sync/create_manifest_data/index.js
++++ b/src/core/sync/create_manifest_data/index.js
+@@ -89,7 +89,7 @@ function create_matchers(config, cwd) {
+ 	/** @type {Record<string, string>} */
+ 	const matchers = {};
+ 	if (fs.existsSync(config.kit.files.params)) {
+-		for (const file of fs.readdirSync(config.kit.files.params)) {
++		for (const file of fs.readdirSync(config.kit.files.params).sort()) {
+ 			const ext = path.extname(file);
+ 			if (!config.kit.moduleExtensions.includes(ext)) continue;
+ 			const type = file.slice(0, -ext.length);
+@@ -222,7 +222,8 @@ function create_routes_and_nodes(cwd, config, fallback) {
+ 
+ 			// We can't use withFileTypes because of a NodeJs bug which returns wrong results
+ 			// with isDirectory() in case of symlinks: https://github.com/nodejs/node/issues/30646
+-			const files = fs.readdirSync(dir).map((name) => ({
++			// sorted: a folder's order on disk differs between file systems, and the nodes are numbered in it
++			const files = fs.readdirSync(dir).sort().map((name) => ({
+ 				is_dir: fs.statSync(path.join(dir, name)).isDirectory(),
+ 				name
+ 			}));
