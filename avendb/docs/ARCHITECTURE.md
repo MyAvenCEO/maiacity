@@ -1683,7 +1683,7 @@ Every node trusts no elliptic curve alone, and there is no switch back.
 
 | Where | How |
 |---|---|
-| Signatures | ML-DSA-65 (FIPS 204) from every signer made since the key move (2026-10-19), each 3,309-byte signature with its 1,952-byte key beside it; SLH-DSA-SHA2-128f (FIPS 205, 17,088 bytes) from a signer made before, which keeps it. Either is the only signature that counts. Every device checks both, and a signer's id hashes its suite with its keys (`sign::Suite`). |
+| Signatures | ML-DSA-65 (FIPS 204) from every signer made since the key move (2026-10-19), each 3,309-byte signature with its 1,952-byte key beside it, which a sync reply brings once for all its signatures by that key (K5, `wire::Packed`, asked for by `session::PACKED`; a peer from before gets whole replies); SLH-DSA-SHA2-128f (FIPS 205, 17,088 bytes) from a signer made before, which keeps it. Either is the only signature that counts. Every device checks both, and a signer's id hashes its suite with its keys (`sign::Suite`). |
 | Passkeys | A passkey's WebAuthn assertion (P-256) rides beside its post-quantum signature: it shows a person was there. |
 | Touch ID keys | A Mac's Secure Enclave signs with ML-DSA-65, and opens its secret with ML-KEM-768 (section 11). A key made before the key move signs with its SLH-DSA key beside it. |
 | Sealed keys | Every box is sealed to X-Wing (ML-KEM-768 with X25519) and Classic McEliece 6688128f at once. |

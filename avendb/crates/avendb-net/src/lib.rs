@@ -140,7 +140,7 @@ use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
 use avendb::sealed::{FileRoot, PIECE};
 use avendb::sign::{Ceremony, RelayPass, SUITES, Signed, SignerKeys};
 use avendb::sync::{log_of, place, LogId};
-use avendb::wire::{Announce, Claim, FileHold, Join, Reply, Request, Statement, Wire};
+use avendb::wire::{Announce, Claim, FileHold, Join, Packed, Reply, Request, Statement, Wire};
 use data_encoding::{BASE32_NOPAD, BASE64URL_NOPAD};
 use iroh::address_lookup::MemoryLookup;
 #[cfg(not(target_arch = "wasm32"))]
@@ -643,6 +643,7 @@ impl Node {
             shelf,
             blob_peers: Mutex::default(),
             follows: Mutex::default(),
+            unpacked: Mutex::default(),
             pieces: Mutex::default(),
             pool,
             changed: Notify::new(),
@@ -1587,6 +1588,9 @@ struct Shared {
     /// The vaults the device of each sync connection follows, by the connection (`Connection::stable_id`): as its last
     /// request named them (`sync::Ask::follow`), which the gate lets its blob connections fetch by.
     follows: Mutex<HashMap<usize, Vec<VaultId>>>,
+    /// The sync connections whose node refused a request for a packed reply (K5, `session::PACKED`), a node from before
+    /// it, by the connection (`Connection::stable_id`): it asks those for whole replies.
+    unpacked: Mutex<HashSet<usize>>,
     /// The pieces of the files whose HashSeq it holds, each with the files it is a piece of: what the gate hands out
     /// as those files.
     pieces: Mutex<HashMap<iroh_blobs::Hash, BTreeSet<avendb::sealed::FileRoot>>>,
@@ -1812,9 +1816,8 @@ impl Shared {
                 }
             };
             let request = self.lab(request).await;
-            let reply = session::exchange(&peer.conn, kind, &request, session::REPLY_LIMIT).await?;
+            let Reply { edits, blobs, more } = self.reply_to(&peer, kind, &request).await?;
             self.sent.requests.fetch_add(1, Ordering::Relaxed);
-            let Reply { edits, blobs, more } = Reply::from_wire(&reply)?;
             // where the next page starts: a page that brings nothing past the last ends the asking
             let last = edits.iter().map(|s| place(&s.edit)).max().filter(|&l| after.is_none_or(|a| l > a));
             let lacking = move |lab: &mut Lab, me| -> Vec<BlobId> {
@@ -1843,6 +1846,25 @@ impl Shared {
                 _ => return Ok(new),
             }
         }
+    }
+
+    /// The reply of the peer on `peer`'s connection to the message of kind `kind` with body `request`, packed, each
+    /// ML-DSA-65 key its signatures carry once (K5, `session::PACKED`), where the peer's node takes that; else whole,
+    /// as a node from before K5 answers, asked again without it, and from then on on that connection.
+    async fn reply_to(&self, peer: &Peer, kind: u8, request: &[u8]) -> Result<Reply> {
+        let (id, limit) = (peer.conn.stable_id(), session::REPLY_LIMIT);
+        let packs = !self.unpacked.lock().expect("unpacked").contains(&id);
+        if packs {
+            let packed = session::exchange(&peer.conn, kind | session::PACKED, request, limit).await;
+            if let Ok(Ok(Packed(reply))) = packed.map(|bytes| Packed::from_wire(&bytes)) {
+                return Ok(reply);
+            }
+        }
+        let reply = Reply::from_wire(&session::exchange(&peer.conn, kind, request, limit).await?)?;
+        if packs {
+            self.unpacked.lock().expect("unpacked").insert(id);
+        }
+        Ok(reply)
     }
 
     /// Asks `endpoint` for its contact card, and takes its vault logs. How many edits were new.
@@ -2064,6 +2086,7 @@ impl Shared {
     /// doesn't know that device (`Lab::peers`) and it isn't connected any more. What it follows goes.
     fn gone(&self, peer: &Peer) {
         self.follows.lock().expect("follows").remove(&peer.conn.stable_id());
+        self.unpacked.lock().expect("unpacked").remove(&peer.conn.stable_id());
         let known = self.reach.lock().expect("reach").contains_key(&peer.device);
         if !known && self.live(peer.endpoint).is_none() {
             self.held.lock().expect("held").remove(&peer.device);
