@@ -4,12 +4,15 @@
 	frozen math engine checked against its hash, its worker, and the checker that draws what comes back. Every attempt
 	must be refused or stopped:
 	- a doc whose formulas reach out (\href, \url, \includegraphics, the HTML extension, HTML in \text), blow up (\def
-	  bombs, deep nesting, a megabyte) or name commands KaTeX never heard of goes the docs' own way (the Markdown engine,
-	  then `typesetIn` in the page's own math shell): each of those is shown as its source, every formula of the paper's
-	  kind beside them is typeset, and nothing is drawn but MathML Core and the Markdown engine's own tags;
+	  bombs, deep nesting, one too long to send) or name commands KaTeX never heard of goes the docs' own way (the
+	  Markdown engine, then `typesetIn` in the page's own math shell): each of those is shown as its source, every formula
+	  of the paper's kind beside them is typeset, and nothing is drawn but MathML Core and the Markdown engine's own tags;
+	  a formula of a million characters, asked of the host, is never sent (and never drawn: laying out a word that long
+	  would hold the page in WebKit by itself);
 	- in a shell of its own, the engine's worker tries every way out it has, and says what came of each;
 	- a batch that never returns ends its worker (its frame removed), the formulas beside it are typeset all the same,
-	  and the next batch starts in a fresh worker, while the page's clock never waits.
+	  and the next batch starts in a fresh worker, while the page's clock never waits (its longest wait named by what
+	  the page was at, so a stall says where it came from).
 	What reaches out only the canary can tell: `?canary=<address>` aims every attempt there, and scripts/probes.mjs
 	(headless Chromium, in CI before every deploy) listens there and fails on anything that arrived. Opened by hand, the
 	attempts aim at this site's /__math-probe/, which counts nothing.
@@ -21,7 +24,7 @@
 	import { TAGS } from '$lib/markdown/index.js';
 	import { latestOf } from '$lib/sandbox/engines.js';
 	import { engineCode } from '$lib/sandbox/frame.js';
-	import { GOOD, SPIN, WORKER_TRIES, hostileDoc, hostileTex, probeEngine } from '$lib/sandbox/math-probe.js';
+	import { GOOD, MEGABYTE, SPIN, WORKER_TRIES, hostileDoc, hostileTex, probeEngine } from '$lib/sandbox/math-probe.js';
 	import { TIMEOUT, mathShell, typeset, typesetIn } from '$lib/sandbox/math-host.js';
 	import { ELEMENTS, MATHML } from '$lib/sandbox/mathml.js';
 
@@ -42,6 +45,9 @@
 
 	const t0 = performance.now();
 	const ms = () => Math.round(performance.now() - t0);
+	/** what the page is at, and the longest the page's clock waited at each (ms) */
+	let phase = 'drawing the doc';
+	const waits = {};
 	const passed = $derived(checks.filter((c) => c.ok).length);
 	const add = (name, ok, note) => (checks = [...checks, { name, ok: !!ok, note }]);
 	const why = (e) => String(e?.message ?? e);
@@ -75,7 +81,9 @@
 		const code = await engineCode('math').catch((e) => (add('The engine is the frozen one, its bytes checked against its hash', false, why(e)), null));
 		if (code) add('The engine is the frozen one, its bytes checked against its hash', true, `math engine ${latestOf('math')?.v}, ${code.length} characters, as engines.json names them`);
 		await tick();
+		phase = 'typesetting the doc';
 		await typesetIn(doc);
+		phase = 'checking what was drawn';
 		const spans = [...doc.querySelectorAll('span.math[data-math]')];
 		const drawn = (s) => !!s?.querySelector(':scope > math');
 		formulas = [...GOOD.map((tex, i) => ({ what: tex, want: 'typeset', typeset: drawn(spans[i]) })), ...HOSTILE.map(([what, , want], i) => ({ what, want, typeset: drawn(spans[GOOD.length + i]) }))];
@@ -88,10 +96,15 @@
 		const stray = strays(doc);
 		add("Nothing is drawn but MathML Core and the Markdown engine's tags", !stray.length, stray.length ? stray.slice(0, 12).join(', ') : `${doc.querySelectorAll('*').length} elements, each with only its own attributes`);
 		const out = reaches(doc);
-		add('Nothing drawn leads anywhere or runs anything', !out.length, out.length ? out.slice(0, 12).join(', ') : 'no address, handler, style, link, script or frame')
+		add('Nothing drawn leads anywhere or runs anything', !out.length, out.length ? out.slice(0, 12).join(', ') : 'no address, handler, style, link, script or frame');
+		phase = 'a formula of a million characters';
+		const t = performance.now();
+		const [mega] = await typeset([{ tex: MEGABYTE, display: true }]);
+		add('A formula of a million characters is never sent', mega === null, mega === null ? `its source kept, in ${Math.round(performance.now() - t)} ms` : 'it was typeset');
 	}
 
 	async function theWorker() {
+		phase = "the worker's tries";
 		const shell = await mathShell(probeEngine(() => engineCode('math'), canary));
 		const stops = [];
 		const stop = shell.stop.bind(shell);
@@ -115,12 +128,14 @@
 		add('Its frame has no origin and no connection', walls, walls ? `sandbox="allow-scripts", its document out of the page's reach, its policy “default-src 'none'; connect-src 'none'”; its worker: ${said['an origin'] ?? '?'}` : `sandbox=${frame?.getAttribute('sandbox')}, the page reached ${reached}`);
 
 		// a batch that never returns: its worker ended, the formula beside it typeset, the spinning one its source
+		phase = 'a batch that never returns';
 		const t = ms();
 		const [beside, spun] = await typeset([{ tex: 'y^{2}' }, { tex: SPIN }], { shell });
 		const took = ms() - t;
 		const ended = stops.filter((s) => /ran longer than/.test(s.why));
 		add('A batch that runs past its time ends its worker', ended.length >= 1 && !frame?.isConnected && shell.frame === null, ended.length ? `${ended.length} times, after ${(TIMEOUT / 1000).toFixed(0)} s each: “${ended[0].why}”, its frame removed with its worker` : 'it was never ended');
 		add('The formulas beside it are typeset; it shows its source', !!beside && !spun, `y² ${beside ? 'typeset' : 'not typeset'}, the spinning formula ${spun ? 'typeset' : 'its source'}, in ${(took / 1000).toFixed(1)} s`);
+		phase = 'the next batch';
 		const [next] = await typeset([{ tex: 'z_{n}' }], { shell });
 		add('The next batch starts in a fresh worker', !!next && !!shell.frame && shell.frame !== frame, next ? 'typeset in a new frame and worker' : 'it was not typeset');
 		stop('the probe is through');
@@ -132,14 +147,16 @@
 		const clock = setInterval(() => {
 			const now = performance.now();
 			gap = Math.max(gap, now - last);
+			waits[phase] = Math.max(waits[phase] ?? 0, now - last);
 			last = now;
 		}, 50);
 		(async () => {
 			await theDoc().catch((e) => add('The doc is drawn', false, why(e)));
 			await theWorker().catch((e) => add('The probe shell runs', false, why(e)));
 			clearInterval(clock);
-			add('The page goes on meanwhile', gap < 1000, `the page’s clock never waited more than ${Math.round(gap)} ms`);
-			results = { canary, ms: ms(), said: { ...said }, checks, formulas };
+			const where = Object.entries(waits).map(([p, w]) => `${p} ${Math.round(w)} ms`).join(', ');
+			add('The page goes on meanwhile', gap < 1000, `the page’s clock never waited more than ${Math.round(gap)} ms (the longest wait while ${where})`);
+			results = { canary, ms: ms(), said: { ...said }, checks, formulas, waits };
 			line = checks.every((c) => c.ok) ? 'Every check passed.' : 'Some checks failed.';
 		})();
 		return () => clearInterval(clock);
@@ -263,7 +280,7 @@
 		color: var(--ink);
 		font-weight: 600;
 	}
-	/* a formula's source can be a megabyte: the doc keeps to its box */
+	/* a formula's source can be long: the doc keeps to its box */
 	.doc {
 		max-height: 30rem;
 		overflow: auto;

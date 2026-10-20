@@ -181,6 +181,12 @@ async function signedIn() {
 	return page;
 }
 
+/**
+ * What a probe page's check says in the log: its note where it failed, and always for the page's clock (how long the
+ * page ever waited), so a run that only just passed is seen as one.
+ */
+const noteOf = (c) => (!c.ok || /goes on meanwhile/.test(c.name) ? c.note : '');
+
 /** the results a lab writes into #results once it is through */
 const resultsOf = (page, ms) => driver.waitFor(page, '#results', ms).then(() => page.$eval('#results', (e) => JSON.parse(e.textContent ?? 'null')));
 
@@ -314,7 +320,7 @@ async function viewProbe() {
 	await sleep(1000);
 	if (results) {
 		check('the view probe checks everything it tries', results.checks.length >= 10, `${results.checks.length} checks`);
-		for (const c of results.checks) check(`views: ${c.name}`, c.ok, c.ok ? '' : c.note);
+		for (const c of results.checks) check(`views: ${c.name}`, c.ok, noteOf(c));
 	}
 
 	// the frame's DOM: only the engine's scripts, no handler, no address that leads out
@@ -377,7 +383,7 @@ async function mathProbe() {
 	await sleep(1000);
 	if (results) {
 		check('the math probe checks everything it tries', results.checks.length >= 10, `${results.checks.length} checks`);
-		for (const c of results.checks) check(`maths: ${c.name}`, c.ok, c.ok ? '' : c.note);
+		for (const c of results.checks) check(`maths: ${c.name}`, c.ok, noteOf(c));
 	}
 
 	// the doc as drawn: MathML elements only in MathML's namespace, and nothing that leads out or runs

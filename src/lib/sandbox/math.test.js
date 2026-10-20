@@ -115,11 +115,14 @@ describe('the frozen math engine', () => {
 	});
 	test('booted as a worker boots it (a realm of its own), it answers a batch: MathML the checker passes, or nothing', () => {
 		const said = [];
-		const scope = { postMessage: (m) => said.push(m), performance, console };
+		const scope = { postMessage: (m) => said.push(m), performance, console, WebAssembly, fetch };
 		scope.self = scope;
 		vm.createContext(scope);
 		vm.runInContext(bytes.toString('utf8'), scope);
 		expect(said[0][0]).toEqual({ op: 'ready' });
+		// its worker's ways out taken off before any formula is read: the second lock's, and WebAssembly (which WebKit
+		// compiles despite the frame's policy)
+		expect([scope.WebAssembly, scope.fetch]).toEqual([undefined, undefined]);
 		const items = [...DISPLAY.map((tex) => ({ tex, display: true })), ...INLINE.map((tex) => ({ tex, display: false })), ...HOSTILE.slice(0, 20).map((tex) => ({ tex, display: false }))];
 		scope.onmessage({ data: { id: 7, op: 'typeset', items } });
 		const [answer] = said[1];

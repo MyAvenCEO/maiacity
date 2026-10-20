@@ -6,9 +6,11 @@
  * Every attempt must be refused or stopped.
  *
  * - `hostileDoc(canary)`: a doc's Markdown whose formulas reach out every way KaTeX could (`\href`, `\url`,
- *   `\includegraphics`, the HTML extension, HTML in `\text`), blow up (`\def` bombs, deep nesting, a megabyte), or name
- *   commands KaTeX never heard of; and, beside them, formulas of the paper's kind, which must still be typeset. It goes
- *   the docs' own way: the Markdown engine, then the math host's frozen engine in the page's own shell.
+ *   `\includegraphics`, the HTML extension, HTML in `\text`), blow up (`\def` bombs, deep nesting, one too long to
+ *   send), or name commands KaTeX never heard of; and, beside them, formulas of the paper's kind, which must still be
+ *   typeset. It goes the docs' own way: the Markdown engine, then the math host's frozen engine in the page's own shell.
+ * - `MEGABYTE`: a formula of a million characters, asked of the host directly, never drawn: the page lays out none of
+ *   it (WebKit takes many seconds to break a word that long into lines, which would stall the page by itself).
  * - `probeEngine(code)`: the frozen math engine with a probe after it, in a shell of the probe's own. Asked `probe`, its
  *   worker tries every way out it has (`WORKER_TRIES`), each said as it went; a batch holding `SPIN` never returns, and
  *   its worker must be ended while the formulas beside it are typeset.
@@ -21,6 +23,9 @@ export const SPIN = '\\maiaprobespin';
 
 /** a name only the probe writes: a page or an event that holds it was reached */
 export const ESCAPE = 'maia-probe-escape';
+
+/** a formula of a million characters: the host sends none of it (./math.js `LIMITS.tex`) */
+export const MEGABYTE = 'x'.repeat(1_000_000);
 
 /** a picture's name in a doc (its hash and ending), so a caption is a figure's as in the paper */
 const PICTURE = `${'0'.repeat(63)}1.png`;
@@ -48,7 +53,7 @@ export const hostileTex = (c) => [
 	['nesting 400 deep', `${'\\frac{'.repeat(400)}x${'}{y}'.repeat(400)}`, 'source'],
 	['a space 1000 ems wide (KaTeX makes it 10)', '\\kern{1000em}x', 'either'],
 	['a command KaTeX never heard of', '\\maiaprobeunknown{x}', 'source'],
-	['a megabyte', 'x'.repeat(1_000_000), 'source']
+	['too long to send (past 4,000 characters)', `\\text{${'x'.repeat(4990)}}`, 'source']
 ];
 
 /** the formulas of the paper's kind that must be typeset: inline, display, numbered (\tag), gathered */
