@@ -36,16 +36,12 @@ jobs:
             (SELECT count(*) FROM passkeys p WHERE p.founder_id = f.id) AS passkeys,
             (SELECT count(*) FROM api_keys k WHERE k.founder_id = f.id) AS api_keys,
             (SELECT count(*) FROM device_codes d WHERE d.founder_id = f.id) AS device_codes,
-            (SELECT count(*) FROM vault_devices v WHERE v.founder_id = f.id) AS media_devices,
             (SELECT count(*) FROM signup_invites i WHERE i.made_by = f.id) AS invites_made,
             (SELECT count(*) FROM signup_invites i WHERE i.used_by = f.id) AS invites_used
           FROM founders f ORDER BY f.number;
           \echo '== API keys of founders after the first (label and scope, never the hash)'
           SELECT f.number, k.label, k.scope, k.created::date FROM api_keys k JOIN founders f ON f.id = k.founder_id
           WHERE f.number > 1 ORDER BY f.number, k.created;
-          \echo '== media devices of founders after the first'
-          SELECT f.number, v.label, v.created::date, v.revoked_at::date FROM vault_devices v
-          JOIN founders f ON f.id = v.founder_id WHERE f.number > 1 ORDER BY f.number, v.created;
           \echo '== every table that points at a founder: its rows of each founder after the first, and what a delete does'
           SELECT format('SELECT %L AS "table", %L AS "column", %L AS on_delete, f.number, count(*) AS rows FROM %s t JOIN founders f ON f.id = t.%I WHERE f.number > 1 GROUP BY f.number ORDER BY f.number',
             c.conrelid::regclass, a.attname, CASE c.confdeltype WHEN 'c' THEN 'cascade' WHEN 'n' THEN 'set null' ELSE 'blocks' END,
