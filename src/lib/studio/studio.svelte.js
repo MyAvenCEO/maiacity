@@ -1623,6 +1623,7 @@ export class Studio {
 		// stopped (or started again) while it loaded: this start is over
 		if (run !== this.run) return;
 		this.playing = true;
+		this.world.plays(true);
 		// the Mac's jobs wait while the studio plays (./jobs/mac.js)
 		void import('./jobs/mac.js').then((m) => m.studioPlaying(true));
 		this.schedule();
