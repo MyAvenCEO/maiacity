@@ -118,6 +118,9 @@ const report = await page.evaluate(
 		// stopped first, as the studio is before Play: the shots from the playhead prepared and metered, the world stood
 		// where the play starts (src/lib/studio/studio.svelte.js `preparePlayback`, `meterAhead`)
 		const first = list.filter((c) => c.start + c.dur > from);
+		// the draws followed from here (a trace not kept yet): a shader first drawn while the shots were prepared is not
+		// counted as first drawn at a cut
+		win.__filmTrace = [];
 		const p0 = performance.now();
 		await viewer.prepare(first.slice(0, 3).map((c) => c.spec));
 		await viewer.meterAhead((o.meter === 'all' ? first : first.slice(0, 3)).map((c) => c.spec), () => true);
@@ -163,7 +166,7 @@ const report = await page.evaluate(
 		const costs = (/** @type {number} */ a, /** @type {number} */ b) => trace.filter((f) => f.at >= a && f.at < b);
 		const top = (/** @type {any[]} */ fs) => {
 			const worst = fs.reduce((m, f) => (!m || f.total + f.loop > m.total + m.loop ? f : m), null);
-			return worst && Object.fromEntries(['total', 'exposure', 'staging', 'set', 'render', 'shadow', 'dearest', 'view', 'compiled', 'buffers', 'textures', 'warm', 'warmed', 'loop', 'worst'].map((k) => [k, Math.round(worst[k] ?? 0)]));
+			return worst && { ...Object.fromEntries(['total', 'exposure', 'staging', 'set', 'render', 'shadow', 'dearest', 'firsts', 'view', 'compiled', 'buffers', 'textures', 'warm', 'warmed', 'loop', 'worst'].map((k) => [k, Math.round(worst[k] ?? 0)])), drew: worst.drew };
 		};
 		const cuts = list
 			.filter((c) => c.start > from && c.start < to)
@@ -196,6 +199,7 @@ const report = await page.evaluate(
 			hitchesAwayFromCuts: outside.filter((f) => f.gap > o.hitch).length,
 			reloads,
 			compiledWhilePlaying: trace.reduce((a, f) => a + (f.compiled ?? 0), 0),
+			firstShaderDraws: trace.reduce((a, f) => a + (f.firsts ?? 0), 0),
 			warmedWhilePlaying: trace.reduce((a, f) => a + (f.warmed ?? 0), 0),
 			warmTime: Math.round(trace.reduce((a, f) => a + (f.warm ?? 0), 0)),
 			scale: viewer.scale,

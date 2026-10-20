@@ -7,7 +7,10 @@
 //
 // The shaders are compiled as the film draws (into a half-float target: no tone mapping, linear), not as the canvas
 // would — the world's own compiles too —, and set compiling a frame before their first draw, so a GPU that compiles
-// beside the page has them ready.
+// beside the page has them ready. Each draw is made the ways a frame makes it: into the shadow maps (into small ones
+// of the warming's own: the world's are not drawn again), and behind glass (a pane of the warming's own in every
+// draw: a frame with glass in it draws everything behind it once more, into a target of four samples, and a GPU
+// makes each thing again for that — 1.4 s on the Mac at the first shot that looked through a dome's glass).
 // Only what is new is drawn (a renderable not warmed with its geometry and material yet): the whole world as the shots
 // are prepared, and while a timeline plays, what the world builds for the shots ahead, a few at a time.
 import * as THREE from 'three';
@@ -31,6 +34,17 @@ export function createWarmer(renderer) {
 	// a new target each time, and the film's own camera's would be made 64 pixels wide and back)
 	const eye = new THREE.OrthographicCamera();
 	eye.layers.set(LAYER);
+	// the pane: a triangle of glass only the warming sees, in front of the eye
+	const pane = new THREE.Mesh(
+		new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute([-1, 0, -1, 1, 0, -1, 0, 0, 1], 3)),
+		new THREE.MeshPhysicalMaterial({ transmission: 1, roughness: 0, side: THREE.DoubleSide })
+	);
+	pane.layers.set(LAYER);
+	pane.frustumCulled = false;
+	pane.castShadow = false;
+	/** each light's own small shadow map, drawn into by the warming @type {WeakMap<THREE.Light, unknown>} */
+	const smallMaps = new WeakMap();
+	const SMALL = new THREE.Vector2(16, 16);
 	const box = new THREE.Box3(), ball = new THREE.Sphere(), centre = new THREE.Vector3(), size = new THREE.Vector3();
 
 	/** @param {() => void} job runs with the warm target bound, as the film's frames are drawn */
@@ -91,7 +105,21 @@ export function createWarmer(renderer) {
 			marked.push(o);
 		};
 		// the lights as they are now (the shaders are compiled for as many lights as a frame has): only those a frame draws
-		scene.traverseVisible((o) => void (/** @type {any} */ (o).isLight && o.layers.test(camera.layers) && mark(o)));
+		/** @type {any[]} */
+		const casting = [];
+		scene.traverseVisible((o) => {
+			const l = /** @type {any} */ (o);
+			if (!l.isLight || !o.layers.test(camera.layers)) return;
+			mark(o);
+			if (l.castShadow && l.shadow) casting.push(l);
+		});
+		// their shadows drawn into maps of the warming's own: the world's keep what they hold, and the light's matrix
+		for (const l of casting) {
+			set(l.shadow, 'map', smallMaps.get(l) ?? null);
+			set(l.shadow, 'mapSize', SMALL);
+			set(l.shadow, 'needsUpdate', true);
+			set(l.shadow, 'matrix', new THREE.Matrix4());
+		}
 		for (const o of objs) {
 			mark(o);
 			if (o.frustumCulled) set(o, 'frustumCulled', false);
@@ -103,7 +131,7 @@ export function createWarmer(renderer) {
 		}
 		const shadows = renderer.shadowMap;
 		set(shadows, 'autoUpdate', false);
-		set(shadows, 'needsUpdate', false);
+		set(shadows, 'needsUpdate', casting.length > 0);
 		// seen from above, all of them in the frame: each covers a few pixels, so a GPU that makes a shader only for the
 		// first pixel it shades has made it
 		box.makeEmpty();
@@ -119,9 +147,14 @@ export function createWarmer(renderer) {
 		eye.position.set(c.x, c.y + 2 * r, c.z);
 		eye.lookAt(c);
 		eye.updateMatrixWorld();
+		pane.position.copy(c);
+		pane.scale.setScalar(r / 4);
+		scene.add(pane);
 		try {
 			onTarget(() => renderer.render(scene, eye));
 		} finally {
+			scene.remove(pane);
+			for (const l of casting) smallMaps.set(l, l.shadow.map);
 			for (const o of marked) o.layers.disable(LAYER);
 			for (let i = put.length - 1; i >= 0; i--) put[i][0][put[i][1]] = put[i][2];
 		}
@@ -195,7 +228,11 @@ export function createWarmer(renderer) {
 			return n;
 		},
 		stats,
-		dispose: () => rt.dispose()
+		dispose() {
+			rt.dispose();
+			pane.geometry.dispose();
+			pane.material.dispose();
+		}
 	};
 }
 

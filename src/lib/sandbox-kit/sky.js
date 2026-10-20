@@ -198,6 +198,25 @@ export function createSky(renderer, scene, options = {}) {
 	const envUniverse = planet ? null : createUniverse({ clouds: 0, mirror: map });
 	const envScene = new THREE.Scene();
 	if (envUniverse) envScene.add(envUniverse.dome);
+	// and drawn again into the same target each time: three makes a new one for every map, and a new texture is a new
+	// environment to every material that has one (each looked up again, and its old map left on the GPU), on every cut
+	// to another hour and every frame the hour runs on
+	/** @type {THREE.WebGLRenderTarget | null} */
+	let envTarget = null;
+	if (pmrem) {
+		const p = /** @type {any} */ (pmrem), allocate = p._allocateTargets.bind(pmrem), was = new THREE.Color();
+		p._allocateTargets = () => {
+			if (!envTarget) return (envTarget = allocate());
+			// as new: nothing of the light before left in it
+			const alpha = renderer.getClearAlpha();
+			renderer.getClearColor(was);
+			renderer.setRenderTarget(envTarget);
+			renderer.setClearColor(0x000000, 0);
+			renderer.clear();
+			renderer.setClearColor(was, alpha);
+			return envTarget;
+		};
+	}
 
 	const sun = new THREE.DirectionalLight('#fff1d8', 2.4);
 	sun.castShadow = !planet;
@@ -277,7 +296,7 @@ export function createSky(renderer, scene, options = {}) {
 			envAt = l.dir.clone();
 			const old = scene.environment;
 			scene.environment = pmrem.fromScene(envScene).texture;
-			old?.dispose();
+			if (old !== scene.environment) old?.dispose();
 		}
 	};
 	const setPlanet = (/** @type {number} */ hour) => {
@@ -336,7 +355,8 @@ export function createSky(renderer, scene, options = {}) {
 			envUniverse?.dispose();
 			sun.shadow.map?.dispose();
 			if (pmrem) {
-				scene.environment?.dispose();
+				if (scene.environment !== envTarget?.texture) scene.environment?.dispose();
+				envTarget?.dispose();
 				scene.environment = null;
 				pmrem.dispose();
 			}
