@@ -5,8 +5,8 @@
 // JSON. It has no page, no network, no keys, no clock to wait on; a call that loops, eats its memory or throws is
 // stopped and the view keeps the data it had.
 
-import { load } from '../sandbox/logic-host.js';
-import { seedOf } from '../sandbox/logic.js';
+import { load } from './logic-host.js';
+import { seedOf } from './logic.js';
 
 /**
  * Load a view's logic: { init(data), on(event, data), dispose() }, each call answering (in time) the new data, or the

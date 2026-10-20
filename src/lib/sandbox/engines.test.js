@@ -114,3 +114,15 @@ describe('engines come only from us', () => {
 		expect(hits).toEqual([]);
 	});
 });
+
+test("each library a view may load is one table's row (game/code/limits.js), and its frozen engine carries the version it names", async () => {
+	const { LIBS } = await import('../../../game/code/limits.js');
+	const { LIB_MODULES } = await import('../../../game/code/rules.js');
+	expect(Object.keys(LIB_MODULES)).toEqual(Object.keys(LIBS));
+	for (const [name, l] of Object.entries(LIBS)) {
+		expect(SOURCES[l.engine]).toEndWith(`/view/libs/${name}.js`);
+		expect(latestOf(l.engine).version).toBe(l.version);
+		expect(versionOf(l.engine)).toBe(l.version);
+	}
+	expect(Object.keys(SOURCES).filter((k) => k.startsWith('lib-')).sort()).toEqual(Object.values(LIBS).map((l) => l.engine).sort());
+});

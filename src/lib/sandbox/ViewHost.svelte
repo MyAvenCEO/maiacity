@@ -11,16 +11,16 @@
 	  version the view names (its `engine`), never one below the floor (./engines.js `engineFor`).
 	- A view's own script never runs in a window: the engine starts it in a worker inside the frame (./view/worker.js),
 	  on a copy of the DOM, with its libraries (three, d3, the MCP Apps SDK) from frozen files of ours. No CDN.
-	- Logic that decides (a view's `logic`) runs in QuickJS in the logic host ($lib/genui/logic.js); the frame only
+	- Logic that decides (a view's `logic`) runs in QuickJS in the logic host (./view-logic.js); the frame only
 	  shows the state it makes and names the events a person makes.
 	- What comes back is plain data: events by name, a height, and MCP Apps JSON-RPC, of which only METHODS are answered
-	  (game/genui/views.js). A load we did not cause stops the view.
+	  (game/code/views.js). A load we did not cause stops the view.
 -->
 <script>
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
-	import { LIMITS, METHODS, PROTOCOL } from '../../../game/genui/views.js';
-	import { loadLogic } from '$lib/genui/logic.js';
+	import { LIMITS, METHODS, PROTOCOL } from '../../../game/code/views.js';
+	import { loadLogic } from './view-logic.js';
 	import { MCP_STYLES } from './view/theme.js';
 	import { DENY, SANDBOX } from './policy.js';
 	import { bootDoc, engineCode, hasScript, viewOf, workerOf } from './view-host.js';

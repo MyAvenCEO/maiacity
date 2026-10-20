@@ -9,7 +9,7 @@ import { cleanCss, sanitize } from './sanitize.js';
 import { eventOf, render } from './template.js';
 import { fromA2ui } from './a2ui.js';
 import { classic } from './imports.js';
-import { examples } from '../../../../game/genui/examples.js';
+import { examples } from '../../../../game/code/examples.js';
 
 const clean = (html) => {
 	const doc = new DOMParser().parseFromString(`<!doctype html><html><head></head><body>${html}</body></html>`, 'text/html');

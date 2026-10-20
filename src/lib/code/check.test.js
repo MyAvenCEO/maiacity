@@ -8,7 +8,7 @@ const noop = new Proxy(function () {}, { get: (_, k) => (k === Symbol.toPrimitiv
 globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContext: () => noop, style: {} }) };
 globalThis.$state ??= (x) => x;
 const { checkCode, TYPES } = await import('./check.js');
-const EXAMPLES = (await import('../../../game/genui/examples.js')).examples();
+const EXAMPLES = (await import('../../../game/code/examples.js')).examples();
 const { defaultViews: v1Views, SLOTS } = await import('../../../game/maiacity-v1/views.js');
 const V1_VIEWS = v1Views();
 const { hostileCards } = await import('../assets/schemas/hostile.js');

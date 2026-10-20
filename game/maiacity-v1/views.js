@@ -1,6 +1,6 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /**
- * MaiaCity V1's screens as view cards (Samuel, 2026-10-13): html views (game/genui/views.js) the view host shows
+ * MaiaCity V1's screens as view cards (Samuel, 2026-10-13): html views (game/code/views.js) the view host shows
  * (src/lib/sandbox/ViewHost.svelte: no origin, no network, no reach into the page, its script in a worker) and hands
  * the game as its data and its MCP Apps tool result.
  * A MIP puts a screen in (`views`, a card with an id already there replaces it) or takes it out (`removeViews`),

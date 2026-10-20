@@ -14,7 +14,7 @@
  * floor), and its script in the view worker that engine was frozen with (`workerFor`).
  *   bootDoc(key, nonce) the frame's first document: its policy, and the one script that takes in our engine
  */
-import { LIBS } from '../../../game/genui/views.js';
+import { LIBS } from '../../../game/code/limits.js';
 import { fromA2ui } from './view/a2ui.js';
 import { workerFor } from './engines.js';
 import { engineCode } from './frame.js';
