@@ -28,15 +28,16 @@ export { engineAt, isFrozen, latestOf, pathOf };
  * runs here all the same:
  * - box 1: every box engine so far; a recipe runs on the one it was made for, by its hash (#1076).
  * - view 3 cleans every value its template fills into an attribute again (G8); view 4 holds a view's script to a
- *   budget of work (G7), with view worker 2 answering its watch.
+ *   budget of work (G7), with view worker 2 answering its watch; view worker 3 takes WebAssembly off a view's
+ *   script, which WebKit compiled despite the frame's policy (the probes in WebKit, 2026-10-20).
  * - logic 1: the first, and so far the only one.
  */
 /** @type {Record<string, number>} */
-export const FLOOR = { box: 1, view: 4, 'view-worker': 2, logic: 1 };
+export const FLOOR = { box: 1, view: 4, 'view-worker': 3, logic: 1 };
 
-/** the view worker each view engine starts a view's script in (view 4's watch asks a question only worker 2 answers) */
+/** the view worker each view engine starts a view's script in (view 4's watch asks a question only worker 2 and later answer) */
 /** @type {Record<number, number>} */
-export const WORKERS = { 1: 1, 2: 1, 3: 1, 4: 2 };
+export const WORKERS = { 1: 1, 2: 1, 3: 1, 4: 3 };
 
 /**
  * The frozen engine of `kind` that runs code naming version `named`: that one, or the kind's floor where it names an

@@ -174,6 +174,7 @@ impl Gate {
         let proposals: Vec<Value> = lines.iter().map(|(e, l)| json!({ "entry": e, "line": l })).collect();
         let op = json!({ "op": "aip_open", "vault": self.alice.to_hex(), "title": title, "proposals": proposals,
             "note": "Why: the valley needs it.\n\nWhat changes: new rules.", "tags": [GAME],
+            "objective": "def rules : Metric := metric \"Rules\" (atLeast (reading \"rules\") 1)",
             "as": self.agent.to_hex() });
         let aip = text(&ok(self.run(self.claude, op))["entry"]);
         let op = json!({ "op": "aip_promote", "entry": aip, "as": self.agent.to_hex() });

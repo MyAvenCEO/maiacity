@@ -9,7 +9,7 @@
 	import { TOOL, TOOLS, TOOL_GROUPS, newTool, toolText } from '../../../game/film/grade-tools.js';
 	import { fine } from './fine.js';
 
-	/** @typedef {import('$lib/auth/client').GradeTool} GradeTool */
+	/** @typedef {import('./types.js').GradeTool} GradeTool */
 	/** @type {{ tools: GradeTool[], onchange: (tools: GradeTool[]) => void, depth?: number }} */
 	let { tools, onchange, depth = 0 } = $props();
 

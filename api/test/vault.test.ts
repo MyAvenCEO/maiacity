@@ -1,9 +1,9 @@
-// The media vault's API side: pairing a Mac's iroh node, revoking it, and what a device needs to join the catalog.
+// The media vault's API side: what a device needs to join the catalog, and the catalog's mirror.
 import { beforeAll, describe, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { useDb, type Db } from "../src/pg";
 import { MIGRATIONS } from "../src/migrations-list";
-import { joinInfo, listDevices, listVaultFiles, pairDevice, revokeDevice } from "../src/vault";
+import { joinInfo, listVaultFiles } from "../src/vault";
 
 const pg = new PGlite();
 const node = (c: string) => c.repeat(64).slice(0, 64);
@@ -20,22 +20,6 @@ beforeAll(async () => {
   };
   useDb(db);
   await pg.query("INSERT INTO founders (id, name, role) VALUES ('first', 'first', 'admin')");
-});
-
-describe("pairing a Mac's node", () => {
-  test("an EndpointId is 64 hex; pairing again renews only the label", async () => {
-    await expect(pairDevice("first", "nope", "x")).rejects.toThrow(/64 hex/);
-    const d = await pairDevice("first", node("a").toUpperCase(), "maiaCITY Studio · Mac");
-    expect(d.endpoint_id).toBe(node("a"));
-    expect((await pairDevice("first", node("a"), "renamed")).label).toBe("renamed");
-    expect((await listDevices()).map((x) => x.endpoint_id)).toEqual([node("a")]);
-  });
-
-  test("a revoked node stays revoked", async () => {
-    expect(await revokeDevice(node("a"))).toBe(true);
-    expect(await revokeDevice(node("a"))).toBe(false);
-    await expect(pairDevice("first", node("a"), "again")).rejects.toThrow(/revoked/);
-  });
 });
 
 describe("joining", () => {

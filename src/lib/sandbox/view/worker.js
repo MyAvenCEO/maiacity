@@ -25,6 +25,10 @@ import '../lockdown.js';
 import { parseHTML } from 'linkedom';
 import { classic } from './imports.js';
 
+// WebAssembly goes too: a view's script never needs it (only the logic host compiles its QuickJS), the frame's policy
+// refuses it in Chromium, but WebKit compiles it all the same (the probes in WebKit, 2026-10-20)
+if (!Reflect.deleteProperty(self, 'WebAssembly')) Object.defineProperty(self, 'WebAssembly', { value: undefined, writable: false, configurable: false });
+
 const NativeEvent = self.Event;
 // taken before anything of the view's runs, so no script of its can bend how the watch is answered
 const echo = MessagePort.prototype.postMessage;

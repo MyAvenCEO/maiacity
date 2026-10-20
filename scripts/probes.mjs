@@ -1,7 +1,9 @@
 /*
  * Both probes in a real browser (hardening H8, gap G9): every way out of the asset box and of a view, tried from inside
  * each by code made to do harm, in headless Chromium, against the site as it is in this checkout. CI runs it on every
- * pull request and before every deploy (.github/workflows/kernel.yml); a failure stops the deploy.
+ * pull request and before every deploy (.github/workflows/kernel.yml); a failure stops the deploy. CI runs it again in
+ * WebKit (--browser webkit, on Playwright), the engine Samuel's Mac app, The OS, shows the site in (Tauri is WebKit):
+ * a wall that holds in Chromium is not taken to hold there.
  *
  * - The box: its lab (/app/assets/box/) runs every check, the box's probe among them (src/lib/assets/box/probe.js, a
  *   recipe that tries every way out, one that crashes its worker and one that never stops, each ended alone). Every
@@ -19,15 +21,25 @@
  *   BASE=http://localhost:5173 node scripts/probes.mjs                 a running one (VITE_RECIPE_FEED=dev bun run dev)
  *   CHROME=/path/to/chrome node scripts/probes.mjs                     else Playwright's Chromium, or Chrome on a Mac
  *   node scripts/probes.mjs --only view|box
+ *   node scripts/probes.mjs --browser webkit                           in Playwright's WebKit (bunx playwright install webkit)
+ *   node scripts/probes.mjs --playwright                               Chromium driven by Playwright, as WebKit is: the
+ *                                                                      WebKit run's own code, checked where WebKit is not
+ *
+ * Chromium is driven by puppeteer (as it always was), WebKit by Playwright: the probes are the same, only the few calls
+ * that differ between the two go through a driver (`puppeteerDriver`, `playwrightDriver` below).
  */
 import { spawn } from 'node:child_process';
 import { existsSync, readdirSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { join } from 'node:path';
-import puppeteer from 'puppeteer-core';
 import { CLICKS, HTML_TRIES } from '../src/lib/sandbox/view/probe.js';
 
-const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null;
+const arg = (name) => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : null);
+const only = arg('--only');
+/** chromium (the default) or webkit; Playwright drives anything but Chromium, and Chromium too when asked */
+const browserName = arg('--browser') ?? 'chromium';
+if (!['chromium', 'webkit'].includes(browserName)) throw new Error(`--browser chromium|webkit, not ${browserName}`);
+const viaPlaywright = browserName !== 'chromium' || process.argv.includes('--playwright');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Playwright's Chromium: where PLAYWRIGHT_BROWSERS_PATH (or its own cache) keeps it */
@@ -42,8 +54,69 @@ function playwrightChromium() {
 	}
 	return null;
 }
-const chrome = process.env.CHROME ?? playwrightChromium() ?? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find((p) => existsSync(p));
-if (!chrome) throw new Error('No Chromium found: install Playwright’s (npx playwright install chromium) or set CHROME.');
+
+/** the app's sign-in, answered: an admin, as scripts/avendb-smoke.mjs answers it */
+const founder = { id: 'probe', number: 1, name: 'Probe', since: '2026-01-01', role: 'founder', caps: [] };
+const meHeaders = (origin) => ({ 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true', 'content-type': 'application/json' });
+
+/**
+ * Chromium by puppeteer, as the probes always ran: its sign-in answered over the DevTools protocol (Fetch), which only
+ * Chromium speaks.
+ */
+async function puppeteerDriver(origin) {
+	const chrome = process.env.CHROME ?? playwrightChromium() ?? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find((p) => existsSync(p));
+	if (!chrome) throw new Error('No Chromium found: install Playwright’s (npx playwright install chromium) or set CHROME.');
+	const { default: puppeteer } = await import('puppeteer-core');
+	const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
+	return {
+		name: chrome,
+		newPage: () => browser.newPage(),
+		viewport: (page, size) => page.setViewport(size),
+		beforeEachDocument: (page, fn) => page.evaluateOnNewDocument(fn),
+		async answerMe(page) {
+			const cdp = await page.createCDPSession();
+			await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/me' }] });
+			cdp.on('Fetch.requestPaused', (r) => {
+				cdp.send('Fetch.fulfillRequest', { requestId: r.requestId, responseCode: 200, responseHeaders: Object.entries(meHeaders(origin)).map(([name, value]) => ({ name, value })), body: Buffer.from(JSON.stringify(founder)).toString('base64') }).catch(() => {});
+			});
+		},
+		/** settled: no more than two requests in flight for half a second */
+		idle: 'networkidle2',
+		/** an element there, seen or not (#results is hidden) */
+		waitFor: (page, sel, ms) => page.waitForSelector(sel, { timeout: ms }),
+		click: (el) => el.click(),
+		pages: async () => (await browser.pages()).length,
+		onWindow: (fn) => browser.on('targetcreated', (t) => t.type() === 'page' && fn()),
+		close: () => browser.close()
+	};
+}
+
+/**
+ * WebKit (or Chromium, with --playwright) by Playwright: every tab in one context, so a window any of them opens is
+ * counted; the sign-in answered by its routing, which works in every engine it drives.
+ */
+async function playwrightDriver(origin) {
+	const pw = await import('playwright').catch(() => null);
+	if (!pw) throw new Error('No Playwright: bun install (it is a devDependency), then bunx playwright install webkit.');
+	const browser = await pw[browserName].launch({ headless: true });
+	const context = await browser.newContext();
+	return {
+		name: `${browserName} ${browser.version()} (Playwright)`,
+		newPage: () => context.newPage(),
+		viewport: (page, size) => page.setViewportSize(size),
+		beforeEachDocument: (page, fn) => page.addInitScript(fn),
+		answerMe: (page) => page.route(/\/api\/me$/, (route) => route.fulfill({ status: 200, headers: meHeaders(origin), body: JSON.stringify(founder) }).catch(() => {})),
+		/** settled: no request at all in flight for half a second (Playwright has no "two or fewer") */
+		idle: 'networkidle',
+		/** an element there, seen or not: Playwright waits for a visible one unless told, and #results is hidden */
+		waitFor: (page, sel, ms) => page.waitForSelector(sel, { timeout: ms, state: 'attached' }),
+		// Playwright waits up to half a minute for an element to take a click; puppeteer tries once. A few seconds, then on
+		click: (el) => el.click({ timeout: 3000 }),
+		pages: async () => context.pages().length,
+		onWindow: (fn) => context.on('page', () => fn()),
+		close: () => browser.close()
+	};
+}
 
 const checks = [];
 const check = (what, ok, found = '') => {
@@ -79,29 +152,29 @@ if (!base) {
 }
 const origin = new URL(base).origin;
 
-const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
+// a browser that won't start takes the dev server down with it, rather than leaving it running
+const driver = await (viaPlaywright ? playwrightDriver : puppeteerDriver)(origin).catch((e) => {
+	canary.close();
+	if (server?.pid) process.kill(-server.pid);
+	throw e;
+});
+console.log(`the probes, in ${driver.name}`);
 
 /** a tab signed in to the app as an admin, with avenDB left for later (as scripts/avendb-smoke.mjs answers it) */
 async function signedIn() {
-	const page = await browser.newPage();
-	await page.setViewport({ width: 1280, height: 1000 });
-	await page.evaluateOnNewDocument(() => {
+	const page = await driver.newPage();
+	await driver.viewport(page, { width: 1280, height: 1000 });
+	await driver.beforeEachDocument(page, () => {
 		try {
 			sessionStorage.setItem('avendb:later', '1');
 		} catch {}
 	});
-	const cdp = await page.createCDPSession();
-	await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/me' }] });
-	cdp.on('Fetch.requestPaused', (r) => {
-		const founder = { id: 'probe', number: 1, name: 'Probe', since: '2026-01-01', role: 'founder', caps: [] };
-		const headers = { 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true', 'content-type': 'application/json' };
-		cdp.send('Fetch.fulfillRequest', { requestId: r.requestId, responseCode: 200, responseHeaders: Object.entries(headers).map(([name, value]) => ({ name, value })), body: Buffer.from(JSON.stringify(founder)).toString('base64') }).catch(() => {});
-	});
+	await driver.answerMe(page);
 	return page;
 }
 
 /** the results a lab writes into #results once it is through */
-const resultsOf = (page, ms) => page.waitForSelector('#results', { timeout: ms }).then(() => page.$eval('#results', (e) => JSON.parse(e.textContent ?? 'null')));
+const resultsOf = (page, ms) => driver.waitFor(page, '#results', ms).then(() => page.$eval('#results', (e) => JSON.parse(e.textContent ?? 'null')));
 
 /**
  * The dev server's stand-in for the recipe feed bundles every recipe the first time it is asked, longer than the box's
@@ -123,13 +196,67 @@ async function warm(path) {
 	for (let i = 0; i < 4; i++) {
 		let reloaded = false;
 		const moved = (f) => f === page.mainFrame() && (reloaded = true);
-		await page.goto(`${base}${path}`, { waitUntil: 'networkidle2', timeout: 120000 }).catch(() => {});
+		await page.goto(`${base}${path}`, { waitUntil: driver.idle, timeout: 120000 }).catch(() => {});
 		page.on('framenavigated', moved);
 		await sleep(4000);
 		page.off('framenavigated', moved);
 		if (!reloaded) break;
 	}
 	await page.close();
+}
+
+/**
+ * What a plain worker of this browser has, outside any box: each way out the box's and the view's scripts try, by the
+ * thing it needs (the names are theirs). A way out the browser itself lacks is refused in it all the same, and stays
+ * green, but its refusal says nothing of our walls: the run names it, so a run in WebKit is never read as having tried
+ * what only Chromium has (or the other way round). The box takes its globals away, so a refusal's wording can't tell
+ * the two apart: only a worker of the browser's own, on the canary's page, can.
+ */
+const NEEDS = {
+	fetch: 'fetch',
+	'fetch same site': 'fetch',
+	XMLHttpRequest: 'XMLHttpRequest',
+	WebSocket: 'WebSocket',
+	EventSource: 'EventSource',
+	WebTransport: 'WebTransport',
+	sendBeacon: 'navigator.sendBeacon',
+	importScripts: 'importScripts',
+	'a nested worker': 'Worker',
+	'nested worker': 'Worker',
+	'a SharedWorker': 'SharedWorker',
+	WebAssembly: 'WebAssembly',
+	RTCPeerConnection: 'RTCPeerConnection',
+	indexedDB: 'indexedDB',
+	caches: 'caches',
+	OPFS: 'navigator.storage && navigator.storage.getDirectory',
+	localStorage: 'localStorage',
+	sessionStorage: 'sessionStorage',
+	BroadcastChannel: 'BroadcastChannel',
+	cookieStore: 'cookieStore',
+	passkeys: 'navigator.credentials'
+};
+/** the ways out (by name) whose thing a plain worker of this browser lacks; null if it could not be asked */
+let lacks = null;
+async function nativeWorker() {
+	const page = await driver.newPage();
+	try {
+		await page.goto(`${CANARY}/features`);
+		// each thing asked for in a try of its own: a name the browser never heard of throws, and counts as lacking
+		const body = `const has = {};\n${Object.entries(NEEDS).map(([k, e]) => `try { has[${JSON.stringify(k)}] = !!(${e}); } catch { has[${JSON.stringify(k)}] = false; }`).join('\n')}\npostMessage(has);`;
+		lacks = await page.evaluate(async (body) => {
+			const w = new Worker(URL.createObjectURL(new Blob([body], { type: 'text/javascript' })));
+			const has = await new Promise((ok, no) => ((w.onmessage = (e) => ok(e.data)), (w.onerror = (e) => no(new Error(e.message)))));
+			w.terminate();
+			return Object.keys(has).filter((k) => !has[k]);
+		}, body);
+	} catch (e) {
+		console.log(`  (what a plain worker of ${browserName} has could not be asked: ${e instanceof Error ? e.message : e})`);
+	}
+	await page.close();
+}
+function absent(where, said) {
+	const missing = Object.keys(said).filter((what) => lacks?.includes(what) && /^blocked/i.test(String(said[what])));
+	if (missing.length) console.log(`  ${where}: refused, but a plain worker of ${browserName} has no such thing, so this proves nothing of our walls: ${missing.join(', ')}`);
 }
 
 /** a frame's element, or null: a frame the page dropped (a reload) answers nothing rather than throwing */
@@ -144,7 +271,7 @@ async function find(frame, sel) {
 async function viewProbe() {
 	// the browser reaches the canary: so nothing arriving means nothing got out, not that nothing could (opened as a page
 	// of its own, not fetched from one of the site's, which would teach the browser to connect to it from the site)
-	const control = await browser.newPage();
+	const control = await driver.newPage();
 	await control.goto(`${CANARY}/control`).catch(() => {});
 	await sleep(500);
 	await control.close();
@@ -153,9 +280,9 @@ async function viewProbe() {
 	connections = 0;
 
 	const page = await signedIn();
-	const pages = (await browser.pages()).length;
+	const pages = await driver.pages();
 	let popups = 0;
-	browser.on('targetcreated', (t) => t.type() === 'page' && popups++);
+	driver.onWindow(() => popups++);
 	const url = `${base}/app/views/probe/?canary=${encodeURIComponent(`${CANARY}/v`)}`;
 	await page.goto(url, { waitUntil: 'domcontentloaded' });
 
@@ -171,7 +298,7 @@ async function viewProbe() {
 	for (const sel of frame ? CLICKS : []) {
 		const el = await find(frame, sel);
 		if (!el) continue;
-		await el.click().catch(() => {});
+		await driver.click(el).catch(() => {});
 		if (sel === '#probe-text') await page.keyboard.press('Enter');
 		clicked.push(sel);
 	}
@@ -214,17 +341,18 @@ async function viewProbe() {
 	};
 	check(`nothing reached the canary (${clicked.length} clicked, ${Object.keys(HTML_TRIES).length} addresses in its markup, every attempt of its script)`, !hits.length && !connections, hits.length ? hits.map(named).join('; ') : connections ? `${connections} connections with no request` : '');
 	check('the page is where it was', page.url() === url, page.url() === url ? '' : page.url());
-	const windows = (await browser.pages()).length - pages;
+	const windows = (await driver.pages()) - pages;
 	check('no window opened', !popups && !windows, popups || windows ? `${Math.max(popups, windows)} opened` : '');
 	// what each attempt of its script came to, for the log
 	if (results) for (const [what, said] of Object.entries(results.said)) if (!what.startsWith('(')) console.log(`    ${what}: ${said}`);
+	if (results) absent('views', results.said);
 	await page.close();
 }
 
 async function boxLab() {
 	const page = await signedIn();
 	await page.goto(`${base}/app/assets/box/`, { waitUntil: 'domcontentloaded' });
-	const shown = await page.waitForSelector('button.chip.run:not([disabled])', { timeout: 120000 }).catch(() => null);
+	const shown = await driver.waitFor(page, 'button.chip.run:not([disabled])', 120000).catch(() => null);
 	if (!shown) return check('the box lab opens', false, (await page.evaluate(() => document.body.innerText).catch(() => '')).replace(/\s+/g, ' ').slice(0, 300));
 	// a page the dev server reloads (a dependency it found late) loses its run: a failure says so
 	let reloads = 0;
@@ -236,6 +364,7 @@ async function boxLab() {
 	const open = probes.filter(([, v]) => !String(v).startsWith('blocked'));
 	check(`box: every way out refused (${probes.length} tried)`, probes.length > 10 && !open.length, open.map(([k, v]) => `${k}: ${v}`).join('; '));
 	for (const [what, said] of probes) console.log(`    ${what}: ${said}`);
+	absent('box', r.probes ?? {});
 	// each ended alone: the same box goes on, the recipe behind it built in its own room, a machine kept running
 	for (const [what, got] of [['a recipe that never stops', r.kill], ['a recipe that crashes its worker', r.crash]]) {
 		const alone = got?.alone === true && !!got?.stopped;
@@ -251,6 +380,8 @@ const t0 = Date.now();
 try {
 	const fed = only === 'view' ? null : feed();
 	const took = (t) => `${((Date.now() - t) / 1000).toFixed(0)} s`;
+	await nativeWorker();
+	console.log(lacks?.length ? `a plain worker of ${browserName} has no ${[...new Set(lacks.map((k) => NEEDS[k]))].join(', ')}` : `a plain worker of ${browserName} has every thing the probes try`);
 	if (only !== 'box') {
 		const t = Date.now();
 		await warm('/app/views/probe/');
@@ -267,11 +398,11 @@ try {
 } catch (e) {
 	check(`the probes finish: ${e instanceof Error ? e.message : e}`, false);
 } finally {
-	await browser.close();
+	await driver.close();
 	canary.close();
 	if (server?.pid) process.kill(-server.pid);
 }
 
 const failed = checks.filter((c) => !c.ok);
-console.log(`\n${checks.length - failed.length} of ${checks.length} checks green in ${((Date.now() - t0) / 1000).toFixed(0)} s (${chrome})`);
+console.log(`\n${checks.length - failed.length} of ${checks.length} checks green in ${((Date.now() - t0) / 1000).toFixed(0)} s (${driver.name})`);
 process.exit(failed.length ? 1 : 0);

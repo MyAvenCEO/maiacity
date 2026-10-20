@@ -1,7 +1,6 @@
 // The studio's one state: the library, the open timeline and its clips, the playhead and the sound, the colour
 // pipeline's LUTs, the world viewer, the renders — shared by the three working steps (Edit · Grade · Render) and every
 // panel in them. The panels only show it and call its methods; nothing here draws.
-import { may, me } from '$lib/auth/client';
 import { ODT, PROFILES, WORKING, asStudio, isCache, isSequence, profileFor, proxyFor } from './color.js';
 import { avenLibrary, avenUrl, isAven, withGraded } from './aven.js';
 import { createCut, cutJobs, cutsHere, deleteCut, getCut, isCut, listCuts, listStories, renderCut, renderQueue, saveCut, setProfile, setTranscript, shootable } from './cuts.js';
@@ -15,21 +14,21 @@ import { captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpe
 import { command, native } from '$lib/native';
 import { cleanEq, cleanKeys, keyDb, webAudioQ } from '../../../game/film/sound.js';
 
-/** @typedef {import('$lib/auth/client').Cdl} Cdl */
-/** @typedef {import('$lib/auth/client').ClipFrame} ClipFrame */
-/** @typedef {import('$lib/auth/client').Delivery} Delivery */
-/** @typedef {import('$lib/auth/client').MediaItem} MediaItem */
-/** @typedef {import('$lib/auth/client').RenderJob} RenderJob */
-/** @typedef {import('$lib/auth/client').Shape} Shape */
-/** @typedef {import('$lib/auth/client').Shot} Shot */
-/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
-/** @typedef {import('$lib/auth/client').Timeline} Timeline */
-/** @typedef {import('$lib/auth/client').TimelineStage} TimelineStage */
+/** @typedef {import('./types.js').Cdl} Cdl */
+/** @typedef {import('./types.js').ClipFrame} ClipFrame */
+/** @typedef {import('./types.js').Delivery} Delivery */
+/** @typedef {import('./types.js').MediaItem} MediaItem */
+/** @typedef {import('./types.js').RenderJob} RenderJob */
+/** @typedef {import('./types.js').Shape} Shape */
+/** @typedef {import('./types.js').Shot} Shot */
+/** @typedef {import('./types.js').ShotSpec} ShotSpec */
+/** @typedef {import('./types.js').Timeline} Timeline */
+/** @typedef {import('./types.js').TimelineStage} TimelineStage */
 /** @typedef {import('./color.js').ProxyState} ProxyState */
 /** @typedef {import('./luts.js').Lut} Lut */
 /** @typedef {import('./luts.js').LutSource} LutSource */
 /** @typedef {'V1' | 'A1' | 'A2' | 'A3'} Track */
-/** @typedef {import('$lib/auth/client').TimelineClip} Clip */
+/** @typedef {import('./types.js').TimelineClip} Clip */
 /** @typedef {{ url: string, duration: number, peaks: number[], buffer?: AudioBuffer }} Source */
 /** @typedef {{ word: string, start: number, end: number }} Timed */
 /**
@@ -141,7 +140,7 @@ const peaksOf = (buffer) => {
 export const onSoundTrack = (c) => !!c && c.track !== 'V1';
 
 export class Studio {
-	/** @type {'loading' | 'signed-out' | 'forbidden' | 'ready'} */
+	/** @type {'loading' | 'ready'} who opens it is the app's gate's, by Maia City's Admin group ($lib/app/places.ts) */
 	phase = $state('loading');
 	error = $state('');
 	/** @type {string | null} */
@@ -526,12 +525,8 @@ export class Studio {
 
 	// ── loading ──────────────────────────────────────────────────────────────
 	async load() {
-		try {
-			const founder = await me();
-			if (!may(founder, 'media:admin')) return void (this.phase = 'forbidden');
-		} catch {
-			return void (this.phase = 'signed-out');
-		}
+		// no gate of its own: the app's opens the studio to Maia City's admins ($lib/app/places.ts), and everything it
+		// reads and writes is avenDB's, by the person's own shares
 		try {
 			const [media, tls, here, stories] = await Promise.all([allMedia(), listTimelines(), cutsHere().catch(() => false), listStories().catch(() => [])]);
 			this.library = media;
@@ -839,12 +834,12 @@ export class Studio {
 	/**
 	 * The timeline's chapters (Samuel 2026-10-18), in the order they start: each a named part of the film from its
 	 * time `at` to the next one's, as a YouTube film lists them; kept with the cut.
-	 * @returns {import('$lib/auth/client').Chapter[]}
+	 * @returns {import('./types.js').Chapter[]}
 	 */
 	get chapters() {
 		return [...(this.current?.chapters ?? [])].sort((a, b) => a.at - b.at);
 	}
-	/** @param {import('$lib/auth/client').Chapter[]} list */
+	/** @param {import('./types.js').Chapter[]} list */
 	setChapters(list) {
 		this.setMeta({ chapters: [...list].sort((a, b) => a.at - b.at) });
 	}
@@ -856,7 +851,7 @@ export class Studio {
 		this.setChapters([...this.chapters, { id, at: t, name: name || `Chapter ${this.chapters.length + 1}` }]);
 		return id;
 	}
-	/** @param {number} id @param {Partial<import('$lib/auth/client').Chapter>} patch */
+	/** @param {number} id @param {Partial<import('./types.js').Chapter>} patch */
 	editChapter(id, patch) {
 		const at = patch.at === undefined ? {} : { at: Math.max(0, Math.round(patch.at * 30) / 30) };
 		this.setChapters(this.chapters.map((c) => (c.id === id ? { ...c, ...patch, ...at, id } : c)));
@@ -893,7 +888,7 @@ export class Studio {
 	script = $derived(scriptOf(this.clips, this.byHash));
 	/**
 	 * A shot's place in the script: its scene, label, description, notes, size (any tab; the cut stays).
-	 * @param {string} id @param {import('$lib/auth/client').ClipScript} patch
+	 * @param {string} id @param {import('./types.js').ClipScript} patch
 	 */
 	setScript(id, patch) {
 		const c = this.clips.find((k) => k.id === id);
@@ -2119,7 +2114,7 @@ export class Studio {
 
 	/** The newest finished render of this timeline, and what its report says (the worker's, C6). */
 	lastRender = $derived(this.newest.find((r) => r.status === 'done') ?? null);
-	/** @type {import('$lib/auth/client').RenderReport | null} */
+	/** @type {import('./types.js').RenderReport | null} */
 	lastReport = $derived(this.lastRender?.report ?? null);
 
 	/** The files the last render delivered: a cut's deliveries are in its render's report. */

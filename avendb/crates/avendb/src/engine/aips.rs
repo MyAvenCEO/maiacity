@@ -4,7 +4,10 @@
 //! with the text a person reads. Its readers count its writes, its lines' and its reviews' as they count any: nothing
 //! here is a rule of the edits, and nothing is on the wire that wasn't.
 //!
-//! - **Stages.** `aip_open` makes an idea, named by a random key (`aip::key`); `aip_promote` proposes it and gives it
+//! - **Stages.** `aip_open` makes an idea, named by a random key (`aip::key`); `aip_objective` writes what it must
+//!   deliver, metrics in Lean (`crate::objective`), which makes an idea one at the objective stage, derived as archived
+//!   is; `aip_measure` records a reading on it, which the metrics are checked against, so whoever works on it reads its
+//!   progress in every `aip` read; `aip_promote` proposes it, once it holds an objective, and gives it
 //!   the vault's next number, AIP-n, where it has none yet; `aip_withdraw` takes it back; `aip_review`, the vault's
 //!   answer, accepts, declines or sends it back to revise, an idea again that keeps its number. Archived is never
 //!   typed: an AIP is applied once every line's heads are on main, rejected once withdrawn or declined.
@@ -39,6 +42,7 @@ use crate::history::MAIN;
 use crate::id::{EditId, EntryId, SignerId, VaultId};
 use crate::lab::Lab;
 use crate::lens::{self, Lane};
+use crate::objective::{self, Dec};
 use crate::ops::{self, FieldOp, Link, Record, RecordOp};
 use crate::policy::Refusal;
 use crate::world;
@@ -50,10 +54,13 @@ pub const AIP: &str = "aip";
 /// The type of a review entry, and its record's kind.
 const REVIEW: &str = "review";
 
-/// The AIP schema, by its id: every op reads and writes an AIP through it.
+/// The AIP schema, by its id: every op reads and writes an AIP through it, v2, an AIP v1 read through its lens.
 fn schema() -> Named {
-    Named::Id(lens::AIP_V1.id())
+    Named::Id(lens::AIP_V2.id())
 }
+
+/// The most readings one AIP records.
+const MAX_READINGS: usize = 2000;
 
 fn set(field: &str, value: impl Into<Value>) -> RecordOp {
     RecordOp::top(field, FieldOp::Set(value.into()))
@@ -71,7 +78,7 @@ fn lane_of<'l>(lanes: &'l mut HashMap<VaultId, Lane>, lab: &Lab, me: SignerId, v
     lanes.entry(v).or_insert_with(|| lane(lab, me, v))
 }
 
-/// An AIP as device `me` reads it: its entry, its vault, its labels, its record through AIP v1, and its lines, each a
+/// An AIP as device `me` reads it: its entry, its vault, its labels, its record through AIP v2, and its lines, each a
 /// proposal of an entry of its vault (a line that links another vault's is no line of it).
 struct Aip {
     entry: EntryId,
@@ -93,6 +100,41 @@ impl Aip {
     /// The stage its author or its vault typed: an idea, proposed or withdrawn.
     fn typed(&self) -> &str {
         self.text("stage").unwrap_or("idea")
+    }
+
+    /// Its objective's Lean, `""` where it has none.
+    fn lean(&self) -> &str {
+        self.text("objective").unwrap_or("")
+    }
+
+    /// Its readings, each a name and a value in millionths, in the order recorded: a row whose value is no number
+    /// within the bound is none.
+    fn readings(&self) -> Vec<(String, Dec)> {
+        let rows = self.record.get("readings").and_then(ops::rows).unwrap_or_default();
+        let one = |r: &Value| Some((r.get("name")?.as_str()?.to_string(), objective::dec_of(r.get("value")?)?));
+        rows.iter().filter_map(one).collect()
+    }
+
+    /// Whether it holds an objective that reads: at least one metric.
+    fn has_objective(&self) -> bool {
+        !self.lean().trim().is_empty() && objective::parse(self.lean()).is_ok()
+    }
+
+    /// Its objective as people and agents read it: the Lean, and where it reads, each metric checked against the
+    /// readings (`objective::summary_json`), else the error; then every reading. `null` where it has none.
+    fn objective_json(&self) -> Value {
+        let lean = self.lean();
+        if lean.trim().is_empty() {
+            return Value::Null;
+        }
+        let rows = self.record.get("readings").and_then(ops::rows).unwrap_or_default();
+        let mut out = match objective::parse(lean) {
+            Ok(ms) => objective::summary_json(&ms, &self.readings()),
+            Err(e) => json!({ "error": e.to_string(), "metrics": [], "met": 0, "total": 0, "progress": 0 }),
+        };
+        out["lean"] = lean.into();
+        out["readings"] = rows.to_vec().into();
+        out
     }
 }
 
@@ -282,6 +324,7 @@ fn derive(lab: &Lab, me: SignerId, lanes: &mut HashMap<VaultId, Lane>, a: &Aip, 
     let stage = match (outcome, a.typed()) {
         (Some(_), _) => "archived",
         (None, "proposed") => "proposed",
+        _ if a.has_objective() => "objective",
         _ => "idea",
     };
     Derived { lines, outcome, stage }
@@ -415,7 +458,7 @@ impl<'a> Book<'a> {
             "vault": a.vault.to_hex(),
             "key": text("key"),
             "number": a.number(),
-            "label": label.filter(|_| d.stage != "idea"),
+            "label": label.filter(|_| d.stage != "idea" && d.stage != "objective"),
             "title": text("title"),
             "note": a.text("note").unwrap_or_default(),
             "stage": d.stage,
@@ -426,6 +469,7 @@ impl<'a> Book<'a> {
             "author": a.attrs.author.to_hex(),
             "intent": a.record.get("intent").cloned().unwrap_or(Value::Null),
             "links": a.record.get("links").cloned().unwrap_or_else(|| json!([])),
+            "objective": a.objective_json(),
             "lines": lines,
             "reviews": reviews.iter().map(|r| r.to_json(&d.lines)).collect::<Vec<_>>(),
             "signatures": { "have": have, "need": 1, "of": "owners" },
@@ -479,6 +523,7 @@ impl<'a> Book<'a> {
                     "author": by,
                     "intent": null,
                     "links": [],
+                    "objective": null,
                     "lines": [l.to_json()],
                     "reviews": reviews.iter().map(|r| r.to_json(lines)).collect::<Vec<_>>(),
                     "signatures": { "have": have, "need": 1, "of": "owners" },
@@ -492,8 +537,10 @@ impl<'a> Book<'a> {
 
 /// `{"op": "aips", "vault"?}`: every AIP device `me` holds, of vault `vault` alone if it names one, as people read it:
 /// its entry, vault, key, number and label (`AIP-n`, `AIP-n.2` where two of one vault hold one number, `null` for an
-/// idea), title, note, stage (`idea`, `proposed` or `archived`), outcome (`applied`, `rejected` or `null`), why, was,
-/// entry tags, author, intent and links; its lines, each `{entry, line, type, title, name, heads, merged, new, tags,
+/// idea), title, note, stage (`idea`, `objective`, `proposed` or `archived`), outcome (`applied`, `rejected` or `null`), why, was,
+/// entry tags, author, intent and links; its objective, `null` or `{lean, metrics, met, total, progress, readings}`, or
+/// `error` where its Lean doesn't read (each metric `{id, name, note, goal, readings, value, baseline, targets, met,
+/// progress}`, progress from 0 to 1, `objective::summary_json`); its lines, each `{entry, line, type, title, name, heads, merged, new, tags,
 /// public}`, `new` for a new entry, a draft, `tags` its entry's tags and `public` whether a share to everyone picks a
 /// new entry once it lands (advice: only the vault's stewards read every selector); its
 /// reviews, newest first, each `{review, verdict, text, heads, by, authors, at, current}`, `by` who started what it
@@ -532,11 +579,13 @@ pub(super) fn one(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Val
     Ok(book.item(i, labels.get(&entry), true))
 }
 
-/// `{"op": "aip_open", "vault", "title", "note"?, "proposals"?: [{entry, line}], "tags"?, "as"?}`: a new AIP in
+/// `{"op": "aip_open", "vault", "title", "note"?, "proposals"?: [{entry, line}], "tags"?, "objective"?, "as"?}`: a
+/// new AIP in
 /// vault `vault`, an idea, acting for `actor`: its key eight random letters and digits of the device's own randomness,
 /// none another AIP of the vault the device holds has; its title and note; its lines, each a proposal of an entry of
 /// `vault` (`BadOp` for another vault's: one vault per AIP, so one policy decides it; `NoEntry` where the device shows
-/// no such proposal); its entry tags, a game's among them (`game:<id>`). Answers `{entry, key}`.
+/// no such proposal); its entry tags, a game's among them (`game:<id>`); its objective, a file of Lean, as
+/// `aip_objective` writes it. Answers `{entry, key}`.
 pub(super) fn open(
     lab: &mut Lab,
     me: SignerId,
@@ -545,7 +594,11 @@ pub(super) fn open(
     (title, note): (String, String),
     proposals: &[(EntryId, EditId)],
     tags: Vec<String>,
+    lean: Option<String>,
 ) -> Result<Value, Refused> {
+    if let Some(lean) = &lean {
+        read_lean(lean)?;
+    }
     for &(e, line) in proposals {
         let h = lab.history(me, e).ok_or(Refused::NoEntry)?;
         if lab.vault_of_entry(me, e) != Some(vault) {
@@ -570,7 +623,10 @@ pub(super) fn open(
     let rows: Vec<Value> = (proposals.iter().enumerate())
         .map(|(i, (e, line))| json!({ "id": i + 1, "entry": link(e), "line": line.to_hex() }))
         .collect();
-    let value = json!({ "kind": AIP, "key": key, "title": title, "note": note, "proposals": rows, "stage": "idea" });
+    let mut value = json!({ "kind": AIP, "key": key, "title": title, "note": note, "proposals": rows, "stage": "idea" });
+    if let Some(lean) = lean {
+        value["objective"] = lean.into();
+    }
     let create = Step::Create { vault, ty: AIP.into(), tags, schema: schema(), value, draft: false, file: None };
     let made = step(lab, me, actor, create)?;
     Ok(json!({ "entry": made["entry"], "key": key }))
@@ -586,7 +642,8 @@ fn author_or_vault(a: &Aip, actor: VaultId) -> Result<(), Refused> {
 
 /// `{"op": "aip_promote", "entry", "as"?}`: AIP `entry` proposed, acting for `actor`, its author or its vault: its
 /// stage `proposed`, and where it has no number yet, the vault's next, one more than the highest of the vault's AIPs
-/// the device holds; a revised AIP keeps its own. `BadOp` for an AIP with no lines, or one archived. Answers
+/// the device holds; a revised AIP keeps its own. `BadOp` for an AIP with no lines, with no objective that reads (the
+/// objective stage comes first), or one archived. Answers
 /// `{entry, number, edit}`, `edit` `null` where it was proposed already.
 pub(super) fn promote(lab: &mut Lab, me: SignerId, actor: VaultId, entry: EntryId) -> Result<Value, Refused> {
     let (number, typed) = {
@@ -604,6 +661,10 @@ pub(super) fn promote(lab: &mut Lab, me: SignerId, actor: VaultId, entry: EntryI
         let a = &book.aips[i];
         if a.lines.is_empty() {
             return Err(bad("the AIP names no proposal line: it proposes nothing yet"));
+        }
+        if !a.has_objective() {
+            let why = "the AIP has no objective yet: write what it must deliver first (aip_objective), metrics in Lean";
+            return Err(bad(why));
         }
         let highest = book.aips.iter().filter(|b| b.vault == a.vault).filter_map(Aip::number).max();
         (a.number().unwrap_or(highest.unwrap_or(0) + 1), a.typed().to_string())
@@ -760,4 +821,98 @@ fn answer(
         "accepts": accepts.iter().map(EditId::to_hex).collect::<Vec<_>>(),
         "merges": merges.iter().map(EditId::to_hex).collect::<Vec<_>>(),
     }))
+}
+
+/// Lean `lean` as an objective: its metrics, or `BadOp` with where and why it doesn't read.
+fn read_lean(lean: &str) -> Result<Vec<objective::Metric>, Refused> {
+    objective::parse(lean).map_err(|e| bad(format!("the objective doesn't read: {e}")))
+}
+
+/// AIP `entry`, for `actor` to write on before it is proposed or archived: its author or its vault (`NoCap` else),
+/// `BadOp` once archived, or once proposed unless `proposed` lets it.
+fn open_for(lab: &Lab, me: SignerId, actor: VaultId, entry: EntryId, proposed: bool) -> Result<Aip, Refused> {
+    let mut lanes = HashMap::new();
+    let a = aip_of(lab, me, &mut lanes, entry)?;
+    author_or_vault(&a, actor)?;
+    let book = Book::new(lab, me);
+    let d = derive(lab, me, &mut lanes, &a, book.reviews_of(entry, ""));
+    if let Some(outcome) = d.outcome {
+        return Err(bad(format!("the AIP is archived, {outcome}: it changes no more")));
+    }
+    if d.stage == "proposed" && !proposed {
+        return Err(bad("the AIP is proposed: its objective is what its reviewers judge, so it changes only once they ask for a revision"));
+    }
+    Ok(a)
+}
+
+/// `{"op": "aip_objective", "entry", "lean", "as"?}`: AIP `entry`'s objective, what it must deliver, written by
+/// `actor`, its author or its vault: `lean`, a file of Lean against `AvenDB.Objective`, one or more metrics
+/// (`crate::objective`), read first, so a file that doesn't read is refused (`BadOp`, where and why) and none is ever
+/// stored. An idea then stands at the objective stage. `BadOp` once proposed (a revision opens it again) or archived.
+/// Answers `{entry, edit, metrics}`, `metrics` each `{id, name}`.
+pub(super) fn objective(lab: &mut Lab, me: SignerId, actor: VaultId, entry: EntryId, lean: String) -> Result<Value, Refused> {
+    let metrics = read_lean(&lean)?;
+    open_for(lab, me, actor, entry, false)?;
+    let made = edits(lab, me, actor, (entry, MAIN), &schema(), &[set("objective", lean)])?;
+    let names: Vec<Value> = metrics.iter().map(|m| json!({ "id": m.id, "name": m.name })).collect();
+    Ok(json!({ "entry": entry.to_hex(), "edit": made["edit"], "metrics": names }))
+}
+
+/// `{"op": "aip_measure", "entry", "name", "value", "note"?, "as"?}`: a reading recorded on AIP `entry` by `actor`,
+/// its author or its vault, while it is worked on or proposed: `name` (at most 160 characters), the number it read,
+/// `value`, within 10^24, and a note (at most 2,000 characters); `at`, the device's clock. Its metrics read the first
+/// reading of each name as their baseline and the newest as where they stand. `BadOp` once archived, or past
+/// `MAX_READINGS`. Answers `{entry, edit, objective}`, the objective as `aip` reads it now.
+pub(super) fn measure(
+    lab: &mut Lab,
+    me: SignerId,
+    actor: VaultId,
+    entry: EntryId,
+    name: String,
+    value: &Value,
+    note: Option<String>,
+) -> Result<Value, Refused> {
+    let (name, note) = (name.trim().to_string(), note.filter(|n| !n.trim().is_empty()));
+    if name.is_empty() || name.chars().count() > 160 {
+        return Err(bad("a reading's name is 1 to 160 characters"));
+    }
+    if note.as_ref().is_some_and(|n| n.chars().count() > 2000) {
+        return Err(bad("a reading's note is at most 2,000 characters"));
+    }
+    if objective::dec_of(value).is_none() {
+        return Err(bad("a reading's value is a finite number within 10^24"));
+    }
+    let a = open_for(lab, me, actor, entry, true)?;
+    let rows = a.record.get("readings").and_then(ops::rows).unwrap_or_default();
+    if rows.len() >= MAX_READINGS {
+        return Err(bad(format!("an AIP records at most {MAX_READINGS} readings")));
+    }
+    let id = rows.iter().filter_map(|r| r.get("id")?.as_i64()).max().unwrap_or(0) + 1;
+    let mut row = json!({ "id": id, "name": name, "value": value, "at": lab.now() });
+    if let Some(note) = note {
+        row["note"] = note.into();
+    }
+    let row = row.as_object().cloned().expect("a row is an object");
+    let made = edits(lab, me, actor, (entry, MAIN), &schema(), &[RecordOp::top("readings", FieldOp::Insert(row, None))])?;
+    let objective = aip_of(lab, me, &mut HashMap::new(), entry).map(|a| a.objective_json()).unwrap_or(Value::Null);
+    Ok(json!({ "entry": entry.to_hex(), "edit": made["edit"], "objective": objective }))
+}
+
+/// `{"op": "objective_check", "lean", "readings"?}`: Lean `lean` read as an objective, as `aip_objective` would, and
+/// checked against `readings`, each `{name, value}` in the order recorded: `{ok: true, metrics, met, total, progress}`
+/// as `aip` reads an objective, or `{ok: false, error, line, col}`. Reads nothing the device holds: an editor checks a
+/// file as it is typed.
+pub(super) fn objective_check(o: &Map<String, Value>) -> Result<Value, Refused> {
+    let lean = o.get("lean").and_then(Value::as_str).ok_or_else(|| bad("objective_check takes the Lean: lean"))?;
+    let rows = o.get("readings").and_then(Value::as_array).cloned().unwrap_or_default();
+    let one = |r: &Value| Some((r.get("name")?.as_str()?.to_string(), objective::dec_of(r.get("value")?)?));
+    let readings: Vec<(String, Dec)> = rows.iter().filter_map(one).collect();
+    Ok(match objective::parse(lean) {
+        Ok(ms) => {
+            let mut out = objective::summary_json(&ms, &readings);
+            out["ok"] = true.into();
+            out
+        }
+        Err(e) => json!({ "ok": false, "error": e.why, "line": e.line, "col": e.col }),
+    })
 }

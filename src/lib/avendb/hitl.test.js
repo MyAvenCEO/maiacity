@@ -3,7 +3,7 @@
 // wait, the one op that answers, and the card's words.
 // Run: bun test src/lib/avendb/hitl.test.js
 import { expect, test } from 'bun:test';
-import { REVIEW_V1, answering, asksOf, countsOf, detail, lead, newsOf, revisionsOf, signed, top } from './hitl.js';
+import { REVIEW_V1, answering, asksOf, countsOf, detail, lead, newsOf, objectiveLine, revisionsOf, signed, top } from './hitl.js';
 
 const hex = (n) => n.toString(16).padStart(64, '0');
 const ALICE = hex(1);
@@ -110,4 +110,10 @@ test('the review schema keeps the bytes avenDB ships, so its id', () => {
 	expect(schema.title).toBe('Review, v1');
 	expect(schema.required).toEqual(['kind', 'entry', 'line', 'heads', 'verdict']);
 	expect(REVIEW_V1.endsWith('}\n')).toBe(true);
+});
+
+test("an AIP's objective in one line", () => {
+	expect(objectiveLine({ objective: null })).toBe(null);
+	expect(objectiveLine({ objective: { met: 1, total: 2, progress: 0.75, metrics: [], readings: [], lean: '' } })).toBe('Objective: 1 of 2 met · 75 %');
+	expect(objectiveLine({ objective: { error: 'line 1', met: 0, total: 0, progress: 0, metrics: [], readings: [], lean: 'x' } })).toBe('Objective: its Lean does not read');
 });

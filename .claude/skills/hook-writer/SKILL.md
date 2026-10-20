@@ -218,7 +218,9 @@ allow:
   `avendb_run` `{ op: "propose", entry, from: <heads>, name: "Hooks: <angle>" }` answers its `line`; then one
   `{ op: "batch", ops: [...] }` of `{ op: "insert", entry, line, path: ["hooks"], value: <row> }`, all ten at once,
   each with its parts named. Then put the line to the person in an AIP: `{ op: "aip_open", vault, title, note,
-  proposals: [{ entry, line }] }` and `{ op: "aip_promote", entry: <the aip> }` — only a promoted AIP reaches them.
+  proposals: [{ entry, line }], objective }` (its objective, metrics in Lean, e.g. `def hooks : Metric := metric
+  "Hooks" (atLeast (reading "hooks") 10)`), `{ op: "aip_measure", entry: <the aip>, name: "hooks", value: 10 }` and
+  `{ op: "aip_promote", entry: <the aip> }` (refused without an objective) — only a promoted AIP reaches them.
   They read the hooks on the Hook tab, accept the AIP and put one on the card.
 
 ## Copy work

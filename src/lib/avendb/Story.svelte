@@ -9,14 +9,16 @@
 	shape, in layers (StoryThumbnail), the Journey tab where it starts and ends, its question and its beats with their
 	tension (StoryJourney), the Writing tab its full text, the base of every post of it (StoryWriting), the Movie tab its
 	script, its scenes, lines and shot list (StoryMovie), the Derivatives tab its posts, each of a post type (StoryPosts).
-	On the right its lines and its history, as a note's: each proposal, what its title reads there and Merge for
-	whoever may merge it, and every edit of the main line, newest first, who made it and what title it left, to
-	restore. Agents over the Mac app's MCP write on proposals, which the person merges here.
+	On the right its lines and its history, avenDB's one version side (./Lines.svelte), as a note's: each open
+	proposal, what its title reads there and Merge for whoever may merge it, its variants, and every edit of the main
+	line, newest first, who made it and what title it left, to restore. Agents over the Mac app's MCP write on
+	proposals, which the person merges here.
 -->
 <script>
 	import { flowsFor, moving, STORY, stageOf } from './flows.js';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
+	import Lines from './Lines.svelte';
 	import { allowed, may } from './ops.js';
 	import StoryHook from './StoryHook.svelte';
 	import StoryJourney from './StoryJourney.svelte';
@@ -69,11 +71,13 @@
 	const tab = $derived((flow.stages.some((s) => s.key === step) && step) || stage?.key || flow.stages[0].key);
 	let problem = $state('');
 
-	/** @typedef {{ line: string | null, name: string | null, heads: string[], history: string[], title: string | null,
-	 *   record: any }} Line
-	 *  @typedef {{ id: string, actor: string, line: string | null, kind: string, name: string | null,
-	 *   title: string | null, beforeTitle: string | null, counted: boolean }} Edit */
+	/** @typedef {import('svelte').ComponentProps<typeof Lines>} LinesProps a line and an edit, as the `note` op reads them
+	 *  @typedef {NonNullable<LinesProps['note']>['lines'][number] & { title: string | null, record: any }} Line
+	 *  @typedef {NonNullable<LinesProps['note']>['edits'][number] & { title: string | null,
+	 *   beforeTitle: string | null }} Edit */
 	let note = $state(/** @type {{ lines: Line[], edits: Edit[] } | null} */ (null));
+	/** what the right side shows: its history, or its lines */
+	let side = $state('history');
 	$effect(() => {
 		void world;
 		const e = entry;
@@ -86,13 +90,11 @@
 			gone = true;
 		};
 	});
-	const proposals = $derived((note?.lines ?? []).slice(1));
-	/** the main line's edits, newest first, numbered in the order the device took them */
-	const history = $derived.by(() => {
-		const on = new Set(note?.lines[0]?.history ?? []);
-		const counted = (note?.edits ?? []).filter((e) => e.counted !== false).map((e, i) => ({ ...e, n: i + 1 }));
-		return counted.filter((e) => on.has(e.id)).reverse();
-	});
+	const proposals = $derived((note?.lines ?? []).slice(1).filter((l) => !l.variant));
+	/** its edits by id, as the side (./Lines.svelte) hands one back */
+	const byEdit = $derived(new Map((note?.edits ?? []).map((e) => [e.id, e])));
+	/** the main line's one latest edit, which restoring changes nothing */
+	const latest = $derived(note?.lines[0]?.heads.length === 1 ? note.lines[0].heads[0] : '');
 
 	/** what the acting vault's caps let it do, as the device answers a dry run: rename, merge each proposal */
 	let can = $state(/** @type {Record<string, boolean>} */ ({}));
@@ -137,12 +139,18 @@
 	const label = (s) =>
 		stage && flow.stages.indexOf(s) < flow.stages.indexOf(stage) ? `Back to ${s.name}` : `Move to ${s.name}`;
 
-	/** What edit `e` did, in words. @param {Edit} e */
-	function did(e) {
-		if (e.kind === 'propose') return `Proposed “${e.name ?? 'a change'}”`;
-		if (e.kind === 'merge') return 'Merged a proposal';
-		if (e.title !== null && e.beforeTitle !== null && e.title !== e.beforeTitle) return `Titled it “${e.title}”`;
-		return 'Changed it';
+	/** What edit `x` did where a story says it in its own words: titled it. Elsewhere avenDB's (./Lines.svelte).
+	 *  @param {{ id: string }} x */
+	function titled(x) {
+		const e = byEdit.get(x.id);
+		if (e?.kind !== 'edit' || e.title === null || e.beforeTitle === null || e.title === e.beforeTitle) return undefined;
+		return `Titled it “${e.title}”`;
+	}
+
+	/** What its title reads on line `l`, where it isn't what main's reads. @param {{ line: string | null }} l */
+	function titleOn(l) {
+		const title = note?.lines.find((x) => x.line === l.line)?.title ?? null;
+		return title !== null && title !== record.title ? `Title: “${title}”` : undefined;
 	}
 </script>
 
@@ -161,51 +169,46 @@
 	{/each}
 {/snippet}
 
-<!-- on the right: its proposals, then the main line's history -->
+<!-- on the right: its lines and the main line's history, avenDB's one version side -->
 {#snippet about()}
 	{#if item}
-		<div class="side">
-			<h3>Proposals</h3>
-			{#if proposals.length}
-				<ul>
-					{#each proposals as p (p.line)}
-						<li>
-							<span>
-								<b>{p.name ?? 'A proposal'}</b>
-								{#if p.title !== null && p.title !== record.title}<small class="soft">Title: “{p.title}”</small>{/if}
-							</span>
-							{#if writes && p.line}
-								<button
-									class="btn"
-									disabled={busy || can[p.line] === false}
-									title={can[p.line] === false ? 'Its share doesn’t let it merge' : undefined}
-									onclick={() => p.line && merge(p.line)}>Merge</button
-								>
-							{/if}
-						</li>
-					{/each}
-				</ul>
-			{:else}
-				<p class="soft">None. An agent working on it over the Mac app’s MCP proposes its changes here.</p>
-			{/if}
-
-			<h3>History</h3>
-			<ol>
-				{#each history as e, i (e.id)}
-					<li>
-						<span>
-							<b>#{e.n} {did(e)}</b>
-							<small class="soft">{nameOf(byId.get(e.actor))}</small>
-						</span>
-						{#if writes && i > 0 && e.kind !== 'propose'}
-							<button class="btn quiet" disabled={busy} onclick={() => restore(e.id)}>Restore</button>
-						{/if}
-					</li>
-				{/each}
-			</ol>
-			{#if item.proposals}<p class="soft">{count(item.proposals, 'proposal')} in all.</p>{/if}
-		</div>
+		<Lines
+			{world}
+			{note}
+			bind:tab={side}
+			thing="the story"
+			said={titled}
+			about={(l) => (l.variant ? undefined : titleOn(l))}
+			lineEnd={writes ? merging : undefined}
+			below={writes ? restoring : undefined}
+			versions={item.proposals ? inAll : undefined}
+		/>
 	{/if}
+{/snippet}
+
+<!-- beside an open proposal: Merge, for whoever may merge it -->
+{#snippet merging(/** @type {{ line: string | null, variant?: boolean }} */ l)}
+	{#if l.line && !l.variant}
+		{@const p = l.line}
+		<button
+			class="btn"
+			disabled={busy || can[p] === false}
+			title={can[p] === false ? 'Its share doesn’t let it merge' : undefined}
+			onclick={() => merge(p)}>Merge</button
+		>
+	{/if}
+{/snippet}
+
+<!-- under an edit of main: Restore, to put that version back -->
+{#snippet restoring(/** @type {{ id: string, kind: string }} */ e)}
+	{#if e.id !== latest && e.kind !== 'propose' && e.kind !== 'variant' && e.kind !== 'sealed'}
+		<button class="btn quiet restore" disabled={busy} onclick={() => restore(e.id)}>Restore</button>
+	{/if}
+{/snippet}
+
+<!-- under its lines: how many proposals it has had in all -->
+{#snippet inAll()}
+	<p class="soft all">{count(item?.proposals ?? 0, 'proposal')} in all.</p>
 {/snippet}
 
 <Frame
@@ -350,45 +353,15 @@
 		line-height: 1.5;
 	}
 
-	.side h3 {
-		margin: 0 0 0.4rem;
-		font-size: 0.86rem;
+	/* under an edit of its history (./Lines.svelte) */
+	.restore {
+		margin-top: 0.3rem;
+		padding: 0.16rem 0.5rem;
+		font-size: 0.76rem;
 	}
 
-	.side h3 + * {
-		margin-bottom: 1rem;
-	}
-
-	.side ul,
-	.side ol {
-		display: flex;
-		flex-direction: column;
-		gap: 0.35rem;
-		margin: 0 0 1rem;
-		padding: 0;
-		list-style: none;
-	}
-
-	.side li {
-		display: flex;
-		justify-content: space-between;
-		align-items: center;
-		gap: 0.5rem;
-		padding: 0.45rem 0.6rem;
-		border: 1px solid var(--edge);
-		border-radius: 8px;
-		background: #fff;
-		font-size: 0.82rem;
-	}
-
-	.side li span {
-		display: flex;
-		flex-direction: column;
-		gap: 0.15rem;
-		min-width: 0;
-	}
-
-	.side p {
-		font-size: 0.82rem;
+	.all {
+		margin: 0 0.35rem;
+		font-size: 0.76rem;
 	}
 </style>

@@ -9,7 +9,7 @@
 import { LIGHTS } from '../../../game/film/shot.js';
 import { partsOf } from '../../../game/film/worlds.js';
 
-/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
+/** @typedef {import('./types.js').ShotSpec} ShotSpec */
 /** @typedef {number | [number, number][]} Curve */
 /**
  * One lane: `kind` how it is drawn (`camera` keys, `cues`, a `text` line, or a `curve` with keys to drag), `label`

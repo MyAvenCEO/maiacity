@@ -1088,8 +1088,8 @@ or a lens brings none. The record ops `set`, `unset`, `insert`, `remove`, `move`
 to, as}`; `tag {entry, add, remove, as}`; `propose {entry, from, name, as}`; `merge {entry, from, into, take, as}`,
 `take` the conflicts where the target takes the other line's value, each `{at: path, what: value | row | order}`, as
 `note` lists a proposal's `conflicts`; `review {entry, line, verdict, text, as}`, the vault's answer to a proposal
-(below, "Merges by policy"); the AIP ops `aip_open {vault, title, note, proposals, tags, as}`, `aip_promote {entry,
-as}`, `aip_withdraw {entry, why, as}` and `aip_review {entry, verdict, text, heads, as}` (below, "AIPs"); `variant
+(below, "Merges by policy"); the AIP ops `aip_open {vault, title, note, proposals, tags, objective, as}`, `aip_objective
+{entry, lean, as}`, `aip_measure {entry, name, value, note, as}`, `aip_promote {entry, as}`, `aip_withdraw {entry, why, as}` and `aip_review {entry, verdict, text, heads, as}` (below, "AIPs"); `variant
 {entry, from, name, as}`, a living variant (above); `restore {entry, line, at, as}`, `undo {entry, line, edit, as}`,
 `fork {entry, line, into, schema, ops, as}`; and `batch {ops, as}`, whose record ops in a row on one entry's line make
 one write. A schema or a lens is created as an entry of its type (section 9).
@@ -1315,8 +1315,25 @@ of the edits is new, nothing new is on the wire, and every write counts as any w
   eight random letters and digits from the device's own randomness, which names it for good; every line must be a
   proposal of an entry of `vault` (BadOp for another vault's: one vault per AIP, so one policy decides it). Games
   find theirs by entry tags (`game:<id>`). `aip_promote {entry}` makes it **proposed**, and gives it a number where it
-  has none (BadOp for one with no lines, or one archived). `aip_withdraw {entry, why}` takes it back. Both are its
-  author's or its vault's alone (NoCap for anyone else). **Archived** is never typed: it is derived, below.
+  has none (BadOp for one with no lines, with no objective that reads, or one archived). `aip_withdraw {entry, why}`
+  takes it back. Both are its author's or its vault's alone (NoCap for anyone else). **Archived** is never typed: it
+  is derived, below.
+- **The objective stage** (Samuel 2026-10-20; the model `spec/AvenDB/Objective.lean`, the engine `objective.rs`,
+  `spec/vectors/objectives.json` between them). Between the idea and its proposal an AIP states what it must deliver:
+  `aip_objective {entry, lean}` (or `objective` on `aip_open`) writes a file of Lean against `AvenDB.Objective`, one
+  or more metrics, each `def x : Metric := metric "name" (goal)`, goals `atLeast`, `atMost`, `between` and `equals`
+  over expressions of readings (`reading "fps"`), numbers, `+ - * /`, `min` and `max`, a doc comment its note. The
+  engine reads the file first and refuses one that doesn't read, with its line and column; so every objective stored
+  is also a Lean file that type-checks against the model. An idea whose objective reads is at the **objective**
+  stage, derived as archived is, and only then may it be promoted. While it is worked on, its author and its vault
+  record readings (`aip_measure {entry, name, value, note}`, until it is archived): every `aip` read checks each metric
+  against them, the newest reading of each name where it stands and the first its baseline, and answers `objective`:
+  each metric met or not and its progress, the distance now against the distance at the baseline, from 0 to 1, so an
+  agent reads its own progress in its loop. Numbers are exact decimals, millionths, the same on every device; the
+  evaluator is total and bounded (no loops, no IO, at most 32 metrics of 4,096 parts), so an objective, data, never
+  reaches the device that reads it. The objective is fixed once proposed (a revision opens it again); the readings go
+  on. `objective_check {lean, readings}` reads a file unsaved. AIP, v2 (shipped, lens from v1) holds `objective` and
+  `readings`; v1 records read on unchanged.
 - **Numbers count per vault.** Promote gives one more than the highest number of the vault's AIPs the device holds,
   and a revised AIP keeps its own. Two devices that promote while apart may give one number twice; once they sync,
   every reader labels them alike, by where the write that set each number stands in the one order every device

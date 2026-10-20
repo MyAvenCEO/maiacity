@@ -16,7 +16,7 @@
 		const map = new Map();
 		for (const d of s.deliveries) map.set(d.aspect ?? '?', [...(map.get(d.aspect ?? '?') ?? []), d]);
 		/** @param {string} a */
-		const at = (a) => (SHAPES.indexOf(/** @type {import('$lib/auth/client').Shape} */ (a)) + 99) % 99;
+		const at = (a) => (SHAPES.indexOf(/** @type {import('./types.js').Shape} */ (a)) + 99) % 99;
 		return [...map.entries()].sort(([a], [b]) => at(a) - at(b));
 	});
 	/** @param {unknown} b */

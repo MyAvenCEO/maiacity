@@ -16,7 +16,7 @@ import { SHOT, SHOT_V1, shotFrom } from './avenshots.js';
 import { isVideo, proxyFor } from './color.js';
 import { CUT, createCut, device, homeOf, schemaIn, shootable, timelineOf, worldOf } from './cuts.js';
 
-/** @typedef {import('$lib/auth/client').Timeline} Timeline */
+/** @typedef {import('./types.js').Timeline} Timeline */
 
 const HASH = /^[0-9a-f]{64}$/;
 
@@ -175,7 +175,7 @@ export async function bringFootageProxies(vault, as, frozen, hashes = frozen.fla
 	);
 	const lacking = wanted.filter((h) => !known.has(h));
 	if (lacking.length) {
-		const files = /** @type {import('$lib/auth/client').MediaItem[]} */ (await command('vault_list').catch(() => []));
+		const files = /** @type {import('./types.js').MediaItem[]} */ (await command('vault_list').catch(() => []));
 		const byHash = new Map(files.map((m) => [m.hash, m]));
 		for (const h of lacking) {
 			const m = byHash.get(h);

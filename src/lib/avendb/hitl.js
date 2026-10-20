@@ -48,22 +48,46 @@ export const REVIEW_V1 = `{
 
 /**
  * An AIP as the `aips` read lists it (avendb's `engine::aips`): its entry (`null` for a bare proposal), its vault,
- * key, number and label (`AIP-n`, `null` for an idea), title and note, stage (`idea`, `proposed` or `archived`) and
- * outcome (`applied`, `rejected` or `null`), its tags and author, its lines, its reviews newest first (`current` where
+ * key, number and label (`AIP-n`, `null` for an idea), title and note, stage (`idea`, `objective`, `proposed` or
+ * `archived`) and outcome (`applied`, `rejected` or `null`), its tags and author, its objective (`Objective`, `null`
+ * where it has none), its lines, its reviews newest first (`current` where
  * one answers every line as it stands), the signatures so far, and a summary line per part. A line that is `new` is a
  * draft, a new entry proposed inside the AIP: its main line holds nothing until the vault accepts it, which lands it;
  * `public` where a share to everyone picks it once it lands, by its type or its `tags`.
  * @typedef {{ bare: boolean, entry: string | null, vault: string, key: string | null, number: number | null,
- *   label: string | null, title: string, note: string, stage: 'idea' | 'proposed' | 'archived',
+ *   label: string | null, title: string, note: string, stage: 'idea' | 'objective' | 'proposed' | 'archived',
  *   outcome: 'applied' | 'rejected' | null, why: string | null, was: string | null, tags: string[],
  *   author: string | null, intent: { vault: string, entry: string } | null,
- *   links: { id: number, name: string, url: string }[],
+ *   links: { id: number, name: string, url: string }[], objective?: Objective | null,
  *   lines: { entry: string, line: string, type: string | null, title: string | null, name: string | null,
  *     heads: string[], merged: boolean, new: boolean, tags: string[], public: boolean }[],
  *   reviews: { review: string, verdict: Verdict, text: string, heads: string[], by: string | null, at: number,
  *     current: boolean }[],
  *   signatures: { have: number, need: number, of: string }, summary: string[] }} Aip
  */
+
+/**
+ * An AIP's objective as the `aips` read gives it (avendb's `objective::summary_json`, the model
+ * avendb/spec/AvenDB/Objective.lean): its Lean, each metric checked against the readings recorded on the AIP (its
+ * value now and at its first reading, its targets, met, progress from 0 to 1), how many are met, the mean progress,
+ * and every reading; `error` where the Lean doesn't read.
+ * @typedef {{ lean: string, error?: string, met: number, total: number, progress: number,
+ *   metrics: { id: string, name: string, note: string | null, goal: 'atLeast' | 'atMost' | 'between' | 'equals',
+ *     readings: string[], value: number | null, baseline: number | null, targets: (number | null)[], met: boolean,
+ *     progress: number }[],
+ *   readings: { id: number, name: string, value: number, at?: number, note?: string }[] }} Objective
+ */
+
+/**
+ * One line on what an AIP's objective says now: "Objective: 1 of 2 met · 75 %", or null where it has none.
+ * @param {{ objective?: Objective | null }} aip @returns {string | null}
+ */
+export function objectiveLine(aip) {
+	const o = aip.objective;
+	if (!o) return null;
+	if (o.error) return 'Objective: its Lean does not read';
+	return `Objective: ${o.met} of ${o.total} met · ${Math.round(o.progress * 100)} %`;
+}
 
 /** Whether two lists of heads name the same version. @param {string[]} a @param {string[]} b */
 export const same = (a, b) => a.length === b.length && [...a].sort().join() === [...b].sort().join();

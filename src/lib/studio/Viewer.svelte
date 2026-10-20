@@ -19,7 +19,7 @@
 	 *   stacks?: any[],
 	 *   luts: Record<string, import('./luts.js').Lut | null>,
 	 *   aspect: number,
-	 *   frame?: import('$lib/auth/client').ClipFrame,
+	 *   frame?: import('./types.js').ClipFrame,
 	 *   falseColor?: boolean,
 	 *   canvas?: HTMLCanvasElement | null,
 	 *   plan?: import('./view.js').ViewPlan | null,

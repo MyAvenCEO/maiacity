@@ -19,7 +19,7 @@
 	/** @param {string} iso */
 	const when = (iso) => new Date(iso).toLocaleString([], { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
 	/** What the worker is doing, in plain words. */
-	/** @param {import('$lib/auth/client').RenderJob} r */
+	/** @param {import('./types.js').RenderJob} r */
 	function stage(r) {
 		if (r.status === 'queued') return 'Waiting for the Mac';
 		if (r.status === 'done') return 'Rendered';

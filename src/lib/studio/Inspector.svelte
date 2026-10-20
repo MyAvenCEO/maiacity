@@ -14,13 +14,13 @@
 	import ColorBadge from './ColorBadge.svelte';
 	import Eq from './Eq.svelte';
 	import { toKeys } from './shots.js';
-	import { SHOT_LIGHTS } from '$lib/auth/client';
+	import { SHOT_LIGHTS } from './types.js';
 	import { WORLDS } from '../../../game/film/worlds.js';
 	import { isWorld, itemName, onSoundTrack } from './studio.svelte.js';
 	import { hasSound, wordsOf } from './transcript.js';
 	import Transcript from './Transcript.svelte';
 
-	/** @typedef {import('$lib/auth/client').ShotSpec} ShotSpec */
+	/** @typedef {import('./types.js').ShotSpec} ShotSpec */
 	/** @type {{ s: import('./studio.svelte.js').Studio }} */
 	let { s } = $props();
 
@@ -53,7 +53,7 @@
 	/**
 	 * A change to the world clip's shot (a new version, saved a moment after the last change). The camera's keys,
 	 * lights and cues it changes exist: the fields that show them are only there when they do.
-	 * @param {(sp: ShotSpec & { camera: { keys: import('$lib/auth/client').CameraKey[] } }) => unknown} change
+	 * @param {(sp: ShotSpec & { camera: { keys: import('./types.js').CameraKey[] } }) => unknown} change
 	 */
 	const edit = (change) => sel && s.editSpec(sel, (sp) => void change(/** @type {any} */ (sp)));
 	/** @param {string} v */

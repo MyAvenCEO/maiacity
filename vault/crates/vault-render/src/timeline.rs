@@ -1,4 +1,4 @@
-//! The timeline as the API and the studio write it (contract C1, `Timeline` / `TimelineClip` in src/lib/auth/client.ts),
+//! The timeline as the API and the studio write it (contract C1, `Timeline` / `TimelineClip` in src/lib/studio/types.js),
 //! and what the render worker (scripts/film/worker.ts) reads out of it: which clips take part, the film's length, the
 //! delivery shapes, the picture track cut into pieces on the film's clock, the captions' phrases, the files' names.
 
