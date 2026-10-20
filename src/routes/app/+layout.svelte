@@ -53,8 +53,17 @@
 	/** the key move (K3b) under way, and why it didn't go through, if it didn't */
 	let moveBusy = $state(false);
 	let moveError = $state('');
-	/** the key move went through: said once, as the banner goes (Samuel 2026-10-20: after his touch "nothing happened") */
-	let moved = $state(false);
+	/** the key move went through: said once, as the banner goes (Samuel 2026-10-20: after his touch "nothing happened"),
+	 *  'avens' where only the server and the agents of their coop's aven moved (K3c) */
+	let moved = $state<boolean | 'avens'>(false);
+	/** what moves: their keys, the server and the agents of their coop's aven (K3c), or both */
+	const moveWhat = $derived(
+		!session.moving?.avens
+			? 'Your keys move'
+			: session.moving.device
+				? 'Your keys, and your coop’s server and agents, move'
+				: 'Your coop’s server and agents move'
+	);
 	/** who asks once more for the key move: the passkey's prompt, Touch ID, or both */
 	const moveAsks = $derived(
 		[session.moving?.passkey ? `${asks} once more` : '', session.moving?.touch ? 'Touch ID asks for a touch' : '']
@@ -65,7 +74,8 @@
 	/** Moves the person's keys to ML-DSA-65 now (session.moveKeys), showing why not if it didn't go through. */
 	async function moveNow() {
 		[moveBusy, moveError] = [true, ''];
-		if (await session.moveKeys()) moved = true;
+		const avens = !!session.moving?.avens && !session.moving.device;
+		if (await session.moveKeys()) moved = avens ? 'avens' : true;
 		else moveError = session.error;
 		moveBusy = false;
 	}
@@ -474,12 +484,13 @@
 	{:else}
 		{#if invited}<p class="invite-note" role="status">{invited} <button class="quiet later" onclick={() => (invited = '')}>OK</button></p>
 		{:else if session.moving && moveAsks}<p class="invite-note move-note" role="status">
-				Your keys move to ML-DSA-65, smaller and faster post-quantum signatures: {moveAsks}.
-				<button class="quiet later" disabled={moveBusy} onclick={moveNow}>{moveBusy ? 'Moving…' : 'Move my keys'}</button>
+				{moveWhat} to ML-DSA-65, smaller and faster post-quantum signatures: {moveAsks}.
+				<button class="quiet later" disabled={moveBusy} onclick={moveNow}>{moveBusy ? 'Moving…' : session.moving.device || !session.moving.avens ? 'Move my keys' : 'Move them'}</button>
 				{#if moveError}<span class="bad">{moveError}</span>{/if}
 			</p>
 		{:else if moved}<p class="invite-note move-note" role="status">
-				Your keys moved to ML-DSA-65. Your other devices learn it as they sync with this one.
+				{#if moved === 'avens'}Your coop’s server and agents moved to ML-DSA-65. Each signs with its new key from its next start.
+				{:else}Your keys moved to ML-DSA-65. Your other devices learn it as they sync with this one.{/if}
 				<button class="quiet later" onclick={() => (moved = false)}>OK</button>
 			</p>{/if}
 		<div class="app" class:immersive>

@@ -1053,15 +1053,72 @@ impl Node {
         Ok(out)
     }
 
-    /// The connection to the device `offer` names, once its hello proved it the device offered.
+    /// The connection to the device `offer` names, once its hello proved it the device offered, or that device's next
+    /// key once its key moved (the key move, K3c), as the server's offer the app and the agents carry names the key it
+    /// started with: a device beside it in the vault it belongs to, by the logs its card brings, at the same endpoint,
+    /// so from the same secret. Its person's devices signed it in, and it signed its joining itself.
     async fn offered(&self, offer: &Offer) -> Result<Peer> {
         self.know(offer.addr.clone());
         let endpoint = offer.addr.id;
         let peer = self.shared.connection(endpoint).await?;
-        if peer.device != offer.device {
+        if peer.device != offer.device && !self.moved_from(offer.device, &peer).await {
             bail!("the device at {endpoint} isn't the one offered");
         }
         Ok(peer)
+    }
+
+    /// Whether `peer`'s device is the next key of device `earlier` (`offered`): a device beside it in a vault, by the
+    /// logs `peer`'s card brings, as their endpoint is the same.
+    async fn moved_from(&self, earlier: SignerId, peer: &Peer) -> bool {
+        if self.shared.contact(peer.endpoint).await.is_err() {
+            return false;
+        }
+        let next = peer.device;
+        let beside = move |lab: &mut Lab, me| {
+            let st = lab.state(me);
+            st.vaults().iter().any(|v| v.devices.contains(&earlier) && v.devices.contains(&next))
+        };
+        self.shared.lab(beside).await
+    }
+
+    /// The next key of device `device` at `endpoint`, a server or an agent of an aven its person governs
+    /// (`Lab::aven_devices`), as it hands it while its key hasn't moved yet (the key move, K3c, `Lab::move_key`), once
+    /// its hello proved it that device. Fails if it isn't reached, or has no key to move.
+    pub async fn next_key_of(&self, endpoint: EndpointId, device: SignerId) -> Result<SignerId> {
+        let peer = self.shared.connection(endpoint).await?;
+        if peer.device != device {
+            bail!("the device at {endpoint} isn't the one asked");
+        }
+        let next = session::exchange(&peer.conn, session::NEXT_KEY, &[], 64).await;
+        let next = next.context("it hands no next key: its key moved, or it runs a build from before the move")?;
+        Ok(SignerId(<[u8; 32]>::try_from(&next[..]).context("a key's id")?))
+    }
+
+    /// Sends the device at `endpoint` the claim of its next key (`Lab::claim`, the key move, K3c), and keeps the join
+    /// it answers with, which makes that key a device of its vault beside it, as the device signed it too
+    /// (`Lab::accept_claim`). Then they sync.
+    pub async fn send_move(&self, endpoint: EndpointId, claim: Claim) -> Result<()> {
+        let peer = self.shared.connection(endpoint).await?;
+        let id = claim.add.id();
+        let Action::Share(Sharing::Device { vault, device: next, .. }) = claim.add.action else {
+            bail!("a claim that adds no device")
+        };
+        let join = session::exchange(&peer.conn, session::CLAIM, &claim.to_wire(), session::REPLY_LIMIT).await;
+        let Join { edit, blobs } = Join::from_wire(&join.context("the device refuses its key move")?)?;
+        if edit.edit.id() != id {
+            bail!("the device answered its key move with another edit");
+        }
+        let blobs = blobs.into_iter().map(Arc::from).collect();
+        let kept = self.shared.lab(move |lab, me| {
+            lab.receive(me, vec![edit], blobs);
+            lab.state(me).is_device(next, vault)
+        });
+        if !kept.await {
+            bail!("the device's join doesn't make its next key a device of its vault");
+        }
+        self.shared.changed.notify_one();
+        self.shared.ask(peer.endpoint).await?;
+        Ok(())
     }
 
     /// The avenMAIA the server `offer` names is a device of, by its card (`contact`): none while nobody has
@@ -1932,7 +1989,7 @@ impl Shared {
         let told = self.told.lock().expect("told").clone();
         for (device, reach) in news.reach.iter() {
             let want = own.only(&reach.logs, &reach.files);
-            let live = self.live(reach.endpoint).filter(|p| p.device == *device).map(|p| p.conn.stable_id());
+            let live = self.live(reach.endpoint).map(|p| p.conn.stable_id());
             let due = told.get(device).is_none_or(|(on, was)| *was != want || live.is_some_and(|id| id != *on));
             if !due || !self.unreached.lock().expect("unreached").due(device) {
                 continue;
@@ -1952,12 +2009,11 @@ impl Shared {
     }
 
     /// Tells `device`, at `endpoint`, that it holds `want`: all of it on a connection it told nothing yet, else what
-    /// changed since it last told it, if anything did.
+    /// changed since it last told it, if anything did. Whichever key the device at `endpoint` goes by, as its hello
+    /// proves it: one secret makes one endpoint, so it is `device`, or across a key move its earlier or next key
+    /// (`Lab::peers`), as a server whose key moved goes by its earlier key until it starts again (K3c).
     async fn tell(self: &Arc<Self>, device: SignerId, endpoint: EndpointId, want: Holdings) -> Result<()> {
         let peer = self.connection(endpoint).await?;
-        if peer.device != device {
-            bail!("the hello at {endpoint} proved another device");
-        }
         let on = peer.conn.stable_id();
         let told = self.told.lock().expect("told").get(&device).filter(|(at, _)| *at == on).map(|(_, h)| h.clone());
         if let Some(announce) = want.since(told.as_ref()) {

@@ -32,8 +32,10 @@ pub(crate) const JOIN: u8 = 4;
 /// A request for the key to seal to of a device of no vault that answers claims, the server or an agent's (P8f,
 /// `Options::card`), answered while it belongs to no vault (`Lab::claim_key`).
 pub(crate) const CLAIM_KEY: u8 = 5;
-/// A claim of such a device (P8f, `Node::add_device_vault_with`), answered by its join once it takes it
-/// (`Lab::accept_claim`): the edit that adds it to its device vault, signed by it too, and its McEliece key.
+/// A claim of such a device (P8f, `Node::add_device_vault_with`), or of the next key of a device of a vault that
+/// answers claims (the key move, K3c, `Node::send_move`), answered by its join once it takes it
+/// (`Lab::accept_claim`): the edit that adds it, or its next key, to its device vault, signed by it too, and its
+/// McEliece key.
 pub(crate) const CLAIM: u8 = 6;
 /// A request for the logs it names alone (v8 phase H, `only`), answered by a reply as a request is, of those logs
 /// alone: what a node asks a peer whose holdings hold what it lacks there.
@@ -52,6 +54,10 @@ pub(crate) const SIGN_UP: u8 = 10;
 /// those vaults' entries and of every log that is no entry's, the vaults', shares' and audiences' (`vaulted`): what a
 /// node that asks only when told (`Options::lazy`), a cloud session's agent, asks for the vaults a call touches.
 pub(crate) const ASK_VAULTS: u8 = 11;
+
+/// A request for the next key of a device of a vault that answers claims, the server or an agent's (the key move, K3c),
+/// answered by its id while it isn't a device of that vault yet (`Lab::move_key`).
+pub(crate) const NEXT_KEY: u8 = 12;
 
 /// The most vaults an `ASK_VAULTS` names.
 const VAULTS_LIMIT: usize = 4096;
@@ -299,14 +305,37 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
             let key = shared.lab(|lab, me| lab.claim_key(me)).await;
             Ok(key.map_err(|why| anyhow!("no claim: {why:?}"))?.to_wire())
         }
+        NEXT_KEY if shared.opts.card => {
+            let next = shared.lab(|lab, me| lab.move_key(me)).await;
+            Ok(next.map_err(|why| anyhow!("no key move: {why:?}"))?.0.to_vec())
+        }
         CLAIM if shared.opts.card => {
             let claim = Claim::from_wire(body)?;
             let accept = move |lab: &mut avendb::lab::Lab, me| -> Result<_, avendb::policy::Refusal> {
                 let join = lab.accept_claim(me, claim)?;
-                Ok((join, lab.vault_of(me)))
+                // a key move: its next key takes what it kept, and it opens as that key from its next start
+                let next = match &join.edit.edit.action {
+                    Action::Share(avendb::policy::Sharing::Device { device: next, .. }) if *next != me => Some(*next),
+                    _ => None,
+                };
+                // the edit is kept: keeps not carried now are carried as it opens as its next key (`server::open_as`)
+                let carried = next.map(|next| lab.finish_move(me, &[(me, next)]));
+                Ok((join, lab.vault_of(me), next, carried))
             };
-            let (join, vault) = shared.lab(accept).await.map_err(|why| anyhow!("the claim is refused: {why:?}"))?;
-            tracing::info!("avendb: claimed by {device:?}, a device of its owner's; its device vault is {vault:?}");
+            let (join, vault, next, carried) =
+                shared.lab(accept).await.map_err(|why| anyhow!("the claim is refused: {why:?}"))?;
+            if let Some(Err(why)) = carried {
+                tracing::warn!("avendb: its keeps aren't carried to its next key yet: {why:?}");
+            }
+            match next {
+                Some(next) => {
+                    tracing::info!("avendb: its key moved to {next:?} by {device:?}, a device of its owner's");
+                    n0_future::task::spawn(crate::server::name_next(shared.clone(), next));
+                }
+                None => {
+                    tracing::info!("avendb: claimed by {device:?}, a device of its owner's; its device vault is {vault:?}")
+                }
+            }
             shared.changed.notify_one();
             Ok(join.to_wire())
         }
