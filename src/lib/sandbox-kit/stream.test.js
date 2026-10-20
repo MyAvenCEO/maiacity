@@ -121,6 +121,19 @@ describe('the stream', () => {
 		expect(s.states().filter((e) => e.state === 'built').length).toBe(6);
 	});
 
+	test('builds nothing ahead while shots are pinned: what a film needs is all it builds', async () => {
+		const { s, finish } = row(6, { ahead: true, budget: 6, far: 100 });
+		s.pin([[{ x: 30, y: 0, z: 0, frustum: { intersectsSphere: (/** @type {any} */ c) => c.center.x > 25 } }]]);
+		s.look([{ x: 0, y: 0, z: 0, frustum: { intersectsSphere: () => false } }]);
+		s.tick();
+		for (let k = 0; k < 8; k++) {
+			for (const [i, f] of finish) if (s.building(i)) f();
+			await flush();
+		}
+		// the one pinned shot sees the last thing of the row, and only it is built
+		expect(s.states().filter((e) => e.state === 'built').map((e) => e.id)).toEqual([5]);
+	});
+
 	test('a failed build holds nothing back', async () => {
 		const s = createStream();
 		s.add({ id: 'a', x: 0, z: 0, r: 1, build: () => Promise.reject(new Error('no')) });

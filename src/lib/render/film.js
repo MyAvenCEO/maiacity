@@ -12,9 +12,15 @@
 /** the darkroom, loaded only by film mode (a world never pays for it) */
 export const darkroom = () => import('$lib/film/pipeline.js');
 
-const win = () => /** @type {{ __filmDraw?: boolean, __worldTime?: number, __film?: { virtual?: boolean }, __world?: unknown }} */ (/** @type {unknown} */ (window));
+const win = () => /** @type {{ __filmDraw?: boolean, __filmPlays?: boolean, __worldTime?: number, __film?: { virtual?: boolean }, __world?: unknown }} */ (/** @type {unknown} */ (window));
 /** True while the film draws the canvas itself: the world must not spend a frame drawing for nobody. */
 export const filmDraws = () => !!win().__filmDraw;
+/**
+ * True while a timeline plays through the film (the studio asks for a frame every animation frame): the world keeps
+ * each piece of its own work short and never hurries a build, so no frame waits for it (a dome built in 70 ms slices
+ * after a cut stuttered every frame until it stood).
+ */
+export const filmPlays = () => !!win().__filmPlays;
 /** The world's clock in seconds while a film sets it (the shot's clock), else undefined: run animations on the world's own. */
 export const worldTime = () => win().__worldTime;
 /** True while a film holds the page's clock or draws: keep the resolution it asked for. */

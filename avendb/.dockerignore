@@ -4,3 +4,5 @@ target
 spec
 docs
 scripts
+# each crate's tests, which a release build never compiles: a change to one leaves the image as it was
+crates/*/tests

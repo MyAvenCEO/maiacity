@@ -29,7 +29,7 @@ import { createWorldRenderer } from '$lib/render/world.js'
 import { createSky } from '$lib/sandbox-kit/sky.js'
 import { createWalker } from '$lib/sandbox-kit/walker.js'
 import { createObstacles } from '$lib/sandbox-kit/obstacles.js'
-import { connectFilm, filmDraws, filmHoldsSize, worldTime } from '$lib/sandbox-kit/film.js'
+import { connectFilm, filmDraws, filmHoldsSize, filmPlays, worldTime } from '$lib/sandbox-kit/film.js'
 import { createStream, type View } from '$lib/sandbox-kit/stream.js'
 import { ambience, levelsAt } from './ambience'
 import { createForest, INSIDE, type Forest } from './flora.js'
@@ -1248,7 +1248,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 					const mine = { i, cancelled: false }
 					building = mine
 					// on film nothing is drawn while the world is readied (__filmDraw): every dome builds in long stretches
-					mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => rush.has(i) || (!filmDraws() && gapTo(i) < 12), background: () => !rush.has(i) && (filmDraws() || gapTo(i) > 45), library, flora: flora ? { garden: flora.inside, seed: flora.seed, flora: plantsIn!, drawn: library } : undefined })
+					mountInterior(container, d.kind, () => {}, { host: { scene, camera, renderer, x: d.x, z: d.z }, cancelled: () => job.cancelled, hurry: () => !filmPlays() && (rush.has(i) || (!filmDraws() && gapTo(i) < 12)), background: () => filmPlays() || (!rush.has(i) && (filmDraws() || gapTo(i) > 45)), library, flora: flora ? { garden: flora.inside, seed: flora.seed, flora: plantsIn!, drawn: library } : undefined })
 						.then((h) => {
 							if (building === mine) building = null
 							if (job.cancelled || !h.embedded) {
@@ -1482,20 +1482,13 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 			const t3 = performance.now()
 			if (t3 - t0 > 300) console.warn(`film: ${(w as { name?: string }).name ?? 'a shot'} staged: animals ${Math.round(t1 - t0)} ms, plants ${Math.round(t2 - t1)} ms, library ${Math.round(t3 - t2)} ms`)
 		},
-		// still staged for a shot while every dome its camera sees is shown in full (another shot from the same stand that
-		// sees others is staged again)
-		// (another shot from the same stand that sees other domes: when they are built it is held at once, the domes it
-		// sees shown in full and the rest their simple selves — no staging; when not, it is staged)
+		// whether everything a shot's camera sees is built (every dome it sees, its animals): asked of the shot drawn now
+		// and, four times a second while the timeline plays, of the shots ahead, so it only answers and changes nothing (it
+		// once showed the domes the shot it was asked about sees, and the shot on screen had its domes taken away and put
+		// back four times a second, the shadows drawn again each time). What a shot shows is `move`'s, as it is drawn
 		holds: (w) => {
 			const views = shotViews(w)
-			const need = domeStream.wanted(views) as number[]
-			if ((w.dome !== undefined && !built.has(w.dome)) || !need.every((i) => built.has(i)) || !actorsReady(views)) return false
-			if (!filmed || filmed.size !== need.length || need.some((i) => !filmed!.has(i))) {
-				filmed = new Set(need)
-				domeStream.look(views)
-				settle()
-			}
-			return true
+			return (w.dome === undefined || built.has(w.dome)) && (domeStream.wanted(views) as number[]).every((i) => built.has(i)) && actorsReady(views)
 		},
 		// keep built what the shots ahead see (the stream lets go of nothing pinned, and never goes over KEEP)
 		keep: (ws) => {
@@ -1507,11 +1500,14 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 		},
 		// what it holds it holds wherever the shot stands: a cut to a held shot is only a move
 		streams: true,
+		// stand where the shot stands and show what its camera sees: the domes it sees in full, the rest their simple selves
 		move: (w) => {
 			walker.place(w.stand[0], w.stand[1], 0, 0, 0)
 			const views = shotViews(w)
-			filmed = new Set(domeStream.wanted(views) as number[])
+			const need = domeStream.wanted(views) as number[]
 			domeStream.look(views)
+			if (filmed && filmed.size === need.length && need.every((i) => filmed!.has(i))) return
+			filmed = new Set(need)
 			settle()
 		},
 		// the library: the film's sets put their assets in it (src/lib/film/sets.js, the tired land's trucks)
