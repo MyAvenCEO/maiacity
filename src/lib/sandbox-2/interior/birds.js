@@ -137,7 +137,8 @@ export function songbirds(trees, count, seed, open, eye) {
 		for (const b of birds) {
 			const s = state(b, t);
 			const d2 = at ? (s.x - at.x) ** 2 + (s.z - at.z) ** 2 : Infinity;
-			flock.put(b.coat, s.x, s.y, s.z, s.yaw, d2, () => clips[b.coat]?.[s.clip]?.(s.at, s.motion) ?? {});
+			// (its pose made only for one near enough to be rigged)
+			flock.put(b.coat, s.x, s.y, s.z, s.yaw, d2, d2 < 28 * 28 ? () => clips[b.coat]?.[s.clip]?.(s.at, s.motion) ?? {} : undefined);
 		}
 		flock.end();
 	};

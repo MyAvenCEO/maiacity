@@ -168,6 +168,7 @@ export function herd(kind: Kind, patches: Patch[], seed: number, eye?: Eye): { o
 			an.dist += an.v * dt
 		}
 	}
+	const near2 = spec.near * spec.near
 	const pose = (t: number) => {
 		const at = eye?.()
 		flock.begin()
@@ -178,21 +179,23 @@ export function herd(kind: Kind, patches: Patch[], seed: number, eye?: Eye): { o
 			const k = Math.min(1, an.v / own)
 			const going = k * k * (3 - 2 * k)
 			const still = spec.still[Math.floor(an.phase * 3) % spec.still.length]!
-			const motion: Motion = { dist: an.dist, speed: an.v, turn: an.turn }
-			const posed = (): Pose => {
+			// its bones posed only near the eye, where it can be rigged (a pose for each of hundreds every frame was only
+			// garbage to collect)
+			const posed = d2 < near2 ? (): Pose => {
 				const clips = actors.clips[an.coat]
 				if (!clips) return {}
 				const tt = t + an.phase
+				const motion: Motion = { dist: an.dist, speed: an.v, turn: an.turn }
 				if (going > 0.999) return clips[spec.moving]!(tt, motion)
 				const rest = (clips[still] ?? clips.idle)!(tt)
 				return going < 0.001 ? rest : blend(rest, clips[spec.moving]!(tt, motion), going)
-			}
+			} : undefined
 			// from afar, a hen pecks and a goat grazes as a whole when it stops; walking, each bobs or waddles
 			const pause = !an.walking
 			const pitch = pause ? (kind === 'hen' ? Math.max(0, Math.sin(t * 5 + an.phase)) * 0.55 : kind === 'goat' || kind === 'sheep' ? 0.25 : 0) : 0
 			const roll = an.walking && kind === 'goose' ? Math.sin(t * 7 + an.phase) * 0.08 : 0
 			const bob = !an.walking ? 0 : kind === 'frog' || kind === 'rabbit' ? Math.abs(Math.sin(t * 9 + an.phase)) * (kind === 'frog' ? 0.14 : 0.05) : Math.abs(Math.sin(t * (kind === 'hen' ? 12 : 6) + an.phase)) * (kind === 'goat' || kind === 'sheep' ? 0.03 : 0.02)
-			flock.put(an.coat, an.x, d2 < spec.near * spec.near ? 0 : bob, an.z, an.yaw, d2, posed, pitch, roll, an.size)
+			flock.put(an.coat, an.x, d2 < near2 ? 0 : bob, an.z, an.yaw, d2, posed, pitch, roll, an.size)
 		}
 		flock.end()
 	}
@@ -254,7 +257,7 @@ export function apiary(spots: { x: number; z: number; rot: number }[], seed: num
 			// facing the way it flies round
 			const sg = Math.sign(b.speed), yaw = Math.atan2(Math.cos(a) * sg, -Math.sin(a) * sg)
 			const d2 = at ? (x - at.x) ** 2 + (z - at.z) ** 2 : Infinity
-			swarm.put(0, x, b.h + Math.sin(t * 3 + b.wob) * 0.15, z, yaw, d2, () => bees.clips[0]?.fly?.(t + b.phase) ?? {})
+			swarm.put(0, x, b.h + Math.sin(t * 3 + b.wob) * 0.15, z, yaw, d2, d2 < 4 * 4 ? () => bees.clips[0]?.fly?.(t + b.phase) ?? {} : undefined)
 		}
 		swarm.end()
 	}
@@ -290,7 +293,7 @@ export function fishes(pools: { x: number; z: number; r: number; y: number; n: n
 		const at = eye?.()
 		school.begin()
 		for (const f of fish) {
-			let x = 0, z = 0, y = 0, yaw = 0, motion: Motion = { dist: 0, speed: 0 }
+			let x = 0, z = 0, y = 0, yaw = 0, dist = 0, speed = 0, turn: number | undefined
 			if (f.pool) {
 				// round the pool, wandering in and out
 				const a = t * f.speed + f.phase
@@ -299,7 +302,9 @@ export function fishes(pools: { x: number; z: number; r: number; y: number; n: n
 				z = f.pool.z + Math.cos(a) * rr
 				y = f.pool.y
 				yaw = a + (f.speed > 0 ? Math.PI / 2 : -Math.PI / 2)
-				motion = { dist: Math.abs(t * f.speed) * rr, speed: Math.abs(f.speed) * rr, turn: f.speed }
+				dist = Math.abs(t * f.speed) * rr
+				speed = Math.abs(f.speed) * rr
+				turn = f.speed
 			} else if (f.line) {
 				// up and down the stream, slowly
 				const L = f.line.line
@@ -312,11 +317,14 @@ export function fishes(pools: { x: number; z: number; r: number; y: number; n: n
 				const dir = Math.cos(t * f.speed + f.phase) > 0 ? 1 : -1
 				yaw = Math.atan2((b.x - a.x) * dir, (b.z - a.z) * dir)
 				const along = Math.hypot(b.x - a.x, b.z - a.z) * (L.length - 2) * 0.5
-				motion = { dist: along * (1 - Math.cos(t * f.speed + f.phase)), speed: along * Math.abs(f.speed * Math.cos(t * f.speed + f.phase)) }
+				dist = along * (1 - Math.cos(t * f.speed + f.phase))
+				speed = along * Math.abs(f.speed * Math.cos(t * f.speed + f.phase))
 			}
 			const d2 = at ? (x - at.x) ** 2 + (z - at.z) ** 2 : Infinity
 			// from afar the whole fish wags; near, its body waves
-			school.put(f.coat, x, y, z, yaw + (d2 < 18 * 18 ? 0 : Math.sin(t * 8 + f.phase) * 0.15), d2, () => swimmers.clips[f.coat]?.swim?.(t + f.phase, motion) ?? {})
+			// (its pose, and how it swims, made only for one near enough to be rigged)
+			const near = d2 < 18 * 18
+			school.put(f.coat, x, y, z, yaw + (near ? 0 : Math.sin(t * 8 + f.phase) * 0.15), d2, near ? () => swimmers.clips[f.coat]?.swim?.(t + f.phase, { dist, speed, turn }) ?? {} : undefined)
 		}
 		school.end()
 	}

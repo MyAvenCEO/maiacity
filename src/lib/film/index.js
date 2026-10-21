@@ -22,7 +22,7 @@ import { filmPath, worldOfPath } from '../../../game/film/worlds.js';
 import { installClock } from './clock.js';
 import { createPipeline } from './pipeline.js';
 import { sets } from './sets.js';
-import { createWarmer } from './warm.js';
+import { createWarmer, drawsNothing } from './warm.js';
 
 /** @typedef {import('../../../game/film/shot.js').Spec} Spec @typedef {import('../../../game/film/shot.js').Shape} Shape */
 /** @typedef {import('./pipeline.js').Lut} Lut */
@@ -192,6 +192,9 @@ export function startFilm({ base = '' } = {}) {
 			const renderer = world().renderer, one = renderer.renderBufferDirect, used = new WeakSet();
 			// (its arguments named, not gathered: a rest array for every draw of every frame is only garbage to collect)
 			renderer.renderBufferDirect = function (/** @type {any} */ camera, /** @type {any} */ scene, /** @type {any} */ geometry, /** @type {any} */ material, /** @type {any} */ object, /** @type {any} */ group) {
+				// (a draw of nothing anyone sees not made: three draws a two-sided see-through thing twice and makes its
+				// shader's settings again for each, garbage every frame for each lamp's beam by day)
+				if (drawsNothing(camera, material)) return;
 				if (!cost.track) return one.call(this, camera, scene, geometry, material, object, group);
 				const t = clock.now();
 				try {
