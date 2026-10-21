@@ -16,7 +16,8 @@ function commit() {
 	}
 }
 
-export default defineConfig({
+// a dev server's pages (`serve`) may also reach this machine; a build's never (src/lib/sandbox/policy.js pageCsp)
+export default defineConfig(({ command }) => ({
 	plugins: [
 		tailwindcss(),
 		// the asset box's worker, bundled whole (src/lib/assets/box)
@@ -50,7 +51,7 @@ export default defineConfig({
 			// every page's own policy (src/lib/sandbox/policy.js): the scripts it may run, its own start script by its
 			// hash, written into each page as a <meta>, as a prerendered page has no headers of its own (deploy/Caddyfile
 			// sends what a <meta> can't hold, frame-ancestors; the Mac app sends it with its own, vault/app/tauri.conf.json)
-			csp: { mode: 'hash', directives: pageCsp((text) => createHash('sha256').update(text).digest('base64')) }
+			csp: { mode: 'hash', directives: pageCsp((text) => createHash('sha256').update(text).digest('base64'), { dev: command === 'serve' }) }
 		})
 	],
 	server: {
@@ -66,4 +67,4 @@ export default defineConfig({
 		port: Number(process.env.PORT) || 5173,
 		strictPort: !!process.env.PORT
 	}
-});
+}));

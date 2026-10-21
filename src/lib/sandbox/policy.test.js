@@ -50,6 +50,30 @@ test('theOS runs the same scripts as the page', () => {
 	expect([...POLICIES['theOS’s']['script-src']].sort()).toEqual([...POLICIES['the page’s']['script-src']].sort());
 });
 
+describe('the page talks only to our own servers, and posts no form', () => {
+	const page = POLICIES['the page’s'];
+	test('everything starts from our own origin', () => expect(page['default-src']).toEqual(["'self'"]));
+	test('connects only to the hosts it names, no wildcard', () => {
+		for (const s of page['connect-src']) expect(s).not.toMatch(/\*|^(https?|wss?):?$/);
+		expect(page['connect-src'].filter((s) => /^(https|wss):\/\//.test(s)).sort()).toEqual(['https://api.maia.city', 'https://avendb.maia.city', 'wss://avendb.maia.city']);
+	});
+	test('a build reaches this machine only from a dev server', () => {
+		const dev = pageCsp(sha256, { dev: true })['connect-src'];
+		expect(dev.some((s) => s.includes('localhost'))).toBe(true);
+		expect(page['connect-src'].some((s) => /localhost:|127\.0\.0\.1/.test(s))).toBe(false);
+	});
+	test('no form posts anywhere', () => expect(page['form-action']).toEqual(["'none'"]));
+});
+
+test('theOS’s policy is never looser than the page’s: every directive the page names, and nothing it does not allow', () => {
+	const page = POLICIES['the page’s'];
+	const os = POLICIES['theOS’s'];
+	for (const [d, sources] of Object.entries(page)) {
+		expect(os[d], d).toBeDefined();
+		for (const s of os[d]) expect(sources, `${d} ${s}`).toContain(s);
+	}
+});
+
 const { csp } = await import('./frame.js');
 const { viewCsp } = await import('./view-host.js');
 const { NEVER, SHUT, frameCsp } = await import('./policy.js');
