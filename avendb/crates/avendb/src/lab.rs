@@ -2316,8 +2316,8 @@ impl Lab {
                 return;
             }
             assert!(round < ROUNDS, "{d:?} keeps making edits its own view refuses: {work:?}");
-            // what its edits say, every write counted: what it drafts on
-            let view = store.log.view();
+            // what its edits say, every write counted: what it drafts on, its replay of this round
+            let view = store.replay.state.clone();
             for w in work {
                 self.work(d, &view, w);
             }
