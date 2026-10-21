@@ -292,7 +292,8 @@ impl Folder {
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH).expect("after 1970").subsec_nanos();
         let path = std::env::temp_dir().join(format!("avendb-device-{name}-{}-{n}-{nanos}", std::process::id()));
         std::fs::create_dir_all(&path).expect("a folder of its own");
-        Folder(path)
+        // as the file system resolves it, as an agent names the files it reads and writes (`agent::allowed`)
+        Folder(std::fs::canonicalize(path).expect("its folder"))
     }
 }
 
@@ -776,6 +777,11 @@ async fn a_touch_opens_eves_mac_once_its_touch_id_key_owns_her_vault_beside_her_
     server.shutdown().await.expect("the server's node stops");
 }
 
+/// The workspace of a harness started beside the app's folder `host`: the test's folder that holds it.
+fn workspace(host: &Path) -> Vec<PathBuf> {
+    host.parent().map(Path::to_path_buf).into_iter().collect()
+}
+
 /// An agent harness, as an agent's own device sees it (`agent::serve`): MCP on its stdin and stdout.
 struct Harness {
     to: Option<WriteHalf<DuplexStream>>,
@@ -790,12 +796,19 @@ impl Harness {
         Harness::built(host, harness, 1)
     }
 
-    /// The harness `harness` starts its agent device beside the app's folder `host`, a build made at `built`.
+    /// The harness `harness` starts its agent device beside the app's folder `host`, a build made at `built`, in the
+    /// test's folder, which holds `host` (`workspace`).
     fn built(host: &Path, harness: &str, built: u64) -> Harness {
+        Harness::within(host, harness, built, workspace(host))
+    }
+
+    /// The harness `harness` starts its agent device beside the app's folder `host`, a build made at `built`, its
+    /// files inside the folders `roots` alone.
+    fn within(host: &Path, harness: &str, built: u64, roots: Vec<PathBuf>) -> Harness {
         let (pipe, device) = tokio::io::duplex(1 << 20);
         let (input, output) = tokio::io::split(device);
         let (host, harness) = (host.to_path_buf(), harness.to_string());
-        let serving = tokio::spawn(agent::serve_built(host, harness, input, output, built));
+        let serving = tokio::spawn(agent::serve_in(host, harness, roots, input, output, built, agent::IDLE_AGENT));
         let (from, to) = tokio::io::split(pipe);
         Harness { to: Some(to), from: BufReader::new(from).lines(), serving, next: 0 }
     }
@@ -806,7 +819,8 @@ impl Harness {
         let (pipe, device) = tokio::io::duplex(1 << 20);
         let (input, output) = tokio::io::split(device);
         let (host, harness) = (host.to_path_buf(), harness.to_string());
-        let serving = tokio::spawn(agent::serve_idle(host, harness, input, output, 1, idle));
+        let roots = workspace(&host);
+        let serving = tokio::spawn(agent::serve_in(host, harness, roots, input, output, 1, idle));
         let (from, to) = tokio::io::split(pipe);
         Harness { to: Some(to), from: BufReader::new(from).lines(), serving, next: 0 }
     }
@@ -1398,6 +1412,18 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
         assert!(error && no.contains("keeps this Mac's keys"), "{no}");
         assert!(!kept.exists(), "nothing written at {}", kept.display());
     }
+    // nor anywhere outside its workspace, the folder its harness started it in, nor over a file there
+    let outside = Folder::new("outside-the-workspace");
+    std::fs::write(outside.0.join("hers.csv"), b"hers").expect("a file outside");
+    for path in [outside.0.join("new.csv"), outside.0.join("hers.csv")] {
+        let get = json!({ "entry": file, "path": at(&path), "overwrite": true });
+        let (no, error) = claude.tool("avendb_read_file", get).await;
+        assert!(error && no.contains("outside this agent's workspace"), "{no}");
+    }
+    assert!(!outside.0.join("new.csv").exists());
+    assert_eq!(std::fs::read(outside.0.join("hers.csv")).expect("her file"), b"hers", "hers, as it was");
+    let (no, error) = claude.tool("avendb_run", json!({ "op": op, "path": at(&outside.0.join("hers.csv")) })).await;
+    assert!(error && no.contains("outside this agent's workspace"), "{no}");
     // never over a file there, unless it says so, as a get_file op on avendb_run by the file's vault and name does
     std::fs::write(&back, b"hers").expect("a file of hers");
     let (no, error) = claude.tool("avendb_read_file", json!({ "entry": file, "path": at(&back) })).await;
@@ -1861,6 +1887,7 @@ async fn a_cloud_agent_her_mac_adds_to_avenmaia_drafts_a_spark_through_the_serve
         key: key.to_string().into(),
         server: server.offer().to_text(),
         proxy: false,
+        roots: workspace(&folder.0.join("cloud")),
     };
     let mut keyless = Harness::cloud(cloud(""));
     let started = keyless.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("it starts");

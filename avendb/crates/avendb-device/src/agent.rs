@@ -70,8 +70,11 @@
 //! shares let it add or draft one there. Where they let
 //! it only suggest, as a Suggester's do, which an agent is on Maia City by its standing rule, it is a draft, and its
 //! file a draft Library file of its own that brings it in its creation, which the vault's owners land by accepting an
-//! AIP the agent opens over them. `avendb_read_file` is `get_file`. No path in a folder that keeps this Mac's keys is
-//! read or written, whatever its harness names (`fenced`): an agent acts through its aven's vault caps alone.
+//! AIP the agent opens over them. `avendb_read_file` is `get_file`. A file it reads or writes is one inside its
+//! workspace (`allowed`): the folder its harness started it in, or the folders `ROOTS_VAR` names, as the file system
+//! resolves the path, its links and `..` followed; and even there, never one in a folder that keeps this Mac's keys
+//! (`fenced`) nor one that keeps secrets or settings that run code (`SENSITIVE`), whatever its harness names: an agent
+//! acts through its aven's vault caps alone.
 
 use std::collections::BTreeSet;
 use std::io;
@@ -345,6 +348,20 @@ pub async fn serve_idle(
     host: PathBuf,
     harness: String,
     input: impl AsyncRead + Unpin,
+    output: impl AsyncWrite + Unpin,
+    built: u64,
+    idle: Duration,
+) -> Result<()> {
+    serve_in(host, harness, roots(), input, output, built, idle).await
+}
+
+/// `serve_idle`, its harness's files read and written inside the folders `roots` alone (`allowed`), whichever session
+/// runs the device: each other session tells it its own as it connects.
+pub async fn serve_in(
+    host: PathBuf,
+    harness: String,
+    roots: Vec<PathBuf>,
+    input: impl AsyncRead + Unpin,
     mut output: impl AsyncWrite + Unpin,
     built: u64,
     idle: Duration,
@@ -361,14 +378,14 @@ pub async fn serve_idle(
             && let Some(held) = hold(&lock(&host, &name))?
         {
             since = None;
-            let session = Session { host: &host, name: &name, built, idle };
+            let session = Session { host: &host, name: &name, built, idle, roots: &roots };
             if session.run(held, &mut lines, &mut waiting, &mut output).await? {
                 return Ok(());
             }
             yields = Some(Instant::now() + YIELD);
             continue;
         }
-        match through(&socket(&host, &name), built, &mut lines, &mut waiting, &mut output).await? {
+        match through(&socket(&host, &name), built, &roots, &mut lines, &mut waiting, &mut output).await? {
             Some(true) => return Ok(()),
             Some(false) => since = None,
             None => {}
@@ -453,12 +470,14 @@ pub async fn serve_cloud(cloud: Cloud, input: impl AsyncRead + Unpin, mut output
 }
 
 /// A cloud session's agent: the folder it keeps its own in, its key in hex as its environment holds it (`KEY_VAR`), the
-/// server's offer, and whether it reaches the server through the environment's HTTP proxy (`Options::proxy`).
+/// server's offer, whether it reaches the server through the environment's HTTP proxy (`Options::proxy`), and the
+/// folders it may read files from and write them to (`roots`).
 pub struct Cloud {
     pub dir: PathBuf,
     pub key: zeroize::Zeroizing<String>,
     pub server: String,
     pub proxy: bool,
+    pub roots: Vec<PathBuf>,
 }
 
 impl Cloud {
@@ -467,7 +486,7 @@ impl Cloud {
     pub fn from_env(dir: PathBuf) -> Cloud {
         let key = zeroize::Zeroizing::new(std::env::var(KEY_VAR).unwrap_or_default());
         let server = std::env::var(SERVER_VAR).ok().filter(|s| !s.trim().is_empty());
-        Cloud { dir, key, server: server.unwrap_or_else(|| SERVER.into()), proxy: true }
+        Cloud { dir, key, server: server.unwrap_or_else(|| SERVER.into()), proxy: true, roots: roots() }
     }
 }
 
@@ -531,7 +550,7 @@ impl Cloud {
         drop(secret);
         let looking = AbortOnDropHandle::new(tokio::spawn(look_cloud(node.clone(), server)));
         let cloud = Some(Arc::new(Bringing::new(at)));
-        let agent = Arc::new(Agent { node, host: folder, name: name.to_string(), cloud });
+        let agent = Arc::new(Agent { node, host: folder, name: name.to_string(), cloud, roots: self.roots.clone() });
         let used = tokio::time::Instant::now();
         *open = Some(Opened { agent: agent.clone(), _looking: looking, used });
         Ok(agent)
@@ -599,12 +618,13 @@ fn hold(file: &Path) -> Result<Option<std::fs::File>> {
 }
 
 /// The one session that runs an agent's device: the app's `host` folder, the agent's `name`, the `built` of its
-/// build, and how long it runs on unused once its own harness has gone (`IDLE_AGENT`).
+/// build, how long it runs on unused once its own harness has gone (`IDLE_AGENT`), and its harness's workspace roots.
 struct Session<'a> {
     host: &'a Path,
     name: &'a str,
     built: u64,
     idle: Duration,
+    roots: &'a [PathBuf],
 }
 
 /// When the device a session runs was last used: a line asked of it, here or on its socket, or a session connecting.
@@ -645,8 +665,8 @@ impl Session<'_> {
         let opts = Options { bind: None, direct: true, relay, ..Options::local() };
         let node = Arc::new(server::open_agent(shelf, name, opts).await?);
         let looking = AbortOnDropHandle::new(tokio::spawn(look(node.clone(), host.to_path_buf(), name.to_string())));
-        let agent =
-            Arc::new(Agent { node: node.clone(), host: host.to_path_buf(), name: name.to_string(), cloud: None });
+        let (host_dir, roots) = (host.to_path_buf(), self.roots.to_vec());
+        let agent = Arc::new(Agent { node: node.clone(), host: host_dir, name: name.to_string(), cloud: None, roots });
         let (newer, count) = (Arc::new(Notify::new()), watch::channel(0));
         let sock = socket(host, name);
         // it holds the lock: a socket there is a session's before it, gone
@@ -721,20 +741,22 @@ async fn others(
     }
 }
 
-/// Another session of an agent on `stream`: its first line says its build (`HELLO`); one newer than `built` it lets
-/// know of through `newer`, and answers nothing, as it takes this one's place; any other, `agent` answers line by line,
-/// each counted in `used`.
+/// Another session of an agent on `stream`: its first line says its build (`HELLO`) and its harness's workspace roots
+/// (`roots`); one newer than `built` it lets know of through `newer`, and answers nothing, as it takes this one's
+/// place; any other, `agent` answers line by line, its files inside that session's roots alone (none, where its hello
+/// names none, as an older build's), each counted in `used`.
 async fn other(stream: UnixStream, agent: Arc<Agent>, built: u64, newer: Arc<Notify>, used: Used) {
     let (read, mut write) = stream.into_split();
     let mut lines = BufReader::new(read).lines();
     let Ok(Some(hello)) = lines.next_line().await else { return };
-    let Some(theirs) = serde_json::from_str::<Value>(&hello).ok().and_then(|h| h[HELLO].as_u64()) else {
-        return;
-    };
+    let Ok(hello) = serde_json::from_str::<Value>(&hello) else { return };
+    let Some(theirs) = hello[HELLO].as_u64() else { return };
     if theirs > built {
         newer.notify_one();
         return;
     }
+    let roots = hello["roots"].as_array().into_iter().flatten().filter_map(Value::as_str).map(PathBuf::from).collect();
+    let agent = Agent { roots, ..(*agent).clone() };
     while let Ok(Some(line)) = lines.next_line().await {
         used.now();
         let answer = answer_line(&agent, &line).await;
@@ -748,11 +770,13 @@ async fn other(stream: UnixStream, agent: Arc<Agent>, built: u64, newer: Arc<Not
 }
 
 /// Answers its harness through the session that runs its agent's device, on socket `sock`: its build first, `built`,
-/// then the lines `waiting` holds, then each of `lines`, and each answer back on `output`. Whether `lines` ended, once
-/// every answer due came (true), or the connection did first (false); none where nothing answers on `sock`.
+/// with its workspace roots, `roots`, then the lines `waiting` holds, then each of `lines`, and each answer back on
+/// `output`. Whether `lines` ended, once every answer due came (true), or the connection did first (false); none where
+/// nothing answers on `sock`.
 async fn through(
     sock: &Path,
     built: u64,
+    roots: &[PathBuf],
     lines: &mut Lines<BufReader<impl AsyncRead + Unpin>>,
     waiting: &mut Waiting,
     output: &mut (impl AsyncWrite + Unpin),
@@ -760,7 +784,8 @@ async fn through(
     let Ok(stream) = UnixStream::connect(sock).await else { return Ok(None) };
     let (read, mut write) = stream.into_split();
     let mut answers = BufReader::new(read).lines();
-    let mut first = format!("{}\n", json!({ HELLO: built }));
+    let roots: Vec<String> = roots.iter().map(|r| r.to_string_lossy().into_owned()).collect();
+    let mut first = format!("{}\n", json!({ HELLO: built, "roots": roots }));
     for line in waiting.lines() {
         first.push_str(line);
         first.push('\n');
@@ -1029,8 +1054,14 @@ fn instructions(name: &str, cloud: bool) -> String {
              a shot version, asked in the studio, and `probe`, `proxy`, `still`, `transcript` and `analysis` of every \
              file tagged media:original, by themselves; where it may only suggest, its AIP's note names what to \
              make once it lands, and the person asks it. A done task's `outputs` are file entries, read with \
-             avendb_read_file. For access it lacks, ask its person with avendb_request_access, saying why: they \
+             avendb_read_file. Every path it names is a file inside its workspace alone, {workspace}, its links \
+             and `..` followed: the folder its harness started it in, or the folders {roots_var} names; and even \
+             there never one that keeps secrets or settings that run code (`.env` files, `.git`, `.ssh`, `.aws`, \
+             `.netrc`, shell start-up files, launch agents, agent and editor settings such as `.claude`, browser \
+             profiles). For access it lacks, ask its person with avendb_request_access, saying why: they \
              answer in theOS app.",
+            workspace = WORKSPACE,
+            roots_var = ROOTS_VAR,
             coop = world::SEED_COOP,
         )
 }
@@ -1203,6 +1234,7 @@ fn names_in(args: &Value) -> (BTreeSet<VaultId>, BTreeSet<EntryId>) {
 }
 
 /// The agent's device, as its MCP answers.
+#[derive(Clone)]
 struct Agent {
     node: Arc<Node>,
     /// the app's folder, beside which it leaves its requests; a cloud session's agent's own folder
@@ -1211,6 +1243,8 @@ struct Agent {
     name: String,
     /// a cloud session's agent's: what it brings from the server, before each call (`bring_for`)
     cloud: Option<Arc<Bringing>>,
+    /// the folders its harness's session may read files from and write them to (`allowed`)
+    roots: Vec<PathBuf>,
 }
 
 impl Agent {
@@ -1387,9 +1421,10 @@ impl Agent {
     /// own setting, which an agent keeps nowhere, and for a path or `overwrite` beside an op that takes none.
     async fn run(&self, op: Value, beside: Beside) -> Result<Value> {
         let Beside { path, overwrite } = beside;
-        if let Some(path) = &path {
-            outside(&self.host, path)?;
-        }
+        let path = match path {
+            Some(path) => Some(allowed(&self.roots, &self.host, &path)?),
+            None => None,
+        };
         if op_name(&op) == Some("get_file") {
             return self.get_file(&op, path, overwrite).await;
         }
@@ -1647,8 +1682,7 @@ impl Agent {
             None => None,
         };
         if let Some(path) = &path {
-            anyhow::ensure!(path.is_absolute(), "{} isn't an absolute path", path.display());
-            outside(&self.host, path)?;
+            allowed(&self.roots, &self.host, path)?;
             let meta = tokio::fs::metadata(path).await.with_context(|| format!("no file at {}", path.display()))?;
             anyhow::ensure!(meta.is_file(), "{} is no file", path.display());
         }
@@ -1970,8 +2004,12 @@ fn tools() -> Value {
     let one = json!({ "type": "object", "description": "One op of avenDB's engine, as JSON" });
     let op = json!({ "type": "object", "properties": { "op": one }, "required": ["op"] });
     let path = "For put_file, or a create with a file: the absolute path of the file on this Mac it saves; for \
-                get_file: the absolute path on this Mac it writes the file it reads to";
-    let overwrite = "For get_file alone: true to replace a file at path, which it never does otherwise";
+                get_file: the absolute path on this Mac it writes the file it reads to. Inside the agent's workspace \
+                alone (the folder its harness started it in, or those AVENDB_AGENT_ROOTS names), never a file there \
+                that keeps secrets or settings that run code (.env files, .git, .ssh, shell start-up files, agent and \
+                editor settings)";
+    let overwrite = "For get_file alone: true to replace a file at path, inside the agent's workspace, which it never \
+                     does otherwise";
     let run = json!({
         "type": "object",
         "properties": {
@@ -2002,7 +2040,8 @@ fn tools() -> Value {
         "properties": {
             "url": text("Its link: a web page, a YouTube video, a post, a picture or a clip on the web"),
             "path": text("The absolute path of a file on this Mac (a picture, a film, a sound), saved to the \
-                          Library first and shown by the artifact"),
+                          Library first and shown by the artifact; inside the agent's workspace alone, as \
+                          avendb_run's path"),
             "title": text("Its title; left out, its link's (a YouTube video by its id) or its file's name"),
             "note": text("Our note on it: why it matters"),
             "by": {
@@ -2034,10 +2073,10 @@ fn tools() -> Value {
             "entry": text("The file's entry id, as put_file answers it and a query or the world shows it"),
             "vault": text("With name: the id of the vault the file is in"),
             "name": text("With vault: the file's name, as put_file named it; the newest of that name"),
-            "path": text("The absolute path on this Mac it writes the file to; left out, a text file of at most 64 \
-                          KiB comes back inline alone"),
-            "overwrite": { "type": "boolean", "description": "true to replace a file at path, which it never does \
-                                                             otherwise" },
+            "path": text("The absolute path on this Mac it writes the file to, inside the agent's workspace alone, as \
+                          avendb_run's path; left out, a text file of at most 64 KiB comes back inline alone"),
+            "overwrite": { "type": "boolean", "description": "true to replace a file at path, inside the agent's \
+                                                             workspace, which it never does otherwise" },
         },
     });
     json!([
@@ -2087,7 +2126,9 @@ fn tools() -> Value {
                             with entry in place of vault and name brings the file into that entry, where the agent \
                             may edit it on main. get_file reads a file of a vault back, as avendb_read_file \
                             does: the op names its entry, or its vault and name, and the absolute path it writes to \
-                            goes beside the op, with overwrite: true to replace a file there.",
+                            goes beside the op, with overwrite: true to replace a file there. A path is a file \
+                            inside the agent's workspace alone: the folder its harness started it in, or those \
+                            AVENDB_AGENT_ROOTS names, never one there that keeps secrets or settings that run code.",
             "inputSchema": run,
         },
         {
@@ -2110,8 +2151,9 @@ fn tools() -> Value {
             "description": "Add an artifact as this agent, as the Artifacts page adds one: a source fact standing \
                             on its own, a bookmarked link, a YouTube video, a picture or a clip, one entry of \
                             avenDB's artifact schema. Give its url, or the absolute path of a file on this Mac, which \
-                            it saves to the Library first, or both; and its title, note, by, taken, language and \
-                            transcript if known. It goes where avendb_add_spark's goes: in the vault named, else in \
+                            it saves to the Library first, inside the agent's workspace alone, or both; and its \
+                            title, note, by, taken, language and transcript if known. It goes where \
+                            avendb_add_spark's goes: in the vault named, else in \
                             its aven's coop, Maia City; on main where the aven's \
                             shares let it create, else, where they let it only suggest, as a draft, its file a draft \
                             Library file of its own, both landed by the vault's owners accepting an AIP that names \
@@ -2125,9 +2167,10 @@ fn tools() -> Value {
             "name": "avendb_read_file",
             "description": "Read a file of a vault's Library back as this agent, where its shares let it read the \
                             file's entry: by its entry id, or the newest of a name in a vault. Its bytes are written \
-                            to the absolute path on this Mac given, never over a file there unless overwrite is \
-                            true; a text file of at most 64 KiB comes back inline too, as text, and with no path, \
-                            inline alone. Answers its entry, vault, name, media type, length, path and text. The \
+                            to the absolute path on this Mac given, inside the agent's workspace alone, never over a \
+                            file there unless overwrite is true; a text file of at most 64 KiB comes back inline \
+                            too, as text, and with no path, inline alone. Answers its entry, vault, name, media \
+                            type, length, path and text. The \
                             same as a get_file op on avendb_run.",
             "inputSchema": file,
         },
@@ -2193,22 +2236,128 @@ fn fenced(host: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// Fails where `path` is in a folder that keeps this Mac's keys (`fenced`), as the file system resolves it: its links
-/// followed, and for a file not there yet, its folder's. A path whose folder can't be resolved is left to the caller,
-/// which says it isn't there.
-fn outside(host: &Path, path: &Path) -> Result<()> {
-    let real = std::fs::canonicalize(path).ok().or_else(|| {
-        let name = path.file_name()?;
-        Some(std::fs::canonicalize(path.parent()?).ok()?.join(name))
-    });
-    let Some(real) = real else { return Ok(()) };
+/// What an agent's instructions call its workspace (`roots`).
+const WORKSPACE: &str = "the folders it may read files from and write them to";
+
+/// The environment variable that names the folders an agent may read files from and write them to: its
+/// workspace roots, a path list (`:` between them). Left out, the folder its harness started it in (`roots`).
+pub const ROOTS_VAR: &str = "AVENDB_AGENT_ROOTS";
+
+/// The workspace roots of an agent this process serves: the absolute folders `ROOTS_VAR` names, else the folder its
+/// harness started it in.
+pub fn roots() -> Vec<PathBuf> {
+    match std::env::var_os(ROOTS_VAR) {
+        Some(list) => std::env::split_paths(&list).filter(|p| p.is_absolute()).collect(),
+        None => std::env::current_dir().into_iter().collect(),
+    }
+}
+
+/// What no file an agent reads or writes is in, or is, even inside its workspace, each a run of folder or file names
+/// anywhere below its root, compared without case (a Mac's disk ignores it): folders and files that keep keys, tokens
+/// and passwords (SSH, GPG, cloud and container logins, Keychains, `.netrc`, package registries' and git's), the
+/// shell's start-up files and the Mac's launch agents, which run code, the settings of agent harnesses and editors,
+/// which grant tools or run tasks, a repository's `.git`, whose hooks run code, and browsers' profiles. Any name that
+/// starts with `.env` too (`ENV_FILES`).
+const SENSITIVE: &[&[&str]] = &[
+    &[".ssh"],
+    &[".gnupg"],
+    &[".aws"],
+    &[".azure"],
+    &[".kube"],
+    &[".docker"],
+    &["library", "keychains"],
+    &[".netrc"],
+    &[".git-credentials"],
+    &[".npmrc"],
+    &[".pypirc"],
+    &[".git"],
+    &[".config", "gh"],
+    &[".config", "gcloud"],
+    &[".config", "fish"],
+    &[".bashrc"],
+    &[".bash_profile"],
+    &[".bash_login"],
+    &[".bash_logout"],
+    &[".profile"],
+    &[".zshrc"],
+    &[".zshenv"],
+    &[".zprofile"],
+    &[".zlogin"],
+    &[".zlogout"],
+    &["library", "launchagents"],
+    &["library", "launchdaemons"],
+    &[".claude"],
+    &[".mcp.json"],
+    &[".codex"],
+    &[".cursor"],
+    &[".vscode"],
+    &[".mozilla"],
+    &[".config", "google-chrome"],
+    &[".config", "chromium"],
+    &["application support", "google", "chrome"],
+    &["application support", "firefox"],
+    &["application support", "bravesoftware"],
+    &["application support", "microsoft edge"],
+    &["application support", "arc"],
+    &["library", "safari"],
+    &["library", "cookies"],
+];
+
+/// The start of the names of environment files, `.env`, `.env.local`, `.envrc`, which keep secrets (`SENSITIVE`).
+const ENV_FILES: &str = ".env";
+
+/// Where file `path` really is, if an agent whose workspace is `roots` may read it or write it there: an absolute
+/// path, as the file system resolves it, its links and `..` followed (for a file not there yet, its folder's), inside
+/// one of `roots` as they resolve, and in no folder that keeps this Mac's keys (`fenced`, the app's `host` folder's
+/// among them) nor anything `SENSITIVE` below that root. Fails with why not, before a byte is read or written. A
+/// get_file's `overwrite` replaces a file only where this allows it, inside a root.
+fn allowed(roots: &[PathBuf], host: &Path, path: &Path) -> Result<PathBuf> {
+    anyhow::ensure!(path.is_absolute(), "{} isn't an absolute path", path.display());
+    let real = match std::fs::canonicalize(path) {
+        Ok(real) => real,
+        Err(_) => {
+            // a link to nothing is never followed later to wherever it comes to point
+            let link = std::fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_symlink());
+            anyhow::ensure!(!link, "{} is a link to nothing", path.display());
+            let name = path.file_name().with_context(|| format!("{} names no file", path.display()))?;
+            let folder = path.parent().and_then(|p| std::fs::canonicalize(p).ok());
+            folder.with_context(|| format!("no folder at {}", path.display()))?.join(name)
+        }
+    };
     for kept in fenced(host) {
         let kept = std::fs::canonicalize(&kept).unwrap_or(kept);
         if real.starts_with(&kept) {
             bail!("{} is in {}, which keeps this Mac's keys: an agent reads and writes no file there", path.display(), kept.display());
         }
     }
-    Ok(())
+    // a root that is the whole disk is no workspace
+    let roots: Vec<PathBuf> =
+        roots.iter().filter_map(|r| std::fs::canonicalize(r).ok()).filter(|r| r.parent().is_some()).collect();
+    let within: Vec<&Path> = roots.iter().filter_map(|r| real.strip_prefix(r).ok()).collect();
+    if within.is_empty() {
+        let named: Vec<String> = roots.iter().map(|r| r.display().to_string()).collect();
+        let workspace = if named.is_empty() { "none".to_string() } else { named.join(", ") };
+        bail!(
+            "{} is outside this agent's workspace ({workspace}): an agent reads and writes files only inside the \
+             folder its harness started it in, or the folders {ROOTS_VAR} names",
+            path.display()
+        );
+    }
+    for below in within {
+        let names: Vec<String> = below.components().map(|c| c.as_os_str().to_string_lossy().to_lowercase()).collect();
+        let hit = names.iter().find(|n| n.starts_with(ENV_FILES)).cloned().or_else(|| {
+            let run = SENSITIVE.iter().find(|run| names.windows(run.len()).any(|w| w.iter().eq(run.iter())))?;
+            Some(run.join("/"))
+        });
+        if let Some(hit) = hit {
+            bail!(
+                "{} is in or is {hit}, which keeps secrets or settings that run code: an agent reads and writes no \
+                 file there, even inside its workspace",
+                path.display()
+            );
+        }
+    }
+    Ok(real)
 }
 
 /// Whether get_file may write a file at `path`: an absolute path that names a file, in a folder that is there, with
@@ -2553,4 +2702,88 @@ fn op_name(op: &Value) -> Option<&str> {
 /// Bytes in lowercase hex.
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A fresh folder of the test's own, as the file system resolves it: the app's folder in it (not made), a
+    /// workspace, and a folder beside the workspace, outside it.
+    fn folders(name: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let nanos = std::time::SystemTime::now().duration_since(UNIX_EPOCH).expect("after 1970").subsec_nanos();
+        let top = std::env::temp_dir().join(format!("avendb-agent-{name}-{}-{nanos}", std::process::id()));
+        std::fs::create_dir_all(top.join("work")).expect("a workspace");
+        std::fs::create_dir_all(top.join("out")).expect("a folder outside it");
+        let top = std::fs::canonicalize(top).expect("the test's folder");
+        (top.join("app"), top.join("work"), top.join("out"))
+    }
+
+    #[test]
+    fn an_agent_reads_and_writes_inside_its_workspace_alone() {
+        let (host, work, out) = folders("workspace");
+        let roots = [work.clone()];
+        std::fs::write(work.join("notes.md"), "# Notes").expect("a file in the workspace");
+        std::fs::write(out.join("secret.txt"), "no").expect("a file outside it");
+        // a file there, and one not there yet, it may read or write
+        assert_eq!(allowed(&roots, &host, &work.join("notes.md")).expect("inside"), work.join("notes.md"));
+        assert_eq!(allowed(&roots, &host, &work.join("new.md")).expect("a new file inside"), work.join("new.md"));
+        // outside it, by name, by `..` and by a link, refused
+        let refused = |p: &Path| allowed(&roots, &host, p).expect_err("refused").to_string();
+        assert!(refused(&out.join("secret.txt")).contains("outside this agent's workspace"));
+        assert!(refused(&work.join("..").join("out").join("secret.txt")).contains("outside this agent's workspace"));
+        std::os::unix::fs::symlink(out.join("secret.txt"), work.join("link.txt")).expect("a link out");
+        assert!(refused(&work.join("link.txt")).contains("outside this agent's workspace"));
+        std::os::unix::fs::symlink(&out, work.join("away")).expect("a folder link out");
+        assert!(refused(&work.join("away").join("new.txt")).contains("outside this agent's workspace"));
+        std::os::unix::fs::symlink(out.join("gone.txt"), work.join("dangling")).expect("a link to nothing");
+        assert!(refused(&work.join("dangling")).contains("a link to nothing"));
+        assert!(refused(Path::new("notes.md")).contains("isn't an absolute path"));
+        // no workspace at all, or the whole disk as one, reaches nothing
+        let none = allowed(&[], &host, &work.join("notes.md")).expect_err("no workspace");
+        assert!(none.to_string().contains("outside this agent's workspace (none)"), "{none}");
+        assert!(allowed(&[PathBuf::from("/")], &host, &work.join("notes.md")).is_err());
+    }
+
+    #[test]
+    fn an_agent_never_touches_secrets_or_settings_that_run_code_even_inside_its_workspace() {
+        let (host, work, _) = folders("sensitive");
+        let roots = [work.clone()];
+        for kept in [".env.local", ".git/hooks", ".ssh", ".config/gh", ".claude", "Library/LaunchAgents"] {
+            std::fs::create_dir_all(work.join(kept)).expect("a folder in the workspace");
+        }
+        std::fs::write(work.join(".env"), "TOKEN=1").expect("an environment file");
+        let refused = |p: PathBuf| allowed(&roots, &host, &p).expect_err("refused").to_string();
+        for named in [
+            work.join(".env"),
+            work.join(".env.local").join("x"),
+            work.join(".ENV.production"),
+            work.join(".envrc"),
+            work.join(".git").join("hooks").join("pre-commit"),
+            work.join(".ssh").join("id_ed25519"),
+            work.join(".config").join("gh").join("hosts.yml"),
+            work.join(".claude").join("settings.json"),
+            work.join(".zshrc"),
+            work.join("Library").join("LaunchAgents").join("x.plist"),
+        ] {
+            let why = refused(named);
+            assert!(why.contains("keeps secrets or settings that run code"), "{why}");
+        }
+        // a link inside the workspace to one of them is refused as it resolves
+        std::os::unix::fs::symlink(work.join(".env"), work.join("plain.txt")).expect("a link to .env");
+        assert!(refused(work.join("plain.txt")).contains("keeps secrets or settings that run code"));
+        // a name that only looks alike is a file like any other
+        assert!(allowed(&roots, &host, &work.join("environment.md")).is_ok());
+        std::fs::create_dir_all(work.join("cookies")).expect("a folder of recipes");
+        assert!(allowed(&roots, &host, &work.join("cookies").join("recipe.md")).is_ok());
+    }
+
+    #[test]
+    fn an_agent_never_touches_the_apps_keys_inside_its_workspace() {
+        let (_, work, _) = folders("keys");
+        let host = work.join("avendb");
+        std::fs::create_dir_all(&host).expect("the app's folder, in the workspace");
+        let why = allowed(&[work.clone()], &host, &host.join("key")).expect_err("refused").to_string();
+        assert!(why.contains("keeps this Mac's keys"), "{why}");
+    }
 }
