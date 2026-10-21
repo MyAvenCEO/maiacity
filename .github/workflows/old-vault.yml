@@ -49,14 +49,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - name: Prepare SSH
-        run: |
-          HOST=$(getent ahostsv4 "$API_HOST" | awk '{print $1; exit}')
-          [ -n "$HOST" ] || { echo "::error::$API_HOST does not resolve"; exit 1; }
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -T 10 -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          printf 'Host prod\n  HostName %s\n  User deploy\n  IdentityFile ~/.ssh/id_ed25519\n  StrictHostKeyChecking yes\n' "$HOST" > ~/.ssh/config
+      # the server's own action (.github/actions/prod-ssh): its host keys pinned, never taken on trust
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+      - uses: ./.github/actions/prod-ssh
+        with:
+          host: ${{ env.API_HOST }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
 
       - name: Measure the bucket
         run: |

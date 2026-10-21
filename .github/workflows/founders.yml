@@ -1,9 +1,10 @@
 name: Founders
 
 # What each founder of the API holds in the live Postgres, read only (Samuel 2026-10-20, before removing founders 2 and
-# 3): their row, how many passkeys, API keys, device codes, media devices and invites each holds, the labels of the
-# keys and devices of every founder after the first, and MaiaCity V1's seats. Never a secret: no hash, code or key.
-# Run by hand only; one READ ONLY transaction over SSH, as the backup reads the database (deploy/backup.sh).
+# 3): by founder number, how many passkeys, API keys, device codes and invites each holds, the rows of every founder
+# after the first in each table that points at one, and how many MaiaCity V1 seats each holds. Counts alone: the
+# repository is public and so is this log, so no name, id, label, hash, code or key is printed. Run by hand only; one
+# READ ONLY transaction over SSH, as the backup reads the database (deploy/backup.sh).
 on:
   workflow_dispatch:
 
@@ -19,38 +20,39 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Prepare SSH
-        run: |
-          HOST=$(getent ahostsv4 "$API_HOST" | awk '{print $1; exit}')
-          [ -n "$HOST" ] || { echo "::error::$API_HOST does not resolve"; exit 1; }
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -T 10 -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          printf 'Host prod\n  HostName %s\n  User deploy\n  IdentityFile ~/.ssh/id_ed25519\n  StrictHostKeyChecking yes\n' "$HOST" > ~/.ssh/config
+      # the server's own action (.github/actions/prod-ssh): its host keys pinned, never taken on trust
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+      - uses: ./.github/actions/prod-ssh
+        with:
+          host: ${{ env.API_HOST }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
       - name: Read the founders, read only
         run: |
           ssh prod 'docker exec -i maia-city-db psql -U maiacity -d maiacity -v ON_ERROR_STOP=1 -P pager=off' <<'SQL'
           BEGIN READ ONLY;
           \echo '== founders, and what each holds (counts)'
-          SELECT f.number, f.id, f.role, left(coalesce(f.name, ''), 40) AS name, f.created::date AS since,
+          SELECT f.number, f.role,
             (SELECT count(*) FROM passkeys p WHERE p.founder_id = f.id) AS passkeys,
             (SELECT count(*) FROM api_keys k WHERE k.founder_id = f.id) AS api_keys,
             (SELECT count(*) FROM device_codes d WHERE d.founder_id = f.id) AS device_codes,
             (SELECT count(*) FROM signup_invites i WHERE i.made_by = f.id) AS invites_made,
             (SELECT count(*) FROM signup_invites i WHERE i.used_by = f.id) AS invites_used
           FROM founders f ORDER BY f.number;
-          \echo '== API keys of founders after the first (label and scope, never the hash)'
-          SELECT f.number, k.label, k.scope, k.created::date FROM api_keys k JOIN founders f ON f.id = k.founder_id
-          WHERE f.number > 1 ORDER BY f.number, k.created;
+          \echo '== API keys of founders after the first, by scope (counts)'
+          SELECT f.number, k.scope, count(*) AS keys FROM api_keys k JOIN founders f ON f.id = k.founder_id
+          WHERE f.number > 1 GROUP BY f.number, k.scope ORDER BY f.number, k.scope;
           \echo '== every table that points at a founder: its rows of each founder after the first, and what a delete does'
           SELECT format('SELECT %L AS "table", %L AS "column", %L AS on_delete, f.number, count(*) AS rows FROM %s t JOIN founders f ON f.id = t.%I WHERE f.number > 1 GROUP BY f.number ORDER BY f.number',
             c.conrelid::regclass, a.attname, CASE c.confdeltype WHEN 'c' THEN 'cascade' WHEN 'n' THEN 'set null' ELSE 'blocks' END,
             c.conrelid::regclass, a.attname)
           FROM pg_constraint c JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
           WHERE c.contype = 'f' AND c.confrelid = 'founders'::regclass ORDER BY c.conrelid::regclass::text \gexec
-          \echo '== MaiaCity V1 seats'
-          SELECT g.id, s.seat, s.p->>'founder' AS founder, left(coalesce(s.p->>'name', ''), 40) AS name,
-            (SELECT f.number FROM founders f WHERE f.id = s.p->>'founder') AS number
-          FROM v1_games g, jsonb_each(g.state->'players') AS s(seat, p) ORDER BY g.id, s.seat;
+          \echo '== MaiaCity V1 seats, by the founder number in each (counts)'
+          SELECT (SELECT f.number FROM founders f WHERE f.id = s.p->>'founder') AS number, count(*) AS seats,
+            count(DISTINCT g.id) AS games
+          FROM v1_games g, jsonb_each(g.state->'players') AS s(seat, p) GROUP BY 1 ORDER BY 1;
           COMMIT;
           SQL

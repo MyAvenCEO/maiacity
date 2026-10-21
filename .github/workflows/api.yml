@@ -3,11 +3,12 @@ name: API
 # The signup service at api.maia.city. Runs only when something it depends on
 # changes — a journal entry must never redeploy a server.
 #
+#   tests  – the API's tests (bun test api/test), on this commit
 #   image  – build the api container, push to GHCR tagged with the commit
 #   infra  – Pulumi: Hetzner server, volume, firewall (state in the `pulumi-state`
 #            branch, so no Pulumi Cloud account is needed)
 #   dns    – point api.maia.city and avendb.maia.city at the server (Hetzner DNS; skipped without a token)
-#   deploy – over SSH: compose files + .env, then pull and up
+#   deploy – once the tests passed, over SSH: compose files + .env, then pull and up
 #
 # avenDB's server (avendb.maia.city) gets its settings, Caddy site and firewall port from here, and its image from
 # avendb.yml, which builds and restarts it alone whenever its code changes: an avenDB change never restarts the API,
@@ -48,6 +49,24 @@ env:
   S3_REGION: hel1
 
 jobs:
+  # beside the image's build, as deploy.yml's kernel gate is: nothing goes on the server unless they pass
+  tests:
+    name: The API's tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      # the tests import game/ and scripts/ (the root's packages) and the API's own (its Postgres, PGlite)
+      - run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile
+        working-directory: api
+      - run: bun test ./api/test
+
   image:
     name: Build and push the API image
     runs-on: ubuntu-latest
@@ -102,9 +121,11 @@ jobs:
         working-directory: infra
         run: bun run check
       - name: Derive the public deploy key
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
           install -m 600 /dev/null deploy_key
-          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > deploy_key
+          printf '%s\n' "$DEPLOY_SSH_KEY" > deploy_key
           echo "SSH_PUBLIC_KEY=$(ssh-keygen -y -f deploy_key)" >> "$GITHUB_ENV"
           rm deploy_key
       - name: Fetch the Pulumi state from the pulumi-state branch
@@ -177,19 +198,20 @@ jobs:
 
   deploy:
     name: Roll out over SSH
-    needs: [image, infra, dns]
+    needs: [tests, image, infra, dns]
     runs-on: ubuntu-latest
     env:
       HOST: ${{ needs.infra.outputs.ipv4 }}
     steps:
       - uses: actions/checkout@v4
-      - name: Prepare SSH
-        run: |
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
-          # First contact with a freshly created server: take its host key.
-          for i in $(seq 1 30); do ssh-keyscan -T 5 -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break; sleep 5; done
-          printf 'Host prod\n  HostName %s\n  User deploy\n  IdentityFile ~/.ssh/id_ed25519\n  StrictHostKeyChecking yes\n  ServerAliveInterval 20\n  ServerAliveCountMax 6\n' "$HOST" > ~/.ssh/config
+      # its host keys pinned (.github/actions/prod-ssh), never taken on trust: a server Pulumi makes anew has new ones,
+      # and DEPLOY_KNOWN_HOSTS is filled with them before it is deployed to (the action's error says how)
+      - uses: ./.github/actions/prod-ssh
+        with:
+          host: ${{ needs.infra.outputs.ipv4 }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          wait: 'true'
       - name: Wait for cloud-init (is Docker there yet?)
         run: ssh prod 'sudo cloud-init status --wait >/dev/null || true; docker --version'
       - name: Mount the Hetzner volume (fstab by stable device id; automount is not reliable)
@@ -313,9 +335,10 @@ jobs:
       - name: Update the containers
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
         run: |
           # The token goes to the server over stdin, never as a process argument.
-          printf '%s' "$GHCR_TOKEN" | ssh prod "docker login ghcr.io -u '${{ github.actor }}' --password-stdin >/dev/null"
+          printf '%s' "$GHCR_TOKEN" | ssh prod "docker login ghcr.io -u '$ACTOR' --password-stdin >/dev/null"
           ssh prod "cd $APP_DIR
             docker compose -f docker-compose.yml -f docker-compose.prod.yml pull -q
             docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans

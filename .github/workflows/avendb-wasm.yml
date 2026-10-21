@@ -1,0 +1,94 @@
+name: avenDB WebAssembly
+
+# The page's WebAssembly (src/lib/avendb/device, avendb/scripts/build-web.sh), built here from a PR's sources. When the
+# committed one differs, this job commits the one it built to the PR's branch, so no thread rebuilds it by hand (pull
+# before your next push). That commit runs the checks again, on the branch's real head; it carries no [skip ci], which
+# a squash merge copies into main's commit and skips every workflow there with it (#1179, #1180, #1182). It is made as
+# github-actions[bot] itself (41898282): as 41898, a stranger to the repository, its runs had waited for an approval
+# (#1173). The runs that commit starts, avenDB's checks among them, are held for a maintainer's click all the same, so
+# the job approves those on its own commit itself (#1195).
+#
+# Its own workflow, apart from avenDB's checks (avendb-checks.yml): it writes to the branch, and those checks, which
+# avendb.yml also runs before every deploy, only read.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'avendb/**'
+      - 'src/lib/avendb/device/**'
+      - '.github/workflows/avendb-wasm.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avendb-wasm-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  wasm:
+    name: The page's WebAssembly
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.129
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: avendb -> target
+          key: wasm
+          cache-on-failure: true
+      - run: avendb/scripts/build-web.sh
+      - name: Commit it where it changed
+        id: commit
+        env:
+          SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+        run: |
+          if git diff --quiet -- src/lib/avendb/device && [ -z "$(git ls-files --others --exclude-standard src/lib/avendb/device)" ]; then
+            echo "The committed WebAssembly is the one these sources build."
+            exit 0
+          fi
+          if [ "$SAME_REPO" != "true" ]; then
+            echo "::error::src/lib/avendb/device is stale: run avendb/scripts/build-web.sh and commit what it writes"
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A src/lib/avendb/device
+          git commit -m "avenDB: the page's WebAssembly, built by CI from this branch's sources"
+          git push
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "::notice::Committed the rebuilt WebAssembly to this branch: pull before your next push."
+      # The repository holds first-time contributors' runs for a maintainer's click, and github-actions[bot] counts as
+      # one, so every run on the commit above waited for Samuel (#1190, #1192). He chose (2026-10-21 10:57) that this
+      # job approves them itself: only the runs on the commit it just pushed, built from this PR's own sources
+      - name: Approve the checks on that commit
+        if: steps.commit.outputs.sha
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          approved=""
+          for i in $(seq 1 12); do
+            sleep 5
+            for id in $(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SHA&status=action_required" --jq '.workflow_runs[].id'); do
+              case " $approved " in *" $id "*) continue ;; esac
+              gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/approve" && approved="$approved $id"
+            done
+          done
+          if [ -n "$approved" ]; then
+            echo "Approved the held runs:$approved"
+          else
+            echo "::warning::No held run on $SHA to approve; if its checks wait, approve them in the Actions tab"
+          fi

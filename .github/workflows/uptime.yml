@@ -1,0 +1,77 @@
+name: Uptime
+
+# Whether maia.city is up, asked from outside every ten minutes: the site, the API's health and avenDB's feed health
+# (/feed/health, avendb-server's health.rs), one request each with short timeouts, never a load. A run fails on any
+# failure, and GitHub mails a failed scheduled run to whoever last changed its schedule below.
+#
+# The repository is public, and so is this log: it says each answer's status code and how long it took, and of avenDB's
+# health only whether a panic is recorded and how often it started in the last hour, never a body.
+#
+# avenDB's host agrees TLS keys by X25519MLKEM768 alone (deploy/Caddyfile), which the runner's own curl (OpenSSL 3.0)
+# can't: every request goes through a curl on OpenSSL 3.5, as avendb.yml's checks do.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+env:
+  SITE: https://maia.city/
+  API_HEALTH: https://api.maia.city/api/health
+  AVENDB_HEALTH: https://avendb.maia.city/feed/health
+  # avendb-server restarting more often than this in an hour is a crash loop
+  MOST_STARTS: 6
+
+jobs:
+  up:
+    name: The site, the API and avenDB answer
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ask each once
+        run: |
+          docker pull -q curlimages/curl:8.16.0 >/dev/null
+          FAILED=0
+          # one GET, the body into BODY (never printed), and its status code and time in CODE and TOOK
+          ask() {
+            local said
+            said=$(docker run --rm curlimages/curl:8.16.0 -sS --connect-timeout 10 --max-time 20 \
+              -w '\n%{http_code} %{time_total}' "$@" 2>/dev/null) || true
+            BODY=$(printf '%s\n' "$said" | sed '$d')
+            read -r CODE TOOK <<< "$(printf '%s\n' "$said" | tail -n 1)"
+            CODE=${CODE:-000}
+          }
+          fail() { echo "::error::$1"; FAILED=1; }
+
+          ask "$SITE"
+          echo "$SITE: $CODE in ${TOOK}s"
+          [ "$CODE" = 200 ] || fail "$SITE answers $CODE, not 200"
+
+          ask "$API_HEALTH"
+          echo "$API_HEALTH: $CODE in ${TOOK}s"
+          if [ "$CODE" != 200 ]; then
+            fail "$API_HEALTH answers $CODE, not 200"
+          elif ! printf '%s' "$BODY" | jq -e '.ok == true' >/dev/null 2>&1; then
+            fail "$API_HEALTH does not say ok"
+          fi
+
+          ask --curves X25519MLKEM768 "$AVENDB_HEALTH"
+          echo "$AVENDB_HEALTH: $CODE in ${TOOK}s"
+          if [ "$CODE" != 200 ]; then
+            fail "$AVENDB_HEALTH answers $CODE, not 200"
+          elif ! HOUR=$(printf '%s' "$BODY" | jq -er '.starts.hour' 2>/dev/null); then
+            fail "$AVENDB_HEALTH does not say how the server is doing"
+          else
+            PANIC=$(printf '%s' "$BODY" | jq -r 'if .panic == null then "no" else "yes" end')
+            echo "avenDB: a panic recorded this run: $PANIC; starts in the last hour: $HOUR"
+            [ "$PANIC" = no ] || fail "avenDB's server recorded a panic this run (its health and logs say which)"
+            [ "$HOUR" -le "$MOST_STARTS" ] || fail "avenDB's server started $HOUR times in the last hour"
+          fi
+
+          exit "$FAILED"
