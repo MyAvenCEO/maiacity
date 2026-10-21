@@ -2,8 +2,9 @@
 # Built from the repo root, because the API shares the game's rules in game/ and the code entries in code/.
 FROM oven/bun:1.4.2-alpine
 WORKDIR /app/api
-COPY api/package.json api/bun.lock* ./
-RUN bun install --frozen-lockfile --production || bun install --production
+# The lockfile is required and installed as is: if it does not match package.json the build fails, never resolves afresh
+COPY api/package.json api/bun.lock ./
+RUN bun install --frozen-lockfile --production
 COPY api/src ./src
 COPY game /app/game
 COPY code /app/code
