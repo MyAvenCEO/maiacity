@@ -136,7 +136,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::engine::follow_standing;
 use avendb::id::{BlobId, EditId, ShareId, SignerId, VaultId};
 use avendb::keys::PublicKey;
-use avendb::lab::{Backup, Drafting, Lab, Unsigned};
+use avendb::lab::{Backup, Drafting, Lab, Unsigned, Warm};
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
 use avendb::sealed::{FileRoot, PIECE};
 use avendb::sign::{Ceremony, RelayPass, SUITES, Signed, SignerKeys};
@@ -605,7 +605,12 @@ impl Node {
             (Some(edits), Some(key)) => edits.vouched(key).await,
             _ => HashSet::new(),
         };
-        let restore = move || restore(lab, me, stored, &vouched);
+        // and what it worked out from them before (`Edits::warm`)
+        let warm = match &edits {
+            Some(edits) => edits.warm().await,
+            None => Warm::default(),
+        };
+        let restore = move || restore(lab, me, stored, &vouched, &warm);
         #[cfg(not(target_arch = "wasm32"))]
         let (lab, stored) = tokio::task::spawn_blocking(restore).await?;
         // a page has no threads to spare
@@ -1499,11 +1504,12 @@ impl Drop for Node {
 }
 
 /// Device `me` of `lab`, with what its shelf held taken back, if it held anything (`stored`), not checking again the
-/// signatures of the edits `vouched` (`Lab::restore_vouched`); and the ids of the edits the shelf held, in its order.
-fn restore(mut lab: Lab, me: SignerId, (signed, keys): edits::Stored, vouched: &HashSet<EditId>) -> (Lab, Vec<EditId>) {
+/// signatures of the edits `vouched`, from what it worked out before (`Lab::restore_warm`); and the ids of the edits
+/// the shelf held, in its order.
+fn restore(mut lab: Lab, me: SignerId, (signed, keys): edits::Stored, vouched: &HashSet<EditId>, warm: &Warm) -> (Lab, Vec<EditId>) {
     let stored = signed.iter().map(|s| s.edit.id()).collect();
     if !signed.is_empty() {
-        lab.restore_vouched(me, Backup::new(signed, keys), vouched);
+        lab.restore_warm(me, Backup::new(signed, keys), vouched, warm);
     }
     (lab, stored)
 }

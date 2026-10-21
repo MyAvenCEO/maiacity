@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 use avendb::cast::*;
 use avendb::id::{EditId, EntryId, SignerId, VaultId};
 use avendb::lab::Lab;
+use avendb::policy::{Action, Revoking};
 use avendb::sign::Signed;
 use avendb::wire::Wire;
 use avendb_net::shelf::FLOOR;
@@ -309,4 +310,54 @@ async fn an_object_is_put_once_and_owned_by_its_owner_alone() {
 #[test]
 fn the_floor_stays_where_the_last_reset_left_it() {
     assert_eq!(FLOOR, 18, "raising the floor would leave every place's shelf for an empty one: a reset");
+}
+
+/// How many times device `me` of `lab` counted `what` since it started.
+fn counted(lab: &Lab, me: SignerId, what: &str) -> u64 {
+    lab.perf(me)["counts"][what].as_u64().unwrap_or(0)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_node_starts_from_what_it_worked_out_before_and_passes_what_it_cant_open() {
+    let dir = Folder::new("warm");
+    let (node, w, coop) = mac(dir.path()).await;
+    let (alice, phone, passkey) = (w.alice, w.phone_a, w.passkey_a);
+    let remove = move |lab: &mut Lab, me: SignerId| {
+        lab.submit(me, &[passkey], Action::Revoke(Revoking::Device { vault: alice, device: phone, keep: vec![] }))
+    };
+    node.act(remove).await.expect("Alice's phone removed");
+    let welcome = write(&node, coop, "Welcome", WELCOME_TEXT).await;
+    let held = node.read(|lab, me| lab.log(me).ids().to_vec()).await;
+    node.shutdown().await.expect("it stops");
+    drop(node);
+    let g = dir.path().join(format!("g{FLOOR}"));
+    let named = |folder: &str| files(&g.join(folder)).into_keys().map(|n| format!("{folder}/{n}")).collect::<Vec<_>>();
+    assert_eq!(named("warm"), ["warm/0000000000000000"], "the choice its resolve made, put once");
+    // each start again: every edit in its order, Welcome shown, and what it took from its shelf and worked out anew
+    let start = || async {
+        let (node, _, _) = mac(dir.path()).await;
+        assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held, "every edit, in its order");
+        assert!(shows(&node, welcome, WELCOME_TEXT).await, "it shows Welcome again");
+        let counts = node.read(|lab, me| {
+            let count = |what| counted(lab, me, what);
+            (count("replay: removals as chosen before"), count("keys from the shelf"), count("keys opened"))
+        });
+        let counts = counts.await;
+        node.shutdown().await.expect("it stops");
+        counts
+    };
+    // the first: it takes the removals as it chose them, and opens the boxes of the keys it made itself before
+    let (chosen, shelved, opened) = start().await;
+    assert!(chosen > 0 && shelved == 0 && opened > 0, "chosen {chosen}, from the shelf {shelved}, opened {opened}");
+    assert!(!named("opened").is_empty(), "the keys it opened, put");
+    // the next: it opens no box again
+    let (chosen, shelved, opened) = start().await;
+    assert!(chosen > 0 && shelved > 0 && opened == 0, "chosen {chosen}, from the shelf {shelved}, opened {opened}");
+    assert_eq!(named("warm").len(), 1, "a choice the same is put no more");
+    // what it can't open it passes, and works it out again
+    for name in named("warm").into_iter().chain(named("opened")) {
+        fs::write(g.join(name), [7u8; 80]).expect("a forged one");
+    }
+    let (chosen, shelved, opened) = start().await;
+    assert!(chosen == 0 && shelved == 0 && opened > 0, "chosen {chosen}, from the shelf {shelved}, opened {opened}");
 }

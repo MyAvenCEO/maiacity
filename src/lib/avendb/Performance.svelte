@@ -65,7 +65,10 @@
 	const COUNTS = /** @type {Record<string, string>} */ ({
 		'edits offered': 'Edits offered to it',
 		'edits checked': 'Edits whose signatures it checked',
-		'refresh rounds': 'Refresh rounds'
+		'refresh rounds': 'Refresh rounds',
+		'replay: removals as chosen before': 'Replays that took the removals as chosen before',
+		'keys opened': 'Keys opened from their boxes',
+		'keys from the shelf': 'Keys taken from the device’s shelf, no box opened'
 	});
 
 	/** @typedef {{ count: number, total_ms: number, mean_ms: number, max_ms: number }} Timer */

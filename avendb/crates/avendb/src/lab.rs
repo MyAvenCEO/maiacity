@@ -96,7 +96,7 @@ use crate::merge;
 use crate::ops::Loc;
 use crate::perf::Perf;
 use crate::policy::{
-    acting, covered, mk_audience, replay, replay_on_why, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
+    acting, covered, mk_audience, replay, replay_none, replay_on_why, Action, Memo, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
     Meaning, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share, Sharing, State, Vault, Who, Why,
     Wrap, Write,
 };
@@ -404,7 +404,7 @@ fn trust(store: &mut Store) -> bool {
         store.bodies.remove(id);
         store.spoilt.remove(id);
     }
-    store.replay = replay(&[]);
+    store.replay = replay_none(store.replay.memo.take());
     store.replayed = 0;
     store.latest = OnceLock::new();
     store.digests = None;
@@ -421,6 +421,30 @@ impl ShelfKey {
     pub fn seal(&self, bytes: &[u8]) -> [u8; 32] {
         self.0.child("shelf head", bytes).bytes()
     }
+
+    /// `bytes` encrypted for the device alone, as what `purpose` names, under `context`.
+    fn lock(&self, purpose: &str, bytes: &[u8], context: &[u8], rng: &mut SeededRng) -> Vec<u8> {
+        keys::encrypt(&self.0.child("shelf box", purpose.as_bytes()), bytes, context, rng)
+    }
+
+    /// What `lock` encrypted as `bytes`, if it did, as what `purpose` names, under `context`.
+    fn unlock(&self, purpose: &str, bytes: &[u8], context: &[u8]) -> Option<Zeroizing<Vec<u8>>> {
+        keys::decrypt(&self.0.child("shelf box", purpose.as_bytes()), bytes, context).map(Zeroizing::new)
+    }
+}
+
+/// The engine's own hash, of its sources (`build.rs`): what a device worked out with another engine it works out again.
+const ENGINE: &str = env!("AVENDB_ENGINE");
+
+/// What a device keeps on its shelf of what it worked out, encrypted for it alone, to start again from it quickly
+/// (`Lab::restore_warm`): the choice its replay's resolve made (`policy::Memo`), for this engine alone (`ENGINE`), and
+/// the keys it opened from their boxes, each part as `Lab::warm_memo` and `Lab::warm_keys` gave it. It vouches for
+/// nothing it doesn't check: a key counts only for the very box it opened, with the key it opens it with now, and
+/// where its id is the one that box names; and the choice only for edits that turn on the same (`Memo`).
+#[derive(Clone, Debug, Default)]
+pub struct Warm {
+    pub memo: Option<Vec<u8>>,
+    pub keys: Vec<Vec<u8>>,
 }
 
 /// What one device holds: its edits, each with its signatures, to pass on, and the blobs they name; what it makes of
@@ -486,6 +510,13 @@ struct Store {
     shown_writes: (usize, Option<EditId>),
     shown_lanes: BTreeMap<VaultId, ([u8; 32], BTreeSet<BlobId>)>,
     shown_groups: [u8; 32],
+    /// The keys it opened from their boxes before, from its shelf (`Warm::keys`), each by the box it opened and the
+    /// key it opened it with (`opened_box`): that box it doesn't open again. And those it opened since it last gave
+    /// them (`Lab::warm_keys`).
+    opened_before: HashMap<[u8; 32], Secret>,
+    opened_since: Vec<([u8; 32], Secret)>,
+    /// The choice of its replay's resolve its shelf keeps, as it last gave it or took it from there (`Lab::warm_memo`).
+    memo_given: Option<Memo>,
 }
 
 impl Default for Store {
@@ -521,6 +552,9 @@ impl Default for Store {
             shown_writes: (0, None),
             shown_lanes: BTreeMap::new(),
             shown_groups: [0; 32],
+            opened_before: HashMap::new(),
+            opened_since: vec![],
+            memo_given: None,
         }
     }
 }
@@ -544,6 +578,8 @@ impl Store {
         self.shown.clear();
         self.reshow = true;
         self.opened.clear();
+        self.opened_before.clear();
+        self.opened_since.clear();
     }
 
     /// It read the selector of every live share over vault `v` but the keep shares, and of every share those rest on,
@@ -2454,7 +2490,12 @@ impl Lab {
             let fresh = store.log.edits().get(store.replayed..).unwrap_or_default();
             store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
             let was = std::mem::replace(&mut store.replay, replay(&[]));
+            let memo = was.memo.clone().filter(|m| m.upto > 0);
             let (replayed, why) = replay_on_why(was, store.log.edits(), store.replayed);
+            // a replay of every edit whose resolve chose as before took that choice, and tried no removal again
+            if matches!(why, Why::Whole(_)) && memo.is_some() && replayed.memo == memo {
+                store.perf.count("replay: removals as chosen before", 1);
+            }
             store.replay = replayed;
             store.perf.count(why_counted(why), 1);
             store.replayed = store.log.edits().len();
@@ -4305,9 +4346,30 @@ impl Lab {
     /// vouches for the edits of a shelf's head it sealed with its own key (`shelf_key`) after it kept them, each
     /// checked as it came (avendb-net's `Edits::vouched`): so a device opening again checks only what came after.
     pub fn restore_vouched(&mut self, d: SignerId, backup: Backup, vouched: &HashSet<EditId>) {
+        self.restore_warm(d, backup, vouched, &Warm::default());
+    }
+
+    /// `restore_vouched`, starting from what device `d` worked out before, as its shelf keeps it (`Warm`): what of it
+    /// it opens with its shelf key, and holds for this engine.
+    pub fn restore_warm(&mut self, d: SignerId, backup: Backup, vouched: &HashSet<EditId>, warm: &Warm) {
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
-        self.stores.insert(d, Store { follow, query_depth, gate, perf, ..Store::default() });
+        let mut store = Store { follow, query_depth, gate, perf, ..Store::default() };
+        if let Some(key) = self.shelf_key(d) {
+            let memo = warm.memo.as_deref().and_then(|b| key.unlock("memo", b, ENGINE.as_bytes()));
+            if let Some(memo) = memo.and_then(|b| Memo::from_bytes(&b)) {
+                store.memo_given = Some(memo.clone());
+                store.replay = replay_none(Some(memo));
+            }
+            for bytes in warm.keys.iter().filter_map(|b| key.unlock("keys", b, b"opened keys")) {
+                for chunk in bytes.chunks_exact(64) {
+                    let (opened, secret) = chunk.split_at(32);
+                    let secret = Secret::from_bytes(secret.try_into().expect("32 bytes"));
+                    store.opened_before.insert(opened.try_into().expect("32 bytes"), secret);
+                }
+            }
+        }
+        self.stores.insert(d, store);
         let (at, offered) = (Perf::start(), backup.signed.len() as u64);
         let fresh = self.fresh(d, backup.signed, vouched);
         if let Some(store) = self.stores.get_mut(&d) {
@@ -4324,6 +4386,43 @@ impl Lab {
     pub fn shelf_key(&self, d: SignerId) -> Option<ShelfKey> {
         let own = self.keys.get(&d).filter(|k| matches!(k, Key::Device(_)))?.seal_secret()?;
         Some(ShelfKey(own.child("shelf seal", &[])))
+    }
+
+    /// The choice device `d`'s replay's resolve made (`policy::Memo`), encrypted for it alone and this engine, for its
+    /// shelf (`Warm::memo`): `None` while it is locked, where it tried no removal, and where its shelf keeps that choice
+    /// already, as it gave it last.
+    pub fn warm_memo(&mut self, d: SignerId) -> Option<Vec<u8>> {
+        let key = self.shelf_key(d)?;
+        let store = self.stores.get_mut(&d)?;
+        let memo = store.replay.memo.as_ref().filter(|m| m.upto > 0 && store.memo_given.as_ref() != Some(*m))?.clone();
+        let bytes = memo.to_bytes();
+        store.memo_given = Some(memo);
+        Some(key.lock("memo", &bytes, ENGINE.as_bytes(), &mut self.rng))
+    }
+
+    /// The keys device `d` opened from their boxes since it last gave them, or with `all` every key it opened or took
+    /// from its shelf, encrypted for it alone, for its shelf (`Warm::keys`): `None` while it is locked, and where it
+    /// opened none since.
+    pub fn warm_keys(&mut self, d: SignerId, all: bool) -> Option<Vec<u8>> {
+        let key = self.shelf_key(d)?;
+        let store = self.stores.get_mut(&d)?;
+        if store.opened_since.is_empty() {
+            return None;
+        }
+        let since = std::mem::take(&mut store.opened_since);
+        let give: Vec<(&[u8; 32], &Secret)> = match all {
+            true => {
+                store.opened_before.extend(since);
+                store.opened_before.iter().collect()
+            }
+            false => {
+                let given = since.iter().map(|(b, k)| (b, k)).collect();
+                store.opened_before.extend(since.iter().cloned());
+                given
+            }
+        };
+        let bytes: Zeroizing<Vec<u8>> = Zeroizing::new(give.iter().flat_map(|(b, k)| b.iter().copied().chain(k.bytes())).collect());
+        Some(key.lock("keys", &bytes, b"opened keys", &mut self.rng))
     }
 
     /// `action` signed by `signers`, drafted on device `on` and building on what it holds, unchecked and kept nowhere:
@@ -4399,6 +4498,13 @@ fn same_key(a: &SignerKeys, b: &SignerKeys) -> bool {
     }
 }
 
+/// The name of box `bytes` with `info`, as key `with` opens it: what opens is the same wherever all three are.
+fn opened_box(info: &[u8], bytes: &[u8], with: &Secret) -> [u8; 32] {
+    let mut h = crate::hash::Hasher::new("opened box");
+    h.update(&with.id().0).update(&(info.len() as u64).to_le_bytes()).update(info).update(bytes);
+    h.finalize()
+}
+
 /// Open every box the device can: for one of `mine` (its own key, and what owners lend it), or for a key it already
 /// holds; then every key published in the clear; then derive the keys of the entries in each audience whose key it
 /// holds; and again, until nothing more opens. A box counts only if what opens is the key it names.
@@ -4421,14 +4527,26 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
                 Recipient::Key { name: to, id: under } => store.keys.get(&under, to).cloned(),
             };
             let Some(with) = with else { continue };
+            let info = box_info(*name, *id, &b.to);
+            let opened = opened_box(&info, &b.bytes, &with);
+            // the same box it opened before with the same key, as its shelf keeps it: what opened, again
+            if let Some(secret) = store.opened_before.get(&opened).filter(|k| k.id() == *id) {
+                more |= store.keys.insert(*name, secret.clone());
+                store.perf.count("keys from the shelf", 1);
+                continue;
+            }
             let mut first = [0; 32];
             let n = b.bytes.len().min(32);
             first[..n].copy_from_slice(&b.bytes[..n]);
             if store.unopened.contains(&(*id, b.to, first)) {
                 continue;
             }
-            match keys::open(&b.bytes, &with, &box_info(*name, *id, &b.to)) {
-                Some(secret) if secret.id() == *id => more |= store.keys.insert(*name, secret),
+            match keys::open(&b.bytes, &with, &info) {
+                Some(secret) if secret.id() == *id => {
+                    store.perf.count("keys opened", 1);
+                    store.opened_since.push((opened, secret.clone()));
+                    more |= store.keys.insert(*name, secret);
+                }
                 _ => {
                     store.unopened.insert((*id, b.to, first));
                 }
