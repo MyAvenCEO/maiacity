@@ -159,6 +159,21 @@
 		const every = setInterval(look, 15000);
 		return () => clearInterval(every);
 	});
+	/** in theOS, the agents it hosts now as sessions of its device (avendb-device's `sessions`), looked for again now
+	 *  and then; else none */
+	let hosted = $state(/** @type {{ id: number, name: string, device: string, since: number }[] | null} */ (null));
+	$effect(() => {
+		const look = () =>
+			api.hostedSessions?.().then(
+				(/** @type {typeof hosted} */ got) => (hosted = got),
+				() => (hosted = null)
+			);
+		look();
+		const every = setInterval(look, 15000);
+		return () => clearInterval(every);
+	});
+	/** When a session started, as a person reads it. @param {number} secs */
+	const startedAt = (secs) => new Date(secs * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 	/** in theOS, the agents' processes running on this Mac (vault/app's `agent_processes`), each a harness session's,
 	 *  an old build's marked: looked for again now and then; else none */
 	let processes = $state(/** @type {{ pid: number, started: string, exe: string, harness: string, gone: boolean, old: boolean }[] | null} */ (null));
@@ -1062,6 +1077,25 @@
 					devices, with a key of its own: Claude Code as agentClaude, Codex as agentCodex, and so on. Once a harness runs
 					its device, this page asks you to approve it, and it acts as avenMAIA with exactly what avenMAIA holds.
 				</p>
+				{#if hosted}
+					<h4>Working through theOS</h4>
+					{#if hosted.length}
+						<ul class="procs">
+							{#each hosted as h (h.id)}
+								<li>
+									<span><b>{h.name}</b> · since {startedAt(h.since)}</span>
+									<small class="soft mono" title={h.device}>{h.device.slice(0, 8)}…</small>
+								</li>
+							{/each}
+						</ul>
+					{:else}
+						<p class="soft">No agent session works through theOS now.</p>
+					{/if}
+					<p class="soft">
+						An approved agent keeps no avenDB copy of its own: theOS holds it, and the agent signs what it writes with its own
+						key, acting with avenMAIA's groups.
+					</p>
+				{/if}
 				{#if processes}
 					<h4>Running on this Mac</h4>
 					{#if processes.length}

@@ -13,7 +13,7 @@
 //! the session writes, the host asks the agent to sign the edit (`{"sign": id}`), and the agent answers
 //! (`{"signed": signature, "id": id}`). The session ends with the connection.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -27,6 +27,7 @@ use avendb_net::{Node, disk, server};
 use n0_future::task::AbortOnDropHandle;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt as _, AsyncRead, AsyncWrite, AsyncWriteExt as _, BufReader};
+use tokio::net::unix::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::mpsc;
 
@@ -41,9 +42,26 @@ pub fn socket(host: &Path) -> PathBuf {
     agent::agents(host).join("sessions.sock")
 }
 
+/// The sessions theOS's device hosts now, by a number of their own: what Settings lists (`list`).
+pub type Hosted = Arc<Mutex<BTreeMap<u64, Live>>>;
+
+/// A session hosted now: its harness's agent's name, its key, and since when (Unix seconds).
+pub struct Live {
+    name: String,
+    device: SignerId,
+    since: u64,
+}
+
+/// The sessions `hosted` holds now, each `{id, name, device, since}`, the oldest first.
+pub fn list(hosted: &Hosted) -> Value {
+    let hosted = hosted.lock().expect("the sessions");
+    let rows = hosted.iter().map(|(id, l)| json!({ "id": id, "name": l.name, "device": hex(&l.device.0), "since": l.since }));
+    Value::Array(rows.collect())
+}
+
 /// Hosts its person's agents on `node`, theOS's device, at the socket in the agents' folder beside its `host` folder,
 /// each connection a session of its own, until the task is dropped.
-pub async fn serve(node: Arc<Node>, host: PathBuf) -> Result<()> {
+pub async fn serve(node: Arc<Node>, host: PathBuf, hosted: Hosted) -> Result<()> {
     let sock = socket(&host);
     std::fs::create_dir_all(agent::agents(&host)).ok();
     // a socket left there is one of an app that ran before: this one hosts from now on
@@ -54,11 +72,14 @@ pub async fn serve(node: Arc<Node>, host: PathBuf) -> Result<()> {
         use std::os::unix::fs::PermissionsExt as _;
         std::fs::set_permissions(&sock, std::fs::Permissions::from_mode(0o600)).ok();
     }
+    let mut next = 0u64;
     loop {
         let (stream, _) = listener.accept().await?;
-        let (node, host) = (node.clone(), host.clone());
+        let (node, host, hosted) = (node.clone(), host.clone(), hosted.clone());
+        next += 1;
+        let id = next;
         tokio::spawn(async move {
-            if let Err(e) = session(stream, node, host).await {
+            if let Err(e) = session(stream, node, host, (id, hosted)).await {
                 tracing::info!("avendb: an agent's session ended: {e:#}");
             }
         });
@@ -69,7 +90,7 @@ pub async fn serve(node: Arc<Node>, host: PathBuf) -> Result<()> {
 type Pending = Arc<Mutex<HashMap<EditId, std::sync::mpsc::Sender<Option<Signature>>>>>;
 
 /// One agent's session on `stream`, hosted by `node`: its hello, then its lines, until it goes.
-async fn session(stream: UnixStream, node: Arc<Node>, host: PathBuf) -> Result<()> {
+async fn session(stream: UnixStream, node: Arc<Node>, host: PathBuf, (id, hosted): (u64, Hosted)) -> Result<()> {
     let (read, mut write) = stream.into_split();
     let mut lines = BufReader::new(read).lines();
     let challenge = *server::random()?;
@@ -141,6 +162,9 @@ async fn session(stream: UnixStream, node: Arc<Node>, host: PathBuf) -> Result<(
         }
     });
     let agent = Agent::session(node.clone(), host, name.clone(), roots);
+    let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let live = Live { name: name.clone(), device: s, since };
+    hosted.lock().expect("the sessions").insert(id, live);
     let ended = async {
         while let Some(line) = lines.next_line().await? {
             let m: Value = serde_json::from_str(&line).unwrap_or_default();
@@ -164,6 +188,7 @@ async fn session(stream: UnixStream, node: Arc<Node>, host: PathBuf) -> Result<(
         anyhow::Ok(())
     };
     let result = ended.await;
+    hosted.lock().expect("the sessions").remove(&id);
     node.act(move |lab, _| lab.unhost(s)).await;
     writer.abort();
     drop(alive);
@@ -173,10 +198,14 @@ async fn session(stream: UnixStream, node: Arc<Node>, host: PathBuf) -> Result<(
     result
 }
 
+/// How long an agent whose session theOS's device closed, as theOS restarts after an update, waits for it to host it
+/// again, before it runs its own device.
+const AGAIN: Duration = Duration::from_secs(60);
+
 /// Relays harness `name`'s MCP lines on `input` and `output` to theOS's device on the socket beside the app's `host`
-/// folder, its harness's files inside `roots` alone, signing with the key on the agent's own shelf what it is asked to (`session`). `None` where nothing hosts it
-/// there, or the host refuses each of its keys, and nothing was relayed: the agent then runs its own device as before.
-/// Else when `input` ended.
+/// folder, its harness's files inside `roots` alone, signing with the key on the agent's own shelf what it is asked to
+/// (`session`). `None` where nothing hosts it there, or the host refuses each of its keys, or it closed the session and
+/// hosts it no more within `AGAIN`: the agent then runs its own device as before. Else when `input` ended.
 pub async fn relay(
     host: &Path,
     name: &str,
@@ -184,9 +213,6 @@ pub async fn relay(
     input: &mut tokio::io::Lines<BufReader<impl AsyncRead + Unpin>>,
     output: &mut (impl AsyncWrite + Unpin),
 ) -> Result<Option<()>> {
-    let Ok(stream) = UnixStream::connect(socket(host)).await else {
-        return Ok(None);
-    };
     // its keys, where its shelf opens: else it runs as before, which says what is the matter
     let keys = match disk::open(&agent::folder(host, name)) {
         Ok(shelf) => server::agent_keys(&shelf).await.unwrap_or_default(),
@@ -195,11 +221,58 @@ pub async fn relay(
     if keys.is_empty() {
         return Ok(None);
     }
+    let Some(mut hosted) = hosted_by(host, name, roots, &keys).await? else { return Ok(None) };
+    tracing::info!("{name}: works as a session of theOS's device");
+    loop {
+        let (from, write, key) = &mut hosted;
+        tokio::select! {
+            line = input.next_line() => match line? {
+                Some(line) => send(write, &json!({ "mcp": line })).await?,
+                None => return Ok(Some(())),
+            },
+            m = from.next_line() => {
+                let Some(m) = m.ok().flatten() else {
+                    // theOS closed it, as it restarts: it hosts it again in a moment, or the agent runs its own device
+                    tracing::info!("{name}: theOS's device closed its session; it waits for theOS to host it again");
+                    let until = tokio::time::Instant::now() + AGAIN;
+                    loop {
+                        if let Some(again) = hosted_by(host, name, roots, &keys).await.ok().flatten() {
+                            hosted = again;
+                            break;
+                        }
+                        if tokio::time::Instant::now() >= until {
+                            tracing::info!("{name}: theOS doesn't host it again: it runs its own device");
+                            return Ok(None);
+                        }
+                        tokio::time::sleep(Duration::from_millis(500)).await;
+                    }
+                    continue;
+                };
+                let m: Value = serde_json::from_str(&m)?;
+                if let Some(id) = m["sign"].as_str().and_then(EditId::from_hex) {
+                    send(write, &json!({ "id": id.to_hex(), "signed": hex(&keys[*key].sign(id).to_wire()) })).await?;
+                } else if let Some(answer) = m["mcp"].as_str() {
+                    output.write_all(format!("{answer}\n").as_bytes()).await?;
+                    output.flush().await?;
+                }
+            }
+        }
+    }
+}
+
+/// The session theOS's device on the socket beside `host` hosts agent `name` in, by the first of `keys` it takes: the
+/// lines it sends, where the agent writes, and which of `keys` it signs with. None where nothing answers there, or the host
+/// refuses each key.
+async fn hosted_by(
+    host: &Path,
+    name: &str,
+    roots: &[PathBuf],
+    keys: &[DeviceKey],
+) -> Result<Option<(tokio::io::Lines<BufReader<OwnedReadHalf>>, OwnedWriteHalf, usize)>> {
+    let Ok(stream) = UnixStream::connect(socket(host)).await else { return Ok(None) };
     let (read, mut write) = stream.into_split();
     let mut from = BufReader::new(read).lines();
-    let Some(first) = from.next_line().await? else {
-        return Ok(None);
-    };
+    let Some(first) = from.next_line().await? else { return Ok(None) };
     let first: Value = serde_json::from_str(&first)?;
     let challenge: [u8; 32] = first["challenge"]
         .as_str()
@@ -208,35 +281,14 @@ pub async fn relay(
         .ok_or_else(|| anyhow!("the host sent no challenge"))?;
     let hellos: Vec<String> = keys.iter().map(|k| hex(&k.hello(&challenge, true).to_wire())).collect();
     send(&mut write, &json!({ "name": name, "hellos": hellos, "roots": roots })).await?;
-    let Some(said) = from.next_line().await? else {
-        return Ok(None);
-    };
+    let Some(said) = from.next_line().await? else { return Ok(None) };
     let said: Value = serde_json::from_str(&said)?;
     let Some(hosted) = said["hosted"].as_str().and_then(unhex) else {
         tracing::info!("{name}: theOS doesn't host it ({}): it runs its own device", said["refused"]);
         return Ok(None);
     };
-    let key: &DeviceKey =
-        keys.iter().find(|k| k.id().0[..] == hosted[..]).context("the host hosts a key it wasn't offered")?;
-    tracing::info!("{name}: works as a session of theOS's device");
-    loop {
-        tokio::select! {
-            line = input.next_line() => match line? {
-                Some(line) => send(&mut write, &json!({ "mcp": line })).await?,
-                None => return Ok(Some(())),
-            },
-            m = from.next_line() => {
-                let Some(m) = m? else { bail!("theOS's device closed {name}'s session") };
-                let m: Value = serde_json::from_str(&m)?;
-                if let Some(id) = m["sign"].as_str().and_then(EditId::from_hex) {
-                    send(&mut write, &json!({ "id": id.to_hex(), "signed": hex(&key.sign(id).to_wire()) })).await?;
-                } else if let Some(answer) = m["mcp"].as_str() {
-                    output.write_all(format!("{answer}\n").as_bytes()).await?;
-                    output.flush().await?;
-                }
-            }
-        }
-    }
+    let key = keys.iter().position(|k| k.id().0[..] == hosted[..]).context("the host hosts a key it wasn't offered")?;
+    Ok(Some((from, write, key)))
 }
 
 async fn send(write: &mut (impl AsyncWrite + Unpin), m: &Value) -> Result<()> {

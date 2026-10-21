@@ -2416,6 +2416,8 @@ async fn an_approved_agent_works_as_a_session_of_the_macs_device_by_its_own_key(
     assert_eq!((&me["me"]["device"], &me["me"]["aven"]), (&json!("agentClaude"), &aven), "{me}");
     assert!(!own.exists(), "no device of its own answers on its socket");
     assert!(agent::online(&dir, "agentClaude", device.as_str().expect("its key")), "the Mac's page sees it run");
+    let hosted = app.call("sessions", json!([])).await.expect("its sessions");
+    assert_eq!((&hosted[0]["name"], &hosted[0]["device"]), (&json!("agentClaude"), &device), "Settings lists it: {hosted}");
     let read = reads(&mut claude, &seeds).await;
     assert!(!read.1 && read.0.contains("In March."), "it reads what the aven may: {read:?}");
     let kale = json!({ "op": { "op": "create", "vault": mine, "type": "note", "value": titled("Kale", "In April.") } });
