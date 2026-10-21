@@ -22,6 +22,7 @@
 <script>
 	import { tick } from 'svelte';
 	import { sure } from '$lib/app/sure.js';
+	import { command, native } from '$lib/native';
 	import Ask from './Ask.svelte';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
@@ -155,6 +156,36 @@
 		const every = setInterval(look, 15000);
 		return () => clearInterval(every);
 	});
+	/** in theOS, the agents' processes running on this Mac (vault/app's `agent_processes`), each a harness session's,
+	 *  an old build's marked: looked for again now and then; else none */
+	let processes = $state(/** @type {{ pid: number, started: string, exe: string, harness: string, gone: boolean, old: boolean }[] | null} */ (null));
+	const lookProcesses = () =>
+		native()
+			? command('agent_processes').then(
+					(/** @type {any} */ got) => (processes = got),
+					() => (processes = null)
+				)
+			: undefined;
+	$effect(() => {
+		lookProcesses();
+		const every = setInterval(lookProcesses, 15000);
+		return () => clearInterval(every);
+	});
+	/** Stops agent process `p`, after the person said so: its harness starts it again from this app when it needs it.
+	 *  @param {{ pid: number, harness: string, old: boolean }} p */
+	async function stopAgent(p) {
+		const said = p.old ? 'an old build' : 'this build';
+		if (!(await sure(`Stop ${p.harness}'s agent process ${p.pid} (${said})? Its session starts a fresh one from theOS when it next needs avenDB.`))) return;
+		await command('agent_stop', { pid: p.pid }).catch((/** @type {unknown} */ e) => console.warn(`stopping agent ${p.pid}:`, e));
+		lookProcesses();
+	}
+	/** Stops every agent process of an old build, after the person said so. */
+	async function stopOld() {
+		const old = (processes ?? []).filter((p) => p.old);
+		if (!old.length || !(await sure(`Stop ${old.length} agent process${old.length === 1 ? '' : 'es'} of an old build? Their sessions start fresh ones from theOS when they next need avenDB.`))) return;
+		for (const p of old) await command('agent_stop', { pid: p.pid }).catch((/** @type {unknown} */ e) => console.warn(`stopping agent ${p.pid}:`, e));
+		lookProcesses();
+	}
 	/** Copies the cloud agent's key. */
 	async function copyCloud() {
 		await navigator.clipboard.writeText(cloud?.key ?? '');
@@ -944,6 +975,23 @@
 					devices, with a key of its own: Claude Code as agentClaude, Codex as agentCodex, and so on. Once a harness runs
 					its device, this page asks you to approve it, and it acts as avenMAIA with exactly what avenMAIA holds.
 				</p>
+				{#if processes}
+					<h4>Running on this Mac</h4>
+					{#if processes.length}
+						<ul class="procs">
+							{#each processes as p (p.pid)}
+								<li>
+									<span><b>{p.harness}</b> · process {p.pid} · since {p.started}{#if p.old}<span class="old">{p.gone ? 'old build, gone from disk' : 'old build'}</span>{/if}</span>
+									<small class="soft" title={p.exe}>{p.exe}</small>
+									<button class="btn quiet" onclick={() => stopAgent(p)}>Stop</button>
+								</li>
+							{/each}
+						</ul>
+						{#if processes.some((p) => p.old)}<button class="btn" onclick={stopOld}>Stop all old builds</button>{/if}
+					{:else}
+						<p class="soft">No agent runs on this Mac now: a harness session starts one when it needs avenDB.</p>
+					{/if}
+				{/if}
 				<label class="harness">
 					<span>Harness</span>
 					<input class="field" bind:value={harness} aria-label="The harness's name" placeholder="claude" />
@@ -1478,5 +1526,43 @@
 		box-sizing: border-box;
 		font-family: ui-monospace, monospace;
 		font-size: 0.75rem;
+	}
+
+	.procs {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin: 0 0 0.8rem;
+		padding: 0;
+		list-style: none;
+		font-size: 0.84rem;
+	}
+
+	.procs li {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 0.1rem 0.6rem;
+		align-items: center;
+	}
+
+	.procs small {
+		grid-column: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.procs .btn {
+		grid-column: 2;
+		grid-row: 1 / span 2;
+	}
+
+	.old {
+		margin-left: 0.4rem;
+		padding: 0.05rem 0.4rem;
+		border-radius: 999px;
+		background: #f6e3c6;
+		color: #8a5a12;
+		font-size: 0.72rem;
 	}
 </style>
