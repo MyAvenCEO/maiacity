@@ -50,6 +50,8 @@
 				['settings', 'Settings', 'settings'],
 				// every vault the server syncs, and who holds which of Maia City's cap groups: invites and roles (Samuel 2026-10-20)
 				['vaults', 'Vaults', 'vault'],
+				// theOS's own log, live: its avenDB device, its network, its pages (Samuel 2026-10-21)
+				['activity', 'Activity', 'activity'],
 				// the city's Postgres, read only, the admins' (Samuel 2026-10-20): a page of the app's own
 				['postgres', 'Postgres', 'database']
 			]

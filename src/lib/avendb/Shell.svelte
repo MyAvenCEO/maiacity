@@ -50,6 +50,7 @@
 	import Note from './Note.svelte';
 	import Panel from './Panel.svelte';
 	import Performance from './Performance.svelte';
+	import Activity from './Activity.svelte';
 	import Settings from './Settings.svelte';
 	import Sparks from './Sparks.svelte';
 	import Stories from './Stories.svelte';
@@ -351,6 +352,8 @@
 				<Jobs {world} vault={context} {actor} {api} />
 			{:else if tab === 'performance'}
 				<Performance {api} section={route.section} {thisName} />
+			{:else if tab === 'activity'}
+				<Activity />
 			{:else if tab === 'vaults'}
 				<Vaults {world} {api} {busy} />
 			{:else if tab === 'settings'}
