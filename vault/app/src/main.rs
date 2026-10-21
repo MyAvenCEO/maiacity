@@ -127,6 +127,7 @@ fn main() {
             avendb::avendb,
             avendb::avendb_read,
             avendb::avendb_chunk,
+            avendb::avendb_disk,
             enclave::avendb_touch_ready,
             aven::studio_ingest,
             aven::studio_job,

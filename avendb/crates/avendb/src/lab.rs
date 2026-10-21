@@ -3369,6 +3369,14 @@ impl Lab {
             "blobs": store.blobs.len(),
             "blob_bytes": store.blobs.values().map(|b| b.len()).sum::<usize>(),
         });
+        // the vaults' checkpoints that stand, and the edits it holds on their word, without their signatures
+        let r = &store.replay;
+        let checkpoint = |(e, stood): (&Edit, &bool)| *stood && matches!(e.action, Action::Checkpoint { .. });
+        out["checkpoints"] = serde_json::json!({
+            "standing": r.edits.iter().zip(&r.stood).filter(|&x| checkpoint(x)).count(),
+            "vouched": r.vouched().len(),
+            "bare": store.bare.len(),
+        });
         out
     }
 

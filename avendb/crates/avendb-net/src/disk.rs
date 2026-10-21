@@ -82,6 +82,28 @@ pub fn open(root: &Path) -> Result<Shelf> {
 
 /// Puts the shelf in folder `root` in use aside: a new generation made beside it, empty, which the next `open` uses.
 /// Its number.
+/// How many files folder `root` holds, under it at any depth, and their bytes together: what a place's shelves take
+/// on its disk. Links aren't followed; a folder that isn't there holds nothing.
+pub fn usage(root: &Path) -> io::Result<(u64, u64)> {
+    let entries = match fs::read_dir(root) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok((0, 0)),
+        Err(e) => return Err(e),
+    };
+    let (mut files, mut bytes) = (0, 0);
+    for entry in entries {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        if kind.is_dir() {
+            let (f, b) = usage(&entry.path())?;
+            (files, bytes) = (files + f, bytes + b);
+        } else if kind.is_file() {
+            (files, bytes) = (files + 1, bytes + entry.metadata()?.len());
+        }
+    }
+    Ok((files, bytes))
+}
+
 pub fn aside(root: &Path) -> Result<u64> {
     let n = generations(root)?.last().map_or(FLOOR, |n| (n + 1).max(FLOOR));
     make(root, n)

@@ -191,6 +191,23 @@ pub async fn stop(state: &Avendb) {
     }
 }
 
+/// What avenDB takes on this Mac's disk, for its Performance view: the device's folder (`folder()`) and its agents'
+/// beside it, each its path, how many files and their bytes.
+#[tauri::command]
+pub async fn avendb_disk() -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let device = folder();
+        let agents = device.with_file_name("mac-agents");
+        let usage = |dir: &std::path::Path| -> Result<serde_json::Value, String> {
+            let (files, bytes) = avendb_net::disk::usage(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+            Ok(serde_json::json!({ "path": dir.display().to_string(), "files": files, "bytes": bytes }))
+        };
+        Ok(serde_json::json!({ "device": usage(&device)?, "agents": usage(&agents)? }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// The device's folder: `~/avenDB/mac`, in the folder that holds all of avenDB's data on this Mac, its agents' folder
 /// beside it (`mac-agents`, avendb-device's `agent::agents`). It keeps the name avendb-device gives it by default.
 pub fn folder() -> PathBuf {
