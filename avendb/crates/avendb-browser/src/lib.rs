@@ -719,6 +719,9 @@ impl Device {
     /// A node for device `me` of `lab`, which reaches its peers through the relay, let in by one of `relay_passes` if
     /// the relay doesn't know it yet, and directly too if it binds a socket; on its shelf, if it keeps one.
     async fn spawn(lab: Lab, me: SignerId, start: &Start, relay_passes: Vec<RelayPass>) -> Result<Node> {
+        // a page shows its relay its passes first, by a request of its own, and then connects with none (`show`)
+        let shown = !relay_passes.is_empty() && show(start, &relay_passes).await?;
+        let relay_passes = if shown { Vec::new() } else { relay_passes };
         let (direct, relay, shelf, progress) =
             (start.direct, Some(start.relay.clone()), start.shelf.clone(), start.progress.clone());
         let opts = Options { bind: None, direct, relay, relay_passes, shelf, progress, ..Options::local() };
@@ -1183,6 +1186,53 @@ fn passed(start: &Start, p256: Option<[u8; 33]>, fresh: &Fresh, unlock: &Unlock)
     }
     let new = held.iter().map(|[new, _]| *new).collect();
     Ok(Passed { lab, me, passkeys: held.concat(), new, passes })
+}
+
+/// Where the server beside the relay takes a new device's passes ahead of its connection (avendb-server's
+/// `feed::RELAY_PASS`).
+pub const RELAY_PASS: &str = "/feed/relay-pass";
+
+/// Shows the relay of `start` the passes `passes` ahead of its device's connection, as a page does, by a POST of their
+/// token to the server beside it (`RELAY_PASS`): whether it took one, so the device connects with no token. A page's
+/// WebSocket carries its token in its URL, some 31 KB with a pass in each suite, which a browser may never send, and
+/// the page can't read why the relay turned it away (Samuel's iPhone 2026-10-21: "Joining avenDB's relay" waited its
+/// 20 s, and the server was out of reach). Fails, with the server's why, where it refuses them; false where it can't
+/// be asked, as a relay with no such server beside it, so the token goes in the URL as before.
+#[cfg(target_arch = "wasm32")]
+async fn show(start: &Start, passes: &[RelayPass]) -> Result<bool> {
+    start.progress.step("show");
+    let Ok(url) = start.relay.join(RELAY_PASS) else { return Ok(false) };
+    let init = js_sys::Object::new();
+    let set = |key: &str, value: JsValue| Reflect::set(&init, &key.into(), &value).map(|_| ());
+    let token = avendb_net::passes_token(passes);
+    set("method", "POST".into()).and_then(|()| set("body", token.into())).map_err(|e| anyhow!(js_text(&e)))?;
+    let global = js_sys::global();
+    let fetch = Reflect::get(&global, &"fetch".into()).ok().and_then(|f| f.dyn_into::<Function>().ok());
+    let Some(fetch) = fetch else { return Ok(false) };
+    let Ok(asked) = fetch.call2(&global, &url.as_str().into(), &init) else { return Ok(false) };
+    // a network that fails it, or a server that doesn't answer it as a page may read: the token goes in the URL
+    let Ok(response) = JsFuture::from(Promise::from(asked)).await else { return Ok(false) };
+    let status = Reflect::get(&response, &"status".into()).ok().and_then(|s| s.as_f64()).map(|s| s as u16);
+    match status {
+        Some(200) => Ok(true),
+        Some(403) => {
+            let text = Reflect::get(&response, &"text".into()).ok().and_then(|f| f.dyn_into::<Function>().ok());
+            let body = match text.map(|f| f.call0(&response)) {
+                Some(Ok(p)) => JsFuture::from(Promise::from(p)).await.ok().and_then(|t| t.as_string()),
+                _ => None,
+            };
+            let said: Value = body.and_then(|b| serde_json::from_str(&b).ok()).unwrap_or_default();
+            let why = said["why"].as_str().unwrap_or("it gave no reason");
+            bail!("avenDB's relay won't let this browser in: {why}")
+        }
+        _ => Ok(false),
+    }
+}
+
+/// A device off the browser sends its token as a header, which carries it whole: nothing to show first.
+#[cfg(not(target_arch = "wasm32"))]
+async fn show(_: &Start, _: &[RelayPass]) -> Result<bool> {
+    Ok(false)
 }
 
 /// Report a panic on the page's console: the device can't go on after one, and the page starts over.

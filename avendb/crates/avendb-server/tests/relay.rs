@@ -345,11 +345,15 @@ async fn the_server_serves_the_posts_everyone_reads_as_the_maia_universe_feed() 
 
 /// What the server at `addr` answers a POST of JSON `body` to `path`: its head, lower case, and its body.
 async fn posted(addr: SocketAddr, path: &str, body: &Value) -> (String, String) {
+    post(addr, path, "application/json", &body.to_string()).await
+}
+
+/// What the server at `addr` answers a POST of `body`, of type `kind`, to `path`: its head, lower case, and its body.
+async fn post(addr: SocketAddr, path: &str, kind: &str, body: &str) -> (String, String) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     let mut stream = tokio::net::TcpStream::connect(addr).await.expect("the feed's socket");
-    let body = body.to_string();
     let request = format!(
-        "POST {path} HTTP/1.1\r\nHost: avendb\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\
+        "POST {path} HTTP/1.1\r\nHost: avendb\r\nContent-Type: {kind}\r\nContent-Length: {}\r\n\
          Connection: close\r\n\r\n{body}",
         body.len()
     );
@@ -984,6 +988,64 @@ async fn a_new_device_shows_its_passkeys_pass_in_each_suite_and_the_relay_takes_
     for n in [server, browser, phone] {
         n.shutdown().await.expect("the node shuts down");
     }
+}
+
+/// A page's WebSocket carries its token in its URL, some 31 KB with a pass in each suite, which a browser may never send
+/// (Samuel's iPhone 2026-10-21); so a page shows its passes to the feed first (`feed::RELAY_PASS`), which says why it
+/// refuses one, and its device connects with no token, let in by the pass it showed, for that pass's minutes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_page_shows_the_relay_its_passes_through_the_feed_and_connects_with_none() {
+    let dir = Folder::new("shown");
+    let (data, relay_url, public_addr) = (dir.path().to_path_buf(), None, None);
+    let (signup, gate, bucket, cache) = (false, false, None, 0);
+    let (bind, relay_bind, feed_bind) = (LOOPBACK, LOOPBACK, LOOPBACK);
+    let snapshots = None;
+    let config =
+        Config { data, bind, relay_bind, feed_bind, relay_url, public_addr, signup, gate, bucket, cache, snapshots };
+    let started = avendb_server::start(&config).await.expect("the server, its relay and its feed");
+    let (server, addr, url) = (&started.node, started.feed.addr(), started.relay.url());
+    let mut w = world();
+    let (mac_a, passkey) = (w.mac_a, w.passkey_a);
+    // Alice's new browser, and the passes her passkey makes for it, while this Lab holds her passkey
+    let browser_d = w.lab.device_of(passkey, "Alice's browser");
+    let browser_keys = w.lab.keys_of(browser_d).expect("its keys");
+    let (now, path) = (unix_now(), avendb_server::feed::RELAY_PASS);
+    let old = w.lab.relay_pass(browser_d, passkey, now - PASS_LIFE - 1).expect("a pass");
+    let pass = w.lab.relay_pass(browser_d, passkey, now).expect("a pass");
+    let mac = node(&mut w, mac_a, &[passkey], 1, Options { relay: Some(url.clone()), ..Options::local() }).await;
+    mac.know(server.addr());
+    mac.claim(&started.offer, passkey).await.expect("Alice's vault claims the server");
+    let refused = |body: &str| serde_json::from_str::<Value>(body).expect("JSON")["refused"].clone();
+    // no pass, a stranger's passkey's while sign-up is closed, and one older than its ten minutes: each refused, with why
+    let stranger = Passkey::from_seed_in([9; 32], Suite::MlDsa).pass(browser_keys, now);
+    let tokens = [
+        ("not a token".to_string(), "NoPass"),
+        (avendb_net::passes_token(&[stranger]), "Unknown"),
+        (avendb_net::passes_token(&[old]), "OutOfTime"),
+    ];
+    for (token, why) in tokens {
+        let (head, body) = post(addr, path, "text/plain", &token).await;
+        assert!(head.starts_with("http/1.1 403") && head.contains("access-control-allow-origin: *"), "{why}: {head}");
+        assert_eq!(refused(&body), why, "{body}");
+    }
+    let browser = endpoint(&w, browser_d);
+    assert_eq!(started.relay.passed(&browser), None, "none of them let it in");
+    // her passkey's pass, in a token as a page makes it: the relay lets the browser in till it runs out
+    let (head, body) = post(addr, path, "text/plain", &avendb_net::passes_token(&[pass.clone()])).await;
+    assert!(head.starts_with("http/1.1 200") && head.contains("access-control-allow-origin: *"), "{head}");
+    assert_eq!(serde_json::from_str::<Value>(&body).expect("JSON"), json!({ "until": pass.expires() }));
+    assert_eq!(started.relay.passed(&browser), Some(pass.expires()), "for its ten minutes");
+    let (head, _) = http(addr, "OPTIONS", path).await;
+    assert!(head.starts_with("http/1.1 204"), "a page may ask first: {head}");
+    // her browser connects with no token: let in by the pass it showed, it reaches the server through the relay alone
+    let page = node(&mut w, browser_d, &[passkey], 7, relay_only(&url)).await;
+    until("the relay lets the browser in with no token", || async { started.relay.serves(&page.id()) }).await;
+    page.know(server.addr());
+    until("it reaches the server through the relay", || async { page.contact(server.id()).await.is_ok() }).await;
+    for n in [mac, page] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+    started.shutdown().await.expect("the server stops");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

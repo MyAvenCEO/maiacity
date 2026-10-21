@@ -29,6 +29,8 @@ export function stepWords(here) {
 		// the same step after Touch ID (`touch`): the secret is the one the Secure Enclave's key opens at the touch
 		touchKeys: { title: `Making ${here}’s keys`, does: 'Post-quantum keys from a secret the Secure Enclave opens at your touch' },
 		restore: { title: 'Replaying your vault', does: 'Every edit checked again and applied in order' },
+		// a page's pass goes to the server by a request of its own, as a WebSocket's URL can't carry it whole
+		show: { title: 'Showing avenDB’s relay your pass', does: `One request to the server, so its relay lets ${here} in` },
 		node: { title: `Starting ${here}’s node`, does: 'Its own endpoint, quantum-proof TLS on every connection' },
 		relay: {
 			title: 'Joining avenDB’s relay',
@@ -70,11 +72,11 @@ export function plan(start, { mac, make = false, touch = false }) {
 	if (start === 'found')
 		return [
 			...(make ? ['make'] : []),
-			...['unlock', 'keys', 'node', 'relay', 'server', 'draft', 'sign', 'claim', 'settle'],
+			...['unlock', 'keys', ...own(['show']), 'node', 'relay', 'server', 'draft', 'sign', 'claim', 'settle'],
 			...own(['save'])
 		];
 	if (start === 'link')
-		return ['unlock', 'keys', 'node', 'relay', 'server', 'pass', 'vault', 'join', ...own(['save'])];
+		return ['unlock', 'keys', ...own(['show']), 'node', 'relay', 'server', 'pass', 'vault', 'join', ...own(['save'])];
 	return [touch ? 'touch' : 'unlock', 'keys', 'restore', 'node', 'check'];
 }
 

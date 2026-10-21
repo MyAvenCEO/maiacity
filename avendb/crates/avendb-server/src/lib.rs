@@ -43,7 +43,7 @@ use std::time::{Duration, SystemTime};
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::backup::Keep;
 use avendb::id::SignerId;
-use avendb::sign::RelayPass;
+use avendb::sign::{PASS_SKEW, RelayPass};
 use avendb_net::bucket::Sealed;
 use avendb_net::{Admission, Node, Offer, Options, server, token_passes};
 use data_encoding::HEXLOWER_PERMISSIVE;
@@ -302,7 +302,7 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
         let addr = EndpointAddr::new(node.id()).with_ip_addr(public);
         offer.addr = relays.into_iter().fold(addr, EndpointAddr::with_relay_url);
     }
-    let feed = feed::Feed::spawn(config.feed_bind, node.clone(), health.clone()).await?;
+    let feed = feed::Feed::spawn(config.feed_bind, node.clone(), health.clone(), relay.gate.clone()).await?;
     let backups = config.snapshots.as_ref().map(|s| backups::Backups::spawn(node.clone(), own, s, Keep::default()));
     let beat = health.beat();
     let measure = Abort(tokio::spawn(measure(config.clone(), health.clone())));
@@ -374,6 +374,12 @@ impl Relay {
         self.gate.served.lock().expect("served").contains_key(endpoint)
     }
 
+    /// Takes the passes of token `token` shown ahead of a device's connection, as the feed does (`feed::RELAY_PASS`):
+    /// until when it lets that device in, or why not.
+    pub fn show(&self, token: &str) -> Result<u64, Refused> {
+        self.gate.show(token, now())
+    }
+
     /// It lets `endpoint` in by a pass now (`avendb::sign::RelayPass`): until when, in seconds since 1970.
     pub fn passed(&self, endpoint: &EndpointId) -> Option<u64> {
         self.gate.passes.lock().expect("passes").get(endpoint).copied().filter(|&until| until > now())
@@ -382,6 +388,41 @@ impl Relay {
     /// Lets go of every client, and stops.
     pub async fn shutdown(self) -> Result<()> {
         self.server.shutdown().await.map_err(|e| anyhow!("the relay: {e}"))
+    }
+}
+
+/// Why the relay turns a pass away (`Gate::check`), as the feed tells a page that shows it one (`feed::RELAY_PASS`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Refused {
+    /// The token carries no pass, or none for a device.
+    NoPass,
+    /// No passkey it may be from roots a vault the server knows, and sign-up is closed.
+    Unknown,
+    /// Each was made more than its ten minutes ago, or ahead of the server's clock by more than `PASS_SKEW`.
+    OutOfTime,
+    /// Its signatures don't check out.
+    Unchecked,
+}
+
+impl Refused {
+    /// Its name, as the feed answers it.
+    pub fn name(self) -> &'static str {
+        match self {
+            Refused::NoPass => "NoPass",
+            Refused::Unknown => "Unknown",
+            Refused::OutOfTime => "OutOfTime",
+            Refused::Unchecked => "Unchecked",
+        }
+    }
+
+    /// What it means, in words, for the page to say.
+    pub fn why(self) -> &'static str {
+        match self {
+            Refused::NoPass => "it brought no pass for a new device",
+            Refused::Unknown => "its passkey is of no vault avenDB's server knows: pick the passkey your vault was made with",
+            Refused::OutOfTime => "it isn't from the last ten minutes by the server's clock: check this device's clock",
+            Refused::Unchecked => "its signatures don't check out",
+        }
     }
 }
 
@@ -404,10 +445,47 @@ impl Gate {
     /// client may show its passkey's pass in each suite (`token_passes`): the first the relay honours counts.
     fn pass(&self, request: &ClientRequest, now: u64) -> Option<u64> {
         let endpoint = *request.endpoint_id().as_bytes();
+        self.check(&request.auth_token()?, Some(endpoint), now).ok().map(|(_, until)| until)
+    }
+
+    /// Of the passes token `token` carries for endpoint `endpoint`, or for any where `None`, the first the relay
+    /// honours at `now`, as `pass` takes it: the endpoint it lets in, and until when; else why not, the cheap checks
+    /// first.
+    fn check(&self, token: &str, endpoint: Option<[u8; 32]>, now: u64) -> Result<([u8; 32], u64), Refused> {
         let honours = |p: &SignerId| self.admission.honours(p);
-        let mine = |pass: &RelayPass| pass.endpoint() == Some(endpoint) && pass.candidates().iter().any(honours);
-        let passes = token_passes(&request.auth_token()?);
-        passes.into_iter().filter(mine).find_map(|pass| pass.passkeys(now).iter().any(honours).then(|| pass.expires()))
+        let of = |pass: &RelayPass| pass.endpoint().is_some_and(|e| endpoint.is_none_or(|want| e == want));
+        let passes: Vec<RelayPass> = token_passes(token).into_iter().filter(of).collect();
+        if passes.is_empty() {
+            return Err(Refused::NoPass);
+        }
+        let known: Vec<RelayPass> = passes.into_iter().filter(|p| p.candidates().iter().any(honours)).collect();
+        if known.is_empty() {
+            return Err(Refused::Unknown);
+        }
+        if known.iter().all(|p| p.made > now.saturating_add(PASS_SKEW) || now >= p.expires()) {
+            return Err(Refused::OutOfTime);
+        }
+        let honoured = |p: &RelayPass| Some((p.endpoint()?, p.expires())).filter(|_| p.passkeys(now).iter().any(honours));
+        known.iter().find_map(honoured).ok_or(Refused::Unchecked)
+    }
+
+    /// Lets the device of endpoint `endpoint` in until `until`, by a pass it showed (`show`, `on_connect`), and wakes
+    /// the letting go, whose next end may be this one.
+    fn passed_until(&self, passes: &mut HashMap<EndpointId, u64>, endpoint: EndpointId, until: u64) {
+        let until = passes.get(&endpoint).map_or(until, |&had| had.max(until));
+        passes.insert(endpoint, until);
+        self.passed.notify_one();
+    }
+
+    /// Takes the passes token `token` carries as `check` does, for whichever endpoint each is for, shown ahead of the
+    /// device's connection, by a POST to the feed (`feed::RELAY_PASS`): a page's WebSocket carries its token in its
+    /// URL, which two passes make some 31 KB long, and a browser may never send one that long (Samuel's iPhone
+    /// 2026-10-21). Its device then connects with no token, let in by the pass it showed. Until when.
+    fn show(&self, token: &str, now: u64) -> Result<u64, Refused> {
+        let (endpoint, until) = self.check(token, None, now)?;
+        let endpoint = EndpointId::from_bytes(&endpoint).map_err(|_| Refused::NoPass)?;
+        self.passed_until(&mut self.passes.lock().expect("passes"), endpoint, until);
+        Ok(until)
     }
 
     /// The relay still lets `endpoint` in at `now`: the server knows it, or its pass hasn't run out.
@@ -425,9 +503,7 @@ impl AccessControl for Gate {
         let mut served = self.served.lock().expect("served");
         let mut passes = self.passes.lock().expect("passes");
         if let Some(until) = pass {
-            let until = passes.get(&endpoint).map_or(until, |&had| had.max(until));
-            passes.insert(endpoint, until);
-            self.passed.notify_one();
+            self.passed_until(&mut passes, endpoint, until);
         }
         if !self.admits(&endpoint, &passes, now) {
             return Access::Deny { reason: Some("not a device this server knows, nor one with a pass".into()) };
