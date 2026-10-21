@@ -1,6 +1,6 @@
 // The media, for this Mac's own tools (the film scripts, `bun media`, `bun voice`): the Library of Maia City in avenDB
 // (Studio 2), reached as the agent device agentScripts, a device of the coop's aven avenMAIA, with its rights and no
-// more (./avendb.mjs: the first run waits for its person's approval in The OS app). The legacy vault on
+// more (./avendb.mjs: the first run waits for its person's approval in theOS app). The legacy vault on
 // 127.0.0.1:4545 is gone from here.
 //
 // A file is a `file` entry of the vault. It is named by its BLAKE3 hash (64 hex) as before: a file brought from the
@@ -20,7 +20,7 @@
 // Rights: where avenMAIA may create files (Editor on Maia City), a file lands at once (`put_file`). Where it may only
 // suggest (a Suggester, its default), each add and describe is a draft or a proposal, put to Maia City in an AIP of
 // its own, opened and promoted here: verdict "draft", and the file shows on the vault's main line only once a human
-// accepts that AIP in The OS app (/app/aips/?aip=<aip>). Until then this device still reads it on its own line.
+// accepts that AIP in theOS app (/app/aips/?aip=<aip>). Until then this device still reads it on its own line.
 //
 // AVENDB_VAULT names the vault by id (else the one named Maia City).
 import { blake3 } from '@noble/hashes/blake3.js';
@@ -225,7 +225,7 @@ async function how(vault, tags) {
 		const a = await session().ask({ op: 'creatable', vault, type: 'file', tags, draft }).catch(() => null);
 		if (Array.isArray(a?.tags)) return { draft, tags: [...new Set([...tags, ...a.tags])] };
 	}
-	throw new Error('avenDB: avenMAIA may neither add nor draft a file in Maia City — Maia City must give it Suggester (drafts) or Editor (files at once), in The OS app');
+	throw new Error('avenDB: avenMAIA may neither add nor draft a file in Maia City — Maia City must give it Suggester (drafts) or Editor (files at once), in theOS app');
 }
 
 /**

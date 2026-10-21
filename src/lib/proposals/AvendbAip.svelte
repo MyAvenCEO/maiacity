@@ -8,7 +8,7 @@
 	alone, and only that review counts). Accepting merges every line at once; a new entry's line (a draft) lands in main
 	only then, every field of it shown as added. Who accepts it measures it too, on this device: where its objective
 	names measuring logic, Measure runs that logic on its lines here and records the numbers as the vault's readings
-	(./measure.js), which its `measured "name"` metrics count; and in The OS on a Mac, with Lean got there (Get Lean,
+	(./measure.js), which its `measured "name"` metrics count; and in theOS on a Mac, with Lean got there (Get Lean,
 	which names its sizes), Measure checks the objective with real Lean too and records its verdict (./lean.js).
 -->
 <script>
@@ -78,7 +78,7 @@
 	const measurable = $derived(
 		!aip.bare && ownVault && as !== aip.author && !!aip.objective?.measures?.length && ['objective', 'proposed'].includes(aip.stage)
 	);
-	// checking it with real Lean (N3): in The OS alone, by its vault, never its author, an objective that reads
+	// checking it with real Lean (N3): in theOS alone, by its vault, never its author, an objective that reads
 	const checkable = $derived(
 		!!session.mac && !aip.bare && ownVault && as !== aip.author && !!aip.objective && !aip.objective.error && ['objective', 'proposed'].includes(aip.stage)
 	);

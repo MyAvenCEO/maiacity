@@ -44,7 +44,7 @@ if (listFile.endsWith('.json')) {
 	};
 } else {
 	const list = (await import(pathToFileURL(resolve(listFile)).href)).default;
-	if (!list.cuts) throw new Error(`${listFile} has no timing without the voice's word timings: approve agentScripts in The OS app (avenDB, ./vault.mjs), set LIBRARY=<dir with <hash>.json>, or use its records (scripts/film/worlds/export.mjs) with --seconds`);
+	if (!list.cuts) throw new Error(`${listFile} has no timing without the voice's word timings: approve agentScripts in theOS app (avenDB, ./vault.mjs), set LIBRARY=<dir with <hash>.json>, or use its records (scripts/film/worlds/export.mjs) with --seconds`);
 	film = { name: list.name, shots: list.shots.map((/** @type {any} */ s) => ({ name: s.name, spec: fromLegacy(s, { fps: list.fps ?? 30 }) })) };
 }
 const size = flag('size') ?? '1080';

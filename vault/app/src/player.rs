@@ -288,7 +288,7 @@ static LAST_LOAD: Mutex<Option<Value>> = Mutex::new(None);
 static SENT: AtomicU64 = AtomicU64::new(0);
 /// Pictures sent to the viewer that it has not said it drew yet (`player_drawn`). A page that falls behind (a busy
 /// webview, the Mac short of memory) is sent no more until it catches up: a frame it can't draw in time is dropped
-/// here, never queued in the channel, where frames piled up in The OS for as long as the page lagged.
+/// here, never queued in the channel, where frames piled up in theOS for as long as the page lagged.
 static IN_FLIGHT: AtomicU64 = AtomicU64::new(0);
 /// When the last picture was sent (ms since the pump's epoch): a page that has said nothing for a second is sent the
 /// next one anyway (an answer lost is never a picture stopped for good).

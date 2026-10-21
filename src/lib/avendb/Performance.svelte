@@ -6,7 +6,7 @@
 	Work: the device's timers since it started, each how often it ran, its time in all, on average and at most (replay,
 	signature checks, refresh, reads), and its counts (edits offered and checked, refresh rounds), as the device's
 	`perf` op answers them (avendb's `Lab::perf`). Storage: what the device holds (its edits, the bodies it opened, the
-	entries it shows, the blobs it keeps, the vaults' checkpoints and the edits it holds on their word), in The OS what
+	entries it shows, the blobs it keeps, the vaults' checkpoints and the edits it holds on their word), in theOS what
 	avenDB takes on the Mac's disk (its device's folder and its agents', vault/app's `avendb_disk`), else what this
 	browser's storage holds of the origin, the page's OPFS store among it (`navigator.storage.estimate`), and the page's
 	memory where the browser says it. Server: avenDB's server's own `GET /feed/health`, its memory, how long it has run,
@@ -74,7 +74,7 @@
 	let perf = $state(/** @type {Perf | null} */ (null));
 	/** what the browser keeps for this origin, and whether it keeps it for good */
 	let storage = $state(/** @type {{ usage: number, quota: number, opfs: number | null, persisted: boolean | null } | null} */ (null));
-	/** what avenDB takes on the Mac's disk, in The OS, or null elsewhere */
+	/** what avenDB takes on the Mac's disk, in theOS, or null elsewhere */
 	let disk = $state(/** @type {{ device: { path: string, files: number, bytes: number }, agents: { path: string, files: number, bytes: number } } | null} */ (null));
 	/** the page's JavaScript heap, where the browser says it (Chrome's `performance.memory`) */
 	let heap = $state(/** @type {{ used: number, total: number, limit: number } | null} */ (null));

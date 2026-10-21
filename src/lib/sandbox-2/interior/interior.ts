@@ -626,7 +626,7 @@ const HELD = 100
 
 /**
  * The page handed back for a frame, then a turn of it: where the page draws no frames (WebKit holds them back from a
- * page it takes for unseen, as The OS's window covered or on another space), a turn after `HELD` ms all the same, so a
+ * page it takes for unseen, as theOS's window covered or on another space), a turn after `HELD` ms all the same, so a
  * dome built a little each frame never stalls on frames that don't come (a world's shot waiting for it for ever).
  */
 export const breath = () =>

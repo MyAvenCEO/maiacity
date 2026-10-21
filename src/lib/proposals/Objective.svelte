@@ -4,7 +4,7 @@
 	(`aip_measure`), those a Measurer of the vault wrote (`measured "name"`: the vault itself or an owner, who accept
 	it, or a holder of its Measurer group, never its author), and the numbers its own lines propose (`proposed "path"`,
 	against main's, `current "path"`), and the measuring logic it names, which those who accept it run on their own
-	device (`logic "name"`, ./measure.js), and real Lean's verdict on it, where one of them checked it with Lean in The OS
+	device (`logic "name"`, ./measure.js), and real Lean's verdict on it, where one of them checked it with Lean in theOS
 	(./lean.js). Each
 	metric: its name and note, its goal and targets, where it started (its first reading, or what main holds) and
 	where it stands now, a bar of its progress and whether it is met; then the Lean itself, the numbers read from its

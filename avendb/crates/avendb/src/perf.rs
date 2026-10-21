@@ -1,6 +1,6 @@
 //! What a device's work costs, measured as it works (Step 0 of the performance plan, 2026-10-20): for each kind of
 //! work, how often it ran, its time in all and its longest. Kept in memory on the device alone, never written to a
-//! vault or sent to a peer; the engine's `perf` op reads it, and The OS shows it.
+//! vault or sent to a peer; the engine's `perf` op reads it, and theOS shows it.
 
 use serde_json::{json, Value};
 use std::collections::BTreeMap;

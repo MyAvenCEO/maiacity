@@ -14,7 +14,7 @@
  * Local first (Samuel 2026-10-20: "everything should be offline / local first loading … ensure our whole app respects
  * this local first pattern"): what the device holds of Maia City is read at once, whether its peers can be reached or
  * not, and the device asks them for what they hold meanwhile (avendb's `bring` op, before anything else it syncs), so
- * the next page reads that; The OS's device keeps syncing anyway. A device that holds none of the vault yet (a first
+ * the next page reads that; theOS's device keeps syncing anyway. A device that holds none of the vault yet (a first
  * sync) is read from the feed this time, and brings the entries the feed named, those alone (`bringRows`, Samuel
  * 2026-10-21: a device syncs first what its pages need), so the next page reads them off the device. A device whose
  * avenDB is older than the ops is read from the feed too. (Until 2026-10-20 every page waited for the

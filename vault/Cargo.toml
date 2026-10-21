@@ -1,4 +1,4 @@
-# The OS, the Mac app (app/), and its native media crates: colour, pictures and sound, speech, the render. Its files are
+# theOS, the Mac app (app/), and its native media crates: colour, pictures and sound, speech, the render. Its files are
 # avenDB's (avendb/, linked by path); the old iroh media vault and its crates retired (#1112).
 [workspace]
 resolver = "3"
@@ -24,7 +24,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # and cross-crate optimisation at link time cost minutes on every build of the app for little.
 [profile.release]
 lto = false
-# The OS's own update (a release build on the Mac at every main) compiles again only what changed in our crates and
+# theOS's own update (a release build on the Mac at every main) compiles again only what changed in our crates and
 # avenDB's: without it each update compiled the app and avenDB's crates whole, 2 to 6 minutes on the Mac. The
 # dependencies are never incremental.
 incremental = true

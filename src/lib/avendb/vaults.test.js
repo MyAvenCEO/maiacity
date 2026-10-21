@@ -150,7 +150,7 @@ test('a key the key move kept beside its next is listed once, by its newest', ()
 });
 
 test('an aven’s devices are named by what they are: its server by its offer, agents by the Mac, the rest the cloud’s', () => {
-	// avenDB's server's offer, as src/lib/avendb/server.js has it: its device's key before the move
+	// avenDB's server's offer, as src/lib/avendb/server.js had it before the key move: its device's earlier key
 	const offer =
 		'AVENDB1UAYTJU2GDDXXNHWO5YZJOJJBYJFXCKVEPNGILCF6ORDFGRZQXIYOKZOGNSNV64ZIP4VEW4HJPYXUPWZBQJWGRT75JV4CAO3N25TOCMYBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
 	const server = offerDevice(offer);

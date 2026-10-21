@@ -1,4 +1,4 @@
-// avenDB's Touch ID key in this Mac's Secure Enclave, for The OS: build.rs builds this file into a static library the
+// avenDB's Touch ID key in this Mac's Secure Enclave, for theOS: build.rs builds this file into a static library the
 // app links, and src/enclave.rs calls `avendb_enclave` with one ask in JSON and frees the answer it gets back, in JSON,
 // with `avendb_enclave_free`.
 //
@@ -13,7 +13,7 @@
 // - {"sign": challenge, "key", "kem", "sealed", "why"}: one touch: {sig, secret}
 // - whatever fails: {"error": why}
 //
-// `why` finishes the Touch ID sheet's sentence "The OS is trying to ...". vault/app/scripts/enclave-probe.swift showed
+// `why` finishes the Touch ID sheet's sentence "theOS is trying to ...". vault/app/scripts/enclave-probe.swift showed
 // each step on a Mac first.
 import CryptoKit
 import Foundation

@@ -1,6 +1,6 @@
 // @ts-nocheck — plain JS
 // The agent of avenMAIA a script talks to, as an MCP session on its stdio: the Mac's (`avendb` in ~/.claude.json, the
-// device The OS app's `avendb-device agent claude` runs), `--device <path>` or AVENDB_DEVICE, or in a cloud session the
+// device theOS app's `avendb-device agent claude` runs), `--device <path>` or AVENDB_DEVICE, or in a cloud session the
 // repo's (scripts/avendb-cloud.sh, with AVENDB_AGENT_KEY). It acts with avenMAIA's rights on Maia City: a Suggester's,
 // so whatever it writes is a proposal an owner accepts.
 import { spawn } from 'node:child_process';
@@ -20,7 +20,7 @@ export function device(named = process.env.AVENDB_DEVICE) {
 	} catch {
 		// no Claude Code config here
 	}
-	throw new Error('no agent device: give --device <The OS app’s avendb-device>, or add it to Claude Code (claude mcp add --scope user avendb -- <avendb-device> agent claude)');
+	throw new Error('no agent device: give --device <theOS app’s avendb-device>, or add it to Claude Code (claude mcp add --scope user avendb -- <avendb-device> agent claude)');
 }
 
 /** an MCP session with the agent (`env`, where given, its environment): `call(tool, args)` answers its tool's text,

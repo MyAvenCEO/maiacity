@@ -1,4 +1,4 @@
-//! Real Lean in The OS (N3, avendb/docs/ARCHITECTURE.md §8, "AIPs"): the pinned Lean release, the version
+//! Real Lean in theOS (N3, avendb/docs/ARCHITECTURE.md §8, "AIPs"): the pinned Lean release, the version
 //! avendb/spec/lean-toolchain names (`VERSION`, `releases`), checks an AIP's objective, a file of Lean against the
 //! spec's own AvenDB.Objective, on the device of whoever measures it, and the page records what it found as their
 //! reading `lean:<key>` (`avendb::objective::verdict_name`): the AIP's Lean verdict (`AvenDB.Measurers.leanVerdict`).
@@ -9,7 +9,7 @@
 //! sandbox profile of its own (`PROFILE`, `sandbox-exec`), which lets it read its own folder and the system's libraries
 //! and nothing else, write nothing (but the one folder its objective module is built in, once), reach no network and
 //! start nothing; elaboration is held to `HEARTBEATS`, memory to `MEMORY_MB` and the clock to `CLOCK`. Only a Mac has
-//! that sandbox, so only The OS on a Mac runs Lean (`LOCKED`).
+//! that sandbox, so only theOS on a Mac runs Lean (`LOCKED`).
 //!
 //! Lean comes only when the person asks (`leanGet`, behind a button in the Proposals app that names its sizes), and
 //! only from avenDB (Samuel 2026-10-21: "do it via avenDB"): the release's archive as Maia City keeps it, a code package
@@ -42,7 +42,7 @@ pub const VERSION: &str = "4.35.0";
 /// The spec's objective module, which every objective imports: the file Lean compiles on the device, once per version.
 pub const OBJECTIVE: &str = include_str!("../../../spec/AvenDB/Objective.lean");
 
-/// The code packages The OS runs beside its own code, each file pinned by its BLAKE3 and its publisher's SHA-256: the
+/// The code packages theOS runs beside its own code, each file pinned by its BLAKE3 and its publisher's SHA-256: the
 /// one list, which the avenDB app's Code page reads too.
 const PACKAGES: &str = include_str!("../../../../src/lib/code/packages.json");
 
@@ -350,7 +350,7 @@ impl Lean {
         })
     }
 
-    /// Gets Lean, unless it is here: the archive as `bring` brings it (`Pieces`: avenDB's copy, in The OS), unpacked
+    /// Gets Lean, unless it is here: the archive as `bring` brings it (`Pieces`: avenDB's copy, in theOS), unpacked
     /// as it comes (`unpack`), and put in place once it checked out; then the objective module compiled. It answers
     /// `engine`.
     pub(crate) async fn get<F, Fut>(&self, bring: F) -> Result<Value>
@@ -358,7 +358,7 @@ impl Lean {
         F: FnOnce(&'static Release) -> Fut,
         Fut: std::future::Future<Output = Result<Pieces>>,
     {
-        ensure!(LOCKED, "Lean runs only in The OS on a Mac");
+        ensure!(LOCKED, "Lean runs only in theOS on a Mac");
         let r = release().context("Lean has no release for this Mac")?;
         let _one = self.once.lock().await;
         if !self.here() {
@@ -447,7 +447,7 @@ impl Lean {
             // a test's own Lean, on a system with no sandbox: never in the app
             tokio::process::Command::new(&lean)
         } else {
-            bail!("Lean runs only in The OS on a Mac");
+            bail!("Lean runs only in theOS on a Mac");
         };
         run.env_clear()
             .env("LEAN_PATH", path)
@@ -464,7 +464,7 @@ impl Lean {
     /// It answers `{ok, key, engine, error, ms}`: whether Lean accepted it, the objective's key (`objective::key`), the
     /// engine (`engine_name`), Lean's first error (`{line, column, message}`) and how long it took.
     pub(crate) async fn check(&self, lean: &str) -> Result<Value> {
-        ensure!(LOCKED || cfg!(test), "Lean runs only in The OS on a Mac");
+        ensure!(LOCKED || cfg!(test), "Lean runs only in theOS on a Mac");
         ensure!(lean.len() <= MAX_LEAN, "an objective of at most {} KB", MAX_LEAN / 1024);
         objective::read(lean).map_err(|e| anyhow!("avenDB's engine doesn't read it, so Lean won't: {e}"))?;
         let r = release().context("Lean has no release for this Mac")?;
@@ -552,7 +552,7 @@ mod tests {
             assert_eq!(r.source, format!("https://github.com/leanprover/lean4/releases/download/v{VERSION}/{}", r.name));
             assert!(r.sha256.len() == 64 && r.blake3.len() == 64 && r.kept < r.bytes, "{}", r.name);
         }
-        // The OS runs Lean on Apple silicon
+        // theOS runs Lean on Apple silicon
         assert!(releases().iter().any(|r| r.os == "macos" && r.arch == "aarch64"));
     }
 
@@ -731,7 +731,7 @@ mod tests {
         assert!(format!("{e}").contains("doesn't read it"), "{e}");
     }
 
-    /// The real thing on a Mac (CI's macOS job, `.github/workflows/lean-mac.yml`): Lean got from GitHub as The OS gets it,
+    /// The real thing on a Mac (CI's macOS job, `.github/workflows/lean-mac.yml`): Lean got from GitHub as theOS gets it,
     /// checks objectives, and its sandbox keeps Lean from the person's files, from writing, and from starting anything,
     /// even where a file got past the input wall.
     #[cfg(target_os = "macos")]
@@ -764,7 +764,7 @@ mod tests {
     }
 
     /// Release `r`'s archive from Lean's releases (`source`), a piece at a time, standing in for avenDB's copy on CI's
-    /// Mac, which holds no vault: `curl`, as nothing in The OS does.
+    /// Mac, which holds no vault: `curl`, as nothing in theOS does.
     #[cfg(target_os = "macos")]
     fn from_releases(r: &'static Release) -> Pieces {
         let (tx, rx) = tokio::sync::mpsc::channel(4);
@@ -793,7 +793,7 @@ mod tests {
     }
 
     /// Where compiling the objective module fails on a Mac, for the log: with no sandbox, in one that allows everything,
-    /// in Lean's own (`PROFILE`, reading its module's folder as where The OS builds it), Lean's own with one more kind of
+    /// in Lean's own (`PROFILE`, reading its module's folder as where theOS builds it), Lean's own with one more kind of
     /// operation allowed (which suffices), the open one with one kind denied (which is needed), and Lean's own asked
     /// only `--version` (whether it stops before compiling anything), each how it ended and the first lines it wrote.
     #[cfg(target_os = "macos")]
