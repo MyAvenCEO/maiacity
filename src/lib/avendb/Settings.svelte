@@ -30,12 +30,14 @@
 	import Ops from './Ops.svelte';
 	import Owned, { ownedTitle } from './Owned.svelte';
 	import Share from './Share.svelte';
+	import { server } from './server.js';
 	import { Here, here, session } from './session.svelte.js';
 	import {
 		acting,
 		actsWords,
 		ago,
 		count,
+		deviceRoles,
 		EVERYONE,
 		groupOf,
 		isStanding,
@@ -139,6 +141,19 @@
 	async function addCloud() {
 		cloud = (await api.addCloudAgent?.()) ?? null;
 	}
+	/** in the Mac app, the agents' devices it knows of (avendb-device's `agentDevices`), looked for again now and then,
+	 *  as an agent starts or stops and its key moves; else none */
+	let agents = $state(/** @type {{ name: string, device: string, cloud: boolean, online: boolean }[] | null} */ (null));
+	$effect(() => {
+		const look = () =>
+			api.agentDevices?.().then(
+				(/** @type {typeof agents} */ known) => (agents = known),
+				() => (agents = null)
+			);
+		look();
+		const every = setInterval(look, 15000);
+		return () => clearInterval(every);
+	});
 	/** Copies the cloud agent's key. */
 	async function copyCloud() {
 		await navigator.clipboard.writeText(cloud?.key ?? '');
@@ -199,6 +214,12 @@
 
 	/** what is shared with the vault in other vaults */
 	const held = $derived(world.shares.filter((c) => c.who === vault && c.over !== vault));
+	/** Vault `id`'s name, where it holds a share over it: with the start of its id where another of those goes by the
+	 *  same name, as two Studio workers. @param {string} id */
+	const heldName = (id) => {
+		const name = nameOf(byId.get(id));
+		return held.some((c) => c.over !== id && nameOf(byId.get(c.over)) === name) ? `${name} (${short(id)})` : name;
+	};
 	/** A row's who: a vault's id, a signer's, a device's, or `"everyone"`. @param {ShareRow} r */
 	const whoOf = (r) =>
 		r.who === EVERYONE ? EVERYONE : 'vault' in r.who ? r.who.vault : 'signer' in r.who ? r.who.signer : 'device' in r.who ? r.who.device : r.who.invite;
@@ -379,17 +400,22 @@
 	};
 	const OLD =
 		'Not unlocked since your keys moved to ML-DSA-65: it moves at its next unlock. Remove it if you no longer use it.';
+	const OLD_AGENT =
+		'Still signs with its key from before the move to ML-DSA-65: it moves the next time a device of yours finds it running, which then asks you once more.';
 	/** Whether device `id` is an old one, not unlocked since the key move. @param {string} id */
 	const isOld = (id) => world.vaults.some((x) => x.devices.some((d) => d.id === id && d.old));
 
+	/** what an aven's devices are, which carry no card: its server, and its agents, here or in the cloud */
+	const roles = $derived(deviceRoles(world, server(), agents));
 	/** A device's name, to start a line: its card's, or what it is. @param {string} id */
-	const deviceName = (id) => signerName(world, id, true);
-	/** How this device acts for the vault. */
+	const deviceName = (id) => roles.get(id) ?? signerName(world, id, true);
+	/** How this device acts for the vault: as the person's vault, through the vaults that own it, from theirs down. */
 	const actsFor = $derived.by(() => {
 		if (!v.via) return 'It doesn’t act for it: it only knows it from what it syncs.';
 		if (!v.via.length) return 'It is one of its devices, and acts for it directly.';
-		const chain = v.via.map((o) => nameOf(byId.get(o)));
-		return `It acts for it through ${list(chain)}, which ${v.via.length === 1 ? 'owns it' : 'own it in turn'}.`;
+		const [first, ...down] = [...v.via].reverse().map((o) => nameOf(byId.get(o)));
+		const owning = down.map((n, i) => `${i ? ', which' : ', who'} owns ${n}`).join('');
+		return `It acts for it as ${first}${owning}, ${down.length ? 'which' : 'who'} owns it.`;
 	});
 
 	/**
@@ -708,7 +734,7 @@
 							<span class="meta">
 								{#if d.me}<span class="chip accent">{here}</span>{/if}
 								{#if drivesById.has(d.id)}<span class="chip">Drive</span>{/if}
-								{#if d.old}<span class="chip warn" title={OLD}>Old key</span>{/if}
+								{#if d.old}<span class="chip warn" title={v.kind === 'aven' ? OLD_AGENT : OLD}>Old key</span>{/if}
 								<span class="soft mono">{short(d.id)}</span>
 								{#if !d.me}<span class="soft">{seen(d.id)}</span>{/if}
 							</span>
@@ -1006,7 +1032,7 @@
 					<Mark vault={byId.get(c.over)} size={28} />
 					<span class="held">
 						<span>
-							<b>{levelName(c, world)}</b> · {shareWhat(c, world)} · of <b>{nameOf(byId.get(c.over))}</b>
+							<b>{levelName(c, world)}</b> · {shareWhat(c, world)} · of <b>{heldName(c.over)}</b>
 						</span>
 						{#if c.slice && !groupOf(c, world)}<Ops ops={c.slice.ops} />{/if}
 					</span>

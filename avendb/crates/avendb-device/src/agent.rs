@@ -222,6 +222,13 @@ pub fn alive(host: &Path, name: &str, device: &str) -> PathBuf {
     agents(host).join(format!("{name}.{device}.alive"))
 }
 
+/// The note in the agents' folder beside the app's `host` folder that its Mac added a cloud agent `name`, its device
+/// `device` in hex (`addCloudAgent`): a cloud agent runs on no Mac and leaves no `alive` file, so this is how the Mac's
+/// page names it among its aven's devices. It names the device alone, never its key.
+pub fn added(host: &Path, name: &str, device: &str) -> PathBuf {
+    agents(host).join(format!("{name}.{device}.added"))
+}
+
 /// Whether agent `name`'s device `device` runs now: it wrote its key to its `alive` file within the last few looks.
 /// An agent harness such as Claude Code starts it with each of its sessions, and it stops with the last of them.
 pub fn online(host: &Path, name: &str, device: &str) -> bool {
