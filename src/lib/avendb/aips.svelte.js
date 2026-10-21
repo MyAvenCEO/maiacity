@@ -34,6 +34,7 @@ export const aips = {
 	get why() {
 		return why;
 	},
-	/** Reads them again, as the world changed or a change was made: at once, or once the read that runs ends. */
-	again: () => (session.phase === 'open' ? go() : Promise.resolve())
+	/** Reads them again, as the world changed, or `soon`, as the person made a change or asked: at once, or after the
+	 *  read that runs (./latest.js). @param {boolean} [soon] */
+	again: (soon = false) => (session.phase === 'open' ? go(soon) : Promise.resolve())
 };
