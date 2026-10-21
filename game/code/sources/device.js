@@ -14,9 +14,10 @@
  * Local first (Samuel 2026-10-20: "everything should be offline / local first loading … ensure our whole app respects
  * this local first pattern"): what the device holds of Maia City is read at once, whether its peers can be reached or
  * not, and the device asks them for what they hold meanwhile (avendb's `bring` op, before anything else it syncs), so
- * the next page reads that; theOS's device keeps syncing anyway. Only a device that holds none of the vault yet (a
- * first sync) waits for its bring, up to `BRING`, and is read from the feed this time where it is still bringing it. A
- * device whose avenDB is older than the ops is read from the feed too. (Until 2026-10-20 every page waited for the
+ * the next page reads that; theOS's device keeps syncing anyway. A device that holds none of the vault yet (a first
+ * sync) is read from the feed this time, and brings the entries the feed named, those alone (`bringRows`, Samuel
+ * 2026-10-21: a device syncs first what its pages need), so the next page reads them off the device. A device whose
+ * avenDB is older than the ops is read from the feed too. (Until 2026-10-20 every page waited for the
  * bring first, and a server that hung sent it to the feed, which hung as well: the village's live world never stood
  * while avenDB's server restarted.)
  *
@@ -60,11 +61,67 @@ let brought = new WeakMap();
 /** where a page leaves its device for the pages it frames (`deviceOf`) */
 const SHARED = Symbol.for('maiacity.avendb.device');
 
-/** The device the page holds open now, or `null` to read the feed again; each vault is brought again once. */
+/** The device the page holds open now, or `null` to read the feed again; each vault is brought again once. A device
+ * opened brings first the entries this page read before (`learned`), before anything else it syncs. */
 export function useDevice(d) {
 	device = d ?? null;
 	brought = new WeakMap();
 	if (typeof window !== 'undefined') /** @type {any} */ (window)[SHARED] = device;
+	const before = learned();
+	if (device && before.length) void bringEntries(before.slice(0, AT_ONCE), device);
+}
+
+/** where this browser keeps, per page, the entries it read (`learn`) */
+const LEARNED = 'maiacity.avendb.read';
+/** the most entries kept per page, and the most pages */
+const MOST_LEARNED = 512;
+const MOST_PAGES = 64;
+
+/** the page an entry is read for: its path, as one address of a game or a world */
+const pageNow = () => (typeof location !== 'undefined' ? location.pathname : '');
+
+/** what this browser kept, `{ [path]: entries }`, newest page last; empty where it keeps nothing @returns {Record<string, string[]>} */
+function kept() {
+	try {
+		const v = JSON.parse(globalThis.localStorage?.getItem(LEARNED) ?? '{}');
+		return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+	} catch {
+		return {};
+	}
+}
+
+/**
+ * The entries page `path` read before on this browser (`learn`), newest first: its learned manifest (Samuel 2026-10-21:
+ * a device syncs first what its pages need, as a bundler follows what a page imports). What a page reads is what it
+ * names, so a page whose manifest misses an entry still brings it first the next time.
+ * @param {string} [path]
+ * @returns {string[]}
+ */
+export function learned(path = pageNow()) {
+	const at = kept()[path];
+	return Array.isArray(at) ? at.filter((e) => /^[0-9a-f]{64}$/.test(String(e))) : [];
+}
+
+/**
+ * Keeps that page `path` read entries `ids` (the newest first, `MOST_LEARNED` at most, `MOST_PAGES` pages, the page
+ * last read last), so the next time a device opens on it, it brings them before anything else (`useDevice`). A browser
+ * that keeps nothing (private, storage blocked) keeps nothing: the page still reads them, as before.
+ * @param {string[]} ids @param {string} [path]
+ */
+export function learn(ids, path = pageNow()) {
+	const fresh = (ids ?? []).filter((e) => /^[0-9a-f]{64}$/.test(String(e)));
+	if (!path || !fresh.length) return;
+	try {
+		const all = kept();
+		const was = Array.isArray(all[path]) ? all[path] : [];
+		delete all[path];
+		all[path] = [...new Set([...fresh, ...was])].slice(0, MOST_LEARNED);
+		const paths = Object.keys(all);
+		for (const p of paths.slice(0, Math.max(0, paths.length - MOST_PAGES))) delete all[p];
+		globalThis.localStorage?.setItem(LEARNED, JSON.stringify(all));
+	} catch {
+		// nothing kept
+	}
 }
 
 /** The device the page holds open, else the one its parent page holds (a frame of ours, same origin), if any. */
@@ -78,12 +135,66 @@ export function deviceOf() {
 	}
 }
 
-/** device `d`'s bring of vault `vault`, asked for once @param {any} d @param {string} vault */
-function bringOf(d, vault) {
+/** what device `d` brought or brings of each vault @param {any} d @returns {Map<string, Promise<any>>} */
+function broughtBy(d) {
 	let of = brought.get(d);
 	if (!of) brought.set(d, (of = new Map()));
+	return of;
+}
+
+/** device `d`'s bring of vault `vault`, asked for once @param {any} d @param {string} vault */
+function bringOf(d, vault) {
+	const of = broughtBy(d);
 	if (!of.has(vault)) of.set(vault, d.run({ op: 'bring', vaults: [vault] }));
 	return of.get(vault);
+}
+
+/** How many entries one `bring` names at most (avendb-net's `MOST_BROUGHT`). */
+export const AT_ONCE = 64;
+
+/**
+ * Has the device the page reads (`deviceOf`) bring from its peers the entries of rows `rows` (the feed's, read because
+ * the device held none of vault `vault`'s code yet), and nothing else of the vault: `{ op: 'bring', entries }`,
+ * `AT_ONCE` at a time, one after another. A new device asked for a whole vault takes all of it before any entry is whole
+ * (Maia City's ~2,200 logs come a page at a time across all of them), so the entries a page reads come first, and the
+ * next page reads them off the device; the rest of the vault comes in the background. Once per vault and device, as its
+ * bring (`whenBrought` answers it): `{ ok: { new, peers, reached } }`, or null with no device.
+ * @param {any[]} rows @param {string} [vault]
+ */
+export function bringRows(rows, vault = MAIA_CITY) {
+	const d = deviceOf();
+	if (!d) return Promise.resolve(null);
+	const of = broughtBy(d);
+	if (of.has(vault)) return of.get(vault);
+	const all = bringEntries((rows ?? []).map((r) => r?.entry), d);
+	of.set(vault, all);
+	return all;
+}
+
+/**
+ * Has device `d` (the page's, `deviceOf`) bring the entries `ids` alone from its peers, `AT_ONCE` at a time, one bring
+ * after another: `{ ok: { new, peers, reached } }`, or null where there is no device, nothing to bring, or a bring
+ * refused (a device whose avenDB knows no `entries` yet). What a view brings for the items it shows (the Maia
+ * Universe's newest posts, a world's recipes), and nothing else.
+ * @param {string[]} ids @param {any} [d]
+ */
+export async function bringEntries(ids, d = deviceOf()) {
+	const sorted = [...new Set((ids ?? []).filter((e) => /^[0-9a-f]{64}$/.test(String(e))))].sort();
+	if (!d || !sorted.length) return null;
+	learn(sorted);
+	try {
+		const sum = { new: 0, peers: 0, reached: true };
+		for (let i = 0; i < sorted.length; i += AT_ONCE) {
+			const got = await d.run({ op: 'bring', entries: sorted.slice(i, i + AT_ONCE) });
+			if (!got?.ok) return null;
+			sum.new += got.ok.new ?? 0;
+			sum.peers = Math.max(sum.peers, got.ok.peers ?? 0);
+			sum.reached &&= !!got.ok.reached;
+		}
+		return { ok: sum };
+	} catch {
+		return null;
+	}
 }
 
 /**
@@ -116,16 +227,21 @@ function within(p, ms) {
 export async function deviceRows(kinds, { vault = MAIA_CITY, wait = BRING, answer = ANSWER } = {}) {
 	const d = deviceOf();
 	if (!d || !/^[0-9a-f]{64}$/.test(String(vault))) return null;
-	const bring = bringOf(d, vault);
 	const code = async () => {
 		const got = await within(d.run({ op: 'code', vault, type: kinds }), answer);
 		return d === deviceOf() && Array.isArray(got?.ok) && got.ok.length ? got.ok : null;
 	};
 	const held = await code();
-	if (held) return held;
-	// none held yet: its bring first, then what it brought; still bringing it, or a device whose avenDB knows no
-	// `bring` yet: the feed, this time
-	if (!(await within(bring, wait))?.ok) return null;
+	if (held) {
+		learn(held.map((r) => r?.entry));
+		// what changed of the vault since, brought beside
+		void bringOf(d, vault).catch(() => null);
+		return held;
+	}
+	// none held yet: a bring of the entries a page read before (`bringRows`) first, then what it brought; else the
+	// feed this time, and the page has the device bring the entries the feed named (`bringRows`), never the whole vault
+	const before = broughtBy(d).get(vault);
+	if (!before || !(await within(before, wait))?.ok) return null;
 	return code();
 }
 

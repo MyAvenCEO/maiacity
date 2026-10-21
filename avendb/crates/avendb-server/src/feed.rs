@@ -3,7 +3,9 @@
 //! (`Config::feed_bind`), behind the proxy at avendb.maia.city/feed/. Any page may read it
 //! (`Access-Control-Allow-Origin: *`), as it is what everyone reads anyway: a post is in it while a Public share of its
 //! vault reaches it, as the content flow's published stage does, and leaves it as its article goes back to a draft. The
-//! server works it out at most every few seconds (`FRESH`), however many ask.
+//! server works it out at most every few seconds (`FRESH`), however many ask. A page asks for it a page at a time
+//! (`?limit=20`, then `&after=<the last entry>`, as `{"posts": [...], "more"}`): the stream shows its newest posts
+//! first and the next as its person scrolls, never all of them before the first.
 //!
 //! Beside it, the pictures everyone may read (`GET /feed/files/<vault>/<name>`, `FILES`): each a file entry of a vault,
 //! public, by the name an article shows it by, served whole as the server opens it (`world::public_file`), so that a
@@ -179,7 +181,7 @@ type Kept<T> = Arc<Mutex<Option<(Instant, T)>>>;
 /// media (`Media`), and the proofs of code it was asked for (`Proven`), by what each asks (`Asked`).
 #[derive(Clone, Default)]
 struct Feeds {
-    posts: Kept<Bytes>,
+    posts: Kept<Posts>,
     entries: Kept<Listed>,
     media: Kept<Media>,
     proofs: Arc<Mutex<BTreeMap<String, Kept<Option<Proven>>>>>,
@@ -316,7 +318,7 @@ async fn answer(
     } else {
         match path.strip_prefix(ENTRY) {
             Some(at) if reads => entry(at, query, &node, &feeds.entries).await,
-            _ if reads && path == PATH => (StatusCode::OK, posts(&node, &feeds.posts).await),
+            _ if reads && path == PATH => posts(query, &node, &feeds.posts).await,
             _ if reads && [ENTRIES, CODE].contains(&path) => listed(path == CODE, query, &node, &feeds.entries).await,
             _ if *request.method() == Method::OPTIONS && ours => (StatusCode::NO_CONTENT, Bytes::new()),
             _ => (StatusCode::NOT_FOUND, error("no such feed")),
@@ -493,14 +495,43 @@ async fn fresh_or<T: Clone>(kept: &Kept<T>, work: impl Future<Output = T>) -> T 
     t
 }
 
-/// The feed's JSON: as the server last worked it out, if that was a moment ago (`FRESH`), else anew.
-async fn posts(node: &Node, kept: &Kept<Bytes>) -> Bytes {
+/// The posts everyone may read, newest first, as the server worked them out (`posts`): each post, and the feed's JSON
+/// of them all.
+#[derive(Clone)]
+struct Posts {
+    posts: Arc<Vec<Value>>,
+    whole: Bytes,
+}
+
+/// The feed's JSON: as the server last worked it out, if that was a moment ago (`FRESH`), else anew; whole, the newest
+/// `MOST`, for a query that asks nothing, else a page of them (`limit=<n>`, `after=<entry>`: `world::page_of_posts`), as
+/// the Maia Universe shows the newest first and asks for the next as its person scrolls; a bad request, as JSON, for a
+/// query that asks what isn't there to ask.
+async fn posts(query: &str, node: &Node, kept: &Kept<Posts>) -> (StatusCode, Bytes) {
     let work = async {
         let mut posts = node.read(world::public_posts).await;
         posts.truncate(MOST);
-        Bytes::from(serde_json::to_vec(&json!({ "posts": posts })).expect("JSON writes"))
+        let whole = Bytes::from(serde_json::to_vec(&json!({ "posts": posts })).expect("JSON writes"));
+        Posts { posts: Arc::new(posts), whole }
     };
-    fresh_or(kept, work).await
+    let (mut limit, mut after) = (None, None);
+    for (k, v) in query.split('&').filter(|kv| !kv.is_empty()).map(|kv| kv.split_once('=').unwrap_or((kv, ""))) {
+        match k {
+            "limit" => match v.parse::<usize>() {
+                Ok(n) if (1..=MOST).contains(&n) => limit = Some(n),
+                _ => return (StatusCode::BAD_REQUEST, error("limit is a count of posts, 1 to 200")),
+            },
+            "after" if EntryId::from_hex(v).is_some() => after = Some(v.to_string()),
+            "after" => return (StatusCode::BAD_REQUEST, error("after is an entry, 64 hex digits")),
+            _ => return (StatusCode::BAD_REQUEST, error("the posts' feed asks limit and after alone")),
+        }
+    }
+    let kept = fresh_or(kept, work).await;
+    if limit.is_none() && after.is_none() {
+        return (StatusCode::OK, kept.whole);
+    }
+    let page = world::page_of_posts(kept.posts.to_vec(), limit.unwrap_or(MOST), after.as_deref());
+    (StatusCode::OK, Bytes::from(serde_json::to_vec(&page).expect("JSON writes")))
 }
 
 /// The entries everyone may read, as the server last worked them out, if that was a moment ago (`FRESH`), else anew.

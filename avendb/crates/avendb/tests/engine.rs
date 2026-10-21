@@ -287,6 +287,16 @@ fn the_posts_everyone_reads_are_the_feed_newest_first() {
     assert_eq!(listed(&posts), both, "the posts the share reaches, now and later, and no other");
     let created: Vec<u64> = posts.iter().map(|p| p["created"].as_u64().unwrap()).collect();
     assert!(created.windows(2).all(|c| c[0] >= c[1]), "newest first: {created:?}");
+    // the same feed a page at a time, newest first, as a page shows the newest and the next as its person scrolls
+    let page = |w: &mut World, o: Value| ok(run(w, mac, o));
+    let first_page = page(&mut w, json!({ "op": "posts", "limit": 1 }));
+    assert_eq!((&first_page["posts"], &first_page["more"]), (&json!([posts[0]]), &json!(true)));
+    let next = page(&mut w, json!({ "op": "posts", "limit": 1, "after": posts[0]["entry"] }));
+    assert_eq!((&next["posts"], &next["more"]), (&json!([posts[1]]), &json!(false)));
+    let gone = page(&mut w, json!({ "op": "posts", "after": hex(EntryId([7; 32])) }));
+    assert_eq!((&gone["posts"], &gone["more"]), (&json!([]), &json!(false)), "after a post taken off: none");
+    assert_eq!(page(&mut w, json!({ "op": "posts" }))["posts"], json!(posts), "all of them, by default");
+    assert_eq!(refused(&run(&mut w, mac, json!({ "op": "posts", "after": "x" }))), "BadOp");
     let first = posts.iter().find(|p| p["entry"] == hex(harvest)).unwrap();
     let fields = ["vault", "name", "kind", "title", "text", "channel", "about"].map(|k| first[k].clone());
     let want = [json!(alice), json!("Alice"), json!("human"), json!("Harvest"), json!("Out now."), json!("Devlog")];

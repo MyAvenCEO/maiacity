@@ -1,12 +1,13 @@
 <script>
 	// @ts-nocheck — plain JS, kept loose on purpose
-	// Maia Universe: maiaCITY's own content stream. Every post published in avenDB comes from its server's feed, taken
-	// in again every minute while the page is open.
+	// Maia Universe: maiaCITY's own content stream. Every post published in avenDB, the newest page first, off the page's
+	// own avenDB device where one is open, else its server's feed; the next page as its person scrolls to the end
+	// (`loadMore`); the newest page taken in again every minute while the page is open.
 	import { onMount } from 'svelte';
 	import { base } from '$app/paths';
 	import { shaped } from '$lib/app/shapes.js';
 	import { CHANNELS, isDoc, postHref } from '$lib/universe/posts.js';
-	import { authorOf, loadFeed, stream } from '$lib/universe/stream.svelte.js';
+	import { authorOf, loadFeed, loadMore, stream } from '$lib/universe/stream.svelte.js';
 	import PostCard from '$lib/universe/PostCard.svelte';
 
 	onMount(() => {
@@ -27,6 +28,15 @@
 	const top = $derived([...posts].sort((a, b) => b.likes - a.likes).slice(0, 3));
 	// every voice that has a post in the stream, by its newest post
 	const voices = $derived([...new Set(posts.map((p) => p.author))].map((k) => stream.authors[k]).filter(Boolean));
+
+	// the end of the stream: once it scrolls into view, the next page
+	let end = $state();
+	$effect(() => {
+		if (!end || typeof IntersectionObserver === 'undefined') return;
+		const seen = new IntersectionObserver((xs) => xs.some((x) => x.isIntersecting) && loadMore(), { rootMargin: '600px' });
+		seen.observe(end);
+		return () => seen.disconnect();
+	});
 </script>
 
 <svelte:head>
@@ -62,6 +72,14 @@
 					{/if}
 				</p>
 			{/each}
+			{#if stream.more || stream.loadingMore}
+				<div class="more" bind:this={end}>
+					<button onclick={() => loadMore()} disabled={stream.loadingMore}>
+						{stream.loadingMore ? 'Taking in older posts…' : 'Older posts'}
+					</button>
+					<span>{posts.length} shown{stream.from ? `, from ${stream.from}` : ''}</span>
+				</div>
+			{/if}
 		</main>
 
 		<aside class="side">
@@ -97,6 +115,31 @@
 </div>
 
 <style>
+	.more {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 0.4rem;
+		margin: 1.5rem 0 0;
+		font-size: 0.8rem;
+		color: var(--muted);
+	}
+
+	.more button {
+		padding: 0.5rem 1.1rem;
+		border: 1px solid var(--line, rgba(0, 0, 0, 0.12));
+		border-radius: 999px;
+		background: transparent;
+		color: var(--ink);
+		font: inherit;
+		cursor: pointer;
+	}
+
+	.more button:disabled {
+		cursor: default;
+		opacity: 0.6;
+	}
+
 	.universe {
 		max-width: 68rem;
 		margin: 0 auto;

@@ -38,6 +38,7 @@
 		const list = rooms;
 		void world;
 		let gone = false;
+		// a room this device holds nothing of yet is brought first by the read itself (../avendb/session.svelte.js `near`)
 		Promise.all(list.map((r) => api.ask({ op: 'room', entry: r.entry, last: 1 }).then((a) => [r.entry, a?.ok ?? null]))).then(
 			(rows) => !gone && (heads = Object.fromEntries(rows))
 		);

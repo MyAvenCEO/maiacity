@@ -962,6 +962,20 @@ pub fn public_posts(lab: &Lab, me: SignerId) -> Vec<Value> {
     posts.into_iter().map(|(_, _, post)| post).collect()
 }
 
+/// A page of posts `posts`, newest first as `public_posts` lists them: `limit` of them, the newest, or with `after` (an
+/// entry, hex) those after its post, none where it isn't among them any more (it was taken off: the page reads the
+/// newest again); `{"posts": [...], "more"}`, `more` whether any come after the last. So a page that shows the newest posts first asks for the next ones as its person scrolls, of its own device
+/// (avendb's `posts` op) or of avenDB's server (`/feed/posts?limit=…&after=…`), the same pages.
+pub fn page_of_posts(posts: Vec<Value>, limit: usize, after: Option<&str>) -> Value {
+    let from = match after {
+        None => 0,
+        Some(a) => posts.iter().position(|p| p["entry"].as_str() == Some(a)).map_or(posts.len(), |i| i + 1),
+    };
+    let more = posts.len() > from + limit;
+    let page: Vec<Value> = posts.into_iter().skip(from).take(limit).collect();
+    json!({ "posts": page, "more": more })
+}
+
 /// Who wrote version `version` of entry `entry` (its heads), by device `me`'s view (Samuel 2026-10-18: never the coop,
 /// always the coop's aven and its human collaborators): the aven of the entry's vault, where that vault is a coop with
 /// one (`aven_of`), first; then the vault each write of that version its readers count was signed in, each once, in the
