@@ -110,7 +110,10 @@ pub fn engine_name(r: &Release) -> String {
 
 /// The sandbox Lean runs in (`sandbox-exec -p`): nothing allowed but reading its own folder (`ROOT`) and what the
 /// system's dynamic loader reads and maps, writing `/dev/null`, reading the system's settings, and running `LEAN`; with
-/// `OUT`, writing that one folder too. No network, no other process, no file of the person's.
+/// `OUT`, writing that one folder too. No network, no other process, no file of the person's. The loader opens the root
+/// folder itself to find the system's shared libraries, and stops the process before `main` where it can't (macOS 15:
+/// `dyld4::CacheFinder`, SIGABRT with nothing written), so the root folder's own list of names is readable, nothing
+/// under it.
 const PROFILE: &str = r#"(version 1)
 (deny default)
 (allow process-exec (literal (param "LEAN")))
@@ -127,6 +130,7 @@ const PROFILE: &str = r#"(version 1)
   (literal "/dev/null")
   (literal "/dev/random")
   (literal "/dev/urandom"))
+(allow file-read-data (literal "/"))
 (allow file-map-executable
   (subpath (param "ROOT"))
   (subpath "/usr/lib")
@@ -624,7 +628,7 @@ mod tests {
         assert!(format!("{e}").contains("doesn't read it"), "{e}");
     }
 
-    /// The real thing on a Mac (CI's macOS job, `.github/workflows/mac.yml`): Lean got from GitHub as The OS gets it,
+    /// The real thing on a Mac (CI's macOS job, `.github/workflows/lean-mac.yml`): Lean got from GitHub as The OS gets it,
     /// checks objectives, and its sandbox keeps Lean from the person's files, from writing, and from starting anything,
     /// even where a file got past the input wall.
     #[cfg(target_os = "macos")]
