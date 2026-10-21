@@ -485,6 +485,13 @@ impl Decode for crate::policy::Wrap {
     }
 }
 
+/// An entry's state: its entry, its basis, and its slice's root (36 bytes and a root of 40 at least).
+impl Decode for crate::policy::Stated {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(crate::policy::Stated { entry: EntryId::decode(r)?, basis: r.seq(32)?, slice: FileRoot::decode(r)? })
+    }
+}
+
 /// A name: UTF-8 behind its length.
 impl Decode for Sym {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
@@ -880,6 +887,7 @@ impl Decode for Action {
             12 => Action::Claim { share: ShareId::decode(r)?, vault: VaultId::decode(r)?, via: r.seq(32)? },
             15 => Action::Wraps { entry: EntryId::decode(r)?, wraps: r.seq(70)? },
             16 => Action::Checkpoint { vault: VaultId::decode(r)?, covers: r.seq(32)? },
+            17 => Action::Snapshot { vault: VaultId::decode(r)?, states: r.seq(76)? },
             _ => return Err(WireError::Unknown),
         })
     }
@@ -1493,7 +1501,11 @@ mod tests {
         };
         let wraps = Action::Wraps { entry, wraps: vec![wrap.clone(), wrap] };
         let checkpoint = Action::Checkpoint { vault: VaultId([5; 32]), covers: vec![EditId([11; 32]), EditId([12; 32])] };
-        for action in [Action::Share(Sharing::Grant(share, vec![])), claim, wraps, checkpoint] {
+        let stated =
+            crate::policy::Stated { entry, basis: vec![EditId([13; 32])], slice: FileRoot { hash: [14; 32], size: 15 } };
+        let states = vec![stated.clone(), crate::policy::Stated { basis: vec![], ..stated }];
+        let snapshot = Action::Snapshot { vault: VaultId([5; 32]), states };
+        for action in [Action::Share(Sharing::Grant(share, vec![])), claim, wraps, checkpoint, snapshot] {
             let e = edit(action);
             assert_eq!(Edit::from_wire(&e.to_wire()), Ok(e));
         }

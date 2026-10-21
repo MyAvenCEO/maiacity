@@ -48,7 +48,7 @@ use avendb::lens::{example, View};
 use avendb::ops::Loc;
 use avendb::policy::{
     history, mk_audience, replay, tips, Action, Creation, Edit, KeepMode, Kind, Level, Line, Principal, Proposal,
-    Readings, Refusal, Revoking, Setting, Share, Sharing, State, Vault, Who, Wrap,
+    Readings, Refusal, Revoking, Setting, Share, Sharing, Stated, State, Vault, Who, Wrap,
 };
 use avendb::rules::{self, ops_of_json, Cap, CapGroup, Grant, Proof, Touch};
 use avendb::slice::{Atom, Attrs, Header, Select, Selector, Sym, TagDelta, CAP_GROUP_TYPE, LENS_TYPE, SCHEMA_TYPE};
@@ -465,6 +465,17 @@ impl Names {
             "checkpoint" => Action::Checkpoint {
                 vault: vault(),
                 covers: list(&x["covers"]).iter().map(|c| self.edit(c)).collect(),
+            },
+            "snapshot" => Action::Snapshot {
+                vault: vault(),
+                states: list(&x["states"])
+                    .iter()
+                    .map(|s| Stated {
+                        entry: entry(&s["entry"]),
+                        basis: list(&s["basis"]).iter().map(|b| self.edit(b)).collect(),
+                        slice: FileRoot { hash: [0; 32], size: 0 },
+                    })
+                    .collect(),
             },
             other => panic!("no action {other}"),
         }

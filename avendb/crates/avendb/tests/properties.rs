@@ -33,7 +33,7 @@ use avendb::lens::{DocV1, Lane, Schema, View, DOCUMENT_V1, TODO_V1};
 use avendb::policy::{
     is_accept, keep_picks, mk_audience, order, passes, removes, replay, trace, view, Action, At, Creation, Edit, Entry,
     Fact, Holder, Issued, KeepMode, Kind, Level, Line, Log, Principal, Proposal, Readings, Refusal, Replay, Revoking,
-    Setting, Share, Sharing, State, Vault, Who, Wrap, Write,
+    Setting, Share, Sharing, Stated, State, Vault, Who, Wrap, Write,
 };
 use avendb::rules::Grant;
 use avendb::slice::{Atom, Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, LENS_TYPE, SCHEMA_TYPE};
@@ -2112,6 +2112,10 @@ impl Twin {
             }
             Action::Checkpoint { vault, covers } => {
                 Action::Checkpoint { vault: self.vault(vault), covers: self.edits(&covers) }
+            }
+            Action::Snapshot { vault, states } => {
+                let states = states.into_iter().map(|s| Stated { basis: self.edits(&s.basis), ..s }).collect();
+                Action::Snapshot { vault: self.vault(vault), states }
             }
         }
     }

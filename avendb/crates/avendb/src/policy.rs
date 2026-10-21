@@ -398,6 +398,20 @@ pub enum Action {
     /// signatures when it stood (`Checkpoint.lean`): a device may then hold a covered edit without its signatures,
     /// while the checkpoint stands and the edit's signers acted for the vault. It changes nothing in the state.
     Checkpoint { vault: VaultId, covers: Vec<EditId> },
+    /// Vault `vault`'s owners' word, by its root or its threshold, on the state of each entry `states` names
+    /// (`Snapshot.lean`): a device may start an entry from its stated slice instead of replaying the entry's log,
+    /// while the snapshot stands and is honest. It changes nothing in the state.
+    Snapshot { vault: VaultId, states: Vec<Stated> },
+}
+
+/// An entry's state as a snapshot states it (`Stated`): what the edits up to `basis`, the frontier of the entry's log
+/// it had seen, make of entry `entry`, its slice, which travels as a file sealed under the entry's key, `slice` its
+/// root.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Stated {
+    pub entry: EntryId,
+    pub basis: Vec<EditId>,
+    pub slice: FileRoot,
 }
 
 /// One key of an entry's earlier stays, `name` and its `id`, wrapped under the key the schedule links it to: one of a
@@ -2548,7 +2562,7 @@ impl State {
                 }
                 Ok(Change::Nothing)
             }
-            &Action::Checkpoint { vault, .. } => {
+            &Action::Checkpoint { vault, .. } | &Action::Snapshot { vault, .. } => {
                 vault_at(vault)?;
                 if !approves(Principal::Vault(vault)) {
                     return Err(Refusal::BelowThreshold);
@@ -3759,7 +3773,7 @@ pub fn replay_on(was: Replay, edits: &[Edit], held: usize) -> Replay {
 /// isn't its replay.
 fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Option<Replay> {
     let tail = was.tail.as_ref()?;
-    if fresh.iter().any(|e| e.is_removal() || matches!(e.action, Action::Checkpoint { .. })) {
+    if fresh.iter().any(|e| e.is_removal() || matches!(e.action, Action::Checkpoint { .. } | Action::Snapshot { .. })) {
         return None;
     }
     let among = |p: &EditId| ids.iter().position(|i| i == p).map(|i| fresh[i].depth);
