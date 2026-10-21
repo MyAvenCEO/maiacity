@@ -351,11 +351,24 @@
 		if (now === asked) return;
 		asked = now;
 		may(api, actor, Object.values(asks)).then((answers) => {
-			if (asked === now) can = Object.fromEntries(names.map((n, i) => [n, answers[i]]));
+			if (asked !== now) return;
+			can = Object.fromEntries(names.map((n, i) => [n, answers[i]]));
+			// a removal it refuses goes into the Mac app's log too, with why (Samuel 2026-10-21: no Remove on any device)
+			for (const [n, verdict] of Object.entries(can))
+				if (/^(owner|device) /.test(n) && !allowed(verdict)) console.warn(`avenDB: Settings may not remove ${n}:`, verdict);
 		});
 	});
 	/** Whether the device would make `what` (`can`). @param {string} what */
 	const lets = (what) => allowed(can[what]);
+	/**
+	 * Why a Remove of `what` waits or can't be, in words: while the device hasn't answered its dry run yet, or as it
+	 * refuses it; '' where it would make it. @param {string} what
+	 */
+	const whyNot = (what) => {
+		const verdict = /** @type {any} */ (can[what]);
+		if (verdict === undefined) return `${Here} is checking whether it may remove it`;
+		return allowed(verdict) ? '' : (verdict.why ?? verdict.refused ?? 'refused');
+	};
 
 	/** when each device last said what it holds (`lastSaid`) */
 	const said = $derived(lastSaid(world));
@@ -576,6 +589,16 @@
 	</article>
 {/snippet}
 
+<!-- Remove for owner or device `what`, by `onremove`: on the person's own vault it shows even where it can't be, and
+	says why, or that the device is still checking -->
+{#snippet remover(/** @type {string} */ what, /** @type {() => void} */ onremove)}
+	{@const why = whyNot(what)}
+	<span class="remover">
+		{#if why}<span class="soft why">{why}</span>{/if}
+		<button class="btn quiet danger" disabled={busy || !!why} onclick={onremove}>Remove</button>
+	</span>
+{/snippet}
+
 {#snippet ownership()}
 	<article class="card wide">
 		<h3>Owners</h3>
@@ -594,9 +617,7 @@
 							<span class="soft mono">{short(o.signer)}</span>
 						{/if}
 					</span>
-					{#if lets(ownerKey(o))}
-						<button class="btn quiet danger" disabled={busy} onclick={() => removeOwner(o)}>Remove</button>
-					{/if}
+					{#if lets(ownerKey(o)) || own}{@render remover(ownerKey(o), () => removeOwner(o))}{/if}
 				</li>
 			{/each}
 		</ul>
@@ -695,10 +716,8 @@
 						{#if own}{@render keeps(d)}{/if}
 						{#if d.me}
 							<button class="btn quiet" disabled={busy} onclick={() => (renaming = d.name ?? thisName)}>Rename</button>
-						{:else if lets(`device ${d.id}`)}
-							<button class="btn quiet danger" disabled={busy} onclick={() => removeDevice(d.id, deviceName(d.id))}
-								>Remove</button
-							>
+						{:else if lets(`device ${d.id}`) || own}
+							{@render remover(`device ${d.id}`, () => removeDevice(d.id, deviceName(d.id)))}
 						{/if}
 					{/if}
 				</li>
@@ -1089,6 +1108,21 @@
 
 	.card p {
 		line-height: 1.5;
+	}
+
+	/* a Remove, and on the person's own vault why it can't be yet */
+	.remover {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.6rem;
+		min-width: 0;
+	}
+
+	.remover .why {
+		max-width: 36ch;
+		font-size: 0.78rem;
+		line-height: 1.35;
+		text-align: right;
 	}
 
 	dl {
