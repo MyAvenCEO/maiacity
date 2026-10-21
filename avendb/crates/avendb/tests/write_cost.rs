@@ -75,4 +75,12 @@ fn one_write_on_a_big_vault() {
             eprintln!("  {k}: {:.2} ms", v - was);
         }
     }
+    // what Settings asks: the shares over the vault, each row with a dry run of its revoke
+    for round in 0..2 {
+        let t = Instant::now();
+        let op = serde_json::json!({ "op": "shares", "over": alice.to_hex() });
+        let answer = avendb::engine::run(&mut lab, mac, &op);
+        assert!(answer.get("ok").is_some(), "{answer}");
+        eprintln!("shares {round}: {:?}", t.elapsed());
+    }
 }

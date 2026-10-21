@@ -2052,8 +2052,17 @@ impl Lab {
     pub fn draft(&mut self, on: SignerId, signers: &[SignerId], mut action: Action) -> Result<Unsigned, Refusal> {
         let (&author, cosigners) = signers.split_first().expect("an edit has an author");
         let blobs = self.fill_seal_to(&mut action);
-        let log = &self.held(on).log;
-        let edit = log.check(author, cosigners, action)?;
+        let store = self.held(on);
+        let log = &store.log;
+        // checked on the replay it keeps where that is of every edit it holds, as it is but within `together`; a dry
+        // run tries no removal's cuts, which only name the edit
+        let edit = match store.replayed == log.edits().len() {
+            true => {
+                debug_assert!(store.replay == log.replay(), "the replay kept differs from the log's");
+                log.check_on(&store.replay, !self.dry, author, cosigners, action)?
+            }
+            false => log.check(author, cosigners, action)?,
+        };
         Ok(Unsigned { edit, blobs, held: log.ids().len(), batch: vec![], pass: None })
     }
 
@@ -2104,7 +2113,7 @@ impl Lab {
     ) -> Result<EditId, Refusal> {
         let Unsigned { edit, blobs, held, batch, pass } = draft;
         if self.held(on).log.ids().len() != held {
-            self.held(on).view().step(&edit)?;
+            self.held(on).view().accepts(&edit, edit.id())?;
         }
         // in a dry run, checked and then not made (`dry`)
         if self.dry {
@@ -2155,7 +2164,7 @@ impl Lab {
     ) -> Result<Signed, Refusal> {
         let Unsigned { edit, held, batch, .. } = draft;
         if self.held(on).log.ids().len() != held {
-            self.held(on).view().step(&edit)?;
+            self.held(on).view().accepts(&edit, edit.id())?;
         }
         let (id, standing) = (edit.id(), sign::standing(&edit));
         let first: Vec<SignerId> = edit.sigs().take(signers).collect();
@@ -2182,7 +2191,7 @@ impl Lab {
         ceremonies: &[(SignerId, &Ceremony)],
     ) -> Result<EditId, Refusal> {
         let Signed { edit, mut sigs } = part;
-        self.held(on).view().step(&edit)?;
+        self.held(on).view().accepts(&edit, edit.id())?;
         if self.dry {
             return Ok(edit.id());
         }
