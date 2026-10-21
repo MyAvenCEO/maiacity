@@ -1,5 +1,5 @@
 //! Real Lean in The OS (N3, avendb/docs/ARCHITECTURE.md §8, "AIPs"): the pinned Lean release, the version
-//! avendb/spec/lean-toolchain names (`VERSION`, `RELEASES`), checks an AIP's objective, a file of Lean against the
+//! avendb/spec/lean-toolchain names (`VERSION`, `releases`), checks an AIP's objective, a file of Lean against the
 //! spec's own AvenDB.Objective, on the device of whoever measures it, and the page records what it found as their
 //! reading `lean:<key>` (`avendb::objective::verdict_name`): the AIP's Lean verdict (`AvenDB.Measurers.leanVerdict`).
 //! Browsers keep avenDB's own engine, which reads the same subset of Lean (`avendb::objective`).
@@ -11,11 +11,13 @@
 //! start nothing; elaboration is held to `HEARTBEATS`, memory to `MEMORY_MB` and the clock to `CLOCK`. Only a Mac has
 //! that sandbox, so only The OS on a Mac runs Lean (`LOCKED`).
 //!
-//! Lean comes only when the person asks (`leanGet`, behind a button in the Proposals app that names its sizes): the
-//! release's archive straight from Lean's releases on GitHub, unpacked as it streams in, keeping only what checking an
-//! objective needs (`keep`: `lean`, its shared libraries and the Init library's .olean files, 1,964 of its 18,534
-//! files), into a folder of its own beside the device's shelves (`lean/<version>.part`), which is put in place
-//! (`lean/<version>`) only once the archive's SHA-256 matched the one pinned here; nothing in it runs before. The spec's
+//! Lean comes only when the person asks (`leanGet`, behind a button in the Proposals app that names its sizes), and
+//! only from avenDB (Samuel 2026-10-21: "do it via avenDB"): the release's archive as Maia City keeps it, a code package
+//! (src/lib/code/packages.json, the avenDB app's Code page) that came in by an AIP its owners signed, read off the open
+//! device a piece at a time (`Pieces`) and unpacked as it streams in, keeping only what checking an objective needs
+//! (`keep`: `lean`, its shared libraries and the Init library's .olean files, 1,964 of its 18,534 files), into a folder
+//! of its own beside the device's shelves (`lean/<version>.part`), which is put in place (`lean/<version>`) only once
+//! the archive's SHA-256, as Lean publishes it, and its BLAKE3 matched the pins; nothing in it runs before. The spec's
 //! Objective.lean, built into this device, is compiled there once per version of it (`objective/<key>`, its BLAKE3).
 //!
 //! The device's calls (`Service::call`, with no device open): `leanEngine` what Lean is here (`Lean::engine`),
@@ -25,7 +27,7 @@ use std::io::{self, Read, Write as _};
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context as _, Result, anyhow, bail, ensure};
@@ -40,47 +42,71 @@ pub const VERSION: &str = "4.35.0";
 /// The spec's objective module, which every objective imports: the file Lean compiles on the device, once per version.
 pub const OBJECTIVE: &str = include_str!("../../../spec/AvenDB/Objective.lean");
 
-/// A release of Lean for one system: its archive on GitHub, the archive's SHA-256 and size, and how many bytes of it
-/// the device keeps (`keep`).
+/// The code packages The OS runs beside its own code, each file pinned by its BLAKE3 and its publisher's SHA-256: the
+/// one list, which the avenDB app's Code page reads too.
+const PACKAGES: &str = include_str!("../../../../src/lib/code/packages.json");
+
+/// A release of Lean for one system: its archive (`name`, as Lean's releases name it, and where Lean publishes it,
+/// `source`), the archive's SHA-256 as Lean publishes it and its BLAKE3, which tags its copy in avenDB, its size, and how
+/// many bytes of it the device keeps (`keep`).
 pub struct Release {
-    pub os: &'static str,
-    pub arch: &'static str,
-    pub asset: &'static str,
-    pub sha256: &'static str,
+    pub os: String,
+    pub arch: String,
+    pub name: String,
+    pub source: String,
+    pub sha256: String,
+    pub blake3: String,
     pub bytes: u64,
     pub kept: u64,
 }
 
-/// Lean `VERSION`'s releases, each archive's SHA-256 pinned here (read off the archives themselves, 2026-10-20).
-pub const RELEASES: &[Release] = &[
-    Release {
-        os: "macos",
-        arch: "aarch64",
-        asset: "lean-4.35.0-darwin_aarch64.tar.zst",
-        sha256: "c0c6f34f35ba1dcc5c4a5fd106fefab9eb5e8469712624dd2c868d51b63177c2",
-        bytes: 570_422_530,
-        kept: 543_661_464,
-    },
-    Release {
-        os: "macos",
-        arch: "x86_64",
-        asset: "lean-4.35.0-darwin.tar.zst",
-        sha256: "0b43be5c7ecfb36016566a41005ab62bdb04743e6bfd5837e45f796ef4750b4e",
-        bytes: 576_516_478,
-        kept: 549_832_184,
-    },
-    Release {
-        os: "linux",
-        arch: "x86_64",
-        asset: "lean-4.35.0-linux.tar.zst",
-        sha256: "7289597a44543246c9227b8cae501767e095ce17f6d448b95fc4a8dc97268f6d",
-        bytes: 594_481_375,
-        kept: 597_428_984,
-    },
-];
+/// Lean's releases, as src/lib/code/packages.json pins them (each hash read off the archive itself).
+pub fn releases() -> &'static [Release] {
+    static PINS: OnceLock<Vec<Release>> = OnceLock::new();
+    PINS.get_or_init(|| {
+        let pins: Value = serde_json::from_str(PACKAGES).expect("packages.json");
+        let lean = pins["packages"].as_array().into_iter().flatten().find(|p| p["id"] == "lean");
+        let files = lean.and_then(|l| l["files"].as_array()).cloned().unwrap_or_default();
+        files
+            .iter()
+            .map(|f| {
+                let text = |k: &str| f[k].as_str().unwrap_or_else(|| panic!("packages.json: Lean's file has no {k}")).to_string();
+                let count = |k: &str| f[k].as_u64().unwrap_or_else(|| panic!("packages.json: Lean's file has no {k}"));
+                Release {
+                    os: text("os"),
+                    arch: text("arch"),
+                    name: text("name"),
+                    source: text("source"),
+                    sha256: text("sha256"),
+                    blake3: text("blake3"),
+                    bytes: count("size"),
+                    kept: count("kept"),
+                }
+            })
+            .collect()
+    })
+}
 
-/// Where the releases come from.
-const RELEASES_URL: &str = "https://github.com/leanprover/lean4/releases/download";
+/// How much of an archive avenDB reads at a time.
+pub const PIECE: u64 = 4 << 20;
+
+/// An archive's bytes as something brings them, a piece at a time: avenDB's copy (`Service::lean_archive`), or in a
+/// test, Lean's releases themselves.
+pub type Pieces = tokio::sync::mpsc::Receiver<io::Result<Vec<u8>>>;
+
+/// Release `r`'s archive among the world's entries (`world`, the `world` op's answer): a file entry tagged
+/// `blake3:<its pin>` and of its size, the newest; its file (`{root, size, len}`), or none where no vault here holds it.
+pub fn copy_in(world: &Value, r: &Release) -> Option<Value> {
+    let pin = format!("blake3:{}", r.blake3);
+    let tagged = |e: &Value, t: &str| e["tags"].as_array().is_some_and(|ts| ts.iter().any(|x| x == t));
+    world["entries"]
+        .as_array()?
+        .iter()
+        .filter(|e| e["kind"] == "file" && e["deleted"] != true && !tagged(e, "avendb:deleted") && tagged(e, &pin))
+        .filter(|e| e["files"][0]["len"].as_u64() == Some(r.bytes))
+        .max_by_key(|e| e["created"].as_u64())
+        .map(|e| e["files"][0].clone())
+}
 
 /// Whether Lean runs here: only where its sandbox does, on a Mac.
 pub const LOCKED: bool = cfg!(target_os = "macos");
@@ -99,7 +125,7 @@ const SPARE: u64 = 500_000_000;
 
 /// The release for this system, if Lean has one.
 pub fn release() -> Option<&'static Release> {
-    RELEASES.iter().find(|r| r.os == std::env::consts::OS && r.arch == std::env::consts::ARCH)
+    releases().iter().find(|r| r.os == std::env::consts::OS && r.arch == std::env::consts::ARCH)
 }
 
 /// The engine a verdict names in its note: Lean's version, the first hex digits of its archive's SHA-256, and the
@@ -162,10 +188,10 @@ pub fn keep(rel: &Path) -> bool {
 }
 
 /// Unpacks a release's archive as `from` reads it, into `into`, keeping only what `keep` keeps: its bytes counted in
-/// `at` as they come, and checked against its SHA-256 once the last one is in. Fails, and leaves `into` unfit for use,
+/// `at` as they come, and checked against its SHA-256 and its BLAKE3 once the last one is in. Fails, and leaves `into` unfit for use,
 /// where they don't match, or where it keeps no `lean`.
 pub fn unpack(from: impl Read, r: &Release, into: &Path, at: &AtomicU64) -> Result<u64> {
-    let mut read = Hashing { inner: from, hash: Sha256::new(), at };
+    let mut read = Hashing { inner: from, hash: Sha256::new(), blake3: blake3::Hasher::new(), at };
     let decoder = ruzstd::decoding::StreamingDecoder::new(&mut read).context("Lean's archive isn't zstd")?;
     let mut archive = tar::Archive::new(decoder);
     let mut kept = 0u64;
@@ -195,6 +221,8 @@ pub fn unpack(from: impl Read, r: &Release, into: &Path, at: &AtomicU64) -> Resu
     io::copy(&mut read, &mut io::sink())?;
     let got = HEXLOWER.encode(&read.hash.finalize());
     ensure!(got == r.sha256, "Lean's archive isn't the one pinned: its SHA-256 is {got}, not {}", r.sha256);
+    let got = read.blake3.finalize().to_hex();
+    ensure!(got.as_str() == r.blake3, "Lean's archive isn't the one pinned: its BLAKE3 is {got}, not {}", r.blake3);
     ensure!(lean, "Lean's archive holds no bin/lean");
     #[cfg(unix)]
     {
@@ -208,6 +236,7 @@ pub fn unpack(from: impl Read, r: &Release, into: &Path, at: &AtomicU64) -> Resu
 struct Hashing<'a, R> {
     inner: R,
     hash: Sha256,
+    blake3: blake3::Hasher,
     at: &'a AtomicU64,
 }
 
@@ -215,7 +244,30 @@ impl<R: Read> Read for Hashing<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let n = self.inner.read(buf)?;
         self.hash.update(&buf[..n]);
+        self.blake3.update(&buf[..n]);
         self.at.fetch_add(n as u64, Ordering::Relaxed);
+        Ok(n)
+    }
+}
+
+/// The bytes `Pieces` bring, read in order: the end where they end, an error where one came.
+struct Piecewise {
+    pieces: Pieces,
+    held: Vec<u8>,
+    at: usize,
+}
+
+impl Read for Piecewise {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        while self.at == self.held.len() {
+            match self.pieces.blocking_recv() {
+                Some(piece) => (self.held, self.at) = (piece?, 0),
+                None => return Ok(0),
+            }
+        }
+        let n = buf.len().min(self.held.len() - self.at);
+        buf[..n].copy_from_slice(&self.held[self.at..self.at + n]);
+        self.at += n;
         Ok(n)
     }
 }
@@ -298,16 +350,24 @@ impl Lean {
         })
     }
 
-    /// Gets Lean, unless it is here: the archive from GitHub by `curl` (always on a Mac), unpacked as it comes
-    /// (`unpack`), and put in place once it checked out; then the objective module compiled. It answers `engine`.
-    pub(crate) async fn get(&self) -> Result<Value> {
+    /// Gets Lean, unless it is here: the archive as `bring` brings it (`Pieces`: avenDB's copy, in The OS), unpacked
+    /// as it comes (`unpack`), and put in place once it checked out; then the objective module compiled. It answers
+    /// `engine`.
+    pub(crate) async fn get<F, Fut>(&self, bring: F) -> Result<Value>
+    where
+        F: FnOnce(&'static Release) -> Fut,
+        Fut: std::future::Future<Output = Result<Pieces>>,
+    {
         ensure!(LOCKED, "Lean runs only in The OS on a Mac");
         let r = release().context("Lean has no release for this Mac")?;
         let _one = self.once.lock().await;
         if !self.here() {
             let at = Arc::new(AtomicU64::new(0));
             *self.getting.lock().expect("the getting") = Some(at.clone());
-            let got = self.fetch(r, at).await;
+            let got = match bring(r).await {
+                Ok(pieces) => self.fetch(r, at, pieces).await,
+                Err(e) => Err(e),
+            };
             *self.getting.lock().expect("the getting") = None;
             *self.failed.lock().expect("the failure") = got.as_ref().err().map(|e| format!("{e:#}"));
             got?;
@@ -316,7 +376,7 @@ impl Lean {
         Ok(self.engine())
     }
 
-    async fn fetch(&self, r: &'static Release, at: Arc<AtomicU64>) -> Result<()> {
+    async fn fetch(&self, r: &'static Release, at: Arc<AtomicU64>, pieces: Pieces) -> Result<()> {
         std::fs::create_dir_all(&self.dir)?;
         let free = free_bytes(&self.dir);
         if let Some(free) = free {
@@ -333,27 +393,10 @@ impl Lean {
             std::fs::remove_dir_all(&part)?;
         }
         std::fs::create_dir_all(&part)?;
-        let url = format!("{RELEASES_URL}/v{VERSION}/{}", r.asset);
         let into = part.clone();
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            let mut curl = std::process::Command::new("curl")
-                .args(["--fail", "--location", "--silent", "--show-error", "--proto", "=https", "--proto-redir", "=https"])
-                .arg(&url)
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .spawn()
-                .context("curl didn't start")?;
-            let stdout = curl.stdout.take().expect("curl's output");
-            let unpacked = unpack(stdout, r, &into, &at);
-            let out = curl.wait_with_output()?;
-            if !out.status.success() {
-                bail!("getting Lean failed: {}", String::from_utf8_lossy(&out.stderr).trim());
-            }
-            unpacked.map(|_| ())
-        })
-        .await
-        .map_err(|e| anyhow!("getting Lean failed: {e}"))??;
+        tokio::task::spawn_blocking(move || unpack(Piecewise { pieces, held: vec![], at: 0 }, r, &into, &at))
+            .await
+            .map_err(|e| anyhow!("getting Lean failed: {e}"))??;
         std::fs::rename(&part, self.root())?;
         Ok(())
     }
@@ -500,7 +543,17 @@ mod tests {
     fn the_version_is_the_spec_s() {
         let toolchain = include_str!("../../../spec/lean-toolchain").trim();
         assert_eq!(toolchain, format!("leanprover/lean4:v{VERSION}"));
-        assert!(RELEASES.iter().all(|r| r.asset.starts_with(&format!("lean-{VERSION}-")) && r.sha256.len() == 64));
+        let pins: Value = serde_json::from_str(PACKAGES).unwrap();
+        let lean = pins["packages"].as_array().unwrap().iter().find(|p| p["id"] == "lean").unwrap();
+        assert_eq!(lean["version"], VERSION);
+        assert!(!releases().is_empty());
+        for r in releases() {
+            assert!(r.name.starts_with(&format!("lean-{VERSION}-")), "{}", r.name);
+            assert_eq!(r.source, format!("https://github.com/leanprover/lean4/releases/download/v{VERSION}/{}", r.name));
+            assert!(r.sha256.len() == 64 && r.blake3.len() == 64 && r.kept < r.bytes, "{}", r.name);
+        }
+        // The OS runs Lean on Apple silicon
+        assert!(releases().iter().any(|r| r.os == "macos" && r.arch == "aarch64"));
     }
 
     #[test]
@@ -543,8 +596,16 @@ mod tests {
     }
 
     fn pinned(bytes: &[u8]) -> Release {
-        let sha256: &'static str = HEXLOWER.encode(&Sha256::digest(bytes)).leak();
-        Release { os: "test", arch: "test", asset: "test", sha256, bytes: bytes.len() as u64, kept: 0 }
+        Release {
+            os: "test".into(),
+            arch: "test".into(),
+            name: "test".into(),
+            source: "test".into(),
+            sha256: HEXLOWER.encode(&Sha256::digest(bytes)),
+            blake3: blake3::hash(bytes).to_hex().to_string(),
+            bytes: bytes.len() as u64,
+            kept: 0,
+        }
     }
 
     #[test]
@@ -561,13 +622,56 @@ mod tests {
 
         let other = tempdir();
         let mut wrong = pinned(&zst);
-        wrong.sha256 = "0000000000000000000000000000000000000000000000000000000000000000";
+        wrong.sha256 = "0".repeat(64);
         let e = unpack(&zst[..], &wrong, &other, &AtomicU64::new(0)).unwrap_err();
-        assert!(format!("{e}").contains("isn't the one pinned"), "{e}");
+        assert!(format!("{e}").contains("SHA-256"), "{e}");
+        let mut wrong = pinned(&zst);
+        wrong.blake3 = "0".repeat(64);
+        let e = unpack(&zst[..], &wrong, &tempdir(), &AtomicU64::new(0)).unwrap_err();
+        assert!(format!("{e}").contains("BLAKE3"), "{e}");
 
         let none = archive(&[("lib/lean/Init.olean", b"init")]);
         let e = unpack(&none[..], &pinned(&none), &tempdir(), &AtomicU64::new(0)).unwrap_err();
         assert!(format!("{e}").contains("no bin/lean"), "{e}");
+    }
+
+    #[test]
+    fn it_unpacks_what_avendb_brings_a_piece_at_a_time() {
+        let zst = archive(&[("bin/lean", b"lean"), ("lib/lean/Init.olean", b"init")]);
+        let pieces = |cut: &[Result<&[u8], &str>]| {
+            let (tx, rx) = tokio::sync::mpsc::channel(cut.len().max(1));
+            for piece in cut {
+                tx.try_send(piece.map(<[u8]>::to_vec).map_err(io::Error::other)).unwrap();
+            }
+            Piecewise { pieces: rx, held: vec![], at: 0 }
+        };
+        let dir = tempdir();
+        let (a, b) = zst.split_at(zst.len() / 3);
+        assert_eq!(unpack(pieces(&[Ok(a), Ok(&[]), Ok(b)]), &pinned(&zst), &dir, &AtomicU64::new(0)).unwrap(), 8);
+        assert_eq!(std::fs::read(dir.join("bin/lean")).unwrap(), b"lean");
+        // a read that failed half way, and a copy that ends early, are never Lean
+        let e = unpack(pieces(&[Ok(a), Err("avenDB didn't read it")]), &pinned(&zst), &tempdir(), &AtomicU64::new(0));
+        assert!(format!("{:#}", e.unwrap_err()).contains("avenDB didn't read it"));
+        assert!(unpack(pieces(&[Ok(a)]), &pinned(&zst), &tempdir(), &AtomicU64::new(0)).is_err());
+    }
+
+    #[test]
+    fn it_finds_lean_s_archive_among_the_files_by_its_pin() {
+        let r = pinned(b"archive");
+        let file = |root: &str, len: u64| json!([{ "root": root, "size": len + 64, "len": len }]);
+        let entry = |tags: Vec<String>, files: Value, created: u64| {
+            json!({ "kind": "file", "tags": tags, "files": files, "created": created })
+        };
+        let pin = format!("blake3:{}", r.blake3);
+        let world = json!({ "entries": [
+            entry(vec!["package:lean".into()], file("untagged", 7), 9),
+            entry(vec![pin.clone()], file("short", 6), 9),
+            entry(vec![pin.clone(), "avendb:deleted".into()], file("deleted", 7), 9),
+            entry(vec![pin.clone()], file("older", 7), 1),
+            entry(vec![pin.clone()], file("newer", 7), 2),
+        ] });
+        assert_eq!(copy_in(&world, &r).unwrap()["root"], "newer");
+        assert!(copy_in(&json!({ "entries": [] }), &r).is_none());
     }
 
     #[test]
@@ -606,8 +710,7 @@ mod tests {
     /// the objective module, and checks an objective Lean accepts and one it doesn't. Skipped without one.
     #[tokio::test]
     async fn real_lean_checks_an_objective() {
-        let Some(path) = std::env::var_os("AVENDB_LEAN_ARCHIVE") else { return };
-        let r = release().unwrap();
+        let (Some(path), Some(r)) = (std::env::var_os("AVENDB_LEAN_ARCHIVE"), release()) else { return };
         let lean = Lean::new(tempdir());
         let file = std::fs::File::open(path).unwrap();
         unpack(io::BufReader::new(file), r, &lean.root(), &AtomicU64::new(0)).unwrap();
@@ -636,7 +739,7 @@ mod tests {
     #[ignore = "gets Lean from GitHub: run on a Mac with --ignored"]
     async fn lean_on_a_mac() {
         let lean = Lean::new(tempdir());
-        let e = match lean.get().await {
+        let e = match lean.get(|r| async move { Ok(from_releases(r)) }).await {
             Ok(e) => e,
             Err(e) => {
                 bisect(&lean).await;
@@ -658,6 +761,35 @@ mod tests {
         assert!(!out.contains("ESCAPED"), "{out}");
         assert_eq!(out.matches("stopped").count(), 4, "{out}");
         assert!(!Path::new(&home).join("lean-escaped").exists());
+    }
+
+    /// Release `r`'s archive from Lean's releases (`source`), a piece at a time, standing in for avenDB's copy on CI's
+    /// Mac, which holds no vault: `curl`, as nothing in The OS does.
+    #[cfg(target_os = "macos")]
+    fn from_releases(r: &'static Release) -> Pieces {
+        let (tx, rx) = tokio::sync::mpsc::channel(4);
+        std::thread::spawn(move || {
+            let mut curl = std::process::Command::new("curl")
+                .args(["--fail", "--location", "--silent", "--show-error", "--proto", "=https"])
+                .arg(&r.source)
+                .stdout(Stdio::piped())
+                .spawn()
+                .expect("curl");
+            let mut out = curl.stdout.take().expect("curl's output");
+            let mut piece = vec![0; PIECE as usize];
+            loop {
+                match out.read(&mut piece) {
+                    Ok(0) => break,
+                    Ok(n) if tx.blocking_send(Ok(piece[..n].to_vec())).is_ok() => {}
+                    Ok(_) => return,
+                    Err(e) => return drop(tx.blocking_send(Err(e))),
+                }
+            }
+            if !curl.wait().is_ok_and(|s| s.success()) {
+                let _ = tx.blocking_send(Err(io::Error::other("curl failed")));
+            }
+        });
+        rx
     }
 
     /// Where compiling the objective module fails on a Mac, for the log: with no sandbox, in one that allows everything,

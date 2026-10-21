@@ -1,7 +1,7 @@
 // @ts-nocheck — plain JS, kept loose on purpose
 /**
  * HOW FAR avenDB HAS SYNCED (Samuel 2026-10-20), for every app page: what the device the page holds open said last of
- * the logs its live peers hold (avendb's `synced` op: `{ peers, logs, behind, pulling }`), asked every second while it
+ * the logs its live peers hold (avendb's `synced` op: `{ peers, logs, behind, pulling, pages }`), asked every second while it
  * is behind and every few seconds once it is not, by the app's status pill ($lib/app/StatusPill.svelte) while avenDB is
  * open. Games, sandboxes and the asset viewers read their code off this device once it holds Maia City
  * (game/code/sources/device.js), so this is what such a page waits for, and the pill says so.
@@ -15,10 +15,13 @@ const EVERY = { behind: 1000, synced: 4000 };
 const STILL = 30000;
 
 /**
- * What the device said last: `known` once it answered (a device too old for the op never does), the counts, and
- * since when they stand (`since`, ms) as of its last answer (`at`).
+ * What the device said last: `known` once it answered (a device too old for the op never does), the counts, since
+ * when they stand (`since`, ms) as of its last answer (`at`), and when its last page of edits came (`paged`, ms; 0
+ * for none since the page watched). A log counts only once whole, and a page brings edits of many, so on a big vault
+ * the logs stand still for minutes while the pages show the pull moving (Samuel's iPhone 2026-10-21, "it says it
+ * syncs but somehow it doesn't").
  */
-export const sync = $state({ known: false, peers: 0, logs: 0, behind: 0, pulling: 0, since: 0, at: 0 });
+export const sync = $state({ known: false, peers: 0, logs: 0, behind: 0, pulling: 0, pages: 0, since: 0, at: 0, paged: 0 });
 
 /** Whether the device still brings what its peers hold: behind them, and pulling, or its count moved lately. */
 export const syncing = () => sync.known && sync.behind > 0 && sync.logs > 0 && (sync.pulling > 0 || sync.at - sync.since < STILL);
@@ -38,14 +41,15 @@ export function watchSync() {
 		if (stop) return;
 		if (!got?.ok) return void (sync.known = false);
 		const at = Date.now();
-		const moved = !sync.known || got.ok.behind !== sync.behind || got.ok.logs !== sync.logs;
-		Object.assign(sync, { known: true, ...got.ok, at, since: moved ? at : sync.since });
+		const paged = sync.known && (got.ok.pages ?? 0) > sync.pages;
+		const moved = !sync.known || paged || got.ok.behind !== sync.behind || got.ok.logs !== sync.logs;
+		Object.assign(sync, { known: true, pages: 0, ...got.ok, at, since: moved ? at : sync.since, paged: paged ? at : sync.paged });
 		t = setTimeout(ask, sync.behind > 0 ? EVERY.behind : EVERY.synced);
 	};
 	void ask();
 	return () => {
 		stop = true;
 		clearTimeout(t);
-		sync.known = false;
+		Object.assign(sync, { known: false, paged: 0 });
 	};
 }

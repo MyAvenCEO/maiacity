@@ -353,7 +353,10 @@ impl Service {
             "rename" => self.rename(a.text(0)?).await.map(Value::from),
             "qrSvg" => qr_svg(&a.text(0)?, u32::try_from(a.count(1)?)?).map(Value::from),
             "leanEngine" => Ok(self.lean.engine()),
-            "leanGet" => self.lean.get().await,
+            "leanGet" => {
+                let me = self.clone();
+                self.lean.get(|r| me.lean_archive(r)).await
+            }
             "leanCheck" => self.lean.check(&a.text(0)?).await,
             _ => self.on_device(call, a).await,
         }
@@ -453,6 +456,35 @@ impl Service {
         let asks = engine::reads(&op) || engine::asks(&op);
         let approver = if asks { None } else { Some(self.approver().await?) };
         d.run(op, None::<NoBytes>, approver.as_ref()).await
+    }
+
+    /// Lean's archive `r`, a piece at a time (`lean::Pieces`), as a vault this device holds keeps it: Maia City's, a code
+    /// package an AIP brought (scripts/propose-code.mjs), found by its pin (`lean::copy_in`) and read off the open device.
+    /// Lean comes from nowhere else.
+    async fn lean_archive(self: Arc<Self>, r: &'static lean::Release) -> Result<lean::Pieces> {
+        let d = self.device().context("Lean comes from Maia City in avenDB: open avenDB on this Mac first")?;
+        let (world, _) = d.run(json!({ "op": "world" }), None::<NoBytes>, None::<&NoCeremony>).await?;
+        let file = lean::copy_in(&world["ok"], r)
+            .with_context(|| format!("Maia City holds no copy of Lean's {} yet: it comes in by an AIP its owners accept", r.name))?;
+        let (tx, rx) = mpsc::channel(4);
+        tokio::spawn(async move {
+            let mut at = 0;
+            while at < r.bytes {
+                let to = (at + lean::PIECE).min(r.bytes);
+                let op = json!({ "op": "read_file", "root": file["root"], "size": file["size"], "from": at, "to": to });
+                let piece = match d.run(op, None::<NoBytes>, None::<&NoCeremony>).await {
+                    Ok((_, Some(bytes))) if bytes.len() as u64 == to - at => Ok(bytes),
+                    Ok((answer, _)) => Err(io::Error::other(format!("avenDB didn't read Lean's archive from {at} on: {answer}"))),
+                    Err(e) => Err(io::Error::other(format!("avenDB didn't read Lean's archive from {at} on: {e:#}"))),
+                };
+                let failed = piece.is_err();
+                if tx.send(piece).await.is_err() || failed {
+                    return;
+                }
+                at = to;
+            }
+        });
+        Ok(rx)
     }
 
     /// Whether the folder holds an account, what opens it, and the device if it is open.

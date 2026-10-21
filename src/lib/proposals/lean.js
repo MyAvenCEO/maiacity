@@ -2,7 +2,8 @@
 // Real Lean on an AIP's objective (avendb/docs/ARCHITECTURE.md §8, "AIPs", N3): in The OS on a Mac, whoever accepts an
 // AIP checks its objective with the Lean release the spec pins, on their own Mac (avendb-device's `lean`: the archive's
 // SHA-256 pinned, Lean run in a sandbox with no network, no files of theirs and nothing it may start, and only on a file
-// avenDB's own engine reads). Lean comes only when they ask, behind a button that names its sizes (`leanGet`). What it
+// avenDB's own engine reads). Lean comes only when they ask, behind a button that names its sizes (`leanGet`), and only
+// from avenDB: Maia City keeps its archive as a code package (src/lib/code/packages.json, the Code app). What it
 // found the device records on the AIP as their reading `lean:<key>`, 1 where Lean accepted the file and 0 where it
 // didn't, the Lean and its first error in the note (`verdictOf`), written as the vault, never the AIP's author; every
 // reader then sees the AIP's Lean verdict (the `aip` read's `objective.verdict`, avendb/spec/AvenDB/Measurers.lean
