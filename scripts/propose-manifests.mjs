@@ -47,8 +47,9 @@ try {
 	await agent.open();
 	const city = await agent.city();
 	const live = (rows) => (rows ?? []).filter((r) => !(r.tags ?? []).includes('avendb:deleted'));
-	const schemas = live((await agent.call('avendb_ask', { op: { op: 'query', vault: city.id, where: { type: ['schema'] } } })).rows);
-	const hasSchema = schemas.some((r) => r.record?.title === MANIFEST_SCHEMA || String(r.record?.source ?? r.record ?? '').includes(`"title":"${MANIFEST_SCHEMA}"`));
+	// a schema is no row a query reads: the `schemas` op lists those of the vault's lane
+	const { schemas } = await agent.call('avendb_ask', { op: { op: 'schemas', vault: city.id } });
+	const hasSchema = (schemas ?? []).some((s) => s.title === MANIFEST_SCHEMA);
 	const held = new Set(live((await agent.call('avendb_ask', { op: { op: 'query', vault: city.id, where: { type: ['manifest'] } } })).rows).map((r) => r.record?.id));
 	const open = (await agent.call('avendb_ask', { op: { op: 'aips', vault: city.id } })).filter((a) => a.title === title && !a.outcome);
 	if (open.length && !flag('--again')) throw new Error(`"${title}" is open already (${open.map((a) => a.entry).join(', ')}): nothing was written (--again proposes all the same)`);
