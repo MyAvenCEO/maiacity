@@ -17,6 +17,7 @@ name: avenDB checks
 # spec's caches are warmed by a run on every merge that touches avenDB; without one, every PR compiled from scratch.
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'avendb/**'
       - 'src/lib/avendb/device/**'
@@ -37,8 +38,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # Not on a draft (Samuel 2026-10-21): a thread's every push to its draft ran all three, ten minutes each. They run
+  # once the PR is marked ready, and on every push after; merge only once they are green there
   tests:
     name: avenDB tests (${{ matrix.name }})
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
