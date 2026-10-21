@@ -6,10 +6,11 @@
 // says what it would do.
 //
 //   node scripts/propose-manifests.mjs [--run] [--device <path of avendb-device>] [--again]
-//   node scripts/propose-manifests.mjs --owner <Maia City vault id>     the owner's op, printed
+//   node scripts/propose-manifests.mjs --owner <Maia City vault id>     the owner's two ops, printed
 //
 // A schema is never a draft: a new type's schema joins the vault's lane only by the vault's own create on main. So the
-// first time, an owner runs one op in avenDB's Query console (`--owner` prints it, and `--run` prints it and stops where
+// first time, an owner runs two ops in avenDB's Query console, one after the other, a share never running in a batch
+// (`--owner` prints them, and `--run` prints them and stops where
 // the schema is missing): the schema "Manifest, v1" and the Public share that lets a device not signed in read the
 // manifests off the feed. Then `--run` drafts the manifests alone.
 import { MANIFEST_SCHEMA, MANIFEST_V1 } from '../game/code/sources/manifests.js';
@@ -21,18 +22,14 @@ const flag = (f) => args.includes(f);
 const option = (f) => (args.includes(f) ? args[args.indexOf(f) + 1] : undefined);
 const title = `Manifests: what each page syncs first (${MANIFESTS.length})`;
 
-/** What an owner of vault `vault` runs once, as the vault: the manifests' schema on main, and their Public share. */
-const ownerOp = (vault) => ({
-	op: 'batch',
-	ops: [
-		{ op: 'create', vault, type: 'schema', value: MANIFEST_V1, as: vault },
-		{ op: 'share', over: vault, who: 'everyone', level: 'Public', what: { type: ['manifest'] }, as: vault }
-	],
-	as: vault
-});
+/** What an owner of vault `vault` runs once, as the vault, one op at a time: the manifests' schema on main, then their Public share. */
+const ownerOps = (vault) => [
+	{ op: 'create', vault, type: 'schema', value: MANIFEST_V1, as: vault },
+	{ op: 'share', over: vault, who: 'everyone', level: 'Public', what: { type: ['manifest'] }, as: vault }
+];
 if (option('--owner')) {
 	if (!/^[0-9a-f]{64}$/.test(option('--owner'))) throw new Error('--owner takes the Maia City vault id (64 hex)');
-	console.log(JSON.stringify(ownerOp(option('--owner'))));
+	for (const op of ownerOps(option('--owner'))) console.log(JSON.stringify(op));
 	process.exit(0);
 }
 
@@ -61,8 +58,8 @@ try {
 		console.error(`${label}: drafted as ${made.entry}`);
 	};
 	if (!hasSchema) {
-		console.error(`Maia City has no schema "${MANIFEST_SCHEMA}" yet, and a schema is never a draft: nothing was written. An owner runs this once in avenDB's Query console (the schema on main, and the manifests' Public share), then this script again:`);
-		console.log(JSON.stringify(ownerOp(city.id)));
+		console.error(`Maia City has no schema "${MANIFEST_SCHEMA}" yet, and a schema is never a draft: nothing was written. An owner runs these two ops once in avenDB's Query console, one at a time (the schema on main, then the manifests' Public share), then this script again:`);
+		for (const op of ownerOps(city.id)) console.log(JSON.stringify(op));
 		process.exit(1);
 	}
 	const fresh = MANIFESTS.filter((m) => !held.has(m.id));
