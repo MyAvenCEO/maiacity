@@ -1707,24 +1707,41 @@ struct News {
 impl Shared {
     /// `f` on the Lab, off the async threads: its crypto takes milliseconds, a McEliece key pair seconds. The Lab's
     /// clock is the machine's, so an entry `f` creates says when (`Lab::set_now`). If what the device holds changed,
-    /// its saver puts it on the shelf, if the node keeps one.
+    /// its saver puts it on the shelf, if the node keeps one. A panic in `f`, a bug, fails the call that asked for it
+    /// alone: it is caught while the Lab is still locked, so the lock isn't poisoned and every later call runs, logged,
+    /// and carried on to the caller once the lock is let go.
     async fn lab<T: Send + 'static>(self: &Arc<Self>, f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static) -> T {
         let shared = self.clone();
         let work = move || {
-            let mut lab = shared.lab.lock().expect("the Lab");
-            lab.set_now(unix_now());
-            let out = f(&mut lab, shared.me);
-            let now = lab.size(shared.me);
-            if shared.size.send_if_modified(|size| *size != now && { *size = now; true }) {
-                shared.edits.iter().for_each(|edits| edits.due.notify_one());
-            }
-            out
+            let mut lab = shared.locked_lab();
+            let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                lab.set_now(unix_now());
+                let out = f(&mut lab, shared.me);
+                let now = lab.size(shared.me);
+                if shared.size.send_if_modified(|size| *size != now && { *size = now; true }) {
+                    shared.edits.iter().for_each(|edits| edits.due.notify_one());
+                }
+                out
+            }));
+            drop(lab);
+            ran.unwrap_or_else(|panic| {
+                let why = panic.downcast_ref::<&str>().copied().or(panic.downcast_ref::<String>().map(String::as_str));
+                tracing::error!("avendb: a call on the Lab panicked, and fails alone: {}", why.unwrap_or("no message"));
+                std::panic::resume_unwind(panic)
+            })
         };
         #[cfg(not(target_arch = "wasm32"))]
         return tokio::task::spawn_blocking(work).await.expect("the Lab's task");
         // a page's node runs in a worker of its own, which the Lab may hold up
         #[cfg(target_arch = "wasm32")]
         work()
+    }
+
+    /// The Lab, locked. A call that changes it never poisons the lock (`lab` catches its panic first); one that only
+    /// reads it (the saver's) changed nothing if it panicked, so the Lab it leaves is taken as it is rather than lost
+    /// to every later call.
+    pub(crate) fn locked_lab(&self) -> std::sync::MutexGuard<'_, Lab> {
+        self.lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Where to reach `endpoint`: through the node's relay, if it has one, and wherever the lookup knows of.
