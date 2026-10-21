@@ -16,7 +16,8 @@
 	Acting as a vault that proposed (an aven), the cards are the revisions asked of it, each with the words it was sent
 	and the AIP to open.
 
-	It reads the AIPs the device holds with one op, `aips`, again each time the world changes, and tells the page how
+	It reads the AIPs the device holds with one op, `aips`, again each time the world changes, one read at a time and
+	shared with the Proposals app (./aips.svelte.js), and tells the page how
 	many wait in each vault the person answers for (`oncounts`), for the bubbles on the vaults in the nav pill.
 -->
 <script>
@@ -26,6 +27,7 @@
 	import ProposedAssets from './ProposedAssets.svelte';
 	import { answering, asksOf, countsOf, detail, lead, newsOf, objectiveLine, revisionsOf, signed, top as topOf } from './hitl.js';
 	import { nameOf } from './vaults.js';
+	import { aips as held } from './aips.svelte.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, api: any, vault: string, busy: boolean,
@@ -37,16 +39,11 @@
 	/** the vaults the person answers for: those they act for as the vault itself, as its owner */
 	const answers = $derived(world.vaults.filter((v) => v.acting?.as === v.id).map((v) => v.id));
 
-	/** the AIPs the device holds (`aips`), read again each time the world changes; the last read asked wins */
-	let aips = $state(/** @type {import('./hitl.js').Aip[]} */ ([]));
-	let reading = 0;
+	/** the AIPs the device holds (`aips`), read again each time the world changes, one read at a time (./aips.svelte.js) */
+	const aips = $derived(/** @type {import('./hitl.js').Aip[]} */ (held.list));
 	$effect(() => {
 		world;
-		const n = ++reading;
-		api.ask({ op: 'aips' }).then(
-			(/** @type {any} */ got) => n === reading && Array.isArray(got?.ok) && (aips = got.ok),
-			() => {}
-		);
+		held.again();
 	});
 
 	const asks = $derived(asksOf(vault, aips));
