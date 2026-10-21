@@ -92,7 +92,8 @@
 		[moveBusy, moveError] = [true, ''];
 		const avens = !!session.moving?.avens && !session.moving.device;
 		const retiring = retire.length > 0;
-		if (await session.moveKeys()) moved = retiring ? 'retired' : avens ? 'avens' : true;
+		const checkpoint = !!session.moving?.checkpoint;
+		if (await session.moveKeys()) moved = retiring ? 'retired' : checkpoint ? 'checkpoint' : avens ? 'avens' : true;
 		else moveError = session.error;
 		moveBusy = false;
 	}
@@ -426,6 +427,11 @@
 				<button class="quiet later" disabled={moveBusy} onclick={moveNow}>{moveBusy ? 'Removing…' : 'Remove old keys'}</button>
 				{#if moveError}<span class="bad">{moveError}</span>{/if}
 			</p>
+		{:else if session.moving?.checkpoint && moveAsks}<p class="invite-note move-note" role="status">
+				Your keys moved to ML-DSA-65. Sign one checkpoint over what your old keys signed, so their old signatures need no checking any more: {moveAsks}.
+				<button class="quiet later" disabled={moveBusy} onclick={moveNow}>{moveBusy ? 'Signing…' : 'Sign checkpoint'}</button>
+				{#if moveError}<span class="bad">{moveError}</span>{/if}
+			</p>
 		{:else if session.moving && moveAsks}<p class="invite-note move-note" role="status">
 				{moveWhat} to ML-DSA-65, smaller and faster post-quantum signatures: {moveAsks}.
 				<button class="quiet later" disabled={moveBusy} onclick={moveNow}>{moveBusy ? 'Moving…' : session.moving.device || !session.moving.avens ? 'Move my keys' : 'Move them'}</button>
@@ -433,6 +439,7 @@
 			</p>
 		{:else if moved}<p class="invite-note move-note" role="status">
 				{#if moved === 'retired'}Your old keys are removed. Your other devices learn it as they sync with this one.
+				{:else if moved === 'checkpoint'}Your checkpoint is signed. Your other devices learn it as they sync with this one.
 				{:else if moved === 'avens'}Your coop’s server and agents moved to ML-DSA-65. Each signs with its new key from its next start.
 				{:else}Your keys moved to ML-DSA-65. Your other devices learn it as they sync with this one.{/if}
 				<button class="quiet later" onclick={() => (moved = false)}>OK</button>

@@ -93,9 +93,11 @@ let vault = $state('');
  *  Mac app its Touch ID key still signs in SLH-DSA, or the server or an agent of the aven they govern does (K3c):
  *  whether their passkey signs, whether Touch ID does, whether the device moves, and how many of the aven's devices
  *  move with it; once all of it moved, the earlier keys and the old devices to remove (`retire`), which waits while
- *  this device doesn't hold what the coop's server holds (`behind`); null once nothing moves.
+ *  this device doesn't hold what the coop's server holds (`behind`); or, nothing left to move, a checkpoint the
+ *  person signs alone (`checkpoint`); null once nothing moves.
  *  @type {{ passkey: boolean, touch: boolean, device: boolean, avens?: number,
- *    retire?: { kind: 'root' | 'owner' | 'device', key: string, next?: string, vault?: string }[], behind?: boolean } | null} */
+ *    retire?: { kind: 'root' | 'owner' | 'device', key: string, next?: string, vault?: string }[], behind?: boolean,
+ *    checkpoint?: boolean } | null} */
 let moving = $state.raw(null);
 /** what the page is doing for the person, and what went wrong last, where it shows them */
 let doing = $state('');
@@ -464,7 +466,11 @@ async function checkMove(d, again = false) {
 async function moveKeys() {
 	const d = device;
 	if (!d || !moving) return false;
-	const what = moving.retire?.length ? 'Removing your old keys' : 'Moving your keys to ML-DSA-65';
+	const what = moving.retire?.length
+		? 'Removing your old keys'
+		: moving.checkpoint
+			? 'Signing your checkpoint'
+			: 'Moving your keys to ML-DSA-65';
 	const ok = await change(what, async () => {
 		if (mac) return macOpened(await mac.call('moveKeys'));
 		const moved = await d.move_keys((await ceremonies(meta.credential)).sign, null);

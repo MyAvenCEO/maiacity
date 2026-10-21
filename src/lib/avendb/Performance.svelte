@@ -67,7 +67,7 @@
 	/**
 	 * @typedef {{ timers: Record<string, Timer>, counts: Record<string, number>,
 	 *   held: { edits: number, bodies: number, shown: number, blobs: number, blob_bytes: number },
-	 *   checkpoints?: { standing: number, vouched: number, bare: number } }} Perf
+	 *   checkpoints?: { standing: number, vouched: number, bare: number, uncovered?: number } }} Perf
 	 */
 
 	/** the device's own, as its `perf` op answers, or null where it doesn't (an older device) */
@@ -275,6 +275,10 @@
 					<dd>{perf.checkpoints.vouched.toLocaleString()}</dd>
 					<dt>Held without signatures</dt>
 					<dd>{perf.checkpoints.bare.toLocaleString()}</dd>
+					{#if perf.checkpoints.uncovered !== undefined}
+						<dt>Old SLH-DSA signatures still checked</dt>
+						<dd>{perf.checkpoints.uncovered.toLocaleString()}</dd>
+					{/if}
 				</dl>
 			</article>
 		{/if}

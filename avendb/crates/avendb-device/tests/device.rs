@@ -2291,7 +2291,9 @@ async fn ivys_mac_its_touch_id_key_and_her_drive_move_to_ml_dsa_65_with_her_pass
     hosted(&mut app, "her drive hosted", |d| d["volumes"][0]["state"] == "hosted").await;
     // the page asks once more: her passkey, her Touch ID key, her Mac and her drive move in one sheet and one touch
     let moving = app.call("moving", json!([])).await;
-    let asks = json!({ "passkey": true, "touch": true, "device": true, "avens": 0, "retire": [], "behind": false });
+    let asks = json!({
+        "passkey": true, "touch": true, "device": true, "avens": 0, "retire": [], "behind": false, "checkpoint": false,
+    });
     assert_eq!(moving, json!({ "ok": asks }));
     let moved = app.call("moveKeys", json!([])).await["ok"].clone();
     let touched = vec!["move your Touch ID key to ML-DSA-65".to_string()];
@@ -2323,7 +2325,16 @@ async fn ivys_mac_its_touch_id_key_and_her_drive_move_to_ml_dsa_65_with_her_pass
     .await;
     assert_eq!(drives["drives"][0]["device"], next_hex);
     assert!(app.asked().is_empty() && app.touched().is_empty(), "no sheet and no touch");
-    assert_eq!(app.call("moving", json!([])).await, json!({ "ok": null }), "nothing more moves");
+    // nothing more moves; what her Mac's earlier key signed as it moved, her passkey's next key vouches for alone, in
+    // one more sheet
+    let checkpoint = json!({
+        "passkey": true, "touch": false, "device": false, "avens": 0, "retire": [], "behind": false, "checkpoint": true,
+    });
+    assert_eq!(app.call("moving", json!([])).await, json!({ "ok": checkpoint }));
+    let stays = app.call("moveKeys", json!([])).await["ok"].clone();
+    assert_eq!(stays["id"], json!(mac_next.to_hex()), "it stays as it is");
+    assert_eq!(app.asked(), vec!["move".to_string()]);
+    assert_eq!(app.call("moving", json!([])).await, json!({ "ok": null }), "nothing more to sign");
     // the app quits and starts again: a touch opens it as its next key, and it hosts her drive as its next key
     app.host.close().await;
     drop(app);

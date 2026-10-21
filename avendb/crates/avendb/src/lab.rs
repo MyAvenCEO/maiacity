@@ -1157,6 +1157,51 @@ impl Lab {
         Ok(())
     }
 
+    /// Device `on`'s checkpoints alone, signed by `by` (its person's key, moved to ML-DSA-65): over the edits earlier
+    /// keys signed that no checkpoint covers yet (`uncovered`), for a person with nothing left to move or retire whose
+    /// keys moved before a move drafted checkpoints, or whose vaults took such edits since. Empty if there are none.
+    pub fn draft_checkpoint(&self, on: SignerId, by: SignerId) -> Result<Vec<Unsigned>, Refusal> {
+        if self.keys_of(by).is_none_or(|k| k.suite() == Suite::SlhDsa) {
+            return Ok(vec![]);
+        }
+        let mut drafting = self.drafting(on);
+        // only what no earlier key signs any more: one moved to its next key, or no longer acting for the vault; an
+        // edit of a key still to move is covered at its own move, not by a ceremony at each unlock until then
+        let store = self.held(on);
+        let view = drafting.log.view();
+        let slh = |id: &EditId| -> Vec<SignerId> {
+            let sigs = store.signed.get(id).map(|s| s.sigs.as_slice()).unwrap_or_default();
+            sigs.iter().filter(|x| x.keys.suite() == Suite::SlhDsa).map(|x| x.keys.id()).collect()
+        };
+        let uncovered = self.uncovered(on, &drafting.log, by);
+        let mut signers: BTreeSet<SignerId> = uncovered.iter().flat_map(|(_, ids)| ids.iter().flat_map(slh)).collect();
+        // beside each vault's owners and devices, among which a moved key's next key is
+        for v in uncovered.iter().filter_map(|(v, _)| view.vault(*v)) {
+            signers.extend(v.devices.iter().copied());
+            signers.extend(v.owners.iter().filter_map(|p| match p {
+                Principal::Signer(s) => Some(*s),
+                _ => None,
+            }));
+        }
+        let moved = self.earlier_keys(on, &signers);
+        for (vault, covers) in uncovered {
+            let done = |s: &SignerId| moved.contains_key(s) || !view.acts_for(*s, vault);
+            let covers: Vec<EditId> = covers.into_iter().filter(|id| slh(id).iter().all(done)).collect();
+            for part in covers.chunks(CHECKPOINT_COVERS) {
+                drafting.draft(&[by], Action::Checkpoint { vault, covers: part.to_vec() })?;
+            }
+        }
+        Ok(drafting.done())
+    }
+
+    /// How many of device `on`'s edits carry an SLH-DSA signature no checkpoint it holds covers, and so still need
+    /// their signatures checked: none left, on a device holding everything, and its old signature code can go (K6).
+    pub fn uncovered_count(&self, on: SignerId) -> usize {
+        let store = self.held(on);
+        let slh = |s: &Signed| s.sigs.iter().any(|x| x.keys.suite() == Suite::SlhDsa);
+        store.log.ids().iter().filter(|id| !store.covers.contains(id) && store.signed.get(id).is_some_and(slh)).count()
+    }
+
     /// For each vault `by` approves in `log`, `on`'s edits, drafted moves among them, a checkpoint over it would cover
     /// that none covers yet: those that stand and carry an SLH-DSA signature, every signer of which acted for the vault
     /// just before or just after it (`acting`). Each edit under the first vault, in `log`'s order, that may cover it.
@@ -3387,6 +3432,7 @@ impl Lab {
             "standing": r.edits.iter().zip(&r.stood).filter(|&x| checkpoint(x)).count(),
             "vouched": r.vouched().len(),
             "bare": store.bare.len(),
+            "uncovered": self.uncovered_count(d),
         });
         out
     }

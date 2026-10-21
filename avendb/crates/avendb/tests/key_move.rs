@@ -323,6 +323,9 @@ fn one_ceremony_and_one_touch_move_alices_keys_and_her_mac() {
     // with every device on its next key, one more checkpoint covers what their earlier keys signed after they moved:
     // then no edit any device holds rests on an SLH-DSA signature
     let last = lab.draft_move(phone_next, &[], next).expect("a checkpoint");
+    let alone = lab.draft_checkpoint(phone_next, next).expect("a checkpoint alone");
+    assert_eq!(alone.len(), last.len(), "the checkpoint a person signs alone, once nothing moves");
+    assert!(last.is_empty() || lab.uncovered_count(phone_next) > 0);
     if !last.is_empty() {
         let key = authenticator.ceremony(last[0].challenge());
         lab.complete_move(phone_next, last, &[(next, &key)]).expect("her passkey's next key signed it");
@@ -330,6 +333,8 @@ fn one_ceremony_and_one_touch_move_alices_keys_and_her_mac() {
     }
     for d in [mac_next, phone_next] {
         assert!(lab.draft_move(d, &[], next).expect("nothing left").is_empty(), "{d:?}");
+        assert!(lab.draft_checkpoint(d, next).expect("nothing left").is_empty(), "{d:?}");
+        assert_eq!(lab.uncovered_count(d), 0, "no SLH-DSA signature left to check on {d:?}");
     }
     // each key of her passkey signs for the vault, its owners being equal: one secret makes both
     let threshold = Action::Settings { vault, set: Setting::Threshold(1) };
