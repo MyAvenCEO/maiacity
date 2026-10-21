@@ -450,6 +450,8 @@ struct Store {
     /// keys kept.
     covers: HashSet<EditId>,
     bare: HashSet<EditId>,
+    /// It took edits since it last brought its keys and items up to date (`receive_now`, `catch_up`).
+    behind: bool,
 }
 
 impl Default for Store {
@@ -478,6 +480,7 @@ impl Default for Store {
             files_at: OnceLock::new(),
             covers: HashSet::new(),
             bare: HashSet::new(),
+            behind: false,
         }
     }
 }
@@ -2277,6 +2280,9 @@ impl Lab {
     /// signing on it right now. Each round replays its edits, opens and derives what it can, reads what that opens, and
     /// makes the edits its upkeep calls for (`upkeep`). A locked device only replays.
     fn refresh(&mut self, d: SignerId, lent: &[(SignerId, Secret)]) {
+        if let Some(store) = self.stores.get_mut(&d) {
+            store.behind = false;
+        }
         let own = self.keys.get(&d).and_then(Key::seal_secret);
         let unlocked = own.is_some();
         let mine: Vec<(SignerId, Secret)> = own.map(|o| (d, o)).into_iter().chain(lent.iter().cloned()).collect();
@@ -4007,6 +4013,13 @@ impl Lab {
     /// check out, and each key an edit it holds names, by the key's own hash, then brings its keys and items up to
     /// date. How many edits were new.
     pub fn receive(&mut self, d: SignerId, edits: Vec<Signed>, blobs: Vec<Arc<[u8]>>) -> usize {
+        self.receive_now(d, edits, blobs, true)
+    }
+
+    /// `receive`, bringing its keys and items up to date only if `now`, else at the next `catch_up` (or the next
+    /// `receive` that does): a pull's pages from far behind each sort before what the replay last stepped over, and each
+    /// would replay the whole log (2026-10-21, an iPhone catching up a page of 4 MB at a time). How many edits were new.
+    fn receive_now(&mut self, d: SignerId, edits: Vec<Signed>, blobs: Vec<Arc<[u8]>>, now: bool) -> usize {
         let blobs: Blobs = blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect();
         let before = self.held(d).signed.len();
         let mut changed = self.take(d, edits, &blobs);
@@ -4019,10 +4032,23 @@ impl Lab {
             }
         }
         let new = self.held(d).signed.len() - before;
-        if changed {
+        let store = self.stores.get_mut(&d).expect("a device");
+        store.behind |= changed;
+        if now && store.behind {
             self.refresh(d, &[]);
         }
         new
+    }
+
+    /// Brings device `d`'s keys and items up to date with the edits it took since it last did (`receive_now`). True if
+    /// there were any.
+    pub fn catch_up(&mut self, d: SignerId) -> bool {
+        let Some(store) = self.stores.get_mut(&d) else { return false };
+        if !store.behind {
+            return false;
+        }
+        self.refresh(d, &[]);
+        true
     }
 
     /// `receive`, and whose each edit it took is (`whose_log`): what a pull tells its person.
@@ -4032,11 +4058,23 @@ impl Lab {
         edits: Vec<Signed>,
         blobs: Vec<Arc<[u8]>>,
     ) -> (usize, Vec<(VaultId, Option<EntryId>)>) {
+        self.receive_whose_now(d, edits, blobs, true)
+    }
+
+    /// `receive_whose`, bringing its keys and items up to date only if `now` (`receive_now`): a pull's page that isn't
+    /// its last.
+    pub fn receive_whose_now(
+        &mut self,
+        d: SignerId,
+        edits: Vec<Signed>,
+        blobs: Vec<Arc<[u8]>>,
+        now: bool,
+    ) -> (usize, Vec<(VaultId, Option<EntryId>)>) {
         let held = &self.held(d).signed;
         let ids = edits.iter().map(|s| (s.edit.id(), &s.edit));
         let fresh: Vec<(EditId, Option<LogId>)> =
             ids.filter(|(id, _)| !held.contains_key(id)).map(|(id, e)| (id, log_of(e, id))).collect();
-        let new = self.receive(d, edits, blobs);
+        let new = self.receive_now(d, edits, blobs, now);
         let taken = fresh.into_iter().filter(|(id, _)| self.held(d).signed.contains_key(id));
         let whose = taken.filter_map(|(_, log)| self.whose_log(d, log?)).collect();
         (new, whose)
