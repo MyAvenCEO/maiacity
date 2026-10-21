@@ -351,7 +351,23 @@ export function antHills(
 	const FAR_HILLS = 70
 	const hill = actor(actorRef('ant-hill'), 0.22)
 	let far: THREE.InstancedMesh | null = null
+	/** a rigged hill in a holder of its own: the rig's pose sets its own root where the clip says, so it stands in a
+	 * holder placed at its spot (posed bare, the hill would end up at the middle of the world: the master dome's stage) */
+	const rig = () => {
+		const near = hill.copy()
+		const holder = new THREE.Group()
+		holder.add(near.object)
+		object.add(holder)
+		return { near, holder }
+	}
+	/** the first one, made hidden once the build is here, so that a world's warming (src/lib/film/warm.js) draws it out
+	 * of sight before a shot comes near a hill, as a crowd's first copy ($lib/assets/render/crowd.js) */
+	let spare: ReturnType<typeof rig> | null = null
 	void hill.ready.then(() => {
+		if (hill.model) {
+			spare = rig()
+			spare.holder.visible = false
+		}
 		if (!hill.far) return
 		far = new THREE.InstancedMesh(hill.far.geometry, hill.far.material, Math.max(1, spots.length))
 		far.castShadow = far.receiveShadow = true
@@ -445,16 +461,13 @@ export function antHills(
 			if (far && !near && (!at || d2 < FAR_HILLS * FAR_HILLS))
 				far.setMatrixAt(nf++, placed.compose(at3.set(h.s.x, 0, h.s.z), turnQ.setFromAxisAngle(up3, h.s.rot), size3.setScalar(h.s.size)))
 			if (near && !h.near && hill.model) {
-				h.near = hill.copy()
-				// the rig's pose sets its own root where the clip says, so it stands in a holder placed at its spot: posed
-				// bare, the hill would end up at the middle of the world (the master dome's stage)
-				const holder = new THREE.Group()
+				const { near: rigged, holder } = spare ?? rig()
+				spare = null
 				holder.position.set(h.s.x, 0, h.s.z)
 				holder.rotation.y = h.s.rot
 				holder.scale.setScalar(h.s.size)
-				holder.add(h.near.object)
+				h.near = rigged
 				h.holder = holder
-				object.add(holder)
 			}
 			if (h.near && h.holder) {
 				h.holder.visible = near
