@@ -49,6 +49,11 @@ export function createWarmer(renderer) {
 	pane.layers.set(LAYER);
 	pane.frustumCulled = false;
 	pane.castShadow = false;
+	// and a speck of the same glass: no area, so it draws nothing, but a frame with it in it draws the glass pass
+	const speck = new THREE.Mesh(new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(new Array(9).fill(0), 3)), pane.material);
+	speck.frustumCulled = false;
+	/** the size each camera's glass pass was last drawn at @type {WeakMap<THREE.Camera, string>} */
+	const glassAt = new WeakMap();
 	/** each light's own small shadow map, drawn into by the warming @type {WeakMap<THREE.Light, unknown>} */
 	const smallMaps = new WeakMap();
 	const SMALL = new THREE.Vector2(16, 16);
@@ -275,9 +280,29 @@ export function createWarmer(renderer) {
 			ripe.push(...next);
 			return n;
 		},
+		/**
+		 * The camera's own glass pass made at this size: three keeps a glass's refraction target by the camera, and
+		 * makes it (four samples, half floats, the frame's size, its mipmaps) the first time that camera draws glass, or
+		 * draws it at another size — 62 ms on the Mac at the village's first cut to glass. `draw` draws the camera's
+		 * frame: with a speck of glass in it, if the camera has not drawn glass at this size yet, so that frame makes it.
+		 * For a frame drawn while the timeline stands, before Play.
+		 * @template T @param {THREE.Scene} scene @param {THREE.Camera} camera @param {string} size @param {() => T} draw @returns {T}
+		 */
+		glassPass(scene, camera, size, draw) {
+			if (glassAt.get(camera) === size) return draw();
+			speck.layers.mask = camera.layers.mask;
+			scene.add(speck);
+			try {
+				return draw();
+			} finally {
+				scene.remove(speck);
+				glassAt.set(camera, size);
+			}
+		},
 		stats,
 		dispose() {
 			rt.dispose();
+			speck.geometry.dispose();
 			pane.geometry.dispose();
 			pane.material.dispose();
 		}
