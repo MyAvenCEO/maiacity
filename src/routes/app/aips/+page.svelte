@@ -210,6 +210,7 @@
 		align-items: start;
 	}
 	.col {
+		min-width: 0;
 		padding: 0.6rem;
 		border-radius: 14px;
 		background: rgb(31 42 35 / 0.04);
@@ -241,6 +242,9 @@
 		display: grid;
 		gap: 0.3rem;
 		width: 100%;
+		min-width: 0;
+		overflow: hidden;
+		overflow-wrap: anywhere;
 		text-align: left;
 		padding: 0.65rem 0.75rem;
 		border: 1px solid rgb(31 42 35 / 0.1);
@@ -254,6 +258,19 @@
 	.cards b {
 		font-size: 0.92rem;
 		line-height: 1.3;
+	}
+	/* a card stays its column's width: long names (a file's hash) wrap, and title and changes keep to a few lines */
+	.cards b,
+	.cards .sum {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 3;
+		line-clamp: 3;
+		overflow: hidden;
+	}
+	.cards .sum {
+		-webkit-line-clamp: 2;
+		line-clamp: 2;
 	}
 	.where {
 		font-size: 0.68rem;
