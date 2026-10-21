@@ -25,12 +25,13 @@
 	}
 }
 
-# What every one of our names answers with: HTTPS only from now on, for a year, on every subdomain (not on the
-# browsers' preload list: that is a step taken by hand, and hard to undo); no file read as another type than it says;
+# What every one of our names answers with: HTTPS only from now on, for a year, on each of these names (not on every
+# subdomain, so a name we add later isn't locked out before it has a certificate; not on the browsers' preload list:
+# that is a step taken by hand, and hard to undo); no file read as another type than it says;
 # no full address sent on to another site.
 (walls) {
 	header {
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
 		Referrer-Policy strict-origin-when-cross-origin
 	}
