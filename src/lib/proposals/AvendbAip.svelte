@@ -13,6 +13,7 @@
 -->
 <script>
 	// @ts-nocheck — plain JS
+	import { base } from '$app/paths';
 	import ProposedAssets from '$lib/avendb/ProposedAssets.svelte';
 	import Objective from './Objective.svelte';
 	import { session } from '$lib/avendb/session.svelte.js';
@@ -157,8 +158,8 @@
 				<div class="measure">
 					<button disabled={!!session.doing} onclick={getLean}>Get Lean</button>
 					<small class="dim"
-						>Lean {lean.version} checks objectives on this Mac, locked away from your files and the network: a {mb(lean.download)} download from
-						Lean's releases on GitHub, {mb(lean.kept)} kept on this Mac.{lean.failed ? ` The last try failed: ${lean.failed}` : ''}</small
+						>Lean {lean.version} checks objectives on this Mac, locked away from your files and the network: {mb(lean.download)} read from
+						Maia City in avenDB (<a href="{base}/app/#code/lean">Code</a>), {mb(lean.kept)} kept on this Mac.{lean.failed ? ` The last try failed: ${lean.failed}` : ''}</small
 					>
 				</div>
 			{/if}
