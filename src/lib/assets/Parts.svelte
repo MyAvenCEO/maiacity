@@ -8,6 +8,7 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { treeOf } from './tree.js';
+	import { linkHref } from '$lib/markdown/index.js';
 
 	/**
 	 * @type {{ catalog: any, own?: string, picked?: string | null, solo?: boolean, hrefOf?: (ref: string) => string | null,
@@ -52,7 +53,7 @@
 			{#if catalog.steps?.length && catalog.steps[card.step - 1]}
 				<p class="soft">
 					Build step {card.step}: {catalog.steps[card.step - 1]}{#if card.source}{' · source: '}{#each catalog.sources?.filter((s) => s.label === card.source) ?? [] as s (s.url)}<a
-								href={s.url}
+								href={linkHref(s.url)}
 								target="_blank"
 								rel="noreferrer">{s.label} ↗</a
 							>{:else}{card.source}{/each}{/if}
@@ -99,7 +100,7 @@
 		<details>
 			<summary><b>Sources</b> <small>{catalog.sources.length}</small></summary>
 			<ul class="sources">
-				{#each catalog.sources as s (s.url)}<li><a href={s.url} target="_blank" rel="noreferrer">{s.label} ↗</a></li>{/each}
+				{#each catalog.sources as s (s.url)}<li><a href={linkHref(s.url)} target="_blank" rel="noreferrer">{s.label} ↗</a></li>{/each}
 			</ul>
 		</details>
 	{/if}

@@ -5,6 +5,7 @@
 	// the source's picture in an arch, the shift from → to with its quote, then the report's sections, or the source's
 	// own words. Everything comes from the vault's entries everyone reads (./inspire.js `inspireOf`).
 	import { base } from '$app/paths';
+	import { linkHref } from '$lib/markdown/index.js';
 	import { categoryById, sourceLabel, typeLabel } from '$lib/inspire-me/categories';
 
 	let { entry } = $props();
@@ -45,7 +46,7 @@
 			</ul>
 			<div class="actions">
 				{#if entry.source}
-					<a class="pill-btn" href={entry.source} target="_blank" rel="noopener noreferrer">Open source ↗</a>
+					<a class="pill-btn" href={linkHref(entry.source)} target="_blank" rel="noopener noreferrer">Open source ↗</a>
 				{/if}
 				<span class="dates">
 					{#if entry.added}Added {entry.added}{/if}{#if entry.published}&ensp;·&ensp;Published {entry.published}{/if}
