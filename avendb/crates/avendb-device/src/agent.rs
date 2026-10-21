@@ -371,6 +371,10 @@ pub async fn serve_in(
     let dir = folder(&host, &name);
     std::fs::create_dir_all(&dir).with_context(|| format!("the agent's folder {}", dir.display()))?;
     let (mut lines, mut waiting, mut since) = (BufReader::new(input).lines(), Waiting::default(), None);
+    // theOS hosts it where it runs and knows its key: then it runs no device of its own
+    if crate::sessions::relay(&host, &name, &roots, &mut lines, &mut output).await?.is_some() {
+        return Ok(());
+    }
     // until when it leaves the lock to the newer build it made way for
     let mut yields: Option<Instant> = None;
     loop {
@@ -872,7 +876,7 @@ async fn reply(agent: &Agent, line: &str, output: &mut (impl AsyncWrite + Unpin)
 
 /// `agent`'s answer to MCP line `line`, a line of JSON ending in a newline: none to a notification, or to a line that
 /// isn't JSON.
-async fn answer_line(agent: &Agent, line: &str) -> Option<String> {
+pub(crate) async fn answer_line(agent: &Agent, line: &str) -> Option<String> {
     let message = serde_json::from_str::<Value>(line).ok()?;
     let mut answer = agent.answer(&message).await?.to_string();
     answer.push('\n');
@@ -1235,7 +1239,7 @@ fn names_in(args: &Value) -> (BTreeSet<VaultId>, BTreeSet<EntryId>) {
 
 /// The agent's device, as its MCP answers.
 #[derive(Clone)]
-struct Agent {
+pub(crate) struct Agent {
     node: Arc<Node>,
     /// the app's folder, beside which it leaves its requests; a cloud session's agent's own folder
     host: PathBuf,
@@ -1248,6 +1252,11 @@ struct Agent {
 }
 
 impl Agent {
+    /// A session's agent, `name`, hosted by theOS's `node` (`sessions`), its harness's files inside `roots` alone.
+    pub(crate) fn session(node: Arc<Node>, host: PathBuf, name: String, roots: Vec<PathBuf>) -> Agent {
+        Agent { node, host, name, cloud: None, roots }
+    }
+
     /// The answer to MCP message `m`: none for a notification.
     async fn answer(&self, m: &Value) -> Option<Value> {
         answer(m, || self.instructions(), |name, args| async move { self.call(&name, &args).await }).await
@@ -1308,7 +1317,7 @@ impl Agent {
 
     /// Why a cloud session's agent whose key belongs to no vault does nothing.
     fn unjoined(&self) -> String {
-        let key = hex(&self.node.device().0);
+        let key = hex(&self.node.acting_as().0);
         format!(
             "{name}'s key ({key}) isn't a device of avenMAIA: its person adds one in theOS app (Settings, Agents, Add a \
              cloud agent), which shows the key once, and puts it in this environment's {KEY_VAR}; a new session uses \
@@ -1328,7 +1337,7 @@ impl Agent {
             if self.cloud.is_some() {
                 bail!("{}", self.unjoined());
             }
-            let device = hex(&self.node.device().0);
+            let device = hex(&self.node.acting_as().0);
             if std::fs::read_to_string(denied(&self.host, &self.name)).is_ok_and(|d| d.trim() == device) {
                 return Ok(format!(
                     "{}'s person said no to its request. Ask again with avendb_request_access, saying why.",
@@ -1368,7 +1377,7 @@ impl Agent {
                 let named = |id: &Option<String>| all.iter().find(|v| v["id"].as_str() == id.as_deref());
                 let aven_name = named(&aven).map_or(Value::Null, |v| v["name"].clone());
                 let me = json!({ "device": self.name, "vault": hex(&vault.0), "aven": aven, "avenName": aven_name,
-                    "key": hex(&self.node.device().0) });
+                    "key": hex(&self.node.acting_as().0) });
                 let under = aven_name.as_str().map(String::from).or(aven).unwrap_or_else(|| "no aven".into());
                 let who = format!("{} is a device of the aven {under}, acting as it with its rights", self.name);
                 Ok(json!({ "who": who, "me": me, "vaults": vaults }).to_string())
@@ -1959,7 +1968,7 @@ impl Agent {
         if self.cloud.is_some() {
             bail!("{}", self.unjoined());
         }
-        let (device, offer) = (hex(&self.node.device().0), Some(self.node.offer().to_text()));
+        let (device, offer) = (hex(&self.node.acting_as().0), Some(self.node.offer().to_text()));
         let ask = Asking { level: level.to_string(), why: why.to_string(), vaults };
         let asked = asking(&self.name, &device, offer, &ask);
         std::fs::create_dir_all(agents(&self.host))?;

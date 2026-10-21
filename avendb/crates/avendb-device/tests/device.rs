@@ -1198,7 +1198,7 @@ async fn the_same_harness_on_her_other_mac_joins_her_coops_aven_as_a_device_too(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn every_session_of_a_harness_answers_as_its_one_device_and_a_newer_build_takes_over() {
+async fn every_session_of_a_harness_answers_as_its_one_device_and_once_approved_the_mac_hosts_the_next() {
     let (_relay, url, server) = server().await;
     let folder = Folder::new("agent-sessions");
     let dir = folder.0.join("avendb");
@@ -1244,27 +1244,31 @@ async fn every_session_of_a_harness_answers_as_its_one_device_and_a_newer_build_
     let first = first.close().await;
     let read = reads(&mut second, &entry).await;
     assert!(!read.1 && read.0.contains("Tomatoes in March."), "through the first still: {read:?}");
-    // a session of a newer build starts: the first makes way and ends, the newer runs the same device, and the second
-    // goes on through it
+    // a session that starts now, its key the aven's, runs no device of its own: the Mac's device hosts it, while the
+    // first runs on for the second
     let mut newer = Harness::built(&dir, agent::CLAUDE, 2);
-    let done = tokio::time::timeout(Duration::from_secs(60), first).await;
-    done.expect("the first ends within 60 s").expect("its task").expect("it ends cleanly");
     let (me, _) = newer.tool("avendb_vaults", json!({})).await;
     let me: Value = serde_json::from_str(&me).expect("JSON");
     assert_eq!(me["me"]["vault"], aven, "the same device, of the aven: {me}");
-    let read = reads(&mut second, &entry).await;
-    assert!(!read.1 && read.0.contains("Tomatoes in March."), "the second through the newer: {read:?}");
+    let read = reads(&mut newer, &entry).await;
+    assert!(!read.1 && read.0.contains("Tomatoes in March."), "the newer, hosted, reads her note: {read:?}");
     let beans = json!({ "op": { "op": "create", "vault": mine, "type": "note", "value": titled("Beans", "In May.") } });
     let (made, error) = second.tool("avendb_run", beans).await;
-    assert!(!error && made.contains("\"ok\""), "an Editor writes, through the newer: {made}");
+    assert!(!error && made.contains("\"ok\""), "an Editor writes, through the first: {made}");
     let end = Instant::now() + Duration::from_secs(10);
     while alive_files(&dir) != [one.clone()] {
         assert!(Instant::now() < end, "still one device: {:?}", alive_files(&dir));
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     second.quit().await;
+    let done = tokio::time::timeout(Duration::from_secs(60), first).await;
+    done.expect("the first ends within 60 s, its sessions gone").expect("its task").expect("it ends cleanly");
     newer.quit().await;
-    assert!(alive_files(&dir).is_empty(), "none runs");
+    let end = Instant::now() + Duration::from_secs(10);
+    while !alive_files(&dir).is_empty() {
+        assert!(Instant::now() < end, "none runs: {:?}", alive_files(&dir));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");
 }
@@ -2377,4 +2381,51 @@ async fn ivys_mac_its_touch_id_key_and_her_drive_move_to_ml_dsa_65_with_her_pass
 /// Bytes as lowercase hex digits.
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_approved_agent_works_as_a_session_of_the_macs_device_by_its_own_key() {
+    let (_relay, url, server) = server().await;
+    let folder = Folder::new("session");
+    let dir = folder.0.join("avendb");
+    let mut app = App::start(&dir, Passkey::from_seed([6; 32]), true);
+    app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await.expect("her vault");
+    let mine = world_of(&mut app).await["mine"].clone();
+    let seeds =
+        run(&mut app, json!({ "op": "create", "vault": mine, "type": "note", "value": titled("Seeds", "In March.") }));
+    let seeds = seeds.await.expect("her note")["entry"].clone();
+    // agentClaude asks, runs its own device while it isn't hers yet, and joins her coop's aven
+    let mut claude = Harness::start(&dir, agent::CLAUDE);
+    let (waits, _) = claude.tool("avendb_vaults", json!({})).await;
+    assert!(waits.contains("waiting for its person to answer"), "{waits}");
+    let device = requests(&mut app, 1).await[0]["device"].clone();
+    let both = json!({ "op": "found", "vaults": [{ "kind": "coop", "name": "Eve's Garden" },
+        { "kind": "aven", "name": "avenEVE", "under": 0 }] });
+    let aven = run(&mut app, both).await.expect("her coop and its aven")["vaults"][1].clone();
+    let editor = json!({ "op": "share", "over": mine, "who": { "vault": aven }, "level": "Editor", "what": "everything",
+        "as": mine });
+    run(&mut app, editor).await.expect("avenEVE an Editor of her vault");
+    app.call("grant", json!(["agentClaude", device, []])).await.expect("granted");
+    claude.quit().await;
+    let own = agent::agents(&dir).join("agentClaude.sock");
+    std::fs::remove_file(&own).ok();
+    // its next session runs no device of its own: the Mac's device hosts it, and it acts by its own key, as the aven
+    let mut claude = Harness::start(&dir, agent::CLAUDE);
+    let (me, _) = claude.tool("avendb_vaults", json!({})).await;
+    let me: Value = serde_json::from_str(&me).unwrap_or_else(|_| panic!("JSON: {me}"));
+    assert_eq!((&me["me"]["device"], &me["me"]["aven"]), (&json!("agentClaude"), &aven), "{me}");
+    assert!(!own.exists(), "no device of its own answers on its socket");
+    assert!(agent::online(&dir, "agentClaude", device.as_str().expect("its key")), "the Mac's page sees it run");
+    let read = reads(&mut claude, &seeds).await;
+    assert!(!read.1 && read.0.contains("In March."), "it reads what the aven may: {read:?}");
+    let kale = json!({ "op": { "op": "create", "vault": mine, "type": "note", "value": titled("Kale", "In April.") } });
+    let (made, error) = claude.tool("avendb_run", kale).await;
+    assert!(!error && made.contains("\"ok\""), "it writes, as the aven may: {made}");
+    let made: Value = serde_json::from_str(&made).expect("JSON");
+    let kale = made["ok"]["entry"].clone();
+    let shown = shown(&mut app, &kale, "the session's note on the Mac", |_| true).await;
+    assert_eq!(note(&mut app, &kale).await, Some(("Kale".into(), "In April.".into())), "{shown}");
+    claude.quit().await;
+    app.quit().await;
+    server.shutdown().await.expect("the server's node stops");
 }
