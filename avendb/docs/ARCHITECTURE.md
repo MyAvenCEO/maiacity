@@ -1383,6 +1383,25 @@ of the edits is new, nothing new is on the wire, and every write counts as any w
   the baseline, then the proposal's whenever its lines or the logic change; each number it hands back is an
   `aip_measure` reading, written as the vault, its note naming the logic, a hash of its code and the side. Every run
   is a pure function of the logic and the records, so anyone who reads both can run it again and compare.
+- **Real Lean's verdict** (N3, `leanVerdict` in `spec/AvenDB/Measurers.lean`, `crates/avendb-device/src/lean.rs`,
+  `src/lib/proposals/lean.js`). avenDB's engine reads a subset of Lean; real Lean checks the whole file, on the Mac of
+  whoever accepts the AIP, in The OS (browsers have no Lean, and keep the engine). The device runs the Lean release
+  `spec/lean-toolchain` pins, got only when the person asks (Get Lean, which names its sizes: a 570 MB download, 544
+  MB kept on an Apple silicon Mac): the release's archive from Lean's GitHub releases, unpacked as it streams in,
+  keeping only `lean`, its shared libraries and the Init library's .olean files, into a folder beside the device's
+  shelves, put in place only once the archive's SHA-256 matched the one pinned in `lean.rs`. The spec's
+  `AvenDB/Objective.lean`, built into the device, is compiled there once per version of it. Two walls stand between
+  an objective and the Mac: Lean runs only on a file the engine reads (no `#eval`, macros or options), and only
+  under a sandbox profile of its own (`sandbox-exec`: read its own folder and the system's libraries, write nothing,
+  no network, start nothing; 200,000 heartbeats, 1 GB, 60 s). Measure on the AIP then also checks its objective
+  (`leanCheck`, on Lean's standard input, warnings as errors) and records what Lean found as a reading of the vault's
+  named `lean:<key>`, `key` the first 16 hex digits of the BLAKE3 of the objective's Lean (`objective::key`), 1
+  where Lean accepted it and 0 where it didn't, its note naming the Lean (version, the archive's SHA-256, the
+  objective module's key) and Lean's first error. The AIP's verdict is the newest such reading a Measurer wrote for
+  the objective it holds now: none until one does, none once the objective changes (L1), the newest standing (L2),
+  never one its author wrote alone (L3). `aip` answers `objective.key` and `objective.verdict`, `{ok, by, at, note}`
+  or `null`, and the Proposals app shows it. `.github/workflows/lean-mac.yml` gets Lean on a Mac runner as The OS does
+  and checks that the sandbox stops a file that got past the first wall from reading, writing and starting anything.
 - **Numbers count per vault.** Promote gives one more than the highest number of the vault's AIPs the device holds,
   and a revised AIP keeps its own. Two devices that promote while apart may give one number twice; once they sync,
   every reader labels them alike, by where the write that set each number stands in the one order every device

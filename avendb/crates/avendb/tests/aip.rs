@@ -649,6 +649,43 @@ fn an_objective_reads_the_numbers_its_lines_propose() {
     assert!(run(&mut g.w, g.mac, bad)["why"].as_str().unwrap_or_default().contains("empty field"));
 }
 
+/// N3 (`spec/AvenDB/Measurers.lean`, L1 to L3): real Lean's verdict on an AIP's objective is the newest reading a
+/// Measurer wrote named for the objective's key: the aven's own "yes" counts for nothing, Alice's vault's counts on
+/// every reader, its newest stands, and a new objective has none until it is checked again.
+#[test]
+fn lean_s_verdict_is_a_measurer_s_reading_on_the_objective_it_holds() {
+    let mut g = gate();
+    let n = g.create("note", note());
+    g.sync(1);
+    let line = g.propose(&n, "Earlier", vec![set(json!(["title"]), json!("Corn first"))]);
+    let (aven, alice) = (g.aven.to_hex(), g.alice.to_hex());
+    let lean = "def fps : Metric := metric \"Frames\" (atLeast (reading \"fps\") 50)\n";
+    let op = json!({ "op": "aip_open", "vault": alice, "title": "Faster corn", "as": aven, "objective": lean,
+        "proposals": [{ "entry": n, "line": line }] });
+    let aip = ok(run(&mut g.w, g.mac, op))["entry"].as_str().expect("its entry").to_string();
+    g.sync(2);
+    let key = g.aip(g.mac, &aip)["objective"]["key"].as_str().expect("its key").to_string();
+    assert_eq!(key, avendb::objective::key(lean));
+    assert_eq!(g.aip(g.mac, &aip)["objective"]["verdict"], Value::Null, "unchecked");
+    let say = |by: &str, v: u64, note: &str| json!({ "op": "aip_measure", "entry": aip,
+        "name": format!("lean:{key}"), "value": v, "note": note, "as": by });
+    ok(run(&mut g.w, g.mac, say(&aven, 1, "the author's own")));
+    assert_eq!(g.aip(g.mac, &aip)["objective"]["verdict"], Value::Null, "the author's yes counts for nothing");
+    ok(run(&mut g.w, g.mac, say(&alice, 0, "lean-4.35.0 abc: 1:1 nope")));
+    ok(run(&mut g.w, g.mac, say(&alice, 1, "lean-4.35.0 abc")));
+    g.sync(3);
+    for d in g.readers {
+        let v = g.aip(d, &aip)["objective"]["verdict"].clone();
+        assert_eq!((&v["ok"], &v["by"], &v["note"]), (&json!(true), &json!(alice), &json!("lean-4.35.0 abc")), "on {d:?}");
+    }
+    // a new objective is a new key: no verdict until Lean checks it
+    let lean2 = format!("{lean}def more : Metric := metric \"More\" (atLeast (reading \"fps\") 60)\n");
+    ok(run(&mut g.w, g.mac, json!({ "op": "aip_objective", "entry": aip, "lean": lean2, "as": aven })));
+    let o = g.aip(g.mac, &aip)["objective"].clone();
+    assert_ne!(o["key"], json!(key));
+    assert_eq!(o["verdict"], Value::Null);
+}
+
 /// N2, M4 (`spec/AvenDB/Measurers.lean`): those who accept an AIP measure it themselves, with no share: Alice's vault,
 /// as her Mac acts for it, records a reading on the aven's AIP, and it counts as measured on every reader.
 #[test]

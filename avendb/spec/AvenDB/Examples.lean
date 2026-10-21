@@ -1755,6 +1755,13 @@ def sMeasurer : List Edit := sAdmin ++ chain 630 [
 #guard !measures (view sMeasurer) city bob bob && !measures (view sMeasurer) city alice alice
 #guard measuredBy (view sMeasurer) city alice [(alice, [1, 2]), (bob, [3]), (alice, [4]), (bob, [5])] == [3, 5]
 #guard measuredBy (view sMeasurer) city bob [(alice, [1, 2]), (bob, [3])] == [1, 2]
+-- N3: Lean's verdict on Bob's AIP, keyed "k": Alice's Mac said yes, then no, and Bob's own yes counts for nothing
+#guard leanVerdict (measuredBy (view sMeasurer) city bob
+  [(alice, [(verdictName "k", Objective.one)]), (bob, [(verdictName "k", Objective.one)]),
+   (alice, [(verdictName "k", 0)])]) "k" == some false
+#guard leanVerdict (measuredBy (view sMeasurer) city bob [(alice, [(verdictName "k", Objective.one)])]) "k" == some true
+#guard leanVerdict (measuredBy (view sMeasurer) city bob [(alice, [(verdictName "k", Objective.one)])]) "j" == none
+#guard leanVerdict (measuredBy (view sMeasurer) city bob [(bob, [(verdictName "k", Objective.one)])]) "k" == none
 
 /-! ## A key move: every signer to ML-DSA-65
 

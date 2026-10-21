@@ -883,6 +883,24 @@ pub fn measure_named(name: &str) -> bool {
     (1..=64).contains(&name.len()) && name.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
+/// The key of objective `src`, its Lean as written: the first 16 hex digits of its BLAKE3 hash. A Lean verdict on it
+/// is a Measurer's reading named for it (`verdict_name`), so a verdict counts for the objective it was made on alone.
+pub fn key(src: &str) -> String {
+    blake3::hash(src.as_bytes()).to_hex()[..16].to_string()
+}
+
+/// The name of a Lean verdict's reading on the objective keyed `key` (`Measurers.lean`'s `verdictName`).
+pub fn verdict_name(key: &str) -> String {
+    format!("lean:{key}")
+}
+
+/// Of the readings a vault's Measurers wrote, oldest first, each its name and value: the verdict on the objective keyed
+/// `key`, the newest reading named for it, whether it is one (`Measurers.lean`'s `leanVerdict`, L1 to L3).
+pub fn lean_verdict<'a>(measured: impl DoubleEndedIterator<Item = (&'a str, Dec)>, key: &str) -> Option<bool> {
+    let name = verdict_name(key);
+    measured.rev().find(|(n, _)| *n == name).map(|(_, v)| v == ONE)
+}
+
 /// The metrics of an objective file, in their order: `Error` with where and why for anything else (`read`).
 pub fn parse(src: &str) -> Result<Vec<Metric>, Error> {
     read(src).map(|o| o.metrics)

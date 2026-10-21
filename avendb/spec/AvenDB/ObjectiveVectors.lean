@@ -1,4 +1,5 @@
 import AvenDB.Objective
+import AvenDB.Measurers
 import AvenDB.Objectives.Start
 import AvenDB.Objectives.Memory
 import AvenDB.Objectives.Unmeasured
@@ -12,7 +13,9 @@ import AvenDB.Objectives.Measured
 file of Lean, its text as `include_str` reads it, the very file Lean elaborated here, so the text and the metrics are
 one; the metrics as the model holds them (`Expr`, `Goal`, `Metric`, numbers in millionths); readings, each a name and
 a value in millionths, in the order recorded, and those of them a Measurer wrote; the numbers found at the paths it
-names in the proposal and on main; the measuring logic it names, in file order; and what `check` answers.
+names in the proposal and on main; the measuring logic it names, in file order; and what `check` answers. Beside
+them, `verdicts`: a Measurer's readings, oldest first, an objective's key and the Lean verdict they give it
+(`leanVerdict`).
 -/
 
 namespace AvenDB.ObjectiveVectors
@@ -139,6 +142,27 @@ def cases : List Case := [
 -- Every vector names its measuring logic as a ref may (`Measure.named`).
 #guard cases.all (·.measures.all Measure.named)
 
-def render : String := obj [("cases", arr (cases.map case))] ++ "\n"
+/-- A Lean verdict's case: readings a vault's Measurers wrote, oldest first, and the objective's key. -/
+structure Verdict where
+  name : String
+  measured : Readings
+  key : String
+
+def verdictCase (c : Verdict) : String :=
+  obj [("name", jstr c.name), ("measured", named "name" c.measured), ("key", jstr c.key),
+       ("verdict", opt (fun b => if b then "true" else "false") (leanVerdict c.measured c.key))]
+
+def verdicts : List Verdict := [
+  { name := "none measured yet", measured := [], key := "0123456789abcdef" },
+  { name := "Lean accepted it", measured := [("fps", u 40), ("lean:0123456789abcdef", u 1)], key := "0123456789abcdef" },
+  { name := "the newest stands: accepted, then not",
+    measured := [("lean:0123456789abcdef", u 1), ("fps", u 40), ("lean:0123456789abcdef", 0)],
+    key := "0123456789abcdef" },
+  { name := "a reading for another objective is no verdict on this one",
+    measured := [("lean:fedcba9876543210", u 1)], key := "0123456789abcdef" },
+  { name := "any value but one is a no", measured := [("lean:0123456789abcdef", u 2)], key := "0123456789abcdef" }
+]
+
+def render : String := obj [("cases", arr (cases.map case)), ("verdicts", arr (verdicts.map verdictCase))] ++ "\n"
 
 end AvenDB.ObjectiveVectors
