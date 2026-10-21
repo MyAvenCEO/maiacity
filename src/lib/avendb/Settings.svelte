@@ -32,6 +32,7 @@
 	import Share from './Share.svelte';
 	import { server } from './server.js';
 	import { Here, here, session } from './session.svelte.js';
+	import { share, sync } from './sync.svelte.js';
 	import {
 		acting,
 		actsWords,
@@ -348,15 +349,25 @@
 	 * What the device would make, as it answers a dry run of each (`may`): the vault's name (`profile`), the master
 	 * recovery key as an owner (`recovery`), backups on or off (`backUp`), what a device of the vault keeps (`copy`),
 	 * and removing each owner (`owner <id>`) and each device but this one (`device <id>`): `true`, `{ approve }` where
-	 * the vault's owners approve it, or why not. Asked again only once what it asks changes, or who asks, or how the
-	 * vault is governed: a vault that syncs on changes its world faster than a device with a big vault answers, and an
-	 * answer thrown away at each change left every Remove hidden (Samuel 2026-10-20: no Remove on any owner).
+	 * the vault's owners approve it, or why not. Each is asked again only once what it asks changes, or who asks, or
+	 * how the vault is governed, and kept as it comes even where another changed meanwhile: a device that syncs a big
+	 * vault changes its world faster than it answers, and an answer thrown away at each change left every Remove
+	 * hidden (Samuel 2026-10-20), then on "checking" for good (his iPhone 2026-10-21). One it doesn't answer in
+	 * `MAY_WAIT` it asks again `MAY_AGAIN` on. Removals aren't asked while the device syncs (`behind`): it refuses
+	 * them until it has caught up (`waits`), and they are the dearest to check.
 	 */
 	let can = $state(/** @type {Record<string, Verdict>} */ ({}));
-	/** what `can` answers, or is being asked: this device, the acting vault, the vault's root and threshold, and the
-	 *  ops, as JSON */
-	let asked = '';
+	/** what each answer in `can` answers, or what is being asked, by its name: this device, the acting vault, the
+	 *  vault's root and threshold, and the op, as JSON */
+	const askedOf = /** @type {Record<string, string>} */ ({});
+	/** counts the times it asked again what the device didn't answer */
+	let again = $state(0);
+	const MAY_WAIT = 20000;
+	const MAY_AGAIN = 15000;
+	/** Whether this device still brings what its peers hold, as the app's sync pill reads it (./sync.svelte.js). */
+	const behind = $derived(sync.known && sync.behind > 0);
 	$effect(() => {
+		void again;
 		/** @type {Record<string, object>} */
 		const asks = { profile: { op: 'profile', vault, name: naming?.trim() || nameOf(v) } };
 		if (recoveryMissing && world.recovery)
@@ -364,31 +375,52 @@
 		if (own && backs != null) asks.backUp = { op: 'back_up', on: !backs };
 		const other = devices.find((d) => !d.me) ?? devices[0];
 		if (own && other) asks.copy = { op: 'copy', device: other.id, full: other.copy !== 'full' };
-		for (const o of owners)
-			asks[ownerKey(o)] = { op: 'revoke', vault, owner: 'vault' in o ? { vault: o.vault } : { signer: o.signer } };
-		for (const d of devices) if (!d.me) asks[`device ${d.id}`] = { op: 'revoke', vault, device: d.id };
-		const names = Object.keys(asks);
-		const now = JSON.stringify([world.me, actor, v.root, v.threshold, asks]);
-		if (now === asked) return;
-		asked = now;
-		may(api, actor, Object.values(asks)).then((answers) => {
-			if (asked !== now) return;
-			can = Object.fromEntries(names.map((n, i) => [n, answers[i]]));
-			// a removal it refuses goes into the Mac app's log too, with why (Samuel 2026-10-21: no Remove on any device)
-			for (const [n, verdict] of Object.entries(can))
-				if (/^(owner|device) /.test(n) && !allowed(verdict)) console.warn(`avenDB: Settings may not remove ${n}:`, verdict);
+		if (!behind) {
+			for (const o of owners)
+				asks[ownerKey(o)] = { op: 'revoke', vault, owner: 'vault' in o ? { vault: o.vault } : { signer: o.signer } };
+			for (const d of devices) if (!d.me) asks[`device ${d.id}`] = { op: 'revoke', vault, device: d.id };
+		}
+		const by = JSON.stringify([world.me, actor, v.root, v.threshold]);
+		const fresh = Object.entries(asks)
+			.map(([name, op]) => ({ name, op, key: `${by} ${JSON.stringify(op)}` }))
+			.filter((x) => askedOf[x.name] !== x.key);
+		if (!fresh.length) return;
+		for (const x of fresh) askedOf[x.name] = x.key;
+		may(
+			api,
+			actor,
+			fresh.map((x) => x.op),
+			MAY_WAIT
+		).then((answers) => {
+			const got = fresh.map((x, i) => ({ ...x, verdict: answers[i] })).filter((x) => askedOf[x.name] === x.key);
+			if (!got.length) return;
+			can = { ...can, ...Object.fromEntries(got.map((x) => [x.name, x.verdict])) };
+			let unanswered = false;
+			for (const { name, verdict } of got) {
+				if (/** @type {any} */ (verdict)?.refused === 'NoAnswer') {
+					delete askedOf[name];
+					unanswered = true;
+				}
+				// a removal it refuses goes into the Mac app's log too, with why (Samuel 2026-10-21: no Remove on any device)
+				else if (/^(owner|device) /.test(name) && !allowed(verdict)) console.warn(`avenDB: Settings may not remove ${name}:`, verdict);
+			}
+			if (unanswered) setTimeout(() => again++, MAY_AGAIN);
 		});
 	});
 	/** Whether the device would make `what` (`can`). @param {string} what */
 	const lets = (what) => allowed(can[what]);
 	/**
-	 * Why a Remove of `what` waits or can't be, in words: while the device hasn't answered its dry run yet, or as it
-	 * refuses it; '' where it would make it. @param {string} what
+	 * Why a Remove of `what` waits or can't be, in words: as the device refuses it, while this device still syncs, while
+	 * it hasn't answered its dry run yet, or didn't in time; '' where it would make it. @param {string} what
 	 */
 	const whyNot = (what) => {
 		const verdict = /** @type {any} */ (can[what]);
+		const unanswered = verdict?.refused === 'NoAnswer';
+		if (verdict !== undefined && !unanswered && !allowed(verdict)) return verdict.why ?? verdict.refused ?? 'refused';
+		if (behind) return `Removing waits until ${here} has synced what your other devices hold: ${Math.floor(100 * share())}% so far`;
+		if (unanswered) return `${Here} didn’t answer in time whether it may remove it: it asks again`;
 		if (verdict === undefined) return `${Here} is checking whether it may remove it`;
-		return allowed(verdict) ? '' : (verdict.why ?? verdict.refused ?? 'refused');
+		return '';
 	};
 
 	/** when each device last said what it holds (`lastSaid`) */
@@ -1346,9 +1378,37 @@
 		cursor: default;
 	}
 
+	/* on a phone: the name and what tells it apart across the row, what it keeps and what to do under it, and why a
+	   Remove waits on a line of its own (Samuel's iPhone 2026-10-21: the toggle lay over "last seen") */
 	@media (max-width: 520px) {
 		.list li.device {
 			flex-wrap: wrap;
+			row-gap: 0.4rem;
+		}
+
+		.list li.device .who {
+			flex-basis: 100%;
+		}
+
+		.meta {
+			flex-wrap: wrap;
+			white-space: normal;
+		}
+
+		.list li.device > .btn,
+		.remover .btn {
+			margin-left: auto;
+		}
+
+		.remover {
+			display: contents;
+		}
+
+		.remover .why {
+			order: 1;
+			flex-basis: 100%;
+			max-width: none;
+			text-align: left;
 		}
 	}
 

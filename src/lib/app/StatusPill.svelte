@@ -43,6 +43,8 @@
 	});
 
 	const n = (/** @type {number} */ x) => x.toLocaleString('en');
+	/** how long ago, `ms` being how many milliseconds */
+	const secs = (/** @type {number} */ ms) => (ms < 2000 ? 'just now' : ms < 120000 ? `${Math.round(ms / 1000)} s ago` : `${Math.round(ms / 60000)} min ago`);
 	const percent = $derived(Math.floor(100 * share()));
 	const label = $derived(
 		shown === 'sync' ? `Syncing avenDB · ${percent}%` : shown === 'wait' ? "Waiting for avenDB's server" : `Loading ${n(files.reading)} ${files.reading === 1 ? 'file' : 'files'}`
@@ -53,6 +55,7 @@
 				(sync.behind > 0
 					? `avenDB: ${n(Math.max(0, sync.logs - sync.behind))} of ${n(sync.logs)} logs synced from ${sync.peers === 1 ? 'your peer' : `your ${n(sync.peers)} peers`}${sync.pulling ? `, ${n(sync.pulling)} coming in now` : ''}`
 					: `avenDB: in sync with ${sync.peers === 1 ? 'your peer' : `your ${n(sync.peers)} peers`}`),
+			sync.known && sync.behind > 0 && (sync.paged ? `Its last page of edits came ${secs(sync.at - sync.paged)}; a log counts once it is whole.` : sync.pulling ? 'No page of edits has come since this page opened.' : ''),
 			files.reading > 0 && `This page: ${n(files.reading)} ${files.reading === 1 ? 'file' : 'files'} on the way${files.waiting ? `, ${n(files.waiting)} waiting for avenDB's server to answer again` : ''}`
 		].filter(Boolean)
 	);

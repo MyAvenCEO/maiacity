@@ -196,6 +196,11 @@ const BACKOFF_MAX: Duration = Duration::from_secs(60);
 /// How long a blob connection nothing uses stays open.
 const IDLE: Duration = Duration::from_secs(30);
 
+/// How long a node waits for a page of edits it asked a peer for (`Shared::pages`): one that never comes, over a
+/// connection kept open, would hold its pull, and the sync bar, for ever (Samuel's iPhone 2026-10-21, "syncing" at 19%
+/// with two pulls running). The asking fails, and the node asks again as it does any it failed (`Backoff`).
+const PAGE_WAIT: Duration = Duration::from_secs(180);
+
 /// The TLS of every node on a machine: aws-lc-rs with X25519MLKEM768 as its only key exchange, so that ML-KEM-768
 /// agrees the keys of every connection along with X25519, and a peer that offers only classical groups finds none in
 /// common. Ciphers with 256-bit keys first; AES-128 last, as QUIC protects its first packets with it.
@@ -1345,9 +1350,11 @@ impl Node {
     }
 
     /// How far its device is synced with the peers it is connected to, by what each told it it holds (`Holdings`), as
-    /// the `synced` op tells it: `{"peers", "logs", "behind", "pulling"}`, how many of them told it, how many logs they
-    /// hold between them that this device may hold, how many of those hold edits this device lacks (`differ`), which it
-    /// asks them for, and how many pulls from them run now (`jobs`). What a page's sync bar shows.
+    /// the `synced` op tells it: `{"peers", "logs", "behind", "pulling", "pages"}`, how many of them told it, how many
+    /// logs they hold between them that this device may hold, how many of those hold edits this device lacks (`differ`),
+    /// which it asks them for, how many pulls from them run now (`jobs`), and how many pages of edits it took since it
+    /// started: a log counts once whole, and a page brings edits of many, so the pages show a pull moving while the
+    /// logs don't. What a page's sync bar shows.
     pub async fn synced(&self) -> Value {
         let live: BTreeSet<SignerId> = {
             let peers = self.shared.peers.lock().expect("peers");
@@ -1364,7 +1371,8 @@ impl Node {
         }
         let (running, _) = self.jobs().snapshot();
         let pulling = running.iter().filter(|j| j.kind == "pull").count();
-        json!({ "peers": heard.len(), "logs": logs.len(), "behind": behind.len(), "pulling": pulling })
+        let pages = self.shared.sent.requests.load(Ordering::Relaxed);
+        json!({ "peers": heard.len(), "logs": logs.len(), "behind": behind.len(), "pulling": pulling, "pages": pages })
     }
 
     /// The devices it is connected to now, as their hellos proved them, each with how many logs it holds edits in that
@@ -1816,7 +1824,8 @@ impl Shared {
                 }
             };
             let request = self.lab(request).await;
-            let Reply { edits, blobs, more } = self.reply_to(&peer, kind, &request).await?;
+            let reply = time::timeout(PAGE_WAIT, self.reply_to(&peer, kind, &request)).await;
+            let Reply { edits, blobs, more } = reply.context("no page in time")??;
             self.sent.requests.fetch_add(1, Ordering::Relaxed);
             // where the next page starts: a page that brings nothing past the last ends the asking
             let last = edits.iter().map(|s| place(&s.edit)).max().filter(|&l| after.is_none_or(|a| l > a));

@@ -243,6 +243,7 @@ async fn a_node_brings_the_vaults_a_page_reads_its_code_from_first_and_tells_how
     let synced = run(&phone, json!({ "op": "synced" })).await.expect("synced");
     assert_eq!(synced["peers"], 1);
     assert!(synced["logs"].as_u64() > synced["behind"].as_u64(), "{synced}");
+    let pages = synced["pages"].as_u64().expect("how many pages it took");
     // a bring of the coop: each device it knows asked at once, the Mac, the one it reaches, answers whole, and the
     // phone reads Notes
     let known = phone.read(|lab, me| lab.peers(me).len()).await;
@@ -250,6 +251,9 @@ async fn a_node_brings_the_vaults_a_page_reads_its_code_from_first_and_tells_how
     assert_eq!((&brought["peers"], &brought["reached"]), (&json!(known), &json!(true)), "{brought}");
     assert!(brought["new"].as_u64() > Some(0), "{brought}");
     assert!(phone.read(reads).await, "brought first");
+    // the pages it took tell the bring moving, as a log counts only once whole
+    let after = run(&phone, json!({ "op": "synced" })).await.expect("synced");
+    assert!(after["pages"].as_u64() > Some(pages), "{after}");
     let caught = || async { run(&phone, json!({ "op": "synced" })).await.expect("synced")["behind"] == 0 };
     until("the phone is synced with its peer", caught).await;
     // a bring names 1 to 64 vaults, each by its id

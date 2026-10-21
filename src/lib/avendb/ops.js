@@ -113,13 +113,15 @@ export const allowed = (v) => v === true || (!!v && typeof v === 'object' && 'ap
  * Whether the acting vault `actor` may make each of the change ops `ops` now, as the device answers by a dry run of
  * each that checks, proves and refuses as running it would, and makes nothing (the engine's `may`): `true`,
  * `{ approve }` where its vault's owners approve it, or the refusal, `{ refused, why }`. What a page asks before it
- * offers a button, so the rules stay the device's alone.
- * @param {{ ask: (op: object) => Promise<any> }} api @param {string} actor @param {object[]} ops
+ * offers a button, so the rules stay the device's alone. Given `wait` (ms), an answer that doesn't come by then
+ * counts as none (`NoAnswer`), as a device busy syncing a big vault may take long.
+ * @param {{ ask: (op: object) => Promise<any> }} api @param {string} actor @param {object[]} ops @param {number} [wait]
  * @returns {Promise<import('./vaults.js').Verdict[]>}
  */
-export async function may(api, actor, ops) {
+export async function may(api, actor, ops, wait = 0) {
 	if (!ops.length) return [];
-	const out = await api.ask({ op: 'may', as: actor, ops }).catch(() => null);
+	const asked = api.ask({ op: 'may', as: actor, ops }).catch(() => null);
+	const out = await (wait ? Promise.race([asked, new Promise((done) => setTimeout(() => done(null), wait))]) : asked);
 	const no = { refused: out?.refused ?? 'NoAnswer', why: out ? why(out) : 'the device didn’t answer' };
 	return out?.ok ?? ops.map(() => no);
 }
