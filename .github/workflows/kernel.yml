@@ -11,7 +11,7 @@ name: Kernel
 #            harm, in headless Chromium against the dev server (scripts/probes.mjs: the box's lab, /app/assets/box/, the
 #            view probe, /app/views/probe/, and the math probe, /app/math/probe/, with a canary that hears anything that
 #            got out)
-#   probes-webkit – the same probes in WebKit (Playwright's), the engine Samuel's Mac app, The OS, shows the site in
+#   probes-webkit – the same probes in WebKit (Playwright's), the engine Samuel's Mac app, theOS, shows the site in
 #            (Tauri is WebKit): a wall that holds in Chromium is not taken to hold there
 on:
   pull_request:

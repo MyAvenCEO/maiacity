@@ -8,7 +8,7 @@
 //! person's aven (`avendb_device::agent`).
 //!
 //! `avendb-device agent cloud [--dir <folder>]`: a cloud session's agent, agentCloud, as an MCP server on its stdin and
-//! stdout, its key from the environment (`AVENDB_AGENT_KEY`), as The OS app showed it once, reaching avenDB's server
+//! stdout, its key from the environment (`AVENDB_AGENT_KEY`), as theOS app showed it once, reaching avenDB's server
 //! alone, its folder in `~/avenDB/cloud` unless named (`avendb_device::agent::serve_cloud`).
 
 use std::path::PathBuf;

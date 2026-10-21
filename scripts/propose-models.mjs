@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// The speech models The OS runs (src/lib/models/models.json), proposed into the Maia City vault as one AIP by this Mac's
+// The speech models theOS runs (src/lib/models/models.json), proposed into the Maia City vault as one AIP by this Mac's
 // agent (the device of avenMAIA Claude Code starts as its MCP server: `avendb-device agent claude`), so a Mac brings them
 // from avenDB as every other asset file, not out of the legacy vault (vault/app/src/models.rs). Each file is hashed here
 // first and must be the pinned file; each missing one becomes a draft file entry of Maia City (`create`, `draft: true`,
@@ -10,7 +10,7 @@
 //
 //   bun scripts/propose-models.mjs --from <folder> [--run] [--device <path of avendb-device>]
 //
-// The files are read from --from, a folder of them by hash or by name. The agent device reads no file inside The OS's
+// The files are read from --from, a folder of them by hash or by name. The agent device reads no file inside theOS's
 // own folder (~/Library/Application Support/city.maia.studio, which holds the Mac's keys), so copy its models/ out first
 // (`cp -c` clones them on APFS, no extra disk). The agent device is the one ~/.claude.json starts as
 // the `avendb` MCP server, else `--device` or AVENDB_DEVICE.
@@ -57,7 +57,7 @@ function device() {
 	} catch {
 		// no Claude Code config here
 	}
-	throw new Error('no agent device: give --device <The OS app’s avendb-device>, or add it to Claude Code (claude mcp add --scope user avendb -- <avendb-device> agent claude)');
+	throw new Error('no agent device: give --device <theOS app’s avendb-device>, or add it to Claude Code (claude mcp add --scope user avendb -- <avendb-device> agent claude)');
 }
 
 /** an MCP session with the agent device on its stdio: `call(tool, args)` answers its tool's text, read as JSON */
@@ -161,13 +161,13 @@ try {
 	}
 	const count = files.length;
 	const objective = [
-		`/-- Maia City holds every speech model file The OS pins (src/lib/models/models.json). -/`,
+		`/-- Maia City holds every speech model file theOS pins (src/lib/models/models.json). -/`,
 		`def files : Metric := metric "Pinned model files in Maia City" (equals (reading "files") ${count})`,
 		''
 	].join('\n');
 	const note = [
-		`The speech models The OS runs on the Mac, as Maia City's own files: ${models.map((/** @type {any} */ m) => `${m.label} (${m.task}; ${m.version})`).join('; ')}.`,
-		`Each file is tagged with the BLAKE3 of its bytes, which The OS pins (src/lib/models/models.json) and checks before it loads one; ${proposals.length} of ${count} are new here, ${(files.reduce((s, x) => s + x.file.size, 0) / 1048576).toFixed(0)} MB in all.`
+		`The speech models theOS runs on the Mac, as Maia City's own files: ${models.map((/** @type {any} */ m) => `${m.label} (${m.task}; ${m.version})`).join('; ')}.`,
+		`Each file is tagged with the BLAKE3 of its bytes, which theOS pins (src/lib/models/models.json) and checks before it loads one; ${proposals.length} of ${count} are new here, ${(files.reduce((s, x) => s + x.file.size, 0) / 1048576).toFixed(0)} MB in all.`
 	].join('\n\n');
 	const aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title, note, proposals, objective } });
 	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'files', value: count - proposals.length, note: 'Maia City before this AIP' } });

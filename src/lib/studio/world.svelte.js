@@ -268,7 +268,7 @@ export class WorldViewer {
 	}
 
 	/**
-	 * The GPU may drop the world's WebGL context (The OS's WebView on a Mac short of memory): every shader it is asked to
+	 * The GPU may drop the world's WebGL context (theOS's WebView on a Mac short of memory): every shader it is asked to
 	 * compile after that fails ("Argument 1 ('shader') to WebGL2RenderingContext.shaderSource…") and nothing it draws
 	 * shows. The world is then loaded again in a fresh page — a new context, its memory given back — up to LOSSES times
 	 * in LOSS_WINDOW; after that the proxies and stand-ins play, said on the monitor.

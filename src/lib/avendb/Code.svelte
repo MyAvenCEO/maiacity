@@ -1,5 +1,5 @@
 <!--
-	The code packages (Samuel 2026-10-21: "another code app like the models app"): the programs The OS runs on the Mac
+	The code packages (Samuel 2026-10-21: "another code app like the models app"): the programs theOS runs on the Mac
 	beside its own code, Lean first, as src/lib/code/packages.json pins them (the one list, which avendb-device's lean.rs
 	builds in), in the layout every avenDB view has (./Frame.svelte): on the left every package; in the middle the one
 	picked, what it does and its files, each with its pinned size, its BLAKE3 and its publisher's SHA-256 and whether the
@@ -78,7 +78,7 @@
 		<h2>{shown.label} {shown.version}</h2>
 		{#if shown.note}<p class="soft">{shown.note}</p>{/if}
 		<p class="soft">
-			The OS brings a package only from avenDB, a <span class="mono">file</span> entry tagged with its pin, and unpacks a
+			theOS brings a package only from avenDB, a <span class="mono">file</span> entry tagged with its pin, and unpacks a
 			file only when its bytes hash to both pins below.
 		</p>
 	</section>

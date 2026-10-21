@@ -157,5 +157,5 @@ bucket of snapshots that is its own bucket: the snapshots always live apart from
 
 - The backup settings as an entry in avenMAIA's vault (time of day, retention, vaults left out), signed and versioned.
 - avenMAIA's MCP tools (`backup_now`, `snapshots`, `restore_rehearsal`, `restore` with a Maia City owner's approval).
-- A Backups card in The OS.
+- A Backups card in theOS.
 - A second location for the bucket of snapshots.

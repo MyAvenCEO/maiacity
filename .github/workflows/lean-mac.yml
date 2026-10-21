@@ -1,7 +1,7 @@
 name: Lean on macOS
 
-# Real Lean in The OS (avendb/crates/avendb-device/src/lean.rs, N3): on a Mac runner, the device gets the pinned Lean
-# release (from Lean's releases here, standing in for Maia City's copy in avenDB, where The OS gets it), checks its
+# Real Lean in theOS (avendb/crates/avendb-device/src/lean.rs, N3): on a Mac runner, the device gets the pinned Lean
+# release (from Lean's releases here, standing in for Maia City's copy in avenDB, where theOS gets it), checks its
 # SHA-256 and BLAKE3, unpacks what it keeps, compiles the spec's objective module and
 # checks objectives, and its sandbox stops a file that got past the input wall from reading the person's files, writing
 # or starting anything. Only for pull requests that touch it: it downloads Lean's 570 MB archive each run.

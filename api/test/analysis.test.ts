@@ -132,7 +132,7 @@ describe("POST /api/analysis", () => {
     expect((await analyseRoute(post(framesBody, pass("other")))).status).toBe(403);
   });
 
-  describe("The OS's avenDB device pass", () => {
+  describe("theOS's avenDB device pass", () => {
     const ask = (pass: string) => statusRoute(new Request("http://api/api/analysis", { headers: { "x-avendb-pass": pass } }));
 
     test("an admin of Maia City's pass opens it, once; anyone else's, or a pass that is no pass, opens nothing", async () => {

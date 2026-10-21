@@ -11,7 +11,7 @@
  * that is Prem's for now (its attestation report for the model unavailable, a 5xx, rate limiting) answers 503 with
  * `transient: true`: the caller keeps the recording queued and tries again later, without using up a try.
  *
- * Who may ask: The OS by its avenDB device's pass, an admin of Maia City (#1107).
+ * Who may ask: theOS by its avenDB device's pass, an admin of Maia City (#1107).
  */
 import { adminByPass } from "./standing";
 import { call, failure, paused, pick, prem, PremError, resetPrem } from "./prem";
@@ -120,7 +120,7 @@ export async function transcribe(bytes: Uint8Array, mime = "audio/mp4", name = "
 }
 
 // ── who may ask ──
-/** The OS by its avenDB device's pass in `X-Avendb-Pass`, an admin of Maia City as avenDB's server says (standing.ts)
+/** theOS by its avenDB device's pass in `X-Avendb-Pass`, an admin of Maia City as avenDB's server says (standing.ts)
  *  — else the response that says why not. */
 export async function authorize(req: Request): Promise<true | Response> {
   const admin = await adminByPass(req.headers.get("x-avendb-pass") ?? undefined);

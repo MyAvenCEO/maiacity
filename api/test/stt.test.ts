@@ -109,7 +109,7 @@ describe("POST /api/transcripts", () => {
     expect(new Uint8Array(await asked[0].file.arrayBuffer())).toEqual(audio);
   });
 
-  test("The OS may ask as multipart too", async () => {
+  test("theOS may ask as multipart too", async () => {
     useSttClient({ audio: { transcriptions: { create: async () => fixture } } });
     const form = new FormData();
     form.set("file", new File([audio], "take.m4a", { type: "audio/mp4" }));
