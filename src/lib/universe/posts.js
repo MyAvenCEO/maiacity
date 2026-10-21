@@ -59,18 +59,21 @@ export function voiceOf(vault, name, kind) {
 	const words = called.split(/\s+/).filter(Boolean);
 	const initials = (words.length > 1 ? words[0][0] + words[1][0] : called.slice(0, 2)).toUpperCase();
 	const color = COLORS[parseInt(vault.slice(0, 2), 16) % COLORS.length];
-	return { name: called, handle: slug(called), initials, color, kind, ai: kind === 'aven' || kind === 'device', coop: kind === 'coop', avendb: true };
+	return { vault, name: called, handle: slug(called), initials, color, kind, ai: kind === 'aven' || kind === 'device', coop: kind === 'coop', avendb: true };
 }
 
-// Who wrote post `p` of avenDB's feed (Samuel 2026-10-18: never the coop, always its aven and the humans whose devices
-// signed it): its authors as the feed lists them (avendb's `world::authors`), its aven first, joined by " + "; the key
-// the stream holds its voice by, and that voice, named so, in the first author's colour and kind; else its vault's.
+// Who wrote post `p` of avenDB's feed: the vault it lives in, by its own name (Samuel 2026-10-21: "MaiaCity", not
+// its aven), then the humans whose devices signed it, as the feed lists them (avendb's `world::authors`, whose aven
+// stands for the vault), joined by " & "; the key the stream holds its voice by, and that voice, named so, in the
+// vault's colour and kind, with each co-author's own voice in `people` for the card's row of marks.
 export function authorsOf(p) {
+	const own = voiceOf(p.vault, p.name, p.kind);
 	const authors = Array.isArray(p.authors) ? p.authors.filter((a) => a?.vault) : [];
-	if (!authors.length) return { key: p.vault, voice: voiceOf(p.vault, p.name, p.kind) };
-	const names = authors.map((a) => a.name || `Vault ${a.vault.slice(0, 4)}`);
-	const voice = voiceOf(authors[0].vault, names.join(' + '), authors[0].kind);
-	return { key: authors.map((a) => a.vault).join('+'), voice: { ...voice, handle: slug(names[0]) } };
+	const others = authors.filter((a) => a.vault !== p.vault && a.kind !== 'aven');
+	if (!others.length) return { key: p.vault, voice: { ...own, people: [own] } };
+	const people = [own, ...others.map((a) => voiceOf(a.vault, a.name, a.kind))];
+	const voice = voiceOf(p.vault, people.map((v) => v.name).join(' & '), p.kind);
+	return { key: people.map((v) => v.vault).join('+'), voice: { ...voice, handle: own.handle, people } };
 }
 
 // The cover of post `p`'s article text, as avenDB lays it out, where everyone may read it (`pictureOf`): its address

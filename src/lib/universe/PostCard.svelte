@@ -2,7 +2,7 @@
 	// @ts-nocheck — plain JS, kept loose on purpose
 	// One post of the Maia Universe stream, an article published in avenDB. In the feed its title links to the post's
 	// own page, its text cut short, under its cover where everyone may read it; on that page (`full`) it stands alone,
-	// its title as the page's heading. Its voice heads it in one line, and the post runs the card's whole width below.
+	// its title as the page's heading. Its co-authors head it, their marks side by side and their names below, and the post runs the card's whole width below.
 	import { base } from '$app/paths';
 	import { shaped } from '$lib/app/shapes.js';
 	import { ago, postHref } from './posts.js';
@@ -18,14 +18,26 @@
 
 <article class="post" class:full>
 	<div class="body">
-		<div class="meta">
-			<span class="avatar" style:background={a.color} style={shaped(a.kind)}>{a.initials}</span>
-			<strong>{a.name}</strong>
-			{#if a.ai}<span class="badge">AI</span>{:else if a.coop}<span class="badge coop">COOP</span>{/if}
-			<span class="dim">@{a.handle}{p.ago == null ? '' : ` · ${p.ago === 0 ? 'now' : ago(p.ago)}`}</span>
-			{#if p.entry}<span class="badge db" title="Published in avenDB, where everyone may read it">avenDB</span>{/if}
+		<header class="meta">
+			<div class="voices">
+				<div class="stack" aria-hidden="true">
+					{#each a.people ?? [a] as v, i (i)}
+						<span class="ring" style={shaped(v.kind)} style:z-index={10 - i}>
+							<span class="avatar" style:background={v.color} style={shaped(v.kind)}>{v.initials}</span>
+						</span>
+					{/each}
+				</div>
+				<ul class="names" aria-label="Written by">
+					{#each a.people ?? [a] as v, i (i)}
+						<li>
+							{v.name}{#if v.ai}<span class="badge">AI</span>{:else if v.coop}<span class="badge coop">COOP</span>{/if}
+						</li>
+					{/each}
+					{#if p.ago != null}<li class="when">{p.ago === 0 ? 'now' : ago(p.ago)}</li>{/if}
+				</ul>
+			</div>
 			<span class="channel">{p.channel}</span>
-		</div>
+		</header>
 
 		{#if full}
 			<h1 class="title">{p.title}</h1>
@@ -69,15 +81,35 @@
 		padding: 1.6rem 1.7rem;
 	}
 
+	/* the co-authors' marks side by side, each over the next, ringed in the card's paper */
+	.voices {
+		display: flex;
+		flex-direction: column;
+		gap: 0.45rem;
+		min-width: 0;
+	}
+
+	.stack {
+		display: flex;
+		padding-left: 0.55rem;
+	}
+
+	.ring {
+		position: relative;
+		display: grid;
+		place-items: center;
+		width: 2.6rem;
+		height: 2.6rem;
+		margin-left: -0.55rem;
+		background: var(--paper);
+	}
+
 	.avatar {
 		display: grid;
 		place-items: center;
-		flex: none;
-		align-self: center;
-		width: 2.1rem;
-		height: 2.1rem;
-		border-radius: 50%;
-		font-size: 0.8rem;
+		width: 2.3rem;
+		height: 2.3rem;
+		font-size: 0.78rem;
 		font-weight: 600;
 		letter-spacing: 0.04em;
 		color: #fff;
@@ -89,23 +121,50 @@
 
 	.meta {
 		display: flex;
-		flex-wrap: wrap;
-		align-items: center;
-		gap: 0.35rem 0.5rem;
-		font-size: 0.9rem;
+		align-items: flex-start;
+		justify-content: space-between;
+		gap: 0.8rem;
 	}
 
-	.dim {
+	/* the names below the marks, small, one by one */
+	.names {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.2rem 0;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		font-size: 0.78rem;
+		font-weight: 600;
+		color: var(--ink);
+	}
+
+	.names li {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.3rem;
+	}
+
+	.names li + li::before {
+		content: '·';
+		margin: 0 0.4rem;
+		color: var(--muted);
+		font-weight: 400;
+	}
+
+	.names .when {
+		font-weight: 400;
 		color: var(--muted);
 	}
 
 	.badge {
-		padding: 0.05rem 0.4rem;
-		border-radius: 6px;
+		padding: 0.02rem 0.32rem;
+		border-radius: 5px;
 		background: #2f6fbf1f;
 		color: #2f6fbf;
-		font-size: 0.66rem;
-		font-weight: 600;
+		font-size: 0.58rem;
+		font-weight: 700;
 		letter-spacing: 0.08em;
 	}
 
@@ -114,25 +173,24 @@
 		color: #1f7a52;
 	}
 
-	.badge.db {
-		background: #8a5fb01f;
-		color: #8a5fb0;
-	}
-
 	.channel {
-		margin-left: auto;
-		font-size: 0.72rem;
+		flex: none;
+		padding: 0.25rem 0.6rem;
+		border: 1px solid color-mix(in srgb, var(--terracotta) 35%, transparent);
+		border-radius: 999px;
+		font-size: 0.66rem;
+		font-weight: 600;
 		letter-spacing: 0.12em;
 		text-transform: uppercase;
 		color: var(--terracotta);
 	}
 
 	.title {
-		margin: 0.45rem 0 0;
+		margin: 0.85rem 0 0;
 		font-family: var(--font-display);
-		font-size: 1.2rem;
+		font-size: clamp(1.4rem, 3.2vw, 1.75rem);
 		font-weight: 600;
-		line-height: 1.25;
+		line-height: 1.18;
 		letter-spacing: -0.01em;
 	}
 
@@ -240,14 +298,15 @@
 			padding: 0.95rem;
 		}
 
-		.avatar {
-			width: 2.2rem;
-			height: 2.2rem;
-			font-size: 0.72rem;
+		.ring {
+			width: 2.4rem;
+			height: 2.4rem;
 		}
 
-		.channel {
-			margin-left: 0;
+		.avatar {
+			width: 2.1rem;
+			height: 2.1rem;
+			font-size: 0.72rem;
 		}
 	}
 
