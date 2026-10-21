@@ -7,9 +7,11 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use avendb::cast::{claim_on, document, human_on};
+use avendb::engine;
 use avendb::lab::{Lab, Remote};
 use avendb::policy::{Action, Sharing};
 use avendb::sign::DeviceKey;
+use serde_json::json;
 
 #[test]
 fn a_session_on_the_mac_writes_as_its_own_key_and_reads_only_what_its_key_opens() {
@@ -61,6 +63,21 @@ fn a_session_on_the_mac_writes_as_its_own_key_and_reads_only_what_its_key_opens(
     assert!(fresh.iter().any(|e| e.author == agent), "authored by the agent's key");
     assert!(lab.item(agent, note).is_some() && lab.entries(agent).contains(&note), "it reads what it wrote");
     assert!(lab.item(mac, note).is_some(), "and Alice's Mac shows it, from the same store");
+
+    // given Editor over Alice's vault, it writes there and changes what it wrote, through that share
+    let editor = json!({ "op": "share", "over": alice.to_hex(), "who": { "vault": aven.to_hex() }, "level": "Editor",
+        "what": "everything", "as": alice.to_hex() });
+    let shared = engine::run(&mut lab, mac, &editor);
+    assert!(shared.get("ok").is_some(), "{shared}");
+    let todo = json!({ "op": "create", "vault": alice.to_hex(), "type": "note",
+        "value": { "kind": "document", "title": "Seeds",
+        "blocks": [{ "id": 1, "type": "paragraph", "text": "In March." }] } });
+    let made = engine::run(&mut lab, agent, &todo);
+    let entry = made["ok"]["entry"].clone();
+    assert!(entry.is_string(), "it creates in Alice's vault: {made}");
+    let set = json!({ "op": "set", "entry": entry, "path": ["title"], "value": "Seeds, sown" });
+    let set = engine::run(&mut lab, agent, &set);
+    assert!(set.get("ok").is_some(), "and sets what it wrote: {set}");
 
     // the session ends: its key is forgotten, its writes stay
     lab.unhost(agent);

@@ -17,6 +17,8 @@
 //!   forgotten.
 
 use std::collections::{BTreeMap, VecDeque};
+
+use avendb::id::SignerId;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -72,6 +74,9 @@ pub struct Job {
     /// The entries it is about, in hex, as `vaults`: a file's, the entry that brings it; a pull's, each entry whose
     /// edits it took.
     pub entries: BTreeMap<String, u64>,
+    /// The session it began for (`Node::acting`), an agent theOS hosts; none for the node's own device. A session sees
+    /// its own jobs alone (`Jobs::to_json_for`).
+    pub by: Option<SignerId>,
 }
 
 impl Job {
@@ -131,6 +136,7 @@ impl Jobs {
             error: None,
             vaults: BTreeMap::new(),
             entries: BTreeMap::new(),
+            by: crate::acting(),
         };
         self.book.lock().expect("jobs").running.insert(id.clone(), job);
         Running { jobs: self.clone(), id, over: false }
@@ -146,7 +152,17 @@ impl Jobs {
 
     /// The jobs as the page reads them: `{"running": [...], "ended": [...]}`.
     pub fn to_json(&self) -> Value {
-        let (running, ended) = self.snapshot();
+        self.to_json_for(None)
+    }
+
+    /// `to_json`, as `who` reads them: a session (`Node::acting`) its own jobs alone, never its host's or another
+    /// session's; the node's own device, none, all of them.
+    pub fn to_json_for(&self, who: Option<SignerId>) -> Value {
+        let (mut running, mut ended) = self.snapshot();
+        if who.is_some() {
+            running.retain(|j| j.by == who);
+            ended.retain(|j| j.by == who);
+        }
         json!({
             "running": running.iter().map(Job::to_json).collect::<Vec<_>>(),
             "ended": ended.iter().map(Job::to_json).collect::<Vec<_>>(),

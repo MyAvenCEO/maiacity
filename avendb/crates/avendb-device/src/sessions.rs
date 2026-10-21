@@ -6,9 +6,10 @@
 //! its own key opens.
 //!
 //! The socket speaks JSON, a message a line. The host opens with a challenge, 32 random bytes; the agent answers with a
-//! hello over it from each key it may be (`server::agent_keys`: its next key first, after a key move); the host takes
-//! the first that is a device of a vault it holds and hosts it, or refuses, and the agent then runs its own device as
-//! before, so that one not approved yet can still ask for access. From then on the agent sends its harness's lines
+//! hello over it from each key it may be (`server::agent_keys`: its next key first, after a key move), each with the
+//! key it is sealed to; the host takes the first that is a device of a vault it holds, else the first, as an agent not
+//! approved yet, which asks for access through it and whose join it signs over the session once its person approves
+//! (`Node::add_hosted_device`); never a device of its own. From then on the agent sends its harness's lines
 //! (`{"mcp": line}`) and the host answers each (`{"mcp": answer}`), running it as the session (`Node::acting`); where
 //! the session writes, the host asks the agent to sign the edit (`{"sign": id}`), and the agent answers
 //! (`{"signed": signature, "id": id}`). The session ends with the connection.
@@ -19,7 +20,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
-use avendb::id::{EditId, SignerId};
+use avendb::id::{BlobId, EditId, SignerId};
+use avendb::keys::PublicKey;
 use avendb::lab::Remote;
 use avendb::sign::{DeviceKey, Hello, Signature, SignerKeys};
 use avendb::wire::Wire;
@@ -45,11 +47,35 @@ pub fn socket(host: &Path) -> PathBuf {
 /// The sessions theOS's device hosts now, by a number of their own: what Settings lists (`list`).
 pub type Hosted = Arc<Mutex<BTreeMap<u64, Live>>>;
 
-/// A session hosted now: its harness's agent's name, its key, and since when (Unix seconds).
+/// A session hosted now: its harness's agent's name, its key, since when (Unix seconds), and the key it handed to seal
+/// to, should it join its aven (`seal_of`).
 pub struct Live {
     name: String,
     device: SignerId,
     since: u64,
+    seal: Option<Seal>,
+    /// its key and how it signs, for another session of the same key to sign by once this one ends
+    keys: SignerKeys,
+    sign: Remote,
+}
+
+/// What an agent's key is sealed to, as it handed it: the public key, and the McEliece key that names, whose id it
+/// matches (`seal_in`).
+pub type Seal = (PublicKey, Arc<[u8]>);
+
+/// The key session `device`, hosted now, handed to seal to: what its join to its aven names (`Node::add_hosted_device`).
+/// None where it isn't hosted now, or handed none.
+pub fn seal_of(hosted: &Hosted, device: SignerId) -> Option<Seal> {
+    let hosted = hosted.lock().expect("the sessions");
+    hosted.values().find(|l| l.device == device).and_then(|l| l.seal.clone())
+}
+
+/// The key to seal to an agent's hello names, `{seal, mceliece}`, each in hex: the public key, and the McEliece key whose
+/// id it names. None where it names none, or one that doesn't match.
+fn seal_in(said: &Value) -> Option<Seal> {
+    let key = PublicKey::from_wire(&unhex(said["seal"].as_str()?)?).ok()?;
+    let mceliece: Arc<[u8]> = unhex(said["mceliece"].as_str()?)?.into();
+    (BlobId::of(&mceliece) == key.mceliece).then_some((key, mceliece))
 }
 
 /// The sessions `hosted` holds now, each `{id, name, device, since}`, the oldest first.
@@ -102,30 +128,40 @@ async fn session(stream: UnixStream, node: Arc<Node>, host: PathBuf, (id, hosted
     let roots: Vec<PathBuf> =
         said["roots"].as_array().into_iter().flatten().filter_map(|r| Some(PathBuf::from(r.as_str()?))).collect();
     let hellos = said["hellos"].as_array().cloned().unwrap_or_default();
-    let proven: Vec<(SignerId, SignerKeys)> = hellos
+    let seals = said["seals"].as_array().cloned().unwrap_or_default();
+    let proven: Vec<(SignerId, SignerKeys, Option<Seal>)> = hellos
         .iter()
-        .filter_map(|h| Hello::from_wire(&unhex(h.as_str()?)?).ok())
-        .filter_map(|h| {
+        .enumerate()
+        .filter_map(|(i, h)| {
+            let h = Hello::from_wire(&unhex(h.as_str()?)?).ok()?;
             let SignerKeys::Device { ed25519, .. } = &h.keys else {
                 return None;
             };
-            Some((h.verify(&challenge, true, ed25519)?, h.keys))
+            Some((h.verify(&challenge, true, ed25519)?, h.keys, seals.get(i).and_then(seal_in)))
         })
         .collect();
-    // the first key that is a device of a vault the host holds, and no device of its own Lab
-    let candidates = proven.clone();
+    // the first key that is a device of a vault the host holds, else the first it may ask for access by, which no vault
+    // holds yet; never a device of its own Lab
+    let candidates: Vec<(SignerId, SignerKeys, bool)> = proven.iter().map(|(s, k, _)| (*s, k.clone(), false)).collect();
     let chosen = node
         .read(move |lab, me| {
             let st = lab.state(me);
-            candidates
-                .into_iter()
-                .find(|(s, _)| st.vaults().iter().any(|v| v.devices.contains(s)) && !lab.devices().contains(s))
+            let member = |s: &SignerId| st.vaults().iter().any(|v| v.devices.contains(s));
+            let theirs = candidates.into_iter().filter(|(s, ..)| !lab.devices().contains(s));
+            let theirs: Vec<_> = theirs.map(|(s, k, _)| (s, k, member(&s))).collect();
+            let joined = theirs.iter().position(|(.., m)| *m);
+            joined.or((!theirs.is_empty()).then_some(0)).map(|i| theirs[i].clone())
         })
         .await;
-    let Some((s, keys)) = chosen else {
-        send(&mut write, &json!({ "refused": "no key of the agent's is a device of a vault this Mac holds" })).await?;
-        bail!("{name}: no key it proved is a device of a vault this Mac holds");
+    let Some((s, keys, member)) = chosen else {
+        send(&mut write, &json!({ "refused": "no key of the agent's is one this Mac may host" })).await?;
+        bail!("{name}: no key it proved is one this Mac may host");
     };
+    let seal = proven.into_iter().find(|(p, ..)| *p == s).and_then(|(.., seal)| seal);
+    if !member {
+        // it asks for access as it starts, until its person answers (`agent::ask_by_default`)
+        agent::ask_by_default(&host, &name, &hex(&s.0));
+    }
     // what it writes, it signs: the host asks it on the socket and waits, its Lab held, a moment at most
     let (out, mut outgoing) = mpsc::unbounded_channel::<Value>();
     let pending: Pending = Arc::default();
@@ -140,8 +176,12 @@ async fn session(stream: UnixStream, node: Arc<Node>, host: PathBuf, (id, hosted
             signed.filter(|sig| sig.keys.id() == s)
         })
     };
+    // listed before it is hosted, so that another session of its key that ends meanwhile leaves it hosted
+    let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let live = Live { name: name.clone(), device: s, since, seal, keys, sign: sign.clone() };
+    hosted.lock().expect("the sessions").insert(id, live);
     node.act(move |lab, me| lab.host(me, s, keys, sign)).await;
-    send(&mut write, &json!({ "hosted": hex(&s.0) })).await?;
+    let greeted = send(&mut write, &json!({ "hosted": hex(&s.0) })).await;
     tracing::info!("avendb: {name} {s:?} works as a session of this Mac's device");
     // that it runs, for the Mac's page, as an agent running its own device says it (`agent::online`)
     let alive_file = agent::alive(&host, &name, &hex(&s.0));
@@ -162,9 +202,6 @@ async fn session(stream: UnixStream, node: Arc<Node>, host: PathBuf, (id, hosted
         }
     });
     let agent = Agent::session(node.clone(), host, name.clone(), roots);
-    let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-    let live = Live { name: name.clone(), device: s, since };
-    hosted.lock().expect("the sessions").insert(id, live);
     let ended = async {
         while let Some(line) = lines.next_line().await? {
             let m: Value = serde_json::from_str(&line).unwrap_or_default();
@@ -187,12 +224,26 @@ async fn session(stream: UnixStream, node: Arc<Node>, host: PathBuf, (id, hosted
         }
         anyhow::Ok(())
     };
-    let result = ended.await;
-    hosted.lock().expect("the sessions").remove(&id);
-    node.act(move |lab, _| lab.unhost(s)).await;
+    let result = match greeted {
+        Ok(()) => ended.await,
+        Err(e) => Err(e),
+    };
+    // another session of the same key, as a second session of its harness, signs from now on; else it is forgotten
+    let other = {
+        let mut hosted = hosted.lock().expect("the sessions");
+        hosted.remove(&id);
+        hosted.values().find(|l| l.device == s).map(|l| (l.keys, l.sign.clone()))
+    };
+    node.act(move |lab, me| {
+        lab.unhost(s);
+        if let Some((keys, sign)) = other {
+            lab.host(me, s, keys, sign);
+        }
+    })
+    .await;
     writer.abort();
     drop(alive);
-    // it no longer runs, unless a device of its own, of the same key, still does and says so again
+    // it no longer runs, unless another session of the same key still does, and says so again
     std::fs::remove_file(&alive_file).ok();
     tracing::info!("avendb: {name}'s session ended");
     result
@@ -205,7 +256,7 @@ const AGAIN: Duration = Duration::from_secs(60);
 /// Relays harness `name`'s MCP lines on `input` and `output` to theOS's device on the socket beside the app's `host`
 /// folder, its harness's files inside `roots` alone, signing with the key on the agent's own shelf what it is asked to
 /// (`session`). `None` where nothing hosts it there, or the host refuses each of its keys, or it closed the session and
-/// hosts it no more within `AGAIN`: the agent then runs its own device as before. Else when `input` ended.
+/// hosts it no more within `AGAIN`: the agent then says theOS doesn't run, until it does. Else when `input` ended.
 pub async fn relay(
     host: &Path,
     name: &str,
@@ -213,14 +264,13 @@ pub async fn relay(
     input: &mut tokio::io::Lines<BufReader<impl AsyncRead + Unpin>>,
     output: &mut (impl AsyncWrite + Unpin),
 ) -> Result<Option<()>> {
-    // its keys, where its shelf opens: else it runs as before, which says what is the matter
-    let keys = match disk::open(&agent::folder(host, name)) {
-        Ok(shelf) => server::agent_keys(&shelf).await.unwrap_or_default(),
-        Err(_) => vec![],
-    };
-    if keys.is_empty() {
+    // where theOS runs, its keys, on its own shelf, a new one made where it has none yet
+    if !socket(host).exists() {
         return Ok(None);
     }
+    let shelf = disk::open(&agent::folder(host, name))?;
+    let keys = server::agent_keys(&shelf).await?;
+    anyhow::ensure!(!keys.is_empty(), "{name}'s shelf holds no key");
     let Some(mut hosted) = hosted_by(host, name, roots, &keys).await? else { return Ok(None) };
     tracing::info!("{name}: works as a session of theOS's device");
     loop {
@@ -232,7 +282,7 @@ pub async fn relay(
             },
             m = from.next_line() => {
                 let Some(m) = m.ok().flatten() else {
-                    // theOS closed it, as it restarts: it hosts it again in a moment, or the agent runs its own device
+                    // theOS closed it, as it restarts: it hosts it again in a moment
                     tracing::info!("{name}: theOS's device closed its session; it waits for theOS to host it again");
                     let until = tokio::time::Instant::now() + AGAIN;
                     loop {
@@ -241,7 +291,7 @@ pub async fn relay(
                             break;
                         }
                         if tokio::time::Instant::now() >= until {
-                            tracing::info!("{name}: theOS doesn't host it again: it runs its own device");
+                            tracing::info!("{name}: theOS doesn't host it again");
                             return Ok(None);
                         }
                         tokio::time::sleep(Duration::from_millis(500)).await;
@@ -280,11 +330,19 @@ async fn hosted_by(
         .and_then(|b| b.try_into().ok())
         .ok_or_else(|| anyhow!("the host sent no challenge"))?;
     let hellos: Vec<String> = keys.iter().map(|k| hex(&k.hello(&challenge, true).to_wire())).collect();
-    send(&mut write, &json!({ "name": name, "hellos": hellos, "roots": roots })).await?;
+    // the key each is sealed to, should it join its aven as theOS hosts it: the agent never hands its secret
+    let seals: Vec<Value> = keys
+        .iter()
+        .map(|k| {
+            let secret = k.seal_secret();
+            json!({ "seal": hex(&secret.public().to_wire()), "mceliece": hex(&secret.mceliece_public()) })
+        })
+        .collect();
+    send(&mut write, &json!({ "name": name, "hellos": hellos, "seals": seals, "roots": roots })).await?;
     let Some(said) = from.next_line().await? else { return Ok(None) };
     let said: Value = serde_json::from_str(&said)?;
     let Some(hosted) = said["hosted"].as_str().and_then(unhex) else {
-        tracing::info!("{name}: theOS doesn't host it ({}): it runs its own device", said["refused"]);
+        tracing::info!("{name}: theOS doesn't host it ({})", said["refused"]);
         return Ok(None);
     };
     let key = keys.iter().position(|k| k.id().0[..] == hosted[..]).context("the host hosts a key it wasn't offered")?;
