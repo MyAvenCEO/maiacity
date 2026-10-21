@@ -49,17 +49,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # the property tests are most of core's time (869 of about 1,300 test-seconds on 2026-10-21, t19 alone 126 s)
+          # and nextest starts them last, so core ran 7 minutes; on a runner of their own they run beside the rest.
+          # Both build the same crate, so they share one cache
           - name: core
             cache: core
             args: -p avendb
+            filter: -E 'not binary_id(avendb::properties)'
+            doc: true
+          - name: core properties
+            cache: core
+            args: -p avendb
+            filter: -E 'binary_id(avendb::properties)'
           # avendb-device's own build is the long pole (about 7 of 10 minutes compiling), so it and the browser's
           # tests, which build on it, run beside the network's and the server's rather than after them
           - name: net, server
             cache: net-server
             args: -p avendb-net -p avendb-server
+            doc: true
           - name: device, browser
             cache: device-browser
             args: -p avendb-device -p avendb-browser
+            doc: true
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -84,9 +95,10 @@ jobs:
         env:
           CARGO_PROFILE_TEST_OPT_LEVEL: 1
           AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
-        run: cargo nextest run --locked --no-tests=pass ${{ matrix.args }}
+        run: cargo nextest run --locked --no-tests=pass ${{ matrix.args }} ${{ matrix.filter }}
       # nextest runs no doc tests
       - name: cargo test --doc
+        if: matrix.doc
         working-directory: avendb
         env:
           CARGO_PROFILE_TEST_OPT_LEVEL: 1
