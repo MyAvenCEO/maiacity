@@ -10,7 +10,7 @@ name: The OS on macOS
 # keeps a warm one there (about 4 minutes warm against 16 cold).
 on:
   pull_request:
-    paths: &paths
+    paths:
       - 'vault/app/**'
       - 'vault/crates/**'
       - 'vault/Cargo.toml'
@@ -21,7 +21,15 @@ on:
       - '.github/workflows/mac.yml'
   push:
     branches: [main]
-    paths: *paths
+    paths:
+      - 'vault/app/**'
+      - 'vault/crates/**'
+      - 'vault/Cargo.toml'
+      - 'vault/Cargo.lock'
+      - 'avendb/crates/**'
+      - 'avendb/Cargo.toml'
+      - 'avendb/Cargo.lock'
+      - '.github/workflows/mac.yml'
   workflow_dispatch:
 
 permissions:

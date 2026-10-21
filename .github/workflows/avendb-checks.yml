@@ -16,13 +16,16 @@ name: avenDB checks
 # spec's caches are warmed by a run on every merge that touches avenDB; without one, every PR compiled from scratch.
 on:
   pull_request:
-    paths: &paths
+    paths:
       - 'avendb/**'
       - 'src/lib/avendb/device/**'
       - '.github/workflows/avendb-checks.yml'
   push:
     branches: [main]
-    paths: *paths
+    paths:
+      - 'avendb/**'
+      - 'src/lib/avendb/device/**'
+      - '.github/workflows/avendb-checks.yml'
   workflow_dispatch:
 
 permissions:
