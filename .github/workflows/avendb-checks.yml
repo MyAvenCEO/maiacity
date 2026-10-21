@@ -144,6 +144,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
+      actions: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -161,6 +162,7 @@ jobs:
           cache-on-failure: true
       - run: avendb/scripts/build-web.sh
       - name: Commit it where it changed
+        id: commit
         env:
           SAME_REPO: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
         run: |
@@ -177,4 +179,27 @@ jobs:
           git add -A src/lib/avendb/device
           git commit -m "avenDB: the page's WebAssembly, built by CI from this branch's sources"
           git push
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "::notice::Committed the rebuilt WebAssembly to this branch: pull before your next push."
+      # The repository holds first-time contributors' runs for a maintainer's click, and github-actions[bot] counts as
+      # one, so every run on the commit above waited for Samuel (#1190, #1192). He chose (2026-10-21 10:57) that this
+      # job approves them itself: only the runs on the commit it just pushed, built from this PR's own sources
+      - name: Approve the checks on that commit
+        if: steps.commit.outputs.sha
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          approved=""
+          for i in $(seq 1 12); do
+            sleep 5
+            for id in $(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SHA&status=action_required" --jq '.workflow_runs[].id'); do
+              case " $approved " in *" $id "*) continue ;; esac
+              gh api -X POST "repos/$GITHUB_REPOSITORY/actions/runs/$id/approve" && approved="$approved $id"
+            done
+          done
+          if [ -n "$approved" ]; then
+            echo "Approved the held runs:$approved"
+          else
+            echo "::warning::No held run on $SHA to approve; if its checks wait, approve them in the Actions tab"
+          fi
