@@ -982,7 +982,9 @@ fn instructions(name: &str, cloud: bool) -> String {
              `measure(input)`, given `{{lines}}`, each line's `entry`, `type`, `tags` and `record` on one side \
              (`aip_records` (`entry`) reads both, `main` and `proposed`), and hands back named numbers; a file that \
              doesn't read is refused with its line and column, and `objective_check` (`lean`, `readings`, \
-             `measured`, `proposed` and `current`, each `{{path, value}}`) checks one unsaved. While it works, \
+             `measured`, `proposed` and `current`, each `{{path, value}}`) checks one unsaved; those who accept it \
+             may check it with real Lean too, on their Mac, and `aip`'s `objective.verdict` says whether Lean \
+             accepted the objective it holds now, so it keeps to `import AvenDB.Objective` first. While it works, \
              it measures (a test, a count, a run) and records each reading with \
              `aip_measure` (`entry`, `name`, `value`, `note`): `aip` answers its `objective`, each metric met or \
              not and its progress from its first reading toward its target, so it reads its own progress in its \
