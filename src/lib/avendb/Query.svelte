@@ -81,6 +81,24 @@
 	let out = $state(/** @type {any} */ (null));
 	let ms = $state(0);
 	let bad = $state('');
+	/** while an op runs: when it started, the seconds since, whether it changes anything, and the run it is */
+	let since = $state(0);
+	let ticks = $state(0);
+	let changing = $state(false);
+	let current = 0;
+	$effect(() => {
+		if (!running) return;
+		const t = setInterval(() => (ticks = Math.floor((performance.now() - since) / 1000)), 250);
+		return () => clearInterval(t);
+	});
+	/** what a run that takes long waits on, as far as the page can tell: the device answers only once it is done */
+	const waiting = $derived(
+		!running || ticks < 3
+			? ''
+			: changing
+				? 'A change waits until the device has applied what it is bringing in from its peers; then, where the vault’s owners sign it, the passkey’s sheet (or Touch ID) asks you.'
+				: 'A read waits until the device has applied what it is bringing in from its peers.'
+	);
 
 	// a fresh console starts on the vault's notes
 	let filled = false;
@@ -110,17 +128,27 @@
 		}
 		// a change acts as the acting vault, as every screen's does, unless it names another
 		if (op && typeof op === 'object' && acts(op) && !('as' in op)) op = { ...op, as: actor };
-		[running, bad] = [true, ''];
 		const start = performance.now();
+		const me = ++current;
+		[running, bad, out, since, ticks, changing] = [true, '', null, start, 0, acts(op)];
+		/** @type {any} */
+		let got;
 		try {
-			out = await api.ask(op);
+			got = await api.ask(op);
 			// a file's bytes, which come beside the answer, show by their count
-			if (out?.bytes instanceof Uint8Array) out = { ok: { ...out.ok, bytes: count(out.bytes.length, 'byte') } };
+			if (got?.bytes instanceof Uint8Array) got = { ok: { ...got.ok, bytes: count(got.bytes.length, 'byte') } };
 		} catch (e) {
-			out = { refused: 'Error', why: /** @type {Error} */ (e).message ?? String(e) };
-		} finally {
-			[ms, running] = [Math.round(performance.now() - start), false];
+			got = { refused: 'Error', why: /** @type {Error} */ (e).message ?? String(e) };
 		}
+		// a run the person stopped waiting for shows nothing when it ends late
+		if (me !== current) return;
+		[out, ms, running] = [got, Math.round(performance.now() - start), false];
+	}
+
+	/** Stops waiting for the op that runs: the device still finishes it, and a read shows what it made. */
+	function stop() {
+		current++;
+		[running, bad] = [false, changing ? 'Stopped waiting. The device still finishes the change: read the vault again to see whether it went in, before you run it again.' : ''];
 	}
 
 	/** Where a batch stopped, and what stands of it. @param {any} out */
@@ -165,10 +193,12 @@
 	<div class="editor">
 		<textarea bind:value={text} onkeydown={keys} spellcheck="false" aria-label="The op, as JSON" rows="12"></textarea>
 		<div class="row">
-			<button class="btn primary" disabled={running} onclick={run}>{running ? 'Running…' : 'Run'}</button>
+			<button class="btn primary" disabled={running} onclick={run}>{running ? `Running… ${ticks} s` : 'Run'}</button>
+			{#if running && ticks >= 3}<button class="btn" onclick={stop}>Stop waiting</button>{/if}
 			<small class="soft">Ctrl+Enter or ⌘Enter</small>
 			{#if out && !running}<small class="soft took">{ms} ms</small>{/if}
 		</div>
+		{#if waiting}<p class="soft waiting" role="status">{waiting}</p>{/if}
 	</div>
 
 	{#if bad}
@@ -251,6 +281,11 @@
 
 	.took {
 		margin-left: auto;
+	}
+
+	.waiting {
+		margin: 0.5rem 0 0;
+		font-size: 0.85rem;
 	}
 
 	.refused {
