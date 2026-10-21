@@ -407,6 +407,7 @@
 		flex: 1;
 		min-height: 0;
 		overflow-y: auto;
+		overscroll-behavior: contain;
 		padding: 0.5rem 0.6rem 1rem;
 	}
 	.compose {
