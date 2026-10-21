@@ -473,7 +473,7 @@ impl Names {
                     .map(|s| Stated {
                         entry: entry(&s["entry"]),
                         basis: list(&s["basis"]).iter().map(|b| self.edit(b)).collect(),
-                        slice: FileRoot { hash: [0; 32], size: 0 },
+                        slice: file(&s["file"]),
                     })
                     .collect(),
             },
@@ -960,7 +960,8 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
         let mut names = Names::default();
         let (mut all, mut files) = (vec![], vec![]);
         for v in list(&case["edits"]) {
-            for f in v.get("files").map_or(&[][..], list) {
+            let states = v["action"].get("snapshot").map_or(&[][..], |x| list(&x["states"]));
+            for f in v.get("files").map_or(&[][..], list).iter().chain(states.iter().map(|x| &x["file"])) {
                 if !files.contains(f) {
                     files.push(f.clone());
                 }
@@ -1019,7 +1020,7 @@ fn each_device_is_sent_what_the_lean_model_sends_it_by_what_it_holds() {
             let ids = |edits: Vec<Edit>| edits.iter().map(Edit::id).collect::<Vec<_>>();
             assert_eq!(ids(respond(&peer, d, &follow)), names.edits(&a["respond"]), "{what}: sent whole");
             assert_eq!(ids(respond_since(&peer, d, &asked)), names.edits(&a["since"]), "{what}: sent");
-            // the files it may fetch: those an edit it is sent brings (T27)
+            // the files it may fetch: those an edit it is sent brings, or a snapshot's state of an entry it syncs (T27)
             let fetch: Vec<&Value> = files.iter().filter(|f| may_fetch(&peer, d, &file(f), &follow)).collect();
             assert_eq!(fetch, list(&a["fetch"]).iter().collect::<Vec<_>>(), "{what}: files it may fetch");
             fetched += fetch.len();

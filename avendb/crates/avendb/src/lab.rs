@@ -3933,10 +3933,9 @@ impl Lab {
     }
 
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the sealed bytes of file `file`: an edit `asker`
-    /// may receive by `d`'s view brings it (T27). Whether `d` holds them is its store's to say.
+    /// may receive by `d`'s view brings it, or a snapshot states an entry `asker` syncs as it (T27). Whether `d` holds them is its store's to say.
     pub fn may_fetch_file(&self, d: SignerId, asker: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
-        let edits = self.held(d).log.edits();
-        answer(edits, self.latest(d), asker, follow).into_iter().any(|i| edits[i].files().contains(file))
+        crate::sync::fetchable(self.held(d).log.edits(), self.latest(d), asker, file, follow)
     }
 
     /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.

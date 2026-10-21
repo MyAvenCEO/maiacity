@@ -547,6 +547,15 @@ impl Edit {
         }
     }
 
+    /// The states a snapshot states, each with the file its slice travels as (`Edit.statedFiles`): no other edit's.
+    pub fn stated(&self) -> impl Iterator<Item = &Stated> {
+        match &self.action {
+            Action::Snapshot { states, .. } => &states[..],
+            _ => &[],
+        }
+        .iter()
+    }
+
     pub fn is_removal(&self) -> bool {
         self.action.keep().is_some()
     }
