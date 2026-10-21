@@ -61,11 +61,67 @@ let brought = new WeakMap();
 /** where a page leaves its device for the pages it frames (`deviceOf`) */
 const SHARED = Symbol.for('maiacity.avendb.device');
 
-/** The device the page holds open now, or `null` to read the feed again; each vault is brought again once. */
+/** The device the page holds open now, or `null` to read the feed again; each vault is brought again once. A device
+ * opened brings first the entries this page read before (`learned`), before anything else it syncs. */
 export function useDevice(d) {
 	device = d ?? null;
 	brought = new WeakMap();
 	if (typeof window !== 'undefined') /** @type {any} */ (window)[SHARED] = device;
+	const before = learned();
+	if (device && before.length) void bringEntries(before.slice(0, AT_ONCE), device);
+}
+
+/** where this browser keeps, per page, the entries it read (`learn`) */
+const LEARNED = 'maiacity.avendb.read';
+/** the most entries kept per page, and the most pages */
+const MOST_LEARNED = 512;
+const MOST_PAGES = 64;
+
+/** the page an entry is read for: its path, as one address of a game or a world */
+const pageNow = () => (typeof location !== 'undefined' ? location.pathname : '');
+
+/** what this browser kept, `{ [path]: entries }`, newest page last; empty where it keeps nothing @returns {Record<string, string[]>} */
+function kept() {
+	try {
+		const v = JSON.parse(globalThis.localStorage?.getItem(LEARNED) ?? '{}');
+		return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+	} catch {
+		return {};
+	}
+}
+
+/**
+ * The entries page `path` read before on this browser (`learn`), newest first: its learned manifest (Samuel 2026-10-21:
+ * a device syncs first what its pages need, as a bundler follows what a page imports). What a page reads is what it
+ * names, so a page whose manifest misses an entry still brings it first the next time.
+ * @param {string} [path]
+ * @returns {string[]}
+ */
+export function learned(path = pageNow()) {
+	const at = kept()[path];
+	return Array.isArray(at) ? at.filter((e) => /^[0-9a-f]{64}$/.test(String(e))) : [];
+}
+
+/**
+ * Keeps that page `path` read entries `ids` (the newest first, `MOST_LEARNED` at most, `MOST_PAGES` pages, the page
+ * last read last), so the next time a device opens on it, it brings them before anything else (`useDevice`). A browser
+ * that keeps nothing (private, storage blocked) keeps nothing: the page still reads them, as before.
+ * @param {string[]} ids @param {string} [path]
+ */
+export function learn(ids, path = pageNow()) {
+	const fresh = (ids ?? []).filter((e) => /^[0-9a-f]{64}$/.test(String(e)));
+	if (!path || !fresh.length) return;
+	try {
+		const all = kept();
+		const was = Array.isArray(all[path]) ? all[path] : [];
+		delete all[path];
+		all[path] = [...new Set([...fresh, ...was])].slice(0, MOST_LEARNED);
+		const paths = Object.keys(all);
+		for (const p of paths.slice(0, Math.max(0, paths.length - MOST_PAGES))) delete all[p];
+		globalThis.localStorage?.setItem(LEARNED, JSON.stringify(all));
+	} catch {
+		// nothing kept
+	}
 }
 
 /** The device the page holds open, else the one its parent page holds (a frame of ours, same origin), if any. */
@@ -125,6 +181,7 @@ export function bringRows(rows, vault = MAIA_CITY) {
 export async function bringEntries(ids, d = deviceOf()) {
 	const sorted = [...new Set((ids ?? []).filter((e) => /^[0-9a-f]{64}$/.test(String(e))))].sort();
 	if (!d || !sorted.length) return null;
+	learn(sorted);
 	try {
 		const sum = { new: 0, peers: 0, reached: true };
 		for (let i = 0; i < sorted.length; i += AT_ONCE) {
@@ -176,6 +233,7 @@ export async function deviceRows(kinds, { vault = MAIA_CITY, wait = BRING, answe
 	};
 	const held = await code();
 	if (held) {
+		learn(held.map((r) => r?.entry));
 		// what changed of the vault since, brought beside
 		void bringOf(d, vault).catch(() => null);
 		return held;
