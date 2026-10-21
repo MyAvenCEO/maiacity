@@ -190,18 +190,19 @@ export function startFilm({ base = '' } = {}) {
 			// while a trace is read (the cut probe), each draw timed and the dearest named: what a dear frame drew first,
 			// and the draws that were the first of their shaders (each waits for its shader to be made, if it is not yet)
 			const renderer = world().renderer, one = renderer.renderBufferDirect, used = new WeakSet();
-			renderer.renderBufferDirect = function (/** @type {any[]} */ ...a) {
-				if (!cost.track) return one.apply(this, /** @type {any} */ (a));
+			// (its arguments named, not gathered: a rest array for every draw of every frame is only garbage to collect)
+			renderer.renderBufferDirect = function (/** @type {any} */ camera, /** @type {any} */ scene, /** @type {any} */ geometry, /** @type {any} */ material, /** @type {any} */ object, /** @type {any} */ group) {
+				if (!cost.track) return one.call(this, camera, scene, geometry, material, object, group);
 				const t = clock.now();
 				try {
-					return one.apply(this, /** @type {any} */ (a));
+					return one.call(this, camera, scene, geometry, material, object, group);
 				} finally {
-					const p = renderer.properties.get(a[3])?.currentProgram, first = !!p && !used.has(p);
+					const p = renderer.properties.get(material)?.currentProgram, first = !!p && !used.has(p);
 					if (first) used.add(p);
 					if (cost.timing) {
 						const d = clock.now() - t;
 						if (first) cost.firsts++;
-						if (d > cost.dearest) (cost.dearest = d), (cost.drew = `${a[4]?.name || a[4]?.type || '?'} (${a[3]?.type ?? '?'}${a[3]?.transmission > 0 ? ', glass' : ''}, ${a[4]?.geometry?.attributes?.position?.count ?? 0} vertices${first ? ', the first draw of its shader' : ''})`);
+						if (d > cost.dearest) (cost.dearest = d), (cost.drew = `${object?.name || object?.type || '?'} (${material?.type ?? '?'}${material?.transmission > 0 ? ', glass' : ''}, ${object?.geometry?.attributes?.position?.count ?? 0} vertices${first ? ', the first draw of its shader' : ''})`);
 					}
 				}
 			};
@@ -713,7 +714,10 @@ export function startFilm({ base = '' } = {}) {
 			cost.timing = live && cost.track;
 			// what the GPU was sent while this frame was drawn: shaders compiled, buffers and textures made (none, warmed)
 			const info = v.renderer.info, made0 = [info.programs?.length ?? 0, info.memory.geometries, info.memory.textures];
-			const { frame, at } = linear(v, spec, t, to, W, H, quality === 'final', quality !== 'final');
+			const draw = () => linear(v, spec, t, to, W, H, quality === 'final', live);
+			// stopped, the film camera's own glass pass made at this size (./warm.js `glassPass`): the first cut to glass
+			// while it plays draws it as any frame does
+			const { frame, at } = live && !playing && warmer && warming() !== 'off' ? warmer.glassPass(v.scene, v.camera, `${W}x${H}`, draw) : draw();
 			const made = [info.programs?.length ?? 0, info.memory.geometries, info.memory.textures].map((n, i) => n - made0[i]);
 			const tv = clock.now();
 			gpu().view(frame, width, height, 2 ** (evAt(ev, t) + at.stops), os > 1 ? 3 : 1, view);

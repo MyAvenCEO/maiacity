@@ -5,7 +5,7 @@
 //
 //   node scripts/film/world/cuts.mjs --timeline v1-A|v1-B|village [--film village.json] [--from 0] [--seconds 60]
 //     [--px 1280] [--site http://127.0.0.1:5173] [--engine chrome|webkit] [--meter all|ahead] [--grade clip|none]
-//     [--warm all|shown|off] [--ready play|stand] [--stand 180] [--out cuts.json]
+//     [--warm all|shown|off] [--ready play|stand] [--stand 180] [--size 1920x1080] [--heap] [--trace] [--out cuts.json]
 //
 // `--ready play` (the default): before it plays, the world is readied as the studio's Play readies it
 // (src/lib/studio/studio.svelte.js `preparePlayback`): the sets built, every shot played readied in turn
@@ -21,6 +21,13 @@
 // intros' shots are the world's own (`__world.intro.shots()`); the first village's are its film's (`--film`: the film's JSON,
 // as films/legacy/the-first-village.json held it before the films moved into avenDB; `git show
 // bc244eda^:films/legacy/the-first-village.json` brings it back).
+// `--heap` (Chrome): what the page allocated while it played, by the place that allocated it and the calls that led
+// there (the sampling heap profiler, the objects collected since counted too: what the garbage collections had to
+// sweep, the long frames with no script in them). `--trace` (Chrome): Chrome's own trace while it played, and for the
+// longest tasks of the page's main thread and of the GPU process's, what each spent its time on (its events by their
+// own time: a garbage collection, the page's scripts, a paint, the draws the GPU process ran): what a long frame with no
+// script in it waited on. A trace is large: keep it to a stretch of the timeline (`--seconds 20`). `--size` is the
+// frames' size (the container's software renderer draws a small one in a time a Mac draws the full one).
 // Engines: chrome (puppeteer-core; CHROME, by default Google Chrome on a Mac, the container's Chromium elsewhere) or
 // webkit (Playwright's, the engine of the Mac app; PLAYWRIGHT names the module where it is installed). Timings mean
 // something only on a real GPU: on a Mac, never in a software renderer.
@@ -45,6 +52,102 @@ const which = args.timeline ?? 'v1-A';
 const engine = args.engine ?? 'chrome';
 /** a frame that stands longer than this is a hitch (ms): two frames at 60 Hz, and a little */
 const HITCH = 40;
+
+/**
+ * The places that allocated the most, each with the calls that led there most (a sampling heap profile).
+ * @param {any} profile @returns {{ mb: number, top: { at: string, mb: number, via: string[] }[] }}
+ */
+function allocators(profile) {
+	const where = (/** @type {any} */ f) => `${f.functionName || '(anonymous)'} ${String(f.url).replace(/^.*\/(src|node_modules)\//, '$1/').replace(/\?.*$/, '')}:${f.lineNumber + 1}`;
+	/** @type {Map<string, { bytes: number, via: Map<string, number> }>} */
+	const sites = new Map();
+	const mb = (/** @type {number} */ n) => Math.round(n / 1e5) / 10;
+	let total = 0;
+	const walk = (/** @type {any} */ n, /** @type {string[]} */ up) => {
+		const here = [where(n.callFrame), ...up.slice(0, 5)];
+		if (n.selfSize) {
+			total += n.selfSize;
+			const site = sites.get(here[0]) ?? { bytes: 0, via: new Map() };
+			const via = here.slice(1, 5).join(' < ');
+			site.bytes += n.selfSize;
+			site.via.set(via, (site.via.get(via) ?? 0) + n.selfSize);
+			sites.set(here[0], site);
+		}
+		for (const c of n.children ?? []) walk(c, here);
+	};
+	walk(profile.head, []);
+	return {
+		mb: mb(total),
+		top: [...sites]
+			.sort((a, b) => b[1].bytes - a[1].bytes)
+			.slice(0, 25)
+			.map(([at, s]) => ({ at, mb: mb(s.bytes), via: [...s.via].sort((a, b) => b[1] - a[1]).slice(0, 3).map(([v, n]) => `${mb(n)} MB < ${v}`) }))
+	};
+}
+
+/** what Chrome's trace records (`--trace`): the threads' tasks, the page's scripts, paints and collections, the GPU
+ * process's work (ANGLE's too) */
+const TRACED = ['toplevel', 'devtools.timeline', 'v8', 'v8.execute', 'disabled-by-default-v8.gc', 'gpu', 'gpu.angle', 'blink.console'];
+
+/**
+ * The longest tasks of the page's main thread and of the GPU process's while it played (ms from the play's start),
+ * each with what it spent its time on: its events by their own time. And over the whole play, what the page's main
+ * thread spent most on.
+ * @param {any[]} events @returns {Record<string, any>}
+ */
+function tasks(events) {
+	/** @type {Map<string, string>} */
+	const names = new Map();
+	for (const e of events) if (e.ph === 'M' && e.name === 'thread_name') names.set(`${e.pid}:${e.tid}`, e.args?.name);
+	const play = events.find((e) => e.name === 'TimeStamp' && /probe: play/.test(JSON.stringify(e.args ?? {})));
+	const t0 = play?.ts ?? events.reduce((m, e) => (e.ts && e.ts < m ? e.ts : m), Infinity);
+	/** @type {Map<string, any[]>} */
+	const byThread = new Map();
+	for (const e of events) {
+		if (e.ph !== 'X' || e.dur === undefined) continue;
+		const k = `${e.pid}:${e.tid}`;
+		if (!byThread.has(k)) byThread.set(k, []);
+		/** @type {any[]} */ (byThread.get(k)).push(e);
+	}
+	const ms = (/** @type {number} */ us) => Math.round(us / 1000);
+	/** each event's own time (less the events inside it), summed by name @param {any[]} xs sorted */
+	const own = (xs) => {
+		/** @type {Map<string, number>} */
+		const by = new Map();
+		/** @type {any[]} */
+		const stack = [];
+		for (const e of xs) {
+			while (stack.length && e.ts >= stack[stack.length - 1].ts + stack[stack.length - 1].dur) stack.pop();
+			const up = stack[stack.length - 1];
+			if (up) by.set(up.name, (by.get(up.name) ?? 0) - e.dur);
+			by.set(e.name, (by.get(e.name) ?? 0) + e.dur);
+			stack.push(e);
+		}
+		return [...by].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([n, d]) => `${ms(d)} ms ${n}`);
+	};
+	/** @type {Record<string, any>} */
+	const out = {};
+	for (const [label, name] of [['page', 'CrRendererMain'], ['gpu', 'CrGpuMain']]) {
+		// the busiest thread of that name (the page's renderer, not another's)
+		const xs = [...byThread].filter(([k]) => names.get(k) === name).sort((a, b) => b[1].length - a[1].length)[0]?.[1];
+		if (!xs) continue;
+		xs.sort((a, b) => a.ts - b.ts || b.dur - a.dur);
+		/** @type {any[]} */
+		const outer = [];
+		let end = -Infinity;
+		for (const e of xs) if (e.ts >= end) (outer.push(e), (end = e.ts + e.dur));
+		out[label] = {
+			spent: own(xs),
+			longest: outer
+				.filter((e) => e.dur > HITCH * 1000)
+				.sort((a, b) => b.dur - a.dur)
+				.slice(0, 20)
+				.map((task) => ({ at: ms(task.ts - t0), ms: ms(task.dur), spent: own(xs.filter((e) => e.ts >= task.ts && e.ts + e.dur <= task.ts + task.dur)) }))
+				.sort((a, b) => a.at - b.at)
+		};
+	}
+	return out;
+}
 
 /** @returns {{ path: string, clips: { spec: any, in: number, dur: number }[] | null }} */
 function timeline() {
@@ -80,6 +183,21 @@ async function launch() {
 
 const { path, clips } = timeline();
 const { browser, page } = await launch();
+/** what the page allocated while it played (`--heap`), and what Chrome's trace saw then (`--trace`) @type {any} */
+let heap = null, chromeTrace = null;
+const recording = (!!args.heap || !!args.trace) && engine === 'chrome';
+if (recording) {
+	const cdp = args.heap ? await page.createCDPSession() : null;
+	await page.exposeFunction('__probeRecord', async (/** @type {string} */ what) => {
+		if (what === 'start') {
+			if (cdp) await cdp.send('HeapProfiler.startSampling', { samplingInterval: 16384, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true });
+			if (args.trace) await page.tracing.start({ categories: TRACED });
+			return;
+		}
+		if (cdp) heap = allocators((await cdp.send('HeapProfiler.stopSampling')).profile);
+		if (args.trace) chromeTrace = tasks(JSON.parse(Buffer.from(/** @type {Uint8Array} */ (await page.tracing.stop())).toString('utf8')).traceEvents);
+	});
+}
 const started = Date.now();
 const say = (/** @type {string} */ s) => console.error(`[${((Date.now() - started) / 1000).toFixed(1)} s] ${s}`);
 /** @type {string[]} */
@@ -171,7 +289,7 @@ const report = await page.evaluate(
 		viewer.look?.(first.slice(0, 3).map(viewOf));
 		// and the frame at the playhead drawn, as the stopped studio draws it (its first frame is never the play's)
 		const shown0 = viewer.drawnAt;
-		viewer.show({ spec: first[0].spec, t: first[0].in + Math.max(0, from - first[0].start), shape: '16:9', width: 1920, height: 1080, view: viewOf(first[0]), meter: true });
+		viewer.show({ spec: first[0].spec, t: first[0].in + Math.max(0, from - first[0].start), shape: '16:9', width: o.size[0], height: o.size[1], view: viewOf(first[0]), meter: true });
 		for (const s0 = performance.now(); viewer.drawnAt === shown0 && performance.now() - s0 < 60000; ) await new Promise((r) => setTimeout(r, 50));
 		log(`${first.length} shots from ${from} s; the first prepared and metered in ${Math.round(performance.now() - p0)} ms; playing ${from}–${to.toFixed(1)} s`);
 		// play: the timeline's clock is the page's own (the audio clock in the studio), the world driven every frame as
@@ -215,6 +333,8 @@ const report = await page.evaluate(
 			return m ? Math.round(m.usedJSHeapSize / 1e6) : null;
 		};
 		const heapAtPlay = heapNow();
+		if (o.record) await /** @type {any} */ (window).__probeRecord('start');
+		console.timeStamp('probe: play');
 		const play0 = performance.now();
 		let prev = play0;
 		await new Promise((done) => {
@@ -227,13 +347,14 @@ const report = await page.evaluate(
 				viewer.keep(kept(t));
 				viewer.markHeld(specs);
 				viewer.look?.(list.filter((x) => x.start + x.dur > t).slice(0, 3).map(viewOf));
-				if (c) viewer.show({ spec: c.spec, t: c.in + (t - c.start), shape: '16:9', width: 1920, height: 1080, view: viewOf(c), meter: false, wait: 50 });
+				if (c) viewer.show({ spec: c.spec, t: c.in + (t - c.start), shape: '16:9', width: o.size[0], height: o.size[1], view: viewOf(c), meter: false, wait: 50 });
 				frames.push({ now: now - play0, gap: now - prev, t, clip: c?.i ?? -1, drawnAt: viewer.drawnAt - play0, live: !!c && viewer.isLive(c.spec) });
 				prev = now;
 				requestAnimationFrame(tick);
 			};
 			requestAnimationFrame(tick);
 		});
+		if (o.record) await /** @type {any} */ (window).__probeRecord('stop');
 		const heapAtEnd = heapNow();
 		const trace = traced.map((f) => ({ ...f, at: f.at - play0 }));
 		const long = longFrames.map((f) => ({ ...f, at: Math.round(f.at - play0) })).filter((f) => f.at >= 0);
@@ -293,11 +414,11 @@ const report = await page.evaluate(
 			dearestFrames: [...trace].sort((x, y) => y.total + y.loop - (x.total + x.loop)).slice(0, 12).map((f) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v * 10) / 10 : v])))
 		};
 	},
-	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), meter: args.meter ?? 'ahead', grade: args.grade ?? 'clip', warm: args.warm, ready: args.ready ?? 'play', stand: Number(args.stand ?? 180), hitch: HITCH }
+	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), meter: args.meter ?? 'ahead', grade: args.grade ?? 'clip', warm: args.warm, ready: args.ready ?? 'play', stand: Number(args.stand ?? 180), size: (args.size ?? '1920x1080').split('x').map(Number), record: recording, hitch: HITCH }
 );
 await browser.close();
 // a shot that waited for parts of the world while it played (the village's domes: "waits N s for domes …")
 const waits = warnings.filter((w) => /^film: .* waits .* for /.test(w)).length;
-const out = { timeline: which, engine, site, warm: args.warm ?? 'all', at: new Date().toISOString(), ...report, waits, warnings };
+const out = { timeline: which, engine, site, warm: args.warm ?? 'all', at: new Date().toISOString(), ...report, waits, heap, trace: chromeTrace, warnings };
 if (args.out) writeFileSync(args.out, JSON.stringify(out, null, 1));
 console.log(JSON.stringify(out, null, 1));
