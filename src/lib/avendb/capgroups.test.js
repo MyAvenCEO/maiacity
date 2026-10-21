@@ -4,7 +4,7 @@
 // (./vaults.js `serverCity`).
 // Run: bun test src/lib/avendb/capgroups.test.js
 import { describe, expect, test } from 'bun:test';
-import { ADMIN, CAP_GROUPS, CITIZEN, TRAVELER, capGroupOps, groupHolders, heldGroups, moveOps } from './capgroups.js';
+import { ADMIN, AGENT, AGENT_GROUP, CAP_GROUPS, CITIZEN, TRAVELER, agentOps, capGroupOps, groupHolders, heldGroups, holdsAgent, moveOps } from './capgroups.js';
 import { refs } from './ops.js';
 import { seedCity, serverCity } from './vaults.js';
 
@@ -139,5 +139,38 @@ describe('the Vaults app', () => {
 		expect(moveOps(CITY, BOB, CITIZEN, groups, [{ share: 's1', name: TRAVELER }, { share: 's2', name: CITIZEN }])).toEqual([
 			{ op: 'revoke', share: 's1', as: CITY }
 		]);
+	});
+});
+
+describe("the coop's aven's Agent group", () => {
+	const AVEN = 'e'.repeat(64);
+	const G = '4'.repeat(64);
+	const old = [
+		share({ id: 's', who: AVEN, group: 'Suggester' }),
+		share({ id: 'a', who: AVEN, group: 'Editor', slice: { name: 'AIP author' } }),
+		share({ id: 'v', who: AVEN, group: 'Viewer' }),
+		share({ id: 'o', who: ME, group: 'Suggester' })
+	];
+
+	test('defines it, gives it, then revokes the Suggester and AIP author shares it stands in for', () => {
+		const ops = agentOps(CITY, AVEN, groups, old);
+		expect(ops).toEqual([
+			{ op: 'define_group', vault: CITY, group: AGENT_GROUP },
+			{ op: 'share_group', over: CITY, group: '$0', who: { vault: AVEN }, as: CITY },
+			{ op: 'revoke', share: 's', as: CITY },
+			{ op: 'revoke', share: 'a', as: CITY }
+		]);
+		expect(refs(ops[1], [{ entry: G }]).group).toBe(G);
+		expect(holdsAgent(CITY, AVEN, groups, old)).toBe(false);
+	});
+
+	test('gives the group Maia City holds, and nothing once the aven holds it alone', () => {
+		const have = [...groups, { entry: G, name: AGENT, caps: [], includes: [] }];
+		expect(agentOps(CITY, AVEN, have, [])).toEqual([{ op: 'share_group', over: CITY, group: G, who: { vault: AVEN }, as: CITY }]);
+		const done = [share({ id: 'g', who: AVEN, group: AGENT, capGroup: G })];
+		expect(agentOps(CITY, AVEN, have, done)).toEqual([]);
+		expect(holdsAgent(CITY, AVEN, have, done)).toBe(true);
+		// a Suggester's share given since goes again
+		expect(agentOps(CITY, AVEN, have, [...done, old[0]])).toEqual([{ op: 'revoke', share: 's', as: CITY }]);
 	});
 });

@@ -16,7 +16,12 @@
  *              may found coops and avens through avenDB's server (avendb's `gate::ADMIN`). Maia City's own owners always
  *              may all of it; anyone else holds it by a share of it
  *
- * The repo seed defines the three groups once, on the first device of Maia City's owner (./seed.js runs in
+ *   Agent      what the coop's aven, avenMAIA, holds, so every agent session of it (Samuel 2026-10-21: the Suggester's and
+ *              the AIP author's shares as one group): reads all of Maia City, drafts new entries and writes on proposals,
+ *              starts and merges them, and adds and sets its AIPs, so an agent opens and promotes them as their author;
+ *              a human of Maia City accepts each. No seed defines it: an owner gives it in the Vaults app (`agentOps`)
+ *
+ * The repo seed defines the first three groups once, on the first device of Maia City's owner (./seed.js runs in
  * ./Account.svelte); the app reads which the person holds ($lib/app/access.svelte.js).
  */
 import { EVERYONE } from './vaults.js';
@@ -30,6 +35,9 @@ export const CITIZEN = 'Citizen';
 /** The admins' group: the admins' own pages, and founding coops and avens through avenDB's server, beside Maia City's own
  *  owners (avendb's `gate::ADMIN`, which names it exactly so). */
 export const ADMIN = 'Admin';
+
+/** The group the coop's aven holds, so its agents. */
+export const AGENT = 'Agent';
 
 /** MaiaCity V1's tag in the Maia City vault, which every entry of it carries (game/games.js `gameTag`). */
 const V1 = 'game:maiacity-v1';
@@ -136,3 +144,46 @@ export function moveOps(city, vault, to, groups, held) {
 	if (has && !drop.length) return [];
 	return [...(has ? [] : [{ op: 'share_group', over: city, group: group.entry, who: { vault }, as: city }]), ...drop];
 }
+
+/** What the Agent group gives (avendb/crates/avendb/tests/cap_groups.rs proves it), its AIPs its entries of type `aip`. */
+export const AGENT_GROUP = {
+	name: AGENT,
+	caps: [
+		{ op: 'read' },
+		{ op: 'create', on: 'proposals' },
+		{ op: 'set', path: [], on: 'proposals' },
+		{ op: 'propose' },
+		{ op: 'merge', on: 'proposals' },
+		{ op: 'create', where: { type: ['aip'] } },
+		{ op: 'set', path: [], where: { type: ['aip'] } }
+	],
+	includes: []
+};
+
+/** The shares the Agent group stands in for: a Suggester's, and an AIP author's (./vaults.js `AIP_AUTHOR`). */
+const OLD_AGENT = (/** @type {import('./vaults.js').CapView} */ c) =>
+	!c.capGroup && (c.group === 'Suggester' || c.slice?.name === 'AIP author');
+
+/**
+ * The ops, run one after another as vault `city` itself, that give aven `aven` Maia City's Agent group in place of the
+ * shares it stands in for: the group defined first where `city` holds none yet (`groups`, the `cap_groups` op's rows),
+ * then a share of it to the aven where it holds none, then the revocation of each Suggester's and AIP author's share
+ * over `city` to the aven (`shares`, its world's), so it never stands with neither. None where it is done.
+ * @param {string} city @param {string} aven @param {CapGroup[]} groups @param {import('./vaults.js').CapView[]} shares
+ */
+export function agentOps(city, aven, groups, shares) {
+	const group = groups.find((g) => g.name === AGENT)?.entry;
+	const mine = shares.filter((c) => c.over === city && c.who === aven);
+	const define = group ? [] : [{ op: 'define_group', vault: city, group: AGENT_GROUP }];
+	const has = !!group && mine.some((c) => c.capGroup === group);
+	const give = has ? [] : [{ op: 'share_group', over: city, group: group ?? '$0', who: { vault: aven }, as: city }];
+	const drop = mine.filter(OLD_AGENT).map((c) => ({ op: 'revoke', share: c.id, as: city }));
+	return [...define, ...give, ...drop];
+}
+
+/** Whether aven `aven` holds Maia City's Agent group, as `shares` show it. @param {string} city @param {string} aven
+ *  @param {CapGroup[]} groups @param {import('./vaults.js').CapView[]} shares */
+export const holdsAgent = (city, aven, groups, shares) => {
+	const group = groups.find((g) => g.name === AGENT)?.entry;
+	return !!group && shares.some((c) => c.over === city && c.who === aven && c.capGroup === group);
+};
