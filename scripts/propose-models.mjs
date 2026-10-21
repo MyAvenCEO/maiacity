@@ -161,8 +161,13 @@ try {
 	}
 	const count = files.length;
 	const objective = [
+		'import AvenDB.Objective',
+		'open AvenDB.Objective',
+		'',
 		`/-- Maia City holds every speech model file theOS pins (src/lib/models/models.json). -/`,
 		`def files : Metric := metric "Pinned model files in Maia City" (equals (reading "files") ${count})`,
+		'',
+		'def objective : List Metric := [files]',
 		''
 	].join('\n');
 	const note = [

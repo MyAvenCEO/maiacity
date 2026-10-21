@@ -69,8 +69,13 @@ try {
 		process.exit(0);
 	}
 	const objective = [
+		'import AvenDB.Objective',
+		'open AvenDB.Objective',
+		'',
 		`/-- Maia City holds every manifest the repo declares (src/lib/avendb/manifests.js). -/`,
 		`def manifests : Metric := metric "Declared manifests in Maia City" (equals (reading "manifests") ${MANIFESTS.length})`,
+		'',
+		'def objective : List Metric := [manifests]',
 		''
 	].join('\n');
 	const note = [
