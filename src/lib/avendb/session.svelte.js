@@ -634,16 +634,26 @@ async function near(d, op) {
  */
 async function attempt(what, work) {
 	[doing, error] = [what, ''];
+	const ours = () => doing.startsWith(what);
+	// a change the device is slow to answer (a busy Mac) goes on in the background: the page is no longer held by it,
+	// and shows what it made once it lands
+	const late = `${what} is taking long. It goes on in the background and shows here once it’s done.`;
+	const slow = setTimeout(() => ours() && ([doing, error] = ['', late]), SLOW);
 	try {
 		await work();
+		if (error === late) error = '';
 		return true;
 	} catch (e) {
 		error = plain(/** @type {Error} */ (e).message ?? String(e));
 		return false;
 	} finally {
-		doing = '';
+		clearTimeout(slow);
+		if (ours()) doing = '';
 	}
 }
+
+/** How long a change holds the page before it goes on in the background (`attempt`), in ms. */
+const SLOW = 45_000;
 
 /**
  * Runs `work` as `what`, then shows what changed: whether it went through.
