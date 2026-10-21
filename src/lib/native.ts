@@ -1,4 +1,4 @@
-// The Mac app (The OS) and the website share these pages. Inside the app, every call to the API goes out natively,
+// The Mac app (theOS) and the website share these pages. Inside the app, every call to the API goes out natively,
 // with the session its passkey's sign-in gave it (vault/app/src/auth.rs), as a browser's cookie would. The studio and
 // the admin's media functions live only there.
 

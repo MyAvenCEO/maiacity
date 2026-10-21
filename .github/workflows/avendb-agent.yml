@@ -3,7 +3,7 @@ name: avenDB cloud agent
 # avenDB's agent for Claude Code sessions in Anthropic's cloud (avendb-device agent cloud, agentCloud): a Linux x86_64
 # build of avendb-device from avendb/ alone, put on the rolling release "avendb-agent" in place of the last one, which
 # scripts/avendb-cloud.sh downloads when a cloud session starts it, as the repository's .mcp.json says (avendb/README.md,
-# "Cloud sessions"). It holds no key: a session's key is the one The OS app showed once, in the environment's
+# "Cloud sessions"). It holds no key: a session's key is the one theOS app showed once, in the environment's
 # AVENDB_AGENT_KEY.
 #
 # Built on Ubuntu 22.04, so its glibc is older than a cloud session's (Ubuntu 24.04), and it runs there.

@@ -1,11 +1,17 @@
 {
-	"name": "maiaCITY",
-	"short_name": "maiaCITY",
+	"name": "theOS",
+	"short_name": "theOS",
 	"description": "The city's own rooms: the games, the worlds and what we build with.",
 	"start_url": "./app/",
 	"scope": "./",
 	"display": "standalone",
 	"orientation": "any",
-	"background_color": "#f1ede3",
-	"theme_color": "#f1ede3"
+	"background_color": "#f8f1e8",
+	"theme_color": "#f1ede3",
+	"icons": [
+		{ "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+		{ "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+		{ "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+		{ "src": "/icons/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+	]
 }

@@ -1385,7 +1385,7 @@ of the edits is new, nothing new is on the wire, and every write counts as any w
   is a pure function of the logic and the records, so anyone who reads both can run it again and compare.
 - **Real Lean's verdict** (N3, `leanVerdict` in `spec/AvenDB/Measurers.lean`, `crates/avendb-device/src/lean.rs`,
   `src/lib/proposals/lean.js`). avenDB's engine reads a subset of Lean; real Lean checks the whole file, on the Mac of
-  whoever accepts the AIP, in The OS (browsers have no Lean, and keep the engine). The device runs the Lean release
+  whoever accepts the AIP, in theOS (browsers have no Lean, and keep the engine). The device runs the Lean release
   `spec/lean-toolchain` pins, got only when the person asks (Get Lean, which names its sizes: a 570 MB download, 544
   MB kept on an Apple silicon Mac), and only from avenDB: the release's archive as Maia City keeps it, a code package
   (`src/lib/code/packages.json`, the avenDB app's Code page) that came in by an AIP its owners accepted
@@ -1839,7 +1839,7 @@ stays its root (spec: `Examples.touch`, `tests/touch_id.rs`).
 - **What stays on the Mac.** The Enclave's blobs of both keys and the ciphertext are in `Meta::touch`. Only that
   Enclave reads them, and only after a touch. `touchOff` forgets them. The vault's owners revoke the key like any
   owner, from any device (the `revoke` op). A Mac whose fingers changed falls back to the passkey.
-- **The app's side.** The device asks for each touch in a line `{"enclave": n, ...}`, as it asks for a sheet. The OS
+- **The app's side.** The device asks for each touch in a line `{"enclave": n, ...}`, as it asks for a sheet. theOS
   answers it with CryptoKit in Swift (vault/app/enclave/Enclave.swift, linked in by build.rs; vault/app/src/enclave.rs).
   The touch that makes the keys also covers the edit that adds them, so setup takes one touch beside the passkey.
   `vault/app/scripts/enclave-check.sh` checks the bridge on a Mac without building the app.

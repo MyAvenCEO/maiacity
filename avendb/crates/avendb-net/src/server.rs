@@ -52,8 +52,8 @@ pub async fn open_agent(shelf: Shelf, name: &str, opts: Options) -> Result<Node>
 }
 
 /// An agent device named `name` whose key is `secret`, in suite `suite`, which its person keeps elsewhere, never on
-/// `shelf`: a cloud session's agent, whose key is in its environment's secrets, as The OS showed it once
-/// (`sign::kept_secret`); or that key as The OS makes it, on no shelf, for the moment it takes its person's Mac to add
+/// `shelf`: a cloud session's agent, whose key is in its environment's secrets, as theOS showed it once
+/// (`sign::kept_secret`); or that key as theOS makes it, on no shelf, for the moment it takes its person's Mac to add
 /// it under their aven, which it cosigns (`Node::add_device_vault_with`). Else as `open_agent`.
 pub async fn open_agent_with(
     shelf: Option<Shelf>,

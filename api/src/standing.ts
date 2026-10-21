@@ -4,7 +4,7 @@
  * (the `api_pass` op, avendb's `sign::ApiPass`): the device's keys, the API's name and when it was made, under a
  * signature context of its own. The API hands it to avenDB's server (POST /feed/pass, inside the compose network as
  * it reads its code, AVENDB_FEED), which checks it and answers the vault the device is a device of and whether that
- * vault is an admin of Maia City: it owns Maia City, or holds its Admin cap group. So the page opens in The OS and in
+ * vault is an admin of Maia City: it owns Maia City, or holds its Admin cap group. So the page opens in theOS and in
  * a browser alike, with no passkey session, no Postgres role and no key of the API's.
  *
  * A pass counts for ten minutes by avenDB's server's clock, for this API alone, and the API takes each pass once: a

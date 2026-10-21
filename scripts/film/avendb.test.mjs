@@ -6,7 +6,7 @@ import { PassThrough, Writable } from 'node:stream';
 import { connect, ok, parseResult } from './avendb.mjs';
 
 const text = (t, isError = false) => ({ content: [{ type: 'text', text: t }], isError });
-const WAIT = 'agentScripts is waiting for its person to answer its access request: they open The OS app on this Mac.';
+const WAIT = 'agentScripts is waiting for its person to answer its access request: they open theOS app on this Mac.';
 
 /** A mock `avendb-device agent scripts`: answers each request line with `answer(message)`. */
 function mock(answer) {

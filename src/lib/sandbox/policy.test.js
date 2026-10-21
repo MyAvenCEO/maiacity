@@ -1,5 +1,5 @@
 // @ts-nocheck — plain JS
-// The scripts our pages may run (./policy.js `pageCsp`, every page's <meta>; vault/app/tauri.conf.json, The OS's
+// The scripts our pages may run (./policy.js `pageCsp`, every page's <meta>; vault/app/tauri.conf.json, theOS's
 // window): a frame written into the page (the box, the logic host, a view) keeps the page's policy beside its own, so
 // both name the one script of each frame by its hash. A frame's script changed without its hash in the policies
 // leaves the box and every view unable to start; a policy that lets in inline code it does not name, or eval, lets in
@@ -20,7 +20,7 @@ const HASHES = [`'sha256-${sha256(SHELL_SCRIPT)}'`, `'sha256-${sha256(VIEW_SCRIP
 const quoted = (sources) => sources.map((s) => (/^(self|none|unsafe-[a-z-]+|wasm-unsafe-eval|strict-dynamic|report-sample)$|^(nonce|sha\d{3})-/.test(s) ? `'${s}'` : s));
 const POLICIES = {
 	'the page’s': Object.fromEntries(Object.entries(pageCsp(sha256)).map(([k, v]) => [k, quoted(v)])),
-	'The OS’s': Object.fromEntries(
+	'theOS’s': Object.fromEntries(
 		Object.entries(JSON.parse(readFileSync(`${ROOT}vault/app/tauri.conf.json`, 'utf8')).app.security.csp).map(([k, v]) => [k, Array.isArray(v) ? v : v.split(/\s+/)])
 	)
 };
@@ -46,8 +46,8 @@ for (const [whose, policy] of Object.entries(POLICIES))
 		});
 	});
 
-test('The OS runs the same scripts as the page', () => {
-	expect([...POLICIES['The OS’s']['script-src']].sort()).toEqual([...POLICIES['the page’s']['script-src']].sort());
+test('theOS runs the same scripts as the page', () => {
+	expect([...POLICIES['theOS’s']['script-src']].sort()).toEqual([...POLICIES['the page’s']['script-src']].sort());
 });
 
 const { csp } = await import('./frame.js');

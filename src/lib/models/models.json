@@ -1,5 +1,5 @@
 {
-	"about": "The speech models The OS runs on the Mac (vault/app/src/models.rs), each file pinned by the BLAKE3 hash of its bytes. Maia City keeps them as file entries tagged `model:<id>` and `blake3:<hash>` (scripts/propose-models.mjs proposes them); the avenDB app's Models page (src/lib/avendb/Models.svelte) shows them. A copy whose bytes don't hash to the pin is never loaded.",
+	"about": "The speech models theOS runs on the Mac (vault/app/src/models.rs), each file pinned by the BLAKE3 hash of its bytes. Maia City keeps them as file entries tagged `model:<id>` and `blake3:<hash>` (scripts/propose-models.mjs proposes them); the avenDB app's Models page (src/lib/avendb/Models.svelte) shows them. A copy whose bytes don't hash to the pin is never loaded.",
 	"models": [
 		{
 			"id": "phonon-2",

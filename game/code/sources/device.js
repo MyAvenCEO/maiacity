@@ -14,7 +14,7 @@
  * Local first (Samuel 2026-10-20: "everything should be offline / local first loading … ensure our whole app respects
  * this local first pattern"): what the device holds of Maia City is read at once, whether its peers can be reached or
  * not, and the device asks them for what they hold meanwhile (avendb's `bring` op, before anything else it syncs), so
- * the next page reads that; The OS's device keeps syncing anyway. Only a device that holds none of the vault yet (a
+ * the next page reads that; theOS's device keeps syncing anyway. Only a device that holds none of the vault yet (a
  * first sync) waits for its bring, up to `BRING`, and is read from the feed this time where it is still bringing it. A
  * device whose avenDB is older than the ops is read from the feed too. (Until 2026-10-20 every page waited for the
  * bring first, and a server that hung sent it to the feed, which hung as well: the village's live world never stood
