@@ -15,6 +15,7 @@
 	import V1Aip from '$lib/proposals/V1Aip.svelte';
 	import AvendbAip from '$lib/proposals/AvendbAip.svelte';
 	import { session } from '$lib/avendb/session.svelte.js';
+	import { aips } from '$lib/avendb/aips.svelte.js';
 	import Unlock from '$lib/avendb/Unlock.svelte';
 
 	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
@@ -23,24 +24,9 @@
 
 	const g = liveGame();
 	let acct = $state({ id: null });
-	// avenDB's AIPs: every vault this device holds, read again each time its world changes (as the HITL stack reads them)
-	let avendb = $state([]);
-	// whether this device answered `aips` yet, and why it didn't, if it refused: until then the tabs say they read
-	let read = $state(false);
-	let why = $state('');
-	let reading = 0;
-	function loadAvendb() {
-		if (session.phase !== 'open') return;
-		const n = ++reading;
-		session
-			.ask({ op: 'aips' })
-			.then((got) => {
-				if (n !== reading) return;
-				if (Array.isArray(got?.ok)) [avendb, read, why] = [got.ok, true, ''];
-				else why = got?.why ?? got?.refused ?? 'avenDB did not answer';
-			})
-			.catch((e) => n === reading && (why = String(e?.message ?? e)));
-	}
+	// avenDB's AIPs: every vault this device holds, read again each time its world changes, one read at a time, the
+	// read the HITL stack shares ($lib/avendb/aips.svelte.js): until the device answered, the tabs say they read
+	const loadAvendb = () => aips.again();
 	$effect(() => {
 		session.world;
 		loadAvendb();
@@ -53,11 +39,13 @@
 			.catch(() => {});
 	});
 
-	const all = $derived(allOf(g.view, avendb, session.world));
+	const all = $derived(allOf(g.view, aips.list, session.world));
 	const shown = $derived(all.filter((a) => a.stage === stage));
 	const count = (id) => all.filter((a) => a.stage === id).length;
 	const current = $derived(all.find((a) => a.key === open) ?? null);
-	const loading = $derived((acct.id && !g.loaded) || ((session.phase === 'loading' || session.phase === 'open') && !read && !why));
+	// with avenDB open, only its answer is waited for: MaiaCity V1's MIPs join them once its game loads
+	const avendbOn = $derived(session.phase === 'loading' || session.phase === 'open');
+	const loading = $derived(avendbOn ? !aips.read && !aips.why : !!acct.id && !g.loaded);
 
 	// the tab and the AIP open are kept in the address, so a link (a HITL card's) opens on them
 	$effect(() => {
@@ -115,9 +103,9 @@
 		</section>
 	{:else}
 		{#if loading}
-			<p class="dim center">Reading the AIPs of your vaults…</p>
-		{:else if why && !read}
-			<p class="dim center">avenDB's AIPs didn't read: {why}. <button class="link" onclick={loadAvendb}>Read again</button></p>
+			<p class="dim center">{session.phase === 'loading' ? 'Opening avenDB…' : 'Reading the AIPs of your vaults…'}</p>
+		{:else if aips.why && !aips.read}
+			<p class="dim center">avenDB's AIPs didn't read: {aips.why}. <button class="link" onclick={loadAvendb}>Read again</button></p>
 		{:else}
 			<ul class="list">
 				{#each shown as a (a.key)}
