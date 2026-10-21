@@ -20,7 +20,7 @@
 	import { access, invites as mayInvite, makeInvite, readAccess } from '$lib/app/access.svelte.js';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
-	import { ADMIN, CITIZEN, TRAVELER, groupHolders, moveOps } from './capgroups.js';
+	import { ADMIN, CITIZEN, TRAVELER, agentOps, groupHolders, holdsAgent, moveOps } from './capgroups.js';
 	import { feed } from './server.js';
 	import { session } from './session.svelte.js';
 	import { KINDS, nameOf, short } from './vaults.js';
@@ -160,6 +160,21 @@
 		await api.runAll(`Making ${name(id)} a ${to.toLowerCase()}`, ops);
 	}
 
+	/** What aven `id` may do in Maia City, as its agents do it, as a person reads it. @param {string} id */
+	function agentAccess(id) {
+		if (holdsAgent(city, id, access.list, world.shares)) return 'The Agent group';
+		const old = world.shares.filter((c) => c.over === city && c.who === id && !c.capGroup);
+		return old.length ? old.map((c) => c.slice?.name || c.group || c.level).join(', ') : 'Nothing yet';
+	}
+
+	/** Gives aven `id`, and so every agent session of it, Maia City's Agent group in place of the shares it stands in
+	 *  for (./capgroups.js `agentOps`). @param {string} id */
+	async function giveAgent(id) {
+		const ops = agentOps(city, id, access.list, world.shares);
+		if (!ops.length) return;
+		if (await api.runAll(`Giving ${name(id)} the Agent group`, ops)) readAccess();
+	}
+
 	/** Makes an invite for one new human, a traveler of Maia City, its link copied to hand them. */
 	async function invite() {
 		[invited, copied] = ['', false];
@@ -262,6 +277,19 @@
 					{#if r !== TRAVELER}
 						<button class="btn" disabled={busy} onclick={() => move(v.id, TRAVELER)}>Make traveler</button>
 					{/if}
+				</div>
+			{/if}
+		{/if}
+		{#if v.kind === 'aven' && city}
+			<h4 class="side-head">Its agents in Maia City</h4>
+			<p class="now">{agentAccess(v.id)}</p>
+			<p class="soft note">
+				The Agent group reads all of Maia City, drafts and proposes changes, and opens AIPs, which a human of Maia City
+				accepts. Every agent session of the aven acts with it.
+			</p>
+			{#if mayInvite() && agentOps(city, v.id, access.list, world.shares).length}
+				<div class="row">
+					<button class="btn primary" disabled={busy} onclick={() => giveAgent(v.id)}>Give the Agent group</button>
 				</div>
 			{/if}
 		{/if}
