@@ -123,8 +123,19 @@ pub struct Scratch {
 }
 
 impl Scratch {
+    /// The schemas the writes it read were written under: those `Lane::fits` looked up for them.
+    pub fn authored(&self) -> &BTreeSet<BlobId> {
+        &self.authored
+    }
+
     fn new(signer: SignerId, line: Line) -> Scratch {
         Scratch { item: Item::new_on(signer, line), holds: HashSet::new(), authored: BTreeSet::new(), tip: None }
+    }
+
+    /// A copy to read a write on without changing this one: its item forked, as the same device.
+    pub fn fork(&self) -> Scratch {
+        let (holds, authored) = (self.holds.clone(), self.authored.clone());
+        Scratch { item: self.item.clone(), holds, authored, tip: self.tip }
     }
 
     /// Import the update change `c` carries, noting the schemas it was written under.
@@ -433,7 +444,13 @@ impl History {
 
     /// An edit on `line`: `change` edits the item `signer` shows there, and the write carries what changed.
     pub fn edit(&self, line: Line, signer: SignerId, change: impl FnOnce(&mut Item)) -> Draft {
-        let mut item = self.item(line, signer).unwrap_or_else(|| Item::new_on(signer, line));
+        self.edit_on(None, line, signer, change)
+    }
+
+    /// `edit`, on `shown`, a copy of the item `signer` shows on `line` where it holds one: the same item, made without
+    /// importing the line's history again.
+    pub fn edit_on(&self, shown: Option<Item>, line: Line, signer: SignerId, change: impl FnOnce(&mut Item)) -> Draft {
+        let mut item = shown.or_else(|| self.item(line, signer)).unwrap_or_else(|| Item::new_on(signer, line));
         let since = item.version();
         change(&mut item);
         Draft { proposal: on(line), deps: self.heads(line), body: item.export(&since) }
@@ -570,6 +587,16 @@ impl History {
 
 /// An item, as `signer` edits it on `line`, holding the updates of `changes` it can open, each checked against the
 /// Loro peer of its author on its own line. `None` if none imports.
+/// The item `changes` make, as `signer` edits it on `line`: `None` if it opens none of their updates.
+pub fn build_from(changes: &[&Change], signer: SignerId, line: Line) -> Option<Item> {
+    build(changes, signer, line)
+}
+
+/// Import the update change `c` carries into `item`: whether it took it.
+pub fn import_change(item: &mut Item, c: &Change) -> bool {
+    import(item, c)
+}
+
 fn build(changes: &[&Change], signer: SignerId, line: Line) -> Option<Item> {
     let mut item = Item::new_on(signer, line);
     let mut shown = false;
