@@ -51,6 +51,9 @@
 		'open keys': ['Opening keys', 'The keys it holds unsealed, to open what they encrypt'],
 		read: ['Reading', 'The bodies of entries opened with those keys'],
 		'show items': ['Showing', 'Each entry made into what its views read'],
+		'show: lanes': ['Showing: lanes', 'Each vault’s schemas and lenses read, to judge its entries’ writes'],
+		'show: cap groups': ['Showing: cap groups', 'The cap groups’ writes judged one after the other'],
+		'show: entries': ['Showing: entries', 'Every other entry, made anew only where it changed'],
 		upkeep: ['Upkeep', 'The rest of a refresh: digests, indexes, what it follows']
 	});
 	/** what each count counts, as a person reads it */
