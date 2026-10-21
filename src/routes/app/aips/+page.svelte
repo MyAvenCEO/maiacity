@@ -4,7 +4,7 @@
 	idea, then its objective (what it must deliver, metrics in Lean, measured as it is worked on), then proposed
 	(waiting for its vault's yes), then archived as applied or rejected. Samuel 2026-10-20: the page is the four stages
 	as one tab bar and nothing else, no filter and no way to write one here: agents make proposals through the MCP for
-	now. Samuel 2026-10-21: the stages as a kanban board, a column of cards each; a narrow screen keeps the tab bar and
+	now. Samuel 2026-10-21: the stages as a kanban board, open only signed in (no sign-in box here), a column of cards each; a narrow screen keeps the tab bar and
 	shows one column. MaiaCity V1's MIPs ($lib/proposals/aips.js) show the AIP way among them.
 -->
 <script>
@@ -17,7 +17,6 @@
 	import AvendbAip from '$lib/proposals/AvendbAip.svelte';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import { aips } from '$lib/avendb/aips.svelte.js';
-	import Unlock from '$lib/avendb/Unlock.svelte';
 
 	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 	let stage = $state(STAGES.some((s) => s.id === q.get('stage')) ? q.get('stage') : 'proposed');
@@ -133,7 +132,6 @@
 				{/each}
 			</div>
 		{/if}
-		{#if session.phase !== 'open' && session.phase !== 'loading'}<div class="unlock"><p class="dim small">The AIPs of your avenDB vaults show here once avenDB is open in this tab.</p><Unlock /></div>{/if}
 		{#if g.error}<p class="dim small">MaiaCity V1: {g.error}</p>{/if}
 	{/if}
 </main>
@@ -288,6 +286,17 @@
 		}
 	}
 	@media (max-width: 900px) {
+		.tabs {
+			flex-wrap: nowrap;
+			gap: 0.25rem;
+		}
+		.tabs button {
+			flex: 1 1 0;
+			min-width: 0;
+			padding: 0.3rem 0.35rem;
+			font-size: 0.8rem;
+			white-space: nowrap;
+		}
 		.board {
 			grid-template-columns: 1fr;
 		}
@@ -360,9 +369,6 @@
 		margin: 0;
 		padding-left: 1.1rem;
 		font-size: 0.9rem;
-	}
-	.unlock {
-		margin-top: 1.2rem;
 	}
 	.center {
 		text-align: center;

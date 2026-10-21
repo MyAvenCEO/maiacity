@@ -338,9 +338,6 @@
 	});
 	const waiting = $derived(!!game?.needs && !access.owner && !access.known && session.phase === 'open');
 	const closed = $derived(!!game && !waiting && !opens(game));
-	// the Proposals app is open signed out too: public is watch and read only (Samuel 2026-10-17), so it shows the
-	// proposals of the published games, and nothing there writes without a sign-in
-	const watching = $derived(phase === 'locked' && session.phase === 'new' && rel.startsWith('/app/aips/'));
 	// a page that builds assets waits for the Maia City vault's recipes, loaded once, the first time one is opened
 	const assetPage = $derived(ASSET_PAGES.test(rel));
 
@@ -368,17 +365,13 @@
 
 <svelte:head>
 	<meta name="robots" content="noindex" />
-	{#if phase !== 'ready' && !watching}<title>{session.phase === 'new' ? 'Sign in' : 'Unlock'} · maiaCITY</title>{:else if closed}<title>Not open to you yet · maiaCITY</title>{/if}
+	{#if phase !== 'ready'}<title>{session.phase === 'new' ? 'Sign in' : 'Unlock'} · maiaCITY</title>{:else if closed}<title>Not open to you yet · maiaCITY</title>{/if}
 </svelte:head>
 
 <!-- pinned to the home screen: a dark strip behind the status bar's white words, except over a world in full screen -->
 {#if !(phase === 'ready' && immersive && !closed)}<div class="status-strip" aria-hidden="true"></div>{/if}
 {#if phase === 'loading'}
 	<div class="gate"><p class="quiet">One moment…</p></div>
-{:else if watching}
-	<div class="app">
-		{@render children()}
-	</div>
 {:else if phase !== 'ready'}
 	<div class="gate">
 		<a class="logo" href="{base}/">maia<strong>CITY</strong></a>
