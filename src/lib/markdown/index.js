@@ -56,6 +56,8 @@ const words = (html) => String(html ?? '').replace(/<!--[\s\S]*?(-->|$)/g, '').r
 const SAFE = /^(https?:\/\/|mailto:|\/(?![/\\])|#|\?|[^:/?#\\]*(?:[/?#]|$))/i;
 /** Whether `href` is an address a link may lead to. */
 export const safeHref = (href) => SAFE.test(decoded(href));
+/** An address from a record or a vault, as a link's href: itself when a link may lead there, else none (no link). */
+export const linkHref = (href) => (href && safeHref(href) ? href : undefined);
 /** Where a picture may be shown from: the web over https, this site, a page-made blob or an
  * inline picture, an SVG among them (in an image a browser runs none of its scripts and loads nothing for it, and a
  * data URL never opens as a page of this site). */

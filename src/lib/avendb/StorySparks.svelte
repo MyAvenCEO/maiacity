@@ -6,6 +6,7 @@
 -->
 <script>
 	import Icon from './Icon.svelte';
+	import { linkHref } from '$lib/markdown/index.js';
 	import { allowed, creatable, may } from './ops.js';
 	import { addingArtifact, ARTIFACT, entryOf, fromLink, fromWords, isArtifact } from './artifacts.js';
 	import SparkRow from './SparkRow.svelte';
@@ -182,7 +183,7 @@
 					<a href="#artifacts/{s.entry}">{s.title || 'Untitled'}</a>
 					{#if fromWords(r)}<span class="soft"> · {fromWords(r)}</span>{/if}
 					{#if r.url}
-						<a class="out" href={r.url} target="_blank" rel="noopener noreferrer">{hostOf(r.url)} <Icon name="out" size={12} /></a>
+						<a class="out" href={linkHref(r.url)} target="_blank" rel="noopener noreferrer">{hostOf(r.url)} <Icon name="out" size={12} /></a>
 					{/if}
 				</li>
 			{/each}

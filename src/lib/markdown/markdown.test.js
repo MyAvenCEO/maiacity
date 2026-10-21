@@ -2,7 +2,13 @@
 // The Markdown engine against hostile Markdown: whatever goes in, only the tags and attributes in TAGS come out, no
 // address leads to a script, and the Markdown we write ourselves still reads as before.
 import { describe, expect, test } from 'bun:test';
-import { TAGS, decoded, markdown, safeHref } from './index.js';
+import { TAGS, decoded, linkHref, markdown, safeHref } from './index.js';
+
+test('a link from a record leads only where a link may (linkHref)', () => {
+	for (const ok of ['https://example.com/a?b#c', 'http://example.com', 'mailto:a@b.c', '/app/', '#notes/x']) expect(linkHref(ok)).toBe(ok);
+	for (const bad of ['javascript:alert(1)', ' JaVaScRiPt:alert(1)', 'java\tscript:alert(1)', 'java&#x73;cript:alert(1)', 'data:text/html,<b>', 'vbscript:x', '', null, undefined])
+		expect(linkHref(bad)).toBeUndefined();
+});
 
 const HOSTILE = [
 	'<script>alert(1)</script>',

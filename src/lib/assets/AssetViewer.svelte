@@ -41,6 +41,7 @@
 	import { parseRef, refOf } from './refs.js';
 	import { soilOf } from './soil.js';
 	import { treeOf } from './tree.js';
+	import { linkHref } from '$lib/markdown/index.js';
 	import { VIEWS, asker, camerawork, letGoOf, loop, measure, movesOf, onTap, openStage, safeArea, tabbed, viewsOf } from './viewer.js';
 	import { builtRows, heroReading, labRows, longNote, moveChips, paramTabs, scaleBar, slider, tagLines, viewChips } from './ViewerParts.svelte';
 
@@ -712,7 +713,7 @@
 					<details>
 						<summary><b>Sources</b> <small>{catalog.sources.length}</small></summary>
 						<ul class="sources">
-							{#each catalog.sources as s (s.url)}<li><a href={s.url} target="_blank" rel="noreferrer">{s.label} ↗</a></li>{/each}
+							{#each catalog.sources as s (s.url)}<li><a href={linkHref(s.url)} target="_blank" rel="noreferrer">{s.label} ↗</a></li>{/each}
 						</ul>
 					</details>
 				{/if}
@@ -758,7 +759,7 @@
 						{#each card.specs as [k, v] (k)}<dt>{k}</dt><dd>{v}</dd>{/each}
 					</dl>
 				{/if}
-				{#if catalog.steps?.length}<small>Build step {card.step}: {catalog.steps[card.step - 1]}{#if card.source}{' · source: '}{#each catalog.sources.filter((s) => s.label === card.source) as s (s.url)}<a href={s.url} target="_blank" rel="noreferrer">{s.label} ↗</a>{:else}{card.source}{/each}{/if}</small>{/if}
+				{#if catalog.steps?.length}<small>Build step {card.step}: {catalog.steps[card.step - 1]}{#if card.source}{' · source: '}{#each catalog.sources.filter((s) => s.label === card.source) as s (s.url)}<a href={linkHref(s.url)} target="_blank" rel="noreferrer">{s.label} ↗</a>{:else}{card.source}{/each}{/if}</small>{/if}
 				<div class="row">
 					<button class="chip" onclick={() => lookAt?.(card.id)}>Look at it</button>
 					<button class="chip" class:on={alone} onclick={() => (alone = !alone)}>Alone</button>
