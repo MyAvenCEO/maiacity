@@ -1,0 +1,1002 @@
+{
+ "engine": "Rapier 0.21.0",
+ "timestep": 0.008333333333333333,
+ "hall": {
+  "span": 12,
+  "length": 20,
+  "bay": 5,
+  "eavesM": 5.7,
+  "pitchDeg": 10,
+  "slabTopM": 0.25
+ },
+ "solver": {
+  "iterations": 16,
+  "internalPgsIterations": 8
+ },
+ "parts": 210,
+ "wallClockS": 133.2,
+ "stages": [
+  {
+   "stage": "Foundation slab",
+   "parts": 1,
+   "placedParts": 1,
+   "timeS": 0.6,
+   "msPerTick": 1.49,
+   "bodies": 2,
+   "joints": 0,
+   "failures": 0,
+   "maxAnchorErrorMm": 0,
+   "maxSpeedMmS": 0.002,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Steel columns",
+   "parts": 10,
+   "placedParts": 11,
+   "timeS": 2.1,
+   "msPerTick": 2.89,
+   "bodies": 12,
+   "joints": 40,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.0277,
+   "maxSpeedMmS": 0.299,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Rafter pairs (lifted as units)",
+   "parts": 10,
+   "placedParts": 21,
+   "timeS": 3.1,
+   "msPerTick": 3.48,
+   "bodies": 22,
+   "joints": 100,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.2,
+   "maxSpeedMmS": 1.079,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Wall bracing",
+   "parts": 4,
+   "placedParts": 25,
+   "timeS": 4,
+   "msPerTick": 3.49,
+   "bodies": 26,
+   "joints": 132,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.2928,
+   "maxSpeedMmS": 0.927,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Gable posts & door header",
+   "parts": 5,
+   "placedParts": 30,
+   "timeS": 5,
+   "msPerTick": 4.67,
+   "bodies": 31,
+   "joints": 172,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.6992,
+   "maxSpeedMmS": 0.57,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Purlins",
+   "parts": 40,
+   "placedParts": 70,
+   "timeS": 9.5,
+   "msPerTick": 11.45,
+   "bodies": 71,
+   "joints": 492,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.8439,
+   "maxSpeedMmS": 0.475,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Side walls & ribbon windows",
+   "parts": 40,
+   "placedParts": 110,
+   "timeS": 14,
+   "msPerTick": 25.41,
+   "bodies": 111,
+   "joints": 812,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.8073,
+   "maxSpeedMmS": 0.885,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Gable walls & windows",
+   "parts": 32,
+   "placedParts": 142,
+   "timeS": 17.7,
+   "msPerTick": 34.43,
+   "bodies": 143,
+   "joints": 1052,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.7957,
+   "maxSpeedMmS": 0.953,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Roof panels & rooflights",
+   "parts": 40,
+   "placedParts": 182,
+   "timeS": 22.2,
+   "msPerTick": 46.66,
+   "bodies": 183,
+   "joints": 1972,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.8205,
+   "maxSpeedMmS": 1.441,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Ridge, gutters, trims & downpipes",
+   "parts": 20,
+   "placedParts": 202,
+   "timeS": 24.7,
+   "msPerTick": 60.62,
+   "bodies": 203,
+   "joints": 2404,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.9866,
+   "maxSpeedMmS": 0.899,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Sectional door",
+   "parts": 8,
+   "placedParts": 210,
+   "timeS": 26,
+   "msPerTick": 63.47,
+   "bodies": 211,
+   "joints": 2496,
+   "failures": 0,
+   "maxAnchorErrorMm": 1.0223,
+   "maxSpeedMmS": 0.813,
+   "settleTicks": 60
+  }
+ ],
+ "settled": {
+  "mass": 180433.833,
+  "suppliedMassKg": 180433.833,
+  "plannedMassKg": 180433.833,
+  "superstructureMassKg": 16633.8,
+  "groundReactionN": 1770056.3,
+  "weightN": 1770055.9,
+  "reactionRatio": 1,
+  "failures": 0,
+  "connections": 614,
+  "verticalDriftMm": {
+   "rafter-3-left": -4.235,
+   "purlin-left-5-bay-2": -7.246,
+   "roof-panel-left-10": -3.748,
+   "gable-panel-front-middle-row-6": -0.189,
+   "door-section-8": -0.167
+  }
+ },
+ "windTrials": [
+  {
+   "speedMS": 10,
+   "from": "front",
+   "durationS": 0.4,
+   "netDragZN": -6210.2,
+   "newFailedPoints": 0,
+   "separatedConnections": 0,
+   "firstFailures": []
+  },
+  {
+   "speedMS": 25,
+   "from": "front",
+   "durationS": 0.4,
+   "netDragZN": -38872.4,
+   "newFailedPoints": 0,
+   "separatedConnections": 0,
+   "firstFailures": []
+  },
+  {
+   "speedMS": 40,
+   "from": "front",
+   "durationS": 0.4,
+   "netDragZN": -99742.1,
+   "newFailedPoints": 0,
+   "separatedConnections": 0,
+   "firstFailures": []
+  },
+  {
+   "speedMS": 100,
+   "from": "front",
+   "durationS": 0.4,
+   "netDragZN": -334173.6,
+   "newFailedPoints": 2206,
+   "separatedConnections": 489,
+   "firstFailures": [
+    {
+     "connection": "wall-panel-right-row-5-bay-4/column-5-right",
+     "profile": "Sandwich panel fastener",
+     "mode": "shear",
+     "utilization": 1.01
+    },
+    {
+     "connection": "gable-panel-front-left-row-6/gable-post-front-left",
+     "profile": "Sandwich panel fastener",
+     "mode": "withdrawal",
+     "utilization": 1.198
+    },
+    {
+     "connection": "gable-panel-front-left-row-6/gable-post-front-left",
+     "profile": "Sandwich panel fastener",
+     "mode": "withdrawal",
+     "utilization": 1.134
+    },
+    {
+     "connection": "gable-panel-front-right-row-6/gable-post-front-right",
+     "profile": "Sandwich panel fastener",
+     "mode": "withdrawal",
+     "utilization": 1.077
+    },
+    {
+     "connection": "gable-panel-front-right-row-6/gable-post-front-right",
+     "profile": "Sandwich panel fastener",
+     "mode": "withdrawal",
+     "utilization": 1.143
+    }
+   ]
+  }
+ ],
+ "failures": [
+  {
+   "tick": 3529,
+   "connection": "wall-panel-right-row-5-bay-4/column-5-right",
+   "a": "wall-panel-right-row-5-bay-4",
+   "b": "column-5-right",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 808.102050876353,
+    "shearN": 2137.1810341722653,
+    "utilization": 1.010466190065599,
+    "separationM": 0.0011424285204615864,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "gable-panel-front-left-row-6/gable-post-front-left",
+   "a": "gable-panel-front-left-row-6",
+   "b": "gable-post-front-left",
+   "point": 0,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 1768.624199599381,
+    "shearN": 533.6138956144254,
+    "utilization": 1.1982467421031744,
+    "separationM": 0.0009236849231481447,
+    "mode": "withdrawal"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "gable-panel-front-left-row-6/gable-post-front-left",
+   "a": "gable-panel-front-left-row-6",
+   "b": "gable-post-front-left",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 1672.413796875309,
+    "shearN": 524.0175894279156,
+    "utilization": 1.134474308847667,
+    "separationM": 0.0008762936639637122,
+    "mode": "withdrawal"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "gable-panel-front-right-row-6/gable-post-front-right",
+   "a": "gable-panel-front-right-row-6",
+   "b": "gable-post-front-right",
+   "point": 0,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 1600.1245200459744,
+    "shearN": 364.1881713912231,
+    "utilization": 1.0766504371031937,
+    "separationM": 0.0008205229283548396,
+    "mode": "withdrawal"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "gable-panel-front-right-row-6/gable-post-front-right",
+   "a": "gable-panel-front-right-row-6",
+   "b": "gable-post-front-right",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 1699.7886181541114,
+    "shearN": 381.91612988469643,
+    "utilization": 1.1434433224650031,
+    "separationM": 0.00087108284288314,
+    "mode": "withdrawal"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "roof-panel-left-15/purlin-left-5-bay-4",
+   "a": "roof-panel-left-15",
+   "b": "purlin-left-5-bay-4",
+   "point": 0,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 136.19386884513426,
+    "shearN": 2492.4006304865184,
+    "utilization": 1.0010862311480264,
+    "separationM": 0.001248059461002499,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "roof-panel-left-15/purlin-left-5-bay-4",
+   "a": "roof-panel-left-15",
+   "b": "purlin-left-5-bay-4",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 2501.818733012528,
+    "utilization": 1.0007274932050112,
+    "separationM": 0.0012534576716195613,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "roof-panel-left-15/purlin-left-5-bay-4",
+   "a": "roof-panel-left-15",
+   "b": "purlin-left-5-bay-4",
+   "point": 2,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 2547.468696504783,
+    "utilization": 1.0189874786019133,
+    "separationM": 0.0012762616638675311,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "roof-panel-left-15/purlin-left-5-bay-4",
+   "a": "roof-panel-left-15",
+   "b": "purlin-left-5-bay-4",
+   "point": 3,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 135.4102607017137,
+    "shearN": 2538.216997989261,
+    "utilization": 1.0192922008489111,
+    "separationM": 0.0012709132019551488,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "roof-panel-right-15/purlin-right-5-bay-4",
+   "a": "roof-panel-right-15",
+   "b": "purlin-right-5-bay-4",
+   "point": 0,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 107.39903073528914,
+    "shearN": 2570.1501646726674,
+    "utilization": 1.0305503221593098,
+    "separationM": 0.0012861965655298392,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "roof-panel-right-15/purlin-right-5-bay-4",
+   "a": "roof-panel-right-15",
+   "b": "purlin-right-5-bay-4",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 2578.970747657284,
+    "utilization": 1.0315882990629135,
+    "separationM": 0.0012925111374666397,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "roof-panel-right-15/purlin-right-5-bay-4",
+   "a": "roof-panel-right-15",
+   "b": "purlin-right-5-bay-4",
+   "point": 2,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 2534.240239383436,
+    "utilization": 1.0136960957533743,
+    "separationM": 0.0012701475413891175,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "roof-panel-right-15/purlin-right-5-bay-4",
+   "a": "roof-panel-right-15",
+   "b": "purlin-right-5-bay-4",
+   "point": 3,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 108.88889702657745,
+    "shearN": 2525.2661208246936,
+    "utilization": 1.0127115691274398,
+    "separationM": 0.0012638063313688665,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "door-section-1/gable-post-front-left",
+   "a": "door-section-1",
+   "b": "gable-post-front-left",
+   "point": 0,
+   "material": "Sectional door roller / hinge",
+   "reading": {
+    "withdrawalN": 1512.2905962508923,
+    "shearN": 177.99841658827071,
+    "utilization": 1.010704679271895,
+    "separationM": 0.0007613649394043575,
+    "mode": "withdrawal"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "door-section-1/gable-post-front-left",
+   "a": "door-section-1",
+   "b": "gable-post-front-left",
+   "point": 3,
+   "material": "Sectional door roller / hinge",
+   "reading": {
+    "withdrawalN": 1667.291014028154,
+    "shearN": 178.0563206789509,
+    "utilization": 1.1138068423522738,
+    "separationM": 0.0008383858566902158,
+    "mode": "withdrawal"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "door-section-1/gable-post-front-right",
+   "a": "door-section-1",
+   "b": "gable-post-front-right",
+   "point": 1,
+   "material": "Sectional door roller / hinge",
+   "reading": {
+    "withdrawalN": 1538.5458078573795,
+    "shearN": 123.48545237701883,
+    "utilization": 1.0268858465990092,
+    "separationM": 0.0007717466974053513,
+    "mode": "withdrawal"
+   }
+  },
+  {
+   "tick": 3529,
+   "connection": "door-section-1/gable-post-front-right",
+   "a": "door-section-1",
+   "b": "gable-post-front-right",
+   "point": 2,
+   "material": "Sectional door roller / hinge",
+   "reading": {
+    "withdrawalN": 1691.0736047583414,
+    "shearN": 125.51736569065905,
+    "utilization": 1.1284998096751166,
+    "separationM": 0.0008478626872613698,
+    "mode": "withdrawal"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-left-row-1-bay-4/column-5-left",
+   "a": "wall-panel-left-row-1-bay-4",
+   "b": "column-5-left",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 1239.544518615637,
+    "shearN": 1776.1357728978574,
+    "utilization": 1.089780323589496,
+    "separationM": 0.001082950702640423,
+    "mode": "withdrawal"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "window-left-row-4-bay-3/column-3-left",
+   "a": "window-left-row-4-bay-3",
+   "b": "column-3-left",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 10.11786498321265,
+    "shearN": 2523.941186560074,
+    "utilization": 1.0095990077361203,
+    "separationM": 0.0012619807332528983,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "window-left-row-4-bay-3/column-3-left",
+   "a": "window-left-row-4-bay-3",
+   "b": "column-3-left",
+   "point": 2,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 143.46676771826367,
+    "shearN": 2513.19830986834,
+    "utilization": 1.0098189896193288,
+    "separationM": 0.0012586449517402243,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "window-left-row-4-bay-3/column-4-left",
+   "a": "window-left-row-4-bay-3",
+   "b": "column-4-left",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 126.25061996827418,
+    "shearN": 2702.1026465877026,
+    "utilization": 1.0841132281194472,
+    "separationM": 0.001352525224509569,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "window-left-row-4-bay-3/column-4-left",
+   "a": "window-left-row-4-bay-3",
+   "b": "column-4-left",
+   "point": 2,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 2693.8060249390614,
+    "utilization": 1.0775224099756247,
+    "separationM": 0.0013469452633817444,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "window-left-row-4-bay-4/column-5-left",
+   "a": "window-left-row-4-bay-4",
+   "b": "column-5-left",
+   "point": 0,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 963.832471031905,
+    "shearN": 2058.6603086398677,
+    "utilization": 1.0444951248454661,
+    "separationM": 0.001136557884423915,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-left-row-5-bay-2/column-3-left",
+   "a": "wall-panel-left-row-5-bay-2",
+   "b": "column-3-left",
+   "point": 0,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 119.00016048004629,
+    "shearN": 3076.297780171399,
+    "utilization": 1.2330738339284508,
+    "separationM": 0.0015392992781198978,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-left-row-5-bay-2/column-3-left",
+   "a": "wall-panel-left-row-5-bay-2",
+   "b": "column-3-left",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 13.564696307749724,
+    "shearN": 3076.7754362521846,
+    "utilization": 1.2307433980468623,
+    "separationM": 0.0015384026688509368,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-left-row-5-bay-3/column-3-left",
+   "a": "wall-panel-left-row-5-bay-3",
+   "b": "column-3-left",
+   "point": 2,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 34.641081164023795,
+    "shearN": 2869.0157480055273,
+    "utilization": 1.1478386442805453,
+    "separationM": 0.0014346124360613852,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-left-row-5-bay-3/column-3-left",
+   "a": "wall-panel-left-row-5-bay-3",
+   "b": "column-3-left",
+   "point": 3,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 171.3087510297007,
+    "shearN": 2857.2451003530496,
+    "utilization": 1.1485899628164962,
+    "separationM": 0.0014311879900689901,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-left-row-5-bay-3/column-4-left",
+   "a": "wall-panel-left-row-5-bay-3",
+   "b": "column-4-left",
+   "point": 0,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 240.91101284752594,
+    "shearN": 3089.561140339628,
+    "utilization": 1.2462169974186381,
+    "separationM": 0.0015494697605961789,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-left-row-5-bay-3/column-4-left",
+   "a": "wall-panel-left-row-5-bay-3",
+   "b": "column-4-left",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 90.00683520470317,
+    "shearN": 3085.382122507431,
+    "utilization": 1.2356106998319878,
+    "separationM": 0.0015433473420030917,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-left-row-5-bay-4/column-4-left",
+   "a": "wall-panel-left-row-5-bay-4",
+   "b": "column-4-left",
+   "point": 2,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 291.0287201162972,
+    "shearN": 2669.0405537467946,
+    "utilization": 1.0851026798006473,
+    "separationM": 0.00134243018379705,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-left-row-5-bay-4/column-4-left",
+   "a": "wall-panel-left-row-5-bay-4",
+   "b": "column-4-left",
+   "point": 3,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 455.4226366779676,
+    "shearN": 2637.6068520287654,
+    "utilization": 1.0978603319612372,
+    "separationM": 0.001338317944648039,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-left-row-5-bay-4/column-5-left",
+   "a": "wall-panel-left-row-5-bay-4",
+   "b": "column-5-left",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 1103.6992850353365,
+    "shearN": 2325.9019397948523,
+    "utilization": 1.1861585526137983,
+    "separationM": 0.001287242396105816,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-right-row-1-bay-4/column-5-right",
+   "a": "wall-panel-right-row-1-bay-4",
+   "b": "column-5-right",
+   "point": 0,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 1276.0474631492445,
+    "shearN": 1583.9302619770297,
+    "utilization": 1.0607078883965506,
+    "separationM": 0.0010169970750961192,
+    "mode": "withdrawal"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-right-row-3-bay-4/column-5-right",
+   "a": "wall-panel-right-row-3-bay-4",
+   "b": "column-5-right",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 1174.0615089425055,
+    "shearN": 1617.586532406762,
+    "utilization": 1.0155220781268446,
+    "separationM": 0.0009993756321579094,
+    "mode": "withdrawal"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "window-right-row-4-bay-3/column-3-right",
+   "a": "window-right-row-4-bay-3",
+   "b": "column-3-right",
+   "point": 0,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 132.15840747223126,
+    "shearN": 2587.38702568502,
+    "utilization": 1.0386982511482639,
+    "separationM": 0.001295380008467474,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "window-right-row-4-bay-3/column-3-right",
+   "a": "window-right-row-4-bay-3",
+   "b": "column-3-right",
+   "point": 3,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 13.144705071910153,
+    "shearN": 2577.069491288716,
+    "utilization": 1.030865043851062,
+    "separationM": 0.0012885515071391705,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "window-right-row-4-bay-3/column-4-right",
+   "a": "window-right-row-4-bay-3",
+   "b": "column-4-right",
+   "point": 0,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 43.13059929555104,
+    "shearN": 2769.2950891697346,
+    "utilization": 1.1080911621782454,
+    "separationM": 0.0013848154696109519,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "window-right-row-4-bay-3/column-4-right",
+   "a": "window-right-row-4-bay-3",
+   "b": "column-4-right",
+   "point": 3,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 37.774394464258634,
+    "shearN": 2760.680358639947,
+    "utilization": 1.1045592545256493,
+    "separationM": 0.001380469390049769,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "window-right-row-4-bay-4/column-5-right",
+   "a": "window-right-row-4-bay-4",
+   "b": "column-5-right",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 1014.8685841734981,
+    "shearN": 2185.031339154132,
+    "utilization": 1.1052859954184149,
+    "separationM": 0.0012046078403600917,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-right-row-5-bay-2/column-3-right",
+   "a": "wall-panel-right-row-5-bay-2",
+   "b": "column-3-right",
+   "point": 0,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 156.12306043547372,
+    "shearN": 2961.491335539109,
+    "utilization": 1.1891602162815191,
+    "separationM": 0.001482801852952119,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-right-row-5-bay-2/column-3-right",
+   "a": "wall-panel-right-row-5-bay-2",
+   "b": "column-3-right",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 8.042187552874775,
+    "shearN": 2960.8688575998003,
+    "utilization": 1.1843596784509907,
+    "separationM": 0.0014804398897527876,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-right-row-5-bay-3/column-3-right",
+   "a": "wall-panel-right-row-5-bay-3",
+   "b": "column-3-right",
+   "point": 0,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 143.8063654218945,
+    "shearN": 2940.2365728769096,
+    "utilization": 1.17999568141389,
+    "separationM": 0.0014718756210375598,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-right-row-5-bay-3/column-3-right",
+   "a": "wall-panel-right-row-5-bay-3",
+   "b": "column-3-right",
+   "point": 3,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 27.622396400357268,
+    "shearN": 2929.406823721793,
+    "utilization": 1.171907421215574,
+    "separationM": 0.0014647685257106924,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-right-row-5-bay-3/column-4-right",
+   "a": "wall-panel-right-row-5-bay-3",
+   "b": "column-4-right",
+   "point": 0,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 112.78485622568462,
+    "shearN": 3166.2868994576666,
+    "utilization": 1.268744717598664,
+    "separationM": 0.0015841474957742328,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-right-row-5-bay-3/column-4-right",
+   "a": "wall-panel-right-row-5-bay-3",
+   "b": "column-4-right",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 120.9683094824237,
+    "shearN": 3171.7869057573753,
+    "utilization": 1.2712752853539115,
+    "separationM": 0.0015870464318532857,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "wall-panel-right-row-5-bay-4/column-5-right",
+   "a": "wall-panel-right-row-5-bay-4",
+   "b": "column-5-right",
+   "point": 2,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 238.71860291512962,
+    "shearN": 2946.6981961691745,
+    "utilization": 1.1893747124207092,
+    "separationM": 0.001478175973174745,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "gable-panel-front-middle-row-6/gable-post-front-left",
+   "a": "gable-panel-front-middle-row-6",
+   "b": "gable-post-front-left",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 1531.2293983147765,
+    "shearN": 425.8531247932555,
+    "utilization": 1.0349341983304075,
+    "separationM": 0.0007946720006015162,
+    "mode": "withdrawal"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "gable-panel-front-middle-row-6/gable-post-front-right",
+   "a": "gable-panel-front-middle-row-6",
+   "b": "gable-post-front-right",
+   "point": 0,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 1567.977442209686,
+    "shearN": 325.7601387594798,
+    "utilization": 1.0534085078153748,
+    "separationM": 0.000800729811997077,
+    "mode": "withdrawal"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "roof-panel-left-6/purlin-left-5-bay-2",
+   "a": "roof-panel-left-6",
+   "b": "purlin-left-5-bay-2",
+   "point": 1,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 213.6823970375392,
+    "shearN": 2547.918493498525,
+    "utilization": 1.029075114551995,
+    "separationM": 0.0012784315406228113,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3530,
+   "connection": "roof-panel-left-6/purlin-left-5-bay-2",
+   "a": "roof-panel-left-6",
+   "b": "purlin-left-5-bay-2",
+   "point": 2,
+   "material": "Sandwich panel fastener",
+   "reading": {
+    "withdrawalN": 202.5359035772253,
+    "shearN": 2609.253018594015,
+    "utilization": 1.0523990087526385,
+    "separationM": 0.0013085509263313006,
+    "mode": "shear"
+   }
+  }
+ ]
+}
