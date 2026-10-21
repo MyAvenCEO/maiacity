@@ -23,7 +23,11 @@ only as far as it reaches:
 - a removal that stands after the snapshot sends a device back to the history (`stale`): what it took away may change
   the entry's state, and the snapshot hadn't seen it.
 
-Taken in place, an honest slice is exactly what the history makes of the entry (`withSlice_self`). In the engine each
+Taken in place, an honest slice is exactly what the history makes of the entry (`withSlice_self`). A device starts
+from the latest standing state of each entry that isn't stale (`startStates`, `startStates_sound`), replays the rest and
+each entry's edits past its snapshot on top (`startView`), and a device away too long starts so again (`awayTooLong`).
+A full copy checks a start (`startsRight`); the scenarios check it, and a proof that every honest start is right for
+every history is still to come. In the engine each
 slice travels sealed to its entry's readers, a file the snapshot names by its hash, and an entry id is the hash of its
 vault, its creator and a nonce (`EntryId::of`), which the slice carries, so its vault can't be claimed.
 -/
@@ -208,6 +212,49 @@ theorem honest_no_lie {edits : List Edit} (h : ∀ y ∈ statedIn edits, honest 
   intro y hy
   simp [h y hy]
 
+/-! ## Starting from snapshots
+
+A device that starts from snapshots replays the kernel and the entries no snapshot it takes states, puts each state it
+takes in place, and replays on top only the edits of that entry's log the snapshot hadn't seen. A state that is stale is
+not taken: its entry is replayed from its history (S4). A device away too long starts the same way over what its peers
+hold, dropping what it held (S6). -/
+
+/-- The states a device starting from `edits` takes: the latest standing one of each entry that isn't stale. -/
+def startStates (edits : List Edit) : List (Edit × Stated) :=
+  let ok := (statedIn edits).filter fun (c, _, x) => !stale edits c x
+  (ok.filter fun (c, _, x) => !ok.any fun (c', _, x') => x'.entry == x.entry && decide (c.depth < c'.depth)).map
+    fun (c, _, x) => (c, x)
+
+/-- What a device knows starting from snapshots: the edits of every log but the taken entries' replayed, each taken
+    state put in place, then each taken entry's edits its snapshot hadn't seen replayed on top. -/
+def startView (edits : List Edit) : State :=
+  let taken := startStates edits
+  let mine (o : Edit) : Option Stated :=
+    (taken.find? fun (_, x) => o.log? == some (.entry x.entry)).map (·.2)
+  let base := view (edits.filter fun o => (mine o).isNone)
+  let put := taken.foldl (fun st (_, x) => st.withSlice x.entry x.slice) base
+  replay put (order (edits.filter fun o => (mine o).any fun x => !(seenOf edits x).contains o.id))
+
+/-- A device starting from snapshots takes only states it would take (`statedIn`), and none that is stale. -/
+theorem startStates_sound {edits : List Edit} {c : Edit} {x : Stated} (h : (c, x) ∈ startStates edits) :
+    ∃ v, (c, v, x) ∈ statedIn edits ∧ stale edits c x = false := by
+  unfold startStates at h
+  obtain ⟨⟨c', v, x'⟩, hy, hyx⟩ := List.mem_map.1 h
+  simp only [Prod.mk.injEq] at hyx
+  obtain ⟨rfl, rfl⟩ := hyx
+  obtain ⟨hok, -⟩ := List.mem_filter.1 hy
+  obtain ⟨hin, hs⟩ := List.mem_filter.1 hok
+  exact ⟨v, hin, by simpa using hs⟩
+
+/-- What a full copy checks of a start: every entry a device takes from snapshots is as the history makes it. -/
+def startsRight (edits : List Edit) : Bool :=
+  (startStates edits).all fun (_, x) => (startView edits).sliceOf x.entry == (view edits).sliceOf x.entry
+
+/-- A device that holds `held` and whose peers hold `edits` was away too long when more than `most` of their edits are
+    new to it: it then starts from snapshots over `edits` (`startView`), and what it held counts for nothing. -/
+def awayTooLong (held edits : List Edit) (most : Nat) : Bool :=
+  (edits.filter fun o => !held.contains o).length > most
+
 /-! ## Scenarios -/
 
 namespace Examples
@@ -252,6 +299,28 @@ def sWide : List Edit := sNote ++ chain 50 [(passkeyA, [], .snapshot alice [welc
 -- a revocation after the snapshot sends a device back to the history
 #guard !stale sSnap snapA welcomeAt
 #guard stale (sSnap ++ chain 60 [(passkeyA, [], .revoke (.device alice phoneA [1, 2, 3, 40, 41, 50]))]) snapA welcomeAt
+
+/-- Her Mac writes the note again after the snapshot: replayed on top of the slice. -/
+def sAfter : List Edit := sSnap ++
+  [{ id := 60, depth := 60, author := macA, cosigners := [], action := .write alice welcome alice none 0 [41],
+     parents := [41] }]
+
+-- starting from the snapshot, a device knows the note as the history makes it, and the kernel as it is
+#guard (startStates sSnap).length == 1
+#guard (startView sSnap).sliceOf welcome == (view sSnap).sliceOf welcome
+#guard actsFor (startView sSnap) macA alice && actsFor (startView sSnap) phoneA alice
+-- a write after the snapshot is replayed on top
+#guard (startView sAfter).writesOf welcome == [40, 41, 60]
+#guard (startView sAfter).sliceOf welcome == (view sAfter).sliceOf welcome
+-- a revocation after it: the note comes from its history, and the phone acts for Alice no more
+def sRevoked : List Edit := sSnap ++ chain 60 [(passkeyA, [], .revoke (.device alice phoneA [1, 2, 3, 40, 41, 50]))]
+#guard (startStates sRevoked).isEmpty
+#guard (startView sRevoked).sliceOf welcome == (view sRevoked).sliceOf welcome
+#guard !actsFor (startView sRevoked) phoneA alice
+-- a full copy finds every start right
+#guard startsRight sSnap && startsRight sAfter && startsRight sRevoked
+-- a device that held only Alice's vault is away too long past one new edit
+#guard awayTooLong s1 sAfter 1 && !awayTooLong sNote sSnap 1
 
 end Examples
 
