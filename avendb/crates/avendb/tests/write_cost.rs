@@ -63,4 +63,16 @@ fn one_write_on_a_big_vault() {
             }
         }
     }
+    // the device starting again from what it keeps, as an unlock does
+    let backup = lab.backup(mac);
+    let before = totals(&lab.perf(mac));
+    let t = Instant::now();
+    lab.restore_from(mac, backup);
+    eprintln!("restore: {:?}", t.elapsed());
+    for (k, v) in &totals(&lab.perf(mac)) {
+        let was = before.iter().find(|(b, _)| b == k).map_or(0.0, |(_, x)| *x);
+        if v - was > 0.05 {
+            eprintln!("  {k}: {:.2} ms", v - was);
+        }
+    }
 }
