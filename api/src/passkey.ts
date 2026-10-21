@@ -28,13 +28,19 @@ export type Result<T> = { ok: true; value: T } | { ok: false; error: string };
 // if that ever stops being true these move into Postgres.
 type Challenge = { purpose: "register" | "login"; founderId?: string; name?: string; invite?: string; expires: number };
 const CHALLENGES = new Map<string, Challenge>();
+// the challenges held at once at most: past it, the oldest goes first, so asking for many holds no more memory
+export const MOST_CHALLENGES = 10_000;
 
-function remember(challenge: string, data: Omit<Challenge, "expires">) {
+export function remember(challenge: string, data: Omit<Challenge, "expires">) {
   for (const [c, d] of CHALLENGES) if (d.expires < Date.now()) CHALLENGES.delete(c);
+  while (CHALLENGES.size >= MOST_CHALLENGES) CHALLENGES.delete(CHALLENGES.keys().next().value as string);
   CHALLENGES.set(challenge, { ...data, expires: Date.now() + 5 * 60_000 });
 }
 
-function take(challenge: string, purpose: Challenge["purpose"]): Challenge | null {
+/** How many challenges it holds now. */
+export const heldChallenges = () => CHALLENGES.size;
+
+export function take(challenge: string, purpose: Challenge["purpose"]): Challenge | null {
   const d = CHALLENGES.get(challenge);
   if (!d || d.purpose !== purpose || d.expires < Date.now()) return null;
   CHALLENGES.delete(challenge);
