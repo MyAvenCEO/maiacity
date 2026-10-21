@@ -47,9 +47,14 @@ jobs:
           - name: core
             cache: core
             args: -p avendb
-          - name: net, server, device
-            cache: net-server-device
-            args: -p avendb-net -p avendb-server -p avendb-device -p avendb-browser
+          # avendb-device's own build is the long pole (about 7 of 10 minutes compiling), so it and the browser's
+          # tests, which build on it, run beside the network's and the server's rather than after them
+          - name: net, server
+            cache: net-server
+            args: -p avendb-net -p avendb-server
+          - name: device, browser
+            cache: device-browser
+            args: -p avendb-device -p avendb-browser
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
