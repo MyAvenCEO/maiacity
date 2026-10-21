@@ -48,14 +48,16 @@
 			);
 		return () => (gone = true);
 	});
-	/** whether every room's head has come, so the list knows each room's kind (a note to self among them) */
-	const known = $derived(rooms.every((r) => heads[r.entry]));
+	/** room `r`'s record as the person reads it: its head's, else the one the device's world holds */
+	const recordOf = (r) => heads[r.entry]?.room ?? r.record ?? null;
+	/** whether every room's kind is known, so the list knows each room's kind (a note to self among them) */
+	const known = $derived(rooms.every((r) => recordOf(r)?.look));
 	let seen = $state(R.seenAll());
 	const unread = (entry) => Math.max(0, (heads[entry]?.count ?? 0) - (seen[entry] ?? 0));
 
 	const groups = $derived.by(() => {
 		const by = { channel: [], group: [], dm: [], self: [], opening: [] };
-		for (const r of rooms) (by[heads[r.entry]?.room?.look] ?? by.opening).push(r);
+		for (const r of rooms) (by[recordOf(r)?.look] ?? by.opening).push(r);
 		return by;
 	});
 
@@ -113,7 +115,7 @@
 		making = '';
 	}
 
-	const title = (r) => R.titleOf(r, heads[r.entry]?.room, world, (v) => (v ? nameOf(v) : ''));
+	const title = (r) => R.titleOf(r, recordOf(r), world, (v) => (v ? nameOf(v) : ''));
 	const readers = $derived((here?.readers ?? []).map((v) => byId.get(v)).filter(Boolean));
 	const mentionable = $derived(readers.filter((v) => v.id !== world?.mine).map((v) => ({ id: v.id, name: v.name ?? '' })));
 	const mine = (m) => !!m?.by && (m.by.vault === world?.mine || m.actor === actor);
@@ -182,6 +184,13 @@
 		const dm = groups.dm.find((r) => r.readers.includes(who));
 		if (dm) pick(dm.entry);
 		else (chosen = [who]), void make();
+	}
+
+	// deleting the open room: off every reader's list, its signed history kept
+	async function drop() {
+		const n = read?.count ?? 0;
+		if (!confirm(`Delete “${title(here)}”${n ? ` and its ${n} ${n === 1 ? 'message' : 'messages'}` : ''} for everyone in it? It stays in the vault’s signed history.`)) return;
+		if (await api.run('Deleting the room', R.deletingRoom(open, actor))) pick('');
 	}
 
 	// adding people to the open room
@@ -277,6 +286,11 @@
 						</select>
 						<button class="btn" disabled={!adding} onclick={add}>Add</button>
 					</div>
+				{/if}
+				{#if owner}
+					<h4>Delete</h4>
+					<p class="hint">{read?.count ? `${read.count} ${read.count === 1 ? 'message' : 'messages'} in it.` : 'No messages in it.'}</p>
+					<button class="btn danger" disabled={!!api.doing} onclick={drop}>Delete this room</button>
 				{/if}
 			</div>
 		{/if}
@@ -506,6 +520,11 @@
 		font: inherit;
 		font-size: 0.85rem;
 		cursor: pointer;
+	}
+	.btn.danger {
+		border-color: #b3261e;
+		background: #fff;
+		color: #b3261e;
 	}
 	.btn:disabled {
 		opacity: 0.45;

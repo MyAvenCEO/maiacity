@@ -17,6 +17,12 @@ export const LOOKS = {
 	self: 'Note to self'
 };
 
+/** The tag a deleted room carries among the entry's own tags (avenDB's deleted tag: taking it out brings it back). */
+export const GONE = 'avendb:deleted';
+
+/** The op that deletes room `room`, acting for `actor`: gone from every reader's list, its signed history kept. */
+export const deletingRoom = (room, actor) => ({ op: 'tag', entry: room, add: [GONE], as: actor });
+
 /** The longest message, as Room, v1 holds it. */
 export const MAX_TEXT = 8000;
 
@@ -28,7 +34,7 @@ export const rowId = () => 1 + Math.floor(Math.random() * (Number.MAX_SAFE_INTEG
  * @param {import('$lib/avendb/vaults.js').WorldView} world
  */
 export function roomsOf(world) {
-	return (world?.entries ?? []).filter((e) => e.type === 'room' && !e.deleted).sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
+	return (world?.entries ?? []).filter((e) => e.type === 'room' && !e.deleted && !(e.tags ?? []).includes(GONE)).sort((a, b) => (b.created ?? 0) - (a.created ?? 0));
 }
 
 /**
