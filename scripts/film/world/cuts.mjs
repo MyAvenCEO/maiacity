@@ -28,6 +28,9 @@
 // own time: a garbage collection, the page's scripts, a paint, the draws the GPU process ran): what a long frame with no
 // script in it waited on. A trace is large: keep it to a stretch of the timeline (`--seconds 20`). `--size` is the
 // frames' size (the container's software renderer draws a small one in a time a Mac draws the full one).
+// `--firsts`: what the GPU drew for the first time while it played (each geometry's first draw: the thing, its bytes,
+// into the shadow maps or the frame), by cut: a thing the warming (src/lib/film/warm.js) never saw before its shot, sent
+// to the GPU on the cut's own frame (the hens' rigs at the village's sunrise, 2026-10-21). The world's first window only.
 // Engines: chrome (puppeteer-core; CHROME, by default Google Chrome on a Mac, the container's Chromium elsewhere) or
 // webkit (Playwright's, the engine of the Mac app; PLAYWRIGHT names the module where it is installed). Timings mean
 // something only on a real GPU: on a Mac, never in a software renderer.
@@ -225,6 +228,25 @@ const report = await page.evaluate(
 		if (viewer.state !== 'ready') return { error: `the world is ${viewer.state}: ${viewer.error}` };
 		log(`the world is up after ${Math.round(performance.now() - t0)} ms`);
 		let win = /** @type {any} */ (iframe.contentWindow);
+		// the first draw of each geometry while it plays (`--firsts`), wrapped round the world's renderer
+		const firsts = { on: false, list: /** @type {{ at: number, what: string, kb: number, into: string }[]} */ ([]) };
+		if (o.firsts) {
+			const r = win.__world.renderer, seen = new WeakSet(), draw = r.renderBufferDirect;
+			const bytes = (/** @type {any} */ g) => [...Object.values(g.attributes ?? {}), g.index].reduce((a, x) => a + (x?.array?.byteLength ?? 0), 0);
+			const named = (/** @type {any} */ x) => {
+				const out = [];
+				for (let p = x, k = 0; p && k < 4; p = p.parent, k++) out.push(p.name || p.type);
+				return out.join(' < ');
+			};
+			r.renderBufferDirect = function (/** @type {any} */ camera, /** @type {any} */ scene, /** @type {any} */ geometry, /** @type {any} */ material, /** @type {any} */ object) {
+				if (geometry && !seen.has(geometry)) {
+					seen.add(geometry);
+					if (firsts.on)
+						firsts.list.push({ at: performance.now(), what: named(object), kb: Math.round((bytes(geometry) + (object.instanceMatrix?.array?.byteLength ?? 0)) / 1024), into: `${material?.type} ${camera?.layers?.isEnabled?.(31) ? 'warming' : camera?.isOrthographicCamera ? 'shadow' : 'frame'}` });
+				}
+				return draw.apply(this, /** @type {any} */ (arguments));
+			};
+		}
 		// the timeline: the clips back to back, each its shot from `in` for `dur`
 		let at = 0;
 		const list = (o.clips ?? win.__world.intro.shots().map((/** @type {any} */ spec) => ({ spec, in: 0, dur: spec.seconds }))).map((/** @type {any} */ c, /** @type {number} */ i) => {
@@ -337,6 +359,7 @@ const report = await page.evaluate(
 		console.timeStamp('probe: play');
 		const play0 = performance.now();
 		let prev = play0;
+		firsts.on = true;
 		await new Promise((done) => {
 			const tick = () => {
 				const now = performance.now();
@@ -354,6 +377,7 @@ const report = await page.evaluate(
 			};
 			requestAnimationFrame(tick);
 		});
+		firsts.on = false;
 		if (o.record) await /** @type {any} */ (window).__probeRecord('stop');
 		const heapAtEnd = heapNow();
 		const trace = traced.map((f) => ({ ...f, at: f.at - play0 }));
@@ -385,9 +409,16 @@ const report = await page.evaluate(
 					// the longest frame of the page there, and what ran in it
 					longFrame: long.filter((f) => f.at >= a && f.at < b).sort((x, y) => y.ms - x.ms)[0] ?? null,
 					// a garbage collection there: the most the page's heap shrank between two frames drawn (MB)
-					heapFreed: Math.round(costs(a, b).reduce((m, f, i, fs) => (i && fs[i - 1].heap && f.heap ? Math.max(m, fs[i - 1].heap - f.heap) : m), 0))
+					heapFreed: Math.round(costs(a, b).reduce((m, f, i, fs) => (i && fs[i - 1].heap && f.heap ? Math.max(m, fs[i - 1].heap - f.heap) : m), 0)),
+					// what the GPU drew there for the first time (`--firsts`), the largest first
+					...(o.firsts ? drawnFirst(a, b) : {})
 				};
 			});
+		/** what was drawn for the first time from a to b (ms of the play): its KB, and the largest ones */
+		function drawnFirst(/** @type {number} */ a, /** @type {number} */ b) {
+			const got = firsts.list.filter((f) => f.at - play0 >= a && f.at - play0 < b && f.into !== 'warming').sort((x, y) => y.kb - x.kb);
+			return { firstKB: got.reduce((n, f) => n + f.kb, 0), firstDrawn: got.slice(0, 10).map((f) => `${f.kb} KB ${f.what} (${f.into})`) };
+		}
 		const gaps = frames.map((f) => f.gap).sort((x, y) => x - y);
 		const pct = (/** @type {number} */ p) => +gaps[Math.min(gaps.length - 1, Math.floor(gaps.length * p))].toFixed(1);
 		const outside = frames.filter((f) => !cuts.some((c) => f.t >= c.at - 0.2 && f.t < c.at + 1.5));
@@ -409,12 +440,13 @@ const report = await page.evaluate(
 			warmedWhilePlaying: trace.reduce((a, f) => a + (f.warmed ?? 0), 0),
 			warmTime: Math.round(trace.reduce((a, f) => a + (f.warm ?? 0), 0)),
 			scale: viewer.scale,
+			...(o.firsts ? { firstsWhilePlaying: drawnFirst(0, Infinity) } : {}),
 			cuts,
 			longFrames: [...long].sort((x, y) => y.ms - x.ms).slice(0, 15),
 			dearestFrames: [...trace].sort((x, y) => y.total + y.loop - (x.total + x.loop)).slice(0, 12).map((f) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v * 10) / 10 : v])))
 		};
 	},
-	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), meter: args.meter ?? 'ahead', grade: args.grade ?? 'clip', warm: args.warm, ready: args.ready ?? 'play', stand: Number(args.stand ?? 180), size: (args.size ?? '1920x1080').split('x').map(Number), record: recording, hitch: HITCH }
+	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), meter: args.meter ?? 'ahead', grade: args.grade ?? 'clip', warm: args.warm, ready: args.ready ?? 'play', stand: Number(args.stand ?? 180), size: (args.size ?? '1920x1080').split('x').map(Number), record: recording, hitch: HITCH, firsts: !!args.firsts }
 );
 await browser.close();
 // a shot that waited for parts of the world while it played (the village's domes: "waits N s for domes …")

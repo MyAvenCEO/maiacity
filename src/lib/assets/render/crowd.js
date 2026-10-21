@@ -180,6 +180,11 @@ export function crowd(refs, counts, o) {
 			const view = got.obj.userData.view;
 			models[c] = got.obj;
 			clips[c] = playerOf(view?.clips?.motion, view?.clips?.bones ?? []);
+			// its first copy made now, hidden, so that a world's warming (src/lib/film/warm.js) draws it out of sight
+			// before a shot shows it; made only on the frame one was first wanted, the cut sent the GPU the coat's buffers
+			// and shaders on its own first frame (the village's sunrise: six hens and a carp, 7 MB, first drawn into the
+			// shadow map there; Samuel 2026-10-21, "small hickups between cuts"). Its later copies share its buffers.
+			rigged(c, 0).copy.visible = false;
 		});
 	};
 	/** whether each coat's coarse build is asked for: only once one of its actors is in sight of an eye (`seen`) */
