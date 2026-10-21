@@ -23,6 +23,28 @@ const LOT_BYTES = 8e6;
 /** the most bytes of new buffers it sends the GPU in one frame while the timeline plays */
 const FRAME_BYTES = 4e6;
 
+/**
+ * Whether this draw changes no pixel, and need not be made: see-through and of no opacity at all, its colour weighed by
+ * its alpha (blended normally or added, not premultiplied), writing no depth or stencil, one of three's own shaders as
+ * it is. The warming's own draws are made all the same: they make its shader before it is ever seen.
+ * @param {THREE.Camera} camera @param {THREE.Material} material
+ */
+export function drawsNothing(camera, material) {
+	const m = /** @type {any} */ (material);
+	return (
+		m.opacity === 0 &&
+		m.transparent &&
+		(m.blending === THREE.NormalBlending || m.blending === THREE.AdditiveBlending) &&
+		!m.premultipliedAlpha &&
+		!m.depthWrite &&
+		!m.stencilWrite &&
+		!m.alphaToCoverage &&
+		(m.isMeshBasicMaterial || m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial) &&
+		!Object.hasOwn(m, 'onBeforeCompile') &&
+		!camera.layers.isEnabled(LAYER)
+	);
+}
+
 /** @param {THREE.WebGLRenderer} renderer */
 export function createWarmer(renderer) {
 	/** each renderable as it was warmed: its geometry and its material(s) @type {WeakMap<THREE.Object3D, [unknown, unknown]>} */

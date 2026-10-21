@@ -126,6 +126,9 @@ export async function settled() {
 	}
 }
 
+/** the nearer of two actors first */
+const nearer = (/** @type {{ d2: number }} */ a, /** @type {{ d2: number }} */ b) => a.d2 - b.d2;
+
 /** the first mesh of a tree */
 const meshOf = (root) => {
 	let m = null;
@@ -219,9 +222,16 @@ export function crowd(refs, counts, o) {
 		return pool[k];
 	};
 
-	let entries = [];
-	/** where its actors stood the last frame (what `want` measures from) */
-	let last = [];
+	// a frame's actors, written over each frame into records kept from the one before (a crowd of thousands made a
+	// record for each of them every frame, garbage the page's collections stopped frames to sweep): `n` of them this
+	// frame, `lastN` the frame before (where its actors stood: what `want` measures from)
+	/** @type {{ coat: number, x: number, y: number, z: number, yaw: number, pitch: number, roll: number, d2: number, size: number, pose: (() => Pose) | undefined, chosen: boolean }[]} */
+	const entries = [];
+	let n = 0, lastN = 0;
+	/** and what each frame works with, made once */
+	/** @type {typeof entries} */
+	const close = [];
+	const used = counts.map(() => 0), slot = counts.map(() => 0), farOf = counts.map(() => false), nearOf = counts.map(() => false);
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(0, 0, 0, 'YXZ'), p = new THREE.Vector3(), s = new THREE.Vector3();
 	const self = {
 		object,
@@ -232,10 +242,22 @@ export function crowd(refs, counts, o) {
 		 */
 		want(points, ask = true) {
 			const r2 = (near * 1.5) ** 2, s2 = seen * seen;
-			const farOf = counts.map(() => false), nearOf = counts.map(() => false);
-			for (const en of last) {
-				if (!farOf[en.coat] && points.some((pt) => (pt.x - en.x) ** 2 + ((pt.y ?? en.y) - en.y) ** 2 + (pt.z - en.z) ** 2 < s2 && (!pt.frustum || pt.frustum.containsPoint(en)))) farOf[en.coat] = true;
-				if (!nearOf[en.coat] && points.some((pt) => (pt.x - en.x) ** 2 + (pt.z - en.z) ** 2 < r2)) nearOf[en.coat] = true;
+			farOf.fill(false);
+			nearOf.fill(false);
+			for (let i = 0; i < lastN; i++) {
+				const en = entries[i];
+				if (!farOf[en.coat])
+					for (const pt of points)
+						if ((pt.x - en.x) ** 2 + ((pt.y ?? en.y) - en.y) ** 2 + (pt.z - en.z) ** 2 < s2 && (!pt.frustum || pt.frustum.containsPoint(en))) {
+							farOf[en.coat] = true;
+							break;
+						}
+				if (!nearOf[en.coat])
+					for (const pt of points)
+						if ((pt.x - en.x) ** 2 + (pt.z - en.z) ** 2 < r2) {
+							nearOf[en.coat] = true;
+							break;
+						}
 			}
 			/** @type {string[]} */
 			const labels = [];
@@ -254,50 +276,74 @@ export function crowd(refs, counts, o) {
 		/** each coat's clips, by name, once its near build is here: (t, motion) → pose */
 		clips,
 		begin() {
-			entries = [];
+			n = 0;
 		},
 		/**
 		 * one of them: its coat, where its middle is, which way it faces (and leans, drawn from afar), how far from the
-		 * eye (squared), its pose if it is near enough to be rigged, and its size against the build
+		 * eye (squared), its pose if it is near enough to be rigged (asked only of those: one further off than `near`
+		 * may pass none), and its size against the build
 		 * @param {number} coat @param {number} x @param {number} y @param {number} z @param {number} yaw @param {number} d2
-		 * @param {() => Pose} pose @param {number} [pitch] @param {number} [roll] @param {number} [size]
+		 * @param {(() => Pose) | undefined} pose @param {number} [pitch] @param {number} [roll] @param {number} [size]
 		 */
 		put(coat, x, y, z, yaw, d2, pose, pitch = 0, roll = 0, size = 1) {
-			entries.push({ coat, x, y: y - lift * scale * size, z, yaw, pitch, roll, d2, size, pose });
+			const en = entries[n] ?? (entries[n] = { coat: 0, x: 0, y: 0, z: 0, yaw: 0, pitch: 0, roll: 0, d2: 0, size: 1, pose: undefined, chosen: false });
+			n++;
+			en.coat = coat;
+			en.x = x;
+			en.y = y - lift * scale * size;
+			en.z = z;
+			en.yaw = yaw;
+			en.pitch = pitch;
+			en.roll = roll;
+			en.d2 = d2;
+			en.size = size;
+			en.pose = pose;
+			en.chosen = false;
 		},
 		end() {
-			last = entries;
+			lastN = n;
 			// a coat with an actor in sight: its coarse build asked for; near the eye: its rigged one (drawn coarse until
-			// it is here)
-			for (const en of entries) {
-				if (en.d2 < seen * seen) askFar(en.coat);
-				if (en.d2 < near * near) askNear(en.coat);
+			// it is here); the nearest `max` of those whose rigged build is here, rigged
+			const near2 = near * near, seen2 = seen * seen;
+			close.length = 0;
+			for (let i = 0; i < n; i++) {
+				const en = entries[i];
+				if (en.d2 < seen2) askFar(en.coat);
+				if (en.d2 < near2) {
+					askNear(en.coat);
+					if (models[en.coat]) close.push(en);
+				}
 			}
-			const close = entries.filter((en) => en.d2 < near * near && models[en.coat]).sort((a, b) => a.d2 - b.d2).slice(0, max);
-			const chosen = new Set(close);
-			const used = counts.map(() => 0);
+			close.sort(nearer);
+			if (close.length > max) close.length = max;
+			used.fill(0);
 			for (const en of close) {
+				en.chosen = true;
 				const r = rigged(en.coat, used[en.coat]++);
 				r.copy.visible = true;
 				r.copy.position.set(en.x, en.y, en.z);
 				r.copy.rotation.set(0, en.yaw, 0);
 				r.copy.scale.setScalar(scale * en.size);
-				r.pose(en.pose());
+				r.pose(en.pose?.() ?? {});
 			}
-			pools.forEach((pool, c) => pool.forEach((r, k) => (r.copy.visible = k < used[c])));
-			const slot = counts.map(() => 0);
-			for (const en of entries) {
-				if (chosen.has(en)) continue;
+			for (let c = 0; c < pools.length; c++) for (let k = 0; k < pools[c].length; k++) pools[c][k].copy.visible = k < used[c];
+			slot.fill(0);
+			for (let i = 0; i < n; i++) {
+				const en = entries[i];
+				// (its pose let go: the frame's closures are not kept for the next)
+				en.pose = undefined;
+				if (en.chosen) continue;
 				const mesh = far[en.coat];
 				if (!mesh) continue;
 				q.setFromEuler(e.set(en.pitch, en.yaw, en.roll));
 				mesh.setMatrixAt(slot[en.coat]++, m.compose(p.set(en.x, en.y, en.z), q, s.setScalar(scale * en.size)));
 			}
-			far.forEach((mesh, c) => {
-				if (!mesh) return;
+			for (let c = 0; c < far.length; c++) {
+				const mesh = far[c];
+				if (!mesh) continue;
 				mesh.count = slot[c];
 				mesh.instanceMatrix.needsUpdate = true;
-			});
+			}
 		}
 	};
 	crowds.add(new WeakRef(self));
