@@ -351,7 +351,7 @@
 			{:else if tab === 'jobs'}
 				<Jobs {world} vault={context} {actor} {api} />
 			{:else if tab === 'performance'}
-				<Performance {api} section={route.section} {thisName} />
+				<Performance {api} {world} section={route.section} {thisName} />
 			{:else if tab === 'activity'}
 				<Activity />
 			{:else if tab === 'vaults'}

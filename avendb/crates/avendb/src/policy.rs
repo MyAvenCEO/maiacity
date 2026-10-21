@@ -3825,16 +3825,24 @@ pub fn replay(edits: &[Edit]) -> Replay {
 /// tried in the same order still, as the state with none standing ranks them, which is checked; no removal or move
 /// after an edit hides anything from it, and the edits before that place stand as they stood.
 pub fn replay_on(was: Replay, edits: &[Edit], held: usize) -> Replay {
-    let Some(fresh) = edits.get(held..) else { return replay(edits) };
+    replay_on_why(was, edits, held).0
+}
+
+/// `replay_on`, and how it went: `Why::Whole` where it replayed every edit again, saying why.
+pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) {
+    let Some(fresh) = edits.get(held..) else { return (replay(edits), Why::Whole("replay whole: fewer edits than it held")) };
     if fresh.is_empty() {
-        return was;
+        return (was, Why::Nothing);
     }
     let deepest = edits[..held].iter().map(|e| e.depth).max();
     let ids_fresh = ids(fresh);
     let by_id: HashMap<EditId, &Edit> = ids_fresh.iter().copied().zip(fresh).collect();
-    let known = |id: &EditId| was.tail.as_ref().is_some_and(|t| t.parents.contains(id) || t.covered.contains_key(id));
-    if was.tail.is_none() || ids_fresh.iter().any(known) {
-        return replay(edits);
+    let Some(tail) = was.tail.as_ref() else { return (replay(edits), Why::Whole("replay whole: no place to step on from")) };
+    if ids_fresh.iter().any(|id| tail.parents.contains(id)) {
+        return (replay(edits), Why::Whole("replay whole: an edit it held builds on a new one"));
+    }
+    if ids_fresh.iter().any(|id| tail.covered.contains_key(id)) {
+        return (replay(edits), Why::Whole("replay whole: a checkpoint it held covers a new edit"));
     }
     let steps = |e: &Edit| {
         matches!(e.action, Action::Write { .. })
@@ -3843,7 +3851,10 @@ pub fn replay_on(was: Replay, edits: &[Edit], held: usize) -> Replay {
             && e.parents.iter().all(|p| by_id.get(p).is_none_or(|parent| parent.depth < e.depth))
     };
     if !fresh.iter().all(steps) {
-        return step_tail(was, fresh, &ids_fresh).unwrap_or_else(|| replay(edits));
+        return match step_tail(was, fresh, &ids_fresh) {
+            Ok(r) => (r, Why::Tail),
+            Err(why) => (replay(edits), Why::Whole(why)),
+        };
     }
     let mut order: Vec<(u64, u8, EditId, &Edit)> = by_id.iter().map(|(&id, &e)| (e.depth, e.rank(), id, e)).collect();
     order.sort_by_key(|a| (a.0, a.1, a.2));
@@ -3857,15 +3868,25 @@ pub fn replay_on(was: Replay, edits: &[Edit], held: usize) -> Replay {
         tail.parents.extend(e.parents.iter().copied());
         tail.depths.insert(id, e.depth);
     }
-    out
+    (out, Why::Stepped)
 }
 
-/// `replay_on`'s replay of its last edits again with `fresh`, each id in `ids`, from its `Tail`; `None` where that
+/// How `replay_on_why` went: nothing new, the new edits stepped on one by one, the last edits replayed again with them
+/// from its place (`Tail`), or every edit replayed again, and why.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Why {
+    Nothing,
+    Stepped,
+    Tail,
+    Whole(&'static str),
+}
+
+/// `replay_on`'s replay of its last edits again with `fresh`, each id in `ids`, from its `Tail`; why not where that
 /// isn't its replay.
-fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Option<Replay> {
-    let tail = was.tail.as_ref()?;
+fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Result<Replay, &'static str> {
+    let tail = was.tail.as_ref().ok_or("replay whole: no place to step on from")?;
     if fresh.iter().any(|e| e.is_removal() || matches!(e.action, Action::Checkpoint { .. } | Action::Snapshot { .. })) {
-        return None;
+        return Err("replay whole: a removal, a checkpoint or a snapshot came");
     }
     let among = |p: &EditId| ids.iter().position(|i| i == p).map(|i| fresh[i].depth);
     let depth = |p: &EditId| tail.depths.get(p).copied().or_else(|| among(p));
@@ -3873,7 +3894,7 @@ fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Option<Replay> {
     let mut new: Vec<(u64, u8, EditId, &Edit)> = Vec::with_capacity(fresh.len());
     for (e, &id) in fresh.iter().zip(ids) {
         if !e.parents.iter().all(|p| depth(p).is_none_or(|d| d < e.depth)) {
-            return None;
+            return Err("replay whole: a new edit builds on another new one as deep");
         }
         new.push((e.depth, e.rank(), id, e));
     }
@@ -3881,19 +3902,19 @@ fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Option<Replay> {
     let key = |i: usize| (was.edits[i].depth, was.edits[i].rank(), was.ids[i]);
     let at = tail.at;
     if at > 0 && new.first().is_some_and(|f| (f.0, f.1, f.2) <= key(at - 1)) {
-        return None;
+        return Err("replay whole: a new edit sorts before its place");
     }
     let mut merged: Vec<(Edit, EditId)> = Vec::with_capacity(was.edits.len() - at + new.len());
     let (mut old, mut add) = ((at..was.edits.len()).peekable(), new.into_iter().peekable());
     loop {
         let next_old = old.peek().map(|&i| key(i));
         match (next_old, add.peek()) {
-            (Some(k), Some(a)) if k < (a.0, a.1, a.2) => merged.push((was.edits[old.next()?].clone(), k.2)),
+            (Some(k), Some(a)) if k < (a.0, a.1, a.2) => merged.push((was.edits[old.next().ok_or("replay whole: its tail ran out")?].clone(), k.2)),
             (_, Some(_)) => {
-                let (.., id, e) = add.next()?;
+                let (.., id, e) = add.next().ok_or("replay whole: its tail ran out")?;
                 merged.push((e.clone(), id));
             }
-            (Some(k), None) => merged.push((was.edits[old.next()?].clone(), k.2)),
+            (Some(k), None) => merged.push((was.edits[old.next().ok_or("replay whole: its tail ran out")?].clone(), k.2)),
             (None, None) => break,
         }
     }
@@ -3904,12 +3925,12 @@ fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Option<Replay> {
     let none = HashSet::new();
     let mut base = None;
     if !tail.tried.is_empty() {
-        let from = tail.base.clone()?;
+        let from = tail.base.clone().ok_or("replay whole: no base to resolve on")?;
         let Run { state, snap, .. } = run_from(from, &tail_edits, &tail_ids, &none, false, &HashMap::new(), again);
         let mut tried = tail.cands.clone();
         tried.sort_by_key(|&i| priority(&state, &was.edits[i]));
         if tried != tail.tried {
-            return None;
+            return Err("replay whole: its removals rank otherwise");
         }
         base = Some(snap.unwrap_or_else(|| tail.base.clone().expect("its base")));
     }
@@ -3934,7 +3955,7 @@ fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Option<Replay> {
         tail.state = run.snap.expect("the state at its new place");
     }
     tail.base = base;
-    Some(Replay { edits, ids: all, stood, state: run.state, acts, tail: Some(tail) })
+    Ok(Replay { edits, ids: all, stood, state: run.state, acts, tail: Some(tail) })
 }
 
 /// `replay`, given each edit's id.

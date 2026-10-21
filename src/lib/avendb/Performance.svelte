@@ -23,10 +23,15 @@
 	import { native } from '$lib/native';
 	import { disk as readDisk } from './native.js';
 	import { feed } from './server.js';
-	import { ago, count, size } from './vaults.js';
+	import { ago, count, nameOf, short, size } from './vaults.js';
 
-	/** @type {{ api: any, section?: string, thisName: string }} */
-	let { api, section = '', thisName } = $props();
+	/** @type {{ api: any, world?: import('./vaults.js').WorldView, section?: string, thisName: string }} */
+	let { api, world, section = '', thisName } = $props();
+	/** a vault's name as this device knows it, by its id, or its id's first digits */
+	const vaultName = (/** @type {string | null} */ id) => {
+		const v = id ? world?.vaults.find((x) => x.id === id) : undefined;
+		return v ? nameOf(v) : id ? `Vault ${short(id)}` : 'No vault';
+	};
 
 	/** the page's sections, in order, as its left side lists them: each its address after `#performance/`, name and icon */
 	const SECTIONS = /** @type {const} */ ([
@@ -67,7 +72,8 @@
 	/**
 	 * @typedef {{ timers: Record<string, Timer>, counts: Record<string, number>,
 	 *   held: { edits: number, bodies: number, shown: number, blobs: number, blob_bytes: number },
-	 *   checkpoints?: { standing: number, vouched: number, bare: number, uncovered?: number } }} Perf
+	 *   checkpoints?: { standing: number, vouched: number, bare: number, uncovered?: number,
+	 *     uncovered_by?: { vault: string | null, edits: number }[] } }} Perf
 	 */
 
 	/** the device's own, as its `perf` op answers, or null where it doesn't (an older device) */
@@ -278,6 +284,10 @@
 					{#if perf.checkpoints.uncovered !== undefined}
 						<dt>Old SLH-DSA signatures still checked</dt>
 						<dd>{perf.checkpoints.uncovered.toLocaleString()}</dd>
+						{#each perf.checkpoints.uncovered_by ?? [] as u (u.vault)}
+							<dt class="sub">{vaultName(u.vault)}</dt>
+							<dd>{u.edits.toLocaleString()}</dd>
+						{/each}
 					{/if}
 				</dl>
 			</article>
@@ -445,6 +455,10 @@
 
 	dt {
 		color: var(--soft);
+	}
+
+	dt.sub {
+		padding-left: 0.8rem;
 	}
 
 	dd {
