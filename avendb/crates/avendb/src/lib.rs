@@ -65,6 +65,7 @@ pub mod scenarios;
 pub mod sealed;
 pub mod sign;
 pub mod slice;
+pub mod snapshot;
 pub mod sync;
 pub mod wire;
 pub mod words;
