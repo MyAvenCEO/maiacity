@@ -547,6 +547,15 @@ impl Edit {
         }
     }
 
+    /// The states a snapshot states, each with the file its slice travels as (`Edit.statedFiles`): no other edit's.
+    pub fn stated(&self) -> impl Iterator<Item = &Stated> {
+        match &self.action {
+            Action::Snapshot { states, .. } => &states[..],
+            _ => &[],
+        }
+        .iter()
+    }
+
     pub fn is_removal(&self) -> bool {
         self.action.keep().is_some()
     }
@@ -1149,6 +1158,12 @@ impl State {
     /// The accepted writes of one entry, in replay order.
     pub fn entry_writes(&self, e: EntryId) -> impl Iterator<Item = &Write> {
         self.by_entry.get(&e).into_iter().flatten().map(|&i| &self.writes[i])
+    }
+
+    /// How many accepted writes one entry has, and its last in replay order.
+    pub fn entry_tip(&self, e: EntryId) -> (usize, Option<EditId>) {
+        let places = self.by_entry.get(&e).map_or(&[][..], |p| &p[..]);
+        (places.len(), places.last().map(|&i| self.writes[i].edit))
     }
 
     /// The ids of the accepted writes of one entry, in replay order.
@@ -4012,16 +4027,42 @@ impl Log {
     /// that takes an entry to an audience takes away only what the writes of its entry rested on, so it keeps every
     /// write of its entry that stands now; a mark of the wants alone keeps nothing.
     pub fn draft(&self, author: SignerId, cosigners: &[SignerId], action: Action) -> Edit {
-        self.draft_with(None, author, cosigners, action)
+        self.draft_with(None, None, true, author, cosigners, action)
     }
 
     /// `draft`, given `view`, what the log's edits say as the caller worked it out already: no replay, but for a
     /// removal other than a mark.
     pub fn draft_on(&self, view: &State, author: SignerId, cosigners: &[SignerId], action: Action) -> Edit {
-        self.draft_with(Some(view), author, cosigners, action)
+        self.draft_with(Some(view), None, true, author, cosigners, action)
     }
 
-    fn draft_with(&self, given: Option<&State>, author: SignerId, cosigners: &[SignerId], action: Action) -> Edit {
+    /// `check`, given `replay`, the replay of the log's edits as the caller keeps it (`policy::replay_on`): what the
+    /// log's edits say is its state, so nothing is replayed but, for a removal other than a mark where `cuts`, the
+    /// trial of what it cuts. A device checks each change it drafts so, never replaying its whole log to check one.
+    /// Without `cuts` a removal keeps nothing it had seen: what it would keep only names the edit, as a view accepts a
+    /// revoke by who revokes what, never by what it keeps (`State::check`), so a dry run asks no trial (`Lab::dry`).
+    pub fn check_on(
+        &self,
+        replay: &Replay,
+        cuts: bool,
+        author: SignerId,
+        cosigners: &[SignerId],
+        action: Action,
+    ) -> Result<Edit, Refusal> {
+        let edit = self.draft_with(Some(&replay.state), Some(replay), cuts, author, cosigners, action);
+        replay.state.accepts(&edit, edit.id())?;
+        Ok(edit)
+    }
+
+    fn draft_with(
+        &self,
+        given: Option<&State>,
+        replayed: Option<&Replay>,
+        cuts: bool,
+        author: SignerId,
+        cosigners: &[SignerId],
+        action: Action,
+    ) -> Edit {
         let depth = self.edits.iter().map(|o| o.depth.saturating_add(1)).max().unwrap_or(0);
         let mut edit = Edit { parents: vec![], depth, author, cosigners: cosigners.to_vec(), action };
         if !matches!(edit.action, Action::Genesis { .. } | Action::Share(Sharing::Grant(..)))
@@ -4049,9 +4090,16 @@ impl Log {
             keep.extend(view().writes(*entry));
             keep.sort();
             keep.dedup();
-        } else if edit.is_removal() {
+        } else if edit.is_removal() && cuts {
             // replayed with the removals that stand now and this one, everything that stands now must still stand
-            let before = self.replay();
+            let own;
+            let before = match replayed {
+                Some(r) => r,
+                None => {
+                    own = self.replay();
+                    &own
+                }
+            };
             let standing: HashSet<EditId> = before.standing().into_iter().collect();
             let rem: HashSet<EditId> = before
                 .edits

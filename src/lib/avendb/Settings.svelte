@@ -22,6 +22,7 @@
 <script>
 	import { tick } from 'svelte';
 	import { sure } from '$lib/app/sure.js';
+	import { command, native } from '$lib/native';
 	import Ask from './Ask.svelte';
 	import BackupUsage from './BackupUsage.svelte';
 	import Frame from './Frame.svelte';
@@ -156,6 +157,36 @@
 		const every = setInterval(look, 15000);
 		return () => clearInterval(every);
 	});
+	/** in theOS, the agents' processes running on this Mac (vault/app's `agent_processes`), each a harness session's,
+	 *  an old build's marked: looked for again now and then; else none */
+	let processes = $state(/** @type {{ pid: number, started: string, exe: string, harness: string, gone: boolean, old: boolean }[] | null} */ (null));
+	const lookProcesses = () =>
+		native()
+			? command('agent_processes').then(
+					(/** @type {any} */ got) => (processes = got),
+					() => (processes = null)
+				)
+			: undefined;
+	$effect(() => {
+		lookProcesses();
+		const every = setInterval(lookProcesses, 15000);
+		return () => clearInterval(every);
+	});
+	/** Stops agent process `p`, after the person said so: its harness starts it again from this app when it needs it.
+	 *  @param {{ pid: number, harness: string, old: boolean }} p */
+	async function stopAgent(p) {
+		const said = p.old ? 'an old build' : 'this build';
+		if (!(await sure(`Stop ${p.harness}'s agent process ${p.pid} (${said})? Its session starts a fresh one from theOS when it next needs avenDB.`))) return;
+		await command('agent_stop', { pid: p.pid }).catch((/** @type {unknown} */ e) => console.warn(`stopping agent ${p.pid}:`, e));
+		lookProcesses();
+	}
+	/** Stops every agent process of an old build, after the person said so. */
+	async function stopOld() {
+		const old = (processes ?? []).filter((p) => p.old);
+		if (!old.length || !(await sure(`Stop ${old.length} agent process${old.length === 1 ? '' : 'es'} of an old build? Their sessions start fresh ones from theOS when they next need avenDB.`))) return;
+		for (const p of old) await command('agent_stop', { pid: p.pid }).catch((/** @type {unknown} */ e) => console.warn(`stopping agent ${p.pid}:`, e));
+		lookProcesses();
+	}
 	/** Copies the cloud agent's key. */
 	async function copyCloud() {
 		await navigator.clipboard.writeText(cloud?.key ?? '');
@@ -351,20 +382,29 @@
 	 * recovery key as an owner (`recovery`), backups on or off (`backUp`), what a device of the vault keeps (`copy`),
 	 * and removing each owner (`owner <id>`) and each device but this one (`device <id>`): `true`, `{ approve }` where
 	 * the vault's owners approve it, or why not. Each is asked again only once what it asks changes, or who asks, or
-	 * how the vault is governed, and kept as it comes even where another changed meanwhile: a device that syncs a big
-	 * vault changes its world faster than it answers, and an answer thrown away at each change left every Remove
-	 * hidden (Samuel 2026-10-20), then on "checking" for good (his iPhone 2026-10-21). One it doesn't answer in
-	 * `MAY_WAIT` it asks again `MAY_AGAIN` on. Removals aren't asked while the device syncs (`behind`): it refuses
-	 * them until it has caught up (`waits`), and they are the dearest to check.
+	 * how the vault is governed, and never while the device still works on the last ask of it: a device busy with a
+	 * big vault answers slowly, and asking again on a timer only handed it the same dry runs again. An answer to what
+	 * changed meanwhile is asked again at once. A Remove doesn't wait for its answer (Samuel's Mac 2026-10-21: every
+	 * one on "checking" for good), only for a refusal. Removals aren't asked while the device syncs (`behind`): they
+	 * wait until it has caught up (`waits`). Nor are they on the person's own vault, where every Remove shows anyway
+	 * and the device checks each as it makes it: a dry run of each, over the whole vault, kept Samuel's Mac at full CPU
+	 * (2026-10-21, every call answered 30-50 s late).
 	 */
 	let can = $state(/** @type {Record<string, Verdict>} */ ({}));
 	/** what each answer in `can` answers, or what is being asked, by its name: this device, the acting vault, the
 	 *  vault's root and threshold, and the op, as JSON */
 	const askedOf = /** @type {Record<string, string>} */ ({});
-	/** counts the times it asked again what the device didn't answer */
+	/** the names asked and not answered yet, each with when it was asked (ms): one ask of each at a time, but one
+	 *  unanswered in `MAY_LOST` counts as lost, as by a device that closed meanwhile */
+	const asking = /** @type {Map<string, number>} */ (new Map());
+	/** what the page asks now, by name, as `askedOf` keys it */
+	let wants = /** @type {Record<string, string>} */ ({});
+	/** the names whose ask changed while the device worked on it, told in the app's log once */
+	const changed = new Set();
+	/** counts the times it asks again: what the device failed to answer, or what changed while it answered */
 	let again = $state(0);
-	const MAY_WAIT = 20000;
 	const MAY_AGAIN = 15000;
+	const MAY_LOST = 180000;
 	/** Whether this device still brings what its peers hold, as the app's sync pill reads it (./sync.svelte.js). */
 	const behind = $derived(sync.known && sync.behind > 0);
 	$effect(() => {
@@ -376,51 +416,65 @@
 		if (own && backs != null) asks.backUp = { op: 'back_up', on: !backs };
 		const other = devices.find((d) => !d.me) ?? devices[0];
 		if (own && other) asks.copy = { op: 'copy', device: other.id, full: other.copy !== 'full' };
-		if (!behind) {
+		if (!behind && !own) {
 			for (const o of owners)
 				asks[ownerKey(o)] = { op: 'revoke', vault, owner: 'vault' in o ? { vault: o.vault } : { signer: o.signer } };
 			for (const d of devices) if (!d.me) asks[`device ${d.id}`] = { op: 'revoke', vault, device: d.id };
 		}
 		const by = JSON.stringify([world.me, actor, v.root, v.threshold]);
+		wants = Object.fromEntries(Object.entries(asks).map(([name, op]) => [name, `${by} ${JSON.stringify(op)}`]));
+		const at = Date.now();
+		const pending = (/** @type {string} */ name) => at - (asking.get(name) ?? -Infinity) < MAY_LOST;
 		const fresh = Object.entries(asks)
-			.map(([name, op]) => ({ name, op, key: `${by} ${JSON.stringify(op)}` }))
-			.filter((x) => askedOf[x.name] !== x.key);
+			.map(([name, op]) => ({ name, op, key: wants[name] }))
+			.filter((x) => !pending(x.name) && askedOf[x.name] !== x.key);
 		if (!fresh.length) return;
-		for (const x of fresh) askedOf[x.name] = x.key;
+		for (const x of fresh) {
+			askedOf[x.name] = x.key;
+			asking.set(x.name, at);
+		}
 		may(
 			api,
 			actor,
-			fresh.map((x) => x.op),
-			MAY_WAIT
+			fresh.map((x) => x.op)
 		).then((answers) => {
-			const got = fresh.map((x, i) => ({ ...x, verdict: answers[i] })).filter((x) => askedOf[x.name] === x.key);
-			if (!got.length) return;
-			can = { ...can, ...Object.fromEntries(got.map((x) => [x.name, x.verdict])) };
-			let unanswered = false;
-			for (const { name, verdict } of got) {
-				if (/** @type {any} */ (verdict)?.refused === 'NoAnswer') {
+			// only the last ask of each counts: one counted as lost (`MAY_LOST`) that answers late doesn't
+			const got = fresh.map((x, i) => ({ ...x, verdict: /** @type {any} */ (answers[i]) })).filter((x) => asking.get(x.name) === at);
+			for (const x of got) asking.delete(x.name);
+			const kept = got.filter((x) => x.verdict?.refused !== 'NoAnswer' && wants[x.name] === x.key);
+			if (kept.length) can = { ...can, ...Object.fromEntries(kept.map((x) => [x.name, x.verdict])) };
+			let now = false;
+			let later = false;
+			for (const { name, key, verdict } of got) {
+				if (verdict?.refused === 'NoAnswer') {
 					delete askedOf[name];
-					unanswered = true;
+					later = true;
+				} else if (wants[name] !== key) {
+					delete askedOf[name];
+					now ||= name in wants;
+					if (name in wants && !changed.has(name)) {
+						changed.add(name);
+						console.warn(`avenDB: Settings asks ${name} again: it changed while the device answered`, { was: key, now: wants[name] });
+					}
 				}
 				// a removal it refuses goes into the Mac app's log too, with why (Samuel 2026-10-21: no Remove on any device)
 				else if (/^(owner|device) /.test(name) && !allowed(verdict)) console.warn(`avenDB: Settings may not remove ${name}:`, verdict);
 			}
-			if (unanswered) setTimeout(() => again++, MAY_AGAIN);
+			if (now) again++;
+			else if (later) setTimeout(() => again++, MAY_AGAIN);
 		});
 	});
 	/** Whether the device would make `what` (`can`). @param {string} what */
 	const lets = (what) => allowed(can[what]);
 	/**
-	 * Why a Remove of `what` waits or can't be, in words: as the device refuses it, while this device still syncs, while
-	 * it hasn't answered its dry run yet, or didn't in time; '' where it would make it. @param {string} what
+	 * Why a Remove of `what` can't be, or waits, in words: as the device refuses it, or while this device still syncs;
+	 * '' where it may be pressed. One the device hasn't answered yet may: removing checks again that it has caught up
+	 * (`waits`), and the device checks the removal itself as it makes it. @param {string} what
 	 */
 	const whyNot = (what) => {
 		const verdict = /** @type {any} */ (can[what]);
-		const unanswered = verdict?.refused === 'NoAnswer';
-		if (verdict !== undefined && !unanswered && !allowed(verdict)) return verdict.why ?? verdict.refused ?? 'refused';
+		if (verdict !== undefined && !allowed(verdict)) return verdict.why ?? verdict.refused ?? 'refused';
 		if (behind) return `Removing waits until ${here} has synced what your other devices hold: ${Math.floor(100 * share())}% so far`;
-		if (unanswered) return `${Here} didn’t answer in time whether it may remove it: it asks again`;
-		if (verdict === undefined) return `${Here} is checking whether it may remove it`;
 		return '';
 	};
 
@@ -469,29 +523,67 @@
 	/**
 	 * Why removing a key or a device waits, or '' where it needn't: a removal drops every edit resting on that key
 	 * which the device removing it doesn't hold, so this device first holds all its peers hold (the `synced` op):
-	 * reaching at least one, avenDB's server among them, and behind none.
+	 * reaching at least one, avenDB's server among them, and behind none. As the app's sync pill read it last, where
+	 * that was in `SYNC_FRESH`; else asked, as the device answers every ask in turn.
 	 */
 	async function waits() {
-		const s = await read(api, { op: 'synced' }, null);
+		const s = sync.known && Date.now() - sync.at < SYNC_FRESH ? sync : await read(api, { op: 'synced' }, null);
 		if (!s) return `${Here} can’t tell yet how far it has synced`;
 		if (!s.peers) return `${Here} reaches neither avenDB’s server nor another device of yours right now`;
 		if (s.behind > 0) return `${Here} is still syncing ${count(s.behind, 'log')} from your other devices`;
 		return '';
 	}
 	/**
-	 * Removes owner or device `name` from vault `of` by op `op`, once this device has caught up (`waits`) and the
-	 * person says yes: its peers refuse it from then on. The vault's owners approve it.
-	 * @param {string} name @param {string} of @param {object} op
+	 * Where each Remove is, by its name in `can`: waiting for the person's yes, checking that this device has synced,
+	 * removing (`busy`), or how it ended, removed or why not, until the page goes (Samuel 2026-10-21: "zero UI feedback
+	 * that it's actually happening").
 	 */
-	async function remove(name, of, op) {
-		const wait = await waits();
-		if (wait) return void (session.error = `${name} stays for now: ${wait}. Remove it once it has caught up.`);
-		const sureOf = `Remove ${name} from ${nameOf(byId.get(of))}? It syncs nothing more. Anything it wrote that never reached ${here} is dropped; what it holds stays on it, encrypted.`;
-		return (await sure(sureOf)) && api.run(`Removing ${name}`, op);
+	let removing = $state(/** @type {Record<string, { busy: boolean, text: string, bad?: boolean }>} */ ({}));
+	/** whether a Remove is under way: the others wait for it */
+	const removingAny = $derived(Object.values(removing).some((r) => r.busy));
+	/** how old a reading of the sync pill `waits` takes as it is (ms) */
+	const SYNC_FRESH = 30000;
+	/**
+	 * Removes owner or device `name` from vault `of` by op `op`, once the person says yes and this device has caught
+	 * up (`waits`): its peers refuse it from then on. The vault's owners approve it. The question comes first and at
+	 * once, the page's own, before anything the device answers (Samuel 2026-10-21: "those popups should be instant, we
+	 * are local first"); each step shows by its Remove, `what` (`removing`).
+	 * @param {string} what @param {string} name @param {string} of @param {object} op
+	 */
+	async function remove(what, name, of, op) {
+		// each step goes into the Mac app's log too (the page forwards warnings), so a Remove that stops shows where
+		const step = (/** @type {boolean} */ busy, /** @type {string} */ text, bad = false) => {
+			console.warn(`avenDB: Settings removing ${what}: ${text}`);
+			removing = { ...removing, [what]: { busy, text, bad } };
+		};
+		const stop = () => {
+			const { [what]: _, ...rest } = removing;
+			removing = rest;
+		};
+		try {
+			step(true, 'Asking you first');
+			const sureOf = `Remove ${name} from ${nameOf(byId.get(of))}? It syncs nothing more. Anything it wrote that never reached ${here} is dropped; what it holds stays on it, encrypted.`;
+			if (!(await sure(sureOf))) {
+				console.warn(`avenDB: Settings removing ${what}: not confirmed`);
+				return stop();
+			}
+			step(true, `Checking that ${here} has synced`);
+			const wait = await waits();
+			if (wait) {
+				session.error = `${name} stays for now: ${wait}. Remove it once it has caught up.`;
+				return step(false, `Not removed: ${wait}`, true);
+			}
+			step(true, 'Removing');
+			const done = await api.run(`Removing ${name}`, op);
+			if (done == null) return step(false, `Not removed: ${session.error || 'the device refused it'}`, true);
+			step(false, 'Removed');
+		} catch (e) {
+			step(false, `Not removed: ${/** @type {Error} */ (e)?.message ?? String(e)}`, true);
+		}
 	}
 	/** @param {{ vault: string } | { signer: string, recovery: boolean, by: string | null }} o */
 	const removeOwner = (o) =>
-		remove(ownerName(o), vault, {
+		remove(ownerKey(o), ownerName(o), vault, {
 			op: 'revoke',
 			vault,
 			owner: 'vault' in o ? { vault: o.vault } : { signer: o.signer }
@@ -500,7 +592,8 @@
 	 * Removes device `id` from vault `of`, this one unless named, as a lost phone is (`revoke`).
 	 * @param {string} id @param {string} name @param {string} [of]
 	 */
-	const removeDevice = (id, name, of = vault) => remove(name, of, { op: 'revoke', vault: of, device: id });
+	const removeDevice = (id, name, of = vault) =>
+		remove(of === vault ? `device ${id}` : `device ${of} ${id}`, name, of, { op: 'revoke', vault: of, device: id });
 
 	/**
 	 * Sets what device `d` keeps of every vault it syncs: a full copy, or a light one (`copy`).
@@ -653,12 +746,18 @@
 {/snippet}
 
 <!-- Remove for owner or device `what`, by `onremove`: on the person's own vault it shows even where it can't be, and
-	says why, or that the device is still checking -->
+	says why, or what else the page is doing meanwhile; once pressed, where it is (`removing`) -->
 {#snippet remover(/** @type {string} */ what, /** @type {() => void} */ onremove)}
 	{@const why = whyNot(what)}
+	{@const now = removing[what]}
 	<span class="remover">
-		{#if why}<span class="soft why">{why}</span>{/if}
-		<button class="btn quiet danger" disabled={busy || !!why} onclick={onremove}>Remove</button>
+		{#if now}
+			<span class="why" class:soft={!now.bad} class:error={now.bad} role="status">
+				{#if now.busy}<span class="spin" aria-hidden="true"></span>{/if}{now.text}{now.busy ? '…' : ''}
+			</span>
+		{:else if why}<span class="soft why">{why}</span>
+		{:else if busy && session.doing}<span class="soft why">Waits until “{session.doing}” is done</span>{/if}
+		<button class="btn quiet danger" disabled={busy || removingAny || !!why} onclick={onremove}>Remove</button>
 	</span>
 {/snippet}
 
@@ -928,6 +1027,23 @@
 					devices, with a key of its own: Claude Code as agentClaude, Codex as agentCodex, and so on. Once a harness runs
 					its device, this page asks you to approve it, and it acts as avenMAIA with exactly what avenMAIA holds.
 				</p>
+				{#if processes}
+					<h4>Running on this Mac</h4>
+					{#if processes.length}
+						<ul class="procs">
+							{#each processes as p (p.pid)}
+								<li>
+									<span><b>{p.harness}</b> · process {p.pid} · since {p.started}{#if p.old}<span class="old">{p.gone ? 'old build, gone from disk' : 'old build'}</span>{/if}</span>
+									<small class="soft" title={p.exe}>{p.exe}</small>
+									<button class="btn quiet" onclick={() => stopAgent(p)}>Stop</button>
+								</li>
+							{/each}
+						</ul>
+						{#if processes.some((p) => p.old)}<button class="btn" onclick={stopOld}>Stop all old builds</button>{/if}
+					{:else}
+						<p class="soft">No agent runs on this Mac now: a harness session starts one when it needs avenDB.</p>
+					{/if}
+				{/if}
 				<label class="harness">
 					<span>Harness</span>
 					<input class="field" bind:value={harness} aria-label="The harness's name" placeholder="claude" />
@@ -1187,6 +1303,28 @@
 		font-size: 0.78rem;
 		line-height: 1.35;
 		text-align: right;
+	}
+
+	.remover .why.error {
+		color: var(--bad);
+	}
+
+	.remover .spin {
+		display: inline-block;
+		width: 0.7rem;
+		height: 0.7rem;
+		margin-right: 0.4rem;
+		vertical-align: -0.05rem;
+		border: 2px solid currentColor;
+		border-right-color: transparent;
+		border-radius: 50%;
+		animation: removing 0.9s linear infinite;
+	}
+
+	@keyframes removing {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	dl {
@@ -1463,5 +1601,43 @@
 		box-sizing: border-box;
 		font-family: ui-monospace, monospace;
 		font-size: 0.75rem;
+	}
+
+	.procs {
+		display: flex;
+		flex-direction: column;
+		gap: 0.5rem;
+		margin: 0 0 0.8rem;
+		padding: 0;
+		list-style: none;
+		font-size: 0.84rem;
+	}
+
+	.procs li {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		gap: 0.1rem 0.6rem;
+		align-items: center;
+	}
+
+	.procs small {
+		grid-column: 1;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.procs .btn {
+		grid-column: 2;
+		grid-row: 1 / span 2;
+	}
+
+	.old {
+		margin-left: 0.4rem;
+		padding: 0.05rem 0.4rem;
+		border-radius: 999px;
+		background: #f6e3c6;
+		color: #8a5a12;
+		font-size: 0.72rem;
 	}
 </style>

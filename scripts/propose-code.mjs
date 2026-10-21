@@ -102,8 +102,13 @@ try {
 	}
 	const count = files.length;
 	const objective = [
+		'import AvenDB.Objective',
+		'open AvenDB.Objective',
+		'',
 		`/-- Maia City holds every code package file theOS pins (src/lib/code/packages.json). -/`,
 		`def files : Metric := metric "Pinned code package files in Maia City" (equals (reading "files") ${count})`,
+		'',
+		'def objective : List Metric := [files]',
 		''
 	].join('\n');
 	const note = [

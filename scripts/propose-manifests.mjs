@@ -6,10 +6,11 @@
 // says what it would do.
 //
 //   node scripts/propose-manifests.mjs [--run] [--device <path of avendb-device>] [--again]
-//   node scripts/propose-manifests.mjs --owner <Maia City vault id>     the owner's op, printed
+//   node scripts/propose-manifests.mjs --owner <Maia City vault id>     the owner's two ops, printed
 //
 // A schema is never a draft: a new type's schema joins the vault's lane only by the vault's own create on main. So the
-// first time, an owner runs one op in avenDB's Query console (`--owner` prints it, and `--run` prints it and stops where
+// first time, an owner runs two ops in avenDB's Query console, one after the other, a share never running in a batch
+// (`--owner` prints them, and `--run` prints them and stops where
 // the schema is missing): the schema "Manifest, v1" and the Public share that lets a device not signed in read the
 // manifests off the feed. Then `--run` drafts the manifests alone.
 import { MANIFEST_SCHEMA, MANIFEST_V1 } from '../game/code/sources/manifests.js';
@@ -21,18 +22,14 @@ const flag = (f) => args.includes(f);
 const option = (f) => (args.includes(f) ? args[args.indexOf(f) + 1] : undefined);
 const title = `Manifests: what each page syncs first (${MANIFESTS.length})`;
 
-/** What an owner of vault `vault` runs once, as the vault: the manifests' schema on main, and their Public share. */
-const ownerOp = (vault) => ({
-	op: 'batch',
-	ops: [
-		{ op: 'create', vault, type: 'schema', value: MANIFEST_V1, as: vault },
-		{ op: 'share', over: vault, who: 'everyone', level: 'Public', what: { type: ['manifest'] }, as: vault }
-	],
-	as: vault
-});
+/** What an owner of vault `vault` runs once, as the vault, one op at a time: the manifests' schema on main, then their Public share. */
+const ownerOps = (vault) => [
+	{ op: 'create', vault, type: 'schema', value: MANIFEST_V1, as: vault },
+	{ op: 'share', over: vault, who: 'everyone', level: 'Public', what: { type: ['manifest'] }, as: vault }
+];
 if (option('--owner')) {
 	if (!/^[0-9a-f]{64}$/.test(option('--owner'))) throw new Error('--owner takes the Maia City vault id (64 hex)');
-	console.log(JSON.stringify(ownerOp(option('--owner'))));
+	for (const op of ownerOps(option('--owner'))) console.log(JSON.stringify(op));
 	process.exit(0);
 }
 
@@ -47,8 +44,9 @@ try {
 	await agent.open();
 	const city = await agent.city();
 	const live = (rows) => (rows ?? []).filter((r) => !(r.tags ?? []).includes('avendb:deleted'));
-	const schemas = live((await agent.call('avendb_ask', { op: { op: 'query', vault: city.id, where: { type: ['schema'] } } })).rows);
-	const hasSchema = schemas.some((r) => r.record?.title === MANIFEST_SCHEMA || String(r.record?.source ?? r.record ?? '').includes(`"title":"${MANIFEST_SCHEMA}"`));
+	// a schema is no row a query reads: the `schemas` op lists those of the vault's lane
+	const { schemas } = await agent.call('avendb_ask', { op: { op: 'schemas', vault: city.id } });
+	const hasSchema = (schemas ?? []).some((s) => s.title === MANIFEST_SCHEMA);
 	const held = new Set(live((await agent.call('avendb_ask', { op: { op: 'query', vault: city.id, where: { type: ['manifest'] } } })).rows).map((r) => r.record?.id));
 	const open = (await agent.call('avendb_ask', { op: { op: 'aips', vault: city.id } })).filter((a) => a.title === title && !a.outcome);
 	if (open.length && !flag('--again')) throw new Error(`"${title}" is open already (${open.map((a) => a.entry).join(', ')}): nothing was written (--again proposes all the same)`);
@@ -60,8 +58,8 @@ try {
 		console.error(`${label}: drafted as ${made.entry}`);
 	};
 	if (!hasSchema) {
-		console.error(`Maia City has no schema "${MANIFEST_SCHEMA}" yet, and a schema is never a draft: nothing was written. An owner runs this once in avenDB's Query console (the schema on main, and the manifests' Public share), then this script again:`);
-		console.log(JSON.stringify(ownerOp(city.id)));
+		console.error(`Maia City has no schema "${MANIFEST_SCHEMA}" yet, and a schema is never a draft: nothing was written. An owner runs these two ops once in avenDB's Query console, one at a time (the schema on main, then the manifests' Public share), then this script again:`);
+		for (const op of ownerOps(city.id)) console.log(JSON.stringify(op));
 		process.exit(1);
 	}
 	const fresh = MANIFESTS.filter((m) => !held.has(m.id));
@@ -71,8 +69,13 @@ try {
 		process.exit(0);
 	}
 	const objective = [
+		'import AvenDB.Objective',
+		'open AvenDB.Objective',
+		'',
 		`/-- Maia City holds every manifest the repo declares (src/lib/avendb/manifests.js). -/`,
 		`def manifests : Metric := metric "Declared manifests in Maia City" (equals (reading "manifests") ${MANIFESTS.length})`,
+		'',
+		'def objective : List Metric := [manifests]',
 		''
 	].join('\n');
 	const note = [

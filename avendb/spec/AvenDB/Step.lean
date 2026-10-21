@@ -43,11 +43,13 @@ def Revoking.keep : Revoking → List EditId
   | .grant _ _ k _ | .owner _ _ k | .device _ _ k => k
 
 /-- An entry's state as a snapshot states it: entry `entry`'s slice of what the edits up to `basis` make of it, `basis`
-    being the frontier of the entry's log it had seen (`Snapshot.lean`). -/
+    being the frontier of the entry's log it had seen (`Snapshot.lean`). The slice travels as `file`, sealed under the
+    entry's key, which only who may receive the entry fetches (`mayFetch`). -/
 structure Stated where
   entry : EntryId
   basis : List EditId
   slice : Slice
+  file  : FileId := 0
   deriving DecidableEq, Repr
 
 /-- Every change. An edit that acts for a vault (issues or revokes a grant, writes, marks) names the owners `via` its

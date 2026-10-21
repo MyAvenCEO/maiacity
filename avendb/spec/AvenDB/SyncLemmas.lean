@@ -807,18 +807,24 @@ theorem respond_whole_logs {edits : List Edit} {d : SignerId} {fl : List VaultId
   · exact .inl ⟨ho, h⟩
   · exact .inr ⟨ho, h⟩
 
-/-- A file a device may know of by a node's view, it may fetch (T27). -/
-theorem reachFiles_fetch {edits : List Edit} {d : SignerId} {f : FileId} (h : f ∈ reachFiles edits d) :
-    mayFetch edits d f = true := by
+/-- A file a device may know of by a node's view is brought by an edit sent it. -/
+theorem reachFiles_brought {edits : List Edit} {d : SignerId} {f : FileId} (h : f ∈ reachFiles edits d) :
+    (respond edits d).any (fun o => o.filesOf.contains f) = true := by
   simp only [reachFiles, List.mem_flatMap, List.mem_filter] at h
   obtain ⟨o, ⟨ho, hl⟩, hf⟩ := h
   split at hl
   · rename_i l hl'
     simp only [reachLogs, logsOf, List.contains_iff_mem, List.mem_eraseDups, List.mem_filterMap] at hl
     obtain ⟨o', ho', hl''⟩ := hl
-    unfold mayFetch
     exact List.any_eq_true.mpr ⟨o, respond_whole_logs ho' ho (hl'.trans hl''.symm), by simpa using hf⟩
   · cases hl
+
+/-- A file a device may know of by a node's view, it may fetch (T27). -/
+theorem reachFiles_fetch {edits : List Edit} {d : SignerId} {f : FileId} (h : f ∈ reachFiles edits d) :
+    mayFetch edits d f = true := by
+  obtain ⟨o, ho, hf⟩ := List.any_eq_true.mp (reachFiles_brought h)
+  unfold mayFetch
+  exact List.any_eq_true.mpr ⟨o, ho, by rw [hf]; rfl⟩
 
 /-- What a node tells device `d` it holds is of its own holdings, of logs and files `d` may know of. -/
 theorem tells_sound {n : Node} {d : SignerId} :

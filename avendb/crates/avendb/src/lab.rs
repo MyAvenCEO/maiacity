@@ -401,6 +401,17 @@ fn trust(store: &mut Store) -> bool {
     true
 }
 
+/// A device's key for what it seals on its own shelf (`Lab::shelf_key`): whoever holds the device's own key derives
+/// it, and nobody else, so a seal a shelf holds is the device's word that it checked what the seal names.
+pub struct ShelfKey(Secret);
+
+impl ShelfKey {
+    /// The seal of `bytes`.
+    pub fn seal(&self, bytes: &[u8]) -> [u8; 32] {
+        self.0.child("shelf head", bytes).bytes()
+    }
+}
+
 /// What one device holds: its edits, each with its signatures, to pass on, and the blobs they name; what it makes of
 /// them; the keys it holds; what it read with them; and the entries it shows.
 struct Store {
@@ -452,6 +463,18 @@ struct Store {
     bare: HashSet<EditId>,
     /// It took edits since it last brought its keys and items up to date (`receive_now`, `catch_up`).
     behind: bool,
+    /// What it shows is to be checked against every entry's writes again (`show_items`): it holds nothing shown yet, a
+    /// removal came since, or it let go of edits; else only the entries whose tips moved or that `opened` names.
+    reshow: bool,
+    /// The bodies it opened since it last showed its items, by their entries.
+    opened: HashMap<EntryId, Vec<EditId>>,
+    /// The entries whose shown items keep their scratch items (`SCRATCHES`).
+    scratched: HashSet<EntryId>,
+    /// How many writes its view held when it last showed its items, and the last of them, with the hashes of the
+    /// lanes and the cap groups then: what tells that only new writes came since (`show_items`).
+    shown_writes: (usize, Option<EditId>),
+    shown_lanes: BTreeMap<VaultId, ([u8; 32], BTreeSet<BlobId>)>,
+    shown_groups: [u8; 32],
 }
 
 impl Default for Store {
@@ -481,6 +504,12 @@ impl Default for Store {
             covers: HashSet::new(),
             bare: HashSet::new(),
             behind: false,
+            reshow: true,
+            opened: HashMap::new(),
+            scratched: HashSet::new(),
+            shown_writes: (0, None),
+            shown_lanes: BTreeMap::new(),
+            shown_groups: [0; 32],
         }
     }
 }
@@ -502,6 +531,8 @@ impl Store {
         self.spoilt.clear();
         self.readings = Readings::default();
         self.shown.clear();
+        self.reshow = true;
+        self.opened.clear();
     }
 
     /// It read the selector of every live share over vault `v` but the keep shares, and of every share those rest on,
@@ -523,11 +554,41 @@ impl Store {
 
 /// What a device shows of one entry: its history, every accepted write with what the device could open, the item of
 /// each line where it opens any update, and a hash of which writes it holds and opened, to build it again only once
-/// that changes.
+/// that changes; and its tip, what a refresh that removed nothing checks instead of that hash (`Tip`).
 struct Shown {
     history: History,
     items: BTreeMap<Line, Item>,
     print: [u8; 32],
+    tip: Tip,
+    /// Where judging its writes left off, to judge the writes that come after on (`Judging::resume`).
+    after: After,
+}
+
+/// What judging an entry's writes leaves, to judge a write that comes after them as judging all of them again would
+/// (`Judging`): its scratch item, kept for the entries judged last alone (`SCRATCHES`), its attributes, whose its
+/// rows are, which writes each line's item imported, and which schemas judging its writes looked up in the lane.
+#[derive(Default)]
+struct After {
+    scratch: Option<Scratch>,
+    attrs: Option<Attrs>,
+    mine: crate::policy::Mine,
+    imported: BTreeMap<Line, HashSet<EditId>>,
+    asked: BTreeSet<BlobId>,
+}
+
+/// How many entries keep their scratch items between refreshes: those judged last, as a device edits a few at a time.
+const SCRATCHES: usize = 32;
+
+/// What a refresh checks of an entry it showed, where no removal came since and nothing was let go of
+/// (`Store::reshow`): how many writes it holds and its last, the hashes of its vault's lane and of the cap groups.
+/// Between such refreshes the writes of an entry only grow, each new one past those it held, so a write is new to it
+/// exactly where its count changed; a body opened since marks its entry (`Store::opened`).
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct Tip {
+    writes: usize,
+    last: Option<EditId>,
+    lane: [u8; 32],
+    groups: [u8; 32],
 }
 
 /// What a device's standing `Keys` edits say: the seeds announced, the boxes, and what is published.
@@ -1811,7 +1872,7 @@ impl Lab {
     /// `fresh`, timed on device `to` (`perf`).
     fn checked(&mut self, to: SignerId, edits: Vec<Signed>) -> Vec<Signed> {
         let (at, offered) = (Perf::start(), edits.len() as u64);
-        let fresh = self.fresh(to, edits);
+        let fresh = self.fresh(to, edits, &HashSet::new());
         if let Some(store) = self.stores.get_mut(&to) {
             store.perf.add("check", at);
             store.perf.count("edits offered", offered);
@@ -1839,7 +1900,7 @@ impl Lab {
     /// checked when it arrived, and a copy with other signatures adds nothing. An edit a checkpoint it holds or one
     /// among `edits` covers comes unchecked, on that checkpoint's word, its signatures or none: its replay lets go of
     /// it unless one that stands vouches for it (`refresh`).
-    fn fresh(&self, to: SignerId, edits: Vec<Signed>) -> Vec<Signed> {
+    fn fresh(&self, to: SignerId, edits: Vec<Signed>, vouched: &HashSet<EditId>) -> Vec<Signed> {
         let Some(store) = self.stores.get(&to) else { return vec![] };
         let mut seen = HashSet::new();
         let new = |s: &Signed| {
@@ -1853,7 +1914,15 @@ impl Lab {
             store.covers.contains(&id) || batch.contains(&id)
         };
         let (bare, rest): (Vec<Signed>, Vec<Signed>) = new.into_iter().partition(on_word);
-        let ok = checked_all(&rest);
+        // those checked when the device kept them, and sealed by it since, aren't checked again
+        let (sealed, unsealed): (Vec<usize>, Vec<usize>) =
+            (0..rest.len()).partition(|&i| vouched.contains(&rest[i].edit.id()));
+        let mut ok = vec![false; rest.len()];
+        sealed.into_iter().for_each(|i| ok[i] = true);
+        let to_check: Vec<Signed> = unsealed.iter().map(|&i| rest[i].clone()).collect();
+        for (i, fine) in unsealed.into_iter().zip(checked_all(&to_check)) {
+            ok[i] = fine;
+        }
         bare.into_iter().chain(rest.into_iter().zip(ok).filter_map(|(s, ok)| ok.then_some(s))).collect()
     }
 
@@ -2002,8 +2071,17 @@ impl Lab {
     pub fn draft(&mut self, on: SignerId, signers: &[SignerId], mut action: Action) -> Result<Unsigned, Refusal> {
         let (&author, cosigners) = signers.split_first().expect("an edit has an author");
         let blobs = self.fill_seal_to(&mut action);
-        let log = &self.held(on).log;
-        let edit = log.check(author, cosigners, action)?;
+        let store = self.held(on);
+        let log = &store.log;
+        // checked on the replay it keeps where that is of every edit it holds, as it is but within `together`; a dry
+        // run tries no removal's cuts, which only name the edit
+        let edit = match store.replayed == log.edits().len() {
+            true => {
+                debug_assert!(store.replay == log.replay(), "the replay kept differs from the log's");
+                log.check_on(&store.replay, !self.dry, author, cosigners, action)?
+            }
+            false => log.check(author, cosigners, action)?,
+        };
         Ok(Unsigned { edit, blobs, held: log.ids().len(), batch: vec![], pass: None })
     }
 
@@ -2054,7 +2132,7 @@ impl Lab {
     ) -> Result<EditId, Refusal> {
         let Unsigned { edit, blobs, held, batch, pass } = draft;
         if self.held(on).log.ids().len() != held {
-            self.held(on).view().step(&edit)?;
+            self.held(on).view().accepts(&edit, edit.id())?;
         }
         // in a dry run, checked and then not made (`dry`)
         if self.dry {
@@ -2105,7 +2183,7 @@ impl Lab {
     ) -> Result<Signed, Refusal> {
         let Unsigned { edit, held, batch, .. } = draft;
         if self.held(on).log.ids().len() != held {
-            self.held(on).view().step(&edit)?;
+            self.held(on).view().accepts(&edit, edit.id())?;
         }
         let (id, standing) = (edit.id(), sign::standing(&edit));
         let first: Vec<SignerId> = edit.sigs().take(signers).collect();
@@ -2132,7 +2210,7 @@ impl Lab {
         ceremonies: &[(SignerId, &Ceremony)],
     ) -> Result<EditId, Refusal> {
         let Signed { edit, mut sigs } = part;
-        self.held(on).view().step(&edit)?;
+        self.held(on).view().accepts(&edit, edit.id())?;
         if self.dry {
             return Ok(edit.id());
         }
@@ -2337,6 +2415,9 @@ impl Lab {
             let Some(store) = stores.get_mut(&d) else { return };
             store.perf.count("refresh rounds", 1);
             let at = Perf::start();
+            // a removal may take writes from the middle of an entry's: what it shows is checked against them all
+            let fresh = store.log.edits().get(store.replayed..).unwrap_or_default();
+            store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
             let was = std::mem::replace(&mut store.replay, replay(&[]));
             store.replay = replay_on(was, store.log.edits(), store.replayed);
             store.replayed = store.log.edits().len();
@@ -2474,7 +2555,10 @@ impl Lab {
         }
         let readings = &self.held(on).readings;
         let lane = Lane::with_built_ins(view.lane_of(vault, readings));
-        let read = h.reading(w, Some(content), on, &lane);
+        // on a copy of the scratch item its showing left, where it holds the version the write builds on
+        let shown = self.held(on).shown.get(&w.entry).filter(|_| !w.first);
+        let mut at = shown.and_then(|s| s.after.scratch.as_ref()).map(Scratch::fork);
+        let read = h.reading_on(&mut at, w, Some(content), on, &lane);
         // each set marked own or not as its readers will mark it, by whose each row is (`policy::Mine`)
         let touches = read.touches.as_deref().map(|ts| h.mine().mark(w.actor, &[ts, needs].concat()));
         let attrs = if w.first { first.cloned() } else { view.at_write(w, readings).0 };
@@ -2921,7 +3005,7 @@ impl Lab {
         change: impl FnOnce(&mut Item),
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        let draft = self.shown(on, entry).edit(line, on, change);
+        let draft = self.shown(on, entry).edit_on(self.shown_item(on, entry, line), line, on, change);
         self.make(on, actor, entry, draft, TagDelta::default())
     }
 
@@ -2938,7 +3022,7 @@ impl Lab {
         change: impl FnOnce(&mut Item),
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
-        let draft = self.shown(on, entry).edit(MAIN, on, change);
+        let draft = self.shown(on, entry).edit_on(self.shown_item(on, entry, MAIN), MAIN, on, change);
         self.make_bringing(on, actor, entry, draft, TagDelta::default(), (files, &[]), None)
     }
 
@@ -3125,6 +3209,11 @@ impl Lab {
     }
 
     /// What device `d` shows of an entry: its history, empty if it holds no write of it.
+    /// A copy of the item device `d` shows of entry `entry` on line `line`, to edit: the item its history makes.
+    fn shown_item(&self, d: SignerId, entry: EntryId, line: Line) -> Option<Item> {
+        self.held(d).shown.get(&entry)?.items.get(&line).cloned()
+    }
+
     fn shown(&self, d: SignerId, entry: EntryId) -> &History {
         static NONE: std::sync::LazyLock<History> = std::sync::LazyLock::new(History::default);
         self.held(d).shown.get(&entry).map_or(&NONE, |s| &s.history)
@@ -3201,6 +3290,7 @@ impl Lab {
         self.keep(on, vec![signed], &Blobs::new());
         let store = self.stores.get_mut(&on).expect("a device");
         store.bodies.insert(id, body);
+        store.opened.entry(entry).or_default().push(id);
         store.files_at = OnceLock::new();
         Ok(id)
     }
@@ -3940,10 +4030,9 @@ impl Lab {
     }
 
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the sealed bytes of file `file`: an edit `asker`
-    /// may receive by `d`'s view brings it (T27). Whether `d` holds them is its store's to say.
+    /// may receive by `d`'s view brings it, or a snapshot states an entry `asker` syncs as it (T27). Whether `d` holds them is its store's to say.
     pub fn may_fetch_file(&self, d: SignerId, asker: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
-        let edits = self.held(d).log.edits();
-        answer(edits, self.latest(d), asker, follow).into_iter().any(|i| edits[i].files().contains(file))
+        crate::sync::fetchable(self.held(d).log.edits(), self.latest(d), asker, file, follow)
     }
 
     /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.
@@ -4171,11 +4260,32 @@ impl Lab {
     /// `restore_backup`, taking `backup`'s edits instead of a copy of them: a node starting again from its store holds
     /// each edit once as it restores, not twice (Samuel 2026-10-20: the server's start took more than its 1 GB).
     pub fn restore_from(&mut self, d: SignerId, backup: Backup) {
+        self.restore_vouched(d, backup, &HashSet::new());
+    }
+
+    /// `restore_from`, where the edits `vouched` were checked already: their signatures aren't checked again. A node
+    /// vouches for the edits of a shelf's head it sealed with its own key (`shelf_key`) after it kept them, each
+    /// checked as it came (avendb-net's `Edits::vouched`): so a device opening again checks only what came after.
+    pub fn restore_vouched(&mut self, d: SignerId, backup: Backup, vouched: &HashSet<EditId>) {
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
         self.stores.insert(d, Store { follow, query_depth, gate, perf, ..Store::default() });
-        self.keep(d, backup.signed, &backup.blobs);
+        let (at, offered) = (Perf::start(), backup.signed.len() as u64);
+        let fresh = self.fresh(d, backup.signed, vouched);
+        if let Some(store) = self.stores.get_mut(&d) {
+            store.perf.add("check", at);
+            store.perf.count("edits offered", offered);
+            store.perf.count("edits checked", fresh.iter().filter(|s| !vouched.contains(&s.edit.id())).count() as u64);
+        }
+        self.keep_fresh(d, fresh, &backup.blobs);
         self.refresh(d, &[]);
+    }
+
+    /// Device `d`'s key for what it seals on its own shelf (`ShelfKey`), derived from its own key: `None` while it is
+    /// locked.
+    pub fn shelf_key(&self, d: SignerId) -> Option<ShelfKey> {
+        let own = self.keys.get(&d).filter(|k| matches!(k, Key::Device(_)))?.seal_secret()?;
+        Some(ShelfKey(own.child("shelf seal", &[])))
     }
 
     /// `action` signed by `signers`, drafted on device `on` and building on what it holds, unchecked and kept nowhere:
@@ -4388,6 +4498,7 @@ fn read(d: SignerId, store: &mut Store) {
             match keys::open_edit(key, body, &write_context(edit)).and_then(|plain| Body::from_wire(&plain).ok()) {
                 Some(b) => {
                     store.bodies.insert(id, b);
+                    store.opened.entry(*entry).or_default().push(id);
                     store.files_at = OnceLock::new();
                 }
                 None => {
@@ -4718,8 +4829,11 @@ fn landed_in(store: &Store, e: EntryId) -> bool {
 /// with the content of its body where the device opened it, in replay order, and the item of each line.
 fn show_items(d: SignerId, store: &mut Store) {
     let (st, r, bodies) = (&store.replay.state, &store.readings, &store.bodies);
+    let (reshow, opened) = (std::mem::take(&mut store.reshow), std::mem::take(&mut store.opened));
     let mut old = std::mem::take(&mut store.shown);
-    let mut shown = BTreeMap::new();
+    if reshow {
+        old.retain(|e, _| st.entry(*e).is_some());
+    }
     // each vault's lane as the device reads it off the vault's schema and lens entries (`State::lane_of`), its hash,
     // and what judges the writes of the vault's entries, made once one of them is shown anew
     let mut lanes: HashMap<VaultId, (Vec<&[u8]>, [u8; 32], OnceCell<Lane>)> = HashMap::new();
@@ -4777,29 +4891,151 @@ fn show_items(d: SignerId, store: &mut Store) {
     let groups_print = h.finalize();
     store.perf.add("show: cap groups", at);
     let at = Perf::start();
+    let tip = |en: &Entry| {
+        let (writes, last) = st.entry_tip(en.id);
+        Tip { writes, last, lane: lanes[&en.vault].1, groups: groups_print }
+    };
+    let cap_groups: HashSet<EntryId> = judging.keys().copied().collect();
+    let mut recent: Vec<EntryId> = vec![];
     for (e, j) in judging {
         let en = st.entry(e).expect("an entry");
-        shown.insert(e, j.shown(d, print(en, &groups_print)));
+        old.insert(e, j.shown_on(d, print(en, &groups_print), tip(en), None));
     }
-    // then every other entry, by the groups in force
-    for en in st.entries() {
-        if shown.contains_key(&en.id) {
+    // then every other entry, by the groups in force: anew only where its tip moved, a body of it opened, or, after a
+    // removal, which writes it holds and opened changed. Where the writes only grew past those it showed, under the
+    // same lanes and cap groups, only the entries of the new writes and of the bodies opened can have moved.
+    let all = st.all_writes();
+    let ids = |blobs: &[&[u8]]| blobs.iter().map(|b| BlobId::of(b)).collect::<BTreeSet<BlobId>>();
+    let lanes_now: BTreeMap<VaultId, ([u8; 32], BTreeSet<BlobId>)> =
+        lanes.iter().map(|(v, (blobs, h, _))| (*v, (*h, ids(blobs)))).collect();
+    // a vault whose lane only gained schemas or lenses since: its old hash and what it gained. A write is judged by
+    // the schemas it was written under alone (`Lane::fits`), so it is judged as before where it names none of them.
+    let gained: HashMap<VaultId, ([u8; 32], BTreeSet<BlobId>)> = lanes_now
+        .iter()
+        .filter_map(|(v, (h, now))| {
+            let (was, before) = store.shown_lanes.get(v)?;
+            (was != h && before.is_subset(now)).then(|| (*v, (*was, now - before)))
+        })
+        .collect();
+    let (n, last) = store.shown_writes;
+    let grew = !reshow
+        && (1..=all.len()).contains(&n)
+        && Some(all[n - 1].edit) == last
+        && store.shown_lanes.len() == lanes_now.len()
+        && lanes_now.iter().all(|(v, (h, _))| gained.contains_key(v) || store.shown_lanes.get(v).is_some_and(|w| w.0 == *h))
+        && store.shown_groups == groups_print;
+    let todo: Vec<&Entry> = if grew {
+        let changed = st.entries().iter().filter(|en| gained.contains_key(&en.vault)).map(|en| en.id);
+        let mut es: Vec<EntryId> =
+            all[n..].iter().map(|w| w.entry).chain(opened.keys().copied()).chain(changed).collect();
+        es.sort();
+        es.dedup();
+        es.into_iter().filter_map(|e| st.entry(e)).collect()
+    } else {
+        st.entries().iter().collect()
+    };
+    store.shown_writes = (all.len(), all.last().map(|w| w.edit));
+    store.shown_lanes = lanes_now;
+    store.shown_groups = groups_print;
+    for en in todo {
+        if cap_groups.contains(&en.id) {
             continue;
         }
-        let print = print(en, &groups_print);
-        if let Some(s) = old.remove(&en.id).filter(|s| s.print == print) {
-            shown.insert(en.id, s);
+        let tip = tip(en);
+        // judged under the lane before it gained schemas none of its writes name: as if under this one
+        if let Some((was, new)) = gained.get(&en.vault)
+            && let Some(s) = old.get_mut(&en.id)
+            && s.tip.lane == *was
+            && s.after.asked.is_disjoint(new)
+        {
+            s.tip.lane = tip.lane;
+            if !reshow && s.tip == tip && !opened.contains_key(&en.id) {
+                s.print = print(en, &groups_print);
+                debug_assert!(same_shown(s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault))));
+            }
+        }
+        let kept = old.get_mut(&en.id).filter(|s| s.tip == tip && !opened.contains_key(&en.id));
+        let print = match kept {
+            Some(_) if !reshow => continue,
+            Some(s) => {
+                let print = print(en, &groups_print);
+                if s.print == print {
+                    continue;
+                }
+                print
+            }
+            None => print(en, &groups_print),
+        };
+        if let Some(s) = old.get_mut(&en.id).filter(|s| s.print == print) {
+            s.tip = tip;
             continue;
         }
-        let mut j = Judging::new(st, en, r, lane(en.vault));
-        for w in st.entry_writes(en.id) {
+        // writes that only came after those it judged, judged on where it left off: what judging all of them makes
+        let writes: Vec<&Write> = st.entry_writes(en.id).collect();
+        // a body it opened of a write it judged before changes what it judged: all are judged again then
+        let resumes = |s: &Shown| {
+            let (was, now) = (s.tip, tip);
+            let new = |id: &EditId| writes[was.writes..].iter().any(|w| w.edit == *id);
+            !reshow
+                && (was.lane, was.groups) == (now.lane, now.groups)
+                && was.writes > 0
+                && was.writes <= writes.len()
+                && Some(writes[was.writes - 1].edit) == was.last
+                && opened.get(&en.id).is_none_or(|ids| ids.iter().all(new))
+        };
+        let (mut j, from, items) = match old.remove(&en.id) {
+            Some(s) if resumes(&s) => {
+                let from = s.tip.writes;
+                (Judging::resume(en, r, lane(en.vault), s.history, s.after), from, Some(s.items))
+            }
+            _ => (Judging::new(st, en, r, lane(en.vault)), 0, None),
+        };
+        for w in &writes[from..] {
             j.judge(d, st, (r, bodies), w, &groups);
         }
-        shown.insert(en.id, j.shown(d, print));
+        let s = j.shown_on(d, print, tip, items);
+        debug_assert!(from == 0 || same_shown(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault))));
+        recent.push(en.id);
+        old.insert(en.id, s);
     }
+    // only the entries judged last keep their scratch items
+    let mut keep: HashSet<EntryId> = recent.iter().rev().take(SCRATCHES).copied().collect();
+    let room = SCRATCHES.saturating_sub(keep.len());
+    let before: Vec<EntryId> = store.scratched.iter().filter(|e| !keep.contains(e)).take(room).copied().collect();
+    keep.extend(before);
+    for (e, s) in old.iter_mut() {
+        if s.after.scratch.is_some() && !keep.contains(e) {
+            s.after.scratch = None;
+        }
+    }
+    store.scratched = keep;
     store.perf.add("show: entries", at);
-    store.shown = shown;
+    store.shown = old;
     store.readings.groups = groups;
+}
+
+/// Entry `en`'s writes judged anew from its first, on device `d`: what judging on from where it left off must make.
+fn judged_anew(
+    d: SignerId,
+    st: &State,
+    rb: (&Readings, &HashMap<EditId, Body>),
+    groups: &Groups,
+    en: &Entry,
+    lane: &Lane,
+) -> Shown {
+    let mut j = Judging::new(st, en, rb.0, lane);
+    for w in st.entry_writes(en.id) {
+        j.judge(d, st, rb, w, groups);
+    }
+    let tip = Tip { writes: 0, last: None, lane: [0; 32], groups: [0; 32] };
+    j.shown_on(d, [0; 32], tip, None)
+}
+
+/// Two showings of an entry show the same: the same writes, judged alike, and the same record on each line.
+fn same_shown(a: &Shown, b: &Shown) -> bool {
+    a.history.changes() == b.history.changes()
+        && a.items.keys().eq(b.items.keys())
+        && a.items.iter().zip(&b.items).all(|((_, x), (_, y))| x.record() == y.record())
 }
 
 /// The writes of one entry as a device judges them, one after the other in the order they were accepted, each on what
@@ -4815,6 +5051,10 @@ struct Judging<'a> {
     attrs: Option<Attrs>,
     /// Whose each row is, by the writes counted so far (`policy::Mine`).
     mine: crate::policy::Mine,
+    /// The writes each line's item imported, where it is judged on from an earlier showing.
+    imported: BTreeMap<Line, HashSet<EditId>>,
+    /// The schemas it looked up in the lane: a lane that only gained others judges its writes as this one did.
+    asked: BTreeSet<BlobId>,
 }
 
 impl<'a> Judging<'a> {
@@ -4822,7 +5062,16 @@ impl<'a> Judging<'a> {
         let of_lane = r.headers.get(&en.creation).is_some_and(|h| h.ty.of_lane());
         let attrs = st.first_attrs(en, r);
         let mine = Default::default();
-        Judging { vault: en.vault, of_lane, lane, history: History::default(), scratch: None, attrs, mine }
+        let (imported, asked) = (BTreeMap::new(), BTreeSet::new());
+        let history = History::default();
+        Judging { vault: en.vault, of_lane, lane, history, scratch: None, attrs, mine, imported, asked }
+    }
+
+    /// Judging on from where judging the writes of `history` left off, `after`.
+    fn resume(en: &Entry, r: &Readings, lane: &'a Lane, history: History, after: After) -> Judging<'a> {
+        let of_lane = r.headers.get(&en.creation).is_some_and(|h| h.ty.of_lane());
+        let After { scratch, attrs, mine, imported, asked } = after;
+        Judging { vault: en.vault, of_lane, lane, history, scratch, attrs, mine, imported, asked }
     }
 
     /// Judge the next write of the entry, `w`, on device `d`, by what it reads (`r`), the bodies it opened, and the cap
@@ -4841,14 +5090,18 @@ impl<'a> Judging<'a> {
         groups: &Groups,
     ) -> bool {
         let none = TagDelta::default();
-        let Judging { vault, of_lane, lane, history, scratch, attrs, mine } = self;
+        let Judging { vault, of_lane, lane, history, scratch, attrs, mine, asked, .. } = self;
         let body = bodies.get(&w.edit);
         let (proof, content) = (body.and_then(|b| b.proof.as_ref()), body.map(|b| &b.content[..]));
         let asks = body.map(|b| &b.tags).unwrap_or(&none);
         let counts = |d: &EditId| history.get(*d).is_some_and(|c| c.counted);
         let read = w.deps.iter().all(counts).then(|| match *of_lane && w.first {
             true => Reading { touches: Some(vec![Touch::Create]), adds: vec![], fits: !r.unfit.contains(&w.edit) },
-            false => history.reading_on(scratch, w, content, d, lane),
+            false => {
+                let read = history.reading_on(scratch, w, content, d, lane);
+                asked.extend(scratch.iter().flat_map(|s| s.authored()));
+                read
+            }
         });
         let fits = read.as_ref().is_none_or(|r| r.fits);
         let at = At { attrs: attrs.as_ref(), place: st.place(w.edit), groups };
@@ -4878,12 +5131,32 @@ impl<'a> Judging<'a> {
     /// What device `d` shows of the entry once it judged every write, with the print `print`: its history, and the item
     /// on each line. No item on main for a draft its vault hasn't landed: its main line holds nothing yet, whatever a
     /// write of the vault's own on main beside it holds.
-    fn shown(self, d: SignerId, print: [u8; 32]) -> Shown {
-        let history = self.history;
+    ///
+    /// The items `items` it showed before are grown by the updates of each line's history they didn't import, as
+    /// building them again would make them, Loro taking updates in any order.
+    fn shown_on(self, d: SignerId, print: [u8; 32], tip: Tip, items: Option<BTreeMap<Line, Item>>) -> Shown {
+        let Judging { history, scratch, attrs, mine, imported: mut was, asked, .. } = self;
+        let mut old = items.unwrap_or_default();
         let landed = history.landed();
-        let lines = history.lines().into_iter().filter(|l| *l != MAIN || landed);
-        let items = lines.filter_map(|l| Some((l, history.item(l, d)?))).collect();
-        Shown { history, items, print }
+        let (mut items, mut imported) = (BTreeMap::new(), BTreeMap::new());
+        for l in history.lines().into_iter().filter(|l| *l != MAIN || landed) {
+            let changes = history.history(l);
+            let held = was.remove(&l).unwrap_or_default();
+            let item = match old.remove(&l) {
+                Some(mut item) => {
+                    for c in changes.iter().filter(|c| !held.contains(&c.write.edit)) {
+                        crate::history::import_change(&mut item, c);
+                    }
+                    Some(item)
+                }
+                None => crate::history::build_from(&changes, d, l),
+            };
+            if let Some(item) = item {
+                items.insert(l, item);
+                imported.insert(l, changes.iter().map(|c| c.write.edit).collect());
+            }
+        }
+        Shown { history, items, print, tip, after: After { scratch, attrs, mine, imported, asked } }
     }
 }
 

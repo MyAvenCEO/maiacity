@@ -2,6 +2,8 @@
 //! browser build never carries them. The window shows the studio's pages; this side runs avenDB's device (avendb.rs),
 //! the studio's jobs on avenDB's files (aven.rs, jobs.rs), the player, the render and the world window.
 
+mod activity;
+mod agents;
 mod analyse;
 mod auth;
 mod aven;
@@ -95,7 +97,13 @@ fn main() {
     if args.first().is_some_and(|a| a == "agent") {
         std::process::exit(agent(&args[1..]));
     }
-    tracing_subscriber::fmt().with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "warn".into())).init();
+    // to stderr as before, and into the ring avenDB's Activity view reads (activity.rs); Loro's block diagnostics,
+    // thousands of lines at info on every export, never
+    let filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "warn".into());
+    tracing_subscriber::fmt()
+        .with_env_filter(format!("{filter},loro_internal=warn"))
+        .with_writer(activity::Tee::default)
+        .init();
 
     let app = tauri::Builder::default();
     // a page whose web process died opens again, never left white (revive.rs)
@@ -139,6 +147,9 @@ fn main() {
             aven::studio_job,
             page::page_answer,
             log_js,
+            activity::activity_log,
+            agents::agent_processes,
+            agents::agent_stop,
             jobs::jobs_list,
             jobs::jobs_cancel,
             jobs::jobs_bump,

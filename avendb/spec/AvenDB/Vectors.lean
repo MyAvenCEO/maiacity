@@ -1394,8 +1394,9 @@ def SyncCase.toEdits (c : SyncCase) : List Edit :=
       | none => [])
     acc ++ [{ edit with parents }]) []
 
-/-- Every file the edits of a case bring, each once. -/
-def SyncCase.files (c : SyncCase) : List FileId := (c.edits.flatMap (·.files)).eraseDups
+/-- Every file the edits of a case bring or a snapshot's state travels as, each once. -/
+def SyncCase.files (c : SyncCase) : List FileId :=
+  (c.edits.flatMap (·.files) ++ c.toEdits.flatMap fun o => o.statedFiles.map (·.2)).eraseDups
 
 def plain (edits : List (SignerId × List SignerId × Action)) : List SyncEdit :=
   edits.map fun (author, cosigners, action) => { author, cosigners, action }
@@ -1511,7 +1512,9 @@ def syncs : List SyncCase := [
       (2, [], newShare 32 100 (toVault 103) .relay 100),
       (2, [], .move 100 1 [30, 31] [])] ++ [
       -- then a film, into the note
-      { author := 2, action := wr 100 1 100 [9] (stay := some 14), files := [3] }],
+      { author := 2, action := wr 100 1 100 [9] (stay := some 14), files := [3] },
+      -- and Alice's passkey states the note's state, its slice a file of its own: fetched as the note is
+      { author := 1, action := .snapshot 100 [{ entry := 1, basis := [], slice := {}, file := 4 }] }],
     -- Carol's Mac, the server, Alice's Mac, Bob's Mac and Dan's passkey, each holding nothing yet; then Carol's
     -- Mac from a peer that lacks the film's write
     asks := [(7, [], none, []), (600, [], none, []), (2, [], none, []), (5, [], none, []), (8, [], none, []),
@@ -2030,9 +2033,9 @@ def action : Action → String
       ("public", bool pub)])]
   | .claim c v via => obj [("claim", obj [("share", nat c), ("vault", nat v), ("via", ids via)])]
   | .checkpoint v covers => obj [("checkpoint", obj [("vault", nat v), ("covers", ids covers)])]
-  -- a state's slice travels as a sealed file the edit names by its root, so its JSON leaves the slice out
+  -- a state's slice travels as a sealed file the edit names by its root, so its JSON names the file, not the slice
   | .snapshot v states => obj [("snapshot", obj [("vault", nat v),
-      ("states", arr (states.map fun x => obj [("entry", nat x.entry), ("basis", ids x.basis)]))])]
+      ("states", arr (states.map fun x => obj [("entry", nat x.entry), ("basis", ids x.basis), ("file", nat x.file)]))])]
   | .wraps e ws => obj [("wraps", obj [("entry", nat e),
       ("wraps", arr (ws.map fun (s, t) => obj [("secret", keyName s), ("to", keyName t)]))])]
 

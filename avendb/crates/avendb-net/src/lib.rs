@@ -599,7 +599,13 @@ impl Node {
             }
             None => (None, edits::Stored::default()),
         };
-        let restore = move || restore(lab, me, stored);
+        // the edits of a head the device sealed it checked already (`Edits::vouched`)
+        let key = lab.shelf_key(me);
+        let vouched = match (&edits, &key) {
+            (Some(edits), Some(key)) => edits.vouched(key).await,
+            _ => HashSet::new(),
+        };
+        let restore = move || restore(lab, me, stored, &vouched);
         #[cfg(not(target_arch = "wasm32"))]
         let (lab, stored) = tokio::task::spawn_blocking(restore).await?;
         // a page has no threads to spare
@@ -607,6 +613,11 @@ impl Node {
         let (lab, stored) = restore();
         if let Some(edits) = &edits {
             edits.settle(&lab, me, &stored);
+            if let Some(key) = key
+                && let Err(e) = edits.seal_with(key).await
+            {
+                tracing::warn!("avendb: the shelf's head can't be sealed: {e:#}");
+            }
         }
         opts.progress.step("node");
         if let Some(admission) = &opts.admission {
@@ -1487,12 +1498,12 @@ impl Drop for Node {
     }
 }
 
-/// Device `me` of `lab`, with what its shelf held taken back, if it held anything (`stored`); and the ids of the edits
-/// the shelf held, in its order.
-fn restore(mut lab: Lab, me: SignerId, (signed, keys): edits::Stored) -> (Lab, Vec<EditId>) {
+/// Device `me` of `lab`, with what its shelf held taken back, if it held anything (`stored`), not checking again the
+/// signatures of the edits `vouched` (`Lab::restore_vouched`); and the ids of the edits the shelf held, in its order.
+fn restore(mut lab: Lab, me: SignerId, (signed, keys): edits::Stored, vouched: &HashSet<EditId>) -> (Lab, Vec<EditId>) {
     let stored = signed.iter().map(|s| s.edit.id()).collect();
     if !signed.is_empty() {
-        lab.restore_from(me, Backup::new(signed, keys));
+        lab.restore_vouched(me, Backup::new(signed, keys), vouched);
     }
     (lab, stored)
 }

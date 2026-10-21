@@ -161,11 +161,19 @@ def Edit.filesOf (edit : Edit) : List FileId :=
   | .write .. => edit.files
   | _ => []
 
+/-- The slice files a snapshot names, each with the entry it states (`Stated.file`): no other edit names one. -/
+def Edit.statedFiles (edit : Edit) : List (EntryId × FileId) :=
+  match edit.action with
+  | .snapshot _ ss => ss.map fun x => (x.entry, x.file)
+  | _ => []
+
 /-- A peer holding `edits` may hand device `d`, which follows the vaults `follow`, the bytes of file `f`: it sends `d`
-    an edit that brings `f`. The bytes are ciphertext all the same: whoever may fetch a file keeps it, and only who
-    opens the write's key opens it. -/
+    an edit that brings `f`, or a snapshot whose state of an entry `d` syncs travels as `f`. The bytes are
+    ciphertext all the same: whoever may fetch a file keeps it, and only who opens the write's key, or the entry's,
+    opens it. -/
 def mayFetch (edits : List Edit) (d : SignerId) (f : FileId) (follow : List VaultId := []) : Bool :=
-  (respond edits d follow).any fun o => o.filesOf.contains f
+  (respond edits d follow).any fun o => o.filesOf.contains f ||
+    o.statedFiles.any fun (e, g) => g == f && syncs (view edits) d e follow
 
 /-- The vaults passkey `p` owns in `st`: those it is an owner or the root of. -/
 def ownedBy (st : State) (p : SignerId) : List VaultId :=

@@ -3,7 +3,7 @@
 // messages and thread replies as rows, edits and deletes of a row's own fields, reactions as chips per emoji.
 // Run: bun test src/lib/chat/rooms.test.js
 import { expect, test } from 'bun:test';
-import { chips, deleting, editing, grouped, making, mentionsIn, pathOf, posting, reacting, titleOf, unreacting } from './rooms.js';
+import { chips, deleting, deletingRoom, editing, grouped, making, mentionsIn, pathOf, posting, reacting, roomsOf, titleOf, unreacting } from './rooms.js';
 
 test('a room is made, then shared at Member on that one room', () => {
 	const ops = making({ vault: 'me', actor: 'me', look: 'group', name: 'Garden', members: ['bob', 'carol'] });
@@ -55,4 +55,10 @@ test('mentions are the people named with @, and a DM is named by the other perso
 	const world = { mine: 'me', vaults: [{ id: 'me', name: 'Alice' }, { id: 'bob', name: 'Bob' }] };
 	expect(titleOf({ vault: 'me', readers: ['me', 'bob'] }, { look: 'dm', name: '' }, world, (v) => v?.name)).toBe('Bob');
 	expect(titleOf({ vault: 'me', readers: ['me'] }, { look: 'channel', name: 'general' }, world, (v) => v?.name)).toBe('# general');
+});
+
+test('a room tagged deleted is left out, and deleting one tags it so', () => {
+	const world = { entries: [{ entry: 'a', type: 'room', tags: ['avendb:deleted'], created: 2 }, { entry: 'b', type: 'room', tags: [], created: 1 }] };
+	expect(roomsOf(world).map((r) => r.entry)).toEqual(['b']);
+	expect(deletingRoom('a', 'V')).toEqual({ op: 'tag', entry: 'a', add: ['avendb:deleted'], as: 'V' });
 });
