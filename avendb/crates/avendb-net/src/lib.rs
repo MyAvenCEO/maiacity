@@ -296,6 +296,11 @@ pub struct Options {
 /// with its signatures, so a big reply never waits whole in either end's memory, nor holds up the connection.
 pub const PAGE: usize = 4 << 20;
 
+/// Every how many pages of a pull its device brings its keys and items up to date (`Lab::receive_whose_now`), and at
+/// its last: each time replays the whole log for a device catching up from far behind, whose edits sort before what
+/// its replay last stepped over.
+const CATCH_UP: usize = 8;
+
 impl Options {
     /// Nodes on one machine, as in the tests: loopback, no relay, and no lookup but the addresses a node is told.
     pub fn local() -> Options {
@@ -1788,6 +1793,10 @@ impl Shared {
         let peer = self.connection(endpoint).await?;
         let mut job = self.jobs.begin("pull", peer.device.to_hex(), String::new(), 0, "edits");
         let asked = self.pages(endpoint, peer, scope, &mut job).await;
+        // what its pages brought, brought up to date once more, however the asking ended
+        if self.lab(|lab, me| lab.catch_up(me)).await {
+            self.changed.notify_one();
+        }
         if matches!(asked, Ok(0)) { job.forget() } else { job.ended(&asked) }
         asked
     }
@@ -1835,8 +1844,10 @@ impl Shared {
             let lacking = self.lab(lacking).await;
             let keys = self.fetch(endpoint, lacking).await;
             let fetched = !keys.is_empty();
-            let (got, whose) = self.lab(move |lab, me| lab.receive_whose(me, edits, keys)).await;
-            if got > 0 || fetched {
+            // its keys and items brought up to date every few pages and at the last, not at each (`CATCH_UP`)
+            let now = !more || (pages + 1) % CATCH_UP == 0;
+            let (got, whose) = self.lab(move |lab, me| lab.receive_whose_now(me, edits, keys, now)).await;
+            if now && (got > 0 || fetched || new > 0) {
                 self.changed.notify_one();
             }
             new += got;

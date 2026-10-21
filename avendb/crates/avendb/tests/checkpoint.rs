@@ -88,3 +88,27 @@ fn a_covered_edit_with_its_signatures_stays_where_no_checkpoint_stands() {
     assert!(ids.iter().all(|id| held.contains(id)), "every signed edit kept");
     assert!(lab.state(mac).acts_for(mac, alice));
 }
+
+#[test]
+fn a_device_far_behind_takes_a_checkpoints_bare_edits_over_several_pulls() {
+    let mut lab = Lab::new();
+    let passkey = lab.passkey("Alice");
+    let mac = lab.device_of(passkey, "Alice's Mac");
+    let phone = lab.device_of(passkey, "Alice's iPhone");
+    let alice = human_on(&mut lab, passkey, &[mac, phone]);
+    let before = lab.backup(mac);
+    let ids: Vec<_> = before.signed().iter().map(|s| s.edit.id()).collect();
+    lab.submit(mac, &[passkey], Action::Checkpoint { vault: alice, covers: ids.clone() }).expect("her passkey's");
+    // what a server holding them on the checkpoint's word sends: the covered edits bare, the checkpoint signed
+    let sent = stripped(&lab.backup(mac), &ids).signed().to_vec();
+    let (checkpoint, covered): (Vec<Signed>, Vec<Signed>) =
+        sent.into_iter().partition(|s| matches!(s.edit.action, Action::Checkpoint { .. }));
+    lab.restore_from(phone, Backup::new(vec![], []));
+    // the phone, behind, pulls a page at a time: the checkpoint and the first half of what it covers, then the rest
+    let half = covered.len() / 2;
+    lab.receive(phone, checkpoint.iter().chain(&covered[..half]).cloned().collect(), vec![]);
+    lab.receive(phone, covered[half..].to_vec(), vec![]);
+    let held: Vec<_> = lab.backup(phone).signed().iter().map(|s| s.edit.id()).collect();
+    assert!(ids.iter().all(|id| held.contains(id)), "every covered edit held once the last page came");
+    assert!(lab.state(phone).acts_for(phone, alice), "the phone a device of Alice's");
+}
