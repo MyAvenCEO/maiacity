@@ -36,9 +36,12 @@
 		--edge: rgb(0 0 0 / 0.1);
 		--card: #fff;
 		--accent: #2f6d62;
-		height: 100vh;
-		height: 100dvh;
+		/* pinned to the screen, so the page under it (the app's room for the nav pill at its foot) never scrolls or
+		   bounces: only the rooms list, the timeline and the side panel scroll, each on its own */
+		position: fixed;
+		inset: 0;
 		overflow: hidden;
+		overscroll-behavior: none;
 		background: var(--paper);
 	}
 	.closed {
