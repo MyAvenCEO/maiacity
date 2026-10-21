@@ -1,7 +1,7 @@
 // The media, from the terminal. Every file lives in avenDB's Library of Maia City (Studio 2), known by its BLAKE3 hash
 // (its legacy:/blake3: tag) and described (title, tags; description and meta in its about). This terminal reaches it
 // as the agent device agentScripts, a device of the coop's aven avenMAIA (scripts/film/vault.mjs, ./avendb.mjs): the
-// first run waits until its person approves it in The OS app, with one touch of their passkey. No login, no key.
+// first run waits until its person approves it in theOS app, with one touch of their passkey. No login, no key.
 //
 //   bun media status       what the Library holds, as agentScripts sees it
 //   bun media add <file> [--title "…"] [--description "…"] [--tags a,b] [--replaces <hash>]

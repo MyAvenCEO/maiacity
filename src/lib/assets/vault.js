@@ -44,7 +44,7 @@
 import { holds } from '../../../game/hash.js';
 import { idOf, slug } from '$lib/ids.js';
 import { CODE_FEED, KEPT_PROOFS, MAIA_CITY, NO_ANCHOR, fileOf, listedRows, listingOf, proofOf, provenRows, seedFeedOf } from '../../../game/code/sources/feed.js';
-import { READ, deviceFile, deviceOf, deviceRows, whenBrought } from '../../../game/code/sources/device.js';
+import { READ, bringRows, deviceFile, deviceOf, deviceRows, whenBrought } from '../../../game/code/sources/device.js';
 import { KEPT_NEWEST, fresh } from '../../../game/code/fresh.js';
 import { buildOf } from './builds.js';
 import * as cache from './cache.js';
@@ -528,6 +528,8 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 	const read = recipesOf(rows, readerOf(how), newest, false);
 	if (!Object.keys(read.index.recipes).length)
 		return failed(`the Maia City vault holds no asset recipes yet: ${url} listed ${rows.length ? `${rows.length} entries, none of them one` : 'none'}${read.refused.length ? ` (${read.refused.slice(0, 3).join('; ')})` : ''}`);
+	// the page's device, holding none of them yet, brings these recipes alone from its peers, for the next page
+	if (device && !standIn) void bringRows(rows, String(rows[0]?.vault ?? vault));
 	return ready(read, proving, String(rows[0]?.vault ?? ''), url);
 }
 

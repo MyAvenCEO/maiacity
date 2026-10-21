@@ -1,5 +1,5 @@
 // @ts-nocheck — plain JS, kept loose on purpose, as the other logic of ours is ($lib/avendb/functions.js)
-// Real Lean on an AIP's objective (avendb/docs/ARCHITECTURE.md §8, "AIPs", N3): in The OS on a Mac, whoever accepts an
+// Real Lean on an AIP's objective (avendb/docs/ARCHITECTURE.md §8, "AIPs", N3): in theOS on a Mac, whoever accepts an
 // AIP checks its objective with the Lean release the spec pins, on their own Mac (avendb-device's `lean`: the archive's
 // SHA-256 pinned, Lean run in a sandbox with no network, no files of theirs and nothing it may start, and only on a file
 // avenDB's own engine reads). Lean comes only when they ask, behind a button that names its sizes (`leanGet`), and only

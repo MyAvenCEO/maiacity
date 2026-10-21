@@ -814,4 +814,60 @@ def sealAll (st : State) : State :=
 /-- After an accepted change from `pre` to `post`: rotate what went stale, then seal, publish and link. -/
 def settle (pre post : State) : State := sealAll ((staleKeys pre post).foldl bump post)
 
+/-! ## An entry's slice
+
+What a peer knows of one entry, read off its state: the parts of `State` that are the entry's own. A snapshot
+(`Action.snapshot`, `Snapshot.lean`) carries slices, so a device takes an entry's state without replaying its history.
+The kernel (vaults, shares, revocations, epochs, published keys, who may do what) is no entry's and is never in one. -/
+
+/-- The entry key an entry key name names, if it names one. -/
+def KeyName.entry? : KeyName → Option EntryId
+  | .entry e _ _ => some e
+  | _ => none
+
+/-- Entry `e`'s parts of a state. The parts kept by edit (`uncounted`, `accepts`, `defs`, `adds`) are those of the
+    slice's own writes. -/
+structure Slice where
+  entries   : List Entry := []
+  writes    : List Write := []
+  uncounted : List EditId := []
+  accepts   : List EditId := []
+  marks     : List (EntryId × List ShareId) := []
+  defs      : List (EditId × CapGroup) := []
+  adds      : List (EditId × List Ops.Loc) := []
+  /-- The seals of the entry's keys. -/
+  seals     : List Seal := []
+  born      : Bool := false
+  deriving DecidableEq, Repr
+
+namespace State
+
+/-- The ids of entry `e`'s accepted writes. -/
+def writesOf (st : State) (e : EntryId) : List EditId := (st.writes.filter (·.entry == e)).map (·.edit)
+
+/-- Entry `e`'s slice of the state. -/
+def sliceOf (st : State) (e : EntryId) : Slice :=
+  let ids := st.writesOf e
+  { entries := st.entries.filter (·.id == e), writes := st.writes.filter (·.entry == e),
+    uncounted := st.uncounted.filter ids.contains, accepts := st.accepts.filter ids.contains,
+    marks := st.marks.filter (·.1 == e), defs := st.defs.filter (ids.contains ·.1),
+    adds := st.adds.filter (ids.contains ·.1), seals := st.seals.filter (·.secret.entry? == some e),
+    born := st.born.contains e }
+
+/-- The state with entry `e`'s slice put in place of what it held of `e`, the rest as it was. -/
+def withSlice (st : State) (e : EntryId) (sl : Slice) : State :=
+  let old := st.writesOf e
+  { st with
+    entries := st.entries.filter (·.id != e) ++ sl.entries,
+    writes := st.writes.filter (·.entry != e) ++ sl.writes,
+    uncounted := st.uncounted.filter (!old.contains ·) ++ sl.uncounted,
+    accepts := st.accepts.filter (!old.contains ·) ++ sl.accepts,
+    marks := st.marks.filter (·.1 != e) ++ sl.marks,
+    defs := st.defs.filter (!old.contains ·.1) ++ sl.defs,
+    adds := st.adds.filter (!old.contains ·.1) ++ sl.adds,
+    seals := st.seals.filter (·.secret.entry? != some e) ++ sl.seals,
+    born := if sl.born && !st.born.contains e then st.born ++ [e] else st.born }
+
+end State
+
 end AvenDB

@@ -111,7 +111,7 @@ const READS = new Set(['world', 'get', 'query', 'history', 'schemas', 'requests'
 
 /**
  * The world read last and when, shared by every caller for a moment (Samuel 2026-10-18: the whole world as JSON over
- * the bridge, read by thirty callers and every four seconds, ran The OS out of memory and stuttered playback): one
+ * the bridge, read by thirty callers and every four seconds, ran theOS out of memory and stuttered playback): one
  * read answers all who ask within `FRESH`, and any change made through `device()` drops it.
  * @type {{ at: number, world: Promise<any> } | null}
  */

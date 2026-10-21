@@ -1,7 +1,7 @@
 // Where the site loads a media file from. Every file is known by its BLAKE3 hash (64 hex), the one the old media vault
 // named it by; there are no paths. The manifest is the site's files by hash, with their titles, descriptions and tags
 // (for sorting, never for finding a file). The bytes come from avenDB's feed of Maia City's public files, behind
-// api.maia.city/vault/files (with Range; deploy/Caddyfile), in The OS too.
+// api.maia.city/vault/files (with Range; deploy/Caddyfile), in theOS too.
 import published from './manifest.json';
 
 export type MediaEntry = { url: string | null; mime: string; title: string; description: string; tags: string[]; stream?: string };

@@ -201,6 +201,12 @@ const IDLE: Duration = Duration::from_secs(30);
 /// with two pulls running). The asking fails, and the node asks again as it does any it failed (`Backoff`).
 const PAGE_WAIT: Duration = Duration::from_secs(180);
 
+/// The most entry logs one asking of the logs a peer holds more of names (`Shared::ask_differing`). A peer answers an
+/// asking a page at a time by the edits' places across every log it names (`sync::place`), and a log counts only once
+/// it is whole, so one asking of every log of a vault (~2,200 of Maia City's) makes nearly none whole until its last
+/// page. Asked so many at a time, each batch of entries comes whole before the next starts.
+const LOGS_AT_ONCE: usize = 256;
+
 /// The TLS of every node on a machine: aws-lc-rs with X25519MLKEM768 as its only key exchange, so that ML-KEM-768
 /// agrees the keys of every connection along with X25519, and a peer that offers only classical groups finds none in
 /// common. Ciphers with 256-bit keys first; AES-128 last, as QUIC protects its first packets with it.
@@ -649,6 +655,7 @@ impl Node {
             unreached: Mutex::default(),
             asking: Mutex::default(),
             owed: Mutex::default(),
+            wanted: Mutex::default(),
             offered: Mutex::default(),
             shelf,
             blob_peers: Mutex::default(),
@@ -1257,6 +1264,14 @@ impl Node {
         self.shared.asking(peer, Scope::Logs(logs)).await
     }
 
+    /// Mark the entry logs `logs` as what a page reads now: an asking of what a peer holds more of takes them before
+    /// the other entries' (`Shared::ask_differing`), until one asked for them. Logs that are no entry's come first
+    /// anyway.
+    pub fn want(&self, logs: impl IntoIterator<Item = LogId>) {
+        let entries = logs.into_iter().filter(|l| matches!(l, LogId::Entry(_)));
+        self.shared.wanted.lock().expect("wanted").extend(entries);
+    }
+
     /// Ask the device at endpoint `peer` for its contact card (`Lab::card`), as a device asks the server for its
     /// vault's log before a vault gives the server relay on its entries. How many edits were new.
     pub async fn contact(&self, peer: EndpointId) -> Result<usize> {
@@ -1591,6 +1606,8 @@ struct Shared {
     asking: Mutex<HashMap<EndpointId, bool>>,
     /// The peers whose asking failed, and when to ask each again.
     owed: Mutex<Backoff<EndpointId>>,
+    /// The entry logs its pages asked for (`Node::want`): an asking of what a peer holds more of takes them first.
+    wanted: Mutex<BTreeSet<LogId>>,
     /// The McEliece keys in the blob store, by hash and by id.
     offered: Mutex<blobs::Offered>,
     /// Its blob store over its shelf, if it keeps one (`shelf`): what the shelf holds whole.
@@ -2153,13 +2170,26 @@ impl Shared {
 
     /// Asks `endpoint` for the logs where the device there holds what this one lacks (`differ`), and those alone, if
     /// there are any. How many edits were new.
+    ///
+    /// A batch at a time (`next_logs`): first every log that is no entry's, the vaults', shares' and audiences', which
+    /// say who may do what; then the entry logs its pages asked for (`wanted`), as they stand when each batch starts;
+    /// then the rest, `LOGS_AT_ONCE` at a time, so that the entries come whole a batch after another.
     async fn ask_differing(self: &Arc<Self>, endpoint: EndpointId) -> Result<usize> {
         let peer = self.connection(endpoint).await?;
-        let logs = self.differ(peer.device).await;
-        if logs.is_empty() {
-            return Ok(0);
+        let mut left = self.differ(peer.device).await;
+        let mut new = 0;
+        loop {
+            let logs = {
+                let mut wanted = self.wanted.lock().expect("wanted");
+                let logs = next_logs(&mut left, &wanted, LOGS_AT_ONCE);
+                wanted.retain(|l| !logs.contains(l));
+                logs
+            };
+            if logs.is_empty() {
+                return Ok(new);
+            }
+            new += self.asking(endpoint, Scope::Logs(logs)).await?;
         }
-        self.asking(endpoint, Scope::Logs(logs)).await
     }
 
     /// `Node::synced_to`: this device and each device on a live connection or of which the node keeps no statement, by
@@ -2216,9 +2246,24 @@ impl Shared {
     }
 }
 
+/// The logs of `left` to ask for next, taken out of it (`Shared::ask_differing`): every log that is no entry's, if any is
+/// left; else the entry logs of `wanted` left, at most `most`; else at most `most` others. None once `left` is empty.
+fn next_logs(left: &mut BTreeSet<LogId>, wanted: &BTreeSet<LogId>, most: usize) -> BTreeSet<LogId> {
+    let rules: BTreeSet<LogId> = left.iter().filter(|l| !matches!(l, LogId::Entry(_))).copied().collect();
+    let next = if !rules.is_empty() {
+        rules
+    } else {
+        let first: BTreeSet<LogId> = left.intersection(wanted).take(most).copied().collect();
+        if first.is_empty() { left.iter().take(most).copied().collect() } else { first }
+    };
+    left.retain(|l| !next.contains(l));
+    next
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use avendb::id::EntryId;
 
     /// An offer with an address of each family and a relay.
     fn offer() -> Offer {
@@ -2227,6 +2272,22 @@ mod tests {
             .with_ip_addr("[2001:db8::7]:7401".parse().expect("an address"))
             .with_relay_url("https://avendb.maia.city".parse().expect("a URL"));
         Offer { device: SignerId([5; 32]), addr }
+    }
+
+    #[test]
+    fn the_logs_that_say_who_may_do_what_come_first_then_the_wanted_entries_then_the_rest_in_batches() {
+        let entry = |i: u8| LogId::Entry(EntryId([i; 32]));
+        let mut left: BTreeSet<LogId> = (1..=5).map(entry).collect();
+        left.extend([LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32]))]);
+        let wanted: BTreeSet<LogId> = [entry(4), entry(7)].into();
+        // the vault's and the share's log, however many
+        let rules = next_logs(&mut left, &wanted, 1);
+        assert_eq!(rules, [LogId::Vault(VaultId([9; 32])), LogId::Share(ShareId([8; 32]))].into());
+        // the wanted entry left, then the others two at a time, until none is left
+        assert_eq!(next_logs(&mut left, &wanted, 2), [entry(4)].into());
+        assert_eq!(next_logs(&mut left, &wanted, 2), [entry(1), entry(2)].into());
+        assert_eq!(next_logs(&mut left, &wanted, 2), [entry(3), entry(5)].into());
+        assert!(next_logs(&mut left, &wanted, 2).is_empty() && left.is_empty());
     }
 
     #[test]

@@ -1,7 +1,7 @@
 <!--
 	Postgres: the admins' window into the city's Postgres, read only (api/src/tables.ts). Every table of it with how many
 	rows it holds, and a page of one table's rows at a time; a row opens whole below. A column that keeps a secret or a
-	credential is never sent, only that it is there. It opens by Maia City's Admin group in avenDB, in The OS as in a
+	credential is never sent, only that it is there. It opens by Maia City's Admin group in avenDB, in theOS as in a
 	browser (Samuel 2026-10-20: "attached to my maia city admin vault, not my passkey"): the page for whoever holds it
 	($lib/app/places), and every read of the API by a pass this device signs for it (the `api_pass` op), which avenDB's
 	server checks for the API (api/src/standing.ts). No passkey session, Postgres role or key opens it.

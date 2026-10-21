@@ -1532,8 +1532,18 @@ async fn hanas_browser_and_passkey_from_before_the_key_move_move_in_one_ceremony
     run(&moved, set_text(hana, note, None, 2, "Red, blue and green.")).await.expect("it edits her note");
     until("her Mac reads the edit", || node_shows(&mac, note, "Red, blue and green.")).await;
     // nothing more moves here: her Mac moves at its own next unlock. Her earlier keys stay: she governs no server
-    // whose holding tells her browser it holds all, and removing them over less would cut what it lacks
-    assert_eq!(moved.moving().await.expect("what moves"), None);
+    // whose holding tells her browser it holds all, and removing them over less would cut what it lacks. What her
+    // browser's earlier key signed as it moved, its passkey's next key vouches for alone, in one more ceremony
+    let moving = moved.moving().await.expect("what moves");
+    assert_eq!(moving, Some(Moving { passkey: true, checkpoint: true, ..Moving::default() }));
+    let sign = |challenge, _: Moving| {
+        let hanas = &hanas;
+        async move { Ok(Signing { passkey: Some(hanas.ceremony(challenge, Step::Approve).await?), touch: None }) }
+    };
+    let same = start_on(&shelf.0, "Hana's browser", &url, 6);
+    let stays = moved.move_keys(same, sign, |_| async { Ok(()) }).await.expect("her passkey signs it");
+    assert!(stays.is_none(), "her browser stays as it is");
+    assert_eq!(moved.moving().await.expect("what moves"), None, "nothing left: her Mac's edits wait for its move");
     // closed, it opens again from its shelf as its next key, by her passkey's unlock alone
     moved.close().await.expect("it closes");
     let again = Device::open(start_on(&shelf.0, "Hana's browser", &url, 5), &kept, hanas.unlock(nonce, [0xbb; 32]));

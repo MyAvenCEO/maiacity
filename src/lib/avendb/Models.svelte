@@ -1,6 +1,6 @@
 <!--
 	The models (Samuel 2026-10-20: "a model viewer" in avenDB, the models kept by the Maia City COOP): the speech models
-	The OS runs on the Mac, as src/lib/models/models.json pins them (the one list, which vault/app/src/models.rs builds
+	theOS runs on the Mac, as src/lib/models/models.json pins them (the one list, which vault/app/src/models.rs builds
 	in), in the layout every avenDB view has (./Frame.svelte): on the left every model; in the middle the one picked, what
 	it does and its files, each with its pinned size and BLAKE3 and whether the vault holds it, a `file` entry tagged
 	`blake3:<its pin>` (scripts/propose-models.mjs proposes the missing ones as one AIP); on the right where it came from.
@@ -77,7 +77,7 @@
 		<h2>{shown.label}</h2>
 		{#if shown.note}<p class="soft">{shown.note}</p>{/if}
 		<p class="soft">
-			The OS loads a file only when its bytes hash to its pin below, wherever it brought it from. It brings each from
+			theOS loads a file only when its bytes hash to its pin below, wherever it brought it from. It brings each from
 			Maia City in avenDB, a <span class="mono">file</span> entry tagged with its pin.
 		</p>
 	</section>

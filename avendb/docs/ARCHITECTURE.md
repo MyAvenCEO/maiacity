@@ -1054,7 +1054,8 @@ without padding). `share`, `share_group`, `revoke`, `settings` and `found` may a
 | `read_file` | `root`, `size`, `from`, `to` | `{root, from, to, len}` and the bytes beside; `NoCap` for a file the device doesn't open |
 | `jobs` | none | What the node does in the background (`Node::jobs`): `{running, ended}`, the last 200 that ended, newest first |
 | `code` | `vault`, `type` | The vault's public code the device holds, of the kinds `type` names (`world::CODE_KINDS`, all for none), in the rows avenDB's server's feed serves (`/feed/code`, `world::public_entries_of`): what a page that holds a device runs its games, sandboxes and asset recipes from, checked edit by edit as the device took them, with no proof |
-| `bring` | `vaults` | Each peer the device knows asked at once for the entries of 1 to 64 vaults (`Node::bring`), until one answers whole: `{new, peers, reached}`, how many edits were new, how many peers it asked, and whether one answered whole |
+| `posts` | `limit`, `after` | The posts the device opens that everyone may read, newest first, as avenDB's server's feed serves them (`/feed/posts`, `world::public_posts`): `limit` of them (200 at most, and by default), the newest or those after post `after` (`world::page_of_posts`), `{posts, more}`. The Maia Universe reads its newest page first off its own device, and the next as its person scrolls |
+| `bring` | `vaults` or `entries` | Each peer the device knows asked at once for the entries of 1 to 64 vaults (`Node::bring`), or for the logs that are no entry's and then the logs of 1 to 64 entries alone (`Node::bring_logs`, the entries also marked wanted: `Node::want`), until one answers whole: `{new, peers, reached}`, how many edits were new, how many peers it asked, and whether one answered whole. A page whose device holds none of a vault's code brings the entries the feed named, never the whole vault |
 | `synced` | none | How far the device is synced with the peers it is connected to, by the holdings each told it: `{peers, logs, behind, pulling}`, how many told it, how many logs they hold between them, how many of those hold edits the device lacks, and how many pulls run now |
 | `creatable` | `vault`, `type`, `tags`, `draft`, `as` | The tags a new entry, or with `draft` a draft, needs to land where vault `as` may create it, or `NoCap` |
 | `taggable` | `entry`, `as` | The tags `as` may add or take off: `"any"`, or a list |
@@ -1385,7 +1386,7 @@ of the edits is new, nothing new is on the wire, and every write counts as any w
   is a pure function of the logic and the records, so anyone who reads both can run it again and compare.
 - **Real Lean's verdict** (N3, `leanVerdict` in `spec/AvenDB/Measurers.lean`, `crates/avendb-device/src/lean.rs`,
   `src/lib/proposals/lean.js`). avenDB's engine reads a subset of Lean; real Lean checks the whole file, on the Mac of
-  whoever accepts the AIP, in The OS (browsers have no Lean, and keep the engine). The device runs the Lean release
+  whoever accepts the AIP, in theOS (browsers have no Lean, and keep the engine). The device runs the Lean release
   `spec/lean-toolchain` pins, got only when the person asks (Get Lean, which names its sizes: a 570 MB download, 544
   MB kept on an Apple silicon Mac), and only from avenDB: the release's archive as Maia City keeps it, a code package
   (`src/lib/code/packages.json`, the avenDB app's Code page) that came in by an AIP its owners accepted
@@ -1839,7 +1840,7 @@ stays its root (spec: `Examples.touch`, `tests/touch_id.rs`).
 - **What stays on the Mac.** The Enclave's blobs of both keys and the ciphertext are in `Meta::touch`. Only that
   Enclave reads them, and only after a touch. `touchOff` forgets them. The vault's owners revoke the key like any
   owner, from any device (the `revoke` op). A Mac whose fingers changed falls back to the passkey.
-- **The app's side.** The device asks for each touch in a line `{"enclave": n, ...}`, as it asks for a sheet. The OS
+- **The app's side.** The device asks for each touch in a line `{"enclave": n, ...}`, as it asks for a sheet. theOS
   answers it with CryptoKit in Swift (vault/app/enclave/Enclave.swift, linked in by build.rs; vault/app/src/enclave.rs).
   The touch that makes the keys also covers the edit that adds them, so setup takes one touch beside the passkey.
   `vault/app/scripts/enclave-check.sh` checks the bridge on a Mac without building the app.

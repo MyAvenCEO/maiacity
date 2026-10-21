@@ -1,5 +1,5 @@
 #!/bin/sh
-# Checks The OS's Secure Enclave bridge (vault/app/enclave/Enclave.swift) on this Mac without building the app: builds
+# Checks theOS's Secure Enclave bridge (vault/app/enclave/Enclave.swift) on this Mac without building the app: builds
 # it into the static library build.rs builds, links that into a small Rust program the way the app links it, and asks
 # it whether this Mac can hold avenDB's Touch ID key. With --touch it also makes a test key on one touch and signs with
 # it twice: first on that same touch, as the app adds the key to the vault, then on a new touch, as the app opens.
@@ -57,7 +57,7 @@ fn main() {
     }
     // the bytes 0 to 31
     let challenge = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
-    let made = ask(&format!(r#"{{"make":"{challenge}","why":"make a test Touch ID key for a check of The OS"}}"#));
+    let made = ask(&format!(r#"{{"make":"{challenge}","why":"make a test Touch ID key for a check of theOS"}}"#));
     if made.contains("\"error\"") {
         println!("make FAILED: {made}");
         return;

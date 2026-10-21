@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // @ts-nocheck — plain JS
-// The code packages The OS runs beside its own code (src/lib/code/packages.json, Lean first), proposed into the Maia
+// The code packages theOS runs beside its own code (src/lib/code/packages.json, Lean first), proposed into the Maia
 // City vault as one AIP by avenMAIA's agent (./agent.mjs: the Mac's, or a cloud session's), so a Mac brings them from
 // avenDB alone (avendb-device's lean.rs), as the speech models (./propose-models.mjs). Each file is fetched from where
 // its publisher publishes it (`source`, https only) unless --from holds it already, and must hash to both its pins,
@@ -13,7 +13,7 @@
 //   bun scripts/propose-code.mjs [--from <folder>] [--run] [--again] [--device <path of avendb-device>]
 //
 // --from is where the files are looked for, by hash or by name, and where a missing one is fetched to: a folder in the
-// system's temporary folder unless given (never The OS's own folder, ~/Library/Application Support/city.maia.studio,
+// system's temporary folder unless given (never theOS's own folder, ~/Library/Application Support/city.maia.studio,
 // which holds the Mac's keys and which the agent reads nothing in).
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
@@ -102,13 +102,13 @@ try {
 	}
 	const count = files.length;
 	const objective = [
-		`/-- Maia City holds every code package file The OS pins (src/lib/code/packages.json). -/`,
+		`/-- Maia City holds every code package file theOS pins (src/lib/code/packages.json). -/`,
 		`def files : Metric := metric "Pinned code package files in Maia City" (equals (reading "files") ${count})`,
 		''
 	].join('\n');
 	const note = [
-		`The code packages The OS runs on the Mac beside its own code, as Maia City's own files: ${packages.map((p) => `${p.label} ${p.version} (${p.task})`).join('; ')}. The OS brings them only from avenDB.`,
-		`Each file is tagged with the BLAKE3 of its bytes and pinned by its publisher's SHA-256 too (src/lib/code/packages.json); The OS unpacks one only when its bytes hash to both. ${proposals.length} of ${count} are new here, ${(files.reduce((s, x) => s + x.file.size, 0) / 1e6).toFixed(0)} MB in all.`
+		`The code packages theOS runs on the Mac beside its own code, as Maia City's own files: ${packages.map((p) => `${p.label} ${p.version} (${p.task})`).join('; ')}. theOS brings them only from avenDB.`,
+		`Each file is tagged with the BLAKE3 of its bytes and pinned by its publisher's SHA-256 too (src/lib/code/packages.json); theOS unpacks one only when its bytes hash to both. ${proposals.length} of ${count} are new here, ${(files.reduce((s, x) => s + x.file.size, 0) / 1e6).toFixed(0)} MB in all.`
 	].join('\n\n');
 	const aip = await agent.call('avendb_run', { op: { op: 'aip_open', vault: city.id, title, note, proposals, objective } });
 	await agent.call('avendb_run', { op: { op: 'aip_measure', entry: aip.entry, name: 'files', value: count - proposals.length, note: 'Maia City before this AIP' } });

@@ -922,10 +922,13 @@ pub struct Moving {
     pub avens: usize,
     pub retire: Vec<Retire>,
     pub behind: bool,
+    /// Nothing moves or retires, and its person's next key signs the checkpoint alone, over what earlier keys signed
+    /// that none covers yet (`avendb::lab::Lab::draft_checkpoint`).
+    pub checkpoint: bool,
 }
 
 impl Moving {
-    /// As the page and the Mac app read it: `{passkey, touch, device, avens, retire, behind}`, each step of `retire`
+    /// As the page and the Mac app read it: `{passkey, touch, device, avens, retire, behind, checkpoint}`, each step of `retire`
     /// as `{"root", "key", "next"}`, the root handed on from `key` to `next`, `{"owner", "key"}` or `{"device",
     /// "vault", "key"}`, each id in hex.
     pub fn to_json(&self) -> Value {
@@ -939,7 +942,7 @@ impl Moving {
         let retire: Vec<Value> = self.retire.iter().map(step).collect();
         json!({
             "passkey": self.passkey, "touch": self.touch, "device": self.device, "avens": self.avens,
-            "retire": retire, "behind": self.behind,
+            "retire": retire, "behind": self.behind, "checkpoint": self.checkpoint,
         })
     }
 }
@@ -1053,10 +1056,20 @@ fn drafted(
         }
     }
     moves.extend(avens.iter().map(|a| (a.device, a.next)));
-    // nothing moves, nothing to sign: the checkpoint over what earlier keys signed rides a move's ceremony or the
-    // retire's, never one of its own
+    // nothing moves: the checkpoint over what earlier keys signed rode a move's ceremony or the retire's, but a person
+    // whose keys moved before moves drafted one, or whose vaults took such edits since, signs it alone, once its
+    // device holds what its coop's server holds, so one ceremony covers all of it
     if moves.is_empty() {
-        return Ok(None);
+        let Some(by) = lab.owner_among(me, opener).or(opener.first().copied()) else { return Ok(None) };
+        let caught_up = lab.governed_devices(me).is_empty() || holds_what_servers_hold(lab, me, peers);
+        let drafts = if caught_up { lab.draft_checkpoint(me, by)? } else { vec![] };
+        if drafts.is_empty() {
+            return Ok(None);
+        }
+        let (passkeys, touches) = ceremonies_of(lab, me, &drafts, &[]);
+        let (passkey, touch) = (!passkeys.is_empty(), !touches.is_empty());
+        let moving = Moving { passkey, touch, checkpoint: true, ..Moving::default() };
+        return Ok(Some(Drafted { moves, drafts, passkeys, touches, moving }));
     }
     let drafts = lab.draft_move(me, &moves, by()?)?;
     let (passkeys, touches) = ceremonies_of(lab, me, &drafts, &moves);

@@ -41,7 +41,7 @@
 //! and a session still connected takes its place, so that none idles on, holding a device in memory.
 //!
 //! A Claude Code session in Anthropic's cloud runs no Mac: `avendb-device agent cloud` (`serve_cloud`), the device
-//! agentCloud, whose key its person's Mac made and added to avenMAIA in one ceremony (The OS app's "Add a cloud agent",
+//! agentCloud, whose key its person's Mac made and added to avenMAIA in one ceremony (theOS app's "Add a cloud agent",
 //! `add_cloud_agent` in this crate), showed once, and keeps no copy of; its person puts it in the cloud environment's
 //! secrets (`KEY_VAR`). Every session holding the key acts as that one device, reaching the server alone through the
 //! environment's HTTP proxy, on the server's relay, which lets in only devices it knows: so a key no Mac added gets
@@ -409,7 +409,7 @@ const SYNC: Duration = Duration::from_secs(60);
 const BRING: Duration = Duration::from_secs(40);
 
 /// Runs a cloud session's agent, agentCloud, answering MCP on `input` and `output` until `input` ends, its folder in
-/// `dir`. A cloud session runs no Mac and no The OS: its key is one its person made in The OS app, which added it to
+/// `dir`. A cloud session runs no Mac and no theOS: its key is one its person made in theOS app, which added it to
 /// their coop's aven, avenMAIA, as a device beside its server, and which they keep in the environment's secrets
 /// (`KEY_VAR`), so every session of the environment acts as that one device. It reaches nobody but the server
 /// (`SERVER`, or the one `SERVER_VAR` names), through its relay alone, by way of the environment's HTTP proxy
@@ -513,7 +513,7 @@ impl Cloud {
                 let host = server.addr.relay_urls().next().map_or("the server".into(), |r| r.to_string());
                 bail!(
                     "{host} doesn't let {name} in: its key may not be a device of avenMAIA yet (its person adds one in \
-                     The OS app, Settings, Agents, Add a cloud agent), or this environment's network doesn't allow \
+                     theOS app, Settings, Agents, Add a cloud agent), or this environment's network doesn't allow \
                      avendb.maia.city"
                 );
             }
@@ -544,10 +544,10 @@ fn cloud_key(text: &str) -> Result<(zeroize::Zeroizing<[u8; 32]>, avendb::sign::
     let text = text.trim();
     anyhow::ensure!(
         !text.is_empty(),
-        "{KEY_VAR} isn't set: its person adds a cloud agent in The OS app (Settings, Agents, Add a cloud agent), which \
+        "{KEY_VAR} isn't set: its person adds a cloud agent in theOS app (Settings, Agents, Add a cloud agent), which \
          shows its key once, and puts it in this environment's {KEY_VAR}; a new session reads it"
     );
-    let wrong = || anyhow!("{KEY_VAR} holds no key: 66 hex digits, as The OS app shows it");
+    let wrong = || anyhow!("{KEY_VAR} holds no key: 66 hex digits, as theOS app shows it");
     anyhow::ensure!(text.len() % 2 == 0 && text.is_ascii(), wrong());
     let mut bytes = zeroize::Zeroizing::new(vec![0u8; text.len() / 2]);
     for (i, byte) in bytes.iter_mut().enumerate() {
@@ -945,7 +945,7 @@ fn instructions(name: &str, cloud: bool) -> String {
             "this Mac",
         ),
         true => (
-            "an agent device in this cloud session: an avenDB device whose key its person made in The OS app and keeps \
+            "an agent device in this cloud session: an avenDB device whose key its person made in theOS app and keeps \
              in this environment's secrets, a device of its coop's one aven, avenMAIA for Maia City, beside its server, \
              which it reaches through avendb.maia.city. It brings from there only the vaults a call names, by their \
              ids or by the entries it names, else its aven's coop, Maia City; the first call on a big vault may \
@@ -994,7 +994,7 @@ fn instructions(name: &str, cloud: bool) -> String {
              as on any proposal, then name it in `aip_open`'s `proposals` as `{{entry, line}}` with its `objective` \
              and `aip_promote`. A \
              draft shows nowhere on the vault's main line, nor to everyone, until its person accepts the AIP; a \
-             schema or lens is never a draft. Only a promoted AIP reaches a person, who answers it whole in The OS \
+             schema or lens is never a draft. Only a promoted AIP reaches a person, who answers it whole in theOS \
              app or at /app/aips/?aip=<entry>; an agent never \
              reviews one, since `aip_review` is the vault's own. Read them with avendb_ask, `aips` or `aip` (`entry`, \
              with its diff); after a revise, write again on the same lines and promote it again: it keeps its \
@@ -1030,7 +1030,7 @@ fn instructions(name: &str, cloud: bool) -> String {
              file tagged media:original, by themselves; where it may only suggest, its AIP's note names what to \
              make once it lands, and the person asks it. A done task's `outputs` are file entries, read with \
              avendb_read_file. For access it lacks, ask its person with avendb_request_access, saying why: they \
-             answer in The OS app.",
+             answer in theOS app.",
             coop = world::SEED_COOP,
         )
 }
@@ -1276,7 +1276,7 @@ impl Agent {
     fn unjoined(&self) -> String {
         let key = hex(&self.node.device().0);
         format!(
-            "{name}'s key ({key}) isn't a device of avenMAIA: its person adds one in The OS app (Settings, Agents, Add a \
+            "{name}'s key ({key}) isn't a device of avenMAIA: its person adds one in theOS app (Settings, Agents, Add a \
              cloud agent), which shows the key once, and puts it in this environment's {KEY_VAR}; a new session uses \
              it. Where they did so just now, the server may not have it yet: call again in a moment.",
             name = self.name
@@ -1302,7 +1302,7 @@ impl Agent {
                 ));
             }
             return Ok(format!(
-                "{} is waiting for its person to answer its access request: they open The OS app on this Mac, where \
+                "{} is waiting for its person to answer its access request: they open theOS app on this Mac, where \
                  avenDB shows it, pick the vaults their aven passes on to it, and approve with one touch of their \
                  passkey. Then call this again.",
                 self.name
@@ -1905,7 +1905,7 @@ impl Agent {
         anyhow::ensure!(!why.is_empty(), "say why: its person reads it before they answer");
         let vaults: Vec<String> =
             args["vaults"].as_array().into_iter().flatten().filter_map(|v| v.as_str().map(String::from)).collect();
-        let answers = "Its person sees the request in The OS app and answers it there; avendb_ask with \
+        let answers = "Its person sees the request in theOS app and answers it there; avendb_ask with \
                        {\"op\": \"requests\"} shows its answer once it comes, and avendb_vaults what it has.";
         if let Some(vault) = vault {
             // acting as the aven, it asks the coop that owns it, which decides what the aven holds
@@ -2059,7 +2059,7 @@ fn tools() -> Value {
             "description": "Ask this agent's person for access it lacks: a level (Viewer reads, Suggester reads and \
                             writes on proposals they merge, Editor reads and changes), why, and optionally the ids of \
                             the vaults it asks for. Once it is added, a request its vault shares with its aven. They \
-                            answer in The OS app, picking the vaults and levels their aven passes on to it.",
+                            answer in theOS app, picking the vaults and levels their aven passes on to it.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -2173,7 +2173,7 @@ struct Found {
 
 /// The folders an agent never reads a file from or writes one to, whatever path its harness names: those that keep
 /// this Mac's keys. The app's avenDB folder `host` and its agents' beside it (each device's key, offer, lock and
-/// socket), The OS's own folder (its API key and settings) and its media vault's, the terminals' keys, and the
+/// socket), theOS's own folder (its API key and settings) and its media vault's, the terminals' keys, and the
 /// person's SSH, GPG, cloud and Keychain folders. Its harness may reach them by tools of its own; the MCP never
 /// carries their bytes into a vault, nor writes over them (Samuel 2026-10-19: an agent acts through vault caps alone).
 fn fenced(host: &Path) -> Vec<PathBuf> {

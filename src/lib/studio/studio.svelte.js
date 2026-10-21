@@ -1142,7 +1142,7 @@ export class Studio {
 				// the sound the movie carries: its proxy's (the proxy keeps it, on the original's clock), else a small
 				// original's — read by hash straight from the vault, never copied out of it. A big original (4K footage: a
 				// gigabyte or more) is never read whole into the page for its sound: decoding it held the whole movie in
-				// memory, a dozen at once on a timeline of footage, and The OS ran the Mac out of memory. The Mac reads
+				// memory, a dozen at once on a timeline of footage, and theOS ran the Mac out of memory. The Mac reads
 				// its sound track in place instead (`studio_sound`, mono); off the Mac it waits for its proxy.
 				// On the Mac every movie's sound is read there, in place — its proxy's when it has one: a whole proxy fetched
 				// into the page came through avenDB's bridge copied several times over (and a long one cut short)
@@ -1177,7 +1177,7 @@ export class Studio {
 	 */
 	async soundOnMac(m) {
 		// one at a time: a timeline of footage read all at once held every movie's sound twice over (the Mac's and the
-		// page's) and ran The OS out of memory
+		// page's) and ran theOS out of memory
 		const turn = this.soundQueue.then(() => this.readSoundOnMac(m));
 		this.soundQueue = turn.catch(() => null);
 		return turn;

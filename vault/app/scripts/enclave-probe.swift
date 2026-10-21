@@ -1,4 +1,4 @@
-// Probe (2026-10-19): can this Mac's Secure Enclave hold The OS's Touch ID key, a second owner of its person's avenDB
+// Probe (2026-10-19): can this Mac's Secure Enclave hold theOS's Touch ID key, a second owner of its person's avenDB
 // vault? CryptoKit's post-quantum Enclave keys need macOS 26: ML-DSA-65 signs each ceremony's challenge, ML-KEM-768
 // opens the key's secret, and one touch must cover both, also after the keys are loaded again from their blobs, as at
 // every start of the app.
@@ -77,7 +77,7 @@ if CommandLine.arguments.contains("--touch") {
         exit(1)
     }
     let ctx = LAContext()
-    print("Touch ID approved:", touch(ctx, "make a test Touch ID key for The OS"))
+    print("Touch ID approved:", touch(ctx, "make a test Touch ID key for theOS"))
     do {
         let key = try SecureEnclave.MLDSA65.PrivateKey(accessControl: access, authenticationContext: ctx)
         let kem = try SecureEnclave.MLKEM768.PrivateKey(accessControl: access, authenticationContext: ctx)

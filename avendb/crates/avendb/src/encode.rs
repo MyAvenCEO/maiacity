@@ -264,6 +264,14 @@ impl Encode for crate::policy::Wrap {
     }
 }
 
+impl Encode for crate::policy::Stated {
+    fn encode(&self, out: &mut Vec<u8>) {
+        self.entry.encode(out);
+        self.basis.encode(out);
+        self.slice.encode(out);
+    }
+}
+
 impl Encode for Sym {
     fn encode(&self, out: &mut Vec<u8>) {
         self.0.encode(out);
@@ -704,7 +712,8 @@ impl Encode for Revoking {
 }
 
 /// Each kind by its tag: 0 genesis, 1 settings, 2 share, 3 revoke, 4 write, 5 mark, 6 keys, 12 claim, 15 a move's
-/// wraps, 16 a checkpoint of a vault's owners (`Checkpoint.lean`); 13 and 14 were used before. 7, an older checkpoint,
+/// wraps, 16 a checkpoint of a vault's owners (`Checkpoint.lean`), 17 their snapshot of entries' states
+/// (`Snapshot.lean`); 13 and 14 were used before. 7, an older checkpoint,
 /// went with the classical half of a signature, as every signature is SLH-DSA; 8, a publish into a vault's schema lane,
 /// went into the write, as a schema or lens entry; 9, a sync rule, and 10, its end, into the share and the revoke, as a
 /// keep share and its revocation; 11, a pick, into the mark. No tag is used again. A settings, share or revoke edit's
@@ -782,6 +791,11 @@ impl Encode for Action {
                 out.push(16);
                 vault.encode(out);
                 covers.encode(out);
+            }
+            Action::Snapshot { vault, states } => {
+                out.push(17);
+                vault.encode(out);
+                states.encode(out);
             }
         }
     }

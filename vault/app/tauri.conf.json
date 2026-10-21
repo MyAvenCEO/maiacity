@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "The OS",
+  "productName": "theOS",
   "version": "0.1.0",
   "identifier": "city.maia.studio",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "The OS",
+        "title": "theOS",
         "url": "/app/",
         "width": 1320,
         "height": 860,
