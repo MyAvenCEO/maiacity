@@ -1,4 +1,5 @@
 import AvenDB.Gate
+import AvenDB.Objective
 
 /-!
 # Who measures an AIP
@@ -60,5 +61,42 @@ theorem measuredBy_holds {α : Type} (st : State) (v a : VaultId) (added : List 
     AIPs need no share to measure them. -/
 theorem measures_vault (st : State) (v a : VaultId) (h : v ≠ a) : measures st v a v = true := by
   simp [measures, h]
+
+/-! ## A Lean verdict (N3)
+
+Real Lean checks an objective's file on a Measurer's own device (The OS on a Mac: `avendb-device`'s `leanCheck`, the
+pinned toolchain in a locked-down process), which records what it found as a reading of its own: named `lean:` and the
+objective's key (a hash of its Lean, `objective::key`), one where Lean accepted the file, zero where it didn't, the
+engine and where it failed in its note. An AIP's verdict is the newest such reading a Measurer wrote for the objective
+the AIP holds now (`leanVerdict`, over `measuredBy`'s readings): none until one does, none for another objective (L1),
+the newest standing (L2), and never one an author wrote alone (L3, from M2). -/
+
+/-- The name of a Lean verdict's reading on the objective keyed `key`. -/
+def verdictName (key : String) : String := "lean:" ++ key
+
+/-- Of the readings a vault's Measurers wrote, oldest first, each its name and value (`measuredBy`): the verdict on
+    the objective keyed `key`, the newest reading named for it (`verdictName`), whether it is one. -/
+def leanVerdict (measured : List (String × Objective.Dec)) (key : String) : Option Bool :=
+  (measured.reverse.find? (·.1 == verdictName key)).map (·.2 == Objective.one)
+
+/-- L1: no reading named for the objective, no verdict. -/
+theorem leanVerdict_none (measured : List (String × Objective.Dec)) (key : String)
+    (h : ∀ p ∈ measured, p.1 ≠ verdictName key) : leanVerdict measured key = none := by
+  have : measured.reverse.find? (·.1 == verdictName key) = none := by
+    rw [List.find?_eq_none]
+    intro p hp
+    simpa using h p (List.mem_reverse.mp hp)
+  simp [leanVerdict, this]
+
+/-- L2: the newest reading for the objective stands. -/
+theorem leanVerdict_newest (measured : List (String × Objective.Dec)) (key : String) (x : Objective.Dec) :
+    leanVerdict (measured ++ [(verdictName key, x)]) key = some (x == Objective.one) := by
+  simp [leanVerdict]
+
+/-- L3: what an AIP's author wrote alone gives it no verdict. -/
+theorem leanVerdict_author (st : State) (v a : VaultId) (added : List (VaultId × List (String × Objective.Dec)))
+    (key : String) (h : ∀ p ∈ added, p.1 = a) : leanVerdict (measuredBy st v a added) key = none := by
+  rw [measuredBy_author st v a added h]
+  rfl
 
 end AvenDB
