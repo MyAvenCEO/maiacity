@@ -10,7 +10,7 @@
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { postFrom, postHref } from '$lib/universe/posts.js';
-	import { loadFeed, stream } from '$lib/universe/stream.svelte.js';
+	import { loadAll, stream } from '$lib/universe/stream.svelte.js';
 
 	/** @type {{ path: string }} the old address, without its leading slash: `blog/day-19-…`, `inspire-me/<slug>` */
 	let { path } = $props();
@@ -27,7 +27,7 @@
 		const stay = { replaceState: true };
 		const toChannel = `${base}/universe/?c=${encodeURIComponent(channel)}`;
 		if (!from) return goto(toChannel, stay);
-		await loadFeed();
+		await loadAll();
 		const post = postFrom(stream.posts, from);
 		goto(post ? postHref(base, post) : toChannel, stay);
 	});

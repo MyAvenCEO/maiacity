@@ -137,8 +137,8 @@ const server = Bun.serve({
     "/api/health": (req) => json(req, { ok: true }),
 
     // MaiaCity V1 (api/src/maiacity-v1.js): one shared game for two players. Any signed-in founder reads it; the first
-    // two to sign in take seat A and seat B, and only the founder in a seat moves for it. The OS plays it signed in as
-    // its person, as a browser does (Samuel 2026-10-19: "Play in The OS").
+    // two to sign in take seat A and seat B, and only the founder in a seat moves for it. theOS plays it signed in as
+    // its person, as a browser does (Samuel 2026-10-19: "Play in theOS").
     "/api/maiacity-v1": {
       OPTIONS: preflight,
       GET: async (req) => {
@@ -269,7 +269,7 @@ const server = Bun.serve({
       },
     },
 
-    // the shot analysis (analysis.ts): The OS sends a proxy's frames (display-referred) and the words said,
+    // the shot analysis (analysis.ts): theOS sends a proxy's frames (display-referred) and the words said,
     // Prem's confidential Qwen answers tags, cues and a summary in the vocabulary (game/film/vocabulary.json)
     "/api/analysis": {
       GET: analysisStatus,

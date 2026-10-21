@@ -19,6 +19,7 @@ use avendb::id::{BlobId, EntryId, VaultId};
 use avendb::lab::Lab;
 use avendb::policy::Refusal;
 use avendb::sign::Ceremony;
+use avendb::sync::LogId;
 use bytes::Bytes;
 use iroh::EndpointId;
 use n0_future::time::{self, Duration};
@@ -34,8 +35,28 @@ pub type NoBytes = fn() -> stream::Empty<io::Result<Bytes>>;
 /// be reached is given up on then.
 const BRING: Duration = Duration::from_secs(60);
 
-/// The most vaults one `bring` names.
+/// The most vaults, or entries, one `bring` names.
 const MOST_BROUGHT: usize = 64;
+
+/// What one `bring` names: vaults, whose entries it brings, or the logs of entries.
+#[derive(Clone)]
+enum Brought {
+    Vaults(BTreeSet<VaultId>),
+    Logs(BTreeSet<LogId>),
+}
+
+impl Brought {
+    fn len(&self) -> usize {
+        match self {
+            Brought::Vaults(v) => v.len(),
+            Brought::Logs(l) => l.len(),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
 
 /// No ceremony at hand, as for an agent: an op its vault's owners approve answers `approve` and makes nothing
 /// (`Node::run`). A ceremony asked of it fails.
@@ -181,21 +202,48 @@ impl Node {
     /// peers it asked, and whether one of them answered whole. So a page that reads a vault's code off its own device
     /// reads what its peers hold of it, the server's, before the rest of what it syncs, and not what it held before; a
     /// device that reaches none, offline, reads what it holds.
+    ///
+    /// `{"op": "bring", "entries": [...]}` brings the logs that are no entry's (`Node::bring` of no vault), then the
+    /// logs of the entries it names alone, the same way (`Node::bring_logs`), as a page that knows which entries it reads (a world's recipes, a timeline's clips) asks
+    /// for those and not their whole vault; and marks them wanted (`Node::want`), so that the node's own asking of its
+    /// peers takes them before other entries' if this bring reaches nobody.
     async fn bring_vaults(&self, op: &Value) -> Value {
-        let ids = op.get("vaults").and_then(Value::as_array).map(|xs| {
-            xs.iter().map(|x| x.as_str().and_then(VaultId::from_hex)).collect::<Option<BTreeSet<VaultId>>>()
-        });
-        let vaults = match ids.flatten() {
-            Some(vaults) if !vaults.is_empty() && vaults.len() <= MOST_BROUGHT => vaults,
+        let named = |key: &str| op.get(key).and_then(Value::as_array).map(|xs| xs.iter().map(|x| x.as_str()).collect::<Vec<_>>());
+        let scope = match (named("vaults"), named("entries")) {
+            (Some(xs), None) => xs.into_iter().map(|x| x.and_then(VaultId::from_hex)).collect::<Option<BTreeSet<_>>>().map(Brought::Vaults),
+            (None, Some(xs)) => xs
+                .into_iter()
+                .map(|x| x.and_then(EntryId::from_hex).map(LogId::Entry))
+                .collect::<Option<BTreeSet<_>>>()
+                .map(Brought::Logs),
+            _ => None,
+        };
+        let scope = match scope {
+            Some(s) if !s.is_empty() && s.len() <= MOST_BROUGHT => s,
             _ => {
-                let why = format!("bring names 1 to {MOST_BROUGHT} vaults, each its id, 64 hex digits");
+                let why = format!(
+                    "bring names 1 to {MOST_BROUGHT} vaults, or 1 to {MOST_BROUGHT} entries, each its id, 64 hex digits"
+                );
                 return Refused::BadOp(why).to_json();
             }
         };
+        if let Brought::Logs(logs) = &scope {
+            self.want(logs.iter().copied());
+        }
         let peers = self.read(|lab, me| lab.peers(me)).await;
         let endpoints: Vec<EndpointId> = peers.into_iter().filter_map(|(_, key)| EndpointId::from_bytes(&key).ok()).collect();
-        let mut asks: FuturesUnordered<_> =
-            endpoints.iter().map(|&peer| time::timeout(BRING, self.bring(peer, vaults.clone()))).collect();
+        let ask = |peer: EndpointId| {
+            let scope = scope.clone();
+            async move {
+                match scope {
+                    Brought::Vaults(vaults) => self.bring(peer, vaults).await,
+                    // the logs that are no entry's first, which say who may do what (a vault named by none), then
+                    // the entries' own
+                    Brought::Logs(logs) => Ok(self.bring(peer, BTreeSet::new()).await? + self.bring_logs(peer, logs).await?),
+                }
+            }
+        };
+        let mut asks: FuturesUnordered<_> = endpoints.iter().map(|&peer| time::timeout(BRING, ask(peer))).collect();
         let (mut new, mut reached) = (0, false);
         while let Some(asked) = asks.next().await {
             if let Ok(Ok(n)) = asked {

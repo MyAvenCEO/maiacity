@@ -45,7 +45,7 @@
 import { command, native } from '$lib/native';
 import { allowed, answer, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
-import { useDevice } from '../../../game/code/sources/device.js';
+import { bringEntries, learn, useDevice } from '../../../game/code/sources/device.js';
 
 /** The name of this browser's shelf in OPFS (./device/store.js). */
 const STORE = 'avendb-browser';
@@ -541,12 +541,42 @@ async function refresh() {
 async function send(op, read) {
 	const d = device;
 	if (!d) throw new Error('avenDB isn’t open on this page yet');
-	if (reads(op)) return d.run(op);
+	if (reads(op)) return near(d, op);
 	if (APPROVED.includes(op?.op) && doing) {
 		const [verdict] = (await d.run({ op: 'may', ops: [op] }))?.ok ?? [];
 		if (allowed(verdict) && verdict !== true) doing = `${doing}: ${asks} once`;
 	}
 	return d.run(op, mac ? undefined : (await ceremonies(meta.credential)).sign, read);
+}
+
+/** an entry's id: 64 hex digits */
+const ENTRY = /^[0-9a-f]{64}$/;
+
+/** the reads whose answers name the entries a view shows, which the page learns (`learn`): not the device's own
+ *  bookkeeping (`world`, `jobs`, `synced`, `log`, `bring`, …), whose answers name everything it holds */
+const VIEWS = new Set(['query', 'get', 'room', 'history', 'note', 'pin', 'posts', 'code', 'aip', 'aip_records', 'aips', 'database']);
+
+/** The entries answer `got` of a view's read names: its entry, or each row's, shallow. @param {any} got */
+function namedIn(got) {
+	const ok = got?.ok;
+	if (!ok || typeof ok !== 'object') return [];
+	const rows = Array.isArray(ok) ? ok : [ok, ...['rows', 'posts', 'entries', 'items'].flatMap((k) => (Array.isArray(ok[k]) ? ok[k] : []))];
+	return rows.map((r) => r?.entry).filter((e) => typeof e === 'string' && ENTRY.test(e));
+}
+
+/**
+ * A read, for every app view the same way (Samuel 2026-10-21: query views solved once, for all our views, by the
+ * manifests): run on what the device holds; where it names an entry the device holds nothing of yet (`NoEntry`, a new
+ * device still syncing), that entry alone is brought from its peers first (`bring`, before anything else it syncs)
+ * and read again; and the entries the answer names are learned for this page, which a device opened on it brings
+ * first the next time (game/code/sources/device.js `learn`). @param {any} d @param {any} op
+ */
+async function near(d, op) {
+	let got = await d.run(op);
+	const entry = typeof op?.entry === 'string' && ENTRY.test(op.entry) ? op.entry : null;
+	if (got?.refused === 'NoEntry' && entry && (await bringEntries([entry], { run: (o) => d.run(o) }))?.ok?.new) got = await d.run(op);
+	if (VIEWS.has(op?.op)) learn([...(entry && got?.ok ? [entry] : []), ...namedIn(got)]);
+	return got;
 }
 
 /**

@@ -1,6 +1,6 @@
 #!/bin/sh
 # avenDB for Claude Code sessions in Anthropic's cloud, as the repo's .mcp.json starts it (avendb-cloud): agentCloud,
-# a device of avenMAIA (avendb-device agent cloud), its key the one The OS app showed once, which the cloud
+# a device of avenMAIA (avendb-device agent cloud), its key the one theOS app showed once, which the cloud
 # environment keeps as AVENDB_AGENT_KEY. It runs the latest Linux build from its rolling release
 # (.github/workflows/avendb-agent.yml), fetched again only when the release's checksum changed, and checked against it;
 # kept in ~/.cache/avendb. Anywhere but a cloud session, as on a Mac, whose own agent the Mac app runs

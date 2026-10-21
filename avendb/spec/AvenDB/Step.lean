@@ -42,6 +42,14 @@ inductive Revoking where
 def Revoking.keep : Revoking → List EditId
   | .grant _ _ k _ | .owner _ _ k | .device _ _ k => k
 
+/-- An entry's state as a snapshot states it: entry `entry`'s slice of what the edits up to `basis` make of it, `basis`
+    being the frontier of the entry's log it had seen (`Snapshot.lean`). -/
+structure Stated where
+  entry : EntryId
+  basis : List EditId
+  slice : Slice
+  deriving DecidableEq, Repr
+
 /-- Every change. An edit that acts for a vault (issues or revokes a grant, writes, marks) names the owners `via` its
     author acts through (`actsVia`): none when its author is a member of the vault, else from an owner of the vault down
     to the vault its author is a member of, as a device of Bob's human vault writes for Bob's coop through `[bob]`. A
@@ -95,6 +103,14 @@ inductive Action where
       key it goes under): what a move leaves to do, in one edit rather than one `keys` edit a key, so a move costs one
       signature however many writes the entry had. Accepted where each wrap would be as a `keys` edit of its own. -/
   | wraps      (e : EntryId) (ws : List (KeyName × KeyName))
+  /-- A snapshot of vault `v`: its owners' word, by their threshold, on the state of each of its entries `states` names,
+      at the frontier it names, so a device takes that state without replaying the entry's history (`Snapshot.lean`).
+      It changes nothing here. Its owners sign it when they unlock, beside the checkpoint, in one signature. Each slice
+      travels sealed to its entry's readers, as a file the edit names by its hash, so a relay sees which entries and
+      at which frontiers, and a device fetches only the slices of the entries it syncs. A device
+      takes from it only states of `v`'s own entries, each confined to its entry (`scoped`); one that holds the
+      history checks it (`honest`), and a removal after it sends a device back to the history. -/
+  | snapshot   (v : VaultId) (states : List Stated)
   deriving DecidableEq, Repr
 
 /-- A mark that takes entry `e` to audience `to` and leaves its wants as they are: what a move was. -/
@@ -473,6 +489,7 @@ def apply (st : State) (edit : Edit) : Option State :=
   | .claim cid v via => applyClaim st sigs edit.author cid v via
   | .checkpoint v _ => if (st.vault? v).isSome && approves st sigs (.vault v) then some st else none
   | .wraps e ws => if !ws.isEmpty && ws.all (wrapOk st edit.author e) then some st else none
+  | .snapshot v _ => if (st.vault? v).isSome && approves st sigs (.vault v) then some st else none
 
 /-- One edit: check it, then rotate, seal and link keys. -/
 def step (st : State) (edit : Edit) : Option State := (apply st edit).map (settle st)

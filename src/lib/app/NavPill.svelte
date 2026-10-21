@@ -24,7 +24,7 @@
 
 	/** @type {{ founder: import('$lib/auth/client').Founder | null, name?: string, onsignout?: () => void }} the person's
 	 *  name from their avenDB human vault's profile, '' until avenDB shows it; no "Sign out" without `onsignout`, as in
-	 *  The OS, whose avenDB runs while the app does */
+	 *  theOS, whose avenDB runs while the app does */
 	let { founder, name = '', onsignout } = $props();
 
 	const home = `${base}/app/`;

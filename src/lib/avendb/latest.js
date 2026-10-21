@@ -1,12 +1,12 @@
 // A read a page repeats each time what it reads changes, as the AIPs are read again on every change of the device's
 // world (./aips.svelte.js), that never starves and never piles up: one read runs at a time, a read asked meanwhile runs
 // once after it, and every read that ends shows its answer. Proposals and the HITL stack each started a read on every
-// change and dropped every answer but the last asked's: while The OS's device synced, its world changed faster than an
+// change and dropped every answer but the last asked's: while theOS's device synced, its world changed faster than an
 // `aips` read took, so no answer ever showed (Samuel 2026-10-21: Proposals stuck on "Reading the AIPs of your
 // vaults…", every tab at 0), while the reads piled up on the device, whose every op waits its turn. A read asked
 // meanwhile waits, after the one that ran, twice as long as that took (`rest`), so that while what it reads keeps
 // changing, as a device catching up after its unlock does, it takes no more than a third of the device's time, as the
-// world's own reads do (./session.svelte.js `watch`): back to back, they held one of The OS's cores and Studio's reads
+// world's own reads do (./session.svelte.js `watch`): back to back, they held one of theOS's cores and Studio's reads
 // waited behind them (2026-10-21). A read the person asked for, as after their own change, goes at once. A read with
 // no answer after `patience` says so (`failed`), and the next starts only once it ends, or once it is taken for lost,
 // four times that later; its answer still shows if it comes before a newer one's.

@@ -65,7 +65,7 @@ pub async fn world(app: &AppHandle) -> Result<Value, String> {
 
 /// File `f`'s plain bytes from `from` to `to`: from the open device's node itself, the bytes handed over as it read
 /// them. The device's `run` call, as the page sends it, put them in base64 in its JSON answer, copied twice more on
-/// the way, every window of every movie the player, the sound and the page read (2026-10-18: The OS grew to 12.8 GB);
+/// the way, every window of every movie the player, the sound and the page read (2026-10-18: theOS grew to 12.8 GB);
 /// until a page has opened the device, the host's own `run` answers, the bytes beside as they are.
 pub async fn read(app: &AppHandle, f: &File, from: u64, to: u64) -> Result<Vec<u8>, String> {
     use avendb_net::{NoBytes, NoCeremony};
@@ -1016,7 +1016,7 @@ async fn still(job: &Job<'_>, id: &str, name: &str) -> Result<Value, String> {
 }
 
 /// The `transcript` rule (plan J5): the original's words with their times, heard on this Mac by the speech model
-/// (vault-asr, the model kept in The OS's own folder: models.rs); none where it has no sound track or no speech. Its
+/// (vault-asr, the model kept in theOS's own folder: models.rs); none where it has no sound track or no speech. Its
 /// value is the transcript as the legacy studio recorded it (`words`, `utterances`, `language`, `model`, `seconds`,
 /// `state`).
 async fn transcript(job: &Job<'_>, name: &str) -> Result<Value, String> {
@@ -1211,7 +1211,7 @@ pub async fn serve(app: AppHandle, request: tauri::http::Request<Vec<u8>>) -> ta
         }
         // a whole file in one answer only while it is small (a still, a preview, a proxy); a bigger one answers its
         // first piece as a range, so the player asks for the rest piece by piece: a whole original in one answer
-        // (gigabytes, held over the bridge) ran The OS out of memory
+        // (gigabytes, held over the bridge) ran theOS out of memory
         None if len > 32 * MAX => (0, MAX - 1, true),
         None => (0, len.saturating_sub(1), false),
     };

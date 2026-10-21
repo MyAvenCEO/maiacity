@@ -692,9 +692,10 @@ test("a page that holds its avenDB open reads the recipes off its own device: th
 		const f = feedOf();
 		const r = await vault.loadRecipes({ feed: AT, fetch: f.get, timeout: 1000, ...PROVING, proofs: keepOf(), kept });
 		expect([r.phase, r.feed, r.count]).toEqual(['ready', 'this device', Object.keys(made.index.recipes).length]);
+		// what it holds read at once, what changed of the vault since brought beside
 		expect(asked).toEqual([
-			{ op: 'bring', vaults: [DEV_VAULT] },
-			{ op: 'code', vault: DEV_VAULT, type: ['recipe'] }
+			{ op: 'code', vault: DEV_VAULT, type: ['recipe'] },
+			{ op: 'bring', vaults: [DEV_VAULT] }
 		]);
 		// a recipe built off the device's own copy: its file off its store, no listing, proof or file off the feed
 		const apple = LABEL['plants/apple@2'];
@@ -713,6 +714,30 @@ test("a page that holds its avenDB open reads the recipes off its own device: th
 		expect(old.r.feed).toBe(ROWS_URL);
 		await vault.recipeAt(LABEL['things/bell-tent@1']);
 		expect(old.proofs().length).toBe(1);
+	} finally {
+		useDevice(null);
+	}
+}, 60000);
+
+test("a page whose device holds none of the recipes yet reads the feed and has its device bring the entries the feed named, those alone, a bring at a time", async () => {
+	const { useDevice, whenBrought, AT_ONCE } = await import('../../../game/code/sources/device.js');
+	const asked = [];
+	const device = {
+		run: async (op) => (asked.push(op), op.op === 'bring' ? { ok: { new: op.entries?.length ?? 0, peers: 1, reached: true } } : { ok: [] }),
+		read: async () => new Uint8Array()
+	};
+	useDevice(device);
+	try {
+		const f = feedOf();
+		const r = await vault.loadRecipes({ feed: AT, fetch: f.get, timeout: 1000, ...PROVING, proofs: keepOf() });
+		expect([r.phase, r.feed]).toEqual(['ready', ROWS_URL]);
+		const b = await whenBrought(DEV_VAULT);
+		const entries = [...new Set(FEED.rows.map((x) => x.entry))].sort();
+		// never the whole vault: the code it holds, then its entries, AT_ONCE at a time
+		expect(asked.filter((o) => o.op === 'bring' && o.vaults)).toEqual([]);
+		expect(asked.filter((o) => o.op === 'bring').flatMap((o) => o.entries)).toEqual(entries);
+		expect(asked.filter((o) => o.op === 'bring').every((o) => o.entries.length <= AT_ONCE)).toBe(true);
+		expect(b).toEqual({ ok: { new: entries.length, peers: 1, reached: true } });
 	} finally {
 		useDevice(null);
 	}

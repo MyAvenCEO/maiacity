@@ -313,7 +313,7 @@
 	const enter = () => avendb(naming ? name.trim() : '');
 
 	/** Signs out of this browser: it locks avenDB here, so the next way in asks for the passkey again, and a session an
-	 *  API sign-in of before left here goes too. The OS has none: its avenDB runs while the app does. */
+	 *  API sign-in of before left here goes too. theOS has none: its avenDB runs while the app does. */
 	async function leave() {
 		await session.lock();
 		await signOut().catch(() => {});

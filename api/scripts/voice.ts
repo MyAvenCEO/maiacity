@@ -8,7 +8,7 @@
 // MiniMax Speech 2.8 HD and put into avenDB's Library (scripts/film/vault.mjs: described with its words, voice and
 // settings in its about), where the studio plays it back; where avenMAIA only suggests, as a draft in an AIP that Maia
 // City accepts. A shot list names the take by the BLAKE3 hash it prints. Needs FAL_API_KEY in .env, and agentScripts
-// approved once in The OS app (no login).
+// approved once in theOS app (no login).
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { readJson, ROOT, say } from "./media-client";

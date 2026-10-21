@@ -11,7 +11,7 @@
 //    builds that commit of main itself (the build is the same, byte for byte, wherever it runs: vite.config.ts names
 //    it by its commit, not its time), fetches every file the live site serves, and only when all of them are the bytes
 //    it built does it propose the list into Maia City (avenMAIA, a Suggester: a draft file entry `maia.city release`
-//    and an AIP over it, or the open one brought up to date). An owner accepts it in The OS, with Touch ID or a passkey.
+//    and an AIP over it, or the open one brought up to date). An owner accepts it in theOS, with Touch ID or a passkey.
 // 3. When the live site names the commit Maia City accepted, the witness holds every file it serves to the accepted
 //    list. A file that differs, a commit main doesn't hold, or an older release served again is said in its log and a
 //    notification.
@@ -130,7 +130,7 @@ function tell(msg) {
 	console.error(msg);
 	if (process.platform !== 'darwin') return;
 	try {
-		execFileSync('osascript', ['-e', `display notification ${JSON.stringify(msg.slice(0, 180))} with title "The OS"`], { timeout: 30_000 });
+		execFileSync('osascript', ['-e', `display notification ${JSON.stringify(msg.slice(0, 180))} with title "theOS"`], { timeout: 30_000 });
 	} catch {}
 }
 
