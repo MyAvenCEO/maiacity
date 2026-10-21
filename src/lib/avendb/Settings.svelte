@@ -495,19 +495,47 @@
 		return '';
 	}
 	/**
-	 * Removes owner or device `name` from vault `of` by op `op`, once this device has caught up (`waits`) and the
-	 * person says yes: its peers refuse it from then on. The vault's owners approve it.
-	 * @param {string} name @param {string} of @param {object} op
+	 * Where each Remove is, by its name in `can`: checking that this device has synced, waiting for the person's yes,
+	 * removing (`busy`), or how it ended, removed or why not, until the page goes (Samuel 2026-10-21: "zero UI feedback
+	 * that it's actually happening").
 	 */
-	async function remove(name, of, op) {
-		const wait = await waits();
-		if (wait) return void (session.error = `${name} stays for now: ${wait}. Remove it once it has caught up.`);
-		const sureOf = `Remove ${name} from ${nameOf(byId.get(of))}? It syncs nothing more. Anything it wrote that never reached ${here} is dropped; what it holds stays on it, encrypted.`;
-		return (await sure(sureOf)) && api.run(`Removing ${name}`, op);
+	let removing = $state(/** @type {Record<string, { busy: boolean, text: string, bad?: boolean }>} */ ({}));
+	/** whether a Remove is under way: the others wait for it */
+	const removingAny = $derived(Object.values(removing).some((r) => r.busy));
+	/**
+	 * Removes owner or device `name` from vault `of` by op `op`, once this device has caught up (`waits`) and the
+	 * person says yes: its peers refuse it from then on. The vault's owners approve it. Each step shows by its Remove,
+	 * `what` (`removing`).
+	 * @param {string} what @param {string} name @param {string} of @param {object} op
+	 */
+	async function remove(what, name, of, op) {
+		const step = (/** @type {boolean} */ busy, /** @type {string} */ text, bad = false) =>
+			(removing = { ...removing, [what]: { busy, text, bad } });
+		const stop = () => {
+			const { [what]: _, ...rest } = removing;
+			removing = rest;
+		};
+		try {
+			step(true, `Checking that ${here} has synced`);
+			const wait = await waits();
+			if (wait) {
+				session.error = `${name} stays for now: ${wait}. Remove it once it has caught up.`;
+				return step(false, `Not removed: ${wait}`, true);
+			}
+			step(true, 'Asking you first');
+			const sureOf = `Remove ${name} from ${nameOf(byId.get(of))}? It syncs nothing more. Anything it wrote that never reached ${here} is dropped; what it holds stays on it, encrypted.`;
+			if (!(await sure(sureOf))) return stop();
+			step(true, 'Removing');
+			const done = await api.run(`Removing ${name}`, op);
+			if (done == null) return step(false, `Not removed: ${session.error || 'the device refused it'}`, true);
+			step(false, 'Removed');
+		} catch (e) {
+			step(false, `Not removed: ${/** @type {Error} */ (e)?.message ?? String(e)}`, true);
+		}
 	}
 	/** @param {{ vault: string } | { signer: string, recovery: boolean, by: string | null }} o */
 	const removeOwner = (o) =>
-		remove(ownerName(o), vault, {
+		remove(ownerKey(o), ownerName(o), vault, {
 			op: 'revoke',
 			vault,
 			owner: 'vault' in o ? { vault: o.vault } : { signer: o.signer }
@@ -516,7 +544,8 @@
 	 * Removes device `id` from vault `of`, this one unless named, as a lost phone is (`revoke`).
 	 * @param {string} id @param {string} name @param {string} [of]
 	 */
-	const removeDevice = (id, name, of = vault) => remove(name, of, { op: 'revoke', vault: of, device: id });
+	const removeDevice = (id, name, of = vault) =>
+		remove(of === vault ? `device ${id}` : `device ${of} ${id}`, name, of, { op: 'revoke', vault: of, device: id });
 
 	/**
 	 * Sets what device `d` keeps of every vault it syncs: a full copy, or a light one (`copy`).
@@ -669,12 +698,17 @@
 {/snippet}
 
 <!-- Remove for owner or device `what`, by `onremove`: on the person's own vault it shows even where it can't be, and
-	says why, or that the device is still checking -->
+	says why; once pressed, where it is (`removing`) -->
 {#snippet remover(/** @type {string} */ what, /** @type {() => void} */ onremove)}
 	{@const why = whyNot(what)}
+	{@const now = removing[what]}
 	<span class="remover">
-		{#if why}<span class="soft why">{why}</span>{/if}
-		<button class="btn quiet danger" disabled={busy || !!why} onclick={onremove}>Remove</button>
+		{#if now}
+			<span class="why" class:soft={!now.bad} class:error={now.bad} role="status">
+				{#if now.busy}<span class="spin" aria-hidden="true"></span>{/if}{now.text}{now.busy ? '…' : ''}
+			</span>
+		{:else if why}<span class="soft why">{why}</span>{/if}
+		<button class="btn quiet danger" disabled={busy || removingAny || !!why} onclick={onremove}>Remove</button>
 	</span>
 {/snippet}
 
@@ -1202,6 +1236,28 @@
 		font-size: 0.78rem;
 		line-height: 1.35;
 		text-align: right;
+	}
+
+	.remover .why.error {
+		color: var(--bad);
+	}
+
+	.remover .spin {
+		display: inline-block;
+		width: 0.7rem;
+		height: 0.7rem;
+		margin-right: 0.4rem;
+		vertical-align: -0.05rem;
+		border: 2px solid currentColor;
+		border-right-color: transparent;
+		border-radius: 50%;
+		animation: removing 0.9s linear infinite;
+	}
+
+	@keyframes removing {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 
 	dl {
