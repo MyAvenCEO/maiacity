@@ -401,6 +401,17 @@ fn trust(store: &mut Store) -> bool {
     true
 }
 
+/// A device's key for what it seals on its own shelf (`Lab::shelf_key`): whoever holds the device's own key derives
+/// it, and nobody else, so a seal a shelf holds is the device's word that it checked what the seal names.
+pub struct ShelfKey(Secret);
+
+impl ShelfKey {
+    /// The seal of `bytes`.
+    pub fn seal(&self, bytes: &[u8]) -> [u8; 32] {
+        self.0.child("shelf head", bytes).bytes()
+    }
+}
+
 /// What one device holds: its edits, each with its signatures, to pass on, and the blobs they name; what it makes of
 /// them; the keys it holds; what it read with them; and the entries it shows.
 struct Store {
@@ -1861,7 +1872,7 @@ impl Lab {
     /// `fresh`, timed on device `to` (`perf`).
     fn checked(&mut self, to: SignerId, edits: Vec<Signed>) -> Vec<Signed> {
         let (at, offered) = (Perf::start(), edits.len() as u64);
-        let fresh = self.fresh(to, edits);
+        let fresh = self.fresh(to, edits, &HashSet::new());
         if let Some(store) = self.stores.get_mut(&to) {
             store.perf.add("check", at);
             store.perf.count("edits offered", offered);
@@ -1889,7 +1900,7 @@ impl Lab {
     /// checked when it arrived, and a copy with other signatures adds nothing. An edit a checkpoint it holds or one
     /// among `edits` covers comes unchecked, on that checkpoint's word, its signatures or none: its replay lets go of
     /// it unless one that stands vouches for it (`refresh`).
-    fn fresh(&self, to: SignerId, edits: Vec<Signed>) -> Vec<Signed> {
+    fn fresh(&self, to: SignerId, edits: Vec<Signed>, vouched: &HashSet<EditId>) -> Vec<Signed> {
         let Some(store) = self.stores.get(&to) else { return vec![] };
         let mut seen = HashSet::new();
         let new = |s: &Signed| {
@@ -1903,7 +1914,15 @@ impl Lab {
             store.covers.contains(&id) || batch.contains(&id)
         };
         let (bare, rest): (Vec<Signed>, Vec<Signed>) = new.into_iter().partition(on_word);
-        let ok = checked_all(&rest);
+        // those checked when the device kept them, and sealed by it since, aren't checked again
+        let (sealed, unsealed): (Vec<usize>, Vec<usize>) =
+            (0..rest.len()).partition(|&i| vouched.contains(&rest[i].edit.id()));
+        let mut ok = vec![false; rest.len()];
+        sealed.into_iter().for_each(|i| ok[i] = true);
+        let to_check: Vec<Signed> = unsealed.iter().map(|&i| rest[i].clone()).collect();
+        for (i, fine) in unsealed.into_iter().zip(checked_all(&to_check)) {
+            ok[i] = fine;
+        }
         bare.into_iter().chain(rest.into_iter().zip(ok).filter_map(|(s, ok)| ok.then_some(s))).collect()
     }
 
@@ -4234,11 +4253,32 @@ impl Lab {
     /// `restore_backup`, taking `backup`'s edits instead of a copy of them: a node starting again from its store holds
     /// each edit once as it restores, not twice (Samuel 2026-10-20: the server's start took more than its 1 GB).
     pub fn restore_from(&mut self, d: SignerId, backup: Backup) {
+        self.restore_vouched(d, backup, &HashSet::new());
+    }
+
+    /// `restore_from`, where the edits `vouched` were checked already: their signatures aren't checked again. A node
+    /// vouches for the edits of a shelf's head it sealed with its own key (`shelf_key`) after it kept them, each
+    /// checked as it came (avendb-net's `Edits::vouched`): so a device opening again checks only what came after.
+    pub fn restore_vouched(&mut self, d: SignerId, backup: Backup, vouched: &HashSet<EditId>) {
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
         self.stores.insert(d, Store { follow, query_depth, gate, perf, ..Store::default() });
-        self.keep(d, backup.signed, &backup.blobs);
+        let (at, offered) = (Perf::start(), backup.signed.len() as u64);
+        let fresh = self.fresh(d, backup.signed, vouched);
+        if let Some(store) = self.stores.get_mut(&d) {
+            store.perf.add("check", at);
+            store.perf.count("edits offered", offered);
+            store.perf.count("edits checked", fresh.iter().filter(|s| !vouched.contains(&s.edit.id())).count() as u64);
+        }
+        self.keep_fresh(d, fresh, &backup.blobs);
         self.refresh(d, &[]);
+    }
+
+    /// Device `d`'s key for what it seals on its own shelf (`ShelfKey`), derived from its own key: `None` while it is
+    /// locked.
+    pub fn shelf_key(&self, d: SignerId) -> Option<ShelfKey> {
+        let own = self.keys.get(&d).filter(|k| matches!(k, Key::Device(_)))?.seal_secret()?;
+        Some(ShelfKey(own.child("shelf seal", &[])))
     }
 
     /// `action` signed by `signers`, drafted on device `on` and building on what it holds, unchecked and kept nowhere:

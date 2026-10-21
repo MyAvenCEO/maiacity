@@ -167,6 +167,43 @@ async fn a_head_follows_every_64_journal_entries_and_one_cut_short_is_passed() {
     assert_eq!(heads, ["0000000000000001", "0000000000000002"], "and the next head comes after it");
 }
 
+/// How many edits device `me` of `lab` checked the signatures of, and how many it was offered, since it started.
+fn checks(lab: &Lab, me: SignerId) -> (u64, u64) {
+    let perf = lab.perf(me);
+    let count = |k: &str| perf["counts"][k].as_u64().unwrap_or(0);
+    (count("edits checked"), count("edits offered"))
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_head_the_device_sealed_is_not_checked_again_and_a_forged_seal_is_passed() {
+    let dir = Folder::new("sealed");
+    let (node, _, coop) = mac(dir.path()).await;
+    for n in 0..70 {
+        write(&node, coop, &format!("Note {n}"), &format!("note number {n}")).await;
+    }
+    let held = node.read(|lab, me| lab.log(me).ids().to_vec()).await;
+    node.shutdown().await.expect("it stops");
+    drop(node);
+    let g = dir.path().join(format!("g{FLOOR}"));
+    let sealed: Vec<String> = files(&g.join("sealed")).into_keys().collect();
+    assert_eq!(sealed, ["0000000000000001"], "the head it put is sealed");
+    // started again: the head's edits come back unchecked, only the journal's after it are checked
+    let (node, _, _) = mac(dir.path()).await;
+    assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held, "every edit, in its order");
+    let (checked, offered) = node.read(|lab, me| checks(lab, me)).await;
+    assert!(offered as usize >= held.len() && checked * 3 < offered, "checked {checked} of {offered}");
+    node.shutdown().await.expect("it stops");
+    drop(node);
+    // a seal another key made vouches for nothing: every edit is checked again
+    fs::write(g.join("sealed/0000000000000001"), [7u8; 32]).expect("a forged seal");
+    let (node, _, _) = mac(dir.path()).await;
+    assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held);
+    let (all, again) = node.read(|lab, me| checks(lab, me)).await;
+    assert_eq!(again, offered, "offered the same edits");
+    assert!(all > checked * 3, "every edit checked, but those a checkpoint covers: {all} of {offered}");
+    node.shutdown().await.expect("it stops");
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_journal_entry_cut_short_is_passed_and_never_replaced() {
     let dir = Folder::new("torn");

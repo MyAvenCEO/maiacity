@@ -16,6 +16,11 @@
 //! head names one pack of its whole log alone, and the heads, packs and entries before it stay where they are, as
 //! everything put on a shelf does.
 //!
+//! - `sealed/<n>`: head `n`'s seal by the device's own key (`Lab::shelf_key`), put once the device checked every edit
+//!   the head holds: a node starting from a head it sealed doesn't check those edits' signatures again
+//!   (`Lab::restore_vouched`), only the journal's after it. A head's packs are blobs read by their hash, so the seal of
+//!   the head's bytes vouches for every edit in them.
+//!
 //! A node's holdings name of its device's edits only those its shelf holds (`Edits::held`): on the server, those its
 //! bucket took.
 
@@ -25,7 +30,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, anyhow, ensure};
 use avendb::id::{BlobId, EditId, SignerId};
-use avendb::lab::Lab;
+use avendb::lab::{Lab, ShelfKey};
 use avendb::sign::Signed;
 use avendb::wire::Wire;
 use bytes::Bytes;
@@ -47,6 +52,7 @@ const JOURNALED: u64 = 64;
 /// Once a head names this many packs, the next names one pack of the whole log.
 const PACKS: usize = 64;
 const HEADS: &str = "heads/";
+const SEALED: &str = "sealed/";
 const JOURNAL: &str = "journal/";
 
 /// A blob on the shelf: its hash and its size.
@@ -60,6 +66,10 @@ pub(crate) struct Edits {
     /// What the shelf holds, which one save at a time reads and writes.
     book: tokio::sync::Mutex<Book>,
     kept: Mutex<Kept>,
+    /// The head the node started from, if any: its number, its bytes, and the ids of the edits it holds.
+    started: Mutex<Option<(u64, Bytes, Vec<EditId>)>>,
+    /// The device's key for its seals, once it is known (`seal_with`).
+    key: Mutex<Option<Arc<ShelfKey>>>,
     /// Woken when its device took something new.
     pub(crate) due: Notify,
 }
@@ -210,6 +220,10 @@ fn head_name(n: u64) -> String {
     format!("{HEADS}{n:016x}")
 }
 
+fn sealed_name(n: u64) -> String {
+    format!("{SEALED}{n:016x}")
+}
+
 fn journal_name(n: u64) -> String {
     format!("{JOURNAL}{n:016x}")
 }
@@ -227,14 +241,21 @@ impl Edits {
         let mut start = None;
         for &n in heads.iter().rev() {
             match read_head(&shelf, n).await {
-                Ok(read) => {
-                    start = Some(read);
+                Ok((head, signed, bytes)) => {
+                    start = Some((n, head, signed, bytes));
                     break;
                 }
                 Err(e) => tracing::warn!("avendb: head {n} on the shelf doesn't read whole, so it is passed: {e:#}"),
             }
         }
-        let (head, mut signed) = start.unwrap_or_default();
+        let (head, mut signed, bytes) = match start {
+            Some((n, head, signed, bytes)) => {
+                let ids = signed.iter().map(|s| s.edit.id()).collect();
+                (head, signed, Some((n, bytes, ids)))
+            }
+            None => (Head::default(), Vec::new(), None),
+        };
+        let started = Mutex::new(bytes);
         let mut keys: BTreeMap<BlobId, u64> = head.keys.into_iter().collect();
         let (mut pending, mut next) = (Vec::new(), head.journal);
         while let Some(bytes) = shelf.get(&journal_name(next)).await? {
@@ -263,8 +284,41 @@ impl Edits {
         signed.retain(|s| seen.insert(s.edit.id()));
         let kept = Kept { written: 0, keys: keys.keys().copied().collect(), whole: false };
         let book = Book { packs: head.packs, keys, mark: head.journal, next, head: next_head, pending };
-        let edits = Edits { shelf, book: tokio::sync::Mutex::new(book), kept: Mutex::new(kept), due: Notify::new() };
+        let (book, kept, key) = (tokio::sync::Mutex::new(book), Mutex::new(kept), Mutex::new(None));
+        let edits = Edits { shelf, book, kept, started, key, due: Notify::new() };
         Ok((edits, (signed, bytes)))
+    }
+
+    /// The edits of the head the node started from, if the device sealed it with `key` (`sealed/<n>`): checked when it
+    /// kept them. None if it started from no head, or from one it didn't seal.
+    pub(crate) async fn vouched(&self, key: &ShelfKey) -> HashSet<EditId> {
+        let Some((n, bytes, ids)) = self.started.lock().expect("started").clone() else { return HashSet::new() };
+        match self.shelf.get(&sealed_name(n)).await {
+            Ok(Some(seal)) if seal[..] == key.seal(&bytes) => ids.into_iter().collect(),
+            _ => HashSet::new(),
+        }
+    }
+
+    /// Seals with `key`, the device's own (`Lab::shelf_key`), every head it puts from now on, and the head it started
+    /// from if the device took back every edit of it (`settle`) and it isn't sealed yet.
+    pub(crate) async fn seal_with(&self, key: ShelfKey) -> Result<()> {
+        let key = Arc::new(key);
+        *self.key.lock().expect("key") = Some(key.clone());
+        let whole = self.kept.lock().expect("kept").whole;
+        let started = self.started.lock().expect("started").take();
+        if let (false, Some((n, bytes, _))) = (whole, started) {
+            self.seal(&key, n, &bytes).await?;
+        }
+        Ok(())
+    }
+
+    /// Puts head `n`'s seal by `key`, the head's bytes being `bytes`, unless it is there already.
+    async fn seal(&self, key: &ShelfKey, n: u64, bytes: &[u8]) -> Result<()> {
+        match self.shelf.put(&sealed_name(n), Bytes::copy_from_slice(&key.seal(bytes))).await {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => Ok(()),
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// Takes on device `me` of `lab` as it started, from the edits `stored` its shelf held, in their order: if the log
@@ -401,6 +455,11 @@ impl Edits {
             let name = head_name(book.head);
             match self.shelf.put(&name, bytes.clone()).await {
                 Ok(()) => {
+                    // every edit it holds the device kept, each checked as it came
+                    let key = self.key.lock().expect("key").clone();
+                    if let Some(key) = key {
+                        self.seal(&key, book.head, &bytes).await?;
+                    }
                     book.head += 1;
                     return Ok(());
                 }
@@ -430,8 +489,8 @@ pub(crate) async fn put_first_head(shelf: &Shelf, packs: Vec<Blob>, keys: Vec<Ke
     Ok(shelf.put(&head_name(1), Head { journal: 0, packs, keys }.to_bytes()).await?)
 }
 
-/// Head `n` on `shelf`, and the edits of its packs, every one of which must read whole.
-async fn read_head(shelf: &Shelf, n: u64) -> Result<(Head, Vec<Signed>)> {
+/// Head `n` on `shelf`, the edits of its packs, every one of which must read whole, and its bytes.
+async fn read_head(shelf: &Shelf, n: u64) -> Result<(Head, Vec<Signed>, Bytes)> {
     let bytes = shelf.get(&head_name(n)).await?.ok_or_else(|| anyhow!("listed, and gone"))?;
     let head = Head::from_bytes(&bytes).ok_or_else(|| anyhow!("cut short or changed"))?;
     let mut signed = Vec::new();
@@ -440,7 +499,7 @@ async fn read_head(shelf: &Shelf, n: u64) -> Result<(Head, Vec<Signed>)> {
         let records = pack.strip_prefix(PACK).with_context(|| format!("its pack {hash} is no pack of edits"))?;
         signed.extend(edits_of(records).with_context(|| format!("its pack {hash} holds an edit cut short"))?);
     }
-    Ok((head, signed))
+    Ok((head, signed, bytes))
 }
 
 impl Shared {
