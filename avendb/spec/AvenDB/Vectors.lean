@@ -619,6 +619,11 @@ def cases : List Case := [
     (1, [], .checkpoint 100 [0, 1, 2]),
     (1, [], .checkpoint 200 [3, 4]),
     (1, [4], .checkpoint 200 [3, 4]),
+    -- a snapshot (`Snapshot.lean`) likewise: only by the vault's approval, and it changes nothing
+    (2, [], .snapshot 100 [{ entry := 1, basis := [2], slice := {} }]),
+    (1, [], .snapshot 100 [{ entry := 1, basis := [2], slice := {} }]),
+    (1, [], .snapshot 200 [{ entry := 1, basis := [2], slice := {} }]),
+    (1, [4], .snapshot 200 [{ entry := 1, basis := [2], slice := {} }]),
     -- Welcome goes public: its audience's key is published
     (2, [], newShare 31 200 .everyone .read 200 (only 1) (via := [100])),
     (2, [], .move 200 1 [30, 31] [] [100]),
@@ -1902,7 +1907,7 @@ def action : Action → String
       ("public", bool pub)])]
   | .claim c v via => obj [("claim", obj [("share", nat c), ("vault", nat v), ("via", ids via)])]
   | .checkpoint v covers => obj [("checkpoint", obj [("vault", nat v), ("covers", ids covers)])]
-  -- no vector holds a snapshot yet: its slices' wire comes with the engine's (S7 of the smart sync plan)
+  -- a state's slice travels as a sealed file the edit names by its root, so its JSON leaves the slice out
   | .snapshot v states => obj [("snapshot", obj [("vault", nat v),
       ("states", arr (states.map fun x => obj [("entry", nat x.entry), ("basis", ids x.basis)]))])]
   | .wraps e ws => obj [("wraps", obj [("entry", nat e),

@@ -398,6 +398,20 @@ pub enum Action {
     /// signatures when it stood (`Checkpoint.lean`): a device may then hold a covered edit without its signatures,
     /// while the checkpoint stands and the edit's signers acted for the vault. It changes nothing in the state.
     Checkpoint { vault: VaultId, covers: Vec<EditId> },
+    /// Vault `vault`'s owners' word, by its root or its threshold, on the state of each entry `states` names
+    /// (`Snapshot.lean`): a device may start an entry from its stated slice instead of replaying the entry's log,
+    /// while the snapshot stands and is honest. It changes nothing in the state.
+    Snapshot { vault: VaultId, states: Vec<Stated> },
+}
+
+/// An entry's state as a snapshot states it (`Stated`): what the edits up to `basis`, the frontier of the entry's log
+/// it had seen, make of entry `entry`, its slice, which travels as a file sealed under the entry's key, `slice` its
+/// root.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Stated {
+    pub entry: EntryId,
+    pub basis: Vec<EditId>,
+    pub slice: FileRoot,
 }
 
 /// One key of an entry's earlier stays, `name` and its `id`, wrapped under the key the schedule links it to: one of a
@@ -948,6 +962,33 @@ pub struct State {
     late: Option<Late>,
     /// The keep shares that pick each entry, as its vault's stewards last marked them: its wants.
     marks: Arc<HashMap<EntryId, Arc<[ShareId]>>>,
+}
+
+/// What a peer knows of one entry, the parts of a state that are its own (`State.lean`'s `Slice`): its entry, its
+/// accepted writes, its marks, the seals of its keys, and whether it was born. The audiences of its stays and writes
+/// come with it, which the model keeps in the entry. The kernel (vaults, shares, revocations, epochs, published keys)
+/// is no entry's and never in one; what readers read off the writes (`Readings`) travels beside it.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Slice {
+    pub entries: Vec<Entry>,
+    pub writes: Vec<Write>,
+    /// Each audience the entry stayed in or a write of it was judged in, with its shares, in the order first named.
+    pub audiences: Vec<(AudienceId, Arc<[ShareId]>)>,
+    pub marks: Vec<(EntryId, Arc<[ShareId]>)>,
+    pub seals: Vec<Seal>,
+    pub born: bool,
+}
+
+impl Slice {
+    /// It holds the parts of entry `e` of vault `v` alone (`Slice.within` and `Stated.scoped`): each part names `e`,
+    /// its entry is `v`'s, and each audience is the one its vault and shares name.
+    pub fn within(&self, e: EntryId, v: VaultId) -> bool {
+        self.entries.iter().all(|en| en.id == e && en.vault == v)
+            && self.writes.iter().all(|w| w.entry == e)
+            && self.marks.iter().all(|(x, _)| *x == e)
+            && self.seals.iter().all(|s| matches!(s.secret, KeyName::Entry(x, ..) if x == e))
+            && self.audiences.iter().all(|(x, shares)| *x == AudienceId::of(v, shares))
+    }
 }
 
 /// What an accepted edit changes, worked out before anything changes (`State::check`).
@@ -2548,7 +2589,7 @@ impl State {
                 }
                 Ok(Change::Nothing)
             }
-            &Action::Checkpoint { vault, .. } => {
+            &Action::Checkpoint { vault, .. } | &Action::Snapshot { vault, .. } => {
                 vault_at(vault)?;
                 if !approves(Principal::Vault(vault)) {
                     return Err(Refusal::BelowThreshold);
@@ -2738,6 +2779,55 @@ impl State {
         self.entries = Arc::new(entries);
         self.writes = Arc::new(kept);
         self.index_entries();
+    }
+
+    /// Entry `e`'s slice of the state (`State.sliceOf`).
+    pub fn slice_of(&self, e: EntryId) -> Slice {
+        let entries: Vec<Entry> = self.entry(e).into_iter().cloned().collect();
+        let writes: Vec<Write> = self.entry_writes(e).cloned().collect();
+        let named = entries.iter().flat_map(|en| en.stays.iter().map(|(_, x)| *x)).chain(writes.iter().map(|w| w.audience));
+        let mut audiences: Vec<(AudienceId, Arc<[ShareId]>)> = vec![];
+        for x in named {
+            if let Some(shares) = self.audiences.get(&x).filter(|_| !audiences.iter().any(|(y, _)| *y == x)) {
+                audiences.push((x, shares.clone()));
+            }
+        }
+        Slice {
+            entries,
+            writes,
+            audiences,
+            marks: self.marks.get(&e).map(|m| (e, m.clone())).into_iter().collect(),
+            seals: self.seals.list.iter().filter(|s| matches!(s.secret, KeyName::Entry(x, ..) if x == e)).copied().collect(),
+            born: self.born.contains(&e),
+        }
+    }
+
+    /// The state with entry `e`'s slice `sl` put in place of what it held of `e`, the rest as it was
+    /// (`State.withSlice`). An audience it names joins those known, as the entry's creation or a mark would add it.
+    pub fn with_slice(&self, e: EntryId, sl: &Slice) -> State {
+        let mut st = self.clone();
+        let entries = st.entries.iter().filter(|en| en.id != e).chain(&sl.entries).cloned().collect();
+        let writes = st.writes.iter().filter(|w| w.entry != e).chain(&sl.writes).cloned().collect();
+        st.entries = Arc::new(entries);
+        st.writes = Arc::new(writes);
+        st.index_entries();
+        let audiences = Arc::make_mut(&mut st.audiences);
+        for (x, shares) in &sl.audiences {
+            audiences.entry(*x).or_insert_with(|| shares.clone());
+        }
+        let marks = Arc::make_mut(&mut st.marks);
+        marks.remove(&e);
+        marks.extend(sl.marks.iter().cloned());
+        let mut seals = Seals::default();
+        let kept = st.seals.list.iter().filter(|s| !matches!(s.secret, KeyName::Entry(x, ..) if x == e));
+        for s in kept.chain(&sl.seals) {
+            seals.add(*s);
+        }
+        st.seals = Arc::new(seals);
+        if sl.born {
+            Arc::make_mut(&mut st.born).push(e);
+        }
+        st
     }
 
     /// Index the entries and the writes again, and count the audiences in use.
@@ -3759,7 +3849,7 @@ pub fn replay_on(was: Replay, edits: &[Edit], held: usize) -> Replay {
 /// isn't its replay.
 fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Option<Replay> {
     let tail = was.tail.as_ref()?;
-    if fresh.iter().any(|e| e.is_removal() || matches!(e.action, Action::Checkpoint { .. })) {
+    if fresh.iter().any(|e| e.is_removal() || matches!(e.action, Action::Checkpoint { .. } | Action::Snapshot { .. })) {
         return None;
     }
     let among = |p: &EditId| ids.iter().position(|i| i == p).map(|i| fresh[i].depth);

@@ -324,6 +324,7 @@ fn action(id: EditId, a: &Action) -> (&'static str, Value) {
         Action::Checkpoint { vault, covers } => {
             ("checkpoint", json!({ "vault": hex(&vault.0), "covers": covers.len() }))
         }
+        Action::Snapshot { vault, states } => ("snapshot", json!({ "vault": hex(&vault.0), "states": states.len() })),
         Action::Revoke(Revoking::Grant { share, actor, keep, via }) => (
             "revoke",
             json!({ "share": hex(&share.0), "actor": hex(&actor.0), "keep": keep.len(), "via": vias(via) }),
@@ -441,7 +442,7 @@ fn concerns(st: &State, id: EditId, a: &Action, shares: &HashMap<ShareId, VaultI
             KeyName::Entry(e, ..) => of(&e).into_iter().collect(),
         },
         Action::Wraps { entry, .. } => of(entry).into_iter().collect(),
-        Action::Checkpoint { vault, .. } => vec![*vault],
+        Action::Checkpoint { vault, .. } | Action::Snapshot { vault, .. } => vec![*vault],
     };
     vaults.extend(a.via().unwrap_or_default());
     let mut seen = HashSet::new();
