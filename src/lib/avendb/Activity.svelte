@@ -49,7 +49,7 @@
 			next = got.next;
 			if (follow) {
 				await tick();
-				list?.scrollTo({ top: list.scrollHeight });
+				newest();
 			}
 		} catch (e) {
 			// an app from before the Activity view has no such command
@@ -60,13 +60,21 @@
 	onMount(() => {
 		read();
 		const t = setInterval(read, 1000);
-		return () => clearInterval(t);
+		// the page scrolls, in whatever box holds it: a scroll anywhere is caught on its way down
+		document.addEventListener('scroll', scrolled, { capture: true, passive: true });
+		return () => {
+			clearInterval(t);
+			document.removeEventListener('scroll', scrolled, { capture: true });
+		};
 	});
 
-	/** The person scrolled: the page follows the newest lines only while it is at their foot. */
+	/** Scrolls to the newest line, at the foot of the page. */
+	const newest = () => list?.lastElementChild?.scrollIntoView({ block: 'end' });
+
+	/** The person scrolled the page: it follows the newest lines only while their foot is in sight. */
 	function scrolled() {
 		if (!list) return;
-		follow = list.scrollHeight - list.scrollTop - list.clientHeight < 40;
+		follow = list.getBoundingClientRect().bottom - window.innerHeight < 120;
 	}
 
 	/** Set `set` with `x` in it or out of it, toggled. @param {Set<string>} set @param {string} x */
@@ -88,7 +96,7 @@
 	<h3 class="nav-group">Levels</h3>
 	{#each LEVELS as l (l)}
 		<button class="nav-item" class:on={levels.has(l)} aria-pressed={levels.has(l)} onclick={() => (levels = toggled(levels, l))}>
-			<span class="dot {l.toLowerCase()}"></span><span>{l[0] + l.slice(1).toLowerCase()}</span><small>{counts[l]}</small>
+			<i class="dot {l.toLowerCase()}"></i><span>{l[0] + l.slice(1).toLowerCase()}</span><small>{counts[l]}</small>
 		</button>
 	{/each}
 	<h3 class="nav-group">From</h3>
@@ -134,7 +142,7 @@
 			<button class="btn" onclick={clear} disabled={!rows.length}>Clear</button>
 		</div>
 		{#if failed}<p class="error">{failed.includes('activity_log') ? 'This build of theOS keeps no activity log yet: it comes with the next one.' : failed}</p>{/if}
-		<div class="lines" bind:this={list} onscroll={scrolled} role="log" aria-live="off">
+		<div class="lines" bind:this={list} role="log" aria-live="off">
 			{#each shown as r (r.n)}
 				<button class="line {r.level.toLowerCase()}" class:on={picked?.n === r.n} onclick={() => ([picked, open] = [r, 'aside'])}>
 					<span class="time">{r.time ? clock(r.time) : ''}</span>
@@ -147,7 +155,7 @@
 			{/each}
 		</div>
 		{#if !follow && !paused}
-			<button class="btn newest" onclick={() => (list?.scrollTo({ top: list.scrollHeight }), (follow = true))}>
+			<button class="btn newest" onclick={() => (newest(), (follow = true))}>
 				<Icon name="download" size={14} /> Newest
 			</button>
 		{/if}
@@ -168,9 +176,7 @@
 	}
 
 	.lines {
-		height: calc(100dvh - 15rem);
 		min-height: 18rem;
-		overflow-y: auto;
 		border: 1px solid var(--edge);
 		border-radius: 0.6rem;
 		background: #1f2724;
@@ -181,7 +187,7 @@
 
 	.line {
 		display: grid;
-		grid-template-columns: 6.6rem 3.4rem 9rem minmax(0, 1fr);
+		grid-template-columns: 6.6rem 3.2rem minmax(0, 9rem) minmax(0, 1fr);
 		gap: 0.6rem;
 		width: 100%;
 		padding: 0.12rem 0.6rem;
@@ -237,6 +243,7 @@
 	}
 
 	.dot {
+		flex: none;
 		width: 0.55rem;
 		height: 0.55rem;
 		border-radius: 50%;
@@ -257,10 +264,16 @@
 
 	.newest {
 		position: sticky;
-		bottom: 0.5rem;
-		float: right;
-		margin-top: -2.6rem;
-		margin-right: 1rem;
+		bottom: 6rem;
+		display: flex;
+		margin: -3rem 1rem 0 auto;
+	}
+
+	.label {
+		flex: 1;
+		min-width: 0;
+		font-style: normal;
+		line-height: 1.3;
 	}
 
 	dl {

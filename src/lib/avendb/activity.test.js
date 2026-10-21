@@ -28,3 +28,12 @@ test('routine polls and store diagnostics hide where quiet, and a search keeps t
 	expect(keep(rows, { ...all, levels: new Set(['WARN']) }).map((r) => r.n)).toEqual([4]);
 	expect(keep(rows, { ...all, sources: new Set(['store']) }).map((r) => r.n)).toEqual([3]);
 });
+
+test('spans whose fields hold braces and colons, and spans joined by a colon, leave the target and message whole', () => {
+	const a = parse(1, '2026-10-21T12:53:38.884Z  INFO export{mode=Updates { from: VersionVector({}) }}: loro_internal::oplog::change_store::block_encode: Diagnosing EncodedBlock:');
+	expect(a).toMatchObject({ target: 'loro_internal::oplog::change_store::block_encode', source: 'store', message: 'Diagnosing EncodedBlock:' });
+	expect(a.spans).toBe('export{mode=Updates { from: VersionVector({}) }}');
+	const b = parse(2, '2026-10-21T12:53:08.148Z  INFO endpoint{id=4926d82c53}:relay-actor: iroh::socket::transports::relay::actor: home is now relay https://avendb.maia.city/, was None');
+	expect(b).toMatchObject({ target: 'iroh::socket::transports::relay::actor', source: 'network', message: 'home is now relay https://avendb.maia.city/, was None' });
+	expect(b.spans).toBe('endpoint{id=4926d82c53} › relay-actor');
+});
