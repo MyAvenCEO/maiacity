@@ -97,9 +97,11 @@ fn main() {
     if args.first().is_some_and(|a| a == "agent") {
         std::process::exit(agent(&args[1..]));
     }
-    // to stderr as before, and into the ring avenDB's Activity view reads (activity.rs)
+    // to stderr as before, and into the ring avenDB's Activity view reads (activity.rs); Loro's block diagnostics,
+    // thousands of lines at info on every export, never
+    let filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "warn".into());
     tracing_subscriber::fmt()
-        .with_env_filter(std::env::var("RUST_LOG").unwrap_or_else(|_| "warn".into()))
+        .with_env_filter(format!("{filter},loro_internal=warn"))
         .with_writer(activity::Tee::default)
         .init();
 

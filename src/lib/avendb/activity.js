@@ -29,8 +29,28 @@ export function sourceOf(target) {
 
 const ANSI = /\x1b\[[0-9;]*m/g;
 const LINE = /^(\S+)\s+(TRACE|DEBUG|INFO|WARN|ERROR)\s+(.*)$/;
-// the spans and the target before the message: `name{fields}: ` each span, then `a::b: ` the target
-const PREFIX = /^((?:[\w.-]+\{[^}]*\}:\s)*)([\w.:-]+):\s/;
+// a target: a module path, `a::b::c`
+const TARGET = /^[A-Za-z_]\w*(?:::\w+)*$/;
+
+/**
+ * Text `rest` cut at each `: ` outside braces: the spans (`name{fields}`, joined by `:`, fields that hold braces and
+ * colons of their own), the target, then the message, whose own `: ` it cuts too. @param {string} rest
+ */
+function cuts(rest) {
+	const parts = [];
+	let depth = 0;
+	let from = 0;
+	for (let i = 0; i < rest.length; i++) {
+		const c = rest[i];
+		if (c === '{') depth++;
+		else if (c === '}') depth = Math.max(0, depth - 1);
+		else if (c === ':' && rest[i + 1] === ' ' && depth === 0) {
+			parts.push([rest.slice(from, i), i + 2]);
+			from = i + 2;
+		}
+	}
+	return parts;
+}
 
 /**
  * Line `text`, number `n`, as a row: `{ n, time, level, target, spans, source, message, text }`. A line that isn't
@@ -42,10 +62,17 @@ export function parse(n, text) {
 	const m = LINE.exec(plain);
 	if (!m) return { n, time: '', level: '', target: '', spans: '', source: 'app', message: plain, text: plain };
 	const [, time, level, rest] = m;
-	const p = PREFIX.exec(rest);
-	const target = p?.[2] ?? '';
-	const spans = (p?.[1] ?? '').split(/\}:\s/).filter(Boolean).map((x) => `${x}}`).join(' › ');
-	return { n, time, level, target, spans, source: sourceOf(target), message: p ? rest.slice(p[0].length) : rest, text: plain };
+	// the spans come first, each with braces or a dash in it; the first module path is the target
+	const spans = [];
+	for (const [part, after] of cuts(rest)) {
+		if (TARGET.test(part)) {
+			const target = part;
+			return { n, time, level, target, spans: spans.join(' › '), source: sourceOf(target), message: rest.slice(after), text: plain };
+		}
+		if (!/[{-]/.test(part)) break;
+		spans.push(...part.split(/(?<=\}):|:(?=[\w.-]+\{)/));
+	}
+	return { n, time, level, target: '', spans: '', source: 'app', message: rest, text: plain };
 }
 
 /** The device's calls the page itself makes every few seconds, which say nothing new. */
