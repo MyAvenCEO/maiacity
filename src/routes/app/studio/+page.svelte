@@ -67,7 +67,7 @@
 		};
 		addEventListener('error', report);
 		addEventListener('unhandledrejection', report);
-		const slow = setTimeout(() => s.phase === 'loading' && !s.failed && (s.failed = 'Still waiting after 10 s (the API: /api/me; avenDB on this Mac: the library, the cuts and the stories).'), 10000);
+		const slow = setTimeout(() => s.phase === 'loading' && !s.failed && (s.failed = 'Still waiting after 10 s for avenDB on this Mac (the library, the cuts and the stories).'), 10000);
 		s.load().catch((e) => (s.failed = (e as Error).stack ?? String(e)));
 		// for the tests and the console: the studio's state
 		(window as unknown as { __studio?: Studio }).__studio = s;
