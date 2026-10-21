@@ -1,0 +1,6 @@
+Contact: https://github.com/MyAvenCEO/maiacity/security/advisories/new
+Contact: mailto:maiacityguardian@gmail.com
+Expires: 2027-10-21T00:00:00.000Z
+Preferred-Languages: en, de
+Canonical: https://maia.city/.well-known/security.txt
+Policy: https://github.com/MyAvenCEO/maiacity/blob/main/SECURITY.md
