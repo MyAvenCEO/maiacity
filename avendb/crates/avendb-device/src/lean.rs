@@ -457,11 +457,15 @@ async fn within(mut run: tokio::process::Command, input: Option<&[u8]>) -> Resul
     let out = tokio::time::timeout(CLOCK, child.wait_with_output())
         .await
         .map_err(|_| anyhow!("Lean ran longer than {} s", CLOCK.as_secs()))??;
-    let (stdout, stderr) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    let (stdout, mut stderr) = (String::from_utf8_lossy(&out.stdout).into_owned(), String::from_utf8_lossy(&out.stderr).into_owned());
     if !out.status.success() && stdout.is_empty() {
         tracing::warn!("Lean stopped ({}): {}", out.status, stderr.trim());
+        // a Lean that wrote nothing, as one a signal stopped, says how it ended (`found`)
+        if stderr.trim().is_empty() {
+            stderr = out.status.to_string();
+        }
     }
-    Ok((out.status.success(), stdout.into_owned(), stderr.into_owned()))
+    Ok((out.status.success(), stdout, stderr))
 }
 
 /// The bytes free on the disk `path` is on, where the system says.
@@ -628,7 +632,13 @@ mod tests {
     #[ignore = "gets Lean from GitHub: run on a Mac with --ignored"]
     async fn lean_on_a_mac() {
         let lean = Lean::new(tempdir());
-        let e = lean.get().await.unwrap();
+        let e = match lean.get().await {
+            Ok(e) => e,
+            Err(e) => {
+                bisect(&lean).await;
+                panic!("{e:#}");
+            }
+        };
         assert_eq!(e["here"], true, "{e}");
         checks(&lean).await;
         // past the input wall: Lean itself, as a file that tries what the sandbox stops
@@ -644,5 +654,47 @@ mod tests {
         assert!(!out.contains("ESCAPED"), "{out}");
         assert_eq!(out.matches("stopped").count(), 4, "{out}");
         assert!(!Path::new(&home).join("lean-escaped").exists());
+    }
+
+    /// Where compiling the objective module fails on a Mac: with no sandbox, in a sandbox that allows everything, and in
+    /// Lean's own (`PROFILE`), each how it ended and the first lines it wrote, for the log.
+    #[cfg(target_os = "macos")]
+    async fn bisect(lean: &Lean) {
+        let root = lean.dir.join(format!("{VERSION}.part"));
+        let root = if root.join("bin/lean").is_file() { root } else { lean.root() };
+        let Ok(root) = root.canonicalize() else { return println!("bisect: no Lean unpacked") };
+        let bin = root.join("bin/lean");
+        for (name, profile) in [("no sandbox", None), ("allow default", Some("(version 1)\n(allow default)\n".to_string())), ("PROFILE", Some(format!("{PROFILE}{PROFILE_OUT}")))] {
+            let dir = tempdir();
+            std::fs::create_dir_all(dir.join("AvenDB")).unwrap();
+            std::fs::write(dir.join("AvenDB/Objective.lean"), OBJECTIVE).unwrap();
+            let dir = dir.canonicalize().unwrap();
+            let mut run = match &profile {
+                None => tokio::process::Command::new(&bin),
+                Some(p) => {
+                    let mut run = tokio::process::Command::new("/usr/bin/sandbox-exec");
+                    run.arg("-D").arg(format!("ROOT={}", root.display()));
+                    run.arg("-D").arg(format!("LEAN={}", bin.display()));
+                    run.arg("-D").arg(format!("OUT={}", dir.display()));
+                    run.arg("-p").arg(p).arg(&bin);
+                    run
+                }
+            };
+            let path = std::env::join_paths([root.join("lib/lean"), dir.clone()]).unwrap();
+            run.env_clear()
+                .env("LEAN_PATH", path)
+                .current_dir(&dir)
+                .args(["--json", "--threads=1"])
+                .arg(format!("--memory={MEMORY_MB}"))
+                .args(["-o", "AvenDB/Objective.olean", "AvenDB/Objective.lean"]);
+            match within(run, None).await {
+                Ok((ok, out, err)) => println!(
+                    "bisect {name}: ok {ok}\n  out: {}\n  err: {}",
+                    out.lines().take(5).collect::<Vec<_>>().join("\n       "),
+                    err.lines().take(8).collect::<Vec<_>>().join("\n       ")
+                ),
+                Err(e) => println!("bisect {name}: {e:#}"),
+            }
+        }
     }
 }
