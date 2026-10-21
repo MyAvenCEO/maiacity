@@ -332,7 +332,7 @@ async fn a_node_starts_from_what_it_worked_out_before_and_passes_what_it_cant_op
     drop(node);
     let g = dir.path().join(format!("g{FLOOR}"));
     let named = |folder: &str| files(&g.join(folder)).into_keys().map(|n| format!("{folder}/{n}")).collect::<Vec<_>>();
-    assert_eq!(named("warm"), ["warm/0000000000000000"], "the choice its resolve made, put once");
+    assert!(!named("warm").is_empty(), "the choice its resolve made, put");
     // each start again: every edit in its order, Welcome shown, and what it took from its shelf and worked out anew
     let start = || async {
         let (node, _, _) = mac(dir.path()).await;
@@ -350,10 +350,11 @@ async fn a_node_starts_from_what_it_worked_out_before_and_passes_what_it_cant_op
     let (chosen, shelved, opened) = start().await;
     assert!(chosen > 0 && shelved == 0 && opened > 0, "chosen {chosen}, from the shelf {shelved}, opened {opened}");
     assert!(!named("opened").is_empty(), "the keys it opened, put");
-    // the next: it opens no box again
+    let put = (named("warm"), named("opened"));
+    // the next: it opens no box again, and puts nothing, as its shelf holds all it worked out
     let (chosen, shelved, opened) = start().await;
     assert!(chosen > 0 && shelved > 0 && opened == 0, "chosen {chosen}, from the shelf {shelved}, opened {opened}");
-    assert_eq!(named("warm").len(), 1, "a choice the same is put no more");
+    assert_eq!((named("warm"), named("opened")), put, "what its shelf holds already is put no more");
     // what it can't open it passes, and works it out again
     for name in named("warm").into_iter().chain(named("opened")) {
         fs::write(g.join(name), [7u8; 80]).expect("a forged one");

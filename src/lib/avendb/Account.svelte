@@ -482,6 +482,9 @@
 		 *  (avendb-device's `agentDevices`); else none.
 		 *  @returns {Promise<{ name: string, device: string, cloud: boolean, online: boolean }[] | null>} */
 		agentDevices: async () => (mac ? mac.call('agentDevices') : null),
+		/** In theOS, the agents it hosts now as sessions of its device, `{id, name, device, since}` each (avendb-device's
+		 *  `sessions`); else none. */
+		hostedSessions: async () => (mac ? mac.call('sessions') : null),
 		/**
 		 * In the Mac app: a new agent for the person's cloud sessions, agentCloud, its key made on this Mac and added to
 		 * their coop's aven, avenMAIA, as a device beside its server, in one sheet (avendb-device's `addCloudAgent`). Its

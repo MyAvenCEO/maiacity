@@ -22,7 +22,7 @@
 //!   the head's bytes vouches for every edit in them.
 //!
 //! - `warm/<n>` and `opened/<n>`, numbered from 0 on in 16 hex digits: what the device worked out, encrypted for it
-//!   alone (`Lab::warm_memo`, `Lab::warm_keys`), for a node to start from quickly (`Lab::restore_warm`). `warm/<n>` is
+//!   alone (`Lab::warming`), for a node to start from quickly (`Lab::restore_warm`). `warm/<n>` is
 //!   the choice its replay's resolve made, put when it changed, the newest standing; `opened/<n>` the keys it opened
 //!   from their boxes since the one before, or every one of them, in `opened/<n>-all`, after `OPENED` of the others.
 //!   The device takes nothing of them it can't open and check: a wrong one costs it the time it saves, no more.
@@ -36,7 +36,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, anyhow, ensure};
 use avendb::id::{BlobId, EditId, SignerId};
-use avendb::lab::{Lab, ShelfKey, Warm};
+use avendb::lab::{Lab, ShelfKey, Warm, Warming};
 use avendb::sign::Signed;
 use avendb::wire::Wire;
 use bytes::Bytes;
@@ -371,14 +371,15 @@ impl Edits {
         })
     }
 
-    /// Puts on the shelf what the device worked out (`Shared::save`): the choice of its replay's resolve `memo`, if it
-    /// changed, and the keys `opened` gave, every one of them if `all` (`opened_all`), each under the next number free.
-    async fn put_warm(&self, memo: Option<Vec<u8>>, opened: Option<Vec<u8>>, all: bool) -> Result<()> {
-        if let Some(memo) = memo {
+    /// Puts on the shelf what the device worked out (`Shared::save`), as `warming` gives it: the choice of its replay's
+    /// resolve, if it changed, and the keys it opened, every one of them if `all` (`opened_all`), each under the next
+    /// number free.
+    async fn put_warm(&self, warming: &mut Warming, all: bool) -> Result<()> {
+        if let Some(memo) = warming.memo.take() {
             let n = self.put_next(WARM, "", 0, memo).await?;
             self.warmed.lock().expect("warmed").0 = n + 1;
         }
-        if let Some(opened) = opened {
+        if let Some(opened) = warming.keys.take() {
             let n = self.put_next(OPENED_KEYS, if all { ALL } else { "" }, 1, opened).await?;
             let mut warmed = self.warmed.lock().expect("warmed");
             warmed.1 = n + 1;
@@ -601,16 +602,27 @@ impl Shared {
         let shared = self.clone();
         let due = move || {
             let mut lab = shared.locked_lab();
-            let warm = (lab.warm_memo(shared.me), lab.warm_keys(shared.me, all));
-            Ok::<_, anyhow::Error>((shared.edits.as_ref().expect("its edits").due(&lab, shared.me, plan)?, warm))
+            let warming = lab.warming(shared.me, all);
+            Ok::<_, anyhow::Error>((shared.edits.as_ref().expect("its edits").due(&lab, shared.me, plan)?, warming))
         };
         #[cfg(not(target_arch = "wasm32"))]
-        let (due, (memo, opened)) = tokio::task::spawn_blocking(due).await??;
+        let (due, warming) = tokio::task::spawn_blocking(due).await??;
         #[cfg(target_arch = "wasm32")]
-        let (due, (memo, opened)) = due()?;
-        // what it worked out only spares it time: a shelf that can't take it costs it that time, no more
-        if let Err(e) = edits.put_warm(memo, opened, all).await {
-            tracing::warn!("avendb: what the device worked out can't be put on its shelf: {e:#}");
+        let (due, warming) = due()?;
+        // what it worked out only spares it time: a shelf that can't take it costs it that time, no more, and the
+        // device gives it again at the next save
+        if let Some(mut warming) = warming {
+            match edits.put_warm(&mut warming, all).await {
+                Ok(()) => {
+                    let shared = self.clone();
+                    let warmed = move || shared.locked_lab().warmed(shared.me, warming);
+                    #[cfg(not(target_arch = "wasm32"))]
+                    tokio::task::spawn_blocking(warmed).await?;
+                    #[cfg(target_arch = "wasm32")]
+                    warmed();
+                }
+                Err(e) => tracing::warn!("avendb: what the device worked out can't be put on its shelf: {e:#}"),
+            }
         }
         let Some(due) = due else { return Ok(false) };
         edits.put(&mut book, due).await?;

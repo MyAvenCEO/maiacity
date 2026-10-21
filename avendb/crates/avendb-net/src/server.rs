@@ -169,6 +169,29 @@ pub(crate) async fn name_next(shared: Arc<Shared>, next: SignerId) {
     }
 }
 
+/// The keys an agent's device on `shelf` may be, the one to try first first: its next key, where its shelf names one
+/// its secret makes in either suite, then its own key (`open_as`). None where its shelf holds no secret yet: an agent
+/// that never ran.
+pub async fn agent_keys(shelf: &Shelf) -> Result<Vec<sign::DeviceKey>> {
+    let Some(bytes) = shelf.get(SECRET).await.context("the agent's secret")? else {
+        return Ok(vec![]);
+    };
+    let (secret, suite) =
+        sign::kept_secret_of(&bytes).ok_or_else(|| anyhow!("the shelf's {SECRET} holds no device's secret"))?;
+    let named = shelf.get(NEXT).await.context("the shelf's next key")?;
+    let next = named.and_then(|b| <[u8; 32]>::try_from(&b[..]).ok()).map(SignerId);
+    let mut keys = vec![];
+    if let Some(next) = next {
+        let moved = sign::SUITES.into_iter().map(|s| sign::DeviceKey::from_secret_in(*secret, s));
+        keys.extend(moved.filter(|k| k.id() == next));
+    }
+    let own = sign::DeviceKey::from_secret_in(*secret, suite);
+    if keys.iter().all(|k| k.id() != own.id()) {
+        keys.push(own);
+    }
+    Ok(keys)
+}
+
 /// The device's secret on `shelf` and its suite, or a new one put there, in the suite new signers are made in.
 async fn secret(shelf: &Shelf) -> Result<(Zeroizing<[u8; 32]>, Suite)> {
     for _ in 0..2 {
@@ -191,7 +214,7 @@ async fn secret(shelf: &Shelf) -> Result<(Zeroizing<[u8; 32]>, Suite)> {
 }
 
 /// 32 bytes of the machine's own randomness, wiped as they are dropped.
-pub(crate) fn random() -> Result<Zeroizing<[u8; 32]>> {
+pub fn random() -> Result<Zeroizing<[u8; 32]>> {
     let mut bytes = Zeroizing::new([0; 32]);
     getrandom::fill(&mut *bytes).map_err(|e| anyhow!("no randomness from the machine: {e}"))?;
     Ok(bytes)

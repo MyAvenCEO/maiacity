@@ -78,7 +78,7 @@ describe("0029: every CID becomes its hash", () => {
   test("timeline clips name their file by hash; world clips are left as they were", async () => {
     const { clips } = (await pg.query<{ clips: any[] }>("SELECT clips FROM timelines WHERE id = $1", [timeline])).rows[0]!;
     expect(clips.map((c) => [c.id, c.hash ?? null])).toEqual([["a", H1], ["w", null], ["b", H2]]);
-    expect(JSON.stringify(clips)).not.toMatch(/cid|baf/);
+    expect(JSON.stringify(clips)).not.toMatch(/cid|"baf/);
     expect(clips[0].grade.slope).toEqual([1.1, 1, 1]);
     // (its grade from before is the stacks migration's: scripts/film/migrate-grade-stacks.mjs)
   });

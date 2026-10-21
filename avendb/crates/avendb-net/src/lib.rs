@@ -1274,6 +1274,18 @@ impl Node {
         out
     }
 
+    /// Run `f` as session `s`, which its device hosts (`Lab::host`): each read, ask and change `f` makes through the node
+    /// acts as `s`, on the device's one store.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub async fn acting<F: std::future::Future>(&self, s: SignerId, f: F) -> F::Output {
+        ACTING.scope(s, f).await
+    }
+
+    /// Who acts through the node here: the session `acting` names, else its device.
+    pub fn acting_as(&self) -> SignerId {
+        acting().unwrap_or(self.shared.me)
+    }
+
     /// Read its Lab as its device.
     pub async fn read<T: Send + 'static>(&self, f: impl FnOnce(&Lab, SignerId) -> T + Send + 'static) -> T {
         self.shared.lab(|lab, me| f(lab, me)).await
@@ -1764,6 +1776,20 @@ struct News {
     invites: Vec<ShareId>,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+tokio::task_local! {
+    /// The session a node's caller acts as (`Node::acting`).
+    static ACTING: SignerId;
+}
+
+/// The session the calling task acts as (`Node::acting`), if any.
+fn acting() -> Option<SignerId> {
+    #[cfg(not(target_arch = "wasm32"))]
+    return ACTING.try_with(|s| *s).ok();
+    #[cfg(target_arch = "wasm32")]
+    None
+}
+
 impl Shared {
     /// `f` on the Lab, off the async threads: its crypto takes milliseconds, a McEliece key pair seconds. The Lab's
     /// clock is the machine's, so an entry `f` creates says when (`Lab::set_now`). If what the device holds changed,
@@ -1772,11 +1798,12 @@ impl Shared {
     /// and carried on to the caller once the lock is let go.
     async fn lab<T: Send + 'static>(self: &Arc<Self>, f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static) -> T {
         let shared = self.clone();
+        let me = acting().unwrap_or(self.me);
         let work = move || {
             let mut lab = shared.locked_lab();
             let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 lab.set_now(unix_now());
-                let out = f(&mut lab, shared.me);
+                let out = f(&mut lab, me);
                 let now = lab.size(shared.me);
                 if shared.size.send_if_modified(|size| *size != now && { *size = now; true }) {
                     shared.edits.iter().for_each(|edits| edits.due.notify_one());

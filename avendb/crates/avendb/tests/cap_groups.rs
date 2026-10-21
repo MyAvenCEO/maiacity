@@ -245,3 +245,57 @@ fn an_invite_made_before_the_key_move_is_claimed_by_its_key_in_slh_dsa() {
     assert_eq!(c.w.lab.claim_invite(mac_e, invite, erin, new), Err(Refusal::NoConsent));
     c.w.lab.claim_invite(mac_e, invite, erin, old).expect("in SLH-DSA, Erin's vault claims it");
 }
+
+/// What the AIP must deliver, as every AIP names before it is promoted.
+const OBJECTIVE: &str = "import AvenDB.Objective\nopen AvenDB.Objective\n\n/-- Clear. -/\n\
+    def clear : Metric := metric \"Plans read clearly\" (atMost (reading \"questions\") 0)\n";
+
+/// Maia City's Agent group (Samuel 2026-10-21: Suggester and AIP author as one group): reads all of the vault, drafts
+/// new entries and writes on proposals, starts and merges them, and adds and sets its AIPs. What avenMAIA holds, so
+/// every agent session of it.
+fn agent() -> Value {
+    let aips = json!({ "type": ["aip"] });
+    json!({ "name": "Agent", "caps": [
+        { "op": "read" },
+        { "op": "create", "on": "proposals" },
+        { "op": "set", "path": [], "on": "proposals" },
+        { "op": "propose" },
+        { "op": "merge", "on": "proposals" },
+        { "op": "create", "where": aips },
+        { "op": "set", "path": [], "where": aips },
+    ] })
+}
+
+#[test]
+fn the_agent_group_drafts_proposes_and_opens_aips_as_a_suggester_and_an_aip_author_did() {
+    let mut c = city();
+    let (mac_a, mac_b, alice, bob) = (c.w.mac_a, c.w.mac_b, c.w.alice.to_hex(), c.w.bob.to_hex());
+    let defined = ran(&mut c, mac_a, json!({ "op": "define_group", "vault": alice, "group": agent() }));
+    let group = defined["entry"].as_str().expect("its entry").to_string();
+    ran(&mut c, mac_a, json!({ "op": "share_group", "over": alice, "group": group, "who": { "vault": bob } }));
+    c.w.lab.sync(mac_a, mac_b);
+    let try_on = |c: &mut City, op: Value| engine::run(&mut c.w.lab, mac_b, &op);
+    // it reads all of Maia City
+    assert!(c.w.lab.reads(mac_b, c.map) && c.w.lab.reads(mac_b, c.memo));
+    // it drafts a new entry, but writes none on the main line
+    let note = json!({ "kind": "document", "title": "Idea" });
+    let draft = json!({ "op": "create", "vault": alice, "type": "document", "value": note, "draft": true, "as": bob });
+    assert!(try_on(&mut c, draft).get("ok").is_some(), "a draft");
+    let main = json!({ "op": "create", "vault": alice, "type": "document", "value": note, "as": bob });
+    assert!(try_on(&mut c, main).get("refused").is_some(), "nothing on the main line");
+    let memo = c.memo.to_hex();
+    let edit = json!({ "op": "set", "entry": memo, "path": ["title"], "value": "Mine", "as": bob });
+    assert!(try_on(&mut c, edit).get("refused").is_some(), "no edit of the main line");
+    // it proposes a change and writes on its line
+    let start = json!({ "op": "propose", "entry": memo, "name": "Better plans", "as": bob });
+    let line = try_on(&mut c, start)["ok"]["line"].as_str().expect("its line").to_string();
+    let write = json!({ "op": "set", "entry": memo, "line": line, "path": ["title"], "value": "Better", "as": bob });
+    assert!(try_on(&mut c, write.clone()).get("ok").is_some(), "{write}");
+    // and opens an AIP over it and promotes it, as its author
+    let open = json!({ "op": "aip_open", "vault": alice, "title": "Better plans", "note": "Why: clearer.",
+        "proposals": [{ "entry": memo, "line": line }], "objective": OBJECTIVE, "as": bob });
+    let opened = try_on(&mut c, open);
+    let aip = opened["ok"]["entry"].as_str().unwrap_or_else(|| panic!("an AIP: {opened}")).to_string();
+    let promoted = try_on(&mut c, json!({ "op": "aip_promote", "entry": aip, "as": bob }));
+    assert!(promoted["ok"]["number"].as_u64().is_some(), "promoted: {promoted}");
+}
