@@ -6,7 +6,7 @@
 	import { base } from '$app/paths';
 	import { shaped } from '$lib/app/shapes.js';
 	import { ago, postHref } from './posts.js';
-	import { authorOf, like } from './stream.svelte.js';
+	import { authorOf, faceOf, like } from './stream.svelte.js';
 
 	let { post: p, full = false } = $props();
 	const a = $derived(authorOf(p));
@@ -23,7 +23,10 @@
 				<div class="stack" aria-hidden="true">
 					{#each a.people ?? [a] as v, i (i)}
 						<span class="ring" style={shaped(v.kind)} style:z-index={10 - i}>
-							<span class="avatar" style:background={v.color} style={shaped(v.kind)}>{v.initials}</span>
+							<span class="avatar" style:background={v.color} style={shaped(v.kind)}>
+								{v.initials}
+								{#if faceOf(v.vault)}<img src={faceOf(v.vault)} alt="" />{/if}
+							</span>
 						</span>
 					{/each}
 				</div>
@@ -105,6 +108,8 @@
 	}
 
 	.avatar {
+		position: relative;
+		overflow: hidden;
 		display: grid;
 		place-items: center;
 		width: 2.3rem;
@@ -113,6 +118,15 @@
 		font-weight: 600;
 		letter-spacing: 0.04em;
 		color: #fff;
+	}
+
+	/* its profile picture over its initials, once the server hands it */
+	.avatar img {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
 	}
 
 	.body {

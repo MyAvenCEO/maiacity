@@ -31,6 +31,8 @@
 	import { allowed, may, read } from './ops.js';
 	import Ops from './Ops.svelte';
 	import Owned, { ownedTitle } from './Owned.svelte';
+	import { mediaOf, whole } from './files.js';
+	import { pictureOf, setPicture, squared } from './picture.js';
 	import Share from './Share.svelte';
 	import { server } from './server.js';
 	import { Here, here, session } from './session.svelte.js';
@@ -198,6 +200,31 @@
 	const v = $derived(/** @type {import('./vaults.js').VaultView} */ (byId.get(vault)));
 	/** whether this is the person's own vault: their devices, drives and agents show only there */
 	const own = $derived(vault === world.mine);
+	/** its profile picture, its file entry, and that picture as a blob URL once this device has read it */
+	const picture = $derived(pictureOf(world, vault));
+	let pictureUrl = $state('');
+	$effect(() => {
+		const file = picture?.files?.[0];
+		if (!file || file.len === null) return void (pictureUrl = '');
+		let url = '';
+		let gone = false;
+		whole((root, size, from, to) => api.readFile(root, size, from, to), file, mediaOf({ name: 'p.jpg', type: '' }))
+			.then((blob) => !gone && (pictureUrl = url = URL.createObjectURL(blob)))
+			.catch(() => {});
+		return () => {
+			gone = true;
+			if (url) URL.revokeObjectURL(url);
+		};
+	});
+	/** the file picker its picture is dropped through */
+	let picking = $state(/** @type {HTMLInputElement | null} */ (null));
+	/** @param {Event} e */
+	async function pick(e) {
+		const input = /** @type {HTMLInputElement} */ (e.currentTarget);
+		const file = input.files?.[0];
+		input.value = '';
+		if (file) await setPicture(api, vault, await squared(file), picture);
+	}
 	/** the share that lets everyone read its name, if it has one */
 	const namePublic = $derived(nameShared(world, vault));
 	/** whether vaults of its kind hold devices, as the kind table says */
@@ -695,7 +722,7 @@
 {#snippet profile()}
 	<article class="card wide">
 		<div class="row head">
-			<Mark vault={v} size={52} />
+			<Mark vault={v} size={52} src={pictureUrl} />
 			<div>
 				<h3>{nameOf(v)}</h3>
 				<span class="chip accent">{KINDS[v.kind]}</span>
@@ -725,6 +752,14 @@
 					<button class="btn quiet" onclick={() => (naming = null)}>Cancel</button>
 				</div>
 			{/if}
+			<!-- its profile picture, which everyone sees (./picture.js): a square JPEG of the picture dropped here -->
+			<div class="row">
+				<p class="soft">{picture ? 'Everyone sees its picture.' : 'It has no picture yet.'}</p>
+				<button class="btn quiet" disabled={busy} onclick={() => picking?.click()}>
+					{picture ? 'Change picture' : 'Add a picture'}
+				</button>
+				<input bind:this={picking} type="file" accept="image/*" hidden onchange={pick} />
+			</div>
 			<!-- its name is public by default (./vaults.js NAME_TYPES): its owners keep it to those it shares with here -->
 			<div class="row">
 				<p class="soft">

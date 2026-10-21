@@ -5,7 +5,8 @@
 // (`loadMore`), each off the page's own avenDB device where one is open (avendb's `posts` op), else off avenDB's server
 // (`FEED?limit=…&after=…`). The device brings the posts the server shows that it lacks, those alone, so the next look
 // reads them off it. A post page that names a post the pages haven't reached reads the whole feed (`loadAll`).
-import { ENTRIES, FEED, authorsOf, fromFeed } from './posts.js';
+import { ENTRIES, FEED, authorsOf, fromFeed, pictureUrl } from './posts.js';
+import { PICTURE } from '$lib/avendb/picture.js';
 import { inspireOf } from './inspire.js';
 import { ANSWER, bringEntries, deviceOf } from '../../../game/code/sources/device.js';
 
@@ -30,6 +31,23 @@ export const stream = $state({
 export const findPost = (doc) => stream.posts.find((p) => p.doc === doc);
 
 export const authorOf = (p) => stream.authors[p.author];
+
+// each vault's profile picture as avenDB's server serves it to everyone ($lib/avendb/picture.js): its address once it
+// loaded, '' where it has none, asked for once per vault whatever number of cards show it
+// (`asked` plain, as a card asks while it renders, where no state may change)
+const faces = $state({});
+const asked = new Set();
+export function faceOf(vault) {
+	if (!vault || typeof Image === 'undefined') return '';
+	if (!asked.has(vault)) {
+		asked.add(vault);
+		const src = pictureUrl(vault, PICTURE);
+		const img = new Image();
+		img.onload = () => (faces[vault] = src);
+		img.src = src;
+	}
+	return faces[vault] ?? '';
+}
 
 export function like(p) {
 	p.liked = !p.liked;
