@@ -54,7 +54,7 @@
 	let moveError = $state('');
 	/** the key move went through: said once, as the banner goes (Samuel 2026-10-20: after his touch "nothing happened"),
 	 *  'avens' where only the server and the agents of their coop's aven moved (K3c), 'retired' where the old keys went */
-	let moved = $state<boolean | 'avens' | 'retired'>(false);
+	let moved = $state<boolean | 'avens' | 'retired' | 'checkpoint'>(false);
 	/** the key move's last step, once every key moved (Samuel 2026-10-20: "you should have removed all the old keys"):
 	 *  the earlier keys and the old devices it removes, each `{ kind, key }` ('root' hands the root on, 'owner' or
 	 *  'device' goes), and whether it waits until this device holds what the coop's server holds (`behind`) */
