@@ -8,21 +8,29 @@ name: avenDB checks
 #            vectors to the model; `lake exe vectors` must write nothing new (vectors regenerated and committed)
 #   wasm   – the page's WebAssembly (src/lib/avendb/device, scripts/build-web.sh), built here from the PR's sources. When
 #            the committed one differs, this job commits the one it built to the PR's branch, so no thread rebuilds it
-#            by hand (pull before your next push)
+#            by hand (pull before your next push). That commit says [skip ci]: it is built here from the sources the
+#            commit before it was checked on, and a run started by this job's own push would wait for an approval
+#            nobody gives (the PR's head would show its checks as pending until it merged)
+#
+# On main too: GitHub lets a pull request restore only the caches its base branch saved, so the tests' and the
+# spec's caches are warmed by a run on every merge that touches avenDB; without one, every PR compiled from scratch.
 on:
   pull_request:
-    paths:
+    paths: &paths
       - 'avendb/**'
       - 'src/lib/avendb/device/**'
       - '.github/workflows/avendb-checks.yml'
+  push:
+    branches: [main]
+    paths: *paths
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: avendb-checks-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+  group: avendb-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   tests:
@@ -84,6 +92,7 @@ jobs:
 
   wasm:
     name: The page's WebAssembly
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -119,6 +128,6 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898+github-actions[bot]@users.noreply.github.com'
           git add -A src/lib/avendb/device
-          git commit -m "avenDB: the page's WebAssembly, built by CI from this branch's sources"
+          git commit -m "avenDB: the page's WebAssembly, built by CI from this branch's sources [skip ci]"
           git push
           echo "::notice::Committed the rebuilt WebAssembly to this branch: pull before your next push."

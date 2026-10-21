@@ -5,9 +5,12 @@ name: The OS on macOS
 # queueing behind Samuel's Mac, where one Rust build runs at a time. A check only: it signs nothing and ships nothing;
 # The OS itself is still built on the Mac (scripts/watch-main.mjs). The repository is public, so the runner is free.
 # The Secure Enclave bridge needs macOS 26's SDK: where the runner's is older, build.rs builds without it and says so.
+#
+# On main too, after each merge that touches it: a pull request restores only the caches its base branch saved, so this
+# keeps a warm one there (about 4 minutes warm against 16 cold).
 on:
   pull_request:
-    paths:
+    paths: &paths
       - 'vault/app/**'
       - 'vault/crates/**'
       - 'vault/Cargo.toml'
@@ -16,14 +19,17 @@ on:
       - 'avendb/Cargo.toml'
       - 'avendb/Cargo.lock'
       - '.github/workflows/mac.yml'
+  push:
+    branches: [main]
+    paths: *paths
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: mac-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: true
+  group: mac-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   check:
