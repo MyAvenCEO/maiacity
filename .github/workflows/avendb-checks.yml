@@ -69,8 +69,13 @@ jobs:
           # a cache key takes no commas: the shard's own, not its name (with one, the restore failed and nothing was saved)
           key: tests-${{ matrix.cache }}
           cache-on-failure: true
+      # Our own crates' tests built at opt-level 1, not dev's 2 (the dependencies keep theirs): each test file took 70
+      # to 150 s to build at 2. Locally (2026-10-21) the net and server tests built in 2m47s at 1 and ran as fast as at
+      # 2 (220 s against 216 s); here they had taken 6m57s to build
       - name: cargo test
         working-directory: avendb
+        env:
+          CARGO_PROFILE_TEST_OPT_LEVEL: 1
         run: cargo test --locked ${{ matrix.args }}
 
   spec:
