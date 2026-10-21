@@ -509,8 +509,11 @@
 	 * @param {string} what @param {string} name @param {string} of @param {object} op
 	 */
 	async function remove(what, name, of, op) {
-		const step = (/** @type {boolean} */ busy, /** @type {string} */ text, bad = false) =>
-			(removing = { ...removing, [what]: { busy, text, bad } });
+		// each step goes into the Mac app's log too (the page forwards warnings), so a Remove that stops shows where
+		const step = (/** @type {boolean} */ busy, /** @type {string} */ text, bad = false) => {
+			console.warn(`avenDB: Settings removing ${what}: ${text}`);
+			removing = { ...removing, [what]: { busy, text, bad } };
+		};
 		const stop = () => {
 			const { [what]: _, ...rest } = removing;
 			removing = rest;
@@ -524,7 +527,10 @@
 			}
 			step(true, 'Asking you first');
 			const sureOf = `Remove ${name} from ${nameOf(byId.get(of))}? It syncs nothing more. Anything it wrote that never reached ${here} is dropped; what it holds stays on it, encrypted.`;
-			if (!(await sure(sureOf))) return stop();
+			if (!(await sure(sureOf))) {
+				console.warn(`avenDB: Settings removing ${what}: not confirmed`);
+				return stop();
+			}
 			step(true, 'Removing');
 			const done = await api.run(`Removing ${name}`, op);
 			if (done == null) return step(false, `Not removed: ${session.error || 'the device refused it'}`, true);
@@ -698,7 +704,7 @@
 {/snippet}
 
 <!-- Remove for owner or device `what`, by `onremove`: on the person's own vault it shows even where it can't be, and
-	says why; once pressed, where it is (`removing`) -->
+	says why, or what else the page is doing meanwhile; once pressed, where it is (`removing`) -->
 {#snippet remover(/** @type {string} */ what, /** @type {() => void} */ onremove)}
 	{@const why = whyNot(what)}
 	{@const now = removing[what]}
@@ -707,7 +713,8 @@
 			<span class="why" class:soft={!now.bad} class:error={now.bad} role="status">
 				{#if now.busy}<span class="spin" aria-hidden="true"></span>{/if}{now.text}{now.busy ? '…' : ''}
 			</span>
-		{:else if why}<span class="soft why">{why}</span>{/if}
+		{:else if why}<span class="soft why">{why}</span>
+		{:else if busy && session.doing}<span class="soft why">Waits until “{session.doing}” is done</span>{/if}
 		<button class="btn quiet danger" disabled={busy || removingAny || !!why} onclick={onremove}>Remove</button>
 	</span>
 {/snippet}
