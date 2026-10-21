@@ -1,10 +1,10 @@
 // Retains the detailed-stand baseline used by the saved historical measurements.
 import {writeFileSync} from 'node:fs';
-import {initialize,Simulation,G} from '../src/simulation';
-import {ShedBuild} from '../src/shed';
-import {metalShedDefinition,metalShedScenario} from '../src/metal-shed';
-import {domeDefinition,domeScenario} from '../src/dome';
-import {Wind} from '../src/wind';
+import {initialize,Simulation,G} from '../simulation';
+import {ShedBuild} from '../shed';
+import {metalShedDefinition,metalShedScenario} from '../metal-shed';
+import {domeDefinition,domeScenario} from '../dome';
+import {Wind} from '../wind';
 await initialize();const results=[];
 for(const [definition,scenario] of [[metalShedDefinition(),metalShedScenario()],[domeDefinition(8,{detailedShoring:true}),domeScenario()]] as const){
  const sim=new Simulation(scenario),build=new ShedBuild(sim,definition),stages=[];

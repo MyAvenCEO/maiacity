@@ -1,13 +1,14 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import {describe,it,expect} from 'vitest';
-import {partsCatalog,boundsOf,massOf,geometryDetails,previewSpec,partGeometryRecord} from '../src/parts-catalog';
-import {industrialHallDefinition} from '../src/industrial-hall';
-import {germanHouseDefinition} from '../src/german-house';
-import {shedPlan} from '../src/shed';
-import {brickHouseDefinition} from '../src/brick-house';
-import {metalShedDefinition} from '../src/metal-shed';
-import {domeDefinition} from '../src/dome';
-import {standDefinition,DEFAULT_STAND_SETTINGS} from '../src/stand-lab';
-import type {BuildDefinition,BuildPart} from '../src/shed';
+import {partsCatalog,boundsOf,massOf,geometryDetails,previewSpec,partGeometryRecord} from '../parts-catalog';
+import {industrialHallDefinition} from '../industrial-hall';
+import {germanHouseDefinition} from '../german-house';
+import {shedPlan} from '../shed';
+import {brickHouseDefinition} from '../brick-house';
+import {metalShedDefinition} from '../metal-shed';
+import {domeDefinition} from '../dome';
+import {standDefinition,DEFAULT_STAND_SETTINGS} from '../stand-lab';
+import type {BuildDefinition,BuildPart} from '../shed';
 
 describe('assembly parts catalogue',()=>{
   it('maps every placement once for each building, including unplaced components',()=>{

@@ -1,8 +1,9 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import {beforeAll,afterEach,expect,test} from 'vitest';
-import {initialize,Simulation,DT,G,transform} from '../src/simulation';
-import {ShedBuild,shedScenario} from '../src/shed';
-import {brickHouseDefinition,brickHouseScenario} from '../src/brick-house';
-import {Wind} from '../src/wind';
+import {initialize,Simulation,DT,G,transform} from '../simulation';
+import {ShedBuild,shedScenario} from '../shed';
+import {brickHouseDefinition,brickHouseScenario} from '../brick-house';
+import {Wind} from '../wind';
 beforeAll(initialize);const worlds:Simulation[]=[];afterEach(()=>worlds.splice(0).forEach(s=>s.dispose()));
 test.each([['shed',DT],['house',DT],['shed',DT/2],['house',DT/2]] as const)('%s roof holds under gravity and separates under extreme wind at dt=%s',(which,dt)=>{
  const sim=new Simulation(which==='house'?brickHouseScenario():shedScenario(),dt);worlds.push(sim);

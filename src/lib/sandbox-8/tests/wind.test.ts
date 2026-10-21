@@ -1,7 +1,8 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import { afterEach, beforeAll, expect, test } from 'vitest';
-import { DT, initialize, Simulation, Playback, type Box } from '../src/simulation';
-import { Wind, AIR_DENSITY, DRAG_COEFFICIENT } from '../src/wind';
-import { ShedBuild, shedScenario } from '../src/shed';
+import { DT, initialize, Simulation, Playback, type Box } from '../simulation';
+import { Wind, AIR_DENSITY, DRAG_COEFFICIENT } from '../wind';
+import { ShedBuild, shedScenario } from '../shed';
 beforeAll(initialize);
 const worlds: Simulation[] = [];
 afterEach(() => worlds.splice(0).forEach(s => s.dispose()));

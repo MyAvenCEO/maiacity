@@ -1,8 +1,9 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import {beforeAll,expect,test} from 'vitest';
-import {initialize,Simulation,scenarios} from '../src/simulation';
-import {ShedBuild,shedScenario} from '../src/shed';
-import {WorkerRuntime} from '../src/worker-runtime';
-import {SimulationView} from '../src/worker-client';
+import {initialize,Simulation,scenarios} from '../simulation';
+import {ShedBuild,shedScenario} from '../shed';
+import {WorkerRuntime} from '../worker-runtime';
+import {SimulationView} from '../worker-client';
 beforeAll(initialize);
 test('worker commands preserve exact assembly, wind-free steps, pause and exported state',()=>{
  const runtime=new WorkerRuntime(),sim=new Simulation(shedScenario()),build=new ShedBuild(sim);

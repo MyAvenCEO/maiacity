@@ -1,6 +1,7 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import {expect,test} from 'vitest';
-import {domeDefinition,domeDetail,domeMesh,domeScenario} from '../src/dome';
-import {volumeOf} from '../src/simulation';
+import {domeDefinition,domeDetail,domeMesh,domeScenario} from '../dome';
+import {volumeOf} from '../simulation';
 
 test('diameter is unbounded above; cell density follows a calculation, including non-preset subdivisions',()=>{
  for(const diameter of [16.1,32,64,100,1000])expect(()=>domeScenario(diameter)).not.toThrow();

@@ -1,6 +1,7 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import {beforeAll,afterEach,expect,test} from 'vitest';
-import {initialize,Simulation,DT,type Box} from '../src/simulation';
-import {FastenerGroup,WOOD_FASTENER} from '../src/fasteners';
+import {initialize,Simulation,DT,type Box} from '../simulation';
+import {FastenerGroup,WOOD_FASTENER} from '../fasteners';
 beforeAll(initialize);const worlds:Simulation[]=[];afterEach(()=>worlds.splice(0).forEach(s=>s.dispose()));
 const box=(id:string,x:number,fixed=false):Box=>({id,size:[.1,.2,.2],position:{x,y:1,z:0},fixed,density:600,material:'Wood (rigid)',friction:.6,color:0xaabbcc});
 function lab(dt=DT,fixed=true){const sim=new Simulation({id:'grip',title:'Grip proof',question:'',boxes:[box('support',0,fixed),box('wood',.1)]},dt);worlds.push(sim);sim.world.gravity={x:0,y:0,z:0};sim.world.numSolverIterations=8;sim.world.integrationParameters.numInternalPgsIterations=12;return {sim,group:new FastenerGroup(sim,'wood','support',WOOD_FASTENER)};}

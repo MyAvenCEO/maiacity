@@ -1,10 +1,11 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import RAPIER from '@dimforge/rapier3d-compat';
 import {beforeAll,expect,test} from 'vitest';
-import {initialize,Simulation,volumeOf,transform,rotationOf} from '../src/simulation';
-import {domeDefinition as detailedDomeDefinition,domeScenario,domeMesh} from '../src/dome';
-import {ShedBuild} from '../src/shed';
-import {Wind} from '../src/wind';
-import {v,sub,cross,length,unit,mul,add} from '../src/geometry';
+import {initialize,Simulation,volumeOf,transform,rotationOf} from '../simulation';
+import {domeDefinition as detailedDomeDefinition,domeScenario,domeMesh} from '../dome';
+import {ShedBuild} from '../shed';
+import {Wind} from '../wind';
+import {v,sub,cross,length,unit,mul,add} from '../geometry';
 beforeAll(initialize);
 
 test('pentagonal entrance has actual missing material and a clear doorway through the whole frame',()=>{

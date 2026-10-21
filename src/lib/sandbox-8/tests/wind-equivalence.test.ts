@@ -1,9 +1,10 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import { beforeAll, expect, test } from 'vitest';
-import { initialize, Simulation, type Box } from '../src/simulation';
-import { Wind, WIND_DIRECTIONS } from '../src/wind';
+import { initialize, Simulation, type Box } from '../simulation';
+import { Wind, WIND_DIRECTIONS } from '../wind';
 import { ReferenceWind } from './helpers/reference-wind';
-import { domeDefinition, domeScenario } from '../src/dome';
-import { ShedBuild, shedScenario } from '../src/shed';
+import { domeDefinition, domeScenario } from '../dome';
+import { ShedBuild, shedScenario } from '../shed';
 beforeAll(initialize);
 
 function compare(sim: Simulation, wind: Wind, reference: ReferenceWind) {

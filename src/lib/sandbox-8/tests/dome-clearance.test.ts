@@ -1,8 +1,9 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import {beforeAll,expect,test} from 'vitest';
-import {initialize,Simulation,G,shapeVerticesOf,rotationOf,transform,type Box} from '../src/simulation';
-import {domeDefinition as detailedDomeDefinition,domeScenario} from '../src/dome';
-import {ShedBuild} from '../src/shed';
-import {hull,sub,cross,dot,length,unit,v} from '../src/geometry';
+import {initialize,Simulation,G,shapeVerticesOf,rotationOf,transform,type Box} from '../simulation';
+import {domeDefinition as detailedDomeDefinition,domeScenario} from '../dome';
+import {ShedBuild} from '../shed';
+import {hull,sub,cross,dot,length,unit,v} from '../geometry';
 beforeAll(initialize);
 
 // Independent separating-axis check: convex face normals and edge cross products.

@@ -1,7 +1,7 @@
 import { writeFileSync } from 'node:fs';
-import { G, initialize, Simulation } from '../src/simulation';
-import { ShedBuild } from '../src/shed';
-import { brickHouseDefinition, brickHouseScenario } from '../src/brick-house';
+import { G, initialize, Simulation } from '../simulation';
+import { ShedBuild } from '../shed';
+import { brickHouseDefinition, brickHouseScenario } from '../brick-house';
 
 await initialize();
 const definition = brickHouseDefinition(), sim = new Simulation(brickHouseScenario()), build = new ShedBuild(sim, definition);

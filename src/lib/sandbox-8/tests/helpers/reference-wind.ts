@@ -1,6 +1,6 @@
 // Frozen pre-optimization implementation: independent all-collider sheltering oracle.
 import RAPIER from '@dimforge/rapier3d-compat';
-import { Simulation, transform, shapeVerticesOf, surfaceFacesOf, type Box, type V3 } from '../../src/simulation';
+import { Simulation, transform, shapeVerticesOf, surfaceFacesOf, type Box, type V3 } from '../../simulation';
 
 export const AIR_DENSITY = 1.225;
 export const DRAG_COEFFICIENT = 1.2; // Illustrative uniform value, not calibrated to timber/buildings.

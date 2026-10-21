@@ -1,7 +1,8 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import RAPIER from '@dimforge/rapier3d-compat';
 import { afterEach, beforeAll, expect, test } from 'vitest';
-import { DT, G, initialize, Simulation, boundsY, verticesOf, rotationOf, inverseRotation, transform, volumeOf } from '../src/simulation';
-import { jointPoint, shedPlan, shedScenario, ShedBuild, STAGES, ROOF_PITCH, roofUndersideY } from '../src/shed';
+import { DT, G, initialize, Simulation, boundsY, verticesOf, rotationOf, inverseRotation, transform, volumeOf } from '../simulation';
+import { jointPoint, shedPlan, shedScenario, ShedBuild, STAGES, ROOF_PITCH, roofUndersideY } from '../shed';
 
 beforeAll(initialize);
 const worlds: Simulation[] = [];

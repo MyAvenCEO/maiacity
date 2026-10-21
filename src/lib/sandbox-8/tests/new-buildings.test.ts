@@ -1,11 +1,12 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import {beforeAll,afterEach,expect,test} from 'vitest';
-import {initialize,Simulation,DT,G,volumeOf,type Box} from '../src/simulation';
-import {ShedBuild,jointPoint} from '../src/shed';
-import {metalShedDefinition,metalShedScenario} from '../src/metal-shed';
-import {domeDefinition as detailedDomeDefinition,domeScenario,domeMesh} from '../src/dome';
-import {fasteningPatch} from '../src/fasteners';
-import {Wind,AIR_DENSITY,DRAG_COEFFICIENT} from '../src/wind';
-import {hull,length,v} from '../src/geometry';
+import {initialize,Simulation,DT,G,volumeOf,type Box} from '../simulation';
+import {ShedBuild,jointPoint} from '../shed';
+import {metalShedDefinition,metalShedScenario} from '../metal-shed';
+import {domeDefinition as detailedDomeDefinition,domeScenario,domeMesh} from '../dome';
+import {fasteningPatch} from '../fasteners';
+import {Wind,AIR_DENSITY,DRAG_COEFFICIENT} from '../wind';
+import {hull,length,v} from '../geometry';
 beforeAll(initialize);const worlds:Simulation[]=[];afterEach(()=>worlds.splice(0).forEach(s=>s.dispose()));
 const definitions={metal:metalShedDefinition,dome:domeDefinition},scenarios={metal:metalShedScenario,dome:domeScenario};
 function lab(which:keyof typeof definitions,dt=DT){const def=definitions[which](),sim=new Simulation(scenarios[which](),dt);worlds.push(sim);return {sim,def,build:new ShedBuild(sim,def)};}

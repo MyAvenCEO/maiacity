@@ -1,6 +1,7 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import {expect,test} from 'vitest';
-import {fitRigidRotation,v,mean,sub,add,length,hull,polyVolume} from '../src/geometry';
-import {transform} from '../src/simulation';
+import {fitRigidRotation,v,mean,sub,add,length,hull,polyVolume} from '../geometry';
+import {transform} from '../simulation';
 test.each([.4,Math.PI])('panel fitting recovers rigid translation and rotation %s',angle=>{
  const points=[v(-2,-1,0),v(3,-1,0),v(0,2,0),v(1,1,0)],rotation={x:Math.sin(angle/2),y:0,z:0,w:Math.cos(angle/2)},target=points.map(p=>transform(p,rotation,v(1,2,3)));
  const fit=fitRigidRotation(points,target),a=mean(points),b=mean(target);

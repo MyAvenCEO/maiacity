@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
-import { G, initialize, Simulation } from '../src/simulation';
-import { ShedBuild, shedScenario, STAGES } from '../src/shed';
+import { G, initialize, Simulation } from '../simulation';
+import { ShedBuild, shedScenario, STAGES } from '../shed';
 
 await initialize();
 const sim = new Simulation(shedScenario()), build = new ShedBuild(sim);

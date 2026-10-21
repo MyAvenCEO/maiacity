@@ -1,8 +1,9 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import {beforeAll,expect,test} from 'vitest';
-import {initialize,Simulation} from '../src/simulation';
-import {domeDefinition,domeScenario} from '../src/dome';
-import {ShedBuild} from '../src/shed';
-import {Wind} from '../src/wind';
+import {initialize,Simulation} from '../simulation';
+import {domeDefinition,domeScenario} from '../dome';
+import {ShedBuild} from '../shed';
+import {Wind} from '../wind';
 beforeAll(initialize);
 test.each([8,16])('%s m dome retains finite wind failure after all scaffolding leaves',diameter=>{
  const sim=new Simulation(domeScenario(diameter)),build=new ShedBuild(sim,domeDefinition(diameter)),wind=new Wind(sim);

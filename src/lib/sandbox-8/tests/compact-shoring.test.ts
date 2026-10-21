@@ -1,7 +1,8 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import {beforeAll,expect,test} from 'vitest';
-import {initialize,Simulation,shapeVerticesOf,transform,rotationOf,volumeOf,G} from '../src/simulation';
-import {domeDefinition as currentDomeDefinition,domeScenario} from '../src/dome';
-import {ShedBuild} from '../src/shed';
+import {initialize,Simulation,shapeVerticesOf,transform,rotationOf,volumeOf,G} from '../simulation';
+import {domeDefinition as currentDomeDefinition,domeScenario} from '../dome';
+import {ShedBuild} from '../shed';
 beforeAll(initialize);
 
 test.each([6,8,10,12,16])('%s m compact stands retain collision geometry, component masses and workshop instructions',diameter=>{

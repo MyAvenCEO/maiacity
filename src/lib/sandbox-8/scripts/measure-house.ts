@@ -1,10 +1,10 @@
 // Staged German-house construction, settling, ground reaction and wind trials.
 // Run: npm run measure:house   (writes german-house-measurements.json)
 import { writeFileSync } from 'node:fs';
-import { initialize, Simulation, DT, G, volumeOf } from '../src/simulation';
-import { ShedBuild } from '../src/shed';
-import { Wind } from '../src/wind';
-import { germanHouseDefinition, germanHouseScenario, HOUSE } from '../src/german-house';
+import { initialize, Simulation, DT, G, volumeOf } from '../simulation';
+import { ShedBuild } from '../shed';
+import { Wind } from '../wind';
+import { germanHouseDefinition, germanHouseScenario, HOUSE } from '../german-house';
 await initialize();
 const def = germanHouseDefinition(), sim = new Simulation(germanHouseScenario(), DT), build = new ShedBuild(sim, def);
 const stages: unknown[] = [];

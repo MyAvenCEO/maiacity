@@ -1,5 +1,5 @@
 import { writeFileSync } from 'node:fs';
-import { DT, G, initialize, scenarios, Simulation } from '../src/simulation';
+import { DT, G, initialize, scenarios, Simulation } from '../simulation';
 await initialize();
 const rows = scenarios().map(scenario => {
   const s = new Simulation(scenario); const mass = s.mass;

@@ -1,9 +1,10 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import {beforeAll,afterAll,describe,expect,test} from 'vitest';
-import {initialize,Simulation,DT,G,volumeOf,verticesOf,transform,rotationOf,piecesOf,type Box} from '../src/simulation';
-import {ShedBuild,jointPoint} from '../src/shed';
-import {fasteningPatch} from '../src/fasteners';
-import {Wind} from '../src/wind';
-import {germanHouseDefinition,germanHouseScenario,OPENINGS} from '../src/german-house';
+import {initialize,Simulation,DT,G,volumeOf,verticesOf,transform,rotationOf,piecesOf,type Box} from '../simulation';
+import {ShedBuild,jointPoint} from '../shed';
+import {fasteningPatch} from '../fasteners';
+import {Wind} from '../wind';
+import {germanHouseDefinition,germanHouseScenario,OPENINGS} from '../german-house';
 
 beforeAll(initialize);
 

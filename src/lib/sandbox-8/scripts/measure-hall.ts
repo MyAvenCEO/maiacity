@@ -1,10 +1,10 @@
 // Staged industrial-hall construction, settling, ground reaction and wind trials.
 // Run: npm run measure:hall   (writes industrial-hall-measurements.json)
 import { writeFileSync } from 'node:fs';
-import { initialize, Simulation, DT, G, volumeOf } from '../src/simulation';
-import { ShedBuild } from '../src/shed';
-import { Wind } from '../src/wind';
-import { industrialHallDefinition, industrialHallScenario, HALL } from '../src/industrial-hall';
+import { initialize, Simulation, DT, G, volumeOf } from '../simulation';
+import { ShedBuild } from '../shed';
+import { Wind } from '../wind';
+import { industrialHallDefinition, industrialHallScenario, HALL } from '../industrial-hall';
 await initialize();
 const def = industrialHallDefinition(), sim = new Simulation(industrialHallScenario(), DT), build = new ShedBuild(sim, def);
 const stages: unknown[] = [];

@@ -1,8 +1,9 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import { afterEach, beforeAll, expect, test } from 'vitest';
-import { initialize, Simulation, DT, G, piecesOf, volumeOf, type Box } from '../src/simulation';
-import { ShedBuild, jointPoint } from '../src/shed';
-import { brickHouseDefinition, brickHouseScenario, sharedFaceArea } from '../src/brick-house';
-import { Wind } from '../src/wind';
+import { initialize, Simulation, DT, G, piecesOf, volumeOf, type Box } from '../simulation';
+import { ShedBuild, jointPoint } from '../shed';
+import { brickHouseDefinition, brickHouseScenario, sharedFaceArea } from '../brick-house';
+import { Wind } from '../wind';
 
 beforeAll(initialize);
 const worlds: Simulation[] = [];

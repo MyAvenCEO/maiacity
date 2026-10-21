@@ -1,7 +1,8 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import {beforeAll,expect,test} from 'vitest';
-import {initialize,Simulation} from '../src/simulation';
-import {domeDefinition as detailedDomeDefinition,domeScenario} from '../src/dome';
-import {ShedBuild} from '../src/shed';
+import {initialize,Simulation} from '../simulation';
+import {domeDefinition as detailedDomeDefinition,domeScenario} from '../dome';
+import {ShedBuild} from '../shed';
 beforeAll(initialize);
 test.each([10,16])('adaptive %s m dome carries gravity throughout staged construction',diameter=>{
  const def=domeDefinition(diameter),sim=new Simulation(domeScenario(diameter)),build=new ShedBuild(sim,def);

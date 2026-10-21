@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import type {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+import {createControls} from '$lib/render/core.js';
 import type {Box} from './simulation';
 import type {BuildDefinition, BuildPart} from './shed';
 import {boundsOf, escapeHtml as e, geometryDetails, mm, partsCatalog, partGeometryRecord, previewSpec, type PartGroup} from './parts-catalog';
@@ -24,7 +25,7 @@ export class PartsGallery {
     this.scene.background=new THREE.Color(0x192c27);
     this.scene.add(new THREE.HemisphereLight(0xffffff,0x809589,2.5));
     const light=new THREE.DirectionalLight(0xffeed4,3);light.position.set(4,8,5);this.scene.add(light,this.root,this.dimensions);
-    this.controls=new OrbitControls(this.camera,canvas);this.controls.enableDamping=true;this.controls.enabled=false;this.controls.minDistance=.3;
+    this.controls=createControls(this.camera,canvas,{enabled:false,minDistance:.3});
     list.addEventListener('click',event=>{const button=(event.target as HTMLElement).closest<HTMLButtonElement>('button[data-group]');if(button)this.select(button.dataset.group!,true);});
     detail.addEventListener('change',event=>{const select=event.target as HTMLSelectElement;if(select.id==='gallery-instance'&&this.selected){this.chosenSpec=this.selected.instances.find(p=>p.box.id===select.value)!.box;this.refreshTile(this.selected);this.showDetail();this.drawDimensions();}});
     detail.addEventListener('click',event=>{if((event.target as HTMLElement).closest('[data-focus]')&&this.selected)this.focus(this.selected.id);

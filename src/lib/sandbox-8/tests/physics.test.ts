@@ -1,5 +1,6 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import { afterEach, beforeAll, expect, test } from 'vitest';
-import { boundsY, DT, G, initialize, Playback, scenarios, Simulation } from '../src/simulation';
+import { boundsY, DT, G, initialize, Playback, scenarios, Simulation } from '../simulation';
 
 beforeAll(initialize);
 const live: Simulation[] = [];

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createControls, createRenderer } from '$lib/render/core.js';
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import { scenarios, polyhedraOf, piecesOf, verticesOf, type Box, type Scenario } from './simulation';
 import { shedScenario } from './shed';
@@ -40,9 +40,11 @@ function partGeometry(spec: Box) {
   return geometry;
 }
 
-async function main() {
+/** Mounts the laboratory into `root` (Sandbox 7, src/routes/app/games/sandbox-8); resolves to what takes it down again. */
+export async function mountLab(root: HTMLElement): Promise<() => void> {
   const presets = [...scenarios(), shedScenario(), brickHouseScenario(), metalShedScenario(), domeScenario(), standScenario(), industrialHallScenario(), germanHouseScenario()];
-  document.querySelector('#app')!.innerHTML = `
+  root.classList.add('physical-lab');
+  root.innerHTML = `
     <header><div><small>PHYSICAL WORLD / ASSEMBLY SANDBOX</small><h1>From parts to buildings</h1></div><span class="tag">RIGID BODY LABORATORY</span></header>
     <div class="layout"><aside class="left"><h2>Choose an experiment</h2><nav id="scenario-list" aria-label="Experiments"></nav><section id="dome-controls" hidden aria-label="Dome dimensions"><h2>Dome size</h2>
       <form id="dome-size-form"><label for="dome-diameter">Frame diameter · m</label><input id="dome-diameter" type="number" min="${MIN_DOME_DIAMETER}" step="any" value="${DEFAULT_DOME_DIAMETER}" required>
@@ -87,11 +89,9 @@ async function main() {
   const scene = new THREE.Scene(); scene.background = new THREE.Color(0x20372b);
   scene.fog = new THREE.Fog(0x20372b, 18, 42);
   const camera = new THREE.PerspectiveCamera(42, 1, .05, 100);
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFShadowMap; renderer.outputColorSpace = THREE.SRGBColorSpace;
+  const renderer = createRenderer({ antialias: true, maxPixelRatio: 2, shadows: 'pcf', colorSpace: THREE.SRGBColorSpace });
   viewport.prepend(renderer.domElement);
-  const controls = new OrbitControls(camera, renderer.domElement); controls.enableDamping = true; controls.maxDistance = 30; controls.minDistance = .5;
+  const controls = createControls(camera, renderer.domElement, { maxDistance: 30, minDistance: .5 });
   scene.add(new THREE.HemisphereLight(0xf6f0d3, 0x4c6850, 2));
   const light = new THREE.DirectionalLight(0xffe4b2, 3); light.position.set(-3, 8, 5); light.castShadow = true;
   light.shadow.mapSize.set(2048, 2048); Object.assign(light.shadow.camera, { left: -8, right: 8, top: 8, bottom: -8 }); light.shadow.bias = -.0003; scene.add(light);
@@ -105,7 +105,7 @@ async function main() {
     gallery.resize(viewport.clientWidth,viewport.clientHeight);
     if(active&&galleryDirty){gallery.setPlan(build?.plan ?? config.boxes.filter(b=>!b.fixed).map(box=>({box,stage:0,connectTo:[]})),build?.definition);galleryDirty=false;}
     galleryActive=active;gallery.setActive(active);controls.enabled=!active;
-    document.querySelector('main')!.classList.toggle('parts-view',active);
+    root.querySelector('main')!.classList.toggle('parts-view',active);
     for(const id of ['gallery-header','gallery-list','gallery-detail'])el(id).hidden=!active;
     el('assembly-inspector').hidden=active;el('setup-details').hidden=active||!!build;
     el('construction').hidden=active||!build||config.id==='stand-lab';
@@ -387,7 +387,7 @@ async function main() {
     const anchor = dialog.querySelector('a')!; anchor.href = url; anchor.download = `physical-world-${config.id}-${sim.ticks}.json`;
     dialog.querySelector('button')!.onclick = () => dialog.close();
     dialog.onclose = () => { URL.revokeObjectURL(url); dialog.remove(); };
-    document.body.append(dialog); dialog.showModal();
+    root.append(dialog); dialog.showModal();
   };
   const raycaster = new THREE.Raycaster(); let down = { x: 0, y: 0 };
   renderer.domElement.onpointerdown = e => { down = { x: e.clientX, y: e.clientY }; };
@@ -399,10 +399,11 @@ async function main() {
     const hit = raycaster.intersectObjects([...meshes.values()].filter(mesh => mesh.visible))[0];
     if (hit) { selected = hit.object.userData.id; if(!galleryDirty)gallery.selectInstance(selected); el<HTMLSelectElement>('part').value = selected; fillSetup(); void send({type:'select',id:selected}); }
   });
-  new ResizeObserver(() => { const w = viewport.clientWidth, h = viewport.clientHeight; renderer.setSize(w, h); gallery.resize(w,h); camera.aspect = w / h; camera.updateProjectionMatrix(); }).observe(viewport);
+  const resizing = new ResizeObserver(() => { const w = viewport.clientWidth, h = viewport.clientHeight; renderer.setSize(w, h); gallery.resize(w,h); camera.aspect = w / h; camera.updateProjectionMatrix(); }); resizing.observe(viewport);
   await reset(presets[presets.length - 1], true);
   let last = performance.now(), lastDisplay = 0;
-  document.addEventListener('visibilitychange', () => { last = performance.now(); });
+  const resume = () => { last = performance.now(); };
+  document.addEventListener('visibilitychange', resume);
   renderer.setAnimationLoop((now: number) => {
     const elapsed = (now - last) / 1000; last = now;
     if (!document.hidden && !galleryActive && playback.running) client.advance(elapsed);
@@ -412,5 +413,10 @@ async function main() {
     if (now - lastDisplay > 100) { update(); lastDisplay = now; }
     if(galleryActive)gallery.render(renderer);else {controls.update(); renderer.render(scene, camera);}
   });
+  return () => {
+    renderer.setAnimationLoop(null); resizing.disconnect(); document.removeEventListener('visibilitychange', resume);
+    client.dispose(); controls.dispose(); gallery.controls.dispose();
+    scene.traverse(object => { const mesh = object as THREE.Mesh; mesh.geometry?.dispose(); for (const m of [mesh.material].flat()) (m as THREE.Material | undefined)?.dispose(); });
+    renderer.dispose(); root.innerHTML = ''; root.classList.remove('physical-lab');
+  };
 }
-main().catch(error => { document.querySelector('#app')!.textContent = `Could not start the laboratory: ${error.message}`; console.error(error); });

@@ -1,6 +1,7 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import {expect,test} from 'vitest';
-import {WorkerClient} from '../src/worker-client';
-import type {Reply,Request} from '../src/worker-runtime';
+import {WorkerClient} from '../worker-client';
+import type {Reply,Request} from '../worker-runtime';
 class Port {
  messages:Request[]=[];onmessage?:({data}:{data:Reply})=>void;onerror?:({message}:{message:string})=>void;
  postMessage(request:Request){this.messages.push(request);}

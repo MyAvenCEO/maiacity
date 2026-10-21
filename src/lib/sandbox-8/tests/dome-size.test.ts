@@ -1,11 +1,12 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import RAPIER from '@dimforge/rapier3d-compat';
 import {beforeAll,expect,test} from 'vitest';
-import {initialize,Simulation,volumeOf,type Box} from '../src/simulation';
-import {domeDefinition as detailedDomeDefinition,domeScenario} from '../src/dome';
-import {ShedBuild} from '../src/shed';
-import {Wind} from '../src/wind';
-import {fasteningPatch} from '../src/fasteners';
-import {v} from '../src/geometry';
+import {initialize,Simulation,volumeOf,type Box} from '../simulation';
+import {domeDefinition as detailedDomeDefinition,domeScenario} from '../dome';
+import {ShedBuild} from '../shed';
+import {Wind} from '../wind';
+import {fasteningPatch} from '../fasteners';
+import {v} from '../geometry';
 beforeAll(initialize);
 
 test.each([6,8,12,16])('diameter %s preserves physical attachments, doorway and support withdrawal',(diameter)=>{

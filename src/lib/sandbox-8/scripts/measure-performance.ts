@@ -2,10 +2,10 @@
 // Headless, same-world wind comparison. No physics settings are changed.
 // Run: node --import tsx scripts/measure-performance.ts
 import { strict as assert } from 'node:assert';
-import { initialize, Simulation } from '../src/simulation';
-import { domeDefinition, domeScenario } from '../src/dome';
-import { ShedBuild } from '../src/shed';
-import { Wind } from '../src/wind';
+import { initialize, Simulation } from '../simulation';
+import { domeDefinition, domeScenario } from '../dome';
+import { ShedBuild } from '../shed';
+import { Wind } from '../wind';
 import { ReferenceWind } from '../tests/helpers/reference-wind';
 await initialize();
 for (const diameter of [8, 16]) {

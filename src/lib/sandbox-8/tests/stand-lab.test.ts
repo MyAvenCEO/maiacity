@@ -1,9 +1,10 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import {beforeAll,expect,test} from 'vitest';
-import {initialize,Simulation,volumeOf,G} from '../src/simulation';
-import {ShedBuild} from '../src/shed';
-import {standDefinition,standScenario,STAND_HUBS} from '../src/stand-lab';
-import {fasteningPatch} from '../src/fasteners';
-import {WorkerRuntime} from '../src/worker-runtime';
+import {initialize,Simulation,volumeOf,G} from '../simulation';
+import {ShedBuild} from '../shed';
+import {standDefinition,standScenario,STAND_HUBS} from '../stand-lab';
+import {fasteningPatch} from '../fasteners';
+import {WorkerRuntime} from '../worker-runtime';
 beforeAll(initialize);
 
 test('extension moves the same stock without changing stand mass; every hub has a real mounting face',()=>{

@@ -1,6 +1,6 @@
-import {initialize,Simulation} from '../src/simulation';
-import {domeScenario,domeDefinition} from '../src/dome';
-import {ShedBuild} from '../src/shed';
+import {initialize,Simulation} from '../simulation';
+import {domeScenario,domeDefinition} from '../dome';
+import {ShedBuild} from '../shed';
 await initialize();
 for(const diameter of [8,16]){
  const def=domeDefinition(diameter),sim=new Simulation(domeScenario(diameter)),build=new ShedBuild(sim,def);let peak=0,previous=0,stage=-1;

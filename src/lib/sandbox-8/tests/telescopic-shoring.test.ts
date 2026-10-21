@@ -1,9 +1,10 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
 import {beforeAll,expect,test} from 'vitest';
-import {initialize,Simulation,shapeVerticesOf,transform,rotationOf,volumeOf,G} from '../src/simulation';
-import {domeDefinition,domeScenario} from '../src/dome';
-import {STAND_MODEL,MIN_OVERLAP} from '../src/telescopic-stand';
-import {fasteningPatch} from '../src/fasteners';
-import {ShedBuild} from '../src/shed';
+import {initialize,Simulation,shapeVerticesOf,transform,rotationOf,volumeOf,G} from '../simulation';
+import {domeDefinition,domeScenario} from '../dome';
+import {STAND_MODEL,MIN_OVERLAP} from '../telescopic-stand';
+import {fasteningPatch} from '../fasteners';
+import {ShedBuild} from '../shed';
 beforeAll(initialize);
 
 test.each([6,8,8.01,10,10.01,12,16])('%s m uses identical stock and constant stand mass at every height, with clear mounts',diameter=>{

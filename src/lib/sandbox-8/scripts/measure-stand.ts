@@ -1,4 +1,4 @@
-import {initialize,Simulation} from '../src/simulation';import {ShedBuild} from '../src/shed';import {standScenario,standDefinition,STAND_HUBS} from '../src/stand-lab';
+import {initialize,Simulation} from '../simulation';import {ShedBuild} from '../shed';import {standScenario,standDefinition,STAND_HUBS} from '../stand-lab';
 await initialize();
 for(const hub of Object.keys(STAND_HUBS) as (keyof typeof STAND_HUBS)[])for(const heightM of [1.3,4,8.4]){
  const sim=new Simulation(standScenario()),build=new ShedBuild(sim,standDefinition({heightM,loadKg:hub==='plate'?100:0,friction:.65,hub}));
