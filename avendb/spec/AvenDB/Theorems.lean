@@ -705,13 +705,11 @@ theorem T12_since (edits : List Edit) (d : SignerId) (fr : Ask) {o : Edit} (h : 
     o ∈ edits ∧ ∃ l, o.log? = some l ∧ (mayReceiveLog (view edits) d l fr.follow = true ∨ ∃ v, l = .vault v) :=
   Syncing.T12_since edits d fr h
 
-/-- T27 (files follow their edits): a peer hands a device a file only if it holds a write that brings it, of an entry
-    that device may receive by the peer's view. So a device acting through relay alone fetches no file of an audience
-    (T26), backup fetches them as ciphertext, and a file named nowhere a device may look is never handed to it. -/
-theorem T27_files_follow_their_edits (edits : List Edit) (d : SignerId) (f : FileId) (fl : List VaultId)
-    (h : mayFetch edits d f fl = true) :
+/-- T27, of the files edits bring: an edit a peer sends a device that brings a file is a write of an entry that device
+    may receive by the peer's view. -/
+theorem T27_brought (edits : List Edit) (d : SignerId) (f : FileId) (fl : List VaultId)
+    (h : (respond edits d fl).any (fun o => o.filesOf.contains f) = true) :
     ∃ o ∈ edits, f ∈ o.filesOf ∧ ∃ e, o.log? = some (.entry e) ∧ mayReceive (view edits) d e fl = true := by
-  unfold mayFetch at h
   obtain ⟨o, hsent, hf⟩ := List.any_eq_true.mp h
   have hf : f ∈ o.filesOf := by simpa using hf
   have hlog : ∃ e, o.log? = some (.entry e) := by
@@ -724,6 +722,24 @@ theorem T27_files_follow_their_edits (edits : List Edit) (d : SignerId) (f : Fil
   rcases hmay with hmay | ⟨v, hv⟩
   · simpa [mayReceiveLog] using hmay
   · cases hv
+
+/-- T27 (files follow their edits): a peer hands a device a file only if it holds a write that brings it, or a snapshot
+    whose state of an entry travels as it (`Stated.file`), of an entry that device may receive by the peer's view. So a
+    device acting through relay alone fetches no file of an audience (T26), backup fetches them as ciphertext, and a
+    file named nowhere a device may look is never handed to it. -/
+theorem T27_files_follow_their_edits (edits : List Edit) (d : SignerId) (f : FileId) (fl : List VaultId)
+    (h : mayFetch edits d f fl = true) :
+    ∃ o ∈ edits, ∃ e, (f ∈ o.filesOf ∧ o.log? = some (.entry e) ∨ (e, f) ∈ o.statedFiles) ∧
+      mayReceive (view edits) d e fl = true := by
+  unfold mayFetch at h
+  obtain ⟨o, hsent, hf⟩ := List.any_eq_true.mp h
+  rcases Bool.or_eq_true_iff.mp hf with hb | hs
+  · obtain ⟨o', ho', hf', e, he, hm⟩ := T27_brought edits d f fl (List.any_eq_true.mpr ⟨o, hsent, hb⟩)
+    exact ⟨o', ho', e, .inl ⟨hf', he⟩, hm⟩
+  · obtain ⟨⟨e, g⟩, hm, hg⟩ := List.any_eq_true.mp hs
+    simp only [Bool.and_eq_true, beq_iff_eq] at hg
+    obtain ⟨rfl, hr⟩ := hg
+    exact ⟨o, (T12_sync_sends_only_what_shares_reach edits d fl hsent).1, e, .inr hm, Syncing.syncs_may hr⟩
 
 /-- T28 (a device syncs what it may and its keep shares want): every edit of an entry a peer sends a device is of an
     entry the device may receive by the peer's view and that its keep shares want (`wants`). A keep share only narrows:
@@ -875,10 +891,12 @@ theorem H1_synced_to_file (n : Node) (me d : SignerId) (f : FileId) (h : (d, tru
 
 /-- T27, holdings never authorize: a node's blob gate hands a blob of a file, its root or one of its pieces, over a blob
     connection from an endpoint only while a sync connection from that endpoint is open, and only to the device its
-    hello proved, if a write the node holds brings the file, of an entry that device may receive by the node's view. -/
+    hello proved, if a write the node holds brings the file, or a snapshot it holds states an entry as it, of an entry
+    that device may receive by the node's view. -/
 theorem T27_holdings_never_authorize (n : Node) (ep : EndpointId) (b : FileBlob) (fl : List VaultId)
     (h : n.hands ep b fl = true) :
-    ∃ c ∈ n.conns, c.endpoint = ep ∧ ∃ o ∈ n.edits, b.file ∈ o.filesOf ∧ ∃ e, o.log? = some (.entry e) ∧
+    ∃ c ∈ n.conns, c.endpoint = ep ∧ ∃ o ∈ n.edits, ∃ e,
+      (b.file ∈ o.filesOf ∧ o.log? = some (.entry e) ∨ (e, b.file) ∈ o.statedFiles) ∧
       mayReceive (view n.edits) c.device e fl = true := by
   unfold Node.hands at h
   split at h
@@ -901,8 +919,7 @@ theorem T27_holdings_name_only_fetchable_files (n : Node) (c : Conn) (told : Opt
       mayReceive (view n.edits) c.device e = true) ∧
     (∀ f, (f, none) ∈ a.files → ∃ t ∈ told, ∃ x, (f, x) ∈ t.files) := by
   refine ⟨fun f x hf => ?_, (Syncing.since_sound h).2.2⟩
-  exact T27_files_follow_their_edits n.edits c.device f []
-    (Syncing.reachFiles_fetch ((H1_states_its_shelf n c told h).2 f x hf).2)
+  exact T27_brought n.edits c.device f [] (Syncing.reachFiles_brought ((H1_states_its_shelf n c told h).2 f x hf).2)
 
 /-! ## Signed holdings
 

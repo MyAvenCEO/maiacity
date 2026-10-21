@@ -207,10 +207,19 @@ pub fn respond(edits: &[Edit], d: SignerId, follow: &[VaultId]) -> Vec<Edit> {
 }
 
 /// A peer holding `edits` may hand device `d`, which follows the vaults `follow`, the sealed bytes of file `file`: it
-/// sends `d` an edit that brings the file (T27), a write of an entry `d` may receive. Holding the bytes is the peer's
-/// store's to say.
+/// sends `d` an edit that brings the file (T27), a write of an entry `d` may receive, or a snapshot whose state of an
+/// entry `d` syncs travels as it (`Stated::slice`). Holding the bytes is the peer's store's to say.
 pub fn may_fetch(edits: &[Edit], d: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
-    answer(edits, &view(edits), d, follow).into_iter().any(|i| edits[i].files().contains(file))
+    fetchable(edits, &view(edits), d, file, follow)
+}
+
+/// `may_fetch`, by the view `st` of `edits`.
+pub(crate) fn fetchable(edits: &[Edit], st: &State, d: SignerId, file: &FileRoot, follow: &[VaultId]) -> bool {
+    let reach = Reach::new(st, d, follow);
+    answer(edits, st, d, follow).into_iter().any(|i| {
+        let edit = &edits[i];
+        edit.files().contains(file) || edit.stated().any(|x| x.slice == *file && reach.log(LogId::Entry(x.entry)))
+    })
 }
 
 /// `respond`, by the view `st` of `edits`: the places in `edits` of what it sends, the entry, audience and share logs'

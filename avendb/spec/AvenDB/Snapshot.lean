@@ -265,19 +265,19 @@ def sNote : List Edit := s1 ++ chain 40 [(macA, [], create alice welcome alice [
      parents := [40] }]
 
 /-- Entry `welcome`'s state after both writes, as Alice's owners state it. -/
-def welcomeAt : Stated := ⟨welcome, [41], (view sNote).sliceOf welcome⟩
+def welcomeAt : Stated := { entry := welcome, basis := [41], slice := (view sNote).sliceOf welcome }
 
 /-- Her passkey signs a snapshot of it. -/
 def snapA : Edit := { id := 50, depth := 50, author := passkeyA, cosigners := [], action := .snapshot alice [welcomeAt] }
 def sSnap : List Edit := sNote ++ [snapA]
 
 /-- A snapshot that leaves out the second write: a lie. -/
-def welcomeLie : Stated := ⟨welcome, [41], { welcomeAt.slice with
-  writes := welcomeAt.slice.writes.take 1, adds := welcomeAt.slice.adds.filter (·.1 == 40) }⟩
+def welcomeLie : Stated := { welcomeAt with slice := { welcomeAt.slice with
+  writes := welcomeAt.slice.writes.take 1, adds := welcomeAt.slice.adds.filter (·.1 == 40) } }
 def sLie : List Edit := sNote ++ chain 50 [(passkeyA, [], .snapshot alice [welcomeLie])]
 
 /-- A state that reaches past its entry, into `charter`'s marks: not scoped, never taken. -/
-def welcomeWide : Stated := ⟨welcome, [41], { welcomeAt.slice with marks := [(charter, [])] }⟩
+def welcomeWide : Stated := { welcomeAt with slice := { welcomeAt.slice with marks := [(charter, [])] } }
 def sWide : List Edit := sNote ++ chain 50 [(passkeyA, [], .snapshot alice [welcomeWide])]
 
 #guard refused sNote == []
@@ -317,6 +317,10 @@ def sRevoked : List Edit := sSnap ++ chain 60 [(passkeyA, [], .revoke (.device a
 #guard (startStates sRevoked).isEmpty
 #guard (startView sRevoked).sliceOf welcome == (view sRevoked).sliceOf welcome
 #guard !actsFor (startView sRevoked) phoneA alice
+-- a state's slice file: its entry's readers fetch it, Bob's Mac, which may not receive the note, doesn't
+def sFiled : List Edit := sNote ++ s2.drop 3 ++ chain 60 [(passkeyA, [], .snapshot alice [{ welcomeAt with file := 7 }])]
+#guard refused sFiled == []
+#guard mayFetch sFiled macA 7 && mayFetch sFiled phoneA 7 && !mayFetch sFiled macB 7 && !mayFetch sFiled macA 8
 -- a full copy finds every start right
 #guard startsRight sSnap && startsRight sAfter && startsRight sRevoked
 -- a device that held only Alice's vault is away too long past one new edit
