@@ -189,6 +189,7 @@ pub fn host(config: Config) -> Result<(Host, Lines)> {
         files: Mutex::default(),
         drives: drive::Drives::default(),
         sessions: Mutex::default(),
+        hosted: sessions::Hosted::default(),
         lean,
     });
     Ok((Host { service, runtime }, asks))
@@ -312,6 +313,8 @@ struct Service {
     drives: drive::Drives,
     /// The agents on this Mac it hosts, as sessions of its device (`sessions`), while it is open.
     sessions: Mutex<Option<n0_future::task::AbortOnDropHandle<()>>>,
+    /// The sessions it hosts now (`sessions::Hosted`), for Settings to list.
+    hosted: sessions::Hosted,
     /// Lean, where the person got it, which checks an AIP's objective (`lean`).
     lean: lean::Lean,
 }
@@ -417,6 +420,7 @@ impl Service {
                 agent::command(&std::env::current_exe()?, &self.config.dir, harness)
             }
             "agentDevices" => self.agent_devices(),
+            "sessions" => sessions::list(&self.hosted),
             "drives" => self.drives().await?,
             "joinDrive" => self.join_drive(&a.text(0)?, a.get(1).as_str().unwrap_or_default()).await?,
             "openDrive" => self.open_drive(&a.text(0)?).await?,
@@ -726,9 +730,9 @@ impl Service {
     /// Hosts the agents on this Mac as sessions of device `d` from here on (`sessions`), in place of the device it
     /// hosted them on before.
     fn host_agents(&self, d: &Device) {
-        let (node, dir) = (d.shared_node(), self.config.dir.clone());
+        let (node, dir, hosted) = (d.shared_node(), self.config.dir.clone(), self.hosted.clone());
         let serving = tokio::spawn(async move {
-            if let Err(e) = sessions::serve(node, dir).await {
+            if let Err(e) = sessions::serve(node, dir, hosted).await {
                 tracing::warn!("avendb: this Mac's agents aren't hosted: {e:#}");
             }
         });
