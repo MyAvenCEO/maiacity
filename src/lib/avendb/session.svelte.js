@@ -2,7 +2,8 @@
  * This tab's avenDB device, the one every page of the site shares: the person's account on this browser, loaded once,
  * unlocked once with their passkey, and kept open as long as the tab lives, so that leaving avenDB for another page of
  * the site and coming back, or opening a page of its own that reads it (the Proposals app's AIPs), asks for no second
- * unlock and runs no second device. Here alone the device's WebAssembly is loaded (./device/avendb_browser.js), its
+ * unlock and runs no second device. Here alone the device's WebAssembly is loaded (./device/avendb_browser.js), in a
+ * worker of its own beside the page (./remote.js), so that its long work never holds the page's thread, its
  * shelf in the browser's private file system opened (./device/store.js) and what opens it again read (`meta`),
  * the device started (founding the person's vault, linking this browser to it, or unlocking it), every op sent to it
  * with the passkey's ceremony where its vault's owners approve it, and what it shows of its world read as it changes.
@@ -69,12 +70,12 @@ const APPROVED = ['share', 'share_group', 'revoke', 'settings', 'found'];
 /** @type {Steps} */
 const QUIET = { step: () => {}, device: () => () => {} };
 
-/** @type {any} the device's WebAssembly */
+/** @type {any} the device's WebAssembly, as the page reaches it in its worker (./remote.js) */
 let avendb = null;
 /** @type {any} in the Mac app, its device beside it (./native.js): null where the page runs the device; state, as
  *  pages read it to know whose device it is */
 let mac = $state.raw(null);
-/** @type {any} the page's store, its device's shelf in OPFS (./device/store.js) */
+/** @type {any} the page's store, its device's shelf in OPFS (./device/store.js), opened in the device's worker */
 let store = null;
 
 /** @type {Phase} */
@@ -91,8 +92,10 @@ let vault = $state('');
 /** what the key move asks of the person (K3b, avendb-browser's `Moving`), while their passkey, this device or in the
  *  Mac app its Touch ID key still signs in SLH-DSA, or the server or an agent of the aven they govern does (K3c):
  *  whether their passkey signs, whether Touch ID does, whether the device moves, and how many of the aven's devices
- *  move with it; null once nothing moves.
- *  @type {{ passkey: boolean, touch: boolean, device: boolean, avens?: number } | null} */
+ *  move with it; once all of it moved, the earlier keys and the old devices to remove (`retire`), which waits while
+ *  this device doesn't hold what the coop's server holds (`behind`); null once nothing moves.
+ *  @type {{ passkey: boolean, touch: boolean, device: boolean, avens?: number,
+ *    retire?: { kind: 'root' | 'owner' | 'device', key: string, next?: string, vault?: string }[], behind?: boolean } | null} */
 let moving = $state.raw(null);
 /** what the page is doing for the person, and what went wrong last, where it shows them */
 let doing = $state('');
@@ -153,11 +156,10 @@ async function start() {
 		return;
 	}
 	try {
-		const pkg = await import('./device/avendb_browser.js');
-		await pkg.default();
+		const pkg = await import('./remote.js');
+		await pkg.load();
 		avendb = pkg;
-		const stores = await import('./device/store.js');
-		store = await stores.open(STORE);
+		store = await pkg.openStore(STORE);
 		meta = (await avendb.storeMeta(store)) ?? null;
 		phase = meta ? 'closed' : 'new';
 	} catch (e) {
@@ -244,9 +246,27 @@ async function stepping(shows, name, ...args) {
 	}
 }
 
-async function ceremonies(/** @type {string | undefined} */ id) {
+/** The PRF's salt for the passkey's own keys, read off the device's WebAssembly once. @type {Uint8Array | null} */
+let prfSalt = null;
+
+/**
+ * The passkey's ceremonies (./device/passkey.js), with the passkey whose credential's id is `id`, here on the page, as
+ * WebAuthn runs only here; their salts, which it reads off the WebAssembly at once, asked of the device's worker first:
+ * the passkey's own, and the salt of the device whose own 32 bytes are `nonce`, for its unlock.
+ * @param {string | undefined} id @param {Uint8Array} [nonce]
+ */
+async function ceremonies(id, nonce) {
 	const passkey = await import('./device/passkey.js');
-	return { passkey, ...passkey.ceremonies(avendb, id) };
+	prfSalt ??= await avendb.prfSalt();
+	const salt = nonce ? await avendb.deviceSalt(nonce) : null;
+	const salts = {
+		prfSalt: () => prfSalt,
+		deviceSalt: (/** @type {Uint8Array} */ n) => {
+			if (!salt || !nonce || hex(n) !== hex(nonce)) throw new Error('no salt asked for this device');
+			return salt;
+		}
+	};
+	return { passkey, ...passkey.ceremonies(salts, id) };
 }
 
 /** A sign-in whose passkey roots no vault the other side holds: say which button sets one up, and mark it so (`code`
@@ -276,12 +296,13 @@ async function found(fresh, { name, relay, server, backup, person }, { step, dev
 		await macOpened(await stepping(shown(), 'found', name, relay, server, backup));
 		return;
 	}
-	const { passkey, unlock, sign, held } = await ceremonies(undefined);
+	const nonce = crypto.getRandomValues(new Uint8Array(32));
+	const { passkey, unlock, sign, held } = await ceremonies(undefined, nonce);
 	if (fresh) step('make');
 	const made = fresh ? await passkey.create(person || name) : null;
 	if (made) held.id = made.id;
-	const nonce = crypto.getRandomValues(new Uint8Array(32));
-	const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => unlock(nonce, challenge);
+	// a copy of the nonce, as what the unlock brings back is moved to the device's worker, and the nonce kept after it
+	const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => unlock(nonce.slice(), challenge);
 	const shows = shown();
 	const d = await avendb.Device.found(name, relay, server, made?.spki, unlockNew, sign, backup, shows, store);
 	step('save');
@@ -300,9 +321,10 @@ async function link(through, { name, relay }, { step, device: shown } = QUIET) {
 		await macOpened(await stepping(shown(), 'link', name, relay, through).catch(noAccount));
 		return;
 	}
-	const { unlock, held } = await ceremonies(undefined);
 	const nonce = crypto.getRandomValues(new Uint8Array(32));
-	const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => unlock(nonce, challenge);
+	const { unlock, held } = await ceremonies(undefined, nonce);
+	// a copy of the nonce, as what the unlock brings back is moved to the device's worker, and the nonce kept after it
+	const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => unlock(nonce.slice(), challenge);
 	const d = await avendb.Device.link(name, relay, through, unlockNew, shown(), store).catch(noAccount);
 	step('save');
 	await started(d, nonce, held.id, { name, relay });
@@ -363,11 +385,12 @@ async function opening({ step, device: shown }) {
 		const why = new Error(`avenDB is open in another tab of ${here}: it opens in one tab at a time`);
 		throw Object.assign(why, { code: 'held' });
 	});
-	const { unlock } = await ceremonies(meta.credential);
+	const nonce = unhex(meta.nonce);
+	const { unlock } = await ceremonies(meta.credential, nonce);
 	step('unlock');
 	let unlocked;
 	try {
-		unlocked = await unlock(unhex(meta.nonce));
+		unlocked = await unlock(nonce);
 	} catch (e) {
 		await store.release().catch(() => {});
 		throw e;
@@ -401,15 +424,17 @@ const MOVE_AGAIN = 30000;
 /** What device `d`'s key move asks of the person (K3b), once it opened: where it asks for no ceremony, as a move cut
  *  short, it goes on at once; otherwise the page asks once more (`moveKeys`). Never fails: a device that can't say yet,
  *  as one still bringing what its peers hold (it caught up with none of them), is asked again `MOVE_AGAIN` later, for
- *  as long as it is the page's (Samuel 2026-10-20: a phone that unlocked mid-sync never showed "Move my keys").
- *  @param {any} d */
-async function checkMove(d) {
-	moving = null;
+ *  as long as it is the page's (Samuel 2026-10-20: a phone that unlocked mid-sync never showed "Move my keys"). So is
+ *  one whose old keys' removal waits until it holds what its coop's server holds (`behind`), the banner saying so
+ *  meanwhile (`again`). @param {any} d @param {boolean} [again] */
+async function checkMove(d, again = false) {
+	if (!again) moving = null;
 	try {
 		const asked = (mac ? await mac.call('moving') : await d.moving()) ?? null;
 		if (device !== d) return;
 		moving = asked;
-		if (asked && !asked.passkey && !asked.touch) await moveKeys();
+		if (asked?.behind) setTimeout(() => device === d && void checkMove(d, true), MOVE_AGAIN);
+		else if (asked && !asked.passkey && !asked.touch) await moveKeys();
 	} catch (e) {
 		console.warn('avenDB: the key move is asked about again in a moment:', /** @type {Error} */ (e)?.message ?? e);
 		setTimeout(() => device === d && !moving && void checkMove(d), MOVE_AGAIN);
@@ -422,7 +447,8 @@ async function checkMove(d) {
 async function moveKeys() {
 	const d = device;
 	if (!d || !moving) return false;
-	const ok = await change('Moving your keys to ML-DSA-65', async () => {
+	const what = moving.retire?.length ? 'Removing your old keys' : 'Moving your keys to ML-DSA-65';
+	const ok = await change(what, async () => {
 		if (mac) return macOpened(await mac.call('moveKeys'));
 		const moved = await d.move_keys((await ceremonies(meta.credential)).sign, null);
 		if (!moved) return;
@@ -432,7 +458,8 @@ async function moveKeys() {
 		d.free();
 		meta = (await avendb.storeMeta(store)) ?? meta;
 	});
-	if (ok && device === d) moving = null;
+	// a device that stays as it was, as after its old keys' removal, says what is left: the avens' move, or nothing
+	if (ok && device === d) void checkMove(d);
 	return ok;
 }
 
@@ -713,8 +740,9 @@ export const session = {
 	set doing(what) {
 		doing = what;
 	},
-	/** what the key move asks of the person (K3b, K3c): `{ passkey, touch, device, avens }` while anything of theirs
-	 *  here, or a device of the aven they govern, is to move to ML-DSA-65, else null */
+	/** what the key move asks of the person (K3b, K3c): `{ passkey, touch, device, avens, retire, behind }` while
+	 *  anything of theirs here, or a device of the aven they govern, is to move to ML-DSA-65, or once it all moved, the
+	 *  earlier keys and old devices to remove (`retire`, waiting while `behind`), else null */
 	get moving() {
 		return moving;
 	},

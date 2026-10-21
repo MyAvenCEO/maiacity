@@ -77,6 +77,33 @@ export const proofOf = (kinds, { vault = MAIA_CITY, feed = CODE_FEED, entries } 
 /** the device module's WebAssembly, started once (the page's own avenDB device, which the page loads anyway) */
 let wasm = null;
 
+/** a page's proofs, checked in a worker of their own (./prove.worker.js), never on the page's thread */
+let prover = null;
+let asks = 0;
+const waiting = new Map();
+/** @param {Uint8Array} bytes @param {string} vault @param {string} kinds @returns {Promise<string>} */
+function offThread(bytes, vault, kinds) {
+	if (!prover) {
+		prover = new Worker(new URL('./prove.worker.js', import.meta.url), { type: 'module' });
+		prover.onmessage = ({ data: { id, rows, error } }) => {
+			const w = waiting.get(id);
+			waiting.delete(id);
+			if (error == null) w?.ok(rows);
+			else w?.no(new Error(error));
+		};
+		prover.onerror = (e) => {
+			for (const w of waiting.values()) w.no(new Error(e.message || 'the proof worker failed'));
+			waiting.clear();
+			prover = null;
+		};
+	}
+	const id = ++asks;
+	return new Promise((ok, no) => {
+		waiting.set(id, { ok, no });
+		prover.postMessage({ id, bytes, vault, kinds }, [bytes.buffer]);
+	});
+}
+
 /**
  * The rows the proof `bytes` proves of vault `vault`'s public code of kinds `kinds`, as avenDB's WebAssembly reads
  * them back (avendb-browser's `provenCode`, `avendb::provenance::verify`): a device of no vault takes the edits as it
@@ -85,6 +112,8 @@ let wasm = null;
  * @param {Uint8Array} bytes @param {string} vault @param {string[]} kinds @returns {Promise<any[]>}
  */
 export async function verifyProof(bytes, vault, kinds) {
+	// in a page, off its thread: seconds of WebAssembly there froze the page and the view frames that share its thread
+	if (typeof window !== 'undefined' && typeof Worker !== 'undefined') return JSON.parse(await offThread(bytes, vault, kinds.join(',')));
 	wasm ??= import('../../../src/lib/avendb/device/avendb_browser.js').then(async (pkg) => (await pkg.default(), pkg));
 	const pkg = await wasm.catch((e) => {
 		wasm = null;

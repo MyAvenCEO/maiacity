@@ -1045,6 +1045,7 @@ without padding). `share`, `share_group`, `revoke`, `settings` and `found` may a
 | `cap_groups` | `vault` | The vault's cap groups the device reads, each `{entry, name, caps, includes}` as its version in force says |
 | `kinds` | none | The kind table (section 3): each kind's name (`kind`), `ownedBy` (`"signers"` or the kinds of vault that may own it), `most` owners (`null` for any), whether it holds `devices`, and how many of it one owner may own (`each`, `null` for any) |
 | `limits` | none | How deep the device's queries read: `{depth, default, ceiling}` (below) |
+| `perf` | none | What the device's work cost since it started, kept on the device alone and never written to a vault: `{timers, counts, held}`, each timer `{count, total_ms, mean_ms, max_ms}` (check, keep, replay, refresh, open keys, read, show items, upkeep), each count a number (edits offered and checked, refresh rounds), and what it holds (`edits`, `bodies`, `shown`, `blobs`, `blob_bytes`) |
 | `api_pass` | `audience` | The device's signed pass to service `audience`, made now, which keeps nothing: `{pass, expires}`, its wire bytes in base64url (section 5, "A device's pass to a service"); `Locked` while the device is locked |
 | `world` | none | The device's world (below), or `null` while it belongs to no vault |
 | `database` | `vault` | A vault's database as the device holds it: its tables, audiences, schemas, lenses and counts |
@@ -1701,7 +1702,7 @@ Every node trusts no elliptic curve alone, and there is no switch back.
 
 | Where | How |
 |---|---|
-| Signatures | ML-DSA-65 (FIPS 204) from every signer made since the key move (2026-10-19), each 3,309-byte signature with its 1,952-byte key beside it; SLH-DSA-SHA2-128f (FIPS 205, 17,088 bytes) from a signer made before, which keeps it. Either is the only signature that counts. Every device checks both, and a signer's id hashes its suite with its keys (`sign::Suite`). |
+| Signatures | ML-DSA-65 (FIPS 204) from every signer made since the key move (2026-10-19), each 3,309-byte signature with its 1,952-byte key beside it, which a sync reply brings once for all its signatures by that key (K5, `wire::Packed`, asked for by `session::PACKED`; a peer from before gets whole replies); SLH-DSA-SHA2-128f (FIPS 205, 17,088 bytes) from a signer made before, which keeps it. Either is the only signature that counts. Every device checks both, and a signer's id hashes its suite with its keys (`sign::Suite`). |
 | Passkeys | A passkey's WebAuthn assertion (P-256) rides beside its post-quantum signature: it shows a person was there. |
 | Touch ID keys | A Mac's Secure Enclave signs with ML-DSA-65, and opens its secret with ML-KEM-768 (section 11). A key made before the key move signs with its SLH-DSA key beside it. |
 | Sealed keys | Every box is sealed to X-Wing (ML-KEM-768 with X25519) and Classic McEliece 6688128f at once. |
@@ -1754,6 +1755,17 @@ hello proves (`Shared::tell`). The offer the app and the agents carry names the 
 its next key at that endpoint stands for it, once the server's card shows both as devices of one vault
 (`Node::offered`). A shelf that names a next key that is no device of a vault opens as the earlier key, never as a
 device of no vault, which would take a stranger's claim.
+
+The earlier keys go in a last step, once every key of the person's moved (Samuel 2026-10-20, "you should have
+removed all the old keys"; `Lab::retires`, `Lab::draft_retire`): the root is handed on to its next key, signed by both;
+each earlier owner key whose next key is an owner goes, and the master recovery key from before K4 beside the Lab's;
+each earlier device key whose next key is a device goes, and each old device of the person's that never moved and
+doesn't run now; and each earlier key of the server and the agents once its next key answers as a live peer, so none
+is cut off while it still runs as the earlier one. As every removal cuts what rests on it that its drafter doesn't
+hold (T16), a device drafts them only while it is connected to a device of the aven its person governs and holds all
+that device told it holds (`Node::live_peers`, `Moving::behind`); the page says it waits meanwhile and asks again. A
+person who governs no aven keeps their earlier keys, as nothing tells their device it holds all. One ceremony of the
+passkey signs the batch (`Device::move_keys`), and each removal keeps every edit its drafter holds.
 
 ## 11. Passkeys
 

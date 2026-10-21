@@ -48,7 +48,9 @@ jobs:
       - run: node scripts/media-manifest.mjs
 
       # Served from the domain root, so no base path.
-      - run: bun run build
+      # Vite on Bun, as a Mac of Maia City builds it to witness this release (scripts/release.mjs): Vite on Node lays
+      # out other bytes
+      - run: bun --bun run build
 
       # the release list (scripts/release.mjs): the commit and the hash of every file built, up as /release.json, which
       # a Mac of Maia City witnesses and proposes into Maia City for its owners to accept

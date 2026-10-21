@@ -35,7 +35,10 @@
 				['flows', 'Flows', 'flow'],
 				['functions', 'Functions', 'fn'],
 				['history', 'History', 'history'],
-				['jobs', 'Jobs', 'jobs']
+				['jobs', 'Jobs', 'jobs'],
+				// what this device's work costs and how the server is doing, read on the device alone, never written to a
+				// vault (Samuel 2026-10-20)
+				['performance', 'Performance', 'gauge']
 			]
 		],
 		[

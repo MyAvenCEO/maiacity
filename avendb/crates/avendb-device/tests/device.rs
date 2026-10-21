@@ -800,6 +800,17 @@ impl Harness {
         Harness { to: Some(to), from: BufReader::new(from).lines(), serving, next: 0 }
     }
 
+    /// The harness `harness` starts its agent device beside the app's folder `host`, which, its harness gone, runs it
+    /// on for `idle` unused.
+    fn idle(host: &Path, harness: &str, idle: Duration) -> Harness {
+        let (pipe, device) = tokio::io::duplex(1 << 20);
+        let (input, output) = tokio::io::split(device);
+        let (host, harness) = (host.to_path_buf(), harness.to_string());
+        let serving = tokio::spawn(agent::serve_idle(host, harness, input, output, 1, idle));
+        let (from, to) = tokio::io::split(pipe);
+        Harness { to: Some(to), from: BufReader::new(from).lines(), serving, next: 0 }
+    }
+
     /// A cloud session starts its agent, agentCloud, as `cloud` says.
     fn cloud(cloud: agent::Cloud) -> Harness {
         let (pipe, device) = tokio::io::duplex(1 << 20);
@@ -1242,6 +1253,40 @@ async fn every_session_of_a_harness_answers_as_its_one_device_and_a_newer_build_
     assert!(alive_files(&dir).is_empty(), "none runs");
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_agent_whose_harness_went_closes_once_unused_and_a_session_still_on_takes_its_place() {
+    let folder = Folder::new("agent-idle");
+    let dir = folder.0.join("avendb");
+    // the first session runs agentClaude's device, running it on for a moment unused once its harness goes
+    let idle = Duration::from_millis(500);
+    let mut first = Harness::idle(&dir, agent::CLAUDE, idle);
+    first.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
+    let mut second = Harness::start(&dir, agent::CLAUDE);
+    let hello = second.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
+    assert_eq!(hello["serverInfo"]["name"], "avendb", "answered through the first");
+    // the first's harness goes: while the second asks, it runs on
+    let first = first.close().await;
+    let busy = Instant::now() + idle * 3;
+    while Instant::now() < busy {
+        second.ask("ping", json!({})).await.expect("answered");
+        assert!(!first.is_finished(), "used, the first runs on");
+        tokio::time::sleep(idle / 5).await;
+    }
+    // unused, it closes its device and ends, its lock let go of
+    let done = tokio::time::timeout(Duration::from_secs(30), first).await;
+    done.expect("the first ends unused").expect("its task").expect("it ends cleanly");
+    // the second takes its place, the same device, and answers on
+    let hello = second.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
+    assert_eq!(hello["serverInfo"]["name"], "avendb");
+    let end = Instant::now() + Duration::from_secs(10);
+    while alive_files(&dir).len() != 1 {
+        assert!(Instant::now() < end, "one device runs: {:?}", alive_files(&dir));
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    second.quit().await;
+    assert!(alive_files(&dir).is_empty(), "none runs");
 }
 
 /// Whether `holders`, an entry's or a file's `syncedTo`, has `device` holding any of it.
@@ -2241,7 +2286,8 @@ async fn ivys_mac_its_touch_id_key_and_her_drive_move_to_ml_dsa_65_with_her_pass
     hosted(&mut app, "her drive hosted", |d| d["volumes"][0]["state"] == "hosted").await;
     // the page asks once more: her passkey, her Touch ID key, her Mac and her drive move in one sheet and one touch
     let moving = app.call("moving", json!([])).await;
-    assert_eq!(moving, json!({ "ok": { "passkey": true, "touch": true, "device": true, "avens": 0 } }));
+    let asks = json!({ "passkey": true, "touch": true, "device": true, "avens": 0, "retire": [], "behind": false });
+    assert_eq!(moving, json!({ "ok": asks }));
     let moved = app.call("moveKeys", json!([])).await["ok"].clone();
     let touched = vec!["move your Touch ID key to ML-DSA-65".to_string()];
     assert_eq!((app.asked(), app.touched()), (vec!["move".to_string()], touched));

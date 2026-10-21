@@ -443,8 +443,9 @@ async fn a_persons_mac_moves_the_avens_server_and_agent_from_before_the_key_move
     let moves: Vec<(SignerId, SignerId)> = earlier.into_iter().zip(next).collect();
     let by_move = moves.clone();
     let drafts = bobs.read(move |lab, me| lab.draft_move(me, &by_move, passkey_b)).await.expect("the move's edits");
-    assert_eq!(drafts.len(), 2, "one edit each");
-    for (draft, at) in drafts.into_iter().zip([server.id(), claude.id()]) {
+    assert_eq!(drafts.len(), 3, "one edit each, and his passkey's checkpoint over what SLH-DSA signed");
+    assert!(matches!(drafts[2].edit().action, Action::Checkpoint { .. }));
+    for (draft, at) in drafts.into_iter().take(2).zip([server.id(), claude.id()]) {
         let claim = bobs.act(move |lab, me| lab.claim(me, draft, &[])).await.expect("its claim");
         bobs.send_move(at, claim).await.expect("the device takes its key move");
     }

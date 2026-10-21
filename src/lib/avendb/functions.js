@@ -28,17 +28,21 @@ export function refusal(code) {
 /**
  * Runs function code `code` on `event`: `{ ops }`, the ops it hands back (none where it hands back nothing), or
  * `{ ops: [], error }` where the checker refuses it (`refusal`), it doesn't load, throws, runs too long or hands back
- * anything but a list of ops.
- * @param {string} code @param {object} event @returns {Promise<{ ops: object[], error?: string }>}
+ * anything but a list of ops. It runs on the logic engine its record names (`engine`, `{ host, version }`), never one
+ * below the floor ($lib/sandbox/engines.js `engineFor`); one that names none runs on the floor, one made for another
+ * host runs nowhere.
+ * @param {string} code @param {object} event @param {{ host?: string, version?: number }} [engine]
+ * @returns {Promise<{ ops: object[], error?: string }>}
  */
-export async function runFunction(code, event) {
+export async function runFunction(code, event, engine) {
 	if (code == null || (typeof code === 'string' && !code.trim())) return { ops: [] };
+	if (engine != null && engine.host !== 'logic') return { ops: [], error: `it is made for the ${String(engine.host).slice(0, 12)} engine, not the logic engine` };
 	const refused = refusal(code);
 	if (refused) return { ops: [], error: refused };
 	// what crosses is one string, parsed inside the engine: nothing of the page goes in
 	const json = JSON.stringify(event);
 	const now = Number.isFinite(event?.now) ? event.now * 1000 : 0;
-	const { out, error } = await runOnce({ code, file: 'function.js', kind: 'call', name: 'run', json, seed: seedOf(json), now });
+	const { out, error } = await runOnce({ code, file: 'function.js', kind: 'call', name: 'run', json, seed: seedOf(json), now, engine: engine?.version });
 	if (error) return { ops: [], error: error === 'it exports no run' ? 'it exports no run(event)' : error };
 	if (out === undefined) return { ops: [] };
 	const ops = JSON.parse(out);

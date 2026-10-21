@@ -3,19 +3,24 @@
 // still around it, and what the frames there spent their time on (src/lib/film `__filmTrace`: the world set to its
 // moment, rendered, viewed, staged; the world's own frames between two draws). A smooth cut costs what any frame does.
 //
-//   node scripts/film/world/cuts.mjs --timeline v1-A|v1-B|village [--from 0] [--seconds 60] [--px 1280]
-//     [--site http://127.0.0.1:5173] [--engine chrome|webkit] [--meter all|ahead] [--grade clip|none] [--warm all|shown|off]
-//     [--stand 180] [--out cuts.json]
+//   node scripts/film/world/cuts.mjs --timeline v1-A|v1-B|village [--film village.json] [--from 0] [--seconds 60]
+//     [--px 1280] [--site http://127.0.0.1:5173] [--engine chrome|webkit] [--meter all|ahead] [--grade clip|none]
+//     [--warm all|shown|off] [--ready play|stand] [--stand 180] [--out cuts.json]
 //
-// `--stand`: the most seconds it stands stopped before Play, as the studio stands while a timeline is open, for the world
-// to build what the shots played see (it plays as soon as the world holds them all).
+// `--ready play` (the default): before it plays, the world is readied as the studio's Play readies it
+// (src/lib/studio/studio.svelte.js `preparePlayback`): the sets built, every shot played readied in turn
+// (`readyShot`), the world stood where the play starts. `--ready stand`: it stands stopped instead, at most `--stand`
+// seconds, as the studio stands while a timeline is open, for the world to build what the shots played see (it plays as
+// soon as the world holds them all).
 //
 // `--grade clip` (the default) draws every clip through a grade of its own and the output LUT, as the studio draws a
 // timeline graded clip by clip (the cubes made here at the Mac's sizes: 33³, the output 65³), the grades of the shots
 // ahead sent before their cuts as the studio sends them.
 //
 // The site is a dev server (the viewer is imported from its sources): `VITE_RECIPE_FEED=dev bun run dev`. The V1
-// intros' shots are the world's own (`__world.intro.shots()`); the first village's are films/legacy/the-first-village.json.
+// intros' shots are the world's own (`__world.intro.shots()`); the first village's are its film's (`--film`: the film's JSON,
+// as films/legacy/the-first-village.json held it before the films moved into avenDB; `git show
+// bc244eda^:films/legacy/the-first-village.json` brings it back).
 // Engines: chrome (puppeteer-core; CHROME, by default Google Chrome on a Mac, the container's Chromium elsewhere) or
 // webkit (Playwright's, the engine of the Mac app; PLAYWRIGHT names the module where it is installed). Timings mean
 // something only on a real GPU: on a Mac, never in a software renderer.
@@ -45,7 +50,7 @@ const HITCH = 40;
 function timeline() {
 	if (which.startsWith('v1-')) return { path: `/games/maiacity-v1/?film&area=${which.slice(3)}`, clips: null };
 	if (which !== 'village') throw new Error(`--timeline v1-A, v1-B or village, not ${which}`);
-	const film = JSON.parse(readFileSync(join(root, 'films/legacy/the-first-village.json'), 'utf8'));
+	const film = JSON.parse(readFileSync(args.film ?? join(root, 'films/legacy/the-first-village.json'), 'utf8'));
 	const clips = film.timeline.clips
 		.filter((/** @type {any} */ c) => c.track === 'V1' && c.kind === 'world')
 		.sort((/** @type {any} */ a, /** @type {any} */ b) => a.start - b.start)
@@ -146,12 +151,20 @@ const report = await page.evaluate(
 		// the world holds every shot played, or `--stand` seconds; then Play draws what came since out of sight, as the
 		// studio's does
 		const played = list.filter((c) => c.start + c.dur > from && c.start < to).map((c) => c.spec);
-		for (const s0 = performance.now(); performance.now() - s0 < o.stand * 1000; ) {
-			const held = (await viewer.film?.held?.(played)) ?? [];
-			if (held.length && held.every(Boolean)) break;
-			await new Promise((r) => setTimeout(r, 1000));
+		if (o.ready === 'stand') {
+			for (const s0 = performance.now(); performance.now() - s0 < o.stand * 1000; ) {
+				const held = (await viewer.film?.held?.(played)) ?? [];
+				if (held.length && held.every(Boolean)) break;
+				await new Promise((r) => setTimeout(r, 1000));
+			}
+			await viewer.dress?.(list.map((c) => c.spec), { again: true });
+		} else {
+			// as Play readies it: the sets, then every shot played in turn, each staged until the world holds it
+			const r0 = performance.now();
+			await viewer.dress?.(list.map((c) => c.spec), { again: true });
+			for (const spec of played) await viewer.readyShot(spec);
+			log(`readied the world for ${played.length} shot(s) as Play does in ${Math.round(performance.now() - r0)} ms`);
 		}
-		await viewer.dress?.(list.map((c) => c.spec), { again: true });
 		await viewer.meterAhead((o.meter === 'all' ? first : first.slice(0, 3)).map((c) => c.spec), () => true);
 		await viewer.standAt(first[0].spec);
 		// and the views they are drawn through sent, as the stopped studio sends them
@@ -267,6 +280,9 @@ const report = await page.evaluate(
 			reloads,
 			heapAtPlay,
 			heapAtEnd,
+			// the cuts whose picture stood still longer than a hitch, and the frames that waited on a staging while it played
+			stalledCuts: cuts.filter((c) => c.still > o.hitch).length,
+			stagedWhilePlaying: trace.filter((f) => f.staging > 1).length,
 			compiledWhilePlaying: trace.reduce((a, f) => a + (f.compiled ?? 0), 0),
 			firstShaderDraws: trace.reduce((a, f) => a + (f.firsts ?? 0), 0),
 			warmedWhilePlaying: trace.reduce((a, f) => a + (f.warmed ?? 0), 0),
@@ -277,9 +293,11 @@ const report = await page.evaluate(
 			dearestFrames: [...trace].sort((x, y) => y.total + y.loop - (x.total + x.loop)).slice(0, 12).map((f) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v * 10) / 10 : v])))
 		};
 	},
-	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), meter: args.meter ?? 'ahead', grade: args.grade ?? 'clip', warm: args.warm, stand: Number(args.stand ?? 180), hitch: HITCH }
+	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), meter: args.meter ?? 'ahead', grade: args.grade ?? 'clip', warm: args.warm, ready: args.ready ?? 'play', stand: Number(args.stand ?? 180), hitch: HITCH }
 );
 await browser.close();
-const out = { timeline: which, engine, site, warm: args.warm ?? 'all', at: new Date().toISOString(), ...report, warnings };
+// a shot that waited for parts of the world while it played (the village's domes: "waits N s for domes …")
+const waits = warnings.filter((w) => /^film: .* waits .* for /.test(w)).length;
+const out = { timeline: which, engine, site, warm: args.warm ?? 'all', at: new Date().toISOString(), ...report, waits, warnings };
 if (args.out) writeFileSync(args.out, JSON.stringify(out, null, 1));
 console.log(JSON.stringify(out, null, 1));

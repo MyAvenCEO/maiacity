@@ -38,7 +38,8 @@
 //! The app may host the device in its own process instead (`host`): the same calls, each answered as its line would
 //! be but with no id around it (`Host::call`), the sheets to show as they come (`Lines`), each answered as its line
 //! would be (`Host::answer`), and the open device's node at hand (`Host::node`), so the app's own Rust reads a file's
-//! bytes by range and posts its jobs with no JSON and no base64. `serve` is that host behind lines on a pipe: the
+//! bytes by range and posts its jobs with no JSON and no base64, and hands its page a file's bytes both ways as they
+//! are (`Host::run`, `Host::chunk`), where the calls carry them in base64. `serve` is that host behind lines on a pipe: the
 //! sidecar and the app's own process run the device one way.
 //!
 //! The passkey's ceremonies run in the sign-in sheet as the page's do (vault/app/src/passkey.rs,
@@ -219,6 +220,31 @@ impl Host {
         }
     }
 
+    /// Runs op `op` as `call("run", [op])` does, but a `read_file`'s bytes come beside its answer as they are, not in
+    /// base64 in it: the answer as `call` gives it, `{"ok": answer}` or `{"error": why}`, and the bytes, if any. The
+    /// app hands them to its page so, with no JSON between.
+    pub async fn run(&self, op: Value) -> (Value, Option<Vec<u8>>) {
+        let service = self.service.clone();
+        let done = self.runtime.spawn(async move { service.run(&service.device()?, op).await }).await;
+        match done {
+            Ok(Ok((value, bytes))) => (json!({ "ok": value }), bytes),
+            Ok(Err(e)) => (json!({ "error": format!("{e:#}") }), None),
+            Err(e) => (json!({ "error": format!("the device failed: {e}") }), None),
+        }
+    }
+
+    /// Hands chunk `chunk` of file `n` over from `at` on, as `call("fileChunk", [n, at, base64])` does, its bytes as
+    /// they are: the answer as `call` gives it, `{"ok": null}` or `{"error": why}`.
+    pub async fn chunk(&self, n: u64, at: u64, chunk: Vec<u8>) -> Value {
+        let service = self.service.clone();
+        let done = self.runtime.spawn(async move { service.file_chunk(n, at, chunk).await }).await;
+        match done {
+            Ok(Ok(())) => json!({ "ok": null }),
+            Ok(Err(e)) => json!({ "error": format!("{e:#}") }),
+            Err(e) => json!({ "error": format!("the device failed: {e}") }),
+        }
+    }
+
     /// The app's answer to a sheet, as `serve` reads its line: `{"sheet": n, "back": url}`, the URL the sheet's page
     /// sent back, or `{"sheet": n, "error": why}`; or to a touch, `{"enclave": n, ...}` (`touch`). One that names no
     /// sheet or touch awaited is let go.
@@ -362,10 +388,7 @@ impl Service {
                 tokio::time::timeout(CHANGED, d.changed(held)).await.map_or(Value::Null, Value::from)
             }
             "run" => {
-                let op = a.get(0).clone();
-                let asks = engine::reads(&op) || engine::asks(&op);
-                let approver = if asks { None } else { Some(self.approver().await?) };
-                let (mut answer, bytes) = d.run(op, None::<NoBytes>, approver.as_ref()).await?;
+                let (mut answer, bytes) = self.run(&d, a.get(0).clone()).await?;
                 if let (Some(bytes), Some(out)) = (bytes, answer.as_object_mut()) {
                     out.insert("bytes".to_string(), BASE64.encode(&bytes).into());
                 }
@@ -420,6 +443,14 @@ impl Service {
             }
             _ => bail!("no call {call:?}"),
         })
+    }
+
+    /// Op `op` run on the open device `d` (`Device::run`): its answer, and a `read_file`'s bytes beside; a change its
+    /// vault's owners approve signed in the passkey's ceremony in the sheet (`approver`).
+    async fn run(self: &Arc<Self>, d: &Arc<Device>, op: Value) -> Result<(Value, Option<Vec<u8>>)> {
+        let asks = engine::reads(&op) || engine::asks(&op);
+        let approver = if asks { None } else { Some(self.approver().await?) };
+        d.run(op, None::<NoBytes>, approver.as_ref()).await
     }
 
     /// Whether the folder holds an account, what opens it, and the device if it is open.

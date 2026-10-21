@@ -13,6 +13,8 @@ import AvenDB.Gate
 import AvenDB.Measurers
 import AvenDB.Theorems
 import AvenDB.Examples
+import AvenDB.Checkpoint
+import AvenDB.Wraps
 import AvenDB.Vectors
 import AvenDB.Ops
 import AvenDB.Links

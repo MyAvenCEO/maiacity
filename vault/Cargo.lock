@@ -227,6 +227,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "slh-dsa",
+ "web-time",
  "x-wing",
  "zeroize",
 ]
@@ -3547,7 +3548,6 @@ dependencies = [
  "avendb",
  "avendb-device",
  "avendb-net",
- "base64 0.22.1",
  "blake3",
  "block2",
  "bytes",

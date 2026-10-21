@@ -14,7 +14,7 @@ use avendb::lab::Lab;
 use avendb::lens::Status;
 use avendb::policy::{Action, Kind, Principal};
 use avendb::sign::Hello;
-use avendb::wire::Wire;
+use avendb::wire::{Packed, Reply, Wire};
 use avendb_net::{ALPN, Node, Options, exporter, pq_provider};
 use iroh::endpoint::presets;
 use iroh::{Endpoint, SecretKey};
@@ -254,6 +254,41 @@ async fn mceliece_keys_go_over_iroh_blobs_only_within_reach() {
         let unproven = client([9; 32], pq_provider()).await;
         assert!(fetch(&unproven).await.is_none(), "nor may an endpoint no hello proved");
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_request_that_asks_for_its_reply_packed_gets_each_key_once() {
+    let mut w = world();
+    handbook_ready(&mut w);
+    let (mac_a, passkey_a, mac_b) = (w.mac_a, w.passkey_a, w.mac_b);
+    let mac = node(&mut w, mac_a, &[passkey_a], 1).await;
+    // Bob's Mac by hand, on one connection: its hello, then its request, packed (K5) and whole
+    let raw = client(*w.lab.endpoint_secret(mac_b).expect("Bob's Mac's key"), pq_provider()).await;
+    let conn = raw.connect(mac.addr(), ALPN).await.expect("it connects");
+    let exporter = exporter(&conn).expect("an exporter");
+    let (mut send, mut recv) = conn.open_bi().await.expect("a stream");
+    send.write_all(&w.lab.hello(mac_b, &exporter, true).expect("a hello").to_wire()).await.expect("its hello");
+    send.finish().expect("and ends");
+    recv.read_to_end(64 << 10).await.expect("Alice's Mac's hello back");
+    // as one that holds nothing yet asks
+    let request = avendb::wire::Request::default().to_wire();
+    let ask = |kind: u8| {
+        let (conn, request) = (conn.clone(), request.clone());
+        async move {
+            let (mut send, mut recv) = conn.open_bi().await.expect("a stream");
+            send.write_all(&[kind]).await.expect("its kind");
+            send.write_all(&request).await.expect("its request");
+            send.finish().expect("and ends");
+            recv.read_to_end(64 << 20).await
+        }
+    };
+    let whole = Reply::from_wire(&ask(0).await.expect("a reply")).expect("a whole reply");
+    let packed = ask(0x80).await.expect("a packed reply");
+    assert_eq!(Packed::from_wire(&packed), Ok(Packed(whole.clone())), "the same edits, each signature whole again");
+    assert!(packed.len() < whole.to_wire().len(), "{} bytes instead of {}", packed.len(), whole.to_wire().len());
+    // a card is asked for whole alone
+    assert!(ask(0x82).await.is_err(), "a packed card is refused");
+    mac.shutdown().await.expect("the node shuts down");
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]

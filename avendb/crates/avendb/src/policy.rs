@@ -390,9 +390,35 @@ pub enum Action {
     /// the invite at sign-up with no tap of its inviter. From then on the share names `vault`, and its key is sealed to
     /// `vault`'s seed (`State::targets`); a second claim finds no invite left.
     Claim { share: ShareId, vault: VaultId, via: Vec<VaultId> },
+    /// The keys of entry `entry`'s earlier stays, each wrapped under the key the schedule links it to: what a move
+    /// leaves to do, in one edit and one signature rather than a `Keys` edit a key (`Wraps.lean`). Accepted where each
+    /// wrap would be as a `Keys` edit of its own, the entry's own keys alone; it changes nothing in the schedule.
+    Wraps { entry: EntryId, wraps: Vec<Wrap> },
+    /// Vault `vault`'s owners' word, by its root or its threshold, that each edit of `covers` carried its signers'
+    /// signatures when it stood (`Checkpoint.lean`): a device may then hold a covered edit without its signatures,
+    /// while the checkpoint stands and the edit's signers acted for the vault. It changes nothing in the state.
+    Checkpoint { vault: VaultId, covers: Vec<EditId> },
+}
+
+/// One key of an entry's earlier stays, `name` and its `id`, wrapped under the key the schedule links it to: one of a
+/// `Wraps` edit's.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Wrap {
+    pub name: KeyName,
+    pub id: KeyId,
+    pub boxed: KeyBox,
 }
 
 impl Action {
+    /// The boxes of keys it carries, each with the key's name and id: a `Keys` edit's, or a `Wraps` edit's.
+    pub fn key_boxes(&self) -> Vec<(KeyName, KeyId, &KeyBox)> {
+        match self {
+            Action::Keys { name, id, boxes, .. } => boxes.iter().map(|b| (*name, *id, b)).collect(),
+            Action::Wraps { wraps, .. } => wraps.iter().map(|w| (w.name, w.id, &w.boxed)).collect(),
+            _ => vec![],
+        }
+    }
+
     /// The edits a removal had seen and keeps, for removals: every revocation, handing the root on, and a mark that
     /// takes an entry to an audience.
     pub fn keep(&self) -> Option<&[EditId]> {
@@ -771,6 +797,8 @@ pub enum Refusal {
     /// Not a rule of the edits but of a server: a claim of it (`Lab::accept_claim`) doesn't add the server itself as a
     /// device of a device vault.
     NotClaiming,
+    /// A `Wraps` edit wraps nothing, or a key that isn't one of its entry's.
+    BadWraps,
 }
 
 /// What a removal takes away.
@@ -914,6 +942,10 @@ pub struct State {
     /// Only while checking an edit that a mark after it hadn't seen (`hide`): each entry such a mark took to an
     /// audience, and that audience's shares. A write must be allowed there too.
     narrow: Vec<(EntryId, Arc<[ShareId]>)>,
+    /// Only while `run` checks an edit against the state before it: the moves after it, looked up by the entry each
+    /// moved, with the edit's place and id. Nothing is hidden by them; `in_audience` only notes when one that hadn't
+    /// seen the edit would have answered otherwise, and only then is the edit checked again with them hidden.
+    late: Option<Late>,
     /// The keep shares that pick each entry, as its vault's stewards last marked them: its wants.
     marks: Arc<HashMap<EntryId, Arc<[ShareId]>>>,
 }
@@ -1247,6 +1279,7 @@ impl State {
             && (cp.share.wide
                 || (audience.contains(&cp.id)
                     && self.narrow.iter().all(|(x, shares)| *x != e || shares.contains(&cp.id))))
+            && self.late.as_ref().is_none_or(|l| l.allows(cp, e))
     }
 
     /// Vault `a` may write entry `e` of vault `v` in the audience of the shares `audience`: it is the vault, or it
@@ -2049,13 +2082,18 @@ impl State {
     /// `step` in place, for edit `edit` whose id is `id`: a refused edit leaves the state as it was.
     pub fn step_mut(&mut self, edit: &Edit, id: EditId) -> Result<(), Refusal> {
         let change = self.check(edit, id)?;
+        self.apply(change, edit, id);
+        Ok(())
+    }
+
+    /// The change `check` worked out for edit `edit`, whose id is `id`, made.
+    fn apply(&mut self, change: Change, edit: &Edit, id: EditId) {
         if change.removes() {
             self.remove(change, edit, id);
         } else {
             let touch = self.commit(change);
             self.settle(touch, id);
         }
-        Ok(())
     }
 
     /// `step_mut` the way the model words it, whatever the edit: every write judged again after it (`drop_unseen`) and
@@ -2496,6 +2534,26 @@ impl State {
                     return Err(Refusal::CapToItself);
                 }
                 Ok(Change::Claim { at, vault })
+            }
+            Action::Wraps { entry, wraps } => {
+                // each of the entry's own keys, wrapped where the schedule seals it, by a signer that may open it
+                if wraps.is_empty() || !wraps.iter().all(|w| matches!(w.name, KeyName::Entry(e, ..) if e == *entry)) {
+                    return Err(Refusal::BadWraps);
+                }
+                for w in wraps {
+                    self.may_box(edit.author, w.name)?;
+                    if !self.sealed(w.name, w.boxed.to.name()) {
+                        return Err(Refusal::Unsealed);
+                    }
+                }
+                Ok(Change::Nothing)
+            }
+            &Action::Checkpoint { vault, .. } => {
+                vault_at(vault)?;
+                if !approves(Principal::Vault(vault)) {
+                    return Err(Refusal::BelowThreshold);
+                }
+                Ok(Change::Nothing)
             }
             Action::Keys { name, boxes, clear, .. } => {
                 self.may_box(edit.author, *name)?;
@@ -3311,6 +3369,65 @@ struct Cut {
     facts: Vec<Fact>,
 }
 
+/// The moves among the edits being replayed, by the entry each takes to an audience: each one's place, the edits it
+/// keeps and the audience's shares.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Moves(HashMap<EntryId, Vec<(usize, Arc<HashSet<EditId>>, Arc<[ShareId]>)>>);
+
+impl Moves {
+    /// The audience facts of the moves after place `at` that hadn't seen edit `id`.
+    fn unseen(&self, at: usize, id: EditId) -> impl Iterator<Item = Fact> + '_ {
+        self.0.iter().flat_map(move |(e, ms)| {
+            ms.iter().filter(move |m| m.0 > at && !m.1.contains(&id)).map(move |m| Fact::Audience(*e, m.2.clone()))
+        })
+    }
+}
+
+/// The moves after the edit `run` checks (`State::late`): they hide nothing, and only note in `differs` whether any
+/// that hadn't seen the edit would have kept a share out of an entry's audience. Every check's answer depends on the
+/// moves hidden only through `in_audience`, so a check none of whose calls was answered otherwise answers as it would
+/// with them hidden.
+#[derive(Debug)]
+struct Late {
+    moves: Arc<Moves>,
+    at: usize,
+    id: EditId,
+    differs: std::sync::atomic::AtomicBool,
+}
+
+impl Late {
+    /// Share `cp`, in entry `e`'s audience, answered as it is; noting whether a move that hadn't seen the edit would
+    /// have kept it out.
+    fn allows(&self, cp: &Issued, e: EntryId) -> bool {
+        let out = self.moves.0.get(&e).into_iter().flatten().any(|m| {
+            m.0 > self.at && !m.1.contains(&self.id) && !m.2.contains(&cp.id)
+        });
+        if out {
+            self.differs.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        true
+    }
+}
+
+impl Clone for Late {
+    fn clone(&self) -> Self {
+        Late {
+            moves: self.moves.clone(),
+            at: self.at,
+            id: self.id,
+            differs: std::sync::atomic::AtomicBool::new(self.differs.load(std::sync::atomic::Ordering::Relaxed)),
+        }
+    }
+}
+
+impl PartialEq for Late {
+    fn eq(&self, other: &Self) -> bool {
+        self.moves == other.moves && self.at == other.at && self.id == other.id
+    }
+}
+
+impl Eq for Late {}
+
 /// One replay of edits already in `order`, with the removals `rem` and no others: an edit stands if the state before it
 /// accepts it, and again with what each later removal that hadn't seen it takes away hidden. Which edits stood, and the
 /// state at the end; with `states`, every state along the way too.
@@ -3318,38 +3435,94 @@ struct Run {
     stood: Vec<bool>,
     state: State,
     states: Vec<State>,
+    /// Of the edits a checkpoint covers (`watch`), each with a vault every signer of it acted for just before it or
+    /// just after it (`vouched` in `Checkpoint.lean`).
+    acts: HashSet<(EditId, VaultId)>,
+}
+
+/// The vaults whose checkpoints among `edits` cover each edit, by its id: the edits a replay watches for `acts`.
+fn watched(edits: &[Edit]) -> HashMap<EditId, Vec<VaultId>> {
+    let mut out: HashMap<EditId, Vec<VaultId>> = HashMap::new();
+    for e in edits {
+        if let Action::Checkpoint { vault, covers } = &e.action {
+            for c in covers {
+                out.entry(*c).or_default().push(*vault);
+            }
+        }
+    }
+    out
 }
 
 fn run(edits: &[Edit], ids: &[EditId], rem: &HashSet<EditId>, states: bool) -> Run {
+    run_watching(edits, ids, rem, states, &HashMap::new())
+}
+
+fn run_watching(
+    edits: &[Edit],
+    ids: &[EditId],
+    rem: &HashSet<EditId>,
+    states: bool,
+    watch: &HashMap<EditId, Vec<VaultId>>,
+) -> Run {
     let shares = std::cell::OnceCell::new();
     let shares = || shares.get_or_init(|| shares_issued(edits.iter().zip(ids.iter().copied()))).clone();
-    let cuts: Vec<Cut> = edits
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| rem.contains(&ids[*i]))
-        .map(|(at, r)| {
-            let keep = r.action.keep().unwrap_or(&[]).iter().copied().collect();
-            Cut { at, keep, facts: removes_among(r, shares) }
-        })
-        .collect();
-    let mut out = Run { stood: Vec::with_capacity(edits.len()), state: State::default(), states: vec![] };
+    // the moves apart, looked up by entry: an edit is checked again with them hidden only where one would answer
+    // otherwise (`Late`), not scanned for at every edit
+    let mut cuts: Vec<Cut> = vec![];
+    let mut moves = Moves::default();
+    for (at, r) in edits.iter().enumerate().filter(|(i, _)| rem.contains(&ids[*i])) {
+        let keep: HashSet<EditId> = r.action.keep().unwrap_or(&[]).iter().copied().collect();
+        let facts = removes_among(r, shares);
+        if !facts.is_empty() && facts.iter().all(|f| matches!(f, Fact::Audience(..))) {
+            let keep = Arc::new(keep);
+            for f in facts {
+                if let Fact::Audience(e, to) = f {
+                    moves.0.entry(e).or_default().push((at, keep.clone(), to));
+                }
+            }
+        } else {
+            cuts.push(Cut { at, keep, facts });
+        }
+    }
+    let moves = (!moves.0.is_empty()).then(|| Arc::new(moves));
+    let mut out =
+        Run { stood: Vec::with_capacity(edits.len()), state: State::default(), states: vec![], acts: HashSet::new() };
     if states {
         out.states.push(State::default());
     }
     for (i, edit) in edits.iter().enumerate() {
         let id = ids[i];
+        // which of the vaults whose checkpoints cover it each signer acts for just before it
+        let before: Vec<(VaultId, Vec<bool>)> = watch.get(&id).into_iter().flatten().map(|&v| {
+            (v, edit.sigs().map(|s| out.state.acts_for(s, v)).collect())
+        }).collect();
         let mut stands = !edit.is_removal() || rem.contains(&id);
         if stands {
             let cut = cuts.iter().filter(|c| c.at > i && !c.keep.contains(&id));
-            let hidden: Vec<Fact> = cut.flat_map(|c| c.facts.iter().cloned()).collect();
-            if !hidden.is_empty() {
-                stands = out.state.hide(&hidden).check(edit, id).is_ok();
-            }
-            if stands {
-                stands = out.state.step_mut(edit, id).is_ok();
-            }
+            let mut hidden: Vec<Fact> = cut.flat_map(|c| c.facts.iter().cloned()).collect();
+            out.state.late = moves.clone().map(|moves| Late { moves, at: i, id, differs: false.into() });
+            let checked = out.state.check(edit, id);
+            let late = out.state.late.take();
+            stands = match checked {
+                Err(_) => false,
+                Ok(change) => {
+                    if let Some(l) = late.filter(|l| !hidden.is_empty() || l.differs.load(std::sync::atomic::Ordering::Relaxed)) {
+                        hidden.extend(l.moves.unseen(i, id));
+                    }
+                    let ok = hidden.is_empty() || out.state.hide(&hidden).check(edit, id).is_ok();
+                    if ok {
+                        out.state.apply(change, edit, id);
+                    }
+                    ok
+                }
+            };
         }
         out.stood.push(stands);
+        for (v, pre) in before {
+            if edit.sigs().zip(pre).all(|(s, pre)| pre || out.state.acts_for(s, v)) {
+                out.acts.insert((id, v));
+            }
+        }
         if states {
             out.states.push(out.state.clone());
         }
@@ -3433,9 +3606,33 @@ pub struct Replay {
     pub ids: Vec<EditId>,
     pub stood: Vec<bool>,
     pub state: State,
+    /// Of the edits a checkpoint covers, each with a vault every signer of it acted for just before or just after it.
+    pub acts: HashSet<(EditId, VaultId)>,
 }
 
 impl Replay {
+    /// The edits the checkpoints that stand vouch for (`vouched` in `Checkpoint.lean`): each edit before a checkpoint
+    /// that stands, that stands itself, that the checkpoint covers, and whose signers all acted for the checkpoint's
+    /// vault just before or just after it.
+    pub fn vouched(&self) -> HashSet<EditId> {
+        let mut out = HashSet::new();
+        if self.acts.is_empty() {
+            return out;
+        }
+        let at: HashMap<EditId, usize> = self.ids.iter().enumerate().map(|(i, id)| (*id, i)).collect();
+        for (j, e) in self.edits.iter().enumerate().filter(|(j, _)| self.stood[*j]) {
+            if let Action::Checkpoint { vault, covers } = &e.action {
+                for c in covers {
+                    let before = at.get(c).is_some_and(|&i| i < j && self.stood[i]);
+                    if before && self.acts.contains(&(*c, *vault)) {
+                        out.insert(*c);
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// The ids of the edits that stand, in replay order.
     pub fn standing(&self) -> Vec<EditId> {
         self.ids.iter().zip(&self.stood).filter(|(_, s)| **s).map(|(id, _)| *id).collect()
@@ -3479,8 +3676,18 @@ pub fn replay_on(was: Replay, edits: &[Edit], held: usize) -> Replay {
 fn replay_ids(edits: &[Edit], ids: &[EditId]) -> Replay {
     let (edits, ids) = order_ids(edits, ids);
     let rem = resolve(&edits, &ids);
-    let Run { stood, state, .. } = run(&edits, &ids, &rem, false);
-    Replay { edits, ids, stood, state }
+    let Run { stood, state, acts, .. } = run_watching(&edits, &ids, &rem, false, &watched(&edits));
+    Replay { edits, ids, stood, state, acts }
+}
+
+/// Of the edits `watch` names, those that stand among `edits`, each with a vault `watch` names for it that every signer
+/// of it acted for just before or just after it: what a checkpoint over that vault may cover (`vouched`).
+pub fn acting(edits: &[Edit], watch: &HashMap<EditId, Vec<VaultId>>) -> HashSet<(EditId, VaultId)> {
+    let (edits, ids) = order_ids(edits, &ids(edits));
+    let rem = resolve(&edits, &ids);
+    let Run { stood, acts, .. } = run_watching(&edits, &ids, &rem, false, watch);
+    let stands: HashSet<EditId> = ids.iter().zip(&stood).filter(|(_, s)| **s).map(|(id, _)| *id).collect();
+    acts.into_iter().filter(|(id, _)| stands.contains(id)).collect()
 }
 
 /// What a peer holding `edits` knows: their replay in `order` from the empty state, refused edits skipped, every
@@ -3503,6 +3710,9 @@ pub struct Log {
     edits: Vec<Edit>,
     /// Each edit's id, hashed once.
     ids: Vec<EditId>,
+    /// The same ids, to tell at once whether it holds an edit: a search of `ids` for each edit received made a restore
+    /// of n edits cost n²/2 compares.
+    held: HashSet<EditId>,
 }
 
 impl Log {
@@ -3531,7 +3741,8 @@ impl Log {
     /// A log holding `edits`, as a peer that received them.
     pub fn from_edits(edits: Vec<Edit>) -> Self {
         let ids = ids(&edits);
-        Self { edits, ids }
+        let held = ids.iter().copied().collect();
+        Self { edits, ids, held }
     }
 
     /// The edit `author` and `cosigners` would sign here, unchecked: what a peer that skips the rules would send. It
@@ -3635,6 +3846,7 @@ impl Log {
         let id = edit.id();
         self.edits.push(edit);
         self.ids.push(id);
+        self.held.insert(id);
         Ok(id)
     }
 
@@ -3642,12 +3854,50 @@ impl Log {
     pub fn receive(&mut self, edits: impl IntoIterator<Item = Edit>) {
         for edit in edits {
             let id = edit.id();
-            if !self.ids.contains(&id) {
+            if self.held.insert(id) {
                 self.edits.push(edit);
                 self.ids.push(id);
             }
         }
     }
+
+    /// Let go of the edits `ids`: a device holding them on a checkpoint's word that no checkpoint vouches for any more.
+    pub fn let_go(&mut self, ids: &HashSet<EditId>) {
+        let keep: Vec<bool> = self.ids.iter().map(|id| !ids.contains(id)).collect();
+        let mut keeps = keep.iter();
+        self.edits.retain(|_| *keeps.next().expect("one per edit"));
+        self.ids.retain(|id| !ids.contains(id));
+        self.held.retain(|id| !ids.contains(id));
+    }
+
+    /// The log holding `bare`'s edits only where the checkpoints vouch for them (`trusted` in `Checkpoint.lean`): it
+    /// lets go of those no checkpoint that stands vouches for, and replays again, until every one left is vouched for.
+    /// The edits it let go of.
+    pub fn trust(&mut self, bare: &HashSet<EditId>) -> HashSet<EditId> {
+        let mut gone = HashSet::new();
+        loop {
+            let vouched = self.replay().vouched();
+            let out: HashSet<EditId> =
+                self.ids.iter().filter(|id| bare.contains(id) && !vouched.contains(id)).copied().collect();
+            if out.is_empty() {
+                return gone;
+            }
+            self.let_go(&out);
+            gone.extend(out);
+        }
+    }
+}
+
+/// The edits the checkpoints among `edits` cover: those a device may hold without their signatures, on a checkpoint's
+/// word, while one that stands vouches for them (`Replay::vouched`).
+pub fn covered<'a>(edits: impl IntoIterator<Item = &'a Edit>) -> HashSet<EditId> {
+    let mut out = HashSet::new();
+    for e in edits {
+        if let Action::Checkpoint { covers, .. } = &e.action {
+            out.extend(covers.iter().copied());
+        }
+    }
+    out
 }
 
 #[cfg(test)]

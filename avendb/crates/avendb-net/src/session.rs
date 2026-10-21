@@ -11,7 +11,7 @@ use avendb::lab::Lab;
 use avendb::policy::{Action, Kind};
 use avendb::sign::{Hello, RelayPass};
 use avendb::sync::{LogId, log_of};
-use avendb::wire::{Announce, Claim, Join, Reply, Request, Statement, Wire};
+use avendb::wire::{Announce, Claim, Join, Packed, Reply, Request, Statement, Wire};
 use iroh::endpoint::{Connection, RecvStream, VarInt};
 use iroh::protocol::{AcceptError, ProtocolHandler};
 
@@ -58,6 +58,11 @@ pub(crate) const ASK_VAULTS: u8 = 11;
 /// A request for the next key of a device of a vault that answers claims, the server or an agent's (the key move, K3c),
 /// answered by its id while it isn't a device of that vault yet (`Lab::move_key`).
 pub(crate) const NEXT_KEY: u8 = 12;
+
+/// The bit a request, an `ASK_LOGS` or an `ASK_VAULTS` sets in its kind to ask for its reply packed, each ML-DSA-65
+/// key its signatures carry once (K5, `wire::Packed`). A node from before refuses the kind, and the asking node asks
+/// again without it, and from then on on that connection (`Shared::unpacked`).
+pub(crate) const PACKED: u8 = 0x80;
 
 /// The most vaults an `ASK_VAULTS` names.
 const VAULTS_LIMIT: usize = 4096;
@@ -230,18 +235,23 @@ fn from_vaults_body(body: &[u8]) -> Result<(BTreeSet<VaultId>, Request)> {
 /// passkey's pass for the device whose hello proved it on this connection, made in its minutes, gets the link card of
 /// each passkey it may be from, and a join the node accepts gets nothing, and the node tells the new device what it
 /// holds. A device of no vault that answers claims, the server or an agent's, hands its key to seal to whoever asks,
-/// and answers the first claim it takes with its join (P8f).
+/// and answers the first claim it takes with its join (P8f). A request of any of the three kinds that sets `PACKED` gets
+/// its reply packed, each ML-DSA-65 key once (K5).
 async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Result<Vec<u8>> {
     let message = recv.read_to_end(MESSAGE_LIMIT).await?;
     let (&kind, body) = message.split_first().context("an empty message")?;
     let device = peer.device;
+    // a reply packed where the request asks for it (K5), whole otherwise
+    let packed = kind & PACKED != 0 && matches!(kind & !PACKED, REQUEST | ASK_LOGS | ASK_VAULTS);
+    let replied = |reply: Reply| if packed { Packed(reply).to_wire() } else { reply.to_wire() };
+    let kind = if packed { kind & !PACKED } else { kind };
     match kind {
         REQUEST => {
             let (request, page) = (Request::from_wire(body)?, shared.opts.page);
             shared.follows(peer, &request);
             let (edits, ids, more) = shared.lab(move |lab, me| lab.reply(me, device, &request, page)).await;
             let blobs = shared.offer(ids).await?;
-            Ok(Reply { edits, blobs, more }.to_wire())
+            Ok(replied(Reply { edits, blobs, more }))
         }
         ASK_LOGS => {
             let (request, page) = (Request::from_wire(body)?, shared.opts.page);
@@ -252,7 +262,7 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
             };
             let (edits, ids, more) = shared.lab(reply).await;
             let blobs = shared.offer(ids).await?;
-            Ok(Reply { edits, blobs, more }.to_wire())
+            Ok(replied(Reply { edits, blobs, more }))
         }
         ASK_VAULTS => {
             let ((vaults, request), page) = (from_vaults_body(body)?, shared.opts.page);
@@ -263,7 +273,7 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
             };
             let (edits, ids, more) = shared.lab(reply).await;
             let blobs = shared.offer(ids).await?;
-            Ok(Reply { edits, blobs, more }.to_wire())
+            Ok(replied(Reply { edits, blobs, more }))
         }
         ANNOUNCE => {
             // of the device whose hello proved it on this connection, and of no other

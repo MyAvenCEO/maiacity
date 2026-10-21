@@ -86,6 +86,15 @@ inductive Action where
       secret came with the invite, and by a member of `v` acting for it. From then on the share names `v`, and its key
       is sealed to `v`'s seed (`targets`); a second claim finds no invite left. -/
   | claim      (c : ShareId) (v : VaultId) (via : List VaultId := [])
+  /-- A checkpoint of vault `v`: its owners' word, by their threshold, that each edit of `covers` carried its signers'
+      signatures when it stood. It changes nothing here; a device that holds a covered edit without its signatures
+      takes it on this word, while the checkpoint stands and the edit's signers acted for `v` (`Checkpoint.lean`). So
+      the signatures of every covered edit, SLH-DSA's among them, need neither travel nor be checked again. -/
+  | checkpoint (v : VaultId) (covers : List EditId)
+  /-- The keys of entry `e`'s earlier stays, each wrapped under the key the schedule links it to (`ws`, each key and the
+      key it goes under): what a move leaves to do, in one edit rather than one `keys` edit a key, so a move costs one
+      signature however many writes the entry had. Accepted where each wrap would be as a `keys` edit of its own. -/
+  | wraps      (e : EntryId) (ws : List (KeyName × KeyName))
   deriving DecidableEq, Repr
 
 /-- A mark that takes entry `e` to audience `to` and leaves its wants as they are: what a move was. -/
@@ -262,6 +271,13 @@ def mayBox (st : State) (d : SignerId) : KeyName → Bool
     match st.entry? e with
     | some en => entitled st d (.audience en.vault en.audience) && (en.stayAudience s).isSome
     | none => false
+
+/-- Signer `d` may wrap key `w.1`, one of entry `e`'s own, under `w.2`: it may open the key, and the schedule seals it
+    there. -/
+def wrapOk (st : State) (d : SignerId) (e : EntryId) (w : KeyName × KeyName) : Bool :=
+  (match w.1 with
+    | .entry x _ _ => x == e
+    | _ => false) && mayBox st d w.1 && st.seals.contains ⟨w.1, w.2⟩
 
 /-- A new entry in audience `x` of vault `v` brings the audience back into use: no entry is in it, and its current key
     was sealed before. Its settle moves the audience to a new epoch (`staleKeys`), the one a device names for the
@@ -455,6 +471,8 @@ def apply (st : State) (edit : Edit) : Option State :=
     else if pub && !st.published.contains secret then none
     else some st
   | .claim cid v via => applyClaim st sigs edit.author cid v via
+  | .checkpoint v _ => if (st.vault? v).isSome && approves st sigs (.vault v) then some st else none
+  | .wraps e ws => if !ws.isEmpty && ws.all (wrapOk st edit.author e) then some st else none
 
 /-- One edit: check it, then rotate, seal and link keys. -/
 def step (st : State) (edit : Edit) : Option State := (apply st edit).map (settle st)

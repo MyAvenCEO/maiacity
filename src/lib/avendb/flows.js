@@ -34,7 +34,8 @@ const PROFILE = 'profile';
  * @typedef {{ kind: 'flow', key: string, name: string, about: string, types: string[], stages: Stage[],
  *   tags: string[], entry?: string, vault?: string }} Flow
  * @typedef {{ kind: 'function', name: string, about: string, on: 'enter' | 'leave', flow: string, stage: string,
- *   code: string, enabled: boolean, tags: string[], entry?: string, vault?: string }} Fn
+ *   code: string, enabled: boolean, tags: string[], engine?: { host: string, version: number }, entry?: string,
+ *   vault?: string }} Fn
  */
 
 /** @type {Flow} the content flow: a post's idea, its draft, then published on the Maia Universe stream */
@@ -368,7 +369,7 @@ export async function moving(world, actor, e, flow, to, withPictures = true) {
 		const event = { on: f.on ?? 'enter', flow: flow.key, stage: at, tag: stageTag(flow.key, at), from: from?.key ?? null, to };
 		const pictures = f.on === 'leave' ? leaving : going;
 		const now = Math.floor(Date.now() / 1000);
-		const { ops: asked, error } = await runFunction(f.code, { ...event, item, posts, pictures, now });
+		const { ops: asked, error } = await runFunction(f.code, { ...event, item, posts, pictures, now }, f.engine);
 		if (error) errors.push(`${f.name}: ${error}`);
 		const made = bound(asked, e.vault, actor, [e.entry, ...posts, ...pictures], ops.length);
 		if (typeof made === 'string') errors.push(`${f.name}: ${made}`);

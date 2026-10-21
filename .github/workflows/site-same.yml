@@ -1,0 +1,76 @@
+name: The site builds the same on macOS
+
+# The release Maia City accepts (scripts/release.mjs) rests on one fact: a commit builds the same site, byte for byte,
+# wherever it is built, so a Mac of Maia City can build what maia.city names and find it is the very same. This builds
+# one commit on Linux (as the deploy does) and on macOS (as Samuel's Mac does), Vite on Bun in both, and holds the two lists to each
+# other: every file, by its BLAKE3 hash.
+on:
+  pull_request:
+    paths:
+      - 'package.json'
+      - 'bun.lock'
+      - '.bun-version'
+      - 'vite.config.ts'
+      - 'patches/**'
+      - 'scripts/release.mjs'
+      - '.github/workflows/site-same.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: site-same-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # the deploy (Linux) and Samuel's Mac, each running Vite on Bun as both do (Vite on Node lays out other bytes)
+        os: [ubuntu-latest, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+
+      - run: bun install --frozen-lockfile
+
+      # both name the build by the same commit (GITHUB_SHA), as the deploy and the Mac's witness each do
+      - run: bun --bun run build 2>&1 | tail -60
+        shell: bash
+
+      - run: bun scripts/release.mjs list build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: list-${{ matrix.os }}
+          path: build/release.json
+          retention-days: 3
+
+  same:
+    name: Every file the same on Linux and macOS
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: list-*
+
+      - name: Compare the two lists
+        run: |
+          node -e '
+            const fs = require("fs");
+            const a = JSON.parse(fs.readFileSync("list-ubuntu-latest/release.json", "utf8")).files;
+            const b = JSON.parse(fs.readFileSync("list-macos-15/release.json", "utf8")).files;
+            const names = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
+            const off = names.filter((f) => a[f] !== b[f]).map((f) => `${f}: ${a[f] ? "linux " + a[f].slice(0, 12) : "not on linux"} / ${b[f] ? "macos " + b[f].slice(0, 12) : "not on macos"}`);
+            console.log(`${names.length} files, ${off.length} differ`);
+            if (off.length) { console.log(off.slice(0, 60).join("\n")); process.exit(1); }
+          '

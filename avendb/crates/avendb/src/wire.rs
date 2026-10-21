@@ -28,7 +28,7 @@ use crate::rules::{
 use crate::sealed::{Brought, FileKey, FileRoot};
 use crate::sign::{
     self, ApiPass, Assertion, EnclaveSig, Hello, PqKey, RelayPass, Signature, SignerKeys, Signed, Suite, WebAuthn,
-    PQ_SIGNATURE_BYTES,
+    ML_DSA_PUBLIC_BYTES, ML_DSA_SIGNATURE_BYTES, PQ_SIGNATURE_BYTES,
 };
 use crate::slice::{Atom, Body, Header, Select, Selector, Slice, Sym, TagDelta};
 use crate::sync::{Ask, LogId, Place};
@@ -83,7 +83,7 @@ macro_rules! wire {
     )*};
 }
 
-wire!(Signed, Signature, SignerKeys, Ask, Hello, Request, Reply, Announce, Statement, Join, RelayPass, ApiPass, Claim, PublicKey, Slice, Select, Body, RecoveryKey);
+wire!(Signed, Signature, SignerKeys, Ask, Hello, Request, Reply, Packed, Announce, Statement, Join, RelayPass, ApiPass, Claim, PublicKey, Slice, Select, Body, RecoveryKey);
 
 /// An edit on the wire is the bytes its id hashes (`encode::bytes`): the format's version, then the edit.
 impl Wire for Edit {
@@ -128,6 +128,30 @@ pub struct Reply {
     /// Smallest first, no repeats.
     pub blobs: Vec<BlobId>,
     pub more: bool,
+}
+
+/// A reply whose signatures name their ML-DSA-65 key by its hash alone (K5, "keys travel once"): each key its
+/// signatures carry comes once, before the reply, and each signature by it comes without it, 3,309 bytes instead of
+/// 5,261. What a peer answers a request with that asks for it (`avendb_net`'s `session::PACKED`), as a peer from before
+/// answers none; a request that doesn't ask gets a `Reply`. Unpacked, each signature brings its key again, so nothing
+/// a device keeps or checks changes, and a signature whose key the reply doesn't bring stays as it came, and fails.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Packed(pub Reply);
+
+/// The ML-DSA-65 key's hash that signer keys `keys` name, if they name one their signature `pq` brings whole: the key
+/// followed by its signature (`sign::PqKey::MlDsa`).
+fn brought(keys: &SignerKeys, pq: &[u8]) -> Option<[u8; 32]> {
+    let hash = ml_dsa_hash(keys)?;
+    let key = pq.get(..ML_DSA_PUBLIC_BYTES).filter(|_| pq.len() == ML_DSA_PUBLIC_BYTES + ML_DSA_SIGNATURE_BYTES)?;
+    (sign::ml_dsa_key(key) == hash).then_some(hash)
+}
+
+/// The hash of the ML-DSA-65 key a device's or a passkey's keys `keys` name, if they sign in ML-DSA-65.
+fn ml_dsa_hash(keys: &SignerKeys) -> Option<[u8; 32]> {
+    match *keys {
+        SignerKeys::Device { pq: PqKey::MlDsa(h), .. } | SignerKeys::Passkey { pq: PqKey::MlDsa(h), .. } => Some(h),
+        _ => None,
+    }
 }
 
 /// What a device holds of a log, as it states it in its holdings (`Announce`): the frontier of the part whose whole
@@ -452,6 +476,12 @@ impl Decode for Recipient {
 impl Decode for KeyBox {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
         Ok(KeyBox { to: Recipient::decode(r)?, bytes: r.bytes()? })
+    }
+}
+
+impl Decode for crate::policy::Wrap {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        Ok(crate::policy::Wrap { name: KeyName::decode(r)?, id: KeyId::decode(r)?, boxed: KeyBox::decode(r)? })
     }
 }
 
@@ -848,6 +878,8 @@ impl Decode for Action {
                 clear: r.option()?,
             },
             12 => Action::Claim { share: ShareId::decode(r)?, vault: VaultId::decode(r)?, via: r.seq(32)? },
+            15 => Action::Wraps { entry: EntryId::decode(r)?, wraps: r.seq(70)? },
+            16 => Action::Checkpoint { vault: VaultId::decode(r)?, covers: r.seq(32)? },
             _ => return Err(WireError::Unknown),
         })
     }
@@ -999,9 +1031,14 @@ impl Encode for Signed {
     }
 }
 
+/// The fewest bytes a signature takes on the wire: a Touch ID key's keys, its ML-DSA-65 key's hash alone, held on a
+/// checkpoint's word with no signature (`Lab::trust`): its suite, 32 bytes, no assertion, no Enclave signature and
+/// no post-quantum one, behind its length.
+const SIGNATURE_MIN: usize = 1 + 32 + 1 + 1 + 4;
+
 impl Decode for Signed {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Signed { edit: versioned(r)?, sigs: r.seq(79)? })
+        Ok(Signed { edit: versioned(r)?, sigs: r.seq(SIGNATURE_MIN)? })
     }
 }
 
@@ -1151,7 +1188,7 @@ impl Encode for Claim {
 
 impl Decode for Claim {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
-        Ok(Claim { card: r.seq(76)?, add: versioned(r)?, sigs: r.seq(79)? })
+        Ok(Claim { card: r.seq(76)?, add: versioned(r)?, sigs: r.seq(SIGNATURE_MIN)? })
     }
 }
 
@@ -1186,6 +1223,42 @@ impl Decode for Reply {
             _ => return Err(WireError::Unknown),
         };
         Ok(Reply { edits, blobs, more })
+    }
+}
+
+/// The keys, each once, smallest hash first, then the reply, each signature by one of them without it.
+impl Encode for Packed {
+    fn encode(&self, out: &mut Vec<u8>) {
+        let mut keys = BTreeMap::<[u8; 32], Vec<u8>>::new();
+        let mut edits = self.0.edits.clone();
+        for sig in edits.iter_mut().flat_map(|s| &mut s.sigs) {
+            if let Some(hash) = brought(&sig.keys, &sig.pq) {
+                let alone = sig.pq.split_off(ML_DSA_PUBLIC_BYTES);
+                keys.entry(hash).or_insert(std::mem::replace(&mut sig.pq, alone));
+            }
+        }
+        keys.into_values().collect::<Vec<_>>().encode(out);
+        Reply { edits, ..self.0.clone() }.encode(out);
+    }
+}
+
+impl Decode for Packed {
+    fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let mut keys = BTreeMap::new();
+        for key in r.seq::<Vec<u8>>(ML_DSA_PUBLIC_BYTES)? {
+            if key.len() != ML_DSA_PUBLIC_BYTES {
+                return Err(WireError::Unknown);
+            }
+            keys.insert(sign::ml_dsa_key(&key), key);
+        }
+        let mut reply = Reply::decode(r)?;
+        for sig in reply.edits.iter_mut().flat_map(|s| &mut s.sigs) {
+            let key = ml_dsa_hash(&sig.keys).and_then(|h| keys.get(&h));
+            if let Some(key) = key.filter(|_| sig.pq.len() == ML_DSA_SIGNATURE_BYTES) {
+                sig.pq.splice(0..0, key.iter().copied());
+            }
+        }
+        Ok(Packed(reply))
     }
 }
 
@@ -1350,6 +1423,41 @@ mod tests {
     }
 
     #[test]
+    fn a_packed_reply_brings_each_ml_dsa_key_once_and_reads_back_whole() {
+        let w = world();
+        let held = |e: &Edit| w.lab.signed_edit(w.server, e.id()).expect("held").clone();
+        let edits: Vec<Signed> = w.lab.log(w.server).edits().iter().map(held).collect();
+        let sigs = || edits.iter().flat_map(|s| &s.sigs);
+        let carried: Vec<_> = sigs().filter_map(|s| brought(&s.keys, &s.pq)).collect();
+        let keys: std::collections::BTreeSet<_> = carried.iter().collect();
+        assert!(carried.len() > keys.len() && keys.len() > 1, "signers that sign many edits: {}", carried.len());
+        let reply = Reply { edits: edits.clone(), blobs: vec![BlobId([7; 32])], more: true };
+        let (whole, packed) = (reply.to_wire(), Packed(reply.clone()).to_wire());
+        assert_eq!(Packed::from_wire(&packed), Ok(Packed(reply.clone())), "each signature brings its key again");
+        // each key once instead of in each of its signatures, with its length before it
+        let saved = (carried.len() - keys.len()) * ML_DSA_PUBLIC_BYTES - keys.len() * 4 - 4;
+        assert_eq!(whole.len() - packed.len(), saved);
+        // a reply from before reads as no packed one, and a packed one that leaves a key out leaves its signatures short
+        assert!(Packed::from_wire(&whole).is_err());
+        let mut r = Reader { bytes: &packed, at: 0 };
+        let first = r.seq::<Vec<u8>>(ML_DSA_PUBLIC_BYTES).expect("its keys")[0].clone();
+        let mut short = (keys.len() as u32 - 1).to_be_bytes().to_vec();
+        short.extend(&packed[4 + 4 + ML_DSA_PUBLIC_BYTES..]);
+        let left = Packed::from_wire(&short).expect("it reads").0;
+        let hash = crate::sign::ml_dsa_key(&first);
+        let mut without = left.edits.iter().flat_map(|s| &s.sigs).filter(|s| ml_dsa_hash(&s.keys) == Some(hash));
+        assert!(without.clone().count() > 0 && without.all(|s| s.pq.len() == ML_DSA_SIGNATURE_BYTES));
+        for (s, kept) in left.edits.iter().zip(&edits) {
+            for sig in &s.sigs {
+                let id = sig.keys.id();
+                let ok = crate::sign::verify(id, s.edit.id(), sig);
+                assert_eq!(ok, ml_dsa_hash(&sig.keys) != Some(hash), "only those whose key it left out fail");
+            }
+            assert_eq!(s.edit, kept.edit);
+        }
+    }
+
+    #[test]
     fn a_claim_reads_back_the_same() {
         let w = world();
         let card = w.lab.card(w.server);
@@ -1376,7 +1484,16 @@ mod tests {
         };
         let edit = |action| Edit { parents: vec![], depth: 0, author: k, cosigners: vec![], action };
         let claim = Action::Claim { share: ShareId([4; 32]), vault: VaultId([5; 32]), via: vec![VaultId([6; 32])] };
-        for action in [Action::Share(Sharing::Grant(share, vec![])), claim] {
+        // a move's wraps in one edit, and a checkpoint of a vault's owners (2026-10-20)
+        let entry = EntryId([7; 32]);
+        let wrap = crate::policy::Wrap {
+            name: KeyName::Entry(entry, None, 0),
+            id: KeyId([8; 32]),
+            boxed: KeyBox { to: Recipient::Key { name: KeyName::Entry(entry, Some(EditId([9; 32])), 0), id: KeyId([10; 32]) }, bytes: vec![1, 2, 3] },
+        };
+        let wraps = Action::Wraps { entry, wraps: vec![wrap.clone(), wrap] };
+        let checkpoint = Action::Checkpoint { vault: VaultId([5; 32]), covers: vec![EditId([11; 32]), EditId([12; 32])] };
+        for action in [Action::Share(Sharing::Grant(share, vec![])), claim, wraps, checkpoint] {
             let e = edit(action);
             assert_eq!(Edit::from_wire(&e.to_wire()), Ok(e));
         }

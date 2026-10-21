@@ -1260,6 +1260,14 @@ theorem apply_writes {st post : State} {edit : Edit} (h : apply st edit = some p
   · -- a claim changes one share alone
     obtain ⟨-, -, -, -, -, -, -, -, -, rfl⟩ := applyClaim_some h
     exact .inl ⟨rfl, .claim _ _ _, same st⟩
+  · -- a checkpoint changes nothing
+    simp only [Option.ite_none_right_eq_some, Option.some.injEq] at h
+    obtain ⟨-, rfl⟩ := h
+    exact .inl ⟨rfl, .of_eq rfl rfl rfl rfl rfl, same st⟩
+  · -- wraps change nothing
+    simp only [Option.ite_none_right_eq_some, Option.some.injEq] at h
+    obtain ⟨-, rfl⟩ := h
+    exact .inl ⟨rfl, .of_eq rfl rfl rfl rfl rfl, same st⟩
 
 /-- Every write's entry exists, and every entry's first write is accepted. -/
 def EntriesWhole (st : State) : Prop :=
