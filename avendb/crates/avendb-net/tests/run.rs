@@ -221,6 +221,38 @@ async fn once_it_follows_a_vault_a_node_asks_again_and_is_sent_what_everyone_rea
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_node_brings_the_entries_a_page_names_alone_and_refuses_a_bring_naming_both_or_neither() {
+    let mut w = world();
+    let h = handbook(&mut w);
+    let (mac_a, phone_a, coop) = (w.mac_a, w.phone_a, h.coop);
+    // two notes Alice's Mac writes in the coop that her phone doesn't hold yet
+    let first = w.lab.create(mac_a, coop, coop, "doc", &[], document("First", "Bring me.", mac_a)).expect("First");
+    let other = w.lab.create(mac_a, coop, coop, "doc", &[], document("Other", "Leave me.", mac_a)).expect("Other");
+    let mac = node(&mut w, mac_a, &[], 1).await;
+    // her phone asks its peers only when told
+    let lazy = Options { lazy: true, ..Options::local() };
+    let phone = Node::spawn(w.lab.split(phone_a, &[], [2; 32]), phone_a, lazy).await.expect("a node");
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    until("the two meet", || async { phone.proven(mac.id()).is_some() }).await;
+    let holds = |e| move |lab: &Lab, me| text(lab, me, e, 2).is_some();
+    // a bring of the first note alone: the Mac answers whole, and the phone holds it and not the other
+    let brought = run(&phone, json!({ "op": "bring", "entries": [first.to_hex()] })).await.expect("brought");
+    assert_eq!(brought["reached"], json!(true), "{brought}");
+    assert!(brought["new"].as_u64() > Some(0), "{brought}");
+    assert!(phone.read(holds(first)).await, "the entry it named");
+    assert!(!phone.read(holds(other)).await, "and nothing else");
+    // a bring names vaults or entries, 1 to 64, each by its id
+    let both = json!({ "op": "bring", "vaults": [coop.to_hex()], "entries": [first.to_hex()] });
+    for bad in [both, json!({ "op": "bring" }), json!({ "op": "bring", "entries": [] }), json!({ "op": "bring", "entries": ["x"] })] {
+        assert_eq!(run(&phone, bad).await.expect_err("refused")["refused"], "BadOp");
+    }
+    for n in [&mac, &phone] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_node_brings_the_vaults_a_page_reads_its_code_from_first_and_tells_how_far_it_is_synced() {
     let mut w = world();
     let h = handbook(&mut w);

@@ -14,9 +14,10 @@
  * Local first (Samuel 2026-10-20: "everything should be offline / local first loading … ensure our whole app respects
  * this local first pattern"): what the device holds of Maia City is read at once, whether its peers can be reached or
  * not, and the device asks them for what they hold meanwhile (avendb's `bring` op, before anything else it syncs), so
- * the next page reads that; The OS's device keeps syncing anyway. Only a device that holds none of the vault yet (a
- * first sync) waits for its bring, up to `BRING`, and is read from the feed this time where it is still bringing it. A
- * device whose avenDB is older than the ops is read from the feed too. (Until 2026-10-20 every page waited for the
+ * the next page reads that; The OS's device keeps syncing anyway. A device that holds none of the vault yet (a first
+ * sync) is read from the feed this time, and brings the entries the feed named, those alone (`bringRows`, Samuel
+ * 2026-10-21: a device syncs first what its pages need), so the next page reads them off the device. A device whose
+ * avenDB is older than the ops is read from the feed too. (Until 2026-10-20 every page waited for the
  * bring first, and a server that hung sent it to the feed, which hung as well: the village's live world never stood
  * while avenDB's server restarted.)
  *
@@ -78,12 +79,51 @@ export function deviceOf() {
 	}
 }
 
-/** device `d`'s bring of vault `vault`, asked for once @param {any} d @param {string} vault */
-function bringOf(d, vault) {
+/** what device `d` brought or brings of each vault @param {any} d @returns {Map<string, Promise<any>>} */
+function broughtBy(d) {
 	let of = brought.get(d);
 	if (!of) brought.set(d, (of = new Map()));
+	return of;
+}
+
+/** device `d`'s bring of vault `vault`, asked for once @param {any} d @param {string} vault */
+function bringOf(d, vault) {
+	const of = broughtBy(d);
 	if (!of.has(vault)) of.set(vault, d.run({ op: 'bring', vaults: [vault] }));
 	return of.get(vault);
+}
+
+/** How many entries one `bring` names at most (avendb-net's `MOST_BROUGHT`). */
+export const AT_ONCE = 64;
+
+/**
+ * Has the device the page reads (`deviceOf`) bring from its peers the entries of rows `rows` (the feed's, read because
+ * the device held none of vault `vault`'s code yet), and nothing else of the vault: `{ op: 'bring', entries }`,
+ * `AT_ONCE` at a time, one after another. A new device asked for a whole vault takes all of it before any entry is whole
+ * (Maia City's ~2,200 logs come a page at a time across all of them), so the entries a page reads come first, and the
+ * next page reads them off the device; the rest of the vault comes in the background. Once per vault and device, as its
+ * bring (`whenBrought` answers it): `{ ok: { new, peers, reached } }`, or null with no device.
+ * @param {any[]} rows @param {string} [vault]
+ */
+export function bringRows(rows, vault = MAIA_CITY) {
+	const d = deviceOf();
+	if (!d) return Promise.resolve(null);
+	const of = broughtBy(d);
+	if (of.has(vault)) return of.get(vault);
+	const ids = [...new Set((rows ?? []).map((r) => r?.entry).filter((e) => /^[0-9a-f]{64}$/.test(String(e))))].sort();
+	const all = (async () => {
+		const sum = { new: 0, peers: 0, reached: ids.length > 0 };
+		for (let i = 0; i < ids.length; i += AT_ONCE) {
+			const got = await d.run({ op: 'bring', entries: ids.slice(i, i + AT_ONCE) });
+			if (!got?.ok) return null;
+			sum.new += got.ok.new ?? 0;
+			sum.peers = Math.max(sum.peers, got.ok.peers ?? 0);
+			sum.reached &&= !!got.ok.reached;
+		}
+		return { ok: sum };
+	})().catch(() => null);
+	of.set(vault, all);
+	return all;
 }
 
 /**
@@ -116,16 +156,20 @@ function within(p, ms) {
 export async function deviceRows(kinds, { vault = MAIA_CITY, wait = BRING, answer = ANSWER } = {}) {
 	const d = deviceOf();
 	if (!d || !/^[0-9a-f]{64}$/.test(String(vault))) return null;
-	const bring = bringOf(d, vault);
 	const code = async () => {
 		const got = await within(d.run({ op: 'code', vault, type: kinds }), answer);
 		return d === deviceOf() && Array.isArray(got?.ok) && got.ok.length ? got.ok : null;
 	};
 	const held = await code();
-	if (held) return held;
-	// none held yet: its bring first, then what it brought; still bringing it, or a device whose avenDB knows no
-	// `bring` yet: the feed, this time
-	if (!(await within(bring, wait))?.ok) return null;
+	if (held) {
+		// what changed of the vault since, brought beside
+		void bringOf(d, vault).catch(() => null);
+		return held;
+	}
+	// none held yet: a bring of the entries a page read before (`bringRows`) first, then what it brought; else the
+	// feed this time, and the page has the device bring the entries the feed named (`bringRows`), never the whole vault
+	const before = broughtBy(d).get(vault);
+	if (!before || !(await within(before, wait))?.ok) return null;
 	return code();
 }
 

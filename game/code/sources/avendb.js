@@ -32,7 +32,7 @@ import { canonical, jsonFile } from '../files.js';
 import { checkCode } from '../check.js';
 import { ENTRIES as SEED } from '../../../code/index.js';
 import { CODE_FEED, MAIA_CITY, proofOf, provenRows } from './feed.js';
-import { deviceRows } from './device.js';
+import { bringRows, deviceRows } from './device.js';
 import { KEPT_NEWEST, fresh } from '../fresh.js';
 import { isFrozen, latestOf } from '../../engines.js';
 
@@ -235,7 +235,10 @@ export async function loadCode(viewOf, { feed = CODE_FEED, vault = MAIA_CITY, ur
 	const local = device ? await deviceRows(KINDS, { vault }) : null;
 	if (local) return taken(local);
 	const got = await provenRows(url, { vault, kinds: KINDS, fetch: get, timeout, ...(verify ? { verify } : {}), ...(keep ? { keep } : {}) });
-	return 'error' in got ? got : taken(got.rows);
+	if ('error' in got) return got;
+	// the device, holding none of them yet, brings these entries alone from its peers, for the next load
+	if (device) void bringRows(got.rows, vault);
+	return taken(got.rows);
 }
 
 /**

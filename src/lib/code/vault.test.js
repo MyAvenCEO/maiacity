@@ -211,15 +211,22 @@ describe('loading', () => {
 			proved.length = 0;
 			const f = proof(rowsOf([ENTRIES['views/coop-chart']]));
 			expect(await load(f)).toEqual({ taken: ['views/view-holders'], refused: [] });
+			// what it holds read at once, what changed of the vault since brought beside
 			expect(asked).toEqual([
-				{ op: 'bring', vaults: [VAULT] },
-				{ op: 'code', vault: VAULT, type: ['view', 'logic', 'config'] }
+				{ op: 'code', vault: VAULT, type: ['view', 'logic', 'config'] },
+				{ op: 'bring', vaults: [VAULT] }
 			]);
 			expect([f.asked, proved]).toEqual([[], []]);
-			// brought once a page; a device that holds none of the vault's code: the feed, proven
+			// brought once a page; a device that holds none of the vault's code: the feed, proven, and the device brings
+			// the entries the feed named alone, never the whole vault
+			const { useDevice: fresh } = await import('../../../game/code/sources/device.js');
+			asked.length = 0;
 			code = { ok: [] };
+			fresh({ run: async (op) => (asked.push(op), op.op === 'bring' ? brought : code), read: async () => new Uint8Array() });
 			expect(await load(f)).toEqual({ taken: ['views/coop-chart'], refused: [] });
-			expect(asked.filter((o) => o.op === 'bring').length).toBe(1);
+			await new Promise((r) => setTimeout(r, 0));
+			const entries = rowsOf([ENTRIES['views/coop-chart']]).map((r) => r.entry);
+			expect(asked.filter((o) => o.op === 'bring')).toEqual([{ op: 'bring', entries }]);
 			expect(proved.length).toBe(1);
 			// a device too old for the ops, or still bringing the vault: the feed
 			useDevice({ run: async () => ({ refused: 'BadOp', why: 'no op is called "bring"' }), read: async () => new Uint8Array() });
@@ -246,8 +253,12 @@ describe('loading', () => {
 			expect(await load(f)).toEqual({ taken: ['views/view-holders'], refused: [] });
 			expect(Date.now() - t).toBeLessThan(1000);
 			expect(f.asked).toEqual([]);
-			// one that holds none of it yet waits for its bring, and reads the feed where it doesn't come
+			// one that holds none of it yet reads the feed at once, or waits for a bring of its entries a page asked for,
+			// and reads the feed where it doesn't come
 			useDevice({ run: async (op) => (op.op === 'bring' ? new Promise(() => {}) : { ok: [] }), read: async () => new Uint8Array() });
+			expect(await deviceRows(['view'], { vault: VAULT, wait: 20 })).toBe(null);
+			const { bringRows } = await import('../../../game/code/sources/device.js');
+			void bringRows(rows, VAULT);
 			expect(await deviceRows(['view'], { vault: VAULT, wait: 20 })).toBe(null);
 		} finally {
 			useDevice(null);
