@@ -574,7 +574,7 @@ function namedIn(got) {
 async function near(d, op) {
 	let got = await d.run(op);
 	const entry = typeof op?.entry === 'string' && ENTRY.test(op.entry) ? op.entry : null;
-	if (got?.refused === 'NoEntry' && entry && (await bringEntries([entry], { run: (o) => d.run(o) }))?.ok?.new) got = await d.run(op);
+	if (got?.refused === 'NoEntry' && entry && (await bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }))?.ok?.new) got = await d.run(op);
 	if (VIEWS.has(op?.op)) learn([...(entry && got?.ok ? [entry] : []), ...namedIn(got)]);
 	return got;
 }
