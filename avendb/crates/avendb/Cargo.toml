@@ -45,3 +45,7 @@ web-time = "1.1"
 # passkeys of the relying party localhost also count, made by a test page's virtual authenticator
 # (scripts/test-browser.sh): never in a build that ships
 localhost-passkeys = []
+
+# the engine's own hash, of its sources (build.rs)
+[build-dependencies]
+blake3 = { version = "1.8.7", features = ["zeroize"] }
