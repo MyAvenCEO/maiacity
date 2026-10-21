@@ -22,7 +22,7 @@
 	import { session } from '$lib/avendb/session.svelte.js';
 	import { pillVaults, seeded, signerName } from '$lib/avendb/vaults.js';
 	import { remember } from '$lib/app/session';
-	import { native } from '$lib/native';
+	import { forwardConsole, native } from '$lib/native';
 	import NavPill from '$lib/app/NavPill.svelte';
 	import { immersive as fullScreen } from '$lib/app/immersive.svelte';
 	import { gameAt, opens } from '$lib/app/places';
@@ -125,6 +125,8 @@
 	);
 
 	onMount(async () => {
+		// in the Mac app, every page's warnings and errors go into the app's log, which has a reader, as the studio's do
+		forwardConsole(window, 'app');
 		// the views and logic modules from the Maia City vault (C10), loaded beside avenDB's start so the app's pages run
 		// them from the start; it never throws, and offline the repo's seed runs
 		const code = loadCode();
