@@ -452,11 +452,15 @@
 
 	/**
 	 * Revokes share `id`, acting for vault `as`; a standing grant ("all my vaults, now and later") ends on every vault
-	 * it reached, and no vault founded later follows it.
+	 * it reached, and no vault founded later follows it. Like a removal, it waits until this device has caught up
+	 * (`waits`): it drops every edit resting on the share that never reached this device.
 	 * @param {string | null} id @param {string} as @param {boolean} [standing]
 	 */
-	const revokeShare = (id, as, standing = false) =>
-		api.run('Revoking', { op: 'revoke', share: id, as, ...(standing ? { standing: true } : {}) });
+	async function revokeShare(id, as, standing = false) {
+		const wait = await waits();
+		if (wait) return void (session.error = `The share stays for now: ${wait}. Revoke it once it has caught up.`);
+		return api.run('Revoking', { op: 'revoke', share: id, as, ...(standing ? { standing: true } : {}) });
+	}
 	/** Revokes share row `r`: a keep share as its issuer, any other as the acting vault. @param {ShareRow} r */
 	const revoke = (r) =>
 		revokeShare(r.id, r.kind === 'keep' ? (r.issuer ?? world.mine) : actor, r.kind === 'grant' && isStanding(r.name));

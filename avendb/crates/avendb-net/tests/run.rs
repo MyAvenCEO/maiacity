@@ -296,3 +296,55 @@ async fn a_node_brings_the_vaults_a_page_reads_its_code_from_first_and_tells_how
         n.shutdown().await.expect("the node shuts down");
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_removal_waits_until_its_device_holds_what_its_peers_hold() {
+    let mut w = world();
+    let (mac_a, phone_a, alice, bob) = (w.mac_a, w.phone_a, w.alice, w.bob);
+    let plan = w.lab.create(mac_a, alice, alice, "doc", &[], document("Plan", "Bob reads it.", mac_a)).expect("Plan");
+    let read = w.lab.issue(mac_a, &[mac_a], share(alice, vault(bob), Level::Read, by_id(plan))).expect("Bob reads it");
+    w.lab.sync_all(0);
+    // her Mac writes on, which her phone doesn't hold yet
+    let later = document("Later", "Her phone hasn't seen me.", mac_a);
+    let later = w.lab.create(mac_a, alice, alice, "doc", &[], later).expect("Later");
+    let phone = node(&mut w, phone_a, &[], 2).await;
+    let end = json!({ "op": "revoke", "share": read.to_hex() });
+    let live = move |lab: &Lab, me| lab.state(me).live(read);
+    // her phone knows her Mac holds her vault, and reaches it not: the removal is refused, saying what to do
+    let refused = run(&phone, end.clone()).await.expect_err("refused while it can't catch up");
+    assert_eq!(refused["refused"], "Behind", "{refused}");
+    assert!(refused["why"].as_str().is_some_and(|w| w.starts_with("Sync first")), "{refused}");
+    assert!(phone.read(live).await, "Bob still reads it");
+    // a removal that names an owner or a device waits alike; a change that removes nothing doesn't
+    let device = json!({ "op": "revoke", "vault": alice.to_hex(), "device": mac_a.to_hex() });
+    assert_eq!(run(&phone, device).await.expect_err("refused")["refused"], "Behind");
+    let card = run(&phone, json!({ "op": "card", "name": "Her phone" })).await;
+    assert!(card.is_ok(), "{card:?}");
+    // her Mac comes online: the phone catches up with it first, then the removal goes through
+    let mac = node(&mut w, mac_a, &[], 1).await;
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    let made = run(&phone, end).await.expect("made once it caught up");
+    assert!(made["edit"].is_string(), "{made}");
+    assert!(!phone.read(live).await, "Bob's share ended");
+    let holds = move |lab: &Lab, me| text(lab, me, later, 2).is_some();
+    assert!(phone.read(holds).await, "it took what her Mac wrote before it removed anything");
+    for n in [&mac, &phone] {
+        n.shutdown().await.expect("the node shuts down");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_panic_in_one_call_fails_that_call_alone_and_the_node_runs_on() {
+    let mut w = world();
+    let mac_a = w.mac_a;
+    let mac = std::sync::Arc::new(node(&mut w, mac_a, &[], 1).await);
+    let failing = mac.clone();
+    let failed = tokio::spawn(async move { failing.act(|_, _| -> () { panic!("a bug in one call") }).await }).await;
+    assert!(failed.expect_err("that call fails").is_panic());
+    // every later call runs, reads and changes alike
+    assert!(run(&mac, json!({ "op": "world" })).await.is_ok(), "it reads on");
+    let card = run(&mac, json!({ "op": "card", "name": "Her Mac" })).await;
+    assert!(card.is_ok(), "it changes on: {card:?}");
+    mac.shutdown().await.expect("the node shuts down");
+}

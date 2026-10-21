@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, bail};
@@ -22,7 +22,7 @@ use avendb::sign::Ceremony;
 use avendb::sync::LogId;
 use bytes::Bytes;
 use iroh::EndpointId;
-use n0_future::time::{self, Duration};
+use n0_future::time::{self, Duration, Instant};
 use n0_future::{FuturesUnordered, StreamExt as _, stream, task};
 use serde_json::{Value, json};
 
@@ -34,6 +34,14 @@ pub type NoBytes = fn() -> stream::Empty<io::Result<Bytes>>;
 /// How long `bring` waits for each peer to hand over what it holds of the vaults it names, at most: a peer that can't
 /// be reached is given up on then.
 const BRING: Duration = Duration::from_secs(60);
+
+/// How long a removal asks its device's peers for what they hold before it checks it holds it all (`catch_up`), at
+/// most: a peer that can't be reached by then is given up on.
+const CATCHING_UP: Duration = Duration::from_secs(5);
+
+/// How long a removal waits, once it caught up with a peer, for what that peer holds to be told (`removal_waits`), at
+/// most.
+const HEARD: Duration = Duration::from_secs(3);
 
 /// The most vaults, or entries, one `bring` names.
 const MOST_BROUGHT: usize = 64;
@@ -264,8 +272,74 @@ impl Node {
         answer
     }
 
-    /// A change: made, or drafted for the passkey to approve and, with a ceremony at hand, signed in it and made.
+    /// Asks each device that holds its vaults (`avendb::lab::Lab::peers`), and each it is connected to now, for what it
+    /// holds, all at once, for a few seconds at most (`CATCHING_UP`). Whether one of them handed over all it holds for
+    /// it in that time.
+    pub async fn catch_up(&self) -> bool {
+        let known = self.read(|lab, me| lab.peers(me)).await;
+        let mut endpoints: BTreeSet<EndpointId> =
+            known.into_iter().filter_map(|(_, key)| EndpointId::from_bytes(&key).ok()).collect();
+        endpoints.extend(self.shared.peers.lock().expect("peers").keys().copied());
+        let caught = AtomicBool::new(false);
+        let asks = n0_future::join_all(endpoints.into_iter().map(|peer| {
+            let caught = &caught;
+            async move {
+                if self.sync_with(peer).await.is_ok() {
+                    caught.store(true, Ordering::Relaxed);
+                }
+            }
+        }));
+        let _ = time::timeout(CATCHING_UP, asks).await;
+        caught.into_inner()
+    }
+
+    /// Why a removal waits (`engine::removes`), or `None` where it needn't: it cuts every edit resting on what it
+    /// removes that its device doesn't hold, for everyone (T16), so the device first catches up with its peers
+    /// (`catch_up`) and then holds what each it is connected to told it holds (`live_peers`), reaching at least one: a
+    /// peer it caught up with whole that told nothing yet, as its announcement comes on its own, it waits for a moment
+    /// (`HEARD`), and else takes the catch-up as its word. A device that knows no peer, the only one that holds its
+    /// vaults, waits for nothing.
+    pub async fn removal_waits(&self) -> Option<String> {
+        let known = self.read(|lab, me| !lab.peers(me).is_empty()).await;
+        let reached = self.catch_up().await;
+        let until = Instant::now() + HEARD;
+        let live = loop {
+            let live = self.live_peers().await;
+            if !reached || live.values().any(Option::is_some) || Instant::now() >= until {
+                break live;
+            }
+            time::sleep(Duration::from_millis(100)).await;
+        };
+        let told: Vec<usize> = live.values().filter_map(|&lacks| lacks).collect();
+        let lacking: usize = told.iter().sum();
+        if lacking > 0 {
+            let logs = if lacking == 1 { "1 log".to_string() } else { format!("{lacking} logs") };
+            return Some(format!(
+                "Sync first: this device hasn't seen the edits in {logs} that its peers hold, and a removal drops \
+                 every edit resting on what it removes that this device doesn't hold, for everyone. Let it sync, then \
+                 try again"
+            ));
+        }
+        if told.is_empty() && !reached && (known || !live.is_empty()) {
+            return Some(
+                "Sync first: this device reaches none of the devices that hold its vaults right now, so it can't tell \
+                 what it hasn't seen, and a removal drops every edit resting on what it removes that this device \
+                 doesn't hold, for everyone. Connect it, let it sync, then try again"
+                    .to_string(),
+            );
+        }
+        None
+    }
+
+    /// A change: made, or drafted for the passkey to approve and, with a ceremony at hand, signed in it and made. A
+    /// removal (`engine::removes`), whichever way it comes (the page, an agent, the command line), is refused while
+    /// its device is behind its peers (`removal_waits`).
     async fn change<A: Authenticator>(&self, op: Value, authenticator: Option<&A>) -> Result<Value> {
+        if engine::removes(&op)
+            && let Some(why) = self.removal_waits().await
+        {
+            return Ok(Refused::Behind(why).to_json());
+        }
         let prepare = move |lab: &mut Lab, me| {
             let prepared = engine::prepare(lab, me, &op);
             let keys = match &prepared {
