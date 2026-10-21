@@ -71,19 +71,20 @@ jobs:
     needs: [kernel, build]
     runs-on: ubuntu-latest
     steps:
+      # the server's own action (.github/actions/prod-ssh): its host keys pinned, never taken on trust
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+      - uses: ./.github/actions/prod-ssh
+        with:
+          host: ${{ env.API_HOST }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+
+      # after the checkout, which empties the workspace
       - uses: actions/download-artifact@v4
         with:
           name: site
-
-      - name: Prepare SSH
-        run: |
-          HOST=$(getent hosts "$API_HOST" | awk '{print $1}' | head -1)
-          [ -n "$HOST" ] || { echo "::error::$API_HOST does not resolve"; exit 1; }
-          echo "HOST=$HOST" >> "$GITHUB_ENV"
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -T 10 -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          printf 'Host prod\n  HostName %s\n  User deploy\n  IdentityFile ~/.ssh/id_ed25519\n  StrictHostKeyChecking yes\n  ServerAliveInterval 20\n' "$HOST" > ~/.ssh/config
 
       - name: Put the build on the server and switch to it
         run: |

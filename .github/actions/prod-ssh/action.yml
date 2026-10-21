@@ -1,0 +1,71 @@
+name: SSH to the server
+description: >-
+  Makes `ssh prod` reach the production server as deploy, trusting only the host keys pinned in DEPLOY_KNOWN_HOSTS,
+  never whatever answers at its address.
+
+# Every workflow that reaches the server over SSH prepares it here (deploy.yml, api.yml, avendb.yml, founders.yml,
+# old-vault.yml), so they all trust the same pinned keys. The keys are written under the alias `prod`
+# (HostKeyAlias), so one secret holds whether the server is reached by its name or its address.
+#
+# DEPLOY_KNOWN_HOSTS takes the server's keys as `ssh-keyscan` prints them, as known_hosts lines (hashed or not), or as
+# its .pub files hold them; every line is a key the server may answer with. A server made anew (api.yml's Pulumi) has
+# new keys: the secret is filled again before its first deploy.
+inputs:
+  host:
+    description: The server's host name or IPv4 address
+    required: true
+  ssh-key:
+    description: The deploy user's private key (secrets.DEPLOY_SSH_KEY)
+    required: true
+  known-hosts:
+    description: The server's pinned host keys (secrets.DEPLOY_KNOWN_HOSTS)
+    required: true
+  wait:
+    description: Try for up to two and a half minutes until the server answers (a server just made is still starting)
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - name: Pin the server's host keys and write the deploy key
+      shell: bash
+      env:
+        NAME: ${{ inputs.host }}
+        SSH_KEY: ${{ inputs.ssh-key }}
+        KNOWN_HOSTS: ${{ inputs.known-hosts }}
+      run: |
+        if [ -z "$KNOWN_HOSTS" ]; then
+          echo "::error title=DEPLOY_KNOWN_HOSTS is not set::Nothing reaches the server until its host keys are pinned. On your Mac, run: ssh-keyscan -t ed25519 $NAME — and on the server check its fingerprint matches: ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub (compare with: ssh-keyscan -t ed25519 $NAME | ssh-keygen -lf -). Then paste the ssh-keyscan line into the repository secret DEPLOY_KNOWN_HOSTS (Settings > Secrets and variables > Actions)."
+          exit 1
+        fi
+        [ -n "$SSH_KEY" ] || { echo "::error::The repository secret DEPLOY_SSH_KEY is not set."; exit 1; }
+        if printf '%s' "$NAME" | grep -Eq '^[0-9]+(\.[0-9]+){3}$'; then
+          HOST=$NAME
+        else
+          HOST=$(getent ahostsv4 "$NAME" | awk '{print $1; exit}')
+          [ -n "$HOST" ] || { echo "::error::$NAME does not resolve"; exit 1; }
+        fi
+        echo "HOST=$HOST" >> "$GITHUB_ENV"
+        mkdir -p ~/.ssh && chmod 700 ~/.ssh
+        # each line's key type and key, under the alias prod: a line may start with a host field (known_hosts,
+        # ssh-keyscan) or with its key type (a .pub file); comments, blank lines and markers are left out
+        printf '%s\n' "$KNOWN_HOSTS" | awk '
+          /^[[:space:]]*(#|@|$)/ { next }
+          $1 ~ /^(ssh-|ecdsa-|sk-)/ { print "prod", $1, $2; next }
+          $2 ~ /^(ssh-|ecdsa-|sk-)/ { print "prod", $2, $3 }' > ~/.ssh/known_hosts
+        [ -s ~/.ssh/known_hosts ] \
+          || { echo "::error::DEPLOY_KNOWN_HOSTS holds no host key: paste the line ssh-keyscan -t ed25519 $NAME prints."; exit 1; }
+        (umask 077; printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519)
+        printf 'Host prod\n  HostName %s\n  HostKeyAlias prod\n  User deploy\n  IdentityFile ~/.ssh/id_ed25519\n  StrictHostKeyChecking yes\n  UserKnownHostsFile ~/.ssh/known_hosts\n  ServerAliveInterval 20\n  ServerAliveCountMax 6\n' \
+          "$HOST" > ~/.ssh/config
+    - name: Wait for the server to answer
+      if: inputs.wait == 'true'
+      shell: bash
+      run: |
+        for i in $(seq 1 30); do
+          ssh -o BatchMode=yes -o ConnectTimeout=5 prod true 2>/dev/null && exit 0
+          sleep 5
+        done
+        # once more, with what ssh says: a changed host key shows here
+        ssh -o BatchMode=yes -o ConnectTimeout=10 prod true
