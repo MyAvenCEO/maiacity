@@ -62,6 +62,7 @@
 pub mod agent;
 pub mod drive;
 pub mod lean;
+pub mod sessions;
 
 use std::collections::HashMap;
 use std::io;
@@ -187,6 +188,7 @@ pub fn host(config: Config) -> Result<(Host, Lines)> {
         progress: Mutex::default(),
         files: Mutex::default(),
         drives: drive::Drives::default(),
+        sessions: Mutex::default(),
         lean,
     });
     Ok((Host { service, runtime }, asks))
@@ -308,6 +310,8 @@ struct Service {
     files: Mutex<HashMap<u64, Incoming>>,
     /// The drives it hosts, and the volumes it looks at (`drive`).
     drives: drive::Drives,
+    /// The agents on this Mac it hosts, as sessions of its device (`sessions`), while it is open.
+    sessions: Mutex<Option<n0_future::task::AbortOnDropHandle<()>>>,
     /// Lean, where the person got it, which checks an AIP's objective (`lean`).
     lean: lean::Lean,
 }
@@ -574,6 +578,7 @@ impl Service {
     /// ends.
     async fn close(&self) {
         self.drives.stop().await;
+        self.sessions.lock().expect("the sessions").take();
         let d = self.device.lock().expect("the device").take();
         if let Some(d) = d {
             d.close().await.ok();
@@ -714,7 +719,20 @@ impl Service {
         *self.device.lock().expect("the device") = Some(d.clone());
         self.leave_offer(&d);
         self.watch_drives();
+        self.host_agents(&d);
         info(&d)
+    }
+
+    /// Hosts the agents on this Mac as sessions of device `d` from here on (`sessions`), in place of the device it
+    /// hosted them on before.
+    fn host_agents(&self, d: &Device) {
+        let (node, dir) = (d.shared_node(), self.config.dir.clone());
+        let serving = tokio::spawn(async move {
+            if let Err(e) = sessions::serve(node, dir).await {
+                tracing::warn!("avendb: this Mac's agents aren't hosted: {e:#}");
+            }
+        });
+        *self.sessions.lock().expect("the sessions") = Some(n0_future::task::AbortOnDropHandle::new(serving));
     }
 
     /// Device `d`'s offer, left for the agents on this Mac where one ever started (`agent`), as it is now.

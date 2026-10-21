@@ -360,7 +360,7 @@ impl Meta {
 /// with, whether it closed, and the owner key whose ceremony opened it, in each suite: its passkey, or on a Mac its
 /// Touch ID key (`open_by_touch`), which approves its key move (`move_keys`).
 pub struct Device {
-    node: Node,
+    node: Arc<Node>,
     passkey: SignerId,
     p256: [u8; 33],
     mask: [u8; 32],
@@ -520,7 +520,7 @@ impl Device {
         let passkey = owner.unwrap_or(passkeys[0]);
         let (shelf, name, relay) = (start.shelf.clone(), start.name.clone(), start.relay.clone());
         let (p256, mask, opener, closed) = (meta.p256, meta.mask, opener.to_vec(), watch::Sender::new(false));
-        let device = Device { node, passkey, p256, mask, shelf, name, relay, closed, opener };
+        let device = Device { node: Arc::new(node), passkey, p256, mask, shelf, name, relay, closed, opener };
         start.progress.step("check");
         if device.vault().await.is_none() {
             device.close().await.ok();
@@ -748,7 +748,7 @@ impl Device {
         let Some((p256, opener)) = node.act(forget).await else { bail!("the passkey's keys") };
         let (shelf, name, relay) = (start.shelf.clone(), start.name.clone(), start.relay.clone());
         let closed = watch::Sender::new(false);
-        Ok(Device { node, passkey, p256, mask, shelf, name, relay, closed, opener })
+        Ok(Device { node: Arc::new(node), passkey, p256, mask, shelf, name, relay, closed, opener })
     }
 
     /// What opens it again, as it started: its name and relay, its secret's mask, its passkey's P-256 key and its id,
@@ -794,6 +794,11 @@ impl Device {
     /// Its node.
     pub fn node(&self) -> &Node {
         &self.node
+    }
+
+    /// Its node, to share with what runs beside it: the agents it hosts on this Mac (`avendb_device::sessions`).
+    pub fn shared_node(&self) -> Arc<Node> {
+        self.node.clone()
     }
 
     /// Its person's passkey's P-256 key, compressed: what the page keeps to open the device again.

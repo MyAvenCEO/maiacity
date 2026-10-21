@@ -152,7 +152,16 @@ enum Key {
     /// A signer the Lab holds the public half of alone, and its standing consent to be added as an owner, as the master
     /// recovery key (`Lab::set_recovery`): it signs no edit but one that takes that consent (`sign::standing`).
     Consent(Arc<RecoveryKey>),
+    /// A session's key (`Lab::host`): its keys, and how its holder, an agent on the same machine, signs an edit's id
+    /// when asked. The Lab never holds its secret.
+    Remote {
+        keys: SignerKeys,
+        sign: Remote,
+    },
 }
+
+/// How a session's holder signs edit `id` (`Lab::host`): its signature, `None` where it refuses or is gone.
+pub type Remote = Arc<dyn Fn(EditId) -> Option<Signature> + Send + Sync>;
 
 impl Key {
     /// Its signature on edit `edit`: `None` for a passkey in the platform's authenticator, which signs in a ceremony.
@@ -161,6 +170,7 @@ impl Key {
             Key::Device(k) => Some(k.sign(edit)),
             Key::Passkey(p) => Some(p.sign(edit)),
             Key::Enclave(k) => Some(k.sign(edit)),
+            Key::Remote { sign, .. } => sign(edit),
             Key::Web { .. } | Key::Consent(_) => None,
         }
     }
@@ -172,7 +182,7 @@ impl Key {
             Key::Device(k) => Some(k.seal_secret()),
             Key::Passkey(p) => Some(p.seal_secret()),
             Key::Enclave(k) => Some(k.seal_secret()),
-            Key::Web { .. } | Key::Consent(_) => None,
+            Key::Web { .. } | Key::Consent(_) | Key::Remote { .. } => None,
         }
     }
 
@@ -181,6 +191,9 @@ impl Key {
         match (self, self.seal_secret()) {
             (Key::Web { seal, .. }, _) => seal.clone(),
             (Key::Consent(k), _) => (k.seal.clone(), k.mceliece.clone()),
+            (Key::Remote { .. }, _) => {
+                unreachable!("a session's key is sealed to nowhere (`Lab::seal_public`)")
+            }
             (_, secret) => {
                 let secret = secret.expect("a key at hand");
                 (secret.public(), secret.mceliece_public())
@@ -193,7 +206,7 @@ impl Key {
             Key::Device(k) => k.keys(),
             Key::Passkey(p) => p.keys(),
             Key::Enclave(k) => k.keys(),
-            Key::Web { keys, .. } => *keys,
+            Key::Web { keys, .. } | Key::Remote { keys, .. } => *keys,
             Key::Consent(k) => k.keys,
         }
     }
@@ -777,6 +790,15 @@ pub struct Lab {
     lawless: bool,
     /// The master recovery key every human vault it founds adds as an owner (`set_recovery`).
     recovery: Option<Arc<RecoveryKey>>,
+    /// The sessions its devices host (`host`): each session's signer, with the device that keeps its store.
+    hosted: HashMap<SignerId, Hosted>,
+}
+
+/// A session a device hosts (`Lab::host`): the device, and the keys the session's own key opens in that device's view,
+/// worked out again once the view holds more edits.
+struct Hosted {
+    host: SignerId,
+    opens: std::sync::Mutex<Option<(usize, Arc<HashSet<KeyName>>)>>,
 }
 
 impl Default for Lab {
@@ -814,6 +836,7 @@ impl Lab {
             held_back: None,
             lawless: false,
             recovery: None,
+            hosted: HashMap::new(),
         };
         lab.keep_spares(SPARES.load(Ordering::Relaxed));
         lab
@@ -911,7 +934,7 @@ impl Lab {
     pub fn passkey_secret(&self, passkey: SignerId) -> Option<Zeroizing<[u8; 32]>> {
         match self.keys.get(&passkey)? {
             Key::Passkey(p) => Some(p.secret()),
-            Key::Device(_) | Key::Enclave(_) | Key::Web { .. } | Key::Consent(_) => None,
+            Key::Device(_) | Key::Enclave(_) | Key::Web { .. } | Key::Consent(_) | Key::Remote { .. } => None,
         }
     }
 
@@ -1452,7 +1475,7 @@ impl Lab {
     /// stay here, for its node to put on the shelf as it closes, and the new node takes them from the shelf. `None`
     /// unless `d` is a device of the Lab and it holds `new`, `d` or a key of `d`'s in the other suite (`device_keys`).
     pub fn moved(&mut self, d: SignerId, new: SignerId, seed: [u8; 32]) -> Option<Lab> {
-        let held = self.stores.get(&d)?;
+        let held = self.stores.get(&self.at(d))?;
         let (follow, query_depth, gate) = (held.follow.clone(), held.query_depth, held.gate);
         let store = Store { follow, query_depth, gate, ..Store::default() };
         let Some(SignerKeys::Device { ed25519, .. }) = self.keys.get(&new).map(Key::keys) else { return None };
@@ -1732,7 +1755,7 @@ impl Lab {
     /// one owner of the device vault it belongs to, avenMAIA's Maia City (`home`); while it belongs to none, as before
     /// a claim, it takes any. What it held already, restored or not, stays; what it drafts itself, it takes.
     pub fn gate(&mut self, d: SignerId, on: bool) {
-        self.stores.get_mut(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab")).gate = on;
+        self.stores.get_mut(&self.at(d)).unwrap_or_else(|| panic!("{d:?} is no device of the Lab")).gate = on;
     }
 
     /// The vault gated device `d` serves (`gate`): the one owner, a vault, of the vault it belongs to. None where it
@@ -1776,7 +1799,7 @@ impl Lab {
         for s in beside {
             gone.extend(self.keys.remove(&s).and_then(|k| k.seal_secret()).map(|x| x.id()));
         }
-        let store = self.stores.get_mut(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        let store = self.stores.get_mut(&self.at(d)).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
         gone.extend(store.keys.ids());
         store.forget();
         // what passkeys in the platform's authenticator lent in their ceremonies, nothing here holds
@@ -1838,7 +1861,64 @@ impl Lab {
     }
 
     fn held(&self, d: SignerId) -> &Store {
-        self.stores.get(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"))
+        let at = self.at(d);
+        self.stores.get(&at).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"))
+    }
+
+    /// The device whose store `d` reads and writes: its host, for a session (`host`); else `d`.
+    fn at(&self, d: SignerId) -> SignerId {
+        self.hosted.get(&d).map_or(d, |h| h.host)
+    }
+
+    /// Device `host` hosts session `s`, an agent on its machine whose key `keys` is a device of a vault, with no store of
+    /// its own (Samuel 2026-10-21, agents as sessions): what `s` writes is drafted on `host`'s one replay and signed by
+    /// `s`'s holder by `sign`, as its author, and kept on `host`'s store, whose node passes it on; what `s` reads is what
+    /// `host` shows, of the entries `s`'s own key opens alone (`sees`, spec `AvenDB.Sessions`). Nothing of `s` is kept:
+    /// a session lives while its holder is connected.
+    pub fn host(&mut self, host: SignerId, s: SignerId, keys: SignerKeys, sign: Remote) {
+        assert!(self.stores.contains_key(&host), "{host:?} is no device of the Lab");
+        assert!(!self.stores.contains_key(&s), "{s:?} is a device of the Lab with a store of its own");
+        self.keys.insert(s, Key::Remote { keys, sign });
+        self.hosted.insert(s, Hosted { host, opens: std::sync::Mutex::new(None) });
+    }
+
+    /// Session `s` (`host`) ends: its key is forgotten. What it wrote stays, as every device's writes.
+    pub fn unhost(&mut self, s: SignerId) {
+        if self.hosted.remove(&s).is_some() {
+            self.keys.remove(&s);
+        }
+    }
+
+    /// The sessions device `host` hosts.
+    pub fn sessions(&self, host: SignerId) -> Vec<SignerId> {
+        self.hosted.iter().filter(|(_, h)| h.host == host).map(|(s, _)| *s).collect()
+    }
+
+    /// Whether `d` reads entry `entry`: a device reads all it shows; a session (`host`) only what its own key opens in its
+    /// host's view as well, the current key of the entry's audience and the entry's key (spec `AvenDB.sessionOpens`).
+    pub fn sees(&self, d: SignerId, entry: EntryId) -> bool {
+        let Some(h) = self.hosted.get(&d) else {
+            return true;
+        };
+        let store = self.held(h.host);
+        let st = store.view();
+        let Some(en) = st.entry(entry) else {
+            return false;
+        };
+        let opens = {
+            let mut cached = h.opens.lock().expect("a session's keys");
+            let held = store.log.ids().len();
+            match &*cached {
+                Some((at, opens)) if *at == held => opens.clone(),
+                _ => {
+                    let opens = Arc::new(st.opens(&[KeyName::Signer(d)]));
+                    *cached = Some((held, opens.clone()));
+                    opens
+                }
+            }
+        };
+        let audience = KeyFam::Audience(en.vault, en.audience());
+        opens.contains(&st.current(audience)) && st.entry_key(entry).is_some_and(|k| opens.contains(&k))
     }
 
     fn unlocked(&self, d: SignerId) -> Result<(), Refusal> {
@@ -1847,7 +1927,10 @@ impl Lab {
 
     /// The public key keys are sealed to for signer `s`, and the McEliece blob it names, if the Lab holds its key.
     fn seal_public(&self, s: SignerId) -> Option<(PublicKey, Arc<[u8]>)> {
-        Some(self.keys.get(&s)?.seal_public())
+        match self.keys.get(&s)? {
+            Key::Remote { .. } => None,
+            key => Some(key.seal_public()),
+        }
     }
 
     /// Sign `edit` with the key of each of its signers; a signer the Lab holds the standing consent of alone by that
@@ -1873,7 +1956,7 @@ impl Lab {
     fn checked(&mut self, to: SignerId, edits: Vec<Signed>) -> Vec<Signed> {
         let (at, offered) = (Perf::start(), edits.len() as u64);
         let fresh = self.fresh(to, edits, &HashSet::new());
-        if let Some(store) = self.stores.get_mut(&to) {
+        if let Some(store) = self.stores.get_mut(&self.at(to)) {
             store.perf.add("check", at);
             store.perf.count("edits offered", offered);
             store.perf.count("edits checked", fresh.len() as u64);
@@ -1901,7 +1984,7 @@ impl Lab {
     /// among `edits` covers comes unchecked, on that checkpoint's word, its signatures or none: its replay lets go of
     /// it unless one that stands vouches for it (`refresh`).
     fn fresh(&self, to: SignerId, edits: Vec<Signed>, vouched: &HashSet<EditId>) -> Vec<Signed> {
-        let Some(store) = self.stores.get(&to) else { return vec![] };
+        let Some(store) = self.stores.get(&self.at(to)) else { return vec![] };
         let mut seen = HashSet::new();
         let new = |s: &Signed| {
             let id = s.edit.id();
@@ -1929,7 +2012,7 @@ impl Lab {
     /// Device `to` keeps `fresh`, new edits whose signatures checked out (`fresh`), and the blobs among `blobs` they
     /// name. True if there were any.
     fn keep_fresh(&mut self, to: SignerId, fresh: Vec<Signed>, blobs: &Blobs) -> bool {
-        let Some(store) = self.stores.get_mut(&to) else { return false };
+        let Some(store) = self.stores.get_mut(&self.at(to)) else { return false };
         let at = Perf::start();
         // its own write, one, drafted on everything it holds: what its edits say now is what they said, that write
         // stepped on, with no replay (`latest`)
@@ -2382,8 +2465,9 @@ impl Lab {
     ) -> Result<Vec<u8>, Refusal> {
         let mut seen = HashSet::new();
         let readers = readers.iter().copied().filter(|v| seen.insert(*v));
+        let at = self.at(on);
         let Lab { stores, rng, .. } = self;
-        let store = stores.get(&on).unwrap_or_else(|| panic!("{on:?} is no device of the Lab"));
+        let store = stores.get(&at).unwrap_or_else(|| panic!("{on:?} is no device of the Lab"));
         let (st, ix) = (store.view(), KeyIndex::of(&store.replay));
         let key = Secret::generate(rng);
         let sealed = keys::seal_edit(&key, &slice.to_wire(), &share_context(of), rng);
@@ -2403,7 +2487,9 @@ impl Lab {
     /// signing on it right now. Each round replays its edits, opens and derives what it can, reads what that opens, and
     /// makes the edits its upkeep calls for (`upkeep`). A locked device only replays.
     fn refresh(&mut self, d: SignerId, lent: &[(SignerId, Secret)]) {
-        if let Some(store) = self.stores.get_mut(&d) {
+        // a session's store is its host's, which opens what it holds with its own keys
+        let d = self.at(d);
+        if let Some(store) = self.stores.get_mut(&self.at(d)) {
             store.behind = false;
         }
         let own = self.keys.get(&d).and_then(Key::seal_secret);
@@ -3278,8 +3364,9 @@ impl Lab {
     /// the epoch it names (`entry_key_for`), bound to the edit, then sign and keep it.
     fn seal_write(&mut self, on: SignerId, mut edit: Edit, body: Body, x: AudienceId) -> Result<EditId, Refusal> {
         let Action::Write { vault, entry, stay, epoch, .. } = edit.action else { unreachable!("a write") };
+        let at = self.at(on);
         let Lab { stores, rng, .. } = self;
-        let store = stores.get_mut(&on).expect("a device");
+        let store = stores.get_mut(&at).expect("a device");
         let key = entry_key_for(store, rng, vault, x, entry, stay, epoch);
         let sealed = keys::seal_edit(&key, &body.to_wire(), &write_context(&edit), rng);
         if let Action::Write { body: b, .. } = &mut edit.action {
@@ -3288,7 +3375,7 @@ impl Lab {
         let id = edit.id();
         let signed = self.sign(edit)?;
         self.keep(on, vec![signed], &Blobs::new());
-        let store = self.stores.get_mut(&on).expect("a device");
+        let store = self.stores.get_mut(&self.at(on)).expect("a device");
         store.bodies.insert(id, body);
         store.opened.entry(entry).or_default().push(id);
         store.files_at = OnceLock::new();
@@ -3416,13 +3503,16 @@ impl Lab {
 
     /// The item as device `d` shows it on line `line`.
     pub fn item_on(&self, d: SignerId, entry: EntryId, line: Line) -> Option<&Item> {
+        if !self.sees(d, entry) {
+            return None;
+        }
         self.held(d).shown.get(&entry)?.items.get(&line)
     }
 
     /// Whether entry `e` has landed, as device `d` shows it (`History::landed`): it is no draft, or its vault took it
     /// into main. Every main read leaves out one that hasn't (`world`, `data`, the feeds).
     pub fn landed(&self, d: SignerId, e: EntryId) -> bool {
-        landed_in(self.held(d), e)
+        self.sees(d, e) && landed_in(self.held(d), e)
     }
 
     /// Whether entry `e` goes public once it lands, as device `d` reads the selectors of its vault's shares: a live
@@ -3443,6 +3533,9 @@ impl Lab {
     /// heads, the proposals' names, and any version to open read-only (`History::item_at`). `None` if it counts no
     /// write of the entry.
     pub fn history(&self, d: SignerId, entry: EntryId) -> Option<&History> {
+        if !self.sees(d, entry) {
+            return None;
+        }
         self.held(d).shown.get(&entry).map(|s| &s.history)
     }
 
@@ -3455,12 +3548,16 @@ impl Lab {
     /// The entries device `d` knows of, in the order they were created: those of its vaults, and those its vaults'
     /// shares reach, whether it reads them or only relays them.
     pub fn entries(&self, d: SignerId) -> Vec<EntryId> {
-        self.held(d).view().entries().iter().map(|en| en.id).collect()
+        let ids = self.held(d).view().entries().iter().map(|en| en.id);
+        ids.filter(|&e| self.sees(d, e)).collect()
     }
 
     /// What entry `entry` means to device `d`, by what it reads (`policy::State::meaning`): its type, its author, its
     /// tags now, its audience, and where a steward would move it. `None` if it doesn't read the entry's header.
     pub fn meaning(&self, d: SignerId, entry: EntryId) -> Option<Meaning> {
+        if !self.sees(d, entry) {
+            return None;
+        }
         let store = self.held(d);
         store.view().meaning_landed(entry, &store.readings, landed_in(store, entry))
     }
@@ -3473,6 +3570,9 @@ impl Lab {
 
     /// Device `d` holds the key its view says entry `entry` is under now: it reads what is written to it next.
     pub fn reads(&self, d: SignerId, entry: EntryId) -> bool {
+        if !self.sees(d, entry) {
+            return false;
+        }
         let store = self.held(d);
         store.view().entry_key(entry).is_some_and(|name| store.keys.first(name).is_some())
     }
@@ -3536,7 +3636,7 @@ impl Lab {
     /// own key, the one keys are sealed to for it, then, for a device, each key it holds. None while it is locked.
     pub fn secrets(&self, s: SignerId) -> Vec<Secret> {
         let Some(key) = self.keys.get(&s) else { return vec![] };
-        let held = self.stores.get(&s).into_iter().flat_map(|store| store.keys.secrets().cloned());
+        let held = self.stores.get(&self.at(s)).into_iter().flat_map(|store| store.keys.secrets().cloned());
         key.seal_secret().into_iter().chain(held).collect()
     }
 
@@ -3598,7 +3698,7 @@ impl Lab {
     /// Device `d` follows the vaults `vaults` from now on, and no others: it names them in each request, and is sent
     /// what everyone reads of them (`sync::Ask::follow`). Any device may follow any vault: it needs no share.
     pub fn follow(&mut self, d: SignerId, vaults: &[VaultId]) {
-        let store = self.stores.get_mut(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        let store = self.stores.get_mut(&self.at(d)).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
         let mut follow = vaults.to_vec();
         follow.sort();
         follow.dedup();
@@ -3613,7 +3713,7 @@ impl Lab {
     /// Device `d` reads at most `depth` rows down in a query from now on, however deep the query asks (`engine`'s
     /// `query`, whose own limit is `engine::QUERY_DEPTH` unless it names one).
     pub fn set_query_depth(&mut self, d: SignerId, depth: usize) {
-        self.stores.get_mut(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab")).query_depth = depth;
+        self.stores.get_mut(&self.at(d)).unwrap_or_else(|| panic!("{d:?} is no device of the Lab")).query_depth = depth;
     }
 
     /// The most rows down device `d` reads in a query (`set_query_depth`): `lens::CEILING` until set, as deep as any
@@ -3643,7 +3743,7 @@ impl Lab {
 
     /// The digest of each log device `d` holds (`sync::digests`): what it gossips.
     pub fn digests(&mut self, d: SignerId) -> &BTreeMap<LogId, [u8; 32]> {
-        let store = self.stores.get_mut(&d).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
+        let store = self.stores.get_mut(&self.at(d)).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
         store.digests.get_or_insert_with(|| digests_ids(store.log.edits(), store.log.ids()))
     }
 
@@ -3747,6 +3847,7 @@ impl Lab {
             held_back: None,
             lawless: false,
             recovery: self.recovery.clone(),
+            hosted: HashMap::new(),
         }
     }
 
@@ -3754,7 +3855,7 @@ impl Lab {
     pub fn endpoint_secret(&self, d: SignerId) -> Option<Zeroizing<[u8; 32]>> {
         match self.keys.get(&d)? {
             Key::Device(k) => Some(k.endpoint_secret()),
-            Key::Passkey(_) | Key::Enclave(_) | Key::Web { .. } | Key::Consent(_) => None,
+            Key::Passkey(_) | Key::Enclave(_) | Key::Web { .. } | Key::Consent(_) | Key::Remote { .. } => None,
         }
     }
 
@@ -3764,7 +3865,7 @@ impl Lab {
     pub fn own_key(&self, d: SignerId, purpose: &str, data: &[u8]) -> Option<Secret> {
         match self.keys.get(&d)? {
             Key::Device(k) => Some(k.seal_secret().child(purpose, data)),
-            Key::Passkey(_) | Key::Enclave(_) | Key::Web { .. } | Key::Consent(_) => None,
+            Key::Passkey(_) | Key::Enclave(_) | Key::Web { .. } | Key::Consent(_) | Key::Remote { .. } => None,
         }
     }
 
@@ -3773,7 +3874,7 @@ impl Lab {
     pub fn hello(&self, d: SignerId, exporter: &[u8; 32], dialer: bool) -> Option<Hello> {
         match self.keys.get(&d)? {
             Key::Device(k) => Some(k.hello(exporter, dialer)),
-            Key::Passkey(_) | Key::Enclave(_) | Key::Web { .. } | Key::Consent(_) => None,
+            Key::Passkey(_) | Key::Enclave(_) | Key::Web { .. } | Key::Consent(_) | Key::Remote { .. } => None,
         }
     }
 
@@ -3844,7 +3945,7 @@ impl Lab {
         let device = device.keys();
         match self.keys.get_mut(&passkey)? {
             Key::Passkey(p) => Some(p.pass(device, made)),
-            Key::Device(_) | Key::Enclave(_) | Key::Web { .. } | Key::Consent(_) => None,
+            Key::Device(_) | Key::Enclave(_) | Key::Web { .. } | Key::Consent(_) | Key::Remote { .. } => None,
         }
     }
 
@@ -3855,7 +3956,7 @@ impl Lab {
         match self.keys.get_mut(&passkey)? {
             Key::Passkey(p) => Some(p.ceremony(challenge)),
             Key::Enclave(k) => Some(k.ceremony(challenge)),
-            Key::Device(_) | Key::Web { .. } | Key::Consent(_) => None,
+            Key::Device(_) | Key::Web { .. } | Key::Consent(_) | Key::Remote { .. } => None,
         }
     }
 
@@ -4116,6 +4217,19 @@ impl Lab {
     /// with. Only a write that names the file in the clear counts, and only with the length its sealed size says.
     pub fn file(&self, d: SignerId, root: &FileRoot) -> Option<Brought> {
         let store = self.held(d);
+        // a session opens a file only through a write of an entry it reads itself
+        if self.hosted.contains_key(&d) {
+            let brings = |(id, body): (&EditId, &Body)| {
+                let signed = store.signed.get(id)?;
+                let Action::Write { entry, .. } = signed.edit.action else {
+                    return None;
+                };
+                let named = signed.edit.files();
+                let f = body.files.iter().find(|f| f.root == *root && named.contains(&f.root) && f.fits())?;
+                self.sees(d, entry).then(|| (*id, f.clone()))
+            };
+            return store.bodies.iter().filter_map(brings).min_by_key(|(id, _)| *id).map(|(_, f)| f);
+        }
         // the first write by id that names the file and holds its key, each file once, rather than every body sorted
         // again at every file asked for (an entry list asks for thousands)
         let at = store.files_at.get_or_init(|| {
@@ -4165,7 +4279,7 @@ impl Lab {
         let blobs: Blobs = blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect();
         let before = self.held(d).signed.len();
         let mut changed = self.take(d, edits, &blobs);
-        let store = self.stores.get_mut(&d).expect("a device");
+        let store = self.stores.get_mut(&self.at(d)).expect("a device");
         let named: HashSet<BlobId> = store.log.edits().iter().flat_map(Edit::blobs).collect();
         for (b, bytes) in blobs {
             if named.contains(&b) && !store.blobs.contains_key(&b) {
@@ -4174,7 +4288,7 @@ impl Lab {
             }
         }
         let new = self.held(d).signed.len() - before;
-        let store = self.stores.get_mut(&d).expect("a device");
+        let store = self.stores.get_mut(&self.at(d)).expect("a device");
         store.behind |= changed;
         if now && store.behind {
             self.refresh(d, &[]);
@@ -4185,7 +4299,7 @@ impl Lab {
     /// Brings device `d`'s keys and items up to date with the edits it took since it last did (`receive_now`). True if
     /// there were any.
     pub fn catch_up(&mut self, d: SignerId) -> bool {
-        let Some(store) = self.stores.get_mut(&d) else { return false };
+        let Some(store) = self.stores.get_mut(&self.at(d)) else { return false };
         if !store.behind {
             return false;
         }
@@ -4272,7 +4386,7 @@ impl Lab {
         self.stores.insert(d, Store { follow, query_depth, gate, perf, ..Store::default() });
         let (at, offered) = (Perf::start(), backup.signed.len() as u64);
         let fresh = self.fresh(d, backup.signed, vouched);
-        if let Some(store) = self.stores.get_mut(&d) {
+        if let Some(store) = self.stores.get_mut(&self.at(d)) {
             store.perf.add("check", at);
             store.perf.count("edits offered", offered);
             store.perf.count("edits checked", fresh.iter().filter(|s| !vouched.contains(&s.edit.id())).count() as u64);
