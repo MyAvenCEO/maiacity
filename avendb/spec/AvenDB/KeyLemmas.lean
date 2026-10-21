@@ -329,6 +329,9 @@ theorem apply_cases {st post : State} {edit : Edit} (h : apply st edit = some po
   · -- wraps
     cases h
     exact Change.applied .same
+  · -- a snapshot changes nothing
+    cases h
+    exact Change.applied .same
 
 /-! ## What exists
 

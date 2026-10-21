@@ -108,11 +108,14 @@ grants), and a write without its header, tags, proof, touches, whether it fits i
 /-- A share as a relay sees it. -/
 def Share.blind (c : Share) : Share := { c with select := .all, ops := [] }
 
-/-- An action as a relay sees it. A mark is in the clear: a relay reads its audience and its wants as they are. -/
+/-- An action as a relay sees it. A mark is in the clear: a relay reads its audience and its wants as they are. A
+    snapshot's slices are its entries' readers' alone. -/
 def Action.blind : Action → Action
   | .share (.grant c via) => .share (.grant c.blind via)
   | .write v e a s g deps p via create _ _ _ _ _ _ =>
     .write v e a s g deps p via (create.map fun (x, _) => (x, ⟨0, 0, 0⟩)) {} none [] true none []
+  -- each slice is sealed to its entry's readers: a relay sees which entries, at which frontiers, and no more
+  | .snapshot v states => .snapshot v (states.map fun x => { x with slice := {} })
   | a => a
 
 def Edit.blind (o : Edit) : Edit := { o with action := o.action.blind }

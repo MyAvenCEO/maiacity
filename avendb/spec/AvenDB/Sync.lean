@@ -41,7 +41,7 @@ inductive LogId where
     audience's; a write (of a schema or a lens entry too), a mark and an entry's key to the entry's. -/
 def Edit.log? (edit : Edit) : Option LogId :=
   match edit.action with
-  | .genesis v .. | .settings v _ | .checkpoint v _ | .share (.owner v _) | .share (.device v _) | .revoke (.owner v ..)
+  | .genesis v .. | .settings v _ | .checkpoint v _ | .snapshot v _ | .share (.owner v _) | .share (.device v _) | .revoke (.owner v ..)
   | .revoke (.device v ..) => some (.vault v)
   | .share (.grant c _) => some (.share c.id)
   | .revoke (.grant c ..) | .claim c .. => some (.share c)

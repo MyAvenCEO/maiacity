@@ -716,6 +716,10 @@ theorem apply_ops (st : State) (edit : Edit) :
     simp only [Edit.blind, Action.blind]
     simp only [apply, wrapOk_ops]
     split <;> simp only [Option.map_some, Option.map_none, ops_ops]
+  | snapshot v states =>
+    simp only [Edit.blind, Action.blind]
+    simp only [apply, sigs_mk, vault?_ops, approves_ops]
+    split <;> simp only [Option.map_some, Option.map_none, ops_ops]
 
 /-! ## A relay's copy of an edit -/
 
@@ -749,6 +753,7 @@ theorem eblind_edit_blind (o : Edit) : o.blind.blind = o.blind := by
     | grant c via => simp only [Edit.blind, Action.blind, blind_blind]
     | _ => rfl
   | write v e a s g deps p via create tags => cases create <;> rfl
+  | snapshot v states => simp [Edit.blind, Action.blind, List.map_map, Function.comp_def]
   | _ => rfl
 
 /-- A relay's copy of a removal has its priority. -/
