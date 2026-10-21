@@ -25,4 +25,5 @@ import AvenDB.OpsVectors
 import AvenDB.Backup
 import AvenDB.BackupVectors
 import AvenDB.Objective
+import AvenDB.Sessions
 import AvenDB.ObjectiveVectors
