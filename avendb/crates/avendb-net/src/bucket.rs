@@ -62,6 +62,10 @@ pub trait Bucket: Send + Sync + 'static {
     fn list<'a>(&'a self, prefix: &'a str) -> Fut<'a, Vec<String>>;
     /// Deletes what is under `name`, if anything.
     fn delete<'a>(&'a self, name: &'a str) -> Fut<'a, ()>;
+    /// How many objects start with `prefix`, and their bytes together, where the bucket says them (0 where it doesn't).
+    fn usage<'a>(&'a self, prefix: &'a str) -> Fut<'a, (u64, u64)> {
+        Box::pin(async move { Ok((self.list(prefix).await?.len() as u64, 0)) })
+    }
 }
 
 /// A bucket in a folder, each object a file under its name: the tests'.
@@ -101,6 +105,16 @@ impl Bucket for Folder {
             names.retain(|name| name.starts_with(prefix));
             names.sort();
             Ok(names)
+        })
+    }
+
+    fn usage<'a>(&'a self, prefix: &'a str) -> Fut<'a, (u64, u64)> {
+        Box::pin(async move {
+            let (mut objects, mut bytes) = (0, 0);
+            for name in self.list(prefix).await? {
+                (objects, bytes) = (objects + 1, bytes + fs::metadata(self.0.join(name))?.len());
+            }
+            Ok((objects, bytes))
         })
     }
 

@@ -58,6 +58,13 @@ async function readFile(op) {
 export const status = () => call('status');
 
 /**
+ * What avenDB takes on this Mac's disk (vault/app/src/avendb.rs `avendb_disk`): the device's folder and its agents',
+ * each its `path`, `files` and `bytes`.
+ * @returns {Promise<{ device: { path: string, files: number, bytes: number }, agents: { path: string, files: number, bytes: number } }>}
+ */
+export const disk = () => command('avendb_disk').catch(why);
+
+/**
  * Whether this Mac may keep a Touch ID key for avenDB in its Secure Enclave: macOS 26 or later, a Secure Enclave, and
  * a finger enrolled (vault/app/src/enclave.rs). False in an app built without its Secure Enclave bridge.
  * @returns {Promise<boolean>}

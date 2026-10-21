@@ -6,9 +6,11 @@
 	Work: the device's timers since it started, each how often it ran, its time in all, on average and at most (replay,
 	signature checks, refresh, reads), and its counts (edits offered and checked, refresh rounds), as the device's
 	`perf` op answers them (avendb's `Lab::perf`). Storage: what the device holds (its edits, the bodies it opened, the
-	entries it shows, the blobs it keeps), what this browser's storage holds of the origin, the page's OPFS store among
-	it (`navigator.storage.estimate`), and the page's memory where the browser says it. Server: avenDB's server's own
-	`GET /feed/health`, its memory, how long it has run, its last panic and its starts.
+	entries it shows, the blobs it keeps, the vaults' checkpoints and the edits it holds on their word), in The OS what
+	avenDB takes on the Mac's disk (its device's folder and its agents', vault/app's `avendb_disk`), else what this
+	browser's storage holds of the origin, the page's OPFS store among it (`navigator.storage.estimate`), and the page's
+	memory where the browser says it. Server: avenDB's server's own `GET /feed/health`, its memory, how long it has run,
+	its last panic and its starts, and what its shelf takes in its bucket and its folder, as it last measured.
 
 	All of it is read on the device, or from the server's public feed, and kept in this page alone: nothing here is
 	written to a vault or sent to a peer. It is read when the page opens and again on Refresh.
@@ -18,6 +20,8 @@
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import { read } from './ops.js';
+	import { native } from '$lib/native';
+	import { disk as readDisk } from './native.js';
 	import { feed } from './server.js';
 	import { ago, count, size } from './vaults.js';
 
@@ -47,6 +51,9 @@
 		'open keys': ['Opening keys', 'The keys it holds unsealed, to open what they encrypt'],
 		read: ['Reading', 'The bodies of entries opened with those keys'],
 		'show items': ['Showing', 'Each entry made into what its views read'],
+		'show: lanes': ['Showing: lanes', 'Each vault’s schemas and lenses read, to judge its entries’ writes'],
+		'show: cap groups': ['Showing: cap groups', 'The cap groups’ writes judged one after the other'],
+		'show: entries': ['Showing: entries', 'Every other entry, made anew only where it changed'],
 		upkeep: ['Upkeep', 'The rest of a refresh: digests, indexes, what it follows']
 	});
 	/** what each count counts, as a person reads it */
@@ -59,13 +66,16 @@
 	/** @typedef {{ count: number, total_ms: number, mean_ms: number, max_ms: number }} Timer */
 	/**
 	 * @typedef {{ timers: Record<string, Timer>, counts: Record<string, number>,
-	 *   held: { edits: number, bodies: number, shown: number, blobs: number, blob_bytes: number } }} Perf
+	 *   held: { edits: number, bodies: number, shown: number, blobs: number, blob_bytes: number },
+	 *   checkpoints?: { standing: number, vouched: number, bare: number } }} Perf
 	 */
 
 	/** the device's own, as its `perf` op answers, or null where it doesn't (an older device) */
 	let perf = $state(/** @type {Perf | null} */ (null));
 	/** what the browser keeps for this origin, and whether it keeps it for good */
 	let storage = $state(/** @type {{ usage: number, quota: number, opfs: number | null, persisted: boolean | null } | null} */ (null));
+	/** what avenDB takes on the Mac's disk, in The OS, or null elsewhere */
+	let disk = $state(/** @type {{ device: { path: string, files: number, bytes: number }, agents: { path: string, files: number, bytes: number } } | null} */ (null));
 	/** the page's JavaScript heap, where the browser says it (Chrome's `performance.memory`) */
 	let heap = $state(/** @type {{ used: number, total: number, limit: number } | null} */ (null));
 	/** the server's `/feed/health`, or why it couldn't be read */
@@ -113,8 +123,9 @@
 	async function refresh() {
 		if (reading) return;
 		reading = true;
-		const [p, s] = await Promise.all([read(api, { op: 'perf' }, null), readStorage(), readHealth()]);
-		[perf, storage, heap, readAt, reading] = [p, s, readHeap(), Math.floor(Date.now() / 1000), false];
+		const onMac = native() ? readDisk().catch(() => null) : Promise.resolve(null);
+		const [p, s, d] = await Promise.all([read(api, { op: 'perf' }, null), readStorage(), onMac, readHealth()]);
+		[perf, storage, disk, heap, readAt, reading] = [p, s, d, readHeap(), Math.floor(Date.now() / 1000), false];
 	}
 	onMount(() => void refresh());
 
@@ -254,6 +265,30 @@
 				<dd>{count(perf.held.blobs, 'file')}, {bytes(perf.held.blob_bytes)}</dd>
 			</dl>
 		</article>
+		{#if perf.checkpoints}
+			<article class="card">
+				<h3>Checkpoints</h3>
+				<dl>
+					<dt>Standing</dt>
+					<dd>{perf.checkpoints.standing.toLocaleString()}</dd>
+					<dt>Edits they vouch for</dt>
+					<dd>{perf.checkpoints.vouched.toLocaleString()}</dd>
+					<dt>Held without signatures</dt>
+					<dd>{perf.checkpoints.bare.toLocaleString()}</dd>
+				</dl>
+			</article>
+		{/if}
+	{/if}
+	{#if disk}
+		<article class="card">
+			<h3>This Mac’s disk</h3>
+			<dl>
+				<dt>This device</dt>
+				<dd>{bytes(disk.device.bytes)} in {count(disk.device.files, 'file')}, {disk.device.path}</dd>
+				<dt>Its agents</dt>
+				<dd>{bytes(disk.agents.bytes)} in {count(disk.agents.files, 'file')}, {disk.agents.path}</dd>
+			</dl>
+		</article>
 	{/if}
 	<article class="card">
 		<h3>This browser</h3>
@@ -303,6 +338,29 @@
 				{/if}
 			</dl>
 			{#if healthFailed}<p class="error">Read again, it failed: {healthFailed}</p>{/if}
+		</article>
+		<article class="card">
+			<h3>Its storage</h3>
+			{#if health.shelf}
+				<dl>
+					{#if health.shelf.bucket}
+						<dt>Object storage</dt>
+						<dd>
+							{health.shelf.bucket.error
+								? `Couldn’t list it: ${health.shelf.bucket.error}`
+								: `${bytes(health.shelf.bucket.bytes)} in ${count(health.shelf.bucket.objects, 'object')}`}
+						</dd>
+					{/if}
+					{#if health.shelf.folder}
+						<dt>{health.shelf.bucket ? 'Its disk cache' : 'Its disk'}</dt>
+						<dd>{bytes(health.shelf.folder.bytes)} in {count(health.shelf.folder.files, 'file')}</dd>
+					{/if}
+					<dt>Measured</dt>
+					<dd>{ago(health.shelf.at)}</dd>
+				</dl>
+			{:else}
+				<p class="empty">The server hasn’t measured its storage yet; it does every 10 minutes.</p>
+			{/if}
 		</article>
 		{#if memory}
 			<article class="card">
