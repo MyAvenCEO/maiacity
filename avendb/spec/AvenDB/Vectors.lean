@@ -1902,6 +1902,9 @@ def action : Action → String
       ("public", bool pub)])]
   | .claim c v via => obj [("claim", obj [("share", nat c), ("vault", nat v), ("via", ids via)])]
   | .checkpoint v covers => obj [("checkpoint", obj [("vault", nat v), ("covers", ids covers)])]
+  -- no vector holds a snapshot yet: its slices' wire comes with the engine's (S7 of the smart sync plan)
+  | .snapshot v states => obj [("snapshot", obj [("vault", nat v),
+      ("states", arr (states.map fun x => obj [("entry", nat x.entry), ("basis", ids x.basis)]))])]
   | .wraps e ws => obj [("wraps", obj [("entry", nat e),
       ("wraps", arr (ws.map fun (s, t) => obj [("secret", keyName s), ("to", keyName t)]))])]
 
