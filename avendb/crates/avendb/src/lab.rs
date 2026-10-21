@@ -4527,18 +4527,18 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
                 Recipient::Key { name: to, id: under } => store.keys.get(&under, to).cloned(),
             };
             let Some(with) = with else { continue };
+            let mut first = [0; 32];
+            let n = b.bytes.len().min(32);
+            first[..n].copy_from_slice(&b.bytes[..n]);
+            if store.unopened.contains(&(*id, b.to, first)) {
+                continue;
+            }
             let info = box_info(*name, *id, &b.to);
             let opened = opened_box(&info, &b.bytes, &with);
             // the same box it opened before with the same key, as its shelf keeps it: what opened, again
             if let Some(secret) = store.opened_before.get(&opened).filter(|k| k.id() == *id) {
                 more |= store.keys.insert(*name, secret.clone());
                 store.perf.count("keys from the shelf", 1);
-                continue;
-            }
-            let mut first = [0; 32];
-            let n = b.bytes.len().min(32);
-            first[..n].copy_from_slice(&b.bytes[..n]);
-            if store.unopened.contains(&(*id, b.to, first)) {
                 continue;
             }
             match keys::open(&b.bytes, &with, &info) {
