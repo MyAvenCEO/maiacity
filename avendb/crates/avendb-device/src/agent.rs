@@ -393,9 +393,9 @@ pub const KEY_VAR: &str = "AVENDB_AGENT_KEY";
 /// avenDB's own (`SERVER`).
 pub const SERVER_VAR: &str = "AVENDB_SERVER";
 
-/// avenDB's server's offer, the same as long as its shelf keeps its device's key, as the site's
+/// avenDB's server's offer, the same as long as its shelf keeps its device's key (a key move changes it), as the site's
 /// src/lib/avendb/server.js has it: avendb.maia.city, its relay.
-pub const SERVER: &str = "AVENDB1UAYTJU2GDDXXNHWO5YZJOJJBYJFXCKVEPNGILCF6ORDFGRZQXIYOKZOGNSNV64ZIP4VEW4HJPYXUPWZBQJWGRT75JV4CAO3N25TOCMYBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY";
+pub const SERVER: &str = "AVENDB1UAYTJU2GDDXXNHWO5YZJOJJBYJFXCKVEPNGILCF6ORDFGRZQXIYILMA34RATWVAUIACI3TRYMUAW3PSIXGBRKSIFTSZ5DMBTRRLB6BYBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY";
 
 /// How long a cloud session's agent keeps its device open after its last tool call: then it closes it, and opens it
 /// again at the next, so that sessions of one key that don't use avenDB at the same time never run its device at once.
