@@ -11,6 +11,9 @@ import { defaultViews } from '../../../game/maiacity-v1/views.js';
 import { examples } from '../../../game/code/examples.js';
 import { FLOOR, engineFor, enginesOf, latestOf } from '../sandbox/engines.js';
 
+// the page's own ops, not the manifests' walk a device opened on it makes first (game/code/sources/manifests.js)
+const ownOps = (o) => o.where?.type?.[0] !== 'manifest';
+
 // the view host's page side, outside a page
 mock.module('$app/paths', () => ({ base: '' }));
 const { viewOf, viewOfCard } = await import('../sandbox/view-host.js');
@@ -212,7 +215,7 @@ describe('loading', () => {
 			const f = proof(rowsOf([ENTRIES['views/coop-chart']]));
 			expect(await load(f)).toEqual({ taken: ['views/view-holders'], refused: [] });
 			// what it holds read at once, what changed of the vault since brought beside
-			expect(asked).toEqual([
+			expect(asked.filter(ownOps)).toEqual([
 				{ op: 'code', vault: VAULT, type: ['view', 'logic', 'config'] },
 				{ op: 'bring', vaults: [VAULT] }
 			]);

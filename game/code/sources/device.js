@@ -25,6 +25,7 @@
  * parent's device (`deviceOf`), the same person's, on the same origin. A frame of another origin, or none, reads none.
  */
 import { MAIA_CITY } from './anchor.js';
+import { bringDeclared } from './manifests.js';
 
 /**
  * How long a page waits for its device to bring Maia City from its peers before it reads the feed instead (ms): a
@@ -62,13 +63,20 @@ let brought = new WeakMap();
 const SHARED = Symbol.for('maiacity.avendb.device');
 
 /** The device the page holds open now, or `null` to read the feed again; each vault is brought again once. A device
- * opened brings first the entries this page read before (`learned`), before anything else it syncs. */
+ * opened brings first what the manifests of Maia City declare for this page (./manifests.js `bringDeclared`), then the
+ * entries this page read before (`learned`), before anything else it syncs. */
 export function useDevice(d) {
 	device = d ?? null;
 	brought = new WeakMap();
 	if (typeof window !== 'undefined') /** @type {any} */ (window)[SHARED] = device;
+	if (!device) return;
+	const opened = device;
 	const before = learned();
-	if (device && before.length) void bringEntries(before.slice(0, AT_ONCE), device);
+	void (async () => {
+		const declared = await bringDeclared(pageNow(), { device: opened, bring: (ids) => bringEntries(ids, opened) }).catch(() => []);
+		const rest = before.filter((e) => !declared.includes(e));
+		if (rest.length) await bringEntries(rest.slice(0, AT_ONCE), opened);
+	})();
 }
 
 /** where this browser keeps, per page, the entries it read (`learn`) */

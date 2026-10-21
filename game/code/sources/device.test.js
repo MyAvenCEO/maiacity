@@ -23,20 +23,24 @@ test('a page keeps the entries it read, newest first, and a device opened on it 
 	expect(learned('/universe/')).toEqual([]);
 	// what a page brings is learned too
 	const asked = [];
-	const d = { run: async (op) => (asked.push(op), { ok: { new: 1, peers: 1, reached: true } }), read: async () => new Uint8Array() };
+	const d = { run: async (op) => (asked.push(op), op.op === 'query' ? { ok: { rows: [] } } : { ok: { new: 1, peers: 1, reached: true } }), read: async () => new Uint8Array() };
 	await bringEntries([id(9)], d);
 	expect(learned('')).toEqual([]);
 	// a device opened on a page that read before brings those first, AT_ONCE at most
 	globalThis.location = { pathname: '/app/worlds/room/' };
+	const fetched = globalThis.fetch;
+	globalThis.fetch = async () => new Response('{"entries":[]}');
 	try {
 		learn(Array.from({ length: AT_ONCE + 5 }, (_, i) => id(100 + i)));
 		asked.length = 0;
 		useDevice(d);
-		await new Promise((r) => setTimeout(r, 0));
-		expect(asked.length).toBe(1);
-		expect(asked[0].entries.length).toBe(AT_ONCE);
+		await new Promise((r) => setTimeout(r, 10));
+		const brings = asked.filter((o) => o.op === 'bring');
+		expect(brings.length).toBe(1);
+		expect(brings[0].entries.length).toBe(AT_ONCE);
 	} finally {
 		delete globalThis.location;
+		globalThis.fetch = fetched;
 	}
 });
 
