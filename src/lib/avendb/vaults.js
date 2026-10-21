@@ -648,9 +648,19 @@ export const SEED = /** @type {const} */ (['Maia City', 'avenMAIA']);
 const SEED_KINDS = /** @type {const} */ (['coop', 'aven']);
 
 /**
- * The seed of the person's vault, each vault of it with its name in `SEED`, if their claim of the server founded one:
- * an aven with a device, the server, owned alone by a coop their vault owns alone (avendb's `world::seeder`). Empty
- * where their vault founded no seed.
+ * The human vaults that own coop `v`, where vaults own it and every one is a human vault (keys among its owners don't
+ * count), in the order they joined (avendb's `world::human_owners`; Samuel 2026-10-21: a coop may have many owners).
+ * @param {Map<string, VaultView>} byId @param {VaultView | undefined} v @returns {VaultView[]}
+ */
+function humanOwners(byId, v) {
+	const vaults = (v?.owners ?? []).filter((o) => 'vault' in o).map((o) => byId.get(/** @type {{ vault: string }} */ (o).vault));
+	return vaults.every((u) => u?.kind === 'human') ? /** @type {VaultView[]} */ (vaults) : [];
+}
+
+/**
+ * The seed of the person's vault, each vault of it with its name in `SEED`, if their vault owns one: an aven with a
+ * device, the server, owned alone by a coop human vaults own, theirs among them, as it founded it or was added since
+ * (avendb's `world::seeders`). Empty where their vault owns no seed.
  * @param {WorldView} world @returns {[VaultView, string][]}
  */
 export function seeded(world) {
@@ -659,11 +669,10 @@ export function seeded(world) {
 	const owner = (v) => (v?.owners.length === 1 && 'vault' in v.owners[0] ? byId.get(v.owners[0].vault) : undefined);
 	const last = SEED_KINDS.at(-1);
 	for (const server of world.vaults.filter((v) => v.kind === last && v.devices.length)) {
-		/** @type {VaultView[]} */
-		const chain = [server];
-		for (let up = owner(server); up && chain.length < SEED_KINDS.length; up = owner(up)) chain.unshift(up);
-		const kinds = chain.length === SEED_KINDS.length && chain.every((v, i) => v.kind === SEED_KINDS[i]);
-		if (kinds && owner(chain[0])?.id === world.mine) return /** @type {[VaultView, string][]} */ (chain.map((v, i) => [v, SEED[i]]));
+		const city = owner(server);
+		const chain = /** @type {VaultView[]} */ ([city, server]);
+		const kinds = !!city && chain.every((v, i) => v.kind === SEED_KINDS[i]);
+		if (kinds && humanOwners(byId, city).some((h) => h.id === world.mine)) return /** @type {[VaultView, string][]} */ (chain.map((v, i) => [v, SEED[i]]));
 	}
 	return [];
 }
@@ -676,8 +685,8 @@ export const seedServer = (world) => seeded(world)[1]?.[0];
 
 /**
  * Maia City as anyone's world shows it, whoever founded it (avendb's `world::avenceo` and `seeder`): the coop of the
- * seed whose aven is the server the person's vault is kept by: an aven with a device, owned alone by a coop owned alone
- * by a human vault, to which their vault gives relay or more on the whole of it, as it did as it was founded through
+ * seed whose aven is the server the person's vault is kept by: an aven with a device, owned alone by a coop human
+ * vaults own (`humanOwners`), to which their vault gives relay or more on the whole of it, as it did as it was founded through
  * the server. Never by its name, which anyone may give a vault. Undefined where the world shows no such server.
  * @param {WorldView} world @returns {VaultView | undefined}
  */
@@ -689,7 +698,7 @@ export function serverCity(world) {
 		if (c.over !== world.mine || !c.whole || !['relay', 'backup', 'read', 'write', 'owner'].includes(c.level)) continue;
 		const server = byId.get(c.who);
 		const city = owner(server);
-		if (server?.kind === 'aven' && server.devices.length && city?.kind === 'coop' && owner(city)?.kind === 'human') return city;
+		if (server?.kind === 'aven' && server.devices.length && city?.kind === 'coop' && humanOwners(byId, city).length) return city;
 	}
 	return undefined;
 }
