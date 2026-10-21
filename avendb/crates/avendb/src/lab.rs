@@ -3716,6 +3716,13 @@ impl Lab {
         gate::device_standing(st, &st.read_groups(&store.readings), home, d)
     }
 
+    /// The cap groups device `on` reads in force now, by its view (`State::read_groups`): what the server weighs who
+    /// holds which of its vault's groups by (`quota`).
+    pub fn read_groups(&self, on: SignerId) -> crate::policy::Groups {
+        let store = self.held(on);
+        store.view().read_groups(&store.readings)
+    }
+
     /// Whether vault `u` measures the AIPs of vault `v` that `author` started, by device `on`'s view and the cap groups
     /// it reads (`gate::measures`).
     pub fn measures(&self, on: SignerId, v: VaultId, author: VaultId, u: VaultId) -> bool {

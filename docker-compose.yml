@@ -44,6 +44,9 @@ services:
       RP_ID: ${RP_ID:-localhost}
       RP_NAME: ${RP_NAME:-maiaCITY}
       SITE_ORIGIN: ${SITE_ORIGIN:-http://localhost:5173}
+      # the asks a minute one address may make of the passkey ceremonies and the calls with a device's pass
+      # (api/src/limits.js): 30 by default, 0 for no limit
+      API_RATE: ${API_RATE:-}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
       # speech to text and the shot analysis (api/src/stt.ts, analysis.ts, prem.ts): Prem's key, from the GitHub secret
       # PREMAI_API_KEY; without it /api/transcripts and /api/analysis answer 503. (The shot analysis itself runs on the
@@ -88,6 +91,19 @@ services:
       AVENDB_SNAPSHOTS_AT: ${AVENDB_SNAPSHOTS_AT:-}
       # then checks every folder, reading each file's bytes once in AVENDB_SNAPSHOTS_READ_DAYS (30 by default)
       AVENDB_SNAPSHOTS_READ_DAYS: ${AVENDB_SNAPSHOTS_READ_DAYS:-}
+      # who it takes and whom its relay lets in (avendb/crates/avendb-server/src/lib.rs Config): the gate (on or off)
+      # and sign-up (open, invite or closed; invite by default with the gate on). Production turns the gate on
+      AVENDB_GATE: ${AVENDB_GATE:-}
+      AVENDB_SIGNUP: ${AVENDB_SIGNUP:-}
+      # what it takes and keeps at most: one edit (MiB), one file (GB), each person's backup by the cap group of Maia
+      # City they hold (Traveler=5,Citizen=25 in GB by default; off for none), what its relay reads from each client a
+      # second (MiB), the passes it holds at once, and the asks of the feed's signed routes per address a minute
+      AVENDB_MAX_EDIT: ${AVENDB_MAX_EDIT:-}
+      AVENDB_MAX_FILE: ${AVENDB_MAX_FILE:-}
+      AVENDB_BACKUP_LIMITS: ${AVENDB_BACKUP_LIMITS:-}
+      AVENDB_RELAY_RATE: ${AVENDB_RELAY_RATE:-}
+      AVENDB_RELAY_PASSES: ${AVENDB_RELAY_PASSES:-}
+      AVENDB_FEED_RATE: ${AVENDB_FEED_RATE:-}
       RUST_LOG: ${AVENDB_LOG:-info}
       # plain log lines: the deploy reads its offer from them
       NO_COLOR: "1"

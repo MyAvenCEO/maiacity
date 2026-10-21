@@ -47,6 +47,9 @@ pub struct Health {
     panic: Mutex<Value>,
     /// What its shelf takes where it keeps it, as last measured (`shelf`), or null before.
     shelf: Mutex<Value>,
+    /// How the last check of the bucket of snapshots went (`checked`): when, and whether every folder was whole, each
+    /// null before the first. Counts alone, never a vault's id: the repo is public, and an uptime check reads it.
+    backups: Mutex<Value>,
 }
 
 impl Health {
@@ -68,7 +71,9 @@ impl Health {
             };
             json!({ "started": l["started"], "seen": l["seen"], "memory": l["memory"], "panic": l["panic"], "ended": ended })
         });
-        let health = Arc::new(Health { file, started, starts, before, panic: Mutex::new(Value::Null), shelf: Mutex::new(Value::Null) });
+        let (panic, shelf) = (Mutex::new(Value::Null), Mutex::new(Value::Null));
+        let backups = Mutex::new(json!({ "checked_at": null, "whole": null }));
+        let health = Arc::new(Health { file, started, starts, before, panic, shelf, backups });
         health.write(Value::Null);
         health
     }
@@ -112,7 +117,7 @@ impl Health {
 
     /// How it is doing, as `GET /feed/health` says it: this run's start and how long it has run, the memory it holds,
     /// its last panic, how many times it started in the last hour and the last few starts, and how the run before
-    /// ended.
+    /// ended; what its shelf takes, and how the last check of its snapshots went.
     pub fn json(&self) -> Value {
         let now = now();
         let hour = self.starts.iter().filter(|&&s| now.saturating_sub(s) < 3600).count();
@@ -125,7 +130,22 @@ impl Health {
             "starts": { "hour": hour, "recent": recent },
             "before": self.before,
             "shelf": *self.shelf.lock().unwrap_or_else(|e| e.into_inner()),
+            "backups": *self.backups.lock().unwrap_or_else(|e| e.into_inner()),
         })
+    }
+
+    /// Says how the check of the bucket of snapshots at `at` went (`backups::check_all`): whether every folder it
+    /// checked was whole and none failed to be checked, with how many it checked and how many weren't whole or failed;
+    /// a check that couldn't run at all (`checks` none) is not whole.
+    pub fn checked(&self, at: u64, checks: Option<&crate::backups::Checks>) {
+        let said = match checks {
+            Some(c) => {
+                let broken = c.checked.iter().filter(|(_, x)| !x.whole()).count() + c.failed.len();
+                json!({ "checked_at": at, "whole": broken == 0, "vaults": c.checked.len(), "not_whole": broken })
+            }
+            None => json!({ "checked_at": at, "whole": false, "vaults": null, "not_whole": null }),
+        };
+        *self.backups.lock().unwrap_or_else(|e| e.into_inner()) = said;
     }
 
     /// Says what its shelf takes, as just measured: `{at, bucket: {objects, bytes}, folder: {files, bytes}}`.
@@ -229,6 +249,37 @@ fn read(path: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_last_check_of_the_snapshots_says_whether_every_folder_was_whole_and_no_vault() {
+        use crate::backups::Checks;
+        use avendb::id::VaultId;
+        use avendb_net::backup::Checked;
+        let dir = std::env::temp_dir().join(format!("avendb-health-checks-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("a folder");
+        let health = Health::open(&dir);
+        assert_eq!(health.json()["backups"], json!({ "checked_at": null, "whole": null }), "no check before the first");
+        let whole = Checked { newest: Some(1), same: true, ..Checked::default() };
+        let torn = Checked { newest: Some(1), same: true, unreadable: vec![3], ..Checked::default() };
+        let (a, b) = (VaultId::from_u64(1), VaultId::from_u64(2));
+        let mut checks = Checks { checked: vec![(a, whole.clone())], failed: vec![], took: Duration::ZERO };
+        health.checked(100, Some(&checks));
+        assert_eq!(health.json()["backups"], json!({ "checked_at": 100, "whole": true, "vaults": 1, "not_whole": 0 }));
+        checks.checked.push((b, torn));
+        health.checked(200, Some(&checks));
+        assert_eq!(health.json()["backups"]["whole"], false, "a folder that isn't whole");
+        assert_eq!(health.json()["backups"]["not_whole"], 1);
+        checks.checked.truncate(1);
+        checks.failed.push((b, "unreadable".into()));
+        health.checked(300, Some(&checks));
+        assert_eq!(health.json()["backups"]["whole"], false, "a vault it couldn't check");
+        health.checked(400, None);
+        assert_eq!(health.json()["backups"], json!({ "checked_at": 400, "whole": false, "vaults": null, "not_whole": null }));
+        // counts alone: no vault's id is said
+        let said = health.json()["backups"].to_string();
+        assert!(!said.contains(&a.to_hex()) && !said.contains(&b.to_hex()), "{said}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     #[test]
     fn a_run_that_said_nothing_as_it_ended_was_killed_and_one_that_stopped_says_so() {

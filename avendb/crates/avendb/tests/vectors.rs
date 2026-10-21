@@ -41,6 +41,7 @@ use std::fmt::Debug;
 use std::hash::Hash;
 
 use avendb::gate;
+use avendb::{admission, quota};
 use avendb::history::{Change, History};
 use avendb::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::{KeyBox, KeyFam, KeyId, KeyName, Recipient, Seal};
@@ -1107,6 +1108,89 @@ fn the_server_says_of_each_device_what_the_lean_model_says() {
     }
     // an admin's device, a device that is no admin's, and a signer that is nobody's device
     assert!(admins > 0 && others > 0 && nobodys > 0, "{admins} {others} {nobodys}");
+}
+
+/// The held edits of a case, each at the depth the model gives it, with the names of what they created.
+fn held_of(case: &Value) -> (Vec<Edit>, Names) {
+    let mut names = Names::default();
+    let held: Vec<Edit> = list(&case["held"])
+        .iter()
+        .map(|v| {
+            let edit = names.edit_of(v, num(&v["depth"]));
+            names.created(v, &edit, true);
+            edit
+        })
+        .collect();
+    (held, names)
+}
+
+#[test]
+fn the_server_keeps_for_each_person_what_the_lean_models_quota_keeps() {
+    let vectors = vectors();
+    let cases = list(&vectors["quotas"]);
+    assert!(cases.len() >= 7);
+    let (mut refused, mut nobodys) = (0, 0);
+    for case in cases {
+        let name = case["name"].as_str().unwrap();
+        let (held, names) = held_of(case);
+        let st = replay(&held).state;
+        let groups = st.read_groups(&names.readings);
+        let home = names.vault(&case["home"]);
+        let limits: quota::Limits =
+            list(&case["limits"]).iter().map(|l| (l["group"].as_str().unwrap().to_string(), num(&l["bytes"]))).collect();
+        let brought = |i: &Value| quota::Brought {
+            signer: signer(&i["signer"]),
+            size: num(&i["size"]),
+            file: i["file"].as_bool().unwrap(),
+        };
+        let items: Vec<quota::Brought> = list(&case["items"]).iter().map(brought).collect();
+        let kept = quota::keep_all(&st, &groups, home, &limits, &items);
+        let want: Vec<bool> = list(&case["kept"]).iter().map(|b| b.as_bool().unwrap()).collect();
+        assert_eq!(kept, want, "{name}");
+        for (item, want) in items.iter().zip(list(&case["persons"])) {
+            let person = quota::payer_of(&st, item.signer);
+            let said = person.map(|p| (p, quota::limit_of(&st, &groups, home, p, &limits)));
+            let want = (!want.is_null()).then(|| (names.vault(&want["vault"]), want["limit"].as_u64()));
+            assert_eq!(said, want, "{name}: the person of {:?}", item.signer);
+            nobodys += usize::from(said.is_none());
+        }
+        refused += kept.iter().filter(|k| !**k).count();
+    }
+    // some files refused, and items of nobody's
+    assert!(refused > 0 && nobodys > 0, "{refused} {nobodys}");
+}
+
+#[test]
+fn the_relay_honours_each_pass_the_lean_model_honours() {
+    let vectors = vectors();
+    let cases = list(&vectors["admissions"]);
+    assert!(cases.len() >= 9);
+    let (mut yes, mut no) = (0, 0);
+    for case in cases {
+        let name = case["name"].as_str().unwrap();
+        let (held, names) = held_of(case);
+        let st = replay(&held).state;
+        let signup = match case["signup"].as_str().unwrap() {
+            "anyone" => admission::Signup::Anyone,
+            "invited" => admission::Signup::Invited,
+            _ => admission::Signup::Known,
+        };
+        let invite = (!case["invite"].is_null()).then(|| names.share(&case["invite"]));
+        let home = names.vault(&case["home"]);
+        let claimable = case["claimable"].as_bool().unwrap();
+        let said = admission::honours(&st, home, signup, claimable, signer(&case["passkey"]), invite);
+        assert_eq!(said, case["honours"].as_bool().unwrap(), "{name}");
+        // the open invites the server lists for its relay are those the model calls open
+        if let Some(c) = invite {
+            assert_eq!(admission::open_invites(&st, home).contains(&c), admission::open_invite(&st, home, c), "{name}");
+        }
+        if said {
+            yes += 1;
+        } else {
+            no += 1;
+        }
+    }
+    assert!(yes > 0 && no > 0, "{yes} {no}");
 }
 
 /// `v` without its `null` fields: the model writes every field, and absent ones as `null`.

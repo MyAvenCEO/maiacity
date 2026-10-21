@@ -113,7 +113,7 @@ A device starts in one of three ways; everything after is one op through `PageDe
   server only lets their devices through and helps them find each other, and writes its card there, in two ceremonies:
   the unlock, which is the pass to the relay, and one for the vault's genesis and the edit that adds the device together
   (three with a new passkey). The server's relay lets any passkey's pass in while it is open to sign-up
-  (`AVENDB_SIGNUP`, open by default), so a person with no device yet gets in. The first person to found their vault
+  (`AVENDB_SIGNUP`, open by default with the gate off; with it on, by invite: a newcomer's pass with an invite of Maia City's still open), so a person with no device yet gets in. The first person to found their vault
   through a server nobody has claimed yet claims it in that same ceremony, founding the seed: Maia City, a coop their
   vault owns alone, and avenMAIA, Maia City's one aven; the server becomes avenMAIA's device
   ([ARCHITECTURE.md](docs/ARCHITECTURE.md) §3). Each seed vault then follows the person's server setting, backup or
@@ -275,8 +275,14 @@ plain HTTP on port 3350 and the feed's on port 3351. Its environment:
 | `AVENDB_FEED_BIND` | `0.0.0.0:3351` | The socket the Maia Universe's feed is served on, plain HTTP behind the same proxy |
 | `AVENDB_RELAY_URL` | the relay's own socket | Where devices reach the relay, `https://avendb.maia.city` once deployed |
 | `AVENDB_PUBLIC_ADDR` | its interfaces' addresses | Where devices on UDP reach it from the internet, the server's IP and port 7401, as its offer says |
-| `AVENDB_SIGNUP` | `open` | `open`: its relay lets in any passkey's pass for ten minutes, so a new person's first browser founds their vault; `closed`: only passkeys of vaults it knows |
+| `AVENDB_SIGNUP` | `open`, `invite` with the gate on | `open`: its relay lets in any passkey's pass for ten minutes, so a new person's first browser founds their vault; `invite`: only passkeys of vaults it knows, and a newcomer's shown with an invite of Maia City's still open (G5); `closed`: only passkeys of vaults it knows |
 | `AVENDB_GATE` | `off` | `on`: it takes a new person's vault only with an invite of Maia City's it claims, and a new coop or aven only where an admin owns it (Maia City, its owner, or a holder of its cap group named Admin); `off`: any. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) §5, Who the server takes |
+| `AVENDB_MAX_EDIT` | `16` | The mebibytes of one edit it takes at most |
+| `AVENDB_MAX_FILE` | `50` | The gigabytes of one file it keeps at most |
+| `AVENDB_BACKUP_LIMITS` | `Traveler=5,Citizen=25` | The gigabytes of new files it keeps for each person, by the cap group of Maia City they hold: the most of those they hold, the least for one who holds none; owners and holders of Admin have none, and `off` limits nobody. Edits are always kept, and nothing kept is dropped (Q1-Q5); a device asks its standing at `/feed/backup` |
+| `AVENDB_RELAY_RATE` | `8` | The mebibytes a second its relay reads from each client, `0` for no limit |
+| `AVENDB_RELAY_PASSES` | `4096` | The relay passes it holds at once |
+| `AVENDB_FEED_RATE` | `30` | The asks a minute of the feed's signed routes from each address, by the proxy's `X-Forwarded-For`, `0` for no limit |
 | `AVENDB_BUCKET` and the rest | none | Its bucket (see [Deploying the server](#deploying-the-server), step 6) |
 | `AVENDB_CACHE` | `8` | With a bucket, the gigabytes of the parts it read lately that its folder caches |
 | `AVENDB_SNAPSHOTS` and the rest | none | Its bucket of snapshots: every vault backed up into it each day (see [docs/BACKUP.md](docs/BACKUP.md)) |

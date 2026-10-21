@@ -359,6 +359,7 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
             let Reply { mut edits, .. } = Reply::from_wire(body)?;
             // a sign-up card carries vault logs and claims, and nothing else
             edits.retain(|s| crate::of_a_vault(s) || matches!(s.edit.action, Action::Claim { .. }));
+            shared.sized(&mut edits);
             let human = |s: &avendb::sign::Signed| match s.edit.action {
                 Action::Genesis { kind: Kind::Human, .. } => Some(VaultId::from(s.edit.id())),
                 _ => None,

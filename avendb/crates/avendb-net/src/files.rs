@@ -349,7 +349,25 @@ impl Shared {
         let keep = self.opts.keep;
         loop {
             let (files, whole) = self.lab(move |lab, me| (lab.files(me), lab.kept_files(me, keep))).await;
-            let whole: HashSet<FileRoot> = whole.into_iter().collect();
+            let mut whole: HashSet<FileRoot> = whole.into_iter().collect();
+            // a server's limits (`Node::limit`): of the files to keep whole that it doesn't hold whole yet, those that
+            // would take their person past their backup's limit, or that are larger than one file may be, it keeps
+            // as any other, a piece at a time as they are read, and fetches none of
+            let fresh: Vec<FileRoot> = whole.iter().filter(|f| !kept.contains(&(**f, true))).copied().collect();
+            if !fresh.is_empty() && self.limits_files() {
+                let mut held: HashSet<FileRoot> = kept.iter().filter(|(_, w)| *w).map(|(f, _)| *f).collect();
+                let mut new = Vec::new();
+                for f in fresh {
+                    if self.holds(f).await {
+                        held.insert(f);
+                    } else {
+                        new.push(f);
+                    }
+                }
+                new.sort_by_key(|f| f.size);
+                let may = self.weigh(&held, &new).await;
+                whole.retain(|f| held.contains(f) || may.contains(f));
+            }
             let files = files.into_iter().map(|f| (f, whole.contains(&f)));
             for (root, whole) in files.filter(|f| !kept.contains(f) && failing.due(&f.0)).collect::<Vec<_>>() {
                 let keeping = self.keep(root, whole).await;
@@ -367,6 +385,31 @@ impl Shared {
             }
             time::timeout(self.opts.retry, size.changed()).await.ok();
         }
+    }
+
+    /// It limits the files it keeps whole (`Node::limit`): their size, or each person's backup.
+    fn limits_files(&self) -> bool {
+        let keeping = self.keeping.lock().expect("keeping");
+        keeping.limits.file.is_some() || !keeping.limits.backup.is_empty()
+    }
+
+    /// Of `new`, files to keep whole that it doesn't hold whole yet, smallest first, those it may fetch by its limits
+    /// (`limits::weigh`), `held` those it holds whole, which count whatever the limits say. Its book of what it keeps
+    /// for each person is worked out again only now and then, as it weighs every edit.
+    async fn weigh(self: &Arc<Self>, held: &HashSet<FileRoot>, new: &[FileRoot]) -> HashSet<FileRoot> {
+        let (book, backup) = {
+            let keeping = self.keeping.lock().expect("keeping");
+            (keeping.fresh_book(), keeping.limits.backup.clone())
+        };
+        let book = match book {
+            Some(book) => book,
+            None => {
+                let book = self.lab(move |lab, me| avendb::quota::book(lab, me, &backup)).await;
+                self.keeping.lock().expect("keeping").set_book(book)
+            }
+        };
+        let mut keeping = self.keeping.lock().expect("keeping");
+        crate::limits::weigh(&mut keeping, &book, held, new)
     }
 
     /// Keeps file `root`, whole if `whole` says, as `keeper` says: a `keep` job of the file, in pieces, forgotten if it
