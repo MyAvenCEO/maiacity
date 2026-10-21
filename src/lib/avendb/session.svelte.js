@@ -421,12 +421,25 @@ function running(d) {
 /** How long a device that can't say yet what its key move asks waits before it is asked again (ms). */
 const MOVE_AGAIN = 30000;
 
+/** How long a device with nothing to move waits before it is asked again, while a device of an aven its person
+ *  governs still signs with its key from before the move: a server or an agent moves only while it runs (K3c), as
+ *  their cloud sessions' agent does only while a session uses avenDB, so the device looks for it now and then (ms). */
+const AVEN_AGAIN = 180000;
+/** the next of those looks, one at a time */
+let avenLater = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined);
+
+/** Whether a device of an aven the person sees still signs with its key from before the key move, with no next key
+ *  beside it yet. */
+const avenOld = () => !!world?.vaults.some((v) => v.kind === 'aven' && v.devices.some((d) => d.old && !d.next));
+
 /** What device `d`'s key move asks of the person (K3b), once it opened: where it asks for no ceremony, as a move cut
  *  short, it goes on at once; otherwise the page asks once more (`moveKeys`). Never fails: a device that can't say yet,
  *  as one still bringing what its peers hold (it caught up with none of them), is asked again `MOVE_AGAIN` later, for
  *  as long as it is the page's (Samuel 2026-10-20: a phone that unlocked mid-sync never showed "Move my keys"). So is
  *  one whose old keys' removal waits until it holds what its coop's server holds (`behind`), the banner saying so
- *  meanwhile (`again`). @param {any} d @param {boolean} [again] */
+ *  meanwhile (`again`), and one with nothing to move while a server or an agent of an aven still signs as before the
+ *  move (`AVEN_AGAIN`): it moves once the device finds it running, as their cloud sessions' agent. @param {any} d
+ *  @param {boolean} [again] */
 async function checkMove(d, again = false) {
 	if (!again) moving = null;
 	try {
@@ -435,6 +448,10 @@ async function checkMove(d, again = false) {
 		moving = asked;
 		if (asked?.behind) setTimeout(() => device === d && void checkMove(d, true), MOVE_AGAIN);
 		else if (asked && !asked.passkey && !asked.touch) await moveKeys();
+		else if (!asked && avenOld()) {
+			clearTimeout(avenLater);
+			avenLater = setTimeout(() => device === d && !moving && void checkMove(d, true), AVEN_AGAIN);
+		}
 	} catch (e) {
 		console.warn('avenDB: the key move is asked about again in a moment:', /** @type {Error} */ (e)?.message ?? e);
 		setTimeout(() => device === d && !moving && void checkMove(d), MOVE_AGAIN);

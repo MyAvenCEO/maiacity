@@ -204,7 +204,7 @@ const KIND_WORDS = /** @type {Record<string, string>} */ ({ human: 'human', coop
 const KIND_IS = /** @type {Record<string, string>} */ ({
 	human: "A person's vault: the identity everything they do starts from.",
 	coop: 'A coop: a company or a group, which hires avens by sharing with them.',
-	aven: "A person's aven: the one identity their agents act as, which coops hire by sharing with it.",
+	aven: 'An aven: the AI identity of the coop that owns it, which its server and its agents act as, each a device of it.',
 	device: 'A device vault: the keys of one agent, server or drive, with only the rights its owner passes on to it.'
 });
 
@@ -505,6 +505,84 @@ export function signerName(world, id, lead = false) {
 		if (o && 'by' in o) return say(`${o.by === 'touch' ? 'a Mac Touch ID key' : 'a passkey'} of ${nameOf(v)}`);
 	}
 	return say(`key ${short(id)}`);
+}
+
+/** The device an offer's text names (avendb-net's `Offer::to_text`): `AVENDB1`, then in base32 without padding its
+ *  endpoint's 32 bytes, then its device's 32, in hex; null if it is no offer. @param {string} offer */
+export function offerDevice(offer) {
+	if (!offer?.startsWith('AVENDB1')) return null;
+	const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+	/** @type {number[]} */
+	const bytes = [];
+	let [bits, value] = [0, 0];
+	for (const c of offer.slice('AVENDB1'.length)) {
+		const n = ALPHABET.indexOf(c);
+		if (n < 0) return null;
+		[value, bits] = [((value << 5) | n) & 0xffff, bits + 5];
+		if (bits >= 8) {
+			bits -= 8;
+			bytes.push((value >> bits) & 0xff);
+		}
+		if (bytes.length === 64) break;
+	}
+	if (bytes.length < 64) return null;
+	return bytes
+		.slice(32, 64)
+		.map((b) => b.toString(16).padStart(2, '0'))
+		.join('');
+}
+
+/**
+ * Names for the devices of avens, which carry no card, as a person reads them: avenDB's server, by the device its offer
+ * `offer` names; each agent `agents` names (the Mac app's `agentDevices`), on this Mac, or the cloud sessions' one it
+ * added; and where `agents` is given, as in the Mac app, any other device of an aven, which runs on no Mac of theirs:
+ * their cloud sessions' agent, or, where the Mac noted that one, an agent elsewhere. Each name goes to every key of its
+ * device, before and after its key move (`next`).
+ * Where the device's card names it, that name stays.
+ * @param {WorldView} world @param {string} offer
+ * @param {{ name: string, device: string, cloud: boolean }[] | null} [agents]
+ * @returns {Map<string, string>}
+ */
+export function deviceRoles(world, offer, agents = null) {
+	/** @type {Map<string, string>} */
+	const next = new Map();
+	/** @type {Set<string>} */
+	const named = new Set();
+	for (const v of world.vaults)
+		for (const d of v.devices) {
+			if (d.next) next.set(d.id, d.next);
+			if (d.name) named.add(d.id);
+		}
+	/** @type {Map<string, string>} */
+	const roles = new Map();
+	/** device `id` and each key it moved to, named `name` @param {string} id @param {string} name */
+	const along = (id, name) => {
+		for (let at = /** @type {string | undefined} */ (id), n = 0; at && n < 16 && !roles.has(at); at = next.get(at), n++)
+			roles.set(at, name);
+	};
+	// a key that moved to one named is named so too
+	const back = () => {
+		for (let again = true; again; ) {
+			again = false;
+			for (const [old, to] of next)
+				if (!roles.has(old) && roles.has(to)) {
+					roles.set(old, /** @type {string} */ (roles.get(to)));
+					again = true;
+				}
+		}
+	};
+	const server = offerDevice(offer);
+	if (server) along(server, 'avenDB’s server');
+	for (const a of agents ?? []) along(a.device, a.cloud ? `${a.name}, for cloud sessions` : `${a.name} on this Mac`);
+	back();
+	// any other device of an aven runs on no Mac of theirs: the cloud sessions' agent, unless this Mac noted that one
+	const other = agents?.some((a) => a.cloud) ? 'An agent not on this Mac' : 'agentCloud, for cloud sessions';
+	if (agents)
+		for (const v of world.vaults)
+			if (v.kind === 'aven') for (const d of v.devices) if (!roles.has(d.id)) along(d.id, other);
+	back();
+	for (const id of named) roles.delete(id);
+	return roles;
 }
 
 /**

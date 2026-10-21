@@ -1878,6 +1878,11 @@ async fn a_cloud_agent_her_mac_adds_to_avenmaia_drafts_a_spark_through_the_serve
     assert!(key.starts_with("02"), "ML-DSA-65, as every new signer");
     let device = added["device"].clone();
     device_shown(&mut app, &maia, &device, "agentCloud a device of avenMAIA", |d| d.is_some()).await;
+    // her Mac names it among avenMAIA's devices by a note of its device alone, never its key
+    let known = app.call("agentDevices", json!([])).await.expect("the agents' devices");
+    let cloudy = json!({ "name": "agentCloud", "device": device, "cloud": true, "online": false });
+    assert!(known.as_array().is_some_and(|k| k.contains(&cloudy)), "{known}");
+    assert!(!known.to_string().contains(&key[2..]), "no key in what names it");
     // a cloud session with it acts as avenMAIA, through the server alone, as nothing tells it where her Mac is
     let mut session = Harness::cloud(cloud(&key));
     let (said, error) = once_it_may(&mut session, "avendb_vaults", json!({})).await;

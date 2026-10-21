@@ -478,6 +478,10 @@
 		 *  adds it (avendb-device's `agentCommand`); else none. @param {string} harness
 		 *  @returns {Promise<{ device: string, command: string, claude: string | null } | null>} */
 		agentCommand: async (harness) => (mac ? mac.call('agentCommand', harness) : null),
+		/** In the Mac app: the agents' devices it knows of, each that ran on it and each cloud agent it added
+		 *  (avendb-device's `agentDevices`); else none.
+		 *  @returns {Promise<{ name: string, device: string, cloud: boolean, online: boolean }[] | null>} */
+		agentDevices: async () => (mac ? mac.call('agentDevices') : null),
 		/**
 		 * In the Mac app: a new agent for the person's cloud sessions, agentCloud, its key made on this Mac and added to
 		 * their coop's aven, avenMAIA, as a device beside its server, in one sheet (avendb-device's `addCloudAgent`). Its

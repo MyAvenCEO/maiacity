@@ -8,9 +8,11 @@ import {
 	AIP_AUTHOR,
 	AIPS,
 	aipAuthorOps,
+	deviceRoles,
 	levelName,
 	newest,
 	newestKey,
+	offerDevice,
 	signerName,
 	OLD_SUGGESTER,
 	opsWords,
@@ -145,4 +147,38 @@ test('a key the key move kept beside its next is listed once, by its newest', ()
 	expect(newest(v.devices).map((d) => d.id)).toEqual([now, phone]);
 	expect(newest(v.owners)).toEqual([v.owners[1], v.owners[2]]);
 	expect([old, now, phone, pass, hex(7)].map((k) => newestKey(world, k))).toEqual([now, now, phone, next, hex(7)]);
+});
+
+test('an aven’s devices are named by what they are: its server by its offer, agents by the Mac, the rest the cloud’s', () => {
+	// avenDB's server's offer, as src/lib/avendb/server.js has it: its device's key before the move
+	const offer =
+		'AVENDB1UAYTJU2GDDXXNHWO5YZJOJJBYJFXCKVEPNGILCF6ORDFGRZQXIYOKZOGNSNV64ZIP4VEW4HJPYXUPWZBQJWGRT75JV4CAO3N25TOCMYBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
+	const server = offerDevice(offer);
+	expect(server).toBe('e565c66c9b5f73287f2a4b70e97e2f47db21826c68cffd4d78203b6dd766e133');
+	expect(offerDevice('no offer')).toBeNull();
+	const [moved, claude, claudeOld, cloud, phone] = [11, 12, 13, 14, 15].map(hex);
+	const aven = {
+		...vault(AVEN, 'aven', COOP, [COOP, MINE]),
+		devices: [
+			{ id: server, me: false, next: moved },
+			{ id: moved, me: false, next: null },
+			{ id: claudeOld, me: false, next: claude },
+			{ id: claude, me: false, next: null },
+			{ id: cloud, me: false, next: null, old: true }
+		]
+	};
+	const mine = { ...vault(MINE, 'human', null, null), devices: [{ id: phone, me: false, name: 'Safari on iPhone' }] };
+	const w = { mine: MINE, vaults: [mine, aven], kinds: KINDS };
+	const onMac = deviceRoles(w, offer, [{ name: 'agentClaude', device: claude, cloud: false }]);
+	expect([server, moved].map((d) => onMac.get(d))).toEqual(['avenDB’s server', 'avenDB’s server']);
+	expect([claudeOld, claude].map((d) => onMac.get(d))).toEqual(['agentClaude on this Mac', 'agentClaude on this Mac']);
+	expect(onMac.get(cloud)).toBe('agentCloud, for cloud sessions');
+	expect(onMac.has(phone)).toBe(false);
+	// a browser knows no Mac's agents: it names the server alone, and the others stay a device of the aven
+	const inBrowser = deviceRoles(w, offer);
+	expect(inBrowser.get(moved)).toBe('avenDB’s server');
+	expect(inBrowser.has(claude) || inBrowser.has(cloud)).toBe(false);
+	// a cloud agent the Mac added is named by its note
+	const added = deviceRoles(w, offer, [{ name: 'agentCloud', device: cloud, cloud: true }]);
+	expect([added.get(cloud), added.get(claude)]).toEqual(['agentCloud, for cloud sessions', 'An agent not on this Mac']);
 });
