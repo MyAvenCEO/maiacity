@@ -423,6 +423,9 @@ struct Store {
     /// the vault the share is over.
     slices: HashMap<ShareId, Slice>,
     unreadable: HashSet<ShareId>,
+    /// The boxes it tried with the key they are to and that didn't open to their key, each by its key's id, whom it
+    /// is to and its first bytes: tried once, not again at every refresh.
+    unopened: HashSet<(KeyId, Recipient, [u8; 32])>,
     /// The bodies of the writes it opened, and the writes whose bodies never open: garbled under the key they name.
     bodies: HashMap<EditId, Body>,
     spoilt: HashSet<EditId>,
@@ -462,6 +465,7 @@ impl Default for Store {
             derived: HashSet::new(),
             slices: HashMap::new(),
             unreadable: HashSet::new(),
+            unopened: HashSet::new(),
             bodies: HashMap::new(),
             spoilt: HashSet::new(),
             readings: Readings::default(),
@@ -489,6 +493,7 @@ impl Store {
         self.derived.clear();
         self.slices.clear();
         self.unreadable.clear();
+        self.unopened.clear();
         self.bodies.clear();
         self.files_at = OnceLock::new();
         self.spoilt.clear();
@@ -2316,8 +2321,8 @@ impl Lab {
                 return;
             }
             assert!(round < ROUNDS, "{d:?} keeps making edits its own view refuses: {work:?}");
-            // what its edits say, every write counted: what it drafts on
-            let view = store.log.view();
+            // what its edits say, every write counted: what it drafts on, its replay of this round
+            let view = store.replay.state.clone();
             for w in work {
                 self.work(d, &view, w);
             }
@@ -3369,6 +3374,14 @@ impl Lab {
             "blobs": store.blobs.len(),
             "blob_bytes": store.blobs.values().map(|b| b.len()).sum::<usize>(),
         });
+        // the vaults' checkpoints that stand, and the edits it holds on their word, without their signatures
+        let r = &store.replay;
+        let checkpoint = |(e, stood): (&Edit, &bool)| *stood && matches!(e.action, Action::Checkpoint { .. });
+        out["checkpoints"] = serde_json::json!({
+            "standing": r.edits.iter().zip(&r.stood).filter(|&x| checkpoint(x)).count(),
+            "vouched": r.vouched().len(),
+            "bare": store.bare.len(),
+        });
         out
     }
 
@@ -4169,10 +4182,17 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
                 Recipient::Key { name: to, id: under } => store.keys.get(&under, to).cloned(),
             };
             let Some(with) = with else { continue };
-            if let Some(secret) = keys::open(&b.bytes, &with, &box_info(*name, *id, &b.to))
-                && secret.id() == *id
-            {
-                more |= store.keys.insert(*name, secret);
+            let mut first = [0; 32];
+            let n = b.bytes.len().min(32);
+            first[..n].copy_from_slice(&b.bytes[..n]);
+            if store.unopened.contains(&(*id, b.to, first)) {
+                continue;
+            }
+            match keys::open(&b.bytes, &with, &box_info(*name, *id, &b.to)) {
+                Some(secret) if secret.id() == *id => more |= store.keys.insert(*name, secret),
+                _ => {
+                    store.unopened.insert((*id, b.to, first));
+                }
             }
         }
         for &(name, id, bytes) in &ix.clear {
@@ -4612,6 +4632,7 @@ fn show_items(d: SignerId, store: &mut Store) {
     // each vault's lane as the device reads it off the vault's schema and lens entries (`State::lane_of`), its hash,
     // and what judges the writes of the vault's entries, made once one of them is shown anew
     let mut lanes: HashMap<VaultId, (Vec<&[u8]>, [u8; 32], OnceCell<Lane>)> = HashMap::new();
+    let at = Perf::start();
     for en in st.entries() {
         lanes.entry(en.vault).or_insert_with(|| {
             let blobs = st.lane_of(en.vault, r);
@@ -4622,6 +4643,8 @@ fn show_items(d: SignerId, store: &mut Store) {
             (blobs, h.finalize(), OnceCell::new())
         });
     }
+    store.perf.add("show: lanes", at);
+    let at = Perf::start();
     let lane = |v: VaultId| {
         let (blobs, _, lane) = &lanes[&v];
         lane.get_or_init(|| Lane::with_built_ins(blobs.iter().copied()))
@@ -4661,6 +4684,8 @@ fn show_items(d: SignerId, store: &mut Store) {
         h.update(&w.0);
     }
     let groups_print = h.finalize();
+    store.perf.add("show: cap groups", at);
+    let at = Perf::start();
     for (e, j) in judging {
         let en = st.entry(e).expect("an entry");
         shown.insert(e, j.shown(d, print(en, &groups_print)));
@@ -4681,6 +4706,7 @@ fn show_items(d: SignerId, store: &mut Store) {
         }
         shown.insert(en.id, j.shown(d, print));
     }
+    store.perf.add("show: entries", at);
     store.shown = shown;
     store.readings.groups = groups;
 }

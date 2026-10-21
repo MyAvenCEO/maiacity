@@ -155,6 +155,30 @@ impl Bucket for S3 {
         })
     }
 
+    /// The objects under `prefix` and their bytes, as its listing says them, a page of 1,000 at a time.
+    fn usage<'a>(&'a self, prefix: &'a str) -> Fut<'a, (u64, u64)> {
+        Box::pin(async move {
+            let (mut objects, mut bytes, mut after) = (0, 0, None::<String>);
+            loop {
+                let mut action = self.bucket.list_objects_v2(Some(&self.credentials));
+                action.with_prefix(prefix);
+                if let Some(token) = &after {
+                    action.with_continuation_token(token.as_str());
+                }
+                let response = through(self.client.get(action.sign(SIGNED)).send().await?, prefix).await?;
+                let page = ListObjectsV2::parse_response(&response.text().await?)
+                    .map_err(|e| anyhow::anyhow!("listing {prefix}: the bucket's answer doesn't read: {e}"))?;
+                objects += page.contents.len() as u64;
+                bytes += page.contents.iter().map(|object| object.size).sum::<u64>();
+                match page.next_continuation_token {
+                    Some(token) => after = Some(token),
+                    None => break,
+                }
+            }
+            Ok((objects, bytes))
+        })
+    }
+
     fn delete<'a>(&'a self, name: &'a str) -> Fut<'a, ()> {
         Box::pin(async move {
             let url = self.bucket.delete_object(Some(&self.credentials), name).sign(SIGNED);

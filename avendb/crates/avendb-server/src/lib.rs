@@ -234,6 +234,7 @@ pub struct Running {
     /// How it is doing (`health`), said in its folder every few seconds for as long as it runs.
     pub health: Arc<health::Health>,
     _beat: Abort,
+    _measure: Abort,
     /// What the apps know of the server (P8c), so that a new device links through it with its person's passkey alone:
     /// its device, its endpoint, where devices on UDP reach it (`Config::public_addr`) and its relay. A device it
     /// doesn't know yet reaches it straight, over UDP, as its relay lets the device in only once it joined.
@@ -304,7 +305,34 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
     let feed = feed::Feed::spawn(config.feed_bind, node.clone(), health.clone()).await?;
     let backups = config.snapshots.as_ref().map(|s| backups::Backups::spawn(node.clone(), own, s, Keep::default()));
     let beat = health.beat();
-    Ok(Running { node, relay, feed, backups: backups.transpose()?, health, _beat: beat, offer })
+    let measure = Abort(tokio::spawn(measure(config.clone(), health.clone())));
+    let backups = backups.transpose()?;
+    Ok(Running { node, relay, feed, backups, health, _beat: beat, _measure: measure, offer })
+}
+
+/// How often the server measures what its shelf takes: its bucket's listing is a request per 1,000 objects.
+const MEASURE: Duration = Duration::from_secs(600);
+
+/// Measures what the server's shelf takes, every `MEASURE`, for its health to say (`GET /feed/health`): its bucket's
+/// objects and their bytes, where it keeps its shelf in one, and its folder's files and theirs, the bucket's cache
+/// or the shelf itself.
+async fn measure(config: Config, health: Arc<health::Health>) {
+    let bucket = config.bucket.as_ref().and_then(|b| bucket::S3::new(b).ok());
+    loop {
+        let mut said = serde_json::json!({ "at": now() });
+        if let Some(b) = &bucket {
+            match avendb_net::bucket::Bucket::usage(b, "").await {
+                Ok((objects, bytes)) => said["bucket"] = serde_json::json!({ "objects": objects, "bytes": bytes }),
+                Err(e) => said["bucket"] = serde_json::json!({ "error": format!("{e:#}") }),
+            }
+        }
+        let data = config.data.clone();
+        if let Ok(Ok((files, bytes))) = tokio::task::spawn_blocking(move || avendb_net::disk::usage(&data)).await {
+            said["folder"] = serde_json::json!({ "files": files, "bytes": bytes });
+        }
+        health.shelf(said);
+        tokio::time::sleep(MEASURE).await;
+    }
 }
 
 /// The server's relay: iroh's, serving plain HTTP on its socket, letting in only the clients its admission admits or

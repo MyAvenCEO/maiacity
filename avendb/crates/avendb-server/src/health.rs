@@ -45,6 +45,8 @@ pub struct Health {
     before: Value,
     /// This run's last panic, `{at, message}`: a task's panic leaves the process running.
     panic: Mutex<Value>,
+    /// What its shelf takes where it keeps it, as last measured (`shelf`), or null before.
+    shelf: Mutex<Value>,
 }
 
 impl Health {
@@ -66,7 +68,7 @@ impl Health {
             };
             json!({ "started": l["started"], "seen": l["seen"], "memory": l["memory"], "panic": l["panic"], "ended": ended })
         });
-        let health = Arc::new(Health { file, started, starts, before, panic: Mutex::new(Value::Null) });
+        let health = Arc::new(Health { file, started, starts, before, panic: Mutex::new(Value::Null), shelf: Mutex::new(Value::Null) });
         health.write(Value::Null);
         health
     }
@@ -122,7 +124,13 @@ impl Health {
             "panic": *self.panic.lock().unwrap_or_else(|e| e.into_inner()),
             "starts": { "hour": hour, "recent": recent },
             "before": self.before,
+            "shelf": *self.shelf.lock().unwrap_or_else(|e| e.into_inner()),
         })
+    }
+
+    /// Says what its shelf takes, as just measured: `{at, bucket: {objects, bytes}, folder: {files, bytes}}`.
+    pub fn shelf(&self, measured: Value) {
+        *self.shelf.lock().unwrap_or_else(|e| e.into_inner()) = measured;
     }
 
     /// Writes how this run is doing to its file, as it is now, `ended` or not (null): whole or not at all, by a file
