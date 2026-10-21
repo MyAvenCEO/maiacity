@@ -32,24 +32,30 @@
 	let open = $state(q.get('room') ?? '');
 	let side = $state('');
 
-	/** each room's head, its record with its last message, and how many it holds: `{ [entry]: answer }` */
+	/** each room's head, its record with its last message, and how many it holds: `{ [entry]: answer }`, `null` where
+	 *  the read was refused; a room not in it is still being read. Each head shows as it comes, so one slow room never
+	 *  holds the others back, and a head read before stays until its new one comes. */
 	let heads = $state({});
 	$effect(() => {
 		const list = rooms;
 		void world;
 		let gone = false;
 		// a room this device holds nothing of yet is brought first by the read itself (../avendb/session.svelte.js `near`)
-		Promise.all(list.map((r) => api.ask({ op: 'room', entry: r.entry, last: 1 }).then((a) => [r.entry, a?.ok ?? null]))).then(
-			(rows) => !gone && (heads = Object.fromEntries(rows))
-		);
+		for (const r of list)
+			api.ask({ op: 'room', entry: r.entry, last: 1 }).then(
+				(a) => !gone && (heads = { ...heads, [r.entry]: a?.ok ?? (heads[r.entry] || null) }),
+				() => !gone && !(r.entry in heads) && (heads = { ...heads, [r.entry]: null })
+			);
 		return () => (gone = true);
 	});
+	/** whether every room's head has come, so the list knows each room's kind (a note to self among them) */
+	const known = $derived(rooms.every((r) => heads[r.entry]));
 	let seen = $state(R.seenAll());
 	const unread = (entry) => Math.max(0, (heads[entry]?.count ?? 0) - (seen[entry] ?? 0));
 
 	const groups = $derived.by(() => {
-		const by = { channel: [], group: [], dm: [], self: [] };
-		for (const r of rooms) by[heads[r.entry]?.room?.look ?? 'group']?.push(r);
+		const by = { channel: [], group: [], dm: [], self: [], opening: [] };
+		for (const r of rooms) (by[heads[r.entry]?.room?.look] ?? by.opening).push(r);
 		return by;
 	});
 
@@ -155,15 +161,21 @@
 		where = coops[0]?.id ?? '';
 		side = '';
 	}
+	let busy = false;
 	async function make() {
 		const self = making === 'self';
+		// one note to self: an existing one opens, and none is made while the rooms' kinds are still being read
+		if (self && groups.self.length) return pick(groups.self[0].entry);
+		if (busy || (self && !known)) return;
 		const vault = making === 'channel' ? where : world.mine;
 		const members = self ? [] : chosen;
 		if (making === 'dm' && members.length !== 1) return;
 		if (making === 'channel' && !vault) return;
 		const ops = R.making({ vault, actor: R.actorIn(world, vault), look: making, name: name.trim(), topic: topic.trim(), members });
-		const done = await api.runAll(self ? 'Making your note to self' : 'Making the room', ops);
+		busy = true;
+		const done = await api.runAll(self ? 'Making your note to self' : 'Making the room', ops).finally(() => (busy = false));
 		if (done?.[0]?.entry) pick(done[0].entry);
+		else if (self) making = '';
 	}
 	/** an existing DM with `who`, opened instead of making a second */
 	function dmWith(who) {
@@ -195,7 +207,8 @@
 		['channel', 'Channels'],
 		['group', 'Groups'],
 		['dm', 'Direct messages'],
-		['self', 'Notes to self']
+		['self', 'Notes to self'],
+		['opening', 'Still opening']
 	];
 </script>
 
@@ -206,7 +219,7 @@
 			<button class="nav-item" data-pick onclick={() => start('dm')}><Icon name="users" /><span>New message</span></button>
 			<button class="nav-item" data-pick onclick={() => start('group')}><Icon name="plus" /><span>New group</span></button>
 			{#if coops.length}<button class="nav-item" data-pick onclick={() => start('channel')}><Icon name="plus" /><span>New channel</span></button>{/if}
-			{#if !groups.self.length}<button class="nav-item" data-pick onclick={() => ((making = 'self'), make())}><Icon name="note" /><span>Note to self</span></button>{/if}
+			{#if known && !groups.self.length}<button class="nav-item" data-pick onclick={() => ((making = 'self'), make())}><Icon name="note" /><span>Note to self</span></button>{/if}
 		</div>
 		{#each SECTIONS as [look, label] (look)}
 			{#if groups[look].some(matches)}
@@ -273,7 +286,10 @@
 		{#if making}
 			<section class="making">
 				<h2>{making === 'dm' ? 'New message' : making === 'group' ? 'New group' : making === 'channel' ? 'New channel' : 'Note to self'}</h2>
-				{#if making === 'dm'}
+				{#if making === 'self'}
+					<p class="hint">{api.doing || 'Only you read it.'}</p>
+					<div class="row"><button class="link" onclick={() => (making = '')}>Back</button></div>
+				{:else if making === 'dm'}
 					<p class="hint">Only the two of you read it.</p>
 					<ul class="people">
 						{#each people as p (p.id)}<li><button onclick={() => dmWith(p.id)}>{nameOf(p)} <small>{KINDS[p.kind]}</small></button></li>{:else}<li class="hint">Nobody else is in your vaults yet.</li>{/each}
@@ -305,7 +321,8 @@
 			</header>
 			<div class="timeline" bind:this={timeline} {onscroll}>
 				{#if read?.more}<button class="older link" onclick={() => ((stuck = false), (shown += 50))}>Show older messages</button>{/if}
-				{#if !record && why}<p class="hint">{why}</p>{/if}
+				{#if !record && why}<p class="hint">{why}</p>
+				{:else if read?.entry !== open}<p class="hint empty">Opening the room…</p>{/if}
 				{#each lines as l (l.m.id)}
 					{#if l.dayStart}<div class="day"><span>{R.dayWords(l.m.at)}</span></div>{/if}
 					<Message
