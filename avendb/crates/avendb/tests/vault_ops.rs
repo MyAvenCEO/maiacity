@@ -862,3 +862,25 @@ fn a_request_to_co_own_and_an_invitation_are_each_signed_by_both_passkeys_one_af
     assert_eq!(refused(&run(&mut w, mac_c, owner(garden, carol, &entry, carol))), "BadOp");
     assert!(!owns(&w, mac_c, garden, carol));
 }
+
+#[test]
+fn maia_city_stays_the_seed_with_a_second_owner() {
+    // Samuel 2026-10-21: a coop may have many owners; adding a second human to Maia City must not unseat the seed
+    let mut w = cast::world();
+    let (mac, avenceo, alice, bob) = (w.mac_a, w.avenceo, w.alice, w.bob);
+    let st = w.lab.state(mac);
+    let Some(&city) = world::seed_of(&w.lab, mac).first() else { panic!("Alice's seed") };
+    assert_eq!(world::seed_coop(st, alice), Some(city));
+    let keeps = world::avenceo(st, alice);
+    let add_bob = Action::Share(Sharing::Owner { vault: city, owner: Principal::Vault(bob), seal_to: None });
+    w.lab.submit(mac, &[w.passkey_a, w.passkey_b], add_bob).expect("her passkey adds Bob's vault, which consents");
+    let st = w.lab.state(mac);
+    assert_eq!(vault(&w.lab, mac, city).owners, [Principal::Vault(alice), Principal::Vault(bob)]);
+    assert_eq!(world::seeders(st, avenceo), [alice, bob], "both owners, in the order they joined");
+    assert_eq!(world::seeder(st, avenceo), Some(alice), "the founder first");
+    assert!(world::seeded(st, alice, avenceo) && world::seeded(st, bob, avenceo));
+    assert_eq!((world::seed_coop(st, alice), world::seed_coop(st, bob)), (Some(city), Some(city)));
+    assert_eq!(world::seed_of(&w.lab, mac), [city, avenceo], "Alice's devices still see her seed");
+    assert!(world::owns_server(&w.lab, mac), "and the server it ends");
+    assert_eq!(world::avenceo(st, alice), keeps, "and the server keeps her vault as before");
+}

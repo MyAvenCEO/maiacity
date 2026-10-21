@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'bun:test';
 import { ADMIN, CAP_GROUPS, CITIZEN, TRAVELER, capGroupOps, groupHolders, heldGroups, moveOps } from './capgroups.js';
 import { refs } from './ops.js';
-import { serverCity } from './vaults.js';
+import { seedCity, serverCity } from './vaults.js';
 
 const CITY = 'c'.repeat(64);
 const ME = 'a'.repeat(64);
@@ -93,6 +93,18 @@ describe('Maia City, to anyone', () => {
 		expect(serverCity({ mine: ME, vaults, shares: [keeps(SERVER, { whole: false })] })).toBeUndefined();
 		expect(serverCity({ mine: ME, vaults, shares: [keeps(FAKE_AVEN)] })).toBeUndefined();
 		expect(serverCity({ mine: ME, vaults, shares: [keeps(SERVER, { over: SAM })] })).toBeUndefined();
+	});
+
+	test('stays Maia City with a second human owner, to the server’s keeps and to each owner as theirs (Samuel 2026-10-21)', () => {
+		const DAN = 'd'.repeat(64);
+		const two = vaults.map((v) => (v.id === CITY ? { ...v, owners: [{ vault: SAM }, { vault: DAN }] } : v)).concat(vault(DAN, 'human'));
+		expect(serverCity({ mine: ME, vaults: two, shares: [keeps(SERVER)] })?.id).toBe(CITY);
+		expect(seedCity({ mine: SAM, vaults: two, shares: [] })?.id).toBe(CITY);
+		expect(seedCity({ mine: DAN, vaults: two, shares: [] })?.id).toBe(CITY);
+		expect(seedCity({ mine: ME, vaults: two, shares: [] })).toBeUndefined();
+		// a coop a coop owns beside a human is no seed's
+		const mixed = two.map((v) => (v.id === CITY ? { ...v, owners: [{ vault: SAM }, { vault: FAKE }] } : v));
+		expect(seedCity({ mine: SAM, vaults: mixed, shares: [] })).toBeUndefined();
 	});
 });
 

@@ -1308,14 +1308,15 @@ pub fn seed_of(lab: &Lab, me: SignerId) -> Vec<VaultId> {
 
 /// Maia City, the coop of the seed that the claim of human vault `person` founded, by view `st`, found walking down
 /// from `person` rather than up from the server, as `seed_of` walks: so a view that holds no server's device finds it,
-/// as an agent's holds none. A coop `person` owns alone: where the view holds one whose aven is a server (`seeder`), as
-/// the person's own devices do, that one; else the first the view holds, by the order the vaults were founded
-/// (`State::vaults`), as the seed is founded with the person's vault or as they claim a server, before a coop of their
-/// own. Never by its name, which anyone may give a vault. None where `person` owns no coop alone.
+/// as an agent's holds none. A coop human vaults alone own, `person` among them (`human_owners`; Samuel 2026-10-21: a
+/// coop may have many owners): where the view holds one whose aven is a server (`seeded`), as the person's own devices
+/// do, that one; else the first the view holds, by the order the vaults were founded (`State::vaults`), as the seed is
+/// founded with the person's vault or as they claim a server, before a coop of their own. Never by its name, which
+/// anyone may give a vault. None where `person` owns no such coop.
 pub fn seed_coop(st: &State, person: VaultId) -> Option<VaultId> {
-    let owned = |v: &&Vault| v.kind == Kind::Coop && v.owners == [Principal::Vault(person)];
+    let owned = |v: &&Vault| v.kind == Kind::Coop && human_owners(st, v).contains(&person);
     let coops: Vec<VaultId> = st.vaults().iter().filter(owned).map(|v| v.id).collect();
-    let serves = |&coop: &VaultId| aven_of(st, coop).is_some_and(|aven| seeder(st, aven) == Some(person));
+    let serves = |&coop: &VaultId| aven_of(st, coop).is_some_and(|aven| seeded(st, person, aven));
     coops.iter().copied().find(serves).or(coops.first().copied())
 }
 
@@ -1326,22 +1327,36 @@ pub fn aven_of(st: &State, coop: VaultId) -> Option<VaultId> {
     st.vaults().iter().find(ours).map(|v| v.id)
 }
 
-/// Whether vault `server` ends a seed founded from vault `mine`, by view `st` (`seeder`).
+/// Whether vault `server` ends a seed vault `mine` owns, by view `st` (`seeders`): founded from it, or added to it as
+/// an owner of the seed's coop since.
 pub fn seeded(st: &State, mine: VaultId, server: VaultId) -> bool {
-    seeder(st, server) == Some(mine)
+    seeders(st, server).contains(&mine)
 }
 
-/// The human vault whose seed vault `server` ends, by view `st` (`SEED`): its kind and its owner's are the seed's,
-/// avenMAIA's and Maia City's, each owned by the one before alone, the first by that human vault. An aven is one to a
-/// coop, so no other vault ends such a chain. None for any other vault.
+/// The human vault that founded the seed vault `server` ends, by view `st`: the first of its owners (`seeders`), as
+/// owners keep the order they joined in. None for any other vault.
 pub fn seeder(st: &State, server: VaultId) -> Option<VaultId> {
-    let mut at = server;
-    for kind in SEED.iter().rev() {
-        let v = st.vault(at).filter(|v| v.kind == *kind)?;
-        let [Principal::Vault(owner)] = v.owners[..] else { return None };
-        at = owner;
-    }
-    st.vault(at).is_some_and(|v| v.kind == Kind::Human).then_some(at)
+    seeders(st, server).first().copied()
+}
+
+/// The human vaults that own the seed vault `server` ends, by view `st` (`SEED`), in the order they joined it: the
+/// server is the seed's aven, avenMAIA, owned alone by a coop, Maia City, which human vaults alone own (Samuel
+/// 2026-10-21: a coop may have many owners, each equal), at least one. An aven is one to a coop, so no other vault
+/// ends such a chain. Empty for any other vault.
+pub fn seeders(st: &State, server: VaultId) -> Vec<VaultId> {
+    let Some(aven) = st.vault(server).filter(|v| v.kind == SEED[1]) else { return vec![] };
+    let [Principal::Vault(coop)] = aven.owners[..] else { return vec![] };
+    let Some(coop) = st.vault(coop).filter(|v| v.kind == SEED[0]) else { return vec![] };
+    human_owners(st, coop)
+}
+
+/// The human vaults that own vault `v`, by view `st`, in the order they joined it, where every vault among its owners
+/// is a human vault (keys among them, as a recovery key, don't count); empty otherwise.
+fn human_owners(st: &State, v: &Vault) -> Vec<VaultId> {
+    let vault = |p: &Principal| if let Principal::Vault(o) = p { Some(*o) } else { None };
+    let vaults: Vec<VaultId> = v.owners.iter().filter_map(vault).collect();
+    let human = |o: &VaultId| st.vault(*o).is_some_and(|u| u.kind == Kind::Human);
+    if vaults.iter().all(human) { vaults } else { vec![] }
 }
 
 /// A server's vault by view `st`, read from the seed: the aven of a seed, avenMAIA, which Maia City owns (`seeder`),
