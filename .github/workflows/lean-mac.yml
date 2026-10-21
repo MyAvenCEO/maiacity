@@ -40,8 +40,21 @@ jobs:
         working-directory: avendb
         run: cargo test --locked -p avendb-device --lib lean::tests::lean_on_a_mac -- --ignored --nocapture
 
-      # what the sandbox denied Lean, by operation and path: Lean's own folder and the runner's, nothing of a person's
+      # what the sandbox denied Lean, by operation and path, and why Lean stopped (its crash report: the reason and the
+      # stopped thread's frames): Lean's own folder and the runner's, nothing of a person's
       - name: What the sandbox stopped
         if: failure()
         run: |
-          log show --last 20m --style compact --predicate 'eventMessage CONTAINS "Sandbox: lean(" OR eventMessage CONTAINS "Sandbox: sandbox-exec("' | tail -80 || true
+          sudo log show --last 20m --style compact --predicate 'eventMessage CONTAINS "deny(" AND eventMessage CONTAINS "lean"' | tail -60 || true
+          python3 - <<'PY' || true
+          import glob, json, os
+          for f in sorted(glob.glob(os.path.expanduser('~/Library/Logs/DiagnosticReports/lean*.ips')))[:2]:
+              body = json.loads(open(f).read().split('\n', 1)[1])
+              print(f, json.dumps(body.get('termination')), json.dumps(body.get('asi')), json.dumps(body.get('exception')))
+              images = body.get('usedImages', [])
+              thread = next((t for t in body.get('threads', []) if t.get('triggered')), {})
+              for frame in thread.get('frames', [])[:30]:
+                  i = frame.get('imageIndex')
+                  name = images[i].get('name') if i is not None and i < len(images) else None
+                  print('   ', name, frame.get('symbol'), frame.get('symbolLocation'))
+          PY

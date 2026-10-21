@@ -656,15 +656,36 @@ mod tests {
         assert!(!Path::new(&home).join("lean-escaped").exists());
     }
 
-    /// Where compiling the objective module fails on a Mac: with no sandbox, in a sandbox that allows everything, and in
-    /// Lean's own (`PROFILE`), each how it ended and the first lines it wrote, for the log.
+    /// Where compiling the objective module fails on a Mac, for the log: with no sandbox, in one that allows everything,
+    /// in Lean's own (`PROFILE`, reading its module's folder as where The OS builds it), Lean's own with one more kind of
+    /// operation allowed (which suffices), the open one with one kind denied (which is needed), and Lean's own asked
+    /// only `--version` (whether it stops before compiling anything), each how it ended and the first lines it wrote.
     #[cfg(target_os = "macos")]
     async fn bisect(lean: &Lean) {
         let root = lean.dir.join(format!("{VERSION}.part"));
         let root = if root.join("bin/lean").is_file() { root } else { lean.root() };
         let Ok(root) = root.canonicalize() else { return println!("bisect: no Lean unpacked") };
         let bin = root.join("bin/lean");
-        for (name, profile) in [("no sandbox", None), ("allow default", Some("(version 1)\n(allow default)\n".to_string())), ("PROFILE", Some(format!("{PROFILE}{PROFILE_OUT}")))] {
+        let own = format!("{PROFILE}{PROFILE_OUT}(allow file-read* (subpath (param \"OUT\")))\n");
+        const MORE: [&str; 24] = [
+            "mach*", "mach-lookup", "ipc*", "ipc-posix-shm*", "ipc-posix-sem*", "file-read*", "file-read-data",
+            "file-write*", "file-ioctl", "file-map-executable", "process*", "process-fork", "process-info*", "signal",
+            "system*", "system-fsctl", "sysctl*", "iokit*", "user-preference*", "network*", "pseudo-tty",
+            "dynamic-code-generation", "syscall*", "file*",
+        ];
+        const NEED: [&str; 12] = [
+            "mach*", "ipc*", "file-write*", "file-ioctl", "process-fork", "process-info*", "signal", "system*",
+            "sysctl*", "iokit*", "user-preference*", "syscall*",
+        ];
+        let mut tries: Vec<(String, Option<String>, bool)> = vec![
+            ("no sandbox".into(), None, false),
+            ("allow default".into(), Some("(version 1)\n(allow default)\n".into()), false),
+            ("PROFILE --version".into(), Some(PROFILE.into()), true),
+            ("PROFILE".into(), Some(own.clone()), false),
+        ];
+        tries.extend(MORE.iter().map(|m| (format!("PROFILE + {m}"), Some(format!("{own}(allow {m})\n")), false)));
+        tries.extend(NEED.iter().map(|m| (format!("allow default - {m}"), Some(format!("(version 1)\n(allow default)\n(deny {m})\n")), false)));
+        for (name, profile, version) in tries {
             let dir = tempdir();
             std::fs::create_dir_all(dir.join("AvenDB")).unwrap();
             std::fs::write(dir.join("AvenDB/Objective.lean"), OBJECTIVE).unwrap();
@@ -681,17 +702,19 @@ mod tests {
                 }
             };
             let path = std::env::join_paths([root.join("lib/lean"), dir.clone()]).unwrap();
-            run.env_clear()
-                .env("LEAN_PATH", path)
-                .current_dir(&dir)
-                .args(["--json", "--threads=1"])
-                .arg(format!("--memory={MEMORY_MB}"))
-                .args(["-o", "AvenDB/Objective.olean", "AvenDB/Objective.lean"]);
+            run.env_clear().env("LEAN_PATH", path).current_dir(&dir);
+            if version {
+                run.arg("--version");
+            } else {
+                run.args(["--json", "--threads=1"])
+                    .arg(format!("--memory={MEMORY_MB}"))
+                    .args(["-o", "AvenDB/Objective.olean", "AvenDB/Objective.lean"]);
+            }
             match within(run, None).await {
                 Ok((ok, out, err)) => println!(
                     "bisect {name}: ok {ok}\n  out: {}\n  err: {}",
-                    out.lines().take(5).collect::<Vec<_>>().join("\n       "),
-                    err.lines().take(8).collect::<Vec<_>>().join("\n       ")
+                    out.lines().take(3).collect::<Vec<_>>().join("\n       "),
+                    err.lines().take(4).collect::<Vec<_>>().join("\n       ")
                 ),
                 Err(e) => println!("bisect {name}: {e:#}"),
             }
