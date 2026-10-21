@@ -1160,6 +1160,12 @@ impl State {
         self.by_entry.get(&e).into_iter().flatten().map(|&i| &self.writes[i])
     }
 
+    /// How many accepted writes one entry has, and its last in replay order.
+    pub fn entry_tip(&self, e: EntryId) -> (usize, Option<EditId>) {
+        let places = self.by_entry.get(&e).map_or(&[][..], |p| &p[..]);
+        (places.len(), places.last().map(|&i| self.writes[i].edit))
+    }
+
     /// The ids of the accepted writes of one entry, in replay order.
     pub fn writes(&self, e: EntryId) -> Vec<EditId> {
         self.entry_writes(e).map(|w| w.edit).collect()
