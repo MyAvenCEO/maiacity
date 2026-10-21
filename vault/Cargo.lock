@@ -261,6 +261,7 @@ dependencies = [
  "avendb",
  "avendb-browser",
  "avendb-net",
+ "blake3",
  "bytes",
  "data-encoding",
  "getrandom 0.4.3",

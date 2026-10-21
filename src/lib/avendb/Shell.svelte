@@ -58,6 +58,7 @@
 	import Vaults from './Vaults.svelte';
 	import Worlds from './Worlds.svelte';
 	import Models from './Models.svelte';
+	import Code from './Code.svelte';
 	import { NAV, OUT } from './VaultApps.svelte';
 	import Dashboard from '$lib/app/Dashboard.svelte';
 	import { may } from './ops.js';
@@ -140,7 +141,9 @@
 			// the section of the settings, or of the device's performance, it opens at (`#settings/devices`)
 			section: known === 'settings' || known === 'performance' ? (entry ?? '') : '',
 			// a model the Models page shows (`#models/` and its id)
-			model: known === 'models' && /^[a-z0-9-]+$/.test(entry ?? '') ? (entry ?? '') : ''
+			model: known === 'models' && /^[a-z0-9-]+$/.test(entry ?? '') ? (entry ?? '') : '',
+			// a code package the Code page shows (`#code/` and its id)
+			pack: known === 'code' && /^[a-z0-9-]+$/.test(entry ?? '') ? (entry ?? '') : ''
 		};
 	}
 
@@ -338,6 +341,8 @@
 				<Worlds {world} vault={context} {actor} entry={route.world} />
 			{:else if tab === 'models'}
 				<Models {world} vault={context} {actor} entry={route.model} />
+			{:else if tab === 'code'}
+				<Code {world} vault={context} {actor} entry={route.pack} />
 			{:else if tab === 'flows'}
 				<Flows {world} vault={context} {actor} />
 			{:else if tab === 'functions'}

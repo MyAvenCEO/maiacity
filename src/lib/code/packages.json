@@ -1,0 +1,24 @@
+{
+	"about": "The code packages The OS runs on the Mac beside its own code (avendb/crates/avendb-device/src/lean.rs), each file pinned by the BLAKE3 hash of its bytes, and by the SHA-256 its publisher gives where it gives one. Maia City keeps them as file entries tagged `package:<id>` and `blake3:<hash>` (scripts/propose-code.mjs proposes them); the avenDB app's Code page (src/lib/avendb/Code.svelte) shows them. A device brings a file only from avenDB, and never unpacks or runs a copy whose bytes don't hash to its pins.",
+	"packages": [
+		{
+			"id": "lean",
+			"label": "Lean",
+			"task": "Checks an AIP's objective",
+			"version": "4.35.0",
+			"note": "The Lean release avendb/spec/lean-toolchain pins, for Apple silicon Macs: The OS keeps lean, its libraries and the Init library's .olean files out of it (1,964 of its 18,534 files) and runs them only in Lean's own sandbox.",
+			"files": [
+				{
+					"name": "lean-4.35.0-darwin_aarch64.tar.zst",
+					"os": "macos",
+					"arch": "aarch64",
+					"source": "https://github.com/leanprover/lean4/releases/download/v4.35.0/lean-4.35.0-darwin_aarch64.tar.zst",
+					"size": 570422530,
+					"kept": 543661464,
+					"sha256": "c0c6f34f35ba1dcc5c4a5fd106fefab9eb5e8469712624dd2c868d51b63177c2",
+					"blake3": "ede479bd3982ea2dc2e6fc01aff1404081c9c06574b35476e73c53261431eda6"
+				}
+			]
+		}
+	]
+}
