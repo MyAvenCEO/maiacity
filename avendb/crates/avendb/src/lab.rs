@@ -96,9 +96,9 @@ use crate::merge;
 use crate::ops::Loc;
 use crate::perf::Perf;
 use crate::policy::{
-    acting, covered, mk_audience, replay, replay_on, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
-    Meaning, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share, Sharing, State, Vault, Who, Wrap,
-    Write,
+    acting, covered, mk_audience, replay, replay_on_why, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
+    Meaning, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share, Sharing, State, Vault, Who, Why,
+    Wrap, Write,
 };
 use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
@@ -365,6 +365,17 @@ fn checked_all(signed: &[Signed]) -> Vec<bool> {
 /// stands vouches for keeps only its signers' keys, its signatures let go of; each it doesn't keeps its signatures,
 /// held as any other edit, where they check out; and the store lets go of the rest, to replay again. True if it let go
 /// of any.
+/// The count `refresh` adds to for how its replay went (`policy::replay_on_why`): where it replayed every edit again,
+/// why.
+fn why_counted(why: Why) -> &'static str {
+    match why {
+        Why::Nothing => "replay: nothing new",
+        Why::Stepped => "replay: stepped on",
+        Why::Tail => "replay: last edits again",
+        Why::Whole(why) => why,
+    }
+}
+
 fn trust(store: &mut Store) -> bool {
     let vouched = store.replay.vouched();
     let out: Vec<EditId> = store.bare.iter().filter(|id| !vouched.contains(id)).copied().collect();
@@ -1261,6 +1272,30 @@ impl Lab {
         let store = self.held(on);
         let slh = |s: &Signed| s.sigs.iter().any(|x| x.keys.suite() == Suite::SlhDsa);
         store.log.ids().iter().filter(|id| !store.covers.contains(id) && store.signed.get(id).is_some_and(slh)).count()
+    }
+
+    /// `uncovered_count` by the vault each edit is of (`sync::log_of`), most first: `{vault, edits}`, the vault's id.
+    pub fn uncovered_by(&self, on: SignerId) -> Vec<Value> {
+        let store = self.held(on);
+        let st = store.view();
+        let slh = |s: &Signed| s.sigs.iter().any(|x| x.keys.suite() == Suite::SlhDsa);
+        let vault = |id: &EditId| {
+            let e = &store.signed.get(id)?.edit;
+            match crate::sync::log_of(e, *id)? {
+                LogId::Vault(v) | LogId::Audience(v, _) => Some(v),
+                LogId::Entry(en) => st.entry(en).map(|en| en.vault),
+                LogId::Share(c) => st.share(c).map(|cp| cp.share.over),
+            }
+        };
+        let mut by: BTreeMap<Option<VaultId>, usize> = BTreeMap::new();
+        for id in store.log.ids().iter().filter(|id| !store.covers.contains(id)) {
+            if store.signed.get(id).is_some_and(slh) {
+                *by.entry(vault(id)).or_default() += 1;
+            }
+        }
+        let mut out: Vec<(Option<VaultId>, usize)> = by.into_iter().collect();
+        out.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
+        out.into_iter().map(|(v, n)| serde_json::json!({ "vault": v.map(|v| crate::words::hex(&v.0)), "edits": n })).collect()
     }
 
     /// For each vault `by` approves in `log`, `on`'s edits, drafted moves among them, a checkpoint over it would cover
@@ -2419,7 +2454,9 @@ impl Lab {
             let fresh = store.log.edits().get(store.replayed..).unwrap_or_default();
             store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
             let was = std::mem::replace(&mut store.replay, replay(&[]));
-            store.replay = replay_on(was, store.log.edits(), store.replayed);
+            let (replayed, why) = replay_on_why(was, store.log.edits(), store.replayed);
+            store.replay = replayed;
+            store.perf.count(why_counted(why), 1);
             store.replayed = store.log.edits().len();
             debug_assert!(store.replay == replay(store.log.edits()), "a replay stepped on differs from the whole");
             store.latest = OnceLock::from(store.replay.state.clone());
@@ -3523,6 +3560,7 @@ impl Lab {
             "vouched": r.vouched().len(),
             "bare": store.bare.len(),
             "uncovered": self.uncovered_count(d),
+            "uncovered_by": self.uncovered_by(d),
         });
         out
     }
