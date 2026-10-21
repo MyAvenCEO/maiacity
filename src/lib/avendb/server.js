@@ -8,9 +8,11 @@ import { native } from '$lib/native';
 /** The server's relay. */
 export const RELAY = 'https://avendb.maia.city';
 
-/** The server's offer, the same as long as its shelf (g18, for good: avenDB is never reset) keeps its device's key. */
+/** The server's offer, the same as long as its shelf (g18, for good: avenDB is never reset) keeps its device's key. A key
+ *  move changes it (K3c, 2026-10-20): once its earlier key is removed, a new device can't tell the server by the old one
+ *  (avendb-net's `offered`), so this takes the offer the server logs as it starts (avendb.yml, "What the server says"). */
 export const SERVER =
-	'AVENDB1UAYTJU2GDDXXNHWO5YZJOJJBYJFXCKVEPNGILCF6ORDFGRZQXIYOKZOGNSNV64ZIP4VEW4HJPYXUPWZBQJWGRT75JV4CAO3N25TOCMYBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
+	'AVENDB1UAYTJU2GDDXXNHWO5YZJOJJBYJFXCKVEPNGILCF6ORDFGRZQXIYILMA34RATWVAUIACI3TRYMUAW3PSIXGBRKSIFTSZ5DMBTRRLB6BYBAS6PKHZODTUQCGLIOR2HA4Z2F4XWC5TFNZSGELTNMFUWCLTDNF2HSLY';
 
 /** In a dev build alone, a test server's for this tab ($lib/app/entry.js, scripts/entry-walk.mjs): a link can't lead
  *  a person's page to another server. @param {string} key */
