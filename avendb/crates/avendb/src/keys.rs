@@ -289,9 +289,46 @@ impl McEliece {
 
     /// The pair `seed` makes (`Secret::pair_seed`).
     fn made(seed: &[u8; 32]) -> McEliece {
+        #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+        if let Some(pair) = test_pairs::made(seed) {
+            return pair;
+        }
         let (public, secret) = mceliece::keypair_boxed(&mut PairSeed(Some(*seed)));
         let public: Arc<[u8]> = public.as_array()[..].into();
         McEliece { id: BlobId::of(&public), public, secret }
+    }
+}
+
+/// The tests' shared pairs: most of the pairs a test run makes are of the same few fixed keys, made again in every
+/// test program, at most of a second each (240 of the 312 pairs avenDB's net and server tests made, 2026-10-21). With
+/// AVENDB_TEST_PAIRS naming a folder, each pair is made once and read back from there by every other program. Debug
+/// builds alone: the secret halves lie in that folder, so nothing optimised (the server, the app, the page) has it.
+#[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+mod test_pairs {
+    use super::*;
+
+    pub(super) fn made(seed: &[u8; 32]) -> Option<McEliece> {
+        let folder = std::path::PathBuf::from(std::env::var_os("AVENDB_TEST_PAIRS")?);
+        let name: String = hash::keyed(seed, "test pair file", b"").iter().map(|b| format!("{b:02x}")).collect();
+        let path = folder.join(&name);
+        if let Ok(bytes) = std::fs::read(&path) {
+            if bytes.len() == MCELIECE_PUBLIC_BYTES + mceliece::CRYPTO_SECRETKEYBYTES {
+                let (public, secret) = bytes.split_at(MCELIECE_PUBLIC_BYTES);
+                let secret = <Box<[u8; mceliece::CRYPTO_SECRETKEYBYTES]>>::try_from(secret.to_vec().into_boxed_slice()).ok()?;
+                let public: Arc<[u8]> = public.into();
+                return Some(McEliece { id: BlobId::of(&public), public, secret: mceliece::SecretKey::from(secret) });
+            }
+        }
+        let (public, secret) = mceliece::keypair_boxed(&mut PairSeed(Some(*seed)));
+        let public: Arc<[u8]> = public.as_array()[..].into();
+        let mut bytes = public.to_vec();
+        bytes.extend_from_slice(&secret.as_array()[..]);
+        // written aside and renamed into place, so a program reading it meanwhile finds it whole or not at all
+        let aside = folder.join(format!("{name}.{}", std::process::id()));
+        if std::fs::create_dir_all(&folder).is_ok() && std::fs::write(&aside, &bytes).is_ok() {
+            let _ = std::fs::rename(&aside, &path);
+        }
+        Some(McEliece { id: BlobId::of(&public), public, secret })
     }
 }
 
