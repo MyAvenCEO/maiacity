@@ -4,7 +4,8 @@
 	idea, then its objective (what it must deliver, metrics in Lean, measured as it is worked on), then proposed
 	(waiting for its vault's yes), then archived as applied or rejected. Samuel 2026-10-20: the page is the four stages
 	as one tab bar and nothing else, no filter and no way to write one here: agents make proposals through the MCP for
-	now. MaiaCity V1's MIPs ($lib/proposals/aips.js) show the AIP way among them.
+	now. Samuel 2026-10-21: the stages as a kanban board, a column of cards each; a narrow screen keeps the tab bar and
+	shows one column. MaiaCity V1's MIPs ($lib/proposals/aips.js) show the AIP way among them.
 -->
 <script>
 	// @ts-nocheck — plain JS
@@ -40,7 +41,6 @@
 	});
 
 	const all = $derived(allOf(g.view, aips.list, session.world));
-	const shown = $derived(all.filter((a) => a.stage === stage));
 	const count = (id) => all.filter((a) => a.stage === id).length;
 	const current = $derived(all.find((a) => a.key === open) ?? null);
 	// with avenDB open, only its answer is waited for: MaiaCity V1's MIPs join them once its game loads
@@ -79,13 +79,13 @@
 
 <main class="app-page">
 	<h1 class="sr">Proposals</h1>
-	<nav class="tabs" aria-label="Stage">
-		{#each STAGES as s (s.id)}<button class:on={stage === s.id} onclick={() => ((stage = s.id), (open = ''))}>{s.label} <small>{count(s.id)}</small></button>{/each}
+	<nav class="tabs" class:hide={!current} aria-label="Stage">
+		{#each STAGES as s (s.id)}<button class:on={!current && stage === s.id} onclick={() => ((stage = s.id), (open = ''))}>{s.label} <small>{count(s.id)}</small></button>{/each}
 	</nav>
 
 	{#if current}
 		<section class="detail">
-			<button class="back link" onclick={() => (open = '')}>← All {STAGES.find((s) => s.id === stage)?.label.toLowerCase()}</button>
+			<button class="back link" onclick={() => (open = '')}>← All proposals</button>
 			<p class="eyebrow">{current.where} · {current.label}{current.was && current.was !== current.label ? ` · was ${current.was}` : ''}</p>
 			<h2>{current.title} <span class="status {outcome(current)}">{outcome(current)}</span></h2>
 			<p class="by">By {current.author}{current.via === 'mcp' ? ', through the MCP' : ''} · {when(current.created)}{current.decided ? ` · decided ${when(current.decided)}` : ''} · {current.policy}{current.stage === 'proposed' ? ` (${current.signed} of ${current.needs} so far)` : ''}</p>
@@ -107,19 +107,31 @@
 		{:else if aips.why && !aips.read}
 			<p class="dim center">avenDB's AIPs didn't read: {aips.why}. <button class="link" onclick={loadAvendb}>Read again</button></p>
 		{:else}
-			<ul class="list">
-				{#each shown as a (a.key)}
-					<li>
-						<button onclick={() => show(a)}>
-							<span class="head"><b>{a.title}</b><span class="status {outcome(a)}">{outcome(a)}</span></span>
-							<span class="meta">{a.where} · {a.label}{a.source === 'avendb' ? '' : ` (was ${a.was})`} · by {a.author}{a.decided || a.created ? ` · ${when(a.decided || a.created)}` : ''}{progress(a)}{a.stage === 'proposed' ? ` · ${a.signed} of ${a.needs} signatures` : ''}</span>
-							{#if a.changes.length}<span class="sum">{a.changes.slice(0, 3).join(' · ')}{a.changes.length > 3 ? ` · +${a.changes.length - 3} more` : ''}</span>{/if}
-						</button>
-					</li>
-				{:else}
-					<li class="dim empty">{EMPTY[stage]}</li>
+			<!-- the board: a column per stage, side by side; on a narrow screen the stage bar picks the one column shown -->
+			<div class="board">
+				{#each STAGES as s (s.id)}
+					<section class="col" class:on={stage === s.id} aria-label={s.label}>
+						<h2 class="col-head">{s.label} <small>{count(s.id)}</small></h2>
+						<ul class="cards">
+							{#each all.filter((a) => a.stage === s.id) as a (a.key)}
+								<li>
+									<button onclick={() => show(a)}>
+										<span class="where">{a.where} · {a.label}</span>
+										<b>{a.title}</b>
+										{#if a.changes.length}<span class="sum">{a.changes.slice(0, 2).join(' · ')}{a.changes.length > 2 ? ` · +${a.changes.length - 2} more` : ''}</span>{/if}
+										<span class="foot">
+											<span class="meta">{a.author}{a.decided || a.created ? ` · ${when(a.decided || a.created)}` : ''}{progress(a)}{a.stage === 'proposed' ? ` · ${a.signed} of ${a.needs} signed` : ''}</span>
+											{#if a.stage === 'archived'}<span class="status {outcome(a)}">{outcome(a)}</span>{/if}
+										</span>
+									</button>
+								</li>
+							{:else}
+								<li class="dim empty">{EMPTY[s.id]}</li>
+							{/each}
+						</ul>
+					</section>
 				{/each}
-			</ul>
+			</div>
 		{/if}
 		{#if session.phase !== 'open' && session.phase !== 'loading'}<div class="unlock"><p class="dim small">The AIPs of your avenDB vaults show here once avenDB is open in this tab.</p><Unlock /></div>{/if}
 		{#if g.error}<p class="dim small">MaiaCity V1: {g.error}</p>{/if}
@@ -128,7 +140,7 @@
 
 <style>
 	.app-page {
-		max-width: 60rem;
+		max-width: 84rem;
 		margin: 0 auto;
 		padding: 1.6rem clamp(1rem, 4vw, 2rem) 6rem;
 	}
@@ -193,39 +205,104 @@
 	.tabs small {
 		opacity: 0.7;
 	}
-	.list {
+	.board {
+		display: grid;
+		grid-template-columns: repeat(4, minmax(0, 1fr));
+		gap: 0.8rem;
+		align-items: start;
+	}
+	.col {
+		padding: 0.6rem;
+		border-radius: 14px;
+		background: rgb(31 42 35 / 0.04);
+		min-height: 12rem;
+	}
+	.col-head {
+		margin: 0.1rem 0.3rem 0.6rem;
+		font-family: inherit;
+		font-size: 0.78rem;
+		letter-spacing: 0.06em;
+		text-transform: uppercase;
+		color: #24452f;
+	}
+	.col-head small {
+		margin-left: 0.2rem;
+		padding: 0 0.4rem;
+		border-radius: 999px;
+		background: #24452f18;
+		font-size: 0.72rem;
+	}
+	.cards {
 		list-style: none;
-		margin: 0.6rem 0;
+		margin: 0;
 		padding: 0;
 		display: grid;
 		gap: 0.5rem;
 	}
-	.list li > button {
+	.cards li > button {
 		display: grid;
-		gap: 0.2rem;
+		gap: 0.3rem;
 		width: 100%;
 		text-align: left;
-		padding: 0.7rem 0.9rem;
+		padding: 0.65rem 0.75rem;
 		border: 1px solid rgb(31 42 35 / 0.1);
-		border-radius: 12px;
+		border-radius: 10px;
 		background: #fff;
+		box-shadow: 0 1px 2px rgb(31 42 35 / 0.06);
 	}
-	.list li > button:hover {
+	.cards li > button:hover {
 		border-color: #24452f;
 	}
-	.head {
+	.cards b {
+		font-size: 0.92rem;
+		line-height: 1.3;
+	}
+	.where {
+		font-size: 0.68rem;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		color: var(--muted);
+	}
+	.foot {
 		display: flex;
 		justify-content: space-between;
-		gap: 0.6rem;
-		align-items: baseline;
+		gap: 0.5rem;
+		align-items: center;
 	}
 	.meta,
 	.sum {
-		font-size: 0.8rem;
+		font-size: 0.78rem;
 		color: var(--muted);
 	}
 	.sum {
 		color: #24452f;
+	}
+	.empty {
+		font-size: 0.8rem;
+		padding: 0.8rem 0.3rem;
+	}
+	/* wide: the four columns, no stage bar; narrow: the stage bar, one column */
+	@media (min-width: 901px) {
+		.tabs.hide {
+			display: none;
+		}
+	}
+	@media (max-width: 900px) {
+		.board {
+			grid-template-columns: 1fr;
+		}
+		.col {
+			display: none;
+			background: none;
+			padding: 0;
+			min-height: 0;
+		}
+		.col.on {
+			display: block;
+		}
+		.col-head {
+			display: none;
+		}
 	}
 	.status {
 		flex: none;
@@ -254,7 +331,8 @@
 		color: #6b6a66;
 	}
 	.detail {
-		margin-top: 1rem;
+		max-width: 60rem;
+		margin: 1rem auto 0;
 		padding: 1rem 1.1rem;
 		border-radius: 14px;
 		background: #fff;
@@ -286,7 +364,6 @@
 	.unlock {
 		margin-top: 1.2rem;
 	}
-	.empty,
 	.center {
 		text-align: center;
 		padding: 1.4rem 0;
