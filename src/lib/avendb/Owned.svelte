@@ -109,9 +109,19 @@
 
 	/** every vault it shows with its devices and shares: those wholly its own, and those they own that hold devices */
 	const listed = $derived(own.flatMap((x) => [x, ...under(x)]));
-	/** Remove and Revoke as the device answers a dry run of each, by `device <vault> <id>` and `share <id>` */
+	/**
+	 * Remove and Revoke as the device answers a dry run of each, by `device <vault> <id>` and `share <id>`: asked again
+	 * only once what they ask changed, and never while the device still works on the last ask. Asked at every change of
+	 * the world, each a dry run over a coop's whole vault, they kept Samuel's Mac busy for good (2026-10-21: theOS at
+	 * full CPU, every call answered 30-50 s late).
+	 */
 	let can = $state(/** @type {Record<string, import('./vaults.js').Verdict>} */ ({}));
+	/** what `can` answers, or what is being asked, as JSON; whether the device works on it still; asks once it is done */
+	let asked = '';
+	let asking = false;
+	let again = $state(0);
 	$effect(() => {
+		void again;
 		/** @type {[string, object][]} */
 		const asks = listed.flatMap((x) => [
 			...newest(x.devices).map((d) => /** @type {[string, object]} */ ([`device ${x.id} ${d.id}`, { op: 'revoke', vault: x.id, device: d.id }])),
@@ -121,13 +131,18 @@
 					/** @type {[string, object]} */ ([`standing ${c.id}`, { op: 'revoke', share: c.id, standing: true }])
 			)
 		]);
-		let gone = false;
+		const key = JSON.stringify([world.mine, asks]);
+		if (asking || key === asked) return;
+		[asked, asking] = [key, true];
 		may(api, world.mine, asks.map(([, op]) => op)).then((answers) => {
-			if (!gone) can = Object.fromEntries(asks.map(([k], i) => [k, answers[i]]));
+			asking = false;
+			can = Object.fromEntries(asks.map(([k], i) => [k, answers[i]]));
+			// what the device didn't answer is asked again a little later; what changed meanwhile, now
+			if (answers.some((a) => /** @type {any} */ (a)?.refused === 'NoAnswer')) {
+				asked = '';
+				setTimeout(() => again++, 15000);
+			} else again++;
 		});
-		return () => {
-			gone = true;
-		};
 	});
 	const lets = (/** @type {string} */ what) => allowed(can[what]);
 </script>

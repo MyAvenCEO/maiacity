@@ -385,7 +385,9 @@
 	 * big vault answers slowly, and asking again on a timer only handed it the same dry runs again. An answer to what
 	 * changed meanwhile is asked again at once. A Remove doesn't wait for its answer (Samuel's Mac 2026-10-21: every
 	 * one on "checking" for good), only for a refusal. Removals aren't asked while the device syncs (`behind`): they
-	 * wait until it has caught up (`waits`).
+	 * wait until it has caught up (`waits`). Nor are they on the person's own vault, where every Remove shows anyway
+	 * and the device checks each as it makes it: a dry run of each, over the whole vault, kept Samuel's Mac at full CPU
+	 * (2026-10-21, every call answered 30-50 s late).
 	 */
 	let can = $state(/** @type {Record<string, Verdict>} */ ({}));
 	/** what each answer in `can` answers, or what is being asked, by its name: this device, the acting vault, the
@@ -413,7 +415,7 @@
 		if (own && backs != null) asks.backUp = { op: 'back_up', on: !backs };
 		const other = devices.find((d) => !d.me) ?? devices[0];
 		if (own && other) asks.copy = { op: 'copy', device: other.id, full: other.copy !== 'full' };
-		if (!behind) {
+		if (!behind && !own) {
 			for (const o of owners)
 				asks[ownerKey(o)] = { op: 'revoke', vault, owner: 'vault' in o ? { vault: o.vault } : { signer: o.signer } };
 			for (const d of devices) if (!d.me) asks[`device ${d.id}`] = { op: 'revoke', vault, device: d.id };
@@ -516,27 +518,31 @@
 	/**
 	 * Why removing a key or a device waits, or '' where it needn't: a removal drops every edit resting on that key
 	 * which the device removing it doesn't hold, so this device first holds all its peers hold (the `synced` op):
-	 * reaching at least one, avenDB's server among them, and behind none.
+	 * reaching at least one, avenDB's server among them, and behind none. As the app's sync pill read it last, where
+	 * that was in `SYNC_FRESH`; else asked, as the device answers every ask in turn.
 	 */
 	async function waits() {
-		const s = await read(api, { op: 'synced' }, null);
+		const s = sync.known && Date.now() - sync.at < SYNC_FRESH ? sync : await read(api, { op: 'synced' }, null);
 		if (!s) return `${Here} can’t tell yet how far it has synced`;
 		if (!s.peers) return `${Here} reaches neither avenDB’s server nor another device of yours right now`;
 		if (s.behind > 0) return `${Here} is still syncing ${count(s.behind, 'log')} from your other devices`;
 		return '';
 	}
 	/**
-	 * Where each Remove is, by its name in `can`: checking that this device has synced, waiting for the person's yes,
+	 * Where each Remove is, by its name in `can`: waiting for the person's yes, checking that this device has synced,
 	 * removing (`busy`), or how it ended, removed or why not, until the page goes (Samuel 2026-10-21: "zero UI feedback
 	 * that it's actually happening").
 	 */
 	let removing = $state(/** @type {Record<string, { busy: boolean, text: string, bad?: boolean }>} */ ({}));
 	/** whether a Remove is under way: the others wait for it */
 	const removingAny = $derived(Object.values(removing).some((r) => r.busy));
+	/** how old a reading of the sync pill `waits` takes as it is (ms) */
+	const SYNC_FRESH = 30000;
 	/**
-	 * Removes owner or device `name` from vault `of` by op `op`, once this device has caught up (`waits`) and the
-	 * person says yes: its peers refuse it from then on. The vault's owners approve it. Each step shows by its Remove,
-	 * `what` (`removing`).
+	 * Removes owner or device `name` from vault `of` by op `op`, once the person says yes and this device has caught
+	 * up (`waits`): its peers refuse it from then on. The vault's owners approve it. The question comes first and at
+	 * once, the page's own, before anything the device answers (Samuel 2026-10-21: "those popups should be instant, we
+	 * are local first"); each step shows by its Remove, `what` (`removing`).
 	 * @param {string} what @param {string} name @param {string} of @param {object} op
 	 */
 	async function remove(what, name, of, op) {
@@ -550,17 +556,17 @@
 			removing = rest;
 		};
 		try {
-			step(true, `Checking that ${here} has synced`);
-			const wait = await waits();
-			if (wait) {
-				session.error = `${name} stays for now: ${wait}. Remove it once it has caught up.`;
-				return step(false, `Not removed: ${wait}`, true);
-			}
 			step(true, 'Asking you first');
 			const sureOf = `Remove ${name} from ${nameOf(byId.get(of))}? It syncs nothing more. Anything it wrote that never reached ${here} is dropped; what it holds stays on it, encrypted.`;
 			if (!(await sure(sureOf))) {
 				console.warn(`avenDB: Settings removing ${what}: not confirmed`);
 				return stop();
+			}
+			step(true, `Checking that ${here} has synced`);
+			const wait = await waits();
+			if (wait) {
+				session.error = `${name} stays for now: ${wait}. Remove it once it has caught up.`;
+				return step(false, `Not removed: ${wait}`, true);
 			}
 			step(true, 'Removing');
 			const done = await api.run(`Removing ${name}`, op);
