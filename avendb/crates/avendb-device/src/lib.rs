@@ -361,8 +361,9 @@ impl Service {
     /// `agents` the access requests the agent devices on this Mac left, `grant [name, device, shares, avenName]` one of
     /// them granted, the agent added under the person's one aven unless it is there already, the aven founded and named
     /// `avenName` if their vault owns none yet, and each of `shares` `{over, level}` a share the aven passes on to it
-    /// (`grant`), `deny [name, device]` one denied (`agent`), and `agentCommand [harness?]` the command that runs a
-    /// harness's agent device, Claude Code's unless named, and for Claude Code the line that adds it.
+    /// (`grant`), `deny [name, device]` one denied (`agent`), `agentCommand [harness?]` the command that runs a
+    /// harness's agent device, Claude Code's unless named, and for Claude Code the line that adds it, and
+    /// `agentDevices` the agents' devices this Mac knows of (`agent_devices`).
     /// `drives` the volumes plugged in and the drives joined here, `joinDrive [volume, name]` a drive used for avenDB as
     /// a device of the person's vault, `openDrive [volume]` one another Mac of theirs joined, opened here, and
     /// `ejectDrive [volume]` one hosted here, its node stopped and the volume ejected (`drive`).
@@ -400,6 +401,7 @@ impl Service {
                 agent::named(harness)?;
                 agent::command(&std::env::current_exe()?, &self.config.dir, harness)
             }
+            "agentDevices" => self.agent_devices(),
             "drives" => self.drives().await?,
             "joinDrive" => self.join_drive(&a.text(0)?, a.get(1).as_str().unwrap_or_default()).await?,
             "openDrive" => self.open_drive(&a.text(0)?).await?,
@@ -725,6 +727,31 @@ impl Service {
         Value::Array(open)
     }
 
+    /// `agentDevices`: the agents' devices this Mac knows of, by what they leave in its agents' folder: each that ran
+    /// here, by its `alive` file, every key it ran as, and whether it runs now; and each cloud agent this Mac added, by
+    /// its note (`agent::added`). What the page names its aven's devices by, which carry no card of their own.
+    /// `[{name, device, cloud, online}]`, each device's key in hex.
+    fn agent_devices(&self) -> Value {
+        let mut known = vec![];
+        for entry in std::fs::read_dir(agent::agents(&self.config.dir)).into_iter().flatten().flatten() {
+            let file = entry.file_name();
+            let Some(file) = file.to_str() else { continue };
+            let (stem, cloud) = match (file.strip_suffix(".alive"), file.strip_suffix(".added")) {
+                (Some(stem), _) => (stem, false),
+                (_, Some(stem)) => (stem, true),
+                _ => continue,
+            };
+            // an alive file from before it named its device (`agentClaude.alive`) names none
+            let Some((name, device)) = stem.rsplit_once('.') else { continue };
+            if agent::named(name).is_err() || SignerId::from_hex(device).is_none() {
+                continue;
+            }
+            let online = !cloud && agent::online(&self.config.dir, name, device);
+            known.push(json!({ "name": name, "device": device, "cloud": cloud, "online": online }));
+        }
+        Value::Array(known)
+    }
+
     /// Agent device `name`'s access request as it left it, checked: its device's key, its offer if any naming that
     /// device, a level of `agent::LEVELS`, why in at most 500 characters, and the vaults it names; or none.
     fn request(&self, name: &str) -> Option<Value> {
@@ -818,6 +845,11 @@ impl Service {
         let device = node.device();
         node.shutdown().await.ok();
         added.context("the cloud agent isn't added")?;
+        // a note that this Mac added it, by its device alone, for the page to name it by (`agent_devices`)
+        let note = agent::added(&self.config.dir, &name, &hex(&device.0));
+        if let Err(e) = note.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|()| std::fs::write(&note, "")) {
+            tracing::warn!("avendb: the note that this Mac added {name} isn't kept: {e}");
+        }
         // its secret with its suite (`sign::kept_secret`), as the cloud session reads it back (`agent::KEY_VAR`)
         let key = Zeroizing::new(hex(&sign::kept_secret(&secret, sign::SIGNING)));
         Ok(json!({ "device": hex(&device.0), "name": name, "aven": hex(&aven.0), "key": key.as_str(),
