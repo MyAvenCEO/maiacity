@@ -535,6 +535,11 @@ A junior owner can't keep his own removal out by removing his remover: his remov
 is no longer an owner at its place. A mark of the wants alone takes nothing away and is no removal, and neither is the
 revocation of a keep share (K1).
 
+So a removal is drafted only on what its device's peers hold: a node (`Node::run`, whichever way the op comes: the
+page, an agent's MCP, the command line) first asks each device that holds its vaults for what it holds, and refuses a
+revocation or a new root (`engine::removes`) with `Behind`, saying what to sync, while it reaches none of them or lacks
+edits one of them told it of (`Node::removal_waits`). A device that knows no peer drafts it at once.
+
 **Forks.** A device signs its edits in a log one after another. Two of its edits in one log where neither builds on
 the other mean its key signed twice from the same past: a restored backup, a clone or a stolen key. Every peer flags
 such forks (passkeys, which sign on several devices, aside). Both edits stand, as concurrent edits do.

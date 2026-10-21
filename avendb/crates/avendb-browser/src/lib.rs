@@ -898,10 +898,7 @@ pub fn steps_json(steps: &Steps) -> Value {
     json!({ "steps": steps.steps.iter().map(stage).collect::<Vec<_>>(), "over": steps.over })
 }
 
-/// How long a device asks its peers for what they hold before its key move drafts (`catch_up`), at most.
-const CATCH_UP: Duration = Duration::from_secs(5);
-
-/// Why `Device::moving` says nothing yet: it caught up with none of its peers within `CATCH_UP`.
+/// Why `Device::moving` says nothing yet: it caught up with none of its peers within a few seconds (`catch_up`).
 pub const NOT_CAUGHT_UP: &str = "its key move waits until it caught up with one of its peers";
 
 /// How long a key move waits for its device's shelf to hold its batch (`Device::shelved`), at most.
@@ -1124,26 +1121,14 @@ fn holds_what_servers_hold(lab: &Lab, me: SignerId, peers: &BTreeMap<SignerId, O
     theirs.peek().is_some() && theirs.all(|(_, &lacks)| lacks == Some(0))
 }
 
-/// Asks each device `node` knows for what it holds (`avendb::lab::Lab::peers`), for a few seconds at most
-/// (`CATCH_UP`): so a key move drafts on what another device of its person moved already, not over it. Whether one of
-/// them handed over all it holds for it in that time. A device that caught up with none, its peers all away or its
-/// vaults still coming from the server, holds too little to move on: the keys its move rotates would be made over
+/// Asks each device `node` knows for what it holds, for a few seconds at most (`avendb_net::Node::catch_up`, as a
+/// removal does first): so a key move drafts on what another device of its person moved already, not over it. Whether
+/// one of them handed over all it holds for it in that time. A device that caught up with none, its peers all away or
+/// its vaults still coming from the server, holds too little to move on: the keys its move rotates would be made over
 /// what it doesn't hold yet (2026-10-20: a phone that moved its passkey at once, before the server handed it the
 /// rest, never read its coop again).
 async fn catch_up(node: &Node) -> bool {
-    let peers = node.read(|lab, me| lab.peers(me)).await;
-    let endpoints = peers.into_iter().filter_map(|(_, key)| iroh::EndpointId::from_bytes(&key).ok());
-    let caught = std::sync::atomic::AtomicBool::new(false);
-    let asks = n0_future::join_all(endpoints.map(|peer| {
-        let caught = &caught;
-        async move {
-            if node.sync_with(peer).await.is_ok() {
-                caught.store(true, std::sync::atomic::Ordering::Relaxed);
-            }
-        }
-    }));
-    or(async move { asks.await; }, sleep(CATCH_UP)).await;
-    caught.into_inner()
+    node.catch_up().await
 }
 
 /// A browser's device's Lab as it opens again: its person's passkey, by its P-256 key and the ceremony that unlocked

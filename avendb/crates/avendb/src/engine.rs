@@ -103,6 +103,9 @@ pub enum Refused {
     NoSchema(String),
     /// The device shows no such entry, or no such line of it.
     NoEntry,
+    /// A removal while its device is behind its peers, in words: what it hasn't seen, and what to do (avendb-net's
+    /// `Node::removal_waits`).
+    Behind(String),
     /// A batch's `at`th op was refused, after its steps before it did `done`, which stand.
     Batch { at: usize, done: Vec<Value>, why: Box<Refused> },
 }
@@ -120,6 +123,7 @@ impl Refused {
             Refused::BadOp(why) => ("BadOp".into(), why.clone()),
             Refused::NoSchema(why) => ("NoSchema".into(), why.clone()),
             Refused::NoEntry => ("NoEntry".into(), "the device shows no such entry, or no such line of it".into()),
+            Refused::Behind(why) => ("Behind".into(), why.clone()),
             Refused::Batch { at, done, why } => {
                 let mut out = why.to_json();
                 out["at"] = (*at).into();
@@ -277,6 +281,19 @@ pub fn name(v: &Value) -> Option<&str> {
 /// Whether op `v` only reads: a device runs it on what it holds and changes nothing.
 pub fn reads(v: &Value) -> bool {
     name(v).is_some_and(|name| READS.contains(&name))
+}
+
+/// Whether op `v` takes something out of a vault: it ends a share, takes an owner or a device out, or sets a vault's
+/// root, alone or in a batch. Such an edit cuts every edit resting on what it removes that its drafter doesn't hold
+/// (T16), so a node makes it only once its device holds what its peers hold (avendb-net's `Node::removal_waits`); a
+/// Lab alone knows no peers.
+pub fn removes(v: &Value) -> bool {
+    match op_of(v) {
+        Ok(("revoke", _)) => true,
+        Ok(("settings", o)) => o.contains_key("root"),
+        Ok(("batch", o)) => o.get("ops").and_then(Value::as_array).is_some_and(|ops| ops.iter().any(removes)),
+        _ => false,
+    }
 }
 
 /// Whether op `v` changes nothing, though it runs on the Lab: `may` and `shares`, whose dry runs make nothing.
