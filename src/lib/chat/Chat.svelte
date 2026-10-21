@@ -20,6 +20,7 @@
 	import Composer from './Composer.svelte';
 	import Message from './Message.svelte';
 	import * as R from './rooms.js';
+	import { bringEntries } from '../../../game/code/sources/device.js';
 
 	/** the device the view reads and changes through: the tab's (../avendb/session.svelte.js), or one a test gives */
 	let { api = session } = $props();
@@ -38,9 +39,15 @@
 		const list = rooms;
 		void world;
 		let gone = false;
-		Promise.all(list.map((r) => api.ask({ op: 'room', entry: r.entry, last: 1 }).then((a) => [r.entry, a?.ok ?? null]))).then(
-			(rows) => !gone && (heads = Object.fromEntries(rows))
-		);
+		const ask = () => Promise.all(list.map((r) => api.ask({ op: 'room', entry: r.entry, last: 1 }).then((a) => [r.entry, a?.ok ?? null])));
+		ask().then(async (rows) => {
+			if (gone) return;
+			heads = Object.fromEntries(rows);
+			// rooms this device holds nothing of yet (a new device): those rooms alone brought from its peers, then
+			// their heads again, before the rest of what it syncs
+			const lacking = rows.filter(([, h]) => !h).map(([e]) => e);
+			if (lacking.length && (await bringEntries(lacking))?.ok?.new && !gone) heads = Object.fromEntries(await ask());
+		});
 		return () => (gone = true);
 	});
 	let seen = $state(R.seenAll());
@@ -64,10 +71,16 @@
 		void world;
 		if (!entry) return void (read = null);
 		let gone = false;
-		api.ask({ op: 'room', entry, last: shown }).then((a) => {
-			if (gone) return;
+		const ask = () => api.ask({ op: 'room', entry, last: shown });
+		const take = (a) => {
 			read = a?.ok ?? null;
 			why = a?.ok ? '' : (a?.why ?? 'This room doesn’t open on this device yet.');
+		};
+		ask().then(async (a) => {
+			if (gone) return;
+			take(a);
+			// a room this device holds nothing of yet: this room first, brought from its peers, then read again
+			if (!a?.ok && (await bringEntries([entry]))?.ok && !gone) take(await ask());
 		});
 		return () => (gone = true);
 	});

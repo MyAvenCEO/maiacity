@@ -191,6 +191,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "batch" | "may" => &["ops", "as"],
         "world" | "log" | "jobs" | "synced" => &[],
         "code" => &["vault", "type"],
+        "posts" => &["limit", "after"],
         "bring" => &["vaults", "entries"],
         "shares" => &["over", "as"],
         "database" => &["vault"],
@@ -221,7 +222,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
-const READS: [&str; 28] = [
+const READS: [&str; 29] = [
     "query",
     "objective_check",
     "get",
@@ -247,6 +248,7 @@ const READS: [&str; 28] = [
     "perf",
     "requests",
     "code",
+    "posts",
     "bring",
     "synced",
     "api_pass",
@@ -333,6 +335,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "taggable" => vaults::taggable(lab, me, o),
         "requests" => Ok(vaults::requests(lab, me)),
         "code" => code(lab, me, o),
+        "posts" => posts(lab, me, o),
         "read_file" => Err(bad("read_file reads a file's bytes from a node's store: a node runs it (Node::run)")),
         "jobs" => Err(bad("jobs tells what a node does in the background: a node runs it (Node::run)")),
         "bring" => Err(bad("bring asks a node's peers for vaults or entries: a node runs it (Node::run)")),
@@ -438,6 +441,22 @@ fn code(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refuse
     }
     let kinds = if kinds.is_empty() { world::CODE_KINDS.to_vec() } else { strs(&kinds) };
     Ok(Value::Array(world::public_entries_of(lab, me, Some(vault), Some(&kinds))))
+}
+
+/// The most posts one `posts` op hands out.
+const MOST_POSTS: usize = 200;
+
+/// `{"op": "posts", "limit"?, "after"?}`: the posts device `me` opens that everyone may read, newest first, as avenDB's
+/// server serves them (`world::public_posts`): `limit` of them (`MOST_POSTS` at most, and by default), the newest or
+/// those after post `after` (an entry id; none where it lists it no more: `world::page_of_posts`), as a page that shows the newest first asks for the next ones as
+/// its person scrolls. `{"posts": [...], "more"}`, `more` whether more come after the last.
+fn posts(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let limit = count_of(o, "limit")?.unwrap_or(MOST_POSTS).clamp(1, MOST_POSTS);
+    let after = match o.get("after") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(id_of(Some(v), "after", EntryId::from_hex)?.to_hex()),
+    };
+    Ok(world::page_of_posts(world::public_posts(lab, me), limit, after.as_deref()))
 }
 
 // The fields ops share.

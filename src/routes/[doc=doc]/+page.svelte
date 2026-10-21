@@ -15,7 +15,7 @@
 	import { bodyText, laidOut, render } from '$lib/avendb/article.js';
 	import { shaped } from '$lib/app/shapes.js';
 	import { ago, isDoc, pictureOf, postHref, slug } from '$lib/universe/posts.js';
-	import { authorOf, findPost, loadFeed, stream } from '$lib/universe/stream.svelte.js';
+	import { authorOf, findPost, loadAll, stream } from '$lib/universe/stream.svelte.js';
 	import PostCard from '$lib/universe/PostCard.svelte';
 	import InspirePost from '$lib/universe/InspirePost.svelte';
 	import { inspireOf } from '$lib/universe/inspire.js';
@@ -25,7 +25,7 @@
 
 	// a post published in avenDB opens once its feed is in
 	onMount(() => {
-		if (!data.asset && !findPost(data.doc)) loadFeed();
+		if (!data.asset && !findPost(data.doc)) loadAll();
 	});
 
 	const post = $derived(findPost(data.doc));

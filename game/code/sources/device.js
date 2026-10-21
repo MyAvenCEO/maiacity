@@ -110,20 +110,34 @@ export function bringRows(rows, vault = MAIA_CITY) {
 	if (!d) return Promise.resolve(null);
 	const of = broughtBy(d);
 	if (of.has(vault)) return of.get(vault);
-	const ids = [...new Set((rows ?? []).map((r) => r?.entry).filter((e) => /^[0-9a-f]{64}$/.test(String(e))))].sort();
-	const all = (async () => {
-		const sum = { new: 0, peers: 0, reached: ids.length > 0 };
-		for (let i = 0; i < ids.length; i += AT_ONCE) {
-			const got = await d.run({ op: 'bring', entries: ids.slice(i, i + AT_ONCE) });
+	const all = bringEntries((rows ?? []).map((r) => r?.entry), d);
+	of.set(vault, all);
+	return all;
+}
+
+/**
+ * Has device `d` (the page's, `deviceOf`) bring the entries `ids` alone from its peers, `AT_ONCE` at a time, one bring
+ * after another: `{ ok: { new, peers, reached } }`, or null where there is no device, nothing to bring, or a bring
+ * refused (a device whose avenDB knows no `entries` yet). What a view brings for the items it shows (the Maia
+ * Universe's newest posts, a world's recipes), and nothing else.
+ * @param {string[]} ids @param {any} [d]
+ */
+export async function bringEntries(ids, d = deviceOf()) {
+	const sorted = [...new Set((ids ?? []).filter((e) => /^[0-9a-f]{64}$/.test(String(e))))].sort();
+	if (!d || !sorted.length) return null;
+	try {
+		const sum = { new: 0, peers: 0, reached: true };
+		for (let i = 0; i < sorted.length; i += AT_ONCE) {
+			const got = await d.run({ op: 'bring', entries: sorted.slice(i, i + AT_ONCE) });
 			if (!got?.ok) return null;
 			sum.new += got.ok.new ?? 0;
 			sum.peers = Math.max(sum.peers, got.ok.peers ?? 0);
 			sum.reached &&= !!got.ok.reached;
 		}
 		return { ok: sum };
-	})().catch(() => null);
-	of.set(vault, all);
-	return all;
+	} catch {
+		return null;
+	}
 }
 
 /**

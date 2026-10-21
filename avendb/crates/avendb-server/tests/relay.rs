@@ -295,6 +295,17 @@ async fn the_server_serves_the_posts_everyone_reads_as_the_maia_universe_feed() 
     assert_eq!(body, r#"{"posts":[]}"#);
     let (head, _) = http(addr, "OPTIONS", "/feed/posts").await;
     assert!(head.starts_with("http/1.1 204") && head.contains("access-control-allow-origin: *"), "{head}");
+    // a page of them, as a page asks for the newest and then the next; a query it can't read is a bad request
+    let after = format!("/feed/posts?limit=20&after={}", "ab".repeat(32));
+    for path in ["/feed/posts?limit=20", after.as_str()] {
+        let (head, body) = http(addr, "GET", path).await;
+        assert!(head.starts_with("http/1.1 200"), "{path}: {head}");
+        assert_eq!(body, r#"{"more":false,"posts":[]}"#, "{path}");
+    }
+    for path in ["/feed/posts?limit=0", "/feed/posts?limit=201", "/feed/posts?after=x", "/feed/posts?since=1"] {
+        let (head, _) = http(addr, "GET", path).await;
+        assert!(head.starts_with("http/1.1 400"), "{path}: {head}");
+    }
     // no picture anyone may read yet, a name that isn't a picture's, nor a path that names no vault
     let vault = "ab".repeat(32);
     let picture = format!("/feed/files/{vault}/{}.png", "cd".repeat(32));
