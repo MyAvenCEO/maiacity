@@ -174,11 +174,60 @@ async function start() {
  *  the page never runs a second device beside it. */
 async function openMac() {
 	const bridge = await import('./native.js');
-	const status = await bridge.status();
+	const status = await statusOf(bridge);
 	mac = bridge;
 	meta = status.meta ?? null;
 	if (meta && status.device) running(new mac.NativeDevice(status.device));
 	else phase = meta ? 'closed' : 'new';
+}
+
+/**
+ * How long the page waits for the app's status as it loads before it asks again (ms), and how many times it asks: once
+ * the window was reloaded (⌘R) while the page before it had calls under way, the new page's first ask never got its
+ * answer, and it waited at "One moment…" until theOS was quit (Samuel, 2026-10-21).
+ */
+const ASK_AGAIN = 2500;
+const ASKS = 6;
+/** sessionStorage: when this window last opened its page again for want of the app's status (`statusOf`), in ms
+ *  since 1970; it does so once a minute at most. */
+const REOPENED = 'avendb:reopened';
+
+/**
+ * In the Mac app: its status as the page loads, asked again every `ASK_AGAIN` ms while no answer has come, the first
+ * answer counting. Should none come to `ASKS` asks, the page opens again, as a new one, once a minute at most; then it
+ * fails, saying so.
+ * @param {typeof import('./native.js')} bridge
+ */
+async function statusOf(bridge) {
+	const late = Symbol('late');
+	/** @type {ReturnType<typeof bridge.status>[]} */
+	const asks = [];
+	while (asks.length < ASKS) {
+		asks.push(bridge.status());
+		const wait = /** @type {Promise<typeof late>} */ (new Promise((r) => setTimeout(r, ASK_AGAIN, late)));
+		const got = await Promise.race([...asks, wait]);
+		if (got === late) continue;
+		if (asks.length > 1) unanswered(`status: answered only once asked ${asks.length} times, ${ASK_AGAIN} ms apart`);
+		return got;
+	}
+	const now = Date.now();
+	let last = now;
+	try {
+		last = Number(sessionStorage.getItem(REOPENED)) || 0;
+		sessionStorage.setItem(REOPENED, String(now));
+	} catch {
+		// no storage: the page never opens again, so it can't do so over and over
+	}
+	if (now - last > 60000) {
+		unanswered(`status: no answer to ${ASKS} asks in ${(ASKS * ASK_AGAIN) / 1000} s; the page opens again`);
+		// a moment for that line to reach the app's log
+		await new Promise((r) => setTimeout(r, 300));
+		location.reload();
+		// the page goes: nothing answers here any more
+		return /** @type {Promise<never>} */ (new Promise(() => {}));
+	}
+	unanswered(`status: no answer to ${ASKS} asks, even after the page opened again`);
+	throw new Error('theOS doesn’t answer this page. Quit theOS and open it again.');
 }
 
 /** In the Mac app: its device runs from here on, its folder keeping what opens it again. @param {any} info */
@@ -574,7 +623,7 @@ function namedIn(got) {
 async function near(d, op) {
 	let got = await d.run(op);
 	const entry = typeof op?.entry === 'string' && ENTRY.test(op.entry) ? op.entry : null;
-	if (got?.refused === 'NoEntry' && entry && (await bringEntries([entry], { run: (o) => d.run(o) }))?.ok?.new) got = await d.run(op);
+	if (got?.refused === 'NoEntry' && entry && (await bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }))?.ok?.new) got = await d.run(op);
 	if (VIEWS.has(op?.op)) learn([...(entry && got?.ok ? [entry] : []), ...namedIn(got)]);
 	return got;
 }

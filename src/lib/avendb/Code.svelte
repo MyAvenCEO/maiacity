@@ -5,12 +5,15 @@
 	picked, what it does and its files, each with its pinned size, its BLAKE3 and its publisher's SHA-256 and whether the
 	vault holds it, a `file` entry tagged `blake3:<its pin>` (scripts/propose-code.mjs proposes the missing ones as one
 	AIP); on the right its pins. A Mac brings a package only from avenDB, and unpacks a file only when its bytes hash to
-	its pins. Each has an address of its own, `#code/` and its id.
+	its pins. Each has an address of its own, `#code/` and its id. In theOS, Lean's own page gets it onto this Mac (Get
+	Lean, `leanGet`) or says it is here (Samuel 2026-10-21: with no AIP at the objective stage, the AIP page had nowhere
+	to offer it).
 -->
 <script>
 	// @ts-nocheck — plain JS
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
+	import { session } from './session.svelte.js';
 	import { ago, nameOf, reads, short, size } from './vaults.js';
 	import PINS from '$lib/code/packages.json';
 
@@ -38,6 +41,27 @@
 	/** the systems a file runs on, as a person names them */
 	const SYSTEMS = { 'macos aarch64': 'Mac, Apple silicon', 'macos x86_64': 'Mac, Intel', 'linux x86_64': 'Linux' };
 	const system = (f) => SYSTEMS[`${f.os} ${f.arch}`] ?? `${f.os} ${f.arch}`;
+
+	/** Lean on this Mac, in theOS (avendb-device's `leanEngine`): `{version, can, here, download, kept, getting, failed}` */
+	let lean = $state(null);
+	const readLean = async () => (lean = (await session.mac?.call('leanEngine').catch(() => null)) ?? lean);
+	$effect(() => {
+		if (session.mac && shown.id === 'lean' && !lean) readLean();
+	});
+	const GETTING = 'Getting Lean for this Mac';
+	/** brings Lean's archive from avenDB and unpacks it, saying how far it got (as the AIP page's Get Lean) */
+	async function getLean() {
+		const poll = setInterval(async () => {
+			const at = (await readLean())?.getting;
+			if (at && session.doing.startsWith(GETTING)) session.doing = `${GETTING}: ${size(at.at)} of ${size(at.of)}`;
+		}, 1000);
+		try {
+			await session.attempt(GETTING, async () => (lean = await session.mac.call('leanGet')));
+		} finally {
+			clearInterval(poll);
+			await readLean();
+		}
+	}
 </script>
 
 <!-- every package down the left -->
@@ -82,6 +106,23 @@
 			file only when its bytes hash to both pins below.
 		</p>
 	</section>
+
+	{#if lean && shown.id === 'lean'}
+		<section class="mac">
+			<h3>On this Mac</h3>
+			{#if lean.here}
+				<p class="state ok"><Icon name="check" size={14} /> Lean {lean.version} is here, {size(lean.kept)} kept: theOS checks AIP objectives with it.</p>
+			{:else if lean.can}
+				<p class="soft">
+					Lean {lean.version} checks AIP objectives on this Mac, locked away from your files and the network: {size(lean.download)} read
+					from avenDB, {size(lean.kept)} kept.{lean.failed ? ` The last try failed: ${lean.failed}` : ''}
+				</p>
+				<button class="btn primary" disabled={!!session.doing} onclick={getLean}>Get Lean</button>
+			{:else}
+				<p class="soft">No Lean is pinned for this Mac: it runs only on Macs with Apple silicon.</p>
+			{/if}
+		</section>
+	{/if}
 
 	<ul class="files">
 		{#each shown.files as f (f.blake3)}
@@ -142,6 +183,32 @@
 	h2 {
 		margin: 0;
 		font-size: 1.6rem;
+	}
+
+	.mac {
+		display: flex;
+		flex-direction: column;
+		align-items: flex-start;
+		gap: 0.5rem;
+		max-width: 44rem;
+		margin-bottom: 1rem;
+		padding: 0.8rem 1rem;
+		border: 1px solid var(--edge);
+		border-radius: 12px;
+		background: var(--card, #fff);
+	}
+
+	.mac h3 {
+		margin: 0;
+		font-size: 1rem;
+	}
+
+	.mac p {
+		margin: 0;
+	}
+
+	.mac .state {
+		margin-left: 0;
 	}
 
 	.files {

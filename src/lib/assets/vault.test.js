@@ -16,6 +16,9 @@ import { expect, mock, test } from 'bun:test';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
+// the page's own ops, not the manifests' walk a device opened on it makes first (game/code/sources/manifests.js)
+const ownOps = (o) => o.where?.type?.[0] !== 'manifest';
+
 // outside a page: textures draw on a stand-in canvas, and a module's runes are plain values
 const noop = new Proxy(function () {}, { get: (_, k) => (k === Symbol.toPrimitive ? () => 0 : noop), apply: () => noop, set: () => true });
 globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContext: () => noop, style: {} }) };
@@ -693,7 +696,7 @@ test("a page that holds its avenDB open reads the recipes off its own device: th
 		const r = await vault.loadRecipes({ feed: AT, fetch: f.get, timeout: 1000, ...PROVING, proofs: keepOf(), kept });
 		expect([r.phase, r.feed, r.count]).toEqual(['ready', 'this device', Object.keys(made.index.recipes).length]);
 		// what it holds read at once, what changed of the vault since brought beside
-		expect(asked).toEqual([
+		expect(asked.filter(ownOps)).toEqual([
 			{ op: 'code', vault: DEV_VAULT, type: ['recipe'] },
 			{ op: 'bring', vaults: [DEV_VAULT] }
 		]);
