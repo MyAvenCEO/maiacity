@@ -43,4 +43,5 @@ jobs:
       # what the sandbox denied Lean, by operation and path: Lean's own folder and the runner's, nothing of a person's
       - name: What the sandbox stopped
         if: failure()
-        run: log show --last 20m --style compact --predicate 'eventMessage CONTAINS "Sandbox: lean(" OR eventMessage CONTAINS "Sandbox: sandbox-exec("' | tail -80 || true
+        run: |
+          log show --last 20m --style compact --predicate 'eventMessage CONTAINS "Sandbox: lean(" OR eventMessage CONTAINS "Sandbox: sandbox-exec("' | tail -80 || true
