@@ -836,8 +836,8 @@ impl Service {
 
     /// Grants agent device `name`'s access request (`agents`), the one its device `device` left. The agent's key joins
     /// its coop's one aven, avenMAIA, which Maia City owns and the seed founded (`agent::aven_of`), as a device of it
-    /// beside its server, in one ceremony of their passkey in the sheet, which the agent's device cosigns
-    /// (`Node::add_device_vault_with` at `Place::Vault`): from then on it acts as avenMAIA, with avenMAIA's rights, no
+    /// beside its server, in one ceremony of their passkey in the sheet, which the agent cosigns over the session theOS
+    /// hosts it in (`Node::add_hosted_device`): from then on it acts as avenMAIA, with avenMAIA's rights, no
     /// more and no less (Samuel 2026-10-18: no agent vaults under an aven, no sub caps). Maia City decides what
     /// avenMAIA holds: given Suggester and an AIP author's share, an agent proposes, drafts and opens AIPs, which a
     /// human of Maia City accepts. One already a device of it, as the same harness asking again, is granted at once.
@@ -869,11 +869,12 @@ impl Service {
             let asked = asked.context("no such request: it changed")?;
             let offline = "isn't running: open a Claude Code session (or its harness), then approve";
             anyhow::ensure!(asked["online"] == true, "{name} {offline}");
-            let offer = asked["offer"].as_str().context("its device is another vault's: it can't join")?;
-            let (offer, approver) = (Offer::from_text(offer)?, self.approver().await?);
+            // theOS hosts it (`sessions`): it signs its join over its session, with the key it handed to seal to
+            let (key, mceliece) = sessions::seal_of(&self.hosted, agent).with_context(|| format!("{name} {offline}"))?;
+            let approver = self.approver().await?;
             // the owner key that approves: the Mac's Touch ID key where it is one, else the passkey
             let owner = d.node().read(engine::passkey_of).await.unwrap_or(d.passkey());
-            d.node().add_device_vault_with(&offer, Place::Vault(aven), owner, &approver).await?;
+            d.node().add_hosted_device(agent, key, mceliece, aven, owner, &approver).await?;
         }
         std::fs::remove_file(agent::request(&self.config.dir, name)).ok();
         Ok(json!({ "aven": hex(&aven.0), "vault": hex(&aven.0) }))

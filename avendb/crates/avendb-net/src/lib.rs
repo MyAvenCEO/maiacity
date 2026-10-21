@@ -1066,6 +1066,36 @@ impl Node {
         Ok((parent, vault))
     }
 
+    /// Add session `device`, an agent this device hosts on its Mac (`Lab::host`), which runs no device of its own, to
+    /// aven `aven` as a device of it, its key to seal to `key`, with `mceliece` the McEliece key it names, both handed
+    /// by the agent as it connected: drafted here and signed in one ceremony of the passkey `passkey` made by
+    /// `authenticator`, then signed by the agent too, asked through its session (`Lab::accept_hosted`), as a server
+    /// signs its claim. The aven. Fails as `add_device_vault_with` does, or if the agent doesn't sign.
+    pub async fn add_hosted_device(
+        &self,
+        device: SignerId,
+        key: PublicKey,
+        mceliece: Arc<[u8]>,
+        aven: VaultId,
+        passkey: SignerId,
+        authenticator: &impl Authenticator,
+    ) -> Result<VaultId> {
+        let human = self.shared.lab(|lab, me| lab.vault_of(me)).await.context("this device belongs to no vault")?;
+        let draft = move |lab: &mut Lab, me| {
+            let nonce = lab.nonce();
+            let mut drafting = lab.drafting(me);
+            add_device_vault(&mut drafting, passkey, human, Place::Vault(aven), nonce, device, key)?;
+            Ok::<_, Refusal>(drafting.done())
+        };
+        let drafts = self.shared.lab(draft).await.map_err(|why| anyhow!("the device is refused: {why:?}"))?;
+        let (_, (), claim) = self.sign(vec![(passkey, (), drafts)], true, Step::Approve, authenticator).await?;
+        let claim = claim.context("a claim")?;
+        let kept = self.shared.lab(move |lab, me| lab.accept_hosted(me, claim, mceliece)).await;
+        let vault = kept.map_err(|why| anyhow!("the agent's join is refused: {why:?}"))?;
+        self.shared.changed.notify_one();
+        Ok(vault)
+    }
+
     /// Add the device `offer` names, which handed `key` to seal to (`claim_key`), to a device vault at `place`
     /// (`add_device_vault`), the edits drafted on this device and signed in one ceremony of the passkey `passkey`, for
     /// `step`; this device keeps them, but the last, which adds the device: its claim of it (`Lab::claim`), which the
@@ -1783,7 +1813,7 @@ tokio::task_local! {
 }
 
 /// The session the calling task acts as (`Node::acting`), if any.
-fn acting() -> Option<SignerId> {
+pub(crate) fn acting() -> Option<SignerId> {
     #[cfg(not(target_arch = "wasm32"))]
     return ACTING.try_with(|s| *s).ok();
     #[cfg(target_arch = "wasm32")]

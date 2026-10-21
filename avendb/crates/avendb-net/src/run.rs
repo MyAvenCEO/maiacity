@@ -109,7 +109,7 @@ impl Node {
             }
             Some("read_file") => return self.read_bytes(&op).await,
             _ if engine::brings(&op) => self.put(op, bytes).await?,
-            Some("jobs") => json!({ "ok": self.jobs().to_json() }),
+            Some("jobs") => json!({ "ok": self.jobs().to_json_for(crate::acting()) }),
             Some("follow") => self.follow(op).await,
             Some("bring") => self.bring_vaults(&op).await,
             Some("synced") => json!({ "ok": self.synced().await }),
