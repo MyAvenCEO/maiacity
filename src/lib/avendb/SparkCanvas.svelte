@@ -25,6 +25,7 @@
 	} from './artifacts.js';
 	import { mediaOf } from './files.js';
 	import Icon from './Icon.svelte';
+	import { linkHref } from '$lib/markdown/index.js';
 	import { allowed, creatable, may } from './ops.js';
 	import { addingStory, CARD, grownFrom, itemsFor, linkIn, newId, PIECE, pictureOf, pieces, placing, textItem } from './sparks.js';
 	import { count, nameOf } from './vaults.js';
@@ -349,7 +350,7 @@
 							<small class="soft">{LOOK_NAME[look]}{fromWords(r) ? ` · ${fromWords(r)}` : ''}</small>
 						</div>
 						{#if r.url}
-							<a class="out" href={r.url} target="_blank" rel="noopener noreferrer" title="Open the link" aria-label="Open the link"
+							<a class="out" href={linkHref(r.url)} target="_blank" rel="noopener noreferrer" title="Open the link" aria-label="Open the link"
 								><Icon name="out" size={13} /></a
 							>
 						{/if}

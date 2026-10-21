@@ -1219,9 +1219,7 @@ pub const SEED_COOP: &str = SEED_NAMES[0];
 /// the invite their link brings, which a device signed with no passkey (Samuel 2026-10-19).
 pub fn open_invite(lab: &Lab, me: SignerId, share: ShareId) -> bool {
     let Some(&city) = seed_of(lab, me).first() else { return false };
-    let st = lab.state(me);
-    st.share(share)
-        .is_some_and(|cp| cp.share.over == city && matches!(cp.share.who, Who::Invite(_)) && st.live(share))
+    crate::admission::open_invite(lab.state(me), city, share)
 }
 
 /// What avenDB's server, device `me`, answers a service called `audience` that brings pass `pass`, at `now`, seconds

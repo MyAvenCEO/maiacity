@@ -14,6 +14,7 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { base } from '$app/paths';
+	import { linkHref } from '$lib/markdown/index.js';
 	import ProposedAssets from '$lib/avendb/ProposedAssets.svelte';
 	import Objective from './Objective.svelte';
 	import { session } from '$lib/avendb/session.svelte.js';
@@ -196,7 +197,7 @@
 	</details>
 
 	{#if aip.links?.length}
-		<p class="links">{#each aip.links as l (l.id)}<a href={l.url} target="_blank" rel="noopener">{l.name || l.url} ↗</a>{/each}</p>
+		<p class="links">{#each aip.links as l (l.id)}<a href={linkHref(l.url)} target="_blank" rel="noopener">{l.name || l.url} ↗</a>{/each}</p>
 	{/if}
 
 	{#if aip.reviews.length}

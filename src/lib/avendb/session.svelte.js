@@ -337,12 +337,13 @@ const noAccount = (e) => {
  * which also claims the server if nobody has yet; one ceremony more to make the passkey. This device goes by `name`,
  * reaches avenDB's server `server` through its relay `relay`, and the vault gives the server a backup cap, keeping its
  * ciphertext, unless `backup` is off: then a relay cap, which lets their devices through and keeps nothing. `person`
- * names the passkey made. It shows its steps by `at`.
+ * names the passkey made, and `invite` the share of the open invite they sign up with, if any, which the device shows
+ * its relay pass with, so a server that lets newcomers in by invite lets them in. It shows its steps by `at`.
  * @param {boolean} fresh
- * @param {{ name: string, relay: string, server: string, backup: boolean, person: string }} how
+ * @param {{ name: string, relay: string, server: string, backup: boolean, person: string, invite?: string | null }} how
  * @param {Steps} [at]
  */
-async function found(fresh, { name, relay, server, backup, person }, { step, device: shown } = QUIET) {
+async function found(fresh, { name, relay, server, backup, person, invite }, { step, device: shown } = QUIET) {
 	if (mac) {
 		await macOpened(await stepping(shown(), 'found', name, relay, server, backup));
 		return;
@@ -355,7 +356,10 @@ async function found(fresh, { name, relay, server, backup, person }, { step, dev
 	// a copy of the nonce, as what the unlock brings back is moved to the device's worker, and the nonce kept after it
 	const unlockNew = (/** @type {Uint8Array<ArrayBuffer>} */ challenge) => unlock(nonce.slice(), challenge);
 	const shows = shown();
-	const d = await avendb.Device.found(name, relay, server, made?.spki, unlockNew, sign, backup, shows, store);
+	await avendb.signUpWith(invite);
+	const d = await avendb.Device.found(name, relay, server, made?.spki, unlockNew, sign, backup, shows, store).finally(() =>
+		avendb.signUpWith(null)
+	);
 	step('save');
 	await started(d, nonce, held.id, { name, relay });
 }

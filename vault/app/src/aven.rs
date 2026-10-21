@@ -9,11 +9,12 @@
 //! Mac's lanes (jobs.rs) and answers what it made; `studio_ingest` brings a card's files in (plan J1).
 
 use std::io::{self, Read as _};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
-use tauri::{AppHandle, Emitter as _};
+use tauri::{AppHandle, Emitter as _, State};
+use tauri_plugin_dialog::DialogExt as _;
 use vault_media::{ByteSource, Source};
 
 /// How many bytes a read asks the device for at a time: AVFoundation reads in small pieces, mostly in order.
@@ -306,17 +307,64 @@ pub struct Brought {
     error: Option<String>,
 }
 
+/// The files and folders this Mac's person handed the app since it started: picked in the Mac's own picker
+/// (`studio_pick`) or dropped on its window (main.rs). `studio_ingest` brings in nothing outside them, so what a page
+/// asks for is only ever what its person chose.
+#[derive(Default)]
+pub struct Picked(Mutex<Vec<PathBuf>>);
+
+impl Picked {
+    /// Holds `paths` from now on, each as the drive names it (links followed).
+    pub fn add(&self, paths: impl IntoIterator<Item = PathBuf>) {
+        let mut held = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        for p in paths.into_iter().filter_map(|p| p.canonicalize().ok()) {
+            if !held.contains(&p) {
+                held.push(p);
+            }
+        }
+    }
+
+    /// Whether `path` is one of them, or inside a folder among them.
+    fn holds(&self, path: &Path) -> bool {
+        let Ok(p) = path.canonicalize() else { return false };
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).iter().any(|h| p.starts_with(h))
+    }
+}
+
+/// The Mac's own picker, for files (or for folders, with `folders`): what its person picked, held as theirs to bring
+/// in (`Picked`); none when they cancel.
+#[tauri::command]
+pub async fn studio_pick(app: AppHandle, picked: State<'_, Picked>, folders: bool) -> Result<Vec<String>, String> {
+    crate::gate()?;
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    let dialog = app.dialog().file();
+    if folders {
+        dialog.pick_folders(move |p| drop(tx.send(p)));
+    } else {
+        dialog.pick_files(move |p| drop(tx.send(p)));
+    }
+    let paths: Vec<PathBuf> = rx.await.ok().flatten().unwrap_or_default().into_iter().filter_map(|p| p.into_path().ok()).collect();
+    picked.add(paths.iter().cloned());
+    Ok(paths.iter().map(|p| p.display().to_string()).collect())
+}
+
 /// Brings the files at `paths` (and in the folders among them) into vault `vault` (acting as `actor`, the vault's own by default) as originals: each a
 /// `file` entry tagged `media:original` and `tags`, read back and compared (`put_path`). One at a time, in the Io lane;
-/// the page hears `studio-ingest` events `{path, done, len}` as each goes in. What became of each.
+/// the page hears `studio-ingest` events `{path, done, len}` as each goes in. What became of each. Only paths its
+/// person picked or dropped here (`Picked`), and only while avenDB is open.
 #[tauri::command]
 pub async fn studio_ingest(
     app: AppHandle,
+    picked: State<'_, Picked>,
     vault: String,
     paths: Vec<String>,
     tags: Vec<String>,
     actor: Option<String>,
 ) -> Result<Vec<Brought>, String> {
+    crate::gate()?;
+    if let Some(p) = paths.iter().find(|p| !picked.holds(Path::new(p))) {
+        return Err(format!("{p}: pick it or drop it on the app first"));
+    }
     let mut files = vec![];
     for p in &paths {
         files.extend(crate::files::walk(Path::new(p)).map_err(|e| format!("{p}: {e:#}"))?);
@@ -1187,7 +1235,10 @@ pub async fn serve(app: AppHandle, request: tauri::http::Request<Vec<u8>>) -> ta
     if root.len() != 64 || !root.bytes().all(|b| b.is_ascii_hexdigit()) {
         return reply(StatusCode::BAD_REQUEST, "not a root");
     }
-    let media = query.get("media").cloned().unwrap_or_else(|| "application/octet-stream".into());
+    let media = served_as(query.get("media").map(String::as_str).unwrap_or(""));
+    // only the app's own pages may read the bytes back (a film drawn on a canvas, a JSON file fetched); a tag shows
+    // them without asking
+    let origin = request.headers().get(header::ORIGIN).and_then(|v| v.to_str().ok()).filter(|o| own_origin(o)).map(str::to_string);
     const MAX: u64 = 8 * 1024 * 1024;
     let range = request
         .headers()
@@ -1229,9 +1280,57 @@ pub async fn serve(app: AppHandle, request: tauri::http::Request<Vec<u8>>) -> ta
         .header(header::ACCEPT_RANGES, "bytes")
         .header(header::CONTENT_LENGTH, body.len().to_string())
         .header(header::CACHE_CONTROL, "private, max-age=31536000, immutable")
-        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*");
+        .header(header::X_CONTENT_TYPE_OPTIONS, "nosniff")
+        .header(header::VARY, "Origin");
+    if let Some(origin) = origin {
+        res = res.header(header::ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+    }
     if partial {
         res = res.header(header::CONTENT_RANGE, format!("bytes {start}-{}/{len}", (start + body.len() as u64).saturating_sub(1)));
     }
     res.body(body).unwrap_or_default()
+}
+
+/// The type a file of `aven:` is served as: the media the player, the monitors and the jobs' pages read (a picture, a
+/// sound, a film, a JSON value, plain text, captions), never one a web view would run (a page, an SVG, XML, a script);
+/// anything else as plain bytes.
+fn served_as(media: &str) -> String {
+    let m = media.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    let token = m.matches('/').count() == 1 && m.bytes().all(|b| b.is_ascii_alphanumeric() || b"/.+-_".contains(&b));
+    let shown = (m.starts_with("image/") && !m.contains("svg") && !m.contains("xml"))
+        || m.starts_with("audio/")
+        || m.starts_with("video/")
+        || matches!(m.as_str(), "application/json" | "text/plain" | "text/vtt");
+    if token && shown { m } else { "application/octet-stream".into() }
+}
+
+/// Whether `origin` is the app's own pages': the bundled site (`tauri://localhost` on a Mac), or the dev server in a
+/// debug build.
+fn own_origin(origin: &str) -> bool {
+    matches!(origin, "tauri://localhost" | "http://tauri.localhost" | "https://tauri.localhost")
+        || (cfg!(debug_assertions) && (origin.starts_with("http://localhost:") || origin == "http://localhost"))
+}
+
+#[cfg(test)]
+mod served {
+    use super::{own_origin, served_as};
+
+    #[test]
+    fn only_media_types_are_served() {
+        for ok in ["video/quicktime", "audio/wav", "image/jpeg", "image/png", "application/json", "text/plain", "text/vtt"] {
+            assert_eq!(served_as(ok), ok);
+        }
+        assert_eq!(served_as("Video/MP4; codecs=x"), "video/mp4");
+        for active in ["text/html", "image/svg+xml", "application/xhtml+xml", "text/xml", "application/xml", "text/javascript", "application/javascript", "", "video/mp4\r\nX: y", "image/png/x"] {
+            assert_eq!(served_as(active), "application/octet-stream", "{active:?}");
+        }
+    }
+
+    #[test]
+    fn only_the_apps_own_pages_read_back() {
+        assert!(own_origin("tauri://localhost"));
+        assert!(!own_origin("null"));
+        assert!(!own_origin("https://maia.city"));
+        assert!(!own_origin("https://evil.example"));
+    }
 }

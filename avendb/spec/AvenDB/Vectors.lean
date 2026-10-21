@@ -3,6 +3,8 @@ import AvenDB.Logs
 import AvenDB.Lens
 import AvenDB.Proposals
 import AvenDB.Gate
+import AvenDB.Admission
+import AvenDB.Quota
 import AvenDB.Writes
 
 /-!
@@ -1656,6 +1658,127 @@ def standings : List StandingCase := [
 #guard (standings.map (·.answer)) ==
   [some (100, true), some (101, true), some (102, false), some (101, false), none, none, none]
 
+/-! ## Quota cases
+
+What the server of a vault (`home`), holding some edits, keeps of a run of items its peers bring, each an edit or a file
+of some bytes signed by a device (`keepAll`, `Quota.lean`), by limits named after `home`'s cap groups: an edit always,
+a file only where its person's backup stays within their limit. Each held edit claims a depth, as in a gate case. The
+model's answer is whether it keeps each item, and each item's person with their limit, `null` for none. The held edits
+are a standing case's: Maia City is coop 200, which Alice's vault owns; its Traveler group is entry 50, which Carol holds,
+its Admin group entry 52, which Bob holds, and its Citizen group entry 51, which Dave holds; Carol's agent device 11 acts
+for her device vault 320, and Dave's Mac is 9. -/
+
+structure QuotaCase where
+  name   : String
+  home   : VaultId
+  held   : List (Nat × SignerId × List SignerId × Action)
+  limits : Limits
+  items  : List Brought
+
+def QuotaCase.edits (c : QuotaCase) : List Edit :=
+  c.held.zipIdx.map fun ((depth, author, co, a), i) => ({ id := i, depth, author, cosigners := co, action := a } : Edit)
+
+/-- Whether the server keeps each item, in order. -/
+def QuotaCase.kept (c : QuotaCase) : List Bool :=
+  let ks := keepAll (view c.edits) c.home c.limits [] c.items
+  -- each item comes once in a case, so whether it is kept is whether it is among what the server holds
+  c.items.map fun i => ks.contains i
+
+/-- Each item's person, and their limit. -/
+def QuotaCase.persons (c : QuotaCase) : List (Option (VaultId × Option Nat)) :=
+  let st := view c.edits
+  c.items.map fun i => (payerOf st i.signer).map fun p => (p, limitOf st c.home p c.limits)
+
+/-- What the server of Maia City holds besides Carol's: Dave's Mac a device of his vault, Maia City's Citizen group,
+    which Dave holds, and Carol's device vault, with her agent's device in it. -/
+def daveCites : List (Nat × SignerId × List SignerId × Action) := carolTravels ++ [
+  (22, 8, [9], .share (.device 103 9)),
+  (23, 2, [], newEntry 200 51 200 [] capGroupType (via := [100]) (defines := some { name := "Citizen" })),
+  (24, 2, [], groupShare 35 200 (toVault 103) .read 51 (via := [100])),
+  (25, 6, [], .genesis 320 .deviceVault [.vault 102] 1),
+  (26, 6, [11], .share (.device 320 11))]
+
+def quotaLimits : Limits := [("Traveler", 100), ("Citizen", 500)]
+
+def quotas : List QuotaCase := [
+  { name := "a Traveler's files fill their limit and no more, and every edit is kept", home := 200,
+    held := gateHeld ++ daveCites, limits := quotaLimits,
+    items := [⟨7, 60, true⟩, ⟨7, 30, false⟩, ⟨7, 20, true⟩, ⟨7, 10, true⟩, ⟨7, 50, false⟩, ⟨7, 1, true⟩] },
+  { name := "a Citizen's limit is the Citizen group's", home := 200, held := gateHeld ++ daveCites,
+    limits := quotaLimits, items := [⟨9, 300, true⟩, ⟨9, 250, true⟩, ⟨9, 200, true⟩] },
+  { name := "Maia City's owner and a holder of its Admin group have no limit", home := 200,
+    held := gateHeld ++ daveCites, limits := quotaLimits, items := [⟨2, 1000, true⟩, ⟨5, 2000, true⟩] },
+  { name := "once their Citizen share is revoked, a person takes the least limit", home := 200,
+    held := gateHeld ++ daveCites ++ [(30, 2, [], .revoke (.grant 35 200 [] [100]))], limits := quotaLimits,
+    items := [⟨9, 300, true⟩, ⟨9, 100, true⟩] },
+  { name := "a person's agent counts against their backup", home := 200, held := gateHeld ++ daveCites,
+    limits := quotaLimits, items := [⟨7, 60, true⟩, ⟨11, 50, true⟩, ⟨11, 40, true⟩, ⟨11, 5, false⟩] },
+  { name := "with no limits said, nothing is limited", home := 200, held := gateHeld ++ daveCites, limits := [],
+    items := [⟨7, 1000, true⟩, ⟨9, 1000, true⟩] },
+  { name := "a stranger's key counts against nobody", home := 200, held := gateHeld ++ daveCites,
+    limits := quotaLimits, items := [⟨555, 1000, true⟩, ⟨4, 1000, true⟩] }]
+
+-- a file kept and one refused, an edit kept whatever the limit, and items of nobody's
+#guard quotas.any fun c => (c.kept.zip c.items).any fun (k, i) => k && i.file
+#guard quotas.any fun c => (c.kept.zip c.items).any fun (k, i) => !k && i.file
+#guard quotas.all fun c => (c.kept.zip c.items).all fun (k, i) => k || i.file
+#guard quotas.any fun c => c.persons.any (·.isNone)
+#guard (quotas.map (·.kept)) == [[true, true, false, true, true, false], [true, false, true], [true, true],
+  [false, true], [true, false, true, true], [true, true], [true, true]]
+#guard (quotas.map (·.persons)) == [
+  List.replicate 6 (some (102, some 100)), List.replicate 3 (some (103, some 500)),
+  [some (100, none), some (101, none)], List.replicate 2 (some (103, some 100)),
+  List.replicate 4 (some (102, some 100)), [some (102, none), some (103, none)],
+  [none, none]]
+
+/-! ## Admission cases
+
+Whom the relay of the server of a vault (`home`), holding some edits, lets in by a pass (`honours`, `Admission.lean`):
+the passkey that signed it, and the invite it is shown with, if any, as the server signs people up (`anyone`,
+`invited` or `known`). The model's answer is whether it honours the pass. The held edits are a gate case's, and Eve's
+claim of invite 31 where a case says so. -/
+
+structure AdmissionCase where
+  name      : String
+  home      : VaultId
+  held      : List (Nat × SignerId × List SignerId × Action)
+  signup    : Signup
+  claimable : Bool
+  passkey   : SignerId
+  invite    : Option ShareId
+
+def AdmissionCase.edits (c : AdmissionCase) : List Edit :=
+  c.held.zipIdx.map fun ((depth, author, co, a), i) => ({ id := i, depth, author, cosigners := co, action := a } : Edit)
+
+def AdmissionCase.honours (c : AdmissionCase) : Bool :=
+  AvenDB.honours (view c.edits) c.home c.signup c.claimable c.passkey c.invite
+
+/-- Eve founds her vault and claims invite 31 with it. -/
+def eveClaims : List (Nat × SignerId × List SignerId × Action) :=
+  deep 100 [eveFounds, (12, [700], .claim 31 104)]
+
+def admissions : List AdmissionCase := [
+  { name := "a stranger's passkey with no invite, by invite", home := 200, held := gateHeld, signup := .invited,
+    claimable := false, passkey := 12, invite := none },
+  { name := "a stranger's passkey with an open invite of Maia City", home := 200, held := gateHeld,
+    signup := .invited, claimable := false, passkey := 12, invite := some 31 },
+  { name := "a stranger's passkey with an invite to another vault", home := 200, held := gateHeld,
+    signup := .invited, claimable := false, passkey := 12, invite := some 33 },
+  { name := "a stranger's passkey with a share that is no invite", home := 200, held := gateHeld,
+    signup := .invited, claimable := false, passkey := 12, invite := some 32 },
+  { name := "a stranger's passkey with an invite already claimed", home := 200, held := gateHeld ++ eveClaims,
+    signup := .invited, claimable := false, passkey := 13, invite := some 31 },
+  { name := "once claimed, the newcomer's own passkey is known", home := 200, held := gateHeld ++ eveClaims,
+    signup := .invited, claimable := false, passkey := 12, invite := none },
+  { name := "a stranger's passkey with an open invite, sign-up closed", home := 200, held := gateHeld,
+    signup := .known, claimable := false, passkey := 12, invite := some 31 },
+  { name := "a stranger's passkey, sign-up open to anyone", home := 200, held := gateHeld, signup := .anyone,
+    claimable := false, passkey := 12, invite := none },
+  { name := "a stranger's passkey while nobody has claimed the server", home := 200, held := [], signup := .known,
+    claimable := true, passkey := 12, invite := none }]
+
+#guard (admissions.map (·.honours)) == [false, true, false, false, false, true, false, true, true]
+
 /-! ## A version's writes (T10l)
 
 How many writes a version of an entry holds (`writesAt`), of the writes its readers count at the end of a step case,
@@ -2043,6 +2166,28 @@ def standingCase (c : StandingCase) : String :=
     ": [\n  " ++ ",\n  ".intercalate (c.edits.map editJson) ++ "],\n " ++ str "device" ++ ": " ++ nat c.device ++
     ",\n " ++ str "standing" ++ ": " ++ opt (fun (v, a) => obj [("vault", nat v), ("admin", bool a)]) c.answer ++ "}"
 
+def heldJson (held : List Edit) : String :=
+  let editJson := fun (o : Edit) =>
+    obj [("depth", nat o.depth), ("author", nat o.author), ("cosigners", arr (o.cosigners.map nat)),
+      ("action", action o.action)]
+  "[\n  " ++ ",\n  ".intercalate (held.map editJson) ++ "]"
+
+def quotaCase (c : QuotaCase) : String :=
+  let item := fun (i : Brought) => obj [("signer", nat i.signer), ("size", nat i.size), ("file", bool i.file)]
+  let person := opt fun ((p, l) : VaultId × Option Nat) => obj [("vault", nat p), ("limit", opt nat l)]
+  "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "home" ++ ": " ++ nat c.home ++ ",\n " ++ str "held" ++
+    ": " ++ heldJson c.edits ++ ",\n " ++ str "limits" ++ ": " ++
+    arr (c.limits.map fun (n, b) => obj [("group", str n), ("bytes", nat b)]) ++ ",\n " ++ str "items" ++ ": " ++
+    arr (c.items.map item) ++ ",\n " ++ str "kept" ++ ": " ++ arr (c.kept.map bool) ++ ",\n " ++ str "persons" ++
+    ": " ++ arr (c.persons.map person) ++ "}"
+
+def admissionCase (c : AdmissionCase) : String :=
+  let signup := match c.signup with | .anyone => "anyone" | .invited => "invited" | .known => "known"
+  "{" ++ str "name" ++ ": " ++ str c.name ++ ",\n " ++ str "home" ++ ": " ++ nat c.home ++ ",\n " ++ str "held" ++
+    ": " ++ heldJson c.edits ++ ",\n " ++ str "signup" ++ ": " ++ str signup ++ ", " ++ str "claimable" ++ ": " ++
+    bool c.claimable ++ ", " ++ str "passkey" ++ ": " ++ nat c.passkey ++ ", " ++ str "invite" ++ ": " ++
+    opt nat c.invite ++ ",\n " ++ str "honours" ++ ": " ++ bool c.honours ++ "}"
+
 /-- A version case: the step case and entry it reads, the version's heads, the writes left out, and how many writes
     the version holds. -/
 def versionCase (c : VersionCase) : String :=
@@ -2056,6 +2201,8 @@ def render : String :=
     "\n],\n\"syncs\": [\n" ++ ",\n".intercalate (syncs.map syncCase) ++
     "\n],\n\"gates\": [\n" ++ ",\n".intercalate (gates.map gateCase) ++
     "\n],\n\"standings\": [\n" ++ ",\n".intercalate (standings.map standingCase) ++
+    "\n],\n\"quotas\": [\n" ++ ",\n".intercalate (quotas.map quotaCase) ++
+    "\n],\n\"admissions\": [\n" ++ ",\n".intercalate (admissions.map admissionCase) ++
     "\n],\n\"versions\": [\n" ++ ",\n".intercalate (versionCases.map versionCase) ++ "\n]}\n"
 
 /-- What an edit creates, by the model's number: a vault or a grant. -/
@@ -2080,7 +2227,8 @@ def audiencesOf : Action → List Audience :=
 def allActions : List Action :=
   cases.flatMap (·.edits.map (·.2.2)) ++ views.flatMap (·.edits.map (·.2.2.2)) ++
     syncs.flatMap (·.edits.map (·.action)) ++ gates.flatMap (fun c => (c.held ++ c.batch).map (·.2.2.2)) ++
-    standings.flatMap fun c => c.held.map (·.2.2.2)
+    standings.flatMap (fun c => c.held.map (·.2.2.2)) ++ quotas.flatMap (fun c => c.held.map (·.2.2.2)) ++
+    admissions.flatMap fun c => c.held.map (·.2.2.2)
 
 -- every case refuses some edits and accepts others, so neither side can pass by always saying the same thing
 #guard cases.all fun c => let (acc, _) := run c.edits; acc.any id && acc.any (!·)
@@ -2097,6 +2245,12 @@ def allActions : List Action :=
 -- in a standing case too
 #guard standings.all fun c => nodup (c.edits.filterMap fun o => created o.action)
 #guard standings.all fun c => nodup (c.edits.map fun o => (o.depth, o.rank))
+-- in a quota case and an admission case too
+#guard quotas.all fun c => nodup (c.edits.filterMap fun o => created o.action)
+#guard quotas.all fun c => c.items.eraseDups.length == c.items.length
+#guard quotas.all fun c => nodup (c.edits.map fun o => (o.depth, o.rank))
+#guard admissions.all fun c => nodup (c.edits.filterMap fun o => created o.action)
+#guard admissions.all fun c => nodup (c.edits.map fun o => (o.depth, o.rank))
 -- every audience a case names is in the model's order, so it names one set of shares whatever order the Rust core keeps
 #guard allActions.all fun a => (audiencesOf a).all fun x => x == mkAudience x
 -- each kind of settings, share and revocation is accepted or refused as its comment says, wide owner grants and

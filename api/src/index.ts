@@ -17,6 +17,7 @@ import { analyseRoute, MODEL as ANALYSIS_MODEL, statusRoute as analysisStatus } 
 import { checkModels, pick } from "./prem";
 import { GameError, getGame, move, takeSeat } from "./maiacity-v1.js";
 import { loadCode } from "../../game/code/index.js";
+import { Rate, limitRoutes, perMinute } from "./limits.js";
 
 const PORT = Number(process.env.PORT ?? 3000);
 const ORIGINS = (process.env.SITE_ORIGIN ?? "http://localhost:5173")
@@ -97,6 +98,11 @@ function fail(req: Request, e: unknown) {
 
 const preflight = (req: Request) => new Response(null, { status: 204, headers: cors(req) });
 
+// how often one address may ask a passkey ceremony or a call with a device's pass (limits.js), `API_RATE` a minute
+const RATE = new Rate(perMinute(process.env.API_RATE));
+const tooMany = (req: Request) =>
+  json(req, { error: "Too many requests: try again in a minute." }, { status: 429, headers: { "Retry-After": "60" } });
+
 // who signed up, as the API knows them: no profile, which lives in their avenDB human vault (Samuel 2026-10-18)
 const publicFounder = (f: { id: string; number: number | bigint; created: Date }) => ({
   id: f.id,
@@ -132,7 +138,7 @@ const server = Bun.serve({
   port: PORT,
   // slow requests are let finish: Bun's default idle timeout is 10 s
   idleTimeout: 255,
-  routes: {
+  routes: limitRoutes({
     // Health, for the container and for the deploy job.
     "/api/health": (req) => json(req, { ok: true }),
 
@@ -284,7 +290,7 @@ const server = Bun.serve({
       OPTIONS: (req) => new Response(null, { status: 204, headers: cors(req) }),
       DELETE: (req) => new Response(null, { status: 204, headers: { ...cors(req), "Set-Cookie": clearCookie() } }),
     },
-  },
+  }, RATE, tooMany),
   fetch: (req) => new Response("Not found", { status: 404, headers: cors(req) }),
 });
 

@@ -36,20 +36,23 @@ pub mod health;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::net::SocketAddr;
+use std::num::NonZeroU32;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
 use anyhow::{Context as _, Result, anyhow, bail};
+use avendb::admission::Signup;
 use avendb::backup::Keep;
-use avendb::id::SignerId;
+use avendb::id::{ShareId, SignerId};
 use avendb::sign::{PASS_SKEW, RelayPass};
 use avendb_net::bucket::Sealed;
 use avendb_net::{Admission, Node, Offer, Options, server, token_passes};
 use data_encoding::HEXLOWER_PERMISSIVE;
 use iroh::{EndpointAddr, EndpointId, RelayUrl};
 use iroh_relay::server::{
-    Access, AccessControl, ClientRequest, ConnectionId, RelayConfig, RelayService, Server, ServerConfig,
+    Access, AccessControl, ClientRateLimit, ClientRequest, ConnectionId, Limits, RelayConfig, RelayService, Server,
+    ServerConfig,
 };
 use tokio::sync::Notify;
 use tokio::task::JoinHandle;
@@ -75,14 +78,26 @@ pub struct Config {
     /// as its offer says; if unsaid, the addresses of its own network interfaces, which in a container are the
     /// container's.
     pub public_addr: Option<SocketAddr>,
-    /// Sign-up is open (`AVENDB_SIGNUP`, `open` by default, or `closed`): its relay lets in, for ten minutes, a device
-    /// whose pass any passkey signed (`avendb_net::Admission::open`), not only one whose passkey roots a vault the
-    /// server knows. A device on UDP reaches the server without the relay anyway.
-    pub signup: bool,
+    /// How it signs people up (`AVENDB_SIGNUP`; `avendb::admission::Signup`, `Admission.lean`): whose passes its relay
+    /// honours for ten minutes besides those of a passkey that roots a vault the server knows. `open`, any passkey's
+    /// (`avendb_net::Admission::open`); `invite`, one shown with an invite of Maia City no vault claimed yet
+    /// (`avendb_net::Admission::invited`), the relay following the gate (G5); `closed`, none. By default `invite`
+    /// where the gate is on, `open` where it is off. A device on UDP reaches the server without the relay anyway.
+    pub signup: Signup,
     /// It takes a new vault only where it welcomes it (`AVENDB_GATE`, `off` by default, or `on`; `avendb::gate`): a
     /// person's only with the invite of the vault it serves it claims, a coop or an aven only where an admin of that
-    /// vault owns it. Until its first human vault claims it, it serves no vault, and takes any.
+    /// vault owns it. Until its first human vault claims it, it serves no vault, and takes any. What it took before
+    /// stays: the gate weighs only vaults new to it.
     pub gate: bool,
+    /// What it takes and keeps at most (`avendb_net::Limits`): the bytes of one edit (`AVENDB_MAX_EDIT`, in MiB, 16 by
+    /// default), of one file it keeps whole (`AVENDB_MAX_FILE`, in GB, 50 by default), and of each person's backup by
+    /// the cap group of Maia City they hold (`AVENDB_BACKUP_LIMITS`, `Traveler=5,Citizen=25` in GB by default, `off`
+    /// for none; `avendb::quota`, `Quota.lean`). Maia City's owners and the holders of its Admin group have no limit.
+    pub limits: avendb_net::Limits,
+    /// How much its relay reads from each client a second (`AVENDB_RELAY_RATE`, in MiB, 8 by default; 0 for no limit),
+    /// the most passes it holds at once (`AVENDB_RELAY_PASSES`, 4096 by default), and how many asks of the feed's
+    /// signed routes a minute it answers each address (`AVENDB_FEED_RATE`, 30 by default; 0 for no limit).
+    pub rates: Rates,
     /// The bucket that is its shelf (`AVENDB_BUCKET` and the rest of `BucketConfig`), if any; else its folder is.
     pub bucket: Option<BucketConfig>,
     /// The most bytes of the files in its bucket its folder caches (`AVENDB_CACHE`, in gigabytes, 8 by default).
@@ -149,6 +164,11 @@ impl Config {
             v.parse().with_context(|| format!("{name}: {v} is no socket address"))
         };
         let url = |v: String| v.parse().with_context(|| format!("AVENDB_RELAY_URL: {v} is no URL"));
+        let gate = match var("AVENDB_GATE").as_deref() {
+            None | Some("off") => false,
+            Some("on") => true,
+            Some(v) => return Err(anyhow!("AVENDB_GATE: {v} is neither on nor off")),
+        };
         Ok(Config {
             data: var("AVENDB_DATA").map_or_else(|| PathBuf::from("/data"), PathBuf::from),
             bind: socket("AVENDB_BIND", "0.0.0.0:7401")?,
@@ -156,15 +176,25 @@ impl Config {
             feed_bind: socket("AVENDB_FEED_BIND", "0.0.0.0:3351")?,
             relay_url: var("AVENDB_RELAY_URL").map(url).transpose()?,
             public_addr: var("AVENDB_PUBLIC_ADDR").map(|v| v.parse()).transpose().context("AVENDB_PUBLIC_ADDR")?,
-            signup: match var("AVENDB_SIGNUP").as_deref() {
-                None | Some("open") => true,
-                Some("closed") => false,
-                Some(v) => return Err(anyhow!("AVENDB_SIGNUP: {v} is neither open nor closed")),
+            signup: match (var("AVENDB_SIGNUP").as_deref(), gate) {
+                (None, true) | (Some("invite"), _) => Signup::Invited,
+                (None, false) | (Some("open"), _) => Signup::Anyone,
+                (Some("closed"), _) => Signup::Known,
+                (Some(v), _) => return Err(anyhow!("AVENDB_SIGNUP: {v} is none of open, invite and closed")),
             },
-            gate: match var("AVENDB_GATE").as_deref() {
-                None | Some("off") => false,
-                Some("on") => true,
-                Some(v) => return Err(anyhow!("AVENDB_GATE: {v} is neither on nor off")),
+            gate,
+            limits: avendb_net::Limits {
+                edit: Some(number(&var, "AVENDB_MAX_EDIT", 16)? as usize * MIB as usize),
+                file: Some(number(&var, "AVENDB_MAX_FILE", 50)?.saturating_mul(GB)),
+                backup: match var("AVENDB_BACKUP_LIMITS") {
+                    Some(v) => backup_limits(&v)?,
+                    None => backup_limits(BACKUP_LIMITS)?,
+                },
+            },
+            rates: Rates {
+                relay: number(&var, "AVENDB_RELAY_RATE", 8)?.saturating_mul(MIB),
+                passes: number(&var, "AVENDB_RELAY_PASSES", 4096)? as usize,
+                feed: number(&var, "AVENDB_FEED_RATE", 30)? as u32,
             },
             bucket: var("AVENDB_BUCKET").map(|name| bucket_config(name, &var)).transpose()?,
             cache: match var("AVENDB_CACHE") {
@@ -184,6 +214,60 @@ impl Config {
             bail!("AVENDB_SNAPSHOTS: {} is the server's own bucket; snapshots go into a bucket of their own", b.name);
         }
         Ok(self)
+    }
+}
+
+/// A mebibyte, and a gigabyte, as the limits count them.
+const MIB: u64 = 1 << 20;
+const GB: u64 = 1_000_000_000;
+
+/// Each person's backup by the cap group of Maia City they hold, unless `AVENDB_BACKUP_LIMITS` says otherwise (Samuel
+/// 2026-10-21: "each traveler 5GB backup limit and each citizen 25GB").
+pub const BACKUP_LIMITS: &str = "Traveler=5,Citizen=25";
+
+/// The whole number variable `name` says, as `var` says it, or `default` where it is unsaid.
+fn number(var: &impl Fn(&str) -> Option<String>, name: &str, default: u64) -> Result<u64> {
+    match var(name) {
+        Some(v) => v.trim().parse().with_context(|| format!("{name}: {v} is no whole number")),
+        None => Ok(default),
+    }
+}
+
+/// Each person's backup by the name of the cap group of Maia City they hold, as `said` says it: `<group>=<GB>`, comma
+/// apart, as `Traveler=5,Citizen=25`, a number of gigabytes that may have a fraction; `off`, or nothing, for none.
+pub fn backup_limits(said: &str) -> Result<avendb::quota::Limits> {
+    let said = said.trim();
+    if said.is_empty() || said == "off" {
+        return Ok(Vec::new());
+    }
+    said.split(',')
+        .map(|part| {
+            let (group, gb) =
+                part.split_once('=').with_context(|| format!("AVENDB_BACKUP_LIMITS: {part} is no <group>=<GB>"))?;
+            let gb: f64 =
+                gb.trim().parse().with_context(|| format!("AVENDB_BACKUP_LIMITS: {gb} is no number of GB"))?;
+            if !(gb.is_finite() && gb >= 0.0) || group.trim().is_empty() {
+                bail!("AVENDB_BACKUP_LIMITS: {part} is no <group>=<GB>");
+            }
+            Ok((group.trim().to_string(), (gb * GB as f64) as u64))
+        })
+        .collect()
+}
+
+/// How much the server answers each client and address (`Config::rates`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rates {
+    /// The bytes a second its relay reads from each client; 0 for no limit.
+    pub relay: u64,
+    /// The most passes its relay holds at once: past that it turns new ones away (`Refused::Full`).
+    pub passes: usize,
+    /// The asks a minute of the feed's signed routes it answers each address; 0 for no limit.
+    pub feed: u32,
+}
+
+impl Default for Rates {
+    fn default() -> Rates {
+        Rates { relay: 0, passes: 4096, feed: 0 }
     }
 }
 
@@ -262,8 +346,12 @@ pub async fn start(config: &Config) -> Result<Running> {
 /// Starts the server as `start` does, saying how it is doing as `health` does: the binary opens that first, so that
 /// a start that fails says so too.
 pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<Running> {
-    let admission = if config.signup { Admission::open() } else { Admission::default() };
-    let relay = Relay::spawn(config.relay_bind, admission.clone()).await?;
+    let admission = match config.signup {
+        Signup::Anyone => Admission::open(),
+        Signup::Invited => Admission::invited(),
+        Signup::Known => Admission::default(),
+    };
+    let relay = Relay::spawn_with(config.relay_bind, admission.clone(), config.rates).await?;
     let url = config.relay_url.clone().unwrap_or_else(|| relay.url());
     let shelf = match &config.bucket {
         Some(b) => {
@@ -291,6 +379,7 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
     };
     let node = Arc::new(server::open(shelf, opts).await?);
     node.gate(config.gate).await;
+    node.limit(config.limits.clone());
     // on its relay before it says its offer: its endpoint joins the relay once its first net report is done, a few
     // seconds in, and until then the relay drops what devices send it
     if tokio::time::timeout(ONLINE, node.endpoint().online()).await.is_err() {
@@ -302,8 +391,9 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
         let addr = EndpointAddr::new(node.id()).with_ip_addr(public);
         offer.addr = relays.into_iter().fold(addr, EndpointAddr::with_relay_url);
     }
-    let feed = feed::Feed::spawn(config.feed_bind, node.clone(), health.clone(), relay.gate.clone()).await?;
-    let backups = config.snapshots.as_ref().map(|s| backups::Backups::spawn(node.clone(), own, s, Keep::default()));
+    let rate = feed::Rate::per_minute(config.rates.feed);
+    let feed = feed::Feed::spawn(config.feed_bind, node.clone(), health.clone(), relay.gate.clone(), rate).await?;
+    let backups = config.snapshots.as_ref().map(|s| backups::Backups::spawn(node.clone(), own, s, Keep::default(), health.clone()));
     let beat = health.beat();
     let measure = Abort(tokio::spawn(measure(config.clone(), health.clone())));
     let backups = backups.transpose()?;
@@ -346,10 +436,24 @@ pub struct Relay {
 impl Relay {
     /// The relay on socket `bind`, letting in whom `admission` admits.
     pub async fn spawn(bind: SocketAddr, admission: Admission) -> Result<Relay> {
+        Relay::spawn_with(bind, admission, Rates::default()).await
+    }
+
+    /// The relay on socket `bind`, letting in whom `admission` admits, reading from each client and holding passes at
+    /// most as `rates` says.
+    pub async fn spawn_with(bind: SocketAddr, admission: Admission, rates: Rates) -> Result<Relay> {
         let (served, passes, passed) = (Mutex::default(), Mutex::default(), Notify::new());
-        let gate = Arc::new(Gate { admission, served, passes, passed });
+        let gate = Arc::new(Gate { admission, served, passes, passed, most: rates.passes.max(1) });
         let mut relay = RelayConfig::new(bind);
         relay.access = gate.clone();
+        if let Some(rate) = u32::try_from(rates.relay).ok().and_then(NonZeroU32::new) {
+            let mut limits = Limits::default();
+            let mut client = ClientRateLimit::new(rate);
+            // a burst of two seconds' worth, as a page's sync sends a page of edits at once
+            client.max_burst_bytes = rate.checked_mul(NonZeroU32::new(2).expect("two"));
+            limits.client_rx = Some(client);
+            relay.limits = limits;
+        }
         let mut config = ServerConfig::default();
         config.relay = Some(relay);
         let server = Server::spawn(config).await.map_err(|e| anyhow!("the relay on {bind}: {e}"))?;
@@ -374,10 +478,10 @@ impl Relay {
         self.gate.served.lock().expect("served").contains_key(endpoint)
     }
 
-    /// Takes the passes of token `token` shown ahead of a device's connection, as the feed does (`feed::RELAY_PASS`):
-    /// until when it lets that device in, or why not.
-    pub fn show(&self, token: &str) -> Result<u64, Refused> {
-        self.gate.show(token, now())
+    /// Takes the passes of token `token` shown ahead of a device's connection, as the feed does (`feed::RELAY_PASS`),
+    /// with invite `invite` where the newcomer brings one: until when it lets that device in, or why not.
+    pub fn show(&self, token: &str, invite: Option<ShareId>) -> Result<u64, Refused> {
+        self.gate.show(token, invite, now())
     }
 
     /// It lets `endpoint` in by a pass now (`avendb::sign::RelayPass`): until when, in seconds since 1970.
@@ -402,6 +506,8 @@ pub enum Refused {
     OutOfTime,
     /// Its signatures don't check out.
     Unchecked,
+    /// The relay holds as many passes as it takes at once: it is asked too much now.
+    Full,
 }
 
 impl Refused {
@@ -412,6 +518,7 @@ impl Refused {
             Refused::Unknown => "Unknown",
             Refused::OutOfTime => "OutOfTime",
             Refused::Unchecked => "Unchecked",
+            Refused::Full => "Full",
         }
     }
 
@@ -422,6 +529,7 @@ impl Refused {
             Refused::Unknown => "its passkey is of no vault avenDB's server knows: pick the passkey your vault was made with",
             Refused::OutOfTime => "it isn't from the last ten minutes by the server's clock: check this device's clock",
             Refused::Unchecked => "its signatures don't check out",
+            Refused::Full => "avenDB's relay is letting in as many new devices as it can just now: try again in a few minutes",
         }
     }
 }
@@ -435,6 +543,8 @@ struct Gate {
     passes: Mutex<HashMap<EndpointId, u64>>,
     /// Woken when it lets a client in by a pass, whose end may come before any other's.
     passed: Notify,
+    /// The most passes it holds at once (`Rates::passes`).
+    most: usize,
 }
 
 impl Gate {
@@ -445,14 +555,20 @@ impl Gate {
     /// client may show its passkey's pass in each suite (`token_passes`): the first the relay honours counts.
     fn pass(&self, request: &ClientRequest, now: u64) -> Option<u64> {
         let endpoint = *request.endpoint_id().as_bytes();
-        self.check(&request.auth_token()?, Some(endpoint), now).ok().map(|(_, until)| until)
+        self.check(&request.auth_token()?, Some(endpoint), None, now).ok().map(|(_, until)| until)
     }
 
-    /// Of the passes token `token` carries for endpoint `endpoint`, or for any where `None`, the first the relay
-    /// honours at `now`, as `pass` takes it: the endpoint it lets in, and until when; else why not, the cheap checks
-    /// first.
-    fn check(&self, token: &str, endpoint: Option<[u8; 32]>, now: u64) -> Result<([u8; 32], u64), Refused> {
-        let honours = |p: &SignerId| self.admission.honours(p);
+    /// Of the passes token `token` carries for endpoint `endpoint`, or for any where `None`, shown with invite
+    /// `invite` if any, the first the relay honours at `now`, as `pass` takes it (`Admission::honours_with`): the
+    /// endpoint it lets in, and until when; else why not, the cheap checks first.
+    fn check(
+        &self,
+        token: &str,
+        endpoint: Option<[u8; 32]>,
+        invite: Option<ShareId>,
+        now: u64,
+    ) -> Result<([u8; 32], u64), Refused> {
+        let honours = |p: &SignerId| self.admission.honours_with(p, invite);
         let of = |pass: &RelayPass| pass.endpoint().is_some_and(|e| endpoint.is_none_or(|want| e == want));
         let passes: Vec<RelayPass> = token_passes(token).into_iter().filter(of).collect();
         if passes.is_empty() {
@@ -465,26 +581,37 @@ impl Gate {
         if known.iter().all(|p| p.made > now.saturating_add(PASS_SKEW) || now >= p.expires()) {
             return Err(Refused::OutOfTime);
         }
-        let honoured = |p: &RelayPass| Some((p.endpoint()?, p.expires())).filter(|_| p.passkeys(now).iter().any(honours));
+        let honoured =
+            |p: &RelayPass| Some((p.endpoint()?, p.expires())).filter(|_| p.passkeys(now).iter().any(honours));
         known.iter().find_map(honoured).ok_or(Refused::Unchecked)
     }
 
     /// Lets the device of endpoint `endpoint` in until `until`, by a pass it showed (`show`, `on_connect`), and wakes
-    /// the letting go, whose next end may be this one.
-    fn passed_until(&self, passes: &mut HashMap<EndpointId, u64>, endpoint: EndpointId, until: u64) {
+    /// the letting go, whose next end may be this one; unless it holds as many passes as it takes (`most`), those run
+    /// out let go first. Whether it took it.
+    fn passed_until(&self, passes: &mut HashMap<EndpointId, u64>, endpoint: EndpointId, until: u64, now: u64) -> bool {
+        if passes.len() >= self.most && !passes.contains_key(&endpoint) {
+            passes.retain(|_, &mut until| until > now);
+            if passes.len() >= self.most {
+                return false;
+            }
+        }
         let until = passes.get(&endpoint).map_or(until, |&had| had.max(until));
         passes.insert(endpoint, until);
         self.passed.notify_one();
+        true
     }
 
     /// Takes the passes token `token` carries as `check` does, for whichever endpoint each is for, shown ahead of the
     /// device's connection, by a POST to the feed (`feed::RELAY_PASS`): a page's WebSocket carries its token in its
     /// URL, which two passes make some 31 KB long, and a browser may never send one that long (Samuel's iPhone
     /// 2026-10-21). Its device then connects with no token, let in by the pass it showed. Until when.
-    fn show(&self, token: &str, now: u64) -> Result<u64, Refused> {
-        let (endpoint, until) = self.check(token, None, now)?;
+    fn show(&self, token: &str, invite: Option<ShareId>, now: u64) -> Result<u64, Refused> {
+        let (endpoint, until) = self.check(token, None, invite, now)?;
         let endpoint = EndpointId::from_bytes(&endpoint).map_err(|_| Refused::NoPass)?;
-        self.passed_until(&mut self.passes.lock().expect("passes"), endpoint, until);
+        if !self.passed_until(&mut self.passes.lock().expect("passes"), endpoint, until, now) {
+            return Err(Refused::Full);
+        }
         Ok(until)
     }
 
@@ -502,8 +629,12 @@ impl AccessControl for Gate {
         // under the lock, so that a client let in while the admission changes is let go with the others
         let mut served = self.served.lock().expect("served");
         let mut passes = self.passes.lock().expect("passes");
-        if let Some(until) = pass {
-            self.passed_until(&mut passes, endpoint, until);
+        if let Some(until) = pass
+            && !self.passed_until(&mut passes, endpoint, until, now)
+        {
+            return Access::Deny {
+                reason: Some("the relay is letting in as many new devices as it can just now".into()),
+            };
         }
         if !self.admits(&endpoint, &passes, now) {
             return Access::Deny { reason: Some("not a device this server knows, nor one with a pass".into()) };
@@ -559,5 +690,45 @@ struct Abort(JoinHandle<()>);
 impl Drop for Abort {
     fn drop(&mut self) {
         self.0.abort();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn endpoint(n: u8) -> EndpointId {
+        iroh::SecretKey::from_bytes(&[n; 32]).public()
+    }
+
+    #[test]
+    fn the_relay_holds_at_most_so_many_passes_and_lets_those_run_out_go_first() {
+        let gate = Gate {
+            admission: Admission::default(),
+            served: Mutex::default(),
+            passes: Mutex::default(),
+            passed: Notify::new(),
+            most: 2,
+        };
+        let mut passes = gate.passes.lock().expect("passes");
+        assert!(gate.passed_until(&mut passes, endpoint(1), 100, 0));
+        assert!(gate.passed_until(&mut passes, endpoint(2), 50, 0));
+        assert!(!gate.passed_until(&mut passes, endpoint(3), 100, 10), "a third, while two run");
+        assert!(gate.passed_until(&mut passes, endpoint(1), 200, 10), "one it holds, longer");
+        assert_eq!(passes.get(&endpoint(1)), Some(&200));
+        assert!(gate.passed_until(&mut passes, endpoint(3), 100, 60), "once one ran out, a third");
+        assert_eq!(passes.len(), 2);
+        drop(passes);
+        let refused = gate.show("no token", None, 0);
+        assert_eq!(refused, Err(Refused::NoPass));
+        assert_eq!(Refused::Full.name(), "Full");
+    }
+
+    #[test]
+    fn backup_limits_read_as_gigabytes_by_group() {
+        assert_eq!(backup_limits(BACKUP_LIMITS).expect("the defaults").len(), 2);
+        assert_eq!(backup_limits("Citizen=1.5").expect("one"), vec![("Citizen".to_string(), 1_500_000_000)]);
+        assert!(backup_limits("").expect("none").is_empty() && backup_limits("off").expect("none").is_empty());
+        assert!(backup_limits("=3").is_err() && backup_limits("Traveler=lots").is_err());
     }
 }

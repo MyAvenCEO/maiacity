@@ -112,6 +112,7 @@ fn main() {
     app.plugin(tauri_plugin_dialog::init())
         .manage(auth::Auth::default())
         .manage(avendb::Avendb::default())
+        .manage(aven::Picked::default())
         .setup(|app| {
             aven::init(app.handle());
             // every process this Mac runs, in one registry (jobs.rs): the studio's Processes tab is its view
@@ -122,6 +123,10 @@ fn main() {
         .on_window_event(|window, event| {
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 world::close_window(window.app_handle());
+            }
+            // files and folders dropped on the window are its person's to bring in (aven.rs `Picked`)
+            if let tauri::WindowEvent::DragDrop(tauri::DragDropEvent::Drop { paths, .. }) = event {
+                window.app_handle().state::<aven::Picked>().add(paths.iter().cloned());
             }
         })
         .register_asynchronous_uri_scheme_protocol("aven", |ctx, request, responder| {
@@ -138,6 +143,7 @@ fn main() {
             avendb::avendb_disk,
             enclave::avendb_touch_ready,
             aven::studio_ingest,
+            aven::studio_pick,
             aven::studio_job,
             page::page_answer,
             log_js,

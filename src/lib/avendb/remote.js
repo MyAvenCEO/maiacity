@@ -238,3 +238,7 @@ export const deviceSalt = (nonce) => call('pkg', 'deviceSalt', [nonce]);
 /** The rows proof `bytes` proves of vault `vault`'s public code of kinds `kinds` (avendb-browser's `provenCode`), as
  *  JSON text, each signature checked and every rule replayed in the worker. */
 export const provenCode = (bytes, vault, kinds) => call('pkg', 'provenCode', [bytes, vault, kinds]);
+
+/** The open invite, the hex of its share, a newcomer's device shows its relay pass with while it signs up (null: none),
+ *  so a relay that lets newcomers in by invite lets this one in. */
+export const signUpWith = (invite) => call('pkg', 'invite', [invite ?? null]);

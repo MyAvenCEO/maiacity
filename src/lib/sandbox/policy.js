@@ -110,14 +110,36 @@ export const VIEW_SCRIPT = `addEventListener('message', function boot(e) {
  * adds each page's own start script's). A frame written into the page (srcdoc: the box, the logic host, a view) keeps
  * the page's policy beside its own, so this one names what those frames run as well: their one script each, by its
  * hash, the blob: URLs they start their engine and the code they are handed from (a recipe, a view's script), and
- * WebAssembly (avenDB's device in the page, QuickJS in the logic host). Nothing else, and no eval. As SvelteKit's
- * directives: its keywords unquoted.
+ * WebAssembly (avenDB's device in the page, QuickJS in the logic host). Nothing else, and no eval.
+ *
+ * Everything else starts from our own origin (default-src), and the page talks only to our own servers (CONNECT): the
+ * API, avenDB's feed and relay, and in theOS its own bridge and the `aven:` files. Pictures and films may come from
+ * any https host (a link's preview, a video's still), as they cannot run; frames only from us, a blob: (a PDF) and
+ * Bunny's player; no form posts anywhere. The same pages run in theOS (vault/app/tauri.conf.json), so its schemes are
+ * named here too: they lead nowhere in a browser. A dev server's page also reaches this machine (`dev`): its API, its
+ * avenDB, Vite's own socket. As SvelteKit's directives: its keywords unquoted.
  * @param {(text: string) => string} sha256 a script's SHA-256 hash, in base64
+ * @param {{ dev?: boolean }} [o] `dev` for a dev server's pages
  * @returns {NonNullable<import('@sveltejs/kit').KitConfig['csp']>['directives']}
  */
-export const pageCsp = (sha256) => ({
+export const pageCsp = (sha256, { dev = false } = {}) => ({
+	'default-src': ['self'],
 	'script-src': ['self', 'wasm-unsafe-eval', 'blob:', `sha256-${sha256(SHELL_SCRIPT)}`, `sha256-${sha256(VIEW_SCRIPT)}`],
 	'worker-src': ['self', 'blob:'],
+	'connect-src': [...CONNECT, ...(dev ? LOCAL : [])],
+	// Svelte writes style attributes into each prerendered page, and SvelteKit hashes no inline style when this is here
+	'style-src': ['self', 'unsafe-inline'],
+	'img-src': ['self', 'data:', 'blob:', 'https:', 'aven:', ...(dev ? LOCAL : [])],
+	'media-src': ['self', 'data:', 'blob:', 'https:', 'aven:', ...(dev ? LOCAL : [])],
+	'font-src': ['self', 'data:'],
+	'frame-src': ['self', 'blob:', 'https://iframe.mediadelivery.net'],
 	'object-src': ['none'],
-	'base-uri': ['self']
+	'base-uri': ['self'],
+	'form-action': ['none']
 });
+
+/** Where the page may connect: us, our API (and its media, /vault/files), avenDB's feed and relay, theOS's bridge. */
+export const CONNECT = ['self', 'blob:', 'data:', 'https://api.maia.city', 'https://avendb.maia.city', 'wss://avendb.maia.city', 'ipc:', 'http://ipc.localhost', 'aven:'];
+
+/** This machine, for a dev server's pages only. */
+const LOCAL = ['http://localhost:*', 'ws://localhost:*', 'http://127.0.0.1:*', 'ws://127.0.0.1:*'];

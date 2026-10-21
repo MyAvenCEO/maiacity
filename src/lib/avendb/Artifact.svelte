@@ -26,6 +26,7 @@
 	} from './artifacts.js';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
+	import { linkHref } from '$lib/markdown/index.js';
 	import { allowed, creatable, DELETED, may } from './ops.js';
 	import { addingSpark, grownFrom, itemsFor, pictureOf, SPARK, sparkRecord } from './sparks.js';
 	import { authorsLine, count, signerName } from './vaults.js';
@@ -143,7 +144,7 @@
 				<dd class="what"><Icon name={LOOKS.find(([l]) => l === look)?.[2] ?? 'artifact'} size={14} /> {LOOK_NAME[look]}</dd>
 				{#if record.url}
 					<dt>Link</dt>
-					<dd><a href={record.url} target="_blank" rel="noopener noreferrer">{record.url}</a></dd>
+					<dd><a href={linkHref(record.url)} target="_blank" rel="noopener noreferrer">{record.url}</a></dd>
 				{/if}
 				{#if record.site}
 					<dt>Site</dt>
@@ -152,7 +153,7 @@
 				{#if by.name || by.platform || by.url}
 					<dt>Whose it is</dt>
 					<dd>
-						{#if by.url}<a href={by.url} target="_blank" rel="noopener noreferrer">{by.name || by.url}</a>{:else}{by.name ?? ''}{/if}{by.platform
+						{#if by.url}<a href={linkHref(by.url)} target="_blank" rel="noopener noreferrer">{by.name || by.url}</a>{:else}{by.name ?? ''}{/if}{by.platform
 							? `${by.name || by.url ? ' · ' : ''}${by.platform}`
 							: ''}
 					</dd>
@@ -231,7 +232,7 @@
 
 			{#if cover}
 				{#if record.url && (look === 'youtube' || look === 'link')}
-					<a class="cover" href={record.url} target="_blank" rel="noopener noreferrer" title="Open {record.site ?? 'the link'}">
+					<a class="cover" href={linkHref(record.url)} target="_blank" rel="noopener noreferrer" title="Open {record.site ?? 'the link'}">
 						<img src={cover} alt={item.title ?? ''} />
 						{#if look === 'youtube'}<span class="play" aria-hidden="true"><Icon name="play" size={26} /></span>{/if}
 					</a>

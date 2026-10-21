@@ -535,6 +535,11 @@ A junior owner can't keep his own removal out by removing his remover: his remov
 is no longer an owner at its place. A mark of the wants alone takes nothing away and is no removal, and neither is the
 revocation of a keep share (K1).
 
+So a removal is drafted only on what its device's peers hold: a node (`Node::run`, whichever way the op comes: the
+page, an agent's MCP, the command line) first asks each device that holds its vaults for what it holds, and refuses a
+revocation or a new root (`engine::removes`) with `Behind`, saying what to sync, while it reaches none of them or lacks
+edits one of them told it of (`Node::removal_waits`). A device that knows no peer drafts it at once.
+
 **Forks.** A device signs its edits in a log one after another. Two of its edits in one log where neither builds on
 the other mean its key signed twice from the same past: a restored backup, a clone or a stolen key. Every peer flags
 such forks (passkeys, which sign on several devices, aside). Both edits stand, as concurrent edits do.
@@ -680,6 +685,24 @@ its own (`avendb-net`): `INVITE`, where the server hands whoever names an unclai
 (`Lab::sign_up_card`), which the server refuses unless it takes every new human vault in them. A device does both in
 `Node::claim_invite`. The server must hold Backup over `home` to hold its invites. A server nobody has claimed serves no
 vault, and takes any.
+
+Its relay follows the gate (G5, `Admission.lean`, `avendb::admission`). By sign-up `invite` (`AVENDB_SIGNUP`, the
+default once the gate is on) it honours a pass only from a passkey that roots a vault it keeps, or from a newcomer's
+passkey shown with an invite of `home`'s that is still open (`POST /feed/relay-pass?invite=<share>`); `open` honours
+any, `closed` the known alone, and a server nobody has claimed honours any. The vaults it kept before the gate came on
+stay kept, as the gate weighs only vaults new to it, and their founders' passkeys stay known.
+
+### What the server backs up for each person
+
+What a server keeps of a person's vaults counts against their backup (`Quota.lean`, `avendb::quota`): each human vault
+is a person, who pays for itself and for every vault it alone owns, down the line. The limit is data
+(`AVENDB_BACKUP_LIMITS`, by default 5 GB for a holder of `home`'s cap group **Traveler** and 25 GB for **Citizen**): the
+largest of the groups they hold, the least for one who holds none, and none for an owner of `home` or a holder of
+**Admin**, or for a vault several people own. A limit lives in the server's configuration rather than in the cap group
+itself, as a cap group is read by every device, and a field old devices don't know would stop them reading it. Edits
+are always kept (Q2). A file is charged to whoever's edit first named it; past the limit the server fetches no new
+file of theirs (Q3) and drops nothing it already holds (Q1). A device asks its standing with a pass of its own made for
+`avenDB backup` (`POST /feed/backup`, Q5).
 
 ### A device's pass to a service
 

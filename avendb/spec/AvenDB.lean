@@ -10,6 +10,8 @@ import AvenDB.Lens
 import AvenDB.Props
 import AvenDB.Claims
 import AvenDB.Gate
+import AvenDB.Admission
+import AvenDB.Quota
 import AvenDB.Measurers
 import AvenDB.Theorems
 import AvenDB.Examples

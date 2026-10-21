@@ -25,6 +25,18 @@
 	}
 }
 
+# What every one of our names answers with: HTTPS only from now on, for a year, on each of these names (not on every
+# subdomain, so a name we add later isn't locked out before it has a certificate; not on the browsers' preload list:
+# that is a step taken by hand, and hard to undo); no file read as another type than it says;
+# no full address sent on to another site.
+(walls) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+	}
+}
+
 {$SITE_ADDRESS:maia.city} {
 	root * /srv/site/current
 	encode zstd gzip
@@ -32,11 +44,14 @@
 	# frame we can't see), no file is read as another type than it says, no plugin objects, no <base> moving our links.
 	# Which scripts a page may run comes in the page itself, a <meta> SvelteKit writes with each page's own hashes
 	# (src/lib/sandbox/policy.js pageCsp): frame-ancestors can't be said in a <meta>, so it stays here.
+	# Permissions-Policy turns off what no page of ours uses (the camera, the microphone, where you are, a payment, a
+	# device on a port); a passkey, the clipboard, full screen and what Bunny's player is handed stay as the browser
+	# has them.
+	import walls
 	header {
 		Content-Security-Policy "frame-ancestors 'self'; object-src 'none'; base-uri 'self'"
 		X-Frame-Options SAMEORIGIN
-		X-Content-Type-Options nosniff
-		Referrer-Policy strict-origin-when-cross-origin
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), display-capture=(), payment=(), usb=(), serial=(), hid=(), bluetooth=(), midi=(), magnetometer=(), xr-spatial-tracking=(), idle-detection=(), local-fonts=(), otp-credentials=(), browsing-topics=()"
 	}
 	# hashed chunks never change; pages are looked at again
 	@immutable path /_app/immutable/*
@@ -52,6 +67,7 @@
 }
 
 www.{$SITE_ADDRESS:maia.city} {
+	import walls
 	redir https://{$SITE_ADDRESS:maia.city}{uri} permanent
 }
 
@@ -65,6 +81,7 @@ www.{$SITE_ADDRESS:maia.city} {
 	tls {
 		curves x25519mlkem768
 	}
+	import walls
 	handle /feed/* {
 		encode zstd gzip
 		reverse_proxy avendb:3351
@@ -75,6 +92,7 @@ www.{$SITE_ADDRESS:maia.city} {
 }
 
 {$API_ADDRESS} {
+	import walls
 	# what a browser asks before it reads one of the site's media by Range (its CORS preflight), answered here, as
 	# avenDB's feed answers no OPTIONS
 	@media_preflight {

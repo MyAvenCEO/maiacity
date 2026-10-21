@@ -39,6 +39,7 @@
 //! | K the key move | `sign`: two suites, ML-DSA-65 for every new signer and SLH-DSA for every signer made before, each signer's id hashing its suite; a passkey's or Touch ID key's secret deriving its key in each; a device's kept secret naming its suite; `lab`: devices reopened in their own suite, a passkey held in both and the one its vault knows taken; `avendb-net`: a new device's pass in each suite, to the relay and to a peer | the key move example (`keyMove`) and its vector |
 //! | H2 provenance | `provenance`: the proof of a vault's public code, of what a stranger that follows it may receive (`sync::answer`), as one reply; an observer, a device of no vault anchored to the vault by its id, that takes it as any reply and reads back the rows the feed serves, and holds a file to the write that brought it | T12 |
 
+pub mod admission;
 pub mod aip;
 pub mod backup;
 pub mod cast;
@@ -59,6 +60,7 @@ pub mod ops;
 pub mod perf;
 pub mod policy;
 pub mod provenance;
+pub mod quota;
 pub mod recovery;
 pub mod rules;
 pub mod scenarios;

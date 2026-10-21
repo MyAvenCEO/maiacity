@@ -511,7 +511,7 @@ impl Shared {
         let plan = (book.next - book.mark, book.packs.len());
         let shared = self.clone();
         let due = move || {
-            let lab = shared.lab.lock().expect("the Lab");
+            let lab = shared.locked_lab();
             shared.edits.as_ref().expect("its edits").due(&lab, shared.me, plan)
         };
         #[cfg(not(target_arch = "wasm32"))]

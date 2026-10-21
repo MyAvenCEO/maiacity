@@ -159,7 +159,8 @@ export async function open(say, name = '', starts = UNSHOWN) {
 	}
 	say('Setting up your human vault');
 	const at = starts('found');
-	await session.found(false, { ...how, server: server(), backup: true, person: named }, at);
+	const invite = invitation()?.share ?? null;
+	await session.found(false, { ...how, server: server(), backup: true, person: named, invite }, at);
 	keep(() => sessionStorage, SIGNUP, null);
 	say('Naming your human vault');
 	at.step('profile');

@@ -115,6 +115,7 @@ mod edits;
 mod files;
 mod holdings;
 mod jobs;
+mod limits;
 pub mod kx;
 mod progress;
 mod run;
@@ -162,6 +163,7 @@ use tokio::sync::{Notify, watch};
 
 use holdings::{Logs, MOST};
 
+pub use limits::{Limits, Usage};
 pub use files::Source;
 pub use holdings::{Holder, Holdings, SyncedTo};
 pub use jobs::{HISTORY, Job, Jobs, Running, State as JobState};
@@ -330,14 +332,17 @@ impl Options {
 
 /// Who may use the server's relay: the endpoints of the devices the server knows, those of every vault in its view
 /// whose keys it saw sign, and its own; and, for ten minutes, a new device whose pass a passkey signed that roots a
-/// vault in its view (P8d, `sign::RelayPass`), or any passkey while nobody has claimed the server (P8f). The server's
-/// node keeps it up to date as its view changes, from before its endpoint binds; the relay asks it about each client
-/// that connects, and lets go of a client it stops admitting.
+/// vault in its view (P8d, `sign::RelayPass`), or any passkey while nobody has claimed the server (P8f); and, while it
+/// signs people up by invite (`Admission::invited`), a pass shown with an invite of Maia City no vault claimed yet
+/// (`avendb::admission`, G5). The server's node keeps it up to date as its view changes, from before its endpoint
+/// binds; the relay asks it about each client that connects, and lets go of a client it stops admitting.
 #[derive(Clone, Debug, Default)]
 pub struct Admission {
     admitted: Arc<watch::Sender<Admitted>>,
     /// It honours a pass of any passkey (P8e, `Admission::open`).
     open: bool,
+    /// It honours a pass shown with an open invite (`Admission::invited`).
+    invited: bool,
 }
 
 /// Whom the server's relay lets in, by the server's view.
@@ -350,6 +355,9 @@ pub struct Admitted {
     /// Nobody has claimed the server yet: it honours a pass of any passkey, for the device that claims it
     /// (`Node::claim`, `Node::found_with`).
     pub claimable: bool,
+    /// The invites of the vault the server serves, Maia City, that no vault claimed yet (`admission::open_invites`):
+    /// a pass shown with one is honoured while the server signs people up by invite.
+    pub invites: HashSet<ShareId>,
 }
 
 impl Admission {
@@ -361,6 +369,14 @@ impl Admission {
         Admission { open: true, ..Admission::default() }
     }
 
+    /// An admission that signs people up by invite (G5, `avendb::admission::Signup::Invited`): its relay honours a
+    /// pass of a passkey that roots a vault it knows, as any admission does, and one shown with an invite of Maia City
+    /// that no vault claimed yet, for the newcomer's first device to found their vault and claim the invite in its
+    /// ten minutes.
+    pub fn invited() -> Admission {
+        Admission { invited: true, ..Admission::default() }
+    }
+
     /// The relay lets `endpoint` in.
     pub fn admits(&self, endpoint: &EndpointId) -> bool {
         self.admitted.borrow().endpoints.contains(endpoint)
@@ -370,6 +386,12 @@ impl Admission {
     pub fn honours(&self, passkey: &SignerId) -> bool {
         let admitted = self.admitted.borrow();
         self.open || admitted.claimable || admitted.passkeys.contains(passkey)
+    }
+
+    /// The relay lets in the endpoint a pass of `passkey` names, shown with invite `invite` (`admission::honours`):
+    /// as `honours` says, or, signing people up by invite, where `invite` is one of Maia City's no vault claimed yet.
+    pub fn honours_with(&self, passkey: &SignerId, invite: Option<ShareId>) -> bool {
+        self.honours(passkey) || (self.invited && invite.is_some_and(|c| self.admitted.borrow().invites.contains(&c)))
     }
 
     /// Marks each change of whom it admits.
@@ -602,7 +624,8 @@ impl Node {
             let own = SecretKey::from_bytes(&secret).public();
             let endpoints = endpoints(&lab.peers(me)).chain([own]).collect();
             let claimable = opts.card && lab.vault_of(me).is_none();
-            admission.set(Admitted { endpoints, passkeys: lab.roots(me).into_iter().collect(), claimable });
+            let (passkeys, invites) = (lab.roots(me).into_iter().collect(), open_invites(&lab, me).into_iter().collect());
+            admission.set(Admitted { endpoints, passkeys, claimable, invites });
         }
         let size = lab.size(me);
         let lookup = MemoryLookup::new();
@@ -678,6 +701,7 @@ impl Node {
             size: watch::Sender::new(size),
             sent: Sent::default(),
             jobs: Jobs::default(),
+            keeping: Mutex::default(),
         });
         let router = Router::builder(endpoint)
             .accept(ALPN, session::Protocol(shared.clone()))
@@ -1289,6 +1313,20 @@ impl Node {
         self.shared.contact(peer).await
     }
 
+    /// It takes and keeps at most what `limits` says (`limits`): the bytes of one edit, of one file it keeps whole,
+    /// and of each person's backup by the cap group of Maia City they hold (`avendb::quota`). A node told nothing takes
+    /// and keeps whatever its peers bring.
+    pub fn limit(&self, limits: Limits) {
+        self.shared.keeping.lock().expect("keeping").limits = limits;
+        self.shared.changed.notify_one();
+    }
+
+    /// What it keeps for person `p`, the human vault whose backup it is, as it last weighed it (`limits::Usage`): none
+    /// before it weighed it, or where it limits nobody.
+    pub fn backup(&self, p: VaultId) -> Option<Usage> {
+        self.shared.keeping.lock().expect("keeping").usage(p)
+    }
+
     /// Its device, a server, takes a new vault from its peers only where it welcomes it, or again any (`Lab::gate`): a
     /// person's with the invite it claims, a coop or an aven an admin of the vault it serves owns.
     pub async fn gate(&self, on: bool) {
@@ -1645,6 +1683,8 @@ struct Shared {
     sent: Sent,
     /// What it does in the background, as its person watches it (`Node::jobs`).
     jobs: Jobs,
+    /// What it takes and keeps at most, and what it keeps for each person (`Node::limit`, `limits`).
+    keeping: Mutex<limits::Keeping>,
 }
 
 /// How many messages of each kind a node has sent, and how many times it dialed: once its peers and it agree, they
@@ -1713,29 +1753,49 @@ struct News {
     roots: Vec<SignerId>,
     /// The node is a server whose device belongs to no vault yet: nobody has claimed it.
     claimable: bool,
+    /// The invites of Maia City no vault claimed yet, whose passes a server's relay honours while it signs people up
+    /// by invite.
+    invites: Vec<ShareId>,
 }
 
 impl Shared {
     /// `f` on the Lab, off the async threads: its crypto takes milliseconds, a McEliece key pair seconds. The Lab's
     /// clock is the machine's, so an entry `f` creates says when (`Lab::set_now`). If what the device holds changed,
-    /// its saver puts it on the shelf, if the node keeps one.
+    /// its saver puts it on the shelf, if the node keeps one. A panic in `f`, a bug, fails the call that asked for it
+    /// alone: it is caught while the Lab is still locked, so the lock isn't poisoned and every later call runs, logged,
+    /// and carried on to the caller once the lock is let go.
     async fn lab<T: Send + 'static>(self: &Arc<Self>, f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static) -> T {
         let shared = self.clone();
         let work = move || {
-            let mut lab = shared.lab.lock().expect("the Lab");
-            lab.set_now(unix_now());
-            let out = f(&mut lab, shared.me);
-            let now = lab.size(shared.me);
-            if shared.size.send_if_modified(|size| *size != now && { *size = now; true }) {
-                shared.edits.iter().for_each(|edits| edits.due.notify_one());
-            }
-            out
+            let mut lab = shared.locked_lab();
+            let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                lab.set_now(unix_now());
+                let out = f(&mut lab, shared.me);
+                let now = lab.size(shared.me);
+                if shared.size.send_if_modified(|size| *size != now && { *size = now; true }) {
+                    shared.edits.iter().for_each(|edits| edits.due.notify_one());
+                }
+                out
+            }));
+            drop(lab);
+            ran.unwrap_or_else(|panic| {
+                let why = panic.downcast_ref::<&str>().copied().or(panic.downcast_ref::<String>().map(String::as_str));
+                tracing::error!("avendb: a call on the Lab panicked, and fails alone: {}", why.unwrap_or("no message"));
+                std::panic::resume_unwind(panic)
+            })
         };
         #[cfg(not(target_arch = "wasm32"))]
         return tokio::task::spawn_blocking(work).await.expect("the Lab's task");
         // a page's node runs in a worker of its own, which the Lab may hold up
         #[cfg(target_arch = "wasm32")]
         work()
+    }
+
+    /// The Lab, locked. A call that changes it never poisons the lock (`lab` catches its panic first); one that only
+    /// reads it (the saver's) changed nothing if it panicked, so the Lab it leaves is taken as it is rather than lost
+    /// to every later call.
+    pub(crate) fn locked_lab(&self) -> std::sync::MutexGuard<'_, Lab> {
+        self.lab.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     /// Where to reach `endpoint`: through the node's relay, if it has one, and wherever the lookup knows of.
@@ -1862,7 +1922,8 @@ impl Shared {
             };
             let request = self.lab(request).await;
             let reply = time::timeout(PAGE_WAIT, self.reply_to(&peer, kind, &request)).await;
-            let Reply { edits, blobs, more } = reply.context("no page in time")??;
+            let Reply { mut edits, blobs, more } = reply.context("no page in time")??;
+            self.sized(&mut edits);
             self.sent.requests.fetch_add(1, Ordering::Relaxed);
             // where the next page starts: a page that brings nothing past the last ends the asking
             let last = edits.iter().map(|s| place(&s.edit)).max().filter(|&l| after.is_none_or(|a| l > a));
@@ -1922,6 +1983,7 @@ impl Shared {
         let Reply { mut edits, .. } = Reply::from_wire(&reply)?;
         // a card carries vault logs, and nothing else
         edits.retain(of_a_vault);
+        self.sized(&mut edits);
         let new = self.lab(move |lab, me| lab.receive(me, edits, Vec::new())).await;
         if new > 0 {
             self.changed.notify_one();
@@ -1980,7 +2042,8 @@ impl Shared {
     /// Tells the peers what changed of its holdings whenever they may have, and every `retry` tries again the peers
     /// whose wait is over: those it couldn't tell, and those it failed to ask.
     async fn announcer(self: Arc<Self>) {
-        let mut news = News { size: (usize::MAX, 0), reach: Arc::default(), roots: Vec::new(), claimable: false };
+        let mut news =
+            News { size: (usize::MAX, 0), reach: Arc::default(), roots: Vec::new(), claimable: false, invites: Vec::new() };
         loop {
             if let Some(fresh) = self.news(news.size).await {
                 news = fresh;
@@ -1992,6 +2055,12 @@ impl Shared {
             owed.into_iter().for_each(|endpoint| self.ask_soon(endpoint));
             time::timeout(self.opts.retry, self.changed.notified()).await.ok();
         }
+    }
+
+    /// Of `edits` from a peer, those no larger than the most it takes (`Node::limit`).
+    fn sized(&self, edits: &mut Vec<Signed>) {
+        let most = self.keeping.lock().expect("keeping").limits.edit;
+        limits::sized(edits, most);
     }
 
     /// Whom to tell what, worked out again if the device's edits changed since `size`; then whom the relay lets in, if
@@ -2013,14 +2082,15 @@ impl Shared {
                     reach.insert(device, Reach { endpoint, files: files.collect(), logs });
                 }
                 let claimable = server && lab.vault_of(me).is_none();
-                Some(News { size: now, reach: Arc::new(reach), roots: lab.roots(me), claimable })
+                let invites = if server { open_invites(lab, me) } else { Vec::new() };
+                Some(News { size: now, reach: Arc::new(reach), roots: lab.roots(me), claimable, invites })
             })
             .await?;
         *self.reach.lock().expect("reach") = news.reach.clone();
         if let Some(admission) = &self.opts.admission {
             let endpoints = news.reach.values().map(|r| r.endpoint).chain([self.endpoint.id()]).collect();
-            let passkeys = news.roots.iter().copied().collect();
-            admission.set(Admitted { endpoints, passkeys, claimable: news.claimable });
+            let (passkeys, invites) = (news.roots.iter().copied().collect(), news.invites.iter().copied().collect());
+            admission.set(Admitted { endpoints, passkeys, claimable: news.claimable, invites });
         }
         Some(news)
     }
@@ -2320,5 +2390,39 @@ mod tests {
         assert_eq!(Offer::from_bytes(&bytes), Some(offer), "which reads as the same offer");
         let swapped = format!("{OFFER}{}", BASE32_NOPAD.encode(&bytes));
         assert!(Offer::from_text(&swapped).is_err(), "but not from a text other than its own");
+    }
+}
+
+/// The invites of the vault device `me` of `lab` serves, the seed's coop, Maia City, that no vault claimed yet
+/// (`avendb::admission::open_invites`); none where it serves no coop.
+fn open_invites(lab: &Lab, me: SignerId) -> Vec<ShareId> {
+    match avendb::world::seed_of(lab, me).first() {
+        Some(&home) => avendb::admission::open_invites(lab.state(me), home),
+        None => Vec::new(),
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+
+    #[test]
+    fn signing_up_by_invite_honours_a_known_passkey_or_an_open_invite_alone() {
+        let (known, stranger) = (SignerId::from_u64(1), SignerId::from_u64(2));
+        let (open, claimed) = (ShareId::from_u64(31), ShareId::from_u64(32));
+        let admitted = || Admitted { passkeys: [known].into(), invites: [open].into(), ..Admitted::default() };
+        let invited = Admission::invited();
+        invited.set(admitted());
+        assert!(invited.honours_with(&known, None), "a passkey of a vault it knows");
+        assert!(!invited.honours_with(&stranger, None), "a stranger with no invite");
+        assert!(invited.honours_with(&stranger, Some(open)), "a stranger with an open invite");
+        assert!(!invited.honours_with(&stranger, Some(claimed)), "a stranger with an invite no longer open");
+        let closed = Admission::default();
+        closed.set(admitted());
+        assert!(closed.honours_with(&known, None) && !closed.honours_with(&stranger, Some(open)), "closed: known alone");
+        assert!(Admission::open().honours_with(&stranger, None), "open to anyone");
+        let unclaimed = Admission::invited();
+        unclaimed.set(Admitted { claimable: true, ..Admitted::default() });
+        assert!(unclaimed.honours_with(&stranger, None), "while nobody has claimed the server, any");
     }
 }

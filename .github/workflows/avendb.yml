@@ -4,7 +4,8 @@ name: avenDB server
 # so a change to avenDB never restarts the API or the media vault, and a failed avenDB build never holds up theirs.
 #
 #   image  – build the server's image (avendb/Dockerfile.server), push to GHCR tagged with the commit
-#   deploy – over SSH: AVENDB_IMAGE, its bucket's settings and its bucket of snapshots into the server's .env, then pull
+#   checks – avenDB's tests and Lean spec (avendb-checks.yml), on this commit
+#   deploy – once both passed, over SSH: AVENDB_IMAGE, its bucket's settings and its bucket of snapshots into the server's .env, then pull
 #            and restart this one container
 #   bucket – make sure avenDB's own bucket is there (BUCKET in hel1, beside the media vault's), with Object Lock
 #
@@ -78,31 +79,38 @@ jobs:
             ${{ steps.meta.outputs.image }}:${{ github.sha }}
             ${{ steps.meta.outputs.image }}:latest
 
+  # avenDB's checks (avendb-checks.yml): its Rust tests and its Lean spec, on this very commit, beside the image's
+  # build; nothing goes on the server unless they pass
+  checks:
+    name: avenDB checks
+    uses: ./.github/workflows/avendb-checks.yml
+
   deploy:
     name: Restart avenDB's server over SSH
-    needs: image
+    needs: [image, checks]
     runs-on: ubuntu-latest
     steps:
-      - name: Prepare SSH
-        run: |
-          HOST=$(getent ahostsv4 "$API_HOST" | awk '{print $1; exit}')
-          [ -n "$HOST" ] || { echo "::error::$API_HOST does not resolve"; exit 1; }
-          echo "HOST=$HOST" >> "$GITHUB_ENV"
-          mkdir -p ~/.ssh && chmod 700 ~/.ssh
-          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -T 10 -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          printf 'Host prod\n  HostName %s\n  User deploy\n  IdentityFile ~/.ssh/id_ed25519\n  StrictHostKeyChecking yes\n  ServerAliveInterval 20\n' "$HOST" > ~/.ssh/config
+      # the server's own action (.github/actions/prod-ssh): its host keys pinned, never taken on trust
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github/actions
+      - uses: ./.github/actions/prod-ssh
+        with:
+          host: ${{ env.API_HOST }}
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
       - name: Roll out the new image
         env:
           IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ACTOR: ${{ github.actor }}
           # the server's bucket (blobs B3a): its store lives there, every object sealed under AVENDB_BUCKET_SEAL
           BUCKET_ACCESS_KEY: ${{ secrets.HETZNER_S3_ACCESS_KEY }}
           BUCKET_SECRET_KEY: ${{ secrets.HETZNER_S3_SECRET_KEY }}
           BUCKET_SEAL: ${{ secrets.AVENDB_BUCKET_SEAL }}
         run: |
           # The token goes to the server over stdin, never as a process argument.
-          printf '%s' "$GHCR_TOKEN" | ssh prod "docker login ghcr.io -u '${{ github.actor }}' --password-stdin >/dev/null"
+          printf '%s' "$GHCR_TOKEN" | ssh prod "docker login ghcr.io -u '$ACTOR' --password-stdin >/dev/null"
           # The bucket's settings, every secret set, or no deploy at all: a server started without its bucket would be a
           # new, empty device on its volume, every app cut off from Maia City (Samuel 2026-10-19: "so no accidental
           # resets can happen anymore"). They go to the server over stdin too, and never into the log.

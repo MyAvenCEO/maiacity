@@ -49,6 +49,22 @@ const page = (fn) => (...args) => {
 	return answered;
 };
 
+/** The open invite a newcomer signs up with, the hex of its share, while the page says so (`pkg.invite`). */
+let invite = null;
+/** The relay's pass shown as the device shows it, with the invite it signs up with, so a relay that lets newcomers in by
+ *  invite alone (`AVENDB_SIGNUP=invite`, Admission.lean) lets this one in; every other fetch as it was. */
+const fetched = globalThis.fetch.bind(globalThis);
+globalThis.fetch = (resource, init) => {
+	if (invite && typeof resource === 'string') {
+		const url = new URL(resource, location.href);
+		if (url.pathname.endsWith('/feed/relay-pass')) {
+			url.searchParams.set('invite', invite);
+			return fetched(url.href, init);
+		}
+	}
+	return fetched(resource, init);
+};
+
 /** What the page sent as an argument: its functions and its store, as it names them, else as it came. */
 function taken(arg) {
 	if (arg && typeof arg === 'object' && '$fn' in arg) return page(arg.$fn);
@@ -103,6 +119,7 @@ async function answer({ id, target, method, args }) {
 		let ok;
 		if (target === 'pkg' && method === 'start') ok = undefined;
 		else if (target === 'pkg' && method === 'openStore') store ??= await open(...args);
+		else if (target === 'pkg' && method === 'invite') invite = /^[0-9a-f]{64}$/.test(args[0] ?? '') ? args[0] : null;
 		else ok = given(await callee(target, method)(...args.map(taken)));
 		postMessage({ id, ok }, handed(ok));
 	} catch (e) {
