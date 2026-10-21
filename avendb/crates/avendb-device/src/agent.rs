@@ -11,34 +11,19 @@
 //! One is taken out by removing its device from avenMAIA. No token: the device's key is who it is. The harness never
 //! names or picks an aven: its person's coop's one aven is it.
 //!
-//! It is a device of its own (`avendb_net::server::open_agent`), in a folder of its own in the agents' folder beside
-//! the Mac app's (`<app's folder>-agents/<device>`, which the app's device never clears), which keeps its key and its
-//! edits and no file whole of its own accord: it reads its person's files from the Mac's one store, over iroh, so that
-//! nothing is kept twice. A file it saves (`put_file`) it seals onto its own shelf, as every device does, and lets go
-//! of once the Mac's device holds it whole, as that device's holdings say (`Node::holds_whole`, `Node::let_go`): from
-//! then on the Mac's one store keeps it, and a read of it fetches it from there. Where the Mac keeps a light copy, the
-//! agent keeps its own, the one copy on the Mac. avenDB is never reset: its folder, like the app's, keeps what it holds
-//! (`disk::open`).
+//! It runs no avenDB device of its own (Samuel 2026-10-21, agents as sessions): theOS's device on its person's Mac hosts
+//! it as a session (`sessions`), on a socket in the agents' folder beside the app's (`<app's folder>-agents`), and its
+//! process relays its harness's MCP lines there and signs, with its own key, what theOS asks it to. Its key alone it
+//! keeps, in a folder of its own there (`<app's folder>-agents/<device>`); the Mac's one store keeps every edit and
+//! file, one copy of each, however many agents work on it. While theOS doesn't run, each tool call says so
+//! (`closed`), and the agent connects again as soon as it does. avenDB is never reset: its folder keeps its key.
 //!
-//! It asks for access as anyone asks avenDB for it, and its person answers on the page's one consent screen: it leaves
-//! an access request for the Mac app (`<app's folder>-agents/<device>.request`, `asking`): who asks, by its device's
-//! name and key, why, and while it belongs to no vault, its offer. Approving adds its key to avenMAIA in one ceremony of
-//! their passkey (`Node::add_device_vault_with` at `Place::Vault`), which the agent's device cosigns; from then on it
-//! acts as avenMAIA by its own key. A no is left for it (`<device>.denied`, the device it said no to), and it asks no
-//! more until it asks again.
-//!
-//! It finds the Mac's device by the offer the app leaves (`<app's folder>-agents/offer.txt`), the device whose key is
-//! the offer's endpoint, and reaches it directly. While it belongs to no vault it asks that device for what it may
-//! hold, so that a join it missed, as one made while it didn't run, reaches it, and it asks no more.
-//!
-//! However many sessions of its harness run on the Mac, each starting it, one process runs its device: the one that
-//! holds its lock file (`<app's folder>-agents/<device>.lock`), which answers the others on its socket beside it
-//! (`<device>.sock`), each of which relays its harness's lines (`serve`). One device is one node, one shelf and one
-//! endpoint, never two of the same key at once. When it goes away, one of the others takes its place, and asks it
-//! again whatever it left unanswered; when a session of a newer build of it starts, as after the Mac app was rebuilt,
-//! the older makes way, and answers its harness through the newer from then on. Once its own harness has gone and no
-//! session used it for a while (`IDLE_AGENT`), the one that runs it closes its device and ends, letting go of its lock,
-//! and a session still connected takes its place, so that none idles on, holding a device in memory.
+//! It asks for access as anyone asks avenDB for it, and its person answers on the page's one consent screen: theOS
+//! leaves its access request for the page as it hosts it while it belongs to no vault (`ask_by_default`), and
+//! `avendb_request_access` says what it asks for (`<app's folder>-agents/<device>.request`, `asking`): who asks, by its
+//! device's name and key, and why. Approving adds its key to avenMAIA in one ceremony of their passkey, which the
+//! agent's key cosigns over its session (`Node::add_hosted_device`); from then on it acts as avenMAIA by its own key. A
+//! no is left for it (`<device>.denied`, the device it said no to), and it asks no more until it asks again.
 //!
 //! A Claude Code session in Anthropic's cloud runs no Mac: `avendb-device agent cloud` (`serve_cloud`), the device
 //! agentCloud, whose key its person's Mac made and added to avenMAIA in one ceremony (theOS app's "Add a cloud agent",
@@ -82,7 +67,7 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::time::{Duration, Instant, UNIX_EPOCH};
+use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::engine;
@@ -101,31 +86,14 @@ use n0_future::task::AbortOnDropHandle;
 use n0_future::{Stream, stream};
 use serde_json::{Value, json};
 use tokio::fs::File;
-use tokio::io::{AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, BufReader, Lines};
-use tokio::net::{UnixListener, UnixStream};
-use tokio::sync::{Notify, watch};
-use tokio::task::JoinSet;
+use tokio::io::{AsyncBufReadExt as _, AsyncRead, AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _, BufReader};
+use tokio::sync::watch;
 
 /// The MCP version it speaks, unless its client asks for another.
 const PROTOCOL: &str = "2025-06-18";
 
 /// How often it looks for the Mac's offer, leaves its own, and lets go of the files the Mac's device holds whole.
 pub const LOOK: Duration = Duration::from_secs(3);
-
-/// How long a session waits for the one that runs its agent's device to answer on its socket, as it starts or as
-/// another takes its place (`serve`).
-const WAIT: Duration = Duration::from_secs(30);
-
-/// How long a session that made way for a newer build leaves the lock to it, rather than take it back at once.
-const YIELD: Duration = Duration::from_secs(5);
-
-/// How long the session that runs an agent's device runs it on once its own harness has gone (its stdin ended) and no
-/// other session asked it anything, nor connected: then it closes its device and lets go of its lock, and a session
-/// still connected takes its place (`serve`), so that no process idles on, holding a device in memory.
-pub const IDLE_AGENT: Duration = Duration::from_secs(600);
-
-/// The key of a session's first line to the one that runs its agent's device: the build it runs (`built`).
-const HELLO: &str = "avendb-agent";
 
 /// How many bytes of a file it saves it reads at a time.
 const CHUNK: usize = 1 << 20;
@@ -244,18 +212,6 @@ pub fn online(host: &Path, name: &str, device: &str) -> bool {
     fresh && std::fs::read_to_string(&file).is_ok_and(|d| d.trim() == device)
 }
 
-/// The file in the agents' folder beside the app's `host` folder that the one session running agent `name`'s device
-/// holds locked while it does (`serve`).
-fn lock(host: &Path, name: &str) -> PathBuf {
-    agents(host).join(format!("{name}.lock"))
-}
-
-/// The socket in the agents' folder beside the app's `host` folder on which the one session running agent `name`'s
-/// device answers the others (`serve`).
-fn socket(host: &Path, name: &str) -> PathBuf {
-    agents(host).join(format!("{name}.sock"))
-}
-
 /// The file in the agents' folder beside the app's `host` folder where its person's no to agent `name` is left: the
 /// device it said no to.
 pub fn denied(host: &Path, name: &str) -> PathBuf {
@@ -267,6 +223,20 @@ pub fn denied(host: &Path, name: &str) -> PathBuf {
 pub fn asking(name: &str, device: &str, offer: Option<String>, ask: &Asking) -> Value {
     json!({ "name": name, "kind": "agent", "device": device, "offer": offer, "level": ask.level, "why": ask.why,
         "vaults": ask.vaults })
+}
+
+/// Leaves agent `name`'s request for access by default for its person's page, its device `device` in hex, as theOS
+/// hosts it while it belongs to no vault (`sessions`): unless it left one for that device already, or its person said
+/// no to that device.
+pub(crate) fn ask_by_default(host: &Path, name: &str, device: &str) {
+    let (file, no) = (request(host, name), denied(host, name));
+    let asked = std::fs::read_to_string(&file).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok());
+    if std::fs::read_to_string(no).is_ok_and(|d| d.trim() == device) || asked.is_some_and(|a| a["device"] == device) {
+        return;
+    }
+    let ask = Asking { level: ASKS.to_string(), why: WHY.to_string(), vaults: vec![] };
+    std::fs::create_dir_all(agents(host)).ok();
+    std::fs::write(&file, asking(name, device, None, &ask).to_string()).ok();
 }
 
 /// What an access request asks for: a level of `LEVELS`; why; and the vaults it names, by their ids, if any.
@@ -315,90 +285,59 @@ pub fn host_offer(host: &Path) -> PathBuf {
     agents(host).join("offer.txt")
 }
 
-/// Runs harness `harness`'s agent device beside the app's `host` folder, answering MCP on `input` and `output` until
-/// `input` ends: as the one session that runs it, where none does yet, or else through that one. Fails if its folder or
-/// its node can't be opened, or the session that runs it doesn't answer.
+/// Runs harness `harness`'s agent beside the app's `host` folder, answering MCP on `input` and `output` until `input`
+/// ends, its harness's files inside its workspace (`roots`).
 pub async fn serve(
     host: PathBuf,
     harness: String,
     input: impl AsyncRead + Unpin,
     output: impl AsyncWrite + Unpin,
 ) -> Result<()> {
-    serve_built(host, harness, input, output, built()).await
+    serve_in(host, harness, roots(), input, output).await
 }
 
-/// `serve`, as a session of a build made at `built` (`built`). Of the sessions of one agent, the one that holds its
-/// lock file runs its device and answers the others on its socket, its own harness's lines as theirs; each other one
-/// says its build first, then relays its harness's lines, keeping those not answered yet. Where the one running it
-/// goes away, one of them takes its place, and answers those first. A session of a newer build than the one running
-/// it takes its place at once: the older makes way, as it reads its first line, and goes on through it.
-pub async fn serve_built(
-    host: PathBuf,
-    harness: String,
-    input: impl AsyncRead + Unpin,
-    output: impl AsyncWrite + Unpin,
-    built: u64,
-) -> Result<()> {
-    serve_idle(host, harness, input, output, built, IDLE_AGENT).await
-}
-
-/// `serve_built`, where the session that runs the device, its own harness gone, runs it on for `idle` after it was
-/// last used (`IDLE_AGENT`).
-pub async fn serve_idle(
-    host: PathBuf,
-    harness: String,
-    input: impl AsyncRead + Unpin,
-    output: impl AsyncWrite + Unpin,
-    built: u64,
-    idle: Duration,
-) -> Result<()> {
-    serve_in(host, harness, roots(), input, output, built, idle).await
-}
-
-/// `serve_idle`, its harness's files read and written inside the folders `roots` alone (`allowed`), whichever session
-/// runs the device: each other session tells it its own as it connects.
+/// `serve`, its harness's files read and written inside the folders `roots` alone (`allowed`). The agent runs no
+/// avenDB device of its own: theOS's device on this Mac hosts it as a session (`sessions`), approved or still asking
+/// for access, and it signs what it is asked to by its key, on its own shelf. While theOS doesn't run, it answers each
+/// tool call saying so, and connects as soon as theOS runs again.
 pub async fn serve_in(
     host: PathBuf,
     harness: String,
     roots: Vec<PathBuf>,
     input: impl AsyncRead + Unpin,
     mut output: impl AsyncWrite + Unpin,
-    built: u64,
-    idle: Duration,
 ) -> Result<()> {
     named(&harness)?;
     let name = device_name(&harness);
     let dir = folder(&host, &name);
     std::fs::create_dir_all(&dir).with_context(|| format!("the agent's folder {}", dir.display()))?;
-    let (mut lines, mut waiting, mut since) = (BufReader::new(input).lines(), Waiting::default(), None);
-    // theOS hosts it where it runs and knows its key: then it runs no device of its own
-    if crate::sessions::relay(&host, &name, &roots, &mut lines, &mut output).await?.is_some() {
-        return Ok(());
-    }
-    // until when it leaves the lock to the newer build it made way for
-    let mut yields: Option<Instant> = None;
+    let mut lines = BufReader::new(input).lines();
     loop {
-        if yields.is_none_or(|until| Instant::now() >= until)
-            && let Some(held) = hold(&lock(&host, &name))?
-        {
-            since = None;
-            let session = Session { host: &host, name: &name, built, idle, roots: &roots };
-            if session.run(held, &mut lines, &mut waiting, &mut output).await? {
-                return Ok(());
+        if crate::sessions::relay(&host, &name, &roots, &mut lines, &mut output).await?.is_some() {
+            return Ok(());
+        }
+        // theOS doesn't run on this Mac: each call says so, until it does
+        tokio::select! {
+            line = lines.next_line() => {
+                let Some(line) = line? else { return Ok(()) };
+                let Ok(message) = serde_json::from_str::<Value>(&line) else { continue };
+                let closed = |_: String, _: Value| async { Err::<String, _>(anyhow!("{}", closed(&name))) };
+                if let Some(answer) = answer(&message, || instructions(&name, false), closed).await {
+                    output.write_all(format!("{answer}\n").as_bytes()).await?;
+                    output.flush().await?;
+                }
             }
-            yields = Some(Instant::now() + YIELD);
-            continue;
+            () = tokio::time::sleep(AGAIN) => {}
         }
-        match through(&socket(&host, &name), built, &roots, &mut lines, &mut waiting, &mut output).await? {
-            Some(true) => return Ok(()),
-            Some(false) => since = None,
-            None => {}
-        }
-        // none answers yet: the one that runs it starts, or makes way, or went away
-        let waited = since.get_or_insert_with(Instant::now).elapsed();
-        anyhow::ensure!(waited < WAIT, "another session runs {name}, and doesn't answer on its socket");
-        tokio::time::sleep(Duration::from_millis(100)).await;
     }
+}
+
+/// How often an agent looks for theOS again while it doesn't run.
+const AGAIN: Duration = Duration::from_secs(1);
+
+/// What a tool call of agent `name` answers while theOS doesn't run on this Mac.
+fn closed(name: &str) -> String {
+    format!("theOS isn't running on this Mac, and {name} works through it: open theOS, then call this again.")
 }
 
 /// A cloud session's agent, as its harness names it: `avendb-device agent cloud`, the device agentCloud.
@@ -603,277 +542,6 @@ async fn look_cloud(node: Arc<Node>, server: Offer) {
     }
 }
 
-/// When the build this process runs was made: its program's time on disk as it starts, in nanoseconds since 1970;
-/// none where it can't tell.
-fn built() -> u64 {
-    let made = std::env::current_exe().and_then(std::fs::metadata).and_then(|m| m.modified());
-    made.ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map_or(0, |d| d.as_nanos() as u64)
-}
-
-/// Lock file `file`, held, where no other session holds it; none where one does.
-fn hold(file: &Path) -> Result<Option<std::fs::File>> {
-    let opened = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(file);
-    let held = opened.with_context(|| format!("the agent's lock file {}", file.display()))?;
-    match held.try_lock() {
-        Ok(()) => Ok(Some(held)),
-        Err(std::fs::TryLockError::WouldBlock) => Ok(None),
-        Err(std::fs::TryLockError::Error(e)) => Err(e).context("the agent's lock file"),
-    }
-}
-
-/// The one session that runs an agent's device: the app's `host` folder, the agent's `name`, the `built` of its
-/// build, how long it runs on unused once its own harness has gone (`IDLE_AGENT`), and its harness's workspace roots.
-struct Session<'a> {
-    host: &'a Path,
-    name: &'a str,
-    built: u64,
-    idle: Duration,
-    roots: &'a [PathBuf],
-}
-
-/// When the device a session runs was last used: a line asked of it, here or on its socket, or a session connecting.
-#[derive(Clone)]
-struct Used(Arc<std::sync::Mutex<tokio::time::Instant>>);
-
-impl Used {
-    fn new() -> Used {
-        Used(Arc::new(std::sync::Mutex::new(tokio::time::Instant::now())))
-    }
-
-    fn now(&self) {
-        *self.0.lock().expect("used") = tokio::time::Instant::now();
-    }
-
-    fn last(&self) -> tokio::time::Instant {
-        *self.0.lock().expect("used")
-    }
-}
-
-impl Session<'_> {
-    /// Runs the agent's device while it holds its lock file, `held`: its node on its shelf, and its looks (`look`); it
-    /// answers on its socket the other sessions (`others`), and here, the lines its harness left `waiting` first, then
-    /// each of `lines`. Whether `lines` ended, once no other session goes on through it, or none used it for `idle`,
-    /// when those still connected take its place, or as it made way for a newer build; false where it made way with
-    /// `lines` going on, to answer through that one from then on.
-    async fn run(
-        &self,
-        held: std::fs::File,
-        lines: &mut Lines<BufReader<impl AsyncRead + Unpin>>,
-        waiting: &mut Waiting,
-        output: &mut (impl AsyncWrite + Unpin),
-    ) -> Result<bool> {
-        let (host, name) = (self.host, self.name);
-        let shelf = disk::open(&folder(host, name))?;
-        let mac = read_offer(&host_offer(host));
-        let relay = mac.as_ref().and_then(|o| o.addr.relay_urls().next().cloned());
-        let opts = Options { bind: None, direct: true, relay, ..Options::local() };
-        let node = Arc::new(server::open_agent(shelf, name, opts).await?);
-        let looking = AbortOnDropHandle::new(tokio::spawn(look(node.clone(), host.to_path_buf(), name.to_string())));
-        let (host_dir, roots) = (host.to_path_buf(), self.roots.to_vec());
-        let agent = Arc::new(Agent { node: node.clone(), host: host_dir, name: name.to_string(), cloud: None, roots });
-        let (newer, count) = (Arc::new(Notify::new()), watch::channel(0));
-        let sock = socket(host, name);
-        // it holds the lock: a socket there is a session's before it, gone
-        std::fs::remove_file(&sock).ok();
-        let listener = UnixListener::bind(&sock).with_context(|| format!("the agent's socket {}", sock.display()))?;
-        let used = Used::new();
-        let others = others(listener, agent.clone(), self.built, newer.clone(), count.0, used.clone());
-        let others = AbortOnDropHandle::new(tokio::spawn(others));
-        for line in waiting.take() {
-            reply(&agent, &line, output).await?;
-        }
-        let (mut count, mut ended) = (count.1, false);
-        loop {
-            tokio::select! {
-                biased;
-                () = newer.notified() => break,
-                line = lines.next_line(), if !ended => match line? {
-                    Some(line) => {
-                        used.now();
-                        reply(&agent, &line, output).await?;
-                        used.now();
-                    }
-                    // the others' sessions go on through it, until they end too, or leave it unused
-                    None => ended = true,
-                },
-                () = async { _ = count.wait_for(|n| *n == 0).await; }, if ended => break,
-                () = tokio::time::sleep_until(used.last() + self.idle), if ended => {
-                    if used.last() + self.idle <= tokio::time::Instant::now() {
-                        tracing::info!("{name} unused for {:?}: it closes, a session still on takes over", self.idle);
-                        break;
-                    }
-                }
-            }
-        }
-        drop(others);
-        drop(looking);
-        std::fs::remove_file(alive(host, name, &hex(&node.device().0))).ok();
-        drop(agent);
-        node.shutdown().await?;
-        drop(held);
-        Ok(ended)
-    }
-}
-
-/// The other sessions of an agent, on `listener`, each as it comes, which `agent` answers (`other`), however many at
-/// once, as many as `count` says, each connecting and each line it asks counted in `used`; one of a newer build than
-/// `built` it lets know of through `newer`.
-async fn others(
-    listener: UnixListener,
-    agent: Arc<Agent>,
-    built: u64,
-    newer: Arc<Notify>,
-    count: watch::Sender<usize>,
-    used: Used,
-) {
-    let mut sessions = JoinSet::new();
-    loop {
-        tokio::select! {
-            accepted = listener.accept() => match accepted {
-                Ok((stream, _)) => {
-                    used.now();
-                    sessions.spawn(other(stream, agent.clone(), built, newer.clone(), used.clone()));
-                }
-                Err(e) => {
-                    tracing::warn!("a session of {} isn't taken: {e}", agent.name);
-                    tokio::time::sleep(Duration::from_millis(100)).await;
-                }
-            },
-            Some(_) = sessions.join_next(), if !sessions.is_empty() => {}
-        }
-        count.send_replace(sessions.len());
-    }
-}
-
-/// Another session of an agent on `stream`: its first line says its build (`HELLO`) and its harness's workspace roots
-/// (`roots`); one newer than `built` it lets know of through `newer`, and answers nothing, as it takes this one's
-/// place; any other, `agent` answers line by line, its files inside that session's roots alone (none, where its hello
-/// names none, as an older build's), each counted in `used`.
-async fn other(stream: UnixStream, agent: Arc<Agent>, built: u64, newer: Arc<Notify>, used: Used) {
-    let (read, mut write) = stream.into_split();
-    let mut lines = BufReader::new(read).lines();
-    let Ok(Some(hello)) = lines.next_line().await else { return };
-    let Ok(hello) = serde_json::from_str::<Value>(&hello) else { return };
-    let Some(theirs) = hello[HELLO].as_u64() else { return };
-    if theirs > built {
-        newer.notify_one();
-        return;
-    }
-    let roots = hello["roots"].as_array().into_iter().flatten().filter_map(Value::as_str).map(PathBuf::from).collect();
-    let agent = Agent { roots, ..(*agent).clone() };
-    while let Ok(Some(line)) = lines.next_line().await {
-        used.now();
-        let answer = answer_line(&agent, &line).await;
-        used.now();
-        if let Some(answer) = answer
-            && write.write_all(answer.as_bytes()).await.is_err()
-        {
-            return;
-        }
-    }
-}
-
-/// Answers its harness through the session that runs its agent's device, on socket `sock`: its build first, `built`,
-/// with its workspace roots, `roots`, then the lines `waiting` holds, then each of `lines`, and each answer back on
-/// `output`. Whether `lines` ended, once every answer due came (true), or the connection did first (false); none where
-/// nothing answers on `sock`.
-async fn through(
-    sock: &Path,
-    built: u64,
-    roots: &[PathBuf],
-    lines: &mut Lines<BufReader<impl AsyncRead + Unpin>>,
-    waiting: &mut Waiting,
-    output: &mut (impl AsyncWrite + Unpin),
-) -> Result<Option<bool>> {
-    let Ok(stream) = UnixStream::connect(sock).await else { return Ok(None) };
-    let (read, mut write) = stream.into_split();
-    let mut answers = BufReader::new(read).lines();
-    let roots: Vec<String> = roots.iter().map(|r| r.to_string_lossy().into_owned()).collect();
-    let mut first = format!("{}\n", json!({ HELLO: built, "roots": roots }));
-    for line in waiting.lines() {
-        first.push_str(line);
-        first.push('\n');
-    }
-    if write.write_all(first.as_bytes()).await.is_err() {
-        return Ok(Some(false));
-    }
-    let mut ended = false;
-    loop {
-        tokio::select! {
-            line = lines.next_line(), if !ended => match line? {
-                Some(line) => {
-                    waiting.sent(&line);
-                    if write.write_all(format!("{line}\n").as_bytes()).await.is_err() {
-                        return Ok(Some(false));
-                    }
-                }
-                None => {
-                    ended = true;
-                    write.shutdown().await.ok();
-                }
-            },
-            answer = answers.next_line() => match answer {
-                Ok(Some(answer)) => {
-                    waiting.answered(&answer);
-                    output.write_all(format!("{answer}\n").as_bytes()).await?;
-                    output.flush().await?;
-                }
-                _ => return Ok(Some(ended)),
-            },
-        }
-        if ended && waiting.is_empty() {
-            return Ok(Some(true));
-        }
-    }
-}
-
-/// The requests a session's harness sent that are not answered yet, each its id in JSON and its line, the oldest
-/// first: those it asks again of the session that takes the place of one that went away.
-#[derive(Default)]
-struct Waiting(Vec<(String, String)>);
-
-impl Waiting {
-    /// Line `line` is sent on: a request, one with a method and an id, waits for its answer.
-    fn sent(&mut self, line: &str) {
-        let Ok(m) = serde_json::from_str::<Value>(line) else { return };
-        if let (Some(_), Some(id)) = (m.get("method"), m.get("id")) {
-            self.0.push((id.to_string(), line.to_string()));
-        }
-    }
-
-    /// Line `line` came back: an answer, one with an id and no method, answers the request of that id.
-    fn answered(&mut self, line: &str) {
-        let Ok(m) = serde_json::from_str::<Value>(line) else { return };
-        if let (None, Some(id)) = (m.get("method"), m.get("id")) {
-            let id = id.to_string();
-            self.0.retain(|(waits, _)| *waits != id);
-        }
-    }
-
-    /// The lines waiting, the oldest first.
-    fn lines(&self) -> impl Iterator<Item = &str> {
-        self.0.iter().map(|(_, line)| line.as_str())
-    }
-
-    /// The lines waiting, taken, to answer now.
-    fn take(&mut self) -> Vec<String> {
-        std::mem::take(&mut self.0).into_iter().map(|(_, line)| line).collect()
-    }
-
-    fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-/// `agent`'s answer to MCP line `line`, on `output`: none to a notification, or to a line that isn't JSON.
-async fn reply(agent: &Agent, line: &str, output: &mut (impl AsyncWrite + Unpin)) -> Result<()> {
-    if let Some(answer) = answer_line(agent, line).await {
-        output.write_all(answer.as_bytes()).await?;
-        output.flush().await?;
-    }
-    Ok(())
-}
-
 /// `agent`'s answer to MCP line `line`, a line of JSON ending in a newline: none to a notification, or to a line that
 /// isn't JSON.
 pub(crate) async fn answer_line(agent: &Agent, line: &str) -> Option<String> {
@@ -881,69 +549,6 @@ pub(crate) async fn answer_line(agent: &Agent, line: &str) -> Option<String> {
     let mut answer = agent.answer(&message).await?.to_string();
     answer.push('\n');
     Some(answer)
-}
-
-/// The Mac's offer in `file`, if it left one.
-fn read_offer(file: &Path) -> Option<Offer> {
-    Offer::from_text(std::fs::read_to_string(file).ok()?.trim()).ok()
-}
-
-/// The JSON in `file`, if it holds some.
-fn read_json(file: &Path) -> Option<Value> {
-    serde_json::from_str(&std::fs::read_to_string(file).ok()?).ok()
-}
-
-/// Every little while: the Mac's device where its offer says it is, and, until it belongs to a vault, what that device
-/// may tell it, as a join it missed, then its request to be added under its person's aven left for the Mac's page, its
-/// offer as it is now, unless its person said no to this device; and the files it holds whole that the Mac's device
-/// holds whole too, it lets go of (`hand_over`).
-async fn look(node: Arc<Node>, host: PathBuf, name: String) {
-    let (file, no, mut known) = (request(&host, &name), denied(&host, &name), None);
-    let device = hex(&node.device().0);
-    loop {
-        // that it runs, for the Mac's page (`online`)
-        std::fs::write(alive(&host, &name, &device), &device).ok();
-        let mac = read_offer(&host_offer(&host));
-        if let Some(mac) = &mac
-            && known.as_ref() != Some(&mac.to_text())
-        {
-            known = Some(mac.to_text());
-            node.know(mac.addr.clone());
-        }
-        // a join made while it didn't run, or whose answer it lost, reaches it from the Mac's device
-        if let Some(mac) = &mac
-            && alone(&node).await
-            && let Ok(Err(e)) = tokio::time::timeout(LOOK, node.sync_with(mac.addr.id)).await
-        {
-            tracing::debug!("the Mac's device isn't asked: {e:#}");
-        }
-        let said_no = std::fs::read_to_string(&no).is_ok_and(|d| d.trim() == device);
-        if alone(&node).await && !said_no {
-            let offer = node.offer().to_text();
-            let fresh = match read_json(&file) {
-                // as it asked, with its offer as it is now
-                Some(mut asked) if asked["device"] == device.as_str() => {
-                    (asked["offer"] != offer.as_str()).then(|| {
-                        asked["offer"] = offer.into();
-                        asked
-                    })
-                }
-                _ => {
-                    let (level, why) = (ASKS.to_string(), WHY.to_string());
-                    let ask = Asking { level, why, vaults: vec![] };
-                    Some(asking(&name, &device, Some(offer), &ask))
-                }
-            };
-            if let Some(asked) = fresh {
-                std::fs::write(&file, asked.to_string()).ok();
-            }
-        }
-        // the Mac's device, the one whose key is the offer's endpoint
-        if let Some(mac) = mac.and_then(|mac| node.device_at(mac.addr.id)) {
-            hand_over(&node, mac).await;
-        }
-        tokio::time::sleep(LOOK).await;
-    }
 }
 
 /// Whether `node`'s device belongs to no vault yet.
@@ -1968,9 +1573,10 @@ impl Agent {
         if self.cloud.is_some() {
             bail!("{}", self.unjoined());
         }
-        let (device, offer) = (hex(&self.node.acting_as().0), Some(self.node.offer().to_text()));
+        // hosted by theOS, it has no offer of its own: theOS's device has its join signed over its session
+        let device = hex(&self.node.acting_as().0);
         let ask = Asking { level: level.to_string(), why: why.to_string(), vaults };
-        let asked = asking(&self.name, &device, offer, &ask);
+        let asked = asking(&self.name, &device, None, &ask);
         std::fs::create_dir_all(agents(&self.host))?;
         std::fs::remove_file(denied(&self.host, &self.name)).ok();
         std::fs::write(request(&self.host, &self.name), asked.to_string())?;
@@ -2720,7 +2326,7 @@ mod tests {
     /// A fresh folder of the test's own, as the file system resolves it: the app's folder in it (not made), a
     /// workspace, and a folder beside the workspace, outside it.
     fn folders(name: &str) -> (PathBuf, PathBuf, PathBuf) {
-        let nanos = std::time::SystemTime::now().duration_since(UNIX_EPOCH).expect("after 1970").subsec_nanos();
+        let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).expect("after 1970").subsec_nanos();
         let top = std::env::temp_dir().join(format!("avendb-agent-{name}-{}-{nanos}", std::process::id()));
         std::fs::create_dir_all(top.join("work")).expect("a workspace");
         std::fs::create_dir_all(top.join("out")).expect("a folder outside it");

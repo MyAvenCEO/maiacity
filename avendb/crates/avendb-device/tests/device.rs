@@ -13,9 +13,9 @@
 //! for access; she denies, it asks again, and the page's consent screen adds each key, in a sheet each, as a device
 //! of her coop's one aven, which owns nothing and holds the rights its coop and her vault give it, the agents' rights,
 //! the same for every one; the same harness on her other Mac joins the same aven as a device too. An agent saves a
-//! file of her Mac by its path as the aven's rights allow, an Editor's and not a Suggester's, and keeps it while her
-//! Mac keeps a light copy, then lets go of it once her Mac keeps a full one: one copy on her Mac. It reads a file back
-//! to a path on her Mac, every byte, from its own shelf or else from her Mac, never over a file there unless it says
+//! file of her Mac by its path as the aven's rights allow, an Editor's and not a Suggester's, onto her Mac's one store,
+//! which theOS hosts it on: one copy on her Mac. It reads a file back
+//! to a path on her Mac, every byte, from her Mac, never over a file there unless it says
 //! so, a small text file inline; a Suggester reads it too, and no agent reads a file of a vault the aven's shares
 //! don't reach. An agent adds a spark to the coop that owns its aven by its fields' plain names, as the page captures
 //! one, and her Mac reads it; one that may add a spark nowhere says so, and where it may. A Suggester agent of her
@@ -791,36 +791,19 @@ struct Harness {
 }
 
 impl Harness {
-    /// The harness `harness` starts its agent device beside the app's folder `host`.
+    /// The harness `harness` starts its agent beside the app's folder `host`, in the test's folder, which holds `host`
+    /// (`workspace`).
     fn start(host: &Path, harness: &str) -> Harness {
-        Harness::built(host, harness, 1)
+        Harness::within(host, harness, workspace(host))
     }
 
-    /// The harness `harness` starts its agent device beside the app's folder `host`, a build made at `built`, in the
-    /// test's folder, which holds `host` (`workspace`).
-    fn built(host: &Path, harness: &str, built: u64) -> Harness {
-        Harness::within(host, harness, built, workspace(host))
-    }
-
-    /// The harness `harness` starts its agent device beside the app's folder `host`, a build made at `built`, its
-    /// files inside the folders `roots` alone.
-    fn within(host: &Path, harness: &str, built: u64, roots: Vec<PathBuf>) -> Harness {
+    /// The harness `harness` starts its agent beside the app's folder `host`, its files inside the folders `roots`
+    /// alone.
+    fn within(host: &Path, harness: &str, roots: Vec<PathBuf>) -> Harness {
         let (pipe, device) = tokio::io::duplex(1 << 20);
         let (input, output) = tokio::io::split(device);
         let (host, harness) = (host.to_path_buf(), harness.to_string());
-        let serving = tokio::spawn(agent::serve_in(host, harness, roots, input, output, built, agent::IDLE_AGENT));
-        let (from, to) = tokio::io::split(pipe);
-        Harness { to: Some(to), from: BufReader::new(from).lines(), serving, next: 0 }
-    }
-
-    /// The harness `harness` starts its agent device beside the app's folder `host`, which, its harness gone, runs it
-    /// on for `idle` unused.
-    fn idle(host: &Path, harness: &str, idle: Duration) -> Harness {
-        let (pipe, device) = tokio::io::duplex(1 << 20);
-        let (input, output) = tokio::io::split(device);
-        let (host, harness) = (host.to_path_buf(), harness.to_string());
-        let roots = workspace(&host);
-        let serving = tokio::spawn(agent::serve_in(host, harness, roots, input, output, 1, idle));
+        let serving = tokio::spawn(agent::serve_in(host, harness, roots, input, output));
         let (from, to) = tokio::io::split(pipe);
         Harness { to: Some(to), from: BufReader::new(from).lines(), serving, next: 0 }
     }
@@ -1018,7 +1001,7 @@ async fn harnesses_ask_for_access_and_join_her_coops_aven_as_its_devices_with_it
     let device = asked[0]["device"].clone();
     assert_eq!((&asked[0]["name"], &asked[0]["level"]), (&json!("agentClaude"), &json!("Suggester")), "{asked}");
     assert!(asked[0].get("aven").is_none(), "a harness names no aven: {asked}");
-    assert!(asked[0]["offer"].is_string(), "its offer, to join by");
+    assert!(asked[0]["offer"].is_null(), "no offer: theOS hosts it, and it signs its join over its session");
     // the command that runs any harness's agent device, and for Claude Code the line that adds it
     let codex = app.call("agentCommand", json!(["codex"])).await.expect("its command");
     assert_eq!(codex["device"], "agentCodex");
@@ -1198,7 +1181,7 @@ async fn the_same_harness_on_her_other_mac_joins_her_coops_aven_as_a_device_too(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn every_session_of_a_harness_answers_as_its_one_device_and_once_approved_the_mac_hosts_the_next() {
+async fn every_session_of_a_harness_is_her_macs_session_of_its_one_key_approved_or_not() {
     let (_relay, url, server) = server().await;
     let folder = Folder::new("agent-sessions");
     let dir = folder.0.join("avendb");
@@ -1212,58 +1195,46 @@ async fn every_session_of_a_harness_answers_as_its_one_device_and_once_approved_
     app.asked();
     let (_, aven) = coop_and_aven(&mut app).await;
     give(&mut app, &mine, &aven, "Editor", &mine).await;
-    // two Claude Code sessions: the first runs agentClaude's device, the second answers through it, as the same device
-    let mut first = Harness::built(&dir, agent::CLAUDE, 1);
+    // two Claude Code sessions, not approved yet: her Mac hosts both, as the same key, and runs no device for either
+    let mut first = Harness::start(&dir, agent::CLAUDE);
     first.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
     let (waits, _) = first.tool("avendb_vaults", json!({})).await;
     assert!(waits.contains("waiting for its person to answer"), "{waits}");
-    let mut second = Harness::built(&dir, agent::CLAUDE, 1);
-    let hello = second.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
-    assert_eq!(hello["serverInfo"]["name"], "avendb", "answered through the first");
+    let mut second = Harness::start(&dir, agent::CLAUDE);
     let (waits, _) = second.tool("avendb_vaults", json!({})).await;
     assert!(waits.contains("waiting for its person to answer"), "{waits}");
     let asked = requests(&mut app, 1).await;
     let device = asked[0]["device"].clone();
     let one = format!("agentClaude.{}.alive", device.as_str().expect("its key"));
-    assert_eq!(alive_files(&dir), [one.clone()], "one device runs, saying so");
+    assert_eq!(alive_files(&dir), [one.clone()], "one key, saying it runs");
     assert_eq!(asked[0]["online"], true, "{asked}");
+    let hosted = app.call("sessions", json!([])).await.expect("its sessions");
+    let devices: Vec<&Value> = hosted.as_array().expect("sessions").iter().map(|s| &s["device"]).collect();
+    assert_eq!(devices, [&device, &device], "both hosted, as one key: {hosted}");
+    assert!(!agent::agents(&dir).join("agentClaude.sock").exists(), "no device of its own answers on a socket");
+    // approved while both run: its key signs its join over a session, and both act as the aven at once
     let granted = app.call("grant", json!(["agentClaude", device, []])).await.expect("granted");
     assert_eq!(granted["vault"], aven, "a device of the aven");
-    let (me, _) = second.tool("avendb_vaults", json!({})).await;
-    let me: Value = serde_json::from_str(&me).expect("JSON");
-    assert_eq!((&me["me"]["device"], &me["me"]["vault"]), (&json!("agentClaude"), &aven), "{me}");
-    let read = reads(&mut second, &entry).await;
-    assert!(!read.1 && read.0.contains("Tomatoes in March."), "the second session reads her note: {read:?}");
-    // a request its device leaves as if its join hadn't reached it: her Mac takes it away, as its key is the aven's
+    assert_eq!(app.asked(), ["approve"], "one sheet");
+    for h in [&mut first, &mut second] {
+        let (me, _) = h.tool("avendb_vaults", json!({})).await;
+        let me: Value = serde_json::from_str(&me).unwrap_or_else(|_| panic!("JSON: {me}"));
+        assert_eq!((&me["me"]["device"], &me["me"]["vault"]), (&json!("agentClaude"), &aven), "{me}");
+        let read = reads(h, &entry).await;
+        assert!(!read.1 && read.0.contains("Tomatoes in March."), "it reads her note: {read:?}");
+    }
+    // a request its key leaves as if its join hadn't reached it: her Mac takes it away, as its key is the aven's
     let stale = agent::Asking { level: "Suggester".into(), why: "to help".into(), vaults: vec![] };
     let stale = agent::asking("agentClaude", device.as_str().expect("its key"), None, &stale);
     std::fs::write(agent::request(&dir, "agentClaude"), stale.to_string()).expect("a request left");
     assert_eq!(app.call("agents", json!([])).await, Ok(json!([])), "no request from a device of the aven");
     assert!(!agent::request(&dir, "agentClaude").exists(), "taken away");
-    // the first session ends: it runs the device on for the second, which goes on through it
-    let first = first.close().await;
-    let read = reads(&mut second, &entry).await;
-    assert!(!read.1 && read.0.contains("Tomatoes in March."), "through the first still: {read:?}");
-    // a session that starts now, its key the aven's, runs no device of its own: the Mac's device hosts it, while the
-    // first runs on for the second
-    let mut newer = Harness::built(&dir, agent::CLAUDE, 2);
-    let (me, _) = newer.tool("avendb_vaults", json!({})).await;
-    let me: Value = serde_json::from_str(&me).expect("JSON");
-    assert_eq!(me["me"]["vault"], aven, "the same device, of the aven: {me}");
-    let read = reads(&mut newer, &entry).await;
-    assert!(!read.1 && read.0.contains("Tomatoes in March."), "the newer, hosted, reads her note: {read:?}");
+    // the first ends; the second goes on, and writes as the aven may
+    first.quit().await;
     let beans = json!({ "op": { "op": "create", "vault": mine, "type": "note", "value": titled("Beans", "In May.") } });
     let (made, error) = second.tool("avendb_run", beans).await;
-    assert!(!error && made.contains("\"ok\""), "an Editor writes, through the first: {made}");
-    let end = Instant::now() + Duration::from_secs(10);
-    while alive_files(&dir) != [one.clone()] {
-        assert!(Instant::now() < end, "still one device: {:?}", alive_files(&dir));
-        tokio::time::sleep(Duration::from_millis(50)).await;
-    }
+    assert!(!error && made.contains("\"ok\""), "an Editor writes: {made}");
     second.quit().await;
-    let done = tokio::time::timeout(Duration::from_secs(60), first).await;
-    done.expect("the first ends within 60 s, its sessions gone").expect("its task").expect("it ends cleanly");
-    newer.quit().await;
     let end = Instant::now() + Duration::from_secs(10);
     while !alive_files(&dir).is_empty() {
         assert!(Instant::now() < end, "none runs: {:?}", alive_files(&dir));
@@ -1274,42 +1245,32 @@ async fn every_session_of_a_harness_answers_as_its_one_device_and_once_approved_
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn an_agent_whose_harness_went_closes_once_unused_and_a_session_still_on_takes_its_place() {
-    let folder = Folder::new("agent-idle");
+async fn an_agent_says_theos_isnt_running_until_it_runs_and_then_works_through_it() {
+    let (_relay, url, server) = server().await;
+    let folder = Folder::new("agent-closed");
     let dir = folder.0.join("avendb");
-    // the first session runs agentClaude's device, running it on for a moment unused once its harness goes
-    let idle = Duration::from_millis(500);
-    let mut first = Harness::idle(&dir, agent::CLAUDE, idle);
-    first.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
-    let mut second = Harness::start(&dir, agent::CLAUDE);
-    let hello = second.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
-    assert_eq!(hello["serverInfo"]["name"], "avendb", "answered through the first");
-    // the first's harness goes: while the second asks, it runs on
-    let first = first.close().await;
-    let busy = Instant::now() + idle * 3;
-    while Instant::now() < busy {
-        second.ask("ping", json!({})).await.expect("answered");
-        assert!(!first.is_finished(), "used, the first runs on");
-        tokio::time::sleep(idle / 5).await;
-    }
-    // unused, it closes its device and ends, its lock let go of
-    let done = tokio::time::timeout(Duration::from_secs(30), first).await;
-    done.expect("the first ends unused").expect("its task").expect("it ends cleanly");
-    // the second takes its place, the same device, and answers on
-    let hello = second.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
+    // no theOS on her Mac: it answers its harness's hello, and each tool call says so
+    let mut claude = Harness::start(&dir, agent::CLAUDE);
+    let hello = claude.ask("initialize", json!({ "protocolVersion": "2025-06-18" })).await.expect("its hello");
     assert_eq!(hello["serverInfo"]["name"], "avendb");
-    let end = Instant::now() + Duration::from_secs(10);
-    while alive_files(&dir).len() != 1 {
-        assert!(Instant::now() < end, "one device runs: {:?}", alive_files(&dir));
-        tokio::time::sleep(Duration::from_millis(50)).await;
+    let (closed, error) = claude.tool("avendb_vaults", json!({})).await;
+    assert!(error && closed.contains("theOS isn't running"), "{closed}");
+    // theOS runs: it connects, and asks for access through it
+    let mut app = App::start(&dir, Passkey::from_seed([5; 32]), true);
+    app.call("found", json!(["Eve's Mac", url.to_string(), server.offer().to_text()])).await.expect("her vault");
+    let mut said = String::new();
+    for _ in 0..100 {
+        said = claude.tool("avendb_vaults", json!({})).await.0;
+        if !said.contains("theOS isn't running") {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
-    second.quit().await;
-    assert!(alive_files(&dir).is_empty(), "none runs");
-}
-
-/// Whether `holders`, an entry's or a file's `syncedTo`, has `device` holding any of it.
-fn holds_some(holders: &Value, device: &Value) -> bool {
-    holders.as_array().into_iter().flatten().any(|h| h["device"] == *device)
+    assert!(said.contains("waiting for its person to answer"), "{said}");
+    assert_eq!(requests(&mut app, 1).await[0]["name"], "agentClaude");
+    claude.quit().await;
+    app.quit().await;
+    server.shutdown().await.expect("the server's node stops");
 }
 
 /// The bytes `from..to` of file `root` of `size` sealed bytes, as the device reads them (`read_file`).
@@ -1384,13 +1345,14 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     bringing["file"] = json!({ "name": "Harvest.csv" });
     let (no, error) = claude.tool("avendb_run", json!({ "op": bringing })).await;
     assert!(error && no.contains("give its absolute path beside the op"), "{no}");
-    // and saves it into her vault, as an Editor creates an entry: its length the file's size, sealed onto its own shelf
+    // and saves it into her vault, as an Editor creates an entry: its length the file's size, sealed onto her Mac's one
+    // store, never a shelf of its own
     let (made, error) = claude.tool("avendb_run", json!({ "op": op, "path": at(&path) })).await;
     assert!(!error && made.contains("\"ok\""), "an Editor saves a file: {made}");
     let made: Value = serde_json::from_str(&made).expect("JSON");
     let (file, root, size) = (made["ok"]["entry"].clone(), made["ok"]["root"].clone(), made["ok"]["size"].clone());
     let (claudes, blob) = (agent::folder(&dir, "agentClaude"), root.as_str().expect("its root in hex").to_string());
-    assert!(objects(&claudes, FLOOR, "blobs").contains(&blob), "in agentClaude's folder");
+    assert!(!objects(&claudes, FLOOR, "blobs").contains(&blob), "never in agentClaude's folder");
     // a note that brings the same file in its creation, one write, and the file brought into it again, path beside
     let mut bringing = create.clone();
     bringing["file"] = json!({ "name": "Harvest.csv", "media": "text/csv" });
@@ -1462,19 +1424,12 @@ async fn an_agent_saves_a_file_of_her_mac_as_its_share_allows_and_her_mac_keeps_
     let shown_file = shown(&mut app, &file, "the agent's file in her vault", |f| f["kind"] == "file").await;
     assert_eq!((&shown_file["title"], &shown_file["files"][0]["len"]), (&json!("Harvest.csv"), &json!(harvest.len())));
     assert_eq!(read_back(&mut app, &root, &size, 0, harvest.len()).await, harvest, "every byte");
-    // while her Mac keeps it light, agentClaude keeps its copy: the one on her Mac
-    tokio::time::sleep(agent::LOOK * 2).await;
-    assert!(objects(&claudes, FLOOR, "blobs").contains(&blob), "still in agentClaude's folder");
-    // with a full copy her Mac keeps it whole, and agentClaude lets go of its own: the one copy is her Mac's
+    // with a full copy her Mac keeps it whole: the one copy, as agentClaude never kept one
     let full = run(&mut app, json!({ "op": "copy", "full": true })).await;
     assert!(full.expect("a full copy")["share"].is_string());
-    let alone = |f: &Value| {
-        let holders = &f["files"][0]["syncedTo"];
-        holds_all(holders, &mac, true) && !holds_some(holders, &claude_device)
-    };
-    shown(&mut app, &file, "the file whole on her Mac, and on agentClaude no more", alone).await;
-    until("agentClaude's folder holds none of it", || async { !objects(&claudes, FLOOR, "blobs").contains(&blob) })
-        .await;
+    let whole = |f: &Value| holds_all(&f["files"][0]["syncedTo"], &mac, true);
+    shown(&mut app, &file, "the file whole on her Mac", whole).await;
+    assert!(!objects(&claudes, FLOOR, "blobs").contains(&blob), "agentClaude's folder holds none of it");
     assert_eq!(read_back(&mut app, &root, &size, 100, 200).await, harvest[100..200], "her Mac reads it still");
     // and agentClaude reads it back still, fetched from her Mac's one store
     let again = folder.0.join("Harvest again.csv");
@@ -2394,7 +2349,7 @@ async fn an_approved_agent_works_as_a_session_of_the_macs_device_by_its_own_key(
     let seeds =
         run(&mut app, json!({ "op": "create", "vault": mine, "type": "note", "value": titled("Seeds", "In March.") }));
     let seeds = seeds.await.expect("her note")["entry"].clone();
-    // agentClaude asks, runs its own device while it isn't hers yet, and joins her coop's aven
+    // agentClaude asks through the Mac's device, which hosts it while it isn't hers yet, and joins her coop's aven
     let mut claude = Harness::start(&dir, agent::CLAUDE);
     let (waits, _) = claude.tool("avendb_vaults", json!({})).await;
     assert!(waits.contains("waiting for its person to answer"), "{waits}");

@@ -170,14 +170,10 @@ pub(crate) async fn name_next(shared: Arc<Shared>, next: SignerId) {
 }
 
 /// The keys an agent's device on `shelf` may be, the one to try first first: its next key, where its shelf names one
-/// its secret makes in either suite, then its own key (`open_as`). None where its shelf holds no secret yet: an agent
-/// that never ran.
+/// its secret makes in either suite, then its own key (`open_as`). An agent that never ran gets its secret on its shelf
+/// now, its one key in the suite new signers are made in.
 pub async fn agent_keys(shelf: &Shelf) -> Result<Vec<sign::DeviceKey>> {
-    let Some(bytes) = shelf.get(SECRET).await.context("the agent's secret")? else {
-        return Ok(vec![]);
-    };
-    let (secret, suite) =
-        sign::kept_secret_of(&bytes).ok_or_else(|| anyhow!("the shelf's {SECRET} holds no device's secret"))?;
+    let (secret, suite) = secret(shelf).await?;
     let named = shelf.get(NEXT).await.context("the shelf's next key")?;
     let next = named.and_then(|b| <[u8; 32]>::try_from(&b[..]).ok()).map(SignerId);
     let mut keys = vec![];

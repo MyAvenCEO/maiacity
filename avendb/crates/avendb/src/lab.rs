@@ -1732,6 +1732,37 @@ impl Lab {
         Ok(join)
     }
 
+    /// Device `on`'s claim (`claim`) of a session it hosts (`host`), an agent on its Mac that runs no device of its own,
+    /// kept on `on`'s store as the agent signs it too: as `accept_claim` keeps a server's, with the session's signature
+    /// asked of it (`Key::Remote`) and its McEliece key `mceliece`, the blob the claim's key to seal to names, which the
+    /// agent handed as it connected. `NotClaiming` if the claim adds no session `on` hosts, or names another key to seal
+    /// to, or its view doesn't make the session a device of the vault; `Locked` if the session didn't sign.
+    pub fn accept_hosted(&mut self, on: SignerId, claim: Claim, mceliece: Arc<[u8]>) -> Result<VaultId, Refusal> {
+        let Claim { add, sigs, .. } = claim;
+        let Action::Share(Sharing::Device { vault, device, seal_to: Some(sealed) }) = &add.action else {
+            return Err(Refusal::NotClaiming);
+        };
+        let (vault, device, sealed) = (*vault, *device, sealed.mceliece);
+        if !self.hosted.get(&device).is_some_and(|h| h.host == on) || BlobId::of(&mceliece) != sealed {
+            return Err(Refusal::NotClaiming);
+        }
+        // its own signature in its place among the edit's signers, the others' in theirs
+        let own = self.sign_by(device, add.id(), &[], &[], None, &[])?;
+        let mut theirs = sigs.into_iter();
+        let all: Option<Vec<Signature>> =
+            add.sigs().map(|s| if s == device { Some(own.clone()) } else { theirs.next() }).collect();
+        let all = all.filter(|_| theirs.next().is_none()).ok_or(Refusal::BadSignature)?;
+        let signed = Signed { edit: add, sigs: all };
+        signed.verify()?;
+        let view = self.held(on).view().step(&signed.edit)?;
+        if !view.vault(vault).is_some_and(|v| claimable(v.kind) && v.devices.contains(&device)) {
+            return Err(Refusal::NotClaiming);
+        }
+        let blobs: Blobs = [(sealed, mceliece)].into_iter().collect();
+        self.deliver(on, vec![signed], &blobs);
+        Ok(vault)
+    }
+
     /// Signer `s`'s signature on edit `id`: by its ceremony among `ceremonies`, over the edit's id or, with the edits
     /// `batch` drafted together, over theirs (`Ceremony::sign_in`), or, with `pass`, the device an edit adds and when
     /// the pass was made, as the passkey's pass for that device (`Ceremony::sign_adding`), its keys taken in from that
@@ -3334,6 +3365,10 @@ impl Lab {
     /// What device `d` shows of an entry: its history, empty if it holds no write of it.
     /// A copy of the item device `d` shows of entry `entry` on line `line`, to edit: the item its history makes.
     fn shown_item(&self, d: SignerId, entry: EntryId, line: Line) -> Option<Item> {
+        // the host's item writes as the host's peer: a session's write is its own key's, its item made anew for it
+        if self.hosted.contains_key(&d) {
+            return None;
+        }
         self.held(d).shown.get(&entry)?.items.get(&line).cloned()
     }
 
