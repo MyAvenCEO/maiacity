@@ -21,6 +21,7 @@ use avendb_net::bucket::{Bucket, Fut};
 use avendb_net::{Node, Shelf, server};
 use tokio::sync::Notify;
 
+use crate::health::Health;
 use crate::{Abort, SnapshotsConfig, bucket};
 
 /// The bucket of snapshots `config` names, each call tried again if it fails (`Retrying`), staging in its folder.
@@ -186,7 +187,14 @@ pub struct Backups {
 impl Backups {
     /// Backs up every vault `node` knows each day at `config.at`, keeping what `keep` keeps, and its device's secret,
     /// from `shelf`, the server's; then checks every folder, reading each file's blobs once in `config.read_days`.
-    pub fn spawn(node: Arc<Node>, shelf: Shelf, config: &SnapshotsConfig, keep: Keep) -> Result<Backups> {
+    /// How each check went is said in `health` (`GET /feed/health`), for an uptime check to watch.
+    pub fn spawn(
+        node: Arc<Node>,
+        shelf: Shelf,
+        config: &SnapshotsConfig,
+        keep: Keep,
+        health: Arc<Health>,
+    ) -> Result<Backups> {
         let (snapshots, wake) = (snapshots(config)?, Arc::new(Notify::new()));
         let (at, read_days) = (config.at, config.read_days);
         let woken = wake.clone();
@@ -208,8 +216,12 @@ impl Backups {
                 }
                 let time = now();
                 back_up_all(&node, &snapshots, &keep, time, false).await;
-                if let Err(e) = check_all(&snapshots, Reading::at(read_days, time)).await {
-                    tracing::error!("avenDB check: the bucket of snapshots isn't checked: {e:#}");
+                match check_all(&snapshots, Reading::at(read_days, time)).await {
+                    Ok(checks) => health.checked(now(), Some(&checks)),
+                    Err(e) => {
+                        tracing::error!("avenDB check: the bucket of snapshots isn't checked: {e:#}");
+                        health.checked(now(), None);
+                    }
                 }
             }
         });

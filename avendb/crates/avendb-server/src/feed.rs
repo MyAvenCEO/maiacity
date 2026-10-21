@@ -65,11 +65,22 @@
 //! `Relay::show`): the body is the token a device shows the relay (`avendb_net::passes_token`), and the server answers
 //! until when its relay lets that device in, `{"until"}`, or why not, `{"refused", "why"}` (`Refused`). A page's
 //! WebSocket can carry its token in its URL alone, which a browser may never send at some 31 KB, and it can't read why
-//! the relay turned it away; so a page shows its passes here first, and connects with none.
+//! the relay turned it away; so a page shows its passes here first, and connects with none. A newcomer signing up with
+//! an invite names it (`?invite=<share>`), as a server that signs people up by invite honours a pass of a passkey it
+//! doesn't know only with an invite of Maia City no vault claimed yet (`avendb_net::Admission::invited`, G5).
+//!
+//! And a person's backup (`POST /feed/backup`, `BACKUP`, `avendb::quota`): a device posts a pass it made for
+//! `quota::BACKUP_AUDIENCE`, `{"pass"}`, and the server answers what it keeps for the person of the vault that device
+//! is a device of, `{"vault", "used", "limit", "group", "refused", "full"}`, their own alone (Q5), so a page shows
+//! "Backup full: 5 GB of 5 GB, Traveler".
+//!
+//! The signed routes, and whether an invite is open, take a while to answer, so each address may ask them only so often
+//! (`Rate`, `AVENDB_FEED_RATE`): its address is the one the proxy in front says it came from (`X-Forwarded-For`), and a
+//! request with none came from inside the server's own network, maiaCITY's API asking about a pass, and is not limited.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::convert::Infallible;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -142,6 +153,9 @@ pub const VAULTS: &str = "/feed/vaults";
 /// Where a new device shows the relay its passes ahead of its connection (`relay_pass`), by a POST of its token.
 pub const RELAY_PASS: &str = "/feed/relay-pass";
 
+/// Where a device asks what the server keeps for its person (`backup`), by a POST of `{"pass"}`.
+pub const BACKUP: &str = "/feed/backup";
+
 /// The most bytes a POST of `PASS` brings: a pass is some 5 KiB of keys and signature, in base64url; and of
 /// `RELAY_PASS`, two relay passes, some 31 KB.
 const MOST_POSTED: usize = 64 << 10;
@@ -185,6 +199,8 @@ struct Feeds {
     entries: Kept<Listed>,
     media: Kept<Media>,
     proofs: Arc<Mutex<BTreeMap<String, Kept<Option<Proven>>>>>,
+    /// How often each address may ask the signed routes (`Rate`).
+    rate: Arc<std::sync::Mutex<Rate>>,
 }
 
 /// A proof of a vault's code, as the server worked it out (`proven`): its bytes, one `wire::Reply`, and its tag, the
@@ -216,10 +232,17 @@ pub struct Feed {
 
 impl Feed {
     /// The feed of what `node` keeps, served on socket `bind`, and the passes shown ahead to the relay behind `gate`.
-    pub(crate) async fn spawn(bind: SocketAddr, node: Arc<Node>, health: Arc<Health>, gate: Arc<Gate>) -> Result<Feed> {
+    /// Each address asks its signed routes as often as `rate` lets it.
+    pub(crate) async fn spawn(
+        bind: SocketAddr,
+        node: Arc<Node>,
+        health: Arc<Health>,
+        gate: Arc<Gate>,
+        rate: Rate,
+    ) -> Result<Feed> {
         let listener = TcpListener::bind(bind).await.with_context(|| format!("the feed on {bind}"))?;
         let addr = listener.local_addr().context("the feed's socket")?;
-        let feeds = Feeds::default();
+        let feeds = Feeds { rate: Arc::new(std::sync::Mutex::new(rate)), ..Feeds::default() };
         let serving = tokio::spawn(async move {
             loop {
                 let stream = match listener.accept().await {
@@ -267,6 +290,13 @@ async fn answer(
     health: Arc<Health>,
     gate: Arc<Gate>,
 ) -> Result<Response<Full<Bytes>>, Infallible> {
+    // the signed routes and an invite's, which take a while, as often as each address may ask them
+    let path = request.uri().path();
+    let costly = [PASS, RELAY_PASS, VAULTS, BACKUP].contains(&path) || path.starts_with(INVITE);
+    if costly && *request.method() != Method::OPTIONS && !feeds.rate.lock().expect("rate").allows(client(&request)) {
+        let busy = no_store(StatusCode::TOO_MANY_REQUESTS, error("asked too often: try again in a minute"));
+        return Ok(opened(busy));
+    }
     if request.uri().path() == PASS && *request.method() == Method::POST {
         return Ok(pass(request, &node).await);
     }
@@ -276,6 +306,14 @@ async fn answer(
             Method::POST => relay_pass(request, &gate).await,
             Method::OPTIONS => opened(no_store(StatusCode::NO_CONTENT, Bytes::new())),
             _ => opened(no_store(StatusCode::METHOD_NOT_ALLOWED, error("post a relay token"))),
+        });
+    }
+    // a page asks it from the browser, as for the vaults
+    if request.uri().path() == BACKUP {
+        return Ok(match *request.method() {
+            Method::POST => backup(request, &node).await,
+            Method::OPTIONS => opened(no_store(StatusCode::NO_CONTENT, Bytes::new())),
+            _ => opened(no_store(StatusCode::METHOD_NOT_ALLOWED, error("post {\"pass\"}"))),
         });
     }
     // an admin's page asks it from the browser: its POST of JSON is asked about first (OPTIONS), and both are answered
@@ -439,21 +477,113 @@ async fn vaults(request: Request<Incoming>, node: &Node) -> Response<Full<Bytes>
     opened(no_store(status, body))
 }
 
+/// The answer to a POST of `BACKUP`: of the pass it brings, `{"pass"}`, made for `quota::BACKUP_AUDIENCE`, what the
+/// server keeps for the person of the vault its device is a device of (`quota::backup_standing`, Q5), checked now by
+/// the server's clock, never kept: `{"vault", "used", "limit", "group", "refused", "full"}`, `limit` and `group` null
+/// where it limits nothing, `used` null before it weighed their backup; forbidden for any other pass, and a bad request
+/// for a body that is no pass.
+async fn backup(request: Request<Incoming>, node: &Node) -> Response<Full<Bytes>> {
+    let posted = match Limited::new(request.into_body(), MOST_POSTED).collect().await {
+        Ok(body) => body.to_bytes(),
+        Err(_) => return opened(no_store(StatusCode::PAYLOAD_TOO_LARGE, error("a pass is a few kilobytes"))),
+    };
+    let asked: Value = serde_json::from_slice(&posted).unwrap_or_default();
+    let pass = asked.get("pass").and_then(Value::as_str).and_then(sign::unbase64url);
+    let Some(pass) = pass.and_then(|bytes| ApiPass::from_wire(&bytes).ok()) else {
+        return opened(no_store(StatusCode::BAD_REQUEST, error("post {\"pass\"}, a device's ApiPass in base64url")));
+    };
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let Some(person) = node.read(move |lab, me| avendb::quota::backup_standing(lab, me, &pass, now)).await else {
+        let refused = error("a pass of a device of a person's vault, made for \"avenDB backup\"");
+        return opened(no_store(StatusCode::FORBIDDEN, refused));
+    };
+    let answer = match node.backup(person) {
+        Some(u) => json!({
+            "vault": person.to_hex(), "used": u.used, "limit": u.limit, "group": u.group, "refused": u.refused,
+            "full": u.full(),
+        }),
+        None => json!({ "vault": person.to_hex(), "used": null, "limit": null, "group": null, "refused": 0, "full": false }),
+    };
+    opened(no_store(StatusCode::OK, Bytes::from(serde_json::to_vec(&answer).expect("JSON writes"))))
+}
+
 /// The answer to a POST of `RELAY_PASS`: of the passes the token it brings carries, the one the relay honours now
-/// (`Relay::show`), `{"until"}`, seconds since 1970, after which the relay lets its device in with no token till then;
-/// else forbidden, `{"refused", "why"}`, the refusal by name and in words, for the page to say.
+/// (`Relay::show`), with the invite its query names if any (`?invite=<share>`), `{"until"}`, seconds since 1970, after
+/// which the relay lets its device in with no token till then; else forbidden, `{"refused", "why"}`, the refusal by
+/// name and in words, for the page to say.
 async fn relay_pass(request: Request<Incoming>, gate: &Gate) -> Response<Full<Bytes>> {
+    let query = request.uri().query().unwrap_or_default();
+    let invite = query.split('&').find_map(|kv| kv.strip_prefix("invite=")).and_then(ShareId::from_hex);
     let posted = match Limited::new(request.into_body(), MOST_POSTED).collect().await {
         Ok(body) => body.to_bytes(),
         Err(_) => return opened(no_store(StatusCode::PAYLOAD_TOO_LARGE, error("two passes are some 31 KB"))),
     };
     let token = String::from_utf8_lossy(&posted);
     let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
-    let (status, answer) = match gate.show(token.trim(), now) {
+    let (status, answer) = match gate.show(token.trim(), invite, now) {
         Ok(until) => (StatusCode::OK, json!({ "until": until })),
         Err(refused) => (StatusCode::FORBIDDEN, json!({ "refused": refused.name(), "why": refused.why() })),
     };
     opened(no_store(status, Bytes::from(serde_json::to_vec(&answer).expect("JSON writes"))))
+}
+
+/// The address request `request` came from, as the proxy in front says (`X-Forwarded-For`, its last address, the one
+/// the proxy saw): none for a request that came from inside the server's own network, with no such header.
+fn client(request: &Request<Incoming>) -> Option<IpAddr> {
+    client_of(request.headers().get("x-forwarded-for").and_then(|v| v.to_str().ok()))
+}
+
+/// The address header `forwarded` names last, if any (`client`): one that names none it reads is counted as one
+/// address of its own, never as inside the network.
+fn client_of(forwarded: Option<&str>) -> Option<IpAddr> {
+    let last = forwarded?.rsplit(',').next().unwrap_or_default().trim();
+    Some(last.parse().unwrap_or(IpAddr::from([0, 0, 0, 0])))
+}
+
+/// How often each address may ask the feed's signed routes (`AVENDB_FEED_RATE`): a bucket of tokens for each, as many
+/// as it may ask in a minute, filled again over that minute, one taken for each ask. It holds at most `ADDRESSES`
+/// buckets; past that it forgets the full ones, and if none is full, all of them.
+pub struct Rate {
+    per_minute: u32,
+    buckets: HashMap<IpAddr, (f64, Instant)>,
+}
+
+/// The most addresses a `Rate` keeps a bucket for.
+const ADDRESSES: usize = 16_384;
+
+impl Rate {
+    /// `per_minute` asks a minute for each address; 0 for no limit.
+    pub fn per_minute(per_minute: u32) -> Rate {
+        Rate { per_minute, buckets: HashMap::new() }
+    }
+
+    /// Takes an ask of address `ip` now, if it may ask: none, inside the server's network, always may.
+    pub fn allows(&mut self, ip: Option<IpAddr>) -> bool {
+        self.allows_at(ip, Instant::now())
+    }
+
+    /// `allows`, at `now`.
+    fn allows_at(&mut self, ip: Option<IpAddr>, now: Instant) -> bool {
+        let (Some(ip), true) = (ip, self.per_minute > 0) else { return true };
+        let most = f64::from(self.per_minute);
+        let filled = |(tokens, at): (f64, Instant)| (tokens + now.duration_since(at).as_secs_f64() * most / 60.0).min(most);
+        if self.buckets.len() >= ADDRESSES && !self.buckets.contains_key(&ip) {
+            self.buckets.retain(|_, b| filled(*b) < most);
+            if self.buckets.len() >= ADDRESSES {
+                self.buckets.clear();
+            }
+        }
+        let tokens = self.buckets.get(&ip).map_or(most, |b| filled(*b));
+        let allows = tokens >= 1.0;
+        self.buckets.insert(ip, (if allows { tokens - 1.0 } else { tokens }, now));
+        allows
+    }
+}
+
+impl Default for Rate {
+    fn default() -> Rate {
+        Rate::per_minute(0)
+    }
 }
 
 /// Answer `response` readable by any page, for its POST of JSON: what an admin's page in a browser asks of `VAULTS`.
@@ -1037,6 +1167,37 @@ fn plain(status: StatusCode, why: &'static str) -> Response<Full<Bytes>> {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn each_address_asks_the_signed_routes_as_often_as_its_rate_lets_it() {
+        let mut rate = Rate::per_minute(3);
+        let (a, b): (IpAddr, IpAddr) = ("203.0.113.7".parse().expect("an address"), "2001:db8::1".parse().expect("one"));
+        let t0 = Instant::now();
+        assert!((0..3).all(|_| rate.allows_at(Some(a), t0)), "three at once");
+        assert!(!rate.allows_at(Some(a), t0), "not a fourth");
+        assert!(rate.allows_at(Some(b), t0), "another address has its own");
+        assert!(rate.allows_at(None, t0), "inside the server's network, never limited");
+        assert!(!rate.allows_at(Some(a), t0 + Duration::from_secs(10)), "a sixth of a minute fills less than one");
+        assert!(rate.allows_at(Some(a), t0 + Duration::from_secs(21)), "a third of a minute fills one");
+        assert!(rate.allows_at(Some(a), t0 + Duration::from_secs(600)), "and a long wait fills it");
+        let mut open = Rate::per_minute(0);
+        assert!((0..1000).all(|_| open.allows_at(Some(a), t0)), "0 limits nothing");
+        // as many addresses as it keeps, and one more: the full ones forgotten first
+        let mut many = Rate::per_minute(1);
+        for n in 0..ADDRESSES as u32 {
+            many.allows_at(Some(IpAddr::from(n.to_be_bytes())), t0);
+        }
+        assert!(many.allows_at(Some(b), t0) && many.buckets.len() <= ADDRESSES);
+    }
+
+    #[test]
+    fn the_address_is_the_last_the_proxy_names() {
+        assert_eq!(client_of(None), None);
+        assert_eq!(client_of(Some("203.0.113.7")), Some("203.0.113.7".parse().expect("an address")));
+        let said = Some("10.0.0.1, 2001:db8::1");
+        assert_eq!(client_of(said), Some("2001:db8::1".parse().expect("an address")), "the one the proxy saw");
+        assert_eq!(client_of(Some("not an address")), Some(IpAddr::from([0, 0, 0, 0])), "limited all the same");
+    }
 
     #[tokio::test]
     async fn a_feed_asked_many_times_at_once_is_worked_out_once() {

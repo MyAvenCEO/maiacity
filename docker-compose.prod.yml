@@ -29,6 +29,12 @@ services:
     build: !reset null
     volumes:
       - ${AVENDB_DATA_PATH:?set AVENDB_DATA_PATH in .env}:/data
+    environment:
+      # it keeps a new vault only where Maia City welcomes it (a person's with the invite they claim, a coop or an aven
+      # an admin owns), and its relay lets in by a pass only the passkeys of vaults it keeps and newcomers with an
+      # open invite (Gate.lean, Admission.lean); the vaults it kept before stay kept
+      AVENDB_GATE: ${AVENDB_GATE:-on}
+      AVENDB_SIGNUP: ${AVENDB_SIGNUP:-invite}
     expose:
       - "3350"
       # the Maia Universe's feed, behind Caddy at avendb.maia.city/feed/

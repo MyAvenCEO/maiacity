@@ -23,6 +23,7 @@
 	import { tick } from 'svelte';
 	import { sure } from '$lib/app/sure.js';
 	import Ask from './Ask.svelte';
+	import BackupUsage from './BackupUsage.svelte';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
@@ -1096,6 +1097,7 @@
 		<p>
 			<span class="chip" class:ok={backs}>{backs ? 'Backed up' : 'Relay only'}</span>
 		</p>
+		{#if backs}<BackupUsage />{/if}
 		<p class="soft">
 			{backs
 				? "avenDB's server keeps your vault encrypted, which it can never open, so your passkey alone brings it back with every device lost."
