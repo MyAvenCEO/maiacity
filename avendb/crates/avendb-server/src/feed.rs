@@ -58,6 +58,12 @@
 //! now, or a signer that is no vault's device. So the API opens its admins' pages by avenDB's own word, never kept.
 //! Asked with `"passkeys": true`, it adds the P-256 keys of that vault's owner passkeys, `"passkeys"`
 //! (`world::vault_passkeys`): the API knows a person by the human vault the passkey they signed up with roots.
+//!
+//! And a new device's relay passes, shown ahead of its connection (`POST /feed/relay-pass`, `RELAY_PASS`,
+//! `Relay::show`): the body is the token a device shows the relay (`avendb_net::passes_token`), and the server answers
+//! until when its relay lets that device in, `{"until"}`, or why not, `{"refused", "why"}` (`Refused`). A page's
+//! WebSocket can carry its token in its URL alone, which a browser may never send at some 31 KB, and it can't read why
+//! the relay turned it away; so a page shows its passes here first, and connects with none.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
@@ -84,8 +90,8 @@ use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
 
-use crate::Abort;
 use crate::health::Health;
+use crate::{Abort, Gate};
 
 /// Where the feed is served.
 pub const PATH: &str = "/feed/posts";
@@ -131,7 +137,11 @@ pub const PASS: &str = "/feed/pass";
 /// `{"pass"}`: a pass its device made for `world::VAULTS_AUDIENCE`.
 pub const VAULTS: &str = "/feed/vaults";
 
-/// The most bytes a POST of `PASS` brings: a pass is some 5 KiB of keys and signature, in base64url.
+/// Where a new device shows the relay its passes ahead of its connection (`relay_pass`), by a POST of its token.
+pub const RELAY_PASS: &str = "/feed/relay-pass";
+
+/// The most bytes a POST of `PASS` brings: a pass is some 5 KiB of keys and signature, in base64url; and of
+/// `RELAY_PASS`, two relay passes, some 31 KB.
 const MOST_POSTED: usize = 64 << 10;
 
 /// Where the proof of one vault's public code is served (`proof`): `PROOF?vault=<64 hex>` or `PROOF?seed=1`, and the
@@ -203,8 +213,8 @@ pub struct Feed {
 }
 
 impl Feed {
-    /// The feed of what `node` keeps, served on socket `bind`.
-    pub async fn spawn(bind: SocketAddr, node: Arc<Node>, health: Arc<Health>) -> Result<Feed> {
+    /// The feed of what `node` keeps, served on socket `bind`, and the passes shown ahead to the relay behind `gate`.
+    pub(crate) async fn spawn(bind: SocketAddr, node: Arc<Node>, health: Arc<Health>, gate: Arc<Gate>) -> Result<Feed> {
         let listener = TcpListener::bind(bind).await.with_context(|| format!("the feed on {bind}"))?;
         let addr = listener.local_addr().context("the feed's socket")?;
         let feeds = Feeds::default();
@@ -219,10 +229,11 @@ impl Feed {
                         continue;
                     }
                 };
-                let (node, feeds, health) = (node.clone(), feeds.clone(), health.clone());
+                let (node, feeds, health, gate) = (node.clone(), feeds.clone(), health.clone(), gate.clone());
                 tokio::spawn(async move {
-                    let service =
-                        service_fn(move |request| answer(request, node.clone(), feeds.clone(), health.clone()));
+                    let service = service_fn(move |request| {
+                        answer(request, node.clone(), feeds.clone(), health.clone(), gate.clone())
+                    });
                     let mut http = http1::Builder::new();
                     // a client that never finishes its request's head is let go, as the timer says (30 s)
                     http.timer(TokioTimer::new());
@@ -244,16 +255,26 @@ impl Feed {
 /// The answer to `request`: for a GET or HEAD, the feed of `PATH`, a picture of `FILES` (`picture`), a medium of `MEDIA`
 /// by the `Range` it asks (`media`), the entries of `ENTRIES` or the code of `CODE` (`listed`), an entry of `ENTRY`
 /// (`entry`), or a file of it (`OF_ENTRY`, `OF_ROOT`, `source`), the proof of some code (`PROOF`, `proof`), or whether
-/// an invite is open (`INVITE`, `invite`); for a POST of `PASS`, whom a pass names (`pass`); nothing for a browser's
-/// OPTIONS before any of them; and not found for anything else.
+/// an invite is open (`INVITE`, `invite`); for a POST of `PASS`, whom a pass names (`pass`), and of `RELAY_PASS`, until
+/// when the relay lets a new device in (`relay_pass`); nothing for a browser's OPTIONS before any of them; and not
+/// found for anything else.
 async fn answer(
     request: Request<Incoming>,
     node: Arc<Node>,
     feeds: Feeds,
     health: Arc<Health>,
+    gate: Arc<Gate>,
 ) -> Result<Response<Full<Bytes>>, Infallible> {
     if request.uri().path() == PASS && *request.method() == Method::POST {
         return Ok(pass(request, &node).await);
+    }
+    // a page shows it, from the browser, before its device connects
+    if request.uri().path() == RELAY_PASS {
+        return Ok(match *request.method() {
+            Method::POST => relay_pass(request, &gate).await,
+            Method::OPTIONS => opened(no_store(StatusCode::NO_CONTENT, Bytes::new())),
+            _ => opened(no_store(StatusCode::METHOD_NOT_ALLOWED, error("post a relay token"))),
+        });
     }
     // an admin's page asks it from the browser: its POST of JSON is asked about first (OPTIONS), and both are answered
     if request.uri().path() == VAULTS {
@@ -414,6 +435,23 @@ async fn vaults(request: Request<Incoming>, node: &Node) -> Response<Full<Bytes>
         None => (StatusCode::FORBIDDEN, error("the vaults are listed to an admin of Maia City alone")),
     };
     opened(no_store(status, body))
+}
+
+/// The answer to a POST of `RELAY_PASS`: of the passes the token it brings carries, the one the relay honours now
+/// (`Relay::show`), `{"until"}`, seconds since 1970, after which the relay lets its device in with no token till then;
+/// else forbidden, `{"refused", "why"}`, the refusal by name and in words, for the page to say.
+async fn relay_pass(request: Request<Incoming>, gate: &Gate) -> Response<Full<Bytes>> {
+    let posted = match Limited::new(request.into_body(), MOST_POSTED).collect().await {
+        Ok(body) => body.to_bytes(),
+        Err(_) => return opened(no_store(StatusCode::PAYLOAD_TOO_LARGE, error("two passes are some 31 KB"))),
+    };
+    let token = String::from_utf8_lossy(&posted);
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let (status, answer) = match gate.show(token.trim(), now) {
+        Ok(until) => (StatusCode::OK, json!({ "until": until })),
+        Err(refused) => (StatusCode::FORBIDDEN, json!({ "refused": refused.name(), "why": refused.why() })),
+    };
+    opened(no_store(status, Bytes::from(serde_json::to_vec(&answer).expect("JSON writes"))))
 }
 
 /// Answer `response` readable by any page, for its POST of JSON: what an admin's page in a browser asks of `VAULTS`.

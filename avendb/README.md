@@ -293,8 +293,8 @@ The server runs at `avendb.maia.city`, beside the media vault's server on the sa
 2. **Everything else** comes from `.github/workflows/api.yml`: the Caddy site `avendb.maia.city` (`deploy/Caddyfile`,
    `reverse_proxy avendb:3350`, and `/feed/*` to `avendb:3351`; its TLS agrees keys by X25519MLKEM768 alone,
    `curves x25519mlkem768`, the only key exchange a device offers, and `avendb.yml` checks a classical one is refused;
-   it reads request headers up to 64 KB, as a browser's relay pass rides in the relay's URL and Caddy 2.11 turns it
-   away otherwise, which both workflows check), UDP 7401 in the firewall (`infra/index.ts`), the service `avendb` in the
+   it reads request headers up to 64 KB, as a browser's relay pass rides in the relay's URL wherever the page can't
+   show it first by a POST to `/feed/relay-pass`, and Caddy 2.11 turns it away otherwise, which both workflows check), UDP 7401 in the firewall (`infra/index.ts`), the service `avendb` in the
    root compose files, and its settings in the server's `.env`: `AVENDB_RELAY_URL=https://avendb.maia.city`,
    `AVENDB_PUBLIC_ADDR` (the server's IP and port 7401), and its data folder on the Hetzner volume.
 3. **DNS**: an A record `avendb.maia.city` for the server. `api.yml`'s `dns` job sets it with a `HETZNER_DNS_TOKEN`;
