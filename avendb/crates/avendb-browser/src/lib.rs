@@ -695,6 +695,38 @@ impl Device {
         Ok(Some(device))
     }
 
+    /// Signs a checkpoint over every edit its person's key may vouch for now, as they ask for it on the Performance
+    /// page (`avendb::lab::Lab::draft_checkpoint` with `all`): the edits earlier keys signed in SLH-DSA that no
+    /// checkpoint covers, the edits of keys that still sign the old way among them, in one batch that `sign` signs,
+    /// given its challenge and what it asks for, as a key move's (`move_keys`). Nothing moves, so it goes on as it is,
+    /// and syncs the checkpoint to its peers. How many edits it covers: none where there was nothing to cover. Fails if
+    /// no key of its person's in ML-DSA-65 opened it, or if the vault refuses it.
+    pub async fn sign_checkpoint<S>(&self, sign: impl FnOnce([u8; 32], Moving) -> S) -> Result<usize>
+    where
+        S: Future<Output = Result<Signing>>,
+    {
+        let refused = |why: Refusal| anyhow!("its checkpoint is refused: {why:?}");
+        let opener = self.opener.clone();
+        let drafted = move |lab: &Lab, me| {
+            let by = lab.owner_among(me, &opener).or(opener.first().copied()).ok_or(Refusal::NotActing)?;
+            let drafts = lab.draft_checkpoint(me, by, true)?;
+            let (passkeys, touches) = ceremonies_of(lab, me, &drafts, &[]);
+            Ok::<_, Refusal>((drafts, passkeys, touches))
+        };
+        let (drafts, passkeys, touches) = self.node.read(drafted).await.map_err(refused)?;
+        let Some(first) = drafts.first() else { return Ok(0) };
+        let covered = drafts.iter().map(|d| match &d.edit().action {
+            Action::Checkpoint { covers, .. } => covers.len(),
+            _ => 0,
+        });
+        let covered = covered.sum();
+        let (passkey, touch) = (!passkeys.is_empty(), !touches.is_empty());
+        let Signing { passkey, touch } = sign(first.challenge(), Moving { passkey, touch, checkpoint: true, ..Moving::default() }).await?;
+        let signers = Signers { passkeys, touches, passkey: passkey.map(Arc::new), touch: touch.map(Arc::new) };
+        self.node.act(move |lab, me| lab.complete_move(me, drafts, &signers.ceremonies())).await.map_err(refused)?;
+        Ok(covered)
+    }
+
     /// Its Mac's Touch ID key's Enclave key, as its shelf keeps it (`Meta::touch`, `sign::enclave_key`): what names
     /// that key's next key in its key move (`Lab::moves`). None in a browser.
     async fn touch_key(&self) -> Result<Option<[u8; 32]>> {
@@ -1064,7 +1096,7 @@ fn drafted(
     if moves.is_empty() {
         let Some(by) = lab.owner_among(me, opener).or(opener.first().copied()) else { return Ok(None) };
         let caught_up = lab.governed_devices(me).is_empty() || holds_what_servers_hold(lab, me, peers);
-        let drafts = if caught_up { lab.draft_checkpoint(me, by)? } else { vec![] };
+        let drafts = if caught_up { lab.draft_checkpoint(me, by, false)? } else { vec![] };
         if drafts.is_empty() {
             return Ok(None);
         }
@@ -1401,6 +1433,23 @@ impl PageDevice {
             };
             let moved = device.move_keys(start, sign, |_| async { Ok(()) }).await.map_err(js_value)?;
             Ok(moved.map_or(JsValue::UNDEFINED, |moved| PageDevice(Rc::new(moved), store).into()))
+        })
+    }
+
+    /// Signs a checkpoint over every edit its person's key may vouch for now (`Device::sign_checkpoint`), in one
+    /// ceremony of their passkey, `ceremony(challenge, "checkpoint")`, where it asks for one: a promise of how many
+    /// edits it covers.
+    pub fn sign_checkpoint(&self, ceremony: Function) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let ceremonies = Js(ceremony);
+            let sign = |challenge, moving: Moving| async move {
+                let passkey = if moving.passkey { Some(ceremonies.call(challenge, "checkpoint").await?) } else { None };
+                anyhow::ensure!(!moving.touch, "a browser holds no Touch ID key");
+                Ok(Signing { passkey, touch: None })
+            };
+            let covered = device.sign_checkpoint(sign).await.map_err(js_value)?;
+            Ok(JsValue::from(covered as f64))
         })
     }
 

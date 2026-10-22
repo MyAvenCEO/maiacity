@@ -128,7 +128,7 @@ mod tree;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::hash::Hash;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -704,6 +704,7 @@ impl Node {
             pool,
             changed: Notify::new(),
             size: watch::Sender::new(size),
+            warm: AtomicBool::new(false),
             sent: Sent::default(),
             jobs: Jobs::default(),
             keeping: Mutex::default(),
@@ -1727,6 +1728,8 @@ struct Shared {
     changed: Notify,
     /// How many edits and McEliece keys its device holds (`Node::changes`).
     size: watch::Sender<(usize, usize)>,
+    /// Whether its device worked out something its shelf lacks, as last seen (`Lab::warm_due`).
+    warm: AtomicBool,
     /// How many messages it has sent.
     sent: Sent,
     /// What it does in the background, as its person watches it (`Node::jobs`).
@@ -1835,8 +1838,14 @@ impl Shared {
                 lab.set_now(unix_now());
                 let out = f(&mut lab, me);
                 let now = lab.size(shared.me);
-                if shared.size.send_if_modified(|size| *size != now && { *size = now; true }) {
+                let grew = shared.size.send_if_modified(|size| *size != now && { *size = now; true });
+                // what it worked out, as a replay or a key it opened, wakes the saver too, once as it comes to
+                let warm = lab.warm_due(shared.me);
+                if grew || (warm && !shared.warm.swap(true, Ordering::Relaxed)) {
                     shared.edits.iter().for_each(|edits| edits.due.notify_one());
+                }
+                if !warm {
+                    shared.warm.store(false, Ordering::Relaxed);
                 }
                 out
             }));

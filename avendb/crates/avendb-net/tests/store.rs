@@ -343,6 +343,13 @@ async fn a_node_starts_from_what_it_worked_out_before_and_passes_what_it_cant_op
             (count("replay: removals as chosen before"), count("keys from the shelf"), count("keys opened"))
         });
         let counts = counts.await;
+        // its saver puts what it worked out as it comes to, with no edit to save and before it stops
+        let mut waited = 0;
+        while node.read(|lab, me| lab.warm_due(me)).await {
+            assert!(waited < 100, "what it worked out, put while it runs");
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            waited += 1;
+        }
         node.shutdown().await.expect("it stops");
         counts
     };

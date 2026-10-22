@@ -74,6 +74,7 @@
 //! device reads off those of them the vault created itself and the device counts (`lane_of`): what it reads and judges
 //! the vault's entries by.
 
+use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
 use std::sync::{Arc, OnceLock};
@@ -96,7 +97,7 @@ use crate::merge;
 use crate::ops::Loc;
 use crate::perf::Perf;
 use crate::policy::{
-    acting, covered, mk_audience, replay, replay_none, replay_on_why, Action, Memo, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
+    acting, covered, mk_audience, replay, replay_none, replay_on, replay_on_why, Action, Memo, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
     Meaning, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share, Sharing, State, Vault, Who, Why,
     Wrap, Write,
 };
@@ -254,6 +255,16 @@ impl Unsigned {
     }
 }
 
+/// The edits of one vault a checkpoint by its person's key may cover (`Lab::vouch`), each in the order its device
+/// holds it.
+struct Vouch {
+    vault: VaultId,
+    /// Those every SLH-DSA signer of which moved to its next key, or acts for the vault no more.
+    ready: Vec<EditId>,
+    /// Those that wait on signers that still act for the vault in SLH-DSA, each with those signers.
+    waiting: Vec<(EditId, Vec<SignerId>)>,
+}
+
 /// Edits drafted on a device one after another, each building on those drafted before it, for its passkeys to sign all
 /// of them in one ceremony (`Lab::drafting`): as a person's first device founds their vault and adds itself, and the
 /// first to claim a server founds avenMAIA and adds the server, in one ceremony instead of one for each edit.
@@ -261,6 +272,11 @@ pub struct Drafting<'a> {
     lab: &'a Lab,
     /// The device's log, with the edits drafted so far.
     log: Log,
+    /// The replay of `log`'s edits: the device's own until a draft joins them, then stepped on with each
+    /// (`policy::replay_on`), the choice of its resolve taken where it holds (`Memo`). No draft replays the whole log
+    /// again: a key move's checkpoint over a big vault drafted a whole replay for each edit and each look, every removal
+    /// tried each time (2026-10-22, about 12 s each on Samuel's Mac).
+    replay: Cow<'a, Replay>,
     drafts: Vec<Unsigned>,
 }
 
@@ -269,11 +285,19 @@ impl Drafting<'_> {
     pub fn draft(&mut self, signers: &[SignerId], mut action: Action) -> Result<EditId, Refusal> {
         let (&author, cosigners) = signers.split_first().expect("an edit has an author");
         let blobs = self.lab.fill_seal_to(&mut action);
-        let edit = self.log.check(author, cosigners, action)?;
+        let edit = self.log.check_on(&self.replay, true, author, cosigners, action)?;
         let (id, held) = (edit.id(), self.log.ids().len());
         self.log.receive([edit.clone()]);
+        let was = std::mem::replace(&mut self.replay, Cow::Owned(replay_none(None))).into_owned();
+        self.replay = Cow::Owned(replay_on(was, self.log.edits(), held));
+        debug_assert!(*self.replay == self.log.replay(), "a draft stepped on differs from the replay");
         self.drafts.push(Unsigned { edit, blobs, held, batch: vec![], pass: None });
         Ok(id)
+    }
+
+    /// What the device's log says with the edits drafted so far.
+    pub fn view(&self) -> State {
+        self.replay.state.clone()
     }
 
     /// The drafts, in the order they were drafted, each to sign over their batch and keep in that order
@@ -1247,7 +1271,7 @@ impl Lab {
         let owner = |view: &State, s| view.vault(vault).is_some_and(|v| v.owners.contains(&Principal::Signer(s)));
         let root = |view: &State| view.vault(vault).and_then(|v| v.root);
         let mut drafting = self.drafting(on);
-        let view = drafting.log.view();
+        let view = drafting.view();
         let owners = moves.iter().copied().filter(|&(old, new)| owner(&view, old) && !owner(&view, new));
         for (old, new) in owners {
             let adder = if Some(new) == self.recovery() { by } else { old };
@@ -1259,7 +1283,7 @@ impl Lab {
             drafting.draft(&signers, Action::Share(add))?;
             drafting.drafts.last_mut().expect("drafted").blobs.extend(blobs);
         }
-        let view = drafting.log.view();
+        let view = drafting.view();
         let by = moves.iter().find(|&&(old, _)| old == by).map_or(by, |&(_, new)| new);
         // each device's next key joins the vault the device belongs to: the person's own, or an aven or a device vault
         // they govern, its server's and its agents' (K3c), after theirs
@@ -1289,7 +1313,7 @@ impl Lab {
     /// On top of `drafting`, by `by`, a next key, a checkpoint over each vault `by` approves for, covering what
     /// `uncovered` finds, in parts of at most `CHECKPOINT_COVERS` edits.
     fn draft_checkpoints(&self, on: SignerId, drafting: &mut Drafting, by: SignerId) -> Result<(), Refusal> {
-        for (vault, covers) in self.uncovered(on, &drafting.log, by) {
+        for (vault, covers) in self.uncovered(on, &drafting, by) {
             for part in covers.chunks(CHECKPOINT_COVERS) {
                 drafting.draft(&[by], Action::Checkpoint { vault, covers: part.to_vec() })?;
             }
@@ -1299,21 +1323,39 @@ impl Lab {
 
     /// Device `on`'s checkpoints alone, signed by `by` (its person's key, moved to ML-DSA-65): over the edits earlier
     /// keys signed that no checkpoint covers yet (`uncovered`), for a person with nothing left to move or retire whose
-    /// keys moved before a move drafted checkpoints, or whose vaults took such edits since. Empty if there are none.
-    pub fn draft_checkpoint(&self, on: SignerId, by: SignerId) -> Result<Vec<Unsigned>, Refusal> {
+    /// keys moved before a move drafted checkpoints, or whose vaults took such edits since. Without `all`, only those
+    /// no earlier key signs any more (`Vouch::ready`), as each unlock asks: an edit of a key still to move is covered
+    /// at its own move, not by a ceremony at each unlock until then. With `all`, as its person asks for it, every one
+    /// `by` may vouch for, the edits of keys that still sign the old way too (`Vouch::waiting`): the vault's owners
+    /// approve anything it may do, so their word adds no power (`Checkpoint.lean`). Empty if there are none.
+    pub fn draft_checkpoint(&self, on: SignerId, by: SignerId, all: bool) -> Result<Vec<Unsigned>, Refusal> {
         if self.keys_of(by).is_none_or(|k| k.suite() == Suite::SlhDsa) {
             return Ok(vec![]);
         }
         let mut drafting = self.drafting(on);
-        // only what no earlier key signs any more: one moved to its next key, or no longer acting for the vault; an
-        // edit of a key still to move is covered at its own move, not by a ceremony at each unlock until then
+        for Vouch { vault, ready, waiting } in self.vouch(on, &drafting, by) {
+            let mut covers = ready;
+            if all {
+                covers.extend(waiting.into_iter().map(|(id, _)| id));
+            }
+            for part in covers.chunks(CHECKPOINT_COVERS) {
+                drafting.draft(&[by], Action::Checkpoint { vault, covers: part.to_vec() })?;
+            }
+        }
+        Ok(drafting.done())
+    }
+
+    /// For each vault `by` approves on device `on`, the edits a checkpoint by `by` may cover (`uncovered`), in `log`'s
+    /// order: those whose SLH-DSA signers all moved to their next keys or act for the vault no more, and those that
+    /// wait on a signer that still acts for it in SLH-DSA, each with those signers.
+    fn vouch(&self, on: SignerId, drafting: &Drafting, by: SignerId) -> Vec<Vouch> {
         let store = self.held(on);
-        let view = drafting.log.view();
+        let view = &drafting.replay.state;
         let slh = |id: &EditId| -> Vec<SignerId> {
             let sigs = store.signed.get(id).map(|s| s.sigs.as_slice()).unwrap_or_default();
             sigs.iter().filter(|x| x.keys.suite() == Suite::SlhDsa).map(|x| x.keys.id()).collect()
         };
-        let uncovered = self.uncovered(on, &drafting.log, by);
+        let uncovered = self.uncovered(on, drafting, by);
         let mut signers: BTreeSet<SignerId> = uncovered.iter().flat_map(|(_, ids)| ids.iter().flat_map(slh)).collect();
         // beside each vault's owners and devices, among which a moved key's next key is
         for v in uncovered.iter().filter_map(|(v, _)| view.vault(*v)) {
@@ -1324,14 +1366,74 @@ impl Lab {
             }));
         }
         let moved = self.earlier_keys(on, &signers);
+        let mut out = vec![];
         for (vault, covers) in uncovered {
             let done = |s: &SignerId| moved.contains_key(s) || !view.acts_for(*s, vault);
-            let covers: Vec<EditId> = covers.into_iter().filter(|id| slh(id).iter().all(done)).collect();
-            for part in covers.chunks(CHECKPOINT_COVERS) {
-                drafting.draft(&[by], Action::Checkpoint { vault, covers: part.to_vec() })?;
+            let (mut ready, mut waiting) = (vec![], vec![]);
+            for id in covers {
+                let held: Vec<SignerId> = slh(&id).into_iter().filter(|s| !done(s)).collect();
+                match held.is_empty() {
+                    true => ready.push(id),
+                    false => waiting.push((id, held)),
+                }
             }
+            out.push(Vouch { vault, ready, waiting });
         }
-        Ok(drafting.done())
+        out
+    }
+
+    /// Where device `on`'s old signatures stand for a checkpoint, as its Performance page shows it: what one by its
+    /// person's key at hand (`vouching_key`) would cover now, by vault, `ready` as each unlock offers it and `waiting`
+    /// on a key that still signs in SLH-DSA, and those keys, the most edits first, each with what it is of which vault;
+    /// and `others`, the edits no checkpoint of theirs may cover, whose signers never acted for a vault they govern.
+    /// Null while no key of theirs in ML-DSA-65 is at hand.
+    pub fn vouching(&self, on: SignerId) -> Value {
+        let Some(by) = self.vouching_key(on) else { return Value::Null };
+        let drafting = self.drafting(on);
+        let vouch = self.vouch(on, &drafting, by);
+        let view = &drafting.replay.state;
+        let mut keys: BTreeMap<SignerId, usize> = BTreeMap::new();
+        for (_, held) in vouch.iter().flat_map(|v| &v.waiting) {
+            held.iter().for_each(|s| *keys.entry(*s).or_default() += 1);
+        }
+        let seen = self.signers_seen(on, &keys.keys().copied().collect());
+        let what = |s: SignerId| {
+            let device = view.vaults().iter().find(|v| v.devices.contains(&s)).map(|v| ("device", v.id));
+            let owner = || view.vaults().iter().find(|v| v.owners.contains(&Principal::Signer(s))).map(|v| ("owner", v.id));
+            let recovery = seen.get(&s).is_some_and(|k| self.is_recovery(k));
+            match device.or_else(owner) {
+                Some((_, v)) if recovery => ("recovery", Some(v)),
+                Some((role, v)) => (role, Some(v)),
+                None => (if recovery { "recovery" } else { "signer" }, None),
+            }
+        };
+        let mut keys: Vec<(SignerId, usize)> = keys.into_iter().collect();
+        keys.sort_by_key(|&(s, n)| (std::cmp::Reverse(n), s));
+        let hex = |v: VaultId| crate::words::hex(&v.0);
+        let keys: Vec<Value> = keys
+            .into_iter()
+            .map(|(s, n)| {
+                let (role, of) = what(s);
+                serde_json::json!({ "signer": s.to_hex(), "role": role, "of": of.map(hex), "edits": n })
+            })
+            .collect();
+        let ready: usize = vouch.iter().map(|v| v.ready.len()).sum();
+        let waiting: usize = vouch.iter().map(|v| v.waiting.len()).sum();
+        let vaults: Vec<Value> = vouch
+            .iter()
+            .map(|v| serde_json::json!({ "vault": hex(v.vault), "ready": v.ready.len(), "waiting": v.waiting.len() }))
+            .collect();
+        let others = self.uncovered_count(on).saturating_sub(ready + waiting);
+        serde_json::json!({ "by": by.to_hex(), "ready": ready, "waiting": waiting, "vaults": vaults, "keys": keys, "others": others })
+    }
+
+    /// The key of device `on`'s person a checkpoint of theirs is signed by (`draft_checkpoint`), as the Lab holds
+    /// their keys: an owner key of the vault `on` belongs to, in ML-DSA-65, whose approval alone is the vault's where
+    /// one is (`owner_among`). None while none is at hand.
+    pub fn vouching_key(&self, on: SignerId) -> Option<SignerId> {
+        let next = |k: &SignerId| self.keys_of(*k).is_some_and(|x| x.suite() == sign::SIGNING);
+        let held: Vec<SignerId> = self.keys.keys().copied().filter(next).collect();
+        self.owner_among(on, &held).filter(next)
     }
 
     /// How many of device `on`'s edits carry an SLH-DSA signature no checkpoint it holds covers, and so still need
@@ -1369,9 +1471,9 @@ impl Lab {
     /// For each vault `by` approves in `log`, `on`'s edits, drafted moves among them, a checkpoint over it would cover
     /// that none covers yet: those that stand and carry an SLH-DSA signature, every signer of which acted for the vault
     /// just before or just after it (`acting`). Each edit under the first vault, in `log`'s order, that may cover it.
-    fn uncovered(&self, on: SignerId, log: &Log, by: SignerId) -> Vec<(VaultId, Vec<EditId>)> {
+    fn uncovered(&self, on: SignerId, drafting: &Drafting, by: SignerId) -> Vec<(VaultId, Vec<EditId>)> {
         let store = self.held(on);
-        let view = log.view();
+        let (log, view) = (&drafting.log, &drafting.replay.state);
         let vaults: Vec<VaultId> =
             view.vaults().iter().map(|v| v.id).filter(|&v| view.approves(&[by], Principal::Vault(v))).collect();
         // signed by an SLH-DSA key: as its signatures say, or, for an edit of the move not signed yet, its keys at hand
@@ -1385,7 +1487,7 @@ impl Lab {
         if watch.is_empty() {
             return vec![];
         }
-        let acts = acting(log.edits(), &watch);
+        let acts = acting(log.edits(), &watch, drafting.replay.memo.as_ref());
         let mut out: Vec<(VaultId, Vec<EditId>)> = vaults.iter().map(|&v| (v, vec![])).collect();
         for id in log.ids().iter().filter(|id| watch.contains_key(id)) {
             if let Some((_, covers)) = out.iter_mut().find(|(v, _)| acts.contains(&(*id, *v))) {
@@ -1525,7 +1627,7 @@ impl Lab {
         let mut drafting = self.drafting(on);
         let mut by = by;
         for retire in retires {
-            let view = drafting.log.view();
+            let view = drafting.view();
             let root = view.vault(vault).and_then(|v| v.root);
             let mut signers = vec![by];
             signers.extend(root.filter(|&r| r != by && !view.approves(&[by], Principal::Vault(vault))));
@@ -2283,7 +2385,12 @@ impl Lab {
     /// signers to sign all of them in one ceremony (`Drafting`, `sign::batch_challenge`): what a browser asks its
     /// person once for, where it would otherwise ask once for each edit.
     pub fn drafting(&self, on: SignerId) -> Drafting<'_> {
-        Drafting { lab: self, log: self.held(on).log.clone(), drafts: vec![] }
+        let store = self.held(on);
+        let replay = match store.replayed == store.log.edits().len() {
+            true => Cow::Borrowed(&store.replay),
+            false => Cow::Owned(store.log.replay_memo(store.replay.memo.as_ref())),
+        };
+        Drafting { lab: self, log: store.log.clone(), replay, drafts: vec![] }
     }
 
     /// Edits to draft on device `on` for each of `passkeys`, one of which is its person's, as a device that doesn't
@@ -3746,6 +3853,7 @@ impl Lab {
             "bare": store.bare.len(),
             "uncovered": self.uncovered_count(d),
             "uncovered_by": self.uncovered_by(d),
+            "vouching": self.vouching(d),
         });
         out
     }
@@ -4571,6 +4679,14 @@ impl Lab {
             key.lock("keys", &bytes, b"opened keys", &mut self.rng)
         });
         Some(Warming { memo, keys, memo_of, keys_of })
+    }
+
+    /// Whether device `d` worked out something its shelf lacks (`warming`), as cheaply as it tells: the node's saver
+    /// is woken as it comes to, so a replay or a key opened with nothing else to save reaches the shelf too.
+    pub fn warm_due(&self, d: SignerId) -> bool {
+        let Some(store) = self.stores.get(&d) else { return false };
+        let memo = store.replay.memo.as_ref().is_some_and(|m| m.upto > 0 && store.memo_given.as_ref() != Some(m));
+        memo || !store.opened_since.is_empty()
     }
 
     /// Device `d`'s shelf took `warming` (`warming`): what it gave, it holds given.

@@ -24,6 +24,7 @@
 	import { disk as readDisk } from './native.js';
 	import { feed } from './server.js';
 	import { ago, count, nameOf, short, size } from './vaults.js';
+	import { session } from './session.svelte.js';
 
 	/** @type {{ api: any, world?: import('./vaults.js').WorldView, section?: string, thisName: string }} */
 	let { api, world, section = '', thisName } = $props();
@@ -76,7 +77,15 @@
 	 * @typedef {{ timers: Record<string, Timer>, counts: Record<string, number>,
 	 *   held: { edits: number, bodies: number, shown: number, blobs: number, blob_bytes: number },
 	 *   checkpoints?: { standing: number, vouched: number, bare: number, uncovered?: number,
-	 *     uncovered_by?: { vault: string | null, edits: number }[] } }} Perf
+	 *     uncovered_by?: { vault: string | null, edits: number }[], vouching?: Vouching | null } }} Perf
+	 */
+	/**
+	 * What a checkpoint by the person's key would cover now (avendb's `Lab::vouching`): `ready` as each unlock offers
+	 * it, `waiting` on keys that still sign the old way, by vault, those keys, and `others`, which only other vaults'
+	 * owners can vouch for.
+	 * @typedef {{ by: string, ready: number, waiting: number, others: number,
+	 *   vaults: { vault: string, ready: number, waiting: number }[],
+	 *   keys: { signer: string, role: string, of: string | null, edits: number }[] }} Vouching
 	 */
 
 	/** the device's own, as its `perf` op answers, or null where it doesn't (an older device) */
@@ -126,6 +135,27 @@
 		} catch (e) {
 			healthFailed = why(e);
 		}
+	}
+
+	/** what a key still signing the old way is, as a person reads it */
+	const ROLES = /** @type {Record<string, string>} */ ({
+		device: 'Device of',
+		owner: 'Owner key of',
+		recovery: 'Recovery key of',
+		signer: 'Key'
+	});
+	/** the checkpoint being signed, and how it went */
+	let signing = $state(false);
+	let signed = $state('');
+	/** Signs a checkpoint over everything the person may vouch for now (the session's `signCheckpoint`), then reads
+	 *  the page again. */
+	async function vouch() {
+		[signing, signed] = [true, ''];
+		const covered = await session.signCheckpoint();
+		signing = false;
+		if (covered === null) return void (signed = session.error || 'Your checkpoint didn’t go through.');
+		signed = covered ? `Your checkpoint covers ${covered.toLocaleString()} edits.` : 'There was nothing left to cover.';
+		await refresh();
 	}
 
 	/** Reads it all again: the device's, the browser's and the server's at once. */
@@ -292,7 +322,39 @@
 							<dd>{u.edits.toLocaleString()}</dd>
 						{/each}
 					{/if}
+					{#if perf.checkpoints.vouching}
+						{@const v = perf.checkpoints.vouching}
+						<dt>You can vouch for now</dt>
+						<dd>{(v.ready + v.waiting).toLocaleString()}</dd>
+						{#each v.vaults as u (u.vault)}
+							<dt class="sub">{vaultName(u.vault)}</dt>
+							<dd>{(u.ready + u.waiting).toLocaleString()}</dd>
+						{/each}
+						{#if v.others}
+							<dt>Only other vaults’ owners can vouch for</dt>
+							<dd>{v.others.toLocaleString()}</dd>
+						{/if}
+					{/if}
 				</dl>
+				{#if perf.checkpoints.vouching}
+					{@const v = perf.checkpoints.vouching}
+					{#if v.keys.length}
+						<p class="soft">
+							{v.waiting.toLocaleString()} of them were signed by keys that still sign the old way, so the checkpoint your unlock offers leaves them
+							out. Signing here covers them too.
+						</p>
+						<dl>
+							{#each v.keys.slice(0, 12) as k (k.signer)}
+								<dt class="sub">{ROLES[k.role] ?? 'Key'} {k.of ? vaultName(k.of) : ''} · {short(k.signer)}</dt>
+								<dd>{k.edits.toLocaleString()}</dd>
+							{/each}
+						</dl>
+					{/if}
+					{#if v.ready + v.waiting}
+						<button class="btn" disabled={signing} onclick={vouch}>{signing ? 'Signing…' : 'Sign checkpoint'}</button>
+					{/if}
+				{/if}
+				{#if signed}<p class="soft">{signed}</p>{/if}
 			</article>
 		{/if}
 	{/if}
