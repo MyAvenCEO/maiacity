@@ -1,0 +1,14 @@
+{
+	"batterypack": {
+		"entry": "84891586da535187a8aa362a45bf3173a5e26ac30ad7a151da8c8e81b14b5b06",
+		"at": [
+			"dc20934723d9b514c9c9dc24773ca9b7d5b8be36bdaae5f0f096e5777ccbd7ba"
+		]
+	},
+	"pallet": {
+		"entry": "715bb30cfe7c0c13381492cdd45d39685cfd8cfc83c4f85d8ceb1540d07460ad",
+		"at": [
+			"5bbcda823a2726832cbdd372132c8ee34c78969cca15617d1532dd3205cf3710"
+		]
+	}
+}

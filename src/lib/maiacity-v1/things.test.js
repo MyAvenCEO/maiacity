@@ -3,6 +3,7 @@
 // them without building anything.
 // Run: bun test src/lib/maiacity-v1/things.test.js
 import { expect, test } from 'bun:test';
+import { pinnedAs } from '$lib/assets/pins.fixture.js';
 
 // textures are drawn on a canvas; outside a page a stand-in canvas takes every call and draws nothing
 const noop = new Proxy(function () {}, { get: (_, k) => (k === Symbol.toPrimitive ? () => 0 : noop), apply: () => noop, set: () => true });
@@ -87,7 +88,8 @@ test("the plant stake's flag, and the open backpack's bottle, cap and packets, a
 	const { plantStake, backpack, SEED_PACKETS, BOTTLE } = await import('$lib/models/planting.js');
 	const stake = plantStake({ name: 'Samuel', seed: 'apple' });
 	expect(STAKE_FLAG.path.reduce((x, i) => x.children[i], stake)).toBe(stake.userData.flag);
-	expect(stakeRef('Ana Lu', 'pear')).toBe('things/plant-stake@2?name=Ana+Lu&seed=pear');
+	expect(stakeRef('Ana Lu', 'pear')).toBe('pin:maiacity-v1/stake?name=Ana+Lu&seed=pear');
+	expect(pinnedAs(stakeRef('Ana Lu', 'pear'))).toBe('things/plant-stake@2');
 	expect(PACK_PACKETS).toEqual(Object.keys(SEED_PACKETS));
 	expect(BOTTLE_MOUTH).toBe(BOTTLE.mouth);
 	const pack = backpack();
@@ -111,7 +113,7 @@ test("the people: the stand-in's ref, built with their height and look, and its 
 	expect(standInRef(1.8, { trousers: '#5b5145', shirt: '#3f6f9a' })).toBe(`${STAND_IN}?height=1.8&shirt=%233f6f9a&trousers=%235b5145`);
 	// the version it names builds human(look, height): its params in their order, after its height
 	const fam = FAMILIES.find((f) => f.id === 'stand-in');
-	const v = Number(STAND_IN.split('@')[1]);
+	const v = Number(/@(\d+)/.exec(pinnedAs(STAND_IN))[1]);
 	const at = fam.versions.find((x) => x.v === v);
 	expect(at?.kept).toBe(true);
 	expect(fam.params[0]).toMatchObject({ id: 'height', type: 'number', min: 1, max: 2.2 });

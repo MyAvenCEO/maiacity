@@ -5,6 +5,6 @@
  */
 
 /** our Euro pallet, by its ref */
-export const PALLET = 'things/euro-pallet@1';
+export const PALLET = 'pin:factories/pallet';
 /** its height (m) */
 export const PALLET_H = 0.144;

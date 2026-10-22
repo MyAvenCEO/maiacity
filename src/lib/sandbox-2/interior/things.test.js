@@ -3,6 +3,10 @@
 // stand where they always stood, in the walker's way as their builders say, at the version they have them.
 // Run: bun test src/lib/sandbox-2/interior/things.test.js
 import { expect, test } from 'bun:test';
+import { pinnedAs } from '$lib/assets/pins.fixture.js';
+
+/** the workshop a Thing of the library is, as the village's config names it (./things.js `THINGS`) */
+const KEYS = { 'art-studio': 'studio', 'repair-cafe': 'repair' };
 
 test('what of each Thing stands in the walker’s way is what its builder hands back with it', async () => {
 	const { WALK, THINGS } = await import('./things.js');
@@ -31,7 +35,7 @@ test('the coops stand where Sandbox 4 stood its mini domes, turned as they were,
 		expect(t.x).toBeCloseTo(g.position.x, 9);
 		expect(t.z).toBeCloseTo(g.position.z, 9);
 		expect(t.turn).toBeCloseTo(g.rotation.y, 9);
-		expect(t.ref).toBe(i % 2 === 1 ? 'things/rabbit-hutch@2' : 'things/chicken-coop@2');
+		expect(pinnedAs(t.ref)).toBe(i % 2 === 1 ? 'things/rabbit-hutch@2' : 'things/chicken-coop@2');
 		const mine = collidersAt(t.ref, t.x, t.z, t.turn);
 		mine.forEach((p, j) => ['x', 'z', 'r'].forEach((k) => expect(p[k]).toBeCloseTo(theirs[i].colliders[j][k], 9)));
 	});
@@ -63,10 +67,11 @@ async function builtWorkshops() {
 
 test('every workshop Thing is in the way where its builder says, and its middle is the one the library brings it to', async () => {
 	const THREE = await import('three');
-	const { WALK, MIDDLE } = await import('./things.js');
+	const { WALK, MIDDLE, villageAsset } = await import('./things.js');
 	const { DOME_ROOMS } = await import('$lib/models/domerooms.js');
 	for (const [, id, build] of await builtWorkshops()) {
-		const ref = `things/${id}@1`;
+		const ref = villageAsset(KEYS[id] ?? id);
+		expect(pinnedAs(ref)).toBe(`things/${id}@1`);
 		const s = build();
 		expect(WALK[ref].length).toBe(s.colliders.length);
 		WALK[ref].forEach((p, i) => ['x', 'z', 'r'].forEach((k) => expect(p[k]).toBeCloseTo(s.colliders[i][k], 9)));
@@ -92,7 +97,7 @@ test('a copy of each workshop covers what the master dome built there, and is in
 	const boxOf = (o) => (o.updateMatrixWorld(true), new THREE.Box3().setFromObject(o));
 	ours.forEach((t, i) => {
 		const [a, id, build] = theirs[i];
-		expect(t.ref).toBe(`things/${id}@1`);
+		expect(pinnedAs(t.ref)).toBe(`things/${id}@1`);
 		expect(t.turn).toBe(a);
 		// the dome's: its set put on the ring (spaces.ts `place`)
 		const s = build();

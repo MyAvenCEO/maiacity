@@ -34,7 +34,7 @@
  * five times the triangles per token (139,560 against 28,364, its cells and plates inside) and the line draws dozens
  * of packs; it moves to version 10 once a token keeps only what shows outside
  */
-export const PACK_REF = 'machines/batterypack@9';
+export const PACK_REF = 'pin:factories/batterypack';
 
 /** the cells of one pack, and the test and loading rates per cell the cycle times are built from */
 const CELLS = 280;

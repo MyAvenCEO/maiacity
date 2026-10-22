@@ -44,7 +44,7 @@ import { groundMaterial } from '$lib/biomes'
 import { biomeOr } from '$lib/assets/sources/biome.js'
 import { createCover, type Cover } from './cover.js'
 import type { Drawn } from './drawn.js'
-import { standThings, workshopsOf } from './things.js'
+import { FLOORS, standThings, workshopsOf } from './things.js'
 import { swapLegacy } from './legacy.js'
 import { pick as pickPlant, type Garden } from './sandbox5.js'
 import { forestFloor, floorPick, grassTuft, appleTree, banana, berryBush, canopyTree, climber, clover, coconutPalm, comfrey, crop, CROPS, type Crop, fruitTree, ginger, grapePergola, herb, papaya, passionVine, potted, seeded, shrub, smallFruitTree, squash, strawberries, tropicalShrub, vineAlong, type Plant } from './plants'
@@ -1364,7 +1364,7 @@ async function raiseInterior(container: HTMLElement, kind: DomeKind, onProgress:
 		// Sandbox 5: the floor under the glass is the warm food forest biome's, as the Maia City vault keeps it
 		// ($lib/assets/sources/biome.js, its newest version): big fallen leaves, humus, moss and a living mat, run into
 		// each other in patches; its cover streamed round you (below). Bare soil where the vault holds none, no cover
-		const warmBiome = opts.flora ? biomeOr('biomes/warm-food-forest') : null
+		const warmBiome = opts.flora ? biomeOr(FLOORS.warm) : null
 		const warmFloor = opts.flora ? groundMaterial(warmBiome?.surface ?? { soil: 1 }) : null
 		const groundWithPond = () => {
 			const sh = new THREE.Shape().absarc(0, 0, R, 0, TAU, false)

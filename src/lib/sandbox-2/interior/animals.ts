@@ -3,7 +3,7 @@
  * under the trees, rabbits in theirs, goats and sheep browsing the forest,
  * geese along the stream, frogs by the ponds, bees round their hives, fish in
  * the ponds and the tanks. Every one is a rigged actor of its breed, built in
- * the asset box as every asset is (the Actors, `actors/goat:goat-saanen`): near
+ * the asset box as every asset is (the Actors' Saanen goat, by the pin of it the village keeps): near
  * the eye it moves every bone as its kind does — walks with its feet set down
  * and kept there, pecks, scratches, grazes, hops, flies, swims — from the clips
  * the box wrote down, and further off a coarser build of it stands in for
@@ -16,6 +16,7 @@ import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { actor, blend, crowd } from '$lib/assets/render/crowd.js'
 import { seeded } from './plants'
+import { villageAsset } from './things.js'
 
 /** where the eye stands (in the crowd's own frame) */
 export type Eye = () => { x: number; z: number }
@@ -25,8 +26,9 @@ type Motion = { dist: number; speed: number; turn?: number }
 type Pose = Record<string, number[]>
 type Clip = (t: number, m?: Motion) => Pose
 
-/** an actor of the Actors by its cast's name: `goat-saanen` is `actors/goat:goat-saanen` */
-export const actorRef = (id: string) => `actors/${id.startsWith('bird-') ? 'songbird' : id === 'ant-hill' ? 'ant' : id.split('-')[0]}:${id}`
+/** an actor of the Actors by its cast's name (`goat-saanen`, `bird-robin`): the version of it the village's config pins
+ * under that name (code/configs/sandbox-4/assets, ./things.js `villageAsset`) */
+export const actorRef = (id: string) => villageAsset(id)
 
 type Part = { geo: THREE.BufferGeometry; color: string; at: [number, number, number]; rot?: [number, number, number]; scale?: [number, number, number] }
 
@@ -268,6 +270,10 @@ export function apiary(spots: { x: number; z: number; rot: number }[], seed: num
 /** the fish of the ponds: koi of three colours and a plain carp; of the aquaponics tanks: tilapia */
 export const POND_FISH = ['fish-koi', 'fish-kohaku', 'fish-ogon', 'fish-carp']
 export const TANK_FISH = ['fish-nile', 'fish-redtilapia']
+
+/** every cast the village draws, each by the name its config pins it under (./things.js `villageAsset`): the herds'
+ * breeds, the bees, the ant hills and the fish of the ponds and the tanks */
+export const CASTS = [...Object.values(KINDS).flatMap((k) => k.breeds.map((b) => b.id)), 'bee', 'ant-hill', ...POND_FISH, ...TANK_FISH]
 
 /**
  * Fish: koi and carp in the ponds, tilapia in the aquaponics tanks, circling
