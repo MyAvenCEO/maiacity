@@ -113,6 +113,7 @@ impl Node {
             Some("follow") => self.follow(op).await,
             Some("bring") => self.bring_vaults(&op).await,
             Some("synced") => json!({ "ok": self.synced().await }),
+            Some("network") => json!({ "ok": self.network().await }),
             _ if engine::asks(&op) => self.dry(move |lab, me| engine::run(lab, me, &op)).await,
             _ if engine::reads(&op) => self.read(move |lab, me| engine::read(lab, me, &op)).await,
             _ => self.change(op, authenticator).await?,

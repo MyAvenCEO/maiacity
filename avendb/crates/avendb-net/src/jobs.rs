@@ -262,7 +262,7 @@ impl Drop for Running {
 }
 
 /// The time by this machine's clock, or the browser's, in milliseconds since 1970.
-fn now_ms() -> u64 {
+pub(crate) fn now_ms() -> u64 {
     time::SystemTime::now().duration_since(time::SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_millis() as u64)
 }
 

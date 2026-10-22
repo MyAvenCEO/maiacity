@@ -10,7 +10,12 @@
 	avenDB takes on the Mac's disk (its device's folder and its agents', vault/app's `avendb_disk`), else what this
 	browser's storage holds of the origin, the page's OPFS store among it (`navigator.storage.estimate`), and the page's
 	memory where the browser says it. Server: avenDB's server's own `GET /feed/health`, its memory, how long it has run,
-	its last panic and its starts, and what its shelf takes in its bucket and its folder, as it last measured.
+	its last panic and its starts, and what its shelf takes in its bucket and its folder, as it last measured. Network
+	(Samuel 2026-10-22: "how long and where it is being synced from", "the whole sync topology … what comes directly p2p
+	and what via relay"): the device's own endpoint, relay and direct addresses, each peer it is connected to with each
+	path of the connection (direct or relayed, the one it sends on, its round trip, the bytes it carried), what it took
+	from each peer page by page and how fast, and its newest pages, as the device's `network` op answers (avendb-net's
+	`Node::network`), read again every few seconds while the page is open.
 
 	All of it is read on the device, or from the server's public feed, and kept in this page alone: nothing here is
 	written to a vault or sent to a peer. It is read when the page opens and again on Refresh.
@@ -23,7 +28,7 @@
 	import { native } from '$lib/native';
 	import { disk as readDisk } from './native.js';
 	import { feed } from './server.js';
-	import { ago, count, nameOf, short, size } from './vaults.js';
+	import { ago, count, nameOf, short, signerName, size } from './vaults.js';
 	import { session } from './session.svelte.js';
 
 	/** @type {{ api: any, world?: import('./vaults.js').WorldView, section?: string, thisName: string }} */
@@ -37,6 +42,7 @@
 	/** the page's sections, in order, as its left side lists them: each its address after `#performance/`, name and icon */
 	const SECTIONS = /** @type {const} */ ([
 		['work', 'Work', 'jobs'],
+		['network', 'Network', 'link'],
 		['storage', 'Storage', 'database'],
 		['server', 'Server', 'sync']
 	]);
@@ -87,6 +93,31 @@
 	 *   vaults: { vault: string, ready: number, waiting: number }[],
 	 *   keys: { signer: string, role: string, of: string | null, edits: number }[] }} Vouching
 	 */
+
+	/**
+	 * Where the device syncs from and how, as its `network` op answers (avendb-net's `Node::network`).
+	 * @typedef {{ pages: number, edits: number, new: number, bytes: number, wait_ms: number, take_ms: number,
+	 *   bytes_per_s: number, edits_per_s: number, direct: { pages: number, bytes: number },
+	 *   relay: { pages: number, bytes: number }, failed: number, first: number, last: number }} Pulled
+	 * @typedef {{ way: string, addr: string, selected: boolean, rtt_ms: number, rx: number, tx: number, lost: number }} Path
+	 * @typedef {{ me: { endpoint: string, relays: string[], direct: string[] },
+	 *   peers: { device: string, endpoint: string, since: number, dialed: boolean, way: string, paths: Path[],
+	 *     rx: number, tx: number, logs: number | null, lacks: number | null, pulled: Pulled | null }[],
+	 *   gone: { device: string, pulled: Pulled }[],
+	 *   recent: { device: string, at: number, bytes: number, edits: number, new: number, wait_ms: number, take_ms: number, way: string }[] }} Network
+	 */
+	/** where the device syncs from, or null where it doesn't say (an older device) */
+	let network = $state(/** @type {Network | null} */ (null));
+	/** Reads the network alone again: what changes from second to second. */
+	async function readNetwork() {
+		network = await read(api, { op: 'network' }, null);
+	}
+	/** how often the network is read again while the page is open (ms) */
+	const NETWORK_EVERY = 3000;
+	onMount(() => {
+		const t = setInterval(() => void readNetwork(), NETWORK_EVERY);
+		return () => clearInterval(t);
+	});
 
 	/** the device's own, as its `perf` op answers, or null where it doesn't (an older device) */
 	let perf = $state(/** @type {Perf | null} */ (null));
@@ -163,7 +194,7 @@
 		if (reading) return;
 		reading = true;
 		const onMac = native() ? readDisk().catch(() => null) : Promise.resolve(null);
-		const [p, s, d] = await Promise.all([read(api, { op: 'perf' }, null), readStorage(), onMac, readHealth()]);
+		const [p, s, d] = await Promise.all([read(api, { op: 'perf' }, null), readStorage(), onMac, readHealth(), readNetwork()]);
 		[perf, storage, disk, heap, readAt, reading] = [p, s, d, readHeap(), Math.floor(Date.now() / 1000), false];
 	}
 	onMount(() => void refresh());
@@ -183,6 +214,30 @@
 	const timer = $derived(perf?.timers?.[picked] ?? null);
 	const counts = $derived(Object.entries(perf?.counts ?? {}));
 	const memory = $derived(health?.memory ?? null);
+
+	/** A device, as this device knows it: its name, else its id's start. @param {string} id */
+	const deviceName = (id) => (world ? signerName(world, id, true) : `Device ${short(id)}`);
+	/** How a way of sending reads. @param {string} way */
+	const WAYS = /** @type {Record<string, string>} */ ({ direct: 'Direct', relay: 'Relay', other: 'Other', '': 'Not chosen yet' });
+	/** Bytes a second, as a person reads it. @param {number} n */
+	const rate = (n) => `${size(Math.max(0, Math.round(n)))}/s`;
+	/** A time of day, from milliseconds since 1970. @param {number} ms */
+	const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+	/** what came in all from the peers it took from, live or gone */
+	const pulledAll = $derived([...(network?.peers ?? []).map((p) => p.pulled), ...(network?.gone ?? []).map((g) => g.pulled)].filter((x) => !!x));
+	const total = $derived(
+		pulledAll.reduce(
+			(a, p) => ({
+				bytes: a.bytes + p.bytes,
+				ms: a.ms + p.wait_ms + p.take_ms,
+				wait: a.wait + p.wait_ms,
+				direct: a.direct + p.direct.bytes,
+				relay: a.relay + p.relay.bytes,
+				pages: a.pages + p.pages
+			}),
+			{ bytes: 0, ms: 0, wait: 0, direct: 0, relay: 0, pages: 0 }
+		)
+	);
 </script>
 
 <!-- down the left, the page's sections, each scrolling to it, and Refresh -->
@@ -286,6 +341,120 @@
 				</dl>
 			</article>
 		{/if}
+	{/if}
+{/snippet}
+
+{#snippet net()}
+	{#if !network}
+		<p class="empty">{reading ? 'Reading where this device syncs from…' : 'This device doesn’t say where it syncs from yet.'}</p>
+	{:else}
+		{@const direct = network.peers.filter((p) => p.way === 'direct').length}
+		{@const relayed = network.peers.filter((p) => p.way === 'relay').length}
+		<article class="card">
+			<h3>At a glance</h3>
+			<div class="tiles">
+				<div class="tile"><b>{network.peers.length}</b><span>{network.peers.length === 1 ? 'peer' : 'peers'} connected: {direct} direct, {relayed} through a relay</span></div>
+				<div class="tile"><b>{bytes(total.bytes)}</b><span>synced in {count(total.pages, 'page')}</span></div>
+				<div class="tile"><b>{total.ms ? rate((total.bytes * 1000) / total.ms) : '–'}</b><span>while pulling ({time(total.wait)} of it waiting for pages)</span></div>
+				<div class="tile"
+					><b>{total.bytes ? `${Math.round((100 * total.direct) / total.bytes)}% · ${Math.round((100 * total.relay) / total.bytes)}%` : '–'}</b><span
+						>direct · through a relay</span
+					></div
+				>
+			</div>
+		</article>
+		<article class="card">
+			<h3>This device</h3>
+			<dl>
+				<dt>Endpoint</dt>
+				<dd>{short(network.me.endpoint)}</dd>
+				<dt>Relay</dt>
+				<dd>{network.me.relays.length ? network.me.relays.join(', ') : 'None'}</dd>
+				<dt>Reached directly at</dt>
+				<dd>{network.me.direct.length ? network.me.direct.join(', ') : 'No direct address (a browser syncs through a relay)'}</dd>
+			</dl>
+		</article>
+		<article class="card wide">
+			<h3>Its peers</h3>
+			{#if !network.peers.length}
+				<p class="empty">No peer is connected now.</p>
+			{:else}
+				<div class="table-wrap"><table>
+					<thead><tr><th>Peer</th><th>Way</th><th>Round trip</th><th>Received</th><th>Pages</th><th>Speed</th><th>Lacks</th></tr></thead>
+					<tbody>
+						{#each network.peers as p (p.endpoint)}
+							{@const on = p.paths.find((x) => x.selected)}
+							<tr>
+								<td>
+									<b>{deviceName(p.device)}</b>
+									<span class="soft small">{p.dialed ? 'dialed' : 'dialed us'} {ago(Math.floor(p.since / 1000))}</span>
+								</td>
+								<td><span class="way {p.way || 'none'}">{WAYS[p.way] ?? p.way}</span></td>
+								<td>{on ? time(on.rtt_ms) : '–'}</td>
+								<td>{bytes(p.rx)}</td>
+								<td>{p.pulled ? p.pulled.pages.toLocaleString() : '0'}</td>
+								<td>{p.pulled ? rate(p.pulled.bytes_per_s) : '–'}</td>
+								<td>{p.lacks == null ? '–' : count(p.lacks, 'log')}</td>
+							</tr>
+							{#each p.paths as x (x.addr)}
+								<tr class="path">
+									<td>{x.selected ? '▸ ' : ''}{x.way === 'relay' ? 'Relay' : x.way === 'direct' ? 'Direct' : 'Path'} {x.addr}</td>
+									<td>{x.selected ? 'in use' : 'standby'}</td>
+									<td>{time(x.rtt_ms)}</td>
+									<td>{bytes(x.rx)}</td>
+									<td colspan="3">sent {bytes(x.tx)}{x.lost ? `, lost ${bytes(x.lost)}` : ''}</td>
+								</tr>
+							{/each}
+						{/each}
+					</tbody>
+				</table></div>
+			{/if}
+		</article>
+		{#each [...network.peers.filter((p) => p.pulled).map((p) => ({ device: p.device, pulled: /** @type {Pulled} */ (p.pulled), live: true })), ...network.gone.map((g) => ({ ...g, live: false }))] as x (x.device)}
+			{@const t = x.pulled}
+			<article class="card">
+				<h3>Synced from {deviceName(x.device)}{x.live ? '' : ' (not connected now)'}</h3>
+				<dl>
+					<dt>Pages</dt>
+					<dd>{t.pages.toLocaleString()}{t.failed ? `, ${t.failed} that never came` : ''}</dd>
+					<dt>Edits</dt>
+					<dd>{t.edits.toLocaleString()}, {t.new.toLocaleString()} new</dd>
+					<dt>Bytes</dt>
+					<dd>{bytes(t.bytes)}: {bytes(t.direct.bytes)} direct, {bytes(t.relay.bytes)} through a relay</dd>
+					<dt>Waited for pages</dt>
+					<dd>{time(t.wait_ms)}{t.pages ? `, ${time(t.wait_ms / t.pages)} each` : ''}</dd>
+					<dt>Took them in</dt>
+					<dd>{time(t.take_ms)}{t.pages ? `, ${time(t.take_ms / t.pages)} each` : ''}</dd>
+					<dt>Speed</dt>
+					<dd>{rate(t.bytes_per_s)}, {t.edits_per_s.toLocaleString()} edits/s</dd>
+					<dt>From – to</dt>
+					<dd>{t.first ? `${clock(t.first)} – ${clock(t.last)}` : '–'}</dd>
+				</dl>
+			</article>
+		{/each}
+		<article class="card wide">
+			<h3>The newest pages</h3>
+			{#if !network.recent.length}
+				<p class="empty">No page of edits has come since this device started.</p>
+			{:else}
+				<div class="table-wrap"><table>
+					<thead><tr><th>When</th><th>From</th><th>Way</th><th>Size</th><th>Edits</th><th>Waited</th><th>Took in</th></tr></thead>
+					<tbody>
+						{#each network.recent as r, i (i)}
+							<tr>
+								<td>{clock(r.at)}</td>
+								<td>{deviceName(r.device)}</td>
+								<td><span class="way {r.way || 'none'}">{WAYS[r.way] ?? r.way}</span></td>
+								<td>{bytes(r.bytes)}</td>
+								<td>{r.edits.toLocaleString()}{r.new !== r.edits ? ` (${r.new.toLocaleString()} new)` : ''}</td>
+								<td>{time(r.wait_ms)}</td>
+								<td>{time(r.take_ms)}</td>
+							</tr>
+						{/each}
+					</tbody>
+				</table></div>
+			{/if}
+		</article>
 	{/if}
 {/snippet}
 
@@ -466,6 +635,7 @@
 <Frame nav={menu} aside={details} navLabel="Performance" navIcon="gauge" asideLabel="The timer picked" asideIcon="info" bind:open>
 	<div class="page">
 		{@render part('work', work)}
+		{@render part('network', net)}
 		{@render part('storage', stored)}
 		{@render part('server', server)}
 	</div>
@@ -601,6 +771,38 @@
 		margin-top: 0.2rem;
 		border-radius: 2px;
 		background: var(--terracotta, #c8744f);
+	}
+
+	tr.path td {
+		border-top: 0;
+		padding-top: 0;
+		color: var(--soft);
+		font-size: 0.78rem;
+	}
+
+	.small {
+		display: block;
+		font-size: 0.74rem;
+	}
+
+	/* the way a page or a peer came: direct green, through a relay amber */
+	.way {
+		padding: 0.05rem 0.45rem;
+		border-radius: 999px;
+		background: rgb(0 0 0 / 0.06);
+		font-size: 0.76rem;
+	}
+
+	.way.direct {
+		background: rgb(46 160 67 / 0.16);
+	}
+
+	.way.relay {
+		background: rgb(210 153 34 / 0.2);
+	}
+
+	.table-wrap {
+		overflow-x: auto;
 	}
 
 	@media (max-width: 40rem) {
