@@ -2159,6 +2159,7 @@ shelf answers a call only once its place's source of truth holds what it was ask
 | Write, Finish | A blob being written, then finished under its hash with its outboard |
 | Drop | Lets go of a blob |
 | Put, Get, Names | A named object, put once and never replaced; read it; list names by prefix |
+| Keep | An object under `slots/` alone, written in place: a shortcut rebuilt from what was put, never history |
 
 Over its shelf a node runs a blob store of its own (`ShelfStore`), which iroh-blobs reads and writes like any other.
 
@@ -2195,6 +2196,7 @@ all older than that starts a new one beside them. Tests hold `FLOOR` at 18 and t
   meta/<n>         what opens the device again, follow list included (browser, desktop); device.key on the server
   stated/<device>/<checked>  each device's signed statements of its holdings, at most one an hour each (H2)
   drives/<device> the key of each drive this desktop hosts, wrapped under its own device's (section 3)
+  slots/view-<n>   the device's stored view, in two slots kept in turn, in place (Keep)
 ```
 
 - **Edits** (`crates/avendb-net/src/edits.rs`). A save appends a journal entry. Every 64 entries, a pack blob takes
@@ -2202,6 +2204,13 @@ all older than that starts a new one beside them. Tests hold `FLOOR` at 18 and t
   a few dozen objects, however long the log. Once a head would name 64 packs, the next names one pack of the whole log.
   Every head and entry ends with the BLAKE3 hash of all before it, so a torn one reads as none. Every edit is checked
   again as it comes back.
+- **Stored view** (`Replay::to_view`, `spec/AvenDB/StoredView.lean`, V1). What the device's edits say (its replay's
+  state, and the last edits it may replay again), sealed under its own key for this engine alone, in `slots/view-0`
+  and `slots/view-1` in turn, each kept after the edits it is of. A node starts from the newest that opens and is of
+  the very edits its log starts with, and steps on it with the edits after it; with none, it replays every edit, then
+  keeps one. It keeps a new one after any replay of every edit, or after 4096 edits stepped on. A view holds no
+  history: every edit stays on the shelf as it was put, so any past point can still be rebuilt from them. On the
+  server, each slot kept is one more object version the bucket's lock holds for 7 days.
 - **Packs, not one object per edit.** An edit is a few kilobytes and object storage bills at least 64 KB per object,
   so packs keep "everything is a blob" true and cheap.
 - **Generations.** A place keeps its shelves side by side: `g1`, `g2` and on. The newest is in use. Forgetting an

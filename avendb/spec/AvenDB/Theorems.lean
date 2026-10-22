@@ -5,6 +5,7 @@ import AvenDB.RelayLemmas
 import AvenDB.KeyLemmas
 import AvenDB.SyncLemmas
 import AvenDB.RuleLemmas
+import AvenDB.StoredView
 import AvenDB.Schemas
 import AvenDB.Gate
 
@@ -14,8 +15,9 @@ import AvenDB.Gate
 What must always hold, stated over the executable model. T9 (lenses) and T10 (proposals) are proven in their own files.
 The proofs are in `Lemmas.lean` (vaults and writes), `CapLemmas.lean` (shares, audiences, keep shares, removals and
 replay), `RuleLemmas.lean` (shares that name ops), `Schemas.lean` (writes that fit their schemas), `RelayLemmas.lean`
-(blind relays), `KeyLemmas.lean` (keys) and `SyncLemmas.lean` (convergence, sync and holdings); the predicates the
-statements use are in `Props.lean`, and the model of holdings and connections in `Logs.lean`.
+(blind relays), `KeyLemmas.lean` (keys), `SyncLemmas.lean` (convergence, sync and holdings) and `StoredView.lean`
+(stepping on a stored view, V1); the predicates the statements use are in `Props.lean`, and the model of holdings and
+connections in `Logs.lean`.
 
 The assumptions are part of the model rather than axioms: an edit's signers are the keys that signed it (signatures
 can't be forged); keys are learned only through `Knows` (sealed, wrapped or encrypted data reveals nothing without its
@@ -672,6 +674,16 @@ theorem T11_convergence {edits₁ edits₂ : List Edit} (hperm : edits₁.Perm e
 theorem T11_same_standing {edits₁ edits₂ : List Edit} (hperm : edits₁.Perm edits₂) (hids : (edits₁.map Edit.id).Nodup) :
     standing edits₁ = standing edits₂ :=
   Syncing.T11_same_standing hperm hids
+
+/-- V1 (stored view): a peer that kept what it knew of the edits `held` steps new edits on it one by one, in the replay
+    order, and knows what replaying every edit would tell it, with the same edits standing, when the new edits are
+    writes, each deeper than every edit held, and no edit held builds on one of them. Assumes ids don't collide. -/
+theorem V1_view_steps_on (held new : List Edit) (hw : ∀ n ∈ new, n.action.isWrite = true)
+    (hd : ∀ e ∈ held, ∀ n ∈ new, e.depth < n.depth) (hp : ∀ e ∈ held, ∀ n ∈ new, n.id ∉ e.parents)
+    (hids : ((held ++ new).map Edit.id).Nodup) :
+    view (held ++ new) = (stepsOn (view held) (order new)).1 ∧
+      standing (held ++ new) = standing held ++ (stepsOn (view held) (order new)).2 :=
+  Stored.V1_view_steps_on held new hw hd hp hids
 
 /-- T12 (sync shares only what shares allow, and what is public only with an interest): every edit a peer sends a
     device that follows the vaults `fl` is one it holds, and of an entry, an audience or a share that device may receive

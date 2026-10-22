@@ -12,7 +12,9 @@
 // - `blobs/<hash>`: each finished blob, named by its BLAKE3 hash in hex, and `outboards/<hash>` its outboard, written
 //   last, so that a blob counts once its outboard is there;
 // - `new/`: the blobs being written, each under the name its node chose (`new-...`), and the objects being put;
-// - each named object at its name, put once and never replaced: `heads/0000000000000001` in `heads/`.
+// - each named object at its name, put once and never replaced: `heads/0000000000000001` in `heads/`;
+// - `slots/`: the objects kept in place (`keep`), shortcuts the device rebuilds from what it put, such as its stored
+//   view (`avendb_net::shelf::SLOTS`).
 //
 // Each object is written whole beside its place, flushed, then moved into it, so an object is always whole. While its
 // device runs, the worker holds the store's `lock`, which OPFS lets only one worker do: the same device can't run in
@@ -37,6 +39,8 @@ const HASH = /^[0-9a-f]{64}$/;
 const WRITTEN = /^[A-Za-z0-9-]+$/;
 /** What the names of the blobs a node writes start with: what `list` drops of them is what it never finished. */
 const WRITING = 'new-';
+/** The folder of the objects kept in place, never put (`avendb_net::shelf::SLOTS`). */
+const SLOTS = 'slots/';
 /** One part of an object's name (`avendb_net::shelf::named`). */
 const PART = /^[a-z0-9._-]+$/;
 /** The most blob files held open at once, the least lately used let go first. */
@@ -310,6 +314,7 @@ const ops = {
 	/** Puts `bytes` under object `name` once: written whole in `new/`, then moved into place, unless something is
 	 *  there already. True if it holds them now; false if it holds other bytes there, which it never replaces. */
 	async put(name, bytes) {
+		if (name.startsWith(SLOTS)) throw new Error(`${name} is kept in place, never put`);
 		const [folder, file] = await object(name, true);
 		const there = await bytesOf(folder, file);
 		if (there) return same(there, bytes);
@@ -320,7 +325,26 @@ const ops = {
 		return true;
 	},
 
-	/** The bytes put under object `name`, or `undefined`. */
+	/** Keeps `bytes` under object `name`, under `slots/`, in place of what it held: written whole in `new/`, then
+	 *  moved over it. A browser that won't move a file over another has the old one removed first, and one that can't
+	 *  move at all copies, so a slot cut short as it is kept may hold nothing, or bytes that don't open: the device
+	 *  keeps what it can't lose in two slots. */
+	async keep(name, bytes) {
+		if (!name.startsWith(SLOTS)) throw new Error(`${name} is put, never kept in place`);
+		const [folder, file] = await object(name, true);
+		const fresh = await dir.getDirectoryHandle(NEW);
+		const part = staged('keep');
+		await written(fresh, part, bytes);
+		try {
+			await moved(fresh, part, folder, file);
+		} catch (e) {
+			if (e?.name !== 'InvalidModificationError') throw e;
+			await removed(folder, file);
+			await moved(fresh, part, folder, file);
+		}
+	},
+
+	/** The bytes put or kept under object `name`, or `undefined`. */
 	async get(name) {
 		try {
 			const [folder, file] = await object(name, false);

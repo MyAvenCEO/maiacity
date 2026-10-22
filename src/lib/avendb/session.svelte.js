@@ -471,7 +471,18 @@ function running(d) {
 	phase = 'open';
 	useDevice({ run: send, read: api.readFile });
 	if (holders) watch();
+	if (!mac) keepStorage();
 	void checkMove(d);
+}
+
+/** Asks the browser to keep this origin's storage for good, the device's shelf in OPFS with it, so that it never clears
+ *  it under pressure: a cleared shelf brings everything from the server again (2026-10-22: an iPhone holding 818 MB
+ *  said "the browser may clear it", as no page had ever asked). The browser decides, and nothing waits on it. */
+function keepStorage() {
+	const s = navigator.storage;
+	s?.persisted?.()
+		.then((kept) => kept || s.persist?.())
+		.catch(() => {});
 }
 
 /** How long a device that can't say yet what its key move asks waits before it is asked again (ms). */

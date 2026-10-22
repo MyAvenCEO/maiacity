@@ -315,6 +315,12 @@ fn one_ceremony_and_one_touch_move_alices_keys_and_her_mac() {
     assert_eq!(vouching["keys"][0]["signer"], Value::from(phone.to_hex()), "{vouching}");
     assert_eq!(vouching["keys"][0]["role"], "device", "{vouching}");
     assert_eq!(vouching["keys"][0]["of"], Value::from(avendb::words::hex(&vault.0)), "{vouching}");
+    // its edits counted by log and by kind, each once
+    let held = &lab.perf(mac_next)["held"];
+    let sum = |by: &Value| by.as_object().expect("counts").values().filter_map(Value::as_u64).sum::<u64>();
+    assert_eq!(sum(&held["logs"]), held["edits"].as_u64().expect("edits"), "{held}");
+    assert_eq!(sum(&held["actions"]), held["edits"].as_u64().expect("edits"), "{held}");
+    assert!(held["logs"]["entry"].as_u64().is_some_and(|n| n > 0), "{held}");
 
     // Alice's phone opens: her passkey's next key is an owner already, and the phone moves alone. Cut short once its
     // next key joined and what opens it named that key, it has nothing left to do at its next unlock

@@ -681,4 +681,24 @@ def view (edits : List Edit) : State := let o := order edits; (runWith o (resolv
 /-- The edits that stand in what a peer holding `edits` knows, in replay order. -/
 def standing (edits : List Edit) : List Edit := let o := order edits; (runWith o (resolve o)).2
 
+/-! ## Stepping on a stored view
+
+A device keeps what it knows between unlocks and steps new edits on it one by one, never replaying every edit it holds
+again, where that gives the view: new writes, each deeper than every edit it held, none of which an edit it held builds
+on (`V1_view_steps_on`). -/
+
+/-- An edit writes an entry. -/
+def Action.isWrite : Action → Bool
+  | .write .. => true
+  | _ => false
+
+/-- Edits stepped on one by one from `st`, in this order: each stands if `step` accepts it on the state before it. The
+    state at the end, and the edits that stood. -/
+def stepsOn : State → List Edit → State × List Edit
+  | st, [] => (st, [])
+  | st, edit :: edits =>
+    match step st edit with
+    | some st' => let r := stepsOn st' edits; (r.1, edit :: r.2)
+    | none => stepsOn st edits
+
 end AvenDB

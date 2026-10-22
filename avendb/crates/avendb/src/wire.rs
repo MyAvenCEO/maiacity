@@ -290,35 +290,44 @@ pub(crate) struct Reader<'a> {
 }
 
 impl<'a> Reader<'a> {
-    fn take(&mut self, n: usize) -> Result<&'a [u8], WireError> {
+    pub(crate) fn new(bytes: &'a [u8]) -> Reader<'a> {
+        Reader { bytes, at: 0 }
+    }
+
+    /// Nothing is left to read.
+    pub(crate) fn done(&self) -> bool {
+        self.at == self.bytes.len()
+    }
+
+    pub(crate) fn take(&mut self, n: usize) -> Result<&'a [u8], WireError> {
         let end = self.at.checked_add(n).filter(|&e| e <= self.bytes.len()).ok_or(WireError::Short)?;
         let out = &self.bytes[self.at..end];
         self.at = end;
         Ok(out)
     }
 
-    fn u8(&mut self) -> Result<u8, WireError> {
+    pub(crate) fn u8(&mut self) -> Result<u8, WireError> {
         Ok(self.take(1)?[0])
     }
 
-    fn array<const N: usize>(&mut self) -> Result<[u8; N], WireError> {
+    pub(crate) fn array<const N: usize>(&mut self) -> Result<[u8; N], WireError> {
         Ok(self.take(N)?.try_into().expect("N bytes"))
     }
 
     /// A count of values, each at least `min` bytes long: never more than the bytes left can hold.
-    fn count(&mut self, min: usize) -> Result<usize, WireError> {
+    pub(crate) fn count(&mut self, min: usize) -> Result<usize, WireError> {
         let n = u32::from_be_bytes(self.array()?) as usize;
         if n.saturating_mul(min.max(1)) > self.bytes.len() - self.at { Err(WireError::Short) } else { Ok(n) }
     }
 
     /// Bytes behind their length.
-    fn bytes(&mut self) -> Result<Vec<u8>, WireError> {
+    pub(crate) fn bytes(&mut self) -> Result<Vec<u8>, WireError> {
         let n = self.count(1)?;
         Ok(self.take(n)?.to_vec())
     }
 
     /// A sequence behind its count, each value at least `min` bytes long.
-    fn seq<T: Decode>(&mut self, min: usize) -> Result<Vec<T>, WireError> {
+    pub(crate) fn seq<T: Decode>(&mut self, min: usize) -> Result<Vec<T>, WireError> {
         let n = self.count(min)?;
         let mut out = Vec::with_capacity(n.min(64));
         for _ in 0..n {
@@ -333,7 +342,7 @@ impl<'a> Reader<'a> {
         if out.windows(2).all(|w| w[0] < w[1]) { Ok(out) } else { Err(WireError::Unordered) }
     }
 
-    fn option<T: Decode>(&mut self) -> Result<Option<T>, WireError> {
+    pub(crate) fn option<T: Decode>(&mut self) -> Result<Option<T>, WireError> {
         match self.u8()? {
             0 => Ok(None),
             1 => Ok(Some(T::decode(self)?)),

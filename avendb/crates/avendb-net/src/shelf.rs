@@ -6,7 +6,9 @@
 //! is finished, with its outboard, the BLAKE3 tree iroh-blobs checks it by; and named objects, each put once and never
 //! replaced (`Call::Put`): the edits its device holds, as a journal, packs and heads (`edits`), a page's or the Mac's
 //! meta, and the server's device's secret. What a shelf answered it holds, it holds for good: synced to the folder's
-//! disk, in OPFS, or in the server's bucket.
+//! disk, in OPFS, or in the server's bucket. Beside them, under `slots/` alone (`SLOTS`), a shelf keeps a few objects
+//! written in place (`Call::Keep`): the stored view of its device's vaults, a shortcut it rebuilds from those edits
+//! whenever it must, so no edit is ever replaced.
 //!
 //! Over its shelf a node runs a blob store of its own (`ShelfStore`), which iroh-blobs reads and writes:
 //!
@@ -85,7 +87,12 @@ pub enum Call {
     /// nothing; other bytes under a name it holds are refused (`io::ErrorKind::AlreadyExists`), so that nothing put is
     /// ever replaced.
     Put { name: String, bytes: Bytes, tx: oneshot::Sender<io::Result<()>> },
-    /// What was put under `name`, if anything.
+    /// `bytes` under `name`, a name under `slots/` (`SLOTS`) alone, in place of whatever it held: answered once the
+    /// shelf holds them whole. A folder or a bucket holds what it held until then; a page whose browser can't move one
+    /// file over another may hold nothing, or bytes cut short, if it stops as it keeps them, so a node keeps what it
+    /// can't do without in two slots, sealed, and reads the newest that opens.
+    Keep { name: String, bytes: Bytes, tx: oneshot::Sender<io::Result<()>> },
+    /// What was put or kept under `name`, if anything.
     Get { name: String, tx: oneshot::Sender<io::Result<Option<Bytes>>> },
     /// The name of every object put whose name starts with `prefix`, in order.
     Names { prefix: String, tx: oneshot::Sender<io::Result<Vec<String>>> },
@@ -98,6 +105,10 @@ pub struct Shelf(mpsc::Sender<Call>);
 /// The folders of a shelf that hold its blobs, their outboards, what it is writing, and the lock a page's worker
 /// holds: no named object is under them.
 pub const RESERVED: [&str; 4] = ["blobs", "outboards", "new", "lock"];
+
+/// The folder of a shelf whose objects are kept in place (`Call::Keep`), never put: nothing in it is history, each
+/// object a shortcut its node rebuilds from what it put.
+pub const SLOTS: &str = "slots/";
 
 /// The hash a finished blob's name is, if it is one.
 pub fn hash_of(name: &str) -> Option<Hash> {
@@ -165,15 +176,25 @@ impl Shelf {
         rx.await.map_err(|_| gone())?
     }
 
-    /// Puts `bytes` under `name` once, as `Call::Put` says: done once the shelf holds them.
+    /// Puts `bytes` under `name` once, as `Call::Put` says: done once the shelf holds them. A name under `slots/` is
+    /// kept in place, never put.
     pub async fn put(&self, name: &str, bytes: Bytes) -> io::Result<()> {
-        if !named(name) {
+        if !named(name) || name.starts_with(SLOTS) {
             return Err(unnamed(name));
         }
         self.ask(|tx| Call::Put { name: name.to_string(), bytes, tx }).await
     }
 
-    /// What was put under `name`, if anything.
+    /// Keeps `bytes` under `name`, a name under `slots/`, in place of what it held, as `Call::Keep` says: done once the
+    /// shelf holds them.
+    pub async fn keep(&self, name: &str, bytes: Bytes) -> io::Result<()> {
+        if !named(name) || !name.starts_with(SLOTS) {
+            return Err(unnamed(name));
+        }
+        self.ask(|tx| Call::Keep { name: name.to_string(), bytes, tx }).await
+    }
+
+    /// What was put or kept under `name`, if anything.
     pub async fn get(&self, name: &str) -> io::Result<Option<Bytes>> {
         if !named(name) {
             return Err(unnamed(name));
