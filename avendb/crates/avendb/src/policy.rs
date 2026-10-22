@@ -3888,7 +3888,10 @@ pub fn replay(edits: &[Edit]) -> Replay {
 
 /// `replay` of `edits`, given `was`, the replay of the first `held` of them: the rest stepped on it, one by one, where
 /// each is a write, no removal, deeper than every edit before it and built on none of its own depth, so it sorts after
-/// all of them and no removal's standing or cut turns on it (`run`, `resolve`); else every edit replayed again.
+/// all of them and no removal's standing or cut turns on it (`run`, `resolve`, `V1_view_steps_on`); or a move so deep,
+/// keeping every write of its entry that stands, after moves that all stood, which `resolve` tries last and which
+/// takes away only what those writes read (`V3_move_steps_on`), after which the place it steps on from moves past it;
+/// else every edit replayed again.
 /// Where none of them sorts there but they all sort after the replay's place it steps on from (`Tail`), and none is a
 /// removal, a move or a checkpoint, an edit the replay builds on or one a checkpoint covers, the last ones are replayed
 /// again with them from there: the removals that stand turn only on the edits before them, and the ones `resolve`
@@ -3918,9 +3921,9 @@ pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) 
     if ids_fresh.iter().any(|id| tail.covered.contains_key(id)) {
         return (whole(), Why::Whole("replay whole: a checkpoint it held covers a new edit"));
     }
+    let moving = |e: &Edit| matches!(e.action, Action::Mark { caps: Some(_), .. });
     let steps = |e: &Edit| {
-        matches!(e.action, Action::Write { .. })
-            && !e.is_removal()
+        (matches!(e.action, Action::Write { .. }) && !e.is_removal() || moving(e))
             && deepest.is_none_or(|d| d < e.depth)
             && e.parents.iter().all(|p| by_id.get(p).is_none_or(|parent| parent.depth < e.depth))
     };
@@ -3930,10 +3933,44 @@ pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) 
             Err(why) => (whole(), Why::Whole(why)),
         };
     }
+    // a move steps on where it keeps every write of its entry that stands (`V3_move_steps_on`) and every move before
+    // it stood: the moves are tried all at once (`resolve_moves`), so one that stood not cut what the others stood on
+    let mut kept: HashMap<EntryId, HashSet<EditId>> = HashMap::new();
+    for e in fresh {
+        if let Action::Mark { entry, caps: Some(_), .. } = &e.action {
+            kept.insert(*entry, HashSet::new());
+        }
+    }
+    if !kept.is_empty() {
+        for (i, e) in was.edits.iter().enumerate() {
+            match &e.action {
+                Action::Write { entry, .. } if was.stood[i] => {
+                    if let Some(ws) = kept.get_mut(entry) {
+                        ws.insert(was.ids[i]);
+                    }
+                }
+                Action::Mark { caps: Some(_), .. } if !was.stood[i] => {
+                    return (whole(), Why::Whole("replay whole: a move it held stood not"));
+                }
+                _ => {}
+            }
+        }
+    }
     let mut order: Vec<(u64, u8, EditId, &Edit)> = by_id.iter().map(|(&id, &e)| (e.depth, e.rank(), id, e)).collect();
     order.sort_by_key(|a| (a.0, a.1, a.2));
     let mut out = was;
-    for (.., id, e) in order {
+    // the depth of the last move stepped on: what comes after it is deeper, as after an edit held
+    let mut floor = None;
+    for (depth, _, id, e) in order {
+        if floor.is_some_and(|f| depth <= f) {
+            return (whole(), Why::Whole("replay whole: a new edit as deep as a new move"));
+        }
+        if let Action::Mark { entry, caps: Some(_), keep, .. } = &e.action {
+            let keep: HashSet<&EditId> = keep.iter().collect();
+            if !kept.get(entry).is_some_and(|ws| ws.iter().all(|w| keep.contains(w))) {
+                return (whole(), Why::Whole("replay whole: a move keeps not every write of its entry"));
+            }
+        }
         let stands = out.state.step_mut(e, id).is_ok();
         out.edits.push(e.clone());
         out.ids.push(id);
@@ -3941,8 +3978,39 @@ pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) 
         let tail = out.tail.as_mut().expect("a replay to step on from");
         tail.parents.extend(e.parents.iter().copied());
         tail.depths.insert(id, e.depth);
+        match &e.action {
+            Action::Write { entry, .. } if stands => {
+                if let Some(ws) = kept.get_mut(entry) {
+                    ws.insert(id);
+                }
+            }
+            Action::Mark { caps: Some(_), .. } => {
+                if !stands {
+                    // a later move would be tried with this one, which stood not
+                    kept.clear();
+                }
+                floor = Some(depth);
+                past_move(&mut out);
+            }
+            _ => {}
+        }
     }
     (out, Why::Stepped)
+}
+
+/// A replay's place to step on from moved past the move just stepped on, its last edit: the edits replayed again from
+/// there come after every removal and move, as `step_tail` asks.
+fn past_move(out: &mut Replay) {
+    let n = out.edits.len();
+    let tail = out.tail.as_mut().expect("a replay to step on from");
+    if let Some(base) = tail.base.take() {
+        // the edits that say who may do what up to it, from the base with no removal standing (`resolve_at`)
+        let trust = Trust::of(&out.edits[tail.at..n], &out.ids[tail.at..n]);
+        let none = HashSet::new();
+        tail.base = Some(run_from(base, &trust.edits, &trust.ids, &none, false, &HashMap::new(), None).state);
+    }
+    tail.at = n;
+    tail.state = out.state.clone();
 }
 
 /// How `replay_on_why` went: nothing new, the new edits stepped on one by one, the last edits replayed again with them

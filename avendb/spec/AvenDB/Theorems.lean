@@ -7,6 +7,7 @@ import AvenDB.SyncLemmas
 import AvenDB.RuleLemmas
 import AvenDB.StoredView
 import AvenDB.TrustRuns
+import AvenDB.MoveSteps
 import AvenDB.Schemas
 import AvenDB.Gate
 
@@ -17,7 +18,8 @@ What must always hold, stated over the executable model. T9 (lenses) and T10 (pr
 The proofs are in `Lemmas.lean` (vaults and writes), `CapLemmas.lean` (shares, audiences, keep shares, removals and
 replay), `RuleLemmas.lean` (shares that name ops), `Schemas.lean` (writes that fit their schemas), `RelayLemmas.lean`
 (blind relays), `KeyLemmas.lean` (keys), `SyncLemmas.lean` (convergence, sync and holdings), `StoredView.lean`
-(stepping on a stored view, V1) and `TrustRuns.lean` (removals tried on the trust records, V2); the predicates the statements use are in `Props.lean`, and the model of holdings and
+(stepping on a stored view, V1), `TrustRuns.lean` (removals tried on the trust records, V2) and `MoveSteps.lean` (a move
+stepped on a stored view, V3); the predicates the statements use are in `Props.lean`, and the model of holdings and
 connections in `Logs.lean`.
 
 The assumptions are part of the model rather than axioms: an edit's signers are the keys that signed it (signatures
@@ -693,6 +695,20 @@ theorem V1_view_steps_on (held new : List Edit) (hw : ∀ n ∈ new, n.action.is
 theorem V2_removals_read_trust (edits : List Edit) (hids : ((order edits).map Edit.id).Nodup) :
     resolveTrust (order edits) = resolve (order edits) :=
   Trusted.resolveTrust_eq (order edits) hids
+
+/-- V3 (a move steps on a stored view): a peer that kept what it knew of the edits `held` steps a new mark that takes an
+    entry to another audience on it, as it steps new writes (V1), and knows what replaying every edit would tell it, with
+    the same edits standing, when the move is deeper than every edit held, no edit held builds on it, and it keeps every
+    write of its entry that stands. Assumes ids don't collide. -/
+theorem V3_move_steps_on (held : List Edit) (x : Edit) {v : VaultId} {e : EntryId} {to : Audience}
+    {wants : Option (List ShareId)} {keep : List EditId} {via : List VaultId}
+    (hx : x.action = .mark v e (some to) wants keep via)
+    (hd : ∀ y ∈ held, y.depth < x.depth) (hp : ∀ y ∈ held, x.id ∉ y.parents)
+    (hids : ((held ++ [x]).map Edit.id).Nodup)
+    (hk : ∀ w ∈ standing held, Moves.writesEntry w e = true → keep.contains w.id = true) :
+    view (held ++ [x]) = (stepsOn (view held) (order [x])).1 ∧
+      standing (held ++ [x]) = standing held ++ (stepsOn (view held) (order [x])).2 :=
+  Moves.V3_move_steps_on held x hx hd hp hids hk
 
 /-- T12 (sync shares only what shares allow, and what is public only with an interest): every edit a peer sends a
     device that follows the vaults `fl` is one it holds, and of an entry, an audience or a share that device may receive
