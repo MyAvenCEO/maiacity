@@ -396,24 +396,36 @@ impl Signed {
     /// The edit, if each signer it names signed it. A write that creates its entry must name the entry by its own id,
     /// the hash of its vault, its author and its nonce (`EntryId::of`), else `NotItsId`.
     pub fn verify(&self) -> Result<&Edit, Refusal> {
-        if let Action::Write { vault, entry, create: Some(c), .. } = &self.edit.action
-            && *entry != EntryId::of(*vault, self.edit.author, &c.nonce)
-        {
-            return Err(Refusal::NotItsId);
-        }
+        its_id(&self.edit)?;
         let signers: Vec<SignerId> = self.edit.sigs().collect();
         let id = self.edit.id();
-        let joins = match self.edit.action {
-            Action::Share(Sharing::Device { device, .. }) if self.edit.cosigners.contains(&device) => Some(device),
-            _ => None,
-        };
-        let standing = standing(&self.edit);
-        let consents =
-            |s: SignerId, sig: &Signature| standing.contains(&s) && verify(s, EditId(consent_challenge(s)), sig);
-        let verifies = |(&s, sig): (&SignerId, &Signature)| verify_adding(s, id, sig, joins) || consents(s, sig);
+        let verifies = |(&s, sig): (&SignerId, &Signature)| signs(&self.edit, id, s, sig);
         let all = signers.len() == self.sigs.len() && signers.iter().zip(&self.sigs).all(verifies);
         if all { Ok(&self.edit) } else { Err(Refusal::BadSignature) }
     }
+}
+
+/// A write that creates its entry names it by its own id, the hash of its vault, its author and its nonce
+/// (`EntryId::of`), else `NotItsId`: what `Signed::verify` checks before any signature.
+pub fn its_id(edit: &Edit) -> Result<(), Refusal> {
+    match &edit.action {
+        Action::Write { vault, entry, create: Some(c), .. } if *entry != EntryId::of(*vault, edit.author, &c.nonce) => {
+            Err(Refusal::NotItsId)
+        }
+        _ => Ok(()),
+    }
+}
+
+/// `sig` is signer `s`'s signature on `edit`, whose id is `id` (`Signed::verify`, signer by signer): over the edit
+/// itself, a passkey's pass for a device the edit adds counting too (`verify_adding`), or its standing consent where
+/// the edit takes it (`standing`).
+pub fn signs(edit: &Edit, id: EditId, s: SignerId, sig: &Signature) -> bool {
+    let joins = match edit.action {
+        Action::Share(Sharing::Device { device, .. }) if edit.cosigners.contains(&device) => Some(device),
+        _ => None,
+    };
+    verify_adding(s, id, sig, joins)
+        || (standing(edit).contains(&s) && verify(s, EditId(consent_challenge(s)), sig))
 }
 
 /// A device's hello on a connection (P8): its keys, and its post-quantum signature over the connection's TLS exporter
@@ -510,6 +522,17 @@ pub const STATEMENT_CONTEXT: &[u8] = b"avenDB 2026-10-15 holdings statement";
 pub fn verify_statement(keys: &SignerKeys, body: &[u8], sig: &[u8]) -> Option<SignerId> {
     let SignerKeys::Device { pq, .. } = keys else { return None };
     pq.verifies(body, STATEMENT_CONTEXT, sig).then(|| keys.id())
+}
+
+/// The context of a device's post-quantum signature on a root of its batch-signed log (`batch::Root`, M3): what it
+/// signs counts as that root alone, never as an edit, a hello, a pass or a statement.
+pub const ROOT_CONTEXT: &[u8] = b"avenDB 2026-10-22 log root";
+
+/// The device whose keys `keys` are, if `sig` is their post-quantum signature on a root of their log, `message`
+/// (`batch::Root::message`): `None` unless they are a device's keys and the signature checks out.
+pub fn verify_root(keys: &SignerKeys, message: &[u8], sig: &[u8]) -> Option<SignerId> {
+    let SignerKeys::Device { pq, .. } = keys else { return None };
+    pq.verifies(message, ROOT_CONTEXT, sig).then(|| keys.id())
 }
 
 /// How long a pass lets its device in: seconds from when it was made.
@@ -1169,6 +1192,12 @@ impl DeviceKey {
     /// (`wire::Statement::body`).
     pub fn state(&self, body: &[u8]) -> Vec<u8> {
         self.pq.sign(body, STATEMENT_CONTEXT)
+    }
+
+    /// The device's post-quantum signature on a root of its own log, `message` (`batch::Root::message`): one per
+    /// batch of its edits.
+    pub fn sign_root(&self, message: &[u8]) -> Vec<u8> {
+        self.pq.sign(message, ROOT_CONTEXT)
     }
 
     /// The device's pass to service `audience`, made at `made`, seconds since 1970 (`ApiPass`).
