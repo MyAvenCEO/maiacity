@@ -1,0 +1,6 @@
+{
+	"type": "config",
+	"for": "factories",
+	"title": "Factories assets",
+	"note": "Every asset the factories draw, pinned to its avenDB entry and the heads of its version: the BatteryPack the line makes and the Euro pallet its material comes on. A newer version reaches the factories only through an AIP on this entry."
+}

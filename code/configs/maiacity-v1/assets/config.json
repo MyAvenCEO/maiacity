@@ -1,0 +1,170 @@
+{
+	"bus-stop": {
+		"entry": "d280feabd8009f152420a9073221c69bfbb2b78456bb0075e07ca918376643fc",
+		"at": [
+			"98b53bf5e20df613f27a561da26474b00e2e336d49169c93b26e7a8b6af067b1"
+		]
+	},
+	"gas-station": {
+		"entry": "ea0db03c974ef87f30d7567a6ce5bd71821086c808e2e5c37af7cfbf9aeb17cf",
+		"at": [
+			"774f83d833857442fded8c36ca2e41335f836ac303f93f44db196adf626dc30b"
+		]
+	},
+	"shed": {
+		"entry": "89d3a48ebdf240d9f54cb42b1cd15a3df0153caad144d4bc559ce5a3bd068f99",
+		"at": [
+			"68c90bd9ed5cbb3c970a069b636f3731c9f2c220708f736ea1552c00d5a27cc4"
+		]
+	},
+	"solar": {
+		"entry": "73ee05df4fb051fc8573055fc709e9496f01431407b9ae2aa8b211df46aaf84c",
+		"at": [
+			"9c12c664fc1907ea4d2d182eeef90b1170cd2fc33dbc3a5c21ea57fdc7f9b5c8"
+		]
+	},
+	"ramp": {
+		"entry": "a82563ac657f489f4233bba67c6a31e73ab92ac01d679995c6e86baecd5c8d33",
+		"at": [
+			"98eb1b853fb1da9798c9be72ecdbfcf35d5b7fd3a2528c5e42926f398f45ebe7"
+		]
+	},
+	"battery": {
+		"entry": "908ceda0702e99ab6956fd71fd7c692e7b71668c256e67131cc994c864daa7e7",
+		"at": [
+			"f27b69d8882ae30ea97633ce2dcf0f7f658bb732064267e6324e426f9913f383"
+		]
+	},
+	"cube": {
+		"entry": "2d46cdd8d1f6c701b908971d7ea6e520320a06ddf5970e508706ce755aedaf19",
+		"at": [
+			"d0cfe93b9f523e858f293171bb0317f6323d993f4a071dcec8d8853edf7825b5"
+		]
+	},
+	"pickup": {
+		"entry": "3c5350525a283992a6da6da6ce1a02a2b71341456fda13f9faff429fa3125c21",
+		"at": [
+			"7add75cc7bdcd0a341acc87ea218e5971b5954345f8778f38bc08c878cd263e8"
+		]
+	},
+	"tent": {
+		"entry": "eae02754fc9fddcbc9d5643fde4215cba5a9f7406c7eb47082bc3baf9d21e201",
+		"at": [
+			"219694311481a7a2778045146a5c4a54c561b35a629b8dbf6b3b486c5d0c5032"
+		]
+	},
+	"fire": {
+		"entry": "c23e6d57c1860430e90082b6815664e81908c16737abff5738d070019734c5f2",
+		"at": [
+			"7db323f6cc47ed07fc387037311c782f1ccb402728229150824117469549365a"
+		]
+	},
+	"bag": {
+		"entry": "9db50c20e1e0eca1f67a2c63c0aef2ce52a9c1ec106b21e00eff719ae6f9e63a",
+		"at": [
+			"11c14175e8e2288462ea0ff19b8620e2fc8f4bc0ddcc44a29457965e2bfa3e06"
+		]
+	},
+	"pack": {
+		"entry": "4b759a52985b1f5fb365d7c2dc42986bda09cf93cbb395291bfedc00e2437336",
+		"at": [
+			"246f39008c9c4b28a991e56914d50b604f458adeaed8595e95bd2b0a2560f2ad"
+		]
+	},
+	"stake": {
+		"entry": "c53171f8d279bb6f63e401dcdf181bb85bd9565c3026be9ad6e3f1547bf49bff",
+		"at": [
+			"f9bc4e8bc1297c3c0a4c3fd464d3318afe3dbdb9e1bce6fca99db7c0b4cabeec"
+		]
+	},
+	"earth": {
+		"entry": "fd8b06e4e3b26e659459aa7ca3569c339faf9e45f326558b29080279e5b16ff8",
+		"at": [
+			"1ef348b27394b3cf781fe8159324f80266195bb24e18d7ce3e114033634ce5e0"
+		]
+	},
+	"van": {
+		"entry": "356677bc3d19278990ac8b2169076a3ca67a4c168239e11b25ee5974bc93fd99",
+		"at": [
+			"1e5c5a9eadfc787c2dba523ef9646bd20c16381edb72f12da05f45c3dec4f332"
+		]
+	},
+	"stand-in": {
+		"entry": "26463b748b3e98aaba55151952ba9dd545dfa2f1399f179623736e8ebcb00641",
+		"at": [
+			"7472e908988aaeef20ad50534da0375f430afc494be580f6d52404ce9f6153fc"
+		]
+	},
+	"apple-1": {
+		"entry": "569a8a091623b9432e7c83eecec28c99b0630b24b7f03413d05c9d45d6b78917",
+		"at": [
+			"4ad543fa9bf835d11f127bda02eb2da855ce013d04b19c8b16822c4d31f8fcc0"
+		]
+	},
+	"apple-2": {
+		"entry": "569a8a091623b9432e7c83eecec28c99b0630b24b7f03413d05c9d45d6b78917",
+		"at": [
+			"7de291b2804806954ce49c2dcde073cf1315be43c2602b2099998bb19ad76e02"
+		]
+	},
+	"pear-1": {
+		"entry": "b9b38d24c60b5d50e2c24a3635569d4806595c16960f460448dd2530795f9eba",
+		"at": [
+			"f41bb364daeb489a283f2b3b91c679ae5b9c06422d2f6be414e40a5e361cd56b"
+		]
+	},
+	"cherry-1": {
+		"entry": "405f6f7bacabbf3c5053dda60303d463517fed278b6374e71fffdbdb3541eef7",
+		"at": [
+			"f49a049a37505589c587632481e83883ff28f5f169e65c73f4d9dd162c983350"
+		]
+	},
+	"plum-1": {
+		"entry": "13630245fd31d7ada504c605fcb8897702e5986e73e6226f44fe4291459cb760",
+		"at": [
+			"7352ef97f037065c683da69495052db367b26ba743d0459cdf182af4babce558"
+		]
+	},
+	"apricot-1": {
+		"entry": "9644ce8926bc3538a9f887a144853f34c455cce7208f2aad7a4dfd3370f52081",
+		"at": [
+			"2047d9a9605c9bd15b41af9d74487de33871a35d6f356f032095363b6eaa3854"
+		]
+	},
+	"quince-1": {
+		"entry": "6d8c931663b144ec2ca5fe9049947fab6c6d3ace955109c24b080670fc139081",
+		"at": [
+			"21f69b5a155fed1fa8609b36c5d9fdefbaea32de1c88b5edeba2ce578e8332d6"
+		]
+	},
+	"mulberry-1": {
+		"entry": "66ea9412642e278f214ebb8b5a488337a2249c46d545ff1c4239524d7ae47b52",
+		"at": [
+			"8868188c7e9114aed39c6ac5c3673c02d16250131e97c19005c77de6a98d4cf5"
+		]
+	},
+	"walnut-1": {
+		"entry": "68066309ca74c0153f9ae484ea242a1b0a2695d7b5a7a78bd2a571f72567171d",
+		"at": [
+			"b6f9bf6a86525b11605550e67b38b0bc87df4dbae27758355bfc908648c9c402"
+		]
+	},
+	"chestnut-1": {
+		"entry": "94d592f85a0a5f37cc129d94630f8e74d2f54c47d5f874069c8ba44a6295e2d5",
+		"at": [
+			"56052e5b8a07e07f972970e5f853699230313daebd828e0eed6f064fbee7d2a5"
+		]
+	},
+	"hazel-1": {
+		"entry": "af7dc27e658b1f43d0c3e30da7be40dd31311a202521290fdaa85cfd47cb7153",
+		"at": [
+			"9d28d9814dc9cb2586241706e60a6144124c353bdecaf1f3264bdf0c5d1a484f"
+		]
+	},
+	"blackcurrant-1": {
+		"entry": "42d9820e69ae8a254d357f657ac73b1ec0a7ed0dc305a5be80a6881e65ef976a",
+		"at": [
+			"324694e9a17be71ac0606c4a8ed0f8ae808a98922de523eda366da97a7b2ca83"
+		]
+	}
+}

@@ -35,7 +35,7 @@ import { ambience, levelsAt } from './ambience'
 import { createForest, INSIDE, type Forest } from './flora.js'
 import { createDrawn, createFlora } from './drawn.js'
 import { createCover } from './cover.js'
-import { THINGS, coopsOf, putThings } from './things.js'
+import { FLOORS, THINGS, coopsOf, putThings } from './things.js'
 import { swapLegacy } from './legacy.js'
 import { DRIFT, FIELDS, OUTDOOR_SPACING, pick, pinOf, planting, stageOf, type Flora } from './sandbox5.js'
 
@@ -165,7 +165,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	// as the Maia City vault keeps it ($lib/assets/sources/biome.js, its newest version): a living mat of clover and
 	// grasses in the light, leaf litter, humus and moss under the trees. Where the vault holds none, the ground lies bare
 	// (said on the page's banner), never a floor of the repo's
-	const FLOOR_BIOME = opts.flora ? biomeOr('biomes/food-forest') : null
+	const FLOOR_BIOME = opts.flora ? biomeOr(FLOORS.outside) : null
 	const hex = new THREE.Mesh(new THREE.ShapeGeometry(hexShape, 48), opts.flora ? groundMaterial(FLOOR_BIOME?.surface ?? { soil: 1 }) : m.grass)
 	hex.rotation.x = -Math.PI / 2
 	hex.receiveShadow = true
@@ -427,7 +427,7 @@ export async function mountVillage(container: HTMLElement, onProgress: (label: s
 	const treeCrownMat = new THREE.MeshStandardMaterial({ color: '#4f8a38', roughness: 0.8, flatShading: true })
 	/** Sandbox 5: the simple insides' floor, the warm food forest biome's from the vault, as the full insides' is
 	 *  (interior.ts); bare where the vault holds none */
-	const warmFloor = flora ? groundMaterial(biomeOr('biomes/warm-food-forest')?.surface ?? { soil: 1 }) : null
+	const warmFloor = flora ? groundMaterial(biomeOr(FLOORS.warm)?.surface ?? { soil: 1 }) : null
 	/** Sandbox 5: the warm garden's trees for the simple insides, each ripe (one kind a tree, few to grow) */
 	const RIPE = flora ? flora.inside.trees.map((p) => ({ ...p, stages: [p.stages[p.stages.length - 1]!] })) : []
 	/** each dome's simple version, all of it, so it can step aside for the full one */

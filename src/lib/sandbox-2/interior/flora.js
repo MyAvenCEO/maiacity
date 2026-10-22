@@ -25,7 +25,7 @@
  */
 import * as THREE from 'three';
 import { MAIA_CITY } from '../../../../game/code/sources/anchor.js';
-import { pinRef } from '../../assets/sources/avendb.js';
+import { NotInVault, pinRef } from '../../assets/sources/avendb.js';
 import { TIERS } from './sandbox5.js';
 
 /** @typedef {import('./sandbox5.js').Kind} Kind */
@@ -60,12 +60,13 @@ export const INSIDE = /** @type {Reaches} */ ({ tree: [28, 75], shrub: [16, 40],
 /** A plant's key, for a forest to know it by. @param {Kind} k */
 export const keyOf = (k) => `${k.id}@${k.v}:${k.stage}:${k.seed}`;
 /**
- * A kind as the asset it is built from and its values: by its pin, the plant's entry in the Maia City vault and the heads
- * of its version (Samuel 2026-10-20), else by its card's old ref. @param {Kind} k
+ * A kind as the asset it is built from and its values: by its pin alone, the plant's entry in the Maia City vault and
+ * the heads of its version (Samuel 2026-10-20, 2026-10-22: no old ref stands behind it). Throws NotInVault for a kind
+ * the garden pins no version of. @param {Kind} k
  */
 export const refOf = (k) => {
-	const values = `stage=${k.stage}&seed=${encodeURIComponent(k.seed)}`;
-	return k.pin ? pinRef({ vault: MAIA_CITY, ...k.pin }, values) : `plants/${k.id}@${k.v}?${values}`;
+	if (!k.pin) throw new NotInVault(`the garden pins no version of ${k.id} (configs/sandbox-4/garden)`);
+	return pinRef({ vault: MAIA_CITY, ...k.pin }, `stage=${k.stage}&seed=${encodeURIComponent(k.seed)}`);
 };
 
 /** the side of a cell of the ground the small plants are filed in, metres */

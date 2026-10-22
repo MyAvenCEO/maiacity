@@ -1,0 +1,6 @@
+{
+	"type": "config",
+	"for": "maiacity-v1",
+	"title": "MaiaCity V1 assets",
+	"note": "Every asset MaiaCity V1 draws, each pinned to its avenDB entry and the heads of its version: the buildings and Things of the first trees, the stand-in, and each plant at every version a newcomer may plant. A newer version reaches the game only through an AIP on this entry."
+}

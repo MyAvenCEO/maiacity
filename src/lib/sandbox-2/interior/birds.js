@@ -12,9 +12,10 @@
 import * as THREE from 'three';
 import { crowd } from '$lib/assets/render/crowd.js';
 import { seeded } from './plants';
+import { villageAsset } from './things.js';
 
 /** the five kinds, in the Actors' order */
-const SONGBIRDS = /** @type {const} */ (['robin', 'blackbird', 'greattit', 'sparrow', 'chaffinch']);
+export const SONGBIRDS = /** @type {const} */ (['robin', 'blackbird', 'greattit', 'sparrow', 'chaffinch']);
 
 /** @typedef {{ x: number, z: number, height: number, reach: number }} Tree a tree a bird can sit in */
 /** @typedef {{ kind: 'perch' | 'ground' | 'fly', t0: number, t1: number, from: THREE.Vector3, to: THREE.Vector3, act: string, yaw: number }} Leg one stretch of a bird's round */
@@ -32,7 +33,7 @@ const OFTEN = { robin: 3, blackbird: 3, greattit: 3, sparrow: 4, chaffinch: 3 };
  */
 export function songbirds(trees, count, seed, open, eye) {
 	const r = seeded(seed);
-	const refs = SONGBIRDS.map((k) => `actors/songbird:bird-${k}`);
+	const refs = SONGBIRDS.map((k) => villageAsset(`bird-${k}`));
 	const total = Object.values(OFTEN).reduce((a, b) => a + b, 0);
 	const coatOf = () => {
 		let x = r() * total;

@@ -161,7 +161,10 @@ export function unseeded(world, vault, all) {
 	const have = new Set(ever.flatMap((e) => e.tags ?? []));
 	const recipes = ever.filter((e) => RECIPE_TYPES.includes(e.type ?? '')).flatMap((e) => e.tags ?? []);
 	const schema = (/** @type {string} */ title) => ever.some((e) => e.kind === 'schema' && e.title === title);
+	// a game's settings the vault lacks go in only as an AIP an owner signs (Samuel 2026-10-19, "from now one do it
+	// always as proposals!"), never by the top-up: every game's are in it already, and a new one is proposed
 	return all.filter((p) =>
+		p.kind === 'config' ? false :
 		p.kind === 'config-schema' ? !schema(CONFIG_SCHEMA) : p.kind === 'game-schema' ? !schema(GAME_SCHEMA) :
 		p.kind === 'recipe' ? !recipes.some((t) => t.startsWith(refTag(`${p.name}@`))) : !have.has(p.mark)
 	);

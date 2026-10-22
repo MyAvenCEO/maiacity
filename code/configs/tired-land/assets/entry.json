@@ -1,0 +1,6 @@
+{
+	"type": "config",
+	"for": "tired-land",
+	"title": "Tired land assets",
+	"note": "Every asset the tired land world draws, pinned to its avenDB entry and the heads of its version: its truck. A newer version reaches the world only through an AIP on this entry."
+}

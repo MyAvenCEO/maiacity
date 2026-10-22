@@ -2,7 +2,7 @@
  * THE LIBRARY'S THINGS IN THE VILLAGE — what Sandbox 3 and 4 put down that is a Thing of the library ($lib/models):
  * the playgrounds between the domes, in Sandbox 4 the coops and hutches round the squares, mini domes, and in every
  * master dome the workshops round its ground floor (the dome rooms', $lib/models/domerooms.js). Each is built in the
- * asset box from its recipe at the version the village has always stood (`things/<id>@<v>`) and drawn by the
+ * asset box from its recipe at the version the village's config pins (its avenDB entry, `THINGS`) and drawn by the
  * renderer (./drawn.js) as a copy of it, at its finest shape, casting its shadow as the village's baked ones did.
  *
  * A Thing is built as the library has it, so every copy of one is the same: the village no longer gives each its own
@@ -16,25 +16,35 @@
  */
 import { coopsAround } from './spaces';
 
-/** the Things the village puts down, at the version it stands */
+/**
+ * An asset of the village, by the key its config pins it under (code/configs/sandbox-4/assets: its avenDB entry and
+ * the heads of its version, $lib/assets/vault.js `WORLD_PIN`), with the values it is built with.
+ * @param {string} key @param {string} [query]
+ */
+export const villageAsset = (key, query = '') => `pin:sandbox-4/${key}${query ? `?${query}` : ''}`;
+
+/** the Things the village puts down, each at the version its config pins */
 export const THINGS = {
 	/** the hens' mini dome (the chicken coop's v2), Sandbox 4's */
-	hens: 'things/chicken-coop@2',
+	hens: villageAsset('hens'),
 	/** the rabbits' mini dome (the rabbit hutch's v2), Sandbox 4's */
-	rabbits: 'things/rabbit-hutch@2',
+	rabbits: villageAsset('rabbits'),
 	/** the playground with a climbing dome of round logs (its v2), Sandbox 4's */
-	playDome: 'things/playground@2',
+	playDome: villageAsset('play-dome'),
 	/** the wooden playground with its tower (its v1), Sandbox 3's */
-	playground: 'things/playground@1',
+	playground: villageAsset('playground'),
 	/** the master dome's workshops, each at its v1 */
-	coworking: 'things/coworking@1',
-	woodshop: 'things/woodshop@1',
-	studio: 'things/art-studio@1',
-	pottery: 'things/pottery@1',
-	library: 'things/library@1',
-	bakery: 'things/bakery@1',
-	repair: 'things/repair-cafe@1'
+	coworking: villageAsset('coworking'),
+	woodshop: villageAsset('woodshop'),
+	studio: villageAsset('studio'),
+	pottery: villageAsset('pottery'),
+	library: villageAsset('library'),
+	bakery: villageAsset('bakery'),
+	repair: villageAsset('repair')
 };
+
+/** the village's two forest floors: the food forest outside, the warm one under the glass */
+export const FLOORS = { outside: villageAsset('food-forest'), warm: villageAsset('warm-food-forest') };
 
 /**
  * A set the dome builds round its own place and the library brings to its middle, its foot on the ground

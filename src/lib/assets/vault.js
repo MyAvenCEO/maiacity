@@ -46,6 +46,7 @@ import { idOf, slug } from '$lib/ids.js';
 import { CODE_FEED, KEPT_PROOFS, MAIA_CITY, NO_ANCHOR, fileOf, listedRows, listingOf, proofOf, provenRows, seedFeedOf } from '../../../game/code/sources/feed.js';
 import { READ, bringRows, caughtUp, deviceFile, deviceOf, deviceRows, lacking, whenBrought } from '../../../game/code/sources/device.js';
 import { KEPT_NEWEST, fresh } from '../../../game/code/fresh.js';
+import { configAt } from '../../../game/code/index.js';
 import { buildOf } from './builds.js';
 import * as cache from './cache.js';
 import { LATEST } from './engines.js';
@@ -631,7 +632,45 @@ const notIn = (what) =>
 	);
 
 /**
- * The hash a ref names in the Maia City vault: a pin, an asset by its entry and the heads of its version
+ * A world's name for an asset (Samuel 2026-10-22: sandboxes and worlds name assets only by their avenDB entries):
+ * `pin:<game>/<key>[?its=values]`, the pin `{ entry, at }` that game's config `configs/<game>/assets` keeps under
+ * `key`, an entry of Maia City and the heads of its version. The config is the Maia City vault's once loaded
+ * (game/code/index.js `configAt`), else the repo's seed of it, and a newer version reaches a world only by an AIP on it.
+ * No old ref stands behind a key: one the config doesn't pin names nothing.
+ */
+export const WORLD_PIN = /^pin:([a-z0-9][a-z0-9-]*)\/([a-z0-9][a-z0-9-]*)(?:\?([^#\s]*))?$/;
+
+/** A world's name for its asset `key` (`WORLD_PIN`), with the values it is built with. @param {string} game @param {string} key @param {Record<string, number | string>} [values] */
+export const assetIn = (game, key, values = {}) => {
+	const q = queryOf(values);
+	return `pin:${game}/${key}${q ? `?${q}` : ''}`;
+};
+
+/**
+ * A ref as the vault reads it: a world's name for an asset (`WORLD_PIN`) as the pin its game's config keeps, written
+ * out (`vault:<vault>/<entry>@<heads>?its=values`); any other ref as it is. Throws NotInVault for a key its config
+ * doesn't pin.
+ * @template T @param {T} ref @returns {T | string}
+ */
+export function pinnedOf(ref) {
+	const m = typeof ref === 'string' ? WORLD_PIN.exec(ref) : null;
+	if (!m) return ref;
+	const [, game, key, query = ''] = m;
+	/** @type {any} */
+	let pins;
+	try {
+		pins = configAt(`configs/${game}/assets`);
+	} catch (e) {
+		throw new NotInVault(`${ref}: ${game} keeps no assets config (${e instanceof Error ? e.message : String(e)})`);
+	}
+	const pin = pins && Object.hasOwn(pins, key) ? pins[key] : undefined;
+	if (!parsePin(pin)) throw new NotInVault(`${ref}: ${game}’s assets config (configs/${game}/assets) pins no asset ${key}`);
+	return pinRef({ vault: MAIA_CITY, entry: pin.entry, at: pin.at }, query);
+}
+
+/**
+ * The hash a ref names in the Maia City vault: a world's name for an asset (`WORLD_PIN`), read as the pin its config
+ * keeps; a pin, an asset by its entry and the heads of its version
  * (`vault:<vault>/<entry>@<heads>?its=values`, or `{ entry, at }`, ./sources/avendb.js `PIN_REF`), or an old ref read
  * through the entries' cards, `plants/apple@2:variant?its=values`, its latest version when none is named, its first
  * variant when none is, never another variant than the one it names. Throws NotInVault naming the ref for one the
@@ -641,7 +680,7 @@ const notIn = (what) =>
 export function hashOf(ref) {
 	try {
 		if (!source) throw notIn(typeof ref === 'string' ? ref : JSON.stringify(ref));
-		return source.hashOf(ref);
+		return source.hashOf(pinnedOf(ref));
 	} catch (e) {
 		throw noted(e);
 	}
@@ -649,7 +688,7 @@ export function hashOf(ref) {
 
 /** The values a ref names its build with, as text: a pin's, or an old ref's. @param {string | { params?: any }} ref */
 export const paramsOf = (ref) => {
-	const pin = parsePin(ref);
+	const pin = parsePin(pinnedOf(ref));
 	return pin ? pin.params : parseRef(/** @type {string} */ (ref)).params;
 };
 
@@ -666,7 +705,7 @@ export const nameOf = (hash) => source?.nameOf(hash) ?? recipeInfo(hash)?.label 
 /** The name of what a ref names in the vault (`nameOf`), or the ref itself where it names nothing, never told missed. */
 export function refName(ref) {
 	try {
-		const hash = source?.hashOf(ref);
+		const hash = source?.hashOf(pinnedOf(ref));
 		if (hash) return nameOf(hash);
 	} catch {
 		// named as it is written

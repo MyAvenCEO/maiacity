@@ -12,7 +12,7 @@ import { seededRandom } from '../film/clock.js';
 import { withValues } from './assets.js';
 
 /** the truck, by its ref in the library */
-export const TRUCK = 'machines/truck@1';
+export const TRUCK = 'pin:tired-land/truck';
 
 /**
  * The fleet's trucks as copies of the library's truck, each in its colours, put down and moved by a world's renderer
