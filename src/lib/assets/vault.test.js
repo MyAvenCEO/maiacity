@@ -17,7 +17,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 
 // the page's own ops, not the manifests' walk a device opened on it makes first (game/code/sources/manifests.js)
-const ownOps = (o) => o.where?.type?.[0] !== 'manifest';
+const ownOps = (o) => o.where?.type?.[0] !== 'manifest' && o.op !== 'synced';
 
 // outside a page: textures draw on a stand-in canvas, and a module's runes are plain values
 const noop = new Proxy(function () {}, { get: (_, k) => (k === Symbol.toPrimitive ? () => 0 : noop), apply: () => noop, set: () => true });
@@ -741,6 +741,44 @@ test("a page whose device holds none of the recipes yet reads the feed and has i
 		expect(asked.filter((o) => o.op === 'bring').flatMap((o) => o.entries)).toEqual(entries);
 		expect(asked.filter((o) => o.op === 'bring').every((o) => o.entries.length <= AT_ONCE)).toBe(true);
 		expect(b).toEqual({ ok: { new: entries.length, peers: 1, reached: true } });
+	} finally {
+		useDevice(null);
+	}
+}, 60000);
+
+test("a page whose device is still syncing and lacks recipes the feed lists reads the feed, every recipe proven, has its device bring those entries first and never the whole vault; offline, what it holds", async () => {
+	const { useDevice } = await import('../../../game/code/sources/device.js');
+	const tent = rowAt('things/bell-tent@1');
+	const half = FEED.rows.filter((r) => r.entry !== tent.entry);
+	const asked = [];
+	const behind = (synced) => ({
+		run: async (op) => (asked.push(op), op.op === 'synced' ? { ok: synced } : op.op === 'bring' ? { ok: { new: op.entries?.length ?? 0, peers: 1, reached: true } } : { ok: half }),
+		read: async () => new Uint8Array()
+	});
+	useDevice(behind({ peers: 1, logs: 2416, behind: 2136, pulling: 3, pages: 40 }));
+	try {
+		const f = feedOf();
+		const r = await vault.loadRecipes({ feed: AT, fetch: f.get, timeout: 1000, ...PROVING, proofs: keepOf() });
+		expect([r.phase, r.feed]).toEqual(['ready', ROWS_URL]);
+		// the listing asked once, held to what the device holds, and the recipe it lacks built off the feed, proven
+		expect(f.asked.filter((u) => u === ROWS_URL).length).toBe(1);
+		expect(vault.hashOf('things/bell-tent@1')).toBe(LABEL['things/bell-tent@1']);
+		expect((await vault.recipeAt(LABEL['things/bell-tent@1'])).code).toBe(FILES[LABEL['things/bell-tent@1']]);
+		expect(f.proofs().length).toBe(1);
+		await new Promise((r) => setTimeout(r, 0));
+		const brings = asked.filter((o) => o.op === 'bring');
+		expect(brings.filter((o) => o.vaults)).toEqual([]);
+		expect(brings[0]).toEqual({ op: 'bring', entries: [tent.entry] });
+		// a device that holds all its peers hold reads itself, the feed never asked
+		asked.length = 0;
+		useDevice(behind({ peers: 1, logs: 2416, behind: 0, pulling: 0, pages: 400 }));
+		const g = feedOf();
+		expect((await vault.loadRecipes({ feed: AT, fetch: g.get, timeout: 1000, ...PROVING, proofs: keepOf() })).feed).toBe('this device');
+		expect(g.asked).toEqual([]);
+		// still syncing with the feed out of reach: what it holds, local first
+		useDevice(behind({ peers: 0, logs: 0, behind: 0, pulling: 0, pages: 0 }));
+		const h = feedOf({ throws: 'offline' });
+		expect((await vault.loadRecipes({ feed: AT, fetch: h.get, timeout: 1000, ...PROVING, proofs: keepOf() })).feed).toBe('this device');
 	} finally {
 		useDevice(null);
 	}
