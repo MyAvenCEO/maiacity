@@ -11,6 +11,7 @@ import AvenDB.MoveSteps
 import AvenDB.TailRuns
 import AvenDB.RangeSync
 import AvenDB.Batches
+import AvenDB.KeyTree
 import AvenDB.Schemas
 import AvenDB.Gate
 
@@ -23,8 +24,8 @@ replay), `RuleLemmas.lean` (shares that name ops), `Schemas.lean` (writes that f
 (blind relays), `KeyLemmas.lean` (keys), `SyncLemmas.lean` (convergence, sync and holdings), `StoredView.lean`
 (stepping on a stored view, V1), `TrustRuns.lean` (removals tried on the trust records, V2), `MoveSteps.lean` (a move
 stepped on a stored view, V3), `TailRuns.lean` (a late edit replays the last edits, V4), `RangeSync.lean` (a range
-round of sync, R1) and `Batches.lean` (batch-signed logs, V5); the predicates the statements use are in `Props.lean`,
-and the model of holdings and
+round of sync, R1), `Batches.lean` (batch-signed logs, V5) and `KeyTree.lean` (key trees, V6); the predicates the
+statements use are in `Props.lean`, and the model of holdings and
 connections in `Logs.lean`.
 
 The assumptions are part of the model rather than axioms: an edit's signers are the keys that signed it (signatures
@@ -799,6 +800,79 @@ theorem V5_no_fork_one_log (signs : SignerId → Batches.Said → Bool) (rs : Li
     ∃ (L : List EditId) (f : Nat), ∀ r ∈ rs, r.log = s → r.whole = true → signs s (.root r) = true →
       r.fork = f ∧ r.digest.leaves = L.take r.length :=
   Batches.no_fork_one_log signs rs s h
+
+/-! ## Key trees (V6)
+
+An audience's keys on a key tree (`Trees.run`), built from its changes in the replay order: devices joining (with the
+past or without) and leaving, and commits of new secrets along a member's path. Each statement holds for every list of
+changes, so for commits made apart and merged in the replay order too. `Reach` is `Knows` over the tree's seals
+(`Trees.knows_iff_reach`): a seal opens only with its key. -/
+
+/-- V6 (members open the epoch key): every member of the tree opens every key of the epoch now. -/
+theorem V6_members_open (h : Nat) (cs : List Trees.Change) {x : Trees.Member} (hx : x ∈ (Trees.run h cs).members)
+    {c : Nat} (hc : c ∈ (Trees.run h cs).keys (Trees.run h cs).epoch) :
+    Trees.Reach (Trees.run h cs).seals (Trees.own x.dev) (.epoch (Trees.run h cs).epoch c) :=
+  Trees.members_open h cs hx hc
+
+/-- V6 (a removed device is shut out): a device that leaves opens no key of any epoch after its removal, whatever it
+    opened before and whatever changes come after, unless it joins again. -/
+theorem V6_removed_shut (h : Nat) (before after : List Trees.Change) {r : SignerId}
+    (hm : (Trees.run h before).isMember r = true) (hn : ∀ p hist, Trees.Change.add r p hist ∉ after) {g : Nat}
+    (hg : (Trees.run h before).epoch < g) (c : Nat) :
+    ¬ Trees.Reach (Trees.run h (before ++ .remove r :: after)).seals (Trees.own r) (.epoch g c) :=
+  Trees.removed_shut h before after hm hn hg c
+
+/-- V6 (no past without history): a device added without the past opens no key of an epoch before it joined. -/
+theorem V6_no_history_shut (h : Nat) (before after : List Trees.Change) {d : SignerId} {p : Trees.Place}
+    (hnew : ∀ q hist, Trees.Change.add d q hist ∉ before)
+    (hj : ((Trees.run h before).step (.add d p false)).isMember d = true) {g : Nat} (hg : g ≤ (Trees.run h before).epoch)
+    (c : Nat) : ¬ Trees.Reach (Trees.run h (before ++ .add d p false :: after)).seals (Trees.own d) (.epoch g c) :=
+  Trees.no_history_shut h before after hnew hj hg c
+
+/-- V6 (history stays readable): a removal's epoch seals each key of the epoch before under each of its own, so
+    whoever opens a key of it opens every key of the epoch before. -/
+theorem V6_history_kept (h : Nat) (cs : List Trees.Change) {g c c' : Nat}
+    (hch : (Trees.run h cs).chains (g + 1) = true) (hc : c ∈ (Trees.run h cs).keys (g + 1))
+    (hc' : c' ∈ (Trees.run h cs).keys g) {start : Trees.TKey → Prop}
+    (hr : Trees.Reach (Trees.run h cs).seals start (.epoch (g + 1) c)) :
+    Trees.Reach (Trees.run h cs).seals start (.epoch g c') :=
+  Trees.history_kept h cs hch hc hc' hr
+
+/-- V6 (old boxes stay): whatever opens on a tree opens on every tree after it; no change takes a box away. -/
+theorem V6_opens_kept (h : Nat) (cs more : List Trees.Change) {start : Trees.TKey → Prop} {k : Trees.TKey}
+    (hr : Trees.Reach (Trees.run h cs).seals start k) : Trees.Reach (Trees.run h (cs ++ more)).seals start k :=
+  Trees.opens_kept h cs more hr
+
+/-- V6 (one box a level): a commit drafted on the tree as it stands counts, and its copath seals alone reach every
+    member, with no box to a member's own key needed. -/
+theorem V6_draft_reaches_all (h : Nat) (cs : List Trees.Change) {u : SignerId} {p : Trees.Place}
+    (hp : (Trees.run h cs).placeOf u = some p) :
+    ((Trees.run h cs).draftTo p).all ((Trees.run h cs).targetOk p) = true ∧
+      ∀ x ∈ (Trees.run h cs).members, x.dev ∈ (Trees.run h cs).newKnowers u ((Trees.run h cs).draftTo p) 0 :=
+  Trees.draft_reaches_all h cs hp
+
+/-- V6 (commits made apart both stay): two members that commit on the same tree, merged in the replay order, both
+    count, each starts a key of the epoch, and each node on both paths holds both secrets. -/
+theorem V6_concurrent_keep_both (h : Nat) (cs : List Trees.Change) {u v : SignerId} {p p' : Trees.Place}
+    (hu : (Trees.run h cs).placeOf u = some p) (hv : (Trees.run h cs).placeOf v = some p') :
+    (Trees.run h (cs ++ [(Trees.run h cs).draft u, (Trees.run h cs).draft v])).keys (Trees.run h cs).epoch =
+        (Trees.run h cs).keys (Trees.run h cs).epoch ++ [(Trees.run h cs).now, (Trees.run h cs).now + 1] ∧
+      ∀ q, Trees.Tree.onPath p q = true → Trees.Tree.onPath p' q = true →
+        (Trees.run h cs).now ∈ (Trees.run h (cs ++ [(Trees.run h cs).draft u, (Trees.run h cs).draft v])).current q ∧
+        (Trees.run h cs).now + 1 ∈
+          (Trees.run h (cs ++ [(Trees.run h cs).draft u, (Trees.run h cs).draft v])).current q :=
+  Trees.concurrent_keep_both h cs hu hv
+
+/-- V6 (a stale commit is cut): a commit drafted before a removal it didn't see, which seals to a key the removed
+    device opens, changes nothing when the replay order puts it after the removal. -/
+theorem V6_stale_commit_cut (h : Nat) (cs : List Trees.Change) {u r : SignerId} {p : Trees.Place}
+    (hu : (Trees.run h cs).placeOf u = some p)
+    (hr : ∃ nt ∈ (Trees.run h cs).draftTo p, r ∈ (Trees.run h cs).knowersOf nt.2) :
+    (Trees.run h (cs ++ [.remove r, (Trees.run h cs).draft u])).keys = (Trees.run h (cs ++ [.remove r])).keys ∧
+      (Trees.run h (cs ++ [.remove r, (Trees.run h cs).draft u])).seals = (Trees.run h (cs ++ [.remove r])).seals ∧
+      (Trees.run h (cs ++ [.remove r, (Trees.run h cs).draft u])).current =
+        (Trees.run h (cs ++ [.remove r])).current :=
+  Trees.stale_commit_cut h cs hu hr
 
 /-- T12 (sync shares only what shares allow, and what is public only with an interest): every edit a peer sends a
     device that follows the vaults `fl` is one it holds, and of an entry, an audience or a share that device may receive
