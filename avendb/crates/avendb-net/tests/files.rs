@@ -244,8 +244,13 @@ async fn files_live_on_a_shelf_and_in_the_bucket() {
     until("the server keeps the photo in its bucket", || server.holds_file(photo_root)).await;
     let hex = Hash::from_bytes(photo_root.hash).to_hex();
     assert!(outboards(objects.path()).iter().any(|r| r.starts_with(&hex)), "its outboard in the bucket");
-    let mut staged = std::fs::read_dir(cache.path().join(format!("g{FLOOR}/new"))).expect("staging");
-    assert!(staged.next().is_none(), "none staged");
+    // the McEliece keys its pulls name come after their last page, and are staged on their way to the bucket a moment
+    let staging = cache.path().join(format!("g{FLOOR}/new"));
+    let drained = || {
+        let staging = staging.clone();
+        async move { std::fs::read_dir(&staging).expect("staging").next().is_none() }
+    };
+    until("none staged", drained).await;
     for n in [page, server] {
         n.shutdown().await.expect("the node stops");
     }
