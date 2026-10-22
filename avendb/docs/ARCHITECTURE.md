@@ -531,6 +531,12 @@ stands (`priority` in `Step.lean`, `resolve` in `policy.rs`):
 3. Marks that move an entry. Such a mark takes away only what writes of its own entry relied on, so Rust tries them
    in one batch and chooses what the model's one-by-one tries choose.
 
+Whether a revocation or a root handed on stands depends on the trust edits alone: genesis, settings, shares,
+revocations and claims (`Action::is_trust`, `isTrust` in `Step.lean`). So each such removal is tried on a run of the
+trust edits only, each at its own place in the one order, and only marks are tried on every edit (`resolveTrust`;
+`V2_removals_read_trust` proves it chooses what `resolve` chooses). A try costs the vault's trust edits, not its writes,
+so no choice is kept between replays.
+
 A junior owner can't keep his own removal out by removing his remover: his removal is tried later and refused, as he
 is no longer an owner at its place. A mark of the wants alone takes nothing away and is no removal, and neither is the
 revocation of a keep share (K1).

@@ -74,7 +74,6 @@
 		'edits offered': 'Edits offered to it',
 		'edits checked': 'Edits whose signatures it checked',
 		'refresh rounds': 'Refresh rounds',
-		'replay: removals as chosen before': 'Replays that took the removals as chosen before',
 		'replay: from its stored view': 'Unlocks that stepped on the device’s stored view',
 		'stored view: none that opens': 'Unlocks with no stored view that opens, so every edit replayed',
 		'keys opened': 'Keys opened from their boxes',

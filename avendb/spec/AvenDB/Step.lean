@@ -701,4 +701,30 @@ def stepsOn : State → List Edit → State × List Edit
     | some st' => let r := stepsOn st' edits; (r.1, edit :: r.2)
     | none => stepsOn st edits
 
+/-! ## Trying removals on the trust records
+
+Which revocations stand, and which roots handed on, turns on the edits that say who may do what alone (`isTrust`), never
+on writes, marks, boxes, checkpoints, wraps or snapshots (`V2_removals_read_trust`). So a device tries each of them by a
+replay of those edits alone (`runTrust`), a few hundred where its log holds a hundred thousand writes, and chooses the
+removals `resolve` chooses (`resolveTrust`). -/
+
+/-- An edit says who may do what: a vault made, an owner, a device or a grant given or taken, a setting, an invite
+    claimed. -/
+def Action.isTrust : Action → Bool
+  | .genesis .. | .settings .. | .share _ | .revoke _ | .claim .. => true
+  | _ => false
+
+/-- `runWith`, of the edits that say who may do what alone (`isTrust`), each at its place among `edits`. -/
+def runTrust (edits rem : List Edit) : State × List Edit :=
+  runFrom rem (cuts edits rem) {} (edits.zipIdx.filter (·.1.action.isTrust))
+
+/-- `resolve`, trying each removal that says who may do what by `runTrust`, and each mark that takes an entry to
+    another audience by `runWith`, as `resolve` does. -/
+def resolveTrust (edits : List Edit) : List Edit :=
+  let base := (runTrust edits []).1
+  let cands := (edits.filter Edit.isRemoval).mergeSort fun a b => prioLe (priority base a) (priority base b)
+  cands.foldl (fun rem r =>
+    let stood := if r.action.isTrust then (runTrust edits (rem ++ [r])).2 else (runWith edits (rem ++ [r])).2
+    if (r :: rem).all fun x => stood.any (·.id == x.id) then rem ++ [r] else rem) []
+
 end AvenDB
