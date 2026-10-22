@@ -1,6 +1,6 @@
 <!--
 	The why, set as a magazine manifesto: a headline spread, a chapter with a
-	drop cap, a pull quote between rules, the "I see" refrain hung off a gutter,
+	drop cap, a pull quote between rules, the "We see" refrain hung off a gutter,
 	a crescendo whose lines grow as they build, and the creed as the close.
 -->
 <script lang="ts">
@@ -120,7 +120,7 @@
 		<p class="marker">II<span>The vision</span></p>
 		<ul class="visions">
 			{#each visions as line}
-				<li><span class="see">I see</span> {line}</li>
+				<li><span class="see">We see</span> {line}</li>
 			{/each}
 		</ul>
 	</section>
@@ -141,8 +141,8 @@
 
 	<footer class="close">
 		<p class="lead-in">
-			And on the day a million founders stand inside what they built, they will know what I know
-			deep in my heart for sure:
+			And on the day a million founders stand inside what they built, they will know what we know
+			deep in our hearts for sure:
 		</p>
 		<p class="creed">when we unite in vision, the impossible becomes possible.</p>
 		<p class="signature">
