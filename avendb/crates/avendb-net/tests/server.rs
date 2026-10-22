@@ -105,6 +105,9 @@ async fn the_first_human_vault_to_claim_the_server_owns_it_once_and_for_good() {
     assert!(alices.claim(&offer, passkey_a).await.is_err(), "Alice's vault comes second");
     // Bob tries again, as if the answer had been lost: the server is avenMAIA's device already
     assert_eq!(bobs.claim(&offer, passkey_b).await.expect("the same claim"), avenceo);
+    // the McEliece keys its edits name come after a pull's last page
+    let keyed = move |lab: &Lab, me| lab.request(me, mac_b).wants.is_empty();
+    until("the server holds the keys its edits name", || server.read(keyed)).await;
     let held = server.read(|lab, me| lab.size(me)).await;
     for n in [bobs, alices, stranger] {
         n.shutdown().await.expect("the node shuts down");
