@@ -9,6 +9,7 @@ import AvenDB.StoredView
 import AvenDB.TrustRuns
 import AvenDB.MoveSteps
 import AvenDB.TailRuns
+import AvenDB.RangeSync
 import AvenDB.Schemas
 import AvenDB.Gate
 
@@ -734,6 +735,16 @@ theorem V4_tail_replays (held fresh p s s' : List Edit)
       standing (held ++ fresh) = (Tails.kept p s).2 ++ (Tails.tailRun p s s').2 ∧
       standing held = (Tails.kept p s).2 ++ (Tails.tailRun p s s).2 :=
   Tails.V4_tail_replays held fresh p s s' ho ho' hids hids' hrems hmoves hchosen hcands hrm hstands hinertP hinertT
+
+/-- R1 (range sync): two devices that finish a round over a range of logs, comparing one fingerprint per range and
+    sending what each holds of the ranges that differ, hold the same head of every log in it, the later of the two they
+    held, and the round changes nothing outside the range. Assumes the fingerprint has no collision. -/
+theorem R1_range_round {K F : Type} {fp : Range.Held K Range.Head → (K → Bool) → F} (hfp : Range.Sound fp)
+    (a b : Range.Held K Range.Head) (t : Range.Round K) (r : K → Bool) (hfin : Range.finished fp a b t r) :
+    (∀ k, r k = true → Range.takeIn Range.later t r a b k = Range.takeIn Range.later t r b a k ∧
+      Range.takeIn Range.later t r a b k = Range.later (a k) (b k)) ∧
+    (∀ k, r k = false → Range.takeIn Range.later t r a b k = a k ∧ Range.takeIn Range.later t r b a k = b k) :=
+  Range.round_agrees hfp Range.later_join a b t r hfin
 
 /-- T12 (sync shares only what shares allow, and what is public only with an interest): every edit a peer sends a
     device that follows the vaults `fl` is one it holds, and of an entry, an audience or a share that device may receive
