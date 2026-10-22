@@ -469,6 +469,33 @@ impl ShelfKey {
 /// The engine's own hash, of its sources (`build.rs`): what a device worked out with another engine it works out again.
 const ENGINE: &str = env!("AVENDB_ENGINE");
 
+/// The key a person's devices hand each other what they worked out with (`Lab::handing`, `Lab::start_handed`, M6):
+/// derived from their passkey's seal key (`Passkey::seal_secret`), which a device derives from the PRF output of its
+/// passkey's ceremony, so only a device that holds the passkey makes or opens what it locks. That passkey already signs
+/// as the person's vault's owner, so a handed view trusts nobody new.
+pub struct HandKey(ShelfKey);
+
+impl HandKey {
+    /// The key of the passkey whose seal key is `passkey_seal`.
+    pub fn of(passkey_seal: &Secret) -> HandKey {
+        HandKey(ShelfKey(passkey_seal.child("hand seal", &[])))
+    }
+}
+
+/// What every handed view starts with (`Lab::handing`): version 1, then how many edits it is of, their ids in the order
+/// its giver took them, and its stored view of them (`Replay::to_view`).
+const HANDED: &[u8] = b"avenDB handed view 1\n";
+
+/// What `Lab::handing` locked, opened: the ids of the edits its view is of, and the view. `None` if it is no handed
+/// view.
+fn handed_of(bytes: &[u8]) -> Option<(Vec<EditId>, &[u8])> {
+    let (n, rest) = bytes.strip_prefix(HANDED)?.split_first_chunk::<8>()?;
+    let n = usize::try_from(u64::from_le_bytes(*n)).ok()?;
+    let (ids, view) = rest.split_at_checked(n.checked_mul(32)?)?;
+    Some((ids.chunks_exact(32).map(|id| EditId(id.try_into().expect("32 bytes"))).collect(), view))
+}
+
+
 /// What a device keeps on its shelf of what it worked out, to start again from it quickly (`Lab::restore_warm`), each
 /// the newest first, as `Lab::warming` gave it, encrypted for it alone: its keys, for any engine, which hold the keys it
 /// opened from their boxes and what its shelf names the edits it checked by (`Checked`); and its stored views, for this
@@ -4922,6 +4949,93 @@ impl Lab {
             store.view_given = warming.view_of;
             store.view_wholes = warming.view_wholes;
         }
+    }
+
+    /// Device `d`'s key for what it hands another device of its passkey (`HandKey`): `None` while it is locked, and for
+    /// a device whose keys derive from no passkey (the server, a stranger). A page derives it from its ceremony's PRF
+    /// output (`HandKey::of`).
+    pub fn hand_key(&self, d: SignerId) -> Option<HandKey> {
+        let (Some(Key::Device(_)), Some(&(passkey, _))) = (self.keys.get(&d), self.salts.get(&d)) else { return None };
+        let Some(Key::Passkey(p)) = self.keys.get(&passkey) else { return None };
+        Some(HandKey::of(&p.seal_secret()))
+    }
+
+    /// What device `d` hands a new device of its passkey to start from (`start_handed`, M6), locked for that passkey's
+    /// devices alone (`HandKey`) and this engine: the ids of the edits it holds, each checked as it took it, and its
+    /// replay of them as its stored view (`Replay::to_view`). The new device then neither checks them again nor replays
+    /// them. `None` while it is locked, for a device of no passkey, and while its replay is not of every edit it holds.
+    pub fn handing(&mut self, d: SignerId) -> Option<Vec<u8>> {
+        let key = self.hand_key(d)?;
+        let Lab { stores, rng, .. } = self;
+        let store = stores.get(&d)?;
+        let n = store.log.edits().len();
+        if n == 0 || store.replayed != n {
+            return None;
+        }
+        let at = Perf::start();
+        let mut bytes = Zeroizing::new(HANDED.to_vec());
+        bytes.extend((n as u64).to_le_bytes());
+        store.log.ids().iter().for_each(|id| bytes.extend(id.0));
+        bytes.extend(store.replay.to_view(n));
+        let handed = key.0.lock("handed view", &bytes, ENGINE.as_bytes(), rng);
+        if let Some(store) = stores.get_mut(&d) {
+            store.perf.add("hand view", at);
+        }
+        Some(handed)
+    }
+
+    /// `restore_from`, for a new device `d` of a passkey, with what another device of the passkey handed it
+    /// (`handing`) beside the edits it took (`backup`): it doesn't check the signatures of the edits the handed view is
+    /// of, which its giver checked, and its replay starts from that view, the others stepped on it, the last ones
+    /// replayed again or all of them, as they fall (`V7_handed_view`). True where it took the view: one that opens with
+    /// its passkey's key, for this engine, of edits it took every one of; else it starts as `restore_from` does.
+    pub fn start_handed(&mut self, d: SignerId, backup: Backup, handed: &[u8]) -> bool {
+        let at = Perf::start();
+        let key = self.hand_key(d);
+        let opened = key.and_then(|key| key.0.unlock("handed view", handed, ENGINE.as_bytes()));
+        let Some((ids, view)) = opened.as_ref().and_then(|b| handed_of(b)) else {
+            self.restore_from(d, backup);
+            return false;
+        };
+        let of: HashSet<EditId> = ids.iter().copied().collect();
+        let took: HashSet<EditId> = backup.signed.iter().map(|s| s.edit.id()).filter(|id| of.contains(id)).collect();
+        if took.len() != of.len() {
+            self.restore_from(d, backup);
+            return false;
+        }
+        // the edits the view is of first, in the order its giver took them, the others after them as they came
+        let Backup { signed, blobs } = backup;
+        let (first, rest): (Vec<Signed>, Vec<Signed>) = signed.into_iter().partition(|s| of.contains(&s.edit.id()));
+        let mut first: HashMap<EditId, Signed> = first.into_iter().map(|s| (s.edit.id(), s)).collect();
+        let first: Vec<Signed> = ids.iter().filter_map(|id| first.remove(id)).collect();
+        let held = self.held(d);
+        let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
+        self.stores.insert(d, Store { follow, query_depth, gate, perf, ..Store::default() });
+        let offered = (first.len() + rest.len()) as u64;
+        let fresh = self.fresh(d, first.into_iter().chain(rest).collect(), &of);
+        let Some(store) = self.stores.get_mut(&d) else { return false };
+        store.perf.add("check", at);
+        store.perf.count("edits offered", offered);
+        store.perf.count("edits checked", fresh.iter().filter(|s| !of.contains(&s.edit.id())).count() as u64);
+        store.perf.count("edits handed", of.len() as u64);
+        self.keep_fresh(d, fresh, &blobs);
+        let Some(store) = self.stores.get_mut(&d) else { return false };
+        let at = Perf::start();
+        let took = match Replay::from_view(view, store.log.edits(), store.log.ids()) {
+            Some((replay, held)) => {
+                store.replay = replay;
+                store.replayed = held;
+                store.perf.count("replay: from a handed view", 1);
+                true
+            }
+            None => {
+                store.perf.count("handed view: of other edits", 1);
+                false
+            }
+        };
+        store.perf.add("open view", at);
+        self.refresh(d, &[]);
+        took
     }
 
     /// `action` signed by `signers`, drafted on device `on` and building on what it holds, unchecked and kept nowhere:

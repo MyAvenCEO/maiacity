@@ -12,6 +12,7 @@ import AvenDB.TailRuns
 import AvenDB.RangeSync
 import AvenDB.Batches
 import AvenDB.KeyTree
+import AvenDB.HandedView
 import AvenDB.Schemas
 import AvenDB.Gate
 
@@ -24,9 +25,9 @@ replay), `RuleLemmas.lean` (shares that name ops), `Schemas.lean` (writes that f
 (blind relays), `KeyLemmas.lean` (keys), `SyncLemmas.lean` (convergence, sync and holdings), `StoredView.lean`
 (stepping on a stored view, V1), `TrustRuns.lean` (removals tried on the trust records, V2), `MoveSteps.lean` (a move
 stepped on a stored view, V3), `TailRuns.lean` (a late edit replays the last edits, V4), `RangeSync.lean` (a range
-round of sync, R1), `Batches.lean` (batch-signed logs, V5) and `KeyTree.lean` (key trees, V6); the predicates the
-statements use are in `Props.lean`, and the model of holdings and
-connections in `Logs.lean`.
+round of sync, R1), `Batches.lean` (batch-signed logs, V5), `KeyTree.lean` (key trees, V6) and `HandedView.lean` (a
+handed view, V7); the predicates the statements use are in `Props.lean`, and the model of holdings and connections in
+`Logs.lean`.
 
 The assumptions are part of the model rather than axioms: an edit's signers are the keys that signed it (signatures
 can't be forged); keys are learned only through `Knows` (sealed, wrapped or encrypted data reveals nothing without its
@@ -873,6 +874,23 @@ theorem V6_stale_commit_cut (h : Nat) (cs : List Trees.Change) {u r : SignerId} 
       (Trees.run h (cs ++ [.remove r, (Trees.run h cs).draft u])).current =
         (Trees.run h (cs ++ [.remove r])).current :=
   Trees.stale_commit_cut h cs hu hr
+
+/-- V7 (a handed view): a new device that holds the edits a view another device of its passkey handed it is of, and
+    new ones, in any order, knows what replaying every edit would tell it by stepping the new ones on that view, with
+    the same edits standing, where the new ones are writes, each deeper than every edit the view is of, and no edit
+    the view is of builds on one of them. Assumes ids don't collide. -/
+theorem V7_handed_view (held new mine : List Edit) (hperm : mine.Perm (held ++ new))
+    (hw : ∀ n ∈ new, n.action.isWrite = true) (hd : ∀ e ∈ held, ∀ n ∈ new, e.depth < n.depth)
+    (hp : ∀ e ∈ held, ∀ n ∈ new, n.id ∉ e.parents) (hids : (mine.map Edit.id).Nodup) :
+    view mine = (stepsOn (view held) (order new)).1 ∧
+      standing mine = standing held ++ (stepsOn (view held) (order new)).2 :=
+  Handed.V7_handed_view held new mine hperm hw hd hp hids
+
+/-- V7, nothing new: a device that holds just the edits a handed view is of, in any order, knows from the view alone
+    what replaying them would tell it. -/
+theorem V7_handed_whole {held mine : List Edit} (hperm : mine.Perm held) (hids : (mine.map Edit.id).Nodup) :
+    view mine = view held ∧ standing mine = standing held :=
+  Handed.V7_handed_whole hperm hids
 
 /-- T12 (sync shares only what shares allow, and what is public only with an interest): every edit a peer sends a
     device that follows the vaults `fl` is one it holds, and of an entry, an audience or a share that device may receive
