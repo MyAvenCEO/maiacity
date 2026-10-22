@@ -2270,6 +2270,14 @@ all older than that starts a new one beside them. Tests hold `FLOOR` at 18 and t
   check those edits' signatures again; it checks every edit after it, and every edit where the head is another. A key
   counts only for the very box it opened. It keeps them again after each key it opens and each head it puts or takes
   back whole. What older nodes kept beside the shelf (`warm/`, `opened/`, `sealed/`) no node reads or puts any more.
+- **Handed view** (M6, `Lab::handing`, `Lab::start_handed`, `spec/AvenDB/HandedView.lean`, V7). A new device of a
+  person starts from what another device of the same passkey worked out: the ids of the edits it holds, each checked
+  as it took it, and its stored view of them, sealed for this engine under a key derived from the passkey's seal key
+  (`HandKey`), which only a device that holds the passkey derives, in its ceremony. That passkey already signs as the
+  person's vault's owner, so a handed view trusts nobody new. The new device doesn't check the signatures of the
+  edits the view is of, and steps the others on the view as V1, V3 and V4 say, in whatever order it took them (V7);
+  a debug build checks the result against a replay of every edit. A view that doesn't open, or names an edit the new
+  device didn't take, starts it as a restore does. For 606 edits the view is about 250 KB, ids included.
 - **Packs, not one object per edit.** An edit is a few kilobytes and object storage bills at least 64 KB per object,
   so packs keep "everything is a blob" true and cheap.
 - **Generations.** A place keeps its shelves side by side: `g1`, `g2` and on. The newest is in use. Forgetting an

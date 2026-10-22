@@ -40,6 +40,7 @@
 //! | M7 key trees | `tree`: an audience's keys on a key tree in the style of MLS TreeKEM, member devices at its leaves, a commit's new secrets along its author's path each sealed to the other side, the epoch's key derived from the top, commits made apart kept side by side on a node as in BeeKEM, a removal's epoch wrapping the one before; `keys`: a key sealed to an X-Wing key alone, the tree's boxes | V6 |
 //! | H2 provenance | `provenance`: the proof of a vault's public code, of what a stranger that follows it may receive (`sync::answer`), as one reply; an observer, a device of no vault anchored to the vault by its id, that takes it as any reply and reads back the rows the feed serves, and holds a file to the write that brought it | T12 |
 //! | M3 batch-signed logs | `batch`: each device's one append-only log of the edits it signs, a BLAKE3 Merkle tree split as RFC 9162 splits it, its root signed once per batch by group commit; an edit shown by its path up to a signed root; roots that disagree, a proof of fork that freezes their signer; an existing log wrapped as it stands | V5 |
+//! | M6 handed views | `lab`: a new device of a passkey starts from what another device of it handed it (`Lab::handing`, `Lab::start_handed`), the ids of the edits it held and its stored view, sealed under a key only the passkey's devices derive (`HandKey`): their signatures not checked again, the edits it took beside them stepped on the view | V7 |
 
 pub mod admission;
 pub mod aip;
