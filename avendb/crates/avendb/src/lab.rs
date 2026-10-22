@@ -97,7 +97,7 @@ use crate::merge;
 use crate::ops::Loc;
 use crate::perf::Perf;
 use crate::policy::{
-    acting, covered, mk_audience, replay, replay_none, replay_on, replay_on_why, Action, Memo, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
+    acting, covered, mk_audience, replay, replay_none, replay_on, replay_on_why, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
     Meaning, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share, Sharing, State, Vault, Who, Why,
     Wrap, Write,
 };
@@ -450,15 +450,11 @@ fn trust(store: &mut Store) -> bool {
 }
 
 /// A device's key for what it seals on its own shelf (`Lab::shelf_key`): whoever holds the device's own key derives
-/// it, and nobody else, so a seal a shelf holds is the device's word that it checked what the seal names.
+/// it, and nobody else, so a stored view a shelf holds that opens with it is the device's word that it checked the
+/// edits the view is of.
 pub struct ShelfKey(Secret);
 
 impl ShelfKey {
-    /// The seal of `bytes`.
-    pub fn seal(&self, bytes: &[u8]) -> [u8; 32] {
-        self.0.child("shelf head", bytes).bytes()
-    }
-
     /// `bytes` encrypted for the device alone, as what `purpose` names, under `context`.
     fn lock(&self, purpose: &str, bytes: &[u8], context: &[u8], rng: &mut SeededRng) -> Vec<u8> {
         keys::encrypt(&self.0.child("shelf box", purpose.as_bytes()), bytes, context, rng)
@@ -473,29 +469,24 @@ impl ShelfKey {
 /// The engine's own hash, of its sources (`build.rs`): what a device worked out with another engine it works out again.
 const ENGINE: &str = env!("AVENDB_ENGINE");
 
-/// What a device keeps on its shelf of what it worked out, encrypted for it alone, to start again from it quickly
-/// (`Lab::restore_warm`): the choice its replay's resolve made (`policy::Memo`), for this engine alone (`ENGINE`), and
-/// the keys it opened from their boxes, each part as `Lab::warming` gave it; and its stored views, the newest first
-/// (`Replay::to_view`), for this engine alone too. It vouches for
-/// nothing it doesn't check: a key counts only for the very box it opened, with the key it opens it with now, and
-/// where its id is the one that box names; the choice only for edits that turn on the same (`Memo`); and a view only
-/// where it reads back whole and is of the very edits its log starts with (`Replay::from_view`).
+/// What a device keeps on its shelf of what it worked out, to start again from it quickly (`Lab::restore_warm`), each
+/// the newest first, as `Lab::warming` gave it, encrypted for it alone: its keys, for any engine, which hold the keys it
+/// opened from their boxes and what its shelf names the edits it checked by (`Checked`); and its stored views, for this
+/// engine alone (`ENGINE`), each its replay of the edits its log started with (`Replay::to_view`). It vouches for
+/// nothing it doesn't check: a key counts only for the very box it opened, with the key it opens it with now, and where
+/// its id is the one that box names; the edits only where its shelf names them the same now; and a view only where it
+/// reads back whole and is of the very edits its log starts with (`Replay::from_view`).
 #[derive(Clone, Debug, Default)]
 pub struct Warm {
-    pub memo: Option<Vec<u8>>,
     pub keys: Vec<Vec<u8>>,
     pub views: Vec<Vec<u8>>,
 }
 
-/// What a device worked out that its shelf lacks, each part encrypted for it alone (`Lab::warming`): the choice of its
-/// replay's resolve, the keys it opened and its stored view, for its shelf to take, and what of them it gave, for
-/// `Lab::warmed`.
+/// What of `Warm` a device's shelf lacks (`Lab::warming`), for its shelf to take, and what it is of, for `Lab::warmed`.
 pub struct Warming {
-    pub memo: Option<Vec<u8>>,
     pub keys: Option<Vec<u8>>,
     pub view: Option<Vec<u8>>,
-    memo_of: Option<Memo>,
-    keys_of: usize,
+    keys_of: Option<(Option<Checked>, usize)>,
     view_of: usize,
     view_wholes: u64,
 }
@@ -503,6 +494,27 @@ pub struct Warming {
 /// How many edits a device steps on its replay before its shelf takes its view again (`Lab::warming`): as many as it
 /// steps on again as it starts from the view before. A replay of every edit puts the view on its shelf at once.
 const VIEW_STEPS: usize = 4096;
+/// What a device's shelf names edits it holds by that the device checked, each one, as it took them (avendb-net's
+/// newest head that holds only such edits, by its number and the hash of its bytes, which name its packs by their
+/// hashes): it keeps it with its keys (`Lab::warming`), so that it doesn't check them again as it starts, where its shelf
+/// names them the same (`Lab::restore_warm`).
+pub type Checked = [u8; 40];
+
+/// A device's keys from its shelf (`Warm::keys`), opened: what its shelf named the edits it checked by, if anything
+/// (`Checked`), after a byte that says whether it named any, and the keys it opened from their boxes, each by the box it
+/// opened and the key it opened it with (`opened_box`).
+fn keys_of(bytes: &[u8]) -> Option<(Option<Checked>, Vec<([u8; 32], Secret)>)> {
+    let (checked, keys) = match bytes.split_first()? {
+        (0, keys) => (None, keys),
+        (1, rest) => rest.split_first_chunk::<40>().map(|(checked, keys)| (Some(*checked), keys))?,
+        _ => return None,
+    };
+    let opened = keys.chunks_exact(64).map(|chunk| {
+        let (opened, secret) = chunk.split_at(32);
+        (opened.try_into().expect("32 bytes"), Secret::from_bytes(secret.try_into().expect("32 bytes")))
+    });
+    (keys.len() % 64 == 0).then(|| (checked, opened.collect()))
+}
 
 /// What one device holds: its edits, each with its signatures, to pass on, and the blobs they name; what it makes of
 /// them; the keys it holds; what it read with them; and the entries it shows.
@@ -567,13 +579,14 @@ struct Store {
     shown_writes: (usize, Option<EditId>),
     shown_lanes: BTreeMap<VaultId, ([u8; 32], BTreeSet<BlobId>)>,
     shown_groups: [u8; 32],
-    /// The keys it opened from their boxes before, from its shelf (`Warm::keys`), each by the box it opened and the
-    /// key it opened it with (`opened_box`): that box it doesn't open again. And those it opened since its shelf took
-    /// them (`Lab::warming`, `Lab::warmed`).
+    /// The keys it opened from their boxes before, from its shelf (`Warm::keys`), each by the box it opened and the key
+    /// it opened it with (`opened_box`): that box it doesn't open again. And those it opened since its shelf took them
+    /// (`Lab::warming`, `Lab::warmed`).
     opened_before: HashMap<[u8; 32], Secret>,
     opened_since: Vec<([u8; 32], Secret)>,
-    /// The choice of its replay's resolve its shelf keeps, as it last gave it or took it from there (`Lab::warmed`).
-    memo_given: Option<Memo>,
+    /// What the keys its shelf keeps name the edits it checked by, as it last gave them or took them from there
+    /// (`Lab::warming`).
+    checked_given: Option<Checked>,
     /// How many edits the view its shelf keeps is of, as it last gave it or took it from there, none if 0; how many
     /// times it replayed every edit, and how many times when its shelf took that view (`Lab::warming`).
     view_given: usize,
@@ -616,7 +629,7 @@ impl Default for Store {
             shown_groups: [0; 32],
             opened_before: HashMap::new(),
             opened_since: vec![],
-            memo_given: None,
+            checked_given: None,
             view_given: 0,
             wholes: 0,
             view_wholes: 0,
@@ -636,6 +649,12 @@ impl Store {
         let since = n.abs_diff(self.view_given);
         let stale = self.wholes != self.view_wholes;
         n > 0 && n == self.log.edits().len() && since > 0 && (self.view_given == 0 || stale || since >= VIEW_STEPS)
+    }
+
+    /// Its shelf lacks its keys (`Lab::warming`): it opened a key since its shelf took them, or its shelf names the
+    /// edits it checked by `checked` now, and its keys by something else.
+    fn keys_due(&self, checked: Option<Checked>) -> bool {
+        !self.opened_since.is_empty() || (checked.is_some() && checked != self.checked_given)
     }
 
     /// Forget every key and everything a key opened, as it locks.
@@ -4663,39 +4682,36 @@ impl Lab {
     /// `restore_backup`, taking `backup`'s edits instead of a copy of them: a node starting again from its store holds
     /// each edit once as it restores, not twice (Samuel 2026-10-20: the server's start took more than its 1 GB).
     pub fn restore_from(&mut self, d: SignerId, backup: Backup) {
-        self.restore_vouched(d, backup, &HashSet::new());
+        self.restore_warm(d, backup, None, &Warm::default());
     }
 
-    /// `restore_from`, where the edits `vouched` were checked already: their signatures aren't checked again. A node
-    /// vouches for the edits of a shelf's head it sealed with its own key (`shelf_key`) after it kept them, each
-    /// checked as it came (avendb-net's `Edits::vouched`): so a device opening again checks only what came after.
-    pub fn restore_vouched(&mut self, d: SignerId, backup: Backup, vouched: &HashSet<EditId>) {
-        self.restore_warm(d, backup, vouched, &Warm::default());
-    }
-
-    /// `restore_vouched`, starting from what device `d` worked out before, as its shelf keeps it (`Warm`): what of it
-    /// it opens with its shelf key, and holds for this engine.
-    pub fn restore_warm(&mut self, d: SignerId, backup: Backup, vouched: &HashSet<EditId>, warm: &Warm) {
+    /// `restore_from`, starting from what device `d` worked out before, as its shelf keeps it (`Warm`): what of it it
+    /// opens with its shelf key. Where its keys name the edits it checked as its shelf names the first `n` of `backup`'s
+    /// now (`checked`), their signatures aren't checked again: a device opening again checks only what came after. It
+    /// takes the keys it opened from all of them, and its replay from the newest view that opens for this engine and is
+    /// of the edits its log starts with.
+    pub fn restore_warm(&mut self, d: SignerId, backup: Backup, checked: Option<(Checked, usize)>, warm: &Warm) {
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
         let mut store = Store { follow, query_depth, gate, perf, ..Store::default() };
-        if let Some(key) = self.shelf_key(d) {
-            let memo = warm.memo.as_deref().and_then(|b| key.unlock("memo", b, ENGINE.as_bytes()));
-            if let Some(memo) = memo.and_then(|b| Memo::from_bytes(&b)) {
-                store.memo_given = Some(memo.clone());
-                store.replay = replay_none(Some(memo));
+        let key = self.shelf_key(d);
+        let mut vouched = HashSet::new();
+        let opened = key.as_ref().map_or(vec![], |key| {
+            let opened = |b: &Vec<u8>| keys_of(&key.unlock("keys", b, b"stored keys")?);
+            warm.keys.iter().filter_map(opened).collect::<Vec<_>>()
+        });
+        for (named, keys) in opened {
+            if let (Some((now, n)), Some(named)) = (checked, named)
+                && now == named
+            {
+                vouched.extend(backup.signed.iter().take(n).map(|s| s.edit.id()));
+                store.checked_given = Some(now);
             }
-            for bytes in warm.keys.iter().filter_map(|b| key.unlock("keys", b, b"opened keys")) {
-                for chunk in bytes.chunks_exact(64) {
-                    let (opened, secret) = chunk.split_at(32);
-                    let secret = Secret::from_bytes(secret.try_into().expect("32 bytes"));
-                    store.opened_before.insert(opened.try_into().expect("32 bytes"), secret);
-                }
-            }
+            store.opened_before.extend(keys);
         }
         self.stores.insert(d, store);
         let (at, offered) = (Perf::start(), backup.signed.len() as u64);
-        let fresh = self.fresh(d, backup.signed, vouched);
+        let fresh = self.fresh(d, backup.signed, &vouched);
         if let Some(store) = self.stores.get_mut(&self.at(d)) {
             store.perf.add("check", at);
             store.perf.count("edits offered", offered);
@@ -4703,7 +4719,7 @@ impl Lab {
         }
         self.keep_fresh(d, fresh, &backup.blobs);
         // what its edits said when it last stopped, of the edits its log starts with: the rest step on it
-        if let Some(key) = self.shelf_key(d)
+        if let Some(key) = key
             && let Some(store) = self.stores.get_mut(&d)
         {
             let at = Perf::start();
@@ -4734,56 +4750,52 @@ impl Lab {
         Some(ShelfKey(own.child("shelf seal", &[])))
     }
 
-    /// What device `d` worked out that its shelf lacks, encrypted for it alone, to put there (`Warming`): the choice its
-    /// replay's resolve made (`policy::Memo`), for this engine, where it tried a removal and its shelf doesn't keep that
-    /// choice; and the keys it opened from their boxes since its shelf took them, or with `all` every key it opened or
-    /// took from there. `None` while it is locked, and where its shelf lacks nothing. It holds them given only once the
-    /// shelf took them (`warmed`), so a save cut short gives them again.
-    pub fn warming(&mut self, d: SignerId, all: bool) -> Option<Warming> {
+    /// What of `Warm` device `d`'s shelf lacks, encrypted for it alone, to put there (`Warming`), its shelf holding the
+    /// first `held` edits of its log and naming those it checked by `checked`: its keys, where it opened a key since its
+    /// shelf took them or its shelf names the edits it checked anew; and its stored view, where it replayed every edit
+    /// since its shelf took its view or stepped `VIEW_STEPS` edits on it, and the shelf holds every edit it is of.
+    /// `None` while it is locked, and where its shelf lacks nothing. It holds them given only once the shelf took them
+    /// (`warmed`), so a save cut short gives them again.
+    pub fn warming(&mut self, d: SignerId, held: usize, checked: Option<Checked>) -> Option<Warming> {
         let key = self.shelf_key(d)?;
         let store = self.stores.get(&d)?;
-        let memo_of = store.replay.memo.as_ref().filter(|m| m.upto > 0 && store.memo_given.as_ref() != Some(*m)).cloned();
-        let keys_of = store.opened_since.len();
-        let (view_of, view_wholes) = if store.view_due() { (store.replayed, store.wholes) } else { (0, 0) };
-        if memo_of.is_none() && keys_of == 0 && view_of == 0 {
+        let (keys_due, view_due) = (store.keys_due(checked), store.view_due() && store.replayed <= held);
+        if !keys_due && !view_due {
             return None;
         }
-        let memo = memo_of.as_ref().map(|m| key.lock("memo", &m.to_bytes(), ENGINE.as_bytes(), &mut self.rng));
-        let view = (view_of > 0).then(|| key.lock("view", &store.replay.to_view(view_of), ENGINE.as_bytes(), &mut self.rng));
-        let keys = (keys_of > 0).then(|| {
-            let since = store.opened_since.iter().map(|(b, k)| (b, k));
-            let give: Vec<(&[u8; 32], &Secret)> = match all {
-                true => store.opened_before.iter().chain(since).collect(),
-                false => since.collect(),
-            };
-            let bytes: Zeroizing<Vec<u8>> =
-                Zeroizing::new(give.iter().flat_map(|(b, k)| b.iter().copied().chain(k.bytes())).collect());
-            key.lock("keys", &bytes, b"opened keys", &mut self.rng)
+        let keys_of = keys_due.then(|| (checked.or(store.checked_given), store.opened_since.len()));
+        let keys = keys_of.map(|(checked, _)| {
+            let opened = store.opened_before.iter().chain(store.opened_since.iter().map(|(b, k)| (b, k)));
+            let mut bytes: Zeroizing<Vec<u8>> = Zeroizing::new(match checked {
+                Some(checked) => [&[1][..], &checked].concat(),
+                None => vec![0],
+            });
+            opened.for_each(|(b, k)| bytes.extend(b.iter().copied().chain(k.bytes())));
+            key.lock("keys", &bytes, b"stored keys", &mut self.rng)
         });
-        Some(Warming { memo, keys, view, memo_of, keys_of, view_of, view_wholes })
+        let (view_of, view_wholes) = if view_due { (store.replayed, store.wholes) } else { (0, 0) };
+        let view = view_due.then(|| key.lock("view", &store.replay.to_view(view_of), ENGINE.as_bytes(), &mut self.rng));
+        Some(Warming { keys, view, keys_of, view_of, view_wholes })
     }
 
-    /// Whether device `d` worked out something its shelf lacks (`warming`), as cheaply as it tells: the node's saver
-    /// is woken as it comes to, so a replay or a key opened with nothing else to save reaches the shelf too.
+    /// Whether device `d`'s shelf lacks something of `Warm` (`warming`), as cheaply as it tells: the node's saver is
+    /// woken as it comes to, so a replay or a key opened with nothing else to save reaches the shelf too.
     pub fn warm_due(&self, d: SignerId) -> bool {
-        let Some(store) = self.stores.get(&d) else { return false };
-        let memo = store.replay.memo.as_ref().is_some_and(|m| m.upto > 0 && store.memo_given.as_ref() != Some(m));
-        memo || !store.opened_since.is_empty() || store.view_due()
+        self.stores.get(&d).is_some_and(|store| store.keys_due(None) || store.view_due())
     }
 
     /// Device `d`'s shelf took `warming` (`warming`): what it gave, it holds given.
     pub fn warmed(&mut self, d: SignerId, warming: Warming) {
         let Some(store) = self.stores.get_mut(&d) else { return };
-        if let Some(memo) = warming.memo_of {
-            store.memo_given = Some(memo);
+        if let Some((checked, opened)) = warming.keys_of {
+            store.checked_given = checked;
+            let given: Vec<([u8; 32], Secret)> = store.opened_since.drain(..opened.min(store.opened_since.len())).collect();
+            store.opened_before.extend(given);
         }
         if warming.view_of > 0 {
             store.view_given = warming.view_of;
             store.view_wholes = warming.view_wholes;
         }
-        let n = warming.keys_of.min(store.opened_since.len());
-        let given: Vec<([u8; 32], Secret)> = store.opened_since.drain(..n).collect();
-        store.opened_before.extend(given);
     }
 
     /// `action` signed by `signers`, drafted on device `on` and building on what it holds, unchecked and kept nowhere:

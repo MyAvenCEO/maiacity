@@ -16,23 +16,22 @@
 //! head names one pack of its whole log alone, and the heads, packs and entries before it stay where they are, as
 //! everything put on a shelf does.
 //!
-//! - `sealed/<n>`: head `n`'s seal by the device's own key (`Lab::shelf_key`), put once the device checked every edit
-//!   the head holds: a node starting from a head it sealed doesn't check those edits' signatures again
-//!   (`Lab::restore_vouched`), only the journal's after it. A head's packs are blobs read by their hash, so the seal of
-//!   the head's bytes vouches for every edit in them.
-//!
-//! - `warm/<n>` and `opened/<n>`, numbered from 0 on in 16 hex digits: what the device worked out, encrypted for it
-//!   alone (`Lab::warming`), for a node to start from quickly (`Lab::restore_warm`). `warm/<n>` is
-//!   the choice its replay's resolve made, put when it changed, the newest standing; `opened/<n>` the keys it opened
-//!   from their boxes since the one before, or every one of them, in `opened/<n>-all`, after `OPENED` of the others.
-//!   The device takes nothing of them it can't open and check: a wrong one costs it the time it saves, no more.
-//!
+//! - `slots/keys-0` and `slots/keys-1`: the device's keys, encrypted for it alone (`Lab::warming`): the keys it opened
+//!   from their boxes, so that it doesn't open them again, and its newest head of edits it checked, by its number and
+//!   the hash of its bytes (`Checked`), so that it doesn't check their signatures again as it starts from that head
+//!   (`Lab::restore_warm`); kept after every key it opens and every head it puts or takes back whole.
 //! - `slots/view-0` and `slots/view-1`: the device's stored view, what its edits said when it last kept one, encrypted
-//!   for it alone (`Lab::warming`, `Replay::to_view`), for a node to step on from there rather than replay every edit
-//!   (`Lab::restore_warm`). Each is `SLOT`, the number it was kept as, in 8 bytes, big-endian, then the view; the next
-//!   goes in place of the older (`Shelf::keep`), put after the edits it is of, so the newest that opens is of edits
-//!   the shelf holds. A view is no history: every edit stays on the shelf as it was put, and one that doesn't open
-//!   costs the node a replay of every edit, no more.
+//!   for it alone and this engine (`Replay::to_view`), for a node to step on from there rather than replay every edit,
+//!   kept after a replay of every edit, or 4096 edits stepped on.
+//!
+//! Each slot is what it starts with (`KEYS`, `VIEW`), the number it was kept as, in 8 bytes, big-endian, then what it
+//! keeps; the next goes in place of the older of the two (`Shelf::keep`), put after the edits it names, so the newest
+//! that opens names edits the shelf holds. A slot is no history: every edit stays on the shelf as it was put, and one
+//! that doesn't open costs the node a check of the signatures, the keys opened again or a replay of every edit, no
+//! more.
+//!
+//! What older nodes put beside these, `sealed/<n>`, `warm/<n>` and `opened/<n>`, no node reads or puts any more; they
+//! stay where they are, as everything put on a shelf does, till the person clears them.
 //!
 //! A node's holdings name of its device's edits only those its shelf holds (`Edits::held`): on the server, those its
 //! bucket took.
@@ -43,7 +42,7 @@ use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, anyhow, ensure};
 use avendb::id::{BlobId, EditId, SignerId};
-use avendb::lab::{Lab, ShelfKey, Warm, Warming};
+use avendb::lab::{Checked, Lab, Warm, Warming};
 use avendb::sign::Signed;
 use avendb::wire::Wire;
 use bytes::Bytes;
@@ -64,18 +63,12 @@ const PACK: &[u8] = b"avenDB edits 1\n";
 const JOURNALED: u64 = 64;
 /// Once a head names this many packs, the next names one pack of the whole log.
 const PACKS: usize = 64;
-/// After this many `opened/<n>` since the last that holds every key, the next holds every key.
-const OPENED: u64 = 16;
 const HEADS: &str = "heads/";
-const SEALED: &str = "sealed/";
 const JOURNAL: &str = "journal/";
-const WARM: &str = "warm/";
-const OPENED_KEYS: &str = "opened/";
-const ALL: &str = "-all";
-/// The two slots a device's stored view is kept in, in turn.
-const VIEWS: [&str; 2] = ["slots/view-0", "slots/view-1"];
-/// What every stored view's slot starts with: avenDB's slots, version 1.
-const SLOT: &[u8] = b"avenDB slot 1\n";
+/// The two slots a device's keys are kept in, in turn, and what each starts with.
+const KEYS: ([&str; 2], &[u8]) = (["slots/keys-0", "slots/keys-1"], b"avenDB keys 1\n");
+/// The two slots a device's stored view is kept in, in turn, and what each starts with.
+const VIEW: ([&str; 2], &[u8]) = (["slots/view-0", "slots/view-1"], b"avenDB slot 1\n");
 
 /// A blob on the shelf: its hash and its size.
 pub(crate) type Blob = (Hash, u64);
@@ -88,15 +81,12 @@ pub(crate) struct Edits {
     /// What the shelf holds, which one save at a time reads and writes.
     book: tokio::sync::Mutex<Book>,
     kept: Mutex<Kept>,
-    /// The head the node started from, if any: its number, its bytes, and the ids of the edits it holds.
-    started: Mutex<Option<(u64, Bytes, Vec<EditId>)>>,
-    /// The device's key for its seals, once it is known (`seal_with`).
-    key: Mutex<Option<Arc<ShelfKey>>>,
-    /// The numbers the next `warm/<n>` and `opened/<n>` take, and how many `opened/<n>` came since the last that holds
-    /// every key (`warm`).
-    warmed: Mutex<(u64, u64, u64)>,
-    /// The number the next stored view is kept as, in slot `VIEWS[n % 2]` (`warm`).
-    slot: Mutex<u64>,
+    /// The numbers its next keys and its next stored view are kept as, `n` in slot `n % 2` of theirs (`warm`).
+    slots: Mutex<(u64, u64)>,
+    /// The head it started from and how many edits it holds, the first it took back (`started`); and its newest head
+    /// of edits its device checked, each one (`checked`).
+    started: Option<(Checked, usize)>,
+    checked: Mutex<Option<Checked>>,
     /// Woken when its device took something new.
     pub(crate) due: Notify,
 }
@@ -136,6 +126,15 @@ struct Due {
 
 /// What a node takes back from its shelf as it starts: its edits, in the order they were saved, and McEliece keys.
 pub(crate) type Stored = (Vec<Signed>, Vec<Arc<[u8]>>);
+
+/// Head `n` of `bytes`, by its number and the hash of its bytes: it names its packs by their hashes, each checked as it
+/// is read (`Shelf::read_blob`), so one head named so holds the very edits it held.
+fn checked(n: u64, bytes: &[u8]) -> Checked {
+    let mut out = [0; 40];
+    out[..8].copy_from_slice(&n.to_be_bytes());
+    out[8..].copy_from_slice(Hash::new(bytes).as_bytes());
+    out
+}
 
 /// One record: the edit's length, then its bytes.
 fn record(out: &mut Vec<u8>, signed: &Signed) {
@@ -247,10 +246,6 @@ fn head_name(n: u64) -> String {
     format!("{HEADS}{n:016x}")
 }
 
-fn sealed_name(n: u64) -> String {
-    format!("{SEALED}{n:016x}")
-}
-
 fn journal_name(n: u64) -> String {
     format!("{JOURNAL}{n:016x}")
 }
@@ -276,21 +271,20 @@ impl Edits {
         let mut start = None;
         for &n in heads.iter().rev() {
             match read_head(&shelf, n).await {
-                Ok((head, signed, bytes)) => {
-                    start = Some((n, head, signed, bytes));
+                Ok(read) => {
+                    start = Some(read);
                     break;
                 }
                 Err(e) => tracing::warn!("avendb: head {n} on the shelf doesn't read whole, so it is passed: {e:#}"),
             }
         }
-        let (head, mut signed, bytes) = match start {
-            Some((n, head, signed, bytes)) => {
-                let ids = signed.iter().map(|s| s.edit.id()).collect();
-                (head, signed, Some((n, bytes, ids)))
-            }
-            None => (Head::default(), Vec::new(), None),
+        let (head, named, mut signed) = match start {
+            Some((head, named, signed)) => (head, Some(named), signed),
+            None => Default::default(),
         };
-        let started = Mutex::new(bytes);
+        let mut seen = HashSet::new();
+        signed.retain(|s| seen.insert(s.edit.id()));
+        let started = named.map(|named| (named, signed.len()));
         let mut keys: BTreeMap<BlobId, u64> = head.keys.into_iter().collect();
         let (mut pending, mut next) = (Vec::new(), head.journal);
         while let Some(bytes) = shelf.get(&journal_name(next)).await? {
@@ -300,7 +294,7 @@ impl Edits {
                 tracing::warn!("avendb: journal entry {} on the shelf doesn't read whole, and is skipped", next - 1);
                 continue;
             };
-            signed.extend(edits);
+            signed.extend(edits.into_iter().filter(|s| seen.insert(s.edit.id())));
             pending.extend(entry.records);
             keys.extend(entry.keys);
         }
@@ -315,77 +309,22 @@ impl Edits {
                 }
             }
         }
-        let mut seen = HashSet::new();
-        signed.retain(|s| seen.insert(s.edit.id()));
         let kept = Kept { written: 0, keys: keys.keys().copied().collect(), whole: false };
         let book = Book { packs: head.packs, keys, mark: head.journal, next, head: next_head, pending };
-        let (book, kept, key) = (tokio::sync::Mutex::new(book), Mutex::new(kept), Mutex::new(None));
-        let warmed = Mutex::new((0, 0, 0));
-        let edits = Edits { shelf, book, kept, started, key, warmed, slot: Mutex::new(0), due: Notify::new() };
+        let (book, kept) = (tokio::sync::Mutex::new(book), Mutex::new(kept));
+        let (slots, checked) = (Mutex::new((0, 0)), Mutex::new(None));
+        let edits = Edits { shelf, book, kept, slots, started, checked, due: Notify::new() };
         Ok((edits, (signed, bytes)))
     }
 
-    /// The edits of the head the node started from, if the device sealed it with `key` (`sealed/<n>`): checked when it
-    /// kept them. None if it started from no head, or from one it didn't seal.
-    pub(crate) async fn vouched(&self, key: &ShelfKey) -> HashSet<EditId> {
-        let Some((n, bytes, ids)) = self.started.lock().expect("started").clone() else { return HashSet::new() };
-        match self.shelf.get(&sealed_name(n)).await {
-            Ok(Some(seal)) if seal[..] == key.seal(&bytes) => ids.into_iter().collect(),
-            _ => HashSet::new(),
-        }
-    }
-
-    /// Seals with `key`, the device's own (`Lab::shelf_key`), every head it puts from now on, and the head it started
-    /// from if the device took back every edit of it (`settle`) and it isn't sealed yet.
-    pub(crate) async fn seal_with(&self, key: ShelfKey) -> Result<()> {
-        let key = Arc::new(key);
-        *self.key.lock().expect("key") = Some(key.clone());
-        let whole = self.kept.lock().expect("kept").whole;
-        let started = self.started.lock().expect("started").take();
-        if let (false, Some((n, bytes, _))) = (whole, started) {
-            self.seal(&key, n, &bytes).await?;
-        }
-        Ok(())
-    }
-
-    /// Puts head `n`'s seal by `key`, the head's bytes being `bytes`, unless it is there already.
-    async fn seal(&self, key: &ShelfKey, n: u64, bytes: &[u8]) -> Result<()> {
-        match self.shelf.put(&sealed_name(n), Bytes::copy_from_slice(&key.seal(bytes))).await {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == ErrorKind::AlreadyExists => Ok(()),
-            Err(e) => Err(e.into()),
-        }
-    }
-
-    /// What the device worked out before, as the shelf keeps it (`warm/<n>`, `opened/<n>`, `slots/view-<n>`): the
-    /// newest choice of its replay's resolve, the keys it opened, from the last `opened/<n>` that holds every one on,
-    /// and its stored views, the newest first. Nothing, where the shelf can't be read.
+    /// What the device worked out before, as the shelf keeps it (`slots/`): its keys and its stored views, each the
+    /// newest first. Nothing, where the shelf can't be read.
     pub(crate) async fn warm(&self) -> Warm {
         let read = async {
-            let memos = numbered(&self.shelf, WARM).await?;
-            let opened = numbered(&self.shelf, OPENED_KEYS).await?;
-            let all = opened.iter().rposition(|(_, after)| after == ALL);
-            let from = all.unwrap_or(0);
-            let since = (opened.len() - from) as u64;
-            let next = |found: &[(u64, String)]| found.last().map_or(0, |(n, _)| n + 1);
-            *self.warmed.lock().expect("warmed") = (next(&memos), next(&opened), since);
-            let mut warm = Warm::default();
-            if let Some((n, after)) = memos.last() {
-                warm.memo = self.shelf.get(&format!("{WARM}{n:016x}{after}")).await?.map(|b| b.to_vec());
-            }
-            for (n, after) in &opened[from..] {
-                warm.keys.extend(self.shelf.get(&format!("{OPENED_KEYS}{n:016x}{after}")).await?.map(|b| b.to_vec()));
-            }
-            let mut views = vec![];
-            for slot in VIEWS {
-                let kept = self.shelf.get(slot).await?;
-                let view = kept.as_deref().and_then(|b| b.strip_prefix(SLOT)).filter(|b| b.len() >= 8);
-                views.extend(view.map(|b| (u64::from_be_bytes(b[..8].try_into().expect("8 bytes")), b[8..].to_vec())));
-            }
-            views.sort_by(|a, b| b.0.cmp(&a.0));
-            *self.slot.lock().expect("slot") = views.first().map_or(0, |(n, _)| n + 1);
-            warm.views = views.into_iter().map(|(_, view)| view).collect();
-            anyhow::Ok(warm)
+            let (keys, next_keys) = self.slots(KEYS).await?;
+            let (views, next_view) = self.slots(VIEW).await?;
+            *self.slots.lock().expect("slots") = (next_keys, next_view);
+            anyhow::Ok(Warm { keys, views })
         };
         read.await.unwrap_or_else(|e| {
             tracing::warn!("avendb: what the device worked out before can't be read from its shelf: {e:#}");
@@ -393,58 +332,62 @@ impl Edits {
         })
     }
 
-    /// Puts on the shelf what the device worked out (`Shared::save`), as `warming` gives it: the choice of its replay's
-    /// resolve, if it changed, and the keys it opened, every one of them if `all` (`opened_all`), each under the next
-    /// number free; and its view, if it is due, in place of the older of the two its slots keep.
-    async fn put_warm(&self, warming: &mut Warming, all: bool) -> Result<()> {
+    /// What the two slots `which` keep, the newest first, and the number the next is kept as.
+    async fn slots(&self, (names, starts): ([&str; 2], &[u8])) -> Result<(Vec<Vec<u8>>, u64)> {
+        let mut kept = vec![];
+        for name in names {
+            let bytes = self.shelf.get(name).await?;
+            let slot = bytes.as_deref().and_then(|b| b.strip_prefix(starts)).and_then(|b| b.split_first_chunk::<8>());
+            kept.extend(slot.map(|(n, bytes)| (u64::from_be_bytes(*n), bytes.to_vec())));
+        }
+        kept.sort_by(|a, b| b.0.cmp(&a.0));
+        let next = kept.first().map_or(0, |(n, _)| n + 1);
+        Ok((kept.into_iter().map(|(_, bytes)| bytes).collect(), next))
+    }
+
+    /// Keeps on the shelf what the device worked out (`Shared::save`), as `warming` gives it, each in place of the older
+    /// of the two its slots keep: its keys, then its view.
+    async fn put_warm(&self, warming: &mut Warming) -> Result<()> {
+        if let Some(keys) = warming.keys.take() {
+            let n = self.slots.lock().expect("slots").0;
+            self.keep(KEYS, n, &keys).await?;
+            self.slots.lock().expect("slots").0 = n + 1;
+        }
         if let Some(view) = warming.view.take() {
-            let n = *self.slot.lock().expect("slot");
-            let kept = [SLOT, &n.to_be_bytes(), &view].concat();
-            self.shelf.keep(VIEWS[(n % 2) as usize], Bytes::from(kept)).await?;
-            *self.slot.lock().expect("slot") = n + 1;
-        }
-        if let Some(memo) = warming.memo.take() {
-            let n = self.put_next(WARM, "", 0, memo).await?;
-            self.warmed.lock().expect("warmed").0 = n + 1;
-        }
-        if let Some(opened) = warming.keys.take() {
-            let n = self.put_next(OPENED_KEYS, if all { ALL } else { "" }, 1, opened).await?;
-            let mut warmed = self.warmed.lock().expect("warmed");
-            warmed.1 = n + 1;
-            warmed.2 = if all { 1 } else { warmed.2 + 1 };
+            let n = self.slots.lock().expect("slots").1;
+            self.keep(VIEW, n, &view).await?;
+            self.slots.lock().expect("slots").1 = n + 1;
         }
         Ok(())
     }
 
-    /// The next `opened/<n>` holds every key the device opened, as `OPENED` others came since the last that does.
-    fn opened_all(&self) -> bool {
-        self.warmed.lock().expect("warmed").2 >= OPENED
+    /// Keeps `bytes` as number `n` of the slots `which`, in slot `n % 2`.
+    async fn keep(&self, (names, starts): ([&str; 2], &[u8]), n: u64, bytes: &[u8]) -> Result<()> {
+        let kept = [starts, &n.to_be_bytes(), bytes].concat();
+        Ok(self.shelf.keep(names[(n % 2) as usize], Bytes::from(kept)).await?)
     }
 
-    /// Puts `bytes` as `<prefix><n><after>`, `n` the number `warmed` says is next (`which` of them) or the first free
-    /// after it, and gives `n`.
-    async fn put_next(&self, prefix: &str, after: &str, which: usize, bytes: Vec<u8>) -> Result<u64> {
-        let bytes = Bytes::from(bytes);
-        let mut n = {
-            let warmed = self.warmed.lock().expect("warmed");
-            if which == 0 { warmed.0 } else { warmed.1 }
-        };
-        loop {
-            match self.shelf.put(&format!("{prefix}{n:016x}{after}"), bytes.clone()).await {
-                Ok(()) => return Ok(n),
-                Err(e) if e.kind() == ErrorKind::AlreadyExists => n += 1,
-                Err(e) => return Err(e.into()),
-            }
-        }
+    /// The head the node started from, by its number and the hash of its bytes, and how many edits it holds, the first
+    /// the node took back (`Lab::restore_warm`).
+    pub(crate) fn started(&self) -> Option<(Checked, usize)> {
+        self.started
+    }
+
+    /// Its newest head of edits its device checked, each one, as it took them back or as it put it (`Lab::warming`).
+    pub(crate) fn checked(&self) -> Option<Checked> {
+        *self.checked.lock().expect("checked")
     }
 
     /// Takes on device `me` of `lab` as it started, from the edits `stored` its shelf held, in their order: if the log
-    /// goes on from them, the shelf holds its first edits; else, as some failed their checks, the next save puts a
-    /// head of the whole log.
+    /// goes on from them, the shelf holds its first edits, and the device checked the edits of the head it started from;
+    /// else, as some failed their checks, the next save puts a head of the whole log.
     pub(crate) fn settle(&self, lab: &Lab, me: SignerId, stored: &[EditId]) {
         let mut kept = self.kept.lock().expect("kept");
         match lab.log(me).ids().starts_with(stored) {
-            true => kept.written = stored.len(),
+            true => {
+                kept.written = stored.len();
+                *self.checked.lock().expect("checked") = self.started.map(|(named, _)| named);
+            }
             false => kept.whole = true,
         }
     }
@@ -565,18 +508,14 @@ impl Edits {
         Ok(self.shelf.put_blob(&Bytes::from([PACK, records].concat())).await?)
     }
 
-    /// Puts `head` on the shelf, as the next head after every head there.
+    /// Puts `head` on the shelf, as the next head after every head there: of edits its device holds, each checked.
     async fn put_head(&self, book: &mut Book, head: &Head) -> Result<()> {
         let bytes = head.to_bytes();
         loop {
             let name = head_name(book.head);
             match self.shelf.put(&name, bytes.clone()).await {
                 Ok(()) => {
-                    // every edit it holds the device kept, each checked as it came
-                    let key = self.key.lock().expect("key").clone();
-                    if let Some(key) = key {
-                        self.seal(&key, book.head, &bytes).await?;
-                    }
+                    *self.checked.lock().expect("checked") = Some(checked(book.head, &bytes));
                     book.head += 1;
                     return Ok(());
                 }
@@ -606,9 +545,10 @@ pub(crate) async fn put_first_head(shelf: &Shelf, packs: Vec<Blob>, keys: Vec<Ke
     Ok(shelf.put(&head_name(1), Head { journal: 0, packs, keys }.to_bytes()).await?)
 }
 
-/// Head `n` on `shelf`, the edits of its packs, every one of which must read whole, and its bytes.
-async fn read_head(shelf: &Shelf, n: u64) -> Result<(Head, Vec<Signed>, Bytes)> {
+/// Head `n` on `shelf`, named by `checked`, and the edits of its packs, every one of which must read whole.
+async fn read_head(shelf: &Shelf, n: u64) -> Result<(Head, Checked, Vec<Signed>)> {
     let bytes = shelf.get(&head_name(n)).await?.ok_or_else(|| anyhow!("listed, and gone"))?;
+    let named = checked(n, &bytes);
     let head = Head::from_bytes(&bytes).ok_or_else(|| anyhow!("cut short or changed"))?;
     let mut signed = Vec::new();
     for &(hash, size) in &head.packs {
@@ -616,7 +556,7 @@ async fn read_head(shelf: &Shelf, n: u64) -> Result<(Head, Vec<Signed>, Bytes)> 
         let records = pack.strip_prefix(PACK).with_context(|| format!("its pack {hash} is no pack of edits"))?;
         signed.extend(edits_of(records).with_context(|| format!("its pack {hash} holds an edit cut short"))?);
     }
-    Ok((head, signed, bytes))
+    Ok((head, named, signed))
 }
 
 impl Shared {
@@ -626,26 +566,31 @@ impl Shared {
         let Some(edits) = &self.edits else { return Ok(false) };
         let mut book = edits.book.lock().await;
         let plan = (book.next - book.mark, book.packs.len());
-        let all = edits.opened_all();
         let shared = self.clone();
-        let due = move || {
-            let mut lab = shared.locked_lab();
-            let warming = lab.warming(shared.me, all);
-            Ok::<_, anyhow::Error>((shared.edits.as_ref().expect("its edits").due(&lab, shared.me, plan)?, warming))
-        };
+        let due = move || shared.edits.as_ref().expect("its edits").due(&shared.locked_lab(), shared.me, plan);
         #[cfg(not(target_arch = "wasm32"))]
-        let (due, warming) = tokio::task::spawn_blocking(due).await??;
+        let due = tokio::task::spawn_blocking(due).await??;
         #[cfg(target_arch = "wasm32")]
-        let (due, warming) = due()?;
+        let due = due()?;
         // the edits first, so that what it worked out from them is of edits its shelf holds
         let put = due.is_some();
         if let Some(due) = due {
             edits.put(&mut book, due).await?;
         }
+        let shared = self.clone();
+        let warming = move || {
+            let (mut lab, edits) = (shared.locked_lab(), shared.edits.as_ref().expect("its edits"));
+            let held = edits.held(&lab, shared.me);
+            lab.warming(shared.me, held, edits.checked())
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        let warming = tokio::task::spawn_blocking(warming).await?;
+        #[cfg(target_arch = "wasm32")]
+        let warming = warming();
         // what it worked out only spares it time: a shelf that can't take it costs it that time, no more, and the
         // device gives it again at the next save
         if let Some(mut warming) = warming {
-            match edits.put_warm(&mut warming, all).await {
+            match edits.put_warm(&mut warming).await {
                 Ok(()) => {
                     let shared = self.clone();
                     let warmed = move || shared.locked_lab().warmed(shared.me, warming);
