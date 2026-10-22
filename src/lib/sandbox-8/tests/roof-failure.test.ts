@@ -1,0 +1,33 @@
+// @ts-nocheck — run by bun test, not type-checked, as the app's other tests
+import {beforeAll,afterEach,expect,test} from 'vitest';
+import {initialize,Simulation,DT,G,transform} from '../simulation';
+import {ShedBuild,shedScenario} from '../shed';
+import {brickHouseDefinition,brickHouseScenario} from '../brick-house';
+import {Wind} from '../wind';
+beforeAll(initialize);const worlds:Simulation[]=[];afterEach(()=>worlds.splice(0).forEach(s=>s.dispose()));
+test.each([['shed',DT],['house',DT],['shed',DT/2],['house',DT/2]] as const)('%s roof holds under gravity and separates under extreme wind at dt=%s',(which,dt)=>{
+ const sim=new Simulation(which==='house'?brickHouseScenario():shedScenario(),dt);worlds.push(sim);
+ const build=new ShedBuild(sim,which==='house'?brickHouseDefinition():undefined);
+ while(!build.complete)expect(build.placeNext()).toBe(true);
+ const before=sim.state().map(p=>[p.id,p.mass]),handles=[...sim.parts.values()].map(p=>p.body.handle);
+ sim.run(1);
+ expect(build.failures).toEqual([]);expect(build.maxAnchorError()).toBeLessThan(.005);
+ const reaction=sim.contacts().filter(c=>c.a==='ground').reduce((n,c)=>n+c.force*Math.abs(c.normal.y),0);
+ expect(reaction/(sim.mass*G)).toBeCloseTo(1,1);
+ const wind=new Wind(sim);wind.configure({enabled:true,speed:10,from:'front'});sim.run(.1);expect(build.failures).toEqual([]);
+ wind.configure({enabled:true,speed:300,from:'front'});sim.run(.3);
+ expect(build.failures.some(f=>f.material==='Wood grip')).toBe(true);
+ expect(build.failedConnections.size).toBeGreaterThan(1);
+ expect(build.failures.every(f=>f.reading.utilization>1)).toBe(true);
+ expect(sim.state().map(p=>[p.id,p.mass])).toEqual(before);
+ expect([...sim.parts.values()].map(p=>p.body.handle)).toEqual(handles);
+ expect(sim.state().every(p=>Object.values(p.position).every(Number.isFinite))).toBe(true);
+ expect(build.altered).toBe(true);expect(build.placeNext()).toBe(false);
+ sim.run(.1);
+ const separations=[...build.failedConnections.values()].filter(c=>c.grip?.profile.name==='Wood grip').map(c=>{
+   const p=c.grip!.points[0],a=sim.body(c.a),b=sim.body(c.b);
+   const pa=transform(p.anchorA,a.rotation(),a.translation()),pb=transform(p.anchorB,b.rotation(),b.translation());
+   return Math.hypot(pa.x-pb.x,pa.y-pb.y,pa.z-pb.z);
+ });
+ expect(Math.max(...separations)).toBeGreaterThan(.03);
+},60000);

@@ -1,0 +1,1099 @@
+{
+ "engine": "Rapier 0.21.0",
+ "timestep": 0.008333333333333333,
+ "house": {
+  "lengthM": 10,
+  "depthM": 8,
+  "pitchDeg": 40,
+  "eavesM": 5.75,
+  "storeys": 2
+ },
+ "solver": {
+  "iterations": 8,
+  "internalPgsIterations": 4
+ },
+ "parts": 277,
+ "wallClockS": 155.5,
+ "stages": [
+  {
+   "stage": "Foundation slab",
+   "parts": 1,
+   "placedParts": 1,
+   "timeS": 0.583,
+   "msPerTick": 1.82,
+   "bodies": 2,
+   "joints": 0,
+   "failures": 0,
+   "maxAnchorErrorMm": 0,
+   "maxSpeedMmS": 0.001,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Ground-floor inner walls",
+   "parts": 5,
+   "placedParts": 6,
+   "timeS": 1.5,
+   "msPerTick": 1.23,
+   "bodies": 7,
+   "joints": 11,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.0004,
+   "maxSpeedMmS": 0.064,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Ground-floor clinker facing",
+   "parts": 45,
+   "placedParts": 51,
+   "timeS": 5.75,
+   "msPerTick": 2.19,
+   "bodies": 52,
+   "joints": 190,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.0009,
+   "maxSpeedMmS": 0.038,
+   "settleTicks": 60
+  },
+  {
+   "stage": "First floor slab",
+   "parts": 4,
+   "placedParts": 55,
+   "timeS": 6.583,
+   "msPerTick": 3.48,
+   "bodies": 56,
+   "joints": 204,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.0045,
+   "maxSpeedMmS": 0.095,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Upper-floor inner walls",
+   "parts": 5,
+   "placedParts": 60,
+   "timeS": 7.5,
+   "msPerTick": 3.48,
+   "bodies": 61,
+   "joints": 224,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.0081,
+   "maxSpeedMmS": 0.056,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Upper-floor clinker facing",
+   "parts": 43,
+   "placedParts": 103,
+   "timeS": 11.583,
+   "msPerTick": 4.78,
+   "bodies": 104,
+   "joints": 403,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.0099,
+   "maxSpeedMmS": 0.104,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Top floor slab",
+   "parts": 4,
+   "placedParts": 107,
+   "timeS": 12.417,
+   "msPerTick": 6.4,
+   "bodies": 108,
+   "joints": 417,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.016,
+   "maxSpeedMmS": 0.102,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Gable walls",
+   "parts": 22,
+   "placedParts": 129,
+   "timeS": 14.75,
+   "msPerTick": 7.26,
+   "bodies": 130,
+   "joints": 467,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.0176,
+   "maxSpeedMmS": 0.497,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Wall plates & rafter pairs",
+   "parts": 15,
+   "placedParts": 144,
+   "timeS": 16.5,
+   "msPerTick": 9.66,
+   "bodies": 145,
+   "joints": 603,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.0858,
+   "maxSpeedMmS": 4.464,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Roof boarding & underlayment",
+   "parts": 26,
+   "placedParts": 170,
+   "timeS": 19.167,
+   "msPerTick": 15.87,
+   "bodies": 171,
+   "joints": 1102,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.1546,
+   "maxSpeedMmS": 1.681,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Shingles & ridge",
+   "parts": 41,
+   "placedParts": 211,
+   "timeS": 23.083,
+   "msPerTick": 25.54,
+   "bodies": 212,
+   "joints": 1278,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.2965,
+   "maxSpeedMmS": 1.606,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Barge boards, gutters & downpipes",
+   "parts": 8,
+   "placedParts": 219,
+   "timeS": 24.25,
+   "msPerTick": 36.13,
+   "bodies": 220,
+   "joints": 1388,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.2863,
+   "maxSpeedMmS": 1.805,
+   "settleTicks": 60
+  },
+  {
+   "stage": "Windows & doors",
+   "parts": 58,
+   "placedParts": 277,
+   "timeS": 29.583,
+   "msPerTick": 45.88,
+   "bodies": 278,
+   "joints": 1620,
+   "failures": 0,
+   "maxAnchorErrorMm": 0.5108,
+   "maxSpeedMmS": 3.249,
+   "settleTicks": 60
+  }
+ ],
+ "settled": {
+  "mass": 253640.082,
+  "suppliedMassKg": 253640.072,
+  "plannedMassKg": 253640.072,
+  "aboveFoundationMassKg": 204554.1,
+  "groundReactionN": 2488204.9,
+  "weightN": 2488209.2,
+  "reactionRatio": 1,
+  "failures": 0,
+  "connections": 749,
+  "verticalDriftMm": {
+   "inner-leaf-upper-front": -0.7,
+   "slab-top-2": -0.754,
+   "rafter-pair-7": -0.909,
+   "shingles-front-20": -1.218,
+   "ridge-shingles": -1.169,
+   "door-leaf-front-2": -0.722
+  }
+ },
+ "windTrials": [
+  {
+   "speedMS": 10,
+   "from": "front",
+   "durationS": 0.4,
+   "netDragZN": -7119,
+   "newFailedPoints": 0,
+   "separatedConnections": 0,
+   "firstFailures": []
+  },
+  {
+   "speedMS": 25,
+   "from": "front",
+   "durationS": 0.4,
+   "netDragZN": -44535.4,
+   "newFailedPoints": 0,
+   "separatedConnections": 0,
+   "firstFailures": []
+  },
+  {
+   "speedMS": 40,
+   "from": "front",
+   "durationS": 0.4,
+   "netDragZN": -107625.6,
+   "newFailedPoints": 211,
+   "separatedConnections": 52,
+   "firstFailures": [
+    {
+     "connection": "shingles-front-2/underlayment-front",
+     "profile": "Shingle nails and self-seal strip",
+     "mode": "shear",
+     "utilization": 1.132
+    },
+    {
+     "connection": "shingles-front-2/underlayment-front",
+     "profile": "Shingle nails and self-seal strip",
+     "mode": "shear",
+     "utilization": 1.079
+    },
+    {
+     "connection": "shingles-front-2/underlayment-front",
+     "profile": "Shingle nails and self-seal strip",
+     "mode": "shear",
+     "utilization": 1.079
+    },
+    {
+     "connection": "shingles-front-2/underlayment-front",
+     "profile": "Shingle nails and self-seal strip",
+     "mode": "shear",
+     "utilization": 1.132
+    },
+    {
+     "connection": "shingles-front-3/underlayment-front",
+     "profile": "Shingle nails and self-seal strip",
+     "mode": "shear",
+     "utilization": 1.256
+    }
+   ]
+  },
+  {
+   "speedMS": 60,
+   "from": "front",
+   "durationS": 0.4,
+   "netDragZN": -299568,
+   "newFailedPoints": 580,
+   "separatedConnections": 185,
+   "firstFailures": [
+    {
+     "connection": "rafter-pair-1/wall-plate-front",
+     "profile": "Rafter tie-down bracket and nails",
+     "mode": "withdrawal",
+     "utilization": 1.145
+    },
+    {
+     "connection": "rafter-pair-1/wall-plate-front",
+     "profile": "Rafter tie-down bracket and nails",
+     "mode": "withdrawal",
+     "utilization": 1.146
+    },
+    {
+     "connection": "rafter-pair-2/wall-plate-front",
+     "profile": "Rafter tie-down bracket and nails",
+     "mode": "withdrawal",
+     "utilization": 1.152
+    },
+    {
+     "connection": "rafter-pair-2/wall-plate-front",
+     "profile": "Rafter tie-down bracket and nails",
+     "mode": "withdrawal",
+     "utilization": 1.155
+    },
+    {
+     "connection": "rafter-pair-3/wall-plate-front",
+     "profile": "Rafter tie-down bracket and nails",
+     "mode": "withdrawal",
+     "utilization": 1.15
+    }
+   ]
+  },
+  {
+   "speedMS": 100,
+   "from": "front",
+   "durationS": 0.4,
+   "netDragZN": -703473.1,
+   "newFailedPoints": 120,
+   "separatedConnections": 219,
+   "firstFailures": [
+    {
+     "connection": "roof-boarding-back-2-3/rafter-pair-8",
+     "profile": "Roof boarding nails",
+     "mode": "shear",
+     "utilization": 1.034
+    },
+    {
+     "connection": "door-leaf-front-2/frame-front-2",
+     "profile": "Door hinges and lock",
+     "mode": "withdrawal",
+     "utilization": 1.052
+    },
+    {
+     "connection": "door-leaf-front-2/frame-front-2",
+     "profile": "Door hinges and lock",
+     "mode": "withdrawal",
+     "utilization": 1.084
+    },
+    {
+     "connection": "roof-boarding-back-2-3/rafter-pair-8",
+     "profile": "Roof boarding nails",
+     "mode": "shear",
+     "utilization": 1.176
+    },
+    {
+     "connection": "roof-boarding-back-2-3/rafter-pair-8",
+     "profile": "Roof boarding nails",
+     "mode": "shear",
+     "utilization": 1.224
+    }
+   ]
+  }
+ ],
+ "failures": [
+  {
+   "tick": 3911,
+   "connection": "shingles-front-2/underlayment-front",
+   "a": "shingles-front-2",
+   "b": "underlayment-front",
+   "point": 0,
+   "material": "Shingle nails and self-seal strip",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 283.0620834669813,
+    "utilization": 1.132248333867925,
+    "separationM": 0.001417420758747071,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3911,
+   "connection": "shingles-front-2/underlayment-front",
+   "a": "shingles-front-2",
+   "b": "underlayment-front",
+   "point": 1,
+   "material": "Shingle nails and self-seal strip",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 269.7805854060506,
+    "utilization": 1.0791223416242024,
+    "separationM": 0.0013520707114567823,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3911,
+   "connection": "shingles-front-2/underlayment-front",
+   "a": "shingles-front-2",
+   "b": "underlayment-front",
+   "point": 2,
+   "material": "Shingle nails and self-seal strip",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 269.7776461096915,
+    "utilization": 1.079110584438766,
+    "separationM": 0.0013517479744792023,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3911,
+   "connection": "shingles-front-2/underlayment-front",
+   "a": "shingles-front-2",
+   "b": "underlayment-front",
+   "point": 3,
+   "material": "Shingle nails and self-seal strip",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 283.0592815315774,
+    "utilization": 1.1322371261263098,
+    "separationM": 0.0014171623723067438,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3911,
+   "connection": "shingles-front-3/underlayment-front",
+   "a": "shingles-front-3",
+   "b": "underlayment-front",
+   "point": 0,
+   "material": "Shingle nails and self-seal strip",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 314.07283589957393,
+    "utilization": 1.2562913435982956,
+    "separationM": 0.0015714752269382765,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3911,
+   "connection": "shingles-front-3/underlayment-front",
+   "a": "shingles-front-3",
+   "b": "underlayment-front",
+   "point": 1,
+   "material": "Shingle nails and self-seal strip",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 296.5167785088987,
+    "utilization": 1.186067114035595,
+    "separationM": 0.0014845301302631787,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3911,
+   "connection": "shingles-front-3/underlayment-front",
+   "a": "shingles-front-3",
+   "b": "underlayment-front",
+   "point": 2,
+   "material": "Shingle nails and self-seal strip",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 296.5136799836782,
+    "utilization": 1.1860547199347127,
+    "separationM": 0.0014850303038122354,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3911,
+   "connection": "shingles-front-3/underlayment-front",
+   "a": "shingles-front-3",
+   "b": "underlayment-front",
+   "point": 3,
+   "material": "Shingle nails and self-seal strip",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 314.0699077745337,
+    "utilization": 1.2562796310981348,
+    "separationM": 0.0015718457088962174,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3911,
+   "connection": "ridge-shingles/shingles-back-20",
+   "a": "ridge-shingles",
+   "b": "shingles-back-20",
+   "point": 0,
+   "material": "Shingle nails and self-seal strip",
+   "reading": {
+    "withdrawalN": 126.99087522006243,
+    "shearN": 10.667400665231353,
+    "utilization": 1.0591171768214733,
+    "separationM": 0.0006371906274061673,
+    "mode": "withdrawal"
+   }
+  },
+  {
+   "tick": 3911,
+   "connection": "ridge-shingles/shingles-back-20",
+   "a": "ridge-shingles",
+   "b": "shingles-back-20",
+   "point": 3,
+   "material": "Shingle nails and self-seal strip",
+   "reading": {
+    "withdrawalN": 139.92650421941659,
+    "shearN": 19.38969988837101,
+    "utilization": 1.1686307239628828,
+    "separationM": 0.0007063176878164359,
+    "mode": "withdrawal"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-1",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-1",
+   "point": 0,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 4.1579908449805885,
+    "shearN": 353.48933215743153,
+    "utilization": 1.1786237902296368,
+    "separationM": 0.0017675689296104823,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-1",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-1",
+   "point": 1,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 3.1710436787998333,
+    "shearN": 353.48032406797626,
+    "utilization": 1.1784573794926092,
+    "separationM": 0.0017674727368563168,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-1",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-1",
+   "point": 2,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 6.527689246703375,
+    "shearN": 354.79641512429697,
+    "utilization": 1.1834551068453878,
+    "separationM": 0.0017742822979443967,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-1",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-1",
+   "point": 3,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 7.514636412827031,
+    "shearN": 354.80538979374217,
+    "utilization": 1.183745203760586,
+    "separationM": 0.0017744247968504213,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-2",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-2",
+   "point": 0,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 344.3541522817222,
+    "utilization": 1.1478471742724072,
+    "separationM": 0.0017217707615495464,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-2",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-2",
+   "point": 1,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 344.32776507995936,
+    "utilization": 1.1477592169331978,
+    "separationM": 0.001721639302003578,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-2",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-2",
+   "point": 2,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0.6024838168034989,
+    "shearN": 346.50369060201365,
+    "utilization": 1.1550192857832577,
+    "separationM": 0.001732521071932211,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-2",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-2",
+   "point": 3,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0.8542870767080615,
+    "shearN": 346.5299121121386,
+    "utilization": 1.1551137472324449,
+    "separationM": 0.0017326548256566853,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-3",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-3",
+   "point": 0,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 338.28474797714864,
+    "utilization": 1.1276158265904954,
+    "separationM": 0.0016914412474028585,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-3",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-3",
+   "point": 1,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 338.28622021232445,
+    "utilization": 1.1276207340410815,
+    "separationM": 0.0016914312901578359,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-3",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-3",
+   "point": 2,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 337.14704861672413,
+    "utilization": 1.1238234953890804,
+    "separationM": 0.0016857382818028176,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-3",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-3",
+   "point": 3,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 337.1455713811443,
+    "utilization": 1.123818571270481,
+    "separationM": 0.0016857580943406242,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-4",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-4",
+   "point": 0,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0.1828354872864395,
+    "shearN": 344.292357620293,
+    "utilization": 1.1476418393625996,
+    "separationM": 0.0017214620308371245,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-4",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-4",
+   "point": 1,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 344.29034491295926,
+    "utilization": 1.1476344830431975,
+    "separationM": 0.0017214524107708618,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-4",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-4",
+   "point": 2,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 347.1384513953048,
+    "utilization": 1.1571281713176826,
+    "separationM": 0.0017356922619851483,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-1-4",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-1-4",
+   "point": 3,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0.4638748747138095,
+    "shearN": 347.1404475971732,
+    "utilization": 1.1571389577438318,
+    "separationM": 0.0017357037876454121,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-1",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-1",
+   "point": 0,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0.3507560249576329,
+    "shearN": 350.308402430047,
+    "utilization": 1.167697016125939,
+    "separationM": 0.00175154289016184,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-1",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-1",
+   "point": 1,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 350.3041534891148,
+    "utilization": 1.1676805116303828,
+    "separationM": 0.0017515211598899132,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-1",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-1",
+   "point": 2,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 2.008851016627318,
+    "shearN": 352.7266619629112,
+    "utilization": 1.175831809538941,
+    "separationM": 0.0017636619116350287,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-1",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-1",
+   "point": 3,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 2.594106039707043,
+    "shearN": 352.73088171504077,
+    "utilization": 1.175896785247805,
+    "separationM": 0.0017637021028350812,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-2",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-2",
+   "point": 0,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 347.37414271933966,
+    "utilization": 1.1579138090644656,
+    "separationM": 0.0017368720347406249,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-2",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-2",
+   "point": 1,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 347.37772843078517,
+    "utilization": 1.1579257614359506,
+    "separationM": 0.0017368887062443753,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-2",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-2",
+   "point": 2,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 356.6240973996631,
+    "utilization": 1.1887469913322104,
+    "separationM": 0.0017831236521481935,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-2",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-2",
+   "point": 3,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 356.62060466338573,
+    "utilization": 1.1887353488779524,
+    "separationM": 0.0017831101183400223,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-3",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-3",
+   "point": 0,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 341.1392150836322,
+    "utilization": 1.1371307169454408,
+    "separationM": 0.0017056984675596675,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-3",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-3",
+   "point": 1,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 341.1418157465175,
+    "utilization": 1.1371393858217251,
+    "separationM": 0.0017057106311276007,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-3",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-3",
+   "point": 2,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 342.8621568253904,
+    "utilization": 1.1428738560846348,
+    "separationM": 0.0017143110758054156,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-3",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-3",
+   "point": 3,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 342.8595692117798,
+    "utilization": 1.1428652307059326,
+    "separationM": 0.0017142985516890507,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-4",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-4",
+   "point": 0,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 337.88888110122747,
+    "utilization": 1.1262962703374249,
+    "separationM": 0.0016894450826633795,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-4",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-4",
+   "point": 1,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0.28544143991351234,
+    "shearN": 337.9201980436198,
+    "utilization": 1.126402267561548,
+    "separationM": 0.0016896015930007535,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-4",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-4",
+   "point": 2,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 344.831480353621,
+    "utilization": 1.1494382678454031,
+    "separationM": 0.0017241579026053288,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-2-4",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-2-4",
+   "point": 3,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 344.800791162806,
+    "utilization": 1.1493359705426867,
+    "separationM": 0.001724009204208483,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-3-1",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-3-1",
+   "point": 0,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 347.54194383827974,
+    "utilization": 1.1584731461275992,
+    "separationM": 0.001737761960788802,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-3-1",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-3-1",
+   "point": 1,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 347.54559242079443,
+    "utilization": 1.1584853080693147,
+    "separationM": 0.0017377787592434651,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-3-1",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-3-1",
+   "point": 2,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 350.3765331754896,
+    "utilization": 1.167921777251632,
+    "separationM": 0.0017518853726349018,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-3-1",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-3-1",
+   "point": 3,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 350.3729140556712,
+    "utilization": 1.1679097135189038,
+    "separationM": 0.0017518676167424707,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-3-2",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-3-2",
+   "point": 0,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0.04064254236078568,
+    "shearN": 347.94568338850615,
+    "utilization": 1.1598189762772826,
+    "separationM": 0.0017397284288119899,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-3-2",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-3-2",
+   "point": 1,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0.43339006601803476,
+    "shearN": 347.9392916237013,
+    "utilization": 1.1598012375853235,
+    "separationM": 0.0017396978076860568,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-3-2",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-3-2",
+   "point": 2,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 350.7209773598716,
+    "utilization": 1.1690699245329053,
+    "separationM": 0.0017536102292656614,
+    "mode": "shear"
+   }
+  },
+  {
+   "tick": 3912,
+   "connection": "underlayment-front/roof-boarding-front-3-2",
+   "a": "underlayment-front",
+   "b": "roof-boarding-front-3-2",
+   "point": 3,
+   "material": "Underlayment staples / batten",
+   "reading": {
+    "withdrawalN": 0,
+    "shearN": 350.72731842544596,
+    "utilization": 1.169091061418153,
+    "separationM": 0.0017536478812295512,
+    "mode": "shear"
+   }
+  }
+ ]
+}
