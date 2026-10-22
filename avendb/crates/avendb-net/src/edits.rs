@@ -620,6 +620,8 @@ impl Shared {
                     tokio::task::spawn_blocking(warmed).await?;
                     #[cfg(target_arch = "wasm32")]
                     warmed();
+                    // what it worked out meanwhile wakes the saver again
+                    self.warm.store(false, std::sync::atomic::Ordering::Relaxed);
                 }
                 Err(e) => tracing::warn!("avendb: what the device worked out can't be put on its shelf: {e:#}"),
             }

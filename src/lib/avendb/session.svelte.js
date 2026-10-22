@@ -539,6 +539,23 @@ async function moveKeys() {
 	return ok;
 }
 
+/** Signs a checkpoint over every edit the person's key may vouch for now, as they ask for it on the Performance page:
+ *  the edits earlier keys signed in SLH-DSA that no checkpoint covers, those of keys that still sign the old way too
+ *  (avendb-browser's `sign_checkpoint`), in one ceremony of their passkey or, in the Mac app, one touch of its Touch ID
+ *  key. How many edits it covered, or `null` if it didn't go through, with why shown. */
+async function signCheckpoint() {
+	const d = device;
+	if (!d) return null;
+	let covered = 0;
+	const ok = await change('Signing your checkpoint', async () => {
+		covered = mac
+			? ((await mac.call('signCheckpoint'))?.covered ?? 0)
+			: await d.sign_checkpoint((await ceremonies(meta.credential)).sign);
+	});
+	if (ok && device === d) void checkMove(d);
+	return ok ? covered : null;
+}
+
 /** How long a change waits at least before the page reads the world again, so the changes after it come along. */
 const SETTLE = 150;
 
@@ -876,6 +893,7 @@ export const session = {
 	touch,
 	touchState,
 	moveKeys,
+	signCheckpoint,
 	found,
 	link,
 	claim,

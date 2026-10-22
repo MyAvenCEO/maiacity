@@ -20,6 +20,7 @@
 		claim: 'to claim avenDB’s server',
 		approve: 'to approve what your vault changes',
 		move: 'to move your keys to ML-DSA-65',
+		checkpoint: 'to sign a checkpoint over what your old keys signed',
 		drive: 'to use a drive for avenDB as one of your devices',
 		touch: 'to let Touch ID open avenDB on this Mac'
 	};

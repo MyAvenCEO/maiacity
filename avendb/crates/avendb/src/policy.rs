@@ -3838,7 +3838,7 @@ fn resolve_moves(edits: &[Edit], ids: &[EditId], rem: &mut HashSet<EditId>, move
 }
 
 /// A peer's replay of the edits it holds: the one order, which edits stand, and what it knows.
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub struct Replay {
     pub edits: Vec<Edit>,
     /// Each edit's id, `ids[i]` being `edits[i]`'s.
@@ -4087,10 +4087,12 @@ fn replay_ids(edits: &[Edit], ids: &[EditId], memo: Option<&Memo>) -> Replay {
 }
 
 /// Of the edits `watch` names, those that stand among `edits`, each with a vault `watch` names for it that every signer
-/// of it acted for just before or just after it: what a checkpoint over that vault may cover (`vouched`).
-pub fn acting(edits: &[Edit], watch: &HashMap<EditId, Vec<VaultId>>) -> HashSet<(EditId, VaultId)> {
+/// of it acted for just before or just after it: what a checkpoint over that vault may cover (`vouched`). It takes the
+/// choice of `memo` where it holds for `edits` (`Memo`), as a device's own replay keeps it, so it tries no removal
+/// again.
+pub fn acting(edits: &[Edit], watch: &HashMap<EditId, Vec<VaultId>>, memo: Option<&Memo>) -> HashSet<(EditId, VaultId)> {
     let (edits, ids) = order_ids(edits, &ids(edits));
-    let rem = resolve(&edits, &ids);
+    let rem = resolve_at(&edits, &ids, None, memo).rem;
     let Run { stood, acts, .. } = run_watching(&edits, &ids, &rem, false, watch);
     let stands: HashSet<EditId> = ids.iter().zip(&stood).filter(|(_, s)| **s).map(|(id, _)| *id).collect();
     acts.into_iter().filter(|(id, _)| stands.contains(id)).collect()
@@ -4142,6 +4144,11 @@ impl Log {
     /// The replay of the log's edits.
     pub fn replay(&self) -> Replay {
         replay_ids(&self.edits, &self.ids, None)
+    }
+
+    /// `replay`, taking the choice of `memo` where it holds for the log's edits (`replay_memo`).
+    pub fn replay_memo(&self, memo: Option<&Memo>) -> Replay {
+        replay_ids(&self.edits, &self.ids, memo)
     }
 
     /// A log holding `edits`, as a peer that received them.

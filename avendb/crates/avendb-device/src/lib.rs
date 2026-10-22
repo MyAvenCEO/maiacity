@@ -96,6 +96,9 @@ const CHANGED: Duration = Duration::from_secs(50);
 /// What the Touch ID prompt says the key move's touch is for (`Service::move_keys`).
 const MOVE_TOUCH: &str = "move your Touch ID key to ML-DSA-65";
 
+/// What the Touch ID prompt says a checkpoint's touch is for (`Service::sign_checkpoint`).
+const CHECKPOINT_TOUCH: &str = "sign a checkpoint over what your old keys signed";
+
 /// How the device runs: the folder it keeps its account in, on its shelves (`avendb_net::disk`), whether its node
 /// reaches its peers directly too (`avendb_net::Options::direct`), as the app's does, where a test's may run on its
 /// relay alone; and the folder the system mounts volumes in, whose drives it hosts (`drive`): `/Volumes` on a Mac
@@ -428,6 +431,7 @@ impl Service {
             "touchSetup" => self.touch_setup(&d).await?,
             "moving" => self.moving(&d).await?,
             "moveKeys" => self.move_keys().await?,
+            "signCheckpoint" => self.sign_checkpoint(&d).await?,
             "touchOff" => {
                 d.forget_touch().await?;
                 Value::Null
@@ -992,23 +996,7 @@ impl Service {
         let drives = self.hold_drives(&d).await;
         self.drives.stop().await;
         let (start, _ending) = self.start(&meta.name, &meta.relay)?;
-        let (service, sheets) = (self.clone(), Sheets::new(self.clone(), Some(meta.credential.clone())));
-        let touch = meta.touch.clone();
-        let sign = move |challenge, moving: Moving| async move {
-            let passkey = match moving.passkey {
-                true => {
-                    let brought = sheets.ask("move", challenge, None).await?;
-                    Some(Ceremony::new(brought.assertion, *brought.prf))
-                }
-                false => None,
-            };
-            let touch = match (moving.touch, &touch) {
-                (true, Some(touch)) => Some(service.touch(touch, MOVE_TOUCH, challenge).await?),
-                (true, None) => bail!("this Mac keeps no Touch ID key"),
-                (false, _) => None,
-            };
-            Ok(Signing { passkey, touch })
-        };
+        let sign = self.signing(&meta, "move", MOVE_TOUCH);
         let (service, mac) = (self.clone(), d.clone());
         let keep = move |moves| async move { service.moved_drives(&mac, drives, moves).await };
         match d.move_keys(start, sign, keep).await {
@@ -1026,6 +1014,44 @@ impl Service {
                 }
                 Err(e)
             }
+        }
+    }
+
+    /// `signCheckpoint`: a checkpoint over every edit its person's key may vouch for now, as they ask for it on the
+    /// Performance page (`Device::sign_checkpoint`), in one ceremony of the passkey in the sheet or one touch, as it
+    /// asks: `{covered}`, how many edits it covers. Nothing moves, so the device and its drives run on as they are.
+    async fn sign_checkpoint(self: &Arc<Self>, d: &Arc<Device>) -> Result<Value> {
+        let meta = Meta::load(&self.shelf()).await?.context("this Mac holds no avenDB account")?;
+        let covered = d.sign_checkpoint(self.signing(&meta, "checkpoint", CHECKPOINT_TOUCH)).await?;
+        Ok(json!({ "covered": covered }))
+    }
+
+    /// What signs a batch the key move or a checkpoint drafts (`move_keys`, `sign_checkpoint`), as what it asks for
+    /// says: the passkey in the sheet, for `step`, and this Mac's Touch ID key, its prompt saying `why`.
+    fn signing(
+        self: &Arc<Self>,
+        meta: &Meta,
+        step: &'static str,
+        why: &'static str,
+    ) -> impl FnOnce([u8; 32], Moving) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Signing>> + Send>> + use<> {
+        let (service, sheets) = (self.clone(), Sheets::new(self.clone(), Some(meta.credential.clone())));
+        let touch = meta.touch.clone();
+        move |challenge, moving: Moving| {
+            Box::pin(async move {
+                let passkey = match moving.passkey {
+                    true => {
+                        let brought = sheets.ask(step, challenge, None).await?;
+                        Some(Ceremony::new(brought.assertion, *brought.prf))
+                    }
+                    false => None,
+                };
+                let touch = match (moving.touch, &touch) {
+                    (true, Some(touch)) => Some(service.touch(touch, why, challenge).await?),
+                    (true, None) => bail!("this Mac keeps no Touch ID key"),
+                    (false, _) => None,
+                };
+                Ok(Signing { passkey, touch })
+            })
         }
     }
 
