@@ -225,8 +225,15 @@ pub(crate) fn fetchable(edits: &[Edit], st: &State, d: SignerId, file: &FileRoot
 /// `respond`, by the view `st` of `edits`: the places in `edits` of what it sends, the entry, audience and share logs'
 /// first.
 pub(crate) fn answer(edits: &[Edit], st: &State, d: SignerId, follow: &[VaultId]) -> Vec<usize> {
+    let ids: Vec<EditId> = edits.iter().map(Edit::id).collect();
+    answer_ids(edits, &ids, st, d, follow)
+}
+
+/// `answer`, given each edit's id (`ids[i]` being `edits[i]`'s), as a store keeps them: an edit's id is a hash of all
+/// of it, which every page of a reply worked out again for every edit its device held.
+pub(crate) fn answer_ids(edits: &[Edit], ids: &[EditId], st: &State, d: SignerId, follow: &[VaultId]) -> Vec<usize> {
     let reach = Reach::new(st, d, follow);
-    let logs: Vec<Option<LogId>> = edits.iter().map(|edit| log_of(edit, edit.id())).collect();
+    let logs: Vec<Option<LogId>> = edits.iter().zip(ids).map(|(edit, &id)| log_of(edit, id)).collect();
     let mut may: HashMap<LogId, bool> = HashMap::new();
     let items: Vec<usize> = (0..edits.len())
         .filter(|&i| logs[i].is_some_and(|l| *may.entry(l).or_insert_with(|| reach.log(l))))

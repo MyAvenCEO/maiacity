@@ -46,6 +46,7 @@ import { command, native } from '$lib/native';
 import { allowed, answer, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
 import { bringEntries, learn, useDevice } from '../../../game/code/sources/device.js';
+import { sync } from './sync.svelte.js';
 
 /** The name of this browser's shelf in OPFS (./device/store.js). */
 const STORE = 'avendb-browser';
@@ -623,6 +624,7 @@ async function send(op, read) {
 	const d = device;
 	if (!d) throw new Error('avenDB isn’t open on this page yet');
 	if (reads(op)) return near(d, op);
+	await current(d, op);
 	if (APPROVED.includes(op?.op) && doing) {
 		const [verdict] = (await d.run({ op: 'may', ops: [op] }))?.ok ?? [];
 		if (allowed(verdict) && verdict !== true) doing = `${doing}: ${asks} once`;
@@ -656,8 +658,61 @@ async function near(d, op) {
 	let got = await d.run(op);
 	const entry = typeof op?.entry === 'string' && ENTRY.test(op.entry) ? op.entry : null;
 	if (got?.refused === 'NoEntry' && entry && (await bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }))?.ok?.new) got = await d.run(op);
-	if (VIEWS.has(op?.op)) learn([...(entry && got?.ok ? [entry] : []), ...namedIn(got)]);
+	if (VIEWS.has(op?.op)) {
+		const named = [...(entry && got?.ok ? [entry] : []), ...namedIn(got)];
+		learn(named);
+		freshen(d, named);
+	}
 	return got;
+}
+
+/** Whether the device is still behind its peers, as the status pill last heard (./sync.svelte.js). */
+const behind = () => sync.known && sync.behind > 0;
+
+/** the entries each device was asked to bring while behind, so each comes once (`freshen`) @type {WeakMap<object, Set<string>>} */
+const freshened = new WeakMap();
+
+/**
+ * While the device is still behind its peers, the entries a view's answer names come first, in the background: a
+ * device holds an entry it took early at the heads it had then (an AIP still "proposed" that its vault accepted and
+ * applied since, Samuel's iPhone 2026-10-22), and the whole vault comes a page at a time behind it. What the view shows
+ * is shown at once; once they land, the world changes and the view reads again. Each entry once a device.
+ * @param {any} d @param {string[]} named
+ */
+function freshen(d, named) {
+	if (!behind() || !named.length) return;
+	let of = freshened.get(d);
+	if (!of) freshened.set(d, (of = new Set()));
+	const ids = named.filter((e) => !of.has(e));
+	if (!ids.length) return;
+	ids.forEach((e) => of.add(e));
+	void bringEntries(ids, { run: (/** @type {any} */ o) => d.run(o) });
+}
+
+/** How long a change waits for its entry to come up to date before it runs anyway, in ms (`current`). */
+const CURRENT = 8000;
+
+/**
+ * Before a change to an entry on a device still behind its peers, that entry alone comes up to date first, for a few
+ * seconds at most (`CURRENT`): a change made on the heads the device took early, which its peers moved since, is
+ * refused as moved (an AIP's review names the heads its card showed) or lands on an old version. Where something new
+ * came, the change doesn't run: the person sees it again as it is now and answers that.
+ * @param {any} d @param {any} op
+ */
+async function current(d, op) {
+	const entry = typeof op?.entry === 'string' && ENTRY.test(op.entry) ? op.entry : null;
+	if (!entry || !behind()) return;
+	const what = doing;
+	if (what) doing = `${what}: bringing it up to date first, as this device still syncs`;
+	const brought = await Promise.race([
+		bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }),
+		new Promise((done) => setTimeout(() => done(null), CURRENT))
+	]);
+	if (what && doing.startsWith(what)) doing = what;
+	if (brought?.ok?.new && op.heads) {
+		await refresh();
+		throw new Error('It changed on your other devices while this one was still syncing. Here it is as it is now: look at it again, then answer.');
+	}
 }
 
 /**

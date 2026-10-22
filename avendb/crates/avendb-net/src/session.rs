@@ -245,13 +245,21 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
     let packed = kind & PACKED != 0 && matches!(kind & !PACKED, REQUEST | ASK_LOGS | ASK_VAULTS);
     let replied = |reply: Reply| if packed { Packed(reply).to_wire() } else { reply.to_wire() };
     let kind = if packed { kind & !PACKED } else { kind };
+    // how long a page takes this node to make, from the request read to the reply made (`Traffic::served`)
+    let began = n0_future::time::Instant::now();
+    let served = |edits: usize, wire: Vec<u8>| {
+        shared.traffic.served(edits as u64, wire.len() as u64, began.elapsed().as_millis() as u64);
+        wire
+    };
     match kind {
         REQUEST => {
             let (request, page) = (Request::from_wire(body)?, shared.opts.page);
             shared.follows(peer, &request);
             let (edits, ids, more) = shared.lab(move |lab, me| lab.reply(me, device, &request, page)).await;
             let blobs = shared.offer(ids).await?;
-            Ok(replied(Reply { edits, blobs, more }))
+            let n = edits.len();
+            let wire = replied(Reply { edits, blobs, more });
+            Ok(served(n, wire))
         }
         ASK_LOGS => {
             let (request, page) = (Request::from_wire(body)?, shared.opts.page);
@@ -262,7 +270,9 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
             };
             let (edits, ids, more) = shared.lab(reply).await;
             let blobs = shared.offer(ids).await?;
-            Ok(replied(Reply { edits, blobs, more }))
+            let n = edits.len();
+            let wire = replied(Reply { edits, blobs, more });
+            Ok(served(n, wire))
         }
         ASK_VAULTS => {
             let ((vaults, request), page) = (from_vaults_body(body)?, shared.opts.page);
@@ -273,7 +283,9 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
             };
             let (edits, ids, more) = shared.lab(reply).await;
             let blobs = shared.offer(ids).await?;
-            Ok(replied(Reply { edits, blobs, more }))
+            let n = edits.len();
+            let wire = replied(Reply { edits, blobs, more });
+            Ok(served(n, wire))
         }
         ANNOUNCE => {
             // of the device whose hello proved it on this connection, and of no other
