@@ -11,6 +11,7 @@
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import { ago, nameOf, reads, short } from './vaults.js';
+	import { GAMES } from '../../../game/games.js';
 
 	/** @type {{ world: import('./vaults.js').WorldView, vault: string, actor: string, entry?: string }} */
 	let { world, vault, actor, entry = '' } = $props();
@@ -27,8 +28,11 @@
 	/** the world shown: the one the address names, else the first */
 	const shown = $derived(worlds.find((e) => e.entry === entry) ?? worlds[0]);
 	const rec = $derived(shown?.record ?? null);
-	/** where world `e` opens, under the site's base */
-	const hrefOf = (/** @type {import('./vaults.js').EntryView} */ e) => (e.record?.route ? `${base}${e.record.route}` : '');
+	/** where world `e` opens, under the site's base: the address is the app's, so a game the app knows opens where the app
+	 *  has it (the sandboxes' addresses moved to match their names on 2026-10-22, before the entries' routes did), any
+	 *  other where its entry says */
+	const routeOf = (/** @type {any} */ r) => GAMES.find((g) => g.id === r?.id)?.route ?? r?.route ?? '';
+	const hrefOf = (/** @type {import('./vaults.js').EntryView} */ e) => (routeOf(e.record) ? `${base}${routeOf(e.record)}` : '');
 	/** what a world is, from where it opens */
 	const what = (/** @type {string} */ route) => (route.startsWith('/app/worlds/') ? 'A real place' : route.startsWith('/app/games/') ? 'A sandbox' : 'A game');
 </script>
@@ -79,7 +83,7 @@
 	{#if shown && rec}
 		{@const href = hrefOf(shown)}
 		<section class="world">
-			<p class="kind">{what(rec.route ?? '')}</p>
+			<p class="kind">{what(routeOf(rec))}</p>
 			<h2>{rec.title}</h2>
 			{#if rec.note}<p class="soft">{rec.note}</p>{/if}
 			{#if href}

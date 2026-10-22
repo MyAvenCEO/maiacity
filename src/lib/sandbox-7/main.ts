@@ -40,7 +40,7 @@ function partGeometry(spec: Box) {
   return geometry;
 }
 
-/** Mounts the laboratory into `root` (Sandbox 7, src/routes/app/games/sandbox-8); resolves to what takes it down again. */
+/** Mounts the laboratory into `root` (Sandbox 7, src/routes/app/games/sandbox-7); resolves to what takes it down again. */
 export async function mountLab(root: HTMLElement): Promise<() => void> {
   const presets = [...scenarios(), shedScenario(), brickHouseScenario(), metalShedScenario(), domeScenario(), standScenario(), industrialHallScenario(), germanHouseScenario()];
   root.classList.add('physical-lab');

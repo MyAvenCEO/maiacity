@@ -31,8 +31,10 @@ export const MOVED = /** @type {const} */ ({
 	// the old list of the worlds: Maia City's `game` entries, in avenDB's Worlds app (2026-10-19); each world's own
 	// page stays where it was
 	'/app/worlds/': '/app/#worlds',
-	// Sandbox 3 inside the domes: its tent and domes are the Buildings' now, and the sandboxes after it moved down one
-	'/app/games/sandbox-3/': '/app/buildings/',
+	// the sandboxes' addresses carry their names' numbers since 2026-10-22 (they had kept the numbers from before the old
+	// Sandbox 3 inside the domes went to the Buildings): each of /app/games/sandbox-3/ to sandbox-7/ is the sandbox of
+	// that name now, so only the last old address, Sandbox 7's, is free to pass on
+	'/app/games/sandbox-8/': '/app/games/sandbox-7/',
 	// the skills' own wiki: avenDB's Docs view shows every skill (2026-10-20)
 	'/app/skills/': '/app/#docs',
 	// the avenDB and avenBRAIN architectures' own pages: their docs live in Maia City alone, drawn by avenDB's Docs view

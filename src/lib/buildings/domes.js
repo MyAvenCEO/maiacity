@@ -1,6 +1,6 @@
 /*
- * The domes of Sandbox 3, in the order a village grows them: the Buildings app's (./index.js) and Sandbox 3's page
- * (src/routes/app/games/sandbox-3), on their own so the sandbox loads none of the models.
+ * The domes of Sandbox 3, in the order a village grows them: the Buildings app's (./index.js and
+ * src/routes/app/buildings), on their own so the sandbox loads none of the models.
  */
 
 /** @typedef {import('$lib/sandbox-2/interior/interior').DomeKind} DomeKind */

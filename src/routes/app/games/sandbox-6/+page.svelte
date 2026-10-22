@@ -1,21 +1,21 @@
 <!--
-	avenCITY Sandbox 5 — a valley of settlers, built from scratch: its own map, economy and rules ($lib/sandbox-5), only
-	the sky, the stage and the map camera shared with the other sandboxes ($lib/sandbox-kit). Roads and carriers,
-	production chains from the forest to the mint, soldiers who widen the land, and a rival keep to take.
+	avenCITY Sandbox 6 — one village at its real size ($lib/sandbox-6): the Tower180 hex ringed by its Dome120 factories,
+	and six living hexes round it of Dome40 and Dome80 homes (each a straight block across the north), Dome120 food forests and utilities; every
+	dimension, tonne, price and hectare on toggleable panels, for the village, the tower hex or a living hex.
 -->
 <script>
 	import { loadCode } from '../../../../../game/code/index.js';
 
-	// the valley's numbers are a config entry of the Maia City COOP (configs/sandbox-5/rules): loaded before the game's
+	// the hex's numbers are a config entry of the Maia City COOP (configs/sandbox-6/specs): loaded before the hex's
 	// modules are, as they read them as they load
-	const valley = loadCode().then(() => import('$lib/sandbox-5/Valley.svelte'));
+	const hex = loadCode().then(() => import('$lib/sandbox-6/HexPlan.svelte'));
 </script>
 
 <svelte:head>
-	<title>avenCITY Sandbox 5 · A valley of settlers · maiaCITY</title>
-	<meta name="description" content="Settle a valley: build roads and flags, let carriers bring wares from flag to flag, run production chains from logs to coins, and take the rival keep." />
+	<title>avenCITY Sandbox 6 · One village · maiaCITY</title>
+	<meta name="description" content="A maiaCITY village of seven hexes at its real size: the domes, the tower, their materials in tonnes, real prices and the land in hectares." />
 </svelte:head>
 
-{#await valley then { default: Valley }}
-	<Valley />
+{#await hex then { default: HexPlan }}
+	<HexPlan />
 {/await}

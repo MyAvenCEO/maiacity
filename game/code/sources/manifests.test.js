@@ -86,7 +86,7 @@ test("the repo's manifests hold the kernel, each held manifest exists, and each 
 		for (const k of schema.required) expect(x[k]).toBeDefined();
 	}
 	// every game's page walks to the kernel and its own code
-	const leaves = leavesFor(MANIFESTS, '/app/games/sandbox-6/');
+	const leaves = leavesFor(MANIFESTS, '/app/games/sandbox-5/');
 	expect(leaves[0].leaf.query.type).toContain('capgroup');
 	expect(leaves.some((l) => l.leaf.query?.tags?.[0] === 'game:sandbox-5')).toBe(true);
 });

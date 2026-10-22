@@ -4,7 +4,7 @@
 // recipes are made of (a builder module), and never objectAt (./index.js), which runs a builder in the page: either
 // is a back door round the box. The few worlds that still go through one are listed below, each import with why and
 // whose it is to move; an exception that went comes off the list. (The games are named as they are listed:
-// /app/games/sandbox-4 is Sandbox 3, its village of domes; /app/games/sandbox-5 is Sandbox 4, the same grown from our
+// /app/games/sandbox-3 is Sandbox 3, its village of domes; /app/games/sandbox-4 is Sandbox 4, the same grown from our
 // plants.)
 // Run: bun test src/lib/assets/worlds.test.js
 import { expect, test } from 'bun:test';
@@ -119,7 +119,7 @@ const ALLOWED = {
 	},
 	'src/routes/app/coops/+page.svelte': { imports: { '$lib/models/village.js': "MaiaCity V1's coops: their texts (VILLAGE_INFO), which the Things' notes share; nothing is built" }, owner: ASSET },
 	'src/lib/maiacity-v1/world.js': { imports: { '$lib/models/units.js': 'how fast the people and machines move (SPEED), which the Things share; nothing is built' }, owner: ASSET },
-	'src/routes/app/games/sandbox-5/+page.svelte': { imports: { '$lib/plants': "the plant card's words (its name, Latin name, layer, stages), read from the plants' list; nothing is built" }, owner: ASSET }
+	'src/routes/app/games/sandbox-4/+page.svelte': { imports: { '$lib/plants': "the plant card's words (its name, Latin name, layer, stages), read from the plants' list; nothing is built" }, owner: ASSET }
 };
 
 const under = (list, f) => list.some((d) => (d.endsWith('/') ? f.startsWith(d) : f === d));
