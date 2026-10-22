@@ -18,6 +18,7 @@
 	import ProposedAssets from '$lib/avendb/ProposedAssets.svelte';
 	import Objective from './Objective.svelte';
 	import { session } from '$lib/avendb/session.svelte.js';
+	import { syncing, share } from '$lib/avendb/sync.svelte.js';
 	import { acting, authorsLine, nameOf } from '$lib/avendb/vaults.js';
 	import { when } from './aips.js';
 	import { measureAip, readingsOf } from './measure.js';
@@ -230,7 +231,7 @@
 	{:else if aip.bare}
 		<p class="dim">A proposal no AIP names yet: it becomes one when its author or the vault opens an AIP over it.</p>
 	{/if}
-	{#if session.doing}<p class="dim">{session.doing}…</p>{/if}
+	{#if session.doing}<p class="dim">{session.doing}…</p>{:else if syncing() && aip.stage !== 'archived'}<p class="dim">This device is still syncing ({Math.floor(share() * 100)} %). If this AIP changed on your other devices, it’s brought up to date before your answer counts.</p>{/if}
 	{#if session.error}<p class="err">{session.error}</p>{/if}
 </div>
 

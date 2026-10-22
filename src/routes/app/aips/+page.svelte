@@ -17,6 +17,7 @@
 	import AvendbAip from '$lib/proposals/AvendbAip.svelte';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import { aips } from '$lib/avendb/aips.svelte.js';
+	import { syncing, share } from '$lib/avendb/sync.svelte.js';
 
 	const q = typeof location !== 'undefined' ? new URLSearchParams(location.search) : new URLSearchParams();
 	let stage = $state(STAGES.some((s) => s.id === q.get('stage')) ? q.get('stage') : 'proposed');
@@ -106,6 +107,10 @@
 		{:else if aips.why && !aips.read}
 			<p class="dim center">avenDB's AIPs didn't read: {aips.why}. <button class="link" onclick={loadAvendb}>Read again</button></p>
 		{:else}
+			{#if syncing()}
+				<!-- a device still syncing holds some AIPs as they were when it took them: each one it shows is brought up to date first ($lib/avendb/session.svelte.js `freshen`) -->
+				<p class="dim center small">This device is still syncing ({Math.floor(share() * 100)} %), so some AIPs may show an older stage for a moment. Each one shown here is brought up to date first.</p>
+			{/if}
 			<!-- the board: a column per stage, side by side; on a narrow screen the stage bar picks the one column shown -->
 			<div class="board">
 				{#each STAGES as s (s.id)}
