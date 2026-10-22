@@ -95,6 +95,9 @@ async fn a_vault_comes_back_from_each_snapshot_it_keeps() {
     let photo_root = photo.root;
     mac.act(move |lab, me| lab.bring(me, coop, welcome, vec![photo], |_| {})).await.expect("brought into Welcome");
     until("the server keeps the photo whole", || server.holds_file(photo_root)).await;
+    // the McEliece keys its edits name come after a pull's last page
+    let keyed = || server.read(move |lab, me| lab.request(me, mac_a).wants.is_empty());
+    until("the server holds the keys its edits name", keyed).await;
     assert!(server.vaults().await.contains(&coop), "the server knows of the coop");
 
     // day one: all of the coop, one pack, its McEliece keys and the photo

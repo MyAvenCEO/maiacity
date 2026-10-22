@@ -66,7 +66,8 @@
 		'show: lanes': ['Showing: lanes', 'Each vault’s schemas and lenses read, to judge its entries’ writes'],
 		'show: cap groups': ['Showing: cap groups', 'The cap groups’ writes judged one after the other'],
 		'show: entries': ['Showing: entries', 'Every other entry, made anew only where it changed'],
-		upkeep: ['Upkeep', 'The rest of a refresh: digests, indexes, what it follows']
+		upkeep: ['Upkeep', 'The rest of a refresh: digests, indexes, what it follows'],
+		'sync: reply': ['Answering a page', 'A page of edits worked out for a peer that asked, from its lab']
 	});
 	/** what each count counts, as a person reads it */
 	const COUNTS = /** @type {Record<string, string>} */ ({
@@ -75,7 +76,8 @@
 		'refresh rounds': 'Refresh rounds',
 		'replay: removals as chosen before': 'Replays that took the removals as chosen before',
 		'keys opened': 'Keys opened from their boxes',
-		'keys from the shelf': 'Keys taken from the device’s shelf, no box opened'
+		'keys from the shelf': 'Keys taken from the device’s shelf, no box opened',
+		'sync: edits sent': 'Edits sent to peers in pages'
 	});
 
 	/** @typedef {{ count: number, total_ms: number, mean_ms: number, max_ms: number }} Timer */
@@ -97,6 +99,7 @@
 	/**
 	 * Where the device syncs from and how, as its `network` op answers (avendb-net's `Node::network`).
 	 * @typedef {{ pages: number, edits: number, new: number, bytes: number, wait_ms: number, take_ms: number,
+	 *   ms: number, askings: number, ask_ms: number, keys?: { asked: number, got: number, bytes: number, ms: number },
 	 *   bytes_per_s: number, edits_per_s: number, direct: { pages: number, bytes: number },
 	 *   relay: { pages: number, bytes: number }, failed: number, first: number, last: number }} Pulled
 	 * @typedef {{ way: string, addr: string, selected: boolean, rtt_ms: number, rx: number, tx: number, lost: number }} Path
@@ -229,7 +232,7 @@
 		pulledAll.reduce(
 			(a, p) => ({
 				bytes: a.bytes + p.bytes,
-				ms: a.ms + p.wait_ms + p.take_ms,
+				ms: a.ms + (p.ms ?? p.wait_ms + p.take_ms),
 				wait: a.wait + p.wait_ms,
 				direct: a.direct + p.direct.bytes,
 				relay: a.relay + p.relay.bytes,
@@ -425,6 +428,18 @@
 					<dd>{time(t.wait_ms)}{t.pages ? `, ${time(t.wait_ms / t.pages)} each` : ''}</dd>
 					<dt>Took them in</dt>
 					<dd>{time(t.take_ms)}{t.pages ? `, ${time(t.take_ms / t.pages)} each` : ''}</dd>
+					{#if t.ms != null}
+						<dt>In all</dt>
+						<dd>{time(t.ms)}, the next page asked for while one is taken in</dd>
+					{/if}
+					{#if t.askings}
+						<dt>Askings</dt>
+						<dd>{t.askings.toLocaleString()}, {time(t.ask_ms)} working out what to ask</dd>
+					{/if}
+					{#if t.keys?.asked}
+						<dt>Sealing keys after</dt>
+						<dd>{t.keys.got} of {t.keys.asked}, {bytes(t.keys.bytes)} in {time(t.keys.ms)}</dd>
+					{/if}
 					<dt>Speed</dt>
 					<dd>{rate(t.bytes_per_s)}, {t.edits_per_s.toLocaleString()} edits/s</dd>
 					<dt>From – to</dt>
@@ -587,6 +602,21 @@
 			</dl>
 			{#if healthFailed}<p class="error">Read again, it failed: {healthFailed}</p>{/if}
 		</article>
+		{#if health.sync}
+			<article class="card">
+				<h3>Its answers to peers</h3>
+				<dl>
+					<dt>Pages sent</dt>
+					<dd>{health.sync.pages.toLocaleString()}, {health.sync.edits.toLocaleString()} edits, {bytes(health.sync.bytes)}</dd>
+					<dt>Each page took it</dt>
+					<dd>{time(health.sync.mean_ms)} on average, {time(health.sync.max_ms)} at most</dd>
+					{#if health.sync.recent?.length}
+						<dt>The newest</dt>
+						<dd>{health.sync.recent.slice(0, 8).map((/** @type {{ ms: number }} */ r) => time(r.ms)).join(', ')}</dd>
+					{/if}
+				</dl>
+			</article>
+		{/if}
 		<article class="card">
 			<h3>Its storage</h3>
 			{#if health.shelf}

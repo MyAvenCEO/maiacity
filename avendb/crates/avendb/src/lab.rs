@@ -110,7 +110,7 @@ use crate::sign::{
 };
 use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, CAP_GROUP_TYPE, LENS_TYPE, SCHEMA_TYPE};
 use crate::sync::{
-    answer, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs, LogId, Place,
+    answer_ids, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs, LogId, Place,
 };
 use crate::wire::{Claim, FileHold, Frontier, Join, Request, Statement, Wire as _};
 use crate::world;
@@ -493,6 +493,27 @@ pub struct Warming {
     keys_of: usize,
 }
 
+/// The most askers and askings a device keeps what it worked out for (`Answers`): past them it starts over.
+const ANSWERS_KEPT: usize = 256;
+
+/// What a device worked out of its edits for its peers' syncs, while its edits stay as they were (Samuel's iPhone
+/// 2026-10-22, a page every 9 s): which of its edits each asker may receive (`sync::answer`), and, for each asking a
+/// peer makes page after page with the same request, the places of all it sends, in order (`Lab::reply`). Every page
+/// and every announcement worked both out again over every edit the device held, an edit's id hashed again each time,
+/// and a server holds every vault it keeps. Each is kept with the fingerprint of the edits it was worked out of
+/// (`fingerprint`), and is worked out again once they differ.
+#[derive(Default)]
+struct Answers {
+    may: std::sync::Mutex<HashMap<(SignerId, Vec<VaultId>), (u64, Arc<Vec<usize>>)>>,
+    sends: std::sync::Mutex<HashMap<(SignerId, [u8; 32]), (u64, Arc<Vec<Place>>)>>,
+}
+
+/// The fingerprint of a log's edits, by their ids: how many, and their first eight bytes folded together.
+fn fingerprint(ids: &[EditId]) -> u64 {
+    let fold = ids.iter().fold(0u64, |acc, id| acc ^ u64::from_le_bytes(id.0[..8].try_into().expect("8 bytes")).rotate_left(acc as u32 & 63));
+    fold ^ (ids.len() as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+}
+
 /// What one device holds: its edits, each with its signatures, to pass on, and the blobs they name; what it makes of
 /// them; the keys it holds; what it read with them; and the entries it shows.
 struct Store {
@@ -535,6 +556,8 @@ struct Store {
     gate: bool,
     /// What its work costs (`perf`): its own, never an edit's, and kept across a restore.
     perf: Perf,
+    /// What it worked out of its edits for its peers' syncs, kept while its edits stay as they were (`Answers`).
+    answers: Answers,
     /// Each file its opened bodies bring, by its root (`Lab::file`): worked out once, again after a body comes or goes.
     files_at: OnceLock<HashMap<FileRoot, Brought>>,
     /// The edits the checkpoints it holds cover (`covered`), and those of them it holds on a checkpoint's word: their
@@ -588,6 +611,7 @@ impl Default for Store {
             query_depth: lens::CEILING,
             gate: false,
             perf: Perf::default(),
+            answers: Answers::default(),
             files_at: OnceLock::new(),
             covers: HashSet::new(),
             bare: HashSet::new(),
@@ -3964,7 +3988,7 @@ impl Lab {
         let asked = asks_ids(to_store.log.edits(), to_store.log.ids(), &to_store.follow);
         let store = self.held(from);
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let places = answer(edits, self.latest(from), to, &asked.follow);
+        let places = self.answered(from, to, &asked.follow);
         let sent: Vec<EditId> =
             beyond(edits, ids, &logs_of(edits, ids), &places, &asked).into_iter().map(|i| ids[i]).collect();
         let (signed, blobs) = self.outgoing(from, &sent);
@@ -3987,7 +4011,7 @@ impl Lab {
         let (edits, ids) = (theirs.log.edits(), theirs.log.ids());
         let logs = logs_of(edits, ids);
         let (df, dt) = (theirs.digests.as_ref().expect("worked out"), mine.digests.as_ref().expect("worked out"));
-        answer(edits, self.latest(from), to, &mine.follow).into_iter().any(|i| match logs[i] {
+        self.answered(from, to, &mine.follow).iter().any(|&i| match logs[i] {
             Some(l) => df.get(&l) != dt.get(&l),
             None => !mine.signed.contains_key(&ids[i]),
         })
@@ -4295,6 +4319,27 @@ impl Lab {
         peers
     }
 
+    /// `sync::answer` of device `d`'s edits for `asker`, which follows `follow`: kept while `d`'s edits stay as they
+    /// were (`Answers`).
+    fn answered(&self, d: SignerId, asker: SignerId, follow: &[VaultId]) -> Arc<Vec<usize>> {
+        let store = self.held(d);
+        let (edits, ids) = (store.log.edits(), store.log.ids());
+        let fp = fingerprint(ids);
+        let key = (asker, follow.to_vec());
+        if let Some((at, got)) = store.answers.may.lock().expect("answers").get(&key)
+            && *at == fp
+        {
+            return got.clone();
+        }
+        let got = Arc::new(answer_ids(edits, ids, self.latest(d), asker, follow));
+        let mut may = store.answers.may.lock().expect("answers");
+        if may.len() >= ANSWERS_KEPT {
+            may.clear();
+        }
+        may.insert(key, (fp, got.clone()));
+        got
+    }
+
     /// What device `d` asks `peer` when it syncs with it on the network (`wire::Request`): its frontier of each log and
     /// a few edits further back, and the vaults it follows (`sync::asks`), and the McEliece keys it lacks that the
     /// edits of those logs name, but only of the logs `peer` may hold by `d`'s view, following nothing: `d` tells a
@@ -4303,7 +4348,7 @@ impl Lab {
     pub fn request(&self, d: SignerId, peer: SignerId) -> Request {
         let store = self.held(d);
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let places = answer(edits, self.latest(d), peer, &[]);
+        let places = self.answered(d, peer, &[]);
         let logs = logs_of(edits, ids);
         let shared: HashSet<LogId> = places.iter().filter_map(|&i| logs[i]).collect();
         let theirs: HashSet<EditId> = places.iter().map(|&i| ids[i]).collect();
@@ -4327,17 +4372,16 @@ impl Lab {
         request: &Request,
         page: usize,
     ) -> (Vec<Signed>, Vec<BlobId>, bool) {
+        let at = Perf::start();
+        let places = self.answered(d, asker, &request.ask.follow);
+        let sends = self.sends(d, asker, request, &places);
         let store = self.held(d);
-        let (edits, ids) = (store.log.edits(), store.log.ids());
-        let places = answer(edits, self.latest(d), asker, &request.ask.follow);
-        let sent: BTreeSet<Place> = beyond(edits, ids, &logs_of(edits, ids), &places, &request.ask)
-            .into_iter()
-            .map(|i| (edits[i].depth, ids[i]))
-            .filter(|p| request.after.is_none_or(|after| *p > after))
-            .collect();
+        let edits = store.log.edits();
+        // the places of all it sends this asking, in order: this page starts after the request's `after`
+        let from = request.after.map_or(0, |after| sends.partition_point(|p| *p <= after));
         let (mut signed, mut size, mut more) = (vec![], 0usize, false);
-        for (_, id) in sent {
-            let s = &store.signed[&id];
+        for (_, id) in &sends[from..] {
+            let s = &store.signed[id];
             size = size.saturating_add(s.to_wire().len());
             if size > page && !signed.is_empty() {
                 more = true;
@@ -4349,7 +4393,40 @@ impl Lab {
         let wanted = request.wants.iter().copied().filter(|b| reach.contains(b));
         let blobs: BTreeSet<BlobId> =
             signed.iter().flat_map(|s| s.edit.blobs()).chain(wanted).filter(|b| store.blobs.contains_key(b)).collect();
+        if let Some(store) = self.stores.get_mut(&self.at(d)) {
+            store.perf.add("sync: reply", at);
+            store.perf.count("sync: edits sent", signed.len() as u64);
+        }
         (signed, blobs.into_iter().collect(), more)
+    }
+
+    /// The places of all device `d` sends `asker` for `request`, in order (`sync::beyond` of what `asker` may receive,
+    /// `places`): kept for the request as it stands but for its `after`, while `d`'s edits stay as they were, so that
+    /// an asking a peer makes page after page with the same request works it out once (`Answers`).
+    fn sends(&self, d: SignerId, asker: SignerId, request: &Request, places: &[usize]) -> Arc<Vec<Place>> {
+        let store = self.held(d);
+        let (edits, ids) = (store.log.edits(), store.log.ids());
+        let fp = fingerprint(ids);
+        let mut h = Hasher::new("asking");
+        h.update(&Request { after: None, ..request.clone() }.to_wire());
+        let asked = h.finalize();
+        let key = (asker, asked);
+        if let Some((at, got)) = store.answers.sends.lock().expect("answers").get(&key)
+            && *at == fp
+        {
+            return got.clone();
+        }
+        let sent: BTreeSet<Place> = beyond(edits, ids, &logs_of(edits, ids), places, &request.ask)
+            .into_iter()
+            .map(|i| (edits[i].depth, ids[i]))
+            .collect();
+        let got = Arc::new(sent.into_iter().collect::<Vec<_>>());
+        let mut sends = store.answers.sends.lock().expect("answers");
+        if sends.len() >= ANSWERS_KEPT {
+            sends.clear();
+        }
+        sends.insert(key, (fp, got.clone()));
+        got
     }
 
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the McEliece key `blob`: it holds it, and an
@@ -4358,7 +4435,7 @@ impl Lab {
         let store = self.held(d);
         let edits = store.log.edits();
         store.blobs.contains_key(&blob)
-            && answer(edits, self.latest(d), asker, follow).into_iter().any(|i| edits[i].blobs().contains(&blob))
+            && self.answered(d, asker, follow).iter().any(|&i| edits[i].blobs().contains(&blob))
     }
 
     /// Device `d` may hand `asker`, which follows the vaults `follow`, the sealed bytes of file `file`: an edit `asker`
@@ -4576,7 +4653,7 @@ impl Lab {
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let logs = logs_of(edits, ids);
         let shared: BTreeSet<LogId> =
-            answer(edits, self.latest(d), peer, &[]).into_iter().filter_map(|i| logs[i]).collect();
+            self.answered(d, peer, &[]).iter().filter_map(|&i| logs[i]).collect();
         let digests = store.digests.as_ref().expect("worked out");
         shared.into_iter().filter_map(|l| Some((l, *digests.get(&l)?))).collect()
     }

@@ -1502,6 +1502,12 @@ impl Node {
     /// this device took from it page by page (`traffic::Pulled`: pages, edits, bytes, the time it waited for them and
     /// took to take them, how fast, how much came direct and how much through a relay); the devices it took from that
     /// it is not connected to now; and its newest pages. Kept in memory alone, since it started.
+    /// What this node answered its peers' askings with, and how long each page took it (`traffic::Served`), without
+    /// which peer asked: what avenDB's server says on its public health.
+    pub fn served(&self) -> Value {
+        self.shared.traffic.served_json()
+    }
+
     pub async fn network(&self) -> Value {
         let s = &self.shared;
         let me = s.endpoint.addr();
@@ -1554,6 +1560,7 @@ impl Node {
             Some(json!({ "device": d.to_hex(), "pulled": s.traffic.of(&d)?.to_json() }))
         }).collect();
         json!({
+            "served": s.traffic.served_json(),
             "me": { "endpoint": me.id.to_string(), "relays": relays, "direct": direct },
             "peers": peers,
             "gone": gone,
@@ -2069,45 +2076,76 @@ impl Shared {
             Scope::Logs(_) => session::ASK_LOGS,
             Scope::Vaults(_) => session::ASK_VAULTS,
         };
-        let scope = Arc::new(scope);
-        let (mut after, mut new, mut pages) = (None, 0, 0);
-        let (mut vaults, mut entries) = (BTreeMap::<String, u64>::new(), BTreeMap::<String, u64>::new());
-        loop {
-            let scope = scope.clone();
-            let request = move |lab: &mut Lab, me| {
+        // the request, worked out once for the whole asking: each page asks the same, after the last place it got, so
+        // the peer works out what it sends once too (`Lab::reply`), and no page waits on this device's lab to ask
+        let asking = Instant::now();
+        let base = self
+            .lab(move |lab: &mut Lab, me| {
                 let request = lab.request(me, device);
-                match &*scope {
-                    Scope::All => Request { after, ..request }.to_wire(),
-                    Scope::Logs(logs) => Request { after, ..session::only(lab, me, request, logs) }.to_wire(),
-                    Scope::Vaults(vaults) => {
-                        let request = Request { after, ..session::of_vaults(lab, me, request, vaults) };
-                        session::vaults_body(vaults, &request)
-                    }
+                match scope {
+                    Scope::All => (request, None),
+                    Scope::Logs(logs) => (session::only(lab, me, request, &logs), None),
+                    Scope::Vaults(vaults) => (session::of_vaults(lab, me, request, &vaults), Some(vaults)),
                 }
-            };
-            let request = self.lab(request).await;
-            let asked = Instant::now();
-            let reply = time::timeout(PAGE_WAIT, self.reply_to(&peer, kind, &request)).await;
-            let reply = reply.context("no page in time").and_then(|r| r);
-            if reply.is_err() {
-                self.traffic.failed(device);
+            })
+            .await;
+        self.traffic.asked(device, asking.elapsed().as_millis() as u64);
+        let wire = move |after: Option<avendb::sync::Place>| {
+            let request = Request { after, ..base.0.clone() };
+            match &base.1 {
+                Some(vaults) => session::vaults_body(vaults, &request),
+                None => request.to_wire(),
             }
-            let (Reply { mut edits, blobs, more }, bytes) = reply?;
-            let (wait, way, sent) = (asked.elapsed(), way_of(&peer.conn), edits.len() as u64);
+        };
+        // a page asked for, with how long it took to come
+        let ask = |request: Vec<u8>| {
+            let peer = peer.clone();
+            async move {
+                let asked = Instant::now();
+                let reply = time::timeout(PAGE_WAIT, self.reply_to(&peer, kind, &request)).await;
+                let reply = reply.context("no page in time").and_then(|r| r);
+                if reply.is_err() {
+                    self.traffic.failed(device);
+                }
+                reply.map(|(reply, bytes)| (reply, bytes, asked.elapsed()))
+            }
+        };
+        let (mut after, mut new, mut pages) = (None, 0, 0);
+        let mut keys = BTreeSet::<BlobId>::new();
+        let (mut vaults, mut entries) = (BTreeMap::<String, u64>::new(), BTreeMap::<String, u64>::new());
+        let mut coming = ask(wire(None)).await;
+        let mut since = Instant::now();
+        loop {
+            let (Reply { mut edits, blobs, more }, bytes, wait) = coming?;
+            let (way, sent) = (way_of(&peer.conn), edits.len() as u64);
             let taking = Instant::now();
             self.sized(&mut edits);
             self.sent.requests.fetch_add(1, Ordering::Relaxed);
             // where the next page starts: a page that brings nothing past the last ends the asking
             let last = edits.iter().map(|s| place(&s.edit)).max().filter(|&l| after.is_none_or(|a| l > a));
-            let lacking = move |lab: &mut Lab, me| -> Vec<BlobId> {
-                blobs.into_iter().filter(|b| lab.blob(me, *b).is_none()).collect()
+            let next = match last {
+                Some(last) if more => Some(last),
+                _ => None,
             };
-            let lacking = self.lab(lacking).await;
-            let keys = self.fetch(endpoint, lacking).await;
-            let fetched = !keys.is_empty();
             // its keys and items brought up to date every few pages and at the last, not at each (`CATCH_UP`)
-            let now = !more || (pages + 1) % CATCH_UP == 0;
-            let (got, whose) = self.lab(move |lab, me| lab.receive_whose_now(me, edits, keys, now)).await;
+            let now = next.is_none() || (pages + 1) % CATCH_UP == 0;
+            // the McEliece keys its edits name come after the last page, not with each: a device needs one only to seal
+            // to its signer, each is a megabyte, and a page of a few edits waited ~10 s on them through a relay
+            // (2026-10-22, an iPhone's first sync), while what its edits say could be used already
+            keys.extend(blobs);
+            let take = async {
+                let (got, whose) = self.lab(move |lab, me| lab.receive_whose_now(me, edits, Vec::new(), now)).await;
+                (got, whose, false, taking.elapsed())
+            };
+            // the next page asked for while this one is taken (checked and kept), so the peer, the network and this
+            // device work at once rather than one after the other
+            let ahead = async {
+                match next {
+                    Some(last) => Some(ask(wire(Some(last))).await),
+                    None => None,
+                }
+            };
+            let ((got, whose, fetched, took), ahead) = future::zip(take, ahead).await;
             self.traffic.page(traffic::Page {
                 device,
                 at: jobs::now_ms(),
@@ -2115,9 +2153,11 @@ impl Shared {
                 edits: sent,
                 new: got as u64,
                 wait_ms: wait.as_millis() as u64,
-                take_ms: taking.elapsed().as_millis() as u64,
+                take_ms: took.as_millis() as u64,
+                ms: since.elapsed().as_millis() as u64,
                 way,
             });
+            since = Instant::now();
             if now && (got > 0 || fetched || new > 0) {
                 self.changed.notify_one();
             }
@@ -2132,11 +2172,29 @@ impl Shared {
             job.stage(format!("page {pages}"));
             job.progress(new as u64, None);
             job.about(vaults.clone(), entries.clone());
-            match last {
-                Some(last) if more => after = Some(last),
-                _ => return Ok(new),
+            match (next, ahead) {
+                (Some(last), Some(page)) => {
+                    after = Some(last);
+                    coming = page;
+                }
+                _ => break,
             }
         }
+        // the keys its pages named that it lacks, in one request at the end
+        let fetching = Instant::now();
+        let lacking = move |lab: &mut Lab, me| -> Vec<BlobId> { keys.into_iter().filter(|b| lab.blob(me, *b).is_none()).collect() };
+        let lacking = self.lab(lacking).await;
+        if !lacking.is_empty() {
+            let asked = lacking.len() as u64;
+            let got = self.fetch(endpoint, lacking).await;
+            let bytes = got.iter().map(|k| k.len() as u64).sum();
+            self.traffic.keys(device, asked, got.len() as u64, bytes, fetching.elapsed().as_millis() as u64);
+            if !got.is_empty() {
+                self.lab(move |lab, me| lab.receive(me, Vec::new(), got)).await;
+                self.changed.notify_one();
+            }
+        }
+        Ok(new)
     }
 
     /// The reply of the peer on `peer`'s connection to the message of kind `kind` with body `request`, packed, each

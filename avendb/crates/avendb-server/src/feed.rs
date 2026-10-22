@@ -328,7 +328,7 @@ async fn answer(
     let reads = matches!(*request.method(), Method::GET | Method::HEAD);
     // how the server is doing, without asking its node, so that it answers while the node is busy
     if path == HEALTH && reads {
-        return Ok(well(&health));
+        return Ok(well(&health, &node));
     }
     if let Some(at) = path.strip_prefix(FILES).filter(|_| reads) {
         return Ok(picture(at, &node).await);
@@ -382,9 +382,13 @@ async fn answer(
     Ok(response)
 }
 
-/// The answer to a GET or HEAD of `HEALTH`: how the server is doing (`Health::json`), as JSON, never kept.
-fn well(health: &Health) -> Response<Full<Bytes>> {
-    let body = Bytes::from(serde_json::to_vec(&health.json()).expect("JSON writes"));
+/// The answer to a GET or HEAD of `HEALTH`: how the server is doing (`Health::json`) and how long its sync pages take
+/// it (`Node::served`), as JSON, never kept.
+fn well(health: &Health, node: &Node) -> Response<Full<Bytes>> {
+    let mut said = health.json();
+    // the pages it answered its peers with and how long each took it, never which peer asked (`Node::served`)
+    said["sync"] = node.served();
+    let body = Bytes::from(serde_json::to_vec(&said).expect("JSON writes"));
     let mut response = Response::new(Full::new(body));
     let headers = response.headers_mut();
     headers.insert(header::CONTENT_TYPE, HeaderValue::from_static("application/json"));
