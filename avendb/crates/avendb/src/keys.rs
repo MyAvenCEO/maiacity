@@ -39,10 +39,12 @@ use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId}
 pub const SUITE: u8 = 2;
 
 /// A box sealed to a key pair, or wrapped under a key the sealer holds, or sealed once to an X-Wing key alone
-/// (`seal_once`): its second byte.
+/// (`seal_once`), or a key sealed to an X-Wing key alone in a key tree (`seal_tree`): its second byte. A new kind of
+/// box is a new byte here; the boxes of every kind before it open as they did.
 const SEALED: u8 = 0;
 const WRAPPED: u8 = 1;
 const ONCE: u8 = 2;
+const TREE: u8 = 3;
 
 /// An X-Wing public key's size, and a ciphertext's.
 pub const XWING_PUBLIC_BYTES: usize = x_wing::ENCAPSULATION_KEY_SIZE;
@@ -485,8 +487,8 @@ pub fn wrap(key: &Secret, under: &Secret, info: &[u8], rng: &mut impl CryptoRng)
     [&[SUITE, WRAPPED][..], &encrypt(under, &key.0, info, rng)].concat()
 }
 
-/// Open a box, sealed or wrapped, with the key it was made for; `None` if it was made for another key, with other
-/// `info`, or changed.
+/// Open a box, sealed, wrapped or sealed in a key tree, with the key it was made for; `None` if it was made for another
+/// key, with other `info`, or changed.
 pub fn open(bytes: &[u8], with: &Secret, info: &[u8]) -> Option<Secret> {
     let (&[suite, how], rest) = bytes.split_first_chunk::<2>()?;
     if suite != SUITE {
@@ -498,9 +500,39 @@ pub fn open(bytes: &[u8], with: &Secret, info: &[u8]) -> Option<Secret> {
             open_sealed(rest, &with.xwing(), &mc.secret, &with.public(), info)?
         }
         WRAPPED => decrypt(with, rest, info)?,
+        TREE => open_tree(rest, with, info)?,
         _ => return None,
     });
     Secret::from_slice(&key)
+}
+
+/// Seal `key` to the X-Wing public key `to` alone, bound to `info`: a box of a key tree (`tree`), from a secret on a
+/// commit's path to a key of its copath, or of an epoch's key to a member's own. A tree's keys are X-Wing pairs only:
+/// a commit seals about one box a level, and a McEliece share would add a megabyte of public key to every node. The
+/// keys that stay sealed by both schemes are a vault's seed and the recovery boxes (`seal`). `None` if `to` is no
+/// X-Wing key.
+pub fn seal_tree(key: &Secret, to: &[u8], info: &[u8], rng: &mut impl CryptoRng) -> Option<Vec<u8>> {
+    let xwing = x_wing::EncapsulationKey::try_from(to).ok()?;
+    let (ct, ss) = xwing.encapsulate_with_rng(rng);
+    let under = tree_key(&ss, &ct, to, info);
+    Some([&[SUITE, TREE][..], &ct, &encrypt(&under, &key.0, info, rng)].concat())
+}
+
+/// A tree box's key, opened with `with`'s X-Wing key.
+fn open_tree(rest: &[u8], with: &Secret, info: &[u8]) -> Option<Vec<u8>> {
+    let (ct, rest) = rest.split_at_checked(XWING_CIPHERTEXT)?;
+    let xwing = with.xwing();
+    let ss = xwing.decapsulate(&x_wing::Ciphertext::try_from(ct).ok()?);
+    let to = xwing.encapsulation_key().to_bytes();
+    decrypt(&tree_key(&ss, ct, &to, info), rest, info)
+}
+
+/// The key a tree box is encrypted under: the shared secret, the ciphertext, the public key and what the box is bound
+/// to, which comes last. Its own purpose, so no box of another kind opens as one.
+fn tree_key(ss: &[u8], ct: &[u8], to: &[u8], info: &[u8]) -> Secret {
+    let mut h = Hasher::new("tree box key");
+    h.update(ss).update(ct).update(to).update(info);
+    Secret(h.finalize())
 }
 
 /// A sealed box's contents, opened with an X-Wing and a McEliece secret key, for the public key `to`.
@@ -739,6 +771,30 @@ mod tests {
         assert_eq!(sealed.len(), 2 + 1120 + 24 + 32 + 10 + 16);
         assert!(!sealed.windows(10).any(|w| w == b"a ceremony"));
         assert!(seal_once(&to[1..], b"x", b"", &mut rng).is_none());
+    }
+
+    #[test]
+    fn a_tree_box_opens_only_with_its_key_and_needs_no_mceliece_pair() {
+        // keys of their own, whose pairs no other test makes
+        let mut rng = SeededRng::new("keys tests", b"tree box");
+        let (key, node, other) = (Secret::generate(&mut rng), Secret::generate(&mut rng), Secret::generate(&mut rng));
+        let sealed = seal_tree(&key, &node.xwing_public(), b"path 1", &mut rng).unwrap();
+        assert_eq!(open(&sealed, &node, b"path 1"), Some(key.clone()));
+        assert!(open(&sealed, &other, b"path 1").is_none() && open(&sealed, &node, b"path 2").is_none());
+        for i in [0, 1, 2, 1100, 1130, sealed.len() - 1] {
+            let mut changed = sealed.clone();
+            changed[i] ^= 1;
+            assert!(open(&changed, &node, b"path 1").is_none(), "byte {i}");
+        }
+        // no McEliece pair is made to seal or open it
+        assert!(!pair_made(node.id()));
+        // a box sealed once to the same key doesn't open as a tree box, nor a tree box as one
+        let once = seal_once(&node.xwing_public(), &key.bytes(), b"path 1", &mut rng).unwrap();
+        assert!(open(&once, &node, b"path 1").is_none() && open_once(&sealed, &node, b"path 1").is_none());
+        // the suite and the kind, the X-Wing ciphertext (1,120 bytes), then the nonce, the commitment, the key and its
+        // tag
+        assert_eq!(sealed.len(), 2 + 1120 + 24 + 32 + 32 + 16);
+        assert!(seal_tree(&key, &node.xwing_public()[1..], b"", &mut rng).is_none());
     }
 
     #[test]
