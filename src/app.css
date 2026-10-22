@@ -95,6 +95,28 @@ body {
 	}
 }
 
+/* The app's foot stack ($lib/app/foot.js): every toast, status pill and waiting note of any page, centred just above
+   the nav pill, one above the other (lower `order` nearer the pill), so none covers another. Under the nav pill's menu. */
+.foot-stack {
+	position: fixed;
+	left: 50%;
+	bottom: calc(var(--nav-room) + 2px);
+	z-index: 49;
+	display: flex;
+	flex-direction: column-reverse;
+	align-items: center;
+	gap: 6px;
+	width: max-content;
+	max-width: calc(100vw - 2rem);
+	transform: translateX(-50%);
+	pointer-events: none;
+}
+
+.foot-stack > * {
+	max-width: 100%;
+	pointer-events: auto;
+}
+
 /* Where the joystick sits ($lib/touch/TouchStick.svelte), the one place it is said: in the lower left corner, beside the
    nav pill, as far from the screen's left edge (and the notch, on its side) as from its foot; its size; and the room it
    takes, which a full-screen page keeps a panel of its own above (Sandbox 4's opening doors, a dome's lift). On a phone

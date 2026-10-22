@@ -12,6 +12,7 @@
 <script>
 	// @ts-nocheck — plain JS
 	import { onMount } from 'svelte';
+	import { foot, FOOT } from '$lib/app/foot.js';
 	import { VILLAGE_INFO } from '$lib/models/village.js';
 	import { WAYSIDE_INFO } from '$lib/models/wayside.js';
 	import { RENTED, SUBLET, COOPS, DAY_MS, act, newGame, MINDS, SEATS, SETTING_LIMITS, SETTING_NAMES, TOKEN_COLOUR, TOKEN_LABEL, advance, calendar, dateOf, dateText, heartsValue, inHearts, mintState, nameOf, invariant, nextPayDay, price, quote, signaturesOf, supply, timeOfMonth, weights } from '../../../game/maiacity-v1/engine.js';
@@ -835,7 +836,7 @@
 			{#if error}<p class="error">{error}</p>{/if}
 		</aside>
 		{:else if error}
-			<p class="error toast">{error}</p>
+			<p class="error toast" use:foot={FOOT.toast}>{error}</p>
 		{/if}
 	{:else}
 		<div class="loading" role="status"><p class="eyebrow">MaiaCity V1</p><strong>One hex, one tent, two players</strong><span>{error || 'Opening the game…'}</span></div>
@@ -1585,12 +1586,9 @@
 	.asset-list dl {
 		margin: 0.3rem 0;
 	}
+	/* in the app's foot stack ($lib/app/foot.js) */
 	.toast {
-		position: absolute;
-		z-index: 3;
-		left: 50%;
-		bottom: calc(var(--nav-room, 4rem) + 0.6rem);
-		transform: translateX(-50%);
+		margin: 0;
 		background: rgb(250 248 242 / 0.94);
 	}
 	.loading {

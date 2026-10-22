@@ -12,6 +12,7 @@
 	import { session } from '$lib/avendb/session.svelte.js';
 	import { share, sync, syncing, watchSync } from '$lib/avendb/sync.svelte.js';
 	import { watchRecipes } from '$lib/assets/vault.js';
+	import { foot, FOOT } from './foot.js';
 
 	/** how long something must take before the pill shows, and how long it stays once nothing does (ms) */
 	const SHOW = 400;
@@ -65,7 +66,7 @@
 </script>
 
 {#if shown}
-	<div class="status" transition:fade={{ duration: 200 }}>
+	<div class="status" use:foot={FOOT.status} transition:fade={{ duration: 200 }}>
 		{#if open}
 			<ul class="details" role="list">
 				{#each details as d (d)}<li>{d}</li>{/each}
@@ -82,18 +83,12 @@
 {/if}
 
 <style>
-	/* centred, just above the nav pill (--nav-room, src/app.css), under its menu */
+	/* in the app's foot stack, nearest the nav pill ($lib/app/foot.js) */
 	.status {
-		position: fixed;
-		bottom: calc(var(--nav-room) + 2px);
-		left: 50%;
-		z-index: 49;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		gap: 6px;
-		max-width: calc(100vw - 2rem);
-		transform: translateX(-50%);
 		pointer-events: none;
 	}
 

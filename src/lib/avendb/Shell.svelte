@@ -27,6 +27,7 @@
 -->
 <script>
 	import { setContext } from 'svelte';
+	import { foot, FOOT } from '$lib/app/foot.js';
 	import { afterNavigate } from '$app/navigation';
 	import { wayBack } from '$lib/app/back.svelte.js';
 	import { enter } from '$lib/app/immersive.svelte';
@@ -372,7 +373,7 @@
 		</svelte:boundary>
 	{/if}
 
-	<div class="toasts">
+	<div class="toasts" use:foot={FOOT.toast}>
 		{#if doing}<p class="toast" role="status">{doing}…</p>{/if}
 		{#if error}<p class="toast bad" role="alert">{error}</p>{/if}
 	</div>
@@ -473,22 +474,20 @@
 		margin-top: 1rem;
 	}
 
-	/* at the foot, in the middle, just above the app's own nav pill (--nav-room, src/app.css) */
+	/* in the app's foot stack, above the nav pill and the status pill ($lib/app/foot.js) */
 	.toasts {
-		position: fixed;
-		left: 50%;
-		bottom: var(--nav-room, 5rem);
-		z-index: 45;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
 		gap: 0.5rem;
-		max-width: calc(100vw - 2rem);
-		transform: translateX(-50%);
+	}
+
+	.toasts:empty {
+		display: none;
 	}
 
 	.toast {
-		max-width: min(40rem, calc(100vw - 2rem));
+		max-width: min(40rem, 100%);
 		margin: 0;
 		padding: 0.5rem 0.9rem;
 		border-radius: 12px;
