@@ -3,7 +3,8 @@
 //! shelf of before the last reset or an earlier avenDB's store, and a shelf put aside stays whole beside the next;
 //! avenDB's floor stays where its last reset left it; a head follows every 64 journal entries; a head or an
 //! entry cut short is passed and never replaced; an edit whose signatures fail brings a head of the whole log; an
-//! object is put once, and a slot kept in place; and a node steps on its stored view as it starts.
+//! object is put once, and a slot kept in place; and a node steps on its stored view as it starts, takes the keys it
+//! opened from its shelf, and doesn't check again the edits they name.
 
 mod common;
 
@@ -176,27 +177,46 @@ fn checks(lab: &Lab, me: SignerId) -> (u64, u64) {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_head_the_device_sealed_is_not_checked_again_and_a_forged_seal_is_passed() {
-    let dir = Folder::new("sealed");
+async fn the_edits_its_keys_name_are_not_checked_again_and_forged_keys_vouch_for_none() {
+    let dir = Folder::new("vouched");
     let (node, _, coop) = mac(dir.path()).await;
     for n in 0..70 {
         write(&node, coop, &format!("Note {n}"), &format!("note number {n}")).await;
     }
+    warmed(&node).await;
     let held = node.read(|lab, me| lab.log(me).ids().to_vec()).await;
     node.shutdown().await.expect("it stops");
     drop(node);
     let g = dir.path().join(format!("g{FLOOR}"));
-    let sealed: Vec<String> = files(&g.join("sealed")).into_keys().collect();
-    assert_eq!(sealed, ["0000000000000001"], "the head it put is sealed");
-    // started again: the head's edits come back unchecked, only the journal's after it are checked
+    // started again: the edits its keys name come back unchecked, only those after them are checked
     let (node, _, _) = mac(dir.path()).await;
     assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held, "every edit, in its order");
     let (checked, offered) = node.read(|lab, me| checks(lab, me)).await;
     assert!(offered as usize >= held.len() && checked * 3 < offered, "checked {checked} of {offered}");
     node.shutdown().await.expect("it stops");
     drop(node);
-    // a seal another key made vouches for nothing: every edit is checked again
-    fs::write(g.join("sealed/0000000000000001"), [7u8; 32]).expect("a forged seal");
+    // a head put after it, the same but for its number, vouches for nothing: its keys name another
+    let heads = g.join("heads");
+    let (newest, bytes) = files(&heads).into_iter().last().expect("a head");
+    let next = u64::from_str_radix(&newest, 16).expect("a number") + 1;
+    fs::write(heads.join(format!("{next:016x}")), bytes).expect("put");
+    let (node, _, _) = mac(dir.path()).await;
+    assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held);
+    let (all, _) = node.read(|lab, me| checks(lab, me)).await;
+    assert!(all > checked * 3, "every edit checked, but those a checkpoint covers: {all} of {offered}");
+    warmed(&node).await;
+    node.shutdown().await.expect("it stops");
+    drop(node);
+    // and its keys name it once it checked it
+    let (node, _, _) = mac(dir.path()).await;
+    let (again, _) = node.read(|lab, me| checks(lab, me)).await;
+    assert!(again * 3 < offered, "checked {again} of {offered}");
+    node.shutdown().await.expect("it stops");
+    drop(node);
+    // keys another key sealed vouch for nothing: every edit is checked again
+    for name in ["keys-0", "keys-1"].map(|n| g.join("slots").join(n)).into_iter().filter(|p| p.exists()) {
+        fs::write(name, [&b"avenDB keys 1\n"[..], &[0; 8], &[7u8; 80]].concat()).expect("forged");
+    }
     let (node, _, _) = mac(dir.path()).await;
     assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held);
     let (all, again) = node.read(|lab, me| checks(lab, me)).await;
@@ -335,7 +355,7 @@ fn counted(lab: &Lab, me: SignerId, what: &str) -> u64 {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn a_node_starts_from_what_it_worked_out_before_and_passes_what_it_cant_open() {
+async fn a_node_takes_its_keys_from_its_shelf_and_opens_them_again_where_none_opens() {
     let dir = Folder::new("warm");
     let (node, w, coop) = mac(dir.path()).await;
     let (alice, phone, passkey) = (w.alice, w.phone_a, w.passkey_a);
@@ -344,51 +364,46 @@ async fn a_node_starts_from_what_it_worked_out_before_and_passes_what_it_cant_op
     };
     node.act(remove).await.expect("Alice's phone removed");
     let welcome = write(&node, coop, "Welcome", WELCOME_TEXT).await;
+    warmed(&node).await;
     let held = node.read(|lab, me| lab.log(me).ids().to_vec()).await;
     node.shutdown().await.expect("it stops");
     drop(node);
     let g = dir.path().join(format!("g{FLOOR}"));
     let named = |folder: &str| files(&g.join(folder)).into_keys().map(|n| format!("{folder}/{n}")).collect::<Vec<_>>();
-    assert!(!named("warm").is_empty(), "the choice its resolve made, put");
-    // each start again: every edit in its order, Welcome shown, and what it took from its shelf and worked out anew,
-    // with no view to step on, so that it replays every edit
+    for old in ["warm", "opened", "sealed"] {
+        assert!(!g.join(old).exists(), "{old}/ is put no more");
+    }
+    // each start again: every edit in its order, Welcome shown, and what it took from its shelf and worked out anew
     let start = || async {
-        for (name, _) in files(&g.join("slots")) {
-            fs::write(g.join("slots").join(name), [7u8; 80]).expect("no view");
-        }
         let (node, _, _) = mac(dir.path()).await;
         assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held, "every edit, in its order");
         assert!(shows(&node, welcome, WELCOME_TEXT).await, "it shows Welcome again");
         let counts = node.read(|lab, me| {
             let count = |what| counted(lab, me, what);
-            (count("replay: removals as chosen before"), count("keys from the shelf"), count("keys opened"))
+            (count("replay: from its stored view"), count("keys from the shelf"), count("keys opened"))
         });
         let counts = counts.await;
-        // its saver puts what it worked out as it comes to, with no edit to save and before it stops
-        let mut waited = 0;
-        while node.read(|lab, me| lab.warm_due(me)).await {
-            assert!(waited < 100, "what it worked out, put while it runs");
-            tokio::time::sleep(Duration::from_millis(50)).await;
-            waited += 1;
-        }
+        // its saver keeps its keys and its view as it comes to, with no edit to save and before it stops
+        warmed(&node).await;
         node.shutdown().await.expect("it stops");
         counts
     };
-    // the first: it takes the removals as it chose them, and opens the boxes of the keys it made itself before
-    let (chosen, shelved, opened) = start().await;
-    assert!(chosen > 0 && shelved == 0 && opened > 0, "chosen {chosen}, from the shelf {shelved}, opened {opened}");
-    assert!(!named("opened").is_empty(), "the keys it opened, put");
-    let put = (named("warm"), named("opened"));
-    // the next: it opens no box again, and puts nothing, as its shelf holds all it worked out
-    let (chosen, shelved, opened) = start().await;
-    assert!(chosen > 0 && shelved > 0 && opened == 0, "chosen {chosen}, from the shelf {shelved}, opened {opened}");
-    assert_eq!((named("warm"), named("opened")), put, "what its shelf holds already is put no more");
-    // what it can't open it passes, and works it out again
-    for name in named("warm").into_iter().chain(named("opened")) {
+    // started again: its replay from its view, and the keys it made itself opened from their boxes, then kept
+    let (from_view, shelved, opened) = start().await;
+    assert!(from_view == 1 && shelved == 0 && opened > 0, "from its view {from_view}, keys {shelved}, opened {opened}");
+    // and again: every key from its shelf, no box opened again, and nothing kept anew
+    let kept = files(&g.join("slots"));
+    let (from_view, shelved, opened) = start().await;
+    assert!(from_view == 1 && shelved > 0 && opened == 0, "from its view {from_view}, keys {shelved}, opened {opened}");
+    assert_eq!(files(&g.join("slots")), kept, "what its shelf holds already is kept no more");
+    // what it can't open it passes: it replays every edit, opens every box again, and keeps both anew
+    for name in named("slots") {
         fs::write(g.join(name), [7u8; 80]).expect("a forged one");
     }
-    let (chosen, shelved, opened) = start().await;
-    assert!(chosen == 0 && shelved == 0 && opened > 0, "chosen {chosen}, from the shelf {shelved}, opened {opened}");
+    let (from_view, shelved, opened) = start().await;
+    assert!(from_view == 0 && shelved == 0 && opened > 0, "from its view {from_view}, keys {shelved}, opened {opened}");
+    let (from_view, shelved, opened) = start().await;
+    assert!(from_view == 1 && shelved > 0 && opened == 0, "from its view {from_view}, keys {shelved}, opened {opened}");
 }
 
 /// Waits until device `me` of `node` put on its shelf all it worked out.
@@ -417,7 +432,7 @@ async fn a_node_steps_on_its_stored_view_and_replays_every_edit_where_none_opens
     node.shutdown().await.expect("it stops");
     drop(node);
     let g = dir.path().join(format!("g{FLOOR}"));
-    let slots = || files(&g.join("slots"));
+    let slots = || files(&g.join("slots")).into_iter().filter(|(n, _)| n.starts_with("view-")).collect::<BTreeMap<_, _>>();
     assert_eq!(slots().into_keys().collect::<Vec<_>>(), ["view-0"], "its view, kept");
     // started again: what its edits said comes from its view, with no replay of every edit, and a new edit steps on it
     let (node, _, coop) = mac(dir.path()).await;

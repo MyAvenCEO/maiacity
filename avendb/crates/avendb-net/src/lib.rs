@@ -137,7 +137,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use avendb::engine::follow_standing;
 use avendb::id::{BlobId, EditId, ShareId, SignerId, VaultId};
 use avendb::keys::PublicKey;
-use avendb::lab::{Backup, Drafting, Lab, Unsigned, Warm};
+use avendb::lab::{Backup, Checked, Drafting, Lab, Unsigned, Warm};
 use avendb::policy::{Action, Kind, Principal, Refusal, Sharing};
 use avendb::sealed::{FileRoot, PIECE};
 use avendb::sign::{Ceremony, RelayPass, SUITES, Signed, SignerKeys};
@@ -600,18 +600,13 @@ impl Node {
             }
             None => (None, edits::Stored::default()),
         };
-        // the edits of a head the device sealed it checked already (`Edits::vouched`)
-        let key = lab.shelf_key(me);
-        let vouched = match (&edits, &key) {
-            (Some(edits), Some(key)) => edits.vouched(key).await,
-            _ => HashSet::new(),
-        };
-        // and what it worked out from them before (`Edits::warm`)
+        // what it worked out from them before (`Edits::warm`)
         let warm = match &edits {
             Some(edits) => edits.warm().await,
             None => Warm::default(),
         };
-        let restore = move || restore(lab, me, stored, &vouched, &warm);
+        let started = edits.as_ref().and_then(|edits| edits.started());
+        let restore = move || restore(lab, me, stored, started, &warm);
         #[cfg(not(target_arch = "wasm32"))]
         let (lab, stored) = tokio::task::spawn_blocking(restore).await?;
         // a page has no threads to spare
@@ -619,11 +614,6 @@ impl Node {
         let (lab, stored) = restore();
         if let Some(edits) = &edits {
             edits.settle(&lab, me, &stored);
-            if let Some(key) = key
-                && let Err(e) = edits.seal_with(key).await
-            {
-                tracing::warn!("avendb: the shelf's head can't be sealed: {e:#}");
-            }
         }
         opts.progress.step("node");
         if let Some(admission) = &opts.admission {
@@ -1615,13 +1605,19 @@ impl Drop for Node {
     }
 }
 
-/// Device `me` of `lab`, with what its shelf held taken back, if it held anything (`stored`), not checking again the
-/// signatures of the edits `vouched`, from what it worked out before (`Lab::restore_warm`); and the ids of the edits
-/// the shelf held, in its order.
-fn restore(mut lab: Lab, me: SignerId, (signed, keys): edits::Stored, vouched: &HashSet<EditId>, warm: &Warm) -> (Lab, Vec<EditId>) {
+/// Device `me` of `lab`, with what its shelf held taken back, if it held anything (`stored`), from what it worked out
+/// before (`Lab::restore_warm`), the first edits of the head it started from (`Edits::started`); and the ids of the
+/// edits the shelf held, in its order.
+fn restore(
+    mut lab: Lab,
+    me: SignerId,
+    (signed, keys): edits::Stored,
+    started: Option<(Checked, usize)>,
+    warm: &Warm,
+) -> (Lab, Vec<EditId>) {
     let stored = signed.iter().map(|s| s.edit.id()).collect();
     if !signed.is_empty() {
-        lab.restore_warm(me, Backup::new(signed, keys), vouched, warm);
+        lab.restore_warm(me, Backup::new(signed, keys), started, warm);
     }
     (lab, stored)
 }
