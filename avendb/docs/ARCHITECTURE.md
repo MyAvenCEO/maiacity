@@ -2216,7 +2216,12 @@ all older than that starts a new one beside them. Tests hold `FLOOR` at 18 and t
   and `slots/view-1` in turn, each kept after the edits it is of. A node starts from the newest that opens and is of
   the very edits its log starts with, and steps on it with the edits after it; with none, it replays every edit, then
   keeps one. New writes after every edit it holds step on (V1), and so does a mark that moves an entry, where it keeps
-  every write of the entry that stands (V3, `spec/AvenDB/MoveSteps.lean`): a steward's upkeep replays nothing again. It keeps a new one after any replay of every edit, or after 4096 edits stepped on. A view holds no
+  every write of the entry that stands (V3, `spec/AvenDB/MoveSteps.lean`): a steward's upkeep replays nothing again.
+  A peer's late edit, which sorts among the last edits held, replays only the edits after a place before it, from the
+  state kept there, even past moves: the moves after the place, which all stood and kept no edit out alone, are tried
+  again at once with it, and it replays whole where one stands not, keeps a new edit out, or a new grant rests on one a
+  revocation names (V4, `spec/AvenDB/TailRuns.lean`). It keeps a new one after any replay of every edit, or after
+  4096 edits stepped on. A view holds no
   history: every edit stays on the shelf as it was put, so any past point can still be rebuilt from them. On the
   server, each slot kept is one more object version the bucket's lock holds for 7 days.
 - **Stored keys** (`Lab::warming`, `Lab::restore_warm`). The keys the device opened from their boxes, each by the box
