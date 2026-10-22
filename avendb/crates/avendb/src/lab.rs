@@ -475,23 +475,34 @@ const ENGINE: &str = env!("AVENDB_ENGINE");
 
 /// What a device keeps on its shelf of what it worked out, encrypted for it alone, to start again from it quickly
 /// (`Lab::restore_warm`): the choice its replay's resolve made (`policy::Memo`), for this engine alone (`ENGINE`), and
-/// the keys it opened from their boxes, each part as `Lab::warming` gave it. It vouches for
+/// the keys it opened from their boxes, each part as `Lab::warming` gave it; and its stored views, the newest first
+/// (`Replay::to_view`), for this engine alone too. It vouches for
 /// nothing it doesn't check: a key counts only for the very box it opened, with the key it opens it with now, and
-/// where its id is the one that box names; and the choice only for edits that turn on the same (`Memo`).
+/// where its id is the one that box names; the choice only for edits that turn on the same (`Memo`); and a view only
+/// where it reads back whole and is of the very edits its log starts with (`Replay::from_view`).
 #[derive(Clone, Debug, Default)]
 pub struct Warm {
     pub memo: Option<Vec<u8>>,
     pub keys: Vec<Vec<u8>>,
+    pub views: Vec<Vec<u8>>,
 }
 
 /// What a device worked out that its shelf lacks, each part encrypted for it alone (`Lab::warming`): the choice of its
-/// replay's resolve and the keys it opened, for its shelf to take, and what of them it gave, for `Lab::warmed`.
+/// replay's resolve, the keys it opened and its stored view, for its shelf to take, and what of them it gave, for
+/// `Lab::warmed`.
 pub struct Warming {
     pub memo: Option<Vec<u8>>,
     pub keys: Option<Vec<u8>>,
+    pub view: Option<Vec<u8>>,
     memo_of: Option<Memo>,
     keys_of: usize,
+    view_of: usize,
+    view_wholes: u64,
 }
+
+/// How many edits a device steps on its replay before its shelf takes its view again (`Lab::warming`): as many as it
+/// steps on again as it starts from the view before. A replay of every edit puts the view on its shelf at once.
+const VIEW_STEPS: usize = 4096;
 
 /// What one device holds: its edits, each with its signatures, to pass on, and the blobs they name; what it makes of
 /// them; the keys it holds; what it read with them; and the entries it shows.
@@ -563,6 +574,11 @@ struct Store {
     opened_since: Vec<([u8; 32], Secret)>,
     /// The choice of its replay's resolve its shelf keeps, as it last gave it or took it from there (`Lab::warmed`).
     memo_given: Option<Memo>,
+    /// How many edits the view its shelf keeps is of, as it last gave it or took it from there, none if 0; how many
+    /// times it replayed every edit, and how many times when its shelf took that view (`Lab::warming`).
+    view_given: usize,
+    wholes: u64,
+    view_wholes: u64,
 }
 
 impl Default for Store {
@@ -601,6 +617,9 @@ impl Default for Store {
             opened_before: HashMap::new(),
             opened_since: vec![],
             memo_given: None,
+            view_given: 0,
+            wholes: 0,
+            view_wholes: 0,
         }
     }
 }
@@ -608,6 +627,15 @@ impl Default for Store {
 impl Store {
     fn view(&self) -> &State {
         &self.replay.state
+    }
+
+    /// Its shelf lacks its view (`Lab::warming`): it replayed all its edits, and the view its shelf keeps, if any, is of
+    /// other edits, and it replayed every edit since or stepped `VIEW_STEPS` on it.
+    fn view_due(&self) -> bool {
+        let n = self.replayed;
+        let since = n.abs_diff(self.view_given);
+        let stale = self.wholes != self.view_wholes;
+        n > 0 && n == self.log.edits().len() && since > 0 && (self.view_given == 0 || stale || since >= VIEW_STEPS)
     }
 
     /// Forget every key and everything a key opened, as it locks.
@@ -2730,6 +2758,7 @@ impl Lab {
                 store.perf.count("replay: removals as chosen before", 1);
             }
             store.replay = replayed;
+            store.wholes += matches!(why, Why::Whole(_)) as u64;
             store.perf.count(why_counted(why), 1);
             store.replayed = store.log.edits().len();
             debug_assert!(store.replay == replay(store.log.edits()), "a replay stepped on differs from the whole");
@@ -4673,6 +4702,28 @@ impl Lab {
             store.perf.count("edits checked", fresh.iter().filter(|s| !vouched.contains(&s.edit.id())).count() as u64);
         }
         self.keep_fresh(d, fresh, &backup.blobs);
+        // what its edits said when it last stopped, of the edits its log starts with: the rest step on it
+        if let Some(key) = self.shelf_key(d)
+            && let Some(store) = self.stores.get_mut(&d)
+        {
+            let at = Perf::start();
+            let (edits, ids) = (store.log.edits(), store.log.ids());
+            let found = warm.views.iter().find_map(|b| {
+                let view = key.unlock("view", b, ENGINE.as_bytes())?;
+                Replay::from_view(&view, edits, ids)
+            });
+            match found {
+                Some((replay, held)) => {
+                    store.replay = replay;
+                    store.replayed = held;
+                    store.view_given = held;
+                    store.view_wholes = store.wholes;
+                    store.perf.count("replay: from its stored view", 1);
+                }
+                None => store.perf.count("stored view: none that opens", 1),
+            }
+            store.perf.add("open view", at);
+        }
         self.refresh(d, &[]);
     }
 
@@ -4693,10 +4744,12 @@ impl Lab {
         let store = self.stores.get(&d)?;
         let memo_of = store.replay.memo.as_ref().filter(|m| m.upto > 0 && store.memo_given.as_ref() != Some(*m)).cloned();
         let keys_of = store.opened_since.len();
-        if memo_of.is_none() && keys_of == 0 {
+        let (view_of, view_wholes) = if store.view_due() { (store.replayed, store.wholes) } else { (0, 0) };
+        if memo_of.is_none() && keys_of == 0 && view_of == 0 {
             return None;
         }
         let memo = memo_of.as_ref().map(|m| key.lock("memo", &m.to_bytes(), ENGINE.as_bytes(), &mut self.rng));
+        let view = (view_of > 0).then(|| key.lock("view", &store.replay.to_view(view_of), ENGINE.as_bytes(), &mut self.rng));
         let keys = (keys_of > 0).then(|| {
             let since = store.opened_since.iter().map(|(b, k)| (b, k));
             let give: Vec<(&[u8; 32], &Secret)> = match all {
@@ -4707,7 +4760,7 @@ impl Lab {
                 Zeroizing::new(give.iter().flat_map(|(b, k)| b.iter().copied().chain(k.bytes())).collect());
             key.lock("keys", &bytes, b"opened keys", &mut self.rng)
         });
-        Some(Warming { memo, keys, memo_of, keys_of })
+        Some(Warming { memo, keys, view, memo_of, keys_of, view_of, view_wholes })
     }
 
     /// Whether device `d` worked out something its shelf lacks (`warming`), as cheaply as it tells: the node's saver
@@ -4715,7 +4768,7 @@ impl Lab {
     pub fn warm_due(&self, d: SignerId) -> bool {
         let Some(store) = self.stores.get(&d) else { return false };
         let memo = store.replay.memo.as_ref().is_some_and(|m| m.upto > 0 && store.memo_given.as_ref() != Some(m));
-        memo || !store.opened_since.is_empty()
+        memo || !store.opened_since.is_empty() || store.view_due()
     }
 
     /// Device `d`'s shelf took `warming` (`warming`): what it gave, it holds given.
@@ -4723,6 +4776,10 @@ impl Lab {
         let Some(store) = self.stores.get_mut(&d) else { return };
         if let Some(memo) = warming.memo_of {
             store.memo_given = Some(memo);
+        }
+        if warming.view_of > 0 {
+            store.view_given = warming.view_of;
+            store.view_wholes = warming.view_wholes;
         }
         let n = warming.keys_of.min(store.opened_since.len());
         let given: Vec<([u8; 32], Secret)> = store.opened_since.drain(..n).collect();

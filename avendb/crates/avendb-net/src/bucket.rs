@@ -369,6 +369,10 @@ impl BucketShelf {
             Call::Put { name, bytes, tx } => {
                 tx.send(self.put(&name, &bytes).await).ok();
             }
+            Call::Keep { name, bytes, tx } => {
+                // a bucket's put replaces what it held whole, or leaves it
+                tx.send(self.bucket.put(&format!("{}{name}", self.root), &bytes).await.map_err(failed)).ok();
+            }
             Call::Get { name, tx } => {
                 let got = self.bucket.get(&format!("{}{name}", self.root)).await;
                 tx.send(got.map(|bytes| bytes.map(Bytes::from)).map_err(failed)).ok();

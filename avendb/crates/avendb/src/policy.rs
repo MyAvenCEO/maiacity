@@ -51,6 +51,8 @@ use crate::sealed::FileRoot;
 use crate::slice::{Attrs, Header, Select, Selector, TagDelta};
 use crate::wire::Wire;
 
+mod view;
+
 /// A vault is an identity, like a smart account, of one of four kinds. What each kind may be is one row of the kind
 /// table (`Kind::rules`), the model's `Kind.rules`, which every rule and the page read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

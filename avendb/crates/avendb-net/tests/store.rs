@@ -2,8 +2,8 @@
 //! whole and in its order when the node starts again; a place's first shelf deletes nothing it finds beside it, a
 //! shelf of before the last reset or an earlier avenDB's store, and a shelf put aside stays whole beside the next;
 //! avenDB's floor stays where its last reset left it; a head follows every 64 journal entries; a head or an
-//! entry cut short is passed and never replaced; an edit whose signatures fail brings a head of the whole log; and an
-//! object is put once.
+//! entry cut short is passed and never replaced; an edit whose signatures fail brings a head of the whole log; an
+//! object is put once, and a slot kept in place; and a node steps on its stored view as it starts.
 
 mod common;
 
@@ -254,7 +254,8 @@ async fn an_edit_whose_signatures_fail_brings_a_head_of_the_whole_log() {
     node.shutdown().await.expect("it stops");
     drop(node);
     let after = files(dir.path());
-    for (name, bytes) in &before {
+    // all but the slots, kept in place, which hold no history
+    for (name, bytes) in before.iter().filter(|(name, _)| !name.contains("/slots/")) {
         assert_eq!(after.get(name), Some(bytes), "{name} stays as it was");
     }
     assert!(after.contains_key(&format!("g{FLOOR}/heads/0000000000000001")), "a head of the whole log");
@@ -305,6 +306,22 @@ async fn an_object_is_put_once_and_owned_by_its_owner_alone() {
     }
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_slot_is_kept_in_place_and_never_put() {
+    let dir = Folder::new("slots");
+    let shelf: Shelf = disk::open(dir.path()).expect("the shelf");
+    shelf.keep("slots/view-0", Bytes::from_static(b"one")).await.expect("kept");
+    shelf.keep("slots/view-0", Bytes::from_static(b"two")).await.expect("kept again, in place");
+    assert_eq!(shelf.get("slots/view-0").await.expect("got"), Some(Bytes::from_static(b"two")));
+    let put = shelf.put("slots/view-1", Bytes::from_static(b"one")).await.expect_err("a slot is never put");
+    assert_eq!(put.kind(), ErrorKind::InvalidInput);
+    let kept = shelf.keep("meta/0000000000000001", Bytes::from_static(b"one")).await.expect_err("never kept");
+    assert_eq!(kept.kind(), ErrorKind::InvalidInput, "what is put is never kept in place");
+    assert_eq!(shelf.names("slots/").await.expect("its names"), vec!["slots/view-0".to_string()]);
+    let staged = files(&dir.path().join(format!("g{FLOOR}/new")));
+    assert!(staged.is_empty(), "nothing left beside it: {:?}", staged.keys());
+}
+
 /// avenDB is never reset again (Samuel 2026-10-19: "so no accidental resets can happen anymore"): its floor stays at
 /// the generation its last reset left, so no place ever leaves the shelf it holds for a new, empty one.
 #[test]
@@ -333,8 +350,12 @@ async fn a_node_starts_from_what_it_worked_out_before_and_passes_what_it_cant_op
     let g = dir.path().join(format!("g{FLOOR}"));
     let named = |folder: &str| files(&g.join(folder)).into_keys().map(|n| format!("{folder}/{n}")).collect::<Vec<_>>();
     assert!(!named("warm").is_empty(), "the choice its resolve made, put");
-    // each start again: every edit in its order, Welcome shown, and what it took from its shelf and worked out anew
+    // each start again: every edit in its order, Welcome shown, and what it took from its shelf and worked out anew,
+    // with no view to step on, so that it replays every edit
     let start = || async {
+        for (name, _) in files(&g.join("slots")) {
+            fs::write(g.join("slots").join(name), [7u8; 80]).expect("no view");
+        }
         let (node, _, _) = mac(dir.path()).await;
         assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held, "every edit, in its order");
         assert!(shows(&node, welcome, WELCOME_TEXT).await, "it shows Welcome again");
@@ -368,4 +389,75 @@ async fn a_node_starts_from_what_it_worked_out_before_and_passes_what_it_cant_op
     }
     let (chosen, shelved, opened) = start().await;
     assert!(chosen == 0 && shelved == 0 && opened > 0, "chosen {chosen}, from the shelf {shelved}, opened {opened}");
+}
+
+/// Waits until device `me` of `node` put on its shelf all it worked out.
+async fn warmed(node: &Node) {
+    until("what it worked out, put while it runs", || async { !node.read(|lab, me| lab.warm_due(me)).await }).await;
+}
+
+/// How many times device `me` of `node` counted `what`, and how many times it replayed every edit, since its world
+/// was made: the same world each start, so that starts differ by what each did alone.
+async fn replays(node: &Node, what: &'static str) -> (u64, u64) {
+    node.read(move |lab, me| {
+        let counts = lab.perf(me)["counts"].clone();
+        let wholes = counts.as_object().into_iter().flatten().filter(|(k, _)| k.starts_with("replay whole"));
+        (counted(lab, me, what), wholes.filter_map(|(_, n)| n.as_u64()).sum())
+    })
+    .await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_node_steps_on_its_stored_view_and_replays_every_edit_where_none_opens() {
+    const VIEW: &str = "replay: from its stored view";
+    let dir = Folder::new("view");
+    let (node, _, coop) = mac(dir.path()).await;
+    let welcome = write(&node, coop, "Welcome", WELCOME_TEXT).await;
+    warmed(&node).await;
+    node.shutdown().await.expect("it stops");
+    drop(node);
+    let g = dir.path().join(format!("g{FLOOR}"));
+    let slots = || files(&g.join("slots"));
+    assert_eq!(slots().into_keys().collect::<Vec<_>>(), ["view-0"], "its view, kept");
+    // started again: what its edits said comes from its view, with no replay of every edit, and a new edit steps on it
+    let (node, _, coop) = mac(dir.path()).await;
+    assert!(shows(&node, welcome, WELCOME_TEXT).await, "it shows Welcome again");
+    let (from_view, wholes) = replays(&node, VIEW).await;
+    assert_eq!(from_view, 1, "from its view");
+    let onboarding = write(&node, coop, "Onboarding", ONBOARDING_TEXT).await;
+    let held = node.read(|lab, me| lab.log(me).ids().to_vec()).await;
+    warmed(&node).await;
+    node.shutdown().await.expect("it stops");
+    drop(node);
+    assert_eq!(slots().len(), 1, "one edit stepped on is no new view");
+    // and again: the view is of the edits its log starts with, and those after it step on it
+    let (node, _, _) = mac(dir.path()).await;
+    assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held, "every edit, in its order");
+    assert!(shows(&node, welcome, WELCOME_TEXT).await && shows(&node, onboarding, ONBOARDING_TEXT).await);
+    assert_eq!(replays(&node, VIEW).await, (1, wholes), "from its view, the edits after it stepped on");
+    node.shutdown().await.expect("it stops");
+    drop(node);
+    // a view that doesn't open is passed: it replays every edit, and keeps its view anew
+    fs::write(g.join("slots/view-0"), [7u8; 80]).expect("a forged one");
+    let (node, _, _) = mac(dir.path()).await;
+    assert!(shows(&node, welcome, WELCOME_TEXT).await && shows(&node, onboarding, ONBOARDING_TEXT).await);
+    assert_eq!(replays(&node, VIEW).await, (0, wholes + 1), "no view opens: every edit replayed");
+    assert_eq!(counted_on(&node, "stored view: none that opens").await, 1);
+    warmed(&node).await;
+    node.shutdown().await.expect("it stops");
+    drop(node);
+    let kept = slots();
+    assert_eq!(kept.keys().collect::<Vec<_>>(), ["view-0"], "kept anew, in place of what read as no view");
+    assert_ne!(kept["view-0"], [7u8; 80]);
+    // a newer view that doesn't open is passed for the older one that does
+    let newer = [&b"avenDB slot 1\n"[..], &9u64.to_be_bytes(), &[7u8; 80]].concat();
+    fs::write(g.join("slots/view-1"), newer).expect("a forged one");
+    let (node, _, _) = mac(dir.path()).await;
+    assert!(shows(&node, onboarding, ONBOARDING_TEXT).await);
+    assert_eq!(replays(&node, VIEW).await, (1, wholes), "the newest view that opens");
+    node.shutdown().await.expect("it stops");
+}
+
+async fn counted_on(node: &Node, what: &'static str) -> u64 {
+    node.read(move |lab, me| counted(lab, me, what)).await
 }
