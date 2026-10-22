@@ -389,3 +389,56 @@ fn every_new_format_starts_with_its_version_and_reads_back_one_way() {
     assert!(!avendb::sign::verify(key.id(), EditId(root.root.hash), &as_edit));
 }
 
+#[test]
+fn a_device_wraps_its_log_and_signs_one_root_at_unlock_then_adds_each_edit_it_signs() {
+    use avendb::cast::{document, handbook, world};
+    let mut w = world();
+    let h = handbook(&mut w);
+    let phone = w.phone_a;
+    for i in 0..3 {
+        let note = document("A note", &format!("Note {i}."), phone);
+        w.lab.create(phone, h.coop, h.coop, "note", &[], note).expect("a note");
+    }
+    w.lab.lock(phone);
+    assert!(w.lab.signer_log(phone).is_none(), "locked, it holds no log");
+    assert!(w.lab.unlock(phone));
+    // the edits it holds that it signed, in the order it holds them
+    let held = w.lab.log(phone);
+    let own: Vec<EditId> =
+        held.edits().iter().zip(held.ids()).filter(|(e, _)| e.sigs().any(|s| s == phone)).map(|(_, id)| *id).collect();
+    assert!(own.len() >= 3);
+    // wrapped as it stands at the unlock, under one root it signed
+    let log = w.lab.signer_log(phone).expect("wrapped at the unlock");
+    for (i, id) in own.iter().enumerate() {
+        assert_eq!(log.tree().index(*id), Some(i as u64));
+    }
+    let signed = log.signed().expect("one root over the wrapped log").clone();
+    let n = own.len() as u64;
+    assert_eq!((signed.root.length, signed.root.hash), (n, log.tree().root_at(n).unwrap()));
+    assert!(signed.verify() && signed.root.log == phone);
+    // then what it signs since goes after
+    let note = document("A note", "After the unlock.", phone);
+    w.lab.create(phone, h.coop, h.coop, "note", &[], note).expect("a note");
+    let log = w.lab.signer_log(phone).unwrap();
+    assert!(log.tree().len() > own.len() as u64);
+    // another device takes the root of the unlock as the newest of the phone's log
+    let mut roots = Roots::new();
+    assert!(matches!(roots.take(&signed, None), Taken::Newer));
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    // a debug build signs each batch at once: its newest root is shown to begin with the one of the unlock
+    let newer = log.signed().unwrap().clone();
+    assert!(newer.root.length > signed.root.length);
+    let prefix = log.prefix(signed.root.length).unwrap();
+    assert!(matches!(roots.take(&newer, Some(&prefix)), Taken::Newer));
+    // and each edit's path checks as its signature does
+    for i in 0..log.tree().len() {
+        let id = log.tree().edit(i).unwrap();
+        let Some(signed) = w.lab.signed_edit(phone, id) else { continue };
+        let at = signed.edit.sigs().position(|s| s == phone).unwrap();
+        let by_sig = avendb::sign::signs(&signed.edit, id, phone, &signed.sigs[at]);
+        assert!(by_sig, "edit {i}");
+        assert_eq!(roots.check(phone, id, &log.proof(id).unwrap()), by_sig, "edit {i}");
+    }
+}

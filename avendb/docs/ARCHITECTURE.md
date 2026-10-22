@@ -571,8 +571,10 @@ disagree, of other fork numbers, of one length with other hashes, or the shorter
 the hashes that rebuild both show (`Tree::prefix`, `batch::rebuild`), prove a fork (`batch::ForkProof`): the device
 signed two histories of its log. A device that holds one freezes that device, takes no path to its roots any more and
 says why (`Roots::why`); the proof travels, so its peers freeze it too. Every format starts with its version byte
-(`batch::FORMAT`). So far the core alone holds this: edits still travel and are kept with their own signatures, and
-the wire, the shelf and the page take the paths in a later step.
+(`batch::FORMAT`). So far the core and the Lab hold this: each device wraps its log and signs one root over it when it
+unlocks, and puts each edit it signs after in it (`Lab::signer_log`); a debug build signs each batch at once and
+holds each edit's path to the signature beside it. Edits still travel and are kept with their own signatures, and the
+wire, the shelf and the page take the paths in a later step.
 
 ## 5. Shares
 

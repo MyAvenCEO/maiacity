@@ -84,6 +84,7 @@ use rand_core::Rng as _;
 use serde_json::Value;
 use zeroize::Zeroizing;
 
+use crate::batch::{self, SignerLog};
 use crate::cast;
 use crate::doc::{Item, Version};
 use crate::encode::{self, box_info, share_context, share_select_info, write_context};
@@ -942,6 +943,11 @@ pub struct Lab {
     recovery: Option<Arc<RecoveryKey>>,
     /// The sessions its devices host (`host`): each session's signer, with the device that keeps its store.
     hosted: HashMap<SignerId, Hosted>,
+    /// Each unlocked device's batch-signed log (M3, `batch`): the edits it holds that it signed, in the order it holds
+    /// them, wrapped as they stand when it unlocks and signed under one root, then each edit it signs (`batched`).
+    /// Edits still travel and are kept with their own signatures: a debug build signs each batch at once and holds
+    /// each edit's path to the signature beside it.
+    batches: HashMap<SignerId, SignerLog>,
 }
 
 /// A session a device hosts (`Lab::host`): the device, and the keys the session's own key opens in that device's view,
@@ -987,6 +993,7 @@ impl Lab {
             lawless: false,
             recovery: None,
             hosted: HashMap::new(),
+            batches: HashMap::new(),
         };
         lab.keep_spares(SPARES.load(Ordering::Relaxed));
         lab
@@ -2012,9 +2019,39 @@ impl Lab {
     /// alone (`Key::Consent`), that consent, if the edit takes it (`standing`, `sign::standing`). `Locked` if neither
     /// is at hand.
     fn sign_held(&mut self, s: SignerId, id: EditId, standing: &[SignerId]) -> Result<Signature, Refusal> {
-        match self.keys.get_mut(&s).ok_or(Refusal::Locked)? {
-            Key::Consent(k) if standing.contains(&s) => Ok(k.consent.clone()),
-            key => key.sign(id).ok_or(Refusal::Locked),
+        let sig = match self.keys.get_mut(&s).ok_or(Refusal::Locked)? {
+            Key::Consent(k) if standing.contains(&s) => return Ok(k.consent.clone()),
+            key => key.sign(id).ok_or(Refusal::Locked)?,
+        };
+        self.batched(s, id, &sig);
+        Ok(sig)
+    }
+
+    /// Device `s`'s batch-signed log, wrapped as it stands where it holds none yet: the edits its store holds that it
+    /// signed, in the order it holds them (`SignerLog::wrap`). None for a signer that is no device here.
+    fn wrapped(&mut self, s: SignerId) -> Option<(&mut SignerLog, &DeviceKey)> {
+        let Some(Key::Device(key)) = self.keys.get(&s) else { return None };
+        if !self.batches.contains_key(&s) {
+            let own: Vec<EditId> = self.stores.get(&self.at(s)).map_or(vec![], |store| {
+                let held = store.log.edits().iter().zip(store.log.ids());
+                held.filter(|(e, _)| e.sigs().any(|x| x == s)).map(|(_, id)| *id).collect()
+            });
+            self.batches.insert(s, SignerLog::wrap(s, own));
+        }
+        Some((self.batches.get_mut(&s).expect("wrapped"), key))
+    }
+
+    /// Device `s` signed edit `id`, `sig` its signature: the edit goes at the end of the device's batch-signed log. A
+    /// debug build signs the batch at once, as a free device does (group commit), and holds the edit's path up to it to
+    /// the signature: each must check as the other does (V5), as the stored view is held to the whole replay.
+    fn batched(&mut self, s: SignerId, id: EditId, sig: &Signature) {
+        let Some((log, key)) = self.wrapped(s) else { return };
+        log.write(id);
+        if cfg!(debug_assertions) {
+            log.commit(key);
+            let shown = log.proof(id).is_some_and(|p| batch::Roots::new().check(s, id, &p));
+            let signed = sign::verify(s, id, sig);
+            debug_assert_eq!(shown, signed, "a path up a signed root checks as the signature beside it");
         }
     }
 
@@ -2073,6 +2110,8 @@ impl Lab {
     /// another device holds, or a spare. Its edits and their ciphertext stay, and it still receives and passes on
     /// edits.
     pub fn lock(&mut self, d: SignerId) {
+        // its log is wrapped again as it stands at its next unlock
+        self.batches.remove(&d);
         let own = self.keys.remove(&d).and_then(|k| k.seal_secret()).map(|s| s.id());
         let mut gone: BTreeSet<KeyId> = own.into_iter().collect();
         // and the device keys held beside its devices for the key move (`device_keys`)
@@ -2080,6 +2119,7 @@ impl Lab {
         let beside = self.keys.iter().filter(|(s, k)| matches!(k, Key::Device(_)) && !devices.contains(s));
         let beside: Vec<SignerId> = beside.map(|(s, _)| *s).collect();
         for s in beside {
+            self.batches.remove(&s);
             gone.extend(self.keys.remove(&s).and_then(|k| k.seal_secret()).map(|x| x.id()));
         }
         let store = self.stores.get_mut(&self.at(d)).unwrap_or_else(|| panic!("{d:?} is no device of the Lab"));
@@ -2127,6 +2167,10 @@ impl Lab {
         // while the device was locked doesn't foresee what it draws now
         self.rng.reseed(key.seal_secret().as_bytes());
         self.keys.insert(d, Key::Device(key));
+        // its log is wrapped as it stands, and it signs one root over it
+        if let Some((log, key)) = self.wrapped(d) {
+            log.commit(key);
+        }
         self.refresh(d, &[]);
     }
 
@@ -3888,6 +3932,12 @@ impl Lab {
         &self.held(d).log
     }
 
+    /// Device `d`'s batch-signed log while it is unlocked: wrapped when it unlocked, or at its first edit where it
+    /// never locked (`batched`).
+    pub fn signer_log(&self, d: SignerId) -> Option<&SignerLog> {
+        self.batches.get(&d)
+    }
+
     /// What device `d` makes of the edits it holds, as it last brought itself up to date: what `log(d).view()` says.
     pub fn state(&self, d: SignerId) -> &State {
         self.held(d).view()
@@ -4174,6 +4224,7 @@ impl Lab {
             lawless: false,
             recovery: self.recovery.clone(),
             hosted: HashMap::new(),
+            batches: self.batches.get(&d).map(|log| (d, log.clone())).into_iter().collect(),
         }
     }
 
