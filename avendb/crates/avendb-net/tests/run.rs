@@ -288,6 +288,20 @@ async fn a_node_brings_the_vaults_a_page_reads_its_code_from_first_and_tells_how
     assert!(after["pages"].as_u64() > Some(pages), "{after}");
     let caught = || async { run(&phone, json!({ "op": "synced" })).await.expect("synced")["behind"] == 0 };
     until("the phone is synced with its peer", caught).await;
+    // where it synced from and how, as the Performance page reads it: its one peer, the Mac, over a direct path on a
+    // local network, and the pages it took from it, each with the way it came
+    let net = run(&phone, json!({ "op": "network" })).await.expect("network");
+    let peers = net["peers"].as_array().expect("its peers");
+    assert_eq!(peers.len(), 1, "{net}");
+    assert_eq!(peers[0]["device"], json!(mac_a.to_hex()), "{net}");
+    assert_eq!(peers[0]["lacks"], 0, "{net}");
+    assert!(peers[0]["paths"].as_array().is_some_and(|p| p.iter().any(|x| x["selected"] == true)), "{net}");
+    let pulled = &peers[0]["pulled"];
+    assert!(pulled["pages"].as_u64() > Some(0) && pulled["bytes"].as_u64() > Some(0), "{net}");
+    assert!(pulled["new"].as_u64() > Some(0), "{net}");
+    let recent = net["recent"].as_array().expect("its newest pages");
+    assert!(!recent.is_empty() && recent.iter().all(|r| r["device"] == json!(mac_a.to_hex())), "{net}");
+    assert_eq!(net["me"]["endpoint"], json!(phone.addr().id.to_string()), "{net}");
     // a bring names 1 to 64 vaults, each by its id
     for bad in [json!({ "op": "bring", "vaults": [] }), json!({ "op": "bring", "vaults": ["coop"] })] {
         assert_eq!(run(&phone, bad).await.expect_err("refused")["refused"], "BadOp");

@@ -193,7 +193,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "undo" => &["entry", "line", "edit", "as"],
         "fork" => &["entry", "line", "into", "schema", "ops", "as"],
         "batch" | "may" => &["ops", "as"],
-        "world" | "log" | "jobs" | "synced" => &[],
+        "world" | "log" | "jobs" | "synced" | "network" => &[],
         "code" => &["vault", "type"],
         "posts" => &["limit", "after"],
         "bring" => &["vaults", "entries"],
@@ -226,7 +226,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
-const READS: [&str; 29] = [
+const READS: [&str; 30] = [
     "query",
     "objective_check",
     "get",
@@ -255,6 +255,7 @@ const READS: [&str; 29] = [
     "posts",
     "bring",
     "synced",
+    "network",
     "api_pass",
 ];
 
@@ -357,6 +358,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "jobs" => Err(bad("jobs tells what a node does in the background: a node runs it (Node::run)")),
         "bring" => Err(bad("bring asks a node's peers for vaults or entries: a node runs it (Node::run)")),
         "synced" => Err(bad("synced tells what a node's peers hold: a node runs it (Node::run)")),
+        "network" => Err(bad("network tells where a node syncs from and how: a node runs it (Node::run)")),
         _ if ASKS.contains(&name) => Err(bad(format!("{name} asks by dry runs: run it, don't read it"))),
         _ => Err(bad(format!("{name} changes what the device holds: run it, don't read it"))),
     });

@@ -34,6 +34,7 @@ export const READS = [
 	'code',
 	'bring',
 	'synced',
+	'network',
 	'api_pass'
 ];
 

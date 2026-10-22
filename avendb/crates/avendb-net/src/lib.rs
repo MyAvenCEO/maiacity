@@ -123,6 +123,7 @@ pub mod server;
 mod session;
 pub mod shelf;
 mod statements;
+mod traffic;
 mod tree;
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
@@ -707,6 +708,7 @@ impl Node {
             warm: AtomicBool::new(false),
             sent: Sent::default(),
             jobs: Jobs::default(),
+            traffic: traffic::Traffic::default(),
             keeping: Mutex::default(),
         });
         let router = Router::builder(endpoint)
@@ -1492,6 +1494,73 @@ impl Node {
         json!({ "peers": heard.len(), "logs": logs.len(), "behind": behind.len(), "pulling": pulling, "pages": pages })
     }
 
+    /// Where it syncs from and how (Samuel 2026-10-22: "the whole sync topology … what comes directly p2p and what via
+    /// relay"), as the `network` op tells it for the Performance page: its own endpoint, the relay it is homed on and
+    /// the addresses it is reached at directly; each peer it is connected to, its device, since when, who dialed whom,
+    /// each path of the connection (direct or through a relay, the one it sends on now, its round trip, the bytes it
+    /// carried each way and lost), how many logs that peer holds that this device lacks edits of (`differ`), and what
+    /// this device took from it page by page (`traffic::Pulled`: pages, edits, bytes, the time it waited for them and
+    /// took to take them, how fast, how much came direct and how much through a relay); the devices it took from that
+    /// it is not connected to now; and its newest pages. Kept in memory alone, since it started.
+    pub async fn network(&self) -> Value {
+        let s = &self.shared;
+        let me = s.endpoint.addr();
+        let relays: Vec<String> = me.addrs.iter().filter_map(|a| match a {
+            iroh::TransportAddr::Relay(url) => Some(url.to_string()),
+            _ => None,
+        }).collect();
+        let direct: Vec<String> = me.addrs.iter().filter_map(|a| match a {
+            iroh::TransportAddr::Ip(ip) => Some(ip.to_string()),
+            _ => None,
+        }).collect();
+        let live: Vec<Peer> = {
+            let peers = s.peers.lock().expect("peers");
+            peers.values().filter(|p| p.conn.close_reason().is_none()).cloned().collect()
+        };
+        let mut seen = BTreeSet::new();
+        let mut peers = Vec::new();
+        for p in &live {
+            seen.insert(p.device);
+            let told = s.held.lock().expect("held").get(&p.device).map(|h| h.logs.len());
+            let lacks = if told.is_some() { Some(s.differ(p.device).await.len()) } else { None };
+            let paths: Vec<Value> = p.conn.paths().iter().map(|path| {
+                let st = path.stats();
+                json!({
+                    "way": if path.is_relay() { "relay" } else if path.is_ip() { "direct" } else { "other" },
+                    "addr": addr_of_path(path.remote_addr()),
+                    "selected": path.is_selected(),
+                    "rtt_ms": st.rtt.as_secs_f64() * 1000.0,
+                    "rx": st.udp_rx.bytes,
+                    "tx": st.udp_tx.bytes,
+                    "lost": st.lost_bytes,
+                })
+            }).collect();
+            let st = p.conn.stats();
+            peers.push(json!({
+                "device": p.device.to_hex(),
+                "endpoint": p.endpoint.to_string(),
+                "since": p.since,
+                "dialed": matches!(p.conn.side(), iroh::endpoint::Side::Client),
+                "way": way_of(&p.conn),
+                "paths": paths,
+                "rx": st.udp_rx.bytes,
+                "tx": st.udp_tx.bytes,
+                "logs": told,
+                "lacks": lacks,
+                "pulled": s.traffic.of(&p.device).map(|t| t.to_json()),
+            }));
+        }
+        let gone: Vec<Value> = s.traffic.devices().into_iter().filter(|d| !seen.contains(d)).filter_map(|d| {
+            Some(json!({ "device": d.to_hex(), "pulled": s.traffic.of(&d)?.to_json() }))
+        }).collect();
+        json!({
+            "me": { "endpoint": me.id.to_string(), "relays": relays, "direct": direct },
+            "peers": peers,
+            "gone": gone,
+            "recent": s.traffic.recent(),
+        })
+    }
+
     /// The devices it is connected to now, as their hellos proved them, each with how many logs it holds edits in that
     /// this device lacks (`differ`), as `synced` counts them, or `None` until it told what it holds: what a removal of
     /// keys waits for, as it cuts what rests on them that its drafter doesn't hold (T16; the key move's retire step).
@@ -1661,12 +1730,34 @@ enum Scope {
     Vaults(BTreeSet<VaultId>),
 }
 
+/// The way connection `conn` sends now: `direct` over an IP path, `relay` through a relay, `` where none is selected.
+fn way_of(conn: &Connection) -> &'static str {
+    let paths = conn.paths();
+    match paths.iter().find(|p| p.is_selected()) {
+        Some(p) if p.is_ip() => "direct",
+        Some(p) if p.is_relay() => "relay",
+        Some(_) => "other",
+        None => "",
+    }
+}
+
+/// A path's address at the other end, in words: its IP address and port, or its relay's address.
+fn addr_of_path(a: &iroh::TransportAddr) -> String {
+    match a {
+        iroh::TransportAddr::Ip(ip) => ip.to_string(),
+        iroh::TransportAddr::Relay(url) => url.to_string(),
+        other => format!("{other:?}"),
+    }
+}
+
 /// A connection to a peer, dialed or accepted, with the device its hello proved.
 #[derive(Clone)]
 struct Peer {
     conn: Connection,
     device: SignerId,
     endpoint: EndpointId,
+    /// When its hellos proved it, in milliseconds since 1970.
+    since: u64,
 }
 
 /// What a node's tasks share.
@@ -1734,6 +1825,8 @@ struct Shared {
     sent: Sent,
     /// What it does in the background, as its person watches it (`Node::jobs`).
     jobs: Jobs,
+    /// What it took from each peer and how (`Node::network`).
+    traffic: traffic::Traffic,
     /// What it takes and keeps at most, and what it keeps for each person (`Node::limit`, `limits`).
     keeping: Mutex<limits::Keeping>,
 }
@@ -1929,7 +2022,7 @@ impl Shared {
     /// the node tells the peer all its holdings again, at once.
     fn connected(&self, conn: Connection, device: SignerId) -> Peer {
         let endpoint = conn.remote_id();
-        let peer = Peer { conn, device, endpoint };
+        let peer = Peer { conn, device, endpoint, since: jobs::now_ms() };
         if self.opts.relay.is_some() {
             self.lookup.add_endpoint_info(self.addr_of(endpoint));
         }
@@ -1993,8 +2086,15 @@ impl Shared {
                 }
             };
             let request = self.lab(request).await;
+            let asked = Instant::now();
             let reply = time::timeout(PAGE_WAIT, self.reply_to(&peer, kind, &request)).await;
-            let Reply { mut edits, blobs, more } = reply.context("no page in time")??;
+            let reply = reply.context("no page in time").and_then(|r| r);
+            if reply.is_err() {
+                self.traffic.failed(device);
+            }
+            let (Reply { mut edits, blobs, more }, bytes) = reply?;
+            let (wait, way, sent) = (asked.elapsed(), way_of(&peer.conn), edits.len() as u64);
+            let taking = Instant::now();
             self.sized(&mut edits);
             self.sent.requests.fetch_add(1, Ordering::Relaxed);
             // where the next page starts: a page that brings nothing past the last ends the asking
@@ -2008,6 +2108,16 @@ impl Shared {
             // its keys and items brought up to date every few pages and at the last, not at each (`CATCH_UP`)
             let now = !more || (pages + 1) % CATCH_UP == 0;
             let (got, whose) = self.lab(move |lab, me| lab.receive_whose_now(me, edits, keys, now)).await;
+            self.traffic.page(traffic::Page {
+                device,
+                at: jobs::now_ms(),
+                bytes,
+                edits: sent,
+                new: got as u64,
+                wait_ms: wait.as_millis() as u64,
+                take_ms: taking.elapsed().as_millis() as u64,
+                way,
+            });
             if now && (got > 0 || fetched || new > 0) {
                 self.changed.notify_one();
             }
@@ -2032,20 +2142,24 @@ impl Shared {
     /// The reply of the peer on `peer`'s connection to the message of kind `kind` with body `request`, packed, each
     /// ML-DSA-65 key its signatures carry once (K5, `session::PACKED`), where the peer's node takes that; else whole,
     /// as a node from before K5 answers, asked again without it, and from then on on that connection.
-    async fn reply_to(&self, peer: &Peer, kind: u8, request: &[u8]) -> Result<Reply> {
+    /// With how many bytes it came.
+    async fn reply_to(&self, peer: &Peer, kind: u8, request: &[u8]) -> Result<(Reply, u64)> {
         let (id, limit) = (peer.conn.stable_id(), session::REPLY_LIMIT);
         let packs = !self.unpacked.lock().expect("unpacked").contains(&id);
         if packs {
             let packed = session::exchange(&peer.conn, kind | session::PACKED, request, limit).await;
-            if let Ok(Ok(Packed(reply))) = packed.map(|bytes| Packed::from_wire(&bytes)) {
-                return Ok(reply);
+            if let Ok(bytes) = packed
+                && let Ok(Packed(reply)) = Packed::from_wire(&bytes)
+            {
+                return Ok((reply, bytes.len() as u64));
             }
         }
-        let reply = Reply::from_wire(&session::exchange(&peer.conn, kind, request, limit).await?)?;
+        let bytes = session::exchange(&peer.conn, kind, request, limit).await?;
+        let reply = Reply::from_wire(&bytes)?;
         if packs {
             self.unpacked.lock().expect("unpacked").insert(id);
         }
-        Ok(reply)
+        Ok((reply, bytes.len() as u64))
     }
 
     /// Asks `endpoint` for its contact card, and takes its vault logs. How many edits were new.
