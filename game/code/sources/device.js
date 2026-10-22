@@ -68,6 +68,7 @@ const SHARED = Symbol.for('maiacity.avendb.device');
 export function useDevice(d) {
 	device = d ?? null;
 	brought = new WeakMap();
+	asked = new WeakMap();
 	if (typeof window !== 'undefined') /** @type {any} */ (window)[SHARED] = device;
 	if (!device) return;
 	const opened = device;
@@ -150,11 +151,48 @@ function broughtBy(d) {
 	return of;
 }
 
-/** device `d`'s bring of vault `vault`, asked for once @param {any} d @param {string} vault */
+/** what a bring that asked nothing answers */
+const NONE = { ok: { new: 0, peers: 0, reached: false } };
+
+/**
+ * Device `d`'s bring of vault `vault`, asked for once: what changed of it since, for a device that holds what its peers
+ * hold (`caughtUp`) or can't say. A device still catching up asks nothing more: a bring of a whole vault pulls every log
+ * of it at once, page after page by place across all of them, so none comes whole until its last page, beside the
+ * device's own sync, which brings them a batch at a time, a page's entries first (Samuel's iPhone 2026-10-22, three
+ * pulls at 11% of Maia City's 2,416 logs). @param {any} d @param {string} vault
+ */
 function bringOf(d, vault) {
 	const of = broughtBy(d);
-	if (!of.has(vault)) of.set(vault, d.run({ op: 'bring', vaults: [vault] }));
+	if (!of.has(vault)) of.set(vault, caughtUp(d).then((up) => (up === false ? NONE : d.run({ op: 'bring', vaults: [vault] }))));
 	return of.get(vault);
+}
+
+/**
+ * Whether device `d` holds all that its live peers hold (avendb's `synced` op): true once one of them told it what it
+ * holds and it lacks none of it; false while it lacks some, has no peer to tell it yet, or doesn't answer within
+ * `answer` (a device busy taking pages); null for a device whose avenDB knows no `synced`, read as before it did.
+ * @param {any} [d] @param {number} [answer]
+ * @returns {Promise<boolean | null>}
+ */
+export async function caughtUp(d = deviceOf(), answer = ANSWER) {
+	if (!d) return null;
+	const got = await within(Promise.resolve().then(() => d.run({ op: 'synced' })), answer);
+	if (got === null) return false;
+	const ok = got?.ok;
+	if (!ok || typeof ok !== 'object' || Array.isArray(ok) || typeof ok.behind !== 'number') return null;
+	return ok.peers > 0 && ok.behind === 0;
+}
+
+/**
+ * The entries rows `theirs` (the feed's) hold that rows `mine` (a device's) don't hold as they do: none of the entry,
+ * or the entry at other heads. What a device still syncing lacks of what a page reads.
+ * @param {any[]} mine @param {any[]} theirs @returns {string[]}
+ */
+export function lacking(mine, theirs) {
+	const headsOf = (r) => (Array.isArray(r?.heads) ? r.heads : String(r?.heads ?? '').split(',')).filter(Boolean).sort().join(',');
+	const held = new Map((mine ?? []).map((r) => [r?.entry, headsOf(r)]));
+	const short = (theirs ?? []).filter((r) => typeof r?.entry === 'string' && held.get(r.entry) !== headsOf(r)).map((r) => r.entry);
+	return [...new Set(short)];
 }
 
 /** How many entries one `bring` names at most (avendb-net's `MOST_BROUGHT`). */
@@ -165,18 +203,29 @@ export const AT_ONCE = 64;
  * the device held none of vault `vault`'s code yet), and nothing else of the vault: `{ op: 'bring', entries }`,
  * `AT_ONCE` at a time, one after another. A new device asked for a whole vault takes all of it before any entry is whole
  * (Maia City's ~2,200 logs come a page at a time across all of them), so the entries a page reads come first, and the
- * next page reads them off the device; the rest of the vault comes in the background. Once per vault and device, as its
- * bring (`whenBrought` answers it): `{ ok: { new, peers, reached } }`, or null with no device.
+ * next page reads them off the device; the rest of the vault comes in the background. Each entry once a device, the first
+ * as the vault's bring (`whenBrought` answers it): `{ ok: { new, peers, reached } }`, or null with no device.
  * @param {any[]} rows @param {string} [vault]
  */
 export function bringRows(rows, vault = MAIA_CITY) {
 	const d = deviceOf();
 	if (!d) return Promise.resolve(null);
 	const of = broughtBy(d);
-	if (of.has(vault)) return of.get(vault);
-	const all = bringEntries((rows ?? []).map((r) => r?.entry), d);
-	of.set(vault, all);
+	const ids = (rows ?? []).map((r) => r?.entry).filter((e) => !askedOf(d).has(e));
+	if (!ids.length) return of.get(vault) ?? Promise.resolve(null);
+	for (const e of ids) askedOf(d).add(e);
+	const all = bringEntries(ids, d);
+	if (!of.has(vault)) of.set(vault, all);
 	return all;
+}
+
+/** the entries each device was asked to bring by the rows a page read off the feed (`bringRows`) @type {WeakMap<object, Set<string>>} */
+let asked = new WeakMap();
+/** @param {any} d */
+function askedOf(d) {
+	let of = asked.get(d);
+	if (!of) asked.set(d, (of = new Set()));
+	return of;
 }
 
 /**

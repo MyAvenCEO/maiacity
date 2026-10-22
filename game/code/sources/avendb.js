@@ -32,7 +32,7 @@ import { canonical, jsonFile } from '../files.js';
 import { checkCode } from '../check.js';
 import { ENTRIES as SEED } from '../../../code/index.js';
 import { CODE_FEED, MAIA_CITY, proofOf, provenRows } from './feed.js';
-import { bringRows, deviceRows } from './device.js';
+import { bringRows, caughtUp, deviceRows, lacking } from './device.js';
 import { KEPT_NEWEST, fresh } from '../fresh.js';
 import { isFrozen, latestOf } from '../../engines.js';
 
@@ -232,12 +232,17 @@ export async function loadCode(viewOf, { feed = CODE_FEED, vault = MAIA_CITY, ur
 		const f = fresh(rows, { proven: true, keep: newest });
 		return avendb.use(f.rows, viewOf, f.stale);
 	};
+	const proving = () => provenRows(url, { vault, kinds: KINDS, fetch: get, timeout, ...(verify ? { verify } : {}), ...(keep ? { keep } : {}) });
 	const local = device ? await deviceRows(KINDS, { vault }) : null;
-	if (local) return taken(local);
-	const got = await provenRows(url, { vault, kinds: KINDS, fetch: get, timeout, ...(verify ? { verify } : {}), ...(keep ? { keep } : {}) });
+	// a device still syncing (`caughtUp`) is held to the feed's proof: what it lacks of it, or holds older, read off the
+	// proof this time and brought first; where the feed can't be reached, what it holds (local first)
+	const checked = local && (await caughtUp()) === false ? await proving() : null;
+	const lacks = checked && !('error' in checked) ? lacking(local, checked.rows) : [];
+	if (local && !lacks.length) return taken(local);
+	const got = checked ?? (await proving());
 	if ('error' in got) return got;
-	// the device, holding none of them yet, brings these entries alone from its peers, for the next load
-	if (device) void bringRows(got.rows, vault);
+	// the device, holding none of them yet, or not all, brings these entries alone from its peers, for the next load
+	if (device) void bringRows(lacks.length ? got.rows.filter((r) => lacks.includes(r?.entry)) : got.rows, vault);
 	return taken(got.rows);
 }
 

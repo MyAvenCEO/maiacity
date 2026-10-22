@@ -44,7 +44,7 @@
 import { holds } from '../../../game/hash.js';
 import { idOf, slug } from '$lib/ids.js';
 import { CODE_FEED, KEPT_PROOFS, MAIA_CITY, NO_ANCHOR, fileOf, listedRows, listingOf, proofOf, provenRows, seedFeedOf } from '../../../game/code/sources/feed.js';
-import { READ, bringRows, deviceFile, deviceOf, deviceRows, whenBrought } from '../../../game/code/sources/device.js';
+import { READ, bringRows, caughtUp, deviceFile, deviceOf, deviceRows, lacking, whenBrought } from '../../../game/code/sources/device.js';
 import { KEPT_NEWEST, fresh } from '../../../game/code/fresh.js';
 import { buildOf } from './builds.js';
 import * as cache from './cache.js';
@@ -74,8 +74,9 @@ export const feedOf = () => (import.meta.env.DEV && import.meta.env.VITE_RECIPE_
 /** the most a recipe's file may be (the stand-in's, the largest, is 315 kB), as the avenDB app's Assets read one */
 export const MOST = 16_000_000;
 
-/** how long the index's rows may take, a proof fetched and checked, and a recipe's file once it is asked for (ms) */
-const TIMEOUT = { rows: 30000, file: 30000 };
+/** how long the index's rows may take, a proof fetched and checked, a recipe's file once it is asked for, and the
+ *  listing a device still syncing is held to (`lacksOf`) (ms) */
+const TIMEOUT = { rows: 30000, file: 30000, check: 4000 };
 
 /** the most entries one proof asks for: its address stays under 16 kB, each entry's id 65 characters of it */
 const MOST_IN_ONE = 200;
@@ -465,11 +466,23 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 	// the page's own avenDB first, its own copy of Maia City, which needs no proof: read at once, whatever its peers
 	// answer (local first), and read again once they brought it something new (`fresher`)
 	const local = device && !standIn ? await deviceRows(['recipe'], { vault }) : null;
+	/** the feed's listing, where it was asked already to see what a device still syncing lacks of it */
+	let listing = null;
+	/** what of it the device lacks, which it brings first: all the listing names where it holds none */
+	let lacks = [];
 	if (local) {
 		const read = recipesOf(local, readerOf(how, true), newest, true);
 		if (Object.keys(read.index.recipes).length) {
-			void fresher(vault, how, newest);
-			return ready(read, null, String(local[0]?.vault ?? vault), 'this device');
+			const short = await lacksOf(local, { vault, url, get, timeout });
+			if (!short.lacks.length) {
+				void fresher(vault, how, newest);
+				return ready(read, null, String(local[0]?.vault ?? vault), 'this device');
+			}
+			// a device still syncing that lacks recipes the feed lists (or holds them older): the feed this time, every
+			// recipe proven, and the device brings those first, for the next page (Samuel's iPhone 2026-10-22: "3 assets
+			// couldn't load", "biomes/food-forest is not in the Maia City vault" at 11% of its first sync)
+			listing = short.got;
+			lacks = short.lacks;
 		}
 	}
 	/**
@@ -503,7 +516,7 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 	const proving = standIn ? null : proverOf({ prove, keep: proofs, vault, pageOf });
 	proving?.recall(pageOf());
 	const listed = () => (standIn ? listedRows(url, { fetch: get, timeout }) : listedRows(url, { vault, fetch: get, timeout }));
-	let got = await listed();
+	let got = listing ?? (await listed());
 	// a feed that doesn't answer yet (a server restarting) is asked again, the page told it waits, for `patience`; the
 	// page's device may bring Maia City meanwhile, and is read then
 	const first = Date.now();
@@ -528,9 +541,24 @@ async function load({ feed = feedOf(), fetch: get = globalThis.fetch, timeout = 
 	const read = recipesOf(rows, readerOf(how), newest, false);
 	if (!Object.keys(read.index.recipes).length)
 		return failed(`the Maia City vault holds no asset recipes yet: ${url} listed ${rows.length ? `${rows.length} entries, none of them one` : 'none'}${read.refused.length ? ` (${read.refused.slice(0, 3).join('; ')})` : ''}`);
-	// the page's device, holding none of them yet, brings these recipes alone from its peers, for the next page
-	if (device && !standIn) void bringRows(rows, String(rows[0]?.vault ?? vault));
+	// the page's device, holding none of them yet, or not all, brings these recipes alone from its peers, for the next page
+	if (device && !standIn) void bringRows(lacks.length ? rows.filter((r) => lacks.includes(r?.entry)) : rows, String(rows[0]?.vault ?? vault));
 	return ready(read, proving, String(rows[0]?.vault ?? ''), url);
+}
+
+/**
+ * What the page's device lacks of the recipes the feed lists (`lacking`): nothing for a device that holds what its peers
+ * hold, or can't say (`caughtUp`), nor where the feed doesn't answer within `CHECK` (offline, a server restarting: what
+ * the device holds is read, local first); else the feed's listing (`got`) and the entries the device lacks of it, or
+ * holds at other heads (`lacks`).
+ * @param {any[]} held @param {{ vault: string, url: string, get: typeof globalThis.fetch, timeout: number }} o
+ * @returns {Promise<{ got: any, lacks: string[] }>}
+ */
+async function lacksOf(held, { vault, url, get, timeout }) {
+	if ((await caughtUp()) !== false) return { got: null, lacks: [] };
+	const got = await listedRows(url, { vault, fetch: get, timeout: Math.min(timeout, TIMEOUT.check) }).catch(() => ({ error: 'unread' }));
+	if ('error' in got) return { got: null, lacks: [] };
+	return { got, lacks: lacking(held, got.rows.filter(live)) };
 }
 
 /**

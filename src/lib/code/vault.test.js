@@ -12,7 +12,7 @@ import { examples } from '../../../game/code/examples.js';
 import { FLOOR, engineFor, enginesOf, latestOf } from '../sandbox/engines.js';
 
 // the page's own ops, not the manifests' walk a device opened on it makes first (game/code/sources/manifests.js)
-const ownOps = (o) => o.where?.type?.[0] !== 'manifest';
+const ownOps = (o) => o.where?.type?.[0] !== 'manifest' && o.op !== 'synced';
 
 // the view host's page side, outside a page
 mock.module('$app/paths', () => ({ base: '' }));
@@ -240,6 +240,28 @@ describe('loading', () => {
 			// and asked not to read the device, it reads the feed
 			useDevice({ run: async (op) => (op.op === 'bring' ? brought : { ok: rows }), read: async () => new Uint8Array() });
 			expect(await load(f, { device: false })).toEqual({ taken: ['views/coop-chart'], refused: [] });
+		} finally {
+			useDevice(null);
+		}
+	});
+	test('a device still syncing that lacks code the proof proves: the proof this time, and the device brings what it lacks first; caught up, itself', async () => {
+		const { useDevice } = await import('../../../game/code/sources/device.js');
+		const held = rowsOf([ENTRIES['views/view-holders']]);
+		const all = rowsOf([ENTRIES['views/view-holders'], ENTRIES['views/coop-chart']]);
+		const asked = [];
+		let synced = { peers: 1, logs: 2416, behind: 2000, pulling: 2, pages: 9 };
+		useDevice({ run: async (op) => (asked.push(op), op.op === 'synced' ? { ok: synced } : op.op === 'bring' ? { ok: { new: 1, peers: 1, reached: true } } : { ok: held }), read: async () => new Uint8Array() });
+		try {
+			const f = proof(all);
+			expect((await load(f)).taken.sort()).toEqual(['views/coop-chart', 'views/view-holders']);
+			expect(f.asked.length).toBe(1);
+			await new Promise((r) => setTimeout(r, 0));
+			const coop = [all[1].entry];
+			expect(asked.filter((o) => o.op === 'bring')).toEqual([{ op: 'bring', entries: coop }]);
+			synced = { ...synced, behind: 0, pulling: 0 };
+			const g = proof(all);
+			expect(await load(g)).toEqual({ taken: ['views/view-holders'], refused: [] });
+			expect(g.asked).toEqual([]);
 		} finally {
 			useDevice(null);
 		}
