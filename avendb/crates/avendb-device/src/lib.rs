@@ -401,6 +401,13 @@ impl Service {
                 let held = (a.count(0)?, a.count(1)?);
                 tokio::time::timeout(CHANGED, d.changed(held)).await.map_or(Value::Null, Value::from)
             }
+            "stirred" => {
+                let since = a.get(0).as_u64().context("argument 1 is how many times it changed")?;
+                match tokio::time::timeout(CHANGED, d.stirred(since)).await {
+                    Ok(stirred) => stirred.map_or(json!(-1), Value::from),
+                    Err(_) => Value::Null,
+                }
+            }
             "run" => {
                 let (mut answer, bytes) = self.run(&d, a.get(0).clone()).await?;
                 if let (Some(bytes), Some(out)) = (bytes, answer.as_object_mut()) {

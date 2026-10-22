@@ -906,6 +906,18 @@ impl Device {
         or(changed, async move { closed.wait_for(|&closed| closed).await.is_err() }).await
     }
 
+    /// Waits until what its node shows changed since the page last saw it at `since` (`Node::stirs`): its jobs, the
+    /// pages it took, its peers, what it holds. How many times it changed by then, or None once it closed.
+    pub async fn stirred(&self, since: u64) -> Option<u64> {
+        let (mut stirs, mut closed) = (self.node.stirs(), self.closed.subscribe());
+        let stirred = async move { stirs.wait_for(|&n| n != since).await.ok().map(|n| *n) };
+        or(stirred, async move {
+            let _ = closed.wait_for(|&closed| closed).await;
+            None
+        })
+        .await
+    }
+
     /// Closes its connections and its endpoint, once its shelf holds what it holds, if it can
     /// (`avendb_net::Node::shutdown`).
     pub async fn close(&self) -> Result<()> {
@@ -1540,6 +1552,14 @@ impl PageDevice {
     pub fn changed(&self, edits: u32, keys: u32) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move { Ok(device.changed((edits as usize, keys as usize)).await.into()) })
+    }
+
+    /// Waits until what the device's node shows changed since the page saw it at `since` (`stirred`): a promise of how
+    /// many times it changed by then, or of -1 once the device closed. A page reads its sync, jobs and network again
+    /// then, never on a timer.
+    pub fn stirred(&self, since: f64) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move { Ok(device.stirred(since as u64).await.map_or(-1.0, |n| n as f64).into()) })
     }
 
     /// Closes its connections and its endpoint, once its shelf holds what it holds, if it can; then lets go of the

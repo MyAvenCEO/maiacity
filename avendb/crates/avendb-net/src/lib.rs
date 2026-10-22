@@ -1415,6 +1415,12 @@ impl Node {
         self.shared.size.subscribe()
     }
 
+    /// How many times what the node shows changed, as it changes (`Jobs::stir`): its jobs, the pages it took, its
+    /// peers and what they hold, what its device holds. A page waits on it to read again, never on a timer.
+    pub fn stirs(&self) -> watch::Receiver<u64> {
+        self.shared.jobs.stirs()
+    }
+
     /// The device at endpoint `peer` as its hello proved it, once they are connected.
     pub fn proven(&self, peer: EndpointId) -> Option<SignerId> {
         self.shared.peers.lock().expect("peers").get(&peer).map(|p| p.device)
@@ -1941,6 +1947,9 @@ impl Shared {
                 let grew = shared.size.send_if_modified(|size| *size != now && { *size = now; true });
                 // what it worked out, as a replay or a key it opened, wakes the saver too, once as it comes to
                 let warm = lab.warm_due(shared.me);
+                if grew {
+                    shared.jobs.stir();
+                }
                 if grew || (warm && !shared.warm.swap(true, Ordering::Relaxed)) {
                     shared.edits.iter().for_each(|edits| edits.due.notify_one());
                 }
@@ -2037,6 +2046,7 @@ impl Shared {
         self.told.lock().expect("told").remove(&device);
         self.unreached.lock().expect("unreached").reached(&device);
         self.changed.notify_one();
+        self.jobs.stir();
         peer
     }
 
@@ -2159,6 +2169,7 @@ impl Shared {
                 ms: since.elapsed().as_millis() as u64,
                 way,
             });
+            self.jobs.stir();
             since = Instant::now();
             new += got;
             pages += 1;
@@ -2441,6 +2452,8 @@ impl Shared {
         if holdings.logs.len() > MOST || holdings.files.len() > MOST {
             held.remove(&device);
         }
+        drop(held);
+        self.jobs.stir();
     }
 
     /// The connection of `peer` closed: what its device told the node it holds is kept, unless the node's device
@@ -2452,6 +2465,7 @@ impl Shared {
         if !known && self.live(peer.endpoint).is_none() {
             self.held.lock().expect("held").remove(&peer.device);
         }
+        self.jobs.stir();
     }
 
     /// The logs where `device` holds an edit this node's device lacks, by what it told (`Logs::lacks`). Of the logs the

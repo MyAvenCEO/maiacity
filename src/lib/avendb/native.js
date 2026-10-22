@@ -134,6 +134,13 @@ export class NativeDevice {
 		return false;
 	}
 
+	/** How many times what the app's node shows changed, once it moved from `since` (`./stirs.js`): -1 once it closed,
+	 *  null if nothing changed within a minute (the page asks again). An app from before the op refuses it.
+	 *  @param {number} since */
+	stirred(since) {
+		return this.closed ? Promise.resolve(-1) : call('stirred', since);
+	}
+
 	/**
 	 * Op `op`, any read or change of the database (avendb/docs/ARCHITECTURE.md §8): its answer, `{ ok }` or
 	 * `{ refused, why }`; the passkey's ceremonies, where its vault's owners approve it, run in the app's sheet, so

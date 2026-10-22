@@ -23,7 +23,7 @@ const CALLS = {
 	pkg: ['storeMeta', 'qrSvg', 'prfSalt', 'deviceSalt', 'provenCode'],
 	Device: ['found', 'link', 'open'],
 	store: ['hold', 'release', 'aside'],
-	device: ['keep', 'rename', 'moving', 'move_keys', 'sign_checkpoint', 'behind', 'vault', 'claim_invite', 'run', 'size', 'changed', 'close', 'free']
+	device: ['keep', 'rename', 'moving', 'move_keys', 'sign_checkpoint', 'behind', 'vault', 'claim_invite', 'run', 'size', 'changed', 'stirred', 'close', 'free']
 };
 
 /** The WebAssembly, started once, by the first call. */

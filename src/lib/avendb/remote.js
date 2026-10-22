@@ -209,6 +209,10 @@ export class Device {
 		return call(this.#n, 'changed', [edits, keys]);
 	}
 
+	stirred(since) {
+		return call(this.#n, 'stirred', [since]);
+	}
+
 	close() {
 		return call(this.#n, 'close');
 	}
