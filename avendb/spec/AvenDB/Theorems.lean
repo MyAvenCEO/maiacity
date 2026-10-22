@@ -6,6 +6,7 @@ import AvenDB.KeyLemmas
 import AvenDB.SyncLemmas
 import AvenDB.RuleLemmas
 import AvenDB.StoredView
+import AvenDB.TrustRuns
 import AvenDB.Schemas
 import AvenDB.Gate
 
@@ -15,8 +16,8 @@ import AvenDB.Gate
 What must always hold, stated over the executable model. T9 (lenses) and T10 (proposals) are proven in their own files.
 The proofs are in `Lemmas.lean` (vaults and writes), `CapLemmas.lean` (shares, audiences, keep shares, removals and
 replay), `RuleLemmas.lean` (shares that name ops), `Schemas.lean` (writes that fit their schemas), `RelayLemmas.lean`
-(blind relays), `KeyLemmas.lean` (keys), `SyncLemmas.lean` (convergence, sync and holdings) and `StoredView.lean`
-(stepping on a stored view, V1); the predicates the statements use are in `Props.lean`, and the model of holdings and
+(blind relays), `KeyLemmas.lean` (keys), `SyncLemmas.lean` (convergence, sync and holdings), `StoredView.lean`
+(stepping on a stored view, V1) and `TrustRuns.lean` (removals tried on the trust records, V2); the predicates the statements use are in `Props.lean`, and the model of holdings and
 connections in `Logs.lean`.
 
 The assumptions are part of the model rather than axioms: an edit's signers are the keys that signed it (signatures
@@ -684,6 +685,14 @@ theorem V1_view_steps_on (held new : List Edit) (hw : ∀ n ∈ new, n.action.is
     view (held ++ new) = (stepsOn (view held) (order new)).1 ∧
       standing (held ++ new) = standing held ++ (stepsOn (view held) (order new)).2 :=
   Stored.V1_view_steps_on held new hw hd hp hids
+
+/-- V2 (removals read the trust records alone): trying each revocation and each root handed on by a replay of the
+    edits that say who may do what alone (`runTrust`), and each mark that takes an entry to another audience as
+    `resolve` does, chooses the removals `resolve` chooses, so the view and the edits that stand are the same. Assumes
+    ids don't collide. -/
+theorem V2_removals_read_trust (edits : List Edit) (hids : ((order edits).map Edit.id).Nodup) :
+    resolveTrust (order edits) = resolve (order edits) :=
+  Trusted.resolveTrust_eq (order edits) hids
 
 /-- T12 (sync shares only what shares allow, and what is public only with an interest): every edit a peer sends a
     device that follows the vaults `fl` is one it holds, and of an entry, an audience or a share that device may receive

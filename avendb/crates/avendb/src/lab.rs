@@ -97,7 +97,7 @@ use crate::merge;
 use crate::ops::Loc;
 use crate::perf::Perf;
 use crate::policy::{
-    acting, covered, mk_audience, replay, replay_none, replay_on, replay_on_why, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
+    acting, covered, mk_audience, replay, replay_on, replay_on_why, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
     Meaning, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share, Sharing, State, Vault, Who, Why,
     Wrap, Write,
 };
@@ -273,8 +273,7 @@ pub struct Drafting<'a> {
     /// The device's log, with the edits drafted so far.
     log: Log,
     /// The replay of `log`'s edits: the device's own until a draft joins them, then stepped on with each
-    /// (`policy::replay_on`), the choice of its resolve taken where it holds (`Memo`). No draft replays the whole log
-    /// again: a key move's checkpoint over a big vault drafted a whole replay for each edit and each look, every removal
+    /// (`policy::replay_on`). No draft replays the whole log again: a key move's checkpoint over a big vault drafted a whole replay for each edit and each look, every removal
     /// tried each time (2026-10-22, about 12 s each on Samuel's Mac).
     replay: Cow<'a, Replay>,
     drafts: Vec<Unsigned>,
@@ -288,7 +287,7 @@ impl Drafting<'_> {
         let edit = self.log.check_on(&self.replay, true, author, cosigners, action)?;
         let (id, held) = (edit.id(), self.log.ids().len());
         self.log.receive([edit.clone()]);
-        let was = std::mem::replace(&mut self.replay, Cow::Owned(replay_none(None))).into_owned();
+        let was = std::mem::replace(&mut self.replay, Cow::Owned(replay(&[]))).into_owned();
         self.replay = Cow::Owned(replay_on(was, self.log.edits(), held));
         debug_assert!(*self.replay == self.log.replay(), "a draft stepped on differs from the replay");
         self.drafts.push(Unsigned { edit, blobs, held, batch: vec![], pass: None });
@@ -441,7 +440,7 @@ fn trust(store: &mut Store) -> bool {
         store.bodies.remove(id);
         store.spoilt.remove(id);
     }
-    store.replay = replay_none(store.replay.memo.take());
+    store.replay = replay(&[]);
     store.replayed = 0;
     store.latest = OnceLock::new();
     store.digests = None;
@@ -1534,7 +1533,7 @@ impl Lab {
         if watch.is_empty() {
             return vec![];
         }
-        let acts = acting(log.edits(), &watch, drafting.replay.memo.as_ref());
+        let acts = acting(log.edits(), &watch);
         let mut out: Vec<(VaultId, Vec<EditId>)> = vaults.iter().map(|&v| (v, vec![])).collect();
         for id in log.ids().iter().filter(|id| watch.contains_key(id)) {
             if let Some((_, covers)) = out.iter_mut().find(|(v, _)| acts.contains(&(*id, *v))) {
@@ -2435,7 +2434,7 @@ impl Lab {
         let store = self.held(on);
         let replay = match store.replayed == store.log.edits().len() {
             true => Cow::Borrowed(&store.replay),
-            false => Cow::Owned(store.log.replay_memo(store.replay.memo.as_ref())),
+            false => Cow::Owned(store.log.replay()),
         };
         Drafting { lab: self, log: store.log.clone(), replay, drafts: vec![] }
     }
@@ -2770,12 +2769,7 @@ impl Lab {
             let fresh = store.log.edits().get(store.replayed..).unwrap_or_default();
             store.reshow |= store.replayed == 0 || fresh.iter().any(Edit::is_removal);
             let was = std::mem::replace(&mut store.replay, replay(&[]));
-            let memo = was.memo.clone().filter(|m| m.upto > 0);
             let (replayed, why) = replay_on_why(was, store.log.edits(), store.replayed);
-            // a replay of every edit whose resolve chose as before took that choice, and tried no removal again
-            if matches!(why, Why::Whole(_)) && memo.is_some() && replayed.memo == memo {
-                store.perf.count("replay: removals as chosen before", 1);
-            }
             store.replay = replayed;
             store.wholes += matches!(why, Why::Whole(_)) as u64;
             store.perf.count(why_counted(why), 1);

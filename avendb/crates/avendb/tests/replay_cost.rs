@@ -3,7 +3,7 @@
 
 use avendb::cast::{document, human_on};
 use avendb::lab::Lab;
-use avendb::policy::{replay, replay_memo, Action, Revoking};
+use avendb::policy::{replay, Action, Revoking};
 use std::time::Instant;
 
 #[test]
@@ -30,10 +30,4 @@ fn whole_replay_with_removals() {
     let t = Instant::now();
     let whole = replay(&edits);
     eprintln!("PROBE edits={} removals={removals} stood={} replay_ms={:.0}", edits.len(), whole.stood.iter().filter(|s| **s).count(), t.elapsed().as_secs_f64() * 1e3);
-    let t = Instant::now();
-    let again = replay_memo(&edits, whole.memo.as_ref());
-    eprintln!("PROBE with its memo: replay_ms={:.0}", t.elapsed().as_secs_f64() * 1e3);
-    assert!(again == whole, "the same replay");
-    let none = replay(&[]);
-    assert!(replay_memo(&edits, none.memo.as_ref()) == whole);
 }
