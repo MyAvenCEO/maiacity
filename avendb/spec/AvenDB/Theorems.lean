@@ -7,6 +7,9 @@ import AvenDB.SyncLemmas
 import AvenDB.RuleLemmas
 import AvenDB.StoredView
 import AvenDB.TrustRuns
+import AvenDB.MoveSteps
+import AvenDB.TailRuns
+import AvenDB.RangeSync
 import AvenDB.Schemas
 import AvenDB.Gate
 
@@ -17,7 +20,8 @@ What must always hold, stated over the executable model. T9 (lenses) and T10 (pr
 The proofs are in `Lemmas.lean` (vaults and writes), `CapLemmas.lean` (shares, audiences, keep shares, removals and
 replay), `RuleLemmas.lean` (shares that name ops), `Schemas.lean` (writes that fit their schemas), `RelayLemmas.lean`
 (blind relays), `KeyLemmas.lean` (keys), `SyncLemmas.lean` (convergence, sync and holdings), `StoredView.lean`
-(stepping on a stored view, V1) and `TrustRuns.lean` (removals tried on the trust records, V2); the predicates the statements use are in `Props.lean`, and the model of holdings and
+(stepping on a stored view, V1), `TrustRuns.lean` (removals tried on the trust records, V2) and `MoveSteps.lean` (a move
+stepped on a stored view, V3) and `TailRuns.lean` (a late edit replays the last edits, V4); the predicates the statements use are in `Props.lean`, and the model of holdings and
 connections in `Logs.lean`.
 
 The assumptions are part of the model rather than axioms: an edit's signers are the keys that signed it (signatures
@@ -693,6 +697,54 @@ theorem V1_view_steps_on (held new : List Edit) (hw : ∀ n ∈ new, n.action.is
 theorem V2_removals_read_trust (edits : List Edit) (hids : ((order edits).map Edit.id).Nodup) :
     resolveTrust (order edits) = resolve (order edits) :=
   Trusted.resolveTrust_eq (order edits) hids
+
+/-- V3 (a move steps on a stored view): a peer that kept what it knew of the edits `held` steps a new mark that takes an
+    entry to another audience on it, as it steps new writes (V1), and knows what replaying every edit would tell it, with
+    the same edits standing, when the move is deeper than every edit held, no edit held builds on it, and it keeps every
+    write of its entry that stands. Assumes ids don't collide. -/
+theorem V3_move_steps_on (held : List Edit) (x : Edit) {v : VaultId} {e : EntryId} {to : Audience}
+    {wants : Option (List ShareId)} {keep : List EditId} {via : List VaultId}
+    (hx : x.action = .mark v e (some to) wants keep via)
+    (hd : ∀ y ∈ held, y.depth < x.depth) (hp : ∀ y ∈ held, x.id ∉ y.parents)
+    (hids : ((held ++ [x]).map Edit.id).Nodup)
+    (hk : ∀ w ∈ standing held, Moves.writesEntry w e = true → keep.contains w.id = true) :
+    view (held ++ [x]) = (stepsOn (view held) (order [x])).1 ∧
+      standing (held ++ [x]) = standing held ++ (stepsOn (view held) (order [x])).2 :=
+  Moves.V3_move_steps_on held x hx hd hp hids hk
+
+/-- V4 (a late edit replays the last edits): a peer that kept the replay of the edits `held`, `p ++ s` in order, at a
+    place after `p`, and receives edits `fresh` that sort after it, `p ++ s'` in order with the same removals after the
+    place, all of them moves that stood, knows what replaying every edit would tell it by replaying only `s'` from the
+    state it kept there with the removals it chose, the edits before the place standing as they stood: where the
+    removals rank as before and take away what they took, every move after the place stands again, and the moves after
+    the place keep no edit out alone. Assumes ids don't collide. -/
+theorem V4_tail_replays (held fresh p s s' : List Edit)
+    (ho : order held = p ++ s) (ho' : order (held ++ fresh) = p ++ s')
+    (hids : ((p ++ s).map Edit.id).Nodup) (hids' : ((p ++ s').map Edit.id).Nodup)
+    (hrems : s'.filter Edit.isRemoval = s.filter Edit.isRemoval)
+    (hmoves : ∀ x ∈ s, x.isRemoval = true → x.action.isTrust = false)
+    (hchosen : ∀ x ∈ s, x.isRemoval = true → x ∈ resolve (p ++ s))
+    (hcands : Tails.cands (p ++ s') = Tails.cands (p ++ s))
+    (hrm : ∀ r ∈ p ++ s, r.isRemoval = true → removes (p ++ s') r = removes (p ++ s) r)
+    (hstands : ∀ x ∈ s, x.isRemoval = true → (Tails.tailRun p s s').2.any (·.id == x.id) = true)
+    (hinertP : runFrom (resolve (p ++ s)) (Tails.stripTail (p ++ s) (resolve (p ++ s)) p s) {} p.zipIdx =
+      Tails.kept p s)
+    (hinertT : runFrom (resolve (p ++ s)) (Tails.strip (Tails.cutsAt (p ++ s') (resolve (p ++ s)) s' p.length))
+      (Tails.kept p s).1 (s'.zipIdx p.length) = Tails.tailRun p s s') :
+    view (held ++ fresh) = (Tails.tailRun p s s').1 ∧
+      standing (held ++ fresh) = (Tails.kept p s).2 ++ (Tails.tailRun p s s').2 ∧
+      standing held = (Tails.kept p s).2 ++ (Tails.tailRun p s s).2 :=
+  Tails.V4_tail_replays held fresh p s s' ho ho' hids hids' hrems hmoves hchosen hcands hrm hstands hinertP hinertT
+
+/-- R1 (range sync): two devices that finish a round over a range of logs, comparing one fingerprint per range and
+    sending what each holds of the ranges that differ, hold the same head of every log in it, the later of the two they
+    held, and the round changes nothing outside the range. Assumes the fingerprint has no collision. -/
+theorem R1_range_round {K F : Type} {fp : Range.Held K Range.Head → (K → Bool) → F} (hfp : Range.Sound fp)
+    (a b : Range.Held K Range.Head) (t : Range.Round K) (r : K → Bool) (hfin : Range.finished fp a b t r) :
+    (∀ k, r k = true → Range.takeIn Range.later t r a b k = Range.takeIn Range.later t r b a k ∧
+      Range.takeIn Range.later t r a b k = Range.later (a k) (b k)) ∧
+    (∀ k, r k = false → Range.takeIn Range.later t r a b k = a k ∧ Range.takeIn Range.later t r b a k = b k) :=
+  Range.round_agrees hfp Range.later_join a b t r hfin
 
 /-- T12 (sync shares only what shares allow, and what is public only with an interest): every edit a peer sends a
     device that follows the vaults `fl` is one it holds, and of an entry, an audience or a share that device may receive

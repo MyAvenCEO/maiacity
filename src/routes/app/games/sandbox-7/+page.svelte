@@ -1,21 +1,16 @@
 <!--
-	avenCITY Sandbox 6 — one village at its real size ($lib/sandbox-6): the Tower180 hex ringed by its Dome120 factories,
-	and six living hexes round it of Dome40 and Dome80 homes (each a straight block across the north), Dome120 food forests and utilities; every
-	dimension, tonne, price and hectare on toggleable panels, for the village, the tower hex or a living hex.
+	avenCITY Sandbox 7 — the physical world lab ($lib/sandbox-7): buildings assembled from their physical parts, part by
+	part and stage by stage, with Rapier rigid-body physics in a worker, finite fixings, temporary stands, wind and damage.
 -->
 <script>
-	import { loadCode } from '../../../../../game/code/index.js';
-
-	// the hex's numbers are a config entry of the Maia City COOP (configs/sandbox-6/specs): loaded before the hex's
-	// modules are, as they read them as they load
-	const hex = loadCode().then(() => import('$lib/sandbox-6/HexPlan.svelte'));
+	const lab = import('$lib/sandbox-7/Lab.svelte');
 </script>
 
 <svelte:head>
-	<title>avenCITY Sandbox 6 · One village · maiaCITY</title>
-	<meta name="description" content="A maiaCITY village of seven hexes at its real size: the domes, the tower, their materials in tonnes, real prices and the land in hectares." />
+	<title>avenCITY Sandbox 7 · Physical world lab · maiaCITY</title>
+	<meta name="description" content="Buildings assembled from their physical parts, part by part, with rigid-body physics, finite fixings, wind and damage." />
 </svelte:head>
 
-{#await hex then { default: HexPlan }}
-	<HexPlan />
+{#await lab then { default: Lab }}
+	<Lab />
 {/await}
