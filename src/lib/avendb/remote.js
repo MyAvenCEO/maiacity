@@ -181,6 +181,10 @@ export class Device {
 		return call(this.#n, 'move_keys', [ceremony, steps]);
 	}
 
+	sign_checkpoint(ceremony) {
+		return call(this.#n, 'sign_checkpoint', [ceremony]);
+	}
+
 	behind() {
 		return call(this.#n, 'behind');
 	}
