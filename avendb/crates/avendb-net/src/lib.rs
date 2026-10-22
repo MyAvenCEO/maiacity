@@ -305,10 +305,11 @@ pub struct Options {
 /// with its signatures, so a big reply never waits whole in either end's memory, nor holds up the connection.
 pub const PAGE: usize = 4 << 20;
 
-/// Every how many pages of a pull its device brings its keys and items up to date (`Lab::receive_whose_now`), and at
-/// its last: each time replays the whole log for a device catching up from far behind, whose edits sort before what
-/// its replay last stepped over.
-const CATCH_UP: usize = 8;
+/// How much longer than its last bringing up to date took a pull waits before it brings its device's keys and items up
+/// to date again (`Shared::catch_up_paced`): each time replays the whole log for a device catching up from far behind,
+/// whose edits sort before what its replay last stepped over. Samuel's iPhone 2026-10-22: each asking of 256 logs ended
+/// in one, 5-10 s each, and its pages waited behind them; paced so, at most a quarter of a pull's time goes to them.
+const CATCH_UP_PACE: u32 = 3;
 
 impl Options {
     /// Nodes on one machine, as in the tests: loopback, no relay, and no lookup but the addresses a node is told.
@@ -691,6 +692,7 @@ impl Node {
             blob_peers: Mutex::default(),
             follows: Mutex::default(),
             unpacked: Mutex::default(),
+            paced: Mutex::default(),
             pieces: Mutex::default(),
             pool,
             changed: Notify::new(),
@@ -1813,6 +1815,8 @@ struct Shared {
     /// The sync connections whose node refused a request for a packed reply (K5, `session::PACKED`), a node from before
     /// it, by the connection (`Connection::stable_id`): it asks those for whole replies.
     unpacked: Mutex<HashSet<usize>>,
+    /// The soonest a pull brings its device up to date again, unless it must (`Shared::catch_up_paced`).
+    paced: Mutex<Option<Instant>>,
     /// The pieces of the files whose HashSeq it holds, each with the files it is a piece of: what the gate hands out
     /// as those files.
     pieces: Mutex<HashMap<iroh_blobs::Hash, BTreeSet<avendb::sealed::FileRoot>>>,
@@ -2048,11 +2052,11 @@ impl Shared {
     async fn asking(self: &Arc<Self>, endpoint: EndpointId, scope: Scope) -> Result<usize> {
         let peer = self.connection(endpoint).await?;
         let mut job = self.jobs.begin("pull", peer.device.to_hex(), String::new(), 0, "edits");
+        // an asking of some logs among more to come (`ask_differing`) leaves the last bringing up to date to its caller
+        let must = !matches!(scope, Scope::Logs(_));
         let asked = self.pages(endpoint, peer, scope, &mut job).await;
         // what its pages brought, brought up to date once more, however the asking ended
-        if self.lab(|lab, me| lab.catch_up(me)).await {
-            self.changed.notify_one();
-        }
+        self.catch_up_paced(must).await;
         if matches!(asked, Ok(0)) { job.forget() } else { job.ended(&asked) }
         asked
     }
@@ -2123,15 +2127,17 @@ impl Shared {
                 Some(last) if more => Some(last),
                 _ => None,
             };
-            // its keys and items brought up to date every few pages and at the last, not at each (`CATCH_UP`)
-            let now = next.is_none() || (pages + 1) % CATCH_UP == 0;
             // the McEliece keys its edits name come after the last page, not with each: a device needs one only to seal
             // to its signer, each is a megabyte, and a page of a few edits waited ~10 s on them through a relay
             // (2026-10-22, an iPhone's first sync), while what its edits say could be used already
             keys.extend(blobs);
             let take = async {
-                let (got, whose) = self.lab(move |lab, me| lab.receive_whose_now(me, edits, Vec::new(), now)).await;
-                (got, whose, false, taking.elapsed())
+                let (got, whose) = self.lab(move |lab, me| lab.receive_whose_now(me, edits, Vec::new(), false)).await;
+                // its keys and items brought up to date now and then, not at each page (`CATCH_UP_PACE`)
+                if next.is_some() {
+                    self.catch_up_paced(false).await;
+                }
+                (got, whose, taking.elapsed())
             };
             // the next page asked for while this one is taken (checked and kept), so the peer, the network and this
             // device work at once rather than one after the other
@@ -2141,7 +2147,7 @@ impl Shared {
                     None => None,
                 }
             };
-            let ((got, whose, fetched, took), ahead) = future::zip(take, ahead).await;
+            let ((got, whose, took), ahead) = future::zip(take, ahead).await;
             self.traffic.page(traffic::Page {
                 device,
                 at: jobs::now_ms(),
@@ -2154,9 +2160,6 @@ impl Shared {
                 way,
             });
             since = Instant::now();
-            if now && (got > 0 || fetched || new > 0) {
-                self.changed.notify_one();
-            }
             new += got;
             pages += 1;
             for (v, e) in whose {
@@ -2499,7 +2502,7 @@ impl Shared {
         let peer = self.connection(endpoint).await?;
         let mut left = self.differ(peer.device).await;
         let mut new = 0;
-        loop {
+        let asked = loop {
             let logs = {
                 let mut wanted = self.wanted.lock().expect("wanted");
                 let logs = next_logs(&mut left, &wanted, LOGS_AT_ONCE);
@@ -2507,10 +2510,31 @@ impl Shared {
                 logs
             };
             if logs.is_empty() {
-                return Ok(new);
+                break Ok(new);
             }
-            new += self.asking(endpoint, Scope::Logs(logs)).await?;
+            match self.asking(endpoint, Scope::Logs(logs)).await {
+                Ok(got) => new += got,
+                Err(e) => break Err(e),
+            }
+        };
+        // what every asking brought, brought up to date at last, however it ended
+        self.catch_up_paced(true).await;
+        asked
+    }
+
+    /// Brings its device's keys and items up to date with the edits it took since (`Lab::catch_up`), if it `must`, or
+    /// else once it waited `CATCH_UP_PACE` times as long as the last one took since it ended. True if it did.
+    async fn catch_up_paced(self: &Arc<Self>, must: bool) -> bool {
+        if !must && self.paced.lock().expect("paced").is_some_and(|soonest| Instant::now() < soonest) {
+            return false;
         }
+        let started = Instant::now();
+        let caught = self.lab(|lab, me| lab.catch_up(me)).await;
+        if caught {
+            *self.paced.lock().expect("paced") = Some(Instant::now() + started.elapsed() * CATCH_UP_PACE);
+            self.changed.notify_one();
+        }
+        caught
     }
 
     /// `Node::synced_to`: this device and each device on a live connection or of which the node keeps no statement, by
