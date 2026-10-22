@@ -903,6 +903,19 @@ the clear: that is what Public means.
 - **An audience that comes back into use.** An audience no entry is in keeps its key through removals. The entry that
   brings it back moves it to a new epoch, which whoever a removal took out meanwhile can't open.
 
+**Key trees (M7, `tree`, `spec/AvenDB/KeyTree.lean`, V6).** A key boxed to each member device costs a box per device
+at every epoch: a removal from a thousand devices, a thousand boxes, each 1,100 bytes of X-Wing and a McEliece share
+besides. A key tree, in the style of MLS TreeKEM, costs about one box a level instead: its leaves are the member
+devices, each inner node holds secrets only the devices below it open, and a commit writes new secrets along its
+author's path, each derived from the one below, sealed to the keys that reach the other side (`KeyTree::draft`). The
+epoch's key is derived from the top, so every member opens it (`members_open`), and a device that left opens no key of
+a later epoch (`removed_shut`); a removal's epoch wraps the keys of the one before, so the members keep the history. As
+in Keyhive's BeeKEM, commits made apart both stay on a node until a commit that saw them replaces them, and every peer
+applies the changes in the replay order, so all build the same tree. The tree's boxes are X-Wing alone
+(`keys::seal_tree`): a McEliece public key on every node would add a megabyte a level; the seed and the recovery boxes
+stay sealed by both. So far the core holds the tree and its checks; audiences still box their keys flat, and a tree
+starts at an epoch change once the `Keys` edit carries tree changes.
+
 What rotates on what:
 
 | Trigger | Work |
