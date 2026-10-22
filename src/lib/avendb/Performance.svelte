@@ -61,6 +61,7 @@
 		keep: ['Keeping', 'Checked edits taken into its log'],
 		refresh: ['Refresh', 'One round of bringing what it shows up to date, replay and all'],
 		'open keys': ['Opening keys', 'The keys it holds unsealed, to open what they encrypt'],
+		'open view': ['Opening its view', 'The stored view taken from the device’s shelf, unsealed and read'],
 		read: ['Reading', 'The bodies of entries opened with those keys'],
 		'show items': ['Showing', 'Each entry made into what its views read'],
 		'show: lanes': ['Showing: lanes', 'Each vault’s schemas and lenses read, to judge its entries’ writes'],
@@ -74,7 +75,8 @@
 		'edits offered': 'Edits offered to it',
 		'edits checked': 'Edits whose signatures it checked',
 		'refresh rounds': 'Refresh rounds',
-		'replay: removals as chosen before': 'Replays that took the removals as chosen before',
+		'replay: from its stored view': 'Unlocks that stepped on the device’s stored view',
+		'stored view: none that opens': 'Unlocks with no stored view that opens, so every edit replayed',
 		'keys opened': 'Keys opened from their boxes',
 		'keys from the shelf': 'Keys taken from the device’s shelf, no box opened',
 		'sync: edits sent': 'Edits sent to peers in pages'

@@ -447,6 +447,16 @@ impl Action {
         }
     }
 
+    /// It says who may do what (`Action.isTrust` in `Step.lean`): a vault made, an owner, a device or a grant given or
+    /// taken, a setting, an invite claimed. Which revocations stand, and which roots handed on, turns on these edits
+    /// alone (`V2_removals_read_trust`).
+    pub fn is_trust(&self) -> bool {
+        matches!(
+            self,
+            Action::Genesis { .. } | Action::Settings { .. } | Action::Share(_) | Action::Revoke(_) | Action::Claim { .. }
+        )
+    }
+
     fn keep_mut(&mut self) -> Option<&mut Vec<EditId>> {
         match self {
             Action::Revoke(r) => Some(r.keep_mut()),
@@ -3702,121 +3712,83 @@ fn priority(base: &State, edit: &Edit) -> (u8, usize, u8, usize) {
 /// nothing. The model tries each (`resolve` in `Step.lean`), which chooses the same; trying each here would replay a
 /// vault's edits once for every move it ever made. A mark of the wants alone is no removal, and is never tried.
 fn resolve(edits: &[Edit], ids: &[EditId]) -> HashSet<EditId> {
-    resolve_at(edits, ids, None, None).rem
+    resolve_at(edits, ids, None).rem
 }
 
 /// What `resolve` chose, and how: the removals it tried, by their place, in their place's order and in the order it
-/// tried them, and, where it tried any, the state of the replay with no removal standing just before `snap`; and the
-/// `Memo` of its choice.
+/// tried them, and, where it tried any, the state of the replay of the edits that say who may do what with no removal
+/// standing, just before `snap` (`Trust`).
 struct Resolved {
     rem: HashSet<EditId>,
     cands: Vec<usize>,
     tried: Vec<usize>,
     base: Option<State>,
-    memo: Memo,
 }
 
-/// Which removals a resolve chose (`resolve_at`), with what its choice turned on: the edits up to its last removal, in
-/// their order, what each removal takes away, and the order it tried them in. A resolve of edits whose order is the
-/// same up to there, whose removals take away the same and that tries them in the same order replays the same edits
-/// the same way for every one it tries, and chooses the same: it takes the choice and replays each removal no more.
-/// Only the edits after the last removal differ, which no removal's standing turns on, as a replay stands each edit on
-/// those before it alone. The moves it tries again, all at once, each time.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Memo {
-    /// How many edits of the order its choice turned on, and their ids' hash.
-    pub upto: usize,
-    pub prefix: [u8; 32],
-    /// The hash of what each removal takes away, in their order.
-    pub facts: [u8; 32],
-    /// The removals it tried, in that order, and those it chose.
-    pub tried: Vec<EditId>,
-    pub rem: Vec<EditId>,
-}
-
-impl Memo {
-    /// Its bytes: `upto`, `prefix`, `facts`, then `tried` and `rem`, each its count and its ids.
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(80 + 32 * (self.tried.len() + self.rem.len()));
-        out.extend((self.upto as u64).to_be_bytes());
-        out.extend(self.prefix);
-        out.extend(self.facts);
-        for ids in [&self.tried, &self.rem] {
-            out.extend((ids.len() as u32).to_be_bytes());
-            ids.iter().for_each(|id| out.extend(id.0));
-        }
-        out
-    }
-
-    /// The memo `to_bytes` made `bytes` of, if they are one.
-    pub fn from_bytes(bytes: &[u8]) -> Option<Memo> {
-        let take = |at: &mut usize, n: usize| -> Option<&[u8]> {
-            let part = bytes.get(*at..*at + n)?;
-            *at += n;
-            Some(part)
-        };
-        let mut at = 0;
-        let upto = u64::from_be_bytes(take(&mut at, 8)?.try_into().ok()?) as usize;
-        let prefix = take(&mut at, 32)?.try_into().ok()?;
-        let facts = take(&mut at, 32)?.try_into().ok()?;
-        let mut ids = || -> Option<Vec<EditId>> {
-            let n = u32::from_be_bytes(take(&mut at, 4)?.try_into().ok()?) as usize;
-            (0..n).map(|_| Some(EditId(take(&mut at, 32)?.try_into().ok()?))).collect()
-        };
-        let (tried, rem) = (ids()?, ids()?);
-        (at == bytes.len()).then_some(Memo { upto, prefix, facts, tried, rem })
-    }
-}
-
-/// The edits up to the last of the removals `cands` among `edits`, by their place, each in `ids`, and what each takes
-/// away: what a resolve's choice turns on (`Memo`), but the order it tries them in.
-fn memo_of(edits: &[Edit], ids: &[EditId], cands: &[usize]) -> Memo {
-    let upto = cands.iter().max().map_or(0, |&i| i + 1);
-    let mut h = crate::hash::Hasher::new("policy resolve prefix");
-    for id in &ids[..upto] {
-        h.update(&id.0);
-    }
-    let prefix = h.finalize();
-    let shares = std::cell::OnceCell::new();
-    let shares = || shares.get_or_init(|| shares_issued(edits.iter().zip(ids.iter().copied()))).clone();
-    let mut h = crate::hash::Hasher::new("policy resolve facts");
-    for &i in cands {
-        h.update(format!("{:?}", removes_among(&edits[i], shares)).as_bytes());
-    }
-    Memo { upto, prefix, facts: h.finalize(), tried: vec![], rem: vec![] }
-}
-
-fn resolve_at(edits: &[Edit], ids: &[EditId], snap: Option<usize>, memo: Option<&Memo>) -> Resolved {
+fn resolve_at(edits: &[Edit], ids: &[EditId], snap: Option<usize>) -> Resolved {
     let moving = |i: &usize| matches!(edits[*i].action, Action::Mark { caps: Some(_), .. });
     let moves: Vec<usize> = (0..edits.len()).filter(moving).collect();
     let cands: Vec<usize> = (0..edits.len()).filter(|i| edits[*i].is_removal() && !moving(i)).collect();
     let (mut tried, mut base_at) = (cands.clone(), None);
-    if !cands.is_empty() {
+    let trust = (!cands.is_empty()).then(|| Trust::of(edits, ids));
+    if let Some(trust) = &trust {
+        // a removal's priority reads only the vaults and the shares, which the edits that say who may do what alone
+        // make (`V2_removals_read_trust`)
         let none = HashSet::new();
-        let Run { state: base, snap, .. } = run_from(State::default(), edits, ids, &none, false, &HashMap::new(), snap);
+        let snap = snap.map(|s| trust.before(s));
+        let Run { state: base, snap, .. } =
+            run_from(State::default(), &trust.edits, &trust.ids, &none, false, &HashMap::new(), snap);
         base_at = snap;
         tried.sort_by_key(|&i| priority(&base, &edits[i]));
     }
-    let mut this = if cands.is_empty() { Memo::default() } else { memo_of(edits, ids, &cands) };
-    this.tried = tried.iter().map(|&i| ids[i]).collect();
-    let same = |m: &&Memo| (m.upto, m.prefix, m.facts, &m.tried) == (this.upto, this.prefix, this.facts, &this.tried);
-    let mut rem = match memo.filter(same) {
-        Some(m) => {
-            let rem: HashSet<EditId> = m.rem.iter().copied().collect();
-            debug_assert!(rem == resolve_removals(edits, ids, &tried), "a resolve taken from its memo chooses otherwise");
-            rem
-        }
-        None => resolve_removals(edits, ids, &tried),
-    };
-    let mut chosen: Vec<EditId> = rem.iter().copied().collect();
-    chosen.sort();
-    this.rem = chosen;
+    let mut rem = trust.as_ref().map_or_else(HashSet::new, |trust| resolve_removals(trust, edits, ids, &tried));
     resolve_moves(edits, ids, &mut rem, &moves);
-    Resolved { rem, cands, tried, base: base_at, memo: this }
+    Resolved { rem, cands, tried, base: base_at }
 }
 
-/// The removals that stand, tried one by one in the order `tried` (`resolve`).
-fn resolve_removals(edits: &[Edit], ids: &[EditId], tried: &[usize]) -> HashSet<EditId> {
+/// The edits of an order that say who may do what (`Action::is_trust`), each with its id, in their order: a replay of
+/// them alone ends with the vaults, the shares and the revocations a replay of every edit ends with, and the same of
+/// them stand (`runTrust` in `Step.lean`, `V2_removals_read_trust`). A few hundred, where a log holds a hundred thousand
+/// writes.
+struct Trust {
+    edits: Vec<Edit>,
+    ids: Vec<EditId>,
+    /// Each one's place in the order.
+    at: Vec<usize>,
+}
+
+impl Trust {
+    fn of(edits: &[Edit], ids: &[EditId]) -> Trust {
+        let at: Vec<usize> = (0..edits.len()).filter(|&i| edits[i].action.is_trust()).collect();
+        Trust { edits: at.iter().map(|&i| edits[i].clone()).collect(), ids: at.iter().map(|&i| ids[i]).collect(), at }
+    }
+
+    /// How many of them come before place `i` of the order.
+    fn before(&self, i: usize) -> usize {
+        self.at.partition_point(|&j| j < i)
+    }
+}
+
+/// The removals that stand, tried one by one in the order `tried` (`resolve`), each on a replay of the edits that say
+/// who may do what alone (`trust`, `resolveTrust` in `Step.lean`): every one tried is a revocation or a root handed
+/// on, and which of those stand turns on nothing else (`V2_removals_read_trust`). Moves are tried apart, after them.
+fn resolve_removals(trust: &Trust, edits: &[Edit], ids: &[EditId], tried: &[usize]) -> HashSet<EditId> {
+    let mut rem = HashSet::new();
+    for &r in tried {
+        let mut trial = rem.clone();
+        trial.insert(ids[r]);
+        let stood = run(&trust.edits, &trust.ids, &trial, false).stood;
+        if (0..trust.edits.len()).all(|i| !trial.contains(&trust.ids[i]) || stood[i]) {
+            rem = trial;
+        }
+    }
+    debug_assert!(rem == resolve_whole(edits, ids, tried), "a resolve on the trust edits chooses otherwise");
+    rem
+}
+
+/// `resolve_removals`, each removal tried on a replay of every edit: what the model says (`resolve` in `Step.lean`),
+/// which debug builds check against.
+fn resolve_whole(edits: &[Edit], ids: &[EditId], tried: &[usize]) -> HashSet<EditId> {
     let mut rem = HashSet::new();
     for &r in tried {
         let mut trial = rem.clone();
@@ -3851,9 +3823,6 @@ pub struct Replay {
     pub acts: HashSet<(EditId, VaultId)>,
     /// Where `replay_on` steps on from when new edits sort among the last ones (`Tail`).
     tail: Option<Tail>,
-    /// What its resolve chose, and what that turned on: a replay of edits it holds the same choice for takes it
-    /// (`Memo`).
-    pub memo: Option<Memo>,
 }
 
 /// Two replays are the same where they hold the same edits in the same order, the same ones stand, and they know the
@@ -3914,18 +3883,7 @@ impl Replay {
 }
 
 pub fn replay(edits: &[Edit]) -> Replay {
-    replay_ids(edits, &ids(edits), None)
-}
-
-/// `replay`, taking the choice of `memo` where it holds for `edits` (`Memo`).
-pub fn replay_memo(edits: &[Edit], memo: Option<&Memo>) -> Replay {
-    replay_ids(edits, &ids(edits), memo)
-}
-
-/// No edit replayed, with `memo` to take where it holds (`replay_memo`): what a device starting again from its shelf
-/// steps on from.
-pub fn replay_none(memo: Option<Memo>) -> Replay {
-    Replay { memo, ..replay(&[]) }
+    replay_ids(edits, &ids(edits))
 }
 
 /// `replay` of `edits`, given `was`, the replay of the first `held` of them: the rest stepped on it, one by one, where
@@ -3942,23 +3900,23 @@ pub fn replay_on(was: Replay, edits: &[Edit], held: usize) -> Replay {
 
 /// `replay_on`, and how it went: `Why::Whole` where it replayed every edit again, saying why.
 pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) {
-    let whole = |memo: Option<Memo>| replay_memo(edits, memo.as_ref());
-    let Some(fresh) = edits.get(held..) else { return (whole(was.memo), Why::Whole("replay whole: fewer edits than it held")) };
+    let whole = || replay(edits);
+    let Some(fresh) = edits.get(held..) else { return (whole(), Why::Whole("replay whole: fewer edits than it held")) };
     if fresh.is_empty() {
         return (was, Why::Nothing);
     }
     if held == 0 {
-        return (whole(was.memo), Why::Whole("replay whole: the first since it opened"));
+        return (whole(), Why::Whole("replay whole: the first since it opened"));
     }
     let deepest = edits[..held].iter().map(|e| e.depth).max();
     let ids_fresh = ids(fresh);
     let by_id: HashMap<EditId, &Edit> = ids_fresh.iter().copied().zip(fresh).collect();
-    let Some(tail) = was.tail.as_ref() else { return (whole(was.memo), Why::Whole("replay whole: no place to step on from")) };
+    let Some(tail) = was.tail.as_ref() else { return (whole(), Why::Whole("replay whole: no place to step on from")) };
     if ids_fresh.iter().any(|id| tail.parents.contains(id)) {
-        return (whole(was.memo), Why::Whole("replay whole: an edit it held builds on a new one"));
+        return (whole(), Why::Whole("replay whole: an edit it held builds on a new one"));
     }
     if ids_fresh.iter().any(|id| tail.covered.contains_key(id)) {
-        return (whole(was.memo), Why::Whole("replay whole: a checkpoint it held covers a new edit"));
+        return (whole(), Why::Whole("replay whole: a checkpoint it held covers a new edit"));
     }
     let steps = |e: &Edit| {
         matches!(e.action, Action::Write { .. })
@@ -3967,10 +3925,9 @@ pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) 
             && e.parents.iter().all(|p| by_id.get(p).is_none_or(|parent| parent.depth < e.depth))
     };
     if !fresh.iter().all(steps) {
-        let memo = was.memo.clone();
         return match step_tail(was, fresh, &ids_fresh) {
             Ok(r) => (r, Why::Tail),
-            Err(why) => (whole(memo), Why::Whole(why)),
+            Err(why) => (whole(), Why::Whole(why)),
         };
     }
     let mut order: Vec<(u64, u8, EditId, &Edit)> = by_id.iter().map(|(&id, &e)| (e.depth, e.rank(), id, e)).collect();
@@ -4048,8 +4005,11 @@ fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Result<Replay, &'st
     let none = HashSet::new();
     let mut base = None;
     if !tail.tried.is_empty() {
+        // the base is of the edits that say who may do what alone (`resolve_at`)
         let from = tail.base.clone().ok_or("replay whole: no base to resolve on")?;
-        let Run { state, snap, .. } = run_from(from, &tail_edits, &tail_ids, &none, false, &HashMap::new(), again);
+        let trust = Trust::of(&tail_edits, &tail_ids);
+        let snap = again.map(|s| trust.before(s));
+        let Run { state, snap, .. } = run_from(from, &trust.edits, &trust.ids, &none, false, &HashMap::new(), snap);
         let mut tried = tail.cands.clone();
         tried.sort_by_key(|&i| priority(&state, &was.edits[i]));
         if tried != tail.tried {
@@ -4058,7 +4018,7 @@ fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Result<Replay, &'st
         base = Some(snap.unwrap_or_else(|| tail.base.clone().expect("its base")));
     }
     let run = run_from(tail.state.clone(), &tail_edits, &tail_ids, &none, false, &tail.covered, again);
-    let Replay { mut edits, ids: mut all, mut stood, mut acts, tail, memo, .. } = was;
+    let Replay { mut edits, ids: mut all, mut stood, mut acts, tail, .. } = was;
     let mut tail = tail.expect("a replay to step on from");
     let old: HashSet<EditId> = all[at..].iter().copied().collect();
     acts.retain(|(id, _)| !old.contains(id));
@@ -4078,32 +4038,30 @@ fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Result<Replay, &'st
         tail.state = run.snap.expect("the state at its new place");
     }
     tail.base = base;
-    Ok(Replay { edits, ids: all, stood, state: run.state, acts, tail: Some(tail), memo })
+    Ok(Replay { edits, ids: all, stood, state: run.state, acts, tail: Some(tail) })
 }
 
-/// `replay`, given each edit's id, taking the choice of `memo` where it holds (`Memo`).
-fn replay_ids(edits: &[Edit], ids: &[EditId], memo: Option<&Memo>) -> Replay {
+/// `replay`, given each edit's id.
+fn replay_ids(edits: &[Edit], ids: &[EditId]) -> Replay {
     let depths: HashMap<EditId, u64> = ids.iter().copied().zip(edits.iter().map(|e| e.depth)).collect();
     let (edits, ids) = order_ids(edits, ids);
     // the place it can step on from: after every removal and move, and the last `TAIL` edits
     let after = edits.iter().rposition(Edit::is_removal).map_or(0, |i| i + 1);
     let at = after.max(edits.len().saturating_sub(TAIL));
-    let Resolved { rem, cands, tried, base, memo } = resolve_at(&edits, &ids, Some(at), memo);
+    let Resolved { rem, cands, tried, base } = resolve_at(&edits, &ids, Some(at));
     let covered = watched(&edits);
     let run = run_from(State::default(), &edits, &ids, &rem, false, &covered, Some(at));
     let Run { stood, state, acts, snap, .. } = run;
     let parents = edits.iter().flat_map(|e| e.parents.iter().copied()).collect();
     let tail = snap.map(|state| Tail { at, state, base, cands, tried, parents, covered, depths });
-    Replay { edits, ids, stood, state, acts, tail, memo: Some(memo) }
+    Replay { edits, ids, stood, state, acts, tail }
 }
 
 /// Of the edits `watch` names, those that stand among `edits`, each with a vault `watch` names for it that every signer
-/// of it acted for just before or just after it: what a checkpoint over that vault may cover (`vouched`). It takes the
-/// choice of `memo` where it holds for `edits` (`Memo`), as a device's own replay keeps it, so it tries no removal
-/// again.
-pub fn acting(edits: &[Edit], watch: &HashMap<EditId, Vec<VaultId>>, memo: Option<&Memo>) -> HashSet<(EditId, VaultId)> {
+/// of it acted for just before or just after it: what a checkpoint over that vault may cover (`vouched`).
+pub fn acting(edits: &[Edit], watch: &HashMap<EditId, Vec<VaultId>>) -> HashSet<(EditId, VaultId)> {
     let (edits, ids) = order_ids(edits, &ids(edits));
-    let rem = resolve_at(&edits, &ids, None, memo).rem;
+    let rem = resolve_at(&edits, &ids, None).rem;
     let Run { stood, acts, .. } = run_watching(&edits, &ids, &rem, false, watch);
     let stands: HashSet<EditId> = ids.iter().zip(&stood).filter(|(_, s)| **s).map(|(id, _)| *id).collect();
     acts.into_iter().filter(|(id, _)| stands.contains(id)).collect()
@@ -4154,12 +4112,7 @@ impl Log {
 
     /// The replay of the log's edits.
     pub fn replay(&self) -> Replay {
-        replay_ids(&self.edits, &self.ids, None)
-    }
-
-    /// `replay`, taking the choice of `memo` where it holds for the log's edits (`replay_memo`).
-    pub fn replay_memo(&self, memo: Option<&Memo>) -> Replay {
-        replay_ids(&self.edits, &self.ids, memo)
+        replay_ids(&self.edits, &self.ids)
     }
 
     /// A log holding `edits`, as a peer that received them.

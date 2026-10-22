@@ -531,6 +531,12 @@ stands (`priority` in `Step.lean`, `resolve` in `policy.rs`):
 3. Marks that move an entry. Such a mark takes away only what writes of its own entry relied on, so Rust tries them
    in one batch and chooses what the model's one-by-one tries choose.
 
+Whether a revocation or a root handed on stands depends on the trust edits alone: genesis, settings, shares,
+revocations and claims (`Action::is_trust`, `isTrust` in `Step.lean`). So each such removal is tried on a run of the
+trust edits only, each at its own place in the one order, and only marks are tried on every edit (`resolveTrust`;
+`V2_removals_read_trust` proves it chooses what `resolve` chooses). A try costs the vault's trust edits, not its writes,
+so no choice is kept between replays.
+
 A junior owner can't keep his own removal out by removing his remover: his removal is tried later and refused, as he
 is no longer an owner at its place. A mark of the wants alone takes nothing away and is no removal, and neither is the
 revocation of a keep share (K1).
@@ -2196,6 +2202,7 @@ all older than that starts a new one beside them. Tests hold `FLOOR` at 18 and t
   meta/<n>         what opens the device again, follow list included (browser, desktop); device.key on the server
   stated/<device>/<checked>  each device's signed statements of its holdings, at most one an hour each (H2)
   drives/<device> the key of each drive this desktop hosts, wrapped under its own device's (section 3)
+  slots/keys-<n>   the keys the device opened from their boxes, and its newest head it checked, two slots in turn (Keep)
   slots/view-<n>   the device's stored view, in two slots kept in turn, in place (Keep)
 ```
 
@@ -2211,6 +2218,13 @@ all older than that starts a new one beside them. Tests hold `FLOOR` at 18 and t
   keeps one. It keeps a new one after any replay of every edit, or after 4096 edits stepped on. A view holds no
   history: every edit stays on the shelf as it was put, so any past point can still be rebuilt from them. On the
   server, each slot kept is one more object version the bucket's lock holds for 7 days.
+- **Stored keys** (`Lab::warming`, `Lab::restore_warm`). The keys the device opened from their boxes, each by the box
+  it opened and the key it opened it with, and its newest head of edits it checked, by the head's number and the
+  BLAKE3 hash of its bytes, sealed under its own key for any engine, in `slots/keys-0` and `slots/keys-1` in turn. A
+  head names its packs by their hashes, each checked as it is read, so a node that starts from that very head doesn't
+  check those edits' signatures again; it checks every edit after it, and every edit where the head is another. A key
+  counts only for the very box it opened. It keeps them again after each key it opens and each head it puts or takes
+  back whole. What older nodes kept beside the shelf (`warm/`, `opened/`, `sealed/`) no node reads or puts any more.
 - **Packs, not one object per edit.** An edit is a few kilobytes and object storage bills at least 64 KB per object,
   so packs keep "everything is a blob" true and cheap.
 - **Generations.** A place keeps its shelves side by side: `g1`, `g2` and on. The newest is in use. Forgetting an

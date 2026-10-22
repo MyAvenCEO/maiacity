@@ -15,15 +15,16 @@ use std::collections::HashMap;
 use std::hash::Hash;
 use std::sync::Arc;
 
-use super::{order_ids, watched, Edit, Entry, Issued, Listed, Memo, Replay, Seals, State, Tail, Vault, Write};
+use super::{order_ids, watched, Edit, Entry, Issued, Listed, Replay, Seals, State, Tail, Vault, Write};
 use crate::encode::Encode;
 use crate::id::{AudienceId, EditId, EntryId, ShareId, SignerId, VaultId};
 use crate::keys::{KeyFam, KeyName, PublicKey, Seal};
 use crate::policy::{Kind, Principal, Proposal, Share};
 use crate::wire::{Decode, Reader, WireError};
 
-/// What every stored view starts with: version 1.
-const VIEW: &[u8] = b"avenDB view 1\n";
+/// What every stored view starts with: version 2, which keeps no resolve's choice, as trying a removal replays only the
+/// edits that say who may do what (`V2_removals_read_trust`).
+const VIEW: &[u8] = b"avenDB view 2\n";
 
 impl Encode for Vault {
     fn encode(&self, out: &mut Vec<u8>) {
@@ -462,8 +463,8 @@ fn ids_hash(ids: &[EditId]) -> [u8; 32] {
 
 impl Replay {
     /// Its stored view, the replay of the first `held` edits a device holds (`policy::view`): how many, the hash of
-    /// their ids in the one order, which stood, the state, the signers that acted for the checkpoints' vaults, its
-    /// resolve's choice, and the place it steps on from, each of whose states as it differs from the state after it.
+    /// their ids in the one order, which stood, the state, the signers that acted for the checkpoints' vaults, and the
+    /// place it steps on from, each of whose states as it differs from the state after it.
     pub fn to_view(&self, held: usize) -> Vec<u8> {
         let mut out = VIEW.to_vec();
         (held as u64).encode(&mut out);
@@ -479,7 +480,6 @@ impl Replay {
         acts.sort();
         (acts.len() as u32).encode(&mut out);
         acts.iter().for_each(|a| a.encode(&mut out));
-        self.memo.as_ref().map(Memo::to_bytes).encode(&mut out);
         match &self.tail {
             None => out.push(0),
             Some(tail) => {
@@ -520,10 +520,6 @@ impl Replay {
             let stood = (0..n).map(|i| bits[i / 8] & (1 << (i % 8)) != 0).collect();
             let state = state_of(&mut rd, &State::default())?;
             let acts = rd.seq::<(EditId, VaultId)>(64)?.into_iter().collect();
-            let memo = match rd.option::<Vec<u8>>()? {
-                None => None,
-                Some(b) => Some(Memo::from_bytes(&b).ok_or(WireError::Unknown)?),
-            };
             let tail = match rd.u8()? {
                 0 => None,
                 1 => {
@@ -550,7 +546,7 @@ impl Replay {
             if !rd.done() {
                 return Err(WireError::Trailing);
             }
-            Ok(Replay { edits: vec![], ids: vec![], stood, state, acts, tail, memo })
+            Ok(Replay { edits: vec![], ids: vec![], stood, state, acts, tail })
         };
         let replay = read().ok()?;
         Some((Replay { edits, ids, ..replay }, held))
