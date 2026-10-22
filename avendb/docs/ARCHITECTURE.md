@@ -551,7 +551,7 @@ the other mean its key signed twice from the same past: a restored backup, a clo
 such forks (passkeys, which sign on several devices, aside). Both edits stand, as concurrent edits do.
 
 **Batch-signed logs (M3, `batch`, `spec/AvenDB/Batches.lean`, V5).** A signature on every edit costs 3,309 bytes and
-a few dozen microseconds of ML-DSA-65 to check: 20 to 35 s of one core for a million edits, and some 3.3 TB at a
+about 76 microseconds of ML-DSA-65 to check (measured): some 76 s of one core for a million edits, and 3.3 TB at a
 billion. So each device also keeps one append-only log of the edits it signs, across every avenDB log, in the order it
 signs them, shaped as a Merkle tree of BLAKE3 hashes split as RFC 9162 splits a log (`batch::Tree`), and signs the
 tree's root once per batch (`batch::Root`: the log, which is the device's id, its fork number, its length and its
@@ -571,10 +571,10 @@ disagree, of other fork numbers, of one length with other hashes, or the shorter
 the hashes that rebuild both show (`Tree::prefix`, `batch::rebuild`), prove a fork (`batch::ForkProof`): the device
 signed two histories of its log. A device that holds one freezes that device, takes no path to its roots any more and
 says why (`Roots::why`); the proof travels, so its peers freeze it too. Every format starts with its version byte
-(`batch::FORMAT`). So far the core and the Lab hold this: each device wraps its log and signs one root over it when it
-unlocks, and puts each edit it signs after in it (`Lab::signer_log`); a debug build signs each batch at once and
-holds each edit's path to the signature beside it. Edits still travel and are kept with their own signatures, and the
-wire, the shelf and the page take the paths in a later step.
+(`batch::FORMAT`). So far the core holds this, and a debug build of the Lab checks it: each device wraps its log and
+signs one root over it when it unlocks, puts each edit it signs after in it (`Lab::signer_log`), signs each batch at
+once and holds each edit's path to the signature beside it. Edits still travel and are kept with their own signatures,
+so a release build keeps no log yet; the wire, the shelf and the page take the paths in a later step.
 
 ## 5. Shares
 

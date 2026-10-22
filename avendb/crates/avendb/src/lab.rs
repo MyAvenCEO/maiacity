@@ -943,10 +943,11 @@ pub struct Lab {
     recovery: Option<Arc<RecoveryKey>>,
     /// The sessions its devices host (`host`): each session's signer, with the device that keeps its store.
     hosted: HashMap<SignerId, Hosted>,
-    /// Each unlocked device's batch-signed log (M3, `batch`): the edits it holds that it signed, in the order it holds
-    /// them, wrapped as they stand when it unlocks and signed under one root, then each edit it signs (`batched`).
-    /// Edits still travel and are kept with their own signatures: a debug build signs each batch at once and holds
-    /// each edit's path to the signature beside it.
+    /// Each unlocked device's batch-signed log (M3, `batch`), in a debug build: the edits it holds that it signed, in
+    /// the order it holds them, wrapped as they stand when it unlocks and signed under one root, then each edit it signs
+    /// (`batched`). Edits still travel and are kept with their own signatures, so a release build keeps no log yet and
+    /// pays nothing at unlock: a debug build signs each batch at once and holds each edit's path to the signature beside
+    /// it.
     batches: HashMap<SignerId, SignerLog>,
 }
 
@@ -2045,14 +2046,15 @@ impl Lab {
     /// debug build signs the batch at once, as a free device does (group commit), and holds the edit's path up to it to
     /// the signature: each must check as the other does (V5), as the stored view is held to the whole replay.
     fn batched(&mut self, s: SignerId, id: EditId, sig: &Signature) {
+        if !cfg!(debug_assertions) {
+            return;
+        }
         let Some((log, key)) = self.wrapped(s) else { return };
         log.write(id);
-        if cfg!(debug_assertions) {
-            log.commit(key);
-            let shown = log.proof(id).is_some_and(|p| batch::Roots::new().check(s, id, &p));
-            let signed = sign::verify(s, id, sig);
-            debug_assert_eq!(shown, signed, "a path up a signed root checks as the signature beside it");
-        }
+        log.commit(key);
+        let shown = log.proof(id).is_some_and(|p| batch::Roots::new().check(s, id, &p));
+        let signed = sign::verify(s, id, sig);
+        debug_assert_eq!(shown, signed, "a path up a signed root checks as the signature beside it");
     }
 
     /// The secret device `d` derives the keys of the files it seals from (`sealed::Convergent`): from the current
@@ -2167,8 +2169,10 @@ impl Lab {
         // while the device was locked doesn't foresee what it draws now
         self.rng.reseed(key.seal_secret().as_bytes());
         self.keys.insert(d, Key::Device(key));
-        // its log is wrapped as it stands, and it signs one root over it
-        if let Some((log, key)) = self.wrapped(d) {
+        // its log is wrapped as it stands, and it signs one root over it (a debug build, `batches`)
+        if cfg!(debug_assertions)
+            && let Some((log, key)) = self.wrapped(d)
+        {
             log.commit(key);
         }
         self.refresh(d, &[]);
@@ -3932,8 +3936,8 @@ impl Lab {
         &self.held(d).log
     }
 
-    /// Device `d`'s batch-signed log while it is unlocked: wrapped when it unlocked, or at its first edit where it
-    /// never locked (`batched`).
+    /// Device `d`'s batch-signed log while it is unlocked, in a debug build: wrapped when it unlocked, or at its first
+    /// edit where it never locked (`batched`).
     pub fn signer_log(&self, d: SignerId) -> Option<&SignerLog> {
         self.batches.get(&d)
     }
