@@ -46,6 +46,7 @@
 
 <script>
 	import { onMount, untrack } from 'svelte';
+	import { foot, FOOT } from '$lib/app/foot.js';
 	import { signUpName } from '$lib/app/entry.js';
 	import { native } from '$lib/native';
 	import { sure } from '$lib/app/sure.js';
@@ -688,7 +689,7 @@
 {/if}
 
 {#if seedAt && seedAt.of}
-	<p class="seeding" role="status" title="Maia City’s seed: what the repository adds that Maia City never held, written in the background">
+	<p class="seeding" use:foot={FOOT.waiting} role="status" title="Maia City’s seed: what the repository adds that Maia City never held, written in the background">
 		<span class="spin" aria-hidden="true"></span>
 		Bringing Maia City’s seed · {seedAt.done} of {seedAt.of}
 	</p>
@@ -707,11 +708,8 @@
 {/if}
 
 <style>
+	/* in the app's foot stack ($lib/app/foot.js) */
 	.seeding {
-		position: fixed;
-		right: 1rem;
-		bottom: 1rem;
-		z-index: 40;
 		display: flex;
 		align-items: center;
 		gap: 0.5rem;

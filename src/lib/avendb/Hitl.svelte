@@ -22,6 +22,7 @@
 -->
 <script>
 	import { fade, fly } from 'svelte/transition';
+	import { foot, FOOT } from '$lib/app/foot.js';
 	import Icon from './Icon.svelte';
 	import Mark from './Mark.svelte';
 	import ProposedAssets from './ProposedAssets.svelte';
@@ -207,7 +208,7 @@
 		{/if}
 	</div>
 {:else if !open && (waiting.length || told.length)}
-	<button class="waiting" transition:fade={{ duration: 150 }} onclick={() => ((later = []), (open = true))}>
+	<button class="waiting" use:foot={FOOT.waiting} transition:fade={{ duration: 150 }} onclick={() => ((later = []), (open = true))}>
 		{waiting.length + told.length} waiting for you
 	</button>
 {/if}
@@ -418,12 +419,8 @@
 		color: var(--soft);
 	}
 
+	/* in the app's foot stack ($lib/app/foot.js) */
 	.waiting {
-		position: fixed;
-		left: 50%;
-		bottom: calc(var(--nav-room, 0.5rem) + 0.4rem);
-		z-index: 59;
-		transform: translateX(-50%);
 		padding: 0.4rem 0.9rem;
 		border: 0;
 		border-radius: 999px;
