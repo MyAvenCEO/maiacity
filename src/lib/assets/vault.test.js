@@ -919,7 +919,7 @@ test("the dev server's stand-in serves the feed as avenDB's server does: the row
 });
 
 test('the app holds every page that builds assets until the recipes are in, and no other', () => {
-	for (const p of ['/app/buildings/', '/app/biomes/', '/app/factories/', '/app/maiacity-v1/', '/app/worlds/tired-land/', '/app/games/sandbox-4/', '/app/games/sandbox-5/', '/app/assets/box/', '/app/assets/render/', '/app/assets/render/levels/'])
+	for (const p of ['/app/buildings/', '/app/biomes/', '/app/factories/', '/app/maiacity-v1/', '/app/worlds/tired-land/', '/app/games/sandbox-3/', '/app/games/sandbox-4/', '/app/assets/box/', '/app/assets/render/', '/app/assets/render/levels/'])
 		expect([p, vault.ASSET_PAGES.test(p)]).toEqual([p, true]);
 	for (const p of ['/app/', '/app/avendb/', '/app/assets/', '/app/worlds/', '/app/games/', '/app/games/sandbox-2/', '/app/coops/', '/app/studio/', '/app/plants/', '/app/machines/', '/app/plantsx/', '/app/buildings/x/y'])
 		expect([p, vault.ASSET_PAGES.test(p)]).toEqual([p, false]);

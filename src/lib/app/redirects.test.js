@@ -27,7 +27,7 @@ describe('the old addresses', () => {
 			'/app/models/': '/app/#assets',
 			'/app/plants/': '/app/#assets',
 			'/app/worlds/': '/app/#worlds',
-			'/app/games/sandbox-3/': '/app/buildings/',
+			'/app/games/sandbox-8/': '/app/games/sandbox-7/',
 			'/app/skills/': '/app/#docs',
 			'/docs/avendb/': '/app/#docs',
 			'/docs/avenbrain/': '/app/#docs',
@@ -39,12 +39,12 @@ describe('the old addresses', () => {
 		expect(movedTo('app/board')).toBe('/app/#stories');
 		expect(movedTo('/app/board/')).toBe('/app/#stories');
 		expect(movedTo('admin')).toBe('/app/');
-		expect(movedTo('app/games/sandbox-3')).toBe('/app/buildings/');
+		expect(movedTo('app/games/sandbox-8')).toBe('/app/games/sandbox-7/');
 		expect(movedTo('theos')).toBe('/app/#docs/5c38946e391378e9bedd2021b042e7cde5990b0bd38919d81495b7ed6b51f218');
 	});
 
 	test('an address with a page of its own is not caught', () => {
-		for (const path of ['', '/', 'app', 'app/buildings', 'app/games/sandbox-1', 'app/worlds/tired-land', 'games/sandbox-3', 'app/assets/box', 'universe']) {
+		for (const path of ['', '/', 'app', 'app/buildings', 'app/games/sandbox-1', 'app/games/sandbox-3', 'app/games/sandbox-7', 'app/worlds/tired-land', 'games/sandbox-3', 'app/assets/box', 'universe']) {
 			expect(movedTo(path)).toBeNull();
 		}
 	});
