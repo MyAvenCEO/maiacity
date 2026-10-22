@@ -1869,6 +1869,9 @@ async fn answer_call(store: &JsValue, call: Call) {
             let put = ask_store(store, "put", &[name.clone().into(), bytes(&put)]).await;
             tx.send(put.and_then(|done| if done.is_falsy() { Err(refused()) } else { Ok(()) })).ok();
         }
+        Call::Keep { name, bytes: kept, tx } => {
+            tx.send(ask_store(store, "keep", &[name.into(), bytes(&kept)]).await.map(|_| ())).ok();
+        }
         Call::Get { name, tx } => {
             let got = ask_store(store, "get", &[name.into()]).await;
             tx.send(got.map(|b| (!b.is_undefined() && !b.is_null()).then(|| store_bytes(b)))).ok();

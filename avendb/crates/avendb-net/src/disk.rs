@@ -191,6 +191,9 @@ impl Folder {
             Call::Put { name, bytes, tx } => {
                 tx.send(self.put(&name, &bytes)).ok();
             }
+            Call::Keep { name, bytes, tx } => {
+                tx.send(self.keep(&name, &bytes)).ok();
+            }
             Call::Get { name, tx } => {
                 let got = self.object(&name).and_then(|path| match fs::read(path) {
                     Ok(bytes) => Ok(Some(Bytes::from(bytes))),
@@ -281,17 +284,7 @@ impl Folder {
     /// Puts `bytes` under `name` once: written whole in `new/`, synced, then linked into place, unless something is
     /// there already. The same bytes there are put already; other bytes are refused.
     fn put(&self, name: &str, bytes: &[u8]) -> io::Result<()> {
-        let path = self.object(name)?;
-        let folder = path.parent().expect("an object's folder").to_path_buf();
-        if !folder.exists() {
-            fs::create_dir_all(&folder)?;
-            // each folder made, named by the one above it
-            let mut made = folder.as_path();
-            while let Some(above) = made.parent().filter(|_| made != self.dir) {
-                sync_dir(above)?;
-                made = above;
-            }
-        }
+        let (path, folder) = self.placed(name)?;
         let same = |path: &Path| match fs::read(path)? == bytes {
             true => Ok(()),
             false => Err(io::Error::new(ErrorKind::AlreadyExists, format!("{name} holds other bytes already"))),
@@ -308,6 +301,37 @@ impl Folder {
             Err(e) if e.kind() == ErrorKind::AlreadyExists => same(&path),
             Err(e) => Err(e),
         }
+    }
+
+    /// Keeps `bytes` under `name` in place: written whole in `new/`, synced, then renamed over what it held, which a
+    /// reader finds whole until then.
+    fn keep(&self, name: &str, bytes: &[u8]) -> io::Result<()> {
+        let (path, folder) = self.placed(name)?;
+        let staged = self.dir.join(NEW).join(staged("keep"));
+        write_synced(&staged, bytes)?;
+        match fs::rename(&staged, &path) {
+            Ok(()) => sync_dir(&folder),
+            Err(e) => {
+                removed(fs::remove_file(&staged))?;
+                Err(e)
+            }
+        }
+    }
+
+    /// Where object `name` is, and its folder, made if it isn't yet.
+    fn placed(&self, name: &str) -> io::Result<(PathBuf, PathBuf)> {
+        let path = self.object(name)?;
+        let folder = path.parent().expect("an object's folder").to_path_buf();
+        if !folder.exists() {
+            fs::create_dir_all(&folder)?;
+            // each folder made, named by the one above it
+            let mut made = folder.as_path();
+            while let Some(above) = made.parent().filter(|_| made != self.dir) {
+                sync_dir(above)?;
+                made = above;
+            }
+        }
+        Ok((path, folder))
     }
 
     /// The name of every object whose name starts with `prefix`, in order.

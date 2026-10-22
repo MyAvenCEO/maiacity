@@ -27,6 +27,13 @@
 //!   from their boxes since the one before, or every one of them, in `opened/<n>-all`, after `OPENED` of the others.
 //!   The device takes nothing of them it can't open and check: a wrong one costs it the time it saves, no more.
 //!
+//! - `slots/view-0` and `slots/view-1`: the device's stored view, what its edits said when it last kept one, encrypted
+//!   for it alone (`Lab::warming`, `Replay::to_view`), for a node to step on from there rather than replay every edit
+//!   (`Lab::restore_warm`). Each is `SLOT`, the number it was kept as, in 8 bytes, big-endian, then the view; the next
+//!   goes in place of the older (`Shelf::keep`), put after the edits it is of, so the newest that opens is of edits
+//!   the shelf holds. A view is no history: every edit stays on the shelf as it was put, and one that doesn't open
+//!   costs the node a replay of every edit, no more.
+//!
 //! A node's holdings name of its device's edits only those its shelf holds (`Edits::held`): on the server, those its
 //! bucket took.
 
@@ -65,6 +72,10 @@ const JOURNAL: &str = "journal/";
 const WARM: &str = "warm/";
 const OPENED_KEYS: &str = "opened/";
 const ALL: &str = "-all";
+/// The two slots a device's stored view is kept in, in turn.
+const VIEWS: [&str; 2] = ["slots/view-0", "slots/view-1"];
+/// What every stored view's slot starts with: avenDB's slots, version 1.
+const SLOT: &[u8] = b"avenDB slot 1\n";
 
 /// A blob on the shelf: its hash and its size.
 pub(crate) type Blob = (Hash, u64);
@@ -84,6 +95,8 @@ pub(crate) struct Edits {
     /// The numbers the next `warm/<n>` and `opened/<n>` take, and how many `opened/<n>` came since the last that holds
     /// every key (`warm`).
     warmed: Mutex<(u64, u64, u64)>,
+    /// The number the next stored view is kept as, in slot `VIEWS[n % 2]` (`warm`).
+    slot: Mutex<u64>,
     /// Woken when its device took something new.
     pub(crate) due: Notify,
 }
@@ -308,7 +321,7 @@ impl Edits {
         let book = Book { packs: head.packs, keys, mark: head.journal, next, head: next_head, pending };
         let (book, kept, key) = (tokio::sync::Mutex::new(book), Mutex::new(kept), Mutex::new(None));
         let warmed = Mutex::new((0, 0, 0));
-        let edits = Edits { shelf, book, kept, started, key, warmed, due: Notify::new() };
+        let edits = Edits { shelf, book, kept, started, key, warmed, slot: Mutex::new(0), due: Notify::new() };
         Ok((edits, (signed, bytes)))
     }
 
@@ -344,9 +357,9 @@ impl Edits {
         }
     }
 
-    /// What the device worked out before, as the shelf keeps it (`warm/<n>`, `opened/<n>`): the newest choice of its
-    /// replay's resolve, and the keys it opened, from the last `opened/<n>` that holds every one on. Nothing, where the
-    /// shelf can't be read.
+    /// What the device worked out before, as the shelf keeps it (`warm/<n>`, `opened/<n>`, `slots/view-<n>`): the
+    /// newest choice of its replay's resolve, the keys it opened, from the last `opened/<n>` that holds every one on,
+    /// and its stored views, the newest first. Nothing, where the shelf can't be read.
     pub(crate) async fn warm(&self) -> Warm {
         let read = async {
             let memos = numbered(&self.shelf, WARM).await?;
@@ -363,6 +376,15 @@ impl Edits {
             for (n, after) in &opened[from..] {
                 warm.keys.extend(self.shelf.get(&format!("{OPENED_KEYS}{n:016x}{after}")).await?.map(|b| b.to_vec()));
             }
+            let mut views = vec![];
+            for slot in VIEWS {
+                let kept = self.shelf.get(slot).await?;
+                let view = kept.as_deref().and_then(|b| b.strip_prefix(SLOT)).filter(|b| b.len() >= 8);
+                views.extend(view.map(|b| (u64::from_be_bytes(b[..8].try_into().expect("8 bytes")), b[8..].to_vec())));
+            }
+            views.sort_by(|a, b| b.0.cmp(&a.0));
+            *self.slot.lock().expect("slot") = views.first().map_or(0, |(n, _)| n + 1);
+            warm.views = views.into_iter().map(|(_, view)| view).collect();
             anyhow::Ok(warm)
         };
         read.await.unwrap_or_else(|e| {
@@ -373,8 +395,14 @@ impl Edits {
 
     /// Puts on the shelf what the device worked out (`Shared::save`), as `warming` gives it: the choice of its replay's
     /// resolve, if it changed, and the keys it opened, every one of them if `all` (`opened_all`), each under the next
-    /// number free.
+    /// number free; and its view, if it is due, in place of the older of the two its slots keep.
     async fn put_warm(&self, warming: &mut Warming, all: bool) -> Result<()> {
+        if let Some(view) = warming.view.take() {
+            let n = *self.slot.lock().expect("slot");
+            let kept = [SLOT, &n.to_be_bytes(), &view].concat();
+            self.shelf.keep(VIEWS[(n % 2) as usize], Bytes::from(kept)).await?;
+            *self.slot.lock().expect("slot") = n + 1;
+        }
         if let Some(memo) = warming.memo.take() {
             let n = self.put_next(WARM, "", 0, memo).await?;
             self.warmed.lock().expect("warmed").0 = n + 1;
@@ -609,6 +637,11 @@ impl Shared {
         let (due, warming) = tokio::task::spawn_blocking(due).await??;
         #[cfg(target_arch = "wasm32")]
         let (due, warming) = due()?;
+        // the edits first, so that what it worked out from them is of edits its shelf holds
+        let put = due.is_some();
+        if let Some(due) = due {
+            edits.put(&mut book, due).await?;
+        }
         // what it worked out only spares it time: a shelf that can't take it costs it that time, no more, and the
         // device gives it again at the next save
         if let Some(mut warming) = warming {
@@ -626,9 +659,7 @@ impl Shared {
                 Err(e) => tracing::warn!("avendb: what the device worked out can't be put on its shelf: {e:#}"),
             }
         }
-        let Some(due) = due else { return Ok(false) };
-        edits.put(&mut book, due).await?;
-        Ok(true)
+        Ok(put)
     }
 
     /// Puts on the node's shelf what its device takes, as soon as it took it, and tells the peers once the shelf holds
