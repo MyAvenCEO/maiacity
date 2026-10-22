@@ -550,6 +550,32 @@ edits one of them told it of (`Node::removal_waits`). A device that knows no pee
 the other mean its key signed twice from the same past: a restored backup, a clone or a stolen key. Every peer flags
 such forks (passkeys, which sign on several devices, aside). Both edits stand, as concurrent edits do.
 
+**Batch-signed logs (M3, `batch`, `spec/AvenDB/Batches.lean`, V5).** A signature on every edit costs 3,309 bytes and
+about 76 microseconds of ML-DSA-65 to check (measured): some 76 s of one core for a million edits, and 3.3 TB at a
+billion. So each device also keeps one append-only log of the edits it signs, across every avenDB log, in the order it
+signs them, shaped as a Merkle tree of BLAKE3 hashes split as RFC 9162 splits a log (`batch::Tree`), and signs the
+tree's root once per batch (`batch::Root`: the log, which is the device's id, its fork number, its length and its
+root; `sign::ROOT_CONTEXT`). A batch is what the device wrote while it signed the batch before (group commit,
+`SignerLog::begin` and `end`): the first write of a quiet device is signed at once, so a write waits a signature's time
+or two, about a millisecond each, and a batch grows by itself under load. An edit then shows its device signed it by a
+path up the tree to a signed root (`batch::Proof`): about thirty hashes at a billion edits, checked at hashing speed,
+each root's signature checked once for every edit under it (`batch::Roots::check`). The tree hashes edit ids, which hash
+the sealed bytes, so a relay that opens nothing checks and serves edits all the same. A device checks each signer of an
+edit one way or the other (`batch::check`): its signature on the edit, which every edit made before keeps and which
+checks exactly as today, or a path; V5 proves that where every device keeps one log, both authenticate exactly the
+edits of it, so a device takes, knows and lets stand the same, whatever mix of signatures and paths its edits came
+with, and whatever the batches. A log as it stands is wrapped in its order (`SignerLog::wrap`), its first batch one
+root over all of it; nothing is reset. A device keeps every edit and every node of its tree for good, and of each
+other device the newest root, older ones only at checkpoints (`Roots::checkpoint`). Two roots of one log that
+disagree, of other fork numbers, of one length with other hashes, or the shorter not the first edits of the longer as
+the hashes that rebuild both show (`Tree::prefix`, `batch::rebuild`), prove a fork (`batch::ForkProof`): the device
+signed two histories of its log. A device that holds one freezes that device, takes no path to its roots any more and
+says why (`Roots::why`); the proof travels, so its peers freeze it too. Every format starts with its version byte
+(`batch::FORMAT`). So far the core holds this, and a debug build of the Lab checks it: each device wraps its log and
+signs one root over it when it unlocks, puts each edit it signs after in it (`Lab::signer_log`), signs each batch at
+once and holds each edit's path to the signature beside it. Edits still travel and are kept with their own signatures,
+so a release build keeps no log yet; the wire, the shelf and the page take the paths in a later step.
+
 ## 5. Shares
 
 A share is `{over, who, level, wide, select, parent, issuer, nonce, group}` (`policy::Share`, `Share` in `Basic.lean`).
@@ -876,6 +902,19 @@ the clear: that is what Public means.
   until the audience does.
 - **An audience that comes back into use.** An audience no entry is in keeps its key through removals. The entry that
   brings it back moves it to a new epoch, which whoever a removal took out meanwhile can't open.
+
+**Key trees (M7, `tree`, `spec/AvenDB/KeyTree.lean`, V6).** A key boxed to each member device costs a box per device
+at every epoch: a removal from a thousand devices, a thousand boxes, each 1,100 bytes of X-Wing and a McEliece share
+besides. A key tree, in the style of MLS TreeKEM, costs about one box a level instead: its leaves are the member
+devices, each inner node holds secrets only the devices below it open, and a commit writes new secrets along its
+author's path, each derived from the one below, sealed to the keys that reach the other side (`KeyTree::draft`). The
+epoch's key is derived from the top, so every member opens it (`members_open`), and a device that left opens no key of
+a later epoch (`removed_shut`); a removal's epoch wraps the keys of the one before, so the members keep the history. As
+in Keyhive's BeeKEM, commits made apart both stay on a node until a commit that saw them replaces them, and every peer
+applies the changes in the replay order, so all build the same tree. The tree's boxes are X-Wing alone
+(`keys::seal_tree`): a McEliece public key on every node would add a megabyte a level; the seed and the recovery boxes
+stay sealed by both. So far the core holds the tree and its checks; audiences still box their keys flat, and a tree
+starts at an epoch change once the `Keys` edit carries tree changes.
 
 What rotates on what:
 
@@ -2294,6 +2333,7 @@ The full table, with each theorem's Rust guards, is `spec/README.md`.
 | `Links.lean` | Links, a record read so many rows down (`Doc.cut`), and following links a level at a time (`follow`) |
 | `Lens.lean`, `Doc.lean`, `Proposals.lean` | Lenses (T9); merge of histories and the three-way merge of records (T10a to T10e); lines of history (T10f to T10h) |
 | `Props.lean`, `Theorems.lean` | The predicates the theorems use; every other theorem's statement, the proofs in the `*Lemmas.lean` files and `Schemas.lean` |
+| `Batches.lean` | Batch-signed logs: each device's tree of the edits it signs, signed roots, paths, what a device checks, wrapping a log as it stands, forks (V5) |
 | `Examples.lean`, `Vectors.lean`, `OpsVectors.lean` | The scenarios, checked on every build; the cases the Rust core replays |
 
 Each guarantee and the theorems that state it, in `Theorems.lean` unless the row names another file:
@@ -2354,6 +2394,7 @@ Each guarantee and the theorems that state it, in `Theorems.lean` unless the row
 | G1 | An invite is claimed once, with no owner signing, and makes no owner | `G1_claim_once` |
 | G2 | The server takes only new vaults it welcomes: a person's with the invite it claimed, a coop's or an aven's an admin owns | `G2_takes_welcome`, `G2_human`, `G2_founded` |
 | G3 | A device's pass shows a service the server's word on that device alone, for that service, while fresh; admin only of the device's own vault, as `isAdmin` says | `G3_standing_counts`, `G3_standing_admin` |
+| V5 | A signed root of a device's batch-signed log and a path up its tree show an edit exactly as the device's signature on it does; old signatures check as before; roots that disagree prove a fork, never of a device that keeps one log | `V5_batches_check_the_same`, `V5_old_logs_check_as_today`, `V5_wrap_paths`, `V5_honest_never_frozen`, `V5_no_fork_one_log` |
 
 T29 (marks mean what the keep rules say) is merged into T23, whose wants part it is.
 
@@ -2362,7 +2403,7 @@ in Verifpal against an attacker who breaks the curves (`spec/protocol/*.vp`, run
 box), `hello.vp` (the hello) and `link.vp` (linking by passkey).
 
 **Assumptions**, each part of the model and none an axiom: signatures can't be forged; sealed data reveals nothing
-without its key; ids don't collide; Loro converges and can revert to any version it holds. A hello proves the device
+without its key; ids and hashes don't collide; Loro converges and can revert to any version it holds. A hello proves the device
 whose keys sign it on that connection.
 
 ## 16. Where to look
