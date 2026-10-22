@@ -16,6 +16,7 @@ import AvenDB.Measurers
 import AvenDB.Theorems
 import AvenDB.Examples
 import AvenDB.Checkpoint
+import AvenDB.Batches
 import AvenDB.Snapshot
 import AvenDB.Wraps
 import AvenDB.Vectors
