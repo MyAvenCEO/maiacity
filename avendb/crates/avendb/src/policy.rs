@@ -3945,6 +3945,9 @@ pub fn replay_on_why(was: Replay, edits: &[Edit], held: usize) -> (Replay, Why) 
     if fresh.is_empty() {
         return (was, Why::Nothing);
     }
+    if held == 0 {
+        return (whole(was.memo), Why::Whole("replay whole: the first since it opened"));
+    }
     let deepest = edits[..held].iter().map(|e| e.depth).max();
     let ids_fresh = ids(fresh);
     let by_id: HashMap<EditId, &Edit> = ids_fresh.iter().copied().zip(fresh).collect();
@@ -3997,8 +4000,14 @@ pub enum Why {
 /// isn't its replay.
 fn step_tail(was: Replay, fresh: &[Edit], ids: &[EditId]) -> Result<Replay, &'static str> {
     let tail = was.tail.as_ref().ok_or("replay whole: no place to step on from")?;
-    if fresh.iter().any(|e| e.is_removal() || matches!(e.action, Action::Checkpoint { .. } | Action::Snapshot { .. })) {
-        return Err("replay whole: a removal, a checkpoint or a snapshot came");
+    if fresh.iter().any(Edit::is_removal) {
+        return Err("replay whole: a removal came");
+    }
+    if fresh.iter().any(|e| matches!(e.action, Action::Checkpoint { .. })) {
+        return Err("replay whole: a checkpoint came");
+    }
+    if fresh.iter().any(|e| matches!(e.action, Action::Snapshot { .. })) {
+        return Err("replay whole: a snapshot came");
     }
     let among = |p: &EditId| ids.iter().position(|i| i == p).map(|i| fresh[i].depth);
     let depth = |p: &EditId| tail.depths.get(p).copied().or_else(|| among(p));

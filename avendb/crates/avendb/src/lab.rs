@@ -3844,6 +3844,35 @@ impl Lab {
             "blobs": store.blobs.len(),
             "blob_bytes": store.blobs.values().map(|b| b.len()).sum::<usize>(),
         });
+        // its edits by the log each is of and by what it does: how much of a replay the entries' own logs are, which a
+        // snapshot spares (S7c), and how much is key upkeep
+        let (mut logs, mut actions) = (BTreeMap::<&str, u64>::new(), BTreeMap::<&str, u64>::new());
+        for (edit, id) in store.log.edits().iter().zip(store.log.ids()) {
+            let log = match log_of(edit, *id) {
+                Some(LogId::Vault(_)) => "vault",
+                Some(LogId::Share(_)) => "share",
+                Some(LogId::Audience(..)) => "audience",
+                Some(LogId::Entry(_)) => "entry",
+                None => "signer",
+            };
+            let action = match &edit.action {
+                Action::Genesis { .. } => "genesis",
+                Action::Settings { .. } => "settings",
+                Action::Share(_) => "share",
+                Action::Revoke(_) => "revoke",
+                Action::Write { .. } => "write",
+                Action::Mark { .. } => "mark",
+                Action::Keys { .. } => "keys",
+                Action::Claim { .. } => "claim",
+                Action::Wraps { .. } => "wraps",
+                Action::Checkpoint { .. } => "checkpoint",
+                Action::Snapshot { .. } => "snapshot",
+            };
+            *logs.entry(log).or_default() += 1;
+            *actions.entry(action).or_default() += 1;
+        }
+        out["held"]["logs"] = serde_json::json!(logs);
+        out["held"]["actions"] = serde_json::json!(actions);
         // the vaults' checkpoints that stand, and the edits it holds on their word, without their signatures
         let r = &store.replay;
         let checkpoint = |(e, stood): (&Edit, &bool)| *stood && matches!(e.action, Action::Checkpoint { .. });

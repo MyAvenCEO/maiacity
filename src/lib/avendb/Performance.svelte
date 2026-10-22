@@ -81,7 +81,8 @@
 	/** @typedef {{ count: number, total_ms: number, mean_ms: number, max_ms: number }} Timer */
 	/**
 	 * @typedef {{ timers: Record<string, Timer>, counts: Record<string, number>,
-	 *   held: { edits: number, bodies: number, shown: number, blobs: number, blob_bytes: number },
+	 *   held: { edits: number, bodies: number, shown: number, blobs: number, blob_bytes: number,
+	 *     logs?: Record<string, number>, actions?: Record<string, number> },
 	 *   checkpoints?: { standing: number, vouched: number, bare: number, uncovered?: number,
 	 *     uncovered_by?: { vault: string | null, edits: number }[], vouching?: Vouching | null } }} Perf
 	 */
@@ -175,6 +176,35 @@
 		recovery: 'Recovery key of',
 		signer: 'Key'
 	});
+	/** the log an edit is of (avendb's `sync::LogId`), as a person reads it: an entry's own log is what a snapshot spares */
+	const LOGS = /** @type {Record<string, string>} */ ({
+		entry: 'entries’ own',
+		audience: 'audiences’ keys',
+		vault: 'vaults',
+		share: 'shares',
+		signer: 'signers’ keys'
+	});
+	/** what an edit does, as a person reads it */
+	const ACTIONS = /** @type {Record<string, string>} */ ({
+		write: 'writes',
+		keys: 'key boxes',
+		mark: 'moves',
+		wraps: 'key links',
+		checkpoint: 'checkpoints',
+		snapshot: 'snapshots',
+		share: 'shares',
+		revoke: 'revocations',
+		claim: 'claims',
+		settings: 'settings',
+		genesis: 'new vaults'
+	});
+	/** counts by name, the most first, each with its label from `labels` @param {Record<string, number>} by
+	 *  @param {Record<string, string>} labels */
+	const split = (by, labels) =>
+		Object.entries(by)
+			.sort((a, b) => b[1] - a[1])
+			.map(([k, n]) => `${n.toLocaleString()} ${labels[k] ?? k}`)
+			.join(', ');
 	/** the checkpoint being signed, and how it went */
 	let signing = $state(false);
 	let signed = $state('');
@@ -471,6 +501,14 @@
 				<dd>{perf.held.shown.toLocaleString()}</dd>
 				<dt>Files kept</dt>
 				<dd>{count(perf.held.blobs, 'file')}, {bytes(perf.held.blob_bytes)}</dd>
+				{#if perf.held.logs}
+					<dt>Its edits, by log</dt>
+					<dd>{split(perf.held.logs, LOGS)}</dd>
+				{/if}
+				{#if perf.held.actions}
+					<dt>Its edits, by kind</dt>
+					<dd>{split(perf.held.actions, ACTIONS)}</dd>
+				{/if}
 			</dl>
 		</article>
 		{#if perf.checkpoints}
