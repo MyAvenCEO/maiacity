@@ -23,6 +23,7 @@ export const SPEED = {
 
 /** the real outer size of each asset, width (x) × height (y) × length (z), in metres, as its model must measure */
 export const REAL_SIZES = {
+	waterCanister: { size: [.318, .397, .162], what: '10 L drinking-water canister including outlet and ribs' },
 	pickup: { size: [1.86, 1.82, 5.33], what: 'a double-cab pickup' },
 	pickupMachine: { size: [2.22, 1.84, 5.37], what: 'the double-cab pickup as a Machine at AirSup’s realism: 1.86 m body, its mirrors out of it, 1.82 m to its roof, 5.35 m over its bumpers (machines/pickup.js)' },
 	powerCube: { size: [0.74, 0.75, 0.76], what: 'Open Source Ecology’s Power Cube VII, a 27" (0.69 m) frame, its couplers, caps and handles out of it (actors/powercube.js)' },

@@ -22,6 +22,7 @@ export const GAMES = [
 	{ id: 'sandbox-4', label: 'Sandbox 4', route: '/app/games/sandbox-4/', note: 'The dome cell, its food forest grown from our plants' },
 	{ id: 'sandbox-5', label: 'Sandbox 5', route: '/app/games/sandbox-5/', note: 'A valley of settlers: production chains, an open market, abundance for all' },
 	{ id: 'sandbox-6', label: 'Sandbox 6', route: '/app/games/sandbox-6/', note: 'One village at its real size round the Tower180 hex' },
+	{ id: 'maiacity-v2', label: 'MaiaCity V2', route: '/app/maiacity-v2/', note: 'Three players, two COOPs, two tents, one shared world' },
 	{ id: 'maiacity-v1', label: 'MaiaCity V1', route: '/app/maiacity-v1/', note: 'Two players, three COOPs, one hex, one tent, one Balancer pool' },
 	{ id: 'tired-land', label: 'The tired land', route: '/app/worlds/tired-land/', note: 'Day 19: fields of one crop, a highway, trucks' }
 ];

@@ -248,7 +248,7 @@
 	// proxy, as the V1 intros do), and let go (its WebGL, its domes) when they are left — elsewhere a world shot plays
 	// from its HD proxy where it has one
 	// the world plays live in Edit and 3D, in any world: a shot's HD proxy shows only while its live world is not ready
-	const inWorld = $derived(s.wantWorld && liveTab(s.tab));
+	const inWorld = $derived(s.wantWorld && (s.worldClips.length > 0 || s.tab === '3d'));
 	// the live world draws at the size the monitor is seen at (its long edge in device pixels), as a game draws at its canvas's
 	$effect(() => {
 		const el = frameEl;

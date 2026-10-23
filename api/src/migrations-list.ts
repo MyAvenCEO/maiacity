@@ -1107,4 +1107,32 @@ export const MIGRATIONS: Migration[] = [
       ALTER TABLE founders ADD COLUMN IF NOT EXISTS vault TEXT UNIQUE;
     `,
   },
+  {
+    // Fork once: retain the live V1 snapshot, add a free third seat, never overwrite either game.
+    id: "0060-maiacity-v2",
+    sql: `
+      CREATE TABLE game_fork_snapshots (
+        id TEXT PRIMARY KEY,
+        source_game TEXT NOT NULL,
+        target_game TEXT NOT NULL,
+        state JSONB NOT NULL,
+        source_updated TIMESTAMPTZ NOT NULL,
+        captured TIMESTAMPTZ NOT NULL DEFAULT now(),
+        checksum TEXT NOT NULL
+      );
+      INSERT INTO game_fork_snapshots (id, source_game, target_game, state, source_updated, checksum)
+      SELECT 'maiacity-v1-to-v2', 'maiacity-v1', 'maiacity-v2', state, updated, md5(state::text)
+      FROM v1_games WHERE id = 'main';
+      CREATE FUNCTION preserve_game_fork_snapshot() RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN RAISE EXCEPTION 'Game fork snapshots are immutable'; END $$;
+      CREATE TRIGGER preserve_game_fork_snapshot BEFORE UPDATE OR DELETE ON game_fork_snapshots
+        FOR EACH ROW EXECUTE FUNCTION preserve_game_fork_snapshot();
+      CREATE TABLE v2_games (LIKE v1_games INCLUDING ALL);
+      INSERT INTO v2_games (id, state)
+      SELECT 'main', jsonb_set(state, '{players,C}',
+        '{"seat":"C","name":"Player C","founder":null,"wallet":{"HEARTS":0,"MAIA":0,"TRIBE":0,"VILLAGE":0},"lastMint":null,"arrears":0}'::jsonb)
+        || jsonb_build_object('fork', jsonb_build_object('game', source_game, 'snapshot', id, 'checksum', checksum, 'at', floor(extract(epoch from captured) * 1000), 'sourceTime', state->'t'))
+      FROM game_fork_snapshots WHERE id = 'maiacity-v1-to-v2';
+    `,
+  },
 ];

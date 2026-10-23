@@ -84,10 +84,10 @@
 </script>
 
 <svelte:head>
-	<title>Join · maiaCITY</title>
+	<title>Become a Maia Citizen · Maia City</title>
 	<meta
 		name="description"
-		content="One founder, then two, then we. Claim your place in the line that builds Maia City."
+		content="Build a post-labour economy together in Maia City, a shared digital-twin game shaped by its citizens. Invite only. Planned citizenship subscription: €1 a day."
 	/>
 </svelte:head>
 
@@ -107,18 +107,45 @@
 
 			<button class="quiet" onclick={leave}>Sign out on this device</button>
 		{:else}
-			<p class="eyebrow">Step two</p>
-			<h1>The first step was mine. The second one is yours.</h1>
-			<p class="lede">
-				A city of a million co-founders does not start with a million people. It starts with one
-				more. Put your name in and the line grows by one.
-			</p>
+			<div class="product-hero">
+				<div>
+					<p class="eyebrow">A shared world. An economy we build together.</p>
+					<h1>Build the world<br />after work.</h1>
+					<p class="lede">Become a Maia Citizen. Step into a digital-twin game where we build and test a post-labour, post-AGI economy — together.</p>
+					<p class="hero-note">Start with a tent, a shared pickup and a handful of citizens. Help decide what comes next.</p>
+					<a class="pill-btn" href="#citizenship">Explore citizenship <span aria-hidden="true">↗</span></a>
+					<span class="invite-badge">Early build · invite only</span>
+				</div>
+				<figure class="world-preview">
+					<img src="{base}/maiacity-v1/cover.jpg" alt="The first Maia City settlement in the game" />
+					<figcaption><span>MAIA CITY / THE BEGINNING</span><strong>A little world.<br />A very big question.</strong><span>How do we live when work no longer defines us?</span></figcaption>
+				</figure>
+			</div>
+
+			<section class="possibilities" aria-label="What we explore together">
+				<div><span class="number">01 / ECONOMY</span><h2>Try a different set of rules.</h2><p>Explore monetary policies, shared resources and COOPs. Propose changes. See what happens to the world we share.</p></div>
+				<div><span class="number">02 / EVERYDAY LIFE</span><h2>Make the city work.</h2><p>Homes, energy, water, transport and logistics. Help turn big ideas about life after labour into systems we can play with and test.</p></div>
+				<div><span class="number">03 / CO-CREATION</span><h2>Build the game as we go.</h2><p>The gameplay grows with us. Citizen by citizen, we shape new mechanics, ways to organize and things worth building.</p></div>
+			</section>
+
+			<section class="citizenship" id="citizenship" aria-labelledby="citizenship-title">
+				<div class="offer">
+					<p class="eyebrow">Your place in the experiment</p>
+					<h2 id="citizenship-title">Virtual citizenship.<br />Real participation.</h2>
+					<p>Bring your curiosity, your skills and your ideas. Play the early world, help test its rules and co-create what it becomes.</p>
+					<p class="price"><strong>€1</strong><span>/ day<br /><small>planned subscription</small></span></p>
+					<p class="offer-note">The planned subscription supports the ongoing build. Payments are not open yet. Joining with an invitation does not start a subscription or charge you.</p>
+				</div>
+				<div class="invitation">
+					<p class="eyebrow">We grow one citizen at a time</p>
+					<h3>{invited ? 'Your invitation is here.' : 'A small beginning. Come build with us.'}</h3>
+					<p>Maia City is currently invite only. An invitation from an admin opens your place in the game.</p>
 
 			{#if ready && !open}
 				<p class="note">
 					maiaCITY is invite only: {invite
 						? 'this invite link is used up or expired. Ask for a new one.'
-						: 'an invite link from its admin lets you join.'}
+						: 'have an invitation? Open your personal invite link to begin.'}
 				</p>
 				<p class="already">
 					Already a founder?
@@ -145,7 +172,7 @@
 						placeholder="Your name"
 					/>
 					<button class="pill-btn" type="submit" disabled={busy || name.trim().length < 2}>
-						{busy ? 'One moment…' : 'Join as a founder →'}
+						{busy ? 'One moment…' : 'Become a Maia Citizen →'}
 					</button>
 				</form>
 
@@ -162,6 +189,14 @@
 					<a class="quiet" href="{base}/app/">Sign in</a>
 				</p>
 			{/if}
+				</div>
+			</section>
+			<section class="mission">
+				<p class="eyebrow">First in game. Then in real.</p>
+				<h2>One million founders.<br />One city. Sixteen years.</h2>
+				<p>That is the ambition. Today, we are building the game and learning together. Virtual citizenship means joining this shared experiment; the real-world city is the long-term vision.</p>
+				<p class="maia-note">I’m avenMAIA. I’m learning to build this city with Samuel, Daniel — and the citizens who join us next.</p>
+			</section>
 		{/if}
 
 		{#if ready && count}
@@ -169,7 +204,7 @@
 			<aside class="ladder">
 				<span class="n">{count.count}</span>
 				<span class="label">
-					{count.count === 1 ? 'founder' : 'founders'} · step {count.step} of thirty-one
+					{count.count === 1 ? 'citizen' : 'citizens'} · the world grows with every one
 				</span>
 			</aside>
 		{/if}
@@ -182,13 +217,13 @@
 	}
 
 	article {
-		max-width: 34rem;
+		max-width: 70rem;
 		margin: 0 auto;
 	}
 
 	h1 {
 		margin: 0.75rem 0 0;
-		font-size: clamp(2rem, 5vw, 3rem);
+		font-size: clamp(2.8rem, 5.8vw, 5rem);
 		line-height: 1.05;
 	}
 
@@ -294,5 +329,53 @@
 	.ladder .label {
 		font-size: 0.85rem;
 		color: var(--muted);
+	}
+
+	#terminal {
+		margin-top: 1rem;
+	}
+
+	.product-hero { display:grid; grid-template-columns:1.12fr 1fr; gap:3rem; align-items:center; }
+	.product-hero .eyebrow { font-size:.68rem; letter-spacing:.15em; }
+	.product-hero .lede { max-width:34rem; margin:1.25rem 0 .8rem; font-size:1.13rem; }
+	.hero-note { color:var(--ink-soft); margin:0 0 1.7rem; max-width:29rem; }
+	.invite-badge { display:block; margin-top:.8rem; color:var(--ink-soft); font-size:.75rem; }
+	.world-preview { position:relative; min-height:26rem; margin:0; border-radius:1.8rem; overflow:hidden; background:#243a2b; color:#fff8e8; }
+	.world-preview img { position:absolute; width:100%; height:100%; object-fit:cover; }
+	.world-preview::after { content:''; position:absolute; inset:0; background:linear-gradient(transparent 20%,rgb(17 38 28 / .9)); }
+	.world-preview figcaption { position:absolute; z-index:1; bottom:2rem; left:2rem; right:2rem; display:grid; gap:.8rem; }
+	.world-preview figcaption span:first-child { font-size:.65rem; letter-spacing:.16em; }
+	.world-preview figcaption strong { font-family:var(--font-display, Georgia, serif); font-size:2.25rem; font-weight:400; line-height:1.05; }
+	.world-preview figcaption span:last-child { font-size:.8rem; max-width:20rem; }
+	.possibilities { display:grid; grid-template-columns:repeat(3,1fr); gap:2rem; margin:3.25rem 0; padding:2rem 0; border-block:1px solid var(--line, #d8d1bf); }
+	.number { font-size:.65rem; letter-spacing:.12em; color:var(--ink-soft); }
+	.possibilities h2 { font-size:1.5rem; line-height:1.1; margin:.85rem 0; }
+	.possibilities p { font-size:.92rem; line-height:1.6; color:var(--ink-soft); margin:0; }
+	.citizenship { scroll-margin-top:6rem; display:grid; grid-template-columns:1fr 1fr; background:#243a2b; color:#f6f0e4; border-radius:1.8rem; overflow:hidden; }
+	.offer, .invitation { padding:2.3rem; }
+	.offer { border-right:1px solid #ffffff25; }
+	.citizenship .eyebrow { color:#dec18b; font-size:.65rem; }
+	.citizenship h2 { margin:.7rem 0 1rem; font-size:2.3rem; line-height:1.08; }
+	.citizenship h3 { margin:.7rem 0 1rem; font-size:1.8rem; line-height:1.1; }
+	.citizenship p { line-height:1.55; }
+	.citizenship .price { display:flex; gap:.8rem; align-items:center; margin:1.5rem 0 1rem; }
+	.price strong { font-size:4.6rem; font-family:var(--font-display, Georgia, serif); font-weight:400; line-height:1; }
+	.price small { font-size:.7rem; color:#d7cdb9; }
+	.citizenship .offer-note { font-size:.76rem; color:#d7cdb9; max-width:28rem; }
+	.citizenship .already, .citizenship .fine, .citizenship .note { color:#e4dbca; }
+	.citizenship a { color:#f4c99e; }
+	.citizenship form { color:var(--ink, #243a2b); }
+	.mission { padding:3rem 0 0; max-width:42rem; }
+	.mission h2 { font-size:2.2rem; line-height:1.1; margin:.8rem 0; }
+	.mission p { color:var(--ink-soft); line-height:1.6; }
+	.mission .maia-note { font-size:.85rem; }
+	@media(max-width:720px) {
+		main { padding-block:2rem 3rem; }
+		.product-hero,.citizenship { grid-template-columns:1fr; gap:0; }
+		.product-hero { gap:2rem; }
+		.world-preview { min-height:20rem; }
+		.possibilities { grid-template-columns:1fr; gap:1.6rem; margin:2rem 0; }
+		.offer,.invitation { padding:1.6rem; }
+		.offer { border-right:0; border-bottom:1px solid #ffffff25; }
 	}
 </style>

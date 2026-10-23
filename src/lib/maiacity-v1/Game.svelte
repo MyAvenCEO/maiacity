@@ -516,22 +516,10 @@
 
 	{#if view && player}
 		<div class="topstats">
-			{#if shows('hearts')}<span class="stat panel" title="HEARTS held, and ready to mint"><span class="heart">♥</span> <b>{f(player.wallet.HEARTS, 1)}</b>{#if mint.amount > 0.05}<em>+{f(mint.amount, 1)}</em>{/if}</span>{/if}
-			{#if shows('minds')}{#each MINDS as t (t)}<span class="stat panel" title={TOKEN_LABEL[t]}><i style="background:{TOKEN_COLOUR[t]}"></i> <b>{f(player.wallet[t], 1)}</b></span>{/each}{/if}
 			{#if shows('clock')}<span class="clock m panel" title="The game clock: {cal.weekday} {cal.day} {cal.name}, year {cal.year} ({dateText(cal)}). {speed}, 13 months of 28 days.">{cal.weekday} {cal.day} {cal.name} Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>{/if}
 		</div>
 
 		<div class="topright">
-			{#if shows('seats')}<div class="seg panel">
-				{#each SEATS as s (s)}
-					{#if !view.players[s].founder && mySeat && !demo}
-						<button title="Test run this seat's journey in this browser, as long as no one has taken it" onclick={() => startDemo(s)}>{view.players[s].name} · try</button>
-					{:else}
-						<button class:on={seat === s} onclick={() => ((seat = s), (account = ''))}>{view.players[s].name}{view.players[s].founder === me ? ' · you' : ''}</button>
-					{/if}
-				{/each}
-			</div>{/if}
-			{#if !demo && mySeat && !tour}<div class="seg panel intros" title="Replay a seat's whole story on a fresh test game in this browser; nothing is saved"><span>Play intro</span>{#each SEATS as s (s)}<button onclick={() => startDemo(s)}>{s}</button>{/each}</div>{/if}
 			{#if shows('clock')}<span class="clock panel" title="The game clock: {speed}, 13 months of 28 days"><small>{dateText(cal)}</small> {cal.weekday} {cal.day} {cal.name} · Y{cal.year} · {pad(Math.floor(hour))}:{pad(Math.floor((hour % 1) * 60))}</span>{/if}
 		</div>
 
@@ -906,20 +894,6 @@
 		justify-content: center;
 		gap: 0.3rem;
 	}
-	.stat {
-		display: flex;
-		align-items: center;
-		gap: 0.35rem;
-		padding: 0.45rem 0.8rem;
-		border-radius: 999px;
-		font-variant-numeric: tabular-nums;
-		white-space: nowrap;
-	}
-	.stat em {
-		font-style: normal;
-		font-size: 0.72rem;
-		color: #3d7a4a;
-	}
 	.heart {
 		color: #e0435a;
 	}
@@ -931,22 +905,6 @@
 		display: flex;
 		gap: 0.4rem;
 		align-items: center;
-	}
-	.seg {
-		display: flex;
-		padding: 0.2rem;
-		border-radius: 999px;
-	}
-	.seg button {
-		padding: 0.35rem 0.75rem;
-		border: 0;
-		border-radius: 999px;
-		background: none;
-		white-space: nowrap;
-	}
-	.seg button.on {
-		background: #fff;
-		box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
 	}
 	.clock.m {
 		display: none;
@@ -1229,12 +1187,6 @@
 	.skip.all {
 		right: auto;
 		left: 1rem;
-	}
-	.intros span {
-		align-self: center;
-		padding: 0 0.4rem 0 0.7rem;
-		font-size: 0.8rem;
-		opacity: 0.7;
 	}
 	.demo {
 		position: absolute;

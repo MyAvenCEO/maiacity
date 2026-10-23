@@ -326,7 +326,7 @@
 	const rel = $derived(page.url.pathname.slice(base.length));
 	// full screen: a sandbox, a world, the turntables ($lib/app/Turntable.svelte), a
 	// factory's hall, and the studio's editor
-	const immersive = $derived(/^\/app\/(games\/[^/]+|worlds\/[^/]+|maiacity-v1|factories|biomes)\/?$/.test(rel) || rel.startsWith('/app/studio') || fullScreen.on);
+	const immersive = $derived(/^\/app\/(games\/[^/]+|worlds\/[^/]+|maiacity-v[12]|factories|biomes)\/?$/.test(rel) || rel.startsWith('/app/studio') || fullScreen.on);
 	// a game, world or game asset page opens by the Maia City cap group it needs ($lib/app/access.svelte.js), read from
 	// the person's avenDB as it shows its world anew; until that is read it waits, and anyone without it is told what
 	// opens it

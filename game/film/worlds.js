@@ -12,7 +12,7 @@
 // Plain JavaScript, shared by the browser, the API and the scripts.
 
 /**
- * @typedef {'sandbox-1' | 'sandbox-2' | 'sandbox-3' | 'sandbox-4' | 'sandbox-5' | 'sandbox-6' | 'tired-land' | 'maiacity-v1'} Sandbox
+ * @typedef {'sandbox-1' | 'sandbox-2' | 'sandbox-3' | 'sandbox-4' | 'sandbox-5' | 'sandbox-6' | 'tired-land' | 'maiacity-v1' | 'maiacity-v2'} Sandbox
  *   every world's id, as a shot names it (`world.sandbox`): the keys of WORLDS
  */
 /**
@@ -62,6 +62,17 @@ export const WORLDS = {
 		route: '/app/maiacity-v1/',
 		areas: ['A', 'B'],
 		areaNames: { A: 'Player 1', B: 'Player 2' },
+		parts: [
+			{ id: 'van', label: 'The van', channels: { along: { label: 'Along the highway', range: [0, 1], unit: '0 far out on the steppe · 1 at the bus stop' } } },
+			{ id: 'pickup', label: 'The pickup', channels: { along: { label: 'Along the track', range: [0, 1], unit: '0 the gas station · 1 home' } } },
+			{ id: 'tent', label: 'The bell tent', channels: { pitch: { label: 'Pitched', range: [0, 1], unit: '0 in its bag · 1 standing' } } }
+		]
+	},
+	'maiacity-v2': {
+		label: 'MaiaCity V2 · the intro',
+		route: '/app/maiacity-v2/',
+		areas: ['A', 'B', 'C'],
+		areaNames: { A: 'Player 1', B: 'Player 2', C: 'Player 3' },
 		parts: [
 			{ id: 'van', label: 'The van', channels: { along: { label: 'Along the highway', range: [0, 1], unit: '0 far out on the steppe · 1 at the bus stop' } } },
 			{ id: 'pickup', label: 'The pickup', channels: { along: { label: 'Along the track', range: [0, 1], unit: '0 the gas station · 1 home' } } },

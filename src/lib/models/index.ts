@@ -15,6 +15,7 @@ import { WAYSIDE_INFO, travelVan } from './wayside.js';
 import { pallet } from './pallet.js';
 import { DOME_ROOMS } from './domerooms.js';
 import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
+import { waterCanister } from './water-canister.js';
 import { FIRST, versioned, type Version, type Change } from '$lib/app/versions.js';
 
 /** a model's builder: none of its arguments, or the values of the parameters it declares, in their order */
@@ -74,6 +75,7 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'pickup', label: 'Pickup', note: `${VILLAGE_INFO.pickup.note}. The Village COOP’s`, usedIn: 'MaiaCity V1', make: () => pickup() },
 	{ id: 'loading-ramp', label: 'Loading ramp', note: 'one folding aluminium ramp, 0.86 m wide between its rails, grip bars every 10 cm, a lip to lie on the bed: up 1.16 m over 2 m, from the ground to the pickup’s bed', usedIn: 'MaiaCity V1', make: () => loadingRamp() },
 	{ id: 'backpack', label: 'Backpack', note: 'a hiker’s pack of about 35 l, 32 × 22 cm and 46 cm to its rim: a drawstring collar, a lid pocket thrown back, a front pocket, mesh bottle pockets, padded back, curved shoulder straps and a hip belt; open, a 1 l water bottle and ten seed packets in it', usedIn: 'MaiaCity V1', make: () => backpack() },
+	{ id: 'water-canister', label: '10 L water canister', note: 'A 10-litre drinking-water canister, 302 × 154 × 397 mm, with a handle, wide cap and sealed outlet', usedIn: 'MaiaCity V2', make: waterCanister },
 	{ id: 'water-bottle', label: 'Water bottle', note: '1 l, refillable, powder-coated steel, 7.7 cm across and 30 cm to its cap’s loop; its open mouth at the top to pour from', usedIn: 'MaiaCity V1', make: () => waterBottle() },
 	{
 		id: 'seed-packet',
