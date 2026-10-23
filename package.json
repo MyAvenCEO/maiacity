@@ -37,6 +37,7 @@
 		"@jitl/quickjs-singlefile-browser-release-sync": "^0.32.0",
 		"@modelcontextprotocol/ext-apps": "2.0.3",
 		"@noble/hashes": "2.4.0",
+		"@preact/signals": "2.11.3",
 		"@simplewebauthn/browser": "^14.0.0",
 		"@tauri-apps/api": "^2",
 		"@tauri-apps/plugin-dialog": "^2",
@@ -46,6 +47,7 @@
 		"katex": "0.16.22",
 		"linkedom": "0.18.13",
 		"marked": "^18.0.12",
+		"preact": "11.0.0",
 		"quickjs-emscripten-core": "^0.32.0",
 		"three": "^0.186.0",
 		"yaml": "^2.9.0"
