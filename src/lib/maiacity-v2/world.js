@@ -35,6 +35,7 @@ import { PLOT, SEATS } from '../../../game/maiacity-v2/engine.js';
 import { look, pathOf } from '../../../game/film/camera.js';
 import { BAG_PARTS, BELL_TENT, BOTTLE_MOUTH, CENTRE_AT, FIRE_CATCHES, FIRE_WALK, PACK_PACKETS, PICKUP, RAMP, STAKE_FLAG, TENT_CLOTH, TENT_LAMP, TENT_WALK, THINGS, WALK_CYCLE, stakeRef, standInRef, tentWork } from './things.js';
 import { createDrawn } from './drawn.js';
+import { growthFrame } from './tree-camera.js';
 import { aim, filmHoldsSize, poseIn } from '$lib/sandbox-kit/film.js';
 import { frameAt as reelFrame } from '../../../game/film/reel.js';
 import { plantRef } from './plants.js';
@@ -1280,7 +1281,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	const standing = Object.fromEntries(SEATS.map((s) => [s, []]));
 	const grows = [];
 	/** the players' trees (list: { seat, plant, seed, stage, x, z, grown }), regrown when a stage moves on */
-	function setTrees(list = []) {
+	function setTrees(list = [], { holdGrowth = false } = {}) {
+		const ready = [];
 		for (const seat of SEATS) {
 			const t = list.find((x) => x.seat === seat);
 			const had = trees[seat];
@@ -1300,6 +1302,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			// the plant at its stage from its seed, built in the asset box and drawn by the renderer where this anchor
 			// stands (./plants.js)
 			const plant = new THREE.Group();
+			if (holdGrowth && had) plant.visible = false;
 			const copy = t.markerOnly ? {ready: Promise.resolve(null)} : drawn.follow(plantRef(t.plant, t.stage, t.seed), plant, { pick: `tree:${seat}`, receive: true });
 			const kit = spotKit(drawn, { name: t.name ?? '', seed: t.plant.id, pick: `tree:${seat}` });
 			kit.userData.setWet(0.6);
@@ -1318,18 +1321,29 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			// how tall it stands is read off the build once it is there
 			g.userData = { key, top: 0.7, grown: t.grown, height: 0, ring, drawn: copy };
 			const was = had?.userData;
-			copy.ready.then((box) => {
+			ready.push(copy.ready.then((box) => {
 				const height = Math.max(0, box?.max.y ?? 0);
-				Object.assign(g.userData, { top: Math.max(0.7, height + 0.35), height });
+				Object.assign(g.userData, { top: Math.max(0.7, height + 0.35), height, bounds: box?.clone() });
 				if (trees[seat] !== g) return;
-				away();
-				// watered: it grows in place, from the height it had to its new one (Samuel 2026-10-14)
-				if (was && t.grown > was.grown && height > 0.002) grows.push({ plant, t0: now(), from: Math.min(1, was.height / height) });
-			});
+				const startGrowth = () => {
+					plant.visible = true;
+					away();
+					if (was && t.grown > was.grown && height > 0.002) {
+						const from = Math.min(1, was.height / height);
+						plant.scale.setScalar(from);
+						grows.push({ plant, t0: now(), from, seconds: holdGrowth ? 4 : 1.8 });
+					}
+				};
+				if (holdGrowth && was && t.grown > was.grown) {
+					plant.visible = false;
+					g.userData.startGrowth = startGrowth;
+				} else startGrowth();
+			}));
 			world.add(g);
 			trees[seat] = g;
 		}
 		if (trees[stage.me]) myKit.visible = false;
+		return Promise.all(ready);
 	}
 
 	function placeBattery(where) {
@@ -2876,22 +2890,46 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		camera.position.copy(L(0.46, 0.42, 0.2));
 		camera.lookAt(L(0.02, 0.12, -0.05));
 	}
-	/** watering the first tree (once a game month, Samuel 2026-10-14): kneeling at it, the bottle pouring; then a little
-	 *  way back as it grows in place */
-	function waterTree(seat, onWatered = () => {}) {
-  const me=people[seat], g=trees[seat];
-  if(!g || busy || !me) return Promise.resolve();
-  const S={x:g.position.x,z:g.position.z}, L=spotAt(S);
-  world.attach(waterCan);
-  return play([
-   beat(3.2, (s,k) => {
-    waterCan.position.copy(L(.16,.55,-.15));waterCan.rotation.set(0,spotYaw(S),0);waterCan.rotateZ(-1.3*Math.sin(Math.PI*k));
-    pour.visible=k>.2 && k<.85;pour.position.copy(L(0,.3,0));pour.scale.set(1,.3,1);act(me,'pour');
-    camera.position.copy(L(1.4,1.2,-1.8));camera.lookAt(L(0,.4,0));
-   }, () => {seatOut(me);me.position.copy(L(0,0,-.65));me.rotation.y=spotYaw(S);}),
-   beat(3.8, () => {pour.visible=false;camera.position.copy(L(1.8,1.3,-2.4));camera.lookAt(L(0,.6,0));},()=>{act(me,'stand');onWatered();})
-  ]).finally(()=>{pour.visible=false;});
- }
+	/** A locked close-up of the saved before/after growth, built before the camera starts. */
+	async function waterTree(seat, onWatered = () => Promise.resolve()) {
+		const me = people[seat], before = trees[seat];
+		if (!before || busy || !me) return;
+		const saved = { eye: camera.position.clone(), target: controls.target.clone(), fov: camera.fov, near: camera.near };
+		await onWatered(); // the next stage must be ready before its growth is shown
+		const g = trees[seat];
+		if (!g) return;
+		const bounds = g.userData.bounds?.clone() ?? new THREE.Box3(V(-0.1, 0, -0.1), V(0.1, 0.3, 0.1));
+		if (before.userData.bounds) bounds.union(before.userData.bounds);
+		g.updateWorldMatrix(true, false);
+		const { eye, target } = growthFrame(bounds, g.matrixWorld, saved.eye, camera.aspect);
+		const hold = () => { camera.position.copy(eye); camera.lookAt(target); };
+		const S = { x: g.position.x, z: g.position.z }, L = spotAt(S);
+		world.attach(waterCan);
+		try {
+			await play([
+				beat(3.2, (s, k) => {
+					waterCan.position.copy(L(0.16, 0.55, -0.15));
+					waterCan.rotation.set(0, spotYaw(S), 0);
+					waterCan.rotateZ(-1.3 * Math.sin(Math.PI * k));
+					pour.visible = k > 0.2 && k < 0.85;
+					pour.position.copy(L(0, 0.3, 0)); pour.scale.set(1, 0.3, 1);
+					act(me, 'pour'); hold();
+				}, () => {
+					lensFor({ fov: 42, near: 0.01 });
+					seatOut(me); me.position.copy(L(0, 0, -0.65)); me.rotation.y = spotYaw(S);
+				}),
+				beat(5.5, hold, () => { pour.visible = false; act(me, 'stand'); g.userData.startGrowth?.(); delete g.userData.startGrowth; })
+			]);
+		} finally {
+			// Also reveal the saved stage if the player skipped the close-up.
+			g.userData.startGrowth?.(); delete g.userData.startGrowth;
+			pour.visible = false;
+			goal = null;
+			camera.position.copy(saved.eye); controls.target.copy(saved.target);
+			camera.fov = saved.fov; camera.near = saved.near; camera.updateProjectionMatrix();
+			camera.lookAt(saved.target);
+		}
+	}
 
 	/** the player's joy (Samuel 2026-10-13: after the first mint): their face in the van, centred, a big smile and
 	 *  sparkling eyes, a few seconds */
@@ -3535,7 +3573,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
   }
 		for (let i = grows.length - 1; i >= 0; i--) {
 			// a watered tree grows in place
-			const g = grows[i], k = Math.min(1, (t - g.t0) / 1.8);
+			const g = grows[i], k = Math.min(1, (t - g.t0) / (g.seconds ?? 1.8));
 			g.plant.scale.setScalar(g.from + (1 - g.from) * easeOut(k));
 			if (k >= 1) grows.splice(i, 1);
 		}
