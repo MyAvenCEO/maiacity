@@ -108,6 +108,9 @@ pub use avendb::world::{CARD, DELETED, FILE, FORK, NOTE, PROFILE, TODO};
 /// Which code is a vault's, proven in the page (`provenCode`, H2).
 pub mod provenance;
 
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod moving_tests;
+
 /// How many bytes of a file the page hands its device at a time (`PageDevice::run`'s `read`, for `put_file` and a
 /// `create` that brings a file).
 const CHUNK: u64 = 1 << 20;
@@ -584,7 +587,9 @@ impl Device {
         Ok(())
     }
 
-    /// What its key move asks of its person now (K3b, `move_keys`), once it caught up with its peers (`catch_up`):
+    /// What its key move asks of its person now (K3b, `move_keys`). A local no-work probe and bounded next-key
+    /// discovery return `None` without a full sync; callers periodically ask again as history or peers change.
+    /// When work may exist, it first catches up with its peers (`catch_up`), then recomputes what is needed:
     /// whether their passkey signs, whether its Mac's Touch ID key does, with a touch, and whether a device moves.
     /// `None` once nothing it holds is to move: their keys and its own are in ML-DSA-65, or the Lab holds no next key
     /// of those still in SLH-DSA, as a Mac its Touch ID key opened holds none of their passkey's. Fails while it
@@ -595,6 +600,14 @@ impl Device {
     /// and they may be all the peers it has.
     pub async fn moving(&self) -> Result<Option<Moving>> {
         let touch = self.touch_key().await?;
+        // This is only a no-work probe. A missing peer cannot authorize a move or a retirement. Discover remote
+        // next keys before a full pull too: an offline legacy agent should not make every page reload resend history.
+        let opener = self.opener.clone();
+        let local = self.node.read(move |lab, me| local_move_pending(lab, me, &opener, touch)).await;
+        if !local && aven_moves(&self.node).await.is_empty() {
+            return Ok(None);
+        }
+        // Never reuse a preflight draft or peer result as authority: freshness and all candidates are recomputed.
         if !catch_up(&self.node).await {
             bail!("{NOT_CAUGHT_UP}");
         }
@@ -1180,6 +1193,24 @@ fn holds_what_servers_hold(lab: &Lab, me: SignerId, peers: &BTreeMap<SignerId, O
     let servers = lab.governed_devices(me);
     let mut theirs = peers.iter().filter(|(d, _)| servers.contains(d)).peekable();
     theirs.peek().is_some() && theirs.all(|(_, &lacks)| lacks == Some(0))
+}
+
+/// Whether local history might call for a move, retirement or standalone checkpoint. This does not authorize
+/// anything and intentionally overestimates work: retirement is tested with no live peers and with every governed
+/// peer live, so an absent/stale connection cannot hide a candidate. Discovery and freshness still precede drafting.
+fn local_move_pending(lab: &Lab, me: SignerId, opener: &[SignerId], touch: Option<[u8; 32]>) -> bool {
+    if lab.vault_of(me).is_none() || !lab.moves(me, touch).is_empty() {
+        return true;
+    }
+    let governed = lab.governed_devices(me);
+    if !governed.is_empty()
+        && (!lab.retires(me, &BTreeSet::new()).is_empty() || !lab.retires(me, &governed).is_empty())
+    {
+        return true;
+    }
+    let Some(by) = lab.owner_among(me, opener).or(opener.first().copied()) else { return false };
+    // A refusal is not evidence of no work; the normal freshness/drafting path must explain it.
+    lab.draft_checkpoint(me, by, false).map_or(true, |drafts| !drafts.is_empty())
 }
 
 /// Asks each device `node` knows for what it holds, for a few seconds at most (`avendb_net::Node::catch_up`, as a

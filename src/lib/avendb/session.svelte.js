@@ -46,6 +46,7 @@ import { command, native } from '$lib/native';
 import { allowed, answer, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
 import { createVaultContext } from './context.js';
+import { createMoveChecks } from './move-checks.js';
 import { createEntryWindow, createReadWindow, replyEntries } from './query-window.js';
 import { bringEntries, learn, useDevice } from '../../../game/code/sources/device.js';
 import { sync } from './sync.svelte.js';
@@ -492,45 +493,19 @@ function keepStorage() {
 		.catch(() => {});
 }
 
-/** How long a device that can't say yet what its key move asks waits before it is asked again (ms). */
-const MOVE_AGAIN = 30000;
+/** One bounded recheck timer. No-work results are reconsidered as new history or a remote next key arrives;
+ *  pending freshness retries sooner. A replaced/locked device's pending answers and timers cannot act on its successor. */
+const moveChecks = createMoveChecks({
+	current: () => phase === 'open' ? device : null,
+	ask: (d) => mac ? mac.call('moving') : d.moving(),
+	show: (asked) => { moving = asked; },
+	move: () => moveKeys(),
+	warn: (e) => console.warn('avenDB: the key move is asked about again in a moment:', e?.message ?? e)
+});
 
-/** How long a device with nothing to move waits before it is asked again, while a device of an aven its person
- *  governs still signs with its key from before the move: a server or an agent moves only while it runs (K3c), as
- *  their cloud sessions' agent does only while a session uses avenDB, so the device looks for it now and then (ms). */
-const AVEN_AGAIN = 180000;
-/** the next of those looks, one at a time */
-let avenLater = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined);
-
-/** Whether a device of an aven the person sees still signs with its key from before the key move, with no next key
- *  beside it yet. */
-const avenOld = () => !!world?.vaults.some((v) => v.kind === 'aven' && v.devices.some((d) => d.old && !d.next));
-
-/** What device `d`'s key move asks of the person (K3b), once it opened: where it asks for no ceremony, as a move cut
- *  short, it goes on at once; otherwise the page asks once more (`moveKeys`). Never fails: a device that can't say yet,
- *  as one still bringing what its peers hold (it caught up with none of them), is asked again `MOVE_AGAIN` later, for
- *  as long as it is the page's (Samuel 2026-10-20: a phone that unlocked mid-sync never showed "Move my keys"). So is
- *  one whose old keys' removal waits until it holds what its coop's server holds (`behind`), the banner saying so
- *  meanwhile (`again`), and one with nothing to move while a server or an agent of an aven still signs as before the
- *  move (`AVEN_AGAIN`): it moves once the device finds it running, as their cloud sessions' agent. @param {any} d
- *  @param {boolean} [again] */
-async function checkMove(d, again = false) {
-	if (!again) moving = null;
-	try {
-		const asked = (mac ? await mac.call('moving') : await d.moving()) ?? null;
-		if (device !== d) return;
-		moving = asked;
-		if (asked?.behind) setTimeout(() => device === d && void checkMove(d, true), MOVE_AGAIN);
-		else if (asked && !asked.passkey && !asked.touch) await moveKeys();
-		else if (!asked && avenOld()) {
-			clearTimeout(avenLater);
-			avenLater = setTimeout(() => device === d && !moving && void checkMove(d, true), AVEN_AGAIN);
-		}
-	} catch (e) {
-		console.warn('avenDB: the key move is asked about again in a moment:', /** @type {Error} */ (e)?.message ?? e);
-		setTimeout(() => device === d && !moving && void checkMove(d), MOVE_AGAIN);
-	}
-}
+/** What this device's key migration asks now; no work is checked again in three minutes, pending work in thirty seconds.
+ *  @param {any} d @param {boolean} [again] */
+const checkMove = (d, again = false) => moveChecks.check(d, again);
 
 /** Moves the person's passkey and this device to ML-DSA-65 (K3b), as `moving` asks: one ceremony of their passkey, and
  *  in the Mac app a touch of its Touch ID key, which moves too, with the drives it hosts. The device opens again as its
@@ -795,6 +770,7 @@ async function rename(name) {
  *  unlock opens it again. In the Mac app its device runs on beside the app, which signs out of its own key alone. */
 async function lock() {
 	if (mac) return;
+	moveChecks.stop();
 	const d = device;
 	watching = null;
 	useDevice(null);
@@ -806,6 +782,7 @@ async function lock() {
 /** Forgets the account here: the device lets go, and its shelf is put aside, never deleted, and a new one is in use,
  *  in the app's folder or in OPFS; the account is new here, and every page of the tab sees it so. */
 async function forget() {
+	moveChecks.stop();
 	await device?.close();
 	watching = null;
 	useDevice(null);

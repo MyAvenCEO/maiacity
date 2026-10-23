@@ -43,3 +43,5 @@ import AvenDB.ReceiveEmpty
 import AvenDB.FileAvailability
 
 import AvenDB.ShutdownOwnership
+
+import AvenDB.MigrationProbe
