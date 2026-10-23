@@ -5,7 +5,7 @@
  *   bun scripts/test-avendb-store.mjs [--browser chromium|webkit]
  * Chromium defaults to installed Chrome on macOS, otherwise Playwright's pinned browser.
  */
-import { chromium, webkit } from 'playwright';
+const { chromium, webkit } = await import(process.env.AVENDB_TEST_PLAYWRIGHT || 'playwright');
 import { createServer } from 'node:https';
 import { execFileSync } from 'node:child_process';
 import { readFile, mkdtemp, rm } from 'node:fs/promises';
