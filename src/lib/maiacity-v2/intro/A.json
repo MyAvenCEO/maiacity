@@ -1,0 +1,1211 @@
+{
+	"version": 3,
+	"seat": "A",
+	"rate": 60,
+	"seconds": 331.05,
+	"steps": [
+		{
+			"id": "arrive",
+			"key": "7f0979bb",
+			"lineKey": "80d217eb",
+			"chapter": "The road",
+			"title": "On the road",
+			"kind": "intro",
+			"t": 0,
+			"dur": 6.5667,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 394,
+					"t": 0,
+					"dur": 6.5667
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 6.56,
+					"text": "What do you live on, when your time no longer pays for your life?"
+				}
+			],
+			"text": [
+				"What do you live on, when your time no longer pays for your life?"
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 6.5667,
+					"hour": 8.6,
+					"name": "1.1 On the road",
+					"line": "What do you live on, when your time no longer pays for your life?"
+				}
+			]
+		},
+		{
+			"id": "road",
+			"key": "16ccfccb",
+			"lineKey": "9d55ecf3",
+			"chapter": "The road",
+			"title": "On the road",
+			"kind": "next",
+			"t": 6.5667,
+			"dur": 23.8667,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 1432,
+					"t": 0,
+					"dur": 23.8667
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 7.92,
+					"text": "Where you come from, you sell your hours to pay for land, homes and tools that others own."
+				},
+				{
+					"t": 7.92,
+					"dur": 4.86,
+					"text": "And every year, machines need fewer of those hours."
+				},
+				{
+					"t": 12.78,
+					"dur": 5.2,
+					"text": "So you set out to find another way to live."
+				},
+				{
+					"t": 17.98,
+					"dur": 5.88,
+					"text": "With a backpack, a bottle of water and a seed from home."
+				}
+			],
+			"text": [
+				"Where you come from, you sell your hours to pay for land, homes and tools that others own.",
+				"And every year, machines need fewer of those hours.",
+				"So you set out to find another way to live.",
+				"With a backpack, a bottle of water and a seed from home."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 7.92,
+					"hour": 8.6,
+					"name": "2.1 On the road",
+					"line": "Where you come from, you sell your hours to pay for land, homes and tools that others own."
+				},
+				{
+					"t": 7.92,
+					"dur": 4.86,
+					"hour": 8.6,
+					"name": "2.2 On the road",
+					"line": "And every year, machines need fewer of those hours."
+				},
+				{
+					"t": 12.78,
+					"dur": 5.2,
+					"hour": 8.6,
+					"name": "2.3 On the road",
+					"line": "So you set out to find another way to live."
+				},
+				{
+					"t": 17.98,
+					"dur": 5.8867,
+					"hour": 8.6,
+					"name": "2.4 On the road",
+					"line": "With a backpack, a bottle of water and a seed from home."
+				}
+			]
+		},
+		{
+			"id": "vision",
+			"key": "f35621c7",
+			"lineKey": "efcc1537",
+			"chapter": "The road",
+			"title": "Imagine",
+			"kind": "next",
+			"t": 30.4333,
+			"dur": 16.8667,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 1012,
+					"t": 0,
+					"dur": 16.8667
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 7.92,
+					"text": "Imagine a whole city that grows its own food, makes its own power and builds its own homes."
+				},
+				{
+					"t": 7.92,
+					"dur": 8.94,
+					"text": "There is a vision of it: a blueprint for a new generation of cities. It's why you got on this van."
+				}
+			],
+			"text": [
+				"Imagine a whole city that grows its own food, makes its own power and builds its own homes.",
+				"There is a vision of it: a blueprint for a new generation of cities. It's why you got on this van."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 7.92,
+					"hour": 8.6,
+					"name": "3.1 Imagine",
+					"line": "Imagine a whole city that grows its own food, makes its own power and builds its own homes."
+				},
+				{
+					"t": 7.92,
+					"dur": 8.9467,
+					"hour": 8.6,
+					"name": "3.2 Imagine",
+					"line": "There is a vision of it: a blueprint for a new generation of cities. It's why you got on this van."
+				}
+			]
+		},
+		{
+			"id": "hearts",
+			"key": "041dcde4",
+			"lineKey": "72a56037",
+			"chapter": "The road",
+			"title": "A HEART every hour",
+			"kind": "next",
+			"t": 47.3,
+			"dur": 18.5,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 1110,
+					"t": 0,
+					"dur": 18.5
+				}
+			],
+			"lines": [
+				{
+					"t": 3,
+					"dur": 7.58,
+					"text": "“There, every hour of your life brings you a HEART. Not for your work. For your life.”"
+				},
+				{
+					"t": 10.58,
+					"dur": 7.92,
+					"text": "“A HEART is not money. It is your right to become an owner, and only people get it.”"
+				}
+			],
+			"text": [
+				"“There, every hour of your life brings you a HEART. Not for your work. For your life.”",
+				"“A HEART is not money. It is your right to become an owner, and only people get it.”"
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 3,
+					"hour": 8.6,
+					"name": "4.1 A HEART every hour"
+				},
+				{
+					"t": 3,
+					"dur": 7.58,
+					"hour": 8.6,
+					"name": "4.2 A HEART every hour",
+					"line": "“There, every hour of your life brings you a HEART. Not for your work. For your life.”"
+				},
+				{
+					"t": 10.58,
+					"dur": 7.92,
+					"hour": 8.6,
+					"name": "4.3 A HEART every hour",
+					"line": "“A HEART is not money. It is your right to become an owner, and only people get it.”"
+				}
+			]
+		},
+		{
+			"id": "mint",
+			"key": "d1d1d2e7",
+			"lineKey": "97ba1cf5",
+			"chapter": "The road",
+			"title": "Mint all your HEARTS at once",
+			"kind": "mint",
+			"t": 65.8,
+			"dur": 13.75,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 458,
+					"t": 0,
+					"dur": 7.6333
+				},
+				{
+					"kind": "hold",
+					"n": 120,
+					"t": 7.6333,
+					"dur": 2
+				},
+				{
+					"kind": "joy",
+					"n": 247,
+					"t": 9.6333,
+					"dur": 4.1167
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 7.63,
+					"text": "“Your first mint brings all your HEARTS at once: 124,800, as many as you can ever hold.”"
+				}
+			],
+			"text": [
+				"“Your first mint brings all your HEARTS at once: 124,800, as many as you can ever hold.”"
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 9.6333,
+					"hour": 8.6,
+					"name": "5.1 Mint all your HEARTS at once",
+					"line": "“Your first mint brings all your HEARTS at once: 124,800, as many as you can ever hold.”"
+				},
+				{
+					"t": 9.6333,
+					"dur": 4.1167,
+					"hour": 8.6,
+					"name": "5.2 Mint all your HEARTS at once"
+				}
+			]
+		},
+		{
+			"id": "arrival",
+			"key": "d1e9d33c",
+			"lineKey": "c97c532d",
+			"chapter": "The end of the road",
+			"title": "The end of the road",
+			"kind": "intro",
+			"t": 79.55,
+			"dur": 21.5,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 1290,
+					"t": 0,
+					"dur": 21.5
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 5,
+					"text": "The old world passed this place by."
+				},
+				{
+					"t": 5,
+					"dur": 5,
+					"text": "Here, the old road ends."
+				},
+				{
+					"t": 10,
+					"dur": 5,
+					"text": "And something new begins."
+				},
+				{
+					"t": 15,
+					"dur": 6.5,
+					"text": "Welcome to MaiaCity. You are among our very first human founders."
+				}
+			],
+			"text": [
+				"The old world passed this place by.",
+				"Here, the old road ends.",
+				"And something new begins.",
+				"Welcome to MaiaCity. You are among our very first human founders."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 5,
+					"hour": 8.6,
+					"name": "6.1 The end of the road",
+					"line": "The old world passed this place by."
+				},
+				{
+					"t": 5,
+					"dur": 5,
+					"hour": 8.6,
+					"name": "6.2 The end of the road",
+					"line": "Here, the old road ends."
+				},
+				{
+					"t": 10,
+					"dur": 5,
+					"hour": 8.6,
+					"name": "6.3 The end of the road",
+					"line": "And something new begins."
+				},
+				{
+					"t": 15,
+					"dur": 6.5,
+					"hour": 8.6,
+					"name": "6.4 The end of the road",
+					"line": "Welcome to MaiaCity. You are among our very first human founders."
+				}
+			]
+		},
+		{
+			"id": "station",
+			"key": "52f4423c",
+			"lineKey": "a66dc317",
+			"chapter": "The end of the road",
+			"title": "The station",
+			"kind": "station",
+			"t": 101.05,
+			"dur": 18.35,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 1101,
+					"t": 0,
+					"dur": 18.35
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 9.28,
+					"text": "Today, its city centre is just a gas station. In 16 years, a thriving solarpunk city stands here, feeding 1 million co-founders."
+				},
+				{
+					"t": 12.46,
+					"dur": 5.88,
+					"text": "And from the first day, you can own a part of it."
+				}
+			],
+			"text": [
+				"Today, its city centre is just a gas station. In 16 years, a thriving solarpunk city stands here, feeding 1 million co-founders.",
+				"And from the first day, you can own a part of it."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 9.28,
+					"hour": 9,
+					"name": "7.1 The station",
+					"line": "Today, its city centre is just a gas station. In 16 years, a thriving solarpunk city stands here, feeding 1 million co-founders."
+				},
+				{
+					"t": 9.28,
+					"dur": 3.18,
+					"hour": 9,
+					"name": "7.2 The station"
+				},
+				{
+					"t": 12.46,
+					"dur": 5.89,
+					"hour": 9,
+					"name": "7.3 The station",
+					"line": "And from the first day, you can own a part of it."
+				}
+			]
+		},
+		{
+			"id": "ride",
+			"key": "8a2e46d9",
+			"lineKey": "732c5e68",
+			"chapter": "The end of the road",
+			"title": "Co-owner of MaiaCity",
+			"kind": "drive",
+			"t": 119.4,
+			"dur": 18.3333,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 1100,
+					"t": 0,
+					"dur": 18.3333
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 5.88,
+					"text": "MaiaCOOP holds the land. Village COOP owns our homes and shared equipment."
+				},
+				{
+					"t": 5.88,
+					"dur": 6.9,
+					"text": "Its land is never sold, so no one can ever buy it away from you."
+				},
+				{
+					"t": 12.78,
+					"dur": 5.54,
+					"text": "Every HEART you invest becomes a MIND: your share of MaiaCity."
+				}
+			],
+			"text": [
+				"MaiaCOOP holds the land. Village COOP owns our homes and shared equipment.",
+				"Its land is never sold, so no one can ever buy it away from you.",
+				"Every HEART you invest becomes a MIND: your share of MaiaCity."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 5.88,
+					"hour": 9,
+					"name": "8.1 Co-owner of MaiaCity",
+					"line": "MaiaCOOP holds the land. Village COOP owns our homes and shared equipment."
+				},
+				{
+					"t": 5.88,
+					"dur": 6.9,
+					"hour": 9,
+					"name": "8.2 Co-owner of MaiaCity",
+					"line": "Its land is never sold, so no one can ever buy it away from you."
+				},
+				{
+					"t": 12.78,
+					"dur": 5.5533,
+					"hour": 9,
+					"name": "8.3 Co-owner of MaiaCity",
+					"line": "Every HEART you invest becomes a MIND: your share of MaiaCity."
+				}
+			]
+		},
+		{
+			"id": "maia",
+			"key": "6a51575f",
+			"lineKey": "4dec0396",
+			"chapter": "The end of the road",
+			"title": "Invest into MaiaCOOP",
+			"kind": "invest",
+			"t": 137.7333,
+			"dur": 7.25,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 315,
+					"t": 0,
+					"dur": 5.25
+				},
+				{
+					"kind": "hold",
+					"n": 120,
+					"t": 5.25,
+					"dur": 2
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 5.25,
+					"text": "Invest 50,000 HEARTS, and you are a co-owner of MaiaCity."
+				}
+			],
+			"text": [
+				"Invest 50,000 HEARTS, and you are a co-owner of MaiaCity."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 7.25,
+					"hour": 9.8,
+					"name": "9.1 Invest into MaiaCOOP",
+					"line": "Invest 50,000 HEARTS, and you are a co-owner of MaiaCity."
+				}
+			]
+		},
+		{
+			"id": "shed",
+			"key": "36200f29",
+			"lineKey": "a25277b1",
+			"chapter": "The end of the road",
+			"title": "Your village centre",
+			"kind": "drive",
+			"t": 144.9833,
+			"dur": 8,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 480,
+					"t": 0,
+					"dur": 8
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 8,
+					"text": "This is your village centre. For now, one old shed."
+				}
+			],
+			"text": [
+				"This is your village centre. For now, one old shed."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 8,
+					"hour": 9.8,
+					"name": "10.1 Your village centre",
+					"line": "This is your village centre. For now, one old shed."
+				}
+			]
+		},
+		{
+			"id": "cube",
+			"key": "6ffbcf9a",
+			"lineKey": "e69287b7",
+			"chapter": "The end of the road",
+			"title": "The shed",
+			"kind": "load",
+			"t": 152.9833,
+			"dur": 21.0833,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 1265,
+					"t": 0,
+					"dur": 21.0833
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 4.52,
+					"text": "The village keeps everything it shares in here."
+				},
+				{
+					"t": 4.52,
+					"dur": 5,
+					"text": "Village COOP owns these machines and our homes."
+				},
+				{
+					"t": 9.52,
+					"dur": 6.6,
+					"text": "The ElectroCube: open hardware anyone can build. It will power your home."
+				},
+				{
+					"t": 16.12,
+					"dur": 4.96,
+					"text": "And your first roof: one tent, shared by two."
+				}
+			],
+			"text": [
+				"The village keeps everything it shares in here.",
+				"Village COOP owns these machines and our homes.",
+				"The ElectroCube: open hardware anyone can build. It will power your home.",
+				"And your first roof: one tent, shared by two."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 4.52,
+					"hour": 10.4,
+					"name": "11.1 The shed",
+					"line": "The village keeps everything it shares in here."
+				},
+				{
+					"t": 4.52,
+					"dur": 5,
+					"hour": 10.4,
+					"name": "11.2 The shed",
+					"line": "Village COOP owns these machines and our homes."
+				},
+				{
+					"t": 9.52,
+					"dur": 6.6,
+					"hour": 10.4,
+					"name": "11.3 The shed",
+					"line": "The ElectroCube: open hardware anyone can build. It will power your home."
+				},
+				{
+					"t": 16.12,
+					"dur": 4.9633,
+					"hour": 10.4,
+					"name": "11.4 The shed",
+					"line": "And your first roof: one tent, shared by two."
+				}
+			]
+		},
+		{
+			"id": "drive",
+			"key": "bcb1787d",
+			"lineKey": "5c72dd6a",
+			"chapter": "The end of the road",
+			"title": "The last stretch",
+			"kind": "drive",
+			"t": 174.0667,
+			"dur": 10.75,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 645,
+					"t": 0,
+					"dur": 10.75
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 6.247,
+					"text": "A few more minutes, and you are home."
+				}
+			],
+			"text": [
+				"A few more minutes, and you are home."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 6.247,
+					"hour": 10.4,
+					"name": "12.1 The last stretch",
+					"line": "A few more minutes, and you are home."
+				},
+				{
+					"t": 6.247,
+					"dur": 4.503,
+					"hour": 10.4,
+					"name": "12.2 The last stretch"
+				}
+			]
+		},
+		{
+			"id": "village",
+			"key": "aa177e64",
+			"lineKey": "98b3c3c6",
+			"chapter": "The end of the road",
+			"title": "Invest into Village COOP",
+			"kind": "invest",
+			"t": 184.8167,
+			"dur": 7.9333,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 356,
+					"t": 0,
+					"dur": 5.9333
+				},
+				{
+					"kind": "hold",
+					"n": 120,
+					"t": 5.9333,
+					"dur": 2
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 5.93,
+					"text": "Invest 25,000 HEARTS into Village COOP: our homes, transport and shared tools."
+				}
+			],
+			"text": [
+				"Invest 25,000 HEARTS into Village COOP: our homes, transport and shared tools."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 7.9333,
+					"hour": 12,
+					"name": "13.1 Invest into Village COOP",
+					"line": "Invest 25,000 HEARTS into Village COOP: our homes, transport and shared tools."
+				}
+			]
+		},
+		{
+			"id": "home",
+			"key": "2bbc48ab",
+			"lineKey": "51828eb1",
+			"chapter": "The end of the road",
+			"title": "Your new home",
+			"kind": "drive",
+			"t": 192.75,
+			"dur": 13.5,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 810,
+					"t": 0,
+					"dur": 13.5
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 5,
+					"text": "This is your new home."
+				},
+				{
+					"t": 5,
+					"dur": 8.5,
+					"text": "One hex of grass at the edge of the village. Nothing stands here yet."
+				}
+			],
+			"text": [
+				"This is your new home.",
+				"One hex of grass at the edge of the village. Nothing stands here yet."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 5,
+					"hour": 12,
+					"name": "14.1 Your new home",
+					"line": "This is your new home."
+				},
+				{
+					"t": 5,
+					"dur": 8.5,
+					"hour": 12,
+					"name": "14.2 Your new home",
+					"line": "One hex of grass at the edge of the village. Nothing stands here yet."
+				}
+			]
+		},
+		{
+			"id": "pitch",
+			"key": "6f716977",
+			"lineKey": "8e72547b",
+			"chapter": "Home",
+			"title": "Pitch the tent",
+			"kind": "build",
+			"t": 206.25,
+			"dur": 50.6,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 3036,
+					"t": 0,
+					"dur": 50.6
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 6,
+					"text": "Everything you need for a first home fits in one bag."
+				},
+				{
+					"t": 6,
+					"dur": 7.4,
+					"text": "No builder, no loan, no waiting."
+				},
+				{
+					"t": 13.4,
+					"dur": 6.6,
+					"text": "A home you raised with your own hands."
+				},
+				{
+					"t": 20,
+					"dur": 8.4,
+					"text": "Room for two, and canvas that stands for years."
+				},
+				{
+					"t": 28.4,
+					"dur": 5.64,
+					"text": "And a fire to gather round when the sun goes down."
+				},
+				{
+					"t": 34.04,
+					"dur": 9.1441,
+					"text": "The ElectroCube comes home with you."
+				},
+				{
+					"t": 43.1841,
+					"dur": 7.4,
+					"text": "And by nightfall, the tent has light."
+				}
+			],
+			"text": [
+				"Everything you need for a first home fits in one bag.",
+				"No builder, no loan, no waiting.",
+				"A home you raised with your own hands.",
+				"Room for two, and canvas that stands for years.",
+				"And a fire to gather round when the sun goes down.",
+				"The ElectroCube comes home with you.",
+				"And by nightfall, the tent has light."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 6,
+					"hour": 14.2,
+					"name": "15.1 Pitch the tent",
+					"line": "Everything you need for a first home fits in one bag."
+				},
+				{
+					"t": 6,
+					"dur": 7.4,
+					"hour": 14.2,
+					"name": "15.2 Pitch the tent",
+					"line": "No builder, no loan, no waiting."
+				},
+				{
+					"t": 13.4,
+					"dur": 6.6,
+					"hour": 14.2,
+					"name": "15.3 Pitch the tent",
+					"line": "A home you raised with your own hands."
+				},
+				{
+					"t": 20,
+					"dur": 8.4,
+					"hour": 14.2,
+					"name": "15.4 Pitch the tent",
+					"line": "Room for two, and canvas that stands for years."
+				},
+				{
+					"t": 28.4,
+					"dur": 5.64,
+					"hour": 14.2,
+					"name": "15.5 Pitch the tent",
+					"line": "And a fire to gather round when the sun goes down."
+				},
+				{
+					"t": 34.04,
+					"dur": 9.1441,
+					"hour": 14.2,
+					"name": "15.6 Pitch the tent",
+					"line": "The ElectroCube comes home with you."
+				},
+				{
+					"t": 43.1841,
+					"dur": 7.4159,
+					"hour": 14.4,
+					"hourTo": 16.7,
+					"name": "15.7 Pitch the tent",
+					"line": "And by nightfall, the tent has light."
+				}
+			]
+		},
+		{
+			"id": "answer",
+			"key": "da131ade",
+			"lineKey": "530fb74d",
+			"chapter": "Home",
+			"title": "What you live on",
+			"kind": "next",
+			"t": 256.85,
+			"dur": 7.9333,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 476,
+					"t": 0,
+					"dur": 7.9333
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 7.92,
+					"text": "Home rent goes to Village COOP. Village pays Maia for the land. Both share income with their owners."
+				}
+			],
+			"text": [
+				"Home rent goes to Village COOP. Village pays Maia for the land. Both share income with their owners."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 7.9333,
+					"hour": 16.8,
+					"name": "16.1 What you live on",
+					"line": "Home rent goes to Village COOP. Village pays Maia for the land. Both share income with their owners."
+				}
+			]
+		},
+		{
+			"id": "begin",
+			"key": "09317c28",
+			"lineKey": "69b40788",
+			"chapter": "Home",
+			"title": "How it begins",
+			"kind": "next",
+			"t": 264.7833,
+			"dur": 10.75,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 645,
+					"t": 0,
+					"dur": 10.75
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 6.22,
+					"text": "And this is how everything begins: with a seed you brought from home."
+				},
+				{
+					"t": 6.22,
+					"dur": 4.52,
+					"text": "Everyone who comes here plants their own tree."
+				}
+			],
+			"text": [
+				"And this is how everything begins: with a seed you brought from home.",
+				"Everyone who comes here plants their own tree."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 6.22,
+					"hour": 16.9,
+					"name": "17.1 How it begins",
+					"line": "And this is how everything begins: with a seed you brought from home."
+				},
+				{
+					"t": 6.22,
+					"dur": 4.53,
+					"hour": 16.9,
+					"name": "17.2 How it begins",
+					"line": "Everyone who comes here plants their own tree."
+				}
+			]
+		},
+		{
+			"id": "spot",
+			"key": "7ca2e39d",
+			"lineKey": "4e8a5908",
+			"chapter": "Home",
+			"title": "Choose where it grows",
+			"kind": "spot",
+			"t": 275.5333,
+			"dur": 15.9833,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 272,
+					"t": 0,
+					"dur": 4.5333
+				},
+				{
+					"kind": "hold",
+					"n": 120,
+					"t": 4.5333,
+					"dur": 2
+				},
+				{
+					"kind": "walk",
+					"n": 360,
+					"t": 6.5333,
+					"dur": 6
+				},
+				{
+					"kind": "sticks",
+					"n": 207,
+					"t": 12.5333,
+					"dur": 3.45
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 4.52,
+					"text": "Choose where it grows, out beyond the homes."
+				}
+			],
+			"text": [
+				"Choose where it grows, out beyond the homes."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 12.5333,
+					"hour": 16.9,
+					"name": "18.1 Choose where it grows",
+					"line": "Choose where it grows, out beyond the homes."
+				},
+				{
+					"t": 12.5333,
+					"dur": 3.45,
+					"hour": 16.9,
+					"name": "18.2 Choose where it grows"
+				}
+			]
+		},
+		{
+			"id": "seed",
+			"key": "452ab4d7",
+			"lineKey": "c81c5cce",
+			"chapter": "Home",
+			"title": "Pick your seed",
+			"kind": "pick",
+			"t": 291.5167,
+			"dur": 5,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 180,
+					"t": 0,
+					"dur": 3
+				},
+				{
+					"kind": "hold",
+					"n": 120,
+					"t": 3,
+					"dur": 2
+				}
+			],
+			"lines": [],
+			"text": [],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 5,
+					"hour": 17,
+					"name": "19.1 Pick your seed"
+				}
+			]
+		},
+		{
+			"id": "plant",
+			"key": "17ee3c6f",
+			"lineKey": "f3aca3bb",
+			"chapter": "Home",
+			"title": "Plant it",
+			"kind": "sow",
+			"t": 296.5167,
+			"dur": 15.9667,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 958,
+					"t": 0,
+					"dur": 15.9667
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 3.84,
+					"text": "Into the earth, a finger deep."
+				},
+				{
+					"t": 6.24,
+					"dur": 5.88,
+					"text": "A litre of water, and it has all it needs to start."
+				},
+				{
+					"t": 12.12,
+					"dur": 3.84,
+					"text": "It carries your name now: Samuel."
+				}
+			],
+			"text": [
+				"Into the earth, a finger deep.",
+				"A litre of water, and it has all it needs to start.",
+				"It carries your name now: Samuel."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 3.84,
+					"hour": 17,
+					"name": "20.1 Plant it",
+					"line": "Into the earth, a finger deep."
+				},
+				{
+					"t": 3.84,
+					"dur": 2.4,
+					"hour": 17,
+					"name": "20.2 Plant it"
+				},
+				{
+					"t": 6.24,
+					"dur": 5.88,
+					"hour": 17,
+					"name": "20.3 Plant it",
+					"line": "A litre of water, and it has all it needs to start."
+				},
+				{
+					"t": 12.12,
+					"dur": 3.8467,
+					"hour": 17,
+					"name": "20.4 Plant it",
+					"line": "It carries your name now: Samuel."
+				}
+			]
+		},
+		{
+			"id": "tend",
+			"key": "48852c94",
+			"lineKey": "f163efe4",
+			"chapter": "Home",
+			"title": "Tend it with care",
+			"kind": "next",
+			"t": 312.4833,
+			"dur": 6.5667,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 394,
+					"t": 0,
+					"dur": 6.5667
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 6.56,
+					"text": "Tend it with care. Come back every day, water it, and watch it grow."
+				}
+			],
+			"text": [
+				"Tend it with care. Come back every day, water it, and watch it grow."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 6.5667,
+					"hour": 17.1,
+					"name": "21.1 Tend it with care",
+					"line": "Tend it with care. Come back every day, water it, and watch it grow."
+				}
+			]
+		},
+		{
+			"id": "done",
+			"key": "80fbd1af",
+			"lineKey": "e41984ce",
+			"chapter": "Home",
+			"title": "Tomorrow, the next settlers",
+			"kind": "done",
+			"t": 319.05,
+			"dur": 12,
+			"segs": [
+				{
+					"kind": "moment",
+					"n": 720,
+					"t": 0,
+					"dur": 12
+				}
+			],
+			"lines": [
+				{
+					"t": 0,
+					"dur": 12,
+					"text": "One day it feeds the people who come after you. Tomorrow, you pick up the next settlers."
+				}
+			],
+			"text": [
+				"One day it feeds the people who come after you. Tomorrow, you pick up the next settlers."
+			],
+			"shots": [
+				{
+					"t": 0,
+					"dur": 12,
+					"hour": 17.2,
+					"hourTo": 17.6494,
+					"name": "22.1 Tomorrow, the next settlers",
+					"line": "One day it feeds the people who come after you. Tomorrow, you pick up the next settlers."
+				}
+			]
+		}
+	]
+}

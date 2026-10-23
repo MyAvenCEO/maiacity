@@ -8,6 +8,7 @@
  * An animal is its species' (./species/, on its body plan in ./plans/) and a line in ./casts.ts; it shows here with a
  * line in its kind below.
  */
+import { elderWoman } from './elder-woman.js';
 import { prepare } from './build';
 import { CASTS } from './casts';
 import { HEIGHT, LOOK, human, type Look } from './human';
@@ -81,6 +82,7 @@ function lookOf(given: string[]): Partial<Look> {
 }
 
 const LIST: Omit<Family, 'versions' | 'version'>[] = [
+	{ id: 'elder-woman', label: 'Elder woman', note: 'An older white woman, silver-blonde hair in a bun, a friendly gaze; 1.64 m', from: 'MaiaCity V2', variants: [{ id: 'elder-woman', label: 'Third settler', note: 'Trailer 3', make: elderWoman }] },
 	{
 		id: 'stand-in',
 		label: 'Stand-in',

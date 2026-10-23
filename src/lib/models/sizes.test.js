@@ -3,6 +3,7 @@
 // Run: bun test src/lib/models/sizes.test.js
 import { expect, test } from 'bun:test';
 import * as THREE from 'three';
+import { waterCanister } from './water-canister.js';
 import { REAL_SIZES } from './units.js';
 
 // textures are drawn on a canvas; outside a page a stand-in canvas takes every call and draws nothing
@@ -35,7 +36,7 @@ const player = () => {
 };
 const still = (c) => (c.rig.pose(c.clips.off(0)), c.rig.object);
 const ose = () => still(powerCube());
-const BUILD = { pickup, pickupMachine: () => pickupMachine(), vanMachine: () => vanMachine(), truckMachine: () => truckMachine(), powerCube: () => ose(), powerCubeV3: () => powerCubeV3(), electroCube: () => still(electroCube()), batteryCube: () => still(batteryCube()), batteryPack: () => still(packModule()), batteryPackV10: () => batteryPackV10(), genset: powercube, solarPanel, batteryCabinet: batteryPack, travelVan, busStop, gasStation, oldShed, person: player, tent: () => bellTent(), loadingRamp, backpack, waterBottle, seedPacket, markerSticks, plantStake, dugEarth, domeTent, tentBag: packedTent, storageTent, storageTentBag, bellTent, firePlace, bellTentBag, euroPallet: pallet };
+const BUILD = { waterCanister, pickup, pickupMachine: () => pickupMachine(), vanMachine: () => vanMachine(), truckMachine: () => truckMachine(), powerCube: () => ose(), powerCubeV3: () => powerCubeV3(), electroCube: () => still(electroCube()), batteryCube: () => still(batteryCube()), batteryPack: () => still(packModule()), batteryPackV10: () => batteryPackV10(), genset: powercube, solarPanel, batteryCabinet: batteryPack, travelVan, busStop, gasStation, oldShed, person: player, tent: () => bellTent(), loadingRamp, backpack, waterBottle, seedPacket, markerSticks, plantStake, dugEarth, domeTent, tentBag: packedTent, storageTent, storageTentBag, bellTent, firePlace, bellTentBag, euroPallet: pallet };
 const TOLERANCE = 0.12; // 12 %: mirrors, caps, signs and roof bags stick out a little
 
 for (const [id, { size, what }] of Object.entries(REAL_SIZES)) {

@@ -17,7 +17,7 @@
 	import { nameOf } from '$lib/avendb/vaults.js';
 	import VaultApps from '$lib/avendb/VaultApps.svelte';
 	import Icon from '$lib/app/Icon.svelte';
-	import { APPS, GAME_WORLDS, isAdmin, opens } from '$lib/app/places';
+	import { APPS, CITY, GAME_WORLDS, isAdmin, opens } from '$lib/app/places';
 	import { access, holdsGroup } from '$lib/app/access.svelte.js';
 	import { TRAVELER } from '$lib/avendb/capgroups.js';
 	import { asset } from '$lib/media/url';
@@ -37,6 +37,8 @@
 	const admin = $derived(isAdmin());
 	// the games this founder opens, by the cap groups of Maia City they hold
 	const games = $derived(GAME_WORLDS.filter((g) => opens(g)));
+	const cityGames = $derived(games.filter(g => CITY.some(c => c.href === g.href)));
+	const sandboxes = $derived(games.filter(g => !CITY.some(c => c.href === g.href)));
 	// Maia City's Assets and Worlds in avenDB, read only, for every traveler
 	const traveler = $derived(!!access.city && holdsGroup(TRAVELER));
 	// the vault avenDB's apps open in: the one picked in the nav pill
@@ -53,8 +55,10 @@
 	{@render children?.()}
 
 	<p class="divider">Game Worlds</p>
-	<div class="games">
-		{#each games as g (g.href)}
+	{#each [cityGames, sandboxes] as group, i}
+	{#if i === 1 && group.length && cityGames.length}<hr class="world-divider" aria-label="Sandboxes" />{/if}
+	<div class="games" class:city-games={i === 0}>
+		{#each group as g (g.href)}
 			<div class="game">
 				<a href={g.href}>
 					{#if g.cover}<img src={asset(g.cover)} alt="" loading="lazy" />{:else}<span class="nocover"></span>{/if}
@@ -62,12 +66,13 @@
 				</a>
 			</div>
 		{:else}
-			{#if access.known || session.phase !== 'open'}
+			{#if i === 0 && !games.length && (access.known || session.phase !== 'open')}
 				<p class="none">{session.phase === 'open' ? 'An invite to Maia City opens the sandboxes: ask for one.' : 'Unlock your avenDB to see the games your invite opens.'}</p>
 			{/if}
 		{/each}
 	</div>
 
+	{/each}
 	<p class="divider">Your apps</p>
 	<div class="tiles">
 		{#each APPS as t (t.href)}
@@ -150,10 +155,6 @@
 		background: var(--ink);
 	}
 
-	.game:first-child {
-		grid-column: 1 / -1;
-		aspect-ratio: 21 / 9;
-	}
 
 	.game a {
 		display: block;
@@ -216,7 +217,7 @@
 		opacity: 0.85;
 	}
 
-	.game:not(:first-child) b {
+	.game b {
 		font-size: 1.1rem;
 	}
 
@@ -273,20 +274,20 @@
 
 	@media (max-width: 560px) {
 		/* on a phone the sandboxes stay two a row, their names alone */
-		.game:first-child {
-			aspect-ratio: 16 / 9;
-		}
-		.game:not(:first-child) {
+
+		.game {
 			aspect-ratio: 4 / 3;
 		}
-		.game:not(:first-child) .label span {
+		.game .label span {
 			display: none;
 		}
-		.game:not(:first-child) .label {
+		.game .label {
 			padding: 1.4rem 0.7rem 0.6rem;
 		}
 		.tiles {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 		}
 	}
+	.games.city-games { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+	.world-divider { border:0; border-top:1px solid var(--line); margin:1.15rem 0; }
 </style>

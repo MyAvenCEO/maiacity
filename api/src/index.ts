@@ -1,3 +1,4 @@
+import { GameError as GameErrorV2, getGame as getGameV2, move as moveV2, takeSeat as takeSeatV2, seedPendingGame } from "./maiacity-v2.js";
 // The signup service behind api.maia.city. One Bun process, one Postgres, and
 // as little surface as the job allows: create a founder, sign one in, let them
 // change the name they are known by, and count how many there are.
@@ -91,7 +92,7 @@ async function signedIn(req: Request): Promise<Founder | Response> {
 
 /** Turn a thrown table or game error into a response a person can read. */
 function fail(req: Request, e: unknown) {
-  if (e instanceof TableError || e instanceof GameError) return json(req, { error: e.message }, { status: e.status });
+  if (e instanceof TableError || e instanceof GameError || e instanceof GameErrorV2) return json(req, { error: e.message }, { status: e.status });
   console.error(e);
   return json(req, { error: "Something went wrong on our side." }, { status: 500 });
 }
@@ -112,6 +113,7 @@ const publicFounder = (f: { id: string; number: number | bigint; created: Date }
 
 await migrate();
 useDb(fromBunSql(sql));
+if (await seedPendingGame()) console.log("MaiaCity V2: archived prior economy and seeded Maia/Village balances for P1 and P2.");
 // the views, logic modules and configs from the Maia City vault (C10): read once before serving, then every minute, so
 // a change accepted in the vault runs here without a deploy. Read from avenDB's own feed inside the compose network
 // (AVENDB_FEED): avendb.maia.city takes only post-quantum key exchange. What runs is what Maia City's own signed edits
@@ -183,6 +185,50 @@ const server = Bun.serve({
         const body = await readJson(req);
         try {
           return json(req, { game: await move(me, String(body?.seat ?? ""), body?.action), now: Date.now() });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+
+    "/api/maiacity-v2": {
+      OPTIONS: preflight,
+      GET: async (req) => {
+        const me = await signedIn(req);
+        if (me instanceof Response) return me;
+        try {
+          // a read seats nobody: a seat goes to a person on the page, who asks for it, named as their avenDB profile names
+          // them (the page says so: no name of theirs is kept here)
+          const name = new URL(req.url).searchParams.get("name") ?? "";
+          const admin = can(me, "economy:admin");
+          return json(req, { game: await getGameV2({ id: me.id, name }), me: me.id, admin, now: Date.now() });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/maiacity-v2/seat": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await signedIn(req);
+        if (me instanceof Response) return me;
+        const body = await readJson(req);
+        try {
+          const name = String(body?.name ?? "");
+          return json(req, { game: await takeSeatV2({ id: me.id, name }, String(body?.seat ?? "")), now: Date.now() });
+        } catch (e) {
+          return fail(req, e);
+        }
+      },
+    },
+    "/api/maiacity-v2/move": {
+      OPTIONS: preflight,
+      POST: async (req) => {
+        const me = await signedIn(req);
+        if (me instanceof Response) return me;
+        const body = await readJson(req);
+        try {
+          return json(req, { game: await moveV2(me, String(body?.seat ?? ""), body?.action), now: Date.now() });
         } catch (e) {
           return fail(req, e);
         }

@@ -73,5 +73,6 @@ export const MOUNTS = {
 	'tired-land': async (stage, _area, onProgress) => (await import('$lib/worlds/tired-land')).mountTiredLand(stage, onProgress),
 
 	// MaiaCity V1's world playing a seat's whole first-run intro on the film's clock: A the first player's, B the second's
+	'maiacity-v2': async (stage, area, onProgress) => (await import('$lib/maiacity-v2/film.js')).mountIntroFilm(stage, area === 'C' ? 'C' : area === 'B' ? 'B' : 'A', onProgress),
 	'maiacity-v1': async (stage, area, onProgress) => (await import('$lib/maiacity-v1/film.js')).mountIntroFilm(stage, area === 'B' ? 'B' : 'A', onProgress)
 };

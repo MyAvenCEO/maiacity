@@ -71,7 +71,7 @@ const DUCK = 0.5;
 /** @param {Clip | null | undefined} c */
 export const isWorld = (c) => c?.kind === 'world';
 /** Whether tab `tab` plays world clips in the live world (the rest play their HD proxies). @param {string} tab */
-export const liveTab = (tab) => tab === '3d' || tab === 'edit';
+export const liveTab = (tab) => true;
 /** While the timeline plays, the most a cut to a world shot standing elsewhere holds the picture (ms) before film mode
  * draws it as the world has it, the rest streaming in as in the game: waiting the whole move out (0.5 s and more in
  * Sandbox 3's village, whose shots stand all over the cell) hitched every cut. Stopped, a shot waits until it is staged. */
@@ -1610,7 +1610,7 @@ export class Studio {
 		};
 		try {
 			// the world's own page, still coming up (Play pressed as the studio opened)
-			if (this.world.state === 'loading') await step({ step: 'Starting the world', from: 0, span: 0 }, () => this.until(() => this.world.state !== 'loading' || !going()));
+			if (this.wantWorld && this.worldClips.length && this.world.state !== 'ready') await step({ step: 'Starting the world', from: 0, span: 0 }, () => this.until(() => this.world.state === 'ready' || this.world.state === 'unavailable' || !going()));
 			if (this.world.state !== 'ready' || !this.worldClips.length) return;
 			const shots = (all ? [...this.worldClips] : this.worldClips.filter((c) => c.start + c.dur > this.time))
 				.sort((a, b) => a.start - b.start)
