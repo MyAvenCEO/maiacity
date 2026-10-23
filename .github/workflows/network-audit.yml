@@ -2,7 +2,7 @@ name: Network capacity audit
 
 # Manual, bounded synthetic traffic from the actual production host. This does
 # not deploy, restart, change auth, or read the application's store. Results have
-# timings and byte counts only; no private keys, peer IDs, or server IPs.
+# allowlisted provider state/metrics and byte timings only; no private keys, peer IDs or server IPs.
 on:
   workflow_dispatch:
 
@@ -24,6 +24,13 @@ jobs:
           sparse-checkout: |
             .github/actions/prod-ssh
             scripts/diagnostics
+      - name: Check provider diagnostic boundaries
+        run: python3 scripts/diagnostics/provider-health.test.py
+      - name: Read provider status and metrics without touching the guest
+        continue-on-error: true
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HETZNER_API_KEY }}
+        run: python3 scripts/diagnostics/provider-health.py > provider-health.json
       - uses: ./.github/actions/prod-ssh
         with:
           host: api.maia.city
@@ -42,7 +49,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: server-network-${{ github.run_id }}
-          path: server-network.json
+          path: |
+            server-network.json
+            provider-health.json
           if-no-files-found: warn
           retention-days: 7
       - name: Show measured rates
