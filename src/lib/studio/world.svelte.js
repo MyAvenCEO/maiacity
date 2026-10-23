@@ -133,7 +133,8 @@ export class WorldViewer {
 	 */
 	px = 1920;
 	fastBatches = 0;
-	previewFps = $state(30);
+	/** World previews use a steady 30 FPS; export timing is independent. */
+	get previewFps() { return 30; }
 	pacer = new FramePacer();
 	/** when the GPU dropped the world (its WebGL context lost), the last few times (ms) */
 	losses = /** @type {number[]} */ ([]);
@@ -591,7 +592,7 @@ export class WorldViewer {
 				if (this.took.length >= 24) {
 					const tail = [...this.took].sort((a, b) => a - b)[21];
 					const steps = [1, 0.75, 0.5, 0.35], i = Math.max(0, steps.indexOf(this.scale));
-					if (tail > (this.previewFps === 30 ? 28 : 20) && i < steps.length - 1) { this.scale = steps[i + 1]; this.fastBatches = 0; }
+					if (tail > 28 && i < steps.length - 1) { this.scale = steps[i + 1]; this.fastBatches = 0; }
 					else if (tail < 8 && i > 0) {
 						if (++this.fastBatches >= 20) { this.scale = steps[i - 1]; this.fastBatches = 0; }
 					} else this.fastBatches = 0;

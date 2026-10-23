@@ -4,7 +4,7 @@
 // moment, rendered, viewed, staged; the world's own frames between two draws). A smooth cut costs what any frame does.
 //
 //   node scripts/film/world/cuts.mjs --timeline v1-A|v1-B|v2-C|village [--film village.json] [--from 0] [--seconds 60]
-//     [--px 1280] [--fps 30|60] [--site http://127.0.0.1:5173] [--engine chrome|webkit] [--meter all|ahead] [--grade clip|none]
+//     [--px 1280] [--site http://127.0.0.1:5173] [--engine chrome|webkit] [--meter all|ahead] [--grade clip|none]
 //     [--warm all|shown|off] [--ready play|stand] [--stand 180] [--size 1920x1080] [--heap] [--trace] [--out cuts.json]
 //
 // `--ready play` (the default): before it plays, the world is readied as the studio's Play readies it
@@ -223,7 +223,6 @@ const report = await page.evaluate(
 		if (o.warm) /** @type {any} */ (window).__filmWarm = o.warm;
 		const viewer = new WorldViewer();
 		viewer.px = o.px;
-		viewer.previewFps = o.fps;
 		const t0 = performance.now();
 		await viewer.attach(iframe, o.path, 600000, 900000);
 		if (viewer.state !== 'ready') return { error: `the world is ${viewer.state}: ${viewer.error}` };
@@ -450,7 +449,7 @@ const report = await page.evaluate(
 			dearestFrames: [...trace].sort((x, y) => y.total + y.loop - (x.total + x.loop)).slice(0, 12).map((f) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v * 10) / 10 : v])))
 		};
 	},
-	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), fps: Number(args.fps ?? 30), meter: args.meter ?? 'ahead', grade: args.grade ?? 'clip', warm: args.warm, ready: args.ready ?? 'play', stand: Number(args.stand ?? 180), size: (args.size ?? '1920x1080').split('x').map(Number), record: recording, hitch: HITCH, firsts: !!args.firsts }
+	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), meter: args.meter ?? 'ahead', grade: args.grade ?? 'clip', warm: args.warm, ready: args.ready ?? 'play', stand: Number(args.stand ?? 180), size: (args.size ?? '1920x1080').split('x').map(Number), record: recording, hitch: HITCH, firsts: !!args.firsts }
 );
 await browser.close();
 // a shot that waited for parts of the world while it played (the village's domes: "waits N s for domes …")

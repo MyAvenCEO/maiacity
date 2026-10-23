@@ -322,11 +322,7 @@
 	<h2 class="mlabel">{label}</h2>
 	<div class="badges">
 		{#if fileNote && (s.tab !== 'grade' || fileNote.startsWith('no proxy'))}<span class="b" class:warn={fileNote.startsWith('no proxy') || fileNote.includes('outside')}>{fileNote}</span>{/if}
-		{#if worldNote}<span class="b world">{worldNote}</span>
-			<select class="b fps" aria-label="World preview frame rate" title="Preview frame rate; exports are unchanged" bind:value={s.world.previewFps}>
-				<option value={30}>30 FPS</option><option value={60}>60 FPS</option>
-			</select>
-		{/if}
+		{#if worldNote}<span class="b world">{worldNote}</span>{/if}
 		{#if isWorld(pic) && s.world.error}<span class="b warn" title={s.world.error}>world: {s.world.error}</span>{/if}
 		{#if gl && plan?.note && pic}<span class="b warn" title={plan.note}>{plan.note}</span>{/if}
 		{#if !gl}<span class="b warn">No WebGL2: colour not managed</span>{/if}
@@ -622,7 +618,6 @@
 	}
 
 	/* the badge row lets clicks through to the picture; the switch takes its own */
-	.fps { pointer-events: auto; cursor: pointer; border: 0; }
 
 	.slate {
 		position: absolute;
