@@ -25,7 +25,9 @@ jobs:
             .github/actions/prod-ssh
             scripts/diagnostics
       - name: Check provider diagnostic boundaries
-        run: python3 scripts/diagnostics/provider-health.test.py
+        run: |
+          python3 scripts/diagnostics/provider-health.test.py
+          python3 scripts/diagnostics/guest-health.test.py
       - name: Read provider status and metrics without touching the guest
         continue-on-error: true
         env:
@@ -36,6 +38,11 @@ jobs:
           host: api.maia.city
           ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
           known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      - name: Read bounded guest health without changing services
+        continue-on-error: true
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 prod 'timeout 80s python3 -' \
+            < scripts/diagnostics/guest-health.py > guest-health.json
       - name: One bounded probe, running on the server
         shell: bash
         run: |
@@ -52,6 +59,7 @@ jobs:
           path: |
             server-network.json
             provider-health.json
+            guest-health.json
           if-no-files-found: warn
           retention-days: 7
       - name: Show measured rates
