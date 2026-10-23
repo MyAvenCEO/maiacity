@@ -5029,12 +5029,16 @@ impl Lab {
         let blobs: Blobs = blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect();
         let before = self.held(d).signed.len();
         let mut changed = self.take(d, edits, &blobs);
-        let store = self.stores.get_mut(&self.at(d)).expect("a device");
-        let named: HashSet<BlobId> = store.log.edits().iter().flat_map(Edit::blobs).collect();
-        for (b, bytes) in blobs {
-            if named.contains(&b) && !store.blobs.contains_key(&b) {
-                store.blobs.insert(b, bytes);
-                changed = true;
+        // Edit-only pages have no late-arriving keys to match. Taking their edits and flushing a deferred
+        // replay still happen normally; only the otherwise unused full-history blob-name scan is omitted.
+        if !blobs.is_empty() {
+            let store = self.stores.get_mut(&self.at(d)).expect("a device");
+            let named: HashSet<BlobId> = store.log.edits().iter().flat_map(Edit::blobs).collect();
+            for (b, bytes) in blobs {
+                if named.contains(&b) && !store.blobs.contains_key(&b) {
+                    store.blobs.insert(b, bytes);
+                    changed = true;
+                }
             }
         }
         let new = self.held(d).signed.len() - before;
@@ -6379,3 +6383,7 @@ mod range_payload_tests {
         assert!(w.lab.range_select(from,to,from,&request,&scope,&revision,&wanted,256,usize::MAX).is_none(),"restoring prior contents does not resurrect a process-local revision");
     }
 }
+
+#[cfg(test)]
+#[path = "receive_empty_tests.rs"]
+mod receive_empty_tests;
