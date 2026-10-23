@@ -42,6 +42,9 @@ fn add_witness_hints(announce: &mut Announce, want: &Holdings, witnesses: impl I
         let Some(frontier) = want.logs.get(&witness) else { continue };
         if named.insert(witness) { announce.logs.push((witness, frontier.clone())); }
     }
+    // Announce decoding requires canonical LogId order. Creation order does not order hashes;
+    // move complete pairs so authorized frontiers and the bounded hint set remain unchanged.
+    announce.logs.sort_by_key(|(log, _)| *log);
 }
 
 impl Shared {

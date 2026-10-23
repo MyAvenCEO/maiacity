@@ -3,6 +3,7 @@
 use super::*;
 use crate::{Node, Options};
 use avendb::cast::{document, handbook_ready, world};
+use avendb::wire::Wire;
 use n0_future::future;
 
 async fn wait_for(mut condition: impl AsyncFnMut() -> bool) {
@@ -249,4 +250,49 @@ fn witness_hints_preserve_permission_budget_and_duplicate_suppression() {
     assert_eq!(announced_hints(&held, &announce).len(), pulls::LIVE_LOGS);
     announce.full = true;
     assert!(announced_hints(&held, &announce).is_empty());
+}
+
+#[test]
+fn earlier_witnesses_keep_the_announcement_wire_canonical() {
+    use avendb::id::EntryId;
+    use avendb::wire::Frontier;
+    let log = |n| LogId::Entry(EntryId::from_u64(n));
+    let want = Holdings {
+        logs: (1..=40).map(|n| (log(n), Frontier { heads: vec![avendb::id::EditId::from_u64(n)], waiting: vec![] })).collect(),
+        ..Default::default()
+    };
+    // Creation order has no relation to hashed LogId order. Witnesses may sort before a changed log.
+    let mut announce = Announce {
+        logs: vec![(log(40), want.logs[&log(40)].clone())],
+        ..Default::default()
+    };
+    add_witness_hints(&mut announce, &want, [log(3), log(1), log(3), log(100), log(2)]);
+    assert_eq!(Announce::from_wire(&announce.to_wire()), Ok(announce.clone()),
+        "the receiver must accept the entire announcement after authorized witness insertion");
+    assert_eq!(announce.logs.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
+        vec![log(1), log(2), log(3), log(40)]);
+    assert!(announce.logs.iter().all(|(id, frontier)| want.logs.get(id) == Some(frontier)));
+    add_witness_hints(&mut announce, &want, (4..40).rev().map(log));
+    assert_eq!(announce.logs.len(), pulls::LIVE_LOGS);
+    assert_eq!(Announce::from_wire(&announce.to_wire()), Ok(announce));
+}
+
+#[test]
+fn ineligible_announcements_are_unchanged_without_consuming_witnesses() {
+    use avendb::id::EntryId;
+    use avendb::wire::Frontier;
+    let logs: Vec<_> = (1..=pulls::LIVE_LOGS as u64)
+        .map(|n| (LogId::Entry(EntryId::from_u64(n)), Frontier::default())).collect();
+    let want = Holdings { logs: logs.iter().cloned().collect(), ..Default::default() };
+    for mut announce in [
+        Announce { full: true, logs: logs[..1].to_vec(), ..Default::default() },
+        Announce::default(),
+        Announce { logs, ..Default::default() },
+    ] {
+        let before = announce.clone();
+        add_witness_hints(&mut announce, &want,
+            std::iter::from_fn(|| panic!("ineligible announcement consumed witnesses")));
+        assert_eq!(announce, before);
+        assert_eq!(Announce::from_wire(&announce.to_wire()), Ok(announce));
+    }
 }

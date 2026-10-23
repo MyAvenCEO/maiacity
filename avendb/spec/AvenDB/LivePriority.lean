@@ -47,6 +47,26 @@ theorem witness_never_expands_disclosure (candidate permitted space : Bool)
 theorem full_hint_budget_adds_no_witness (candidate permitted : Bool) :
     witnessHint candidate permitted false = false := by simp [witnessHint]
 
+/-- The output retains the complete `(log, frontier)` pairs and has strictly ascending log IDs.
+This is an abstract postcondition, not an extracted implementation or a proof of Rust's sort.
+The Rust round-trip regression must establish the concrete decoder ordering contract. -/
+def canonicalHints (before after : List (Nat × F)) : Prop :=
+  before.Perm after ∧ after.Pairwise (fun a b => a.1 < b.1)
+
+theorem canonical_hint_pairs_preserved (before after : List (Nat × F))
+    (h : canonicalHints before after) (log : Nat) (frontier : F) :
+    (log, frontier) ∈ after ↔ (log, frontier) ∈ before := by
+  exact h.1.mem_iff.symm
+
+theorem canonical_hint_bound_preserved (before after : List (Nat × F))
+    (h : canonicalHints before after) (limit : Nat) (bound : before.length ≤ limit) :
+    after.length ≤ limit := by
+  rw [← h.1.length_eq]
+  exact bound
+
+theorem canonical_hints_satisfy_order (before after : List (Nat × F))
+    (h : canonicalHints before after) : after.Pairwise (fun a b => a.1 < b.1) := h.2
+
 /-- `missing` is the ordinary peer-scoped difference, already filtered for disclosure. Hints do not expand it.
 Actual response acceptance still independently checks signatures, authorization and causal requirements. -/
 def selected (hint missing dependenciesReady : Bool) : Bool := hint && missing && dependenciesReady
