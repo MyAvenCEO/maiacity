@@ -26,9 +26,12 @@
 
 	onMount(async () => {
 		/** @type {any} */ (window).__filmMountPending = true;
-		startFilm({ base });
 		try {
-			const w = await mount(/** @type {HTMLDivElement} */ (stage), (label) => (status = label === 'ready' ? '' : `${label}…`));
+			startFilm({ base });
+			const w = await mount(/** @type {HTMLDivElement} */ (stage), (label) => {
+				status = label === 'ready' ? '' : `${label}…`;
+				/** @type {any} */ (window).__filmLoadLabel = status;
+			});
 			if (destroyed) return w.dispose();
 			world = w;
 			status = '';

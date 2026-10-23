@@ -1,3 +1,4 @@
+import { waitForWorld } from './world-loading.js';
 import { FramePacer } from './frame-pacer.js';
 // The world viewer: a live sandbox in film mode (contract C3), in an iframe of the same origin, slaved to the
 // timeline's clock through `window.__film`. It draws the exact frame of a world shot the timeline asks for — at proxy
@@ -127,6 +128,8 @@ export class WorldViewer {
 	recording = $state(false);
 	/** the last thing film mode refused (a shot it could not prepare or draw), said on the monitor */
 	error = $state('');
+	/** The native world's current bootstrap stage, before its film API is ready. */
+	loadingLabel = $state('');
 	/**
 	 * the long edge of the program monitor in device pixels (the monitor sets it as it is laid out): the live world draws
 	 * no bigger than it is seen, as a game draws at its canvas's size — the proxy frame (HD) only on a monitor that big
@@ -176,6 +179,8 @@ export class WorldViewer {
 		this.iframe = iframe;
 		this.url = url;
 		this.state = 'loading';
+		this.loadingLabel = 'Opening the world page…';
+		this.error = '';
 		// the Mac's jobs render no world proxy while this world is open (./jobs/mac.js)
 		void import('./jobs/mac.js').then((m) => m.studioWorld(true));
 		if (iframe.getAttribute('src') !== url) {
@@ -198,6 +203,8 @@ export class WorldViewer {
 			try {
 				// (a page whose context the GPU dropped is going: never taken for the fresh one coming)
 				const win = /** @type {(Window & { __film?: Film, __lost?: boolean }) | null} */ (iframe.contentWindow);
+				if (win) forwardConsole(win, 'world');
+				this.loadingLabel = /** @type {any} */ (win)?.__filmLoadLabel || this.loadingLabel;
 				const failure = /** @type {any} */ (win)?.__filmMountError;
 				if (failure) {
 					this.error = failure;
@@ -213,7 +220,7 @@ export class WorldViewer {
 				this.forwardKeys(/** @type {Window} */ (iframe.contentWindow));
 				try {
 					// a page that goes meanwhile never answers: looked for again, never waited on for ever
-					if (!(await this.whileThere(iframe, url, film, film.ready()))) continue;
+					if (!(await this.whileThere(iframe, url, film, film.ready(), Math.max(1, patience - (performance.now() - t0))))) continue;
 					if (this.url !== url) return;
 					// once the world is up: its canvas is there
 					this.watchLoss(/** @type {Window} */ (iframe.contentWindow), iframe, url);
@@ -260,26 +267,16 @@ export class WorldViewer {
 	 * @param {HTMLIFrameElement} iframe @param {string} url @param {Film} film @param {Promise<unknown>} p
 	 * @returns {Promise<boolean>}
 	 */
-	whileThere(iframe, url, film, p) {
-		return new Promise((resolve, reject) => {
-			const there = () => {
-				try {
-					const win = /** @type {(Window & { __film?: Film, __lost?: boolean }) | null} */ (iframe.contentWindow);
-					return this.iframe === iframe && this.url === url && !win?.__lost && win?.__film === film;
-				} catch {
-					return false;
-				}
-			};
-			const id = setInterval(() => {
-				if (!there()) { clearInterval(id); resolve(false); return; }
-				const failure = /** @type {any} */ (iframe.contentWindow)?.__filmMountError;
-				if (failure) { clearInterval(id); reject(new Error(failure)); }
-			}, 250);
-			p.then(
-				() => (clearInterval(id), resolve(there())),
-				(e) => (clearInterval(id), reject(e))
-			);
-		});
+	whileThere(iframe, url, film, p, timeout = 300000) {
+		return waitForWorld(p, () => {
+			try {
+				const win = /** @type {any} */ (iframe.contentWindow);
+				const present = this.iframe === iframe && this.url === url && !win?.__lost && win?.__film === film;
+				const label = win?.__filmLoadLabel || film.progress?.()?.label;
+				if (label) this.loadingLabel = label;
+				return { present, error: win?.__filmMountError, label: this.loadingLabel };
+			} catch { return { present: false }; }
+		}, timeout);
 	}
 
 	/**

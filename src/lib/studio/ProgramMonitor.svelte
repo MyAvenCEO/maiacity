@@ -406,7 +406,7 @@
 				<div class="lcard">
 					<span class="lkick">Preparing the world</span>
 					<p class="lstep">Loading the 3D world</p>
-					<p class="ldetail">{s.world.error || 'Loading assets and preparing the scene…'}</p>
+					<p class="ldetail">{s.world.error || s.world.loadingLabel || 'Loading assets and preparing the scene…'}</p>
 					<div class="lbar busy"><i style:width="0%"></i></div>
 				</div>
 			</div>
