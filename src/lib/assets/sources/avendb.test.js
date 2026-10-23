@@ -253,8 +253,8 @@ test('every recipe of ours is a recipe entry, the stand-in too: its record fits 
 			named.set(t, at.label);
 		}
 	}
-	// the stand-in's eleven versions are longer than a code entry's 200,000 characters of source: their files hold them
-	expect(over).toBe(11);
+	// the stand-in's eleven versions and the elder woman's recipe are longer than a code entry's 200,000 characters of source: their files hold them
+	expect(over).toBe(12);
 	// each recipe is found by its ref, and a kind's first variant by its ref without a variant as well
 	expect(named.size).toBe(Object.keys(made.index.recipes).length + Object.keys(made.index.first).length);
 	for (const [at, variant] of Object.entries(made.index.first)) expect(named.get(`ref:${at}`)).toBe(`${at}:${variant}`);
