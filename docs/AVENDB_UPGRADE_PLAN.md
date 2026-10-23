@@ -413,3 +413,14 @@ Failure diagnostics [7d994cc3973a7e3aa23aad57f26500a157e25f64](https://github.co
 **Next takeover actions:** allow final-head CI to complete (including real WebKit checks; cancelled installations are not passes), build the final Mac development artifact, complete copied-store and same-identity/no-reset acceptance, then authorized merge/hosted-peer/PWA delivery. Only after verifying production Settings→Network diagnostics should Samuel run the agreed iPhone/iPad measurements. Compare useful sync throughput against those measured paths; do not equate HTTP capacity with sync utilization. No deployment, app replacement, Touch ID operation or live-store mutation occurred during this checkpoint. Broader numbered M3–M7 tasks remain tracked separately and are not all complete.
 
 The repository contains every completed source increment and its evidence. The deliberately private untracked `docs/avendb-upgrade-execution.md` is not part of the handoff and must remain uncommitted.
+
+
+### Release continuation and local write latency — 2026-10-23
+
+Current release source is `298898a3252b2b82029c384b8cf6baaa7bf2f0b7`, including generated WASM. Rust core/properties/network/device suites, Lean, server image, Mac compile and WebKit OPFS checks passed. General WebKit probes were cancelled; delivery checks failed one fixture, so release gates are not complete.
+
+The delivery fixture now retains the caller's same lock descriptor through close and configuration verification, matching production. All 17 process/workflow tests passed in 22.536s; a separate-descriptor negative control produces lock contention. Production helper safeguards are unchanged. The original intermittent CI failure is consistent with worker-exit lock timing, but old assertions discarded stderr.
+
+A new user-reported foreground issue is Doing: ordinary local writes can wait on peer catch-up before acceptance, and chat rendering waits for broad world refresh. Target local action-to-visible p95 below 50ms for ordinary edits, measuring durable completion separately. Chat send-to-remote-visible must also be measured under backlog/file load; no network-independent remote latency promise. Fixes must preserve conditional freshness, authorization and truthful saved state.
+
+Fresh Mac HTTPS/SSH probes to the hosted machine time out while GitHub responds. Independent read-only network audit run40018711500 is pending; outage cause remains unknown. Do not infer peer health from a cached homepage. No deployment or live-store mutation has occurred in this continuation.

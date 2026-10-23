@@ -119,16 +119,17 @@ class Closing(unittest.TestCase):
     def save(self):
         (self.root / "state.json").write_text(json.dumps(self.state))
 
-    def start(self, wait=5, verify_only=False):
-        fd = os.open(self.root / ".env.lock", os.O_RDWR)
+    def start(self, wait=5, verify_only=False, lock_fd=None):
+        fd = lock_fd if lock_fd is not None else os.open(self.root / ".env.lock", os.O_RDWR)
         try:
             return subprocess.Popen([sys.executable, str(GATE), str(self.root), "--lock-fd", str(fd), "--wait", str(wait)] + (["--verify-only"] if verify_only else []),
                                     pass_fds=(fd,), env=self.env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         finally:
-            os.close(fd)
+            if lock_fd is None:
+                os.close(fd)
 
-    def run_gate(self, wait=5, verify_only=False):
-        process = self.start(wait, verify_only)
+    def run_gate(self, wait=5, verify_only=False, lock_fd=None):
+        process = self.start(wait, verify_only, lock_fd)
         out, err = process.communicate(timeout=20)
         return process.returncode, out.decode(), err.decode()
 
@@ -234,13 +235,24 @@ class Closing(unittest.TestCase):
         self.assertFalse(any(c[0] == 'stop' for c in self.calls()))
 
     def test_verify_only_requires_receipt_and_rechecks_proposed_configuration(self):
-        self.assertNotEqual(self.run_gate(verify_only=True)[0], 0)
-        self.assertFalse(any(c[0] == 'stop' for c in self.calls()))
-        self.assertEqual(self.run_gate()[0], 0)
-        self.assertEqual(self.run_gate(verify_only=True)[0], 0)
-        self.state=json.loads((self.root/'state.json').read_text())
-        self.state['config_env']={'AVENDB_BUCKET_SEAL':'different'}; self.save()
-        self.assertNotEqual(self.run_gate(verify_only=True)[0], 0)
+        # Like the deployment shell, retain ONE open-file lock through close,
+        # configuration changes and final verification. A new descriptor can
+        # race the detached worker exiting after publishing its receipt.
+        with (self.root / '.env.lock').open('r+') as owner:
+            fcntl.flock(owner, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fd = owner.fileno()
+            self.assertNotEqual(self.run_gate(verify_only=True, lock_fd=fd)[0], 0)
+            self.assertFalse(any(c[0] == 'stop' for c in self.calls()))
+            code, _, error = self.run_gate(lock_fd=fd)
+            self.assertEqual(code, 0, error)
+            self.lock_held()
+            code, _, error = self.run_gate(verify_only=True, lock_fd=fd)
+            self.assertEqual(code, 0, error)
+            self.state=json.loads((self.root/'state.json').read_text())
+            self.state['config_env']={'AVENDB_BUCKET_SEAL':'different'}; self.save()
+            code, _, error = self.run_gate(verify_only=True, lock_fd=fd)
+            self.assertNotEqual(code, 0)
+            self.assertIn('AVENDB_BUCKET_SEAL changed', error)
 
     def workflow(self, fail=False, changed_seal=False):
         sha = 'd' * 40
