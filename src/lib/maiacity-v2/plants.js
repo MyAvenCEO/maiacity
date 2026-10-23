@@ -9,6 +9,7 @@
 
 /** @type {Record<string, { label: string, versions: number[], stages: [number, string][] }>} */
 const PLANTS = {
+ birch: {label:'Silver birch · Birke',versions:[1],stages:[[0,'Winged seed'],[14,'Germination'],[35,'Seedling'],[365,'Sapling'],[1095,'Young birch'],[1825,'Catkins'],[1840,'Seed set'],[1880,'Green catkins'],[1920,'Golden leaves'],[1950,'Winged seeds']]},
 	apple: { label: 'Apple', versions: [1, 2], stages: [[0, 'Pip'], [20, 'Germination'], [35, 'Seedling'], [365, 'Sapling'], [1460, 'Young tree'], [2200, 'Blossom'], [2215, 'Fruit set'], [2260, 'Green apples'], [2300, 'Colouring'], [2320, 'Ripe']] },
 	pear: { label: 'Pear', versions: [1], stages: [[0, 'Pip'], [20, 'Germination'], [35, 'Seedling'], [365, 'Sapling'], [1600, 'Young tree'], [2200, 'Blossom'], [2215, 'Fruit set'], [2270, 'Green pears'], [2320, 'Colouring'], [2340, 'Ripe']] },
 	cherry: { label: 'Cherry', versions: [1], stages: [[0, 'Stone'], [20, 'Germination'], [40, 'Seedling'], [365, 'Sapling'], [1460, 'Young tree'], [1830, 'Blossom'], [1840, 'Fruit set'], [1860, 'Green cherries'], [1880, 'Colouring'], [1890, 'Ripe']] },

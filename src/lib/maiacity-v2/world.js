@@ -759,9 +759,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	const secondHome = new THREE.Group(), secondBag = new THREE.Group(), waterCan = new THREE.Group();
 	secondHome.position.set(SECOND_HOME.x, 0, SECOND_HOME.z);
 	world.add(secondHome, secondBag, waterCan);
-	let secondPoser = null, secondPitch = 1;
+	let secondPoser = null, secondPitch = 1, secondPitched = null;
 	drawn.load(THINGS.tent, secondHome, { pick: 'asset:tent-2', cast: false }).then(g => {
 		secondPoser = g.poser; secondPoser.set('pitch', secondPitch); overLand(g.obj);
+        const lamp = TENT_LAMP.path.reduce((x, i) => x?.children[i], g.named.get(TENT_LAMP.part));
+        let canvas = null;
+        g.obj.traverse(o => o.isMesh && [].concat(o.material).forEach(m => m.emissive?.getHex() === TENT_CLOTH.emissive && (canvas = m)));
+        secondPitched = {canvas, lamp: lamp?.isLight ? lamp : null};
 		for (const c of g.named.get('packs')?.children ?? []) for (const pk of c.children) pk.visible = false;
 	}, () => {});
 	drawn.load(THINGS.bag, secondBag, { pick: 'asset:tent-2' });
@@ -770,7 +774,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	const EXTRA_BED = V(.35, 1.16, -1.45), WATER_BED = V(-.5, 1.16, -1.8);
 	const EXTRA_SHED = V(STORE.x - .4, 0, STORE.z + .6);
 	const WATER_SHED = EXTRA_SHED.clone().add(V(.8,0,0));
-	const WATER_HOME = V(SECOND_HOME.x + 1.2, 0, SECOND_HOME.z + 2.5);
+	const WATER_HOME = V(13, 0, -6);
+ let sharedWater = null;
 	function placeShelter(where) {
 		secondHome.visible = where === 'home';
 		secondBag.visible = where === 'shed' || where === 'bed';
@@ -1279,7 +1284,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		for (const seat of SEATS) {
 			const t = list.find((x) => x.seat === seat);
 			const had = trees[seat];
-			const key = t ? `${t.plant.id}:${t.plant.version}:${t.seed}:${t.stage.toFixed(3)}:${t.x}:${t.z}:${t.name}` : '';
+			const key = t ? `${t.plant.id}:${t.plant.version}:${t.seed}:${t.stage.toFixed(3)}:${t.x}:${t.z}:${t.name}:${!!t.markerOnly}` : '';
 			if (had?.userData.key === key) continue;
 			// the one it takes the place of stands until it is there to draw (no gap while it is built)
 			const away = () => {
@@ -1295,7 +1300,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			// the plant at its stage from its seed, built in the asset box and drawn by the renderer where this anchor
 			// stands (./plants.js)
 			const plant = new THREE.Group();
-			const copy = drawn.follow(plantRef(t.plant, t.stage, t.seed), plant, { pick: `tree:${seat}`, receive: true });
+			const copy = t.markerOnly ? {ready: Promise.resolve(null)} : drawn.follow(plantRef(t.plant, t.stage, t.seed), plant, { pick: `tree:${seat}`, receive: true });
 			const kit = spotKit(drawn, { name: t.name ?? '', seed: t.plant.id, pick: `tree:${seat}` });
 			kit.userData.setWet(0.6);
 			g.add(plant, kit);
@@ -1307,7 +1312,8 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			const ring = new THREE.Mesh(new THREE.RingGeometry(1.5, 2.2, 40).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xa8e07a, transparent: true, opacity: 0.95, depthWrite: false, depthTest: false }));
 			ring.position.y = 0.08;
 			ring.renderOrder = 5;
-			ring.visible = false;
+			ring.visible = !film;
+            ring.name = `tree:${seat}`;
 			g.add(ring);
 			// how tall it stands is read off the build once it is there
 			g.userData = { key, top: 0.7, grown: t.grown, height: 0, ring, drawn: copy };
@@ -2872,34 +2878,21 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	}
 	/** watering the first tree (once a game month, Samuel 2026-10-14): kneeling at it, the bottle pouring; then a little
 	 *  way back as it grows in place */
-	function waterTree(seat) {
-		const me = people[seat];
-		const g = trees[seat];
-		if (!g || busy || !me) return Promise.resolve();
-		const S = { x: g.position.x, z: g.position.z }, L = spotAt(S);
-		const pk = packs[seat];
-		return play([
-			beat(3.2, (s, k) => pourAt(L, S, k, pk.userData.bottle, null, me), () => {
-				lensFor({ fov: 36, near: 0.05 });
-				placeKit();
-				world.attach(pk.userData.bottle);
-				seatOut(me);
-				me.visible = true;
-				wear(me, true);
-				me.position.copy(L(0, 0, -0.55));
-				me.rotation.y = spotYaw(S);
-			}),
-			beat(3.8, (s, k) => {
-				camera.position.copy(L(1.7 - 0.1 * k, 0.75, -2.3 + 0.1 * k));
-				camera.lookAt(L(0, 0.35 + 0.1 * k, 0.2));
-			}, () => {
-				pour.visible = false;
-				stowBottle(pk);
-				act(me, 'kneel');
-				lensFor({ fov: 42, near: 0.1 });
-			})
-		]);
-	}
+	function waterTree(seat, onWatered = () => {}) {
+  const me=people[seat], g=trees[seat];
+  if(!g || busy || !me) return Promise.resolve();
+  const S={x:g.position.x,z:g.position.z}, L=spotAt(S);
+  world.attach(waterCan);
+  return play([
+   beat(3.2, (s,k) => {
+    waterCan.position.copy(L(.16,.55,-.15));waterCan.rotation.set(0,spotYaw(S),0);waterCan.rotateZ(-1.3*Math.sin(Math.PI*k));
+    pour.visible=k>.2 && k<.85;pour.position.copy(L(0,.3,0));pour.scale.set(1,.3,1);act(me,'pour');
+    camera.position.copy(L(1.4,1.2,-1.8));camera.lookAt(L(0,.4,0));
+   }, () => {seatOut(me);me.position.copy(L(0,0,-.65));me.rotation.y=spotYaw(S);}),
+   beat(3.8, () => {pour.visible=false;camera.position.copy(L(1.8,1.3,-2.4));camera.lookAt(L(0,.6,0));},()=>{act(me,'stand');onWatered();})
+  ]).finally(()=>{pour.visible=false;});
+ }
+
 	/** the player's joy (Samuel 2026-10-13: after the first mint): their face in the van, centred, a big smile and
 	 *  sparkling eyes, a few seconds */
 	function joy() {
@@ -3034,6 +3027,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const me = people[stage.me];
 		if (busy || !me) return;
 		const S = { x, z };
+        if (roam && !tourOn) { roamTo = wayTo(me, spotAt(S)(0,0,-.62)); return; }
 		seatOut(me);
 		me.visible = true;
 		wear(me, true); // out of the tent with them, for the seed and the bottle
@@ -3400,6 +3394,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 	function update(view, h) {
 		if (h != null) hour = h;
 		if (!view) return;
+		sharedWater = view.water;
 		for (const seat of SEATS) {
 			const hearts = view.players[seat].wallet.HEARTS;
 			const glow = people[seat].userData.glow;
@@ -3432,11 +3427,13 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		const glow = (lit ? Math.min(1, Math.max(0, (0.8 - up) / 0.55)) : 0) * (cold ? 0.35 : 1);
 		// seen from inside, the canvas is lit by the lantern only, not glowing as it does to whoever is outside
 		const within = roam && inTent ? 0.3 : 1;
-		if (pitched?.canvas) {
-			pitched.canvas.emissive.copy(CLOTH_DAY).lerp(CLOTH_NIGHT, glow * within);
-			pitched.canvas.emissiveIntensity = (0.35 + 0.2 * glow) * within;
+		for (const tent of [pitched, secondPitched]) {
+        if (tent?.canvas) {
+			tent.canvas.emissive.copy(CLOTH_DAY).lerp(CLOTH_NIGHT, glow * within);
+			tent.canvas.emissiveIntensity = (0.35 + 0.2 * glow) * within;
 		}
-		if (pitched?.lamp && homePitch >= 1) pitched.lamp.intensity = LANTERN * (1 + 3 * glow); // while it is pitched, its own
+		if (tent?.lamp) tent.lamp.intensity = LANTERN * (1 + 3 * glow);
+        } // while it is pitched, its own
 		const flame = fire.visible && hearth.built >= 1 ? Math.min(1, Math.max(0, (0.62 - up) / 0.3)) : 0;
 		if (Math.abs(flame - hearth.lit) > 0.005) ((hearth.lit = flame), burnTo());
 		// its burning: its flames and their light flicker in the box while it burns
@@ -3530,6 +3527,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 			const me = people[stage.me];
 			if (walkOn(me, errand.pts, t - errand.t0)) me.rotation.y = errand.yaw;
 		}
+  if (!film && !tourOn && !busy && sharedWater) {
+   world.attach(waterCan); waterCan.visible=true; waterCan.rotation.set(0,0,0);
+   if(sharedWater.carriedBy === stage.me) {
+    const me=people[stage.me];waterCan.position.copy(me.localToWorld(V(.36,.55,.05)));waterCan.rotation.y=me.rotation.y;
+   } else waterCan.position.set(sharedWater.x,sharedWater.carriedBy ? .55 : 0,sharedWater.z);
+  }
 		for (let i = grows.length - 1; i >= 0; i--) {
 			// a watered tree grows in place
 			const g = grows[i], k = Math.min(1, (t - g.t0) / 1.8);
@@ -3575,7 +3578,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				const tree = trees[k];
 				if (tree) {
 					// another's tree, while a spot is chosen: ringed and named however far off the camera is
-					const marked = (core.visible && k !== stage.me) || (!busy && !held);
+					const marked = (core.visible && k !== stage.me) || (!film && !tourOn);
 					tree.userData.ring.visible = marked;
 					const q = tree.position.clone().setY(tree.userData.top).project(camera);
 					const behind = q.z > 1;
@@ -3584,8 +3587,12 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 				}
 			}
 			onLabels(out);
-			const r = { on: roam, near: byPickup(), driving: driving || !!boarding?.into };
-			if (r.on !== roamSeen.on || r.near !== roamSeen.near || r.driving !== roamSeen.driving) ((roamSeen = r), onRoam(r));
+			const at = people[stage.me].getWorldPosition(V());
+   const mine=trees[stage.me];
+   const r = { on: roam, near: byPickup(), driving: driving || !!boarding?.into,
+    waterNear: !!sharedWater && Math.hypot(at.x-sharedWater.x,at.z-sharedWater.z)<2.5,
+    treeNear: !!mine && Math.hypot(at.x-mine.position.x,at.z-mine.position.z)<2.5 };
+			if (r.on !== roamSeen.on || r.near !== roamSeen.near || r.driving !== roamSeen.driving || r.waterNear !== roamSeen.waterNear || r.treeNear !== roamSeen.treeNear) ((roamSeen = r), onRoam(r));
 		}
 	}
 	if (own) loop();
@@ -3669,6 +3676,7 @@ export function createWorld(canvas, { onPick = () => {}, onLabels = () => {}, on
 		sticks: markIt,
 		sow,
 		water: waterTree,
+		position: () => { const p=people[stage.me].getWorldPosition(V()); return {x:p.x,z:p.z}; },
 		skip,
 		get busy() {
 			return busy;

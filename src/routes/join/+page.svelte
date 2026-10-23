@@ -117,7 +117,7 @@
 					<span class="invite-badge">Early build · invite only</span>
 				</div>
 				<figure class="world-preview">
-					<img src="{base}/maiacity-v1/cover.jpg" alt="The first Maia City settlement in the game" />
+					<img src="{base}/maiacity-v2/cover.jpg" alt="The first Maia City settlement in the game" />
 					<figcaption><span>MAIA CITY / THE BEGINNING</span><strong>A little world.<br />A very big question.</strong><span>How do we live when work no longer defines us?</span></figcaption>
 				</figure>
 			</div>

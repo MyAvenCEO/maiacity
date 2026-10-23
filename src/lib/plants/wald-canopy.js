@@ -266,7 +266,7 @@ class Clear {
  * @param {Wood} spec
  * @returns {(g: number, seed: string) => THREE.Group}
  */
-function wood(spec) {
+export function wood(spec) {
 	return (g, seed) => {
 		const bag = new Bag();
 		const vigour = about(chance(seed, 'plant'), 1, 0.08);
