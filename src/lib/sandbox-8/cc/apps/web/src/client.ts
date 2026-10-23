@@ -11,7 +11,6 @@ import type { CommandResult } from '../../../packages/kernel/src/index.ts';
 import type { ActionEntry, AgentView, Frame, FromWorker, ProposalVerdict, Query, StaticWorld, ToWorker } from './protocol.ts';
 import { decodeMessage } from './wire.ts';
 
-declare const __WORKER_SOURCE__: string;
 declare const __REMOTE__: boolean;
 
 type Listener<T> = (v: T) => void;
@@ -24,14 +23,18 @@ export interface Transport {
   onError(l: (message: string) => void): void;
   /** connection lost / restored (remote only) */
   onStatus?(l: (connected: boolean) => void): void;
+  /** end the transport (the worker) */
+  dispose?(): void;
 }
 
 export class WorkerTransport implements Transport {
   readonly remote = false;
   private worker: Worker;
-  constructor(source: string = __WORKER_SOURCE__) {
-    const url = URL.createObjectURL(new Blob([source], { type: 'text/javascript' }));
-    this.worker = new Worker(url);
+  constructor() {
+    this.worker = new Worker(new URL('./worker/sim-worker.ts', import.meta.url), { type: 'module' });
+  }
+  dispose(): void {
+    this.worker.terminate();
   }
   send(msg: ToWorker): void {
     this.worker.postMessage(msg);
@@ -131,6 +134,11 @@ export class SimClient {
   connected = true;
   readonly remote: boolean;
   private readonly transport: Transport;
+
+  /** end the simulation (the worker) */
+  dispose(): void {
+    this.transport.dispose?.();
+  }
 
   constructor(transport: Transport = defaultTransport()) {
     this.transport = transport;

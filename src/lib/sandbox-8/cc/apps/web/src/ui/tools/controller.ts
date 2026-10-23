@@ -2,6 +2,7 @@
  * Tool controller: routes scene pointer events and the keyboard to the active tool, composes
  * the tool visuals for the scene and keeps the overlay layer loaded.
  */
+// @ts-ignore — a .tsx module (Preact JSX): Vite compiles it (src/lib/sandbox-8/tsconfig.json), the app's type check does not
 import { toggleAgentPanel } from '../panels/AgentPanel.tsx';
 import { effect, signal } from '@preact/signals';
 import type { Vec2 } from '../../../../../packages/geo/src/index.ts';
@@ -32,6 +33,7 @@ import {
   tool,
   type ToolId,
 } from '../state.ts';
+// @ts-ignore — a .tsx module (Preact JSX): Vite compiles it (src/lib/sandbox-8/tsconfig.json), the app's type check does not
 import { orderDialog } from '../panels/drawer/MaterialsTab.tsx';
 import { alignToRoad, bCursor, bPlaced, buildingDraftVisuals, cancelBuilding, commitBuilding, installBuildingTool, place, rotate } from './building.ts';
 import { addPoint, cancelDraft, commit, dragIndex, draftCursor, hoverStation, installRoadTool, movePoint, noSnap, onDoubleClick, removeLast, roadDraftVisuals } from './road.ts';
@@ -307,8 +309,8 @@ async function loadOverlay(layer: string): Promise<void> {
 /** last loaded overlay (legend) */
 export const overlayData = signal<OverlayData | null>(null);
 
-/** Install event routing (once, after the scene exists). */
-export function installController(container: HTMLElement): void {
+/** Install event routing (once, after the scene exists); returns what takes it down again. */
+export function installController(container: HTMLElement): () => void {
   installRoadTool();
   installBuildingTool();
   // Alt + wheel rotates the building footprint (capture: keep the camera from zooming)
@@ -340,13 +342,14 @@ export function installController(container: HTMLElement): void {
       scene.setHover(null);
     }
   });
+  const onBlur = () => (noSnap.value = false);
   window.addEventListener('keydown', onKey, true);
   window.addEventListener('keyup', onKeyUp);
-  window.addEventListener('blur', () => (noSnap.value = false));
+  window.addEventListener('blur', onBlur);
   window.addEventListener('pointerup', endDrag);
 
   // compose tool visuals
-  effect(() => {
+  const stops = [effect(() => {
     const t = tool.value;
     const v: ToolVisuals = {};
     if (t === 'road') {
@@ -363,16 +366,24 @@ export function installController(container: HTMLElement): void {
     else if (t === 'inspect' && g) v.cursorRing = { x: g[0], z: g[1], radius: 15, color: '#5aa9e6' };
     else if (t === 'moveTarget' && g) v.cursorRing = { x: g[0], z: g[1], radius: 6, color: '#fab219' };
     scene.setTool(v);
-  });
+  }),
   // leaving the road tool drops the live cursor
   effect(() => {
     if (tool.value !== 'road') draftCursor.value = null;
     if (tool.value !== 'building') bCursor.value = null;
     document.body.dataset.tool = tool.value;
-  });
+  }),
   effect(() => {
     // a custom goal's overlay follows the edits in the Scout panel
     void scoutGoal.value;
     void loadOverlay(overlay.value);
-  });
+  })];
+  return () => {
+    window.removeEventListener('keydown', onKey, true);
+    window.removeEventListener('keyup', onKeyUp);
+    window.removeEventListener('blur', onBlur);
+    window.removeEventListener('pointerup', endDrag);
+    for (const stop of stops) stop();
+    delete document.body.dataset.tool;
+  };
 }

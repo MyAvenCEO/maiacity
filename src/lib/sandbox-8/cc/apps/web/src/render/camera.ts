@@ -4,7 +4,8 @@
  * and smooth focus animations.
  */
 import { MOUSE, type PerspectiveCamera, Spherical, TOUCH, Vector3 } from 'three';
-import { MapControls } from 'three/addons/controls/MapControls.js';
+import type { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { createControls } from '$lib/render/core.js';
 import type { Heightfield } from './heightfield.ts';
 
 const MIN_DIST = .7;
@@ -21,7 +22,7 @@ interface FocusAnim {
 }
 
 export class CameraRig {
-  readonly controls: MapControls;
+  readonly controls: OrbitControls;
   private keys = new Set<string>();
   private anim: FocusAnim | null = null;
   private sph = new Spherical();
@@ -40,7 +41,7 @@ export class CameraRig {
     readonly camera: PerspectiveCamera,
     private dom: HTMLElement,
   ) {
-    const c = new MapControls(camera, dom);
+    const c = createControls(camera, dom);
     c.enableDamping = true;
     c.dampingFactor = 0.09;
     c.screenSpacePanning = false;

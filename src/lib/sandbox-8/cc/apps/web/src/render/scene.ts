@@ -3,6 +3,7 @@
  * and pointer events. Static world data is (re)built only when its revision changes; frames
  * update dynamic objects and the environment.
  */
+import { createRenderer } from '$lib/render/core.js';
 import {
   ACESFilmicToneMapping,
   Mesh,
@@ -93,7 +94,7 @@ class SceneImpl {
   private firstWorld = true;
 
   constructor(private container: HTMLElement) {
-    const r = new WebGLRenderer({ antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: false });
+    const r = createRenderer({ antialias: true, power: 'high-performance', preserve: false });
     r.outputColorSpace = SRGBColorSpace;
     r.toneMapping = ACESFilmicToneMapping;
     r.toneMappingExposure = 1.0;
