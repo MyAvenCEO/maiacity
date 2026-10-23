@@ -8,6 +8,7 @@ mod analyse;
 mod auth;
 mod aven;
 mod avendb;
+mod avendb_shutdown;
 mod blob;
 mod enclave;
 mod files;
@@ -119,8 +120,15 @@ fn main() {
             jobs::init(app.handle().clone());
             Ok(())
         })
-        // the studio's window closed: the unseen world window goes with it, so the app quits as it always did
+        // Closing the main window is a quit request too: keep it available while
+        // avenDB drains, or to explain a failed durable close.
         .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    window.app_handle().exit(0);
+                }
+            }
             if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
                 world::close_window(window.app_handle());
             }
@@ -172,9 +180,8 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("start maiaCITY Studio")
         .run(|handle, event| {
-            if let tauri::RunEvent::Exit = event {
-                // avenDB's device, which closes its own store
-                tauri::async_runtime::block_on(avendb::stop(&handle.state::<avendb::Avendb>()));
+            if let tauri::RunEvent::ExitRequested { code, api, .. } = event {
+                avendb::exit_requested(handle, code, &api);
             }
         });
 }

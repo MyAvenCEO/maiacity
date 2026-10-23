@@ -236,16 +236,32 @@ impl Drives {
         self.hosted.lock().expect("hosted").contains_key(&drive)
     }
 
+    /// Call while holding looking: publication/removal cannot race the fence.
+    async fn close_one(&self, id: SignerId, node: &Arc<Node>) -> Result<()> {
+        node.shutdown().await?;
+        let mut hosted = self.hosted.lock().expect("hosted");
+        if hosted.get(&id).is_some_and(|held| Arc::ptr_eq(&held.node, node)) { hosted.remove(&id); }
+        Ok(())
+    }
+
     /// Stops looking, and every drive's node: as the Mac's device closes.
-    pub(crate) async fn stop(&self) {
-        if let Some(task) = self.task.lock().expect("the task").take() {
+    pub(crate) async fn stop(&self) -> Result<()> {
+        // Finish a look which may be opening a node before aborting its loop.
+        let _one = self.looking.lock().await;
+        let task = self.task.lock().expect("the task").take();
+        if let Some(task) = task {
             task.abort();
+            let _ = task.await;
         }
-        let hosted: Vec<Hosted> = self.hosted.lock().expect("hosted").drain().map(|(_, h)| h).collect();
-        for h in hosted {
-            h.node.shutdown().await.ok();
+        let hosted: Vec<_> = self.hosted.lock().expect("hosted").iter()
+            .map(|(id, h)| (*id, h.node.clone())).collect();
+        let mut errors = Vec::new();
+        for (id, node) in hosted {
+            if let Err(error) = self.close_one(id, &node).await { errors.push(format!("{error:#}")); }
         }
+        anyhow::ensure!(errors.is_empty(), "hosted drives did not close: {}", errors.join("; "));
         self.seen.lock().expect("seen").clear();
+        Ok(())
     }
 }
 
@@ -285,7 +301,7 @@ fn state_of(seen: Option<&Seen>, p256: &[u8; 33], mine: &HashSet<SignerId>, host
 impl Service {
     /// Starts looking at the volumes every `LOOK`, while the Mac's device is open, if it looks at any.
     pub(crate) fn watch_drives(self: &Arc<Self>) {
-        if self.config.volumes.is_none() {
+        if self.ensure_open().is_err() || self.config.volumes.is_none() {
             return;
         }
         let service: Weak<Service> = Arc::downgrade(self);
@@ -310,20 +326,15 @@ impl Service {
     pub(crate) async fn look(self: &Arc<Self>) -> Result<()> {
         let (Some(root), Ok(d)) = (self.config.volumes.clone(), self.device()) else { return Ok(()) };
         let _one = self.drives.looking.lock().await;
+        self.ensure_open()?;
         let mounted = volumes(&root);
         let mine = devices(&d).await;
-        let gone: Vec<Hosted> = {
-            let mut hosted = self.drives.hosted.lock().expect("hosted");
-            let out: Vec<SignerId> = hosted
-                .iter()
-                .filter(|(drive, h)| !mounted.contains(&h.volume) || !store(&h.volume).is_dir() || !mine.contains(drive))
-                .map(|(drive, _)| *drive)
-                .collect();
-            out.iter().filter_map(|drive| hosted.remove(drive)).collect()
-        };
-        for h in gone {
-            tracing::info!("the drive {} is unplugged or removed: its node stops", h.name);
-            h.node.shutdown().await.ok();
+        let gone: Vec<_> = self.drives.hosted.lock().expect("hosted").iter()
+            .filter(|(drive, h)| !mounted.contains(&h.volume) || !store(&h.volume).is_dir() || !mine.contains(drive))
+            .map(|(id, h)| (*id, h.name.clone(), h.node.clone())).collect();
+        for (id, name, node) in gone {
+            tracing::info!("the drive {name} is unplugged or removed: its node stops");
+            self.drives.close_one(id, &node).await?;
         }
         self.drives.seen.lock().expect("seen").retain(|volume, _| mounted.contains(volume));
         self.drives.ejected.lock().expect("ejected").retain(|volume| mounted.contains(volume));
@@ -454,6 +465,8 @@ impl Service {
     /// put aside on it, never deleted. `{"device"}`. Fails for a drive that is one of the person's devices already, or
     /// another person's.
     pub(crate) async fn join_drive(self: &Arc<Self>, path: &str, name: &str) -> Result<Value> {
+        let _life = self.life.lock().await;
+        self.ensure_open()?;
         let d = self.device()?;
         let volume = self.mounted(path)?;
         let fallback = volume.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
@@ -501,23 +514,24 @@ impl Service {
             ..Options::local()
         };
         let node = Arc::new(Node::spawn(lab, me, opts).await?);
-        if let Err(e) = node.link_by_pass(&d.node().offer(), &passes, ceremony).await {
-            node.shutdown().await.ok();
-            return Err(e.context("the drive doesn't join your vault"));
-        }
-        // what opens it again, on its store, as every device keeps it; and its key, wrapped for this Mac
-        let (relay, credential) = (host.relay.clone(), host.credential.clone());
-        let (p256, follow, query_depth) = (d.p256(), vec![], None);
-        let device = me;
-        let meta = Meta { name: name.clone(), relay, nonce, mask, credential, p256, device, follow, query_depth, touch: None };
-        meta.keep(&node.writer_shelf().context("the drive keeps no writable shelf")?).await?;
-        self.wrap_key(&d, &KEY, me, &secret).await?;
-        let _one = self.drives.looking.lock().await;
-        self.drives.seen.lock().expect("seen").insert(volume.clone(), Seen { shelf, meta: Some(meta) });
-        self.hosting(&d, volume, name, node).await?;
-        drop(_one);
-        self.settle(&d).await;
-        Ok(json!({ "device": hex(&me.0) }))
+        self.retain_node(&node);
+        let result = async {
+            node.link_by_pass(&d.node().offer(), &passes, ceremony).await.context("the drive doesn't join your vault")?;
+            // what opens it again, on its store, as every device keeps it; and its key, wrapped for this Mac
+            let (relay, credential) = (host.relay.clone(), host.credential.clone());
+            let (p256, follow, query_depth) = (d.p256(), vec![], None);
+            let device = me;
+            let meta = Meta { name: name.clone(), relay, nonce, mask, credential, p256, device, follow, query_depth, touch: None };
+            meta.keep(&node.writer_shelf().context("the drive keeps no writable shelf")?).await?;
+            self.wrap_key(&d, &KEY, me, &secret).await?;
+            let _one = self.drives.looking.lock().await;
+            self.drives.seen.lock().expect("seen").insert(volume.clone(), Seen { shelf, meta: Some(meta) });
+            self.hosting(&d, volume, name, node.clone()).await?;
+            drop(_one);
+            self.settle(&d).await;
+            Ok(json!({ "device": hex(&me.0) }))
+        }.await;
+        self.finish_node(result, &node).await
     }
 
     /// Opens the drive at volume `path` on this Mac, one of the person's that another Mac of theirs joined, in one
@@ -526,6 +540,8 @@ impl Service {
     /// A drive ejected here and still mounted opens again with none. `{"device"}`. Fails for a drive that holds no
     /// device of the person's vault, or whose key the passkey doesn't open.
     pub(crate) async fn open_drive(self: &Arc<Self>, path: &str) -> Result<Value> {
+        let _life = self.life.lock().await;
+        self.ensure_open()?;
         let d = self.device()?;
         let volume = self.mounted(path)?;
         let _busy = self.drives.busy(&volume)?;
@@ -569,20 +585,20 @@ impl Service {
     /// signed statement of what it holds stays, and shows when it checked. `{"ejected"}`, the volume. Fails, its node
     /// stopped all the same, if macOS doesn't eject it, as when another app holds a file on it open.
     pub(crate) async fn eject_drive(self: &Arc<Self>, path: &str) -> Result<Value> {
+        let _life = self.life.lock().await;
+        self.ensure_open()?;
         let volume = self.mounted(path)?;
         let _busy = self.drives.busy(&volume)?;
         {
             // no look in between: what it would host again is ejected first
             let _one = self.drives.looking.lock().await;
             self.drives.ejected.lock().expect("ejected").insert(volume.clone());
-            let on: Vec<Hosted> = {
-                let mut hosted = self.drives.hosted.lock().expect("hosted");
-                let ids: Vec<SignerId> = hosted.iter().filter(|(_, h)| h.volume == volume).map(|(id, _)| *id).collect();
-                ids.iter().filter_map(|id| hosted.remove(id)).collect()
-            };
-            for h in on {
-                tracing::info!("the drive {} is ejected: its node stops", h.name);
-                h.node.shutdown().await.ok();
+            let on: Vec<_> = self.drives.hosted.lock().expect("hosted").iter()
+                .filter(|(_, h)| h.volume == volume)
+                .map(|(id, h)| (*id, h.name.clone(), h.node.clone())).collect();
+            for (id, name, node) in on {
+                tracing::info!("the drive {name} is ejected: its node stops");
+                self.drives.close_one(id, &node).await?;
             }
             self.drives.seen.lock().expect("seen").remove(&volume);
         }
@@ -648,20 +664,19 @@ impl Service {
         let relay = meta.relay.parse::<RelayUrl>().ok();
         let opts = Options { bind: None, direct: self.config.direct, relay, shelf: Some(shelf), ..Options::local() };
         let node = Arc::new(Node::spawn(lab, me, opts).await?);
-        self.hosting(d, volume, meta.name.clone(), node).await?;
-        Ok(())
+        self.retain_node(&node);
+        let result = self.hosting(d, volume, meta.name.clone(), node.clone()).await;
+        self.finish_node(result, &node).await
     }
 
     /// Drive node `node`, on `volume`, named `name`, hosted from now on: it and the Mac's own device know where each
     /// other is, and sync at once.
     async fn hosting(&self, d: &Arc<Device>, volume: PathBuf, name: String, node: Arc<Node>) -> Result<()> {
-        if let Err(error) = beside(d, &node) {
-            node.shutdown().await.ok();
-            return Err(error);
-        }
+        beside(d, &node)?;
         let carded = Arc::new(AtomicBool::new(false));
         let hosted = Hosted { node: node.clone(), volume, name, carded };
         self.drives.hosted.lock().expect("hosted").insert(node.device(), hosted);
+        self.published_node(&node);
         Ok(())
     }
 

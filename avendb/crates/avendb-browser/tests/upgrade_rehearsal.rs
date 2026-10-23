@@ -274,6 +274,7 @@ async fn run() -> Result<()> {
             shelf: Some(shelf.clone()),
             progress: Progress::new(),
             recovery: None,
+            on_node: None,
         })
     };
     let began = Instant::now();

@@ -17,7 +17,6 @@
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use avendb_device::{Host, OpenNode};
 use serde_json::{Value, json};
@@ -37,16 +36,18 @@ pub fn is_open() -> bool {
 
 /// avenDB's device in the app, once a call started it.
 #[derive(Default)]
-pub struct Avendb(tokio::sync::Mutex<Option<Hosted>>);
+pub struct Avendb {
+    hosted: tokio::sync::Mutex<Option<Hosted>>,
+    closing: AtomicBool,
+    closed: AtomicBool,
+}
 
 struct Hosted {
     host: Host,
     /// The window whose page called last, which its sheets show over; none while only the app's own Rust called.
     window: Window,
-    /// Ends the device's runtime once it has closed (`stop`).
-    quit: oneshot::Sender<()>,
-    /// Comes once its runtime has ended.
-    ended: oneshot::Receiver<()>,
+    /// Retains the runtime's stop signal until every store has fenced.
+    runtime: crate::avendb_shutdown::RuntimeStop,
 }
 
 /// Calls `call` with `args` on avenDB's device, as the page's own device answers it, starting the device if it isn't
@@ -165,7 +166,13 @@ async fn call_on(
 /// The device's host, started if it isn't; the window that called kept for its sheets, never the world renderer's,
 /// which reads off the device unseen (world.rs).
 async fn host_of(state: &Avendb, window: Option<tauri::WebviewWindow>) -> Result<Host, String> {
-    let mut held = state.0.lock().await;
+    if state.closing.load(Ordering::Acquire) {
+        return Err("avenDB is closing; no new device can start".into());
+    }
+    let mut held = state.hosted.lock().await;
+    if state.closing.load(Ordering::Acquire) {
+        return Err("avenDB is closing; no new device can start".into());
+    }
     if held.is_none() {
         *held = Some(start()?);
     }
@@ -176,19 +183,48 @@ async fn host_of(state: &Avendb, window: Option<tauri::WebviewWindow>) -> Result
     Ok(hosted.host.clone())
 }
 
-/// Stops avenDB's device as the app quits: it closes its drives, node and store, for five seconds at most;
-/// then the app quits whether it is done or not.
-pub async fn stop(state: &Avendb) {
+/// Intercepts quit before Tauri tears down the app. Repeated requests share the
+/// first owned close; a failed close keeps its runtime and store owner alive.
+pub fn exit_requested(app: &tauri::AppHandle, code: Option<i32>, api: &tauri::ExitRequestApi) {
+    use tauri::Manager as _;
+    let state = app.state::<Avendb>();
+    if state.closed.load(Ordering::Acquire) { return; }
+    api.prevent_exit();
+    if state.closing.swap(true, Ordering::AcqRel) { return; }
     OPEN.store(false, Ordering::Relaxed);
-    let Some(hosted) = state.0.lock().await.take() else { return };
-    let closed = async {
-        hosted.host.close().await;
-        let _ = hosted.quit.send(());
-        let _ = hosted.ended.await;
-    };
-    if tokio::time::timeout(Duration::from_secs(5), closed).await.is_err() {
-        tracing::warn!("avenDB's device didn't close its store in five seconds");
-    }
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        // Own the close independently of the event callback and surface a panic
+        // as a failure too. Hosted stays in app state until durable success.
+        let closing = app.clone();
+        let result = tauri::async_runtime::spawn(async move { stop(&closing.state::<Avendb>()).await }).await;
+        let result = result.unwrap_or_else(|error| Err(format!("the close task failed: {error}")));
+        match result {
+            Ok(()) => {
+                app.state::<Avendb>().closed.store(true, Ordering::Release);
+                app.exit(code.unwrap_or(0));
+            }
+            Err(error) => {
+                tracing::error!("avenDB shutdown failed; the app and store owner remain alive: {error}");
+                use tauri_plugin_dialog::{DialogExt as _, MessageDialogKind};
+                app.dialog().message(format!("avenDB could not safely close its store. The app has stayed open to protect pending changes.\n\n{error}"))
+                    .title("Maia City could not quit safely")
+                    .kind(MessageDialogKind::Error).show(|_| {});
+            }
+        }
+    });
+}
+
+/// Close all stores before releasing the signal which keeps their runtime alive.
+/// Five seconds is a diagnostic threshold, never permission to cancel the fence.
+async fn stop(state: &Avendb) -> Result<(), String> {
+    let mut held = state.hosted.lock().await;
+    let Some(hosted) = held.as_mut() else { return Ok(()) };
+    tracing::info!("avenDB shutdown: waiting for hosted stores");
+    let Hosted { host, runtime, .. } = hosted;
+    runtime.finish(async { host.close().await.map_err(|error| format!("{error:#}")) }).await?;
+    held.take();
+    Ok(())
 }
 
 /// What avenDB takes on this Mac's disk, for its Performance view: the device's folder (`folder()`) and its agents'
@@ -279,7 +315,7 @@ fn start() -> Result<Hosted, String> {
     let (host, lines) = made.recv().map_err(|_| "avenDB's device didn't start".to_string())??;
     let window: Window = Arc::new(Mutex::new(None));
     tauri::async_runtime::spawn(sheets(lines, host.clone(), window.clone()));
-    Ok(Hosted { host, window, quit, ended })
+    Ok(Hosted { host, window, runtime: crate::avendb_shutdown::RuntimeStop::new(quit, ended) })
 }
 
 /// Shows each sheet the device asks for over the window that called last, and gives it the sheet's answer; and asks

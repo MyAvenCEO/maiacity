@@ -64,12 +64,14 @@ pub mod drive;
 pub mod lean;
 pub mod sessions;
 mod transport;
+#[cfg(test)]
+mod shutdown_tests;
 pub use transport::webtransport_from_env;
 
 use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -160,7 +162,7 @@ pub async fn serve(
             });
         }
     }
-    host.close().await;
+    host.close().await?;
     Ok(())
 }
 
@@ -192,7 +194,10 @@ pub fn host(config: Config) -> Result<(Host, Lines)> {
         enclaves: Mutex::default(),
         next: AtomicU64::new(1),
         device: Mutex::default(),
+        provisional: Arc::default(),
         life: tokio::sync::Mutex::default(),
+        closing: AtomicBool::new(false),
+        closed: watch::channel(None).0,
         progress: Mutex::default(),
         files: Mutex::default(),
         drives: drive::Drives::default(),
@@ -236,7 +241,7 @@ impl Host {
     /// app hands them to its page so, with no JSON between.
     pub async fn run(&self, op: Value) -> (Value, Option<Vec<u8>>) {
         let service = self.service.clone();
-        let done = self.runtime.spawn(async move { service.run(&service.device()?, op).await }).await;
+        let done = self.runtime.spawn(async move { service.ensure_open()?; service.run(&service.device()?, op).await }).await;
         match done {
             Ok(Ok((value, bytes))) => (json!({ "ok": value }), bytes),
             Ok(Err(e)) => (json!({ "error": format!("{e:#}") }), None),
@@ -271,16 +276,32 @@ impl Host {
     /// jobs (`Node::jobs`) with no JSON between: none until a call opens the device (`found`, `link`, `open`), and none
     /// once it is forgotten or closed.
     pub fn node(&self) -> Option<OpenNode> {
+        if self.service.closing.load(Ordering::Acquire) { return None; }
         self.service.device.lock().expect("the device").clone().map(OpenNode)
     }
 
     /// What `serve` does as its input ends, the app gone: the drives it hosts stop, the device closes,
     /// its shelf holding what it holds, and every sheet still awaited ends. The app closes it before it quits.
-    pub async fn close(&self) {
-        let service = self.service.clone();
-        if let Err(e) = self.runtime.spawn(async move { service.close().await }).await {
-            tracing::warn!("closing the device failed: {e}");
+    /// Closing is terminal for this host. Every caller observes the same result;
+    /// cancelling a waiter cannot cancel the close. On failure the host retains
+    /// the device and its writer, so its runtime must remain alive.
+    pub async fn close(&self) -> Result<()> {
+        let mut closed = self.service.closed.subscribe();
+        if !self.service.closing.swap(true, Ordering::AcqRel) {
+            let service = self.service.clone();
+            let runtime = self.runtime.clone();
+            self.runtime.spawn(async move {
+                let closing = service.clone();
+                let result = match runtime.spawn(async move { closing.close().await }).await {
+                    Ok(result) => result.map_err(|error| format!("{error:#}")),
+                    Err(error) => Err(format!("closing the device failed: {error}")),
+                };
+                service.closed.send_replace(Some(result));
+            });
         }
+        let result = closed.wait_for(Option::is_some).await.context("the device's close task ended without an answer")?
+            .as_ref().expect("close answered").clone();
+        result.map_err(anyhow::Error::msg)
     }
 }
 
@@ -311,8 +332,13 @@ struct Service {
     next: AtomicU64,
     /// The device, once open.
     device: Mutex<Option<Arc<Device>>>,
+    /// Nodes whose startup has not published them yet, including failed fences.
+    provisional: Arc<Mutex<Vec<Arc<Node>>>>,
     /// One start at a time: founding, linking, opening or forgetting the device.
     life: tokio::sync::Mutex<()>,
+    /// One terminal close, owned by the host runtime rather than any caller.
+    closing: AtomicBool,
+    closed: watch::Sender<Option<Result<(), String>>>,
     /// The steps of the start under way, or of the last, for the page to show (`steps`).
     progress: Mutex<Option<Progress>>,
     /// The files on their way in from the page (`fileStart`), by number.
@@ -347,16 +373,65 @@ struct Incoming {
 /// What `Incoming::opened` reads once the op answered: no pass more.
 const DONE: u8 = u8::MAX;
 
+/// The node retained while one native device constructor is still running.
+type Starting = Arc<Mutex<Option<Arc<Node>>>>;
+
 /// A pass of a file's bytes, as the device reads it (`Service::file_start`).
 type Pass = std::pin::Pin<Box<dyn n0_future::Stream<Item = io::Result<Bytes>> + Send>>;
 
 impl Service {
+    fn ensure_open(&self) -> Result<()> {
+        anyhow::ensure!(!self.closing.load(Ordering::Acquire), "avenDB's device is closing or closed");
+        Ok(())
+    }
+
+    fn retain_node(&self, node: &Arc<Node>) {
+        self.provisional.lock().expect("starting nodes").push(node.clone());
+    }
+
+    fn published_node(&self, node: &Node) {
+        self.provisional.lock().expect("starting nodes").retain(|held| !std::ptr::eq(held.as_ref(), node));
+    }
+
+    async fn close_provisional(&self, node: &Arc<Node>) -> Result<()> {
+        node.shutdown().await?;
+        self.published_node(node);
+        Ok(())
+    }
+
+    async fn finish_node<T>(&self, result: Result<T>, node: &Arc<Node>) -> Result<T> {
+        if let Err(error) = &result {
+            self.close_provisional(node).await
+                .with_context(|| format!("startup failed ({error:#}); its node could not durably close"))?;
+        }
+        result
+    }
+
+    async fn finish_start<T>(&self, result: Result<T>, starting: &Starting) -> Result<T> {
+        let node = starting.lock().expect("starting node").clone();
+        match node {
+            Some(node) => self.finish_node(result, &node).await,
+            None => result,
+        }
+    }
+
+    async fn close_provisionals(&self) -> Result<()> {
+        let nodes = self.provisional.lock().expect("starting nodes").clone();
+        let mut errors = Vec::new();
+        for node in nodes {
+            if let Err(error) = self.close_provisional(&node).await { errors.push(format!("{error:#}")); }
+        }
+        anyhow::ensure!(errors.is_empty(), "provisional nodes did not close: {}", errors.join("; "));
+        Ok(())
+    }
+
     /// Sends the app line `message` unprompted (`Lines`).
     fn send(&self, message: Value) {
         let _ = self.out.send(message);
     }
 
     async fn call(self: &Arc<Self>, call: &str, a: Args<'_>) -> Result<Value> {
+        self.ensure_open()?;
         tracing::debug!("call {call}");
         match call {
             "status" => self.status().await,
@@ -420,7 +495,7 @@ impl Service {
                 }
                 answer
             }
-            "fileStart" => self.file_start(&d, a.get(0).clone()).into(),
+            "fileStart" => self.file_start(&d, a.get(0).clone())?.into(),
             "fileChunk" => {
                 let at = a.get(1).as_u64().context("argument 2 is where the chunk starts")?;
                 let chunk = BASE64.decode(a.text(2)?.as_bytes()).context("a chunk in base64")?;
@@ -528,13 +603,15 @@ impl Service {
     /// `server` if nobody has; the server backs the vault up unless `backup` is false, and then only relays.
     async fn found(self: &Arc<Self>, name: String, relay: String, server: String, backup: bool) -> Result<Value> {
         let _life = self.life.lock().await;
+        self.ensure_open()?;
         self.fresh().await?;
-        let (start, _ending) = self.start(&name, &relay)?;
+        let (start, _ending, starting) = self.start(&name, &relay)?;
         let server = Offer::from_text(server.trim())?;
         let (sheets, nonce, new) = (Sheets::new(self.clone(), None), random()?, Fresh::new()?);
         start.progress.step("unlock");
         let unlock = sheets.unlock("unlock", nonce, new.challenge(start.now)).await?;
-        let d = Device::found(start, &server, None, new, unlock, &sheets, backup).await?;
+        let result = Device::found(start, &server, None, new, unlock, &sheets, backup).await;
+        let d = self.finish_start(result, &starting).await?;
         self.started(d, nonce, sheets.credential()?).await
     }
 
@@ -543,13 +620,15 @@ impl Service {
     /// edit that adds it too.
     async fn link(self: &Arc<Self>, name: String, relay: String, through: String) -> Result<Value> {
         let _life = self.life.lock().await;
+        self.ensure_open()?;
         self.fresh().await?;
-        let (start, _ending) = self.start(&name, &relay)?;
+        let (start, _ending, starting) = self.start(&name, &relay)?;
         let through = Offer::from_text(through.trim())?;
         let (sheets, nonce, new) = (Sheets::new(self.clone(), None), random()?, Fresh::new()?);
         start.progress.step("unlock");
         let unlock = sheets.unlock("unlock", nonce, new.challenge(start.now)).await?;
-        let d = Device::link(start, &through, new, unlock).await?;
+        let result = Device::link(start, &through, new, unlock).await;
+        let d = self.finish_start(result, &starting).await?;
         self.started(d, nonce, sheets.credential()?).await
     }
 
@@ -558,33 +637,42 @@ impl Service {
     /// none or the touch doesn't come; or the device already open.
     async fn open(self: &Arc<Self>) -> Result<Value> {
         let _life = self.life.lock().await;
+        self.ensure_open()?;
         if let Some(d) = self.device.lock().expect("the device").clone() {
             return Ok(info(&d));
         }
         let meta = Meta::load(&self.shelf()).await?.context("this Mac holds no avenDB account yet")?;
-        let (start, _ending) = self.start(&meta.name, &meta.relay)?;
+        let (start, _ending, starting) = self.start(&meta.name, &meta.relay)?;
         if let Some(touch) = &meta.touch {
             start.progress.step("touch");
             match self.touch(touch, "open avenDB", random()?).await {
-                Ok(ceremony) => return Ok(self.opened(Device::open_by_touch(start, &meta, &ceremony).await?).await),
+                Ok(ceremony) => {
+                    let result = Device::open_by_touch(start, &meta, &ceremony).await;
+                    let device = self.finish_start(result, &starting).await?;
+                    return Ok(self.opened(device).await);
+                }
                 Err(e) => tracing::info!("no touch opened avenDB, so the passkey's sheet does: {e:#}"),
             }
         }
         let sheets = Sheets::new(self.clone(), Some(meta.credential.clone()));
         start.progress.step("unlock");
         let unlock = sheets.unlock("unlock", meta.nonce, random()?).await?;
-        let d = Device::open(start, &meta, unlock).await?;
+        let result = Device::open(start, &meta, unlock).await;
+        let d = self.finish_start(result, &starting).await?;
         Ok(self.opened(d).await)
     }
 
     /// Forgets the account here: closes the device, and puts its shelf, with what opens it, aside (`aside`).
     async fn forget(&self) -> Result<()> {
         let _life = self.life.lock().await;
-        self.drives.stop().await;
-        let d = self.device.lock().expect("the device").take();
+        self.ensure_open()?;
+        self.drives.stop().await?;
+        self.close_provisionals().await?;
+        let d = self.device.lock().expect("the device").clone();
         if let Some(d) = d {
-            d.close().await.ok();
+            d.close().await?;
         }
+        self.device.lock().expect("the device").take();
         self.aside()
     }
 
@@ -596,20 +684,40 @@ impl Service {
 
     /// The app went away: the drives it hosts stop, the device closes, and every sheet still awaited
     /// ends.
-    async fn close(&self) {
-        self.drives.stop().await;
-        self.sessions.lock().expect("the sessions").take();
-        let d = self.device.lock().expect("the device").take();
-        if let Some(d) = d {
-            d.close().await.ok();
-        }
+    async fn close(&self) -> Result<()> {
+        tracing::info!("avenDB shutdown: stopping new calls and pending ceremonies");
         self.sheets.lock().expect("the sheets").clear();
         self.enclaves.lock().expect("the touches").clear();
+        // Incomplete uploads no longer wait for a page which is quitting. Their
+        // admitted node work still drains through the node's own close fence.
+        self.files.lock().expect("the files").clear();
+        let _life = self.life.lock().await;
+        self.sessions.lock().expect("the sessions").take();
+        tracing::info!("avenDB shutdown: closing hosted drives");
+        let drives = self.drives.stop().await;
+        tracing::info!("avenDB shutdown: closing unpublished startup nodes");
+        let provisional = self.close_provisionals().await;
+        tracing::info!("avenDB shutdown: waiting for the device's durable close fence");
+        let d = self.device.lock().expect("the device").clone();
+        let device = match d {
+            Some(d) => d.close().await,
+            None => Ok(()),
+        };
+        // Retain all failed owners. Neither errors nor a cancelled waiter may
+        // drop their last writer while the embedding app is still alive.
+        if device.is_ok() { self.device.lock().expect("the device").take(); }
+        let errors: Vec<_> = [drives, provisional, device].into_iter()
+            .filter_map(Result::err).map(|error| format!("{error:#}")).collect();
+        anyhow::ensure!(errors.is_empty(), "{}", errors.join("; "));
+        tracing::info!("avenDB shutdown: all stores durably closed");
+        Ok(())
     }
 
     /// Op `op` that brings a file under way, a `put_file` or a `create` with a `file` (`Device::run`), its file's
     /// chunks still to come in order (`fileChunk`), then its end (`fileEnd`), which answers the op: the file's number.
-    fn file_start(&self, d: &Arc<Device>, op: Value) -> u64 {
+    fn file_start(&self, d: &Arc<Device>, op: Value) -> Result<u64> {
+        let mut files = self.files.lock().expect("the files");
+        self.ensure_open()?;
         let (chunks, first) = mpsc::channel(2);
         let (passes, waiting) = mpsc::unbounded_channel();
         passes.send(first).expect("its first pass");
@@ -642,12 +750,13 @@ impl Service {
         });
         let n = self.next.fetch_add(1, Ordering::Relaxed);
         let incoming = Incoming { chunks: Some(chunks), at: 0, passes, opened, given: 1, answer };
-        self.files.lock().expect("the files").insert(n, incoming);
-        n
+        files.insert(n, incoming);
+        Ok(n)
     }
 
     /// The bytes of file `n` from `at` on (`fileStart`), handed over once the chunks before them are.
     async fn file_chunk(&self, n: u64, at: u64, chunk: Vec<u8>) -> Result<()> {
+        self.ensure_open()?;
         let chunks = {
             let mut files = self.files.lock().expect("the files");
             let incoming = files.get_mut(&n).context("no such file on its way in")?;
@@ -688,7 +797,7 @@ impl Service {
     /// Where a device starts here: named `name`, through the relay at `relay`, with the machine's randomness, now; on
     /// the shelf in use in the folder; its steps for the page to show (`steps`), the start marked over as the guard
     /// drops.
-    fn start(&self, name: &str, relay: &str) -> Result<(Start, Ending)> {
+    fn start(&self, name: &str, relay: &str) -> Result<(Start, Ending, Starting)> {
         let progress = Progress::new();
         let ending = progress.ending();
         *self.progress.lock().expect("the steps") = Some(progress.clone());
@@ -697,7 +806,13 @@ impl Service {
         getrandom::fill(&mut *entropy).map_err(|e| anyhow!("no randomness: {e}"))?;
         let (name, shelf, direct) = (name.trim().to_string(), Some(self.shelf()), self.config.direct);
         let (entropy, recovery) = (*entropy, Start::recovery());
-        Ok((Start { name, relay, entropy, now: now(), direct, shelf, progress, recovery }, ending))
+        let starting: Starting = Arc::default();
+        let (pending, provisional) = (starting.clone(), self.provisional.clone());
+        let on_node = Some(Arc::new(move |node: Arc<Node>| {
+            provisional.lock().expect("starting nodes").push(node.clone());
+            *pending.lock().expect("starting node") = Some(node);
+        }) as Arc<dyn Fn(Arc<Node>) + Send + Sync>);
+        Ok((Start { name, relay, entropy, now: now(), direct, shelf, progress, recovery, on_node }, ending, starting))
     }
 
     /// The steps of the start under way, or of the last (`avendb_browser::steps_json`): null before the first.
@@ -742,6 +857,7 @@ impl Service {
         }
         let d = Arc::new(d);
         *self.device.lock().expect("the device") = Some(d.clone());
+        self.published_node(d.node());
         self.leave_offer(&d);
         self.watch_drives();
         self.host_agents(&d);
@@ -1007,16 +1123,18 @@ impl Service {
     /// key, with no ceremony, and hosts its drives again as theirs. The device as `open` answers it.
     async fn move_keys(self: &Arc<Self>) -> Result<Value> {
         let _life = self.life.lock().await;
+        self.ensure_open()?;
         let d = self.device()?;
         let meta = Meta::load(&self.shelf()).await?.context("this Mac holds no avenDB account")?;
         self.look().await.ok();
         let drives = self.hold_drives(&d).await?;
-        self.drives.stop().await;
-        let (start, _ending) = self.start(&meta.name, &meta.relay)?;
+        self.drives.stop().await?;
+        let (start, _ending, starting) = self.start(&meta.name, &meta.relay)?;
         let sign = self.signing(&meta, "move", MOVE_TOUCH);
         let (service, mac) = (self.clone(), d.clone());
         let keep = move |moves| async move { service.moved_drives(&mac, drives, moves).await };
-        match d.move_keys(start, sign, keep).await {
+        let moved = d.move_keys(start, sign, keep).await;
+        match self.finish_start(moved, &starting).await {
             Ok(Some(moved)) => Ok(self.opened(moved).await),
             Ok(None) => {
                 self.watch_drives();
@@ -1025,6 +1143,9 @@ impl Service {
             Err(e) => {
                 // closed, as it was to open again as its next key: the page opens it again from its shelf
                 if d.closed() {
+                    // closed() marks admission, not durable completion. A failed
+                    // fence must retain the old Device for Host::close to report.
+                    d.close().await.with_context(|| format!("key move failed ({e:#}); the old device did not durably close"))?;
                     self.device.lock().expect("the device").take();
                 } else {
                     self.watch_drives();
@@ -1092,7 +1213,11 @@ impl Service {
     async fn enclave(&self, mut ask: Value) -> Result<Value> {
         let n = self.next.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
-        self.enclaves.lock().expect("the touches").insert(n, tx);
+        {
+            let mut pending = self.enclaves.lock().expect("the touches");
+            self.ensure_open()?;
+            pending.insert(n, tx);
+        }
         ask["enclave"] = n.into();
         self.send(ask);
         match rx.await {
@@ -1116,7 +1241,11 @@ impl Service {
     async fn sheet(&self, url: String) -> Result<String> {
         let n = self.next.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
-        self.sheets.lock().expect("the sheets").insert(n, tx);
+        {
+            let mut pending = self.sheets.lock().expect("the sheets");
+            self.ensure_open()?;
+            pending.insert(n, tx);
+        }
         self.send(json!({ "sheet": n, "url": url }));
         match rx.await {
             Ok(Ok(back)) => Ok(back),

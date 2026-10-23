@@ -186,6 +186,10 @@ pub struct Start {
     pub shelf: Option<Shelf>,
     pub progress: Progress,
     pub recovery: Option<Arc<RecoveryKey>>,
+    /// An embedding host retains a node before later startup steps can fail.
+    /// Called synchronously after spawn, before another startup await. The host
+    /// transfers ownership on publication, or awaits close before releasing it.
+    pub on_node: Option<Arc<dyn Fn(Arc<Node>) + Send + Sync>>,
 }
 
 impl Start {
@@ -520,7 +524,7 @@ impl Device {
         let passkey = owner.unwrap_or(passkeys[0]);
         let (shelf, name, relay) = (start.shelf.clone(), start.name.clone(), start.relay.clone());
         let (p256, mask, opener, closed) = (meta.p256, meta.mask, opener.to_vec(), watch::Sender::new(false));
-        let device = Device { node: Arc::new(node), passkey, p256, mask, shelf, name, relay, closed, opener };
+        let device = Device { node, passkey, p256, mask, shelf, name, relay, closed, opener };
         start.progress.step("check");
         if device.vault().await.is_none() {
             device.close().await.ok();
@@ -750,21 +754,23 @@ impl Device {
 
     /// A node for device `me` of `lab`, which reaches its peers through the relay, let in by one of `relay_passes` if
     /// the relay doesn't know it yet, and directly too if it binds a socket; on its shelf, if it keeps one.
-    async fn spawn(lab: Lab, me: SignerId, start: &Start, relay_passes: Vec<RelayPass>) -> Result<Node> {
+    async fn spawn(lab: Lab, me: SignerId, start: &Start, relay_passes: Vec<RelayPass>) -> Result<Arc<Node>> {
         // a page shows its relay its passes first, by a request of its own, and then connects with none (`show`)
         let shown = !relay_passes.is_empty() && show(start, &relay_passes).await?;
         let relay_passes = if shown { Vec::new() } else { relay_passes };
         let (direct, relay, shelf, progress) =
             (start.direct, Some(start.relay.clone()), start.shelf.clone(), start.progress.clone());
         let opts = Options { bind: None, direct, relay, relay_passes, shelf, progress, ..Options::local() };
-        Node::spawn(lab, me, opts).await
+        let node = Arc::new(Node::spawn(lab, me, opts).await?);
+        if let Some(retain) = &start.on_node { retain(node.clone()); }
+        Ok(node)
     }
 
     /// The new device whose node is `node`, of the person whose passkey turned out to be `passkey`, of `passkeys`,
     /// those its unlock may have been from (`passed`), its secret kept under `mask`, started at `start`: it forgets the
     /// keys of the others, which nobody holds, and keeps the passkey's own in the other suite, its next key (the key
     /// move); the passkey in each suite opened it.
-    async fn of(node: Node, passkey: SignerId, passkeys: &[SignerId], mask: [u8; 32], start: &Start) -> Result<Device> {
+    async fn of(node: Arc<Node>, passkey: SignerId, passkeys: &[SignerId], mask: [u8; 32], start: &Start) -> Result<Device> {
         let held = passkeys.to_vec();
         let forget = move |lab: &mut Lab, _| {
             let p256 = |lab: &Lab, p| match lab.keys_of(p) {
@@ -780,7 +786,7 @@ impl Device {
         let Some((p256, opener)) = node.try_act(forget).await? else { bail!("the passkey's keys") };
         let (shelf, name, relay) = (start.shelf.clone(), start.name.clone(), start.relay.clone());
         let closed = watch::Sender::new(false);
-        Ok(Device { node: Arc::new(node), passkey, p256, mask, shelf, name, relay, closed, opener })
+        Ok(Device { node, passkey, p256, mask, shelf, name, relay, closed, opener })
     }
 
     /// What opens it again, as it started: its name and relay, its secret's mask, its passkey's P-256 key and its id,
@@ -1852,7 +1858,7 @@ fn starting(name: String, relay: &str, steps: Option<Function>, shelf: Shelf) ->
     let mut entropy = Zeroizing::new([0; 32]);
     getrandom::fill(&mut *entropy).map_err(|e| JsError::new(&format!("no randomness from the browser: {e}")))?;
     let (progress, shelf, recovery) = (shown(steps), Some(shelf), Start::recovery());
-    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, shelf, progress, recovery })
+    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, shelf, progress, recovery, on_node: None })
 }
 
 /// Holds the page's `store` for this page alone, until the device on it closes (`PageDevice::close`): refused while
@@ -2056,7 +2062,7 @@ mod tests {
         let relay = "http://localhost:3340".parse().expect("a relay's URL");
         let (name, progress) = ("Eve's browser".into(), Progress::new());
         let (entropy, recovery) = ([7; 32], None);
-        let start = Start { name, relay, entropy, now: 0, direct: false, shelf: None, progress, recovery };
+        let start = Start { name, relay, entropy, now: 0, direct: false, shelf: None, progress, recovery, on_node: None };
         // its own secret, kept masked by the PRF output on its salt
         let fresh = Fresh::from_secret([9; 32]);
         let mask = fresh.mask(&unlock);
