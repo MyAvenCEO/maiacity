@@ -99,6 +99,11 @@ export class Store {
 		return this.call('put', [name, bytes]);
 	}
 
+	/** Replaces a derived slot, acknowledging only after the OPFS worker finishes it. */
+	keep(name, bytes) {
+		return this.call('keep', [name, bytes]);
+	}
+
 	get(name) {
 		return this.call('get', [name]);
 	}
