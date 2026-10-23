@@ -71,6 +71,17 @@ async fn cancelling_a_file_read_drops_its_receive_future() {
 /// the healthy peer fills the local store and the normal file reader verifies and opens the exact plaintext.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn a_stalled_file_provider_yields_to_an_authorized_peer() {
+    stalled_file_provider(false).await;
+}
+
+/// FileAvailability.partial_import_survives_failed_attempt / next_provider_does_not_request_retained_range:
+/// unlike the empty stalled provider above, this one sends a real proof-verified sealed prefix before stalling.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn verified_file_ranges_survive_a_stalled_provider_and_resume_locally() {
+    stalled_file_provider(true).await;
+}
+
+async fn stalled_file_provider(partial: bool) {
     let mut w = world();
     let h = handbook(&mut w);
     let (mac, phone, raw_device, passkey) = (w.mac_a, w.phone_a, w.server, w.passkey_a);
@@ -86,6 +97,17 @@ async fn a_stalled_file_provider_yields_to_an_authorized_peer() {
     phone.try_know(mac.addr()).unwrap();
     phone.sync_with(mac.id()).await.unwrap();
     assert!(phone.read(move |lab, me| lab.file(me, &root).is_some()).await);
+    let hash = Hash::from_bytes(root.hash);
+    let prefix_ranges = ChunkRanges::bytes(0..SEALED as u64);
+    let prefix_request = GetRequest::blob_ranges(hash, prefix_ranges.clone());
+    let prefix = if partial {
+        assert!(!root.pieced(), "the fixture reads one sealed blob");
+        let prefix = mac.shared.store.export_bao(hash, prefix_ranges.clone()).bao_to_vec().await.unwrap();
+        let full = mac.shared.store.export_bao(hash, ChunkRanges::all()).bao_to_vec().await.unwrap();
+        assert!(full.starts_with(&prefix), "send a valid prefix of the actual whole-blob response");
+        assert!(prefix.len() < full.len(), "the first provider must leave real missing bytes");
+        prefix
+    } else { Vec::new() };
 
     let raw = Endpoint::builder(presets::Empty)
         .secret_key(SecretKey::from_bytes(&w.lab.endpoint_secret(raw_device).unwrap()))
@@ -107,15 +129,45 @@ async fn a_stalled_file_provider_yields_to_an_authorized_peer() {
     let seen = requested.clone();
     let provider = tokio::spawn(async move {
         let conn = endpoint.accept().await.unwrap().await.unwrap();
-        let (send, mut recv) = conn.accept_bi().await.unwrap();
+        let (mut send, mut recv) = conn.accept_bi().await.unwrap();
         assert!(!recv.read_to_end(4096).await.unwrap().is_empty());
         seen.store(true, Ordering::SeqCst);
+        if !prefix.is_empty() { send.write_all(&prefix).await.unwrap(); }
         // Keep the connection live: only cancelling this request should end the silent stream.
         send.stopped().await.unwrap()
     });
-    let request = GetRequest::blob(Hash::from_bytes(root.hash));
-    time::timeout(time::Duration::from_secs(10), phone.shared.get_from(request, || vec![raw.id(), mac.id()], time::Duration::from_millis(150)))
-        .await.unwrap().unwrap();
+    let request = GetRequest::blob(hash);
+    if partial {
+        let first = time::timeout(time::Duration::from_secs(10),
+            phone.shared.get_from(request.clone(), || vec![raw.id()], time::Duration::from_millis(150)))
+            .await.unwrap();
+        assert!(first.is_err(), "a verified prefix is not the requested whole file");
+        // The importer can finish work already queued when the receive future is dropped. Observe verified
+        // store ranges, never infer retention from payload progress, before making the second attempt.
+        time::timeout(time::Duration::from_secs(5), async {
+            loop {
+                if phone.shared.store.remote().local_for_request(prefix_request.clone()).await.unwrap().is_complete() {
+                    break;
+                }
+                time::sleep(time::Duration::from_millis(5)).await;
+            }
+        }).await.expect("already verified ranges remain after the first receive is cancelled");
+        let local = phone.shared.store.remote().local_for_request(request.clone()).await.unwrap();
+        assert!(!local.is_complete(), "the rest still needs an authorized peer");
+        assert!(local.local_bytes() >= SEALED as u64);
+        let missing = local.missing();
+        assert!(missing.ranges.iter().next().unwrap().is_disjoint(&prefix_ranges),
+            "the next request excludes already imported verified ranges");
+        phone.shared.get_from(prefix_request, || panic!("a retained range must not consult any provider"), FILE_IDLE)
+            .await.unwrap();
+        assert_eq!(phone.read_file(root, 0..SEGMENT as u64).await.unwrap(), expected[..SEGMENT]);
+        time::timeout(time::Duration::from_secs(10),
+            phone.shared.get_from(request, || vec![mac.id()], time::Duration::from_secs(2)))
+            .await.unwrap().unwrap();
+    } else {
+        time::timeout(time::Duration::from_secs(10), phone.shared.get_from(request, || vec![raw.id(), mac.id()], time::Duration::from_millis(150)))
+            .await.unwrap().unwrap();
+    }
     assert!(requested.load(Ordering::SeqCst), "the stalled peer was actually tried first");
     assert!(time::timeout(time::Duration::from_secs(5), provider).await.unwrap().unwrap().is_some(),
         "the cancelled request stops its peer's response stream");

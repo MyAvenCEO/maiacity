@@ -28,9 +28,13 @@ Rust correspondence:
 * duplicate_progress_does_not_extend_a_stalled_provider: equal/decreasing counters do not renew.
 * cancelling_a_file_read_drops_its_receive_future: cancellation ends the owned attempt.
 * a_stalled_file_provider_yields_to_an_authorized_peer: fallback through the unchanged gate,
-  exact plaintext, and surviving sync connection. It does NOT yet exercise a first provider
-  importing partial ranges before stalling; preservation/resume remains a store assumption
-  here, requiring that additional runtime scenario. No Rust test is claimed executed here.
+  exact plaintext, and surviving sync connection.
+* verified_file_ranges_survive_a_stalled_provider_and_resume_locally: imports a valid Bao
+  prefix before the provider stalls, observes retained verified ranges after cancellation,
+  excludes them from the next request, reads that prefix without consulting a provider, then
+  completes through an authorized peer and checks the exact plaintext. This exercises the
+  retention assumption with the real importer; it does not establish crash/fsync durability
+  or physical-device behavior. Execution evidence belongs in docs/AVENDB_UPGRADE_PLAN.md.
 -/
 
 namespace AvenDB.FileAvailability
@@ -143,7 +147,8 @@ theorem next_provider_requests_only_requested_ranges (s : ReadState K) (requeste
   exact h.1
 
 /-- Explicit retained-partial-range trace: import then fail then recompute what is missing.
-This proves the abstract retention contract; the existing stalled-provider test starts empty. -/
+This proves the abstract retention contract; the partial-range runtime scenario above
+exercises its importer correspondence without claiming an extraction proof. -/
 theorem partial_import_survives_failed_attempt (s : ReadState K) (offered verified requested : Ranges K)
     (k : K) (ho : offered k = true) (hv : verified k = true) :
     missing (finish .failed (importRanges s offered verified)) requested k = false := by
