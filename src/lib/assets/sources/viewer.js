@@ -42,13 +42,13 @@ function open({ data, card }, hash, label) {
  * card against the card's schema and the recipe it names, its data by ../box/rebuild.js.
  * @param {ReturnType<typeof import('./avendb.js').vaultRecipes>} source the vault's recipes
  * @param {string} hash @param {Record<string, string>} [given]
- * @param {{ box: import('../box/host.js').AssetBox, store?: Pick<typeof cache, 'get' | 'put' | 'drop'>, keep?: boolean }} o
+ * @param {{ box: import('../box/host.js').AssetBox, store?: Pick<typeof cache, 'get' | 'put' | 'drop'>, keep?: boolean, phase?: (step: 'file' | 'cache' | 'build') => void }} o
  *   the box it builds in, the cache (this device's), and whether the cache is read and kept to
  * @returns {Promise<{ obj: any, card: any, data: any, from: 'cache' | 'box', name: string, label: string,
  *   recipe: { hash: string, code: string }, values: Record<string, number | string> | undefined,
  *   given: Record<string, string> | undefined, stored: Promise<boolean> }>}
  */
-export async function vaultBuild(source, hash, given = {}, { box, store = cache, keep = true }) {
+export async function vaultBuild(source, hash, given = {}, { box, store = cache, keep = true, phase = () => {} }) {
 	const at = typeof hash === 'string' ? own(source.index.recipes, hash) : undefined;
 	if (!at) throw new NotInVault(`no recipe ${String(hash).slice(0, 12)}… is in the Maia City vault`);
 	const asked = Object.keys(given).length ? given : undefined;
@@ -59,6 +59,7 @@ export async function vaultBuild(source, hash, given = {}, { box, store = cache,
 	} catch (e) {
 		throw new Error(`${at.label}: ${e instanceof Error ? e.message : String(e)}`);
 	}
+	phase('file');
 	const recipe = await source.recipeAt(hash);
 	const engine = engineAt(source.index.engine);
 	if (!engine) throw new Error(`${at.label}: no engine ${source.index.engine}`);
@@ -66,6 +67,7 @@ export async function vaultBuild(source, hash, given = {}, { box, store = cache,
 	const text = values && Object.fromEntries(Object.entries(values).map(([k, v]) => [k, String(v)]));
 	const said = { name: buildName(hash, values), label: at.label, recipe, values, given: text };
 	if (keep) {
+		phase('cache');
 		const hit = await store.get(key);
 		if (hit) {
 			try {
@@ -77,6 +79,7 @@ export async function vaultBuild(source, hash, given = {}, { box, store = cache,
 		}
 	}
 	let built;
+	phase('build');
 	try {
 		built = await box.build(recipe, text);
 	} catch (e) {

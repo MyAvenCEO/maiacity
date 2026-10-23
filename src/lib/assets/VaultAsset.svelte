@@ -69,6 +69,7 @@
 	let canvasBox = $state();
 	let hero = $state.raw(null);
 	let building = $state(false);
+	let buildPhase = $state('file');
 	let error = $state('');
 	let lost = $state(false);
 	/** where the build came from (this device's cache or the box), its measure, and a plant's above and below its soil */
@@ -131,7 +132,7 @@
 			return;
 		}
 		// for a test in a browser to read what is shown, as AssetViewer's `__viewer`
-		window.__vaultAsset = { stage, camera, controls, get hero() { return hero; }, get picked() { return picked; } };
+		window.__vaultAsset = { stage, camera, controls, get hero() { return hero; }, get picked() { return picked; }, get building() { return building; }, get phase() { return buildPhase; }, get error() { return error; } };
 		// a plant's earth, as the plants page shows it: under a plant, never under its fruit on its own
 		const earth = soilOf();
 		earth.group.visible = false;
@@ -151,7 +152,7 @@
 			try {
 				const { build, live } = boxesOf();
 				// a plant growing is built where it has grown to, mostly between two of its stages: none of it kept
-				const got = await vaultBuild(source, h0, given, { box: build, keep: !growing });
+				const got = await vaultBuild(source, h0, given, { box: build, keep: !growing, phase: (step) => { if (asks.is(ask)) buildPhase = step; } });
 				if (!asks.is(ask)) return void letGo(heroOf(got));
 				forStage(got.obj);
 				const h = heroOf(got, { start: runner(live, got.recipe, got.given) });
@@ -160,6 +161,7 @@
 				// a plant stands in its soil; its fruit, shown on its own, on the floor
 				const soiled = got.card?.group === 'plants' && !(got.values?.fruit >= 1);
 				const { centre, size: s } = stage.show(got.obj, { asset: h, ground: soiled ? -earth.fit(bounds) : undefined, keep: shownHash === h0 });
+				buildPhase = 'prepare';
 				await stage.compile();
 				if (!asks.is(ask)) {
 					stage.clear();
@@ -403,9 +405,16 @@
 	{#if lost}
 		<button class="canvas-note lost" onclick={() => location.reload()}>This device’s graphics ran out of room. Tap to load it again.</button>
 	{:else if error}
-		<div class="canvas-note error" role="alert"><b>Not shown.</b> {error}</div>
+		<div class="canvas-note error" role="alert"><b>Not shown.</b> {error}
+			{#if ready}<button class="chip" onclick={() => show?.(hash, asked)}>Try again</button>{/if}
+		</div>
 	{:else if building && !growing}
-		<div class="canvas-note" role="status">Building {title || at?.label || 'it'} from its entry’s file…</div>
+		<div class="canvas-note" role="status">
+			{#if buildPhase === 'file'}Reading {title || at?.label || 'its'} entry file…
+			{:else if buildPhase === 'cache'}Opening the saved build of {title || at?.label || 'it'}…
+			{:else if buildPhase === 'prepare'}Preparing {title || at?.label || 'it'} for display…
+			{:else}Building {title || at?.label || 'it'}…{/if}
+		</div>
 	{/if}
 </Turntable>
 
