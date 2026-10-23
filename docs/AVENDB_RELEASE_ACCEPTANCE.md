@@ -33,14 +33,30 @@ the host lock, and explicitly start only `db api caddy` with `--no-deps`; they c
 bypass the avenDB close gate through orphan removal or implicit dependencies.
 
 `delivery-checks.yml` runs the disposable process/workflow tests and is required
-by both deployment jobs. Local validation passed all 17 process/workflow tests (44.439 s), Python syntax,
-workflow YAML parsing and whitespace checks. The process tests use Docker/SSH
-stand-ins plus actual POSIX processes and file locks. The separate GitHub-runner fixture uses real Docker, a network-disabled
-toy writer and disposable data; it checks a stop held beyond ten seconds, cancelled
-observation, retained lock, resumed completion and failed exit/marker rejection.
-**That Docker run remains pending**: the local daemon was unavailable during this patch. No
-production rollout has been performed. The original findings below describe the
-audited base; the implementation does not retroactively validate earlier releases.
+by both deployment jobs. Local validation passed all 17 process/workflow tests
+(44.439 s), Python syntax, workflow YAML parsing and whitespace checks.
+[CI run 40009347982, job 120605382001](https://github.com/MyAvenCEO/maiacity/actions/runs/40009347982/job/120605382001)
+passed on 2026-10-23: all 17 process/workflow checks in 10.051 s and all three
+actual Docker checks in 18.246 s. The PR head was
+`cc3e3c301c9abfd5c0eba63106414c10f6e1f1ce`; Actions checked out its merge test
+commit `9880ad644195d41954afd4b5e46d6e27f0ae6e12` with base
+`06fe0685dd4a4160ec0ef32100c503583717be1c`, on Ubuntu 24.04.5.
+
+The actual Docker cases passed:
+
+- `test_cancelled_observer_retains_lock_and_exceeds_default_stop_deadline`:
+  cancel the observer, retain the lock and running writer beyond 12 seconds,
+  refuse a second gate, then verify persisted toy data and successful close.
+- `test_monitor_budget_leaves_real_stop_owned`: expire the monitor budget,
+  retain ownership, then resume verified completion.
+- `test_real_failed_exit_and_marker_never_authorize_replacement`: an actual
+  exit 7/error marker remains refused on repeated observation.
+
+These used a network-disabled toy writer and disposable data on the CI runner;
+they verify Docker/process/lock/receipt integration, not Rust journal durability
+or production SSH session teardown. No production rollout has been performed.
+The original findings below describe the audited base; the implementation does
+not retroactively validate earlier releases.
 
 ## Release fences to settle first
 

@@ -374,3 +374,31 @@ The eight Network diagnostics probe tests passed again locally and are being add
 
 - [x] Diagnostics CI coverage committed/pushed: [c12c67396510393a42fa33dbc0ad2b7e1b6b5200](https://github.com/MyAvenCEO/maiacity/commit/c12c67396510393a42fa33dbc0ad2b7e1b6b5200). The eight probe tests now run in the existing kernel suite; focused rerun passed8/8.
 - [x] Deployment safeguard implementation integrated: [00f1565ecfef9ae52f0258e6bbd12774744532b8](https://github.com/MyAvenCEO/maiacity/commit/00f1565ecfef9ae52f0258e6bbd12774744532b8), original reviewed slice [0253e5df975c92551e7a95b238a4c012e47e7c77](https://github.com/MyAvenCEO/maiacity/commit/0253e5df975c92551e7a95b238a4c012e47e7c77). All17 local process/workflow regressions pass. A detached graceful-stop worker retains the deployment lock across observer cancellation; replacement requires the exact run's clean exit and health marker, and unchanged storage/identity configuration. API rollout no longer replaces avenDB implicitly. Three real disposable-Docker scenarios are required by both rollout jobs but remain unrun at this checkpoint. This marks the source increment only, not production acceptance or parent task28 complete.
+
+
+### Delivery safeguard verified in real Docker — 2026-10-23
+
+[Delivery run40009347982](https://github.com/MyAvenCEO/maiacity/actions/runs/40009347982/job/120605382001) passed all17 process/workflow tests and all3 actual disposable-Docker scenarios for PR head `cc3e3c301c9abfd5c0eba63106414c10f6e1f1ce` (Actions merge checkout recorded in the release acceptance document). Cancellation retained ownership beyond Docker's default stop deadline; an expired observer resumed; an actual exit7/error marker refused replacement. This completes the implementation/testing slice at [00f1565ecfef9ae52f0258e6bbd12774744532b8](https://github.com/MyAvenCEO/maiacity/commit/00f1565ecfef9ae52f0258e6bbd12774744532b8). It is not production SSH or Rust journal-durability acceptance.
+
+The replacement full integrated frontend check also completed with exit0: zero errors and18 existing warnings in8files. Lean73jobs and unchanged vectors,31focused frontend tests, and8probe tests passed. Native runtime checks and alternative-transport failure diagnosis remain in progress; no production deployment or Mac replacement occurred.
+
+
+### Peer-role revocation regression completed — 2026-10-23
+
+- [x] [bed152a31540f691f64da5cb32a4915e507bad3b](https://github.com/MyAvenCEO/maiacity/commit/bed152a31540f691f64da5cb32a4915e507bad3b): checked Lean gate corollaries and runtime `revoked_blob_requests_are_refused_by_server_and_ordinary_peer_alike`. The exact runtime test passed in6.71s with the standard serialized Cargo environment. Positive raw reads succeed at both roles before revocation; both providers observe revocation before a distinct new file exists, hold its bytes, and reject the authenticated reader's raw request. No historical erasure or universal failure-classification claim. Parent task31's wider acceptance remains separate.
+- The local cloud-agent regression passed in10.62s after its completed11m45build. The network/hosted-peer and device/browser CI groups both passed at `cc3e3c30`; the earlier alternative-transport timeout did not recur. A local rerun with unchanged65-second deadline and added phase diagnostics remains queued/running, so the earlier timeout is not silently reclassified as fixed.
+- A copied-store rehearsal review found that the existing link check omitted derived-slot directories. An entire-tree symlink/hardlink preflight and three disposable filesystem tests are now pending validation. They affect the test harness only; no live-store rehearsal or mutation has run.
+
+
+### Alternative-transport timeout narrowed — 2026-10-23
+
+The local exact regression reproduced the failure in65.02s, specifically **negotiate custom routes**, before any relay shutdown or file transfer. The prior green CI run therefore does not resolve the intermittent failure. Added fixture diagnostics retain the65-second acceptance deadline and report which side opens and whether each Lab knows the other's signed endpoint. Source review confirms `sync_with` pulls in one direction; the fixture's initial phone-to-Mac pull may not establish reciprocal signed-endpoint knowledge. This remains a hypothesis until the diagnostics confirm it. No authorization gate or production retry timing has been weakened.
+
+- [x] Copied-store isolation preflight committed: [97d5f08e214cbffbf1b4b06ec31eab9f8a3589c5](https://github.com/MyAvenCEO/maiacity/commit/97d5f08e214cbffbf1b4b06ec31eab9f8a3589c5). All3 `upgrade_rehearsal isolation_tests` passed: independent tree accepted, nested derived-slot symlink/hardlink rejected with target unchanged. The manual account rehearsal remained filtered out. Whole-tree validation runs before opening storage; it does not protect against concurrent path replacement after preflight or establish source snapshot consistency. See `avendb/spec/UpgradeRehearsal.md`.
+
+
+### Split selected connections reproduced — 2026-10-23
+
+Failure diagnostics [7d994cc3973a7e3aa23aad57f26500a157e25f64](https://github.com/MyAvenCEO/maiacity/commit/7d994cc3973a7e3aa23aad57f26500a157e25f64) compile and preserve all assertions/deadlines. One run passed16.17s; direct repeat1 failed65.03s, with neither `opened()` finishing. Both peers were unlocked, knew the exact signed endpoint and had no missing logs, but **both selected peers reported `dialed=true`**. This rules out the missing-endpoint hypothesis for that failure and demonstrates selection of opposite outgoing connections.
+
+`control::connected` currently replaces each local selected-peer map unconditionally; simultaneous inbound/outbound connections can leave the ends selecting different authenticated sessions. Ordinary sync can still operate while connection-bound transport negotiation rejects the nonselected session. The next slice is a deterministic duplicate-connection selection rule, Lean-first, plus a forced-order regression. Preserve existing authentication, current permission, single-connection fallback and stale-generation fencing; do not merely increase retries/deadlines or add reverse-sync timing to hide the race. Three agents are assigned policy/specification, independent lifecycle review and deterministic regression design. No fix is yet claimed.
