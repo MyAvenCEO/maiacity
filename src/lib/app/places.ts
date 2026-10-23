@@ -58,7 +58,8 @@ export const PLAY: Place[] = withVersions([
 	{ href: `${base}/app/games/sandbox-4/`, label: 'Sandbox 4', icon: 'play', note: 'The dome cell, its food forest grown from our plants', cover: '5ddd7dc657e28a84e7ef48b8064dafe5698791950dea387e7059b1c41e5d2fc1.jpg', anchors: 'the Plants, each at the version its forest was planted with' },
 	{ href: `${base}/app/games/sandbox-5/`, label: 'Sandbox 5', icon: 'play', note: 'A valley of settlers: production chains, an open market, abundance for all', cover: 'a36f799daadadb75a3d845776dc8ee9730f8fd92fb1458edff5d9819c155a7c8.jpg' },
 	{ href: `${base}/app/games/sandbox-6/`, label: 'Sandbox 6', icon: 'play', note: 'One village at its real size: six living hexes of terraced Dome40 and Dome80 homes and Dome120s round the Tower180 hex, in tonnes, euros and hectares', cover: '46e52e9e393b192c0a6db481e95fbf623e8d12d2753a3e1d15d1663292d2c716.jpg' },
-	{ href: `${base}/app/games/sandbox-7/`, label: 'Sandbox 7', icon: 'play', note: 'The physical world lab: buildings assembled from their parts, with rigid-body physics, fixings, wind and damage' }
+	{ href: `${base}/app/games/sandbox-7/`, label: 'Sandbox 7', icon: 'play', note: 'The physical world lab: buildings assembled from their parts, with rigid-body physics, fixings, wind and damage' },
+	{ href: `${base}/app/games/sandbox-8/`, label: 'Sandbox 8', icon: 'play', note: 'Constructible City: a settlement built by people with their hands, tools and machines, in real weather' }
 ]);
 
 // the 3D worlds made from real places, to walk and to film, opened from avenDB's Worlds (Maia City's `game` entries)

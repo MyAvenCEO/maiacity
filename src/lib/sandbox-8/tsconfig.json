@@ -1,0 +1,10 @@
+{
+	"//": "How Vite compiles Constructible City's code (./cc): as its upstream does (its tsconfig.json and apps/web/build.mjs), its JSX for Preact. The app's type check reads the root tsconfig.json.",
+	"compilerOptions": {
+		"target": "ES2023",
+		"useDefineForClassFields": true,
+		"verbatimModuleSyntax": true,
+		"jsx": "react-jsx",
+		"jsxImportSource": "preact"
+	}
+}
