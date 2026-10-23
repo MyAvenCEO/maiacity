@@ -103,6 +103,7 @@ jobs:
       - run: npx --yes playwright@1.56.1 install --with-deps chromium
 
       - run: node scripts/test-avendb-store.mjs
+      - run: bun scripts/test-avendb-session.mjs --browser chromium
 
       - run: node scripts/probes.mjs
 
@@ -126,6 +127,7 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-webkit-${{ runner.os }}-${{ hashFiles('bun.lock', 'bun.lockb') }}
       - run: bunx playwright install --with-deps webkit
+      - run: bun scripts/test-avendb-session.mjs --browser webkit
 
       # the probes as in Chromium; a way out WebKit itself lacks is named in the log, refused and green
       - run: node scripts/probes.mjs --browser webkit
