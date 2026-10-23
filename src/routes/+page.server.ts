@@ -6,5 +6,5 @@ import type { PageServerLoad } from './$types';
 export const load: PageServerLoad = () => ({
 	// checked at build time: a prerendered page can't catch a missing image
 	// before it has already painted the gap
-	banner: Boolean(media('a78e789f5d7c92310ebaac44368dd1c3ab6e65efcdee67f148649b3965a03f69.jpg'))
+	banner: Boolean(media('9e442ce81d3237243f561780fa6d3aeeeb7f1d83ea8e68f3a166650739c398b2.jpg'))
 });

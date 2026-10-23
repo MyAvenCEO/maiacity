@@ -27,7 +27,7 @@ export const shapeOf = (kind) => SHAPES[kind ?? 'human'] ?? SHAPES.human;
 /** a coop's hexagon with its corners slightly rounded (Samuel 2026-10-21), as an SVG mask, since a `clip-path` polygon
  *  can't round its corners at every size: each corner cut `R` of the way along its two sides and bent through it */
 const HEX = [[25, 4], [75, 4], [100, 50], [75, 96], [25, 96], [0, 50]];
-const R = 0.16;
+const R = 0.2;
 const ROUNDED_HEX = (() => {
 	const f = (/** @type {number} */ x) => +x.toFixed(2);
 	const along = (/** @type {number[]} */ v, /** @type {number[]} */ w) => `${f(v[0] + (w[0] - v[0]) * R)} ${f(v[1] + (w[1] - v[1]) * R)}`;

@@ -4,10 +4,11 @@
 	a crescendo whose lines grow as they build, and the creed as the close.
 -->
 <script lang="ts">
+	import { base } from '$app/paths';
 	import { asset } from '$lib/media/url';
 	import FounderCounter from '$lib/FounderCounter.svelte';
-	// the banner (a woman on a mountain top at sunrise) and Samuel's portrait, by hash
-	const BANNER = 'a78e789f5d7c92310ebaac44368dd1c3ab6e65efcdee67f148649b3965a03f69.jpg';
+	// The dome city's loading artwork (also used by Sandbox 4) and Samuel's portrait, by hash.
+	const BANNER = '9e442ce81d3237243f561780fa6d3aeeeb7f1d83ea8e68f3a166650739c398b2.jpg';
 	const SAMUEL = 'dad53831fb215f1d6c5fc29c111aba8a2d7b472b43ab076da7537787c2895b8a.jpg';
 
 	// the banner is optional: without the illustration the headline simply
@@ -38,13 +39,14 @@
 		<header class="banner">
 			<img
 				src={asset(BANNER)}
-				alt="A woman on a mountain top at sunrise, arms wide open over the sea."
+				alt="A mother and her son overlooking a green city of domes beside a river at sunset."
+				fetchpriority="high"
 			/>
 			<!-- set like a magazine cover: a kicker, the headline in two weights, a rule, the deck beside a big number -->
 			<div class="story">
 				<h1 class="cover">
 					<span class="opening">This is the story</span>
-					<span class="founders"><span class="light">how</span> <FounderCounter /> <span class="light">of</span> 1,346,269 founders build their own <em>solarpunk</em> city</span>
+					<span class="founders"><span class="light">how</span>{' '}<FounderCounter />{' '}<span class="light">of</span>{' '}1,346,269 founders build their own <em>solarpunk</em> city</span>
 					<span class="deck">
 						<span class="years">in just <span class="number">16</span> years,</span>
 						<span class="when">first in game, then in real.</span>
@@ -83,6 +85,15 @@
 				<li><strong>1</strong><span>real village on the Mediterranean: the first milestone, before the city grows</span></li>
 			</ol>
 		</div>
+	</section>
+
+	<section class="early-access" aria-labelledby="early-access-heading">
+		<p class="kicker"><span>Early access</span></p>
+		<h2 id="early-access-heading">The Maia City game is in <em>early alpha</em> and invite only.</h2>
+		<p class="invitation">
+			Sign up to apply now for early game access and your “Maia Citizenship”.
+		</p>
+		<a class="pill-btn" href="{base}/join/">Sign up <span aria-hidden="true">→</span></a>
 	</section>
 
 	<section class="spread">
@@ -194,7 +205,7 @@
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
-		object-position: 40% 40%;
+		object-position: 65% 50%;
 	}
 
 	/* the lower part darkens so the story reads in white over the hills */
@@ -216,7 +227,7 @@
 		width: 100%;
 		max-width: 1180px;
 		margin: 0 auto;
-		padding: 0 1.5rem clamp(2.5rem, 7vh, 4.5rem);
+		padding: 0 1.5rem calc(5.5rem + env(safe-area-inset-bottom, 0px));
 		color: #fffaf0;
 	}
 
@@ -416,6 +427,39 @@
 		letter-spacing: 0.16em;
 		text-transform: uppercase;
 		color: var(--muted);
+	}
+
+	.early-access {
+		padding-block: 4rem 3.5rem;
+		border-bottom: 1px solid var(--ink);
+	}
+
+	.early-access h2 {
+		max-width: 25ch;
+		font-size: clamp(2.2rem, 5vw, 4rem);
+		line-height: 1.06;
+		text-wrap: balance;
+	}
+
+	.early-access h2 em {
+		color: var(--terracotta);
+	}
+
+	.invitation {
+		max-width: 38ch;
+		margin: 1.5rem 0 1.75rem;
+		font-size: clamp(1.1rem, 1.9vw, 1.35rem);
+		line-height: 1.55;
+		color: var(--ink-soft);
+	}
+
+	.early-access .pill-btn {
+		min-height: 3rem;
+	}
+
+	.early-access .pill-btn:focus-visible {
+		outline: 2px solid var(--ink);
+		outline-offset: 4px;
 	}
 
 	/* ── chapters hang off a gutter, magazine style ─────────── */
@@ -628,11 +672,12 @@
 
 	@media (max-width: 760px) {
 		.banner img {
-			object-position: 30% 40%;
+			object-position: 72% 50%;
 		}
 
 		.spread,
-		.prize {
+		.prize,
+		.early-access {
 			padding-top: 3rem;
 		}
 

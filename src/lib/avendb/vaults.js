@@ -9,6 +9,7 @@
  */
 
 import { fieldPaths, pathWords } from './paths.js';
+import { contextVaults } from './context.js';
 
 /** @typedef {'human' | 'coop' | 'aven' | 'device'} Kind */
 /**
@@ -366,15 +367,12 @@ export function hue(id) {
 
 /**
  * World `w`'s vaults as the app's nav pill lists them ($lib/app/pill.svelte.js): the person's own first, their profile,
- * then the rest, each by its name, its kind, its initials in its colour and its shape, with how many changes wait in it
+ * then the vaults this device can act for, each by its name, kind, initials, colour and shape, with how many changes wait in it
  * (`waiting`, by vault).
  * @param {WorldView} w @param {Record<string, number>} [waiting]
  */
 export function pillVaults(w, waiting = {}) {
-	const mine = w.vaults.find((v) => v.id === w.mine);
-	// a device vault with no device left (its last one removed, as the studio's old workers were) acts for nobody: not one to switch to
-	return [mine, ...w.vaults.filter((v) => v.id !== w.mine && !(v.kind === 'device' && !v.devices?.length))]
-		.filter((v) => !!v)
+	return contextVaults(w)
 		.map((v) => ({
 			id: v.id,
 			label: nameOf(v),
