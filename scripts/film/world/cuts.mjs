@@ -3,8 +3,8 @@
 // still around it, and what the frames there spent their time on (src/lib/film `__filmTrace`: the world set to its
 // moment, rendered, viewed, staged; the world's own frames between two draws). A smooth cut costs what any frame does.
 //
-//   node scripts/film/world/cuts.mjs --timeline v1-A|v1-B|village [--film village.json] [--from 0] [--seconds 60]
-//     [--px 1280] [--site http://127.0.0.1:5173] [--engine chrome|webkit] [--meter all|ahead] [--grade clip|none]
+//   node scripts/film/world/cuts.mjs --timeline v1-A|v1-B|v2-C|village [--film village.json] [--from 0] [--seconds 60]
+//     [--px 1280] [--fps 30|60] [--site http://127.0.0.1:5173] [--engine chrome|webkit] [--meter all|ahead] [--grade clip|none]
 //     [--warm all|shown|off] [--ready play|stand] [--stand 180] [--size 1920x1080] [--heap] [--trace] [--out cuts.json]
 //
 // `--ready play` (the default): before it plays, the world is readied as the studio's Play readies it
@@ -154,8 +154,8 @@ function tasks(events) {
 
 /** @returns {{ path: string, clips: { spec: any, in: number, dur: number }[] | null }} */
 function timeline() {
-	if (which.startsWith('v1-')) return { path: `/games/maiacity-v1/?film&area=${which.slice(3)}`, clips: null };
-	if (which !== 'village') throw new Error(`--timeline v1-A, v1-B or village, not ${which}`);
+	if (/^v[12]-[ABC]$/.test(which)) return { path: `/games/maiacity-${which.slice(0,2)}/?film&area=${which.slice(3)}`, clips: null };
+	if (which !== 'village') throw new Error(`--timeline v1-A, v1-B, v2-C or village, not ${which}`);
 	const film = JSON.parse(readFileSync(args.film ?? join(root, 'films/legacy/the-first-village.json'), 'utf8'));
 	const clips = film.timeline.clips
 		.filter((/** @type {any} */ c) => c.track === 'V1' && c.kind === 'world')
@@ -208,7 +208,7 @@ const warnings = [];
 page.on('console', (/** @type {any} */ m) => {
 	const t = m.text();
 	if (t.startsWith('probe: ')) say(t.slice(7));
-	else if (/^(film|world):/.test(t)) warnings.push(t.slice(0, 400));
+	else if (/^(film|world|assets|maiacity|recipes)/.test(t) || ['warning', 'warn', 'error'].includes(m.type())) { warnings.push(t.slice(0, 1200)); console.error(t.slice(0, 1200)); }
 });
 page.on('pageerror', (/** @type {any} */ e) => warnings.push(`page error: ${e.message}`));
 // a page of the site (any: a missing one) to hold the viewer and the world's iframe, of the same origin
@@ -223,6 +223,7 @@ const report = await page.evaluate(
 		if (o.warm) /** @type {any} */ (window).__filmWarm = o.warm;
 		const viewer = new WorldViewer();
 		viewer.px = o.px;
+		viewer.previewFps = o.fps;
 		const t0 = performance.now();
 		await viewer.attach(iframe, o.path, 600000, 900000);
 		if (viewer.state !== 'ready') return { error: `the world is ${viewer.state}: ${viewer.error}` };
@@ -357,6 +358,7 @@ const report = await page.evaluate(
 		const heapAtPlay = heapNow();
 		if (o.record) await /** @type {any} */ (window).__probeRecord('start');
 		console.timeStamp('probe: play');
+		viewer.plays(true);
 		const play0 = performance.now();
 		let prev = play0;
 		firsts.on = true;
@@ -432,6 +434,8 @@ const report = await page.evaluate(
 			reloads,
 			heapAtPlay,
 			heapAtEnd,
+			previewFps: viewer.previewFps,
+			drawnFps: Math.round(new Set(frames.map(f => f.drawnAt)).size / (to - from) * 10) / 10,
 			// the cuts whose picture stood still longer than a hitch, and the frames that waited on a staging while it played
 			stalledCuts: cuts.filter((c) => c.still > o.hitch).length,
 			stagedWhilePlaying: trace.filter((f) => f.staging > 1).length,
@@ -446,7 +450,7 @@ const report = await page.evaluate(
 			dearestFrames: [...trace].sort((x, y) => y.total + y.loop - (x.total + x.loop)).slice(0, 12).map((f) => Object.fromEntries(Object.entries(f).map(([k, v]) => [k, typeof v === 'number' ? Math.round(v * 10) / 10 : v])))
 		};
 	},
-	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), meter: args.meter ?? 'ahead', grade: args.grade ?? 'clip', warm: args.warm, ready: args.ready ?? 'play', stand: Number(args.stand ?? 180), size: (args.size ?? '1920x1080').split('x').map(Number), record: recording, hitch: HITCH, firsts: !!args.firsts }
+	{ path, clips, from: Number(args.from ?? 0), seconds: Number(args.seconds ?? 60), px: Number(args.px ?? 1280), fps: Number(args.fps ?? 30), meter: args.meter ?? 'ahead', grade: args.grade ?? 'clip', warm: args.warm, ready: args.ready ?? 'play', stand: Number(args.stand ?? 180), size: (args.size ?? '1920x1080').split('x').map(Number), record: recording, hitch: HITCH, firsts: !!args.firsts }
 );
 await browser.close();
 // a shot that waited for parts of the world while it played (the village's domes: "waits N s for domes …")

@@ -1,3 +1,4 @@
+import { FramePacer } from './frame-pacer.js';
 // The world viewer: a live sandbox in film mode (contract C3), in an iframe of the same origin, slaved to the
 // timeline's clock through `window.__film`. It draws the exact frame of a world shot the timeline asks for — at proxy
 // level, through the same view transform as the proxies — and records a camera move flown by hand.
@@ -131,6 +132,9 @@ export class WorldViewer {
 	 * no bigger than it is seen, as a game draws at its canvas's size — the proxy frame (HD) only on a monitor that big
 	 */
 	px = 1920;
+	fastBatches = 0;
+	previewFps = $state(30);
+	pacer = new FramePacer();
 	/** when the GPU dropped the world (its WebGL context lost), the last few times (ms) */
 	losses = /** @type {number[]} */ ([]);
 	/**
@@ -193,6 +197,12 @@ export class WorldViewer {
 			try {
 				// (a page whose context the GPU dropped is going: never taken for the fresh one coming)
 				const win = /** @type {(Window & { __film?: Film, __lost?: boolean }) | null} */ (iframe.contentWindow);
+				const failure = /** @type {any} */ (win)?.__filmMountError;
+				if (failure) {
+					this.error = failure;
+					this.state = 'unavailable';
+					return;
+				}
 				film = win?.__lost ? undefined : win?.__film;
 			} catch {
 				break; // another origin: not film mode
@@ -259,7 +269,11 @@ export class WorldViewer {
 					return false;
 				}
 			};
-			const id = setInterval(() => there() || (clearInterval(id), resolve(false)), 250);
+			const id = setInterval(() => {
+				if (!there()) { clearInterval(id); resolve(false); return; }
+				const failure = /** @type {any} */ (iframe.contentWindow)?.__filmMountError;
+				if (failure) { clearInterval(id); reject(new Error(failure)); }
+			}, 250);
 			p.then(
 				() => (clearInterval(id), resolve(there())),
 				(e) => (clearInterval(id), reject(e))
@@ -397,22 +411,22 @@ export class WorldViewer {
 	readyShot(spec) {
 		const film = this.film;
 		if (!film || !this.holds(spec)) return Promise.resolve();
-		return this.prepareOne(film, spec, true);
+		return this.prepareOne(film, spec, true, false);
 	}
 
 	/**
 	 * One shot prepared in film mode, its world counted ready once it was all done: a prepare the timeline's play cut
 	 * short (false) is asked again once it stands.
-	 * @param {Film} film @param {ShotSpec} s @param {boolean} meter @returns {Promise<void>}
+	 * @param {Film} film @param {ShotSpec} s @param {boolean} meter @param {boolean} [live] @returns {Promise<void>}
 	 */
-	prepareOne(film, s, meter) {
+	prepareOne(film, s, meter, live = true) {
 		const t0 = performance.now();
 		const slow = setInterval(() => console.warn(`world: still preparing ${s.meta?.name ?? 'a shot'} after ${Math.round((performance.now() - t0) / 1000)} s`), 15000);
 		/** @type {() => void} */
 		let end = () => {};
 		const gone = new Promise((r) => (end = () => r(false)));
 		this.ends.add(end);
-		return Promise.race([film.prepare([s], { live: true, meter }).then((r) => r !== false), gone])
+		return Promise.race([film.prepare([s], { live, meter }).then((r) => r !== false), gone])
 			.then((done) => void (done && this.film === film && this.readyShots.add(specKey(s))))
 			.catch((/** @type {Error} */ e) => {
 				this.error = `prepare: ${e?.message ?? e}`;
@@ -557,6 +571,8 @@ export class WorldViewer {
 	show(o) {
 		if (!this.film || !this.holds(o.spec)) return;
 		if (this.busy) return void (this.queued = o);
+		if (o.meter !== false) this.pacer.reset();
+		else if (!this.pacer.accept(performance.now(), this.previewFps)) return;
 		this.busy = true;
 		const t0 = performance.now();
 		const k = this.scale * Math.min(1, Math.max(320, this.px) / Math.max(o.width, o.height));
@@ -569,14 +585,16 @@ export class WorldViewer {
 			})
 			.catch((/** @type {Error} */ e) => void (this.error = `show: ${e?.message ?? e}`))
 			.finally(() => {
-				// the resolution steps (1, ¾, ½, ⅓) on the median of the last frames: each step reallocates the targets,
+				// the resolution steps (1, ¾, ½, ⅓) on the slower tenth of recent frames: each step reallocates the targets,
 				// so it moves rarely — down when frames are slow, up again only when they are well within time
 				this.took.push(performance.now() - t0);
-				if (this.took.length >= 12) {
-					const median = [...this.took].sort((a, b) => a - b)[6];
+				if (this.took.length >= 24) {
+					const tail = [...this.took].sort((a, b) => a - b)[21];
 					const steps = [1, 0.75, 0.5, 0.35], i = Math.max(0, steps.indexOf(this.scale));
-					if (median > 45 && i < steps.length - 1) this.scale = steps[i + 1];
-					else if (median < 18 && i > 0) this.scale = steps[i - 1];
+					if (tail > (this.previewFps === 30 ? 28 : 20) && i < steps.length - 1) { this.scale = steps[i + 1]; this.fastBatches = 0; }
+					else if (tail < 8 && i > 0) {
+						if (++this.fastBatches >= 20) { this.scale = steps[i - 1]; this.fastBatches = 0; }
+					} else this.fastBatches = 0;
 					this.took = [];
 				}
 				this.busy = false;

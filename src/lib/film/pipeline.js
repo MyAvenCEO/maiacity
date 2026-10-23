@@ -147,6 +147,7 @@ void main() {
  */
 export function createPipeline(renderer) {
 	const samples = Math.min(4, renderer.capabilities.maxSamples ?? 0);
+	const outputSize = new THREE.Vector2();
 	const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2));
 	quad.frustumCulled = false;
 	const qscene = new THREE.Scene();
@@ -295,8 +296,11 @@ export function createPipeline(renderer) {
 			u.hasLut.value = !!lut;
 			u.lut.value = lut?.tex ?? null;
 			if (lut) u.lutSize.value = lut.size;
-			renderer.setPixelRatio(1);
-			renderer.setSize(w, h, false);
+			// Both setters resize the canvas backing store, even when the value is unchanged.
+			// Keep it intact across frames; only a real output-size/DPR change reallocates it.
+			if (renderer.getPixelRatio() !== 1) renderer.setPixelRatio(1);
+			renderer.getSize(outputSize);
+			if (outputSize.x !== w || outputSize.y !== h) renderer.setSize(w, h, false);
 			renderer.setViewport(0, 0, w, h);
 			pass(view, null);
 		},
