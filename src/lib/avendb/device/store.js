@@ -21,10 +21,12 @@ export async function open(name = 'avendb') {
 	return store;
 }
 
-/** Whether `bytes` is the whole of its buffer, which the call can then hand over rather than copy. */
+/** Whether `bytes` is the whole of its buffer, which the call can then hand over rather than copy.
+ * @param {Uint8Array<ArrayBuffer>} bytes */
 const whole = (bytes) => bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength;
 
 export class Store {
+	/** @param {Worker} worker */
 	constructor(worker) {
 		this.worker = worker;
 		this.calls = new Map();
@@ -38,13 +40,17 @@ export class Store {
 		worker.onerror = (e) => this.fail(`the store's worker failed: ${e.message}`);
 	}
 
-	/** Every call still waiting fails with `why`. */
+	/** Every call still waiting fails with `why`.
+	 * @param {string} why */
 	fail(why) {
 		this.calls.forEach((call) => call.reject(new Error(why)));
 		this.calls.clear();
 	}
 
-	/** Runs `op` in the worker, handing it what `moved` holds. */
+	/** Runs `op` in the worker, handing it what `moved` holds.
+	 * @param {string} op
+	 * @param {unknown[]} args
+	 * @param {Transferable[]} moved */
 	call(op, args = [], moved = []) {
 		const id = this.next++;
 		return new Promise((resolve, reject) => {
@@ -76,39 +82,57 @@ export class Store {
 		return this.call('list');
 	}
 
+	/** @param {string} name
+	 * @param {number} at
+	 * @param {number} len */
 	read(name, at, len) {
 		return this.call('read', [name, at, len]);
 	}
 
+	/** @param {string} hash */
 	outboard(hash) {
 		return this.call('outboard', [hash]);
 	}
 
+	/** @param {string} name
+	 * @param {number} at
+	 * @param {Uint8Array<ArrayBuffer>} bytes */
 	write(name, at, bytes) {
 		return this.call('write', [name, at, bytes], whole(bytes) ? [bytes.buffer] : []);
 	}
 
+	/** @param {string} name
+	 * @param {string} hash
+	 * @param {number} size
+	 * @param {Uint8Array<ArrayBuffer>} outboard */
 	finish(name, hash, size, outboard) {
 		return this.call('finish', [name, hash, size, outboard], whole(outboard) ? [outboard.buffer] : []);
 	}
 
+	/** @param {string} name */
 	drop(name) {
 		return this.call('drop', [name]);
 	}
 
+	/** @param {string} name
+	 * @param {Uint8Array<ArrayBuffer>} bytes */
 	put(name, bytes) {
 		return this.call('put', [name, bytes]);
 	}
 
 	/** Replaces a derived slot, acknowledging only after the OPFS worker finishes it. */
+	/** @param {string} name
+	 * @param {Uint8Array<ArrayBuffer>} bytes */
 	keep(name, bytes) {
 		return this.call('keep', [name, bytes]);
 	}
 
+	/** @param {string} name */
 	get(name) {
 		return this.call('get', [name]);
 	}
 
+	/** @param {string} prefix */
 	names(prefix) {
 		return this.call('names', [prefix]);
 	}
