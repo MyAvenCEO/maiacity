@@ -40,16 +40,25 @@ export const SEEDLINGS = [
 	{ id: 'cherry', label: 'Sweet cherry', fruit: 'cherries' },
 	{ id: 'plum', label: 'Plum', fruit: 'plums' },
 	{ id: 'apricot', label: 'Apricot', fruit: 'apricots' },
-	{ id: 'quince', label: 'Quince', fruit: 'quinces' },
+	{ id: 'birch', label: 'Silver birch · Birke', fruit: 'winged seeds' },
 	{ id: 'mulberry', label: 'Mulberry', fruit: 'mulberries' },
 	{ id: 'walnut', label: 'Walnut', fruit: 'walnuts' },
 	{ id: 'chestnut', label: 'Sweet chestnut', fruit: 'chestnuts' },
 	{ id: 'hazel', label: 'Hazel', fruit: 'hazelnuts' }
 ];
 /** seeds the backpack held before (a pick of one still plants) */
-const FORMER_SEEDS = ['blackcurrant'];
+const FORMER_SEEDS = ['blackcurrant', 'quince'];
 /** where a first tree may stand on the tribe's hex, in metres from its centre (Samuel 2026-10-14): outside the core
  *  circle where the homes are built, inside the hex (its inner radius is 99.4 m), and not on the other's: 6 m from it, room for both crowns */
+export const WATER_HOME = { x: 13, z: -6 };
+export const WATER_REACH = 2.5;
+/** Real-time care is independent of economy-speed proposals. Missed days never accumulate growth. */
+export const nextWaterAt = (s, tree) => (tree.wateredAt ?? Math.max(tree.at ?? s.started, s.started + (tree.watered ?? 0) * DAY_MS)) + DAY_MS;
+function waterPosition(action) {
+ const x = Number(action.x), z = Number(action.z);
+ if (!Number.isFinite(x) || !Number.isFinite(z) || Math.hypot(x,z) > 500) throw new GameError('Walk to the canister or tree first.');
+ return { x, z };
+}
 export const PLOT = { core: 24, edge: 95, apart: 6 };
 const MAX_LEDGER = 3000;
 const DUST = 1e-9;
@@ -357,6 +366,10 @@ export const nextPayDay = (s) => timeOfMonth(s, ((s.week ?? s.month * WEEKS_A_MO
 /** bring the game forward to `now`: the melt, and every pay day with its rent, at its own moment */
 export function advance(state, now = Date.now()) {
 	const s = consolidate(state, now);
+ s.water ??= { capacityLitres: 10, litres: 10, at: 'power', ...WATER_HOME, carriedBy: null };
+ if (s.water.x == null || s.water.z == null) Object.assign(s.water, WATER_HOME, {at:'power', carriedBy:null});
+ // A disconnected carrier leaves the canister at their last shared position.
+ if (s.water.carriedBy && now - (s.water.touchedAt ?? 0) > 60000) s.water.carriedBy = null;
 	// a setting added later (the starter pack) takes its default in a game started before it
 	s.settings = { ...DEFAULT_SETTINGS, ...s.settings };
 	// a game from before weekly pay days counts its weeks from its months
@@ -671,14 +684,37 @@ export function act(state, seat, action, now = Date.now()) {
 			p.tree = { plant: p.seedling, v: v > 0 ? v : null, name: p.name, at: now, months: m, x: p.spot.x, z: p.spot.z, grown: 0, watered: Math.floor(m) };
 			break;
 		}
-		case 'water': {
+		case 'takeWater': {
+ const w=s.water, at=waterPosition(action);
+ if (w.carriedBy && w.carriedBy !== seat) throw new GameError('Another citizen is carrying the canister.');
+ if (Math.hypot(at.x-w.x,at.z-w.z)>WATER_REACH) throw new GameError('Walk closer to the canister.');
+ Object.assign(w,at,{carriedBy:seat,touchedAt:now,at:'carried'});
+ break;
+ }
+ case 'carryWater':
+ case 'putWater': {
+ const w=s.water;
+ if(w.carriedBy !== seat) throw new GameError('Pick up the canister first.');
+ const at=waterPosition(action);
+ Object.assign(w,at,{touchedAt:now});
+ if(action.type==='putWater') Object.assign(w,{carriedBy:null,at:'ground'});
+ break;
+ }
+ case 'water': {
 			// once a game month (a real day): each watering grows the tree one month on; a month without water, it waits
 			const t = p.tree;
 			if (!t) throw new GameError('Plant your first tree first.');
-			const m = Math.floor(monthsAt(s, now));
-			if (m <= t.watered) throw new GameError('Watered already. Come back tomorrow.');
-			t.grown += 1;
-			t.watered = m;
+			if (action.tree && action.tree !== seat) throw new GameError('You can only water your own tree.');
+ const w=s.water, at=waterPosition(action);
+ if(w.carriedBy !== seat) throw new GameError('Pick up the water canister first.');
+ if(Math.hypot(at.x-t.x,at.z-t.z)>WATER_REACH) throw new GameError('Walk to your own tree first.');
+ if(now < nextWaterAt(s,t)) throw new GameError('Watered already. Come back after 24 hours.');
+ if(w.litres < 1) throw new GameError('The canister is empty.');
+ w.litres -= 1;
+ Object.assign(w,at,{touchedAt:now});
+ t.grown = (t.grown ?? 0) + 1;
+ t.watered = Math.floor(monthsAt(s,now));
+ t.wateredAt = now;
 			break;
 		}
 		case 'propose': {

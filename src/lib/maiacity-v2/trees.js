@@ -8,7 +8,7 @@
  * stage and drawn by the renderer (./plants.js `plantRef`).
  */
 import { plantOf } from './plants.js';
-import { DAYS_A_MONTH, MONTHS_A_YEAR, SEEDLINGS, monthsAt } from '../../../game/maiacity-v2/engine.js';
+import { DAYS_A_MONTH, MONTHS_A_YEAR, SEEDLINGS, nextWaterAt } from '../../../game/maiacity-v2/engine.js';
 
 const YEAR = DAYS_A_MONTH * MONTHS_A_YEAR;
 
@@ -38,6 +38,6 @@ export function treeNow(view, tree, now) {
 	const grown = tree.grown ?? 0;
 	const age = p.stages[0].day + grown * DAYS_A_MONTH;
 	const stage = stageAt(p, age);
-	const due = Math.floor(monthsAt(view, now)) > (tree.watered ?? Infinity);
+	const due = now >= nextWaterAt(view, tree);
 	return { plant: p, seed, age, grown, stage, x: tree.x ?? 0, z: tree.z ?? 30, due, label: SEEDLINGS.find((x) => x.id === tree.plant)?.label ?? p.label, now: p.stages[Math.floor(stage)].name };
 }

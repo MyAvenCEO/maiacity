@@ -1,3 +1,4 @@
+import { birch, BIRCH_STAGES } from './birch.js';
 /*
  * THE PLANTS — every plant grown from code, as avenDB's Assets (/app/avendb/#assets) lists it: its name, what it is, its
  * ten stages from seed to ripe fruit (the last four the fruit's own: set, green, turning, ripe), and the function that
@@ -58,6 +59,7 @@ import { FIELDS } from './fields.js';
 
 /** @type {Plant[]} */
 const ALL = [
+	{id:'birch',label:'Silver birch · Birke',latin:'Betula pendula',note:'White bark, fine hanging twigs, pointed leaves and wind-borne seeds.',from:'Europe and temperate Asia',layer:'canopy',stages:BIRCH_STAGES,grow:birch},
 	{
 		id: 'strawberry',
 		label: 'Strawberry',

@@ -51,6 +51,8 @@ static/**/*.ogg
 !static/sandbox-9/cover.jpg
 # and the MaiaCity V1 cover, a screenshot of the game, for its Game Worlds card
 !static/maiacity-v1/cover.jpg
+# V2 sunset screenshot: both tents lit, captured from the game renderer.
+!static/maiacity-v2/cover.jpg
 # theOS logo (the Mac app icon set is generated from it, vault/app/icon-source.png).
 !static/the-os.png
 # and its home-screen icons for the pinned site (static/manifest.webmanifest, src/app.html), cut from the Mac app's iOS icon

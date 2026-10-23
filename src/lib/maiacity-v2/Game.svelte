@@ -88,13 +88,15 @@
 	// (an admin's growth preview, Samuel 2026-10-14: my tree shown at any number of watered months, for testing; nothing
 	// is saved, and the game's own tree comes back when it ends)
 	let growth = $state(null);
-	const trees = $derived(view ? SEATS.filter((s) => view.players[s].tree).map((s) => {
-		const t = view.players[s].tree;
+	const trees = $derived(view ? SEATS.filter((s) => view.players[s].tree || view.players[s].spot).map((s) => {
+		const p = view.players[s];
+        if (!p.tree) return {seat:s, name:p.name, ...treeNow(view, {...p.spot, plant:p.seedling || 'apple', name:p.name, grown:0}, now), markerOnly:true, label:'Planting spot · not planted'};
+        const t = p.tree;
 		return { seat: s, name: t.name, ...treeNow(view, s === seat && growth != null ? { ...t, grown: growth } : t, now) };
 	}) : []);
 	$effect(() => {
 		const t = trees;
-		world?.trees(t);
+		if (playing !== 'water') world?.trees(t);
 	});
 	// the land still to unlock shows its rims as the welcome story reaches it (all of it once the story is done or skipped)
 	const otherSeat = $derived(seat === 'A' ? 'B' : 'A');
@@ -159,12 +161,18 @@
 	const stepPreview = (d) => (growth = Math.max(0, Math.min(400, shownMonths + d)));
 	const growthOf = $derived(`${seat}:${game?.started ?? 0}`);
 	$effect(() => void (growthOf, (growth = null))); // a new seat or game ends the preview
-	function waterIt() {
-		if (!world || playing || !myTree?.due) return;
-		playing = 'water';
-		world.water(seat).then(() => (playing = ''));
-		doMove({ type: 'water' });
-	}
+	const carryingWater = $derived(game?.water?.carriedBy === seat);
+ const waterNear = $derived(roamNow.waterNear ?? false);
+ const treeNear = $derived(roamNow.treeNear ?? false);
+ const waterMove = (type) => doMove({type, ...world.position(), tree:seat});
+ async function waterIt() {
+  if (!world || playing || !myTree?.due || !carryingWater || !treeNear) return;
+  // Only a successful server move grows the tree; a failed request never plays fake growth.
+  playing = 'water';
+  if (await waterMove('water') === false) { playing = ''; return; }
+  try { await world.water(seat, () => world.trees(trees)); } finally { playing = ''; }
+ }
+
 	function skipShot() {
 		caption = null;
 		world?.skip();
@@ -311,6 +319,8 @@
 		world = createWorld(canvas, {
 			onPick: (name) => {
 				// a Village COOP machine opens its own card
+				if (name === 'asset:water-canister' && !tour) { world.walkTo(game.water.x, game.water.z); return; }
+				if (name?.startsWith('tree:') && !tour) { const p=game.players[name.split(':')[1]], t=p?.tree ?? p?.spot; if(t) world.walkTo(t.x,t.z); return; }
 				if (name?.startsWith('asset:')) return void ((panel = name), (chose = true), (wallet = null));
 				if (!name?.startsWith('player:')) return;
 				openWallet('home', name);
@@ -331,8 +341,9 @@
 			if (mySeat) seat = mySeat;
 		});
 		const t = setInterval(() => (tick = Date.now()), 1000);
-		const r = setInterval(refresh, 10000);
-		return () => (clearInterval(t), clearInterval(r), world.dispose());
+		const r = setInterval(refresh, 3000);
+		const carry = setInterval(() => { if(carryingWater && !busy && !playing && !tour) void waterMove('carryWater'); }, 2000);
+		return () => (clearInterval(t), clearInterval(r), clearInterval(carry), world.dispose());
 	});
 
 	let chose = $state(false); // the player opened a card themselves: while the story plays, only then does one show
@@ -464,6 +475,13 @@
 		return on;
 	});
 	const shows = (what) => !unlocked || unlocked.has('all') || unlocked.has(what) || (what.startsWith('view:') && unlocked.has('mips'));
+    function plantFromBackpack() {
+        const state = {...(seen[seat] ?? {}), off:false};
+        for (const step of steps) { if (step.id === 'spot') break; state[step.id] = true; }
+        seen = {...seen, [seat]:state};
+        resumed = started;
+        if (!demo) try {localStorage.setItem(storyKey(seat), JSON.stringify(state));} catch {}
+    }
 	const mark = (id) => {
 		seen = { ...seen, [seat]: { ...(seen[seat] ?? {}), [id]: true } };
 		if (!demo) try { localStorage.setItem(storyKey(seat), JSON.stringify(seen[seat])); } catch {}
@@ -532,7 +550,8 @@
 				<button class:on={panel === id} class:hint={tour?.hint === id} onclick={() => open(id)}><span class="ic">{ic}</span>{label}</button>
 			{/each}
 			{#if shows('coops')}<a href={aipsLink()} title="This game's proposals, in the Proposals app"><span class="ic">✎</span>Proposals{#if openMips.length}<span class="badge">{openMips.length}</span>{/if}</a>{/if}
-			{#if shows('you')}<p class="speednote">{speed} · pay day in {dur(nextMonth - now)}</p>{/if}
+			{#if canMove && !tour && !player.tree}<button onclick={plantFromBackpack}>Plant your tree</button>{/if}
+            {#if shows('you')}<p class="speednote">{speed} · pay day in {dur(nextMonth - now)}</p>{/if}
 		</nav>{/if}
 		{#if canMove && shows('mint') && !tour && !wallet}
 			<!-- the universal mint button over the nav pill, once the story is done: in it the story mints by its own button (Samuel 2026-10-13) -->
@@ -548,10 +567,18 @@
 			</div>
 			{#if walking}<p class="walkhint">Tap the ground to {roamNow.driving ? 'drive' : 'walk'} there, or use the arrow keys</p>{/if}
 		{/if}
-		{#if canMove && !tour && !playing && myTree?.due}
-			<!-- the first tree waits for its water: once a game month (a real day), a month of its growth each time -->
-			<button class="mintbar waterbar" disabled={busy} title="Water {myTree.name}: a game month of growth" onclick={waterIt}><span class="drop">💧</span> Water <b>{myTree.name}</b></button>
-		{/if}
+		{#if canMove && !tour && !playing}
+   <div class="water-care panel" aria-label="Tree care">
+    <span>💧 {game?.water?.litres ?? 10} / 10 L</span>
+    {#if carryingWater}
+     <button disabled={busy} onclick={() => waterMove('putWater')}>Put down canister</button>
+     {#if myTree?.due && treeNear}<button class="primary" disabled={busy || game.water.litres < 1} onclick={waterIt}>Water my tree · 1 L</button>
+     {:else if myTree?.due}<span>Walk to your tree to water it.</span>
+     {:else}<span>Your tree has had its water. Return after 24 hours.</span>{/if}
+    {:else if waterNear && !game?.water?.carriedBy}<button disabled={busy} onclick={() => waterMove('takeWater')}>Pick up canister</button>
+    {:else}<span>{game?.water?.carriedBy ? `${game.players[game.water.carriedBy].name} is carrying the canister.` : 'The canister is beside the power equipment. Walk over to pick it up.'}</span>{/if}
+   </div>
+  {/if}
 		{#if admin && canMove && !tour && !playing && player.tree}
 			<!-- the admin's growth preview: step my tree through its watered months (a test; nothing is saved) -->
 			<div class="growth panel" role="group" aria-label="Growth preview" title="Admin only: how {myTree?.name ?? 'your tree'} grows, a game month of growth for each watering. A preview, nothing is saved.">
@@ -1979,4 +2006,5 @@
 			transform: translateX(100%);
 		}
 	}
+	.water-care { position:absolute; bottom:6.5rem; left:1rem; display:flex; gap:.6rem; align-items:center; flex-wrap:wrap; max-width:min(36rem,calc(100% - 2rem)); padding:.7rem; font-size:.8rem; }
 </style>
