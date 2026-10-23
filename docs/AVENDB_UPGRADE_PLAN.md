@@ -1,0 +1,252 @@
+# avenDB upgrade: specification, execution plan, and agent handoff
+
+This is the maintained task ledger for the avenDB performance upgrade. Read this document and `avendb/docs/ARCHITECTURE.md` before continuing. It is designed to stand alone for an agent with repository access; prior chats, Claude sessions, local temporary files, and the original author's machine are not required to understand the objective or completion gates.
+
+Last maintained: 2026-10-23. The overall upgrade is **incomplete**. A delivered compact release is not completion of all original M3–M7 integration. Do not infer completion from a module existing, a successful compile, or a merged PR alone.
+
+## Mandatory working agreement
+
+1. **Lean first.** For avenDB semantic changes, define the desired behavior, assumptions, safety properties and relevant progress/fairness properties in `avendb/spec` before implementing the change. Read the existing specification; extend it when the intended behavior is not modeled. Link each implementation task to its applicable definitions/theorems/scenarios and to runtime correspondence tests. Run `lake build` and the repository vector consistency checks. A proof of a simplified model is not proof of Rust implementation equivalence; state its assumptions and test that correspondence.
+2. **Explicit specification debt.** Recent native shutdown/startup-ownership, file-provider failover and progress-UI work was implemented/tested before new Lean coverage was added or explicitly mapped. Existing Lean CI passed on earlier releases, but that does not mean every change was specified Lean-first. Audit these changes, model the relevant ownership/admission/durability/availability semantics, connect tests, and close the gap before claiming their full acceptance. UI presentation, physical device behavior, network throughput, and OS scheduling additionally require empirical tests; do not fabricate proofs of those measurements.
+3. **User-owned, local-first, P2P.** Owners' keys and explicit vault permissions determine authority. A server is another peer; operational availability or backup storage grants no special data authority. Preserve offline allowed reads/writes, independent verification, encryption, post-quantum security, revocation and metadata privacy. Demand manifests and scheduling never grant rights. Do not solve performance by trusting unverified server state.
+4. **No reset migration.** Preserve existing node identity, vault IDs, keys/passkeys, memberships, edits, pending writes, attachments and truthful history. Never clear live stores, reimport to a new identity, overwrite live data with an older copy, or run two writers on one store. Test migrations and recovery on isolated copies. Old binaries do not honor the new writer lock; writable downgrade is not assumed supported.
+5. **Real-time first.** Local actions appear immediately locally, then propagate promptly to all authorized reachable online peers. Reserve bounded resources for live edits, acknowledgements and reactive updates ahead of backlog/bulk work; preserve causal dependencies, verification and durable acceptance. Avoid background starvation. Test latency during catch-up, not only on idle nodes. Delivery still requires an available transport path.
+6. **Commit and push every increment.** The user explicitly requests every commit pushed to the remote. Use a `codex/` branch and focused commits. Do not include another agent's dirty files accidentally. Push each commit immediately, report any failed push, and never claim remote synchronization without success. Merge/deploy only after applicable checks pass.
+7. **Update this ledger on completion.** Every completed task must have a checked box, a full implementation-commit link, exact validation evidence and a clear deployment/device acceptance boundary. Use a follow-up documentation commit to link an implementation hash (a commit cannot contain its own final hash); push both. Record code-complete work as Doing until required acceptance passes. Partial slices may be recorded under a task without checking off the parent.
+
+## System and product background
+
+avenDB stores signed records/history and encrypted files on each participating device. Native Mac nodes use a disk shelf; browser/PWA nodes run the Rust device through WASM and browser storage. Peers reconcile permitted log frontiers and transfer missing records/files. The application uses reactive queries and view/query demand to load useful work first. Local disk, memory and network can share content identities and range/frontier concepts, while retaining distinct durability and ownership responsibilities.
+
+The target is immediate retained local availability, low latency for new edits, efficient bulk catch-up, bounded memory and recovery without resets. It is not constant bandwidth saturation: an unchanged, synchronized device should transfer almost no content. Small-edit latency and bulk-file throughput are different acceptance measures.
+
+Useful code entry points:
+
+- `avendb/spec`: formal specification, scenarios and vectors; begin here for behavior changes.
+- `avendb/crates/avendb/src/lab.rs`, `policy.rs`, `sync.rs`: authorized state, replay, maintenance and reconciliation planning.
+- `avendb/crates/avendb-net/src/lib.rs`, `pulls.rs`, `run.rs`, `files.rs`, `traffic.rs`: peer lifecycle, scheduling, file exchange and metrics.
+- `avendb/crates/avendb-net/src/edits.rs` and shelf/disk modules: persistence, held records, writer ownership and close fences.
+- `avendb/crates/avendb-browser/src/lib.rs`: browser/native shared device lifecycle, unlock and key migration.
+- `avendb/crates/avendb-device/src/lib.rs`, `drive.rs`: native host, startup, shutdown and hosted drives.
+- `vault/app/src/avendb.rs`, `avendb_shutdown.rs`, `main.rs`: Tauri embedding and runtime lifetime.
+- `src/lib/avendb/`: session, reactive reads, demand and performance presentation.
+- `src/lib/app/StatusPill.svelte`; `src/lib/assets/VaultAsset.svelte` and `sources/`: progress and vault-authorized asset loading.
+- `.github/workflows/`: Rust/Lean/WASM/browser/macOS checks and existing deployment flows.
+
+A view accelerator or warm persisted state must be recoverable from canonical signed records. Do not reintroduce the obsolete `warm/`, `opened/`, or `sealed/` directory architectures. Existing persisted views still requiring full held history do not satisfy the eventual demand-paged startup goal. There is no authorized repository/public-feed fallback for missing private vault assets.
+
+## Delivered implementation ledger
+
+- [x] **D01 — compact first release (List 1 implementation baseline).** [Implementation/merge 6d3772da01d952dbe12939f04dfcaa89b4611ac6](https://github.com/MyAvenCEO/maiacity/commit/6d3772da01d952dbe12939f04dfcaa89b4611ac6), [PR #1247](https://github.com/MyAvenCEO/maiacity/pull/1247). Restore/replay improvements, reactive demand, bounded sync/previews, storage ownership and additive proof/range primitives. Required CI passed; server/API/site deployed and same-revision Mac app installed on the existing identity. Copied-store cold/warm/corrupt-derived-view recovery preserved 63,647 exact edits, 85 key blobs and 2,281 visible entries. Subsequent quit defect and mobile acceptance remain open below.
+- [x] **D02 — requested site/context UI.** [Commit 7176643056aaf79eba882966848c238074d241bf](https://github.com/MyAvenCEO/maiacity/commit/7176643056aaf79eba882966848c238074d241bf), [PR #1248](https://github.com/MyAvenCEO/maiacity/pull/1248). Website verified live: larger icon-only profile control, rounded coop shape, acting-authority-filtered contexts, closing popup, invite-only citizenship section and signup links, exact mother/son dome-city loading artwork. Kernel/Chromium/WebKit checks passed. Installed Mac needs the subsequent build to include this UI.
+- [x] **D03 — PWA deployment repair and network diagnostic implementation.** [Commit d82623c32b22369dd46954b043a4491be293c6eb](https://github.com/MyAvenCEO/maiacity/commit/d82623c32b22369dd46954b043a4491be293c6eb), [PR #1249](https://github.com/MyAvenCEO/maiacity/pull/1249). Seven publisher/Caddy tests and six diagnostic tests passed. Old immutable chunk URLs retained for 30 days independently of five rollback releases. Physical iPhone acceptance and live deployment verification remain separate task gates. [Deployment run](https://github.com/MyAvenCEO/maiacity/actions/runs/39966956537).
+- [x] **D04 — actual server measurement tooling and run.** Implementation is D03; [successful server probe](https://github.com/MyAvenCEO/maiacity/actions/runs/39967030928). Mac and server bounded measurements are transcribed below. iPhone/iPad measurements remain open. Artifacts expire; preserve future acceptance summaries in this repository rather than relying only on temporary files or CI retention.
+
+## Current uncommitted work: do not mistake this for delivered code
+
+At this handoff the active integration branch is `codex/avendb-reliability`, based on D03. Inspect `git status` before editing; several agents share the checkout. Follow-up implementations below are not represented by D03.
+
+- Native safe shutdown/startup ownership: locally compiled and five focused regressions passed (two private lifecycle/provisional-failure tests and three host integration tests). Coverage includes >5-second admitted mutation, cancelled quit waiter, actual offline reopen after shutting peers down, failed persistence retaining writer/runtime, second-ceremony cancellation and queued-open rejection. Tauri build/install, Lean correspondence and final installed checks remain open. Implementation commit: pending.
+- File-provider inactivity failover: five Rust tests passed including real authenticated stalled-first-provider fallback, cancelled stream, advancing vs duplicate progress, and transfers longer than the idle window. Minor lazy-provider cleanup requires final retest. Asset phases/retry and source tests passed; desktop WebKit rendered Fig/passion fruit/oregano, which does not establish physical iPad acceptance. Implementation commit: pending.
+- Migration no-work preflight/scheduler: source now being integrated from reviewed drafts; finite retries and stale-device rejection have JS coverage. Native/Lean acceptance pending. Actual moves/removals must retain freshness checks. Implementation commit: pending.
+- Truthful progress presentation: source implementation and focused JS tests underway; backend coherent-frontier snapshot remains distinct follow-up. Implementation commit: pending.
+- Real-time peer lane: concrete issue identified—an existing pull's missing set is fixed for its round, while later announcements set `again`; new chat logs can wait behind a backlog round. Bounded fair live-delta work and Lean specification are underway. Implementation commit: pending.
+
+Agent work boundaries are temporary, not architecture ownership: integration agent owns native/build/release and this ledger; sync agent owns migration/scheduler and scoped Lab receive optimization; real-time agent owns live scheduling/announcement hooks; mobile agent owns status UI and lifecycle diagnosis. Reassign freely after checking current modifications. Parallel heavy Cargo builds share caches and memory: allocate one compile owner at a time.
+
+## Original List 2: deferred production integration, explicitly still open
+
+The original split delivered a compact List 1; it did not delete these requirements. The detailed numbered tasks below expand this list.
+
+- [ ] **L2-M1/M2:** authenticated paged local startup and demand-loaded state; avoid mandatory whole-history reconstruction for the first useful view.
+- [ ] **L2-demand:** complete app/view/query manifests, dependencies, priority, cancellation and truthful query completeness.
+- [ ] **L2-M3:** production durable group commit and signed-root/proof verification, including multi-author/relayed proof retention, crash publication ordering and supported backend atomicity. Existing signatures stay readable.
+- [ ] **L2-M4:** broader authenticated sparse reconciliation beyond current eligible own-signer ranges; cheaper initial authorization planning, proof retention/export, legacy admission and accurate partial-attempt accounting.
+- [ ] **L2-M5:** real-device secure browser/native and browser/browser carrier rollout, late promotion and fallback. Optional production browser carriers remain off until accepted.
+- [ ] **L2-M6:** trusted partial-state handoff and first-view startup before unrelated history arrives; the standalone core currently requiring referenced records is insufficient.
+- [ ] **L2-M7:** production audience/key-tree epochs, membership changes, removals, history policies, offline peers and recovery; standalone tree tests do not complete policy integration.
+- [ ] **L2-legacy:** complete ML migration and historical coverage gates before SLH runtime retirement; retain truthful history and necessary import/migration support for old backups.
+- [ ] **L2-recovery:** resolve actual production backup not-whole warning, not merely pass a separate test bucket recovery.
+- [ ] **L2-acceptance:** actual four-device performance, memory, no-reset upgrade, peer-loss/revocation/crash/recovery and mixed-version acceptance.
+
+M8 live media streams remains out of scope. Prioritizing ordinary chat edits is required now and does not depend on M8.
+
+## How another agent should resume
+
+1. Read this ledger, `avendb/docs/ARCHITECTURE.md`, applicable repository instructions and the relevant Lean definitions. Check branch, worktrees, dirty files and running builds; do not discard another agent's work.
+2. Read the relevant implementation and CI configuration. Verify current deployed/installed revisions; do not infer them from branch HEAD. No Claude login, private chat export or local temporary evidence is required to reconstruct the tasks.
+3. Pick a bounded task below, state its Lean invariants/assumptions and empirical acceptance workload, then implement with differential/adversarial/cancellation tests as applicable.
+4. Run focused tests, relevant Lean checks and required CI. For native shutdown examples: `cargo test --profile app --locked -p avendb-device --lib shutdown_tests` and `cargo test --profile app --locked -p avendb-device --test device shutdown::`. For file failover: `cargo test --profile app --locked -p avendb-net --lib files::fetch_tests` plus existing file authorization/range tests. Inspect current workflows for the canonical full commands and toolchains.
+5. Keep any existing-account rehearsal isolated. Biometric approval must come from the user when a real prompt appears. Do not persist unlocked secrets to suppress sign-in. Test the existing identity on its supported upgrade path.
+6. Commit a focused implementation and push it. Update the applicable numbered task/checkbox and completion log with the full hash, spec mapping, test result and remaining deployment limits; commit/push that update. Finish through required CI and device acceptance before marking the parent task Done.
+
+### Completion entry template
+
+`YYYY-MM-DD | Task ID | Doing/Done | implementation commit URL | Lean definitions/theorems/scenarios | exact tests and result | deployed/installed revision if applicable | remaining limits`
+
+A task with pending physical-device acceptance stays Doing. Every numbered row below is open unless explicitly marked Done with its implementation link in this ledger. Record append-only evidence, but update the primary status so readers need not interpret stale chronological notes.
+
+---
+
+# avenDB performance audit and ordered completion plan
+
+23 October 2026. Audit of the implementation and actual measurements. Source references below are repository-relative; line numbers are navigation hints and may drift. Status is as recorded at approximately 16:15 CEST; the parent is continuing build/deployment work concurrently. “Doing” means implementation or acceptance is in progress; it does not mean deployed and verified.
+
+The immediate gap is not explained by insufficient measured internet capacity. Request preparation, repeated state replay, and duplicate signed pages are demonstrated costs. Relay behavior, transport limits, memory pressure, encoding, and durable writer throughput need separately timed experiments. A goal of always filling bandwidth would be wrong for an idle local-first database: unchanged peers should exchange almost no payload. The target is low latency for useful changes, efficient bulk transfer when needed, immediate local reads, and durable retention without resets.
+
+## What is already delivered
+
+| Foundation | State and boundary |
+|---|---|
+| First compact upgrade, PR1247 / `6d3772da` | Merged; server/API/site deployed, same-revision signed Mac app installed over the existing store. First release improvements are real; full M4–M7 is not complete. |
+| Existing Mac offline/reconnect | Same endpoint and assets observed offline, peers/data returned online. A separate quit-durability defect was found; follow-up is doing. |
+| Requested UI, PR1248 / `7176643` | Merged and website verified live. Next Mac build still needs to include it. |
+| PWA immutable chunk retention and diagnostics, PR1249 / `d82623c` | Merged, seven Caddy/publisher and six diagnostic checks passed. Website deployment/physical mobile acceptance must be checked independently. |
+| Mac capacity audit | Actual bounded downloads and upload completed. |
+| Production server capacity audit | Actual bounded external download/upload completed through trusted SSH workflow39967030928. |
+| Architectural primitives | Reactive subscriptions, scoped demand, additive signer roots, sparse eligible ranges, bounded scheduler, optional carrier tests, handed-view and key-tree cores exist. Presence of a core/test is not proof of full production integration. |
+
+## Actual measurements and limits
+
+| Device/path | Payload / wall time | Mbps | MiB/s |
+|---|---:|---:|---:|
+| Production public WASM → Mac |18,573,142 B /1.315841s|112.92|13.46|
+| Cloudflare synthetic → Mac |67,108,864 B /6.605094s|81.28|9.69|
+| Mac random upload → Cloudflare |16,777,216 B /1.913257s|70.15|8.36|
+| Cloudflare synthetic → production server |67,108,864 B /0.509443s|1,053.84|125.63|
+| Production server random upload → Cloudflare |16,777,216 B /0.323762s|414.56|49.42|
+| Physical iPhone |Not measured yet|—|—|
+| Physical iPad |Not measured yet|—|—|
+
+Mac tests ran15:51–15:52 CEST, server16:08 CEST. Single sequential HTTP stream, fresh connection, no-cache/cachebuster, identity encoding, verified TLS,15s/request cap; downloads discarded, synthetic random uploads. These are short sample rates, not sustained maxima or simultaneous measurements of sync. The public file path establishes at least112.92Mbps from the production website to this Mac at that time, not an independent server uplink maximum. Source semantics: [Cloudflare speedtest](https://github.com/cloudflare/speedtest). Server run: [39967030928](https://github.com/MyAvenCEO/maiacity/actions/runs/39967030928).
+
+Historical installed-Mac sync snapshot at15:23 CEST:
+
+| Sending peer → receiving Mac | Displayed page rate | Offered / newly accepted edits | Already held among offered |
+|---|---:|---:|---:|
+| Server |52kB/s,0.416Mbps|3,821 /360|90.6%|
+| iPad |174kB/s,1.392Mbps|9,664 /5,147|46.7%|
+| iPhone |47kB/s,0.376Mbps|3,551 /2,563|27.8%|
+
+Aggregate:335pages,66MB,display80kB/s (0.64Mbps). These are pipeline counters on the Mac, not the phones' download capacities. Do not divide this number by the later capacity result and report an actual utilization percentage.
+
+Confirmed computation evidence:
+
+- Mac77replay rounds, about4minutes total,3.10s mean,13.54s maximum;74refreshes, about4.7minutes,3.82s mean. Reasons included46whole replays associated with removals and12whole replays associated with late edits. Timers overlap; do not sum them as independent wall time.
+- Captured signature verification1.91s across368calls and12,970checked edits. Crypto verification is not the largest measured Mac cost in this window. This does not measure all signing, key opening, transport crypto, or server costs.
+- Key opening/reuse work24.75s across77rounds;5,134keys from shelf and11new openings. Repeated traversal can be costly even when cryptographic openings are reused.
+- Saver/keeping1.97s across115calls,17ms mean,661ms max. This snapshot does not support making fsync the primary bottleneck; durable backend queue/fence profiling remains necessary.
+- Server health at15:54 CEST:399replies;3,727.5ms mean preparation,27,092ms max. Preparation includes waiting for the Lab lock. Network capacity tests do not explain seconds spent preparing an answer.
+- Repeated server replies near234kB/74edits/0new appeared approximately every200s. Source has a180s legacy-aven retry and unconditional broad `moving()` catch-up; this is a strong mechanism match, not a complete per-request trace proving every observed reply came from that timer.
+- All observed active Mac peer routes were relay paths. Server route77ms RTT, iPad342ms. Relay classification alone does not show whether the relay is saturated or what the direct-route gain will be.
+
+
+## Binding acceptance invariants
+
+These apply to every task and release, including fast paths:
+
+- Owners' keys and explicit verified grants are the only authority. A server, relay, snapshot provider or preferred peer gains no implicit vault powers.
+- Existing authorized local reads and writes continue offline. Reconnect adds verified knowledge; it must not replace local truth with a server copy.
+- Each peer's edits, roots, proofs, holdings and file bytes are independently validated. Optimizations cannot trust server snapshots or skip signature, causal, permission, revocation or content-integrity checks.
+- Preserve PQ-only transport, encryption, revocation correctness and metadata/privacy boundaries. Demand, priority and QoS never grant authorization.
+- Keep the same identities, vaults, passkeys, history, files and accepted pending writes. No reset, reimport or account-recreation workaround.
+- Asset recovery uses permitted peer-held data and verified content. Do not add a central authentication/data fallback that makes the server authoritative or mandatory.
+- Every relevant feature passes malicious-peer and server-offline tests as well as ordinary convergence. A real lack of connectivity is reported honestly, with local work retained for later sync.
+
+## Ordered task plan
+
+Tasks1–17 target the current reliability/throughput problem. Tasks18–24 finish the broader architecture and scale foundations. Tasks29–32 are newly clarified P0 requirements across the early work, not last-phase extras: live actions must remain prompt under load, and the server is an ordinary peer. Several can run in parallel, but each optimization requires the measurement and correctness gates below. Task numbers are ordering/dependency guidance, not estimates of equal effort.
+
+| # | Work to finish | State | Required exit evidence |
+|---|---|---|---|
+|1|Finish native Mac durable shutdown, startup ownership and hosted-drive fences.|Doing|Delayed accepted writes survive quit; failed fences keep runtime/ownership; no second writer enters; interrupted startup retains or closes every unpublished node; signed Mac build installed and existing identity reopened.|
+|2|Prove local-first retention across a real reload/restart; distinguish stored logs, current remote frontier and asset availability.|Doing|Capture exact local durable frontier/edit IDs before and after controlled reload, offline reopen and reconnect. Unchanged data remains; no replay/download of already held content without an explained protocol reason. A “100%” label must not imply a disk fence or complete asset files.|
+|3|Finish iPhone PWA reload/session repair and real-device verification.|Doing|Deploy preserved immutable chunks; resume an old running release across deployment without missing JS; repeated foreground/background/relaunch keeps account identity and local data. Observe any remaining WebKit process termination separately from app navigation/auth errors. No storage clearing.|
+|4|Finish iPad file-provider failover and asset loading diagnosis.|Doing|Ship bounded inactivity/connect deadlines, cancellation and next-provider recovery; preserve verified partial ranges. Fig, passion fruit and oregano open on the physical iPad, alongside a working control asset. Missing bytes, permission, decode and GPU failure produce distinct states and retry.|
+|5|Stop unnecessary broad key-migration catch-up on every open/legacy retry.|Open|A locally settled ML device does not pull all history merely to ask whether a migration exists. Real pending move, revocation and returning old peer still force required fresh checks. Ten-minute idle trace has no periodic duplicate payload from this trigger.|
+|6|Correct measurements and expose every pipeline phase and useful work.|Open|One wall-clock window reports transport bytes, unique accepted edit bytes/count, duplicate bytes, key/file traffic, durable completion and visible completion. Separate queue/Lab lock, auth planning, encoding, network wait, validation, replay and persistence; include first-page wait and partial-success accounting.|
+|7|Run capacity tests on the actual iPhone and iPad.|Open|Open published user-started diagnostic on each physical device/network; record local JSON with device/standalone status. Do not substitute Mac observations or infer phone capacity. Confirm deployment first.|
+|8|Create a reproducible four-device baseline covering distinct workloads.|Open|Same fixture/frontier workload for unchanged reopen, one new edit, sparse catch-up, many small signed edits, first sync, large file and visible asset. Record median/tail latency, unique throughput, raw transport bytes, memory and route. Use disposable fixtures, not artificial production history writes.|
+|9|Make request/frontier and authorization preparation incremental and revision-aware.|Open|Cache/index reusable permitted-log plans and request summaries by complete revision, peer identity, follow/demand and authorization state. Warm unchanged requests avoid full-history traversal; revocation/restore/follow changes invalidate safely. Differential results equal the existing reference; timings scale with changed/requested data.|
+|10|Remove the unconditional history scan on empty-blob receive.|Open|No named-blob scan when there are no supplied key blobs; use a validated revision-aware index if supplied-blob cases justify it. Preserve rejection of unreferenced blobs. Same receive result with operation-count proof and measured page CPU reduction.|
+|11|Suppress duplicates without leaking private frontiers.|Open|Use authenticated, scoped acknowledgments/closed frontiers or equivalent proofs for followed logs, safe cross-peer deduplication and incomplete-attempt tracking. Unchanged reconnect transfers no old signed payload; concurrent updates converge; removed access learns no forbidden log IDs/haves.|
+|12|Reduce whole replay rounds and repeated metadata/key maintenance.|Open|Late edits, removals and moves remain equivalent to full replay. Incremental checkpoints/replay boundaries and coalesced maintenance process catch-up with bounded full passes; idle reopen generates no gratuitous Wrap/Mark edits. Compare causal tests, operation counts and visible latency.|
+|13|Profile then remove repeated encoding/cloning and unnecessary copies.|Open|Measure wire-size preparation vs actual serialization, payload clones and page decode. Reuse immutable encoded sizes/buffers where worthwhile with identical bytes/authorization. Acceptance is reduced allocations/CPU without higher retained memory; magnitude is currently unmeasured.|
+|14|Reduce serialization through the Lab mutex/worker critical section.|Open|Time lock wait separately, move safe read/encode work to revision-pinned snapshots, bound worker tasks and keep mutations ordered. Stale permission snapshots cannot serve revoked data; foreground edits remain responsive during catch-up. No unsafe parallel mutation of the Lab.|
+|15|Tune bounded page pipelining, batching and concurrency from measured service times.|Open|Keep admission/memory bounds and reserved foreground slots. Compare current one-page lookahead with bounded alternatives, adaptive byte budgets and peer choice. Adopt only if unique-edit latency/throughput improves without excessive queueing/memory; test slow peer and cancellation.|
+|16|Optimize bulk file transfer as its own lane.|Open|Measure exact verified plaintext/ciphertext bytes and first useful range. Deduplicate simultaneous reads, allow bounded range/piece parallelism and cancellation, prioritize visible assets over keep-whole work. Resume retained ranges after reconnect; no history/schema lane starvation. Tune independently from small signed-log throughput.|
+|17|Complete M5 real-device carrier/direct-path rollout.|Open|For server/Mac/iPhone/iPad on applicable Wi-Fi, cellular/NAT and relay-only paths, prove actual payload chooses the negotiated carrier, survives late promotion and falls back safely. Record bytes per path, RTT/loss and memory. Preserve identity, PQ-only transport and owned-relay policy. Enable production browser flag only after these tests.|
+|18|Finish app/view/query demand and completeness semantics.|Open|Inventory every view/query's trust/schema/index/entry/file dependencies. Navigation/pagination reprioritize, stale leases release and overlapping demand coalesces. Partial query results are never silently labelled complete. All demand remains within authorization.|
+|19|Finish authenticated paged startup and incremental local reads (M1/M2).|Open|A cold existing-store reopen shows the requested local view without reading/replaying unrelated history. Corrupt/stale snapshots recover from preserved signed history. Query completeness, offline writes, retained keys and browser/native shelves agree; memory/IO scale with active working set.|
+|20|Complete production durable batch/root verification and commit integration (M3).|Open|Own and relayed/multi-author root/proof evidence is retained and recoverable; root publication follows durable accepted records; crash/fork/malformed-proof tests pass. Root-only optimization is activated only where authorization and backend atomicity are established. Existing individual signatures remain readable.|
+|21|Complete broader sparse reconciliation (M4).|Open|Extend beyond current eligible own-signer ranges; bind roots/proofs to complete durable revision, current scope and authorization. Cheaper initial auth planning, multi-author export/proof retention, legacy serve admission and partial-attempt metrics pass differential/mixed-peer tests. Work is proportional to actual differences where protocol permits.|
+|22|Complete authenticated partial handoff/startup (M6).|Open|A trusted handed view plus verified frontier starts useful local work before unrelated history arrives; missing referenced records and revocations cannot masquerade as complete. Passkey binding, expiry, offline resumption and fallback are tested against ordinary replay.|
+|23|Integrate key-tree membership into production audience policy (M7).|Open|Audience actions, epochs, concurrent membership changes, removals, offline devices, retained keys and recovery use the audited tree consistently. Verify revocation and bounded current-resolution cost. The standalone core is insufficient; this is broader scale work, not evidence that it causes today's slow pages.|
+|24|Retire SLH only after validated historical coverage and device migration.|Open|Every supported writer uses ML; all in-scope history has standing authorized ML coverage; no uncovered SLH remains; backup restore/offline-peer catch-up passes without legacy signing/verification. Preserve truthful old identifiers and a migration/import path for old backups/peers until upgraded. Do not rewrite authors' signatures merely because we own the data.|
+|25|Bound mobile memory and lifecycle resources across all lanes.|Open|On physical devices, measure worker/WASM/JS/GPU/preview/page queue peaks; bound concurrent materialization, release unused view demands/resources and cancel suspended work. Repeated asset navigation and background/foreground cycles do not grow memory or trigger avoidable restart. No assumption that the desktop WebKit pass proves iOS memory behavior.|
+|26|Resolve production backup completeness and prove recovery.|Open|Explain/fix the existing production backup not-whole warning; restore an isolated copy containing identities, histories, key roots, files and pending metadata. Compare exact expected records and allowed missing replicas. Test-bucket recovery alone does not close this item.|
+|27|Run complete no-reset acceptance on all four device roles and mixed peers.|Open|Same identity/vaults/passkeys/edits/attachments before/after upgrade; true offline reopen, write, reconnect, provider loss, background suspension, crash/fence and revocation tests. Compare canonical records and visible state, including pending writes. No reset, reimport or new account workaround.|
+|28|Release the reviewed slice, verify exact installed/live versions, then rerun performance acceptance.|Open|Required Rust/Lean/browser checks; recoverable artifact/backups; one reviewed release slice with exact server/site/WASM/Mac SHAs and signed Mac install. Confirm iPhone/iPad obtain compatible release without forced logout. Repeat fixed workload and capacity comparison; publish phase timings and remaining gaps. Writable downgrade is not assumed safe.|
+|29|Give live user actions priority while guaranteeing background fairness.|Open — P0|Separate bounded interactive and backlog/file queues, reserve capacity for new chat/edits and their causal/auth dependencies, and limit non-preemptible batch work. Aging or weighted service prevents background starvation; peers cannot claim arbitrary priority without local validation. Measure p50/p95/p99 send-to-visible and send-to-durable latency under saturated backlog/bulk load, with background progress recorded.|
+|30|Complete the live-edit propagation and reactive-render fast path.|Open — P0|After valid local acceptance/durable publication, promptly announce/fan out to every authorized reachable online peer, without waiting for a whole catch-up cycle. The receiver verifies, applies required causal dependencies, persists and notifies reactive views promptly. Chat is an ordinary signed edit, not M8 streaming. End-to-end timestamps prove no polling delay; no authorization, signature, causality or durability bypass.|
+|31|Audit and remove implicit server authority throughout the stack.|Open — P0|Classify bootstrap, routing, relay admission, restore, holdings freshness, migration safety, source selection and priorities. Server permissions arise only from explicit vault grants and verified history. Server data passes the same validation and conflict rules; a forged/stale server statement cannot override local state or authorize reads. Keep explicit relay-service admission distinct from database authority. Replace mandatory named-server assumptions with appropriate peer/frontier evidence without weakening removal safety.|
+|32|Prove peer-to-peer operation with the server absent or untrusted.|Open — P0|Test Mac↔iPhone↔iPad new chat/edit delivery and reconnect convergence with the database server offline; test an invalid/malicious server separately. Also test loss of the colocated relay infrastructure using another authorized viable carrier/path, including browser limits. Existing local accounts/read/write must not require the server. Record all directed device pairs, latency under bulk load, authorized/offline recipient behavior and eventual catch-up; never fake successful delivery when no network path exists.|
+
+## Ranked bottleneck mechanics and specific sources
+
+1. **Request construction and serialized preparation — confirmed mechanism and large measured delay.** `avendb/crates/avendb/src/lab.rs:4652` already caches `answered` per revision/asker/follow; the next fix must respect that existing work rather than claim no cache exists. `Lab::request` at4676 still calls `logs_of`, constructs shared-ID sets and calls `asks_ids` across held edits. `sync.rs:85,506` perform history-based grouping/asks. `range_inventory` at4749 explicitly documents that initial legacy permission planning still examines held history. `avendb-net/src/lib.rs:2193` executes `try_lab` under one locked Lab. Seconds of server answer time include both computation and lock queueing; instrumentation must distinguish them before choosing index vs scheduler changes. Likely useful for repeated small sync operations; no numeric speedup promised.
+
+2. **Duplicate pages and unnecessary broad refresh — confirmed bytes, strong source mechanism.** `avendb-browser/src/lib.rs:596` calls broad `catch_up` before checking whether `moving()` has anything to do. `src/lib/avendb/session.svelte.js:501,520` calls it again after180s while an old aven signer remains. `Lab::request` intentionally withholds haves not authorized under no-follow disclosure; its comment explicitly says followed logs can therefore arrive whole. This protects privacy, so simply sending all local frontiers is not an acceptable fix. Safe authenticated peer-announced closure or protocol acknowledgments are needed. The90.6% already-held fraction is by edit count, not measured duplicate bytes; removing all of it is not guaranteed by one change.
+
+3. **Repeated replay/materialization — confirmed high cost.** `lab.rs:3008–3060` rebuilds state, keys, materialized items and upkeep in `refresh`, sometimes looping after generated upkeep. `policy.rs:3970` falls back to whole replay when incremental/tail semantics cannot establish correctness. Old or removed edits are causally meaningful; never remove validation or ignore revocation to improve timing. `net/lib.rs:3025` delays non-mandatory refresh by three times the last measured catch-up duration; that duration includes waiting for the Lab and can amplify visible delays. Use dependency-aware incremental checkpoints and explicit foreground budgets, proven equal to full replay.
+
+4. **Receive overhead independent of new work — confirmed code path; cost not isolated.** `lab.rs:5028–5035` scans all held edits to collect named blobs even when the page supplies no key blobs. Normal network page receive passes `Vec::new()` for blobs at `net/lib.rs:2504`. Avoiding this scan is a narrow optimization candidate with simple differential acceptance; do not claim it explains all observed seconds.
+
+5. **Single next-page lookahead, serialized bulk reads, and relayed routes — implementation confirmed; benefit hypotheses.** `net/lib.rs:2480–2530` overlaps one next-page fetch with current receive/materialization. `pulls.rs:90` already has bounded active/page/background budgets and foreground reservations. `files.rs:274–296` reads ranges sequentially and `files.rs:490–514` keeps pieces sequentially. Larger concurrency may hide RTT but can worsen the Lab queue or iOS memory; measure separate log and file lanes. M5 optional carriers are not the same as verified production physical-device acceleration.
+
+6. **Encoding and durable writer pressure — candidates, not demonstrated dominant causes.** `lab.rs:4725` serializes to determine signed-record size, then clones before the wire layer packs again. Profile before introducing retained encoded buffers. Shelf and signer ledgers must preserve ownership, fence ordering and atomic publication; the snapshot's1.97s keeping total is much smaller than replay, so durable group commit is a correctness/batching foundation rather than a proven immediate culprit.
+
+## Instrumentation defects that prevent a bandwidth-utilization claim
+
+- `avendb-net/src/lib.rs:2480` starts the per-page interval after `ask(None).await`; the first network wait of every asking is excluded from that denominator.
+- `avendb-net/src/traffic.rs:202–215` divides encoded page bytes by accumulated pipeline milliseconds and reports all offered edits/s, including duplicates. It is not useful accepted edits/s or link bitrate.
+- `src/lib/avendb/Performance.svelte:391` sums peer intervals that can overlap.
+- Sparse transfers and trailing key blobs need reconciled accounting, alongside bulk file bytes, relay framing and retransmission. A failed partial transfer can have accepted useful data and must not disappear from throughput totals.
+- Replay/refresh/key-opening/answer timers are nested or concurrent. Their sum is not an elapsed-time pie chart. Tag operation IDs or use tracing spans to reconstruct critical path and queue delay.
+
+
+## Live actions and the server-as-peer contract
+
+New chat messages and ordinary interactive edits must reach authorized reachable online devices promptly even while catch-up or large-file work runs. This requires scheduling the entire dependency chain, not merely putting a network request at the front of a queue. Authorization prerequisites, validation, replay, durable publication and reactive view notification can each otherwise sit behind bulk work. Report p50/p95/p99 from local acceptance to remote visible and durable completion, with same clock methodology or bounded clock uncertainty; independently report offline recipients as pending. Fairness bounds must prevent permanent backlog starvation.
+
+Existing source has useful foundations: `avendb-net/src/pulls.rs:90` reserves foreground capacity; `net/src/lib.rs:2708` runs an event-driven announcer; `net/src/lib.rs:2843` announces to authorized peers in independent bounded tasks so one unreachable peer does not block others. Do not describe this as absent broadcast support. The task is to measure and close the lock, queue, persistence and materialization delays along that path, ensure new edits bypass history backlog safely, and wire reactive rendering end to end.
+
+Specific role assumptions to audit:
+
+- `avendb-browser/src/lib.rs:1179` calls `holds_what_servers_hold`, selecting `Lab::governed_devices`; it requires at least one matching online peer and zero missing logs from all selected peers before key-retirement/checkpoint work. Callers around1108/1122 guard safety after an earlier data-loss incident. This is a **server/governed-peer liveness dependency**, not proof of an authorization bypass. Replace any unnecessary named-server dependency only with an equivalent authenticated completeness condition; never simply remove the gate.
+- Browser `Device::found` around394–429 and link/rejoin paths take a configured server offer for bootstrap/recovery. Their explicit granted backup role can be legitimate. Existing authenticated accounts must continue local operation and normal peer sync without that particular node; recovery from a surviving authorized peer should not require an implicitly trusted server.
+- `avendb-net/src/lib.rs:302–309` exposes optional contact-card and relay-admission service behavior. `Admission` around351 governs access to a transport service by verified device/passkey/invite information. A server running that service has operational responsibilities, not extra rights to vault contents or conflict resolution.
+- `avendb-net/src/files.rs:366` ranks connected holders, other connected peers, then known holders; this path does not appear to hardcode the server as authoritative. Preserve provider neutrality and authorization gates.
+- `ARCHITECTURE.md` H2/T27 says holdings are only the word of the signer and never grant file authorization. Test those boundaries against forged, stale and equivocal server statements instead of treating a server response as ground truth.
+- The deployment colocates database peer and relay. “Database server down, relay still running” and “the whole host/relay gone” are different availability tests. PWA peers need an available supported transport; M5 production carrier work must remove avoidable single-host routing dependence while preserving the owned-relay/PQ policy. No software can promise delivery when all paths are unavailable.
+
+No new authority violation was established by this narrow read-only pass. Task31 is the required complete role audit; these are concrete callsites and regression targets, not a claim that its work is already finished.
+
+## What “fast enough” must mean
+
+Use measured, agreed workload baselines rather than an invented global bandwidth percentage. Record first useful view, first asset pixels, time to durably accept a new edit, time until authorized peers expose it, sparse catch-up completion, verified bulk-file throughput, duplicate bytes, idle traffic and mobile peak memory. Report cold and warm separately. For idle/reload, the criterion is no unnecessary content transfer and immediate retained local availability. For bulk transfer, compare contemporaneous raw peer transfer against a bounded same-path capacity sample while documenting route and processing costs. For small edits, latency and useful work per CPU/byte matter more than filling the link.
+
+The memory and disk representations can share immutable records, verified content IDs, frontiers and range semantics. They still have distinct ownership, persistence and durability responsibilities; disk→memory need not repeat network handshakes or an independent synchronization/cache system. An in-memory materialized index is a local view, not another authoritative database. Persistent views are accelerators recoverable from preserved canonical signed data, with explicit completeness and invalidation.
+
+## Dependency and release boundaries
+
+- Immediate production repair:1–5 and P0 requirements29–32, with6–8 for honest validation and25–28 as acceptance requirements. Preserve existing data throughout.
+- First measured throughput slice:9–16, starting with request prep, the empty-blob scan and safe duplicate/maintenance reductions. Re-measure after each meaningful combined change; do not run repeated broad tests once their acceptance has passed.
+- M5 carrier rollout17 can be evaluated independently once physical-device controls and metrics exist. It cannot remove server CPU/replay delays.
+- Complete original architecture:18–24. M1/M2 demand/paged startup, M3 durability/proofs, M4 reconciliation and M6 handoff have ordering dependencies. M7 and full SLH cleanup can proceed as separate correctness work; they are not prerequisites for fixing the demonstrated slow page pipeline.
+- Final completion requires physical iPhone/iPad participation. A desktop emulator, Mac peer counter or a deployed diagnostic URL alone cannot establish their behavior.
+
+
+## Durable evidence policy
+
+The numerical audit and code findings above are preserved here. Temporary local logs referenced in earlier conversations are supplementary, not prerequisites for takeover. CI links in the delivered ledger identify reproducible checks; future task completion must preserve concise results, exact commands and commit links here. Never commit credentials, private vault contents or key material as evidence.
