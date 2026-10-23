@@ -2,7 +2,8 @@
 # so HTTPS is not optional here.
 #
 # The site (maia.city): the built SvelteKit site, static, from /srv/site (the deploy puts each build beside the last
-# and switches a link, so a page never points at chunks that are gone). www goes to the bare name.
+# and switches a link). Hashed chunks keep their original URLs for at least 30 days, independently of the five
+# rollback releases, so an open page can still navigate without losing its unlocked device. www goes to the bare name.
 #
 # The API (api.maia.city):
 #   /vault/files/<hash>    the site's media (src/lib/media/url.ts): Maia City's public files from avenDB's feed
@@ -58,9 +59,24 @@
 	header @immutable Cache-Control "public, max-age=31536000, immutable"
 	@pages not path /_app/immutable/*
 	header @pages Cache-Control "public, max-age=0, must-revalidate"
-	try_files {path} {path}/index.html {path}.html
-	file_server
+	# Only hashed build assets use the shared 30-day window. The current fallback lets this
+	# config roll out before the first publisher backfills the retained assets.
+	handle @immutable {
+		route {
+			file_server {
+				root /srv/site/assets
+				pass_thru
+			}
+			file_server
+		}
+	}
+	handle {
+		try_files {path} {path}/index.html {path}.html
+		file_server
+	}
 	handle_errors 404 {
+		# A missing chunk must not become an immutable cached error before it is available.
+		header Cache-Control "no-store"
 		rewrite * /404.html
 		file_server
 	}
