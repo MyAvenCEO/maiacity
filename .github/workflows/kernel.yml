@@ -123,6 +123,10 @@ jobs:
         with:
           path: ~/.cache/ms-playwright
           key: playwright-webkit-${{ runner.os }}-${{ hashFiles('bun.lock', 'bun.lockb') }}
+      # The Azure mirror can stall package downloads on hosted runners for minutes.
+      # Keep Ubuntu's signed packages and use its canonical HTTPS archive.
+      - name: Use Ubuntu's archive for browser dependencies
+        run: sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
       - run: bunx playwright install --with-deps webkit
 
       # the probes as in Chromium; a way out WebKit itself lacks is named in the log, refused and green
