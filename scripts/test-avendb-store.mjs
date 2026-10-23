@@ -6,7 +6,8 @@
  * Chromium defaults to installed Chrome on macOS, otherwise Playwright's pinned browser.
  */
 import { chromium, webkit } from 'playwright';
-import { createServer } from 'node:http';
+import { createServer } from 'node:https';
+import { execFileSync } from 'node:child_process';
 import { readFile, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { existsSync } from 'node:fs';
@@ -18,7 +19,12 @@ const at = process.argv.indexOf('--browser');
 const engine = at < 0 ? 'chromium' : process.argv[at + 1];
 assert(['chromium', 'webkit'].includes(engine));
 const locations = { canonical: 'avendb/crates/avendb-browser/js', shipped: 'src/lib/avendb/device' };
-const server = createServer(async (req, res) => {
+// Use HTTPS: WebKitGTK does not expose worker storage on every HTTP loopback origin.
+// This disposable certificate is trusted only by this isolated test context.
+const profile = await mkdtemp(join(tmpdir(), 'avendb-opfs-test-'));
+const keyPath = join(profile, 'key.pem'), certPath = join(profile, 'cert.pem');
+execFileSync('openssl', ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', keyPath, '-out', certPath, '-days', '1', '-subj', '/CN=localhost'], { stdio: 'ignore' });
+const server = createServer({ key: await readFile(keyPath), cert: await readFile(certPath) }, async (req, res) => {
 	try {
 		const path = new URL(req.url, 'http://localhost').pathname;
 		res.setHeader('Cache-Control', 'no-store');
@@ -30,21 +36,21 @@ const server = createServer(async (req, res) => {
 	} catch { res.writeHead(500); res.end(); }
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-const origin = `http://127.0.0.1:${server.address().port}`;
+const origin = `https://127.0.0.1:${server.address().port}`;
 // WebKit's ephemeral contexts may not provide OPFS. Use a fresh disk-backed
 // profile for this persistence test; it is never a user profile and is removed below.
-const profile = await mkdtemp(join(tmpdir(), 'avendb-opfs-test-'));
 let context;
 try {
 	const macChrome = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 	const executablePath = process.env.AVENDB_CHROMIUM ?? (existsSync(macChrome) ? macChrome : undefined);
 	context = await (engine === 'webkit'
-		? webkit.launchPersistentContext(profile, { headless: true })
-		: chromium.launchPersistentContext(profile, { headless: true, executablePath }));
+		? webkit.launchPersistentContext(profile, { headless: true, ignoreHTTPSErrors: true })
+		: chromium.launchPersistentContext(profile, { headless: true, executablePath, ignoreHTTPSErrors: true }));
 	const page = await context.newPage();
 	page.setDefaultTimeout(20000);
 	for (const source of Object.keys(locations)) {
 		await page.goto(origin);
+		assert(await page.evaluate(() => isSecureContext), 'OPFS fixture must run in a secure context');
 		await page.evaluate(async source => {
 			const { open } = await import(`/${source}/store.js`);
 			const store = await open(`keep-test-${source}`).catch(error => { throw new Error(`${source} open: ${error.message}`); });
