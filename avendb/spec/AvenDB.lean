@@ -38,6 +38,8 @@ import AvenDB.ObjectiveVectors
 
 import AvenDB.EditRanges
 
+import AvenDB.LivePriority
+
 import AvenDB.ReceiveEmpty
 
 import AvenDB.FileAvailability

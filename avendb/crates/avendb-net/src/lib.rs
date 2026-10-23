@@ -129,6 +129,7 @@ pub mod paged_views;
 mod progress;
 mod proofs;
 mod pulls;
+mod live;
 mod ranges;
 mod run;
 pub mod server;
@@ -2368,9 +2369,25 @@ impl Shared {
         background: bool,
         catch_up: Option<&pulls::CatchUp>,
     ) -> Result<usize> {
+        self.pull_expected(endpoint, scope, background, catch_up, None).await
+    }
+
+    /// A live hint belongs to the authenticated identity that announced it. Fence that identity before building
+    /// a request, then keep the captured Peer throughout the pull even if the endpoint's connection is replaced.
+    async fn pull_expected(
+        self: &Arc<Self>,
+        endpoint: EndpointId,
+        scope: Scope,
+        background: bool,
+        catch_up: Option<&pulls::CatchUp>,
+        expected: Option<SignerId>,
+    ) -> Result<usize> {
         let _activity = self.admit()?;
         let admission = self.pulls.enter(background, catch_up).await?;
         let peer = self.connection(endpoint).await?;
+        if expected.is_some_and(|device| device != peer.device) {
+            anyhow::bail!("sync peer identity changed before live pull");
+        }
         let mut job = self.jobs.begin("pull", peer.device.to_hex(), String::new(), 0, "edits");
         // an asking of some logs among more to come (`ask_differing`) leaves the last bringing up to date to its caller
         let must = !matches!(scope, Scope::Logs(_));
@@ -2879,7 +2896,8 @@ impl Shared {
         let peer = self.connection(endpoint).await?;
         let on = peer.conn.stable_id();
         let told = self.told.lock().expect("told").get(&device).filter(|(at, _)| *at == on).map(|(_, h)| h.clone());
-        if let Some(announce) = want.since(told.as_ref()) {
+        if let Some(mut announce) = want.since(told.as_ref()) {
+            self.live_witnesses(&mut announce, &want).await;
             // Small live changes already have the cheapest encoding. A complete replacement (including reconnect
             // and permission contraction) first reconciles cached subtrees with capable peers. Refusal preserves
             // the original full announcement, and a legacy peer is probed only once on this connection.
@@ -2913,9 +2931,11 @@ impl Shared {
 
     /// `device` told the node `announce` of its holdings, on a connection whose hello proved it: what it holds from
     /// now on, as `Holdings::take` says. A device that claims to hold more than `MOST` logs or files claims nothing.
-    fn hear(&self, device: SignerId, announce: Announce) {
+    fn hear(self: &Arc<Self>, device: SignerId, announce: Announce) {
+        let full = announce.full;
         let mut held = self.held.lock().expect("held");
         let holdings = held.entry(device).or_default();
+        let live_logs = live::announced_hints(holdings, &announce);
         // Always take the holdings lock before the range cache: complete range rounds use the same order, so a
         // legacy update cannot race between checking a root and publishing its replacement.
         let mut ranges = self.ranges.lock().expect("ranges");
@@ -2925,8 +2945,10 @@ impl Shared {
             held.remove(&device);
             ranges.forget(device);
         }
+        let admitted = held.contains_key(&device);
         drop(ranges);
         drop(held);
+        if admitted { self.live_announced(device, full, &live_logs); }
         self.jobs.stir();
     }
 
