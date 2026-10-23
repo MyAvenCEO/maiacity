@@ -2331,9 +2331,9 @@ impl Shared {
         peers.get(&endpoint).filter(|p| p.conn.close_reason().is_none()).cloned()
     }
 
-    /// A connection whose hellos proved `device`, dialed or accepted: the one to its endpoint from now on, which its
-    /// blob connections reach too, through the node's relay if it has one. A new connection starts their talk over:
-    /// the node tells the peer all its holdings again, at once.
+    /// A connection whose hellos proved `device`, dialed or accepted. Control selects its live peer, preferring
+    /// the lower endpoint's outgoing connection for crossed dials to the same device. This returns the actual new
+    /// connection for its caller to serve, even if it is not selected; the node announces its holdings again.
     fn connected(self: &Arc<Self>, conn: Connection, device: SignerId) -> Peer {
         let endpoint = conn.remote_id();
         let peer = Peer { conn, device, endpoint, since: jobs::now_ms() };
