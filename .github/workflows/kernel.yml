@@ -79,6 +79,7 @@ jobs:
           ./src/lib/render/lint.test.js
           ./src/lib/markdown/
           ./src/lib/avendb/
+          ./scripts/diagnostics/network-probe.test.mjs
           ./api/test/
 
   probes:
