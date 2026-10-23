@@ -1262,8 +1262,18 @@ async fn a_note_takes_proposals_merges_and_forks_and_the_database_shows_every_re
     let text = log.to_string();
     assert!(!text.contains("Corn first") && !text.contains("Plant beans"), "no note's text in its history: sealed");
     // the server relays her entries and opens none of them: its rows are sealed
-    let sealed = move |lab: &Lab, me| lab.fetched(me, variant) > 0 && lab.item(me, note).is_none();
-    until("the server keeps her entries, sealed", || server.read(sealed)).await;
+    // Temporary failure-only diagnostics: preserve the predicate, 60 s deadline and 50 ms cadence.
+    let sealed = move |lab: &Lab, me| (lab.fetched(me, variant), lab.item(me, note).is_some());
+    let end = Instant::now() + Duration::from_secs(60);
+    loop {
+        let (variant_writes, note_opened) = server.read(sealed).await;
+        if variant_writes > 0 && !note_opened {
+            break;
+        }
+        assert!(Instant::now() < end,
+            "the server keeps her entries, sealed, within 60 s: variant_writes={variant_writes}, note_opened={note_opened}");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
     for n in [first.node(), &server] {
         n.shutdown().await.expect("the node shuts down");
     }
