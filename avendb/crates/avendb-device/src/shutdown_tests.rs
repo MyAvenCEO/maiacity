@@ -181,3 +181,116 @@ async fn failed_provisional_save_retains_owner_after_constructor_and_host_close_
     assert_eq!(service.provisional.lock().unwrap().len(), 1);
     std::fs::rename(dir.join("staging-held"), dir.join("new")).unwrap();
 }
+
+// ShutdownOwnership.unfinished_owner_retained and failed_trace_retains apply to
+// hosted drives too: closed admission and a failed save do not discharge the
+// drive's fence obligation. This exercises the real eject/aggregate close paths.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn failed_drive_eject_and_host_close_retain_hosted_owner_and_writer() {
+    let folder = Folder::new();
+    let volumes = folder.0.join("Volumes");
+    let volume = volumes.join("Photos");
+    std::fs::create_dir_all(&volume).unwrap();
+    let (host, _sheets) = host(Config {
+        dir: folder.0.join("mac"),
+        direct: false,
+        volumes: Some(volumes),
+        webtransport: None,
+    })
+    .unwrap();
+    let service = host.service.clone();
+    let store = drive::store(&volume);
+    let reader = disk::open(&store).unwrap();
+    let mut w = world();
+    let me = w.mac_a;
+    let node = Arc::new(
+        Node::spawn(
+            w.lab.split(me, &[], [92; 32]),
+            me,
+            Options {
+                shelf: Some(reader.clone()),
+                ..Options::local()
+            },
+        )
+        .await
+        .unwrap(),
+    );
+    service.drives.fixture_host(volume.clone(), node.clone());
+    // There is no main or provisional device that could accidentally keep this
+    // drive alive after its test-owned Arc is gone.
+    assert!(host.node().is_none());
+    assert!(service.provisional.lock().unwrap().is_empty());
+    assert!(reader.writer().is_err());
+    tokio::time::timeout(Duration::from_secs(30), async {
+        while node.behind().await {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+
+    // Withhold only this disposable drive's staging directory. Eject must stop
+    // at the failed final save, before reaching the platform's eject command.
+    let dir = store.join(format!("g{FLOOR}"));
+    std::fs::rename(dir.join("new"), dir.join("staging-held")).unwrap();
+    node.try_act(|lab, me| {
+        let vault = lab.vault_of(me).unwrap();
+        lab.create(
+            me,
+            vault,
+            vault,
+            "note",
+            &[],
+            document("Pending", "Unsaved hosted drive", me),
+        )
+    })
+    .await
+    .unwrap()
+    .unwrap();
+    let retained = Arc::downgrade(&node);
+    drop(node);
+    let ejected = tokio::time::timeout(
+        Duration::from_secs(30),
+        service.eject_drive(volume.to_str().unwrap()),
+    )
+    .await
+    .unwrap()
+    .unwrap_err();
+    assert!(
+        format!("{ejected:#}").contains("final save:"),
+        "{ejected:#}"
+    );
+    assert!(
+        retained.upgrade().is_some(),
+        "failed eject retains the hosted owner after every test Arc was dropped"
+    );
+    assert!(
+        reader.writer().is_err(),
+        "failed eject cannot release the drive's writer"
+    );
+    {
+        let closed = retained.upgrade().unwrap();
+        assert!(closed.try_act(|_, _| ()).await.is_err());
+    }
+
+    let first = tokio::time::timeout(Duration::from_secs(30), host.close())
+        .await
+        .unwrap()
+        .unwrap_err()
+        .to_string();
+    assert!(first.contains("hosted drives did not close"), "{first}");
+    assert!(first.contains("final save:"), "{first}");
+    assert_eq!(host.close().await.unwrap_err().to_string(), first);
+    assert!(host.call("open", vec![]).await.get("error").is_some());
+    assert!(host.node().is_none());
+    assert!(service.provisional.lock().unwrap().is_empty());
+    assert!(
+        retained.upgrade().is_some(),
+        "failed aggregate close retains the hosted owner"
+    );
+    assert!(
+        reader.writer().is_err(),
+        "repeated close failure cannot permit another drive writer"
+    );
+    std::fs::rename(dir.join("staging-held"), dir.join("new")).unwrap();
+}

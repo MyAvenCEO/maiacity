@@ -217,6 +217,19 @@ impl Drop for Busy<'_> {
 }
 
 impl Drives {
+    /// Registers only a disposable fixture node; real publication still uses Service::hosting.
+    #[cfg(test)]
+    pub(crate) fn fixture_host(&self, volume: PathBuf, node: Arc<Node>) {
+        let id = node.device();
+        let hosted = Hosted {
+            node,
+            volume,
+            name: "Shutdown fixture".into(),
+            carded: Arc::new(AtomicBool::new(false)),
+        };
+        assert!(self.hosted.lock().expect("hosted").insert(id, hosted).is_none());
+    }
+
     fn busy(&self, volume: &Path) -> Result<Busy<'_>> {
         if !self.busy.lock().expect("busy").insert(volume.to_path_buf()) {
             bail!("something is under way on this drive already");
