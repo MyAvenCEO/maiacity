@@ -1,0 +1,69 @@
+name: Network capacity audit
+
+# Manual, bounded synthetic traffic from the actual production host. This does
+# not deploy, restart, change auth, or read the application's store. Results have
+# timings and byte counts only; no private keys, peer IDs, or server IPs.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: network-capacity-audit
+  cancel-in-progress: false
+
+jobs:
+  server:
+    name: Measure the server's internet connection
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/actions/prod-ssh
+            scripts/diagnostics
+      - uses: ./.github/actions/prod-ssh
+        with:
+          host: api.maia.city
+          ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
+          known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      - name: One bounded probe, running on the server
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The script travels over trusted SSH stdin; it is not installed.
+          # curl is bounded per request; timeout also bounds the whole remote job.
+          ssh -o BatchMode=yes -o ConnectTimeout=10 prod 'timeout 110s python3 -' \
+            < scripts/diagnostics/network-probe.py > server-network.json
+      - name: Preserve measurements, including incomplete probes
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-network-${{ github.run_id }}
+          path: server-network.json
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Show measured rates
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          from pathlib import Path
+          path = Path('server-network.json')
+          if not path.exists() or not path.stat().st_size:
+              print('No server measurement was produced. Check the SSH/probe step.')
+          else:
+              data = json.loads(path.read_text())
+              print('Bounded single-stream measurements from the production host. These are not a maximum-line-rate or avenDB-throughput claim.\n')
+              print('| Test | Complete | Mbps | Seconds |')
+              print('|---|---|---:|---:|')
+              for row in data.get('results', []):
+                  rate = row.get('end_to_end_mbps')
+                  seconds = row.get('time_total')
+                  rate = f'{rate:.2f}' if row.get('complete') and rate is not None else '—'
+                  seconds = f'{seconds:.3f}' if seconds is not None else '—'
+                  print(f"| {row['name']} | {row['complete']} | {rate} | {seconds} |")
+          PY

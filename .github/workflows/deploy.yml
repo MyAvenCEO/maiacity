@@ -2,7 +2,8 @@ name: Deploy the site
 
 # maia.city is served by our own server: its Caddy serves the built site from /opt/maia-city/site (and the API, and the
 # site's media from avenDB's feed). Each build goes up beside the last and a link switches to it, so a page never points
-# at chunks that are gone; the last few builds stay for a quick way back. Media never ships with the site: every file
+# at missing chunks: their immutable assets are published at shared URLs before the switch. Five builds stay for a
+# quick way back; their chunks stay for at least 30 days for open pages. Media never ships with the site: every file
 # comes from avenDB's feed (api.maia.city/vault/files) by its BLAKE3 hash. maia.city and www point at the server (A
 # records, Hetzner DNS).
 on:
@@ -42,6 +43,12 @@ jobs:
 
       - run: bun install --frozen-lockfile
 
+      - name: Check release retention and actual Caddy routing
+        run: |
+          mkdir -p "$RUNNER_TEMP/site-caddy"
+          docker run --rm -v "$RUNNER_TEMP/site-caddy:/out" --entrypoint cp caddy:2-alpine /usr/bin/caddy /out/caddy
+          CADDY="$RUNNER_TEMP/site-caddy/caddy" python3 -m unittest discover -s deploy -p 'test_publish_site.py' -v
+
       - run: bun run check
 
       # stops if a published post names a file the site's media list (src/lib/media/manifest.json) does not hold
@@ -74,7 +81,9 @@ jobs:
       # the server's own action (.github/actions/prod-ssh): its host keys pinned, never taken on trust
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: .github/actions
+          sparse-checkout: |
+            .github/actions
+            deploy
       - uses: ./.github/actions/prod-ssh
         with:
           host: ${{ env.API_HOST }}
@@ -86,19 +95,42 @@ jobs:
         with:
           name: site
 
+      - name: Validate and activate the immutable asset route
+        run: |
+          # Fail before changing routing if the publisher's standard-library runtime is absent.
+          ssh prod "python3 --version && mkdir -p '$APP_DIR/site/releases'"
+          # The candidate is outside every public file root. Validate with the running
+          # container's actual modules and environment before updating its bound file.
+          scp deploy/Caddyfile "prod:$APP_DIR/site/.Caddyfile-$GITHUB_SHA"
+          ssh prod "bash -s -- '$APP_DIR' '$GITHUB_SHA'" <<'SH'
+          set -euo pipefail
+          site_root="$1/site"
+          config="$1/deploy/Caddyfile"
+          candidate="$site_root/.Caddyfile-$2"
+          digest=$(sha256sum "$candidate" | cut -d ' ' -f 1)
+          applied="$site_root/.caddy-applied"
+          # Reusing unchanged routes avoids reconnecting relay WebSockets on every site deploy.
+          # Record only a successful reload: an interrupted/failed attempt is retried next time.
+          if cmp -s "$candidate" "$config" && [ "$(cat "$applied" 2>/dev/null || true)" = "$digest" ]; then
+            rm "$candidate"
+            exit 0
+          fi
+          docker exec maia-city-caddy caddy validate --config "/srv/site/.Caddyfile-$2" --adapter caddyfile
+          # Preserve the inode mounted into the running container.
+          cat "$candidate" > "$config"
+          docker exec maia-city-caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+          printf '%s\n' "$digest" > "$applied.next"
+          mv -f "$applied.next" "$applied"
+          rm "$candidate"
+          SH
+
       - name: Put the build on the server and switch to it
         run: |
           ssh prod "mkdir -p $APP_DIR/site/releases/$GITHUB_SHA"
           ssh prod "tar -xzf - -C $APP_DIR/site/releases/$GITHUB_SHA" < site.tgz
-          ssh prod "bash -s" <<EOS
-          set -e
-          cd $APP_DIR/site
-          # a relative link: it resolves the same inside Caddy's container
-          ln -sfn releases/$GITHUB_SHA current.next && mv -Tf current.next current
-          # the newest five builds stay
-          ls -1dt releases/*/ | tail -n +6 | xargs -r rm -rf
-          echo "live: \$(readlink current) · \$(ls releases | wc -l) builds kept"
-          EOS
+          # Python's standard library publishes complete immutable assets, then switches the
+          # relative current symlink atomically and applies the five-release cleanup window.
+          ssh prod "python3 - '$APP_DIR/site' '$GITHUB_SHA'" < deploy/publish-site.py
 
       - name: Through the front door (HTTPS from the server)
         run: |

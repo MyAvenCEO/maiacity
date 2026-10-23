@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-OCCBdJuWKuMdRo3X0l6JX8nN+hsW5tz46LtXRtvdu2M='; style-src 'sha256-w53B2D4dSJ+EfZCnofvlrMLFgmzTFuqhMdJESzPE3Io='; connect-src 'self' https://speed.cloudflare.com; base-uri 'none'; form-action 'none'"><meta name="robots" content="noindex,nofollow"><title>Maia network check</title>
+<style>
+:root{color-scheme:light;font:17px/1.5 system-ui,sans-serif;background:#f2f0e8;color:#233c2d}*{box-sizing:border-box}body{max-width:48rem;margin:auto;padding:1.4rem 1.2rem calc(2rem + env(safe-area-inset-bottom))}h1{font-size:2rem;line-height:1.1}button,input,select{font:inherit}button{border:0;border-radius:2rem;padding:.8rem 1.2rem;background:#244c35;color:white;min-height:48px}button:disabled{opacity:.5}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #c88721;outline-offset:3px}.actions{display:flex;gap:.6rem;flex-wrap:wrap}label{display:block;margin:1rem 0}input,select{display:block;width:100%;padding:.6rem;border:1px solid #d0cabb;border-radius:.5rem;background:#fffdf6;color:inherit}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:.7rem .4rem;border-bottom:1px solid #d0cabb;text-align:left}small{color:#526557}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#fffdf6;padding:1rem;border-radius:.7rem;font-size:.75rem}.scroll{overflow-x:auto}#status{min-height:3rem}a{color:inherit}
+</style></head><body>
+<h1>Check this device’s connection</h1>
+<p>Run this on the iPhone or iPad you want to measure. Keep it in the foreground and pause other downloads. The result describes this device’s current connection.</p>
+<p><small>One run uses up to 40 MiB of test downloads and 8 MiB of random upload data, plus at most 256 KiB to find the current public app file. Each transfer stops after 15 seconds. No account, passkey, vault, or stored app data is read or changed. Results stay on this page until you copy or save them. Test traffic goes to Maia City and Cloudflare, which receive ordinary connection information such as your IP address.</small></p>
+<label>This device<select id="device"><option value="iPhone">iPhone</option><option value="iPad">iPad</option><option value="Mac">Mac</option><option value="other">Another device</option></select></label>
+<label>Connection used (optional)<input id="connection" maxlength="100" placeholder="For example: home Wi-Fi or mobile data" autocomplete="off"></label>
+<div class="actions"><button id="start">Run connection check</button><button id="cancel" disabled>Stop</button></div>
+<p id="status" role="status" aria-live="polite">Ready. Nothing runs until you press the button.</p>
+<div class="scroll"><table><thead><tr><th>Test</th><th>Mbps</th><th>Seconds</th><th>Result</th></tr></thead><tbody id="rows"></tbody></table></div>
+<p><small>Mbps means millions of bits per second. These are bounded single-stream tests, not a promise of the connection’s maximum speed. The Maia file measures its public web-serving path; avenDB uses a different protocol. App sync also spends time preparing requests, checking edits, and saving data.</small></p>
+<div class="actions"><button id="copy" disabled>Copy results</button><button id="save" disabled>Save results</button></div>
+<details><summary>Measurement details</summary><pre id="raw">No results yet.</pre></details>
+<p><small>Endpoints are documented by <a href="https://github.com/cloudflare/speedtest" rel="noreferrer">Cloudflare’s speed-test project</a>. This page does not load its analytics or measurement library.</small></p>
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+let report = null, active = null, running = false, stopped = false;
+const maxMs = 15000, MiB = 1048576;
+const labels = {latency:'Cloudflare small request',maia:'Maia public file',download:'Cloudflare download',upload:'Cloudflare upload'};
+function draw() {
+ $('rows').replaceChildren();
+ for (const r of report?.results ?? []) {
+  const tr = document.createElement('tr');
+  for (const value of [labels[r.kind],r.mbps == null ? '—' : r.mbps.toFixed(2),(r.elapsedMs/1000).toFixed(2),r.complete ? 'Complete' : r.error || 'Incomplete']) {
+   const td=document.createElement('td');td.textContent=value;tr.append(td);
+  }
+  $('rows').append(tr);
+ }
+ $('raw').textContent=JSON.stringify(report,null,2);
+}
+async function measure(kind,url,bytes,upload) {
+ if(stopped) throw new Error('Stopped');
+ const ctrl=new AbortController();active=ctrl;
+ const timeout=setTimeout(()=>ctrl.abort(new Error('15-second limit')),maxMs);
+ const started=performance.now(),r={kind,startedUtc:new Date().toISOString(),requestedBytes:bytes,receivedBytes:0,sentBytes:null,elapsedMs:0,complete:false,mbps:null};
+ report.results.push(r);$('status').textContent=`Measuring: ${labels[kind]}…`;
+ const u=new URL(url,location.href);u.searchParams.set('audit',crypto.randomUUID());
+ try {
+  const init={signal:ctrl.signal,cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer'};
+  if(kind==='maia') init.headers={Range:`bytes=0-${bytes-1}`};
+  if(upload){init.method='POST';init.body=upload;init.headers={'Content-Type':'application/octet-stream'};}
+  const response=await fetch(u,init);r.httpStatus=response.status;r.headersMs=performance.now()-started;
+  r.encoding=response.headers.get('content-encoding') || 'identity';
+  if(!response.ok) throw new Error(`HTTP ${response.status}`);
+  if(kind==='maia' && response.status!==206) throw new Error('Server did not honor the bounded byte range');
+  const reader=response.body?.getReader();
+  if(reader) for(;;){const part=await reader.read();if(part.done)break;r.receivedBytes+=part.value.byteLength;if(r.receivedBytes>(upload?65536:Math.max(bytes,1024))){await reader.cancel();throw new Error('Response exceeded the byte limit');}}
+  r.elapsedMs=performance.now()-started;
+  if(upload){r.sentBytes=upload.byteLength;r.complete=true;}
+  else r.complete=r.receivedBytes===bytes;
+  const timing=performance.getEntriesByName(u.href).filter(e=>e.entryType==='resource').at(-1);
+  if(timing)r.resourceTiming={encodedBodySize:timing.encodedBodySize,decodedBodySize:timing.decodedBodySize,transferSize:timing.transferSize,nextHopProtocol:timing.nextHopProtocol,duration:timing.duration};
+  let n=upload?upload.byteLength:r.receivedBytes;
+  if(r.encoding!=='identity' && !upload){
+   if(timing?.encodedBodySize>0)n=timing.encodedBodySize;
+   else throw new Error('Compressed transfer has no wire-byte count');
+  }
+  if(!r.complete)throw new Error('Received byte count did not match');
+  if(kind!=='latency')r.mbps=n*8/(r.elapsedMs/1000)/1e6;
+ }catch(e){r.elapsedMs=performance.now()-started;r.error=ctrl.signal.aborted?(stopped?'Stopped or page backgrounded':'15-second limit'):String(e.message||e);ctrl.abort();r.complete=false;r.mbps=null;}
+ finally{clearTimeout(timeout);if(active===ctrl)active=null;draw();}
+}
+async function currentFile() {
+ const ctrl=new AbortController();active=ctrl;
+ const timeout=setTimeout(()=>ctrl.abort(),maxMs),started=performance.now(),chunks=[];
+ let bytes=0;
+ try {
+  const url=new URL('/release.json',location.href);url.searchParams.set('audit',crypto.randomUUID());
+  const response=await fetch(url,{signal:ctrl.signal,cache:'no-store',credentials:'omit',referrerPolicy:'no-referrer'});
+  if(!response.ok)throw new Error(`Release list: HTTP ${response.status}`);
+  const reader=response.body?.getReader();if(!reader)throw new Error('Release list cannot be streamed');
+  for(;;){const part=await reader.read();if(part.done)break;bytes+=part.value.byteLength;if(bytes>262144){await reader.cancel();throw new Error('Release list exceeded 256 KiB');}chunks.push(part.value);}
+  const all=new Uint8Array(bytes);let at=0;for(const chunk of chunks){all.set(chunk,at);at+=chunk.length;}
+  const manifest=JSON.parse(new TextDecoder().decode(all));
+  if(manifest.kind!=='maia.city release v1' || !/^[0-9a-f]{40}$/.test(manifest.commit || '') || !manifest.files || typeof manifest.files!=='object')throw new Error('Release list has an unexpected format');
+  const path=Object.keys(manifest.files).sort().find(key=>/^_app\/immutable\/(?:workers\/)?assets\/avendb_browser_bg[.-][A-Za-z0-9_-]+\.wasm$/.test(key) && /^[0-9a-f]{64}$/.test(manifest.files[key]));
+  if(!path)throw new Error('Release list has no current avenDB app file');
+  report.release={commit:manifest.commit,file:path,manifestBytes:bytes,manifestMs:performance.now()-started};
+  return '/'+path;
+ }catch(error){ctrl.abort();throw error;}
+ finally{clearTimeout(timeout);if(active===ctrl)active=null;}
+}
+function stop(){stopped=true;active?.abort();}
+document.addEventListener('visibilitychange',()=>{if(running && document.hidden)stop();});
+$('cancel').addEventListener('click',stop);
+$('start').addEventListener('click',async()=>{
+ if(running)return;running=true;stopped=false;$('start').disabled=true;$('cancel').disabled=false;$('copy').disabled=true;$('save').disabled=true;
+ report={version:1,startedUtc:new Date().toISOString(),declaredDevice:$('device').value,connectionNote:$('connection').value,standalone:matchMedia('(display-mode: standalone)').matches || navigator.standalone===true,userAgent:navigator.userAgent,method:'Sequential bounded single-stream HTTP; credentials omitted; fresh cache-busted URLs; results local only',results:[]};draw();
+ try {
+  for(let i=0;i<3 && !stopped;i++)await measure('latency','https://speed.cloudflare.com/__down?bytes=0',0);
+  if(!stopped){try{const path=await currentFile();if(!stopped)await measure('maia',path,8*MiB);}catch(e){report.results.push({kind:'maia',complete:false,mbps:null,elapsedMs:0,error:String(e.message||e)});draw();}}
+  if(!stopped)await measure('download','https://speed.cloudflare.com/__down?bytes=33554432',32*MiB);
+  if(!stopped){const bytes=new Uint8Array(8*MiB);for(let i=0;i<bytes.length;i+=65536)crypto.getRandomValues(bytes.subarray(i,i+65536));await measure('upload','https://speed.cloudflare.com/__up',bytes.byteLength,bytes);}
+ }finally{report.finishedUtc=new Date().toISOString();report.stopped=stopped;running=false;$('start').disabled=false;$('cancel').disabled=true;$('copy').disabled=false;$('save').disabled=false;$('status').textContent=stopped?'Stopped. Partial results are shown.':'Finished. Copy or save these results for the audit.';draw();}
+});
+$('copy').addEventListener('click',async()=>{try{await navigator.clipboard.writeText(JSON.stringify(report,null,2));$('status').textContent='Results copied.';}catch{$('raw').parentElement.open=true;$('status').textContent='Copy was unavailable. Results are expanded below, or use Save results.';}});
+$('save').addEventListener('click',()=>{const blob=new Blob([JSON.stringify(report,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=`maia-network-${report.declaredDevice}-${Date.now()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);});
+</script></body></html>
