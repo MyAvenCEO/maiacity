@@ -193,3 +193,127 @@ async fn rehearsal_inventory() -> anyhow::Result<()> {
     );
     Ok(())
 }
+
+/// Aggregate-only diagnosis of an explicitly copied store after an attempted upgrade.
+/// No identity is unlocked, no files are written, and no ids or records are printed.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "manual disposable release rehearsal diagnosis"]
+async fn rehearsal_saved_delta() -> anyhow::Result<()> {
+    use anyhow::{Context, ensure};
+    use avendb::{
+        id::BlobId,
+        policy::{self, Action},
+    };
+    use std::{
+        collections::{BTreeMap, BTreeSet},
+        path::PathBuf,
+    };
+    let source = PathBuf::from(
+        std::env::var_os("AVENDB_REHEARSAL_SOURCE").context("explicit source copy required")?,
+    )
+    .canonicalize()?;
+    let target = PathBuf::from(
+        std::env::var_os("AVENDB_REHEARSAL_COPY").context("explicit target copy required")?,
+    )
+    .canonicalize()?;
+    ensure!(
+        source.starts_with("/private/tmp")
+            && target.starts_with("/private/tmp")
+            && target.join(".avendb-release-rehearsal").is_file(),
+        "disposable copies required"
+    );
+    let from = disk::open(&source)?;
+    let to = disk::open(&target)?;
+    let (_a, (before, before_keys)) = edits::Edits::open(from).await?;
+    let (_b, (after, after_keys)) = edits::Edits::open(to.clone()).await?;
+    let meta = to
+        .names("meta/")
+        .await?
+        .last()
+        .cloned()
+        .context("Meta absent")?;
+    let meta: serde_json::Value =
+        serde_json::from_slice(&to.get(&meta).await?.context("Meta missing")?)?;
+    let own = meta["device"].as_str().context("Meta device absent")?;
+    let a: BTreeSet<_> = before.iter().map(|s| s.edit.id()).collect();
+    let b: BTreeSet<_> = after.iter().map(|s| s.edit.id()).collect();
+    let fresh: Vec<_> = after.iter().filter(|s| !a.contains(&s.edit.id())).collect();
+    let mut actions = BTreeMap::new();
+    for signed in &fresh {
+        let kind = match signed.edit.action {
+            Action::Genesis { .. } => "genesis",
+            Action::Share(_) => "share",
+            Action::Revoke(_) => "revoke",
+            Action::Settings { .. } => "settings",
+            Action::Write { .. } => "write",
+            Action::Mark { .. } => "mark",
+            Action::Claim { .. } => "claim",
+            Action::Keys { .. } => "keys",
+            Action::Wraps { .. } => "wraps",
+            Action::Checkpoint { .. } => "checkpoint",
+            Action::Snapshot { .. } => "snapshot",
+        };
+        *actions.entry(kind).or_insert(0usize) += 1;
+    }
+    let ka: BTreeSet<_> = before_keys.iter().map(|k| BlobId::of(k)).collect();
+    let kb: BTreeSet<_> = after_keys.iter().map(|k| BlobId::of(k)).collect();
+    let before_edits: Vec<_> = before.iter().map(|s| s.edit.clone()).collect();
+    let before_ids: Vec<_> = before.iter().map(|s| s.edit.id()).collect();
+    let replay = policy::replay(&before_edits);
+    let roundtrip =
+        policy::Replay::from_view(&replay.to_view(before.len()), &before_edits, &before_ids)
+            .context("original replay view did not decode")?
+            .0;
+    eprintln!(
+        "REHEARSAL raw view roundtrip replay_equal={} state_equal={} ids_equal={} stood_equal={} tail_equal={}",
+        replay == roundtrip,
+        replay.state == roundtrip.state,
+        replay.ids == roundtrip.ids,
+        replay.stood == roundtrip.stood,
+        replay.same_tail(&roundtrip)
+    );
+    eprintln!(
+        "REHEARSAL raw view cap_groups_before={} cap_groups_after={} shares_equal={} view_bytes_equal={}",
+        replay
+            .state
+            .shares()
+            .iter()
+            .filter(|s| s.share.group.is_some())
+            .count(),
+        roundtrip
+            .state
+            .shares()
+            .iter()
+            .filter(|s| s.share.group.is_some())
+            .count(),
+        replay.state.shares() == roundtrip.state.shares(),
+        replay.to_view(before.len()) == roundtrip.to_view(before.len())
+    );
+    ensure!(
+        replay == roundtrip && replay.same_tail(&roundtrip),
+        "raw stored-view roundtrip changed replay semantics"
+    );
+    let sa = replay.state;
+    let sb = policy::view(&after.iter().map(|s| s.edit.clone()).collect::<Vec<_>>());
+    eprintln!(
+        "REHEARSAL delta before={} after={} removed={} added={} own_added={} valid_added={} actions={actions:?} keys_before={} keys_after={} keys_removed={} keys_added={} policy_equal={} vaults_equal={} shares_equal={} entries_equal={}",
+        a.len(),
+        b.len(),
+        a.difference(&b).count(),
+        fresh.len(),
+        fresh
+            .iter()
+            .filter(|s| s.edit.author.to_hex() == own)
+            .count(),
+        fresh.iter().filter(|s| s.verify().is_ok()).count(),
+        ka.len(),
+        kb.len(),
+        ka.difference(&kb).count(),
+        kb.difference(&ka).count(),
+        sa == sb,
+        sa.vaults() == sb.vaults(),
+        sa.shares() == sb.shares(),
+        sa.entries() == sb.entries()
+    );
+    Ok(())
+}

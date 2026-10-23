@@ -35,6 +35,15 @@ fn asking(entry: EntryId) -> Asking {
     request.ask.haves.insert(LogId::Entry(entry), vec![]);
     request
 }
+// Receiving the listener's Hello FIN does not mean Protocol::accept has installed
+// the peer yet. These raw endpoints cannot accept a second, reverse-direction dial.
+async fn registered(node: &Node, endpoint: iroh::EndpointId) {
+    n0_future::time::timeout(Duration::from_secs(5), async {
+        while node.shared.live(endpoint).is_none() {
+            n0_future::time::sleep(Duration::from_millis(1)).await;
+        }
+    }).await.expect("the listener registers the authenticated raw peer");
+}
 async fn exchange(peer: &Peer, request: Request) -> Result<Vec<u8>> {
     let request = request.encode()?;
     n0_future::time::timeout(
@@ -440,6 +449,7 @@ async fn actual_legacy_peer_refusal_reconstructs_original_request_and_is_remembe
         hello.verify(&exporter, false, phone.id().as_bytes()),
         Some(receiver)
     );
+    registered(&phone, raw.id()).await;
     let probes = Arc::new(AtomicUsize::new(0));
     let pages = Arc::new(AtomicUsize::new(0));
     let (seen, sent) = (probes.clone(), pages.clone());
@@ -565,6 +575,7 @@ async fn accepted_sparse_page_then_reset_counts_with_legacy_completion() {
     send.finish().unwrap();
     let hello = avendb::sign::Hello::from_wire(&recv.read_to_end(64 << 10).await.unwrap()).unwrap();
     assert_eq!(hello.verify(&exporter, false, phone.id().as_bytes()), Some(receiver));
+    registered(&phone, raw.id()).await;
     let fetches = Arc::new(AtomicUsize::new(0));
     let legacy_edits = Arc::new(AtomicUsize::new(0));
     let legacy_pages = Arc::new(AtomicUsize::new(0));

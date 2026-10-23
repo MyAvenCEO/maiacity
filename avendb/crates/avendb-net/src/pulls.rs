@@ -664,6 +664,13 @@ mod tests {
                 hello.verify(&exporter, false, phone.id().as_bytes()),
                 Some(receiver)
             );
+            // Hello FIN can arrive before the listener registers the peer. The raw
+            // fixture serves only this connection and cannot accept a reverse dial.
+            time::timeout(Duration::from_secs(5), async {
+                while phone.shared.live(raw.id()).is_none() {
+                    time::sleep(Duration::from_millis(1)).await;
+                }
+            }).await.expect("the listener registers the authenticated raw peer");
             let seen = Mutex::new(Vec::new());
             let serving = async {
                 loop {

@@ -82,7 +82,9 @@ Upgrade the existing store in place. Stop the previous app/server writer before 
 older binaries do not honor the new native writer lock. Keep an offline copy of the store and the previous
 app artifact before updating. The upgrade preserves the existing shelf generation, account metadata,
 identity and immutable edit history. New signer ledgers and derived range summaries are additive. An
-engine-version change may require one cold replay before the new encrypted view is saved.
+engine-version change may require one cold replay before the new encrypted view is saved. Stored views now
+preserve every share's cap-group binding; earlier derived-view versions are rejected and rebuilt from the
+signed history before use.
 
 Native stores now require explicit write ownership: `disk::open` returns a reader; acquire `Shelf::writer`
 for standalone writes, or use `Node::writer_shelf` while a Node owns the store. Await `shutdown` before

@@ -176,6 +176,38 @@ async fn observe(device: &Device) -> Result<Observed> {
         })
         .await
 }
+fn compare(stage: &str, expected: &Observed, actual: &Observed) -> bool {
+    let same_set = set_digest(
+        expected.ids.iter().map(|id| id.0).collect(),
+        "release rehearsal edit set 1",
+    ) == set_digest(
+        actual.ids.iter().map(|id| id.0).collect(),
+        "release rehearsal edit set 1",
+    );
+    let a: BTreeMap<_, _> = expected.records.iter().copied().collect();
+    let b: BTreeMap<_, _> = actual.records.iter().copied().collect();
+    eprintln!(
+        "REHEARSAL {stage} device={} vault={} edits_before={} edits_after={} ids_order={} ids_set={} keys_before={} keys_after={} keys_equal={} policy_equal={} vaults_equal={} shares_equal={} entries_equal={} records_before={} records_after={} records_order={} records_by_id={}",
+        expected.device == actual.device,
+        expected.vault == actual.vault,
+        expected.ids.len(),
+        actual.ids.len(),
+        expected.ids == actual.ids,
+        same_set,
+        expected.keys.len(),
+        actual.keys.len(),
+        expected.keys == actual.keys,
+        expected.state == actual.state,
+        expected.state.vaults() == actual.state.vaults(),
+        expected.state.shares() == actual.state.shares(),
+        expected.state.entries() == actual.state.entries(),
+        expected.records.len(),
+        actual.records.len(),
+        expected.records == actual.records,
+        a == b
+    );
+    expected == actual
+}
 fn set_digest(mut ids: Vec<[u8; 32]>, purpose: &str) -> [u8; 32] {
     ids.sort();
     let mut h = hash::Hasher::new(purpose);
@@ -261,13 +293,29 @@ async fn run() -> Result<()> {
         "rehearsal did not recover existing data"
     );
     let cold = began.elapsed();
+    eprintln!(
+        "REHEARSAL cold inventory verified edits={} keys={} visible_records={} seconds={:.3}",
+        expected.ids.len(),
+        expected.keys.len(),
+        expected.records.len(),
+        cold.as_secs_f64()
+    );
     first.close().await?;
+    let stable_close = compare("closed", &expected, &observe(&first).await?);
     let began = Instant::now();
     let warm = Device::open_by_touch(start()?, &meta, &ceremony).await?;
     ensure!(
-        observe(&warm).await? == expected,
-        "clean reopen changed identity, history, keys, policy or visible records"
+        warm.node()
+            .read(
+                |lab, me| lab.perf(me)["counts"]["replay: from its stored view"]
+                    .as_u64()
+                    .unwrap_or(0)
+            )
+            .await
+            == 1,
+        "clean reopen did not exercise its stored view"
     );
+    let stable_warm = compare("warm", &expected, &observe(&warm).await?);
     let warm_time = began.elapsed();
     warm.close().await?;
     // Both derived views and opened-key slots are disposable. Simulate an interrupted
@@ -287,9 +335,18 @@ async fn run() -> Result<()> {
     let began = Instant::now();
     let recovered = Device::open_by_touch(start()?, &meta, &ceremony).await?;
     ensure!(
-        observe(&recovered).await? == expected,
-        "corrupt-slot fallback changed recovered data"
+        recovered
+            .node()
+            .read(
+                |lab, me| lab.perf(me)["counts"]["replay: from its stored view"]
+                    .as_u64()
+                    .unwrap_or(0)
+            )
+            .await
+            == 0,
+        "corrupted-slot reopen did not exercise full replay fallback"
     );
+    let stable_recovered = compare("recovered", &expected, &observe(&recovered).await?);
     let recovery = began.elapsed();
     recovered.close().await?;
     ensure!(
@@ -302,6 +359,10 @@ async fn run() -> Result<()> {
             "pre-existing immutable history or metadata changed"
         );
     }
+    ensure!(
+        stable_close && stable_warm && stable_recovered,
+        "reopen/recovery differed; see aggregate component checks"
+    );
     eprintln!(
         "REHEARSAL passed identity=true metadata=true immutable_history=true edits={} keys={} visible_records={} damaged_slots={} cold_s={:.3} warm_s={:.3} recovery_s={:.3}",
         expected.ids.len(),
