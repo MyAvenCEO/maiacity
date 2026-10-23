@@ -76,7 +76,7 @@ export function parse(n, text) {
 }
 
 /** The device's calls the page itself makes every few seconds, which say nothing new. */
-const POLLS = new Set(['run', 'agents', 'drives', 'changed', 'status', 'steps', 'size', 'moving', 'qrSvg', 'agentDevices', 'sessions']);
+const POLLS = new Set(['run', 'agents', 'drives', 'changed', 'stirred', 'status', 'steps', 'size', 'moving', 'qrSvg', 'agentDevices', 'sessions']);
 
 /**
  * Whether row `r` is routine: a call the page polls the device with, or the store's own block diagnostics, which

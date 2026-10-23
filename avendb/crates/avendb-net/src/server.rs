@@ -19,7 +19,7 @@ use avendb::sign::{self, Suite};
 use bytes::Bytes;
 use zeroize::{Zeroize as _, Zeroizing};
 
-use crate::{Node, Options, Shared, Shelf};
+use crate::{Node, Options, Shared, Shelf, Writer};
 
 /// The object on the server's shelf that holds its device's secret: in a folder, a file readable by its owner alone;
 /// in a bucket, sealed. With its suite where it isn't SLH-DSA (`sign::kept_secret`): a server made before the key move
@@ -36,8 +36,22 @@ pub const NEXT: &str = "device.next";
 /// (`Options::keep`). It hands its contact card to whoever asks, and the first human vault to claim it owns it. Once
 /// its key moved, it opens as its next key (`NEXT`).
 pub async fn open(shelf: Shelf, opts: Options) -> Result<Node> {
+    open_owned(shelf.writer()?, opts).await
+}
+
+/// Continue mutable startup with ownership already acquired, as a restore does.
+pub async fn open_owned(writer: Writer, opts: Options) -> Result<Node> {
+    let shelf = writer.shelf();
     let (secret, suite) = secret(&shelf).await?;
-    open_as(Some(shelf), "the server", &secret, suite, Options { keep: true, card: true, ..opts }).await
+    open_as(
+        Some(shelf.reader()),
+        "the server",
+        &secret,
+        suite,
+        Options { keep: true, card: true, ..opts },
+        Some(writer),
+    )
+    .await
 }
 
 /// An agent device on `shelf`, named `name`, with `opts` for its network: agentClaude on its person's Mac, as
@@ -47,8 +61,9 @@ pub async fn open(shelf: Shelf, opts: Options) -> Result<Node> {
 /// to a device vault under their aven (`Node::add_device_vault_with`); from then on it acts as that device vault by its
 /// own key.
 pub async fn open_agent(shelf: Shelf, name: &str, opts: Options) -> Result<Node> {
-    let (secret, suite) = secret(&shelf).await?;
-    open_agent_with(Some(shelf), name, &secret, suite, opts).await
+    let writer = shelf.writer()?;
+    let (secret, suite) = secret(&writer.shelf()).await?;
+    open_as(Some(shelf), name, &secret, suite, Options { card: true, ..opts }, Some(writer)).await
 }
 
 /// An agent device named `name` whose key is `secret`, in suite `suite`, which its person keeps elsewhere, never on
@@ -62,7 +77,7 @@ pub async fn open_agent_with(
     suite: Suite,
     opts: Options,
 ) -> Result<Node> {
-    open_as(shelf, name, secret, suite, Options { card: true, ..opts }).await
+    open_as(shelf, name, secret, suite, Options { card: true, ..opts }, None).await
 }
 
 /// The node of device `name` whose keys come from `secret`, in suite `suite`, on `shelf`, with `opts`: as the next key
@@ -72,43 +87,55 @@ pub async fn open_agent_with(
 /// names that isn't a device of a vault yet, as a shelf that lost the move would open, it doesn't open as: as a device
 /// of no vault, a server would take any stranger's claim. One whose key moved and whose shelf doesn't name the next
 /// key yet, as a move cut short before it could, it names now and opens as.
-async fn open_as(shelf: Option<Shelf>, name: &str, secret: &[u8; 32], suite: Suite, opts: Options) -> Result<Node> {
+async fn open_as(
+    shelf: Option<Shelf>,
+    name: &str,
+    secret: &[u8; 32],
+    suite: Suite,
+    opts: Options,
+    writer: Option<Writer>,
+) -> Result<Node> {
     let named = match &shelf {
         Some(shelf) => shelf.get(NEXT).await.context("the shelf's next key")?,
         None => None,
     };
     let next = named.map(|b| <[u8; 32]>::try_from(&b[..]).map(SignerId)).transpose();
     let next = next.map_err(|_| anyhow!("the shelf's {NEXT} holds no key's id"))?;
-    let spawn = |next: Option<SignerId>| {
+    let spawn = |next: Option<SignerId>, writer: Option<Writer>| {
         let opts = Options { shelf: shelf.clone(), ..opts.clone() };
         async move {
             let mut lab = Lab::with_entropy(*random()?);
             let me = match next {
-                Some(next) => lab.device_as(name, *secret, next).with_context(|| format!("{NEXT} names another's key"))?,
+                Some(next) => {
+                    lab.device_as(name, *secret, next).with_context(|| format!("{NEXT} names another's key"))?
+                }
                 None => lab.device_with_in(name, *secret, suite),
             };
             lab.device_keys(me, *secret);
-            Node::spawn(lab, me, opts).await
+            match writer {
+                Some(writer) => Node::spawn_owned(lab, me, opts, Some(writer)).await,
+                None => Node::spawn(lab, me, opts).await,
+            }
         }
     };
-    let node = spawn(next).await?;
+    let node = spawn(next, writer).await?;
     if next.is_some() && vault(&node).await.is_none() {
         tracing::warn!("avendb: {name}'s next key is a device of no vault on its shelf: it opens as its earlier key");
-        node.shutdown().await.ok();
-        return spawn(None).await;
+        node.shutdown().await?;
+        return spawn(None, None).await;
     }
     if next.is_some() {
         // the keeps the key it moved from held, carried to its next key where the move's claim didn't carry them
         let earlier = sign::DeviceKey::from_secret_in(*secret, suite).id();
-        if let Err(why) = node.act(move |lab, me| lab.finish_move(me, &[(earlier, me)])).await {
+        if let Err(why) = node.try_act(move |lab, me| lab.finish_move(me, &[(earlier, me)])).await? {
             tracing::warn!("avendb: {name}'s keeps aren't carried to its next key: {why:?}");
         }
     }
     match moved(&node).await {
         Some(next) if shelf.is_some() => {
             name_next(node.shared.clone(), next).await;
-            node.shutdown().await.ok();
-            spawn(Some(next)).await
+            node.shutdown().await?;
+            spawn(Some(next), None).await
         }
         _ => Ok(node),
     }
@@ -146,12 +173,16 @@ const SHELVING: Duration = Duration::from_secs(120);
 /// (`Lab::accept_claim`): once its shelf holds the move, so that it opens as that key from its next start, a device of
 /// its vault, never one of none. A device with no shelf names nothing, and opens as before.
 pub(crate) async fn name_next(shared: Arc<Shared>, next: SignerId) {
+    let Ok(_activity) = shared.admit() else { return };
     let Some(shelf) = shared.opts.shelf.clone() else { return };
     let (mut waited, step) = (Duration::ZERO, Duration::from_secs(1));
     loop {
+        if shared.admit().is_err() {
+            return;
+        }
         shared.save().await.ok();
         let on = shared.clone();
-        let behind = shared.lab(move |lab, me| on.edits.as_ref().is_some_and(|edits| edits.lacks(lab, me))).await;
+        let behind = shared.read(move |lab, me| on.edits.as_ref().is_some_and(|edits| edits.lacks(lab, me))).await;
         if !behind {
             break;
         }
@@ -173,7 +204,14 @@ pub(crate) async fn name_next(shared: Arc<Shared>, next: SignerId) {
 /// its secret makes in either suite, then its own key (`open_as`). An agent that never ran gets its secret on its shelf
 /// now, its one key in the suite new signers are made in.
 pub async fn agent_keys(shelf: &Shelf) -> Result<Vec<sign::DeviceKey>> {
-    let (secret, suite) = secret(shelf).await?;
+    let (secret, suite) = if shelf.get(SECRET).await?.is_some() {
+        secret(shelf).await?
+    } else {
+        let writer = shelf.writer()?;
+        let found = secret(&writer.shelf()).await?;
+        writer.shutdown().await?;
+        found
+    };
     let named = shelf.get(NEXT).await.context("the shelf's next key")?;
     let next = named.and_then(|b| <[u8; 32]>::try_from(&b[..]).ok()).map(SignerId);
     let mut keys = vec![];

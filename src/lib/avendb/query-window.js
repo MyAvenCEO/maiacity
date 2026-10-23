@@ -1,0 +1,103 @@
+// @ts-nocheck — plain JS
+import { createDemand } from '../../../game/code/sources/demand.js';
+
+/** Entry IDs shown by a read. Scheduling hints only: no response here establishes completeness or authority. */
+export function replyEntries(got) {
+	const ok = got?.ok;
+	if (!ok || typeof ok !== 'object') return [];
+	const rows = Array.isArray(ok) ? ok : [ok, ...['rows', 'posts', 'entries', 'items'].flatMap((k) => Array.isArray(ok[k]) ? ok[k] : [])];
+	return [...new Set(rows.map((r) => r?.entry).filter((e) => typeof e === 'string' && /^[0-9a-f]{64}$/.test(e)))];
+}
+
+/** Explicit positive entry filters also matter before an empty local query can return any rows.
+ * Bound traversal of user-authored JSON; negated filters cannot identify a visible entry. */
+export function queryEntries(op) {
+	const entries = new Set(op?.entry && /^[0-9a-f]{64}$/.test(op.entry) ? [op.entry] : []);
+	const pending = [op?.where];
+	for (let visited = 0; pending.length && visited < 512 && entries.size < 512; visited++) {
+		const where = pending.pop();
+		if (!where || typeof where !== 'object') continue;
+		if (Array.isArray(where.entry)) for (const entry of where.entry.slice(0, 512)) {
+			if (typeof entry === 'string' && /^[0-9a-f]{64}$/.test(entry)) entries.add(entry);
+			if (entries.size === 512) break;
+		}
+		for (const key of ['all', 'any']) if (Array.isArray(where[key])) pending.push(...where[key].slice(0, Math.max(0, 512 - visited - pending.length)).reverse());
+	}
+	return [...entries];
+}
+
+/** One component's visible read. Replace the window on each query; keep independent components independent.
+ * Reads stay local-first. Demand registration runs beside them and never delays a local result.
+ * @param {{ device: () => any, read: (device: any, op: any, signal: AbortSignal, demand: ReturnType<typeof createDemand>) => Promise<any> }} options
+ */
+export function createReadWindow({ device, read }) {
+	let current = null, held = null, closed = false;
+	const clear = () => {
+		current?.controller.abort();
+		current = null;
+		void held?.demand.replace([]);
+	};
+	const release = () => {
+		current?.controller.abort();
+		current = null;
+		held?.demand.close();
+		held = null;
+	};
+	return {
+		async read(op) {
+			if (closed) return null;
+			clear();
+			const d = device();
+			if (held && held.device !== d) release();
+			if (!d) return null;
+			// One scope per mounted window, with revisions on replacement: frequent reactive reads do not
+			// accumulate closed scopes on the node. A device change starts an independent scope there.
+			held ??= { device: d, demand: createDemand((o) => d.run(o)) };
+			const { demand } = held;
+			const controller = new AbortController();
+			const request = { controller, device: d };
+			current = request;
+			const active = () => current === request && !controller.signal.aborted && device() === d;
+			void demand.replace(queryEntries(op));
+			try {
+				const got = await read(d, op, controller.signal, demand);
+				if (!active()) return null;
+				void demand.add(replyEntries(got));
+				return got;
+			} catch (error) {
+				if (!active()) return null;
+				clear();
+				throw error;
+			}
+		},
+		clear,
+		invalidate() { if (held && held.device !== device()) release(); },
+		close() { closed = true; release(); }
+	};
+}
+
+
+/** Scheduling for a view whose rows already came from local state, without issuing another content read.
+ * Keep one scope for its mounted lifetime. A device change releases the old owner's scope and republishes
+ * the still-visible entries on the replacement device; no old owner is reached through a new session. */
+export function createEntryWindow({ device }) {
+	let held = null, entries = [], closed = false;
+	const bind = () => {
+		if (closed) return null;
+		const d = device();
+		if (held && held.device !== d) { held.demand.close(); held = null; }
+		if (d && !held && entries.length) held = { device: d, demand: createDemand((op) => d.run(op)) };
+		return held?.demand ?? null;
+	};
+	const replace = (ids) => {
+		if (closed) return Promise.resolve(false);
+		entries = [...new Set(ids.filter((id) => typeof id === 'string' && /^[0-9a-f]{64}$/.test(id)))].slice(0, 512);
+		return bind()?.replace(entries) ?? Promise.resolve(false);
+	};
+	return {
+		replace,
+		clear: () => replace([]),
+		invalidate() { return bind()?.replace(entries) ?? Promise.resolve(false); },
+		close() { closed = true; entries = []; held?.demand.close(); held = null; }
+	};
+}

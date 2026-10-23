@@ -11,7 +11,7 @@
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import { cell } from './db.js';
-	import { acts } from './ops.js';
+	import { acts, reads } from './ops.js';
 	import { count, nameOf, short, whereWords } from './vaults.js';
 
 	/**
@@ -19,6 +19,12 @@
 	 *   onopen: (entry: string) => void }}
 	 */
 	let { world, vault, actor, api, onopen } = $props();
+	let queryWindow = $state.raw(/** @type {any} */ (null));
+	$effect(() => {
+		const window = api.window?.();
+		queryWindow = window;
+		return () => window?.close();
+	});
 
 	const as = $derived(world.vaults.find((v) => v.id === actor));
 	const notes = $derived(world.entries.filter((e) => e.vault === vault && e.type === 'note'));
@@ -109,7 +115,10 @@
 	});
 
 	/** @param {object} op */
-	const fill = (op) => ([text, out, bad] = [JSON.stringify(op, null, 2), null, '']);
+	const fill = (op) => {
+		queryWindow?.clear();
+		[text, out, bad] = [JSON.stringify(op, null, 2), null, ''];
+	};
 	/** the examples on the left: the reads, then the changes */
 	const groups = $derived([
 		{ group: 'Reads', list: examples.filter((x) => !x.change) },
@@ -134,7 +143,8 @@
 		/** @type {any} */
 		let got;
 		try {
-			got = await api.ask(op);
+			if (reads(op) && queryWindow) got = await queryWindow.read(op);
+			else { queryWindow?.clear(); got = await api.ask(op); }
 			// a file's bytes, which come beside the answer, show by their count
 			if (got?.bytes instanceof Uint8Array) got = { ok: { ...got.ok, bytes: count(got.bytes.length, 'byte') } };
 		} catch (e) {
@@ -147,6 +157,7 @@
 
 	/** Stops waiting for the op that runs: the device still finishes it, and a read shows what it made. */
 	function stop() {
+		queryWindow?.clear();
 		current++;
 		[running, bad] = [false, changing ? 'Stopped waiting. The device still finishes the change: read the vault again to see whether it went in, before you run it again.' : ''];
 	}

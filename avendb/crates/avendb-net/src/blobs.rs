@@ -48,12 +48,13 @@ impl Shared {
     /// The McEliece keys `ids`, each put in the blob store first if it isn't there: a key fetched into a page's window
     /// may have left it since.
     pub(crate) async fn offer(self: &Arc<Self>, ids: Vec<BlobId>) -> Result<Vec<BlobId>> {
+        let _activity = self.admit()?;
         for &id in &ids {
             let known = self.offered.lock().expect("offered").contains(&id);
             if known && self.store.has(hash(id)).await? {
                 continue;
             }
-            let key = self.lab(move |lab, me| lab.blob(me, id)).await.context("a key the node holds")?;
+            let key = self.read(move |lab, me| lab.blob(me, id)).await.context("a key the node holds")?;
             let stored = self.store.add_bytes(key.to_vec()).temp_tag().await?.hash();
             ensure!(stored == hash(id), "the key the node holds as {} is another's", id.to_hex());
             self.offered.lock().expect("offered").insert(id);
@@ -65,6 +66,7 @@ impl Shared {
     /// blob connections, in one request: each that arrives whole, which iroh-blobs verified to be the key its id names.
     /// A peer that refuses them together, as it may not hand one, is asked for each alone.
     pub(crate) async fn fetch(self: &Arc<Self>, endpoint: EndpointId, wanted: Vec<BlobId>) -> Vec<Arc<[u8]>> {
+        let Ok(_activity) = self.admit() else { return Vec::new() };
         if wanted.is_empty() {
             return Vec::new();
         }
@@ -93,6 +95,7 @@ impl Shared {
     /// root, or one of its pieces, brought by such an edit (`Lab::may_fetch_file`, T27). Whatever anyone's holdings
     /// say.
     async fn may_fetch(self: &Arc<Self>, connection: u64, hashes: Vec<Hash>) -> bool {
+        let Ok(_activity) = self.admit() else { return false };
         let Some((device, endpoint)) = self.blob_peers.lock().expect("blob peers").get(&connection).copied() else {
             return false;
         };
@@ -106,7 +109,7 @@ impl Shared {
             let key = |h: &Hash| offered.get(&BlobId(*h.as_bytes())).copied();
             hashes.iter().map(|h| (*h.as_bytes(), key(h), of(h))).collect()
         };
-        let may = move |lab: &mut Lab, me| {
+        let may = move |lab: &Lab, me| {
             let files = lab.files(me);
             asked.iter().all(|(hash, key, pieced)| match key {
                 Some(b) => lab.may_fetch(me, device, *b, &follow),
@@ -116,7 +119,7 @@ impl Shared {
                 }
             })
         };
-        self.lab(may).await
+        self.read(may).await
     }
 }
 
@@ -144,6 +147,7 @@ fn verdict(allowed: bool) -> EventResult {
 /// children is refused, as the gate would not weigh the children.
 pub(crate) async fn gate(shared: Arc<Shared>, mut events: mpsc::Receiver<ProviderMessage>) {
     while let Some(event) = events.recv().await {
+        let Ok(_activity) = shared.admit() else { break };
         match event {
             ProviderMessage::ClientConnected(m) => {
                 let proven = |e| shared.live(e).map(|p| (p.device, e));

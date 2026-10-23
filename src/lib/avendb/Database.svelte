@@ -38,8 +38,9 @@
 	/** the lens the Lenses page shows, by its id: '' for the first */
 	let lens = $state('');
 
-	// what the device holds changed, or another vault is picked: read its database again
+	// The query console reads its own window; only the other studio pages need the whole database response.
 	$effect(() => {
+		if (view === 'query') return;
 		void world;
 		const v = vault;
 		let gone = false;

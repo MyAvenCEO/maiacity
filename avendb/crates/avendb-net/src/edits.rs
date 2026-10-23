@@ -43,6 +43,7 @@ use std::sync::{Arc, Mutex};
 use anyhow::{Context as _, Result, anyhow, ensure};
 use avendb::id::{BlobId, EditId, SignerId};
 use avendb::lab::{Checked, Lab, Warm, Warming};
+use avendb::policy::{Log, LogRevision};
 use avendb::sign::Signed;
 use avendb::wire::Wire;
 use bytes::Bytes;
@@ -110,15 +111,25 @@ struct Book {
 struct Kept {
     /// The first `written` edits of the device's log.
     written: usize,
+    /// The log whose first `written` edits were persisted. Withdrawals and restores start a new lineage, even
+    /// when the number of edits stays the same; an in-flight save acknowledges only the lineage it wrote.
+    lineage: Option<LogRevision>,
     keys: HashSet<BlobId>,
     /// The next save puts a head of the whole log: the device didn't take back every edit the shelf held.
     whole: bool,
+}
+
+impl Kept {
+    fn continues(&self, log: &Log) -> bool {
+        !self.whole && self.lineage.as_ref() == Some(&log.lineage())
+    }
 }
 
 /// What a save puts on the shelf: the edits of the device's log from where the shelf's end, or all of them for a head
 /// of the whole log, up to place `to`, and the McEliece keys the shelf lacks.
 struct Due {
     to: usize,
+    lineage: LogRevision,
     records: Vec<u8>,
     keys: Vec<(BlobId, Arc<[u8]>)>,
     whole: bool,
@@ -252,11 +263,16 @@ fn journal_name(n: u64) -> String {
 
 /// The numbers of the objects on `shelf` named `<prefix><n>`, `n` in hex, in order, each with what follows it.
 async fn numbered(shelf: &Shelf, prefix: &str) -> Result<Vec<(u64, String)>> {
-    let mut found: Vec<(u64, String)> = shelf.names(prefix).await?.iter().filter_map(|name| {
-        let rest = name.strip_prefix(prefix)?;
-        let (n, after) = rest.split_at(rest.find('-').unwrap_or(rest.len()));
-        Some((u64::from_str_radix(n, 16).ok()?, after.to_string()))
-    }).collect();
+    let mut found: Vec<(u64, String)> = shelf
+        .names(prefix)
+        .await?
+        .iter()
+        .filter_map(|name| {
+            let rest = name.strip_prefix(prefix)?;
+            let (n, after) = rest.split_at(rest.find('-').unwrap_or(rest.len()));
+            Some((u64::from_str_radix(n, 16).ok()?, after.to_string()))
+        })
+        .collect();
     found.sort();
     Ok(found)
 }
@@ -266,7 +282,8 @@ impl Edits {
     /// whole and of the journal after it, each once, in the order they were saved, and every McEliece key that reads
     /// whole and is its id's. Nothing, on a new shelf. Fails if the shelf can't be read.
     pub(crate) async fn open(shelf: Shelf) -> Result<(Edits, Stored)> {
-        let heads: Vec<u64> = numbered(&shelf, HEADS).await?.into_iter().filter(|(_, after)| after.is_empty()).map(|(n, _)| n).collect();
+        let heads: Vec<u64> =
+            numbered(&shelf, HEADS).await?.into_iter().filter(|(_, after)| after.is_empty()).map(|(n, _)| n).collect();
         let next_head = heads.last().map_or(1, |n| n + 1);
         let mut start = None;
         for &n in heads.iter().rev() {
@@ -309,7 +326,7 @@ impl Edits {
                 }
             }
         }
-        let kept = Kept { written: 0, keys: keys.keys().copied().collect(), whole: false };
+        let kept = Kept { written: 0, lineage: None, keys: keys.keys().copied().collect(), whole: false };
         let book = Book { packs: head.packs, keys, mark: head.journal, next, head: next_head, pending };
         let (book, kept) = (tokio::sync::Mutex::new(book), Mutex::new(kept));
         let (slots, checked) = (Mutex::new((0, 0)), Mutex::new(None));
@@ -347,24 +364,24 @@ impl Edits {
 
     /// Keeps on the shelf what the device worked out (`Shared::save`), as `warming` gives it, each in place of the older
     /// of the two its slots keep: its keys, then its view.
-    async fn put_warm(&self, warming: &mut Warming) -> Result<()> {
+    async fn put_warm_on(&self, on: &Shelf, warming: &mut Warming) -> Result<()> {
         if let Some(keys) = warming.keys.take() {
             let n = self.slots.lock().expect("slots").0;
-            self.keep(KEYS, n, &keys).await?;
+            self.keep_on(on, KEYS, n, &keys).await?;
             self.slots.lock().expect("slots").0 = n + 1;
         }
         if let Some(view) = warming.view.take() {
             let n = self.slots.lock().expect("slots").1;
-            self.keep(VIEW, n, &view).await?;
+            self.keep_on(on, VIEW, n, &view).await?;
             self.slots.lock().expect("slots").1 = n + 1;
         }
         Ok(())
     }
 
     /// Keeps `bytes` as number `n` of the slots `which`, in slot `n % 2`.
-    async fn keep(&self, (names, starts): ([&str; 2], &[u8]), n: u64, bytes: &[u8]) -> Result<()> {
+    async fn keep_on(&self, on: &Shelf, (names, starts): ([&str; 2], &[u8]), n: u64, bytes: &[u8]) -> Result<()> {
         let kept = [starts, &n.to_be_bytes(), bytes].concat();
-        Ok(self.shelf.keep(names[(n % 2) as usize], Bytes::from(kept)).await?)
+        Ok(on.keep(names[(n % 2) as usize], Bytes::from(kept)).await?)
     }
 
     /// The head the node started from, by its number and the hash of its bytes, and how many edits it holds, the first
@@ -386,6 +403,7 @@ impl Edits {
         match lab.log(me).ids().starts_with(stored) {
             true => {
                 kept.written = stored.len();
+                kept.lineage = Some(lab.log(me).lineage());
                 *self.checked.lock().expect("checked") = self.started.map(|(named, _)| named);
             }
             false => kept.whole = true,
@@ -393,16 +411,18 @@ impl Edits {
     }
 
     /// How many of the edits of device `me` of `lab` the shelf holds, the first of its log: none while it is due a
-    /// head of the whole log, as the device didn't take back every edit it held.
+    /// head of the whole log, including a restore or withdrawal that replaced its saved prefix.
     pub(crate) fn held(&self, lab: &Lab, me: SignerId) -> usize {
         let kept = self.kept.lock().expect("kept");
-        if kept.whole { 0 } else { kept.written.min(lab.size(me).0) }
+        if kept.continues(lab.log(me)) { kept.written.min(lab.size(me).0) } else { 0 }
     }
 
     /// The shelf lacks an edit or a McEliece key device `me` of `lab` holds, or the head of its whole log it is due.
     pub(crate) fn lacks(&self, lab: &Lab, me: SignerId) -> bool {
         let kept = self.kept.lock().expect("kept");
-        kept.whole || kept.written < lab.size(me).0 || lab.blob_ids(me).iter().any(|b| !kept.keys.contains(b))
+        !kept.continues(lab.log(me))
+            || kept.written < lab.size(me).0
+            || lab.blob_ids(me).iter().any(|b| !kept.keys.contains(b))
     }
 
     /// What a save puts on the shelf, as device `me` of `lab` holds it now and `book` says the shelf holds, if
@@ -416,7 +436,7 @@ impl Edits {
         }
         let fresh = ids.len() > kept.written || !keys.is_empty();
         let packing = journaled + u64::from(fresh) >= JOURNALED;
-        let whole = kept.whole || ids.len() < kept.written || (packing && packs >= PACKS);
+        let whole = !kept.continues(lab.log(me)) || ids.len() < kept.written || (packing && packs >= PACKS);
         if !whole && !fresh && !packing {
             return Ok(None);
         }
@@ -424,18 +444,23 @@ impl Edits {
         for id in &ids[if whole { 0 } else { kept.written }..] {
             record(&mut records, lab.signed_edit(me, *id).context("an edit the device holds")?);
         }
-        Ok(Some(Due { to: ids.len(), records, keys, whole }))
+        Ok(Some(Due { to: ids.len(), lineage: lab.log(me).lineage(), records, keys, whole }))
     }
 
     /// Puts `due` on the shelf: each new McEliece key as a blob, then the new edits and keys in the next journal
     /// entry, and a pack and a head if one is due; or a pack of the whole log and a head that names it alone.
+    #[cfg(test)]
     async fn put(&self, book: &mut Book, due: Due) -> Result<()> {
+        self.put_on(&self.shelf, book, due).await
+    }
+
+    async fn put_on(&self, on: &Shelf, book: &mut Book, due: Due) -> Result<()> {
         let mut brought = Vec::new();
         for (id, bytes) in &due.keys {
             let size = match book.keys.get(id) {
                 Some(size) => *size,
                 None => {
-                    let (hash, size) = self.shelf.put_blob(&Bytes::copy_from_slice(bytes)).await?;
+                    let (hash, size) = on.put_blob(&Bytes::copy_from_slice(bytes)).await?;
                     ensure!(hash == key_blob(*id), "the McEliece key {} is another's", id.to_hex());
                     size
                 }
@@ -444,14 +469,15 @@ impl Edits {
         }
         let ids: Vec<BlobId> = due.keys.iter().map(|(id, _)| *id).collect();
         if due.whole {
-            let pack = self.pack(&due.records).await?;
+            let pack = self.pack_on(on, &due.records).await?;
             book.keys.extend(brought);
             let head = Head { journal: book.next, packs: vec![pack], keys: book.keys.clone().into_iter().collect() };
-            self.put_head(book, &head).await?;
+            self.put_head_on(on, book, &head).await?;
             (book.packs, book.mark) = (vec![pack], book.next);
             book.pending.clear();
             let mut kept = self.kept.lock().expect("kept");
             (kept.written, kept.whole) = (due.to, false);
+            kept.lineage = Some(due.lineage);
             kept.keys.extend(ids);
             return Ok(());
         }
@@ -459,7 +485,7 @@ impl Edits {
         while !records.is_empty() || !keys.is_empty() {
             let name = journal_name(book.next);
             let entry = Entry { keys: keys.clone(), records: records.to_vec() };
-            match self.shelf.put(&name, entry.to_bytes()).await {
+            match on.put(&name, entry.to_bytes()).await {
                 Ok(()) => {
                     book.next += 1;
                     book.pending.extend(records);
@@ -469,7 +495,7 @@ impl Edits {
                 // put by a save cut short: what of this one it holds is put
                 Err(e) if e.kind() == ErrorKind::AlreadyExists => {
                     book.next += 1;
-                    let there = self.shelf.get(&name).await?.and_then(|bytes| Entry::from_bytes(&bytes));
+                    let there = on.get(&name).await?.and_then(|bytes| Entry::from_bytes(&bytes));
                     let ours = |there: &Entry| {
                         records.starts_with(&there.records) && there.keys.iter().all(|k| keys.contains(k))
                     };
@@ -489,14 +515,15 @@ impl Edits {
         {
             let mut kept = self.kept.lock().expect("kept");
             kept.written = due.to;
+            kept.lineage = Some(due.lineage);
             kept.keys.extend(ids);
         }
         if book.next - book.mark >= JOURNALED {
-            let pack = self.pack(&book.pending).await?;
+            let pack = self.pack_on(on, &book.pending).await?;
             let mut packs = book.packs.clone();
             packs.push(pack);
             let keys = book.keys.clone().into_iter().collect();
-            self.put_head(book, &Head { journal: book.next, packs: packs.clone(), keys }).await?;
+            self.put_head_on(on, book, &Head { journal: book.next, packs: packs.clone(), keys }).await?;
             (book.packs, book.mark) = (packs, book.next);
             book.pending.clear();
         }
@@ -504,16 +531,16 @@ impl Edits {
     }
 
     /// A pack of `records`, on the shelf.
-    async fn pack(&self, records: &[u8]) -> Result<Blob> {
-        Ok(self.shelf.put_blob(&Bytes::from([PACK, records].concat())).await?)
+    async fn pack_on(&self, on: &Shelf, records: &[u8]) -> Result<Blob> {
+        Ok(on.put_blob(&Bytes::from([PACK, records].concat())).await?)
     }
 
     /// Puts `head` on the shelf, as the next head after every head there: of edits its device holds, each checked.
-    async fn put_head(&self, book: &mut Book, head: &Head) -> Result<()> {
+    async fn put_head_on(&self, on: &Shelf, book: &mut Book, head: &Head) -> Result<()> {
         let bytes = head.to_bytes();
         loop {
             let name = head_name(book.head);
-            match self.shelf.put(&name, bytes.clone()).await {
+            match on.put(&name, bytes.clone()).await {
                 Ok(()) => {
                     *self.checked.lock().expect("checked") = Some(checked(book.head, &bytes));
                     book.head += 1;
@@ -552,18 +579,49 @@ async fn read_head(shelf: &Shelf, n: u64) -> Result<(Head, Checked, Vec<Signed>)
     let head = Head::from_bytes(&bytes).ok_or_else(|| anyhow!("cut short or changed"))?;
     let mut signed = Vec::new();
     for &(hash, size) in &head.packs {
-        let pack = shelf.read_blob(hash, size).await.with_context(|| format!("its pack {hash}"))?;
-        let records = pack.strip_prefix(PACK).with_context(|| format!("its pack {hash} is no pack of edits"))?;
-        signed.extend(edits_of(records).with_context(|| format!("its pack {hash} holds an edit cut short"))?);
+        signed.extend(read_pack(shelf, hash, size).await.with_context(|| format!("its pack {hash}"))?);
     }
     Ok((head, named, signed))
+}
+
+/// Decodes a legacy pack without retaining its entire raw encoding beside its decoded edits. The bytes in flight
+/// are one bounded shelf read plus the current record. Nothing escapes until the complete blob hash checks out;
+/// a changed or truncated pack still rejects its whole head, so `Edits::open` can try the previous head.
+async fn read_pack(shelf: &Shelf, hash: Hash, size: u64) -> Result<Vec<Signed>> {
+    let mut reader = shelf.blob_reader(hash, size);
+    ensure!(reader.take(PACK.len()).await?.as_ref() == PACK, "no pack of edits");
+    let mut signed = Vec::new();
+    while reader.remaining() > 0 {
+        let length = reader.take(4).await?;
+        let length = u32::from_be_bytes(length.as_ref().try_into().expect("four bytes")) as usize;
+        let record = reader.take(length).await?;
+        signed.push(Signed::from_wire(&record).context("an edit does not decode whole")?);
+    }
+    reader.finish()?;
+    Ok(signed)
 }
 
 impl Shared {
     /// Puts on the node's shelf, if it keeps one, what its device took since the last save, as `Edits::put` says. True
     /// if the shelf holds more now.
     pub(crate) async fn save(self: &Arc<Self>) -> Result<bool> {
-        let Some(edits) = &self.edits else { return Ok(false) };
+        let operation = self.admit()?;
+        let shared = self.clone();
+        // The saver may be cancelled while its blocking capture or backend write
+        // continues. Keep its whole save lane admitted until actual completion.
+        n0_future::task::spawn(async move {
+            let _operation = operation;
+            shared.save_on(None).await
+        })
+        .await
+        .context("the save task")?
+    }
+
+    pub(crate) async fn save_on(self: &Arc<Self>, override_shelf: Option<&Shelf>) -> Result<bool> {
+        let Some(edits) = &self.edits else {
+            return Ok(false);
+        };
+        let on = override_shelf.unwrap_or(&edits.shelf);
         let mut book = edits.book.lock().await;
         let plan = (book.next - book.mark, book.packs.len());
         let shared = self.clone();
@@ -573,9 +631,14 @@ impl Shared {
         #[cfg(target_arch = "wasm32")]
         let due = due()?;
         // the edits first, so that what it worked out from them is of edits its shelf holds
-        let put = due.is_some();
+        let mut put = due.is_some();
         if let Some(due) = due {
-            edits.put(&mut book, due).await?;
+            edits.put_on(on, &mut book, due).await?;
+        }
+        // A signer root is publishable only after its ordered leaves and root
+        // receipt persist; complete legacy records remain the export eligibility gate.
+        if let Some(signers) = &self.signers {
+            put |= signers.save_on(self, on).await?;
         }
         let shared = self.clone();
         let warming = move || {
@@ -590,19 +653,32 @@ impl Shared {
         // what it worked out only spares it time: a shelf that can't take it costs it that time, no more, and the
         // device gives it again at the next save
         if let Some(mut warming) = warming {
-            match edits.put_warm(&mut warming).await {
+            match edits.put_warm_on(on, &mut warming).await {
                 Ok(()) => {
                     let shared = self.clone();
-                    let warmed = move || shared.locked_lab().warmed(shared.me, warming);
+                    let warmed = move || {
+                        let mut lab = shared.locked_lab();
+                        lab.warmed(shared.me, warming);
+                        // A restore or lock may have invalidated the receipt while the shelf was writing it.
+                        // Publish this under the Lab lock, so a later mutation cannot lose its wakeup. A locked
+                        // device cannot seal a snapshot; leave its edge clear so unlocking wakes the saver.
+                        let pending = !lab.locked(shared.me) && lab.warm_due(shared.me);
+                        shared.warm.store(pending, std::sync::atomic::Ordering::Relaxed);
+                        if pending {
+                            shared.edits.as_ref().expect("its edits").due.notify_one();
+                        }
+                    };
                     #[cfg(not(target_arch = "wasm32"))]
                     tokio::task::spawn_blocking(warmed).await?;
                     #[cfg(target_arch = "wasm32")]
                     warmed();
-                    // what it worked out meanwhile wakes the saver again
-                    self.warm.store(false, std::sync::atomic::Ordering::Relaxed);
                 }
                 Err(e) => tracing::warn!("avendb: what the device worked out can't be put on its shelf: {e:#}"),
             }
+        }
+        // Derived summaries share the authoritative save lane but cannot prevent a clean shutdown.
+        if let Err(error) = self.edit_transfer.summaries.flush(on).await {
+            tracing::warn!(%error, "avendb: optional range summary remains pending");
         }
         Ok(put)
     }
@@ -628,6 +704,419 @@ impl Shared {
                     wait = wait.saturating_mul(2).min(BACKOFF_MAX);
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::shelf::Call;
+    use avendb::id::VaultId;
+    use avendb::policy::{Action, Edit};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// Wire-valid records are enough here: signature and rule validation still belongs to Lab restoration.
+    fn signed(n: usize) -> Signed {
+        Signed {
+            edit: Edit {
+                parents: vec![],
+                depth: n as u64,
+                author: SignerId([1; 32]),
+                cosigners: vec![],
+                action: Action::Checkpoint { vault: VaultId([2; 32]), covers: vec![EditId([3; 32]); n] },
+            },
+            sigs: vec![],
+        }
+    }
+
+    /// A shelf that deliberately fragments reads, including a record's four-byte length. The greatest request
+    /// size makes the bounded I/O contract observable without relying on allocator or process-memory timings.
+    fn fragmented(bytes: Bytes, fragment: usize) -> (Shelf, Arc<AtomicUsize>) {
+        let (shelf, mut calls) = Shelf::new();
+        let largest = Arc::new(AtomicUsize::new(0));
+        let seen = largest.clone();
+        tokio::spawn(async move {
+            while let Some(call) = calls.recv().await {
+                match call {
+                    Call::Read { at, len, tx, .. } => {
+                        seen.fetch_max(len, Ordering::Relaxed);
+                        let at = usize::try_from(at).unwrap_or(usize::MAX).min(bytes.len());
+                        let end = at.saturating_add(len.min(fragment)).min(bytes.len());
+                        tx.send(Ok(bytes.slice(at..end))).ok();
+                    }
+                    _ => panic!("only blob reads are expected"),
+                }
+            }
+        });
+        (shelf, largest)
+    }
+
+    #[tokio::test]
+    async fn streamed_packs_match_whole_decoding_across_fragment_and_record_boundaries() {
+        let small = vec![signed(0), signed(1), signed(9)];
+        let large = vec![signed(1), signed((1 << 20) / 32), signed(3)];
+        for (records, fragments) in [(&small, &[1, 3, 7, 256][..]), (&large, &[65_539, 1 << 20][..])] {
+            let pack = pack_of(records);
+            let expected = unpack(&pack).expect("the old whole-pack decoder");
+            for &fragment in fragments {
+                let (shelf, largest) = fragmented(pack.clone(), fragment);
+                let actual = read_pack(&shelf, Hash::new(&pack), pack.len() as u64).await.expect("a checked pack");
+                assert_eq!(actual, expected, "fragment {fragment}");
+                assert!(largest.load(Ordering::Relaxed) <= 1 << 20, "no whole-pack read");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn streamed_packs_reject_hash_changes_and_short_records() {
+        let pack = pack_of(&[signed(0), signed(3)]);
+        let hash = Hash::new(&pack);
+        let (shelf, _) = fragmented(pack.clone(), 7);
+        assert!(read_pack(&shelf, Hash::new(b"another pack"), pack.len() as u64).await.is_err());
+        for length in [0, PACK.len() - 1, PACK.len() + 2, pack.len() - 1] {
+            let shortened = pack.slice(..length);
+            for declared in [length as u64, pack.len() as u64] {
+                let (shelf, _) = fragmented(shortened.clone(), 3);
+                assert!(read_pack(&shelf, hash, declared).await.is_err(), "{length} bytes, {declared} declared");
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn untrusted_record_lengths_do_not_allocate_the_declared_record() {
+        let bytes: Bytes = [PACK, &u32::MAX.to_be_bytes(), &[9; 8]].concat().into();
+        // A record longer than the declared blob fails before it is allocated. With a dishonest blob size,
+        // it grows only through the eight actual payload bytes and fails at EOF, without allocating 4 GiB.
+        for declared in [bytes.len() as u64, u64::from(u32::MAX) + PACK.len() as u64 + 4] {
+            let (shelf, largest) = fragmented(bytes.clone(), 5);
+            assert!(read_pack(&shelf, Hash::new(&bytes), declared).await.is_err());
+            assert!(largest.load(Ordering::Relaxed) <= 1 << 20);
+        }
+        let (shelf, largest) = fragmented(bytes.clone(), 5);
+        let mut reader = shelf.blob_reader(Hash::new(&bytes), bytes.len() as u64);
+        assert!(reader.take(usize::MAX).await.is_err());
+        assert_eq!(largest.load(Ordering::Relaxed), 0, "invalid length does not even read");
+        assert!(reader.finish().is_err(), "an unread blob cannot be accepted");
+    }
+
+    #[tokio::test]
+    async fn a_bad_streamed_pack_falls_back_to_the_previous_head() {
+        let expected = vec![signed(0), signed(2)];
+        let valid = pack_of(&expected);
+        let changed = pack_of(&[signed(8)]);
+        let valid_hash = Hash::new(&valid);
+        let wrong_hash = Hash::new(b"a different content hash");
+        let heads = [
+            Head { journal: 0, packs: vec![(valid_hash, valid.len() as u64)], keys: vec![] }.to_bytes(),
+            Head { journal: 0, packs: vec![(wrong_hash, changed.len() as u64)], keys: vec![] }.to_bytes(),
+        ];
+        let expected_start = checked(1, &heads[0]);
+        let (shelf, mut calls) = Shelf::new();
+        tokio::spawn(async move {
+            while let Some(call) = calls.recv().await {
+                match call {
+                    Call::Names { prefix, tx } => {
+                        assert_eq!(prefix, HEADS);
+                        tx.send(Ok(vec![head_name(1), head_name(2)])).ok();
+                    }
+                    Call::Get { name, tx } => {
+                        let bytes = match name.as_str() {
+                            "heads/0000000000000001" => Some(heads[0].clone()),
+                            "heads/0000000000000002" => Some(heads[1].clone()),
+                            "journal/0000000000000000" => None,
+                            _ => panic!("unexpected object {name}"),
+                        };
+                        tx.send(Ok(bytes)).ok();
+                    }
+                    Call::Read { name, at, len, tx } => {
+                        let bytes = if name == valid_hash.to_hex().as_str() { &valid } else { &changed };
+                        let at = (at as usize).min(bytes.len());
+                        let end = (at + len.min(7)).min(bytes.len());
+                        tx.send(Ok(bytes.slice(at..end))).ok();
+                    }
+                    _ => panic!("only named objects and blob reads are expected"),
+                }
+            }
+        });
+        let (edits, (actual, keys)) = Edits::open(shelf).await.expect("the earlier head reads whole");
+        assert_eq!(actual, expected);
+        assert!(keys.is_empty());
+        assert_eq!(edits.started(), Some((expected_start, expected.len())));
+    }
+    #[test]
+    fn withdrawal_then_append_cannot_reuse_a_saved_prefix_of_the_same_length() {
+        let first = signed(0).edit;
+        let second = signed(1).edit;
+        let mut log = Log::from_edits(vec![first.clone(), second]);
+        let kept = Kept { written: 2, lineage: Some(log.lineage()), keys: HashSet::new(), whole: false };
+        assert!(kept.continues(&log));
+        log.let_go(&[first.id()].into());
+        log.receive([signed(2).edit]);
+        assert_eq!(log.ids().len(), kept.written);
+        assert!(!kept.continues(&log), "equal counts do not make a replacement prefix durable");
+        let kept = Kept { lineage: Some(log.lineage()), ..kept };
+        log.receive([signed(3).edit]);
+        assert!(kept.continues(&log), "ordinary appends preserve the saved prefix");
+    }
+
+    /// A barrier before the next head is persisted, after its pack is complete. It makes the save/restore race
+    /// deterministic; all storage remains in the test's disposable folder.
+    fn delaying_head(shelf: Shelf) -> (Shelf, tokio::sync::oneshot::Receiver<()>, tokio::sync::oneshot::Sender<()>) {
+        let (proxy, mut calls) = Shelf::new();
+        let (entered, waiting) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        tokio::spawn(async move {
+            let mut pause = Some((entered, released));
+            while let Some(call) = calls.recv().await {
+                match call {
+                    Call::Put { name, bytes, tx } => {
+                        if name.starts_with(HEADS)
+                            && let Some((entered, released)) = pause.take()
+                        {
+                            entered.send(()).ok();
+                            released.await.expect("the test releases the head");
+                        }
+                        tx.send(shelf.put(&name, bytes).await).ok();
+                    }
+                    Call::Write { name, at, bytes, tx } => {
+                        tx.send(shelf.write(&name, at, bytes).await).ok();
+                    }
+                    Call::Finish { name, hash, size, outboard, tx } => {
+                        tx.send(shelf.finish(&name, hash, size, outboard).await).ok();
+                    }
+                    Call::Drop { name, tx } => {
+                        tx.send(shelf.drop(&name).await).ok();
+                    }
+                    Call::Get { name, tx } => {
+                        tx.send(shelf.get(&name).await).ok();
+                    }
+                    Call::Read { name, at, len, tx } => {
+                        tx.send(shelf.read(&name, at, len).await).ok();
+                    }
+                    Call::Names { prefix, tx } => {
+                        tx.send(shelf.names(&prefix).await).ok();
+                    }
+                    _ => panic!("unexpected call while saving a head"),
+                }
+            }
+        });
+        (proxy, waiting, release)
+    }
+
+    #[tokio::test]
+    async fn a_delayed_save_acknowledges_only_its_lineage_and_recovery_keeps_every_old_head() {
+        use avendb::cast::{handbook, text, world};
+        use avendb::lab::Backup;
+
+        struct Folder(std::path::PathBuf);
+        impl Drop for Folder {
+            fn drop(&mut self) {
+                std::fs::remove_dir_all(&self.0).ok();
+            }
+        }
+        let folder = Folder(std::env::temp_dir().join(format!("avendb-lineage-{}", crate::shelf::fresh())));
+        let mut w = world();
+        let h = handbook(&mut w);
+        let me = w.mac_a;
+        let base = w.lab.backup(me);
+        let mut branches = Vec::new();
+        for body in ["first branch", "other branch", "third branch"] {
+            w.lab.restore_backup(me, &base);
+            w.lab.edit(me, h.coop, h.welcome, |i| i.set_text(2, body)).expect("a branch write");
+            branches.push(w.lab.backup(me));
+        }
+        w.lab.restore_backup(me, &branches[0]);
+        let first_ids = w.lab.log(me).ids().to_vec();
+        let writer = crate::disk::open(&folder.0).expect("the test shelf").writer().unwrap();
+        let shelf = writer.shelf();
+        let (mut edits, stored) = Edits::open(shelf.clone()).await.expect("the empty shelf");
+        assert!(stored.0.is_empty());
+        edits.settle(&w.lab, me, &[]);
+        // Start with a complete head, as a node that already passed its first journal compaction does.
+        edits.kept.lock().expect("kept").whole = true;
+        {
+            let mut book = edits.book.lock().await;
+            let due = edits.due(&w.lab, me, (0, 0)).unwrap().unwrap();
+            edits.put(&mut book, due).await.expect("the first head");
+        }
+        assert_eq!(edits.held(&w.lab, me), first_ids.len());
+        let old_head = shelf.get(&head_name(1)).await.unwrap().unwrap();
+        let (proxy, entered, release) = delaying_head(shelf.clone());
+        edits.shelf = proxy;
+
+        w.lab.restore_backup(me, &branches[1]);
+        assert_eq!(w.lab.log(me).ids().len(), first_ids.len(), "restore preserves the count");
+        assert_ne!(w.lab.log(me).ids(), first_ids);
+        assert_eq!(edits.held(&w.lab, me), 0, "replacement edits are not advertised as durable");
+        assert!(edits.lacks(&w.lab, me));
+        {
+            let mut book = edits.book.lock().await;
+            let due = edits.due(&w.lab, me, (book.next - book.mark, book.packs.len())).unwrap().unwrap();
+            assert!(due.whole, "replacement prefixes require a new full head");
+            let writing = edits.put(&mut book, due);
+            tokio::pin!(writing);
+            tokio::select! {
+                saved = &mut writing => panic!("save crossed its barrier early: {saved:?}"),
+                reached = entered => reached.expect("the save is waiting to persist its head"),
+            }
+            // Another restore happens after the second branch's pack was written but before its head is durable.
+            w.lab.restore_backup(me, &branches[2]);
+            assert_eq!(w.lab.log(me).ids().len(), first_ids.len());
+            assert_eq!(edits.held(&w.lab, me), 0);
+            release.send(()).expect("release persistence");
+            writing.await.expect("the second head is durable");
+        }
+        assert_eq!(edits.held(&w.lab, me), 0, "an old save cannot acknowledge the current lineage");
+        assert!(edits.lacks(&w.lab, me), "the saver must run again");
+        let second_head = shelf.get(&head_name(2)).await.unwrap().unwrap();
+        {
+            let mut book = edits.book.lock().await;
+            let due = edits.due(&w.lab, me, (book.next - book.mark, book.packs.len())).unwrap().unwrap();
+            assert!(due.whole);
+            edits.put(&mut book, due).await.expect("the current lineage is durable");
+        }
+        let expected = w.lab.log(me).ids().to_vec();
+        assert_eq!(edits.held(&w.lab, me), expected.len());
+        assert!(!edits.lacks(&w.lab, me));
+        assert_eq!(shelf.names(HEADS).await.unwrap(), vec![head_name(1), head_name(2), head_name(3)]);
+        assert_eq!(shelf.get(&head_name(1)).await.unwrap().unwrap(), old_head);
+        assert_eq!(shelf.get(&head_name(2)).await.unwrap().unwrap(), second_head);
+        drop(edits);
+        let (reopened, (signed, keys)) = Edits::open(shelf).await.expect("restart from the newest head");
+        let restored: Vec<_> = signed.iter().map(|s| s.edit.id()).collect();
+        assert_eq!(restored, expected, "restart selects the latest saved branch");
+        w.lab.restore_from(me, Backup::new(signed, keys));
+        reopened.settle(&w.lab, me, &restored);
+        assert_eq!(reopened.held(&w.lab, me), expected.len());
+        assert_eq!(text(&w.lab, me, h.welcome, 2).as_deref(), Some("third branch"));
+    }
+
+    /// Pause the first stored view after its keys reached disk. Every keep completion is observable without a
+    /// Lab read that might itself wake the saver and hide a lost notification.
+    fn delaying_view(
+        shelf: Shelf,
+    ) -> (
+        Shelf,
+        tokio::sync::oneshot::Receiver<()>,
+        tokio::sync::oneshot::Sender<()>,
+        tokio::sync::mpsc::UnboundedReceiver<()>,
+    ) {
+        let (proxy, mut calls) = Shelf::new();
+        let (entered, waiting) = tokio::sync::oneshot::channel();
+        let (release, released) = tokio::sync::oneshot::channel();
+        let (kept, views) = tokio::sync::mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            let mut pause = Some((entered, released));
+            while let Some(call) = calls.recv().await {
+                match call {
+                    Call::Keep { name, bytes, tx } => {
+                        let view = VIEW.0.contains(&name.as_str());
+                        if view && let Some((entered, released)) = pause.take() {
+                            entered.send(()).ok();
+                            released.await.expect("the test releases the view");
+                        }
+                        let saved = shelf.keep(&name, bytes).await;
+                        if view && saved.is_ok() {
+                            kept.send(()).ok();
+                        }
+                        tx.send(saved).ok();
+                    }
+                    Call::List(tx) => {
+                        tx.send(shelf.list().await).ok();
+                    }
+                    Call::Outboard { hash, tx } => {
+                        tx.send(shelf.outboard(hash).await).ok();
+                    }
+                    Call::Put { name, bytes, tx } => {
+                        tx.send(shelf.put(&name, bytes).await).ok();
+                    }
+                    Call::Write { name, at, bytes, tx } => {
+                        tx.send(shelf.write(&name, at, bytes).await).ok();
+                    }
+                    Call::Finish { name, hash, size, outboard, tx } => {
+                        tx.send(shelf.finish(&name, hash, size, outboard).await).ok();
+                    }
+                    Call::Drop { name, tx } => {
+                        tx.send(shelf.drop(&name).await).ok();
+                    }
+                    Call::Get { name, tx } => {
+                        tx.send(shelf.get(&name).await).ok();
+                    }
+                    Call::Read { name, at, len, tx } => {
+                        tx.send(shelf.read(&name, at, len).await).ok();
+                    }
+                    Call::Names { prefix, tx } => {
+                        tx.send(shelf.names(&prefix).await).ok();
+                    }
+                }
+            }
+        });
+        (proxy, waiting, release, views)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_invalidated_snapshot_save_retries_without_another_mutation_or_spinning_while_locked() {
+        use crate::{Node, Options};
+        use avendb::cast::{document, human_on};
+        use std::time::Duration;
+
+        struct Folder(std::path::PathBuf);
+        impl Drop for Folder {
+            fn drop(&mut self) {
+                std::fs::remove_dir_all(&self.0).ok();
+            }
+        }
+        for unlock_before_receipt in [false, true] {
+            let folder = Folder(std::env::temp_dir().join(format!("avendb-warming-{}", crate::shelf::fresh())));
+            let mut lab = Lab::new();
+            let passkey = lab.passkey("Alice");
+            let me = lab.device_of(passkey, "Alice's Mac");
+            let vault = human_on(&mut lab, passkey, &[me]);
+            lab.create(me, vault, vault, "note", &[], document("Note", "Durable.", me)).unwrap();
+            let backup = lab.backup(me);
+            lab.restore_from(me, backup);
+            let writer = crate::disk::open(&folder.0).unwrap().writer().unwrap();
+            let shelf = writer.shelf();
+            let (proxy, entered, release, mut views) = delaying_view(shelf);
+            let opts = Options { shelf: Some(proxy), ..Options::local() };
+            let node = Node::spawn(lab.split(me, &[passkey], [61; 32]), me, opts).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(15), entered).await.unwrap().unwrap();
+            let edits = node.shared.edits.as_ref().unwrap();
+            // No already-pending permit or rising dirty edge may rescue the stale acknowledgement by accident.
+            while tokio::time::timeout(Duration::ZERO, edits.due.notified()).await.is_ok() {}
+            node.shared.warm.store(true, Ordering::Relaxed);
+            let revision = node.shared.locked_lab().log(me).revision();
+            node.act(move |lab, me| {
+                lab.lock(me);
+                if unlock_before_receipt {
+                    assert!(lab.unlock(me));
+                }
+            })
+            .await;
+            assert_eq!(node.shared.locked_lab().log(me).revision(), revision, "no edit wakeup");
+            release.send(()).unwrap();
+            tokio::time::timeout(Duration::from_secs(15), views.recv()).await.unwrap().unwrap();
+            if !unlock_before_receipt {
+                drop(edits.book.lock().await); // acknowledgement is complete
+                assert!(!node.shared.warm.load(Ordering::Relaxed), "unlock needs a new dirty edge");
+                assert!(node.read(|lab, me| lab.locked(me)).await);
+                assert!(!node.shared.warm.load(Ordering::Relaxed), "a locked read must not consume the unlock edge");
+                assert!(
+                    tokio::time::timeout(Duration::from_millis(50), views.recv()).await.is_err(),
+                    "a locked device cannot seal views and must not retry continuously"
+                );
+                node.act(|lab, me| assert!(lab.unlock(me))).await;
+            }
+            // No reads or mutations follow an unlocked rejected receipt: the saver itself must retry.
+            tokio::time::timeout(Duration::from_secs(15), views.recv())
+                .await
+                .expect("pending snapshot work was rescheduled")
+                .expect("a second view reached the shelf");
+            drop(edits.book.lock().await);
+            assert!(!node.shared.locked_lab().warm_due(me), "the new key prefix and view were acknowledged");
+            assert!(!node.shared.warm.load(Ordering::Relaxed));
+            node.shutdown().await.unwrap();
         }
     }
 }

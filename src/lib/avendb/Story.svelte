@@ -19,7 +19,7 @@
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import Lines from './Lines.svelte';
-	import { allowed, may } from './ops.js';
+	import { allowed, may, windowRead } from './ops.js';
 	import StoryHook from './StoryHook.svelte';
 	import StoryJourney from './StoryJourney.svelte';
 	import StoryMovie from './StoryMovie.svelte';
@@ -32,6 +32,13 @@
 	/** `step` the stage whose tab shows, as its address names it, where it isn't the one it is in
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean, entry: string, step?: string }} */
 	let { world, actor, api, busy, entry, step = '' } = $props();
+
+	let noteWindow = $state.raw(/** @type {any} */ (null));
+	$effect(() => {
+		const window = api.window?.();
+		noteWindow = window;
+		return () => window?.close();
+	});
 
 	/** Each stage's icon in the list on the left; a stage of a vault's own flow has `flow`'s. */
 	const ICONS = /** @type {Record<string, import('svelte').ComponentProps<typeof Icon>['name']>} */ ({
@@ -81,14 +88,11 @@
 	$effect(() => {
 		void world;
 		const e = entry;
+		if (api.window && !noteWindow) return;
 		let gone = false;
-		api.note(e).then(
-			(/** @type {any} */ n) => !gone && (note = n ?? null),
-			() => {}
-		);
-		return () => {
-			gone = true;
-		};
+		const request = windowRead(api, { op: 'note', entry: e }, null, noteWindow);
+		request.result.then((/** @type {any} */ n) => { if (!gone) note = n; });
+		return () => { gone = true; request.close(); };
 	});
 	const proposals = $derived((note?.lines ?? []).slice(1).filter((l) => !l.variant));
 	/** its edits by id, as the side (./Lines.svelte) hands one back */

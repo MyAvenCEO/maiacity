@@ -491,16 +491,8 @@ impl Node {
         while let Some(copied) = copying.next().await {
             (put, bytes) = (put + 1, bytes + copied?);
         }
-        let mut manifest = Manifest {
-            time,
-            edits: taken.edits,
-            root: Hash::EMPTY,
-            packs,
-            keys,
-            files,
-            blobs,
-            ask: taken.ask,
-        };
+        let mut manifest =
+            Manifest { time, edits: taken.edits, root: Hash::EMPTY, packs, keys, files, blobs, ask: taken.ask };
         let seq = manifest.named().into_iter().map(|(h, _)| h).collect::<HashSeq>().into_inner();
         manifest.root = Hash::new(&seq);
         if !held.contains(&manifest.root) {
@@ -633,9 +625,10 @@ pub async fn rehearse(folder: &Folder, time: u64, dir: &Path, opts: Options) -> 
     }
     let began = Instant::now();
     let shelf = disk::open(dir)?;
-    let manifest = restore(folder, time, &shelf).await?;
+    let writer = shelf.writer()?;
+    let manifest = restore(folder, time, &writer.shelf()).await?;
     let restored = began.elapsed();
-    let node = server::open(shelf, opts).await?;
+    let node = server::open_owned(writer, opts).await?;
     let started = began.elapsed() - restored;
     let (edits, ask) = node.read(|lab, me| (lab.size(me).0 as u64, asks_by_frontiers(lab.log(me).edits()))).await;
     let mut files = 0;
@@ -811,9 +804,10 @@ impl Folder {
         }
         // the files' blobs, those due today
         let due: Vec<Blob> = named.into_iter().filter(|(h, _)| !missing.contains(h) && !read.contains(h)).collect();
-        let reads = due.into_iter().filter(|(h, _)| reading.reads(h)).map(|blob| async move {
-            (blob, self.read_through(blob, |_| {}).await)
-        });
+        let reads = due
+            .into_iter()
+            .filter(|(h, _)| reading.reads(h))
+            .map(|blob| async move { (blob, self.read_through(blob, |_| {}).await) });
         let mut reading = stream::iter(reads).buffered_unordered(COPYING);
         while let Some(((hash, size), got)) = reading.next().await {
             (checked.read, checked.read_bytes) = (checked.read + 1, checked.read_bytes + size);

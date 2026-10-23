@@ -34,7 +34,7 @@
 	import { filmPost, filmsOf, postsOfFilm } from '$lib/studio/films.js';
 	import FILM_TEMPLATE from '/films/TEMPLATE.md?raw';
 	import { entryOf } from './artifacts.js';
-	import { allowed, may } from './ops.js';
+	import { allowed, may, windowRead } from './ops.js';
 	import { postTag, postTypeSchema } from './posttypes.js';
 
 	/**
@@ -42,6 +42,13 @@
 	 *   item: import('./vaults.js').EntryView, writes: boolean }}
 	 */
 	let { world, actor, api, busy, item } = $props();
+
+	let noteWindow = $state.raw(/** @type {any} */ (null));
+	$effect(() => {
+		const window = api.window?.();
+		noteWindow = window;
+		return () => window?.close();
+	});
 
 	/** a beat kind's name, for a beat with no title @param {string} t */
 	const label = (t) => /** @type {Record<string, string>} */ (BEAT_LABEL)[t] ?? t;
@@ -106,14 +113,11 @@
 		void world;
 		const e = script?.entry;
 		if (!e) return void (proposals = []);
+		if (api.window && !noteWindow) return;
 		let gone = false;
-		api.note(e).then(
-			(/** @type {any} */ n) => !gone && (proposals = (n?.lines ?? []).slice(1)),
-			() => {}
-		);
-		return () => {
-			gone = true;
-		};
+		const request = windowRead(api, { op: 'note', entry: e }, null, noteWindow);
+		request.result.then((/** @type {any} */ n) => { if (!gone) proposals = (n?.lines ?? []).slice(1); });
+		return () => { gone = true; request.close(); };
 	});
 
 	/** Runs change `op` on the script's main line as `what`. @param {string} what @param {object} op */

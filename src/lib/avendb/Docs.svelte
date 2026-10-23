@@ -17,6 +17,7 @@
 	HTML; until then, or where it can't, the source is what shows.
 -->
 <script>
+	import { windowRead } from './ops.js';
 	import { tick } from 'svelte';
 	import { typesetIn } from '$lib/sandbox/math-host.js';
 	import { DOC_PICTURE, fileNamed, pictures, render } from './article.js';
@@ -33,6 +34,13 @@
 	 *   onaccess: () => void }}
 	 */
 	let { world, vault, actor, api, entry = '', onaccess } = $props();
+
+	let noteWindow = $state.raw(/** @type {any} */ (null));
+	$effect(() => {
+		const window = api.window?.();
+		noteWindow = window;
+		return () => window?.close();
+	});
 
 	const SECTIONS = /** @type {const} */ ([
 		['paper', 'Paper'],
@@ -76,14 +84,11 @@
 		line = null;
 		if (!e) return;
 		void world;
+		if (api.window && !noteWindow) return;
 		let gone = false;
-		api.note(e).then(
-			(/** @type {any} */ n) => !gone && (note = n ?? null),
-			() => {}
-		);
-		return () => {
-			gone = true;
-		};
+		const request = windowRead(api, { op: 'note', entry: e }, null, noteWindow);
+		request.result.then((/** @type {any} */ n) => { if (!gone) note = n; });
+		return () => { gone = true; request.close(); };
 	});
 	/** the line whose text shows: main, or a proposal or variant picked on the right */
 	let line = $state(/** @type {string | null} */ (null));

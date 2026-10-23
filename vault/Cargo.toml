@@ -54,3 +54,7 @@ opt-level = 2
 # and twice that at 2 (avendb/Cargo.toml)
 [profile.dev.package.classic-mceliece-rust]
 opt-level = 3
+
+# The in-process avenDB node must use the same late custom-path activation fix as the avenDB workspace.
+[patch.crates-io]
+iroh = { path = "../avendb/vendor/iroh" }

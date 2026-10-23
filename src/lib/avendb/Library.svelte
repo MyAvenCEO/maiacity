@@ -19,12 +19,15 @@
 	PDF, a film nor a song only saves.
 -->
 <script>
-	import { onDestroy } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import { DENY } from '../sandbox/policy.js';
 	import { address, dataUrl, kindOf, KINDS, mediaOf, serve, whole, WHOLE } from './files.js';
 	import { familyOf } from './made.js';
+	import { visibleEntries } from './visible-entries.js';
+	import { previewPool } from './preview-pool.js';
+	import { previewViewport } from './preview-viewport.js';
 	import { allowed, creatable, deleting, may } from './ops.js';
 	import {
 		count,
@@ -51,6 +54,16 @@
 	 *   onaccess: () => void }}
 	 */
 	let { world, vault, actor, api, busy, onaccess } = $props();
+
+	/** One demand scope for the mounted Library, reused as tiles enter and leave the viewport. */
+	let entryWindow = $state.raw(/** @type {any} */ (null));
+	const visible = visibleEntries((/** @type {string[]} */ entries) => { void entryWindow?.replace(entries); });
+	$effect(() => {
+		const window = api.demand?.();
+		entryWindow = window;
+		void window?.replace(untrack(() => visible.entries()));
+		return () => window?.close();
+	});
 
 	/** @typedef {import('./vaults.js').EntryView} EntryView */
 	/** @typedef {import('./files.js').Kind} Kind */
@@ -234,9 +247,16 @@
 	let streams = $state(false);
 	worker.ready.then((ok) => (streams = ok));
 
-	/** the pictures' previews, by their file's root: blob URLs, and data URLs for SVGs */
+	/** the pictures' previews, by immutable file identity and media type: blob URLs, and data URLs for SVGs */
 	let thumbs = $state(/** @type {Record<string, string>} */ ({}));
-	const thumbing = new Set();
+	const thumbnails = previewPool({
+		changed: (/** @type {string} */ key, /** @type {string | null} */ url) => {
+			const next = { ...thumbs };
+			if (url) next[key] = url; else delete next[key];
+			thumbs = next;
+		},
+		dispose: (/** @type {string} */ url) => { if (url.startsWith('blob:')) URL.revokeObjectURL(url); }
+	});
 	/** the blob URLs the page made, to let go of */
 	const made = new Set();
 
@@ -248,21 +268,47 @@
 	};
 
 	/** Entry `e`'s file as a picture's or a PDF's URL: an SVG as a data URL. @param {EntryView} e */
-	async function picture(e, /** @type {(done: number) => void} */ progress = () => {}) {
+	async function picture(e, /** @type {(done: number) => void} */ progress = () => {}, /** @type {AbortSignal | undefined} */ signal = undefined, makeUrl = urlOf) {
 		const file = fileOf(e);
 		if (!file) throw new Error('it brings no file');
 		const k = kind(e);
 		const type = k === 'svg' ? 'image/svg+xml' : k === 'pdf' ? 'application/pdf' : PICTURE.test(e.media ?? '') ? (e.media ?? '') : '';
 		if (!type) throw new Error('it is no picture this page shows');
-		const blob = await whole(read, file, type, progress);
-		return k === 'svg' ? dataUrl(blob) : urlOf(blob);
+		const blob = await whole(read, file, type, progress, signal);
+		return k === 'svg' ? dataUrl(blob) : makeUrl(blob);
 	}
 
-	/** Entry `e`'s preview as a URL: its picture, or of a film the JPEG still `still` the Mac made of it. @param {EntryView} e @param {EntryView} [still] */
-	async function thumbnail(e, still) {
+	/** Entry `e`'s preview as a URL: its picture, or of a film the JPEG still `still` the Mac made of it. @param {EntryView} e @param {EntryView | undefined} still */
+	async function thumbnail(e, still, /** @type {AbortSignal} */ signal) {
 		const file = still && fileOf(still);
-		if (!file) return picture(e);
-		return urlOf(await whole(read, file, still.media ?? 'image/jpeg'));
+		if (!file) return picture(e, () => {}, signal, (blob) => URL.createObjectURL(blob));
+		return URL.createObjectURL(await whole(read, file, still.media ?? 'image/jpeg', undefined, signal));
+	}
+
+	/** Share one preview URL between rows using the same generated still. @param {EntryView} e @param {EntryView} [still] */
+	function previewFile(e, still) {
+		const file = fileOf(e);
+		const own = file && (kind(e) === 'image' || kind(e) === 'svg') && file.len !== null && file.len <= THUMB;
+		const source = own ? e : still;
+		if (!source) return null;
+		const preview = fileOf(source);
+		if (!preview || preview.len === null || preview.len > THUMB) return null;
+		const svg = source === e && kind(source) === 'svg';
+		const type = svg ? 'image/svg+xml' : (source.media ?? (source === e ? '' : 'image/jpeg'));
+		const key = JSON.stringify([preview.root, preview.size, preview.len, type, svg]);
+		return { source, file: preview, key };
+	}
+	/** @param {EntryView} e */
+	const thumbOf = (e) => { const p = previewFile(e, previewOf.get(e.entry)); return p ? thumbs[p.key] : undefined; };
+	/** Keep a preview while this owner uses it; immutable file identity survives replacement world records.
+	 * @param {object} owner @param {EntryView} e @param {EntryView | undefined} still */
+	function retainPreview(owner, e, still) {
+		const preview = previewFile(e, still);
+		if (!preview) return thumbnails.release(owner);
+		thumbnails.retain(owner, {
+			key: preview.key, bytes: preview.file.len,
+			load: (/** @type {AbortSignal} */ signal) => thumbnail(e, preview.source === e ? undefined : preview.source, signal)
+		});
 	}
 
 	/**
@@ -270,26 +316,12 @@
 	 * in later, as the Mac makes it. @param {HTMLElement} node @param {[EntryView, EntryView | undefined]} of
 	 */
 	function previews(node, of) {
-		/** @type {IntersectionObserver | null} */
-		let seen = null;
-		const watch = (/** @type {[EntryView, EntryView | undefined]} */ [e, still]) => {
-			seen?.disconnect();
-			const file = fileOf(e);
-			if (!file || file.len === null || thumbing.has(file.root)) return;
-			const own = (kind(e) === 'image' || kind(e) === 'svg') && file.len <= THUMB;
-			if (!own && !still) return;
-			seen = new IntersectionObserver(([x]) => {
-				if (!x.isIntersecting || thumbing.has(file.root)) return;
-				seen?.disconnect();
-				thumbing.add(file.root);
-				thumbnail(e, own ? undefined : still)
-					.then((url) => (thumbs = { ...thumbs, [file.root]: url }))
-					.catch(() => thumbing.delete(file.root));
-			});
-			seen.observe(node);
-		};
-		watch(of);
-		return { update: watch, destroy: () => seen?.disconnect() };
+		return previewViewport(node, of, (/** @type {[EntryView, EntryView | undefined]} */ [e, still], /** @type {boolean} */ showing, /** @type {boolean} */ observed) => untrack(() => {
+			if (!showing) { thumbnails.release(node); return visible.hide(node); }
+			visible.show(node, [e.entry, ...(still ? [still.entry] : [])]);
+			// Without viewport support, files still open on selection. Avoid loading every thumbnail at once.
+			if (observed) retainPreview(node, e, still); else thumbnails.release(node);
+		}));
 	}
 
 	/** how the files are laid out, remembered on this device: tiles, or a table */
@@ -336,16 +368,33 @@
 	/** the entry open in the main area */
 	let open = $state('');
 	const viewing = $derived(files.find((e) => e.entry === open));
+	/** A film's viewer owns its poster independently of the rows removed when it opens. */
+	const viewerPreview = {};
+	/** @param {EntryView | undefined} e @param {EntryView | undefined} still */
+	function selected(e, still) {
+		visible.select(e ? [e.entry, ...(still ? [still.entry] : [])] : []);
+		if (e && kind(e) === 'film') retainPreview(viewerPreview, e, still); else thumbnails.release(viewerPreview);
+	}
+	$effect(() => {
+		const e = viewing, still = e && previewOf.get(e.entry);
+		untrack(() => selected(e, still));
+	});
 	/** what the viewer shows it from, how much of it it read, and why it can't */
 	let src = $state('');
 	let loading = $state(-1);
 	let failed = $state('');
 	/** the viewer's opening, so that a slower one, of a file since closed, shows nothing */
 	let opening = 0;
+	/** @type {AbortController | undefined} */
+	let viewerRead;
 
 	/** Opens entry `e` in the main area. @param {EntryView} e */
 	async function show(e) {
+		close();
 		const at = ++opening;
+		const controller = viewerRead = new AbortController();
+		// Acquire before the rows unmount, so their last-owner release cannot revoke a shared poster.
+		untrack(() => selected(e, previewOf.get(e.entry)));
 		[open, src, loading, failed] = [e.entry, '', -1, ''];
 		const file = fileOf(e);
 		const k = kind(e);
@@ -355,16 +404,13 @@
 			if ((k === 'film' || k === 'audio') && streams) src = address(file, e.media ?? '');
 			else if (k === 'film' || k === 'audio') {
 				loading = 0;
-				const blob = await whole(read, file, e.media ?? '', (d) => at === opening && (loading = d));
+				const blob = await whole(read, file, e.media ?? '', (d) => at === opening && (loading = d), controller.signal);
 				if (at === opening) src = urlOf(blob);
 			} else {
-				const thumb = thumbs[file.root];
-				if (thumb) src = thumb;
-				else {
-					loading = 0;
-					const url = await picture(e, (d) => at === opening && (loading = d));
-					if (at === opening) src = url;
-				}
+				loading = 0;
+				const url = await picture(e, (d) => at === opening && (loading = d), controller.signal);
+				if (at === opening) src = url;
+				else releaseUrl(url);
 			}
 		} catch (err) {
 			if (at === opening) failed = `It doesn’t open here: ${/** @type {Error} */ (err).message}.`;
@@ -373,8 +419,15 @@
 		}
 	}
 
+	/** Release a viewer URL independently of viewport thumbnail ownership. @param {string} url */
+	function releaseUrl(url) { if (made.delete(url)) URL.revokeObjectURL(url); }
+
 	function close() {
 		opening++;
+		viewerRead?.abort();
+		viewerRead = undefined;
+		untrack(() => selected(undefined, undefined));
+		releaseUrl(src);
 		[open, src, loading, failed] = ['', '', -1, ''];
 	}
 
@@ -428,6 +481,9 @@
 	}
 
 	onDestroy(() => {
+		close();
+		thumbnails.close();
+		visible.clear();
 		worker.stop();
 		for (const url of made) URL.revokeObjectURL(url);
 	});
@@ -577,7 +633,7 @@
 										{@const e = r.e}
 										{@const k = kind(e)}
 										{@const file = fileOf(e)}
-										{@const thumb = file ? thumbs[file.root] : undefined}
+										{@const thumb = thumbOf(e)}
 										{@const own = r.of ? [] : (e.tags ?? []).filter((t) => !t.includes(':'))}
 										<tr class:deleted={e.deleted} class:made={!!r.of}>
 											<td class="mini">
@@ -624,7 +680,7 @@
 					{#each shown as e (e.entry)}
 						{@const k = kind(e)}
 						{@const file = fileOf(e)}
-						{@const thumb = file ? thumbs[file.root] : undefined}
+						{@const thumb = thumbOf(e)}
 						<button class="tile" class:deleted={e.deleted} onclick={() => show(e)} aria-label="Open {e.title}">
 							<span class="thumb {k}" use:previews={[e, previewOf.get(e.entry)]}>
 								{#if thumb}
@@ -684,7 +740,7 @@
 					<p class="note">Opening it: {Math.floor(loading * 100)} %</p>
 				{:else if k === 'film' && src}
 					<!-- svelte-ignore a11y_media_has_caption -->
-					<video src={src} poster={file ? thumbs[file.root] : undefined} controls autoplay playsinline></video>
+					<video src={src} poster={thumbOf(viewing)} controls autoplay playsinline></video>
 				{:else if k === 'audio' && src}
 					<div class="song"><Icon name="audio" size={64} /><audio src={src} controls autoplay></audio></div>
 				{:else if (k === 'image' || k === 'svg') && src}

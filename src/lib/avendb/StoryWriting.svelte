@@ -8,13 +8,20 @@
 -->
 <script>
 	import ArticleView from './ArticleView.svelte';
-	import { allowed, may } from './ops.js';
+	import { allowed, may, windowRead } from './ops.js';
 
 	/**
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean,
 	 *   item: import('./vaults.js').EntryView, writes: boolean }}
 	 */
 	let { world, actor, api, busy, item } = $props();
+
+	let noteWindow = $state.raw(/** @type {any} */ (null));
+	$effect(() => {
+		const window = api.window?.();
+		noteWindow = window;
+		return () => window?.close();
+	});
 
 	const story = $derived(/** @type {any} */ (item.record) ?? {});
 	const text = $derived(item.text ?? story.text ?? '');
@@ -37,14 +44,11 @@
 	let proposals = $state(/** @type {{ line: string, name: string | null }[]} */ ([]));
 	$effect(() => {
 		void world;
+		if (api.window && !noteWindow) return;
 		let gone = false;
-		api.note(item.entry).then(
-			(/** @type {any} */ n) => !gone && (proposals = (n?.lines ?? []).slice(1)),
-			() => {}
-		);
-		return () => {
-			gone = true;
-		};
+		const request = windowRead(api, { op: 'note', entry: item.entry }, null, noteWindow);
+		request.result.then((/** @type {any} */ n) => { if (!gone) proposals = (n?.lines ?? []).slice(1); });
+		return () => { gone = true; request.close(); };
 	});
 
 	/** what the person has written and not saved yet */

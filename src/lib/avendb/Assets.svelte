@@ -16,6 +16,7 @@
 	one more, its recipe's hash after the entry.
 -->
 <script>
+	import { windowRead } from './ops.js';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import Lines from './Lines.svelte';
@@ -30,6 +31,13 @@
 	 *   it, if it names one
 	 */
 	let { world, vault, actor, api, entry = '', recipe = '' } = $props();
+
+	let noteWindow = $state.raw(/** @type {any} */ (null));
+	$effect(() => {
+		const window = api.window?.();
+		noteWindow = window;
+		return () => window?.close();
+	});
 
 	/** the parts list, with the stage's own `Parts` of an asset's parts, loaded with the stage */
 	const partsList = import('$lib/assets/Parts.svelte');
@@ -116,18 +124,11 @@
 		void world;
 		const e = asset;
 		if (!e) return;
+		if (api.window && !noteWindow) return;
 		let gone = false;
-		api.note(e).then(
-			(/** @type {any} */ n) => {
-				if (!gone) noted = { entry: e, note: n ?? null };
-			},
-			() => {
-				if (!gone) noted = { entry: e, note: null };
-			}
-		);
-		return () => {
-			gone = true;
-		};
+		const request = windowRead(api, { op: 'note', entry: e }, null, noteWindow);
+		request.result.then((/** @type {any} */ n) => { if (!gone) noted = { entry: e, note: n }; });
+		return () => { gone = true; request.close(); };
 	});
 	const note = $derived(noted?.entry === asset ? noted.note : null);
 

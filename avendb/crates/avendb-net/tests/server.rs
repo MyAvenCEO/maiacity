@@ -12,10 +12,10 @@ use avendb::cast::*;
 use avendb::id::{EntryId, ShareId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
-use avendb::world;
 use avendb::policy::{Action, Kind, Level, Principal, Sharing};
 use avendb::sign::{self, DeviceKey, Suite};
 use avendb::slice::Selector;
+use avendb::world;
 use avendb_net::{Admission, Node, Options, Place, disk, server, shelf};
 use common::Folder;
 use iroh::{EndpointId, SecretKey};
@@ -194,14 +194,18 @@ async fn a_persons_mac_adds_agents_as_devices_of_their_coops_one_aven_which_act_
     let garden = found(&mut w, Kind::Coop, bob);
     let aven = found(&mut w, Kind::Aven, garden);
     // a second aven of the garden, for nobody
-    let twice = w.lab.submit(mac_b, &[passkey_b], Action::Genesis {
-        kind: Kind::Aven,
-        owners: vec![Principal::Vault(garden)],
-        threshold: 1,
-        root: None,
-        nonce: 4,
-        seal_to: vec![],
-    });
+    let twice = w.lab.submit(
+        mac_b,
+        &[passkey_b],
+        Action::Genesis {
+            kind: Kind::Aven,
+            owners: vec![Principal::Vault(garden)],
+            threshold: 1,
+            root: None,
+            nonce: 4,
+            seal_to: vec![],
+        },
+    );
     assert!(twice.is_err(), "one aven a coop");
     let bobs = node(&mut w, mac_b, &[passkey_b], 2).await;
     for a in [&claude, &codex, &second] {
@@ -328,9 +332,7 @@ async fn an_avens_access_request_reaches_the_coop_it_asks_directly_and_through_t
     assert!(mac.read(given(aven, Level::Backup)).await, "the server keeps the aven, as it keeps her vault");
     assert!(!mac.read(given(aven, Level::Read)).await, "Bob reads none of it: an aven acts for its coop alone");
     // her aven asks Bob's garden for Editor, both Macs online: a record in the aven, and a share of it to the garden
-    let ask = |why: &str| {
-        serde_json::json!({ "op": "ask", "to": garden.to_hex(), "level": "Editor", "why": why, "as": aven.to_hex() })
-    };
+    let ask = |why: &str| serde_json::json!({ "op": "ask", "to": garden.to_hex(), "level": "Editor", "why": why, "as": aven.to_hex() });
     let first = mac.op(ask("To plan the harvest")).await.expect("an answer");
     let first = first["ok"]["entry"].clone();
     assert!(first.is_string(), "the request: {first}");
@@ -389,9 +391,10 @@ async fn an_avens_access_request_reaches_the_coop_it_asks_directly_and_through_t
 async fn a_server_made_before_the_key_move_opens_as_itself_and_a_new_one_in_ml_dsa_65() {
     // a server made before the key move kept the 32 bytes of its secret alone: it opens in SLH-DSA, as itself
     let old = Folder::new("old server");
-    let shelf = disk::open(old.path()).expect("its shelf");
+    let owner = disk::open(old.path()).expect("its shelf").writer().unwrap();
+    let shelf = owner.shelf();
     shelf.put(server::SECRET, bytes::Bytes::copy_from_slice(&[7; 32])).await.expect("its secret, as it kept it");
-    let node = server::open(shelf, Options::local()).await.expect("the server");
+    let node = server::open_owned(owner, Options::local()).await.expect("the server");
     assert_eq!(node.device(), DeviceKey::from_secret_in([7; 32], Suite::SlhDsa).id(), "in SLH-DSA, as itself");
     node.shutdown().await.expect("it shuts down");
     // a new one makes its secret in ML-DSA-65, keeps its suite with it, and opens as itself again
@@ -414,10 +417,16 @@ async fn a_persons_mac_moves_the_avens_server_and_agent_from_before_the_key_move
     let (server_dir, claude_dir) = (Folder::new("aven server"), Folder::new("aven claude"));
     let secrets = [[11; 32], [12; 32]];
     for (dir, secret) in [&server_dir, &claude_dir].into_iter().zip(secrets) {
-        let shelf = disk::open(dir.path()).expect("its shelf");
-        shelf.put(server::SECRET, bytes::Bytes::copy_from_slice(&secret)).await.expect("its secret, as it kept it");
+        let owner = disk::open(dir.path()).expect("its shelf").writer().unwrap();
+        owner
+            .shelf()
+            .put(server::SECRET, bytes::Bytes::copy_from_slice(&secret))
+            .await
+            .expect("its secret, as it kept it");
+        owner.shutdown().await.unwrap();
     }
-    let [earlier, next] = [Suite::SlhDsa, Suite::MlDsa].map(|suite| secrets.map(|s| DeviceKey::from_secret_in(s, suite).id()));
+    let [earlier, next] =
+        [Suite::SlhDsa, Suite::MlDsa].map(|suite| secrets.map(|s| DeviceKey::from_secret_in(s, suite).id()));
     let admission = Admission::default();
     let server = open(&server_dir, &admission).await.expect("the server");
     let claude = agent(&claude_dir, "agentClaude").await;
@@ -473,7 +482,11 @@ async fn a_persons_mac_moves_the_avens_server_and_agent_from_before_the_key_move
     assert_eq!([server.device(), claude.device()], next, "each in ML-DSA-65, as its next key");
     assert_eq!(server::vault(&server).await, Some(aven), "the server still avenMAIA's");
     assert_eq!(server::vault(&claude).await, Some(aven), "and agentClaude");
-    assert_eq!(*server.id().as_bytes(), found.iter().find(|f| f.0 == earlier[0]).expect("the server").1, "same endpoint");
+    assert_eq!(
+        *server.id().as_bytes(),
+        found.iter().find(|f| f.0 == earlier[0]).expect("the server").1,
+        "same endpoint"
+    );
     // the offer the app carries names the server's earlier key: its next key at the same endpoint stands for it
     bobs.know(server.addr());
     assert_eq!(bobs.claim(&offer, passkey_b).await.expect("the same server"), aven);
@@ -487,10 +500,12 @@ async fn a_server_whose_shelf_names_a_next_key_of_no_vault_opens_as_its_earlier_
     // a shelf that names a next key whose move it doesn't hold: the server doesn't open as a device of no vault, which
     // would take a stranger's claim, but as its earlier key
     let dir = Folder::new("lost move");
-    let shelf = disk::open(dir.path()).expect("its shelf");
+    let owner = disk::open(dir.path()).expect("its shelf").writer().unwrap();
+    let shelf = owner.shelf();
     shelf.put(server::SECRET, bytes::Bytes::copy_from_slice(&[13; 32])).await.expect("its secret");
     let next = DeviceKey::from_secret_in([13; 32], Suite::MlDsa).id();
     shelf.put(server::NEXT, bytes::Bytes::copy_from_slice(&next.0)).await.expect("a next key");
+    owner.shutdown().await.unwrap();
     let node = open(&dir, &Admission::default()).await.expect("the server");
     assert_eq!(node.device(), DeviceKey::from_secret_in([13; 32], Suite::SlhDsa).id(), "as its earlier key");
     node.shutdown().await.expect("it stops");

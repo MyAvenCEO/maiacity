@@ -89,6 +89,10 @@ async fn stated(conn: &Connection) -> Statement {
         let (mut send, mut recv) = conn.accept_bi().await.expect("a message from the node");
         let message = recv.read_to_end(16 << 20).await.expect("its bytes");
         let (&k, body) = message.split_first().expect("a kind");
+        if k == 13 {
+            send.reset(iroh::endpoint::VarInt::from_u32(1)).expect("legacy peer refuses sparse holdings");
+            continue;
+        }
         send.finish().expect("nothing back");
         if k == ANNOUNCE {
             continue;

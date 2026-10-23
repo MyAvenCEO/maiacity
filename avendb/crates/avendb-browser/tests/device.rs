@@ -1370,7 +1370,7 @@ async fn a_gated_server_takes_a_newcomers_vault_only_with_the_invite_maia_city_g
     let backup = avendb::cast::share(maia, vault(avenceo), Level::Backup, Selector::All);
     let backup = move |lab: &mut Lab, me| lab.issue(me, &[me], backup);
     first.node().act(backup).await.expect("Maia City gives its server backup");
-    server.gate(true).await;
+    server.gate(true).await.unwrap();
     // Maia City defines Traveler and invites a traveler: the answer carries the secret the invite's link holds
     let company = maia.to_hex();
     let traveler = json!({ "name": "Traveler", "caps": [{ "op": "read" }] });

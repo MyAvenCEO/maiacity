@@ -106,6 +106,24 @@ jobs:
           CARGO_PROFILE_TEST_OPT_LEVEL: 1
         run: cargo test --locked --doc ${{ matrix.args }}
 
+  image:
+    name: avenDB server image builds
+    # The release patches a local dependency: exercise cargo-chef and the Docker
+    # context before merge, without publishing an image or touching production.
+    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: avendb
+          file: avendb/Dockerfile.server
+          push: false
+          cache-from: type=gha,scope=avendb-pr
+          cache-to: type=gha,scope=avendb-pr,mode=max
+
   spec:
     name: Lean spec and vectors
     runs-on: ubuntu-latest

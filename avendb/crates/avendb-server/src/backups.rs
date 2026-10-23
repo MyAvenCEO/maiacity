@@ -376,9 +376,16 @@ pub async fn restore(snapshots: &Snapshots, at: Option<u64>, into: &Path) -> Res
     let Some(secret) = snapshots.secret().await? else {
         bail!("the bucket of snapshots holds no secret of the server's: a restore would make it another device");
     };
-    let shelf = avendb_net::disk::open(into)?;
-    let restored = backup::restore_all(snapshots, at, &shelf).await?;
-    shelf.put(server::SECRET, bytes::Bytes::copy_from_slice(&secret[..])).await.context("the server's secret")?;
+    let writer = avendb_net::disk::open(into)?.writer()?;
+    let shelf = writer.shelf();
+    let restored = async {
+        let restored = backup::restore_all(snapshots, at, &shelf).await?;
+        shelf.put(server::SECRET, bytes::Bytes::copy_from_slice(&secret[..])).await.context("the server's secret")?;
+        anyhow::Ok(restored)
+    }.await;
+    let ended = writer.shutdown().await;
+    let restored = restored?;
+    ended?;
     Ok(restored)
 }
 

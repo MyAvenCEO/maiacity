@@ -19,7 +19,10 @@ import AvenDB.HandedView
 import AvenDB.Examples
 import AvenDB.Checkpoint
 import AvenDB.Batches
+import AvenDB.BatchDurability
 import AvenDB.Snapshot
+import AvenDB.PagedView
+import AvenDB.TransportEpoch
 import AvenDB.Wraps
 import AvenDB.Vectors
 import AvenDB.Ops
@@ -32,3 +35,5 @@ import AvenDB.BackupVectors
 import AvenDB.Objective
 import AvenDB.Sessions
 import AvenDB.ObjectiveVectors
+
+import AvenDB.EditRanges

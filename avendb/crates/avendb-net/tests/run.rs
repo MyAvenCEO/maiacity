@@ -362,3 +362,30 @@ async fn a_panic_in_one_call_fails_that_call_alone_and_the_node_runs_on() {
     assert!(card.is_ok(), "it changes on: {card:?}");
     mac.shutdown().await.expect("the node shuts down");
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn view_demand_is_revisioned_local_metadata_and_never_a_vault_edit() {
+    let mut w = world();
+    let me = w.mac_a;
+    let n = node(&mut w, me, &[], 211).await;
+    let before = n.read(|lab, me| lab.log(me).ids().to_vec()).await;
+    let scope = "a".repeat(32);
+    let entry = "b".repeat(64);
+    let first = n.op(json!({"op": "demand", "scope": scope, "revision": 1, "entries": [entry]})).await.unwrap();
+    assert_eq!(first["ok"]["accepted"], true);
+    assert_eq!(first["ok"]["lease_ms"], 90_000);
+    let clear = n.op(json!({"op": "demand", "scope": scope, "revision": 3, "entries": []})).await.unwrap();
+    assert_eq!(clear["ok"]["accepted"], true);
+    let late = n.op(json!({"op": "demand", "scope": scope, "revision": 2, "entries": [entry]})).await.unwrap();
+    assert_eq!(late["ok"]["accepted"], false);
+    for invalid in [
+        json!({"op": "demand", "scope": "bad", "revision": 4, "entries": []}),
+        json!({"op": "demand", "scope": scope, "revision": 0, "entries": []}),
+        json!({"op": "demand", "scope": scope, "revision": 4, "entries": ["bad"]}),
+        json!({"op": "demand", "scope": scope, "revision": 4, "entries": vec![entry; 513]}),
+    ] {
+        assert_eq!(n.op(invalid).await.unwrap()["refused"], "BadOp");
+    }
+    assert_eq!(n.read(|lab, me| lab.log(me).ids().to_vec()).await, before);
+    n.shutdown().await.unwrap();
+}

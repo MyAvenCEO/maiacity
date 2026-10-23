@@ -6,6 +6,7 @@
 	import '@fontsource-variable/fraunces/opsz.css';
 	import '../app.css';
 	import { page } from '$app/state';
+	import { useView } from '../../game/code/sources/device.js';
 	import { socials } from '$lib/social';
 	import SiteFooter from '$lib/SiteFooter.svelte';
 	import logo from '$lib/images/maiacity-logo.png';
@@ -24,6 +25,11 @@
 	// The signed-in app (/app/: the dashboard, the games, the admin's tools) is its own place: none of the public
 	// site's chrome there, it brings its own. (An old /games or /admin address only passes through on its way.)
 	const bare = $derived(/^\/(app|games|admin)(\/|$)/.test(page.url.pathname.slice(base.length)));
+
+	// Replan declared entry demand for each client-side navigation, even when the device stays open.
+	$effect(() => {
+		void useView(page.url.pathname);
+	});
 
 	// the phone menu; it closes itself whenever the page changes
 	let menuOpen = $state(false);

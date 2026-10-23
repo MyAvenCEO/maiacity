@@ -401,7 +401,7 @@ impl Device {
         let node = Device::spawn(lab, me, &start, passes.clone()).await?;
         node.on_relay().await;
         progress.step("server");
-        node.know(server.addr.clone());
+        node.try_know(server.addr.clone())?;
         let mut tries = 0;
         while let Err(e) = node.contact(server.addr.id).await {
             tries += 1;
@@ -436,7 +436,7 @@ impl Device {
             }
             Ok::<_, anyhow::Error>(())
         };
-        device.node.act(found).await?;
+        device.node.try_act(found).await??;
         Ok(device)
     }
 
@@ -555,16 +555,16 @@ impl Device {
             let add = Action::Share(Sharing::Owner { vault, owner: Principal::Signer(touch), seal_to: None });
             Ok::<_, Refusal>((touch, lab.draft(me, &[passkey, touch], add)?))
         };
-        let (touch, draft) = self.node.act(draft).await.map_err(|why| anyhow!("the Touch ID key is refused: {why:?}"))?;
+        let (touch, draft) = self.node.try_act(draft).await?.map_err(|why| anyhow!("the Touch ID key is refused: {why:?}"))?;
         let (unlock, consent) = sign(draft.challenge()).await?;
         let secret = xor(&self.mask, &unlock.device);
         anyhow::ensure!(DeviceKey::of(*secret, meta.device).is_some(), "the unlock is of another device");
         let pad = consent.device_mask().context("the Touch ID key's ceremony isn't a touch")?;
         let complete = move |lab: &mut Lab, me| lab.complete(me, draft, &[(passkey, &unlock.ceremony), (touch, &consent)]);
-        self.node.act(complete).await.map_err(|why| anyhow!("the Touch ID key isn't added: {why:?}"))?;
+        self.node.try_act(complete).await?.map_err(|why| anyhow!("the Touch ID key isn't added: {why:?}"))?;
         let touch = Touch { mask: *xor(&secret, &pad), passkey, ..keys };
         meta.touch = Some(touch.clone());
-        meta.keep(shelf).await?;
+        meta.keep(&self.writable_shelf()?).await?;
         Ok(touch)
     }
 
@@ -575,7 +575,7 @@ impl Device {
         let shelf = self.shelf.as_ref().context("this device keeps no shelf")?;
         let mut meta = Meta::load(shelf).await?.context("its shelf holds nothing that opens it")?;
         if meta.touch.take().is_some() {
-            meta.keep(shelf).await?;
+            meta.keep(&self.writable_shelf()?).await?;
         }
         Ok(())
     }
@@ -652,13 +652,13 @@ impl Device {
             let (theirs, ours): (Vec<Unsigned>, Vec<Unsigned>) =
                 drafts.into_iter().partition(|d| adding(d, &avens).is_some());
             let by = signers.clone();
-            self.node.act(move |lab, me| lab.complete_move(me, ours, &by.ceremonies())).await.map_err(refused)?;
+            self.node.try_act(move |lab, me| lab.complete_move(me, ours, &by.ceremonies())).await?.map_err(refused)?;
             // each aven's device signs the edit that adds its next key last, and keeps it; one aven's chain in its log,
             // so one that doesn't take its move holds back those after it, which a later move adds
             for draft in theirs {
                 let at = adding(&draft, &avens).expect("an aven's device's move");
                 let by = signers.clone();
-                let claim = self.node.act(move |lab, me| lab.claim(me, draft, &by.ceremonies())).await.map_err(refused)?;
+                let claim = self.node.try_act(move |lab, me| lab.claim(me, draft, &by.ceremonies())).await?.map_err(refused)?;
                 if let Err(e) = self.node.send_move(at, claim).await {
                     match moves.is_empty() {
                         true => return Err(e.context("an aven's device didn't take its key move")),
@@ -677,12 +677,12 @@ impl Device {
         let (follow, query_depth) = self.node.read(settings).await;
         let touch = meta.touch.clone().map(|t| Touch { passkey: next(t.passkey), ..t });
         let meta = Meta { device: new, follow, query_depth, touch, ..meta };
-        meta.keep(&shelf).await?;
+        meta.keep(&self.writable_shelf()?).await?;
         keep(moves.clone()).await?;
         let left = moves.clone();
-        self.node.act(move |lab, me| lab.finish_move(me, &left)).await.map_err(refused)?;
+        self.node.try_act(move |lab, me| lab.finish_move(me, &left)).await?.map_err(refused)?;
         let seed = start.entropy;
-        let lab = self.node.act(move |lab, me| lab.moved(me, new, seed)).await;
+        let lab = self.node.try_act(move |lab, me| lab.moved(me, new, seed)).await?;
         let lab = lab.context("its next key isn't at hand")?;
         self.close().await?;
         let passkeys = [next(self.passkey), self.passkey];
@@ -723,7 +723,7 @@ impl Device {
         let (passkey, touch) = (!passkeys.is_empty(), !touches.is_empty());
         let Signing { passkey, touch } = sign(first.challenge(), Moving { passkey, touch, checkpoint: true, ..Moving::default() }).await?;
         let signers = Signers { passkeys, touches, passkey: passkey.map(Arc::new), touch: touch.map(Arc::new) };
-        self.node.act(move |lab, me| lab.complete_move(me, drafts, &signers.ceremonies())).await.map_err(refused)?;
+        self.node.try_act(move |lab, me| lab.complete_move(me, drafts, &signers.ceremonies())).await?.map_err(refused)?;
         Ok(covered)
     }
 
@@ -777,7 +777,7 @@ impl Device {
             others.into_iter().for_each(|p| lab.lose(p));
             Some((theirs, opener))
         };
-        let Some((p256, opener)) = node.act(forget).await else { bail!("the passkey's keys") };
+        let Some((p256, opener)) = node.try_act(forget).await? else { bail!("the passkey's keys") };
         let (shelf, name, relay) = (start.shelf.clone(), start.name.clone(), start.relay.clone());
         let closed = watch::Sender::new(false);
         Ok(Device { node: Arc::new(node), passkey, p256, mask, shelf, name, relay, closed, opener })
@@ -791,13 +791,19 @@ impl Device {
         Meta { name, relay, nonce, mask, credential, p256, device, follow: vec![], query_depth: None, touch: None }
     }
 
+    /// Metadata belongs to this exact open Node; a retained Device cannot write through
+    /// the plain read shelf after shutdown or borrow a replacement Node's writer.
+    fn writable_shelf(&self) -> Result<Shelf> {
+        self.node.writer_shelf().context("this device keeps no writable shelf")
+    }
+
     /// Keeps `meta` on its shelf, what opens it again (`Meta::keep`), with the vaults it follows now and how deep its
     /// queries read: a device new here keeps it once it started, and its shelf holds it from then on. Fails for a
     /// device that keeps no shelf.
     pub async fn keep(&self, meta: &Meta) -> Result<()> {
         let (follow, query_depth) = self.node.read(settings).await;
         let meta = Meta { follow, query_depth, ..meta.clone() };
-        meta.keep(self.shelf.as_ref().context("this device keeps no shelf")?).await
+        meta.keep(&self.writable_shelf()?).await
     }
 
     /// Its name reads `name`: in what opens it again, on its shelf, then on its card (the `card` op). Whether its card
@@ -811,7 +817,7 @@ impl Device {
         let mut meta = Meta::load(shelf).await?.context("its shelf holds nothing that opens it")?;
         if meta.name != name {
             meta.name.clone_from(&name);
-            meta.keep(shelf).await?;
+            meta.keep(&self.writable_shelf()?).await?;
         }
         let card = self.op(json!({ "op": "card", "name": name })).await.context("its card")?;
         Ok(card["wrote"].as_bool().unwrap_or(false))
@@ -893,7 +899,7 @@ impl Device {
         let Some(meta) = Meta::load(shelf).await? else { return Ok(()) };
         let (follow, query_depth) = self.node.read(settings).await;
         if (&meta.follow, meta.query_depth) != (&follow, query_depth) {
-            Meta { follow, query_depth, ..meta }.keep(shelf).await?;
+            Meta { follow, query_depth, ..meta }.keep(&self.writable_shelf()?).await?;
         }
         Ok(())
     }
@@ -904,6 +910,18 @@ impl Device {
         let (mut changes, mut closed) = (self.node.changes(), self.closed.subscribe());
         let changed = async move { changes.wait_for(|&size| size != held).await.is_ok() };
         or(changed, async move { closed.wait_for(|&closed| closed).await.is_err() }).await
+    }
+
+    /// Waits until what its node shows changed since the page last saw it at `since` (`Node::stirs`): its jobs, the
+    /// pages it took, its peers, what it holds. How many times it changed by then, or None once it closed.
+    pub async fn stirred(&self, since: u64) -> Option<u64> {
+        let (mut stirs, mut closed) = (self.node.stirs(), self.closed.subscribe());
+        let stirred = async move { stirs.wait_for(|&n| n != since).await.ok().map(|n| *n) };
+        or(stirred, async move {
+            let _ = closed.wait_for(|&closed| closed).await;
+            None
+        })
+        .await
     }
 
     /// Closes its connections and its endpoint, once its shelf holds what it holds, if it can
@@ -1182,6 +1200,9 @@ fn lab(start: &Start, meta: &Meta, unlock: &Unlock) -> Result<(Lab, [SignerId; 2
     let me = lab.device_as(&start.name, *secret, meta.device);
     me.context("the unlock opens another device than the one this shelf keeps")?;
     lab.device_keys(meta.device, *secret);
+    if !lab.hand_from_ceremony(meta.device, passkeys[0], &unlock.ceremony) {
+        bail!("the passkey did not unlock the handoff key");
+    }
     Ok((lab, passkeys))
 }
 
@@ -1218,6 +1239,9 @@ fn passed(start: &Start, p256: Option<[u8; 33]>, fresh: &Fresh, unlock: &Unlock)
     let held: Vec<[SignerId; 2]> = keys.into_iter().filter_map(passkey).collect();
     if held.is_empty() {
         bail!("the unlock's ceremony isn't of the passkey with this P-256 key");
+    }
+    if !lab.hand_from_ceremony(me, held[0][0], &unlock.ceremony) {
+        bail!("the passkey did not unlock the handoff key");
     }
     let new = held.iter().map(|[new, _]| *new).collect();
     Ok(Passed { lab, me, passkeys: held.concat(), new, passes })
@@ -1540,6 +1564,62 @@ impl PageDevice {
     pub fn changed(&self, edits: u32, keys: u32) -> Promise {
         let device = self.0.clone();
         future_to_promise(async move { Ok(device.changed((edits as usize, keys as usize)).await.into()) })
+    }
+
+    /// Waits until what the device's node shows changed since the page saw it at `since` (`stirred`): a promise of how
+    /// many times it changed by then, or of -1 once the device closed. A page reads its sync, jobs and network again
+    /// then, never on a timer.
+    pub fn stirred(&self, since: f64) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move { Ok(device.stirred(since as u64).await.map_or(-1.0, |n| n as f64).into()) })
+    }
+
+    /// Private worker carrier bridge. Commands describe opaque outer packets; peer authority stays in the
+    /// authenticated Rust session. The worker allowlist deliberately exposes none of these methods to page ops.
+    pub fn transport_next(&self) -> Promise {
+        // A pending command wait must not retain Device/Node: freeing the last PageDevice drops Node,
+        // closes its broker and resolves this wait. Holding Rc<Device> here would create a shutdown cycle.
+        let packets = self.0.node.packet_transport();
+        future_to_promise(async move {
+            use avendb_net::transports::Command;
+            let Some(command) = packets.next().await else { return Ok(JsValue::NULL); };
+            let (id, kind, mut value, bytes) = match command {
+                Command::Open { id, carrier, descriptor } => {
+                    let mut value = descriptor.as_object().cloned().unwrap_or_default();
+                    value.insert("transport".into(), json!(carrier.name()));
+                    (id, "open", value, None)
+                }
+                Command::Send { id, bytes } => (id, "send", Default::default(), Some(bytes)),
+                Command::Signal { id, signal } => {
+                    let mut value = serde_json::Map::new(); value.insert("signal".into(), signal);
+                    (id, "signal", value, None)
+                }
+                Command::Close { id } => (id, "close", Default::default(), None),
+            };
+            value.insert("kind".into(), json!(kind));
+            value.insert("route".into(), json!(id.route)); value.insert("epoch".into(), json!(id.epoch));
+            let command = js_sys::JSON::parse(&Value::Object(value).to_string())?;
+            if let Some(bytes) = bytes { Reflect::set(&command, &"bytes".into(), &Uint8Array::from(&bytes[..]))?; }
+            Ok(command)
+        })
+    }
+
+    /// A bounded ready/signal/closed event from the private carrier adapter.
+    pub fn transport_event(&self, event: JsValue) -> Promise {
+        let device = self.0.clone();
+        future_to_promise(async move {
+            let text = String::from(js_sys::JSON::stringify(&event)?);
+            if text.len() > 32 << 10 { return Err(JsError::new("carrier event too large").into()); }
+            let event = serde_json::from_str(&text).map_err(|e| JsError::new(&e.to_string()))?;
+            device.node.transport_event(event).await.map_err(js_value)?;
+            Ok(JsValue::UNDEFINED)
+        })
+    }
+
+    /// Bound the Rust datagram copy before rejecting stale route generations in the broker.
+    pub fn transport_receive(&self, route: String, epoch: u32, bytes: Uint8Array) -> bool {
+        if route.is_empty() || route.len() > 128 || bytes.length() > 65_535 { return false; }
+        self.0.node.transport_receive(&avendb_net::transports::RouteId { route, epoch }, &bytes.to_vec())
     }
 
     /// Closes its connections and its endpoint, once its shelf holds what it holds, if it can; then lets go of the

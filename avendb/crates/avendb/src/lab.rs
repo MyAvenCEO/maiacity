@@ -77,8 +77,8 @@
 use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
-use std::sync::{Arc, OnceLock};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, OnceLock};
 
 use rand_core::Rng as _;
 use serde_json::Value;
@@ -90,28 +90,30 @@ use crate::doc::{Item, Version};
 use crate::encode::{self, box_info, share_context, share_select_info, write_context};
 use crate::gate;
 use crate::hash::{Hasher, Reader};
-use crate::history::{Change, Draft, History, Reading, Scratch, MAIN};
+use crate::history::{Change, Draft, History, MAIN, Reading, Scratch};
 use crate::id::{AudienceId, BlobId, EditId, EntryId, ShareId, SignerId, VaultId};
-use crate::keys::{self, KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient, SeededRng, Secret};
+use crate::keys::{self, KeyBox, KeyFam, KeyId, KeyName, PublicKey, Recipient, Secret, SeededRng};
 use crate::lens::{self, Lane, Lens, Schema, View};
 use crate::merge;
 use crate::ops::Loc;
 use crate::perf::Perf;
 use crate::policy::{
-    acting, covered, mk_audience, replay, replay_on, replay_on_why, Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log,
-    Meaning, Principal, Proposal, Readings, Refusal, Replay, Revoking, Setting, Share, Sharing, State, Vault, Who, Why,
-    Wrap, Write,
+    Action, At, Creation, Edit, Entry, Groups, Issued, KeepMode, Kind, Level, Line, Log, Meaning, Principal, Proposal,
+    Readings, Refusal, Replay, Revoking, Setting, Share, Sharing, State, Vault, Who, Why, Wrap, Write, acting, covered,
+    mk_audience, replay, replay_on, replay_on_why,
 };
 use crate::recovery::RecoveryKey;
 use crate::rules::{self, Grant, Op, Proof, Touch};
 use crate::sealed::{Brought, FileRoot};
 use crate::sign::{
-    self, ApiPass, Ceremony, DeviceKey, EnclaveKey, Hello, Passkey, RelayPass, Signature, SignerKeys, Signed, Suite,
-    SUITES, WebAuthn,
+    self, ApiPass, Ceremony, DeviceKey, EnclaveKey, Hello, Passkey, RelayPass, SUITES, Signature, Signed, SignerKeys,
+    Suite, WebAuthn,
 };
-use crate::slice::{Attrs, Body, Header, Select, Selector, Slice, Sym, TagDelta, CAP_GROUP_TYPE, LENS_TYPE, SCHEMA_TYPE};
+use crate::slice::{
+    Attrs, Body, CAP_GROUP_TYPE, Header, LENS_TYPE, SCHEMA_TYPE, Select, Selector, Slice, Sym, TagDelta,
+};
 use crate::sync::{
-    answer_ids, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs, LogId, Place,
+    LogId, Place, answer_ids, asks_ids, beyond, digests_ids, forks_in, link_places, log_of, logs_of, vault_logs,
 };
 use crate::wire::{Claim, FileHold, Frontier, Join, Request, Statement, Wire as _};
 use crate::world;
@@ -150,7 +152,11 @@ enum Key {
     /// A passkey in the platform's authenticator (P8e), or a Touch ID key in a Mac's Secure Enclave: no secret, only its
     /// keys and the public key sealed to it, as a ceremony showed them, and the id of that key, whose McEliece pair the
     /// process forgets as a device locks. It signs in a ceremony alone (`Lab::complete`).
-    Web { keys: SignerKeys, seal: (PublicKey, Arc<[u8]>), pair: KeyId },
+    Web {
+        keys: SignerKeys,
+        seal: (PublicKey, Arc<[u8]>),
+        pair: KeyId,
+    },
     /// A signer the Lab holds the public half of alone, and its standing consent to be added as an owner, as the master
     /// recovery key (`Lab::set_recovery`): it signs no edit but one that takes that consent (`sign::standing`).
     Consent(Arc<RecoveryKey>),
@@ -389,8 +395,10 @@ fn checked_all(signed: &[Signed]) -> Vec<bool> {
         if cores > 1 && signed.len() > 1 {
             let size = signed.len().div_ceil(cores);
             return std::thread::scope(|scope| {
-                let parts: Vec<_> =
-                    signed.chunks(size).map(|part| scope.spawn(move || part.iter().map(one).collect::<Vec<_>>())).collect();
+                let parts: Vec<_> = signed
+                    .chunks(size)
+                    .map(|part| scope.spawn(move || part.iter().map(one).collect::<Vec<_>>()))
+                    .collect();
                 parts.into_iter().flat_map(|part| part.join().expect("a signature check")).collect()
             });
         }
@@ -425,7 +433,9 @@ fn trust(store: &mut Store) -> bool {
     }
     for id in &store.bare {
         if let Some(signed) = store.signed.get_mut(id) {
-            for sig in signed.sigs.iter_mut().filter(|s| !s.pq.is_empty() || s.webauthn.is_some() || s.enclave.is_some()) {
+            for sig in
+                signed.sigs.iter_mut().filter(|s| !s.pq.is_empty() || s.webauthn.is_some() || s.enclave.is_some())
+            {
                 sig.pq = vec![];
                 sig.webauthn = None;
                 sig.enclave = None;
@@ -452,6 +462,7 @@ fn trust(store: &mut Store) -> bool {
 /// A device's key for what it seals on its own shelf (`Lab::shelf_key`): whoever holds the device's own key derives
 /// it, and nobody else, so a stored view a shelf holds that opens with it is the device's word that it checked the
 /// edits the view is of.
+#[derive(Clone)]
 pub struct ShelfKey(Secret);
 
 impl ShelfKey {
@@ -473,6 +484,7 @@ const ENGINE: &str = env!("AVENDB_ENGINE");
 /// derived from their passkey's seal key (`Passkey::seal_secret`), which a device derives from the PRF output of its
 /// passkey's ceremony, so only a device that holds the passkey makes or opens what it locks. That passkey already signs
 /// as the person's vault's owner, so a handed view trusts nobody new.
+#[derive(Clone)]
 pub struct HandKey(ShelfKey);
 
 impl HandKey {
@@ -495,7 +507,6 @@ fn handed_of(bytes: &[u8]) -> Option<(Vec<EditId>, &[u8])> {
     Some((ids.chunks_exact(32).map(|id| EditId(id.try_into().expect("32 bytes"))).collect(), view))
 }
 
-
 /// What a device keeps on its shelf of what it worked out, to start again from it quickly (`Lab::restore_warm`), each
 /// the newest first, as `Lab::warming` gave it, encrypted for it alone: its keys, for any engine, which hold the keys it
 /// opened from their boxes and what its shelf names the edits it checked by (`Checked`); and its stored views, for this
@@ -513,6 +524,10 @@ pub struct Warm {
 pub struct Warming {
     pub keys: Option<Vec<u8>>,
     pub view: Option<Vec<u8>>,
+    // Process-local receipt binding: no replacement store, lock, withdrawal or earlier acknowledgement may
+    // make its counts describe a different key prefix or view. Appending edits alone keeps this receipt valid.
+    revision: Arc<()>,
+    lineage: crate::policy::LogRevision,
     keys_of: Option<(Option<Checked>, usize)>,
     view_of: usize,
     view_wholes: u64,
@@ -521,22 +536,49 @@ pub struct Warming {
 /// The most askers and askings a device keeps what it worked out for (`Answers`): past them it starts over.
 const ANSWERS_KEPT: usize = 256;
 
+/// Narrow a sync reply after the ordinary authorization decision. Scope never grants access and is not a claim
+/// that the requester holds anything. Older network requests express the same restriction with loose edit IDs.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+pub enum ReplyScope {
+    #[default]
+    All,
+    Logs(BTreeSet<LogId>),
+    Vaults(BTreeSet<VaultId>),
+}
+
 /// What a device worked out of its edits for its peers' syncs, while its edits stay as they were (Samuel's iPhone
 /// 2026-10-22, a page every 9 s): which of its edits each asker may receive (`sync::answer`), and, for each asking a
 /// peer makes page after page with the same request, the places of all it sends, in order (`Lab::reply`). Every page
 /// and every announcement worked both out again over every edit the device held, an edit's id hashed again each time,
-/// and a server holds every vault it keeps. Each is kept with the fingerprint of the edits it was worked out of
-/// (`fingerprint`), and is worked out again once they differ.
+/// and a server holds every vault it keeps. Each is kept with the process-local revision of its log, checked in constant time. A changed log, including
+/// a checkpoint withdrawal or a restore of the same length, invalidates it without a history scan or hash collision.
 #[derive(Default)]
 struct Answers {
-    may: std::sync::Mutex<HashMap<(SignerId, Vec<VaultId>), (u64, Arc<Vec<usize>>)>>,
-    sends: std::sync::Mutex<HashMap<(SignerId, [u8; 32]), (u64, Arc<Vec<Place>>)>>,
+    may: std::sync::Mutex<HashMap<(SignerId, Vec<VaultId>), (crate::policy::LogRevision, Arc<Vec<usize>>)>>,
+    sends: std::sync::Mutex<HashMap<(SignerId, [u8; 32], ReplyScope), (crate::policy::LogRevision, Arc<ReplyPlan>)>>,
 }
 
-/// The fingerprint of a log's edits, by their ids: how many, and their first eight bytes folded together.
-fn fingerprint(ids: &[EditId]) -> u64 {
-    let fold = ids.iter().fold(0u64, |acc, id| acc ^ u64::from_le_bytes(id.0[..8].try_into().expect("8 bytes")).rotate_left(acc as u32 & 63));
-    fold ^ (ids.len() as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)
+/// The ordered edits and authorized explicit key requests for one asking. The first page works both out;
+/// subsequent pages do work proportional to their output, without scanning all authorized history for keys.
+struct ReplyPlan {
+    places: Vec<Place>,
+    wanted: Vec<BlobId>,
+}
+
+/// Conservative encoded-size upper bound for the first range-transfer payload class. The fixed allowance
+/// covers every scalar, option/tag, vector prefix, Device public key and signature container. Variable fields
+/// are counted with checked arithmetic; no bytes are copied or hashed here. Unsupported actions/ceremonies use
+/// ordinary sync. Tests compare this bound against the actual wire encoder across the write variants.
+fn range_write_bound(signed: &Signed) -> Option<usize> {
+    use crate::sign::SignerKeys;
+    let [sig] = signed.sigs.as_slice() else { return None };
+    if !signed.edit.cosigners.is_empty() || !matches!(sig.keys, SignerKeys::Device { .. })
+        || sig.webauthn.is_some() || sig.enclave.is_some() { return None; }
+    let Action::Write { deps, via, create, files, body, .. } = &signed.edit.action else { return None };
+    let ids = signed.edit.parents.len().checked_add(deps.len())?.checked_add(via.len())?
+        .checked_add(create.as_ref().map_or(0, |c| c.audience.len()))?;
+    1024usize.checked_add(sig.pq.len())?.checked_add(body.len())?
+        .checked_add(ids.checked_mul(32)?)?.checked_add(files.len().checked_mul(40)?)
 }
 
 /// How many edits a device steps on its replay before its shelf takes its view again (`Lab::warming`): as many as it
@@ -634,12 +676,16 @@ struct Store {
     /// (`Lab::warming`, `Lab::warmed`).
     opened_before: HashMap<[u8; 32], Secret>,
     opened_since: Vec<([u8; 32], Secret)>,
+    /// A receipt may drain the pending key prefix only once, before a lock or another receipt changes it.
+    /// Allocation identity also separates replacement stores; it is never persisted or used to trust bytes.
+    warm_revision: Arc<()>,
     /// What the keys its shelf keeps name the edits it checked by, as it last gave them or took them from there
     /// (`Lab::warming`).
     checked_given: Option<Checked>,
     /// How many edits the view its shelf keeps is of, as it last gave it or took it from there, none if 0; how many
     /// times it replayed every edit, and how many times when its shelf took that view (`Lab::warming`).
     view_given: usize,
+    view_lineage: Option<crate::policy::LogRevision>,
     wholes: u64,
     view_wholes: u64,
 }
@@ -680,8 +726,10 @@ impl Default for Store {
             shown_groups: [0; 32],
             opened_before: HashMap::new(),
             opened_since: vec![],
+            warm_revision: Arc::new(()),
             checked_given: None,
             view_given: 0,
+            view_lineage: None,
             wholes: 0,
             view_wholes: 0,
         }
@@ -698,8 +746,8 @@ impl Store {
     fn view_due(&self) -> bool {
         let n = self.replayed;
         let since = n.abs_diff(self.view_given);
-        let stale = self.wholes != self.view_wholes;
-        n > 0 && n == self.log.edits().len() && since > 0 && (self.view_given == 0 || stale || since >= VIEW_STEPS)
+        let stale = self.wholes != self.view_wholes || self.view_lineage.as_ref() != Some(&self.log.lineage());
+        n > 0 && n == self.log.edits().len() && (self.view_given == 0 || stale || since >= VIEW_STEPS)
     }
 
     /// Its shelf lacks its keys (`Lab::warming`): it opened a key since its shelf took them, or its shelf names the
@@ -710,6 +758,7 @@ impl Store {
 
     /// Forget every key and everything a key opened, as it locks.
     fn forget(&mut self) {
+        self.warm_revision = Arc::new(());
         self.keys = Keyring::default();
         self.derived.clear();
         self.slices.clear();
@@ -945,6 +994,8 @@ pub struct Lab {
     salts: HashMap<SignerId, (SignerId, [u8; 32])>,
     /// Devices in the order they were made.
     devices: Vec<SignerId>,
+    /// Passkey-derived handoff keys of real devices, retained only while unlocked.
+    hand_keys: HashMap<SignerId, HandKey>,
     stores: HashMap<SignerId, Store>,
     /// Keys made so far; each key's seed counts on from here.
     made: u64,
@@ -976,6 +1027,9 @@ pub struct Lab {
     /// pays nothing at unlock: a debug build signs each batch at once and holds each edit's path to the signature beside
     /// it.
     batches: HashMap<SignerId, SignerLog>,
+    /// Production signing events, enabled by a node with an atomic durable signer ledger.
+    /// They outlive Store restore and lock; only an exact persisted receipt drains them.
+    signing_events: HashMap<SignerId, batch::SigningEvents>,
 }
 
 /// A session a device hosts (`Lab::host`): the device, and the keys the session's own key opens in that device's view,
@@ -1009,6 +1063,7 @@ impl Lab {
             names: HashMap::new(),
             salts: HashMap::new(),
             devices: vec![],
+            hand_keys: HashMap::new(),
             stores: HashMap::new(),
             made: 0,
             rng: SeededRng::new("lab randomness", entropy.as_ref().map_or(&[][..], |e| &e[..])),
@@ -1022,6 +1077,7 @@ impl Lab {
             recovery: None,
             hosted: HashMap::new(),
             batches: HashMap::new(),
+            signing_events: HashMap::new(),
         };
         lab.keep_spares(SPARES.load(Ordering::Relaxed));
         lab
@@ -1302,7 +1358,9 @@ impl Lab {
     /// is in the vault already moved: the move keeps the earlier key beside it (`draft_move`). Nothing once they all
     /// moved, or if `on` belongs to no vault.
     pub fn moves(&self, on: SignerId, touch: Option<[u8; 32]>) -> Vec<(SignerId, SignerId)> {
-        let Some(vault) = self.vault_of(on).and_then(|v| self.state(on).vault(v)) else { return vec![] };
+        let Some(vault) = self.vault_of(on).and_then(|v| self.state(on).vault(v)) else {
+            return vec![];
+        };
         let owners = vault.owners.iter().filter_map(|p| if let Principal::Signer(s) = *p { Some(s) } else { None });
         let signers: BTreeSet<SignerId> = owners.chain(vault.devices.iter().copied()).collect();
         let next = |keys: SignerKeys| match keys {
@@ -1322,7 +1380,9 @@ impl Lab {
     /// coop's aven, which their own move (`moves`) doesn't reach, as they belong to the aven. `on` asks each for its next
     /// key (`move_key`) and adds it with theirs (`draft_move`; the key move, K3c). None if `on` belongs to no vault.
     pub fn aven_devices(&self, on: SignerId) -> Vec<(SignerId, [u8; 32])> {
-        let Some(mine) = self.vault_of(on) else { return vec![] };
+        let Some(mine) = self.vault_of(on) else {
+            return vec![];
+        };
         let st = self.state(on);
         let governed: Vec<&Vault> = st.vaults().iter().filter(|v| claimable(v.kind) && st.owns(mine, v.id)).collect();
         let devices: BTreeSet<SignerId> = governed.iter().flat_map(|v| v.devices.iter().copied()).collect();
@@ -1344,7 +1404,9 @@ impl Lab {
     /// Every device of each aven or device vault the vault device `on` belongs to governs, up the chain, whichever
     /// suite it signs in: its person's coop's server and agents (`aven_devices`). None if `on` belongs to no vault.
     pub fn governed_devices(&self, on: SignerId) -> BTreeSet<SignerId> {
-        let Some(mine) = self.vault_of(on) else { return BTreeSet::new() };
+        let Some(mine) = self.vault_of(on) else {
+            return BTreeSet::new();
+        };
         let st = self.state(on);
         let governed = st.vaults().iter().filter(|v| claimable(v.kind) && st.owns(mine, v.id));
         governed.flat_map(|v| v.devices.iter().copied()).collect()
@@ -1408,7 +1470,8 @@ impl Lab {
         // that approval governs: the edits `on` holds that carry
         // an SLH-DSA signature, whose signers acted for that vault, held from then on without their signatures
         // (`Checkpoint.lean`), so no device checks an SLH-DSA signature again
-        let next = moves.iter().any(|&(_, new)| new == by) || self.keys_of(by).is_some_and(|k| k.suite() != Suite::SlhDsa);
+        let next =
+            moves.iter().any(|&(_, new)| new == by) || self.keys_of(by).is_some_and(|k| k.suite() != Suite::SlhDsa);
         if next {
             self.draft_checkpoints(on, &mut drafting, by)?;
         }
@@ -1493,7 +1556,9 @@ impl Lab {
     /// and `others`, the edits no checkpoint of theirs may cover, whose signers never acted for a vault they govern.
     /// Null while no key of theirs in ML-DSA-65 is at hand.
     pub fn vouching(&self, on: SignerId) -> Value {
-        let Some(by) = self.vouching_key(on) else { return Value::Null };
+        let Some(by) = self.vouching_key(on) else {
+            return Value::Null;
+        };
         let drafting = self.drafting(on);
         let vouch = self.vouch(on, &drafting, by);
         let view = &drafting.replay.state;
@@ -1504,7 +1569,8 @@ impl Lab {
         let seen = self.signers_seen(on, &keys.keys().copied().collect());
         let what = |s: SignerId| {
             let device = view.vaults().iter().find(|v| v.devices.contains(&s)).map(|v| ("device", v.id));
-            let owner = || view.vaults().iter().find(|v| v.owners.contains(&Principal::Signer(s))).map(|v| ("owner", v.id));
+            let owner =
+                || view.vaults().iter().find(|v| v.owners.contains(&Principal::Signer(s))).map(|v| ("owner", v.id));
             let recovery = seen.get(&s).is_some_and(|k| self.is_recovery(k));
             match device.or_else(owner) {
                 Some((_, v)) if recovery => ("recovery", Some(v)),
@@ -1570,7 +1636,9 @@ impl Lab {
         }
         let mut out: Vec<(Option<VaultId>, usize)> = by.into_iter().collect();
         out.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
-        out.into_iter().map(|(v, n)| serde_json::json!({ "vault": v.map(|v| crate::words::hex(&v.0)), "edits": n })).collect()
+        out.into_iter()
+            .map(|(v, n)| serde_json::json!({ "vault": v.map(|v| crate::words::hex(&v.0)), "edits": n }))
+            .collect()
     }
 
     /// For each vault `by` approves in `log`, `on`'s edits, drafted moves among them, a checkpoint over it would cover
@@ -1587,8 +1655,10 @@ impl Lab {
             None => e.sigs().any(|s| self.keys_of(s).is_some_and(|k| k.suite() == Suite::SlhDsa)),
         };
         let edits = log.ids().iter().zip(log.edits());
-        let watch: HashMap<EditId, Vec<VaultId>> =
-            edits.filter(|(id, e)| !store.covers.contains(id) && slh(id, e)).map(|(&id, _)| (id, vaults.clone())).collect();
+        let watch: HashMap<EditId, Vec<VaultId>> = edits
+            .filter(|(id, e)| !store.covers.contains(id) && slh(id, e))
+            .map(|(&id, _)| (id, vaults.clone()))
+            .collect();
         if watch.is_empty() {
             return vec![];
         }
@@ -1649,7 +1719,9 @@ impl Lab {
     /// the whole vault for a wide one, as a copy setting is. One `new` has the like of already stays as it is, and one
     /// whose selector `on` doesn't read can't be issued again.
     fn carry_keeps(&mut self, on: SignerId, old: SignerId, new: SignerId) -> Result<(), Refusal> {
-        let Some(vault) = self.vault_of(on) else { return Ok(()) };
+        let Some(vault) = self.vault_of(on) else {
+            return Ok(());
+        };
         let st = self.state(on);
         let keeps = |d| {
             let named = move |k: &&Issued| k.share.level.is_keep() && k.share.who == Who::Device(d);
@@ -1680,10 +1752,16 @@ impl Lab {
     /// doesn't hold (T16): the caller drafts them (`draft_retire`) only once `on` holds what its peers hold. Nothing if
     /// `on` belongs to no vault.
     pub fn retires(&self, on: SignerId, live: &BTreeSet<SignerId>) -> Vec<Retire> {
-        let Some(mine) = self.vault_of(on) else { return vec![] };
+        let Some(mine) = self.vault_of(on) else {
+            return vec![];
+        };
         let st = self.state(on);
-        let Some(vault) = st.vault(mine) else { return vec![] };
-        let signer = |p: &Principal| if let Principal::Signer(s) = *p { Some(s) } else { None };
+        let Some(vault) = st.vault(mine) else {
+            return vec![];
+        };
+        let signer = |p: &Principal| {
+            if let Principal::Signer(s) = *p { Some(s) } else { None }
+        };
         let owners: BTreeSet<SignerId> = vault.owners.iter().filter_map(signer).collect();
         let governed: Vec<&Vault> = st.vaults().iter().filter(|v| claimable(v.kind) && st.owns(mine, v.id)).collect();
         let devices: BTreeSet<SignerId> =
@@ -1765,14 +1843,20 @@ impl Lab {
         let held = self.stores.get(&self.at(d))?;
         let (follow, query_depth, gate) = (held.follow.clone(), held.query_depth, held.gate);
         let store = Store { follow, query_depth, gate, ..Store::default() };
-        let Some(SignerKeys::Device { ed25519, .. }) = self.keys.get(&new).map(Key::keys) else { return None };
+        let Some(SignerKeys::Device { ed25519, .. }) = self.keys.get(&new).map(Key::keys) else {
+            return None;
+        };
         let mine = |k: &Key| match k.keys() {
             SignerKeys::Device { ed25519: e, .. } => e == ed25519,
             SignerKeys::Passkey { .. } | SignerKeys::Enclave { .. } => true,
         };
         let taken: Vec<SignerId> = self.keys.iter().filter(|(_, k)| mine(k)).map(|(s, _)| *s).collect();
         let keys = taken.into_iter().filter_map(|s| Some((s, self.keys.remove(&s)?))).collect();
-        Some(self.split_off(keys, new, store, HashMap::new(), seed))
+        let mut moved = self.split_off(keys, new, store, HashMap::new(), seed);
+        if let Some(key) = self.hand_keys.remove(&d) {
+            moved.hand_keys.insert(new, key);
+        }
+        Some(moved)
     }
 
     /// The master recovery key `key` (`recovery`): every human vault a device of this Lab founds from now on adds it as
@@ -2051,14 +2135,72 @@ impl Lab {
             Key::Consent(k) if standing.contains(&s) => return Ok(k.consent.clone()),
             key => key.sign(id).ok_or(Refusal::Locked)?,
         };
+        if matches!(self.keys.get(&s), Some(Key::Device(_))) {
+            if let Some(events) = self.signing_events.get_mut(&s) {
+                events.record(id);
+            }
+        }
         self.batched(s, id, &sig);
         Ok(sig)
+    }
+
+    /// Enable production event capture before a node begins accepting mutations. For a
+    /// device's first enrollment only, the caller wraps its existing history once in the
+    /// order returned here, each checked against its actual Device signature. Bare
+    /// checkpoint-trusted records remain legacy records; they cannot mint new roots.
+    /// A resumed ledger uses its own authenticated persisted order instead.
+    pub fn capture_signing(&mut self, s: SignerId) -> Vec<EditId> {
+        self.start_capturing_signing(s);
+        let held = self.held(s);
+        held.log.ids().iter().filter_map(|id| {
+            let signed = held.signed.get(id)?;
+            let at = signed.edit.sigs().position(|signer| signer == s)?;
+            let sig = signed.sigs.get(at)?;
+            (matches!(&sig.keys, SignerKeys::Device { .. }) && sign::signs(&signed.edit, *id, s, sig))
+                .then_some(*id)
+        }).collect()
+    }
+
+    /// Resume event capture with the order already authenticated by its signer ledger.
+    /// This does no legacy scan or signature verification at ordinary restarts.
+    pub fn start_capturing_signing(&mut self, s: SignerId) {
+        self.signing_events.entry(s).or_default();
+    }
+
+    /// Stop an unsupported or conflicted ledger's capture. Ordinary per-edit signatures
+    /// continue to authenticate every write; no batch publication follows this transition.
+    pub fn stop_capturing_signing(&mut self, s: SignerId) {
+        self.signing_events.remove(&s);
+    }
+
+    pub fn signing_pending(&self, s: SignerId) -> bool {
+        self.signing_events.get(&s).is_some_and(batch::SigningEvents::pending)
+    }
+
+    pub fn signing_capture(&self, s: SignerId) -> Option<batch::SigningCapture> {
+        self.signing_events.get(&s)?.capture()
+    }
+
+    pub fn signing_saved(&mut self, s: SignerId, capture: &batch::SigningCapture) -> bool {
+        self.signing_events.get_mut(&s).is_some_and(|events| events.acknowledge(capture))
+    }
+
+    /// Sign a root of this device's already persisted signer ledger. The storage layer
+    /// calls this only after an atomic segment acknowledgement; a locked or non-device
+    /// key cannot produce a root. A signature is not itself a publication receipt.
+    pub fn sign_persisted_root(&self, root: batch::Root) -> Option<batch::SignedRoot> {
+        let Key::Device(key) = self.keys.get(&root.log)? else {
+            return None;
+        };
+        Some(batch::SignedRoot::sign(key, root))
     }
 
     /// Device `s`'s batch-signed log, wrapped as it stands where it holds none yet: the edits its store holds that it
     /// signed, in the order it holds them (`SignerLog::wrap`). None for a signer that is no device here.
     fn wrapped(&mut self, s: SignerId) -> Option<(&mut SignerLog, &DeviceKey)> {
-        let Some(Key::Device(key)) = self.keys.get(&s) else { return None };
+        let Some(Key::Device(key)) = self.keys.get(&s) else {
+            return None;
+        };
         if !self.batches.contains_key(&s) {
             let own: Vec<EditId> = self.stores.get(&self.at(s)).map_or(vec![], |store| {
                 let held = store.log.edits().iter().zip(store.log.ids());
@@ -2076,7 +2218,9 @@ impl Lab {
         if !cfg!(debug_assertions) {
             return;
         }
-        let Some((log, key)) = self.wrapped(s) else { return };
+        let Some((log, key)) = self.wrapped(s) else {
+            return;
+        };
         log.write(id);
         log.commit(key);
         let shown = log.proof(id).is_some_and(|p| batch::Roots::new().check(s, id, &p));
@@ -2139,6 +2283,7 @@ impl Lab {
     /// another device holds, or a spare. Its edits and their ciphertext stay, and it still receives and passes on
     /// edits.
     pub fn lock(&mut self, d: SignerId) {
+        self.hand_keys.remove(&d);
         // its log is wrapped again as it stands at its next unlock
         self.batches.remove(&d);
         let own = self.keys.remove(&d).and_then(|k| k.seal_secret()).map(|s| s.id());
@@ -2171,8 +2316,12 @@ impl Lab {
     /// Unlock device `d` with the passkey its keys derive from: they derive again, and it opens again what its edits
     /// hold for it. False if its keys derive from no passkey (the server, a stranger), or the passkey is lost.
     pub fn unlock(&mut self, d: SignerId) -> bool {
-        let Some(&(passkey, nonce)) = self.salts.get(&d) else { return false };
-        let Some(Key::Passkey(p)) = self.keys.get(&passkey) else { return false };
+        let Some(&(passkey, nonce)) = self.salts.get(&d) else {
+            return false;
+        };
+        let Some(Key::Passkey(p)) = self.keys.get(&passkey) else {
+            return false;
+        };
         let key = p.device(nonce);
         assert_eq!(key.id(), d, "the same passkey and salt derive the same device");
         self.take_key(d, key);
@@ -2182,7 +2331,9 @@ impl Lab {
     /// Unlock device `d` with `secret`, the secret its keys come from, as a browser's device unlocks with what its
     /// passkey's ceremony brings back (P8e, `device_with`): its keys derive again. False if they derive another device.
     pub fn unlock_with(&mut self, d: SignerId, secret: [u8; 32]) -> bool {
-        let Some(key) = DeviceKey::of(secret, d) else { return false };
+        let Some(key) = DeviceKey::of(secret, d) else {
+            return false;
+        };
         if !self.stores.contains_key(&d) {
             return false;
         }
@@ -2342,7 +2493,9 @@ impl Lab {
     /// among `edits` covers comes unchecked, on that checkpoint's word, its signatures or none: its replay lets go of
     /// it unless one that stands vouches for it (`refresh`).
     fn fresh(&self, to: SignerId, edits: Vec<Signed>, vouched: &HashSet<EditId>) -> Vec<Signed> {
-        let Some(store) = self.stores.get(&self.at(to)) else { return vec![] };
+        let Some(store) = self.stores.get(&self.at(to)) else {
+            return vec![];
+        };
         let mut seen = HashSet::new();
         let new = |s: &Signed| {
             let id = s.edit.id();
@@ -2370,7 +2523,9 @@ impl Lab {
     /// Device `to` keeps `fresh`, new edits whose signatures checked out (`fresh`), and the blobs among `blobs` they
     /// name. True if there were any.
     fn keep_fresh(&mut self, to: SignerId, fresh: Vec<Signed>, blobs: &Blobs) -> bool {
-        let Some(store) = self.stores.get_mut(&self.at(to)) else { return false };
+        let Some(store) = self.stores.get_mut(&self.at(to)) else {
+            return false;
+        };
         let at = Perf::start();
         // its own write, one, drafted on everything it holds: what its edits say now is what they said, that write
         // stepped on, with no replay (`latest`)
@@ -2556,7 +2711,8 @@ impl Lab {
             let out = draft(&mut drafting, passkey)?;
             sets.push((passkey, out, drafting.drafts));
         }
-        let mut batch: Vec<EditId> = sets.iter().flat_map(|(_, _, drafts)| drafts.iter().map(|d| d.edit.id())).collect();
+        let mut batch: Vec<EditId> =
+            sets.iter().flat_map(|(_, _, drafts)| drafts.iter().map(|d| d.edit.id())).collect();
         batch.sort();
         batch.dedup();
         if batch.len() > 1 {
@@ -2861,7 +3017,9 @@ impl Lab {
         let began = Perf::start();
         for round in 0.. {
             let Lab { stores, rng, spares, .. } = self;
-            let Some(store) = stores.get_mut(&d) else { return };
+            let Some(store) = stores.get_mut(&d) else {
+                return;
+            };
             store.perf.count("refresh rounds", 1);
             let at = Perf::start();
             // a removal may take writes from the middle of an entry's: what it shows is checked against them all
@@ -3231,7 +3389,9 @@ impl Lab {
         let attrs = Attrs { ty: header.ty.clone(), author: actor, entry, created: header.created, tags: tags.clone() };
         let tags = TagDelta { add: tags, remove: vec![] };
         let proof = match header.ty.of_lane() {
-            true if !(lane_fits(&header.ty, &content) || self.lawless) => return Err(Refusal::NotAView),
+            true if !(lane_fits(&header.ty, &content) || self.lawless) => {
+                return Err(Refusal::NotAView);
+            }
             true => self.prove(on, &view, &w, (Some(&[Touch::Create]), &tags), Some(&attrs))?,
             false => self.proven(on, &view, (vault, &History::default()), &w, (&content, &tags), &[], Some(&attrs))?,
         };
@@ -3379,7 +3539,10 @@ impl Lab {
         let ours = |cp: &&Issued| {
             let s = &cp.share;
             let read = (s.who, s.level, s.wide, s.parent) == (Who::Everyone, Level::Read, false, None);
-            st.live(cp.id) && s.over == vault && s.issuer == vault && read
+            st.live(cp.id)
+                && s.over == vault
+                && s.issuer == vault
+                && read
                 && store.slices.get(&cp.id).is_some_and(|sl| sl.select == select)
         };
         let found = st.shares().iter().find(ours).map(|cp| cp.id);
@@ -4042,7 +4205,9 @@ impl Lab {
     /// Every secret signer `s` holds here, to search views, logs and stores for secrets that shouldn't be there: its
     /// own key, the one keys are sealed to for it, then, for a device, each key it holds. None while it is locked.
     pub fn secrets(&self, s: SignerId) -> Vec<Secret> {
-        let Some(key) = self.keys.get(&s) else { return vec![] };
+        let Some(key) = self.keys.get(&s) else {
+            return vec![];
+        };
         let held = self.stores.get(&self.at(s)).into_iter().flat_map(|store| store.keys.secrets().cloned());
         key.seal_secret().into_iter().chain(held).collect()
     }
@@ -4217,7 +4382,9 @@ impl Lab {
         let keys: HashMap<SignerId, Key> =
             [d].iter().chain(with).filter_map(|s| Some((*s, self.keys.remove(s)?))).collect();
         let salts = self.salts.remove(&d).map(|salt| (d, salt)).into_iter().collect();
-        self.split_off(keys, d, store, salts, seed)
+        let split = self.split_off(keys, d, store, salts, seed);
+        self.hand_keys.remove(&d);
+        split
     }
 
     /// A Lab on a machine of its own holding `keys` and device `d`, its store `store` and its salt among `salts`, with
@@ -4243,6 +4410,7 @@ impl Lab {
             names: self.names.clone(),
             salts,
             devices: vec![d],
+            hand_keys: self.hand_keys.get(&d).map(|key| (d, key.clone())).into_iter().collect(),
             stores: HashMap::from([(d, store)]),
             made: 0,
             rng,
@@ -4256,6 +4424,7 @@ impl Lab {
             recovery: self.recovery.clone(),
             hosted: HashMap::new(),
             batches: self.batches.get(&d).map(|log| (d, log.clone())).into_iter().collect(),
+            signing_events: self.signing_events.get(&d).map(|events| (d, events.detached())).into_iter().collect(),
         }
     }
 
@@ -4295,7 +4464,9 @@ impl Lab {
         logs: Vec<(LogId, Frontier)>,
         files: Vec<(FileRoot, FileHold)>,
     ) -> Option<Statement> {
-        let Key::Device(k) = self.keys.get(&d)? else { return None };
+        let Key::Device(k) = self.keys.get(&d)? else {
+            return None;
+        };
         let sig = k.state(&Statement::body(d, checked, &logs, &files));
         Some(Statement { keys: k.keys(), checked, logs, files, sig })
     }
@@ -4303,7 +4474,9 @@ impl Lab {
     /// Device `d`'s pass to service `audience`, made now by the Lab's clock (`sign::ApiPass`): `None` while it is
     /// locked.
     pub fn api_pass(&self, d: SignerId, audience: &str) -> Option<ApiPass> {
-        let Key::Device(k) = self.keys.get(&d)? else { return None };
+        let Key::Device(k) = self.keys.get(&d)? else {
+            return None;
+        };
         Some(k.api_pass(audience, self.now))
     }
 
@@ -4349,7 +4522,9 @@ impl Lab {
     /// (`roots`), and which a peer hands the passkey's link card on (`link_card`). `None` unless the passkey is at hand
     /// and `d` is an unlocked device of the Lab.
     pub fn relay_pass(&mut self, d: SignerId, passkey: SignerId, made: u64) -> Option<RelayPass> {
-        let Key::Device(device) = self.keys.get(&d)? else { return None };
+        let Key::Device(device) = self.keys.get(&d)? else {
+            return None;
+        };
         let device = device.keys();
         match self.keys.get_mut(&passkey)? {
             Key::Passkey(p) => Some(p.pass(device, made)),
@@ -4477,7 +4652,7 @@ impl Lab {
     fn answered(&self, d: SignerId, asker: SignerId, follow: &[VaultId]) -> Arc<Vec<usize>> {
         let store = self.held(d);
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let fp = fingerprint(ids);
+        let fp = store.log.revision();
         let key = (asker, follow.to_vec());
         if let Some((at, got)) = store.answers.may.lock().expect("answers").get(&key)
             && *at == fp
@@ -4525,15 +4700,27 @@ impl Lab {
         request: &Request,
         page: usize,
     ) -> (Vec<Signed>, Vec<BlobId>, bool) {
+        self.reply_in(d, asker, request, page, &ReplyScope::All)
+    }
+
+    /// `reply`, restricted to these logs or vaults. This is equivalent to marking every unrelated edit loose in
+    /// the request, but does not allocate, serialize and hash that history-sized list on every page.
+    pub fn reply_in(
+        &mut self,
+        d: SignerId,
+        asker: SignerId,
+        request: &Request,
+        page: usize,
+        scope: &ReplyScope,
+    ) -> (Vec<Signed>, Vec<BlobId>, bool) {
         let at = Perf::start();
         let places = self.answered(d, asker, &request.ask.follow);
-        let sends = self.sends(d, asker, request, &places);
+        let sends = self.sends(d, asker, request, &places, scope);
         let store = self.held(d);
-        let edits = store.log.edits();
         // the places of all it sends this asking, in order: this page starts after the request's `after`
-        let from = request.after.map_or(0, |after| sends.partition_point(|p| *p <= after));
+        let from = request.after.map_or(0, |after| sends.places.partition_point(|p| *p <= after));
         let (mut signed, mut size, mut more) = (vec![], 0usize, false);
-        for (_, id) in &sends[from..] {
+        for (_, id) in &sends.places[from..] {
             let s = &store.signed[id];
             size = size.saturating_add(s.to_wire().len());
             if size > page && !signed.is_empty() {
@@ -4542,10 +4729,12 @@ impl Lab {
             }
             signed.push(s.clone());
         }
-        let reach: HashSet<BlobId> = places.iter().flat_map(|&i| edits[i].blobs()).collect();
-        let wanted = request.wants.iter().copied().filter(|b| reach.contains(b));
-        let blobs: BTreeSet<BlobId> =
-            signed.iter().flat_map(|s| s.edit.blobs()).chain(wanted).filter(|b| store.blobs.contains_key(b)).collect();
+        let blobs: BTreeSet<BlobId> = signed
+            .iter()
+            .flat_map(|s| s.edit.blobs())
+            .chain(sends.wanted.iter().copied())
+            .filter(|b| store.blobs.contains_key(b))
+            .collect();
         if let Some(store) = self.stores.get_mut(&self.at(d)) {
             store.perf.add("sync: reply", at);
             store.perf.count("sync: edits sent", signed.len() as u64);
@@ -4553,27 +4742,120 @@ impl Lab {
         (signed, blobs.into_iter().collect(), more)
     }
 
+    /// A bounded inventory for optional sparse payload transfer, using exactly the ordinary reply permission and
+    /// scope plan. Only single-device-signed entry writes with a cheap conservative byte bound are eligible.
+    /// This is an optimization class, never a trust decision: every excluded edit stays on the legacy sync path.
+    /// The caller must bind the result to its durable head and an opaque published signer-root token separately.
+    pub fn range_inventory(
+        &self, d: SignerId, asker: SignerId, signer: SignerId, request: &Request,
+        scope: &ReplyScope, max_edits: usize, max_wire: usize,
+    ) -> Option<(crate::policy::LogRevision, Vec<EditId>)> {
+        let places = self.answered(d, asker, &request.ask.follow);
+        let sends = self.sends(d, asker, request, &places, scope);
+        // Bounds additional inventory work. Initial legacy authorization-plan construction still examines the
+        // held history; this does not claim to make that existing permission computation constant time.
+        if sends.places.len() > max_edits { return None; }
+        let store = self.held(d);
+        let mut ids = Vec::new();
+        for (_, id) in &sends.places {
+            let signed = &store.signed[id];
+            if signed.edit.author == signer && range_write_bound(signed).is_some_and(|n| n <= max_wire) {
+                ids.push(*id);
+            }
+        }
+        ids.sort_unstable();
+        Some((store.log.revision(), ids))
+    }
+
+    /// Select a requested subset through the SAME current authorization plan, with exact revision fencing.
+    /// Re-checking every requested Place rejects a narrowed/revoked/foreign scope before cloning any payload.
+    /// The byte bound is computed from borrowed vector lengths before cloning or serializing large legacy edits.
+    /// Keys and excluded records are reconciled by the mandatory legacy pass after optional ranges.
+    pub fn range_select(
+        &self, d: SignerId, asker: SignerId, signer: SignerId, request: &Request,
+        scope: &ReplyScope, revision: &crate::policy::LogRevision, wanted: &BTreeSet<EditId>,
+        max_edits: usize, max_wire: usize,
+    ) -> Option<(Vec<Signed>, bool)> {
+        let store = self.held(d);
+        if &store.log.revision() != revision || wanted.is_empty() || wanted.len() > max_edits { return None; }
+        let places = self.answered(d, asker, &request.ask.follow);
+        let sends = self.sends(d, asker, request, &places, scope);
+        let mut selected = BTreeMap::new();
+        for id in wanted {
+            let signed = store.signed.get(id)?;
+            let at = (signed.edit.depth, *id);
+            if signed.edit.author != signer || sends.places.binary_search(&at).is_err() { return None; }
+            let bytes = range_write_bound(signed)?;
+            if bytes > max_wire { return None; }
+            selected.insert(at, (signed, bytes));
+        }
+        let mut bytes = 0usize;
+        let mut take = Vec::new();
+        for (signed, size) in selected.values() {
+            let total = bytes.checked_add(*size)?;
+            if total > max_wire { break; }
+            bytes = total; take.push((*signed).clone());
+        }
+        let more = take.len() < selected.len();
+        Some((take, more))
+    }
+
     /// The places of all device `d` sends `asker` for `request`, in order (`sync::beyond` of what `asker` may receive,
     /// `places`): kept for the request as it stands but for its `after`, while `d`'s edits stay as they were, so that
     /// an asking a peer makes page after page with the same request works it out once (`Answers`).
-    fn sends(&self, d: SignerId, asker: SignerId, request: &Request, places: &[usize]) -> Arc<Vec<Place>> {
+    fn sends(
+        &self,
+        d: SignerId,
+        asker: SignerId,
+        request: &Request,
+        places: &[usize],
+        scope: &ReplyScope,
+    ) -> Arc<ReplyPlan> {
         let store = self.held(d);
         let (edits, ids) = (store.log.edits(), store.log.ids());
-        let fp = fingerprint(ids);
+        let fp = store.log.revision();
         let mut h = Hasher::new("asking");
         h.update(&Request { after: None, ..request.clone() }.to_wire());
         let asked = h.finalize();
-        let key = (asker, asked);
+        let key = (asker, asked, scope.clone());
         if let Some((at, got)) = store.answers.sends.lock().expect("answers").get(&key)
             && *at == fp
         {
             return got.clone();
         }
-        let sent: BTreeSet<Place> = beyond(edits, ids, &logs_of(edits, ids), places, &request.ask)
-            .into_iter()
-            .map(|i| (edits[i].depth, ids[i]))
-            .collect();
-        let got = Arc::new(sent.into_iter().collect::<Vec<_>>());
+        let wants: HashSet<BlobId> = request.wants.iter().copied().collect();
+        let wanted = if wants.is_empty() {
+            vec![]
+        } else {
+            let reachable: BTreeSet<BlobId> =
+                places.iter().flat_map(|&i| edits[i].blobs()).filter(|b| wants.contains(b)).collect();
+            reachable.into_iter().collect()
+        };
+        let logs = logs_of(edits, ids);
+        let scoped;
+        let places = match scope {
+            ReplyScope::All => places,
+            _ => {
+                scoped = places
+                    .iter()
+                    .copied()
+                    .filter(|&i| match scope {
+                        ReplyScope::Logs(named) => logs[i].is_some_and(|l| named.contains(&l)),
+                        ReplyScope::Vaults(vaults) => match logs[i] {
+                            Some(LogId::Entry(entry)) => {
+                                self.vault_of_entry(d, entry).is_some_and(|v| vaults.contains(&v))
+                            }
+                            _ => true,
+                        },
+                        ReplyScope::All => true,
+                    })
+                    .collect::<Vec<_>>();
+                &scoped
+            }
+        };
+        let sent: BTreeSet<Place> =
+            beyond(edits, ids, &logs, places, &request.ask).into_iter().map(|i| (edits[i].depth, ids[i])).collect();
+        let got = Arc::new(ReplyPlan { places: sent.into_iter().collect(), wanted });
         let mut sends = store.answers.sends.lock().expect("answers");
         if sends.len() >= ANSWERS_KEPT {
             sends.clear();
@@ -4599,7 +4881,8 @@ impl Lab {
 
     /// The files the edits device `d` holds bring, smallest first: what it keeps, whether or not it reads them.
     pub fn files(&self, d: SignerId) -> Vec<FileRoot> {
-        let files: BTreeSet<FileRoot> = self.held(d).log.edits().iter().flat_map(|e| e.files().iter().copied()).collect();
+        let files: BTreeSet<FileRoot> =
+            self.held(d).log.edits().iter().flat_map(|e| e.files().iter().copied()).collect();
         files.into_iter().collect()
     }
 
@@ -4647,7 +4930,9 @@ impl Lab {
     /// record and its file in one write (`bring_on`), which avenDB's server's feed lists of an entry, with the record
     /// each holds (`world::public_entries`).
     pub fn brought(&self, d: SignerId, entry: EntryId) -> Vec<(EditId, Line, Vec<(FileRoot, Option<u64>)>)> {
-        let Some(h) = self.history(d, entry) else { return vec![] };
+        let Some(h) = self.history(d, entry) else {
+            return vec![];
+        };
         let lines = std::iter::once(MAIN).chain(h.variants().into_iter().map(Some));
         let mut seen = BTreeSet::new();
         let writes = lines.flat_map(|line| self.bringing(d, entry, line).into_iter().map(move |w| (line, w)));
@@ -4659,7 +4944,9 @@ impl Lab {
     /// The writes on line `line` of entry `entry`'s history, oldest first, that bring files device `d` counts as the
     /// entry's (`line_files`), each with the files it brings, by their roots.
     fn bringing(&self, d: SignerId, entry: EntryId, line: Line) -> Vec<(EditId, Vec<FileRoot>)> {
-        let Some(h) = self.history(d, entry) else { return vec![] };
+        let Some(h) = self.history(d, entry) else {
+            return vec![];
+        };
         let store = self.held(d);
         let (st, need) = (store.view(), [whole()]);
         let may = |w: &&Write| {
@@ -4698,7 +4985,9 @@ impl Lab {
             writes.sort_by_key(|(id, _)| **id);
             let mut at = HashMap::new();
             for (id, body) in writes {
-                let Some(named) = store.signed.get(id).map(|s| s.edit.files()) else { continue };
+                let Some(named) = store.signed.get(id).map(|s| s.edit.files()) else {
+                    continue;
+                };
                 for f in body.files.iter().filter(|f| named.contains(&f.root) && f.fits()) {
                     at.entry(f.root).or_insert_with(|| f.clone());
                 }
@@ -4719,8 +5008,8 @@ impl Lab {
         ids.into_iter().collect()
     }
 
-    /// How many edits and how many McEliece keys device `d` holds. Neither ever shrinks but by `restore_backup`, so
-    /// while they stay the same, so does what the device holds.
+    /// How many edits and McEliece keys device `d` holds. Counts alone are not a revision: checkpoint withdrawal
+    /// and restore can remove edits. Use `log(d).revision()` to invalidate derived work.
     pub fn size(&self, d: SignerId) -> (usize, usize) {
         let store = self.held(d);
         (store.log.ids().len(), store.blobs.len())
@@ -4760,7 +5049,9 @@ impl Lab {
     /// Brings device `d`'s keys and items up to date with the edits it took since it last did (`receive_now`). True if
     /// there were any.
     pub fn catch_up(&mut self, d: SignerId) -> bool {
-        let Some(store) = self.stores.get_mut(&self.at(d)) else { return false };
+        let Some(store) = self.stores.get_mut(&self.at(d)) else {
+            return false;
+        };
         if !store.behind {
             return false;
         }
@@ -4805,8 +5096,7 @@ impl Lab {
         let store = self.held(d);
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let logs = logs_of(edits, ids);
-        let shared: BTreeSet<LogId> =
-            self.answered(d, peer, &[]).iter().filter_map(|&i| logs[i]).collect();
+        let shared: BTreeSet<LogId> = self.answered(d, peer, &[]).iter().filter_map(|&i| logs[i]).collect();
         let digests = store.digests.as_ref().expect("worked out");
         shared.into_iter().filter_map(|l| Some((l, *digests.get(&l)?))).collect()
     }
@@ -4886,6 +5176,7 @@ impl Lab {
                     store.replay = replay;
                     store.replayed = held;
                     store.view_given = held;
+                    store.view_lineage = Some(store.log.lineage());
                     store.view_wholes = store.wholes;
                     store.perf.count("replay: from its stored view", 1);
                 }
@@ -4928,7 +5219,15 @@ impl Lab {
         });
         let (view_of, view_wholes) = if view_due { (store.replayed, store.wholes) } else { (0, 0) };
         let view = view_due.then(|| key.lock("view", &store.replay.to_view(view_of), ENGINE.as_bytes(), &mut self.rng));
-        Some(Warming { keys, view, keys_of, view_of, view_wholes })
+        Some(Warming {
+            keys,
+            view,
+            revision: store.warm_revision.clone(),
+            lineage: store.log.lineage(),
+            keys_of,
+            view_of,
+            view_wholes,
+        })
     }
 
     /// Whether device `d`'s shelf lacks something of `Warm` (`warming`), as cheaply as it tells: the node's saver is
@@ -4937,26 +5236,66 @@ impl Lab {
         self.stores.get(&d).is_some_and(|store| store.keys_due(None) || store.view_due())
     }
 
-    /// Device `d`'s shelf took `warming` (`warming`): what it gave, it holds given.
+    /// Device `d`'s shelf took `warming` (`warming`): what it gave, it holds given, only while the store and its
+    /// pending prefix still match. Native saves serialize receipts; overlapping core callers conservatively give
+    /// pending work again after the first acknowledgement, rather than drain keys an older receipt never held.
     pub fn warmed(&mut self, d: SignerId, warming: Warming) {
-        let Some(store) = self.stores.get_mut(&d) else { return };
+        let Some(store) = self.stores.get_mut(&d) else {
+            return;
+        };
+        if !Arc::ptr_eq(&store.warm_revision, &warming.revision) || store.log.lineage() != warming.lineage {
+            return;
+        }
+        store.warm_revision = Arc::new(());
         if let Some((checked, opened)) = warming.keys_of {
             store.checked_given = checked;
-            let given: Vec<([u8; 32], Secret)> = store.opened_since.drain(..opened.min(store.opened_since.len())).collect();
+            let given: Vec<([u8; 32], Secret)> =
+                store.opened_since.drain(..opened.min(store.opened_since.len())).collect();
             store.opened_before.extend(given);
         }
         if warming.view_of > 0 {
             store.view_given = warming.view_of;
+            store.view_lineage = Some(warming.lineage);
             store.view_wholes = warming.view_wholes;
         }
+    }
+
+    /// Bind a real device's handoff key to a verified passkey ceremony. Unlike `device_of`, a browser's
+    /// `device_with` has no software passkey in `salts`. Keep only the domain-separated handoff key,
+    /// never the passkey's signing seed. A Touch ID ceremony cannot hand a view to another device.
+    pub fn hand_from_ceremony(&mut self, d: SignerId, passkey: SignerId, ceremony: &Ceremony) -> bool {
+        if !matches!(self.keys.get(&d), Some(Key::Device(_))) {
+            return false;
+        }
+        let Some(keys @ SignerKeys::Passkey { .. }) = self.keys_of(passkey) else {
+            return false;
+        };
+        let Some(challenge) = ceremony.challenge() else {
+            return false;
+        };
+        if ceremony.sign(keys, EditId(challenge)).is_none() {
+            return false;
+        }
+        self.hand_keys.insert(d, HandKey::of(&ceremony.seal_secret()));
+        true
     }
 
     /// Device `d`'s key for what it hands another device of its passkey (`HandKey`): `None` while it is locked, and for
     /// a device whose keys derive from no passkey (the server, a stranger). A page derives it from its ceremony's PRF
     /// output (`HandKey::of`).
     pub fn hand_key(&self, d: SignerId) -> Option<HandKey> {
-        let (Some(Key::Device(_)), Some(&(passkey, _))) = (self.keys.get(&d), self.salts.get(&d)) else { return None };
-        let Some(Key::Passkey(p)) = self.keys.get(&passkey) else { return None };
+        if !matches!(self.keys.get(&d), Some(Key::Device(_))) {
+            return None;
+        }
+        if let Some(key) = self.hand_keys.get(&d) {
+            return Some(key.clone());
+        }
+        let (Some(Key::Device(_)), Some(&(passkey, _))) = (self.keys.get(&d), self.salts.get(&d)) else {
+            return None;
+        };
+        let Some(Key::Passkey(p)) = self.keys.get(&passkey) else {
+            return None;
+        };
         Some(HandKey::of(&p.seal_secret()))
     }
 
@@ -5013,13 +5352,17 @@ impl Lab {
         self.stores.insert(d, Store { follow, query_depth, gate, perf, ..Store::default() });
         let offered = (first.len() + rest.len()) as u64;
         let fresh = self.fresh(d, first.into_iter().chain(rest).collect(), &of);
-        let Some(store) = self.stores.get_mut(&d) else { return false };
+        let Some(store) = self.stores.get_mut(&d) else {
+            return false;
+        };
         store.perf.add("check", at);
         store.perf.count("edits offered", offered);
         store.perf.count("edits checked", fresh.iter().filter(|s| !of.contains(&s.edit.id())).count() as u64);
         store.perf.count("edits handed", of.len() as u64);
         self.keep_fresh(d, fresh, &blobs);
-        let Some(store) = self.stores.get_mut(&d) else { return false };
+        let Some(store) = self.stores.get_mut(&d) else {
+            return false;
+        };
         let at = Perf::start();
         let took = match Replay::from_view(view, store.log.edits(), store.log.ids()) {
             Some((replay, held)) => {
@@ -5184,7 +5527,9 @@ fn derive(store: &mut Store, stays: &HashMap<AudienceId, Vec<(EntryId, Option<Ed
     let mut new = vec![];
     for id in &store.keys.audiences {
         let (name, audience) = &store.keys.by_id[id];
-        let KeyName::Scoped(KeyFam::Audience(_, x), g) = *name else { continue };
+        let KeyName::Scoped(KeyFam::Audience(_, x), g) = *name else {
+            continue;
+        };
         for &(e, s) in stays.get(&x).into_iter().flatten() {
             if store.derived.insert((*id, e, s)) {
                 new.push((KeyName::Entry(e, s, g), keys::entry_key(audience, e, s)));
@@ -5258,12 +5603,16 @@ fn read(d: SignerId, store: &mut Store) {
         let edits: HashMap<EditId, &Edit> = store.replay.ids.iter().copied().zip(&store.replay.edits).collect();
         for id in wanted {
             let Some(edit) = edits.get(&id) else { continue };
-            let Action::Write { entry, stay, epoch, body, .. } = &edit.action else { continue };
+            let Action::Write { entry, stay, epoch, body, .. } = &edit.action else {
+                continue;
+            };
             let Some(key) = keys::edit_key(body) else {
                 store.spoilt.insert(id);
                 continue;
             };
-            let Some(key) = store.keys.get(&key, KeyName::Entry(*entry, *stay, *epoch)) else { continue };
+            let Some(key) = store.keys.get(&key, KeyName::Entry(*entry, *stay, *epoch)) else {
+                continue;
+            };
             match keys::open_edit(key, body, &write_context(edit)).and_then(|plain| Body::from_wire(&plain).ok()) {
                 Some(b) => {
                     store.bodies.insert(id, b);
@@ -5329,8 +5678,12 @@ fn open_select(of: &Share, keys: &Keyring, steward: bool) -> Result<Option<Slice
         return Err(());
     }
     for b in &boxes {
-        let Recipient::Key { name, id: under } = b.to else { continue };
-        let Some(with) = keys.get(&under, name) else { continue };
+        let Recipient::Key { name, id: under } = b.to else {
+            continue;
+        };
+        let Some(with) = keys.get(&under, name) else {
+            continue;
+        };
         let key = keys::open(&b.bytes, with, &share_select_info(of, id, &b.to)).filter(|k| k.id() == id).ok_or(())?;
         let plain = keys::open_edit(&key, &sealed, &share_context(of)).ok_or(())?;
         return Slice::from_wire(&plain).map(Some).map_err(drop);
@@ -5400,7 +5753,9 @@ fn upkeep(
         let older: Vec<u64> = store.keys.epochs(k).filter(|&x| x < e).collect();
         for x in older {
             let (name, next) = (KeyName::Scoped(k, x), KeyName::Scoped(k, x + 1));
-            let Some(under) = store.keys.first(next).cloned() else { continue };
+            let Some(under) = store.keys.first(next).cloned() else {
+                continue;
+            };
             for secret in store.keys.held(name) {
                 let id = secret.id();
                 if ix.boxed.contains(&(name, id, next)) {
@@ -5429,7 +5784,9 @@ fn upkeep(
             }
             let linked = (0..=epoch).map(|g| KeyName::Entry(en.id, en.stay(), g)).find(|&to| st.sealed(name, to));
             let Some(to_name) = linked else { continue };
-            let Some(under) = store.keys.first(to_name).cloned() else { continue };
+            let Some(under) = store.keys.first(to_name).cloned() else {
+                continue;
+            };
             for secret in store.keys.held(name) {
                 let id = secret.id();
                 if ix.boxed.contains(&(name, id, to_name)) {
@@ -5468,7 +5825,9 @@ fn steward(store: &Store, st: &State, v: VaultId) -> Vec<Work> {
         if !r.headers.contains_key(&en.creation) || !en.retags.iter().all(|w| r.tags.contains_key(w)) {
             continue;
         }
-        let Some(m) = st.meaning_landed(en.id, r, landed_in(store, en.id)) else { continue };
+        let Some(m) = st.meaning_landed(en.id, r, landed_in(store, en.id)) else {
+            continue;
+        };
         let ours = st.entry_writes(en.id).filter(|w| w.actor == v);
         let answered: HashSet<EditId> =
             ours.filter_map(|w| store.bodies.get(&w.edit)).flat_map(|b| b.answers.iter().copied()).collect();
@@ -5691,7 +6050,9 @@ fn show_items(d: SignerId, store: &mut Store) {
         && (1..=all.len()).contains(&n)
         && Some(all[n - 1].edit) == last
         && store.shown_lanes.len() == lanes_now.len()
-        && lanes_now.iter().all(|(v, (h, _))| gained.contains_key(v) || store.shown_lanes.get(v).is_some_and(|w| w.0 == *h))
+        && lanes_now
+            .iter()
+            .all(|(v, (h, _))| gained.contains_key(v) || store.shown_lanes.get(v).is_some_and(|w| w.0 == *h))
         && store.shown_groups == groups_print;
     let todo: Vec<&Entry> = if grew {
         let changed = st.entries().iter().filter(|en| gained.contains_key(&en.vault)).map(|en| en.id);
@@ -5946,4 +6307,75 @@ fn stepped_on(was: &State, held: &[Edit], on: SignerId, edit: &Edit) -> Option<S
 /// a worker's, or an aven, whose device is its server (Samuel 2026-10-18: an aven lives on its server).
 fn claimable(kind: Kind) -> bool {
     matches!(kind, Kind::DeviceVault | Kind::Aven)
+}
+
+#[cfg(test)]
+mod range_payload_tests {
+    use super::*;
+    use crate::cast::{world,todos_on};
+    use crate::id::ShareId;
+    use crate::policy::{Creation,Proposal,Revoking};
+    use crate::sealed::FileRoot;
+    use crate::sign::{DeviceKey,Suite};
+
+    #[test]
+    fn range_write_size_bound_covers_every_nested_wire_field() {
+        for suite in [Suite::MlDsa,Suite::SlhDsa] {
+            let key=DeviceKey::from_secret_in([177;32],suite);
+            for n in [0u64,1,129] {
+                let vault=VaultId::from_u64(1);let nonce=[19;32];
+                let action=Action::Write {
+                    vault,entry:EntryId::of(vault,key.id(),&nonce),actor:vault,
+                    stay:(n>0).then_some(EditId::from_u64(2)),epoch:u64::MAX,
+                    deps:(0..n).map(EditId::from_u64).collect(),
+                    proposal:if n==0{Proposal::Main}else if n==1{Proposal::New}else{Proposal::On(EditId::from_u64(3))},
+                    via:(0..n).map(VaultId::from_u64).collect(),
+                    create:Some(Creation{audience:(0..n).map(ShareId::from_u64).collect(),nonce}),
+                    files:(0..n).map(|i|FileRoot{hash:EditId::from_u64(i).0,size:u64::MAX}).collect(),
+                    body:vec![0xAB;n as usize*129],
+                };
+                let edit=Edit{parents:(0..n).map(EditId::from_u64).collect(),depth:u64::MAX,author:key.id(),cosigners:vec![],action};
+                let signed=Signed{sigs:vec![key.sign(edit.id())],edit};
+                assert!(signed.verify().is_ok(),"the edge object has valid legacy signatures and creation ID");
+                let wire=signed.to_wire();
+                assert_eq!(Signed::from_wire(&wire).unwrap(),signed);
+                assert!(range_write_bound(&signed).unwrap()>=wire.len());
+                let mut without=signed.clone();if let Action::Write{create,..}=&mut without.edit.action{*create=None;}
+                assert!(range_write_bound(&without).unwrap()>=without.to_wire().len());
+                let mut unsupported=signed.clone();unsupported.edit.cosigners.push(SignerId::from_u64(99));
+                assert!(range_write_bound(&unsupported).is_none());
+                unsupported=signed.clone();unsupported.sigs.push(signed.sigs[0].clone());
+                assert!(range_write_bound(&unsupported).is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn inventory_and_selection_match_ordinary_scope_and_fence_revocation() {
+        let mut w=world();let todos=todos_on(&mut w);w.lab.sync_all(0);
+        let from=w.mac_a;let to=w.mac_c;
+        let scope=ReplyScope::Logs([LogId::Entry(todos.door),LogId::Entry(todos.seeds)].into());
+        let mut request=Request::default();
+        request.ask.haves=[(LogId::Entry(todos.door),vec![]),(LogId::Entry(todos.seeds),vec![])].into();
+        let (revision,ids)=w.lab.range_inventory(from,to,from,&request,&scope,65536,usize::MAX).unwrap();
+        assert!(!ids.is_empty());
+        let expected:BTreeSet<_>=w.lab.reply_in(from,to,&request,usize::MAX,&scope).0.into_iter()
+            .filter(|s|s.edit.author==from && range_write_bound(s).is_some()).map(|s|s.edit.id()).collect();
+        assert_eq!(ids.iter().copied().collect::<BTreeSet<_>>(),expected);
+        let wanted:BTreeSet<_>=ids.iter().copied().collect();
+        let (selected,more)=w.lab.range_select(from,to,from,&request,&scope,&revision,&wanted,256,usize::MAX).unwrap();
+        assert!(!more);assert_eq!(selected.iter().map(|s|s.edit.id()).collect::<BTreeSet<_>>(),expected);
+        let narrow=ReplyScope::Logs([LogId::Entry(todos.seeds)].into());
+        assert!(w.lab.range_select(from,to,from,&request,&narrow,&revision,&wanted,256,usize::MAX).is_none(),"narrowed scope rejects even with the same revision");
+        assert!(w.lab.range_select(from,w.stranger,from,&request,&scope,&revision,&wanted,256,usize::MAX).is_none(),"another peer cannot reuse its authorization plan");
+        assert!(w.lab.range_select(from,to,from,&request,&scope,&revision,&wanted,256,1).is_none(),"size eligibility never permits an oversized clone");
+        assert!(w.lab.range_inventory(from,to,from,&request,&scope,0,usize::MAX).is_none());
+        let snapshot=w.lab.backup(from);
+        w.lab.submit(from,&[from],Action::Revoke(Revoking::Grant{share:todos.carol_read,actor:w.alice,keep:vec![],via:vec![]})).unwrap();
+        assert!(w.lab.range_select(from,to,from,&request,&scope,&revision,&wanted,256,usize::MAX).is_none(),"revocation fences the captured set");
+        let (_,now)=w.lab.range_inventory(from,to,from,&request,&scope,65536,usize::MAX).unwrap();
+        assert!(now.is_empty(),"current permission also removes the entry from root/count/leaf disclosure");
+        w.lab.restore_backup(from,&snapshot);
+        assert!(w.lab.range_select(from,to,from,&request,&scope,&revision,&wanted,256,usize::MAX).is_none(),"restoring prior contents does not resurrect a process-local revision");
+    }
 }

@@ -3,6 +3,7 @@
 # change what the media vault runs. See README.md.
 [workspace]
 resolver = "3"
+exclude = ["vendor/iroh"]
 members = [
     "crates/avendb",
     "crates/avendb-browser",
@@ -54,3 +55,7 @@ inherits = "release"
 codegen-units = 16
 lto = false
 incremental = true
+
+# Open authenticated custom carriers on already-connected peers; see vendor/iroh/AVENDB-PATCH.md.
+[patch.crates-io]
+iroh = { path = "vendor/iroh" }

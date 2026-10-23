@@ -28,7 +28,7 @@
 //! Nodes are named by level and index (`Node`): a leaf is level 0, and the node above leaf `i` at level `l` has index
 //! `i >> l`. A tree grows by a new root over its old one, which leaves every name as it is.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 use rand_core::CryptoRng;
 
@@ -183,13 +183,45 @@ pub struct Member {
     pub public: Vec<u8>,
 }
 
-/// A secret a commit wrote on a node: its public key, who opens it, and whether the node holds it still.
+/// A secret a commit wrote on a node: its public key and who opens it.
 #[derive(Clone, Debug)]
 struct Written {
     commit: CommitId,
     public: Vec<u8>,
     knowers: BTreeSet<SignerId>,
-    current: bool,
+}
+
+/// Historical secrets remain readable without putting them on the current-resolution
+/// path. `current` preserves replay order; lookup never scans historical versions.
+/// This is the separation of `written` and `current` in the Lean tree model.
+#[derive(Clone, Debug, Default)]
+struct NodeVersions {
+    history: Vec<Written>,
+    by_commit: HashMap<CommitId, usize>,
+    current: Vec<usize>,
+}
+
+impl NodeVersions {
+    fn written(&self, id: CommitId) -> Option<&Written> {
+        self.by_commit.get(&id).map(|&i| &self.history[i])
+    }
+
+    fn current(&self) -> impl Iterator<Item = &Written> {
+        self.current.iter().map(|&i| &self.history[i])
+    }
+
+    fn remove(&mut self, device: SignerId) {
+        self.current.retain(|&i| !self.history[i].knowers.contains(&device));
+    }
+
+    fn land(&mut self, written: Written, saw: &HashSet<CommitId>) {
+        self.current.retain(|&i| !saw.contains(&self.history[i].commit));
+        let index = self.history.len();
+        let previous = self.by_commit.insert(written.commit, index);
+        debug_assert!(previous.is_none(), "a counted commit is inserted once");
+        self.history.push(written);
+        self.current.push(index);
+    }
 }
 
 /// An epoch: whether its keys wrap the keys of the one before (a removal's do, a new member's without the history
@@ -221,7 +253,7 @@ pub struct KeyTree {
     leaf_of: HashMap<SignerId, u64>,
     /// Every leaf each device was ever added at: where the secrets it opened lie, whether it is a member still.
     held: HashMap<SignerId, BTreeSet<u64>>,
-    nodes: BTreeMap<Node, Vec<Written>>,
+    nodes: BTreeMap<Node, NodeVersions>,
     epochs: Vec<Epoch>,
     commits: HashMap<CommitId, Commit>,
     joins: Vec<Join>,
@@ -299,7 +331,7 @@ impl KeyTree {
 
     /// The commits whose secrets node `n` holds now: more than one where commits made apart both wrote it.
     pub fn current(&self, n: Node) -> Vec<CommitId> {
-        self.nodes.get(&n).map_or(vec![], |l| l.iter().filter(|w| w.current).map(|w| w.commit).collect())
+        self.nodes.get(&n).map_or(vec![], |versions| versions.current().map(|w| w.commit).collect())
     }
 
     /// A commit that counted.
@@ -357,17 +389,15 @@ impl KeyTree {
     fn remove(&mut self, device: SignerId) -> Result<(), Refused> {
         let leaf = self.leaf_of.remove(&device).ok_or(Refused::NotMember)?;
         self.members.remove(&leaf);
-        for w in self.nodes.values_mut().flatten() {
-            if w.knowers.contains(&device) {
-                w.current = false;
-            }
+        for versions in self.nodes.values_mut() {
+            versions.remove(device);
         }
         self.epochs.push(Epoch { chains: true, keys: vec![] });
         Ok(())
     }
 
     fn written(&self, n: Node, c: CommitId) -> Option<&Written> {
-        self.nodes.get(&n)?.iter().find(|w| w.commit == c)
+        self.nodes.get(&n)?.written(c)
     }
 
     /// Who opens key `k`: a leaf's device, a node secret's knowers. No box is sealed to an epoch key.
@@ -431,7 +461,8 @@ impl KeyTree {
             }
         }
         let reached = self.knowers_at(c, self.height);
-        let missed: BTreeSet<SignerId> = self.members.values().map(|m| m.device).filter(|d| !reached.contains(d)).collect();
+        let missed: BTreeSet<SignerId> =
+            self.members.values().map(|m| m.device).filter(|d| !reached.contains(d)).collect();
         let fills: Vec<SignerId> = c.fills.iter().map(|f| f.0).collect();
         if fills.len() != missed.len() || fills.iter().collect::<BTreeSet<_>>() != missed.iter().collect() {
             return Err(Refused::Fills);
@@ -455,15 +486,13 @@ impl KeyTree {
             let all: BTreeSet<SignerId> = self.members.values().map(|m| m.device).collect();
             reached.union(&fills).copied().collect::<BTreeSet<_>>() == all
         });
+        let saw: HashSet<CommitId> = c.saw.iter().copied().collect();
         for level in 1..=self.height {
             let knowers = self.knowers_at(c, level);
-            let list = self.nodes.entry(Node::above(leaf, level)).or_default();
-            for w in list.iter_mut() {
-                if c.saw.contains(&w.commit) {
-                    w.current = false;
-                }
-            }
-            list.push(Written { commit: id, public: c.publics[level as usize - 1].clone(), knowers, current: true });
+            self.nodes
+                .entry(Node::above(leaf, level))
+                .or_default()
+                .land(Written { commit: id, public: c.publics[level as usize - 1].clone(), knowers }, &saw);
         }
         self.epochs.last_mut().expect("an epoch").keys.push(id);
         self.commits.insert(id, c.clone());
@@ -497,7 +526,7 @@ impl KeyTree {
             out.push(TreeKey::Leaf(self.members[&n.index].device));
             return;
         }
-        let current: Vec<&Written> = self.nodes.get(&n).map_or(vec![], |l| l.iter().filter(|w| w.current).collect());
+        let current: Vec<&Written> = self.nodes.get(&n).map_or(vec![], |versions| versions.current().collect());
         if current.is_empty() {
             for child in n.children() {
                 self.resolution(child, out);
@@ -539,7 +568,8 @@ impl KeyTree {
             let mut to = vec![];
             self.resolution(Node::copath(leaf, level), &mut to);
             for t in to {
-                let bytes = keys::seal_tree(&path[level as usize], self.public_of(&t)?, &self.path_info(id, level, &t), rng)?;
+                let bytes =
+                    keys::seal_tree(&path[level as usize], self.public_of(&t)?, &self.path_info(id, level, &t), rng)?;
                 c.boxes.push(PathBox { level, to: t, bytes });
             }
         }
@@ -630,12 +660,21 @@ impl Opener<'_> {
                 _ => None,
             };
             let Some(with) = with else { continue };
-            let Some(s) = keys::open(&b.bytes, &with, &tree.path_info(c, b.level, &b.to)) else { continue };
+            let Some(s) = keys::open(&b.bytes, &with, &tree.path_info(c, b.level, &b.to)) else {
+                continue;
+            };
             // the secret the commit's public key at that level names, and no other
             if commit.publics.get(b.level as usize - 1) != Some(&s.xwing_public()) {
                 continue;
             }
-            return Some(climb(s, level - b.level));
+            let upper = climb(s, level - b.level);
+            // A valid box at a lower level does not prove that the announced upper
+            // public belongs to the derived secret. Never return an unconfirmed
+            // path secret when a malformed commit announces inconsistent levels.
+            if commit.publics.get(level as usize - 1) != Some(&upper.xwing_public()) {
+                continue;
+            }
+            return Some(upper);
         }
         None
     }
@@ -646,13 +685,52 @@ impl Opener<'_> {
         if let Some(k) = self.epochs.get(&(epoch, c)) {
             return k.clone();
         }
-        self.epochs.insert((epoch, c), None);
-        let got = self.epoch_through(epoch, c);
+        let got = self.epoch_direct(epoch, c);
         self.epochs.insert((epoch, c), got.clone());
-        got
+        if got.is_some() {
+            return got;
+        }
+        // Path recursion strictly decreases the node level (at most MAX_HEIGHT).
+        // History, in contrast, can span every past epoch. Keep its DFS frames on
+        // the heap so an old key never consumes one Rust stack frame per epoch.
+        // The next-child cursor preserves the recursive opener's search order.
+        let mut pending = vec![(epoch, c, 0_usize)];
+        while let Some(&(at, id, next_index)) = pending.last() {
+            let tree = self.tree;
+            let valid = tree.commits.get(&id).is_some_and(|commit| commit.epoch == at);
+            if self.epochs[&(at, id)].is_some() || !valid || !tree.chains(at + 1) {
+                pending.pop();
+                continue;
+            }
+            let Some(&next) = tree.keys(at + 1).get(next_index) else {
+                pending.pop();
+                continue;
+            };
+            let child = (at + 1, next);
+            if !self.epochs.contains_key(&child) {
+                let got = self.epoch_direct(child.0, child.1);
+                self.epochs.insert(child, got.clone());
+                if got.is_none() {
+                    pending.push((child.0, child.1, 0));
+                    continue;
+                }
+            }
+            pending.last_mut().expect("the parent frame").2 += 1;
+            let Some(under) = self.epochs[&child].as_ref() else {
+                continue;
+            };
+            let Some(wrap) = tree.commits.get(&next).and_then(|n| n.history.iter().find(|h| h.0 == id)) else {
+                continue;
+            };
+            if let Some(key) = keys::open(&wrap.1, under, &tree.info("history", next, &id.0)) {
+                self.epochs.insert((at, id), Some(key));
+            }
+        }
+        self.epochs[&(epoch, c)].clone()
     }
 
-    fn epoch_through(&mut self, epoch: u64, c: CommitId) -> Option<Secret> {
+    /// Open without following history links into a later epoch.
+    fn epoch_direct(&mut self, epoch: u64, c: CommitId) -> Option<Secret> {
         let tree = self.tree;
         let commit = tree.commits.get(&c).filter(|k| k.epoch == epoch)?;
         if let Some(top) = self.path(c, commit.publics.len() as u8) {
@@ -667,17 +745,6 @@ impl Opener<'_> {
         for j in tree.joins.iter().filter(|j| j.device == me && j.epoch == epoch && j.commit == c) {
             if let Some(k) = keys::open(&j.bytes, self.own, &tree.join_info(me, epoch, c)) {
                 return Some(k);
-            }
-        }
-        if tree.chains(epoch + 1) {
-            for &next in tree.keys(epoch + 1) {
-                let Some(under) = self.epoch_key(epoch + 1, next) else { continue };
-                let Some(wrap) = tree.commits.get(&next).and_then(|n| n.history.iter().find(|h| h.0 == c)) else {
-                    continue;
-                };
-                if let Some(k) = keys::open(&wrap.1, &under, &tree.info("history", next, &c.0)) {
-                    return Some(k);
-                }
             }
         }
         None
@@ -836,7 +903,8 @@ impl Change {
                     boxes.push(PathBox { level, to, bytes: r.bytes().ok()? });
                 }
                 let n = r.count(36).ok()?;
-                let fills = (0..n).map(|_| Some((SignerId(r.array().ok()?), r.bytes().ok()?))).collect::<Option<_>>()?;
+                let fills =
+                    (0..n).map(|_| Some((SignerId(r.array().ok()?), r.bytes().ok()?))).collect::<Option<_>>()?;
                 let history = read_boxes(&mut r)?;
                 Change::Commit(Commit { author, epoch, nonce, saw, publics, boxes, fills, history })
             }
@@ -913,6 +981,120 @@ mod tests {
     }
 
     #[test]
+    fn thousands_of_history_epochs_open_on_a_small_thread_stack() {
+        // Exercise the opener with a cryptographically valid wrap chain and one
+        // late join box. Policy/replay membership is covered by the Cast tests;
+        // this fixture isolates the unbounded history traversal itself.
+        std::thread::Builder::new()
+            .stack_size(128 * 1024)
+            .spawn(|| {
+                let mut rng = SeededRng::new("long key tree history", b"");
+                let owner = SignerId([1; 32]);
+                let joined = SignerId([2; 32]);
+                let own = Secret::generate(&mut rng);
+                let mut tree = KeyTree::new(b"long history");
+                tree.epochs.clear();
+                let mut previous: Option<(CommitId, Secret)> = None;
+                let mut first = None;
+                for epoch in 0..4096_u64 {
+                    let key = Secret::generate(&mut rng);
+                    let mut commit = Commit {
+                        author: owner,
+                        epoch,
+                        nonce: Secret::generate(&mut rng).bytes(),
+                        saw: vec![],
+                        publics: vec![],
+                        boxes: vec![],
+                        fills: vec![],
+                        history: vec![],
+                    };
+                    let id = commit.id();
+                    if let Some((old, secret)) = &previous {
+                        commit
+                            .history
+                            .push((*old, keys::wrap(secret, &key, &tree.info("history", id, &old.0), &mut rng)));
+                    }
+                    if first.is_none() {
+                        first = Some((id, key.clone()));
+                    }
+                    tree.epochs.push(Epoch { chains: epoch != 0, keys: vec![id] });
+                    tree.commits.insert(id, commit);
+                    previous = Some((id, key));
+                }
+                let (latest, key) = previous.unwrap();
+                let epoch = tree.epoch();
+                let bytes =
+                    keys::seal_tree(&key, &own.xwing_public(), &tree.join_info(joined, epoch, latest), &mut rng)
+                        .unwrap();
+                tree.joins.push(Join { device: joined, epoch, commit: latest, bytes });
+                let (id, expected) = first.unwrap();
+                let mut opener = tree.opener(joined, &own);
+                assert_eq!(opener.epoch_key(0, id), Some(expected.clone()));
+                assert_eq!(opener.epoch_key(0, id), Some(expected), "verified openings are reused");
+                assert!(opener.epoch_key(u64::MAX, id).is_none(), "unknown epochs do not wrap arithmetic");
+                let outsider = Secret::generate(&mut rng);
+                assert!(tree.opener(joined, &outsider).epoch_key(0, id).is_none(), "the join box is required");
+                tree.epochs[2048].chains = false;
+                assert!(tree.opener(joined, &own).epoch_key(0, id).is_none(), "a no-history boundary is not crossed");
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn current_versions_match_the_historical_scan_without_scanning_history() {
+        // The old representation is the slow reference: every historical secret
+        // carries its current flag. Exercise replacement, unseen concurrent
+        // versions, removals, rejoining knowers, and empty/duplicate saw lists.
+        let mut versions = NodeVersions::default();
+        let mut slow: Vec<(Written, bool)> = Vec::new();
+        let mut random = 0x72b81a9d_u64;
+        for step in 0..4096_u64 {
+            random = random.wrapping_mul(6364136223846793005).wrapping_add(1);
+            let device = SignerId([(random >> 32) as u8 % 8; 32]);
+            if step % 11 == 10 {
+                versions.remove(device);
+                for (written, current) in &mut slow {
+                    if written.knowers.contains(&device) {
+                        *current = false;
+                    }
+                }
+            } else {
+                let mut id = [0; 32];
+                id[..8].copy_from_slice(&step.to_be_bytes());
+                let id = CommitId(id);
+                let saw: HashSet<_> = slow
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, (_, current))| *current && (i + step as usize) % 3 != 0)
+                    .map(|(_, (written, _))| written.commit)
+                    .collect();
+                let knowers = BTreeSet::from([device, SignerId([(step % 8) as u8; 32])]);
+                let written = Written { commit: id, public: step.to_be_bytes().to_vec(), knowers };
+                for (old, current) in &mut slow {
+                    if saw.contains(&old.commit) {
+                        *current = false;
+                    }
+                }
+                slow.push((written.clone(), true));
+                versions.land(written, &saw);
+            }
+            let expected: Vec<_> = slow.iter().filter(|(_, current)| *current).map(|(w, _)| w.commit).collect();
+            assert_eq!(versions.current().map(|w| w.commit).collect::<Vec<_>>(), expected, "step {step}");
+            assert_eq!(versions.history.len(), slow.len(), "history is retained");
+            assert_eq!(versions.by_commit.len(), slow.len(), "one historical lookup per commit");
+        }
+        for (written, _) in &slow {
+            let held = versions.written(written.commit).expect("old secrets remain readable");
+            assert_eq!(held.public, written.public);
+            assert_eq!(held.knowers, written.knowers);
+        }
+        assert!(versions.history.len() > 3000);
+        assert!(versions.current.len() < 10, "resolution retains only current concurrent versions");
+    }
+
+    #[test]
     fn every_member_opens_the_epochs_key_and_a_full_tree_takes_a_box_a_level() {
         let mut c = Cast::new(8);
         assert_eq!(c.tree.height(), 3);
@@ -969,7 +1151,8 @@ mod tests {
         }
         // devices 0 and 3 draft on the same tree, apart; the replay order applies both
         let (a, b) = (c.draft(0), c.draft(3));
-        let ids: Vec<CommitId> = [&a, &b].iter().map(|x| if let Change::Commit(k) = x { k.id() } else { unreachable!() }).collect();
+        let ids: Vec<CommitId> =
+            [&a, &b].iter().map(|x| if let Change::Commit(k) = x { k.id() } else { unreachable!() }).collect();
         c.apply(a);
         c.apply(b);
         let top = Node { level: 2, index: 0 };
@@ -998,6 +1181,37 @@ mod tests {
         assert!(c.opens(3, epoch, new).is_some(), "it opens the epoch it joined in");
         assert!(c.opens(3, before, old).is_none(), "but no key before it");
         assert!(c.opens(2, before, old).is_some());
+    }
+
+    #[test]
+    fn a_lower_path_box_cannot_confirm_an_inconsistent_upper_public() {
+        let mut cast = Cast::new(4);
+        let Change::Commit(mut commit) = cast.draft(0) else { unreachable!() };
+        assert_eq!(commit.publics.len(), 2);
+        let actual = path_secrets(&cast.own[0].1, &commit.nonce, cast.tree.height());
+        // An authorized but faulty author can encrypt valid lower boxes while
+        // claiming another root public. Rebind every box to the changed commit
+        // ID, so rejection cannot be explained merely by an old AEAD context.
+        commit.publics[1] = Secret::generate(&mut cast.rng).xwing_public();
+        let id = commit.id();
+        for boxed in &mut commit.boxes {
+            boxed.bytes = keys::seal_tree(
+                &actual[boxed.level as usize],
+                cast.tree.public_of(&boxed.to).unwrap(),
+                &cast.tree.path_info(id, boxed.level, &boxed.to),
+                &mut cast.rng,
+            )
+            .unwrap();
+        }
+        assert!(commit.fills.is_empty());
+        assert!(commit.history.is_empty());
+        // Public schedule validation cannot prove every ciphertext consistent;
+        // each local opener must also confirm the public at its target level.
+        cast.apply(Change::Commit(commit));
+        let epoch = cast.tree.epoch();
+        for i in 0..4 {
+            assert!(cast.opens(i, epoch, id).is_none(), "member {i} must reject the inconsistent path");
+        }
     }
 
     #[test]

@@ -109,7 +109,11 @@ async fn a_shelf_deletes_nothing_it_finds_and_puts_older_ones_aside_whole() {
     let earlier = files(dir.path());
     assert_eq!(disk::generations(dir.path()).expect("its shelves"), vec![1], "an old shelf alone");
     let (node, _, coop) = mac(dir.path()).await;
-    assert_eq!(disk::generations(dir.path()).expect("its shelves"), vec![1, FLOOR], "a new one, of the floor's, beside");
+    assert_eq!(
+        disk::generations(dir.path()).expect("its shelves"),
+        vec![1, FLOOR],
+        "a new one, of the floor's, beside"
+    );
     let welcome = write(&node, coop, "Welcome", WELCOME_TEXT).await;
     node.shutdown().await.expect("it stops");
     drop(node);
@@ -302,7 +306,8 @@ fn last_edit(entry: &[u8]) -> EditId {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn an_object_is_put_once_and_owned_by_its_owner_alone() {
     let dir = Folder::new("put");
-    let shelf: Shelf = disk::open(dir.path()).expect("the shelf");
+    let owner = disk::open(dir.path()).expect("the shelf").writer().expect("writer");
+    let shelf: Shelf = owner.shelf();
     shelf.put("meta/0000000000000001", Bytes::from_static(b"one")).await.expect("put");
     shelf.put("meta/0000000000000001", Bytes::from_static(b"one")).await.expect("the same bytes again");
     let other = shelf.put("meta/0000000000000001", Bytes::from_static(b"two")).await.expect_err("other bytes");
@@ -329,7 +334,8 @@ async fn an_object_is_put_once_and_owned_by_its_owner_alone() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_slot_is_kept_in_place_and_never_put() {
     let dir = Folder::new("slots");
-    let shelf: Shelf = disk::open(dir.path()).expect("the shelf");
+    let owner = disk::open(dir.path()).expect("the shelf").writer().expect("writer");
+    let shelf: Shelf = owner.shelf();
     shelf.keep("slots/view-0", Bytes::from_static(b"one")).await.expect("kept");
     shelf.keep("slots/view-0", Bytes::from_static(b"two")).await.expect("kept again, in place");
     assert_eq!(shelf.get("slots/view-0").await.expect("got"), Some(Bytes::from_static(b"two")));
@@ -432,7 +438,8 @@ async fn a_node_steps_on_its_stored_view_and_replays_every_edit_where_none_opens
     node.shutdown().await.expect("it stops");
     drop(node);
     let g = dir.path().join(format!("g{FLOOR}"));
-    let slots = || files(&g.join("slots")).into_iter().filter(|(n, _)| n.starts_with("view-")).collect::<BTreeMap<_, _>>();
+    let slots =
+        || files(&g.join("slots")).into_iter().filter(|(n, _)| n.starts_with("view-")).collect::<BTreeMap<_, _>>();
     assert_eq!(slots().into_keys().collect::<Vec<_>>(), ["view-0"], "its view, kept");
     // started again: what its edits said comes from its view, with no replay of every edit, and a new edit steps on it
     let (node, _, coop) = mac(dir.path()).await;

@@ -77,15 +77,18 @@ export const WHOLE = 1 << 30;
 
 /**
  * File `file` whole, read a window at a time, as a Blob of type `type`: `progress` told the share read so far.
- * @param {Read} read @param {FileView} file @param {string} type @param {(done: number) => void} [progress]
+ * @param {Read} read @param {FileView} file @param {string} type @param {(done: number) => void} [progress] @param {AbortSignal} [signal]
  */
-export async function whole(read, file, type, progress) {
+export async function whole(read, file, type, progress, signal) {
+	signal?.throwIfAborted();
 	const len = file.len ?? 0;
 	if (len > WHOLE) throw new Error(`it is ${size(len)}, more than the ${size(WHOLE)} a page opens whole`);
 	/** @type {BlobPart[]} */
 	const parts = [];
 	for (let at = 0; at < len; ) {
+		signal?.throwIfAborted();
 		const got = await read(file.root, file.size, at, Math.min(len, at + WINDOW));
+		signal?.throwIfAborted();
 		if (!got.length) throw new Error('the file ends early');
 		parts.push(/** @type {BlobPart} */ (got));
 		at += got.length;

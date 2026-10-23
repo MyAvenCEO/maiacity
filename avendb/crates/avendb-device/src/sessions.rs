@@ -180,17 +180,25 @@ async fn session(stream: UnixStream, node: Arc<Node>, host: PathBuf, (id, hosted
     let since = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
     let live = Live { name: name.clone(), device: s, since, seal, keys, sign: sign.clone() };
     hosted.lock().expect("the sessions").insert(id, live);
-    node.act(move |lab, me| lab.host(me, s, keys, sign)).await;
+    if let Err(error) = node.try_act(move |lab, me| lab.host(me, s, keys, sign)).await {
+        hosted.lock().expect("the sessions").remove(&id);
+        return Err(error);
+    }
+    // Publish before greeting: another session may still be cleaning up the same key.
+    // The session map serializes publication with the last session's removal below.
+    let alive_file = agent::alive(&host, &name, &hex(&s.0));
+    {
+        let _sessions = hosted.lock().expect("the sessions");
+        std::fs::write(&alive_file, hex(&s.0)).ok();
+    }
     let greeted = send(&mut write, &json!({ "hosted": hex(&s.0) })).await;
     tracing::info!("avendb: {name} {s:?} works as a session of this Mac's device");
-    // that it runs, for the Mac's page, as an agent running its own device says it (`agent::online`)
-    let alive_file = agent::alive(&host, &name, &hex(&s.0));
     let alive = {
         let (file, device) = (alive_file.clone(), hex(&s.0));
         AbortOnDropHandle::new(tokio::spawn(async move {
             loop {
-                std::fs::write(&file, &device).ok();
                 tokio::time::sleep(agent::LOOK).await;
+                std::fs::write(&file, &device).ok();
             }
         }))
     };
@@ -234,7 +242,7 @@ async fn session(stream: UnixStream, node: Arc<Node>, host: PathBuf, (id, hosted
         hosted.remove(&id);
         hosted.values().find(|l| l.device == s).map(|l| (l.keys, l.sign.clone()))
     };
-    node.act(move |lab, me| {
+    let _ = node.try_act(move |lab, me| {
         lab.unhost(s);
         if let Some((keys, sign)) = other {
             lab.host(me, s, keys, sign);
@@ -242,9 +250,14 @@ async fn session(stream: UnixStream, node: Arc<Node>, host: PathBuf, (id, hosted
     })
     .await;
     writer.abort();
-    drop(alive);
-    // it no longer runs, unless another session of the same key still does, and says so again
-    std::fs::remove_file(&alive_file).ok();
+    alive.abort();
+    let _ = alive.await;
+    // A replacement may already be running: an old session must never erase its marker.
+    let sessions = hosted.lock().expect("the sessions");
+    if !sessions.values().any(|live| live.name == name && live.device == s) {
+        std::fs::remove_file(&alive_file).ok();
+    }
+    drop(sessions);
     tracing::info!("avendb: {name}'s session ended");
     result
 }

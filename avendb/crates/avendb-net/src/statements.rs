@@ -106,6 +106,7 @@ impl Shared {
     /// kept of it; else refused, unless only older. A statement checked more than `AHEAD` past the node's clock, or of
     /// more than `MOST` logs or files, is refused.
     pub(crate) async fn keep_statement(&self, statement: Statement, shelved: bool) -> Result<()> {
+        let _activity = self.admit()?;
         if statement.logs.len() > MOST || statement.files.len() > MOST {
             bail!("a statement of more than {MOST} logs or files");
         }
@@ -155,6 +156,7 @@ impl Shared {
     /// Tells the live peers of `reach` the statements they are due, on a task of its own, unless one is at it; and puts
     /// on the shelf the statements due there.
     pub(crate) fn state(self: &Arc<Self>, reach: &Arc<BTreeMap<SignerId, Reach>>) {
+        let Ok(activity) = self.admit() else { return };
         let mut st = self.statements.lock().expect("statements");
         if std::mem::replace(&mut st.busy, true) {
             return;
@@ -162,6 +164,7 @@ impl Shared {
         drop(st);
         let (shared, reach) = (self.clone(), reach.clone());
         task::spawn(async move {
+            let _activity = activity;
             shared.stating(&reach).await;
             shared.shelve();
             shared.statements.lock().expect("statements").busy = false;
@@ -211,7 +214,7 @@ impl Shared {
                 };
                 sign.into_iter().filter_map(state).collect::<Vec<_>>()
             };
-            let signed = self.lab(signing).await;
+            let Ok(signed) = self.try_lab(signing).await else { return };
             let mut st = self.statements.lock().expect("statements");
             for s in signed {
                 let kept = Kept::of(s);
@@ -261,7 +264,9 @@ impl Shared {
         // each peer on a task of its own, so that a slow one holds up nobody; told even if it refuses them, as a node
         // from before statements does, so that it isn't told again on that connection
         for (peer, out) in sends {
+            let Ok(activity) = self.admit() else { break };
             task::spawn(async move {
+                let _activity = activity;
                 for s in out {
                     if session::exchange(&peer.conn, session::STATE, &s.to_wire(), 0).await.is_err() {
                         break;
@@ -293,8 +298,10 @@ impl Shared {
         }
         drop(st);
         for (d, k) in due {
+            let Ok(activity) = self.admit() else { break };
             let shelf = shelf.clone();
             task::spawn(async move {
+                let _activity = activity;
                 let name = shelved_as(d, k.statement.checked);
                 match shelf.put(&name, Bytes::from(k.statement.to_wire())).await {
                     // the same device's statement for another peer, checked the same second, is there first
@@ -308,6 +315,7 @@ impl Shared {
 
     /// Takes back the statements on the node's shelf, if it keeps one: of each device, the newest that proves it.
     pub(crate) async fn unshelve(self: Arc<Self>) {
+        let Ok(_activity) = self.admit() else { return };
         let Some(shelf) = self.opts.shelf.clone() else { return };
         let names = match shelf.names(STATED).await {
             Ok(names) => names,

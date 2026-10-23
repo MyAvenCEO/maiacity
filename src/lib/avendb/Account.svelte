@@ -46,6 +46,7 @@
 
 <script>
 	import { onMount, untrack } from 'svelte';
+	import { onStir } from './stirs.svelte.js';
 	import { foot, FOOT } from '$lib/app/foot.js';
 	import { signUpName } from '$lib/app/entry.js';
 	import { native } from '$lib/native';
@@ -153,8 +154,9 @@
 	// read first, so that the effect runs again as it changes
 	$effect(() => {
 		if (phase !== 'open') return;
+		// the access asks come as edits: read again as the device says it changed (./stirs.js)
+		const unstir = onStir(lookAsks);
 		const look = () => {
-			lookAsks();
 			if (!mac) return;
 			mac
 				.call('agents')
@@ -163,17 +165,21 @@
 			lookDrives();
 		};
 		look();
-		const every = setInterval(look, 3000);
-		return () => clearInterval(every);
+		// the Mac's agents and drives aren't the device's: looked at now and then
+		const every = mac ? setInterval(look, 3000) : undefined;
+		return () => {
+			unstir();
+			clearInterval(every);
+		};
 	});
 
 	/** The access requests as records, as the device holds them now (the `requests` op): none where it doesn't say. */
-	const lookAsks = () =>
+	const lookAsks = (/** @type {AbortSignal | undefined} */ signal = undefined) =>
 		session.device &&
 		session
 			.ask({ op: 'requests' })
 			.then((/** @type {any} */ out) => {
-				if (out && 'ok' in out) records = out.ok;
+				if (!signal?.aborted && out && 'ok' in out) records = out.ok;
 			})
 			.catch(() => {});
 

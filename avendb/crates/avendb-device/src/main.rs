@@ -33,7 +33,8 @@ async fn run() -> Result<()> {
         Usage::App { dir, volumes } => {
             std::fs::create_dir_all(&dir).with_context(|| format!("the device's folder {}", dir.display()))?;
             let volumes = volumes.or_else(|| cfg!(target_os = "macos").then(|| drive::VOLUMES.into()));
-            serve(Config { dir, direct: true, volumes }, tokio::io::stdin(), tokio::io::stdout()).await
+            let webtransport = avendb_device::webtransport_from_env()?;
+            serve(Config { dir, direct: true, volumes, webtransport }, tokio::io::stdin(), tokio::io::stdout()).await
         }
         Usage::Agent { harness, dir } if harness == agent::CLOUD => {
             let dir = match dir {

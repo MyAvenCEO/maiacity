@@ -35,6 +35,8 @@ const ASK_LOGS: u8 = 7;
 const PACKED: u8 = 0x80;
 /// A signed statement of holdings (`session::STATE`), which the tests here by hand let pass.
 const STATE: u8 = 8;
+/// A new sparse holdings exchange. These by-hand peers deliberately behave like old nodes and refuse it.
+const RANGES: u8 = 13;
 
 /// A node for device `d`, split off `w`'s Lab with the keys of `with`, its randomness drawn from `seed`.
 async fn node(w: &mut World, d: SignerId, with: &[SignerId], seed: u8) -> Node {
@@ -87,6 +89,10 @@ async fn next(conn: &Connection, kind: u8, answer: impl FnOnce(&[u8]) -> Vec<u8>
         let (mut send, mut recv) = conn.accept_bi().await.expect("a message from the node");
         let message = recv.read_to_end(16 << 20).await.expect("its bytes");
         let (&k, body) = message.split_first().expect("a kind");
+        if k == RANGES {
+            send.reset(iroh::endpoint::VarInt::from_u32(1)).expect("legacy peer refuses the new kind");
+            continue;
+        }
         if k == ANNOUNCE || k == STATE {
             if k == ANNOUNCE {
                 heard.push(Announce::from_wire(body).expect("an announcement"));
@@ -110,6 +116,10 @@ async fn announced(conn: &Connection) -> Announce {
         let (mut send, mut recv) = conn.accept_bi().await.expect("a message from the node");
         let message = recv.read_to_end(16 << 20).await.expect("its bytes");
         let (&k, body) = message.split_first().expect("a kind");
+        if k == RANGES {
+            send.reset(iroh::endpoint::VarInt::from_u32(1)).expect("legacy peer refuses the new kind");
+            continue;
+        }
         send.finish().expect("nothing back");
         if k == STATE {
             continue;

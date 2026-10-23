@@ -45,6 +45,7 @@
 import { command, native } from '$lib/native';
 import { allowed, answer, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
+import { createEntryWindow, createReadWindow, replyEntries } from './query-window.js';
 import { bringEntries, learn, useDevice } from '../../../game/code/sources/device.js';
 import { sync } from './sync.svelte.js';
 
@@ -469,7 +470,11 @@ async function started(d, nonce, credential, { name, relay }) {
 function running(d) {
 	device = d;
 	phase = 'open';
-	useDevice({ run: send, read: api.readFile });
+	useDevice({
+		// Demand disposal belongs to this device even while a replacement is opening. Never send stale work to it.
+		run: (/** @type {any} */ op) => op?.op === 'demand' ? d.run(op) : device === d ? send(op) : Promise.reject(new Error('the device changed')),
+		read: api.readFile
+	});
 	if (holders) watch();
 	if (!mac) keepStorage();
 	void checkMove(d);
@@ -640,12 +645,7 @@ const ENTRY = /^[0-9a-f]{64}$/;
 const VIEWS = new Set(['query', 'get', 'room', 'history', 'note', 'pin', 'posts', 'code', 'aip', 'aip_records', 'aips', 'database']);
 
 /** The entries answer `got` of a view's read names: its entry, or each row's, shallow. @param {any} got */
-function namedIn(got) {
-	const ok = got?.ok;
-	if (!ok || typeof ok !== 'object') return [];
-	const rows = Array.isArray(ok) ? ok : [ok, ...['rows', 'posts', 'entries', 'items'].flatMap((k) => (Array.isArray(ok[k]) ? ok[k] : []))];
-	return rows.map((r) => r?.entry).filter((e) => typeof e === 'string' && ENTRY.test(e));
-}
+const namedIn = replyEntries;
 
 /**
  * A read, for every app view the same way (Samuel 2026-10-21: query views solved once, for all our views, by the
@@ -653,15 +653,23 @@ function namedIn(got) {
  * device still syncing), that entry alone is brought from its peers first (`bring`, before anything else it syncs)
  * and read again; and the entries the answer names are learned for this page, which a device opened on it brings
  * first the next time (game/code/sources/device.js `learn`). @param {any} d @param {any} op
+ * @param {{ signal?: AbortSignal, scoped?: boolean, demand?: any }} [options]
  */
-async function near(d, op) {
+async function near(d, op, { signal, scoped = false, demand } = {}) {
+	const path = typeof location === 'undefined' ? '' : location.pathname;
+	const currentView = () => !signal?.aborted && d === device && path === (typeof location === 'undefined' ? '' : location.pathname);
 	let got = await d.run(op);
+	if (!currentView()) return got;
 	const entry = typeof op?.entry === 'string' && ENTRY.test(op.entry) ? op.entry : null;
-	if (got?.refused === 'NoEntry' && entry && (await bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }))?.ok?.new) got = await d.run(op);
-	if (VIEWS.has(op?.op)) {
+	if (got?.refused === 'NoEntry' && entry) {
+		const prioritize = scoped ? !(await demand.add([entry])) : true;
+		if (!currentView()) return got;
+		if ((await bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }, { signal, path, prioritize, learnPriority: !scoped }))?.ok?.new && currentView()) got = await d.run(op);
+	}
+	if (currentView() && VIEWS.has(op?.op)) {
 		const named = [...(entry && got?.ok ? [entry] : []), ...namedIn(got)];
-		learn(named);
-		freshen(d, named);
+		learn(named, path, { prioritize: !scoped });
+		if (!scoped) freshen(d, named);
 	}
 	return got;
 }
@@ -853,6 +861,22 @@ const api = {
 	 * @param {object} op
 	 */
 	ask: (op) => send(op),
+	/** A component-owned read window. Replace its query on each read and close it on unmount. */
+	window: () => {
+		const window = createReadWindow({ device: () => device, read: (d, op, signal, demand) => near(d, op, { signal, demand, scoped: true }) });
+		const dispose = $effect.root(() => {
+			$effect(() => { void device; window.invalidate(); });
+		});
+		return { ...window, close() { dispose(); window.close(); } };
+	},
+	/** A mounted view's visible entries, already materialized locally: scheduling only, without a second read. */
+	demand: () => {
+		const window = createEntryWindow({ device: () => device });
+		const dispose = $effect.root(() => {
+			$effect(() => { void device; void window.invalidate(); });
+		});
+		return { ...window, close() { dispose(); window.close(); } };
+	},
 	/** Vault `vault`'s database as this device holds it, for the database studio. @param {string} vault */
 	database: async (vault) => answer(await send({ op: 'database', vault })),
 	/** The database's log: every signed edit this device holds, for the studio's History. */

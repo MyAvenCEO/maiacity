@@ -22,6 +22,7 @@
 -->
 <script>
 	import { onMount, tick } from 'svelte';
+	import { onStir } from './stirs.svelte.js';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import { read } from './ops.js';
@@ -115,15 +116,12 @@
 	/** where the device syncs from, or null where it doesn't say (an older device) */
 	let network = $state(/** @type {Network | null} */ (null));
 	/** Reads the network alone again: what changes from second to second. */
-	async function readNetwork() {
-		network = await read(api, { op: 'network' }, null);
+	async function readNetwork(/** @type {AbortSignal | undefined} */ signal = undefined) {
+		const got = await read(api, { op: 'network' }, null);
+		if (!signal?.aborted) network = got;
 	}
-	/** how often the network is read again while the page is open (ms) */
-	const NETWORK_EVERY = 3000;
-	onMount(() => {
-		const t = setInterval(() => void readNetwork(), NETWORK_EVERY);
-		return () => clearInterval(t);
-	});
+	// read again as the device says it changed: a page taken, a peer come or gone (./stirs.js), never on a timer
+	onMount(() => onStir(readNetwork));
 
 	/** the device's own, as its `perf` op answers, or null where it doesn't (an older device) */
 	let perf = $state(/** @type {Perf | null} */ (null));

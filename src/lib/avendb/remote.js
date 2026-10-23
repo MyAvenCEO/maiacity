@@ -19,8 +19,12 @@
  * unlock's PRF outputs among them, are moved to the worker, not copied, so the page keeps no copy of them.
  */
 
+import { rtcPageHost } from './transports/page.js';
+import { browserCarrierCapabilities } from './transports/config.js';
+
 /** The worker, once started, its calls waiting for an answer, and the page's functions it may call back. */
 let worker = null;
+let transports = null;
 const calls = new Map();
 let nextId = 0;
 const fns = new Map();
@@ -48,9 +52,15 @@ function fail(why) {
 /** The worker, started on first use. */
 function started() {
 	if (worker) return worker;
-	worker = new Worker(new URL('./remote.worker.js', import.meta.url), { type: 'module' });
-	worker.onmessage = ({ data }) => {
-		if ('fn' in data) return void back(data);
+	const current = new Worker(new URL('./remote.worker.js', import.meta.url), { type: 'module' });
+	worker = current;
+	const carriers = rtcPageHost(); transports = carriers;
+	const suspended = () => carriers.suspend();
+	globalThis.addEventListener?.('pagehide', suspended);
+	current.onmessage = ({ data }) => {
+		if (worker !== current) return;
+		if (carriers.message(data)) return;
+		if ('fn' in data) return void back(data, current);
 		const call = calls.get(data.id);
 		calls.delete(data.id);
 		if (!call) return;
@@ -59,24 +69,27 @@ function started() {
 	};
 	// a worker that failed (it didn't load, or something in it went uncaught) is stopped, every call waiting on it
 	// failing, and the next call starts another
-	worker.onerror = (e) => {
+	current.onerror = (e) => {
 		e.preventDefault?.();
-		worker?.terminate();
-		worker = null;
+		carriers.close(); globalThis.removeEventListener?.('pagehide', suspended);
+		current.terminate();
+		if (worker !== current) return;
+		worker = null; transports = null;
 		fail(`avenDB's worker failed: ${e.message || 'it did not start'}`);
 	};
+	current.postMessage({ $transport: 'capabilities', webrtc: browserCarrierCapabilities().webrtc });
 	return worker;
 }
 
 /** A function of the page's the worker called (`fn`): run here, and its answer sent back, its bytes handed over. */
-async function back({ fn, call, args }) {
+async function back({ fn, call, args }, owner) {
 	const f = fns.get(fn);
 	try {
 		if (!f) throw new Error('the page no longer holds what the device called');
 		const ok = await f(...args);
-		worker?.postMessage({ back: call, ok }, handed(ok));
+		if (worker === owner) owner.postMessage({ back: call, ok }, handed(ok));
 	} catch (e) {
-		worker?.postMessage({ back: call, error: thrown(e) });
+		if (worker === owner) owner.postMessage({ back: call, error: thrown(e) });
 	}
 }
 
@@ -102,12 +115,15 @@ function call(target, method, args = [], moving = []) {
 		w.postMessage({ id, target, method, args: sent }, moved);
 	});
 	return answered
-		.then((ok) => (ok && typeof ok === 'object' && '$device' in ok ? new Device(ok) : ok))
+		.then((ok) => (ok && typeof ok === 'object' && '$device' in ok ? new Device(ok, w) : ok))
 		.finally(() => lent.forEach((fn) => fns.delete(fn)));
 }
 
 /** A device the page lets go of without freeing it is freed in the worker once the page holds it no more. */
-const forgotten = new FinalizationRegistry((n) => worker && call(n, 'free').catch(() => {}));
+const forgotten = new FinalizationRegistry(({ n, owner }) => {
+	if (worker !== owner) return;
+	transports?.closeDevice(n); void call(n, 'free').catch(() => {});
+});
 
 /** The page's store, opened in the worker (./device/store.js): what the page itself asks of it. */
 class RemoteStore {
@@ -128,11 +144,18 @@ class RemoteStore {
 export class Device {
 	#n;
 	#said;
+	#owner;
 
-	constructor({ $device, ...said }) {
+	constructor({ $device, ...said }, owner) {
 		this.#n = $device;
 		this.#said = said;
-		forgotten.register(this, $device, this);
+		this.#owner = owner;
+		forgotten.register(this, { n: $device, owner }, this);
+	}
+
+	#call(method, args = []) {
+		if (worker !== this.#owner) return Promise.reject(Object.assign(new Error('this device worker has ended'), { worker: true }));
+		return call(this.#n, method, args);
 	}
 
 	/** A start (found, link, open), the bytes it is handed moved to the worker: its spki, the unlock's outputs. */
@@ -166,57 +189,63 @@ export class Device {
 	}
 
 	keep(nonce, credential) {
-		return call(this.#n, 'keep', [nonce, credential]);
+		return this.#call('keep', [nonce, credential]);
 	}
 
 	rename(name) {
-		return call(this.#n, 'rename', [name]);
+		return this.#call('rename', [name]);
 	}
 
 	moving() {
-		return call(this.#n, 'moving');
+		return this.#call('moving');
 	}
 
 	move_keys(ceremony, steps) {
-		return call(this.#n, 'move_keys', [ceremony, steps]);
+		return this.#call('move_keys', [ceremony, steps]);
 	}
 
 	sign_checkpoint(ceremony) {
-		return call(this.#n, 'sign_checkpoint', [ceremony]);
+		return this.#call('sign_checkpoint', [ceremony]);
 	}
 
 	behind() {
-		return call(this.#n, 'behind');
+		return this.#call('behind');
 	}
 
 	vault() {
-		return call(this.#n, 'vault');
+		return this.#call('vault');
 	}
 
 	claim_invite(server, share, secret) {
-		return call(this.#n, 'claim_invite', [server, share, secret]);
+		return this.#call('claim_invite', [server, share, secret]);
 	}
 
 	run(op, ceremony, read) {
-		return call(this.#n, 'run', [op, ceremony, read]);
+		return this.#call('run', [op, ceremony, read]);
 	}
 
 	size() {
-		return call(this.#n, 'size');
+		return this.#call('size');
 	}
 
 	changed(edits, keys) {
-		return call(this.#n, 'changed', [edits, keys]);
+		return this.#call('changed', [edits, keys]);
+	}
+
+	stirred(since) {
+		return this.#call('stirred', [since]);
 	}
 
 	close() {
-		return call(this.#n, 'close');
+		if (worker === this.#owner) transports?.closeDevice(this.#n);
+		return this.#call('close');
 	}
 
 	/** Frees it in the worker, without closing it, as the module's `free` does; it answers nothing. */
 	free() {
 		forgotten.unregister(this);
-		call(this.#n, 'free').catch(() => {});
+		if (worker === this.#owner) transports?.closeDevice(this.#n);
+		this.#call('free').catch(() => {});
 	}
 }
 

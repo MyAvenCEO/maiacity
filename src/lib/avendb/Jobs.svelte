@@ -12,6 +12,7 @@
 -->
 <script>
 	import { onMount } from 'svelte';
+	import { onStir } from './stirs.svelte.js';
 	import { native } from '$lib/native';
 	import { BUILT_IN, held, toRecord } from '$lib/studio/jobs/rules.js';
 	import { RULE } from '$lib/studio/jobs/schemas.js';
@@ -97,16 +98,16 @@
 		let gone = false;
 		/** @type {(() => void)[]} */
 		const unlisten = [];
-		// this device's syncs, read again each second while the page shows
-		const read = async () => {
+		// this device's syncs, read again as the device says they changed (./stirs.js), never on a timer
+		const read = async (/** @type {AbortSignal} */ signal) => {
 			try {
 				const j = await api.jobs();
-				if (!gone) [syncs, failed] = [[...j.running, ...j.ended], ''];
+				if (!gone && !signal.aborted) [syncs, failed] = [[...j.running, ...j.ended], ''];
 			} catch (e) {
-				if (!gone) failed = why(e);
+				if (!gone && !signal.aborted) failed = why(e);
 			}
 		};
-		void read();
+		const unstir = onStir(read);
 		// the Mac's own jobs: read once, then as its events tell, read whole again now and then (what holds its lanes)
 		if (mac) {
 			void loadMac();
@@ -122,14 +123,15 @@
 				.catch(() => {});
 		}
 		let ticks = 0;
+		// the clock their times count from, each second
 		const tick = setInterval(async () => {
 			now = Date.now();
-			void read();
 			if (mac && ++ticks % 15 === 0) void loadMac();
 			if (mac) said = (await import('$lib/studio/jobs/mac.js')).lines[0] ?? '';
 		}, 1000);
 		return () => {
 			gone = true;
+			unstir();
 			clearInterval(tick);
 			unlisten.forEach((u) => u());
 		};

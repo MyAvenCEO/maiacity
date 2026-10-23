@@ -22,6 +22,10 @@ range-collections = "=0.4.6"
 tokio = { version = "1.44", default-features = false, features = ["sync"] }
 # tasks and timers on tokio, and in a browser on its event loop (P8d)
 n0-future = "0.3.2"
+# Public types in the pinned custom packet-transport API (M5).
+iroh-base = "=1.3.0"
+noq-udp = "=1.3.0"
+n0-watcher = "=1.0.0"
 anyhow = "1"
 tracing = "0.1"
 # the ops and their answers (`Node::run`, avendb's `engine`)
@@ -38,14 +42,17 @@ x25519-dalek = { version = "3.0.0", features = ["getrandom"] }
 
 # On a machine: TLS through aws-lc-rs, the provider that has X25519MLKEM768; ring, iroh's default, is left out
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-iroh = { version = "=1.3.0", default-features = false, features = ["tls-aws-lc-rs", "portmapper", "fast-apple-datapath"] }
+# Separate HTTP/3 packet carrier, preserving our mandatory PQ provider and pinned certificates.
+wtransport = { version = "=0.7.2", default-features = false, features = ["aws-lc-rs", "self-signed", "quinn"] }
+url = "2.5"
+iroh = { version = "=1.3.0", default-features = false, features = ["tls-aws-lc-rs", "portmapper", "fast-apple-datapath", "unstable-custom-transports"] }
 rustls = { version = "0.23.33", default-features = false, features = ["aws_lc_rs", "std"] }
 tokio = { version = "1.44", features = ["rt-multi-thread", "sync", "time", "io-util"] }
 
 # In a browser (P8d), where aws-lc-rs doesn't build: ring for TLS, and X25519MLKEM768 in pure Rust (`kx`); randomness
 # from the browser
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-iroh = { version = "=1.3.0", default-features = false, features = ["tls-ring"] }
+iroh = { version = "=1.3.0", default-features = false, features = ["tls-ring", "unstable-custom-transports"] }
 rustls = { version = "0.23.33", default-features = false, features = ["ring", "std"] }
 getrandom = { version = "0.4", features = ["wasm_js"] }
 
