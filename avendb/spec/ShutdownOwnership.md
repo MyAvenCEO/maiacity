@@ -42,3 +42,33 @@ lake env lean AvenDB/ShutdownOwnership.lean
 ```
 
 The aggregate `AvenDB.lean` import and the project task ledger are intentionally left for the integrating owner.
+
+## Deployment observer boundary (specified before the rollout helper)
+
+The delivery-only close gate uses the existing model's distinction between an
+observer and the independently retained close owner. A bounded SSH/CI monitor
+maps to `waiters`; cancellation maps to `cancelWaiter`, and a monitor deadline
+maps to `diagnosticTimeout`. Neither is a `fence` or `stop` transition.
+`cancelled_waiter_keeps_obligations` and `step_safe` are the relevant existing
+lemmas. The helper's detached child retains the deployment lock until the exact
+container's close finishes; it has no activation command. Only a later live
+caller holding that lock may replace the container after checking a successful
+receipt against its immutable ID and process-start generation.
+
+The receipt is a refinement check, not a new persistence primitive: exit 0,
+no OOM, unchanged container/process generation, and the matching normal-close
+health marker are required. The Rust server writes that marker after awaited
+Node and relay shutdown succeeds. Missing/stale/error markers fail closed.
+Actual journal durability and Node producer quiescence remain the existing
+Rust/storage obligations; Lean does not prove Docker, flock, process scheduling,
+health-file writes, or that privileged external tools obey this protocol.
+
+This mapping covers observer cancellation and release gating only. In particular,
+the existing server returns an error and exits if its Node fence fails; it does
+not inherit the native app's `failed_runtime_alive` guarantee. The delivery gate
+must refuse replacement on that failure, and tests must not claim the server
+runtime is retained. Early startup signal installation is also outside this
+slice. Mocked Docker/process tests exercise delayed completion, cancelled
+monitors, repeated observation, failed close and stale/replaced instances;
+workflow tests must show no activation after a failed gate and no API-workflow
+bypass. A real disposable-container run remains a separate OS integration gate.

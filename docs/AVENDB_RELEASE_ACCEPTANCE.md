@@ -2,10 +2,50 @@
 
 Read-only audit, 2026-10-23; published from integrated release head `777ded336f4d50716b3eef8df90722eb8cd14303`. Original inspected sources: release branch `codex/avendb-reliability` at `45aa2b955801c4a1d6c3db9a5e66fcb15aedb34e`; these deployment/native files are unchanged from common base `918c07fe`. The explicit-entry source slice is `354679e70d7433324412e45c660c738afeae28a5`; request-basis is `3a86a2cbd7051399719755c5c4785917329dd997`, accounting is `90c9bbf734b3109ba1292c3849a857a32d7e9a96`. These deployment/native files were rechecked unchanged at the publication base. Re-pin the final integrated/generated-WASM head before using this sequence. This is an operator acceptance plan, not a claim that its deployment steps have run. No build, deployment, account, store, or UI action was performed by this audit.
 
+## Delivery-only repair after this audit
+
+`deploy/stop-avendb.py` now implements the proposed observer/owner separation.
+The model mapping is in `avendb/spec/ShutdownOwnership.md`; it adds no new
+storage or authorization semantics. The dedicated server rollout holds the host
+`.env.lock` through close, settings update, verification and activation. A detached
+child inherits that exact lock descriptor and runs SIGTERM with `--timeout=-1`.
+The observer waits at most five minutes for completion (individual metadata calls
+have bounded waits); expiration/cancellation never authorizes replacement. Do not
+explicitly unlock fd 9 in the parent: closing it leaves the child's ownership intact.
+
+Receipts under `.avendb-stop/` bind container ID, image ID, precise Docker start
+and restart count to the initial health start. Success additionally requires exit
+0, no OOM, and the matching `ended.how=stopped` marker. The child never activates
+anything. A later observer can reuse successful evidence for that same stopped
+instance. Failed/pending receipts remain blockers; do not remove them or manually
+restart/recreate the container as an automatic recovery. Diagnose missing ownership,
+storage errors or stale metadata first. The server itself currently exits on a
+fence error; this helper does not promise to keep that failed runtime alive.
+
+Before close and immediately before activation, the helper compares the existing
+read-write `/data` bind and bucket/endpoint/region/seal/data-directory settings
+against Compose, without logging or persisting secrets. Secret rotation that
+changes the seal is intentionally outside this no-reset upgrade. A mismatch after
+settings update leaves the successfully stopped container in place and refuses
+activation; restore the recorded correct configuration under the same host lock
+before retrying. API deployments stage Compose/Caddy files, activate them under
+the host lock, and explicitly start only `db api caddy` with `--no-deps`; they cannot
+bypass the avenDB close gate through orphan removal or implicit dependencies.
+
+`delivery-checks.yml` runs the disposable process/workflow tests and is required
+by both deployment jobs. Local validation passed all 17 process/workflow tests (44.439 s), Python syntax,
+workflow YAML parsing and whitespace checks. The process tests use Docker/SSH
+stand-ins plus actual POSIX processes and file locks. The separate GitHub-runner fixture uses real Docker, a network-disabled
+toy writer and disposable data; it checks a stop held beyond ten seconds, cancelled
+observation, retained lock, resumed completion and failed exit/marker rejection.
+**That Docker run remains pending**: the local daemon was unavailable during this patch. No
+production rollout has been performed. The original findings below describe the
+audited base; the implementation does not retroactively validate earlier releases.
+
 ## Release fences to settle first
 
 1. **Server stop deadline is not a durability fence.** `.github/workflows/avendb.yml:142–144` pulls then runs `docker compose … up -d --no-deps avendb`. Neither compose file sets `stop_grace_period`/`stop_signal`; the Dockerfile sets neither. Rust handles SIGTERM and awaits `Running::shutdown` → `Node::shutdown` before returning (`server/src/main.rs:118–121`, `server/src/lib.rs:344–346`). Docker may forcibly kill a process after its stop deadline. A larger arbitrary timeout alone cannot prove accepted writes have fenced.
-2. **Recommended bounded rollout, without a forced-close deadline:** one owned remote stop operation using `docker stop --signal=SIGTERM --timeout=-1 maia-city-avendb`; monitor at bounded intervals for a fixed rollout budget (e.g. five minutes). On expiry, fail/hold the rollout, leave the close operation owned, do not kill the container, start its replacement, or fall through to rollback. Cancellation of the monitor must not cancel the owned stop or release a second writer. After exit, require exit code 0, no OOM, and the stopped run's `/data/health.json` `ended.how == "stopped"`. That marker is written only after the awaited shutdown succeeds (`main.rs:72–80`). This is a **proposed workflow change**, not implemented by the current workflow. Validate it with a disposable delayed-fence container plus canceled-monitor/failure tests before rollout. Docker documents `--timeout=-1` as no forced timeout: <https://docs.docker.com/reference/cli/docker/container/stop/>.
+2. **Recommended bounded rollout, without a forced-close deadline:** one owned remote stop operation using `docker stop --signal=SIGTERM --timeout=-1 maia-city-avendb`; monitor at bounded intervals for a fixed rollout budget (e.g. five minutes). On expiry, fail/hold the rollout, leave the close operation owned, do not kill the container, start its replacement, or fall through to rollback. Cancellation of the monitor must not cancel the owned stop or release a second writer. After exit, require exit code 0, no OOM, and the stopped run's `/data/health.json` `ended.how == "stopped"`. That marker is written only after the awaited shutdown succeeds (`main.rs:72–80`). The delivery-only repair above now implements this workflow change; validate it with a disposable delayed-fence container plus canceled-monitor/failure tests before rollout. Docker documents `--timeout=-1` as no forced timeout: <https://docs.docker.com/reference/cli/docker/container/stop/>.
 3. **PWA is not the native app.** `release.json` versions the served frontend; `/feed/health` does not identify the server commit. The Mac's `0.1.0` product version is constant and does not identify its Rust revision. Record each separately.
 4. **No blanket offline-shell claim:** `static/app/avendb-files.sw.js:18–26` handles only file streaming through a live page, not a precached application shell. The standalone manifest is not an offline-shell guarantee. Test already-open PWA local reads separately from cold offline launch. Dev-mode Mac pages need `localhost:5173`, while a bundled `custom-protocol` app embeds its pages.
 
@@ -69,7 +109,7 @@ For offline evidence, use an already loaded page and a file already read complet
 
 ## 3. Hosted peer controlled restart and acceptance
 
-Use the reviewed exact-SHA image and the existing `.env` lock/update path. Keep the previous image digest available. Apply the owned stop/fence algorithm above **before** any replacement; current CI's plain `up` is not that algorithm. The stop primitive and read-only completion checks are:
+Use the reviewed exact-SHA image and the existing `.env` lock/update path. Keep the previous image digest available. Use the revised exact-head workflow, whose owned stop/fence gate runs **before** any replacement; the historical plain `up` workflow is not acceptable. The stop primitive and read-only completion checks are:
 
 ```sh
 # MUTATING, only during the authorized rollout under the owned remote coordinator:
@@ -81,7 +121,7 @@ docker cp maia-city-avendb:/data/health.json - | tar -xO
 docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps avendb
 ```
 
-Require `false 0 false`, and matching old `started` plus `ended.how=stopped`; don't mistake another run's marker for this one. A monitor timeout or close error blocks replacement. The proposed coordinator must retain ownership across client disconnect/cancellation; running the blocking primitive in an unowned short-lived SSH command is not that implementation.
+Require `false 0 false`, and matching old `started` plus `ended.how=stopped`; don't mistake another run's marker for this one. A monitor timeout or close error blocks replacement. The coordinator must retain ownership across client disconnect/cancellation; running the blocking primitive in an unowned short-lived SSH command is not that implementation.
 
 After restart compare `.Image` with the expected immutable image and `/data` mount with the baseline. Require the **current container's current startup** log to show the same public device, endpoint, and claimed vault, and its offer. Avoid accepting an old log line. Inspect `/feed/health`: new `started`, `before.started` matching the old run, `before.ended.how=stopped`, no panic/restart loop/OOM, and bounded memory. From the server, the read-only internal feed is accessible without weakening public TLS:
 
