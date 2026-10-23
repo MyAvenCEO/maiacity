@@ -150,10 +150,12 @@ jobs:
           HAS_BUCKET: ${{ secrets.HETZNER_S3_ACCESS_KEY != '' && secrets.HETZNER_S3_SECRET_KEY != '' && secrets.AVENDB_BUCKET_SEAL != '' }}
         run: |
           # its device, its endpoint, whether a vault has claimed it, and its offer, all public (what the apps link through)
-          for i in $(seq 1 24); do
+          # Replaying an existing cold store can exceed the old two-minute polling budget.
+          # Allow 120 five-second polls before failing; the ready offer is still required.
+          for i in $(seq 1 120); do
             SAID=$(ssh prod "docker logs maia-city-avendb 2>&1" | grep 'avenDB server:' || true)
             if printf '%s\n' "$SAID" | grep -q 'avenDB server: offer '; then printf '%s\n' "$SAID" | tail -4; break; fi
-            if [ "$i" = 24 ]; then
+            if [ "$i" = 120 ]; then
               echo "::error::avenDB's server has not said its offer:"
               ssh prod "docker ps -a --filter name=^maia-city-avendb$; docker logs --tail 50 maia-city-avendb 2>&1"
               exit 1

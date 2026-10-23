@@ -90,3 +90,34 @@ test("the repo's manifests hold the kernel, each held manifest exists, and each 
 	expect(leaves[0].leaf.query.type).toContain('capgroup');
 	expect(leaves.some((l) => l.leaf.query?.tags?.[0] === 'game:sandbox-5')).toBe(true);
 });
+
+test('duplicate feed and local rows do not consume a visible query window', () => {
+	const rows = [{ entry: id(1), created: 3 }, { entry: id(1), created: 3 }, { entry: 'invalid', created: 2 }, { entry: id(2), created: 1 }];
+	expect(entriesOf([{ leaf: { query: {}, limit: 2 } }], rows)).toEqual([id(1), id(2)]);
+});
+
+test('each reference root keeps its own follow depth, including already brought shared entries', async () => {
+	const manifest = m({ id: 'depths', routes: ['*'], parts: [{ entry: id(1), follow: 1 }, { entry: id(2), follow: 3 }, { entry: id(5) }] });
+	const links = { 1: 3, 2: 5, 3: 4, 5: 6, 6: 7, 7: 8 };
+	const read = [], brought = [];
+	const d = { run: async (op) => {
+		if (op.op === 'query') return { ok: { rows: [{ record: manifest }] } };
+		read.push(op.entry);
+		return { ok: { record: { entry: id(links[parseInt(op.entry, 16)] ?? 99) } } };
+	} };
+	await bringDeclared('/', { device: d, fetch: null, bring: async (ids) => brought.push(...ids) });
+	expect(brought).toEqual([id(1), id(2), id(5), id(3), id(6), id(7)]);
+	expect(read).not.toContain(id(3));
+	expect(brought).not.toContain(id(8));
+});
+
+test('an abandoned view issues no later priority batch or reference reads', async () => {
+	const controller = new AbortController();
+	const manifest = m({ id: 'first', priority: 'high', routes: ['*'], parts: [{ entry: id(1), follow: 2 }] });
+	const later = m({ id: 'later', routes: ['*'], parts: [{ entry: id(2) }] });
+	const reads = [], brings = [];
+	const d = { run: async (op) => { reads.push(op); return { ok: { rows: [manifest, later].map((record) => ({ record })) } }; } };
+	await expect(bringDeclared('/', { device: d, signal: controller.signal, fetch: null, bring: async (ids) => { brings.push(ids); controller.abort(); } })).rejects.toThrow();
+	expect(brings).toEqual([[id(1)]]);
+	expect(reads.filter((o) => o.op === 'get')).toEqual([]);
+});

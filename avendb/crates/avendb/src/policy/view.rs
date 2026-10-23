@@ -22,9 +22,9 @@ use crate::keys::{KeyFam, KeyName, PublicKey, Seal};
 use crate::policy::{Kind, Principal, Proposal, Share};
 use crate::wire::{Decode, Reader, WireError};
 
-/// What every stored view starts with: version 2, which keeps no resolve's choice, as trying a removal replays only the
-/// edits that say who may do what (`V2_removals_read_trust`).
-const VIEW: &[u8] = b"avenDB view 2\n";
+/// Version 3 preserves cap-group bindings, which the canonical Share codec deliberately omits because the
+/// enclosing Sharing edit carries them. Earlier derived views are rejected and rebuilt from signed history.
+const VIEW: &[u8] = b"avenDB view 3\n";
 
 impl Encode for Vault {
     fn encode(&self, out: &mut Vec<u8>) {
@@ -54,6 +54,7 @@ impl Encode for Issued {
     fn encode(&self, out: &mut Vec<u8>) {
         self.id.encode(out);
         self.share.encode(out);
+        self.share.group.encode(out);
         self.chain.encode(out);
         self.intake.encode(out);
         self.commitment.encode(out);
@@ -62,9 +63,12 @@ impl Encode for Issued {
 
 impl Decode for Issued {
     fn decode(r: &mut Reader<'_>) -> Result<Self, WireError> {
+        let id = ShareId::decode(r)?;
+        let mut share = Share::decode(r)?;
+        share.group = r.option()?;
         Ok(Issued {
-            id: ShareId::decode(r)?,
-            share: Share::decode(r)?,
+            id,
+            share,
             chain: r.seq::<ShareId>(32)?.into(),
             intake: r.seq::<ShareId>(32)?.into(),
             commitment: r.option()?,

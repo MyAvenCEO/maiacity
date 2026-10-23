@@ -26,6 +26,7 @@
  */
 import { MAIA_CITY } from './anchor.js';
 import { bringDeclared } from './manifests.js';
+import { createDemand } from './demand.js';
 
 /**
  * How long a page waits for its device to bring Maia City from its peers before it reads the feed instead (ms): a
@@ -65,19 +66,52 @@ const SHARED = Symbol.for('maiacity.avendb.device');
 /** The device the page holds open now, or `null` to read the feed again; each vault is brought again once. A device
  * opened brings first what the manifests of Maia City declare for this page (./manifests.js `bringDeclared`), then the
  * entries this page read before (`learned`), before anything else it syncs. */
+let activeView = null;
+
 export function useDevice(d) {
+	activeView?.controller.abort();
+	activeView?.demand.close();
+	activeView = null;
 	device = d ?? null;
 	brought = new WeakMap();
 	asked = new WeakMap();
 	if (typeof window !== 'undefined') /** @type {any} */ (window)[SHARED] = device;
-	if (!device) return;
-	const opened = device;
-	const before = learned();
-	void (async () => {
-		const declared = await bringDeclared(pageNow(), { device: opened, bring: (ids) => bringEntries(ids, opened) }).catch(() => []);
+	if (device) void useView(pageNow());
+}
+
+/** Replace this page's demand on navigation. Already issued legacy bring operations may finish, but no stale
+ * manifest walk, reference traversal or subsequent batch is issued after the view/device changes. */
+export function useView(path) {
+	const opened = deviceOf();
+	if (activeView?.device === opened && activeView.path === path) return activeView.done;
+	activeView?.controller.abort();
+	activeView?.demand.close();
+	activeView = null;
+	if (!opened) return Promise.resolve([]);
+	const controller = new AbortController();
+	const signal = controller.signal;
+	const before = learned(path);
+	const demand = createDemand((op) => opened.run(op));
+	const view = { device: opened, path, controller, demand, done: null };
+	activeView = view;
+	view.done = (async () => {
+		const declared = await bringDeclared(path, {
+			device: opened, signal,
+			bring: async (ids) => {
+				const scoped = await demand.add(ids);
+				return bringEntries(ids, opened, { signal, path, prioritize: !scoped });
+			}
+		});
+		signal.throwIfAborted();
 		const rest = before.filter((e) => !declared.includes(e));
-		if (rest.length) await bringEntries(rest.slice(0, AT_ONCE), opened);
-	})();
+		if (rest.length) {
+			const ids = rest.slice(0, AT_ONCE);
+			const scoped = await demand.add(ids);
+			await bringEntries(ids, opened, { signal, path, prioritize: !scoped });
+		}
+		return declared;
+	})().catch(() => []);
+	return view.done;
 }
 
 /** where this browser keeps, per page, the entries it read (`learn`) */
@@ -117,9 +151,10 @@ export function learned(path = pageNow()) {
  * that keeps nothing (private, storage blocked) keeps nothing: the page still reads them, as before.
  * @param {string[]} ids @param {string} [path]
  */
-export function learn(ids, path = pageNow()) {
+export function learn(ids, path = pageNow(), { prioritize = true } = {}) {
 	const fresh = (ids ?? []).filter((e) => /^[0-9a-f]{64}$/.test(String(e)));
 	if (!path || !fresh.length) return;
+	if (prioritize && activeView?.path === path) void activeView.demand.add(fresh);
 	try {
 		const all = kept();
 		const was = Array.isArray(all[path]) ? all[path] : [];
@@ -234,15 +269,18 @@ function askedOf(d) {
  * refused (a device whose avenDB knows no `entries` yet). What a view brings for the items it shows (the Maia
  * Universe's newest posts, a world's recipes), and nothing else.
  * @param {string[]} ids @param {any} [d]
+ * @param {{ signal?: AbortSignal, path?: string, prioritize?: boolean, learnPriority?: boolean }} [options]
  */
-export async function bringEntries(ids, d = deviceOf()) {
-	const sorted = [...new Set((ids ?? []).filter((e) => /^[0-9a-f]{64}$/.test(String(e))))].sort();
+export async function bringEntries(ids, d = deviceOf(), { signal, path = pageNow(), prioritize = true, learnPriority = true } = {}) {
+	const sorted = [...new Set((ids ?? []).filter((e) => /^[0-9a-f]{64}$/.test(String(e))))];
 	if (!d || !sorted.length) return null;
-	learn(sorted);
+	if (signal?.aborted) return null;
+	learn(sorted, path, { prioritize: learnPriority });
 	try {
 		const sum = { new: 0, peers: 0, reached: true };
 		for (let i = 0; i < sorted.length; i += AT_ONCE) {
-			const got = await d.run({ op: 'bring', entries: sorted.slice(i, i + AT_ONCE) });
+			if (signal?.aborted) return null;
+			const got = await d.run({ op: 'bring', entries: sorted.slice(i, i + AT_ONCE), ...(!prioritize ? { prioritize: false } : {}) });
 			if (!got?.ok) return null;
 			sum.new += got.ok.new ?? 0;
 			sum.peers = Math.max(sum.peers, got.ok.peers ?? 0);

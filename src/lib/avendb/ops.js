@@ -33,6 +33,7 @@ export const READS = [
 	'cap_groups',
 	'code',
 	'bring',
+	'demand',
 	'synced',
 	'network',
 	'api_pass'
@@ -133,6 +134,19 @@ export async function may(api, actor, ops) {
 export async function read(api, op, fallback) {
 	const out = await api.ask(op).catch(() => null);
 	return out && 'ok' in out ? out.ok : fallback;
+}
+
+/** A mounted view's read and its cleanup. Close it when its query changes or the view leaves.
+ * @param {{ ask: (op: object) => Promise<any>, window?: () => any }} api
+ * @param {object} op @param {any} fallback
+ * @param {any} [activeWindow] A window retained by the component between reactive reads.
+ */
+export function windowRead(api, op, fallback, activeWindow) {
+	const window = activeWindow ?? api.window?.();
+	/** @type {Promise<any>} */
+	const result = (window ? window.read(op) : api.ask(op)).catch(() => null)
+		.then((/** @type {any} */ out) => out && 'ok' in out ? out.ok : fallback);
+	return { result, close: () => activeWindow ? activeWindow.clear() : window?.close() };
 }
 
 /**

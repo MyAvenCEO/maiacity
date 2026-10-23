@@ -17,13 +17,15 @@
 
 import init, * as avendb from './device/avendb_browser.js';
 import { open } from './device/store.js';
+import { deviceTransports, rtcWorkerCarrier } from './transports/worker.js';
+import { browserCarrierCapabilities } from './transports/config.js';
 
 /** What the page may call, by target: nothing of the module beyond these. */
 const CALLS = {
 	pkg: ['storeMeta', 'qrSvg', 'prfSalt', 'deviceSalt', 'provenCode'],
 	Device: ['found', 'link', 'open'],
 	store: ['hold', 'release', 'aside'],
-	device: ['keep', 'rename', 'moving', 'move_keys', 'sign_checkpoint', 'behind', 'vault', 'claim_invite', 'run', 'size', 'changed', 'close', 'free']
+	device: ['keep', 'rename', 'moving', 'move_keys', 'sign_checkpoint', 'behind', 'vault', 'claim_invite', 'run', 'size', 'changed', 'stirred', 'close', 'free']
 };
 
 /** The WebAssembly, started once, by the first call. */
@@ -32,7 +34,9 @@ let started = null;
 let store = null;
 /** The devices the page holds, by number, until it frees them. */
 const devices = new Map();
+const transports = new Map();
 let nextDevice = 0;
+let rtcAvailable = false;
 /** The page's functions called and not answered yet, by call. */
 const asked = new Map();
 let nextCall = 0;
@@ -80,6 +84,8 @@ function given(ok) {
 	if (!(ok instanceof avendb.Device)) return ok;
 	const n = nextDevice++;
 	devices.set(n, ok);
+	transports.set(n, deviceTransports(ok, { webtransport: browserCarrierCapabilities().webtransport, openRtc: rtcAvailable ? (descriptor, callbacks) =>
+		rtcWorkerCarrier({ ...descriptor, device: n }, callbacks, (message, moving) => postMessage(message, moving)) : undefined }));
 	return { $device: n, id: ok.id(), endpoint: ok.endpoint(), passkey: ok.passkey(), offer: ok.offer() };
 }
 
@@ -100,6 +106,10 @@ function callee(target, method) {
 	if (typeof target === 'number') {
 		const device = devices.get(target);
 		if (!device || !CALLS.device.includes(method)) throw new Error(`no device ${target} to ${method}`);
+		if (method === 'close' || method === 'free') {
+			transports.get(target)?.close(); transports.delete(target);
+			postMessage({ $transport: 'close-device', device: target });
+		}
 		if (method === 'free') devices.delete(target);
 		return device[method].bind(device);
 	}
@@ -128,6 +138,10 @@ async function answer({ id, target, method, args }) {
 }
 
 onmessage = ({ data }) => {
+	if (data.$transport === 'capabilities') {
+		// Sent once by this worker's owning Window before its first device request.
+		rtcAvailable = data.webrtc === true; return;
+	}
 	if (!('back' in data)) return void answer(data);
 	const call = asked.get(data.back);
 	asked.delete(data.back);

@@ -243,7 +243,8 @@ fn start() -> Result<Hosted, String> {
     std::fs::create_dir_all(&dir).map_err(|e| format!("avenDB's folder {} couldn't be made: {e}", dir.display()))?;
     // the drives the Mac mounts, which it hosts
     let volumes = cfg!(target_os = "macos").then(|| avendb_device::drive::VOLUMES.into());
-    let config = avendb_device::Config { dir, direct: true, volumes };
+    let webtransport = avendb_device::webtransport_from_env().map_err(|error| format!("avenDB transport configuration: {error:#}"))?;
+    let config = avendb_device::Config { dir, direct: true, volumes, webtransport };
     let (hosted, made) = std::sync::mpsc::channel();
     let (quit, quitting) = oneshot::channel::<()>();
     let (done, ended) = oneshot::channel();

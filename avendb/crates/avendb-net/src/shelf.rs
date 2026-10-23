@@ -70,7 +70,7 @@ const CHUNK: usize = 1024;
 /// on the server, once its bucket does. A blob is named by its hash in hex once it is finished, and by a name of the
 /// node's choosing while it is written; a named object by a name of its own (`named`).
 pub enum Call {
-    /// Every blob the shelf holds whole, with its size. It drops what it holds of blobs never finished.
+    /// Every blob the shelf holds whole, with its size. Listing never removes active staging files.
     List(oneshot::Sender<io::Result<Vec<(Hash, u64)>>>),
     /// `len` bytes of blob `name` from byte `at` on, or fewer at its end.
     Read { name: String, at: u64, len: usize, tx: oneshot::Sender<io::Result<Bytes>> },
@@ -100,7 +100,98 @@ pub enum Call {
 
 /// A node's shelf: where it sends its calls, which whoever keeps the shelf answers.
 #[derive(Clone, Debug)]
-pub struct Shelf(mpsc::Sender<Call>);
+pub struct Shelf {
+    route: Route,
+    atomic: bool,
+    bounded: Option<BoundedReader>,
+    access: Option<Access>,
+    readonly: bool,
+}
+#[derive(Clone, Debug)]
+enum Route {
+    Generic {
+        sender: mpsc::Sender<Call>,
+        owner: Arc<Mutex<GenericOwner>>,
+    },
+    #[cfg(not(target_arch = "wasm32"))]
+    Native {
+        queue: crate::disk_queue::Queue<Call>,
+        source: crate::writer::Source,
+    },
+}
+#[derive(Debug, Default)]
+struct GenericOwner {
+    active: std::sync::Weak<()>,
+    managed: bool,
+    writing: usize,
+}
+struct UnownedWrite(Arc<Mutex<GenericOwner>>);
+impl Drop for UnownedWrite {
+    fn drop(&mut self) {
+        self.0.lock().expect("shelf owner").writing -= 1;
+    }
+}
+
+#[derive(Clone)]
+struct Access {
+    ownership: std::sync::Weak<()>,
+    life: Arc<crate::lifecycle::Lifecycle>,
+    finalizing: bool,
+    #[cfg(not(target_arch = "wasm32"))]
+    capability: Option<crate::writer::Capability>,
+}
+impl std::fmt::Debug for Access {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("writer admission")
+    }
+}
+/// Exclusive writer lifetime, separate from read-open shelves. Cloned writable
+/// shelves retain admission but do not keep the owner or native lock alive.
+pub struct Writer {
+    shelf: Shelf,
+    ownership: Arc<Mutex<Option<Arc<()>>>>,
+    #[cfg(not(target_arch = "wasm32"))]
+    lease: Arc<Mutex<Option<crate::writer::Lease>>>,
+}
+impl Writer {
+    pub fn shelf(&self) -> Shelf {
+        self.shelf.clone()
+    }
+    pub(crate) fn lifecycle(&self) -> Arc<crate::lifecycle::Lifecycle> {
+        self.shelf.access.as_ref().expect("writer access").life.clone()
+    }
+    /// This owned finalizer survives cancellation of its awaiting caller.
+    pub async fn shutdown(&self) -> io::Result<()> {
+        let life = self.lifecycle();
+        let shelf = self.shelf.clone();
+        let ownership = self.ownership.clone();
+        #[cfg(not(target_arch = "wasm32"))]
+        let lease = self.lease.clone();
+        life.start_close(move |quiet| async move {
+            let _finalizer = quiet.wait().await;
+            shelf.fence().await.map_err(|e| Arc::<str>::from(e.to_string()))?;
+            #[cfg(not(target_arch = "wasm32"))]
+            lease.lock().expect("writer lease").take();
+            ownership.lock().expect("writer ownership").take();
+            Ok(())
+        });
+        life.closed().await.map_err(|e| io::Error::other(e.to_string()))
+    }
+}
+impl Drop for Writer {
+    fn drop(&mut self) {
+        self.lifecycle().abandon();
+    }
+}
+
+type BoundedRead = std::pin::Pin<Box<dyn std::future::Future<Output = io::Result<Option<Bytes>>> + Send>>;
+#[derive(Clone)]
+struct BoundedReader(Arc<dyn Fn(String, usize) -> BoundedRead + Send + Sync>);
+impl std::fmt::Debug for BoundedReader {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("bounded object reader")
+    }
+}
 
 /// The folders of a shelf that hold its blobs, their outboards, what it is writing, and the lock a page's worker
 /// holds: no named object is under them.
@@ -167,13 +258,206 @@ impl Shelf {
     /// A shelf, and the calls to it, for whoever keeps it to answer.
     pub fn new() -> (Shelf, mpsc::Receiver<Call>) {
         let (tx, rx) = mpsc::channel(16);
-        (Shelf(tx), rx)
+        (
+            Shelf {
+                route: Route::Generic { sender: tx, owner: Arc::default() },
+                atomic: false,
+                bounded: None,
+                access: None,
+                readonly: false,
+            },
+            rx,
+        )
     }
 
-    async fn ask<T>(&self, call: impl FnOnce(oneshot::Sender<io::Result<T>>) -> Call) -> io::Result<T> {
+    /// Whether concurrent create-only puts of different bytes at one name are
+    /// serialized atomically and durably. Generic, bucket and unverified browser
+    /// shelves default to false; such shelves keep using legacy edit signatures.
+    pub(crate) fn atomic_put(&self) -> bool {
+        self.atomic
+    }
+
+    /// Reserved for backend implementations that satisfy the atomic publication
+    /// contract. The disk backend uses fsynced staging plus an atomic hard link.
+    #[cfg(test)]
+    pub(crate) fn with_atomic_put(mut self) -> Self {
+        self.atomic = true;
+        self
+    }
+
+    /// Backends install this only when the limit applies before allocating/reading
+    /// an entire named object. Unsupported backends never fall back to an unbounded Get.
+    pub(crate) fn with_bounded_get<F, Fut>(mut self, read: F) -> Self
+    where
+        F: Fn(String, usize) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = io::Result<Option<Bytes>>> + Send + 'static,
+    {
+        self.bounded = Some(BoundedReader(Arc::new(move |name, limit| Box::pin(read(name, limit)))));
+        self
+    }
+    pub(crate) fn bounded_reads(&self) -> bool {
+        self.bounded.is_some()
+    }
+
+    /// Read a named object with a backend-enforced byte limit. Oversized input is
+    /// InvalidData; an unverified backend is Unsupported, so derived state may fall
+    /// back to replay without first allocating attacker-controlled object lengths.
+    pub async fn get_bounded(&self, name: &str, limit: usize) -> io::Result<Option<Bytes>> {
+        if !named(name) {
+            return Err(unnamed(name));
+        }
+        let reader = self
+            .bounded
+            .as_ref()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::Unsupported, "shelf has no bounded named-object reader"))?;
+        (reader.0)(name.to_owned(), limit).await
+    }
+
+    /// Acquire writer ownership, revalidating a native reader's selected generation.
+    pub fn writer(&self) -> io::Result<Writer> {
+        if self.access.is_some() {
+            return Err(io::Error::new(io::ErrorKind::AlreadyExists, "shelf already belongs to a writer"));
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        let lease = match &self.route {
+            Route::Native { source, .. } => Some(source.claim()?),
+            Route::Generic { .. } => None,
+        };
+        let marker = Arc::new(());
+        if let Route::Generic { owner, .. } = &self.route {
+            let mut owner = owner.lock().expect("shelf owner");
+            if owner.active.upgrade().is_some() || owner.writing != 0 {
+                return Err(io::Error::new(io::ErrorKind::WouldBlock, "shelf has an active writer"));
+            }
+            owner.active = Arc::downgrade(&marker);
+            owner.managed = true;
+        }
+        let mut shelf = self.clone();
+        shelf.readonly = false;
+        shelf.access = Some(Access {
+            ownership: Arc::downgrade(&marker),
+            life: crate::lifecycle::Lifecycle::new(),
+            finalizing: false,
+            #[cfg(not(target_arch = "wasm32"))]
+            capability: lease.as_ref().map(crate::writer::Lease::capability),
+        });
+        Ok(Writer {
+            shelf,
+            ownership: Arc::new(Mutex::new(Some(marker))),
+            #[cfg(not(target_arch = "wasm32"))]
+            lease: Arc::new(Mutex::new(lease)),
+        })
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn native(queue: crate::disk_queue::Queue<Call>, source: crate::writer::Source) -> Self {
+        Self { route: Route::Native { queue, source }, atomic: true, bounded: None, access: None, readonly: true }
+    }
+    /// An independent read handle; it may be used to claim a later writer after
+    /// this owner has completed shutdown, but cannot write through the current owner.
+    pub fn reader(&self) -> Self {
+        let mut reader = self.clone();
+        reader.access = None;
+        reader.readonly = true;
+        reader
+    }
+    pub(crate) fn finalizing(&self, proof: &crate::lifecycle::Finalizer) -> io::Result<Self> {
+        let mut shelf = self.clone();
+        let access = shelf.access.as_mut().ok_or_else(|| io::Error::other("no writer"))?;
+        if !proof.is_of(&access.life) {
+            return Err(io::Error::other("different shutdown owner"));
+        }
+        access.finalizing = true;
+        Ok(shelf)
+    }
+    pub(crate) async fn fence(&self) -> io::Result<()> {
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Route::Native { queue, .. } = &self.route {
+            return queue.fence().await;
+        }
+        Ok(()) // Generic backend acknowledgements are retained through admission.
+    }
+    async fn ask<T: Send + 'static>(&self, make: impl FnOnce(oneshot::Sender<io::Result<T>>) -> Call) -> io::Result<T> {
         let (tx, rx) = oneshot::channel();
-        self.0.send(call(tx)).await.map_err(|_| gone())?;
-        rx.await.map_err(|_| gone())?
+        let call = make(tx);
+        let writing = matches!(
+            call,
+            Call::Write { .. } | Call::Finish { .. } | Call::Drop { .. } | Call::Put { .. } | Call::Keep { .. }
+        );
+        if writing && self.readonly {
+            return Err(io::Error::new(io::ErrorKind::PermissionDenied, "read-open shelf has no writer"));
+        }
+        let ownership = if writing {
+            self.access
+                .as_ref()
+                .map(|access| {
+                    access
+                        .ownership
+                        .upgrade()
+                        .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "shelf writer is closed"))
+                })
+                .transpose()?
+        } else {
+            None
+        };
+        let ticket = if writing {
+            match &self.access {
+                Some(access) if !access.finalizing => Some(access.life.admit()?),
+                _ => None,
+            }
+        } else {
+            None
+        };
+        // Legacy generic backends may be used without a Node (snapshot buckets).
+        // Account for their accepted writes before the first owner claim. Once a
+        // Node has claimed this route, base clones can never bypass its lifecycle.
+        let unowned = if writing && self.access.is_none() {
+            match &self.route {
+                Route::Generic { owner, .. } => {
+                    let mut state = owner.lock().expect("shelf owner");
+                    if state.managed {
+                        return Err(io::Error::new(
+                            io::ErrorKind::PermissionDenied,
+                            "write through the active owner's shelf",
+                        ));
+                    }
+                    state.writing += 1;
+                    Some(UnownedWrite(owner.clone()))
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                _ => None,
+            }
+        } else {
+            None
+        };
+        match &self.route {
+            Route::Generic { sender, .. } => sender.send(call).await.map_err(|_| gone())?,
+            #[cfg(not(target_arch = "wasm32"))]
+            Route::Native { queue, .. } => {
+                let guard = if writing {
+                    Some(
+                        self.access
+                            .as_ref()
+                            .and_then(|a| a.capability.as_ref())
+                            .ok_or_else(|| {
+                                io::Error::new(io::ErrorKind::PermissionDenied, "read-open shelf has no writer")
+                            })?
+                            .admit()?,
+                    )
+                } else {
+                    None
+                };
+                queue.send(call, guard).await?;
+            }
+        }
+        // Backend completion, not the requesting future, owns admitted writes.
+        let (answer, result) = oneshot::channel();
+        task::spawn(async move {
+            let _ticket = ticket;
+            let _ownership = ownership;
+            let _unowned = unowned;
+            let _ = answer.send(rx.await.map_err(|_| gone()).and_then(|r| r));
+        });
+        result.await.map_err(|_| gone())?
     }
 
     /// Puts `bytes` under `name` once, as `Call::Put` says: done once the shelf holds them. A name under `slots/` is
@@ -254,6 +538,12 @@ impl Shelf {
         Ok((hash, size))
     }
 
+    /// Reads a blob incrementally. Its fragments are not authenticated until `BlobReader::finish` succeeds;
+    /// callers must keep any decoded result private and discard it if reading or finishing fails.
+    pub(crate) fn blob_reader(&self, hash: Hash, size: u64) -> BlobReader<'_> {
+        BlobReader { shelf: self, hash, size, at: 0, bytes: Bytes::new(), sum: blake3::Hasher::new() }
+    }
+
     /// Blob `hash` of `size` bytes, read whole a step at a time, and checked against its hash.
     pub(crate) async fn read_blob(&self, hash: Hash, size: u64) -> io::Result<Bytes> {
         let name = hash.to_hex();
@@ -270,6 +560,71 @@ impl Shelf {
             return Err(io::Error::new(io::ErrorKind::InvalidData, format!("blob {name} isn't what its hash says")));
         }
         Ok(out.into())
+    }
+}
+
+/// A blob read in bounded pieces, hashed as they arrive. No fragment or decoded result is trusted before
+/// `finish`: the last hash authenticates the entire declared blob, just as `Shelf::read_blob` does.
+pub(crate) struct BlobReader<'a> {
+    shelf: &'a Shelf,
+    hash: Hash,
+    size: u64,
+    /// Bytes consumed by the caller. `bytes` is the unread part of the last bounded shelf read.
+    at: u64,
+    bytes: Bytes,
+    sum: blake3::Hasher,
+}
+
+impl BlobReader<'_> {
+    pub(crate) fn remaining(&self) -> u64 {
+        self.size - self.at
+    }
+
+    /// The next `len` bytes. A length beyond the blob is refused before allocation; a record crossing read
+    /// boundaries grows only with bytes actually received, never by an untrusted declared record length.
+    pub(crate) async fn take(&mut self, len: usize) -> io::Result<Bytes> {
+        if len as u64 > self.remaining() {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "record extends past its blob"));
+        }
+        if len <= self.bytes.len() {
+            self.at += len as u64;
+            return Ok(self.bytes.split_to(len));
+        }
+        let mut out = Vec::new();
+        while out.len() < len {
+            if self.bytes.is_empty() {
+                let want = STEP.min(self.remaining().min(usize::MAX as u64) as usize);
+                let bytes = self.shelf.read(&self.hash.to_hex(), self.at, want).await?;
+                if bytes.is_empty() {
+                    return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "blob is cut short"));
+                }
+                if bytes.len() > want {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, "blob read exceeded its requested length"));
+                }
+                self.sum.update(&bytes);
+                self.bytes = bytes;
+            }
+            let n = (len - out.len()).min(self.bytes.len());
+            // Most records fit in one piece and need no second raw-byte allocation.
+            if out.is_empty() && n == len {
+                self.at += n as u64;
+                return Ok(self.bytes.split_to(n));
+            }
+            out.extend_from_slice(&self.bytes.split_to(n));
+            self.at += n as u64;
+        }
+        Ok(out.into())
+    }
+
+    /// Completes the content-hash check. A caller must discard everything decoded if this fails.
+    pub(crate) fn finish(self) -> io::Result<()> {
+        if self.at != self.size {
+            return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "blob was not read whole"));
+        }
+        if self.sum.finalize().as_bytes() != self.hash.as_bytes() {
+            return Err(io::Error::new(io::ErrorKind::InvalidData, "blob is not what its hash says"));
+        }
+        Ok(())
     }
 }
 
@@ -359,10 +714,21 @@ impl Filling {
 
 /// Where the bytes of a blob are, to be read.
 enum Source {
-    Memory { data: Bytes, outboard: Bytes },
+    Memory {
+        data: Bytes,
+        outboard: Bytes,
+    },
     /// On the shelf as `name`: whole, or `have` of it.
-    Shelf { name: String, size: u64, have: Option<ChunkRanges> },
-    Window { size: u64, chunks: BTreeMap<u64, Bytes>, parents: HashMap<TreeNode, (blake3::Hash, blake3::Hash)> },
+    Shelf {
+        name: String,
+        size: u64,
+        have: Option<ChunkRanges>,
+    },
+    Window {
+        size: u64,
+        chunks: BTreeMap<u64, Bytes>,
+        parents: HashMap<TreeNode, (blake3::Hash, blake3::Hash)>,
+    },
     None,
 }
 
@@ -419,7 +785,9 @@ impl State {
                 w.parents.insert(node, pair);
             }
             Some(Blob::Filling(f)) => {
-                let Some(at) = tree.post_order_offset(node).map(|o| o.value() as usize) else { return };
+                let Some(at) = tree.post_order_offset(node).map(|o| o.value() as usize) else {
+                    return;
+                };
                 if at < f.placed.len() {
                     f.outboard[at * 64..at * 64 + 32].copy_from_slice(pair.0.as_bytes());
                     f.outboard[at * 64 + 32..at * 64 + 64].copy_from_slice(pair.1.as_bytes());
@@ -457,8 +825,12 @@ impl State {
     /// none left.
     fn evict(&mut self) {
         while self.windowed > WINDOWS {
-            let Some((hash, n, count)) = self.arrived.pop_front() else { break };
-            let Some(Blob::Window(w)) = self.blobs.get_mut(&hash) else { continue };
+            let Some((hash, n, count)) = self.arrived.pop_front() else {
+                break;
+            };
+            let Some(Blob::Window(w)) = self.blobs.get_mut(&hash) else {
+                continue;
+            };
             if w.chunks.get(&n).is_some_and(|(_, c)| *c == count) {
                 let (chunk, _) = w.chunks.remove(&n).expect("the chunk");
                 self.windowed -= chunk.len();
@@ -481,7 +853,9 @@ impl State {
     /// The shelf holds `range` of blob `hash`, being written as `name`: true if it is whole now, for the caller to
     /// finish.
     fn wrote(&mut self, hash: Hash, name: &str, range: Range<u64>) -> bool {
-        let Some(Blob::Filling(f)) = self.blobs.get_mut(&hash) else { return false };
+        let Some(Blob::Filling(f)) = self.blobs.get_mut(&hash) else {
+            return false;
+        };
         if f.name != name {
             return false;
         }
@@ -498,7 +872,9 @@ impl State {
             self.outboarded.push_back(hash);
         }
         while self.outboard_bytes > OUTBOARDS {
-            let Some(old) = self.outboarded.pop_front() else { break };
+            let Some(old) = self.outboarded.pop_front() else {
+                break;
+            };
             self.outboard_bytes -= self.outboards.remove(&old).map_or(0, |o| o.len());
         }
     }
@@ -542,7 +918,9 @@ impl State {
 
     /// Tag `name` names nothing any more: the blobs it kept, it keeps no more.
     fn untag(&mut self, name: &Tag) -> bool {
-        let Some((value, children)) = self.tags.remove(name) else { return false };
+        let Some((value, children)) = self.tags.remove(name) else {
+            return false;
+        };
         for hash in std::iter::once(value.hash).chain(children) {
             if let Some(n) = self.kept.get_mut(&hash) {
                 *n -= 1;
@@ -844,9 +1222,8 @@ impl Inner {
                 let tags = {
                     let state = self.lock();
                     let r = &m.inner;
-                    let within = |t: &Tag| {
-                        r.from.as_ref().is_none_or(|f| t >= f) && r.to.as_ref().is_none_or(|end| t < end)
-                    };
+                    let within =
+                        |t: &Tag| r.from.as_ref().is_none_or(|f| t >= f) && r.to.as_ref().is_none_or(|end| t < end);
                     let shown = |v: &HashAndFormat| if v.format.is_raw() { r.raw } else { r.hash_seq };
                     let tags = state.tags.iter().filter(|(t, (v, _))| within(t) && shown(v));
                     tags.map(|(t, (v, _))| Ok(TagInfo::new(t.clone(), *v))).collect()
@@ -972,7 +1349,9 @@ impl Inner {
                 match item {
                     BaoContentItem::Parent(parent) => self.lock().parent(hash, size, &tree, parent),
                     BaoContentItem::Leaf(leaf) => {
-                        let Some(name) = self.lock().leaf(hash, size, &leaf) else { continue };
+                        let Some(name) = self.lock().leaf(hash, size, &leaf) else {
+                            continue;
+                        };
                         let follows =
                             run.as_ref().is_some_and(|(n, at, b)| *n == name && at + b.len() as u64 == leaf.offset);
                         if !follows && let Some((n, at, bytes)) = run.take() {
@@ -1011,7 +1390,9 @@ impl Inner {
     async fn finish(self: &Arc<Self>, hash: Hash) -> io::Result<()> {
         let (name, size, outboard) = {
             let state = self.lock();
-            let Some(Blob::Filling(f)) = state.blobs.get(&hash) else { return Ok(()) };
+            let Some(Blob::Filling(f)) = state.blobs.get(&hash) else {
+                return Ok(());
+            };
             let outboard = f.placed.iter().all(|p| *p).then(|| Bytes::from(f.outboard.clone()));
             (f.name.clone(), f.size, outboard)
         };
@@ -1086,7 +1467,9 @@ impl Inner {
         if naming.is_empty() {
             return;
         }
-        let Some(children) = self.children(hash).await else { return };
+        let Some(children) = self.children(hash).await else {
+            return;
+        };
         let mut state = self.lock();
         for (name, value) in naming {
             state.tag(name, value, children.clone());
@@ -1325,5 +1708,100 @@ impl Inner {
         if let Err(e) = sent.await {
             m.tx.send(ExportRangesItem::Error(e.into())).await.ok();
         }
+    }
+}
+
+#[cfg(test)]
+mod ownership_tests {
+    use super::*;
+    #[tokio::test]
+    async fn generic_preclaim_writes_and_cancelled_owned_writes_cannot_cross_ownership() {
+        let (base, mut calls) = Shelf::new();
+        let writing = tokio::spawn({
+            let base = base.clone();
+            async move { base.put("first", Bytes::new()).await }
+        });
+        let Call::Put { tx, .. } = calls.recv().await.unwrap() else { panic!("put") };
+        writing.abort();
+        assert!(base.writer().is_err(), "an accepted raw write is still awaiting its backend acknowledgement");
+        tx.send(Ok(())).unwrap();
+        let owner = loop {
+            if let Ok(owner) = base.writer() {
+                break Arc::new(owner);
+            }
+            tokio::task::yield_now().await;
+        };
+        let retained = owner.shelf();
+        assert!(base.put("bypass", Bytes::new()).await.is_err());
+        let writing = tokio::spawn({
+            let retained = retained.clone();
+            async move { retained.put("second", Bytes::new()).await }
+        });
+        let Call::Put { tx, .. } = calls.recv().await.unwrap() else { panic!("put") };
+        writing.abort();
+        let waiter = tokio::spawn({
+            let owner = owner.clone();
+            async move { owner.shutdown().await }
+        });
+        while owner.lifecycle().admit().is_ok() {
+            tokio::task::yield_now().await;
+        }
+        waiter.abort();
+        assert!(base.writer().is_err(), "cancelled shutdown keeps accepted backend work owned");
+        tx.send(Ok(())).unwrap();
+        owner.shutdown().await.unwrap();
+        assert!(retained.put("late", Bytes::new()).await.is_err());
+        assert!(base.put("raw-after-close", Bytes::new()).await.is_err(), "once managed, base clones remain readers");
+        let replacement = base.writer().unwrap();
+        replacement.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn dropped_generic_owner_keeps_accepted_backend_work_exclusive() {
+        let (base, mut calls) = Shelf::new();
+        let owner = base.writer().unwrap();
+        let retained = owner.shelf();
+        let writing = tokio::spawn({
+            let retained = retained.clone();
+            async move { retained.put("accepted", Bytes::new()).await }
+        });
+        let Call::Put { tx, .. } = calls.recv().await.unwrap() else { panic!("put") };
+        writing.abort();
+        drop(owner);
+        assert!(retained.put("late", Bytes::new()).await.is_err());
+        assert!(base.writer().is_err(), "accepted generic operation pins its owner after caller and owner drop");
+        tx.send(Ok(())).unwrap();
+        let replacement = loop {
+            if let Ok(owner) = base.writer() {
+                break owner;
+            }
+            tokio::task::yield_now().await;
+        };
+        replacement.shutdown().await.unwrap();
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn failed_native_fence_keeps_retained_writer_lease_and_refuses_more_writes() {
+        let root = std::env::temp_dir().join(format!("avendb-owner-fence-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let source = crate::writer::Source::new(&root);
+        let queue = crate::disk_queue::Queue::start(|call| {
+            if let Call::Put { tx, .. } = call {
+                tx.send(Ok(())).unwrap();
+                panic!("injected backend panic after acknowledgement");
+            }
+        });
+        let reader = Shelf::native(queue, source.clone());
+        let owner = reader.writer().unwrap();
+        let retained = owner.shelf();
+        retained.put("test", Bytes::new()).await.unwrap();
+        assert!(owner.shutdown().await.is_err());
+        assert!(owner.shutdown().await.is_err());
+        assert!(source.claim().is_err(), "failure keeps the real lease while its owner is retained");
+        assert!(retained.put("late", Bytes::new()).await.is_err());
+        drop(owner);
+        assert!(source.claim().is_ok());
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

@@ -17,7 +17,7 @@
 	reaches no further than it, nor beyond its ops.
 -->
 <script>
-	import { allowed, may, read } from './ops.js';
+	import { allowed, may, read, windowRead } from './ops.js';
 	import Ops from './Ops.svelte';
 	import {
 		count,
@@ -42,6 +42,13 @@
 	 *   entry?: string, ondone?: () => void }}
 	 */
 	let { world, actor, api, busy, vault, entry = '', ondone = () => {} } = $props();
+	let readWindow = $state.raw(/** @type {any} */ (null));
+	$effect(() => {
+		const window = api.window?.();
+		readWindow = window;
+		return () => window?.close();
+	});
+
 
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	/** the owner caps the acting vault shares through, where it isn't the vault: the new cap rests on one of them */
@@ -220,13 +227,16 @@
 		const [of, w] = [world.entries.filter((e) => e.vault === vault), $state.snapshot(where)];
 		const theirs = new Set(of.filter((e) => reads(e, actor)).map((e) => e.entry));
 		let gone = false;
-		read(api, { op: 'query', vault, where: w, select: [] }, null).then((out) => {
+		if (api.window && !readWindow) return;
+		const request = windowRead(api, { op: 'query', vault, where: w, select: [] }, null, readWindow);
+		request.result.then((out) => {
 			const rows = /** @type {{ entry: string }[]} */ (out?.rows ?? []);
 			const hits = rows.map((r) => r.entry).filter((e) => theirs.has(e));
 			if (!gone) reach = { hits, unknown: of.length - theirs.size };
 		});
 		return () => {
 			gone = true;
+			request.close();
 		};
 	});
 

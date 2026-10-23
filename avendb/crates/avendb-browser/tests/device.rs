@@ -103,6 +103,15 @@ fn start_on(dir: &Path, name: &str, url: &RelayUrl, seed: u8) -> Start {
     Start { shelf: Some(disk::open(dir).expect("its shelf")), ..start(name, url, seed) }
 }
 
+/// Seed metadata between closed fixture Nodes with an explicit temporary writer. The next Node must acquire
+/// its own generation after this writer has durably finished and released the shelf.
+async fn keep_meta(dir: &Path, meta: &Meta) {
+    let shelf = disk::open(dir).expect("its shelf");
+    let writer = shelf.writer().expect("the closed fixture releases its writer");
+    meta.keep(&writer.shelf()).await.expect("what opens it again");
+    writer.shutdown().await.expect("metadata is durable before the next Node opens");
+}
+
 /// A folder of its own in the system's temporary folder, removed with everything in it when dropped.
 struct Folder(PathBuf);
 
@@ -1370,7 +1379,7 @@ async fn a_gated_server_takes_a_newcomers_vault_only_with_the_invite_maia_city_g
     let backup = avendb::cast::share(maia, vault(avenceo), Level::Backup, Selector::All);
     let backup = move |lab: &mut Lab, me| lab.issue(me, &[me], backup);
     first.node().act(backup).await.expect("Maia City gives its server backup");
-    server.gate(true).await;
+    server.gate(true).await.unwrap();
     // Maia City defines Traveler and invites a traveler: the answer carries the secret the invite's link holds
     let company = maia.to_hex();
     let traveler = json!({ "name": "Traveler", "caps": [{ "op": "read" }] });
@@ -1490,7 +1499,7 @@ async fn hanas_browser_and_passkey_from_before_the_key_move_move_in_one_ceremony
     let (name, relay_at, credential) = ("Hana's browser".to_string(), url.to_string(), "aGFuYQ".to_string());
     let (device, follow, query_depth, touch) = (browser_h, vec![], None, None);
     let meta = Meta { name, relay: relay_at, nonce, mask, credential, p256, device, follow, query_depth, touch };
-    meta.keep(&disk::open(&shelf.0).expect("its shelf")).await.expect("what opens it again");
+    keep_meta(&shelf.0, &meta).await;
     // her browser opens by her passkey's unlock, as itself, her passkey as her vault knows it
     let opened = Device::open(start_on(&shelf.0, "Hana's browser", &url, 3), &meta, hanas.unlock(nonce, [0xaa; 32]));
     let opened = opened.await.expect("it opens");
@@ -1596,7 +1605,7 @@ async fn ivys_vault_takes_the_master_keys_next_key_at_her_browsers_unlock_by_her
     let (name, relay_at, credential) = ("Ivy's browser".to_string(), url.to_string(), "aXZ5".to_string());
     let (device, follow, query_depth, touch) = (browser_i, vec![], None, None);
     let meta = Meta { name, relay: relay_at, nonce, mask, credential, p256, device, follow, query_depth, touch };
-    meta.keep(&disk::open(&shelf.0).expect("its shelf")).await.expect("what opens it again");
+    keep_meta(&shelf.0, &meta).await;
     // avenDB's next build carries the master key in ML-DSA-65, from the same secret
     let master = Arc::new(RecoveryKey::of(secret_key));
     let new = master.id();
@@ -1662,7 +1671,7 @@ async fn hanas_ipad_away_as_her_browser_moved_learns_the_move_from_its_next_key(
     let (name, relay_at, credential) = ("Hana's browser".to_string(), url.to_string(), "aGFuYQ".to_string());
     let (device, follow, query_depth, touch) = (browser_h, vec![], None, None);
     let meta = Meta { name, relay: relay_at, nonce, mask, credential, p256, device, follow, query_depth, touch };
-    meta.keep(&disk::open(&shelf.0).expect("its shelf")).await.expect("what opens it again");
+    keep_meta(&shelf.0, &meta).await;
     let opened = Device::open(start_on(&shelf.0, "Hana's browser", &url, 3), &meta, hanas.unlock(nonce, [0xaa; 32]));
     let opened = opened.await.expect("it opens");
     let moving = opened.moving().await.expect("what moves, once it caught up with her Mac");
@@ -1798,7 +1807,7 @@ async fn sams_phone_moves_his_passkey_only_once_it_brought_what_the_server_keeps
     let (name, relay_at, credential) = ("Sam's phone".to_string(), url.to_string(), "c2Ft".to_string());
     let (device, follow, query_depth, touch) = (phone_s, vec![], None, None);
     let meta = Meta { name, relay: relay_at, nonce, mask, credential, p256, device, follow, query_depth, touch };
-    meta.keep(&disk::open(&shelf.0).expect("its shelf")).await.expect("what opens it again");
+    keep_meta(&shelf.0, &meta).await;
     // it opens while the server and his Mac are away: it caught up with none of them, so nothing moves yet
     let opened = Device::open(start_on(&shelf.0, "Sam's phone", &url, 4), &meta, sams.unlock(nonce, [0xaa; 32]));
     let opened = opened.await.expect("it opens");

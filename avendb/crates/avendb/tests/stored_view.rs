@@ -90,3 +90,70 @@ fn a_view_of_other_edits_or_cut_short_is_no_view() {
     more.push(0);
     assert!(Replay::from_view(&more, c.log.edits(), c.log.ids()).is_none());
 }
+
+#[test]
+fn stored_views_preserve_cap_group_bindings_in_current_and_tail_states() {
+    use avendb::policy::{Level, Share, Sharing, Who};
+    let mut c = cast();
+    let group = EntryId::from_u64(9001);
+    c.log
+        .append(MAC_A, &[], creation(c.alice, group, c.alice, &[]))
+        .unwrap();
+    for (nonce, group) in [(1, Some(group)), (2, None)] {
+        let share = Share {
+            over: c.alice,
+            who: Who::Vault(c.bob),
+            level: Level::Read,
+            wide: false,
+            select: vec![1, 2, 3],
+            parent: None,
+            issuer: c.alice,
+            nonce,
+            group,
+        };
+        c.log
+            .append(MAC_A, &[], Action::Share(Sharing::Grant(share, vec![])))
+            .unwrap();
+    }
+    // Include a removal and continuation so the stored tail's delta states also carry the binding.
+    c.log
+        .append(
+            PASSKEY_C,
+            &[],
+            Action::Revoke(Revoking::Device {
+                vault: c.carol,
+                device: MAC_C,
+                keep: vec![],
+            }),
+        )
+        .unwrap();
+    let note = EntryId::from_u64(9002);
+    c.log
+        .append(MAC_A, &[], creation(c.alice, note, c.alice, &[]))
+        .unwrap();
+    let held = c.log.ids().len();
+    let was = replay(c.log.edits());
+    assert_eq!(
+        was.state
+            .shares()
+            .iter()
+            .filter(|s| s.share.group.is_some())
+            .count(),
+        1
+    );
+    let back = stored(&was, &c.log, held);
+    c.log.receive([write(&c.log, &was.state, MAC_A, note, 5)]);
+    let from_view = replay_on(back, c.log.edits(), held);
+    let whole = replay(c.log.edits());
+    assert!(from_view == whole && from_view.same_tail(&whole));
+}
+
+#[test]
+fn previous_derived_view_version_is_rejected_for_full_replay() {
+    let c = cast();
+    let mut bytes = replay(c.log.edits()).to_view(c.log.ids().len());
+    let current = b"avenDB view 3\n";
+    assert!(bytes.starts_with(current));
+    bytes[..current.len()].copy_from_slice(b"avenDB view 2\n");
+    assert!(Replay::from_view(&bytes, c.log.edits(), c.log.ids()).is_none());
+}

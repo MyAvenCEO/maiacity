@@ -735,7 +735,7 @@ test("a page whose device holds none of the recipes yet reads the feed and has i
 		const r = await vault.loadRecipes({ feed: AT, fetch: f.get, timeout: 1000, ...PROVING, proofs: keepOf() });
 		expect([r.phase, r.feed]).toEqual(['ready', ROWS_URL]);
 		const b = await whenBrought(DEV_VAULT);
-		const entries = [...new Set(FEED.rows.map((x) => x.entry))].sort();
+		const entries = [...new Set(FEED.rows.map((x) => x.entry))];
 		// never the whole vault: the code it holds, then its entries, AT_ONCE at a time
 		expect(asked.filter((o) => o.op === 'bring' && o.vaults)).toEqual([]);
 		expect(asked.filter((o) => o.op === 'bring').flatMap((o) => o.entries)).toEqual(entries);

@@ -118,6 +118,33 @@ theorem same_sends_nothing (fp : Held K V → (K → Bool) → F) (a b : Held K 
     finished fp a b .same r ∧ ∀ k, sent (.same : Round K) r k = false :=
   ⟨h, fun _ => rfl⟩
 
+/-! ## Replacing a peer's routing claim
+
+The network's sparse holdings exchange carries one authenticated device's new claim to a peer that remembers its
+old claim. It does not merge edit authority: only the sent ranges replace that remembered claim. `unsent_agree`
+therefore suffices, without assuming the commutative head join used for full edit reconciliation below.
+-/
+
+/-- Replace the remembered claim `old` with `fresh` only for the ranges this round sent. -/
+def replaceHeld (t : Round K) (r : K → Bool) (old fresh : Held K V) : Held K V :=
+  fun k => if sent t r k then fresh k else old k
+
+/-- A finished sparse claim replacement equals a full replacement inside its range and preserves everything
+outside. The hash soundness assumption is explicit; this grants no permission and verifies no edit. -/
+theorem replacement_agrees {fp : Held K V → (K → Bool) → F} (hfp : Sound fp)
+    (old fresh : Held K V) (t : Round K) (r : K → Bool) (hfin : finished fp old fresh t r) :
+    (∀ k, r k = true → replaceHeld t r old fresh k = fresh k) ∧
+    (∀ k, r k = false → replaceHeld t r old fresh k = old k) := by
+  refine ⟨fun k hr => ?_, fun k hr => ?_⟩
+  · cases hs : sent t r k
+    · simpa [replaceHeld, hs] using unsent_agree hfp old fresh t r hfin k hr hs
+    · simp [replaceHeld, hs]
+  · have hs : sent t r k = false := by
+      cases h : sent t r k
+      · rfl
+      · simp [sent_in t r k h] at hr
+    simp [replaceHeld, hs]
+
 /-! ## A log's head -/
 
 /-- A device's head of a log: how many edits it holds of it and the root over them. -/

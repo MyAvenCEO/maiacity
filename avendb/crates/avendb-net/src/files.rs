@@ -130,6 +130,7 @@ impl Node {
 /// The sealed pieces of a file on their way into the blob store, each a stream of its own, a few segments at a time.
 struct Pieces {
     store: Store,
+    activity: Arc<crate::lifecycle::Ticket>,
     /// The piece being written: how many bytes went into it, where its next go, and the task that adds it.
     open: Option<(u64, mpsc::Sender<Bytes>, JoinHandle<Result<TempTag>>)>,
     /// The pieces written, in order, each held in the store until the file's root is named.
@@ -137,8 +138,8 @@ struct Pieces {
 }
 
 impl Pieces {
-    fn new(store: Store) -> Pieces {
-        Pieces { store, open: None, done: Vec::new() }
+    fn new(store: Store, activity: Arc<crate::lifecycle::Ticket>) -> Pieces {
+        Pieces { store, activity, open: None, done: Vec::new() }
     }
 
     /// Writes `sealed`, the next sealed bytes of the file, into its pieces: a piece that fills is added, and the next
@@ -147,7 +148,8 @@ impl Pieces {
         let mut sealed = Bytes::from(sealed);
         while !sealed.is_empty() {
             let store = &self.store;
-            let (filled, tx, _) = self.open.get_or_insert_with(|| start(store));
+            let activity = self.activity.clone();
+            let (filled, tx, _) = self.open.get_or_insert_with(|| start(store, activity));
             let n = sealed.len().min((PIECE - *filled) as usize);
             tx.send(sealed.split_to(n)).await.map_err(|_| anyhow!("the blob store stopped taking the piece"))?;
             *filled += n as u64;
@@ -175,18 +177,22 @@ impl Pieces {
 }
 
 /// A new piece: the bytes sent to it stream into the store, which hashes them as they come.
-fn start(store: &Store) -> (u64, mpsc::Sender<Bytes>, JoinHandle<Result<TempTag>>) {
+fn start(store: &Store, activity: Arc<crate::lifecycle::Ticket>) -> (u64, mpsc::Sender<Bytes>, JoinHandle<Result<TempTag>>) {
     let (tx, rx) = mpsc::channel::<Bytes>(4);
     let bytes = stream::unfold(rx, |mut rx| async move { rx.recv().await.map(|b| (Ok(b), rx)) });
     let store = store.clone();
-    let adding = task::spawn(async move { Ok(store.add_stream(bytes).await.temp_tag().await?) });
+    let adding = task::spawn(async move {
+        let _activity = activity;
+        Ok(store.add_stream(bytes).await.temp_tag().await?)
+    });
     (0, tx, adding)
 }
 
 impl Shared {
     /// `Node::store_file`.
     async fn store_file<B: Source>(self: &Arc<Self>, len: u64, mut source: B) -> Result<Brought> {
-        let secret = self.lab(|lab, me| lab.convergence(me)).await;
+        let activity = Arc::new(self.admit()?);
+        let secret = self.read(|lab, me| lab.convergence(me)).await;
         let key = match &secret {
             Some(secret) => {
                 let mut convergent = Convergent::new(secret, len);
@@ -203,7 +209,7 @@ impl Shared {
         // would share
         let mut again = secret.as_ref().map(|secret| Convergent::new(secret, len));
         let mut sealer = Sealer::new(&key, len);
-        let mut pieces = Pieces::new(self.store.clone());
+        let mut pieces = Pieces::new(self.store.clone(), activity.clone());
         let mut data = source.open();
         while let Some(bytes) = data.next().await {
             let bytes = bytes?;
@@ -235,7 +241,8 @@ impl Shared {
 
     /// `Node::read_file`.
     async fn read_file(self: &Arc<Self>, root: FileRoot, range: Range<u64>) -> Result<Vec<u8>> {
-        let brought = self.lab(move |lab, me| lab.file(me, &root)).await.context("no file this device opens")?;
+        let _activity = self.admit()?;
+        let brought = self.read(move |lab, me| lab.file(me, &root)).await.context("no file this device opens")?;
         let shape = brought.shape();
         let (from, to) = (range.start.min(shape.len), range.end.min(shape.len));
         if from >= to {
@@ -266,6 +273,7 @@ impl Shared {
     /// node lacks it, with as many pieces as the file's sealed size says. Each is marked for the gate as a piece of the
     /// file.
     async fn pieces_of(self: &Arc<Self>, root: FileRoot) -> Result<Vec<Hash>> {
+        let _activity = self.admit()?;
         let hash = Hash::from_bytes(root.hash);
         if !root.pieced() {
             return Ok(vec![hash]);
@@ -290,6 +298,7 @@ impl Shared {
     /// What `request` asks of one blob of file `root`, piece `piece` of it or else its HashSeq, in this node's store:
     /// what it lacks of it fetched from the first peer that hands it over (`providers`), and kept.
     async fn get(self: &Arc<Self>, request: GetRequest, root: FileRoot, piece: Option<u64>) -> Result<()> {
+        let _activity = self.admit()?;
         let remote = self.store.remote();
         if remote.local_for_request(request.clone()).await?.is_complete() {
             return Ok(());
@@ -348,7 +357,8 @@ impl Shared {
         let (mut kept, mut failing) = (HashSet::new(), Backoff::default());
         let keep = self.opts.keep;
         loop {
-            let (files, whole) = self.lab(move |lab, me| (lab.files(me), lab.kept_files(me, keep))).await;
+            let Ok(activity) = self.admit() else { return };
+            let (files, whole) = self.read(move |lab, me| (lab.files(me), lab.kept_files(me, keep))).await;
             let mut whole: HashSet<FileRoot> = whole.into_iter().collect();
             // a server's limits (`Node::limit`): of the files to keep whole that it doesn't hold whole yet, those that
             // would take their person past their backup's limit, or that are larger than one file may be, it keeps
@@ -383,6 +393,7 @@ impl Shared {
                     }
                 }
             }
+            drop(activity);
             time::timeout(self.opts.retry, size.changed()).await.ok();
         }
     }
@@ -404,7 +415,7 @@ impl Shared {
         let book = match book {
             Some(book) => book,
             None => {
-                let book = self.lab(move |lab, me| avendb::quota::book(lab, me, &backup)).await;
+                let book = self.read(move |lab, me| avendb::quota::book(lab, me, &backup)).await;
                 self.keeping.lock().expect("keeping").set_book(book)
             }
         };
@@ -415,6 +426,7 @@ impl Shared {
     /// Keeps file `root`, whole if `whole` says, as `keeper` says: a `keep` job of the file, in pieces, forgotten if it
     /// fetched none, as they were all there or it failed before it fetched one, as the keeper tries it again.
     async fn keep(self: &Arc<Self>, root: FileRoot, whole: bool) -> Result<()> {
+        let _activity = self.admit()?;
         if !whole {
             if root.pieced() && self.store.has(Hash::from_bytes(root.hash)).await? {
                 self.pieces_of(root).await?;
@@ -423,7 +435,7 @@ impl Shared {
         }
         let count = root.size.div_ceil(PIECE).max(1);
         let mut job = self.jobs.begin("keep", BlobId(root.hash).to_hex(), String::new(), count, "pieces");
-        let whose = self.lab(move |lab, me| lab.whose_file(me, &root)).await;
+        let whose = self.read(move |lab, me| lab.whose_file(me, &root)).await;
         let vaults = whose.values().map(|v| (v.to_hex(), count)).collect();
         job.about(vaults, whose.keys().map(|e| (e.to_hex(), count)).collect());
         let mut fetched = 0;
@@ -434,6 +446,7 @@ impl Shared {
 
     /// `keep` of file `root` whole, each piece told to `job`, and how many it fetched to `fetched`.
     async fn keep_whole(self: &Arc<Self>, root: FileRoot, job: &mut Running, fetched: &mut u64) -> Result<()> {
+        let _activity = self.admit()?;
         job.stage("finding its pieces");
         let pieces = self.pieces_of(root).await?;
         // tagged first, so that a blob store over a shelf puts the pieces it fetches onto it
@@ -529,9 +542,10 @@ impl Shared {
 
     /// `Node::let_go`.
     async fn let_go(self: &Arc<Self>, root: FileRoot) -> Result<bool> {
+        let _activity = self.admit()?;
         let Some(shelf) = &self.shelf else { return Ok(false) };
         let keep = self.opts.keep;
-        if self.lab(move |lab, me| lab.kept_files(me, keep).contains(&root)).await {
+        if self.read(move |lab, me| lab.kept_files(me, keep).contains(&root)).await {
             return Ok(false);
         }
         // its pieces, as the HashSeq it holds names them, and the HashSeq itself; or its one piece

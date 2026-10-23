@@ -78,6 +78,10 @@ pub struct Config {
     /// as its offer says; if unsaid, the addresses of its own network interfaces, which in a container are the
     /// container's.
     pub public_addr: Option<SocketAddr>,
+    /// Optional browser HTTP/3 carrier. All of AVENDB_WT_BIND (UDP), AVENDB_WT_URL (public HTTPS)
+    /// and AVENDB_WT_ORIGINS (JSON array of exact origins) must be set. Disabled by default.
+    /// This listener owns its pinned PQ TLS; the existing reverse proxy stays unchanged.
+    pub webtransport: Option<avendb_net::transports::WtConfig>,
     /// How it signs people up (`AVENDB_SIGNUP`; `avendb::admission::Signup`, `Admission.lean`): whose passes its relay
     /// honours for ten minutes besides those of a passkey that roots a vault the server knows. `open`, any passkey's
     /// (`avendb_net::Admission::open`); `invite`, one shown with an invite of Maia City no vault claimed yet
@@ -176,6 +180,15 @@ impl Config {
             feed_bind: socket("AVENDB_FEED_BIND", "0.0.0.0:3351")?,
             relay_url: var("AVENDB_RELAY_URL").map(url).transpose()?,
             public_addr: var("AVENDB_PUBLIC_ADDR").map(|v| v.parse()).transpose().context("AVENDB_PUBLIC_ADDR")?,
+            webtransport: match (var("AVENDB_WT_BIND"), var("AVENDB_WT_URL"), var("AVENDB_WT_ORIGINS")) {
+                (None, None, None) => None,
+                (Some(bind), Some(public_url), Some(origins)) => Some(avendb_net::transports::WtConfig {
+                    bind: bind.parse().context("AVENDB_WT_BIND: expected UDP socket address")?,
+                    public_url,
+                    allowed_origins: serde_json::from_str(&origins).context("AVENDB_WT_ORIGINS: expected JSON array of exact origins")?,
+                }),
+                _ => bail!("AVENDB_WT_BIND, AVENDB_WT_URL and AVENDB_WT_ORIGINS must all be configured together"),
+            },
             signup: match (var("AVENDB_SIGNUP").as_deref(), gate) {
                 (None, true) | (Some("invite"), _) => Signup::Invited,
                 (None, false) | (Some("open"), _) => Signup::Anyone,
@@ -208,6 +221,7 @@ impl Config {
 
     /// It, if its buckets are two: the snapshots live apart from what they back up.
     fn checked(self) -> Result<Config> {
+        if let Some(config) = &self.webtransport { config.validate().context("AVENDB_WT configuration")?; }
         if let (Some(b), Some(s)) = (&self.bucket, &self.snapshots)
             && (b.name == s.bucket.name && b.endpoint == s.bucket.endpoint)
         {
@@ -378,8 +392,21 @@ pub async fn start_with(config: &Config, health: Arc<health::Health>) -> Result<
         progress: avendb_net::Progress::new(),
     };
     let node = Arc::new(server::open(shelf, opts).await?);
-    node.gate(config.gate).await;
-    node.limit(config.limits.clone());
+    if let Some(config) = &config.webtransport {
+        if let Err(error) = node.listen_webtransport(config.clone()).await {
+            tracing::warn!("avenDB server: optional WebTransport listener unavailable; relay remains active: {error:#}");
+        }
+    }
+    let configured = async {
+        node.gate(config.gate).await?;
+        node.try_limit(config.limits.clone())?;
+        anyhow::Ok(())
+    }.await;
+    if let Err(error) = configured {
+        node.shutdown().await.ok();
+        relay.shutdown().await.ok();
+        return Err(error.context("configuring the server's admission gate and limits"));
+    }
     // on its relay before it says its offer: its endpoint joins the relay once its first net report is done, a few
     // seconds in, and until then the relay drops what devices send it
     if tokio::time::timeout(ONLINE, node.endpoint().online()).await.is_err() {

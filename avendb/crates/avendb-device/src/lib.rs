@@ -63,6 +63,8 @@ pub mod agent;
 pub mod drive;
 pub mod lean;
 pub mod sessions;
+mod transport;
+pub use transport::webtransport_from_env;
 
 use std::collections::HashMap;
 use std::io;
@@ -107,6 +109,8 @@ pub struct Config {
     pub dir: PathBuf,
     pub direct: bool,
     pub volumes: Option<PathBuf>,
+    /// Optional browser carrier on the main node only; never inferred from the iroh UDP/NAT address.
+    pub webtransport: Option<avendb_net::transports::WtConfig>,
 }
 
 /// Runs the device for the app until `input` ends, the app gone: each line of `input` a call or a sheet's answer, each
@@ -175,6 +179,7 @@ pub async fn serve(
 ///   endpoint names its own, X25519MLKEM768 only (`avendb_net::pq_provider`);
 /// - starts no second tracing subscriber for it: the device logs through `tracing`, into the app's own.
 pub fn host(config: Config) -> Result<(Host, Lines)> {
+    if let Some(listener) = &config.webtransport { listener.validate()?; }
     let runtime = tokio::runtime::Handle::try_current().context("avenDB's device is hosted on a tokio runtime")?;
     let (out, asks) = mpsc::unbounded_channel();
     let shelf = Mutex::new(disk::open(&config.dir)?);
@@ -401,6 +406,13 @@ impl Service {
                 let held = (a.count(0)?, a.count(1)?);
                 tokio::time::timeout(CHANGED, d.changed(held)).await.map_or(Value::Null, Value::from)
             }
+            "stirred" => {
+                let since = a.get(0).as_u64().context("argument 1 is how many times it changed")?;
+                match tokio::time::timeout(CHANGED, d.stirred(since)).await {
+                    Ok(stirred) => stirred.map_or(json!(-1), Value::from),
+                    Err(_) => Value::Null,
+                }
+            }
             "run" => {
                 let (mut answer, bytes) = self.run(&d, a.get(0).clone()).await?;
                 if let (Some(bytes), Some(out)) = (bytes, answer.as_object_mut()) {
@@ -554,7 +566,7 @@ impl Service {
         if let Some(touch) = &meta.touch {
             start.progress.step("touch");
             match self.touch(touch, "open avenDB", random()?).await {
-                Ok(ceremony) => return Ok(self.opened(Device::open_by_touch(start, &meta, &ceremony).await?)),
+                Ok(ceremony) => return Ok(self.opened(Device::open_by_touch(start, &meta, &ceremony).await?).await),
                 Err(e) => tracing::info!("no touch opened avenDB, so the passkey's sheet does: {e:#}"),
             }
         }
@@ -562,7 +574,7 @@ impl Service {
         start.progress.step("unlock");
         let unlock = sheets.unlock("unlock", meta.nonce, random()?).await?;
         let d = Device::open(start, &meta, unlock).await?;
-        Ok(self.opened(d))
+        Ok(self.opened(d).await)
     }
 
     /// Forgets the account here: closes the device, and puts its shelf, with what opens it, aside (`aside`).
@@ -716,13 +728,18 @@ impl Service {
     /// own bytes `nonce` and its passkey's credential.
     async fn started(self: &Arc<Self>, d: Device, nonce: [u8; 32], credential: String) -> Result<Value> {
         let meta = d.meta(nonce, credential);
-        let info = self.opened(d);
+        let info = self.opened(d).await;
         self.device()?.keep(&meta).await?;
         Ok(info)
     }
 
     /// Device `d` runs from here on, and hosts the person's drives plugged into this Mac (`drive`).
-    fn opened(self: &Arc<Self>, d: Device) -> Value {
+    async fn opened(self: &Arc<Self>, d: Device) -> Value {
+        if let Some(listener) = &self.config.webtransport {
+            if let Err(error) = d.node().listen_webtransport(listener.clone()).await {
+                tracing::warn!("avenDB: optional WebTransport listener unavailable; existing connections remain active: {error:#}");
+            }
+        }
         let d = Arc::new(d);
         *self.device.lock().expect("the device") = Some(d.clone());
         self.leave_offer(&d);
@@ -901,8 +918,8 @@ impl Service {
         let (name, secret) = (agent::device_name(agent::CLOUD), Zeroizing::new(random()?));
         let opts = Options { bind: None, direct: self.config.direct, relay: Some(relay), ..Options::local() };
         let node = avendb_net::server::open_agent_with(None, &name, &secret, sign::SIGNING, opts).await?;
-        d.node().know(node.addr());
         let added = async {
+            d.node().try_know(node.addr())?;
             let approver = self.approver().await?;
             // the owner key that approves: the Mac's Touch ID key where it is one, else the passkey
             let owner = d.node().read(engine::passkey_of).await.unwrap_or(d.passkey());
@@ -979,7 +996,7 @@ impl Service {
     /// nothing moves; it fails while the device caught up with none of its peers, and the page asks again.
     async fn moving(self: &Arc<Self>, d: &Arc<Device>) -> Result<Value> {
         self.look().await.ok();
-        self.hold_drives(d).await;
+        self.hold_drives(d).await?;
         Ok(d.moving().await?.map_or(Value::Null, |m| m.to_json()))
     }
 
@@ -993,14 +1010,14 @@ impl Service {
         let d = self.device()?;
         let meta = Meta::load(&self.shelf()).await?.context("this Mac holds no avenDB account")?;
         self.look().await.ok();
-        let drives = self.hold_drives(&d).await;
+        let drives = self.hold_drives(&d).await?;
         self.drives.stop().await;
         let (start, _ending) = self.start(&meta.name, &meta.relay)?;
         let sign = self.signing(&meta, "move", MOVE_TOUCH);
         let (service, mac) = (self.clone(), d.clone());
         let keep = move |moves| async move { service.moved_drives(&mac, drives, moves).await };
         match d.move_keys(start, sign, keep).await {
-            Ok(Some(moved)) => Ok(self.opened(moved)),
+            Ok(Some(moved)) => Ok(self.opened(moved).await),
             Ok(None) => {
                 self.watch_drives();
                 Ok(info(&d))

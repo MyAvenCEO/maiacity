@@ -10,7 +10,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, bail};
@@ -23,7 +23,7 @@ use avendb::sync::LogId;
 use bytes::Bytes;
 use iroh::EndpointId;
 use n0_future::time::{self, Duration, Instant};
-use n0_future::{FuturesUnordered, StreamExt as _, stream, task};
+use n0_future::{StreamExt as _, stream, task};
 use serde_json::{Value, json};
 
 use crate::{Authenticator, Node, Shared, Source, Step};
@@ -31,8 +31,7 @@ use crate::{Authenticator, Node, Shared, Source, Step};
 /// No bytes beside an op: what `Node::run` takes for every op but one that brings a file (`engine::brings`).
 pub type NoBytes = fn() -> stream::Empty<io::Result<Bytes>>;
 
-/// How long `bring` waits for each peer to hand over what it holds of the vaults it names, at most: a peer that can't
-/// be reached is given up on then.
+/// The total deadline for a foreground bring, including admission and bounded peer hedges.
 const BRING: Duration = Duration::from_secs(60);
 
 /// How long a removal asks its device's peers for what they hold before it checks it holds it all (`catch_up`), at
@@ -101,6 +100,7 @@ impl Node {
         B: Source,
         A: Authenticator,
     {
+        let _activity = self.shared.admit()?;
         let name = engine::name(&op).map(str::to_string);
         let answer = match name.as_deref() {
             Some("world") => {
@@ -110,11 +110,12 @@ impl Node {
             Some("read_file") => return self.read_bytes(&op).await,
             _ if engine::brings(&op) => self.put(op, bytes).await?,
             Some("jobs") => json!({ "ok": self.jobs().to_json_for(crate::acting()) }),
-            Some("follow") => self.follow(op).await,
-            Some("bring") => self.bring_vaults(&op).await,
+            Some("follow") => self.follow(op).await?,
+            Some("bring") => self.bring_vaults(&op).await?,
+            Some("demand") => self.view_demand(&op),
             Some("synced") => json!({ "ok": self.synced().await }),
             Some("network") => json!({ "ok": self.network().await }),
-            _ if engine::asks(&op) => self.dry(move |lab, me| engine::run(lab, me, &op)).await,
+            _ if engine::asks(&op) => self.try_dry(move |lab, me| engine::run(lab, me, &op)).await?,
             _ if engine::reads(&op) => self.read(move |lab, me| engine::read(lab, me, &op)).await,
             _ => self.change(op, authenticator).await?,
         };
@@ -125,6 +126,28 @@ impl Node {
     /// answers `approve`.
     pub async fn op(&self, op: Value) -> Result<Value> {
         Ok(self.run(op, None::<NoBytes>, None::<&NoCeremony>).await?.0)
+    }
+
+    /// Replace one local view's entry priorities. This is scheduling metadata, never a signed edit or capability.
+    fn view_demand(&self, op: &Value) -> Value {
+        let bad = |why: &str| Refused::BadOp(why.to_string()).to_json();
+        let Some(scope) = op.get("scope").and_then(Value::as_str).filter(|s| s.len() == 32 && s.bytes().all(|c| c.is_ascii_hexdigit())) else {
+            return bad("demand scope is a random 32-character hex identifier");
+        };
+        let Some(revision) = op.get("revision").and_then(Value::as_u64).filter(|n| *n > 0 && *n <= 9_007_199_254_740_991) else {
+            return bad("demand revision is a positive safe integer");
+        };
+        let Some(raw) = op.get("entries").and_then(Value::as_array).filter(|a| a.len() <= crate::demand::MOST_ENTRIES) else {
+            return bad("demand entries is an array of at most 512 entry IDs");
+        };
+        let Some(entries) = raw.iter().map(|v| v.as_str().and_then(EntryId::from_hex).map(LogId::Entry)).collect::<Option<Vec<_>>>() else {
+            return bad("demand entries are 64-character hex entry IDs");
+        };
+        let result = self.shared.demands.lock().expect("demands").replace(scope.to_ascii_lowercase(), revision, entries, Instant::now());
+        match result {
+            Ok(accepted) => json!({"ok": {"accepted": accepted, "lease_ms": crate::demand::LEASE.as_millis() as u64}}),
+            Err(why) => bad(why),
+        }
     }
 
     /// `read_file`: the answer, and the bytes beside.
@@ -151,7 +174,7 @@ impl Node {
         };
         let checked = {
             let op = op.clone();
-            self.dry(move |lab, me| engine::verdict(lab, me, &op)).await
+            self.try_dry(move |lab, me| engine::verdict(lab, me, &op)).await?
         };
         if checked != Value::Bool(true) {
             return Ok(checked);
@@ -197,7 +220,7 @@ impl Node {
         };
         job.subject(BlobId(brought.root.hash).to_hex());
         job.stage("making its entry");
-        let made = self.act(move |lab, me| engine::put_file(lab, me, &op, brought)).await;
+        let made = self.try_act(move |lab, me| engine::put_file(lab, me, &op, brought)).await?;
         if let Some(entry) = made["ok"]["entry"].as_str() {
             job.about(vault.into_iter().collect(), [(entry.to_string(), len)].into());
         }
@@ -216,7 +239,7 @@ impl Node {
     /// logs of the entries it names alone, the same way (`Node::bring_logs`), as a page that knows which entries it reads (a world's recipes, a timeline's clips) asks
     /// for those and not their whole vault; and marks them wanted (`Node::want`), so that the node's own asking of its
     /// peers takes them before other entries' if this bring reaches nobody.
-    async fn bring_vaults(&self, op: &Value) -> Value {
+    async fn bring_vaults(&self, op: &Value) -> Result<Value> {
         let named = |key: &str| op.get(key).and_then(Value::as_array).map(|xs| xs.iter().map(|x| x.as_str()).collect::<Vec<_>>());
         let scope = match (named("vaults"), named("entries")) {
             (Some(xs), None) => xs.into_iter().map(|x| x.and_then(VaultId::from_hex)).collect::<Option<BTreeSet<_>>>().map(Brought::Vaults),
@@ -233,65 +256,80 @@ impl Node {
                 let why = format!(
                     "bring names 1 to {MOST_BROUGHT} vaults, or 1 to {MOST_BROUGHT} entries, each its id, 64 hex digits"
                 );
-                return Refused::BadOp(why).to_json();
+                return Ok(Refused::BadOp(why).to_json());
             }
         };
         if let Brought::Logs(logs) = &scope {
-            self.want(logs.iter().copied());
+            // Scoped views register renewable demand separately; do not leave an additional one-shot priority
+            // behind after that view closes. Older clients omit this and retain their original behavior.
+            if op.get("prioritize").and_then(Value::as_bool) != Some(false) {
+                self.try_want(logs.iter().copied())?;
+            }
         }
         let peers = self.read(|lab, me| lab.peers(me)).await;
-        let endpoints: Vec<EndpointId> = peers.into_iter().filter_map(|(_, key)| EndpointId::from_bytes(&key).ok()).collect();
+        let mut endpoints: Vec<EndpointId> = peers.into_iter().filter_map(|(_, key)| EndpointId::from_bytes(&key).ok()).collect();
+        let known = endpoints.len();
+        endpoints.sort_unstable();
+        endpoints.dedup();
+        endpoints.sort_by_key(|&peer| (self.shared.live(peer).is_none(), self.shared.pulls.rank(peer)));
+        let delay = endpoints.first().map(|&peer| self.shared.pulls.hedge_after(peer)).unwrap_or_default();
         let ask = |peer: EndpointId| {
             let scope = scope.clone();
             async move {
-                match scope {
+                let started = Instant::now();
+                let answer = async { match scope {
                     Brought::Vaults(vaults) => self.bring(peer, vaults).await,
                     // the logs that are no entry's first, which say who may do what (a vault named by none), then
                     // the entries' own
                     Brought::Logs(logs) => Ok(self.bring(peer, BTreeSet::new()).await? + self.bring_logs(peer, logs).await?),
-                }
+                } }.await;
+                self.shared.pulls.observed(peer, started.elapsed(), answer.is_ok());
+                answer.ok()
             }
         };
-        let mut asks: FuturesUnordered<_> = endpoints.iter().map(|&peer| time::timeout(BRING, ask(peer))).collect();
-        let (mut new, mut reached) = (0, false);
-        while let Some(asked) = asks.next().await {
-            if let Ok(Ok(n)) = asked {
-                (new, reached) = (n, true);
-                break;
-            }
-        }
-        json!({ "ok": { "new": new, "peers": endpoints.len(), "reached": reached } })
+        // The same total deadline as the former all-peer race. Keep these futures in this task so an acting
+        // identity remains scoped across each peer's authorization pull and subsequent entry pull.
+        let brought = time::timeout(BRING, crate::pulls::hedged(endpoints, crate::pulls::FANOUT, delay, ask)).await.ok().flatten();
+        Ok(json!({ "ok": { "new": brought.unwrap_or(0), "peers": known, "reached": brought.is_some() } }))
     }
 
     /// `follow`: run, and every peer asked again if the vaults the device follows changed.
-    async fn follow(&self, op: Value) -> Value {
+    async fn follow(&self, op: Value) -> Result<Value> {
         let before = self.read(|lab, me| lab.follows(me).to_vec()).await;
-        let (answer, after) = self.act(move |lab, me| (engine::run(lab, me, &op), lab.follows(me).to_vec())).await;
+        let (answer, after) = self.try_act(move |lab, me| (engine::run(lab, me, &op), lab.follows(me).to_vec())).await?;
         if after != before {
             self.shared.ask_all();
         }
-        answer
+        Ok(answer)
     }
 
     /// Asks each device that holds its vaults (`avendb::lab::Lab::peers`), and each it is connected to now, for what it
-    /// holds, all at once, for a few seconds at most (`CATCHING_UP`). Whether one of them handed over all it holds for
-    /// it in that time.
+    /// holds, for a few seconds at most (`CATCHING_UP`). All required candidates must enter bounded admission and
+    /// at least one must hand over its complete reply in that time. Local overload therefore postpones removal
+    /// rather than treating a peer that was never asked as an unreachable peer.
     pub async fn catch_up(&self) -> bool {
+        self.catching_up().await.ready()
+    }
+
+    async fn catching_up(&self) -> crate::pulls::Readiness {
+        let Ok(_activity) = self.shared.admit() else { return crate::pulls::Readiness { admitted: false, reached: false }; };
         let known = self.read(|lab, me| lab.peers(me)).await;
         let mut endpoints: BTreeSet<EndpointId> =
             known.into_iter().filter_map(|(_, key)| EndpointId::from_bytes(&key).ok()).collect();
         endpoints.extend(self.shared.peers.lock().expect("peers").keys().copied());
-        let caught = AtomicBool::new(false);
-        let asks = n0_future::join_all(endpoints.into_iter().map(|peer| {
+        let mut endpoints: Vec<_> = endpoints.into_iter().collect();
+        endpoints.sort_by_key(|&peer| (self.shared.live(peer).is_none(), self.shared.pulls.rank(peer)));
+        let caught = crate::pulls::CatchUp::new(endpoints.len());
+        let asks = crate::pulls::each_bounded(endpoints, crate::pulls::CATCH_UP_FANOUT, |peer| {
             let caught = &caught;
             async move {
-                if self.sync_with(peer).await.is_ok() {
-                    caught.store(true, Ordering::Relaxed);
+                if self.shared.pull(peer, crate::Scope::All, false, Some(caught)).await.is_ok() {
+                    caught.reached();
                 }
             }
-        }));
+        });
         let _ = time::timeout(CATCHING_UP, asks).await;
-        caught.into_inner()
+        caught.finish()
     }
 
     /// Why a removal waits (`engine::removes`), or `None` where it needn't: it cuts every edit resting on what it
@@ -301,8 +339,13 @@ impl Node {
     /// (`HEARD`), and else takes the catch-up as its word. A device that knows no peer, the only one that holds its
     /// vaults, waits for nothing.
     pub async fn removal_waits(&self) -> Option<String> {
+        let Ok(_activity) = self.shared.admit() else { return Some("This device is closed; reopen it before making a removal".to_string()); };
         let known = self.read(|lab, me| !lab.peers(me).is_empty()).await;
-        let reached = self.catch_up().await;
+        let caught = self.catching_up().await;
+        if !caught.admitted {
+            return Some("Sync first: this device's sync queue is busy and could not ask every required peer before the removal check. Let it sync, then try again".to_string());
+        }
+        let reached = caught.reached;
         let until = Instant::now() + HEARD;
         let live = loop {
             let live = self.live_peers().await;
@@ -349,14 +392,14 @@ impl Node {
             };
             (prepared, keys)
         };
-        let (prepared, keys) = self.act(prepare).await;
+        let (prepared, keys) = self.try_act(prepare).await?;
         let (approval, authenticator) = match (prepared, authenticator) {
             (Ok(Prepared::Approve(a)), Some(authenticator)) => (a, authenticator),
             (prepared, _) => return Ok(engine::prepared(prepared)),
         };
         let ceremony = crate::ceremony_of(authenticator, keys, approval.challenge(), Step::Approve).await?;
         let approve = move |lab: &mut Lab, me| engine::approve(lab, me, approval, &ceremony);
-        Ok(match self.act(approve).await {
+        Ok(match self.try_act(approve).await? {
             Ok(v) => json!({ "ok": v }),
             Err(why) => why.to_json(),
         })
@@ -372,8 +415,10 @@ impl Shared {
         }
         let peers: Vec<EndpointId> = self.peers.lock().expect("peers").keys().copied().collect();
         for endpoint in peers {
+            let Ok(activity) = self.admit() else { return };
             let shared = self.clone();
             task::spawn(async move {
+                let _activity = activity;
                 if let Err(e) = shared.ask(endpoint).await {
                     tracing::debug!("avendb: asking {endpoint} again failed: {e:#}");
                 }

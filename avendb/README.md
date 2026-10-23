@@ -71,6 +71,47 @@ ships.
 The Lean build needs [elan](https://github.com/leanprover/elan) (`spec/lean-toolchain` pins the version). After a change
 to the rules, `lake exe vectors` in `spec/` writes the vectors again; commit them with the change.
 
+## First performance upgrade: rollout and recovery
+
+This release improves stored-view replay, reactive reads, active-view demand, bounded previews and sync,
+and native storage ownership. It adds optional proof-backed reconciliation while ordinary edit signatures
+and the final legacy reconciliation remain authoritative. Production paged startup, root-only batch
+verification, partial handed-view startup and audience key-tree activation are separate milestones.
+
+Upgrade the existing store in place. Stop the previous app/server writer before starting the new one;
+older binaries do not honor the new native writer lock. Keep an offline copy of the store and the previous
+app artifact before updating. The upgrade preserves the existing shelf generation, account metadata,
+identity and immutable edit history. New signer ledgers and derived range summaries are additive. An
+engine-version change may require one cold replay before the new encrypted view is saved. Stored views now
+preserve every share's cap-group binding; earlier derived-view versions are rejected and rebuilt from the
+signed history before use.
+
+Native stores now require explicit write ownership: `disk::open` returns a reader; acquire `Shelf::writer`
+for standalone writes, or use `Node::writer_shelf` while a Node owns the store. Await `shutdown` before
+reopening it. Shutdown refuses new writes, finishes admitted work, saves and fences disk operations before
+releasing ownership; cancellation of a waiter does not cancel that finalization. A failed save is an error,
+not a successful handoff. Bucket ownership is local to one process; keep the existing single-server
+configuration. Non-atomic backends do not publish batch roots.
+
+Do not run an older binary as a writer on an upgraded store. It can append valid ordinary edits outside
+the new signer ledger, so writable downgrade is unsupported. Retain the pre-upgrade copy for controlled
+recovery and account for any subsequent edits before restoring it. No rollout step deletes old generations,
+resets an account or discards history. SLH history remains readable and existing authorized key migration
+continues; this release does not remove the legacy verifier.
+
+Optional carriers are off by default in the site build. Set `VITE_AVENDB_BROWSER_CARRIERS=true` explicitly
+when building to advertise supported browser WebTransport/WebRTC APIs. Native WebTransport separately
+requires all three settings: `AVENDB_WT_BIND`, `AVENDB_WT_URL` and `AVENDB_WT_ORIGINS` (a JSON array of
+exact origins). A native listener failure preserves relay operation. Unsupported browsers retain the relay.
+Carrier activation still requires the normal authenticated peer negotiation; these settings grant no access.
+
+Before rollout, run the Rust suites, Lean build and vector comparison, client tests and production web build.
+The PR checks also build the server image and check the macOS app. The ignored `upgrade_rehearsal` browser
+integration target checks an explicitly marked disposable Mac-store copy with a real existing-key Touch ID
+ceremony; it never accepts the installed store. The optional-carrier Chromium harness tests fresh edits and
+sealed files through WebTransport, relay fallback and WebRTC with alternate paths deliberately stopped.
+Build shipped WASM with `scripts/build-web.sh` without the `localhost-passkeys` test feature.
+
 ## The master recovery key
 
 One master recovery key is the way back in beside the passkeys (Samuel, 2026-10-13): every human vault is founded with

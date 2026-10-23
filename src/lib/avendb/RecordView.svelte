@@ -9,7 +9,7 @@
 -->
 <script>
 	// @ts-nocheck — plain JS
-	import { read } from './ops.js';
+	import { windowRead } from './ops.js';
 	import { at, isLink, isLinks, isRows, pathWords, trailQuery, valueWords } from './paths.js';
 	import { count, short } from './vaults.js';
 
@@ -17,6 +17,13 @@
 
 	/** @type {{ api: any, entry: string, record: Record<string, unknown> | null, trail: Hop[] }} */
 	let { api, entry, record, trail = $bindable([]) } = $props();
+	let readWindow = $state.raw(/** @type {any} */ (null));
+	$effect(() => {
+		const window = api.window?.();
+		readWindow = window;
+		return () => window?.close();
+	});
+
 
 	/** Whether step `s` follows a link. @param {Hop} s @returns {s is { to: true }} */
 	const hop = (s) => typeof s === 'object' && 'to' in s;
@@ -31,11 +38,14 @@
 		followed = null;
 		if (!follow.length) return;
 		let gone = false;
-		read(api, { op: 'query', where: { entry: [e] }, follow, depth }, null).then((/** @type {any} */ out) => {
+		if (api.window && !readWindow) return;
+		const request = windowRead(api, { op: 'query', where: { entry: [e] }, follow, depth }, null, readWindow);
+		request.result.then((/** @type {any} */ out) => {
 			if (!gone) followed = out?.rows?.[0]?.record ?? {};
 		});
 		return () => {
 			gone = true;
+			request.close();
 		};
 	});
 

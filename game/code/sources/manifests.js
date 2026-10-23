@@ -115,7 +115,7 @@ export function entriesOf(leaves, rows) {
 	for (const { leaf } of leaves) {
 		if (leaf.entry) out.push(leaf.entry);
 		else {
-			const found = newest.filter((r) => fits(r, leaf.query)).map((r) => r.entry);
+			const found = [...new Set(newest.filter((r) => fits(r, leaf.query)).map((r) => r.entry).filter((e) => /^[0-9a-f]{64}$/.test(String(e))))];
 			out.push(...(leaf.limit ? found.slice(0, leaf.limit) : found));
 		}
 	}
@@ -159,9 +159,10 @@ export function namedBy(record) {
 export const ENTRIES_FEED = 'https://avendb.maia.city/feed/entries';
 
 /** The rows of the feed `url` asks for, or [] where it can't be read. */
-async function feedRows(url, get) {
+async function feedRows(url, get, signal) {
+	signal?.throwIfAborted();
 	try {
-		const r = await get(url, { headers: { accept: 'application/json' } });
+		const r = await get(url, { headers: { accept: 'application/json' }, signal });
 		if (!r.ok) return [];
 		const { entries } = await r.json();
 		return Array.isArray(entries) ? entries : [];
@@ -173,18 +174,20 @@ async function feedRows(url, get) {
 /**
  * The manifests of vault `vault`: off device `d` where it holds any, else off the feed. @returns {Promise<any[]>}
  */
-export async function manifestsOf(d, { vault = MAIA_CITY, fetch: get = globalThis.fetch } = {}) {
+export async function manifestsOf(d, { vault = MAIA_CITY, fetch: get = globalThis.fetch, signal } = {}) {
+	signal?.throwIfAborted();
 	if (d) {
 		try {
 			const got = await d.run({ op: 'query', vault, where: { type: ['manifest'] } });
 			const rows = got?.ok?.rows ?? [];
+			signal?.throwIfAborted();
 			if (rows.length) return rows.map((r) => r.record).filter(Boolean);
 		} catch {
 			// the feed then
 		}
 	}
 	if (!get) return [];
-	const rows = await feedRows(`${ENTRIES_FEED}?seed=1&vault=${vault}&type=manifest`, get);
+	const rows = await feedRows(`${ENTRIES_FEED}?seed=1&vault=${vault}&type=manifest`, get, signal);
 	return rows.map((r) => r.record).filter(Boolean);
 }
 
@@ -195,41 +198,58 @@ export async function manifestsOf(d, { vault = MAIA_CITY, fetch: get = globalThi
  * Answers the entries asked for.
  * @param {string} path @param {{ device?: any, bring: (ids: string[]) => Promise<any>, vault?: string, fetch?: any }} o
  */
-export async function bringDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: get = globalThis.fetch }) {
-	const leaves = leavesFor(await manifestsOf(d, { vault, fetch: get }), path);
+export async function bringDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: get = globalThis.fetch, signal }) {
+	signal?.throwIfAborted();
+	const leaves = leavesFor(await manifestsOf(d, { vault, fetch: get, signal }), path);
+	signal?.throwIfAborted();
 	if (!leaves.length) return [];
-	const rows = await rowsFor(leaves, { device: d, vault, fetch: get });
-	const asked = [];
+	const rows = await rowsFor(leaves, { device: d, vault, fetch: get, signal });
+	signal?.throwIfAborted();
+	const asked = new Set();
 	for (const rank of [...new Set(leaves.map((l) => l.rank))]) {
 		const at = leaves.filter((l) => l.rank === rank);
-		const ids = entriesOf(at, rows).filter((e) => !asked.includes(e));
+		const ids = entriesOf(at, rows).filter((e) => !asked.has(e));
+		signal?.throwIfAborted();
 		if (ids.length) await bring(ids);
-		asked.push(...ids);
-		let follow = at.filter(({ leaf }) => (leaf.follow ?? 0) > 0);
-		let from = entriesOf(follow, rows);
-		for (let level = 1; follow.length && from.length && d && level <= 3; level++) {
-			const named = await namedOn(d, from);
-			const next = named.filter((e) => !asked.includes(e));
-			if (next.length) await bring(next);
-			asked.push(...next);
-			follow = follow.filter(({ leaf }) => leaf.follow > level);
-			from = next;
+		ids.forEach((e) => asked.add(e));
+		// Keep each entry's remaining depth. A shallow leaf must not inherit another leaf's deeper walk.
+		let frontier = new Map();
+		for (const leaf of at) {
+			const depth = Math.min(3, leaf.leaf.follow ?? 0);
+			if (depth > 0) for (const e of entriesOf([leaf], rows)) frontier.set(e, Math.max(frontier.get(e) ?? 0, depth));
+		}
+		const visited = new Map();
+		while (frontier.size && d) {
+			const next = new Map();
+			for (const [entry, depth] of frontier) {
+				signal?.throwIfAborted();
+				if ((visited.get(entry) ?? 0) >= depth) continue;
+				visited.set(entry, depth);
+				for (const e of await namedOn(d, [entry])) next.set(e, Math.max(next.get(e) ?? 0, depth - 1));
+			}
+			signal?.throwIfAborted();
+			const missing = [...next.keys()].filter((e) => !asked.has(e));
+			if (missing.length) await bring(missing);
+			missing.forEach((e) => asked.add(e));
+			frontier = new Map([...next].filter(([, depth]) => depth > 0));
 		}
 	}
-	return asked;
+	signal?.throwIfAborted();
+	return [...asked];
 }
 
 /**
  * The rows the queries among leaves `leaves` read, once: the feed's public rows of vault `vault` (a listing without
  * records, of the types the queries name where every one names some) and the rows device `d` holds of those types.
  */
-async function rowsFor(leaves, { device: d, vault, fetch: get }) {
+async function rowsFor(leaves, { device: d, vault, fetch: get, signal }) {
 	const queries = leaves.map(({ leaf }) => leaf.query).filter(Boolean);
 	if (!queries.length) return [];
 	const typed = queries.every((q) => q.type?.length);
 	const types = [...new Set(queries.flatMap((q) => q.type ?? []))];
 	const kinds = typed ? `&type=${types.join(',')}` : '';
-	const rows = get ? await feedRows(`${ENTRIES_FEED}?seed=1&vault=${vault}&bare=1${kinds}`, get) : [];
+	const rows = get ? await feedRows(`${ENTRIES_FEED}?seed=1&vault=${vault}&bare=1${kinds}`, get, signal) : [];
+	signal?.throwIfAborted();
 	if (d) {
 		try {
 			const got = await d.run({ op: 'query', vault, ...(typed ? { where: { type: types } } : {}), select: [] });

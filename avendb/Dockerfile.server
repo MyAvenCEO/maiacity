@@ -13,6 +13,8 @@ RUN cargo chef prepare --recipe-path recipe.json
 
 FROM chef AS build
 COPY --from=planner /src/recipe.json recipe.json
+# The patched dependency is outside the workspace, so chef does not include it in its recipe.
+COPY vendor ./vendor
 RUN cargo chef cook --profile server --locked --package avendb-server --recipe-path recipe.json
 COPY . ./
 RUN cargo build --profile server --locked -p avendb-server && cp target/server/avendb-server /avendb-server

@@ -369,7 +369,6 @@ impl SignedRoot {
     pub fn verify(&self) -> bool {
         sign::verify_root(&self.keys, &self.root.message(), &self.sig) == Some(self.root.log)
     }
-
 }
 
 impl Encode for SignedRoot {
@@ -535,6 +534,68 @@ macro_rules! wire {
 
 wire!(SignedRoot, Path, Proof, ForkProof);
 
+/// Successful device signing events not yet acknowledged by the durable signer ledger.
+/// This is independent of a materialized Store: restoring or locking that Store cannot
+/// remove an event. Only unique unsaved ids occupy the queue.
+#[derive(Debug)]
+pub struct SigningEvents {
+    generation: Arc<()>,
+    ids: Vec<EditId>,
+    pending: std::collections::HashSet<EditId>,
+}
+
+impl Default for SigningEvents {
+    fn default() -> Self {
+        Self { generation: Arc::new(()), ids: Vec::new(), pending: Default::default() }
+    }
+}
+
+/// An exact captured prefix of successful signing events. Its generation is process-local,
+/// never serialized, and rotated after acknowledgement to reject overlapping stale receipts.
+#[derive(Clone, Debug)]
+pub struct SigningCapture {
+    generation: Arc<()>,
+    ids: Vec<EditId>,
+}
+
+impl SigningCapture {
+    pub fn ids(&self) -> &[EditId] {
+        &self.ids
+    }
+}
+
+impl SigningEvents {
+    pub fn pending(&self) -> bool {
+        !self.ids.is_empty()
+    }
+
+    pub fn record(&mut self, id: EditId) {
+        if self.pending.insert(id) {
+            self.ids.push(id);
+        }
+    }
+
+    pub fn capture(&self) -> Option<SigningCapture> {
+        (!self.ids.is_empty()).then(|| SigningCapture { generation: self.generation.clone(), ids: self.ids.clone() })
+    }
+
+    pub fn acknowledge(&mut self, capture: &SigningCapture) -> bool {
+        if !Arc::ptr_eq(&self.generation, &capture.generation) || !self.ids.starts_with(&capture.ids) {
+            return false;
+        }
+        for id in self.ids.drain(..capture.ids.len()) {
+            self.pending.remove(&id);
+        }
+        self.generation = Arc::new(());
+        true
+    }
+
+    /// A split Lab gets a fresh receipt generation, even when its pending ids agree.
+    pub fn detached(&self) -> Self {
+        Self { generation: Arc::new(()), ids: self.ids.clone(), pending: self.pending.clone() }
+    }
+}
+
 /// A device's own log, and its batches: every edit it signed in order, the newest root it signed, and the root it is
 /// signing now, if any (group commit).
 #[derive(Clone, Debug)]
@@ -556,6 +617,50 @@ impl SignerLog {
     /// batch signs one root over all of them.
     pub fn wrap(log: SignerId, ids: impl IntoIterator<Item = EditId>) -> SignerLog {
         SignerLog { log, tree: Tree::wrap(ids), signed: None, signing: None }
+    }
+
+    /// Resume an immutable signer ledger and its newest persisted publication. No in-flight
+    /// signing operation survives restart. A malformed root or duplicate ledger id is refused.
+    pub fn resume(log: SignerId, ids: Vec<EditId>, published: Option<SignedRoot>) -> Option<Self> {
+        let tree = Tree::wrap(ids.iter().copied());
+        if tree.len() != ids.len() as u64 {
+            return None;
+        }
+        let mut resumed = Self { log, tree, signed: None, signing: None };
+        if let Some(root) = published {
+            if !resumed.publish(root) {
+                return None;
+            }
+        }
+        Some(resumed)
+    }
+
+    /// The current durable prefix to sign. The caller must persist these leaves before
+    /// requesting its signature, and persist the resulting root before `publish`.
+    pub fn durable_root(&self) -> Option<Root> {
+        (self.waiting() > 0).then(|| Root {
+            log: self.log,
+            fork: FORK,
+            length: self.tree.len(),
+            hash: self.tree.root(),
+        })
+    }
+
+    /// A root whose object has been durably stored. It can cover an older prefix when
+    /// another append completed meanwhile; it must never replace a newer publication.
+    pub fn publish(&mut self, signed: SignedRoot) -> bool {
+        let r = signed.root;
+        if r.log != self.log
+            || r.fork != FORK
+            || r.length == 0
+            || self.tree.root_at(r.length) != Some(r.hash)
+            || !signed.verify()
+            || self.signed.as_ref().is_some_and(|old| old.root.length > r.length)
+        {
+            return false;
+        }
+        self.signed = Some(Arc::new(signed));
+        true
     }
 
     pub fn log(&self) -> SignerId {
@@ -663,6 +768,11 @@ impl Roots {
     pub fn new() -> Roots {
         Roots::default()
     }
+
+    /// Discard signature memoization without changing admitted roots or fork evidence.
+    /// A network receiver uses this between bounded batches so peer history cannot grow
+    /// an unbounded verification cache. Signatures are checked again when needed.
+    pub fn clear_verification_cache(&mut self) { self.checked.clear(); }
 
     /// The newest root it keeps of `log`.
     pub fn newest(&self, log: SignerId) -> Option<&Arc<SignedRoot>> {

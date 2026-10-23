@@ -79,13 +79,13 @@ struct App {
 impl App {
     /// The app starts the device on folder `dir`, Eve's passkey answering its sheets.
     fn start(dir: &Path, passkey: Passkey, direct: bool) -> App {
-        App::with(Config { dir: dir.to_path_buf(), direct, volumes: None }, passkey)
+        App::with(Config { dir: dir.to_path_buf(), direct, volumes: None, webtransport: None }, passkey)
     }
 
     /// The app starts the device on folder `dir`, hosting the drives mounted in folder `volumes`, as macOS mounts them
     /// in /Volumes.
     fn with_volumes(dir: &Path, volumes: &Path, passkey: Passkey) -> App {
-        App::with(Config { dir: dir.to_path_buf(), direct: true, volumes: Some(volumes.to_path_buf()) }, passkey)
+        App::with(Config { dir: dir.to_path_buf(), direct: true, volumes: Some(volumes.to_path_buf()), webtransport: None }, passkey)
     }
 
     fn with(config: Config, passkey: Passkey) -> App {
@@ -206,12 +206,12 @@ struct InApp {
 impl InApp {
     /// The app hosts the device on folder `dir`, Eve's passkey answering its sheets.
     fn start(dir: &Path, passkey: Passkey) -> InApp {
-        InApp::with(Config { dir: dir.to_path_buf(), direct: true, volumes: None }, passkey)
+        InApp::with(Config { dir: dir.to_path_buf(), direct: true, volumes: None, webtransport: None }, passkey)
     }
 
     /// The same, hosting the drives mounted in folder `volumes`, as macOS mounts them in /Volumes.
     fn with_volumes(dir: &Path, volumes: &Path, passkey: Passkey) -> InApp {
-        InApp::with(Config { dir: dir.to_path_buf(), direct: true, volumes: Some(volumes.to_path_buf()) }, passkey)
+        InApp::with(Config { dir: dir.to_path_buf(), direct: true, volumes: Some(volumes.to_path_buf()), webtransport: None }, passkey)
     }
 
     fn with(config: Config, passkey: Passkey) -> InApp {
@@ -290,7 +290,13 @@ impl Folder {
         static MADE: AtomicU32 = AtomicU32::new(0);
         let n = MADE.fetch_add(1, Ordering::Relaxed);
         let nanos = SystemTime::now().duration_since(UNIX_EPOCH).expect("after 1970").subsec_nanos();
-        let path = std::env::temp_dir().join(format!("avendb-device-{name}-{}-{n}-{nanos}", std::process::id()));
+        // macOS's per-user temp directory makes the session socket exceed sockaddr_un's
+        // path limit; use its short system temp path for these disposable fixtures.
+        #[cfg(target_os = "macos")]
+        let root = PathBuf::from("/tmp");
+        #[cfg(not(target_os = "macos"))]
+        let root = std::env::temp_dir();
+        let path = root.join(format!("avendb-device-{name}-{}-{n}-{nanos}", std::process::id()));
         std::fs::create_dir_all(&path).expect("a folder of its own");
         // as the file system resolves it, as an agent names the files it reads and writes (`agent::allowed`)
         Folder(std::fs::canonicalize(path).expect("its folder"))
@@ -594,7 +600,9 @@ async fn a_new_device_puts_aside_a_shelf_cut_short_and_keeps_what_an_earlier_ave
     let dir = folder.0.clone();
     // a start cut short on the shelf in use: something kept, nothing that opens it
     let shelf = disk::open(&dir).expect("its shelf");
-    shelf.put("journal/0000000000000001", Bytes::from_static(b"cut short")).await.expect("kept");
+    let writer = shelf.writer().expect("fixture writer");
+    writer.shelf().put("journal/0000000000000001", Bytes::from_static(b"cut short")).await.expect("kept");
+    writer.shutdown().await.expect("fixture writer closes");
     drop(shelf);
     // and what an earlier avenDB kept in the folder: its store, what opened its device, a store it put aside, and a
     // shelf from before the last reset
@@ -1234,6 +1242,8 @@ async fn every_session_of_a_harness_is_her_macs_session_of_its_one_key_approved_
     let beans = json!({ "op": { "op": "create", "vault": mine, "type": "note", "value": titled("Beans", "In May.") } });
     let (made, error) = second.tool("avendb_run", beans).await;
     assert!(!error && made.contains("\"ok\""), "an Editor writes: {made}");
+    assert!(agent::online(&dir, "agentClaude", device.as_str().expect("its key")),
+        "the first session's cleanup preserves the still-running session's marker");
     second.quit().await;
     let end = Instant::now() + Duration::from_secs(10);
     while !alive_files(&dir).is_empty() {
@@ -2110,8 +2120,16 @@ async fn eves_drive_is_a_device_of_her_vault_hosted_by_the_mac_it_is_plugged_int
         assert!(!open_under(&its_store).is_empty(), "a file held open on the drive shows");
         drop(probe);
     }
-    let ejected = app.call("ejectDrive", json!([path])).await.expect("ejected");
-    assert_eq!(ejected["ejected"], path);
+    let ejected = app.call("ejectDrive", json!([path])).await;
+    // This fixture is a folder, not a mounted disk. macOS refuses its physical ejection,
+    // while avenDB must still stop its node and release every file, as checked below.
+    #[cfg(target_os = "macos")]
+    {
+        let error = ejected.expect_err("a fixture folder is not a disk macOS can eject");
+        assert!(error.contains("macOS didn't eject the drive: Failed to find disk"), "{error}");
+    }
+    #[cfg(not(target_os = "macos"))]
+    assert_eq!(ejected.expect("ejected")["ejected"], path);
     assert_eq!(open_under(&its_store), Vec::<PathBuf>::new(), "nothing on the drive open once it is ejected");
     let out = drives(&mut app, "her drive, ejected", |s| s["drives"][0]["plugged"] == false).await;
     assert!(since(&out) && out["volumes"][0]["state"] == "ejected", "{out}");
@@ -2263,10 +2281,12 @@ async fn ivys_mac_its_touch_id_key_and_her_drive_move_to_ml_dsa_65_with_her_pass
         });
         let (credential, relay, follow, query_depth) = (credential.clone(), relay_at.clone(), vec![], None);
         let meta = Meta { name, relay, nonce, mask, credential, p256, device: d, follow, query_depth, touch };
-        meta.keep(&shelf).await.expect("what opens it again");
+        let writer = shelf.writer().expect("fixture metadata writer after node shutdown");
+        meta.keep(&writer.shelf()).await.expect("what opens it again");
         if d == mac {
-            shelf.put(&format!("drives/{}", photos.to_hex()), Bytes::from(wrapped.clone())).await.expect("its key");
+            writer.shelf().put(&format!("drives/{}", photos.to_hex()), Bytes::from(wrapped.clone())).await.expect("its key");
         }
+        writer.shutdown().await.expect("fixture metadata writer closes");
     }
     // the app starts; no touch comes, so her passkey's sheet opens it, and it hosts her drive with no sheet
     let mut app = InApp::with_volumes(&dir, &volumes, ivys);
@@ -2386,3 +2406,6 @@ async fn an_approved_agent_works_as_a_session_of_the_macs_device_by_its_own_key(
     app.quit().await;
     server.shutdown().await.expect("the server's node stops");
 }
+
+#[path = "device/webtransport.rs"]
+mod webtransport;

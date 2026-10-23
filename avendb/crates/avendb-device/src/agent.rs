@@ -469,7 +469,7 @@ impl Cloud {
         // a folder of its own lasts as long as its session's machine: a new one learns from the server's card that its
         // key moved (K3c), names its next key there, and opens again as it
         for again in [false, true] {
-            node.know(server.addr.clone());
+            node.try_know(server.addr.clone())?;
             if !node.on_relay().await {
                 node.shutdown().await.ok();
                 let host = server.addr.relay_urls().next().map_or("the server".into(), |r| r.to_string());

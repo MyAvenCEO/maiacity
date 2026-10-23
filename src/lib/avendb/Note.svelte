@@ -33,7 +33,7 @@
 	import Icon from './Icon.svelte';
 	import Lines from './Lines.svelte';
 	import Mark from './Mark.svelte';
-	import { allowed, blockText, deleting, may, read } from './ops.js';
+	import { allowed, blockText, deleting, may, windowRead } from './ops.js';
 	import { at as atPath, changeWords, clashes, pathWords, valueWords } from './paths.js';
 	import Share from './Share.svelte';
 	import SparkCanvas from './SparkCanvas.svelte';
@@ -82,6 +82,14 @@
 	 */
 	let { world, actor, api, busy, entry, back = '#sparks', backTo = 'All sparks' } = $props();
 
+	/** The note, its changes and its original are independent reads of this mounted view. */
+	let readWindows = $state.raw(/** @type {any} */ (null));
+	$effect(() => {
+		const windows = { note: api.window?.(), changes: api.window?.(), original: api.window?.() };
+		readWindows = windows;
+		return () => { for (const window of Object.values(windows)) window?.close(); };
+	});
+
 	let note = $state(/** @type {NoteData | null} */ (null));
 	let loaded = $state(false);
 	/** the line picked: `null` for the main line, else the id of its proposal's or variant's first edit */
@@ -116,19 +124,13 @@
 	$effect(() => {
 		void world;
 		const [known, e] = [!!item, entry];
-		if (!known) return;
+		if (!known || (api.window && !readWindows)) return;
 		let gone = false;
-		api.note(e).then(
-			(/** @type {NoteData | undefined} */ n) => {
-				if (!gone) [note, loaded] = [n ?? null, true];
-			},
-			() => {
-				if (!gone) loaded = true;
-			}
-		);
-		return () => {
-			gone = true;
-		};
+		const request = windowRead(api, { op: 'note', entry: e }, null, readWindows?.note);
+		request.result.then((/** @type {NoteData | null} */ n) => {
+			if (!gone) [note, loaded] = [n, true];
+		});
+		return () => { gone = true; request.close(); };
 	});
 
 	/**
@@ -140,8 +142,10 @@
 	$effect(() => {
 		const [e, kind] = [entry, note?.kind];
 		if (!note || kind === 'document' || (textual(kind) && kind !== 'story')) return void (changed = {});
+		if (api.window && !readWindows) return;
 		let gone = false;
-		read(api, { op: 'history', entry: e }, null).then((/** @type {any} */ h) => {
+		const request = windowRead(api, { op: 'history', entry: e }, null, readWindows?.changes);
+		request.result.then((/** @type {any} */ h) => {
 			/** @type {Record<string, string[]>} */
 			const by = {};
 			for (const x of h?.edits ?? []) if (x.changes?.length) by[x.id] = x.changes.map(changeWords);
@@ -149,6 +153,7 @@
 		});
 		return () => {
 			gone = true;
+			request.close();
 		};
 	});
 
@@ -163,18 +168,11 @@
 			original = null;
 			return;
 		}
+		if (api.window && !readWindows) return;
 		let gone = false;
-		api.note(from).then(
-			(/** @type {NoteData | undefined} */ n) => {
-				if (!gone) original = n ?? null;
-			},
-			() => {
-				if (!gone) original = null;
-			}
-		);
-		return () => {
-			gone = true;
-		};
+		const request = windowRead(api, { op: 'note', entry: from }, null, readWindows?.original);
+		request.result.then((/** @type {NoteData | null} */ n) => { if (!gone) original = n; });
+		return () => { gone = true; request.close(); };
 	});
 
 	const key = (/** @type {string | null} */ l) => l ?? '';

@@ -110,7 +110,7 @@ async fn scenario_5_through_the_relay_alone() {
     until("Bob's Mac reads Welcome, through the relay alone", reads).await;
     let met = || async { bob.proven(mac.id()) == Some(mac_a) };
     until("through the relay, the Macs reach each other by their ids alone", met).await;
-    let holds = || server.read(move |lab, me| lab.fetched(me, welcome) > 0);
+    let holds = || server.read(move |lab, me| lab.fetched(me, welcome) > 0 && lab.state(me).entry(welcome).is_some());
     until("and the server holds Welcome's edits", holds).await;
     let opens = move |lab: &Lab, me| {
         let audience = lab.state(me).entry(welcome).expect("Welcome").audience();
@@ -256,6 +256,7 @@ async fn the_servers_offer_names_its_public_address_and_its_relay() {
         bucket: None,
         cache: 0,
         snapshots: None,
+        webtransport: None,
     };
     let started = avendb_server::start(&config).await.expect("the server and its relay");
     let offer = Offer::from_text(&started.offer.to_text()).expect("its offer reads back");

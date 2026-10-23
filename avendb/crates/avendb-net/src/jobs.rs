@@ -24,6 +24,7 @@ use std::sync::{Arc, Mutex};
 
 use n0_future::time;
 use serde_json::{Value, json};
+use tokio::sync::watch;
 
 /// How many ended jobs a node keeps, the newest first.
 pub const HISTORY: usize = 200;
@@ -109,11 +110,19 @@ struct Book {
 
 /// A node's jobs: those under way and the last that ended, shared by the node's tasks and whoever reads them; a clone
 /// shares them.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct Jobs {
     book: Arc<Mutex<Book>>,
     /// How many jobs it began.
     began: Arc<AtomicU64>,
+    /// How many times what its node shows changed (`Jobs::stir`): its jobs, its pages, its peers, what it holds.
+    stirs: Arc<watch::Sender<u64>>,
+}
+
+impl Default for Jobs {
+    fn default() -> Self {
+        Jobs { book: Arc::default(), began: Arc::default(), stirs: Arc::new(watch::Sender::new(0)) }
+    }
 }
 
 impl Jobs {
@@ -139,6 +148,7 @@ impl Jobs {
             by: crate::acting(),
         };
         self.book.lock().expect("jobs").running.insert(id.clone(), job);
+        self.stir();
         Running { jobs: self.clone(), id, over: false }
     }
 
@@ -169,10 +179,21 @@ impl Jobs {
         })
     }
 
+    /// What its node shows changed: a page that waits on `stirs` reads it again, rather than asking on a timer.
+    pub fn stir(&self) {
+        self.stirs.send_modify(|n| *n += 1);
+    }
+
+    /// How many times what its node shows changed, as it changes (`stir`).
+    pub fn stirs(&self) -> watch::Receiver<u64> {
+        self.stirs.subscribe()
+    }
+
     fn update(&self, id: &str, change: impl FnOnce(&mut Job)) {
         if let Some(job) = self.book.lock().expect("jobs").running.get_mut(id) {
             change(job);
         }
+        self.stir();
     }
 
     /// Job `id` ends in `state`, and goes to the history, or nowhere if `keep` is false.
@@ -189,6 +210,8 @@ impl Jobs {
             book.ended.push_front(job);
             book.ended.truncate(HISTORY);
         }
+        drop(book);
+        self.stir();
     }
 }
 
@@ -269,6 +292,26 @@ pub(crate) fn now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn whoever_waits_on_its_stirs_hears_each_job_begin_move_and_end() {
+        let jobs = Jobs::default();
+        let mut stirs = jobs.stirs();
+        let mut moved = || {
+            let moved = stirs.has_changed().expect("open");
+            stirs.borrow_and_update();
+            moved
+        };
+        assert!(!moved(), "nothing yet");
+        let mut pull = jobs.begin("pull", "ab".into(), String::new(), 0, "edits");
+        assert!(moved(), "it began");
+        pull.progress(3, None);
+        assert!(moved(), "it moved");
+        pull.done();
+        assert!(moved(), "it ended");
+        jobs.stir();
+        assert!(moved(), "anything else the node shows");
+    }
 
     #[test]
     fn a_job_runs_ends_and_goes_to_the_history() {

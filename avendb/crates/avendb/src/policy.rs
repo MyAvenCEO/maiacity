@@ -52,6 +52,8 @@ use crate::slice::{Attrs, Header, Select, Selector, TagDelta};
 use crate::wire::Wire;
 
 mod view;
+#[cfg(test)]
+mod replay_moves;
 
 /// A vault is an identity, like a smart account, of one of four kinds. What each kind may be is one row of the kind
 /// table (`Kind::rules`), the model's `Kind.rules`, which every rule and the page read.
@@ -3499,6 +3501,14 @@ impl Moves {
         })
     }
 
+    /// The same facts as `unseen`, restricted to entry `e`. Only a write of that entry can read them:
+    /// `MoveSteps.lean`'s `apply_narrowTo` proves every other check unchanged, even after other facts are hidden.
+    fn unseen_for(&self, e: EntryId, at: usize, id: EditId) -> impl Iterator<Item = Fact> + '_ {
+        self.0.get(&e).into_iter().flatten()
+            .filter(move |m| m.0 > at && !m.1.contains(&id))
+            .map(move |m| Fact::Audience(e, m.2.clone()))
+    }
+
     /// The place of the last of the moves after place `at` that hadn't seen edit `id`.
     fn last_unseen(&self, at: usize, id: EditId) -> Option<usize> {
         self.0.values().flatten().filter(|m| m.0 > at && !m.1.contains(&id)).map(|m| m.0).max()
@@ -3605,6 +3615,20 @@ fn run_from(
     watch: &HashMap<EditId, Vec<VaultId>>,
     snap: Option<usize>,
 ) -> Run {
+    run_from_using::<true>(from, edits, ids, rem, states, watch, snap)
+}
+
+/// `run_from` with the entry index, or the original materialized audience facts as a differential oracle.
+/// The indexed check uses the same facts for the only entry it can read (`Moves::unseen_for`).
+fn run_from_using<const INDEXED_MOVES: bool>(
+    from: State,
+    edits: &[Edit],
+    ids: &[EditId],
+    rem: &HashSet<EditId>,
+    states: bool,
+    watch: &HashMap<EditId, Vec<VaultId>>,
+    snap: Option<usize>,
+) -> Run {
     let shares = std::cell::OnceCell::new();
     let shares = || shares.get_or_init(|| shares_issued(edits.iter().zip(ids.iter().copied()))).clone();
     // the moves apart, looked up by entry: an edit is checked again with them hidden only where one would answer
@@ -3653,10 +3677,26 @@ fn run_from(
                     let cut = hidden.len();
                     let mut late_moves = None;
                     if let Some(l) = late.filter(|l| !hidden.is_empty() || l.differs.load(std::sync::atomic::Ordering::Relaxed)) {
-                        hidden.extend(l.moves.unseen(i, id));
+                        if INDEXED_MOVES {
+                            // Only a non-creating write calls `in_audience`, always for its own entry. Genesis,
+                            // governance, shares, claims, marks, Keys, Wraps and checkpoints never read `narrow`.
+                            // Keep creating writes in this branch too, as the proved `writesEntry` predicate does.
+                            if let Action::Write { entry, .. } = &edit.action {
+                                hidden.extend(l.moves.unseen_for(*entry, i, id));
+                            }
+                        } else {
+                            hidden.extend(l.moves.unseen(i, id));
+                        }
                         late_moves = Some(l.moves);
                     }
                     let ok = hidden.is_empty() || out.state.hide(&hidden).check(edit, id).is_ok();
+                    debug_assert!(!INDEXED_MOVES || {
+                        let mut all = hidden[..cut].to_vec();
+                        if let Some(moves) = &late_moves {
+                            all.extend(moves.unseen(i, id));
+                        }
+                        ok == (all.is_empty() || out.state.hide(&all).check(edit, id).is_ok())
+                    }, "entry-indexed move facts change acceptance");
                     if ok {
                         out.state.apply(change, edit, id);
                     } else if let Some(moves) = late_moves.filter(|_| hidden.len() > cut)
@@ -4235,9 +4275,20 @@ pub fn trace(edits: &[Edit]) -> Vec<State> {
     run(&edits, &ids, &rem, true).states
 }
 
+/// A process-local revision of immutable log contents. Equality is allocation identity, not a shortened hash
+/// or a length: a restore or checkpoint withdrawal may replace a log with a different one of the same length.
+/// It is neither persisted nor sent to a peer, and cannot establish trust in data.
+#[derive(Clone, Debug, Default)]
+pub struct LogRevision(Arc<()>);
+
+impl PartialEq for LogRevision {
+    fn eq(&self, other: &Self) -> bool { Arc::ptr_eq(&self.0, &other.0) }
+}
+impl Eq for LogRevision {}
+
 /// A peer's edits. Each edit appended builds on the frontier of its own log and sorts after everything the peer holds;
 /// edits from other peers are added as they arrive.
-#[derive(Clone, Debug, Default)]
+#[derive(Debug, Default)]
 pub struct Log {
     edits: Vec<Edit>,
     /// Each edit's id, hashed once.
@@ -4245,6 +4296,16 @@ pub struct Log {
     /// The same ids, to tell at once whether it holds an edit: a search of `ids` for each edit received made a restore
     /// of n edits cost n²/2 compares.
     held: HashSet<EditId>,
+    revision: LogRevision,
+    /// Stable only while this particular log appends. A removal or a clone starts a new lineage.
+    lineage: LogRevision,
+}
+
+impl Clone for Log {
+    fn clone(&self) -> Self {
+        Self { edits: self.edits.clone(), ids: self.ids.clone(), held: self.held.clone(),
+            revision: self.revision.clone(), lineage: LogRevision::default() }
+    }
 }
 
 impl Log {
@@ -4261,6 +4322,12 @@ impl Log {
         &self.ids
     }
 
+    /// Changes exactly when the sequence of held edits changes, without scanning history.
+    pub fn revision(&self) -> LogRevision { self.revision.clone() }
+
+    /// An incremental index may append while this token stays equal; otherwise it must rebuild.
+    pub fn lineage(&self) -> LogRevision { self.lineage.clone() }
+
     pub fn view(&self) -> State {
         self.replay().state
     }
@@ -4274,7 +4341,7 @@ impl Log {
     pub fn from_edits(edits: Vec<Edit>) -> Self {
         let ids = ids(&edits);
         let held = ids.iter().copied().collect();
-        Self { edits, ids, held }
+        Self { edits, ids, held, ..Self::default() }
     }
 
     /// The edit `author` and `cosigners` would sign here, unchecked: what a peer that skips the rules would send. It
@@ -4412,11 +4479,13 @@ impl Log {
         self.edits.push(edit);
         self.ids.push(id);
         self.held.insert(id);
+        self.revision = LogRevision::default();
         Ok(id)
     }
 
     /// Add edits from a peer, each once, whether or not the view accepts them: acceptance is decided at replay.
     pub fn receive(&mut self, edits: impl IntoIterator<Item = Edit>) {
+        let before = self.ids.len();
         for edit in edits {
             let id = edit.id();
             if self.held.insert(id) {
@@ -4424,15 +4493,21 @@ impl Log {
                 self.ids.push(id);
             }
         }
+        if self.ids.len() != before { self.revision = LogRevision::default(); }
     }
 
     /// Let go of the edits `ids`: a device holding them on a checkpoint's word that no checkpoint vouches for any more.
     pub fn let_go(&mut self, ids: &HashSet<EditId>) {
+        let before = self.ids.len();
         let keep: Vec<bool> = self.ids.iter().map(|id| !ids.contains(id)).collect();
         let mut keeps = keep.iter();
         self.edits.retain(|_| *keeps.next().expect("one per edit"));
         self.ids.retain(|id| !ids.contains(id));
         self.held.retain(|id| !ids.contains(id));
+        if self.ids.len() != before {
+            self.revision = LogRevision::default();
+            self.lineage = LogRevision::default();
+        }
     }
 
     /// The log holding `bare`'s edits only where the checkpoints vouch for them (`trusted` in `Checkpoint.lean`): it

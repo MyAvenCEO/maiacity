@@ -116,11 +116,12 @@ pub(crate) fn lab_of(name: &str, secret: &[u8; 32], device: Option<SignerId>) ->
 }
 
 /// Node `node`, hosted beside the Mac's own device `d`: each knows where the other is, and they sync at once.
-pub(crate) fn beside(d: &Arc<Device>, node: &Node) {
-    node.know(d.node().addr());
-    d.node().know(node.addr());
+pub(crate) fn beside(d: &Arc<Device>, node: &Node) -> Result<()> {
+    node.try_know(d.node().addr())?;
+    d.node().try_know(node.addr())?;
     let (mac, endpoint) = (d.clone(), node.id());
     tokio::spawn(async move { mac.node().sync_with(endpoint).await.ok() });
+    Ok(())
 }
 
 /// The store on `volume`.
@@ -509,11 +510,11 @@ impl Service {
         let (p256, follow, query_depth) = (d.p256(), vec![], None);
         let device = me;
         let meta = Meta { name: name.clone(), relay, nonce, mask, credential, p256, device, follow, query_depth, touch: None };
-        meta.keep(&shelf).await?;
+        meta.keep(&node.writer_shelf().context("the drive keeps no writable shelf")?).await?;
         self.wrap_key(&d, &KEY, me, &secret).await?;
         let _one = self.drives.looking.lock().await;
         self.drives.seen.lock().expect("seen").insert(volume.clone(), Seen { shelf, meta: Some(meta) });
-        self.hosting(&d, volume, name, node);
+        self.hosting(&d, volume, name, node).await?;
         drop(_one);
         self.settle(&d).await;
         Ok(json!({ "device": hex(&me.0) }))
@@ -592,7 +593,7 @@ impl Service {
     /// The drives hosted now, each held by this Mac's device in each suite (`Lab::device_keys`), so they move with it
     /// in its key move (K3b, `Lab::moves`), once it synced with each, so it holds what each made: their devices, keys
     /// and shelves. A drive whose key this Mac's shelf doesn't open is left as it is.
-    pub(crate) async fn hold_drives(&self, d: &Arc<Device>) -> Vec<Held> {
+    pub(crate) async fn hold_drives(&self, d: &Arc<Device>) -> Result<Vec<Held>> {
         let hosted: Vec<(SignerId, EndpointId, Option<Shelf>)> = {
             let (hosted, seen) = (self.drives.hosted.lock().expect("hosted"), self.drives.seen.lock().expect("seen"));
             let shelf = |h: &Hosted| seen.get(&h.volume).map(|s| s.shelf.clone());
@@ -603,10 +604,10 @@ impl Service {
             d.node().sync_with(endpoint).await.ok();
             let (Some(secret), Some(shelf)) = (self.unwrap_key(d, &KEY, device).await, shelf) else { continue };
             let key = secret.clone();
-            d.node().act(move |lab, _| lab.device_keys(device, *key)).await;
+            d.node().try_act(move |lab, _| lab.device_keys(device, *key)).await?;
             held.push(Held { device, secret, shelf });
         }
-        held
+        Ok(held)
     }
 
     /// The drives of `held` that moved in this Mac's key move, each to its next key among `moves`
@@ -623,8 +624,15 @@ impl Service {
         for Held { device, secret, shelf } in held {
             let Some(&(_, next)) = moves.iter().find(|&&(old, _)| old == device) else { continue };
             self.wrap_key(d, &KEY, next, &secret).await?;
-            let meta = Meta::load(&shelf).await?.context("the drive's store holds nothing that opens it")?;
-            Meta { device: next, ..meta }.keep(&shelf).await?;
+            // These drive nodes are already stopped. Claim before reading metadata,
+            // so another process cannot update it between the read and this write.
+            let owner = shelf.writer()?;
+            let writable = owner.shelf();
+            let meta = Meta::load(&writable).await?.context("the drive's store holds nothing that opens it")?;
+            let kept = Meta { device: next, ..meta }.keep(&writable).await;
+            let ended = owner.shutdown().await;
+            kept?;
+            ended?;
         }
         Ok(())
     }
@@ -640,17 +648,21 @@ impl Service {
         let relay = meta.relay.parse::<RelayUrl>().ok();
         let opts = Options { bind: None, direct: self.config.direct, relay, shelf: Some(shelf), ..Options::local() };
         let node = Arc::new(Node::spawn(lab, me, opts).await?);
-        self.hosting(d, volume, meta.name.clone(), node);
+        self.hosting(d, volume, meta.name.clone(), node).await?;
         Ok(())
     }
 
     /// Drive node `node`, on `volume`, named `name`, hosted from now on: it and the Mac's own device know where each
     /// other is, and sync at once.
-    fn hosting(&self, d: &Arc<Device>, volume: PathBuf, name: String, node: Arc<Node>) {
-        beside(d, &node);
+    async fn hosting(&self, d: &Arc<Device>, volume: PathBuf, name: String, node: Arc<Node>) -> Result<()> {
+        if let Err(error) = beside(d, &node) {
+            node.shutdown().await.ok();
+            return Err(error);
+        }
         let carded = Arc::new(AtomicBool::new(false));
         let hosted = Hosted { node: node.clone(), volume, name, carded };
         self.drives.hosted.lock().expect("hosted").insert(node.device(), hosted);
+        Ok(())
     }
 
     /// Keeps device `device`'s key `secret`, a drive's (`Kept`), on this Mac's shelf, wrapped under a key
@@ -662,7 +674,8 @@ impl Service {
         let key = key.context("this Mac's device is locked")?;
         let mut rng = SeededRng::new("a hosted device's key, wrapped", &random()?);
         let wrapped = keys::wrap(&Secret::from_bytes(*secret), &key, &kept.info(device), &mut rng);
-        match self.shelf().put(&kept.name(device), Bytes::from(wrapped)).await {
+        let shelf = d.node().writer_shelf().context("this Mac keeps no writable shelf")?;
+        match shelf.put(&kept.name(device), Bytes::from(wrapped)).await {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == ErrorKind::AlreadyExists => Ok(()),
             Err(e) => Err(anyhow::Error::from(e).context("keeping the device's key on this Mac")),

@@ -14,7 +14,7 @@
 //! replaced. Every file it writes is readable by its owner alone.
 
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, ErrorKind, Write as _};
+use std::io::{self, ErrorKind, Read as _, Write as _};
 use std::os::unix::fs::FileExt as _;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -32,9 +32,6 @@ const BLOBS: &str = "blobs";
 const OUTBOARDS: &str = "outboards";
 /// The blobs being written and the objects being put.
 const NEW: &str = "new";
-/// What the names of the blobs a node writes start with (`shelf::fresh`): what `Call::List` drops of them is what it
-/// never finished.
-const WRITING: &str = "new-";
 
 /// The generations of the shelves in folder `root`, the oldest first.
 pub fn generations(root: &Path) -> Result<Vec<u64>> {
@@ -60,24 +57,42 @@ pub fn generations(root: &Path) -> Result<Vec<u64>> {
 /// new one of that generation beside whatever the folder holds. It removes nothing it finds in the folder. Its calls
 /// are answered on tokio's threads that may block.
 pub fn open(root: &Path) -> Result<Shelf> {
-    let n = match generations(root)?.last() {
-        Some(&n) if n >= FLOOR => n,
-        _ => make(root, FLOOR)?,
+    let complete = || -> Result<Option<PathBuf>> {
+        let Some(n) = generations(root)?.last().copied().filter(|n| *n >= FLOOR) else { return Ok(None) };
+        let dir = root.join(format!("g{n}"));
+        Ok([BLOBS, OUTBOARDS, NEW].iter().all(|sub| dir.join(sub).is_dir()).then_some(dir))
     };
-    let dir = root.join(format!("g{n}"));
-    for sub in [BLOBS, OUTBOARDS, NEW] {
-        fs::create_dir_all(dir.join(sub)).with_context(|| format!("the shelf in {}", dir.display()))?;
-    }
-    sync_dir(&dir)?;
-    let on = Arc::new(Folder { dir });
-    let (shelf, mut calls) = Shelf::new();
-    tokio::spawn(async move {
-        while let Some(call) = calls.recv().await {
-            let on = on.clone();
-            tokio::task::spawn_blocking(move || on.answer(call));
+    let dir = if let Some(dir) = complete()? {
+        dir
+    } else {
+        // A complete read-open changes no files. Bootstrap or repair is a writer,
+        // and must rescan after acquiring ownership before creating a generation.
+        fs::create_dir_all(root)?;
+        let _bootstrap = crate::writer::Source::new(root).claim()?;
+        if let Some(dir) = complete()? {
+            dir
+        } else {
+            let n = match generations(root)?.last() {
+                Some(&n) if n >= FLOOR => n,
+                _ => make(root, FLOOR)?,
+            };
+            let dir = root.join(format!("g{n}"));
+            for sub in [BLOBS, OUTBOARDS, NEW] {
+                fs::create_dir_all(dir.join(sub)).with_context(|| format!("the shelf in {}", dir.display()))?;
+            }
+            sync_dir(&dir)?;
+            dir
         }
-    });
-    Ok(shelf)
+    };
+    let selected = generation(dir.file_name().and_then(|n| n.to_str()).expect("generation name")).expect("generation");
+    let on = Arc::new(Folder { dir });
+    let bounded = on.clone();
+    let queue = crate::disk_queue::Queue::start(move |call| on.answer(call));
+    let source = crate::writer::Source::for_generation(root, selected);
+    Ok(Shelf::native(queue, source).with_bounded_get(move |name, limit| {
+        let on = bounded.clone();
+        async move { tokio::task::spawn_blocking(move || on.get_bounded(&name, limit)).await.map_err(io::Error::other)? }
+    }))
 }
 
 /// Puts the shelf in folder `root` in use aside: a new generation made beside it, empty, which the next `open` uses.
@@ -105,6 +120,8 @@ pub fn usage(root: &Path) -> io::Result<(u64, u64)> {
 }
 
 pub fn aside(root: &Path) -> Result<u64> {
+    fs::create_dir_all(root)?;
+    let _writer = crate::writer::Source::new(root).claim()?;
     let n = generations(root)?.last().map_or(FLOOR, |n| (n + 1).max(FLOOR));
     make(root, n)
 }
@@ -225,17 +242,39 @@ impl Folder {
         }
     }
 
-    /// Every blob it holds whole, with its size, once it dropped the blobs never finished.
-    fn list(&self) -> io::Result<Vec<(Hash, u64)>> {
-        for entry in fs::read_dir(self.dir.join(NEW))? {
-            let entry = entry?;
-            if entry.file_name().to_str().is_some_and(|n| n.starts_with(WRITING)) {
-                removed(fs::remove_file(entry.path()))?;
-            }
+    fn get_bounded(&self, name: &str, limit: usize) -> io::Result<Option<Bytes>> {
+        let path = self.object(name)?;
+        let file = match File::open(path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        let ceiling = limit
+            .checked_add(1)
+            .and_then(|n| u64::try_from(n).ok())
+            .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "bounded object limit overflows"))?;
+        // Metadata rejects a known huge file cheaply. The streaming limit also
+        // covers growth after this check; metadata alone is never the bound.
+        if file.metadata()?.len() > limit as u64 {
+            return Err(io::Error::new(ErrorKind::InvalidData, "named object exceeds its read limit"));
         }
+        let mut bytes = Vec::new();
+        file.take(ceiling).read_to_end(&mut bytes)?;
+        if bytes.len() > limit {
+            return Err(io::Error::new(ErrorKind::InvalidData, "named object exceeds its read limit"));
+        }
+        Ok(Some(bytes.into()))
+    }
+
+    /// Every blob it holds whole, with its size. Listing is read-only: another
+    /// handle may be writing a staged blob concurrently. Orphan cleanup requires
+    /// exclusive writer ownership at startup, never an ordinary list operation.
+    fn list(&self) -> io::Result<Vec<(Hash, u64)>> {
         let mut held = Vec::new();
         for entry in fs::read_dir(self.dir.join(OUTBOARDS))? {
-            let Some(hash) = entry?.file_name().to_str().and_then(hash_of) else { continue };
+            let Some(hash) = entry?.file_name().to_str().and_then(hash_of) else {
+                continue;
+            };
             match fs::metadata(self.dir.join(BLOBS).join(hash.to_hex())) {
                 Ok(meta) => held.push((hash, meta.len())),
                 Err(e) if e.kind() == ErrorKind::NotFound => {}
@@ -355,7 +394,9 @@ fn walk(dir: &Path, rel: &str, names: &mut Vec<String>) -> io::Result<()> {
     };
     for entry in entries {
         let entry = entry?;
-        let Ok(name) = entry.file_name().into_string() else { continue };
+        let Ok(name) = entry.file_name().into_string() else {
+            continue;
+        };
         let name = if rel.is_empty() { name } else { format!("{rel}/{name}") };
         if rel.is_empty() && RESERVED.contains(&name.as_str()) {
             continue;
@@ -367,4 +408,88 @@ fn walk(dir: &Path, rel: &str, names: &mut Vec<String>) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod reader_tests {
+    use super::*;
+    #[tokio::test]
+    async fn real_writer_closes_retained_shelf_handles_and_refuses_stale_generations() {
+        let root = std::env::temp_dir().join(format!("avendb-writer-runtime-{}", std::process::id()));
+        let reader = open(&root).unwrap();
+        assert_eq!(reader.put("not-owned", Bytes::new()).await.unwrap_err().kind(), ErrorKind::PermissionDenied);
+        let owner = reader.writer().unwrap();
+        let writable = owner.shelf();
+        writable.put("history", Bytes::from_static(b"preserve")).await.unwrap();
+        assert!(reader.writer().is_err());
+        owner.shutdown().await.unwrap();
+        assert_eq!(writable.put("too-late", Bytes::new()).await.unwrap_err().kind(), ErrorKind::BrokenPipe);
+        assert_eq!(writable.get("history").await.unwrap().unwrap(), Bytes::from_static(b"preserve"));
+        let replacement = reader.writer().unwrap();
+        replacement.shutdown().await.unwrap();
+        let next = aside(&root).unwrap();
+        assert!(next > FLOOR);
+        assert_eq!(reader.writer().err().unwrap().kind(), ErrorKind::InvalidInput);
+        assert_eq!(reader.get("history").await.unwrap().unwrap(), Bytes::from_static(b"preserve"));
+        let current = open(&root).unwrap().writer().unwrap();
+        current.shutdown().await.unwrap();
+        drop((owner, replacement, current, writable, reader));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn bounded_named_reads_reject_sparse_oversized_files_and_keep_exact_boundaries() {
+        let root = std::env::temp_dir().join(format!("avendb-bounded-read-{}", std::process::id()));
+        let owner = open(&root).unwrap().writer().unwrap();
+        let shelf = owner.shelf();
+        shelf.put("test/empty", Bytes::new()).await.unwrap();
+        shelf.put("test/exact", Bytes::from_static(b"1234")).await.unwrap();
+        assert_eq!(shelf.get_bounded("test/empty", 0).await.unwrap(), Some(Bytes::new()));
+        assert_eq!(shelf.get_bounded("test/exact", 4).await.unwrap(), Some(Bytes::from_static(b"1234")));
+        assert_eq!(shelf.get_bounded("test/exact", 3).await.unwrap_err().kind(), ErrorKind::InvalidData);
+        assert!(shelf.get_bounded("test/missing", 4).await.unwrap().is_none());
+        let huge = root.join(format!("g{FLOOR}/test/huge"));
+        File::create(&huge).unwrap().set_len(1 << 32).unwrap();
+        assert_eq!(shelf.get_bounded("test/huge", 4 << 20).await.unwrap_err().kind(), ErrorKind::InvalidData);
+        assert_eq!(shelf.get_bounded("../escape", 4).await.unwrap_err().kind(), ErrorKind::InvalidInput);
+        let (unsupported, _rx) = Shelf::new();
+        assert_eq!(unsupported.get_bounded("test/exact", 4).await.unwrap_err().kind(), ErrorKind::Unsupported);
+        drop(shelf);
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn existing_reader_open_is_inert_but_bootstrap_requires_writer_ownership() {
+        let root = std::env::temp_dir().join(format!("avendb-reader-bootstrap-{}", std::process::id()));
+        let shelf = open(&root).unwrap();
+        drop(shelf);
+        let source = crate::writer::Source::new(&root);
+        let owner = source.claim().unwrap();
+        let generation = root.join(format!("g{FLOOR}"));
+        let before = fs::metadata(&generation).unwrap().modified().unwrap();
+        assert!(open(&root).is_ok(), "a complete read-open needs no writer lease");
+        assert_eq!(before, fs::metadata(&generation).unwrap().modified().unwrap());
+        fs::remove_dir(generation.join(NEW)).unwrap();
+        assert!(open(&root).is_err(), "read-open cannot repair a held writer's generation");
+        assert!(!generation.join(NEW).exists());
+        drop(owner);
+        assert!(open(&root).is_ok());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[tokio::test]
+    async fn another_reader_listing_never_deletes_the_writers_staged_blob() {
+        let root = std::env::temp_dir().join(format!("avendb-reader-staging-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let _ownership = open(&root).unwrap().writer().unwrap();
+        let writer = _ownership.shelf();
+        writer.write("new-reader-race", 0, Bytes::from_static(b"first part")).await.unwrap();
+        let reader = open(&root).unwrap();
+        assert!(reader.list().await.unwrap().is_empty());
+        writer.write("new-reader-race", 10, Bytes::from_static(b" and last")).await.unwrap();
+        assert_eq!(&reader.read("new-reader-race", 0, 64).await.unwrap()[..], b"first part and last");
+        assert!(root.join(format!("g{FLOOR}/new/new-reader-race")).exists());
+        drop((reader, writer, _ownership));
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
