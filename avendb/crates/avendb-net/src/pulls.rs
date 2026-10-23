@@ -641,6 +641,41 @@ mod tests {
         phone.shutdown().await.unwrap();
     }
 
+    /// A real single-page exchange whose first admission is held deliberately. This
+    /// catches placing the service clock after the first reply (the old bug).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn first_page_service_time_includes_initial_admission_wait() {
+        use crate::{Node, Options, Scope};
+        use avendb::cast::{handbook_ready, world};
+        let mut w = world();
+        handbook_ready(&mut w);
+        let (sender, receiver) = (w.mac_a, w.phone_a);
+        let options = || Options { lazy: true, ..Options::local() };
+        let mac = Node::spawn(w.lab.split(sender, &[], [135; 32]), sender, options()).await.unwrap();
+        let phone = Node::spawn(w.lab.split(receiver, &[], [136; 32]), receiver, options()).await.unwrap();
+        phone.know(mac.addr());
+        mac.know(phone.addr());
+        phone.shared.connection(mac.id()).await.unwrap();
+        let budget = phone.shared.pulls.pages.clone();
+        let held = budget.clone().acquire_many_owned(budget.available_permits() as u32).await.unwrap();
+        let pull = phone.shared.pull(mac.id(), Scope::Logs(BTreeSet::new()), false, None);
+        let release = async {
+            while phone.shared.traffic.of(&sender).is_none_or(|p| p.askings == 0) {
+                time::sleep(Duration::from_millis(1)).await;
+            }
+            time::sleep(Duration::from_millis(250)).await;
+            drop(held);
+        };
+        let (result, ()) = time::timeout(Duration::from_secs(15), future::zip(pull, release)).await.unwrap();
+        assert_eq!(result.unwrap(), 0);
+        let report = phone.shared.traffic.of(&sender).unwrap();
+        assert_eq!(report.pages, 1, "one empty authorized reply isolates first-page timing");
+        assert!(report.wait_ms >= 200, "the first request really waited at admission: {report:?}");
+        assert!(report.ms >= report.wait_ms, "service time must include the entire first request: {report:?}");
+        mac.shutdown().await.unwrap();
+        phone.shutdown().await.unwrap();
+    }
+
     #[tokio::test]
     async fn a_hedged_request_keeps_the_callers_acting_identity() {
         let signer = avendb::id::SignerId::from_u64(987);

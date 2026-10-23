@@ -2498,8 +2498,10 @@ impl Shared {
         let (mut after, mut new, mut pages) = (None, sparse, 0);
         let mut keys = BTreeSet::<BlobId>::new();
         let (mut vaults, mut entries) = (BTreeMap::<String, u64>::new(), BTreeMap::<String, u64>::new());
-        let mut coming = ask(None).await;
+        // Include initial admission, request encoding and reply wait in pipeline service time.
+        // Starting after this await makes a slow one-page request appear arbitrarily fast.
         let mut since = Instant::now();
+        let mut coming = ask(None).await;
         loop {
             let (Reply { mut edits, blobs, more }, bytes, wait, permit) = coming?;
             let (way, sent) = (way_of(&peer.conn), edits.len() as u64);
@@ -2541,6 +2543,7 @@ impl Shared {
             };
             let (taken, ahead) = future::zip(take, ahead).await;
             let (got, whose, took) = taken?;
+            let finished = Instant::now();
             self.traffic.page(traffic::Page {
                 device,
                 at: jobs::now_ms(),
@@ -2549,11 +2552,11 @@ impl Shared {
                 new: got as u64,
                 wait_ms: wait.as_millis() as u64,
                 take_ms: took.as_millis() as u64,
-                ms: since.elapsed().as_millis() as u64,
+                ms: finished.duration_since(since).as_millis() as u64,
                 way,
             });
             self.jobs.stir();
-            since = Instant::now();
+            since = finished;
             new += got;
             pages += 1;
             for (v, e) in whose {

@@ -385,10 +385,11 @@
 		{@const relayed = network.peers.filter((p) => p.way === 'relay').length}
 		<article class="card">
 			<h3>At a glance</h3>
+			<p>Legacy reply counters exclude sparse transfers, sealing keys and files. Service intervals can overlap across requests: these rates are not device bandwidth. Request elapsed includes admission, encoding and decoding. Accepted edits do not establish disk durability or visible completion.</p>
 			<div class="tiles">
 				<div class="tile"><b>{network.peers.length}</b><span>{network.peers.length === 1 ? 'peer' : 'peers'} connected: {direct} direct, {relayed} through a relay</span></div>
-				<div class="tile"><b>{bytes(total.bytes)}</b><span>synced in {count(total.pages, 'page')}</span></div>
-				<div class="tile"><b>{total.ms ? rate((total.bytes * 1000) / total.ms) : '–'}</b><span>while pulling ({time(total.wait)} of it waiting for pages)</span></div>
+				<div class="tile"><b>{bytes(total.bytes)}</b><span>legacy reply payload in {count(total.pages, 'page')}</span></div>
+				<div class="tile"><b>{total.ms ? rate((total.bytes * 1000) / total.ms) : '–'}</b><span>per pipeline service second</span></div>
 				<div class="tile"
 					><b>{total.bytes ? `${Math.round((100 * total.direct) / total.bytes)}% · ${Math.round((100 * total.relay) / total.bytes)}%` : '–'}</b><span
 						>direct · through a relay</span
@@ -413,7 +414,7 @@
 				<p class="empty">No peer is connected now.</p>
 			{:else}
 				<div class="table-wrap"><table>
-					<thead><tr><th>Peer</th><th>Way</th><th>Round trip</th><th>Received</th><th>Pages</th><th>Speed</th><th>Lacks</th></tr></thead>
+					<thead><tr><th>Peer</th><th>Way</th><th>Round trip</th><th>Received</th><th>Pages</th><th>Payload/service second</th><th>Lacks</th></tr></thead>
 					<tbody>
 						{#each network.peers as p (p.endpoint)}
 							{@const on = p.paths.find((x) => x.selected)}
@@ -449,17 +450,17 @@
 				<h3>Synced from {deviceName(x.device)}{x.live ? '' : ' (not connected now)'}</h3>
 				<dl>
 					<dt>Pages</dt>
-					<dd>{t.pages.toLocaleString()}{t.failed ? `, ${t.failed} that never came` : ''}</dd>
-					<dt>Edits</dt>
-					<dd>{t.edits.toLocaleString()}, {t.new.toLocaleString()} new</dd>
-					<dt>Bytes</dt>
+					<dd>{t.pages.toLocaleString()}{t.failed ? `, ${t.failed} failed requests` : ''}</dd>
+					<dt>Offered edits</dt>
+					<dd>{t.edits.toLocaleString()}, {t.new.toLocaleString()} newly accepted</dd>
+					<dt>Legacy reply payload</dt>
 					<dd>{bytes(t.bytes)}: {bytes(t.direct.bytes)} direct, {bytes(t.relay.bytes)} through a relay</dd>
-					<dt>Waited for pages</dt>
+					<dt>Page request elapsed</dt>
 					<dd>{time(t.wait_ms)}{t.pages ? `, ${time(t.wait_ms / t.pages)} each` : ''}</dd>
-					<dt>Took them in</dt>
+					<dt>Validation and upkeep elapsed</dt>
 					<dd>{time(t.take_ms)}{t.pages ? `, ${time(t.take_ms / t.pages)} each` : ''}</dd>
 					{#if t.ms != null}
-						<dt>In all</dt>
+						<dt>Pipeline service time</dt>
 						<dd>{time(t.ms)}, the next page asked for while one is taken in</dd>
 					{/if}
 					{#if t.askings}
@@ -470,20 +471,20 @@
 						<dt>Sealing keys after</dt>
 						<dd>{t.keys.got} of {t.keys.asked}, {bytes(t.keys.bytes)} in {time(t.keys.ms)}</dd>
 					{/if}
-					<dt>Speed</dt>
-					<dd>{rate(t.bytes_per_s)}, {t.edits_per_s.toLocaleString()} edits/s</dd>
+					<dt>Payload per service second</dt>
+					<dd>{rate(t.bytes_per_s)}, {t.edits_per_s.toLocaleString()} offered edits/s</dd>
 					<dt>From – to</dt>
 					<dd>{t.first ? `${clock(t.first)} – ${clock(t.last)}` : '–'}</dd>
 				</dl>
 			</article>
 		{/each}
 		<article class="card wide">
-			<h3>The newest pages</h3>
+			<h3>The newest legacy reply pages</h3>
 			{#if !network.recent.length}
-				<p class="empty">No page of edits has come since this device started.</p>
+				<p class="empty">No legacy reply page has been recorded since this device started.</p>
 			{:else}
 				<div class="table-wrap"><table>
-					<thead><tr><th>When</th><th>From</th><th>Way</th><th>Size</th><th>Edits</th><th>Waited</th><th>Took in</th></tr></thead>
+					<thead><tr><th>When</th><th>From</th><th>Way</th><th>Size</th><th>Offered edits</th><th>Request elapsed</th><th>Validation/upkeep</th></tr></thead>
 					<tbody>
 						{#each network.recent as r, i (i)}
 							<tr>
