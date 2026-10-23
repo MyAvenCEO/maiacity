@@ -1,0 +1,124 @@
+/** Real local-write completion and reactive DOM, synthetic worker/passkey boundary. See fixtures/local-write/CONTRACT.md.
+ * bun scripts/test-avendb-local-write.mjs --browser chromium|webkit
+ * No account, live store, network peer or secret is used. */
+import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { createServer } from 'vite';
+const { chromium, webkit } = await import(process.env.AVENDB_TEST_PLAYWRIGHT || 'playwright');
+const at = process.argv.indexOf('--browser');
+const engine = at < 0 ? 'chromium' : process.argv[at + 1];
+assert(['chromium', 'webkit'].includes(engine));
+const remote = `
+const entry = 'a'.repeat(64), mine = 'b'.repeat(64);
+const messages = [], waiters = [];
+let status='open';
+let revision = 0;
+const counts = window.fixtureCounts = { brings: 0, writes: 0, worlds: 0 };
+const world = { mine, vaults:[{id:mine,name:'Fixture',kind:'human',acting:{as:mine},devices:[]}],
+ entries:[{entry,vault:mine,type:'room',kind:'room',readers:[mine],record:{kind:'room',look:'self',name:'Fixture'}}] };
+const wake = () => { revision++; for(const resolve of waiters.splice(0)) resolve(true); };
+window.fixtureRemote = text => { messages.push({id:messages.length+1,text,at:Date.now(),by:{vault:mine},actor:mine});wake(); };
+window.fixtureHoldWorld = false;
+window.fixtureReleaseWorld = () => { window.fixtureHoldWorld = false; for(const resolve of (window.worldWaiters ?? []).splice(0)) resolve(); };
+const meta={name:'Synthetic fixture',credential:'fixture',nonce:'01'.repeat(32)};
+export const load=async()=>{};
+export const openStore=async()=>({hold:async()=>{},release:async()=>{}});
+export const storeMeta=async()=>({...meta});
+export const prfSalt=async()=>new Uint8Array(32);
+export const deviceSalt=async()=>new Uint8Array(32);
+export class Device {
+ static async open(){return new Device();}
+ async size(){return [revision,0];}
+ async changed(edits){return edits!==revision?true:new Promise(r=>waiters.push(r));}
+ async moving(){return null;}
+ async run(op){
+  if(op.op==='world'){counts.worlds++;const snapshot={...structuredClone(world),marker:window.fixtureWorldVersion??0};if(window.fixtureHoldWorld)await new Promise(r=>(window.worldWaiters??=[]).push(r));return {ok:snapshot};}
+  if(op.op==='room')return {ok:{entry,room:{kind:'room',look:'self',name:'Fixture',messages:structuredClone(messages)},count:messages.length}};
+  if(op.op==='bring'){counts.brings++;return new Promise(()=>{});}
+  if(op.op==='get')return {ok:{status}};
+  if(op.op==='set'){status=op.value;wake();return {ok:true};}
+  if(op.op==='insert' && window.fixtureRefuse)return {refused:'NoCap',why:'NoCap'};
+  if(op.op==='insert'){counts.writes++;messages.push({...op.value,by:{vault:mine},actor:mine});wake();return {ok:{entry}};}
+  return {ok:null};
+ }
+ async close(){}
+}`;
+const passkey = `export const ceremonies=()=>({unlock:async()=>{return {}},sign:async()=>{throw Error('unexpected signing')}});`;
+let server, browser;
+try {
+ server = await createServer({ optimizeDeps: { noDiscovery:true, entries:[] },
+   server: { host:'127.0.0.1', port:0, strictPort:false, fs:{allow:['scripts/fixtures/local-write']} },
+   plugins:[{name:'local-write-fixture', configureServer(s){s.middlewares.use((req,res,next)=>{
+     if(req.url?.split('?')[0]!=='/__local-write')return next();
+     res.setHeader('Content-Type','text/html');
+     res.end('<!doctype html><html><body><script type="module" src="/scripts/fixtures/local-write/main.js"></script></body></html>');
+   });}}] });
+ await server.listen();
+ const address=server.httpServer.address();
+ assert(address && typeof address==='object');
+ const origin=`http://127.0.0.1:${address.port}`;
+ const chrome='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+ browser=await (engine==='webkit'?webkit.launch({headless:true}):chromium.launch({headless:true,
+   executablePath:process.env.AVENDB_CHROMIUM || (existsSync(chrome)?chrome:undefined)}));
+ const context=await browser.newContext();
+ await context.route('**/*',async route=>{
+   const url=new URL(route.request().url());
+   if(url.origin!==origin)return route.abort();
+   if(url.pathname==='/src/lib/avendb/remote.js')return route.fulfill({contentType:'text/javascript',body:remote});
+   if(url.pathname==='/src/lib/avendb/device/passkey.js')return route.fulfill({contentType:'text/javascript',body:passkey});
+   return route.continue();
+ });
+ const page=await context.newPage();
+ page.setDefaultTimeout(20000);
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.goto(origin+'/__local-write?room='+ 'a'.repeat(64));
+ await page.getByTestId('phase').filter({hasText:'closed'}).waitFor();
+ await page.getByRole('button',{name:'Unlock fixture'}).click();
+ await page.getByTestId('phase').filter({hasText:'open'}).waitFor();
+ await page.waitForSelector('textarea');
+ await page.evaluate(()=>{window.fixtureBehind();window.fixtureHoldWorld=true;});
+ await page.locator('textarea').first().fill('local message while peers unavailable');
+ const started=Date.now();
+ await page.locator('textarea').first().press('Enter');
+ await page.getByText('local message while peers unavailable',{exact:true}).waitFor({timeout:1500});
+ assert.equal(await page.evaluate(()=>window.fixtureCounts.writes),1);
+ // Background freshness reads may also bring; only foreground completion is asserted.
+ assert.equal(await page.evaluate(()=>window.fixtureHoldWorld),true);
+ const localMs=Date.now()-started;
+ await page.waitForFunction(()=>document.querySelector('textarea').value==='');
+ const nonchat=await page.evaluate(async()=>{
+  const result=await window.fixtureSession.run('Tick todo',{op:'set',entry:'c'.repeat(64),path:['status'],value:'done'});
+  return {result,held:window.fixtureHoldWorld};
+ });
+ assert.deepEqual(nonchat,{result:true,held:true});
+ await page.getByTestId('todo-status').filter({hasText:'done'}).waitFor({timeout:1500});
+ await page.evaluate(()=>window.fixtureRefuse=true);
+ await page.locator('textarea').first().fill('refused message stays draft');
+ await page.locator('textarea').first().press('Enter');
+ await page.waitForFunction(()=>window.fixtureSession.error.includes('Refused'));
+ assert.equal(await page.locator('.msg').filter({hasText:'refused message stays draft'}).count(),0);
+ assert.equal(await page.locator('textarea').first().inputValue(),'refused message stays draft');
+ assert.equal(await page.evaluate(()=>window.fixtureCounts.writes),1);
+
+ await page.evaluate(()=>window.fixtureRemote('remote accepted while world held'));
+ await page.getByText('remote accepted while world held',{exact:true}).waitFor({timeout:1500});
+ assert.equal(await page.evaluate(()=>window.fixtureHoldWorld),true);
+ await page.evaluate(()=>window.fixtureReleaseWorld());
+ await page.evaluate(async()=>{
+  await window.fixtureSession.refresh();
+  window.fixtureWorldVersion=1;
+  window.fixtureHoldWorld=true;
+  window.oldWorldRead=window.fixtureSession.refresh();
+ });
+ await page.waitForFunction(()=>(window.worldWaiters??[]).length>0);
+ await page.evaluate(async()=>{
+  window.fixtureWorldVersion=2;
+  window.fixtureHoldWorld=false;
+  await window.fixtureSession.refresh();
+ });
+ assert.equal(await page.evaluate(()=>window.fixtureSession.world.marker),2);
+ await page.evaluate(async()=>{window.fixtureReleaseWorld();await window.oldWorldRead;});
+ assert.equal(await page.evaluate(()=>window.fixtureSession.world.marker),2);
+ assert.deepEqual(errors,[]);
+ console.log('PASS '+engine+': actual Session renders accepted chat+non-chat local mutations, preserves refused draft, and remote messages before blocked world refresh; local browser harness '+localMs+'ms (synthetic device, not physical latency)');
+} finally { await browser?.close();await server?.close(); }

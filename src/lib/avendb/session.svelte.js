@@ -47,6 +47,9 @@ import { allowed, answer, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
 import { createVaultContext } from './context.js';
 import { createMoveChecks } from './move-checks.js';
+import { beforeLocalWrite } from './local-write.js';
+import { createReactiveRead } from './reactive-read.js';
+import { latest } from './latest.js';
 import { createEntryWindow, createReadWindow, replyEntries } from './query-window.js';
 import { bringEntries, learn, useDevice } from '../../../game/code/sources/device.js';
 import { sync } from './sync.svelte.js';
@@ -90,6 +93,8 @@ let device = $state.raw(null);
  *  plain object, as it comes */
 let meta = $state.raw(null);
 /** what the device shows of its world (avendb-browser's `World::to_json`): kept whole, as it comes */
+// Accepted local data changes, before the heavier world summary is rebuilt.
+let revision = $state(0);
 let world = $state.raw(/** @type {import('./vaults.js').WorldView | null} */ (null));
 /** the vault the person looks at, picked in avenDB's nav pill (./Shell.svelte): their own until they pick another */
 let vault = $state('');
@@ -564,6 +569,16 @@ function watch() {
 	const token = (watching = {});
 	watched = d;
 	const on = () => watching === token && device === d;
+	// A second cheap change subscription invalidates targeted views independently of
+	// full-world rendering/backoff. It never downloads or materializes the world.
+	(async () => {
+		let held = await d.size();
+		if (on()) revision++; // cover changes concurrent with this initial snapshot too
+		while (on() && (await d.changed(...held)) && on()) {
+			held = await d.size();
+			if (on()) revision++;
+		}
+	})().catch((/** @type {Error} */ e) => on() && (error = `Watching local changes failed: ${e.message}`));
 	(async () => {
 		let [edits, keys] = await d.size();
 		let took = await timed(refresh);
@@ -585,16 +600,36 @@ async function timed(work) {
 	return performance.now() - t;
 }
 
-/** Reads the device's world again, as it is now. */
-async function refresh() {
-	const d = device;
-	if (!d) return;
+/** World reads share one publication order across explicit and background callers. */
+let worldAsked = 0, worldShown = 0;
+async function readWorld(/** @type {any} */ d) {
+	const n = ++worldAsked;
 	/** @type {import('./vaults.js').WorldView | null} */
-	const w = answer(await send({ op: 'world' })) ?? null;
-	if (d === device) {
+	const w = answer(await near(d, { op: 'world' })) ?? null;
+	if (d === device && n > worldShown) {
+		worldShown = n;
 		world = w;
 		context.reconcile();
 	}
+}
+
+/** Explicit barrier for callers whose next operation needs the new world. */
+async function refresh() {
+	const d = device;
+	if (d) await readWorld(d);
+}
+
+/** One background summary reader per device; accepted writes never wait for it. */
+const worldReaders = new WeakMap();
+function queueRefresh(/** @type {any} */ d) {
+	if (!d) return;
+	let go = worldReaders.get(d);
+	if (!go) {
+		go = latest(async () => { if (device === d) await readWorld(d); }, () => {},
+			(/** @type {Error} */ e) => { if (device === d) error = `Showing local changes failed: ${e.message}`; });
+		worldReaders.set(d, go);
+	}
+	void go(true);
 }
 
 /**
@@ -677,30 +712,19 @@ function freshen(d, named) {
 	void bringEntries(ids, { run: (/** @type {any} */ o) => d.run(o) });
 }
 
-/** How long a change waits for its entry to come up to date before it runs anyway, in ms (`current`). */
-const CURRENT = 8000;
-
-/**
- * Before a change to an entry on a device still behind its peers, that entry alone comes up to date first, for a few
- * seconds at most (`CURRENT`): a change made on the heads the device took early, which its peers moved since, is
- * refused as moved (an AIP's review names the heads its card showed) or lands on an old version. Where something new
- * came, the change doesn't run: the person sees it again as it is now and answers that.
- * @param {any} d @param {any} op
- */
+/** A head-conditional review retains its freshness guard. Ordinary edits never wait for peers.
+ * @param {any} d @param {any} op */
 async function current(d, op) {
-	const entry = typeof op?.entry === 'string' && ENTRY.test(op.entry) ? op.entry : null;
-	if (!entry || !behind()) return;
 	const what = doing;
-	if (what) doing = `${what}: bringing it up to date first, as this device still syncs`;
-	const brought = await Promise.race([
-		bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }),
-		new Promise((done) => setTimeout(() => done(null), CURRENT))
-	]);
-	if (what && doing.startsWith(what)) doing = what;
-	if (brought?.ok?.new && op.heads) {
-		await refresh();
-		throw new Error('It changed on your other devices while this one was still syncing. Here it is as it is now: look at it again, then answer.');
-	}
+	await beforeLocalWrite(op, {
+		behind: behind(),
+		bring: (entry) => bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }),
+		refresh,
+		waiting: (on) => {
+			if (!what || !doing.startsWith(what)) return;
+			doing = on ? `${what}: bringing it up to date first, as this device still syncs` : what;
+		}
+	});
 }
 
 /**
@@ -735,8 +759,14 @@ const SLOW = 45_000;
  * @param {string} what @param {() => Promise<unknown>} work
  */
 async function change(what, work) {
+	const d = device;
 	const ok = await attempt(what, work);
-	if (ok) await refresh();
+	if (ok && device === d) {
+		revision++;
+		// Local acceptance completes independently of the expensive world summary.
+		// Targeted subscribers read the authoritative local device immediately.
+		queueRefresh(d);
+	}
 	return ok;
 }
 
@@ -813,6 +843,18 @@ const qr = async (text, size) => (mac ? mac.call('qrSvg', text, size) : avendb.q
 
 /** What the vaults' screens do, each acting for the vault it names (./Shell.svelte's `api`, beside what its page adds). */
 const api = {
+	/** Subscribe to any targeted local query, independent of the world summary.
+	 * @param {() => any} query @param {(answer: any) => void} take @param {(error: Error) => void} [failed] */
+	observe(query, take, failed) {
+		const reader = createReactiveRead({ read: (/** @type {any} */ d, /** @type {any} */ op, /** @type {AbortSignal} */ signal) => near(d, op, { signal }), take, failed });
+		const dispose = $effect.root(() => {
+			$effect(() => {
+				void revision;
+				reader.update(query(), device, context.current);
+			});
+		});
+		return () => { dispose(); reader.close(); };
+	},
 	/**
 	 * Runs change op `op` as `what` (./ops.js, avendb/docs/ARCHITECTURE.md §8): an entry's change, a share, a
 	 * revocation, a setting, new vaults, a mark, a name, acting for the vault the op names (`as`). What it did, or
@@ -900,6 +942,8 @@ const api = {
 
 /** This tab's avenDB session: what it is now, read as state, and what it does. */
 export const session = {
+	/** Invalidates targeted local reads without waiting for the full world summary. */
+	get revision() { return revision; },
 	/** @returns {Phase} */
 	get phase() {
 		return phase;
@@ -978,5 +1022,6 @@ export const session = {
 	api,
 	run: api.run,
 	runAll: api.runAll,
-	ask: api.ask
+	ask: api.ask,
+	observe: api.observe
 };

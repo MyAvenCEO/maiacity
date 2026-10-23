@@ -19,6 +19,7 @@ export const READS = [
 	'shares',
 	'database',
 	'note',
+	'room',
 	'log',
 	'read_file',
 	'creatable',
