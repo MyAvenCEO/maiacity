@@ -505,11 +505,16 @@ pub fn asks(edits: &[Edit], follow: &[VaultId]) -> Ask {
 /// `asks`, given each edit's id.
 pub(crate) fn asks_ids(edits: &[Edit], ids: &[EditId], follow: &[VaultId]) -> Ask {
     let logs = logs_of(edits, ids);
+    asks_with_logs(edits, ids, &logs, follow)
+}
+
+/// The same structural request with log assignments already derived from these exact edits/IDs.
+pub(crate) fn asks_with_logs(edits: &[Edit], ids: &[EditId], logs: &[Option<LogId>], follow: &[VaultId]) -> Ask {
     let mut ask = Ask { follow: follow.to_vec(), ..Ask::default() };
     ask.follow.sort();
     ask.follow.dedup();
     let mut closed: HashSet<EditId> = HashSet::new();
-    for (l, log) in LogEdits::all(edits, ids, &logs) {
+    for (l, log) in LogEdits::all(edits, ids, logs) {
         let c = log.closed();
         ask.haves.insert(l, log.haves(&c));
         closed.extend(c);
