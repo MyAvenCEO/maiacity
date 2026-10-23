@@ -45,6 +45,7 @@
 import { command, native } from '$lib/native';
 import { allowed, answer, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
+import { createVaultContext } from './context.js';
 import { createEntryWindow, createReadWindow, replyEntries } from './query-window.js';
 import { bringEntries, learn, useDevice } from '../../../game/code/sources/device.js';
 import { sync } from './sync.svelte.js';
@@ -91,6 +92,7 @@ let meta = $state.raw(null);
 let world = $state.raw(/** @type {import('./vaults.js').WorldView | null} */ (null));
 /** the vault the person looks at, picked in avenDB's nav pill (./Shell.svelte): their own until they pick another */
 let vault = $state('');
+const context = createVaultContext({ world: () => world, read: () => vault, write: (id) => (vault = id) });
 /** what the key move asks of the person (K3b, avendb-browser's `Moving`), while their passkey, this device or in the
  *  Mac app its Touch ID key still signs in SLH-DSA, or the server or an agent of the aven they govern does (K3c):
  *  whether their passkey signs, whether Touch ID does, whether the device moves, and how many of the aven's devices
@@ -614,7 +616,10 @@ async function refresh() {
 	if (!d) return;
 	/** @type {import('./vaults.js').WorldView | null} */
 	const w = answer(await send({ op: 'world' })) ?? null;
-	if (d === device) world = w;
+	if (d === device) {
+		world = w;
+		context.reconcile();
+	}
 }
 
 /**
@@ -928,10 +933,10 @@ export const session = {
 	},
 	/** the vault the person looks at: the one they picked in avenDB's nav pill, else their own */
 	get vault() {
-		return world && world.vaults.some((v) => v.id === vault) ? vault : (world?.mine ?? '');
+		return context.current;
 	},
 	set vault(id) {
-		vault = id;
+		context.current = id;
 	},
 	/** the vault the person acts as in the vault they look at, as the device says (the world's `acting`): the vault
 	 *  itself where theirs owns it, else the vault of theirs that holds the strongest share over it; '' until open */

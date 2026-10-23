@@ -14,6 +14,7 @@
 	pages keep what they show at their foot above it with --nav-room.
 -->
 <script>
+	import { tick } from 'svelte';
 	import { base } from '$app/paths';
 	import { afterNavigate } from '$app/navigation';
 	import { page } from '$app/state';
@@ -29,6 +30,11 @@
 
 	const home = `${base}/app/`;
 	let open = $state(false);
+	const menuId = $props.id();
+	/** @type {HTMLButtonElement | undefined} */
+	let trigger = $state();
+	/** @type {HTMLDivElement | undefined} */
+	let menu = $state();
 	/** the vault picked, as the You item shows it: the person's own until they pick another */
 	const here = $derived(pill.context ? (pill.context.list.find((a) => a.id === pill.context?.current) ?? null) : null);
 	/** what waits in the context's other entries (avenDB: the changes waiting for each other vault's yes) */
@@ -45,15 +51,54 @@
 	const atHome = $derived(path === home && onDashboard(hash));
 	const initials = $derived(name ? name.split(/\s+/).map((w) => w[0]).join('').slice(0, 2).toUpperCase() : '·');
 	const who = $derived(name || 'You');
-	// looking at another account than one's own (a COOP's wallet): the avatar and the word say whose
+	// looking at another account than one's own (a COOP's wallet): the avatar and accessible name say whose
 	const acting = $derived(pill.accounts ? pill.accounts.list.find((a) => a.id === pill.accounts?.current && a !== pill.accounts.list[0]) : null);
+	const identityLabel = $derived(acting ? `${who}, as ${acting.label}` : here ? `${who}: ${here.label}` : who);
+
+	function close(restoreFocus = false) {
+		open = false;
+		if (restoreFocus) trigger?.focus();
+	}
+
+	/** @param {Event} event */
+	function outside(event) {
+		if (!open) return;
+		const path = event.composedPath();
+		if ((!trigger || !path.includes(trigger)) && (!menu || !path.includes(menu))) close();
+	}
+
+	/** @param {MouseEvent} event */
+	async function toggle(event) {
+		open = !open;
+		if (open && event.detail === 0) {
+			await tick();
+			if (!open) return;
+			const first = /** @type {HTMLElement | null | undefined} */ (menu?.querySelector('button, a'));
+			first?.focus();
+		}
+	}
+
 	$effect(() => {
 		void path;
 		open = false;
 	});
+
+	$effect(() => {
+		if (!open) return;
+		// Capture also sees clicks on world controls that stop pointer events from bubbling.
+		document.addEventListener('pointerdown', outside, true);
+		document.addEventListener('focusin', outside, true);
+		return () => {
+			document.removeEventListener('pointerdown', outside, true);
+			document.removeEventListener('focusin', outside, true);
+		};
+	});
 </script>
 
-<svelte:window onkeydown={(e) => e.key === 'Escape' && (open = false)} onhashchange={() => (hash = location.hash)} />
+<svelte:window
+	onkeydown={(e) => { if (open && e.key === 'Escape') { e.preventDefault(); close(true); } }}
+	onhashchange={() => (hash = location.hash)}
+/>
 
 <nav class="pill" aria-label="App">
 	{#if back.open}
@@ -71,19 +116,19 @@
 			<span class="ring"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg></span><span>{pill.center.label}</span>
 		</button>
 	{/if}
-	<button class="item" class:on={open} onclick={() => (open = !open)} aria-expanded={open} aria-haspopup="true" title={acting ? `${who}, as ${acting.label}` : here ? `${who}: ${here.label}` : who}>
-		{#if acting}<span class="avatar {acting.shape ?? 'human'}" style="background:{acting.colour}; color:#fff; {shaped(acting.shape)}">{acting.text}</span><span>{acting.label.replace(/ COOP$/, '')}</span>
-		{:else if here}<span class="avatar {here.shape ?? 'human'}" style="background:{here.colour}; color:#fff; {shaped(here.shape)}">{here.text}</span><span class="ctx-name">{here.label}</span>
-		{:else}<span class="avatar">{initials}</span><span>You</span>{/if}
+	<button bind:this={trigger} class="item identity" class:on={open} onclick={toggle} aria-expanded={open} aria-haspopup="menu" aria-controls={menuId} aria-label={identityLabel + (elsewhere ? `, ${elsewhere} waiting in your other vaults` : '')} title={identityLabel}>
+		{#if acting}<span class="avatar {acting.shape ?? 'human'}" aria-hidden="true" style="background:{acting.colour}; color:#fff; {shaped(acting.shape)}">{acting.text}</span>
+		{:else if here}<span class="avatar {here.shape ?? 'human'}" aria-hidden="true" style="background:{here.colour}; color:#fff; {shaped(here.shape)}">{here.text}</span>
+		{:else}<span class="avatar" aria-hidden="true">{initials}</span>{/if}
 		{#if elsewhere}<span class="bubble" title="{elsewhere} waiting in your other vaults">{elsewhere}</span>{/if}
 	</button>
 	{#if open}
-		<div class="account" role="menu">
+		<div bind:this={menu} id={menuId} class="account" role="menu" aria-label="Profiles and accounts">
 			<p class="who"><b>{who}</b>{#if founder}<span>Founder {String(founder.number).padStart(3, '0')}</span>{/if}</p>
 			{#if pill.context}
 				<p class="group">{pill.context.title}</p>
 				{#each pill.context.list as a (a.id)}
-					<button role="menuitemradio" class="acct" aria-checked={a.id === pill.context.current} onclick={() => (pill.context?.pick(a.id), (open = false))}>
+					<button role="menuitemradio" class="acct" aria-checked={a.id === pill.context.current} onclick={() => (pill.context?.pick(a.id), close(true))}>
 						<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff; {shaped(a.shape)}">{a.text}</span>
 						<span class="acct-name">{a.label}{#if a.sub}<small>{a.sub}</small>{/if}</span>
 						{#if a.badge}<span class="bubble" title="{a.badge} waiting">{a.badge}</span>{/if}
@@ -98,7 +143,7 @@
 			{#if pill.accounts}
 				<p class="group">{pill.accounts.title}</p>
 				{#each pill.accounts.list as a (a.id)}
-					<button role="menuitemradio" class="acct" aria-checked={a.id === pill.accounts.current} onclick={() => (pill.accounts?.pick(a.id), (open = false))}>
+					<button role="menuitemradio" class="acct" aria-checked={a.id === pill.accounts.current} onclick={() => (pill.accounts?.pick(a.id), close(true))}>
 						<span class="avatar {a.shape ?? 'human'}" style="background:{a.colour}; color:#fff; {shaped(a.shape)}">{a.text}</span>
 						<span class="acct-name">{a.label}{#if a.sub}<small>{a.sub}</small>{/if}</span>
 					{#if a.badge}<span class="bubble" title="{a.badge} waiting">{a.badge}</span>{/if}
@@ -237,17 +282,23 @@
 		top: 0.15rem;
 		right: 0.35rem;
 	}
-
-	/* the context's name under its mark, cut to the item's width */
-	.ctx-name {
-		max-width: 4.5rem;
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
 	.avatar.aven,
 	.avatar.device {
 		font-size: 0.5rem;
+	}
+
+	/* The dock shows the current identity as a larger mark; names stay in its menu and accessible label. */
+	.item.identity {
+		padding: 0.1875rem 0.25rem;
+	}
+	.identity .avatar {
+		width: 36px;
+		height: 36px;
+		font-size: 0.85rem;
+	}
+	.identity .avatar.aven,
+	.identity .avatar.device {
+		font-size: 0.7rem;
 	}
 
 	.group {

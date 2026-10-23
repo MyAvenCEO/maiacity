@@ -321,6 +321,9 @@ async function viewProbe() {
 	if (results) {
 		check('the view probe checks everything it tries', results.checks.length >= 10, `${results.checks.length} checks`);
 		for (const c of results.checks) check(`views: ${c.name}`, c.ok, noteOf(c));
+		if (results.checks.some((c) => !c.ok)) {
+			console.log(`  view errors: ${JSON.stringify(results.errors)}`);
+		}
 	}
 
 	// the frame's DOM: only the engine's scripts, no handler, no address that leads out
