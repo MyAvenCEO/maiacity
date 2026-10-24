@@ -950,3 +950,22 @@ parser/diff checks passed. Rust execution is explicitly queued with the root; th
 slice is not part of the frozen release and must not be described as deployed.
 
 Proposal causal-body fallback: [81e43133](https://github.com/MyAvenCEO/maiacity/commit/81e43133). Rust regression execution remains pending; no release deployment claim.
+
+### Combined shared/proposal fixture repair and execution evidence
+
+The new shared-vault fixtures initially returned `UnknownKey` before reaching any
+bootstrap logic: ordinary sync does not introduce an unrelated recipient's seed
+contact. They now use the public bidirectional `share_contact` handshake before
+issuing a grant. No key or authority is injected directly. The earlier main-only
+proposal refusal regression is superseded by the implemented exact-cut fallback:
+it now requires retained prefix, missing-body wait, no counted proposal and local
+`ReadOnly`, followed by exact-body retrieval and matching counted proposal/name/item.
+
+The frozen corrected tree passed all **15 bootstrap_store tests** (13.43 seconds)
+including shared/proposal receive, malformed proof, owner accept/merge, historical
+revocation, key/schema waits, concurrent suffix, restart and durable bounds.
+Command: `cargo test -p avendb --lib bootstrap_store::tests -- --nocapture`.
+Log: `/private/tmp/avendb-shared-fixture-stable.log`. An earlier run compiled the old
+fixture tree and is not validation of these edits. No production admission rules
+changed in this repair; full combined/release and physical-device acceptance remain
+separate gates.
