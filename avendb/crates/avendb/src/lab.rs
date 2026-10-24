@@ -761,7 +761,7 @@ struct Store {
     /// What it reads of selectors, headers and tags, from the two above.
     readings: Readings,
     shown: BTreeMap<EntryId, Shown>,
-    warm_materialization: Option<Vec<u8>>,
+    warm_materialization: Option<warm_materialization::Validated>,
     projections: std::sync::Mutex<BTreeMap<(SignerId, EntryId), entry_projection::CachedEntryProjection>>,
     /// The digest of each log it holds (`sync::digests`), what it gossips: `None` until worked out for its edits now.
     digests: Option<BTreeMap<LogId, [u8; 32]>>,
@@ -5506,8 +5506,8 @@ impl Lab {
                 // A stale prefix can still accelerate policy replay, but its
                 // adjunct cannot be used. Do not allocate another up-to-32-MiB
                 // buffer merely to reject it immediately after this closure.
-                let extra = (held == ids.len() && warm_materialization::matching(extra, store))
-                    .then(|| extra.to_vec());
+                let extra = (held == ids.len())
+                    .then(|| warm_materialization::Validated::check(extra, store)).flatten();
                 Some((replay, held, extra))
             });
             match found {
@@ -6339,7 +6339,7 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 /// with the content of its body where the device opened it, in replay order, and the item of each line.
 fn show_items(d: SignerId, store: &mut Store) {
     let materialization = store.warm_materialization.take()
-        .filter(|bytes| warm_materialization::matching(bytes, store));
+        .and_then(|receipt| receipt.consume(store));
     let mut warm = match materialization {
         Some(bytes) => match warm_materialization::decode(&bytes) {
             Some(saved) => saved,
