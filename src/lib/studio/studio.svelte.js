@@ -10,6 +10,7 @@ import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
 import { session } from '$lib/avendb/session.svelte.js';
 import { refreshQueue } from './refresh.js';
+import { MediaSources } from './media-sources.js';
 import { invalidateWorld } from './cuts.js';
 import { untrack } from 'svelte';
 import { scriptOf } from './screenplay.js';
@@ -32,7 +33,7 @@ import { cleanEq, cleanKeys, keyDb, webAudioQ } from '../../../game/film/sound.j
 /** @typedef {import('./luts.js').LutSource} LutSource */
 /** @typedef {'V1' | 'A1' | 'A2' | 'A3'} Track */
 /** @typedef {import('./types.js').TimelineClip} Clip */
-/** @typedef {{ url: string, duration: number, peaks: number[], buffer?: AudioBuffer }} Source */
+/** @typedef {import('./media-sources.js').Source} Source */
 /** @typedef {{ word: string, start: number, end: number }} Timed */
 /**
  * A caption word on the film's clock: `t`…`e`, from its voice clip's file (`hash`), `i` its place in that file's transcript words.
@@ -42,7 +43,7 @@ import { cleanEq, cleanKeys, keyDb, webAudioQ } from '../../../game/film/sound.j
 /**
  * Where a video's sound stands in the studio: decoded (ready), on its way (loading),
  * none in the file (silent), or failed (and why).
- * @typedef {'ready' | 'loading' | 'waiting' | 'silent' | `failed: ${string}`} SoundState
+ * @typedef {import('./media-sources.js').SoundState} SoundState
  */
 /** A shot of the script: its clip, how far it is (words, a storyboard still, the footage, a world shot), what is said under it. @typedef {{ clip: Clip, stage: 'text' | 'storyboard' | 'footage' | 'world', lines: Clip[] }} ScriptShot */
 /** @typedef {{ scene: string, shots: ScriptShot[] }} ScriptScene */
@@ -135,17 +136,6 @@ export const thumb = (m) => raw(m.hash);
 export const itemName = (m) => m?.title || m?.original_name || m?.hash.slice(0, 10) || '';
 /** @param {RenderJob} r */
 export const running = (r) => r.status === 'queued' || r.status === 'rendering';
-/** the largest original whose sound the page decodes itself (bytes); a bigger one's sound comes from its proxy */
-const SOUND_FROM_ORIGINAL = 200 * 1024 * 1024;
-/** A sound's waveform: the loudest sample of each hundredth of a second (at most 8000 bars). @param {AudioBuffer} buffer */
-const peaksOf = (buffer) => {
-	const data = buffer.getChannelData(0), n = Math.min(8000, Math.ceil(buffer.duration * 100)), step = Math.floor(data.length / n);
-	return Array.from({ length: n }, (_, i) => {
-		let max = 0;
-		for (let j = i * step; j < (i + 1) * step; j++) max = Math.max(max, Math.abs(data[j] ?? 0));
-		return max;
-	});
-};
 /** @param {Clip | null | undefined} c */
 export const onSoundTrack = (c) => !!c && c.track !== 'V1';
 
@@ -1007,14 +997,6 @@ export class Studio {
 		void old?.close().catch(() => {});
 		return this.audioCtx();
 	}
-	/** @type {OfflineAudioContext | null} */
-	decoder = null;
-	/**
-	 * Sounds are decoded on a context of their own that never plays (a decoded sound plays on any clock): the playing
-	 * clock can be thrown away at any Play without a decode in flight failing with it.
-	 * @param {ArrayBuffer} bytes
-	 */
-	decode = (bytes) => (this.decoder ??= new OfflineAudioContext(1, 1, 48000)).decodeAudioData(bytes);
 	/** @type {(() => void) | null} */
 	deviceChange = null;
 	/** a change of the Mac's sound devices (headphones in or out, a speaker woken), said in the app's log */
@@ -1039,179 +1021,20 @@ export class Studio {
 	nodes = [];
 	ctxStart = 0;
 	timeStart = 0;
-	/** @type {Map<string, Promise<Source>>} */
-	pending = new Map();
-	// the true length of each video, found one at a time (and the player let go of after, so it frees its slot)
-	/** @type {string[]} */
-	probing = [];
-	/** @type {Promise<void> | null} */
-	prober = null;
+	media = new MediaSources({
+		item: (hash) => this.byHash.get(hash),
+		reload: async () => { if (Date.now() - this.libraryAt > 10000) await this.reloadLibrary(); },
+		url: raw,
+		proxy: (item) => this.proxy(item).hash,
+		publish: (hash, source) => { this.sources[hash] = source; },
+		command, native, hasSound,
+		publishSound: (hash, state) => { this.soundState[hash] = state; }
+	});
 	/** @param {string} hash */
-	probeLength(hash) {
-		this.probing.push(hash);
-		this.prober ??= (async () => {
-			for (let next; (next = /** @type {string | undefined} */ (this.probing.shift())); ) {
-				/** @type {number} */
-				const duration = await new Promise((ok) => {
-					const v = document.createElement('video');
-					v.preload = 'metadata';
-					v.crossOrigin = 'anonymous';
-					/** @param {number} d */
-					const done = (d) => (clearTimeout(late), v.removeAttribute('src'), v.load(), ok(d));
-					const late = setTimeout(() => done(0), 8000);
-					v.onloadedmetadata = () => done(v.duration || 0);
-					v.onerror = () => done(0);
-					v.src = raw(/** @type {string} */ (next));
-				});
-				if (duration && this.sources[next]) this.sources[next] = { ...this.sources[next], duration };
-			}
-			this.prober = null;
-		})();
-	}
+	source(hash) { return this.media.source(hash); }
 
-	/**
-	 * Fetch a file once: sound is decoded (for playing and for its waveform); a still is only shown.
-	 * @param {string} hash @returns {Promise<Source>}
-	 */
-	source(hash) {
-		if (this.sources[hash]) return Promise.resolve(this.sources[hash]);
-		const waiting = this.pending.get(hash);
-		if (waiting) return waiting;
-		const m0 = this.byHash.get(hash);
-		if (m0?.kind === 'video') {
-			// a video streams straight from the library (it answers byte ranges): no need to download it first. It is
-			// ready at once — the monitor's own players load it when it comes up — and its length is looked up
-			// behind, one video at a time: Safari loads only a few videos at once, and a timeline of 42 shots asking
-			// for all of them together left some never answering (black shots, a playhead that would not start)
-			const s = (this.sources[hash] = { url: raw(hash), duration: Number(m0.meta?.duration_s) || 3600, peaks: [] });
-			this.probeLength(hash);
-			return Promise.resolve(s);
-		}
-		if (m0?.kind === 'image') {
-			// its ACEScct proxy when it has one (a float still, or one larger than HD), else the still itself
-			const p = this.proxy(m0);
-			const s = { url: p.hash ? raw(p.hash) : thumb(m0), duration: IMAGE_LEN, peaks: [] };
-			this.sources[hash] = s;
-			return Promise.resolve(s);
-		}
-		const p = (async () => {
-			// a file the library doesn't list yet (one just brought in): the library read again first, as a whole
-			// film fetched and decoded as sound would hold the page for minutes
-			if (!this.byHash.get(hash) && Date.now() - this.libraryAt > 10000) await this.reloadLibrary();
-			const m = this.byHash.get(hash);
-			if (!m) throw new Error(`${hash.slice(0, 12)}… is not in the library (yet).`);
-			if (m.kind === 'video') {
-				const s = (this.sources[hash] = { url: raw(hash), duration: Number(m.meta?.duration_s) || 3600, peaks: [] });
-				this.probeLength(hash);
-				return s;
-			}
-			const res = await fetch(raw(hash));
-			if (!res.ok) throw new Error(`Could not load ${itemName(m)} (${res.status}).`);
-			const bytes = await res.arrayBuffer();
-			const url = URL.createObjectURL(new Blob([bytes], { type: m.mime }));
-			let duration = IMAGE_LEN;
-			/** @type {number[]} */
-			let peaks = [];
-			/** @type {AudioBuffer | undefined} */
-			let buffer;
-			if (m.kind === 'audio') {
-				buffer = await this.decode(bytes.slice(0));
-				duration = buffer.duration;
-				peaks = peaksOf(buffer);
-			}
-			const s = { url, duration, peaks, buffer };
-			this.sources[hash] = s;
-			return s;
-		})();
-		// a load that failed is forgotten: the next play asks again (a failure kept would leave it silent for good)
-		p.catch(() => this.pending.get(hash) === p && this.pending.delete(hash));
-		this.pending.set(hash, p);
-		return p;
-	}
-
-	/** @type {Map<string, Promise<void>>} */
-	pendingSound = new Map();
-	/**
-	 * A clip's sound, ready to play: a sound file decoded (source()); a video's sound — a clip of it on a sound track —
-	 * decoded from the movie itself: its proxy (which carries the sound) or, without one, its original, read by hash
-	 * from the vault. There are no audio proxies. soundState says where each one is.
-	 * @param {string} hash
-	 */
-	async sound(hash) {
-		const m = this.byHash.get(hash);
-		if (m?.kind !== 'video') return void (await this.source(hash));
-		await this.source(hash);
-		if (this.sources[hash]?.buffer) return void (this.soundState[hash] = 'ready');
-		if (!hasSound(m)) return void (this.soundState[hash] = 'silent');
-		const waiting = this.pendingSound.get(hash);
-		if (waiting) return waiting;
-		// failed from this same file before: not read again on every play (only once its proxy comes in)
-		if (this.soundState[hash]?.startsWith('failed') && (this.proxy(m).hash ?? hash) === this.soundFrom[hash]) return;
-		const p = (async () => {
-			this.soundState[hash] = 'loading';
-			try {
-				// the sound the movie carries: its proxy's (the proxy keeps it, on the original's clock), else a small
-				// original's — read by hash straight from the vault, never copied out of it. A big original (4K footage: a
-				// gigabyte or more) is never read whole into the page for its sound: decoding it held the whole movie in
-				// memory, a dozen at once on a timeline of footage, and theOS ran the Mac out of memory. The Mac reads
-				// its sound track in place instead (`studio_sound`, mono); off the Mac it waits for its proxy.
-				// On the Mac every movie's sound is read there, in place — its proxy's when it has one: a whole proxy fetched
-				// into the page came through avenDB's bridge copied several times over (and a long one cut short)
-				const proxy = this.proxy(m).hash;
-				this.soundFrom[hash] = proxy ?? hash;
-				const at = proxy ? (this.byHash.get(proxy) ?? m) : m;
-				const from = proxy ?? (m.size && m.size <= SOUND_FROM_ORIGINAL ? hash : null);
-				const buffer = native() ? await this.soundOnMac(at) : from ? await this.decode(await this.bytesOf(from)) : null;
-				if (!buffer) return void (this.soundState[hash] = 'waiting');
-				this.sources[hash] = { ...this.sources[hash], buffer, peaks: peaksOf(buffer) };
-				this.soundState[hash] = 'ready';
-			} catch (e) {
-				this.soundState[hash] = `failed: ${/** @type {Error} */ (e).message}`;
-				console.warn(`sound of ${itemName(m)}:`, /** @type {Error} */ (e).message);
-			} finally {
-				this.pendingSound.delete(hash);
-			}
-		})();
-		this.pendingSound.set(hash, p);
-		return p;
-	}
-	/** A file's bytes, read by hash from the vault. @param {string} hash */
-	async bytesOf(hash) {
-		const res = await fetch(raw(hash));
-		if (!res.ok) throw new Error(`the vault did not give ${hash.slice(0, 12)} (${res.status})`);
-		return res.arrayBuffer();
-	}
-	/**
-	 * A movie's sound as the Mac reads it in place (vault/app/src/proxies.rs `studio_sound`: its first sound track, mono 16-bit,
-	 * 48 kHz), as a buffer to play; null when it has none.
-	 * @param {MediaItem} m @returns {Promise<AudioBuffer | null>}
-	 */
-	async soundOnMac(m) {
-		// one at a time: a timeline of footage read all at once held every movie's sound twice over (the Mac's and the
-		// page's) and ran theOS out of memory
-		const turn = this.soundQueue.then(() => this.readSoundOnMac(m));
-		this.soundQueue = turn.catch(() => null);
-		return turn;
-	}
-	/** the Mac's sound reads, one after another (`soundOnMac`) */
-	soundQueue = /** @type {Promise<unknown>} */ (Promise.resolve());
-	/** @param {MediaItem} m @returns {Promise<AudioBuffer | null>} */
-	async readSoundOnMac(m) {
-		const rate = 48000;
-		const got = await command('studio_sound', { r: m.hash, name: m.original_name || m.title || 'movie.mov', rate });
-		const bytes = got instanceof ArrayBuffer ? got : new Uint8Array(/** @type {number[]} */ (got)).buffer;
-		const n = Math.floor(bytes.byteLength / 2);
-		if (!n) return null;
-		// 16-bit little-endian samples (the Mac's `studio_sound`), into the buffer's own floats
-		const pcm = new Int16Array(bytes, 0, n);
-		const buffer = new AudioBuffer({ numberOfChannels: 1, length: n, sampleRate: rate });
-		const ch = buffer.getChannelData(0);
-		for (let i = 0; i < n; i++) ch[i] = pcm[i] / 32768;
-		return buffer;
-	}
-	/** what each movie's sound was last read from (its proxy's hash, else its own): a failed one is tried again only from something new */
-	/** @type {Record<string, string>} */
-	soundFrom = {};
+	/** @param {string} hash */
+	sound(hash) { return this.media.sound(hash); }
 	/**
 	 * Every video sound on the sound tracks not decoded yet, tried again: one waiting for its proxy, or one that failed
 	 * once its proxy has come in (a failure from the same file again was a load, on every play and every 20 s).
@@ -1220,8 +1043,6 @@ export class Studio {
 		for (const c of this.clips) {
 			const h = c.hash, st = h ? this.soundState[h] : undefined;
 			if (!onSoundTrack(c) || !h || !st || st === 'ready' || st === 'silent' || st === 'loading') continue;
-			const m = this.byHash.get(h);
-			if (st.startsWith('failed') && (this.proxy(m).hash ?? h) === this.soundFrom[h]) continue;
 			void this.sound(h);
 		}
 	}
@@ -1446,7 +1267,7 @@ export class Studio {
 		void this.flush();
 		void this.ctx?.close();
 		this.ctx = null;
-		for (const s of Object.values(this.sources)) if (s.url.startsWith('blob:')) URL.revokeObjectURL(s.url);
+		this.media.close();
 		this.sources = {};
 	}
 
