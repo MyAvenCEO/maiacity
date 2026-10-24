@@ -1309,7 +1309,8 @@ mod tests {
             "ordinary saver must retain its snapshot interval after a single write");
         let expected = node.read(move |lab,me| lab.item(me,entry).unwrap().record()).await;
         node.shutdown().await.unwrap();
-        let (reopened, (signed, keys)) = Edits::open(shelf.clone()).await.unwrap();
+        let (reopened, (signed, keys, anchors)) = Edits::open(shelf.clone()).await.unwrap();
+        assert!(anchors.is_empty(), "ordinary warm reopen has no bootstrap companion");
         let count = signed.len();
         let warm = reopened.warm().await;
         assert_ne!(warm.views, before, "clean shutdown publishes the current derived frontier");
