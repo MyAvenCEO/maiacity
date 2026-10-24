@@ -664,3 +664,9 @@ while the root owns the compiler queue. Syntax and diff checks passed. Full-hold
 concurrent-cut equivalence is covered by the prerequisite core regression, also
 pending combined execution. Ordinary authorization-cache construction and digest
 save scans remain CPU costs; bounded wire size alone is not a latency proof.
+
+Exact-dependency network integration committed and pushed:
+[1ce4fa3e](https://github.com/MyAvenCEO/maiacity/commit/1ce4fa3e), branch
+`codex/bootstrap-dependency-fetch`. Requires the core missing-cut API from
+[5c3d5201](https://github.com/MyAvenCEO/maiacity/commit/5c3d5201).
+Combined compilation/behavioral validation remains pending.
