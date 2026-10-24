@@ -14,7 +14,7 @@
  * person holds nothing (`access.known` false).
  */
 import { base } from '$app/paths';
-import { ADMIN, heldGroups } from '$lib/avendb/capgroups.js';
+import { ADMIN, heldGroups, travelerDemoOps } from '$lib/avendb/capgroups.js';
 import { session } from '$lib/avendb/session.svelte.js';
 import { seedCity, serverCity } from '$lib/avendb/vaults.js';
 import { native } from '$lib/native';
@@ -51,7 +51,15 @@ export function readAccess() {
 			const city = (seedCity(w) ?? serverCity(w))?.id ?? '';
 			const v = w.vaults.find((x) => x.id === city);
 			// a device that knows no Maia City, as one no share of it reached yet, reads none of its groups
-			const got = v ? await session.ask({ op: 'cap_groups', vault: city }).catch(() => null) : null;
+			let got = v ? await session.ask({ op: 'cap_groups', vault: city }).catch(() => null) : null;
+			if (v?.acting?.as === city && Array.isArray(got?.ok)) {
+				const changes = travelerDemoOps(got.ok);
+				for (const op of changes) {
+					const changed = await session.ask(op);
+					if (changed?.refused) throw new Error(changed.why || changed.refused);
+				}
+				if (changes.length) got = await session.ask({ op: 'cap_groups', vault: city });
+			}
 			const list = got?.ok ?? [];
 			Object.assign(access, { city, owner: v?.acting?.as === city, groups: heldGroups(w, city, list), list, known: true });
 			for (const op of Array.isArray(got?.ok) ? travelerSyncOps(w, city, access.groups, access.owner) : []) {

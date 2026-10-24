@@ -57,7 +57,7 @@
 	import { FLOW, FLOWS, FUNCTION, FUNCTIONS } from './flows.js';
 	import { answer, refs } from './ops.js';
 	import { beside, seeding, seedPieces, unseeded } from './seed.js';
-	import { capGroupOps, travelerDemoOps } from './capgroups.js';
+	import { capGroupOps } from './capgroups.js';
 	import { deviceName, relay as relayOf, server as serverOf } from './server.js';
 	import { asks, Here, here, session } from './session.svelte.js';
 	import { plan, reported, rows, stepWords } from './steps.js';
@@ -388,7 +388,6 @@
 			/** @type {any[]} */
 			const made = [];
 			for (const op of capGroupOps(answer(await send({ op: 'cap_groups', vault: city })), city)) made.push(answer(await send(refs(op, made))));
-			for (const op of travelerDemoOps(answer(await send({ op: 'cap_groups', vault: city })))) answer(await send(op));
 		} catch (e) {
 			failed.push('the cap groups');
 			reasons.add(`the cap groups: ${/** @type {Error} */ (e)?.message ?? e}`);
