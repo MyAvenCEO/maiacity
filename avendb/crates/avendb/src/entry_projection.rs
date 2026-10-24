@@ -489,6 +489,14 @@ impl Lab {
     }
 
     pub fn entry_projection_offer_after(&self, me: SignerId, requester: SignerId, entry: EntryId, known: Option<EditId>) -> Option<EntryProjectionOffer> {
+        self.entry_projection_offer_matching(me,requester,entry,known,None)
+    }
+    /// A format-specific durable pin is only a hint: all standing/current READ gates
+    /// still apply before selecting the signed snapshot with this ciphertext root.
+    pub fn entry_projection_offer_for_root(&self, me:SignerId, requester:SignerId, entry:EntryId, known:Option<EditId>, root:[u8;32])->Option<EntryProjectionOffer> {
+        self.entry_projection_offer_matching(me,requester,entry,known,Some(root))
+    }
+    fn entry_projection_offer_matching(&self, me: SignerId, requester: SignerId, entry: EntryId, known: Option<EditId>, root:Option<[u8;32]>) -> Option<EntryProjectionOffer> {
         let store = self.held(me);
         if store.replayed != store.log.edits().len() { return None; }
         let st = self.latest(me);
@@ -504,6 +512,7 @@ impl Lab {
             if states.len() > MAX_LINES || states.iter().any(|state| state.basis.len() > MAX_BASIS) { return None; }
             if *vault != en.vault || !standing.contains(&edit.id()) { return None; }
             let stated = states.iter().find(|state| state.entry == entry)?;
+            if root.is_some_and(|root|root!=stated.slice.hash) { return None; }
             if stated.slice.size > (MAX_BYTES + 128) as u64
                 || crate::snapshot::stale(store.log.edits(), &standing, edit, stated) { return None; }
             Some((edit, stated))

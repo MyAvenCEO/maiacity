@@ -614,3 +614,16 @@ Runtime source implementation:
 [1bdda96d](https://github.com/MyAvenCEO/maiacity/commit/1bdda96d), pushed on
 `codex/checkpoint-runtime-delivery`; combined execution and remaining semantic gates
 are outstanding. This is not a deployment receipt.
+
+Runtime compatibility correction: judged and projection ciphertext now retain
+separate durable pin names. Provider selection is constrained to the requested
+format's pinned root **after** ordinary current-reader/standing checks, and the
+provider validates the actual envelope before choosing its response version.
+Publishing a newer judged checkpoint therefore does not evict the prior usable v1
+projection. The public judged flow now publishes both and makes a literal v1
+request after judged publication, asserting the previous projection's snapshot ID.
+Unknown request versions and malformed lengths have focused protocol regressions.
+`disk::open` returns `Shelf`, matching `Options::shelf`; the Node fixture is correct.
+Stored-schema rows are intrinsically read-only; their assertion does not measure
+writable readiness. The test separately waits for the durable gate and performs a
+permitted local mutation. Rust execution remains pending; syntax/diff checks passed.

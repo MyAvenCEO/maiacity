@@ -26,6 +26,16 @@ const RESPONSE_LIMIT: usize = CIPHER_LIMIT + EVIDENCE_LIMIT + 41;
 fn tag(entry: EntryId) -> Vec<u8> {
     [b"avendb/checkpoint/".as_slice(), &entry.0].concat()
 }
+fn format_tag(entry: EntryId, judged: bool)->Vec<u8> {
+    if judged { [b"avendb/judged-checkpoint/".as_slice(), &entry.0].concat() } else { tag(entry) }
+}
+fn request_format(bytes:&[u8])->Result<(bool,EntryId,Option<EditId>)> {
+    ensure!(matches!(bytes.first(),Some(1|2)),"unsupported checkpoint request version");
+    let judged=bytes[0]==2;
+    let mut compatible=bytes.to_vec(); compatible[0]=1;
+    let (entry,known)=request(&compatible)?;
+    Ok((judged,entry,known))
+}
 fn request(bytes: &[u8]) -> Result<(EntryId, Option<EditId>)> {
     ensure!(
         (bytes.len() == 33 || bytes.len() == REQUEST_LIMIT) && bytes[0] == 1,
@@ -147,7 +157,7 @@ impl Node {
         };
         let snapshot = answer["edit"].as_str().and_then(EditId::from_hex)
             .ok_or_else(|| anyhow::anyhow!("checkpoint approval returned no edit ID"))?;
-        let pinned = self.shared.pin_checkpoint(entry, snapshot, root).await?;
+        let pinned = self.shared.pin_checkpoint_format(entry, snapshot, root, judged).await?;
         self.shared.changed.notify_one();
         Ok(
             json!({"ok": {"edit": answer["edit"], "entry": entry.to_hex(), "checkpoint": true, "format": if judged { "owner-judgment-2" } else { "projection-1" },
@@ -164,6 +174,9 @@ impl Shared {
         root: FileRoot,
         sealed: Vec<u8>,
     ) -> Result<bool> {
+        self.store_checkpoint_format(entry,snapshot,root,sealed,false).await
+    }
+    async fn store_checkpoint_format(self:&Arc<Self>,entry:EntryId,snapshot:EditId,root:FileRoot,sealed:Vec<u8>,judged:bool)->Result<bool> {
         ensure!(
             sealed.len() <= CIPHER_LIMIT
                 && root.size == sealed.len() as u64
@@ -179,17 +192,20 @@ impl Shared {
             temporary.hash().as_bytes() == &root.hash,
             "stored checkpoint hash"
         );
-        self.pin_checkpoint(entry, snapshot, root).await
+        self.pin_checkpoint_format(entry, snapshot, root, judged).await
     }
 
     async fn pin_checkpoint(self: &Arc<Self>, entry: EntryId, snapshot: EditId, root: FileRoot) -> Result<bool> {
+        self.pin_checkpoint_format(entry,snapshot,root,false).await
+    }
+    async fn pin_checkpoint_format(self: &Arc<Self>, entry: EntryId, snapshot: EditId, root: FileRoot, judged:bool) -> Result<bool> {
         // Keep this gate through the tag write. A newer accepted snapshot may appear
         // during I/O, but its pin then follows this write, never preceding a stale one.
         let _serial = self.checkpoint_pins.clone().lock_owned().await;
         if !self.read(move |lab, me| lab.entry_projection_pin_is_current(me, entry, snapshot, root)).await {
             return Ok(false);
         }
-        self.store.tags().set(tag(entry), HashAndFormat::new(Hash::from_bytes(root.hash), BlobFormat::Raw)).await?;
+        self.store.tags().set(format_tag(entry,judged), HashAndFormat::new(Hash::from_bytes(root.hash), BlobFormat::Raw)).await?;
         Ok(true)
     }
 }
@@ -200,10 +216,12 @@ pub(crate) async fn answer(
     bytes: &[u8],
     permit: Arc<tokio::sync::OwnedSemaphorePermit>,
 ) -> Result<Vec<u8>> {
-    let judged=bytes.first()==Some(&2);
-    let mut compatible=bytes.to_vec();
-    if judged { compatible[0]=1; }
-    let (entry, known) = request(&compatible)?;
+    let (judged,entry,known)=request_format(bytes)?;
+    let Some(pin)=shared.store.tags().get(format_tag(entry,judged)).await? else {
+        return Ok(vec![if judged {2}else{1},0]);
+    };
+    ensure!(pin.format.is_raw(),"checkpoint pin format");
+    let compatible_root=*pin.hash.as_bytes();
     let requester = peer.device;
     let preparing = permit.clone();
     let (revision, offer) = shared
@@ -211,7 +229,7 @@ pub(crate) async fn answer(
             let _preparing = preparing;
             (
                 lab.log(me).revision(),
-                lab.entry_projection_offer_after(me, requester, entry, known),
+                lab.entry_projection_offer_for_root(me, requester, entry, known, compatible_root),
             )
         })
         .await;
@@ -236,13 +254,12 @@ pub(crate) async fn answer(
         Hash::new(&sealed).as_bytes() == &offer.root.hash,
         "checkpoint hash mismatch"
     );
-    if judged {
-        let check=sealed.clone();
-        let snapshot=offer.snapshot;
-        if !shared.read(move|lab,me|lab.restore_owner_judgment(me,snapshot,entry,&check).is_some()).await {
-            return Ok(vec![2,0]);
-        }
-    }
+    let check=sealed.clone();
+    let snapshot=offer.snapshot;
+    let compatible=shared.read(move|lab,me| if judged {
+        lab.restore_owner_judgment(me,snapshot,entry,&check).is_some()
+    } else { lab.open_entry_projection(me,snapshot,entry,&check).is_some() }).await;
+    if !compatible { return Ok(vec![if judged {2}else{1},0]); }
     let mut body = encode(
         offer.snapshot,
         Reply {
@@ -400,7 +417,7 @@ impl Shared {
             // rendering behind disk I/O, or lose the notification if persistence reports failure.
             self.size.send_modify(|_| {});
             self.changed.notify_one();
-            self.store_checkpoint(entry, snapshot, root, sealed).await?;
+            self.store_checkpoint_format(entry, snapshot, root, sealed, judged).await?;
             // The saver is already notified by the staged anchor stamp. Readiness is
             // published only by save_on after its exact durable receipt, not this fetch.
         }
@@ -433,6 +450,21 @@ mod tests {
         async fn ceremony(&self, _: [u8; 32], _: Step) -> Result<Ceremony> {
             anyhow::bail!("owner declined checkpoint approval")
         }
+    }
+
+    #[test]
+    fn checkpoint_format_negotiation_rejects_unknown_and_malformed_requests() {
+        for version in [1,2] {
+            let mut body=vec![version]; body.extend_from_slice(&[7;32]);
+            assert_eq!(request_format(&body).unwrap().0,version==2);
+            for n in [0,1,32] { assert!(request_format(&body[..n]).is_err()); }
+            body.push(0); assert!(request_format(&body).is_err());
+        }
+        for version in [0,3,255] {
+            let mut body=vec![version];body.extend_from_slice(&[7;32]);
+            assert!(request_format(&body).is_err());
+        }
+        assert_ne!(format_tag(EntryId([7;32]),true),format_tag(EntryId([7;32]),false));
     }
 
     #[test]
@@ -617,6 +649,10 @@ mod tests {
             "declined ceremony pins nothing"
         );
         let auth = Owner(Mutex::new(Passkey::from_seed(secret)));
+        let legacy_snapshot = if judged {
+            let (legacy,_)=mac.run(json!({"op":"checkpoint_view","entry":entry.to_hex()}),None::<NoBytes>,Some(&auth)).await.unwrap();
+            Some(EditId::from_hex(legacy["ok"]["edit"].as_str().unwrap()).unwrap())
+        } else { None };
         let (published, _) = mac
             .run(publish, None::<NoBytes>, Some(&auth))
             .await
@@ -635,7 +671,13 @@ mod tests {
         assert!(!stalled.is_empty());
         phone.know(mac.addr());
         mac.know(phone.addr());
-        phone.shared.connection(mac.id()).await.unwrap();
+        let conn=phone.shared.connection(mac.id()).await.unwrap();
+        if let Some(legacy_snapshot)=legacy_snapshot {
+            let mut old_request=vec![1];old_request.extend_from_slice(&entry.0);
+            let bytes=session::exchange(&conn.conn,KIND,&old_request,RESPONSE_LIMIT).await.unwrap();
+            let (snapshot,_,_)=decode(&bytes).expect("v1 receives a projection even after judged publication");
+            assert_eq!(snapshot,legacy_snapshot);
+        }
         let scope = "cd".repeat(16);
         let ack = phone
             .op(
@@ -688,7 +730,7 @@ mod tests {
         if judged { std::fs::remove_dir_all(folder).ok(); }
         let result = result.expect("scoped owner checkpoint is visible before full history");
         assert_eq!(result["ok"]["rows"][0]["record"], expected);
-        assert_eq!(result["ok"]["rows"][0]["readOnly"], true);
+        assert_eq!(result["ok"]["rows"][0]["readOnly"], true, "raw stored-schema rows are read-only regardless of durable readiness; judged write checked separately");
         assert!(absent, "unrelated history stays withheld");
     }
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
