@@ -575,3 +575,37 @@ compiler queue; syntax and diff checks passed.
 Fixed-size frontier implementation:
 [a94d3f68](https://github.com/MyAvenCEO/maiacity/commit/a94d3f68c), committed and pushed;
 combined Rust validation and runtime activation remain outstanding.
+
+### Explicit runtime judged-base wiring (validation pending)
+
+`checkpoint_entry_base` is a separate public Node operation. It uses the existing
+owner passkey ceremony and pin/sign/publication ordering but drafts an owner-judged
+entry base, never a JSON projection. `checkpoint_view` remains unchanged/read-only.
+The common native/PWA checkpoint transport now probes request/response version 2;
+the provider only answers v2 after verifying it can restore the judged envelope.
+Version 1 keeps its projection interpretation. Unsupported v2/no base falls back
+to v1 within the bounded deadline, then ordinary history scheduling. Nodes without
+a durable shelf never adopt a writable base. No hosted-peer authority is added.
+
+A received v2 envelope passes ordinary prepared signed receive, current scoped
+demand and owner/base checks. It enters `bootstrap_pending`: mutation admission
+and query/get readOnly remain blocked until the common saver verifies that current
+anchor identities and the signed frontier match its acknowledged journal state.
+The receipt is checked under the Lab lock; concurrent changes leave it pending.
+The base's existing current-policy/semantic guards remain mandatory after receipt.
+A failed save does not grant writable readiness. Normal disk reopen only takes
+anchors from the persisted companion, not from a network promise.
+
+New public Node regression `owner_judged_checkpoint_publication_fetch_and_durable_write`
+uses explicit owner approval, type-only demand, holds ordinary history pulls,
+waits for the durable readiness receipt and then writes locally. Existing projection
+flow runs separately to exercise version fallback. Core Store regression also checks
+staged mutation refusal. Lean `staged_not_writable` and `projection_not_promoted`
+passed before wiring; syntax/diff checks passed. **Cargo/Node regressions have not
+run; this branch must not be deployed as validated.**
+
+Remaining deployment prerequisite: core reconstruction's 512-unseen-suffix cap must
+not discard a partial view at the next suffix. The reconstruction owner is handling
+that gate. Shared/proposal/capability cases are still refused, not supported by this
+owner-only slice. Physical iPhone/iPad responsiveness, cancellation/revocation while
+awaiting persistence and old-peer timeout behavior still need integrated execution.

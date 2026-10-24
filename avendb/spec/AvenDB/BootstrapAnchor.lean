@@ -68,3 +68,20 @@ theorem frontier_match_is_exact (digest : List Nat → Nat)
     (saved actual : List Nat) (h : exactFrontier digest saved actual) : saved = actual := by
   exact binding saved actual h.2
 end AvenDB.BootstrapAnchor
+
+namespace AvenDB.BootstrapAnchor
+structure RuntimeChecks where
+  negotiatedJudgedFormat : Bool
+  ownerAttestationValid : Bool
+  currentPolicyValid : Bool
+  demandCurrent : Bool
+  exactDurableReceipt : Bool
+
+def runtimeWritable (c : RuntimeChecks) : Bool :=
+  c.negotiatedJudgedFormat && c.ownerAttestationValid && c.currentPolicyValid && c.demandCurrent && c.exactDurableReceipt
+
+theorem staged_not_writable (c : RuntimeChecks) (h : c.exactDurableReceipt = false) : runtimeWritable c = false := by
+  simp [runtimeWritable,h]
+theorem projection_not_promoted (c : RuntimeChecks) (h : c.negotiatedJudgedFormat = false) : runtimeWritable c = false := by
+  simp [runtimeWritable,h]
+end AvenDB.BootstrapAnchor

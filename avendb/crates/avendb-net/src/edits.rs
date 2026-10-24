@@ -696,6 +696,14 @@ impl Shared {
         if let Some(due) = due {
             edits.put_on(on, &mut book, due).await?;
         }
+        // Unlock only bases whose signed frontier and anchor stamp this same save lane
+        // has acknowledged. Concurrent changes keep them read-only until the next save.
+        let ready = {
+            let mut lab=self.locked_lab();
+            !edits.lacks(&lab,self.me) && edits.held(&lab,self.me)==lab.size(self.me).0
+                && lab.finish_durable_owner_bases(self.me)
+        };
+        if ready { self.size.send_modify(|_| {}); }
         // A signer root is publishable only after its ordered leaves and root
         // receipt persist; complete legacy records remain the export eligibility gate.
         if let Some(signers) = &self.signers {
