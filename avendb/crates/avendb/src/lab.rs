@@ -74,6 +74,10 @@
 //! device reads off those of them the vault created itself and the device counts (`lane_of`): what it reads and judges
 //! the vault's entries by.
 
+#[path = "entry_projection.rs"]
+mod entry_projection;
+pub use entry_projection::{PreparedEntryProjection, VerifiedEntryProjection};
+
 use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
