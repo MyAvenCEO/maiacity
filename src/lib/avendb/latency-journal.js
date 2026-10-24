@@ -1,7 +1,7 @@
 /** Device-local, bounded timing evidence. Never stores operation arguments, IDs, keys or error text. */
 const KEY = 'avendb:latency:v1';
 export const TIMED_OPS = new Set(['status', 'world', 'entries', 'entry', 'entry_views', 'query', 'get', 'room', 'history', 'read_file', 'synced', 'cap_groups', 'bring', 'bring_entries', 'network', 'create', 'set', 'unset', 'insert', 'remove', 'move', 'tag', 'merge', 'review', 'put_file']);
-const STAGES = new Set(['unlock.total', 'peer.transport-rtt', ...[...TIMED_OPS].map(op => `call.${op}`)]);
+const STAGES = new Set(['unlock.total', 'peer.transport-rtt', 'query.first-nonempty-emission', 'query.first-nonempty-emission.readonly', ...[...TIMED_OPS].map(op => `call.${op}`)]);
 const LIMIT = 120;
 /** @typedef {{ stage: string, ms: number, at: number, outcome: 'ok' | 'refused' | 'failed' }} Sample */
 /** @param {unknown} value @returns {value is Sample} */
