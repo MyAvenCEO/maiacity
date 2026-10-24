@@ -1016,6 +1016,7 @@ fn owner_base_provenance(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Valu
         "freshness": "owner-attested-basis-with-validated-suffix",
         "historyComplete": false, "filesComplete": false,
         "pendingSuffix": lab.owner_base_pending(me, entry),
+        "blockedReason": lab.owner_base_wait_reason(me, entry),
         "missingDependencyBodies": lab.owner_base_missing(me).into_iter()
             .find(|(e, _)| *e == entry).map(|(_, missing)| ids(&missing)).unwrap_or_default()
     }))

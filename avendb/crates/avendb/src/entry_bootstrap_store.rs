@@ -11,6 +11,7 @@ pub(crate) struct BootstrapProgress {
     base_scratch: Option<Scratch>,
     pending: std::collections::VecDeque<Edit>,
     missing: Vec<EditId>,
+    wait_reason: Option<&'static str>,
 }
 
 
@@ -58,7 +59,12 @@ pub(crate) struct RetainedOverlay {
 impl Lab {
 
     pub fn owner_bases_pending(&self, on: SignerId) -> bool {
-        !self.locked(on) && self.held(on).bootstrap_progress.values().any(|p| !p.pending.is_empty() && p.missing.is_empty())
+        !self.locked(on) && self.held(on).bootstrap_progress.values().any(|p| !p.pending.is_empty() && p.missing.is_empty() && p.wait_reason.is_none())
+    }
+    /// A retained ciphertext wait is distinct from a missing signed-edit demand.
+    pub fn owner_base_wait_reason(&self, on: SignerId, entry: EntryId) -> Option<&'static str> {
+        self.active_owner_base(on, entry)?;
+        self.held(on).bootstrap_progress.get(&entry)?.wait_reason
     }
     /// Missing authenticated historical bodies of the selected dependency cut.
     /// Current owner authorization gates this local scheduling hint; it grants no
@@ -172,7 +178,7 @@ impl Lab {
                     let base = RestoredOwnerJudgment { entry: *entry, history: shown.history,
                         after: shown.after, items: shown.items.into_inner().unwrap_or_default(),
                         policy: progress.policy, bodies: HashMap::new() };
-                    restored.push((snapshot, base, Some((progress.pending, progress.base_scratch, progress.missing))));
+                    restored.push((snapshot, base, Some((progress.pending, progress.base_scratch, progress.missing, progress.wait_reason))));
                     continue;
                 }
             }
@@ -239,18 +245,18 @@ impl Lab {
                 })
             } else { None };
             let mut judging = Judging::resume(&en, &readings, &lane, base.history, base.after);
-            let (mut pending, base_scratch, mut missing) = match resumed {
+            let (mut pending, base_scratch, mut missing, mut wait_reason) = match resumed {
                 Some(saved) => saved,
                 None => {
                     let suffix: Vec<_> = store.log.edits().iter()
                         .filter(|e| judging.history.get(e.id()).is_none()
                             && matches!(e.action,Action::Write{entry:eid,..}if eid==entry))
                         .cloned().collect();
-                    (std::collections::VecDeque::from(crate::policy::order(&suffix)), original_scratch, Vec::new())
+                    (std::collections::VecDeque::from(crate::policy::order(&suffix)), original_scratch, Vec::new(), None)
                 }
             };
             let mut opened_suffix = Vec::new();
-            while budget > 0 && missing.is_empty() {
+            while budget > 0 && missing.is_empty() && wait_reason.is_none() {
                 let Some(edit) = pending.pop_front() else { break; };
                 budget -= 1;
                 store.bootstrap_cursor = Some(entry);
@@ -279,12 +285,19 @@ impl Lab {
                     continue 'anchor;
                 };
                 let Some(key) = store.keys.get(&key_id, w.key()) else {
-                    continue 'anchor;
+                    wait_reason = Some("missing-entry-key");
+                    pending.push_front(edit);
+                    break;
                 };
                 let Some(opened) = keys::open_edit(key, body, &write_context(&edit))
                     .and_then(|b| Body::from_wire(&b).ok())
                 else {
-                    continue 'anchor;
+                    // The ciphertext is already held: a duplicate edit transfer cannot
+                    // fix invalid authentication/body encoding. Preserve the prefix but
+                    // never count the bad body or claim that its key is merely missing.
+                    wait_reason = Some("invalid-entry-body");
+                    pending.push_front(edit);
+                    break;
                 };
                 if judging
                     .scratch
@@ -337,7 +350,7 @@ impl Lab {
                 let basis = OverlayBasis::of(store);
                 store.bootstrap_progress.insert(entry, BootstrapProgress {
                     basis, policy: view.slice_of(entry),
-                    base_scratch, pending, missing,
+                    base_scratch, pending, missing, wait_reason,
                 });
             }
 
@@ -579,6 +592,56 @@ mod tests {
         let basis = OverlayBasis::of(&store);
         store.forget();
         assert!(!basis.matches(&store), "lock forgets reusable secret-derived state");
+    }
+
+    #[test]
+    fn owner_bootstrap_retains_key_wait_and_resumes_on_key_arrival() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Key owner");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let watcher = lab.device_of(owner, "Watcher");
+        let vault = human_on(&mut lab, owner, &[mac, phone, watcher]);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Base", "old", mac)).unwrap();
+        for device in [phone, watcher] { lab.sync(mac, device); }
+        lab.edit(mac, vault, entry, |i| i.set_text(2, "base")).unwrap();
+        let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
+        let snapshot = lab.complete(mac, draft, &[]).unwrap();
+        for device in [phone, watcher] {
+            let offer = lab.entry_projection_offer(mac, device, entry).unwrap();
+            lab.receive(device, offer.evidence, vec![]);
+            assert!(lab.adopt_owner_entry_base(device, snapshot, entry, sealed.clone()));
+        }
+        // Model a legitimate alternate same-family key arriving after its ciphertext.
+        // Inject a validated key into the core keyring; transport authentication is separate.
+        let name = lab.held(mac).view().entry_key(entry).unwrap();
+        let alternate = Secret::generate(&mut lab.rng);
+        let key_id = alternate.id();
+        let store = lab.stores.get_mut(&mac).unwrap();
+        store.keys.insert(name, alternate.clone());
+        store.keys.by_name.insert(name, vec![key_id]);
+        let id = lab.edit(mac, vault, entry, |i| i.set_text(2, "after key")).unwrap();
+        let signed = lab.signed_edit(mac, id).unwrap().clone();
+        let Action::Write { body, .. } = &signed.edit.action else { panic!("write"); };
+        assert_eq!(keys::edit_key(body), Some(key_id));
+        for device in [phone, watcher] {
+            lab.receive(device, vec![signed.clone()], vec![]);
+            assert_eq!(lab.owner_base_wait_reason(device, entry), Some("missing-entry-key"));
+            assert!(!lab.owner_bases_pending(device));
+            assert!(lab.owner_base_missing(device).is_empty(), "held ciphertext is not a missing edit");
+            assert!(lab.item(device, entry).is_some());
+            assert!(lab.edit(device, vault, entry, |i| i.set_text(2, "blocked")).is_err());
+        }
+        let revoke = lab.submit(mac, &[owner], Action::Revoke(crate::policy::Revoking::Device { vault, device: watcher, keep: vec![] })).unwrap();
+        let removal = lab.signed_edit(mac, revoke).unwrap().clone();
+        lab.receive(watcher, vec![removal], vec![]);
+        assert!(lab.owner_base_wait_reason(watcher, entry).is_none());
+        assert!(lab.active_owner_base(watcher, entry).is_none());
+        lab.stores.get_mut(&phone).unwrap().keys.insert(name, alternate);
+        lab.refresh(phone, &[]);
+        assert!(lab.owner_base_wait_reason(phone, entry).is_none());
+        assert_eq!(lab.owner_base_pending(phone, entry), 0);
+        assert_eq!(lab.item(phone, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
     }
 
     #[test]
