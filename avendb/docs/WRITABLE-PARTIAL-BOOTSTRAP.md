@@ -795,3 +795,5 @@ admission, not the remaining latency of missing-schema acquisition.
    draft landing, proposal acceptance/merge and revocation pass should
    `Lab::check_write` owner/main/exact-head restrictions be extended. Durable
    baseline/suffix replay and peer-neutral authorization must use the same path.
+
+Lane completeness repair: [950796ea](https://github.com/MyAvenCEO/maiacity/commit/950796ea), committed and pushed. Lean and Rust 2024 parser checks passed; executable regression validation pending integration.
