@@ -733,6 +733,7 @@ struct Store {
     bootstrap_pending: HashSet<EntryId>,
     bootstrap_basis: Option<entry_base::OverlayBasis>,
     bootstrap_progress: HashMap<EntryId, entry_base::BootstrapProgress>,
+    bootstrap_cursor: Option<EntryId>,
     bootstrap_revision: Arc<()>,
     /// How many of its edits that replay is of, the first of its log: those after it step on it (`replay_on`).
     replayed: usize,
@@ -825,6 +826,7 @@ impl Default for Store {
             bootstrap_pending: HashSet::new(),
             bootstrap_basis: None,
             bootstrap_progress: HashMap::new(),
+            bootstrap_cursor: None,
             bootstrap_revision: Arc::new(()),
             replayed: 0,
             latest: OnceLock::new(),
@@ -905,6 +907,7 @@ impl Store {
         self.bootstrap_active.clear();
         self.bootstrap_basis = None;
         self.bootstrap_progress.clear();
+        self.bootstrap_cursor = None;
         self.projections.lock().expect("entry projections").clear();
         self.reshow = true;
         self.opened.clear();
