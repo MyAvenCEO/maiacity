@@ -28,3 +28,22 @@ theorem unsigned_no_adoption (g : Gates) (h : g.ownerApproved = false) : deliver
   simp [deliver, h]
 theorem projection_preserves_policy (g : Gates) (p h r : Nat) : (apply g p h r).1 = p := rfl
 end AvenDB.CheckpointDemand
+
+/- A persisted blob tag is a local locator, never authority. Reopening still requires
+ordinary signed policy and ciphertext checks at the revision used for adoption. -/
+namespace AvenDB.CheckpointDemand
+structure PersistedGates where
+  gates : Gates
+  pinnedRootMatches : Bool
+  policyRechecked : Bool
+
+def rehydrate (g : PersistedGates) : Bool :=
+  deliver g.gates && g.pinnedRootMatches && g.policyRechecked
+
+theorem wrong_pin_no_rehydrate (g : PersistedGates) (h : g.pinnedRootMatches = false) :
+    rehydrate g = false := by simp [rehydrate, h]
+theorem unchecked_policy_no_rehydrate (g : PersistedGates) (h : g.policyRechecked = false) :
+    rehydrate g = false := by simp [rehydrate, h]
+theorem revoked_no_rehydrate (g : PersistedGates) (h : g.gates.readerAuthorized = false) :
+    rehydrate g = false := by simp [rehydrate, deliver, h]
+end AvenDB.CheckpointDemand

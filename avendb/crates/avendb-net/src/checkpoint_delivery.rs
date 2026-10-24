@@ -255,6 +255,44 @@ fn finish(current: LogRevision, prepared: LogRevision, body: Vec<u8>) -> Result<
 }
 
 impl Shared {
+    /// Rehydrate only the requested local working set, without connecting to a peer.
+    /// A durable tag is not trusted state: current signed policy and ciphertext gates
+    /// run again after I/O, with demand cancellation checked at adoption.
+    pub(crate) async fn restore_view_checkpoint(
+        self: &Arc<Self>, entry: EntryId, scope: &str, revision: u64,
+    ) -> Result<bool> {
+        ensure!(self.discovery_current(scope, revision), "checkpoint demand expired");
+        let Some(pin) = self.store.tags().get(tag(entry)).await? else { return Ok(false); };
+        ensure!(pin.format.is_raw(), "checkpoint pin format");
+        let hash = *pin.hash.as_bytes();
+        let point = self.read(move |lab, me| {
+            let point = lab.entry_projection_restore_point(me, entry, hash)?;
+            (lab.retained_projection_hint(me, entry) != Some(point.0)).then_some(point)
+        }).await;
+        let Some((snapshot, root)) = point else { return Ok(false); };
+        let permit = self.pulls.page(false, false).await?;
+        let mut reader = self.store.reader(pin.hash);
+        let mut sealed = vec![0; root.size as usize + 1];
+        let mut at = 0;
+        while at < sealed.len() {
+            let n = reader.read(&mut sealed[at..]).await?;
+            if n == 0 { break; }
+            at += n;
+        }
+        ensure!(at == root.size as usize, "persisted checkpoint length");
+        sealed.truncate(at);
+        ensure!(Hash::new(&sealed).as_bytes() == &root.hash, "persisted checkpoint hash");
+        let shared = self.clone();
+        let scope = scope.to_owned();
+        let kept = self.try_lab(move |lab, me| {
+            let _permit = permit;
+            shared.discovery_current(&scope, revision)
+                && lab.retain_entry_projection(me, snapshot, entry, sealed)
+        }).await?;
+        if kept { self.size.send_modify(|_| {}); }
+        Ok(kept)
+    }
+
     /// One bounded foreground attempt; stale/cancelled demand cannot adopt its result. Legacy peers
     /// refuse this kind and ordinary history scheduling continues unchanged.
     pub(crate) async fn fetch_view_checkpoint(
@@ -609,4 +647,68 @@ mod tests {
         assert_eq!(result["ok"]["rows"][0]["readOnly"], true);
         assert!(absent, "unrelated history stays withheld");
     }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn persisted_checkpoint_reopens_offline_and_rejects_bad_pin_and_revocation() {
+        use avendb::policy::{Action, Revoking};
+        let folder = std::env::temp_dir().join(format!("avendb-checkpoint-reopen-{}", crate::shelf::fresh()));
+        let mut w = world();
+        let (sender, receiver, owner, vault) = (w.mac_a, w.phone_a, w.passkey_a, w.alice);
+        w.lab.sync(sender, receiver); // ordinary login/authority setup, before the new entry
+        let entry = w.lab.create(sender, vault, vault, "offline-note", &[], document("Before", "initial", sender)).unwrap();
+        for n in 0..8 { w.lab.edit(sender, vault, entry, |item| item.set_text(2, &format!("Offline latest {n}"))).unwrap(); }
+        let expected = w.lab.item(sender, entry).unwrap().record();
+        let PreparedEntryProjection { draft, root, sealed } = w.lab.draft_entry_projection(sender, &[owner], entry).unwrap();
+        let snapshot = w.lab.complete(sender, draft, &[]).unwrap();
+        let offer = w.lab.entry_projection_offer(sender, receiver, entry).unwrap();
+        w.lab.receive(receiver, offer.evidence, vec![]);
+        // Persist the received signed evidence and ciphertext, not the in-memory projection.
+        let shelf = crate::disk::open(&folder).unwrap();
+        let node = Node::spawn(w.lab.split(receiver, &[], [151;32]), receiver,
+            Options { shelf: Some(shelf.clone()), ..Options::local() }).await.unwrap();
+        node.shared.store_checkpoint(entry, root, sealed.clone()).await.unwrap();
+        node.shutdown().await.unwrap();
+        drop(node);
+        // A new Lab/Node holds the same device keys; its shelf supplies the retained edits.
+        let mut next = world();
+        assert_eq!(next.phone_a, receiver);
+        let node = Node::spawn(next.lab.split(receiver, &[], [152;32]), receiver,
+            Options { shelf: Some(shelf), ..Options::local() }).await.unwrap();
+        assert!(node.shared.peers.lock().unwrap().is_empty());
+        assert_eq!(node.read(move |lab, me| lab.retained_projection_hint(me, entry)).await, None);
+        let scope = "ef".repeat(16);
+        node.shared.demands.lock().unwrap().replace(scope.clone(), 1,
+            vec![avendb::sync::LogId::Entry(entry)], Instant::now()).unwrap();
+        // Hold the legitimate blob across the deliberately corrupted tag, so GC cannot
+        // turn the authority rejection check into an unrelated missing-file test.
+        let preserved = node.shared.store.add_bytes_with_opts((sealed, BlobFormat::Raw)).temp_tag().await.unwrap();
+        let corrupt = node.shared.store.add_bytes_with_opts((b"corrupt checkpoint".as_slice(), BlobFormat::Raw)).temp_tag().await.unwrap();
+        node.shared.store.tags().set(tag(entry), HashAndFormat::new(corrupt.hash(), BlobFormat::Raw)).await.unwrap();
+        assert!(!node.shared.restore_view_checkpoint(entry, &scope, 1).await.unwrap(), "pin is not authority");
+        node.shared.store.tags().set(tag(entry), HashAndFormat::new(Hash::from_bytes(root.hash), BlobFormat::Raw)).await.unwrap();
+        drop(preserved);
+        let ack = node.op(json!({"op":"demand", "scope":scope, "revision":2, "entries":[],
+            "queries":[{"vault":vault.to_hex(),"types":["offline-note"]}]})).await.unwrap();
+        assert_eq!(ack["ok"]["accepted"], true);
+        let query = json!({"op":"query", "schema":"stored", "where":{"type":["offline-note"]}});
+        let row = time::timeout(Duration::from_secs(5), async {
+            loop {
+                let answer = node.op(query.clone()).await.unwrap();
+                if answer["ok"]["rows"][0]["checkpoint"]["partial"] == true { break answer["ok"]["rows"][0].clone(); }
+                time::sleep(Duration::from_millis(5)).await;
+            }
+        }).await.expect("offline manifest demand rehydrates the retained projection");
+        assert_eq!(row["record"], expected);
+        assert_eq!(row["readOnly"], true);
+        assert_eq!(node.read(move |lab, me| lab.retained_projection_hint(me, entry)).await, Some(snapshot));
+        w.lab.submit(sender, &[owner], Action::Revoke(Revoking::Device { vault, device: receiver, keep: vec![] })).unwrap();
+        let revoked = w.lab.backup(sender).signed().iter().filter(|signed|
+            matches!(signed.edit.action, Action::Revoke(Revoking::Device { device, .. }) if device == receiver)).cloned().collect();
+        node.try_act(move |lab, me| lab.receive(me, revoked, vec![])).await.unwrap();
+        assert!(!node.shared.restore_view_checkpoint(entry, &scope, 2).await.unwrap(), "current policy rejects old disk pins");
+        assert_ne!(node.op(query).await.unwrap()["ok"]["rows"][0]["checkpoint"]["partial"], true);
+        node.shutdown().await.unwrap();
+        drop(node);
+        std::fs::remove_dir_all(folder).unwrap();
+    }
+
 }
