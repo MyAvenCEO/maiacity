@@ -3348,6 +3348,7 @@ pub fn keep_picks(mode: KeepMode, select: Option<&Selector>, a: &Attrs) -> bool 
 }
 
 /// Write `w` builds only on writes of its own entry among `ws`.
+#[cfg(test)]
 fn deps_in<W: AsRef<Write>>(ws: &[W], w: &Write) -> bool {
     w.deps.iter().all(|d| ws.iter().map(AsRef::as_ref).any(|x| x.edit == *d && x.entry == w.entry))
 }
@@ -3355,17 +3356,31 @@ fn deps_in<W: AsRef<Write>>(ws: &[W], w: &Write) -> bool {
 /// Write `w` may follow the writes `ws`: it builds only on writes of its own entry among them (`UnknownDep`), and a
 /// write on a proposal on the write that started it or another write on it (`NotOnProposal`).
 pub fn builds_on<W: AsRef<Write>>(ws: &[W], w: &Write) -> Result<(), Refusal> {
-    if !deps_in(ws, w) {
+    builds_on_lookup(w, |id| ws.iter().map(AsRef::as_ref).filter(move |x| x.edit == id))
+}
+
+/// The same admission gate with an exact lookup of the preceding writes. A
+/// caller must never index future writes. Retain all matches, even duplicate IDs,
+/// so indexed restoration has precisely the canonical slice semantics.
+pub(crate) fn builds_on_lookup<'a, I: Iterator<Item = &'a Write>>(
+    w: &Write, find: impl Fn(EditId) -> I,
+) -> Result<(), Refusal> {
+    if !w.deps.iter().all(|id| find(*id).any(|x| x.entry == w.entry)) {
         return Err(Refusal::UnknownDep);
     }
-    if !on_proposal(ws, w) {
-        return Err(Refusal::NotOnProposal);
+    if let Proposal::On(branch) = w.proposal {
+        if !find(branch).any(|x| x.proposal == Proposal::New && x.entry == w.entry)
+            || !w.deps.iter().any(|id| *id == branch || find(*id).any(|x| x.proposal == Proposal::On(branch)))
+        {
+            return Err(Refusal::NotOnProposal);
+        }
     }
     Ok(())
 }
 
 /// Write `w` extends its line: the main line and a new proposal need nothing more; a write on proposal `b` builds on
 /// the write of its own entry that started `b`, or on another write on `b`.
+#[cfg(test)]
 fn on_proposal<W: AsRef<Write>>(ws: &[W], w: &Write) -> bool {
     let ws = || ws.iter().map(AsRef::as_ref);
     match w.proposal {
@@ -4688,5 +4703,35 @@ mod tests {
         assert!(canonical(&[]) && canonical(&[a]) && canonical(&[a, b]));
         assert!(!canonical(&[b, a]) && !canonical(&[a, a]));
         assert_eq!(mk_audience(&[b, a, b]), vec![a, b]);
+    }
+}
+
+#[cfg(test)]
+mod indexed_admission_regression {
+    use super::*;
+    #[test]
+    fn indexed_gate_matches_original_prefix_predicates() {
+        use crate::doc::Item;
+        use crate::history::Repo;
+        let signer = SignerId::from_u64(1);
+        let repo = Repo::new(&Item::document("Start", signer), signer);
+        let first = repo.history().changes()[0].write.clone();
+        let branch = EditId::from_u64(2);
+        let mut start = first.clone(); start.edit = branch; start.first = false;
+        start.proposal = Proposal::New; start.deps = vec![first.edit];
+        let prefixes = [vec![], vec![first.clone()], vec![first.clone(), start.clone()],
+            vec![first.clone(), start.clone(), start.clone()]];
+        for held in prefixes {
+            for proposal in [Proposal::Main, Proposal::New, Proposal::On(branch), Proposal::On(EditId::from_u64(999))] {
+                for deps in [vec![], vec![first.edit], vec![branch], vec![first.edit, branch], vec![EditId::from_u64(999)]] {
+                    for entry in [first.entry, EntryId::from_u64(999)] {
+                        let mut w = first.clone(); w.proposal = proposal; w.deps = deps.clone(); w.entry = entry;
+                        let expected = if !deps_in(&held, &w) { Err(Refusal::UnknownDep) }
+                            else if !on_proposal(&held, &w) { Err(Refusal::NotOnProposal) } else { Ok(()) };
+                        assert_eq!(builds_on(&held, &w), expected);
+                    }
+                }
+            }
+        }
     }
 }

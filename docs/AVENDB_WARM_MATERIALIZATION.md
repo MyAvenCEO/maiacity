@@ -139,3 +139,44 @@ This removes one redundant O(log length) hash only. Initial log verification and
 basis hashing, policy replay restoration, key/body preparation, entry fingerprint
 work and uncaptured-entry reconstruction remain. This is not full working-set-only
 startup and has no physical-device latency claim.
+
+## Indexed warm-history reconstruction (follow-up, not lazy-body completion)
+
+`Saved::restore` previously called `History::push` for every restored write.
+`push` validates dependencies with linear scans of the whole admitted prefix,
+so a chain of n ordinary writes performs quadratic prefix searching even though
+its Loro snapshots are deferred. Restoration now constructs an exact index of
+preceding write IDs and invokes the same canonical admission gate through that
+lookup. Unknown dependencies and invalid proposal ancestry retain their original
+refusal order. Future writes never enter the index early; duplicate IDs retain
+all matches rather than silently changing the slice predicate. No authorizing
+receipt is accepted from a peer by this path.
+
+Expected dependency-check cost is proportional to writes plus dependency edges
+for canonical unique IDs, with O(n) temporary index storage. History content,
+metadata and canonical fallback remain identical. This does not remove body
+opening, content copies, per-line history walks or owner-index reconstruction.
+
+Validation: the Lean IndexedHistoryAdmission lookup equivalence theorem passed
+(assumes exact prefix/index membership). The production lookup helper compiled
+standalone and admitted 10,000 indexed writes while rejecting wrong-entry
+ancestry. Full crate regressions are added but pending the parent's Cargo queue:
+`cargo test -p avendb indexed_history_restore_matches_sequential_admission`
+and `cargo test -p avendb indexed_gate_matches_original_prefix_predicates`.
+The first covers a real document chain, proposal and malformed missing/future/
+cross-entry/proposal/duplicate histories; the second compares the shared gate to
+the independent original slice predicates. Existing warm-reopen tests remain required.
+
+### Still open: authenticated metadata/deferred-body boundary
+
+True working-set-first restore still needs an authenticated engine/exact-log
+metadata receipt for historical headers, tags, proofs and capability definitions.
+Authorization dependencies (schema/lens/group histories) must be ready before
+ordinary projections. `read` currently decrypts every accessible body, and
+`Saved::restore` needs content for History and attrs reconstruction. Represent
+metadata-known/content-deferred separately from unreadable/invalid/missing body;
+resolve a target entry's full dependency closure before mutation. Current
+key/policy checks, revocation, lock and stale/corrupt-receipt canonical fallback
+must invalidate reuse. Skipping `read` or treating deferred bodies as empty
+would violate those invariants. That larger implementation is not completed by
+this indexed restoration change.
