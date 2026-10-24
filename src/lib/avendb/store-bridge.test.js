@@ -8,6 +8,17 @@ import { Store as Canonical } from '../../../avendb/crates/avendb-browser/js/sto
 import { Store as Shipped } from './device/store.js';
 
 for (const [name, Store] of [['canonical', Canonical], ['shipped', Shipped]]) {
+ test(`${name}: synchronous transfer failure drops its pending receipt and permits retry`, async () => {
+  const error = new DOMException('fixture detached buffer', 'DataCloneError');
+  const worker = { postMessage() { throw error; } };
+  const store = new Store(worker);
+  await expect(store.keep('slots/view-0', new Uint8Array([1]))).rejects.toBe(error);
+  expect(store.calls.size).toBe(0);
+  worker.postMessage = ({ id }) => queueMicrotask(() => worker.onmessage({ data: { id, ok: true } }));
+  await expect(store.keep('slots/view-0', new Uint8Array([2]))).resolves.toBe(true);
+  expect(store.calls.size).toBe(0);
+ });
+
 	test(`${name}: keeping a view slot waits for the worker and preserves its opaque bytes`, async () => {
 		const sent = [];
 		const worker = { postMessage: (message, transfer) => sent.push(structuredClone(message, { transfer })) };

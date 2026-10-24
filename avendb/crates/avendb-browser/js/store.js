@@ -54,7 +54,8 @@ export class Store {
 		const id = this.next++;
 		return new Promise((resolve, reject) => {
 			this.calls.set(id, { resolve, reject });
-			this.worker.postMessage({ id, op, args }, moved);
+			try { this.worker.postMessage({ id, op, args }, moved); }
+			catch (error) { this.calls.delete(id); reject(error); }
 		});
 	}
 
