@@ -1,7 +1,7 @@
 /**
  * SANDBOX 6 · FOOD AND WATER — what a village eats and drinks, in kilograms and litres, and what its hexes grow.
  *
- * The valley's calendar is the master clock's (game/time.ts, game/policy.hearts.json): a month of thirty days, a year
+ * The valley's calendar is the master clock's (game/time.ts): a month of thirty days, a year
  * of twelve months, and at 1× it runs as fast: a real day is a month, a year takes twelve real days (a day 48 min, a
  * week about 5.6 h), so a food forest grows full in four real months. Faster, a real day is a year (12×) or ten
  * years (120×), and everything in the valley, its people's walking too, runs that much faster with it (SPEEDS).

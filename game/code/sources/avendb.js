@@ -21,7 +21,7 @@
  * way, an entry handed out at an older version than this device proved of it before is refused, saying so (../fresh.js):
  * a signature proves who wrote a version, not that it is the newest. Each entry comes back in the repo entry's own shape ({ ref, type, for, title, ..., files, hash }),
  * with its vault, entry and heads beside, checked by the one checker and held to an engine version the repo ships;
- * what fails either is left out and the seed's stays. Nothing here writes: `copyOf` makes the one batch the vault's
+ * what fails either blocks its path rather than reviving the seed. Nothing here writes: `copyOf` makes the one batch the vault's
  * owner runs to copy the repo in.
  *
  * A ref `vault:<vault id>/<entry id>@<heads>` names one entry at one version, as avenDB pins one: it is served only
@@ -145,7 +145,7 @@ function checked(e, viewOf) {
 
 /** the loaded entries, by path; empty until `use` or `loadCode` fills them */
 let loaded = {};
-/** why a path runs nothing, where its row was older than the newest this device proved of it (../fresh.js) */
+/** Why an observed vault path runs nothing: rejected, deleted, ambiguous, absent or stale. */
 let stale = {};
 
 export const avendb = {
@@ -157,11 +157,15 @@ export const avendb = {
 	/** the loaded entry at `path`, or null @param {string} path */
 	byPath: (path) => loaded[path] ?? null,
 	/**
-	 * why the vault's entry at `path` runs nowhere, where the version handed out of it was older than the newest this
-	 * device proved (../fresh.js) and none of it was loaded before: the loader refuses the path, saying so, rather than
-	 * run the seed's or an older one in silence; undefined otherwise @param {string} path
+	 * Why the vault-owned path runs nowhere instead of silently falling back to repo code.
+	 * @param {string} path
 	 */
-	staleAt: (path) => (loaded[path] ? undefined : stale[path]),
+	refusalAt: (path) => (loaded[path] ? undefined : stale[path]),
+	paths: () => [...new Set([...Object.keys(loaded), ...Object.keys(stale)])],
+	reset() {
+		loaded = {};
+		stale = {};
+	},
 	/** every loaded entry @returns {Record<string, any>} */
 	all: () => loaded,
 	/**
@@ -169,36 +173,50 @@ export const avendb = {
 	 * repo ships; returns what was taken and what was left out (and why). `viewOf` is ../index.js `viewOfEntry`.
 	 * `older` are rows held back as older than the newest this device proved of their entries (../fresh.js `fresh`,
 	 * each `{ row, error }`): what was loaded of such a path before stays, a version at least as new, else the path
-	 * runs nothing and says why (`staleAt`).
+	 * runs nothing and says why (`refusalAt`). Missing, deleted and rejected paths remain blocked until a valid row
+	 * replaces them. `reset` explicitly discards the session for a cold bootstrap; normal reloads never call it.
 	 */
 	use(rows, viewOf, older = []) {
 		const next = {};
-		const twice = new Set();
+		const held = {};
+		const seen = new Set();
 		const refused = [];
+		const reject = (path, error) => {
+			refused.push(error);
+			if (path && PATH.test(path)) {
+				held[path] = error;
+				delete next[path];
+			}
+		};
 		for (const row of rows ?? []) {
-			// an entry the vault deleted (tagged so: src/lib/avendb/seed.js GONE) runs nowhere
-			if ((row?.tags ?? []).includes('avendb:deleted')) continue;
-			const m = entryOf(row);
-			if (m.error) {
-				refused.push(m.error);
+			const path = tagged(row?.tags, 'ref');
+			if (path && seen.has(path)) {
+				reject(path, path + ': held twice in the vault; no code runs');
 				continue;
 			}
-			const c = checked(m.entry, viewOf);
-			if (!c.ok) refused.push(`${m.entry.ref}: ${c.errors.join(' ')}`);
-			else if (next[m.entry.ref] || twice.has(m.entry.ref)) {
-				// which of two is meant, no reader could say: neither runs, and the seed's stays
-				refused.push(`${m.entry.ref}: held twice in the vault (entries ${(next[m.entry.ref]?.entry ?? '?').slice(0, 8)}…, ${m.entry.entry.slice(0, 8)}…)`);
-				twice.add(m.entry.ref);
-				delete next[m.entry.ref];
-			} else next[m.entry.ref] = m.entry;
+			if (path) seen.add(path);
+			if ((row?.tags ?? []).includes('avendb:deleted')) {
+				reject(path, (path ?? 'code entry') + ': deleted in avenDB; the repo seed is not a fallback');
+				continue;
+			}
+			const mapped = entryOf(row);
+			if (mapped.error) {
+				reject(path, mapped.error);
+				continue;
+			}
+			const result = checked(mapped.entry, viewOf);
+			if (!result.ok) reject(path, mapped.entry.ref + ': ' + result.errors.join(' '));
+			else next[mapped.entry.ref] = mapped.entry;
 		}
-		const held = {};
 		for (const { row, error } of older) {
 			refused.push(error);
 			const path = tagged(row?.tags, 'ref');
-			if (!path || next[path] || twice.has(path)) continue;
+			if (!path || next[path] || held[path]) continue;
 			if (loaded[path]?.entry === row.entry) next[path] = loaded[path];
 			else held[path] = error;
+		}
+		for (const path of new Set([...Object.keys(loaded), ...Object.keys(stale)])) {
+			if (!next[path] && !held[path]) held[path] = stale[path] ?? path + ': missing from avenDB; the repo seed is not a fallback';
 		}
 		loaded = next;
 		stale = held;

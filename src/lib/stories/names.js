@@ -2,7 +2,7 @@
 // timelines' projects, the media's tags. The new world is stories — the media vault's buckets, each named by its
 // title — and, before a story, ideas, each a short name its pictures and notes cluster under. Every old day is one
 // name now: the story it became, or the idea it is. The one list (legacy.json), read here — by the media library, the
-// scripts (api/scripts/day.ts, the film scripts) — and by the Mac app, which renames and merges the vault's buckets and
+// film scripts — and by the Mac app, which renames and merges the vault's buckets and
 // rewrites the files' day tags by it when it starts; the API's migration 0032 holds a frozen copy.
 import LEGACY_LIST from './legacy.json' with { type: 'json' };
 

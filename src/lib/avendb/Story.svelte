@@ -128,6 +128,7 @@
 		if (!item) return;
 		const { ops, errors } = await moving(world, actor, item, flow, to, false);
 		problem = errors.join(' · ');
+		if (errors.length) return;
 		const moved = await api.runAll(`Moving it to ${flow.stages.find((s) => s.key === to)?.name ?? to}`, ops);
 		// the tab of the stage it is in now shows
 		if (moved && step) location.hash = `stories/${entry}`;

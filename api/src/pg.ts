@@ -1,4 +1,4 @@
-// The ledger speaks one small database interface — query, exec, transaction —
+// The API speaks one small database interface — query, exec, transaction —
 // so the same code runs on the production Postgres (through Bun's client) and
 // on PGlite in the tests, which gives real Postgres semantics without Docker.
 import type { SQL } from "bun";
@@ -36,7 +36,7 @@ export function fromBunSql(sql: SQL): Db {
   };
 }
 
-/** The live connection. Set once at boot (or by a test) before the ledger runs. */
+/** The live connection. Set once at boot (or by a test) before API queries run. */
 export let db: Db;
 export function useDb(next: Db): void {
   db = next;

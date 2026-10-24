@@ -8,7 +8,7 @@
 <script>
 	import ArticleView from './ArticleView.svelte';
 	import { entryOf } from './artifacts.js';
-	import { CONTENT, flowsFor, moving, stageTag } from './flows.js';
+	import { CONTENT, flowsFor, moving, stageOf, stageTag } from './flows.js';
 	import { postTag } from './posttypes.js';
 
 	/**
@@ -17,7 +17,6 @@
 	 */
 	let { world, actor, api, busy, item } = $props();
 
-	const PUBLISHED = stageTag('content', 'published');
 	/** the flow its posts go through, the vault's own or the app's content flow */
 	const flow = $derived(flowsFor(world, item.vault, 'post')[0] ?? CONTENT);
 	const story = $derived(/** @type {any} */ (item.record) ?? {});
@@ -101,12 +100,11 @@
 	/** Moves post `p` to its flow's published stage, on the Maia Universe stream, on today for its first time out, or
 	 *  back to a draft, its flow's functions running as it goes. @param {import('./vaults.js').EntryView} p */
 	async function publish(p) {
-		const on = (p.tags ?? []).includes(stageTag(flow.key, 'published'));
+		const on = stageOf(p, flow)?.key === 'published';
 		const { ops, errors } = await moving(world, actor, p, flow, on ? 'draft' : 'published');
 		problem = errors.join(' · ');
-		const day = on || /** @type {any} */ (p.record)?.published ? [] : [{ op: 'set', entry: p.entry, path: ['published'], value: new Date().toISOString().slice(0, 10), as: actor }];
-		// the move's ops first, as `moving` counts them: each `$n` in them is the entry its op n created
-		await api.runAll(on ? 'Taking it off the stream' : 'Publishing it on the stream', [...ops, ...day]);
+		if (errors.length) return;
+		await api.runAll(on ? 'Taking it off the stream' : 'Publishing it on the stream', ops);
 	}
 </script>
 
@@ -132,7 +130,7 @@
 				</details>
 			{/if}
 			{#each mine as p (p.entry)}
-				{@const live = (p.tags ?? []).includes(PUBLISHED)}
+				{@const live = stageOf(p, flow)?.key === 'published'}
 				<div class="post" class:live>
 					<button class="open" onclick={() => toggle(p.entry)} aria-expanded={open === p.entry}>
 						<b>{p.title || 'Untitled'}</b>

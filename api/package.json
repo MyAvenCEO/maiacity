@@ -11,10 +11,7 @@
   "dependencies": {
     "@noble/hashes": "2.4.0",
     "@premai/api-sdk": "1.0.66",
-    "@simplewebauthn/server": "^14.0.1",
-    "@zk-kit/baby-jubjub": "^1.0.3",
-    "poseidon-lite": "^0.3.0",
-    "viem": "^2.56.8"
+    "@simplewebauthn/server": "^14.0.1"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",

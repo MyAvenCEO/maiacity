@@ -62,13 +62,33 @@ const move = (to, o) => {
 };
 
 describe('the built-in Publish and Unpublish', () => {
+	test('first-publication metadata is shared, and historical dates survive republishing', async () => {
+		const published = '2026-09-10';
+		const { ops, errors } = await move('published', { post: { record: { published } } });
+		expect(errors).toEqual([]);
+		expect(ops.some((op) => op.op === 'set' && op.path?.[0] === 'published')).toBe(false);
+	});
+	test('stage transitions are validated by the workflow, not by a button', async () => {
+		const { ops, errors } = await move('published', { post: { tags: ['content:idea'] } });
+		expect(ops).toEqual([]);
+		expect(errors).toEqual(['Content cannot move from idea to published']);
+	});
+	test('a vault-defined flow supplies its own publication tag and metadata', async () => {
+		const flow = { ...CONTENT, key: 'newsletter' };
+		const w = world({ post: { tags: ['newsletter:draft'] } });
+		const { ops, errors } = await moving(w, ME, w.entries[0], flow, 'published');
+		expect(errors).toEqual([]);
+		expect(ops).toContainEqual({ op: 'tag', entry: POST, add: ['newsletter:published'], remove: ['newsletter:draft'], as: ME });
+		expect(ops.at(-1)).toMatchObject({ op: 'set', entry: POST, path: ['published'] });
+	});
 	test('publishing: the Public share on the stage tag, the tag swapped, and the picture it shows tagged too', async () => {
 		const { ops, errors } = await move('published');
 		expect(errors).toEqual([]);
 		expect(ops).toEqual([
 			{ op: 'share', over: CITY, who: 'everyone', level: 'Public', what: { tag: PUBLISHED }, as: ME },
 			{ op: 'tag', entry: POST, add: [PUBLISHED], remove: [DRAFT], as: ME },
-			{ op: 'tag', entry: PIC, add: [PUBLISHED], as: ME }
+			{ op: 'tag', entry: PIC, add: [PUBLISHED], as: ME },
+			{ op: 'set', entry: POST, path: ['published'], value: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/), as: ME }
 		]);
 	});
 	test('taking it off: the tag swapped back, and the picture only it shows untagged', async () => {
@@ -90,8 +110,12 @@ describe('a function asks for its own slice, and nothing wider', () => {
 	/** the ops `code` asks for as the post is published, between the move's own two and Publish's one, and why not */
 	const asking = async (code) => {
 		const { ops, errors } = await move('published', { fns: { [CITY]: [fn('Mine', code)] } });
-		expect(ops.at(-1)).toEqual({ op: 'tag', entry: PIC, add: [PUBLISHED], as: ME });
-		return { asked: ops.slice(2, -1), errors };
+		if (errors.length) {
+			expect(ops).toEqual([]);
+			return { asked: [], errors };
+		}
+		expect(ops.at(-2)).toEqual({ op: 'tag', entry: PIC, add: [PUBLISHED], as: ME });
+		return { asked: ops.slice(2, -2), errors };
 	};
 	const returning = (ops) => `export function run(event) { return ${JSON.stringify(ops)}; }`;
 
@@ -172,9 +196,9 @@ describe('function code is checked as it loads', () => {
 			expect(r.ops).toEqual([]);
 			expect(r.error).toBe(refusal(code));
 		});
-	test('a move names the function the checker refused, and makes the rest', async () => {
+	test('a refused function blocks the entire publication plan', async () => {
 		const { ops, errors } = await move('published', { fns: { [CITY]: [fn('Imports', 'import x from "y"; export function run(e) { return []; }')] } });
-		expect(ops).toHaveLength(3);
+		expect(ops).toEqual([]);
 		expect(errors).toEqual([expect.stringMatching(/^Imports: its code imports a module/)]);
 	});
 });
