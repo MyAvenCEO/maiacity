@@ -138,6 +138,18 @@ impl Scratch {
         Scratch { item: self.item.clone(), holds, authored, tip: self.tip }
     }
 
+    /// Fork a fully imported scratch only if it holds exactly the selected counted line history.
+    /// Canonical selection stays with History; extra/absent/unjudged writes force normal rebuilding.
+    pub(crate) fn shown_for(&self, changes: &[&Change], signer: SignerId, line: Line) -> Option<Item> {
+        if self.item.has_parked_updates() || self.holds.len() != changes.len()
+            || !changes.iter().all(|c| c.counted && self.holds.contains(&c.write.edit))
+            || !changes.iter().any(|c| updates(&c.write) && c.body.as_ref().is_some_and(|b| !b.is_empty()))
+        {
+            return None;
+        }
+        Some(self.item.fork_on(signer, line))
+    }
+
     /// Import the update change `c` carries, noting the schemas it was written under.
     fn import(&mut self, c: &Change) {
         let since = self.item.version();
