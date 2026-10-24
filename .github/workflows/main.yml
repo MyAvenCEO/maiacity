@@ -67,8 +67,12 @@ jobs:
       component: avendb
   kernel:
     needs: impact
-    if: needs.impact.outputs.site == 'true' || needs.impact.outputs.api == 'true'
+    if: needs.impact.outputs.site == 'true'
     uses: ./.github/workflows/kernel.yml
+  api-tests:
+    needs: impact
+    if: needs.impact.outputs.api == 'true' && needs.impact.outputs.site != 'true'
+    uses: ./.github/workflows/api-tests.yml
   avendb:
     needs: impact
     if: needs.impact.outputs.avendb == 'true' || needs.impact.outputs.server == 'true' || needs.impact.outputs.agent == 'true'
@@ -89,8 +93,8 @@ jobs:
       built: true
     secrets: inherit
   api:
-    needs: [impact, kernel, delivery, api-image]
-    if: needs.impact.outputs.api == 'true'
+    needs: [impact, kernel, api-tests, delivery, api-image]
+    if: ${{ !cancelled() && needs.impact.outputs.api == 'true' && needs.delivery.result == 'success' && needs.api-image.result == 'success' && ((needs.kernel.result == 'success' && needs.api-tests.result == 'skipped') || (needs.impact.outputs.site != 'true' && needs.kernel.result == 'skipped' && needs.api-tests.result == 'success')) }}
     permissions:
       contents: write
       packages: write

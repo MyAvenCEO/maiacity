@@ -93,3 +93,19 @@ test('a queued, superseded, failed or unknown predecessor forces a full release'
  }
  expect(releasedBase('0'.repeat(40),[])).toBe('');
 });
+
+test('API release accepts exactly its selected gate and successful delivery/image work', () => {
+ const workflow=readFileSync('.github/workflows/main.yml','utf8');
+ const condition=workflow.slice(workflow.indexOf('  api:\n')).match(/if: \$\{\{ (.*?) \}\}/)[1];
+ // This condition uses only boolean operators, string equality and cancelled(); exercise the actual expression.
+ const evaluate=new Function('needs','cancelled',`return (${condition.replaceAll('needs.api-tests', "needs['api-tests']").replaceAll('needs.api-image', "needs['api-image']")})`);
+ const needs={impact:{outputs:{api:'true',site:'true'}},kernel:{result:'success'},'api-tests':{result:'skipped'},delivery:{result:'success'},'api-image':{result:'success'}};
+ expect(evaluate(needs,()=>false)).toBe(true);
+ expect(evaluate(needs,()=>true)).toBe(false);
+ for(const name of ['kernel','delivery','api-image']) for(const result of ['failure','cancelled','skipped']) expect(evaluate({...needs,[name]:{result}},()=>false)).toBe(false);
+ const apiOnly={...needs,impact:{outputs:{api:'true',site:'false'}},kernel:{result:'skipped'},'api-tests':{result:'success'}};
+ expect(evaluate(apiOnly,()=>false)).toBe(true);
+ for(const result of ['failure','cancelled','skipped']) expect(evaluate({...apiOnly,'api-tests':{result}},()=>false)).toBe(false);
+ expect(evaluate({...apiOnly,impact:needs.impact},()=>false)).toBe(false);
+ expect(evaluate({...needs,'api-tests':{result:'failure'}},()=>false)).toBe(false);
+});
