@@ -21,3 +21,18 @@ These results demonstrate a micro-optimization, not the explanation or resolutio
 Remaining: fresh same-artifact cold/warm measurements, opening keys, read/show reconstruction and stewardship costs, browser worker scheduling, snapshot capture copies and physical local/remote latency. This small optimization alone cannot close the reported 10-second unlock issue.
 
 Implementation and validated tests: [1113cc42](https://github.com/MyAvenCEO/maiacity/commit/1113cc42). Raw archived warm timers additionally report read 70–90ms and opening the stored view 138–143ms. Dominant measured warm CPU work remains open-keys and show-items.
+
+
+## Same-engine warm path anatomy
+
+A follow-up synthetic fixture builds 32 real notes with four edits each, restores them to a second test device, captures the encrypted warm view/keys, and reopens three times with the same engine. Each reopen asserts stored-view reuse and exact record equality. It contains 166 edits and only four key boxes (1,752 payload bytes), so it is explicitly not representative of the historical thousands-key workload.
+
+| Trial | Whole restore ms | Show items ms | Judging ms | Materialization ms | Key index ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| 0 | 14.469 | 10.684 | 7.720 | 2.824 | 0.003 |
+| 1 | 14.898 | 11.105 | 7.971 | 2.991 | 0.003 |
+| 2 | 16.388 | 12.521 | 9.061 | 3.288 | 0.003 |
+
+One focused native test passed in 2.32s after compilation. Test-profile debug replay assertions are enabled, so these are not release/physical latency numbers. Added numeric work timers separate key-index construction, stays, box opening, public keys, derivation, item judgment and materialization; they do not record keys or user data. The sum of nested timers is not whole elapsed time. The fixture optionally accepts AVENDB_SYNTHETIC_WARM_ENTRIES (1–256, default32) for a bounded larger synthetic study; no larger run is claimed yet.
+
+The measured next target is ordinary item reconstruction, with judgment roughly72% of show time and materialization27%. The tiny-key fixture cannot establish whether copying key boxes dominates large-store unlock, and no KeyIndex ownership change was made. Large-key profiling and guarded projection-reuse design remain open.
