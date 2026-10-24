@@ -97,13 +97,44 @@ impl Shared {
         task::spawn(async move {
             let _activity = activity;
             loop {
-                let active = { shared.demands.lock().expect("demands").queries(&scope, Instant::now()) };
-                if let Some((revision, queries)) = active {
+                let active = { shared.demands.lock().expect("demands").working_set(&scope, Instant::now()) };
+                if let Some((revision, entries, queries)) = active {
+                    // Restore persisted view projections before any peer work. Local query
+                    // discovery uses the same authorized selector; it never claims completeness.
+                    let requested = entries.clone();
+                    let selectors = queries.clone();
+                    let local = shared.read(move |lab, me| {
+                        let mut local = requested;
+                        for query in selectors {
+                            for id in lab.discover_types(me, me, query.vault.as_deref().and_then(VaultId::from_hex), &query.types) {
+                                let id = LogId::Entry(id);
+                                if !local.contains(&id) { local.push(id); }
+                                if local.len() >= 8 { break; }
+                            }
+                            if local.len() >= 8 { break; }
+                        }
+                        local
+                    }).await;
+                    for id in local.iter().take(8) {
+                        if !shared.discovery_current(&scope, revision) { break; }
+                        if let LogId::Entry(entry) = id {
+                            let _ = time::timeout(crate::checkpoint_delivery::DEADLINE,
+                                shared.restore_view_checkpoint(*entry, &scope, revision)).await;
+                        }
+                    }
                     // Snapshot values before awaiting; no demand/peer mutex spans I/O.
                     let peers: Vec<_> = shared.peers.lock().expect("peers").values()
                         .filter(|p| p.conn.close_reason().is_none()).take(4).cloned().collect();
                     let deadline = Instant::now() + Duration::from_secs(10);
                     for peer in peers {
+                        let mut checkpoints_supported = true;
+                        // Explicit active-view IDs also bootstrap without waiting for collection discovery.
+                        for id in entries.iter().take(8) {
+                            if Instant::now() >= deadline || !shared.discovery_current(&scope, revision) { break; }
+                            if let LogId::Entry(entry) = id {
+                                if shared.fetch_view_checkpoint(&peer, *entry, &scope, revision, deadline).await.is_err() { checkpoints_supported = false; break; }
+                            }
+                        }
                         for query in &queries {
                             if Instant::now() >= deadline || !shared.discovery_current(&scope, revision) { break; }
                             let request = serde_json::to_vec(&json!({"version": 1, "query": query.json()})).expect("discovery JSON");
@@ -112,6 +143,14 @@ impl Shared {
                             let Ok(ids) = response(&bytes) else { break };
                             if !shared.demands.lock().expect("demands").discovered(&scope, revision, &ids, Instant::now()) { break; }
                             shared.size.send_modify(|_| {});
+                            // A bounded working-set checkpoint precedes ordinary history for this view.
+                            // Unsupported/unauthorized/oversized offers fall through to signed-log sync.
+                            for id in ids.iter().take(if checkpoints_supported { 8 } else { 0 }) {
+                                if Instant::now() >= deadline || !shared.discovery_current(&scope, revision) { break; }
+                                if let LogId::Entry(entry) = id {
+                                    if shared.fetch_view_checkpoint(&peer, *entry, &scope, revision, deadline).await.is_err() { checkpoints_supported = false; break; }
+                                }
+                            }
                             // Retain all hints in demand: the bounded live lane may coalesce only its first batch.
                             // Existing authenticated holdings, authority-first pulls and signed receive remain the gate.
                             for chunk in ids.chunks(crate::pulls::LIVE_LOGS) {
@@ -127,10 +166,9 @@ impl Shared {
             }
         });
     }
-    fn discovery_current(self: &Arc<Self>, scope: &str, revision: u64) -> bool {
+    pub(crate) fn discovery_current(self: &Arc<Self>, scope: &str, revision: u64) -> bool {
         if self.admit().is_err() { return false; }
-        self.demands.lock().expect("demands").queries(scope, Instant::now())
-            .is_some_and(|(current, _)| current == revision)
+        self.demands.lock().expect("demands").current(scope, revision, Instant::now())
     }
 }
 

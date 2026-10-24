@@ -134,14 +134,14 @@ impl Lab {
         let en = st.entry(entry).ok_or(Refusal::UnknownEntry)?;
         let vault = en.vault;
         let shown = store.shown.get(&entry).ok_or(Refusal::NotAccepted)?;
-        if !shown.history.landed() || !shown.items.contains_key(&MAIN) || shown.items.len() > MAX_LINES {
+        if !shown.history.landed() || !shown.items().contains_key(&MAIN) || shown.items().len() > MAX_LINES {
             return Err(Refusal::NotAccepted);
         }
         let mut basis: Vec<_> = shown.history.lines().into_iter().flat_map(|line| shown.history.heads(line)).collect();
         basis.sort(); basis.dedup();
         if basis.is_empty() || basis.len() > MAX_BASIS { return Err(Refusal::NotAccepted); }
         let key = st.entry_key(entry).and_then(|name| store.keys.first(name)).ok_or(Refusal::NoCap)?.clone();
-        let records: BTreeMap<_, _> = shown.items.iter().map(|(line, item)| (*line, item.record())).collect();
+        let records: BTreeMap<_, _> = shown.items().iter().map(|(line, item)| (*line, item.record())).collect();
         if records.values().any(|record| !bounded_record(record)) { return Err(Refusal::NotAccepted); }
         let bytes = encode(vault, entry, &basis, &records);
         if bytes.len() > MAX_BYTES { return Err(Refusal::NotAccepted); }
@@ -152,7 +152,7 @@ impl Lab {
         Ok(PreparedEntryProjection { draft, root, sealed })
     }
 
-    fn projection_authority(&self, on: SignerId, snapshot: EditId, entry: EntryId) -> Option<(VaultId, &crate::policy::Stated, KeyName)> {
+    pub(super) fn projection_authority(&self, on: SignerId, snapshot: EditId, entry: EntryId) -> Option<(VaultId, &crate::policy::Stated, KeyName)> {
         let store = self.held(on);
         if store.replayed != store.log.edits().len() { return None; }
         let st = &store.replay.state;
@@ -224,12 +224,25 @@ mod tests {
         let mac = lab.device_of(owner, "Mac");
         let phone = lab.device_of(owner, "Phone");
         let vault = human_on(&mut lab, owner, &[mac, phone]);
+        // Login/authority setup precedes view demand; only the new entry's history is withheld.
+        lab.sync(mac, phone);
         let entry = lab.create(mac, vault, vault, "note", &[], document("Private checkpoint", "before", mac)).unwrap();
         lab.edit(mac, vault, entry, |item| item.set_text(2, "latest private content")).unwrap();
         assert!(matches!(lab.draft_entry_projection(mac, &[mac], entry), Err(Refusal::BelowThreshold)));
         let PreparedEntryProjection { draft, sealed, root } = lab.draft_entry_projection(mac, &[owner], entry).unwrap();
         assert!(!String::from_utf8_lossy(&sealed).contains("latest private content"));
         let snap = lab.complete(mac, draft, &[]).unwrap();
+        let offered = lab.entry_projection_offer(mac, phone, entry).expect("authorized reader offer");
+        assert_eq!(offered.snapshot, snap);
+        assert!(lab.entry_projection_offer_after(mac, phone, entry, Some(snap)).is_none(), "unchanged checkpoint needs no repeat transfer");
+        assert_eq!(offered.root, root);
+        lab.receive(phone, offered.evidence.clone(), vec![]);
+        assert!(lab.retain_entry_projection(phone, snap, entry, sealed.clone()),
+            "new entry setup includes the authorized audience key without content history");
+        assert!(offered.evidence.iter().all(|s| !matches!(s.edit.action, Action::Write { create: None, .. })),
+            "checkpoint evidence withholds intermediate content history");
+        let stranger = lab.passkey("Stranger");
+        assert!(lab.entry_projection_offer(mac, stranger, entry).is_none());
         let projection = lab.open_entry_projection(mac, snap, entry, &sealed).unwrap();
         assert_eq!(projection.record(MAIN), Some(lab.item(mac, entry).unwrap().record()));
         assert_eq!(projection.entry(), entry);
@@ -243,6 +256,7 @@ mod tests {
             vault, device: phone, keep: vec![],
         })).unwrap();
         assert!(lab.open_entry_projection(mac, snap, entry, &sealed).is_none());
+        assert!(lab.entry_projection_offer(mac, phone, entry).is_none());
     }
     #[test]
     fn owner_projection_reads_latest_record_while_entry_history_is_withheld() {
@@ -419,5 +433,133 @@ impl Lab {
             cached.revision = revision;
         }
         Some(cached.value.clone())
+    }
+}
+
+/// A normally signed, scoped checkpoint offer. Evidence contains only authorized entry setup
+/// (creation/key/stay records) and its owner approval, never the intervening content history.
+pub struct EntryProjectionOffer {
+    pub snapshot: EditId,
+    pub root: FileRoot,
+    pub evidence: Vec<Signed>,
+    pub blobs: Vec<BlobId>,
+}
+
+impl Lab {
+    /// Current READ authorization precedes checkpoint selection. Backup/relay possession alone
+    /// cannot discover or fetch a checkpoint; the authenticated requester supplies no identity field.
+    /// An untrusted optimization hint only: it neither reads plaintext nor validates authorization.
+    /// A peer still checks current READ before comparing this ID to its standing snapshot.
+    pub fn retained_projection_hint(&self, me: SignerId, entry: EntryId) -> Option<EditId> {
+        self.held(me).projections.lock().expect("entry projections").get(&(me, entry)).map(|v| v.snapshot)
+    }
+
+    /// A persisted content pin only locates bytes. Select its signed checkpoint under
+    /// current ordinary policy; ciphertext must still pass `retain_entry_projection`.
+    /// A disk tag may advance only to the newest currently authorized standing snapshot.
+    /// Call under the node's checkpoint pin serialization gate; ordinary policy remains
+    /// checked here and no in-memory cache hint is treated as authority.
+    pub fn entry_projection_pin_is_current(&self, me: SignerId, entry: EntryId, snapshot: EditId, root: FileRoot) -> bool {
+        let Some((_, stated, _)) = self.projection_authority(me, snapshot, entry) else { return false; };
+        if stated.slice != root { return false; }
+        let log = &self.held(me).log;
+        let Some(selected) = log.edits().iter().find(|edit| edit.id() == snapshot) else { return false; };
+        !log.edits().iter().any(|edit| {
+            (edit.depth, edit.id()) > (selected.depth, snapshot)
+                && matches!(&edit.action, Action::Snapshot { states, .. } if states.iter().any(|state| state.entry == entry))
+                && self.projection_authority(me, edit.id(), entry).is_some()
+        })
+    }
+
+    pub fn entry_projection_restore_point(&self, me: SignerId, entry: EntryId, hash: [u8; 32]) -> Option<(EditId, FileRoot)> {
+        let store = self.held(me);
+        if store.replayed != store.log.edits().len() { return None; }
+        store.log.edits().iter().filter_map(|edit| {
+            let Action::Snapshot { states, .. } = &edit.action else { return None; };
+            let state = states.iter().find(|state| state.entry == entry && state.slice.hash == hash)?;
+            if state.slice.size > (MAX_BYTES + 128) as u64 { return None; }
+            self.projection_authority(me, edit.id(), entry)?;
+            Some((edit.depth, edit.id(), state.slice))
+        }).max_by_key(|(depth, id, _)| (*depth, *id)).map(|(_, id, root)| (id, root))
+    }
+
+    pub fn entry_projection_offer(&self, me: SignerId, requester: SignerId, entry: EntryId) -> Option<EntryProjectionOffer> {
+        self.entry_projection_offer_after(me, requester, entry, None)
+    }
+
+    pub fn entry_projection_offer_after(&self, me: SignerId, requester: SignerId, entry: EntryId, known: Option<EditId>) -> Option<EntryProjectionOffer> {
+        let store = self.held(me);
+        if store.replayed != store.log.edits().len() { return None; }
+        let st = self.latest(me);
+        let en = st.entry(entry)?;
+        let audience = KeyFam::Audience(en.vault, en.audience());
+        let opens = st.opens(&[KeyName::Signer(requester)]);
+        if !(st.public_key(audience) || st.entitled(requester, audience))
+            || !opens.contains(&st.current(audience))
+            || !st.entry_key(entry).is_some_and(|name| opens.contains(&name)) || !st.wants(requester, en) { return None; }
+        let standing: HashSet<_> = store.replay.standing().into_iter().collect();
+        let (edit, stated) = store.log.edits().iter().filter_map(|edit| {
+            let Action::Snapshot { vault, states } = &edit.action else { return None; };
+            if states.len() > MAX_LINES || states.iter().any(|state| state.basis.len() > MAX_BASIS) { return None; }
+            if *vault != en.vault || !standing.contains(&edit.id()) { return None; }
+            let stated = states.iter().find(|state| state.entry == entry)?;
+            if stated.slice.size > (MAX_BYTES + 128) as u64
+                || crate::snapshot::stale(store.log.edits(), &standing, edit, stated) { return None; }
+            Some((edit, stated))
+        }).max_by_key(|(edit, _)| (edit.depth, edit.id()))?;
+        if known == Some(edit.id()) { return None; }
+        let allowed = self.answered(me, requester, &[]);
+        let mut evidence = Vec::new();
+        let mut evidence_bytes = 0usize;
+        for &index in allowed.iter() {
+            let candidate = &store.log.edits()[index];
+            let id = store.log.ids()[index];
+            let log = crate::sync::log_of(candidate, id);
+            // A newly discovered entry can introduce its audience key after login. Carry
+            // that authorized key evidence with the entry; background history may be stalled.
+            let audience_key = log == Some(LogId::Audience(en.vault, en.audience()))
+                && matches!(candidate.action, Action::Keys { .. });
+            let setup = audience_key || (log == Some(LogId::Entry(entry))
+                && !matches!(candidate.action, Action::Write { create: None, .. }));
+            if setup || id == edit.id() {
+                let signed = store.signed.get(&id)?;
+                if !bounded_offer_edit(signed) { return None; }
+                evidence_bytes = evidence_bytes.checked_add(signed.to_wire().len())?;
+                if evidence_bytes > (480 << 10) { return None; }
+                evidence.push(signed.clone());
+                if evidence.len() > 64 { return None; }
+            }
+        }
+        if !evidence.iter().any(|signed| signed.edit.id() == edit.id()) { return None; }
+        let blobs: BTreeSet<_> = evidence.iter().flat_map(|signed| signed.edit.blobs())
+            .filter(|blob| store.blobs.contains_key(blob)).collect();
+        Some(EntryProjectionOffer { snapshot: edit.id(), root: stated.slice, evidence, blobs: blobs.into_iter().collect() })
+    }
+}
+
+// Bound every variable-length field before encoding/cloning evidence. Oversized legacy setup
+// remains available through ordinary history; the first-view lane never needs an oversized page.
+fn bounded_offer_edit(signed: &Signed) -> bool {
+    use crate::sign::WebAuthn;
+    let e = &signed.edit;
+    if e.parents.len() > 64 || e.cosigners.len() > 8 || signed.sigs.len() > 8 { return false; }
+    for sig in &signed.sigs {
+        if sig.pq.len() > 32768 { return false; }
+        if let Some(web) = &sig.webauthn {
+            let a = web.assertion();
+            if a.authenticator_data.len() > 4096 || a.client_data_json.len() > 4096 || a.signature.len() > 1024
+                || matches!(web, WebAuthn::Batch { edits, .. } if edits.len() > 64) { return false; }
+        }
+        if sig.enclave.as_ref().is_some_and(|s| s.public.len() > 4096 || s.sig.len() > 4096 || s.edits.len() > 64) { return false; }
+    }
+    match &e.action {
+        Action::Write { deps, via, create: Some(c), files, body, .. } =>
+            deps.len() <= 64 && via.len() <= 16 && c.audience.len() <= 64 && files.len() <= 64 && body.len() <= (128 << 10),
+        Action::Snapshot { states, .. } => states.len() <= 16 && states.iter().all(|s| s.basis.len() <= 64),
+        Action::Mark { caps, wants, keep, via, .. } => caps.as_ref().is_none_or(|x| x.len() <= 64)
+            && wants.as_ref().is_none_or(|x| x.len() <= 64) && keep.len() <= 64 && via.len() <= 16,
+        Action::Keys { boxes, .. } => boxes.len() <= 32 && boxes.iter().all(|b| b.bytes.len() <= 4096),
+        Action::Wraps { wraps, .. } => wraps.len() <= 32 && wraps.iter().all(|w| w.boxed.bytes.len() <= 4096),
+        _ => false,
     }
 }

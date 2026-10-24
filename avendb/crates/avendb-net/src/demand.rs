@@ -34,13 +34,18 @@ impl Demands {
     pub(crate) fn set_queries(&mut self, scope: &str, queries: Vec<crate::discovery::Query>) {
         if let Some(held) = self.0.get_mut(scope) { held.queries = queries; }
     }
-    pub(crate) fn queries(&mut self, scope: &str, now: Instant) -> Option<(u64, Vec<crate::discovery::Query>)> {
+    pub(crate) fn current(&self, scope: &str, revision: u64, now: Instant) -> bool {
+        self.0.get(scope).is_some_and(|s| s.until > now && s.revision == revision
+            && (!s.entries.is_empty() || !s.queries.is_empty()))
+    }
+    pub(crate) fn working_set(&mut self, scope: &str, now: Instant) -> Option<(u64, Vec<LogId>, Vec<crate::discovery::Query>)> {
         self.0.retain(|_, s| s.until > now);
-        self.0.get(scope).filter(|s| !s.queries.is_empty()).map(|s| (s.revision, s.queries.clone()))
+        self.0.get(scope).filter(|s| !s.entries.is_empty() || !s.queries.is_empty())
+            .map(|s| (s.revision, s.entries.clone(), s.queries.clone()))
     }
     pub(crate) fn query_scopes(&mut self, now: Instant) -> Vec<String> {
         self.0.retain(|_, s| s.until > now);
-        self.0.iter().filter(|(_, s)| !s.queries.is_empty()).map(|(scope, _)| scope.clone()).collect()
+        self.0.iter().filter(|(_, s)| !s.entries.is_empty() || !s.queries.is_empty()).map(|(scope, _)| scope.clone()).collect()
     }
 
     /// Hints share the view lease and revision, never outliving a released/replaced view.
@@ -85,6 +90,21 @@ mod tests {
     fn entry(n: u8) -> LogId { LogId::Entry(EntryId([n; 32])) }
 
     #[test]
+    fn explicit_checkpoint_working_set_is_cancelled_replaced_and_expired() {
+        let mut d = Demands::default();
+        let now = Instant::now();
+        let log = LogId::Entry(avendb::id::EntryId([91; 32]));
+        assert_eq!(d.replace("scope".into(), 1, vec![log], now), Ok(true));
+        assert_eq!(d.working_set("scope", now).unwrap().1, vec![log]);
+        assert!(d.query_scopes(now).contains(&"scope".into()));
+        assert_eq!(d.replace("scope".into(), 2, vec![], now), Ok(true));
+        assert!(d.working_set("scope", now).is_none());
+        assert_eq!(d.replace("scope".into(), 1, vec![log], now), Ok(false));
+        assert_eq!(d.replace("scope".into(), 3, vec![log], now), Ok(true));
+        assert!(d.working_set("scope", now + LEASE).is_none());
+    }
+
+    #[test]
     fn replacement_release_and_expiry_do_not_remove_another_views_demand() {
         let now = Instant::now();
         let mut d = Demands::default();
@@ -118,16 +138,16 @@ mod query_tests {
         let mut d = Demands::default();
         d.replace("view".into(), 1, vec![], now).unwrap();
         d.set_queries("view", vec![Query { types: vec!["note".into()], vault: None }]);
-        assert_eq!(d.queries("view", now).unwrap().0, 1);
+        assert_eq!(d.working_set("view", now).unwrap().0, 1);
         let hinted = LogId::Entry(avendb::id::EntryId([19; 32]));
         assert!(d.discovered("view", 1, &[hinted], now));
         assert_eq!(d.entries(now), vec![hinted]);
         assert!(!d.replace("view".into(), 1, vec![], now).unwrap());
         d.replace("view".into(), 2, vec![], now).unwrap();
-        assert!(d.queries("view", now).is_none());
+        assert!(d.working_set("view", now).is_none());
         assert!(!d.discovered("view", 1, &[hinted], now));
         assert!(d.entries(now).is_empty());
         d.set_queries("view", vec![Query { types: vec!["note".into()], vault: None }]);
-        assert!(d.queries("view", now + LEASE).is_none());
+        assert!(d.working_set("view", now + LEASE).is_none());
     }
 }

@@ -1,3 +1,4 @@
+import { summaryView } from './startup-summary.js';
 import { observedWindow } from './observed-window.js';
 /*
  * This tab's avenDB device, the one every page of the site shares: the person's account on this browser, loaded once,
@@ -237,6 +238,7 @@ async function statusOf(bridge) {
 		unanswered(`status: no answer to ${ASKS} asks in ${(ASKS * ASK_AGAIN) / 1000} s; the page opens again`);
 		// a moment for that line to reach the app's log
 		await new Promise((r) => setTimeout(r, 300));
+		noteLifecycle('app-reload-request');
 		location.reload();
 		// the page goes: nothing answers here any more
 		return /** @type {Promise<never>} */ (new Promise(() => {}));
@@ -433,6 +435,7 @@ function unlock(at = QUIET) {
 		try {
 			await measureLatency('unlock.total', () => opening(at));
 		} catch (e) {
+			noteLifecycle('unlock-failed');
 			if (!String(/** @type {Error} */ (e)?.message ?? e).includes('holds no vault this device belongs to')) throw e;
 			await (mac ? mac.call('forget') : store.aside());
 			[meta, phase] = [null, 'new'];
@@ -459,13 +462,16 @@ async function opening({ step, device: shown }) {
 	const nonce = unhex(meta.nonce);
 	const { unlock } = await ceremonies(meta.credential, nonce);
 	step('unlock');
+	noteLifecycle('passkey-start');
 	let unlocked;
 	try {
 		unlocked = await unlock(nonce);
+		noteLifecycle('passkey-finished');
 	} catch (e) {
 		await store.release().catch(() => {});
 		throw e;
 	}
+	noteLifecycle('device-open-start');
 	running(await avendb.Device.open(unlocked, shown(), store));
 }
 
@@ -590,7 +596,7 @@ function watch() {
 	(async () => {
 		let [edits, keys] = await d.size();
 		if (!on()) return;
-		let took = await timed(() => refreshDevice(d));
+		let took = await timed(() => refreshDevice(d, true));
 		while (on() && (await d.changed(edits, keys)) && on()) {
 			await new Promise((r) => setTimeout(r, Math.max(SETTLE, 2 * took)));
 			if (!on()) break;
@@ -612,6 +618,7 @@ async function timed(work) {
 
 /** Both background watchers and explicit barriers share one reader per device. */
 const worldReaders = new WeakMap();
+const fullWorldRequests = new WeakSet();
 const retiredWorlds = new WeakSet();
 function retireWorld(/** @type {any} */ d) {
 	retiredWorlds.add(d);
@@ -619,14 +626,17 @@ function retireWorld(/** @type {any} */ d) {
 	// Keep the terminal reader until this device object is collected: late callers
 	// during asynchronous close must not resurrect a new reader for it.
 }
-function refreshDevice(/** @type {any} */ d) {
+function refreshDevice(/** @type {any} */ d, initial = false, full = false) {
+    if (full) fullWorldRequests.add(d);
 	if (retiredWorlds.has(d)) return Promise.reject(new Error('The avenDB device changed before its world refresh.'));
 	let reader = worldReaders.get(d);
 	if (!reader) {
 		reader = createWorldReader({
 			read: async () => {
 				if (device !== d) throw new Error('The avenDB device changed before its world refresh.');
-				return answer(await near(d, { op: 'world' })) ?? null;
+				const full = fullWorldRequests.delete(d);
+                const scoped = !full && typeof location !== 'undefined' && summaryView(location.pathname, location.hash);
+                return answer(await near(d, { op: scoped ? 'world_summary' : 'world' })) ?? null;
 			},
 			take: (w) => {
 				if (device !== d) throw new Error('The avenDB device changed during its world refresh.');
@@ -637,13 +647,13 @@ function refreshDevice(/** @type {any} */ d) {
 		});
 		worldReaders.set(d, reader);
 	}
-	return reader.request();
+	return initial ? reader.ensure() : reader.request();
 }
 
 /** Explicit barrier: its snapshot starts after this call, even if an older read runs. */
 async function refresh() {
 	const d = device;
-	if (d) await refreshDevice(d);
+	if (d) await refreshDevice(d, false, true);
 }
 
 /** Accepted local writes do not wait for their requested summary. Let Svelte
@@ -830,6 +840,7 @@ async function rename(name) {
  *  unlock opens it again. In the Mac app its device runs on beside the app, which signs out of its own key alone. */
 async function lock() {
 	if (mac) return;
+	noteLifecycle('session-lock-request');
 	noteLifecycle('locked');
 	moveChecks.stop();
 	const d = device;
@@ -877,9 +888,9 @@ const qr = async (text, size) => (mac ? mac.call('qrSvg', text, size) : avendb.q
 /** What the vaults' screens do, each acting for the vault it names (./Shell.svelte's `api`, beside what its page adds). */
 const api = {
 	/** Subscribe to any targeted local query, independent of the world summary.
-	 * @param {() => any} query @param {(answer: any) => void} take @param {(error: Error) => void} [failed] */
-	observe(query, take, failed) {
-		const reader = createReactiveRead({ read: observedWindow((d, op, signal, demand) => near(d, op, { signal, demand, scoped: true })), take, failed });
+	 * @param {() => any} query @param {(answer: any) => void} take @param {(error: Error) => void} [failed] @param {(revisions: any[]) => void} [observed] */
+	observe(query, take, failed, observed) {
+		const reader = createReactiveRead({ read: observedWindow((d, op, signal, demand) => near(d, op, { signal, demand, scoped: true })), take, failed, observed });
 		const dispose = $effect.root(() => {
 			$effect(() => {
 				void revision;
@@ -960,6 +971,9 @@ const api = {
 	bring: (what, op, file, quiet) => bring(what, op, file, quiet),
 	/** Shows what changed, as after a change: what `quiet` ones made, once they are done. */
 	refresh: () => refresh(),
+    /** Join the initial summary without scheduling a second whole-world read. */
+    initialWorld: () => device ? refreshDevice(device, true) : Promise.resolve(),
+    viewChanged: () => device ? refreshDevice(device, world === null) : Promise.resolve(),
 	/**
 	 * Bytes `from` to `to` of the file whose root is `root` and whose sealed size is `size`, from this device's
 	 * store or fetched from a peer that may hand them over.
@@ -1056,5 +1070,7 @@ export const session = {
 	run: api.run,
 	runAll: api.runAll,
 	ask: api.ask,
+	initialWorld: api.initialWorld,
+	viewChanged: api.viewChanged,
 	observe: api.observe
 };

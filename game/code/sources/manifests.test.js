@@ -65,7 +65,7 @@ test('a device brings what the manifests declare a priority at a time, then what
 	};
 	const fetch = async () => { throw new Error('Manifest discovery must not use HTTP'); };
 	const got = await bringDeclared('/app/games/x/', { device: d, bring: async (ids) => asked.push(ids), fetch });
-	expect(asked).toEqual([[id(3)], [id(7), id(2)], [id(8)]]);
+	expect(asked).toEqual([[id(3)], [id(7)], [id(2)], [id(8)]]);
 	expect(got).toEqual([id(3), id(7), id(2), id(8)]);
 });
 
@@ -177,13 +177,13 @@ test('known view dependencies are prioritized while unrelated query history is w
  expect(selectors).toEqual([{ types: ['note'], vault: MAIA_CITY }]);
  expect((await device.run({ op: 'get', entry: id(71) })).ok.record.title).toBe('Useful local view');
  // Scheduling is not a claim of complete discovery or peer delivery.
- expect(brought).toEqual([]);
+ expect(brought).toEqual([id(71)]);
  const { manifestDiagnostics } = await import('./manifests.js');
  expect(manifestDiagnostics().pending).toBeGreaterThan(0);
  controller.abort();
  release({ ok: { rows: [{ entry: id(72), type: 'note' }] } });
  await expect(running).rejects.toThrow();
- expect(brought).toEqual([]);
+ expect(brought).toEqual([id(71)]);
  expect(hints).toEqual([id(71)]);
 });
 
@@ -205,4 +205,33 @@ test('an unacknowledged demand lease cannot block canonical local query discover
   expect(await done).toEqual([id(91), id(92)]);
   expect(brought).toEqual([id(91), id(92)]);
  } finally { acknowledge(); }
+});
+
+
+test('high-rank dependencies finish before any lower-rank collection query starts', async () => {
+ const order = [];
+ const high = m({ id: 'high', priority: 'high', routes: ['*'], parts: [{ entry: id(1), follow: 1 }] });
+ const low = m({ id: 'low', priority: 'low', routes: ['*'], parts: [{ query: { type: ['note'] } }] });
+ const controller = new AbortController();
+ const d = { run: async op => {
+  if (op.where?.type?.[0] === 'manifest') return { ok: { rows: [high, low].map(record => ({record})) } };
+  if (op.op === 'get') { order.push('follow'); return {ok:{record:{entry:id(2)}}}; }
+  order.push('low-query'); controller.abort(); return {ok:{rows:[{entry:id(3),type:'note'}]}};
+ } };
+ await expect(bringDeclared('/', {device:d,signal:controller.signal,bring:async ids=>order.push(...ids)})).rejects.toThrow();
+ expect(order).toEqual([id(1), 'follow', id(2), 'low-query']);
+});
+
+
+test('cancellation during a reference read prevents a subsequent broad file scan', async () => {
+ const controller = new AbortController();
+ let world = false;
+ const manifest = m({id:'cancel-follow',routes:['*'],parts:[{entry:id(1),follow:1}]});
+ const d = {run:async op=>{
+  if(op.op==='query') return {ok:{rows:[{record:manifest}]}};
+  if(op.op==='get') {controller.abort(); return {ok:{record:{audio:`aven:${id(2)}:100:84:audio`}}};}
+  world=true; return {ok:{entries:[]}};
+ }};
+ await expect(bringDeclared('/',{device:d,signal:controller.signal,bring:async()=>{}})).rejects.toThrow();
+ expect(world).toBe(false);
 });

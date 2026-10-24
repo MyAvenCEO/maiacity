@@ -16,6 +16,7 @@ export const READS = [
 	'groups',
 	'kinds',
 	'world',
+	'world_summary',
 	'jobs',
 	'shares',
 	'database',

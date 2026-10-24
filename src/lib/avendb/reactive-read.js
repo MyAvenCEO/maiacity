@@ -1,14 +1,17 @@
 import { reads } from './ops.js';
+import { beginReactiveTiming } from './reactive-latency.js';
+import { observedRevisions } from './observed-revisions.js';
+import { reactiveObservation } from './reactive-observation.js';
 
 /** Targeted authorized reads shared by every avenDB consumer. Revisions coalesce
  * without invalidating in-flight answers. Query/owner changes abort the previous
  * scope and start independently; old engine work may finish but cannot publish.
  * There is at most one read per scope, without a timeout spawning duplicate work.
  * @param {{ read: (owner: any, query: any, signal: AbortSignal) => Promise<any>,
- *   take: (answer: any) => void, failed?: (error: Error) => void }} options */
-export function createReactiveRead({ read, take, failed = () => {} }) {
+ *   take: (answer: any) => void, failed?: (error: Error) => void, timing?: typeof beginReactiveTiming, observed?: (revisions: ReturnType<typeof observedRevisions>) => void }} options */
+export function createReactiveRead({ read, take, failed = () => {}, timing = beginReactiveTiming, observed = () => {} }) {
 	let closed = false;
-	/** @type {{ owner: any, query: any, key: string, controller: AbortController, running: boolean, again: boolean } | null} */
+	/** @type {{ owner: any, query: any, key: string, controller: AbortController, running: boolean, again: boolean, emitted: (answer: any) => void } | null} */
 	let scope = null;
 	/** @param {NonNullable<typeof scope>} s */
 	async function pump(s) {
@@ -19,8 +22,15 @@ export function createReactiveRead({ read, take, failed = () => {} }) {
 				s.again = false;
 				try {
 					if (!reads(s.query)) throw new Error('An avenDB observer accepts read operations only.');
-					const answer = await read(s.owner, s.query, s.controller.signal);
-					if (scope === s && !closed) take(answer);
+					const answer = await read(s.owner, reactiveObservation.query(s.owner, s.query), s.controller.signal);
+					if (scope === s && !closed) {
+						take(answer); s.emitted(answer);
+						reactiveObservation.emitted(s.owner, answer);
+						if (s.query?.observeRevision === true) {
+							// Diagnostic plumbing must not turn successful UI delivery into failure.
+							try { observed(observedRevisions(answer)); } catch {}
+						}
+					}
 				} catch (error) {
 					if (scope === s && !closed) failed(error instanceof Error ? error : new Error(String(error)));
 				}
@@ -34,7 +44,7 @@ export function createReactiveRead({ read, take, failed = () => {} }) {
 			const key = JSON.stringify([context, query]);
 			if (!scope || scope.owner !== owner || scope.key !== key) {
 				scope?.controller.abort();
-				scope = { owner, query, key, controller: new AbortController(), running: false, again: false };
+				scope = { owner, query, key, controller: new AbortController(), running: false, again: false, emitted: timing(query) };
 			}
 			if (!query || !owner) return;
 			scope.again = true;

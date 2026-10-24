@@ -6,8 +6,8 @@ const flush = async () => { for (let i = 0; i < 30; i++) await Promise.resolve()
 test('page wrapper closes Window RTC on device free/crash and never sends old device work to a replacement worker', async () => {
 	const oldWorker = globalThis.Worker, oldPeer = globalThis.RTCPeerConnection;
 	const workers = [], peers = [];
-	class Worker {
-		constructor() { this.sent = []; workers.push(this); }
+	class Worker extends EventTarget {
+		constructor() { super(); this.sent = []; workers.push(this); }
 		postMessage(value) { this.sent.push(value); }
 		answer(ok) { const request = this.sent.at(-1); this.onmessage({ data: { id: request.id, ok } }); }
 		terminate() { this.terminated = true; }
@@ -25,6 +25,9 @@ test('page wrapper closes Window RTC on device free/crash and never sends old de
 		const remote = await import('./remote.js');
 		const opening = remote.Device.open({}, null, null); const first = workers[0];
 		expect(first.sent[0]).toEqual({ $transport: 'capabilities', webrtc: false });
+		// Real Workers are EventTargets; exercise the diagnostics listener too.
+		first.dispatchEvent(new Event('messageerror'));
+		expect(first.terminated).not.toBe(true);
 		first.answer({ $device: 0, id: 'device', endpoint: 'endpoint', passkey: 'key', offer: 'offer' }); const device = await opening;
 		const rtc = () => { const { port1, port2 } = new MessageChannel(); ports.push(port1, port2); first.onmessage({ data: { $transport: 'open-rtc', device: 0, route: `route${peers.length}`, epoch: 1, initiator: true, port: port2 } }); };
 		rtc(); await flush(); expect(peers.length).toBe(1); expect(peers[0].config.iceServers).toEqual([]);

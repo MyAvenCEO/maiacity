@@ -4,6 +4,43 @@ This is the maintained task ledger for the avenDB performance upgrade. Read this
 
 Last maintained: 2026-10-24. Current execution order: keep three subagents plus the coordinator progressing authorized Doing and Open work in parallel; finish each increment with validation, a focused pushed implementation commit and this ledger updated. Serialize heavyweight local builds. The overall upgrade is **incomplete**. A delivered compact release is not completion of all original M3–M7 integration. Do not infer completion from a module existing, a successful compile, or a merged PR alone.
 
+## Latest delivery and follow-up checkpoint — 24 October 2026, evening
+
+### Release gate update — 24 October, 22:40 CEST
+
+PR [#1270](https://github.com/MyAvenCEO/maiacity/pull/1270) remains unmerged and undelivered. Previous release `b8da1b8c` remains the deployed site/API/hosted peer; the last verified Mac installation is `30d556c8`. The new Mac native build is running, not installed. Its source must be advanced to the final reviewed release revision after the current compilation finishes, and the bundle rebuilt and receipted before installation. Never install the interim artifact as the final release.
+
+The source-matched WASM run passed. Integrated local core checks passed: entry bases 2/2, startup summary 1/1, own materialization 2/2, unchanged warm restore 1/1, bounded decoder 1/1. The existing net results below remain valid. Remote core and property suites also passed on `1a1f4e64`; these do not imply complete release acceptance.
+
+Two unrelated release-test defects blocked CI: [35961045](https://github.com/MyAvenCEO/maiacity/commit/35961045) makes the Worker fixture implement the real EventTarget interface, retaining crash/free/isolation assertions (10 focused tests, 42 assertions passed). [e618662d](https://github.com/MyAvenCEO/maiacity/commit/e618662d) aligns the media fixture with production's zero-copy AVFoundation decoding and adds decoder-error reporting. Its Main10, frame-count and luma assertions remain intact; macOS CI confirmation is pending, so this is a candidate repair, not a proven resolution. Both commits are pushed. Release checks are rerunning.
+
+Separate follow-up work [1ce8bd2b](https://github.com/MyAvenCEO/maiacity/commit/1ce8bd2b) and [52edb3b7](https://github.com/MyAvenCEO/maiacity/commit/52edb3b7) adds a dormant counted-history representation and structural suffix checks. It is **not integrated in this release**, not writable activation, and its Rust tests await the serialized compiler queue. The full goal still includes writable partial bootstrap, complete demand/completeness coverage, remaining long operations and physical iPhone/iPad stability/latency acceptance.
+
+
+PR [#1268](https://github.com/MyAvenCEO/maiacity/pull/1268) merged as [b8da1b8c](https://github.com/MyAvenCEO/maiacity/commit/b8da1b8c348482b3fef9aa6444d1e3149b93b6be). [Release run 40124036129](https://github.com/MyAvenCEO/maiacity/actions/runs/40124036129) completed successfully, including site, API and hosted-peer rollout. The live site manifest reported this revision. No newer Mac app was installed by this release.
+
+The combined follow-up branch is `codex/avendb-view-startup-integration`:
+
+| State | Implementation and evidence |
+| --- | --- |
+| Implemented; combined Rust validation running | Owner-approved checkpoint publication and authorized active-view fetching: [08ec57c8](https://github.com/MyAvenCEO/maiacity/commit/08ec57c8). Focused core projection 5/5, core checkpoint 3/3, net checkpoint 5/5, demand 3/3 and discovery 4/4 passed. Fresh-peer useful read-only state works with all ordinary history pulls withheld. |
+| Implemented; combined Rust validation running | Warm clean-close materialization [45671ff4](https://github.com/MyAvenCEO/maiacity/commit/45671ff4), stale-copy avoidance [6c1cfaae](https://github.com/MyAvenCEO/maiacity/commit/6c1cfaae). Full lazy working-set loading remains incomplete. |
+| Implemented; combined Rust validation running | Fair foreground/background scheduler [e0837d8d](https://github.com/MyAvenCEO/maiacity/commit/e0837d8d). Individual atomic core operations remain non-preemptible. |
+| Implemented; not deployed | Manifest rank execution and cancellation [4181c243](https://github.com/MyAvenCEO/maiacity/commit/4181c243): 18 tests/124 assertions passed on integrated source; Lean ordering proof passed. |
+| Implemented; not deployed | Top-left restart diagnostics and declared test scenarios [5d26d63a](https://github.com/MyAvenCEO/maiacity/commit/5d26d63a); public policy-observation dispatch [8f6fa271](https://github.com/MyAvenCEO/maiacity/commit/8f6fa271). Combined journal/lifecycle/Studio tests: 19/19, 77 assertions. Actual remote rendering and fresh-view timing are not yet measured. |
+| Open | Matching WASM, combined release checks, deployment, updated Mac installation, physical iPhone/iPad latency and reload acceptance. |
+| Doing / open architecture | Offline checkpoint rehydration, working-set-first loading, generic reactive-view timing; writable partial CRDT bootstrap and complete manifest/dependency/completeness handling remain unfinished. |
+
+Checkpoint publication requires explicit owner approval; no peer receives extra authority. The bootstrap projection is read-only until canonical history covers its basis. The iPhone restart cause remains unproven: absence of a page-exit event does not prove memory termination. No live stores have been reset.
+
+Latest integrated additions: offline checkpoint rehydration [1060e05d](https://github.com/MyAvenCEO/maiacity/commit/1060e05d), deferred warm entry imports [303e47ba](https://github.com/MyAvenCEO/maiacity/commit/303e47ba), and first-nonempty reactive query timing [8057a00c](https://github.com/MyAvenCEO/maiacity/commit/8057a00c). These implementation slices are not yet deployed. Combined Lean passes all 92 build jobs; frontend checking has zero errors (28 warnings); 45 focused UI tests pass with 214 assertions. Combined native Rust validation is compiling; no runtime pass is implied. The warm-reopen test's missing core Backup import was repaired in [2519e19e](https://github.com/MyAvenCEO/maiacity/commit/2519e19e).
+
+The remaining whole-world startup read is a concrete barrier to active-working-set loading: it calls `lab.item` for ordinary entries and can force deferred imports. An additive metadata-only summary with explicit entry incompleteness is in progress. Writable partial bootstrap requires authenticated causal/history evidence, not just the JSON projection; see [implementation design](../avendb/docs/WRITABLE-PARTIAL-BOOTSTRAP.md). This remains Open, not solved by removing read-only guards.
+
+Release candidate [PR #1270](https://github.com/MyAvenCEO/maiacity/pull/1270) is ready for review. Source-matched WASM was generated in [df02ad8a](https://github.com/MyAvenCEO/maiacity/commit/df02ad8a) and merged with the test-only revocation fixture repair. Final integrated net results: warm clean-close/reopen **1/1**, peer-policy/reactive acknowledgement **4/4**, checkpoint/offline restore/revocation/pin ordering **7/7**, scheduler **3/3**, all passed. The fixture repair [0331fadc](https://github.com/MyAvenCEO/maiacity/commit/0331fadc) explicitly receives and verifies revocation before asserting rejection; ordinary sync correctly does not deliver a former vault log to a revoked device. Final core tests, CI, deployment and physical acceptance remain pending. Metadata-first dashboard/Chat startup is now integrated; full-world reads remain on legacy routes. Reviewed fixes preserve local media across incomplete summaries and fence checkpoint pin publication against stale saves.
+
+Build coordination: root owns the shared Cargo queue and integrated release. Agents work on isolated focused commits; heavyweight builds are serialized. The full goal remains active, including the architecture gaps above. A passing slice is not completion of the whole upgrade.
+
 ## Current release checkpoint — 24 October 2026
 
 This checkpoint supersedes older release-status notes below. The delivered release wave and installed no-reset acceptance (tasks 3–4) are complete; task 5 remains separate work.

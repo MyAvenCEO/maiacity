@@ -211,11 +211,17 @@ async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: 
 		.map(({ leaf }) => ({ types: leaf.query.type, vault })));
 	void Promise.resolve(prioritize(entriesOf(leaves.filter(({ leaf }) => leaf.entry), []), queries)).catch(() => {});
 	signal?.throwIfAborted();
-	const rows = await rowsFor(leaves, { device: d, vault, fetch: get, signal });
-	signal?.throwIfAborted();
 	const asked = new Set();
 	for (const rank of [...new Set(leaves.map((l) => l.rank))]) {
 		const at = leaves.filter((l) => l.rank === rank);
+		// Known entries must not wait for materializing query results, particularly
+		// unrelated lower-priority collections. Each rank finishes before the next.
+		const explicit = entriesOf(at.filter(({ leaf }) => leaf.entry), []).filter(e => !asked.has(e));
+		signal?.throwIfAborted();
+		if (explicit.length) await bring(explicit);
+		explicit.forEach(e => asked.add(e));
+		signal?.throwIfAborted();
+		const rows = await rowsFor(at, { device: d, vault, fetch: get, signal });
 		const ids = entriesOf(at, rows).filter((e) => !asked.has(e));
 		signal?.throwIfAborted();
 		if (ids.length) await bring(ids);
@@ -233,7 +239,7 @@ async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: 
 				signal?.throwIfAborted();
 				if ((visited.get(entry) ?? 0) >= depth) continue;
 				visited.set(entry, depth);
-				for (const e of await namedOn(d, [entry])) next.set(e, Math.max(next.get(e) ?? 0, depth - 1));
+				for (const e of await namedOn(d, [entry], signal)) next.set(e, Math.max(next.get(e) ?? 0, depth - 1));
 			}
 			signal?.throwIfAborted();
 			const missing = [...next.keys()].filter((e) => !asked.has(e));
@@ -269,20 +275,23 @@ async function rowsFor(leaves, { device: d, vault, fetch: get, signal }) {
 }
 
 /** The entries the records of entries `ids` name, as device `d` holds them. */
-async function namedOn(d, ids) {
+async function namedOn(d, ids, signal) {
 	const out = new Set();
 	let files;
 
 	for (const entry of ids) {
 		try {
 			const got = await d.run({ op: 'get', entry });
+			signal?.throwIfAborted();
 			for (const e of namedBy(got?.ok?.record)) out.add(e);
 			const roots = [...JSON.stringify(got?.ok?.record ?? {}).matchAll(/aven:([a-f0-9]{64}):/g)].map(m => m[1]);
 			if (roots.length) {
 				files ??= (await d.run({ op: 'world' }))?.ok?.entries ?? [];
+				signal?.throwIfAborted();
 				for (const file of files) if (!file.deleted && file.files?.some(f => roots.includes(f.root))) out.add(file.entry);
 			}
 		} catch {
+			signal?.throwIfAborted();
 			// not held yet
 		}
 	}

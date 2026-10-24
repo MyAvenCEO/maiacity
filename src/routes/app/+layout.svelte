@@ -13,15 +13,15 @@
 -->
 <script lang="ts">
 	import { base } from '$app/paths';
-	import { goto } from '$app/navigation';
+	import { goto, afterNavigate, beforeNavigate } from '$app/navigation';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { ApiError, me, passBy, signOut, type Founder } from '$lib/auth/client';
 	import { claimInvite, failure, later, open, signUpName, waits } from '$lib/app/entry.js';
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import Diagnostics from '$lib/app/Diagnostics.svelte';
-	import { lifecycle } from '$lib/avendb/lifecycle.js';
+	import { lifecycle, noteLifecycle } from '$lib/avendb/lifecycle.js';
 	import { pillVaults, seeded, signerName } from '$lib/avendb/vaults.js';
 	import { remember } from '$lib/app/session';
 	import { forwardConsole, native } from '$lib/native';
@@ -127,6 +127,9 @@
 			: []
 	);
 
+	afterNavigate(() => { if (!native()) noteLifecycle('route-navigation'); });
+	beforeNavigate(({ willUnload }) => { if (!native() && willUnload) noteLifecycle('app-navigation-unload'); });
+
 	onMount(async () => {
 		if (!native()) lifecycle()?.start();
 		// in the Mac app, every page's warnings and errors go into the app's log, which has a reader, as the studio's do
@@ -199,7 +202,9 @@
 		void loadFounder();
 		// the views, logic and configs again, off this device's own copy of Maia City now that it is open
 		void loadCode();
-		await session.refresh().catch(() => {});
+		// A newly founded account explicitly initializes its entry-based setup once.
+        // Routine unlocks join only the metadata summary.
+        await (founded ? session.refresh() : session.initialWorld()).catch(() => {});
 		invited = await claimInvite();
 		if (founded && session.world && seeded(session.world)[0]?.[0]) await goto(`${base}/app/`);
 	}
@@ -326,6 +331,11 @@
 		await goto(`${base}/`);
 	}
 
+    $effect(() => {
+        void page.url.pathname; void page.url.hash;
+        if (phase !== 'ready') return;
+        untrack(() => { void session.viewChanged().catch(() => {}); });
+    });
 	const rel = $derived(page.url.pathname.slice(base.length));
 	// full screen: a sandbox, a world, the turntables ($lib/app/Turntable.svelte), a
 	// factory's hall, and the studio's editor

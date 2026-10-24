@@ -1,7 +1,7 @@
 /** Device-local, bounded timing evidence. Never stores operation arguments, IDs, keys or error text. */
 const KEY = 'avendb:latency:v1';
 export const TIMED_OPS = new Set(['status', 'world', 'entries', 'entry', 'entry_views', 'query', 'get', 'room', 'history', 'read_file', 'synced', 'cap_groups', 'bring', 'bring_entries', 'network', 'create', 'set', 'unset', 'insert', 'remove', 'move', 'tag', 'merge', 'review', 'put_file']);
-const STAGES = new Set(['unlock.total', 'peer.transport-rtt', ...[...TIMED_OPS].map(op => `call.${op}`)]);
+const STAGES = new Set(['unlock.total', 'peer.transport-rtt', 'query.first-nonempty-emission', 'query.first-nonempty-emission.readonly', ...[...TIMED_OPS].map(op => `call.${op}`)]);
 const LIMIT = 120;
 /** @typedef {{ stage: string, ms: number, at: number, outcome: 'ok' | 'refused' | 'failed' }} Sample */
 /** @param {unknown} value @returns {value is Sample} */
@@ -77,9 +77,9 @@ export async function measureLatency(stage, work, journal = latencyJournal, now 
 
 /** Redacted snapshot of nonce-correlated engine policy observations, not transport RTT.
  * @param {any} network */
-export function policyObservations(network) {
+export function policyObservations(network, stage = 'local-completion-to-peer-policy-observation') {
  const observed = network?.policy_observations;
- if (observed?.stage !== 'local-completion-to-peer-policy-observation') return null;
+ if (!['local-completion-to-peer-policy-observation', 'local-completion-to-peer-reactive-consumer'].includes(stage) || observed?.stage !== stage) return null;
  /** @type {any[]} */
  const samples = Array.isArray(observed.samples) ? observed.samples : [];
  return { stage: observed.stage,

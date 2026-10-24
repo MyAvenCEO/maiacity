@@ -728,7 +728,7 @@ async fn receive_inner(
                     .prepare_received_page(edits, permit, owner)
                     .await?;
                 shared
-                    .try_lab(move |lab, me| {
+                    .try_lab_class(crate::lab_schedule::Class::Background, move |lab, me| {
                         let (_permit, _admitted, _activity) = (permit, admitted, activity);
                         let new = lab.receive_prepared(me, prepared, false).0;
                         accepted.new.fetch_add(new, Ordering::Relaxed);

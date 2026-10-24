@@ -165,9 +165,10 @@ fn bad(why: impl Into<String>) -> Refused {
 fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
         "entry_views" => &["vault", "entries", "types", "as", "kind"],
-        "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow"],
+        "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow", "observeRevision"],
         "get" => &["entry", "schema", "line", "at", "version"],
         "pin" => &["entry", "at"],
+        "checkpoint_view" => &["entry"],
         "history" => &["entry", "limit"],
         "room" => &["entry", "last", "before"],
         "schemas" => &["vault"],
@@ -194,7 +195,8 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "undo" => &["entry", "line", "edit", "as"],
         "fork" => &["entry", "line", "into", "schema", "ops", "as"],
         "batch" | "may" => &["ops", "as"],
-        "world" | "log" | "jobs" | "synced" | "network" => &[],
+        "world" | "world_summary" | "log" | "jobs" | "synced" | "network" | "measure_peer_policy" | "measure_peer_visibility" => &[],
+        "observe_query_emission" => &["rows"],
         "code" => &["vault", "type"],
         "posts" => &["limit", "after"],
         "bring" => &["vaults", "entries", "prioritize"],
@@ -228,7 +230,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
-const READS: [&str; 32] = [
+const READS: [&str; 36] = [
     "entry_views",
     "query",
     "objective_check",
@@ -244,6 +246,7 @@ const READS: [&str; 32] = [
     "cap_groups",
     "kinds",
     "world",
+    "world_summary",
     "jobs",
     "database",
     "note",
@@ -260,6 +263,9 @@ const READS: [&str; 32] = [
     "demand",
     "synced",
     "network",
+    "measure_peer_policy",
+    "measure_peer_visibility",
+    "observe_query_emission",
     "api_pass",
 ];
 
@@ -332,6 +338,14 @@ pub fn prepared(out: Result<Prepared, Refused>) -> Value {
 /// `world` names no device it is synced to, and `read_file` reads no bytes, and `jobs` are a node's: a node answers
 /// those (avendb-net's `Node::run`).
 pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
+    if name(v) == Some("world_summary") {
+        let summary = crate::world::summary(lab, me).map(|world| {
+            let mut value = world.to_json(me);
+            value["entriesComplete"] = Value::Bool(false);
+            value
+        });
+        return json!({ "ok": summary });
+    }
     if name(v) == Some("world") {
         return world(lab, me, &SyncedTo::default());
     }
@@ -364,6 +378,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "demand" => Err(bad("demand changes a node's local scheduling priorities: a node runs it (Node::run)")),
         "bring" => Err(bad("bring asks a node's peers for vaults or entries: a node runs it (Node::run)")),
         "synced" => Err(bad("synced tells what a node's peers hold: a node runs it (Node::run)")),
+        "measure_peer_policy" | "measure_peer_visibility" | "observe_query_emission" => Err(bad("peer policy measurements require a node (Node::run)")),
         "network" => Err(bad("network tells where a node syncs from and how: a node runs it (Node::run)")),
         _ if ASKS.contains(&name) => Err(bad(format!("{name} asks by dry runs: run it, don't read it"))),
         _ => Err(bad(format!("{name} changes what the device holds: run it, don't read it"))),
@@ -875,6 +890,11 @@ fn entry_views_inner(lab: &Lab, me: SignerId, o: &Map<String, Value>, synced: &S
 /// level of `depth`, so a cycle of links ends there (`Deep`). `count` is how many rows there are in all, and `depth`
 /// how deep each was read.
 fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let observe_revision = match o.get("observeRevision") {
+        None => false,
+        Some(Value::Bool(value)) => *value,
+        _ => return Err(bad("observeRevision is a boolean")),
+    };
     let w = o.get("where").map(Where::of_json).transpose().map_err(bad)?.unwrap_or(Where::Yes);
     let vault = o.get("vault").map(|_| vault_of(o, "vault")).transpose()?;
     let schema = named(o)?;
@@ -938,6 +958,21 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
         }
         let mut row = row(entry, v, &attrs, &seen, record);
         row["cut"] = cut.into();
+        // Captured with the authorized row under the same Lab read. This is an
+        // opaque correlation frontier, not proof of paint or inclusion of a
+        // sender's edit. Truncated and checkpoint bases must not be treated as
+        // a complete current main-line frontier.
+        if observe_revision {
+            let (kind, heads) = if let Some(p) = checkpoint.as_ref() {
+                ("checkpoint-basis", p["basis"].as_array().cloned().unwrap_or_default())
+            } else {
+                ("main-heads", lab.history(me, entry).map(|h| ids(&h.heads(MAIN)).into_iter().map(Value::String).collect()).unwrap_or_default())
+            };
+            let complete = heads.len() <= 32;
+            row["observedRevision"] = json!({ "kind": kind,
+                "heads": heads.into_iter().take(32).collect::<Vec<_>>(),
+                "frontierComplete": complete });
+        }
         if let Some(checkpoint) = checkpoint { row["checkpoint"] = checkpoint; }
         shown.push(row);
     }

@@ -107,6 +107,7 @@ impl Node {
                 self.world_encoded(engine::WorldSnapshot::into_json).await?
             }
             Some("entry_views") => self.entry_views_encoded(op).await?,
+            Some("checkpoint_view") => self.publish_checkpoint(&op, authenticator).await?,
             Some("read_file") => return self.read_bytes(&op).await,
             _ if engine::brings(&op) => self.put(op, bytes).await?,
             Some("jobs") => json!({ "ok": self.jobs().to_json_for(crate::acting()) }),
@@ -116,6 +117,28 @@ impl Node {
             Some("synced") => json!({ "ok": self.synced().await }),
             Some("network") => json!({ "ok": self.network().await }),
             Some("measure_peer_policy") => json!({ "ok": self.shared.receipts.arm() }),
+            Some("measure_peer_visibility") => json!({ "ok": self.shared.ui_receipts.arm() }),
+            Some("observe_query_emission") => {
+                // A local UI assertion, never a remotely callable authority. Recheck
+                // that each complete main frontier is still the authorized row's.
+                let rows = op.get("rows").and_then(Value::as_array).filter(|r| r.len() <= 64)
+                    .cloned().unwrap_or_default();
+                let ids = self.read(move |lab, me| {
+                    let mut ids = Vec::new();
+                    for row in rows {
+                        if row["kind"] != "main-heads" || row["frontierComplete"] != true || row["readOnly"] != false { continue; }
+                        let Some(entry) = row["entry"].as_str().and_then(avendb::id::EntryId::from_hex) else { continue };
+                        if lab.item(me, entry).is_none() { continue; }
+                        let Some(history) = lab.history(me, entry) else { continue };
+                        let current = history.heads(avendb::history::MAIN);
+                        let Some(heads) = row["heads"].as_array().filter(|h| h.len() <= 32) else { continue };
+                        let decoded: Option<Vec<_>> = heads.iter().map(|h| h.as_str().and_then(avendb::id::EditId::from_hex)).collect();
+                        if decoded.as_ref() == Some(&current) { ids.extend(current); }
+                    }
+                    ids.truncate(64); ids
+                }).await;
+                json!({"ok":{"registered":self.shared.ui_receipts.emitted(ids)}})
+            },
             _ if engine::asks(&op) => self.try_dry(move |lab, me| engine::run(lab, me, &op)).await?,
             _ if engine::reads(&op) => self.read(move |lab, me| engine::read(lab, me, &op)).await,
             _ => self.change(op, authenticator).await?,

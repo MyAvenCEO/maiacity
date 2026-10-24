@@ -35,7 +35,7 @@
 </dialog>
 
 <style>
- .diagnostics-trigger { position: fixed; top: calc(.75rem + env(safe-area-inset-top, 0px)); right: calc(.75rem + env(safe-area-inset-right, 0px)); z-index: 1100; display: grid; place-items: center; width: 48px; height: 48px; border: 1px solid #d9d1bf; border-radius: 50%; color: #263c2e; background: #faf8f0; box-shadow: 0 3px 16px #18271e26; cursor: pointer; }
+ .diagnostics-trigger { position: fixed; top: calc(.75rem + env(safe-area-inset-top, 0px)); left: calc(.75rem + env(safe-area-inset-left, 0px)); z-index: 1100; display: grid; place-items: center; width: 48px; height: 48px; border: 1px solid #d9d1bf; border-radius: 50%; color: #263c2e; background: #faf8f0; box-shadow: 0 3px 16px #18271e26; cursor: pointer; }
  dialog { box-sizing: border-box; width: min(48rem, calc(100vw - 1.5rem)); max-height: calc(100dvh - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); padding: 1rem; border: 1px solid #d9d1bf; border-radius: 1.25rem; background: #faf8f0; color: #263c2e; overflow: auto; }
  dialog::backdrop { background: #18271e70; }
  header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }

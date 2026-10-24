@@ -440,6 +440,16 @@ pub fn drafts(slice: &Slice) -> Option<bool> {
 /// Device `me`'s world by its view: `None` while it belongs to no vault. Where its entries and files are synced to it
 /// leaves to the node (`SyncedTo`).
 pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
+    world_with_entries(lab, me, true)
+}
+
+/// Navigation and authority, with identity profiles/cards only. Ordinary entry
+/// records and file projections are deliberately absent, never confirmed empty.
+pub fn summary(lab: &Lab, me: SignerId) -> Option<World> {
+    world_with_entries(lab, me, false)
+}
+
+fn world_with_entries(lab: &Lab, me: SignerId, include_entries: bool) -> Option<World> {
     let st = lab.state(me);
     let mine = lab.vault_of(me)?;
     // the entries it shows: every one but a draft its vault hasn't landed, which has no main line yet
@@ -491,10 +501,12 @@ pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
             syncs: syncing(st, &devices, v, x),
         });
     }
-    let mut files = lab.entry_files_batch(me, shown.iter().map(|en| en.id));
-    let entries = shown.iter().map(|en| {
-        entry_with_files(lab, me, en, files.remove(&en.id).expect("selected entry file group"))
-    }).collect();
+    let entries = if include_entries {
+        let mut files = lab.entry_files_batch(me, shown.iter().map(|en| en.id));
+        shown.iter().map(|en| {
+            entry_with_files(lab, me, en, files.remove(&en.id).expect("selected entry file group"))
+        }).collect()
+    } else { Vec::new() };
     let (owns_server, backs_up) = (owns_server(lab, me), backs_up(lab, me));
     let recovery = lab.recovery();
     let signers_of = |v: &Vault| {

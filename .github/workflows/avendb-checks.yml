@@ -138,7 +138,7 @@ jobs:
         env:
           CARGO_PROFILE_TEST_OPT_LEVEL: 1
           AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
-        run: cargo nextest run --locked --no-tests=fail --features test-fixtures ${{ matrix.args }} ${{ matrix.filter }}
+        run: cargo nextest run --locked --no-fail-fast --no-tests=fail --features test-fixtures ${{ matrix.args }} ${{ matrix.filter }}
       # This binary shares immutable 40-seed histories via LazyLock. A process per property rebuilt them 37 times.
       - name: Shared-history properties (all seeds and invariants)
         if: matrix.properties

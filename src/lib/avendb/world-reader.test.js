@@ -54,3 +54,23 @@ test('retirement before the first request never starts underlying work',async()=
  const f=fixture();f.reader.cancel(Error('retired before read'));
  await expect(f.reader.request()).rejects.toThrow('retired before read');expect(f.pending).toEqual([]);
 });
+
+
+test('startup consumers share one initial summary while explicit refresh remains a barrier', async () => {
+ const f=fixture(); const initial=f.reader.ensure();
+ expect(f.reader.ensure()).toBe(initial); expect(f.pending.length).toBe(1);
+ const fresh=f.reader.request(); expect(fresh).not.toBe(initial);
+ f.pending[0].resolve('initial'); await initial;
+ await f.reader.ensure(); expect(f.pending.length).toBe(2);
+ f.pending[1].resolve('after mutation'); await fresh;
+ expect(f.shown).toEqual(['initial','after mutation']);
+});
+
+test('initial summary failures retry and device retirement never reuses ready state', async () => {
+ const f=fixture(); const initial=f.reader.ensure().catch(e=>e.message);
+ f.pending[0].reject(Error('initial read failed')); expect(await initial).toBe('initial read failed');
+ const retry=f.reader.ensure(); f.pending[1].resolve('retry'); await retry;
+ f.reader.cancel(Error('device retired'));
+ await expect(f.reader.ensure()).rejects.toThrow('device retired');
+ expect(f.pending.length).toBe(2);
+});

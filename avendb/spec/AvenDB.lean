@@ -22,6 +22,7 @@ import AvenDB.Batches
 import AvenDB.BatchDurability
 import AvenDB.Snapshot
 import AvenDB.EntryProjection
+import AvenDB.CheckpointDemand
 import AvenDB.PagedView
 import AvenDB.TransportEpoch
 import AvenDB.Wraps
@@ -92,3 +93,9 @@ import AvenDB.WarmRestoreNoop
 import AvenDB.ScratchRetention
 
 import AvenDB.PeerReceipt
+
+import AvenDB.WarmMaterialization
+import AvenDB.LabScheduling
+import AvenDB.EntryBaseFormat
+
+import AvenDB.MountedGeneration

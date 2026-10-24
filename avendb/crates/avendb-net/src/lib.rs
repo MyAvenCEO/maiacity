@@ -111,6 +111,7 @@ mod blobs;
 pub mod bucket;
 mod demand;
 mod discovery;
+mod checkpoint_delivery;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod disk;
 #[cfg(not(target_arch = "wasm32"))]
@@ -125,6 +126,7 @@ mod holdings;
 mod jobs;
 pub mod kx;
 mod lifecycle;
+mod lab_schedule;
 mod limits;
 pub mod paged_views;
 mod progress;
@@ -724,6 +726,7 @@ impl Node {
             writer: Mutex::new(writer),
             me,
             lab: Mutex::new(lab),
+            lab_schedule: Arc::default(),
             edits,
             signers,
             endpoint: endpoint.clone(),
@@ -737,6 +740,7 @@ impl Node {
             logs: Mutex::default(),
             world_encoding: Arc::default(),
             entry_encoding: Arc::default(),
+            checkpoint_pins: Arc::default(),
             receive_checking: Arc::default(),
             own: Mutex::new(Own { at: ((usize::MAX, 0), 0), revision: None, holdings: Holdings::default() }),
             reach: Mutex::default(),
@@ -744,6 +748,7 @@ impl Node {
             told: Mutex::default(),
             statements: Mutex::default(),
             receipts: peer_receipts::Receipts::default(),
+            ui_receipts: peer_receipts::Receipts::for_ui(),
             telling: Mutex::default(),
             unreached: Mutex::default(),
             asking: Mutex::default(),
@@ -1411,7 +1416,7 @@ impl Node {
         &self,
         f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static,
     ) -> Result<T> {
-        let sampled = self.shared.receipts.enabled();
+        let sampled = self.shared.receipts.enabled() || self.shared.ui_receipts.enabled();
         let (out, edit) = self.shared.try_lab(move |lab, me| {
             let before = if sampled { lab.log(me).ids().len() } else { 0 };
             let out = f(lab, me);
@@ -1730,6 +1735,7 @@ impl Node {
         json!({
             "served": s.traffic.served_json(),
             "policy_observations": s.receipts.json(),
+            "reactive_observations": s.ui_receipts.json(),
             "me": { "endpoint": me.id.to_string(), "relays": relays, "direct": direct },
             "peers": peers,
             "gone": gone,
@@ -2023,6 +2029,7 @@ struct Shared {
     writer: Mutex<Option<Writer>>,
     me: SignerId,
     lab: Mutex<Lab>,
+    lab_schedule: Arc<lab_schedule::Schedule>,
     /// Its device's edits on its shelf, if it keeps one.
     edits: Option<edits::Edits>,
     /// Durable supplemental signer roots; unsupported shelves keep ordinary signatures only.
@@ -2044,6 +2051,8 @@ struct Shared {
     /// One owned world snapshot/conversion at a time; targeted reads and writes bypass it.
     world_encoding: Arc<tokio::sync::Mutex<()>>,
     entry_encoding: Arc<tokio::sync::Mutex<()>>,
+    /// Serialize durable checkpoint tag changes; a queued old save cannot replace a newer pin.
+    checkpoint_pins: Arc<tokio::sync::Mutex<()>>,
     /// One page's signature checker at a time, independent of interactive Lab access.
     receive_checking: Arc<tokio::sync::Mutex<()>>,
     /// What its device holds for good.
@@ -2057,6 +2066,7 @@ struct Shared {
     /// The signed statements of holdings it keeps, signs and passes on (H2, `statements`).
     statements: Mutex<statements::Statements>,
     receipts: peer_receipts::Receipts,
+    ui_receipts: peer_receipts::Receipts,
     /// Peers being told now, with one coalesced obligation to recompute after success.
     telling: Mutex<HashMap<SignerId, bool>>,
     /// The peers it couldn't tell, and when to try each again.
@@ -2224,11 +2234,23 @@ impl Shared {
         self: &Arc<Self>,
         f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static,
     ) -> Result<T> {
+        self.try_lab_class(lab_schedule::Class::Foreground, f).await
+    }
+
+    pub(crate) async fn try_lab_class<T: Send + 'static>(
+        self: &Arc<Self>, class: lab_schedule::Class,
+        f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static,
+    ) -> Result<T> {
         let operation = self.admit()?;
+        // A real browser task boundary lets pending page messages register foreground
+        // work; immediately-ready Rust futures alone cannot yield the worker event loop.
+        #[cfg(target_arch = "wasm32")]
+        if class == lab_schedule::Class::Background { time::sleep(Duration::ZERO).await; }
+        let turn = self.lab_schedule.acquire(class).await;
         let shared = self.clone();
         let me = acting().unwrap_or(self.me);
         let work = move || {
-            let _operation = operation;
+            let (_operation, _turn) = (operation, turn);
             let mut lab = shared.locked_lab();
             let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 lab.set_now(unix_now());
@@ -2281,9 +2303,19 @@ impl Shared {
         self: &Arc<Self>,
         f: impl FnOnce(&Lab, SignerId) -> T + Send + 'static,
     ) -> T {
+        self.read_class(lab_schedule::Class::Foreground, f).await
+    }
+
+    pub(crate) async fn read_class<T: Send + 'static>(
+        self: &Arc<Self>, class: lab_schedule::Class,
+        f: impl FnOnce(&Lab, SignerId) -> T + Send + 'static,
+    ) -> T {
+        #[cfg(target_arch = "wasm32")]
+        if class == lab_schedule::Class::Background { time::sleep(Duration::ZERO).await; }
+        let turn = self.lab_schedule.acquire(class).await;
         let shared = self.clone();
         let me = acting().unwrap_or(self.me);
-        let work = move || f(&shared.locked_lab(), me);
+        let work = move || { let _turn = turn; f(&shared.locked_lab(), me) };
         #[cfg(not(target_arch = "wasm32"))]
         return tokio::task::spawn_blocking(work).await.expect("the Lab's read task");
         #[cfg(target_arch = "wasm32")]
@@ -2422,7 +2454,7 @@ impl Shared {
         let must = !matches!(scope, Scope::Logs(_));
         let asked = self.pages(endpoint, peer, scope, &mut job, admission, background).await;
         // what its pages brought, brought up to date once more, however the asking ended
-        self.catch_up_paced(must).await;
+        self.catch_up_paced_class(must, if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }).await;
         if matches!(asked, Ok(0)) {
             job.forget()
         } else {
@@ -2474,7 +2506,7 @@ impl Shared {
         // Request construction can outlive a cancelled caller on a blocking worker too.
         let preparing = admission.clone();
         let base = self
-            .read(move |lab: &Lab, me| {
+            .read_class(if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }, move |lab: &Lab, me| {
                 let _preparing = preparing;
                 let request = lab.request(me, device);
                 match scope {
@@ -2557,14 +2589,14 @@ impl Shared {
                 #[cfg(target_arch = "wasm32")]
                 let (prepared, permit, activity, ()) = self.prepare_received_page(edits, permit, ()).await?;
                 let (got, whose) = self
-                    .try_lab(move |lab, me| {
+                    .try_lab_class(if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }, move |lab, me| {
                         let (_permit, _activity) = (permit, activity);
                         lab.receive_prepared(me, prepared, false)
                     })
                     .await?;
                 // its keys and items brought up to date now and then, not at each page (`CATCH_UP_PACE`)
                 if next.is_some() {
-                    self.catch_up_paced(false).await;
+                    self.catch_up_paced_class(false, if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }).await;
                 }
                 Ok::<_, anyhow::Error>((got, whose, taking.elapsed()))
             };
@@ -2622,7 +2654,7 @@ impl Shared {
             let bytes = got.iter().map(|k| k.len() as u64).sum();
             self.traffic.keys(device, asked, got.len() as u64, bytes, fetching.elapsed().as_millis() as u64);
             if !got.is_empty() {
-                self.try_lab(move |lab, me| lab.receive(me, Vec::new(), got)).await?;
+                self.try_lab_class(if background { lab_schedule::Class::Background } else { lab_schedule::Class::Foreground }, move |lab, me| lab.receive(me, Vec::new(), got)).await?;
                 self.changed.notify_one();
             }
         }
@@ -3132,20 +3164,28 @@ impl Shared {
             }
         };
         // what every asking brought, brought up to date at last, however it ended
-        self.catch_up_paced(true).await;
+        self.catch_up_paced_class(true, lab_schedule::Class::Background).await;
         asked
     }
 
     /// Brings its device's keys and items up to date with the edits it took since (`Lab::catch_up`), if it `must`, or
     /// else once it waited `CATCH_UP_PACE` times as long as the last one took since it ended. True if it did.
     async fn catch_up_paced(self: &Arc<Self>, must: bool) -> bool {
+        self.catch_up_paced_class(must, lab_schedule::Class::Foreground).await
+    }
+
+    async fn catch_up_paced_class(self: &Arc<Self>, must: bool, class: lab_schedule::Class) -> bool {
         if !must && self.paced.lock().expect("paced").is_some_and(|soonest| Instant::now() < soonest) {
             return false;
         }
-        let started = Instant::now();
-        let caught = self.try_lab(|lab, me| lab.catch_up(me)).await.unwrap_or(false);
+        let (caught, work) = self.try_lab_class(class, |lab, me| {
+            // Queue waiting is not computation cost: foreground priority must not
+            // multiply a busy queue into another long background-sync cooldown.
+            let started = Instant::now();
+            (lab.catch_up(me), started.elapsed())
+        }).await.unwrap_or((false, Duration::ZERO));
         if caught {
-            *self.paced.lock().expect("paced") = Some(Instant::now() + started.elapsed() * CATCH_UP_PACE);
+            *self.paced.lock().expect("paced") = Some(Instant::now() + work * CATCH_UP_PACE);
             self.changed.notify_one();
         }
         caught

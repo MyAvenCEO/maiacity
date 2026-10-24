@@ -332,6 +332,7 @@ dependencies = [
  "iroh-base",
  "iroh-blobs",
  "irpc",
+ "libc",
  "ml-kem",
  "n0-future",
  "n0-watcher",

@@ -606,10 +606,16 @@ impl Shared {
     /// The save lane/book guard and admitted producer remain owned by the caller.
     fn prepare_warm_with(&self, encode: impl FnOnce(avendb::lab::WarmCapture) -> avendb::lab::Warming)
         -> Option<avendb::lab::Warming> {
+        self.prepare_warm_at(false, encode)
+    }
+
+    fn prepare_warm_at(&self, current: bool, encode: impl FnOnce(avendb::lab::WarmCapture) -> avendb::lab::Warming)
+        -> Option<avendb::lab::Warming> {
         let capture = {
             let (mut lab, edits) = (self.locked_lab(), self.edits.as_ref().expect("its edits"));
             let held = edits.held(&lab, self.me);
-            lab.capture_warm(self.me, held, edits.checked())
+            if current { lab.capture_warm_current(self.me, held, edits.checked()) }
+            else { lab.capture_warm(self.me, held, edits.checked()) }
         };
         capture.map(encode)
     }
@@ -659,7 +665,14 @@ impl Shared {
             self.changed.notify_one();
         }
         let shared = self.clone();
-        let warming = move || shared.prepare_warm_with(avendb::lab::WarmCapture::encode);
+        // Only the once-only quiescent finalizer has an override shelf. The normal
+        // save lane retains its bounded snapshot interval; authoritative data is already durable.
+        let current = override_shelf.is_some();
+        let warming = move || if current {
+            shared.prepare_warm_at(true, avendb::lab::WarmCapture::encode)
+        } else {
+            shared.prepare_warm_with(avendb::lab::WarmCapture::encode)
+        };
         #[cfg(not(target_arch = "wasm32"))]
         let warming = tokio::task::spawn_blocking(warming).await?;
         #[cfg(target_arch = "wasm32")]
@@ -726,6 +739,7 @@ impl Shared {
 mod tests {
     use super::*;
     use crate::shelf::Call;
+    use avendb::lab::Backup;
     use avendb::id::VaultId;
     use avendb::policy::{Action, Edit};
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -1119,6 +1133,49 @@ mod tests {
         node.shutdown().await.unwrap();
         std::fs::remove_dir_all(folder).ok();
         assert!(woke, "durable entry announcement must not wait for optional snapshot I/O");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn clean_shutdown_publishes_recent_materialization_without_background_reencoding() {
+        use crate::{Node, Options};
+        use avendb::cast::{document, human_on};
+        let folder = std::env::temp_dir().join(format!("avendb-close-view-{}", crate::shelf::fresh()));
+        let mut lab = Lab::new();
+        let passkey = lab.passkey("Shutdown materialization");
+        let me = lab.device_of(passkey, "Mac");
+        let vault = human_on(&mut lab, passkey, &[me]);
+        let entry = lab.create(me, vault, vault, "note", &[], document("Recent", "before", me)).unwrap();
+        lab.restore_from(me, lab.backup(me));
+        // Node::spawn owns the writer lease; do not pre-claim a second writer.
+        let shelf = crate::disk::open(&folder).unwrap();
+        let opts = Options { shelf: Some(shelf.clone()), ..Options::local() };
+        let node = Node::spawn(lab.split(me, &[passkey], [91;32]), me, opts).await.unwrap();
+        node.shared.save().await.unwrap();
+        let before = node.shared.edits.as_ref().unwrap().warm().await.views;
+        assert!(!before.is_empty());
+        node.act(move |lab, me| { lab.edit(me, vault, entry, |it| it.set_text(2,"recent durable edit")).unwrap(); }).await;
+        node.shared.save().await.unwrap();
+        assert_eq!(node.shared.edits.as_ref().unwrap().warm().await.views, before,
+            "ordinary saver must retain its snapshot interval after a single write");
+        let expected = node.read(move |lab,me| lab.item(me,entry).unwrap().record()).await;
+        node.shutdown().await.unwrap();
+        let (reopened, (signed, keys)) = Edits::open(shelf.clone()).await.unwrap();
+        let count = signed.len();
+        let warm = reopened.warm().await;
+        assert_ne!(warm.views, before, "clean shutdown publishes the current derived frontier");
+        // split moved the original device into Node; reopen with its same test identity.
+        let mut lab = Lab::new();
+        let restored_passkey = lab.passkey("Shutdown materialization");
+        assert_eq!(lab.device_of(restored_passkey, "Mac"), me);
+        lab.restore_warm(me, Backup::new(signed,keys), reopened.checked().map(|c|(c,count)), &warm);
+        assert_eq!(lab.item(me,entry).unwrap().record(), expected);
+        assert!(lab.work_metrics(me)["counts"]["show: own materialization reused"].as_u64().unwrap_or(0)>0,
+            "write->shutdown->reopen must use persisted materialization");
+        assert!(lab.capture_warm_current(me,count,reopened.checked()).is_none(),
+            "a second unchanged close does not export another snapshot");
+        drop(reopened);
+        drop(node);
+        std::fs::remove_dir_all(folder).ok();
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
