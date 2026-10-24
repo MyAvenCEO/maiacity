@@ -451,3 +451,7 @@ Still open: compile/run these combined gates; native/PWA atomic durable activati
 provider negotiation; live publication/UI integration; shared-writer and proposal/pre-cut
 suffix semantics; decoder resource isolation; actual device latency/reload measurements.
 The full original bootstrap/performance goal is not marked complete.
+
+Store-adoption stage: [`503e1aa4`](https://github.com/MyAvenCEO/maiacity/commit/503e1aa4).
+Required pending Rust filter: `cargo test -p avendb --lib owner_bootstrap_store -- --nocapture`,
+followed by `owner_judgment`, `counted_base`, and existing ordinary history/sharing regressions.
