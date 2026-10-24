@@ -24,7 +24,7 @@ Todos mounts one existing `api.observe` subscription for its selected vault. It 
 - Existing Chromium/WebKit local-write, refusal, targeted remote-read, serialized engine priority, single-world-reader and device-retirement fixture remains green.
 - 30 focused JS tests pass with 191 assertions: local-write, reactive-read, world-reader and query-window.
 - Lean LocalWrite checks pass. Rust source parser checks pass; these are not Rust compilation or execution.
-- Svelte check initially found two new callback annotations, now corrected. Its unrelated base-file `src/lib/media/ref.test.js` lacks `bun:test` declarations; do not represent the entire project type check as green until confirmed/fixed by its owner.
+- Svelte check initially found two new callback annotations, now corrected. The unrelated base-file `src/lib/media/ref.test.js` import typing error has the existing narrow fix cherry-picked from `b66372058a6434b5897a802f26babd85186ce013`; final full check is pending.
 
 ## Remaining gates and limits
 
