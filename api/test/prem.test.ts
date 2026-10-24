@@ -1,11 +1,10 @@
+import { migrateAndUse } from "./fixtures/db";
 // Prem's failures, read as they are: the attestation is per model, so an attestation error is checked against the
 // gateway's attestation route for that model (stood in for here) — 5xx: Prem's report is unavailable for now
 // (transient, the file waits), 401/403: our key, 200 while the SDK's verification failed: a genuine failure. And the
 // endpoints Prem publishes, and the models this key lists.
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
-import { useDb, type Db } from "../src/pg";
-import { MIGRATIONS } from "../src/migrations-list";
 import { initRoles } from "../src/acl";
 import { call, checkModels, classify, discover, endpoints, MAX_PAUSE, paused, pick, PremError, useClock, useModels, useProbe } from "../src/prem";
 import { transcribeRoute, useSttClient } from "../src/stt";
@@ -17,16 +16,7 @@ afterAll(avendb.stop);
 
 beforeAll(async () => {
   avendb.start();
-  for (const m of MIGRATIONS) await pg.exec(m.sql);
-  const db: Db = {
-    query: async (text, params = []) => {
-      const r = await pg.query<any>(text, params as any[]);
-      return { rows: r.rows, affectedRows: r.affectedRows ?? 0 };
-    },
-    exec: async (text) => void (await pg.exec(text)),
-    transaction: (fn) => pg.transaction((tx) => fn({ query: async (t, p = []) => { const r = await tx.query<any>(t, p as any[]); return { rows: r.rows, affectedRows: r.affectedRows ?? 0 }; } })),
-  };
-  useDb(db);
+  await migrateAndUse(pg);
   await initRoles();
   await pg.query("INSERT INTO founders (id, name, role) VALUES ('first', 'first', 'admin')");
 });
@@ -200,3 +190,5 @@ describe("the models and the endpoints", () => {
     expect(endpoints).toEqual({ proxy: "https://gateway2.prem.io", enclave: "https://conf-engine2.prem.io" });
   });
 });
+
+afterAll(async () => { await pg.close(); });

@@ -1,0 +1,54 @@
+{
+  "scope": "Scheduling models only: no extracted-code, cryptographic, durability or elapsed-time proof. The README retains the core security mapping.",
+  "contracts": [
+    {
+      "model": "avendb/spec/AvenDB/WorldSnapshot.lean",
+      "invariant": "frozen serialization excludes later live state",
+      "implementation": "avendb/crates/avendb-net/src/run.rs",
+      "test": "avendb/crates/avendb-net/src/run.rs",
+      "testName": "held_world_encoding_does_not_block_authorized_local_work"
+    },
+    {
+      "model": "avendb/spec/AvenDB/AnnounceOwed.lean",
+      "invariant": "pending wake survives an active announcement",
+      "implementation": "avendb/crates/avendb-net/src/live.rs",
+      "test": "avendb/crates/avendb-net/src/live_tests.rs",
+      "testName": "held_announcement_coalesces_new_entry_wake_without_waiting_for_retry"
+    },
+    {
+      "model": "avendb/spec/AvenDB/ListenerRelease.lean",
+      "invariant": "listener ownership ends at awaited shutdown",
+      "implementation": "avendb/crates/avendb-net/src/transports/control.rs",
+      "test": "avendb/crates/avendb-net/tests/transport_control.rs",
+      "testName": "concurrent_shutdown_releases_listener_port_while_node_is_retained"
+    },
+    {
+      "model": "avendb/spec/AvenDB/DurableAnnounce.lean",
+      "invariant": "authoritative persistence precedes announcement eligibility",
+      "implementation": "avendb/crates/avendb-net/src/edits.rs",
+      "test": "avendb/crates/avendb-net/src/edits.rs",
+      "testName": "durable_entry_wakes_announcements_before_optional_view_save_finishes"
+    },
+    {
+      "model": "avendb/spec/AvenDB/WorldReads.lean",
+      "invariant": "single-flight and post-call freshness",
+      "implementation": "src/lib/avendb/world-reader.js",
+      "test": "src/lib/avendb/world-reader.test.js",
+      "testName": ""
+    },
+    {
+      "model": "avendb/spec/AvenDB/LocalWrite.lean",
+      "invariant": "local acceptance does not wait for summary publication",
+      "implementation": "src/lib/avendb/local-write.js",
+      "test": "src/lib/avendb/local-write.test.js",
+      "testName": ""
+    },
+    {
+      "model": "avendb/spec/AvenDB/ProofWorker.lean",
+      "invariant": "only the idle owning verifier can be released",
+      "implementation": "game/code/sources/proof-worker.js",
+      "test": "game/code/sources/proof-worker.test.js",
+      "testName": ""
+    }
+  ]
+}

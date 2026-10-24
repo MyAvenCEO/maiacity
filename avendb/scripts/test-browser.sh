@@ -20,10 +20,10 @@ if [ "$have" != "$want" ]; then
 	exit 1
 fi
 
-cargo build -p avendb-browser --target wasm32-unknown-unknown --release --features localhost-passkeys
+cargo build --locked -p avendb-browser --target wasm32-unknown-unknown --release --features localhost-passkeys
 out=target/avendb-browser-pkg
 rm -rf "$out"
 wasm-bindgen --target web --no-typescript --out-dir "$out" target/wasm32-unknown-unknown/release/avendb_browser.wasm
 ls -l "$out"
 # the test's relay and server take the same passkeys of localhost as the page
-AVENDB_PKG="$PWD/$out" cargo test -p avendb-browser --features localhost-passkeys --test page -- --ignored --nocapture
+AVENDB_PKG="$PWD/$out" cargo test --locked -p avendb-browser --features localhost-passkeys,test-fixtures --test page --test transports -- --ignored --nocapture

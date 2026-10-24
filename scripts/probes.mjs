@@ -21,21 +21,15 @@
  * The site is the dev server's, with the repo's own recipes standing in for the Maia City vault's feed
  * (VITE_RECIPE_FEED=dev), so nothing here needs avenDB's server; the app's sign-in is answered here (/api/me).
  *
- *   node scripts/probes.mjs                                            starts its own dev server
- *   BASE=http://localhost:5173 node scripts/probes.mjs                 a running one (VITE_RECIPE_FEED=dev bun run dev)
- *   CHROME=/path/to/chrome node scripts/probes.mjs                     else Playwright's Chromium, or Chrome on a Mac
- *   node scripts/probes.mjs --only view|box|math
- *   node scripts/probes.mjs --browser webkit                           in Playwright's WebKit (bunx playwright install webkit)
- *   node scripts/probes.mjs --playwright                               Chromium driven by Playwright, as WebKit is: the
- *                                                                      WebKit run's own code, checked where WebKit is not
- *
- * Chromium is driven by puppeteer (as it always was), WebKit by Playwright: the probes are the same, only the few calls
- * that differ between the two go through a driver (`puppeteerDriver`, `playwrightDriver` below).
+ *   bun scripts/probes.mjs                                            starts its own dev server
+ *   BASE=http://localhost:5173 bun scripts/probes.mjs                 a running one (VITE_RECIPE_FEED=dev bun run dev)
+ *   CHROME=/path/to/chrome bun scripts/probes.mjs                     else Playwright's Chromium, or Chrome on a Mac
+ *   bun scripts/probes.mjs --only view|box|math
+ *   bun scripts/probes.mjs --browser webkit                           in Playwright's WebKit (bunx playwright install webkit)
+ * Both browser engines use the same Playwright driver under Bun. The hostile inputs and escape assertions are unchanged.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, readdirSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { join } from 'node:path';
 import { CLICKS, HTML_TRIES } from '../src/lib/sandbox/view/probe.js';
 import { WORKER_TRIES as MATH_TRIES } from '../src/lib/sandbox/math-probe.js';
 
@@ -44,69 +38,19 @@ const only = arg('--only');
 if (only && !['view', 'box', 'math'].includes(only)) throw new Error(`--only view|box|math, not ${only}`);
 /** whether probe `what` runs: every one, or the one asked for */
 const runs = (what) => !only || only === what;
-/** chromium (the default) or webkit; Playwright drives anything but Chromium, and Chromium too when asked */
+/** Both browser engines run the same probes through Playwright. */
 const browserName = arg('--browser') ?? 'chromium';
 if (!['chromium', 'webkit'].includes(browserName)) throw new Error(`--browser chromium|webkit, not ${browserName}`);
-const viaPlaywright = browserName !== 'chromium' || process.argv.includes('--playwright');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-/** Playwright's Chromium: where PLAYWRIGHT_BROWSERS_PATH (or its own cache) keeps it */
-function playwrightChromium() {
-	const roots = [process.env.PLAYWRIGHT_BROWSERS_PATH, '/opt/pw-browsers', join(process.env.HOME ?? '', '.cache/ms-playwright')].filter(Boolean);
-	for (const root of roots) {
-		if (!existsSync(root)) continue;
-		for (const d of readdirSync(root).filter((d) => /^chromium-\d+$/.test(d)).sort((a, b) => Number(b.slice(9)) - Number(a.slice(9)))) {
-			const bin = join(root, d, 'chrome-linux/chrome');
-			if (existsSync(bin)) return bin;
-		}
-	}
-	return null;
-}
 
 /** the app's sign-in, answered: an admin, as scripts/avendb-smoke.mjs answers it */
 const founder = { id: 'probe', number: 1, name: 'Probe', since: '2026-01-01', role: 'founder', caps: [] };
 const meHeaders = (origin) => ({ 'access-control-allow-origin': origin, 'access-control-allow-credentials': 'true', 'content-type': 'application/json' });
 
-/**
- * Chromium by puppeteer, as the probes always ran: its sign-in answered over the DevTools protocol (Fetch), which only
- * Chromium speaks.
- */
-async function puppeteerDriver(origin) {
-	const chrome = process.env.CHROME ?? playwrightChromium() ?? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'].find((p) => existsSync(p));
-	if (!chrome) throw new Error('No Chromium found: install Playwright’s (npx playwright install chromium) or set CHROME.');
-	const { default: puppeteer } = await import('puppeteer-core');
-	const browser = await puppeteer.launch({ executablePath: chrome, headless: true, args: ['--no-sandbox'] });
-	return {
-		name: chrome,
-		newPage: () => browser.newPage(),
-		viewport: (page, size) => page.setViewport(size),
-		beforeEachDocument: (page, fn) => page.evaluateOnNewDocument(fn),
-		async answerMe(page) {
-			const cdp = await page.createCDPSession();
-			await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*/api/me' }] });
-			cdp.on('Fetch.requestPaused', (r) => {
-				cdp.send('Fetch.fulfillRequest', { requestId: r.requestId, responseCode: 200, responseHeaders: Object.entries(meHeaders(origin)).map(([name, value]) => ({ name, value })), body: Buffer.from(JSON.stringify(founder)).toString('base64') }).catch(() => {});
-			});
-		},
-		/** settled: no more than two requests in flight for half a second */
-		idle: 'networkidle2',
-		/** an element there, seen or not (#results is hidden) */
-		waitFor: (page, sel, ms) => page.waitForSelector(sel, { timeout: ms }),
-		click: (el) => el.click(),
-		pages: async () => (await browser.pages()).length,
-		onWindow: (fn) => browser.on('targetcreated', (t) => t.type() === 'page' && fn()),
-		close: () => browser.close()
-	};
-}
-
-/**
- * WebKit (or Chromium, with --playwright) by Playwright: every tab in one context, so a window any of them opens is
- * counted; the sign-in answered by its routing, which works in every engine it drives.
- */
 async function playwrightDriver(origin) {
 	const pw = await import('playwright').catch(() => null);
 	if (!pw) throw new Error('No Playwright: bun install (it is a devDependency), then bunx playwright install webkit.');
-	const browser = await pw[browserName].launch({ headless: true });
+	const browser = await pw[browserName].launch({ headless: true, ...(browserName === 'chromium' && process.env.CHROME ? { executablePath: process.env.CHROME } : {}) });
 	const context = await browser.newContext();
 	return {
 		name: `${browserName} ${browser.version()} (Playwright)`,
@@ -118,7 +62,7 @@ async function playwrightDriver(origin) {
 		idle: 'networkidle',
 		/** an element there, seen or not: Playwright waits for a visible one unless told, and #results is hidden */
 		waitFor: (page, sel, ms) => page.waitForSelector(sel, { timeout: ms, state: 'attached' }),
-		// Playwright waits up to half a minute for an element to take a click; puppeteer tries once. A few seconds, then on
+		// Bound each hostile click so a refused interaction cannot stall the other escape attempts.
 		click: (el) => el.click({ timeout: 3000 }),
 		pages: async () => context.pages().length,
 		onWindow: (fn) => context.on('page', () => fn()),
@@ -155,13 +99,13 @@ let server = null;
 if (!base) {
 	const port = 5298;
 	base = `http://localhost:${port}`;
-	server = spawn('npx', ['vite', 'dev', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true, env: { ...process.env, VITE_RECIPE_FEED: 'dev' } });
+	server = spawn(process.execPath, ['--bun', 'x', 'vite', 'dev', '--port', String(port), '--strictPort'], { stdio: 'ignore', detached: true, env: { ...process.env, VITE_RECIPE_FEED: 'dev' } });
 	for (let i = 0; i < 120 && !(await fetch(base).then((r) => r.ok, () => false)); i++) await sleep(1000);
 }
 const origin = new URL(base).origin;
 
 // a browser that won't start takes the dev server down with it, rather than leaving it running
-const driver = await (viaPlaywright ? playwrightDriver : puppeteerDriver)(origin).catch((e) => {
+const driver = await playwrightDriver(origin).catch((e) => {
 	canary.close();
 	if (server?.pid) process.kill(-server.pid);
 	throw e;

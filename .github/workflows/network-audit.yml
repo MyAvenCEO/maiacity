@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           sparse-checkout: |
             .github/actions/prod-ssh
@@ -53,7 +53,7 @@ jobs:
             < scripts/diagnostics/network-probe.py > server-network.json
       - name: Preserve measurements, including incomplete probes
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: server-network-${{ github.run_id }}
           path: |

@@ -1,0 +1,18 @@
+name: Full regression checks
+on:
+  schedule:
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: full-regressions
+  cancel-in-progress: true
+jobs:
+  application:
+    uses: ./.github/workflows/kernel.yml
+  avendb:
+    uses: ./.github/workflows/avendb-checks.yml
+    with:
+      real_browser: true
+      protocol: true

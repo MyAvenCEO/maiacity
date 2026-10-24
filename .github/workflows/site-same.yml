@@ -34,9 +34,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
 
@@ -48,7 +48,7 @@ jobs:
 
       - run: bun scripts/release.mjs list build
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: list-${{ matrix.os }}
           path: build/release.json
@@ -59,13 +59,17 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/download-artifact@v8.0.2
         with:
           pattern: list-*
 
       - name: Compare the two lists
         run: |
-          node -e '
+          bun -e '
             const fs = require("fs");
             const a = JSON.parse(fs.readFileSync("list-ubuntu-latest/release.json", "utf8")).files;
             const b = JSON.parse(fs.readFileSync("list-macos-15/release.json", "utf8")).files;

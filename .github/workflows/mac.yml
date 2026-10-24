@@ -45,12 +45,12 @@ jobs:
     runs-on: macos-15
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
       - uses: dtolnay/rust-toolchain@stable
 
       # The app workspace compiles the embedded avenDB crates into its own target directory.
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: vault -> target
           cache-on-failure: true
@@ -67,3 +67,10 @@ jobs:
         run: |
           rustc --edition=2024 --test vault/app/src/media_ref.rs -o "$RUNNER_TEMP/media-ref-tests"
           "$RUNNER_TEMP/media-ref-tests"
+
+      - name: Native color and media contracts
+        working-directory: vault
+        run: cargo test --locked -p vault-color -p vault-media -p vault-asr
+      - name: Render numerical contracts
+        working-directory: vault
+        run: cargo test --locked -p vault-render --test maths --test eq --test look --test creative

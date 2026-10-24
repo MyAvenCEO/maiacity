@@ -43,3 +43,6 @@ libc = "0.2"
 n0-future = "0.3.2"
 # the bucket's retries, minutes long, on a clock the tests move on (`backups::Retrying`)
 tokio = { version = "1.44", features = ["test-util"] }
+
+[features]
+test-fixtures = ["avendb/test-fixtures"]

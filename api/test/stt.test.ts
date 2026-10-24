@@ -1,9 +1,8 @@
+import { migrateAndUse } from "./fixtures/db";
 // Speech to text: Deepgram's answer normalised into the catalog's transcript, and who may ask the route — against a
 // recorded Nova 3 response (test/fixtures/deepgram-nova3.json); Prem itself is stood in for.
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
-import { useDb, type Db } from "../src/pg";
-import { MIGRATIONS } from "../src/migrations-list";
 import { initRoles } from "../src/acl";
 import { useClock } from "../src/prem";
 import { MAX_BYTES, normalize, statusRoute, transcribeRoute, useSttClient, type DeepgramResponse } from "../src/stt";
@@ -16,16 +15,7 @@ afterAll(avendb.stop);
 
 beforeAll(async () => {
   avendb.start();
-  for (const m of MIGRATIONS) await pg.exec(m.sql);
-  const db: Db = {
-    query: async (text, params = []) => {
-      const r = await pg.query<any>(text, params as any[]);
-      return { rows: r.rows, affectedRows: r.affectedRows ?? 0 };
-    },
-    exec: async (text) => void (await pg.exec(text)),
-    transaction: (fn) => pg.transaction((tx) => fn({ query: async (t, p = []) => { const r = await tx.query<any>(t, p as any[]); return { rows: r.rows, affectedRows: r.affectedRows ?? 0 }; } })),
-  };
-  useDb(db);
+  await migrateAndUse(pg);
   await initRoles();
   await pg.query("INSERT INTO founders (id, name, role) VALUES ('first', 'first', 'admin')");
 });
@@ -134,3 +124,5 @@ describe("POST /api/transcripts", () => {
   });
 });
 
+
+afterAll(async () => { await pg.close(); });

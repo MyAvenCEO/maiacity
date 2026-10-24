@@ -11,7 +11,11 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
 		"media": "bun api/scripts/media.ts",
-		"voice": "bun api/scripts/voice.ts"
+		"voice": "bun api/scripts/voice.ts",
+		"test": "bun scripts/ci/test.mjs --gate",
+		"test:changed": "bun scripts/ci/test.mjs",
+		"test:all": "bun scripts/ci/test.mjs --all",
+		"test:inventory": "bun scripts/ci/test.mjs --check"
 	},
 	"devDependencies": {
 		"@noble/post-quantum": "0.7.1",
@@ -54,5 +58,6 @@
 	},
 	"patchedDependencies": {
 		"@sveltejs/kit@2.70.3": "patches/@sveltejs%2Fkit@2.70.3.patch"
-	}
+	},
+	"packageManager": "bun@1.4.4"
 }

@@ -291,7 +291,7 @@ impl McEliece {
 
     /// The pair `seed` makes (`Secret::pair_seed`).
     fn made(seed: &[u8; 32]) -> McEliece {
-        #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+        #[cfg(all(feature = "test-fixtures", debug_assertions, not(target_arch = "wasm32")))]
         if let Some(pair) = test_pairs::made(seed) {
             return pair;
         }
@@ -304,8 +304,8 @@ impl McEliece {
 /// The tests' shared pairs: most of the pairs a test run makes are of the same few fixed keys, made again in every
 /// test program, at most of a second each (240 of the 312 pairs avenDB's net and server tests made, 2026-10-21). With
 /// AVENDB_TEST_PAIRS naming a folder, each pair is made once and read back from there by every other program. Debug
-/// builds alone: the secret halves lie in that folder, so nothing optimised (the server, the app, the page) has it.
-#[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
+/// assertions and the explicit test-fixtures feature only. Ordinary debug builds do not write secret pairs.
+#[cfg(all(feature = "test-fixtures", debug_assertions, not(target_arch = "wasm32")))]
 mod test_pairs {
     use super::*;
 
@@ -327,7 +327,19 @@ mod test_pairs {
         bytes.extend_from_slice(&secret.as_array()[..]);
         // written aside and renamed into place, so a program reading it meanwhile finds it whole or not at all
         let aside = folder.join(format!("{name}.{}", std::process::id()));
-        if std::fs::create_dir_all(&folder).is_ok() && std::fs::write(&aside, &bytes).is_ok() {
+        let write = || -> std::io::Result<()> {
+            use std::io::Write;
+            std::fs::create_dir_all(&folder)?;
+            let mut options = std::fs::OpenOptions::new();
+            options.write(true).create_new(true);
+            #[cfg(unix)] {
+                use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+                std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o700))?;
+                options.mode(0o600);
+            }
+            options.open(&aside)?.write_all(&bytes)
+        };
+        if write().is_ok() {
             let _ = std::fs::rename(&aside, &path);
         }
         Some(McEliece { id: BlobId::of(&public), public, secret })

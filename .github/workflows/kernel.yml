@@ -4,7 +4,7 @@ name: Kernel
 # lockdown, the frozen engines, the asset box, the view host and its engine, the logic host, the math host and its
 # MathML checker, the one checker, the render core and the Markdown engine) changes only with its tests green and every way out of its boxes refused, in a real
 # browser. It runs on every pull request, and before every deploy: deploy.yml calls it, and puts nothing on the server
-# unless it passed. A frozen engine is never changed: a new version goes beside it (node scripts/freeze-engine.mjs).
+# unless it passed. A frozen engine is never changed: a new version goes beside it (bun scripts/freeze-engine.mjs).
 #
 #   tests  – the kernel's tests (bun test, the list below)
 #   probes – every way out of the asset box, of a view and of the math host, tried from inside each by code made to do
@@ -16,6 +16,10 @@ name: Kernel
 on:
   pull_request:
   workflow_call:
+    inputs:
+      full:
+        type: boolean
+        default: false
   workflow_dispatch:
 
 permissions:
@@ -27,14 +31,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  selection:
+    name: Select affected application suites
+    runs-on: ubuntu-latest
+    outputs:
+      suites: ${{ steps.select.outputs.suites }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - id: select
+        env:
+          FORCE_FULL: ${{ inputs.full || false }}
+          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_HEAD: ${{ github.sha }}
+        run: |
+          if [ "$FORCE_FULL" = true ]; then unset CI_BASE; fi
+          bun scripts/ci/test.mjs --matrix
+
+  application:
+    name: Application tests (${{ matrix.label }})
+    needs: selection
+    if: needs.selection.outputs.suites != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.selection.outputs.suites) }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bunx --bun svelte-kit sync
+      - env:
+          SUITE: ${{ matrix.suite }}
+          SHARD: ${{ matrix.shard }}
+        run: bun scripts/ci/test.mjs --suite "$SUITE" --shard "$SHARD"
+
   tests:
     name: The kernel’s tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
 
@@ -44,11 +89,8 @@ jobs:
       - run: bun install --frozen-lockfile
         working-directory: api
 
-      # the paths the tests import by ($lib) are SvelteKit's tsconfig's
-      - run: bunx svelte-kit sync
-
       - name: Check application types
-        run: bun run check
+        run: bun --bun run check
 
       # src/lib/sandbox/              the kernel's engines frozen (bytes = their hashes, sources = the latest, no CDN),
       #                               the logic core (QuickJS, its limits), the view engine's sanitizer and templates,
@@ -68,44 +110,23 @@ jobs:
       # api/test/                     the API: who a founder is, access and invites, its tables and migrations; and
       #                               image.test, the API image holds every module game/ and code/ import, avenDB's
       #                               proof checker among them (H2), and .dockerignore lets in all it copies
-      - run: >-
-          bun test
-          ./src/lib/sandbox/
-          ./src/lib/assets/engines.test.js
-          ./src/lib/assets/box/
-          ./src/lib/assets/schemas/
-          ./src/lib/assets/sources/
-          ./src/lib/assets/vault.test.js
-          ./src/lib/assets/worlds.test.js
-          ./src/lib/assets/params.test.js
-          ./src/lib/assets/register.test.js
-          ./src/lib/assets/versions.test.js
-          ./src/lib/models/timber.test.js
-          ./src/lib/code/
-          ./game/code/sources/proof-worker.test.js
-          ./src/lib/render/lint.test.js
-          ./src/lib/markdown/
-          ./src/lib/avendb/
-          ./src/lib/media/
-          ./src/lib/studio/aven.test.js
-          ./src/lib/studio/cuts.test.js
-          ./src/lib/studio/refresh.test.js
-          ./src/lib/studio/media-sources.test.js
-          ./game/places.test.js
-          ./deploy/check-avendb.test.js
-          ./src/lib/studio/media-proxies.test.js
-          ./scripts/film/avendb.test.mjs
-          ./scripts/diagnostics/network-probe.test.mjs
-          ./api/test/
+      - name: Verify suite ownership
+        run: bun scripts/ci/test.mjs --check
+      - name: Mandatory security and CI policy suites
+        env:
+          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_HEAD: ${{ github.sha }}
+        run: bun scripts/ci/test.mjs --gate
+
 
   probes:
     name: Every way out, tried in Chromium
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
 
@@ -113,34 +134,29 @@ jobs:
 
       # Playwright's Chromium, the same build the probes run in on a developer's machine (/opt/pw-browsers); the browser
       # is kept between runs by Playwright's version, the system libraries it needs are installed each time
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-1.56.1-${{ runner.os }}
       - name: Use Ubuntu's archive for browser dependencies
         run: sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
-      - run: npx --yes playwright@1.56.1 install --with-deps chromium
+      - run: bunx --bun playwright@1.56.1 install --with-deps chromium
 
-      - run: node scripts/test-avendb-store.mjs
+      - run: bun scripts/test-avendb-store.mjs
       - run: bun scripts/test-avendb-session.mjs --browser chromium
-      - run: bun scripts/test-avendb-local-write.mjs --browser chromium
-      - run: bun scripts/test-avendb-local-write.mjs --browser chromium --dm-reuse
-      - run: bun scripts/test-avendb-local-write.mjs --browser chromium --cold-chat
-      - run: bun scripts/test-avendb-local-write.mjs --browser chromium --world-view
-      - run: bun scripts/test-avendb-local-write.mjs --browser chromium --collection sparks
-      - run: bun scripts/test-avendb-local-write.mjs --browser chromium --collection artifacts
+      - run: bun scripts/test-avendb-local-write.mjs --browser chromium --all
       - run: bun scripts/test-proof-worker.mjs --browser chromium
 
-      - run: node scripts/probes.mjs
+      - run: bun scripts/probes.mjs
 
   probes-webkit:
     name: Every way out, tried in WebKit
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
 
@@ -148,7 +164,7 @@ jobs:
 
       # Playwright's WebKit, of the Playwright in package.json (the version the probes drive it with), and the system
       # libraries it needs; the browser is kept between runs by the lockfile, the libraries are installed each time
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6.1.0
         with:
           path: ~/.cache/ms-playwright
           key: playwright-webkit-${{ runner.os }}-${{ hashFiles('bun.lock', 'bun.lockb') }}
@@ -156,27 +172,41 @@ jobs:
       # Keep Ubuntu's signed packages and use its canonical HTTPS archive.
       - name: Use Ubuntu's archive for browser dependencies
         run: sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' /etc/apt/sources.list.d/ubuntu.sources
-      - run: bunx playwright install --with-deps webkit
+      - run: bunx --bun playwright install --with-deps webkit
       - run: bun scripts/test-avendb-session.mjs --browser webkit
-      - run: bun scripts/test-avendb-local-write.mjs --browser webkit
-      - run: bun scripts/test-avendb-local-write.mjs --browser webkit --dm-reuse
-      - run: bun scripts/test-avendb-local-write.mjs --browser webkit --cold-chat
-      - run: bun scripts/test-avendb-local-write.mjs --browser webkit --world-view
-      - run: bun scripts/test-avendb-local-write.mjs --browser webkit --collection sparks
-      - run: bun scripts/test-avendb-local-write.mjs --browser webkit --collection artifacts
+      - run: bun scripts/test-avendb-local-write.mjs --browser webkit --all
       - run: bun scripts/test-proof-worker.mjs --browser webkit
 
       # the probes as in Chromium; a way out WebKit itself lacks is named in the log, refused and green
-      - run: node scripts/probes.mjs --browser webkit
+      - run: bun scripts/probes.mjs --browser webkit
 
   opfs-webkit:
     name: Derived views survive WebKit OPFS reopen
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       # Older Playwright WebKit lacks persistent-context OPFS (upstream #41984).
       # Isolate this test runtime; existing security probes retain their pinned engine.
-      - run: npm install --prefix "$RUNNER_TEMP/avendb-opfs" --ignore-scripts --no-audit --no-fund playwright@1.64.1
-      - run: node "$RUNNER_TEMP/avendb-opfs/node_modules/playwright/cli.js" install --with-deps webkit
-      - run: AVENDB_TEST_PLAYWRIGHT="$RUNNER_TEMP/avendb-opfs/node_modules/playwright/index.mjs" node scripts/test-avendb-store.mjs --browser webkit
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: mkdir -p "$RUNNER_TEMP/avendb-opfs" && bun add --cwd "$RUNNER_TEMP/avendb-opfs" --ignore-scripts --exact playwright@1.64.1
+      - run: bun "$RUNNER_TEMP/avendb-opfs/node_modules/playwright/cli.js" install --with-deps webkit
+      - run: AVENDB_TEST_PLAYWRIGHT="$RUNNER_TEMP/avendb-opfs/node_modules/playwright/index.mjs" bun scripts/test-avendb-store.mjs --browser webkit
+
+  required:
+    name: Kernel required checks
+    if: ${{ always() }}
+    needs: [selection, tests, application, probes, probes-webkit, opfs-webkit]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          printf '%s' "$RESULTS" | jq -e '
+            .selection.result == "success" and .tests.result == "success" and
+            .probes.result == "success" and .["probes-webkit"].result == "success" and
+            .["opfs-webkit"].result == "success" and
+            (.application.result == "success" or
+             (.selection.outputs.suites == "[]" and .application.result == "skipped"))'

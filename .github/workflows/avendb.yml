@@ -17,22 +17,16 @@ name: avenDB server
 # Its settings (host name, data folder), its Caddy site and its firewall port come from the API workflow
 # (api.yml), which also makes the server: that has to have run once before this can roll out.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'avendb/**'
-      # what the server's image never holds (avendb/.dockerignore), and the crates that run in a browser
-      - '!avendb/spec/**'
-      - '!avendb/docs/**'
-      - '!avendb/scripts/**'
-      - '!avendb/**/*.md'
-      - '!avendb/crates/avendb-browser/**'
-      # nor the Mac's native device, which the server's crates never link, nor any crate's tests (avendb/.dockerignore)
-      - '!avendb/crates/avendb-device/**'
-      - '!avendb/crates/*/tests/**'
-      - '.github/workflows/avendb.yml'
-      - 'deploy/stop-avendb.py'
-      - 'deploy/check-avendb.sh'
+  workflow_call:
+    inputs:
+      built_image:
+        description: Image repository built for this SHA in this main run
+        type: string
+        default: ''
+      validated:
+        description: The trusted main pipeline already checked this exact commit
+        type: boolean
+        default: false
   workflow_dispatch:
 
 concurrency:
@@ -55,39 +49,20 @@ env:
 
 jobs:
   image:
-    name: Build and push the avenDB server image
-    runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.meta.outputs.image }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - id: meta
-        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-avendb" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v6
-        with:
-          context: avendb
-          file: avendb/Dockerfile.server
-          push: true
-          # Rust builds are slow: keep the layers between runs
-          cache-from: type=gha,scope=avendb
-          cache-to: type=gha,scope=avendb,mode=max
-          tags: |
-            ${{ steps.meta.outputs.image }}:${{ github.sha }}
-            ${{ steps.meta.outputs.image }}:latest
+    if: ${{ inputs.built_image == '' }}
+    uses: ./.github/workflows/image.yml
+    with:
+      component: avendb
 
   # avenDB's checks (avendb-checks.yml): its Rust tests and its Lean spec, on this very commit, beside the image's
   # build; nothing goes on the server unless they pass
   checks:
+    if: ${{ !inputs.validated }}
     name: avenDB checks
     uses: ./.github/workflows/avendb-checks.yml
 
   delivery:
+    if: ${{ !inputs.validated }}
     uses: ./.github/workflows/delivery-checks.yml
 
   deploy:
@@ -96,10 +71,11 @@ jobs:
       cancel-in-progress: false
     name: Restart avenDB's server over SSH
     needs: [image, checks, delivery]
+    if: ${{ !cancelled() && (needs.image.result == 'success' || (inputs.validated && inputs.built_image != '' && needs.image.result == 'skipped')) && (needs.checks.result == 'success' || (inputs.validated && needs.checks.result == 'skipped')) && (needs.delivery.result == 'success' || (inputs.validated && needs.delivery.result == 'skipped')) }}
     runs-on: ubuntu-latest
     steps:
       # the server's own action (.github/actions/prod-ssh): its host keys pinned, never taken on trust
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           sparse-checkout: |
             .github/actions
@@ -115,7 +91,7 @@ jobs:
           scp deploy/stop-avendb.py "prod:$APP_DIR/deploy/stop-avendb-$GITHUB_SHA.py"
       - name: Roll out the new image
         env:
-          IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
+          IMAGE: ${{ inputs.built_image || needs.image.outputs.image }}:${{ github.sha }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ACTOR: ${{ github.actor }}
           # the server's bucket (blobs B3a): its store lives there, every object sealed under AVENDB_BUCKET_SEAL

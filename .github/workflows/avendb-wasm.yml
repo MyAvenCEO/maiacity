@@ -14,7 +14,13 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - 'avendb/**'
+      - 'avendb/crates/**'
+      - '!avendb/crates/*/tests/**'
+      - 'avendb/vendor/**'
+      - 'avendb/Cargo.toml'
+      - 'avendb/Cargo.lock'
+      - 'avendb/.cargo/**'
+      - 'avendb/scripts/build-web.sh'
       - 'src/lib/avendb/device/**'
       - '.github/workflows/avendb-wasm.yml'
   workflow_dispatch:
@@ -28,6 +34,7 @@ concurrency:
 
 jobs:
   wasm:
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
     name: The page's WebAssembly
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -35,7 +42,7 @@ jobs:
       contents: write
       actions: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.pull_request.head.ref || github.ref }}
       - uses: dtolnay/rust-toolchain@stable
@@ -44,7 +51,7 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen@0.2.129
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: avendb -> target
           key: wasm

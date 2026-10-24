@@ -7,8 +7,16 @@ name: Deploy the site
 # comes from avenDB's feed (api.maia.city/vault/files) by its BLAKE3 hash. maia.city and www point at the server (A
 # records, Hetzner DNS).
 on:
-  push:
-    branches: [main]
+  workflow_call:
+    inputs:
+      built:
+        description: Site artifact already built in this main run
+        type: boolean
+        default: false
+      validated:
+        description: The trusted main pipeline already checked this exact commit
+        type: boolean
+        default: false
   workflow_dispatch:
 
 permissions:
@@ -26,60 +34,27 @@ env:
 jobs:
   # the kernel gate (kernel.yml): its tests and both probes, in Chromium and in WebKit; nothing goes on the server unless they pass
   kernel:
+    if: ${{ !inputs.validated }}
     name: Kernel
     uses: ./.github/workflows/kernel.yml
 
   # checked and built beside the kernel gate, not after it: the build waits for nothing, and only `site` below, which
   # puts it on the server, waits for the gate
   build:
-    name: Check and build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version-file: .bun-version
-
-      - run: bun install --frozen-lockfile
-
-      - name: Check release retention and actual Caddy routing
-        run: |
-          mkdir -p "$RUNNER_TEMP/site-caddy"
-          docker run --rm -v "$RUNNER_TEMP/site-caddy:/out" --entrypoint cp caddy:2-alpine /usr/bin/caddy /out/caddy
-          CADDY="$RUNNER_TEMP/site-caddy/caddy" python3 -m unittest discover -s deploy -p 'test_publish_site.py' -v
-
-      - run: bun run check
-
-      # stops if a published post names a file the site's media list (src/lib/media/manifest.json) does not hold
-      - run: node scripts/media-manifest.mjs
-
-      # Served from the domain root, so no base path.
-      # Vite on Bun, as a Mac of Maia City builds it to witness this release (scripts/release.mjs): Vite on Node lays
-      # out other bytes
-      - run: bun --bun run build
-
-      # the release list (scripts/release.mjs): the commit and the hash of every file built, up as /release.json, which
-      # a Mac of Maia City witnesses and proposes into Maia City for its owners to accept
-      - run: node scripts/release.mjs list build
-
-      - run: tar -C build -czf site.tgz .
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: site
-          path: site.tgz
-          retention-days: 1
-          compression-level: 0
+    if: ${{ !inputs.built }}
+    uses: ./.github/workflows/site-build.yml
+    with:
+      typechecked_elsewhere: true
 
   site:
     name: Put on the server
     # nothing goes on the server unless the kernel gate passed, and the build that goes is this commit's
     needs: [kernel, build]
+    if: ${{ !cancelled() && (needs.build.result == 'success' || (inputs.validated && inputs.built && needs.build.result == 'skipped')) && (needs.kernel.result == 'success' || (inputs.validated && needs.kernel.result == 'skipped')) }}
     runs-on: ubuntu-latest
     steps:
       # the server's own action (.github/actions/prod-ssh): its host keys pinned, never taken on trust
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           sparse-checkout: |
             .github/actions
@@ -91,7 +66,7 @@ jobs:
           known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
 
       # after the checkout, which empties the workspace
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.2
         with:
           name: site
 

@@ -7,7 +7,8 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 
-const { bundleAsset, bundleGroup, bundleRecipes, hashText } = await import('./box/plugin.js');
+const { bundleAsset, bundleGroup, hashText } = await import('./box/plugin.js');
+const { bundleRecipes } = await import('../../../scripts/ci/recipe-fixture.mjs');
 const { recipeFile } = await import('./engines.js');
 const { OBJECT_GROUPS } = await import('./groups.js');
 
@@ -54,8 +55,8 @@ const EDITS = [
 	{ file: 'models/planting.js', from: 's.rotation.set(0.04 * sx, 0, -0.06 * sx);', to: 's.rotation.set(0.05 * sx, 0, -0.06 * sx);', moves: ['things/marker-sticks'] },
 	// a machine another carries: the goods pod is loaded by forklifts built into its rig
 	{ file: 'actors/forklift.js', from: 'put(block(0.76, 0.36, 0.86, [0, 0.29, -0.52], 0.08), BODY, body);', to: 'put(block(0.77, 0.36, 0.86, [0, 0.29, -0.52], 0.08), BODY, body);', moves: ['machines/forklift', 'machines/pod'] },
-	// the stand-in
-	{ file: 'actors/human.ts', from: '[skin(0.74), skin(0.12)', to: '[skin(0.75), skin(0.12)', moves: ['actors/stand-in'] },
+	// Both human builders depend on the same skin geometry.
+	{ file: 'actors/human.ts', from: '[skin(0.74), skin(0.12)', to: '[skin(0.75), skin(0.12)', moves: ['actors/stand-in', 'actors/elder-woman'] },
 	// an animal: every animal carries every species while ../actors/casts.ts maps them all in one object, read by id
 	// as the animal is built, so it may move the other animals; never the stand-in, a machine, a thing or a plant
 	{ file: 'actors/species/frog.ts', from: "const k = kind === 'common' ? 0.7 : 1;", to: "const k = kind === 'common' ? 0.71 : 1;", moves: ['actors/frog'], may: ['actors/chicken', 'actors/rabbit', 'actors/goose', 'actors/goat', 'actors/sheep', 'actors/bee', 'actors/ant', 'actors/songbird', 'actors/fish'] }
