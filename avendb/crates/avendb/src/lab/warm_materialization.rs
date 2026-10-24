@@ -572,7 +572,7 @@ mod tests {
             |id| {
                 let mut item = Item::draft(device, id);
                 item.set_record(crate::lens::View::document_v1(), &document("Draft", "not accepted", device).record());
-                Some(item.bytes())
+                Some(item.export(&Version::default()))
             }).unwrap();
         assert!(!lab.landed(device, entry));
         let backup = lab.backup(device);
