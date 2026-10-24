@@ -125,7 +125,7 @@
 	let noted = $state.raw(/** @type {{ entry: string, note: any } | null} */ (null));
 	const asset = $derived(chosen?.entry ?? '');
 	$effect(() => {
-		void world;
+		void session.revision;
 		const e = asset;
 		if (!e) return;
 		if (api.window && !noteWindow) return;
