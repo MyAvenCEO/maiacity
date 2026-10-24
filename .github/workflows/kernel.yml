@@ -125,6 +125,7 @@ jobs:
       - run: bun scripts/test-avendb-session.mjs --browser chromium
       - run: bun scripts/test-avendb-local-write.mjs --browser chromium
       - run: bun scripts/test-avendb-local-write.mjs --browser chromium --dm-reuse
+      - run: bun scripts/test-avendb-local-write.mjs --browser chromium --cold-chat
       - run: bun scripts/test-avendb-local-write.mjs --browser chromium --world-view
       - run: bun scripts/test-avendb-local-write.mjs --browser chromium --collection sparks
       - run: bun scripts/test-avendb-local-write.mjs --browser chromium --collection artifacts
@@ -159,6 +160,7 @@ jobs:
       - run: bun scripts/test-avendb-session.mjs --browser webkit
       - run: bun scripts/test-avendb-local-write.mjs --browser webkit
       - run: bun scripts/test-avendb-local-write.mjs --browser webkit --dm-reuse
+      - run: bun scripts/test-avendb-local-write.mjs --browser webkit --cold-chat
       - run: bun scripts/test-avendb-local-write.mjs --browser webkit --world-view
       - run: bun scripts/test-avendb-local-write.mjs --browser webkit --collection sparks
       - run: bun scripts/test-avendb-local-write.mjs --browser webkit --collection artifacts
