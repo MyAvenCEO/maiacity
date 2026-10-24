@@ -20,4 +20,11 @@ theorem demand_does_not_grant (authorized a b : List Nat) :
 def complete (_hints : List Nat) (canonicalComplete : Bool) := canonicalComplete
 
 theorem demand_does_not_complete (ids : List Nat) : complete ids false = false := rfl
+-- The implementation deduplicates before truncation; an explicit first ID still
+-- precedes learned hints when the lease is full.
+def promote (required learned : List Nat) := (required ++ learned).take 512
+
+theorem explicit_first (id : Nat) (learned : List Nat) :
+    (promote [id] learned).head? = some id := by simp [promote]
+
 end AvenDB.ViewDemand

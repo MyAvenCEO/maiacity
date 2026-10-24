@@ -175,3 +175,29 @@ test('learned demand publishes before manifest discovery and closes on device re
   expect(calls.filter(op => op.op === 'demand').flatMap(op => op.entries)).not.toContain(id(82));
  } finally { delete globalThis.location; }
 });
+
+test('explicit current-view dependencies precede a full learned lease without clearing the other hints', async () => {
+ const { useView } = await import('./device.js');
+ globalThis.localStorage = store();
+ globalThis.location = { pathname: '/capacity/' };
+ const hints = Array.from({ length: 512 }, (_, i) => id(1000 + i));
+ const target = id(9999), calls = [];
+ let release;
+ const blocked = new Promise(resolve => { release = resolve; });
+ const d = { run: async op => {
+  calls.push(op);
+  if (op.op === 'query') return blocked;
+  if (op.op === 'demand') return { ok: { accepted: true } };
+  return { ok: { new: 0, peers: 0, reached: false } };
+ } };
+ try {
+  useDevice(d);
+  const pending = useView('/capacity/');
+  learn(hints, '/capacity/');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(calls.filter(op => op.op === 'demand').at(-1).entries).toEqual(hints);
+  release({ ok: { rows: [{ record: { kind: 'manifest', id: 'current', routes: ['*'], parts: [{ entry: target }] } }] } });
+  await pending;
+  expect(calls.filter(op => op.op === 'demand').at(-1).entries).toEqual([target, ...hints.slice(0, 511)]);
+ } finally { delete globalThis.location; }
+});

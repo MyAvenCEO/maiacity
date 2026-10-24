@@ -205,7 +205,8 @@ async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: 
 	if (!leaves.length) return [];
 	// These IDs are already declared by canonical local manifests. Publish scheduling
 	// hints before unrelated query materialization or transfer; hints grant no access.
-	await prioritize(entriesOf(leaves.filter(({ leaf }) => leaf.entry), []));
+	// Dispatch is independent of acknowledgement: a busy node must not delay local discovery.
+	void Promise.resolve(prioritize(entriesOf(leaves.filter(({ leaf }) => leaf.entry), []))).catch(() => {});
 	signal?.throwIfAborted();
 	const rows = await rowsFor(leaves, { device: d, vault, fetch: get, signal });
 	signal?.throwIfAborted();

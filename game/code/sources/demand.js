@@ -39,6 +39,8 @@ export function createDemand(run, { scope = crypto.randomUUID().replaceAll('-', 
 	};
 	return {
 		add: (ids) => replace([...entries, ...ids]),
+		// Explicit current-view requirements precede older learned hints at the bound.
+		prioritize: (ids) => replace([...ids, ...entries]),
 		replace,
 		close() {
 			if (stopped) return;

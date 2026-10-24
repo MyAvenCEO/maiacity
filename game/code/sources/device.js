@@ -69,7 +69,7 @@ export function useView(path) {
 			device: opened, signal,
 			prioritize: (ids) => {
 				signal.throwIfAborted();
-				return demand.add(ids);
+				return demand.prioritize(ids);
 			},
 			bring: async (ids) => {
 				const scoped = await demand.add(ids);
