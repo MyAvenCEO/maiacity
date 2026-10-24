@@ -1,0 +1,67 @@
+# Receive signature preparation
+
+Status: focused implementation; native integration and cooperative browser validation pending. This is one bounded interaction-responsiveness improvement, not completion of the overall latency work.
+
+## Blocking operation and change
+
+A legacy sync reply previously called `Lab::receive_whose_now` while holding the same Lab mutex used by generic `Node::read` and `Node::try_act`. Cryptographic signature verification was part of that protected interval. A large incoming page could therefore delay unrelated local operations even though its signatures depend only on immutable incoming bytes.
+
+Native legacy-page ingestion now captures an opaque `ReceivePreparation` under the Lab lock, performs signature verification on a blocking worker without that lock, and commits the resulting opaque `PreparedReceive` through ordinary current-state admission. The token owns its original signed edits and keeps its fields private. Only the first occurrence of an unknown edit is prepared, matching existing duplicate semantics. Checkpoint-covered edits retain the existing whole-page treatment.
+
+The commit still recalculates duplicates and checkpoint coverage and applies the current admission gate. Preparation contains no cached authorization. If a restore or checkpoint withdrawal means a previously skipped signature now needs checking, it uses the ordinary verifier. No signatures, permissions, policy checks, or durable storage requirements are removed. Every native node follows the same path.
+
+A separate FIFO async mutex admits only one prepared-page signature checker per node without holding the interactive Lab mutex. This avoids multiplying the existing per-page CPU parallelism by every active prepared peer pull. Other operations, including the unchanged range-transfer path, can still perform signature work independently.
+
+The page budget and lifecycle admission tickets move through both blocking workers and remain owned until those workers finish, even if their async caller is cancelled. They remain held through commit. Shutdown must not treat detached signature work as complete prematurely.
+
+## Specification and focused evidence
+
+`avendb/spec/AvenDB/PreparedReceive.lean` specifies that prepared signature answers must equal verification for the same immutable input and never replace current gate admission. It explicitly assumes the cryptographic verifier and Rust ownership boundary; it is not an extracted proof of Rust or a wall-clock latency guarantee. The proof passed before implementation.
+
+The core differential regressions passed three tests, covering:
+
+- Ordinary versus prepared reception, including invalid-first duplicate signatures.
+- A restore between capture and commit, requiring fallback verification.
+- A gate change after capture, still refusing a newcomer without current admission.
+- Whole-page checkpoint coverage and withdrawal before commit, refusing an uncovered bare edit.
+
+A local optimized test-profile workload of 54 ML-signed edits measured:
+
+| Phase | Time |
+| --- | ---: |
+| Original protected receive | 3.576 ms |
+| Prepared capture under lock | 0.161 ms |
+| Signature verification outside lock | 2.582 ms |
+| Prepared commit under lock | 0.489 ms |
+| Capture + commit protected time | 0.650 ms |
+
+These are one synthetic run's operation timings, not an end-to-end device benchmark or a throughput claim. `Perf` retains the moved work separately as `prepared signature check` and `prepared signatures`; the CPU cost is not hidden by the shorter protected interval.
+
+The native integration regression deliberately holds the actual signature worker, requires generic reads and mutations to complete while it is held, and checks page-budget/shutdown ownership after cancellation. Its result must be recorded before this slice is marked done.
+
+## Cooperative browser implementation — validation pending
+
+The browser uses the same owned preparation and whole-page admission. `check_cooperatively` checks at most eight signed edits per turn and yields between unfinished groups. The production WASM caller uses `n0_future::time::sleep(Duration::ZERO)`, whose browser implementation waits for a `setTimeout` callback, allowing worker messages to run. A completed token is returned only after all selected signatures have been checked. Cancellation discards the uncommitted preparation. The FIFO checker prevents several pages each doing a full group during the same turn.
+
+`AvenDB/CooperativeReceive.lean` proves the eight-edit step bound and that an incomplete cursor cannot commit; this proof passed before implementation. The core stepping regression and actual browser execution are pending. One signature check is indivisible, so eight edits is not a wall-clock guarantee.
+
+## Remaining work
+
+The range-transfer receive path is unchanged. Current-state gate/replay work, page hashing/capture, and commit still require the mutex; large individual operations can still delay interaction. It does not establish the requested sub-50 ms local UI target, remote live-entry latency, or bandwidth saturation. Production rollout and physical-device measurements remain separate acceptance tasks.
+
+Follow-up implementation boundaries:
+
+1. Validate cooperative verification with the actual compiled WASM in a browser worker: queued messages must run during verification, and final admission must match the ordinary path. Do not split raw incoming pages at the receive boundary: checkpoint coverage and gate admission depend on the whole batch.
+2. Range-transfer ingestion in `edit_transfer.rs` still calls `receive_whose_now` under the mutex. Reusing prepared signatures there must preserve its page/admission lifetimes and accepted-edit accounting even when a caller is cancelled.
+3. Capture and commit measurements must be repeated with larger existing histories, mixed signatures, and concurrent real local writes. Remaining current-state replay/gate costs need their own measured optimization; this signature slice does not bound those costs.
+
+## Reproduce
+
+From `avendb/spec`, run `lake env lean AvenDB/PreparedReceive.lean`. From `avendb`, run:
+
+```sh
+cargo test -p avendb --lib prepared_receive_tests -- --nocapture
+cargo test -p avendb-net --lib prepared_page_allows_generic_access_and_keeps_cancelled_work_admitted -- --nocapture
+```
+
+The first command prints protected/capture/check/commit timings and checks state equivalence; the second exercises the real native helper with a test-only blocking hook. Neither command uses a live account or persistent application store.
