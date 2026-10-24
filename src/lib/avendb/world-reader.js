@@ -4,7 +4,7 @@
  * Cancellation settles both batches immediately; late engine results cannot publish.
  * @param {{ read: () => Promise<any>, take: (answer: any) => void }} options */
 export function createWorldReader({ read, take }) {
-	let running = false, asked = 0;
+	let running = false, asked = 0, ready = false;
 	/** @typedef {{ ticket: number, promise: Promise<void>, resolve: () => void, reject: (error: unknown) => void }} Batch */
 	/** @type {Batch | null} */
 	let pending = null;
@@ -22,13 +22,21 @@ export function createWorldReader({ read, take }) {
 				pending = null;
 				try {
 					const answer = await read();
-					if (!cancelled) { take(answer); covered.resolve(); }
+					if (!cancelled) { take(answer); ready = true; covered.resolve(); }
 				} catch (error) { covered.reject(error); }
 				active = null;
 			}
 		} finally { running = false; }
 	}
 	return {
+        /** Initial consumers share the first valid summary. This is not a
+         * mutation freshness barrier; request() retains that stronger contract.
+         * @returns {Promise<void>} */
+        ensure() {
+            if (cancelled) return Promise.reject(cancelled);
+            if (ready) return Promise.resolve();
+            return active?.promise ?? pending?.promise ?? this.request();
+        },
 		/** @returns {Promise<void>} */
 		request() {
 			if (cancelled) return Promise.reject(cancelled);
