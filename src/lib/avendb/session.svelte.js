@@ -590,7 +590,7 @@ function watch() {
 	(async () => {
 		let [edits, keys] = await d.size();
 		if (!on()) return;
-		let took = await timed(() => refreshDevice(d));
+		let took = await timed(() => refreshDevice(d, true));
 		while (on() && (await d.changed(edits, keys)) && on()) {
 			await new Promise((r) => setTimeout(r, Math.max(SETTLE, 2 * took)));
 			if (!on()) break;
@@ -619,7 +619,7 @@ function retireWorld(/** @type {any} */ d) {
 	// Keep the terminal reader until this device object is collected: late callers
 	// during asynchronous close must not resurrect a new reader for it.
 }
-function refreshDevice(/** @type {any} */ d) {
+function refreshDevice(/** @type {any} */ d, initial = false) {
 	if (retiredWorlds.has(d)) return Promise.reject(new Error('The avenDB device changed before its world refresh.'));
 	let reader = worldReaders.get(d);
 	if (!reader) {
@@ -637,7 +637,7 @@ function refreshDevice(/** @type {any} */ d) {
 		});
 		worldReaders.set(d, reader);
 	}
-	return reader.request();
+	return initial ? reader.ensure() : reader.request();
 }
 
 /** Explicit barrier: its snapshot starts after this call, even if an older read runs. */
@@ -960,6 +960,8 @@ const api = {
 	bring: (what, op, file, quiet) => bring(what, op, file, quiet),
 	/** Shows what changed, as after a change: what `quiet` ones made, once they are done. */
 	refresh: () => refresh(),
+    /** Join the initial summary without scheduling a second whole-world read. */
+    initialWorld: () => device ? refreshDevice(device, true) : Promise.resolve(),
 	/**
 	 * Bytes `from` to `to` of the file whose root is `root` and whose sealed size is `size`, from this device's
 	 * store or fetched from a peer that may hand them over.

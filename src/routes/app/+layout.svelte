@@ -199,7 +199,7 @@
 		void loadFounder();
 		// the views, logic and configs again, off this device's own copy of Maia City now that it is open
 		void loadCode();
-		await session.refresh().catch(() => {});
+		await session.initialWorld().catch(() => {});
 		invited = await claimInvite();
 		if (founded && session.world && seeded(session.world)[0]?.[0]) await goto(`${base}/app/`);
 	}
