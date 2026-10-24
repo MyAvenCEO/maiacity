@@ -281,3 +281,80 @@ Node operation is enabled by this stage, and it remains outside the frozen relea
 Stage-three code: [`f577ffad`](https://github.com/MyAvenCEO/maiacity/commit/f577ffad).
 Pending combined Rust command: `cargo test -p avendb --lib counted_base -- --nocapture`;
 existing policy/history/proposal/sharing suites must also cover the shared admission refactor.
+
+### Provenance decision: what bounded metadata can and cannot establish
+
+**Finding:** bounded signed historical metadata plus asserted schema/proof/acceptance facts
+cannot *independently* establish counted state under the current verifier. This is distinct
+from accepting an entry's state on the vault owners' word, which the existing Snapshot model
+already explicitly permits. Do not describe the latter as historical proof.
+
+The exact missing evidence is source-visible:
+
+1. `sign.rs::Signed::verify` recomputes `edit.id()` and verifies the named signers over it.
+   `encode.rs::edit_id` hashes the complete canonical Edit, including encrypted Write body.
+   A copied `Write` record is derived policy metadata, not the originally signed Edit.
+   The current format has no authenticated selective-disclosure/Merkle proof tying an omitted
+   body to a retained metadata subset. A signature over an opaque ID authenticates that ID,
+   not arbitrary metadata supplied alongside it. Sending the original ciphertext can bind
+   the metadata, but does not prove what decrypting/importing that ciphertext does.
+2. `history.rs::History::reading_on` derives schema fit, actual touches and added row locations
+   from `Item::footprint_as` and the canonical predecessor CRDT. `doc.rs::Item::import_as`
+   also enforces the historical author's Loro peer and detects parked/foreign operations.
+   Neither a signature nor a matching version vector proves these derived facts.
+3. `policy.rs::Mine::{note,mark}` derives ownership from counted row additions. Incorrect
+   retained `adds` can grant an `Own` operation where an ordinary `Set` would be forbidden.
+   Retaining only the final JSON loses the identity and origin of rows, including duplicates.
+4. `policy.rs::is_accept` requires an owner proposal write with actual empty touches and no
+   tag changes. The proposal enum and signer alone do not prove acceptance. `History::passes`
+   and `lands` depend on counted ancestry, not merely on frontier membership.
+5. `lab.rs::Judging::judge` combines those facts with body proof, tags, capability groups,
+   current replay policy, schema/lens readings, and attributes before the write. Serializing
+   their outputs does not provide a proof that this computation was performed correctly.
+
+`ProvenanceBoundary.lean` formalizes this *representation* limitation: two abstract judgments
+can project to the same owner-attested metadata while carrying different omitted counted
+verdicts, so no exact function of that projection recovers the verdict without an additional
+honesty/witness premise. This is deliberately **not** a claim of a cryptographic collision,
+a proof about ciphertext indistinguishability, or a general impossibility of succinct proofs.
+Standalone Lean passed. No new runtime format or unsafe mutation path was added for this audit.
+
+#### Existing model authority, and the concrete next implementation route
+
+`spec/AvenDB/Snapshot.lean` already says a reader may take a scoped entry slice on its vault
+owners' word, with standing-authority checks, full-holder lie detection and invalidation on a
+later removal. `snapshot.rs::{start_states,start_view,honest}` implements that policy model.
+Its universal honest-start theorem is explicitly outstanding. Owner approval can authorize
+that entry-scoped baseline; it cannot rewrite other vaults' authority, manufacture original
+authors' signatures, or prove that the stated past was truthful. No special hosted-peer role
+is required or allowed. The existing user approval for checkpoint publication need not be
+requested again for the same owner-approved operation.
+
+The route consistent with that *existing conditional trust assumption* is to integrate a
+complete owner-attested **judgment state**, not to keep adding metadata-only envelopes:
+
+- Restore only the entry's policy Slice, canonical full per-line CRDT snapshots, counted
+  dependency closure, historical touches and row additions, proposal acceptance/landing,
+  current attributes, schema/lens authored IDs, and capability-proof lineage required by
+  `History`, `Mine` and `After`. Keep the global policy/kernel independently replayed.
+- Reconcile the Lean/Rust boundary first: Lean's Slice includes uncounted/accepts/defs/adds;
+  the current Rust `policy::Slice` contains entries/writes/audiences/marks/seals/born. Lab's
+  content judgment lives separately. Calling `State::with_slice` alone does not restore the
+  content admission state and cannot safely unlock mutations.
+- Validate scope, bounds, dependency/line consistency and all independently available
+  evidence; full holders must compare semantic state to canonical history. A partial holder
+  labels this owner-attested baseline explicitly rather than claiming independent provenance.
+- Seed `Judging::resume`/`History::reading_on` from that complete state; use the shared
+  `History::admit` plus ordinary signed Edit/current authorization gates for every suffix.
+  Prove/test prefix cuts, concurrent suffixes, pre-cut proposals and duplicate delivery.
+- Tie the baseline to policy revision/epoch and atomically persist baseline+suffix frontier.
+  On a known removal, immediately suspend derived writable state and rederive against the
+  removal's preserved-history rules; do not continue from a stale base while catching up.
+
+If independently verified historical provenance is required **without** trusting the owner
+baseline assumption, the protocol needs either the relevant original body closure replayed
+(which can still be active-view scoped), or a sound proof of the actual replay/import/
+authorization computation. No such proof protocol exists here. Selectively signed metadata
+alone is not that mechanism. The owner-attested route preserves entry IDs and history as an
+asserted baseline; replacing old edits with newly authored writes is a different migration
+and must not be silently presented as historical equivalence.
