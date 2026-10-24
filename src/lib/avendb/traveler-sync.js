@@ -3,7 +3,7 @@
 // Public assets/posts and personal profile data retain their existing native rights.
 import { GAMES, gameTag } from '../../../game/games.js';
 import { ADMIN, CITIZEN, TRAVELER, TRAVELER_GAME } from './capgroups.js';
-export const TRAVELER_EXCLUDED_GAMES = { any: GAMES.filter(g => g.id !== TRAVELER_GAME).map(g => ({ tag: gameTag(g.id) })) };
+export const TRAVELER_EXCLUDED_GAMES = { any: GAMES.filter(g => g.id !== TRAVELER_GAME).map(g => ({ all: [{ tag: gameTag(g.id) }, { type: ['game', 'view', 'logic', 'config'] }] })) };
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 export function travelerSyncOps(world, city, groups, owner) {
  if (!world?.mine || !world?.me || !city) return [];

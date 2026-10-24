@@ -6,9 +6,13 @@ const traveler = new Set(['Traveler']);
 test('traveler uses a native keep restriction, excluding every other known game', () => {
  const ops = travelerSyncOps(w, 'city', traveler, false);
  expect(ops).toEqual([{ op: 'keep', over: 'city', as: 'me', mode: 'never', what: TRAVELER_EXCLUDED_GAMES }]);
- expect(TRAVELER_EXCLUDED_GAMES.any).not.toContainEqual({ tag: 'game:sandbox-4' });
- expect(TRAVELER_EXCLUDED_GAMES.any).toContainEqual({ tag: 'game:maiacity-v2' });
- expect(TRAVELER_EXCLUDED_GAMES.any.every(x => Object.keys(x).join() === 'tag')).toBe(true);
+ expect(TRAVELER_EXCLUDED_GAMES.any.map(x => x.all[0].tag)).not.toContain('game:sandbox-4');
+ expect(TRAVELER_EXCLUDED_GAMES.any.map(x => x.all[0].tag)).toContain('game:maiacity-v2');
+ for (const clause of TRAVELER_EXCLUDED_GAMES.any) {
+  expect(clause.all[1].type).not.toContain('story');
+  expect(clause.all[1].type).not.toContain('post:inspire');
+  expect(clause.all[1].type).not.toContain('recipe');
+ }
 });
 test('idempotent, removed on citizenship, never changes someone else’s keep rules', () => {
  const rule = { id:'rule', over:'city', issuer:'me', who:'device', level:'keepNever', slice:{where:TRAVELER_EXCLUDED_GAMES} };
