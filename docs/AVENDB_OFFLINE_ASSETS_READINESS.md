@@ -26,3 +26,20 @@ focused EntryProjection Lean subset proof passes. Rust typed-database exact-row
 regression is added but not executed (shared Cargo queue). No physical offline
 acceptance or deployment is claimed. Requires matching native/WASM engine build
 for the optional database `types` parameter.
+
+## Component integration review
+
+Actual Assets component fixture passed Chromium and WebKit, using metadata-only
+world state, a compiled reactive session stand-in and a synthetic local API.
+It verifies DOM transitions on session revision (empty inventory, read refusal,
+recipe validation refusal, removal), with external network blocked and only typed
+database/entry_views allowed. Native hashing remains unit-covered, not a claim of
+physical Mac acceptance. The selected asset's note/history effect now follows the
+same session revision as inventory, so a stable entry ID no longer waits for a
+full-world publication to update its history sidebar.
+
+API review: Account spreads session.api; ask returns raw {ok}/{refused}, matching
+the helper. The optional database type filter leaves canonical row authorization,
+version history and metadata intact. Current entry_views(vault,types) is an
+unpaginated enumeration of matching held entries; there is no ignored cursor.
+Metadata remains partial and does not assert full peer/history completeness.
