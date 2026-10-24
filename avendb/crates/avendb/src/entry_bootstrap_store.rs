@@ -8,6 +8,7 @@ const SUFFIX_BATCH: usize = 32;
 pub(crate) struct BootstrapProgress {
     basis: OverlayBasis,
     policy: crate::policy::Slice,
+    lane_digest: Option<[u8;32]>,
     base_scratch: Option<Scratch>,
     pending: std::collections::VecDeque<EditId>,
     missing: Vec<EditId>,
@@ -175,7 +176,7 @@ impl Lab {
                 let store = self.stores.get_mut(&at).expect("device");
                 let progress = store.bootstrap_progress.remove(entry).expect("progress");
                 if let Some(shown) = store.shown.remove(entry) {
-                    let base = RestoredOwnerJudgment { entry: *entry, history: shown.history,
+                    let base = RestoredOwnerJudgment { entry: *entry, lane_digest: progress.lane_digest, history: shown.history,
                         after: shown.after, items: shown.items.into_inner().unwrap_or_default(),
                         policy: progress.policy, bodies: HashMap::new() };
                     restored.push((snapshot, base, Some((progress.pending, progress.base_scratch, progress.missing, progress.wait_reason))));
@@ -236,6 +237,8 @@ impl Lab {
                     readings.proofs.insert(*id, p.clone());
                 }
             }
+            let lane_digest = base.lane_digest;
+            let lane_ready = lane_digest == Some(bootstrap_lane_digest(&view, &readings, vault));
             let lane = Lane::with_built_ins(view.lane_of(vault, &readings));
             let en = view.entry(entry).expect("scoped entry").clone();
             base.history.restore_held_bodies(&store.bodies);
@@ -253,6 +256,7 @@ impl Lab {
                     (std::collections::VecDeque::from(suffix), original_scratch, Vec::new(), None)
                 }
             };
+            if !lane_ready { wait_reason = Some("missing-schema-lane"); }
             let mut opened_suffix = Vec::new();
             while budget > 0 && missing.is_empty() && wait_reason.is_none() {
                 let Some(id) = pending.pop_front() else { break; };
@@ -347,7 +351,7 @@ impl Lab {
             {
                 let basis = OverlayBasis::of(store);
                 store.bootstrap_progress.insert(entry, BootstrapProgress {
-                    basis, policy: view.slice_of(entry),
+                    basis, policy: view.slice_of(entry), lane_digest,
                     base_scratch, pending, missing, wait_reason,
                 });
             }
@@ -430,6 +434,69 @@ impl Backup {
 mod tests {
     use super::*;
     use crate::cast::{document, human_on};
+    #[test]
+    fn owner_bootstrap_missing_schema_retains_view_without_advancing_suffix() {
+        use crate::cast::document_v0;
+        use crate::lens::example::DOCUMENT_V0;
+        let mut lab=Lab::new();
+        let owner=lab.passkey("Lane owner");
+        let mac=lab.device_of(owner,"Mac"); let phone=lab.device_of(owner,"Phone");
+        let vault=human_on(&mut lab,owner,&[mac,phone]);
+        lab.sync(mac,phone);
+        lab.add_schema(mac,vault,vault,DOCUMENT_V0.bytes()).unwrap();
+        let entry=lab.create(mac,vault,vault,"doc",&[],document_v0("Base","old",mac)).unwrap();
+        lab.edit(mac,vault,entry,|item| { item.edit_document_v0(|d| d.title="Attested".into()); }).unwrap();
+        let PreparedEntryBase{draft,sealed,..}=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
+        let snapshot=lab.complete(mac,draft,&[]).unwrap();
+        let offer=lab.entry_projection_offer(mac,phone,entry).unwrap();
+        lab.receive(phone,offer.evidence,vec![]);
+        // A pre-lane-attestation envelope remains readable but never grants writes.
+        let name=lab.held(mac).replay.state.entry_key(entry).unwrap();
+        let key=lab.held(mac).keys.get(&keys::edit_key(&sealed).unwrap(),name).unwrap().clone();
+        let mut legacy=keys::open_edit(&key,&sealed,&judgment_context(vault,entry)).unwrap();
+        legacy.truncate(legacy.len()-LANE_ATTESTATION.len()-32);
+        let legacy=keys::seal_edit(&key,&legacy,&judgment_context(vault,entry),&mut lab.rng);
+        let mut legacy_action=lab.signed_edit(mac,snapshot).unwrap().edit.action.clone();
+        if let Action::Snapshot{states,..}=&mut legacy_action { states[0].slice=FileRoot{hash:crate::hash::content(&legacy),size:legacy.len() as u64}; }
+        let legacy_snapshot=lab.submit(mac,&[owner],legacy_action).unwrap();
+        let legacy_offer=lab.entry_projection_offer(mac,phone,entry).unwrap();
+        lab.receive(phone,legacy_offer.evidence,vec![]);
+        assert!(lab.adopt_owner_entry_base(phone,legacy_snapshot,entry,legacy));
+        assert_eq!(lab.owner_base_wait_reason(phone,entry),Some("missing-schema-lane"));
+        assert!(lab.edit(phone,vault,entry, |_| {}).is_err());
+        assert!(lab.adopt_owner_entry_base(phone,snapshot,entry,sealed));
+        assert_eq!(lab.owner_base_wait_reason(phone,entry),Some("missing-schema-lane"));
+        assert_eq!(lab.owner_base_pending(phone,entry),0);
+        assert!(matches!(lab.draft_judged_entry_base(phone,&[owner],entry),Err(Refusal::ReadOnly)), "cannot attest incomplete local lane over an inherited base");
+        let get=crate::engine::read(&lab,phone,&serde_json::json!({"op":"get","entry":entry.to_hex(),"schema":"stored"}));
+        assert_eq!(get["ok"]["readOnly"],true);
+        let query=crate::engine::read(&lab,phone,&serde_json::json!({"op":"query","schema":"stored","where":{"type":["doc"]}}));
+        assert_eq!(query["ok"]["rows"][0]["readOnly"],true);
+        let before=lab.item(phone,entry).unwrap().record();
+        assert!(lab.edit(phone,vault,entry,|item| { item.edit_document_v0(|d| d.title="Forbidden while incomplete".into()); }).is_err());
+        let suffix=lab.edit(mac,vault,entry,|item| { item.edit_document_v0(|d| d.title="Latest".into()); }).unwrap();
+        lab.receive(phone,vec![lab.signed_edit(mac,suffix).unwrap().clone()],vec![]);
+        assert_eq!(lab.owner_base_wait_reason(phone,entry),Some("missing-schema-lane"));
+        assert_eq!(lab.item(phone,entry).unwrap().record(),before);
+        // Supply authorized schema/governance setup only, withholding target content history.
+        let evidence:Vec<_>=lab.log(mac).ids().iter().filter_map(|id| {
+            let signed=lab.signed_edit(mac,*id)?;
+            (!matches!(&signed.edit.action,Action::Write{entry:e,..} if *e==entry)).then(||signed.clone())
+        }).collect();
+        lab.receive(phone,evidence,vec![]);
+        assert_eq!(lab.owner_base_wait_reason(phone,entry),None);
+        assert_eq!(lab.item(phone,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
+        // A later lane addition changes the admission rules: do not silently reuse the old base.
+        lab.add_schema(mac,vault,vault,crate::lens::example::TODO_V0.bytes()).unwrap();
+        let evidence:Vec<_>=lab.log(mac).ids().iter().filter_map(|id| {
+            let signed=lab.signed_edit(mac,*id)?;
+            (!matches!(&signed.edit.action,Action::Write{entry:e,..} if *e==entry)).then(||signed.clone())
+        }).collect();
+        lab.receive(phone,evidence,vec![]);
+        assert_eq!(lab.owner_base_wait_reason(phone,entry),Some("missing-schema-lane"));
+        assert!(lab.edit(phone,vault,entry, |_| {}).is_err());
+    }
+
     #[test]
     fn bootstrap_companion_frontier_has_fixed_size_beyond_1024_writes() {
         let mut lab = Lab::new();
