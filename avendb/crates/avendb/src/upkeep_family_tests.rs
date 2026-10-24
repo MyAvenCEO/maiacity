@@ -265,3 +265,126 @@ fn ordinary_reconstruction_bounds_scratch_retention_before_final_sweep() {
     }
     eprintln!("ordinary reconstructed={} retained_scratch_peak={peak} bound={SCRATCHES}", reconstructed.len());
 }
+
+#[test]
+fn own_materialization_restores_exact_state_and_successor_writes() {
+    use crate::cast::{document, human_on};
+    let mut lab = Lab::new();
+    let passkey = lab.passkey("Own materialization");
+    let d = lab.device_of(passkey, "Cached device");
+    let v = human_on(&mut lab, passkey, &[d]);
+    let entry = lab.create(d, v, v, "note", &[], document("Cached", "first", d)).unwrap();
+    for n in 0..12 { lab.edit(d, v, entry, |it| it.set_text(2, &format!("revision {n}"))).unwrap(); }
+    let heads = lab.shown(d, entry).heads(MAIN);
+    let proposal = lab.propose(d, v, entry, &heads, "preserved proposal").unwrap();
+    lab.edit_on(d, v, entry, Some(proposal), |it| it.set_text(2, "proposal content")).unwrap();
+    lab.restore_from(d, lab.backup(d));
+    let backup = lab.backup(d);
+    let held = backup.signed.len();
+    let saved = lab.warming(d, held, Some([84;40])).unwrap();
+    let warm = Warm { keys: saved.keys.into_iter().collect(), views: saved.view.into_iter().collect() };
+    let key = lab.shelf_key(d).unwrap();
+    let opened = key.unlock("view", &warm.views[0], ENGINE.as_bytes()).unwrap();
+    let (view, extra) = warm_materialization::unwrap(&opened).unwrap();
+    assert!(!extra.is_empty());
+    {
+        let store = lab.held(d);
+        let st = store.view();
+        let en = st.entry(entry).unwrap();
+        let shown = &store.shown[&entry];
+        let lane = Lane::with_built_ins(st.lane_of(v, &store.readings).into_iter());
+        let groups = Groups::default();
+        let started = Instant::now();
+        for _ in 0..10 { black_box(judged_anew(d, st, (&store.readings, &store.bodies), &groups, en, &lane)); }
+        let canonical = started.elapsed();
+        let started = Instant::now();
+        for _ in 0..10 {
+            let saved = warm_materialization::decode(extra).unwrap().remove(&entry).unwrap();
+            let restored = saved.restore(d, st, &store.readings, &store.bodies, en, shown.print, shown.tip).unwrap();
+            assert!(same_shown(shown, &restored));
+            black_box(restored);
+        }
+        eprintln!("own materialization 10x canonical={canonical:?} cached_including_decode={:?}", started.elapsed());
+        let saved = warm_materialization::decode(extra).unwrap().remove(&entry).unwrap();
+        let mut fewer_bodies = store.bodies.clone();
+        let last = st.entry_writes(entry).last().unwrap().edit;
+        assert!(fewer_bodies.remove(&last).is_some());
+        let mut fingerprint = Hasher::new("lab shown");
+        for w in st.entry_writes(entry) {
+            fingerprint.update(&w.edit.0).update(&[fewer_bodies.contains_key(&w.edit) as u8]);
+        }
+        fingerprint.update(&shown.tip.lane).update(&shown.tip.groups);
+        let changed_print = fingerprint.finalize();
+        assert_ne!(shown.print, changed_print);
+        assert!(saved.restore(d, st, &store.readings, &fewer_bodies, en, changed_print, shown.tip).is_none(),
+            "changed current opened-body fingerprint must reject cached materialization");
+    }
+    let legacy = Warm { keys: warm.keys.clone(), views: vec![key.lock("view", view, ENGINE.as_bytes(), &mut lab.rng)] };
+    let before = lab.work_metrics(d)["counts"]["show: own materialization reused"].as_u64().unwrap_or(0);
+    lab.restore_warm(d, backup.clone(), Some(([84;40],held)), &warm);
+    let after = lab.work_metrics(d)["counts"]["show: own materialization reused"].as_u64().unwrap_or(0);
+    assert!(after > before, "unchanged restore must actually use materialization");
+    let cached = lab.item(d, entry).unwrap().record();
+    let version = lab.item(d, entry).unwrap().version();
+    let proposal_version = lab.held(d).shown[&entry].items[&Some(proposal)].version();
+    lab.edit(d, v, entry, |it| it.set_text(2, "successor")).unwrap();
+    let successor = lab.item(d, entry).unwrap().record();
+    let successor_version = lab.item(d, entry).unwrap().version();
+    lab.restore_warm(d, backup.clone(), Some(([84;40],held)), &legacy);
+    assert!(lab.capture_warm_current(d, held, Some([84;40])).is_some(),
+        "legacy policy-only warm state must be eligible for materialization upgrade");
+    assert_eq!(lab.item(d, entry).unwrap().record(), cached);
+    assert_eq!(lab.item(d, entry).unwrap().version(), version);
+    assert_eq!(lab.held(d).shown[&entry].items[&Some(proposal)].version(), proposal_version);
+    lab.edit(d, v, entry, |it| it.set_text(2, "successor")).unwrap();
+    assert_eq!(lab.item(d, entry).unwrap().record(), successor);
+    assert_eq!(lab.item(d, entry).unwrap().version(), successor_version);
+    let changed = lab.backup(d);
+    let before = lab.work_metrics(d)["counts"]["show: own materialization reused"].as_u64().unwrap_or(0);
+    lab.restore_warm(d, changed, None, &warm);
+    assert_eq!(lab.item(d, entry).unwrap().record(), successor);
+    assert_eq!(lab.work_metrics(d)["counts"]["show: own materialization reused"].as_u64().unwrap_or(0), before,
+        "changed full frontier must reject own cached materialization");
+
+    // A valid policy view with damaged derived adjunct remains a usable fallback.
+    let mut damaged = opened.to_vec();
+    damaged.truncate(damaged.len()-1);
+    let bad = Warm { keys: warm.keys.clone(), views: vec![key.lock("view", &damaged, ENGINE.as_bytes(), &mut lab.rng)] };
+    lab.restore_warm(d, backup.clone(), Some(([84;40],held)), &bad);
+    assert_eq!(lab.item(d, entry).unwrap().record(), cached);
+    assert!(lab.capture_warm(d,held,Some([84;40])).is_some(), "damaged adjunct is eligible for regeneration");
+    let stale = Warm { keys: warm.keys, views: vec![key.lock("view", &opened, b"another engine", &mut lab.rng)] };
+    lab.restore_warm(d, backup, Some(([84;40],held)), &stale);
+    assert_eq!(lab.item(d, entry).unwrap().record(), cached);
+}
+
+#[test]
+fn own_materialization_revocation_and_missing_body_use_canonical_fallback() {
+    let mut w = world();
+    let t = todos_on(&mut w);
+    w.lab.sync(w.mac_a, w.mac_c);
+    let backup = w.lab.backup(w.mac_c);
+    w.lab.restore_from(w.mac_c, backup.clone());
+    let saved = w.lab.warming(w.mac_c, backup.signed.len(), Some([85;40])).unwrap();
+    let warm = Warm { keys: saved.keys.into_iter().collect(), views: saved.view.into_iter().collect() };
+    // Same signed frontier, fewer available encrypted bodies: an entry's old
+    // fingerprint must not resurrect plaintext that current reconstruction lacks.
+    let mut missing = backup.clone();
+    missing.blobs.clear();
+    w.lab.restore_from(w.mac_c, missing.clone());
+    let expected: Vec<_> = [t.door,t.seeds,t.solar].iter().map(|e| w.lab.item(w.mac_c,*e).map(Item::record)).collect();
+    w.lab.restore_warm(w.mac_c, missing, Some(([85;40],backup.signed.len())), &warm);
+    let actual: Vec<_> = [t.door,t.seeds,t.solar].iter().map(|e| w.lab.item(w.mac_c,*e).map(Item::record)).collect();
+    assert_eq!(actual, expected);
+    w.lab.submit(w.mac_a, &[w.mac_a], Action::Revoke(Revoking::Grant {
+        share: t.carol_read, actor: w.alice, keep: vec![], via: vec![],
+    })).unwrap();
+    let revoked = w.lab.backup(w.mac_a);
+    w.lab.restore_from(w.mac_c, revoked.clone());
+    let expected: Vec<_> = [t.door,t.seeds,t.solar].iter().map(|e| w.lab.item(w.mac_c,*e).map(Item::record)).collect();
+    let before = w.lab.work_metrics(w.mac_c)["counts"]["show: own materialization reused"].as_u64().unwrap_or(0);
+    w.lab.restore_warm(w.mac_c, revoked, None, &warm);
+    assert_eq!(w.lab.work_metrics(w.mac_c)["counts"]["show: own materialization reused"].as_u64().unwrap_or(0), before);
+    let actual: Vec<_> = [t.door,t.seeds,t.solar].iter().map(|e| w.lab.item(w.mac_c,*e).map(Item::record)).collect();
+    assert_eq!(actual, expected);
+}
