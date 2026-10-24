@@ -19,7 +19,6 @@ query replacement, failure, device replacement and unmount. Old nodes' ordinary
 Validation: 44 focused demand, manifest, device and query-window tests pass,
 including empty local results with a held acknowledgement, selector cancellation,
 bounded traversal, negation exclusion and UTF-8 limits. These are bridge tests,
-not physical latency or proof of fresh-device bootstrap. The peer-side protocol
-must be integrated and validated before this requests useful unknown entries.
+not physical latency or proof of fresh-device bootstrap. The peer-side protocol is implemented in [ae62b08b](https://github.com/MyAvenCEO/maiacity/commit/ae62b08b); combined native validation and deployment remain pending before claiming useful unknown-entry delivery.
 
 This slice grants no access and changes no persisted account or vault state.
