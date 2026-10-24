@@ -20,9 +20,9 @@ This representation eliminates historical CRDT operation bytes from the read-onl
 
 ## Generic read integration
 
-`retain_entry_projection` validates before retaining, keyed by recipient and entry. Each Store holds at most eight entries and 4 MiB ciphertext total; replacement or locking clears them, and ending a hosted session removes its rows. Query access caches validation only for the exact process-local log revision; a changed log rechecks the ordinary gate. Pending replay cannot return a checkpoint. Canonical history supersedes the projection once its signed basis is materialized. A newer canonical record cannot be replaced by an older projection.
+`retain_entry_projection` validates before retaining, keyed by recipient and entry. Each Store holds at most eight entries and 4 MiB ciphertext total; replacement or locking clears them, and ending a hosted session removes its rows. Query access caches validation only for the exact process-local log revision; a changed log rechecks standing approval, current READ/key epoch and revocation without decrypting or parsing the immutable record again. Pending replay cannot return a checkpoint. Canonical history supersedes the projection once its signed basis is materialized. A newer canonical record cannot be replaced by an older projection.
 
-Generic `query` and unpinned `get` use the normal schema/lens/filter pipeline and mark projected rows read-only, with the snapshot ID, signed basis and partial/freshness metadata. Pinned/history reads remain canonical. Projected file availability is explicitly incomplete.
+Generic `query` and unpinned `get` use the normal schema/lens/filter pipeline and mark projected rows read-only, with the snapshot ID, signed basis and partial/freshness metadata. Pinned/history reads remain canonical. The generic Lab write gate refuses edits to a projection-selected entry until canonical history covers its basis, so the displayed newer state cannot trigger a positional edit against an older canonical record. Projected file availability is explicitly incomplete.
 
 ## Remaining runtime work
 

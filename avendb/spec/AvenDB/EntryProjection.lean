@@ -34,4 +34,7 @@ theorem unsigned_rejected (e : Evidence) (h : e.standingOwnerApproval = false) (
     (adopt e k p).2 = none := by simp [adopt, admitted, h]
 theorem unbounded_rejected (e : Evidence) (h : e.boundedRecords = false) (k p : Nat) :
     (adopt e k p).2 = none := by simp [adopt, admitted, h]
+def mutationReady (projectionSelected : Bool) : Bool := !projectionSelected
+
+theorem projected_state_cannot_write : mutationReady true = false := rfl
 end AvenDB.EntryProjection

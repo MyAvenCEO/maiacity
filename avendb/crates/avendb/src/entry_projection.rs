@@ -29,6 +29,7 @@ pub struct VerifiedEntryProjection {
     entry: EntryId,
     snapshot: EditId,
     basis: Vec<EditId>,
+    key: KeyName,
     lines: BTreeMap<Line, Value>,
 }
 impl VerifiedEntryProjection {
@@ -151,11 +152,7 @@ impl Lab {
         Ok(PreparedEntryProjection { draft, root, sealed })
     }
 
-    /// Validate a stored owner-approved projection without adopting any peer's authorization state.
-    /// The local signed log must already establish entry identity and current governance. A
-    /// pending policy update or any standing later removal makes this return None and use history.
-    pub fn open_entry_projection(&self, on: SignerId, snapshot: EditId, entry: EntryId, sealed: &[u8]) -> Option<VerifiedEntryProjection> {
-        if sealed.len() > MAX_BYTES + 128 { return None; }
+    fn projection_authority(&self, on: SignerId, snapshot: EditId, entry: EntryId) -> Option<(VaultId, &crate::policy::Stated, KeyName)> {
         let store = self.held(on);
         if store.replayed != store.log.edits().len() { return None; }
         let st = &store.replay.state;
@@ -167,7 +164,6 @@ impl Lab {
         if *vault != en.vault { return None; }
         let stated = states.iter().find(|s| s.entry == entry)?;
         if stated.basis.is_empty() || stated.basis.len() > MAX_BASIS
-            || stated.slice.size != sealed.len() as u64 || stated.slice.hash != crate::hash::content(sealed)
             || crate::snapshot::stale(store.log.edits(), &standing, edit, stated) { return None; }
         for basis in &stated.basis {
             if let Some(held) = store.log.edits().iter().find(|e| e.id() == *basis) {
@@ -180,9 +176,22 @@ impl Lab {
         let name = st.entry_key(entry)?;
         if !(st.public_key(audience) || st.entitled(on, audience))
             || !opens.contains(&st.current(audience)) || !opens.contains(&name) || !st.wants(on, en) { return None; }
+        store.keys.first(name)?;
+        Some((*vault, stated, name))
+
+    }
+
+    /// Validate a stored owner-approved projection without adopting any peer's authorization state.
+    /// The local signed log must already establish entry identity and current governance. A
+    /// pending policy update or any standing later removal makes this return None and use history.
+    pub fn open_entry_projection(&self, on: SignerId, snapshot: EditId, entry: EntryId, sealed: &[u8]) -> Option<VerifiedEntryProjection> {
+        if sealed.len() > MAX_BYTES + 128 { return None; }
+        let (vault, stated, name) = self.projection_authority(on, snapshot, entry)?;
+        if stated.slice.size != sealed.len() as u64 || stated.slice.hash != crate::hash::content(sealed) { return None; }
+        let store = self.held(on);
         let key = store.keys.first(name)?;
-        let bytes = keys::open_edit(key, sealed, &context(*vault, entry))?;
-        let lines = decode(&bytes, *vault, entry, &stated.basis, on)?;
+        let bytes = keys::open_edit(key, sealed, &context(vault, entry))?;
+        let lines = decode(&bytes, vault, entry, &stated.basis, on)?;
         // A full holder does not take even an owner's incorrect record on faith. Compare
         // against exactly the stated causal version, not later local edits.
         if stated.basis.iter().all(|id| store.log.ids().contains(id)) {
@@ -199,7 +208,7 @@ impl Lab {
                 if canonical.record() != *item { return None; }
             }
         }
-        Some(VerifiedEntryProjection { entry, snapshot, basis: stated.basis.clone(), lines })
+        Some(VerifiedEntryProjection { entry, snapshot, basis: stated.basis.clone(), key: name, lines })
     }
 }
 
@@ -268,6 +277,8 @@ mod tests {
         let get = crate::engine::read(&lab, phone, &serde_json::json!({ "op": "get", "entry": entry.to_hex(), "schema": "stored" }));
         assert_eq!(get["ok"]["record"], row["record"]);
         assert_eq!(get["ok"]["readOnly"], true);
+        assert_eq!(lab.edit(phone, vault, entry, |item| item.set_text(2, "must not edit old state")), Err(Refusal::ReadOnly));
+        assert_eq!(lab.log(phone).ids(), held, "checkpoint-selected writes do not sign stale canonical state");
         lab.sync(mac, phone);
         assert!(lab.entry_projection(phone, entry).is_none(), "canonical history covering basis supersedes checkpoint");
         lab.edit(mac, vault, entry, |item| item.set_text(2, "after checkpoint")).unwrap();
@@ -277,6 +288,34 @@ mod tests {
         assert!(current["ok"]["rows"][0].get("checkpoint").is_none());
         lab.lock(phone);
         assert!(lab.held(phone).projections.lock().unwrap().is_empty(), "locking clears decrypted checkpoint cache");
+    }
+
+    #[test]
+    fn retained_projection_revalidates_revocation_and_recipient() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Owner");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let outsider = lab.device("Outsider");
+        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Checkpoint", "initial", mac)).unwrap();
+        lab.sync(mac, phone);
+        lab.edit(mac, vault, entry, |item| item.set_text(2, "new")).unwrap();
+        let PreparedEntryProjection { draft, sealed, .. } = lab.draft_entry_projection(mac, &[owner], entry).unwrap();
+        let snap = lab.complete(mac, draft, &[]).unwrap();
+        let signed = lab.backup(mac).signed().iter().filter(|s| s.edit.id() == snap).cloned().collect();
+        lab.receive(phone, signed, vec![]);
+        assert!(!lab.retain_entry_projection(outsider, snap, entry, sealed.clone()));
+        assert!(lab.retain_entry_projection(phone, snap, entry, sealed));
+        assert!(lab.entry_projection(phone, entry).is_some());
+        lab.create(phone, vault, vault, "note", &[], document("Unrelated", "does not invalidate projection", phone)).unwrap();
+        assert!(lab.entry_projection(phone, entry).is_some(), "unrelated revision rechecks authorization without losing view");
+        let revoke = lab.submit(mac, &[owner], Action::Revoke(crate::policy::Revoking::Device {
+            vault, device: phone, keep: vec![],
+        })).unwrap();
+        let signed = lab.backup(mac).signed().iter().filter(|s| s.edit.id() == revoke).cloned().collect();
+        lab.receive(phone, signed, vec![]);
+        assert!(lab.entry_projection(phone, entry).is_none());
     }
 
     #[test]
@@ -363,23 +402,22 @@ impl Lab {
         if store.replayed != store.log.edits().len() || !self.sees(on, entry) { return None; }
         let key = (on, entry);
         let revision = store.log.revision();
-        let (snapshot, sealed) = {
-            let cache = store.projections.lock().expect("entry projections");
-            let cached = cache.get(&key)?;
-            let covered = store.shown.get(&entry).is_some_and(|shown| shown.history.landed()
-                && cached.value.basis.iter().all(|id| shown.history.get(*id).is_some_and(|c| c.counted)));
-            if covered { return None; }
-            if cached.revision == revision { return Some(cached.value.clone()); }
-            (cached.snapshot, cached.sealed.clone())
-        };
-        let checked = self.open_entry_projection(on, snapshot, entry, &sealed);
         let mut cache = store.projections.lock().expect("entry projections");
-        match checked {
-            Some(value) => {
-                if let Some(cached) = cache.get_mut(&key) { cached.revision = revision; cached.value = value.clone(); }
-                Some(value)
-            }
-            None => { cache.remove(&key); None }
+        let cached = cache.get_mut(&key)?;
+        let covered = store.shown.get(&entry).is_some_and(|shown| shown.history.landed()
+            && cached.value.basis.iter().all(|id| shown.history.get(*id).is_some_and(|c| c.counted)));
+        if covered { return None; }
+        // Once all frontier signatures are held, use only canonical materialization. An owner
+        // attestation must not mask a locally denied or still-unopened basis.
+        if cached.value.basis.iter().all(|id| store.log.ids().contains(id)) { return None; }
+        if cached.revision != revision {
+            // Immutable ciphertext was authenticated/decoded once. Only policy and the key epoch
+            // change with unrelated log arrivals; do not decrypt/parse the same record again.
+            let authorized = self.projection_authority(on, cached.snapshot, entry)
+                .is_some_and(|(_, stated, name)| name == cached.value.key && stated.basis == cached.value.basis);
+            if !authorized { cache.remove(&key); return None; }
+            cached.revision = revision;
         }
+        Some(cached.value.clone())
     }
 }

@@ -3243,6 +3243,9 @@ impl Lab {
     /// The write `action` authored by device `on` alone, drafted on `view`, what `on`'s edits say, if `view` accepts
     /// it: the edit, and the write it is, with the shares its readers judge it by.
     fn check_write(&self, on: SignerId, view: &State, action: Action) -> Result<(Edit, Write), Refusal> {
+        if let Action::Write { entry, .. } = &action {
+            if self.entry_projection(on, *entry).is_some() { return Err(Refusal::ReadOnly); }
+        }
         let edit = self.held(on).log.draft_on(view, on, &[], action);
         let w = view.accepted_write(&edit, edit.id())?.expect("a write");
         Ok((edit, w))
