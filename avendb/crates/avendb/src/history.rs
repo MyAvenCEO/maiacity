@@ -194,6 +194,42 @@ impl History {
         Ok(())
     }
 
+    /// One ordinary admission gate for local authoring and remote counting. The caller
+    /// derives authorization from the current policy, proof and row ownership. This
+    /// does not authenticate a Write or make missing history trustworthy.
+    pub(crate) fn admit<T>(
+        &self, w: &Write, read: &Reading,
+        authorize: impl FnOnce() -> Result<T, Refusal>,
+    ) -> Result<T, Refusal> {
+        policy::builds_on(&self.changes, w)?;
+        if !w.deps.iter().all(|id| self.get(*id).is_some_and(|c| c.counted)) {
+            return Err(Refusal::NotAccepted);
+        }
+        if !self.lands(w) { return Err(Refusal::NotLanded); }
+        let proof = authorize()?;
+        if !read.fits { return Err(Refusal::NotAView); }
+        if !self.passes(w, read.touches.as_deref()) { return Err(Refusal::NotAccepted); }
+        Ok(proof)
+    }
+
+    /// Verify a proposed full CRDT base against independently counted, readable history.
+    /// Equal JSON/version vectors alone are insufficient: compare every snapshot byte.
+    /// A conservative encoding mismatch rejects reuse, never weakens admission. The
+    /// returned scratch contains the canonical reconstructed Item, not unchecked input.
+    pub(crate) fn snapshot_scratch(
+        &self, basis: &[EditId], snapshot: &[u8], signer: SignerId, line: Line,
+    ) -> Option<Scratch> {
+        if basis.is_empty() || !basis.iter().all(|id| self.get(*id).is_some()) { return None; }
+        let changes = self.version(basis);
+        if changes.iter().any(|c| !c.counted || c.body.is_none()) { return None; }
+        let holds: HashSet<_> = changes.iter().map(|c| c.write.edit).collect();
+        if changes.iter().any(|c| !c.write.deps.iter().all(|id| holds.contains(id))) { return None; }
+        let item = build(&changes, signer, line)?;
+        if item.has_parked_updates() || item.bytes() != snapshot { return None; }
+        let authored = item.authored();
+        Some(Scratch { item, holds, authored, tip: None })
+    }
+
     pub fn changes(&self) -> &[Change] {
         &self.changes
     }

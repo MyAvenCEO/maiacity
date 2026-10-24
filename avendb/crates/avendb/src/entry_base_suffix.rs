@@ -14,6 +14,7 @@ pub struct AuthenticatedCountedEntryBase {
     entry: EntryId,
     snapshot: EditId,
     facts: Vec<Write>,
+    lines: BTreeMap<Line, BaseLine>,
 }
 impl AuthenticatedCountedEntryBase {
     pub fn entry(&self) -> EntryId { self.entry }
@@ -85,7 +86,7 @@ fn counted_encode(vault: VaultId, entry: EntryId, base: &[u8], facts: &[Write]) 
     for w in facts { encode_write(w, &mut bytes); }
     bytes
 }
-fn counted_decode(bytes: &[u8], vault: VaultId, entry: EntryId, basis: &[EditId]) -> Option<Vec<Write>> {
+fn counted_decode(bytes: &[u8], vault: VaultId, entry: EntryId, basis: &[EditId]) -> Option<(Vec<Write>, BTreeMap<Line, BaseLine>)> {
     if bytes.len() > MAX_BYTES { return None; }
     let mut r = WireReader::new(bytes);
     let prefix = counted_context(vault, entry);
@@ -98,7 +99,7 @@ fn counted_decode(bytes: &[u8], vault: VaultId, entry: EntryId, basis: &[EditId]
     // Parse and bound fact metadata before invoking Loro metadata decoding (whose internal
     // allocation remains unbounded by this representation; see entry_base.rs).
     let lines = decode(&base, vault, entry, basis)?;
-    valid_facts(entry, &facts, &lines).then_some(facts)
+    valid_facts(entry, &facts, &lines).then_some((facts, lines))
 }
 impl Lab {
     /// A separate dormant format: v2 remains readable, and Node publishes neither.
@@ -125,13 +126,26 @@ impl Lab {
             states: vec![crate::policy::Stated { entry, basis, slice: root }] })?;
         Ok(PreparedEntryBase { draft, sealed, root })
     }
+    /// Strict full-holder equivalence check. Partial holders fail closed until an
+    /// independently verified history-equivalence witness exists. Rechecks policy now;
+    /// a previously authenticated owner claim cannot cache write authority.
+    pub fn verify_counted_base_equivalence(&self, on: SignerId, snapshot: EditId, entry: EntryId, sealed: &[u8]) -> bool {
+        let Some(base) = self.authenticate_counted_entry_base(on, snapshot, entry, sealed) else { return false; };
+        let Some(shown) = self.held(on).shown.get(&entry) else { return false; };
+        if base.facts.iter().any(|w| shown.history.get(w.edit).is_none_or(|c| !c.counted || c.write != *w)) {
+            return false;
+        }
+        base.lines.iter().all(|(line, claim)|
+            shown.history.snapshot_scratch(&claim.basis, &claim.snapshot, on, *line).is_some())
+    }
+
     pub fn authenticate_counted_entry_base(&self, on: SignerId, snapshot: EditId, entry: EntryId, sealed: &[u8]) -> Option<AuthenticatedCountedEntryBase> {
         if sealed.len() > MAX_BYTES + 128 { return None; }
         let (vault, stated, name) = self.projection_authority(on, snapshot, entry)?;
         if stated.slice.size != sealed.len() as u64 || stated.slice.hash != crate::hash::content(sealed) { return None; }
         let key = self.held(on).keys.first(name)?;
         let bytes = keys::open_edit(key, sealed, &counted_context(vault, entry))?;
-        let facts = counted_decode(&bytes, vault, entry, &stated.basis)?;
+        let (facts, lines) = counted_decode(&bytes, vault, entry, &stated.basis)?;
         // A full holder never substitutes an owner claim for facts already validated.
         // A partial holder only receives the opaque non-writable claim.
         if let Some(shown) = self.held(on).shown.get(&entry) {
@@ -141,7 +155,7 @@ impl Lab {
                 if local != facts { return None; }
             }
         }
-        Some(AuthenticatedCountedEntryBase { entry, snapshot, facts })
+        Some(AuthenticatedCountedEntryBase { entry, snapshot, facts, lines })
     }
 }
 
@@ -174,6 +188,9 @@ mod tests {
         assert_eq!(base.fact_count(), 2);
         assert!(!base.is_writable());
         assert!(lab.authenticate_counted_entry_base(mac, snapshot, entry, &sealed).is_some());
+        assert!(lab.verify_counted_base_equivalence(mac, snapshot, entry, &sealed));
+        assert!(!lab.verify_counted_base_equivalence(phone, snapshot, entry, &sealed),
+            "an owner claim cannot replace missing independently counted history");
         assert!(lab.authenticate_entry_base(phone, snapshot, entry, &sealed).is_none());
         let mut suffix = base.facts.last().unwrap().clone();
         suffix.edit = EditId([92; 32]);
@@ -233,7 +250,7 @@ mod tests {
         assert!(valid_facts(entry, &facts, &lines));
         let raw_base = encode(vault, entry, &basis, &lines);
         let bytes = counted_encode(vault, entry, &raw_base, &facts);
-        assert_eq!(counted_decode(&bytes, vault, entry, &basis).unwrap(), facts);
+        assert_eq!(counted_decode(&bytes, vault, entry, &basis).unwrap().0, facts);
         let mut bad = facts.clone(); bad[0].deps = vec![bad[1].edit];
         assert!(!valid_facts(entry, &bad, &lines));
         let mut bad = facts.clone(); bad.push(bad[1].clone());
@@ -258,4 +275,41 @@ mod tests {
         links_bomb.extend(vec![0;32*(MAX_LINKS+1)]);
         assert!(links::<EditId>(&mut WireReader::new(&links_bomb)).is_none());
     }
+    #[test]
+    fn counted_base_scratch_and_full_history_use_identical_suffix_admission() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Owner");
+        let me = lab.device_of(owner, "Device");
+        let vault = human_on(&mut lab, owner, &[me]);
+        let entry = lab.create(me, vault, vault, "note", &[], document("Base", "old", me)).unwrap();
+        let history = lab.held(me).shown.get(&entry).unwrap().history.clone();
+        let basis = history.heads(MAIN);
+        let snapshot = lab.item(me, entry).unwrap().bytes();
+        let mut scratch = Some(history.snapshot_scratch(&basis, &snapshot, me, MAIN).unwrap());
+        let mut bad = snapshot.clone(); bad[0] ^= 1;
+        assert!(history.snapshot_scratch(&basis, &bad, me, MAIN).is_none());
+        assert!(history.snapshot_scratch(&[EditId([91;32])], &snapshot, me, MAIN).is_none());
+        lab.edit(me, vault, entry, |item| item.set_text(2, "next")).unwrap();
+        let store = lab.held(me);
+        let next = store.shown.get(&entry).unwrap().history.changes().last().unwrap();
+        assert!(next.counted);
+        let lane = Lane::with_built_ins(store.replay.state.lane_of(vault, &store.readings));
+        let cold = history.reading(&next.write, next.body.as_deref(), me, &lane);
+        let warm = history.reading_on(&mut scratch, &next.write, next.body.as_deref(), me, &lane);
+        assert_eq!(cold, warm, "same footprint, schema verdict and row additions");
+        assert_eq!(history.admit(&next.write, &cold, || Ok(())), Ok(()));
+        assert_eq!(history.admit(&next.write, &warm, || Ok(())), Ok(()));
+        assert_eq!(history.admit(&next.write, &warm, || Err::<(), _>(Refusal::NotAllowed)), Err(Refusal::NotAllowed));
+        let mut invalid_schema = warm.clone(); invalid_schema.fits = false;
+        assert_eq!(history.admit(&next.write, &invalid_schema, || Ok(())), Err(Refusal::NotAView));
+        let mut missing = next.write.clone(); missing.deps = vec![EditId([92;32])];
+        assert!(history.admit(&missing, &warm, || Ok(())).is_err());
+        let mut uncounted = History::default();
+        for c in history.changes() {
+            let mut c = c.clone(); c.counted = false; uncounted.push(c).unwrap();
+        }
+        assert_eq!(uncounted.admit(&next.write, &warm, || Ok(())), Err(Refusal::NotAccepted));
+        assert!(uncounted.snapshot_scratch(&basis, &snapshot, me, MAIN).is_none());
+    }
+
 }
