@@ -150,6 +150,8 @@ export class WorldViewer {
 	drawnAt = -Infinity;
 	/** how often the page in the iframe was loaded again because it never came up */
 	reloads = 0;
+	/** Invalidates earlier loading loops when a user retries. */
+	loadGeneration = 0;
 	/** the shots whose exposure film mode has metered (or is metering), by the whole shot */
 	metered = new Set();
 	/** a metering of the shots ahead under way */
@@ -176,6 +178,7 @@ export class WorldViewer {
 			this.queued = null;
 			this.busy = false;
 		}
+		const generation = ++this.loadGeneration;
 		this.iframe = iframe;
 		this.url = url;
 		this.state = 'loading';
@@ -197,7 +200,7 @@ export class WorldViewer {
 			iframe.src = url;
 		}
 		const t0 = performance.now();
-		while (performance.now() - t0 < patience && this.iframe === iframe && this.url === url) {
+		while (generation === this.loadGeneration && performance.now() - t0 < patience && this.iframe === iframe && this.url === url) {
 			/** @type {Film | undefined} */
 			let film;
 			try {
@@ -221,7 +224,7 @@ export class WorldViewer {
 				try {
 					// a page that goes meanwhile never answers: looked for again, never waited on for ever
 					if (!(await this.whileThere(iframe, url, film, film.ready(), Math.max(1, patience - (performance.now() - t0))))) continue;
-					if (this.url !== url) return;
+					if (generation !== this.loadGeneration || this.url !== url) return;
 					// once the world is up: its canvas is there
 					this.watchLoss(/** @type {Window} */ (iframe.contentWindow), iframe, url);
 					this.film = film;
@@ -232,6 +235,7 @@ export class WorldViewer {
 					if (this.error.startsWith('the GPU dropped')) this.error = '';
 					return;
 				} catch (e) {
+					if (generation !== this.loadGeneration) return;
 					// said, and asked again: a world that could not get ready once (a shader, a load) often can the next time
 					this.error = `ready: ${/** @type {Error} */ (e)?.message ?? e}`;
 					console.warn(`world: ${this.error}`);
@@ -244,7 +248,7 @@ export class WorldViewer {
 			}
 			await new Promise((r) => setTimeout(r, waited > wait ? 2000 : 250));
 		}
-		if (this.iframe !== iframe || this.url !== url) return;
+		if (generation !== this.loadGeneration || this.iframe !== iframe || this.url !== url) return;
 		this.state = 'unavailable';
 		// a page that never came up is loaded again, a few times (it was left a stand-in for good)
 		if (this.reloads >= RELOADS) return;
@@ -259,6 +263,18 @@ export class WorldViewer {
 		}
 		iframe.src = 'about:blank';
 		void this.attach(iframe, url, wait, patience);
+	}
+
+	/** Retry only the world page; keep the user's timeline and edits intact. */
+	retry() {
+		const iframe = this.iframe, url = this.url;
+		if (!iframe || !url) return;
+		this.loadGeneration++;
+		this.forget();
+		iframe.src = 'about:blank';
+		this.iframe = null;
+		this.state = 'off';
+		void this.attach(iframe, url);
 	}
 
 	/**

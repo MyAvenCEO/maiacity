@@ -5,11 +5,12 @@
 	// its title as the page's heading. Its co-authors head it, their marks side by side and their names below, and the post runs the card's whole width below.
 	import { base } from '$app/paths';
 	import { shaped } from '$lib/app/shapes.js';
-	import { ago, postHref } from './posts.js';
+	import { ago, postHref, coverOf } from './posts.js';
 	import { authorOf, faceOf, like } from './stream.svelte.js';
 
 	let { post: p, full = false } = $props();
 	const a = $derived(authorOf(p));
+	const cover = $derived(coverOf(p) || p.cover);
 	const SHORT = 320;
 	const text = $derived(
 		full || p.text.length <= SHORT ? p.text : `${p.text.slice(0, SHORT - 20).replace(/\s+\S*$/, '')}…`
@@ -48,8 +49,8 @@
 			<h3 class="title"><a href={postHref(base, p)}>{p.title}</a></h3>
 		{/if}
 
-		{#if p.cover}
-			<div class="cover"><img src={p.cover.src} alt={p.cover.alt || p.title} loading="lazy" /></div>
+		{#if cover}
+			<div class="cover"><img src={cover.src} alt={cover.alt || p.title} loading="lazy" /></div>
 		{/if}
 
 		<p class="text">{text}</p>

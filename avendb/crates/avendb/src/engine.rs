@@ -201,7 +201,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "shares" => &["over", "as"],
         "database" => &["vault"],
         "note" => &["entry"],
-        "read_file" => &["root", "size", "from", "to"],
+        "read_file" => &["root", "size", "from", "to", "local"],
         "creatable" => &["vault", "type", "tags", "draft", "as"],
         "taggable" => &["entry", "as"],
         "share" => &["over", "who", "level", "what", "standing", "request", "as"],

@@ -31,8 +31,8 @@ import { hashText } from '../../hash.js';
 import { canonical, jsonFile } from '../files.js';
 import { checkCode } from '../check.js';
 import { ENTRIES as SEED } from '../../../code/index.js';
-import { CODE_FEED, MAIA_CITY, proofOf, provenRows } from './feed.js';
-import { bringRows, caughtUp, deviceRows, lacking } from './device.js';
+import { CODE_FEED, MAIA_CITY, NO_ANCHOR, proofOf } from './feed.js';
+import { deviceRows } from './device.js';
 import { KEPT_NEWEST, fresh } from '../fresh.js';
 import { isFrozen, latestOf } from '../../engines.js';
 
@@ -214,36 +214,14 @@ export const avendb = {
 	}
 };
 
-/**
- * Load the vault's code entries, off the page's own avenDB where it holds one open that brought Maia City from its
- * peers (./device.js `deviceRows`), else as Maia City's own signed edits prove them (H2, ./feed.js `provenRows`): {
- * taken, refused } or { error } (no anchor, offline, a proof that doesn't check out), and on any failure what was
- * loaded before stays, else the seed: never a row the proof didn't prove, nor one the device didn't check. `viewOf` is
- * ../index.js `viewOfEntry`; `feed` where /feed/code is, on the API the server's own feed inside (AVENDB_FEED); `vault`
- * the anchor, Maia City's id (`MAIA_CITY`); `url` the proof's address (`feedOf`); `verify` and `keep` as `provenRows`
- * takes them (a test's); `device` false reads the feed whatever the page holds open. Either way, an entry whose version
- * is older than the newest this device proved of it before is refused, naming both (../fresh.js `fresh`, the newest
- * kept in `newest`), and what is taken is kept as its newest.
- */
-export async function loadCode(viewOf, { feed = CODE_FEED, vault = MAIA_CITY, url = feedOf(feed, vault), fetch: get = globalThis.fetch, timeout = 4000, verify, keep, device = true, newest = KEPT_NEWEST } = {}) {
-	if (!avendb.on) return { error: 'code from avenDB is switched off' };
-	/** rows a device checked or a proof proved, held to the newest of each entry proved before, and kept as it */
-	const taken = (rows) => {
-		const f = fresh(rows, { proven: true, keep: newest });
-		return avendb.use(f.rows, viewOf, f.stale);
-	};
-	const proving = () => provenRows(url, { vault, kinds: KINDS, fetch: get, timeout, ...(verify ? { verify } : {}), ...(keep ? { keep } : {}) });
-	const local = device ? await deviceRows(KINDS, { vault }) : null;
-	// a device still syncing (`caughtUp`) is held to the feed's proof: what it lacks of it, or holds older, read off the
-	// proof this time and brought first; where the feed can't be reached, what it holds (local first)
-	const checked = local && (await caughtUp()) === false ? await proving() : null;
-	const lacks = checked && !('error' in checked) ? lacking(local, checked.rows) : [];
-	if (local && !lacks.length) return taken(local);
-	const got = checked ?? (await proving());
-	if ('error' in got) return got;
-	// the device, holding none of them yet, or not all, brings these entries alone from its peers, for the next load
-	if (device) void bringRows(lacks.length ? got.rows.filter((r) => lacks.includes(r?.entry)) : got.rows, vault);
-	return taken(got.rows);
+/** Runtime code comes only from the local device, which verifies edits during background peer sync. */
+export async function loadCode(viewOf, { vault = MAIA_CITY, newest = KEPT_NEWEST } = {}) {
+ if (!avendb.on) return { error: 'code from avenDB is switched off' };
+ if (!/^[0-9a-f]{64}$/.test(String(vault))) return { error: NO_ANCHOR };
+ const rows = await deviceRows(KINDS, { vault });
+ if (!rows) return { error: 'Code is not available in local avenDB yet; waiting for peer synchronization.' };
+ const f = fresh(rows, { proven: true, keep: newest });
+ return avendb.use(f.rows, viewOf, f.stale);
 }
 
 /**

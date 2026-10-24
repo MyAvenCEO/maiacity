@@ -342,8 +342,8 @@ export async function deviceRows(kinds, { vault = MAIA_CITY, wait = BRING, answe
 
 /**
  * File `file` of a row the device read (`{ root, size, len }`), whole, as bytes, read off the device a window at a
- * time: from its own store, or else fetched from a peer that may hand it over and kept. Null where no device is open,
- * it can't read it, or it takes longer than `wait` (the reader has asked the feed meanwhile, after `READ`).
+ * time, exclusively from its local store. Peer synchronization runs separately. Null where no device is open,
+ * it cannot read the bytes locally, or the local read exceeds `wait`.
  * @param {{ root: string, size: number, len: number }} file @param {{ wait?: number }} [o]
  * @returns {Promise<Uint8Array | null>}
  */
@@ -353,7 +353,8 @@ export async function deviceFile(file, { wait = READ } = {}) {
 	const read = async () => {
 		const out = new Uint8Array(file.len);
 		for (let at = 0; at < file.len; ) {
-			const got = await d.read(file.root, file.size, at, Math.min(file.len, at + WINDOW));
+			const result = await d.run({ op: 'read_file', root: file.root, size: file.size, from: at, to: Math.min(file.len, at + WINDOW), local: true });
+            const got = result?.bytes;
 			if (!got?.length) throw new Error('the file ends early');
 			out.set(got, at);
 			at += got.length;

@@ -93,7 +93,11 @@ describe('the code loader', () => {
 		const kept = new Map();
 		return { get: (k) => kept.get(k), put: (k, v) => kept.set(k, v) };
 	};
-	const load = (rows, newest) => loadCode({ url: AT, vault: VAULT, fetch: served(rows).get, verify: trusting, keep: proofs(), newest, device: false });
+	const load = async (rows, newest) => {
+ const { useDevice } = await import('../../../game/code/sources/device.js');
+ useDevice({ run: async op => op.op === 'code' ? { ok: rows } : { ok: { new: 0 } } });
+ try { return await loadCode({ vault: VAULT, newest }); } finally { useDevice(null); }
+ };
 
 	afterEach(() => avendb.use([], viewOfEntry));
 

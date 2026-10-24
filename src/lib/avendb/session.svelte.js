@@ -13,7 +13,8 @@
  *
  * A page that reads or changes the person's avenDB:
  *
- *   import { onMount } from 'svelte';
+ *   import { localMediaWorld } from './local-media.svelte.js';
+import { onMount } from 'svelte';
  *   import { session } from '$lib/avendb/session.svelte.js';
  *   import Unlock from '$lib/avendb/Unlock.svelte';
  *
@@ -618,6 +619,7 @@ async function refresh() {
 	const w = answer(await send({ op: 'world' })) ?? null;
 	if (d === device) {
 		world = w;
+		localMediaWorld(w);
 		context.reconcile();
 	}
 }
@@ -667,9 +669,8 @@ async function near(d, op, { signal, scoped = false, demand } = {}) {
 	if (!currentView()) return got;
 	const entry = typeof op?.entry === 'string' && ENTRY.test(op.entry) ? op.entry : null;
 	if (got?.refused === 'NoEntry' && entry) {
-		const prioritize = scoped ? !(await demand.add([entry])) : true;
-		if (!currentView()) return got;
-		if ((await bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }, { signal, path, prioritize, learnPriority: !scoped }))?.ok?.new && currentView()) got = await d.run(op);
+		// Reads return local state immediately. Sync completion refreshes the view separately.
+		void bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }, { signal, path, prioritize: !scoped, learnPriority: !scoped }).catch(() => {});
 	}
 	if (currentView() && VIEWS.has(op?.op)) {
 		const named = [...(entry && got?.ok ? [entry] : []), ...namedIn(got)];
@@ -915,7 +916,7 @@ const api = {
 	 * @returns {Promise<Uint8Array>}
 	 */
 	readFile: async (root, size, from, to) => {
-		const out = await send({ op: 'read_file', root, size, from, to });
+		const out = await send({ op: 'read_file', root, size, from, to, local: true });
 		answer(out);
 		return out.bytes;
 	}

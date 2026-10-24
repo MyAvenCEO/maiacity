@@ -159,8 +159,10 @@ async fn files_follow_their_edits_over_iroh() {
         carol.read(move |lab, me| lab.file(me, &photo_root).is_some()).await
     })
     .await;
+    assert!(carol.read_local_file(photo_root, 70_000..70_010).await.is_err(), "a local read must not fetch from the connected peer");
     let got = carol.read_file(photo_root, 70_000..70_010).await.expect("Carol's Mac reads ten bytes of the photo");
     assert_eq!(got, bytes(1, 70_000, 70_010), "the very bytes");
+    assert_eq!(carol.read_local_file(photo_root, 70_000..70_010).await.unwrap(), got, "after sync/fetch, the local bytes are readable");
     assert!(!carol.holds_file(photo_root).await, "having fetched one segment, not the photo");
     let across = carol.read_file(photo_root, 65_000..140_000).await.expect("a range across three segments");
     assert_eq!(across, bytes(1, 65_000, 140_000));

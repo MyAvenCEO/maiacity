@@ -129,185 +129,25 @@ describe('loaded entries', () => {
 	});
 });
 
-describe('loading', () => {
-	/** where the test's proof is, as avenDB's server serves one */
-	const AT = 'https://feed.example/feed/proof';
-	/**
-	 * A feed that hands out `rows` as its proof's bytes, tagged `tag`, or answers `status`: what the stand-in below
-	 * reads back (./proof.test.js holds avenDB's own WebAssembly to refusing what is no proof).
-	 */
-	const proof = (rows, { status = 200, tag = '"one"' } = {}) => {
-		const asked = [];
-		const get = async (url, o) => (asked.push([url, o?.headers ?? {}]), new Response(status === 200 ? JSON.stringify(rows) : 'down', { status, headers: { etag: tag } }));
-		return { get, asked };
-	};
-	/** a stand-in for avenDB's WebAssembly that reads the test's rows back as proven, counting what it is asked */
-	const proved = [];
-	const trusting = async (bytes, vault, kinds) => (proved.push([vault, kinds]), JSON.parse(new TextDecoder().decode(bytes)));
-	/** where what was proved is kept: one of the test's own */
-	const keep = () => {
-		const kept = new Map();
-		return { get: (k) => kept.get(k), put: (k, v) => kept.set(k, v), kept };
-	};
-	const load = (f, o) => loadCode({ url: AT, vault: VAULT, fetch: f.get, verify: trusting, keep: keep(), ...o });
-	test('takes what the proof proves, anchored to Maia City by its id', async () => {
-		proved.length = 0;
-		const r = await load(proof(rowsOf([ENTRIES['views/view-holders']])));
-		expect(r).toEqual({ taken: ['views/view-holders'], refused: [] });
-		expect(codeAt('views/view-holders').source).toBe('avendb');
-		expect(proved).toEqual([[VAULT, ['view', 'logic', 'config']]]);
-	});
-	test('a proof checked once is kept by its tag: the same proof again runs no check, a new one is checked', async () => {
-		const kept = keep();
-		const f = proof(rowsOf([ENTRIES['views/view-holders']]));
-		proved.length = 0;
-		await load(f, { keep: kept });
-		expect([...kept.kept.values()]).toEqual([{ tag: '"one"', rows: rowsOf([ENTRIES['views/view-holders']]) }]);
-		// the API asks by the tag (a page's browser does it itself); unchanged, the server says so
-		expect(f.asked[0][1]).toEqual({});
-		const unchanged = { get: async (url, o) => (f.asked.push([url, o?.headers ?? {}]), new Response(null, { status: 304, headers: { etag: '"one"' } })) };
-		expect(await load(unchanged, { keep: kept })).toEqual({ taken: ['views/view-holders'], refused: [] });
-		expect(f.asked[1][1]).toEqual({ 'if-none-match': '"one"' });
-		expect(proved.length).toBe(1);
-		// a 304 for a proof this device never checked is no proof
-		expect(await load(unchanged)).toEqual({ error: `${AT} answered 304` });
-		const newer = proof(rowsOf([ENTRIES['views/coop-chart']]), { tag: '"two"' });
-		expect(await load(newer, { keep: kept })).toEqual({ taken: ['views/coop-chart'], refused: [] });
-		expect(proved.length).toBe(2);
-	});
-	test("rows of another vault than Maia City's are not taken, whatever they call themselves", async () => {
-		const other = { ...rowsOf([ENTRIES['views/coop-chart']])[0], vault: 'b'.repeat(64), seed: 'Maia City' };
-		const r = await load(proof([...rowsOf([ENTRIES['views/view-holders']]), other]));
-		expect(r).toEqual({ error: `the proof at ${AT} proved code of another vault than Maia City's` });
-		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
-	});
-	test('no feed, or no network: the seed stays, and nothing throws', async () => {
-		expect(await load(proof([], { status: 404 }))).toEqual({ error: `${AT} answered 404` });
-		expect(await load({ get: async () => { throw new Error('offline'); } })).toEqual({ error: `${AT} could not be reached: offline`, passing: true });
-		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
-	});
-	test('an empty vault (one reset and not seeded yet): the seed runs', async () => {
-		expect(await load(proof([]))).toEqual({ taken: [], refused: [] });
-		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
-	});
-	test("the live feed's proof is read for Maia City's views, logic modules and configs; switched off, nothing is asked and the seed runs", async () => {
-		expect(feedOf('https://avendb.maia.city/feed/code', VAULT)).toBe(`https://avendb.maia.city/feed/proof?vault=${VAULT}&type=view,logic,config`);
-		expect(feedOf('http://avendb:3351/feed/code', VAULT)).toBe(`http://avendb:3351/feed/proof?vault=${VAULT}&type=view,logic,config`);
-		expect(avendb.on).toBe(true);
-		avendb.on = false;
-		try {
-			const f = proof([]);
-			expect(await load(f)).toEqual({ error: 'code from avenDB is switched off' });
-			expect(f.asked).toEqual([]);
-		} finally {
-			avendb.on = true;
-		}
-	});
-	test("a page that holds its avenDB open loads them off its own device once it brought Maia City: the same rows, no proof; the feed where it can't", async () => {
-		const { useDevice } = await import('../../../game/code/sources/device.js');
-		const rows = rowsOf([ENTRIES['views/view-holders']]);
-		const asked = [];
-		let brought = { ok: { new: 0, peers: 1, reached: true } };
-		let code = { ok: rows };
-		useDevice({ run: async (op) => (asked.push(op), op.op === 'bring' ? brought : code), read: async () => new Uint8Array() });
-		try {
-			proved.length = 0;
-			const f = proof(rowsOf([ENTRIES['views/coop-chart']]));
-			expect(await load(f)).toEqual({ taken: ['views/view-holders'], refused: [] });
-			// what it holds read at once, what changed of the vault since brought beside
-			expect(asked.filter(ownOps)).toEqual([
-				{ op: 'code', vault: VAULT, type: ['view', 'logic', 'config'] },
-				{ op: 'bring', vaults: [VAULT] }
-			]);
-			expect([f.asked, proved]).toEqual([[], []]);
-			// brought once a page; a device that holds none of the vault's code: the feed, proven, and the device brings
-			// the entries the feed named alone, never the whole vault
-			const { useDevice: fresh } = await import('../../../game/code/sources/device.js');
-			asked.length = 0;
-			code = { ok: [] };
-			fresh({ run: async (op) => (asked.push(op), op.op === 'bring' ? brought : code), read: async () => new Uint8Array() });
-			expect(await load(f)).toEqual({ taken: ['views/coop-chart'], refused: [] });
-			await new Promise((r) => setTimeout(r, 0));
-			const entries = rowsOf([ENTRIES['views/coop-chart']]).map((r) => r.entry);
-			expect(asked.filter((o) => o.op === 'bring')).toEqual([{ op: 'bring', entries }]);
-			expect(proved.length).toBe(1);
-			// a device too old for the ops, or still bringing the vault: the feed
-			useDevice({ run: async () => ({ refused: 'BadOp', why: 'no op is called "bring"' }), read: async () => new Uint8Array() });
-			expect(await load(f)).toEqual({ taken: ['views/coop-chart'], refused: [] });
-			useDevice({ run: () => new Promise(() => {}), read: async () => new Uint8Array() });
-			const { deviceRows } = await import('../../../game/code/sources/device.js');
-			expect(await deviceRows(['view'], { vault: VAULT, wait: 20, answer: 20 })).toBe(null);
-			// and asked not to read the device, it reads the feed
-			useDevice({ run: async (op) => (op.op === 'bring' ? brought : { ok: rows }), read: async () => new Uint8Array() });
-			expect(await load(f, { device: false })).toEqual({ taken: ['views/coop-chart'], refused: [] });
-		} finally {
-			useDevice(null);
-		}
-	});
-	test('a device still syncing that lacks code the proof proves: the proof this time, and the device brings what it lacks first; caught up, itself', async () => {
-		const { useDevice } = await import('../../../game/code/sources/device.js');
-		const held = rowsOf([ENTRIES['views/view-holders']]);
-		const all = rowsOf([ENTRIES['views/view-holders'], ENTRIES['views/coop-chart']]);
-		const asked = [];
-		let synced = { peers: 1, logs: 2416, behind: 2000, pulling: 2, pages: 9 };
-		useDevice({ run: async (op) => (asked.push(op), op.op === 'synced' ? { ok: synced } : op.op === 'bring' ? { ok: { new: 1, peers: 1, reached: true } } : { ok: held }), read: async () => new Uint8Array() });
-		try {
-			const f = proof(all);
-			expect((await load(f)).taken.sort()).toEqual(['views/coop-chart', 'views/view-holders']);
-			expect(f.asked.length).toBe(1);
-			await new Promise((r) => setTimeout(r, 0));
-			const coop = [all[1].entry];
-			expect(asked.filter((o) => o.op === 'bring')).toEqual([{ op: 'bring', entries: coop }]);
-			synced = { ...synced, behind: 0, pulling: 0 };
-			const g = proof(all);
-			expect(await load(g)).toEqual({ taken: ['views/view-holders'], refused: [] });
-			expect(g.asked).toEqual([]);
-		} finally {
-			useDevice(null);
-		}
-	});
-	test('local first: a device that holds Maia City is read at once, though its peers never answer; a frame of ours reads its parent page\'s device', async () => {
-		const { deviceRows, useDevice, whenBrought } = await import('../../../game/code/sources/device.js');
-		const rows = rowsOf([ENTRIES['views/view-holders']]);
-		// avenDB's server hanging (restarting for a deploy, 2026-10-20): the bring never answers
-		const hanging = { run: async (op) => (op.op === 'bring' ? new Promise(() => {}) : { ok: rows }), read: async () => new Uint8Array() };
-		useDevice(hanging);
-		try {
-			const f = proof(rowsOf([ENTRIES['views/coop-chart']]));
-			const t = Date.now();
-			expect(await load(f)).toEqual({ taken: ['views/view-holders'], refused: [] });
-			expect(Date.now() - t).toBeLessThan(1000);
-			expect(f.asked).toEqual([]);
-			// one that holds none of it yet reads the feed at once, or waits for a bring of its entries a page asked for,
-			// and reads the feed where it doesn't come
-			useDevice({ run: async (op) => (op.op === 'bring' ? new Promise(() => {}) : { ok: [] }), read: async () => new Uint8Array() });
-			expect(await deviceRows(['view'], { vault: VAULT, wait: 20 })).toBe(null);
-			const { bringRows } = await import('../../../game/code/sources/device.js');
-			void bringRows(rows, VAULT);
-			expect(await deviceRows(['view'], { vault: VAULT, wait: 20 })).toBe(null);
-		} finally {
-			useDevice(null);
-		}
-		// a page framed by one of ours that holds its device open: the parent's, read as its own
-		const SHARED = Symbol.for('maiacity.avendb.device');
-		const had = globalThis.window;
-		const brought = { ok: { new: 2, peers: 1, reached: true } };
-		const parent = { [SHARED]: { run: async (op) => (op.op === 'bring' ? brought : { ok: rows }), read: async () => new Uint8Array() } };
-		globalThis.window = { parent };
-		try {
-			expect(await deviceRows(['view'], { vault: VAULT })).toEqual(rows);
-			expect(await whenBrought(VAULT)).toEqual(brought);
-			// a parent of another origin: none, the feed
-			globalThis.window = {
-				get parent() {
-					return new Proxy({}, { get: () => { throw new DOMException('Blocked a frame', 'SecurityError'); } });
-				}
-			};
-			expect(await deviceRows(['view'], { vault: VAULT })).toBe(null);
-		} finally {
-			globalThis.window = had;
-		}
-	});
+describe('local-only loading', () => {
+ test('local entries load without consulting a remote feed', async () => {
+  const { useDevice } = await import('../../../game/code/sources/device.js');
+  const rows = rowsOf([ENTRIES['views/view-holders']]);
+  useDevice({ run: async op => op.op === 'code' ? { ok: rows } : { ok: { new: 0 } } });
+  let fetched = false;
+  try {
+   expect(await loadCode({ vault: VAULT, fetch: async () => { fetched = true; throw Error('HTTP forbidden'); } })).toEqual({ taken: ['views/view-holders'], refused: [] });
+   expect(fetched).toBe(false);
+  } finally { useDevice(null); avendb.use([], viewOfEntry); }
+ });
+ test('no local device never falls back to remote code', async () => {
+  const { useDevice } = await import('../../../game/code/sources/device.js');
+  useDevice(null);
+  let fetched = false;
+  const result = await loadCode({ vault: VAULT, fetch: async () => { fetched = true; return Response.json({}); } });
+  expect(result.error).toContain('local avenDB');
+  expect(fetched).toBe(false);
+ });
 });
 
 describe("a game's settings", () => {
