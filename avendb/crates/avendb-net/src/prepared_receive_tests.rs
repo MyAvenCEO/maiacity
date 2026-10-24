@@ -40,6 +40,7 @@ async fn prepared_page_allows_generic_access_and_keeps_cancelled_work_admitted()
                 .prepare_received_page(
                     edits,
                     permit,
+                    (),
                     Some(Box::new(move || {
                         entered.send(()).unwrap();
                         held.recv().unwrap();
@@ -92,7 +93,7 @@ async fn prepared_page_allows_generic_access_and_keeps_cancelled_work_admitted()
                 .unwrap();
         } else {
             release.send(()).unwrap();
-            let (prepared, permit, activity) = task.await.unwrap();
+            let (prepared, permit, activity, ()) = task.await.unwrap();
             node.try_act(move |lab, me| {
                 let (_permit, _activity) = (permit, activity);
                 lab.receive_prepared(me, prepared, true)

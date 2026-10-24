@@ -1,6 +1,6 @@
 # Receive signature preparation
 
-Status: focused implementation; native integration and cooperative browser validation pending. This is one bounded interaction-responsiveness improvement, not completion of the overall latency work.
+Status: focused implementation; core/cooperative/Lean checks passed previously; combined native integration and actual browser validation pending. This is one bounded interaction-responsiveness improvement, not completion of the overall latency work.
 
 ## Blocking operation and change
 
@@ -10,7 +10,7 @@ Native legacy-page ingestion now captures an opaque `ReceivePreparation` under t
 
 The commit still recalculates duplicates and checkpoint coverage and applies the current admission gate. Preparation contains no cached authorization. If a restore or checkpoint withdrawal means a previously skipped signature now needs checking, it uses the ordinary verifier. No signatures, permissions, policy checks, or durable storage requirements are removed. Every native node follows the same path.
 
-A separate FIFO async mutex admits only one prepared-page signature checker per node without holding the interactive Lab mutex. This avoids multiplying the existing per-page CPU parallelism by every active prepared peer pull. Other operations, including the unchanged range-transfer path, can still perform signature work independently.
+A separate FIFO async mutex admits only one prepared-page signature checker per node without holding the interactive Lab mutex. This avoids multiplying the existing per-page CPU parallelism by every active prepared peer pull. Both legacy and range-transfer ingestion use it; other operations can still perform signature work independently.
 
 The page budget and lifecycle admission tickets move through both blocking workers and remain owned until those workers finish, even if their async caller is cancelled. They remain held through commit. Shutdown must not treat detached signature work as complete prematurely.
 
@@ -47,12 +47,12 @@ The browser uses the same owned preparation and whole-page admission. `check_coo
 
 ## Remaining work
 
-The range-transfer receive path is unchanged. Current-state gate/replay work, page hashing/capture, and commit still require the mutex; large individual operations can still delay interaction. It does not establish the requested sub-50 ms local UI target, remote live-entry latency, or bandwidth saturation. Production rollout and physical-device measurements remain separate acceptance tasks.
+The range-transfer receive path now uses the same preparation helper. Its opaque caller context carries both range admission and the accepted-count owner through capture, detached checking, and commit. Cancellation during preparation cannot publish a premature count or release range admission while its worker still runs; only actual commitment increments accepted edits. A held-checker regression is added, with combined validation pending. Current-state gate/replay work, page hashing/capture, and commit still require the mutex; large individual operations can still delay interaction. It does not establish the requested sub-50 ms local UI target, remote live-entry latency, or bandwidth saturation. Production rollout and physical-device measurements remain separate acceptance tasks.
 
 Follow-up implementation boundaries:
 
 1. Validate cooperative verification with the actual compiled WASM in a browser worker: queued messages must run during verification, and final admission must match the ordinary path. Do not split raw incoming pages at the receive boundary: checkpoint coverage and gate admission depend on the whole batch.
-2. Range-transfer ingestion in `edit_transfer.rs` still calls `receive_whose_now` under the mutex. Reusing prepared signatures there must preserve its page/admission lifetimes and accepted-edit accounting even when a caller is cancelled.
+2. Validate the range-transfer extension with its real-protocol authority/revocation, fallback, and accepted-count cancellation regressions. The new `cancelled_range_signature_check_retains_admission_and_count_until_worker_exits` additionally holds the actual checker and tests ownership after cancellation.
 3. Capture and commit measurements must be repeated with larger existing histories, mixed signatures, and concurrent real local writes. Remaining current-state replay/gate costs need their own measured optimization; this signature slice does not bound those costs.
 
 ## Reproduce
