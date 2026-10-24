@@ -6398,7 +6398,10 @@ impl<'a> Judging<'a> {
                     }
                     Some(item)
                 }
-                None => crate::history::build_from(&changes, d, l),
+                // Judgment already materialized this exact history in many linear entries.
+                // Reuse only after counted-history selection; mismatches rebuild canonically.
+                None => scratch.as_ref().and_then(|s| s.shown_for(&changes, d, l))
+                    .or_else(|| crate::history::build_from(&changes, d, l)),
             };
             if let Some(item) = item {
                 items.insert(l, item);

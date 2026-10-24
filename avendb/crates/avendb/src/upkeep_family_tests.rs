@@ -24,6 +24,19 @@ fn upkeep_families_match_current_authorization_after_revocation_and_restore() {
             let (old, new, _) = decisions(st, d);
             assert_eq!(old, new, "current canonical authorization must be identical for every actor");
         }
+        // Revocation and restore can change which writes count; any eligible scratch
+        // must still agree with materializing the freshly selected canonical history.
+        for shown in lab.held(w.mac_a).shown.values() {
+            let Some(scratch) = &shown.after.scratch else { continue };
+            for line in shown.history.lines() {
+                let changes = shown.history.history(line);
+                if let Some(projected) = scratch.shown_for(&changes, w.mac_a, line) {
+                    let canonical = crate::history::build_from(&changes, w.mac_a, line).unwrap();
+                    assert_eq!(projected.record(), canonical.record());
+                    assert_eq!(projected.version(), canonical.version());
+                }
+            }
+        }
     };
     check(&w.lab);
     let before = decisions(w.lab.held(w.mac_a).view(), w.mac_c).0;
@@ -103,4 +116,75 @@ fn profile_same_engine_synthetic_warm_restore() {
                 - before["timers"][k]["total_ms"].as_f64().unwrap_or(0.0)))).collect();
         eprintln!("synthetic same-engine warm trial={trial} edits={count} entries={} open={elapsed:?} phases_ms={}", entries.len(), serde_json::Value::Object(deltas));
     }
+}
+
+
+#[test]
+fn guarded_scratch_projection_matches_rebuild_and_successor_writes() {
+    let mut w = world();
+    todos_on(&mut w);
+    for n in 0..4 {
+        let entry = w.lab.create(w.mac_a, w.alice, w.alice, "note", &[],
+            crate::cast::document("Scratch materialization", "initial", w.mac_a)).unwrap();
+        for revision in 0..16 {
+            w.lab.edit(w.mac_a, w.alice, entry,
+                |item| item.set_text(2, &format!("note {n} revision {revision}"))).unwrap();
+        }
+        if n == 0 {
+            let heads = w.lab.shown(w.mac_a, entry).heads(MAIN);
+            let proposal = w.lab.propose(w.mac_a, w.alice, entry, &heads, "parallel line").unwrap();
+            w.lab.edit_on(w.mac_a, w.alice, entry, Some(proposal),
+                |item| item.set_text(2, "proposal content")).unwrap();
+        }
+    }
+    let store = w.lab.held(w.mac_a);
+    let mut reused = 0;
+    let mut baseline = std::time::Duration::ZERO;
+    let mut candidate = std::time::Duration::ZERO;
+    for shown in store.shown.values() {
+        let Some(scratch) = &shown.after.scratch else { continue };
+        for line in shown.history.lines() {
+            let changes = shown.history.history(line);
+            let canonical = crate::history::build_from(&changes, w.mac_a, line);
+            let proposed = scratch.shown_for(&changes, w.mac_a, line);
+            if let Some(mut proposed) = proposed {
+                let mut canonical = canonical.expect("an eligible scratch corresponds to a shown item");
+                assert_eq!(proposed.record(), canonical.record());
+                assert_eq!(proposed.version(), canonical.version());
+                proposed.set_text(1, "same next edit");
+                canonical.set_text(1, "same next edit");
+                assert_eq!(proposed.record(), canonical.record());
+                assert_eq!(proposed.version(), canonical.version(), "next edit keeps the same signer/line peer");
+                for _ in 0..10 {
+                    let at = Instant::now();
+                    std::hint::black_box(crate::history::build_from(&changes, w.mac_a, line));
+                    baseline += at.elapsed();
+                    let at = Instant::now();
+                    std::hint::black_box(scratch.shown_for(&changes, w.mac_a, line));
+                    candidate += at.elapsed();
+                }
+                reused += 1;
+            }
+            if !changes.is_empty() {
+                let mut denied: Vec<_> = changes.iter().map(|c| (*c).clone()).collect();
+                denied.last_mut().unwrap().counted = false;
+                let denied_refs: Vec<_> = denied.iter().collect();
+                assert!(scratch.shown_for(&denied_refs, w.mac_a, line).is_none(),
+                    "an authorization-rejected write prevents reuse even with identical IDs");
+                for signer in [w.mac_b, w.mac_c] {
+                    if let Some(mut projected) = scratch.shown_for(&changes, signer, line) {
+                        let mut rebuilt = crate::history::build_from(&changes, signer, line).unwrap();
+                        projected.set_text(1, "another signer continues");
+                        rebuilt.set_text(1, "another signer continues");
+                        assert_eq!(projected.record(), rebuilt.record());
+                        assert_eq!(projected.version(), rebuilt.version());
+                    }
+                }
+                assert!(scratch.shown_for(&changes[..changes.len()-1], w.mac_a, line).is_none(),
+                    "scratch may not expose writes outside the selected history");
+            }
+        }
+    }
+    assert!(reused > 0);
+    eprintln!("scratch projection eligible={reused} repetitions=10 build={baseline:?} guarded_fork={candidate:?}");
 }
