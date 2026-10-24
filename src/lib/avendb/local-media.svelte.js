@@ -5,7 +5,7 @@ import { localFile } from '$lib/media/local-file.js';
 import { useLocalMedia } from '$lib/media/local-resolver.js';
 import { localDevice } from './local.js';
 import { native } from '$lib/native';
-import { avenRef, avenUrl } from '$lib/studio/avenref.js';
+import { avenRef, avenUrl } from '$lib/media/ref.js';
 import { whole, mediaOf, serve, address } from './files.js';
 const urls = $state({});
 const wanted = new Map();

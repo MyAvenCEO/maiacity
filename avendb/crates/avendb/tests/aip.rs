@@ -798,3 +798,28 @@ fn large_bundle_can_be_revised_and_accepted_whole() {
         assert!(list(&read["reviews"]).iter().any(|r| r["verdict"] == "accepted" && r["current"] == true));
     }
 }
+
+/// Persisted V1 review records still read through the new default lens and count as current.
+#[test]
+fn legacy_review_v1_remains_readable_and_current_under_v2() {
+    let mut g = gate();
+    let entry = g.create("note", note());
+    let line = g.propose(&entry, "Earlier planting", vec![set(json!(["title"]), json!("Earlier corn"))]);
+    let (aip, _) = g.open("Legacy review", &[(&entry, &line)]);
+    g.promote(g.mac, &aip, g.aven);
+    let accepted = g.review(&aip, "accepted", "Accepted before the schema upgrade");
+    let record = ok(run(&mut g.w, g.mac, json!({"op":"get", "entry":accepted["review"]})))["record"].clone();
+    let legacy = ok(run(&mut g.w, g.mac, json!({
+        "op":"create", "vault":g.alice.to_hex(), "type":"review",
+        "schema":avendb::lens::REVIEW_V1.id().to_hex(), "value":record
+    })))["entry"].clone();
+    g.sync(2);
+    for device in g.readers {
+        let got = ok(run(&mut g.w, device, json!({"op":"get", "entry":legacy})));
+        assert_eq!(got["record"], record, "V1 record reads unchanged through the default V2 lens");
+        let read = g.aip(device, &aip);
+        let old = list(&read["reviews"]).iter().find(|r| r["review"] == legacy).expect("legacy review remains listed");
+        assert_eq!(old["current"], true);
+        assert_eq!(old["verdict"], "accepted");
+    }
+}
