@@ -905,3 +905,5 @@ label and proposal content, forbidden pre-accept collaborator merge, accepted me
 correspondence, and removal before a delayed proposal. Lean assumptions and Rust
 parser/diff checks passed. Rust execution is explicitly queued with the root; this
 slice is not part of the frozen release and must not be described as deployed.
+
+Proposal causal-body fallback: [81e43133](https://github.com/MyAvenCEO/maiacity/commit/81e43133). Rust regression execution remains pending; no release deployment claim.
