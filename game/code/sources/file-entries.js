@@ -1,5 +1,13 @@
+/**
+ * @typedef {{entry: string, deleted?: boolean, files?: {root: string}[], [key: string]: unknown}} FileEntry
+ * @typedef {{run: (operation: Record<string, unknown>) => Promise<{ok?: {vaults?: {id: string}[], rows?: FileEntry[], entriesComplete?: boolean}}>}} FileDevice
+ */
 // Local file inventory only: never project unrelated note/chat/game bodies.
 // Completion here means enumeration of held local files, not peer/history coverage.
+/** @param {FileDevice} device
+ * @param {{vaults?: string[], signal?: AbortSignal}} options
+ * @returns {Promise<FileEntry[]>}
+ */
 export async function localFileEntries(device, { vaults, signal } = {}) {
  const check = () => signal?.throwIfAborted();
  check();

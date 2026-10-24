@@ -1,6 +1,13 @@
-import {expect,test} from 'bun:test';
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
 import {readCompleteness} from './read-completeness.js';
 import {createReadWindow} from './query-window.js';
+/** @param {unknown} actual */
+const expect = (actual) => ({
+ /** @param {unknown} expected */ toEqual: (expected) => assert.deepEqual(actual, expected),
+ /** @param {unknown} expected */ toBe: (expected) => assert.equal(actual, expected),
+ toBeNull: () => assert.equal(actual, null)
+});
 test('successful empty results never establish discovery or file completeness',()=>{
  const state=readCompleteness({ok:{rows:[],count:0,complete:true}});
  expect(state).toEqual({response:'local',discovery:'unverified',history:'unverified',fileInventory:'unverified',fileBytes:'unverified',authoritativeEmpty:false});
@@ -11,7 +18,8 @@ test('checkpoint history and partial file inventory remain separate from byte av
  expect(readCompleteness({ok:{filesComplete:true,files:[{}]}}).fileBytes).toBe('unverified');
 });
 test('generic windows expose independent completeness and clear stale scope evidence',async()=>{
- let resolve;
+ /** @type {(value: unknown) => void} */
+ let resolve = () => { throw new Error("Deferred read has not started"); };
  const device={run:async()=>({ok:{accepted:true}})};
  const view=createReadWindow({device:()=>device,read:async(_d,op)=>op.wait?new Promise(r=>resolve=r):({ok:{rows:[{checkpoint:{partial:true}}]}})});
  await view.read({op:'query'});expect(view.completeness.history).toBe('checkpoint-partial');
