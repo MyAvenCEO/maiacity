@@ -2710,7 +2710,7 @@ impl Lab {
         // its own write, one, drafted on everything it holds: what its edits say now is what they said, that write
         // stepped on, with no replay (`latest`)
         let stepped = match &fresh[..] {
-            [one] => store.latest.get().and_then(|was| stepped_on(was, store.log.edits(), to, &one.edit)),
+            [one] if store.bootstrap_active.is_empty() => store.latest.get().and_then(|was| stepped_on(was, store.log.edits(), to, &one.edit)),
             _ => None,
         };
         let mut new = false;

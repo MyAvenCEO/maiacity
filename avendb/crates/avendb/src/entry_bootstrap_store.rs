@@ -56,6 +56,9 @@ pub(crate) struct RetainedOverlay {
 
 impl Lab {
 
+    pub fn owner_bases_pending(&self, on: SignerId) -> bool {
+        !self.locked(on) && self.held(on).bootstrap_progress.values().any(|p| !p.pending.is_empty())
+    }
     /// Remaining authenticated-log work, not complete history or file availability.
     pub fn owner_base_pending(&self, on: SignerId, entry: EntryId) -> usize {
         self.held(on).bootstrap_progress.get(&entry).map_or(0, |p| p.pending.len())
@@ -211,6 +214,7 @@ impl Lab {
             }
             let lane = Lane::with_built_ins(view.lane_of(vault, &readings));
             let en = view.entry(entry).expect("scoped entry").clone();
+            base.history.restore_held_bodies(&store.bodies);
             let original_scratch = if resumed.is_none() {
                 base.items.get(&MAIN).cloned().and_then(|item| {
                     Scratch::from_attested_item(item, &base.history.history(MAIN))
@@ -280,7 +284,9 @@ impl Lab {
                         .filter(|s| s.within_version(&judging.history, &w.deps))
                         .map(Scratch::fork);
                 }
-                judging.judge(on, &view, (&readings, &bodies), &w, &readings.groups);
+                if !judging.judge(on, &view, (&readings, &bodies), &w, &readings.groups) {
+                    continue 'anchor;
+                }
                 opened_suffix.push((id, opened));
             }
             let tip = Tip {
@@ -607,7 +613,8 @@ mod tests {
         let mac = lab.device_of(owner, "Mac");
         let phone = lab.device_of(owner, "Phone");
         let vault = human_on(&mut lab, owner, &[mac, phone]);
-        let entry = lab.create(mac, vault, vault, "note", &[], document("Base", "old", mac)).unwrap();
+        let public = lab.issue(mac, &[owner], crate::cast::share(vault, crate::policy::Who::Everyone, crate::policy::Level::Read, crate::cast::of_type("note"))).unwrap();
+        let entry = lab.create_in(mac, vault, vault, vec![public], "note", &[], document("Base", "old", mac)).unwrap();
         lab.sync(mac, phone);
         lab.edit(mac, vault, entry, |item| item.set_text(2, "checkpoint")).unwrap();
         let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();

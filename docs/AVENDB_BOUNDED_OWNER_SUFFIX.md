@@ -34,3 +34,28 @@ semantics under authorization/ordering premises. It passed. Rust parser checks
 passed. Added a 513-suffix/restart/write-blocking/final-equality regression; existing
 concurrent suffix and policy-refusal regressions remain. Cargo tests pending the
 coordinator's queue. No device/deployment result is claimed.
+
+## Concurrent dependency-cut correction
+
+A suffix can build on an earlier version than the checkpoint. The latest full
+CRDT snapshot cannot be used as that historical version merely because it contains
+those changes. Restoration now hydrates omitted historical bodies only from
+locally held authenticated opened edits. Ordinary judgment can then reconstruct
+that dependency cut. If it still cannot judge the suffix, adoption fails closed;
+it must not install a writable base while silently ignoring that write.
+
+General fresh-peer recovery of such a cut remains incomplete. The next API should
+expose the selected suffix's dependency closure entries whose authenticated bodies
+are absent, request those exact IDs with ordinary peer authorization, and retry on
+arrival. Alternatively authenticated per-write CRDT frontier metadata could permit
+safe snapshot checkout. The current implementation does neither automatically.
+
+The ordinary local-write replay fast path also excludes active bootstrap overlays:
+a derived checkpoint view must never be stepped and cached as canonical signed-log
+replay. The canonical equality assertion remains intact.
+
+Focused Rust validation after the corrections: **8/8 bootstrap_store tests passed**
+(11.08 seconds test runtime), including 513 suffix writes with restart, older-depth
+concurrent writes, normal owner write/reopen/convergence, actual later narrow-share
+audience movement, proposal refusal and fixed-size durable-frontier recovery.
+No full-suite, physical-device or Node background-pump validation is implied.
