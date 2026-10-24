@@ -696,3 +696,11 @@ syntax/diff checks passed.
 Transport review corrections:
 [94a61c5f](https://github.com/MyAvenCEO/maiacity/commit/94a61c5f), pushed on
 `codex/bootstrap-retry-review`; tests pending combined Rust execution.
+
+Targeted-network fixture correction: the first integrated run reached the test but
+failed with `Locked` because `Lab::split` moves device/signing state before the
+fixture authored its delayed edit. The fixture now authors all signed edits before
+splitting, restores only the baseline into the initial provider, and gives a distinct
+authorized replacement peer the full copy. Real empty-then-late fetch, peer-loss,
+replacement fetch and unrelated-entry exclusion assertions remain intact. Source
+syntax/diff checks passed; rerun remains with the root compiler queue.
