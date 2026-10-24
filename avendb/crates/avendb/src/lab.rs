@@ -3087,6 +3087,7 @@ impl Lab {
             }
             let at = Perf::start();
             let ix = KeyIndex::of(&store.replay);
+            store.perf.add("keys: index", at);
             open_keys(store, &ix, &mine);
             store.perf.add("open keys", at);
             let at = Perf::start();
@@ -5568,6 +5569,7 @@ fn opened_box(info: &[u8], bytes: &[u8], with: &Secret) -> [u8; 32] {
 /// holds; then every key published in the clear; then derive the keys of the entries in each audience whose key it
 /// holds; and again, until nothing more opens. A box counts only if what opens is the key it names.
 fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
+    let at = Perf::start();
     // the stays each audience had: the entries whose keys a key of the audience derives, and in which stay
     let mut stays: HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>> = HashMap::new();
     for en in store.replay.state.entries() {
@@ -5575,8 +5577,10 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
             stays.entry(*x).or_default().push((en.id, *s));
         }
     }
+    store.perf.add("keys: stays", at);
     loop {
         let mut more = false;
+        let at = Perf::start();
         for (name, id, b) in &ix.boxes {
             if store.keys.contains(id) {
                 continue;
@@ -5611,13 +5615,18 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
                 }
             }
         }
+        store.perf.add("keys: boxes", at);
+        let at = Perf::start();
         for &(name, id, bytes) in &ix.clear {
             let secret = Secret::from_bytes(bytes);
             if !store.keys.contains(&id) && secret.id() == id {
                 more |= store.keys.insert(name, secret);
             }
         }
+        store.perf.add("keys: clear", at);
+        let at = Perf::start();
         more |= derive(store, &stays);
+        store.perf.add("keys: derive", at);
         if !more {
             return;
         }
@@ -6219,6 +6228,7 @@ fn show_items(d: SignerId, store: &mut Store) {
                 && Some(writes[was.writes - 1].edit) == was.last
                 && opened.get(&en.id).is_none_or(|ids| ids.iter().all(new))
         };
+        let judging_at = Perf::start();
         let (mut j, from, items) = match old.remove(&en.id) {
             Some(s) if resumes(&s) => {
                 let from = s.tip.writes;
@@ -6229,7 +6239,10 @@ fn show_items(d: SignerId, store: &mut Store) {
         for w in &writes[from..] {
             j.judge(d, st, (r, bodies), w, &groups);
         }
+        store.perf.add("show: judging", judging_at);
+        let materialize_at = Perf::start();
         let s = j.shown_on(d, print, tip, items);
+        store.perf.add("show: materialize", materialize_at);
         debug_assert!(from == 0 || same_shown(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault))));
         recent.push(en.id);
         old.insert(en.id, s);
