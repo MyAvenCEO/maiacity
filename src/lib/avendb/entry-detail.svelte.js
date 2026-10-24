@@ -1,4 +1,5 @@
 import { answer } from './ops.js';
+import { readCompleteness } from './read-completeness.js';
 
 /** A mounted targeted read. Reset on query/owner replacement and never retain a failed response.
  * Scheduling leases and old-owner suppression belong to api.observe, shared with collections.
@@ -13,5 +14,5 @@ export function entryDetail(api, query) {
 			try { value = answer(out); phase = 'ready'; } catch { value = null; phase = 'error'; }
 		}, () => { value = null; phase = 'error'; });
 	});
-	return { get value() { return value; }, get phase() { return phase; } };
+	return { get completeness() { return readCompleteness(value === null ? null : {ok:value}); }, get value() { return value; }, get phase() { return phase; } };
 }

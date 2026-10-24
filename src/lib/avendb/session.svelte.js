@@ -930,7 +930,7 @@ const api = {
 		const dispose = $effect.root(() => {
 			$effect(() => { void device; window.invalidate(); });
 		});
-		return { ...window, close() { dispose(); window.close(); } };
+		return { ...window, get completeness() { return window.completeness; }, close() { dispose(); window.close(); } };
 	},
 	/** A mounted view's visible entries, already materialized locally: scheduling only, without a second read. */
 	demand: () => {

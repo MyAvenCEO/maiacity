@@ -1,4 +1,5 @@
 // @ts-nocheck — plain JS
+import { readCompleteness } from './read-completeness.js';
 import { createDemand, normalizeDiscovery } from '../../../game/code/sources/demand.js';
 
 /** Entry IDs shown by a read. Scheduling hints only: no response here establishes completeness or authority. */
@@ -55,7 +56,9 @@ export function queryDiscovery(op) {
  */
 export function createReadWindow({ device, read }) {
 	let current = null, held = null, closed = false, queryKey = null, clearing = 0;
+	let completeness = readCompleteness(null);
 	const clear = () => {
+		completeness = readCompleteness(null);
 		current?.controller.abort();
 		current = null;
 		const generation = ++clearing;
@@ -68,6 +71,7 @@ export function createReadWindow({ device, read }) {
 		});
 	};
 	const release = () => {
+		completeness = readCompleteness(null);
 		clearing++;
 		queryKey = null;
 		current?.controller.abort();
@@ -76,7 +80,9 @@ export function createReadWindow({ device, read }) {
 		held = null;
 	};
 	return {
+		get completeness() { return { ...completeness }; },
 		async read(op) {
+			completeness = readCompleteness(null);
 			if (closed) return null;
 			clearing++;
 			current?.controller.abort();
@@ -102,6 +108,7 @@ export function createReadWindow({ device, read }) {
 			try {
 				const got = await read(d, op, controller.signal, demand);
 				if (!active()) return null;
+				completeness = readCompleteness(got);
 				void demand.replace([...entries, ...replyEntries(got)], selectors);
 				return got;
 			} catch (error) {
