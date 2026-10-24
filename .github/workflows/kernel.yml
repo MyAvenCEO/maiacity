@@ -27,6 +27,45 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  selection:
+    name: Select affected application suites
+    runs-on: ubuntu-latest
+    outputs:
+      suites: ${{ steps.select.outputs.suites }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - id: select
+        env:
+          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_HEAD: ${{ github.sha }}
+        run: bun scripts/ci/test.mjs --matrix
+
+  application:
+    name: Application tests (${{ matrix.suite }})
+    needs: selection
+    if: needs.selection.outputs.suites != '[]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: ${{ fromJSON(needs.selection.outputs.suites) }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bunx --bun svelte-kit sync
+      - env:
+          SUITE: ${{ matrix.suite }}
+        run: bun scripts/ci/test.mjs --suite "$SUITE"
+
   tests:
     name: The kernel’s tests
     runs-on: ubuntu-latest
@@ -45,9 +84,6 @@ jobs:
       # the API's own packages, for its tests (its Postgres, PGlite)
       - run: bun install --frozen-lockfile
         working-directory: api
-
-      # the paths the tests import by ($lib) are SvelteKit's tsconfig's
-      - run: bunx --bun svelte-kit sync
 
       - name: Check application types
         run: bun --bun run check
@@ -72,11 +108,11 @@ jobs:
       #                               proof checker among them (H2), and .dockerignore lets in all it copies
       - name: Verify suite ownership
         run: bun scripts/ci/test.mjs --check
-      - name: Security and affected application suites
+      - name: Mandatory security and CI policy suites
         env:
           CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           CI_HEAD: ${{ github.sha }}
-        run: bun scripts/ci/test.mjs
+        run: bun scripts/ci/test.mjs --gate
 
 
   probes:
@@ -154,3 +190,19 @@ jobs:
       - run: mkdir -p "$RUNNER_TEMP/avendb-opfs" && bun add --cwd "$RUNNER_TEMP/avendb-opfs" --ignore-scripts --exact playwright@1.64.1
       - run: bun "$RUNNER_TEMP/avendb-opfs/node_modules/playwright/cli.js" install --with-deps webkit
       - run: AVENDB_TEST_PLAYWRIGHT="$RUNNER_TEMP/avendb-opfs/node_modules/playwright/index.mjs" bun scripts/test-avendb-store.mjs --browser webkit
+
+  required:
+    name: Kernel required checks
+    if: ${{ always() }}
+    needs: [selection, tests, application, probes, probes-webkit, opfs-webkit]
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          printf '%s' "$RESULTS" | jq -e '
+            .selection.result == "success" and .tests.result == "success" and
+            .probes.result == "success" and .["probes-webkit"].result == "success" and
+            .["opfs-webkit"].result == "success" and
+            (.application.result == "success" or
+             (.selection.outputs.suites == "[]" and .application.result == "skipped"))'

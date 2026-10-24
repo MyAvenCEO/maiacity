@@ -11,7 +11,7 @@ import { join, resolve, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import assert from 'node:assert/strict';
-import puppeteer from 'puppeteer-core';
+import { chromium } from 'playwright';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = process.env.AVENDB_PKG;
 if (!pkg || !existsSync(join(pkg, 'avendb_browser_bg.wasm'))) throw new Error('AVENDB_PKG must be a rebuilt browser package');
@@ -105,20 +105,20 @@ const until = async (what, check, timeout = 60_000) => {
     while (!(await check())) { if (Date.now() > end) throw new Error(`timeout: ${what}`); await new Promise((resolve) => setTimeout(resolve, 100)); }
 };
 try {
-    browser = await (launching = puppeteer.launch({ executablePath: chrome, userDataDir: profile, headless: true,
-        args: ['--no-first-run', '--no-default-browser-check', '--no-proxy-server', '--host-resolver-rules=MAP localhost 127.0.0.1'], protocolTimeout: 180_000 }));
+    browser = await (launching = chromium.launchPersistentContext(profile, { executablePath: chrome, headless: true,
+        args: ['--no-first-run', '--no-default-browser-check', '--no-proxy-server', '--host-resolver-rules=MAP localhost 127.0.0.1'], timeout: 180_000 }));
     if (finishing) throw new Error('native fixture ended during browser launch');
     const page = await browser.newPage();
     page.on('pageerror', (error) => process.stderr.write(`browser page error: ${String(error.message).replace(/[0-9a-f]{64}/gi, '<hex>')}\n`));
     page.on('console', (message) => { if (['error', 'warn'].includes(message.type())) process.stderr.write(`browser ${message.type()}: ${message.text().replace(/[0-9a-f]{64}/gi, '<hex>')}\n`); });
     await page.goto(origin);
-    const cdp = await page.createCDPSession();
+    const cdp = await browser.newCDPSession(page);
     await cdp.send('WebAuthn.enable', { enableUI: false });
     await cdp.send('WebAuthn.addVirtualAuthenticator', { options: {
         protocol: 'ctap2', ctap2Version: 'ctap2_1', transport: 'internal', hasResidentKey: true,
         hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true, hasPrf: true,
     } });
-    say({ step: 'listening', origin, browser: await browser.version() });
+    say({ step: 'listening', origin, browser: browser.browser().version() });
     const config = await next();
     const frame = async (name) => {
         await page.evaluate((name) => { const frame = document.createElement('iframe'); frame.name = name; frame.src = `/device?name=${name}`; document.body.append(frame); }, name);

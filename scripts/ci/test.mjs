@@ -40,6 +40,13 @@ if (import.meta.main) {
  const mode=args.includes('--all')?'all':args.includes('--gate')?'gate':'changed';
  const base=value('--base')||process.env.CI_BASE;
  const names=value('--suite')?[value('--suite')]:selected(changed(base,process.env.CI_HEAD||'HEAD'),mode);
+ if (args.includes('--matrix')) {
+  const extra=names.filter(name=>!suites.find(s=>s.name===name && (s.tier==='gate'||s.name==='ci')));
+  const json=JSON.stringify(extra);
+  console.log(json);
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT,`suites=${json}\n`);
+  process.exit(0);
+ }
  let failed=false;
  for (const name of names) {
   if (!groups[name]?.length) throw new Error(`Unknown or empty required suite: ${name}`);

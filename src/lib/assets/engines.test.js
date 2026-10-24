@@ -12,7 +12,7 @@ globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContex
 globalThis.$state ??= (x) => x;
 const { LATEST, recipeFile } = await import('./engines.js');
 const { hashText } = await import('./box/plugin.js');
-const { bundleRecipes } = await import('./testing/recipes.js');
+const { bundleRecipes } = await import('../../../scripts/ci/recipe-fixture.mjs');
 const { MODULES } = await import('./box/modules.js');
 const { objectAt } = await import('./index.js');
 const { buildWith, refOf } = await import('./refs.js');

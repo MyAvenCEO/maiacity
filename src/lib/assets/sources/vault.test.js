@@ -16,7 +16,7 @@ globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContex
 globalThis.$state ??= (x) => x;
 
 // our recipes, as Vite's build hands them to the page (../box/plugin.js): the repo's index, which the vault's must match
-const { bundleRecipes } = await import('../testing/recipes.js');
+const { bundleRecipes } = await import('../../../../scripts/ci/recipe-fixture.mjs');
 const made = await bundleRecipes();
 mock.module('$app/paths', () => ({ base: '' }));
 mock.module('virtual:asset-recipes', () => ({ default: made.index }));

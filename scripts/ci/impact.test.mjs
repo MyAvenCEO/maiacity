@@ -69,3 +69,17 @@ test('Bun package and container versions follow the pinned toolchain', () => {
  expect(JSON.parse(readFileSync('package.json','utf8')).packageManager).toBe(`bun@${version}`);
  expect(readFileSync('api/Dockerfile','utf8')).toContain(`oven/bun:${version}-alpine`);
 });
+
+test('kernel aggregate requires every selected application and security job', () => {
+ const workflow=readFileSync('.github/workflows/kernel.yml','utf8');
+ const expression=workflow.slice(workflow.indexOf('    name: Kernel required checks')).match(/jq -e '([\s\S]*?)'/)[1];
+ const names=['selection','tests','application','probes','probes-webkit','opfs-webkit'];
+ const results=Object.fromEntries(names.map(name=>[name,{result:'success'}]));
+ results.selection.outputs={suites:'["physics"]'};
+ const cases=[{data:results,expected:true}];
+ for(const name of names) for(const result of ['failure','cancelled','skipped']) cases.push({data:{...results,[name]:{...results[name],result}},expected:false});
+ cases.push({data:{...results,selection:{result:'success',outputs:{suites:'[]'}},application:{result:'skipped'}},expected:true});
+ const run=spawnSync('jq',['-c',expression],{input:cases.map(c=>JSON.stringify(c.data)).join('\n'),encoding:'utf8'});
+ expect(run.status).toBe(0);
+ expect(run.stdout.trim().split('\n').map(JSON.parse)).toEqual(cases.map(c=>c.expected));
+});

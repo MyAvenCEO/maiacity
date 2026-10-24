@@ -10,6 +10,7 @@ On main, `main.yml` selects affected components, builds site/container artifacts
 
 - `bun run test`: mandatory security suites plus CI policy tests.
 - `bun run test:changed -- --base origin/main`: security plus affected component suites. Missing comparison selects everything.
+- `bun scripts/ci/test.mjs --suite studio`: a fast component-only development loop; the mandatory gate still runs in CI.
 - `bun run test:all`: every owned JS/TS suite in separate processes.
 - `bun run test:inventory`: fail if a test has no owner.
 - `bun --bun run check`: application types under Bun.
@@ -17,7 +18,7 @@ On main, `main.yml` selects affected components, builds site/container artifacts
 - `cd avendb && cargo test --locked --features test-fixtures -p avendb --test properties -- --test-threads=2`: the same 37 properties and 40 seeds in one process, sharing immutable histories. Other native tests retain nextest isolation.
 - `cd avendb/spec && lake build && lake exe vectors`: complete proof umbrella, generated-content checks and writer coverage.
 
-The suite manifest is `scripts/ci/suites.json`; path changes and unknown build inputs fail conservatively. The original 95-file security selection remains mandatory. The additional 67 application files now have owners and affected/full execution. Test setup shares only immutable asset bundles and database adapter/migration code. Every API suite keeps its own database and browser scenario its own context.
+The suite manifest is `scripts/ci/suites.json`; path changes and unknown build inputs fail conservatively. The original 95-file security selection remains mandatory. Affected application suites run in parallel jobs, alongside security validation, so physics regressions do not serialize the other suites; the kernel aggregate requires every selected job. The additional 67 application files now have owners and affected/full execution. Test setup shares only immutable asset bundles and database adapter/migration code. Every API suite keeps its own database and browser scenario its own context.
 
 The McEliece fixture cache requires an explicit feature plus debug assertions, rejects release builds, and uses private files in a disposable directory. Never enable it for real identities. It is not stored in Actions caches. Full cryptographic negatives, model vectors, mutation tests, frozen migration/engine hashes and both browser engines remain in place.
 
@@ -25,6 +26,6 @@ The McEliece fixture cache requires an explicit feature plus debug assertions, r
 
 The audit sampled duplicate avenDB main-release validation costing about 21 runner-minutes. Eliminating that copy is a runner-cost saving, not proof of a 2× end-to-end speedup. Property process sharing, fixture reuse and fewer browser launches must be timed on comparable runners; report compile, execution, cache transfer and queue time separately. Do not compare an overloaded local cold build with a warm hosted run.
 
-No proof was dropped. A canonical vector manifest replaces repeated path lists, and `avendb/spec/contracts.json` links scheduling models to concrete implementation regressions. Historical phases are archived separately so retired signing checkpoints cannot be confused with current storage checkpoints. Supported V1/V2 van implementations share assertions and both execute.
+No proof was dropped. A canonical vector manifest replaces repeated path lists, and `avendb/spec/contracts.json` links scheduling models to concrete implementation regressions. Historical phases are archived separately so retired signing checkpoints cannot be confused with current storage checkpoints. Supported V1/V2 van, geometry, plant and intro implementations share contracts and both execute, with their different reference formats, seats and move sequences explicit in each version wrapper.
 
-The audit's other near-duplicate versioned tests contain different expectations and remain separate until those differences can be explicitly parameterized. Real worker timeout tests remain integration checks; the challenge-limit test already uses no sleep. Large proof helper files have distinct hypotheses: reducing line count alone does not justify changing them. Manual old-vault recovery remains until data retention/recovery is explicitly complete. These retained checks are intentional, not deleted to meet a speed target.
+Real worker timeout tests remain integration checks; the challenge-limit test already uses no sleep. Large proof helper files have distinct hypotheses: reducing line count alone does not justify changing them. Manual old-vault recovery remains until data retention/recovery is explicitly complete. These retained checks are intentional, not deleted to meet a speed target.

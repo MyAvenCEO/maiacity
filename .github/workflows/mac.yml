@@ -70,7 +70,7 @@ jobs:
 
       - name: Native color and media contracts
         working-directory: vault
-        run: cargo test --locked -p vault-color -p vault-core -p vault-media
+        run: cargo test --locked -p vault-color -p vault-media -p vault-asr
       - name: Render numerical contracts
         working-directory: vault
         run: cargo test --locked -p vault-render --test maths --test eq --test look --test creative

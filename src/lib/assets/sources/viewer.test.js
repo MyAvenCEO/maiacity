@@ -19,7 +19,7 @@ globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContex
 globalThis.$state ??= (x) => x;
 
 // our recipes, as Vite's build hands them to the page (../box/plugin.js): what the stand-in device is made of
-const { bundleRecipes } = await import('../testing/recipes.js');
+const { bundleRecipes } = await import('../../../../scripts/ci/recipe-fixture.mjs');
 const made = await bundleRecipes();
 mock.module('$app/paths', () => ({ base: '' }));
 
