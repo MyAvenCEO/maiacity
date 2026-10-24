@@ -5871,9 +5871,12 @@ fn upkeep(
             }
         }
     }
+    // Every current entry audience occurs in key_fams. Reuse this round's exact entitlement
+    // decisions from the same immutable State; never carry them across refreshes or revocation.
+    let entitled: HashSet<KeyFam> = families.iter().copied().collect();
     // move links: the keys of an entry's earlier stays under a key of its stay now, as the schedule links them
     for en in st.entries() {
-        if !st.entitled(d, KeyFam::Audience(en.vault, en.audience())) {
+        if !entitled.contains(&KeyFam::Audience(en.vault, en.audience())) {
             continue;
         }
         let epoch = st.epoch(KeyFam::Audience(en.vault, en.audience()));
@@ -6516,3 +6519,7 @@ mod entry_files_batch_tests;
 #[cfg(test)]
 #[path = "latest_replay_tests.rs"]
 mod latest_replay_tests;
+
+#[cfg(test)]
+#[path = "upkeep_family_tests.rs"]
+mod upkeep_family_tests;
