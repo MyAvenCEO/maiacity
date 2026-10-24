@@ -188,3 +188,43 @@ fn guarded_scratch_projection_matches_rebuild_and_successor_writes() {
     assert!(reused > 0);
     eprintln!("scratch projection eligible={reused} repetitions=10 build={baseline:?} guarded_fork={candidate:?}");
 }
+
+
+#[test]
+fn unchanged_warm_restore_does_not_reencode_and_corrupt_views_recover() {
+    use crate::cast::{document, human_on};
+    let mut lab = Lab::new();
+    let passkey = lab.passkey("Warm save baseline");
+    let device = lab.device_of(passkey, "Warm device");
+    let vault = human_on(&mut lab, passkey, &[device]);
+    let entry = lab.create(device, vault, vault, "note", &[], document("Retained", "first", device)).unwrap();
+    let backup = lab.backup(device);
+    let count = backup.signed.len();
+    let marker = [81; 40];
+    let saved = lab.warming(device, count, Some(marker)).unwrap();
+    let warm = Warm { keys: saved.keys.clone().into_iter().collect(), views: saved.view.clone().into_iter().collect() };
+    assert_eq!(warm.views.len(), 1);
+    lab.warmed(device, saved);
+    lab.restore_warm(device, backup.clone(), Some((marker, count)), &warm);
+    assert!(!lab.warm_due(device), "validated unchanged state is already represented on its shelf");
+    assert!(lab.capture_warm(device, count, Some(marker)).is_none(), "no capture means no redundant encode/encrypt");
+
+    lab.edit(device, vault, entry, |item| item.set_text(1, "next mutation")).unwrap();
+    let expected = lab.item(device, entry).unwrap().record();
+    let next = lab.backup(device);
+    let next_count = next.signed.len();
+    let next_marker = [82; 40];
+    let pending = lab.warming(device, next_count, Some(next_marker)).unwrap();
+    assert!(pending.keys.is_some(), "new durable frontier must update signature-check receipt");
+    let mut next_warm = warm.clone();
+    if let Some(keys) = &pending.keys { next_warm.keys.insert(0, keys.clone()); }
+    if let Some(view) = &pending.view { next_warm.views.insert(0, view.clone()); }
+    lab.warmed(device, pending);
+    lab.restore_warm(device, next.clone(), Some((next_marker, next_count)), &next_warm);
+    assert_eq!(lab.item(device, entry).unwrap().record(), expected, "next edit survives stored-prefix replay");
+
+    let broken = Warm { keys: next_warm.keys, views: vec![vec![0, 1, 2]] };
+    lab.restore_warm(device, next, Some((next_marker, next_count)), &broken);
+    assert_eq!(lab.item(device, entry).unwrap().record(), expected);
+    assert!(lab.capture_warm(device, next_count, Some(next_marker)).is_some(), "invalid derived view must be regenerated");
+}

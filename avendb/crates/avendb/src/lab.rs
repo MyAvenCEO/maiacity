@@ -5374,11 +5374,12 @@ impl Lab {
         let mut store = Store { follow, query_depth, gate, perf, ..Store::default() };
         let key = self.shelf_key(d);
         let mut vouched = HashSet::new();
-        let opened = key.as_ref().map_or(vec![], |key| {
-            let opened = |b: &Vec<u8>| keys_of(&key.unlock("keys", b, b"stored keys")?);
-            warm.keys.iter().filter_map(opened).collect::<Vec<_>>()
-        });
-        for (named, keys) in opened {
+        // Decode and merge one slot at a time. Keeping both complete decoded key
+        // maps alive until collection finishes needlessly raises the startup peak.
+        // Preserve newest-to-oldest order and the existing per-slot validity checks.
+        for (named, keys) in warm.keys.iter().filter_map(|bytes| {
+            keys_of(&key.as_ref()?.unlock("keys", bytes, b"stored keys")?)
+        }) {
             if let (Some((now, n)), Some(named)) = (checked, named)
                 && now == named
             {
