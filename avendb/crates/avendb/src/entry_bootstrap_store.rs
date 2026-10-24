@@ -47,15 +47,20 @@ impl Lab {
             return;
         }
         let mut state = store.replay.state.clone();
-        for (snapshot, mut base) in restored {
+        'anchor: for (_snapshot, mut base) in restored {
             let entry = base.entry;
-            let Some(snapshot_edit) = store.log.edits().iter().find(|e| e.id() == snapshot) else {
-                continue;
-            };
             let Some(en) = base.policy.entries.first() else {
                 continue;
             };
             let vault = en.vault;
+            // Historical entry slices must not overwrite later audience moves,
+            // wants, or key seals. Content writes may extend retags; policy may not.
+            let current = state.slice_of(entry);
+            let Some(now) = current.entries.first() else { continue; };
+            if now.id != en.id || now.vault != en.vault || now.creator != en.creator
+                || now.creation != en.creation || now.intake != en.intake || now.stays != en.stays
+                || current.marks != base.policy.marks || current.seals != base.policy.seals
+            { continue; }
             let Some(attrs) = base.after.attrs.as_ref() else {
                 continue;
             };
@@ -90,7 +95,7 @@ impl Lab {
                 .edits()
                 .iter()
                 .filter(|e| {
-                    e.depth > snapshot_edit.depth
+                    base.history.get(e.id()).is_none()
                         && matches!(e.action,Action::Write{entry:eid,..}if eid==entry)
                 })
                 .take(513)
@@ -100,41 +105,42 @@ impl Lab {
                 continue;
             }
             suffix = crate::policy::order(&suffix);
+            let mut opened_suffix = Vec::new();
             for edit in suffix {
                 let id = edit.id();
                 // Only normal verified signed-log entries, never owner-invented signatures.
                 if !store.signed.get(&id).is_some_and(|s| s.verify().is_ok()) {
-                    continue;
+                    continue 'anchor;
                 }
                 let Ok(Some(w)) = view.accepted_write(&edit, id) else {
-                    continue;
+                    continue 'anchor;
                 };
                 if w.actor != vault || !w.shares.is_empty() || w.proposal != Proposal::Main {
-                    continue;
+                    continue 'anchor;
                 }
                 if !w
                     .deps
                     .iter()
                     .all(|d| judging.history.get(*d).is_some_and(|c| c.counted))
                 {
-                    continue;
+                    continue 'anchor;
                 }
                 let Action::Write { body, .. } = &edit.action else {
-                    continue;
+                    continue 'anchor;
                 };
                 let Some(key_id) = keys::edit_key(body) else {
-                    continue;
+                    continue 'anchor;
                 };
                 let Some(key) = store.keys.get(&key_id, w.key()) else {
-                    continue;
+                    continue 'anchor;
                 };
                 let Some(opened) = keys::open_edit(key, body, &write_context(&edit))
                     .and_then(|b| Body::from_wire(&b).ok())
                 else {
-                    continue;
+                    continue 'anchor;
                 };
                 if view.step_mut(&edit, id).is_err() {
-                    continue;
+                    continue 'anchor;
                 }
                 if let Some(p) = &opened.proof {
                     readings.proofs.insert(id, p.clone());
@@ -152,7 +158,7 @@ impl Lab {
                         .map(Scratch::fork);
                 }
                 judging.judge(on, &view, (&readings, &bodies), &w, &readings.groups);
-                store.bodies.insert(id, opened);
+                opened_suffix.push((id, opened));
             }
             let tip = Tip {
                 writes: view.entry_writes(entry).count(),
@@ -162,6 +168,7 @@ impl Lab {
             };
             let shown = judging.shown_on(on, [0; 32], tip, Some(std::mem::take(&mut base.items)));
             // The ordinary checks may reject suffix content; only counted history shows.
+            store.bodies.extend(opened_suffix);
             store.shown.insert(entry, shown);
             store.readings = readings;
             store
@@ -248,6 +255,59 @@ impl Backup {
 mod tests {
     use super::*;
     use crate::cast::{document, human_on};
+    #[test]
+    fn owner_bootstrap_includes_concurrent_writes_older_than_snapshot() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Concurrent owner");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Base", "old", mac)).unwrap();
+        lab.sync(mac, phone);
+        let concurrent = lab.edit(phone, vault, entry, |item| {
+            item.edit_document(|d| d.title = "concurrent title".into());
+        }).unwrap();
+        lab.edit(mac, vault, entry, |item| item.set_text(2, "checkpoint text")).unwrap();
+        let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
+        let snapshot = lab.complete(mac, draft, &[]).unwrap();
+        let signed = lab.backup(phone).signed().iter().find(|s| s.edit.id() == concurrent).unwrap().clone();
+        let snapshot_depth = lab.log(mac).edits().iter().find(|e| e.id() == snapshot).unwrap().depth;
+        assert!(signed.edit.depth < snapshot_depth, "the delayed branch predates the checkpoint, but is not included in it");
+        let offer = lab.entry_projection_offer(mac, phone, entry).unwrap();
+        lab.receive(phone, offer.evidence, vec![]);
+        assert!(lab.adopt_owner_entry_base(phone, snapshot, entry, sealed));
+        lab.receive(mac, vec![signed], vec![]);
+        assert_eq!(lab.item(phone, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
+        // The held edit alone is not sufficient evidence for writable adoption.
+        lab.stores.get_mut(&phone).unwrap().signed.remove(&concurrent);
+        lab.refresh(phone, &[]);
+        assert!(!lab.held(phone).bootstrap_active.contains(&entry), "an unverifiable required suffix cannot be skipped while claiming writable completeness");
+    }
+
+    #[test]
+    fn owner_bootstrap_does_not_overwrite_a_later_entry_mark() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Marked owner");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Base", "old", mac)).unwrap();
+        lab.sync(mac, phone);
+        lab.edit(mac, vault, entry, |item| item.set_text(2, "checkpoint")).unwrap();
+        let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
+        let snapshot = lab.complete(mac, draft, &[]).unwrap();
+        let offer = lab.entry_projection_offer(mac, phone, entry).unwrap();
+        lab.receive(phone, offer.evidence, vec![]);
+        assert!(lab.adopt_owner_entry_base(phone, snapshot, entry, sealed.clone()));
+        let mark = lab.submit(mac, &[owner], Action::Mark { vault, entry, caps: Some(vec![]), wants: None, keep: vec![], via: vec![] }).unwrap();
+        let signed = lab.backup(mac).signed().iter().find(|s| s.edit.id() == mark).unwrap().clone();
+        lab.receive(phone, vec![signed], vec![]);
+        let canonical = lab.held(phone).replay.state.slice_of(entry);
+        assert!(!lab.held(phone).bootstrap_active.contains(&entry));
+        assert!(!lab.adopt_owner_entry_base(phone, snapshot, entry, sealed));
+        assert_eq!(lab.held(phone).view().slice_of(entry), canonical, "historical stays/seals cannot overwrite the current policy");
+    }
+
     #[test]
     fn owner_bootstrap_store_writes_reopens_and_converges_concurrent_suffixes() {
         let mut lab = Lab::new();
