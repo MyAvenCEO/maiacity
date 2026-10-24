@@ -2085,3 +2085,100 @@ fn perf_reads_what_the_devices_work_cost_and_writes_nothing() {
     assert_eq!(refused(&run(&mut w, mac, json!({ "op": "perf", "vault": alice }))), "BadOp", "it takes no field");
     assert!(engine::prepare(&mut w.lab, mac, &op).is_err(), "read it, don't run it");
 }
+
+
+#[test]
+fn entry_views_are_exact_scoped_world_rows_before_and_after_revocation() {
+    use avendb::policy::Revoking;
+    use avendb::world::{Holder, SyncedTo};
+    let mut w = cast::world();
+    let l = cast::library(&mut w);
+    let custom = w.lab.create(w.mac_a, w.alice, w.alice, "custom-task-label", &[],
+        avendb::doc::Item::todo("Custom labeled todo", w.mac_a)).unwrap();
+    let key = avendb::sealed::FileKey::from_bytes([9; 32]);
+    let plain = b"canonical entry collection file";
+    let brought = avendb::sealed::Brought::new(avendb::hash::hash("entry collection file", &avendb::sealed::seal(&key, plain)), key, plain.len() as u64);
+    let root = brought.root;
+    ok(engine::put_file(&mut w.lab, w.mac_a, &json!({ "op": "put_file", "vault": w.alice.to_hex(), "name": "sample.txt", "media": "text/plain", "tags": [], "len": plain.len() }), brought));
+    let mut synced = SyncedTo::default();
+    synced.files.insert(root, vec![Holder { device: w.phone_a, has: 1, of: 1, checked: Some(8) }]);
+    synced.entries.insert(l.door, vec![Holder { device: w.phone_a, has: 2, of: 3, checked: Some(7) }]);
+    let compare = |w: &World, me: SignerId, vault: VaultId, types: Option<Vec<String>>| {
+        let mut op = json!({ "op": "entry_views", "vault": vault.to_hex() });
+        if let Some(types) = &types { op["types"] = json!(types); }
+        let all = ok(engine::world(&w.lab, me, &synced));
+        let mut cross_rows = all["entries"].as_array().unwrap().clone();
+        cross_rows.sort_by_key(|row| row["entry"].as_str().unwrap().to_owned());
+        let ids: Vec<_> = cross_rows.iter().map(|row| row["entry"].clone()).collect();
+        let selected = ok(engine::entry_views(&w.lab, me, &json!({"op":"entry_views", "entries":ids, "as":w.bob.to_hex()}), &synced));
+        assert_eq!(selected["rows"], json!(cross_rows));
+        assert_eq!(selected["totalEntries"], json!(cross_rows.len()));
+        let readable = cross_rows.iter().filter(|row| row["public"] == true || row["readers"].as_array().unwrap().contains(&json!(w.bob.to_hex()))).count();
+        assert_eq!(selected["readableEntries"], json!(readable));
+        let expected: Vec<Value> = all["entries"].as_array().unwrap().iter()
+            .filter(|row| row["vault"] == vault.to_hex())
+            .filter(|row| types.as_ref().is_none_or(|types| row["type"].as_str().is_some_and(|ty| types.iter().any(|t| t == ty))))
+            .cloned().collect();
+        let actual = ok(engine::entry_views(&w.lab, me, &op, &synced));
+        assert_eq!(actual["rows"], json!(expected));
+        // Explicit IDs use the same projection even across access loss, unknown IDs and deletion.
+        let mut ids: Vec<_> = expected.iter().map(|row| row["entry"].clone()).collect();
+        ids.push(json!("00".repeat(32)));
+        if let Some(id) = ids.first().cloned() { ids.push(id); }
+        let mut selected_op = op.clone();
+        selected_op.as_object_mut().unwrap().remove("vault");
+        selected_op["entries"] = json!(ids);
+        selected_op["as"] = json!(vault.to_hex());
+        let mut selected_expected = expected.clone();
+        selected_expected.sort_by_key(|row| row["entry"].as_str().unwrap().to_owned());
+        assert_eq!(ok(engine::entry_views(&w.lab, me, &selected_op, &synced))["rows"], json!(selected_expected));
+        let vault_rows: Vec<_> = all["entries"].as_array().unwrap().iter().filter(|row| row["vault"] == vault.to_hex()).collect();
+        assert_eq!(actual["totalEntries"], json!(vault_rows.len()));
+        let readable = vault_rows.iter().filter(|row| row["public"] == true || row["readers"].as_array().unwrap().contains(&json!(vault.to_hex()))).count();
+        assert_eq!(actual["readableEntries"], json!(readable));
+        for actor in [w.bob, VaultId([0; 32])] {
+            let mut as_other = op.clone(); as_other["as"] = json!(actor.to_hex());
+            let readable = vault_rows.iter().filter(|row| row["public"] == true || row["readers"].as_array().unwrap().contains(&json!(actor.to_hex()))).count();
+            let actual = ok(engine::entry_views(&w.lab, me, &as_other, &synced));
+            assert_eq!(actual["readableEntries"], json!(readable));
+            assert_eq!(actual["rows"], json!(expected), "actor metadata cannot grant or suppress device access");
+        }
+        for kind in ["todo", "note", "file", "record", "sealed", "schema", "lens"] {
+            let mut selected = op.clone(); selected["kind"] = json!(kind);
+            let rows: Vec<_> = expected.iter().filter(|row| row["kind"] == kind).cloned().collect();
+            assert_eq!(ok(engine::entry_views(&w.lab, me, &selected, &synced))["rows"], json!(rows));
+        }
+    };
+    w.lab.sync_all(0);
+    for me in [w.mac_a, w.mac_b, w.server] {
+        for vault in [w.alice, w.bob, VaultId([0; 32])] {
+            compare(&w, me, vault, None);
+            compare(&w, me, vault, Some(vec!["todo".into()]));
+            compare(&w, me, vault, Some(vec![]));
+        }
+    }
+    let selected = ok(engine::entry_views(&w.lab, w.mac_a, &json!({"op":"entry_views", "vault":w.alice.to_hex(), "kind":"todo"}), &synced));
+    assert!(selected["rows"].as_array().unwrap().iter().any(|row| row["entry"] == custom.to_hex()), "kind selection preserves a custom entry label");
+    let share = w.lab.issue(w.mac_a, &[w.mac_a], cast::share(w.alice, cast::vault(w.bob), Level::Read, cast::by_id(l.door))).unwrap();
+    w.lab.sync_all(1);
+    compare(&w, w.mac_b, w.alice, None);
+    let revoke = Action::Revoke(Revoking::Grant { share, actor: w.alice, keep: vec![], via: vec![] });
+    w.lab.submit(w.mac_a, &[w.mac_a], revoke).unwrap();
+    w.lab.sync_all(2);
+    compare(&w, w.mac_b, w.alice, None);
+    let mac = w.mac_a;
+    ok(run(&mut w, mac, json!({ "op": "insert", "entry": l.diary.to_hex(), "path": ["tags"], "value": world::DELETED })));
+    compare(&w, mac, w.alice, None);
+    assert!(engine::read(&w.lab, mac, &json!({ "op": "entry_views" })).get("refused").is_some());
+    assert!(engine::read(&w.lab, mac, &json!({ "op": "entry_views", "vault": "not-a-vault" })).get("refused").is_some());
+    assert!(engine::read(&w.lab, mac, &json!({ "op": "entry_views", "vault": w.alice.to_hex(), "types": "todo" })).get("refused").is_some());
+    assert!(engine::read(&w.lab, mac, &json!({ "op": "entry_views", "vault": w.alice.to_hex(), "unknown": true })).get("refused").is_some());
+    for entries in [json!(null), json!("bad"), json!([7]), json!(["bad"]), json!(vec![l.diary.to_hex(); 513])] {
+        assert!(engine::read(&w.lab, mac, &json!({"op":"entry_views", "entries":entries})).get("refused").is_some());
+    }
+    assert!(engine::read(&w.lab, mac, &json!({"op":"entry_views", "vault":w.alice.to_hex(), "entries":[]})).get("refused").is_some());
+    assert_eq!(ok(engine::read(&w.lab, mac, &json!({"op":"entry_views", "entries":[]})))["rows"], json!([]));
+    for kind in [json!("unknown"), json!(7)] {
+        assert!(engine::read(&w.lab, mac, &json!({"op":"entry_views", "vault":w.alice.to_hex(), "kind":kind})).get("refused").is_some());
+    }
+}

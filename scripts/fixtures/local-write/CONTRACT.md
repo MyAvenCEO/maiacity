@@ -60,3 +60,19 @@ same-count revision replacement; this patch does not repair that engine API edge
 case. Real peer transport under bulk load and Mac/iOS/iPad timings remain separate
 acceptance work. No browser harness duration is claimed as network throughput or
 physical local-commit latency.
+
+
+## Active canonical collection view
+
+`--world-view` mounts the actual `Todos.svelte`, not a stand-in `get` label. It
+holds full-world reads, clicks Open → Doing, injects a remote accepted Done state,
+and removes the acting vault's read visibility. The real view must show both
+statuses and then remove the row, while the world remains held. The engine
+boundary implements the generic `entry_views` read; there is no UI mutation overlay.
+
+Before the collection subscription the Open → Doing assertion fails at 1,500 ms.
+Both Chromium and WebKit run the new case in CI. This proves the component no
+longer waits for the global world projection; the synthetic read does not prove
+Rust authorization, native throughput, physical paint latency, or durability.
+The native differential test compares scoped rows with the full canonical world,
+including metadata and sync holdings. It must pass before this slice ships.

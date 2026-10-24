@@ -144,13 +144,17 @@ impl Shared {
     /// Of each device it keeps a statement of, but those connected to it now, what the newest states and when its device
     /// checked: what Synced to lists them by.
     pub(crate) fn stated(&self) -> BTreeMap<SignerId, (Holdings, u64)> {
+        self.stated_map(Clone::clone)
+    }
+
+    pub(crate) fn stated_map(&self, select: impl Fn(&Holdings) -> Holdings) -> BTreeMap<SignerId, (Holdings, u64)> {
         let live: HashSet<SignerId> = {
             let peers = self.peers.lock().expect("peers");
             peers.values().filter(|p| p.conn.close_reason().is_none()).map(|p| p.device).collect()
         };
         let st = self.statements.lock().expect("statements");
         let others = st.kept.iter().filter(|(d, _)| !live.contains(d));
-        others.map(|(d, k)| (*d, (k.holdings.clone(), k.statement.checked))).collect()
+        others.map(|(d, k)| (*d, (select(&k.holdings), k.statement.checked))).collect()
     }
 
     /// Tells the live peers of `reach` the statements they are due, on a task of its own, unless one is at it; and puts

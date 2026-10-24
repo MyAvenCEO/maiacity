@@ -10,7 +10,7 @@
 <script>
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
-	import { allowed, creatable, may } from './ops.js';
+	import { allowed, answer, creatable, may } from './ops.js';
 	import Share from './Share.svelte';
 	import Tags from './Tags.svelte';
 	import {
@@ -37,7 +37,30 @@
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const here = $derived(byId.get(vault));
 	const as = $derived(byId.get(actor));
-	const entries = $derived(world.entries.filter((e) => e.vault === vault));
+	// One active generic collection subscription; global world remains the metadata
+	// source for vault/share navigation, never the barrier for accepted todo edits.
+	let collection = $state(/** @type {import('./vaults.js').EntryView[]} */ ([]));
+	let collectionError = $state('');
+	let totalEntries = $state(0);
+	let readableEntries = $state(0);
+	$effect(() => {
+		const selected = vault;
+		const asActor = actor;
+		collection = [];
+		totalEntries = readableEntries = 0;
+		collectionError = '';
+		return api.observe(() => ({ op: 'entry_views', vault: selected, kind: 'todo', as: asActor }), (/** @type {any} */ out) => {
+			try {
+				const got = answer(out);
+				collection = got?.rows ?? [];
+				totalEntries = got?.totalEntries ?? 0;
+				readableEntries = got?.readableEntries ?? 0;
+				collectionError = '';
+			}
+			catch (error) { collection = []; totalEntries = readableEntries = 0; collectionError = String(error); }
+		}, (/** @type {Error} */ error) => { collection = []; totalEntries = readableEntries = 0; collectionError = error.message; });
+	});
+	const entries = $derived(collection);
 	const seen = $derived(entries.filter((e) => reads(e, actor)));
 	const todos = $derived(seen.filter((e) => e.kind === 'todo'));
 	const tags = $derived(tagsOf(todos));
@@ -133,12 +156,13 @@
 
 <Frame nav={tags.length ? narrow : undefined} navLabel="Narrow the todos" navIcon="todo">
 	<section class="todos-of">
+		{#if collectionError}<p role="alert">{collectionError}</p>{/if}
 		{#if todos.length}<p class="head"><span class="chip">{left} of {count(todos.length, 'todo')} left</span></p>{/if}
 
-		{#if !seen.length && vault !== actor}
+		{#if !readableEntries && vault !== actor}
 			<div class="empty">
 				<p>
-					{nameOf(as)} can't see {entries.length ? `the ${count(entries.length, 'entry', 'entries')}` : 'anything'} in
+					{nameOf(as)} can't see {totalEntries ? `the ${count(totalEntries, 'entry', 'entries')}` : 'anything'} in
 					{nameOf(here)}. A vault that owns it can share its todos with {nameOf(as)}, all of them or those tagged one way, in
 					<button class="link" onclick={onaccess}>Sharing</button>.
 				</p>
@@ -201,8 +225,8 @@
 					</li>
 				{/if}
 			</ul>
-			{#if entries.length > seen.length}
-				<p class="soft">{count(entries.length - seen.length, 'more entry', 'more entries')} here {nameOf(as)} can't read.</p>
+			{#if totalEntries > readableEntries}
+				<p class="soft">{count(totalEntries - readableEntries, 'more entry', 'more entries')} here {nameOf(as)} can't read.</p>
 			{/if}
 		{/if}
 	</section>

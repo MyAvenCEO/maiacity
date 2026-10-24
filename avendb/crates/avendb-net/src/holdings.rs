@@ -71,8 +71,8 @@ impl Holdings {
 
     /// Of these, those of the logs `logs` and the files `files` alone: what a peer that may know those is told.
     pub(crate) fn only(&self, logs: &BTreeSet<LogId>, files: &BTreeSet<FileRoot>) -> Holdings {
-        let logs = self.logs.iter().filter(|(l, _)| logs.contains(l)).map(|(l, f)| (*l, f.clone())).collect();
-        let files = self.files.iter().filter(|(r, _)| files.contains(r)).map(|(r, h)| (*r, h.clone())).collect();
+        let logs = logs.iter().filter_map(|l| self.logs.get(l).map(|f| (*l, f.clone()))).collect();
+        let files = files.iter().filter_map(|r| self.files.get(r).map(|h| (*r, h.clone()))).collect();
         Holdings { logs, files }
     }
 }

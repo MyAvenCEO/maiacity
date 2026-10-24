@@ -124,6 +124,9 @@ jobs:
       - run: node scripts/test-avendb-store.mjs
       - run: bun scripts/test-avendb-session.mjs --browser chromium
       - run: bun scripts/test-avendb-local-write.mjs --browser chromium
+      - run: bun scripts/test-avendb-local-write.mjs --browser chromium --world-view
+      - run: bun scripts/test-avendb-local-write.mjs --browser chromium --collection sparks
+      - run: bun scripts/test-avendb-local-write.mjs --browser chromium --collection artifacts
       - run: bun scripts/test-proof-worker.mjs --browser chromium
 
       - run: node scripts/probes.mjs
@@ -154,6 +157,9 @@ jobs:
       - run: bunx playwright install --with-deps webkit
       - run: bun scripts/test-avendb-session.mjs --browser webkit
       - run: bun scripts/test-avendb-local-write.mjs --browser webkit
+      - run: bun scripts/test-avendb-local-write.mjs --browser webkit --world-view
+      - run: bun scripts/test-avendb-local-write.mjs --browser webkit --collection sparks
+      - run: bun scripts/test-avendb-local-write.mjs --browser webkit --collection artifacts
       - run: bun scripts/test-proof-worker.mjs --browser webkit
 
       # the probes as in Chromium; a way out WebKit itself lacks is named in the log, refused and green

@@ -106,6 +106,7 @@ impl Node {
             Some("world") => {
                 self.world_encoded(engine::WorldSnapshot::into_json).await?
             }
+            Some("entry_views") => self.entry_views_encoded(op).await?,
             Some("read_file") => return self.read_bytes(&op).await,
             _ if engine::brings(&op) => self.put(op, bytes).await?,
             Some("jobs") => json!({ "ok": self.jobs().to_json_for(crate::acting()) }),
@@ -374,6 +375,30 @@ impl Node {
         None
     }
 
+    async fn entry_views_encoded(&self, op: Value) -> Result<Value> {
+        let operation = self.shared.admit()?;
+        let encoding = self.shared.entry_encoding.clone().lock_owned().await;
+        let (snapshot, operation, encoding) = self.read(move |lab, me| {
+            (engine::entry_views_snapshot(lab, me, &op), operation, encoding)
+        }).await;
+        let snapshot = match snapshot {
+            Err(why) => return Ok(why.to_json()),
+            Ok(None) => return Ok(json!({ "ok": null })),
+            Ok(Some(snapshot)) => snapshot,
+        };
+        let logs = snapshot.entries.iter().map(|entry| LogId::Entry(entry.entry)).collect();
+        let files = snapshot.entries.iter().flat_map(|entry| entry.files.iter().map(|(file, _)| *file)).collect();
+        let synced = self.shared.synced_to_for(Some((logs, files))).await;
+        let work = move || {
+            let (_operation, _encoding) = (operation, encoding);
+            json!({ "ok": snapshot.into_json(&synced) })
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        return tokio::task::spawn_blocking(work).await.context("entry collection JSON conversion");
+        #[cfg(target_arch = "wasm32")]
+        Ok(work())
+    }
+
     async fn world_encoded(&self, encode: impl FnOnce(engine::WorldSnapshot) -> Value + Send + 'static) -> Result<Value> {
         let operation = self.shared.admit()?;
         let encoding = self.shared.world_encoding.clone().lock_owned().await;
@@ -482,7 +507,9 @@ mod world_snapshot_tests {
         let write = tokio::spawn(async move {
             let entry = peer.act(move |lab, me| lab.create(me, vault, vault, "note", &[],
                 document("Concurrent local write", "visible without waiting for world JSON", me)).unwrap()).await;
-            peer.read(move |lab, me| lab.item(me, entry).is_some()).await
+            let local = peer.read(move |lab, me| lab.item(me, entry).is_some()).await;
+            let selected = peer.entry_views_encoded(json!({"op":"entry_views", "vault":vault.to_hex(), "kind":"note"})).await.unwrap();
+            local && selected["ok"]["rows"].as_array().unwrap().iter().any(|row| row["entry"] == entry.to_hex())
         });
         let mut write = write;
         let timely = time::timeout(Duration::from_secs(1), &mut write).await;

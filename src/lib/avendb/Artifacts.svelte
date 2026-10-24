@@ -13,6 +13,7 @@
 	import { addingArtifact, ARTIFACT, fromFile, fromLink, isArtifact, LOOKS, lookOf } from './artifacts.js';
 	import { mediaOf } from './files.js';
 	import Frame from './Frame.svelte';
+	import { entryCollection } from './entry-collection.svelte.js';
 	import Icon from './Icon.svelte';
 	import ArtifactRow from './ArtifactRow.svelte';
 	import { allowed, creatable, may } from './ops.js';
@@ -28,9 +29,10 @@
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const here = $derived(byId.get(vault));
 	const as = $derived(byId.get(actor));
-	const entries = $derived(world.entries.filter((e) => e.vault === vault));
+	const collection = entryCollection(() => api, () => ({ op: 'entry_views', vault, as: actor, types: ['artifact'] }));
+	const entries = $derived(collection.rows);
 	const seen = $derived(entries.filter((e) => reads(e, actor)));
-	const hidden = $derived(entries.length - seen.length);
+	const hidden = $derived(collection.totalEntries - collection.readableEntries);
 	const all = $derived(seen.filter(isArtifact).sort((a, b) => (b.created ?? 0) - (a.created ?? 0)));
 	const live = $derived(all.filter((e) => !e.deleted));
 	const deleted = $derived(all.filter((e) => e.deleted));
@@ -66,6 +68,7 @@
 	let askedSpark = $state(/** @type {string[] | null} */ (null));
 	$effect(() => {
 		void world;
+		void collection.rows; // Permission changes also arrive before the broad world summary.
 		let gone = false;
 		creatable(api, actor, vault, ARTIFACT, typed).then((t) => !gone && (asked = t));
 		creatable(api, actor, vault, 'file').then((t) => !gone && (askedFile = t));
@@ -167,7 +170,11 @@
 		<p class="soft binned">Deleted artifacts keep every edit. Open one to bring it back.</p>
 	{/if}
 
-	{#if !seen.length && vault !== actor}
+	{#if collection.phase === 'loading'}
+		<p role="status">Loading the collection…</p>
+	{:else if collection.phase === 'error'}
+		<p role="alert">{collection.error}</p>
+	{:else if !collection.readableEntries && vault !== actor}
 		<p class="soft">
 			{nameOf(as)} can't see {hidden ? `the ${count(hidden, 'entry', 'entries')}` : 'anything'} in {nameOf(here)}: none of
 			it is shared with {nameOf(as)}. A vault that owns it can share some of it with {nameOf(as)} in
@@ -192,7 +199,7 @@
 		</p>
 	{/if}
 
-	{#if hidden > 0 && seen.length}
+	{#if collection.phase === 'ready' && hidden > 0 && collection.readableEntries}
 		<p class="soft">{count(hidden, 'more entry', 'more entries')} here {nameOf(as)} can't read.</p>
 	{/if}
 

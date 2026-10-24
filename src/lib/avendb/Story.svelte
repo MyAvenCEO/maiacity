@@ -15,11 +15,14 @@
 	proposals, which the person merges here.
 -->
 <script>
+	import { untrack } from 'svelte';
 	import { flowsFor, moving, STORY, stageOf } from './flows.js';
+	import { entryCollection } from './entry-collection.svelte.js';
+	import { entryDetail } from './entry-detail.svelte.js';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import Lines from './Lines.svelte';
-	import { allowed, may, windowRead } from './ops.js';
+	import { allowed, may } from './ops.js';
 	import StoryHook from './StoryHook.svelte';
 	import StoryJourney from './StoryJourney.svelte';
 	import StoryMovie from './StoryMovie.svelte';
@@ -33,12 +36,6 @@
 	 * @type {{ world: import('./vaults.js').WorldView, actor: string, api: any, busy: boolean, entry: string, step?: string }} */
 	let { world, actor, api, busy, entry, step = '' } = $props();
 
-	let noteWindow = $state.raw(/** @type {any} */ (null));
-	$effect(() => {
-		const window = api.window?.();
-		noteWindow = window;
-		return () => window?.close();
-	});
 
 	/** Each stage's icon in the list on the left; a stage of a vault's own flow has `flow`'s. */
 	const ICONS = /** @type {Record<string, import('svelte').ComponentProps<typeof Icon>['name']>} */ ({
@@ -67,8 +64,16 @@
 	});
 
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
-	const item = $derived(world.entries.find((e) => e.entry === entry));
+	const collection = entryCollection(() => api, () => ({ op: 'entry_views', entries: [entry], as: actor }));
+	const item = $derived(collection.rows.find((e) => e.entry === entry));
 	const record = $derived(/** @type {any} */ (item?.record) ?? {});
+	let titleDraft = $state('');
+	let titleEntry = '', shownTitle = '';
+	$effect(() => {
+		const next = record.title ?? '';
+		if (titleEntry !== entry || untrack(() => titleDraft) === shownTitle) titleDraft = next;
+		titleEntry = entry; shownTitle = next;
+	});
 	const writes = $derived(!!item && (item.writers ?? []).includes(actor));
 
 	const flow = $derived(item ? (flowsFor(world, item.vault, 'story')[0] ?? STORY) : STORY);
@@ -82,18 +87,11 @@
 	 *  @typedef {NonNullable<LinesProps['note']>['lines'][number] & { title: string | null, record: any }} Line
 	 *  @typedef {NonNullable<LinesProps['note']>['edits'][number] & { title: string | null,
 	 *   beforeTitle: string | null }} Edit */
-	let note = $state(/** @type {{ lines: Line[], edits: Edit[] } | null} */ (null));
+	const detail = entryDetail(() => api, () => ({ op: 'note', entry }));
+	const note = $derived(/** @type {{ lines: Line[], edits: Edit[] } | null} */ (detail.value));
 	/** what the right side shows: its history, or its lines */
 	let side = $state('history');
-	$effect(() => {
-		void world;
-		const e = entry;
-		if (api.window && !noteWindow) return;
-		let gone = false;
-		const request = windowRead(api, { op: 'note', entry: e }, null, noteWindow);
-		request.result.then((/** @type {any} */ n) => { if (!gone) note = n; });
-		return () => { gone = true; request.close(); };
-	});
+
 	const proposals = $derived((note?.lines ?? []).slice(1).filter((l) => !l.variant));
 	/** its edits by id, as the side (./Lines.svelte) hands one back */
 	const byEdit = $derived(new Map((note?.edits ?? []).map((e) => [e.id, e])));
@@ -230,7 +228,7 @@
 		{#if item}
 			<input
 				class="title"
-				value={record.title ?? ''}
+				bind:value={titleDraft}
 				aria-label="Its title"
 				disabled={!writes || busy || can.title === false}
 				onchange={(ev) => set('title', /** @type {HTMLInputElement} */ (ev.target).value.trim())}

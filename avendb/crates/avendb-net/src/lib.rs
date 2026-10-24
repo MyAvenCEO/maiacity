@@ -733,6 +733,7 @@ impl Node {
             dialing: Mutex::default(),
             logs: Mutex::default(),
             world_encoding: Arc::default(),
+            entry_encoding: Arc::default(),
             own: Mutex::new(Own { at: ((usize::MAX, 0), 0), revision: None, holdings: Holdings::default() }),
             reach: Mutex::default(),
             held: Mutex::default(),
@@ -2023,6 +2024,7 @@ struct Shared {
     logs: Mutex<Option<Arc<Logs>>>,
     /// One owned world snapshot/conversion at a time; targeted reads and writes bypass it.
     world_encoding: Arc<tokio::sync::Mutex<()>>,
+    entry_encoding: Arc<tokio::sync::Mutex<()>>,
     /// What its device holds for good.
     own: Mutex<Own>,
     /// Each device it may tell, by its device's view, and what of its holdings it tells it.
@@ -3082,13 +3084,19 @@ impl Shared {
     /// `Node::synced_to`: this device and each device on a live connection or of which the node keeps no statement, by
     /// what it announced (H1), and each other device by its newest statement, with when it checked (H2).
     async fn synced_to(self: &Arc<Self>) -> SyncedTo {
+        self.synced_to_for(None).await
+    }
+
+    async fn synced_to_for(self: &Arc<Self>, scope: Option<(BTreeSet<LogId>, BTreeSet<FileRoot>)>) -> SyncedTo {
+        if scope.as_ref().is_some_and(|(logs, files)| logs.is_empty() && files.is_empty()) { return SyncedTo::default(); }
         self.own_logs().await;
-        let own = self.own.lock().expect("own").holdings.clone();
+        let select = |h: &Holdings| match &scope { Some((logs, files)) => h.only(logs, files), None => h.clone() };
+        let own = select(&self.own.lock().expect("own").holdings);
         let mut held: BTreeMap<SignerId, (Holdings, Option<u64>)> = {
             let held = self.held.lock().expect("held");
-            held.iter().map(|(d, h)| (*d, (h.clone(), None))).collect()
+            held.iter().map(|(d, h)| (*d, (select(h), None))).collect()
         };
-        held.extend(self.stated().into_iter().map(|(d, (h, checked))| (d, (h, Some(checked)))));
+        held.extend(self.stated_map(select).into_iter().map(|(d, (h, checked))| (d, (h, Some(checked)))));
         let reach = self.reach.lock().expect("reach").clone();
         let shared = self.clone();
         self.read(move |lab, me| {
@@ -3109,7 +3117,12 @@ impl Shared {
                 listed
             };
             let mut synced = SyncedTo::default();
-            for l in all.of.keys() {
+            let selected_logs;
+            let logs = if let Some((logs, _)) = &scope { logs } else {
+                selected_logs = all.of.keys().copied().collect::<BTreeSet<_>>();
+                &selected_logs
+            };
+            for l in logs {
                 let LogId::Entry(entry) = *l else { continue };
                 let of = |h: &Holdings, r: Option<&Reach>| {
                     let f = h.logs.get(l).filter(|_| r.is_none_or(|r| r.logs.contains(l)))?;
@@ -3117,7 +3130,12 @@ impl Shared {
                 };
                 synced.entries.insert(entry, list(&of));
             }
-            for f in lab.files(me) {
+            let selected_files;
+            let files = if let Some((_, files)) = &scope { files } else {
+                selected_files = lab.files(me).into_iter().collect::<BTreeSet<_>>();
+                &selected_files
+            };
+            for &f in files {
                 let pieces = f.size.div_ceil(PIECE).max(1);
                 let of = |h: &Holdings, r: Option<&Reach>| match h.files.get(&f) {
                     _ if r.is_some_and(|r| !r.files.contains(&f)) => None,

@@ -8,6 +8,13 @@ const { chromium, webkit } = await import(process.env.AVENDB_TEST_PLAYWRIGHT || 
 const at = process.argv.indexOf('--browser');
 const engine = at < 0 ? 'chromium' : process.argv[at + 1];
 assert(['chromium', 'webkit'].includes(engine));
+const collectionAt = process.argv.indexOf('--collection');
+const collectionView = collectionAt < 0 ? '' : process.argv[collectionAt + 1];
+assert(!collectionView || ['sparks','artifacts'].includes(collectionView));
+const detailAt = process.argv.indexOf('--detail');
+const detailView = detailAt < 0 ? '' : process.argv[detailAt + 1];
+assert(!detailView || ['story','note'].includes(detailView));
+const worldView = process.argv.includes('--world-view');
 const remote = `
 const entry = 'a'.repeat(64), mine = 'b'.repeat(64);
 const messages = [], waiters = [];
@@ -17,8 +24,29 @@ let serial = Promise.resolve();
 window.fixtureOperations = [];
 const counts = window.fixtureCounts = { brings: 0, writes: 0, worlds: 0, activeWorlds:0, maxWorlds:0 };
 const world = { mine, vaults:[{id:mine,name:'Fixture',kind:'human',acting:{as:mine},devices:[]}],
- entries:[{entry,vault:mine,type:'room',kind:'room',readers:[mine],record:{kind:'room',look:'self',name:'Fixture'}}] };
+ shares:[], groups:[], entries:[{entry:'c'.repeat(64),vault:mine,by:mine,authors:[mine],type:'custom-task-label',kind:'todo',title:'Generic collection acceptance',status:'open',tags:[],readers:[mine],writers:[mine],sharers:[mine],levels:{[mine]:'owner'}},{entry,vault:mine,type:'room',kind:'room',readers:[mine],record:{kind:'room',look:'self',name:'Fixture'}}] };
+const collectionKind = new URLSearchParams(location.search).get('collection');
+if(collectionKind){
+ const type=collectionKind==='sparks'?'spark':'artifact';
+ const make=(id,title,vault=mine,extra={})=>({entry:id.repeat(64),vault,by:mine,authors:[mine],type,kind:type==='spark'?'note':'record',title,text:'',created:1,tags:[],readers:[mine],writers:[mine],sharers:[mine],levels:{[mine]:'owner'},record:type==='spark'?{kind:'spark',title,items:[]}:{kind:'artifact',title,look:'link',url:'https://example.test/'},...extra});
+ world.entries.push(make('d','Collection seed'),make('e','Other vault entry','f'.repeat(64)),make('9','Hidden entry',mine,{readers:[],writers:[]}));
+ if(type==='spark')world.entries.push(make('7','Legacy note',mine,{type:'note'}));
+ world.vaults.push({id:'f'.repeat(64),name:'Other vault',kind:'coop',devices:[]});
+ window.fixtureCollectionRemote=(patch)=>{Object.assign(world.entries.find(e=>e.entry==='d'.repeat(64)),patch);wake();};
+ window.fixtureCollectionAdd=()=>{world.entries.push(make('8','New collection entry'));wake();};
+ window.fixtureCollectionRevoke=()=>{for(const e of world.entries)if(e.vault===mine)e.readers=[];wake();};
+ window.fixtureCollectionReadOps=[];
+}
+const detailKind = new URLSearchParams(location.search).get('detail');
+if(detailKind){
+ const make=(id,title)=>({entry:id.repeat(64),vault:mine,type:detailKind,kind:'note',title,text:'Body',tags:[],readers:[mine],writers:[mine],sharers:[mine],record:{kind:detailKind==='story'?'story':'document',title,text:'Body'}});
+ world.entries.push(make('d','Detail seed'),make('e','Other detail'));
+ window.fixtureDetailRefuse=()=>{window.detailRefused=true;wake();};
+ window.fixtureDetailRemote=title=>{const e=world.entries.find(e=>e.entry==='d'.repeat(64));e.title=e.record.title=title;wake();};
+}
 const wake = () => { revision++; if(!window.fixtureMuteWake) for(const resolve of waiters.splice(0)) resolve(true); };
+window.fixtureRemoteStatus = next => {status=next;world.entries[0].status=next;wake();};
+window.fixtureRevokeTodo = () => {world.entries[0].readers=[];world.entries[0].writers=[];wake();};
 window.fixtureRemote = text => { messages.push({id:messages.length+1,text,at:Date.now(),by:{vault:mine},actor:mine});wake(); };
 window.fixtureHoldWorld = false;
 window.fixtureReleaseWorld = () => { window.fixtureHoldWorld = false; for(const resolve of (window.worldWaiters ?? []).splice(0)) resolve(); };
@@ -42,10 +70,28 @@ export class Device {
  }
  async runNow(op){
   if(op.op==='world'){counts.worlds++;counts.activeWorlds++;counts.maxWorlds=Math.max(counts.maxWorlds,counts.activeWorlds);try{const snapshot={...structuredClone(world),marker:window.fixtureWorldVersion??0};if(window.fixtureHoldWorld)await new Promise(r=>(window.worldWaiters??=[]).push(r));return {ok:snapshot};}finally{counts.activeWorlds--;}}
+  if(op.op==='entry_views'){
+   window.fixtureCollectionReadOps?.push(structuredClone(op));
+   if(window.fixtureCollectionRefuse)return {refused:'NoCap',why:'NoCap'};
+   const all=world.entries.filter(e=>op.entries ? op.entries.includes(e.entry) : e.vault===op.vault), actor=op.as??op.vault;
+   const result={ok:{rows:structuredClone(all.filter(e=>(!op.types || op.types.includes(e.type)) && (!op.kind || e.kind===op.kind))),totalEntries:all.length,readableEntries:all.filter(e=>e.public || e.readers?.includes(actor)).length}};
+   if(window.fixtureHoldCollection && op.vault===mine)await new Promise(resolve=>(window.collectionWaiters??=[]).push(resolve));
+   return result;
+  }
+  if(op.op==='note'){
+   if(window.detailRefused)return {refused:'NoCap',why:'NoCap'};
+   const e=world.entries.find(e=>e.entry===op.entry);
+   if(!e)return {ok:null};
+   return {ok:{vault:e.vault,entry:e.entry,kind:e.record?.kind,lines:[{line:null,name:null,heads:[],history:[],title:e.title,text:e.text,record:e.record,blocks:[],base:null,conflicts:null}],edits:[]}};
+  }
+  if(op.op==='history')return {ok:{edits:[]}};
   if(op.op==='room')return {ok:{entry,room:{kind:'room',look:'self',name:'Fixture',messages:structuredClone(messages)},count:messages.length}};
   if(op.op==='bring'){counts.brings++;return new Promise(()=>{});}
-  if(op.op==='get')return {ok:{status}};
-  if(op.op==='set'){status=op.value;wake();return {ok:true};}
+  if(op.op==='get')return {ok:{status,record:world.entries.find(e=>e.entry===op.entry)?.record??{}}};
+  if(op.op==='set'){const target=world.entries.find(e=>e.entry===op.entry);if(target){target[op.path[0]]=op.value;if(target.record)target.record[op.path[0]]=op.value;}status=op.value;wake();return {ok:true};}
+  if(op.op==='may')return {ok:op.ops.map(()=>true)};
+  if(op.op==='creatable')return {ok:{tags:[]}};
+  if(op.op==='taggable')return {ok:{tags:[]}};
   if(op.op==='insert' && window.fixtureRefuse)return {refused:'NoCap',why:'NoCap'};
   if(op.op==='insert'){counts.writes++;messages.push({...op.value,by:{vault:mine},actor:mine});wake();return {ok:{entry}};}
   return {ok:null};
@@ -80,10 +126,88 @@ try {
  const page=await context.newPage();
  page.setDefaultTimeout(20000);
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto(origin+'/__local-write?room='+ 'a'.repeat(64));
+ await page.goto(origin+'/__local-write?room='+ 'a'.repeat(64)+(worldView?'&world-view':'')+(collectionView?'&collection='+collectionView:'')+(detailView?'&detail='+detailView:''));
  await page.getByTestId('phase').filter({hasText:'closed'}).waitFor();
  await page.getByRole('button',{name:'Unlock fixture'}).click();
  await page.getByTestId('phase').filter({hasText:'open'}).waitFor();
+ if(detailView){
+  const title=detailView==='story'?page.getByLabel('Its title',{exact:true}):page.locator('input.title');
+  await title.waitFor();
+  assert.equal(await title.inputValue(),'Detail seed');
+  await page.evaluate(()=>{window.fixtureHoldWorld=true;});
+  await page.evaluate(()=>window.fixtureSession.run('Rename detail',{op:'set',entry:'d'.repeat(64),path:['title'],value:'Accepted detail title'}));
+  await page.waitForFunction(()=>document.querySelector('input.title')?.value==='Accepted detail title',null,{timeout:1500});
+  await page.evaluate(()=>window.fixtureDetailRemote('Remote detail title'));
+  await page.waitForFunction(()=>document.querySelector('input.title')?.value==='Remote detail title',null,{timeout:1500});
+  await title.fill('Unsubmitted detail draft');
+  await page.evaluate(()=>window.fixtureDetailRemote('New remote detail title'));
+  await page.waitForTimeout(250);
+  assert.equal(await title.inputValue(),'Unsubmitted detail draft');
+  await page.evaluate(()=>window.fixtureSwitchEntry('e'.repeat(64)));
+  await page.waitForFunction(()=>document.querySelector('input.title')?.value==='Other detail',null,{timeout:1500});
+  if(detailView==='note'){
+   await page.evaluate(()=>window.fixtureDetailRefuse());
+   await page.getByText('This browser holds no edit of this note',{exact:false}).waitFor({timeout:1500});
+   assert.equal(await page.getByText('Opening the note…',{exact:true}).count(),0);
+  }
+  assert.equal(await page.evaluate(()=>window.fixtureHoldWorld),true);
+  assert.deepEqual(errors,[]);
+  console.log('PASS '+engine+': actual '+detailView+' local and remote title with world held');
+ } else if(collectionView){
+  const rowTitle=text=>page.locator('li.row b').filter({hasText:new RegExp('^'+text+'$')});
+  await rowTitle('Collection seed').waitFor();
+  assert.equal(await rowTitle('Hidden entry').count(),0);
+  if(collectionView==='sparks')await rowTitle('Legacy note').waitFor();
+  const draft=page.getByPlaceholder(collectionView==='sparks'?'Write a thought, paste links, drop pictures':'Paste links, drop pictures or clips');
+  await draft.fill('Unsubmitted capture draft');
+  await page.evaluate(()=>{window.fixtureHoldWorld=true;});
+  await page.evaluate(()=>window.fixtureSession.run('Rename collection entry',{op:'set',entry:'d'.repeat(64),path:['title'],value:'Accepted collection title'}));
+  await rowTitle('Accepted collection title').waitFor({timeout:1500});
+  assert.equal(await page.evaluate(()=>window.fixtureHoldWorld),true);
+  await page.evaluate(()=>window.fixtureCollectionRemote({title:'Remote collection title'}));
+  await rowTitle('Remote collection title').waitFor({timeout:1500});
+  assert.equal(await draft.inputValue(),'Unsubmitted capture draft');
+  await page.evaluate(()=>window.fixtureCollectionAdd());
+  await rowTitle('New collection entry').waitFor({timeout:1500});
+  await page.evaluate(()=>window.fixtureCollectionRemote({deleted:true}));
+  await rowTitle('Remote collection title').waitFor({state:'hidden',timeout:1500});
+  await page.evaluate(()=>window.fixtureCollectionRemote({deleted:false}));
+  await rowTitle('Remote collection title').waitFor({timeout:1500});
+  await page.evaluate(()=>{window.fixtureHoldCollection=true;window.fixtureCollectionRemote({title:'Late old vault title'});});
+  await page.waitForFunction(()=>(window.collectionWaiters??[]).length>0);
+  await page.evaluate(()=>window.fixtureSwitchVault('f'.repeat(64)));
+  await rowTitle('Other vault entry').waitFor({timeout:1500});
+  await page.evaluate(()=>{window.fixtureHoldCollection=false;for(const done of window.collectionWaiters.splice(0))done();});
+  assert.equal(await rowTitle('Late old vault title').count(),0);
+  await page.evaluate(()=>{window.fixtureCollectionRemote({title:'Remote collection title'});window.fixtureSwitchVault('b'.repeat(64));});
+  await rowTitle('Remote collection title').waitFor({timeout:1500});
+  await page.evaluate(()=>{window.fixtureCollectionRefuse=true;window.fixtureCollectionRemote({tags:['changed']});});
+  await page.getByRole('alert').waitFor();
+  assert.equal(await rowTitle('Remote collection title').count(),0);
+  await page.evaluate(()=>{window.fixtureCollectionRefuse=false;window.fixtureCollectionRemote({tags:[]});});
+  await rowTitle('Remote collection title').waitFor({timeout:1500});
+  await page.evaluate(()=>window.fixtureCollectionRevoke());
+  await rowTitle('Remote collection title').waitFor({state:'hidden',timeout:1500});
+  const reads=await page.evaluate(()=>window.fixtureCollectionReadOps);
+  assert(reads.length>0);
+  for(const op of reads){assert.equal(op.as,'b'.repeat(64));assert.deepEqual(op.types,collectionView==='sparks'?['spark','note']:['artifact']);if(collectionView==='sparks')assert.equal(op.kind,'note');}
+  assert.equal(await page.evaluate(()=>window.fixtureHoldWorld),true);
+  assert.deepEqual(errors,[]);
+  console.log('PASS '+engine+': actual '+collectionView+' local/remote/create/delete/revoke/context updates with world held');
+ } else if(worldView){
+  await page.getByText('Generic collection acceptance',{exact:true}).waitFor();
+  await page.evaluate(()=>{window.fixtureHoldWorld=true;});
+  await page.getByRole('button',{name:'Open',exact:true}).click();
+  await page.getByRole('button',{name:'Doing',exact:true}).waitFor({timeout:1500});
+  assert.equal(await page.evaluate(()=>window.fixtureHoldWorld),true);
+  await page.evaluate(()=>window.fixtureRemoteStatus('done'));
+  await page.getByRole('button',{name:'Done',exact:true}).waitFor({timeout:1500});
+  await page.evaluate(()=>window.fixtureRevokeTodo());
+  await page.getByText('Generic collection acceptance',{exact:true}).waitFor({state:'hidden',timeout:1500});
+  assert.equal(await page.evaluate(()=>window.fixtureHoldWorld),true);
+  assert.deepEqual(errors,[]);
+  console.log('PASS '+engine+': actual Todos reflects locally accepted change before blocked world summary');
+ } else {
  await page.waitForSelector('textarea');
  await page.evaluate(()=>{window.fixtureBehind();window.fixtureHoldWorld=true;});
  await page.locator('textarea').first().fill('local message while peers unavailable');
@@ -165,4 +289,11 @@ try {
  await page.evaluate(()=>window.fixtureReleaseWorld());
  assert.deepEqual(errors,[]);
  console.log('PASS '+engine+': actual Session renders accepted chat+non-chat local mutations, preserves refused draft, and remote messages before blocked world refresh; local browser harness '+localMs+'ms (synthetic device, not physical latency)');
-} finally { await browser?.close();await server?.close(); }
+ }
+} finally {
+ // Release deliberately held fake engine work before shutting down the local fixture server.
+ for (const context of browser?.contexts() ?? []) for (const page of context.pages()) {
+  await page.evaluate(() => window.fixtureReleaseWorld?.()).catch(() => {});
+ }
+ await browser?.close(); await server?.close();
+}

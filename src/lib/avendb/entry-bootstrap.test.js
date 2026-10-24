@@ -1,11 +1,13 @@
 // @ts-nocheck — mount the real selection/read effects; unrelated child views and media hosts stay outside this fixture.
 import { afterAll, beforeAll, expect, test } from 'bun:test';
-import { compile } from 'svelte/compiler';
+import { compile, compileModule } from 'svelte/compiler';
 import { parseHTML } from 'linkedom';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createReadWindow } from './query-window.js';
+import { createReactiveRead } from './reactive-read.js';
+import { observedWindow } from './observed-window.js';
 
 const id = (n) => n.toString(16).padStart(64, '0');
 const vault = id(99);
@@ -68,6 +70,10 @@ beforeAll(async () => {
 				contents: compile(['Note.svelte', 'Docs.svelte'].some((name) => path === join(here, name)) ? await readFile(path, 'utf8') : '<script>let { children } = $props();</script>{@render children?.()}', { filename: path, generate: 'client' }).js.code,
 				loader: 'js', resolveDir: resolve(path, '..')
 			}));
+			build.onLoad({ filter: /\.svelte\.js$/ }, async ({ path }) => ({
+				contents: compileModule(await readFile(path, 'utf8'), { filename: path, generate: 'client' }).js.code,
+				loader: 'js', resolveDir: resolve(path, '..')
+			}));
 			build.onLoad({ filter: /\.js$/ }, ({ path }) => mocks.has(path) ? { contents: mocks.get(path), loader: 'js' } : undefined);
 		} }]
 	});
@@ -84,15 +90,29 @@ afterAll(async () => {
 	if (folder) await rm(folder, { recursive: true, force: true });
 });
 
+const activeDemand = calls => [...new Map(calls.map(c => [c.scope, c.entries])).values()].filter(entries => entries.length);
 const settle = async () => { for (let n = 0; n < 12; n++) { ui.flushSync(); await Promise.resolve(); } };
 function fixture(kind, entries, entry) {
-	const calls = [], reads = [];
+	const calls = [], reads = [], observers = new Set();
 	const d = { run: async (op) => { calls.push(op); return { ok: { accepted: true } }; } };
-	const answer = (op) => op.op === 'note' ? new Promise((resolve) => reads.push({ op, resolve })) : Promise.resolve({ ok: {} });
-	const api = { ask: answer, window: () => createReadWindow({ device: () => d, read: (_, op) => answer(op) }) };
+	const answer = (op) => op.op === 'note' ? new Promise((resolve) => reads.push({ op, resolve }))
+		: Promise.resolve({ ok: op.op === 'entry_views' ? { rows: entries.filter(e => op.entries.includes(e.entry)), totalEntries: entries.length, readableEntries: entries.length } : {} });
+	const api = {
+		ask: answer, window: () => createReadWindow({ device: () => d, read: (_, op) => answer(op) }),
+		observe(query, take, failed) {
+			const reader = createReactiveRead({ read: observedWindow((_, op) => answer(op)), take, failed });
+			const refresh = () => reader.update(query(), d);
+			observers.add(refresh); refresh();
+			return () => { observers.delete(refresh); reader.close(); };
+		}
+	};
 	const target = document.createElement('div'); document.body.append(target);
 	const component = ui.mount(ui.Harness, { target, props: { kind, initial: { world: world(entries), vault, actor: vault, api, busy: false, entry, onaccess() {} } } });
-	return { calls, reads, target, component, async close() { await ui.unmount(component); target.remove(); await settle(); } };
+	return { calls, reads, target, component: { update(next) {
+		if (next.world) entries = next.world.entries;
+		component.update(next);
+		if (next.world) for (const refresh of observers) refresh();
+	} }, async close() { await ui.unmount(component); target.remove(); await settle(); } };
 }
 
 test('an unknown explicit note starts a scoped read and reuses its scope as local metadata arrives', async () => {
@@ -101,13 +121,15 @@ test('an unknown explicit note starts a scoped read and reuses its scope as loca
 		await settle();
 		expect(f.reads.map((r) => r.op.entry)).toEqual([id(1)]);
 		expect(f.calls.at(-1).entries).toEqual([id(1)]);
+		const scopes = new Set(f.calls.map(c => c.scope));
+		expect(scopes.size).toBe(2); // independent metadata and note history leases
 		f.reads[0].resolve({ refused: 'NoEntry' }); await settle();
 		f.component.update({ world: world([item(id(1))]) }); await settle();
 		expect(f.reads.map((r) => r.op.entry)).toEqual([id(1), id(1)]);
-		expect(new Set(f.calls.map((c) => c.scope)).size).toBe(1);
+		expect(new Set(f.calls.map((c) => c.scope))).toEqual(scopes); // revisions retain both scopes
 		f.reads[1].resolve({ refused: 'NoEntry' }); await settle();
 	} finally { await f.close(); }
-	expect(f.calls.at(-1).entries).toEqual([]);
+	expect(activeDemand(f.calls)).toEqual([]);
 });
 
 for (const existing of [[], [item(id(2), 'Different document')]]) test(`an explicit missing doc is never replaced by ${existing.length ? 'the first local document' : 'an empty local list'}`, async () => {
@@ -160,7 +182,8 @@ test('a previous note answer is not displayed under a new explicit target', asyn
 		f.component.update({ entry: id(2) }); await settle();
 		expect(f.target.querySelector('h1.title')?.textContent).toBe('Second');
 		expect(f.target.textContent).toContain('Opening the note');
-		expect(f.calls.filter((c) => c.scope === scope).at(-1).entries).toEqual([id(2)]);
+		expect(f.calls.filter((c) => c.scope === scope).at(-1).entries).toEqual([]);
+		expect(activeDemand(f.calls)).toEqual([[id(2)], [id(2)]]); // neither active lease retains the old target
 		f.reads.at(-1).resolve({ refused: 'NoEntry' }); await settle();
 		expect(f.target.textContent).not.toContain('Previous answer');
 	} finally { await f.close(); }
