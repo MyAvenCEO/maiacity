@@ -404,3 +404,50 @@ object deliberately remains non-writable until that integration and its regressi
 
 Judgment restoration code: [`5fe1c9ff`](https://github.com/MyAvenCEO/maiacity/commit/5fe1c9ff).
 Pending Rust gate: `cargo test -p avendb --lib owner_judgment -- --nocapture`.
+
+### Narrow writable Store adoption and recoverable suffix anchors
+
+The isolated core now adds `adopt_owner_entry_base`, an actual Store path using the approved
+owner-attested trust model. It reauthenticates the frame, restores its entry Slice and
+content judgment into a **separate derived overlay**, and leaves pure signed-log Replay and
+the independently replayed authorization kernel unchanged. `Lab::edit` can append ordinary
+owner-authored main-line edits against that base before historical content arrives. Every
+suffix is an ordinary signed Edit; current authorization, key/AEAD checks, author-specific
+Loro update import and the shared judgment/admission path remain in force.
+
+The judgment frame is now version two and additionally carries the bounded entry policy
+Slice plus historical non-content Body metadata (headers, tags, proofs, file descriptors
+and definitions, with CRDT content omitted). This closes the missing Readings input: attrs
+alone cannot safely stand in for tags/proofs. Source full-holder comparisons cover these
+bytes too. Adoption excludes schema/lens/capability-group entries and requires the receiving
+device to act for the entry vault. This first writable slice **does not** enable shared-actor
+writes, proposals/merges, historical undo/restore, or writes during a pending deferred replay.
+Those remain explicit refusals until broader anchors are implemented and validated.
+
+Refresh reauthenticates bases against current canonical policy. A known later removal,
+wrong scope, missing key or superseding full history invalidates the overlay and falls back
+to ordinary history. Concurrent post-checkpoint owner suffixes can fork the attested base
+scratch rather than attempt to reconstruct omitted predecessor bodies. Suffix processing is
+bounded to 512 edits per anchor, 16 anchors per Store; older concurrent/pre-checkpoint suffixes
+and larger tails require ordinary history or a newly owner-approved baseline. This is a
+correctness-first bounded slice, not a claim of final catch-up throughput optimization.
+
+`Backup::bootstrap_bytes` records ciphertext anchors and the acknowledged signed suffix IDs.
+`with_bootstrap_bytes` rejects a torn pair whose signed-log backup lacks those suffixes.
+Reopening never trusts the serialized IDs as authorization: it rechecks the signed owner
+root and current policy, then replays ordinary suffixes. This core companion format must
+still be wired into native/browser atomic durable storage and transport negotiation before
+Node/PWA activation; an in-memory Backup or serialized fixture is not physical crash proof.
+
+`BootstrapAnchor.lean` proves reauthentication/removal refusal, exact anchor restoration,
+and duplicate-ID idempotence under explicit checks. Standalone Lean passed. Rust syntax and
+diff checks passed; Cargo pending shared queue. The `owner_bootstrap_store` regression covers
+two partial devices editing concurrently, duplicate delivery, equality with a full peer,
+serialized-anchor reopen, another write after reopen, torn backup rejection and known
+revocation refusal. Prior `owner_judgment` and `counted_base` gates remain required. New tests
+avoid direct Shown construction so root's lazy `Shown.items` implementation can integrate.
+
+Still open: compile/run these combined gates; native/PWA atomic durable activation and
+provider negotiation; live publication/UI integration; shared-writer and proposal/pre-cut
+suffix semantics; decoder resource isolation; actual device latency/reload measurements.
+The full original bootstrap/performance goal is not marked complete.

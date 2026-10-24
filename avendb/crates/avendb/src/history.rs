@@ -132,6 +132,15 @@ pub(crate) struct ScratchImage {
 }
 
 impl Scratch {
+    pub(crate) fn from_attested_item(item: Item, changes: &[&Change]) -> Option<Self> {
+        if item.has_parked_updates() || changes.iter().any(|c|!c.counted) {return None;}
+        let authored=item.authored();
+        Some(Self {item,holds:changes.iter().map(|c|c.write.edit).collect(),authored,tip:None})
+    }
+    pub(crate) fn within_version(&self, history:&History, deps:&[EditId])->bool {
+        let ids:HashSet<_>=history.version(deps).iter().map(|c|c.write.edit).collect();
+        self.holds.is_subset(&ids)
+    }
     pub(crate) fn image(&self) -> Option<ScratchImage> {
         if self.item.has_parked_updates() { return None; }
         Some(ScratchImage { snapshot: self.item.bytes(), holds: self.holds.iter().copied().collect(),
