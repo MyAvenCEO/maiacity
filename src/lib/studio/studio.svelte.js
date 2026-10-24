@@ -9,8 +9,11 @@ import { filmLut, gradeLut, nativeLut } from './luts.js';
 import { cached, evaluate, saveSpec, shotAt } from './shots.js';
 import { WorldViewer } from './world.svelte.js';
 import { session } from '$lib/avendb/session.svelte.js';
+import { refreshQueue } from './refresh.js';
+import { invalidateWorld } from './cuts.js';
+import { untrack } from 'svelte';
 import { scriptOf } from './screenplay.js';
-import { captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, stepOpen, transcriptOf, transcriptState } from './transcript.js';
+import { captionWordsOf, hasSound, lineWords, phraseBreak, rewordPhrase, transcriptOf } from './transcript.js';
 import { command, native } from '$lib/native';
 import { cleanEq, cleanKeys, keyDb, webAudioQ } from '../../../game/film/sound.js';
 
@@ -277,8 +280,7 @@ export class Studio {
 	skew = 0;
 	/** @type {Record<string, { t0: number; p0: number; t: number; p: number }>} */
 	pace = $state({});
-	/** @type {ReturnType<typeof setInterval> | null} */
-	renderPoll = null;
+	disposed = false;
 
 	/** @type {string[]} */
 	expanded = $state([]);
@@ -536,6 +538,7 @@ export class Studio {
 		// reads and writes is avenDB's, by the person's own shares
 		try {
 			const [media, tls, here, stories] = await Promise.all([allMedia(), listTimelines(), cutsHere().catch(() => false), listStories().catch(() => [])]);
+			if (this.disposed) return;
 			this.library = media;
 			this.timelines = tls;
 			this.stories = stories;
@@ -543,6 +546,7 @@ export class Studio {
 		} catch (e) {
 			this.error = /** @type {Error} */ (e).message;
 		}
+		if (this.disposed) return;
 		this.phase = 'ready';
 		this.watchVault();
 		void this.loadLuts();
@@ -550,7 +554,10 @@ export class Studio {
 		// a proxy the Mac just made — a world shot's too — is in the library at once, so its clips play it
 		if (native() && !this.unlisten)
 			this.unlisten = import('@tauri-apps/api/event').then(({ listen }) =>
-				listen('vault-proxy', () => void this.reloadLibrary())
+				Promise.all(['vault-proxy', 'jobs'].map((event) => listen(event, () => {
+					if (event === 'vault-proxy') this.vaultDirty = true;
+					this.vaultRefresh?.invalidate();
+				}))).then((stops) => () => stops.forEach((off) => off()))
 			);
 		/** @type {string | null} */
 		let last = null;
@@ -595,12 +602,15 @@ export class Studio {
 
 	/** The render queue: every cut's renders and hero frames still to do, as avenDB tasks the Mac runs. */
 	async refreshJobs() {
+		if (this.disposed) return;
 		try {
-			this.queue = /** @type {any} */ (await renderQueue());
+			const queue = await renderQueue();
+			if (this.disposed) return;
+			this.queue = /** @type {any} */ (queue);
 			this.jobsKnown = true;
 		} catch (e) {
 			console.warn('jobs:', /** @type {Error} */ (e).message);
-			this.jobsKnown = false;
+			if (!this.disposed) this.jobsKnown = false;
 		}
 	}
 
@@ -807,6 +817,7 @@ export class Studio {
 	 * read again, the playhead and tab kept. Never while a change of ours waits to be saved, unless `force`.
 	 */
 	async refresh(force = false) {
+		if (this.disposed) return;
 		const cur = this.current;
 		if (!cur || (!force && this.saving !== 'saved')) return;
 		let t;
@@ -815,7 +826,7 @@ export class Studio {
 		} catch {
 			return;
 		}
-		if (this.current?.id !== cur.id || (!force && (this.saving !== 'saved' || t.updated === cur.updated))) return;
+		if (this.disposed || this.current?.id !== cur.id || (!force && (this.saving !== 'saved' || t.updated === cur.updated))) return;
 		// an edit from elsewhere (an agent): one step back reverts it
 		if (this.baseline) this.past = [...this.past.slice(-49), this.baseline];
 		this.future = [];
@@ -1224,8 +1235,11 @@ export class Studio {
 	}
 
 	async reloadLibrary() {
+		if (this.disposed) return;
 		this.libraryAt = Date.now();
-		this.library = await allMedia().catch(() => this.library);
+		const library = await allMedia().catch(() => this.library);
+		if (this.disposed) return;
+		this.library = library;
 		this.retrySounds();
 	}
 
@@ -1416,14 +1430,14 @@ export class Studio {
 	unlisten = null;
 
 	destroy() {
+		this.disposed = true;
+		this.stopVault?.();
+		this.stopVault = null;
+		this.vaultRefresh?.close();
+		this.vaultRefresh = null;
 		void this.unlisten?.then((off) => off());
 		this.unlisten = null;
 		cancelAnimationFrame(this.frame);
-		this.poll(false);
-		if (this.vaultWatch) clearInterval(this.vaultWatch), (this.vaultWatch = null);
-		// left running, the timeline watch kept this whole studio alive after the page was left (its decoded sounds,
-		// its library, its world): one more on every visit
-		if (this.timelineWatch) clearInterval(this.timelineWatch), (this.timelineWatch = null);
 		this.world.detach();
 		this.silence();
 		clearInterval(this.listener);
@@ -2170,21 +2184,37 @@ export class Studio {
 	}
 
 	// ── what the vault brings later: audio proxies and transcripts (made on the server, synced into the catalog) ──
-	/** @type {ReturnType<typeof setInterval> | null} */
-	vaultWatch = null;
-	/** Is anything on screen waiting for the vault — a sound still loading, a transcript on its way? */
-	waitingOnVault() {
-		if (Object.values(this.soundState).some((v) => v !== 'ready' && v !== 'silent' && v !== 'loading')) return true;
-		const hashes = new Set([...this.clips.map((c) => c.hash), this.preview]);
-		return this.library.some((m) => hashes.has(m.hash) && hasSound(m) && stepOpen(transcriptState(m)));
-	}
-	/** @type {ReturnType<typeof setInterval> | null} */
-	timelineWatch = null;
+	/** @type {ReturnType<typeof refreshQueue> | null} */
+	vaultRefresh = null;
+	vaultDirty = true;
+	/** @type {(() => void) | null} */
+	stopVault = null;
 	watchVault() {
-		// the open timeline as others change it (an agent through MCP): seen here within seconds
-		// not while it plays: a read of the cut every few seconds then only costs frames
-		this.timelineWatch ??= setInterval(() => void (!this.playing && this.refresh()), 4000);
-		this.vaultWatch ??= setInterval(() => void (this.waitingOnVault() && this.reloadLibrary()), 20000);
+		if (this.stopVault || this.disposed) return;
+		const release = session.boot();
+		const queue = this.vaultRefresh = refreshQueue(async () => {
+			const changed = this.vaultDirty;
+			this.vaultDirty = false;
+			if (changed) invalidateWorld();
+			const results = await Promise.allSettled([...(changed ? [this.refresh(), this.reloadLibrary()] : []), this.refreshJobs(), this.refreshRenders()]);
+			const failed = results.find((result) => result.status === 'rejected');
+			if (failed?.status === 'rejected') throw failed.reason;
+		}, { delay: 500, allowed: () => !this.disposed && !this.playing && !document.hidden && session.phase === 'open', failed: (error) => console.warn('studio refresh:', error) });
+		const dispose = $effect.root(() => {
+			$effect(() => {
+				void session.revision;
+				void session.phase;
+				void this.saving;
+				untrack(() => { this.vaultDirty = true; queue.invalidate(); });
+			});
+			$effect(() => {
+				void this.playing;
+				untrack(() => queue.resume());
+			});
+		});
+		const resume = () => queue.resume();
+		document.addEventListener('visibilitychange', resume);
+		this.stopVault = () => { dispose(); document.removeEventListener('visibilitychange', resume); queue.close(); release(); };
 	}
 
 	// ── colour: a file's profile, set by hand when detection got it wrong (on its avenDB probe: the Mac makes its proxy
@@ -2208,11 +2238,11 @@ export class Studio {
 
 	// ── exporting: a job the Mac app renders natively (vault/app/src/render.rs); the studio shows how it goes ──
 	async refreshRenders() {
-		if (!this.current) return;
+		if (this.disposed || !this.current) return;
 		const id = this.current.id;
 		const before = this.renders;
 		const next = await listRenders(id).catch(() => null);
-		if (!next || this.current?.id !== id) return; // another timeline opened while this was on its way
+		if (this.disposed || !next || this.current?.id !== id) return;
 		this.renders = next;
 		const t = Date.now();
 		for (const r of next) {
@@ -2226,12 +2256,13 @@ export class Studio {
 		if (ended.length) {
 			this.showRenders = true;
 			if (ended.some((r) => r.status === 'done')) {
-				this.library = await allMedia().catch(() => this.library);
+				const library = await allMedia().catch(() => this.library);
+				if (this.disposed) return;
+				this.library = library;
 				if (this.stage === 'locked' || this.stage === 'graded') this.setMeta({ stage: 'rendered' });
 			}
 		}
 		void this.refreshDeliveries();
-		this.poll(next.some(running));
 	}
 	showRenders = $state(false);
 
@@ -2249,11 +2280,6 @@ export class Studio {
 		this.deliveries = /** @type {DeliveryRecord[]} */ (ds.map((/** @type {any} */ d) => ({ ...d, timeline: id, cut: name })));
 	}
 
-	/** @param {boolean} on */
-	poll(on) {
-		if (on && !this.renderPoll) this.renderPoll = setInterval(() => void this.refreshRenders(), 3000);
-		else if (!on && this.renderPoll) clearInterval(this.renderPoll), (this.renderPoll = null);
-	}
 	/** @param {'youtube-4k'} [delivery] one delivery; none: every one */
 	async exportTimeline(delivery) {
 		if (!this.current || this.queuing) return;
@@ -2264,7 +2290,7 @@ export class Studio {
 			const job = await queueRender(this.current.id, delivery);
 			this.skew = Date.parse(job.created) - Date.now();
 			this.renders = [job, ...this.renders.filter((r) => r.id !== job.id)];
-			this.poll(true);
+			this.vaultRefresh?.invalidate();
 		} catch (e) {
 			this.error = `Render: ${/** @type {Error} */ (e).message}`;
 		} finally {

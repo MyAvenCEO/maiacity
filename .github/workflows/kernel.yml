@@ -47,6 +47,9 @@ jobs:
       # the paths the tests import by ($lib) are SvelteKit's tsconfig's
       - run: bunx svelte-kit sync
 
+      - name: Check application types
+        run: bun run check
+
       # src/lib/sandbox/              the kernel's engines frozen (bytes = their hashes, sources = the latest, no CDN),
       #                               the logic core (QuickJS, its limits), the view engine's sanitizer and templates,
       #                               the math engine against hostile LaTeX and its MathML checker against hostile MathML
@@ -75,6 +78,9 @@ jobs:
           ./src/lib/assets/vault.test.js
           ./src/lib/assets/worlds.test.js
           ./src/lib/assets/params.test.js
+          ./src/lib/assets/register.test.js
+          ./src/lib/assets/versions.test.js
+          ./src/lib/models/timber.test.js
           ./src/lib/code/
           ./game/code/sources/proof-worker.test.js
           ./src/lib/render/lint.test.js
@@ -82,6 +88,9 @@ jobs:
           ./src/lib/avendb/
           ./src/lib/media/
           ./src/lib/studio/aven.test.js
+          ./src/lib/studio/cuts.test.js
+          ./src/lib/studio/refresh.test.js
+          ./src/lib/studio/media-proxies.test.js
           ./scripts/film/avendb.test.mjs
           ./scripts/diagnostics/network-probe.test.mjs
           ./api/test/

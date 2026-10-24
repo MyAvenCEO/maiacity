@@ -2,9 +2,39 @@
 // Cuts in avenDB (./cuts.js): a timeline kept as a record and read back the same.
 // Run: bun test src/lib/studio/cuts.test.js
 import { expect, test } from 'bun:test';
-import { CUT_V1, fieldsOf, isCut, journeyWith, restill, timelineOf } from './cuts.js';
+import { CUT_V1, fieldsOf, invalidateWorld, isCut, journeyWith, restill, timelineOf, worldOf } from './cuts.js';
 import { withWords } from './transcript.js';
 import { libraryOf } from './aven.js';
+
+test('library, cut and task readers share one snapshot until a device change invalidates it', async () => {
+	invalidateWorld();
+	let reads = 0;
+	const world = { entries: [], vaults: [] };
+	const call = async () => { reads++; return { ok: world }; };
+	const results = await Promise.all([worldOf(call), worldOf(call), worldOf(call)]);
+	expect(reads).toBe(1);
+	expect(results).toEqual([world, world, world]);
+	invalidateWorld();
+	await worldOf(call);
+	expect(reads).toBe(2);
+	invalidateWorld();
+});
+
+test('a failed retired snapshot cannot evict a newer successful one', async () => {
+	invalidateWorld();
+	let fail;
+	const old = worldOf(() => new Promise((resolve, reject) => { fail = reject; }));
+	const rejected = old.catch(() => null);
+	invalidateWorld();
+	let reads = 0;
+	const call = async () => { reads++; return { ok: { entries: [], vaults: [] } }; };
+	await worldOf(call);
+	fail(new Error('old request failed'));
+	await rejected;
+	await worldOf(call);
+	expect(reads).toBe(1);
+	invalidateWorld();
+});
 
 test('a timeline goes into a cut record and comes back the same', () => {
 	const t = { id: 'x', name: 'Trailer', project: 'trailer', variant: null, description: 'd', aspect: '9:16', tags: ['a'], stage: 'edit', version: 2, clips: [{ id: 'c1', track: 'V1', start: 0, in: 0, dur: 3, hash: 'aven:r:1:1:' }], color: { working: 'acescct', output: 'odt-rec709' }, grade: null, if_updated: '3' };

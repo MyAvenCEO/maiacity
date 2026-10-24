@@ -189,12 +189,10 @@ function valueIn(ref) {
  * file; none off the Mac app or while avenDB isn't open.
  */
 export async function avenLibrary() {
-	const { native } = await import('$lib/native');
-	if (!native()) return [];
-	const { call, status } = await import('$lib/avendb/native.js');
-	if (!(await status().catch(() => null))?.open) return [];
-	const { answer } = await import('$lib/avendb/ops.js');
-	const items = libraryOf(answer(await call('run', { op: 'world' })));
+	const { device, worldOf } = await import('./cuts.js');
+	const call = await device();
+	if (!call) return [];
+	const items = libraryOf(await worldOf(call));
 	await Promise.all(
 		items.flatMap((m) =>
 			['transcript', 'analysis'].map(async (k) => {

@@ -13,6 +13,7 @@
 <script>
 	import { onMount } from 'svelte';
 	import { onStir } from './stirs.svelte.js';
+	import { refreshQueue } from '$lib/studio/refresh.js';
 	import { native } from '$lib/native';
 	import { BUILT_IN, held, toRecord } from '$lib/studio/jobs/rules.js';
 	import { RULE } from '$lib/studio/jobs/schemas.js';
@@ -44,6 +45,7 @@
 	let said = $state('');
 	let failed = $state('');
 	let now = $state(Date.now());
+	let alive = false;
 	/** what the page shows: everything, or one part */
 	let show = $state(/** @type {(typeof SHOWS)[number][0]} */ (''));
 	/** the kind of job picked on the left, whose jobs alone show */
@@ -77,14 +79,16 @@
 	async function loadMac() {
 		try {
 			const j = /** @type {{ active: MacJob[], history: MacJob[], holds?: string[] }} */ (await command('jobs_list', { limit: 300 }));
+			if (!alive) return;
 			[active, history, holds] = [j.active, j.history, j.holds ?? []];
 		} catch (e) {
-			failed = why(e);
+			if (alive) failed = why(e);
 		}
 	}
 
 	/** A job of the Mac's changed, as its event tells it. @param {MacJob} j */
 	function changed(j) {
+		if (!alive) return;
 		if (FINISHED.includes(j.state)) {
 			active = active.filter((x) => x.id !== j.id);
 			history = [j, ...history.filter((x) => !(x.id === j.id && x.ended === j.ended))].slice(0, 300);
@@ -95,7 +99,13 @@
 	}
 
 	onMount(() => {
+		alive = true;
 		let gone = false;
+		const refresh = refreshQueue(loadMac, { allowed: () => mac && !gone && !document.hidden });
+		const visible = () => refresh.resume();
+		document.addEventListener('visibilitychange', visible);
+		/** @type {typeof import('$lib/studio/jobs/mac.js') | null} */
+		let runner = null;
 		/** @type {(() => void)[]} */
 		const unlisten = [];
 		// this device's syncs, read again as the device says they changed (./stirs.js), never on a timer
@@ -110,12 +120,13 @@
 		const unstir = onStir(read);
 		// the Mac's own jobs: read once, then as its events tell, read whole again now and then (what holds its lanes)
 		if (mac) {
-			void loadMac();
+			refresh.invalidate();
+			void import('$lib/studio/jobs/mac.js').then((module) => { if (!gone) runner = module; });
 			void import('@tauri-apps/api/event')
 				.then(async ({ listen }) => {
 					const on = [
 						await listen('jobs', (e) => changed(/** @type {MacJob} */ (e.payload))),
-						await listen('jobs-gone', (e) => (active = active.filter((x) => x.id !== e.payload)))
+						await listen('jobs-gone', (e) => { if (!gone) active = active.filter((x) => x.id !== e.payload); })
 					];
 					if (gone) on.forEach((u) => u());
 					else unlisten.push(...on);
@@ -124,13 +135,17 @@
 		}
 		let ticks = 0;
 		// the clock their times count from, each second
-		const tick = setInterval(async () => {
+		const tick = setInterval(() => {
+			if (document.hidden) return;
 			now = Date.now();
-			if (mac && ++ticks % 15 === 0) void loadMac();
-			if (mac) said = (await import('$lib/studio/jobs/mac.js')).lines[0] ?? '';
+			if (mac && ++ticks % 15 === 0) refresh.invalidate();
+			if (runner) said = runner.lines[0] ?? '';
 		}, 1000);
 		return () => {
 			gone = true;
+			alive = false;
+			refresh.close();
+			document.removeEventListener('visibilitychange', visible);
 			unstir();
 			clearInterval(tick);
 			unlisten.forEach((u) => u());

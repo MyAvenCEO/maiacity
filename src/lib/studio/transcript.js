@@ -12,7 +12,7 @@
 /** A caption word as the render reads it (vault-render timeline.rs `Word`). @typedef {{ word: string, start: number, end: number }} CaptionWord */
 /** @typedef {{ s: number, e: number, from: number, to: number, sp?: string | number }} Line */
 
-export const HASH = /^[0-9a-f]{64}$/;
+import { isStoredMedia } from '../media/ref.js';
 
 /** @param {unknown} v @returns {v is Word} */
 const isWord = (v) => !!v && typeof v === 'object' && typeof (/** @type {Word} */ (v).w) === 'string' && Number.isFinite((/** @type {Word} */ (v).s)) && Number.isFinite((/** @type {Word} */ (v).e));
@@ -99,13 +99,13 @@ export const stepOpen = (s) => s.state === 'queued' || s.state === 'running' || 
 export function hasSound(m) {
 	if (!m || m.kind !== 'video') return m?.kind === 'audio';
 	if (m.meta?.sequence === 'exr' || m.class === 'proxy' || typeof m.meta?.shot === 'string') return false;
-	if (typeof m.meta?.audio === 'string' && HASH.test(m.meta.audio)) return true;
+	if (isStoredMedia(m.meta?.audio)) return true;
 	const probe = /** @type {{ audio?: boolean } | undefined} */ (m.meta?.probe);
 	if (probe && typeof probe.audio === 'boolean') return probe.audio;
 	return m.class === 'original';
 }
 /** A video's audio proxy (its hash), when made. @param {MediaItem | undefined} m @returns {string | null} */
-export const audioProxyOf = (m) => (typeof m?.meta?.audio === 'string' && HASH.test(m.meta.audio) ? m.meta.audio : null);
+export const audioProxyOf = (m) => (typeof m?.meta?.audio === 'string' && isStoredMedia(m.meta.audio) ? m.meta.audio : null);
 
 /**
  * The transcript in lines to read: its utterances when it has them, else sentences (a full stop, a pause longer than

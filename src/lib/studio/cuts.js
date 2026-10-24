@@ -116,6 +116,7 @@ const READS = new Set(['world', 'get', 'query', 'history', 'schemas', 'requests'
  * @type {{ at: number, world: Promise<any> } | null}
  */
 let kept = null;
+export const invalidateWorld = () => { kept = null; };
 const FRESH = 3000;
 
 /** The app's avenDB device, or `null` off the Mac app or while it isn't open: a change through it drops the world kept. */
@@ -138,7 +139,7 @@ export const worldOf = async (call) => {
 	if (!kept || performance.now() - kept.at > FRESH) {
 		const world = call('run', { op: 'world' }).then(answer);
 		kept = { at: performance.now(), world };
-		world.catch(() => (kept = null));
+		world.catch(() => { if (kept?.world === world) kept = null; });
 	}
 	return kept.world;
 };

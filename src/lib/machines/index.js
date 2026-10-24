@@ -31,7 +31,8 @@ import { batteryPack as batteryPackV10 } from './batterypack.js';
 import { truck as truckV1 } from '$lib/models/furniture';
 import { truck } from './truck.js';
 import { castOf } from '$lib/assets/parts.js';
-import { FIRST, versioned } from '$lib/app/versions.js';
+import { FIRST } from '$lib/app/versions.js';
+import { registerAssets } from '$lib/assets/register.js';
 
 /** @typedef {import('$lib/actors').Actor} Actor */
 /** @typedef {import('$lib/actors').Family} Family */
@@ -256,4 +257,4 @@ const LIST = [
 ];
 
 /** @type {Family[]} */
-export const MACHINES = versioned(LIST, 'variants', HISTORY);
+export const MACHINES = registerAssets(LIST, 'variants', HISTORY);

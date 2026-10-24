@@ -38,7 +38,8 @@ import { CHARD_STAGES, KALE_STAGES, chard, kale } from './greens.js';
 import { BEAN_STAGES, beans } from './beans.js';
 
 import * as THREE from 'three';
-import { FIRST, at, versioned } from '../app/versions.js';
+import { FIRST, at } from '../app/versions.js';
+import { registerAssets } from '$lib/assets/register.js';
 import { detailAt, lite } from './grow.js';
 import { oneFruit, ripeOf } from './fruit.js';
 import { orchard as orchardV1 } from './orchard.v1.js';
@@ -779,7 +780,7 @@ function fruitOf(grow, last, stage, seed) {
  * is grown with
  * @type {(Plant & { versions: import('../app/versions.js').Version<Plant['grow']>[], version: number, params: import('$lib/assets/params.js').Param[] })[]}
  */
-export const PLANTS = versioned(
+export const PLANTS = registerAssets(
 	LAYERS.flatMap((l) => [...ALL, ...WALD, ...FIELDS].filter((p) => (p.layer ?? LAYER_OF[p.id] ?? 'herbaceous') === l.id).map((p) => ({ ...p, layer: l.id, params: paramsOf(p) }))),
 	'grow',
 	HISTORY
