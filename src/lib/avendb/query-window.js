@@ -54,14 +54,21 @@ export function queryDiscovery(op) {
  * @param {{ device: () => any, read: (device: any, op: any, signal: AbortSignal, demand: ReturnType<typeof createDemand>) => Promise<any> }} options
  */
 export function createReadWindow({ device, read }) {
-	let current = null, held = null, closed = false, queryKey = null;
+	let current = null, held = null, closed = false, queryKey = null, clearing = 0;
 	const clear = () => {
-		queryKey = null;
 		current?.controller.abort();
 		current = null;
-		void held?.demand.replace([]);
+		const generation = ++clearing;
+		// Effect cleanup and its replacement run in one turn. Abort stale reads immediately,
+		// but let an unchanged replacement retain the discovery response already in flight.
+		queueMicrotask(() => {
+			if (generation !== clearing) return;
+			queryKey = null;
+			void held?.demand.replace([]);
+		});
 	};
 	const release = () => {
+		clearing++;
 		queryKey = null;
 		current?.controller.abort();
 		current = null;
@@ -71,6 +78,7 @@ export function createReadWindow({ device, read }) {
 	return {
 		async read(op) {
 			if (closed) return null;
+			clearing++;
 			current?.controller.abort();
 			current = null;
 			const d = device();

@@ -215,3 +215,30 @@ test('reactive results replace old row hints and changed predicates clear them b
 		block.resolve({ ok: { rows: [] } }); await next;
 	} finally { view.close(); }
 });
+
+test('same-turn effect cleanup and reread preserve discovery; leaving still releases it', async () => {
+	const d = node(), blocked = deferred(); let block = false, latestSignal;
+	const view = createReadWindow({ device: () => d, read: async (_, __, signal) => {
+		latestSignal = signal;
+		return block ? blocked.promise : { ok: { rows: [] } };
+	} });
+	const op = { op: 'query', where: { type: ['note'] } };
+	try {
+		await view.read(op); await flush();
+		for (let n = 0; n < 8; n++) {
+			view.clear();
+			await view.read(structuredClone(op)); await flush();
+		}
+		expect(d.calls.length).toBe(1);
+		block = true;
+		const pending = view.read(op); await flush();
+		view.clear();
+		expect(latestSignal.aborted).toBe(true);
+		await flush();
+		expect(d.calls.at(-1).revision).toBe(2);
+		expect(d.calls.at(-1).queries).toBeUndefined();
+		blocked.resolve({ ok: { rows: [{ entry: id(8) }] } });
+		expect(await pending).toBeNull(); await flush();
+		expect(d.calls.at(-1).entries).toEqual([]);
+	} finally { view.close(); }
+});
