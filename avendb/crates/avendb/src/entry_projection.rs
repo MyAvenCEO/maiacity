@@ -24,6 +24,7 @@ pub struct PreparedEntryProjection {
 
 /// Authenticated state at the stated basis, explicitly read-only until ordinary history arrives.
 /// Fields cannot be constructed by callers; the Lab gate is the sole constructor.
+#[derive(Clone)]
 pub struct VerifiedEntryProjection {
     entry: EntryId,
     snapshot: EditId,
@@ -257,6 +258,25 @@ mod tests {
         assert_eq!(projection.record(MAIN), Some(lab.item(mac, entry).unwrap().record()));
         assert!(projection.basis().iter().any(|id| !held.contains(id)));
         assert_eq!(lab.log(phone).ids(), held, "projection adopts no signatures, history or authorization");
+        assert!(lab.retain_entry_projection(phone, snap, entry, sealed));
+        let query = serde_json::json!({ "op": "query", "schema": "stored", "where": { "type": ["note"] } });
+        let projected = crate::engine::read(&lab, phone, &query);
+        let row = &projected["ok"]["rows"][0];
+        assert_eq!(row["record"], lab.item(mac, entry).unwrap().record(), "generic query reads checkpoint before history");
+        assert_eq!(row["readOnly"], true);
+        assert_eq!(row["checkpoint"]["partial"], true);
+        let get = crate::engine::read(&lab, phone, &serde_json::json!({ "op": "get", "entry": entry.to_hex(), "schema": "stored" }));
+        assert_eq!(get["ok"]["record"], row["record"]);
+        assert_eq!(get["ok"]["readOnly"], true);
+        lab.sync(mac, phone);
+        assert!(lab.entry_projection(phone, entry).is_none(), "canonical history covering basis supersedes checkpoint");
+        lab.edit(mac, vault, entry, |item| item.set_text(2, "after checkpoint")).unwrap();
+        lab.sync(mac, phone);
+        let current = crate::engine::read(&lab, phone, &query);
+        assert_eq!(current["ok"]["rows"][0]["record"], lab.item(mac, entry).unwrap().record());
+        assert!(current["ok"]["rows"][0].get("checkpoint").is_none());
+        lab.lock(phone);
+        assert!(lab.held(phone).projections.lock().unwrap().is_empty(), "locking clears decrypted checkpoint cache");
     }
 
     #[test]
@@ -306,4 +326,60 @@ mod tests {
         assert!(rejects(br#"{"broken":"unfinished"#));
     }
 
+}
+
+// Bounded, recipient-keyed read projections. Store replacement/lock drops this entire cache.
+pub(super) struct CachedEntryProjection {
+    snapshot: EditId,
+    sealed: Vec<u8>,
+    revision: crate::policy::LogRevision,
+    value: VerifiedEntryProjection,
+}
+const CACHE_ENTRIES: usize = 8;
+const CACHE_BYTES: usize = 4 << 20;
+
+impl Lab {
+    /// Retain only a normally verified checkpoint. This is not entry-history or policy adoption.
+    pub fn retain_entry_projection(&self, on: SignerId, snapshot: EditId, entry: EntryId, sealed: Vec<u8>) -> bool {
+        let Some(value) = self.open_entry_projection(on, snapshot, entry, &sealed) else { return false; };
+        let store = self.held(on);
+        let mut cache = store.projections.lock().expect("entry projections");
+        let key = (on, entry);
+        let rank = |id| store.log.edits().iter().find(|e| e.id() == id).map(|e| (e.depth, id));
+        if cache.get(&key).is_some_and(|old| rank(old.snapshot) > rank(snapshot)) { return false; }
+        cache.remove(&key);
+        while cache.len() >= CACHE_ENTRIES || cache.values().map(|x| x.sealed.len()).sum::<usize>() + sealed.len() > CACHE_BYTES {
+            let Some(first) = cache.keys().next().copied() else { return false; };
+            cache.remove(&first);
+        }
+        cache.insert(key, CachedEntryProjection { snapshot, sealed, revision: store.log.revision(), value });
+        true
+    }
+
+    /// Read-only checkpoint only while canonical history has not materialized its signed basis.
+    /// Authorization is cached only for the exact immutable log revision and recipient.
+    pub(crate) fn entry_projection(&self, on: SignerId, entry: EntryId) -> Option<VerifiedEntryProjection> {
+        let store = self.held(on);
+        if store.replayed != store.log.edits().len() || !self.sees(on, entry) { return None; }
+        let key = (on, entry);
+        let revision = store.log.revision();
+        let (snapshot, sealed) = {
+            let cache = store.projections.lock().expect("entry projections");
+            let cached = cache.get(&key)?;
+            let covered = store.shown.get(&entry).is_some_and(|shown| shown.history.landed()
+                && cached.value.basis.iter().all(|id| shown.history.get(*id).is_some_and(|c| c.counted)));
+            if covered { return None; }
+            if cached.revision == revision { return Some(cached.value.clone()); }
+            (cached.snapshot, cached.sealed.clone())
+        };
+        let checked = self.open_entry_projection(on, snapshot, entry, &sealed);
+        let mut cache = store.projections.lock().expect("entry projections");
+        match checked {
+            Some(value) => {
+                if let Some(cached) = cache.get_mut(&key) { cached.revision = revision; cached.value = value.clone(); }
+                Some(value)
+            }
+            None => { cache.remove(&key); None }
+        }
+    }
 }

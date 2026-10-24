@@ -1,6 +1,6 @@
 # Owner-approved entry projection foundation
 
-This is a read-only primitive, not a completed bootstrap transport. It is not wired into peer reception or application queries. Ordinary signed entry history remains the write and convergence authority.
+This is a scoped read-only checkpoint path, not a completed bootstrap transport. Retained verified checkpoints feed the generic query/get engine. Peer publication and automatic fetching remain separate delivery work. Ordinary signed entry history remains the write and convergence authority.
 
 `Lab::draft_entry_projection` exports the held entry’s JSON records per line and signed-history frontier, encrypts the envelope under the current entry key, and returns content-addressed bytes plus an ordinary unsigned `Action::Snapshot` draft. The existing vault-owner approval ceremony must authorize that draft. Possessing a device, hosting a peer, or holding plaintext does not confer this authority.
 
@@ -18,12 +18,18 @@ The envelope contains uncompressed JSON records, not Loro snapshots. It imports 
 
 This representation eliminates historical CRDT operation bytes from the read-only view. Ordinary history must still arrive before canonical mutation/convergence. No projection claims a writable CRDT checkpoint.
 
+## Generic read integration
+
+`retain_entry_projection` validates before retaining, keyed by recipient and entry. Each Store holds at most eight entries and 4 MiB ciphertext total; replacement or locking clears them, and ending a hosted session removes its rows. Query access caches validation only for the exact process-local log revision; a changed log rechecks the ordinary gate. Pending replay cannot return a checkpoint. Canonical history supersedes the projection once its signed basis is materialized. A newer canonical record cannot be replaced by an older projection.
+
+Generic `query` and unpinned `get` use the normal schema/lens/filter pipeline and mark projected rows read-only, with the snapshot ID, signed basis and partial/freshness metadata. Pinned/history reads remain canonical. Projected file availability is explicitly incomplete.
+
 ## Remaining runtime work
 
 1. Persist and publish owner-approved ciphertext through the existing content-addressed file path, retaining the signed snapshot evidence.
 2. Discover snapshots and sufficient verified governance/entry-creation evidence for the active query, without promoting peer hints into authority.
 3. Enforce encoded limits before network buffering and measure peak parsing memory on iPhone/iPad.
-4. Expose projected read-only rows with explicit basis/partial completeness and reconcile them with ordinary entry materialization.
+4. Extend checkpoint-aware reads to followed links and expose partial-state indicators in application UX.
 5. Connect signed updates from the frontier without allowing projection state to authorize writes or bypass revocation.
 6. Test physical fresh-device first view and restart behavior before declaring bootstrap delivered.
 

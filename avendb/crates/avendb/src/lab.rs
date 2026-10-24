@@ -737,6 +737,7 @@ struct Store {
     /// What it reads of selectors, headers and tags, from the two above.
     readings: Readings,
     shown: BTreeMap<EntryId, Shown>,
+    projections: std::sync::Mutex<BTreeMap<(SignerId, EntryId), entry_projection::CachedEntryProjection>>,
     /// The digest of each log it holds (`sync::digests`), what it gossips: `None` until worked out for its edits now.
     digests: Option<BTreeMap<LogId, [u8; 32]>>,
     /// The vaults it follows, smallest first: it names them in each request (`sync::Ask::follow`), and is sent what
@@ -808,6 +809,7 @@ impl Default for Store {
             spoilt: HashSet::new(),
             readings: Readings::default(),
             shown: BTreeMap::new(),
+            projections: std::sync::Mutex::new(BTreeMap::new()),
             digests: None,
             follow: vec![],
             query_depth: lens::CEILING,
@@ -869,6 +871,7 @@ impl Store {
         self.spoilt.clear();
         self.readings = Readings::default();
         self.shown.clear();
+        self.projections.lock().expect("entry projections").clear();
         self.reshow = true;
         self.opened.clear();
         self.opened_before.clear();
@@ -2493,8 +2496,11 @@ impl Lab {
 
     /// Session `s` (`host`) ends: its key is forgotten. What it wrote stays, as every device's writes.
     pub fn unhost(&mut self, s: SignerId) {
-        if self.hosted.remove(&s).is_some() {
+        if let Some(hosted) = self.hosted.remove(&s) {
             self.keys.remove(&s);
+            if let Some(store) = self.stores.get(&hosted.host) {
+                store.projections.lock().expect("entry projections").retain(|(recipient, _), _| *recipient != s);
+            }
         }
     }
 

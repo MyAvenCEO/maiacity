@@ -889,11 +889,24 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
     for entry in lab.entries(me) {
         let Some(v) = lab.vault_of_entry(me, entry).filter(|v| vault.is_none_or(|x| x == *v)) else { continue };
         let Some(m) = lab.meaning(me, entry).filter(|m| plan.matches(&m.attrs)) else { continue };
-        let Some(item) = lab.item(me, entry) else { continue };
+        let checkpoint = lab.entry_projection(me, entry);
         let lane = lanes.entry(v).or_insert_with(|| lane(lab, me, v));
-        let Some((seen, cut)) = see_within(lane, item, &schema, depth) else { continue };
+        let projected = checkpoint.as_ref().and_then(|p| p.record(MAIN));
+        let visible = if let Some(mut stored) = projected {
+            let below = stored.as_object_mut().map(|r| ops::empty_below(r, depth)).unwrap_or_default();
+            seen_of(lane, &stored, &BTreeSet::new(), &schema).map(|mut seen| {
+                seen.read_only = true;
+                ops::take_out(&mut seen.record, &below);
+                (seen, !below.is_empty())
+            })
+        } else {
+            lab.item(me, entry).and_then(|item| see_within(lane, item, &schema, depth))
+        };
+        let Some((seen, cut)) = visible else { continue };
         if w.holds(&m.attrs, &seen.record) {
-            rows.push((entry, v, m.attrs, seen, cut));
+            let provenance = checkpoint.map(|p| json!({ "snapshot": p.snapshot().to_hex(),
+                "basis": ids(p.basis()), "partial": true, "freshness": "owner-attested-basis" }));
+            rows.push((entry, v, m.attrs, seen, cut, provenance));
         }
     }
     let label = |a: &Attrs, l: &str| -> Value {
@@ -904,7 +917,7 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
             _ => a.created.into(),
         }
     };
-    rows.sort_by(|(_, _, a, x, _), (_, _, b, y, _)| {
+    rows.sort_by(|(_, _, a, x, _, _), (_, _, b, y, _, _)| {
         let by = |(key, down): &(By, bool)| {
             let o = match key {
                 By::Label(l) => compare(Some(&label(a, l)), Some(&label(b, l))),
@@ -917,7 +930,7 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
     let count = rows.len();
     let page = rows.into_iter().skip(offset).take(limit.unwrap_or(usize::MAX));
     let mut shown = vec![];
-    for (entry, v, attrs, seen, cut) in page {
+    for (entry, v, attrs, seen, cut, checkpoint) in page {
         let picked = |f: &String| select.as_ref().is_none_or(|fs| fs.contains(f));
         let mut record = seen.record.iter().filter(|(f, _)| picked(f)).map(|(f, x)| (f.clone(), x.clone())).collect();
         if !follow.is_empty() {
@@ -925,6 +938,7 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
         }
         let mut row = row(entry, v, &attrs, &seen, record);
         row["cut"] = cut.into();
+        if let Some(checkpoint) = checkpoint { row["checkpoint"] = checkpoint; }
         shown.push(row);
     }
     Ok(json!({ "rows": shown, "count": count, "plan": plan.to_json(), "depth": depth }))
@@ -961,6 +975,28 @@ pub(crate) fn limits(depth: usize) -> Value {
 /// asset's recipe on its line, is read before its vault accepts it.
 fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let (entry, line, schema) = (entry_of(o)?, line_of(o, "line")?, named(o)?);
+    if !o.contains_key("at") && !o.contains_key("version") {
+        if let Some(checkpoint) = lab.entry_projection(me, entry) {
+            if let Some(stored) = checkpoint.record(line) {
+                let vault = lab.vault_of_entry(me, entry).ok_or(Refused::NoEntry)?;
+                let m = lab.meaning(me, entry).ok_or(Refused::NoEntry)?;
+                let mut seen = seen_of(&lane(lab, me, vault), &stored, &BTreeSet::new(), &schema)
+                    .ok_or_else(|| unseen(&schema))?;
+                seen.read_only = true;
+                let mut out = row(entry, vault, &m.attrs, &seen, seen.record.clone());
+                out["line"] = line_json(line);
+                out["heads"] = ids(checkpoint.basis()).into();
+                out["at"] = Value::Null;
+                out["version"] = Value::Null;
+                out["authored"] = json!([]);
+                out["files"] = json!([]);
+                out["filesComplete"] = false.into();
+                out["checkpoint"] = json!({ "snapshot": checkpoint.snapshot().to_hex(),
+                    "basis": ids(checkpoint.basis()), "partial": true, "freshness": "owner-attested-basis" });
+                return Ok(out);
+            }
+        }
+    }
     let h = lab.history(me, entry).ok_or(Refused::NoEntry)?;
     if !h.lines().contains(&line) {
         return Err(Refused::NoEntry);
