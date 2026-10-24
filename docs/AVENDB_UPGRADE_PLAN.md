@@ -9,6 +9,10 @@ Last maintained: 2026-10-25. Current execution order: keep three subagents plus 
 ### Current release and separate follow-up status — 24 October 2026
 
 
+**Post-review correction:** combined core at5041f9fe passed254/254 in19.84s; generated Lean vectors are unchanged. Review then found that a post-base suffix with a missing schema could be uncounted while old checkpoint judgments matched. [a1c4b19d](https://github.com/MyAvenCEO/maiacity/commit/a1c4b19d) conservatively retains the anchor whenever any post-base canonical change is uncounted, with a withheld-custom-schema regression. That new regression awaits Rust execution; genuine rejected suffixes conservatively retain the anchor too. Native authentication Rust compilation is running. CI kernel run40140355947 failed application types (47errors), principally manifest/file-entry JSDoc and a test typing issue; repair is underway. This is not a passed release candidate or deployment.
+
+
+
 **Latest integration and Mac observation (25 October):** [ef126549](https://github.com/MyAvenCEO/maiacity/commit/ef126549) connects active checkpoint schema/lens waits to bounded authorized discovery. [98b049dc](https://github.com/MyAvenCEO/maiacity/commit/98b049dc) retires retained anchors only after independent canonical reconstruction with attested judgment and signed/opened-body checks. Combined Lean passed118jobs; the final core rerun is in progress. Net and native validation remain pending. After the user reported Touch ID approval, the installed711fcebe app still displayed “Waiting for your passkey3025.2s”; this is an unresolved authentication wait, not a passed reconnect or measured replay. The integrated timeout/cancellation repair is not installed yet. PR1271 remains draft and these changes are not deployed.
 
 
