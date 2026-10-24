@@ -55,3 +55,16 @@ theorem commit_retains_anchor (j : JournalCommit) (d : Disk) (whole : Bool)
   · exact (Option.some.inj h).symm
   · contradiction
 end AvenDB.BootstrapAnchor
+
+namespace AvenDB.BootstrapAnchor
+/- Fixed-size frontier receipt: collision resistance is represented explicitly as
+injectivity over the compared frontiers. This is not a proof of BLAKE3 security.
+A receipt proves consistency with a saved log, never owner authorization. -/
+def exactFrontier (digest : List Nat → Nat) (saved actual : List Nat) : Prop :=
+  saved.length = actual.length ∧ digest saved = digest actual
+
+theorem frontier_match_is_exact (digest : List Nat → Nat)
+    (binding : ∀ a b, digest a = digest b → a = b)
+    (saved actual : List Nat) (h : exactFrontier digest saved actual) : saved = actual := by
+  exact binding saved actual h.2
+end AvenDB.BootstrapAnchor

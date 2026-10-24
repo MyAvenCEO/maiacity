@@ -546,3 +546,28 @@ pushed; Rust gates remain pending.
    publication, revocation/Mark, crash recovery and older-peer fallback before
    enabling runtime adoption. Shared/capability/proposal cases remain refused until
    their exact semantic restoration is implemented and differentially tested.
+
+### Fixed-size durable frontier (supersedes the 1024-write save ceiling)
+
+The newly emitted companion is version 2: each encrypted anchor carries a u64
+write count and a domain-separated BLAKE3 digest of **all held entry-write IDs in
+persisted order**. The snapshot's signed ID must also exist. Decoder recomputation
+requires an exact match before restoring the anchor; checksum, signed log and
+owner/policy checks remain independent. An extra, missing, replaced or reordered
+entry write fails the consistency fence. This relies explicitly on hash collision
+resistance, not on depth or on the hosted peer. The format has constant frontier
+wire size regardless of edit count. Version 1 remains readable with its old bounds.
+
+`bootstrap_bytes` still returns an explicit failure for invalid anchor count,
+missing snapshot or oversized ciphertext, before any journal acknowledgement.
+The old arbitrary 1024-write serialization ceiling is removed. Existing atomic
+journal captures ensure the encoded frontier and signed records name the same
+state; no write ID list is allocated. Runtime admission's current bounded suffix
+window is a separate remaining scalability issue, not resolved by this storage
+format change. Digest computation still scans held entry writes on a due save.
+
+Lean `frontier_match_is_exact` passed with the digest-binding assumption explicit.
+The updated `bootstrap_companion_frontier_has_fixed_size_beyond_1024_writes` regression
+covers 1024/1025 writes, unchanged wire length, v1 compatibility, stale/torn/reordered
+frontier rejection and digest corruption. Rust execution remains pending root's
+compiler queue; syntax and diff checks passed.
