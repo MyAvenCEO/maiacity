@@ -46,6 +46,18 @@ pub(crate) struct RetainedOverlay {
 }
 
 impl Lab {
+    /// Authorized provenance of a currently adopted owner base. A hint is neither
+    /// global completeness nor permission to skip ordinary write admission.
+    pub fn active_owner_base(&self, on: SignerId, entry: EntryId) -> Option<(EditId, Vec<EditId>)> {
+        let store = self.held(on);
+        if !store.bootstrap_active.contains(&entry)
+            || store.replayed != store.log.edits().len() { return None; }
+        let (snapshot, _) = store.bootstrap_bases.get(&entry)?;
+        let (vault, stated, _) = self.projection_authority(on, *snapshot, entry)?;
+        if !store.replay.state.acts_for(on, vault) { return None; }
+        Some((*snapshot, stated.basis.clone()))
+    }
+
     pub(crate) fn take_owner_overlay(&mut self, on: SignerId) -> Option<RetainedOverlay> {
         let store = self.stores.get_mut(&on)?;
         let basis = store.bootstrap_basis.take()?;
@@ -504,6 +516,7 @@ mod tests {
         lab.receive(phone, vec![signed], vec![]);
         let canonical = lab.held(phone).replay.state.slice_of(entry);
         assert!(!lab.held(phone).bootstrap_active.contains(&entry));
+        assert!(lab.active_owner_base(phone, entry).is_none());
         assert!(!lab.adopt_owner_entry_base(phone, snapshot, entry, sealed));
         assert_eq!(lab.held(phone).view().slice_of(entry), canonical, "historical stays/seals cannot overwrite the current policy");
     }
@@ -530,6 +543,20 @@ mod tests {
             let offer = lab.entry_projection_offer(mac, device, entry).unwrap();
             lab.receive(device, offer.evidence, vec![]);
             assert!(lab.adopt_owner_entry_base(device, snapshot, entry, sealed.clone()));
+            assert_eq!(lab.retained_projection_hint(device, entry), Some(snapshot));
+            let detail = crate::engine::read(&lab, device, &serde_json::json!({
+                "op":"get", "entry":entry.to_hex(), "schema":"stored"
+            }));
+            assert_eq!(detail["ok"]["checkpoint"]["partial"], true);
+            assert_eq!(detail["ok"]["filesComplete"], false);
+            let query = crate::engine::read(&lab, device, &serde_json::json!({
+                "op":"query", "schema":"stored", "observeRevision":true
+            }));
+            let row = query["ok"]["rows"].as_array().unwrap().iter()
+                .find(|r| r["entry"] == entry.to_hex()).expect("adopted entry row");
+            assert_eq!(row["checkpoint"]["partial"], true);
+            assert_eq!(row["observedRevision"]["kind"], "checkpoint-basis");
+
             assert_eq!(
                 lab.item(device, entry).unwrap().record(),
                 lab.item(mac, entry).unwrap().record()

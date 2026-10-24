@@ -451,7 +451,8 @@ impl Lab {
     /// An untrusted optimization hint only: it neither reads plaintext nor validates authorization.
     /// A peer still checks current READ before comparing this ID to its standing snapshot.
     pub fn retained_projection_hint(&self, me: SignerId, entry: EntryId) -> Option<EditId> {
-        self.held(me).projections.lock().expect("entry projections").get(&(me, entry)).map(|v| v.snapshot)
+        self.active_owner_base(me, entry).map(|(snapshot, _)| snapshot)
+            .or_else(|| self.held(me).projections.lock().expect("entry projections").get(&(me, entry)).map(|v| v.snapshot))
     }
 
     /// A persisted content pin only locates bytes. Select its signed checkpoint under
