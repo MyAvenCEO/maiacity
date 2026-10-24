@@ -125,3 +125,5 @@ import AvenDB.BootstrapDependencies
 import AvenDB.BootstrapKeyWait
 
 import AvenDB.EntrySuffixIndex
+
+import AvenDB.CeremonyCancellation
