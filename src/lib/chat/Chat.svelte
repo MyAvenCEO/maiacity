@@ -188,11 +188,31 @@
 		if (done?.[0]?.entry) pick(done[0].entry);
 		else if (self) making = '';
 	}
-	/** an existing DM with `who`, opened instead of making a second */
-	function dmWith(who) {
-		const dm = groups.dm.find((r) => (r.readers ?? []).includes(who));
-		if (dm) pick(dm.entry);
-		else (chosen = [who]), void make();
+	let dmWindow;
+	let dmBusy = $state(false), dmError = $state('');
+	$effect(() => {
+		const owner = api;
+		if (making !== 'dm') return;
+		const window = (owner.api ?? owner).window();
+		dmWindow = window; dmBusy = false; dmError = '';
+		return () => {
+			window.close();
+			if (dmWindow === window) { dmWindow = null; dmBusy = false; dmError = ''; }
+		};
+	});
+	/** A sidebar page cannot prove there is no existing DM. Search through the shared read window. */
+	async function dmWith(who) {
+		if (dmBusy || !world?.mine || !dmWindow) return;
+		const window = dmWindow, owner = api, vault = world.mine;
+		dmBusy = true; dmError = '';
+		try {
+			const found = await R.directRoom(op => window.read(op), who);
+			if (dmWindow !== window || api !== owner || world?.mine !== vault || making !== 'dm') return;
+			if (found) pick(found);
+			else { chosen = [who]; await make(); }
+		} catch (error) {
+			if (dmWindow === window) dmError = error.message;
+		} finally { if (dmWindow === window) dmBusy = false; }
 	}
 
 	// deleting the open room: off every reader's list, its signed history kept
@@ -322,8 +342,10 @@
 					<div class="row"><button class="link" onclick={() => (making = '')}>Back</button></div>
 				{:else if making === 'dm'}
 					<p class="hint">Only the two of you read it.</p>
+					{#if dmBusy}<p class="hint">Looking for your existing conversation…</p>{/if}
+					{#if dmError}<p class="hint" role="alert">{dmError}</p>{/if}
 					<ul class="people">
-						{#each people as p (p.id)}<li><button onclick={() => dmWith(p.id)}>{nameOf(p)} <small>{KINDS[p.kind]}</small></button></li>{:else}<li class="hint">Nobody else is in your vaults yet.</li>{/each}
+						{#each people as p (p.id)}<li><button disabled={dmBusy} onclick={() => dmWith(p.id)}>{nameOf(p)} <small>{KINDS[p.kind]}</small></button></li>{:else}<li class="hint">Nobody else is in your vaults yet.</li>{/each}
 					</ul>
 				{:else if making === 'group' || making === 'channel'}
 					{#if making === 'channel'}

@@ -14,3 +14,9 @@ Mutations still wait for canonical acting-vault metadata. They never infer signi
 - `bun test src/lib/chat/rooms.test.js src/lib/avendb/query-window.test.js src/lib/avendb/reactive-read.test.js`: 25 passed, including null-world title fallback and shared observer/query lifecycle tests.
 
 These browser fixtures are not physical Mac/iPhone/iPad timing results. No account, live store, native binary or deployment was changed by this slice.
+
+## Release repair: reuse DMs beyond the visible page
+
+Before merge, review caught a pagination regression: selecting a person searched only visible DMs and could create a duplicate when the existing DM was on another page. The repair performs a bounded-page canonical local DM query, reads canonical reader metadata for each page through a component-owned read window, and opens the matching existing room. Refusal, cancellation or missing/mismatched metadata produces a retry state rather than proving absence. Leaving the composer closes the window; late results cannot pick or create a room in a replacement context. This establishes local lookup behavior, not global uniqueness across concurrent/offline devices.
+
+Validation: extended Lean absence/refusal/page-independence contract; 27 shared unit tests; actual Chat `--dm-reuse` scenarios in Chromium and WebKit with 51 DMs, target beyond page one, and zero mutation writes. Both existing kernel browser jobs now run this focused regression.
