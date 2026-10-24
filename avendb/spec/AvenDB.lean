@@ -131,3 +131,4 @@ import AvenDB.CeremonyCancellation
 import AvenDB.IndexedHistoryAdmission
 
 import AvenDB.DeferredBodyReadiness
+import AvenDB.ScopedDocumentView
