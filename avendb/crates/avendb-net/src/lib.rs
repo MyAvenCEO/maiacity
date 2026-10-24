@@ -2535,11 +2535,11 @@ impl Shared {
                 // Native cryptography runs outside the Lab mutex. The owned page/admission survives
                 // cancellation until its blocking checker exits; current-state admission still runs below.
                 #[cfg(not(target_arch = "wasm32"))]
-                let (prepared, permit, activity) = self.prepare_received_page(edits, permit,
+                let (prepared, permit, activity, ()) = self.prepare_received_page(edits, permit, (),
                     #[cfg(test)] None,
                 ).await?;
                 #[cfg(target_arch = "wasm32")]
-                let (prepared, permit, activity) = self.prepare_received_page(edits, permit).await?;
+                let (prepared, permit, activity, ()) = self.prepare_received_page(edits, permit, ()).await?;
                 let (got, whose) = self
                     .try_lab(move |lab, me| {
                         let (_permit, _activity) = (permit, activity);
@@ -2613,40 +2613,44 @@ impl Shared {
         Ok(new)
     }
 
-    /// Pure signature checks own their page and lifecycle tickets but never the Lab mutex.
+    /// Pure signature checks own their page, lifecycle ticket and caller context but never the Lab
+    /// mutex. Moving the context through both workers preserves range admission and accepted-count
+    /// ownership even if an asynchronous waiter is cancelled during capture or checking.
     #[cfg(not(target_arch = "wasm32"))]
-    async fn prepare_received_page(
+    async fn prepare_received_page<O: Send + 'static>(
         self: &Arc<Self>,
         edits: Vec<Signed>,
         permit: pulls::Page,
+        owner: O,
         #[cfg(test)] before_check: Option<Box<dyn FnOnce() + Send>>,
-    ) -> Result<(avendb::lab::PreparedReceive, pulls::Page, lifecycle::Ticket)> {
+    ) -> Result<(avendb::lab::PreparedReceive, pulls::Page, lifecycle::Ticket, O)> {
         let activity = self.admit()?;
         let checking = self.receive_checking.clone().lock_owned().await;
-        let (preparation, permit, activity, checking) = self.read(move |lab, me| {
-            (lab.prepare_receive(me, edits), permit, activity, checking)
+        let (preparation, permit, activity, checking, owner) = self.read(move |lab, me| {
+            (lab.prepare_receive(me, edits), permit, activity, checking, owner)
         }).await;
         tokio::task::spawn_blocking(move || {
             let _checking = checking;
             #[cfg(test)]
             if let Some(before) = before_check { before(); }
-            (preparation.check(), permit, activity)
+            (preparation.check(), permit, activity, owner)
         }).await.context("checking incoming signatures")
     }
 
     /// The browser has one worker thread: let its event loop service generic operations between
     /// bounded signature groups. n0_future's zero-duration sleep uses setTimeout, not a microtask.
     #[cfg(target_arch = "wasm32")]
-    async fn prepare_received_page(
+    async fn prepare_received_page<O: Send + 'static>(
         self: &Arc<Self>,
         edits: Vec<Signed>,
         permit: pulls::Page,
-    ) -> Result<(avendb::lab::PreparedReceive, pulls::Page, lifecycle::Ticket)> {
+        owner: O,
+    ) -> Result<(avendb::lab::PreparedReceive, pulls::Page, lifecycle::Ticket, O)> {
         let activity = self.admit()?;
         let _checking = self.receive_checking.clone().lock_owned().await;
         let preparation = self.read(move |lab, me| lab.prepare_receive(me, edits)).await;
         let prepared = preparation.check_cooperatively(|| time::sleep(Duration::ZERO)).await;
-        Ok((prepared, permit, activity))
+        Ok((prepared, permit, activity, owner))
     }
 
     /// Prefer supplemental batch proofs where this device can persist their admissions. The enclosed

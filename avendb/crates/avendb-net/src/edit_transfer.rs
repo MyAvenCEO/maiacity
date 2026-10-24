@@ -712,17 +712,25 @@ async fn receive_inner(
                     ),
                     "fetched edit outside requested logs"
                 );
-                // No trust elevation: each ordinary legacy signature is verified by Lab::receive.
+                // No trust elevation: immutable signatures are checked outside the Lab mutex,
+                // then current-state admission runs on the whole page under that mutex.
                 for signed in &edits {
                     remaining.remove(&signed.edit.id());
                 }
                 shared.sized(&mut edits);
-                let admitted = admission.clone();
-                let accepted = accepted.clone();
+                let owner = (admission.clone(), accepted.clone());
+                #[cfg(not(target_arch = "wasm32"))]
+                let (prepared, permit, activity, (admitted, accepted)) = shared
+                    .prepare_received_page(edits, permit, owner, #[cfg(test)] None)
+                    .await?;
+                #[cfg(target_arch = "wasm32")]
+                let (prepared, permit, activity, (admitted, accepted)) = shared
+                    .prepare_received_page(edits, permit, owner)
+                    .await?;
                 shared
                     .try_lab(move |lab, me| {
-                        let (_permit, _admitted) = (permit, admitted);
-                        let new = lab.receive_whose_now(me, edits, Vec::new(), false).0;
+                        let (_permit, _admitted, _activity) = (permit, admitted, activity);
+                        let new = lab.receive_prepared(me, prepared, false).0;
                         accepted.new.fetch_add(new, Ordering::Relaxed);
                     })
                     .await?;

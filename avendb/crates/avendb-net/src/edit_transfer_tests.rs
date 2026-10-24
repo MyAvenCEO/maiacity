@@ -664,3 +664,41 @@ async fn accepted_count_waits_for_cancelled_blocking_validation() {
     finish.send(()).unwrap();
     assert_eq!(n0_future::time::timeout(Duration::from_secs(3), done).await.unwrap().unwrap(), 1);
 }
+
+/// Range bookkeeping must remain owned by the real detached checker, not just its async waiter.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn cancelled_range_signature_check_retains_admission_and_count_until_worker_exits() {
+    let mut w = world();
+    let me = w.phone_a;
+    let node = Arc::new(Node::spawn(
+        w.lab.split(me, &[], [225; 32]), me,
+        Options { lazy: true, ..Options::local() },
+    ).await.unwrap());
+    let admission = node.shared.pulls.enter(true, None).await.unwrap();
+    let admission_alive = Arc::downgrade(&admission);
+    let permit = node.shared.pulls.page(false, true).await.unwrap();
+    let (accepted, mut done) = Accepted::channel();
+    let edits = w.lab.backup(w.mac_a).signed().to_vec();
+    let (entered, waiting) = tokio::sync::oneshot::channel();
+    let (release, held) = std::sync::mpsc::channel();
+    let shared = node.shared.clone();
+    let task = tokio::spawn(async move {
+        shared.prepare_received_page(edits, permit, (admission, accepted), Some(Box::new(move || {
+            entered.send(()).unwrap();
+            held.recv().unwrap();
+        }))).await.unwrap()
+    });
+    waiting.await.unwrap();
+    n0_future::time::timeout(Duration::from_secs(2), node.read(|lab, me| lab.size(me)))
+        .await.expect("range verification leaves generic reads available");
+    task.abort();
+    assert!(matches!(task.await, Err(error) if error.is_cancelled()));
+    assert!(admission_alive.upgrade().is_some(), "detached checker retains range admission");
+    assert!(matches!(done.try_recv(), Err(tokio::sync::oneshot::error::TryRecvError::Empty)),
+        "range result does not finish while its checker still runs");
+    release.send(()).unwrap();
+    assert_eq!(n0_future::time::timeout(Duration::from_secs(3), done).await.unwrap().unwrap(), 0,
+        "cancelled preparation never claims uncommitted edits");
+    assert!(admission_alive.upgrade().is_none());
+    node.shutdown().await.unwrap();
+}
