@@ -1,4 +1,5 @@
-// avenDB's device in the Mac app, maiaCITY Studio: hosted in the app's process (avendb/crates/
+import { localOperation } from '../../../game/code/sources/local-policy.js';
+// avenDB's device in the Mac app, maiaCITY Studio: hosted in the app’s process (avendb/crates/
 // avendb-device, vault/app/src/avendb.rs), not in this page's WebAssembly. Its node reaches the person's other devices
 // directly, over UDP sockets of its own, and keeps their vault in a folder on the Mac, not in the page's store; it runs
 // on while the app does, whichever page is open. Each ceremony of the person's passkey it asks for runs in the app's
@@ -21,7 +22,7 @@ const why = (e) => {
  * @param {string} name @param {...unknown} args @returns {Promise<any>}
  */
 export function call(name, ...args) {
-	if (name === 'run' && /** @type {any} */ (args[0])?.op === 'read_file') return readFile(args[0]);
+	if (name === 'run' && /** @type {any} */ (args[0])?.op === 'read_file') return readFile(localOperation(args[0]));
 	return command('avendb', { call: name, args }).catch(why);
 }
 

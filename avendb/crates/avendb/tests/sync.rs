@@ -435,6 +435,15 @@ fn keep_modes_choose_what_and_how_a_device_syncs() {
     w.lab.sync_all(3);
     assert_eq!(set(w.lab.entries(phone)), set([proxies[0], proxies[1], schema]));
     assert_eq!(roots(w.lab.kept_files(phone, true)), dawn);
+    let demanded = [proxies[0], proxies[1], originals[0], originals[1]];
+    assert_eq!(roots(w.lab.demanded_files(phone, &demanded)), films(&w, &proxies),
+        "demand hydrates opened files, but cannot escape the keep selection");
+    w.lab.issue(mac, &[mac], keep(alice, phone, alice, KeepMode::Never, tagged_with("dusk"))).unwrap();
+    w.lab.sync_all(4);
+    assert_eq!(roots(w.lab.demanded_files(phone, &demanded)), dawn,
+        "a new never rule wins even when the device already holds the entry");
+    assert!(w.lab.demanded_files(server, &demanded).is_empty(),
+        "view demand grants no readable file keys to a sealed backup peer");
 }
 
 /// A keep share grants nothing (blobs B2c, K1): only a vault issues the keep shares of its own devices, over a vault

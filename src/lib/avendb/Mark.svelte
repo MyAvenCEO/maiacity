@@ -5,11 +5,13 @@
 	shape instead.
 -->
 <script>
+	import { localMedia } from './local-media.svelte.js';
 	import { shaped } from '$lib/app/shapes.js';
 	import { hue, initials, nameOf } from './vaults.js';
 
 	/** @type {{ vault: import('./vaults.js').VaultView | undefined, size?: number, dim?: boolean, src?: string }} */
 	let { vault, size = 44, dim = false, src = '' } = $props();
+	const image = $derived(src || (vault?.id ? localMedia(vault.id, 'profile.jpg') : ''));
 </script>
 
 <span
@@ -19,7 +21,7 @@
 	role="img"
 	aria-label={nameOf(vault)}
 >
-	{#if src}<img {src} alt="" />{:else}{initials(vault)}{/if}
+	{#if image}<img src={image} alt="" />{:else}{initials(vault)}{/if}
 </span>
 
 <style>

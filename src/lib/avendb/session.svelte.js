@@ -44,6 +44,7 @@ import { observedWindow } from './observed-window.js';
  */
 
 import { tick } from 'svelte';
+import { localMediaWorld } from './local-media.svelte.js';
 import { command, native } from '$lib/native';
 import { allowed, answer, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
@@ -629,6 +630,7 @@ function refreshDevice(/** @type {any} */ d) {
 			take: (w) => {
 				if (device !== d) throw new Error('The avenDB device changed during its world refresh.');
 				world = w;
+				localMediaWorld(w);
 				context.reconcile();
 			}
 		});
@@ -657,6 +659,7 @@ function queueRefresh(/** @type {any} */ d) {
 	}).catch((/** @type {Error} */ e) => {
 		if (device === d) error = `Showing local changes failed: ${e.message}`;
 	});
+
 }
 
 /**
@@ -704,9 +707,8 @@ async function near(d, op, { signal, scoped = false, demand } = {}) {
 	if (!currentView()) return got;
 	const entry = typeof op?.entry === 'string' && ENTRY.test(op.entry) ? op.entry : null;
 	if (got?.refused === 'NoEntry' && entry) {
-		const prioritize = scoped ? !(await demand.add([entry])) : true;
-		if (!currentView()) return got;
-		if ((await bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }, { signal, path, prioritize, learnPriority: !scoped }))?.ok?.new && currentView()) got = await d.run(op);
+		// Reads return local state immediately. Sync completion refreshes the view separately.
+		void bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }, { signal, path, prioritize: !scoped, learnPriority: !scoped }).catch(() => {});
 	}
 	if (currentView() && VIEWS.has(op?.op)) {
 		const named = [...(entry && got?.ok ? [entry] : []), ...namedIn(got)];
@@ -964,7 +966,7 @@ const api = {
 	 * @returns {Promise<Uint8Array>}
 	 */
 	readFile: async (root, size, from, to) => {
-		const out = await send({ op: 'read_file', root, size, from, to });
+		const out = await send({ op: 'read_file', root, size, from, to, local: true });
 		answer(out);
 		return out.bytes;
 	}

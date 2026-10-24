@@ -15,6 +15,7 @@
  * device's `changed` waits until it holds something new, however long that is.
  */
 
+import { localOperation } from '../../../game/code/sources/local-policy.js';
 import init, * as avendb from './device/avendb_browser.js';
 import { open } from './device/store.js';
 import { deviceTransports, rtcWorkerCarrier } from './transports/worker.js';
@@ -126,6 +127,7 @@ async function answer({ id, target, method, args }) {
 	try {
 		started ??= init();
 		await started;
+		if (method === 'run' && args?.length) args = [localOperation(args[0]), ...args.slice(1)];
 		let ok;
 		if (target === 'pkg' && method === 'start') ok = undefined;
 		else if (target === 'pkg' && method === 'openStore') store ??= await open(...args);

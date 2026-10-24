@@ -15,7 +15,7 @@ export function journalHtml(md, base = '') {
 			const h = href.trim();
 			if (HASHED.test(h)) return asset(h);
 			if (h.startsWith('/')) return site(h);
-			return /^https:\/\//i.test(h) ? h : null;
+			return /^https:\/\//i.test(h) ? asset(h) : null;
 		}
 	});
 }

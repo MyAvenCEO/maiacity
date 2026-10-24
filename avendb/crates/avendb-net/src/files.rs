@@ -134,6 +134,11 @@ impl Node {
         self.shared.read_file(root, range).await
     }
 
+    /// Read only bytes already stored locally. Never fetch a missing segment from a peer.
+    pub async fn read_local_file(&self, root: FileRoot, range: Range<u64>) -> Result<Vec<u8>> {
+        self.shared.read_file_mode(root, range, true).await
+    }
+
     /// Whether this node holds every sealed byte of file `root`: on a shelf, once the shelf holds it whole, which on
     /// the server is its bucket.
     pub async fn holds_file(&self, root: FileRoot) -> bool {
@@ -272,24 +277,65 @@ impl Shared {
 
     /// `Node::read_file`.
     async fn read_file(self: &Arc<Self>, root: FileRoot, range: Range<u64>) -> Result<Vec<u8>> {
+        self.read_file_mode(root, range, false).await
+    }
+
+    async fn read_file_mode(
+        self: &Arc<Self>,
+        root: FileRoot,
+        range: Range<u64>,
+        local: bool,
+    ) -> Result<Vec<u8>> {
         let _activity = self.admit()?;
-        let brought = self.read(move |lab, me| lab.file(me, &root)).await.context("no file this device opens")?;
+        let brought = self
+            .read(move |lab, me| lab.file(me, &root))
+            .await
+            .context("no file this device opens")?;
         let shape = brought.shape();
         let (from, to) = (range.start.min(shape.len), range.end.min(shape.len));
         if from >= to {
             return Ok(Vec::new());
         }
         let segments = shape.segments_of(from..to);
-        let pieces = self.pieces_of(root).await?;
+        let pieces = if local {
+            if root.pieced() {
+                HashSeq::new(self.store.get_bytes(Hash::from_bytes(root.hash)).await?)
+                    .context("invalid local file index")?
+                    .iter()
+                    .collect()
+            } else {
+                vec![Hash::from_bytes(root.hash)]
+            }
+        } else {
+            self.pieces_of(root).await?
+        };
+        ensure!(
+            pieces.len() as u64 == root.size.div_ceil(PIECE),
+            "incomplete local file index"
+        );
         let mut plain = Vec::new();
         for (p, sealed) in shape.sealed_ranges(from..to) {
             let hash = pieces[p as usize];
             for start in sealed.clone().step_by(READ as usize) {
                 let at = start..(start + READ).min(sealed.end);
-                self.get(GetRequest::blob_ranges(hash, ChunkRanges::bytes(at.clone())), root, Some(p)).await?;
-                let bytes = self.store.export_ranges(hash, at.clone()).concatenate().await?;
+                if !local {
+                    self.get(
+                        GetRequest::blob_ranges(hash, ChunkRanges::bytes(at.clone())),
+                        root,
+                        Some(p),
+                    )
+                    .await?;
+                }
+                let bytes = self
+                    .store
+                    .export_ranges(hash, at.clone())
+                    .concatenate()
+                    .await?;
                 let first = p * PIECE_SEGMENTS + at.start / SEALED as u64;
-                plain.extend(open(&brought.key, shape, first, &bytes).context("sealed bytes that don't open")?);
+                plain.extend(
+                    open(&brought.key, shape, first, &bytes)
+                        .context("sealed bytes that don't open")?,
+                );
             }
         }
         // with no shelf, the pieces it fetched whole it holds
@@ -400,7 +446,16 @@ impl Shared {
         let keep = self.opts.keep;
         loop {
             let Ok(activity) = self.admit() else { return };
-            let (files, whole) = self.read(move |lab, me| (lab.files(me), lab.kept_files(me, keep))).await;
+            let entries = self.demands.lock().expect("demands").entries(time::Instant::now())
+                .into_iter().filter_map(|log| match log {
+                    avendb::sync::LogId::Entry(entry) => Some(entry),
+                    _ => None,
+                }).collect::<Vec<_>>();
+            let (files, whole) = self.read(move |lab, me| {
+                let mut whole = lab.kept_files(me, keep);
+                whole.extend(lab.demanded_files(me, &entries));
+                (lab.files(me), whole)
+            }).await;
             let mut whole: HashSet<FileRoot> = whole.into_iter().collect();
             // a server's limits (`Node::limit`): of the files to keep whole that it doesn't hold whole yet, those that
             // would take their person past their backup's limit, or that are larger than one file may be, it keeps

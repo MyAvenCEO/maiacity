@@ -11,7 +11,7 @@
 	import { evaluate } from './shots.js';
 	import { clockText, isWorld, liveTab, ratio, raw } from './studio.svelte.js';
 	import Viewer from './Viewer.svelte';
-	import { untrack } from 'svelte';
+	import { onDestroy, untrack } from 'svelte';
 	import { nativeFrame } from './luts.js';
 	import { placeholder, worldUrl } from './world.svelte.js';
 
@@ -21,6 +21,9 @@
 
 	/** @type {HTMLIFrameElement | null} */
 	let iframe = $state(null);
+	onDestroy(() => {
+		if (iframe && s.world.iframe === iframe) s.world.detach();
+	});
 	/** @type {HTMLCanvasElement | null} */
 	let stand = $state(null);
 	/** @type {import('./view.js').ViewPlan | null} */
@@ -248,7 +251,7 @@
 	// proxy, as the V1 intros do), and let go (its WebGL, its domes) when they are left — elsewhere a world shot plays
 	// from its HD proxy where it has one
 	// the world plays live in Edit and 3D, in any world: a shot's HD proxy shows only while its live world is not ready
-	const inWorld = $derived(s.wantWorld && (s.worldClips.length > 0 || s.tab === '3d'));
+	const inWorld = $derived(s.wantWorld && s.worldClips.length > 0);
 	// the live world draws at the size the monitor is seen at (its long edge in device pixels), as a game draws at its canvas's
 	$effect(() => {
 		const el = frameEl;
@@ -399,6 +402,16 @@
 						{#if l.play}<button class="lgo" onclick={s.playNow} title="Play at once: what is not ready yet loads while it plays, and may stutter">Play now</button>{/if}
 						<button onclick={() => s.stop()}>Stop</button>
 					</div>
+				</div>
+			</div>
+		{:else if inWorld && !!spec && !live && (s.world.state === 'loading' || s.world.state === 'unavailable')}
+			<div class="loading" role="status" aria-live="polite">
+				<div class="lcard">
+					<span class="lkick">Preparing the world</span>
+					<p class="lstep">{s.world.state === 'unavailable' ? "The world isn’t ready yet" : "Loading the 3D world"}</p>
+					<p class="ldetail">{s.world.error || s.world.loadingLabel || 'Loading assets and preparing the scene…'}</p>
+					<div class="lbar busy"><i style:width="0%"></i></div>
+					<div class="lacts"><button onclick={() => s.world.retry()}>Retry world</button></div>
 				</div>
 			</div>
 		{/if}

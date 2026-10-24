@@ -1,3 +1,5 @@
+import { currentWorldPage, waitForWorld } from './world-loading.js';
+import { FramePacer } from './frame-pacer.js';
 // The world viewer: a live sandbox in film mode (contract C3), in an iframe of the same origin, slaved to the
 // timeline's clock through `window.__film`. It draws the exact frame of a world shot the timeline asks for — at proxy
 // level, through the same view transform as the proxies — and records a camera move flown by hand.
@@ -126,11 +128,17 @@ export class WorldViewer {
 	recording = $state(false);
 	/** the last thing film mode refused (a shot it could not prepare or draw), said on the monitor */
 	error = $state('');
+	/** The native world's current bootstrap stage, before its film API is ready. */
+	loadingLabel = $state('');
 	/**
 	 * the long edge of the program monitor in device pixels (the monitor sets it as it is laid out): the live world draws
 	 * no bigger than it is seen, as a game draws at its canvas's size — the proxy frame (HD) only on a monitor that big
 	 */
 	px = 1920;
+	fastBatches = 0;
+	/** World previews use a steady 30 FPS; export timing is independent. */
+	get previewFps() { return 30; }
+	pacer = new FramePacer();
 	/** when the GPU dropped the world (its WebGL context lost), the last few times (ms) */
 	losses = /** @type {number[]} */ ([]);
 	/**
@@ -142,6 +150,8 @@ export class WorldViewer {
 	drawnAt = -Infinity;
 	/** how often the page in the iframe was loaded again because it never came up */
 	reloads = 0;
+	/** Invalidates earlier loading loops when a user retries. */
+	loadGeneration = 0;
 	/** the shots whose exposure film mode has metered (or is metering), by the whole shot */
 	metered = new Set();
 	/** a metering of the shots ahead under way */
@@ -168,9 +178,12 @@ export class WorldViewer {
 			this.queued = null;
 			this.busy = false;
 		}
+		const generation = ++this.loadGeneration;
 		this.iframe = iframe;
 		this.url = url;
 		this.state = 'loading';
+		this.loadingLabel = 'Opening the world page…';
+		this.error = '';
 		// the Mac's jobs render no world proxy while this world is open (./jobs/mac.js)
 		void import('./jobs/mac.js').then((m) => m.studioWorld(true));
 		if (iframe.getAttribute('src') !== url) {
@@ -187,23 +200,42 @@ export class WorldViewer {
 			iframe.src = url;
 		}
 		const t0 = performance.now();
-		while (performance.now() - t0 < patience && this.iframe === iframe && this.url === url) {
+		while (generation === this.loadGeneration && performance.now() - t0 < patience && this.iframe === iframe && this.url === url) {
 			/** @type {Film | undefined} */
 			let film;
 			try {
 				// (a page whose context the GPU dropped is going: never taken for the fresh one coming)
 				const win = /** @type {(Window & { __film?: Film, __lost?: boolean }) | null} */ (iframe.contentWindow);
+				if (win) forwardConsole(win, 'world');
+				// Navigation is asynchronous: never consume the outgoing document's API or errors.
+				if (!currentWorldPage(win, url, location.href)) {
+					if (performance.now() - t0 > wait) {
+						this.state = 'unavailable';
+						this.error = 'The requested world page has not opened yet.';
+					}
+					await new Promise((r) => setTimeout(r, 100));
+					continue;
+				}
+				this.loadingLabel = /** @type {any} */ (win)?.__filmLoadLabel || this.loadingLabel;
+				const failure = /** @type {any} */ (win)?.__filmMountError;
+				if (failure) {
+					this.error = failure;
+					this.state = 'unavailable';
+					return;
+				}
 				film = win?.__lost ? undefined : win?.__film;
-			} catch {
-				break; // another origin: not film mode
+			} catch (e) {
+				this.error = `Cannot connect to world page ${url}: ${e instanceof Error ? e.message : String(e)}`;
+				console.warn(this.error);
+				break;
 			}
 			if (film && typeof film.show === 'function') {
 				forwardConsole(/** @type {Window} */ (iframe.contentWindow), 'world');
 				this.forwardKeys(/** @type {Window} */ (iframe.contentWindow));
 				try {
 					// a page that goes meanwhile never answers: looked for again, never waited on for ever
-					if (!(await this.whileThere(iframe, url, film, film.ready()))) continue;
-					if (this.url !== url) return;
+					if (!(await this.whileThere(iframe, url, film, film.ready(), Math.max(1, patience - (performance.now() - t0))))) continue;
+					if (generation !== this.loadGeneration || this.url !== url) return;
 					// once the world is up: its canvas is there
 					this.watchLoss(/** @type {Window} */ (iframe.contentWindow), iframe, url);
 					this.film = film;
@@ -211,9 +243,10 @@ export class WorldViewer {
 					if (this.rolling) this.plays(true);
 					this.state = 'ready';
 					// loaded again after the GPU dropped it: nothing to say any more
-					if (this.error.startsWith('the GPU dropped')) this.error = '';
+					this.error = '';
 					return;
 				} catch (e) {
+					if (generation !== this.loadGeneration) return;
 					// said, and asked again: a world that could not get ready once (a shader, a load) often can the next time
 					this.error = `ready: ${/** @type {Error} */ (e)?.message ?? e}`;
 					console.warn(`world: ${this.error}`);
@@ -226,7 +259,7 @@ export class WorldViewer {
 			}
 			await new Promise((r) => setTimeout(r, waited > wait ? 2000 : 250));
 		}
-		if (this.iframe !== iframe || this.url !== url) return;
+		if (generation !== this.loadGeneration || this.iframe !== iframe || this.url !== url) return;
 		this.state = 'unavailable';
 		// a page that never came up is loaded again, a few times (it was left a stand-in for good)
 		if (this.reloads >= RELOADS) return;
@@ -243,28 +276,35 @@ export class WorldViewer {
 		void this.attach(iframe, url, wait, patience);
 	}
 
+	/** Retry only the world page; keep the user's timeline and edits intact. */
+	retry() {
+		const iframe = this.iframe, url = this.url;
+		if (!iframe || !url) return;
+		// Invalidate the outgoing API before asynchronous navigation, even at the same URL.
+		try { if (iframe.contentWindow) /** @type {any} */ (iframe.contentWindow).__lost = true; } catch { /* outgoing origin */ }
+		this.detach();
+		iframe.src = 'about:blank';
+		this.iframe = null;
+		this.state = 'off';
+		void this.attach(iframe, url);
+	}
+
 	/**
 	 * Whether `p` answered while the iframe still held the page of `film` (and the viewer still wants `url` there):
 	 * false as soon as that page is gone or going.
 	 * @param {HTMLIFrameElement} iframe @param {string} url @param {Film} film @param {Promise<unknown>} p
 	 * @returns {Promise<boolean>}
 	 */
-	whileThere(iframe, url, film, p) {
-		return new Promise((resolve, reject) => {
-			const there = () => {
-				try {
-					const win = /** @type {(Window & { __film?: Film, __lost?: boolean }) | null} */ (iframe.contentWindow);
-					return this.iframe === iframe && this.url === url && !win?.__lost && win?.__film === film;
-				} catch {
-					return false;
-				}
-			};
-			const id = setInterval(() => there() || (clearInterval(id), resolve(false)), 250);
-			p.then(
-				() => (clearInterval(id), resolve(there())),
-				(e) => (clearInterval(id), reject(e))
-			);
-		});
+	whileThere(iframe, url, film, p, timeout = 300000) {
+		return waitForWorld(p, () => {
+			try {
+				const win = /** @type {any} */ (iframe.contentWindow);
+				const present = this.iframe === iframe && this.url === url && !win?.__lost && win?.__film === film;
+				const label = win?.__filmLoadLabel || film.progress?.()?.label;
+				if (label) this.loadingLabel = label;
+				return { present, error: win?.__filmMountError, label: this.loadingLabel };
+			} catch { return { present: false }; }
+		}, timeout);
 	}
 
 	/**
@@ -341,6 +381,11 @@ export class WorldViewer {
 	rolling = false;
 
 	detach() {
+		++this.loadGeneration;
+		this.queued = null;
+		this.busy = false;
+		this.error = '';
+		this.loadingLabel = '';
 		void import('./jobs/mac.js').then((m) => m.studioWorld(false));
 		this.film = null;
 		this.drawn = '';
@@ -397,25 +442,27 @@ export class WorldViewer {
 	readyShot(spec) {
 		const film = this.film;
 		if (!film || !this.holds(spec)) return Promise.resolve();
-		return this.prepareOne(film, spec, true);
+		return this.prepareOne(film, spec, true, false);
 	}
 
 	/**
 	 * One shot prepared in film mode, its world counted ready once it was all done: a prepare the timeline's play cut
 	 * short (false) is asked again once it stands.
-	 * @param {Film} film @param {ShotSpec} s @param {boolean} meter @returns {Promise<void>}
+	 * @param {Film} film @param {ShotSpec} s @param {boolean} meter @param {boolean} [live] @returns {Promise<void>}
 	 */
-	prepareOne(film, s, meter) {
+	prepareOne(film, s, meter, live = true) {
+		const generation = this.loadGeneration;
 		const t0 = performance.now();
 		const slow = setInterval(() => console.warn(`world: still preparing ${s.meta?.name ?? 'a shot'} after ${Math.round((performance.now() - t0) / 1000)} s`), 15000);
 		/** @type {() => void} */
 		let end = () => {};
 		const gone = new Promise((r) => (end = () => r(false)));
 		this.ends.add(end);
-		return Promise.race([film.prepare([s], { live: true, meter }).then((r) => r !== false), gone])
-			.then((done) => void (done && this.film === film && this.readyShots.add(specKey(s))))
+		return Promise.race([Promise.resolve().then(() => film.prepare([s], { live, meter })).then((r) => r !== false), gone])
+			.then((done) => void (done && generation === this.loadGeneration && this.film === film && this.readyShots.add(specKey(s))))
 			.catch((/** @type {Error} */ e) => {
-				this.error = `prepare: ${e?.message ?? e}`;
+				if (generation !== this.loadGeneration || this.film !== film) return;
+				this.error = `prepare: ${e instanceof Error ? e.message : String(e)}`;
 				console.warn(`world: ${this.error}`);
 			})
 			.finally(() => {
@@ -471,7 +518,7 @@ export class WorldViewer {
 		this.ends.add(end);
 		const p = Promise.race([Promise.resolve(film.dress(mine)), gone])
 			.then(() => {})
-			.catch((/** @type {Error} */ e) => console.warn(`world: the timeline was not dressed: ${e?.message ?? e}`))
+			.catch((/** @type {Error} */ e) => console.warn(`world: the timeline was not dressed: ${e instanceof Error ? e.message : String(e)}`))
 			.finally(() => this.ends.delete(end));
 		this.dressing = p;
 		return p;
@@ -557,26 +604,33 @@ export class WorldViewer {
 	show(o) {
 		if (!this.film || !this.holds(o.spec)) return;
 		if (this.busy) return void (this.queued = o);
+		if (o.meter !== false) this.pacer.reset();
+		else if (!this.pacer.accept(performance.now(), this.previewFps)) return;
 		this.busy = true;
 		const t0 = performance.now();
+		const film = this.film, generation = this.loadGeneration;
+		const current = () => this.film === film && this.loadGeneration === generation;
 		const k = this.scale * Math.min(1, Math.max(320, this.px) / Math.max(o.width, o.height));
 		const w = Math.round(o.width * k), h = Math.round(o.height * k);
-		Promise.resolve(this.film.show({ ...o, width: w, height: h }))
+		Promise.resolve().then(() => current() ? film.show({ ...o, width: w, height: h }) : false)
 			.then((drew) => {
-				if (drew === false || !this.film) return;
+				if (drew === false || !current()) return;
 				this.drawn = specKey(o.spec);
 				this.drawnAt = performance.now();
 			})
-			.catch((/** @type {Error} */ e) => void (this.error = `show: ${e?.message ?? e}`))
+			.catch((/** @type {Error} */ e) => { if (current()) this.error = `show: ${e instanceof Error ? e.message : String(e)}`; })
 			.finally(() => {
-				// the resolution steps (1, ¾, ½, ⅓) on the median of the last frames: each step reallocates the targets,
+				if (!current()) return;
+				// the resolution steps (1, ¾, ½, ⅓) on the slower tenth of recent frames: each step reallocates the targets,
 				// so it moves rarely — down when frames are slow, up again only when they are well within time
 				this.took.push(performance.now() - t0);
-				if (this.took.length >= 12) {
-					const median = [...this.took].sort((a, b) => a - b)[6];
+				if (this.took.length >= 24) {
+					const tail = [...this.took].sort((a, b) => a - b)[21];
 					const steps = [1, 0.75, 0.5, 0.35], i = Math.max(0, steps.indexOf(this.scale));
-					if (median > 45 && i < steps.length - 1) this.scale = steps[i + 1];
-					else if (median < 18 && i > 0) this.scale = steps[i - 1];
+					if (tail > 28 && i < steps.length - 1) { this.scale = steps[i + 1]; this.fastBatches = 0; }
+					else if (tail < 8 && i > 0) {
+						if (++this.fastBatches >= 20) { this.scale = steps[i - 1]; this.fastBatches = 0; }
+					} else this.fastBatches = 0;
 					this.took = [];
 				}
 				this.busy = false;

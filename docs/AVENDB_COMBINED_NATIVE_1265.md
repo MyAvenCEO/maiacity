@@ -1,0 +1,11 @@
+# Combined native source preparation (not a built release)
+
+This integration merges Studio `50f9337c98a77405a8c89b002be8cf158afca84b` into PR1265 source `2c1c245a597dc436be6ad202ca77963ee6540371`. Studio contains the full installed `30d556c87e7777295d12ea4d9fe8bd72645b21d0` lineage; no commits were selectively dropped. Hosted/PWA release of PR1265 remains separate and comes first.
+
+Resolved source overlaps retain the consolidated PLACES registry and the canonical Traveler restriction to sandbox-4, Citizen requirements for other worlds/apps, local-media resolver test hooks and scoped Bun typing. Recipe cards were regenerated from the combined registries: 337 cards, with the elder-woman v1/v2 cards rebuilt. The Studio incoming-document/generation fences, detach/retry cleanup and footage-only playback behavior remain included.
+
+**The committed WASM binary is provisionally the PR1265 parent's binary, not a build of this combined Rust source.** It must be regenerated with its JS wrapper by the normal source-matched workflow before release. No native compilation, signing, app installation, store migration or app control was performed for this source merge. The installed 30d receipt remains unchanged and cannot be relabeled as this source.
+
+Validation at preparation: 67 targeted frontend tests passed across Studio lifecycle/frame pacing/refresh/media, local file/ref, registry and Traveler behavior. The added actual merged-navigation test passed 13 assertions, retaining V2/Sandbox8 and preventing Traveler access to Citizen routes. Recipe-card generation/check uses `bun scripts/recipe-cards.mjs` and `--check`. Full Svelte check is recorded separately once complete; native and combined-source WASM checks remain pending.
+
+Before a coordinated dev build: finish hosted/PWA delivery, regenerate/validate combined WASM, complete relevant Rust/native gates, freeze the exact clean commit/tree and use one explicitly owned target. Create a fresh immutable signed artifact receipt. Confirm the auto-rebuild agent remains paused and coordinate its eventual source before restoration. Preserve the existing store, keys and identity; the accepted asset/V2/Sandbox8/offline/reconnect scope remains the same.

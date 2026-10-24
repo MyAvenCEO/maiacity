@@ -493,7 +493,7 @@ impl<'a> Book<'a> {
     fn review(&mut self, entry: EntryId, author: VaultId) -> Option<((String, String), Review)> {
         let (lab, me) = (self.lab, self.me);
         let vault = lab.vault_of_entry(me, entry).filter(|v| *v == author)?;
-        let review = Named::Id(lens::REVIEW_V1.id());
+        let review = Named::Id(lens::REVIEW_V2.id());
         let r = see(lane_of(&mut self.lanes, lab, me, vault), lab.item(me, entry)?, &review)?.record;
         let text = |f: &str| r.get(f).and_then(Value::as_str).map(str::to_string);
         let history = lab.history(me, entry)?;
@@ -979,7 +979,7 @@ fn answer(
             "at": lab.now(),
         });
         let (vault, ty, tags) = (a.vault, REVIEW.into(), vec![]);
-        let create = Step::Create { vault, ty, tags, schema: Named::Own, value, draft: false, file: None };
+        let create = Step::Create { vault, ty, tags, schema: Named::Id(lens::REVIEW_V2.id()), value, draft: false, file: None };
         let made = step(lab, me, actor, create)?;
         if verdict == "revise" {
             edits(lab, me, actor, (a.entry, MAIN), &schema(), &[set("stage", "idea")])?;

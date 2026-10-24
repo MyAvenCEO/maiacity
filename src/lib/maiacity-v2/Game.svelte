@@ -85,14 +85,11 @@
 		world?.update(v, h);
 	});
 	// the players' first trees as they stand on the game clock now, each named after its planter
-	// (an admin's growth preview, Samuel 2026-10-14: my tree shown at any number of watered months, for testing; nothing
-	// is saved, and the game's own tree comes back when it ends)
-	let growth = $state(null);
 	const trees = $derived(view ? SEATS.filter((s) => view.players[s].tree || view.players[s].spot).map((s) => {
 		const p = view.players[s];
         if (!p.tree) return {seat:s, name:p.name, ...treeNow(view, {...p.spot, plant:p.seedling || 'apple', name:p.name, grown:0}, now), markerOnly:true, label:'Planting spot · not planted'};
         const t = p.tree;
-		return { seat: s, name: t.name, ...treeNow(view, s === seat && growth != null ? { ...t, grown: growth } : t, now) };
+		return { seat: s, name: t.name, ...treeNow(view, t, now) };
 	}) : []);
 	$effect(() => {
 		const t = trees;
@@ -109,7 +106,7 @@
 		const where = worldStage(view, seat, steps, tour ? tourAt : -1);
 		world.set(where.set);
 		world.touring(!!tour);
-		if (where.place) world.focus(growth != null && !tour ? `tree:${seat}` : where.place);
+		if (where.place) world.focus(where.place);
 	});
 	// the arrival plays by itself the first time; its caption shows over it, with a way to skip
 	let playing = $state(''); // the moment the world plays: 'intro', 'drive', 'load'
@@ -157,10 +154,6 @@
 	}
 	const plantIt = () => doMove({ type: 'plant', v: plantOf(player.seedling)?.version });
 	const myTree = $derived(trees.find((x) => x.seat === seat));
-	const shownMonths = $derived(growth ?? player?.tree?.grown ?? 0);
-	const stepPreview = (d) => (growth = Math.max(0, Math.min(400, shownMonths + d)));
-	const growthOf = $derived(`${seat}:${game?.started ?? 0}`);
-	$effect(() => void (growthOf, (growth = null))); // a new seat or game ends the preview
 	const carryingWater = $derived(game?.water?.carriedBy === seat);
  const waterNear = $derived(roamNow.waterNear ?? false);
  const treeNear = $derived(roamNow.treeNear ?? false);
@@ -170,7 +163,7 @@
   // Only a successful server move grows the tree; a failed request never plays fake growth.
   playing = 'water';
   if (await waterMove('water') === false) { playing = ''; return; }
-  try { await world.water(seat, () => world.trees(trees)); } finally { playing = ''; }
+  try { await world.water(seat, () => world.trees(trees, { holdGrowth: true })); } finally { playing = ''; }
  }
 
 	function skipShot() {
@@ -579,19 +572,6 @@
     {:else}<span>{game?.water?.carriedBy ? `${game.players[game.water.carriedBy].name} is carrying the canister.` : 'The canister is beside the power equipment. Walk over to pick it up.'}</span>{/if}
    </div>
   {/if}
-		{#if admin && canMove && !tour && !playing && player.tree}
-			<!-- the admin's growth preview: step my tree through its watered months (a test; nothing is saved) -->
-			<div class="growth panel" role="group" aria-label="Growth preview" title="Admin only: how {myTree?.name ?? 'your tree'} grows, a game month of growth for each watering. A preview, nothing is saved.">
-				<span class="what">Growth preview</span>
-				<button aria-label="A year back" disabled={shownMonths <= 0} onclick={() => stepPreview(-13)}>«</button>
-				<button aria-label="A month back" disabled={shownMonths <= 0} onclick={() => stepPreview(-1)}>‹</button>
-				<b>{shownMonths} {shownMonths === 1 ? 'watering' : 'waterings'}</b>
-				<button aria-label="A month on" onclick={() => stepPreview(1)}>›</button>
-				<button aria-label="A year on" onclick={() => stepPreview(13)}>»</button>
-				<small>{myTree?.now ?? ''}</small>
-				{#if growth != null}<button class="link" onclick={() => (growth = null)}>End</button>{/if}
-			</div>
-		{/if}
 		{#if ended}<div class="fade-in end" aria-hidden="true"></div>{/if}
 		{#if playing}
 			<!-- the arrival, as a trailer: black bars, one line of the story a shot, fading in and out -->
@@ -1081,46 +1061,6 @@
 	}
 	@keyframes fadeto {
 		to { opacity: 1; }
-	}
-	/* the admin's growth preview, under the numbers at the top */
-	.growth {
-		position: absolute;
-		z-index: 7;
-		top: 4.2rem;
-		left: 50%;
-		transform: translateX(-50%);
-		display: flex;
-		align-items: center;
-		gap: 0.3rem;
-		padding: 0.3rem 0.5rem;
-		border-radius: 999px;
-		font-size: 0.85rem;
-		white-space: nowrap;
-	}
-	.growth .what {
-		margin: 0 0.3rem;
-		color: #6b7a6f;
-	}
-	.growth button:not(.link) {
-		width: 1.9rem;
-		height: 1.9rem;
-		border: 0;
-		border-radius: 50%;
-		background: rgb(36 69 47 / 0.1);
-		font: inherit;
-		cursor: pointer;
-	}
-	.growth button:disabled {
-		opacity: 0.35;
-		cursor: default;
-	}
-	.growth b {
-		min-width: 6.5rem;
-		text-align: center;
-	}
-	.growth small {
-		margin-left: 0.2rem;
-		color: #6b7a6f;
 	}
 	/* the walk's buttons, stacked bottom up: beside the tools down the left, clear of them and of the mint button */
 	.walkbar {

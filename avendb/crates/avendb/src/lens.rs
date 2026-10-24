@@ -1337,7 +1337,7 @@ pub mod blobs {
     /// The schema of each kind of record avenDB writes: every record is written under one of them, or under a schema
     /// of its vault's lane. Maia City, the seed's coop, holds each as a schema entry of its own, shared with
     /// everyone, as their owner (the page's `standard`): the same bytes, so the same ids.
-    pub const SHIPPED: [&str; 30] = [
+    pub const SHIPPED: [&str; 31] = [
         DOCUMENT_V1,
         TODO_V1,
         ARTICLE_V1,
@@ -1350,6 +1350,7 @@ pub mod blobs {
         VIEW_V2,
         LOGIC_V1,
         REVIEW_V1,
+        REVIEW_V2,
         BUNDLE_V1,
         POLICY_V1,
         AIP_V1,
@@ -1373,8 +1374,8 @@ pub mod blobs {
     /// The lenses between the versions of a kind avenDB ships, each from an older version to the newest, so a record
     /// written under the older one opens in the newest app and edits on: every app reads them as it reads `SHIPPED`,
     /// and Maia City holds each as a lens entry beside its schemas.
-    pub const LENSES: [&str; 7] =
-        [ARTICLE_LENS, SPARK_LENS, FUNCTION_LENS, VIEW_LENS, POST_LENS, STORY_LENS, AIP_LENS];
+    pub const LENSES: [&str; 8] =
+        [ARTICLE_LENS, SPARK_LENS, FUNCTION_LENS, VIEW_LENS, POST_LENS, STORY_LENS, AIP_LENS, REVIEW_LENS];
 
     /// A Markdown document: a title, blocks a heading (with its level), a paragraph, a checklist item or code (with
     /// its language), and tags.
@@ -2194,6 +2195,25 @@ pub mod blobs {
 }
 "#;
 
+    // AIP reviews cover every proposal head; the V1 cap excluded bundles over 64 lines.
+    pub const REVIEW_V2: &str = r#"{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Review, v2",
+  "type": "object",
+  "properties": {
+    "kind": { "const": "review" },
+    "entry": { "type": "string", "maxLength": 64 },
+    "line": { "type": "string", "maxLength": 64 },
+    "heads": { "type": "array", "items": { "type": "string", "maxLength": 64 } },
+    "by": { "type": "string", "maxLength": 64 },
+    "verdict": { "enum": ["accepted", "declined", "revise"] },
+    "text": { "type": "string", "maxLength": 2000, "default": "" },
+    "at": { "type": "integer", "minimum": 0 }
+  },
+  "required": ["kind", "entry", "line", "heads", "verdict"]
+}
+"#;
+
     /// A bundle: proposals on several entries, of one vault or many, that belong together (an aven's change of a
     /// recipe, its view and its logic), each by its entry and its line, with the intent that started them (a request or
     /// a spark). It is a record that links them and nothing else: each proposal is accepted and merged as its own.
@@ -2369,6 +2389,14 @@ pub mod blobs {
 }
 "#;
 
+    pub const REVIEW_LENS: &str = r#"{
+  "lens": "Review, v1 to v2",
+  "from": "d49d471ee346dff053e83b0c35ec031e7bdf6255d4a610e9253c0cb4408530f3",
+  "to": "cde9db37f86fca48eb0079216531dbb05c2981835ffff574a2c3a7cc10cae457",
+  "steps": []
+}
+"#;
+
     pub const AIP_LENS: &str = r#"{
   "lens": "AIP, v1 to v2",
   "from": "7e625a0731b3c1314eb7c44568579b36e054bc29379ab8aa67fc2309b3664bf8",
@@ -2393,6 +2421,7 @@ pub static RECIPE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs:
 pub static VIEW_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::VIEW_V1));
 pub static VIEW_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::VIEW_V2));
 pub static LOGIC_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::LOGIC_V1));
+pub static REVIEW_V2: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::REVIEW_V2));
 pub static REVIEW_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::REVIEW_V1));
 pub static BUNDLE_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::BUNDLE_V1));
 pub static POLICY_V1: LazyLock<Schema> = LazyLock::new(|| built_in_schema(blobs::POLICY_V1));
@@ -2438,7 +2467,7 @@ static BUILT_IN: LazyLock<Vec<(&'static str, View)>> = LazyLock::new(|| {
         &*RECIPE_V1,
         &*VIEW_V2,
         &*LOGIC_V1,
-        &*REVIEW_V1,
+        &*REVIEW_V2,
         &*BUNDLE_V1,
         &*POLICY_V1,
         &*AIP_V2,

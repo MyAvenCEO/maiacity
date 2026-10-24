@@ -1,4 +1,5 @@
 // @ts-nocheck — plain JS, kept loose on purpose
+import { localMedia } from '$lib/avendb/local-media.svelte.js';
 // The Maia Universe stream: every post published in avenDB, as its server's feed serves them (`FEED`, `fromFeed`): a
 // post an article's content flow made as it was published, which everyone may read, with the pictures it shows that
 // everyone may read too (`FILES`).
@@ -18,18 +19,8 @@ export const ago = (min) =>
 // a title as it reads in an address: lower case, words joined by dashes
 export { slug };
 
-// avenDB's server: its feed, the posts it keeps that everyone may read, newest first
-export const FEED = 'https://avendb.maia.city/feed/posts';
-
-// avenDB's server: the other entries it keeps that everyone may read, of the kinds a post's layout draws on: an inspire
-// post's own record, its story, the story's spark and the spark's source
-export const ENTRIES = 'https://avendb.maia.city/feed/entries?type=post:inspire,story,spark,artifact';
-
-// avenDB's server: the pictures it keeps that everyone may read, each by its vault and the name an article gives it
-export const FILES = 'https://avendb.maia.city/feed/files';
-
-// where picture `name` of vault `vault` is read, which everyone may read
-export const pictureUrl = (vault, name) => `${FILES}/${vault}/${name}`;
+// Named media is resolved exclusively from this device's local avenDB.
+export const pictureUrl = (vault, name) => localMedia(vault, name);
 
 // where post `p` shows picture `name` from, where everyone may read it: its vault's own, from avenDB's server, else one
 // of the media vault's public files, from its gateway, as a post brought in from before avenDB names them; null for none
@@ -78,7 +69,7 @@ export function authorsOf(p) {
 
 // The cover of post `p`'s article text, as avenDB lays it out, where everyone may read it (`pictureOf`): its address
 // and its words, or null.
-function coverOf(p) {
+export function coverOf(p) {
 	const { coverName, coverAlt } = laidOut(p.md);
 	const src = coverName ? pictureOf(p, coverName) : null;
 	return src ? { src, alt: coverAlt } : null;
