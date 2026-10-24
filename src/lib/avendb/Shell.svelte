@@ -347,9 +347,9 @@
 			{:else if tab === 'worlds'}
 				<Worlds {world} vault={context} {actor} entry={route.world} />
 			{:else if tab === 'models'}
-				<Models {world} vault={context} {actor} entry={route.model} />
+				<Models {world} vault={context} {actor} {api} entry={route.model} />
 			{:else if tab === 'code'}
-				<Code {world} vault={context} {actor} entry={route.pack} />
+				<Code {world} vault={context} {actor} {api} entry={route.pack} />
 			{:else if tab === 'flows'}
 				<Flows {world} vault={context} {actor} />
 			{:else if tab === 'functions'}
