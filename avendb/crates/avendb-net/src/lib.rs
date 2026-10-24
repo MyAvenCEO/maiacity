@@ -769,6 +769,7 @@ impl Node {
             pieces: Mutex::default(),
             pool,
             changed: Notify::new(),
+            bootstrap_due: Notify::new(),
             size: watch::Sender::new(size),
             warm: AtomicBool::new(false),
             sent: Sent::default(),
@@ -787,6 +788,7 @@ impl Node {
             task::spawn(shared.clone().keeper()),
             task::spawn(shared.clone().saver()),
             task::spawn(shared.clone().unshelve()),
+            task::spawn(shared.clone().bootstrap_pump()),
             task::spawn(transports::control::maintain(shared.clone())),
         ];
         Ok(Node { shared, router, tasks: Mutex::new(tasks) })
@@ -2113,6 +2115,8 @@ struct Shared {
     pool: ConnectionPool,
     /// Woken whenever the node's logs may have changed.
     changed: Notify,
+    /// Newly staged or invalidated bounded owner-bootstrap work. Never a timer poll.
+    bootstrap_due: Notify,
     /// How many edits and McEliece keys its device holds (`Node::changes`).
     size: watch::Sender<(usize, usize)>,
     /// Whether its device worked out something its shelf lacks, as last seen (`Lab::warm_due`).
@@ -2260,6 +2264,7 @@ impl Shared {
             let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 lab.set_now(unix_now());
                 let before = lab.log(shared.me).revision();
+                let bootstrap_before = lab.owner_bases_pending(shared.me);
                 let anchors_before = lab.bootstrap_stamp(shared.me);
                 let out = f(&mut lab, me);
                 let now = lab.size(shared.me);
@@ -2273,6 +2278,9 @@ impl Shared {
                     *size = now;
                     true
                 });
+                if lab.owner_bases_pending(shared.me) && (!bootstrap_before || grew || revised) {
+                    shared.bootstrap_due.notify_one();
+                }
                 // what it worked out, as a replay or a key it opened, wakes the saver too, once as it comes to
                 let warm = !lab.locked(shared.me) && lab.warm_due(shared.me);
                 if grew {
@@ -2836,6 +2844,32 @@ impl Shared {
         }
     }
 
+    /// Finish authenticated suffixes without making foreground requests pump history.
+    /// Each turn uses the same fair scheduler as other background work; browser
+    /// admission supplies a real worker event-loop boundary before taking the Lab.
+    async fn bootstrap_pump(self: Arc<Self>) {
+        // Check once at startup for durable partial progress restored before spawn.
+        loop {
+            let turn = self.try_lab_class(lab_schedule::Class::Background, |lab, me| {
+                if !lab.owner_bases_pending(me) { return (false, false); }
+                let pending = lab.advance_owner_bases(me);
+                (true, pending)
+            }).await;
+            let Ok((ran, pending)) = turn else { break; };
+            if ran {
+                // Materialization advances without changing signed-log cardinality.
+                self.size.send_modify(|_| {});
+                self.changed.notify_one();
+                self.edits.iter().for_each(|edits| edits.due.notify_one());
+            }
+            if pending {
+                tokio::task::yield_now().await;
+            } else {
+                self.bootstrap_due.notified().await;
+            }
+        }
+    }
+
     /// Tells the peers what changed of its holdings whenever they may have, and every `retry` tries again the peers
     /// whose wait is over: those it couldn't tell, and those it failed to ask.
     async fn announcer(self: Arc<Self>) {
@@ -3303,6 +3337,41 @@ fn next_demand_logs(
 mod tests {
     use super::*;
     use avendb::id::EntryId;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn bootstrap_pump_finishes_suffix_without_foreground_mutations() {
+        use avendb::cast::{document, human_on};
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Pump owner");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Base", "old", mac)).unwrap();
+        lab.sync(mac, phone);
+        lab.edit(mac, vault, entry, |item| item.set_text(2, "checkpoint")).unwrap();
+        let prepared = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
+        let snapshot = lab.complete(mac, prepared.draft, &[]).unwrap();
+        let offer = lab.entry_projection_offer(mac, phone, entry).unwrap();
+        lab.receive(phone, offer.evidence, vec![]);
+        let mut suffix = Vec::new();
+        for n in 0..40 {
+            suffix.push(lab.edit(mac, vault, entry, |item| item.set_text(2, &format!("suffix {n}"))).unwrap());
+        }
+        let signed = lab.backup(mac).signed().iter().filter(|s| suffix.contains(&s.edit.id())).cloned().collect();
+        lab.receive(phone, signed, vec![]);
+        let expected = lab.item(mac, entry).unwrap().record();
+        assert!(lab.adopt_owner_entry_base(phone, snapshot, entry, prepared.sealed));
+        assert!(lab.owner_base_pending(phone, entry) > 0, "fixture needs a second bounded turn");
+        let node = Node::spawn(lab.split(phone, &[owner], [31; 32]), phone, Options::local()).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(20), async {
+            loop {
+                if node.read(move |lab, me| lab.owner_base_pending(me, entry)).await == 0 { break; }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }).await.expect("background pump advances without foreground mutation");
+        assert_eq!(node.read(move |lab, me| lab.item(me, entry).unwrap().record()).await, expected);
+        node.shutdown().await.unwrap();
+    }
 
     /// An offer with an address of each family and a relay.
     fn offer() -> Offer {
