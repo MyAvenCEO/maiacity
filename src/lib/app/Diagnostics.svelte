@@ -1,9 +1,11 @@
 <script lang="ts">
  import { base } from '$app/paths';
+ import LocalPerformance from '$lib/avendb/LocalPerformance.svelte';
  import LifecycleReport from '$lib/avendb/LifecycleReport.svelte';
  let dialog: HTMLDialogElement;
  let trigger: HTMLButtonElement;
  let network = $state(false);
+ let opened = $state(false);
  const id = $props.id();
  function close() { dialog?.close(); }
  function outside(event: PointerEvent) {
@@ -13,10 +15,10 @@
  }
 </script>
 
-<button bind:this={trigger} class="diagnostics-trigger" aria-label="Open diagnostics" aria-haspopup="dialog" aria-controls={id} onclick={() => dialog.showModal()}>
+<button bind:this={trigger} class="diagnostics-trigger" aria-label="Open diagnostics" aria-haspopup="dialog" aria-controls={id} onclick={() => { opened = true; dialog.showModal(); }}>
  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 12h4l3-7 4 14 3-7h4" stroke-linecap="round" stroke-linejoin="round" /></svg>
 </button>
-<dialog bind:this={dialog} {id} aria-labelledby="{id}-title" onpointerdown={outside} onclose={() => { network = false; trigger?.focus(); }}>
+<dialog bind:this={dialog} {id} aria-labelledby="{id}-title" onpointerdown={outside} onclose={() => { opened = false; network = false; trigger?.focus(); }}>
  <header>
   <h2 id="{id}-title">Diagnostics</h2>
   <button class="close" aria-label="Close diagnostics" onclick={close}>×</button>
@@ -27,6 +29,7 @@
  {:else}
   <p>Checks for this device, available before you unlock.</p>
   <button class="network" onclick={() => { network = true; }}>Network diagnostics</button>
+  {#if opened}<LocalPerformance />{/if}
   <LifecycleReport />
  {/if}
 </dialog>

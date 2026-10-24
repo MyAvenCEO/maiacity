@@ -1,3 +1,4 @@
+import { localTimings } from './local-timings.js';
 import { localOperation } from '../../../game/code/sources/local-policy.js';
 // avenDB's device in the Mac app, maiaCITY Studio: hosted in the app’s process (avendb/crates/
 // avendb-device, vault/app/src/avendb.rs), not in this page's WebAssembly. Its node reaches the person's other devices
@@ -22,8 +23,11 @@ const why = (e) => {
  * @param {string} name @param {...unknown} args @returns {Promise<any>}
  */
 export function call(name, ...args) {
-	if (name === 'run' && /** @type {any} */ (args[0])?.op === 'read_file') return readFile(localOperation(args[0]));
-	return command('avendb', { call: name, args }).catch(why);
+	const op = name === 'run' ? /** @type {any} */ (args[0])?.op : name;
+	return localTimings.measure(op, async () => {
+		if (name === 'run' && op === 'read_file') return readFile(localOperation(args[0]));
+		return command('avendb', { call: name, args }).catch(why);
+	});
 }
 
 /**

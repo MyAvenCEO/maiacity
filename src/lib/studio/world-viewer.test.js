@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { playbackMetrics } from './playback-metrics.js';
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { compileModule } from 'svelte/compiler';
@@ -12,7 +13,7 @@ const compiled = compileModule(source, { generate: 'server' }).js.code
  .replace(/^import .*?;$/gm, '')
  .replace(/export /g, '')
  .replaceAll("import('./jobs/mac.js')", 'Promise.resolve({ studioWorld() {} })');
-const WorldViewer = new Function('SvelteSet', 'waitForWorld', 'currentWorldPage', 'FramePacer', 'forwardConsole', 'filmPath', compiled + ';return WorldViewer;')(Set, waitForWorld, currentWorldPage, FramePacer, () => {}, filmPath);
+const WorldViewer = new Function('playbackMetrics', 'SvelteSet', 'waitForWorld', 'currentWorldPage', 'FramePacer', 'forwardConsole', 'filmPath', compiled + ';return WorldViewer;')(playbackMetrics, Set, waitForWorld, currentWorldPage, FramePacer, () => {}, filmPath);
 const spec = { world: { sandbox: 'maiacity-v2', area: 'C' } };
 const frame = { spec, meter: false, width: 640, height: 360 };
 const tick = () => new Promise(r => setTimeout(r, 0));

@@ -173,7 +173,31 @@ export async function manifestsOf(d, { vault = MAIA_CITY, signal } = {}) {
  * Answers the entries asked for.
  * @param {string} path @param {{ device?: any, bring: (ids: string[]) => Promise<any>, vault?: string, fetch?: any }} o
  */
-export async function bringDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: get = globalThis.fetch, signal }) {
+// Diagnostic observations only; no routes, vault IDs or entry contents are retained.
+const manifestRuns = [];
+let manifestPending = 0;
+export const manifestDiagnostics = () => ({ pending: manifestPending, runs: manifestRuns.map(x => ({ ...x })) });
+
+export async function bringDeclared(path, options) {
+ const start = performance.now();
+ manifestPending++;
+ let requested = 0, state = 'failed';
+ try {
+  const entries = await planDeclared(path, options);
+  requested = entries.length;
+  state = options.signal?.aborted ? 'cancelled' : 'scheduled';
+  return entries;
+ } catch (error) {
+  if (options.signal?.aborted) state = 'cancelled';
+  throw error;
+ } finally {
+  manifestPending--;
+  manifestRuns.push({ ms: performance.now() - start, requested, state });
+  if (manifestRuns.length > 20) manifestRuns.shift();
+ }
+}
+
+async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: get = globalThis.fetch, signal }) {
 	signal?.throwIfAborted();
 	const leaves = leavesFor(await manifestsOf(d, { vault, fetch: get, signal }), path);
 	signal?.throwIfAborted();
