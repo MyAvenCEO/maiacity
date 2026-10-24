@@ -8,6 +8,8 @@ The studio holds and releases the session's existing watcher. Database changes i
 
 The queue tests measure 100 invalidations becoming one read, 100 changes during that read becoming one trailing read, zero idle polling, and cancellation on close. These are deterministic request-count tests, not a production performance benchmark. Direct user commands remain immediate.
 
+The Jobs screen already subscribes to sync and native job events. Its remaining fifteen-second lane-hold snapshot has no corresponding native hold-change event, so that fallback stays, now visibility-aware and serialized through the same queue. Its display clock stays separate, and late responses cannot update an unmounted screen.
+
 ## A13: one media-reference parser
 
 A03 already moved public-hash, private avenDB-file and HTTP references into `media/ref.js`, with shared Rust/JS fixtures. The remaining studio proxy classifiers now use that same parser. Private audio proxies are accepted; malformed private refs and external URLs cannot masquerade as stored proxies. Public URLs and private access rules are unchanged. The old auth/media and studio-vault facades were already removed upstream.
