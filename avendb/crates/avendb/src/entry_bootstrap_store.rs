@@ -238,7 +238,6 @@ mod tests {
     use super::*;
     use crate::cast::{document, human_on};
     #[test]
-<<<<<<< HEAD
     fn bootstrap_companion_fences_concurrent_writes_without_depth_assumptions() {
         let mut lab = Lab::new();
         let owner = lab.passkey("Owner");
@@ -290,7 +289,9 @@ mod tests {
                 .with_bootstrap_bytes(&bytes)
                 .is_none()
         );
-=======
+    }
+
+    #[test]
     fn owner_bootstrap_includes_concurrent_writes_older_than_snapshot() {
         let mut lab = Lab::new();
         let owner = lab.passkey("Concurrent owner");
@@ -341,7 +342,6 @@ mod tests {
         assert!(!lab.held(phone).bootstrap_active.contains(&entry));
         assert!(!lab.adopt_owner_entry_base(phone, snapshot, entry, sealed));
         assert_eq!(lab.held(phone).view().slice_of(entry), canonical, "historical stays/seals cannot overwrite the current policy");
->>>>>>> 529ca788 (fix(avendb): refuse incomplete or stale bootstrap suffix activation)
     }
 
     #[test]
