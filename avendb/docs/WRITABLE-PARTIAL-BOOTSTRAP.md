@@ -795,3 +795,25 @@ admission, not the remaining latency of missing-schema acquisition.
    draft landing, proposal acceptance/merge and revocation pass should
    `Lab::check_write` owner/main/exact-head restrictions be extended. Durable
    baseline/suffix replay and peer-neutral authorization must use the same path.
+
+### Active-view schema/lens dependency priority
+
+The app KERNEL manifest requests capgroup/schema/lens types, but this alone does
+not guarantee a private-vault or explicit-ID view's missing lane receives timely
+priority. Core now exposes only currently authorized `missing-schema-lane` entry
+and vault hints. The bootstrap pump derives bounded schema/lens selectors for each
+live scope containing those entries (including discovered entries). These vault-
+scoped dependency selectors precede normal collection queries and skip redundant
+checkpoint fetches; schema IDs enter the existing signed-log live pull path.
+No separate trusted schema import or hosted role exists. Missing-lane transitions,
+view changes and ordinary bounded retry wake discovery; released/replaced scopes
+cannot retain or add hints. Explicit-ID-only scopes can retain discovered dependencies
+under the same 512-entry lease bound.
+
+Lean scheduling lemmas passed. Added lease/revision/vault scoping regression and
+extended the core missing-lane fixture to check hints clear on real lane recovery.
+Rust validation pending. Bounds retain current discovery limits (four dependent
+vault selectors per pass, at most four peers, 64 IDs per reply and one ten-second
+round deadline). This does not prove arbitrary-size schema discovery completeness;
+a lane outside that bounded result stays honestly read-only, with ordinary sync
+as fallback. No wall-clock or physical-device latency success is claimed.

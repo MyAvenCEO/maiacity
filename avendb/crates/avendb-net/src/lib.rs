@@ -2270,6 +2270,7 @@ impl Shared {
                 let bootstrap_before = lab.owner_bases_pending(shared.me);
                 let missing_before = lab.owner_base_missing(shared.me);
                 let keys_before = lab.owner_base_key_waits(shared.me);
+                let lanes_before = lab.owner_base_lane_waits(shared.me);
                 let anchors_before = lab.bootstrap_stamp(shared.me);
                 let out = f(&mut lab, me);
                 let now = lab.size(shared.me);
@@ -2287,13 +2288,14 @@ impl Shared {
                 let missing_changed=missing_before!=missing_after;
                 let keys_after=lab.owner_base_key_waits(shared.me);
                 let keys_changed=keys_before!=keys_after;
-                if keys_changed { shared.bootstrap_due.notify_one(); }
+                let lanes_changed=lanes_before!=lab.owner_base_lane_waits(shared.me);
+                if keys_changed || lanes_changed { shared.bootstrap_due.notify_one(); }
                 if (lab.owner_bases_pending(shared.me) && (!bootstrap_before || grew || revised))
                     || (!missing_after.is_empty() && (missing_changed || grew || revised)) {
                     shared.bootstrap_due.notify_one();
                 }
                 // Key/body restoration may change only the materialized prefix, not log size.
-                if missing_changed || keys_changed { shared.size.send_modify(|_| {}); }
+                if missing_changed || keys_changed || lanes_changed { shared.size.send_modify(|_| {}); }
                 // what it worked out, as a replay or a key it opened, wakes the saver too, once as it comes to
                 let warm = !lab.locked(shared.me) && lab.warm_due(shared.me);
                 if grew {
@@ -2880,7 +2882,8 @@ impl Shared {
             } else {
                 let missing=self.fetch_owner_dependencies().await;
                 let key_wait=self.prioritize_owner_keys().await;
-                if missing || key_wait {
+                let lane_wait=self.prioritize_owner_lanes().await;
+                if missing || key_wait || lane_wait {
                     // Network failure is an explicit wait, not a tight reconstruction loop.
                     tokio::select! {
                         _=self.bootstrap_due.notified()=>{},

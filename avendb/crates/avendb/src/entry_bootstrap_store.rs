@@ -467,6 +467,7 @@ mod tests {
         assert!(lab.adopt_owner_entry_base(phone,snapshot,entry,sealed));
         assert_eq!(lab.owner_base_wait_reason(phone,entry),Some("missing-schema-lane"));
         assert_eq!(lab.owner_base_pending(phone,entry),0);
+        assert_eq!(lab.owner_base_lane_waits(phone),vec![(entry,vault)]);
         assert!(matches!(lab.draft_judged_entry_base(phone,&[owner],entry),Err(Refusal::ReadOnly)), "cannot attest incomplete local lane over an inherited base");
         let get=crate::engine::read(&lab,phone,&serde_json::json!({"op":"get","entry":entry.to_hex(),"schema":"stored"}));
         assert_eq!(get["ok"]["readOnly"],true);
@@ -485,6 +486,7 @@ mod tests {
         }).collect();
         lab.receive(phone,evidence,vec![]);
         assert_eq!(lab.owner_base_wait_reason(phone,entry),None);
+        assert!(lab.owner_base_lane_waits(phone).is_empty());
         assert_eq!(lab.item(phone,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
         // A later lane addition changes the admission rules: do not silently reuse the old base.
         lab.add_schema(mac,vault,vault,crate::lens::example::TODO_V0.bytes()).unwrap();

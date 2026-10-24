@@ -1,6 +1,15 @@
 //! Exact dependency repair is a subset of ordinary authorized disclosure.
 use super::*;
 impl Lab {
+    /// Only current-authorized retained lane waits; remote discovery still checks access.
+    pub fn owner_base_lane_waits(&self, on: SignerId) -> Vec<(EntryId, VaultId)> {
+        if self.locked(on) { return vec![]; }
+        self.held(on).bootstrap_bases.keys().copied().filter_map(|entry| {
+            (self.owner_base_wait_reason(on, entry) == Some("missing-schema-lane"))
+                .then(|| self.held(on).replay.state.entry(entry).map(|en| (entry,en.vault))).flatten()
+        }).collect()
+    }
+
     /// Current-authorized retained entries waiting for a key, not for ciphertext.
     /// These hints only reorder existing ordinary log requests.
     pub fn owner_base_key_waits(&self, on: SignerId) -> Vec<EntryId> {
