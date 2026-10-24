@@ -296,3 +296,52 @@ fn ineligible_announcements_are_unchanged_without_consuming_witnesses() {
         assert_eq!(Announce::from_wire(&announce.to_wire()), Ok(announce));
     }
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn held_announcement_coalesces_new_entry_wake_without_waiting_for_retry() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (sender, receiver) = (w.mac_a, w.phone_a);
+    let node = Node::spawn(w.lab.split(sender, &[], [93; 32]), sender,
+        Options { lazy: true, retry: Duration::from_secs(60), ..Options::local() }).await.unwrap();
+    // Drive the production scheduling boundary explicitly, without a periodic retry
+    // or unrelated peer task consuming its notification. This is not wire timing.
+    let tasks: Vec<_> = node.tasks.lock().unwrap().drain(..).collect();
+    for task in tasks { task.abort(); let _ = task.await; }
+    let mut news = node.shared.news((usize::MAX, 0), None).await.unwrap();
+    node.shared.own_logs().await;
+    let before = node.shared.own.lock().unwrap().holdings.clone();
+    assert!(node.shared.begin_tell(receiver), "hold the first announcement slot");
+    node.act(move |lab, me| {
+        lab.create(me, coop, coop, "doc", &[], document("Generic live entry", "second frontier", me)).unwrap();
+    }).await;
+    news = node.shared.news(news.size, news.revision.clone()).await.unwrap();
+    node.shared.own_logs().await;
+    assert_ne!(before, node.shared.own.lock().unwrap().holdings);
+    let reach = news.reach.get(&receiver).unwrap();
+    news.reach = Arc::new(std::collections::BTreeMap::from([(receiver, crate::Reach {
+        endpoint: reach.endpoint, files: reach.files.clone(), logs: reach.logs.clone(),
+    })]));
+    assert_eq!(news.reach.len(), 1);
+    while time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_ok() {}
+    // Multiple passes consume the mutation's wake while the first tell is held.
+    node.shared.announce(&news);
+    node.shared.announce(&news);
+    assert_eq!(node.shared.telling.lock().unwrap().len(), 1);
+    node.shared.finish_tell(receiver, true);
+    time::timeout(Duration::from_millis(100), node.shared.changed.notified()).await
+        .expect("successful held tell must release the coalesced frontier wake before the 60s retry");
+    assert!(time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_err(), "one coalesced wake");
+    // A success with no intervening demand must not manufacture an announce loop.
+    assert!(node.shared.begin_tell(receiver));
+    node.shared.finish_tell(receiver, true);
+    assert!(time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_err());
+    // Failed work keeps the existing backoff even when another pass was skipped.
+    assert!(node.shared.begin_tell(receiver));
+    assert!(!node.shared.begin_tell(receiver));
+    node.shared.finish_tell(receiver, false);
+    assert!(!node.shared.unreached.lock().unwrap().due(&receiver));
+    assert!(time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_err());
+    assert!(node.shared.telling.lock().unwrap().is_empty());
+    node.shutdown().await.unwrap();
+}
