@@ -337,7 +337,7 @@ fn own_materialization_restores_exact_state_and_successor_writes() {
     assert!(after > before, "unchanged restore must actually use materialization");
     let cached = lab.item(d, entry).unwrap().record();
     let version = lab.item(d, entry).unwrap().version();
-    let proposal_version = lab.held(d).shown[&entry].items()[&Some(proposal)].version();
+    let proposal_version = lab.held(d).shown[&entry].items_in(Some(lab.held(d)))[&Some(proposal)].version();
     lab.edit(d, v, entry, |it| it.set_text(2, "successor")).unwrap();
     let successor = lab.item(d, entry).unwrap().record();
     let successor_version = lab.item(d, entry).unwrap().version();
@@ -346,7 +346,7 @@ fn own_materialization_restores_exact_state_and_successor_writes() {
         "legacy policy-only warm state must be eligible for materialization upgrade");
     assert_eq!(lab.item(d, entry).unwrap().record(), cached);
     assert_eq!(lab.item(d, entry).unwrap().version(), version);
-    assert_eq!(lab.held(d).shown[&entry].items()[&Some(proposal)].version(), proposal_version);
+    assert_eq!(lab.held(d).shown[&entry].items_in(Some(lab.held(d)))[&Some(proposal)].version(), proposal_version);
     lab.edit(d, v, entry, |it| it.set_text(2, "successor")).unwrap();
     assert_eq!(lab.item(d, entry).unwrap().record(), successor);
     assert_eq!(lab.item(d, entry).unwrap().version(), successor_version);

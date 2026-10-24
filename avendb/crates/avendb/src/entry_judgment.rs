@@ -143,9 +143,17 @@ fn get_touch(r: &mut WireReader<'_>) -> Option<Touch> {
 }
 fn put_judgment(shown: &Shown, store: &Store) -> Option<Vec<u8>> {
     // Proposal labels are content: metadata-only history is not sufficient.
-    put_judgment_parts(shown.history_in(store)?, &shown.after)
+    let history = shown.history_in(store)?;
+    // Publication must not depend on ephemeral scratch retention (last 32
+    // entries or a warm reopen). Attest the same current MAIN causal snapshot.
+    let scratch = Scratch::from_attested_item(shown.items_in(Some(store)).get(&MAIN)?.clone(),
+        &history.history(MAIN))?;
+    put_judgment_with_scratch(history, &shown.after, Some(&scratch))
 }
 fn put_judgment_parts(history: &History, after: &After) -> Option<Vec<u8>> {
+    put_judgment_with_scratch(history, after, after.scratch.as_ref())
+}
+fn put_judgment_with_scratch(history: &History, after: &After, scratch: Option<&Scratch>) -> Option<Vec<u8>> {
     let mut b = Vec::new();
     (history.changes().len() as u32).encode(&mut b);
     if history.changes().len() > MAX_FACTS {
@@ -200,7 +208,7 @@ fn put_judgment_parts(history: &History, after: &After) -> Option<Vec<u8>> {
         .copied()
         .collect::<Vec<_>>()
         .encode(&mut b);
-    match &after.scratch {
+    match scratch {
         None => b.push(0),
         Some(s) => {
             let image = s.image()?;

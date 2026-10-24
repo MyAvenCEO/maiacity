@@ -100,3 +100,14 @@ comparisons demand history before comparing causal snapshots. Regression coverag
 includes a warmed receiver with proposal labels, counted snapshot equivalence,
 and unlanded draft visibility before/after current-key removal. Cargo tests remain
 queued; this correction is not a new measured performance claim.
+
+### First runtime evidence and remaining correction
+
+Full isolated core run at e1400c15: 266 passed, 2 failed. All five warm metadata
+cases and warmed counted-base comparison passed. The failures exposed (1) old
+fixture access without Store and (2) checkpoint serialization of ephemeral
+scratch retention. Publication now constructs its scratch from the authorized
+MAIN item and counted MAIN history, with stable `tip=None`, independent of warm
+reopening or last-32 scratch retention. The same full causal snapshot is retained;
+this does not replace history checks with JSON equality. These final corrections
+are awaiting the next serialized test slot.
