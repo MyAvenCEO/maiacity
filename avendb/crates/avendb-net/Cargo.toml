@@ -58,3 +58,6 @@ getrandom = { version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
 tokio = { version = "1.44", features = ["rt-multi-thread", "macros", "sync", "time", "test-util"] }
+
+[features]
+test-fixtures = ["avendb/test-fixtures"]

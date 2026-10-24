@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 5
     steps:
       # the server's own action (.github/actions/prod-ssh): its host keys pinned, never taken on trust
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           sparse-checkout: .github/actions
       - uses: ./.github/actions/prod-ssh

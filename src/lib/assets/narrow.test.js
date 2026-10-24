@@ -7,7 +7,8 @@
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 
-const { bundleAsset, bundleGroup, bundleRecipes, hashText } = await import('./box/plugin.js');
+const { bundleAsset, bundleGroup, hashText } = await import('./box/plugin.js');
+const { bundleRecipes } = await import('./testing/recipes.js');
 const { recipeFile } = await import('./engines.js');
 const { OBJECT_GROUPS } = await import('./groups.js');
 

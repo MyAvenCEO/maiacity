@@ -1,9 +1,10 @@
+import { databaseOf } from "./fixtures/db";
 // The admin's Postgres window (tables.ts) against real Postgres semantics (PGlite): every table counted, a page of rows
 // in its primary key's order, secrets and credentials never sent, no table but the catalog's, and nothing written.
-import { beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { PGlite } from "@electric-sql/pglite";
 import { MIGRATIONS } from "../src/migrations-list";
-import { useDb, type Db } from "../src/pg";
+import { useDb } from "../src/pg";
 import { listTables, readTable } from "../src/tables";
 
 let pg: PGlite;
@@ -14,12 +15,7 @@ beforeAll(async () => {
   await pg.exec("CREATE TABLE notes (id SERIAL PRIMARY KEY, body TEXT NOT NULL)");
   await pg.query("INSERT INTO notes (body) VALUES ('a dome of hemp'), ('a tower of glass')");
   await pg.query("INSERT INTO secrets (key, value) VALUES ('kept', 'do not show me') ON CONFLICT (key) DO UPDATE SET value = 'do not show me'");
-  const db: Db = {
-    query: (text, params) => pg.query(text, params as any[]) as any,
-    exec: async (text) => void (await pg.exec(text)),
-    transaction: (fn) => pg.transaction((tx) => fn({ query: (text, params) => tx.query(text, params as any[]) as any })),
-  };
-  useDb(db);
+  useDb(databaseOf(pg));
 });
 
 describe("the admin's Postgres window", () => {
@@ -55,3 +51,5 @@ describe("the admin's Postgres window", () => {
     expect((await readTable("notes")).total).toBe(2);
   });
 });
+
+afterAll(async () => { await pg.close(); });

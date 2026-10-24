@@ -22,13 +22,15 @@ on:
       - 'avendb/**'
       - 'src/lib/avendb/device/**'
       - '.github/workflows/avendb-checks.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'avendb/**'
-      - 'src/lib/avendb/device/**'
-      - '.github/workflows/avendb-checks.yml'
+      - 'scripts/ci/**'
   workflow_call:
+    inputs:
+      real_browser:
+        type: boolean
+        default: false
+      protocol:
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       frontend_only:
@@ -49,11 +51,31 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  impact:
+    runs-on: ubuntu-latest
+    outputs:
+      native: ${{ steps.paths.outputs.native }}
+      browser: ${{ steps.paths.outputs.browser }}
+      protocol: ${{ steps.paths.outputs.protocol }}
+      server: ${{ steps.paths.outputs.server }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - id: paths
+        env:
+          CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          CI_HEAD: ${{ github.sha }}
+        run: bun scripts/ci/impact.mjs
   # Not on a draft (Samuel 2026-10-21): a thread's every push to its draft ran all three, ten minutes each. They run
   # once the PR is marked ready, and on every push after; merge only once they are green there
   tests:
+    needs: impact
     name: avenDB tests (${{ matrix.name }})
-    if: (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only
+    if: needs.impact.outputs.native == 'true' && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only && !inputs.frontend_only
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -62,7 +84,7 @@ jobs:
         include:
           # the property tests are most of core's time (869 of about 1,300 test-seconds on 2026-10-21, t19 alone 126 s)
           # and nextest starts them last, so core ran 7 minutes; on a runner of their own they run beside the rest.
-          # Both build the same crate, so they share one cache
+          # Separate execution styles: nextest for isolation, libtest for shared immutable histories.
           - name: core
             cache: core
             args: -p avendb
@@ -71,7 +93,8 @@ jobs:
           - name: core properties
             cache: core
             args: -p avendb
-            filter: -E 'binary_id(avendb::properties)'
+            filter: --test properties
+            properties: true
           # avendb-device's own build is the long pole (about 7 of 10 minutes compiling), so it and the browser's
           # tests, which build on it, run beside the network's and the server's rather than after them
           - name: net, server
@@ -83,9 +106,9 @@ jobs:
             args: -p avendb-device -p avendb-browser
             doc: true
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: avendb -> target
           # a cache key takes no commas: the shard's own, not its name (with one, the restore failed and nothing was saved)
@@ -102,11 +125,20 @@ jobs:
       # gives them one folder to share them in (keys.rs, `test_pairs`): the net and server tests ran in 113 s, against
       # 216 s with cargo test and 261 s with nextest alone (locally, 2026-10-21)
       - name: cargo nextest
+        if: ${{ !matrix.properties }}
         working-directory: avendb
         env:
           CARGO_PROFILE_TEST_OPT_LEVEL: 1
           AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
-        run: cargo nextest run --locked --no-tests=pass ${{ matrix.args }} ${{ matrix.filter }}
+        run: cargo nextest run --locked --no-tests=fail --features test-fixtures ${{ matrix.args }} ${{ matrix.filter }}
+      # This binary shares immutable 40-seed histories via LazyLock. A process per property rebuilt them 37 times.
+      - name: Shared-history properties (all seeds and invariants)
+        if: matrix.properties
+        working-directory: avendb
+        env:
+          CARGO_PROFILE_TEST_OPT_LEVEL: 1
+          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
+        run: cargo test --locked --features test-fixtures -p avendb --test properties -- --test-threads=2
       # nextest runs no doc tests
       - name: cargo test --doc
         if: matrix.doc
@@ -116,16 +148,17 @@ jobs:
         run: cargo test --locked --doc ${{ matrix.args }}
 
   image:
+    needs: impact
     name: avenDB server image builds
     # The release patches a local dependency: exercise cargo-chef and the Docker
     # context before merge, without publishing an image or touching production.
-    if: github.event_name == 'pull_request' && !github.event.pull_request.draft
+    if: needs.impact.outputs.server == 'true' && github.event_name == 'pull_request' && !github.event.pull_request.draft
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
+      - uses: actions/checkout@v7.0.1
+      - uses: docker/setup-buildx-action@v4.4.1
+      - uses: docker/build-push-action@v7.4.0
         with:
           context: avendb
           file: avendb/Dockerfile.server
@@ -134,17 +167,17 @@ jobs:
           cache-to: type=gha,scope=avendb-pr,mode=max
 
   spec:
-    if: ${{ !inputs.real_browser_only && !inputs.frontend_only }}
+    if: ${{ !inputs.real_browser_only && !inputs.frontend_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) }}
     name: Lean spec and vectors
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/cache@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/cache@v6.1.0
         with:
           path: ~/.elan
           key: elan-${{ hashFiles('avendb/spec/lean-toolchain') }}
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6.1.0
         with:
           path: avendb/spec/.lake
           key: lake-${{ hashFiles('avendb/spec/lean-toolchain') }}-${{ hashFiles('avendb/spec/**/*.lean', 'avendb/spec/vectors/**') }}
@@ -168,25 +201,30 @@ jobs:
           fi
 
   real-browser:
+    needs: impact
     name: Disposable real Chromium and WASM
-    if: github.event_name == 'workflow_dispatch' && inputs.real_browser_only
+    if: ${{ !inputs.frontend_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (inputs.real_browser || inputs.real_browser_only || needs.impact.outputs.browser == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen@0.2.129
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: avendb -> target
           key: real-browser-localhost
           cache-on-failure: true
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
       - name: Install disposable test browser
-        run: npx --yes playwright@1.56.1 install --with-deps chromium
+        run: bunx --bun playwright install --with-deps chromium
       - name: Real API with disposable localhost identities
         env:
           CARGO_PROFILE_TEST_OPT_LEVEL: 1
@@ -194,6 +232,7 @@ jobs:
         run: |
           export AVENDB_CHROMIUM="$(find "$HOME/.cache/ms-playwright" -path '*/chrome-linux/chrome' -type f | head -n 1)"
           test -x "$AVENDB_CHROMIUM"
+          export AVENDB_NODE="$(command -v bun)"
           avendb/scripts/test-browser.sh
           # localhost-passkeys artifacts are test-only and must never replace the shipped package.
           git diff --exit-code -- src/lib/avendb/device
@@ -204,10 +243,57 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
-      - run: bun run check
-      - run: bun test src/lib/avendb/observed-window.test.js src/lib/avendb/query-window.test.js src/lib/avendb/reactive-read.test.js src/lib/avendb/local-write.test.js src/lib/avendb/world-reader.test.js
+      - run: bun --bun run check
+      - run: bun test ./src/lib/avendb/
+
+  protocol:
+    needs: impact
+    name: Protocol models and negative controls
+    if: ${{ !inputs.real_browser_only && !inputs.frontend_only && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (inputs.protocol || needs.impact.outputs.protocol == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: verifpal@1.6.5
+      - run: avendb/spec/protocol/check.sh
+
+  required:
+    name: avenDB required checks
+    if: ${{ always() }}
+    needs: [impact, tests, image, spec, real-browser, protocol, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every selected suite to succeed
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+          DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+          PR: ${{ github.event_name == 'pull_request' }}
+          FRONTEND: ${{ inputs.frontend_only || false }}
+          BROWSER_ONLY: ${{ inputs.real_browser_only || false }}
+          BROWSER: ${{ inputs.real_browser || false }}
+          PROTOCOL: ${{ inputs.protocol || false }}
+        run: |
+          printf '%s' "$RESULTS" | jq -e '
+            . as $r |
+            [$r.impact.outputs] | .[0] as $p |
+            (["impact"] +
+              (if env.FRONTEND == "true" then ["frontend"] else [] end) +
+              (if env.DRAFT != "true" and env.FRONTEND != "true" then
+                (if env.BROWSER_ONLY != "true" then
+                  ["spec"] + (if $p.native == "true" then ["tests"] else [] end) +
+                  (if env.PROTOCOL == "true" or $p.protocol == "true" then ["protocol"] else [] end)
+                 else [] end) +
+                (if env.BROWSER == "true" or env.BROWSER_ONLY == "true" or $p.browser == "true" then ["real-browser"] else [] end)
+               else [] end) +
+              (if env.PR == "true" and env.DRAFT != "true" and $p.server == "true" then ["image"] else [] end)
+            ) as $expected |
+            all($r[]; .result == "success" or .result == "skipped") and
+            all($expected[]; $r[.].result == "success")'

@@ -11,7 +11,8 @@ const noop = new Proxy(function () {}, { get: (_, k) => (k === Symbol.toPrimitiv
 globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContext: () => noop, style: {} }) };
 globalThis.$state ??= (x) => x;
 const { LATEST, recipeFile } = await import('./engines.js');
-const { bundleRecipes, hashText } = await import('./box/plugin.js');
+const { hashText } = await import('./box/plugin.js');
+const { bundleRecipes } = await import('./testing/recipes.js');
 const { MODULES } = await import('./box/modules.js');
 const { objectAt } = await import('./index.js');
 const { buildWith, refOf } = await import('./refs.js');

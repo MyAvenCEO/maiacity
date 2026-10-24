@@ -42,6 +42,8 @@ loro = "=1.16.2"
 web-time = "1.1"
 
 [features]
+# Disposable synthetic key cache for tests; never enable in shipped builds.
+test-fixtures = []
 # passkeys of the relying party localhost also count, made by a test page's virtual authenticator
 # (scripts/test-browser.sh): never in a build that ships
 localhost-passkeys = []

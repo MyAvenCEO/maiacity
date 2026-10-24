@@ -1,0 +1,143 @@
+[
+  {
+    "name": "security",
+    "tier": "gate",
+    "paths": [
+      "src/lib/sandbox/",
+      "src/lib/assets/engines.test.js",
+      "src/lib/assets/box/",
+      "src/lib/assets/schemas/",
+      "src/lib/assets/sources/",
+      "src/lib/assets/vault.test.js",
+      "src/lib/assets/worlds.test.js",
+      "src/lib/assets/params.test.js",
+      "src/lib/assets/register.test.js",
+      "src/lib/assets/versions.test.js",
+      "src/lib/models/timber.test.js",
+      "src/lib/code/",
+      "game/code/sources/proof-worker.test.js",
+      "src/lib/render/lint.test.js",
+      "src/lib/markdown/",
+      "src/lib/avendb/",
+      "src/lib/media/",
+      "src/lib/studio/aven.test.js",
+      "src/lib/studio/cuts.test.js",
+      "src/lib/studio/refresh.test.js",
+      "src/lib/studio/media-sources.test.js",
+      "game/places.test.js",
+      "deploy/check-avendb.test.js",
+      "src/lib/studio/media-proxies.test.js",
+      "scripts/film/avendb.test.mjs",
+      "scripts/diagnostics/network-probe.test.mjs",
+      "api/test/"
+    ],
+    "impact": [
+      "src/",
+      "api/",
+      "game/",
+      "code/",
+      "scripts/",
+      "deploy/",
+      "package.json",
+      "bun.lock",
+      "patches/"
+    ]
+  },
+  {
+    "name": "ci",
+    "tier": "targeted",
+    "paths": [
+      "scripts/ci/"
+    ],
+    "impact": [
+      ".github/",
+      "scripts/ci/",
+      ".bun-version",
+      "api/Dockerfile"
+    ]
+  },
+  {
+    "name": "assets",
+    "tier": "targeted",
+    "paths": [
+      "src/lib/assets/",
+      "src/lib/models/",
+      "src/lib/actors/",
+      "src/lib/plants/",
+      "src/lib/biomes/",
+      "src/lib/render/"
+    ],
+    "impact": [
+      "src/lib/assets/",
+      "src/lib/models/",
+      "src/lib/actors/",
+      "src/lib/plants/",
+      "src/lib/biomes/",
+      "src/lib/render/"
+    ]
+  },
+  {
+    "name": "studio",
+    "tier": "targeted",
+    "paths": [
+      "src/lib/studio/",
+      "src/lib/film/"
+    ],
+    "impact": [
+      "src/lib/studio/",
+      "src/lib/film/",
+      "game/film/",
+      "films/"
+    ]
+  },
+  {
+    "name": "games",
+    "tier": "targeted",
+    "paths": [
+      "src/lib/maiacity-v1/",
+      "src/lib/maiacity-v2/",
+      "src/lib/factories/",
+      "src/lib/sandbox-2/",
+      "src/lib/sandbox-kit/"
+    ],
+    "impact": [
+      "src/lib/maiacity-v1/",
+      "src/lib/maiacity-v2/",
+      "src/lib/factories/",
+      "src/lib/sandbox-2/",
+      "src/lib/sandbox-kit/",
+      "src/lib/models/",
+      "src/lib/plants/",
+      "game/",
+      "src/lib/maiacity-testing/"
+    ]
+  },
+  {
+    "name": "physics",
+    "tier": "targeted",
+    "paths": [
+      "src/lib/sandbox-7/"
+    ],
+    "impact": [
+      "src/lib/sandbox-7/"
+    ]
+  },
+  {
+    "name": "application",
+    "tier": "targeted",
+    "paths": [
+      "src/lib/ids.test.js",
+      "src/lib/app/",
+      "src/lib/chat/",
+      "src/lib/universe/",
+      "src/lib/proposals/",
+      "game/code/"
+    ],
+    "impact": [
+      "src/",
+      "game/",
+      "code/",
+      "scripts/"
+    ]
+  }
+]

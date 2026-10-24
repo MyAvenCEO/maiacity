@@ -13,7 +13,7 @@ const noop = new Proxy(function () {}, { get: (_, k) => (k === Symbol.toPrimitiv
 globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContext: () => noop, style: {} }) };
 globalThis.$state ??= (x) => x;
 
-const { bundleRecipes } = await import('../box/plugin.js');
+const { bundleRecipes } = await import('../testing/recipes.js');
 const { recipeFile } = await import('../engines.js');
 const { checkCard } = await import('../schemas/index.js');
 const { CARDS, cardOfFile } = await import('./cards.js');

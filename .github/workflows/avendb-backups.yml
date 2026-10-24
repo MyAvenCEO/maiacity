@@ -136,11 +136,11 @@ jobs:
         run: |
           echo "::notice::The recovery test on the test bucket runs only on a push to main or a run by hand; avenDB's checks ran it in a folder."
       - if: github.event_name != 'pull_request'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
       - if: github.event_name != 'pull_request'
         uses: dtolnay/rust-toolchain@stable
       - if: github.event_name != 'pull_request'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: avendb
       # the project's keys, in this step alone: it builds and runs main's code, never a pull request's

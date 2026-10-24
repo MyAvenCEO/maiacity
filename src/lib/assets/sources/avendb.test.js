@@ -13,7 +13,8 @@ globalThis.document ??= { createElement: () => ({ width: 0, height: 0, getContex
 globalThis.$state ??= (x) => x;
 
 // our recipes, as Vite's build hands them to the page (../box/plugin.js)
-const { bundleRecipes, hashText } = await import('../box/plugin.js');
+const { hashText } = await import('../box/plugin.js');
+const { bundleRecipes } = await import('../testing/recipes.js');
 const made = await bundleRecipes();
 mock.module('$app/paths', () => ({ base: '' }));
 mock.module('virtual:asset-recipes', () => ({ default: made.index }));

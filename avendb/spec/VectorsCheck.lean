@@ -1,7 +1,4 @@
-import AvenDB.Vectors
-import AvenDB.OpsVectors
-import AvenDB.BackupVectors
-import AvenDB.ObjectiveVectors
+import AvenDB.VectorFiles
 
 /-!
 The test vectors on disk are what the model says: `lake build` fails here when `vectors/vaults.json`,
@@ -11,10 +8,7 @@ and write the files even when they are missing or stale.
 -/
 
 #eval show IO Unit from do
-  for (path, model) in [("vectors/vaults.json", AvenDB.Vectors.render),
-      ("vectors/lenses.json", AvenDB.Vectors.renderLenses), ("vectors/ops.json", AvenDB.OpsVectors.render),
-      ("vectors/backups.json", AvenDB.BackupVectors.render),
-      ("vectors/objectives.json", AvenDB.ObjectiveVectors.render)] do
+  for (path, model) in AvenDB.vectorFiles do
     let file ← IO.FS.readFile path
     unless file == model do
       throw <| IO.userError s!"{path} is out of date: run `lake exe vectors`"

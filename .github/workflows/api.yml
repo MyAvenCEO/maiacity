@@ -14,21 +14,20 @@ name: API
 # avendb.yml, which builds and restarts it alone whenever its code changes: an avenDB change never restarts the API,
 # and a failed avenDB build never holds up its deploy.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'api/**'
-      - 'game/**'
-      - 'code/**'
-      - 'infra/**'
-      - 'deploy/**'
-      - 'docker-compose*.yml'
-      # what else the API image copies (api/Dockerfile), and the allow list that lets it into the build (.dockerignore)
-      - 'src/lib/sandbox/engines.json'
-      - 'src/lib/avendb/device/avendb_browser.js'
-      - 'src/lib/avendb/device/avendb_browser_bg.wasm'
-      - '.dockerignore'
-      - '.github/workflows/api.yml'
+  workflow_call:
+    inputs:
+      built_image:
+        description: Image repository built for this SHA in this main run
+        type: string
+        default: ''
+      validated:
+        description: The trusted main pipeline already checked this exact commit
+        type: boolean
+        default: false
+      reconcile_infra:
+        description: Apply infrastructure and DNS changes (manual runs always reconcile)
+        type: boolean
+        default: true
   workflow_dispatch:
 
 concurrency:
@@ -51,14 +50,15 @@ env:
 jobs:
   # beside the image's build, as deploy.yml's kernel gate is: nothing goes on the server unless they pass
   tests:
+    if: ${{ !inputs.validated }}
     name: The API's tests
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
       # the tests import game/ and scripts/ (the root's packages) and the API's own (its Postgres, PGlite)
@@ -68,30 +68,10 @@ jobs:
       - run: bun test ./api/test
 
   image:
-    name: Build and push the API image
-    runs-on: ubuntu-latest
-    outputs:
-      image: ${{ steps.meta.outputs.image }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-      - id: meta
-        run: echo "image=ghcr.io/${GITHUB_REPOSITORY,,}-api" >> "$GITHUB_OUTPUT"
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: api/Dockerfile
-          push: true
-          tags: |
-            ${{ steps.meta.outputs.image }}:${{ github.sha }}
-            ${{ steps.meta.outputs.image }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+    if: ${{ inputs.built_image == '' }}
+    uses: ./.github/workflows/image.yml
+    with:
+      component: api
 
   infra:
     name: Hetzner (Pulumi)
@@ -107,20 +87,27 @@ jobs:
       - name: Check the Pulumi passphrase is set
         run: |
           [ -n "$PULUMI_CONFIG_PASSPHRASE" ] || { echo "::error::Secret PULUMI_PASSPHRASE is missing — without it the Pulumi state cannot be read."; exit 1; }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
-      - uses: pulumi/actions@v6
+      - uses: pulumi/actions@v7.0.0
+        with:
+          pulumi-version: 3.272.0
       - name: Dependencies
+        if: ${{ !inputs.validated || inputs.reconcile_infra }}
         working-directory: infra
-        run: bun install
+        run: bun install --frozen-lockfile
       - name: Type check
+        if: ${{ !inputs.validated || inputs.reconcile_infra }}
         working-directory: infra
-        run: bun run check
+        run: |
+          bun --bun run check
+          bun smoke.mjs
       - name: Derive the public deploy key
+        if: ${{ !inputs.validated || inputs.reconcile_infra }}
         env:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
         run: |
@@ -138,6 +125,7 @@ jobs:
             git -C .pulumi-state rm -rfq . || true
           fi
       - name: pulumi up
+        if: ${{ !inputs.validated || inputs.reconcile_infra }}
         working-directory: infra
         run: |
           pulumi login "file://$GITHUB_WORKSPACE/.pulumi-state"
@@ -152,7 +140,7 @@ jobs:
           echo "ipv4=$(pulumi stack output ipv4)" >> "$GITHUB_OUTPUT"
           echo "data_mount=$(pulumi stack output dataMount)" >> "$GITHUB_OUTPUT"
       - name: Write the Pulumi state back
-        if: always()
+        if: ${{ always() && (!inputs.validated || inputs.reconcile_infra) }}
         run: |
           cd .pulumi-state
           rm -rf .pulumi/backups
@@ -171,6 +159,7 @@ jobs:
       # open it. Without HETZNER_DNS_TOKEN the records have to be set by hand once,
       # and the rest of the pipeline carries on regardless.
       - name: Upsert the A records
+        if: ${{ !inputs.validated || inputs.reconcile_infra }}
         env:
           TOKEN: ${{ secrets.HETZNER_DNS_TOKEN }}
           IP: ${{ needs.infra.outputs.ipv4 }}
@@ -197,6 +186,7 @@ jobs:
           done
 
   delivery:
+    if: ${{ !inputs.validated }}
     uses: ./.github/workflows/delivery-checks.yml
 
   deploy:
@@ -205,11 +195,12 @@ jobs:
       cancel-in-progress: false
     name: Roll out over SSH
     needs: [tests, image, infra, dns, delivery]
+    if: ${{ !cancelled() && (needs.image.result == 'success' || (inputs.validated && inputs.built_image != '' && needs.image.result == 'skipped')) && needs.infra.result == 'success' && needs.dns.result == 'success' && (needs.tests.result == 'success' || (inputs.validated && needs.tests.result == 'skipped')) && (needs.delivery.result == 'success' || (inputs.validated && needs.delivery.result == 'skipped')) }}
     runs-on: ubuntu-latest
     env:
       HOST: ${{ needs.infra.outputs.ipv4 }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       # its host keys pinned (.github/actions/prod-ssh), never taken on trust: a server Pulumi makes anew has new ones,
       # and DEPLOY_KNOWN_HOSTS is filled with them before it is deployed to (the action's error says how)
       - uses: ./.github/actions/prod-ssh
@@ -259,7 +250,7 @@ jobs:
           EOS
       - name: Write .env (the database password is generated once and stays on the server)
         env:
-          IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
+          IMAGE: ${{ inputs.built_image || needs.image.outputs.image }}:${{ github.sha }}
           DATA_MOUNT: ${{ needs.infra.outputs.data_mount }}
           # speech to text (Prem, Deepgram Nova 3): only the API container gets it — never a Mac
           PREMAI_API_KEY: ${{ secrets.PREMAI_API_KEY }}

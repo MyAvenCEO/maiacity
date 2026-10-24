@@ -8,16 +8,12 @@ name: avenDB cloud agent
 #
 # Built on Ubuntu 22.04, so its glibc is older than a cloud session's (Ubuntu 24.04), and it runs there.
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'avendb/**'
-      # what the agent never holds
-      - '!avendb/spec/**'
-      - '!avendb/docs/**'
-      - '!avendb/scripts/**'
-      - '!avendb/**/*.md'
-      - '.github/workflows/avendb-agent.yml'
+  workflow_call:
+    inputs:
+      validated:
+        description: The trusted main pipeline already checked this exact commit
+        type: boolean
+        default: false
   workflow_dispatch:
 
 concurrency:
@@ -32,15 +28,21 @@ env:
   ASSET: avendb-device-x86_64-linux
 
 jobs:
+  checks:
+    if: ${{ !inputs.validated }}
+    uses: ./.github/workflows/avendb-checks.yml
+
   build:
+    needs: checks
+    if: ${{ !cancelled() && (needs.checks.result == 'success' || (inputs.validated && needs.checks.result == 'skipped')) }}
     name: Build the cloud agent and put it on its release
     runs-on: ubuntu-22.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - uses: dtolnay/rust-toolchain@stable
       # Rust builds are slow: keep the compiled dependencies between runs
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@v2.9.3
         with:
           workspaces: avendb
       - name: Build avendb-device

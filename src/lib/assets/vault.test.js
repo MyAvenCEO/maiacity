@@ -28,7 +28,7 @@ const ROOT = join(import.meta.dir, '../../..');
 
 // our recipes, as Vite's build hands them to the seed (./box/plugin.js): what the stand-in feed is made of, and what a
 // page reading the vault must build the same as
-const { bundleRecipes } = await import('./box/plugin.js');
+const { bundleRecipes } = await import('./testing/recipes.js');
 const made = await bundleRecipes();
 mock.module('$app/paths', () => ({ base: '' }));
 mock.module('virtual:asset-recipes', () => ({ default: made.index }));
