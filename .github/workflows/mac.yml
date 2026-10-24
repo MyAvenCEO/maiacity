@@ -62,3 +62,8 @@ jobs:
       - name: cargo check
         working-directory: vault
         run: cargo check --locked -p maiacity-studio
+
+      - name: Media reference contract
+        run: |
+          rustc --edition=2024 --test vault/app/src/media_ref.rs -o "$RUNNER_TEMP/media-ref-tests"
+          "$RUNNER_TEMP/media-ref-tests"

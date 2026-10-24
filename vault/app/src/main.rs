@@ -13,6 +13,7 @@ mod blob;
 mod enclave;
 mod files;
 mod jobs;
+mod media_ref;
 mod models;
 mod page;
 mod passkey;
