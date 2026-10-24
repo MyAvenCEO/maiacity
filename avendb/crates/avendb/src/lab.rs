@@ -78,6 +78,9 @@
 mod entry_projection;
 pub use entry_projection::{PreparedEntryProjection, VerifiedEntryProjection};
 
+#[path = "lab/warm_materialization.rs"]
+mod warm_materialization;
+
 use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
@@ -600,6 +603,7 @@ pub struct WarmCapture {
     opened: Option<Vec<([u8; 32], Secret)>>,
     replay: Option<crate::policy::ViewCapture>,
     receipt: Warming,
+    materialization: Option<warm_materialization::Capture>,
 }
 impl WarmCapture {
     pub fn encode(mut self) -> Warming {
@@ -615,7 +619,10 @@ impl WarmCapture {
             self.receipt.keys = Some(self.key.lock("keys", &bytes, b"stored keys", &mut self.rng));
         }
         if let Some(replay) = self.replay.take() {
-            let bytes = Zeroizing::new(replay.encode(self.receipt.view_of));
+            let bytes = replay.encode(self.receipt.view_of);
+            let bytes = Zeroizing::new(match self.materialization.take() {
+                Some(capture) => capture.encode(bytes), None => bytes,
+            });
             self.receipt.view = Some(self.key.lock("view", &bytes, ENGINE.as_bytes(), &mut self.rng));
         }
         self.receipt
@@ -737,6 +744,7 @@ struct Store {
     /// What it reads of selectors, headers and tags, from the two above.
     readings: Readings,
     shown: BTreeMap<EntryId, Shown>,
+    warm_materialization: Option<Vec<u8>>,
     projections: std::sync::Mutex<BTreeMap<(SignerId, EntryId), entry_projection::CachedEntryProjection>>,
     /// The digest of each log it holds (`sync::digests`), what it gossips: `None` until worked out for its edits now.
     digests: Option<BTreeMap<LogId, [u8; 32]>>,
@@ -809,6 +817,7 @@ impl Default for Store {
             spoilt: HashSet::new(),
             readings: Readings::default(),
             shown: BTreeMap::new(),
+            warm_materialization: None,
             projections: std::sync::Mutex::new(BTreeMap::new()),
             digests: None,
             follow: vec![],
@@ -871,6 +880,7 @@ impl Store {
         self.spoilt.clear();
         self.readings = Readings::default();
         self.shown.clear();
+        self.warm_materialization = None;
         self.projections.lock().expect("entry projections").clear();
         self.reshow = true;
         self.opened.clear();
@@ -5429,13 +5439,21 @@ impl Lab {
             let (edits, ids) = (store.log.edits(), store.log.ids());
             let found = warm.views.iter().find_map(|b| {
                 let view = key.unlock("view", b, ENGINE.as_bytes())?;
-                Replay::from_view(&view, edits, ids)
+                let (replay, extra) = warm_materialization::unwrap(&view)?;
+                let (replay, held) = Replay::from_view(replay, edits, ids)?;
+                Some((replay, held, extra.to_vec()))
             });
             match found {
-                Some((replay, held)) => {
+                Some((replay, held, extra)) => {
+                    let materialized = held == ids.len() && warm_materialization::matching(&extra, store);
+                    if materialized {
+                        store.warm_materialization = Some(extra);
+                    }
                     store.replay = replay;
                     store.replayed = held;
-                    store.view_given = held;
+                    // Upgrade a legacy policy-only view, or repair a malformed adjunct,
+                    // once. Keep its valid replay; the next save captures own materialization.
+                    store.view_given = if held == ids.len() && !materialized { 0 } else { held };
                     store.view_lineage = Some(store.log.lineage());
                     store.view_wholes = store.wholes;
                     store.perf.count("replay: from its stored view", 1);
@@ -5465,18 +5483,32 @@ impl Lab {
     }
 
     /// Capture only inputs needed by the canonical snapshot encoder. No history serialization,
-    /// history hashing or bulk encryption occurs here. Copies IDs/bits/acts/key handles; no edit bodies.
+    /// bulk encryption occurs here. Captures IDs/bits/acts/key handles and hashes the ordered log IDs; no edit bodies.
     /// The caller must release Lab before encoding. The existing receipt fence is retained.
     pub fn capture_warm(&mut self, d: SignerId, held: usize, checked: Option<Checked>) -> Option<WarmCapture> {
+        self.capture_warm_at(d, held, checked, false)
+    }
+
+    /// Clean shutdown has stopped writers and saved the authoritative journal. Publish
+    /// its current derived state without waiting for the background snapshot interval.
+    /// A current acknowledged view remains a no-op; failed persistence acknowledges nothing.
+    pub fn capture_warm_current(&mut self, d: SignerId, held: usize, checked: Option<Checked>) -> Option<WarmCapture> {
+        self.capture_warm_at(d, held, checked, true)
+    }
+
+    fn capture_warm_at(&mut self, d: SignerId, held: usize, checked: Option<Checked>, current: bool) -> Option<WarmCapture> {
         let key = self.shelf_key(d)?;
         let store = self.stores.get(&d)?;
-        let (keys_due, view_due) = (store.keys_due(checked), store.view_due() && store.replayed <= held);
+        let close_due = current && store.replayed > 0 && store.replayed == store.log.edits().len()
+            && store.replayed != store.view_given;
+        let (keys_due, view_due) = (store.keys_due(checked), (store.view_due() || close_due) && store.replayed <= held);
         if !keys_due && !view_due { return None; }
         let keys_of = keys_due.then(|| (checked.or(store.checked_given), store.opened_since.len()));
         let opened = keys_due.then(|| store.opened_before.iter()
             .chain(store.opened_since.iter().map(|(b, k)| (b, k)))
             .map(|(b, k)| (*b, k.clone())).collect());
         let replay = view_due.then(|| store.replay.capture_view());
+        let materialization = view_due.then(|| warm_materialization::Capture::take(store));
         let receipt = Warming {
             keys: None, view: None,
             revision: store.warm_revision.clone(), lineage: store.log.lineage(), keys_of,
@@ -5486,7 +5518,7 @@ impl Lab {
         let mut seed = Zeroizing::new([0u8; 32]);
         self.rng.fill_bytes(&mut *seed);
         let rng = SeededRng::new("warm snapshot encryption", &*seed);
-        Some(WarmCapture { key, rng, opened, replay, receipt })
+        Some(WarmCapture { key, rng, opened, replay, receipt, materialization })
     }
 
     /// Whether device `d`'s shelf lacks something of `Warm` (`warming`), as cheaply as it tells: the node's saver is
@@ -6241,6 +6273,20 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 /// every write through a share that names one is judged by them; then each entry's history, each write of its view
 /// with the content of its body where the device opened it, in replay order, and the item of each line.
 fn show_items(d: SignerId, store: &mut Store) {
+    let materialization = store.warm_materialization.take()
+        .filter(|bytes| warm_materialization::matching(bytes, store));
+    let mut warm = match materialization {
+        Some(bytes) => match warm_materialization::decode(&bytes) {
+            Some(saved) => saved,
+            None => {
+                // Its policy replay remains valid, but regenerate the damaged
+                // optional adjunct on the next save instead of retaining it forever.
+                store.view_given = 0;
+                BTreeMap::new()
+            }
+        },
+        None => BTreeMap::new(),
+    };
     let (st, r, bodies) = (&store.replay.state, &store.readings, &store.bodies);
     let (reshow, opened) = (std::mem::take(&mut store.reshow), std::mem::take(&mut store.opened));
     let mut old = std::mem::take(&mut store.shown);
@@ -6384,6 +6430,15 @@ fn show_items(d: SignerId, store: &mut Store) {
         if let Some(s) = old.get_mut(&en.id).filter(|s| s.print == print) {
             s.tip = tip;
             continue;
+        }
+        if let Some(saved) = warm.remove(&en.id) {
+            if let Some(shown) = saved.restore(d, st, r, bodies, en, print, tip) {
+                debug_assert!(same_shown(&shown, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault))));
+                store.perf.count("show: own materialization reused", 1);
+                old.insert(en.id, shown);
+                continue;
+            }
+            store.view_given = 0; // changed bodies or an invalid item must not retain a stale adjunct
         }
         // writes that only came after those it judged, judged on where it left off: what judging all of them makes
         let writes: Vec<&Write> = st.entry_writes(en.id).collect();
