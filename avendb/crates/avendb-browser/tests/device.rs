@@ -1215,8 +1215,11 @@ async fn a_note_takes_proposals_merges_and_forks_and_the_database_shows_every_re
     let ends = |l: &avendb::lens::Lens| (l.from().to_hex(), l.to().to_hex());
     let shipped = [&avendb::lens::ARTICLE_LENS, &avendb::lens::SPARK_LENS, &avendb::lens::FUNCTION_LENS]
         .into_iter()
-        .chain([&avendb::lens::VIEW_LENS, &avendb::lens::POST_LENS, &avendb::lens::STORY_LENS, &avendb::lens::AIP_LENS, &avendb::lens::REVIEW_LENS])
+        .chain([&avendb::lens::VIEW_LENS, &avendb::lens::POST_LENS, &avendb::lens::STORY_LENS, &avendb::lens::AIP_LENS])
         .map(|l| ends(l))
+        .chain(std::iter::once(ends(&avendb::lens::Lens::parse(
+            avendb::lens::blobs::REVIEW_LENS.as_bytes(),
+        ).expect("the shipped review lens parses"))))
         .collect::<Vec<_>>();
     let hex = |l: &Value, end: &str| l[end].as_str().unwrap_or_default().to_string();
     let got: Vec<_> = lenses.iter().map(|l| (hex(l, "from"), hex(l, "to"))).collect();
