@@ -20,3 +20,18 @@ for _ in 0..<1000 {
     assert(racing.read().0 == terminal)
 }
 print("CeremonyResult: expiration, first completion and 1000 concurrent races passed")
+
+let queue = NSLock()
+queue.lock()
+let queued = DispatchGroup()
+queued.enter()
+DispatchQueue.global().async {
+    assert(!enterCeremonyQueue(queue, until: Date().addingTimeInterval(0.02)),
+           "A blocked queue acquisition must expire")
+    queued.leave()
+}
+assert(queued.wait(timeout: .now() + 2) == .success)
+queue.unlock()
+assert(enterCeremonyQueue(queue, until: Date().addingTimeInterval(1)))
+queue.unlock()
+print("Ceremony queue: blocked acquisition expires; released queue admits the next request")

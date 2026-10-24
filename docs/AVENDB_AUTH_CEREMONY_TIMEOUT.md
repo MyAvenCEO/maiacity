@@ -27,3 +27,14 @@ Validation:
 An unresponsive macOS main thread can still delay execution of sheet cancellation;
 the request nevertheless returns timeout, and a queued start checks its terminal
 state. This fix does not establish that replay/startup itself was slow.
+
+
+Follow-up: dropping the Rust ceremony future now runs identity-bound cancellation
+through an RAII guard, including task abort before its timeout fires. Normal OS
+completion disarms the guard. Native regressions exercise a polled pending future
+being dropped, rejection of its late approval, replacement independence, and
+normal-completion disarming. Swift queue acquisition is also bounded to 120s,
+independently of the approval wait, with a blocked-queue/next-request regression.
+The 120s limits bound queue acquisition and biometric approval separately (up to
+240s combined); they cannot preempt subsequent synchronous Secure Enclave
+cryptographic operations. The bridge does not claim a total-operation deadline.

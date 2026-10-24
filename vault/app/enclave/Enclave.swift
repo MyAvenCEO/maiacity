@@ -37,7 +37,9 @@ private var made: (context: LAContext, key: Data, at: Date)?
 
 @_cdecl("avendb_enclave")
 public func avendbEnclave(_ ask: UnsafePointer<CChar>) -> UnsafeMutablePointer<CChar>? {
-    asking.lock()
+    guard enterCeremonyQueue(asking, until: Date().addingTimeInterval(120)) else {
+        return strdup(#"{"error":"Touch ID is busy. Please try again."}"#)
+    }
     defer { asking.unlock() }
     return strdup(answer(to: String(cString: ask)))
 }
@@ -103,6 +105,9 @@ func raw(_ key: SymmetricKey) -> Data {
 }
 
 // BEGIN ceremony result state (also exercised without invoking biometrics).
+func enterCeremonyQueue(_ queue: NSLock, until deadline: Date) -> Bool {
+    queue.lock(before: deadline)
+}
 final class CeremonyResult {
     private let lock = NSLock()
     private var terminal = false

@@ -51,6 +51,30 @@ pub async fn passkey_sheet(window: tauri::WebviewWindow, url: String) -> Result<
     sheet(&window, url).await
 }
 
+/// Dropping an async ceremony is cancellation too, including task abort and
+/// caller/window teardown before the timeout future can finish.
+struct OnAbandon<F: FnOnce()>(Option<F>);
+impl<F: FnOnce()> OnAbandon<F> {
+    fn disarm(&mut self) { self.0 = None; }
+}
+impl<F: FnOnce()> Drop for OnAbandon<F> {
+    fn drop(&mut self) {
+        if let Some(cancel) = self.0.take() { cancel(); }
+    }
+}
+
+fn cancel_request(window: &tauri::WebviewWindow, request: &Reply) {
+    reply(request, Err("The sign-in request ended. Please try again.".into()));
+    let request = request.clone();
+    let _ = window.run_on_main_thread(move || {
+        if let Some(showing) = take_showing(&request) {
+            // SAFETY: remove only this session before cancelling on the main
+            // thread; cancel may synchronously invoke its completion callback.
+            unsafe { showing._session.cancel(); }
+        }
+    });
+}
+
 /// The sheet for `url` over `window`, for the page (`passkey_sheet`) or for avenDB's native device (avendb.rs), which
 /// asks for its ceremonies itself and opens what comes back with a key of its own.
 pub async fn sheet(window: &tauri::WebviewWindow, url: String) -> Result<String, String> {
@@ -60,6 +84,7 @@ pub async fn sheet(window: &tauri::WebviewWindow, url: String) -> Result<String,
     let ns_window = window.ns_window().map_err(|e| e.to_string())? as usize;
     let (tx, rx) = oneshot::channel();
     let to: Reply = Arc::new(Mutex::new(Some(tx)));
+    let mut abandoned = OnAbandon(Some(|| cancel_request(window, &to)));
     let (main, on_main) = (window.clone(), to.clone());
     window
         .run_on_main_thread(move || {
@@ -69,22 +94,14 @@ pub async fn sheet(window: &tauri::WebviewWindow, url: String) -> Result<String,
         })
         .map_err(|e| e.to_string())?;
     match tokio::time::timeout(std::time::Duration::from_secs(120), rx).await {
-        Ok(answer) => answer.map_err(|_| "the sign-in sheet went away".to_string())?,
-        Err(_) => {
-            // Settle this request first. A late OS completion must not turn a
-            // timeout into approval, nor clear a replacement ceremony.
-            reply(&to, Err("The sign-in request timed out. Please try again.".into()));
-            let expired = to.clone();
-            window.run_on_main_thread(move || {
-                if let Some(showing) = take_showing(&expired) {
-                    // SAFETY: its own session, on the main thread. Remove it
-                    // before cancel, whose completion may run synchronously.
-                    unsafe { showing._session.cancel(); }
-                }
-            }).map_err(|e| e.to_string())?;
-            Err("The sign-in request timed out. Please try again.".into())
+        Ok(Ok(answer)) => {
+            abandoned.disarm(); // the OS completed normally, including denial
+            answer
         }
+        Ok(Err(_)) => Err("the sign-in sheet went away".into()),
+        Err(_) => Err("The sign-in request timed out. Please try again.".into()),
     }
+    // All other exits (including dropped future) run identity-bound cleanup.
 }
 
 /// A late completion/timeout owns only its original session.
@@ -198,6 +215,40 @@ impl Anchor {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn dropping_pending_ceremony_retires_only_its_request() {
+        use std::future::Future;
+        use std::task::{Context, Poll, Wake, Waker};
+        struct Noop;
+        impl Wake for Noop { fn wake(self: Arc<Self>) {} }
+        let (tx, mut rx) = oneshot::channel();
+        let request: Reply = Arc::new(Mutex::new(Some(tx)));
+        let (new_tx, mut new_rx) = oneshot::channel();
+        let replacement: Reply = Arc::new(Mutex::new(Some(new_tx)));
+        let mut future = Box::pin(async {
+            let _guard = OnAbandon(Some(|| reply(&request, Err("abandoned".into()))));
+            std::future::pending::<()>().await;
+        });
+        let waker = Waker::from(Arc::new(Noop));
+        assert!(matches!(future.as_mut().poll(&mut Context::from_waker(&waker)), Poll::Pending));
+        drop(future);
+        reply(&request, Ok("late approval".into()));
+        assert_eq!(rx.try_recv().unwrap(), Err("abandoned".into()));
+        assert!(new_rx.try_recv().is_err());
+        reply(&replacement, Ok("replacement".into()));
+        assert_eq!(new_rx.try_recv().unwrap(), Ok("replacement".into()));
+    }
+
+    #[test]
+    fn normal_completion_disarms_abandonment() {
+        let mut cancelled = false;
+        {
+            let mut guard = OnAbandon(Some(|| cancelled = true));
+            guard.disarm();
+        }
+        assert!(!cancelled);
+    }
 
     #[test]
     fn timed_out_ceremony_rejects_late_approval() {
