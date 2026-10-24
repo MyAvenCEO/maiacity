@@ -195,7 +195,8 @@ export const holdsAgent = (city, aven, groups, shares) => {
 export function travelerDemoOps(have) {
  const traveler = have.find(g => g.name === TRAVELER);
  const citizen = have.find(g => g.name === CITIZEN);
- if (!traveler || JSON.stringify(traveler.caps) !== JSON.stringify(GAME_READS) || traveler.includes.length) return [];
+ const legacy = [GAME_READS, [{ op: 'read', where: { type: ['game', 'recipe', 'view', 'logic'] } }]];
+ if (!traveler || !legacy.some(caps => JSON.stringify(traveler.caps) === JSON.stringify(caps)) || traveler.includes.length) return [];
  const ops = [];
  if (citizen) {
   const caps = [...citizen.caps];

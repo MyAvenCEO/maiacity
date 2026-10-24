@@ -185,3 +185,8 @@ test('migrates only the legacy Traveler grant, Citizen first, without changing p
  expect(travelerDemoOps([{ ...old, caps: CAP_GROUPS[0].caps }, groups[1]])).toEqual([]);
  expect(travelerDemoOps([{ ...old, caps: [{ op: 'read' }] }])).toEqual([]);
 });
+
+test('migrates the older live Traveler grant without config', () => {
+ const old = { ...groups[0], caps: [{op:'read',where:{type:['game','recipe','view','logic']}}] };
+ expect(travelerDemoOps([old,groups[1]]).at(-1).group.caps).toEqual(CAP_GROUPS[0].caps);
+});

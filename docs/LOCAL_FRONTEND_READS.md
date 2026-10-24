@@ -6,7 +6,7 @@ Code, recipes, manifest discovery, Universe posts, named profile images and lega
 
 Manifests and learned view dependencies prioritize background synchronization. Timeline traversal resolves shot references and aven file roots to local entry metadata. Peer transports continue operating in the background. PostgreSQL API operations remain separate and unchanged.
 
-A manifest describes dependencies; it does not grant network authority to a renderer. A missing manifest or missing file cannot weaken the local-read policy. AIP-34 declares the missing V2 gameplay/film dependency routes and requires the owner's normal acceptance.
+A manifest describes dependencies; it does not grant network authority to a renderer. A missing manifest or missing file cannot weaken the local-read policy. AIP-34 declares the V2 gameplay/film dependency routes; the live entry was confirmed applied on 2026-10-24.
 
 Validation covers forced local reads, preserved sync operations, absent/partial local catalogs, file reads with live peers but absent local bytes, manifest audio traversal, and profile identity/deletion matching.
 
