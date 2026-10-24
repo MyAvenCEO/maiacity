@@ -101,3 +101,5 @@ import AvenDB.EntryBaseFormat
 import AvenDB.BaseSuffix
 
 import AvenDB.BaseAdmission
+
+import AvenDB.ProvenanceBoundary
