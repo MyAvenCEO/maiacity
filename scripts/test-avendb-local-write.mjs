@@ -16,6 +16,7 @@ const detailView = detailAt < 0 ? '' : process.argv[detailAt + 1];
 assert(!detailView || ['story','note'].includes(detailView));
 const worldView = process.argv.includes('--world-view');
 const coldChat = process.argv.includes('--cold-chat');
+const dmReuse = process.argv.includes('--dm-reuse');
 const remote = `
 const entry = 'a'.repeat(64), mine = 'b'.repeat(64);
 const messages = [], waiters = [];
@@ -26,6 +27,10 @@ window.fixtureOperations = [];
 const counts = window.fixtureCounts = { brings: 0, writes: 0, worlds: 0, activeWorlds:0, maxWorlds:0 };
 const world = { mine, vaults:[{id:mine,name:'Fixture',kind:'human',acting:{as:mine},devices:[]}],
  shares:[], groups:[], entries:[{entry:'c'.repeat(64),vault:mine,by:mine,authors:[mine],type:'custom-task-label',kind:'todo',title:'Generic collection acceptance',status:'open',tags:[],readers:[mine],writers:[mine],sharers:[mine],levels:{[mine]:'owner'}},{entry,vault:mine,type:'room',kind:'room',readers:[mine],record:{kind:'room',look:'self',name:'Fixture'}}] };
+if(new URLSearchParams(location.search).has('dm-reuse')){
+ world.vaults.push({id:'f'.repeat(64),name:'Friend',kind:'human',devices:[]});
+ for(let i=1;i<=51;i++)world.entries.push({entry:i.toString(16).padStart(64,'0'),vault:mine,type:'room',readers:[mine,i===51?'f'.repeat(64):'other'],record:{kind:'room',look:'dm',name:i===51?'Existing friend DM':'Other DM '+i}});
+}
 const collectionKind = new URLSearchParams(location.search).get('collection');
 if(collectionKind){
  const type=collectionKind==='sparks'?'spark':'artifact';
@@ -75,7 +80,8 @@ export class Device {
   if(op.op==='query'){
    if(window.fixtureQueryRefuse)return {refused:'NoCap',why:'NoCap'};
    const rows=window.fixtureRoomDenied?[]:structuredClone(world.entries.filter(e=>e.type==='room'));
-   const selected=op.vault?rows.filter(e=>e.vault===op.vault && e.record?.look==='self'):rows;
+   const look=op.where?.all?.find(part=>part.path?.[0]==='look')?.eq;
+   const selected=rows.filter(e=>(!op.vault || e.vault===op.vault) && (!look || e.record?.look===look));
    const reply={ok:{rows:selected.slice(op.offset??0,(op.offset??0)+(op.limit??50)),count:selected.length}};
    if(window.fixtureHoldQuery)await new Promise(resolve=>(window.queryWaiters??=[]).push(resolve));
    return reply;
@@ -101,6 +107,7 @@ export class Device {
   if(op.op==='bring'){counts.brings++;return new Promise(()=>{});}
   if(op.op==='get')return {ok:{status,record:world.entries.find(e=>e.entry===op.entry)?.record??{}}};
   if(op.op==='set'){const target=world.entries.find(e=>e.entry===op.entry);if(target){target[op.path[0]]=op.value;if(target.record)target.record[op.path[0]]=op.value;}status=op.value;wake();return {ok:true};}
+  if(op.op==='create'){counts.writes++;return {ok:{entry:'9'.repeat(64)}};}
   if(op.op==='may')return {ok:op.ops.map(()=>true)};
   if(op.op==='creatable')return {ok:{tags:[]}};
   if(op.op==='taggable')return {ok:{tags:[]}};
@@ -138,11 +145,20 @@ try {
  const page=await context.newPage();
  page.setDefaultTimeout(20000);
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto(origin+'/__local-write?room='+ 'a'.repeat(64)+(worldView?'&world-view':'')+(collectionView?'&collection='+collectionView:'')+(detailView?'&detail='+detailView:'')+(coldChat?'&cold-chat':''));
+ await page.goto(origin+'/__local-write?room='+ 'a'.repeat(64)+(worldView?'&world-view':'')+(collectionView?'&collection='+collectionView:'')+(detailView?'&detail='+detailView:'')+(coldChat?'&cold-chat':'')+(dmReuse?'&dm-reuse':''));
  await page.getByTestId('phase').filter({hasText:'closed'}).waitFor();
  await page.getByRole('button',{name:'Unlock fixture'}).click();
  await page.getByTestId('phase').filter({hasText:'open'}).waitFor();
- if(coldChat){
+ if(dmReuse){
+  await page.getByRole('button',{name:'More rooms',exact:true}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Existing friend DM',exact:true}).count(),0);
+  await page.getByRole('button',{name:'New message',exact:true}).first().click();
+  await page.getByRole('button',{name:'Friend Human vault',exact:true}).click();
+  await page.locator('.room-head h2').filter({hasText:'Existing friend DM'}).waitFor({timeout:1500});
+  assert.equal(await page.evaluate(()=>window.fixtureCounts.writes),0);
+  assert.deepEqual(errors,[]);
+  console.log('PASS '+engine+': actual Chat reuses a DM beyond its sidebar page without a write');
+ } else if(coldChat){
   await page.getByRole('button',{name:'Note to self',exact:true}).waitFor({timeout:1500});
   await page.getByText('No messages yet. Say hello.',{exact:true}).waitFor({timeout:1500});
   assert.equal(await page.evaluate(()=>window.fixtureHoldWorld),true);

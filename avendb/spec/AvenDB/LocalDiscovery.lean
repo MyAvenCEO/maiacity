@@ -28,4 +28,16 @@ theorem no_extra_rows (current reply : Context) (rows : List Nat) (id : Nat)
   split at h
   · exact h
   · simp at h
+-- A displayed page is not evidence that no matching DM exists. Only a completed
+-- authorized lookup can establish local absence; refusal/cancellation is not empty.
+def mayCreate (lookup : Option (List Nat)) : Bool :=
+  match lookup with | none => false | some rows => rows.isEmpty
+
+theorem failed_lookup_never_creates : mayCreate none = false := rfl
+
+theorem existing_match_never_creates (id : Nat) (rest : List Nat) :
+    mayCreate (some (id :: rest)) = false := rfl
+
+def reuse (allMatches : List Nat) (_displayedPage : Nat) : Option Nat := allMatches.head?
+theorem reuse_independent_of_page (rows : List Nat) (a b : Nat) : reuse rows a = reuse rows b := rfl
 end AvenDB.LocalDiscovery
