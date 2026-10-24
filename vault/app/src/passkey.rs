@@ -37,6 +37,7 @@ thread_local! {
 }
 
 struct Showing {
+    reply: Reply,
     _session: Retained<ASWebAuthenticationSession>,
     _anchor: Retained<Anchor>,
     _done: RcBlock<dyn Fn(*mut NSURL, *mut NSError)>,
@@ -67,13 +68,44 @@ pub async fn sheet(window: &tauri::WebviewWindow, url: String) -> Result<String,
             }
         })
         .map_err(|e| e.to_string())?;
-    rx.await.map_err(|_| "the sign-in sheet went away".to_string())?
+    match tokio::time::timeout(std::time::Duration::from_secs(120), rx).await {
+        Ok(answer) => answer.map_err(|_| "the sign-in sheet went away".to_string())?,
+        Err(_) => {
+            // Settle this request first. A late OS completion must not turn a
+            // timeout into approval, nor clear a replacement ceremony.
+            reply(&to, Err("The sign-in request timed out. Please try again.".into()));
+            let expired = to.clone();
+            window.run_on_main_thread(move || {
+                if let Some(showing) = take_showing(&expired) {
+                    // SAFETY: its own session, on the main thread. Remove it
+                    // before cancel, whose completion may run synchronously.
+                    unsafe { showing._session.cancel(); }
+                }
+            }).map_err(|e| e.to_string())?;
+            Err("The sign-in request timed out. Please try again.".into())
+        }
+    }
+}
+
+/// A late completion/timeout owns only its original session.
+fn take_showing(request: &Reply) -> Option<Showing> {
+    SHOWING.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        if slot.as_ref().is_some_and(|shown| Arc::ptr_eq(&shown.reply, request)) {
+            slot.take()
+        } else {
+            None
+        }
+    })
 }
 
 /// On the main thread: the sheet for `url`, started over the window whose NSWindow is at `ns_window`; its answer goes
 /// to `to`.
 fn start(window: &tauri::WebviewWindow, ns_window: usize, url: &str, to: Reply) -> Result<(), String> {
     let mtm = MainThreadMarker::new().ok_or("the sign-in sheet starts on the main thread")?;
+    if to.lock().map_err(|_| "the sign-in request failed")?.is_none() {
+        return Err("the sign-in request already ended".into());
+    }
     if SHOWING.with(|s| s.borrow().is_some()) {
         return Err("a sign-in sheet is open already".into());
     }
@@ -82,6 +114,7 @@ fn start(window: &tauri::WebviewWindow, ns_window: usize, url: &str, to: Reply) 
     let anchor = Anchor::new(ns, mtm);
     let url = NSURL::URLWithString(&NSString::from_str(url)).ok_or("the sheet's page has no URL")?;
     let main = window.clone();
+    let completion = to.clone();
     let done = RcBlock::new(move |back: *mut NSURL, error: *mut NSError| {
         // SAFETY: the session passes a URL or an error, each null or valid for the call
         let answer = match unsafe { (back.as_ref(), error.as_ref()) } {
@@ -92,9 +125,10 @@ fn start(window: &tauri::WebviewWindow, ns_window: usize, url: &str, to: Reply) 
             (None, Some(e)) => Err(e.localizedDescription().to_string()),
             (None, None) => Err("the sign-in sheet ended with nothing".into()),
         };
-        reply(&to, answer);
-        // the session is done with what it holds: let go of it, after this call
-        let _ = main.run_on_main_thread(|| drop(SHOWING.with(|s| s.borrow_mut().take())));
+        reply(&completion, answer);
+        // A delayed callback cannot release a newer sheet.
+        let completed = completion.clone();
+        let _ = main.run_on_main_thread(move || drop(take_showing(&completed)));
     });
     // initWithURL:callback: needs macOS 14.4; the app runs from 13
     #[allow(deprecated)]
@@ -107,16 +141,20 @@ fn start(window: &tauri::WebviewWindow, ns_window: usize, url: &str, to: Reply) 
             RcBlock::as_ptr(&done),
         )
     };
-    // SAFETY: set before the session starts, on the main thread; `SHOWING` keeps the anchor alive while it shows
-    let started = unsafe {
+    // SAFETY: configured on the main thread before starting.
+    unsafe {
         session.setPresentationContextProvider(Some(ProtocolObject::from_ref(&*anchor)));
         session.setPrefersEphemeralWebBrowserSession(true);
-        session.start()
-    };
-    if !started {
+    }
+    // Install ownership before start, including a synchronous completion.
+    SHOWING.with(|s| *s.borrow_mut() = Some(Showing {
+        reply: to.clone(), _session: session.clone(), _anchor: anchor, _done: done,
+    }));
+    // SAFETY: configured session, retained above, on the main thread.
+    if !unsafe { session.start() } {
+        drop(take_showing(&to));
         return Err("the sign-in sheet didn't open".into());
     }
-    SHOWING.with(|s| *s.borrow_mut() = Some(Showing { _session: session, _anchor: anchor, _done: done }));
     Ok(())
 }
 
@@ -154,5 +192,33 @@ impl Anchor {
         let this = Anchor::alloc(mtm).set_ivars(AnchorIvars { window });
         // SAFETY: NSObject's own init
         unsafe { msg_send![super(this), init] }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timed_out_ceremony_rejects_late_approval() {
+        let (tx, mut rx) = oneshot::channel();
+        let request: Reply = Arc::new(Mutex::new(Some(tx)));
+        reply(&request, Err("timed out".into()));
+        reply(&request, Ok("late approval".into()));
+        assert_eq!(rx.try_recv().unwrap(), Err("timed out".into()));
+        assert!(request.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn replacement_ceremony_has_independent_ownership() {
+        let (old_tx, _old_rx) = oneshot::channel();
+        let (new_tx, mut new_rx) = oneshot::channel();
+        let old: Reply = Arc::new(Mutex::new(Some(old_tx)));
+        let new: Reply = Arc::new(Mutex::new(Some(new_tx)));
+        assert!(!Arc::ptr_eq(&old, &new));
+        reply(&old, Err("timed out".into()));
+        assert!(new_rx.try_recv().is_err());
+        reply(&new, Ok("new approval".into()));
+        assert_eq!(new_rx.try_recv().unwrap(), Ok("new approval".into()));
     }
 }

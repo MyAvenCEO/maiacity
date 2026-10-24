@@ -102,6 +102,26 @@ func raw(_ key: SymmetricKey) -> Data {
     key.withUnsafeBytes { Data($0) }
 }
 
+// BEGIN ceremony result state (also exercised without invoking biometrics).
+final class CeremonyResult {
+    private let lock = NSLock()
+    private var terminal = false
+    private var result: (Bool, Error?) = (false, nil)
+
+    @discardableResult func finish(_ success: Bool, _ error: Error?) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard !terminal else { return false }
+        terminal = true; result = (success, error)
+        return true
+    }
+    func expire() { _ = finish(false, nil) }
+    func read() -> (Bool, Error?) {
+        lock.lock(); defer { lock.unlock() }
+        return result
+    }
+}
+// END ceremony result state.
+
 /// A touch for `why`: the approval, which the keys then use without asking again. Touch ID alone, no password instead.
 func approved(_ why: String) throws -> LAContext {
     let context = LAContext()
@@ -111,12 +131,16 @@ func approved(_ why: String) throws -> LAContext {
         throw Failure(why: "Touch ID isn't ready on this Mac: \(unable?.localizedDescription ?? "no finger enrolled")")
     }
     let done = DispatchSemaphore(value: 0)
-    var (ok, failed): (Bool, Error?) = (false, nil)
+    let result = CeremonyResult()
     context.evaluatePolicy(.deviceOwnerAuthenticationWithBiometrics, localizedReason: why) { success, error in
-        (ok, failed) = (success, error)
-        done.signal()
+        if result.finish(success, error) { done.signal() }
     }
-    done.wait()
+    guard done.wait(timeout: .now() + 120) == .success else {
+        result.expire()
+        context.invalidate()
+        throw Failure(why: "Touch ID timed out. Please try again.")
+    }
+    let (ok, failed) = result.read()
     guard ok else { throw Failure(why: "Touch ID: \(failed?.localizedDescription ?? "not approved")") }
     return context
 }
