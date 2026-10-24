@@ -715,3 +715,5 @@ missing-cut fixture checks the planned request before late-body receipt and no
 request after it. Syntax/diff checks passed; root owns Rust execution. Remaining
 architecture gap is ordinary key recovery for already-held ciphertext, which this
 exact Signed-edit protocol intentionally does not misrepresent as a missing body.
+
+Per-peer retry correction: [24582549](https://github.com/MyAvenCEO/maiacity/commit/24582549), committed and pushed; combined Rust validation remains pending.
