@@ -856,3 +856,29 @@ resolver, retaining all assertions. `bun run check` passes with zero errors (27
 existing CSS warnings) using the candidate dependency tree and bundled Node PATH;
 25 focused manifest/file/completeness tests pass. No Cargo or runtime authorization
 changes were involved.
+
+### Next isolated slice: shared main-line receive on owner-held partial state
+
+An owner's partial device may now receive a collaborator's main-line suffix through
+an existing share when the encrypted body supplies a complete fixed grant proof.
+The accepted share must name the proof; every chain link must exist in current
+canonical policy, carry the matching commitment/level, and reference no cap group.
+Ordinary signature verification, `State::accepted_write`, causal body/key and lane
+readiness, `Judging::judge`, row ownership, `State::lets` and `History::admit` remain
+the admission path. The chain gate does not itself grant an operation. Missing,
+changed or group-dependent proof remains a retained read-only wait, rather than
+silently accepting with incomplete authority. Standing removal still invalidates
+the owner-attested base; a peer role never substitutes for a signature or right.
+
+Regression `owner_partial_base_receives_group_free_shared_main_and_rechecks_revocation`
+uses actual owner/guest vaults and signed guest writes while pre-snapshot content is
+withheld, compares concurrent owner+guest results against the full holder, rejects
+absent/tampered grant proof and checks removal arriving before a delayed shared edit.
+Lean gate lemmas and parser/diff checks pass; Rust execution remains pending and
+this branch is separate from the frozen delivery candidate.
+
+Still unsupported: adoption by a non-owner shared writer, local shared authoring
+from partial state, historical cap-group-dependent grants, proposal/merge suffixes,
+and general recovery from a canonically rejected suffix. Before those extensions,
+prove selector/group readiness at each write placement and maintain per-line causal
+scratch/checkpoint state for proposal starts, edits, owner accepts and merges.

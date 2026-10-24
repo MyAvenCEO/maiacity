@@ -55,3 +55,13 @@ namespace AvenDB.BootstrapDependencies
 def retireWithSuffix (baseSafe suffixCounted : Bool) : Bool := baseSafe && suffixCounted
 theorem uncounted_suffix_prevents_retirement (b : Bool) : retireWithSuffix b false = false := by simp [retireWithSuffix]
 end AvenDB.BootstrapDependencies
+
+namespace AvenDB.BootstrapDependencies
+-- This slice supports only already-authorized main writes with immutable grant
+-- commitments. Group-dependent historical authority remains unsupported.
+def sharedMainReady (currentAccepted main proofCommitted groupFree ordinaryCounts : Bool) : Bool :=
+  currentAccepted && main && proofCommitted && groupFree && ordinaryCounts
+theorem sharedMain_needs_policy (m p g c : Bool) : sharedMainReady false m p g c = false := by simp [sharedMainReady]
+theorem sharedMain_needs_proof (a m g c : Bool) : sharedMainReady a m false g c = false := by simp [sharedMainReady]
+theorem sharedMain_cannot_skip_counting (a m p g : Bool) : sharedMainReady a m p g false = false := by simp [sharedMainReady]
+end AvenDB.BootstrapDependencies

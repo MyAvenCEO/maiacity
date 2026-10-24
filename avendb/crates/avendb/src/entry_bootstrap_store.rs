@@ -1,5 +1,6 @@
-//! Narrow Store adoption: ordinary owner-authored main-line append while older content
-//! is absent. Shared/proposal writes wait for canonical history; no kernel privilege.
+//! Owner-held partial Store: main-line append while older content is absent.
+//! Received shared writes require complete group-free grant proofs; proposals and
+//! shared-holder authoring remain unsupported. No kernel privilege.
 use super::*;
 
 pub(crate) type Anchors = BTreeMap<EntryId, (EditId, Vec<u8>)>;
@@ -78,6 +79,18 @@ fn canonical_owner_replacement(on: SignerId, store: &Store, base: &RestoredOwner
     if !canonical.items().contains_key(&MAIN)
         || canonical.items().values().any(Item::has_parked_updates) { return None; }
     Some(canonical)
+}
+
+// Fixed grant commitments are self-contained; group-based grants require historical
+// group readiness beyond this slice. Ordinary State::lets still checks every op.
+fn bootstrap_share_proof(state: &State, vault: VaultId, write: &Write, proof: Option<&Proof>) -> bool {
+    if write.actor == vault && write.shares.is_empty() { return true; }
+    let Some(proof)=proof.filter(|p| write.shares.contains(&p.share)) else { return false; };
+    let Some(issued)=state.share(proof.share) else { return false; };
+    issued.chain.len()==proof.grants.len() && !issued.chain.is_empty()
+        && issued.chain.iter().zip(&proof.grants).all(|(id,grant)|
+            state.share(*id).is_some_and(|cp| cp.share.group.is_none()
+                && cp.commitment==Some(grant.commitment()) && cp.share.level==grant.level()))
 }
 
 impl Lab {
@@ -312,7 +325,7 @@ impl Lab {
                 let Ok(Some(w)) = view.accepted_write(&edit, id) else {
                     continue 'anchor;
                 };
-                if w.actor != vault || !w.shares.is_empty() || w.proposal != Proposal::Main {
+                if w.proposal != Proposal::Main {
                     continue 'anchor;
                 }
                 if !w
@@ -343,6 +356,11 @@ impl Lab {
                     pending.push_front(id);
                     break;
                 };
+                if !bootstrap_share_proof(&view,vault,&w,opened.proof.as_ref()) {
+                    wait_reason=Some("unsupported-share-proof");
+                    pending.push_front(id);
+                    break;
+                }
                 if judging
                     .scratch
                     .as_ref()
@@ -476,6 +494,72 @@ impl Backup {
 mod tests {
     use super::*;
     use crate::cast::{document, human_on};
+    #[test]
+    fn owner_partial_base_receives_group_free_shared_main_and_rechecks_revocation() {
+        use crate::policy::{Who,Level,Revoking};
+        let mut lab=Lab::new(); let owner=lab.passkey("Owner");
+        let mac=lab.device_of(owner,"Mac"); let phone=lab.device_of(owner,"Phone"); let pad=lab.device_of(owner,"Pad");
+        let bad=lab.device_of(owner,"Bad proof receiver");
+        let vault=human_on(&mut lab,owner,&[mac,phone,pad,bad]);
+        let guest=lab.passkey("Guest"); let guest_device=lab.device_of(guest,"Guest device");
+        let guest_vault=human_on(&mut lab,guest,&[guest_device]);
+        lab.sync(guest_device,mac);
+        let share=lab.issue(mac,&[owner],crate::cast::share(vault,Who::Vault(guest_vault),Level::Write,crate::cast::of_type("note"))).unwrap();
+        for device in [phone,pad,bad,guest_device] { lab.sync(mac,device); }
+        let entry=lab.create_in(mac,vault,vault,vec![share],"note",&[],document("Base","old",mac)).unwrap();
+        let withheld=lab.edit(mac,vault,entry,|item|item.set_text(2,"Attested")).unwrap();
+        let PreparedEntryBase{draft,sealed,..}=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
+        let snapshot=lab.complete(mac,draft,&[]).unwrap();
+        for device in [phone,pad,bad] {
+            let offer=lab.entry_projection_offer(mac,device,entry).unwrap();
+            lab.receive(device,offer.evidence,vec![]);
+            assert!(lab.adopt_owner_entry_base(device,snapshot,entry,sealed.clone()));
+        }
+        lab.sync(mac,guest_device);
+        let shared=lab.edit(guest_device,guest_vault,entry,|item|item.set_text(2,"Guest update")).unwrap();
+        let signed=lab.signed_edit(guest_device,shared).unwrap().clone();
+        let body=lab.held(guest_device).bodies[&shared].clone();
+        let write=lab.held(guest_device).replay.state.write(shared).unwrap();
+        assert!(bootstrap_share_proof(&lab.held(guest_device).replay.state,vault,write,body.proof.as_ref()));
+        assert!(!bootstrap_share_proof(&lab.held(guest_device).replay.state,vault,write,None));
+        let mut tampered=body.proof.clone().unwrap(); tampered.grants[0].salt[0]^=1;
+        assert!(!bootstrap_share_proof(&lab.held(guest_device).replay.state,vault,write,Some(&tampered)));
+        // A genuinely signed/encrypted malformed proof must retain the prefix
+        // read-only; this exercises receive, rather than just the precheck helper.
+        let mut bad_edit=signed.edit.clone();
+        let mut bad_body=body.clone(); bad_body.proof=Some(tampered);
+        let Action::Write { body: encrypted, .. }=&signed.edit.action else { unreachable!() };
+        let key=lab.held(guest_device).keys.get(&keys::edit_key(encrypted).unwrap(),write.key()).unwrap().clone();
+        let encrypted=keys::seal_edit(&key,&bad_body.to_wire(),&write_context(&bad_edit),&mut lab.rng);
+        if let Action::Write { body, .. }=&mut bad_edit.action { *body=encrypted; }
+        let bad_signed=lab.sign(bad_edit).unwrap(); let bad_id=bad_signed.edit.id();
+        lab.receive(bad,vec![bad_signed],vec![]);
+        assert!(lab.active_owner_base(bad,entry).is_some());
+        assert_eq!(lab.owner_base_wait_reason(bad,entry),Some("unsupported-share-proof"));
+        assert!(lab.owner_base_pending(bad,entry)>0);
+        assert!(lab.history(bad,entry).unwrap().get(bad_id).is_none());
+        // Independent concurrent owner suffix has the same checkpoint cut.
+        let own=lab.edit(mac,vault,entry,|item|item.set_text(1,"Owner title")).unwrap();
+        let own_signed=lab.signed_edit(mac,own).unwrap().clone();
+        lab.receive(phone,vec![own_signed,signed.clone()],vec![]);
+        lab.receive(mac,vec![signed.clone()],vec![]);
+        assert!(lab.active_owner_base(phone,entry).is_some());
+        assert_eq!(lab.owner_base_pending(phone,entry),0);
+        assert!(lab.history(phone,entry).unwrap().get(shared).unwrap().counted);
+        assert_eq!(lab.item(phone,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
+        assert!(!lab.held(phone).log.ids().contains(&withheld),
+            "retained pre-snapshot content remains withheld");
+        let revoked=lab.submit(mac,&[owner],Action::Revoke(Revoking::Grant{share,actor:vault,keep:vec![],via:vec![]})).unwrap();
+        let removal=lab.signed_edit(mac,revoked).unwrap().clone();
+        // Current removal arrives before the old shared suffix on the second partial peer.
+        lab.receive(pad,vec![removal.clone()],vec![]);
+        lab.receive(pad,vec![signed],vec![]);
+        assert!(lab.active_owner_base(pad,entry).is_none());
+        assert!(!lab.adopt_owner_entry_base(pad,snapshot,entry,sealed));
+        lab.receive(phone,vec![removal],vec![]);
+        assert!(lab.active_owner_base(phone,entry).is_none());
+    }
+
     #[test]
     fn canonical_retirement_waits_for_suffix_schema_even_with_all_target_bodies() {
         use crate::lens::example::{DOCUMENT_V0,DOCUMENT_LENS};
