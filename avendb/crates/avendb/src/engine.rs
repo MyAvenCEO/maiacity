@@ -925,7 +925,8 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
         let Some((seen, cut)) = visible else { continue };
         if w.holds(&m.attrs, &seen.record) {
             let provenance = checkpoint.map(|p| json!({ "snapshot": p.snapshot().to_hex(),
-                "basis": ids(p.basis()), "partial": true, "freshness": "owner-attested-basis" }));
+                "basis": ids(p.basis()), "partial": true, "freshness": "owner-attested-basis" }))
+                .or_else(|| owner_base_provenance(lab, me, entry));
             rows.push((entry, v, m.attrs, seen, cut, provenance));
         }
     }
@@ -1008,6 +1009,14 @@ pub(crate) fn limits(depth: usize) -> Value {
 /// brings that `me` counts as the entry's (`Lab::line_files`), oldest first, each `{root, size, len}` as the world lists
 /// an entry's main line's, its plaintext length null where `me` opens none: so a proposal's file, a new version of an
 /// asset's recipe on its line, is read before its vault accepts it.
+fn owner_base_provenance(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
+    lab.active_owner_base(me, entry).map(|(snapshot, basis)| json!({
+        "snapshot": snapshot.to_hex(), "basis": ids(&basis), "partial": true,
+        "freshness": "owner-attested-basis-with-validated-suffix",
+        "historyComplete": false, "filesComplete": false
+    }))
+}
+
 fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let (entry, line, schema) = (entry_of(o)?, line_of(o, "line")?, named(o)?);
     if !o.contains_key("at") && !o.contains_key("version") {
@@ -1070,6 +1079,10 @@ fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused
     out["authored"] = item.authored().iter().map(BlobId::to_hex).collect::<Vec<_>>().into();
     let file = |(root, len): (FileRoot, Option<u64>)| json!({ "root": BlobId(root.hash).to_hex(), "size": root.size, "len": len });
     out["files"] = lab.line_files(me, entry, line).into_iter().map(file).collect::<Vec<_>>().into();
+    if let Some(provenance) = owner_base_provenance(lab, me, entry) {
+        out["checkpoint"] = provenance;
+        out["filesComplete"] = false.into();
+    }
     Ok(out)
 }
 
