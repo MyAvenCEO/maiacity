@@ -134,14 +134,14 @@ impl Lab {
         let en = st.entry(entry).ok_or(Refusal::UnknownEntry)?;
         let vault = en.vault;
         let shown = store.shown.get(&entry).ok_or(Refusal::NotAccepted)?;
-        if !shown.history.landed() || !shown.items.contains_key(&MAIN) || shown.items.len() > MAX_LINES {
+        if !shown.history.landed() || !shown.items().contains_key(&MAIN) || shown.items().len() > MAX_LINES {
             return Err(Refusal::NotAccepted);
         }
         let mut basis: Vec<_> = shown.history.lines().into_iter().flat_map(|line| shown.history.heads(line)).collect();
         basis.sort(); basis.dedup();
         if basis.is_empty() || basis.len() > MAX_BASIS { return Err(Refusal::NotAccepted); }
         let key = st.entry_key(entry).and_then(|name| store.keys.first(name)).ok_or(Refusal::NoCap)?.clone();
-        let records: BTreeMap<_, _> = shown.items.iter().map(|(line, item)| (*line, item.record())).collect();
+        let records: BTreeMap<_, _> = shown.items().iter().map(|(line, item)| (*line, item.record())).collect();
         if records.values().any(|record| !bounded_record(record)) { return Err(Refusal::NotAccepted); }
         let bytes = encode(vault, entry, &basis, &records);
         if bytes.len() > MAX_BYTES { return Err(Refusal::NotAccepted); }

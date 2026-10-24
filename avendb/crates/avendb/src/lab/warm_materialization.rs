@@ -56,7 +56,7 @@ impl Capture {
                 .sum();
             if writes.saturating_add(n) > MAX_WRITES
                 || source_bytes.saturating_add(bytes) > LIMIT
-                || s.items.values().any(Item::has_parked_updates)
+                || s.items().values().any(Item::has_parked_updates)
             {
                 continue;
             }
@@ -78,7 +78,7 @@ impl Capture {
                         )
                     })
                     .collect(),
-                s.items.clone(),
+                s.items().clone(),
                 s.after.asked.clone(),
             ));
         }
@@ -272,19 +272,19 @@ impl Saved {
         let mut imported = BTreeMap::new();
         let asked = self.asked;
         for (line, bytes) in self.items {
-            let item = Item::from_own_snapshot(&bytes, d, line)?;
             imported.insert(
                 line,
                 history.history(line).iter().map(|c| c.write.edit).collect(),
             );
-            if items.insert(line, item).is_some() {
+            if items.insert(line, bytes).is_some() {
                 return None;
             }
         }
         let mine = history.mine();
         Some(Shown {
             history,
-            items,
+            items: OnceLock::new(),
+            deferred: std::sync::Mutex::new(Some((d, items))),
             print,
             tip,
             after: After {
