@@ -21,6 +21,8 @@
 <script>
 	import { onDestroy, untrack } from 'svelte';
 	import Frame from './Frame.svelte';
+	import { entryCollection } from './entry-collection.svelte.js';
+	import { libraryFilesQuery, libraryTasksQuery, libraryRelatedQuery } from './library-query.js';
 	import Icon from './Icon.svelte';
 	import { DENY } from '../sandbox/policy.js';
 	import { address, dataUrl, kindOf, KINDS, mediaOf, serve, whole, WHOLE } from './files.js';
@@ -89,7 +91,10 @@
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const here = $derived(byId.get(vault));
 	const as = $derived(byId.get(actor));
-	const entries = $derived(world.entries.filter((e) => e.vault === vault));
+	const inventory = entryCollection(() => api, () => libraryFilesQuery(vault, actor));
+	const jobs = entryCollection(() => api, () => libraryTasksQuery(vault, actor));
+	const related = entryCollection(() => api, () => libraryRelatedQuery(jobs.rows.filter((e) => reads(e, actor)), actor));
+	const entries = $derived(inventory.rows.filter((e) => e.vault === vault));
 	const seen = $derived(entries.filter((e) => reads(e, actor)));
 	const files = $derived(seen.filter((e) => e.kind === 'file'));
 	const live = $derived(files.filter((e) => !e.deleted));
@@ -98,7 +103,7 @@
 	const hidden = $derived(entries.length - seen.length);
 
 	/** what the Mac's rules made of each file (./made.js) */
-	const family = $derived(familyOf(world));
+	const family = $derived(familyOf({ ...world, entries: [...related.rows, ...entries, ...jobs.rows].filter((e) => reads(e, actor)) }));
 	/** each made file's role (`Proxy · ACEScct` …), by its entry */
 	const roles = $derived(new Map([...family.made.values()].flat().map((m) => [m.entry.entry, m.role])));
 
@@ -367,7 +372,7 @@
 
 	/** the entry open in the main area */
 	let open = $state('');
-	const viewing = $derived(files.find((e) => e.entry === open));
+	const viewing = $derived([...files, ...related.rows.filter((e) => reads(e, actor))].find((e) => e.entry === open));
 	/** A film's viewer owns its poster independently of the rows removed when it opens. */
 	const viewerPreview = {};
 	/** @param {EntryView | undefined} e @param {EntryView | undefined} still */
@@ -479,6 +484,11 @@
 		const done = await api.run(back ? 'Bringing it back' : 'Deleting', { ...deleting(e.entry, back), as: actor });
 		if (done && !back) close();
 	}
+
+	$effect(() => {
+		void vault; void actor;
+		untrack(() => { close(); visible.clear(); });
+	});
 
 	onDestroy(() => {
 		close();
@@ -605,18 +615,17 @@
 				</section>
 			{/if}
 
+			<p class="soft" role="status">Showing files available locally; discovery and downloaded bytes may still be incomplete.{jobs.phase === 'error' || related.phase === 'error' ? ' Derived-file details are unavailable.' : jobs.phase === 'loading' || related.phase === 'loading' ? ' Loading local derived-file details…' : ''}</p>
 			{#if binned}
 				<p class="soft binned">Deleted files keep their bytes. Open one to bring it back.</p>
 			{/if}
 
-			{#if !seen.length && vault !== actor}
-				<div class="empty">
-					<p>
-						{nameOf(as)} can't see {hidden ? `the ${count(hidden, 'entry', 'entries')}` : 'anything'} in {nameOf(here)}:
-						none of it is shared with {nameOf(as)}. A vault that owns it can share some of it with {nameOf(as)} in
-						<button class="link" onclick={onaccess}>Sharing</button>.
-					</p>
-				</div>
+			{#if inventory.phase === 'loading' && !seen.length}
+				<p role="status">Loading local file entries…</p>
+			{:else if inventory.phase === 'error'}
+				<p role="alert">Local file inventory is unavailable: {inventory.error}</p>
+			{:else if !seen.length && vault !== actor}
+				<div class="empty"><p>No readable file entries are available locally yet. This does not establish that nothing is shared with {nameOf(as)}. <button class="link" onclick={onaccess}>Sharing</button></p></div>
 			{:else if shown.length}
 				<div class="layout" role="group" aria-label="Lay the files out">
 					<button aria-pressed={layout === 'grid'} onclick={() => lay('grid')}><Icon name="apps" /> Grid</button>
@@ -706,7 +715,7 @@
 				</div>
 				{/if}
 			{:else}
-				<p class="soft">{binned ? 'Nothing deleted.' : `No file here${asked ? ' yet: drop some on this page.' : '.'}`}</p>
+				<p class="soft">{binned ? 'No deleted files are available locally yet.' : 'No files are available locally yet.'}</p>
 			{/if}
 
 			{#if hidden > 0 && seen.length}
