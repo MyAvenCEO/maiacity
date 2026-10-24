@@ -136,3 +136,4 @@ import AvenDB.ScopedDocumentView
 import AvenDB.DemandedFilesBatch
 
 import AvenDB.QueryReadiness
+import AvenDB.PublicFilesBatch
