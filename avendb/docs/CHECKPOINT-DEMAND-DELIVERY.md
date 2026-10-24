@@ -96,3 +96,7 @@ Final focused gate: core projection **5/5 passed** (including a fresh entry afte
 setup); core checkpoint filter **3/3 passed**; net checkpoint filter **5/5 passed**; standalone
 Lean passed. The successful transport binary included temporary test-only diagnostic prints,
 removed in the committed source. Combined release CI and device acceptance remain separate.
+
+Implementation: [`7ad019df`](https://github.com/MyAvenCEO/maiacity/commit/7ad019df).
+Status: implemented and focused checks passed; integration, deployment, physical-device
+measurements, cache rehydration, and writable partial bootstrap are not claimed complete.
