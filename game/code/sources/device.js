@@ -6,6 +6,7 @@
 import { MAIA_CITY } from './anchor.js';
 import { bringDeclared } from './manifests.js';
 import { createDemand } from './demand.js';
+import { createLocalFileReads } from './local-file-read.js';
 
 /** Background bring scheduling budget; never a renderer network fallback. */
 export const BRING = 8000;
@@ -311,6 +312,8 @@ export async function deviceRows(kinds, { vault = MAIA_CITY, wait = BRING, answe
 	return null;
 }
 
+const readLocalFile = createLocalFileReads({ window: WINDOW });
+
 /**
  * File `file` of a row the device read (`{ root, size, len }`), whole, as bytes, read off the device a window at a
  * time, exclusively from its local store. Peer synchronization runs separately. Null where no device is open,
@@ -319,18 +322,5 @@ export async function deviceRows(kinds, { vault = MAIA_CITY, wait = BRING, answe
  * @returns {Promise<Uint8Array | null>}
  */
 export async function deviceFile(file, { wait = READ } = {}) {
-	const d = deviceOf();
-	if (!d || typeof file?.len !== 'number') return null;
-	const read = async () => {
-		const out = new Uint8Array(file.len);
-		for (let at = 0; at < file.len; ) {
-			const result = await d.run({ op: 'read_file', root: file.root, size: file.size, from: at, to: Math.min(file.len, at + WINDOW), local: true });
-			const got = result?.bytes;
-			if (!got?.length) throw new Error('the file ends early');
-			out.set(got, at);
-			at += got.length;
-		}
-		return out;
-	};
-	return within(read(), wait);
+ return readLocalFile(deviceOf(), file, wait);
 }
