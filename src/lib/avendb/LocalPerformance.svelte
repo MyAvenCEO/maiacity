@@ -76,8 +76,9 @@
  {#if policy}<p>{policy.samples.length} policy observations captured. Local completion to authenticated peer policy observation includes sync, replay and up to 500 ms polling delay. A standing edit is not proof of rendered UI or durable storage.</p>{/if}
  <p>Local call completion is not a rendered frame or remote acknowledgement. Transport RTT is the connection estimate, not write propagation. Unlock totals include authentication time. View readiness and rendered-frame latency are not measured here.</p>
  <h3>Studio playback · target 30 FPS</h3>
+ <button onclick={() => { playbackMetrics.reset(); playback = playbackMetrics.snapshot(); }}>Reset playback measurements</button>
  <p>{playback.frames} measured world frames · {playback.fps === null ? 'FPS unavailable' : `${playback.fps.toFixed(1)} FPS`} · render p95 {ms(playback.renderP95)} · frame gap p95 {ms(playback.gapP95)}.</p>
- <p>{playback.cuts} measured cuts · cut gap p95 {ms(playback.cutP95)} · {playback.longGaps} gaps over 50 ms · {playback.failures} draw failures. Pauses are excluded; these measurements do not cover native video playback.</p>
+ <p>{playback.cuts} measured cuts · cut gap p95 {ms(playback.cutP95)} · {playback.longGaps} gaps over 50 ms · {playback.failures} draw failures. Worst frame gap {ms(playback.maxGap)}; worst cut gap {ms(playback.maxCutGap)}. Totals cover the run since reset; percentiles use up to 300 recent samples. Pauses are excluded; these measurements do not cover native video playback.</p>
  <h3>App manifest scheduling</h3>
  <p>{manifests.pending} pending plans. {#if manifests.runs.length}Last plan: {ms(manifests.runs.at(-1)?.ms ?? null)} · {manifests.runs.at(-1)?.requested} requested entries · {manifests.runs.at(-1)?.state}.{:else}No plan measured in this page yet.{/if} Scheduling completion does not prove files have arrived.</p>
  <h3>Local loading and peer sync</h3>
