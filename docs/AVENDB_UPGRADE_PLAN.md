@@ -9,6 +9,10 @@ Last maintained: 2026-10-25. Current execution order: keep three subagents plus 
 ### Current release and separate follow-up status — 24 October 2026
 
 
+**Exact-artifact CI correction:** generated browser artifact06cc7352 matches the release source. Its core CI ran618tests:617passed,1failed,6separately skipped. The failure was S3's fixture expecting ordinary authoring of a proposal on a rejected write; unified `History::admit` correctly returnsNotAccepted. The corrected fixture first asserts that refusal, then uses the existing explicit `Lab::patched` path to send the same malicious proposal and retains all cross-reader builds-on rejection plus valid successor assertions. No production admission gate is weakened. This correction requires the targeted/full check; native authentication build is still running. Other runs and physical acceptance remain incomplete.
+
+
+
 **Frontend release gate passed:** the integrated candidate now passes full `bun run check` with0errors/27existing CSS warnings, and22AIP/query-window regressions pass. The combined check exposed only new AIP fixture typing; typed Node test/assert/fs imports and fixture annotations repair it without suppressing checking. Native authentication compilation remains live; final Rust coverage for the suffix-retirement guard and indexed warm history will run in full CI and the shared local compiler queue. Candidate is being marked ready for matching WASM/full checks; no merge or deployment has occurred.
 
 

@@ -1524,7 +1524,14 @@ fn s3_a_write_that_breaks_its_schema_counts_for_no_reader() {
     assert_eq!(latest(&mut w, mac), (json!(patched), json!("unfit"), 1));
     // nor anything built on it: a proposal Bob starts from that version
     let from = json!({ "op": "propose", "entry": door, "from": [patched], "name": "Later" });
-    let started = ok(run(&mut w, mac_b, from))["edit"].clone();
+    // Ordinary authoring now shares the receiver's counted-dependency gate.
+    assert_eq!(run(&mut w, mac_b, from)["refused"], "NotAccepted");
+    // A patched peer can still send that invalid proposal: retain the receive-side
+    // regression, rather than weakening author admission to construct the attack.
+    let rejected_parent = EditId::from_hex(&patched).unwrap();
+    let started = w.lab.patched(|lab| lab.propose(mac_b, bob, t.door, &[rejected_parent], "Later"))
+        .expect("a patched peer can author an invalid proposal");
+    let started = json!(hex(started));
     w.lab.sync_all(2);
     for d in [mac, mac_b, mac_c] {
         assert_eq!(latest(&mut w, d), (started.clone(), json!("builds-on"), 1));
