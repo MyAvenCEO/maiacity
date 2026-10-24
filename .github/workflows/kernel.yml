@@ -75,6 +75,9 @@ jobs:
           ./src/lib/assets/vault.test.js
           ./src/lib/assets/worlds.test.js
           ./src/lib/assets/params.test.js
+          ./src/lib/assets/register.test.js
+          ./src/lib/assets/versions.test.js
+          ./src/lib/models/timber.test.js
           ./src/lib/code/
           ./game/code/sources/proof-worker.test.js
           ./src/lib/render/lint.test.js
@@ -82,6 +85,9 @@ jobs:
           ./src/lib/avendb/
           ./src/lib/media/
           ./src/lib/studio/aven.test.js
+          ./src/lib/studio/cuts.test.js
+          ./src/lib/studio/refresh.test.js
+          ./src/lib/studio/media-proxies.test.js
           ./scripts/film/avendb.test.mjs
           ./scripts/diagnostics/network-probe.test.mjs
           ./api/test/

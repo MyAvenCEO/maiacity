@@ -42,6 +42,12 @@ export function requireAvenRef(value) {
 /** @param {unknown} value */
 export const isAven = (value) => parseMediaRef(value)?.kind === 'aven';
 
+/** @param {unknown} value */
+export const isStoredMedia = (value) => {
+	const kind = parseMediaRef(value)?.kind;
+	return kind === 'aven' || kind === 'public';
+};
+
 /** @param {{ root: string, size: number, len: number | null }} file @param {string | null | undefined} media */
 export function avenRef(file, media) {
 	const ref = `aven:${file.root}:${file.size}:${file.len}:${encodeURIComponent(media ?? '')}`;

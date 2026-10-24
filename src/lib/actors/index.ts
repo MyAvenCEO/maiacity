@@ -24,7 +24,8 @@ import { rabbit, RABBIT_COATS } from './species/rabbit';
 import { quadMoves as quadMovesV1 } from './plans/quadruped.v1';
 import { goose, GOOSE_BREEDS } from './species/goose';
 import { birdMoves as birdMovesV1 } from './plans/bird.v1';
-import { FIRST, versioned, type Change, type Version } from '$lib/app/versions.js';
+import { FIRST, type Change, type Version } from '$lib/app/versions.js';
+import { registerAssets } from '$lib/assets/register.js';
 
 /** one actor: a breed, a coat, the stand-in */
 export type Actor = { id: string; label: string; note: string; make: () => Cast; ready?: () => Promise<void> };
@@ -228,6 +229,6 @@ const withDetail = (list: Actor[]) => {
 	return detailed.get(list)!;
 };
 
-export const FAMILIES: Family[] = versioned(LIST, 'variants', HISTORY).map((f) =>
+export const FAMILIES: Family[] = registerAssets(LIST, 'variants', HISTORY).map((f) =>
 	f.id === 'stand-in' ? f : { ...f, params: [{ ...DETAIL }], variants: withDetail(f.variants), versions: f.versions.map((v) => ({ ...v, build: withDetail(v.build) })) }
 );

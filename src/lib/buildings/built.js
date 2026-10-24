@@ -16,7 +16,7 @@
 import { kitchenContainer, sanitaryContainer, techContainer, workshopContainer } from '$lib/models/containers.js';
 import { WAYSIDE_INFO, busStop, gasStation, maiaCentre, oldShed, villageStore } from '$lib/models/wayside.js';
 import { tentSite } from './tent.js';
-import { versioned } from '$lib/app/versions.js';
+import { registerAssets } from '$lib/assets/register.js';
 
 /** @typedef {import('$lib/models').Model} Model */
 
@@ -41,7 +41,7 @@ const CONTAINER_LIST = [
 	{ id: 'container-sanitary', label: 'Sanitary container', note: 'washing machines and dryers, three washbasins, three showers and three toilets in cubicles, the hot-water heat pump; a rainwater tank outside. Walk in', usedIn: 'Sandbox 1', make: () => sanitaryContainer() }
 ];
 /** @type {Model[]} */
-export const CONTAINERS = versioned(CONTAINER_LIST, 'make', HISTORY);
+export const CONTAINERS = registerAssets(CONTAINER_LIST, 'make', HISTORY);
 
 /** the wayside of MaiaCity V1: buildings on the dusty highway and at the village centre, and the places they make
  *  together; and at its end the bell tent from its v2 (./tent.js), which the Buildings list with the domes (./index.js) */
@@ -55,7 +55,7 @@ const WAYSIDE_LIST = [
 	{ id: 'dome-tent', label: 'Bell tent', group: 'Tents and domes', note: 'the bell tent pitched, its fire place lit in front of its door. Walk in', usedIn: 'Sandbox 3', make: () => tentSite() }
 ];
 /** @type {(Model & { group: string })[]} */
-export const WAYSIDE = versioned(WAYSIDE_LIST, 'make', HISTORY);
+export const WAYSIDE = registerAssets(WAYSIDE_LIST, 'make', HISTORY);
 
 /** every building built as one object, in the viewer's order: the `buildings` group's recipes */
 export const BUILT = [...CONTAINERS, ...WAYSIDE];
