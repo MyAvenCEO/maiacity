@@ -156,6 +156,21 @@ async function same(device, /** @type {{root: string, size: number}} */ file) {
  */
 async function ops(device, passkey, vault) {
 	const out = {};
+	// The real WASM API, not the UI's synthetic Device double: custom labels keep canonical todo kind.
+	const task = await run(device, { op: 'create', vault, type: 'custom-task-label', value: { kind: 'todo', title: 'Collection runtime', status: 'open' } });
+	const collection = () => run(device, { op: 'entry_views', vault, kind: 'todo', as: vault });
+	let selected = await collection();
+	const row = selected.rows.find((e) => e.entry === task.entry);
+	if (!row || row.type !== 'custom-task-label' || row.kind !== 'todo' || row.status !== 'open' || !row.readers.includes(vault)) throw new Error('canonical collection omitted the custom-labeled todo');
+	await run(device, { op: 'set', entry: task.entry, path: ['status'], value: 'doing' });
+	selected = await collection();
+	if (selected.rows.find((e) => e.entry === task.entry)?.status !== 'doing') throw new Error('accepted mutation missing from real collection read');
+	if (selected.readableEntries > selected.totalEntries || selected.totalEntries < selected.rows.length) throw new Error('collection metadata count mismatch');
+	const empty = await run(device, { op: 'entry_views', vault, types: [] });
+	if (empty.rows.length || empty.totalEntries !== selected.totalEntries) throw new Error('empty type selection changed metadata');
+	const refused = await device.run({ op: 'entry_views', vault, kind: 'not-a-kind' });
+	if (!refused.refused) throw new Error('invalid collection selector accepted');
+	out.collection = true;
 	const found = { op: 'found', vaults: [{ kind: 'coop', name: 'Eve Farm COOP' }, { kind: 'coop', name: 'Eve COOP' }] };
 	[out.mayFound] = await run(device, { op: 'may', ops: [found] });
 	let before = passkey.count();

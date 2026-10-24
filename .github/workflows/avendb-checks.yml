@@ -30,6 +30,11 @@ on:
       - '.github/workflows/avendb-checks.yml'
   workflow_call:
   workflow_dispatch:
+    inputs:
+      real_browser_only:
+        description: Run the disposable real Chromium/WASM fixture instead of repeating native suites
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -44,7 +49,7 @@ jobs:
   # once the PR is marked ready, and on every push after; merge only once they are green there
   tests:
     name: avenDB tests (${{ matrix.name }})
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    if: (github.event_name != 'pull_request' || !github.event.pull_request.draft) && !inputs.real_browser_only
     runs-on: ubuntu-latest
     timeout-minutes: 45
     strategy:
@@ -125,6 +130,7 @@ jobs:
           cache-to: type=gha,scope=avendb-pr,mode=max
 
   spec:
+    if: ${{ !inputs.real_browser_only }}
     name: Lean spec and vectors
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -156,3 +162,34 @@ jobs:
             echo "::error::avendb/spec/vectors differ from what the model writes: run \`lake exe vectors\` in avendb/spec and commit them"
             exit 1
           fi
+
+  real-browser:
+    name: Disposable real Chromium and WASM
+    if: github.event_name == 'workflow_dispatch' && inputs.real_browser_only
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.129
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: avendb -> target
+          key: real-browser-localhost
+          cache-on-failure: true
+      - name: Install disposable test browser
+        run: npx --yes playwright@1.56.1 install --with-deps chromium
+      - name: Real API with disposable localhost identities
+        env:
+          CARGO_PROFILE_TEST_OPT_LEVEL: 1
+          AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
+        run: |
+          export AVENDB_CHROMIUM="$(find "$HOME/.cache/ms-playwright" -path '*/chrome-linux/chrome' -type f | head -n 1)"
+          test -x "$AVENDB_CHROMIUM"
+          avendb/scripts/test-browser.sh
+          # localhost-passkeys artifacts are test-only and must never replace the shipped package.
+          git diff --exit-code -- src/lib/avendb/device

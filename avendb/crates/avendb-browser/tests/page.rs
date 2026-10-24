@@ -354,6 +354,7 @@ async fn eves_browsers_found_link_and_open_again_with_her_passkey_in_chromium() 
     // the ops the page's screens send, each through `run` (V2): what each answered
     let ops = tab.expect("first", "ops").await;
     eprintln!("the ops answered: {ops}");
+    assert_eq!(ops["collection"], true, "real WASM canonical collection create/read/update/refusal");
     let eve_v = VaultId(id(&first, "vault"));
     let passkey = server.read(move |lab, me| lab.state(me).vault(eve_v).and_then(|v| v.root)).await;
     let passkey = passkey.expect("her vault's root, her passkey").to_hex();
