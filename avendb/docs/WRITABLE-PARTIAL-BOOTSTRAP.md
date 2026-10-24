@@ -194,3 +194,45 @@ asserts the removal is held and the reader no longer lists that device before as
 `authenticate_entry_base` rejects. No authorization guard or rejection assertion is weakened;
 unknown-revocation freshness remains an explicit architectural limitation. Rust rerun pending
 integration; no separate Cargo build was started.
+
+### Stage two: authenticated counted facts and structural suffix links (dormant)
+
+`entry_base_suffix.rs` adds a separate format-three envelope around the format-two CRDT
+base and a maximum of 512 owner-attested counted `Write` facts. Existing format-two bytes
+and APIs remain unchanged. Each fact retains its edit/author/actor/entry, stay/epoch,
+dependencies, proposal, delegation path, creation bit, audience and shares; each variable
+fact list is limited to 64 elements before allocating/decoding it. The total plaintext
+limit remains 1 MiB. These limits bound fact validation, not Loro's internal snapshot decode.
+
+`draft_counted_entry_base` derives the facts from the canonical dependency closure of the
+signed frontier, refuses uncounted/missing dependency closures, and requires the ordinary
+owner approval. `authenticate_counted_entry_base` uses the existing current-policy,
+owner-signed-root and ciphertext gates. It validates one same-entry topological DAG with
+one creation, unique IDs, no missing dependencies, proposal lineage, exact per-line tips,
+and no facts outside the represented line histories. If the recipient independently holds
+the whole basis, the attested facts must exactly match its canonical counted history.
+
+`AuthenticatedCountedEntryBase::links_suffix` checks only structural linkage: bounded
+same-entry fresh ID, noncreation, nonempty known dependencies, and ordinary proposal
+ancestry. It does **not** verify that the supplied Write was signed, authorized, schema-fit,
+row-owner-valid, or CRDT-equivalent. It produces no accepted edit or mutation capability.
+The object stays opaque and `is_writable()` remains false. No Node dispatcher, publish/fetch
+activation, canonical Item/History substitution, or partial-write guard removal is included.
+A partial reader authenticates the owner's claim; historical-author truth is not inferred.
+
+`BaseSuffix.lean` proves structural linkage requires the same entry and held dependencies,
+rejects duplicate IDs, and grants no writable state. Cryptography/current authority and
+historical truth are explicit external obligations, not conclusions of that structural model.
+Standalone Lean passed. Rust syntax parsing passed; Rust type/regression checks are pending
+the shared compiler queue. Exact filters: `counted_base_roundtrip_links_only` and
+`counted_base_rejects_cycles` (both under `cargo test -p avendb --lib`). Tests cover a partial
+reader without canonical replacement, unchanged v2 refusal, ordinary owner approval,
+unknown/foreign/proposal suffixes, forged owner-attested author metadata rejected by a full
+holder, cycles, duplicates, missing creation/dependencies, wrong frontier/context,
+truncation/trailing data, and excess fact/dependency counts.
+
+Still required: authenticated historical provenance and honest base equivalence; one common
+local/remote suffix admission path including schema/row ownership and proposal acceptance;
+differential convergence against full history; bounded Loro decoding; durable base+suffix
+recovery; capability negotiation and measured device acceptance. The full writable bootstrap
+is not complete. This isolated stage is not part of the frozen release candidate.

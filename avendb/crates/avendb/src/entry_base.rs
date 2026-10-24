@@ -6,6 +6,10 @@ use crate::encode::Encode;
 use crate::wire::Reader as WireReader;
 use loro::{EncodedBlobMode, LoroDoc};
 
+#[path = "entry_base_suffix.rs"]
+mod suffix;
+pub use suffix::AuthenticatedCountedEntryBase;
+
 const FORMAT: &[u8] = b"avenDB entry base 2\n";
 const MAX_BYTES: usize = 1 << 20;
 const MAX_LINES: usize = 16;

@@ -97,3 +97,5 @@ import AvenDB.PeerReceipt
 import AvenDB.WarmMaterialization
 import AvenDB.LabScheduling
 import AvenDB.EntryBaseFormat
+
+import AvenDB.BaseSuffix
