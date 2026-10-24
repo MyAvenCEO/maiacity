@@ -15,6 +15,7 @@
  * A vault that holds no manifest yet (before its AIP lands) brings nothing more than before.
  */
 import { MAIA_CITY } from './anchor.js';
+import { normalizeDiscovery } from './demand.js';
 
 /** The title of the Maia City vault's own schema of a manifest. */
 export const MANIFEST_SCHEMA = 'Manifest, v1';
@@ -206,7 +207,9 @@ async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: 
 	// These IDs are already declared by canonical local manifests. Publish scheduling
 	// hints before unrelated query materialization or transfer; hints grant no access.
 	// Dispatch is independent of acknowledgement: a busy node must not delay local discovery.
-	void Promise.resolve(prioritize(entriesOf(leaves.filter(({ leaf }) => leaf.entry), []))).catch(() => {});
+	const queries = normalizeDiscovery(leaves.filter(({ leaf }) => leaf.query?.type?.length)
+		.map(({ leaf }) => ({ types: leaf.query.type, vault })));
+	void Promise.resolve(prioritize(entriesOf(leaves.filter(({ leaf }) => leaf.entry), []), queries)).catch(() => {});
 	signal?.throwIfAborted();
 	const rows = await rowsFor(leaves, { device: d, vault, fetch: get, signal });
 	signal?.throwIfAborted();

@@ -1,5 +1,5 @@
 // @ts-nocheck — plain JS
-import { createDemand } from '../../../game/code/sources/demand.js';
+import { createDemand, normalizeDiscovery } from '../../../game/code/sources/demand.js';
 
 /** Entry IDs shown by a read. Scheduling hints only: no response here establishes completeness or authority. */
 export function replyEntries(got) {
@@ -28,6 +28,25 @@ export function queryEntries(op) {
 		for (const key of ['all', 'any']) if (Array.isArray(where[key])) pending.push(...where[key].slice(0, Math.max(0, 512 - visited - pending.length)).reverse());
 	}
 	return [...entries];
+}
+
+/** Discover positive type candidates even when the local query has no entry IDs yet.
+ * This is only a scheduling hint: the complete original query still runs locally.
+ * Negation, predicates, projections and acting identities are never sent to peers. */
+export function queryDiscovery(op) {
+	if (op?.op !== 'query') return [];
+	const types = new Set(), pending = [op.where];
+	for (let visited = 0; pending.length && visited < 512 && types.size < 8; visited++) {
+		const where = pending.pop();
+		if (!where || typeof where !== 'object') continue;
+		if (Array.isArray(where.type)) for (const type of where.type.slice(0, 8)) {
+			const safe = normalizeDiscovery([{ types: [type] }]);
+			if (safe.length) types.add(type);
+			if (types.size === 8) break;
+		}
+		for (const key of ['all', 'any']) if (Array.isArray(where[key])) pending.push(...where[key].slice(0, Math.max(0, 512 - visited - pending.length)).reverse());
+	}
+	return normalizeDiscovery([{ types: [...types], ...(op.vault === undefined ? {} : { vault: op.vault }) }]);
 }
 
 /** One component's visible read. Replace the window on each query; keep independent components independent.
@@ -62,7 +81,7 @@ export function createReadWindow({ device, read }) {
 			const request = { controller, device: d };
 			current = request;
 			const active = () => current === request && !controller.signal.aborted && device() === d;
-			void demand.replace(queryEntries(op));
+			void demand.replace(queryEntries(op), queryDiscovery(op));
 			try {
 				const got = await read(d, op, controller.signal, demand);
 				if (!active()) return null;

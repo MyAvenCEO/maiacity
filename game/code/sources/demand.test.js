@@ -4,6 +4,22 @@ import { createDemand } from './demand.js';
 const id = (n) => n.toString(16).padStart(64, '0');
 const tick = () => new Promise((resolve) => setTimeout(resolve, 5));
 
+test('selector-only leases renew, retain selectors when rows arrive, and do not infer support from old acknowledgements', async () => {
+	const calls = [];
+	const demand = createDemand(async (op) => { calls.push(op); return { ok: { accepted: true } }; }, { renew: 1 });
+	try {
+		await demand.replace([], [{ types: ['note'], predicate: 'never forwarded' }]);
+		await tick();
+		expect(calls.length).toBeGreaterThan(1);
+		expect(calls[0].queries).toEqual([{ types: ['note'] }]);
+		expect(demand.discovery()).toEqual({ supported: false, complete: false });
+		await demand.add([id(1)]);
+		expect(calls.at(-1).queries).toEqual([{ types: ['note'] }]);
+		await demand.replace([]);
+		expect(calls.at(-1).queries).toBeUndefined();
+	} finally { demand.close(); }
+});
+
 test('view demand coalesces entries and releases its own scope with a newer revision', async () => {
 	const calls = [];
 	const demand = createDemand(async (op) => { calls.push(op); return { ok: { accepted: true } }; }, { scope: 'a'.repeat(32) });

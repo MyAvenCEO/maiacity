@@ -1,6 +1,6 @@
 // @ts-nocheck — Bun tests
 import { expect, test } from 'bun:test';
-import { createReadWindow, queryEntries, replyEntries } from './query-window.js';
+import { createReadWindow, queryEntries, queryDiscovery, replyEntries } from './query-window.js';
 import { windowRead } from './ops.js';
 
 const id = (n) => n.toString(16).padStart(64, '0');
@@ -10,6 +10,33 @@ const node = () => {
 	const calls = [];
 	return { calls, run: async (op) => { calls.push(op); return { ok: { accepted: true } }; } };
 };
+
+test('an empty first-view query publishes bounded discovery without waiting for a lease response', async () => {
+	const pending = deferred(), calls = [];
+	const d = { run: (op) => { calls.push(op); return pending.promise; } };
+	const view = createReadWindow({ device: () => d, read: async () => ({ ok: { rows: [] } }) });
+	try {
+		const op = { op: 'query', vault: id(9), where: { all: [{ type: ['note'] }, { record: { private: 'not sent' } }] } };
+		expect(await view.read(op)).toEqual({ ok: { rows: [] } });
+		await flush();
+		expect(calls[0].entries).toEqual([]);
+		expect(calls[0].queries).toEqual([{ types: ['note'], vault: id(9) }]);
+		expect(JSON.stringify(calls)).not.toContain('not sent');
+		view.clear(); await flush();
+		expect(calls.at(-1).entries).toEqual([]);
+		expect(calls.at(-1).queries).toBeUndefined();
+	} finally { pending.resolve({ ok: { accepted: true } }); view.close(); await flush(); }
+});
+
+test('discovery extracts only bounded positive types and never widens an invalid vault', () => {
+	expect(queryDiscovery({ op: 'query', where: { not: { type: ['secret'] } } })).toEqual([]);
+	expect(queryDiscovery({ op: 'query', vault: 'invalid', where: { type: ['note'] } })).toEqual([]);
+	expect(queryDiscovery({ op: 'get', where: { type: ['note'] } })).toEqual([]);
+	expect(queryDiscovery({ op: 'query', where: { any: [{ type: ['note', 'note'] }, { type: ['story'] }] } })).toEqual([{ types: ['note', 'story'] }]);
+	expect(queryDiscovery({ op: 'query', where: { type: ['é'.repeat(33), 'note'] } })).toEqual([{ types: ['note'] }]);
+	const cycle = { type: ['note'], all: [] }; cycle.all.push(cycle);
+	expect(queryDiscovery({ op: 'query', where: cycle })).toEqual([{ types: ['note'] }]);
+});
 
 test('replacing a query aborts its old read, replaces its scope, and rejects late priorities', async () => {
 	const d = node(), pending = [];
