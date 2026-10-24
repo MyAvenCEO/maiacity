@@ -6,7 +6,15 @@ use crate::ops::{Loc, Seg};
 use crate::rules::Scalar;
 use crate::wire::Decode;
 
-const JUDGMENT: &[u8] = b"avenDB entry judgment 1\n";
+#[path = "entry_anchor_metadata.rs"]
+mod anchor_metadata;
+use anchor_metadata::{get_anchor_metadata, put_anchor_metadata};
+
+#[path = "entry_bootstrap_store.rs"]
+mod bootstrap_store;
+pub(crate) use bootstrap_store::Anchors;
+
+const JUDGMENT: &[u8] = b"avenDB entry judgment 2\n";
 const MAX_FACTS: usize = 512;
 const MAX_LIST: usize = 1024;
 const MAX_PATH: usize = 64;
@@ -16,6 +24,8 @@ pub struct RestoredOwnerJudgment {
     history: History,
     after: After,
     items: BTreeMap<Line, Item>,
+    policy: crate::policy::Slice,
+    bodies: HashMap<EditId, Body>,
 }
 impl RestoredOwnerJudgment {
     pub fn entry(&self) -> EntryId {
@@ -124,12 +134,15 @@ fn get_touch(r: &mut WireReader<'_>) -> Option<Touch> {
     })
 }
 fn put_judgment(shown: &Shown) -> Option<Vec<u8>> {
+    put_judgment_parts(&shown.history, &shown.after)
+}
+fn put_judgment_parts(history: &History, after: &After) -> Option<Vec<u8>> {
     let mut b = Vec::new();
-    (shown.history.changes().len() as u32).encode(&mut b);
-    if shown.history.changes().len() > MAX_FACTS {
+    (history.changes().len() as u32).encode(&mut b);
+    if history.changes().len() > MAX_FACTS {
         return None;
     }
-    for c in shown.history.changes() {
+    for c in history.changes() {
         suffix::encode_write(&c.write, &mut b);
         c.fits.encode(&mut b);
         c.counted.encode(&mut b);
@@ -154,7 +167,7 @@ fn put_judgment(shown: &Shown) -> Option<Vec<u8>> {
             .flatten();
         label.encode(&mut b);
     }
-    match &shown.after.attrs {
+    match &after.attrs {
         None => b.push(0),
         Some(a) => {
             b.push(1);
@@ -165,8 +178,8 @@ fn put_judgment(shown: &Shown) -> Option<Vec<u8>> {
             a.tags.encode(&mut b);
         }
     }
-    (shown.after.imported.len() as u32).encode(&mut b);
-    for (line, ids) in &shown.after.imported {
+    (after.imported.len() as u32).encode(&mut b);
+    for (line, ids) in &after.imported {
         line.encode(&mut b);
         let mut ids: Vec<_> = ids.iter().copied().collect();
         ids.sort();
@@ -179,7 +192,7 @@ fn put_judgment(shown: &Shown) -> Option<Vec<u8>> {
         .copied()
         .collect::<Vec<_>>()
         .encode(&mut b);
-    match &shown.after.scratch {
+    match &after.scratch {
         None => b.push(0),
         Some(s) => {
             let image = s.image()?;
@@ -336,6 +349,8 @@ fn get_judgment(bytes: &[u8], entry: EntryId, on: SignerId) -> Option<RestoredOw
             asked,
         },
         items: BTreeMap::new(),
+        policy: crate::policy::Slice::default(),
+        bodies: HashMap::new(),
     })
 }
 impl Lab {
@@ -370,6 +385,9 @@ impl Lab {
         let mut bytes = judgment_context(vault, entry);
         base.encode(&mut bytes);
         metadata.encode(&mut bytes);
+        put_anchor_metadata(store, entry)
+            .ok_or(Refusal::NotAccepted)?
+            .encode(&mut bytes);
         if bytes.len() > MAX_BYTES {
             return Err(Refusal::NotAccepted);
         }
@@ -427,11 +445,25 @@ impl Lab {
         }
         let base = r.bytes().ok()?;
         let metadata = r.bytes().ok()?;
+        let policy_bytes = r.bytes().ok()?;
+        let (policy, bodies) = get_anchor_metadata(&policy_bytes, entry, vault)?;
         if !r.done() {
             return None;
         }
         let lines = decode(&base, vault, entry, &stated.basis)?;
         let mut restored = get_judgment(&metadata, entry, on)?;
+        if policy.writes.iter().collect::<Vec<_>>()
+            != restored
+                .history
+                .changes()
+                .iter()
+                .map(|c| &c.write)
+                .collect::<Vec<_>>()
+        {
+            return None;
+        }
+        restored.policy = policy;
+        restored.bodies = bodies;
         for (line, base) in &lines {
             let mut heads = restored.history.heads(*line);
             heads.sort();
@@ -454,7 +486,9 @@ impl Lab {
         // is implemented; never compare merely JSON or trust the claim over held facts.
         if stated.basis.iter().all(|id| store.log.ids().contains(id)) {
             let shown = store.shown.get(&entry)?;
-            if put_judgment(shown)? != metadata {
+            if put_judgment(shown)? != metadata
+                || put_anchor_metadata(store, entry)? != policy_bytes
+            {
                 return None;
             }
             for (line, base) in &lines {
@@ -538,15 +572,8 @@ mod tests {
             }
         }
         let expected = put_judgment(original).unwrap();
-        let shown = Shown {
-            history: restored.history,
-            items: restored.items,
-            after: restored.after,
-            print: original.print,
-            tip: original.tip,
-        };
         assert_eq!(
-            put_judgment(&shown).unwrap(),
+            put_judgment_parts(&restored.history, &restored.after).unwrap(),
             expected,
             "metadata roundtrip is exact"
         );
@@ -569,7 +596,9 @@ mod tests {
         let mut r = WireReader::new(&plain);
         r.take(judgment_context(v, entry).len()).unwrap();
         let base = r.bytes().unwrap();
-        let mut lying = shown;
+        let _metadata = r.bytes().unwrap();
+        let policy_bytes = r.bytes().unwrap();
+        let mut lying = restored;
         lying
             .after
             .attrs
@@ -579,7 +608,10 @@ mod tests {
             .push(Sym::new("invented"));
         let mut plain = judgment_context(v, entry);
         base.encode(&mut plain);
-        put_judgment(&lying).unwrap().encode(&mut plain);
+        put_judgment_parts(&lying.history, &lying.after)
+            .unwrap()
+            .encode(&mut plain);
+        policy_bytes.encode(&mut plain);
         let lie = keys::seal_edit(&key, &plain, &judgment_context(v, entry), &mut lab.rng);
         let root = FileRoot {
             hash: crate::hash::content(&lie),
