@@ -456,3 +456,11 @@ Samuel confirms the Home Screen PWA repeatedly returns to unlock WHILE OPEN AND 
 - [x] Mac dev bundle built at879488ef (156.82MiB). Initial ONNX link failure was root's CARGO_NET_OFFLINE setting bypassing cached runtime; normal pinned cached build succeeds. Generated bundle required normal inside-out ad-hoc sealing (sidecar then app); strict deep verification passes. Enclave cfg present. Installed app remains untouched; final new-UI embedding is next.
 - [x] Full avenDB CI run40067644341 passed at879488ef, including all Rust suites and Lean. Applicable CI on newest frontend/proof-worker changes still required.
 - [ ] Deploy final changes and obtain physical iPhone foreground stability evidence from the new pre-unlock panel. Do not ask the user to repeatedly unlock merely to reach Settings; network measurements wait until usable.
+
+
+### Generic durable announcement integration — 2026-10-24
+
+- [x] [8fe8c823](https://github.com/MyAvenCEO/maiacity/commit/8fe8c823): every newly persisted entry wakes peer announcements after authoritative journal and signer persistence, before optional derived snapshots. This is the shared avenDB path, not chat-specific. The earlier mutation wake can observe the old durable frontier, so this second wake matters. Authorization and persistence failures still prevent publication.
+- [x] Deterministic regression failed on old source and passed after repair with optional snapshot I/O held. Eight persistence tests, five live-priority/authorization tests, full Lean78 jobs and independent review passed. These fixture durations are not physical network latency measurements.
+- [ ] Final candidate Mac build, final-head CI, installed-app acceptance and hosted/PWA rollout are in progress. The prior ONNX build-environment issue is resolved; do not treat that historical failed attempt as a remaining source defect.
+- [ ] Measure generic entry propagation on physical peers after rollout. Small updates depend on RTT, verification and persistence as well as bandwidth. Do not claim the reported10–20second delay is wholly explained by this single repaired dependency. Remaining bounded candidates include edits arriving during an in-flight announcement and repeated per-peer authorization/frontier preparation.
