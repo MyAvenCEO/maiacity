@@ -11,7 +11,7 @@ import { join, resolve, extname, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createInterface } from 'node:readline';
 import assert from 'node:assert/strict';
-import { chromium } from 'playwright';
+const { chromium } = await import(process.env.AVENDB_TEST_PLAYWRIGHT || 'playwright');
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const pkg = process.env.AVENDB_PKG;
 if (!pkg || !existsSync(join(pkg, 'avendb_browser_bg.wasm'))) throw new Error('AVENDB_PKG must be a rebuilt browser package');

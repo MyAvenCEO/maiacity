@@ -227,14 +227,19 @@ jobs:
         with:
           bun-version-file: .bun-version
       - run: bun install --frozen-lockfile
-      - name: Install disposable test browser
-        run: bunx --bun playwright install --with-deps chromium
+      # The transport contract requires PQ WebTransport, absent in the older security-probe Chromium.
+      - name: Install current disposable transport browser
+        run: |
+          mkdir -p "$RUNNER_TEMP/avendb-transports"
+          bun add --cwd "$RUNNER_TEMP/avendb-transports" --ignore-scripts --exact playwright@1.64.1
+          bun "$RUNNER_TEMP/avendb-transports/node_modules/playwright/cli.js" install --with-deps chromium
       - name: Real API with disposable localhost identities
         env:
           CARGO_PROFILE_TEST_OPT_LEVEL: 1
           AVENDB_TEST_PAIRS: ${{ runner.temp }}/avendb-test-pairs
         run: |
-          export AVENDB_CHROMIUM="$(find "$HOME/.cache/ms-playwright" -path '*/chrome-linux/chrome' -type f | head -n 1)"
+          export AVENDB_TEST_PLAYWRIGHT="$RUNNER_TEMP/avendb-transports/node_modules/playwright/index.mjs"
+          export AVENDB_CHROMIUM="$(bun -e 'const { chromium } = await import(process.env.AVENDB_TEST_PLAYWRIGHT); console.log(chromium.executablePath())')"
           test -x "$AVENDB_CHROMIUM"
           export AVENDB_NODE="$(command -v bun)"
           avendb/scripts/test-browser.sh

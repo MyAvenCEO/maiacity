@@ -32,6 +32,21 @@ export function selected(files, mode='changed') {
  if (files.some(f=>/^(package\.json$|bun\.lock|\.bun-version$|\.github\/|scripts\/ci\/|patches\/|vite|svelte|tsconfig)/.test(f))) return suites.map(s=>s.name);
  return suites.filter(s=>s.tier==='gate'||s.name==='ci'||files.some(f=>s.impact.some(p=>matches(f,p)))).map(s=>s.name);
 }
+// File-level isolation keeps each simulation's staged state intact; every file belongs to exactly one shard.
+export function partition(files, shard) {
+ if (!shard) return files;
+ const match=/^([1-9]\d*)\/([1-9]\d*)$/.exec(shard);
+ if (!match) throw new Error(`Invalid shard: ${shard}`);
+ const [,index,total]=match.map(Number);
+ if (index>total || total>files.length) throw new Error(`Empty or invalid shard: ${shard}`);
+ return files.filter((_,i)=>i%total===index-1);
+}
+export function matrix(names) {
+ return names.filter(name=>!suites.find(s=>s.name===name && (s.tier==='gate'||s.name==='ci')))
+  .flatMap(suite=>suite==='physics'
+   ? Array.from({length:4},(_,i)=>({suite,shard:`${i+1}/4`,label:`${suite} ${i+1}/4`}))
+   : [{suite,shard:'',label:suite}]);
+}
 if (import.meta.main) {
  const args=process.argv.slice(2);
  const value = flag => args.includes(flag) ? args[args.indexOf(flag)+1] : undefined;
@@ -41,8 +56,7 @@ if (import.meta.main) {
  const base=value('--base')||process.env.CI_BASE;
  const names=value('--suite')?[value('--suite')]:selected(mode==='changed'?changed(base,process.env.CI_HEAD||'HEAD'):null,mode);
  if (args.includes('--matrix')) {
-  const extra=names.filter(name=>!suites.find(s=>s.name===name && (s.tier==='gate'||s.name==='ci')));
-  const json=JSON.stringify(extra);
+  const json=JSON.stringify(matrix(names));
   console.log(json);
   if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT,`suites=${json}\n`);
   process.exit(0);
@@ -51,10 +65,11 @@ if (import.meta.main) {
  for (const name of names) {
   if (!groups[name]?.length) throw new Error(`Unknown or empty required suite: ${name}`);
   const start=performance.now();
-  console.log(`Suite ${name}: ${groups[name].length} files`);
+  const files=partition(groups[name],value('--shard'));
+  console.log(`Suite ${name}${value('--shard')?' '+value('--shard'):''}: ${files.length} files`);
   if (args.includes('--list')) continue;
   // Each suite gets its own process: no API/global/module mocks leak between suites.
-  const result=spawnSync(process.execPath,['test',...groups[name].map(p=>'./'+p)],{stdio:'inherit',env:process.env});
+  const result=spawnSync(process.execPath,['test',...files.map(p=>'./'+p)],{stdio:'inherit',env:process.env});
   const line=`${name}: ${((performance.now()-start)/1000).toFixed(2)}s, exit ${result.status}`;
   console.log(line);
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY,line+'\n');

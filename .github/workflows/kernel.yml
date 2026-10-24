@@ -51,7 +51,7 @@ jobs:
           bun scripts/ci/test.mjs --matrix
 
   application:
-    name: Application tests (${{ matrix.suite }})
+    name: Application tests (${{ matrix.label }})
     needs: selection
     if: needs.selection.outputs.suites != '[]'
     runs-on: ubuntu-latest
@@ -59,7 +59,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: ${{ fromJSON(needs.selection.outputs.suites) }}
+        include: ${{ fromJSON(needs.selection.outputs.suites) }}
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: oven-sh/setup-bun@v2.2.0
@@ -69,7 +69,8 @@ jobs:
       - run: bunx --bun svelte-kit sync
       - env:
           SUITE: ${{ matrix.suite }}
-        run: bun scripts/ci/test.mjs --suite "$SUITE"
+          SHARD: ${{ matrix.shard }}
+        run: bun scripts/ci/test.mjs --suite "$SUITE" --shard "$SHARD"
 
   tests:
     name: The kernel’s tests

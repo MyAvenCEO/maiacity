@@ -1,6 +1,6 @@
 import { expect, test } from 'bun:test';
 import { impact } from './impact.mjs';
-import { inventory, selected } from './test.mjs';
+import { inventory, selected, partition, matrix } from './test.mjs';
 test('a missing comparison or an unknown build input selects all release checks',()=>{
  expect(Object.values(impact(null)).every(Boolean)).toBe(true);
  expect(Object.values(impact(['unexpected-build-input'])).every(Boolean)).toBe(true);
@@ -115,4 +115,16 @@ test('native tests and build helpers validate without publishing unchanged binar
   const next=impact([file]); expect(next.avendb && next.native).toBe(true); expect(next.server || next.agent).toBe(false);
  }
  expect(impact(['avendb/crates/avendb/src/lib.rs']).server).toBe(true);
+});
+
+test('physics shards cover each owned file exactly once and reject invalid selection', () => {
+ const files=inventory().physics;
+ const jobs=matrix(['security','ci','physics','assets']);
+ const pieces=jobs.filter(j=>j.suite==='physics').map(j=>partition(files,j.shard));
+ expect(pieces).toHaveLength(4);
+ expect(pieces.every(p=>p.length>0)).toBe(true);
+ expect(pieces.flat().sort()).toEqual([...files].sort());
+ expect(new Set(pieces.flat()).size).toBe(files.length);
+ expect(jobs.filter(j=>j.suite!=='physics')).toEqual([{suite:'assets',shard:'',label:'assets'}]);
+ for (const shard of ['0/4','5/4','1/0','1/999','oops']) expect(()=>partition(files,shard)).toThrow();
 });
