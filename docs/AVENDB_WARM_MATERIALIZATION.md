@@ -92,3 +92,26 @@ local-media state), Svelte module compilation passes, and
 and subset properties; canonical engine authorization remains a premise. No Cargo,
 physical iPhone measurement, production deployment, or live-store mutation here.
 Keep this follow-up separate from the frozen release until explicitly integrated.
+
+## Follow-up: saving preserves undemanded lazy entries
+
+`Capture::take` previously called `Shown::items()` for every selected entry, so an
+optional warm save could undo lazy restore: import all saved Loro snapshots and
+then export them again despite no view reading those entries. Capture now forks
+already materialized items only; untouched entries retain their own authenticated
+snapshot bytes and emit those bytes unchanged. The existing exact log/entry
+fingerprint validation and first-read canonical-history fallback are unchanged.
+Deferred bytes count toward the capture budget before cloning. The final encoded
+adjunct limit still applies. This reduces import/export work; it does not promise
+zero copying, a hard total process-memory bound, or a complete lazy-history engine.
+
+Regression added: three lazy restored entries remain unmaterialized through
+capture and encoding, the next receipt contains exactly the same per-line bytes,
+and first demand returns the original content. Focused WarmMaterialization Lean
+proof passes. Rust regression `recapturing_untouched_warm_entries_preserves_lazy_items_and_snapshots`
+is pending the shared Cargo queue; no deployment or physical-device claim.
+
+Still eager: canonical policy/key/body preparation and History/Mine/After metadata;
+entries outside the bounded saved receipt; capability-group reconstruction; and
+consumers requesting a full world. Deferring these requires authenticated metadata
+read dependencies and canonical admission to be disentangled from item access.

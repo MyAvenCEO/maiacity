@@ -51,4 +51,15 @@ def summary (metadata : α) : Summary α := ⟨metadata, false⟩
 theorem summaryAuthority (metadata : α) : (summary metadata).metadata = metadata := rfl
 theorem summaryIncomplete (metadata : α) : (summary metadata).entriesComplete = false := rfl
 
+-- Saving untouched own snapshots preserves their opaque bytes, without forcing
+-- lazy item reconstruction. Canonical first-read validation remains unchanged.
+inductive CaptureLine (α : Type) where
+  | snapshot (bytes : List UInt8)
+  | materialized (item : α)
+
+def recapture (line : CaptureLine α) : CaptureLine α := line
+
+theorem untouched_snapshot_preserved (bytes : List UInt8) :
+    recapture (CaptureLine.snapshot (α := α) bytes) = CaptureLine.snapshot bytes := rfl
+
 end AvenDB.WarmMaterialization
