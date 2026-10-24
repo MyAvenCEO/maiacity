@@ -6,11 +6,23 @@ Last maintained: 2026-10-24. Current execution order: keep three subagents plus 
 
 ## Latest delivery and follow-up checkpoint — 24 October 2026, evening
 
-PR [#1268](https://github.com/MyAvenCEO/maiacity/pull/1268) merged as [b8da1b8c](https://github.com/MyAvenCEO/maiacity/commit/b8da1b8c348482b3fef9aa6444d1e3149b93b6be) after all applicable PR gates passed. The live maia.city release manifest now reports this exact commit, and its site deployment job passed in [release run40124036129](https://github.com/MyAvenCEO/maiacity/actions/runs/40124036129). API deployment also passed. Hosted-peer health returns200, but health alone is not image-identity proof; final hosted deployment acceptance remains separate. No newer Mac app was installed by this release.
+PR [#1268](https://github.com/MyAvenCEO/maiacity/pull/1268) merged as [b8da1b8c](https://github.com/MyAvenCEO/maiacity/commit/b8da1b8c348482b3fef9aa6444d1e3149b93b6be). [Release run 40124036129](https://github.com/MyAvenCEO/maiacity/actions/runs/40124036129) completed successfully, including site, API and hosted-peer rollout. The live site manifest reported this revision. No newer Mac app was installed by this release.
 
-Three follow-up implementation branches are being integrated separately: authorized checkpoint delivery, own persisted materialization with clean-close publication, and fair foreground/background Lab scheduling. These are not part of b8da1b8c and remain Doing until final combined validation. The checkpoint path uses explicit owner approval and read-only projection; the warm path does not yet implement fully lazy working-set-first loading; the scheduler cannot interrupt a single atomic core refresh. Physical iPhone reload stability and iPhone/iPad latency remain unverified.
+The combined follow-up branch is `codex/avendb-view-startup-integration`:
 
-Build coordination: one coordinator owns compilation; source review proceeds in parallel. Follow-up changes are combined before the final focused Rust build to avoid rebuilding dependencies for each worktree. A commit records implementation, not a claim that pending tests passed.
+| State | Implementation and evidence |
+| --- | --- |
+| Implemented; combined Rust validation running | Owner-approved checkpoint publication and authorized active-view fetching: [08ec57c8](https://github.com/MyAvenCEO/maiacity/commit/08ec57c8). Focused core projection 5/5, core checkpoint 3/3, net checkpoint 5/5, demand 3/3 and discovery 4/4 passed. Fresh-peer useful read-only state works with all ordinary history pulls withheld. |
+| Implemented; combined Rust validation running | Warm clean-close materialization [45671ff4](https://github.com/MyAvenCEO/maiacity/commit/45671ff4), stale-copy avoidance [6c1cfaae](https://github.com/MyAvenCEO/maiacity/commit/6c1cfaae). Full lazy working-set loading remains incomplete. |
+| Implemented; combined Rust validation running | Fair foreground/background scheduler [e0837d8d](https://github.com/MyAvenCEO/maiacity/commit/e0837d8d). Individual atomic core operations remain non-preemptible. |
+| Implemented; not deployed | Manifest rank execution and cancellation [4181c243](https://github.com/MyAvenCEO/maiacity/commit/4181c243): 18 tests/124 assertions passed on integrated source; Lean ordering proof passed. |
+| Implemented; not deployed | Top-left restart diagnostics and declared test scenarios [5d26d63a](https://github.com/MyAvenCEO/maiacity/commit/5d26d63a); public policy-observation dispatch [8f6fa271](https://github.com/MyAvenCEO/maiacity/commit/8f6fa271). Combined journal/lifecycle/Studio tests: 19/19, 77 assertions. Actual remote rendering and fresh-view timing are not yet measured. |
+| Open | Matching WASM, combined release checks, deployment, updated Mac installation, physical iPhone/iPad latency and reload acceptance. |
+| Doing / open architecture | Offline checkpoint rehydration, working-set-first loading, generic reactive-view timing; writable partial CRDT bootstrap and complete manifest/dependency/completeness handling remain unfinished. |
+
+Checkpoint publication requires explicit owner approval; no peer receives extra authority. The bootstrap projection is read-only until canonical history covers its basis. The iPhone restart cause remains unproven: absence of a page-exit event does not prove memory termination. No live stores have been reset.
+
+Build coordination: root owns the shared Cargo queue and integrated release. Agents work on isolated focused commits; heavyweight builds are serialized. The full goal remains active, including the architecture gaps above. A passing slice is not completion of the whole upgrade.
 
 ## Current release checkpoint — 24 October 2026
 
