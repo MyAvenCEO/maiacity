@@ -884,3 +884,24 @@ prove selector/group readiness at each write placement and maintain per-line cau
 scratch/checkpoint state for proposal starts, edits, owner accepts and merges.
 
 Shared-main receive implementation: [5445d85a](https://github.com/MyAvenCEO/maiacity/commit/5445d85a). Lean/parser checks passed; the signed regression still awaits the shared Rust compiler queue. This is not delivery or completion of shared-holder/proposal bootstrap.
+
+### Proposal receive via exact causal-body fallback (isolated, validation pending)
+
+Owner-held partial state can receive proposal starts/edits/accepts through the same
+current policy and fixed group-free grant path. Before judging a non-main write,
+the selected dependency cut must have its actual authenticated decrypted bodies;
+otherwise the existing exact-body request path retains a read-only prefix and waits.
+A MAIN snapshot is not substituted for a fork at an earlier cut. Proposal start
+bytes remain labels through `History::reading_on` and `import_change`, and ordinary
+`History::admit`/`passes` enforce the owner's accept before a collaborator merges.
+This fallback can require the selected entry's full causal history; it does not
+require unrelated entries. Once canonical history is complete the existing safe
+retirement path may replace the overlay. It is not a new compact per-line snapshot
+protocol and does not enable local partial proposal authoring or non-owner adoption.
+
+`partial_proposal_fetches_exact_cut_then_preserves_accept_and_merge` covers the
+missing-body wait, exact dependency hydration without an unrelated entry, encrypted
+label and proposal content, forbidden pre-accept collaborator merge, accepted merge
+correspondence, and removal before a delayed proposal. Lean assumptions and Rust
+parser/diff checks passed. Rust execution is explicitly queued with the root; this
+slice is not part of the frozen release and must not be described as deployed.

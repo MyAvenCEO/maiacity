@@ -1,6 +1,6 @@
 //! Owner-held partial Store: main-line append while older content is absent.
-//! Received shared writes require complete group-free grant proofs; proposals and
-//! shared-holder authoring remain unsupported. No kernel privilege.
+//! Received shared writes require complete group-free grant proofs. Proposal forks
+//! require their exact causal bodies; shared-holder authoring remains unsupported.
 use super::*;
 
 pub(crate) type Anchors = BTreeMap<EntryId, (EditId, Vec<u8>)>;
@@ -325,9 +325,6 @@ impl Lab {
                 let Ok(Some(w)) = view.accepted_write(&edit, id) else {
                     continue 'anchor;
                 };
-                if w.proposal != Proposal::Main {
-                    continue 'anchor;
-                }
                 if !w
                     .deps
                     .iter()
@@ -360,6 +357,18 @@ impl Lab {
                     wait_reason=Some("unsupported-share-proof");
                     pending.push_front(id);
                     break;
+                }
+                // A new line cannot be built from MAIN's attested snapshot: its
+                // selected causal cut may predate it. Fetch precisely that cut before
+                // ordinary judgment/materialization. Proposal::New content is a name,
+                // so leave interpretation to History::reading_on/import_change.
+                if w.proposal != Proposal::Main {
+                    missing = judging.history.missing_dependency_bodies(&w.deps, None);
+                    if !missing.is_empty() {
+                        pending.push_front(id);
+                        break;
+                    }
+                    judging.scratch = None;
                 }
                 if judging
                     .scratch
@@ -558,6 +567,65 @@ mod tests {
         assert!(!lab.adopt_owner_entry_base(pad,snapshot,entry,sealed));
         lab.receive(phone,vec![removal],vec![]);
         assert!(lab.active_owner_base(phone,entry).is_none());
+    }
+
+    #[test]
+    fn partial_proposal_fetches_exact_cut_then_preserves_accept_and_merge() {
+        use crate::policy::{Who,Level,Revoking};
+        let mut lab=Lab::new(); let owner=lab.passkey("Proposal owner");
+        let mac=lab.device_of(owner,"Mac"); let phone=lab.device_of(owner,"Phone"); let pad=lab.device_of(owner,"Pad");
+        let vault=human_on(&mut lab,owner,&[mac,phone,pad]);
+        let guest=lab.passkey("Proposal guest"); let device=lab.device_of(guest,"Guest device");
+        let guest_vault=human_on(&mut lab,guest,&[device]); lab.sync(device,mac);
+        let share=lab.issue(mac,&[owner],crate::cast::share(vault,Who::Vault(guest_vault),Level::Write,crate::cast::of_type("note"))).unwrap();
+        for d in [phone,pad,device] {lab.sync(mac,d);}
+        let entry=lab.create_in(mac,vault,vault,vec![share],"note",&[],document("Base","old",mac)).unwrap();
+        lab.edit(mac,vault,entry,|i|i.set_text(2,"Checkpoint")).unwrap();
+        let unrelated=lab.create(mac,vault,vault,"note",&[],document("Unrelated","withheld",mac)).unwrap();
+        let unrelated_creation=lab.held(mac).replay.state.entry(unrelated).unwrap().creation;
+        let PreparedEntryBase{draft,sealed,..}=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
+        let snapshot=lab.complete(mac,draft,&[]).unwrap();
+        for d in [phone,pad] {
+            let offer=lab.entry_projection_offer(mac,d,entry).unwrap(); lab.receive(d,offer.evidence,vec![]);
+            assert!(lab.adopt_owner_entry_base(d,snapshot,entry,sealed.clone()));
+        }
+        lab.sync(mac,device);
+        let heads=lab.history(device,entry).unwrap().heads(MAIN);
+        let proposal=lab.propose(device,guest_vault,entry,&heads,"A proposal label, not a CRDT update").unwrap();
+        let changed=lab.edit_on(device,guest_vault,entry,Some(proposal),|i|i.set_text(2,"Proposed")).unwrap();
+        let proposed:Vec<_>=[proposal,changed].into_iter().map(|id|lab.signed_edit(device,id).unwrap().clone()).collect();
+        lab.receive(phone,proposed.clone(),vec![]);
+        assert!(lab.active_owner_base(phone,entry).is_some());
+        assert!(lab.owner_base_pending(phone,entry)>0);
+        let missing=lab.owner_base_missing(phone);
+        assert!(!missing.is_empty());
+        assert!(missing.iter().all(|(e,_)|*e==entry));
+        // Serve only requested signed dependency bodies, not whole-world history.
+        for _ in 0..8 {
+            let ids:Vec<_>=lab.owner_base_missing(phone).into_iter().flat_map(|(_,ids)|ids).collect();
+            if ids.is_empty(){break;}
+            let edits=ids.into_iter().map(|id|lab.signed_edit(mac,id).unwrap().clone()).collect();
+            lab.receive(phone,edits,vec![]);
+        }
+        assert_eq!(lab.owner_base_pending(phone,entry),0);
+        assert_eq!(lab.history(phone,entry).unwrap().name(proposal).as_deref(),Some("A proposal label, not a CRDT update"));
+        assert_eq!(lab.item_on(phone,entry,Some(proposal)).unwrap().record(),lab.item_on(device,entry,Some(proposal)).unwrap().record());
+        assert!(!lab.held(phone).log.ids().contains(&unrelated_creation));
+        lab.receive(mac,proposed.clone(),vec![]);
+        // No collaborator can bypass the vault's accept on the main-line merge.
+        assert!(lab.merge(device,guest_vault,entry,Some(proposal),MAIN,&BTreeSet::new()).is_err());
+        let accepted=lab.accept(mac,vault,entry,proposal).unwrap();
+        let accept=lab.signed_edit(mac,accepted).unwrap().clone();
+        lab.receive(device,vec![accept.clone()],vec![]); lab.receive(phone,vec![accept],vec![]);
+        let merged=lab.merge(device,guest_vault,entry,Some(proposal),MAIN,&BTreeSet::new()).unwrap();
+        let merge=lab.signed_edit(device,merged).unwrap().clone();
+        lab.receive(mac,vec![merge.clone()],vec![]); lab.receive(phone,vec![merge],vec![]);
+        assert_eq!(lab.item(phone,entry).unwrap().record(),lab.item(mac,entry).unwrap().record());
+        assert!(lab.history(phone,entry).unwrap().get(merged).unwrap().counted);
+        let revoked=lab.submit(mac,&[owner],Action::Revoke(Revoking::Grant{share,actor:vault,keep:vec![],via:vec![]})).unwrap();
+        let removal=lab.signed_edit(mac,revoked).unwrap().clone();
+        lab.receive(pad,vec![removal],vec![]); lab.receive(pad,proposed,vec![]);
+        assert!(lab.active_owner_base(pad,entry).is_none());
     }
 
     #[test]
