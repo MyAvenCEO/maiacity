@@ -1163,6 +1163,10 @@ mod tests {
         let count = signed.len();
         let warm = reopened.warm().await;
         assert_ne!(warm.views, before, "clean shutdown publishes the current derived frontier");
+        // split moved the original device into Node; reopen with its same test identity.
+        let mut lab = Lab::new();
+        let restored_passkey = lab.passkey("Shutdown materialization");
+        assert_eq!(lab.device_of(restored_passkey, "Mac"), me);
         lab.restore_warm(me, Backup::new(signed,keys), reopened.checked().map(|c|(c,count)), &warm);
         assert_eq!(lab.item(me,entry).unwrap().record(), expected);
         assert!(lab.work_metrics(me)["counts"]["show: own materialization reused"].as_u64().unwrap_or(0)>0,
