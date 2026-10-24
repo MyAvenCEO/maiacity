@@ -1185,11 +1185,14 @@ async fn a_note_takes_proposals_merges_and_forks_and_the_database_shows_every_re
         .map(|s| s["id"].as_str().unwrap_or_default().to_string())
         .collect();
     let own = "documents, todos, articles (v1 and v2), flows, functions (v1 and v2), recipes, views (v1 and v2), logic, \
-        reviews, bundles, policies, AIPs (v1 and v2), posts, cards, profiles, files, stories, sparks (v1 and v2), requests, artifacts, \
+        reviews (v1 and v2), bundles, policies, AIPs (v1 and v2), posts, cards, profiles, files, stories, sparks (v1 and v2), requests, artifacts, \
         artworks, cap groups, rooms";
-    assert_eq!(schemas.len(), 30, "{own}");
+    assert_eq!(schemas.len(), 31, "{own}");
     let lenses = db["builtIn"]["lenses"].as_array().map(Vec::len);
-    assert_eq!(lenses, Some(7), "the lenses from article, spark, function, view, post, story and AIP v1 to v2");
+    assert_eq!(lenses, Some(8), "the lenses from article, spark, function, view, post, story, AIP and review v1 to v2");
+    assert!(schemas.contains(&avendb::lens::REVIEW_V1.id().to_hex()), "historical reviews remain readable");
+    assert!(schemas.contains(&avendb::lens::REVIEW_V2.id().to_hex()), "current review schema is listed");
+    assert_ne!(avendb::lens::REVIEW_V1.id(), avendb::lens::REVIEW_V2.id());
     assert!(schemas.contains(&avendb::lens::ARTICLE_V1.id().to_hex()));
     assert_eq!(plan["authored"], json!([avendb::lens::DOCUMENT_V1.id().to_hex()]), "written under document v1");
     assert!(schemas.contains(&avendb::lens::DOCUMENT_V1.id().to_hex()));
