@@ -1,3 +1,4 @@
+import { localFileEntries } from './file-entries.js';
 // @ts-nocheck — plain JS, kept loose on purpose
 /**
  * MANIFESTS: WHAT A PAGE NEEDS, DECLARED (Samuel 2026-10-21: "a tree-shaking-like pattern … per core and app
@@ -286,7 +287,7 @@ async function namedOn(d, ids, signal) {
 			for (const e of namedBy(got?.ok?.record)) out.add(e);
 			const roots = [...JSON.stringify(got?.ok?.record ?? {}).matchAll(/aven:([a-f0-9]{64}):/g)].map(m => m[1]);
 			if (roots.length) {
-				files ??= (await d.run({ op: 'world' }))?.ok?.entries ?? [];
+				files ??= await localFileEntries(d, { signal });
 				signal?.throwIfAborted();
 				for (const file of files) if (!file.deleted && file.files?.some(f => roots.includes(f.root))) out.add(file.entry);
 			}

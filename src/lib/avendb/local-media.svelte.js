@@ -1,5 +1,6 @@
 // @ts-nocheck
 // One local media resolver for profiles, posts and legacy content hashes. No HTTP fallback.
+import { localFileEntries } from '../../../game/code/sources/file-entries.js';
 import { deviceOf, learn } from '../../../game/code/sources/device.js';
 import { mediaEntry, forgetMedia, resetMedia } from './local-media-state.js';
 import { useLocalMedia } from '$lib/media/local-resolver.js';
@@ -45,10 +46,15 @@ export function refreshLocalMedia() {
 		const d = await localDevice();
         if (d !== deviceOf()) return;
         useMediaDevice(d);
-		if (!d) return;
-		const world = (snapshotDevice === d && snapshot) || (await d.run({ op: 'world' }))?.ok;
+		if (!d || !wanted.size) return;
+        // Freeze demand across awaits: a newly requested vault is not an empty result.
+        const requests = [...wanted];
+        let world = snapshotDevice === d && snapshot;
+        if (!world || world.entriesComplete === false) {
+            world = { entries: await localFileEntries(d, { vaults: requests.map(([, request]) => request.vault) }) };
+        }
 		if (d !== deviceOf()) return;
-		for (const [key, request] of wanted) {
+		for (const [key, request] of requests) {
 			const entry = mediaEntry(world, request);
             if (entry === undefined) continue; // an incomplete summary is not a deletion
 			if (entry && request.entry !== entry.entry) { learn([entry.entry]); request.entry = entry.entry; }
