@@ -5,3 +5,5 @@ Docs previously derived its collection solely from `world.entries`, so an incomp
 The list shows local loading, failure, or locally unavailable documents explicitly. It never treats an empty local collection as proof that no document exists or that a sharing grant is missing. Navigation labels still use vault metadata; ordinary read permission checks remain unchanged.
 
 Validation: Lean ScopedDocumentView authorization/exclusion model passed; focused JS tests cover fresh empty collection with world unavailable and peer acknowledgement withheld, exact actor-preserving original operation, safe discovery types, unmount release, and route wiring. Eight tests / 33 assertions passed across document-demand, startup-summary and read-completeness suites. Docs compiles with Svelte. Rust unchanged; no Cargo. This is a separate follow-up to frozen release 6b6361c0, not a deployment claim or proof of full transitive/file completeness.
+
+Follow-up validation: converted the new regression to typed Node test/assert/fs imports. Full application `svelte-check --tsconfig ./tsconfig.json` passed with zero errors (27 existing warnings). The focused document tests also passed again.

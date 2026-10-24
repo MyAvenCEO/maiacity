@@ -1,4 +1,14 @@
-import {expect,test} from 'bun:test';
+import assert from 'node:assert/strict';
+import {test} from 'node:test';
+import {readFile} from 'node:fs/promises';
+/** @param {any} actual */
+const expect=(actual)=>({
+ /** @param {any} expected */ toBe:expected=>assert.equal(actual,expected),
+ /** @param {any} expected */ toEqual:expected=>assert.deepEqual(actual,expected),
+ /** @param {string} expected */ toContain:expected=>assert.ok(actual.includes(expected)),
+ toBeUndefined:()=>assert.equal(actual,undefined),
+ not:{toContain:(/** @type {string} */ expected)=>assert.ok(!actual.includes(expected))}
+});
 import {documentQuery} from './document-query.js';
 import {createReactiveRead} from './reactive-read.js';
 import {observedWindow} from './observed-window.js';
@@ -26,7 +36,7 @@ test('fresh Docs reads its authorized collection without world entries or peer a
  } finally {reader.close();finish({ok:{accepted:true}});await flush();}
 });
 test('Docs is wired to scoped collection and targeted observer, without world-entry barrier',async()=>{
- const source=await Bun.file(new URL('./Docs.svelte',import.meta.url)).text();
+ const source=await readFile(new URL('./Docs.svelte',import.meta.url),'utf8');
  expect(source).toContain('entryCollection(() => api, () => documentQuery(vault, actor))');
  expect(source).toContain("api.observe(() => ({ op: 'note', entry: e })");
  expect(source).not.toContain('world.entries');
