@@ -166,7 +166,7 @@
   // Only a successful server move grows the tree; a failed request never plays fake growth.
   playing = 'water';
   if (await waterMove('water') === false) { playing = ''; return; }
-  try { await world.water(seat, () => world.trees(trees)); } finally { playing = ''; }
+  try { await world.water(seat, () => world.trees(trees, { holdGrowth: true })); } finally { playing = ''; }
  }
 
 	function skipShot() {

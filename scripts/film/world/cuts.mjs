@@ -3,7 +3,7 @@
 // still around it, and what the frames there spent their time on (src/lib/film `__filmTrace`: the world set to its
 // moment, rendered, viewed, staged; the world's own frames between two draws). A smooth cut costs what any frame does.
 //
-//   node scripts/film/world/cuts.mjs --timeline v1-A|v1-B|village [--film village.json] [--from 0] [--seconds 60]
+//   node scripts/film/world/cuts.mjs --timeline v1-A|v1-B|v2-C|village [--film village.json] [--from 0] [--seconds 60]
 //     [--px 1280] [--site http://127.0.0.1:5173] [--engine chrome|webkit] [--meter all|ahead] [--grade clip|none]
 //     [--warm all|shown|off] [--ready play|stand] [--stand 180] [--size 1920x1080] [--heap] [--trace] [--out cuts.json]
 //
@@ -154,8 +154,8 @@ function tasks(events) {
 
 /** @returns {{ path: string, clips: { spec: any, in: number, dur: number }[] | null }} */
 function timeline() {
-	if (which.startsWith('v1-')) return { path: `/games/maiacity-v1/?film&area=${which.slice(3)}`, clips: null };
-	if (which !== 'village') throw new Error(`--timeline v1-A, v1-B or village, not ${which}`);
+	if (/^v[12]-[ABC]$/.test(which)) return { path: `/games/maiacity-${which.slice(0,2)}/?film&area=${which.slice(3)}`, clips: null };
+	if (which !== 'village') throw new Error(`--timeline v1-A, v1-B, v2-C or village, not ${which}`);
 	const film = JSON.parse(readFileSync(args.film ?? join(root, 'films/legacy/the-first-village.json'), 'utf8'));
 	const clips = film.timeline.clips
 		.filter((/** @type {any} */ c) => c.track === 'V1' && c.kind === 'world')
@@ -208,7 +208,7 @@ const warnings = [];
 page.on('console', (/** @type {any} */ m) => {
 	const t = m.text();
 	if (t.startsWith('probe: ')) say(t.slice(7));
-	else if (/^(film|world):/.test(t)) warnings.push(t.slice(0, 400));
+	else if (/^(film|world|assets|maiacity|recipes)/.test(t) || ['warning', 'warn', 'error'].includes(m.type())) { warnings.push(t.slice(0, 1200)); console.error(t.slice(0, 1200)); }
 });
 page.on('pageerror', (/** @type {any} */ e) => warnings.push(`page error: ${e.message}`));
 // a page of the site (any: a missing one) to hold the viewer and the world's iframe, of the same origin
@@ -357,6 +357,7 @@ const report = await page.evaluate(
 		const heapAtPlay = heapNow();
 		if (o.record) await /** @type {any} */ (window).__probeRecord('start');
 		console.timeStamp('probe: play');
+		viewer.plays(true);
 		const play0 = performance.now();
 		let prev = play0;
 		firsts.on = true;
@@ -432,6 +433,8 @@ const report = await page.evaluate(
 			reloads,
 			heapAtPlay,
 			heapAtEnd,
+			previewFps: viewer.previewFps,
+			drawnFps: Math.round(new Set(frames.map(f => f.drawnAt)).size / (to - from) * 10) / 10,
 			// the cuts whose picture stood still longer than a hitch, and the frames that waited on a staging while it played
 			stalledCuts: cuts.filter((c) => c.still > o.hitch).length,
 			stagedWhilePlaying: trace.filter((f) => f.staging > 1).length,

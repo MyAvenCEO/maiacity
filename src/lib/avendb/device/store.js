@@ -55,7 +55,8 @@ export class Store {
 		const id = this.next++;
 		return new Promise((resolve, reject) => {
 			this.calls.set(id, { resolve, reject });
-			this.worker.postMessage({ id, op, args }, moved);
+			try { this.worker.postMessage({ id, op, args }, moved); }
+			catch (error) { this.calls.delete(id); reject(error); }
 		});
 	}
 
@@ -117,14 +118,16 @@ export class Store {
 	/** @param {string} name
 	 * @param {Uint8Array<ArrayBuffer>} bytes */
 	put(name, bytes) {
-		return this.call('put', [name, bytes]);
+		return this.call('put', [name, bytes], whole(bytes) ? [bytes.buffer] : []);
 	}
 
-	/** Replaces a derived slot, acknowledging only after the OPFS worker finishes it. */
+	/** Replaces a derived slot, acknowledging only after the OPFS worker finishes it.
+	 * Like put/write, consumes a whole standalone buffer; subarrays retain their backing buffer.
+	 * The Rust bridge supplies an owned JS copy, never a view into WASM memory. */
 	/** @param {string} name
 	 * @param {Uint8Array<ArrayBuffer>} bytes */
 	keep(name, bytes) {
-		return this.call('keep', [name, bytes]);
+		return this.call('keep', [name, bytes], whole(bytes) ? [bytes.buffer] : []);
 	}
 
 	/** @param {string} name */

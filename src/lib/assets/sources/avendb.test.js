@@ -240,7 +240,7 @@ test("a recipe of ours is avenDB's recipe entry: its file the source, the card b
 test('every recipe of ours is a recipe entry, the stand-in too: its record fits Recipe, v1 and its file is the recipe', () => {
 	const RECIPE = recipeSchema();
 	const firsts = new Set(Object.entries(made.index.first).map(([at, variant]) => `${at}:${variant}`));
-	let over = 0;
+	const oversized = [];
 	const named = new Map();
 	for (const [hash, at] of Object.entries(made.index.recipes)) {
 		const code = recipeFile(made.libraries[`${at.group}/${at.id}`], at.id, at.v, at.variant);
@@ -248,14 +248,17 @@ test('every recipe of ours is a recipe entry, the stand-in too: its record fits 
 		const fits = check(RECIPE, { ...value, card: {} });
 		if (!fits.ok) throw new Error(`${at.label}: its record does not fit Recipe, v1: ${fits.errors.slice(0, 3).join('; ')}`);
 		expect(hashText(file.text)).toBe(hash);
-		if ([...file.text].length > RECIPE.properties.source.maxLength) over++;
+		if ([...file.text].length > RECIPE.properties.source.maxLength) oversized.push(at.label);
 		for (const t of tags.filter((x) => x.startsWith('ref:'))) {
 			if (named.has(t)) throw new Error(`${t} names two recipes: ${named.get(t)} and ${at.label}`);
 			named.set(t, at.label);
 		}
 	}
-	// the stand-in's eleven versions and the elder woman's recipe are longer than a code entry's 200,000 characters of source: their files hold them
-	expect(over).toBe(12);
+	// Frozen stand-in v1–v11 and elder-woman v1/v2 exceed inline source limits; their files retain every version.
+	expect(oversized.sort()).toEqual([
+		...Array.from({ length: 11 }, (_, i) => `actors/stand-in@${i + 1}:stand-in`),
+		'actors/elder-woman@1:elder-woman', 'actors/elder-woman@2:elder-woman'
+	].sort());
 	// each recipe is found by its ref, and a kind's first variant by its ref without a variant as well
 	expect(named.size).toBe(Object.keys(made.index.recipes).length + Object.keys(made.index.first).length);
 	for (const [at, variant] of Object.entries(made.index.first)) expect(named.get(`ref:${at}`)).toBe(`${at}:${variant}`);

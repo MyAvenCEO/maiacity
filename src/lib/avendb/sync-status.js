@@ -42,10 +42,10 @@ export function peerStatus(sync) {
 	const requests = `${n(sync.pulling)} active sync ${sync.pulling === 1 ? 'request' : 'requests'}`;
 	const peers = `${n(sync.peers)} connected ${sync.peers === 1 ? 'peer' : 'peers'}`;
 	const label = sync.behind > 0
-		? `${sync.pulling > 0 ? 'Receiving updates' : 'Waiting for updates'} · ${n(sync.behind)} ${sync.behind === 1 ? 'log' : 'logs'} behind`
+		? `${sync.pulling > 0 ? 'Syncing' : 'Waiting for peers'} · receiving ${n(sync.behind)} ${sync.behind === 1 ? 'log' : 'logs'}`
 		: sync.pulling > 0 ? 'Checking peer updates'
-			: sync.peers === 0 ? 'No peers connected'
-				: sync.logs === 0 ? 'Waiting for peer announcements' : 'Up to date with connected peers';
+			: sync.peers === 0 ? 'Peer status unknown · offline'
+				: sync.logs === 0 ? 'Waiting for peer announcements' : 'Incoming logs current · sharing unverified';
 	const details = [sync.behind > 0
 		? `${n(sync.behind)} announced ${sync.behind === 1 ? 'log needs' : 'logs need'} updates; ${requests}.`
 		: sync.pulling > 0 ? `${requests}; checking for peer updates.` : label + '.'];
@@ -54,7 +54,8 @@ export function peerStatus(sync) {
 	if (sync.behind > 0 || sync.pulling > 0) details.push(sync.paged
 		? `Last new transfer page observed ${ago(Math.max(0, sync.at - sync.paged))}.`
 		: 'No new transfer page observed since this view started watching.');
-	details.push('Peer log coverage does not measure local disk saves or file downloads.');
+	details.push('Outgoing entries: acknowledgment unavailable. Required files: completeness unavailable.');
+	details.push('Peer log coverage does not measure local disk saves or file downloads. New announcements may change coverage without deleting local data.');
 	return { active: sync.behind > 0 || sync.pulling > 0, fraction, label, details };
 }
 

@@ -4,6 +4,7 @@
 import { expect, test } from 'bun:test';
 import { MANIFEST_V1, bringDeclared, covers, entriesOf, leavesFor, namedBy } from './manifests.js';
 import { MANIFESTS } from '../../../src/lib/avendb/manifests.js';
+import { MAIA_CITY } from './anchor.js';
 
 const id = (i) => i.toString(16).padStart(64, '0');
 const m = (o) => ({ kind: 'manifest', title: o.id, ...o });
@@ -57,12 +58,12 @@ test('a device brings what the manifests declare a priority at a time, then what
 	const d = {
 		run: async (op) => {
 			if (op.op === 'query' && op.where?.type?.[0] === 'manifest') return { ok: { rows: [kernel, world, game].map((record) => ({ record })) } };
-			if (op.op === 'query') return { ok: { rows: [{ entry: id(3), type: 'capgroup', tags: [] }] } };
+			if (op.op === 'query') return { ok: { rows: [{ entry: id(3), type: 'capgroup', tags: [] }, { entry: id(2), type: 'view', tags: ['game:x'], created: 1 }] } };
 			if (op.op === 'get') return { ok: { record: records[op.entry] ?? null } };
 			return { ok: {} };
 		}
 	};
-	const fetch = async () => new Response(JSON.stringify({ entries: [{ entry: id(2), type: 'view', tags: ['game:x'], created: 1 }] }));
+	const fetch = async () => { throw new Error('Manifest discovery must not use HTTP'); };
 	const got = await bringDeclared('/app/games/x/', { device: d, bring: async (ids) => asked.push(ids), fetch });
 	expect(asked).toEqual([[id(3)], [id(7), id(2)], [id(8)]]);
 	expect(got).toEqual([id(3), id(7), id(2), id(8)]);
@@ -120,4 +121,88 @@ test('an abandoned view issues no later priority batch or reference reads', asyn
 	await expect(bringDeclared('/', { device: d, signal: controller.signal, fetch: null, bring: async (ids) => { brings.push(ids); controller.abort(); } })).rejects.toThrow();
 	expect(brings).toEqual([[id(1)]]);
 	expect(reads.filter((o) => o.op === 'get')).toEqual([]);
+});
+
+test('film shot references participate in manifest dependency traversal', () => {
+ expect(namedBy({ timeline: JSON.stringify({ clips: [{ shot: `shot:${id(5)}` }] }) })).toEqual([id(5)]);
+});
+test('missing manifests never fall back to HTTP discovery', async () => {
+ let fetched = false;
+ const result = await bringDeclared('/app/studio/', { device: { run: async () => ({ ok: { rows: [] } }) }, bring: async () => {}, fetch: async () => { fetched = true; } });
+ expect(result).toEqual([]);
+ expect(fetched).toBe(false);
+});
+
+
+test('following a timeline prioritizes audio file entries named by aven roots', async () => {
+	const root = 'a'.repeat(64);
+	const timeline = id(10), audio = id(11);
+	const d = { run: async op => {
+		if (op.op === 'query') return { ok: { rows: [{ record: m({ id: 'film', routes: ['/studio/'], parts: [{ entry: timeline, follow: 1 }] }) }] } };
+		if (op.op === 'get') return { ok: { record: { clips: JSON.stringify([{ hash: `aven:${root}:100:84:audio%2Fmpeg` }]) } } };
+		if (op.op === 'world') return { ok: { entries: [{ entry: audio, files: [{ root }] }] } };
+	} };
+	const brought = [];
+	await bringDeclared('/studio/', { device: d, bring: async ids => brought.push(...ids) });
+	expect(brought).toEqual([timeline, audio]);
+});
+
+test('manifest diagnostics report scheduling without claiming delivery or retaining IDs', async () => {
+ const { manifestDiagnostics } = await import('./manifests.js');
+ await bringDeclared('/private/route/', { device: { run: async () => ({ ok: { rows: [] } }) }, bring: async () => {} });
+ const state = manifestDiagnostics();
+ expect(state.pending).toBe(0);
+ expect(state.runs.at(-1).state).toBe('scheduled');
+ expect(state.runs.at(-1).requested).toBe(0);
+ expect(JSON.stringify(state)).not.toContain('/private/route/');
+});
+
+test('known view dependencies are prioritized while unrelated query history is withheld', async () => {
+ const controller = new AbortController();
+ let release, hinted;
+ const withheld = new Promise(resolve => { release = resolve; });
+ const published = new Promise(resolve => { hinted = resolve; });
+ const hints = [], brought = [], selectors = [];
+ const manifest = m({ id: 'partial', routes: ['*'], parts: [{ entry: id(71) }, { query: { type: ['note'] } }] });
+ const device = { run: async op => {
+  if (op.op === 'query' && op.where?.type?.[0] === 'manifest') return { ok: { rows: [{ record: manifest }] } };
+  if (op.op === 'query') return withheld;
+  if (op.op === 'get' && op.entry === id(71)) return { ok: { record: { title: 'Useful local view' } } };
+  throw new Error('Unexpected broad or remote read');
+ } };
+ const running = bringDeclared('/partial/', { device, signal: controller.signal,
+  prioritize: async (ids, queries) => { hints.push(...ids); selectors.push(...queries); hinted(); }, bring: async ids => brought.push(...ids) });
+ await Promise.race([published, new Promise((_, reject) => setTimeout(() => reject(new Error('demand blocked by unrelated history')), 100))]);
+ expect(hints).toEqual([id(71)]);
+ expect(selectors).toEqual([{ types: ['note'], vault: MAIA_CITY }]);
+ expect((await device.run({ op: 'get', entry: id(71) })).ok.record.title).toBe('Useful local view');
+ // Scheduling is not a claim of complete discovery or peer delivery.
+ expect(brought).toEqual([]);
+ const { manifestDiagnostics } = await import('./manifests.js');
+ expect(manifestDiagnostics().pending).toBeGreaterThan(0);
+ controller.abort();
+ release({ ok: { rows: [{ entry: id(72), type: 'note' }] } });
+ await expect(running).rejects.toThrow();
+ expect(brought).toEqual([]);
+ expect(hints).toEqual([id(71)]);
+});
+
+test('an unacknowledged demand lease cannot block canonical local query discovery', async () => {
+ let queried;
+ const discovered = new Promise(resolve => { queried = resolve; });
+ let acknowledge;
+ const waiting = new Promise(resolve => { acknowledge = resolve; });
+ const manifest = m({ id: 'ack', routes: ['*'], parts: [{ entry: id(91) }, { query: { type: ['note'] } }] });
+ const d = { run: async op => {
+  if (op.where?.type?.[0] === 'manifest') return { ok: { rows: [{ record: manifest }] } };
+  queried();
+  return { ok: { rows: [{ entry: id(92), type: 'note' }] } };
+ } };
+ const brought = [];
+ const done = bringDeclared('/ack/', { device: d, prioritize: () => waiting, bring: async ids => brought.push(...ids) });
+ try {
+  await Promise.race([discovered, new Promise((_, reject) => setTimeout(() => reject(new Error('query waited for demand acknowledgement')), 100))]);
+  expect(await done).toEqual([id(91), id(92)]);
+  expect(brought).toEqual([id(91), id(92)]);
+ } finally { acknowledge(); }
 });

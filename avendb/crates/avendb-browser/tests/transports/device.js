@@ -3,6 +3,8 @@ import * as avendb from '/client/remote.js';
 import { create, ceremony } from '/passkey.js';
 const hex = (bytes) => [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 let device, actor;
+const fileScope = hex(crypto.getRandomValues(new Uint8Array(16)));
+let fileRevision = 0;
 const run = async (op) => { const out = await device.run(op); if (!('ok' in out)) throw new Error(JSON.stringify(out)); return out.ok; };
 const record = (text) => ({ kind: 'document', title: text, blocks: [{ id: 1, type: 'heading', level: 1, text }, { id: 2, type: 'paragraph', text }] });
 window.fixture = {
@@ -33,8 +35,21 @@ window.fixture = {
         return { ...out.ok, len, seed };
     },
     async readFile(file) {
-        const out = await device.run({ op: 'read_file', root: file.root, size: file.size, from: 0, to: file.len });
-        return !!out.ok && out.bytes?.length === file.len && out.bytes.every((b, i) => b === (i * file.seed) % 251);
+        // Production reads are local-only. Register view demand so the normal
+        // authorized background file lane hydrates this entry before reading it.
+        await run({ op: 'demand', scope: fileScope, revision: ++fileRevision, entries: [file.entry] });
+        let out;
+        try { out = await device.run({ op: 'read_file', root: file.root, size: file.size, from: 0, to: file.len }); }
+        catch (error) {
+            if (/no blob [0-9a-f]{64} on the shelf|[0-9a-f]{64} lacks [0-9]+\.\.[0-9]+/.test(String(error))) return false;
+            throw error;
+        }
+        // The signed file entry can arrive after its demand; refusal remains a
+        // non-success until the bounded outer wait sees an authorized exact read.
+        if (!out.ok) return false;
+        if (out.bytes?.length !== file.len || !out.bytes.every((b, i) => b === (i * file.seed) % 251)) throw new Error('carrier file bytes differ');
+        await run({ op: 'demand', scope: fileScope, revision: ++fileRevision, entries: [] });
+        return true;
     },
     async close() { await device.close(); device.free(); },
 };

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import '$lib/avendb/local-media.svelte.js';
 	import { base } from '$app/paths';
 	// self-hosted from npm, bundled into the build and served from our own CDN —
 	// no request ever goes to Google

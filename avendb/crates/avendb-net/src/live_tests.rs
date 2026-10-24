@@ -358,3 +358,65 @@ async fn held_announcement_coalesces_new_entry_wake_without_waiting_for_retry() 
     assert!(node.shared.telling.lock().unwrap().is_empty());
     node.shutdown().await.unwrap();
 }
+
+/// Every remote entry predates the first authenticated announcement. No target ID is supplied
+/// to the receiving application; discovery must hydrate its view while background work is held.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn an_active_type_query_discovers_existing_entries_without_unrelated_history() {
+    let mut w = world();
+    let coop = handbook_ready(&mut w);
+    let (sender, receiver) = (w.mac_a, w.phone_a);
+    // The receiver has valid identity/governance/schema state, but no target or unrelated payloads.
+    let phone_lab = w.lab.split(receiver, &[], [121; 32]);
+    let target = w.lab.create(sender, coop, coop, "active-document", &[],
+        document("Useful existing entry", "active view", sender)).unwrap();
+    let unrelated = (0..pulls::LIVE_LOGS + 1).map(|i| {
+        w.lab.create(sender, coop, coop, "background-document", &[],
+            document(&format!("Unrelated {i}"), "withheld history", sender)).unwrap()
+    }).collect::<Vec<_>>();
+    let mac = Node::spawn(w.lab.split(sender, &[], [122; 32]), sender, Options::local()).await.unwrap();
+    let phone = Node::spawn(phone_lab, receiver, Options::local()).await.unwrap();
+    // Hold only background admission. A negotiated bounded discovery lane must stay available.
+    let mut stalled = Vec::new();
+    loop {
+        let mut page = Box::pin(phone.shared.pulls.page(false, true));
+        let Some(page) = future::poll_once(&mut page).await else { break };
+        stalled.push(page.unwrap());
+    }
+    assert!(!stalled.is_empty());
+    phone.know(mac.addr());
+    mac.know(phone.addr());
+    phone.shared.connection(mac.id()).await.unwrap();
+    wait_for(async || phone.shared.held.lock().unwrap().get(&sender)
+        .is_some_and(|held| held.logs.contains_key(&LogId::Entry(target)))).await;
+    let query = serde_json::json!({"op":"query", "vault":coop.to_hex(),
+        "where":{"type":["active-document"]}, "select":[]});
+    let initial = phone.op(query.clone()).await.unwrap();
+    assert_eq!(initial["ok"]["rows"], serde_json::json!([]));
+    // Local capability and lease acceptance are distinct; remote discovery is always incomplete.
+    // Requester identity must be bound by the connection, never selected by this payload.
+    let ack = phone.op(serde_json::json!({"op":"demand", "scope":"ab".repeat(16),
+        "revision":1, "entries":[],
+        "queries":[{"vault":coop.to_hex(), "types":["active-document"]}]})).await.unwrap();
+    assert_eq!(ack["ok"]["discovery_supported"], true);
+    assert_eq!(ack["ok"]["discovery_complete"], false);
+    let useful = time::timeout(Duration::from_secs(2), async {
+        loop {
+            let answer = phone.op(query.clone()).await.unwrap();
+            if answer["ok"]["rows"].as_array().is_some_and(|rows| rows.iter()
+                .any(|row| row["entry"].as_str() == Some(target.to_hex().as_str()))) { break; }
+            time::sleep(Duration::from_millis(5)).await;
+        }
+    }).await.is_ok();
+    let unrelated_absent = phone.read(move |lab, me|
+        unrelated.iter().all(|entry| lab.item(me, *entry).is_none())).await;
+    let incomplete = phone.synced().await;
+    // Clean up before asserting, so background tasks/locks never leak to another test.
+    drop(stalled);
+    phone.shutdown().await.unwrap();
+    mac.shutdown().await.unwrap();
+    assert!(unrelated_absent, "active discovery must not require unrelated payloads");
+    assert!(incomplete["behind"].as_u64().is_some_and(|behind| behind > 0),
+        "a useful local result is not whole-device completeness: {incomplete}");
+    assert!(useful, "an authenticated type-only active query must discover its existing entry before background admission is released");
+}

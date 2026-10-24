@@ -1,6 +1,6 @@
 // @ts-nocheck — Bun tests
 import { expect, test } from 'bun:test';
-import { createReadWindow, queryEntries, replyEntries } from './query-window.js';
+import { createReadWindow, queryEntries, queryDiscovery, replyEntries } from './query-window.js';
 import { windowRead } from './ops.js';
 
 const id = (n) => n.toString(16).padStart(64, '0');
@@ -10,6 +10,33 @@ const node = () => {
 	const calls = [];
 	return { calls, run: async (op) => { calls.push(op); return { ok: { accepted: true } }; } };
 };
+
+test('an empty first-view query publishes bounded discovery without waiting for a lease response', async () => {
+	const pending = deferred(), calls = [];
+	const d = { run: (op) => { calls.push(op); return pending.promise; } };
+	const view = createReadWindow({ device: () => d, read: async () => ({ ok: { rows: [] } }) });
+	try {
+		const op = { op: 'query', vault: id(9), where: { all: [{ type: ['note'] }, { record: { private: 'not sent' } }] } };
+		expect(await view.read(op)).toEqual({ ok: { rows: [] } });
+		await flush();
+		expect(calls[0].entries).toEqual([]);
+		expect(calls[0].queries).toEqual([{ types: ['note'], vault: id(9) }]);
+		expect(JSON.stringify(calls)).not.toContain('not sent');
+		view.clear(); await flush();
+		expect(calls.at(-1).entries).toEqual([]);
+		expect(calls.at(-1).queries).toBeUndefined();
+	} finally { pending.resolve({ ok: { accepted: true } }); view.close(); await flush(); }
+});
+
+test('discovery extracts only bounded positive types and never widens an invalid vault', () => {
+	expect(queryDiscovery({ op: 'query', where: { not: { type: ['secret'] } } })).toEqual([]);
+	expect(queryDiscovery({ op: 'query', vault: 'invalid', where: { type: ['note'] } })).toEqual([]);
+	expect(queryDiscovery({ op: 'get', where: { type: ['note'] } })).toEqual([]);
+	expect(queryDiscovery({ op: 'query', where: { any: [{ type: ['note', 'note'] }, { type: ['story'] }] } })).toEqual([{ types: ['note', 'story'] }]);
+	expect(queryDiscovery({ op: 'query', where: { type: ['é'.repeat(33), 'note'] } })).toEqual([{ types: ['note'] }]);
+	const cycle = { type: ['note'], all: [] }; cycle.all.push(cycle);
+	expect(queryDiscovery({ op: 'query', where: cycle })).toEqual([{ types: ['note'] }]);
+});
 
 test('replacing a query aborts its old read, replaces its scope, and rejects late priorities', async () => {
 	const d = node(), pending = [];
@@ -153,4 +180,65 @@ test('an effect clears a borrowed window without closing its component lifetime'
 	const request = windowRead(api, { op: 'query' }, null, window);
 	expect(await request.result).toBe(42); request.close();
 	expect(cleared).toBe(1); expect(closed).toBe(0);
+});
+
+test('identical empty reactive reads keep discovery in flight on the same revision', async () => {
+	const pending = deferred(), calls = [];
+	const d = { run: (op) => { calls.push(op); return pending.promise; } };
+	const view = createReadWindow({ device: () => d, read: async () => ({ ok: { rows: [] } }) });
+	const op = { op: 'query', where: { type: ['note'] }, select: [] };
+	try {
+		for (let i = 0; i < 12; i++) { await view.read(structuredClone(op)); await flush(); }
+		expect(calls.length).toBe(1);
+		expect(calls[0].revision).toBe(1);
+		expect(calls[0].queries).toEqual([{ types: ['note'] }]);
+		view.clear(); await flush();
+		expect(calls.at(-1).queries).toBeUndefined();
+		expect(calls.at(-1).revision).toBe(2);
+	} finally { view.close(); pending.resolve({ ok: { accepted: true } }); await flush(); }
+});
+
+test('reactive results replace old row hints and changed predicates clear them before reading', async () => {
+	const d = node(); let rows = [id(1)], block = null;
+	const view = createReadWindow({ device: () => d, read: async () => block ? block.promise : ({ ok: { rows: rows.map(entry => ({ entry })) } }) });
+	const op = { op: 'query', where: { type: ['note'] }, select: [] };
+	try {
+		await view.read(op); await flush();
+		const before = d.calls.length;
+		await view.read(structuredClone(op)); await flush();
+		expect(d.calls.length).toBe(before);
+		rows = [id(2)]; await view.read(op); await flush();
+		expect(d.calls.at(-1).entries).toEqual([id(2)]);
+		block = deferred();
+		const next = view.read({ ...op, where: { type: ['note'], tag: ['another'] } }); await flush();
+		expect(d.calls.at(-1).entries).toEqual([]);
+		block.resolve({ ok: { rows: [] } }); await next;
+	} finally { view.close(); }
+});
+
+test('same-turn effect cleanup and reread preserve discovery; leaving still releases it', async () => {
+	const d = node(), blocked = deferred(); let block = false, latestSignal;
+	const view = createReadWindow({ device: () => d, read: async (_, __, signal) => {
+		latestSignal = signal;
+		return block ? blocked.promise : { ok: { rows: [] } };
+	} });
+	const op = { op: 'query', where: { type: ['note'] } };
+	try {
+		await view.read(op); await flush();
+		for (let n = 0; n < 8; n++) {
+			view.clear();
+			await view.read(structuredClone(op)); await flush();
+		}
+		expect(d.calls.length).toBe(1);
+		block = true;
+		const pending = view.read(op); await flush();
+		view.clear();
+		expect(latestSignal.aborted).toBe(true);
+		await flush();
+		expect(d.calls.at(-1).revision).toBe(2);
+		expect(d.calls.at(-1).queries).toBeUndefined();
+		blocked.resolve({ ok: { rows: [{ entry: id(8) }] } });
+		expect(await pending).toBeNull(); await flush();
+		expect(d.calls.at(-1).entries).toEqual([]);
+	} finally { view.close(); }
 });

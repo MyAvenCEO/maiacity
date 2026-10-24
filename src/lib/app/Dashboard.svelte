@@ -75,7 +75,7 @@
 	{/each}
 	<p class="divider">Your apps</p>
 	<div class="tiles">
-		{#each APPS as t (t.href)}
+		{#each APPS.filter(opens) as t (t.href)}
 			<a class="tile" href={t.href}><Icon name={t.icon} size={34} /><b>{t.label}</b><span>{t.note}</span></a>
 		{/each}
 	</div>
@@ -90,7 +90,7 @@
 			{/snippet}
 		</VaultApps>
 	{:else if traveler}
-		<VaultApps only={['assets', 'worlds']} onopen={() => (session.vault = access.city)}>
+		<VaultApps only={['assets']} onopen={() => (session.vault = access.city)}>
 			{#snippet head()}
 				<p class="divider">Maia City</p>
 			{/snippet}

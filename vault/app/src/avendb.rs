@@ -139,6 +139,11 @@ fn ok_of(answer: Value) -> Result<Value, String> {
 /// Op `op` run on the device (`Host::run`), as `run` calls it but its bytes beside as they are: its answer, and a
 /// `read_file`'s bytes.
 async fn run_on(state: &Avendb, window: Option<tauri::WebviewWindow>, op: Value) -> Result<(Value, Option<Vec<u8>>), String> {
+    let mut op = op;
+    // A webview may only read local bytes. Peer transfer is owned by background sync.
+    if window.is_some() && op.get("op").and_then(Value::as_str) == Some("read_file") {
+        op["local"] = Value::Bool(true);
+    }
     let host = host_of(state, window).await?;
     let (answer, bytes) = host.run(op).await;
     OPEN.store(host.node().is_some(), Ordering::Relaxed);

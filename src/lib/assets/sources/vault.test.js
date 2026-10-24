@@ -80,8 +80,16 @@ test("the vault's index is the repo's: every version and variant, its latest, it
 	const v = vaultOf();
 	expect(v.refused).toEqual([]);
 	expect(v.index).toEqual(made.index);
-	expect(Object.keys(v.index.recipes).length).toBe(336);
+	expect(Object.keys(v.index.recipes).length).toBe(337);
 	expect(v.reads).toEqual([]);
+	// The added recipe is elder-woman v2, with its frozen v1 still independently addressable.
+	const [one, two] = [1, 2].map(version => v.hashOf(`actors/elder-woman@${version}:elder-woman`));
+	expect(one).not.toBe(two);
+	expect(v.index.latest['actors/elder-woman']).toBe(2);
+	expect([one, two].map(hash => {
+		const row = v.index.recipes[hash];
+		return [row.group, row.id, row.v, row.variant];
+	})).toEqual([['actors', 'elder-woman', 1, 'elder-woman'], ['actors', 'elder-woman', 2, 'elder-woman']]);
 });
 
 test('a ref names the same recipe in the vault as in the repo, however it is named', () => {
@@ -111,9 +119,9 @@ test('a ref names the same recipe in the vault as in the repo, however it is nam
 test("each recipe's source is its entry's file, read once and held to its hash", async () => {
 	const v = vaultOf();
 	for (const hash of Object.keys(made.index.recipes)) expect(await v.recipeAt(hash)).toEqual({ hash, code: FILES[hash] });
-	expect(v.reads.length).toBe(336);
+	expect(v.reads.length).toBe(337);
 	await v.recipeAt(hashOf('actors/stand-in@11'));
-	expect(v.reads.length).toBe(336);
+	expect(v.reads.length).toBe(337);
 	// the stand-in's head, over a code entry's 200,000 characters, comes whole from its file
 	expect((await v.recipeAt(hashOf('actors/stand-in@11'))).code.length).toBeGreaterThan(300000);
 });
@@ -237,7 +245,7 @@ test("a row that doesn't check is left out, saying why, and the ref it would nam
 		expect(err.message).toContain('plants/apple@2');
 		// the rest of the vault reads as before
 		expect(v.hashOf('plants/apple@1')).toBe(made.index.labels['plants/apple@1']);
-		expect(Object.keys(v.index.recipes).length).toBe(335);
+		expect(Object.keys(v.index.recipes).length).toBe(336);
 	}
 	// one made for an older frozen engine, by its hash, is one of the recipes, made for that engine
 	const older = vaultOf([
@@ -426,7 +434,7 @@ test('a pin names an asset by its entry and the heads of its version, whatever i
 		expect(row.record.title.startsWith(v.nameOf(hash).replace(/ v\d+ · [0-9a-f]{8}…$/, '').split(' · ')[0])).toBe(true);
 		n++;
 	}
-	expect(n).toBe(336);
+	expect(n).toBe(337);
 	// one asset's versions, by the heads each names
 	const truck = rows.find((r) => r.entry === idOf('asset-machines/truck'));
 	const [one, two] = [1, 2].map((x) => truck.brought.find((b) => b.version === x && b.line === null));

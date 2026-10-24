@@ -74,6 +74,10 @@
 //! device reads off those of them the vault created itself and the device counts (`lane_of`): what it reads and judges
 //! the vault's entries by.
 
+#[path = "entry_projection.rs"]
+mod entry_projection;
+pub use entry_projection::{PreparedEntryProjection, VerifiedEntryProjection};
+
 use std::borrow::Cow;
 use std::cell::OnceCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
@@ -384,6 +388,61 @@ impl Keyring {
     }
 }
 
+/// An immutable incoming page and the signature checks it needs at capture time. No authorization is
+/// captured. The fields are private so callers cannot substitute bytes after verification.
+pub struct ReceivePreparation {
+    edits: Vec<Signed>,
+    checking: Vec<usize>,
+}
+
+/// Signature results bound to the owned incoming page. Only the completing verification methods of `ReceivePreparation` create one.
+pub struct PreparedReceive {
+    edits: Vec<Signed>,
+    signatures: HashMap<EditId, bool>,
+    perf: Perf,
+}
+
+impl ReceivePreparation {
+    /// Verify at most eight edits per turn, yielding between unfinished turns. The caller must
+    /// supply an actual event-loop task yield (not a ready future or a microtask). No partial
+    /// result is exposed; dropping this future discards the uncommitted owned page.
+    pub async fn check_cooperatively<F, Y>(self, mut yield_turn: F) -> PreparedReceive
+    where
+        F: FnMut() -> Y,
+        Y: std::future::Future<Output = ()>,
+    {
+        let mut signatures = HashMap::new();
+        let mut perf = Perf::default();
+        let mut chunks = self.checking.chunks(8).peekable();
+        while let Some(chunk) = chunks.next() {
+            let at = Perf::start();
+            for &i in chunk {
+                let signed = &self.edits[i];
+                signatures.insert(signed.edit.id(), signed.verify().is_ok());
+            }
+            perf.add("prepared signature check", at);
+            perf.count("prepared signatures", chunk.len() as u64);
+            if chunks.peek().is_some() {
+                perf.count("prepared verification yields", 1);
+                yield_turn().await;
+            }
+        }
+        PreparedReceive { edits: self.edits, signatures, perf }
+    }
+
+    /// Expensive pure cryptography, deliberately independent of the Lab and its current policy.
+    pub fn check(self) -> PreparedReceive {
+        let at = Perf::start();
+        let checking: Vec<_> = self.checking.iter().map(|&i| self.edits[i].clone()).collect();
+        let signatures = checking.iter().zip(checked_all(&checking))
+            .map(|(signed, valid)| (signed.edit.id(), valid)).collect();
+        let mut perf = Perf::default();
+        perf.add("prepared signature check", at);
+        perf.count("prepared signatures", checking.len() as u64);
+        PreparedReceive { edits: self.edits, signatures, perf }
+    }
+}
+
 /// Whether each of `signed`'s signatures check out, in order: on every core the machine has, as each check stands
 /// alone (a restore of Maia City's 18,955 edits spent 11.2 s of its 13.5 s checking them on one core, 2026-10-20); on
 /// one in a browser, which has no threads to spare.
@@ -678,6 +737,7 @@ struct Store {
     /// What it reads of selectors, headers and tags, from the two above.
     readings: Readings,
     shown: BTreeMap<EntryId, Shown>,
+    projections: std::sync::Mutex<BTreeMap<(SignerId, EntryId), entry_projection::CachedEntryProjection>>,
     /// The digest of each log it holds (`sync::digests`), what it gossips: `None` until worked out for its edits now.
     digests: Option<BTreeMap<LogId, [u8; 32]>>,
     /// The vaults it follows, smallest first: it names them in each request (`sync::Ask::follow`), and is sent what
@@ -749,6 +809,7 @@ impl Default for Store {
             spoilt: HashSet::new(),
             readings: Readings::default(),
             shown: BTreeMap::new(),
+            projections: std::sync::Mutex::new(BTreeMap::new()),
             digests: None,
             follow: vec![],
             query_depth: lens::CEILING,
@@ -810,6 +871,7 @@ impl Store {
         self.spoilt.clear();
         self.readings = Readings::default();
         self.shown.clear();
+        self.projections.lock().expect("entry projections").clear();
         self.reshow = true;
         self.opened.clear();
         self.opened_before.clear();
@@ -2434,8 +2496,11 @@ impl Lab {
 
     /// Session `s` (`host`) ends: its key is forgotten. What it wrote stays, as every device's writes.
     pub fn unhost(&mut self, s: SignerId) {
-        if self.hosted.remove(&s).is_some() {
+        if let Some(hosted) = self.hosted.remove(&s) {
             self.keys.remove(&s);
+            if let Some(store) = self.stores.get(&hosted.host) {
+                store.projections.lock().expect("entry projections").retain(|(recipient, _), _| *recipient != s);
+            }
         }
     }
 
@@ -2504,8 +2569,12 @@ impl Lab {
 
     /// `fresh`, timed on device `to` (`perf`).
     fn checked(&mut self, to: SignerId, edits: Vec<Signed>) -> Vec<Signed> {
+        self.checked_prepared(to, edits, &HashMap::new())
+    }
+
+    fn checked_prepared(&mut self, to: SignerId, edits: Vec<Signed>, prepared: &HashMap<EditId, bool>) -> Vec<Signed> {
         let (at, offered) = (Perf::start(), edits.len() as u64);
-        let fresh = self.fresh(to, edits, &HashSet::new());
+        let fresh = self.fresh_prepared(to, edits, &HashSet::new(), prepared);
         if let Some(store) = self.stores.get_mut(&self.at(to)) {
             store.perf.add("check", at);
             store.perf.count("edits offered", offered);
@@ -2518,7 +2587,11 @@ impl Lab {
     /// whose signatures check out (`gate::takes`), the vault it serves its device vault's one owner; nothing of them if
     /// it takes nothing.
     fn take(&mut self, to: SignerId, edits: Vec<Signed>, blobs: &Blobs) -> bool {
-        let mut fresh = self.checked(to, edits);
+        self.take_prepared(to, edits, blobs, &HashMap::new())
+    }
+
+    fn take_prepared(&mut self, to: SignerId, edits: Vec<Signed>, blobs: &Blobs, prepared: &HashMap<EditId, bool>) -> bool {
+        let mut fresh = self.checked_prepared(to, edits, prepared);
         if let Some(home) = self.home(to).filter(|_| !fresh.is_empty()) {
             let store = self.held(to);
             let batch = fresh.iter().map(|s| s.edit.clone()).collect();
@@ -2534,6 +2607,10 @@ impl Lab {
     /// among `edits` covers comes unchecked, on that checkpoint's word, its signatures or none: its replay lets go of
     /// it unless one that stands vouches for it (`refresh`).
     fn fresh(&self, to: SignerId, edits: Vec<Signed>, vouched: &HashSet<EditId>) -> Vec<Signed> {
+        self.fresh_prepared(to, edits, vouched, &HashMap::new())
+    }
+
+    fn fresh_prepared(&self, to: SignerId, edits: Vec<Signed>, vouched: &HashSet<EditId>, prepared: &HashMap<EditId, bool>) -> Vec<Signed> {
         let Some(store) = self.stores.get(&self.at(to)) else {
             return vec![];
         };
@@ -2554,8 +2631,15 @@ impl Lab {
             (0..rest.len()).partition(|&i| vouched.contains(&rest[i].edit.id()));
         let mut ok = vec![false; rest.len()];
         sealed.into_iter().for_each(|i| ok[i] = true);
-        let to_check: Vec<Signed> = unsealed.iter().map(|&i| rest[i].clone()).collect();
-        for (i, fine) in unsealed.into_iter().zip(checked_all(&to_check)) {
+        let mut unchecked = Vec::new();
+        for i in unsealed {
+            match prepared.get(&rest[i].edit.id()) {
+                Some(&valid) => ok[i] = valid,
+                None => unchecked.push(i),
+            }
+        }
+        let to_check: Vec<Signed> = unchecked.iter().map(|&i| rest[i].clone()).collect();
+        for (i, fine) in unchecked.into_iter().zip(checked_all(&to_check)) {
             ok[i] = fine;
         }
         bare.into_iter().chain(rest.into_iter().zip(ok).filter_map(|(s, ok)| ok.then_some(s))).collect()
@@ -3087,6 +3171,7 @@ impl Lab {
             }
             let at = Perf::start();
             let ix = KeyIndex::of(&store.replay);
+            store.perf.add("keys: index", at);
             open_keys(store, &ix, &mine);
             store.perf.add("open keys", at);
             let at = Perf::start();
@@ -3158,6 +3243,9 @@ impl Lab {
     /// The write `action` authored by device `on` alone, drafted on `view`, what `on`'s edits say, if `view` accepts
     /// it: the edit, and the write it is, with the shares its readers judge it by.
     fn check_write(&self, on: SignerId, view: &State, action: Action) -> Result<(Edit, Write), Refusal> {
+        if let Action::Write { entry, .. } = &action {
+            if self.entry_projection(on, *entry).is_some() { return Err(Refusal::ReadOnly); }
+        }
         let edit = self.held(on).log.draft_on(view, on, &[], action);
         let w = view.accepted_write(&edit, edit.id())?.expect("a write");
         Ok((edit, w))
@@ -4179,6 +4267,31 @@ impl Lab {
         self.batches.get(&d)
     }
 
+    /// Bounded positive-type discovery for an authenticated peer. Current policy (including received
+    /// revocations not yet materialized) authorizes BEFORE any type is inspected. IDs are only hints;
+    /// no empty/truncated result establishes completeness, and normal signed receive remains required.
+    pub fn discover_types(&self, me: SignerId, requester: SignerId, vault: Option<VaultId>, types: &[String]) -> Vec<EntryId> {
+        if types.is_empty() || types.len() > 8 || types.iter().any(|ty| ty.is_empty() || ty.len() > 64) { return vec![]; }
+        let st = self.latest(me);
+        let opens = st.opens(&[KeyName::Signer(requester)]);
+        let selector = crate::ops::Where::of_json(&serde_json::json!({"type": types}))
+            .expect("bounded positive types").plan();
+        let mut audiences = HashMap::new();
+        st.entries().iter().filter(|en| {
+            let audience = KeyFam::Audience(en.vault, en.audience());
+            *audiences.entry(audience).or_insert_with(||
+                (st.public_key(audience) || st.entitled(requester, audience))
+                    && opens.contains(&st.current(audience)))
+                && st.entry_key(en.id).is_some_and(|key| opens.contains(&key))
+                && st.wants(requester, en)
+                && vault.is_none_or(|v| en.vault == v)
+                && self.landed(me, en.id)
+        // The selector contains only immutable creation types. Rebuilding each candidate's
+        // full meaning (retags, shares and stewardship) adds work without changing that match.
+        }).filter(|en| st.first_attrs(en, &self.held(me).readings).is_some_and(|attrs| selector.matches(&attrs)))
+            .take(64).map(|en| en.id).collect()
+    }
+
     /// What device `d` makes of the edits it holds, as it last brought itself up to date: what `log(d).view()` says.
     pub fn state(&self, d: SignerId) -> &State {
         self.held(d).view()
@@ -4254,6 +4367,17 @@ impl Lab {
     /// The signed edit device `d` holds with id `edit`, as it would send it.
     pub fn signed_edit(&self, d: SignerId, edit: EditId) -> Option<&Signed> {
         self.held(d).signed.get(&edit)
+    }
+
+    /// Diagnostic policy observation only: no authority, persistence or rendered-state claim.
+    /// Unknown/unauthorized/not-yet-replayed all have the same unavailable result.
+    pub fn peer_edit_outcome(&self, d: SignerId, peer: SignerId, id: EditId) -> Option<bool> {
+        let store = self.held(d);
+        if store.replayed != store.log.edits().len() { return None; }
+        let allowed = self.answered(d, peer, &[]);
+        if !allowed.iter().any(|&i| store.log.ids().get(i) == Some(&id)) { return None; }
+        let at = store.replay.ids.iter().position(|held| *held == id)?;
+        store.replay.stood.get(at).copied()
     }
 
     /// Every secret signer `s` holds here, to search views, logs and stores for secrets that shouldn't be there: its
@@ -4974,6 +5098,18 @@ impl Lab {
         files.into_iter().collect()
     }
 
+    /// Files needed by active local views. Demand grants nothing: both current keep selection and
+    /// readable file keys must permit each file. Opened/light devices hydrate these in background.
+    pub fn demanded_files(&self, d: SignerId, entries: &[EntryId]) -> Vec<FileRoot> {
+        let st = self.latest(d);
+        let files: BTreeSet<FileRoot> = entries.iter()
+            .filter(|entry| st.entry(**entry).is_some_and(|en| st.wants(d, en)))
+            .flat_map(|entry| self.entry_files(d, *entry))
+            .filter_map(|(root, len)| len.map(|_| root))
+            .collect();
+        files.into_iter().collect()
+    }
+
     /// The files the writes of entry `entry` bring, as device `d` holds them, in the order it took them, each once:
     /// each with its plaintext length where `d` opens it (`file`), else `None`.
     pub fn entry_files(&self, d: SignerId, entry: EntryId) -> Vec<(FileRoot, Option<u64>)> {
@@ -5114,9 +5250,13 @@ impl Lab {
     /// `receive` that does): a pull's pages from far behind each sort before what the replay last stepped over, and each
     /// would replay the whole log (2026-10-21, an iPhone catching up a page of 4 MB at a time). How many edits were new.
     fn receive_now(&mut self, d: SignerId, edits: Vec<Signed>, blobs: Vec<Arc<[u8]>>, now: bool) -> usize {
+        self.receive_now_prepared(d, edits, blobs, now, &HashMap::new())
+    }
+
+    fn receive_now_prepared(&mut self, d: SignerId, edits: Vec<Signed>, blobs: Vec<Arc<[u8]>>, now: bool, prepared: &HashMap<EditId, bool>) -> usize {
         let blobs: Blobs = blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect();
         let before = self.held(d).signed.len();
-        let mut changed = self.take(d, edits, &blobs);
+        let mut changed = self.take_prepared(d, edits, &blobs, prepared);
         // Edit-only pages have no late-arriving keys to match. Taking their edits and flushing a deferred
         // replay still happen normally; only the otherwise unused full-history blob-name scan is omitted.
         if !blobs.is_empty() {
@@ -5170,11 +5310,38 @@ impl Lab {
         blobs: Vec<Arc<[u8]>>,
         now: bool,
     ) -> (usize, Vec<(VaultId, Option<EntryId>)>) {
+        self.receive_whose_prepared_inner(d, edits, blobs, now, &HashMap::new())
+    }
+
+    /// Captures only which immutable signatures need checking. A state change after capture is safe:
+    /// reception still deduplicates, resolves checkpoint coverage and applies the CURRENT gate.
+    pub fn prepare_receive(&self, d: SignerId, edits: Vec<Signed>) -> ReceivePreparation {
+        let store = self.held(d);
+        let mut seen = HashSet::new();
+        let fresh: Vec<_> = edits.iter().enumerate().filter(|(_, signed)| {
+            let id = signed.edit.id();
+            !store.signed.contains_key(&id) && seen.insert(id)
+        }).collect();
+        let batch = covered(fresh.iter().map(|(_, signed)| &signed.edit));
+        let checking = fresh.into_iter().filter_map(|(i, signed)| {
+            let id = signed.edit.id();
+            (!store.covers.contains(&id) && !batch.contains(&id)).then_some(i)
+        }).collect();
+        ReceivePreparation { edits, checking }
+    }
+
+    /// Takes a cryptographically prepared page through ordinary CURRENT-state admission.
+    pub fn receive_prepared(&mut self, d: SignerId, prepared: PreparedReceive, now: bool) -> (usize, Vec<(VaultId, Option<EntryId>)>) {
+        self.stores.get_mut(&self.at(d)).expect("a device").perf.merge(prepared.perf);
+        self.receive_whose_prepared_inner(d, prepared.edits, Vec::new(), now, &prepared.signatures)
+    }
+
+    fn receive_whose_prepared_inner(&mut self, d: SignerId, edits: Vec<Signed>, blobs: Vec<Arc<[u8]>>, now: bool, prepared: &HashMap<EditId, bool>) -> (usize, Vec<(VaultId, Option<EntryId>)>) {
         let held = &self.held(d).signed;
         let ids = edits.iter().map(|s| (s.edit.id(), &s.edit));
         let fresh: Vec<(EditId, Option<LogId>)> =
             ids.filter(|(id, _)| !held.contains_key(id)).map(|(id, e)| (id, log_of(e, id))).collect();
-        let new = self.receive_now(d, edits, blobs, now);
+        let new = self.receive_now_prepared(d, edits, blobs, now, prepared);
         let taken = fresh.into_iter().filter(|(id, _)| self.held(d).signed.contains_key(id));
         let whose = taken.filter_map(|(_, log)| self.whose_log(d, log?)).collect();
         (new, whose)
@@ -5231,11 +5398,12 @@ impl Lab {
         let mut store = Store { follow, query_depth, gate, perf, ..Store::default() };
         let key = self.shelf_key(d);
         let mut vouched = HashSet::new();
-        let opened = key.as_ref().map_or(vec![], |key| {
-            let opened = |b: &Vec<u8>| keys_of(&key.unlock("keys", b, b"stored keys")?);
-            warm.keys.iter().filter_map(opened).collect::<Vec<_>>()
-        });
-        for (named, keys) in opened {
+        // Decode and merge one slot at a time. Keeping both complete decoded key
+        // maps alive until collection finishes needlessly raises the startup peak.
+        // Preserve newest-to-oldest order and the existing per-slot validity checks.
+        for (named, keys) in warm.keys.iter().filter_map(|bytes| {
+            keys_of(&key.as_ref()?.unlock("keys", bytes, b"stored keys")?)
+        }) {
             if let (Some((now, n)), Some(named)) = (checked, named)
                 && now == named
             {
@@ -5556,6 +5724,7 @@ fn opened_box(info: &[u8], bytes: &[u8], with: &Secret) -> [u8; 32] {
 /// holds; then every key published in the clear; then derive the keys of the entries in each audience whose key it
 /// holds; and again, until nothing more opens. A box counts only if what opens is the key it names.
 fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
+    let at = Perf::start();
     // the stays each audience had: the entries whose keys a key of the audience derives, and in which stay
     let mut stays: HashMap<AudienceId, Vec<(EntryId, Option<EditId>)>> = HashMap::new();
     for en in store.replay.state.entries() {
@@ -5563,8 +5732,10 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
             stays.entry(*x).or_default().push((en.id, *s));
         }
     }
+    store.perf.add("keys: stays", at);
     loop {
         let mut more = false;
+        let at = Perf::start();
         for (name, id, b) in &ix.boxes {
             if store.keys.contains(id) {
                 continue;
@@ -5599,13 +5770,18 @@ fn open_keys(store: &mut Store, ix: &KeyIndex, mine: &[(SignerId, Secret)]) {
                 }
             }
         }
+        store.perf.add("keys: boxes", at);
+        let at = Perf::start();
         for &(name, id, bytes) in &ix.clear {
             let secret = Secret::from_bytes(bytes);
             if !store.keys.contains(&id) && secret.id() == id {
                 more |= store.keys.insert(name, secret);
             }
         }
+        store.perf.add("keys: clear", at);
+        let at = Perf::start();
         more |= derive(store, &stays);
+        store.perf.add("keys: derive", at);
         if !more {
             return;
         }
@@ -5859,9 +6035,12 @@ fn upkeep(
             }
         }
     }
+    // Every current entry audience occurs in key_fams. Reuse this round's exact entitlement
+    // decisions from the same immutable State; never carry them across refreshes or revocation.
+    let entitled: HashSet<KeyFam> = families.iter().copied().collect();
     // move links: the keys of an entry's earlier stays under a key of its stay now, as the schedule links them
     for en in st.entries() {
-        if !st.entitled(d, KeyFam::Audience(en.vault, en.audience())) {
+        if !entitled.contains(&KeyFam::Audience(en.vault, en.audience())) {
             continue;
         }
         let epoch = st.epoch(KeyFam::Audience(en.vault, en.audience()));
@@ -6042,6 +6221,21 @@ fn landed_in(store: &Store, e: EntryId) -> bool {
     !opened && crate::policy::history(ws.iter(), MAIN).iter().any(|w| w.first)
 }
 
+/// Retain reconstruction accelerators as entries finish, rather than keeping
+/// one extra Loro document per entry until the entire database is reconstructed.
+/// Entry iteration is unique; an evicted earlier entry cannot enter the final
+/// last-SCRATCHES selection. Its shown items/history remain untouched.
+fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<EntryId>, entry: EntryId, shown: Shown) {
+    recent.push(entry);
+    if recent.len() > SCRATCHES {
+        let expired = recent[recent.len() - SCRATCHES - 1];
+        if let Some(shown) = old.get_mut(&expired) {
+            shown.after.scratch = None;
+        }
+    }
+    old.insert(entry, shown);
+}
+
 /// Rebuild what device `d` shows of each entry whose writes, what it opened of them, its vault's lane or the cap groups
 /// in force changed: first the cap groups, as the device counts the writes that say them (`State::read_groups`), as
 /// every write through a share that names one is judged by them; then each entry's history, each write of its view
@@ -6204,6 +6398,7 @@ fn show_items(d: SignerId, store: &mut Store) {
                 && Some(writes[was.writes - 1].edit) == was.last
                 && opened.get(&en.id).is_none_or(|ids| ids.iter().all(new))
         };
+        let judging_at = Perf::start();
         let (mut j, from, items) = match old.remove(&en.id) {
             Some(s) if resumes(&s) => {
                 let from = s.tip.writes;
@@ -6214,10 +6409,12 @@ fn show_items(d: SignerId, store: &mut Store) {
         for w in &writes[from..] {
             j.judge(d, st, (r, bodies), w, &groups);
         }
+        store.perf.add("show: judging", judging_at);
+        let materialize_at = Perf::start();
         let s = j.shown_on(d, print, tip, items);
+        store.perf.add("show: materialize", materialize_at);
         debug_assert!(from == 0 || same_shown(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault))));
-        recent.push(en.id);
-        old.insert(en.id, s);
+        retain_recent_shown(&mut old, &mut recent, en.id, s);
     }
     // only the entries judged last keep their scratch items
     let mut keep: HashSet<EntryId> = recent.iter().rev().take(SCRATCHES).copied().collect();
@@ -6370,7 +6567,10 @@ impl<'a> Judging<'a> {
                     }
                     Some(item)
                 }
-                None => crate::history::build_from(&changes, d, l),
+                // Judgment already materialized this exact history in many linear entries.
+                // Reuse only after counted-history selection; mismatches rebuild canonically.
+                None => scratch.as_ref().and_then(|s| s.shown_for(&changes, d, l))
+                    .or_else(|| crate::history::build_from(&changes, d, l)),
             };
             if let Some(item) = item {
                 items.insert(l, item);
@@ -6504,3 +6704,15 @@ mod entry_files_batch_tests;
 #[cfg(test)]
 #[path = "latest_replay_tests.rs"]
 mod latest_replay_tests;
+
+#[cfg(test)]
+#[path = "upkeep_family_tests.rs"]
+mod upkeep_family_tests;
+
+#[cfg(test)]
+#[path = "prepared_receive_tests.rs"]
+mod prepared_receive_tests;
+
+#[cfg(test)]
+#[path = "peer_receipt_tests.rs"]
+mod peer_receipt_tests;

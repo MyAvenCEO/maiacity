@@ -131,3 +131,73 @@ test('an older node gets the original bring shape after rejecting demand', async
 		expect(calls.filter((op) => op.op === 'bring')).toEqual([{ op: 'bring', entries: [id(8)] }]);
 	} finally { delete globalThis.location; }
 });
+
+
+test('an empty local catalog does not wait for an unfinished background bring', async () => {
+	const { deviceRows, bringRows } = await import('./device.js');
+	let finish;
+	const blocked = new Promise(resolve => { finish = resolve; });
+	const d = { run: async op => op.op === 'code' ? { ok: [] } : op.op === 'bring' ? blocked : { ok: {} } };
+	useDevice(d);
+	const sync = bringRows([{ entry: id(91) }]);
+	const result = await Promise.race([deviceRows(['recipe']), new Promise(resolve => setTimeout(() => resolve('blocked'), 100))]);
+	finish({ ok: { new: 1 } });
+	await sync;
+	expect(result).toBeNull();
+});
+
+test('learned demand publishes before manifest discovery and closes on device replacement', async () => {
+ const { useView } = await import('./device.js');
+ globalThis.localStorage = store();
+ globalThis.location = { pathname: '/fresh/' };
+ learn([id(81)], '/fresh/');
+ let release, publish;
+ const withheld = new Promise(resolve => { release = resolve; });
+ const published = new Promise(resolve => { publish = resolve; });
+ const calls = [];
+ const d = { run: async op => {
+  calls.push(op);
+  if (op.op === 'query') return withheld;
+  if (op.op === 'demand') { publish(); return { ok: { accepted: true } }; }
+  throw new Error('No transfer before discovery');
+ } };
+ try {
+  useDevice(d);
+  const pending = useView('/fresh/');
+  await Promise.race([published, new Promise((_, reject) => setTimeout(() => reject(new Error('learned demand blocked')), 100))]);
+  expect(calls.filter(op => op.op === 'demand')[0].entries).toEqual([id(81)]);
+  useDevice(null);
+  await Promise.resolve();
+  expect(calls.filter(op => op.op === 'demand').at(-1).entries).toEqual([]);
+  release({ ok: { rows: [{ record: { kind: 'manifest', id: 'late', routes: ['*'], parts: [{ entry: id(82) }] } }] } });
+  await pending;
+  expect(calls.filter(op => op.op === 'bring')).toEqual([]);
+  expect(calls.filter(op => op.op === 'demand').flatMap(op => op.entries)).not.toContain(id(82));
+ } finally { delete globalThis.location; }
+});
+
+test('explicit current-view dependencies precede a full learned lease without clearing the other hints', async () => {
+ const { useView } = await import('./device.js');
+ globalThis.localStorage = store();
+ globalThis.location = { pathname: '/capacity/' };
+ const hints = Array.from({ length: 512 }, (_, i) => id(1000 + i));
+ const target = id(9999), calls = [];
+ let release;
+ const blocked = new Promise(resolve => { release = resolve; });
+ const d = { run: async op => {
+  calls.push(op);
+  if (op.op === 'query') return blocked;
+  if (op.op === 'demand') return { ok: { accepted: true } };
+  return { ok: { new: 0, peers: 0, reached: false } };
+ } };
+ try {
+  useDevice(d);
+  const pending = useView('/capacity/');
+  learn(hints, '/capacity/');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  expect(calls.filter(op => op.op === 'demand').at(-1).entries).toEqual(hints);
+  release({ ok: { rows: [{ record: { kind: 'manifest', id: 'current', routes: ['*'], parts: [{ entry: target }] } }] } });
+  await pending;
+  expect(calls.filter(op => op.op === 'demand').at(-1).entries).toEqual([target, ...hints.slice(0, 511)]);
+ } finally { delete globalThis.location; }
+});
