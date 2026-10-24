@@ -9,6 +9,10 @@ Last maintained: 2026-10-25. Current execution order: keep three subagents plus 
 
 ### Separate working-set integration — 25 October
 
+
+**Validation queue update:** release native authentication Rust tests passed4/4 (cold debug build31m01s). The local corrected S3 engine regression is running next; combined working-set core/warm/shared/proposal tests follow. Working-set Lean passed121jobs. Release checkout `build/index.html` currently contains a unit-test-only placeholder for Tauri compilation: it is NOT a distributable frontend. Before any Mac installation, build the real frontend from the reviewed matching-WASM commit and then build/sign the actual app. No test executable or placeholder may be installed as the dev app. Existing installed711fcebe remains unchanged.
+
+
 This branch, `codex/avendb-working-set`, is separate from release PR1271 (`codex/avendb-bootstrap-followup`, current release candidate `dacbbf0a`). Neither branch is deployed; installed production/dev app remains711fcebe pending successful delivery and acceptance. Do not push these broader changes into the frozen release merely to synchronize status.
 
 - **Doing — authenticated deferred warm bodies:** [a59cf1b1](https://github.com/MyAvenCEO/maiacity/commit/a59cf1b1), [d0593fb8](https://github.com/MyAvenCEO/maiacity/commit/d0593fb8), publication correction [6c7434b3](https://github.com/MyAvenCEO/maiacity/commit/6c7434b3). Runtime metadata receipt and on-demand history hydration implemented, current key required, corruption/change fallback retained. Rust validation pending; no physical speed claim. Bounded receipts and changed logs still require canonical fallback. See AVENDB_WARM_DEFERRED_BODY_BOUNDARY.md.
