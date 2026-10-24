@@ -57,3 +57,13 @@ test('unlock duration uses a monotonic clock and preserves results and failures'
  expect(f.journal.snapshot().samples.map(s => [s.ms, s.outcome])).toEqual([[25, 'ok'], [15, 'failed']]);
  f.journal.flush(); expect(f.raw()).not.toContain('private account');
 });
+
+test('unlock outcome is durable before returning even without pagehide or timer execution', async () => {
+ const f = fixture(); let time = 5;
+ await measureLatency('unlock.total', async () => { time = 20; }, f.journal, () => time);
+ expect(f.writes()).toBe(1);
+ expect(createLatencyJournal({storage:f.storage}).snapshot().samples[0]).toMatchObject({stage:'unlock.total',ms:15,outcome:'ok'});
+ await expect(measureLatency('unlock.total', async () => {time=30;throw Error('failed');},f.journal,()=>time)).rejects.toThrow();
+ expect(f.writes()).toBe(2);
+ expect(createLatencyJournal({storage:f.storage}).snapshot().samples.at(-1).outcome).toBe('failed');
+});

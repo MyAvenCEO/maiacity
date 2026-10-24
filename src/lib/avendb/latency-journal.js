@@ -67,5 +67,10 @@ export async function measureLatency(stage, work, journal = latencyJournal, now 
  const start = now();
  /** @type {'ok' | 'failed'} */ let outcome = 'failed';
  try { const result = await work(); outcome = 'ok'; return result; }
- finally { journal.record(stage, Math.max(0, now() - start), outcome); }
+ finally {
+  journal.record(stage, Math.max(0, now() - start), outcome);
+  // This boundary is rare and critical: iOS may reclaim the document immediately after unlock.
+  // Do not leave its evidence waiting behind the ordinary two-second write coalescer.
+  if (stage === 'unlock.total') journal.flush();
+ }
 }
