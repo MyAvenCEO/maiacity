@@ -145,7 +145,10 @@ try {
     // Give both protocols their bounded opening window; unavailable PQ WebTransport must retain the relay.
     progress('negotiated carrier readiness');
     await until('actual host-only RTC', async () => (await metrics()).every((m) => m['rtc-ready'] > 0));
-    const wtEnd = Date.now() + 20_000;
+    // Linking can race initial capability negotiation. control.rs retries after 30 s and permits
+    // 25 s to open a route; cover that cycle before deciding WT is unavailable. The native test
+    // still requires both actual WT connections and fresh ciphertext after the relay is stopped.
+    const wtEnd = Date.now() + 90_000;
     while (!(await metrics()).every((m) => m['wt-ready'] > 0) && Date.now() < wtEnd) await new Promise((resolve) => setTimeout(resolve, 100));
     const before = await metrics(), wt = before.every((m) => m['wt-ready'] > 0);
     say({ step: 'carriers', first: alice.endpoint, second: bob.endpoint, wt, metrics: before });

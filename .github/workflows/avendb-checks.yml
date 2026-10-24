@@ -20,8 +20,12 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'avendb/**'
-      - 'src/lib/avendb/device/**'
-      - '.github/workflows/avendb-checks.yml'
+      - 'src/lib/avendb/**'
+      - 'scripts/avendb-browser-transports.mjs'
+      - 'package.json'
+      - 'bun.lock'
+      - '.bun-version'
+      - '.github/**'
       - 'scripts/ci/**'
   workflow_call:
     inputs:

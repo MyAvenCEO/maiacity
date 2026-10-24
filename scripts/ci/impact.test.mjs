@@ -128,3 +128,11 @@ test('physics shards cover each owned file exactly once and reject invalid selec
  expect(jobs.filter(j=>j.suite!=='physics')).toEqual([{suite:'assets',shard:'',label:'assets'}]);
  for (const shard of ['0/4','5/4','1/0','1/999','oops']) expect(()=>partition(files,shard)).toThrow();
 });
+
+test('JavaScript worker and carrier changes require real browser validation without native publishing', () => {
+ for (const file of ['src/lib/avendb/transports/webtransport.js','src/lib/avendb/remote.worker.js','scripts/avendb-browser-transports.mjs']) {
+  const next=impact([file]);
+  expect(next.site && next.avendb && next.browser).toBe(true);
+  expect(next.server || next.agent || next.native).toBe(false);
+ }
+});

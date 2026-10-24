@@ -31,7 +31,8 @@ export function impact(files) {
   if (/^(src|static|blog|films|code|game|scripts|patches)\//.test(file) || /^(vite|svelte|tsconfig)/.test(file)) {
    set('site');
    if (/^(game|code)\//.test(file) || /^src\/lib\/(sandbox\/engines.json|avendb\/device\/)/.test(file)) set('api');
-   if (/^src\/lib\/avendb\/device\//.test(file)) set('avendb','browser','native');
+   if (/^src\/lib\/avendb\//.test(file) || file === 'scripts/avendb-browser-transports.mjs') set('avendb','browser');
+   if (/^src\/lib\/avendb\/device\//.test(file)) set('native');
    continue;
   }
   if (/^vault\//.test(file)) { set('mac'); continue; }
