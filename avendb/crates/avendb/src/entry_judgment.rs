@@ -12,7 +12,7 @@ use anchor_metadata::{get_anchor_metadata, put_anchor_metadata};
 
 #[path = "entry_bootstrap_store.rs"]
 mod bootstrap_store;
-pub(crate) use bootstrap_store::{Anchors, OverlayBasis};
+pub(crate) use bootstrap_store::{Anchors, OverlayBasis, BootstrapProgress};
 
 const JUDGMENT: &[u8] = b"avenDB entry judgment 2\n";
 const MAX_FACTS: usize = 512;

@@ -731,6 +731,7 @@ struct Store {
     bootstrap_state: Option<State>,
     bootstrap_active: HashSet<EntryId>,
     bootstrap_basis: Option<entry_base::OverlayBasis>,
+    bootstrap_progress: HashMap<EntryId, entry_base::BootstrapProgress>,
     bootstrap_revision: Arc<()>,
     /// How many of its edits that replay is of, the first of its log: those after it step on it (`replay_on`).
     replayed: usize,
@@ -821,6 +822,7 @@ impl Default for Store {
             bootstrap_state: None,
             bootstrap_active: HashSet::new(),
             bootstrap_basis: None,
+            bootstrap_progress: HashMap::new(),
             bootstrap_revision: Arc::new(()),
             replayed: 0,
             latest: OnceLock::new(),
@@ -900,6 +902,7 @@ impl Store {
         self.bootstrap_state=None;
         self.bootstrap_active.clear();
         self.bootstrap_basis = None;
+        self.bootstrap_progress.clear();
         self.projections.lock().expect("entry projections").clear();
         self.reshow = true;
         self.opened.clear();
@@ -3301,7 +3304,7 @@ impl Lab {
     fn check_write(&self, on: SignerId, view: &State, action: Action) -> Result<(Edit, Write), Refusal> {
         if let Action::Write { entry, vault, actor, proposal, deps, .. } = &action {
             if self.held(on).bootstrap_active.contains(entry)
-                && (self.held(on).replayed != self.held(on).log.edits().len() || *actor != *vault || *proposal != Proposal::Main || *deps != self.shown(on,*entry).heads(MAIN)) {
+                && (self.owner_base_pending(on, *entry) > 0 || self.held(on).replayed != self.held(on).log.edits().len() || *actor != *vault || *proposal != Proposal::Main || *deps != self.shown(on,*entry).heads(MAIN)) {
                 return Err(Refusal::ReadOnly);
             }
             if self.entry_projection(on, *entry).is_some() { return Err(Refusal::ReadOnly); }
