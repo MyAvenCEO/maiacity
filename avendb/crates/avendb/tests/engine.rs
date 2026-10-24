@@ -2207,3 +2207,17 @@ fn query_observed_revision_is_opt_in_and_matches_the_authorized_get_frontier() {
     assert!(list(&denied["rows"]).is_empty());
     assert!(run(&mut w, mac, json!({"op":"query","observeRevision":"yes"})).get("refused").is_some());
 }
+
+#[test]
+fn typed_database_rows_preserve_canonical_versions_without_unrelated_rows() {
+    let mut w = cast::world();
+    cast::library(&mut w);
+    let (mac, vault) = (w.mac_a, w.alice.to_hex());
+    let full = ok(run(&mut w, mac, json!({"op":"database","vault":vault})));
+    let typed = ok(run(&mut w, mac, json!({"op":"database","vault":vault,"types":["note"]})));
+    let expected: Vec<_> = list(&full["rows"]).iter().filter(|row| row["type"] == "note").cloned().collect();
+    assert!(!expected.is_empty());
+    assert_eq!(typed["rows"], json!(expected), "type filtering keeps exact canonical records, versions and authority metadata");
+    let empty = ok(run(&mut w, mac, json!({"op":"database","vault":vault,"types":[]})));
+    assert!(list(&empty["rows"]).is_empty());
+}

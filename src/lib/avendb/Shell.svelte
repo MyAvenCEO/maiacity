@@ -27,6 +27,7 @@
 -->
 <script>
 	import { setContext } from 'svelte';
+    import { needsWorldEntries, localNavigation } from './startup-summary.js';
 	import { foot, FOOT } from '$lib/app/foot.js';
 	import { afterNavigate } from '$app/navigation';
 	import { wayBack } from '$lib/app/back.svelte.js';
@@ -153,7 +154,8 @@
 	const tab = $derived(route.page);
 	// a link to the dashboard itself (the nav pill's Home and Back, `/app/` with no hash) is the router's navigation, no
 	// hashchange: the page it leads to is read from the address after every navigation too
-	afterNavigate(() => (route = parse(location.hash)));
+	const navigated = () => localNavigation(() => { route = parse(location.hash); }, () => session.viewChanged());
+	afterNavigate(navigated);
 
 	const busy = $derived(!!doing);
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
@@ -270,7 +272,7 @@
 	});
 </script>
 
-<svelte:window onhashchange={() => (route = parse(location.hash))} />
+<svelte:window onhashchange={navigated} />
 
 {#snippet head()}
 	<header class="main-head">
@@ -293,7 +295,7 @@
 {/snippet}
 
 <div class="shell" class:reading={!!route.entry}>
-    {#if world.entriesComplete === false && tab !== 'home'}
+    {#if needsWorldEntries(world, tab)}
         <p role="status">Loading this view’s local entries…</p>
     {:else}
 	{#if route.entry}

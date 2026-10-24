@@ -17,6 +17,8 @@
 -->
 <script>
 	import { windowRead } from './ops.js';
+    import { readAssetInventory } from './asset-inventory.js';
+    import { session } from './session.svelte.js';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import Lines from './Lines.svelte';
@@ -47,14 +49,16 @@
 
 	let db = $state(/** @type {import('./db.js').Db | null} */ (null));
 	let failed = $state('');
+    let inventory = $state.raw(/** @type {{vault:string,entries:any[]} | null} */ (null));
+    const inventoryWorld = $derived({ ...world, entries: inventory?.vault === vault ? inventory.entries : [] });
 	// what the device holds changed, or another vault is picked: read its database again, as the table editor does
 	$effect(() => {
-		void world;
+		void session.revision;
 		const v = vault;
 		let gone = false;
-		api.database(v).then(
-			(/** @type {import('./db.js').Db} */ d) => {
-				if (!gone) [db, failed] = [d, ''];
+		readAssetInventory(api, v).then(
+			(result) => {
+				if (!gone) { db = result.db; inventory = {vault: v, entries: result.entries}; failed = ''; }
 			},
 			(/** @type {Error} */ e) => {
 				if (!gone) failed = e.message ?? String(e);
@@ -74,7 +78,7 @@
 	const city = $derived(seeded(world)[0]?.[0] ?? world.vaults.find((v) => v.kind === 'coop' && v.name === 'Maia City'));
 	const held = $derived(db?.vault === vault ? db : null);
 	/** the vault's recipes, read from its entries as the acting vault opens them, each file only when it is built */
-	const source = $derived(vaultSource(world, held, vault, actor, read));
+	const source = $derived(vaultSource(inventoryWorld, held, vault, actor, read));
 	const shelf = $derived(shelfOf(source));
 	const recipes = $derived(Object.keys(source.index.recipes).length);
 	/** the recipe entries this browser holds that the acting vault doesn't open */
@@ -249,7 +253,7 @@
 			<dt>Version</dt>
 			<dd>{versionName(chosen.asset, chosen)}</dd>
 			<dt>By</dt>
-			<dd>{authorsLine(world, world.entries.find((e) => e.entry === chosen.entry)?.authors, nameOf(here))}</dd>
+			<dd>{authorsLine(world, inventoryWorld.entries.find((e) => e.entry === chosen.entry)?.authors, nameOf(here))}</dd>
 			<dt>Entry</dt>
 			<dd class="mono" title={chosen.entry}>{short(chosen.entry)}</dd>
 			{#if shown?.edit}
@@ -289,7 +293,7 @@
 	{:else}
 		{#if !recipes || sealed}
 			<p class="soft lead">
-				{#if !recipes}No recipe entry in {nameOf(here)} that a page may build{source.refused.length ? '' : ' yet'}.{/if}
+				{#if !recipes}No locally available recipe entry in {nameOf(here)} that a page may build{source.refused.length ? '' : ' yet'}.{/if}
 				{#if sealed}{count(sealed, 'more recipe entry', 'more recipe entries')} {nameOf(world.vaults.find((v) => v.id === actor))} doesn’t open.{/if}
 			</p>
 		{/if}
