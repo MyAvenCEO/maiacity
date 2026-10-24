@@ -18,6 +18,8 @@ test('idempotent, removed on citizenship, never changes someone else’s keep ru
  const rule = { id:'rule', over:'city', issuer:'me', who:'device', level:'keepNever', slice:{where:TRAVELER_EXCLUDED_GAMES} };
  const world = {...w, shares:[rule]};
  expect(travelerSyncOps(world,'city',traveler,false)).toEqual([]);
+ expect(travelerSyncOps(world,'city',new Set(),false)).toEqual([]);
+ expect(travelerSyncOps({...w, shares:[{...rule,slice:{where:{any:[...TRAVELER_EXCLUDED_GAMES.any].reverse()}}}]},'city',traveler,false)).toEqual([]);
  expect(travelerSyncOps(world,'city',new Set(['Citizen','Traveler']),false)).toEqual([{op:'revoke',share:'rule',as:'me'}]);
  expect(travelerSyncOps({...w,shares:[{...rule,issuer:'another'}]},'city',new Set(['Citizen']),false)).toEqual([]);
  expect(travelerSyncOps(w,'city',traveler,true)).toEqual([]);

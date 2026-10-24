@@ -54,7 +54,7 @@ export function readAccess() {
 			const got = v ? await session.ask({ op: 'cap_groups', vault: city }).catch(() => null) : null;
 			const list = got?.ok ?? [];
 			Object.assign(access, { city, owner: v?.acting?.as === city, groups: heldGroups(w, city, list), list, known: true });
-			for (const op of travelerSyncOps(w, city, access.groups, access.owner)) {
+			for (const op of Array.isArray(got?.ok) ? travelerSyncOps(w, city, access.groups, access.owner) : []) {
 				const result = await session.ask(op);
 				if (result?.refused) throw new Error(result.why || result.refused);
 			}
