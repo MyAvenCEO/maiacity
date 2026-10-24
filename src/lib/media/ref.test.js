@@ -1,3 +1,4 @@
+// @ts-expect-error Bun's test runner types are not part of the browser TypeScript project.
 import { expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { avenRef, avenUrl, isAven, parseMediaRef, requireAvenRef } from './ref.js';
