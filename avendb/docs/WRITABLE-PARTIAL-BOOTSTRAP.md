@@ -968,3 +968,5 @@ Generic JS completeness retains query-level checkpoint evidence on empty pages.
 Four JS regressions and the focused `QueryReadiness.lean` model pass. Rust parser
 checks pass; new raw query and checkpoint-empty-page regression execution remains
 queued, with no Cargo run competing against the shared compiler.
+
+Query uncertainty implementation: [77c4f551](https://github.com/MyAvenCEO/maiacity/commit/77c4f551). Four JS tests and Lean passed; Rust execution pending.
