@@ -122,7 +122,37 @@ pub struct Scratch {
     tip: Option<EditId>,
 }
 
+/// The exact scratch state attested by an entry's owners, never an authorization kernel.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ScratchImage {
+    pub snapshot: Vec<u8>,
+    pub holds: BTreeSet<EditId>,
+    pub authored: BTreeSet<BlobId>,
+    pub tip: Option<EditId>,
+}
+
 impl Scratch {
+    pub(crate) fn from_attested_item(item: Item, changes: &[&Change]) -> Option<Self> {
+        if item.has_parked_updates() || changes.iter().any(|c|!c.counted) {return None;}
+        let authored=item.authored();
+        Some(Self {item,holds:changes.iter().map(|c|c.write.edit).collect(),authored,tip:None})
+    }
+    pub(crate) fn within_version(&self, history:&History, deps:&[EditId])->bool {
+        let ids:HashSet<_>=history.version(deps).iter().map(|c|c.write.edit).collect();
+        self.holds.is_subset(&ids)
+    }
+    pub(crate) fn image(&self) -> Option<ScratchImage> {
+        if self.item.has_parked_updates() { return None; }
+        Some(ScratchImage { snapshot: self.item.bytes(), holds: self.holds.iter().copied().collect(),
+            authored: self.authored.clone(), tip: self.tip })
+    }
+    pub(crate) fn from_owner_image(image: ScratchImage, signer: SignerId, line: Line) -> Option<Self> {
+        if image.tip.is_some_and(|id| !image.holds.contains(&id)) { return None; }
+        let item = Item::from_owner_snapshot(&image.snapshot, signer, line)?;
+        if item.authored() != image.authored { return None; }
+        Some(Self { item, holds: image.holds.into_iter().collect(), authored: image.authored, tip: image.tip })
+    }
+
     /// The schemas the writes it read were written under: those `Lane::fits` looked up for them.
     pub fn authored(&self) -> &BTreeSet<BlobId> {
         &self.authored
@@ -186,12 +216,82 @@ pub struct Described {
 }
 
 impl History {
+
+    /// Exact dependency-cut bodies that must be imported beyond the eligible scratch.
+    /// IDs identify signed edits with inline authenticated ciphertext, not blob roots.
+    pub(crate) fn missing_dependency_bodies(&self, deps: &[EditId], scratch: Option<&Scratch>) -> Vec<EditId> {
+        let scratch = scratch.filter(|s| s.within_version(self, deps));
+        self.version(deps).iter().filter(|c| c.counted && c.body.is_none()
+            && scratch.is_none_or(|s| !s.holds.contains(&c.write.edit)))
+            .map(|c| c.write.edit).collect()
+    }
+
+    /// Hydrate omitted bodies only from locally authenticated opened edits.
+    pub(crate) fn restore_held_bodies(&mut self, bodies: &HashMap<EditId, crate::slice::Body>) {
+        for change in &mut self.changes {
+            if change.body.is_none() {
+                if let Some(body) = bodies.get(&change.write.edit) {
+                    change.body = Some(body.content.clone());
+                }
+            }
+        }
+    }
     /// Add the next accepted write. Refused, as the rules refuse it, if it builds on a write the history doesn't
     /// hold or, on a proposal, on neither the proposal's start nor another write on it.
     pub fn push(&mut self, c: Change) -> Result<(), Refusal> {
         policy::builds_on(&self.changes, &c.write)?;
         self.changes.push(c);
         Ok(())
+    }
+
+    /// Restore already counted metadata in one pass without repeatedly scanning
+    /// its entire prefix for dependencies. This is not authorization: every write
+    /// still passes the same canonical builds-on gate before entering the index.
+    pub(crate) fn from_changes(changes: Vec<Change>) -> Result<Self, Refusal> {
+        let mut preceding: HashMap<EditId, Vec<&Write>> = HashMap::new();
+        for change in &changes {
+            policy::builds_on_lookup(&change.write, |id| {
+                preceding.get(&id).into_iter().flatten().copied()
+            })?;
+            preceding.entry(change.write.edit).or_default().push(&change.write);
+        }
+        Ok(Self { changes })
+    }
+
+    /// One ordinary admission gate for local authoring and remote counting. The caller
+    /// derives authorization from the current policy, proof and row ownership. This
+    /// does not authenticate a Write or make missing history trustworthy.
+    pub(crate) fn admit<T>(
+        &self, w: &Write, read: &Reading,
+        authorize: impl FnOnce() -> Result<T, Refusal>,
+    ) -> Result<T, Refusal> {
+        policy::builds_on(&self.changes, w)?;
+        if !w.deps.iter().all(|id| self.get(*id).is_some_and(|c| c.counted)) {
+            return Err(Refusal::NotAccepted);
+        }
+        if !self.lands(w) { return Err(Refusal::NotLanded); }
+        let proof = authorize()?;
+        if !read.fits { return Err(Refusal::NotAView); }
+        if !self.passes(w, read.touches.as_deref()) { return Err(Refusal::NotAccepted); }
+        Ok(proof)
+    }
+
+    /// Verify a proposed full CRDT base against independently counted, readable history.
+    /// Equal JSON/version vectors alone are insufficient: compare every snapshot byte.
+    /// A conservative encoding mismatch rejects reuse, never weakens admission. The
+    /// returned scratch contains the canonical reconstructed Item, not unchecked input.
+    pub(crate) fn snapshot_scratch(
+        &self, basis: &[EditId], snapshot: &[u8], signer: SignerId, line: Line,
+    ) -> Option<Scratch> {
+        if basis.is_empty() || !basis.iter().all(|id| self.get(*id).is_some()) { return None; }
+        let changes = self.version(basis);
+        if changes.iter().any(|c| !c.counted || c.body.is_none()) { return None; }
+        let holds: HashSet<_> = changes.iter().map(|c| c.write.edit).collect();
+        if changes.iter().any(|c| !c.write.deps.iter().all(|id| holds.contains(id))) { return None; }
+        let item = build(&changes, signer, line)?;
+        if item.has_parked_updates() || item.bytes() != snapshot { return None; }
+        let authored = item.authored();
+        Some(Scratch { item, holds, authored, tip: None })
     }
 
     pub fn changes(&self) -> &[Change] {
@@ -832,6 +932,36 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn indexed_history_restore_matches_sequential_admission() {
+        let signer = SignerId::from_u64(2);
+        let mut repo = Repo::new(&Item::document("Start", signer), signer);
+        for n in 0..32 {
+            repo.edit(signer, MAIN, |i| { i.edit_document(|d| d.title = format!("Edit {n}")); });
+        }
+        let branch = repo.propose(signer, &repo.heads(MAIN), "Proposal").unwrap();
+        repo.edit(signer, Some(branch), |i| { i.edit_document(|d| d.title = "Branch".into()); });
+        let canonical = repo.history().changes().to_vec();
+        let check = |changes: Vec<Change>| {
+            let mut sequential = History::default();
+            let expected = changes.iter().cloned().try_for_each(|c| sequential.push(c));
+            let actual = History::from_changes(changes.clone());
+            assert_eq!(actual.as_ref().err(), expected.as_ref().err());
+            if let Ok(actual) = actual {
+                assert_eq!(actual.changes().iter().map(|c| &c.write).collect::<Vec<_>>(),
+                    sequential.changes().iter().map(|c| &c.write).collect::<Vec<_>>());
+                assert_eq!(actual.changes().iter().map(|c| &c.body).collect::<Vec<_>>(),
+                    sequential.changes().iter().map(|c| &c.body).collect::<Vec<_>>());
+            }
+        };
+        check(canonical.clone());
+        let mut missing = canonical.clone(); missing.remove(0); check(missing);
+        let mut future = canonical.clone(); future.swap(0, 1); check(future);
+        let mut wrong_entry = canonical.clone(); wrong_entry[1].write.entry = EntryId::from_u64(99); check(wrong_entry);
+        let mut wrong_branch = canonical.clone(); wrong_branch.last_mut().unwrap().write.proposal = Proposal::On(EditId::from_u64(999)); check(wrong_branch);
+        let mut duplicate = canonical.clone(); duplicate.insert(1, canonical[0].clone()); check(duplicate);
+    }
 
     #[test]
     fn undo_takes_back_one_change_and_keeps_the_rest() {

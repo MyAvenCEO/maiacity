@@ -17,7 +17,7 @@ async fn bench_restore() {
     };
     let began = Instant::now();
     let shelf = disk::open(std::path::Path::new(&root)).expect("the shelf");
-    let (_edits, (signed, keys)) = edits::Edits::open(shelf).await.expect("its edits");
+    let (_edits, (signed, keys, anchors)) = edits::Edits::open(shelf).await.expect("its edits");
     let read = began.elapsed();
     let (count, bytes) = (
         signed.len(),
@@ -26,7 +26,7 @@ async fn bench_restore() {
     let mut lab = Lab::new();
     let me = lab.device("bench");
     let began = Instant::now();
-    lab.restore_from(me, avendb::lab::Backup::new(signed, keys));
+    lab.restore_from(me, avendb::lab::Backup::new(signed, keys).with_bootstrap_bytes(&anchors).expect("valid anchor companion"));
     let restored = began.elapsed();
     eprintln!(
         "BENCH edits={count} wire_mb={:.1} read_s={:.2} restore_s={:.2}",
@@ -50,7 +50,7 @@ async fn bench_replay() {
         .and_then(|n| n.parse().ok())
         .unwrap_or(3);
     let shelf = disk::open(std::path::Path::new(&root)).expect("the shelf");
-    let (_edits, (signed, _)) = edits::Edits::open(shelf).await.expect("its edits");
+    let (_edits, (signed, _, _)) = edits::Edits::open(shelf).await.expect("its edits");
     let edits: Vec<_> = signed.into_iter().map(|s| s.edit).collect();
     let removals = edits.iter().filter(|e| e.is_removal()).count();
     for _ in 0..rounds {
@@ -77,7 +77,7 @@ async fn bench_keys() {
         return;
     };
     let shelf = disk::open(std::path::Path::new(&root)).expect("the shelf");
-    let (_edits, (signed, _)) = edits::Edits::open(shelf).await.expect("its edits");
+    let (_edits, (signed, _, _)) = edits::Edits::open(shelf).await.expect("its edits");
     let mut kinds: BTreeMap<String, (usize, usize, usize)> = BTreeMap::new();
     let mut batches: BTreeMap<(String, u64), usize> = BTreeMap::new();
     let mut actions: BTreeMap<&'static str, (usize, usize)> = BTreeMap::new();
@@ -167,7 +167,7 @@ async fn rehearsal_inventory() -> anyhow::Result<()> {
         .context("independent baseline count required")?
         .parse()?;
     let shelf = disk::open(&root)?;
-    let (_edits, (signed, keys)) = edits::Edits::open(shelf).await?;
+    let (_edits, (signed, keys, anchors)) = edits::Edits::open(shelf).await?;
     ensure!(
         signed.len() == expected,
         "copy differs from independently recorded baseline edit count"
@@ -175,6 +175,7 @@ async fn rehearsal_inventory() -> anyhow::Result<()> {
     let value = serde_json::json!({
         "edits": signed.len(),
         "keys": keys.len(),
+        "bootstrap_anchor_bytes": anchors.len(),
         "edit_digest": digest(signed.iter().map(|s| s.edit.id().0).collect(), "release rehearsal edit set 1"),
         "key_digest": digest(keys.iter().map(|k| BlobId::of(k).0).collect(), "release rehearsal key set 1"),
     });
@@ -224,8 +225,8 @@ async fn rehearsal_saved_delta() -> anyhow::Result<()> {
     );
     let from = disk::open(&source)?;
     let to = disk::open(&target)?;
-    let (_a, (before, before_keys)) = edits::Edits::open(from).await?;
-    let (_b, (after, after_keys)) = edits::Edits::open(to.clone()).await?;
+    let (_a, (before, before_keys, _)) = edits::Edits::open(from).await?;
+    let (_b, (after, after_keys, _)) = edits::Edits::open(to.clone()).await?;
     let meta = to
         .names("meta/")
         .await?

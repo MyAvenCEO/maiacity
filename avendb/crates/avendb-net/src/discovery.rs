@@ -79,7 +79,33 @@ fn hints(lab: &avendb::lab::Lab, me: avendb::id::SignerId, requester: avendb::id
         .into_iter().map(|id| id.to_hex()).collect()
 }
 
+/// Bounded vault-local dependencies; never a global schema query or an access grant.
+fn lane_queries(entries: &[LogId], waits: &[(EntryId,VaultId)]) -> Vec<Query> {
+    let mut vaults=std::collections::BTreeSet::new();
+    for (entry,vault) in waits {
+        if entries.contains(&LogId::Entry(*entry)) { vaults.insert(*vault); }
+    }
+    vaults.into_iter().take(4).map(|vault| Query {
+        types: vec![avendb::slice::SCHEMA_TYPE.into(),avendb::slice::LENS_TYPE.into()],
+        vault: Some(vault.to_hex()),
+    }).collect()
+}
 impl Shared {
+    pub(crate) async fn prioritize_owner_lanes(self: &Arc<Self>) -> bool {
+        let waits=self.read(|lab,me|lab.owner_base_lane_waits(me)).await;
+        if waits.is_empty() { return false; }
+        let scopes=self.demands.lock().expect("demands").query_scopes(Instant::now());
+        let mut pending=false;
+        for scope in scopes {
+            let sources={
+                let mut demands=self.demands.lock().expect("demands");
+                demands.working_set(&scope,Instant::now()).map(|(revision,_,_)|
+                    demands.dependency_entries(&scope,revision,Instant::now())).unwrap_or_default()
+            };
+            if !lane_queries(&sources,&waits).is_empty() { pending=true; self.schedule_discovery(scope); }
+        }
+        pending
+    }
     pub(crate) fn schedule_discoveries(self: &Arc<Self>) {
         let scopes = self.demands.lock().expect("demands").query_scopes(Instant::now());
         for scope in scopes { self.schedule_discovery(scope); }
@@ -98,7 +124,13 @@ impl Shared {
             let _activity = activity;
             loop {
                 let active = { shared.demands.lock().expect("demands").working_set(&scope, Instant::now()) };
-                if let Some((revision, entries, queries)) = active {
+                if let Some((revision, entries, mut queries)) = active {
+                    let sources=shared.demands.lock().expect("demands").dependency_entries(&scope,revision,Instant::now());
+                    let waits=shared.read(|lab,me|lab.owner_base_lane_waits(me)).await;
+                    let mut dependencies=lane_queries(&sources,&waits);
+                    let dependency_count=dependencies.len();
+                    dependencies.append(&mut queries);
+                    let queries=dependencies;
                     // Restore persisted view projections before any peer work. Local query
                     // discovery uses the same authorized selector; it never claims completeness.
                     let requested = entries.clone();
@@ -129,13 +161,13 @@ impl Shared {
                     for peer in peers {
                         let mut checkpoints_supported = true;
                         // Explicit active-view IDs also bootstrap without waiting for collection discovery.
-                        for id in entries.iter().take(8) {
+                        for id in entries.iter().take(if dependency_count > 0 { 0 } else { 8 }) {
                             if Instant::now() >= deadline || !shared.discovery_current(&scope, revision) { break; }
                             if let LogId::Entry(entry) = id {
                                 if shared.fetch_view_checkpoint(&peer, *entry, &scope, revision, deadline).await.is_err() { checkpoints_supported = false; break; }
                             }
                         }
-                        for query in &queries {
+                        for (query_index,query) in queries.iter().enumerate() {
                             if Instant::now() >= deadline || !shared.discovery_current(&scope, revision) { break; }
                             let request = serde_json::to_vec(&json!({"version": 1, "query": query.json()})).expect("discovery JSON");
                             let reply = time::timeout(Duration::from_secs(3).min(deadline.saturating_duration_since(Instant::now())), session::exchange(&peer.conn, KIND, &request, RESPONSE_LIMIT)).await;
@@ -143,9 +175,10 @@ impl Shared {
                             let Ok(ids) = response(&bytes) else { break };
                             if !shared.demands.lock().expect("demands").discovered(&scope, revision, &ids, Instant::now()) { break; }
                             shared.size.send_modify(|_| {});
+                            shared.bootstrap_due.notify_one();
                             // A bounded working-set checkpoint precedes ordinary history for this view.
                             // Unsupported/unauthorized/oversized offers fall through to signed-log sync.
-                            for id in ids.iter().take(if checkpoints_supported { 8 } else { 0 }) {
+                            for id in ids.iter().take(if checkpoints_supported && query_index >= dependency_count { 8 } else { 0 }) {
                                 if Instant::now() >= deadline || !shared.discovery_current(&scope, revision) { break; }
                                 if let LogId::Entry(entry) = id {
                                     if shared.fetch_view_checkpoint(&peer, *entry, &scope, revision, deadline).await.is_err() { checkpoints_supported = false; break; }
@@ -243,4 +276,24 @@ mod tests {
             "current policy rejects even before background materialization");
     }
 
+}
+
+#[cfg(test)]
+mod lane_dependency_tests {
+    use super::*;
+    #[test]
+    fn lane_discovery_stays_vault_scoped_and_follows_lease_revision() {
+        let now=Instant::now(); let entry=EntryId([1;32]); let other=EntryId([2;32]); let vault=VaultId([3;32]);
+        let mut demands=crate::demand::Demands::default();
+        demands.replace("view".into(),1,vec![LogId::Entry(entry)],now).unwrap();
+        let queries=lane_queries(&demands.dependency_entries("view",1,now),&[(entry,vault),(other,VaultId([4;32]))]);
+        assert_eq!(queries.len(),1); assert_eq!(queries[0].vault,Some(vault.to_hex()));
+        assert_eq!(queries[0].types,vec![avendb::slice::SCHEMA_TYPE.to_string(),avendb::slice::LENS_TYPE.to_string()]);
+        assert!(demands.discovered("view",1,&[LogId::Entry(other)],now));
+        assert!(demands.entries(now).contains(&LogId::Entry(other)));
+        demands.replace("view".into(),2,vec![],now).unwrap();
+        assert!(demands.dependency_entries("view",1,now).is_empty());
+        assert!(lane_queries(&demands.dependency_entries("view",2,now),&[(entry,vault)]).is_empty());
+        assert!(!demands.discovered("view",1,&[LogId::Entry(other)],now));
+    }
 }

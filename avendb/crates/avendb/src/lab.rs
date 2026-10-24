@@ -74,9 +74,12 @@
 //! device reads off those of them the vault created itself and the device counts (`lane_of`): what it reads and judges
 //! the vault's entries by.
 
+#[path = "bootstrap_dependencies.rs"]
+mod bootstrap_dependencies;
+
 #[path = "entry_base.rs"]
 mod entry_base;
-pub use entry_base::{AuthenticatedEntryBaseEnvelope, PreparedEntryBase};
+pub use entry_base::{AuthenticatedCountedEntryBase, AuthenticatedEntryBaseEnvelope, PreparedEntryBase, RestoredOwnerJudgment};
 
 #[path = "entry_projection.rs"]
 mod entry_projection;
@@ -334,6 +337,7 @@ impl Drafting<'_> {
 /// as devices that make a family's key at the same time each make one; its keys are told apart by their ids.
 #[derive(Default)]
 struct Keyring {
+    revision: Arc<()>,
     by_id: HashMap<KeyId, (KeyName, Secret)>,
     /// Each name's keys, the smallest id first.
     by_name: HashMap<KeyName, Vec<KeyId>>,
@@ -350,6 +354,7 @@ impl Keyring {
         if self.by_id.contains_key(&id) {
             return false;
         }
+        self.revision = Arc::new(());
         let ids = self.by_name.entry(name).or_default();
         let at = ids.partition_point(|x| *x < id);
         ids.insert(at, id);
@@ -725,6 +730,14 @@ struct Store {
     blobs: Blobs,
     /// The replay of its edits as it last brought itself up to date: which stand, and what it knows.
     replay: Replay,
+    bootstrap_bases: entry_base::Anchors,
+    bootstrap_state: Option<State>,
+    bootstrap_active: HashSet<EntryId>,
+    bootstrap_pending: HashSet<EntryId>,
+    bootstrap_basis: Option<entry_base::OverlayBasis>,
+    bootstrap_progress: HashMap<EntryId, entry_base::BootstrapProgress>,
+    bootstrap_cursor: Option<EntryId>,
+    bootstrap_revision: Arc<()>,
     /// How many of its edits that replay is of, the first of its log: those after it step on it (`replay_on`).
     replayed: usize,
     /// What its edits say now, those it kept since that replay too (`Lab::latest`): replayed once for the edits it
@@ -748,7 +761,7 @@ struct Store {
     /// What it reads of selectors, headers and tags, from the two above.
     readings: Readings,
     shown: BTreeMap<EntryId, Shown>,
-    warm_materialization: Option<Vec<u8>>,
+    warm_materialization: Option<warm_materialization::Validated>,
     projections: std::sync::Mutex<BTreeMap<(SignerId, EntryId), entry_projection::CachedEntryProjection>>,
     /// The digest of each log it holds (`sync::digests`), what it gossips: `None` until worked out for its edits now.
     digests: Option<BTreeMap<LogId, [u8; 32]>>,
@@ -810,6 +823,14 @@ impl Default for Store {
             signed: HashMap::new(),
             blobs: HashMap::new(),
             replay: replay(&[]),
+            bootstrap_bases: BTreeMap::new(),
+            bootstrap_state: None,
+            bootstrap_active: HashSet::new(),
+            bootstrap_pending: HashSet::new(),
+            bootstrap_basis: None,
+            bootstrap_progress: HashMap::new(),
+            bootstrap_cursor: None,
+            bootstrap_revision: Arc::new(()),
             replayed: 0,
             latest: OnceLock::new(),
             keys: Keyring::default(),
@@ -853,7 +874,7 @@ impl Default for Store {
 
 impl Store {
     fn view(&self) -> &State {
-        &self.replay.state
+        self.bootstrap_state.as_ref().unwrap_or(&self.replay.state)
     }
 
     /// Its shelf lacks its view (`Lab::warming`): it replayed all its edits, and the view its shelf keeps, if any, is of
@@ -885,6 +906,11 @@ impl Store {
         self.readings = Readings::default();
         self.shown.clear();
         self.warm_materialization = None;
+        self.bootstrap_state=None;
+        self.bootstrap_active.clear();
+        self.bootstrap_basis = None;
+        self.bootstrap_progress.clear();
+        self.bootstrap_cursor = None;
         self.projections.lock().expect("entry projections").clear();
         self.reshow = true;
         self.opened.clear();
@@ -1057,13 +1083,14 @@ impl Spares {
 pub struct Backup {
     signed: Vec<Signed>,
     blobs: Blobs,
+    bootstrap_bases: entry_base::Anchors,
 }
 
 impl Backup {
     /// A backup of signed edits, in the order the device took them, and McEliece keys, each under the id it hashes to:
     /// what a node reads back from its store on disk.
     pub fn new(signed: Vec<Signed>, blobs: impl IntoIterator<Item = Arc<[u8]>>) -> Backup {
-        Backup { signed, blobs: blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect() }
+        Backup { signed, blobs: blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect(), bootstrap_bases:BTreeMap::new() }
     }
 
     /// Its signed edits, in the order the device took them.
@@ -2689,7 +2716,7 @@ impl Lab {
         // its own write, one, drafted on everything it holds: what its edits say now is what they said, that write
         // stepped on, with no replay (`latest`)
         let stepped = match &fresh[..] {
-            [one] => store.latest.get().and_then(|was| stepped_on(was, store.log.edits(), to, &one.edit)),
+            [one] if store.bootstrap_active.is_empty() => store.latest.get().and_then(|was| stepped_on(was, store.log.edits(), to, &one.edit)),
             _ => None,
         };
         let mut new = false;
@@ -3173,12 +3200,15 @@ impl Lab {
         let own = self.keys.get(&d).and_then(Key::seal_secret);
         let unlocked = own.is_some();
         let mine: Vec<(SignerId, Secret)> = own.map(|o| (d, o)).into_iter().chain(lent.iter().cloned()).collect();
+        let mut retained = if unlocked { self.take_owner_overlay(d) } else { None };
         let began = Perf::start();
         for round in 0.. {
             let Lab { stores, rng, spares, .. } = self;
             let Some(store) = stores.get_mut(&d) else {
                 return;
             };
+            store.bootstrap_state=None;
+            store.bootstrap_active.clear();
             store.perf.count("refresh rounds", 1);
             let at = Perf::start();
             // a removal may take writes from the middle of an entry's: what it shows is checked against them all
@@ -3220,6 +3250,9 @@ impl Lab {
             store.perf.add("upkeep", at);
             if work.is_empty() {
                 store.perf.add("refresh", began);
+                if !self.restore_owner_overlay(d, retained.take()) {
+                    self.rebuild_owner_bases(d);
+                }
                 return;
             }
             assert!(round < ROUNDS, "{d:?} keeps making edits its own view refuses: {work:?}");
@@ -3277,7 +3310,12 @@ impl Lab {
     /// The write `action` authored by device `on` alone, drafted on `view`, what `on`'s edits say, if `view` accepts
     /// it: the edit, and the write it is, with the shares its readers judge it by.
     fn check_write(&self, on: SignerId, view: &State, action: Action) -> Result<(Edit, Write), Refusal> {
-        if let Action::Write { entry, .. } = &action {
+        if let Action::Write { entry, vault, actor, proposal, deps, .. } = &action {
+            if self.held(on).bootstrap_pending.contains(entry) || self.owner_base_wait_reason(on, *entry).is_some() { return Err(Refusal::ReadOnly); }
+            if self.held(on).bootstrap_active.contains(entry)
+                && (self.owner_base_pending(on, *entry) > 0 || self.held(on).replayed != self.held(on).log.edits().len() || *actor != *vault || *proposal != Proposal::Main || *deps != self.shown(on,*entry).heads(MAIN)) {
+                return Err(Refusal::ReadOnly);
+            }
             if self.entry_projection(on, *entry).is_some() { return Err(Refusal::ReadOnly); }
         }
         let edit = self.held(on).log.draft_on(view, on, &[], action);
@@ -3341,14 +3379,10 @@ impl Lab {
         // each set marked own or not as its readers will mark it, by whose each row is (`policy::Mine`)
         let touches = read.touches.as_deref().map(|ts| h.mine().mark(w.actor, &[ts, needs].concat()));
         let attrs = if w.first { first.cloned() } else { view.at_write(w, readings).0 };
-        let proof = self.prove(on, view, w, (touches.as_deref(), asks), attrs.as_ref())?;
-        if !(read.fits || self.lawless) {
-            return Err(Refusal::NotAView);
-        }
-        if !(h.passes(w, read.touches.as_deref()) || self.lawless) {
-            return Err(Refusal::NotAccepted);
-        }
-        Ok(proof)
+        let authorize = || self.prove(on, view, w, (touches.as_deref(), asks), attrs.as_ref());
+        // Existing patched-app test mode remains explicit; ordinary local and remote
+        // writes use the same dependency/landing/schema/proposal admission gate.
+        if self.lawless { authorize() } else { h.admit(w, &read, authorize) }
     }
 
     /// Run `f` dry: every edit it asks for, a write, a share, any edit it completes (`complete`), is checked, proven
@@ -3941,6 +3975,7 @@ impl Lab {
         version: &[EditId],
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
+        if self.held(on).bootstrap_active.contains(&entry) { return Err(Refusal::ReadOnly); }
         let draft = self.shown(on, entry).restore(line, version, on);
         self.make(on, actor, entry, draft, TagDelta::default())
     }
@@ -3956,6 +3991,7 @@ impl Lab {
         edit: EditId,
     ) -> Result<EditId, Refusal> {
         self.unlocked(on)?;
+        if self.held(on).bootstrap_active.contains(&entry) { return Err(Refusal::ReadOnly); }
         let draft = self.shown(on, entry).undo(line, edit, on).ok_or(Refusal::UnknownDep)?;
         self.make(on, actor, entry, draft, TagDelta::default())
     }
@@ -4326,12 +4362,14 @@ impl Lab {
             .take(64).map(|en| en.id).collect()
     }
 
-    /// What device `d` makes of the edits it holds, as it last brought itself up to date: what `log(d).view()` says.
+    /// What device `d` currently reads: independently replayed policy, with an explicitly
+    /// owner-attested entry baseline where one is active. `replay` remains the pure signed log.
     pub fn state(&self, d: SignerId) -> &State {
         self.held(d).view()
     }
 
-    /// The replay of the edits device `d` holds: which stand, and what they say (`state`).
+    /// Pure replay of the signed edits device `d` holds; owner-attested entry overlays are
+    /// separate and never alter the replay's kernel, signatures or standing decisions.
     pub fn replay(&self, d: SignerId) -> &Replay {
         &self.held(d).replay
     }
@@ -5405,7 +5443,7 @@ impl Lab {
     pub fn backup(&self, d: SignerId) -> Backup {
         let store = self.held(d);
         let signed = store.log.ids().iter().map(|id| store.signed[id].clone()).collect();
-        Backup { signed, blobs: store.blobs.clone() }
+        Backup { signed, blobs: store.blobs.clone(), bootstrap_bases:store.bootstrap_bases.clone() }
     }
 
     /// Restore device `d` from `backup`: it holds what the backup holds and nothing it made or received since. What it
@@ -5429,7 +5467,7 @@ impl Lab {
     pub fn restore_warm(&mut self, d: SignerId, backup: Backup, checked: Option<(Checked, usize)>, warm: &Warm) {
         let held = self.held(d);
         let (follow, query_depth, gate, perf) = (held.follow.clone(), held.query_depth, held.gate, held.perf.clone());
-        let mut store = Store { follow, query_depth, gate, perf, ..Store::default() };
+        let mut store = Store { follow, query_depth, gate, perf, bootstrap_bases:backup.bootstrap_bases.clone(), ..Store::default() };
         let key = self.shelf_key(d);
         let mut vouched = HashSet::new();
         // Decode and merge one slot at a time. Keeping both complete decoded key
@@ -5468,8 +5506,8 @@ impl Lab {
                 // A stale prefix can still accelerate policy replay, but its
                 // adjunct cannot be used. Do not allocate another up-to-32-MiB
                 // buffer merely to reject it immediately after this closure.
-                let extra = (held == ids.len() && warm_materialization::matching(extra, store))
-                    .then(|| extra.to_vec());
+                let extra = (held == ids.len())
+                    .then(|| warm_materialization::Validated::check(extra, store)).flatten();
                 Some((replay, held, extra))
             });
             match found {
@@ -5661,7 +5699,7 @@ impl Lab {
             return false;
         }
         // the edits the view is of first, in the order its giver took them, the others after them as they came
-        let Backup { signed, blobs } = backup;
+        let Backup { signed, blobs, .. } = backup;
         let (first, rest): (Vec<Signed>, Vec<Signed>) = signed.into_iter().partition(|s| of.contains(&s.edit.id()));
         let mut first: HashMap<EditId, Signed> = first.into_iter().map(|s| (s.edit.id(), s)).collect();
         let first: Vec<Signed> = ids.iter().filter_map(|id| first.remove(id)).collect();
@@ -6301,7 +6339,7 @@ fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<Entr
 /// with the content of its body where the device opened it, in replay order, and the item of each line.
 fn show_items(d: SignerId, store: &mut Store) {
     let materialization = store.warm_materialization.take()
-        .filter(|bytes| warm_materialization::matching(bytes, store));
+        .and_then(|receipt| receipt.consume(store));
     let mut warm = match materialization {
         Some(bytes) => match warm_materialization::decode(&bytes) {
             Some(saved) => saved,
@@ -6609,10 +6647,10 @@ impl<'a> Judging<'a> {
         let at = At { attrs: attrs.as_ref(), place: st.place(w.edit), groups };
         let counted = read.as_ref().is_some_and(|r| {
             let marked = r.touches.as_deref().map(|ts| mine.mark(w.actor, ts));
-            r.fits
-                && st.lets(w, proof, marked.as_deref(), asks, at)
-                && history.passes(w, r.touches.as_deref())
-                && history.lands(w)
+            history.admit(w, r, || {
+                st.lets(w, proof, marked.as_deref(), asks, at)
+                    .then_some(()).ok_or(Refusal::NotAllowed)
+            }).is_ok()
         });
         let adds = read.as_ref().map(|r| r.adds.clone()).unwrap_or_default();
         mine.note(w, &adds, counted);

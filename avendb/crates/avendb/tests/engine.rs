@@ -11,7 +11,7 @@
 use avendb::cast::{self, World};
 use avendb::data;
 use avendb::engine;
-use avendb::id::{BlobId, EntryId, SignerId, VaultId};
+use avendb::id::{BlobId, EditId, EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::{NewShare, Tamper};
 use avendb::lens::{self, Schema, Status, TypeV1, View};
@@ -1524,7 +1524,14 @@ fn s3_a_write_that_breaks_its_schema_counts_for_no_reader() {
     assert_eq!(latest(&mut w, mac), (json!(patched), json!("unfit"), 1));
     // nor anything built on it: a proposal Bob starts from that version
     let from = json!({ "op": "propose", "entry": door, "from": [patched], "name": "Later" });
-    let started = ok(run(&mut w, mac_b, from))["edit"].clone();
+    // Ordinary authoring now shares the receiver's counted-dependency gate.
+    assert_eq!(run(&mut w, mac_b, from)["refused"], "NotAccepted");
+    // A patched peer can still send that invalid proposal: retain the receive-side
+    // regression, rather than weakening author admission to construct the attack.
+    let rejected_parent = EditId::from_hex(&patched).unwrap();
+    let started = w.lab.patched(|lab| lab.propose(mac_b, bob, t.door, &[rejected_parent], "Later"))
+        .expect("a patched peer can author an invalid proposal");
+    let started = json!(started.to_hex());
     w.lab.sync_all(2);
     for d in [mac, mac_b, mac_c] {
         assert_eq!(latest(&mut w, d), (started.clone(), json!("builds-on"), 1));
@@ -2206,4 +2213,18 @@ fn query_observed_revision_is_opt_in_and_matches_the_authorized_get_frontier() {
     let denied = ok(run(&mut w, other, json!({"op":"query","vault":alice,"observeRevision":true})));
     assert!(list(&denied["rows"]).is_empty());
     assert!(run(&mut w, mac, json!({"op":"query","observeRevision":"yes"})).get("refused").is_some());
+}
+
+#[test]
+fn typed_database_rows_preserve_canonical_versions_without_unrelated_rows() {
+    let mut w = cast::world();
+    cast::library(&mut w);
+    let (mac, vault) = (w.mac_a, w.alice.to_hex());
+    let full = ok(run(&mut w, mac, json!({"op":"database","vault":vault})));
+    let typed = ok(run(&mut w, mac, json!({"op":"database","vault":vault,"types":["note"]})));
+    let expected: Vec<_> = list(&full["rows"]).iter().filter(|row| row["type"] == "note").cloned().collect();
+    assert!(!expected.is_empty());
+    assert_eq!(typed["rows"], json!(expected), "type filtering keeps exact canonical records, versions and authority metadata");
+    let empty = ok(run(&mut w, mac, json!({"op":"database","vault":vault,"types":[]})));
+    assert!(list(&empty["rows"]).is_empty());
 }

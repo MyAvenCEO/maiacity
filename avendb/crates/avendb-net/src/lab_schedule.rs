@@ -8,6 +8,13 @@ use std::{
 };
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
 
+// Tests acknowledge the actual queued registration, not the number of unrelated
+// Node background tasks. This hook is absent from production builds.
+#[cfg(test)]
+tokio::task_local! {
+    static REGISTERED: std::cell::RefCell<Option<oneshot::Sender<()>>>;
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Class {
     Foreground,
@@ -94,6 +101,10 @@ impl Schedule {
                 id,
             }
         };
+        #[cfg(test)]
+        let _ = REGISTERED.try_with(|notice| {
+            if let Some(send) = notice.borrow_mut().take() { let _ = send.send(()); }
+        });
         let turn = receive.await.expect("queued Lab turn retains sender");
         drop(registration);
         turn
@@ -159,6 +170,26 @@ mod tests {
         assert!(poll_once(&mut readers[3]).await.is_some());
     }
     #[tokio::test]
+    async fn registration_acknowledges_this_waiter_with_unrelated_work_queued() {
+        let schedule = Arc::new(Schedule::default());
+        let active = schedule.acquire(Class::Background).await;
+        let mut unrelated = Box::pin(schedule.acquire(Class::Background));
+        assert!(poll_once(&mut unrelated).await.is_none());
+        let (notice, registered) = oneshot::channel();
+        let mut tracked = Box::pin(REGISTERED.scope(
+            std::cell::RefCell::new(Some(notice)), schedule.acquire(Class::Foreground)));
+        assert!(poll_once(&mut tracked).await.is_none());
+        registered.await.expect("actual tracked registration acknowledged");
+        assert_eq!(schedule.state.lock().unwrap().background.len(), 1);
+        assert_eq!(schedule.state.lock().unwrap().foreground.len(), 1);
+        drop(active);
+        let first = poll_once(&mut tracked).await.expect("tracked foreground goes first");
+        assert!(poll_once(&mut unrelated).await.is_none());
+        drop(first);
+        assert!(poll_once(&mut unrelated).await.is_some());
+    }
+
+    #[tokio::test]
     async fn cancelled_queue_and_unclaimed_grant_release_capacity() {
         let schedule = Arc::new(Schedule::default());
         let active = schedule.acquire(Class::Background).await;
@@ -213,11 +244,22 @@ mod integration {
                 .unwrap()
         });
         entered_rx.await.unwrap();
+        let mut registrations = Vec::new();
+        // Deliberately queue unrelated maintenance too. Node owns background
+        // tasks, so total queue length is not the fixture's task count.
+        let (notice, registered) = oneshot::channel();
+        registrations.push(registered);
+        let shared = node.shared.clone();
+        let maintenance = tokio::spawn(REGISTERED.scope(std::cell::RefCell::new(Some(notice)), async move {
+            shared.try_lab_class(Class::Background, |_, _| ()).await.unwrap();
+        }));
         let mut backlog = Vec::new();
         for _ in 0..8 {
             let shared = node.shared.clone();
             let progress = history.clone();
-            backlog.push(tokio::spawn(async move {
+            let (notice, registered) = oneshot::channel();
+            registrations.push(registered);
+            backlog.push(tokio::spawn(REGISTERED.scope(std::cell::RefCell::new(Some(notice)), async move {
                 shared
                     .try_lab_class(Class::Background, move |lab, me| {
                         lab.catch_up(me);
@@ -225,11 +267,13 @@ mod integration {
                     })
                     .await
                     .unwrap()
-            }));
+            })));
         }
         let shared = node.shared.clone();
         let seen = history.clone();
-        let reader = tokio::spawn(async move {
+        let (notice, registered) = oneshot::channel();
+        registrations.push(registered);
+        let reader = tokio::spawn(REGISTERED.scope(std::cell::RefCell::new(Some(notice)), async move {
             shared
                 .read(move |lab, me| {
                     assert!(
@@ -239,10 +283,12 @@ mod integration {
                     lab.size(me)
                 })
                 .await
-        });
+        }));
         let shared = node.shared.clone();
         let seen = history.clone();
-        let writer = tokio::spawn(async move {
+        let (notice, registered) = oneshot::channel();
+        registrations.push(registered);
+        let writer = tokio::spawn(REGISTERED.scope(std::cell::RefCell::new(Some(notice)), async move {
             shared
                 .try_lab(move |lab, me| {
                     assert!(
@@ -261,40 +307,29 @@ mod integration {
                 })
                 .await
                 .unwrap()
-        });
+        }));
         time::timeout(Duration::from_secs(5), async {
-            loop {
-                let ready = {
-                    let s = node.shared.lab_schedule.state.lock().unwrap();
-                    s.background.len() == 8 && s.foreground.len() >= 2
-                };
-                if ready {
-                    break;
-                }
-                time::sleep(Duration::from_millis(1)).await;
-            }
+            for registered in registrations { registered.await.expect("task queued before release"); }
         })
         .await
         .unwrap();
         // Cancelling the async caller must not release its still-running blocking turn.
         active.abort();
         assert!(active.await.unwrap_err().is_cancelled());
-        assert_eq!(
-            node.shared
-                .lab_schedule
-                .state
-                .lock()
-                .unwrap()
-                .background
-                .len(),
-            8
-        );
+        {
+            let state = node.shared.lab_schedule.state.lock().unwrap();
+            assert!(state.active, "cancellation retains the executing blocking turn");
+            assert!(state.background.len() >= 9, "all eight history tasks and maintenance remain queued");
+            assert!(state.foreground.len() >= 2, "both foreground tasks remain queued");
+        }
+        assert_eq!(history.load(Ordering::SeqCst), 0, "no queued history ran before release");
         release.send(()).unwrap();
         reader.await.unwrap();
         let entry = writer.await.unwrap();
         for task in backlog {
             task.await.unwrap();
         }
+        maintenance.await.unwrap();
         assert_eq!(
             history.load(Ordering::SeqCst),
             8,

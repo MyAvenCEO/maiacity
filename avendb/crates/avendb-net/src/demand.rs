@@ -48,9 +48,14 @@ impl Demands {
         self.0.iter().filter(|(_, s)| !s.entries.is_empty() || !s.queries.is_empty()).map(|(scope, _)| scope.clone()).collect()
     }
 
+    pub(crate) fn dependency_entries(&mut self, scope: &str, revision: u64, now: Instant) -> Vec<LogId> {
+        self.0.get(scope).filter(|s| s.until > now && s.revision == revision)
+            .map(|s| s.entries.iter().chain(&s.discovered).copied().collect()).unwrap_or_default()
+    }
+
     /// Hints share the view lease and revision, never outliving a released/replaced view.
     pub(crate) fn discovered(&mut self, scope: &str, revision: u64, logs: &[LogId], now: Instant) -> bool {
-        let Some(held) = self.0.get_mut(scope).filter(|s| s.until > now && s.revision == revision && !s.queries.is_empty()) else { return false };
+        let Some(held) = self.0.get_mut(scope).filter(|s| s.until > now && s.revision == revision && (!s.queries.is_empty() || !s.entries.is_empty())) else { return false };
         for log in logs {
             if held.discovered.len() + held.entries.len() >= MOST_ENTRIES { break; }
             if !held.entries.contains(log) && !held.discovered.contains(log) { held.discovered.push(*log); }

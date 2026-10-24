@@ -40,7 +40,7 @@
 //! every entitlement only grows, so the only key that goes stale is an audience's that comes back into use. A removal
 //! runs the model's `settle` in full (`stale_keys`).
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::hash::Hash;
 use std::sync::Arc;
 
@@ -3348,6 +3348,7 @@ pub fn keep_picks(mode: KeepMode, select: Option<&Selector>, a: &Attrs) -> bool 
 }
 
 /// Write `w` builds only on writes of its own entry among `ws`.
+#[cfg(test)]
 fn deps_in<W: AsRef<Write>>(ws: &[W], w: &Write) -> bool {
     w.deps.iter().all(|d| ws.iter().map(AsRef::as_ref).any(|x| x.edit == *d && x.entry == w.entry))
 }
@@ -3355,17 +3356,31 @@ fn deps_in<W: AsRef<Write>>(ws: &[W], w: &Write) -> bool {
 /// Write `w` may follow the writes `ws`: it builds only on writes of its own entry among them (`UnknownDep`), and a
 /// write on a proposal on the write that started it or another write on it (`NotOnProposal`).
 pub fn builds_on<W: AsRef<Write>>(ws: &[W], w: &Write) -> Result<(), Refusal> {
-    if !deps_in(ws, w) {
+    builds_on_lookup(w, |id| ws.iter().map(AsRef::as_ref).filter(move |x| x.edit == id))
+}
+
+/// The same admission gate with an exact lookup of the preceding writes. A
+/// caller must never index future writes. Retain all matches, even duplicate IDs,
+/// so indexed restoration has precisely the canonical slice semantics.
+pub(crate) fn builds_on_lookup<'a, I: Iterator<Item = &'a Write>>(
+    w: &Write, find: impl Fn(EditId) -> I,
+) -> Result<(), Refusal> {
+    if !w.deps.iter().all(|id| find(*id).any(|x| x.entry == w.entry)) {
         return Err(Refusal::UnknownDep);
     }
-    if !on_proposal(ws, w) {
-        return Err(Refusal::NotOnProposal);
+    if let Proposal::On(branch) = w.proposal {
+        if !find(branch).any(|x| x.proposal == Proposal::New && x.entry == w.entry)
+            || !w.deps.iter().any(|id| *id == branch || find(*id).any(|x| x.proposal == Proposal::On(branch)))
+        {
+            return Err(Refusal::NotOnProposal);
+        }
     }
     Ok(())
 }
 
 /// Write `w` extends its line: the main line and a new proposal need nothing more; a write on proposal `b` builds on
 /// the write of its own entry that started `b`, or on another write on `b`.
+#[cfg(test)]
 fn on_proposal<W: AsRef<Write>>(ws: &[W], w: &Write) -> bool {
     let ws = || ws.iter().map(AsRef::as_ref);
     match w.proposal {
@@ -4297,6 +4312,8 @@ pub struct Log {
     /// The same ids, to tell at once whether it holds an edit: a search of `ids` for each edit received made a restore
     /// of n edits cost n²/2 compares.
     held: HashSet<EditId>,
+    entry_order: BTreeMap<EntryId, BTreeMap<(u64, u8, EditId), usize>>,
+    write_at: HashMap<EditId, usize>,
     revision: LogRevision,
     /// Stable only while this particular log appends. A removal or a clone starts a new lineage.
     lineage: LogRevision,
@@ -4305,7 +4322,8 @@ pub struct Log {
 impl Clone for Log {
     fn clone(&self) -> Self {
         Self { edits: self.edits.clone(), ids: self.ids.clone(), held: self.held.clone(),
-            revision: self.revision.clone(), lineage: LogRevision::default() }
+            revision: self.revision.clone(), lineage: LogRevision::default(),
+            entry_order: self.entry_order.clone(), write_at: self.write_at.clone() }
     }
 }
 
@@ -4313,6 +4331,48 @@ impl Log {
     pub fn new() -> Self {
         Self::default()
     }
+
+    fn index_write(&mut self, edit: &Edit, id: EditId, at: usize) {
+        if let Action::Write { entry, .. } = edit.action {
+            self.write_at.entry(id).or_insert(at);
+            self.entry_order.entry(entry).or_default()
+                .entry((edit.depth, edit.rank(), id)).or_insert(at);
+        }
+    }
+
+    fn rebuild_entry_index(&mut self) {
+        self.entry_order.clear();
+        self.write_at.clear();
+        for (at, (edit, &id)) in self.edits.iter().zip(&self.ids).enumerate() {
+            if let Action::Write { entry, .. } = edit.action {
+                self.write_at.entry(id).or_insert(at);
+                self.entry_order.entry(entry).or_default()
+                    .entry((edit.depth, edit.rank(), id)).or_insert(at);
+            }
+        }
+    }
+
+    /// Reference-equivalent to order(filtered unseen entry writes), without
+    /// scanning unrelated logs, hashing bodies, cloning ciphertext or sorting.
+    pub fn entry_suffix_ids(&self, entry: EntryId, judged: &HashSet<EditId>) -> Vec<EditId> {
+        self.entry_order.get(&entry).into_iter().flat_map(|index| index.iter())
+            .filter(|((_, _, id), at)| {
+                if judged.contains(id) { return false; }
+                let edit = &self.edits[**at];
+                edit.parents.iter().all(|parent| {
+                    if judged.contains(parent) { return true; }
+                    self.write_at.get(parent).map(|at| &self.edits[*at])
+                        .filter(|p| matches!(p.action, Action::Write { entry: e, .. } if e == entry))
+                        .is_none_or(|p| p.depth < edit.depth)
+                })
+            }).map(|((_, _, id), _)| *id).collect()
+    }
+
+    /// Immutable signed-log input; callers still verify signatures and admission.
+    pub fn entry_write(&self, id: EditId) -> Option<&Edit> {
+        self.write_at.get(&id).map(|at| &self.edits[*at])
+    }
+
 
     pub fn edits(&self) -> &[Edit] {
         &self.edits
@@ -4342,7 +4402,9 @@ impl Log {
     pub fn from_edits(edits: Vec<Edit>) -> Self {
         let ids = ids(&edits);
         let held = ids.iter().copied().collect();
-        Self { edits, ids, held, ..Self::default() }
+        let mut log = Self { edits, ids, held, ..Self::default() };
+        log.rebuild_entry_index();
+        log
     }
 
     /// The edit `author` and `cosigners` would sign here, unchecked: what a peer that skips the rules would send. It
@@ -4477,6 +4539,7 @@ impl Log {
     pub fn append(&mut self, author: SignerId, cosigners: &[SignerId], action: Action) -> Result<EditId, Refusal> {
         let edit = self.check(author, cosigners, action)?;
         let id = edit.id();
+        self.index_write(&edit, id, self.edits.len());
         self.edits.push(edit);
         self.ids.push(id);
         self.held.insert(id);
@@ -4490,6 +4553,7 @@ impl Log {
         for edit in edits {
             let id = edit.id();
             if self.held.insert(id) {
+                self.index_write(&edit, id, self.edits.len());
                 self.edits.push(edit);
                 self.ids.push(id);
             }
@@ -4508,6 +4572,7 @@ impl Log {
         if self.ids.len() != before {
             self.revision = LogRevision::default();
             self.lineage = LogRevision::default();
+            self.rebuild_entry_index();
         }
     }
 
@@ -4544,6 +4609,49 @@ pub fn covered<'a>(edits: impl IntoIterator<Item = &'a Edit>) -> HashSet<EditId>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn indexed_entry_suffix_matches_reference_across_log_changes() {
+        fn write(entry: EntryId, depth: u64, parents: Vec<EditId>) -> Edit {
+            Edit { parents, depth, author: SignerId::from_u64(1), cosigners: vec![],
+                action: Action::Write { vault: VaultId::from_u64(1), entry,
+                    actor: VaultId::from_u64(1), stay: None, epoch: 0,
+                    deps: vec![], proposal: Proposal::Main, via: vec![], create: None,
+                    files: vec![], body: vec![depth as u8; 1024] } }
+        }
+        fn check(log: &Log, entry: EntryId, judged: &HashSet<EditId>) {
+            let selected: Vec<_> = log.edits().iter().filter(|e|
+                matches!(e.action, Action::Write { entry: n, .. } if n == entry)
+                    && !judged.contains(&e.id())).cloned().collect();
+            let expected: Vec<_> = order(&selected).iter().map(Edit::id).collect();
+            assert_eq!(log.entry_suffix_ids(entry, judged), expected);
+            for id in expected { assert_eq!(log.entry_write(id).unwrap().id(), id); }
+        }
+        let entry = EntryId::from_u64(1);
+        let parent = write(entry, 9, vec![]);
+        let shallow = write(entry, 8, vec![parent.id()]);
+        let child = write(entry, 10, vec![parent.id()]);
+        let mut log = Log::from_edits(vec![shallow.clone(), child.clone(), child.clone()]);
+        check(&log, entry, &HashSet::new());
+        assert_eq!(log.entry_suffix_ids(entry, &HashSet::new()).len(), 2);
+        // Late parent arrival changes the depth filter without stale ordering.
+        log.receive([parent.clone(), child.clone()]);
+        check(&log, entry, &HashSet::new());
+        assert!(!log.entry_suffix_ids(entry, &HashSet::new()).contains(&shallow.id()));
+        // Judged parents lie outside the selected suffix, just as in order().
+        let judged = HashSet::from([parent.id()]);
+        check(&log, entry, &judged);
+        assert!(log.entry_suffix_ids(entry, &judged).contains(&shallow.id()));
+        log.receive((2..102).map(|n| write(EntryId::from_u64(n), n, vec![])));
+        assert_eq!(log.entry_order[&entry].len(), 3, "unrelated entries do not enter the candidate index");
+        check(&log.clone(), entry, &judged);
+        log.let_go(&HashSet::from([parent.id()]));
+        assert!(log.entry_write(parent.id()).is_none());
+        check(&log, entry, &HashSet::new());
+        let replacement = Log::from_edits(vec![write(entry, 50, vec![])]);
+        check(&replacement, entry, &HashSet::new());
+        assert!(replacement.entry_write(child.id()).is_none());
+    }
 
     #[test]
     fn each_level_includes_the_ones_before_it() {
@@ -4595,5 +4703,35 @@ mod tests {
         assert!(canonical(&[]) && canonical(&[a]) && canonical(&[a, b]));
         assert!(!canonical(&[b, a]) && !canonical(&[a, a]));
         assert_eq!(mk_audience(&[b, a, b]), vec![a, b]);
+    }
+}
+
+#[cfg(test)]
+mod indexed_admission_regression {
+    use super::*;
+    #[test]
+    fn indexed_gate_matches_original_prefix_predicates() {
+        use crate::doc::Item;
+        use crate::history::Repo;
+        let signer = SignerId::from_u64(1);
+        let repo = Repo::new(&Item::document("Start", signer), signer);
+        let first = repo.history().changes()[0].write.clone();
+        let branch = EditId::from_u64(2);
+        let mut start = first.clone(); start.edit = branch; start.first = false;
+        start.proposal = Proposal::New; start.deps = vec![first.edit];
+        let prefixes = [vec![], vec![first.clone()], vec![first.clone(), start.clone()],
+            vec![first.clone(), start.clone(), start.clone()]];
+        for held in prefixes {
+            for proposal in [Proposal::Main, Proposal::New, Proposal::On(branch), Proposal::On(EditId::from_u64(999))] {
+                for deps in [vec![], vec![first.edit], vec![branch], vec![first.edit, branch], vec![EditId::from_u64(999)]] {
+                    for entry in [first.entry, EntryId::from_u64(999)] {
+                        let mut w = first.clone(); w.proposal = proposal; w.deps = deps.clone(); w.entry = entry;
+                        let expected = if !deps_in(&held, &w) { Err(Refusal::UnknownDep) }
+                            else if !on_proposal(&held, &w) { Err(Refusal::NotOnProposal) } else { Ok(()) };
+                        assert_eq!(builds_on(&held, &w), expected);
+                    }
+                }
+            }
+        }
     }
 }

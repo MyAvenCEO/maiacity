@@ -37,4 +37,10 @@ theorem unbounded_rejected (e : Evidence) (h : e.boundedRecords = false) (k p : 
 def mutationReady (projectionSelected : Bool) : Bool := !projectionSelected
 
 theorem projected_state_cannot_write : mutationReady true = false := rfl
+-- Filtering the existing canonical local collection does not admit any new row.
+def typedRows (rows : List α) (matchesType : α → Bool) := rows.filter matchesType
+
+theorem typed_rows_are_canonical (rows : List α) (matchesType : α → Bool) (row : α)
+    (h : row ∈ typedRows rows matchesType) : row ∈ rows := by
+  exact (List.mem_filter.mp h).1
 end AvenDB.EntryProjection

@@ -38,6 +38,15 @@ test('discovery extracts only bounded positive types and never widens an invalid
 	expect(queryDiscovery({ op: 'query', where: cycle })).toEqual([{ types: ['note'] }]);
 });
 
+test('typed inventory reads publish only explicit bounded types within their vault', () => {
+	for (const op of ['database', 'entry_views']) {
+		expect(queryDiscovery({ op, vault: id(9), types: ['recipe', 'recipe'], where: { type: ['private'] } })).toEqual([{ types: ['recipe'], vault: id(9) }]);
+		expect(queryDiscovery({ op, vault: 'invalid', types: ['recipe'] })).toEqual([]);
+		expect(queryDiscovery({ op })).toEqual([]);
+		expect(queryDiscovery({ op, types: Array.from({ length: 20 }, (_, i) => `type-${i}`) })[0].types.length).toBe(8);
+	}
+});
+
 test('replacing a query aborts its old read, replaces its scope, and rejects late priorities', async () => {
 	const d = node(), pending = [];
 	const view = createReadWindow({ device: () => d, read: (_, op, signal) => {
@@ -242,3 +251,12 @@ test('same-turn effect cleanup and reread preserve discovery; leaving still rele
 		expect(d.calls.at(-1).entries).toEqual([]);
 	} finally { view.close(); }
 });
+
+test('AIP discovery preserves explicit vault scope and does not send private selectors', () => {
+	expect(queryDiscovery({op:'aips',vault:id(2),as:id(8),private:'secret'})).toEqual([{types:['aip','review'],vault:id(2)}]);
+	expect(queryDiscovery({op:'aips',vault:'invalid'})).toEqual([]);
+});
+
+ test('opened AIP replies prioritize explicit referenced line entries', () => {
+ expect(replyEntries({ok:{entry:id(1),lines:[{entry:id(2),record:{entry:id(3)}},{entry:'invalid'}]}})).toEqual([id(1),id(2)]);
+ });

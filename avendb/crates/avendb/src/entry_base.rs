@@ -6,6 +6,14 @@ use crate::encode::Encode;
 use crate::wire::Reader as WireReader;
 use loro::{EncodedBlobMode, LoroDoc};
 
+#[path = "entry_base_suffix.rs"]
+mod suffix;
+pub use suffix::AuthenticatedCountedEntryBase;
+#[path = "entry_judgment.rs"]
+mod judgment;
+pub use judgment::RestoredOwnerJudgment;
+pub(crate) use judgment::{Anchors, OverlayBasis, BootstrapProgress};
+
 const FORMAT: &[u8] = b"avenDB entry base 2\n";
 const MAX_BYTES: usize = 1 << 20;
 const MAX_LINES: usize = 16;
@@ -153,7 +161,7 @@ impl Lab {
         if sealed.len() > MAX_BYTES + 128 { return None; }
         let (vault, stated, name) = self.projection_authority(on, snapshot, entry)?;
         if stated.slice.size != sealed.len() as u64 || stated.slice.hash != crate::hash::content(sealed) { return None; }
-        let key = self.held(on).keys.first(name)?;
+        let key = self.held(on).keys.get(&keys::edit_key(sealed)?, name)?;
         let bytes = keys::open_edit(key, sealed, &context(vault, entry))?;
         let lines = decode(&bytes, vault, entry, &stated.basis)?;
         Some(AuthenticatedEntryBaseEnvelope { entry, snapshot, lines })

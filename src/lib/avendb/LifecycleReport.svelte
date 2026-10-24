@@ -1,6 +1,7 @@
 <script lang="ts">
  import { onMount } from 'svelte';
  import { lifecycle } from './lifecycle.js';
+ import { restartEvidence } from './restart-evidence.js';
  let report = $state<ReturnType<NonNullable<ReturnType<typeof lifecycle>>['snapshot']> | null>(null);
  onMount(() => { report = lifecycle()?.snapshot() ?? null; });
  function exportReport() {
@@ -15,6 +16,7 @@
 {#if report}
  <details class="lifecycle-report" ontoggle={() => { report = lifecycle()?.snapshot() ?? null; }}>
   <summary>Page restart details</summary>
+  <p>{restartEvidence(report).text}</p>
   <p>This window has loaded {report.current.documents} document{report.current.documents === 1 ? '' : 's'}. Navigation: {report.navigation}.</p>
   {#if report.previous}
    <p>Previous page: {report.previous.phase}, {report.previous.visibility}. Page exit: {report.previous.exit}. Worker errors recorded: {report.previous.workerFailures}.</p>

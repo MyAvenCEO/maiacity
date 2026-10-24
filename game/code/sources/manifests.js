@@ -1,4 +1,4 @@
-// @ts-nocheck — plain JS, kept loose on purpose
+import { localFileEntries } from './file-entries.js';
 /**
  * MANIFESTS: WHAT A PAGE NEEDS, DECLARED (Samuel 2026-10-21: "a tree-shaking-like pattern … per core and app
  * manifests", "composite leaf pattern"). A manifest is an entry of the Maia City vault, of type `manifest`, changed only
@@ -21,7 +21,18 @@ import { normalizeDiscovery } from './demand.js';
 export const MANIFEST_SCHEMA = 'Manifest, v1';
 
 /** How each priority ranks: what the kernel needs first, then the page, then what it may show later. */
+/** @type {Record<string, number>} */
 export const PRIORITY = { high: 0, medium: 1, low: 2 };
+
+/**
+ * @typedef {{type?: string[], tags?: string[]}} ManifestQuery
+ * @typedef {{entry?: string, manifest?: string, query?: ManifestQuery, limit?: number, follow?: number}} ManifestPart
+ * @typedef {{kind: string, id: string, priority?: string, routes?: string[], parts?: ManifestPart[]}} Manifest
+ * @typedef {{entry: string, type?: string, kind?: string, tags?: string[], created?: number, record?: unknown}} ManifestRow
+ * @typedef {{leaf: ManifestPart, rank: number}} RankedLeaf
+ * @typedef {{run: (operation: Record<string, unknown>) => Promise<{ok?: {rows?: ManifestRow[], record?: unknown, vaults?: {id:string}[], entriesComplete?: boolean}}>}} ManifestDevice
+ * @typedef {{device?: ManifestDevice, bring: (ids: string[]) => Promise<unknown>, vault?: string, fetch?: typeof globalThis.fetch, signal?: AbortSignal, prioritize?: (ids: string[], queries: {types: string[], vault?: string}[]) => unknown}} PlanOptions
+ */
 
 const ID = '^[a-z0-9][a-z0-9-]*$';
 
@@ -67,6 +78,7 @@ export const MANIFEST_V1 = JSON.stringify({
 });
 
 /** Route `route` covers path `path`: the same path, a path under a route ending in `*`, or any path for `*`. */
+/** @param {string} route @param {string} path */
 export const covers = (route, path) =>
 	route === '*' || (route.endsWith('*') ? path.startsWith(route.slice(0, -1)) : route === path);
 
@@ -74,12 +86,15 @@ export const covers = (route, path) =>
  * The parts the manifests `all` (records) declare for path `path`, walked as a composite: each manifest whose routes
  * cover the path, and each manifest it holds, once however many hold it, a cycle ending where it comes round. Each
  * leaf (an entry or a query) once, at the highest priority any manifest reaching it gives, the highest first.
- * @param {any[]} all @param {string} path @returns {{ leaf: any, rank: number }[]}
+ * @param {Manifest[]} all @param {string} path @returns {RankedLeaf[]}
  */
 export function leavesFor(all, path) {
 	const byId = new Map((all ?? []).filter((m) => m?.kind === 'manifest' && typeof m.id === 'string').map((m) => [m.id, m]));
+	/** @type {Map<string, RankedLeaf>} */
 	const leaves = new Map();
-	const rankOf = (m) => PRIORITY[m.priority] ?? PRIORITY.medium;
+	/** @param {Manifest} m */
+	const rankOf = (m) => PRIORITY[m.priority ?? 'medium'] ?? PRIORITY.medium;
+	/** @param {Manifest} m @param {number} rank @param {Set<string>} seen */
 	const walk = (m, rank, seen) => {
 		if (seen.has(m.id)) return;
 		seen.add(m.id);
@@ -103,12 +118,13 @@ export function leavesFor(all, path) {
 }
 
 /** Row `row` is one query `q` asks for: of one of its types, if it names any, and with all its tags. */
+/** @param {ManifestRow} row @param {ManifestQuery | undefined} q */
 const fits = (row, q) =>
-	(!q.type?.length || q.type.includes(row?.type ?? row?.kind)) && (q.tags ?? []).every((t) => (row?.tags ?? []).includes(t));
+	(!q?.type?.length || q.type.includes(row?.type ?? row?.kind ?? '')) && (q?.tags ?? []).every((t) => (row?.tags ?? []).includes(t));
 
 /**
  * The entries leaves `leaves` name, in their order: an entry's id, and each query's rows of `rows` (the public entries,
- * newest first), at most its `limit`. @param {{ leaf: any }[]} leaves @param {any[]} rows @returns {string[]}
+ * newest first), at most its `limit`. @param {{leaf: ManifestPart}[]} leaves @param {ManifestRow[]} rows @returns {string[]}
  */
 export function entriesOf(leaves, rows) {
 	const newest = [...(rows ?? [])].sort((a, b) => (b?.created ?? 0) - (a?.created ?? 0));
@@ -132,7 +148,9 @@ const REF = /(?:vault:[0-9a-f]{64}\/|shot:)([0-9a-f]{64})/g;
  * @param {any} record @returns {string[]}
  */
 export function namedBy(record) {
+	/** @type {Set<string>} */
 	const out = new Set();
+	/** @param {unknown} v @param {number} depth */
 	const visit = (v, depth) => {
 		if (depth > 8 || v == null) return;
 		if (typeof v === 'string') {
@@ -148,7 +166,7 @@ export function namedBy(record) {
 		}
 		if (Array.isArray(v)) return v.forEach((x) => visit(x, depth + 1));
 		if (typeof v === 'object') {
-			if (typeof v.entry === 'string' && HEX.test(v.entry) && v.entry.length === 64) out.add(v.entry);
+			if ('entry' in v && typeof v.entry === 'string' && HEX.test(v.entry) && v.entry.length === 64) out.add(v.entry);
 			for (const x of Object.values(v)) visit(x, depth + 1);
 		}
 	};
@@ -157,13 +175,17 @@ export function namedBy(record) {
 }
 
 /** Manifests are verified local records. The device discovers and syncs them from peers in the background. */
+/** @param {ManifestDevice | undefined} d
+ * @param {{vault?:string, signal?:AbortSignal, fetch?:typeof globalThis.fetch}} options
+ * @returns {Promise<Manifest[]>}
+ */
 export async function manifestsOf(d, { vault = MAIA_CITY, signal } = {}) {
  signal?.throwIfAborted();
  if (!d) return [];
  try {
   const got = await d.run({ op: 'query', vault, where: { type: ['manifest'] } });
   signal?.throwIfAborted();
-  return (got?.ok?.rows ?? []).map(r => r.record).filter(Boolean);
+  return (got?.ok?.rows ?? []).map(r => /** @type {Manifest} */ (r.record)).filter(Boolean);
  } catch (e) { signal?.throwIfAborted(); return []; }
 }
 
@@ -176,10 +198,12 @@ export async function manifestsOf(d, { vault = MAIA_CITY, signal } = {}) {
  * @param {string} path @param {{ device?: any, bring: (ids: string[]) => Promise<any>, vault?: string, fetch?: any }} o
  */
 // Diagnostic observations only; no routes, vault IDs or entry contents are retained.
+/** @type {{ms:number, requested:number, state:string}[]} */
 const manifestRuns = [];
 let manifestPending = 0;
 export const manifestDiagnostics = () => ({ pending: manifestPending, runs: manifestRuns.map(x => ({ ...x })) });
 
+/** @param {string} path @param {PlanOptions} options @returns {Promise<string[]>} */
 export async function bringDeclared(path, options) {
  const start = performance.now();
  manifestPending++;
@@ -199,6 +223,7 @@ export async function bringDeclared(path, options) {
  }
 }
 
+/** @param {string} path @param {PlanOptions} options @returns {Promise<string[]>} */
 async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: get = globalThis.fetch, signal, prioritize = () => {} }) {
 	signal?.throwIfAborted();
 	const leaves = leavesFor(await manifestsOf(d, { vault, fetch: get, signal }), path);
@@ -207,10 +232,10 @@ async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: 
 	// These IDs are already declared by canonical local manifests. Publish scheduling
 	// hints before unrelated query materialization or transfer; hints grant no access.
 	// Dispatch is independent of acknowledgement: a busy node must not delay local discovery.
-	const queries = normalizeDiscovery(leaves.filter(({ leaf }) => leaf.query?.type?.length)
-		.map(({ leaf }) => ({ types: leaf.query.type, vault })));
+	const queries = normalizeDiscovery(leaves.flatMap(({ leaf }) => leaf.query?.type?.length ? [{ types: leaf.query.type, vault }] : []));
 	void Promise.resolve(prioritize(entriesOf(leaves.filter(({ leaf }) => leaf.entry), []), queries)).catch(() => {});
 	signal?.throwIfAborted();
+	/** @type {Set<string>} */
 	const asked = new Set();
 	for (const rank of [...new Set(leaves.map((l) => l.rank))]) {
 		const at = leaves.filter((l) => l.rank === rank);
@@ -256,8 +281,9 @@ async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: 
  * The rows device `d` locally holds for queries among `leaves`, without records.
  * A local result is not proof that discovery or peer delivery is complete.
  */
+/** @param {RankedLeaf[]} leaves @param {Pick<PlanOptions,"device"|"vault"|"fetch"|"signal">} options @returns {Promise<ManifestRow[]>} */
 async function rowsFor(leaves, { device: d, vault, fetch: get, signal }) {
-	const queries = leaves.map(({ leaf }) => leaf.query).filter(Boolean);
+	const queries = leaves.flatMap(({ leaf }) => leaf.query ? [leaf.query] : []);
 	if (!queries.length) return [];
 	const typed = queries.every((q) => q.type?.length);
 	const types = [...new Set(queries.flatMap((q) => q.type ?? []))];
@@ -275,7 +301,9 @@ async function rowsFor(leaves, { device: d, vault, fetch: get, signal }) {
 }
 
 /** The entries the records of entries `ids` name, as device `d` holds them. */
+/** @param {ManifestDevice} d @param {string[]} ids @param {AbortSignal | undefined} signal @returns {Promise<string[]>} */
 async function namedOn(d, ids, signal) {
+	/** @type {Set<string>} */
 	const out = new Set();
 	let files;
 
@@ -286,7 +314,7 @@ async function namedOn(d, ids, signal) {
 			for (const e of namedBy(got?.ok?.record)) out.add(e);
 			const roots = [...JSON.stringify(got?.ok?.record ?? {}).matchAll(/aven:([a-f0-9]{64}):/g)].map(m => m[1]);
 			if (roots.length) {
-				files ??= (await d.run({ op: 'world' }))?.ok?.entries ?? [];
+				files ??= await localFileEntries(d, { signal });
 				signal?.throwIfAborted();
 				for (const file of files) if (!file.deleted && file.files?.some(f => roots.includes(f.root))) out.add(file.entry);
 			}

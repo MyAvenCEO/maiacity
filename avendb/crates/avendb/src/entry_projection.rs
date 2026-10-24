@@ -189,7 +189,7 @@ impl Lab {
         let (vault, stated, name) = self.projection_authority(on, snapshot, entry)?;
         if stated.slice.size != sealed.len() as u64 || stated.slice.hash != crate::hash::content(sealed) { return None; }
         let store = self.held(on);
-        let key = store.keys.first(name)?;
+        let key = store.keys.get(&keys::edit_key(sealed)?, name)?;
         let bytes = keys::open_edit(key, sealed, &context(vault, entry))?;
         let lines = decode(&bytes, vault, entry, &stated.basis, on)?;
         // A full holder does not take even an owner's incorrect record on faith. Compare
@@ -451,7 +451,8 @@ impl Lab {
     /// An untrusted optimization hint only: it neither reads plaintext nor validates authorization.
     /// A peer still checks current READ before comparing this ID to its standing snapshot.
     pub fn retained_projection_hint(&self, me: SignerId, entry: EntryId) -> Option<EditId> {
-        self.held(me).projections.lock().expect("entry projections").get(&(me, entry)).map(|v| v.snapshot)
+        self.active_owner_base(me, entry).map(|(snapshot, _)| snapshot)
+            .or_else(|| self.held(me).projections.lock().expect("entry projections").get(&(me, entry)).map(|v| v.snapshot))
     }
 
     /// A persisted content pin only locates bytes. Select its signed checkpoint under
@@ -488,6 +489,14 @@ impl Lab {
     }
 
     pub fn entry_projection_offer_after(&self, me: SignerId, requester: SignerId, entry: EntryId, known: Option<EditId>) -> Option<EntryProjectionOffer> {
+        self.entry_projection_offer_matching(me,requester,entry,known,None)
+    }
+    /// A format-specific durable pin is only a hint: all standing/current READ gates
+    /// still apply before selecting the signed snapshot with this ciphertext root.
+    pub fn entry_projection_offer_for_root(&self, me:SignerId, requester:SignerId, entry:EntryId, known:Option<EditId>, root:[u8;32])->Option<EntryProjectionOffer> {
+        self.entry_projection_offer_matching(me,requester,entry,known,Some(root))
+    }
+    fn entry_projection_offer_matching(&self, me: SignerId, requester: SignerId, entry: EntryId, known: Option<EditId>, root:Option<[u8;32]>) -> Option<EntryProjectionOffer> {
         let store = self.held(me);
         if store.replayed != store.log.edits().len() { return None; }
         let st = self.latest(me);
@@ -503,6 +512,7 @@ impl Lab {
             if states.len() > MAX_LINES || states.iter().any(|state| state.basis.len() > MAX_BASIS) { return None; }
             if *vault != en.vault || !standing.contains(&edit.id()) { return None; }
             let stated = states.iter().find(|state| state.entry == entry)?;
+            if root.is_some_and(|root|root!=stated.slice.hash) { return None; }
             if stated.slice.size > (MAX_BYTES + 128) as u64
                 || crate::snapshot::stale(store.log.edits(), &standing, edit, stated) { return None; }
             Some((edit, stated))
@@ -539,7 +549,7 @@ impl Lab {
 
 // Bound every variable-length field before encoding/cloning evidence. Oversized legacy setup
 // remains available through ordinary history; the first-view lane never needs an oversized page.
-fn bounded_offer_edit(signed: &Signed) -> bool {
+pub(super) fn bounded_offer_edit(signed: &Signed) -> bool {
     use crate::sign::WebAuthn;
     let e = &signed.edit;
     if e.parents.len() > 64 || e.cosigners.len() > 8 || signed.sigs.len() > 8 { return false; }
@@ -555,6 +565,7 @@ fn bounded_offer_edit(signed: &Signed) -> bool {
     match &e.action {
         Action::Write { deps, via, create: Some(c), files, body, .. } =>
             deps.len() <= 64 && via.len() <= 16 && c.audience.len() <= 64 && files.len() <= 64 && body.len() <= (128 << 10),
+        Action::Write { deps, via, create:None, files, body, .. } => deps.len()<=64 && via.len()<=16 && files.len()<=64 && body.len()<=(128<<10),
         Action::Snapshot { states, .. } => states.len() <= 16 && states.iter().all(|s| s.basis.len() <= 64),
         Action::Mark { caps, wants, keep, via, .. } => caps.as_ref().is_none_or(|x| x.len() <= 64)
             && wants.as_ref().is_none_or(|x| x.len() <= 64) && keep.len() <= 64 && via.len() <= 16,

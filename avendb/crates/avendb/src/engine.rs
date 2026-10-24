@@ -168,7 +168,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow", "observeRevision"],
         "get" => &["entry", "schema", "line", "at", "version"],
         "pin" => &["entry", "at"],
-        "checkpoint_view" => &["entry"],
+        "checkpoint_view" | "checkpoint_entry_base" => &["entry"],
         "history" => &["entry", "limit"],
         "room" => &["entry", "last", "before"],
         "schemas" => &["vault"],
@@ -202,7 +202,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "bring" => &["vaults", "entries", "prioritize"],
         "demand" => &["scope", "revision", "entries", "queries"],
         "shares" => &["over", "as"],
-        "database" => &["vault"],
+        "database" => &["vault", "types"],
         "note" => &["entry"],
         "read_file" => &["root", "size", "from", "to", "local"],
         "creatable" => &["vault", "type", "tags", "draft", "as"],
@@ -922,10 +922,12 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
         } else {
             lab.item(me, entry).and_then(|item| see_within(lane, item, &schema, depth))
         };
-        let Some((seen, cut)) = visible else { continue };
+        let Some((mut seen, cut)) = visible else { continue };
+        seen.read_only |= lab.owner_base_durability_pending(me, entry) || lab.owner_base_pending(me, entry) > 0 || lab.owner_base_wait_reason(me, entry).is_some();
         if w.holds(&m.attrs, &seen.record) {
             let provenance = checkpoint.map(|p| json!({ "snapshot": p.snapshot().to_hex(),
-                "basis": ids(p.basis()), "partial": true, "freshness": "owner-attested-basis" }));
+                "basis": ids(p.basis()), "partial": true, "freshness": "owner-attested-basis" }))
+                .or_else(|| owner_base_provenance(lab, me, entry));
             rows.push((entry, v, m.attrs, seen, cut, provenance));
         }
     }
@@ -1008,6 +1010,18 @@ pub(crate) fn limits(depth: usize) -> Value {
 /// brings that `me` counts as the entry's (`Lab::line_files`), oldest first, each `{root, size, len}` as the world lists
 /// an entry's main line's, its plaintext length null where `me` opens none: so a proposal's file, a new version of an
 /// asset's recipe on its line, is read before its vault accepts it.
+fn owner_base_provenance(lab: &Lab, me: SignerId, entry: EntryId) -> Option<Value> {
+    lab.active_owner_base(me, entry).map(|(snapshot, basis)| json!({
+        "snapshot": snapshot.to_hex(), "basis": ids(&basis), "partial": true,
+        "freshness": "owner-attested-basis-with-validated-suffix",
+        "historyComplete": false, "filesComplete": false,
+        "pendingSuffix": lab.owner_base_pending(me, entry),
+        "blockedReason": lab.owner_base_wait_reason(me, entry),
+        "missingDependencyBodies": lab.owner_base_missing(me).into_iter()
+            .find(|(e, _)| *e == entry).map(|(_, missing)| ids(&missing)).unwrap_or_default()
+    }))
+}
+
 fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
     let (entry, line, schema) = (entry_of(o)?, line_of(o, "line")?, named(o)?);
     if !o.contains_key("at") && !o.contains_key("version") {
@@ -1061,7 +1075,7 @@ fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused
         None => lab.item_on(me, entry, line).ok_or(Refused::NoEntry)?,
     };
     let mut seen = see(&lane(lab, me, vault), item, &schema).ok_or_else(|| unseen(&schema))?;
-    seen.read_only |= at.is_some();
+    seen.read_only |= at.is_some() || lab.owner_base_durability_pending(me, entry) || lab.owner_base_pending(me, entry) > 0 || lab.owner_base_wait_reason(me, entry).is_some();
     let mut out = row(entry, vault, &m.attrs, &seen, seen.record.clone());
     out["line"] = line_json(line);
     out["heads"] = ids(&h.heads(line)).into();
@@ -1070,6 +1084,10 @@ fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused
     out["authored"] = item.authored().iter().map(BlobId::to_hex).collect::<Vec<_>>().into();
     let file = |(root, len): (FileRoot, Option<u64>)| json!({ "root": BlobId(root.hash).to_hex(), "size": root.size, "len": len });
     out["files"] = lab.line_files(me, entry, line).into_iter().map(file).collect::<Vec<_>>().into();
+    if let Some(provenance) = owner_base_provenance(lab, me, entry) {
+        out["checkpoint"] = provenance;
+        out["filesComplete"] = false.into();
+    }
     Ok(out)
 }
 

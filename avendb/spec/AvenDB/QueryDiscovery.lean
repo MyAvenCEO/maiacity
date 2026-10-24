@@ -42,4 +42,14 @@ def release (captured current : Nat) (entries : List Entry) : List Entry :=
 theorem changed_policy_withholds (captured current : Nat) (entries : List Entry)
     (h : captured ≠ current) : release captured current entries = [] := by
   simp [release, h]
+-- Typed inventory operations publish only their explicit positive type set.
+-- As with universal queries, this hint changes scheduling, never permission.
+def typedDemand (types : List Nat) : List Nat := types.take 8
+
+theorem typed_demand_bounded (types : List Nat) : (typedDemand types).length ≤ 8 :=
+  List.length_take_le _ _
+
+theorem typed_demand_does_not_invent_types (types : List Nat) (t : Nat)
+    (h : t ∈ typedDemand types) : t ∈ types := List.mem_of_mem_take h
+
 end AvenDB.QueryDiscovery

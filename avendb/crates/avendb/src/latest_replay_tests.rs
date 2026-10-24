@@ -67,7 +67,7 @@ fn late_parent_and_restore_match_whole_replay() {
     let snapshot = w.lab.backup(d);
     // Construct a real deferred prefix followed by reverse receipt of the remainder.
     // Signature validation and the canonical fallback judge the historical order.
-    w.lab.restore_backup(d, &Backup { signed: vec![], blobs: snapshot.blobs.clone() });
+    w.lab.restore_backup(d, &Backup { signed: vec![], blobs: snapshot.blobs.clone(), bootstrap_bases:BTreeMap::new() });
     let split = snapshot.signed.len() / 2;
     w.lab.receive_now(d, snapshot.signed[split..].to_vec(), vec![], false);
     check(&w.lab, d, &[w.mac_c, w.stranger]);

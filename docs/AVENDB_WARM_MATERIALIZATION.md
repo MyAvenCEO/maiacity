@@ -67,3 +67,116 @@ Twelve targeted JavaScript tests passed; changed Svelte components and the sessi
 The media resolver distinguishes an unenumerated collection from a confirmed full-world deletion. Same-device incomplete summaries retain resolved URLs; full-world deletion still revokes them. Device replacement clears URLs and file identities immediately on summary/render access, and an old asynchronous read cannot publish into a replacement device. Four focused media regressions pass alongside the twelve summary/reader tests. New unresolved media still needs file metadata; this does not claim complete scoped media discovery.
 
 The app's explicit `founded` result requests one full freshness barrier for entry-based account initialization. Routine unlocks still join metadata-only startup. This does not silently run entry seeding against partial collections, nor does it add a full-world request to every ordinary dashboard open. Later repository seed top-ups still require complete inventory; fully scoped maintenance remains separate work.
+
+## Follow-up: file-only media inventory (isolated candidate)
+
+Two consumers still defeated lazy item restoration by requesting `world` only to
+resolve media: profile/local-media fallback before a complete shared snapshot, and
+manifest traversal of `aven:` references. They now use canonical `entry_views`
+with `types: ['file']`; local-media scopes to requested vaults. Cross-vault legacy
+roots enumerate identity metadata through `world_summary`, then query each vault
+sequentially. No unrelated note/chat/game body is projected by this inventory.
+Authorization remains the engine's existing projection policy.
+
+An unavailable/refused/incomplete inventory throws rather than confirming empty;
+local-media retains already resolved same-device URLs on that path. Actual device
+replacement still clears them. Demand is captured before awaits, so a newly added
+vault request cannot be mistaken for a missing file in the prior inventory.
+Enumeration is of currently held local files, not a promise of complete peer
+history. File collections themselves remain unpaginated. This is evidence of
+avoided work, not proof of the cause or resolution of iPhone document restarts.
+
+Validation: 26 focused Bun tests pass (file inventory, manifest traversal,
+local-media state), Svelte module compilation passes, and
+`AvenDB/LocalFileInventory.lean` passes. Lean proves only the modeled preservation
+and subset properties; canonical engine authorization remains a premise. No Cargo,
+physical iPhone measurement, production deployment, or live-store mutation here.
+Keep this follow-up separate from the frozen release until explicitly integrated.
+
+## Follow-up: saving preserves undemanded lazy entries
+
+`Capture::take` previously called `Shown::items()` for every selected entry, so an
+optional warm save could undo lazy restore: import all saved Loro snapshots and
+then export them again despite no view reading those entries. Capture now forks
+already materialized items only; untouched entries retain their own authenticated
+snapshot bytes and emit those bytes unchanged. The existing exact log/entry
+fingerprint validation and first-read canonical-history fallback are unchanged.
+Deferred bytes count toward the capture budget before cloning. The final encoded
+adjunct limit still applies. This reduces import/export work; it does not promise
+zero copying, a hard total process-memory bound, or a complete lazy-history engine.
+
+Regression added: three lazy restored entries remain unmaterialized through
+capture and encoding, the next receipt contains exactly the same per-line bytes,
+and first demand returns the original content. Focused WarmMaterialization Lean
+proof passes. Rust regression `recapturing_untouched_warm_entries_preserves_lazy_items_and_snapshots`
+is pending the shared Cargo queue; no deployment or physical-device claim.
+
+Still eager: canonical policy/key/body preparation and History/Mine/After metadata;
+entries outside the bounded saved receipt; capability-group reconstruction; and
+consumers requesting a full world. Deferring these requires authenticated metadata
+read dependencies and canonical admission to be disentangled from item access.
+
+
+## Unchanged reopen: consume a previously validated receipt without rehashing history
+
+The encrypted local adjunct's ordered-log basis is checked once when the persisted
+view is opened. A private `Validated` receipt then retains the immutable bytes and
+that log's process-local revision. `show_items` consumes it only if the revision
+still matches, avoiding a second complete ordered-log hash. Appends, withdrawals,
+and newly reconstructed logs invalidate the token; neither log length nor a peer
+assertion is sufficient. No token is persisted or transmitted. Current policy,
+keys, body availability, and per-entry fingerprints are still independently checked.
+Malformed adjunct decoding retains the canonical fallback.
+
+The Lean implication explicitly assumes the existing LogRevision invariant: equal
+revision means equal ordered log contents. The Rust regression covers unchanged
+consumption, corrupt basis, a new write, reconstructed equal-length log, and
+withdrawal. Lean passed; Rust execution is pending the parent's shared build queue:
+
+`cargo test -p avendb validated_warm_receipt_requires_unchanged_log_revision`
+
+This removes one redundant O(log length) hash only. Initial log verification and
+basis hashing, policy replay restoration, key/body preparation, entry fingerprint
+work and uncaptured-entry reconstruction remain. This is not full working-set-only
+startup and has no physical-device latency claim.
+
+## Indexed warm-history reconstruction (follow-up, not lazy-body completion)
+
+`Saved::restore` previously called `History::push` for every restored write.
+`push` validates dependencies with linear scans of the whole admitted prefix,
+so a chain of n ordinary writes performs quadratic prefix searching even though
+its Loro snapshots are deferred. Restoration now constructs an exact index of
+preceding write IDs and invokes the same canonical admission gate through that
+lookup. Unknown dependencies and invalid proposal ancestry retain their original
+refusal order. Future writes never enter the index early; duplicate IDs retain
+all matches rather than silently changing the slice predicate. No authorizing
+receipt is accepted from a peer by this path.
+
+Expected dependency-check cost is proportional to writes plus dependency edges
+for canonical unique IDs, with O(n) temporary index storage. History content,
+metadata and canonical fallback remain identical. This does not remove body
+opening, content copies, per-line history walks or owner-index reconstruction.
+
+Validation: the Lean IndexedHistoryAdmission lookup equivalence theorem passed
+(assumes exact prefix/index membership). The production lookup helper compiled
+standalone and admitted 10,000 indexed writes while rejecting wrong-entry
+ancestry. Full crate regressions are added but pending the parent's Cargo queue:
+`cargo test -p avendb indexed_history_restore_matches_sequential_admission`
+and `cargo test -p avendb indexed_gate_matches_original_prefix_predicates`.
+The first covers a real document chain, proposal and malformed missing/future/
+cross-entry/proposal/duplicate histories; the second compares the shared gate to
+the independent original slice predicates. Existing warm-reopen tests remain required.
+
+### Still open: authenticated metadata/deferred-body boundary
+
+True working-set-first restore still needs an authenticated engine/exact-log
+metadata receipt for historical headers, tags, proofs and capability definitions.
+Authorization dependencies (schema/lens/group histories) must be ready before
+ordinary projections. `read` currently decrypts every accessible body, and
+`Saved::restore` needs content for History and attrs reconstruction. Represent
+metadata-known/content-deferred separately from unreadable/invalid/missing body;
+resolve a target entry's full dependency closure before mutation. Current
+key/policy checks, revocation, lock and stale/corrupt-receipt canonical fallback
+must invalidate reuse. Skipping `read` or treating deferred bodies as empty
+would violate those invariants. That larger implementation is not completed by
+this indexed restoration change.

@@ -1,11 +1,12 @@
 // @ts-nocheck — plain JS
+import { readCompleteness } from './read-completeness.js';
 import { createDemand, normalizeDiscovery } from '../../../game/code/sources/demand.js';
 
 /** Entry IDs shown by a read. Scheduling hints only: no response here establishes completeness or authority. */
 export function replyEntries(got) {
 	const ok = got?.ok;
 	if (!ok || typeof ok !== 'object') return [];
-	const rows = Array.isArray(ok) ? ok : [ok, ...['rows', 'posts', 'entries', 'items'].flatMap((k) => Array.isArray(ok[k]) ? ok[k] : [])];
+	const rows = Array.isArray(ok) ? ok : [ok, ...['rows', 'posts', 'entries', 'items', 'lines'].flatMap((k) => Array.isArray(ok[k]) ? ok[k] : [])];
 	return [...new Set(rows.map((r) => r?.entry).filter((e) => typeof e === 'string' && /^[0-9a-f]{64}$/.test(e)))];
 }
 
@@ -34,6 +35,10 @@ export function queryEntries(op) {
  * This is only a scheduling hint: the complete original query still runs locally.
  * Negation, predicates, projections and acting identities are never sent to peers. */
 export function queryDiscovery(op) {
+	if (op?.op === 'aips') return normalizeDiscovery([{ types: ['aip', 'review'], ...(op.vault === undefined ? {} : { vault: op.vault }) }]);
+	if (op?.op === 'database' || op?.op === 'entry_views') {
+		return normalizeDiscovery([{ types: op.types, ...(op.vault === undefined ? {} : { vault: op.vault }) }]);
+	}
 	if (op?.op !== 'query') return [];
 	const types = new Set(), pending = [op.where];
 	for (let visited = 0; pending.length && visited < 512 && types.size < 8; visited++) {
@@ -55,7 +60,9 @@ export function queryDiscovery(op) {
  */
 export function createReadWindow({ device, read }) {
 	let current = null, held = null, closed = false, queryKey = null, clearing = 0;
+	let completeness = readCompleteness(null);
 	const clear = () => {
+		completeness = readCompleteness(null);
 		current?.controller.abort();
 		current = null;
 		const generation = ++clearing;
@@ -68,6 +75,7 @@ export function createReadWindow({ device, read }) {
 		});
 	};
 	const release = () => {
+		completeness = readCompleteness(null);
 		clearing++;
 		queryKey = null;
 		current?.controller.abort();
@@ -76,7 +84,9 @@ export function createReadWindow({ device, read }) {
 		held = null;
 	};
 	return {
+		get completeness() { return { ...completeness }; },
 		async read(op) {
+			completeness = readCompleteness(null);
 			if (closed) return null;
 			clearing++;
 			current?.controller.abort();
@@ -102,6 +112,7 @@ export function createReadWindow({ device, read }) {
 			try {
 				const got = await read(d, op, controller.signal, demand);
 				if (!active()) return null;
+				completeness = readCompleteness(got);
 				void demand.replace([...entries, ...replyEntries(got)], selectors);
 				return got;
 			} catch (error) {

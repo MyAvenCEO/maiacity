@@ -112,6 +112,7 @@ pub mod bucket;
 mod demand;
 mod discovery;
 mod checkpoint_delivery;
+mod bootstrap_dependencies;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod disk;
 #[cfg(not(target_arch = "wasm32"))]
@@ -736,6 +737,7 @@ impl Node {
             store: store.clone(),
             opts,
             peers: Mutex::default(),
+            dependency_peer_turn: std::sync::atomic::AtomicUsize::new(0),
             dialing: Mutex::default(),
             logs: Mutex::default(),
             world_encoding: Arc::default(),
@@ -769,6 +771,7 @@ impl Node {
             pieces: Mutex::default(),
             pool,
             changed: Notify::new(),
+            bootstrap_due: Notify::new(),
             size: watch::Sender::new(size),
             warm: AtomicBool::new(false),
             sent: Sent::default(),
@@ -787,6 +790,7 @@ impl Node {
             task::spawn(shared.clone().keeper()),
             task::spawn(shared.clone().saver()),
             task::spawn(shared.clone().unshelve()),
+            task::spawn(shared.clone().bootstrap_pump()),
             task::spawn(transports::control::maintain(shared.clone())),
         ];
         Ok(Node { shared, router, tasks: Mutex::new(tasks) })
@@ -1877,13 +1881,18 @@ impl Drop for Node {
 fn restore(
     mut lab: Lab,
     me: SignerId,
-    (signed, keys): edits::Stored,
+    (signed, keys, anchors): edits::Stored,
     started: Option<(Checked, usize)>,
     warm: &Warm,
 ) -> (Lab, Vec<EditId>) {
     let stored = signed.iter().map(|s| s.edit.id()).collect();
     if !signed.is_empty() {
-        lab.restore_warm(me, Backup::new(signed, keys), started, warm);
+        let backup = Backup::new(signed, keys);
+        let backup = if anchors.is_empty() { backup } else {
+            // Invalid companion never invalidates or discards the ordinary signed log.
+            backup.clone().with_bootstrap_bytes(&anchors).unwrap_or(backup)
+        };
+        lab.restore_warm(me, backup, started, warm);
     }
     (lab, stored)
 }
@@ -2044,6 +2053,7 @@ struct Shared {
     opts: Options,
     /// The live connection to each peer, with the device its hello proved: whom the blob gate lets in.
     peers: Mutex<HashMap<EndpointId, Peer>>,
+    dependency_peer_turn: std::sync::atomic::AtomicUsize,
     /// A lock for each endpoint, held while dialing it, so that a node dials each peer once.
     dialing: Mutex<HashMap<EndpointId, Arc<tokio::sync::Mutex<()>>>>,
     /// Its device's edits by their logs, as they were when they were last worked out.
@@ -2108,6 +2118,8 @@ struct Shared {
     pool: ConnectionPool,
     /// Woken whenever the node's logs may have changed.
     changed: Notify,
+    /// Newly staged or invalidated bounded owner-bootstrap work. Never a timer poll.
+    bootstrap_due: Notify,
     /// How many edits and McEliece keys its device holds (`Node::changes`).
     size: watch::Sender<(usize, usize)>,
     /// Whether its device worked out something its shelf lacks, as last seen (`Lab::warm_due`).
@@ -2255,6 +2267,11 @@ impl Shared {
             let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 lab.set_now(unix_now());
                 let before = lab.log(shared.me).revision();
+                let bootstrap_before = lab.owner_bases_pending(shared.me);
+                let missing_before = lab.owner_base_missing(shared.me);
+                let keys_before = lab.owner_base_key_waits(shared.me);
+                let lanes_before = lab.owner_base_lane_waits(shared.me);
+                let anchors_before = lab.bootstrap_stamp(shared.me);
                 let out = f(&mut lab, me);
                 let now = lab.size(shared.me);
                 // Restore and checkpoint withdrawal can replace edits without changing their count. Wake
@@ -2267,6 +2284,18 @@ impl Shared {
                     *size = now;
                     true
                 });
+                let missing_after=lab.owner_base_missing(shared.me);
+                let missing_changed=missing_before!=missing_after;
+                let keys_after=lab.owner_base_key_waits(shared.me);
+                let keys_changed=keys_before!=keys_after;
+                let lanes_changed=lanes_before!=lab.owner_base_lane_waits(shared.me);
+                if keys_changed || lanes_changed { shared.bootstrap_due.notify_one(); }
+                if (lab.owner_bases_pending(shared.me) && (!bootstrap_before || grew || revised))
+                    || (!missing_after.is_empty() && (missing_changed || grew || revised)) {
+                    shared.bootstrap_due.notify_one();
+                }
+                // Key/body restoration may change only the materialized prefix, not log size.
+                if missing_changed || keys_changed || lanes_changed { shared.size.send_modify(|_| {}); }
                 // what it worked out, as a replay or a key it opened, wakes the saver too, once as it comes to
                 let warm = !lab.locked(shared.me) && lab.warm_due(shared.me);
                 if grew {
@@ -2275,7 +2304,7 @@ impl Shared {
                 let signing = shared.signers.as_ref().is_some_and(|signers| {
                     lab.signing_pending(shared.me) || (!lab.locked(shared.me) && signers.root_due())
                 });
-                if grew || signing || (warm && !shared.warm.swap(true, Ordering::Relaxed)) {
+                if grew || signing || anchors_before != lab.bootstrap_stamp(shared.me) || (warm && !shared.warm.swap(true, Ordering::Relaxed)) {
                     shared.edits.iter().for_each(|edits| edits.due.notify_one());
                 }
                 if !warm {
@@ -2830,6 +2859,41 @@ impl Shared {
         }
     }
 
+    /// Finish authenticated suffixes without making foreground requests pump history.
+    /// Each turn uses the same fair scheduler as other background work; browser
+    /// admission supplies a real worker event-loop boundary before taking the Lab.
+    async fn bootstrap_pump(self: Arc<Self>) {
+        // Check once at startup for durable partial progress restored before spawn.
+        loop {
+            let turn = self.try_lab_class(lab_schedule::Class::Background, |lab, me| {
+                if !lab.owner_bases_pending(me) { return (false, false); }
+                let pending = lab.advance_owner_bases(me);
+                (true, pending)
+            }).await;
+            let Ok((ran, pending)) = turn else { break; };
+            if ran {
+                // Materialization advances without changing signed-log cardinality.
+                self.size.send_modify(|_| {});
+                self.changed.notify_one();
+                self.edits.iter().for_each(|edits| edits.due.notify_one());
+            }
+            if pending {
+                tokio::task::yield_now().await;
+            } else {
+                let missing=self.fetch_owner_dependencies().await;
+                let key_wait=self.prioritize_owner_keys().await;
+                let lane_wait=self.prioritize_owner_lanes().await;
+                if missing || key_wait || lane_wait {
+                    // Network failure is an explicit wait, not a tight reconstruction loop.
+                    tokio::select! {
+                        _=self.bootstrap_due.notified()=>{},
+                        _=time::sleep(self.opts.retry.max(Duration::from_millis(250)))=>{},
+                    }
+                } else { self.bootstrap_due.notified().await; }
+            }
+        }
+    }
+
     /// Tells the peers what changed of its holdings whenever they may have, and every `retry` tries again the peers
     /// whose wait is over: those it couldn't tell, and those it failed to ask.
     async fn announcer(self: Arc<Self>) {
@@ -3148,10 +3212,13 @@ impl Shared {
         let mut left = self.differ(peer.device).await;
         let mut new = 0;
         let asked = loop {
+            let key_waits = self.read(|lab, me| lab.owner_base_key_waits(me)).await;
             let logs = {
                 let mut wanted = self.wanted.lock().expect("wanted");
                 let active = self.demands.lock().expect("demands").entries(Instant::now());
-                let logs = next_demand_logs(&mut left, &wanted, &active, LOGS_AT_ONCE);
+                let mut priority = bootstrap_dependencies::key_logs(&active, &key_waits);
+                priority.extend(active);
+                let logs = next_demand_logs(&mut left, &wanted, &priority, LOGS_AT_ONCE);
                 wanted.retain(|l| !logs.contains(l));
                 logs
             };
@@ -3297,6 +3364,74 @@ fn next_demand_logs(
 mod tests {
     use super::*;
     use avendb::id::EntryId;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn bootstrap_pump_finishes_suffix_without_foreground_mutations() {
+        use avendb::cast::{document, human_on};
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Pump owner");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Base", "old", mac)).unwrap();
+        lab.sync(mac, phone);
+        lab.edit(mac, vault, entry, |item| item.set_text(2, "checkpoint")).unwrap();
+        let prepared = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
+        let snapshot = lab.complete(mac, prepared.draft, &[]).unwrap();
+        let offer = lab.entry_projection_offer(mac, phone, entry).unwrap();
+        lab.receive(phone, offer.evidence, vec![]);
+        let mut suffix = Vec::new();
+        for n in 0..40 {
+            suffix.push(lab.edit(mac, vault, entry, |item| item.set_text(2, &format!("suffix {n}"))).unwrap());
+        }
+        let signed = lab.backup(mac).signed().iter().filter(|s| suffix.contains(&s.edit.id())).cloned().collect();
+        lab.receive(phone, signed, vec![]);
+        let expected = lab.item(mac, entry).unwrap().record();
+        assert!(lab.adopt_owner_entry_base(phone, snapshot, entry, prepared.sealed));
+        assert!(lab.owner_base_pending(phone, entry) > 0, "fixture needs a second bounded turn");
+        let node = Node::spawn(lab.split(phone, &[owner], [31; 32]), phone, Options::local()).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(20), async {
+            loop {
+                if node.read(move |lab, me| lab.owner_base_pending(me, entry)).await == 0 { break; }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        }).await.expect("background pump advances without foreground mutation");
+        assert_eq!(node.read(move |lab, me| lab.item(me, entry).unwrap().record()).await, expected);
+        node.shutdown().await.unwrap();
+    }
+
+    #[tokio::test(flavor="multi_thread",worker_threads=2)]
+    async fn bootstrap_missing_body_transition_wakes_idle_dependency_pump() {
+        use avendb::cast::{document,human_on};
+        let mut lab=Lab::new();let owner=lab.passkey("Wake owner");
+        let mac=lab.device_of(owner,"Mac");let phone=lab.device_of(owner,"Phone");let pad=lab.device_of(owner,"Pad");
+        let vault=human_on(&mut lab,owner,&[mac,phone,pad]);
+        let entry=lab.create(mac,vault,vault,"note",&[],document("Base","old",mac)).unwrap();
+        lab.sync(mac,phone);lab.sync(mac,pad);
+        let dependency=lab.edit(mac,vault,entry,|i|i.set_text(2,"dependency")).unwrap();
+        let dependency_signed=lab.signed_edit(mac,dependency).unwrap().clone();
+        lab.sync(mac,phone);
+        let concurrent=lab.edit(phone,vault,entry,|i|{i.edit_document(|d|d.title="concurrent".into());}).unwrap();
+        let signed=lab.signed_edit(phone,concurrent).unwrap().clone();
+        lab.edit(mac,vault,entry,|i|i.set_text(2,"checkpoint")).unwrap();
+        let prepared=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
+        let snapshot=lab.complete(mac,prepared.draft,&[]).unwrap();
+        let offer=lab.entry_projection_offer(mac,pad,entry).unwrap();
+        lab.receive(pad,offer.evidence,vec![]);lab.receive(pad,vec![signed],vec![]);
+        let node=Node::spawn(lab.split(pad,&[owner],[41;32]),pad,Options::local()).await.unwrap();
+        node.tasks.lock().unwrap().iter().for_each(|task|task.abort());
+        while tokio::time::timeout(Duration::ZERO,node.shared.bootstrap_due.notified()).await.is_ok() {}
+        assert!(node.act(move|lab,me|lab.adopt_owner_entry_base(me,snapshot,entry,prepared.sealed)).await);
+        assert!(!node.read(|lab,me|lab.owner_bases_pending(me)).await,"dependency wait is not runnable replay");
+        assert_eq!(node.read(move|lab,me|bootstrap_dependencies::missing_batch(lab,me,entry)).await,vec![dependency]);
+        tokio::time::timeout(Duration::from_millis(100),node.shared.bootstrap_due.notified()).await.expect("new dependency wait must wake the network pump");
+        let mut changed=node.shared.size.subscribe();changed.borrow_and_update();
+        node.act(move|lab,me|lab.receive(me,vec![dependency_signed],vec![])).await;
+        assert!(node.read(|lab,me|lab.owner_base_missing(me).is_empty()).await);
+        assert!(node.read(move|lab,me|bootstrap_dependencies::missing_batch(lab,me,entry)).await.is_empty(),"next peer must not re-fetch a dependency already received");
+        tokio::time::timeout(Duration::from_millis(100),changed.changed()).await.unwrap().unwrap();
+        node.shutdown().await.unwrap();
+    }
 
     /// An offer with an address of each family and a relay.
     fn offer() -> Offer {

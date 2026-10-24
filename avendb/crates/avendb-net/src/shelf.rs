@@ -1660,6 +1660,19 @@ impl Inner {
         Ok(())
     }
 
+    /// A filling source may be renamed after export captured its temporary name.
+    /// Retry that exact immutable blob's final location once, never an arbitrary
+    /// alternate object. If neither location is readable retain the original error.
+    async fn read_filling(&self, name: &str, hash: Hash, at: u64, len: usize) -> io::Result<Bytes> {
+        match self.shelf.read(name, at, len).await {
+            Ok(bytes) => Ok(bytes),
+            Err(original) => match self.shelf.read(&hash.to_hex(), at, len).await {
+                Ok(bytes) if bytes.len() == len => Ok(bytes),
+                _ => Err(original),
+            },
+        }
+    }
+
     /// The bytes `ranges` of blob `hash`, cut to it: from memory, from the shelf a step at a time, or from its window,
     /// which must hold them all.
     async fn export_ranges(self: &Arc<Self>, m: ExportRangesMsg) {
@@ -1687,7 +1700,12 @@ impl Inner {
                             return Err(lacking());
                         }
                         for at in (from..to).step_by(STEP) {
-                            let data = self.shelf.read(name, at, STEP.min((to - at) as usize)).await?;
+                            let len = STEP.min((to - at) as usize);
+                            let data = if have.is_some() {
+                                self.read_filling(name, hash, at, len).await?
+                            } else {
+                                self.shelf.read(name, at, len).await?
+                            };
                             m.tx.send(Leaf { offset: at, data }.into()).await?;
                         }
                     }
@@ -1714,6 +1732,30 @@ impl Inner {
 #[cfg(test)]
 mod ownership_tests {
     use super::*;
+    #[tokio::test]
+    async fn filling_export_retries_only_the_same_final_blob_after_rename() {
+        let (shelf, mut calls) = Shelf::new();
+        let inner = Arc::new(Inner { shelf, state: Mutex::new(State::default()) });
+        let hash = Hash::from_bytes([42;32]);
+        let reader = tokio::spawn({ let inner=inner.clone(); async move { inner.read_filling("new-racing",hash,7,3).await } });
+        let Call::Read {name,at,len,tx}=calls.recv().await.unwrap() else {panic!("temporary read")};
+        assert_eq!((name.as_str(),at,len),("new-racing",7,3));
+        tx.send(Err(io::Error::other("OPFS temporary file moved"))).unwrap();
+        let Call::Read {name,at,len,tx}=calls.recv().await.unwrap() else {panic!("final read")};
+        assert_eq!((name,at,len),(hash.to_hex(),7,3));
+        tx.send(Ok(Bytes::from_static(b"abc"))).unwrap();
+        assert_eq!(reader.await.unwrap().unwrap(),Bytes::from_static(b"abc"));
+        let reader = tokio::spawn({ let inner=inner.clone(); async move { inner.read_filling("new-missing",hash,0,3).await } });
+        let Call::Read {tx,..}=calls.recv().await.unwrap() else {panic!("temporary read")};
+        tx.send(Err(io::Error::new(io::ErrorKind::PermissionDenied,"original denied"))).unwrap();
+        let Call::Read {tx,..}=calls.recv().await.unwrap() else {panic!("final read")};
+        tx.send(Err(io::Error::new(io::ErrorKind::NotFound,"final absent"))).unwrap();
+        let error=reader.await.unwrap().unwrap_err();
+        assert_eq!(error.kind(),io::ErrorKind::PermissionDenied);
+        assert_eq!(error.to_string(),"original denied");
+        assert!(calls.try_recv().is_err(),"no unbounded retry or alternate path");
+    }
+
     #[tokio::test]
     async fn generic_preclaim_writes_and_cancelled_owned_writes_cannot_cross_ownership() {
         let (base, mut calls) = Shelf::new();

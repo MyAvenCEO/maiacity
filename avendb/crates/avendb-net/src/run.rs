@@ -107,7 +107,7 @@ impl Node {
                 self.world_encoded(engine::WorldSnapshot::into_json).await?
             }
             Some("entry_views") => self.entry_views_encoded(op).await?,
-            Some("checkpoint_view") => self.publish_checkpoint(&op, authenticator).await?,
+            Some("checkpoint_view" | "checkpoint_entry_base") => self.publish_checkpoint(&op, authenticator).await?,
             Some("read_file") => return self.read_bytes(&op).await,
             _ if engine::brings(&op) => self.put(op, bytes).await?,
             Some("jobs") => json!({ "ok": self.jobs().to_json_for(crate::acting()) }),
@@ -185,7 +185,7 @@ impl Node {
         };
         match result {
             Ok(accepted) => {
-                if accepted { self.shared.size.send_modify(|_| {}); self.shared.schedule_discovery(scope); }
+                if accepted { self.shared.size.send_modify(|_| {}); self.shared.bootstrap_due.notify_one(); self.shared.schedule_discovery(scope); }
                 json!({"ok": {"accepted": accepted, "lease_ms": crate::demand::LEASE.as_millis() as u64, "discovery_supported": true, "discovery_complete": false}})
             },
             Err(why) => bad(why),
