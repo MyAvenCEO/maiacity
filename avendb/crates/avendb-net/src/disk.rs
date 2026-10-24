@@ -14,6 +14,10 @@
 //! replaced. Every file it writes is readable by its owner alone.
 
 use std::fs::{self, File, OpenOptions};
+use std::ffi::CString;
+use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::MetadataExt;
 use std::io::{self, ErrorKind, Read as _, Write as _};
 use std::os::unix::fs::FileExt as _;
 use std::path::{Path, PathBuf};
@@ -85,7 +89,8 @@ pub fn open(root: &Path) -> Result<Shelf> {
         }
     };
     let selected = generation(dir.file_name().and_then(|n| n.to_str()).expect("generation name")).expect("generation");
-    let on = Arc::new(Folder { dir });
+    let anchor = File::open(&dir)?;
+    let on = Arc::new(Folder { dir, anchor });
     let bounded = on.clone();
     let queue = crate::disk_queue::Queue::start(move |call| on.answer(call));
     let source = crate::writer::Source::for_generation(root, selected);
@@ -173,6 +178,8 @@ fn removed(r: io::Result<()>) -> io::Result<()> {
 /// A generation's folder, which answers its shelf's calls.
 struct Folder {
     dir: PathBuf,
+    // Retain the exact generation identity while its shelf is alive.
+    anchor: File,
 }
 
 impl Folder {
@@ -361,14 +368,37 @@ impl Folder {
     fn placed(&self, name: &str) -> io::Result<(PathBuf, PathBuf)> {
         let path = self.object(name)?;
         let folder = path.parent().expect("an object's folder").to_path_buf();
-        if !folder.exists() {
-            fs::create_dir_all(&folder)?;
-            // each folder made, named by the one above it
-            let mut made = folder.as_path();
-            while let Some(above) = made.parent().filter(|_| made != self.dir) {
-                sync_dir(above)?;
-                made = above;
+        let identity = self.anchor.metadata()?;
+        let present = fs::symlink_metadata(&self.dir)?;
+        if !present.is_dir() || present.dev() != identity.dev() || present.ino() != identity.ino() {
+            return Err(io::Error::new(ErrorKind::NotFound, "the opened shelf generation is no longer mounted here"));
+        }
+        // Never create the generation or any ancestor. Each child is created and
+        // opened relative to a held directory descriptor, so replacement with a
+        // symlink cannot redirect directory creation outside this generation.
+        let mut parent = self.anchor.try_clone()?;
+        for component in folder.strip_prefix(&self.dir).expect("object below generation").components() {
+            let name = CString::new(component.as_os_str().as_bytes())
+                .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "object folder contains NUL"))?;
+            let flags = libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC;
+            // SAFETY: name is NUL-terminated; parent owns a valid directory fd.
+            let mut fd = unsafe { libc::openat(parent.as_raw_fd(), name.as_ptr(), flags) };
+            if fd < 0 {
+                let error = io::Error::last_os_error();
+                if error.kind() != ErrorKind::NotFound { return Err(error); }
+                // SAFETY: same live parent and one path component; never recursive.
+                let made = unsafe { libc::mkdirat(parent.as_raw_fd(), name.as_ptr(), 0o700) };
+                if made < 0 {
+                    let error = io::Error::last_os_error();
+                    if error.kind() != ErrorKind::AlreadyExists { return Err(error); }
+                } else { parent.sync_all()?; }
+                // A concurrent creator may have installed a symlink: fail closed.
+                // SAFETY: same valid descriptor and owned CString.
+                fd = unsafe { libc::openat(parent.as_raw_fd(), name.as_ptr(), flags) };
+                if fd < 0 { return Err(io::Error::last_os_error()); }
             }
+            // SAFETY: successful openat returned a new owned descriptor.
+            parent = unsafe { File::from_raw_fd(fd) };
         }
         Ok((path, folder))
     }
@@ -492,4 +522,43 @@ mod reader_tests {
         drop((reader, writer, _ownership));
         std::fs::remove_dir_all(root).unwrap();
     }
+    #[test]
+    fn object_parent_creation_never_resurrects_an_unplugged_volume() {
+        let root = std::env::temp_dir().join(format!("avendb-unplug-parent-{}", std::process::id()));
+        let volume = root.join("Photo drive");
+        let dir = volume.join(".avendb/g1");
+        fs::create_dir_all(dir.join(NEW)).unwrap();
+        let folder = Folder { anchor: File::open(&dir).unwrap(), dir };
+        folder.put("existing/one", b"preserved").unwrap();
+        let away = root.join("unplugged");
+        fs::rename(&volume, &away).unwrap();
+        assert_eq!(folder.put("new-objects/nested/two", b"late save").unwrap_err().kind(), ErrorKind::NotFound);
+        assert!(!volume.exists(), "a late save must not fabricate a free mounted volume");
+        assert_eq!(fs::read(away.join(".avendb/g1/existing/one")).unwrap(), b"preserved");
+        fs::rename(&away, &volume).unwrap();
+        folder.put("new-objects/nested/two", b"after replug").unwrap();
+        assert_eq!(fs::read(volume.join(".avendb/g1/new-objects/nested/two")).unwrap(), b"after replug");
+        drop(folder); fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn object_parent_creation_rejects_symlink_and_generation_replacements() {
+        let root = std::env::temp_dir().join(format!("avendb-symlink-parent-{}", std::process::id()));
+        let dir = root.join("g1");
+        let outside = root.join("outside");
+        fs::create_dir_all(dir.join(NEW)).unwrap(); fs::create_dir(&outside).unwrap();
+        let folder = Folder { anchor: File::open(&dir).unwrap(), dir: dir.clone() };
+        std::os::unix::fs::symlink(&outside, dir.join("redirect")).unwrap();
+        assert!(folder.placed("redirect/nested/object").is_err());
+        assert!(!outside.join("nested").exists());
+        fs::rename(&dir, root.join("original")).unwrap();
+        fs::create_dir(&dir).unwrap();
+        assert!(folder.placed("replacement/object").is_err(), "a different generation identity cannot inherit this shelf");
+        assert!(!dir.join("replacement").exists());
+        fs::remove_dir(&dir).unwrap();
+        std::os::unix::fs::symlink(root.join("original"), &dir).unwrap();
+        assert!(folder.placed("replacement/object").is_err(), "a symlink at the generation fails closed");
+        drop(folder); fs::remove_dir_all(root).unwrap();
+    }
+
 }

@@ -42,6 +42,7 @@ x25519-dalek = { version = "3.0.0", features = ["getrandom"] }
 
 # On a machine: TLS through aws-lc-rs, the provider that has X25519MLKEM768; ring, iroh's default, is left out
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+libc = "0.2"
 # Separate HTTP/3 packet carrier, preserving our mandatory PQ provider and pinned certificates.
 wtransport = { version = "=0.7.2", default-features = false, features = ["aws-lc-rs", "self-signed", "quinn"] }
 url = "2.5"
