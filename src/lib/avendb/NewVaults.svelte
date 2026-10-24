@@ -73,6 +73,8 @@
 	async function create() {
 		const before = new Set(world.vaults.map((v) => v.id));
 		if (!(await api.run(`Creating ${count(ready.length, 'vault')}`, $state.snapshot(op)))) return;
+		// The next operation is built from the new vaults in the world summary.
+		await api.refresh();
 		// each one's name public, as every vault's is by default (./vaults.js `NAME_TYPES`), shared acting for it
 		const fresh = world.vaults.filter((v) => !before.has(v.id) && !nameShared(world, v.id));
 		if (fresh.length) await api.runAll('Making their names public', fresh.map((v) => nameShare(v.id)));

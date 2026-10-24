@@ -8,9 +8,7 @@
  */
 import { session } from './session.svelte.js';
 import { onStir } from './stirs.svelte.js';
-
-/** how long a count that pulls from no peer may stand still and still count as syncing (ms) */
-const STILL = 30000;
+import { emptySync, observeSync, missingUpdates, peerCoverage } from './sync-status.js';
 
 /**
  * What the device said last: `known` once it answered (a device too old for the op never does), the counts, since
@@ -19,33 +17,31 @@ const STILL = 30000;
  * the logs stand still for minutes while the pages show the pull moving (Samuel's iPhone 2026-10-21, "it says it
  * syncs but somehow it doesn't").
  */
-export const sync = $state({ known: false, peers: 0, logs: 0, behind: 0, pulling: 0, pages: 0, since: 0, at: 0, paged: 0 });
+export const sync = $state(emptySync());
 
-/** Whether the device still brings what its peers hold: behind them, and pulling, or its count moved lately. */
-export const syncing = () => sync.known && sync.behind > 0 && sync.logs > 0 && (sync.pulling > 0 || sync.at - sync.since < STILL);
+/** Missing peer updates remain missing while requests wait or stop. */
+export const syncing = () => missingUpdates(sync);
 
-/** How much of what its peers hold the device holds, from 0 to 1. */
-export const share = () => (sync.logs > 0 ? Math.max(0, sync.logs - sync.behind) / sync.logs : 1);
+/** Relative coverage of announced peer logs only; unknown is never a claim of completion. */
+export const share = () => peerCoverage(sync) ?? 0;
 
 /**
  * Asks the device the page holds open how far it synced, and again as that changes, until the function returned stops it.
  * Unknown again while avenDB is closed, or for a device whose avenDB knows no `synced`.
  */
 export function watchSync() {
+	Object.assign(sync, emptySync());
 	let stop = false;
 	const ask = async (signal) => {
 		const got = session.phase === 'open' ? await session.ask({ op: 'synced' }).catch(() => null) : null;
 		if (stop || signal.aborted) return;
 		if (!got?.ok) return void (sync.known = false);
-		const at = Date.now();
-		const paged = sync.known && (got.ok.pages ?? 0) > sync.pages;
-		const moved = !sync.known || paged || got.ok.behind !== sync.behind || got.ok.logs !== sync.logs;
-		Object.assign(sync, { known: true, pages: 0, ...got.ok, at, since: moved ? at : sync.since, paged: paged ? at : sync.paged });
+		Object.assign(sync, observeSync(sync, got.ok, Date.now()));
 	};
 	const unwatch = onStir(ask);
 	return () => {
 		stop = true;
 		unwatch();
-		Object.assign(sync, { known: false, paged: 0 });
+		Object.assign(sync, emptySync());
 	};
 }

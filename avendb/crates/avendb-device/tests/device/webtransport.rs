@@ -49,7 +49,7 @@ async fn listener_reopens_the_same_mac_and_bind_failure_keeps_its_existing_accou
         let made = original.call("run", json!([write])).await;
         let entry = made["ok"]["ok"]["entry"].clone();
         assert!(entry.is_string(), "{made}");
-        original.host.close().await;
+        original.host.close().await.expect("durable host close");
         drop(original);
 
         let occupied = UdpSocket::bind(LOOPBACK).unwrap();
@@ -69,9 +69,13 @@ async fn listener_reopens_the_same_mac_and_bind_failure_keeps_its_existing_accou
         assert_eq!(read["ok"]["ok"]["record"]["title"], "Kept");
         let old_writer = retained.writer_shelf().expect("the original node writer");
         drop(occupied);
-        app.host.close().await;
+        app.host.close().await.expect("durable host close");
         assert!(old_writer.put("tests/late", Bytes::from_static(b"must not write")).await.is_err());
-        // Keep the old closed OpenNode alive: listener teardown must not rely on dropping its final Arc.
+        // A closed host is terminal; the replacement keeps the same stored account.
+        // Keep the old OpenNode alive: teardown must not rely on dropping its final Arc.
+        assert!(app.call("open", json!([])).await.get("error").is_some());
+        drop(app);
+        let mut app = InApp::with(config(&folder.0, bind), Passkey::from_seed([5; 32]));
         let reopened = app.call("open", json!([])).await;
         assert_eq!(
             reopened["ok"]["id"], identity,
@@ -84,9 +88,11 @@ async fn listener_reopens_the_same_mac_and_bind_failure_keeps_its_existing_accou
             "opening an already open device installs no duplicate listener"
         );
         let live = app.host.node().unwrap();
-        app.host.close().await;
+        app.host.close().await.expect("durable host close");
         assert!(live.endpoint().is_closed());
         drop(UdpSocket::bind(bind).expect("shutdown releases socket even while the closed node is retained"));
+        drop(app);
+        let mut app = InApp::with(config(&folder.0, bind), Passkey::from_seed([5; 32]));
         let reopened = app.call("open", json!([])).await;
         assert_eq!(reopened["ok"]["id"], identity);
         assert!(
@@ -99,7 +105,7 @@ async fn listener_reopens_the_same_mac_and_bind_failure_keeps_its_existing_accou
             "existing vault data remains readable"
         );
         drop((retained, live));
-        app.host.close().await;
+        app.host.close().await.expect("durable host close");
         drop(UdpSocket::bind(bind).expect("final listener closed"));
         server.shutdown().await.unwrap();
         relay.shutdown().await.unwrap();

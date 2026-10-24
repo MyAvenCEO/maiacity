@@ -46,6 +46,11 @@ import { command, native } from '$lib/native';
 import { allowed, answer, reads, refs } from './ops.js';
 import { acting as actingIn, plain } from './vaults.js';
 import { createVaultContext } from './context.js';
+import { createMoveChecks } from './move-checks.js';
+import { beforeLocalWrite } from './local-write.js';
+import { noteLifecycle } from './lifecycle.js';
+import { createReactiveRead } from './reactive-read.js';
+import { createWorldReader } from './world-reader.js';
 import { createEntryWindow, createReadWindow, replyEntries } from './query-window.js';
 import { bringEntries, learn, useDevice } from '../../../game/code/sources/device.js';
 import { sync } from './sync.svelte.js';
@@ -89,6 +94,8 @@ let device = $state.raw(null);
  *  plain object, as it comes */
 let meta = $state.raw(null);
 /** what the device shows of its world (avendb-browser's `World::to_json`): kept whole, as it comes */
+// Accepted local data changes, before the heavier world summary is rebuilt.
+let revision = $state(0);
 let world = $state.raw(/** @type {import('./vaults.js').WorldView | null} */ (null));
 /** the vault the person looks at, picked in avenDB's nav pill (./Shell.svelte): their own until they pick another */
 let vault = $state('');
@@ -439,6 +446,7 @@ function unlock(at = QUIET) {
  *  the device the function it shows its own by with `device`. @param {Steps} at */
 async function opening({ step, device: shown }) {
 	if (mac) return macOpened(await stepping(shown(), 'open'));
+	noteLifecycle('unlocking');
 	// the store first, so that a tab that can't open it never asks for the passkey: one tab at a time holds it
 	await store.hold().catch(() => {
 		const why = new Error(`avenDB is open in another tab of ${here}: it opens in one tab at a time`);
@@ -470,8 +478,10 @@ async function started(d, nonce, credential, { name, relay }) {
  *  off it, the games' and the assets' (game/code/sources/device.js); then it asks what its key move asks of the person
  *  (`checkMove`). @param {any} d */
 function running(d) {
+	if (device && device !== d) retireWorld(device);
 	device = d;
 	phase = 'open';
+	if (!mac) noteLifecycle('open');
 	useDevice({
 		// Demand disposal belongs to this device even while a replacement is opening. Never send stale work to it.
 		run: (/** @type {any} */ op) => op?.op === 'demand' ? d.run(op) : device === d ? send(op) : Promise.reject(new Error('the device changed')),
@@ -492,45 +502,19 @@ function keepStorage() {
 		.catch(() => {});
 }
 
-/** How long a device that can't say yet what its key move asks waits before it is asked again (ms). */
-const MOVE_AGAIN = 30000;
+/** One bounded recheck timer. No-work results are reconsidered as new history or a remote next key arrives;
+ *  pending freshness retries sooner. A replaced/locked device's pending answers and timers cannot act on its successor. */
+const moveChecks = createMoveChecks({
+	current: () => phase === 'open' ? device : null,
+	ask: (d) => mac ? mac.call('moving') : d.moving(),
+	show: (asked) => { moving = asked; },
+	move: () => moveKeys(),
+	warn: (e) => console.warn('avenDB: the key move is asked about again in a moment:', e?.message ?? e)
+});
 
-/** How long a device with nothing to move waits before it is asked again, while a device of an aven its person
- *  governs still signs with its key from before the move: a server or an agent moves only while it runs (K3c), as
- *  their cloud sessions' agent does only while a session uses avenDB, so the device looks for it now and then (ms). */
-const AVEN_AGAIN = 180000;
-/** the next of those looks, one at a time */
-let avenLater = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined);
-
-/** Whether a device of an aven the person sees still signs with its key from before the key move, with no next key
- *  beside it yet. */
-const avenOld = () => !!world?.vaults.some((v) => v.kind === 'aven' && v.devices.some((d) => d.old && !d.next));
-
-/** What device `d`'s key move asks of the person (K3b), once it opened: where it asks for no ceremony, as a move cut
- *  short, it goes on at once; otherwise the page asks once more (`moveKeys`). Never fails: a device that can't say yet,
- *  as one still bringing what its peers hold (it caught up with none of them), is asked again `MOVE_AGAIN` later, for
- *  as long as it is the page's (Samuel 2026-10-20: a phone that unlocked mid-sync never showed "Move my keys"). So is
- *  one whose old keys' removal waits until it holds what its coop's server holds (`behind`), the banner saying so
- *  meanwhile (`again`), and one with nothing to move while a server or an agent of an aven still signs as before the
- *  move (`AVEN_AGAIN`): it moves once the device finds it running, as their cloud sessions' agent. @param {any} d
- *  @param {boolean} [again] */
-async function checkMove(d, again = false) {
-	if (!again) moving = null;
-	try {
-		const asked = (mac ? await mac.call('moving') : await d.moving()) ?? null;
-		if (device !== d) return;
-		moving = asked;
-		if (asked?.behind) setTimeout(() => device === d && void checkMove(d, true), MOVE_AGAIN);
-		else if (asked && !asked.passkey && !asked.touch) await moveKeys();
-		else if (!asked && avenOld()) {
-			clearTimeout(avenLater);
-			avenLater = setTimeout(() => device === d && !moving && void checkMove(d, true), AVEN_AGAIN);
-		}
-	} catch (e) {
-		console.warn('avenDB: the key move is asked about again in a moment:', /** @type {Error} */ (e)?.message ?? e);
-		setTimeout(() => device === d && !moving && void checkMove(d), MOVE_AGAIN);
-	}
-}
+/** What this device's key migration asks now; no work is checked again in three minutes, pending work in thirty seconds.
+ *  @param {any} d @param {boolean} [again] */
+const checkMove = (d, again = false) => moveChecks.check(d, again);
 
 /** Moves the person's passkey and this device to ML-DSA-65 (K3b), as `moving` asks: one ceremony of their passkey, and
  *  in the Mac app a touch of its Touch ID key, which moves too, with the drives it hosts. The device opens again as its
@@ -589,16 +573,28 @@ function watch() {
 	const token = (watching = {});
 	watched = d;
 	const on = () => watching === token && device === d;
+	// A second cheap change subscription invalidates targeted views independently of
+	// full-world rendering/backoff. It never downloads or materializes the world.
+	(async () => {
+		let held = await d.size();
+		if (on()) revision++; // cover changes concurrent with this initial snapshot too
+		while (on() && (await d.changed(...held)) && on()) {
+			held = await d.size();
+			if (on()) revision++;
+		}
+	})().catch((/** @type {Error} */ e) => on() && (error = `Watching local changes failed: ${e.message}`));
 	(async () => {
 		let [edits, keys] = await d.size();
-		let took = await timed(refresh);
+		if (!on()) return;
+		let took = await timed(() => refreshDevice(d));
 		while (on() && (await d.changed(edits, keys)) && on()) {
 			await new Promise((r) => setTimeout(r, Math.max(SETTLE, 2 * took)));
 			if (!on()) break;
 			[edits, keys] = await d.size();
-			took = await timed(refresh);
+			if (!on()) break;
+			took = await timed(() => refreshDevice(d));
 		}
-	})().catch((/** @type {Error} */ e) => (error = `Showing what arrives failed: ${e.message}`));
+	})().catch((/** @type {Error} */ e) => on() && (error = `Showing what arrives failed: ${e.message}`));
 }
 
 /** How long `work` took, in milliseconds, with the redraw it set off (a task later, after Svelte's own).
@@ -610,16 +606,46 @@ async function timed(work) {
 	return performance.now() - t;
 }
 
-/** Reads the device's world again, as it is now. */
+/** Both background watchers and explicit barriers share one reader per device. */
+const worldReaders = new WeakMap();
+const retiredWorlds = new WeakSet();
+function retireWorld(/** @type {any} */ d) {
+	retiredWorlds.add(d);
+	worldReaders.get(d)?.cancel(new Error('The avenDB device changed during its world refresh.'));
+	// Keep the terminal reader until this device object is collected: late callers
+	// during asynchronous close must not resurrect a new reader for it.
+}
+function refreshDevice(/** @type {any} */ d) {
+	if (retiredWorlds.has(d)) return Promise.reject(new Error('The avenDB device changed before its world refresh.'));
+	let reader = worldReaders.get(d);
+	if (!reader) {
+		reader = createWorldReader({
+			read: async () => {
+				if (device !== d) throw new Error('The avenDB device changed before its world refresh.');
+				return answer(await near(d, { op: 'world' })) ?? null;
+			},
+			take: (w) => {
+				if (device !== d) throw new Error('The avenDB device changed during its world refresh.');
+				world = w;
+				context.reconcile();
+			}
+		});
+		worldReaders.set(d, reader);
+	}
+	return reader.request();
+}
+
+/** Explicit barrier: its snapshot starts after this call, even if an older read runs. */
 async function refresh() {
 	const d = device;
-	if (!d) return;
-	/** @type {import('./vaults.js').WorldView | null} */
-	const w = answer(await send({ op: 'world' })) ?? null;
-	if (d === device) {
-		world = w;
-		context.reconcile();
-	}
+	if (d) await refreshDevice(d);
+}
+
+/** Accepted local writes do not wait for their requested summary. */
+function queueRefresh(/** @type {any} */ d) {
+	if (d) void refreshDevice(d).catch((/** @type {Error} */ e) => {
+		if (device === d) error = `Showing local changes failed: ${e.message}`;
+	});
 }
 
 /**
@@ -702,30 +728,19 @@ function freshen(d, named) {
 	void bringEntries(ids, { run: (/** @type {any} */ o) => d.run(o) });
 }
 
-/** How long a change waits for its entry to come up to date before it runs anyway, in ms (`current`). */
-const CURRENT = 8000;
-
-/**
- * Before a change to an entry on a device still behind its peers, that entry alone comes up to date first, for a few
- * seconds at most (`CURRENT`): a change made on the heads the device took early, which its peers moved since, is
- * refused as moved (an AIP's review names the heads its card showed) or lands on an old version. Where something new
- * came, the change doesn't run: the person sees it again as it is now and answers that.
- * @param {any} d @param {any} op
- */
+/** A head-conditional review retains its freshness guard. Ordinary edits never wait for peers.
+ * @param {any} d @param {any} op */
 async function current(d, op) {
-	const entry = typeof op?.entry === 'string' && ENTRY.test(op.entry) ? op.entry : null;
-	if (!entry || !behind()) return;
 	const what = doing;
-	if (what) doing = `${what}: bringing it up to date first, as this device still syncs`;
-	const brought = await Promise.race([
-		bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }),
-		new Promise((done) => setTimeout(() => done(null), CURRENT))
-	]);
-	if (what && doing.startsWith(what)) doing = what;
-	if (brought?.ok?.new && op.heads) {
-		await refresh();
-		throw new Error('It changed on your other devices while this one was still syncing. Here it is as it is now: look at it again, then answer.');
-	}
+	await beforeLocalWrite(op, {
+		behind: behind(),
+		bring: (entry) => bringEntries([entry], { run: (/** @type {any} */ o) => d.run(o) }),
+		refresh,
+		waiting: (on) => {
+			if (!what || !doing.startsWith(what)) return;
+			doing = on ? `${what}: bringing it up to date first, as this device still syncs` : what;
+		}
+	});
 }
 
 /**
@@ -760,8 +775,14 @@ const SLOW = 45_000;
  * @param {string} what @param {() => Promise<unknown>} work
  */
 async function change(what, work) {
+	const d = device;
 	const ok = await attempt(what, work);
-	if (ok) await refresh();
+	if (ok && device === d) {
+		revision++;
+		// Local acceptance completes independently of the expensive world summary.
+		// Targeted subscribers read the authoritative local device immediately.
+		queueRefresh(d);
+	}
 	return ok;
 }
 
@@ -795,7 +816,10 @@ async function rename(name) {
  *  unlock opens it again. In the Mac app its device runs on beside the app, which signs out of its own key alone. */
 async function lock() {
 	if (mac) return;
+	noteLifecycle('locked');
+	moveChecks.stop();
 	const d = device;
+	if (d) retireWorld(d);
 	watching = null;
 	useDevice(null);
 	[device, world, vault] = [null, null, ''];
@@ -806,6 +830,8 @@ async function lock() {
 /** Forgets the account here: the device lets go, and its shelf is put aside, never deleted, and a new one is in use,
  *  in the app's folder or in OPFS; the account is new here, and every page of the tab sees it so. */
 async function forget() {
+	moveChecks.stop();
+	if (device) retireWorld(device);
 	await device?.close();
 	watching = null;
 	useDevice(null);
@@ -836,6 +862,18 @@ const qr = async (text, size) => (mac ? mac.call('qrSvg', text, size) : avendb.q
 
 /** What the vaults' screens do, each acting for the vault it names (./Shell.svelte's `api`, beside what its page adds). */
 const api = {
+	/** Subscribe to any targeted local query, independent of the world summary.
+	 * @param {() => any} query @param {(answer: any) => void} take @param {(error: Error) => void} [failed] */
+	observe(query, take, failed) {
+		const reader = createReactiveRead({ read: (/** @type {any} */ d, /** @type {any} */ op, /** @type {AbortSignal} */ signal) => near(d, op, { signal }), take, failed });
+		const dispose = $effect.root(() => {
+			$effect(() => {
+				void revision;
+				reader.update(query(), device, context.current);
+			});
+		});
+		return () => { dispose(); reader.close(); };
+	},
 	/**
 	 * Runs change op `op` as `what` (./ops.js, avendb/docs/ARCHITECTURE.md §8): an entry's change, a share, a
 	 * revocation, a setting, new vaults, a mark, a name, acting for the vault the op names (`as`). What it did, or
@@ -923,6 +961,8 @@ const api = {
 
 /** This tab's avenDB session: what it is now, read as state, and what it does. */
 export const session = {
+	/** Invalidates targeted local reads without waiting for the full world summary. */
+	get revision() { return revision; },
 	/** @returns {Phase} */
 	get phase() {
 		return phase;
@@ -1001,5 +1041,6 @@ export const session = {
 	api,
 	run: api.run,
 	runAll: api.runAll,
-	ask: api.ask
+	ask: api.ask,
+	observe: api.observe
 };

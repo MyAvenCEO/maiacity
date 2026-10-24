@@ -2,7 +2,7 @@ name: Network capacity audit
 
 # Manual, bounded synthetic traffic from the actual production host. This does
 # not deploy, restart, change auth, or read the application's store. Results have
-# timings and byte counts only; no private keys, peer IDs, or server IPs.
+# allowlisted provider state/metrics and byte timings only; no private keys, peer IDs or server IPs.
 on:
   workflow_dispatch:
 
@@ -24,11 +24,25 @@ jobs:
           sparse-checkout: |
             .github/actions/prod-ssh
             scripts/diagnostics
+      - name: Check provider diagnostic boundaries
+        run: |
+          python3 scripts/diagnostics/provider-health.test.py
+          python3 scripts/diagnostics/guest-health.test.py
+      - name: Read provider status and metrics without touching the guest
+        continue-on-error: true
+        env:
+          HCLOUD_TOKEN: ${{ secrets.HETZNER_API_KEY }}
+        run: python3 scripts/diagnostics/provider-health.py > provider-health.json
       - uses: ./.github/actions/prod-ssh
         with:
           host: api.maia.city
           ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
           known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      - name: Read bounded guest health without changing services
+        continue-on-error: true
+        run: |
+          ssh -o BatchMode=yes -o ConnectTimeout=10 prod 'timeout 80s python3 -' \
+            < scripts/diagnostics/guest-health.py > guest-health.json
       - name: One bounded probe, running on the server
         shell: bash
         run: |
@@ -42,7 +56,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: server-network-${{ github.run_id }}
-          path: server-network.json
+          path: |
+            server-network.json
+            provider-health.json
+            guest-health.json
           if-no-files-found: warn
           retention-days: 7
       - name: Show measured rates

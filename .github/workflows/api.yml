@@ -196,9 +196,15 @@ jobs:
             fi
           done
 
+  delivery:
+    uses: ./.github/workflows/delivery-checks.yml
+
   deploy:
+    concurrency:
+      group: maia-production-containers
+      cancel-in-progress: false
     name: Roll out over SSH
-    needs: [tests, image, infra, dns]
+    needs: [tests, image, infra, dns, delivery]
     runs-on: ubuntu-latest
     env:
       HOST: ${{ needs.infra.outputs.ipv4 }}
@@ -233,8 +239,24 @@ jobs:
         run: |
           # site/ before compose mounts it (Docker would make it root's); the site workflow fills it
           ssh prod "mkdir -p $APP_DIR/deploy $APP_DIR/site/releases"
-          scp docker-compose.yml docker-compose.prod.yml prod:$APP_DIR/
-          scp deploy/Caddyfile deploy/backup.sh prod:$APP_DIR/deploy/
+          # Staging does not alter active configuration while a detached avenDB
+          # close still owns the host lock after its CI observer has disappeared.
+          for FILE in docker-compose.yml docker-compose.prod.yml; do
+            scp "$FILE" "prod:$APP_DIR/deploy/$FILE-$GITHUB_SHA"
+          done
+          for FILE in Caddyfile backup.sh; do
+            scp "deploy/$FILE" "prod:$APP_DIR/deploy/$FILE-$GITHUB_SHA"
+          done
+          ssh prod "cd $APP_DIR && bash -s" <<EOS
+          set -e
+          exec 9>.env.lock; flock -w 300 9
+          mv "deploy/docker-compose.yml-$GITHUB_SHA" docker-compose.yml
+          mv "deploy/docker-compose.prod.yml-$GITHUB_SHA" docker-compose.prod.yml
+          # Keep Caddy's bind-mounted inode; only its contents are replaced.
+          cat "deploy/Caddyfile-$GITHUB_SHA" > deploy/Caddyfile
+          rm "deploy/Caddyfile-$GITHUB_SHA"
+          mv "deploy/backup.sh-$GITHUB_SHA" deploy/backup.sh
+          EOS
       - name: Write .env (the database password is generated once and stays on the server)
         env:
           IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
@@ -246,7 +268,7 @@ jobs:
           ssh prod "cd $APP_DIR && bash -s" <<EOS
           set -e
           # avendb.yml writes AVENDB_IMAGE here too: one writer at a time
-          exec 9>.env.lock; flock 9
+          exec 9>.env.lock; flock -w 300 9
           # Postgres keeps this password inside its own data directory, so it is
           # created once next to that data and never rotated automatically.
           PWFILE="$DATA_MOUNT/.postgres_password"
@@ -332,6 +354,8 @@ jobs:
           # A failed backup is a warning, not a stopped release — the next deploy and the daily run try again.
           ssh prod "timeout 900 bash $APP_DIR/deploy/backup.sh before-deploy-${GITHUB_SHA::7} --no-media </dev/null" \
             || echo "::warning::The database backup before this deploy failed — see the step's log."
+      # avenDB alone owns its image changes and close gate (avendb.yml). Do not
+      # recreate it or remove it as an orphan during an unrelated API release.
       - name: Update the containers
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -340,8 +364,10 @@ jobs:
           # The token goes to the server over stdin, never as a process argument.
           printf '%s' "$GHCR_TOKEN" | ssh prod "docker login ghcr.io -u '$ACTOR' --password-stdin >/dev/null"
           ssh prod "cd $APP_DIR
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull -q
-            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
+            set -e
+            exec 9>.env.lock; flock -w 300 9
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull -q db api caddy
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps db api caddy
             # a running Caddy keeps its old routes until told: read the Caddyfile again
             docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
             docker logout ghcr.io >/dev/null

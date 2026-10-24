@@ -81,3 +81,22 @@ test('oversized manifest and malformed manifest fail closed', async () => {
   await assert.rejects(h.run('currentFile()'), expected);
  }
 });
+
+test('embedded check reports the host PWA display mode', () => {
+ const h = harness(async () => { throw new Error('no request expected'); });
+ h.context.window = { top: { matchMedia: () => ({ matches: true }), navigator: { standalone: false } } };
+ assert.equal(h.run('standalone()'), true);
+ h.context.window.top.matchMedia = () => ({ matches: false });
+ h.context.window.top.navigator.standalone = true;
+ assert.equal(h.run('standalone()'), true);
+ h.context.window.top.navigator.standalone = false;
+ assert.equal(h.run('standalone()'), false);
+});
+
+test('cross-origin parent cannot supply a claimed standalone mode', () => {
+ const h = harness(async () => { throw new Error('no request expected'); });
+ h.context.window = { get top() { throw new Error('cross-origin'); } };
+ h.context.matchMedia = () => ({ matches: false });
+ h.context.navigator = { standalone: false };
+ assert.equal(h.run('standalone()'), false);
+});

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-OCCBdJuWKuMdRo3X0l6JX8nN+hsW5tz46LtXRtvdu2M='; style-src 'sha256-w53B2D4dSJ+EfZCnofvlrMLFgmzTFuqhMdJESzPE3Io='; connect-src 'self' https://speed.cloudflare.com; base-uri 'none'; form-action 'none'"><meta name="robots" content="noindex,nofollow"><title>Maia network check</title>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-Zr1qNZEhbUYJ6ZS2kXm7qroJJR85Y6r2KL4C3zRUot0='; style-src 'sha256-w53B2D4dSJ+EfZCnofvlrMLFgmzTFuqhMdJESzPE3Io='; connect-src 'self' https://speed.cloudflare.com; base-uri 'none'; form-action 'none'"><meta name="robots" content="noindex,nofollow"><title>Maia network check</title>
 <style>
 :root{color-scheme:light;font:17px/1.5 system-ui,sans-serif;background:#f2f0e8;color:#233c2d}*{box-sizing:border-box}body{max-width:48rem;margin:auto;padding:1.4rem 1.2rem calc(2rem + env(safe-area-inset-bottom))}h1{font-size:2rem;line-height:1.1}button,input,select{font:inherit}button{border:0;border-radius:2rem;padding:.8rem 1.2rem;background:#244c35;color:white;min-height:48px}button:disabled{opacity:.5}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #c88721;outline-offset:3px}.actions{display:flex;gap:.6rem;flex-wrap:wrap}label{display:block;margin:1rem 0}input,select{display:block;width:100%;padding:.6rem;border:1px solid #d0cabb;border-radius:.5rem;background:#fffdf6;color:inherit}table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums}th,td{padding:.7rem .4rem;border-bottom:1px solid #d0cabb;text-align:left}small{color:#526557}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#fffdf6;padding:1rem;border-radius:.7rem;font-size:.75rem}.scroll{overflow-x:auto}#status{min-height:3rem}a{color:inherit}
 </style></head><body>
@@ -21,6 +21,12 @@ const $ = (id) => document.getElementById(id);
 let report = null, active = null, running = false, stopped = false;
 const maxMs = 15000, MiB = 1048576;
 const labels = {latency:'Cloudflare small request',maia:'Maia public file',download:'Cloudflare download',upload:'Cloudflare upload'};
+// The app embeds this same-origin page so the unlocked session survives the check.
+// Report its top-level display mode, not an iframe's potentially different media query.
+function standalone() {
+ try { return window.top.matchMedia('(display-mode: standalone)').matches || window.top.navigator.standalone===true; }
+ catch { return matchMedia('(display-mode: standalone)').matches || navigator.standalone===true; }
+}
 function draw() {
  $('rows').replaceChildren();
  for (const r of report?.results ?? []) {
@@ -89,7 +95,7 @@ document.addEventListener('visibilitychange',()=>{if(running && document.hidden)
 $('cancel').addEventListener('click',stop);
 $('start').addEventListener('click',async()=>{
  if(running)return;running=true;stopped=false;$('start').disabled=true;$('cancel').disabled=false;$('copy').disabled=true;$('save').disabled=true;
- report={version:1,startedUtc:new Date().toISOString(),declaredDevice:$('device').value,connectionNote:$('connection').value,standalone:matchMedia('(display-mode: standalone)').matches || navigator.standalone===true,userAgent:navigator.userAgent,method:'Sequential bounded single-stream HTTP; credentials omitted; fresh cache-busted URLs; results local only',results:[]};draw();
+ report={version:1,startedUtc:new Date().toISOString(),declaredDevice:$('device').value,connectionNote:$('connection').value,standalone:standalone(),userAgent:navigator.userAgent,method:'Sequential bounded single-stream HTTP; credentials omitted; fresh cache-busted URLs; results local only',results:[]};draw();
  try {
   for(let i=0;i<3 && !stopped;i++)await measure('latency','https://speed.cloudflare.com/__down?bytes=0',0);
   if(!stopped){try{const path=await currentFile();if(!stopped)await measure('maia',path,8*MiB);}catch(e){report.results.push({kind:'maia',complete:false,mbps:null,elapsedMs:0,error:String(e.message||e)});draw();}}

@@ -1,7 +1,7 @@
 <!--
 	WHAT A PAGE WAITS FOR, centred just above the nav pill (Samuel 2026-10-20: "The loading progress should be above
 	center the navpill"), on every app page, a full-screen world too, clear of the HUD a game draws at its top: avenDB
-	syncing what its peers hold ($lib/avendb/sync.svelte.js), with how far, as a ring; else the asset files the page
+	updates announced by its peers ($lib/avendb/sync.svelte.js), with missing log counts; else the asset files the page
 	reads, or that it waits for while avenDB's server doesn't answer ($lib/assets/vault.js `recipes`). It shows once
 	something takes a moment, and fades once nothing does; tapped, it says how far each is. Nothing here is an error: a
 	file still on its way is loading, never missing (the page's own banner tells what really is, ./VaultRecipes.svelte).
@@ -10,7 +10,8 @@
 	// @ts-nocheck — plain JS
 	import { fade } from 'svelte/transition';
 	import { session } from '$lib/avendb/session.svelte.js';
-	import { share, sync, syncing, watchSync } from '$lib/avendb/sync.svelte.js';
+	import { sync, watchSync } from '$lib/avendb/sync.svelte.js';
+	import { peerStatus } from '$lib/avendb/sync-status.js';
 	import { watchRecipes } from '$lib/assets/vault.js';
 	import { foot, FOOT } from './foot.js';
 
@@ -29,7 +30,8 @@
 	});
 
 	/** what the page waits for now: avenDB syncing, the server answering again, or its files */
-	const now = $derived(syncing() ? 'sync' : files.waiting > 0 ? 'wait' : files.reading > 0 ? 'files' : '');
+	const peers = $derived(peerStatus(sync));
+	const now = $derived(peers.active ? 'sync' : files.waiting > 0 ? 'wait' : files.reading > 0 ? 'files' : '');
 	/** what the pill shows: `now`, once it held for `SHOW` (or nothing once nothing held for `HIDE`) */
 	let shown = $state('');
 	$effect(() => {
@@ -44,22 +46,16 @@
 	});
 
 	const n = (/** @type {number} */ x) => x.toLocaleString('en');
-	/** how long ago, `ms` being how many milliseconds */
-	const secs = (/** @type {number} */ ms) => (ms < 2000 ? 'just now' : ms < 120000 ? `${Math.round(ms / 1000)} s ago` : `${Math.round(ms / 60000)} min ago`);
-	const percent = $derived(Math.floor(100 * share()));
 	const label = $derived(
-		shown === 'sync' ? `Syncing avenDB · ${percent}%` : shown === 'wait' ? "Waiting for avenDB's server" : `Loading ${n(files.reading)} ${files.reading === 1 ? 'file' : 'files'}`
+		shown === 'sync' ? peers.label : shown === 'wait' ? "Waiting for avenDB's server" : `Loading ${n(files.reading)} ${files.reading === 1 ? 'file' : 'files'}`
 	);
 	const details = $derived(
 		[
-			sync.known &&
-				(sync.behind > 0
-					? `avenDB: ${n(Math.max(0, sync.logs - sync.behind))} of ${n(sync.logs)} logs synced from ${sync.peers === 1 ? 'your peer' : `your ${n(sync.peers)} peers`}${sync.pulling ? `, ${n(sync.pulling)} coming in now` : ''}`
-					: `avenDB: in sync with ${sync.peers === 1 ? 'your peer' : `your ${n(sync.peers)} peers`}`),
-			sync.known && sync.behind > 0 && (sync.paged ? `Its last page of edits came ${secs(sync.at - sync.paged)}; a log counts once it is whole.` : sync.pulling ? 'No page of edits has come since this page opened.' : ''),
+			...peers.details,
 			files.reading > 0 && `This page: ${n(files.reading)} ${files.reading === 1 ? 'file' : 'files'} on the way${files.waiting ? `, ${n(files.waiting)} waiting for avenDB's server to answer again` : ''}`
 		].filter(Boolean)
 	);
+	const fraction = $derived(shown === 'sync' && sync.behind > 0 ? peers.fraction : null);
 	/** the ring: how far the sync is, or a turning arc while it can't say */
 	const R = 7;
 	const ROUND = 2 * Math.PI * R;
@@ -73,9 +69,9 @@
 			</ul>
 		{/if}
 		<button class="pill" onclick={() => (open = !open)} aria-expanded={open} aria-live="polite" title={label}>
-			<svg class="ring" class:turning={shown !== 'sync'} viewBox="0 0 18 18" width="16" height="16" aria-hidden="true">
+			<svg class="ring" class:turning={fraction === null} viewBox="0 0 18 18" width="16" height="16" aria-hidden="true">
 				<circle cx="9" cy="9" r={R} class="track" />
-				<circle cx="9" cy="9" r={R} class="done" stroke-dasharray="{shown === 'sync' ? Math.max(0.04, share()) * ROUND : ROUND / 4} {ROUND}" />
+				<circle cx="9" cy="9" r={R} class="done" stroke-dasharray="{fraction === null ? ROUND / 4 : fraction * ROUND} {ROUND}" />
 			</svg>
 			<span>{label}</span>
 		</button>

@@ -129,6 +129,7 @@ pub mod paged_views;
 mod progress;
 mod proofs;
 mod pulls;
+mod live;
 mod ranges;
 mod run;
 pub mod server;
@@ -2330,9 +2331,9 @@ impl Shared {
         peers.get(&endpoint).filter(|p| p.conn.close_reason().is_none()).cloned()
     }
 
-    /// A connection whose hellos proved `device`, dialed or accepted: the one to its endpoint from now on, which its
-    /// blob connections reach too, through the node's relay if it has one. A new connection starts their talk over:
-    /// the node tells the peer all its holdings again, at once.
+    /// A connection whose hellos proved `device`, dialed or accepted. Control selects its live peer, preferring
+    /// the lower endpoint's outgoing connection for crossed dials to the same device. This returns the actual new
+    /// connection for its caller to serve, even if it is not selected; the node announces its holdings again.
     fn connected(self: &Arc<Self>, conn: Connection, device: SignerId) -> Peer {
         let endpoint = conn.remote_id();
         let peer = Peer { conn, device, endpoint, since: jobs::now_ms() };
@@ -2368,9 +2369,25 @@ impl Shared {
         background: bool,
         catch_up: Option<&pulls::CatchUp>,
     ) -> Result<usize> {
+        self.pull_expected(endpoint, scope, background, catch_up, None).await
+    }
+
+    /// A live hint belongs to the authenticated identity that announced it. Fence that identity before building
+    /// a request, then keep the captured Peer throughout the pull even if the endpoint's connection is replaced.
+    async fn pull_expected(
+        self: &Arc<Self>,
+        endpoint: EndpointId,
+        scope: Scope,
+        background: bool,
+        catch_up: Option<&pulls::CatchUp>,
+        expected: Option<SignerId>,
+    ) -> Result<usize> {
         let _activity = self.admit()?;
         let admission = self.pulls.enter(background, catch_up).await?;
         let peer = self.connection(endpoint).await?;
+        if expected.is_some_and(|device| device != peer.device) {
+            anyhow::bail!("sync peer identity changed before live pull");
+        }
         let mut job = self.jobs.begin("pull", peer.device.to_hex(), String::new(), 0, "edits");
         // an asking of some logs among more to come (`ask_differing`) leaves the last bringing up to date to its caller
         let must = !matches!(scope, Scope::Logs(_));
@@ -2481,8 +2498,10 @@ impl Shared {
         let (mut after, mut new, mut pages) = (None, sparse, 0);
         let mut keys = BTreeSet::<BlobId>::new();
         let (mut vaults, mut entries) = (BTreeMap::<String, u64>::new(), BTreeMap::<String, u64>::new());
-        let mut coming = ask(None).await;
+        // Include initial admission, request encoding and reply wait in pipeline service time.
+        // Starting after this await makes a slow one-page request appear arbitrarily fast.
         let mut since = Instant::now();
+        let mut coming = ask(None).await;
         loop {
             let (Reply { mut edits, blobs, more }, bytes, wait, permit) = coming?;
             let (way, sent) = (way_of(&peer.conn), edits.len() as u64);
@@ -2524,6 +2543,7 @@ impl Shared {
             };
             let (taken, ahead) = future::zip(take, ahead).await;
             let (got, whose, took) = taken?;
+            let finished = Instant::now();
             self.traffic.page(traffic::Page {
                 device,
                 at: jobs::now_ms(),
@@ -2532,11 +2552,11 @@ impl Shared {
                 new: got as u64,
                 wait_ms: wait.as_millis() as u64,
                 take_ms: took.as_millis() as u64,
-                ms: since.elapsed().as_millis() as u64,
+                ms: finished.duration_since(since).as_millis() as u64,
                 way,
             });
             self.jobs.stir();
-            since = Instant::now();
+            since = finished;
             new += got;
             pages += 1;
             for (v, e) in whose {
@@ -2879,7 +2899,8 @@ impl Shared {
         let peer = self.connection(endpoint).await?;
         let on = peer.conn.stable_id();
         let told = self.told.lock().expect("told").get(&device).filter(|(at, _)| *at == on).map(|(_, h)| h.clone());
-        if let Some(announce) = want.since(told.as_ref()) {
+        if let Some(mut announce) = want.since(told.as_ref()) {
+            self.live_witnesses(&mut announce, &want).await;
             // Small live changes already have the cheapest encoding. A complete replacement (including reconnect
             // and permission contraction) first reconciles cached subtrees with capable peers. Refusal preserves
             // the original full announcement, and a legacy peer is probed only once on this connection.
@@ -2913,9 +2934,11 @@ impl Shared {
 
     /// `device` told the node `announce` of its holdings, on a connection whose hello proved it: what it holds from
     /// now on, as `Holdings::take` says. A device that claims to hold more than `MOST` logs or files claims nothing.
-    fn hear(&self, device: SignerId, announce: Announce) {
+    fn hear(self: &Arc<Self>, device: SignerId, announce: Announce) {
+        let full = announce.full;
         let mut held = self.held.lock().expect("held");
         let holdings = held.entry(device).or_default();
+        let live_logs = live::announced_hints(holdings, &announce);
         // Always take the holdings lock before the range cache: complete range rounds use the same order, so a
         // legacy update cannot race between checking a root and publishing its replacement.
         let mut ranges = self.ranges.lock().expect("ranges");
@@ -2925,8 +2948,10 @@ impl Shared {
             held.remove(&device);
             ranges.forget(device);
         }
+        let admitted = held.contains_key(&device);
         drop(ranges);
         drop(held);
+        if admitted { self.live_announced(device, full, &live_logs); }
         self.jobs.stir();
     }
 

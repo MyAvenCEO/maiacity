@@ -73,21 +73,25 @@
 		[...SECTIONS.map(([at, name]) => ({ name, docs: shown.filter((d) => d.key.startsWith(`${at}/`)) })),
 			{ name: 'Other', docs: shown.filter((d) => !SECTIONS.some(([at]) => d.key.startsWith(`${at}/`))) }].filter((g) => g.docs.length)
 	);
-	const picked = $derived(docs.find((d) => d.e.entry === entry) ?? docs[0]);
+	// Local absence must not replace an explicit selection with a different document.
+	const target = $derived(entry || docs[0]?.e.entry);
+	const picked = $derived(docs.find((d) => d.e.entry === target));
 	const skill = $derived(!!picked?.key.startsWith('skill/'));
 
 	/** what the `note` op reads of the doc picked: its lines and every edit */
 	let note = $state(/** @type {any} */ (null));
+	let loaded = $state(false);
 	$effect(() => {
-		const e = picked?.e.entry;
+		const e = target;
 		note = null;
+		loaded = false;
 		line = null;
 		if (!e) return;
 		void world;
 		if (api.window && !noteWindow) return;
 		let gone = false;
 		const request = windowRead(api, { op: 'note', entry: e }, null, noteWindow);
-		request.result.then((/** @type {any} */ n) => { if (!gone) note = n; });
+		request.result.then((/** @type {any} */ n) => { if (!gone) [note, loaded] = [n, true]; });
 		return () => { gone = true; request.close(); };
 	});
 	/** the line whose text shows: main, or a proposal or variant picked on the right */
@@ -198,7 +202,9 @@
 {/snippet}
 
 <Frame nav={docs.length ? list : undefined} aside={picked ? side : undefined} navLabel="Every doc" navIcon="library" asideLabel="Its history, versions and outline">
-	{#if !docs.length}
+	{#if target && !picked}
+		<p class="soft empty">{loaded ? 'This browser hasn’t loaded this document.' : 'Opening the document…'}</p>
+	{:else if !docs.length}
 		<p class="soft empty">
 			<Icon name="article" size={18} />
 			{#if seen.length}No doc in {nameOf(byId.get(vault))} yet. Each doc goes into Maia City as an AIP its owners

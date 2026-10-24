@@ -467,3 +467,44 @@ test("the viewer's modules reach nothing of the repo's recipes, cards or librari
 	const shell = readFileSync(resolve(ROOT, 'src/lib/avendb/Shell.svelte'), 'utf8');
 	expect(shell).toContain('<Assets {world} vault={context} {actor} {api} entry={route.asset} recipe={route.recipe} />');
 });
+
+
+test('a file still being fetched is reported before any cache read or model build', async () => {
+	const hash = LABEL['plants/fig@1'];
+	const d = deviceOf([hash]);
+	let release;
+	const waiting = new Promise((resolve) => { release = resolve; });
+	const source = vaultSource(d.world, d.db, VAULT, ACTOR, async (...args) => {
+		await waiting;
+		return d.readFile(...args);
+	});
+	const box = boxOf(), store = storeOf(), phases = [];
+	const building = vaultBuild(source, hash, {}, { box, store, phase: (p) => phases.push(p) });
+	await Promise.resolve();
+	expect(phases).toEqual(['file']);
+	expect(store.asked.get).toBe(0);
+	expect(box.asked).toHaveLength(0);
+	release();
+	const got = await building;
+	expect(got.card.recipe).toBe(hash);
+	expect(phases).toEqual(['file', 'cache', 'build']);
+}, 60000);
+
+test('a failed entry-file fetch can be retried through the same source, still checking its exact hash', async () => {
+	const hash = LABEL['plants/oregano@1'];
+	const d = deviceOf([hash]);
+	let attempt = 0;
+	const source = vaultSource(d.world, d.db, VAULT, ACTOR, (...args) => {
+		if (++attempt === 1) throw new Error('no peer hands over its file');
+		return d.readFile(...args);
+	});
+	const box = boxOf(), store = storeOf(), phases = [];
+	const options = { box, store, phase: (p) => phases.push(p) };
+	await expect(vaultBuild(source, hash, {}, options)).rejects.toThrow('no peer hands over its file');
+	expect(phases).toEqual(['file']);
+	expect(box.asked).toHaveLength(0);
+	const got = await vaultBuild(source, hash, {}, options);
+	expect(got.card.recipe).toBe(hash);
+	expect(box.asked[0].recipe.code).toBe(FILES[hash]);
+	expect(phases).toEqual(['file', 'file', 'cache', 'build']);
+}, 60000);

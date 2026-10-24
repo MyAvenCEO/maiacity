@@ -21,6 +21,7 @@
 -->
 <script>
 	import { tick } from 'svelte';
+	import { base } from '$app/paths';
 	import { sure } from '$lib/app/sure.js';
 	import { command, native } from '$lib/native';
 	import Ask from './Ask.svelte';

@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::os::unix::fs::MetadataExt;
 use std::process::{Command, Stdio};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -35,8 +36,26 @@ fn copy_root() -> Result<PathBuf> {
             "live store is forbidden"
         );
     }
+    isolated_tree(&root)?;
     Ok(root)
 }
+
+/// Validate every descendant before opening a writer or damaging derived slots.
+/// APFS copy-on-write clones have independent inodes; hard links do not.
+fn isolated_tree(path: &Path) -> Result<()> {
+    let meta = std::fs::symlink_metadata(path)?;
+    ensure!(!meta.file_type().is_symlink(), "rehearsal tree contains a symlink");
+    if meta.is_dir() {
+        for entry in std::fs::read_dir(path)? {
+            isolated_tree(&entry?.path())?;
+        }
+    } else {
+        ensure!(meta.is_file(), "rehearsal tree contains a non-regular object");
+        ensure!(meta.nlink() == 1, "rehearsal file has multiple hard links");
+    }
+    Ok(())
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
@@ -274,6 +293,7 @@ async fn run() -> Result<()> {
             shelf: Some(shelf.clone()),
             progress: Progress::new(),
             recovery: None,
+            on_node: None,
         })
     };
     let began = Instant::now();
@@ -386,4 +406,60 @@ fn existing_mac_identity_survives_upgrade_reopen_and_interrupted_derived_slots()
         .unwrap()
         .block_on(run())
         .unwrap();
+}
+
+
+#[cfg(test)]
+mod isolation_tests {
+    use super::*;
+    use std::os::unix::fs::symlink;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct Fixture(PathBuf);
+    impl Fixture {
+        fn new() -> Self {
+            static NEXT: AtomicUsize = AtomicUsize::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "avendb-rehearsal-isolation-{}-{}-{}",
+                std::process::id(),
+                SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(),
+                NEXT.fetch_add(1, Ordering::Relaxed),
+            ));
+            std::fs::create_dir(&path).unwrap();
+            std::fs::create_dir_all(path.join("copy/g0/slots")).unwrap();
+            std::fs::write(path.join("outside"), b"untouched").unwrap();
+            Self(path)
+        }
+        fn root(&self) -> PathBuf { self.0.join("copy") }
+        fn slot(&self) -> PathBuf { self.root().join("g0/slots/view-0") }
+        fn outside(&self) -> PathBuf { self.0.join("outside") }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) { let _ = std::fs::remove_dir_all(&self.0); }
+    }
+
+    #[test]
+    fn independent_tree_is_accepted() {
+        let fixture = Fixture::new();
+        std::fs::write(fixture.slot(), b"independent").unwrap();
+        isolated_tree(&fixture.root()).unwrap();
+    }
+
+    #[test]
+    fn nested_slot_symlink_is_refused_without_touching_target() {
+        let fixture = Fixture::new();
+        symlink(fixture.outside(), fixture.slot()).unwrap();
+        let error = isolated_tree(&fixture.root()).unwrap_err();
+        assert!(error.to_string().contains("symlink"));
+        assert_eq!(std::fs::read(fixture.outside()).unwrap(), b"untouched");
+    }
+
+    #[test]
+    fn nested_slot_hardlink_is_refused_without_touching_target() {
+        let fixture = Fixture::new();
+        std::fs::hard_link(fixture.outside(), fixture.slot()).unwrap();
+        let error = isolated_tree(&fixture.root()).unwrap_err();
+        assert!(error.to_string().contains("hard links"));
+        assert_eq!(std::fs::read(fixture.outside()).unwrap(), b"untouched");
+    }
 }

@@ -21,6 +21,10 @@ const RETRY: Duration = Duration::from_secs(30);
 const WAIT: Duration = Duration::from_secs(10);
 const OPEN_WAIT: Duration = Duration::from_secs(25);
 
+#[cfg(test)]
+#[path = "control_selection_tests.rs"]
+mod selection_tests;
+
 #[derive(Clone, Copy, Debug, Default)]
 struct Caps {
     wt: bool,
@@ -671,7 +675,9 @@ pub(crate) async fn browser_event(shared: &Arc<Shared>, event: Value) -> Result<
     }
 }
 
-/// A replacement sync connection starts a fresh negotiation generation; an older serve task cannot retire it.
+/// A crossed dial to the same proven device selects the lower endpoint's outgoing connection at both ends.
+/// Either direction alone works; same-direction and key-move replacement retain their existing behavior.
+/// The caller still serves the actual new peer, even when it does not replace the selected connection.
 pub(crate) fn connected(shared: &Arc<Shared>, peer: &Peer) {
     let Ok(_operation) = shared.admit() else {
         peer.conn.close(0u32.into(), b"node closing");
@@ -683,7 +689,23 @@ pub(crate) fn connected(shared: &Arc<Shared>, peer: &Peer) {
         peer.conn.close(0u32.into(), b"node closing");
         return;
     }
-    shared.peers.lock().expect("peers").insert(peer.endpoint, peer.clone());
+    let mut peers = shared.peers.lock().expect("peers");
+    if let Some(old) = peers.get(&peer.endpoint) {
+        let lower = shared.endpoint.id() < peer.endpoint;
+        let old_dialed = matches!(old.conn.side(), iroh::endpoint::Side::Client);
+        let incoming_dialed = matches!(peer.conn.side(), iroh::endpoint::Side::Client);
+        // ConnectionSelection.retain: preserve the live preferred generation and its route. Peer identity
+        // equality matters: an authenticated key move at the same endpoint must not be held behind the old key.
+        let retain = old.conn.close_reason().is_none()
+            && old.device == peer.device
+            && lower == old_dialed
+            && lower != incoming_dialed;
+        if old.conn.stable_id() == peer.conn.stable_id() || retain {
+            return;
+        }
+    }
+    peers.insert(peer.endpoint, peer.clone());
+    drop(peers);
     let stale =
         state.sessions.get(&peer.endpoint).filter(|n| n.on != peer.conn.stable_id()).and_then(|n| n.route.clone());
     if let Some(id) = stale {

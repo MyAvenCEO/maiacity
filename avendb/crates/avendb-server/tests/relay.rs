@@ -16,7 +16,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use avendb::admission::Signup;
 use avendb::cast::*;
-use avendb::id::{SignerId, VaultId};
+use avendb::id::{EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::Lab;
 use avendb::policy::{Action, Kind, Level, Principal, Revoking};
@@ -598,6 +598,25 @@ async fn brought(node: &Node, op: Value, text: &str) -> Value {
     answer["ok"].clone()
 }
 
+/// Establish receipt before HTTP can cache a feed: a forbidden entry must be present,
+/// otherwise a 404 could pass only because its independent log has not arrived yet.
+/// Backup holds encrypted writes without granting a materialized/readable private entry.
+async fn held_entries(server: &Node, made: &[&Value]) {
+    let entries: Vec<_> = made.iter().map(|made| {
+        EntryId::from_hex(made["entry"].as_str().expect("an entry")).expect("an entry id")
+    }).collect();
+    let end = Instant::now() + Duration::from_secs(30);
+    loop {
+        let wanted = entries.clone();
+        let held = server.read(move |lab, me| wanted.iter().map(|entry| {
+            (entry.to_hex(), lab.fetched(me, *entry))
+        }).collect::<Vec<_>>()).await;
+        if held.iter().all(|(_, count)| *count > 0) { break; }
+        assert!(Instant::now() < end, "fixture receipt within 30 s, entry/write counts: {held:?}");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 /// A public code entry's file, over HTTP, as a page with no device reads a recipe's source: Maia City creates a
 /// recipe with its source, one write, and brings a newer one into it; each row of it lists both, and
 /// `/feed/entry/<vault>/<entry>/file` serves the newest whole, as plain text no page runs, `seed=1` holding as ever.
@@ -671,9 +690,24 @@ async fn the_server_serves_a_public_code_entrys_newest_file_whole_as_plain_text(
     let file = |v: VaultId, made: &Value, query: &str| {
         format!("/feed/entry/{}/{}/file{query}", v.to_hex(), made["entry"].as_str().expect("an entry"))
     };
+    held_entries(server, &[&lamp, &lantern, &view, &logic, &post]).await;
     let lamps = file(city, &lamp, "");
-    let served = || async { http(addr, "GET", &lamps).await.0.starts_with("http/1.1 200") };
+    let served = || async {
+        let (head, body) = http(addr, "GET", &lamps).await;
+        head.starts_with("http/1.1 200") && body == new
+    };
     until("the server serves the lamp's newest source", served).await;
+    // Interactive logs may arrive before unrelated entries. A visible lamp is not a completion fence for the
+    // view or Alice's lantern, and the feed can still hold an earlier five-second snapshot.
+    until("the public view is listed", || async {
+        let views = got(addr, "/feed/code?seed=1&type=view").await;
+        views["code"].as_array().is_some_and(|rows| rows.iter().any(|row| row["entry"] == view["entry"]))
+    }).await;
+    let lantern_path = file(alice, &lantern, "");
+    until("Alice's public lantern is served", || async {
+        let (head, body) = http(addr, "GET", &lantern_path).await;
+        head.starts_with("http/1.1 200") && body == "lantern\n"
+    }).await;
     // its row lists both files, the newest last, as the code and the entry's own row do
     let listed = |made: &Value, text: &str| json!({ "root": made["root"], "size": made["size"], "len": text.len() });
     let row = got(addr, &format!("/feed/entry/{}/{e}", city.to_hex())).await;
@@ -784,14 +818,28 @@ async fn the_server_serves_maia_citys_media_by_their_old_hash_whole_or_by_range(
     };
     let [sound, picture, private, theirs, page] = [1u8, 2, 3, 4, 5].map(|n| format!("{n:02x}").repeat(32));
     let geese = "0123456789abcdef";
-    brought(&mac, put(city, &format!("{sound}.mp3"), "audio/mpeg", json!([tag]), geese), geese).await;
-    brought(&mac, put(city, &format!("{picture}.jpg"), "image/jpeg", json!([tag]), "a cover"), "a cover").await;
-    brought(&mac, put(city, &format!("{private}.png"), "image/png", json!([]), "a draft"), "a draft").await;
-    brought(&mac, put(alice, &format!("{theirs}.mp3"), "audio/mpeg", json!([tag]), "hers"), "hers").await;
-    brought(&mac, put(city, &format!("{page}.html"), "text/html", json!([tag]), "<script>"), "<script>").await;
+    let sound_entry = brought(&mac, put(city, &format!("{sound}.mp3"), "audio/mpeg", json!([tag]), geese), geese).await;
+    let picture_entry = brought(&mac, put(city, &format!("{picture}.jpg"), "image/jpeg", json!([tag]), "a cover"), "a cover").await;
+    let private_entry = brought(&mac, put(city, &format!("{private}.png"), "image/png", json!([]), "a draft"), "a draft").await;
+    let theirs_entry = brought(&mac, put(alice, &format!("{theirs}.mp3"), "audio/mpeg", json!([tag]), "hers"), "hers").await;
+    let page_entry = brought(&mac, put(city, &format!("{page}.html"), "text/html", json!([tag]), "<script>"), "<script>").await;
+    held_entries(server, &[&sound_entry, &picture_entry, &private_entry, &theirs_entry, &page_entry]).await;
+    // These are readable public entries, excluded from media only by vault/type, not missing keys or metadata.
+    for (v, made) in [(alice, &theirs_entry), (city, &page_entry)] {
+        let path = format!("/feed/entry/{}/{}", v.to_hex(), made["entry"].as_str().expect("an entry"));
+        until("the excluded public medium has a readable entry", || async {
+            let (head, _) = http(addr, "GET", &path).await;
+            head.starts_with("http/1.1 200")
+        }).await;
+    }
     let at = |hash: &str| format!("/feed/media/{hash}");
     let served = || async { http(addr, "GET", &at(&sound)).await.0.starts_with("http/1.1 200") };
     until("the server serves Maia City's sound by its old hash", served).await;
+    // Sound and picture are independent logs; the live lane may publish either before the other.
+    until("the server serves Maia City's picture by its old hash", || async {
+        let (head, body) = http(addr, "GET", &at(&picture)).await;
+        head.starts_with("http/1.1 200") && body == "a cover"
+    }).await;
     // whole, by its hash alone or with its ending, as a sound read by ranges
     for path in [at(&sound), at(&format!("{sound}.mp3"))] {
         let (head, body) = http(addr, "GET", &path).await;

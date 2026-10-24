@@ -90,8 +90,9 @@
 		return () => { for (const window of Object.values(windows)) window?.close(); };
 	});
 
-	let note = $state(/** @type {NoteData | null} */ (null));
-	let loaded = $state(false);
+	let received = $state.raw(/** @type {{ entry: string, note: NoteData | null } | null} */ (null));
+	const loaded = $derived(received?.entry === entry);
+	const note = $derived(loaded ? received?.note ?? null : null);
 	/** the line picked: `null` for the main line, else the id of its proposal's or variant's first edit */
 	let line = $state(/** @type {string | null} */ (null));
 	/** the edit whose version shows, read-only: '' for the line's latest */
@@ -120,15 +121,15 @@
 
 	const item = $derived(world.entries.find((e) => e.entry === entry));
 
-	// what the device holds changed: read the note again
+	// Request an explicit target even before its metadata arrives in this device's world.
 	$effect(() => {
 		void world;
-		const [known, e] = [!!item, entry];
-		if (!known || (api.window && !readWindows)) return;
+		const e = entry;
+		if (!e || (api.window && !readWindows)) return;
 		let gone = false;
 		const request = windowRead(api, { op: 'note', entry: e }, null, readWindows?.note);
 		request.result.then((/** @type {NoteData | null} */ n) => {
-			if (!gone) [note, loaded] = [n, true];
+			if (!gone) received = { entry: e, note: n };
 		});
 		return () => { gone = true; request.close(); };
 	});
@@ -158,20 +159,18 @@
 	});
 
 	/** the note this one is a copy of, as its page reads it, where this browser reads it */
-	let original = $state(/** @type {NoteData | null} */ (null));
+	let receivedOriginal = $state.raw(/** @type {{ entry: string, note: NoteData | null } | null} */ (null));
+	const original = $derived(receivedOriginal?.entry === item?.forkOf ? receivedOriginal?.note ?? null : null);
 
 	// and the original's history, which this one's goes on into
 	$effect(() => {
 		void world;
 		const from = item?.forkOf;
-		if (!from || !world.entries.some((e) => e.entry === from)) {
-			original = null;
-			return;
-		}
+		if (!from) return;
 		if (api.window && !readWindows) return;
 		let gone = false;
 		const request = windowRead(api, { op: 'note', entry: from }, null, readWindows?.original);
-		request.result.then((/** @type {NoteData | null} */ n) => { if (!gone) original = n; });
+		request.result.then((/** @type {NoteData | null} */ n) => { if (!gone) receivedOriginal = { entry: from, note: n }; });
 		return () => { gone = true; request.close(); };
 	});
 
@@ -868,10 +867,10 @@
 			asideLabel="History and versions"
 			asideIcon="history"
 		>
-			{#if !item}
-				<p class="soft pad">This browser doesn’t know this note.</p>
-			{:else if !loaded}
+			{#if !loaded}
 				<p class="soft pad">Opening the note…</p>
+			{:else if !item}
+				<p class="soft pad">This browser doesn’t know this note.</p>
 			{:else if !note || !here}
 				<div class="empty pad">This browser holds no edit of this note {nameOf(as)} may read.</div>
 			{:else}

@@ -28,8 +28,11 @@ pub struct Pulled {
     pub new: u64,
     pub bytes: u64,
     /// How long it waited for its pages to come, and how long it took to check and take them, in milliseconds: the
+    /// request elapsed includes admission, encoding and decoding, not only network wait. The
     /// next page is asked for while one is taken, so the two overlap; and how long its pages took one after the other
-    /// (`ms`), from the end of the one before, or the asking's start, to the end of each.
+    /// (`ms`), from the previous processing/lookahead join (or before the first ask) to the next join.
+    /// These are legacy reply pipeline service intervals, excluding request planning, sparse ranges, keys and files.
+    /// Concurrent requests can overlap, so their sum is not device wall-clock time.
     pub wait_ms: u64,
     pub take_ms: u64,
     pub ms: u64,
@@ -59,7 +62,7 @@ pub struct Page {
     pub new: u64,
     pub wait_ms: u64,
     pub take_ms: u64,
-    /// From the end of the page before, or the asking's start, to the end of this one.
+    /// Pipeline interval through the processing/lookahead join; not this page's individual latency.
     pub ms: u64,
     /// `direct`, `relay`, or `` where the connection named no selected path.
     pub way: &'static str,
@@ -197,8 +200,8 @@ impl Traffic {
 }
 
 impl Pulled {
-    /// As the page reads it: with how fast its pages came, in bytes and edits a second of the time they took one after
-    /// the other.
+    /// Compatible legacy JSON: bytes/edits per summed pipeline service second, not transport bandwidth.
+    /// `edits - new` includes both already-held and rejected offers; it is not a duplicate count.
     pub fn to_json(&self) -> Value {
         let ms = self.ms.max(1) as f64;
         json!({

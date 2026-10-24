@@ -68,18 +68,14 @@
 	let shown = $state(50);
 	let read = $state(null);
 	let why = $state('');
-	$effect(() => {
-		const entry = here?.entry;
-		void world;
-		if (!entry) return void (read = null);
-		let gone = false;
-		api.ask({ op: 'room', entry, last: shown }).then((a) => {
-			if (gone) return;
-			read = a?.ok ?? null;
-			why = a?.ok ? '' : (a?.why ?? 'This room doesn’t open on this device yet.');
-		});
-		return () => (gone = true);
-	});
+	// The shared avenDB subscription reads this view directly from accepted local
+	// state. Full-world rendering and peer catch-up are independent.
+	onMount(() => api.observe(() => here?.entry ? { op: 'room', entry: open, last: shown } : null,
+		(answer) => {
+			read = answer?.ok ?? null;
+			why = answer?.ok ? '' : (answer?.why ?? 'This room doesn’t open on this device yet.');
+		}, (error) => { why = error.message; }));
+	$effect(() => { if (!here) read = null; });
 	const record = $derived(read?.entry === open ? read.room : null);
 	const messages = $derived(record?.messages ?? []);
 	const lines = $derived(R.grouped(messages));

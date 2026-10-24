@@ -31,6 +31,7 @@ on:
       - '!avendb/crates/avendb-device/**'
       - '!avendb/crates/*/tests/**'
       - '.github/workflows/avendb.yml'
+      - 'deploy/stop-avendb.py'
   workflow_dispatch:
 
 concurrency:
@@ -85,20 +86,32 @@ jobs:
     name: avenDB checks
     uses: ./.github/workflows/avendb-checks.yml
 
+  delivery:
+    uses: ./.github/workflows/delivery-checks.yml
+
   deploy:
+    concurrency:
+      group: maia-production-containers
+      cancel-in-progress: false
     name: Restart avenDB's server over SSH
-    needs: [image, checks]
+    needs: [image, checks, delivery]
     runs-on: ubuntu-latest
     steps:
       # the server's own action (.github/actions/prod-ssh): its host keys pinned, never taken on trust
       - uses: actions/checkout@v4
         with:
-          sparse-checkout: .github/actions
+          sparse-checkout: |
+            .github/actions
+            deploy
       - uses: ./.github/actions/prod-ssh
         with:
           host: ${{ env.API_HOST }}
           ssh-key: ${{ secrets.DEPLOY_SSH_KEY }}
           known-hosts: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      - name: Prepare the close gate
+        run: |
+          ssh prod "python3 --version && mkdir -p '$APP_DIR/deploy'"
+          scp deploy/stop-avendb.py "prod:$APP_DIR/deploy/stop-avendb-$GITHUB_SHA.py"
       - name: Roll out the new image
         env:
           IMAGE: ${{ needs.image.outputs.image }}:${{ github.sha }}
@@ -125,7 +138,12 @@ jobs:
           ssh prod "cd $APP_DIR && bash -s" <<EOS
           set -e
           # api.yml rewrites this .env too: one writer at a time
-          exec 9>.env.lock; flock 9
+          exec 9>.env.lock; flock -w 300 9
+          # Pull first; a registry failure must not stop the running device.
+          docker pull --quiet "$IMAGE"
+          # The child owns close independently of this SSH/CI observer and retains fd 9.
+          # A failed/expired monitor exits before changing config or starting a writer.
+          python3 "deploy/stop-avendb-$GITHUB_SHA.py" "$APP_DIR" --lock-fd 9 --wait 300
           grep -q '^AVENDB_DATA_PATH=' .env 2>/dev/null \
             || { echo "::error::$APP_DIR/.env has no avenDB settings yet: run the API workflow (api.yml) first."; exit 1; }
           sed -i '/^AVENDB_IMAGE=/d' .env && echo "AVENDB_IMAGE=$IMAGE" >> .env
@@ -138,8 +156,9 @@ jobs:
             *,avendb,*) ;;
             *) sed -i '/^COMPOSE_PROFILES=/d' .env && echo "COMPOSE_PROFILES=\${P:+\$P,}avendb" >> .env ;;
           esac
-          flock -u 9
-          docker compose -f docker-compose.yml -f docker-compose.prod.yml pull -q avendb
+          # Recheck the proposed settings too: a changed mount/bucket/seal cannot
+          # activate a different device even after the old one closed cleanly.
+          python3 "deploy/stop-avendb-$GITHUB_SHA.py" "$APP_DIR" --lock-fd 9 --verify-only
           # this one container: the API, the media vault and Caddy stay as they are
           docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --no-deps avendb
           docker logout ghcr.io >/dev/null
