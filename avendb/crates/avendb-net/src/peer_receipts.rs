@@ -342,7 +342,13 @@ mod tests {
         let phone = Node::spawn(w.lab.split(receiver, &[], [64; 32]), receiver, Options::local()).await.unwrap();
         phone.know(mac.addr()); mac.know(phone.addr());
         phone.sync_with(mac.id()).await.unwrap();
-        mac.shared.ui_receipts.arm(); phone.shared.ui_receipts.arm();
+        let armed_mac = mac.op(json!({"op":"measure_peer_visibility"})).await.unwrap();
+        let armed_phone = phone.op(json!({"op":"measure_peer_visibility"})).await.unwrap();
+        assert_eq!(armed_mac["ok"]["enabled"], true);
+        assert_eq!(armed_phone["ok"]["enabled"], true);
+        // UI-only activation must independently sample edits; policy sampling is off.
+        assert!(!mac.shared.receipts.enabled());
+        assert!(mac.shared.ui_receipts.enabled());
         let entry = mac.act(move |lab, me| lab.create(me, vault, vault, "doc", &[], document("Reactive receipt", "ordinary entry", me)).unwrap()).await;
         phone.sync_with(mac.id()).await.unwrap();
         // Policy convergence alone must never become a UI acknowledgement.
