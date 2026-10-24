@@ -43,7 +43,7 @@ The native integration regression deliberately holds the actual signature worker
 
 The browser uses the same owned preparation and whole-page admission. `check_cooperatively` checks at most eight signed edits per turn and yields between unfinished groups. The production WASM caller uses `n0_future::time::sleep(Duration::ZERO)`, whose browser implementation waits for a `setTimeout` callback, allowing worker messages to run. A completed token is returned only after all selected signatures have been checked. Cancellation discards the uncommitted preparation. The FIFO checker prevents several pages each doing a full group during the same turn.
 
-`AvenDB/CooperativeReceive.lean` proves the eight-edit step bound and that an incomplete cursor cannot commit; this proof passed before implementation. The core stepping regression and actual browser execution are pending. One signature check is indivisible, so eight edits is not a wall-clock guarantee.
+`AvenDB/CooperativeReceive.lean` proves the eight-edit step bound and that an incomplete cursor cannot commit; this proof passed before implementation. The combined core regression passed, including cooperative stepping parity and the eight-signature turn count. Actual browser-worker execution remains pending. One signature check is indivisible, so eight edits is not a wall-clock guarantee.
 
 ## Remaining work
 
@@ -65,3 +65,7 @@ cargo test -p avendb-net --lib prepared_page_allows_generic_access_and_keeps_can
 ```
 
 The first command prints protected/capture/check/commit timings and checks state equivalence; the second exercises the real native helper with a test-only blocking hook. Neither command uses a live account or persistent application store.
+
+## Combined-source core validation — 24 October 2026
+
+On the combined performance branch, all three `prepared_receive_tests` passed, including whole-page checkpoint coverage, current admission after preparation, and cooperative signature-result equivalence. In this synthetic 54-edit run, baseline protected work was 7.463 ms; capture was 0.426 ms, verification outside the lock 5.764 ms, and commit 1.188 ms, for 1.613 ms total protected work. These are operation measurements, not physical-device or end-to-end latency. History (6 tests) and document (20 tests) regressions also passed on the same compiled core. Network cancellation/interaction and compiled-browser acceptance remain separate pending gates.
