@@ -856,3 +856,20 @@ resolver, retaining all assertions. `bun run check` passes with zero errors (27
 existing CSS warnings) using the candidate dependency tree and bundled Node PATH;
 25 focused manifest/file/completeness tests pass. No Cargo or runtime authorization
 changes were involved.
+
+### Release transport blocker: export racing blob finalization
+
+The real-browser RTC test failed when a range export captured a Filling blob's
+`new/` name immediately before OPFS finalization moved it to its immutable hash.
+The worker serializes individual operations but cannot keep that earlier Rust
+source snapshot current. Range export now tries the same blob's final hash once
+when the temporary read fails, accepts only the full requested range, and preserves
+the original failure if the final location cannot supply it. Finished sources and
+range-coverage checks are unchanged; no arbitrary errors are swallowed by the
+fixture, and its exact-byte equality remains mandatory. This is shared shelf code,
+so the repair covers native and browser backends equally.
+
+`filling_export_retries_only_the_same_final_blob_after_rename` deterministically
+checks the captured-name race and propagation of the original storage failure when
+neither location works. Rust parser/diff checks pass; Cargo and regenerated WASM /
+real-browser carrier validation remain queued with root's compiler slot.
