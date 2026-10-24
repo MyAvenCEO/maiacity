@@ -1257,14 +1257,22 @@ fn files_everyone_reads(
     let mut files = BTreeMap::new();
     let landed = |en: &&Entry| lab.landed(me, en.id);
     let public = st.entries().iter().filter(landed).filter(|en| of(en) && everyone_reads(st, en));
+    let mut candidates = Vec::new();
     for en in public.filter(|en| typed(lab, me, en.id, FILE)) {
         let Some(What::Record { title, record, deleted: false, .. }) = lab.item(me, en.id).map(|i| record(i.record()))
         else {
             continue;
         };
         let media = record.get("media").and_then(Value::as_str).unwrap_or_default().to_string();
-        if let Some((root, len)) = lab.entry_files(me, en.id).into_iter().find_map(|(root, len)| Some((root, len?))) {
-            files.entry((en.vault, title)).or_insert(PublicFile { root, len, media });
+        candidates.push((en.id, en.vault, title, media));
+    }
+    // Keep candidate order (including first-name wins), but scan held history
+    // once for the selected public entries instead of once per file entry.
+    let mut roots = lab.entry_files_batch(me, candidates.iter().map(|(id, ..)| *id));
+    for (entry, vault, title, media) in candidates {
+        if let Some((root, len)) = roots.remove(&entry).into_iter().flatten()
+            .find_map(|(root, len)| Some((root, len?))) {
+            files.entry((vault, title)).or_insert(PublicFile { root, len, media });
         }
     }
     files
@@ -1618,3 +1626,7 @@ pub fn approver(st: &State, v: VaultId) -> Option<SignerId> {
     }
     None
 }
+
+#[cfg(test)]
+#[path = "public_files_batch_tests.rs"]
+mod public_files_batch_tests;
