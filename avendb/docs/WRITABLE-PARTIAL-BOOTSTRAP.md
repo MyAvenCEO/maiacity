@@ -571,3 +571,7 @@ The updated `bootstrap_companion_frontier_has_fixed_size_beyond_1024_writes` reg
 covers 1024/1025 writes, unchanged wire length, v1 compatibility, stale/torn/reordered
 frontier rejection and digest corruption. Rust execution remains pending root's
 compiler queue; syntax and diff checks passed.
+
+Fixed-size frontier implementation:
+[a94d3f68](https://github.com/MyAvenCEO/maiacity/commit/a94d3f68c), committed and pushed;
+combined Rust validation and runtime activation remain outstanding.
