@@ -6,12 +6,14 @@
  import { playbackMetrics } from '$lib/studio/playback-metrics.js';
  import { session } from './session.svelte.js';
  import { sync } from './sync.svelte.js';
+ import { lifecycle } from './lifecycle.js';
  let manifests = $state(manifestDiagnostics());
  let playback = $state(playbackMetrics.snapshot());
  let measuring = $state(false), result = $state('');
  let evidence = $state(latencyJournal.snapshot());
  let exported = $state('');
  let deviceLabel = $state('This device');
+ let scenario = $state('already-synced');
  /** @type {ReturnType<typeof policyObservations>} */
  let policy = $state(null);
  async function armPolicy() {
@@ -40,6 +42,9 @@
   latencyJournal.flush();
   evidence = latencyJournal.snapshot();
   exported = JSON.stringify({ ...evidence, device: deviceLabel, exportedAt: Date.now(), policyObservations: policy,
+   scenario: { declared: scenario, source: 'user-selected', firstViewReadiness: 'unmeasured' },
+   peerLogCoverage: sync.known ? { peers: sync.peers, logs: sync.logs, behind: sync.behind, pulling: sync.pulling } : null,
+   lifecycle: lifecycle()?.snapshot() ?? null,
    semantics: { calls: 'Local engine response including queue and any signing ceremony; not rendered or remotely replicated.', unlock: 'User unlock request to completion; includes authentication interaction.', view: 'View readiness and rendered frames are not instrumented by this report.', peer: 'Authenticated connection transport RTT estimate; not edit acceptance or remote visibility.' } }, null, 2);
   const url = URL.createObjectURL(new Blob([exported], { type: 'application/json' }));
   const link = document.createElement('a'); link.href = url; link.download = `maia-latency-${deviceLabel.replace(/ /g, '-')}-${Date.now()}.json`;
@@ -64,9 +69,11 @@
  <h3>Device latency report</h3>
  <p>Retains the last 120 measured operations across reloads on this device. Contains only fixed stage names, durations and outcomes; no account data, entry IDs or contents.</p>
  <label>Device <select bind:value={deviceLabel}><option>This device</option><option>iPhone</option><option>iPad</option><option>Mac</option></select></label>
- <button onclick={exportReport}>Export latency report</button>
+ <label>Test scenario <select bind:value={scenario}><option value="already-synced">Already-synced peers</option><option value="fresh-catching-up">Fresh / catching-up peer</option></select></label>
+ <p>This is your test label, not a completeness claim. Run the observation on connected devices, make an ordinary edit, then capture and export. Fresh-device first-view readiness: unmeasured.</p>
+ <button onclick={exportReport}>Export latency and restart report</button>
  <button onclick={armPolicy} disabled={measuring || session.phase !== 'open'}>Observe entry propagation for 2 minutes</button>
- <button onclick={measurePeers} disabled={measuring || session.phase !== 'open'}>Capture peer connection RTT</button>
+ <button onclick={measurePeers} disabled={measuring || session.phase !== 'open'}>Capture peer propagation and RTT</button>
  <p>{evidence.samples.length} retained samples. {evidence.storageAvailable ? 'Available here before unlock.' : 'Persistent storage unavailable; these samples may be lost on reload.'}</p>
  {#if exported}<details open><summary>Report text</summary><textarea aria-label="Latency report JSON" readonly value={exported} rows="8"></textarea></details>{/if}
  {#if evidence.samples.length}

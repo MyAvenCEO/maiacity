@@ -237,6 +237,7 @@ async function statusOf(bridge) {
 		unanswered(`status: no answer to ${ASKS} asks in ${(ASKS * ASK_AGAIN) / 1000} s; the page opens again`);
 		// a moment for that line to reach the app's log
 		await new Promise((r) => setTimeout(r, 300));
+		noteLifecycle('app-reload-request');
 		location.reload();
 		// the page goes: nothing answers here any more
 		return /** @type {Promise<never>} */ (new Promise(() => {}));
@@ -433,6 +434,7 @@ function unlock(at = QUIET) {
 		try {
 			await measureLatency('unlock.total', () => opening(at));
 		} catch (e) {
+			noteLifecycle('unlock-failed');
 			if (!String(/** @type {Error} */ (e)?.message ?? e).includes('holds no vault this device belongs to')) throw e;
 			await (mac ? mac.call('forget') : store.aside());
 			[meta, phase] = [null, 'new'];
@@ -459,13 +461,16 @@ async function opening({ step, device: shown }) {
 	const nonce = unhex(meta.nonce);
 	const { unlock } = await ceremonies(meta.credential, nonce);
 	step('unlock');
+	noteLifecycle('passkey-start');
 	let unlocked;
 	try {
 		unlocked = await unlock(nonce);
+		noteLifecycle('passkey-finished');
 	} catch (e) {
 		await store.release().catch(() => {});
 		throw e;
 	}
+	noteLifecycle('device-open-start');
 	running(await avendb.Device.open(unlocked, shown(), store));
 }
 
@@ -830,6 +835,7 @@ async function rename(name) {
  *  unlock opens it again. In the Mac app its device runs on beside the app, which signs out of its own key alone. */
 async function lock() {
 	if (mac) return;
+	noteLifecycle('session-lock-request');
 	noteLifecycle('locked');
 	moveChecks.stop();
 	const d = device;

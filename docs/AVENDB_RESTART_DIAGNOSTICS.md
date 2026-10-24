@@ -1,0 +1,11 @@
+# PWA restart evidence and device test scenarios
+
+Implemented 2026-10-25; physical iPhone reproduction remains required. This is diagnostic instrumentation, not a claim that the restart defect is fixed.
+
+The global Diagnostics control is top-left, respecting the safe area, and remains usable while locked. Page restart details retain at most 64 enumerated events in localStorage across document/session loss. Records contain a bounded local document counter, elapsed milliseconds, phase and visibility only. They exclude account/entry identifiers, routes, URLs, error messages, credentials and unlock material. Storage denial never blocks unlock. This journal has no authority and cannot restore authentication.
+
+Events distinguish explicit app reload intent, route navigation/unload, session lock requests, passkey and device-open phases, worker failure/message errors, page errors, history transitions, visibility, pagehide/pageshow and service-worker controller/state changes. A missing exit does not prove memory pressure, an operating-system termination or any other cause. Service-worker state discovery observes registrations present at startup; controller changes remain observed thereafter.
+
+Export restart details before unlocking after a recurrence. The combined latency export also includes lifecycle evidence, a user-selected already-synced versus fresh/catching-up scenario, and separately reported announced-peer log coverage. The scenario is a label, not proof of completeness. Fresh first-view readiness is explicitly unmeasured. Observe entry propagation opts into the existing two-minute peer policy measurement; make an ordinary edit, then capture and export on the devices. Policy observation includes replay and polling delay, not rendered UI or a durable acknowledgement. Connection RTT is separately labeled, not edit propagation or useful throughput. Existing network diagnostics remain available.
+
+Validation: 17 lifecycle/latency tests passed (61 assertions); all four modified Svelte components compile without warnings; lifecycle.js passes standalone checkJs; diff whitespace check passes. Tests cover durable reopen, distinct same-document events, bounded redaction, storage denial and service-worker observations. No physical iPhone stability claim, deployment or bandwidth saturation claim follows from these checks.
