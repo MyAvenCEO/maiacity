@@ -327,7 +327,7 @@ mod tests {
         assert_eq!(p.full_range, Some(false));
         assert!(p.tags.iter().any(|t| t.ends_with("maiacity:color=acescct")), "{:?}", p.tags);
         // decoded again, the first frame's luma is the ramp's: the log codes survived the encoder
-        let luma = first_luma(&out);
+        let luma = first_luma(&out).expect("decode the encoded 10-bit frame without sample copying");
         for x in [16usize, 80, 160, 240, 300] {
             let v = (x * 1023 / w) as f32;
             let want = ycc(v, v, v).0;
@@ -338,9 +338,9 @@ mod tests {
     }
 
     /// The first frame's Y codes, decoded as `x420`.
-    fn first_luma(path: &Path) -> Vec<u16> {
+    fn first_luma(path: &Path) -> Result<Vec<u16>> {
         use objc2_av_foundation::{AVAssetReader, AVAssetReaderTrackOutput, AVAssetTrack, AVURLAsset};
-        use objc2_core_video::{CVPixelBufferGetHeight, CVPixelBufferGetWidth};
+        use objc2_core_video::{CVPixelBufferGetHeight, CVPixelBufferGetWidth, CVPixelBufferGetPixelFormatType};
         unsafe {
             let asset = AVURLAsset::URLAssetWithURL_options(&NSURL::fileURLWithPath(&NSString::from_str(&path.to_string_lossy())), None);
             #[allow(deprecated)]
@@ -349,17 +349,27 @@ mod tests {
             let x420 = NSNumber::new_u32(u32::from_be_bytes(*b"x420"));
             let settings = dict(&[(&key("PixelFormatType"), &x420)]);
             let output = AVAssetReaderTrackOutput::assetReaderTrackOutputWithTrack_outputSettings(&track, Some(&settings));
+            // Match the production decoder (proxy.rs): read the decoder's buffer
+            // directly rather than asking AVFoundation for an extra copied surface.
+            // The fixture never changes that buffer, and keeps its sample alive.
+            output.setAlwaysCopiesSampleData(false);
             reader.addOutput(&output);
-            assert!(reader.startReading());
-            let sample = output.copyNextSampleBuffer().unwrap();
-            let buf = sample.image_buffer().unwrap();
-            CVPixelBufferLockBaseAddress(&buf, CVPixelBufferLockFlags::ReadOnly);
+            ensure!(reader.startReading(), "decoder did not start: {:?}", reader.error());
+            let sample = output.copyNextSampleBuffer().with_context(||
+                format!("decoder returned no first frame: status={:?}, error={:?}", reader.status(), reader.error()))?;
+            let buf = sample.image_buffer().context("decoded sample has no pixel buffer")?;
+            ensure!(CVPixelBufferGetPixelFormatType(&buf) == u32::from_be_bytes(*b"x420"), "decoder did not preserve x420 output");
+            ensure!(CVPixelBufferLockBaseAddress(&buf, CVPixelBufferLockFlags::ReadOnly) == 0, "cannot lock decoded luma");
             let (w, h) = (CVPixelBufferGetWidth(&buf), CVPixelBufferGetHeight(&buf));
             let (base, stride) = (CVPixelBufferGetBaseAddressOfPlane(&buf, 0) as *const u8, CVPixelBufferGetBytesPerRowOfPlane(&buf, 0));
+            if base.is_null() || stride < w * 2 {
+                CVPixelBufferUnlockBaseAddress(&buf, CVPixelBufferLockFlags::ReadOnly);
+                bail!("decoded frame has no valid 10-bit luma plane");
+            }
             let plane = std::slice::from_raw_parts(base, stride * h);
             let out = (0..h).flat_map(|y| (0..w).map(move |x| (y, x))).map(|(y, x)| code(plane, y * stride + x * 2)).collect();
             CVPixelBufferUnlockBaseAddress(&buf, CVPixelBufferLockFlags::ReadOnly);
-            out
+            Ok(out)
         }
     }
 
