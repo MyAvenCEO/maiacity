@@ -2,12 +2,14 @@
 //! grant access, change a request's scope, or change the edit/cursor protocol. Cancellation releases admission;
 //! callers move the page permit into blocking validation so detached work remains charged until it ends.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Result, anyhow};
+use avendb::id::SignerId;
+use avendb::sync::LogId;
 use iroh::EndpointId;
 use n0_future::time::{self, Duration, Instant};
 use n0_future::{FuturesUnordered, StreamExt as _, future};
@@ -19,6 +21,44 @@ pub(crate) const PAGE_BYTES: usize = 8 << 20;
 pub(crate) const FANOUT: usize = if cfg!(target_arch = "wasm32") { 2 } else { 3 };
 pub(crate) const CATCH_UP_FANOUT: usize = if cfg!(target_arch = "wasm32") { 4 } else { 8 };
 const HISTORY: usize = 128;
+/// A small change on an established connection can bypass a backlog round. A full announcement or a large
+/// catch-up delta stays on that round; a peer cannot grow the interactive queue without bound.
+pub(crate) const LIVE_LOGS: usize = 16;
+const LIVE_PEERS: usize = 64;
+
+#[derive(Default)]
+struct LiveBook {
+    next: u64,
+    peers: BTreeMap<SignerId, (u64, BTreeSet<LogId>)>,
+}
+
+/// One coalesced worker per authenticated peer. Dropping a cancelled worker releases its queue entry. Sequence
+/// fencing prevents its drop from removing a replacement queued after an empty `next`.
+pub(crate) struct LiveWork {
+    book: Arc<Mutex<LiveBook>>,
+    peer: SignerId,
+    sequence: u64,
+}
+
+impl LiveWork {
+    pub(crate) fn next(&mut self) -> Option<BTreeSet<LogId>> {
+        let mut book = self.book.lock().expect("live pulls");
+        let (sequence, logs) = book.peers.get_mut(&self.peer)?;
+        if *sequence != self.sequence { return None; }
+        if !logs.is_empty() { return Some(std::mem::take(logs)); }
+        book.peers.remove(&self.peer);
+        None
+    }
+}
+
+impl Drop for LiveWork {
+    fn drop(&mut self) {
+        let mut book = self.book.lock().expect("live pulls");
+        if book.peers.get(&self.peer).is_some_and(|(sequence, _)| *sequence == self.sequence) {
+            book.peers.remove(&self.peer);
+        }
+    }
+}
 
 pub(crate) struct Budget {
     active: Arc<Semaphore>,
@@ -29,6 +69,7 @@ pub(crate) struct Budget {
     background_pages: Arc<Semaphore>,
     page_slots: u32,
     recent: Mutex<VecDeque<(EndpointId, Estimate)>>,
+    live: Arc<Mutex<LiveBook>>,
 }
 
 /// The queue ticket is retained during service too, bounding all outstanding admissions, including waiters.
@@ -114,6 +155,7 @@ impl Budget {
             background_pages: Arc::new(Semaphore::new(pages.saturating_sub(1).max(1) as usize)),
             page_slots: pages,
             recent: Mutex::default(),
+            live: Arc::default(),
         }
     }
 
@@ -169,6 +211,26 @@ impl Budget {
             _background: background,
             _page: page,
         })
+    }
+
+    /// Scheduling hints only, received after the peer's authenticated announcement was admitted. The caller
+    /// still intersects these IDs with ordinary authorized differences before asking; a hint grants no access.
+    /// Overflow remains on normal reconciliation. Existing workers coalesce up to LIVE_LOGS pending logs.
+    pub(crate) fn live_announced(&self, peer: SignerId, full: bool, logs: &[LogId]) -> Option<LiveWork> {
+        if full || logs.is_empty() || logs.len() > LIVE_LOGS { return None; }
+        let mut book = self.live.lock().expect("live pulls");
+        if let Some((_, pending)) = book.peers.get_mut(&peer) {
+            for log in logs {
+                if pending.len() >= LIVE_LOGS { break; }
+                pending.insert(*log);
+            }
+            return None;
+        }
+        if book.peers.len() >= LIVE_PEERS { return None; }
+        book.next = book.next.wrapping_add(1);
+        let sequence = book.next;
+        book.peers.insert(peer, (sequence, logs.iter().copied().collect()));
+        Some(LiveWork { book: self.live.clone(), peer, sequence })
     }
 
     pub(crate) fn observed(&self, peer: EndpointId, elapsed: Duration, success: bool) {
@@ -579,6 +641,41 @@ mod tests {
         phone.shutdown().await.unwrap();
     }
 
+    /// A real single-page exchange whose first admission is held deliberately. This
+    /// catches placing the service clock after the first reply (the old bug).
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn first_page_service_time_includes_initial_admission_wait() {
+        use crate::{Node, Options, Scope};
+        use avendb::cast::{handbook_ready, world};
+        let mut w = world();
+        handbook_ready(&mut w);
+        let (sender, receiver) = (w.mac_a, w.phone_a);
+        let options = || Options { lazy: true, ..Options::local() };
+        let mac = Node::spawn(w.lab.split(sender, &[], [135; 32]), sender, options()).await.unwrap();
+        let phone = Node::spawn(w.lab.split(receiver, &[], [136; 32]), receiver, options()).await.unwrap();
+        phone.know(mac.addr());
+        mac.know(phone.addr());
+        phone.shared.connection(mac.id()).await.unwrap();
+        let budget = phone.shared.pulls.pages.clone();
+        let held = budget.clone().acquire_many_owned(budget.available_permits() as u32).await.unwrap();
+        let pull = phone.shared.pull(mac.id(), Scope::Logs(BTreeSet::new()), false, None);
+        let release = async {
+            while phone.shared.traffic.of(&sender).is_none_or(|p| p.askings == 0) {
+                time::sleep(Duration::from_millis(1)).await;
+            }
+            time::sleep(Duration::from_millis(250)).await;
+            drop(held);
+        };
+        let (result, ()) = time::timeout(Duration::from_secs(15), future::zip(pull, release)).await.unwrap();
+        assert_eq!(result.unwrap(), 0);
+        let report = phone.shared.traffic.of(&sender).unwrap();
+        assert_eq!(report.pages, 1, "one empty authorized reply isolates first-page timing");
+        assert!(report.wait_ms >= 200, "the first request really waited at admission: {report:?}");
+        assert!(report.ms >= report.wait_ms, "service time must include the entire first request: {report:?}");
+        mac.shutdown().await.unwrap();
+        phone.shutdown().await.unwrap();
+    }
+
     #[tokio::test]
     async fn a_hedged_request_keeps_the_callers_acting_identity() {
         let signer = avendb::id::SignerId::from_u64(987);
@@ -776,5 +873,69 @@ mod tests {
             raw.close().await;
             phone.shutdown().await.unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod live_queue_tests {
+    use super::*;
+    use avendb::id::EntryId;
+
+    fn log(n: u64) -> LogId { LogId::Entry(EntryId::from_u64(n)) }
+
+    #[test]
+    fn live_hints_bound_full_inventories_peers_and_coalesced_logs() {
+        // LivePriority.full_is_not_interactive / oversized_is_not_interactive / hints_are_bounded.
+        let budget = Budget::default();
+        let peer = SignerId::from_u64(1);
+        assert!(budget.live_announced(peer, true, &[log(1)]).is_none());
+        assert!(budget.live_announced(peer, false, &[]).is_none());
+        assert!(budget.live_announced(peer, false, &(0..=LIVE_LOGS as u64).map(log).collect::<Vec<_>>()).is_none());
+        let mut first = budget.live_announced(peer, false, &[log(1)]).unwrap();
+        assert!(budget.live_announced(peer, false, &(2..=LIVE_LOGS as u64 + 1).map(log).collect::<Vec<_>>()).is_none());
+        assert_eq!(first.next().unwrap().len(), LIVE_LOGS);
+        let mut workers = vec![first];
+        for n in 2..=LIVE_PEERS as u64 {
+            workers.push(budget.live_announced(SignerId::from_u64(n), false, &[log(n)]).unwrap());
+        }
+        assert!(budget.live_announced(SignerId::from_u64(LIVE_PEERS as u64 + 1), false, &[log(1)]).is_none());
+        drop(workers);
+        assert!(budget.live.lock().unwrap().peers.is_empty(), "cancellation releases every bounded entry");
+    }
+
+    #[test]
+    fn an_empty_or_cancelled_live_worker_cannot_remove_a_new_generation() {
+        // LivePriority.old_worker_keeps_replacement. Empty detection and removal happen atomically.
+        let budget = Budget::default();
+        let peer = SignerId::from_u64(1);
+        let mut old = budget.live_announced(peer, false, &[log(1)]).unwrap();
+        assert_eq!(old.next().unwrap(), [log(1)].into());
+        assert!(old.next().is_none());
+        let mut fresh = budget.live_announced(peer, false, &[log(2)]).unwrap();
+        drop(old);
+        assert_eq!(fresh.next().unwrap(), [log(2)].into());
+        assert!(budget.live_announced(peer, false, &[log(3)]).is_none());
+        assert_eq!(fresh.next().unwrap(), [log(3)].into());
+        drop(fresh);
+        assert!(budget.live_announced(peer, false, &[log(4)]).is_some());
+    }
+
+    #[tokio::test]
+    async fn later_live_admissions_cannot_overtake_a_queued_background_pull() {
+        // LivePriority.later_arrival_cannot_overtake / queued_background_eventually_first.
+        let budget = Budget::new(2, 1, 2, 4, 4);
+        let first = budget.enter(false, None).await.unwrap();
+        let second = budget.enter(false, None).await.unwrap();
+        let mut background = Box::pin(budget.enter(true, None));
+        assert!(future::poll_once(&mut background).await.is_none());
+        let mut later_live = Box::pin(budget.enter(false, None));
+        assert!(future::poll_once(&mut later_live).await.is_none());
+        drop(first);
+        assert!(future::poll_once(&mut later_live).await.is_none());
+        let background = background.await.unwrap();
+        drop(second);
+        let live = later_live.await.unwrap();
+        drop((background, live));
+        assert_eq!(budget.active.available_permits(), 2);
     }
 }

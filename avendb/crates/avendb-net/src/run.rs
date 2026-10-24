@@ -104,8 +104,7 @@ impl Node {
         let name = engine::name(&op).map(str::to_string);
         let answer = match name.as_deref() {
             Some("world") => {
-                let synced = self.synced_to().await;
-                self.read(move |lab, me| engine::world(lab, me, &synced)).await
+                self.world_encoded(engine::WorldSnapshot::into_json).await?
             }
             Some("read_file") => return self.read_bytes(&op).await,
             _ if engine::brings(&op) => self.put(op, bytes).await?,
@@ -379,6 +378,26 @@ impl Node {
         None
     }
 
+    async fn world_encoded(&self, encode: impl FnOnce(engine::WorldSnapshot) -> Value + Send + 'static) -> Result<Value> {
+        let operation = self.shared.admit()?;
+        let encoding = self.shared.world_encoding.clone().lock_owned().await;
+        let synced = self.synced_to().await;
+        // Both capture and rendering retain admission inside the actual work, even
+        // if their async requester is cancelled. The snapshot owns its acting identity.
+        let (snapshot, operation, encoding) = self.read(move |lab, me| {
+            (engine::world_snapshot(lab, me, &synced), operation, encoding)
+        }).await;
+        let work = move || {
+            let (_operation, _encoding) = (operation, encoding);
+            encode(snapshot)
+        };
+        #[cfg(not(target_arch = "wasm32"))]
+        return tokio::task::spawn_blocking(work).await.context("world JSON conversion");
+        // No Lab lock is held, but synchronous WASM conversion still occupies its worker.
+        #[cfg(target_arch = "wasm32")]
+        Ok(work())
+    }
+
     /// A change: made, or drafted for the passkey to approve and, with a ceremony at hand, signed in it and made. A
     /// removal (`engine::removes`), whichever way it comes (the page, an agent, the command line), is refused while
     /// its device is behind its peers (`removal_waits`).
@@ -428,5 +447,75 @@ impl Shared {
                 }
             });
         }
+    }
+}
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod world_snapshot_tests {
+    use super::*;
+    use std::sync::Arc;
+    use avendb::cast::{document, human_on};
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn held_world_encoding_does_not_block_authorized_local_work() {
+        let mut lab = Lab::new();
+        let passkey = lab.passkey("Snapshot owner");
+        let me = lab.device_of(passkey, "local peer");
+        assert_eq!(engine::world(&lab, me, &Default::default()), json!({"ok": null}));
+        let vault = human_on(&mut lab, passkey, &[me]);
+        let node = Arc::new(Node::spawn(lab.split(me, &[passkey], [95; 32]), me,
+            crate::Options { lazy: true, ..crate::Options::local() }).await.unwrap());
+        let tasks: Vec<_> = node.tasks.lock().unwrap().drain(..).collect();
+        for task in tasks { task.abort(); let _ = task.await; }
+        let expected = node.world_encoded(engine::WorldSnapshot::into_json).await.unwrap();
+        let (entered, entering) = tokio::sync::oneshot::channel();
+        let (release, waiting) = std::sync::mpsc::channel();
+        let worker = node.clone();
+        let encoding = tokio::spawn(async move {
+            worker.world_encoded(move |snapshot| {
+                entered.send(()).unwrap();
+                waiting.recv().unwrap();
+                snapshot.into_json()
+            }).await.unwrap()
+        });
+        entering.await.unwrap();
+        assert!(node.shared.world_encoding.try_lock().is_err(), "held encoder owns the world-only permit");
+        let mut next_world = Box::pin(node.world_encoded(engine::WorldSnapshot::into_json));
+        assert!(n0_future::future::poll_once(&mut next_world).await.is_none(), "second world waits before capture");
+        let peer = node.clone();
+        let write = tokio::spawn(async move {
+            let entry = peer.act(move |lab, me| lab.create(me, vault, vault, "note", &[],
+                document("Concurrent local write", "visible without waiting for world JSON", me)).unwrap()).await;
+            peer.read(move |lab, me| lab.item(me, entry).is_some()).await
+        });
+        let mut write = write;
+        let timely = time::timeout(Duration::from_secs(1), &mut write).await;
+        // Always release the held encoder, including on regression failure.
+        release.send(()).unwrap();
+        let encoded = encoding.await.unwrap();
+        if timely.is_err() { let _ = write.await; }
+        assert_eq!(encoded, expected, "later mutation cannot change the captured authorized snapshot");
+        let fresh = next_world.await.unwrap();
+        assert_ne!(fresh, expected, "queued world captures after the concurrent mutation");
+        // Cancelling the requester cannot release the active serializer's admission.
+        let (entered, entering) = tokio::sync::oneshot::channel();
+        let (release, waiting) = std::sync::mpsc::channel();
+        let worker = node.clone();
+        let abandoned = tokio::spawn(async move {
+            worker.world_encoded(move |snapshot| {
+                entered.send(()).unwrap();
+                waiting.recv().unwrap();
+                snapshot.into_json()
+            }).await
+        });
+        entering.await.unwrap();
+        abandoned.abort();
+        let _ = abandoned.await;
+        assert!(node.shared.world_encoding.try_lock().is_err(), "cancelled request cannot release active encoder permit");
+        let premature = time::timeout(Duration::from_millis(50), node.shutdown()).await;
+        release.send(()).unwrap();
+        node.shutdown().await.unwrap();
+        assert!(premature.is_err(), "shutdown must wait for a cancelled request's active encoder");
+        assert!(matches!(timely, Ok(Ok(true))), "authorized local write/read must not wait for world encoding");
     }
 }

@@ -694,7 +694,7 @@ async fn the_mac_app_hosts_the_device_in_its_own_process_and_reads_a_file_from_i
     app.host.answer(&json!({ "sheet": 999, "back": "city.maia.studio://avendb#sealed=x" }));
     assert!(app.asked().is_empty(), "no other sheet");
     // the app closes it as it quits: the host holds no node, and its sheets end once it is gone
-    app.host.close().await;
+    app.host.close().await.expect("durable host close");
     assert!(app.host.node().is_none(), "no node once closed");
     drop(node);
     let InApp { host, mut sheets, .. } = app;
@@ -708,7 +708,7 @@ async fn the_mac_app_hosts_the_device_in_its_own_process_and_reads_a_file_from_i
     let node = app.host.node().expect("its node");
     assert_eq!(node.read_file(root, 0..10).await.expect("its first bytes"), film[..10], "kept on its shelf");
     drop(node);
-    app.host.close().await;
+    app.host.close().await.expect("durable host close");
     server.shutdown().await.expect("the server's node stops");
 }
 
@@ -748,7 +748,7 @@ async fn a_touch_opens_eves_mac_once_its_touch_id_key_owns_her_vault_beside_her_
     assert_eq!(coop["ok"]["ok"]["vaults"].as_array().map(Vec::len), Some(1), "a new vault: {coop}");
     assert_eq!((app.asked(), app.touched()), (vec![], vec!["approve what your vault changes".to_string()]));
     // the app quits and starts again: a touch opens the same device, no sheet
-    app.host.close().await;
+    app.host.close().await.expect("durable host close");
     drop(app);
     let mut app = InApp::start(&dir, Passkey::from_seed([5; 32]));
     let opened = app.call("open", json!([])).await["ok"].clone();
@@ -765,7 +765,7 @@ async fn a_touch_opens_eves_mac_once_its_touch_id_key_owns_her_vault_beside_her_
     assert!(set["ok"]["ok"]["edit"].is_string(), "the root hands the root on: {set}");
     assert_eq!((app.asked(), app.touched()), (vec!["approve".to_string()], vec![]));
     // no touch comes: her passkey's sheet opens it instead
-    app.host.close().await;
+    app.host.close().await.expect("durable host close");
     drop(app);
     let mut app = InApp::start(&dir, Passkey::from_seed([5; 32]));
     app.no_touch = true;
@@ -775,13 +775,13 @@ async fn a_touch_opens_eves_mac_once_its_touch_id_key_owns_her_vault_beside_her_
     // she turns Touch ID off here: the next start takes the sheet alone
     assert_eq!(app.call("touchOff", json!([])).await, json!({ "ok": null }));
     assert_eq!(app.call("status", json!([])).await["ok"]["meta"]["touch"], false);
-    app.host.close().await;
+    app.host.close().await.expect("durable host close");
     drop(app);
     let mut app = InApp::start(&dir, Passkey::from_seed([5; 32]));
     let opened = app.call("open", json!([])).await["ok"].clone();
     assert_eq!(opened["id"], device["id"], "the same device");
     assert_eq!((app.asked(), app.touched()), (vec!["unlock".to_string()], vec![]));
-    app.host.close().await;
+    app.host.close().await.expect("durable host close");
     server.shutdown().await.expect("the server's node stops");
 }
 
@@ -2342,7 +2342,7 @@ async fn ivys_mac_its_touch_id_key_and_her_drive_move_to_ml_dsa_65_with_her_pass
     assert_eq!(app.asked(), vec!["move".to_string()]);
     assert_eq!(app.call("moving", json!([])).await, json!({ "ok": null }), "nothing more to sign");
     // the app quits and starts again: a touch opens it as its next key, and it hosts her drive as its next key
-    app.host.close().await;
+    app.host.close().await.expect("durable host close");
     drop(app);
     let mut app = InApp::with_volumes(&dir, &volumes, Passkey::from_seed(seed));
     let opened = app.call("open", json!([])).await["ok"].clone();
@@ -2350,7 +2350,7 @@ async fn ivys_mac_its_touch_id_key_and_her_drive_move_to_ml_dsa_65_with_her_pass
     assert_eq!((app.asked(), app.touched()), (vec![], vec!["open avenDB".to_string()]));
     hosted(&mut app, "her drive hosted as its next key", |d| d["volumes"][0]["device"] == next_hex).await;
     assert_eq!(app.call("moving", json!([])).await, json!({ "ok": null }));
-    app.host.close().await;
+    app.host.close().await.expect("durable host close");
 }
 
 /// Bytes as lowercase hex digits.
@@ -2409,3 +2409,6 @@ async fn an_approved_agent_works_as_a_session_of_the_macs_device_by_its_own_key(
 
 #[path = "device/webtransport.rs"]
 mod webtransport;
+
+#[path = "device/shutdown.rs"]
+mod shutdown;

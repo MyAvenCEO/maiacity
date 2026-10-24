@@ -640,6 +640,12 @@ impl Shared {
         if let Some(signers) = &self.signers {
             put |= signers.save_on(self, on).await?;
         }
+        // The authoritative frontier is durable now. Optional restart summaries may
+        // take much longer; peers must not wait for them before learning this edit.
+        // Holdings still filter through Edits::held and the current authorized view.
+        if put {
+            self.changed.notify_one();
+        }
         let shared = self.clone();
         let warming = move || {
             let (mut lab, edits) = (shared.locked_lab(), shared.edits.as_ref().expect("its edits"));
@@ -1002,6 +1008,18 @@ mod tests {
         tokio::sync::oneshot::Sender<()>,
         tokio::sync::mpsc::UnboundedReceiver<()>,
     ) {
+        delaying_view_when(shelf, Arc::new(std::sync::atomic::AtomicBool::new(true)))
+    }
+
+    fn delaying_view_when(
+        shelf: Shelf,
+        enabled: Arc<std::sync::atomic::AtomicBool>,
+    ) -> (
+        Shelf,
+        tokio::sync::oneshot::Receiver<()>,
+        tokio::sync::oneshot::Sender<()>,
+        tokio::sync::mpsc::UnboundedReceiver<()>,
+    ) {
         let (proxy, mut calls) = Shelf::new();
         let (entered, waiting) = tokio::sync::oneshot::channel();
         let (release, released) = tokio::sync::oneshot::channel();
@@ -1012,7 +1030,7 @@ mod tests {
                 match call {
                     Call::Keep { name, bytes, tx } => {
                         let view = VIEW.0.contains(&name.as_str());
-                        if view && let Some((entered, released)) = pause.take() {
+                        if view && enabled.load(Ordering::Relaxed) && let Some((entered, released)) = pause.take() {
                             entered.send(()).ok();
                             released.await.expect("the test releases the view");
                         }
@@ -1053,6 +1071,46 @@ mod tests {
             }
         });
         (proxy, waiting, release, views)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn durable_entry_wakes_announcements_before_optional_view_save_finishes() {
+        use crate::{Node, Options};
+        use avendb::cast::{document, human_on};
+        use std::time::Duration;
+        let folder = std::env::temp_dir().join(format!("avendb-durable-wake-{}", crate::shelf::fresh()));
+        let mut lab = Lab::new();
+        let passkey = lab.passkey("Alice");
+        let me = lab.device_of(passkey, "local peer");
+        let vault = human_on(&mut lab, passkey, &[me]);
+        let writer = crate::disk::open(&folder).unwrap().writer().unwrap();
+        let enabled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (proxy, entered, release, _) = delaying_view_when(writer.shelf(), enabled.clone());
+        let node = Node::spawn(lab.split(me, &[passkey], [71; 32]), me,
+            Options { shelf: Some(proxy.clone()), ..Options::local() }).await.unwrap();
+        // Isolate the save→announce boundary from periodic reconciliation and unrelated readers.
+        node.tasks.lock().unwrap().iter().for_each(|task| task.abort());
+        node.shared.save().await.unwrap();
+        node.act(move |lab, me| {
+            lab.create(me, vault, vault, "note", &[], document("A live entry", "generic mutation", me)).unwrap();
+            let backup = lab.backup(me);
+            lab.restore_from(me, backup);
+        }).await;
+        while tokio::time::timeout(Duration::ZERO, node.shared.changed.notified()).await.is_ok() {}
+        enabled.store(true, Ordering::Relaxed);
+        let shared = node.shared.clone();
+        let saving = tokio::spawn(async move { shared.save_on(None).await });
+        tokio::time::timeout(Duration::from_secs(15), entered).await.unwrap().unwrap();
+        {
+            let lab = node.shared.locked_lab();
+            assert!(!node.shared.edits.as_ref().unwrap().lacks(&lab, me));
+        }
+        let woke = tokio::time::timeout(Duration::from_millis(100), node.shared.changed.notified()).await.is_ok();
+        release.send(()).unwrap();
+        saving.await.unwrap().unwrap();
+        node.shutdown().await.unwrap();
+        std::fs::remove_dir_all(folder).ok();
+        assert!(woke, "durable entry announcement must not wait for optional snapshot I/O");
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

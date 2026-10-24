@@ -270,9 +270,11 @@ async fn negotiated_challenges_cannot_be_replayed_after_close_or_connection_repl
 #[cfg(not(target_arch = "wasm32"))]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn concurrent_shutdown_releases_listener_port_while_node_is_retained() {
+    let phase = std::time::Instant::now();
     tokio::time::timeout(Duration::from_secs(20), async {
         let mut w = world();
         handbook_ready(&mut w);
+        eprintln!("listener gate fixture ready: {:?}", phase.elapsed());
         let me = w.mac_a;
         let node = Node::spawn(
             w.lab.split(me, &[], [187; 32]),
@@ -284,6 +286,7 @@ async fn concurrent_shutdown_releases_listener_port_while_node_is_retained() {
         )
         .await
         .unwrap();
+        eprintln!("listener gate node ready: {:?}", phase.elapsed());
         let probe = std::net::UdpSocket::bind("127.0.0.1:0").unwrap();
         let address = probe.local_addr().unwrap();
         drop(probe);
@@ -298,7 +301,9 @@ async fn concurrent_shutdown_releases_listener_port_while_node_is_retained() {
             std::net::UdpSocket::bind(address).is_err(),
             "listener owns the port"
         );
+        eprintln!("listener gate shutdown begins: {:?}", phase.elapsed());
         let (first, second) = tokio::join!(node.shutdown(), node.shutdown());
+        eprintln!("listener gate shutdown complete: {:?}", phase.elapsed());
         first.unwrap();
         second.unwrap();
         let rebound = std::net::UdpSocket::bind(address)

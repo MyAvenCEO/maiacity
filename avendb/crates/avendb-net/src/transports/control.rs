@@ -21,6 +21,10 @@ const RETRY: Duration = Duration::from_secs(30);
 const WAIT: Duration = Duration::from_secs(10);
 const OPEN_WAIT: Duration = Duration::from_secs(25);
 
+#[cfg(test)]
+#[path = "control_selection_tests.rs"]
+mod selection_tests;
+
 #[derive(Clone, Copy, Debug, Default)]
 struct Caps {
     wt: bool,
@@ -185,11 +189,11 @@ impl Control {
         self.close();
         #[cfg(not(target_arch = "wasm32"))]
         {
-            // The native endpoint keeps its UDP socket until its last owner drops, even after close/wait_idle.
-            // Retire the handle as well as awaiting its supervisor; serialize concurrent shutdown callers.
-            let native = self.native.lock().expect("native transport").take();
+            // Retain the completion owner if this caller is cancelled while awaiting shutdown.
+            let native = self.native.lock().expect("native transport").clone();
             if let Some(native) = native {
                 native.shutdown().await;
+                self.native.lock().expect("native transport").take();
             }
         }
     }
@@ -671,7 +675,9 @@ pub(crate) async fn browser_event(shared: &Arc<Shared>, event: Value) -> Result<
     }
 }
 
-/// A replacement sync connection starts a fresh negotiation generation; an older serve task cannot retire it.
+/// A crossed dial to the same proven device selects the lower endpoint's outgoing connection at both ends.
+/// Either direction alone works; same-direction and key-move replacement retain their existing behavior.
+/// The caller still serves the actual new peer, even when it does not replace the selected connection.
 pub(crate) fn connected(shared: &Arc<Shared>, peer: &Peer) {
     let Ok(_operation) = shared.admit() else {
         peer.conn.close(0u32.into(), b"node closing");
@@ -683,7 +689,23 @@ pub(crate) fn connected(shared: &Arc<Shared>, peer: &Peer) {
         peer.conn.close(0u32.into(), b"node closing");
         return;
     }
-    shared.peers.lock().expect("peers").insert(peer.endpoint, peer.clone());
+    let mut peers = shared.peers.lock().expect("peers");
+    if let Some(old) = peers.get(&peer.endpoint) {
+        let lower = shared.endpoint.id() < peer.endpoint;
+        let old_dialed = matches!(old.conn.side(), iroh::endpoint::Side::Client);
+        let incoming_dialed = matches!(peer.conn.side(), iroh::endpoint::Side::Client);
+        // ConnectionSelection.retain: preserve the live preferred generation and its route. Peer identity
+        // equality matters: an authenticated key move at the same endpoint must not be held behind the old key.
+        let retain = old.conn.close_reason().is_none()
+            && old.device == peer.device
+            && lower == old_dialed
+            && lower != incoming_dialed;
+        if old.conn.stable_id() == peer.conn.stable_id() || retain {
+            return;
+        }
+    }
+    peers.insert(peer.endpoint, peer.clone());
+    drop(peers);
     let stale =
         state.sessions.get(&peer.endpoint).filter(|n| n.on != peer.conn.stable_id()).and_then(|n| n.route.clone());
     if let Some(id) = stale {
@@ -835,6 +857,30 @@ pub(crate) async fn listen(shared: &Arc<Shared>, config: super::webtransport::Co
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn cancelled_shutdown_keeps_native_completion_owner() {
+        use std::future::Future;
+        let packets = PacketTransport::new(iroh::SecretKey::from_bytes(&[1; 32]).public());
+        let control = Control::new(packets.clone());
+        let (events, _rx) = tokio::sync::mpsc::channel(32);
+        let native = super::super::webtransport::NativeWt::bind(super::super::webtransport::Config {
+            bind: "127.0.0.1:0".parse().unwrap(), public_url: "https://127.0.0.1:0/packets".into(),
+            allowed_origins: vec!["https://app.example".into()],
+        }, packets, events).await.unwrap();
+        let address = native.local_addr().unwrap();
+        *control.native.lock().unwrap() = Some(Arc::new(native));
+        let mut first = Box::pin(control.shutdown());
+        std::future::poll_fn(|cx| {
+            assert!(first.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        }).await;
+        drop(first);
+        assert!(control.native.lock().unwrap().is_some());
+        control.shutdown().await;
+        let _rebound = std::net::UdpSocket::bind(address).expect("control must retain native driver completion");
+    }
+
     #[test]
     fn route_epoch_binds_both_challenges_ordered_endpoints_and_the_tls_session() {
         let a = iroh::SecretKey::from_bytes(&[1; 32]).public();

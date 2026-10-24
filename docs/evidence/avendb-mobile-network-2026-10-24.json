@@ -1,0 +1,284 @@
+{
+  "measurements": [
+    {
+      "device_confirmed_by_user": "iPad",
+      "declared_selector": "iPhone",
+      "startedUtc": "2026-10-24T06:35:36.010Z",
+      "finishedUtc": "2026-10-24T06:35:45.455Z",
+      "standalone": true,
+      "method": "Sequential bounded single-stream HTTP; credentials omitted; fresh cache-busted URLs; results local only",
+      "release": {
+        "commit": "23286402ee4b88dfdb36441fdd1123a9a48cac36",
+        "file": "_app/immutable/assets/avendb_browser_bg.SZIHVG77.wasm",
+        "manifestBytes": 87258,
+        "manifestMs": 76
+      },
+      "results": [
+        {
+          "kind": "latency",
+          "startedUtc": "2026-10-24T06:35:36.011Z",
+          "requestedBytes": 0,
+          "receivedBytes": 0,
+          "sentBytes": null,
+          "elapsedMs": 691,
+          "complete": true,
+          "mbps": null,
+          "httpStatus": 200,
+          "headersMs": 691,
+          "encoding": "identity",
+          "resourceTiming": {
+            "encodedBodySize": 0,
+            "decodedBodySize": 0,
+            "transferSize": 0,
+            "nextHopProtocol": "http/1.1",
+            "duration": 690
+          }
+        },
+        {
+          "kind": "latency",
+          "startedUtc": "2026-10-24T06:35:36.706Z",
+          "requestedBytes": 0,
+          "receivedBytes": 0,
+          "sentBytes": null,
+          "elapsedMs": 248,
+          "complete": true,
+          "mbps": null,
+          "httpStatus": 200,
+          "headersMs": 248,
+          "encoding": "identity",
+          "resourceTiming": {
+            "encodedBodySize": 0,
+            "decodedBodySize": 0,
+            "transferSize": 0,
+            "nextHopProtocol": "http/1.1",
+            "duration": 247
+          }
+        },
+        {
+          "kind": "latency",
+          "startedUtc": "2026-10-24T06:35:36.954Z",
+          "requestedBytes": 0,
+          "receivedBytes": 0,
+          "sentBytes": null,
+          "elapsedMs": 122,
+          "complete": true,
+          "mbps": null,
+          "httpStatus": 200,
+          "headersMs": 122,
+          "encoding": "identity",
+          "resourceTiming": {
+            "encodedBodySize": 0,
+            "decodedBodySize": 0,
+            "transferSize": 0,
+            "nextHopProtocol": "http/1.1",
+            "duration": 120
+          }
+        },
+        {
+          "kind": "maia",
+          "startedUtc": "2026-10-24T06:35:37.152Z",
+          "requestedBytes": 8388608,
+          "receivedBytes": 8388608,
+          "sentBytes": null,
+          "elapsedMs": 517,
+          "complete": true,
+          "mbps": 129.80437911025143,
+          "httpStatus": 206,
+          "headersMs": 35,
+          "encoding": "identity",
+          "resourceTiming": {
+            "encodedBodySize": 8393297,
+            "decodedBodySize": 8388608,
+            "transferSize": 8393597,
+            "nextHopProtocol": "h2",
+            "duration": 515.0000000000005
+          }
+        },
+        {
+          "kind": "download",
+          "startedUtc": "2026-10-24T06:35:37.669Z",
+          "requestedBytes": 33554432,
+          "receivedBytes": 33554432,
+          "sentBytes": null,
+          "elapsedMs": 4948,
+          "complete": true,
+          "mbps": 54.25130476960388,
+          "httpStatus": 200,
+          "headersMs": 196,
+          "encoding": "identity",
+          "resourceTiming": {
+            "encodedBodySize": 0,
+            "decodedBodySize": 0,
+            "transferSize": 0,
+            "nextHopProtocol": "http/1.1",
+            "duration": 4940
+          }
+        },
+        {
+          "kind": "upload",
+          "startedUtc": "2026-10-24T06:35:42.624Z",
+          "requestedBytes": 8388608,
+          "receivedBytes": 0,
+          "sentBytes": 8388608,
+          "elapsedMs": 2831,
+          "complete": true,
+          "mbps": 23.705003179088664,
+          "httpStatus": 200,
+          "headersMs": 2831,
+          "encoding": "identity",
+          "resourceTiming": {
+            "encodedBodySize": 0,
+            "decodedBodySize": 0,
+            "transferSize": 0,
+            "nextHopProtocol": "http/1.1",
+            "duration": 2763.999999999998
+          }
+        }
+      ],
+      "stopped": false
+    },
+    {
+      "device_confirmed_by_user": "iPhone",
+      "declared_selector": "iPhone",
+      "startedUtc": "2026-10-24T06:36:45.163Z",
+      "finishedUtc": "2026-10-24T06:36:48.972Z",
+      "standalone": true,
+      "method": "Sequential bounded single-stream HTTP; credentials omitted; fresh cache-busted URLs; results local only",
+      "release": {
+        "commit": "23286402ee4b88dfdb36441fdd1123a9a48cac36",
+        "file": "_app/immutable/assets/avendb_browser_bg.SZIHVG77.wasm",
+        "manifestBytes": 87258,
+        "manifestMs": 41
+      },
+      "results": [
+        {
+          "kind": "latency",
+          "startedUtc": "2026-10-24T06:36:45.168Z",
+          "requestedBytes": 0,
+          "receivedBytes": 0,
+          "sentBytes": null,
+          "elapsedMs": 498,
+          "complete": true,
+          "mbps": null,
+          "httpStatus": 200,
+          "headersMs": 498,
+          "encoding": "identity",
+          "resourceTiming": {
+            "encodedBodySize": 0,
+            "decodedBodySize": 0,
+            "transferSize": 0,
+            "nextHopProtocol": "http/1.1",
+            "duration": 494.99999999999955
+          }
+        },
+        {
+          "kind": "latency",
+          "startedUtc": "2026-10-24T06:36:45.668Z",
+          "requestedBytes": 0,
+          "receivedBytes": 0,
+          "sentBytes": null,
+          "elapsedMs": 242,
+          "complete": true,
+          "mbps": null,
+          "httpStatus": 200,
+          "headersMs": 242,
+          "encoding": "identity",
+          "resourceTiming": {
+            "encodedBodySize": 0,
+            "decodedBodySize": 0,
+            "transferSize": 0,
+            "nextHopProtocol": "http/1.1",
+            "duration": 238.99999999999955
+          }
+        },
+        {
+          "kind": "latency",
+          "startedUtc": "2026-10-24T06:36:45.910Z",
+          "requestedBytes": 0,
+          "receivedBytes": 0,
+          "sentBytes": null,
+          "elapsedMs": 59,
+          "complete": true,
+          "mbps": null,
+          "httpStatus": 200,
+          "headersMs": 59,
+          "encoding": "identity",
+          "resourceTiming": {
+            "encodedBodySize": 0,
+            "decodedBodySize": 0,
+            "transferSize": 0,
+            "nextHopProtocol": "http/1.1",
+            "duration": 56
+          }
+        },
+        {
+          "kind": "maia",
+          "startedUtc": "2026-10-24T06:36:46.012Z",
+          "requestedBytes": 8388608,
+          "receivedBytes": 8388608,
+          "sentBytes": null,
+          "elapsedMs": 637,
+          "complete": true,
+          "mbps": 105.35143485086343,
+          "httpStatus": 206,
+          "headersMs": 19,
+          "encoding": "identity",
+          "resourceTiming": {
+            "encodedBodySize": 8393333,
+            "decodedBodySize": 8388608,
+            "transferSize": 8393633,
+            "nextHopProtocol": "h2",
+            "duration": 636
+          }
+        },
+        {
+          "kind": "download",
+          "startedUtc": "2026-10-24T06:36:46.651Z",
+          "requestedBytes": 33554432,
+          "receivedBytes": 33554432,
+          "sentBytes": null,
+          "elapsedMs": 1369,
+          "complete": true,
+          "mbps": 196.08141417092767,
+          "httpStatus": 200,
+          "headersMs": 88,
+          "encoding": "identity",
+          "resourceTiming": {
+            "encodedBodySize": 0,
+            "decodedBodySize": 0,
+            "transferSize": 0,
+            "nextHopProtocol": "http/1.1",
+            "duration": 1359
+          }
+        },
+        {
+          "kind": "upload",
+          "startedUtc": "2026-10-24T06:36:48.031Z",
+          "requestedBytes": 8388608,
+          "receivedBytes": 0,
+          "sentBytes": 8388608,
+          "elapsedMs": 940.9999999999991,
+          "complete": true,
+          "mbps": 71.31653985122217,
+          "httpStatus": 200,
+          "headersMs": 940.9999999999991,
+          "encoding": "identity",
+          "resourceTiming": {
+            "encodedBodySize": 0,
+            "decodedBodySize": 0,
+            "transferSize": 0,
+            "nextHopProtocol": "http/1.1",
+            "duration": 883
+          }
+        }
+      ],
+      "stopped": false
+    }
+  ],
+  "limits": [
+    "User identifies first run as iPad despite unchanged iPhone selector.",
+    "Single bounded HTTP samples; not physical-link maxima or avenDB sync throughput.",
+    "Connection type was not supplied.",
+    "A completed short diagnostic does not establish long-term PWA session stability."
+  ]
+}

@@ -108,6 +108,9 @@ pub use avendb::world::{CARD, DELETED, FILE, FORK, NOTE, PROFILE, TODO};
 /// Which code is a vault's, proven in the page (`provenCode`, H2).
 pub mod provenance;
 
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod moving_tests;
+
 /// How many bytes of a file the page hands its device at a time (`PageDevice::run`'s `read`, for `put_file` and a
 /// `create` that brings a file).
 const CHUNK: u64 = 1 << 20;
@@ -186,6 +189,10 @@ pub struct Start {
     pub shelf: Option<Shelf>,
     pub progress: Progress,
     pub recovery: Option<Arc<RecoveryKey>>,
+    /// An embedding host retains a node before later startup steps can fail.
+    /// Called synchronously after spawn, before another startup await. The host
+    /// transfers ownership on publication, or awaits close before releasing it.
+    pub on_node: Option<Arc<dyn Fn(Arc<Node>) + Send + Sync>>,
 }
 
 impl Start {
@@ -520,7 +527,7 @@ impl Device {
         let passkey = owner.unwrap_or(passkeys[0]);
         let (shelf, name, relay) = (start.shelf.clone(), start.name.clone(), start.relay.clone());
         let (p256, mask, opener, closed) = (meta.p256, meta.mask, opener.to_vec(), watch::Sender::new(false));
-        let device = Device { node: Arc::new(node), passkey, p256, mask, shelf, name, relay, closed, opener };
+        let device = Device { node, passkey, p256, mask, shelf, name, relay, closed, opener };
         start.progress.step("check");
         if device.vault().await.is_none() {
             device.close().await.ok();
@@ -580,7 +587,9 @@ impl Device {
         Ok(())
     }
 
-    /// What its key move asks of its person now (K3b, `move_keys`), once it caught up with its peers (`catch_up`):
+    /// What its key move asks of its person now (K3b, `move_keys`). A local no-work probe and bounded next-key
+    /// discovery return `None` without a full sync; callers periodically ask again as history or peers change.
+    /// When work may exist, it first catches up with its peers (`catch_up`), then recomputes what is needed:
     /// whether their passkey signs, whether its Mac's Touch ID key does, with a touch, and whether a device moves.
     /// `None` once nothing it holds is to move: their keys and its own are in ML-DSA-65, or the Lab holds no next key
     /// of those still in SLH-DSA, as a Mac its Touch ID key opened holds none of their passkey's. Fails while it
@@ -591,6 +600,14 @@ impl Device {
     /// and they may be all the peers it has.
     pub async fn moving(&self) -> Result<Option<Moving>> {
         let touch = self.touch_key().await?;
+        // This is only a no-work probe. A missing peer cannot authorize a move or a retirement. Discover remote
+        // next keys before a full pull too: an offline legacy agent should not make every page reload resend history.
+        let opener = self.opener.clone();
+        let local = self.node.read(move |lab, me| local_move_pending(lab, me, &opener, touch)).await;
+        if !local && aven_moves(&self.node).await.is_empty() {
+            return Ok(None);
+        }
+        // Never reuse a preflight draft or peer result as authority: freshness and all candidates are recomputed.
         if !catch_up(&self.node).await {
             bail!("{NOT_CAUGHT_UP}");
         }
@@ -750,21 +767,23 @@ impl Device {
 
     /// A node for device `me` of `lab`, which reaches its peers through the relay, let in by one of `relay_passes` if
     /// the relay doesn't know it yet, and directly too if it binds a socket; on its shelf, if it keeps one.
-    async fn spawn(lab: Lab, me: SignerId, start: &Start, relay_passes: Vec<RelayPass>) -> Result<Node> {
+    async fn spawn(lab: Lab, me: SignerId, start: &Start, relay_passes: Vec<RelayPass>) -> Result<Arc<Node>> {
         // a page shows its relay its passes first, by a request of its own, and then connects with none (`show`)
         let shown = !relay_passes.is_empty() && show(start, &relay_passes).await?;
         let relay_passes = if shown { Vec::new() } else { relay_passes };
         let (direct, relay, shelf, progress) =
             (start.direct, Some(start.relay.clone()), start.shelf.clone(), start.progress.clone());
         let opts = Options { bind: None, direct, relay, relay_passes, shelf, progress, ..Options::local() };
-        Node::spawn(lab, me, opts).await
+        let node = Arc::new(Node::spawn(lab, me, opts).await?);
+        if let Some(retain) = &start.on_node { retain(node.clone()); }
+        Ok(node)
     }
 
     /// The new device whose node is `node`, of the person whose passkey turned out to be `passkey`, of `passkeys`,
     /// those its unlock may have been from (`passed`), its secret kept under `mask`, started at `start`: it forgets the
     /// keys of the others, which nobody holds, and keeps the passkey's own in the other suite, its next key (the key
     /// move); the passkey in each suite opened it.
-    async fn of(node: Node, passkey: SignerId, passkeys: &[SignerId], mask: [u8; 32], start: &Start) -> Result<Device> {
+    async fn of(node: Arc<Node>, passkey: SignerId, passkeys: &[SignerId], mask: [u8; 32], start: &Start) -> Result<Device> {
         let held = passkeys.to_vec();
         let forget = move |lab: &mut Lab, _| {
             let p256 = |lab: &Lab, p| match lab.keys_of(p) {
@@ -780,7 +799,7 @@ impl Device {
         let Some((p256, opener)) = node.try_act(forget).await? else { bail!("the passkey's keys") };
         let (shelf, name, relay) = (start.shelf.clone(), start.name.clone(), start.relay.clone());
         let closed = watch::Sender::new(false);
-        Ok(Device { node: Arc::new(node), passkey, p256, mask, shelf, name, relay, closed, opener })
+        Ok(Device { node, passkey, p256, mask, shelf, name, relay, closed, opener })
     }
 
     /// What opens it again, as it started: its name and relay, its secret's mask, its passkey's P-256 key and its id,
@@ -1174,6 +1193,24 @@ fn holds_what_servers_hold(lab: &Lab, me: SignerId, peers: &BTreeMap<SignerId, O
     let servers = lab.governed_devices(me);
     let mut theirs = peers.iter().filter(|(d, _)| servers.contains(d)).peekable();
     theirs.peek().is_some() && theirs.all(|(_, &lacks)| lacks == Some(0))
+}
+
+/// Whether local history might call for a move, retirement or standalone checkpoint. This does not authorize
+/// anything and intentionally overestimates work: retirement is tested with no live peers and with every governed
+/// peer live, so an absent/stale connection cannot hide a candidate. Discovery and freshness still precede drafting.
+fn local_move_pending(lab: &Lab, me: SignerId, opener: &[SignerId], touch: Option<[u8; 32]>) -> bool {
+    if lab.vault_of(me).is_none() || !lab.moves(me, touch).is_empty() {
+        return true;
+    }
+    let governed = lab.governed_devices(me);
+    if !governed.is_empty()
+        && (!lab.retires(me, &BTreeSet::new()).is_empty() || !lab.retires(me, &governed).is_empty())
+    {
+        return true;
+    }
+    let Some(by) = lab.owner_among(me, opener).or(opener.first().copied()) else { return false };
+    // A refusal is not evidence of no work; the normal freshness/drafting path must explain it.
+    lab.draft_checkpoint(me, by, false).map_or(true, |drafts| !drafts.is_empty())
 }
 
 /// Asks each device `node` knows for what it holds, for a few seconds at most (`avendb_net::Node::catch_up`, as a
@@ -1852,7 +1889,7 @@ fn starting(name: String, relay: &str, steps: Option<Function>, shelf: Shelf) ->
     let mut entropy = Zeroizing::new([0; 32]);
     getrandom::fill(&mut *entropy).map_err(|e| JsError::new(&format!("no randomness from the browser: {e}")))?;
     let (progress, shelf, recovery) = (shown(steps), Some(shelf), Start::recovery());
-    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, shelf, progress, recovery })
+    Ok(Start { name, relay, entropy: *entropy, now: now(), direct: false, shelf, progress, recovery, on_node: None })
 }
 
 /// Holds the page's `store` for this page alone, until the device on it closes (`PageDevice::close`): refused while
@@ -2056,7 +2093,7 @@ mod tests {
         let relay = "http://localhost:3340".parse().expect("a relay's URL");
         let (name, progress) = ("Eve's browser".into(), Progress::new());
         let (entropy, recovery) = ([7; 32], None);
-        let start = Start { name, relay, entropy, now: 0, direct: false, shelf: None, progress, recovery };
+        let start = Start { name, relay, entropy, now: 0, direct: false, shelf: None, progress, recovery, on_node: None };
         // its own secret, kept masked by the PRF output on its salt
         let fresh = Fresh::from_secret([9; 32]);
         let mask = fresh.mask(&unlock);

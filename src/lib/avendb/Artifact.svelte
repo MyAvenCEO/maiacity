@@ -124,7 +124,10 @@
 	/** Asks the Mac for its words: the jobs' schemas into its vault where it lacks them, then the task. */
 	async function fetchWords() {
 		if (!item || !rule) return;
-		for (const op of lacking(world, item.vault, actor)) if (!(await api.run('Adding the studio’s job schemas', op))) return;
+		const missing = lacking(world, item.vault, actor);
+		for (const op of missing) if (!(await api.run('Adding the studio’s job schemas', op))) return;
+		// The task planner reads the schemas just accepted into the local world.
+		if (missing.length) await api.refresh();
 		const op = asking(rule, item, world, actor, actor, Math.floor(Date.now() / 1000));
 		if (op && (await api.run('Asking the Mac for its words', op))) nudge();
 	}

@@ -433,3 +433,82 @@ async fn a_file_of_two_pieces_over_iroh() {
         n.shutdown().await.expect("the node shuts down");
     }
 }
+
+/// PeerRoleGate: a prior authenticated grant and a server deployment role do not
+/// authorize a NEW file attached after revocation. Old authorized bytes are not erased.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn revoked_blob_requests_are_refused_by_server_and_ordinary_peer_alike() {
+    use avendb::policy::{Action, Revoking};
+    let mut w = world();
+    let h = handbook(&mut w);
+    let grant = w.lab.issue(w.mac_a, &[w.mac_a],
+        share(h.coop, vault(w.carol), Level::Read, by_id(h.welcome))).unwrap();
+    w.lab.sync_all(1);
+    let (owner, owner_key, server_id, reader, reader_key) =
+        (w.mac_a, w.passkey_a, w.server, w.mac_c, w.passkey_c);
+    let (coop, entry) = (h.coop, h.welcome);
+    let folder = Folder::new("peer-role-gate");
+    let mac = node(&mut w, owner, &[owner_key], 111, Options { keep: true, ..Options::local() }).await;
+    let server = node(&mut w, server_id, &[], 112, Options { keep: true, ..on_disk(&folder) }).await;
+    let carol = node(&mut w, reader, &[reader_key], 113, Options::local()).await;
+    for (left, right) in [(&mac, &server), (&mac, &carol), (&server, &carol)] {
+        left.know(right.addr());
+        right.know(left.addr());
+    }
+    let old = mac.store_file(8192, reading(11, 8192)).await.unwrap();
+    let old_root = old.root;
+    mac.act(move |lab, me| lab.bring(me, coop, entry, vec![old], |_| {})).await.unwrap();
+    until("both providers hold the initially granted file", || async {
+        server.sync_with(mac.id()).await.ok();
+        mac.holds_file(old_root).await && server.holds_file(old_root).await
+    }).await;
+    for provider in [&mac, &server] {
+        carol.sync_with(provider.id()).await.unwrap();
+        assert!(provider.read(move |lab, me| lab.may_fetch_file(me, reader, &old_root, &[])).await);
+        let got = by_hand(carol.endpoint(), provider, GetRequest::blob(Hash::from_bytes(old_root.hash))).await;
+        assert_eq!(got.map(|bytes| bytes.len() as u64), Some(old_root.size),
+            "the prior authenticated grant really permits a raw blob request at each role");
+    }
+    mac.act(move |lab, me| lab.submit(me, &[me], Action::Revoke(Revoking::Grant {
+        share: grant, actor: coop, keep: vec![], via: vec![],
+    }))).await.unwrap();
+    // Observe the grant itself as revoked at both providers before even storing the new bytes.
+    // store_file updates physical holdings too; no fresh root may be announced before this barrier.
+    let revoked = move |lab: &avendb::lab::Lab, me| {
+        let state = lab.state(me);
+        state.share(grant).is_some() && !state.live(grant)
+    };
+    assert!(mac.read(revoked).await, "the owner has applied the revocation");
+    until("the server has applied the same revocation before new bytes exist", || async {
+        server.sync_with(mac.id()).await.ok();
+        server.read(revoked).await
+    }).await;
+    let fresh = mac.store_file(8192, reading(12, 8192)).await.unwrap();
+    let fresh_root = fresh.root;
+    assert_ne!(old_root, fresh_root);
+    mac.act(move |lab, me| lab.bring(me, coop, entry, vec![fresh], |_| {})).await.unwrap();
+    until("the server holds the new file and has current revoked permission", || async {
+        server.sync_with(mac.id()).await.ok();
+        server.holds_file(fresh_root).await
+            && !server.read(move |lab, me| lab.may_fetch_file(me, reader, &fresh_root, &[])).await
+    }).await;
+    for provider in [&mac, &server] {
+        assert!(provider.holds_file(fresh_root).await, "refusal must not mean absent bytes");
+        assert!(!provider.read(move |lab, me| lab.may_fetch_file(me, reader, &fresh_root, &[])).await);
+        // Carol deliberately bypasses its application permission checks and names a known hash.
+        carol.sync_with(provider.id()).await.expect("the revoked reader still has an authenticated sync connection");
+        assert_eq!(provider.proven(carol.id()), Some(reader));
+        let conn = carol.endpoint().connect(provider.addr(), iroh_blobs::ALPN).await
+            .expect("a connection failure must not count as file refusal");
+        let received = MemStore::new();
+        let hash = Hash::from_bytes(fresh_root.hash);
+        assert!(received.remote().execute_get(conn, GetRequest::blob(hash)).await.is_err(),
+            "neither deployment role may serve newly forbidden bytes to a formerly granted peer");
+        assert!(received.get_bytes(hash).await.is_err(), "the refused request yielded no complete blob");
+    }
+    assert!(!carol.read(move |lab, me| lab.file(me, &fresh_root).is_some()).await);
+    assert!(!carol.holds_file(fresh_root).await);
+    mac.shutdown().await.unwrap();
+    server.shutdown().await.unwrap();
+    carol.shutdown().await.unwrap();
+}

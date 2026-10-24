@@ -38,6 +38,7 @@ use avendb::wire::FileHold;
 use bytes::Bytes;
 use iroh::EndpointId;
 use iroh_blobs::api::proto::BlobStatus;
+use iroh_blobs::api::remote::GetProgressItem;
 use iroh_blobs::api::{Store, TempTag};
 use iroh_blobs::hashseq::HashSeq;
 use iroh_blobs::protocol::{ChunkRanges, ChunkRangesExt as _, GetRequest};
@@ -50,6 +51,36 @@ use crate::{Backoff, Node, Running, Shared};
 
 /// The most sealed bytes of a piece a node reads at a time: whole segments, as each opens on its own.
 const READ: u64 = 64 * SEALED as u64;
+
+/// A provider may take time to connect or open a cold store. Once receiving, only advancing payload-byte counts
+/// extend its turn: an otherwise live sync connection cannot keep a stalled file read waiting forever.
+const FILE_CONNECT: time::Duration = time::Duration::from_secs(30);
+const FILE_IDLE: time::Duration = time::Duration::from_secs(20);
+
+/// Consume iroh-blobs' receive future itself, not a detached download. Dropping this stream on idle or caller
+/// cancellation drops that future and its QUIC streams; verified ranges already imported stay available to the
+/// next provider. There is no whole-transfer deadline: a large file progressing within each idle window continues.
+async fn receive_file(progress: impl Stream<Item = GetProgressItem>, idle: time::Duration) -> Result<()> {
+    tokio::pin!(progress);
+    let mut bytes = 0;
+    let mut deadline = time::Instant::now() + idle;
+    loop {
+        let left = deadline.saturating_duration_since(time::Instant::now());
+        ensure!(!left.is_zero(), "file provider stopped making progress");
+        let item = time::timeout(left, progress.next()).await.context("file provider stopped making progress")?;
+        match item {
+            Some(GetProgressItem::Progress(n)) if n > bytes => {
+                bytes = n;
+                deadline = time::Instant::now() + idle;
+            }
+            Some(GetProgressItem::Progress(_)) => {}
+            Some(GetProgressItem::Done(_)) => return Ok(()),
+            Some(GetProgressItem::Error(error)) => return Err(anyhow!("file provider failed: {error}")),
+            None => bail!("file provider ended without completing its request"),
+        }
+    }
+}
+
 
 /// The name a file's root is kept under in the blob store, so that whatever cleans the store up leaves it whole.
 fn tag(root: &FileRoot) -> Vec<u8> {
@@ -344,21 +375,32 @@ impl Shared {
     /// What `request` asks of one blob of file `root`, piece `piece` of it or else its HashSeq, in this node's store:
     /// what it lacks of it fetched from the first peer that hands it over (`providers`), and kept.
     async fn get(self: &Arc<Self>, request: GetRequest, root: FileRoot, piece: Option<u64>) -> Result<()> {
+        self.get_from(request, || self.providers(root, piece), FILE_IDLE).await
+    }
+
+    /// The same receive path with its ordered candidates explicit, so fallback and cancellation are tested against
+    /// real providers. Only `get` chooses production candidates, through the existing permission-scoped holdings.
+    async fn get_from(self: &Arc<Self>, request: GetRequest, providers: impl FnOnce() -> Vec<EndpointId>, idle: time::Duration) -> Result<()> {
         let _activity = self.admit()?;
         let remote = self.store.remote();
         if remote.local_for_request(request.clone()).await?.is_complete() {
             return Ok(());
         }
-        for endpoint in self.providers(root, piece) {
-            // the peer's blob gate lets in only an endpoint whose sync connection lives
-            if self.connection(endpoint).await.is_err() {
-                continue;
-            }
-            let Ok(conn) = self.pool.get_or_connect(endpoint).await else { continue };
+        for endpoint in providers() {
+            // Include waiting behind a concurrent dial in the availability bound. The authenticated sync
+            // connection is still required before the peer's unchanged blob gate may let this endpoint in.
+            let connect = async {
+                self.connection(endpoint).await?;
+                self.pool.get_or_connect(endpoint).await.map_err(anyhow::Error::from)
+            };
+            let Ok(Ok(conn)) = time::timeout(FILE_CONNECT, connect).await else { continue };
             let missing = remote.local_for_request(request.clone()).await?.missing();
-            if remote.execute_get((*conn).clone(), missing).await.is_err() {
-                continue;
+            let receive = remote.execute_get((*conn).clone(), missing).stream();
+            if let Err(error) = receive_file(receive, idle).await {
+                tracing::debug!(%endpoint, %error, "avendb: trying another file provider");
             }
+            // Even an interrupted attempt may have completed the last range before it was cancelled. Recompute
+            // after every attempt, so the next peer sends only what this store still lacks.
             if remote.local_for_request(request.clone()).await?.is_complete() {
                 return Ok(());
             }
@@ -607,3 +649,7 @@ impl Shared {
         Ok(true)
     }
 }
+
+#[cfg(all(test, not(target_arch = "wasm32")))]
+#[path = "files_fetch_tests.rs"]
+mod fetch_tests;

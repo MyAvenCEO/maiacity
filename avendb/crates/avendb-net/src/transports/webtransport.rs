@@ -1,7 +1,8 @@
 //! Native HTTP/3 carrier for already-authenticated avenDB peers. The ticket admits one outer connection;
 //! iroh's PQ handshake and exporter-bound Hello still authenticate every inner application connection.
 use std::collections::{BTreeMap, BTreeSet};
-use std::future::IntoFuture;
+use std::future::{Future, IntoFuture};
+use std::pin::Pin;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, atomic::{AtomicBool, Ordering}};
@@ -14,8 +15,8 @@ use tokio::sync::{mpsc, watch, Semaphore};
 use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::{Instant, timeout};
 use url::Url;
-use wtransport::{Connection, Endpoint, Identity, ServerConfig, VarInt};
-use wtransport::endpoint::{IncomingSession, endpoint_side::Server};
+use wtransport::{Connection, Identity, ServerConfig, VarInt, quinn};
+use wtransport::endpoint::IncomingSessionFuture;
 use wtransport::tls::self_signed::time::{Duration as WallDuration, OffsetDateTime};
 
 use super::{Carrier, Command, PacketTransport, RouteId};
@@ -88,7 +89,8 @@ struct Inner {
     authority: String,
     host: String,
     origins: BTreeSet<String>,
-    endpoint: Endpoint<Server>,
+    endpoint: Mutex<Option<quinn::Endpoint>>,
+    runtime: Arc<JoinedRuntime>,
     broker: PacketTransport,
     events: mpsc::Sender<WtEvent>,
     state: Mutex<State>,
@@ -100,6 +102,42 @@ struct Inner {
 pub struct NativeWt {
     inner: Arc<Inner>,
     task: Mutex<Option<JoinHandle<()>>>,
+    ending: tokio::sync::Mutex<()>,
+}
+
+/// Quinn's default runtime detaches its endpoint driver. Dropping the last endpoint
+/// only wakes that driver; wait_idle covers connections, not UDP socket release.
+/// Retain completion handles so awaited shutdown includes the actual driver drop.
+#[derive(Debug, Default)]
+struct JoinedRuntime { tasks: Mutex<JoinSet<()>> }
+impl quinn::Runtime for JoinedRuntime {
+    fn new_timer(&self, at: std::time::Instant) -> Pin<Box<dyn quinn::AsyncTimer>> {
+        quinn::Runtime::new_timer(&quinn::TokioRuntime, at)
+    }
+    fn spawn(&self, future: Pin<Box<dyn Future<Output = ()> + Send>>) {
+        let mut tasks = self.tasks.lock().expect("WT runtime");
+        while tasks.try_join_next().is_some() {}
+        tasks.spawn(future);
+    }
+    fn wrap_udp_socket(&self, socket: std::net::UdpSocket) -> io::Result<Arc<dyn quinn::AsyncUdpSocket>> {
+        quinn::Runtime::wrap_udp_socket(&quinn::TokioRuntime, socket)
+    }
+}
+impl JoinedRuntime {
+    async fn joined(&self) {
+        // Keep ownership in the runtime across cancellation of a shutdown caller.
+        // A driver may spawn more work while finishing; it enters this same set.
+        std::future::poll_fn(|cx| {
+            let mut tasks = self.tasks.lock().expect("WT runtime");
+            loop {
+                match tasks.poll_join_next(cx) {
+                    std::task::Poll::Ready(Some(_)) => continue,
+                    std::task::Poll::Ready(None) => return std::task::Poll::Ready(()),
+                    std::task::Poll::Pending => return std::task::Poll::Pending,
+                }
+            }
+        }).await;
+    }
 }
 
 fn invalid(message: &'static str) -> io::Error { io::Error::new(io::ErrorKind::InvalidInput, message) }
@@ -155,17 +193,20 @@ impl NativeWt {
         if events.max_capacity() < 2 * MAX_ROUTES { return Err(invalid("WebTransport event capacity")); }
         let now = OffsetDateTime::now_utc();
         let certificates = Certificates { current: Certificate::generate(&host, now)?, next: Certificate::generate(&host, now)?, rotate_at: Instant::now() + ROTATION };
-        let endpoint = Endpoint::server(tls_config(config.bind, &certificates.current)?)?;
+        let tls = tls_config(config.bind, &certificates.current)?;
+        let runtime = Arc::new(JoinedRuntime::default());
+        let endpoint = quinn::Endpoint::new(tls.quic_endpoint_config().clone(), Some(tls.quic_config().clone()),
+            std::net::UdpSocket::bind(config.bind)?, runtime.clone())?;
         if url.port() == Some(0) { url.set_port(Some(endpoint.local_addr()?.port())).map_err(|_| invalid("invalid listener port"))?; }
         let authority = url[url::Position::BeforeHost..url::Position::AfterPort].to_owned();
         let (stop, stopped) = watch::channel(false);
-        let inner = Arc::new(Inner { config, url, authority, host, origins, endpoint, broker, events,
+        let inner = Arc::new(Inner { config, url, authority, host, origins, endpoint: Mutex::new(Some(endpoint)), runtime, broker, events,
             state: Mutex::new(State { certificates, routes: BTreeMap::new() }), closed: AtomicBool::new(false), stop });
         let task = tokio::spawn(serve(inner.clone(), stopped));
-        Ok(Self { inner, task: Mutex::new(Some(task)) })
+        Ok(Self { inner, task: Mutex::new(Some(task)), ending: tokio::sync::Mutex::new(()) })
     }
 
-    pub fn local_addr(&self) -> io::Result<SocketAddr> { self.inner.endpoint.local_addr() }
+    pub fn local_addr(&self) -> io::Result<SocketAddr> { self.inner.endpoint()?.local_addr() }
 
     /// The caller already proved `peer` and negotiated `wire_epoch` over the exporter-bound PQ session.
     pub fn reserve(&self, peer: EndpointId, wire_epoch: [u8; 16]) -> io::Result<Reservation> {
@@ -197,14 +238,25 @@ impl NativeWt {
     pub fn close(&self) { self.inner.closed.store(true, Ordering::Release); let _ = self.inner.stop.send(true); }
 
     pub async fn shutdown(&self) {
+        let _ending = self.ending.lock().await;
         self.close();
-        let task = self.task.lock().expect("WT task").take();
-        if let Some(task) = task { let _ = task.await; }
+        std::future::poll_fn(|cx| {
+            let mut task = self.task.lock().expect("WT task");
+            let Some(handle) = task.as_mut() else { return std::task::Poll::Ready(()); };
+            if Pin::new(handle).poll(cx).is_pending() { return std::task::Poll::Pending; }
+            task.take();
+            std::task::Poll::Ready(())
+        }).await;
+        drop(self.inner.endpoint.lock().expect("WT endpoint").take());
+        self.inner.runtime.joined().await;
     }
 }
 impl Drop for NativeWt { fn drop(&mut self) { self.close(); } }
 
 impl Inner {
+    fn endpoint(&self) -> io::Result<quinn::Endpoint> {
+        self.endpoint.lock().expect("WT endpoint").clone().ok_or_else(disconnected)
+    }
     fn rotate(&self, now: OffsetDateTime, at: Instant) -> io::Result<()> {
         let mut state = self.state.lock().expect("WT state");
         let certificates = &mut state.certificates;
@@ -215,7 +267,7 @@ impl Inner {
             Some(Certificate::generate(&self.host, now)?)
         } else { None };
         let current = fresh.as_ref().unwrap_or(&certificates.next);
-        self.endpoint.reload_config(tls_config(self.config.bind, current)?, false)?;
+        self.endpoint()?.set_server_config(Some(tls_config(self.config.bind, current)?.quic_config().clone()));
         let promoted = std::mem::replace(&mut certificates.next, next);
         certificates.current = fresh.unwrap_or(promoted);
         // The promoted certificate and the next pin overlap across a rotation boundary.
@@ -256,6 +308,7 @@ async fn stopped(stop: &mut watch::Receiver<bool>) {
 }
 
 async fn serve(inner: Arc<Inner>, mut stop: watch::Receiver<bool>) {
+    let Ok(endpoint) = inner.endpoint() else { return; };
     let permits = Arc::new(Semaphore::new(MAX_HANDSHAKES));
     let mut sessions = JoinSet::new();
     let mut maintenance = tokio::time::interval(Duration::from_secs(10));
@@ -283,24 +336,25 @@ async fn serve(inner: Arc<Inner>, mut stop: watch::Receiver<bool>) {
                     Command::Open { id, .. } | Command::Signal { id, .. } => inner.finish(&id),
                 }
             },
-            incoming = inner.endpoint.accept() => {
-                if !incoming.remote_address_validated() { incoming.retry(); continue; }
+            incoming = endpoint.accept() => {
+                let Some(incoming) = incoming else { break; };
+                if !incoming.remote_address_validated() { let _ = incoming.retry(); continue; }
                 let Ok(permit) = permits.clone().try_acquire_owned() else { incoming.refuse(); continue; };
                 let inner = inner.clone(); let stop = stop.clone();
-                sessions.spawn(async move { session(inner, incoming, permit, stop).await; });
+                sessions.spawn(async move { session(inner, IncomingSessionFuture::with_quic_incoming(incoming), permit, stop).await; });
             },
         }
     }
     inner.closed.store(true, Ordering::Release); let _ = inner.stop.send(true);
     // No accept future is alive at this point: wtransport 0.7.2 accept panics if polled after close.
-    inner.endpoint.close(CLOSE, b"listener stopped");
+    endpoint.close(quinn::VarInt::from_u32(0), b"listener stopped");
     let ids: Vec<_> = inner.state.lock().expect("WT state").routes.keys().cloned().collect();
     for id in ids { inner.finish(&id); }
     sessions.abort_all(); while sessions.join_next().await.is_some() {}
-    let _ = timeout(Duration::from_secs(1), inner.endpoint.wait_idle()).await;
+    let _ = timeout(Duration::from_secs(1), endpoint.wait_idle()).await;
 }
 
-async fn session(inner: Arc<Inner>, incoming: IncomingSession, permit: tokio::sync::OwnedSemaphorePermit, mut stop: watch::Receiver<bool>) {
+async fn session(inner: Arc<Inner>, incoming: IncomingSessionFuture, permit: tokio::sync::OwnedSemaphorePermit, mut stop: watch::Receiver<bool>) {
     let request = tokio::select! {
         biased;
         _ = stopped(&mut stop) => return,
@@ -348,6 +402,51 @@ async fn session(inner: Arc<Inner>, incoming: IncomingSession, permit: tokio::sy
 mod tests {
     use super::*;
     fn peer(byte: u8) -> EndpointId { iroh::SecretKey::from_bytes(&[byte; 32]).public() }
+    #[tokio::test]
+    async fn cancelled_shutdown_retains_completion_ownership() {
+        let (events, _rx) = mpsc::channel(32);
+        let listener = NativeWt::bind(config(), PacketTransport::new(peer(1)), events).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let mut first = Box::pin(listener.shutdown());
+        // Current-thread executor: supervisor cannot finish before this poll returns.
+        std::future::poll_fn(|cx| {
+            assert!(first.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        }).await;
+        drop(first);
+        listener.shutdown().await;
+        let _rebound = std::net::UdpSocket::bind(address).expect("cancelled caller must not lose completion barrier");
+    }
+
+    #[tokio::test]
+    async fn cancelled_runtime_join_keeps_running_driver() {
+        let runtime = JoinedRuntime::default();
+        let (release, wait) = tokio::sync::oneshot::channel();
+        quinn::Runtime::spawn(&runtime, Box::pin(async move { let _ = wait.await; }));
+        let mut first = Box::pin(runtime.joined());
+        std::future::poll_fn(|cx| {
+            assert!(first.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        }).await;
+        drop(first);
+        assert_eq!(runtime.tasks.lock().unwrap().len(), 1);
+        release.send(()).expect("cancelling waiter must not abort driver");
+        runtime.joined().await;
+        assert!(runtime.tasks.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn awaited_shutdown_releases_socket_with_listener_retained() {
+        let (events, _rx) = mpsc::channel(32);
+        let listener = NativeWt::bind(config(), PacketTransport::new(peer(1)), events).await.unwrap();
+        let address = listener.local_addr().unwrap();
+        assert!(std::net::UdpSocket::bind(address).is_err());
+        let ((), ()) = tokio::join!(listener.shutdown(), listener.shutdown());
+        let rebound = std::net::UdpSocket::bind(address).expect("driver completion releases UDP before shutdown returns");
+        assert_eq!(rebound.local_addr().unwrap(), address);
+        assert!(listener.local_addr().is_err());
+    }
+
     fn config() -> Config { Config { bind: "127.0.0.1:0".parse().unwrap(), public_url: "https://127.0.0.1:0/packets".into(), allowed_origins: vec!["https://app.example".into()] } }
 
     #[tokio::test]

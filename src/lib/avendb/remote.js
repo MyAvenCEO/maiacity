@@ -21,6 +21,7 @@ import { localOperation } from '../../../game/code/sources/local-policy.js';
  */
 
 import { rtcPageHost } from './transports/page.js';
+import { noteLifecycle } from './lifecycle.js';
 import { browserCarrierCapabilities } from './transports/config.js';
 
 /** The worker, once started, its calls waiting for an answer, and the page's functions it may call back. */
@@ -75,6 +76,7 @@ function started() {
 		carriers.close(); globalThis.removeEventListener?.('pagehide', suspended);
 		current.terminate();
 		if (worker !== current) return;
+		noteLifecycle('worker-failed');
 		worker = null; transports = null;
 		fail(`avenDB's worker failed: ${e.message || 'it did not start'}`);
 	};

@@ -554,8 +554,19 @@ pub enum ReplyScope {
 /// a checkpoint withdrawal or a restore of the same length, invalidates it without a history scan or hash collision.
 #[derive(Default)]
 struct Answers {
+    basis: std::sync::Mutex<Option<Arc<RequestBasis>>>,
+    #[cfg(test)]
+    basis_builds: std::sync::atomic::AtomicUsize,
     may: std::sync::Mutex<HashMap<(SignerId, Vec<VaultId>), (crate::policy::LogRevision, Arc<Vec<usize>>)>>,
     sends: std::sync::Mutex<HashMap<(SignerId, [u8; 32], ReplyScope), (crate::policy::LogRevision, Arc<ReplyPlan>)>>,
+}
+
+/// Disposable structural work, shared across peers only while the exact held edits/IDs stay unchanged.
+/// It contains NO permission decision, follow list, available-key state or persisted authority.
+struct RequestBasis {
+    revision: crate::policy::LogRevision,
+    logs: Vec<Option<LogId>>,
+    ask: crate::sync::Ask,
 }
 
 /// The ordered edits and authorized explicit key requests for one asking. The first page works both out;
@@ -4668,6 +4679,25 @@ impl Lab {
         got
     }
 
+    /// Log append/new receive/withdrawal rotate revision; replacing a Store drops this basis. Signature,
+    /// key and view changes do not alter these structural inputs. Disclosure is still filtered per request.
+    fn request_basis(&self, d: SignerId) -> Arc<RequestBasis> {
+        let store = self.held(d);
+        let revision = store.log.revision();
+        let mut cached = store.answers.basis.lock().expect("request basis");
+        if let Some(basis) = cached.as_ref().filter(|basis| basis.revision == revision) {
+            return basis.clone();
+        }
+        let (edits, ids) = (store.log.edits(), store.log.ids());
+        let logs = logs_of(edits, ids);
+        let ask = crate::sync::asks_with_logs(edits, ids, &logs, &[]);
+        let basis = Arc::new(RequestBasis { revision, logs, ask });
+        #[cfg(test)]
+        store.answers.basis_builds.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        *cached = Some(basis.clone());
+        basis
+    }
+
     /// What device `d` asks `peer` when it syncs with it on the network (`wire::Request`): its frontier of each log and
     /// a few edits further back, and the vaults it follows (`sync::asks`), and the McEliece keys it lacks that the
     /// edits of those logs name, but only of the logs `peer` may hold by `d`'s view, following nothing: `d` tells a
@@ -4677,10 +4707,11 @@ impl Lab {
         let store = self.held(d);
         let (edits, ids) = (store.log.edits(), store.log.ids());
         let places = self.answered(d, peer, &[]);
-        let logs = logs_of(edits, ids);
-        let shared: HashSet<LogId> = places.iter().filter_map(|&i| logs[i]).collect();
+        let basis = self.request_basis(d);
+        let shared: HashSet<LogId> = places.iter().filter_map(|&i| basis.logs[i]).collect();
         let theirs: HashSet<EditId> = places.iter().map(|&i| ids[i]).collect();
-        let mut ask = asks_ids(edits, ids, &store.follow);
+        let mut ask = basis.ask.clone();
+        ask.follow = store.follow.clone();
         ask.haves.retain(|l, _| shared.contains(l));
         ask.loose.retain(|id| theirs.contains(id));
         let wants: BTreeSet<BlobId> =
@@ -5029,12 +5060,16 @@ impl Lab {
         let blobs: Blobs = blobs.into_iter().map(|b| (BlobId::of(&b), b)).collect();
         let before = self.held(d).signed.len();
         let mut changed = self.take(d, edits, &blobs);
-        let store = self.stores.get_mut(&self.at(d)).expect("a device");
-        let named: HashSet<BlobId> = store.log.edits().iter().flat_map(Edit::blobs).collect();
-        for (b, bytes) in blobs {
-            if named.contains(&b) && !store.blobs.contains_key(&b) {
-                store.blobs.insert(b, bytes);
-                changed = true;
+        // Edit-only pages have no late-arriving keys to match. Taking their edits and flushing a deferred
+        // replay still happen normally; only the otherwise unused full-history blob-name scan is omitted.
+        if !blobs.is_empty() {
+            let store = self.stores.get_mut(&self.at(d)).expect("a device");
+            let named: HashSet<BlobId> = store.log.edits().iter().flat_map(Edit::blobs).collect();
+            for (b, bytes) in blobs {
+                if named.contains(&b) && !store.blobs.contains_key(&b) {
+                    store.blobs.insert(b, bytes);
+                    changed = true;
+                }
             }
         }
         let new = self.held(d).signed.len() - before;
@@ -6379,3 +6414,11 @@ mod range_payload_tests {
         assert!(w.lab.range_select(from,to,from,&request,&scope,&revision,&wanted,256,usize::MAX).is_none(),"restoring prior contents does not resurrect a process-local revision");
     }
 }
+
+#[cfg(test)]
+#[path = "receive_empty_tests.rs"]
+mod receive_empty_tests;
+
+#[cfg(test)]
+#[path = "request_basis_tests.rs"]
+mod request_basis_tests;

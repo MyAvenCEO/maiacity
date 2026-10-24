@@ -314,9 +314,25 @@ pub(super) fn prepare(lab: &mut Lab, me: SignerId, name: &str, o: &Map<String, V
 
 /// `{"op": "world"}`: device `me`'s world (`world::World::to_json`), each entry and file synced to the devices `synced`
 /// says, its answer: `{"ok": null}` while it belongs to no vault.
-pub fn world(lab: &Lab, me: SignerId, synced: &SyncedTo) -> Value {
+/// Fully owned, permission-filtered world and the identity that produced it.
+/// Encoding needs neither the Lab nor a later caller's acting identity.
+pub struct WorldSnapshot {
+    me: SignerId,
+    world: Option<World>,
+}
+impl WorldSnapshot {
+    pub fn into_json(self) -> Value {
+        json!({ "ok": self.world.map(|w| w.to_json(self.me)) })
+    }
+}
+
+pub fn world_snapshot(lab: &Lab, me: SignerId, synced: &SyncedTo) -> WorldSnapshot {
     let world = world::world(lab, me).map(|w| World { synced_to: synced.clone(), ..w });
-    json!({ "ok": world.map(|w| w.to_json(me)) })
+    WorldSnapshot { me, world }
+}
+
+pub fn world(lab: &Lab, me: SignerId, synced: &SyncedTo) -> Value {
+    world_snapshot(lab, me, synced).into_json()
 }
 
 /// `{"op": "requests"}`: the access requests device `me` reads (`world::requests`), each `{entry, from, to, asks,
