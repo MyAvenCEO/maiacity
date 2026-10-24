@@ -76,7 +76,7 @@
 
 #[path = "entry_base.rs"]
 mod entry_base;
-pub use entry_base::{AuthenticatedCountedEntryBase, AuthenticatedEntryBaseEnvelope, PreparedEntryBase};
+pub use entry_base::{AuthenticatedCountedEntryBase, AuthenticatedEntryBaseEnvelope, PreparedEntryBase, RestoredOwnerJudgment};
 
 #[path = "entry_projection.rs"]
 mod entry_projection;

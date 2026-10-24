@@ -100,6 +100,18 @@ pub struct Item {
 }
 
 impl Item {
+    /// Internal owner-attested full snapshot import. Caller must authenticate the
+    /// scoped owner envelope and enforce wire/count bounds before calling. Never used
+    /// for ordinary signed updates, whose author-peer checks remain in import_as.
+    pub(crate) fn from_owner_snapshot(bytes: &[u8], signer: SignerId, line: Line) -> Option<Item> {
+        let meta = LoroDoc::decode_import_blob_meta(bytes, true).ok()?;
+        if meta.mode != EncodedBlobMode::Snapshot { return None; }
+        let doc = LoroDoc::new();
+        let status = doc.import(bytes).ok()?;
+        if status.pending.as_ref().is_some_and(|p| !p.is_empty()) { return None; }
+        Some(Item::on(doc, peer(signer, line)))
+    }
+
     /// An empty item on `signer`'s device, before it imports any write: it shows nothing until one is there.
     pub fn new(signer: SignerId) -> Item {
         Item::new_on(signer, None)

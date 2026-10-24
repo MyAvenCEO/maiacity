@@ -9,6 +9,9 @@ use loro::{EncodedBlobMode, LoroDoc};
 #[path = "entry_base_suffix.rs"]
 mod suffix;
 pub use suffix::AuthenticatedCountedEntryBase;
+#[path = "entry_judgment.rs"]
+mod judgment;
+pub use judgment::RestoredOwnerJudgment;
 
 const FORMAT: &[u8] = b"avenDB entry base 2\n";
 const MAX_BYTES: usize = 1 << 20;
