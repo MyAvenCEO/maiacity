@@ -440,7 +440,8 @@ async fn a_node_steps_on_its_stored_view_and_replays_every_edit_where_none_opens
     let g = dir.path().join(format!("g{FLOOR}"));
     let slots =
         || files(&g.join("slots")).into_iter().filter(|(n, _)| n.starts_with("view-")).collect::<BTreeMap<_, _>>();
-    assert_eq!(slots().into_keys().collect::<Vec<_>>(), ["view-0"], "its view, kept");
+    let first = slots();
+    assert_eq!(first.keys().collect::<Vec<_>>(), ["view-0"], "its view, kept");
     // started again: what its edits said comes from its view, with no replay of every edit, and a new edit steps on it
     let (node, _, coop) = mac(dir.path()).await;
     assert!(shows(&node, welcome, WELCOME_TEXT).await, "it shows Welcome again");
@@ -449,28 +450,49 @@ async fn a_node_steps_on_its_stored_view_and_replays_every_edit_where_none_opens
     let onboarding = write(&node, coop, "Onboarding", ONBOARDING_TEXT).await;
     let held = node.read(|lab, me| lab.log(me).ids().to_vec()).await;
     warmed(&node).await;
+    assert_eq!(slots(), first, "one small running edit does not bypass the background snapshot interval");
     node.shutdown().await.expect("it stops");
     drop(node);
-    assert_eq!(slots().len(), 1, "one edit stepped on is no new view");
-    // and again: the view is of the edits its log starts with, and those after it step on it
+    let closed = slots();
+    assert_eq!(closed.keys().collect::<Vec<_>>(), ["view-0", "view-1"], "clean close publishes the current frontier beside the older view");
+    assert_eq!(closed["view-0"], first["view-0"], "clean close preserves the older generation for fallback");
+    assert_ne!(closed["view-1"], closed["view-0"], "the new generation includes the latest edit");
+    // and again: the clean-close view covers the latest durable edit.
     let (node, _, _) = mac(dir.path()).await;
     assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held, "every edit, in its order");
     assert!(shows(&node, welcome, WELCOME_TEXT).await && shows(&node, onboarding, ONBOARDING_TEXT).await);
     assert_eq!(replays(&node, VIEW).await, (1, wholes), "from its view, the edits after it stepped on");
     node.shutdown().await.expect("it stops");
     drop(node);
-    // a view that doesn't open is passed: it replays every edit, and keeps its view anew
-    fs::write(g.join("slots/view-0"), [7u8; 80]).expect("a forged one");
+    assert_eq!(slots(), closed, "an unchanged reopen and close do not publish another view");
+    // Corrupt the newest payload while retaining its generation header. The older
+    // valid view must still open and replay the suffix containing Onboarding.
+    let mut damaged_newest = closed["view-1"].clone();
+    damaged_newest[b"avenDB slot 1\n".len() + 8..].fill(7);
+    fs::write(g.join("slots/view-1"), damaged_newest).expect("a forged newest view");
+    let (node, _, _) = mac(dir.path()).await;
+    assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held, "older view retains every durable edit");
+    assert!(shows(&node, welcome, WELCOME_TEXT).await && shows(&node, onboarding, ONBOARDING_TEXT).await);
+    assert_eq!(replays(&node, VIEW).await, (1, wholes), "older valid view plus canonical suffix");
+    node.shutdown().await.expect("it stops");
+    drop(node);
+    // Full replay requires corrupting EVERY retained generation, including the
+    // current-frontier view intentionally published by the preceding clean close.
+    for name in slots().keys() {
+        fs::write(g.join("slots").join(name), [7u8; 80]).expect("a forged view generation");
+    }
     let (node, _, _) = mac(dir.path()).await;
     assert!(shows(&node, welcome, WELCOME_TEXT).await && shows(&node, onboarding, ONBOARDING_TEXT).await);
+    assert_eq!(node.read(|lab, me| lab.log(me).ids().to_vec()).await, held, "full replay preserves every durable edit");
     assert_eq!(replays(&node, VIEW).await, (0, wholes + 1), "no view opens: every edit replayed");
     assert_eq!(counted_on(&node, "stored view: none that opens").await, 1);
     warmed(&node).await;
     node.shutdown().await.expect("it stops");
     drop(node);
     let kept = slots();
-    assert_eq!(kept.keys().collect::<Vec<_>>(), ["view-0"], "kept anew, in place of what read as no view");
+    assert_eq!(kept.keys().collect::<Vec<_>>(), ["view-0", "view-1"], "invalid generations remain on disk; the first is replaced by a valid view");
     assert_ne!(kept["view-0"], [7u8; 80]);
+    assert_eq!(kept["view-1"], [7u8; 80], "recovery does not erase the other slot");
     // a newer view that doesn't open is passed for the older one that does
     let newer = [&b"avenDB slot 1\n"[..], &9u64.to_be_bytes(), &[7u8; 80]].concat();
     fs::write(g.join("slots/view-1"), newer).expect("a forged one");
