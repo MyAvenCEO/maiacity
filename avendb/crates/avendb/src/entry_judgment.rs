@@ -519,8 +519,7 @@ impl Lab {
                 return None;
             }
             for (line, base) in &lines {
-                shown
-                    .history
+                shown.history_in(store)?
                     .snapshot_scratch(&base.basis, &base.snapshot, on, *line)?;
             }
         }
@@ -563,6 +562,13 @@ mod tests {
         assert!(lab.held(mac).deferred_bodies[&proposal].content_ready());
         let snapshot = lab.complete(mac, draft, &[]).unwrap();
         lab.sync(mac, phone);
+        let backup = lab.backup(phone);
+        let n = backup.signed.len();
+        let receipt = lab.capture_warm_current(phone, n, Some([28; 40])).unwrap().encode();
+        let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect() };
+        lab.warmed(phone, receipt);
+        lab.restore_warm(phone, backup, Some(([28; 40], n)), &warm);
+        assert!(lab.held(phone).deferred_bodies.contains_key(&proposal));
         let restored = lab.restore_owner_judgment(phone, snapshot, entry, &sealed).unwrap();
         assert_eq!(put_judgment_parts(&restored.history, &restored.after).unwrap(), expected,
             "full holder accepts identical judgment including proposal labels");

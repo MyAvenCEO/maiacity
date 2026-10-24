@@ -562,6 +562,32 @@ mod tests {
     }
 
     #[test]
+    fn warm_metadata_unlanded_draft_stays_hidden_after_key_removal() {
+        use crate::cast::{document, human_on};
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Deferred draft");
+        let device = lab.device_of(owner, "Mac");
+        let vault = human_on(&mut lab, owner, &[device]);
+        let (entry, proposal) = lab.create_draft(device, vault, vault, "note", &[],
+            |id| {
+                let mut item = Item::draft(device, id);
+                item.set_record(crate::lens::View::document_v1(), &document("Draft", "not accepted", device).record());
+                Some(item.bytes())
+            }).unwrap();
+        assert!(!lab.landed(device, entry));
+        let backup = lab.backup(device);
+        let n = backup.signed.len();
+        let receipt = lab.capture_warm_current(device, n, Some([29;40])).unwrap().encode();
+        let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect() };
+        lab.warmed(device, receipt);
+        lab.restore_warm(device, backup, Some(([29;40], n)), &warm);
+        assert!(lab.held(device).deferred_bodies.contains_key(&proposal));
+        assert!(!lab.landed(device, entry), "deferred authorized content is not a ciphertext-only relay");
+        lab.stores.get_mut(&device).unwrap().keys = Keyring::default();
+        assert!(!lab.landed(device, entry), "missing current keys fail closed");
+    }
+
+    #[test]
     fn warm_metadata_stale_basis_uses_canonical_suffix_not_deferred_content() {
         let (mut lab, device, vault, entries, _backup, warm) = warmed_notes();
         lab.edit(device,vault,entries[0],|item| { item.edit_document(|d| d.title="New frontier".into()); }).unwrap();

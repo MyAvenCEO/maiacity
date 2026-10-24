@@ -90,3 +90,13 @@ content boundary instead of treating deferred bodies as absent. The regression
 `warm_reopen_publishes_judged_base_with_proposal_labels` covers warm reopening,
 publication and exact judgment acceptance by a full holder. Parser checks passed;
 Cargo execution remains queued, not claimed passed.
+
+### Deferred full-holder comparison and draft visibility
+
+Draft visibility now resolves current-key history and fails closed when that
+history is unavailable, rather than treating deferred content as a relay that
+has never decrypted it. Both judged and counted checkpoint full-holder CRDT
+comparisons demand history before comparing causal snapshots. Regression coverage
+includes a warmed receiver with proposal labels, counted snapshot equivalence,
+and unlanded draft visibility before/after current-key removal. Cargo tests remain
+queued; this correction is not a new measured performance claim.
