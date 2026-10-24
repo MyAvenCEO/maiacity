@@ -538,3 +538,33 @@ Next handoff: validate and integrate the fixture repair, push its focused commit
 - Current hosted capacity/health audit completed through pinned CI access: [run 40086908338](https://github.com/MyAvenCEO/maiacity/actions/runs/40086908338). See [network audit](AVENDB_NETWORK_AUDIT_2026-10-23.md) and its sanitized evidence for measured 1087.89 Mbps download, 447.83 Mbps upload, internal feed health and memory headroom. Actual hosted source revision remains unknown; image labels do not prove app revision. These are HTTP capacity samples, not avenDB throughput.
 - The old Mac GUI completed ordinary quit. Exact main-binary and sidecar agent relay commands were independently reviewed and excluded from the installer writer guard; 21 pure-mock guard cases passed. No process was killed. Final installation still requires verified artifact provenance and acceptance. A fresh disposable clone independently matched all 7,935 backup files (8,632,981,373 bytes) before test markers were added; current-core rehearsal compilation is in progress, not a runtime pass.
 - Local disk pressure was relieved by deleting only inactive, regenerable incremental compiler caches. App bundles, live stores and recovery backups were retained. Priorities 3, 4 and 5 remain Doing.
+
+
+### Final-core copied-store preservation check — 2026-10-24
+
+A fresh independently verified disposable clone retained 7,935 files / 8,632,981,373 bytes with exact original SHA256 manifest, no hardlinks/symlinks and distinct inodes. Manifest hash: `c8fcebc66b7f8d970eacbf6cfa8f4ee30e60fe70a0c7d22d4c205212b9ab8c56`. Original source reverified unchanged after copying.
+
+**Retain the failed first attempt:** cold inventory matched 63,647 edits, 85 keys and 2,281 records, but final save failed with `No space left on device (os error 28)`. It did not pass close/warm/recovery. Its cold open was 110.948 s under machine/storage pressure; do not hide it or call it a representative startup benchmark.
+
+**Successful fresh-copy retry:** one test passed, zero failed, total 527.76 s including 404.704 s waiting in the authentication ceremony. Exact identity, metadata, immutable edit history, keys, policy, vaults, shares, entries and record equality passed after close, two warm reopens and recovery from four deliberately damaged derived slots. Final preserved inventory: 63,647 edits, 85 keys and 2,281 visible records.
+
+| Phase | Open s | Replay s | Open keys s | Show items s | Separate metric capture s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| cold | 41.508 | 6.894432 | 2.912 | 6.057 | 2.513 |
+| warm-1 | 3.893 | 0.000008 | 0.816 | 1.020 | 1.641 |
+| warm-2 | 3.619 | 0.000007 | 0.864 | 0.892 | 1.641 |
+| recovery | 19.024 | 2.061934 | 11.000 | 1.074 | 2.177 |
+
+Both warm runs reused the stored view, checked zero signatures and opened zero new keys; 5,134 keys came from the shelf. Nested timers overlap: do not sum them. Metric collection and authentication wait are excluded from open time. This was compatibility evidence under concurrent machine load, not an uncontended speed comparison or evidence that physical PWA slow unlock is resolved.
+
+Sanitized structured evidence: [final-core copied-store rehearsal](evidence/avendb-final-core-rehearsal-2026-10-24.json); original logs `/private/tmp/avendb-final-core-rehearsal.log` and `/private/tmp/avendb-final-core-rehearsal-retry.log`. The immutable pre-run receipt records executable SHA256 `56f0e5b5b015a8f29d3857638cfd0dea2b211fdcaae3ead5abb0421a9c6674d4`, compilation starting at `a06022dcc392774492f68e0366c2559b1754fede` and validation revision `a5e6d025f2c25012a526408b1c079c50d23f519e`. Both have the same core source subtree `dbe602185a172c01e5040e842b19595d0d5c06c4`. This is the captured original hash, not a rehash of the now-mutable shared Cargo target. The receipt's first-copy path/result=pending is historical; fresh-copy preparation and actual retry output establish the later successful result. No final installed offline/assets/reconnect acceptance is implied. The later overwritten Mac bundle is a separate artifact and is not certified by this rehearsal.
+
+
+### Release integration and Mac artifact correction — 2026-10-24
+
+- [x] [PR #1255](https://github.com/MyAvenCEO/maiacity/pull/1255) merged as [720922e0570433a0e5c6663f6f15f91e7631d176](https://github.com/MyAvenCEO/maiacity/commit/720922e0570433a0e5c6663f6f15f91e7631d176) after all twelve final-head checks passed. Merge/deployment health remains distinct from source CI.
+- [ ] The previously signed Mac artifact built at `2c45cf40` was overwritten at 13:54 local time by a different task using the same Cargo/bundle output directory. Its bytes and signature no longer match the approved artifact receipt. It was **not installed**. Do not re-sign the replacement and present it as the validated artifact. No preserved exact original bundle was found in the bounded local search.
+- [ ] Samuel authorized coordination with the other task. The other task confirmed ownership of the combined Mac build/install using `/private/tmp/studio-combined-target`, integrating merged `720922e0` plus the verified media-test typing fix. Root retains hosted deployment/health verification. No combined installation has occurred yet. Pin exact source/build provenance, preserve a verified artifact copy, and rerun the install preflight. Existing live account data must not be reset or restored from an older snapshot.
+- Priorities **3 and 4 remain Doing**: finish verified deployment/Mac replacement and final installed no-reset offline/assets/reconnect acceptance. Priority **5 is deferred** while this release is completed; generic physical latency and slow unlock are not declared solved. The intermittent iPhone return-to-unlock remains unresolved independently of successful compatibility or network tests.
+
+- Deployment-check repair committed as [b66372058a6434b5897a802f26babd85186ce013](https://github.com/MyAvenCEO/maiacity/commit/b66372058a6434b5897a802f26babd85186ce013): suppress only the unavailable `bun:test` import declaration in the media reference test, retaining checking everywhere else. All 32 media regressions / 1,008 assertions pass; full local Svelte validation remains running at this checkpoint.
