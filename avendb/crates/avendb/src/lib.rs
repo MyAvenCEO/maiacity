@@ -52,6 +52,9 @@ pub mod batch;
 pub mod cast;
 pub mod data;
 pub mod doc;
+// Staged warm-start representation; runtime activation awaits demand hydration.
+#[allow(dead_code)]
+mod deferred_body;
 pub mod encode;
 pub mod engine;
 pub mod gate;
