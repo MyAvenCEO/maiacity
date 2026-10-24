@@ -217,13 +217,13 @@ mod network_tests {
         let owner = lab.passkey("Owner");
         let mac = lab.device_of(owner, "Mac");
         let phone = lab.device_of(owner, "Phone");
-        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        let replacement_device = lab.device_of(owner, "Replacement");
+        let vault = human_on(&mut lab, owner, &[mac, phone, replacement_device]);
         let entry = lab
             .create(mac, vault, vault, "note", &[], document("A", "old", mac))
             .unwrap();
         lab.sync(mac, phone);
-        let provider = lab.split(mac, &[owner], [81; 32]);
-        let receiver = lab.split(phone, &[], [82; 32]);
+        let baseline = lab.backup(mac);
         let wanted = lab
             .edit(mac, vault, entry, |i| i.set_text(2, "needed"))
             .unwrap();
@@ -254,6 +254,16 @@ mod network_tests {
                 document("B", "unrelated", mac),
             )
             .unwrap();
+        // split moves device/signing state. Author every test edit first, then give
+        // the initial provider only its old baseline and the replacement the full copy.
+        let later = lab
+            .edit(mac, vault, entry, |i| i.set_text(2, "after peer loss"))
+            .unwrap();
+        lab.sync(mac, replacement_device);
+        let replacement_lab = lab.split(replacement_device, &[], [83; 32]);
+        let receiver = lab.split(phone, &[], [82; 32]);
+        let mut provider = lab.split(mac, &[owner], [81; 32]);
+        provider.restore_backup(mac, &baseline);
         let sender = Node::spawn(provider, mac, Options::local()).await.unwrap();
         let receiver = Node::spawn(receiver, phone, Options::local())
             .await
@@ -302,10 +312,7 @@ mod network_tests {
                 .is_err(),
             "lost peer is a retryable transport failure"
         );
-        let later = lab
-            .edit(mac, vault, entry, |i| i.set_text(2, "after peer loss"))
-            .unwrap();
-        let replacement = Node::spawn(lab.split(mac, &[owner], [83; 32]), mac, Options::local())
+        let replacement = Node::spawn(replacement_lab, replacement_device, Options::local())
             .await
             .unwrap();
         receiver.know(replacement.addr());
