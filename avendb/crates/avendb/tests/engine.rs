@@ -11,7 +11,7 @@
 use avendb::cast::{self, World};
 use avendb::data;
 use avendb::engine;
-use avendb::id::{BlobId, EntryId, SignerId, VaultId};
+use avendb::id::{BlobId, EditId, EntryId, SignerId, VaultId};
 use avendb::keys::KeyFam;
 use avendb::lab::{NewShare, Tamper};
 use avendb::lens::{self, Schema, Status, TypeV1, View};
@@ -1531,7 +1531,7 @@ fn s3_a_write_that_breaks_its_schema_counts_for_no_reader() {
     let rejected_parent = EditId::from_hex(&patched).unwrap();
     let started = w.lab.patched(|lab| lab.propose(mac_b, bob, t.door, &[rejected_parent], "Later"))
         .expect("a patched peer can author an invalid proposal");
-    let started = json!(hex(started));
+    let started = json!(started.to_hex());
     w.lab.sync_all(2);
     for d in [mac, mac_b, mac_c] {
         assert_eq!(latest(&mut w, d), (started.clone(), json!("builds-on"), 1));
