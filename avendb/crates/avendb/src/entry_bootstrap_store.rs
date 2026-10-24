@@ -598,9 +598,9 @@ mod tests {
             lab.receive(device, offer.evidence, vec![]);
             assert!(lab.stage_owner_entry_base(device, snapshot, entry, sealed.clone()));
             assert!(lab.edit(device,vault,entry,|i|i.set_text(2,"not durable")).is_err());
-            assert!(lab.owner_base_pending(device,entry));
+            assert!(lab.owner_base_durability_pending(device,entry));
             assert!(lab.finish_durable_owner_bases(device));
-            assert!(!lab.owner_base_pending(device,entry));
+            assert!(!lab.owner_base_durability_pending(device,entry));
             assert_eq!(lab.retained_projection_hint(device, entry), Some(snapshot));
             let detail = crate::engine::read(&lab, device, &serde_json::json!({
                 "op":"get", "entry":entry.to_hex(), "schema":"stored"
@@ -800,7 +800,7 @@ impl Lab {
         self.stores.get_mut(&at).expect("device").bootstrap_pending.insert(entry);
         true
     }
-    pub fn owner_base_pending(&self,on:SignerId,entry:EntryId)->bool { self.held(on).bootstrap_pending.contains(&entry) }
+    pub fn owner_base_durability_pending(&self,on:SignerId,entry:EntryId)->bool { self.held(on).bootstrap_pending.contains(&entry) }
     /// Caller must hold the Lab lock and verify the common journal has this exact
     /// signed frontier and anchor stamp. This does not make an invalid base active.
     pub fn finish_durable_owner_bases(&mut self,on:SignerId)->bool {

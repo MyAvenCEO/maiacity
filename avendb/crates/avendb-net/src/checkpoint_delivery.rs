@@ -717,7 +717,7 @@ mod tests {
         if judged {
             time::timeout(Duration::from_secs(15),async {
                 loop {
-                    let ready=phone.read(move|lab,me| !lab.owner_base_pending(me,entry) && !lab.bootstrap_stamp(me).is_empty()).await;
+                    let ready=phone.read(move|lab,me| !lab.owner_base_durability_pending(me,entry) && !lab.bootstrap_stamp(me).is_empty()).await;
                     if ready { break; }
                     time::sleep(Duration::from_millis(5)).await;
                 }
