@@ -129,6 +129,8 @@ mod limits;
 pub mod paged_views;
 mod progress;
 mod proofs;
+mod peer_receipts;
+mod receipt_tracker;
 mod pulls;
 mod live;
 mod ranges;
@@ -741,6 +743,7 @@ impl Node {
             held: Mutex::default(),
             told: Mutex::default(),
             statements: Mutex::default(),
+            receipts: peer_receipts::Receipts::default(),
             telling: Mutex::default(),
             unreached: Mutex::default(),
             asking: Mutex::default(),
@@ -1408,8 +1411,19 @@ impl Node {
         &self,
         f: impl FnOnce(&mut Lab, SignerId) -> T + Send + 'static,
     ) -> Result<T> {
-        let out = self.shared.try_lab(f).await?;
+        let sampled = self.shared.receipts.enabled();
+        let (out, edit) = self.shared.try_lab(move |lab, me| {
+            let before = if sampled { lab.log(me).ids().len() } else { 0 };
+            let out = f(lab, me);
+            let edit = if sampled && lab.log(me).ids().len() > before {
+                lab.log(me).edits().iter().zip(lab.log(me).ids()).skip(before).rev()
+                    .find_map(|(edit, id)| matches!(avendb::sync::log_of(edit, *id), Some(avendb::sync::LogId::Entry(_))).then_some(*id))
+            } else { None };
+            (out, edit)
+        }).await?;
+        let completed = Instant::now();
         self.shared.changed.notify_one();
+        if let Some(edit) = edit { self.shared.observe_edit(edit, completed); }
         Ok(out)
     }
 
@@ -1715,6 +1729,7 @@ impl Node {
             .collect();
         json!({
             "served": s.traffic.served_json(),
+            "policy_observations": s.receipts.json(),
             "me": { "endpoint": me.id.to_string(), "relays": relays, "direct": direct },
             "peers": peers,
             "gone": gone,
@@ -2041,6 +2056,7 @@ struct Shared {
     told: Mutex<HashMap<SignerId, (usize, Holdings)>>,
     /// The signed statements of holdings it keeps, signs and passes on (H2, `statements`).
     statements: Mutex<statements::Statements>,
+    receipts: peer_receipts::Receipts,
     /// Peers being told now, with one coalesced obligation to recompute after success.
     telling: Mutex<HashMap<SignerId, bool>>,
     /// The peers it couldn't tell, and when to try each again.

@@ -11,11 +11,11 @@ The device retains at most 120 samples in `avendb:latency:v1`, including generic
 
 For an actual-device comparison: export once after warm unlock and using a loaded view, once while catching up and making an ordinary permitted edit, and once on a fresh device's first view. The export button also displays the report as selectable text if file download is unavailable. Avoid clearing PWA storage; clearing it would invalidate warm-state measurements.
 
-Accepted-entry acknowledgement RTT and remote rendered visibility remain unavailable until the engine provides correlated evidence. Internet speed-test results and transport RTT do not establish either metric. No physical-device measurements are claimed by adding these instruments.
+Existing released builds without the policy-observation protocol cannot report accepted-entry acknowledgement. Remote rendered visibility remains unavailable. Internet speed-test results and transport RTT do not establish either metric. No physical-device measurements are claimed by adding these instruments.
 
 ## Remote edit acceptance: protocol gap and implementation boundary
 
-Source review on 2026-10-24 found no per-edit acceptance receipt that a JS diagnostic can safely time:
+Source review on 2026-10-24 found no pre-existing per-edit acceptance receipt that a JS diagnostic could safely time:
 
 - `session.rs::answer_body(ANNOUNCE)` calls `Shared::hear` and schedules a pull before returning an empty response. That response confirms receipt of an inventory, not receipt of the edit itself.
 - `REQUEST`/`ASK_LOGS` replies deliver records to the requester. Completion of serving that reply does not establish that the requester validated or materialized them.
@@ -33,4 +33,12 @@ The smallest honest acceptance instrument therefore requires engine/protocol wor
 6. Test reordered/duplicate/stale receipts, wrong authenticated identity, reconnect, missing dependencies, revocation during validation, cancellation and bounded-table overflow. Specify receipt non-authority and stage separation in Lean before enabling the feature. Receipts are evidence reported by the authenticated peer, not a grant of access or proof that its UI rendered.
 7. For rendered visibility, add a distinct local reactive-view/render hook on the receiving device; an engine receipt alone cannot measure that boundary. Run ordinary permitted edits on physical iPhone/iPad/Mac and export each device's actual report. Do not substitute simulated/browser automation timings for physical measurements.
 
-Until these engine contracts exist, the diagnostics intentionally expose transport RTT and local call timing only. No remote acceptance measurement or physical-device result was added by this review.
+### Implemented diagnostic slice (requires matching native/WASM deployment)
+
+`peer_receipts.rs` adds protocol kind 18: a versioned fixed 65-byte request (nonce and exact edit ID), and a 66-byte echo with unavailable/standing/not-standing outcome. The existing authenticated connection identifies the responder. `Lab::peer_edit_outcome` first requires its replay to cover the held log, then applies the existing current-policy permission filter, then reads that exact edit's `Replay::stood` result. Unknown, denied and unreplayed requests all return unavailable. It does not force replay or change a vault. Both ingestion paths already feed that same replay; signed-record retention cannot short-circuit it.
+
+The **Observe entry propagation for 2 minutes** diagnostics button explicitly arms a 120-second local measurement session. During that window generic `try_act` samples the latest new entry edit from a mutation, targeting at most three connected peers. The same operation works for any entry type. Probes have a 30-second deadline, poll every 500 ms, and retain at most 64 redacted results. A refused/unsupported connection is suppressed for the rest of the node lifetime (bounded set; saturation disables further unknown connections). A separate one-permit receiver gate bounds observation work. Timeout, disconnect and unauthorized results never become successful samples.
+
+**Capture peer connection RTT** also captures the distinct policy samples for export. The field `policyObservations` contains only fixed stage name, duration and standing/not-standing outcome. Its elapsed time starts after local mutation completion and ends when this origin receives a matched authenticated policy observation; it includes ordinary sync, replay, and up to a polling interval plus probe processing/delivery. It is not raw network RTT, proof of durable save, decrypted entry availability or remote rendering. Sampling one final edit from a multi-edit mutation does not measure every edit in that mutation. Results are in-memory until captured/exported; the local-call journal remains the durable timing mechanism.
+
+Lean `PeerReceipt.lean` proves the small identity/freshness/current-permission and non-authority contract. The tracker tests exercise wrong identity/connection/nonce/edit, duplicates, expiry, cancellation, reorder and bounds. Added core and real-two-peer integration regressions require the shared Rust test gate before delivery. No physical iPhone/iPad result is claimed by this implementation.

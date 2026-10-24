@@ -74,3 +74,14 @@ export async function measureLatency(stage, work, journal = latencyJournal, now 
   if (stage === 'unlock.total') journal.flush();
  }
 }
+
+/** Redacted snapshot of nonce-correlated engine policy observations, not transport RTT.
+ * @param {any} network */
+export function policyObservations(network) {
+ const observed = network?.policy_observations;
+ if (observed?.stage !== 'local-completion-to-peer-policy-observation') return null;
+ return { stage: observed.stage,
+  samples: (Array.isArray(observed.samples) ? observed.samples : []).slice(-64)
+   .filter(s => s && Number.isFinite(s.ms) && s.ms >= 0 && s.ms < 30000 && ['standing', 'not-standing'].includes(s.outcome))
+   .map(s => ({ ms: s.ms, outcome: s.outcome })) };
+}

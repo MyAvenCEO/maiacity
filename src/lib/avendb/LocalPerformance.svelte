@@ -2,7 +2,7 @@
  import { manifestDiagnostics } from '../../../game/code/sources/manifests.js';
  import { onMount } from 'svelte';
  import { localTimings } from './local-timings.js';
- import { latencyJournal, recordPeerTimings } from './latency-journal.js';
+ import { latencyJournal, recordPeerTimings, policyObservations } from './latency-journal.js';
  import { playbackMetrics } from '$lib/studio/playback-metrics.js';
  import { session } from './session.svelte.js';
  import { sync } from './sync.svelte.js';
@@ -12,13 +12,25 @@
  let evidence = $state(latencyJournal.snapshot());
  let exported = $state('');
  let deviceLabel = $state('This device');
+ let policy = $state(null);
+ async function armPolicy() {
+  if (measuring || session.phase !== 'open') return;
+  measuring = true;
+  try {
+   const answer = await session.ask({ op: 'measure_peer_policy' });
+   result = answer?.ok?.enabled ? 'Observing ordinary entry edits for two minutes. Make an edit, then capture the peer measurements.' : 'This build does not support peer policy observations.';
+  } catch { result = 'Peer policy observations are unavailable on this build.'; }
+  finally { measuring = false; }
+ }
+
  async function measurePeers() {
   if (measuring || session.phase !== 'open') return;
   measuring = true;
   try {
    const answer = await session.ask({ op: 'network' });
    const count = recordPeerTimings(answer?.ok);
-   result = count ? `Recorded ${count} selected authenticated connection RTT estimates.` : 'No selected peer path has a measured RTT yet.';
+   policy = policyObservations(answer?.ok);
+   result = `Captured ${count} transport RTT estimates and ${policy?.samples.length ?? 0} policy observations.`;
    evidence = latencyJournal.snapshot();
   } catch { result = 'Peer connection timings are unavailable.'; }
   finally { measuring = false; }
@@ -26,7 +38,7 @@
  function exportReport() {
   latencyJournal.flush();
   evidence = latencyJournal.snapshot();
-  exported = JSON.stringify({ ...evidence, device: deviceLabel, exportedAt: Date.now(),
+  exported = JSON.stringify({ ...evidence, device: deviceLabel, exportedAt: Date.now(), policyObservations: policy,
    semantics: { calls: 'Local engine response including queue and any signing ceremony; not rendered or remotely replicated.', unlock: 'User unlock request to completion; includes authentication interaction.', view: 'View readiness and rendered frames are not instrumented by this report.', peer: 'Authenticated connection transport RTT estimate; not edit acceptance or remote visibility.' } }, null, 2);
   const url = URL.createObjectURL(new Blob([exported], { type: 'application/json' }));
   const link = document.createElement('a'); link.href = url; link.download = `maia-latency-${deviceLabel.replace(/ /g, '-')}-${Date.now()}.json`;
@@ -52,6 +64,7 @@
  <p>Retains the last 120 measured operations across reloads on this device. Contains only fixed stage names, durations and outcomes; no account data, entry IDs or contents.</p>
  <label>Device <select bind:value={deviceLabel}><option>This device</option><option>iPhone</option><option>iPad</option><option>Mac</option></select></label>
  <button onclick={exportReport}>Export latency report</button>
+ <button onclick={armPolicy} disabled={measuring || session.phase !== 'open'}>Observe entry propagation for 2 minutes</button>
  <button onclick={measurePeers} disabled={measuring || session.phase !== 'open'}>Capture peer connection RTT</button>
  <p>{evidence.samples.length} retained samples. {evidence.storageAvailable ? 'Available here before unlock.' : 'Persistent storage unavailable; these samples may be lost on reload.'}</p>
  {#if exported}<details open><summary>Report text</summary><textarea aria-label="Latency report JSON" readonly value={exported} rows="8"></textarea></details>{/if}
@@ -59,6 +72,7 @@
  <table><thead><tr><th>Recent stage</th><th>Duration</th><th>Result</th></tr></thead><tbody>
  {#each evidence.samples.slice(-12).reverse() as sample}<tr><td>{sample.stage}</td><td>{ms(sample.ms)}</td><td>{sample.outcome}</td></tr>{/each}
  </tbody></table>{/if}
+ {#if policy}<p>{policy.samples.length} policy observations captured. Local completion to authenticated peer policy observation includes sync, replay and up to 500 ms polling delay. A standing edit is not proof of rendered UI or durable storage.</p>{/if}
  <p>Local call completion is not a rendered frame or remote acknowledgement. Transport RTT is the connection estimate, not write propagation. Unlock totals include authentication time. View readiness and rendered-frame latency are not measured here.</p>
  <h3>Studio playback · target 30 FPS</h3>
  <p>{playback.frames} measured world frames · {playback.fps === null ? 'FPS unavailable' : `${playback.fps.toFixed(1)} FPS`} · render p95 {ms(playback.renderP95)} · frame gap p95 {ms(playback.gapP95)}.</p>
@@ -74,7 +88,7 @@
  <tbody>{#each rows as row}<tr><th>{row.op}</th><td>{ms(row.median)}</td><td>{ms(row.p95)}</td><td>{row.pending ? `${row.pending} · ${ms(row.waiting)}` : '—'}</td><td>{row.failed}</td></tr>{/each}</tbody></table>
  {:else}<p>No local-call measurements yet.</p>{/if}
  <p>{sync.known ? `${sync.peers} connected peers · ${sync.behind} announced logs need updates · ${sync.pulling} active requests.` : 'Peer state unavailable.'}</p>
- <p>Log coverage does not confirm file availability or outgoing replication. Peer acceptance round-trip, remote visibility, and manifest file completeness: unavailable until measured by the sync engine.</p>
+ <p>Log coverage does not confirm file availability or outgoing replication. Peer policy observations require opting in above and compatible peers. Remote visibility and manifest file completeness remain unavailable.</p>
 </section>
 <style>
  textarea { width: 100%; box-sizing: border-box; } select { font: inherit; margin: .5rem; } button { margin: .2rem; padding: .6rem 1rem; border: 1px solid #d9d1bf; border-radius: 2rem; background: #244c35; color: white; font: inherit; cursor: pointer; } button:disabled { opacity: .5; cursor: default; }

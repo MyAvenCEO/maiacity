@@ -4356,6 +4356,17 @@ impl Lab {
         self.held(d).signed.get(&edit)
     }
 
+    /// Diagnostic policy observation only: no authority, persistence or rendered-state claim.
+    /// Unknown/unauthorized/not-yet-replayed all have the same unavailable result.
+    pub fn peer_edit_outcome(&self, d: SignerId, peer: SignerId, id: EditId) -> Option<bool> {
+        let store = self.held(d);
+        if store.replayed != store.log.edits().len() { return None; }
+        let allowed = self.answered(d, peer, &[]);
+        if !allowed.iter().any(|&i| store.log.ids().get(i) == Some(&id)) { return None; }
+        let at = store.replay.ids.iter().position(|held| *held == id)?;
+        store.replay.stood.get(at).copied()
+    }
+
     /// Every secret signer `s` holds here, to search views, logs and stores for secrets that shouldn't be there: its
     /// own key, the one keys are sealed to for it, then, for a device, each key it holds. None while it is locked.
     pub fn secrets(&self, s: SignerId) -> Vec<Secret> {
@@ -6688,3 +6699,7 @@ mod upkeep_family_tests;
 #[cfg(test)]
 #[path = "prepared_receive_tests.rs"]
 mod prepared_receive_tests;
+
+#[cfg(test)]
+#[path = "peer_receipt_tests.rs"]
+mod peer_receipt_tests;

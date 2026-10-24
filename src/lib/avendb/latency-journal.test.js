@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { expect, test } from 'bun:test';
-import { createLatencyJournal, recordPeerTimings, measureLatency } from './latency-journal.js';
+import { createLatencyJournal, recordPeerTimings, measureLatency, policyObservations } from './latency-journal.js';
 import { createLocalTimings } from './local-timings.js';
 function fixture(initial = null) {
  let stored = initial, writes = 0, tick = 100;
@@ -66,4 +66,18 @@ test('unlock outcome is durable before returning even without pagehide or timer 
  await expect(measureLatency('unlock.total', async () => {time=30;throw Error('failed');},f.journal,()=>time)).rejects.toThrow();
  expect(f.writes()).toBe(2);
  expect(createLatencyJournal({storage:f.storage}).snapshot().samples.at(-1).outcome).toBe('failed');
+});
+
+test('policy observation export bounds and redacts engine records without inventing RTT', () => {
+ expect(policyObservations({})).toBeNull();
+ expect(policyObservations({ policy_observations: { stage: 'transport-rtt', samples: [] } })).toBeNull();
+ const base = { stage: 'local-completion-to-peer-policy-observation' };
+ const result = policyObservations({ policy_observations: { ...base, peer: 'secret', samples: [
+  { ms: 123, outcome: 'standing', entry: 'secret', nonce: 'secret' },
+  { ms: 456, outcome: 'not-standing' }, null,
+  { ms: 1, outcome: 'unknown' }, { ms: 30000, outcome: 'standing' }, { ms: -1, outcome: 'standing' }
+ ] }});
+ expect(result).toEqual({ ...base, samples: [{ ms: 123, outcome: 'standing' }, { ms: 456, outcome: 'not-standing' }] });
+ expect(JSON.stringify(result)).not.toContain('secret');
+ expect(policyObservations({ policy_observations: { ...base, samples: Array.from({ length: 100 }, () => ({ ms: 1, outcome: 'standing' })) } }).samples).toHaveLength(64);
 });

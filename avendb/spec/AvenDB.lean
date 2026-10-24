@@ -85,3 +85,5 @@ import AvenDB.CooperativeReceive
 
 import AvenDB.QueryDiscovery
 import AvenDB.ShownScratch
+
+import AvenDB.PeerReceipt

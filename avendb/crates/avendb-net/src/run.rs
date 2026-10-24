@@ -115,6 +115,7 @@ impl Node {
             Some("demand") => self.view_demand(&op),
             Some("synced") => json!({ "ok": self.synced().await }),
             Some("network") => json!({ "ok": self.network().await }),
+            Some("measure_peer_policy") => json!({ "ok": self.shared.receipts.arm() }),
             _ if engine::asks(&op) => self.try_dry(move |lab, me| engine::run(lab, me, &op)).await?,
             _ if engine::reads(&op) => self.read(move |lab, me| engine::read(lab, me, &op)).await,
             _ => self.change(op, authenticator).await?,
