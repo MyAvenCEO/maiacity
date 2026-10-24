@@ -1,0 +1,33 @@
+# Historical implementation phases
+
+This records earlier milestones, not the current test selection. The retired signing checkpoints and T18 below predate the active storage checkpoint model in `AvenDB/Checkpoint.lean`. Current compatibility tests remain required until their supported data has migrated and recovery obligations have ended.
+
+## Phases
+
+Each phase is one PR, merged only when its Rust tests pass and its theorems are proven without `sorry`. Until then
+its tests are ignored with the phase as the reason, so `cargo test -p avendb --no-fail-fast -- --ignored` lists
+what is still red.
+
+| Phase | Builds | Proves |
+|---|---|---|
+| P0 | This spec, the `avendb` API as stubs, every test | Statements compile, scenarios check |
+| P1 | Vaults, vault logs, chains; edit ids and signatures (device keys, passkeys through the WebAuthn envelope); vectors for the vault rules | T2, T3 |
+| P2 | Spaces (since replaced by flat vaults), grants, revocation with strong removal, the passkey as root, Public, write checks with causal closure, what each device may receive | T1, T4, T8, T14, T16 |
+| P3 | Keys, sealing, encryption of every edit, rotation | T5, T6, T7 |
+| P4 | Schemas and lenses projected on read, edits through each app's view, the schema lane | T9, T17 |
+| P4b | Post-quantum: SHA-3 ids and hashes (BLAKE3 since VERSION 10), SLH-DSA on every edit (since VERSION 9, with a passkey's WebAuthn assertion beside it; checkpoints and T18 retired), device keys kept masked by the passkey's PRF output, X-Wing plus Classic McEliece in every sealed key box | |
+| P5 | History and proposals: every write on a line of its entry's history, proposals from any version, a lossless three-way merge, restore and undo, variants | T10 for writes (T10f to T10h) and version numbers (T10i to T10k) |
+| P6 | Logs and frontiers: every edit building on its own log's frontier, devices asking with what they hold of each log, one digest per log to gossip, forks flagged; offline devices, random delivery orders and partial delivery; Lean ⇄ Rust vectors for sync; a device writing under the newest key it knows | T11, T12, T13, T15, T19 |
+| P7 | The avenDB tile | |
+| P8 | Sync on its own iroh ALPN with X25519MLKEM768 on every connection and the bytes in iroh-blobs; linking a new device by its passkey, through a device's QR code or the server (P8c); the protocol models; a device in the browser, let onto the relay by its passkey's pass, and big answers a page at a time (P8d); the browser's own passkey signing in ceremonies over each edit, a new person's first browser founding their vault, and the store in IndexedDB (P8e); three kinds of vault, every act for a coop or an aven vault naming its chain, and the server a device of avenCEO, claimed by the first human vault founded through it, in the ceremony that founds it (P8f) | T20, T21 |
+| F | Flat vaults: no spaces; caps on any slice of a vault (types, tags, entries, authors, creation times) resting on caps; cells, stewards that move entries to the cells their caps pick and answer tag asks, creation through a cap's intake cell; seeds, cap keys, cell keys and entry keys derived per stay, a cell coming back into use moving on; sync by cells | T22, T23, T24, T25, and T1, T4 to T8, T12, T13, T15 to T17 again |
+| O | Ops: one JSON language to read and change any record, the same engine on every device, the page and the studio on it | O1, O2, O3 |
+| C | Caps that name ops: rules in a write cap's sealed slice with a commitment in the clear, proof-carrying writes, every reader counting only what the rules allow; `may` for the page; rules in the share dialog; rooms, whose members change only the rows they added (setOwn, Member) | C1, C2, C3, C4, C5, and T25 again |
+| S | Writes that fit their schemas: every reader judging each write by its entry's schemas, devices refusing what doesn't fit, the page saying why a write doesn't count | S1, S2, S3, S4 |
+| B | Blobs ([ARCHITECTURE.md](../docs/ARCHITECTURE.md) §13): sealed files of any size, writes that name the files they bring, one iroh-blobs store per node, sync rules by the cap selector for any data (since replaced by keep shares), marked by the stewards | T27, T28, T29 (since merged into T23), and T13, T25 again |
+| H | Holdings (v8): each device tells each peer, on its own connection, what it holds for good of each log and file the peer may know; asks for the logs that differ alone; Synced to; one pool of blob connections, let in only while a sync connection proves the device; signed statements of holdings, kept newest first, passed on only to who may know them and kept on the shelf | H1, H2, and T27 extended |
+| N | Records inside records: rows of lists of records at any depth, each list a mergeable Loro container of its row; self-holding shapes; fit per innermost row and the 256-row ceiling; merge, undo and caps at any depth; queries read so many rows down, up to the device's most; links in schemas, followed by queries a level at a time, each hop opening only what the reader may read | O1 to O3 and S1, S2 at any depth, `S2_ceiling`, L1, L2, L3 |
+| A | One aven: four primitives (vault, owns, device, share); four kinds of vault by one kind table (`Kind.rules`), the device vault among them, an aven owned by one human vault and one to a person; sub caps by one rule (`shareParentOk`), so an aven passes a coop's share on to its agents' device vaults; the server's device vault at the end of the seed; access requests as records answered through the `answering` group; scenarios 27 and 28 | T21 (`T21_owners_count`, `T21_aven_owner`, `T21_one_aven`), T22 (`T22_sub_cap_level`) |
+| M | Merges by path and by policy, code entries (C4b; the Scion plan's A, B and I): a merge op names a path; a merge into main through a share counts only on top of the vault's accept, every vault's default policy being one of its owners; `review`, `bundle` and `policy` records; `recipe`, `view` and `logic` code entries and function v2 | M1, M2, and C4 again |
+| D | Drafts: a creation that starts a line of its own, so a Suggester (an agent) proposes a new entry inside an AIP; `create` naming its lines (grant kind 13); only the vault's merge lands a draft; unlanded drafts on no main read and in no public audience | D1, D2, D3, and C2, C4, T17, T23 again |
+| BK | Backups ([BACKUP.md](../docs/BACKUP.md)): a snapshot of each vault each day into one bucket of snapshots, a folder per vault sealed apart, incremental by frontiers as a device asks a peer, deduplicated, made whole at 64 packs; retention; a daily check from the bucket alone, and a restore after a disaster as the same device, tested against a real Hetzner bucket | B1 to B9 |

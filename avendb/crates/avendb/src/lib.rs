@@ -42,6 +42,9 @@
 //! | M3 batch-signed logs | `batch`: each device's one append-only log of the edits it signs, a BLAKE3 Merkle tree split as RFC 9162 splits it, its root signed once per batch by group commit; an edit shown by its path up to a signed root; roots that disagree, a proof of fork that freezes their signer; an existing log wrapped as it stands | V5 |
 //! | M6 handed views | `lab`: a new device of a passkey starts from what another device of it handed it (`Lab::handing`, `Lab::start_handed`), the ids of the edits it held and its stored view, sealed under a key only the passkey's devices derive (`HandKey`): their signatures not checked again, the edits it took beside them stepped on the view | V7 |
 
+#[cfg(all(feature = "test-fixtures", not(debug_assertions)))]
+compile_error!("test-fixtures must never be enabled in release/app builds");
+
 pub mod admission;
 pub mod aip;
 pub mod backup;

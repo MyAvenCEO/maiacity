@@ -134,7 +134,17 @@ try {
  const chrome='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
  browser=await (engine==='webkit'?webkit.launch({headless:true}):chromium.launch({headless:true,
    executablePath:process.env.AVENDB_CHROMIUM || (existsSync(chrome)?chrome:undefined)}));
+ const cases=process.argv.includes('--all') ? [
+  {worldView:false,collectionView:null,detailView:null},
+  {dmReuse:true},
+  {coldChat:true},
+  {worldView:true,collectionView:null,detailView:null},
+  {worldView:false,collectionView:'sparks',detailView:null},
+  {worldView:false,collectionView:'artifacts',detailView:null},
+ ] : [{worldView,collectionView,detailView,coldChat,dmReuse}];
+ for (const {worldView,collectionView,detailView,coldChat,dmReuse} of cases) {
  const context=await browser.newContext();
+ try {
  await context.route('**/*',async route=>{
    const url=new URL(route.request().url());
    if(url.origin!==origin)return route.abort();
@@ -347,6 +357,11 @@ try {
  await page.evaluate(()=>window.fixtureReleaseWorld());
  assert.deepEqual(errors,[]);
  console.log('PASS '+engine+': actual Session renders accepted chat+non-chat local mutations, preserves refused draft, and remote messages before blocked world refresh; local browser harness '+localMs+'ms (synthetic device, not physical latency)');
+ }
+ } finally {
+  for (const page of context.pages()) await page.evaluate(() => window.fixtureReleaseWorld?.()).catch(() => {});
+  await context.close();
+ }
  }
 } finally {
  // Release deliberately held fake engine work before shutting down the local fixture server.

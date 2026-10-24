@@ -1,0 +1,127 @@
+name: Validate and release
+
+# Each required suite runs once on the actual main commit. Calls never trust a PR result or a cache as validation.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: main-release
+  cancel-in-progress: false
+jobs:
+  impact:
+    permissions:
+      contents: read
+      actions: read
+    runs-on: ubuntu-latest
+    outputs:
+      full_validation: ${{ steps.paths.outputs.full_validation }}
+      site: ${{ steps.paths.outputs.site }}
+      api: ${{ steps.paths.outputs.api }}
+      avendb: ${{ steps.paths.outputs.avendb }}
+      server: ${{ steps.paths.outputs.server }}
+      agent: ${{ steps.paths.outputs.agent }}
+      infra: ${{ steps.paths.outputs.infra }}
+      browser: ${{ steps.paths.outputs.browser }}
+      protocol: ${{ steps.paths.outputs.protocol }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - id: paths
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_BASE: ${{ github.event.before }}
+          CI_HEAD: ${{ github.sha }}
+        run: |
+          CI_BASE=$(bun scripts/ci/release-base.mjs)
+          export CI_BASE
+          bun scripts/ci/impact.mjs
+  site-build:
+    needs: impact
+    if: needs.impact.outputs.site == 'true'
+    uses: ./.github/workflows/site-build.yml
+    with:
+      typechecked_elsewhere: true
+  api-image:
+    needs: impact
+    if: needs.impact.outputs.api == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image.yml
+    with:
+      component: api
+  server-image:
+    needs: impact
+    if: needs.impact.outputs.server == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/image.yml
+    with:
+      component: avendb
+  kernel:
+    needs: impact
+    if: needs.impact.outputs.site == 'true'
+    uses: ./.github/workflows/kernel.yml
+    with:
+      full: ${{ needs.impact.outputs.full_validation == 'true' }}
+  api-tests:
+    needs: impact
+    if: needs.impact.outputs.api == 'true' && needs.impact.outputs.site != 'true'
+    uses: ./.github/workflows/api-tests.yml
+  avendb:
+    needs: impact
+    if: needs.impact.outputs.avendb == 'true' || needs.impact.outputs.server == 'true' || needs.impact.outputs.agent == 'true'
+    uses: ./.github/workflows/avendb-checks.yml
+    with:
+      full: ${{ needs.impact.outputs.full_validation == 'true' }}
+      real_browser: ${{ needs.impact.outputs.browser == 'true' }}
+      protocol: ${{ needs.impact.outputs.protocol == 'true' }}
+  delivery:
+    needs: impact
+    if: needs.impact.outputs.api == 'true' || needs.impact.outputs.server == 'true'
+    uses: ./.github/workflows/delivery-checks.yml
+  site:
+    needs: [impact, kernel, site-build]
+    if: needs.impact.outputs.site == 'true'
+    uses: ./.github/workflows/deploy.yml
+    with:
+      validated: true
+      built: true
+    secrets: inherit
+  api:
+    needs: [impact, kernel, api-tests, delivery, api-image]
+    if: ${{ !cancelled() && needs.impact.outputs.api == 'true' && needs.delivery.result == 'success' && needs.api-image.result == 'success' && ((needs.kernel.result == 'success' && needs.api-tests.result == 'skipped') || (needs.impact.outputs.site != 'true' && needs.kernel.result == 'skipped' && needs.api-tests.result == 'success')) }}
+    permissions:
+      contents: write
+      packages: write
+    uses: ./.github/workflows/api.yml
+    with:
+      validated: true
+      built_image: ${{ needs.api-image.outputs.image }}
+      reconcile_infra: ${{ needs.impact.outputs.infra == 'true' }}
+    secrets: inherit
+  server:
+    needs: [impact, avendb, delivery, server-image]
+    if: needs.impact.outputs.server == 'true'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/avendb.yml
+    with:
+      validated: true
+      built_image: ${{ needs.server-image.outputs.image }}
+    secrets: inherit
+  agent:
+    needs: [impact, avendb]
+    if: needs.impact.outputs.agent == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/avendb-agent.yml
+    with:
+      validated: true

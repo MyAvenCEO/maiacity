@@ -39,3 +39,6 @@ zeroize = "1.8"
 
 [dev-dependencies]
 avendb-server = { path = "../avendb-server" }
+
+[features]
+test-fixtures = ["avendb/test-fixtures"]

@@ -1,6 +1,6 @@
 # One small Bun process. No build step: Bun runs the TypeScript directly.
 # Built from the repo root, because the API shares the game's rules in game/ and the code entries in code/.
-FROM oven/bun:1.4.2-alpine
+FROM oven/bun:1.4.4-alpine
 WORKDIR /app/api
 # The lockfile is required and installed as is: if it does not match package.json the build fails, never resolves afresh
 COPY api/package.json api/bun.lock ./

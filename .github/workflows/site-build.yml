@@ -1,0 +1,52 @@
+name: Build site
+on:
+  workflow_call:
+    inputs:
+      typechecked_elsewhere:
+        type: boolean
+        default: false
+permissions:
+  contents: read
+jobs:
+  build:
+    name: Check and build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - uses: oven-sh/setup-bun@v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - run: bun install --frozen-lockfile
+
+      - name: Check release retention and actual Caddy routing
+        run: |
+          mkdir -p "$RUNNER_TEMP/site-caddy"
+          docker run --rm -v "$RUNNER_TEMP/site-caddy:/out" --entrypoint cp caddy:2-alpine /usr/bin/caddy /out/caddy
+          CADDY="$RUNNER_TEMP/site-caddy/caddy" python3 -m unittest discover -s deploy -p 'test_publish_site.py' -v
+
+      - run: bun --bun run check
+        if: ${{ !inputs.typechecked_elsewhere }}
+
+      # stops if a published post names a file the site's media list (src/lib/media/manifest.json) does not hold
+      - run: bun scripts/media-manifest.mjs
+
+      # Served from the domain root, so no base path.
+      # Vite on Bun, as a Mac of Maia City builds it to witness this release (scripts/release.mjs): Vite on Node lays
+      # out other bytes
+      - run: bun --bun run build
+
+      # the release list (scripts/release.mjs): the commit and the hash of every file built, up as /release.json, which
+      # a Mac of Maia City witnesses and proposes into Maia City for its owners to accept
+      - run: bun scripts/release.mjs list build
+
+      - run: tar -C build -czf site.tgz .
+
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: site
+          path: site.tgz
+          retention-days: 1
+          compression-level: 0
+

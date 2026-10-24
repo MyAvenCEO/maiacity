@@ -1,14 +1,8 @@
-import AvenDB.Vectors
-import AvenDB.OpsVectors
-import AvenDB.BackupVectors
-import AvenDB.ObjectiveVectors
+import AvenDB.VectorFiles
 
-/-- `lake exe vectors`: write the test vectors the Rust core checks itself against. -/
+/-- `lake exe vectors`: write every model vector consumed by the Rust tests. -/
 def main : IO Unit := do
   IO.FS.createDirAll "vectors"
-  IO.FS.writeFile "vectors/vaults.json" AvenDB.Vectors.render
-  IO.FS.writeFile "vectors/lenses.json" AvenDB.Vectors.renderLenses
-  IO.FS.writeFile "vectors/ops.json" AvenDB.OpsVectors.render
-  IO.FS.writeFile "vectors/backups.json" AvenDB.BackupVectors.render
-  IO.FS.writeFile "vectors/objectives.json" AvenDB.ObjectiveVectors.render
-  IO.println "wrote vectors/vaults.json, vectors/lenses.json, vectors/ops.json, vectors/backups.json and vectors/objectives.json"
+  for (path, contents) in AvenDB.vectorFiles do
+    IO.FS.writeFile path contents
+    IO.println s!"wrote {path}"
