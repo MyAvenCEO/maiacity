@@ -517,3 +517,32 @@ No public adoption operation or runtime auto-activation is enabled by this fix.
 Rust tests pending root compiler queue: `bootstrap_companion_1024_boundary` and
 `bootstrap_anchor_only_adoption`; rustfmt parser and diff checks passed. Existing
 Lean journal assumptions are unchanged.
+
+Correction implementation: [cc9a4fd3](https://github.com/MyAvenCEO/maiacity/commit/cc9a4fd3c),
+pushed; Rust gates remain pending.
+
+### Minimal runtime connection after core validation
+
+1. Keep `checkpoint_view` and v1 `checkpoint_delivery::KIND` (19) read-only.
+   Add an explicitly named owner-approved `checkpoint_entry_base` operation that
+   drafts the judged envelope using the existing passkey approval/temporary pin/
+   signed Snapshot publication sequence in `checkpoint_delivery.rs`. Do not silently
+   promote the current read-only JSON projection envelope to a writable base.
+2. Negotiate a separate judged-base protocol capability/version before asking for
+   it; old peers retain existing v1 projection and ordinary history catch-up. The
+   reply still uses the authenticated ordinary peer channel and signed evidence,
+   bounded ciphertext and existing single response admission permit. No peer role
+   receives an authorization exception.
+3. Route active-entry demand to this negotiated fetch after discovery. Feed evidence
+   through normal signed receive first; recheck current identity/policy/demand epoch
+   and ciphertext commitment before explicit judged-base adoption. Unsupported
+   semantic cases retain read-only projection/history fallback, not partial writes.
+4. The adopted base is ready for writable use only after existing durable save
+   receipt covers its anchor and signed frontier. Wakeup alone is not that receipt.
+   Cancellation, refusal, or failed storage must not report writable readiness.
+5. Connect ordinary local mutation and incoming live suffix through the now-tested
+   canonical admission gates; expose view readiness separately from historical
+   coverage. Validate fresh holder with history withheld, concurrent edits before
+   publication, revocation/Mark, crash recovery and older-peer fallback before
+   enabling runtime adoption. Shared/capability/proposal cases remain refused until
+   their exact semantic restoration is implemented and differentially tested.
