@@ -21,6 +21,7 @@
 	many wait in each vault the person answers for (`oncounts`), for the bubbles on the vaults in the nav pill.
 -->
 <script>
+	import { onMount } from 'svelte';
 	import { fade, fly } from 'svelte/transition';
 	import { foot, FOOT } from '$lib/app/foot.js';
 	import Icon from './Icon.svelte';
@@ -40,12 +41,9 @@
 	/** the vaults the person answers for: those they act for as the vault itself, as its owner */
 	const answers = $derived(world.vaults.filter((v) => v.acting?.as === v.id).map((v) => v.id));
 
-	/** the AIPs the device holds (`aips`), read again each time the world changes, one read at a time (./aips.svelte.js) */
+	/** the AIPs the device holds (`aips`), observed while this stack is mounted (./aips.svelte.js) */
 	const aips = $derived(/** @type {import('./hitl.js').Aip[]} */ (held.list));
-	$effect(() => {
-		world;
-		held.again();
-	});
+	onMount(() => held.hold());
 
 	const asks = $derived(asksOf(vault, aips));
 	const revisions = $derived(revisionsOf(vault, aips));

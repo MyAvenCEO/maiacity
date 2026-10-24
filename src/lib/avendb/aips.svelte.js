@@ -1,4 +1,3 @@
-// @ts-nocheck — plain JS
 import { createAipScope } from './aip-scope.js';
 import { session } from './session.svelte.js';
 
@@ -10,10 +9,13 @@ let read = $state(false);
 let why = $state('');
 
 let refresh = $state(0);
-let identity, previousPhase;
+/** @type {any} */
+let identity;
+/** @type {string | undefined} */
+let previousPhase;
 const reset = () => { list = []; read = false; why = ''; };
 const scope = createAipScope({
-	observe: (...args) => session.observe(...args),
+	observe: (query, take, failed) => session.observe(query, take, failed),
 	query: () => {
 		void refresh;
 		const phase = session.phase, device = session.device;

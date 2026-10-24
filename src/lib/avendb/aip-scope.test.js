@@ -31,3 +31,15 @@ test('closed generations cannot overwrite a replacement consumer', () => {
 	callbacks[0]('old'); callbacks[1]('current'); expect(seen).toEqual(['current']);
 	next(); callbacks[1]('late'); expect(seen).toEqual(['current']); expect(resets).toBe(4);
 });
+
+test('HITL-only mounting reads AIPs and retains its lease after a proposals view leaves', async () => {
+	let live=0, reads=0;
+	const scope=createAipScope({observe:(_q,take)=>{live++;reads++;take({ok:[]});return ()=>live--;}, query:()=>({op:'aips'}), take:()=>{},failed:()=>{},reset:()=>{}});
+	const hitl=scope.hold(); expect(reads).toBe(1); expect(live).toBe(1);
+	const proposals=scope.hold(); proposals(); expect(live).toBe(1); expect(reads).toBe(1);
+	hitl(); expect(live).toBe(0);
+	// Guard the actual consumer wiring that previously omitted this lifetime.
+	const source=await Bun.file(new URL('./Hitl.svelte',import.meta.url)).text();
+	expect(source).toContain('onMount(() => held.hold())');
+	expect(source).not.toContain('held.again()');
+});
