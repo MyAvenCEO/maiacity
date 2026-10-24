@@ -53,6 +53,16 @@ fn batched_projection_matches_current_device_before_after_revocation_and_restore
             let selected = [todos.door, todos.seeds];
             let batch = lab.entry_files_batch(d, selected);
             for entry in selected { assert_eq!(batch[&entry], lab.entry_files(d, entry)); }
+            // Differential reference is the original per-entry demand projection,
+            // including current keep selection and current readable file keys.
+            for demanded in [vec![], selected.to_vec(), vec![todos.door, todos.door, todos.seeds]] {
+                let state = lab.latest(d);
+                let expected: BTreeSet<_> = demanded.iter()
+                    .filter(|entry| state.entry(**entry).is_some_and(|en| state.wants(d, en)))
+                    .flat_map(|entry| lab.entry_files(d, *entry))
+                    .filter_map(|(root, len)| len.map(|_| root)).collect();
+                assert_eq!(lab.demanded_files(d, &demanded), expected.into_iter().collect::<Vec<_>>());
+            }
             if let Some(world) = crate::world::world(lab, d) {
                 for entry in world.entries { assert_eq!(entry.files, lab.entry_files(d, entry.entry)); }
             }
