@@ -9,7 +9,7 @@ export function entryDetail(api, query) {
 	$effect(() => {
 		const owner = api(), op = query();
 		value = null; phase = op ? 'loading' : 'ready';
-		return owner.observe(() => op, (out) => {
+		return owner.observe(() => op, (/** @type {any} */ out) => {
 			try { value = answer(out); phase = 'ready'; } catch { value = null; phase = 'error'; }
 		}, () => { value = null; phase = 'error'; });
 	});
