@@ -3,7 +3,7 @@
 // messages and thread replies as rows, edits and deletes of a row's own fields, reactions as chips per emoji.
 // Run: bun test src/lib/chat/rooms.test.js
 import { expect, test } from 'bun:test';
-import { chips, deleting, deletingRoom, editing, grouped, making, mentionsIn, pathOf, posting, reacting, roomsOf, titleOf, unreacting } from './rooms.js';
+import { directRoom, chips, deleting, deletingRoom, editing, grouped, making, mentionsIn, pathOf, posting, reacting, roomsOf, titleOf, unreacting } from './rooms.js';
 
 test('a room is made, then shared at Member on that one room', () => {
 	const ops = making({ vault: 'me', actor: 'me', look: 'group', name: 'Garden', members: ['bob', 'carol'] });
@@ -61,4 +61,31 @@ test('a room tagged deleted is left out, and deleting one tags it so', () => {
 	const world = { entries: [{ entry: 'a', type: 'room', tags: ['avendb:deleted'], created: 2 }, { entry: 'b', type: 'room', tags: [], created: 1 }] };
 	expect(roomsOf(world).map((r) => r.entry)).toEqual(['b']);
 	expect(deletingRoom('a', 'V')).toEqual({ op: 'tag', entry: 'a', add: ['avendb:deleted'], as: 'V' });
+});
+
+test('an unnamed room has an honest fallback before vault names arrive', () => {
+ expect(titleOf({vault:'v',readers:['v','other']},{look:'dm'},null,v=>v?.name??'')).toBe('Direct message');
+});
+
+
+test('DM reuse searches beyond the displayed page and never treats refusal as absence', async () => {
+ const ids=Array.from({length:51},(_,i)=>i.toString(16).padStart(64,'0'));
+ const ops=[];
+ const found=await directRoom(async op=>{
+  ops.push(op);
+  if(op.op==='query')return {ok:{rows:ids.slice(op.offset,op.offset+op.limit).map(entry=>({entry})),count:ids.length}};
+  return {ok:{rows:op.entries.map(entry=>({entry,type:'room',readers:[entry===ids[50]?'target':'other'],record:{look:'dm'}}))}};
+ },'target');
+ expect(found).toBe(ids[50]);
+ expect(ops.filter(op=>op.op==='query').map(op=>op.offset)).toEqual([0,50]);
+ await expect(directRoom(async()=>({refused:'NoCap',why:'NoCap'}),'target')).rejects.toThrow();
+ await expect(directRoom(async()=>null,'target')).rejects.toThrow();
+ expect(await directRoom(async()=>({ok:{rows:[],count:0}}),'target')).toBe(null);
+});
+
+
+test('a DM whose metadata disappears during lookup does not establish absence', async () => {
+ await expect(directRoom(async op=>op.op==='query'
+  ? {ok:{rows:[{entry:'a'.repeat(64)}],count:1}}
+  : {ok:{rows:[]}},'target')).rejects.toThrow('Room access changed');
 });

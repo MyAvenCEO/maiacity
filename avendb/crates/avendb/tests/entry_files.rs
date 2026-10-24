@@ -421,3 +421,30 @@ fn an_assets_versions_and_variants_are_one_entry() {
         }
     }
 }
+
+#[test]
+fn full_world_file_rows_match_individual_scans_with_interleaved_assets() {
+    let mut g = gate();
+    let (mac, alice) = (g.mac, g.alice);
+    let first = source("first asset");
+    let second = source("second asset");
+    let a_op = g.create("A", alice, first.len);
+    let a = entry_id(&ok(engine::put_file(&mut g.w.lab, mac, &a_op, first.clone())));
+    let b_op = g.create("B", alice, second.len);
+    let b = entry_id(&ok(engine::put_file(&mut g.w.lab, mac, &b_op, second.clone())));
+    let append = |entry: EntryId, len| json!({ "op": "put_file", "entry": entry.to_hex(), "len": len,
+        "name": "source.js", "as": alice.to_hex() });
+    ok(engine::put_file(&mut g.w.lab, mac, &append(a, second.len), second));
+    ok(engine::put_file(&mut g.w.lab, mac, &append(a, first.len), first));
+    // Repeated root does not duplicate the row, and each device resolves lengths itself.
+    for before_sync in [true, false] {
+        if !before_sync { g.w.lab.sync_all(1); }
+        for d in [mac, g.w.mac_b, g.w.mac_c, g.w.server, g.w.stranger] {
+            if let Some(view) = world::world(&g.w.lab, d) {
+                for row in view.entries { assert_eq!(row.files, g.w.lab.entry_files(d, row.entry)); }
+            }
+        }
+    }
+    assert_eq!(g.w.lab.entry_files(mac, a).len(), 2);
+    assert_eq!(g.w.lab.entry_files(mac, b).len(), 1);
+}

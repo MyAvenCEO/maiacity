@@ -186,3 +186,49 @@ fn overlapping_receipts_never_drain_keys_outside_their_captured_prefix() {
         assert!(!lab.warm_due(phone));
     }
 }
+
+#[test]
+fn owned_capture_survives_append_but_restore_and_lock_reject_its_receipt() {
+    for mode in [0, 1, 2] {
+        let (mut lab, _, _, phone, vault, note) = alice();
+        let backup = lab.backup(phone);
+        let held = lab.log(phone).ids().len();
+        let capture = lab.capture_warm(phone, held, Some([9; 40])).unwrap();
+        match mode {
+            0 => { lab.edit(phone, vault, note, |it| it.set_text(2, "After capture")).unwrap(); }
+            1 => lab.restore_backup(phone, &backup),
+            _ => { lab.lock(phone); assert!(lab.unlock(phone)); }
+        }
+        // Encoding after mutation still produces the captured prefix, never current mutable state.
+        let receipt = capture.encode();
+        let warm = bytes(&receipt);
+        lab.warmed(phone, receipt);
+        assert_eq!(lab.warm_due(phone), mode != 0);
+        if mode == 0 {
+            let expected = lab.item(phone, note).unwrap().record();
+            let backup = lab.backup(phone);
+            lab.restore_warm(phone, backup, Some(([9; 40], held)), &warm);
+            assert_eq!(lab.item(phone, note).unwrap().record(), expected);
+        }
+    }
+}
+
+#[test]
+fn dropping_unencoded_capture_does_not_acknowledge_pending_work() {
+    let (mut lab, _, _, phone, _, _) = alice();
+    let held = lab.log(phone).ids().len();
+    drop(lab.capture_warm(phone, held, Some([7; 40])).unwrap());
+    assert!(lab.warm_due(phone));
+    assert!(lab.capture_warm(phone, held, Some([7; 40])).is_some());
+}
+
+#[test]
+fn captured_view_bytes_equal_canonical_encoding() {
+    let (mut lab, _, _, phone, vault, note) = alice();
+    let replay = lab.log(phone).replay();
+    let held = lab.log(phone).ids().len();
+    let expected = replay.to_view(held);
+    let capture = replay.capture_view();
+    lab.edit(phone, vault, note, |it| it.set_text(2, "Later")).unwrap();
+    assert_eq!(capture.encode(held), expected);
+}

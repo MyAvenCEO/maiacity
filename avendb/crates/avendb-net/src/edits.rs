@@ -602,6 +602,18 @@ async fn read_pack(shelf: &Shelf, hash: Hash, size: u64) -> Result<Vec<Signed>> 
 }
 
 impl Shared {
+    /// The encoder receives only owned inputs after the Lab guard is dropped.
+    /// The save lane/book guard and admitted producer remain owned by the caller.
+    fn prepare_warm_with(&self, encode: impl FnOnce(avendb::lab::WarmCapture) -> avendb::lab::Warming)
+        -> Option<avendb::lab::Warming> {
+        let capture = {
+            let (mut lab, edits) = (self.locked_lab(), self.edits.as_ref().expect("its edits"));
+            let held = edits.held(&lab, self.me);
+            lab.capture_warm(self.me, held, edits.checked())
+        };
+        capture.map(encode)
+    }
+
     /// Puts on the node's shelf, if it keeps one, what its device took since the last save, as `Edits::put` says. True
     /// if the shelf holds more now.
     pub(crate) async fn save(self: &Arc<Self>) -> Result<bool> {
@@ -647,11 +659,7 @@ impl Shared {
             self.changed.notify_one();
         }
         let shared = self.clone();
-        let warming = move || {
-            let (mut lab, edits) = (shared.locked_lab(), shared.edits.as_ref().expect("its edits"));
-            let held = edits.held(&lab, shared.me);
-            lab.warming(shared.me, held, edits.checked())
-        };
+        let warming = move || shared.prepare_warm_with(avendb::lab::WarmCapture::encode);
         #[cfg(not(target_arch = "wasm32"))]
         let warming = tokio::task::spawn_blocking(warming).await?;
         #[cfg(target_arch = "wasm32")]
@@ -1177,4 +1185,52 @@ mod tests {
             node.shutdown().await.unwrap();
         }
     }
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn held_snapshot_encoder_releases_lab_and_cancelled_waiter_keeps_producer() {
+        use crate::{Node, Options};
+        use avendb::cast::{document, human_on};
+        use std::time::Duration;
+        let folder = std::env::temp_dir().join(format!("avendb-encode-{}", crate::shelf::fresh()));
+        let mut lab = Lab::new();
+        let passkey = lab.passkey("Alice");
+        let me = lab.device_of(passkey, "Mac");
+        let vault = human_on(&mut lab, passkey, &[me]);
+        let entry = lab.create(me, vault, vault, "note", &[], document("Note", "Before", me)).unwrap();
+        // Node::spawn acquires the single writer; do not pre-acquire another owner.
+        let shelf = crate::disk::open(&folder).unwrap();
+        let node = Node::spawn(lab.split(me, &[passkey], [71; 32]), me,
+            Options { shelf: Some(shelf), ..Options::local() }).await.unwrap();
+        node.shared.save().await.unwrap();
+        let book = node.shared.edits.as_ref().unwrap().book.lock().await;
+        node.act(|lab, me| { let backup = lab.backup(me); lab.restore_backup(me, &backup); }).await;
+        let (entered_tx, entered_rx) = tokio::sync::oneshot::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+        let shared = node.shared.clone();
+        let operation = shared.admit().unwrap();
+        let worker = tokio::task::spawn_blocking(move || {
+            let _operation = operation;
+            let captured = shared.prepare_warm_with(|capture| {
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                capture.encode()
+            });
+            let _ = done_tx.send(captured.is_some());
+        });
+        tokio::time::timeout(Duration::from_secs(15), entered_rx).await.unwrap().unwrap();
+        // Deadline detects lock ownership, not a physical performance budget.
+        tokio::time::timeout(Duration::from_secs(2), node.act(move |lab, me| {
+            lab.edit(me, vault, entry, |item| item.set_text(2, "During encoding")).unwrap();
+        })).await.expect("snapshot encoder must not hold Lab");
+        worker.abort(); // Once started, the blocking producer owns its admission until it really completes.
+        drop(book);
+        let mut closing = Box::pin(node.shutdown());
+        assert!(tokio::time::timeout(Duration::from_millis(50), &mut closing).await.is_err(),
+            "shutdown must wait for the cancelled waiter's actual encoder producer");
+        release_tx.send(()).unwrap();
+        assert!(tokio::time::timeout(Duration::from_secs(15), done_rx).await.unwrap().unwrap());
+        tokio::time::timeout(Duration::from_secs(15), closing).await.unwrap().unwrap();
+        std::fs::remove_dir_all(folder).ok();
+    }
+
 }
