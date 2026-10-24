@@ -198,6 +198,9 @@ fn unchanged_warm_restore_does_not_reencode_and_corrupt_views_recover() {
     let device = lab.device_of(passkey, "Warm device");
     let vault = human_on(&mut lab, passkey, &[device]);
     let entry = lab.create(device, vault, vault, "note", &[], document("Retained", "first", device)).unwrap();
+    // A freshly founding device generated its own keys rather than opening their
+    // boxes. Exercise an already-warm device, including those opened-box receipts.
+    lab.restore_from(device, lab.backup(device));
     let backup = lab.backup(device);
     let count = backup.signed.len();
     let marker = [81; 40];
@@ -206,7 +209,9 @@ fn unchanged_warm_restore_does_not_reencode_and_corrupt_views_recover() {
     assert_eq!(warm.views.len(), 1);
     lab.warmed(device, saved);
     lab.restore_warm(device, backup.clone(), Some((marker, count)), &warm);
-    assert!(!lab.warm_due(device), "validated unchanged state is already represented on its shelf");
+    let restored = lab.held(device);
+    assert!(!lab.warm_due(device), "validated unchanged state is already represented on its shelf: replayed={} saved={} wholes={} saved_wholes={} newkeys={} checked={:?} counts={}",
+        restored.replayed, restored.view_given, restored.wholes, restored.view_wholes, restored.opened_since.len(), restored.checked_given, lab.work_metrics(device));
     assert!(lab.capture_warm(device, count, Some(marker)).is_none(), "no capture means no redundant encode/encrypt");
 
     lab.edit(device, vault, entry, |item| item.set_text(1, "next mutation")).unwrap();
@@ -227,4 +232,36 @@ fn unchanged_warm_restore_does_not_reencode_and_corrupt_views_recover() {
     lab.restore_warm(device, next, Some((next_marker, next_count)), &broken);
     assert_eq!(lab.item(device, entry).unwrap().record(), expected);
     assert!(lab.capture_warm(device, next_count, Some(next_marker)).is_some(), "invalid derived view must be regenerated");
+}
+
+
+#[test]
+fn ordinary_reconstruction_bounds_scratch_retention_before_final_sweep() {
+    use crate::cast::{document, human_on};
+    let mut lab = Lab::new();
+    let passkey = lab.passkey("Scratch bound");
+    let device = lab.device_of(passkey, "Device");
+    let vault = human_on(&mut lab, passkey, &[device]);
+    let (mut reconstructed, mut recent) = (BTreeMap::new(), Vec::new());
+    let mut expected = BTreeMap::new();
+    let mut peak = 0;
+    for i in 0..(SCRATCHES * 2 + 7) {
+        let entry = lab.create(device, vault, vault, "note", &[],
+            document(&format!("Note {i}"), "retained content", device)).unwrap();
+        let shown = lab.stores.get_mut(&device).unwrap().shown.remove(&entry).unwrap();
+        assert!(shown.after.scratch.is_some());
+        expected.insert(entry, (shown.items[&MAIN].record(), shown.items[&MAIN].version()));
+        // The exact helper used during show_items, before its final cache sweep.
+        retain_recent_shown(&mut reconstructed, &mut recent, entry, shown);
+        let held = reconstructed.values().filter(|s| s.after.scratch.is_some()).count();
+        peak = peak.max(held);
+        assert!(held <= SCRATCHES, "scratch documents must be bounded during reconstruction");
+    }
+    assert_eq!(peak, SCRATCHES);
+    let selected: HashSet<_> = recent.iter().rev().take(SCRATCHES).copied().collect();
+    for (entry, shown) in &reconstructed {
+        assert_eq!(shown.after.scratch.is_some(), selected.contains(entry), "same final cache selection");
+        assert_eq!((shown.items[&MAIN].record(), shown.items[&MAIN].version()), expected[entry]);
+    }
+    eprintln!("ordinary reconstructed={} retained_scratch_peak={peak} bound={SCRATCHES}", reconstructed.len());
 }

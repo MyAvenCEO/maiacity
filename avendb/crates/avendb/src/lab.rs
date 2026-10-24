@@ -6197,6 +6197,21 @@ fn landed_in(store: &Store, e: EntryId) -> bool {
     !opened && crate::policy::history(ws.iter(), MAIN).iter().any(|w| w.first)
 }
 
+/// Retain reconstruction accelerators as entries finish, rather than keeping
+/// one extra Loro document per entry until the entire database is reconstructed.
+/// Entry iteration is unique; an evicted earlier entry cannot enter the final
+/// last-SCRATCHES selection. Its shown items/history remain untouched.
+fn retain_recent_shown(old: &mut BTreeMap<EntryId, Shown>, recent: &mut Vec<EntryId>, entry: EntryId, shown: Shown) {
+    recent.push(entry);
+    if recent.len() > SCRATCHES {
+        let expired = recent[recent.len() - SCRATCHES - 1];
+        if let Some(shown) = old.get_mut(&expired) {
+            shown.after.scratch = None;
+        }
+    }
+    old.insert(entry, shown);
+}
+
 /// Rebuild what device `d` shows of each entry whose writes, what it opened of them, its vault's lane or the cap groups
 /// in force changed: first the cap groups, as the device counts the writes that say them (`State::read_groups`), as
 /// every write through a share that names one is judged by them; then each entry's history, each write of its view
@@ -6375,8 +6390,7 @@ fn show_items(d: SignerId, store: &mut Store) {
         let s = j.shown_on(d, print, tip, items);
         store.perf.add("show: materialize", materialize_at);
         debug_assert!(from == 0 || same_shown(&s, &judged_anew(d, st, (r, bodies), &groups, en, lane(en.vault))));
-        recent.push(en.id);
-        old.insert(en.id, s);
+        retain_recent_shown(&mut old, &mut recent, en.id, s);
     }
     // only the entries judged last keep their scratch items
     let mut keep: HashSet<EntryId> = recent.iter().rev().take(SCRATCHES).copied().collect();
