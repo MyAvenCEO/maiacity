@@ -100,3 +100,19 @@ removed in the committed source. Combined release CI and device acceptance remai
 Implementation: [`7ad019df`](https://github.com/MyAvenCEO/maiacity/commit/7ad019df).
 Status: implemented and focused checks passed; integration, deployment, physical-device
 measurements, cache rehydration, and writable partial bootstrap are not claimed complete.
+
+## Follow-up: offline working-set restoration
+
+Implemented, Rust validation pending the shared compiler slot: active-view demand first checks
+local authorized discovery and explicit IDs, then reopens at most eight pinned checkpoints
+before peer work. Startup does not eagerly decrypt every checkpoint. The persisted tag is only
+a locator: its hash must name a currently authorized signed snapshot, the signed length bounds
+the allocation, ciphertext hash/AEAD checks run normally, and current policy plus current demand
+are checked again at adoption. Missing/corrupt/withdrawn pins fall through to ordinary sync.
+No history, policy, or writable state is adopted from ciphertext.
+
+Lean `PersistedGates` makes the pin-match and policy-recheck assumptions explicit; wrong-pin,
+unchecked-policy, and revoked-reader refusal proofs pass. The new disposable-disk regression
+reopens with history still withheld and no connected peers, issues a type-only demand, checks
+the exact current read-only record, and rejects a corrupted pin and a subsequent revocation.
+This follow-up does not establish physical mobile latency or complete app manifest coverage.

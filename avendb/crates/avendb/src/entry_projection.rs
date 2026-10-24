@@ -454,6 +454,20 @@ impl Lab {
         self.held(me).projections.lock().expect("entry projections").get(&(me, entry)).map(|v| v.snapshot)
     }
 
+    /// A persisted content pin only locates bytes. Select its signed checkpoint under
+    /// current ordinary policy; ciphertext must still pass `retain_entry_projection`.
+    pub fn entry_projection_restore_point(&self, me: SignerId, entry: EntryId, hash: [u8; 32]) -> Option<(EditId, FileRoot)> {
+        let store = self.held(me);
+        if store.replayed != store.log.edits().len() { return None; }
+        store.log.edits().iter().filter_map(|edit| {
+            let Action::Snapshot { states, .. } = &edit.action else { return None; };
+            let state = states.iter().find(|state| state.entry == entry && state.slice.hash == hash)?;
+            if state.slice.size > (MAX_BYTES + 128) as u64 { return None; }
+            self.projection_authority(me, edit.id(), entry)?;
+            Some((edit.depth, edit.id(), state.slice))
+        }).max_by_key(|(depth, id, _)| (*depth, *id)).map(|(_, id, root)| (id, root))
+    }
+
     pub fn entry_projection_offer(&self, me: SignerId, requester: SignerId, entry: EntryId) -> Option<EntryProjectionOffer> {
         self.entry_projection_offer_after(me, requester, entry, None)
     }

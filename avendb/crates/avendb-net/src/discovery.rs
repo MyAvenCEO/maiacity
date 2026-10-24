@@ -99,6 +99,29 @@ impl Shared {
             loop {
                 let active = { shared.demands.lock().expect("demands").working_set(&scope, Instant::now()) };
                 if let Some((revision, entries, queries)) = active {
+                    // Restore persisted view projections before any peer work. Local query
+                    // discovery uses the same authorized selector; it never claims completeness.
+                    let requested = entries.clone();
+                    let selectors = queries.clone();
+                    let local = shared.read(move |lab, me| {
+                        let mut local = requested;
+                        for query in selectors {
+                            for id in lab.discover_types(me, me, query.vault.as_deref().and_then(VaultId::from_hex), &query.types) {
+                                let id = LogId::Entry(id);
+                                if !local.contains(&id) { local.push(id); }
+                                if local.len() >= 8 { break; }
+                            }
+                            if local.len() >= 8 { break; }
+                        }
+                        local
+                    }).await;
+                    for id in local.iter().take(8) {
+                        if !shared.discovery_current(&scope, revision) { break; }
+                        if let LogId::Entry(entry) = id {
+                            let _ = time::timeout(crate::checkpoint_delivery::DEADLINE,
+                                shared.restore_view_checkpoint(*entry, &scope, revision)).await;
+                        }
+                    }
                     // Snapshot values before awaiting; no demand/peer mutex spans I/O.
                     let peers: Vec<_> = shared.peers.lock().expect("peers").values()
                         .filter(|p| p.conn.close_reason().is_none()).take(4).cloned().collect();
