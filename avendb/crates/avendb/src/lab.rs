@@ -334,6 +334,7 @@ impl Drafting<'_> {
 /// as devices that make a family's key at the same time each make one; its keys are told apart by their ids.
 #[derive(Default)]
 struct Keyring {
+    revision: Arc<()>,
     by_id: HashMap<KeyId, (KeyName, Secret)>,
     /// Each name's keys, the smallest id first.
     by_name: HashMap<KeyName, Vec<KeyId>>,
@@ -350,6 +351,7 @@ impl Keyring {
         if self.by_id.contains_key(&id) {
             return false;
         }
+        self.revision = Arc::new(());
         let ids = self.by_name.entry(name).or_default();
         let at = ids.partition_point(|x| *x < id);
         ids.insert(at, id);
@@ -728,6 +730,8 @@ struct Store {
     bootstrap_bases: entry_base::Anchors,
     bootstrap_state: Option<State>,
     bootstrap_active: HashSet<EntryId>,
+    bootstrap_basis: Option<entry_base::OverlayBasis>,
+    bootstrap_revision: Arc<()>,
     /// How many of its edits that replay is of, the first of its log: those after it step on it (`replay_on`).
     replayed: usize,
     /// What its edits say now, those it kept since that replay too (`Lab::latest`): replayed once for the edits it
@@ -816,6 +820,8 @@ impl Default for Store {
             bootstrap_bases: BTreeMap::new(),
             bootstrap_state: None,
             bootstrap_active: HashSet::new(),
+            bootstrap_basis: None,
+            bootstrap_revision: Arc::new(()),
             replayed: 0,
             latest: OnceLock::new(),
             keys: Keyring::default(),
@@ -893,6 +899,7 @@ impl Store {
         self.warm_materialization = None;
         self.bootstrap_state=None;
         self.bootstrap_active.clear();
+        self.bootstrap_basis = None;
         self.projections.lock().expect("entry projections").clear();
         self.reshow = true;
         self.opened.clear();
@@ -3182,6 +3189,7 @@ impl Lab {
         let own = self.keys.get(&d).and_then(Key::seal_secret);
         let unlocked = own.is_some();
         let mine: Vec<(SignerId, Secret)> = own.map(|o| (d, o)).into_iter().chain(lent.iter().cloned()).collect();
+        let mut retained = if unlocked { self.take_owner_overlay(d) } else { None };
         let began = Perf::start();
         for round in 0.. {
             let Lab { stores, rng, spares, .. } = self;
@@ -3231,7 +3239,9 @@ impl Lab {
             store.perf.add("upkeep", at);
             if work.is_empty() {
                 store.perf.add("refresh", began);
-                self.rebuild_owner_bases(d);
+                if !self.restore_owner_overlay(d, retained.take()) {
+                    self.rebuild_owner_bases(d);
+                }
                 return;
             }
             assert!(round < ROUNDS, "{d:?} keeps making edits its own view refuses: {work:?}");
