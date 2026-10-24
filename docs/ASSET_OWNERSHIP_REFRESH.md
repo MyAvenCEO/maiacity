@@ -18,7 +18,7 @@ A03 already moved public-hash, private avenDB-file and HTTP references into `med
 
 The timber coop, rabbit hutch and playground now live in `models/timber.v1.js`. The world imports them; compatibility exports preserve existing world callers. Their deterministic random generator is shared from `assets/seeded.js`, with the original sequence unchanged.
 
-Regression fingerprints captured before the move cover geometry attributes, indices, groups, world transforms and material properties. All three match after the move. No geometry redesign or asset version bump is intended. The larger dome-room interiors still have world-specific dependencies; this change moves the historical builders identified by A12, not every world interior.
+Regression fingerprints cover geometry attributes, indices, groups, world transforms and material properties. All three match the original builders recovered from the pre-refactor Git revision. CI normalizes numbers to five decimal places (10 micrometres for positions) to ignore platform-specific trigonometric rounding; raw fingerprints also matched locally before and after the move. No geometry redesign or asset version bump is intended. The larger dome-room interiors still have world-specific dependencies; this change moves the historical builders identified by A12, not every world interior. The existing world-builder boundary register explicitly records this relocated legacy dependency.
 
 ## A11: one object-asset registration boundary
 
