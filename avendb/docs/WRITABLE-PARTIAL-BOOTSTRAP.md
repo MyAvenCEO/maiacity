@@ -834,3 +834,5 @@ comparison remains root/scope/decryption authenticated; normal public restoratio
 still performs its existing full-holder mismatch rejection. The full-history end
 of the lane regression now requires anchor retirement and a successful normal edit.
 Lean retirement gate lemmas passed; executable Rust validation remains pending.
+
+Canonical retirement implementation: [42055024](https://github.com/MyAvenCEO/maiacity/commit/42055024), committed and pushed; Rust regression execution pending combined validation.
