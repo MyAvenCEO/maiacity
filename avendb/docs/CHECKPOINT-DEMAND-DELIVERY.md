@@ -121,3 +121,11 @@ Offline follow-up implementation: [`5a13b4ea`](https://github.com/MyAvenCEO/maia
 Rust gate remains pending integration: `cargo test -p avendb-net --lib persisted_checkpoint_reopens_offline_and_rejects_bad_pin_and_revocation -- --nocapture`,
 then the existing `checkpoint` and core `entry_projection` filters. Loopback permission is
 needed for the disposable node endpoints even though the reopen assertion has no peers.
+
+## Writable continuation boundary
+
+See [WRITABLE-PARTIAL-BOOTSTRAP.md](WRITABLE-PARTIAL-BOOTSTRAP.md) for the source-backed
+implementation sequence. Current projections are JSON records; enabling writes requires a
+versioned authenticated Loro base plus counted avenDB history metadata and a shared base/suffix
+validator. Removing `ReadOnly` or constructing a new CRDT from the displayed JSON is unsafe.
+That design is not an implementation or a completed convergence proof.
