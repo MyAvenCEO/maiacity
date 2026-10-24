@@ -401,3 +401,6 @@ This is a real restoration path but not yet Store/Node writable activation: poli
 anchors, the Store's normal replay equality invariant, baseline invalidation during live
 removals, and atomic durable baseline+suffix recovery remain to be integrated. The returned
 object deliberately remains non-writable until that integration and its regressions pass.
+
+Judgment restoration code: [`5fe1c9ff`](https://github.com/MyAvenCEO/maiacity/commit/5fe1c9ff).
+Pending Rust gate: `cargo test -p avendb --lib owner_judgment -- --nocapture`.
