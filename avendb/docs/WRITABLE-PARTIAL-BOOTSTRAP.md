@@ -970,3 +970,29 @@ checks pass; new raw query and checkpoint-empty-page regression execution remain
 queued, with no Cargo run competing against the shared compiler.
 
 Query uncertainty implementation: [77c4f551](https://github.com/MyAvenCEO/maiacity/commit/77c4f551). Four JS tests and Lean passed; Rust execution pending.
+
+### Release transport blocker: export racing blob finalization
+
+The real-browser RTC test failed when a range export captured a Filling blob's
+`new/` name immediately before OPFS finalization moved it to its immutable hash.
+The worker serializes individual operations but cannot keep that earlier Rust
+source snapshot current. Range export now tries the same blob's final hash once
+when the temporary read fails, accepts only the full requested range, and preserves
+the original failure if the final location cannot supply it. Finished sources and
+range-coverage checks are unchanged; no arbitrary errors are swallowed by the
+fixture, and its exact-byte equality remains mandatory. This is shared shelf code,
+so the repair covers native and browser backends equally.
+
+`filling_export_retries_only_the_same_final_blob_after_rename` deterministically
+checks the captured-name race and propagation of the original storage failure when
+neither location works. Rust parser/diff checks pass; Cargo and regenerated WASM /
+real-browser carrier validation remain queued with root's compiler slot.
+
+Range-finalization race implementation: [f3c1a77a](https://github.com/MyAvenCEO/maiacity/commit/f3c1a77a). Parser/diff passed; deterministic Rust and browser/WASM delivery checks pending.
+
+The separate `FillingReadFallback.lean` contract now proves at most two attempts,
+identical blob/range addressing, and retention of the original error after a failed
+or wrong-length final read. It explicitly assumes the temporary name belongs to
+that blob and makes no cryptographic/content-integrity claim. It supplements the
+implementation after the release blocker was diagnosed; it was not retroactively
+Lean-first. Its focused Lean check passed; Rust/browser validation remains separate.
