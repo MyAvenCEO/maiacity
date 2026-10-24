@@ -94,3 +94,4 @@ import AvenDB.ScratchRetention
 import AvenDB.PeerReceipt
 
 import AvenDB.WarmMaterialization
+import AvenDB.LabScheduling
