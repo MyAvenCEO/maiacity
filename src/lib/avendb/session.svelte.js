@@ -883,9 +883,9 @@ const qr = async (text, size) => (mac ? mac.call('qrSvg', text, size) : avendb.q
 /** What the vaults' screens do, each acting for the vault it names (./Shell.svelte's `api`, beside what its page adds). */
 const api = {
 	/** Subscribe to any targeted local query, independent of the world summary.
-	 * @param {() => any} query @param {(answer: any) => void} take @param {(error: Error) => void} [failed] */
-	observe(query, take, failed) {
-		const reader = createReactiveRead({ read: observedWindow((d, op, signal, demand) => near(d, op, { signal, demand, scoped: true })), take, failed });
+	 * @param {() => any} query @param {(answer: any) => void} take @param {(error: Error) => void} [failed] @param {(revisions: any[]) => void} [observed] */
+	observe(query, take, failed, observed) {
+		const reader = createReactiveRead({ read: observedWindow((d, op, signal, demand) => near(d, op, { signal, demand, scoped: true })), take, failed, observed });
 		const dispose = $effect.root(() => {
 			$effect(() => {
 				void revision;

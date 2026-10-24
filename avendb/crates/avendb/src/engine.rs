@@ -165,7 +165,7 @@ fn bad(why: impl Into<String>) -> Refused {
 fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
         "entry_views" => &["vault", "entries", "types", "as", "kind"],
-        "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow"],
+        "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow", "observeRevision"],
         "get" => &["entry", "schema", "line", "at", "version"],
         "pin" => &["entry", "at"],
         "checkpoint_view" => &["entry"],
@@ -878,6 +878,11 @@ fn entry_views_inner(lab: &Lab, me: SignerId, o: &Map<String, Value>, synced: &S
 /// level of `depth`, so a cycle of links ends there (`Deep`). `count` is how many rows there are in all, and `depth`
 /// how deep each was read.
 fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused> {
+    let observe_revision = match o.get("observeRevision") {
+        None => false,
+        Some(Value::Bool(value)) => *value,
+        _ => return Err(bad("observeRevision is a boolean")),
+    };
     let w = o.get("where").map(Where::of_json).transpose().map_err(bad)?.unwrap_or(Where::Yes);
     let vault = o.get("vault").map(|_| vault_of(o, "vault")).transpose()?;
     let schema = named(o)?;
@@ -941,6 +946,21 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
         }
         let mut row = row(entry, v, &attrs, &seen, record);
         row["cut"] = cut.into();
+        // Captured with the authorized row under the same Lab read. This is an
+        // opaque correlation frontier, not proof of paint or inclusion of a
+        // sender's edit. Truncated and checkpoint bases must not be treated as
+        // a complete current main-line frontier.
+        if observe_revision {
+            let (kind, heads) = if let Some(p) = checkpoint.as_ref() {
+                ("checkpoint-basis", p["basis"].as_array().cloned().unwrap_or_default())
+            } else {
+                ("main-heads", lab.history(me, entry).map(|h| ids(&h.heads(MAIN)).into_iter().map(Value::String).collect()).unwrap_or_default())
+            };
+            let complete = heads.len() <= 32;
+            row["observedRevision"] = json!({ "kind": kind,
+                "heads": heads.into_iter().take(32).collect::<Vec<_>>(),
+                "frontierComplete": complete });
+        }
         if let Some(checkpoint) = checkpoint { row["checkpoint"] = checkpoint; }
         shown.push(row);
     }

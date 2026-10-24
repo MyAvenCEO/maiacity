@@ -1,13 +1,14 @@
 import { reads } from './ops.js';
 import { beginReactiveTiming } from './reactive-latency.js';
+import { observedRevisions } from './observed-revisions.js';
 
 /** Targeted authorized reads shared by every avenDB consumer. Revisions coalesce
  * without invalidating in-flight answers. Query/owner changes abort the previous
  * scope and start independently; old engine work may finish but cannot publish.
  * There is at most one read per scope, without a timeout spawning duplicate work.
  * @param {{ read: (owner: any, query: any, signal: AbortSignal) => Promise<any>,
- *   take: (answer: any) => void, failed?: (error: Error) => void, timing?: typeof beginReactiveTiming }} options */
-export function createReactiveRead({ read, take, failed = () => {}, timing = beginReactiveTiming }) {
+ *   take: (answer: any) => void, failed?: (error: Error) => void, timing?: typeof beginReactiveTiming, observed?: (revisions: ReturnType<typeof observedRevisions>) => void }} options */
+export function createReactiveRead({ read, take, failed = () => {}, timing = beginReactiveTiming, observed = () => {} }) {
 	let closed = false;
 	/** @type {{ owner: any, query: any, key: string, controller: AbortController, running: boolean, again: boolean, emitted: (answer: any) => void } | null} */
 	let scope = null;
@@ -21,7 +22,13 @@ export function createReactiveRead({ read, take, failed = () => {}, timing = beg
 				try {
 					if (!reads(s.query)) throw new Error('An avenDB observer accepts read operations only.');
 					const answer = await read(s.owner, s.query, s.controller.signal);
-					if (scope === s && !closed) { take(answer); s.emitted(answer); }
+					if (scope === s && !closed) {
+						take(answer); s.emitted(answer);
+						if (s.query?.observeRevision === true) {
+							// Diagnostic plumbing must not turn successful UI delivery into failure.
+							try { observed(observedRevisions(answer)); } catch {}
+						}
+					}
 				} catch (error) {
 					if (scope === s && !closed) failed(error instanceof Error ? error : new Error(String(error)));
 				}
