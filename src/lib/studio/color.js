@@ -1,7 +1,7 @@
 // The studio's side of the colour standard (contract C5): what each picture is, how the viewer brings it in, and the
 // grades as data. The maths and the tables live in game/film/color.js (stream A) — imported, never copied.
 import { PROFILES, profileOf, ODT } from '../../../game/film/color.js';
-import { isAven } from './avenref.js';
+import { isAven } from '../media/ref.js';
 
 export { PROFILES, profileOf, ODT };
 

@@ -55,7 +55,7 @@ pub(crate) type Told = Arc<dyn Fn(f64, &str) + Send + Sync>;
 
 /// The footage a cut plays: the studio's library items for it the page named (src/lib/studio/aven.js `libraryOf`),
 /// each by its avenDB reference (`aven:…`), and any other reference a clip names, told from the reference alone (its
-/// media type rides on it: src/lib/studio/avenref.js). Every file's bytes are read in place from avenDB's device
+/// media type rides on it: src/lib/media/ref.js). Every file's bytes are read in place from avenDB's device
 /// (aven.rs); the legacy vault is not read.
 struct Footage {
     rt: tokio::runtime::Handle,
@@ -79,16 +79,16 @@ impl Footage {
             if lib.media.contains_key(h) {
                 continue;
             }
-            let Some(Ok(f)) = crate::aven::file_of_ref(h) else { continue };
-            let mime = h.splitn(5, ':').nth(4).map(percent_decode).unwrap_or_default();
+            let Ok(reference) = crate::media_ref::MediaRef::parse(h) else { continue };
+            let mime = reference.media;
             let kind = mime.split('/').next().filter(|k| ["video", "audio", "image"].contains(k)).unwrap_or("other").to_string();
-            lib.add(Media { hash: h.to_string(), mime, kind, size: f.len, title: String::new(), meta: Value::Null });
+            lib.add(Media { hash: h.to_string(), mime, kind, size: reference.file.len, title: String::new(), meta: Value::Null });
         }
         lib
     }
 
     fn add(&mut self, m: Media) {
-        if crate::aven::file_of_ref(&m.hash).is_none() {
+        if crate::media_ref::MediaRef::parse(&m.hash).is_err() {
             return;
         }
         if let Some(p) = m.meta.get("proxy").and_then(Value::as_str).filter(|_| m.meta.get("role").and_then(Value::as_str) != Some("proxy")) {
@@ -97,25 +97,6 @@ impl Footage {
         self.ext.insert(m.hash.clone(), extension(&m.title, &m.mime, &m.meta));
         self.media.insert(m.hash.clone(), m);
     }
-}
-
-/// "%2F" and the like back to their bytes (a reference's media type is percent-encoded).
-fn percent_decode(s: &str) -> String {
-    let b = s.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(v) = u8::from_str_radix(std::str::from_utf8(&b[i + 1..i + 3]).unwrap_or("zz"), 16) {
-                out.push(v);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(b[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
 }
 
 /// A file's extension on disk: the one its name has, else its type's.
@@ -157,8 +138,7 @@ impl Library for Footage {
         let m = self.media.get(hash).with_context(|| format!("{hash} is no avenDB file the cut names"))?;
         let name = if m.title.is_empty() { "file".to_string() } else { m.title.clone() };
         let ext = self.ext.get(hash).map(String::as_str).unwrap_or("bin");
-        let f = crate::aven::file_of_ref(hash).with_context(|| format!("{hash} is no avenDB file"))?.map_err(anyhow::Error::msg)?;
-        let src = crate::aven::source_on(&self.rt, f, &format!("{name}.{ext}")).map_err(anyhow::Error::msg)?;
+        let src = crate::aven::source_on(&self.rt, hash, &format!("{name}.{ext}")).map_err(anyhow::Error::msg)?;
         self.files.lock().unwrap().insert(hash.to_string(), src.clone());
         Ok(src)
     }

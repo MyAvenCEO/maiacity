@@ -562,7 +562,7 @@ pub(crate) async fn program(
     for c in v1 {
         let Some(file) = files.get(&c.id) else { continue };
         // an avenDB file, by its reference (the page names each clip's proxy, else its original)
-        let source = crate::proxies::source_of(file, &format!("{}.mov", c.id))?;
+        let source = crate::aven::source_of_ref(file, &format!("{}.mov", c.id))?;
         let profile = profiles.get(&c.id).map(String::as_str).unwrap_or("rec709");
         let journey = vault_media::cst::journey(profile).or_else(|| vault_media::cst::journey("rec709")).ok_or("no journey")?.kernel_args();
         let (steps, cubes) = crate::proxies::graded(t, c, 33).await?;

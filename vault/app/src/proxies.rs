@@ -1,7 +1,7 @@
 //! Colour, for the studio and the rules: the colour journeys into the working space (ACEScct) a proxy or a grading still
 //! is made through (vault_media::cst; the `proxy` and `still` rules: aven.rs), the viewer's cubes (`color_lut`,
 //! `color_grade`), a clip's whole grade baked for the player (`graded`) and a shot as the film shows it (`color_frame`).
-//! Every file is avenDB's, named by its reference (`aven:…`: aven.rs `ref_of`); the legacy vault is not read. The
+//! Every file is avenDB's, named by its reference (`aven:…`: media_ref.rs); the legacy vault is not read. The
 //! maths is vault-render's and vault-media's alone. And how short of memory the Mac is, which heavy work waits on.
 
 use std::collections::HashMap;
@@ -84,7 +84,7 @@ pub fn color_lut(profile: String) -> crate::Res<tauri::ipc::Response> {
 #[tauri::command]
 pub async fn studio_sound(r: String, name: String, rate: u32) -> crate::Res<tauri::ipc::Response> {
     crate::gate()?;
-    let src = source_of(&r, &name)?;
+    let src = crate::aven::source_of_ref(&r, &name)?;
     let rate = rate.clamp(8_000, 96_000);
     let samples = tauri::async_runtime::spawn_blocking(move || objc2::rc::autoreleasepool(|_| vault_media::audio::decode_mono(src, rate, &mut |_| {})))
         .await
@@ -123,12 +123,6 @@ pub async fn color_grade(stacks: Vec<serde_json::Value>) -> crate::Res<tauri::ip
     Ok(tauri::ipc::Response::new(out))
 }
 
-/// File `r` of avenDB (its reference, `aven:…`) read in place, `name`'s extension saying what it is. A legacy vault hash
-/// is no longer read: its file is brought into avenDB first (the film seed's import, src/lib/studio/importer.js).
-pub(crate) fn source_of(r: &str, name: &str) -> crate::Res<vault_media::Source> {
-    crate::aven::source_of_ref(r, name).unwrap_or_else(|| Err(format!("{r} is no avenDB file: the legacy vault is not read any more")))
-}
-
 /// The creative LUTs named (by their avenDB references), read from avenDB.
 async fn luts_of(hashes: &[String]) -> crate::Res<HashMap<String, vault_render::Lut3d>> {
     let mut out = HashMap::new();
@@ -136,7 +130,7 @@ async fn luts_of(hashes: &[String]) -> crate::Res<HashMap<String, vault_render::
         if out.contains_key(h) {
             continue;
         }
-        let src = source_of(h, "look.cube")?;
+        let src = crate::aven::source_of_ref(h, "look.cube")?;
         let text = tauri::async_runtime::spawn_blocking(move || src.read_all()).await.map_err(|e| format!("{e}"))?.map_err(|e| format!("{e:#}"))?;
         out.insert(h.clone(), vault_render::Lut3d::from_cube_str(h, &String::from_utf8_lossy(&text)).map_err(|e| format!("{e:#}"))?);
     }
@@ -189,7 +183,7 @@ pub async fn color_frame(
         (None, Some(f)) => (f, Some((profile.unwrap_or_else(|| "rec709".into()), at.unwrap_or(0.0)))),
         (None, None) => return Err("a still or a file to show".into()),
     };
-    let src = source_of(&hash, if frame.is_some() { "frame.mov" } else { "still.png" })?;
+    let src = crate::aven::source_of_ref(&hash, if frame.is_some() { "frame.mov" } else { "still.png" })?;
     // the clip's whole grade: its stacks as steps, their colour runs baked with their LUTs read from avenDB
     let grade = graded(&t, &c, 33).await?;
     let w = width.unwrap_or(960).clamp(64, 3840);

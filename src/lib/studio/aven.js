@@ -1,7 +1,7 @@
 /*
  * The studio's footage from avenDB (Jobs and studio 2.0, J1-J7 in the studio's views): every original a vault of the
  * person holds, with what the rules made of it (./jobs/rules.js: probe, proxy, still, transcript, analysis), as the
- * studio's library items (`MediaItem`, ./types.js), beside the legacy vault's.
+ * studio's library items (`MediaItem`, ./types.js), with avenDB as their only storage owner.
  *
  * An avenDB file is named where the legacy studio names a vault file by its hash, by a reference that carries what reading
  * it takes: `aven:<root>:<sealed size>:<length>:<media type>` (`avenRef`). The Mac app's Rust reads it in place through
@@ -10,8 +10,8 @@
 
 import { madeIndex, tasksOf } from './jobs/tasks.js';
 
-export { avenRef, avenUrl, isAven } from './avenref.js';
-import { avenRef, avenUrl } from './avenref.js';
+export { avenRef, avenUrl, isAven } from '../media/ref.js';
+import { avenRef, avenUrl } from '../media/ref.js';
 
 /** @param {string} s */
 const parse = (s) => {
