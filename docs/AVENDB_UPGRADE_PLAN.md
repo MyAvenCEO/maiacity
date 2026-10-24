@@ -10,8 +10,13 @@ Last maintained: 2026-10-25. Current execution order: keep three subagents plus 
 ### Separate working-set integration — 25 October
 
 
-**Validation queue update:** release native authentication Rust tests passed4/4 (cold debug build31m01s). The local corrected S3 engine regression is running next; combined working-set core/warm/shared/proposal tests follow. Working-set Lean passed121jobs. Release checkout `build/index.html` currently contains a unit-test-only placeholder for Tauri compilation: it is NOT a distributable frontend. Before any Mac installation, build the real frontend from the reviewed matching-WASM commit and then build/sign the actual app. No test executable or placeholder may be installed as the dev app. Existing installed711fcebe remains unchanged.
+**Current verified integration status (25 October):** release native authentication tests passed **4/4** and corrected S3 regression passed **1/1**. Release PR1271 is open; its remaining net/browser failures have focused fixes awaiting final validation. Full release net tests are currently compiling; serialize Cargo builds. Working-set Lean passed121jobs. The first warm branch core run passed266 and failed2; both failures now have corrections integrated, but the combined rerun has **not passed yet**.
 
+Warm corrections are integrated and pushed: [b0b7559e](https://github.com/MyAvenCEO/maiacity/commit/b0b7559e) hydrates authorized history for visibility and equivalence; [38beb7ab](https://github.com/MyAvenCEO/maiacity/commit/38beb7ab) and [910fe191](https://github.com/MyAvenCEO/maiacity/commit/910fe191) repair test fixtures; [84cb91c4](https://github.com/MyAvenCEO/maiacity/commit/84cb91c4) normalizes checkpoint scratch against authorized MAIN state and counted causal history; [42882c67](https://github.com/MyAvenCEO/maiacity/commit/42882c67) checks scratch-retention independence. Review found no new concrete authorization defect; runtime verification remains pending.
+
+The installed711fcebe app still showed “Waiting for your passkey5880.0s” after reported approval. Reconnect acceptance remains **unverified**. Do not classify this as replay latency. Existing account/vault data was not reset.
+
+Release checkout `build/index.html` contains a unit-test-only placeholder for Tauri compilation: **NOT a distributable frontend**. Before any Mac installation build the real frontend from the reviewed matching-WASM commit, then build/sign the actual app.
 
 This branch, `codex/avendb-working-set`, is separate from release PR1271 (`codex/avendb-bootstrap-followup`, current release candidate `dacbbf0a`). Neither branch is deployed; installed production/dev app remains711fcebe pending successful delivery and acceptance. Do not push these broader changes into the frozen release merely to synchronize status.
 
@@ -19,7 +24,7 @@ This branch, `codex/avendb-working-set`, is separate from release PR1271 (`codex
 - **Doing — shared/proposal receive on owner-held partial bases:** [bf482a3a](https://github.com/MyAvenCEO/maiacity/commit/bf482a3a), [ed526552](https://github.com/MyAvenCEO/maiacity/commit/ed526552). Group-free proof chains retain canonical authorization; proposal forks fetch exact causal bodies before judgment. Rust validation pending. Non-owner adoption, local shared/proposal partial authoring, cap groups and compact per-line checkpoints remain open. See avendb/docs/WRITABLE-PARTIAL-BOOTSTRAP.md.
 - **Doing — Docs view demand:** [6ee54020](https://github.com/MyAvenCEO/maiacity/commit/6ee54020), typed tests [636f7751](https://github.com/MyAvenCEO/maiacity/commit/636f7751). Scoped story/post collection and selected-note observation replace whole-world discovery. Isolated full application check passed0errors/27warnings and8focused tests passed. Combined validation and delivery pending; no global completeness claim.
 
-Compiler queue: the native authentication test build in the release checkout is active; do not start a competing Cargo build. Next validate the corrected release S3 engine regression, then combined working-set core/warm/proposal regressions. Separate Lean integration is running. Preserve all account/vault/node data; physical Mac offline/reconnect and iPhone/iPad acceptance remain open, as does the full original M3–M7 scope recorded below.
+Compiler queue: full release net tests first, then combined working-set core/warm/shared/proposal regressions. Preserve all account/vault/node data. Physical Mac offline/reconnect and iPhone/iPad acceptance remain open, as does the original M3–M7 scope below. Older dated snapshots below are historical evidence, not current live process status.
 
 
 ### Current release and separate follow-up status — 24 October 2026
