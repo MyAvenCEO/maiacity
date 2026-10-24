@@ -1,4 +1,4 @@
-/-! Proposed bounded discovery hints, not an implemented protocol. Authorization
+/-! Bounded discovery hints: abstract contract for the implementation. Authorization
 precedes positive-type matching. IDs remain untrusted scheduling hints. -/
 namespace AvenDB.QueryDiscovery
 structure Entry where
@@ -34,4 +34,12 @@ theorem unauthorized_hidden (a : Nat) (types : List Nat) (entries : List Entry) 
 def completeFromHint (_entries : List Entry) : Bool := false
 
 theorem no_global_completion (entries : List Entry) : completeFromHint entries = false := rfl
+-- A prepared hint body can be released only against the exact captured policy identity.
+-- Rust uses LogRevision allocation identity; this model abstracts that identity as Nat.
+def release (captured current : Nat) (entries : List Entry) : List Entry :=
+  if captured = current then entries else []
+
+theorem changed_policy_withholds (captured current : Nat) (entries : List Entry)
+    (h : captured ≠ current) : release captured current entries = [] := by
+  simp [release, h]
 end AvenDB.QueryDiscovery

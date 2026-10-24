@@ -4179,6 +4179,29 @@ impl Lab {
         self.batches.get(&d)
     }
 
+    /// Bounded positive-type discovery for an authenticated peer. Current policy (including received
+    /// revocations not yet materialized) authorizes BEFORE any type is inspected. IDs are only hints;
+    /// no empty/truncated result establishes completeness, and normal signed receive remains required.
+    pub fn discover_types(&self, me: SignerId, requester: SignerId, vault: Option<VaultId>, types: &[String]) -> Vec<EntryId> {
+        if types.is_empty() || types.len() > 8 || types.iter().any(|ty| ty.is_empty() || ty.len() > 64) { return vec![]; }
+        let st = self.latest(me);
+        let opens = st.opens(&[KeyName::Signer(requester)]);
+        let selector = crate::ops::Where::of_json(&serde_json::json!({"type": types}))
+            .expect("bounded positive types").plan();
+        let mut audiences = HashMap::new();
+        st.entries().iter().filter(|en| {
+            let audience = KeyFam::Audience(en.vault, en.audience());
+            *audiences.entry(audience).or_insert_with(||
+                (st.public_key(audience) || st.entitled(requester, audience))
+                    && opens.contains(&st.current(audience)))
+                && st.entry_key(en.id).is_some_and(|key| opens.contains(&key))
+                && st.wants(requester, en)
+                && vault.is_none_or(|v| en.vault == v)
+                && self.landed(me, en.id)
+        }).filter(|en| self.meaning(me, en.id).is_some_and(|meaning| selector.matches(&meaning.attrs)))
+            .take(64).map(|en| en.id).collect()
+    }
+
     /// What device `d` makes of the edits it holds, as it last brought itself up to date: what `log(d).view()` says.
     pub fn state(&self, d: SignerId) -> &State {
         self.held(d).view()

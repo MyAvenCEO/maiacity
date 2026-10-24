@@ -359,11 +359,9 @@ async fn held_announcement_coalesces_new_entry_wake_without_waiting_for_retry() 
     node.shutdown().await.unwrap();
 }
 
-/// Proposed query-demand acceptance, deliberately opt-in until its protocol/security review.
-/// Unlike a live-edit fixture, every remote entry predates the first authenticated announcement.
-/// No target ID is supplied to the receiving node. The proposed `queries` field is not implemented.
+/// Every remote entry predates the first authenticated announcement. No target ID is supplied
+/// to the receiving application; discovery must hydrate its view while background work is held.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-#[ignore = "RED specification: bounded authenticated query discovery is not implemented"]
 async fn an_active_type_query_discovers_existing_entries_without_unrelated_history() {
     let mut w = world();
     let coop = handbook_ready(&mut w);
@@ -395,11 +393,13 @@ async fn an_active_type_query_discovers_existing_entries_without_unrelated_histo
         "where":{"type":["active-document"]}, "select":[]});
     let initial = phone.op(query.clone()).await.unwrap();
     assert_eq!(initial["ok"]["rows"], serde_json::json!([]));
-    // This is a proposed local scheduling API, not a claim that current demand supports selectors.
+    // Local capability and lease acceptance are distinct; remote discovery is always incomplete.
     // Requester identity must be bound by the connection, never selected by this payload.
-    let _ack = phone.op(serde_json::json!({"op":"demand", "scope":"ab".repeat(16),
+    let ack = phone.op(serde_json::json!({"op":"demand", "scope":"ab".repeat(16),
         "revision":1, "entries":[],
         "queries":[{"vault":coop.to_hex(), "types":["active-document"]}]})).await.unwrap();
+    assert_eq!(ack["ok"]["discovery_supported"], true);
+    assert_eq!(ack["ok"]["discovery_complete"], false);
     let useful = time::timeout(Duration::from_secs(2), async {
         loop {
             let answer = phone.op(query.clone()).await.unwrap();
@@ -411,7 +411,7 @@ async fn an_active_type_query_discovers_existing_entries_without_unrelated_histo
     let unrelated_absent = phone.read(move |lab, me|
         unrelated.iter().all(|entry| lab.item(me, *entry).is_none())).await;
     let incomplete = phone.synced().await;
-    // Clean up before asserting RED, so background tasks/locks never leak to another test.
+    // Clean up before asserting, so background tasks/locks never leak to another test.
     drop(stalled);
     phone.shutdown().await.unwrap();
     mac.shutdown().await.unwrap();
