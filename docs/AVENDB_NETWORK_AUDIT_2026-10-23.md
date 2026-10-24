@@ -36,3 +36,15 @@ No synchronized avenDB useful-byte/wall-clock measurement was taken; therefore n
 For physical iPhone/iPad, use the existing [bounded diagnostic page](https://maia.city/diagnostics/network/) on each actual device, select its device label and note Wi-Fi/cellular/VPN, press Start and keep the page foregrounded, then share its local Copy/Save JSON. The page uses at most 40 MiB download + 8 MiB random upload plus 256 KiB manifest discovery; it cancels when backgrounded. No authenticated remote browser surface for those physical devices was available in this audit, so their bandwidth is still open and must not be inferred from Mac peer-sync counters or desktop emulation. Results are not automatically uploaded anywhere.
 
 Release/restart checks are separate: [no-reset acceptance sequence](AVENDB_RELEASE_ACCEPTANCE.md).
+
+
+## Physical Home Screen PWA samples — 2026-10-24
+
+Both user-provided runs completed in standalone mode on deployed revision23286402. The user identified the first as iPad although its selector remained iPhone. Connection type was not supplied. Sanitized evidence: [mobile network measurements](evidence/avendb-mobile-network-2026-10-24.json).
+
+| Device | Cloudflare download | Cloudflare upload | Maia range download | Maia headers |
+|---|---:|---:|---:|---:|
+| iPad |54.25Mbps|23.71Mbps|129.80Mbps|35ms|
+| iPhone |196.08Mbps|71.32Mbps|105.35Mbps|19ms|
+
+Each Maia request received8MiB with HTTP206; download32MiB and upload8MiB completed. Cloudflare and Maia are different paths/protocols/sample sizes, so their rates are not interchangeable maxima. Small-entry10–20second delays are not explained by these HTTP capacity samples alone. Actual accepted unique-edit throughput and end-to-end latency remain unmeasured. Short diagnostic completion proves the panel is usable on both devices, not that the repeated iPhone unlock symptom is permanently resolved.
