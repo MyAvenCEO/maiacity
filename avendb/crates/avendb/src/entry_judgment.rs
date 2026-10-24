@@ -432,7 +432,7 @@ impl Lab {
             return None;
         }
         let store = self.held(on);
-        let key = store.keys.first(name)?;
+        let key = store.keys.get(&keys::edit_key(sealed)?, name)?;
         let bytes = keys::open_edit(key, sealed, &judgment_context(vault, entry))?;
         if bytes.len() > MAX_BYTES {
             return None;

@@ -161,7 +161,7 @@ impl Lab {
         if sealed.len() > MAX_BYTES + 128 { return None; }
         let (vault, stated, name) = self.projection_authority(on, snapshot, entry)?;
         if stated.slice.size != sealed.len() as u64 || stated.slice.hash != crate::hash::content(sealed) { return None; }
-        let key = self.held(on).keys.first(name)?;
+        let key = self.held(on).keys.get(&keys::edit_key(sealed)?, name)?;
         let bytes = keys::open_edit(key, sealed, &context(vault, entry))?;
         let lines = decode(&bytes, vault, entry, &stated.basis)?;
         Some(AuthenticatedEntryBaseEnvelope { entry, snapshot, lines })
