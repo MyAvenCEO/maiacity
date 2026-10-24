@@ -27,4 +27,12 @@ def promote (required learned : List Nat) := (required ++ learned).take 512
 theorem explicit_first (id : Nat) (learned : List Nat) :
     (promote [id] learned).head? = some id := by simp [promote]
 
+-- Executing a rank starts with its known explicit entries; discovery of lower
+-- ranks cannot become a prerequisite. This models ordering, not elapsed time.
+def rankWork (explicit discovered : List Nat) := explicit ++ discovered
+
+theorem explicit_prefix_before_discovery (explicit discovered : List Nat) :
+    (rankWork explicit discovered).take explicit.length = explicit := by
+  simp [rankWork]
+
 end AvenDB.ViewDemand
