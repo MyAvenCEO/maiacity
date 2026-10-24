@@ -1225,8 +1225,7 @@ mod tests {
         let snapshot=lab.complete(mac,prepared.draft,&[]).unwrap();
         let offer=lab.entry_projection_offer(mac,phone,entry).unwrap();
         lab.receive(phone,offer.evidence,vec![]);
-        let writer=crate::disk::open(&folder).unwrap().writer().unwrap();
-        let shelf=writer.shelf();
+        let shelf=crate::disk::open(&folder).unwrap();
         let node=Node::spawn(lab.split(phone,&[owner],[73;32]),phone,Options { shelf:Some(shelf.clone()), ..Options::local() }).await.unwrap();
         node.tasks.lock().unwrap().iter().for_each(|task|task.abort());
         node.shared.save().await.unwrap();
@@ -1241,7 +1240,6 @@ mod tests {
         assert!(!anchors.is_empty());
         assert!(avendb::lab::Backup::new(signed,keys).with_bootstrap_bytes(&anchors).is_some());
         node.shutdown().await.unwrap();
-        drop(writer);
         std::fs::remove_dir_all(folder).ok();
     }
 
