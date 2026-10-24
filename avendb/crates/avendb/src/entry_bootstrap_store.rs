@@ -194,24 +194,35 @@ impl Backup {
             return None;
         }
         let mut r = WireReader::new(bytes);
-        let prefix = b"avenDB bootstrap anchors 1\n";
-        if r.take(prefix.len()).ok()? != prefix {
+        let v1 = b"avenDB bootstrap anchors 1\n";
+        let v2 = b"avenDB bootstrap anchors 2\n";
+        let prefix = r.take(v2.len()).ok()?;
+        if prefix != v1 && prefix != v2 {
             return None;
         }
+        let digest_fence = prefix == v2;
         let mut anchors = BTreeMap::new();
         for _ in 0..bounded_count(&mut r, 68, 16)? {
             let entry = EntryId::decode(&mut r).ok()?;
             let snapshot = EditId::decode(&mut r).ok()?;
             let sealed = r.bytes().ok()?;
-            let suffix = seq::<EditId>(&mut r, 32, 1024)?;
-            // Detect a torn pair: the durable anchor must not name acknowledged suffix
-            // edits absent from the signed-log backup supplied with it.
-            if !self.signed.iter().any(|s| s.edit.id() == snapshot)
-                || !suffix
+            if !self.signed.iter().any(|s| s.edit.id() == snapshot) {
+                return None;
+            }
+            if digest_fence {
+                let count = u64::decode(&mut r).ok()?;
+                let root: [u8; 32] = r.take(32).ok()?.try_into().ok()?;
+                if (count, root) != anchor_frontier(entry, self.signed.iter()) {
+                    return None;
+                }
+            } else {
+                let suffix = seq::<EditId>(&mut r, 32, 1024)?;
+                if !suffix
                     .iter()
                     .all(|id| self.signed.iter().any(|s| s.edit.id() == *id))
-            {
-                return None;
+                {
+                    return None;
+                }
             }
             if sealed.len() > MAX_BYTES + 128 || anchors.insert(entry, (snapshot, sealed)).is_some()
             {
@@ -231,7 +242,7 @@ mod tests {
     use super::*;
     use crate::cast::{document, human_on};
     #[test]
-    fn bootstrap_companion_1024_boundary_is_recoverable_1025_refuses_encoding() {
+    fn bootstrap_companion_frontier_has_fixed_size_beyond_1024_writes() {
         let mut lab = Lab::new();
         let owner = lab.passkey("Owner");
         let mac = lab.device_of(owner, "Mac");
@@ -256,6 +267,23 @@ mod tests {
             .collect();
         let snapshot = backup.signed[0].edit.id();
         backup.bootstrap_bases.insert(entry, (snapshot, vec![1]));
+        let mut legacy = b"avenDB bootstrap anchors 1\n".to_vec();
+        1u32.encode(&mut legacy);
+        entry.encode(&mut legacy);
+        snapshot.encode(&mut legacy);
+        vec![1u8].encode(&mut legacy);
+        backup
+            .signed
+            .iter()
+            .map(|s| s.edit.id())
+            .collect::<Vec<_>>()
+            .encode(&mut legacy);
+        assert!(
+            Backup::new(backup.signed.clone(), backup.blobs.values().cloned())
+                .with_bootstrap_bytes(&legacy)
+                .is_some(),
+            "v1 remains readable"
+        );
         let bytes = backup.bootstrap_bytes().expect("exact bound is encodable");
         assert!(
             Backup::new(backup.signed.clone(), backup.blobs.values().cloned())
@@ -265,15 +293,41 @@ mod tests {
         let mut extra = template;
         extra.edit.depth = 1024;
         backup.signed.push(extra);
+        let larger = backup
+            .bootstrap_bytes()
+            .expect("no arbitrary write-count ceiling");
+        assert_eq!(larger.len(), bytes.len(), "frontier has constant wire size");
         assert!(
-            backup.bootstrap_bytes().is_none(),
-            "refuse before acknowledging an undecodable save"
+            Backup::new(backup.signed.clone(), backup.blobs.values().cloned())
+                .with_bootstrap_bytes(&larger)
+                .is_some()
         );
         assert!(
-            Backup::new(backup.signed, backup.blobs.values().cloned())
+            Backup::new(backup.signed.clone(), backup.blobs.values().cloned())
                 .with_bootstrap_bytes(&bytes)
-                .is_some(),
-            "previous durable anchor remains usable"
+                .is_none(),
+            "stale companion is not an exact committed frontier"
+        );
+        let mut reordered = backup.signed.clone();
+        reordered.swap(1, 2);
+        assert!(
+            Backup::new(reordered, backup.blobs.values().cloned())
+                .with_bootstrap_bytes(&larger)
+                .is_none()
+        );
+        let mut corrupt = larger.clone();
+        *corrupt.last_mut().unwrap() ^= 1;
+        assert!(
+            Backup::new(backup.signed.clone(), backup.blobs.values().cloned())
+                .with_bootstrap_bytes(&corrupt)
+                .is_none()
+        );
+        backup.signed.pop();
+        assert!(
+            Backup::new(backup.signed, backup.blobs.values().cloned())
+                .with_bootstrap_bytes(&larger)
+                .is_none(),
+            "torn suffix rejected"
         );
     }
 
@@ -461,6 +515,23 @@ mod tests {
     }
 }
 
+/// Ordered signed-log frontier. This is a consistency receipt, not authorization.
+/// BLAKE3 collision resistance is the binding assumption; every edit is still verified.
+fn anchor_frontier<'a>(
+    entry: EntryId,
+    signed: impl Iterator<Item = &'a crate::sign::Signed>,
+) -> (u64, [u8; 32]) {
+    let mut h = blake3::Hasher::new_derive_key("avenDB durable entry anchor frontier 2");
+    h.update(&entry.0);
+    let mut count = 0u64;
+    for s in signed.filter(|s| matches!(s.edit.action,Action::Write{entry:e,..}if e==entry)) {
+        h.update(&s.edit.id().0);
+        count += 1;
+    }
+    h.update(&count.to_be_bytes());
+    (count, *h.finalize().as_bytes())
+}
+
 fn encode_anchors<'a>(
     anchors: &Anchors,
     signed: impl Iterator<Item = &'a crate::sign::Signed> + Clone,
@@ -471,7 +542,7 @@ fn encode_anchors<'a>(
     if anchors.len() > 16 {
         return None;
     }
-    let mut b = b"avenDB bootstrap anchors 1\n".to_vec();
+    let mut b = b"avenDB bootstrap anchors 2\n".to_vec();
     (anchors.len() as u32).encode(&mut b);
     for (entry, (snapshot, sealed)) in anchors {
         if sealed.len() > MAX_BYTES + 128 || !signed.clone().any(|s| s.edit.id() == *snapshot) {
@@ -480,18 +551,11 @@ fn encode_anchors<'a>(
         entry.encode(&mut b);
         snapshot.encode(&mut b);
         sealed.encode(&mut b);
-        // Depth is not causality: an unseen concurrent write may predate the snapshot.
-        // Fence every held entry write (including any held baseline facts) instead.
-        let suffix: Vec<_> = signed
-            .clone()
-            .filter(|s| matches!(s.edit.action,Action::Write{entry:e,..}if e==*entry))
-            .map(|s| s.edit.id())
-            .take(1025)
-            .collect();
-        if suffix.len() > 1024 {
-            return None;
-        }
-        suffix.encode(&mut b);
+        // Fixed-size exact durable frontier. Depth is not causality; every held
+        // entry write contributes, including concurrent writes older than the base.
+        let (count, root) = anchor_frontier(*entry, signed.clone());
+        count.encode(&mut b);
+        b.extend_from_slice(&root);
     }
     Some(b)
 }
