@@ -1215,12 +1215,12 @@ async fn a_note_takes_proposals_merges_and_forks_and_the_database_shows_every_re
     let ends = |l: &avendb::lens::Lens| (l.from().to_hex(), l.to().to_hex());
     let shipped = [&avendb::lens::ARTICLE_LENS, &avendb::lens::SPARK_LENS, &avendb::lens::FUNCTION_LENS]
         .into_iter()
-        .chain([&avendb::lens::VIEW_LENS, &avendb::lens::POST_LENS, &avendb::lens::STORY_LENS, &avendb::lens::AIP_LENS])
+        .chain([&avendb::lens::VIEW_LENS, &avendb::lens::POST_LENS, &avendb::lens::STORY_LENS, &avendb::lens::AIP_LENS, &avendb::lens::REVIEW_LENS])
         .map(|l| ends(l))
         .collect::<Vec<_>>();
     let hex = |l: &Value, end: &str| l[end].as_str().unwrap_or_default().to_string();
     let got: Vec<_> = lenses.iter().map(|l| (hex(l, "from"), hex(l, "to"))).collect();
-    assert_eq!(got, shipped, "the lenses avenDB ships, from article, spark, function, view and post v1 to v2");
+    assert_eq!(got, shipped, "the lenses avenDB ships, including the historical review v1 to current review v2 bridge");
     // her database's history, every edit her browser holds, in the order it took them: her vault's genesis, her
     // browser added to it, avenCEO's relay on the whole of it, and each write, every one counted and ML-DSA-65 signed
     let log = run(&first, json!({ "op": "log" })).await.expect("its log");
