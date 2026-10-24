@@ -76,7 +76,7 @@
 
 #[path = "entry_projection.rs"]
 mod entry_projection;
-pub use entry_projection::{PreparedEntryProjection, VerifiedEntryProjection};
+pub use entry_projection::{EntryProjectionOffer, PreparedEntryProjection, VerifiedEntryProjection};
 
 #[path = "lab/warm_materialization.rs"]
 mod warm_materialization;

@@ -160,7 +160,7 @@ pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
                 Ok(Ok(answer)) => {
                     // The envelope retains range response memory admission through write_all, including a stalled
                     // peer. Closing/cancellation releases only after every blocking worker drops its Arc too.
-                    let deadline = if answer._range.is_some() { crate::edit_transfer::DEADLINE } else { PAGE_WAIT };
+                    let deadline = if answer._range.is_some() { crate::edit_transfer::DEADLINE } else if answer._checkpoint.is_some() { crate::checkpoint_delivery::DEADLINE } else { PAGE_WAIT };
                     if matches!(n0_future::time::timeout(deadline, send.write_all(&answer.bytes)).await, Ok(Ok(()))) {
                         send.finish().ok();
                     } else { send.reset(REFUSED).ok(); }
@@ -175,6 +175,7 @@ pub(crate) async fn serve(shared: Arc<Shared>, peer: Peer) {
 struct Answer {
     bytes: Vec<u8>,
     _range: Option<Arc<crate::edit_transfer::Serving>>,
+    _checkpoint: Option<Arc<tokio::sync::OwnedSemaphorePermit>>,
 }
 
 /// `request`, what device `me` of `lab` asks a peer (`Lab::request`), cut to the logs `logs`, for the peer to answer
@@ -266,20 +267,29 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
     recv.read_exact(&mut kind).await?;
     let kind = kind[0];
     let range = if kind == crate::edit_ranges::KIND { Some(shared.edit_transfer.serving()?) } else { None };
+    // Hold checkpoint response memory admission until write_all completes, including a slow
+    // reader. Acquiring before body allocation prevents queued peers retaining response buffers.
+    let checkpoint = if kind == crate::checkpoint_delivery::KIND {
+        Some(Arc::new(shared.discovery_answer.clone().try_acquire_owned().context("checkpoint provider busy")?))
+    } else { None };
     let limit = match kind {
         crate::transports::control::KIND => crate::transports::control::LIMIT,
         crate::edit_ranges::KIND => crate::edit_ranges::CONTROL_BYTES,
         crate::discovery::KIND => crate::discovery::REQUEST_LIMIT,
+        crate::checkpoint_delivery::KIND => crate::checkpoint_delivery::REQUEST_LIMIT,
         crate::peer_receipts::KIND => crate::peer_receipts::REQUEST_LIMIT,
         _ => MESSAGE_LIMIT - 1,
     };
-    let deadline = if range.is_some() { crate::edit_transfer::DEADLINE } else { PAGE_WAIT };
+    let deadline = if range.is_some() { crate::edit_transfer::DEADLINE } else if checkpoint.is_some() { crate::checkpoint_delivery::DEADLINE } else { PAGE_WAIT };
     let message = n0_future::time::timeout(deadline, recv.read_to_end(limit)).await.context("request body deadline")??;
-    let bytes = answer_body(shared, peer, kind, &message, range.clone()).await?;
-    Ok(Answer { bytes, _range: range })
+    let preparing = answer_body(shared, peer, kind, &message, range.clone(), checkpoint.clone());
+    let bytes = if checkpoint.is_some() {
+        n0_future::time::timeout(crate::checkpoint_delivery::DEADLINE, preparing).await.context("checkpoint preparation deadline")??
+    } else { preparing.await? };
+    Ok(Answer { bytes, _range: range, _checkpoint: checkpoint })
 }
 
-async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], range: Option<Arc<crate::edit_transfer::Serving>>) -> Result<Vec<u8>> {
+async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], range: Option<Arc<crate::edit_transfer::Serving>>, checkpoint: Option<Arc<tokio::sync::OwnedSemaphorePermit>>) -> Result<Vec<u8>> {
     let device = peer.device;
     // a reply packed where the request asks for it (K5), whole otherwise
     let packed = kind & PACKED != 0 && matches!(kind & !PACKED, REQUEST | ASK_LOGS | ASK_VAULTS);
@@ -293,6 +303,7 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
     };
     match kind {
         crate::discovery::KIND => crate::discovery::answer(shared, peer, body).await,
+        crate::checkpoint_delivery::KIND => crate::checkpoint_delivery::answer(shared, peer, body, checkpoint.context("missing checkpoint response admission")?).await,
         crate::peer_receipts::KIND => crate::peer_receipts::answer(shared, peer, body).await,
         REQUEST | ASK_LOGS | ASK_VAULTS => {
             let reply = authorized_reply(shared, peer, kind, body).await?;

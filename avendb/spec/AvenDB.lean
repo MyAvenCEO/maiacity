@@ -22,6 +22,7 @@ import AvenDB.Batches
 import AvenDB.BatchDurability
 import AvenDB.Snapshot
 import AvenDB.EntryProjection
+import AvenDB.CheckpointDemand
 import AvenDB.PagedView
 import AvenDB.TransportEpoch
 import AvenDB.Wraps
