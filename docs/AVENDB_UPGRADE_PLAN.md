@@ -22,6 +22,10 @@ The combined follow-up branch is `codex/avendb-view-startup-integration`:
 
 Checkpoint publication requires explicit owner approval; no peer receives extra authority. The bootstrap projection is read-only until canonical history covers its basis. The iPhone restart cause remains unproven: absence of a page-exit event does not prove memory termination. No live stores have been reset.
 
+Latest integrated additions: offline checkpoint rehydration [1060e05d](https://github.com/MyAvenCEO/maiacity/commit/1060e05d), deferred warm entry imports [303e47ba](https://github.com/MyAvenCEO/maiacity/commit/303e47ba), and first-nonempty reactive query timing [8057a00c](https://github.com/MyAvenCEO/maiacity/commit/8057a00c). These implementation slices are not yet deployed. Combined Lean passes all 92 build jobs; frontend checking has zero errors (28 warnings); 45 focused UI tests pass with 214 assertions. Combined native Rust validation is compiling; no runtime pass is implied. The warm-reopen test's missing core Backup import was repaired in [2519e19e](https://github.com/MyAvenCEO/maiacity/commit/2519e19e).
+
+The remaining whole-world startup read is a concrete barrier to active-working-set loading: it calls `lab.item` for ordinary entries and can force deferred imports. An additive metadata-only summary with explicit entry incompleteness is in progress. Writable partial bootstrap requires authenticated causal/history evidence, not just the JSON projection; see [implementation design](../avendb/docs/WRITABLE-PARTIAL-BOOTSTRAP.md). This remains Open, not solved by removing read-only guards.
+
 Build coordination: root owns the shared Cargo queue and integrated release. Agents work on isolated focused commits; heavyweight builds are serialized. The full goal remains active, including the architecture gaps above. A passing slice is not completion of the whole upgrade.
 
 ## Current release checkpoint — 24 October 2026
