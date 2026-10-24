@@ -6,6 +6,17 @@ Last maintained: 2026-10-24. Current execution order: keep three subagents plus 
 
 ## Latest delivery and follow-up checkpoint — 24 October 2026, evening
 
+### Release gate update — 24 October, 22:40 CEST
+
+PR [#1270](https://github.com/MyAvenCEO/maiacity/pull/1270) remains unmerged and undelivered. Previous release `b8da1b8c` remains the deployed site/API/hosted peer; the last verified Mac installation is `30d556c8`. The new Mac native build is running, not installed. Its source must be advanced to the final reviewed release revision after the current compilation finishes, and the bundle rebuilt and receipted before installation. Never install the interim artifact as the final release.
+
+The source-matched WASM run passed. Integrated local core checks passed: entry bases 2/2, startup summary 1/1, own materialization 2/2, unchanged warm restore 1/1, bounded decoder 1/1. The existing net results below remain valid. Remote core and property suites also passed on `1a1f4e64`; these do not imply complete release acceptance.
+
+Two unrelated release-test defects blocked CI: [35961045](https://github.com/MyAvenCEO/maiacity/commit/35961045) makes the Worker fixture implement the real EventTarget interface, retaining crash/free/isolation assertions (10 focused tests, 42 assertions passed). [e618662d](https://github.com/MyAvenCEO/maiacity/commit/e618662d) aligns the media fixture with production's zero-copy AVFoundation decoding and adds decoder-error reporting. Its Main10, frame-count and luma assertions remain intact; macOS CI confirmation is pending, so this is a candidate repair, not a proven resolution. Both commits are pushed. Release checks are rerunning.
+
+Separate follow-up work [1ce8bd2b](https://github.com/MyAvenCEO/maiacity/commit/1ce8bd2b) and [52edb3b7](https://github.com/MyAvenCEO/maiacity/commit/52edb3b7) adds a dormant counted-history representation and structural suffix checks. It is **not integrated in this release**, not writable activation, and its Rust tests await the serialized compiler queue. The full goal still includes writable partial bootstrap, complete demand/completeness coverage, remaining long operations and physical iPhone/iPad stability/latency acceptance.
+
+
 PR [#1268](https://github.com/MyAvenCEO/maiacity/pull/1268) merged as [b8da1b8c](https://github.com/MyAvenCEO/maiacity/commit/b8da1b8c348482b3fef9aa6444d1e3149b93b6be). [Release run 40124036129](https://github.com/MyAvenCEO/maiacity/actions/runs/40124036129) completed successfully, including site, API and hosted-peer rollout. The live site manifest reported this revision. No newer Mac app was installed by this release.
 
 The combined follow-up branch is `codex/avendb-view-startup-integration`:
