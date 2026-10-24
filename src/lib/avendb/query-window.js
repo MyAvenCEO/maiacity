@@ -6,7 +6,7 @@ import { createDemand, normalizeDiscovery } from '../../../game/code/sources/dem
 export function replyEntries(got) {
 	const ok = got?.ok;
 	if (!ok || typeof ok !== 'object') return [];
-	const rows = Array.isArray(ok) ? ok : [ok, ...['rows', 'posts', 'entries', 'items'].flatMap((k) => Array.isArray(ok[k]) ? ok[k] : [])];
+	const rows = Array.isArray(ok) ? ok : [ok, ...['rows', 'posts', 'entries', 'items', 'lines'].flatMap((k) => Array.isArray(ok[k]) ? ok[k] : [])];
 	return [...new Set(rows.map((r) => r?.entry).filter((e) => typeof e === 'string' && /^[0-9a-f]{64}$/.test(e)))];
 }
 
@@ -35,6 +35,7 @@ export function queryEntries(op) {
  * This is only a scheduling hint: the complete original query still runs locally.
  * Negation, predicates, projections and acting identities are never sent to peers. */
 export function queryDiscovery(op) {
+	if (op?.op === 'aips') return normalizeDiscovery([{ types: ['aip', 'review'], ...(op.vault === undefined ? {} : { vault: op.vault }) }]);
 	if (op?.op === 'database' || op?.op === 'entry_views') {
 		return normalizeDiscovery([{ types: op.types, ...(op.vault === undefined ? {} : { vault: op.vault }) }]);
 	}

@@ -28,10 +28,7 @@
 	// avenDB's AIPs: every vault this device holds, read again each time its world changes, one read at a time, the
 	// read the HITL stack shares ($lib/avendb/aips.svelte.js): until the device answered, the tabs say they read
 	const loadAvendb = () => aips.again(true);
-	$effect(() => {
-		session.world;
-		aips.again();
-	});
+	onMount(() => aips.hold());
 	onMount(() => session.boot());
 
 	onMount(() => {

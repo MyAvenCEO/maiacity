@@ -42,15 +42,15 @@
 	// the lines with their diffs: the `aip` read, once per AIP shown and version of its lines, not again for each new
 	// answer of the `aips` read (a bare proposal has no entry of its own to read)
 	let lines = $state(null);
-	let read = 0;
 	const entry = $derived(aip.entry);
 	const heads = $derived(aip.lines.map((l) => l.heads.join()).join(';'));
 	$effect(() => {
 		heads;
-		const n = ++read;
 		lines = null;
 		if (!entry) return;
-		session.ask({ op: 'aip', entry }).then((got) => n === read && (lines = got?.ok?.lines ?? []));
+		const selected = entry;
+		return session.observe(() => ({ op: 'aip', entry: selected }),
+			(got) => { lines = got?.ok?.lines ?? []; }, () => { lines = []; });
 	});
 	const shown = $derived(lines ?? aip.lines);
 

@@ -17,6 +17,7 @@
 	import V1Draft from '$lib/maiacity-v2/V1Draft.svelte';
 	import AvendbAip from '$lib/proposals/AvendbAip.svelte';
 	import { session } from '$lib/avendb/session.svelte.js';
+	import { aips } from '$lib/avendb/aips.svelte.js';
 	import Unlock from '$lib/avendb/Unlock.svelte';
 	import { nameOf } from '$lib/avendb/vaults.js';
 
@@ -30,18 +31,9 @@
 
 	const g = liveGame();
 	let acct = $state({ id: null });
-	// avenDB's AIPs: every vault this device holds, read again each time its world changes (as the HITL stack reads them)
-	let avendb = $state([]);
-	let reading = 0;
-	function loadAvendb() {
-		if (session.phase !== 'open') return;
-		const n = ++reading;
-		session.ask({ op: 'aips' }).then((got) => n === reading && Array.isArray(got?.ok) && (avendb = got.ok));
-	}
-	$effect(() => {
-		session.world;
-		loadAvendb();
-	});
+	const avendb = $derived(aips.list);
+	const loadAvendb = () => aips.again();
+	onMount(() => aips.hold());
 	onMount(() => session.boot());
 
 	onMount(() => {
