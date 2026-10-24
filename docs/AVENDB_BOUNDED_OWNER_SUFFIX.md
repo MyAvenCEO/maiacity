@@ -59,3 +59,18 @@ Focused Rust validation after the corrections: **8/8 bootstrap_store tests passe
 concurrent writes, normal owner write/reopen/convergence, actual later narrow-share
 audience movement, proposal refusal and fixed-size durable-frontier recovery.
 No full-suite, physical-device or Node background-pump validation is implied.
+
+## Shared turn budget follow-up
+
+The next candidate changes the former per-anchor allowance to one shared budget
+of 32 admission attempts across all anchors. The last processed entry is the
+round-robin cursor; the next turn starts after it. Blocked dependency queues keep
+their missing-body state and do not consume runnable turns. Completed entries do
+not consume the budget. A two-anchor regression checks total attempts and that
+both runnable entries progress within two turns. Lean BootstrapTurnBudget passed;
+Rust remains pending.
+
+Reusable turns now copy only anchor IDs, not all sealed checkpoint buffers. Initial
+suffix discovery still scans/orders the held log; the existing policy Log exposes
+no entry-indexed authenticated-log iterator here. This remaining preparation cost
+is explicitly outside the new admission bound and must not be called solved.

@@ -151,9 +151,16 @@ impl Lab {
     /// Reauthenticate ciphertext and policy on every reconstruction. The signed suffix
     /// stays in the ordinary log; only the entry's derived view is overlaid.
     pub(crate) fn rebuild_owner_bases(&mut self, on: SignerId) {
-        let anchors = self.held(on).bootstrap_bases.clone();
+        // Only IDs are copied. Reusable cursors never clone/decrypt sealed anchors.
+        let mut entries: Vec<_> = self.held(on).bootstrap_bases.keys().copied().collect();
+        if let Some(last) = self.held(on).bootstrap_cursor {
+            let next = entries.partition_point(|entry| *entry <= last);
+            let n = entries.len();
+            if n > 0 { entries.rotate_left(next % n); }
+        }
         let mut restored = Vec::new();
-        for (entry, (snapshot, sealed)) in &anchors {
+        for entry in &entries {
+            let snapshot = self.held(on).bootstrap_bases[entry].0;
             let reusable = self.held(on).bootstrap_progress.get(entry)
                 .is_some_and(|p| p.basis.matches(self.held(on)))
                 && self.active_owner_base(on, *entry).is_some();
@@ -165,14 +172,15 @@ impl Lab {
                     let base = RestoredOwnerJudgment { entry: *entry, history: shown.history,
                         after: shown.after, items: shown.items.into_inner().unwrap_or_default(),
                         policy: progress.policy, bodies: HashMap::new() };
-                    restored.push((*snapshot, base, Some((progress.pending, progress.base_scratch))));
+                    restored.push((snapshot, base, Some((progress.pending, progress.base_scratch, progress.missing))));
                     continue;
                 }
             }
             let at = self.at(on);
             self.stores.get_mut(&at).expect("device").bootstrap_progress.remove(entry);
-            if let Some(base) = self.restore_owner_judgment(on, *snapshot, *entry, sealed) {
-                restored.push((*snapshot, base, None));
+            let sealed = &self.held(on).bootstrap_bases[entry].1;
+            if let Some(base) = self.restore_owner_judgment(on, snapshot, *entry, sealed) {
+                restored.push((snapshot, base, None));
             }
         }
         let at = self.at(on);
@@ -185,6 +193,7 @@ impl Lab {
             return;
         }
         let mut state = store.replay.state.clone();
+        let mut budget = SUFFIX_BATCH;
         'anchor: for (_snapshot, mut base, resumed) in restored {
             let entry = base.entry;
             let Some(en) = base.policy.entries.first() else {
@@ -230,20 +239,21 @@ impl Lab {
                 })
             } else { None };
             let mut judging = Judging::resume(&en, &readings, &lane, base.history, base.after);
-            let (mut pending, base_scratch) = match resumed {
+            let (mut pending, base_scratch, mut missing) = match resumed {
                 Some(saved) => saved,
                 None => {
                     let suffix: Vec<_> = store.log.edits().iter()
                         .filter(|e| judging.history.get(e.id()).is_none()
                             && matches!(e.action,Action::Write{entry:eid,..}if eid==entry))
                         .cloned().collect();
-                    (std::collections::VecDeque::from(crate::policy::order(&suffix)), original_scratch)
+                    (std::collections::VecDeque::from(crate::policy::order(&suffix)), original_scratch, Vec::new())
                 }
             };
-            let mut missing = Vec::new();
             let mut opened_suffix = Vec::new();
-            for _ in 0..SUFFIX_BATCH {
+            while budget > 0 && missing.is_empty() {
                 let Some(edit) = pending.pop_front() else { break; };
+                budget -= 1;
+                store.bootstrap_cursor = Some(entry);
                 let id = edit.id();
                 // Only normal verified signed-log entries, never owner-invented signatures.
                 if !store.signed.get(&id).is_some_and(|s| s.verify().is_ok()) {
@@ -693,6 +703,48 @@ mod tests {
         assert!(lab.active_owner_base(phone, entry).is_none());
         assert!(!lab.adopt_owner_entry_base(phone, snapshot, entry, sealed));
         assert_eq!(lab.held(phone).view().slice_of(entry), canonical, "historical stays/seals cannot overwrite the current policy");
+    }
+
+    #[test]
+    fn owner_bootstrap_shares_one_turn_budget_and_rotates_between_entries() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Budget owner");
+        let mac = lab.device_of(owner, "Mac");
+        let phone = lab.device_of(owner, "Phone");
+        let vault = human_on(&mut lab, owner, &[mac, phone]);
+        let entries: Vec<_> = (0..2).map(|_| lab.create(mac, vault, vault, "note", &[], document("Base", "old", mac)).unwrap()).collect();
+        lab.sync(mac, phone);
+        for &entry in &entries {
+            lab.edit(mac, vault, entry, |i| i.set_text(2, "base")).unwrap();
+            let PreparedEntryBase { draft, sealed, .. } = lab.draft_judged_entry_base(mac, &[owner], entry).unwrap();
+            let snapshot = lab.complete(mac, draft, &[]).unwrap();
+            let offer = lab.entry_projection_offer(mac, phone, entry).unwrap();
+            lab.receive(phone, offer.evidence, vec![]);
+            assert!(lab.adopt_owner_entry_base(phone, snapshot, entry, sealed));
+        }
+        let mut signed = Vec::new();
+        for &entry in &entries {
+            for n in 0..64 {
+                let id = lab.edit(mac, vault, entry, |i| i.set_text(2, &format!("suffix {n}"))).unwrap();
+                signed.push(lab.signed_edit(mac, id).unwrap().clone());
+            }
+        }
+        lab.receive(phone, signed, vec![]);
+        let initial: Vec<_> = entries.iter().map(|e| lab.owner_base_pending(phone, *e)).collect();
+        assert_eq!(initial.iter().sum::<usize>(), 128 - SUFFIX_BATCH);
+        for _ in 0..2 {
+            let before: usize = entries.iter().map(|e| lab.owner_base_pending(phone, *e)).sum();
+            lab.advance_owner_bases(phone);
+            let after: usize = entries.iter().map(|e| lab.owner_base_pending(phone, *e)).sum();
+            assert_eq!(before - after, SUFFIX_BATCH, "one shared budget, not one budget per anchor");
+        }
+        for (entry, before) in entries.iter().zip(initial) {
+            assert!(lab.owner_base_pending(phone, *entry) < before, "each runnable anchor progresses within two turns");
+        }
+        while lab.owner_bases_pending(phone) { lab.advance_owner_bases(phone); }
+        for entry in entries {
+            assert_eq!(lab.item(phone, entry).unwrap().record(), lab.item(mac, entry).unwrap().record());
+        }
     }
 
     #[test]
