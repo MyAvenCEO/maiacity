@@ -845,3 +845,4 @@ an ordinary signed update through the custom document-v0 schema/lens, withholds
 those lane entries while delivering the target body, refuses retirement, then
 supplies the authorized lane evidence and compares canonical results. Lean gate
 lemma and parser/diff checks passed; Rust execution pending root queue.
+Retirement suffix guard: [f35a9d57](https://github.com/MyAvenCEO/maiacity/commit/f35a9d57), committed and pushed; executable test pending combined validation.
