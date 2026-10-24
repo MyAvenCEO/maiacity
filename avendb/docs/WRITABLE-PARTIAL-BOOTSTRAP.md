@@ -875,3 +875,10 @@ neither location works. Rust parser/diff checks pass; Cargo and regenerated WASM
 real-browser carrier validation remain queued with root's compiler slot.
 
 Range-finalization race implementation: [f3c1a77a](https://github.com/MyAvenCEO/maiacity/commit/f3c1a77a). Parser/diff passed; deterministic Rust and browser/WASM delivery checks pending.
+
+The separate `FillingReadFallback.lean` contract now proves at most two attempts,
+identical blob/range addressing, and retention of the original error after a failed
+or wrong-length final read. It explicitly assumes the temporary name belongs to
+that blob and makes no cryptographic/content-integrity claim. It supplements the
+implementation after the release blocker was diagnosed; it was not retroactively
+Lean-first. Its focused Lean check passed; Rust/browser validation remains separate.
