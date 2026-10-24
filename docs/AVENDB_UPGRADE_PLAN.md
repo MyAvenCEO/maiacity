@@ -9,6 +9,10 @@ Last maintained: 2026-10-25. Current execution order: keep three subagents plus 
 ### Current release and separate follow-up status — 24 October 2026
 
 
+**Combined delivery preparation:** integrated warm-history indexing [196d72f3](https://github.com/MyAvenCEO/maiacity/commit/196d72f3) preserves the canonical dependency gate with preceding-write lookup; Lean passed119jobs, while full crate regressions remain queued behind the native authentication build. Full working-set-first/deferred-body startup is still open. Application type repair [90f4f174](https://github.com/MyAvenCEO/maiacity/commit/90f4f174) passed0errors/27existing CSS warnings and25focused tests before integration. Proposal demand [f379ded3](https://github.com/MyAvenCEO/maiacity/commit/f379ded3) plus HITL correction [e84ab686](https://github.com/MyAvenCEO/maiacity/commit/e84ab686) register scoped discovery even on empty local results; all three consumers own reference-counted lifetimes.22tests/96assertions and Svelte compilation passed on the agent branch. Combined frontend check is running. No new deployment/installation or physical acceptance is claimed.
+
+
+
 **Post-review correction:** combined core at5041f9fe passed254/254 in19.84s; generated Lean vectors are unchanged. Review then found that a post-base suffix with a missing schema could be uncounted while old checkpoint judgments matched. [a1c4b19d](https://github.com/MyAvenCEO/maiacity/commit/a1c4b19d) conservatively retains the anchor whenever any post-base canonical change is uncounted, with a withheld-custom-schema regression. That new regression awaits Rust execution; genuine rejected suffixes conservatively retain the anchor too. Native authentication Rust compilation is running. CI kernel run40140355947 failed application types (47errors), principally manifest/file-entry JSDoc and a test typing issue; repair is underway. This is not a passed release candidate or deployment.
 
 
