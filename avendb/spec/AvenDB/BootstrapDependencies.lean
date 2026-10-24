@@ -65,3 +65,12 @@ theorem sharedMain_needs_policy (m p g c : Bool) : sharedMainReady false m p g c
 theorem sharedMain_needs_proof (a m g c : Bool) : sharedMainReady a m false g c = false := by simp [sharedMainReady]
 theorem sharedMain_cannot_skip_counting (a m p g : Bool) : sharedMainReady a m p g false = false := by simp [sharedMainReady]
 end AvenDB.BootstrapDependencies
+
+namespace AvenDB.BootstrapDependencies
+-- Proposal fork materialization uses the selected causal cut, never an unrelated
+-- MAIN snapshot. Owner attestation does not replace ordinary proposal/merge policy.
+def proposalCutReady (bodiesComplete currentPolicy counted passes : Bool) : Bool :=
+  bodiesComplete && currentPolicy && counted && passes
+theorem proposal_missing_cut_waits (p c m : Bool) : proposalCutReady false p c m = false := by simp [proposalCutReady]
+theorem proposal_merge_needs_accept (b p c : Bool) : proposalCutReady b p c false = false := by simp [proposalCutReady]
+end AvenDB.BootstrapDependencies
