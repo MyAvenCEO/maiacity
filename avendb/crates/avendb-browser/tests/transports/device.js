@@ -41,7 +41,7 @@ window.fixture = {
         let out;
         try { out = await device.run({ op: 'read_file', root: file.root, size: file.size, from: 0, to: file.len }); }
         catch (error) {
-            if (/no blob [0-9a-f]+ on the shelf/.test(String(error))) return false;
+            if (/no blob [0-9a-f]{64} on the shelf|[0-9a-f]{64} lacks [0-9]+\.\.[0-9]+/.test(String(error))) return false;
             throw error;
         }
         // The signed file entry can arrive after its demand; refusal remains a
