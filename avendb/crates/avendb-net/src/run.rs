@@ -143,11 +143,26 @@ impl Node {
         let Some(entries) = raw.iter().map(|v| v.as_str().and_then(EntryId::from_hex).map(LogId::Entry)).collect::<Option<Vec<_>>>() else {
             return bad("demand entries are 64-character hex entry IDs");
         };
-        let result = self.shared.demands.lock().expect("demands").replace(scope.to_ascii_lowercase(), revision, entries, Instant::now());
+        let queries = match op.get("queries") {
+            None => vec![],
+            Some(value) => match value.as_array().filter(|rows| rows.len() <= 8)
+                .and_then(|rows| rows.iter().map(crate::discovery::Query::parse).collect::<Option<Vec<_>>>()) {
+                Some(queries) => queries,
+                None => return bad("invalid discovery selectors"),
+            },
+        };
+        if queries.len() > 8 || queries.iter().any(|q| !q.valid()) { return bad("discovery names at most eight bounded positive-type selectors"); }
+        let scope = scope.to_ascii_lowercase();
+        let result = {
+            let mut demands = self.shared.demands.lock().expect("demands");
+            let result = demands.replace(scope.clone(), revision, entries, Instant::now());
+            if matches!(result, Ok(true)) { demands.set_queries(&scope, queries); }
+            result
+        };
         match result {
             Ok(accepted) => {
-                if accepted { self.shared.size.send_modify(|_| {}); }
-                json!({"ok": {"accepted": accepted, "lease_ms": crate::demand::LEASE.as_millis() as u64}})
+                if accepted { self.shared.size.send_modify(|_| {}); self.shared.schedule_discovery(scope); }
+                json!({"ok": {"accepted": accepted, "lease_ms": crate::demand::LEASE.as_millis() as u64, "discovery_supported": true, "discovery_complete": false}})
             },
             Err(why) => bad(why),
         }

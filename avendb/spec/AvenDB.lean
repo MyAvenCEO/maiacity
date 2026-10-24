@@ -82,3 +82,6 @@ import AvenDB.UpkeepFamilies
 import AvenDB.PreparedReceive
 
 import AvenDB.CooperativeReceive
+
+import AvenDB.QueryDiscovery
+import AvenDB.ShownScratch

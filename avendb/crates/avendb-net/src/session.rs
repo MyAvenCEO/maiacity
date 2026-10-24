@@ -269,6 +269,7 @@ async fn answer(shared: &Arc<Shared>, peer: &Peer, mut recv: RecvStream) -> Resu
     let limit = match kind {
         crate::transports::control::KIND => crate::transports::control::LIMIT,
         crate::edit_ranges::KIND => crate::edit_ranges::CONTROL_BYTES,
+        crate::discovery::KIND => crate::discovery::REQUEST_LIMIT,
         _ => MESSAGE_LIMIT - 1,
     };
     let deadline = if range.is_some() { crate::edit_transfer::DEADLINE } else { PAGE_WAIT };
@@ -290,6 +291,7 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
         wire
     };
     match kind {
+        crate::discovery::KIND => crate::discovery::answer(shared, peer, body).await,
         REQUEST | ASK_LOGS | ASK_VAULTS => {
             let reply = authorized_reply(shared, peer, kind, body).await?;
             let n = reply.edits.len();
@@ -330,12 +332,15 @@ async fn answer_body(shared: &Arc<Shared>, peer: &Peer, kind: u8, body: &[u8], r
                 if let Some(complete) = complete { complete.apply(held.entry(device).or_default()); }
                 (answer, done)
             };
-            if complete { shared.jobs.stir(); shared.ask_soon(peer.endpoint); }
+            if complete { shared.jobs.stir(); shared.ask_soon(peer.endpoint); shared.schedule_discoveries(); }
             Ok(answer)
         }
         ANNOUNCE => {
             // of the device whose hello proved it on this connection, and of no other
-            shared.hear(device, Announce::from_wire(body)?);
+            let announce = Announce::from_wire(body)?;
+            let full = announce.full;
+            shared.hear(device, announce);
+            if full { shared.schedule_discoveries(); }
             shared.ask_soon(peer.endpoint);
             Ok(Vec::new())
         }

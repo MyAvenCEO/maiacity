@@ -110,6 +110,7 @@ mod blobs;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod bucket;
 mod demand;
+mod discovery;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod disk;
 #[cfg(not(target_arch = "wasm32"))]
@@ -746,6 +747,8 @@ impl Node {
             owed: Mutex::default(),
             wanted: Mutex::default(),
             demands: Mutex::default(),
+            discovery_running: Mutex::default(),
+            discovery_answer: Arc::new(tokio::sync::Semaphore::new(1)),
             offered: Mutex::default(),
             shelf,
             blob_peers: Mutex::default(),
@@ -2050,6 +2053,8 @@ struct Shared {
     wanted: Mutex<BTreeSet<LogId>>,
     /// Active app/query windows, replaced or released independently of one-shot brings.
     demands: Mutex<demand::Demands>,
+    discovery_running: Mutex<HashMap<String, bool>>,
+    discovery_answer: Arc<tokio::sync::Semaphore>,
     /// The McEliece keys in the blob store, by hash and by id.
     offered: Mutex<blobs::Offered>,
     /// Its blob store over its shelf, if it keeps one (`shelf`): what the shelf holds whole.
