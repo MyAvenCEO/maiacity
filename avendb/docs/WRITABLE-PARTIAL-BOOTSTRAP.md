@@ -169,3 +169,6 @@ Next: counted-history metadata and a verified base/suffix model (design steps 1/
 one shared local/remote suffix validator, differential full-versus-partial history tests,
 version negotiation, durable suffix recovery, and device measurements. No writable partial
 bootstrap milestone is marked done by this representation stage.
+
+Stage-one code: [`41498df3`](https://github.com/MyAvenCEO/maiacity/commit/41498df3).
+Pending Rust command: `cargo test -p avendb --lib entry_base -- --nocapture`.
