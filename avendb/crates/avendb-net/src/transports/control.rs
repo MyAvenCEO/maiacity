@@ -189,11 +189,11 @@ impl Control {
         self.close();
         #[cfg(not(target_arch = "wasm32"))]
         {
-            // The native endpoint keeps its UDP socket until its last owner drops, even after close/wait_idle.
-            // Retire the handle as well as awaiting its supervisor; serialize concurrent shutdown callers.
-            let native = self.native.lock().expect("native transport").take();
+            // Retain the completion owner if this caller is cancelled while awaiting shutdown.
+            let native = self.native.lock().expect("native transport").clone();
             if let Some(native) = native {
                 native.shutdown().await;
+                self.native.lock().expect("native transport").take();
             }
         }
     }
@@ -857,6 +857,30 @@ pub(crate) async fn listen(shared: &Arc<Shared>, config: super::webtransport::Co
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(target_arch = "wasm32"))]
+    #[tokio::test]
+    async fn cancelled_shutdown_keeps_native_completion_owner() {
+        use std::future::Future;
+        let packets = PacketTransport::new(iroh::SecretKey::from_bytes(&[1; 32]).public());
+        let control = Control::new(packets.clone());
+        let (events, _rx) = tokio::sync::mpsc::channel(32);
+        let native = super::super::webtransport::NativeWt::bind(super::super::webtransport::Config {
+            bind: "127.0.0.1:0".parse().unwrap(), public_url: "https://127.0.0.1:0/packets".into(),
+            allowed_origins: vec!["https://app.example".into()],
+        }, packets, events).await.unwrap();
+        let address = native.local_addr().unwrap();
+        *control.native.lock().unwrap() = Some(Arc::new(native));
+        let mut first = Box::pin(control.shutdown());
+        std::future::poll_fn(|cx| {
+            assert!(first.as_mut().poll(cx).is_pending());
+            std::task::Poll::Ready(())
+        }).await;
+        drop(first);
+        assert!(control.native.lock().unwrap().is_some());
+        control.shutdown().await;
+        let _rebound = std::net::UdpSocket::bind(address).expect("control must retain native driver completion");
+    }
+
     #[test]
     fn route_epoch_binds_both_challenges_ordered_endpoints_and_the_tls_session() {
         let a = iroh::SecretKey::from_bytes(&[1; 32]).public();
