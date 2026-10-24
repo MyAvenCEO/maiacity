@@ -15,3 +15,5 @@ The Lean specification `AvenDB/ShownScratch.lean` establishes conditional projec
 Native checks cover record and version equality, subsequent edits by three signers, rejected-change and selected-subset fallback, authorization revocation/restoration, and parked dependency detection. The microbenchmark compares ten reconstructions and guarded forks of the same eligible histories. End-to-end synthetic warm restore separately checks retained records and stored-view selection.
 
 **Current status: implementation prepared; native validation pending in the combined integration checkout.** Standalone Lean check passed using `.elan/bin/lake env lean AvenDB/ShownScratch.lean`. No native speedup is claimed for this change until the parity tests and comparable-history benchmark execute. This change removes duplicate materialization, not canonical judgment, key reconstruction, or fresh-device bootstrap. It must not be reported as solving the entire multi-second unlock complaint.
+
+Implementation: [1ecb09bc](https://github.com/MyAvenCEO/maiacity/commit/1ecb09bc). Native acceptance remains pending; integration must append actual results here before marking this slice complete.
