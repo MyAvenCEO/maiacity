@@ -47,6 +47,9 @@ jobs:
       # the paths the tests import by ($lib) are SvelteKit's tsconfig's
       - run: bunx svelte-kit sync
 
+      - name: Check application types
+        run: bun run check
+
       # src/lib/sandbox/              the kernel's engines frozen (bytes = their hashes, sources = the latest, no CDN),
       #                               the logic core (QuickJS, its limits), the view engine's sanitizer and templates,
       #                               the math engine against hostile LaTeX and its MathML checker against hostile MathML
