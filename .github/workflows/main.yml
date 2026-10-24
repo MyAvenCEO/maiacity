@@ -17,6 +17,7 @@ jobs:
       actions: read
     runs-on: ubuntu-latest
     outputs:
+      full_validation: ${{ steps.paths.outputs.full_validation }}
       site: ${{ steps.paths.outputs.site }}
       api: ${{ steps.paths.outputs.api }}
       avendb: ${{ steps.paths.outputs.avendb }}
@@ -27,8 +28,6 @@ jobs:
       protocol: ${{ steps.paths.outputs.protocol }}
     steps:
       - uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
@@ -69,6 +68,8 @@ jobs:
     needs: impact
     if: needs.impact.outputs.site == 'true'
     uses: ./.github/workflows/kernel.yml
+    with:
+      full: ${{ needs.impact.outputs.full_validation == 'true' }}
   api-tests:
     needs: impact
     if: needs.impact.outputs.api == 'true' && needs.impact.outputs.site != 'true'
@@ -78,6 +79,7 @@ jobs:
     if: needs.impact.outputs.avendb == 'true' || needs.impact.outputs.server == 'true' || needs.impact.outputs.agent == 'true'
     uses: ./.github/workflows/avendb-checks.yml
     with:
+      full: ${{ needs.impact.outputs.full_validation == 'true' }}
       real_browser: ${{ needs.impact.outputs.browser == 'true' }}
       protocol: ${{ needs.impact.outputs.protocol == 'true' }}
   delivery:

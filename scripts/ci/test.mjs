@@ -39,7 +39,7 @@ if (import.meta.main) {
  if (args.includes('--check')) { console.log(Object.fromEntries(Object.entries(groups).map(([k,v])=>[k,v.length]))); process.exit(0); }
  const mode=args.includes('--all')?'all':args.includes('--gate')?'gate':'changed';
  const base=value('--base')||process.env.CI_BASE;
- const names=value('--suite')?[value('--suite')]:selected(changed(base,process.env.CI_HEAD||'HEAD'),mode);
+ const names=value('--suite')?[value('--suite')]:selected(mode==='changed'?changed(base,process.env.CI_HEAD||'HEAD'):null,mode);
  if (args.includes('--matrix')) {
   const extra=names.filter(name=>!suites.find(s=>s.name===name && (s.tier==='gate'||s.name==='ci')));
   const json=JSON.stringify(extra);

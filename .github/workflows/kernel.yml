@@ -16,6 +16,10 @@ name: Kernel
 on:
   pull_request:
   workflow_call:
+    inputs:
+      full:
+        type: boolean
+        default: false
   workflow_dispatch:
 
 permissions:
@@ -34,16 +38,17 @@ jobs:
       suites: ${{ steps.select.outputs.suites }}
     steps:
       - uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
       - id: select
         env:
+          FORCE_FULL: ${{ inputs.full || false }}
           CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           CI_HEAD: ${{ github.sha }}
-        run: bun scripts/ci/test.mjs --matrix
+        run: |
+          if [ "$FORCE_FULL" = true ]; then unset CI_BASE; fi
+          bun scripts/ci/test.mjs --matrix
 
   application:
     name: Application tests (${{ matrix.suite }})
@@ -72,8 +77,6 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2.2.0
         with:

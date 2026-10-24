@@ -109,3 +109,10 @@ test('API release accepts exactly its selected gate and successful delivery/imag
  expect(evaluate({...apiOnly,impact:needs.impact},()=>false)).toBe(false);
  expect(evaluate({...needs,'api-tests':{result:'failure'}},()=>false)).toBe(false);
 });
+
+test('native tests and build helpers validate without publishing unchanged binaries', () => {
+ for (const file of ['avendb/crates/avendb/tests/properties.rs','avendb/crates/avendb-device/tests/agent.rs','avendb/scripts/test-browser.sh']) {
+  const next=impact([file]); expect(next.avendb && next.native).toBe(true); expect(next.server || next.agent).toBe(false);
+ }
+ expect(impact(['avendb/crates/avendb/src/lib.rs']).server).toBe(true);
+});

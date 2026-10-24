@@ -25,6 +25,9 @@ on:
       - 'scripts/ci/**'
   workflow_call:
     inputs:
+      full:
+        type: boolean
+        default: false
       real_browser:
         type: boolean
         default: false
@@ -60,16 +63,17 @@ jobs:
       server: ${{ steps.paths.outputs.server }}
     steps:
       - uses: actions/checkout@v7.0.1
-        with:
-          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2.2.0
         with:
           bun-version-file: .bun-version
       - id: paths
         env:
+          FORCE_FULL: ${{ inputs.full || false }}
           CI_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           CI_HEAD: ${{ github.sha }}
-        run: bun scripts/ci/impact.mjs
+        run: |
+          if [ "$FORCE_FULL" = true ]; then unset CI_BASE; fi
+          bun scripts/ci/impact.mjs
   # Not on a draft (Samuel 2026-10-21): a thread's every push to its draft ran all three, ten minutes each. They run
   # once the PR is marked ready, and on every push after; merge only once they are green there
   tests:
