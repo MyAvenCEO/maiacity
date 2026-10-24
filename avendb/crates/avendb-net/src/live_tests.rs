@@ -5,6 +5,8 @@ use crate::{Node, Options};
 use avendb::cast::{document, handbook_ready, world};
 use avendb::wire::Wire;
 use n0_future::future;
+use std::time::Instant;
+use tokio::sync::watch;
 
 async fn wait_for(mut condition: impl AsyncFnMut() -> bool) {
     time::timeout(Duration::from_secs(20), async {
@@ -87,41 +89,46 @@ async fn a_live_edit_reaches_an_authorized_peer_while_its_background_pages_are_s
             .await
     );
 
-    let mut updates = phone.stirs();
-    let chat = mac
+    // All times share one monotonic process clock. Setup, key generation and initial
+    // catch-up are excluded. Both reactive consumers subscribe before the mutation.
+    let local_updates = mac.stirs();
+    let remote_updates = phone.stirs();
+    let began = Instant::now();
+    let (entry, mutation_completed) = mac
         .act(move |lab, me| {
-            lab.create(
-                me,
-                coop,
-                coop,
-                "doc",
-                &[],
-                document("Live chat", "sent during backlog", me),
-            )
-            .unwrap()
+            let entry = lab.create(me, coop, coop, "doc", &[],
+                document("Live generic entry", "sent during backlog", me)).unwrap();
+            (entry, began.elapsed())
         })
         .await;
-    let delivered = time::timeout(Duration::from_secs(20), async {
-        loop {
-            updates.borrow_and_update();
-            if phone
-                .read(move |lab, me| lab.item(me, chat).is_some())
-                .await
-            {
-                break;
+    let mutation_returned = began.elapsed();
+    let observe = async |node: &Node, mut updates: watch::Receiver<u64>| {
+        time::timeout(Duration::from_secs(20), async {
+            loop {
+                updates.borrow_and_update();
+                if let Some(body) = node.read(move |lab, me| lab.item(me, entry)
+                    .and_then(|item| item.read(avendb::lens::View::document_v1()))).await {
+                    break (began.elapsed(), body);
+                }
+                updates.changed().await.expect("live view notifications remain open");
             }
-            updates
-                .changed()
-                .await
-                .expect("live view notifications remain open");
-        }
-    })
-    .await;
-    delivered.expect("a reactive consumer sees the live edit without polling");
-    let sender_body = mac.read(move |lab, me| lab.item(me, chat).and_then(|item| item.read(avendb::lens::View::document_v1()))).await;
-    let receiver_body = phone.read(move |lab, me| lab.item(me, chat).and_then(|item| item.read(avendb::lens::View::document_v1()))).await;
-    assert!(sender_body.is_some());
+        }).await.expect("a reactive consumer reads the live edit without polling")
+    };
+    let ((local_readable, sender_body), (remote_readable, receiver_body)) =
+        tokio::join!(observe(&mac, local_updates), observe(&phone, remote_updates));
     assert_eq!(receiver_body, sender_body, "the exact live body is decrypted");
+    // The observations are upper bounds that include task scheduling and targeted
+    // reads; they are not a wire receive timestamp or a browser DOM paint time.
+    eprintln!("LIVE_LATENCY {}", serde_json::json!({
+        "fixture": "authenticated-loopback-generic-document",
+        "background_slots_held": stalled.len(),
+        "mutation_completed_ms": mutation_completed.as_secs_f64() * 1000.0,
+        "mutation_returned_ms": mutation_returned.as_secs_f64() * 1000.0,
+        "local_readable_ms": local_readable.as_secs_f64() * 1000.0,
+        "receiver_readable_ms": remote_readable.as_secs_f64() * 1000.0,
+        "durable_ms": null, "remote_accept_ms": null,
+        "durability": "in-memory fixture; no disk fence measured"
+    }));
     assert!(phone.read(move |lab, me| lab.item(me, backlog_first).is_some()).await,
         "the first creation is the required audience-key witness");
     let unrelated = backlog[1..].to_vec();
