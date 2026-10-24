@@ -4,6 +4,23 @@ This is the maintained task ledger for the avenDB performance upgrade. Read this
 
 Last maintained: 2026-10-24. Current execution order: keep three subagents plus the coordinator progressing authorized Doing and Open work in parallel; finish each increment with validation, a focused pushed implementation commit and this ledger updated. Serialize heavyweight local builds. The overall upgrade is **incomplete**. A delivered compact release is not completion of all original M3–M7 integration. Do not infer completion from a module existing, a successful compile, or a merged PR alone.
 
+## Current release checkpoint — 24 October 2026
+
+This checkpoint supersedes older release-status notes below. Finish the remaining installed-Mac acceptance before calling tasks 3–4 complete; task 5 remains separate work.
+
+| State | Current five-task summary |
+| --- | --- |
+| Done | 1. Original propagation integration and handoff. Further generic latency work belongs to task 5. |
+| Done | 2. Diagnostics and worker-memory implementation deployed. Intermittent physical iPhone unlock/reload acceptance remains unresolved. |
+| Doing | 3. CI and hosted/API/site delivery verified; combined Mac dev build is signed and preserved, but not installed. |
+| Doing | 4. Final combined-build copied-store rehearsal and installed offline/assets/reconnect acceptance remain pending. Earlier copied-store passes do not substitute for these checks. |
+| Doing | 5. Generic instant local and remote updates; follow-up [draft PR #1260](https://github.com/MyAvenCEO/maiacity/pull/1260) remains open. Do not infer physical-device latency from synthetic results. |
+
+- [x] **Hosted peer and API release:** [PR #1255](https://github.com/MyAvenCEO/maiacity/pull/1255) merged as [720922e0570433a0e5c6663f6f15f91e7631d176](https://github.com/MyAvenCEO/maiacity/commit/720922e0570433a0e5c6663f6f15f91e7631d176) after all 12 exact-head checks passed. [Hosted workflow 40092379491](https://github.com/MyAvenCEO/maiacity/actions/runs/40092379491) passed its merge-SHA tests, graceful-close and unchanged-store/bucket/seal guards, then activated the new image. Internal/external PQ relay health, feed response and browser relay HTTP 101 passed. [API workflow 40092379462](https://github.com/MyAvenCEO/maiacity/actions/runs/40092379462) passed internal and external health checks.
+- [x] **Actual hosted image identity:** [Post-deploy read-only observation 40093102553](https://github.com/MyAvenCEO/maiacity/actions/runs/40093102553), at 12:14:32 UTC, recorded Docker image `sha256:c120716483eba42406679114129515c41081806048f211499b391948853c22ba`, exactly matching the image build's published immutable `720922e0…` tag digest. Container running, zero container restarts, no current panic/OOM, one expected start that hour; previous run ended `stopped`. OCI labels alone were not used as source identity. No reset or forced-close bypass occurred.
+- [x] **Website/PWA publication:** [PR #1259](https://github.com/MyAvenCEO/maiacity/pull/1259), merged as [25bd11275fd6db1ac055e3ff9724a18f67f2d6cc](https://github.com/MyAvenCEO/maiacity/commit/25bd11275fd6db1ac055e3ff9724a18f67f2d6cc), repaired the site typecheck's missing `bun:test` declaration. [Site workflow 40093965291](https://github.com/MyAvenCEO/maiacity/actions/runs/40093965291) passed build and all browser gates. Live `release.json` exactly matched that run's CI artifact; all **850 served files** matched their BLAKE3 hashes with zero failures, TLS verification enabled and two concurrent requests. Public served-byte verification does not establish which bundle an already-open physical PWA runs. The site-only patch did not redeploy the hosted peer or API.
+- [ ] **Combined Mac dev build:** candidate source [30d556c87e7777295d12ea4d9fe8bd72645b21d0](https://github.com/MyAvenCEO/maiacity/commit/30d556c87e7777295d12ea4d9fe8bd72645b21d0) is signed and preserved, **not installed**. Coordinate with its build owner; never install a shared-target bundle without its own source/tree/file-manifest provenance. A fresh copied-store rehearsal for the combined candidate is pending, followed by guarded app-only installation and existing-account offline/assets/reconnect checks. Preserve live store, identity and passkeys; never restore an older snapshot into the live store.
+
 ## Mandatory working agreement
 
 1. **Lean first.** For avenDB semantic changes, define the desired behavior, assumptions, safety properties and relevant progress/fairness properties in `avendb/spec` before implementing the change. Read the existing specification; extend it when the intended behavior is not modeled. Link each implementation task to its applicable definitions/theorems/scenarios and to runtime correspondence tests. Run `lake build` and the repository vector consistency checks. A proof of a simplified model is not proof of Rust implementation equivalence; state its assumptions and test that correspondence.
@@ -540,6 +557,49 @@ Next handoff: validate and integrate the fixture repair, push its focused commit
 - Local disk pressure was relieved by deleting only inactive, regenerable incremental compiler caches. App bundles, live stores and recovery backups were retained. Priorities 3, 4 and 5 remain Doing.
 
 
+### Final-core copied-store preservation check — 2026-10-24
+
+A fresh independently verified disposable clone retained 7,935 files / 8,632,981,373 bytes with exact original SHA256 manifest, no hardlinks/symlinks and distinct inodes. Manifest hash: `c8fcebc66b7f8d970eacbf6cfa8f4ee30e60fe70a0c7d22d4c205212b9ab8c56`. Original source reverified unchanged after copying.
+
+**Retain the failed first attempt:** cold inventory matched 63,647 edits, 85 keys and 2,281 records, but final save failed with `No space left on device (os error 28)`. It did not pass close/warm/recovery. Its cold open was 110.948 s under machine/storage pressure; do not hide it or call it a representative startup benchmark.
+
+**Successful fresh-copy retry:** one test passed, zero failed, total 527.76 s including 404.704 s waiting in the authentication ceremony. Exact identity, metadata, immutable edit history, keys, policy, vaults, shares, entries and record equality passed after close, two warm reopens and recovery from four deliberately damaged derived slots. Final preserved inventory: 63,647 edits, 85 keys and 2,281 visible records.
+
+| Phase | Open s | Replay s | Open keys s | Show items s | Separate metric capture s |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| cold | 41.508 | 6.894432 | 2.912 | 6.057 | 2.513 |
+| warm-1 | 3.893 | 0.000008 | 0.816 | 1.020 | 1.641 |
+| warm-2 | 3.619 | 0.000007 | 0.864 | 0.892 | 1.641 |
+| recovery | 19.024 | 2.061934 | 11.000 | 1.074 | 2.177 |
+
+Both warm runs reused the stored view, checked zero signatures and opened zero new keys; 5,134 keys came from the shelf. Nested timers overlap: do not sum them. Metric collection and authentication wait are excluded from open time. This was compatibility evidence under concurrent machine load, not an uncontended speed comparison or evidence that physical PWA slow unlock is resolved.
+
+Sanitized structured evidence: [final-core copied-store rehearsal](evidence/avendb-final-core-rehearsal-2026-10-24.json); original logs `/private/tmp/avendb-final-core-rehearsal.log` and `/private/tmp/avendb-final-core-rehearsal-retry.log`. The immutable pre-run receipt records executable SHA256 `56f0e5b5b015a8f29d3857638cfd0dea2b211fdcaae3ead5abb0421a9c6674d4`, compilation starting at `a06022dcc392774492f68e0366c2559b1754fede` and validation revision `a5e6d025f2c25012a526408b1c079c50d23f519e`. Both have the same core source subtree `dbe602185a172c01e5040e842b19595d0d5c06c4`. This is the captured original hash, not a rehash of the now-mutable shared Cargo target. The receipt's first-copy path/result=pending is historical; fresh-copy preparation and actual retry output establish the later successful result. No final installed offline/assets/reconnect acceptance is implied. The later overwritten Mac bundle is a separate artifact and is not certified by this rehearsal.
+
+
+### Release integration and Mac artifact correction — 2026-10-24
+
+- [x] [PR #1255](https://github.com/MyAvenCEO/maiacity/pull/1255) merged as [720922e0570433a0e5c6663f6f15f91e7631d176](https://github.com/MyAvenCEO/maiacity/commit/720922e0570433a0e5c6663f6f15f91e7631d176) after all twelve final-head checks passed. Merge/deployment health remains distinct from source CI.
+- [ ] The previously signed Mac artifact built at `2c45cf40` was overwritten at 13:54 local time by a different task using the same Cargo/bundle output directory. Its bytes and signature no longer match the approved artifact receipt. It was **not installed**. Do not re-sign the replacement and present it as the validated artifact. No preserved exact original bundle was found in the bounded local search.
+- [ ] Samuel authorized coordination with the other task. The other task confirmed ownership of the combined Mac build/install using `/private/tmp/studio-combined-target`, integrating merged `720922e0` plus the verified media-test typing fix. Root retains hosted deployment/health verification. No combined installation has occurred yet. Pin exact source/build provenance, preserve a verified artifact copy, and rerun the install preflight. Existing live account data must not be reset or restored from an older snapshot.
+- Priorities **3 and 4 remain Doing**: finish verified deployment/Mac replacement and final installed no-reset offline/assets/reconnect acceptance. Priority **5 is deferred** while this release is completed; generic physical latency and slow unlock are not declared solved. The intermittent iPhone return-to-unlock remains unresolved independently of successful compatibility or network tests.
+
+- Deployment-check repair committed as [b66372058a6434b5897a802f26babd85186ce013](https://github.com/MyAvenCEO/maiacity/commit/b66372058a6434b5897a802f26babd85186ce013): suppress only the unavailable `bun:test` import declaration in the media reference test, retaining checking everywhere else. All 32 media regressions / 1,008 assertions pass; full local Svelte validation subsequently passed with zero errors and 28 warnings in 11 files (exit 0).
+
+
+## PR1255 hosted deployment — verified
+
+PR1255 merged at 2026-10-24 12:03:40 UTC as `720922e0570433a0e5c6663f6f15f91e7631d176`, after all 12 exact-head checks passed. Local installation checkout remained pinned at `a5e6d025`.
+
+- API run [40092379462](https://github.com/MyAvenCEO/maiacity/actions/runs/40092379462) succeeded; logs confirm internal health and external `https://api.maia.city` health success.
+- Hosted run [40092379491](https://github.com/MyAvenCEO/maiacity/actions/runs/40092379491) succeeded, including all merge-SHA Rust/Lean tests and graceful-close delivery gates. Activation logs record verified graceful close before and after settings validation, new startup offer, sealed existing bucket configured, internal and external PQ relay health, feed response, and browser relay HTTP101. No forced shutdown or identity-guard bypass.
+- Published immutable image `ghcr.io/myavenceo/maiacity-avendb:720922e0570433a0e5c6663f6f15f91e7631d176` has digest `sha256:c120716483eba42406679114129515c41081806048f211499b391948853c22ba`.
+- Post-deploy trusted diagnostic run [40093102553](https://github.com/MyAvenCEO/maiacity/actions/runs/40093102553), observed 12:14:32 UTC, reports exactly that Docker.Image digest. Container running, zero container restarts, no panic/OOM, one expected start in last hour; prior run ended `stopped`. This verifies actual running artifact identity rather than relying on absent OCI revision labels.
+- Site run [40092379489](https://github.com/MyAvenCEO/maiacity/actions/runs/40092379489) failed its typecheck before publishing: `src/lib/media/ref.test.js` cannot find `bun:test` declarations. Website fix is prepared in [PR #1259](https://github.com/MyAvenCEO/maiacity/pull/1259); local full Svelte validation passes with zero errors and 28 warnings, and the 32 media tests / 1,008 assertions pass. It has not yet been merged/deployed at this checkpoint; no new site version is claimed.
+
+Mac app installation and installed offline/assets/reconnect acceptance remain separate from passed copied-store tests. No physical-device instant-sync or iPhone stability claim follows from hosted deployment.
+
+
 ## 2026-10-24 — task 5 active collection slice (Doing; draft only)
 
 Implementation [75952741c2688605a6075011d1af0806669fd160](https://github.com/MyAvenCEO/maiacity/commit/75952741c2688605a6075011d1af0806669fd160) removes actual Todos' dependency on the global world refresh through generic canonical `entry_views` observations. Full design, scope, RED/GREEN evidence and limitations are in [AVENDB_ACTIVE_COLLECTIONS.md](AVENDB_ACTIVE_COLLECTIONS.md). Native/WASM execution and deployed physical-device acceptance remain pending; this is not task 5 completion.
@@ -588,3 +648,7 @@ Production WASM [b54f1f0b](https://github.com/MyAvenCEO/maiacity/commit/b54f1f0b
 Final isolated-slice validation: [fd9af758](https://github.com/MyAvenCEO/maiacity/commit/fd9af758cc00f7c841c0b57bc041af146ee4d424) fixes the callback annotation and retains exact production WASM. [Frontend run40099352603](https://github.com/MyAvenCEO/maiacity/actions/runs/40099352603) passed the full Svelte check and 32 shared scheduling tests. The isolated Story/Note implementation and regression gates are complete; PR1260 can leave draft. Required PR checks are requested by the ready transition and are **not** claimed satisfied by the manual runs. Root still owns combined-source integration, regenerated combined WASM, merge/deployment and physical acceptance. Task5 as a whole remains doing: physical <50ms local visibility, peer propagation distributions, related world-metadata consumers, and the measured full-perf/warm-replay bottlenecks are not closed by these tests.
 
 PR1260 left draft at [b03e4c28](https://github.com/MyAvenCEO/maiacity/commit/b03e4c2884e291d16dadcdea9e6c7221c693925c). GitHub reports `mergeable=CONFLICTING` / `mergeStateStatus=DIRTY` against current main; no automatic PR check rollup appeared after the ready transition. Root must resolve the planned combined-source integration and then run the normal PR gates. The green manual source/runtime/frontend runs above do not replace that integration check. The isolated worktree is clean and no live store, installed app, main checkout or combined Mac candidate was modified by this slice.
+
+### PR1260 main integration — 2026-10-24
+
+Resolved the conflict against current main `fc7c87fb677e18fc641bb00019eb0210fcc8546d` by preserving both chronological handoff sections and the incoming copied-store evidence. No runtime source or generated WASM changes: the production Rust tree remains identical to validated2aa728e4 and the browser binary remains b54f1f0b. Main's media typing fix was already represented on this branch. The combined Mac candidate is untouched. This resolves the main-branch conflict only; automatic PR checks and later combined Mac/source integration still require their own gates.
