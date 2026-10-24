@@ -131,12 +131,14 @@ impl Lab {
     /// a previously authenticated owner claim cannot cache write authority.
     pub fn verify_counted_base_equivalence(&self, on: SignerId, snapshot: EditId, entry: EntryId, sealed: &[u8]) -> bool {
         let Some(base) = self.authenticate_counted_entry_base(on, snapshot, entry, sealed) else { return false; };
-        let Some(shown) = self.held(on).shown.get(&entry) else { return false; };
-        if base.facts.iter().any(|w| shown.history.get(w.edit).is_none_or(|c| !c.counted || c.write != *w)) {
+        let store = self.held(on);
+        let Some(shown) = store.shown.get(&entry) else { return false; };
+        let Some(history) = shown.history_in(store) else { return false; };
+        if base.facts.iter().any(|w| history.get(w.edit).is_none_or(|c| !c.counted || c.write != *w)) {
             return false;
         }
         base.lines.iter().all(|(line, claim)|
-            shown.history.snapshot_scratch(&claim.basis, &claim.snapshot, on, *line).is_some())
+            history.snapshot_scratch(&claim.basis, &claim.snapshot, on, *line).is_some())
     }
 
     pub fn authenticate_counted_entry_base(&self, on: SignerId, snapshot: EditId, entry: EntryId, sealed: &[u8]) -> Option<AuthenticatedCountedEntryBase> {
@@ -164,6 +166,29 @@ mod tests {
     use super::*;
     use crate::cast::{document, human_on};
     use crate::policy::Proposal;
+
+    #[test]
+    fn warmed_full_holder_compares_counted_snapshot_with_demanded_history() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Warm counted receiver");
+        let mac = lab.device_of(owner, "Mac");
+        let vault = human_on(&mut lab, owner, &[mac]);
+        let entry = lab.create(mac, vault, vault, "note", &[], document("Base", "old", mac)).unwrap();
+        let PreparedEntryBase { draft, sealed, .. } = lab.draft_counted_entry_base(mac, &[owner], entry).unwrap();
+        let snapshot = lab.complete(mac, draft, &[]).unwrap();
+        let backup = lab.backup(mac);
+        let n = backup.signed.len();
+        let receipt = lab.capture_warm_current(mac, n, Some([30;40])).unwrap().encode();
+        let warm = Warm { keys: receipt.keys.clone().into_iter().collect(), views: receipt.view.clone().into_iter().collect() };
+        lab.warmed(mac, receipt);
+        lab.restore_warm(mac, backup, Some(([30;40], n)), &warm);
+        let creation = lab.held(mac).view().entry(entry).unwrap().creation;
+        assert!(lab.held(mac).deferred_bodies.contains_key(&creation));
+        assert!(lab.verify_counted_base_equivalence(mac, snapshot, entry, &sealed));
+        assert!(lab.held(mac).deferred_bodies[&creation].content_ready());
+        lab.stores.get_mut(&mac).unwrap().keys = Keyring::default();
+        assert!(!lab.verify_counted_base_equivalence(mac, snapshot, entry, &sealed));
+    }
 
     #[test]
     fn counted_base_roundtrip_links_only_and_rejects_owner_fact_mismatch() {

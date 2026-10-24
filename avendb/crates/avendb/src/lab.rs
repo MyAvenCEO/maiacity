@@ -6382,7 +6382,15 @@ fn landed_in(store: &Store, e: EntryId) -> bool {
     if !st.is_draft(e) {
         return true;
     }
-    let shown = store.shown.get(&e).map(|s| &s.history);
+    let shown = match store.shown.get(&e) {
+        Some(shown) => match shown.history_in(store) {
+            Some(history) => Some(history),
+            // Previously opened deferred state that no longer has current keys
+            // cannot fall through to the ciphertext-only relay visibility rule.
+            None => return false,
+        },
+        None => None,
+    };
     if shown.is_some_and(History::landed) {
         return true;
     }
