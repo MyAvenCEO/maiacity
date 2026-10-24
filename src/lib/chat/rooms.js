@@ -171,9 +171,9 @@ export function grouped(ms) {
 export function titleOf(room, record, world, nameOf) {
 	if (record?.look === 'self') return 'Note to self';
 	if (record?.name) return record.look === 'channel' ? `# ${record.name}` : record.name;
-	const others = (room?.readers ?? []).filter((v) => v !== world.mine && v !== room.vault);
-	const people = (others.length ? others : room?.readers ?? []).filter((v) => v !== world.mine);
-	const byId = new Map(world.vaults.map((v) => [v.id, v]));
+	const others = (room?.readers ?? []).filter((v) => v !== world?.mine && v !== room.vault);
+	const people = (others.length ? others : room?.readers ?? []).filter((v) => v !== world?.mine);
+	const byId = new Map((world?.vaults ?? []).map((v) => [v.id, v]));
 	const names = people.map((v) => nameOf(byId.get(v))).filter(Boolean);
 	return names.length ? names.join(', ') : LOOKS[record?.look] ?? 'Room';
 }

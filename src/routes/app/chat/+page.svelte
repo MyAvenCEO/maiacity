@@ -17,7 +17,7 @@
 </svelte:head>
 
 <div class="chat-page">
-	{#if session.phase === 'open' && session.world}
+	{#if session.phase === 'open'}
 		<Chat />
 	{:else}
 		<div class="closed">
