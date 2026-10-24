@@ -197,8 +197,17 @@ mod tests {
         assert!(lab.authenticate_entry_base(phone, snapshot, EntryId([99;32]), &sealed).is_none());
         let outsider = lab.device("Outsider");
         assert!(lab.authenticate_entry_base(outsider, snapshot, entry, &sealed).is_none());
-        lab.submit(mac, &[owner], Action::Revoke(crate::policy::Revoking::Device { vault, device: phone, keep: vec![] })).unwrap();
-        lab.sync(mac, phone);
+        let revoke = lab.submit(mac, &[owner], Action::Revoke(crate::policy::Revoking::Device { vault, device: phone, keep: vec![] })).unwrap();
+        assert!(!lab.state(mac).is_device(phone, vault), "issuer has applied the revocation");
+        assert!(!lab.log(phone).ids().contains(&revoke), "reader has not received the new policy yet");
+        // Sync filters by the sender's current authorization; a removed device is not
+        // guaranteed to receive its former vault log. This gate is relative to held
+        // verified policy, so deliver the signed removal through ordinary receive.
+        let signed = lab.backup(mac).signed().iter()
+            .filter(|edit| edit.edit.id() == revoke).cloned().collect();
+        lab.receive(phone, signed, vec![]);
+        assert!(lab.log(phone).ids().contains(&revoke), "revocation evidence is actually held");
+        assert!(!lab.state(phone).is_device(phone, vault), "reader policy has applied the revocation");
         assert!(lab.authenticate_entry_base(phone, snapshot, entry, &sealed).is_none());
     }
 
