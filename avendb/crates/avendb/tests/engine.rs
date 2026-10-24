@@ -2182,3 +2182,28 @@ fn entry_views_are_exact_scoped_world_rows_before_and_after_revocation() {
         assert!(engine::read(&w.lab, mac, &json!({"op":"entry_views", "vault":w.alice.to_hex(), "kind":kind})).get("refused").is_some());
     }
 }
+
+#[test]
+fn query_observed_revision_is_opt_in_and_matches_the_authorized_get_frontier() {
+    let mut w = cast::world();
+    let _library = cast::library(&mut w);
+    let mac = w.mac_a;
+    let plain = ok(run(&mut w, mac, json!({"op":"query"})));
+    assert!(!list(&plain["rows"]).is_empty());
+    assert!(list(&plain["rows"]).iter().all(|row| row.get("observedRevision").is_none()));
+    let observed = ok(run(&mut w, mac, json!({"op":"query","observeRevision":true})));
+    assert_eq!(entries(&plain), entries(&observed));
+    for row in list(&observed["rows"]) {
+        let got = ok(run(&mut w, mac, json!({"op":"get","entry":row["entry"]})));
+        assert_eq!(row["observedRevision"]["kind"], "main-heads");
+        assert_eq!(row["observedRevision"]["frontierComplete"], true);
+        assert_eq!(row["observedRevision"]["heads"], got["heads"]);
+        assert_eq!(row["record"], got["record"]);
+    }
+    let other = w.mac_b;
+    w.lab.sync_all(0);
+    let alice = w.alice.to_hex();
+    let denied = ok(run(&mut w, other, json!({"op":"query","vault":alice,"observeRevision":true})));
+    assert!(list(&denied["rows"]).is_empty());
+    assert!(run(&mut w, mac, json!({"op":"query","observeRevision":"yes"})).get("refused").is_some());
+}
