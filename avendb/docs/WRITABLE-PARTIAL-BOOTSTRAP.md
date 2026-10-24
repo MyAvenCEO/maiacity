@@ -277,3 +277,7 @@ proof/schema lineage and acceptance state needed to recreate History/Mine/After 
 Loro decode CPU/allocation requires a bounded gate; durable base+suffix recovery and
 concurrent/revoked/pre-cut-proposal differential convergence must pass. No writable object or
 Node operation is enabled by this stage, and it remains outside the frozen release candidate.
+
+Stage-three code: [`f577ffad`](https://github.com/MyAvenCEO/maiacity/commit/f577ffad).
+Pending combined Rust command: `cargo test -p avendb --lib counted_base -- --nocapture`;
+existing policy/history/proposal/sharing suites must also cover the shared admission refactor.
