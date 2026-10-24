@@ -15,7 +15,7 @@
 	import { base } from '$app/paths';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import { onMount } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { ApiError, me, passBy, signOut, type Founder } from '$lib/auth/client';
 	import { claimInvite, failure, later, open, signUpName, waits } from '$lib/app/entry.js';
 	import { pillContext } from '$lib/app/pill.svelte.js';
@@ -326,6 +326,11 @@
 		await goto(`${base}/`);
 	}
 
+    $effect(() => {
+        void page.url.pathname; void page.url.hash;
+        if (phase !== 'ready') return;
+        untrack(() => { void session.viewChanged().catch(() => {}); });
+    });
 	const rel = $derived(page.url.pathname.slice(base.length));
 	// full screen: a sandbox, a world, the turntables ($lib/app/Turntable.svelte), a
 	// factory's hall, and the studio's editor

@@ -121,7 +121,7 @@ import { contextVaults } from './context.js';
  * whether avenDB's server keeps an encrypted copy of it, `null` where it holds no share on it; `kinds` the kind table.
  * @typedef {{ me: string, mine: string, recovery: string | null, vaults: VaultView[], shares: CapView[],
  *   audiences: CellView[], entries: EntryView[], groups: Group[], kinds: KindRules[], ownsServer: boolean,
- *   backsUp: boolean | null }} WorldView
+ *   backsUp: boolean | null, entriesComplete?: boolean }} WorldView
  */
 /**
  * What the device answers `may` for one op: it would make it, it would once those signers approve it, or why not.

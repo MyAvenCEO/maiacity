@@ -293,6 +293,9 @@
 {/snippet}
 
 <div class="shell" class:reading={!!route.entry}>
+    {#if world.entriesComplete === false && tab !== 'home'}
+        <p role="status">Loading this view’s local entries…</p>
+    {:else}
 	{#if route.entry}
 		{#key `${route.entry}${route.page}${route.edit}`}
 			{#if route.page === 'stories' && route.edit}
@@ -390,6 +393,7 @@
 			<Ask {world} {api} {busy} made={asks.made} to={here.id} />
 		</Panel>
 	{/if}
+    {/if}
 </div>
 
 <style>

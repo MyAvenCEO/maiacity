@@ -398,3 +398,37 @@ fn own_materialization_revocation_and_missing_body_use_canonical_fallback() {
     let actual: Vec<_> = [t.door,t.seeds,t.solar].iter().map(|e| w.lab.item(w.mac_c,*e).map(Item::record)).collect();
     assert_eq!(actual, expected);
 }
+
+
+#[test]
+fn startup_summary_preserves_authority_without_importing_ordinary_warm_items() {
+    use crate::cast::{document, human_on};
+    let mut lab = Lab::new();
+    let owner = lab.passkey("Summary owner");
+    let d = lab.device_of(owner, "Summary device");
+    let v = human_on(&mut lab, owner, &[d]);
+    let entry = lab.create(d,v,v,"note",&[],document("Unrelated", "Do not import at startup",d)).unwrap();
+    lab.restore_from(d,lab.backup(d));
+    let count = lab.backup(d).signed.len();
+    let saved = lab.warming(d,count,Some([89;40])).unwrap();
+    let opened = lab.shelf_key(d).unwrap().unlock("view",&saved.view.unwrap(),ENGINE.as_bytes()).unwrap();
+    let (_, extra) = warm_materialization::unwrap(&opened).unwrap();
+    let deferred = {
+        let store = lab.held(d);
+        let st = store.view();
+        let shown = &store.shown[&entry];
+        warm_materialization::decode(extra).unwrap().remove(&entry).unwrap()
+            .restore(d,st,&store.readings,&store.bodies,st.entry(entry).unwrap(),shown.print,shown.tip).unwrap()
+    };
+    lab.stores.get_mut(&d).unwrap().shown.insert(entry,deferred);
+    let mut summary = crate::engine::read(&lab,d,&serde_json::json!({"op":"world_summary"}))["ok"].clone();
+    assert_eq!(summary["entriesComplete"],false);
+    assert_eq!(summary["entries"],serde_json::json!([]));
+    assert!(lab.held(d).shown[&entry].items.get().is_none(), "summary must leave unrelated warm notes deferred");
+    let mut full = crate::engine::read(&lab,d,&serde_json::json!({"op":"world"}))["ok"].clone();
+    assert!(lab.held(d).shown[&entry].items.get().is_some());
+    summary.as_object_mut().unwrap().remove("entriesComplete");
+    summary.as_object_mut().unwrap().remove("entries");
+    full.as_object_mut().unwrap().remove("entries");
+    assert_eq!(summary,full,"navigation and authority metadata must be exactly canonical");
+}

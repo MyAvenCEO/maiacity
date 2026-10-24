@@ -46,6 +46,7 @@
 
 <script>
 	import { onMount, untrack } from 'svelte';
+    import { completeEntries } from './startup-summary.js';
 	import { onStir } from './stirs.svelte.js';
 	import { foot, FOOT } from '$lib/app/foot.js';
 	import { signUpName } from '$lib/app/entry.js';
@@ -313,7 +314,10 @@
 				.catch((/** @type {Error} */ e) => (session.error = `Setting what ${here} keeps failed: ${e.message}`))
 				.finally(() => (copying = false));
 		}
-		// the profiles of the person's vault, by their maiaCITY name, and of the seed their claim of the server
+		// Metadata-only startup can maintain the device card/copy policy. Entry-based
+        // maintenance must never interpret the deliberately absent collection as empty.
+        if (!completeEntries(w)) return;
+        // the profiles of the person's vault, by their maiaCITY name, and of the seed their claim of the server
 		// founded, if it did: written once, by whichever of their devices comes first, each public as it is named
 		// (./vaults.js `NAME_TYPES`)
 		/** @type {[string, string][]} */

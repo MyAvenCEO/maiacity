@@ -1,3 +1,4 @@
+import { summaryView } from './startup-summary.js';
 import { observedWindow } from './observed-window.js';
 /*
  * This tab's avenDB device, the one every page of the site shares: the person's account on this browser, loaded once,
@@ -612,6 +613,7 @@ async function timed(work) {
 
 /** Both background watchers and explicit barriers share one reader per device. */
 const worldReaders = new WeakMap();
+const fullWorldRequests = new WeakSet();
 const retiredWorlds = new WeakSet();
 function retireWorld(/** @type {any} */ d) {
 	retiredWorlds.add(d);
@@ -619,14 +621,17 @@ function retireWorld(/** @type {any} */ d) {
 	// Keep the terminal reader until this device object is collected: late callers
 	// during asynchronous close must not resurrect a new reader for it.
 }
-function refreshDevice(/** @type {any} */ d, initial = false) {
+function refreshDevice(/** @type {any} */ d, initial = false, full = false) {
+    if (full) fullWorldRequests.add(d);
 	if (retiredWorlds.has(d)) return Promise.reject(new Error('The avenDB device changed before its world refresh.'));
 	let reader = worldReaders.get(d);
 	if (!reader) {
 		reader = createWorldReader({
 			read: async () => {
 				if (device !== d) throw new Error('The avenDB device changed before its world refresh.');
-				return answer(await near(d, { op: 'world' })) ?? null;
+				const full = fullWorldRequests.delete(d);
+                const scoped = !full && typeof location !== 'undefined' && summaryView(location.pathname, location.hash);
+                return answer(await near(d, { op: scoped ? 'world_summary' : 'world' })) ?? null;
 			},
 			take: (w) => {
 				if (device !== d) throw new Error('The avenDB device changed during its world refresh.');
@@ -643,7 +648,7 @@ function refreshDevice(/** @type {any} */ d, initial = false) {
 /** Explicit barrier: its snapshot starts after this call, even if an older read runs. */
 async function refresh() {
 	const d = device;
-	if (d) await refreshDevice(d);
+	if (d) await refreshDevice(d, false, true);
 }
 
 /** Accepted local writes do not wait for their requested summary. Let Svelte
@@ -962,6 +967,7 @@ const api = {
 	refresh: () => refresh(),
     /** Join the initial summary without scheduling a second whole-world read. */
     initialWorld: () => device ? refreshDevice(device, true) : Promise.resolve(),
+    viewChanged: () => device ? refreshDevice(device, world === null) : Promise.resolve(),
 	/**
 	 * Bytes `from` to `to` of the file whose root is `root` and whose sealed size is `size`, from this device's
 	 * store or fetched from a peer that may hand them over.
