@@ -9,6 +9,10 @@ Last maintained: 2026-10-25. Current execution order: keep three subagents plus 
 
 ### Separate working-set integration — 25 October
 
+**Latest combined evidence:** release local `avendb-net --lib` passed **182/182**, with7 separately ignored, including the filling-to-final read race and actual Node foreground/cancellation regression. This feature set differs from CI's larger net/server suite; it does not replace that gate or real-browser transfer. Working-set application check passed **0errors/27warnings** and Lean **122jobs**. Combined core/warm/shared/proposal/file-demand regressions are now running; no result claimed yet.
+
+Integrated performance increments: [f520ad7f](https://github.com/MyAvenCEO/maiacity/commit/f520ad7f) replaces per-entry file-demand history scans with one existing authorized batch projection. [69d4f178](https://github.com/MyAvenCEO/maiacity/commit/69d4f178) scopes Models/Code local file inventories independently of whole-world discovery; its3 focused integrated tests passed. Both remain source-only until delivery. Bootstrap document current status reconciled in [1ec5d1da](https://github.com/MyAvenCEO/maiacity/commit/1ec5d1da).
+
 
 **Current verified integration status (25 October):** release native authentication tests passed **4/4** and corrected S3 regression passed **1/1**. Release PR1271 is open; its remaining net/browser failures have focused fixes awaiting final validation. Full release net tests are currently compiling; serialize Cargo builds. Working-set Lean passed121jobs. The first warm branch core run passed266 and failed2; both failures now have corrections integrated, but the combined rerun has **not passed yet**.
 
