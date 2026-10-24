@@ -4273,7 +4273,9 @@ impl Lab {
                 && st.wants(requester, en)
                 && vault.is_none_or(|v| en.vault == v)
                 && self.landed(me, en.id)
-        }).filter(|en| self.meaning(me, en.id).is_some_and(|meaning| selector.matches(&meaning.attrs)))
+        // The selector contains only immutable creation types. Rebuilding each candidate's
+        // full meaning (retags, shares and stewardship) adds work without changing that match.
+        }).filter(|en| st.first_attrs(en, &self.held(me).readings).is_some_and(|attrs| selector.matches(&attrs)))
             .take(64).map(|en| en.id).collect()
     }
 
