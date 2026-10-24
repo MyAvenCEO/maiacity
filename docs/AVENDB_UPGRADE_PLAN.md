@@ -707,3 +707,34 @@ Focused validation passed: `cargo test --locked -p avendb --test work_metrics` (
 Final review found that paginated Chat discovery limited the existing-DM reuse search to the visible page. [dff1ddce](https://github.com/MyAvenCEO/maiacity/commit/dff1ddce4d4d3b9f74e0fb4af7edf6f29e31c21d) repairs this through canonical universal DM queries and explicit-ID metadata reads in a component-owned read window. A refused/cancelled lookup or changed/missing metadata never proves absence; leaving the composer or replacing its context closes the window and prevents late creation. The lookup is local and does not claim global uniqueness between disconnected devices.
 
 Validation: Lean absence/refusal/page-independence contract passed; 27 shared room/query/observer tests passed; actual Chat Chromium and WebKit both reused the existing DM beyond page one among 51 DMs with zero writes. Kernel Chromium/WebKit jobs now independently invoke both `--dm-reuse` and the existing `--cold-chat` release regressions. Overall task 5 remains Doing; final-head CI, delivery and physical latency are tracked separately by the release owner.
+
+
+## PR1265 delivery — 24 October 2026
+
+Merged [PR1265](https://github.com/MyAvenCEO/maiacity/pull/1265) as [ec8c2231dc798ea36e01d7c2cbcd68c1e26366eb](https://github.com/MyAvenCEO/maiacity/commit/ec8c2231dc798ea36e01d7c2cbcd68c1e26366eb). Exact reviewed head `2c1c245a597dc436be6ad202ca77963ee6540371` passed every required check plus independent real Chromium/WASM run [40106847675](https://github.com/MyAvenCEO/maiacity/actions/runs/40106847675). The snapshot held-encoder/cancellation regression passed in 1.065 s; invalidated snapshot retry passed in 0.312 s; net/server suite passed 244 tests with 8 explicitly skipped. The repaired test lets Node acquire its own sole disk writer; production ownership checks and concurrency assertions remain unchanged. Cold Chat discovery and cross-page DM reuse now run in Chromium and WebKit CI.
+
+Delivered source slices: one-pass file-history grouping, guarded lazy replay, scoped local room discovery, native snapshot serialization/encryption outside Lab, and lightweight startup rehearsal metrics. These are bounded improvements, not completion of authenticated partial bootstrap or proof of physical sub-50ms interaction.
+
+- Website/PWA [40107513232](https://github.com/MyAvenCEO/maiacity/actions/runs/40107513232): success; live release manifest matches the exact CI artifact and all 852 served files match BLAKE3.
+- API [40107513197](https://github.com/MyAvenCEO/maiacity/actions/runs/40107513197): success; internal health passed 15:36:48 UTC and external health passed 15:36:49 UTC.
+- Hosted peer [40107513178](https://github.com/MyAvenCEO/maiacity/actions/runs/40107513178): successful deployment workflow; independent running-image evidence recorded below when complete.
+
+Native Mac installation is **not** updated by this delivery. Existing installed 30d acceptance remains historical evidence. Isolated combined source `62771396314460f2e6c11dd4091fe3fa177fb7f4` on `codex/native-combined-1265` preserves Studio 50f9337c and the full 30d lineage; 68 targeted frontend checks and 337 recipe cards passed. Its WASM is explicitly provisional until regenerated from combined source; native build/install and final full typecheck remain pending. No account, vault, keys or live store reset occurred.
+
+The eleven-task architecture plan remains incomplete: full warm-start optimization, end-to-end manifest scheduling, authenticated partial bootstrap, live mutations during that bootstrap, complete progressive persistence/query completeness, and physical iPhone/iPad accepted-entry roundtrip/remote-visible measurements remain open. Hosted publication does not establish which bundle an already-open PWA is executing.
+
+
+### PR #1265 publication verified — ec8c2231 (2026-10-24)
+
+PR #1265 merged as [ec8c2231dc798ea36e01d7c2cbcd68c1e26366eb](https://github.com/MyAvenCEO/maiacity/commit/ec8c2231dc798ea36e01d7c2cbcd68c1e26366eb). Automatic deployment completed without a manual duplicate rollout or shutdown bypass.
+
+- **Site/PWA publication:** [run 40107513232](https://github.com/MyAvenCEO/maiacity/actions/runs/40107513232) passed. The live `release.json` exactly matches the merge-SHA CI artifact, and all **852 served files** match their BLAKE3 hashes; zero failures.
+- **API:** [run 40107513197](https://github.com/MyAvenCEO/maiacity/actions/runs/40107513197) passed, with actual internal health success at 15:36:48 UTC and external health success at 15:36:49 UTC.
+- **Hosted peer:** [run 40107513178](https://github.com/MyAvenCEO/maiacity/actions/runs/40107513178) passed Rust/Lean/delivery gates, verified graceful close and the post-settings identity gate, then produced its ready offer. Internal and external PQ relay health, refusal of classical-only key exchange, feed response and browser relay HTTP 101 passed.
+- **Actual running image:** [read-only run 40108318545](https://github.com/MyAvenCEO/maiacity/actions/runs/40108318545), observed 15:44:14 UTC, reports Docker.Image `sha256:f1cf40e30f893212eb5c2c86f13ac70c2e3a72696355811e2165541a7c172aa5`. This exactly matches the build log's published manifest-list digest for the ec8c2231 tag. Its separate build config digest is `sha256:ee83a9c10f27bef6b5a77bd5e7f9e369abd18e354aa3a4092c2d29c4abb05fc5`; do not conflate the two. The OCI revision label remains absent. Runtime was running with zero restarts, no recorded panic or container OOM, one start in the last hour, and the prior instance ended `stopped`.
+
+This verifies publication and hosted runtime identity/health. It does not assert that physical iPhone/iPad PWAs have loaded the new bundle, that latency targets have been met, or that the Mac native application was rebuilt/installed for this commit. Those remain distinct acceptance items. The hosted node has unchanged peer authority.
+
+Private evidence: `/private/tmp/avendb-ec8c-deployment-evidence.json`, `/private/tmp/avendb-site-ec8c2231-served-check.log`, `/private/tmp/avendb-ec8c-hosted-image.log`, `/private/tmp/avendb-ec8c-hosted-deploy.log`, `/private/tmp/avendb-ec8c-api-deploy.log`, and `/private/tmp/avendb-hosted-audit-latest-40108318545/guest-health.json`.
+
+Native coordination follow-up: Studio commits `ad52aed7` and `d3d6082e` are now validated by that chat (Svelte: zero errors, 28 warnings) and must also be preserved before the next combined native build. They are not included in the prepared `6277139` source and are not part of the published PR1265 release. Final combined production build remains required.
