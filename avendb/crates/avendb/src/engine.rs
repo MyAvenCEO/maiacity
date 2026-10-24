@@ -194,7 +194,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "undo" => &["entry", "line", "edit", "as"],
         "fork" => &["entry", "line", "into", "schema", "ops", "as"],
         "batch" | "may" => &["ops", "as"],
-        "world" | "log" | "jobs" | "synced" | "network" => &[],
+        "world" | "log" | "jobs" | "synced" | "network" | "measure_peer_policy" => &[],
         "code" => &["vault", "type"],
         "posts" => &["limit", "after"],
         "bring" => &["vaults", "entries", "prioritize"],
@@ -228,7 +228,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
-const READS: [&str; 32] = [
+const READS: [&str; 33] = [
     "entry_views",
     "query",
     "objective_check",
@@ -260,6 +260,7 @@ const READS: [&str; 32] = [
     "demand",
     "synced",
     "network",
+    "measure_peer_policy",
     "api_pass",
 ];
 
@@ -364,6 +365,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         "demand" => Err(bad("demand changes a node's local scheduling priorities: a node runs it (Node::run)")),
         "bring" => Err(bad("bring asks a node's peers for vaults or entries: a node runs it (Node::run)")),
         "synced" => Err(bad("synced tells what a node's peers hold: a node runs it (Node::run)")),
+        "measure_peer_policy" => Err(bad("peer policy measurements require a node (Node::run)")),
         "network" => Err(bad("network tells where a node syncs from and how: a node runs it (Node::run)")),
         _ if ASKS.contains(&name) => Err(bad(format!("{name} asks by dry runs: run it, don't read it"))),
         _ => Err(bad(format!("{name} changes what the device holds: run it, don't read it"))),

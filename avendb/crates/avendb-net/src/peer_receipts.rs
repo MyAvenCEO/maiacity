@@ -246,7 +246,9 @@ mod tests {
         mac.know(phone.addr());
         phone.sync_with(mac.id()).await.unwrap();
         assert!(!mac.shared.receipts.enabled());
-        mac.shared.receipts.arm();
+        let armed = mac.op(serde_json::json!({"op":"measure_peer_policy"})).await.unwrap();
+        assert!(armed.get("ok").is_some(), "{armed}");
+        assert!(mac.shared.receipts.enabled());
         mac.act(move |lab, me| {
             lab.create(
                 me,
