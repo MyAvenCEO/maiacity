@@ -59,6 +59,28 @@ pub(crate) async fn answer(
     );
     Ok(bytes)
 }
+fn validate_reply(reply: &Reply, entry: EntryId, ids: &[EditId]) -> Result<()> {
+    anyhow::ensure!(
+        !reply.more && reply.blobs.is_empty() && reply.edits.len() <= ids.len(),
+        "unexpected dependency payload"
+    );
+    anyhow::ensure!(
+        reply.edits.iter().all(|s| ids.contains(&s.edit.id())
+            && matches!(s.edit.action,avendb::policy::Action::Write{entry:e,..}if e==entry)),
+        "dependency outside requested entry/cut"
+    );
+    anyhow::ensure!(
+        reply
+            .edits
+            .iter()
+            .map(|s| s.edit.id())
+            .collect::<BTreeSet<_>>()
+            .len()
+            == reply.edits.len(),
+        "duplicate dependency reply IDs"
+    );
+    Ok(())
+}
 impl Shared {
     /// One bounded sweep; disconnected/legacy peers leave the exact wait visible.
     /// The caller backs off between unresolved sweeps, while new local work wakes it.
@@ -137,15 +159,7 @@ impl Shared {
         )
         .await??;
         let reply = Reply::from_wire(&bytes)?;
-        anyhow::ensure!(
-            !reply.more && reply.blobs.is_empty() && reply.edits.len() <= ids.len(),
-            "unexpected dependency payload"
-        );
-        anyhow::ensure!(
-            reply.edits.iter().all(|s| ids.contains(&s.edit.id())
-                && matches!(s.edit.action,avendb::policy::Action::Write{entry:e,..}if e==entry)),
-            "dependency outside requested entry/cut"
-        );
+        validate_reply(&reply, entry, &ids)?;
         if reply.edits.is_empty() {
             return Ok(());
         }
@@ -214,6 +228,22 @@ mod network_tests {
             .edit(mac, vault, entry, |i| i.set_text(2, "needed"))
             .unwrap();
         let signed = lab.signed_edit(mac, wanted).unwrap().clone();
+        let bad = Reply {
+            edits: vec![signed.clone(), signed.clone()],
+            blobs: vec![],
+            more: false,
+        };
+        assert!(
+            validate_reply(&bad, entry, &[wanted, EditId([99; 32])]).is_err(),
+            "duplicates cannot consume signature work as distinct requested edits"
+        );
+        let one = Reply {
+            edits: vec![signed.clone()],
+            blobs: vec![],
+            more: false,
+        };
+        assert!(validate_reply(&one, EntryId([99; 32]), &[wanted]).is_err());
+
         let unrelated = lab
             .create(
                 mac,

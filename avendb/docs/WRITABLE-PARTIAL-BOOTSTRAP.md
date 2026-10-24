@@ -670,3 +670,25 @@ Exact-dependency network integration committed and pushed:
 `codex/bootstrap-dependency-fetch`. Requires the core missing-cut API from
 [5c3d5201](https://github.com/MyAvenCEO/maiacity/commit/5c3d5201).
 Combined compilation/behavioral validation remains pending.
+
+### Transport review: wait transitions and malformed replies
+
+Found and fixed a real wake gap: creating an exact missing-body wait makes runnable
+reconstruction false, so the old `Shared::try_lab` wake predicate could leave an
+idle dependency pump asleep. It now compares authorized missing-cut reports before
+and after the mutation and wakes new/changed waits as well as runnable suffix work.
+A wait change also emits a reactive notification even if only restored keys/bodies
+changed the materialized result. The new Node regression adopts directly into a
+missing-cut wait with no runnable suffix, requires an idle-pump wake, then checks
+late-body resolution and reactive notification. Targeted replies now reject duplicate
+signed IDs before cryptographic preparation; the network fixture checks duplicate
+and wrong-entry payload rejection.
+
+Review findings retained as open: a current suffix whose decryption key is missing
+still drops its useful prefix in core admission rather than retaining a distinct
+key wait. This requires a separate truthful key-wait state and key-revision retry;
+resending already-held signed ciphertext is not a fix. Root and the core owner were
+notified. Cancellation retains prepared-receive admission until detached work ends;
+provider current-policy revision fencing and receiver ordinary signature/admission
+remain in place. No new authority was added. Rust regression execution is pending;
+syntax/diff checks passed.
