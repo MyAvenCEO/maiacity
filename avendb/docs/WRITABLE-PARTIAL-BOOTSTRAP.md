@@ -239,3 +239,41 @@ is not complete. This isolated stage is not part of the frozen release candidate
 
 Stage-two implementation: [`1ce8bd2b`](https://github.com/MyAvenCEO/maiacity/commit/1ce8bd2b).
 Lean and Rust syntax checks passed; Cargo remains explicitly pending shared-queue availability.
+
+### Stage three: shared admission and independently checked base equivalence
+
+`History::admit` now supplies one ordinary dependency/landing/schema/proposal gate to both
+local `Lab::proven` and remote `Judging::judge`. Each caller still derives authorization
+using its existing current policy, proof, capability groups and row-owner-marked touches.
+The gate requires counted dependencies and ordinary proposal ancestry; it never interprets
+an owner-attested fact as counted evidence. The existing explicit patched-app test mode
+remains separate; no new bypass is introduced.
+
+`History::snapshot_scratch` verifies a proposed full snapshot against independently held,
+counted, readable canonical history and checks exact exported snapshot bytes. Matching
+JSON or matching version vectors are insufficient. It returns a scratch built from the
+canonical Item, with the exact held edits and authored schemas, which feeds the existing
+`History::reading_on` footprint/schema machinery. A malformed/missing/uncounted basis,
+parked updates or differing snapshot refuses reuse. Byte comparison is conservative and
+may reject an equivalent alternative encoding; it cannot accept differing encoded state.
+
+`Lab::verify_counted_base_equivalence` rechecks current checkpoint authority and ciphertext,
+then requires full canonical correspondence for all facts and line snapshots. It deliberately
+returns false for a fresh partial reader missing those facts. This is executable equivalence
+checking, not a trusted-peer shortcut or a way to skip historical evidence. It still incurs
+canonical reconstruction and does not claim the new-device performance target is achieved.
+
+`BaseAdmission.lean` proves peer gate equality, authorization/counting requirements and
+revoked refusal from explicit input facts. Standalone Lean passed. Rust syntax checks passed;
+Cargo remains pending the root-owned queue. Added `counted_base_scratch_and_full_history`
+regression compares complete Reading results (footprint, row additions and schema verdict)
+and shared admission across canonical replay and verified-base scratch, with authorization,
+schema, missing-dependency and uncounted-base negatives. Existing counted-base roundtrip now
+requires full-holder equivalence and partial-holder refusal.
+
+Remaining blockers to writable activation are concrete: a partial device has no independently
+verified historical body/provenance witness yet; facts omit the full judged touches/row-adds,
+proof/schema lineage and acceptance state needed to recreate History/Mine/After safely;
+Loro decode CPU/allocation requires a bounded gate; durable base+suffix recovery and
+concurrent/revoked/pre-cut-proposal differential convergence must pass. No writable object or
+Node operation is enabled by this stage, and it remains outside the frozen release candidate.

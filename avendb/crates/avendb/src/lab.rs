@@ -3311,14 +3311,10 @@ impl Lab {
         // each set marked own or not as its readers will mark it, by whose each row is (`policy::Mine`)
         let touches = read.touches.as_deref().map(|ts| h.mine().mark(w.actor, &[ts, needs].concat()));
         let attrs = if w.first { first.cloned() } else { view.at_write(w, readings).0 };
-        let proof = self.prove(on, view, w, (touches.as_deref(), asks), attrs.as_ref())?;
-        if !(read.fits || self.lawless) {
-            return Err(Refusal::NotAView);
-        }
-        if !(h.passes(w, read.touches.as_deref()) || self.lawless) {
-            return Err(Refusal::NotAccepted);
-        }
-        Ok(proof)
+        let authorize = || self.prove(on, view, w, (touches.as_deref(), asks), attrs.as_ref());
+        // Existing patched-app test mode remains explicit; ordinary local and remote
+        // writes use the same dependency/landing/schema/proposal admission gate.
+        if self.lawless { authorize() } else { h.admit(w, &read, authorize) }
     }
 
     /// Run `f` dry: every edit it asks for, a write, a share, any edit it completes (`complete`), is checked, proven
@@ -6529,10 +6525,10 @@ impl<'a> Judging<'a> {
         let at = At { attrs: attrs.as_ref(), place: st.place(w.edit), groups };
         let counted = read.as_ref().is_some_and(|r| {
             let marked = r.touches.as_deref().map(|ts| mine.mark(w.actor, ts));
-            r.fits
-                && st.lets(w, proof, marked.as_deref(), asks, at)
-                && history.passes(w, r.touches.as_deref())
-                && history.lands(w)
+            history.admit(w, r, || {
+                st.lets(w, proof, marked.as_deref(), asks, at)
+                    .then_some(()).ok_or(Refusal::NotAllowed)
+            }).is_ok()
         });
         let adds = read.as_ref().map(|r| r.adds.clone()).unwrap_or_default();
         mine.note(w, &adds, counted);

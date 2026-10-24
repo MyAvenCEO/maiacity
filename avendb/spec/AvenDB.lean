@@ -97,3 +97,5 @@ import AvenDB.PeerReceipt
 import AvenDB.EntryBaseFormat
 
 import AvenDB.BaseSuffix
+
+import AvenDB.BaseAdmission
