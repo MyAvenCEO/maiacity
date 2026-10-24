@@ -30,3 +30,12 @@ theorem legacy_lane_not_writable (d : Nat) : laneReady none d = false := by simp
 theorem different_lane_not_writable (a b : Nat) (h : a ≠ b) : laneReady (some a) b = false := by
   simp [laneReady, h]
 end AvenDB.BootstrapDependencies
+
+namespace AvenDB.BootstrapDependencies
+-- Derived schema discovery remains a hint under the same live view lease.
+def laneDemand (live authorized waiting : Bool) : Bool := live && authorized && waiting
+theorem no_lane_demand_after_release (a w : Bool) : laneDemand false a w = false := by simp [laneDemand]
+theorem lane_demand_needs_authority (l a w : Bool) (h : laneDemand l a w = true) : a = true := by
+  simp [laneDemand, Bool.and_eq_true] at h
+  exact h.1.2
+end AvenDB.BootstrapDependencies
