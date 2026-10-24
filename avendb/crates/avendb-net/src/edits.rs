@@ -480,7 +480,7 @@ impl Edits {
         for id in &ids[if whole { 0 } else { kept.written }..] {
             record(&mut records, lab.signed_edit(me, *id).context("an edit the device holds")?);
         }
-        let anchors = lab.bootstrap_bytes(me);
+        let anchors = lab.bootstrap_bytes(me).context("bootstrap anchor cannot be encoded within durable bounds; previous durable state retained")?;
         ensure!(anchors.len() <= MAX_ANCHORS, "bootstrap anchor save exceeds its bound");
         Ok(Some(Due { anchors, anchor_stamp, to: ids.len(), lineage: lab.log(me).lineage(), records, keys, whole }))
     }
@@ -1197,6 +1197,44 @@ mod tests {
             }
         });
         (proxy, waiting, release, views)
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn bootstrap_anchor_only_adoption_wakes_saver_and_persists() {
+        use crate::{Node, Options};
+        use avendb::cast::{document, human_on};
+        use std::time::Duration;
+        let folder = std::env::temp_dir().join(format!("avendb-anchor-wake-{}", crate::shelf::fresh()));
+        let mut lab=Lab::new();
+        let owner=lab.passkey("Owner");
+        let mac=lab.device_of(owner,"Mac");
+        let phone=lab.device_of(owner,"Phone");
+        let vault=human_on(&mut lab,owner,&[mac,phone]);
+        let entry=lab.create(mac,vault,vault,"note",&[],document("Base","old",mac)).unwrap();
+        lab.sync(mac,phone);
+        lab.edit(mac,vault,entry,|i|i.set_text(2,"new")).unwrap();
+        let prepared=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
+        let snapshot=lab.complete(mac,prepared.draft,&[]).unwrap();
+        let offer=lab.entry_projection_offer(mac,phone,entry).unwrap();
+        lab.receive(phone,offer.evidence,vec![]);
+        let writer=crate::disk::open(&folder).unwrap().writer().unwrap();
+        let shelf=writer.shelf();
+        let node=Node::spawn(lab.split(phone,&[owner],[73;32]),phone,Options { shelf:Some(shelf.clone()), ..Options::local() }).await.unwrap();
+        node.tasks.lock().unwrap().iter().for_each(|task|task.abort());
+        node.shared.save().await.unwrap();
+        let edits=node.shared.edits.as_ref().unwrap();
+        while tokio::time::timeout(Duration::ZERO,edits.due.notified()).await.is_ok() {}
+        let before=node.read(|lab,me|lab.log(me).revision()).await;
+        assert!(node.act(move |lab,me|lab.adopt_owner_entry_base(me,snapshot,entry,prepared.sealed)).await);
+        assert_eq!(before,node.read(|lab,me|lab.log(me).revision()).await,"adoption adds no signed edit");
+        tokio::time::timeout(Duration::from_millis(100),edits.due.notified()).await.expect("anchor-only adoption wakes idle saver");
+        node.shared.save().await.unwrap();
+        let (_, (signed, keys, anchors))=Edits::open(shelf).await.unwrap();
+        assert!(!anchors.is_empty());
+        assert!(avendb::lab::Backup::new(signed,keys).with_bootstrap_bytes(&anchors).is_some());
+        node.shutdown().await.unwrap();
+        drop(writer);
+        std::fs::remove_dir_all(folder).ok();
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
