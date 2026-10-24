@@ -1,4 +1,5 @@
 // @ts-nocheck — plain JS
+import { answer } from '../avendb/ops.js';
 /**
  * Chat rooms on avenDB (avendb/docs/ARCHITECTURE.md §8, "Rooms"; plan /mnt/project-files/chat-rooms/plan.md): a room
  * is an entry of type `room` (Room, v1), a channel, a group, a DM or a note to self; its messages are rows, each with
@@ -171,9 +172,9 @@ export function grouped(ms) {
 export function titleOf(room, record, world, nameOf) {
 	if (record?.look === 'self') return 'Note to self';
 	if (record?.name) return record.look === 'channel' ? `# ${record.name}` : record.name;
-	const others = (room?.readers ?? []).filter((v) => v !== world.mine && v !== room.vault);
-	const people = (others.length ? others : room?.readers ?? []).filter((v) => v !== world.mine);
-	const byId = new Map(world.vaults.map((v) => [v.id, v]));
+	const others = (room?.readers ?? []).filter((v) => v !== world?.mine && v !== room.vault);
+	const people = (others.length ? others : room?.readers ?? []).filter((v) => v !== world?.mine);
+	const byId = new Map((world?.vaults ?? []).map((v) => [v.id, v]));
 	const names = people.map((v) => nameOf(byId.get(v))).filter(Boolean);
 	return names.length ? names.join(', ') : LOOKS[record?.look] ?? 'Room';
 }
@@ -234,4 +235,27 @@ export function dayWords(at) {
 	if (d.toDateString() === today.toDateString()) return 'Today';
 	if (d.toDateString() === y.toDateString()) return 'Yesterday';
 	return d.toLocaleDateString([], { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+/** Search canonical local DMs across all pages, independently of the displayed sidebar.
+ * A refused/cancelled read never proves absence. The caller owns and closes its read window. */
+export async function directRoom(read, who) {
+ for (let offset = 0; ; ) {
+  const page = answer(await read({ op: 'query', where: { all: [
+   { type: ['room'] }, { path: ['look'], eq: 'dm' }, { not: { tag: GONE } }
+  ] }, select: [], order: [['created', 'desc']], offset, limit: 50 }));
+  if (!page || !Array.isArray(page.rows) || !Number.isSafeInteger(page.count)) throw Error('Room lookup did not complete. Please try again.');
+  if (page.rows.length) {
+   const metadata = answer(await read({ op: 'entry_views', entries: page.rows.map(r => r.entry), types: ['room'] }));
+   if (!metadata || !Array.isArray(metadata.rows)) throw Error('Room lookup did not complete. Please try again.');
+   const rows = roomsOf({ entries: metadata.rows });
+   if (rows.length !== page.rows.length || page.rows.some(r => !rows.some(m => m.entry === r.entry && m.record?.look === 'dm')))
+    throw Error('Room access changed during lookup. Please try again.');
+   const found = rows.find(r => r.record?.look === 'dm' && (r.readers ?? []).includes(who));
+   if (found) return found.entry;
+  }
+  offset += page.rows.length;
+  if (offset >= page.count) return null;
+  if (!page.rows.length) throw Error('Room lookup changed. Please try again.');
+ }
 }

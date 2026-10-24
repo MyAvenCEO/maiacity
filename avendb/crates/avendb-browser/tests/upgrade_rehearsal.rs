@@ -338,7 +338,7 @@ async fn open_timed(label: &str, start: Start, meta: &Meta, ceremony: &Ceremony)
     let open_ms = began.elapsed().as_secs_f64() * 1000.0;
     progress.end();
     let capture = Instant::now();
-    let metrics = device.node().read(|lab, me| startup_metrics(&lab.perf(me))).await;
+    let metrics = device.node().read(|lab, me| startup_metrics(&lab.work_metrics(me))).await;
     eprintln!("REHEARSAL_STARTUP {}", json!({"phase": label, "open_ms": open_ms,
         "metric_capture_ms": capture.elapsed().as_secs_f64() * 1000.0,
         "steps": avendb_browser::steps_json(&progress.steps()), "metrics": metrics}));
@@ -349,7 +349,7 @@ async fn observe_timed(label: &str, device: &Device, before: &serde_json::Value)
     let began = Instant::now();
     let observed = observe(device).await?;
     let observe_ms = began.elapsed().as_secs_f64() * 1000.0;
-    let after = device.node().read(|lab, me| startup_metrics(&lab.perf(me))).await;
+    let after = device.node().read(|lab, me| startup_metrics(&lab.work_metrics(me))).await;
     eprintln!("REHEARSAL_OBSERVE {}", json!({"phase": label, "observe_ms": observe_ms,
         "metrics_delta": startup_delta(before, &after)}));
     Ok(observed)
@@ -417,14 +417,7 @@ async fn run() -> Result<()> {
     let began = Instant::now();
     let (warm, warm_metrics) = open_timed("warm-1", start()?, &meta, &ceremony).await?;
     ensure!(
-        warm.node()
-            .read(
-                |lab, me| lab.perf(me)["counts"]["replay: from its stored view"]
-                    .as_u64()
-                    .unwrap_or(0)
-            )
-            .await
-            == 1,
+        warm_metrics["counts"]["replay: from its stored view"].as_u64() == Some(1),
         "clean reopen did not exercise its stored view"
     );
     let stable_warm = compare("warm", &expected, &observe_timed("warm-1", &warm, &warm_metrics).await?);
@@ -454,15 +447,7 @@ async fn run() -> Result<()> {
     let began = Instant::now();
     let (recovered, recovery_metrics) = open_timed("recovery", start()?, &meta, &ceremony).await?;
     ensure!(
-        recovered
-            .node()
-            .read(
-                |lab, me| lab.perf(me)["counts"]["replay: from its stored view"]
-                    .as_u64()
-                    .unwrap_or(0)
-            )
-            .await
-            == 0,
+        recovery_metrics["counts"]["replay: from its stored view"].as_u64().unwrap_or(0) == 0,
         "corrupted-slot reopen did not exercise full replay fallback"
     );
     let stable_recovered = compare("recovered", &expected, &observe_timed("recovery", &recovered, &recovery_metrics).await?);

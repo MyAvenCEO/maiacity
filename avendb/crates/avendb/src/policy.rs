@@ -52,6 +52,7 @@ use crate::slice::{Attrs, Header, Select, Selector, TagDelta};
 use crate::wire::Wire;
 
 mod view;
+pub use view::ViewCapture;
 #[cfg(test)]
 mod replay_moves;
 

@@ -13,7 +13,7 @@ On main, `main.yml` selects affected components, builds site/container artifacts
 - `bun run test:all`: every owned JS/TS suite in separate processes.
 - `bun run test:inventory`: fail if a test has no owner.
 - `bun --bun run check`: application types under Bun.
-- `bun scripts/test-avendb-local-write.mjs --browser chromium --all`: four scenarios, one server/browser and a fresh context per case. Repeat with `webkit`.
+- `bun scripts/test-avendb-local-write.mjs --browser chromium --all`: six scenarios, one server/browser and a fresh context per case. Repeat with `webkit`.
 - `cd avendb && cargo test --locked --features test-fixtures -p avendb --test properties -- --test-threads=2`: the same 37 properties and 40 seeds in one process, sharing immutable histories. Other native tests retain nextest isolation.
 - `cd avendb/spec && lake build && lake exe vectors`: complete proof umbrella, generated-content checks and writer coverage.
 

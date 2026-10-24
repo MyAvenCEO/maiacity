@@ -491,7 +491,10 @@ pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
             syncs: syncing(st, &devices, v, x),
         });
     }
-    let entries = shown.iter().map(|en| entry(lab, me, en)).collect();
+    let mut files = lab.entry_files_batch(me, shown.iter().map(|en| en.id));
+    let entries = shown.iter().map(|en| {
+        entry_with_files(lab, me, en, files.remove(&en.id).expect("selected entry file group"))
+    }).collect();
     let (owns_server, backs_up) = (owns_server(lab, me), backs_up(lab, me));
     let recovery = lab.recovery();
     let signers_of = |v: &Vault| {
@@ -695,6 +698,10 @@ fn lane(lab: &Lab, me: SignerId, entry: EntryId, ty: Option<&str>) -> Option<Wha
 
 /// Entry `en` as device `me` shows it.
 fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
+    entry_with_files(lab, me, en, lab.entry_files(me, en.id))
+}
+
+fn entry_with_files(lab: &Lab, me: SignerId, en: &Entry, files: Vec<(FileRoot, Option<u64>)>) -> EntryView {
     let meaning = lab.meaning(me, en.id);
     let what = match lab.item(me, en.id) {
         None => lane(lab, me, en.id, meaning.as_ref().map(|m| m.attrs.ty.as_str())).unwrap_or(What::Sealed),
@@ -743,7 +750,7 @@ fn entry(lab: &Lab, me: SignerId, en: &Entry) -> EntryView {
         audience: x,
         public: st.public_key(KeyFam::Audience(v, x)),
         levels: levels(st, v, x),
-        files: lab.entry_files(me, en.id),
+        files,
         what,
     }
 }

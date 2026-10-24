@@ -348,7 +348,7 @@ fn shares_of(rd: &mut Reader<'_>) -> Result<Arc<[ShareId]>, WireError> {
     Ok(rd.seq::<ShareId>(32)?.into())
 }
 
-fn put_places(v: &Vec<usize>, out: &mut Vec<u8>) {
+fn put_places(v: &[usize], out: &mut Vec<u8>) {
     (v.len() as u32).encode(out);
     v.iter().for_each(|&i| (i as u32).encode(out));
 }
@@ -365,7 +365,7 @@ fn put_state(out: &mut Vec<u8>, r: &State, t: &State) {
     debug_assert!(t.narrow.is_empty() && t.late.is_none(), "a state between two edits");
     put_vec(out, &r.vaults, &t.vaults, |v| v.id, &r.vault_at);
     put_vec(out, &r.shares, &t.shares, |c| c.id, &r.share_at);
-    put_map(out, &r.held, &t.held, put_places);
+    put_map(out, &r.held, &t.held, |v, out| put_places(v, out));
     put_listed(out, &r.revoked, &t.revoked);
     put_vec(out, &r.entries, &t.entries, |en| en.id, &r.entry_at);
     put_listed(out, &r.born, &t.born);
@@ -470,39 +470,16 @@ impl Replay {
     /// their ids in the one order, which stood, the state, the signers that acted for the checkpoints' vaults, and the
     /// place it steps on from, each of whose states as it differs from the state after it.
     pub fn to_view(&self, held: usize) -> Vec<u8> {
-        let mut out = VIEW.to_vec();
-        (held as u64).encode(&mut out);
-        ids_hash(&self.ids).encode(&mut out);
-        (self.stood.len() as u32).encode(&mut out);
-        let mut bits = vec![0u8; self.stood.len().div_ceil(8)];
-        for (i, _) in self.stood.iter().enumerate().filter(|(_, s)| **s) {
-            bits[i / 8] |= 1 << (i % 8);
+        encode_view(held, &self.ids, &self.stood, &self.state, &self.acts,
+            self.tail.as_ref().map(|t| (t.at, &t.state, t.base.as_ref(), t.cands.as_slice(), t.tried.as_slice())))
+    }
+
+    /// Only the owned inputs the canonical view encoder needs: no edit bodies or derived indexes.
+    pub fn capture_view(&self) -> ViewCapture {
+        ViewCapture {
+            ids: self.ids.clone(), stood: self.stood.clone(), state: self.state.clone(), acts: self.acts.clone(),
+            tail: self.tail.as_ref().map(|t| (t.at, t.state.clone(), t.base.clone(), t.cands.clone(), t.tried.clone())),
         }
-        out.extend(bits);
-        put_state(&mut out, &State::default(), &self.state);
-        let mut acts: Vec<&(EditId, VaultId)> = self.acts.iter().collect();
-        acts.sort();
-        (acts.len() as u32).encode(&mut out);
-        acts.iter().for_each(|a| a.encode(&mut out));
-        match &self.tail {
-            None => out.push(0),
-            Some(tail) => {
-                out.push(1);
-                (tail.at as u64).encode(&mut out);
-                put_state(&mut out, &self.state, &tail.state);
-                match &tail.base {
-                    None => out.push(0),
-                    Some(base) => {
-                        out.push(1);
-                        put_state(&mut out, &tail.state, base);
-                    }
-                }
-                for places in [&tail.cands, &tail.tried] {
-                    put_places(places, &mut out);
-                }
-            }
-        }
-        out
     }
 
     /// The replay `to_view` made `bytes` of, of the first edits of `edits`, `ids` being their ids, and how many: none
@@ -568,4 +545,57 @@ impl Replay {
             _ => false,
         }
     }
+}
+
+/// Frozen input to the canonical encoder. Capturing copies IDs/bits/acts/tail positions;
+/// State payloads are Arc-backed. Edit bodies and derived prefix maps are not copied.
+pub struct ViewCapture {
+    ids: Vec<EditId>,
+    stood: Vec<bool>,
+    state: State,
+    acts: std::collections::HashSet<(EditId, VaultId)>,
+    tail: Option<(usize, State, Option<State>, Vec<usize>, Vec<usize>)>,
+}
+impl ViewCapture {
+    pub fn encode(self, held: usize) -> Vec<u8> {
+        encode_view(held, &self.ids, &self.stood, &self.state, &self.acts,
+            self.tail.as_ref().map(|t| (t.0, &t.1, t.2.as_ref(), t.3.as_slice(), t.4.as_slice())))
+    }
+}
+fn encode_view(held: usize, ids: &[EditId], stood: &[bool], state: &State,
+    acts: &std::collections::HashSet<(EditId, VaultId)>,
+    tail: Option<(usize, &State, Option<&State>, &[usize], &[usize])>) -> Vec<u8> {
+        let mut out = VIEW.to_vec();
+        (held as u64).encode(&mut out);
+        ids_hash(ids).encode(&mut out);
+        (stood.len() as u32).encode(&mut out);
+        let mut bits = vec![0u8; stood.len().div_ceil(8)];
+        for (i, _) in stood.iter().enumerate().filter(|(_, s)| **s) {
+            bits[i / 8] |= 1 << (i % 8);
+        }
+        out.extend(bits);
+        put_state(&mut out, &State::default(), state);
+        let mut acts: Vec<&(EditId, VaultId)> = acts.iter().collect();
+        acts.sort();
+        (acts.len() as u32).encode(&mut out);
+        acts.iter().for_each(|a| a.encode(&mut out));
+        match tail {
+            None => out.push(0),
+            Some((at, tail_state, base, cands, tried)) => {
+                out.push(1);
+                (at as u64).encode(&mut out);
+                put_state(&mut out, state, tail_state);
+                match base {
+                    None => out.push(0),
+                    Some(base) => {
+                        out.push(1);
+                        put_state(&mut out, tail_state, base);
+                    }
+                }
+                for places in [cands, tried] {
+                    put_places(places, &mut out);
+                }
+            }
+        }
+        out
 }

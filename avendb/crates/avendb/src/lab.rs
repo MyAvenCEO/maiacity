@@ -533,6 +533,36 @@ pub struct Warming {
     view_wholes: u64,
 }
 
+/// Immutable snapshot inputs, owned independently of Lab. Encoding consumes the keys
+/// and private RNG; dropping an unencoded capture acknowledges nothing.
+pub struct WarmCapture {
+    key: ShelfKey,
+    rng: SeededRng,
+    opened: Option<Vec<([u8; 32], Secret)>>,
+    replay: Option<crate::policy::ViewCapture>,
+    receipt: Warming,
+}
+impl WarmCapture {
+    pub fn encode(mut self) -> Warming {
+        if let Some(opened) = self.opened.take() {
+            let checked = self.receipt.keys_of.and_then(|(checked, _)| checked);
+            let mut bytes = Zeroizing::new(match checked {
+                Some(checked) => [&[1][..], &checked].concat(),
+                None => vec![0],
+            });
+            for (box_id, key) in opened {
+                bytes.extend(box_id.iter().copied().chain(key.bytes()));
+            }
+            self.receipt.keys = Some(self.key.lock("keys", &bytes, b"stored keys", &mut self.rng));
+        }
+        if let Some(replay) = self.replay.take() {
+            let bytes = Zeroizing::new(replay.encode(self.receipt.view_of));
+            self.receipt.view = Some(self.key.lock("view", &bytes, ENGINE.as_bytes(), &mut self.rng));
+        }
+        self.receipt
+    }
+}
+
 /// The most askers and askings a device keeps what it worked out for (`Answers`): past them it starts over.
 const ANSWERS_KEPT: usize = 256;
 
@@ -3116,7 +3146,13 @@ impl Lab {
     /// checks its own edits by.
     fn latest(&self, d: SignerId) -> &State {
         let store = self.held(d);
-        store.latest.get_or_init(|| store.log.view())
+        store.latest.get_or_init(|| {
+            // The maintained replay is a prefix of this held log, even while receive defers
+            // materialization. Advance it with the SAME guards/fallback as refresh; never
+            // expose its stale state directly. Withdrawal resets that prefix and restore
+            // replaces the Store. Cloning still costs history work under Lab's lock.
+            replay_on_why(store.replay.clone(), store.log.edits(), store.replayed).0.state
+        })
     }
 
     /// The write `action` authored by device `on` alone, drafted on `view`, what `on`'s edits say, if `view` accepts
@@ -4153,6 +4189,13 @@ impl Lab {
         &self.held(d).replay
     }
 
+    /// Already-recorded timers and counters only. Unlike `perf`, this does not
+    /// inspect history, compute vouching, or resolve authorization. Use it when
+    /// measuring startup so the observation does not add diagnostic replay work.
+    pub fn work_metrics(&self, d: SignerId) -> Value {
+        self.held(d).perf.to_json()
+    }
+
     /// What device `d`'s work cost since it started (`perf`), and how much it holds: its edits, the bodies it opened,
     /// the entries it shows and the blobs it keeps.
     pub fn perf(&self, d: SignerId) -> Value {
@@ -4940,6 +4983,20 @@ impl Lab {
         files.map(|f| (f, self.file(d, &f).map(|b| b.len))).collect()
     }
 
+    /// The same held-log projection as `entry_files`, grouped in one history pass for
+    /// a full-world snapshot. The caller supplies its already selected entries; this
+    /// transient map adds no authority or persisted cache. Lengths still use `file`.
+    pub(crate) fn entry_files_batch(
+        &self, d: SignerId, entries: impl IntoIterator<Item = EntryId>,
+    ) -> BTreeMap<EntryId, Vec<(FileRoot, Option<u64>)>> {
+        grouped_file_roots(entries, self.held(d).log.edits().iter())
+            .into_iter()
+            .map(|(entry, roots)| (entry, roots.into_iter().map(|root| {
+                (root, self.file(d, &root).map(|file| file.len))
+            }).collect()))
+            .collect()
+    }
+
     /// The files the writes of line `line` of entry `entry` bring that device `d` counts as the entry's, in the order
     /// the line's history holds them, oldest first, each once, with its plaintext length where `d` opens it (`file`):
     /// of the writes it counts on that line's history (`History::history`), those that create the entry, act for its
@@ -5236,33 +5293,32 @@ impl Lab {
     /// `None` while it is locked, and where its shelf lacks nothing. It holds them given only once the shelf took them
     /// (`warmed`), so a save cut short gives them again.
     pub fn warming(&mut self, d: SignerId, held: usize, checked: Option<Checked>) -> Option<Warming> {
+        self.capture_warm(d, held, checked).map(WarmCapture::encode)
+    }
+
+    /// Capture only inputs needed by the canonical snapshot encoder. No history serialization,
+    /// history hashing or bulk encryption occurs here. Copies IDs/bits/acts/key handles; no edit bodies.
+    /// The caller must release Lab before encoding. The existing receipt fence is retained.
+    pub fn capture_warm(&mut self, d: SignerId, held: usize, checked: Option<Checked>) -> Option<WarmCapture> {
         let key = self.shelf_key(d)?;
         let store = self.stores.get(&d)?;
         let (keys_due, view_due) = (store.keys_due(checked), store.view_due() && store.replayed <= held);
-        if !keys_due && !view_due {
-            return None;
-        }
+        if !keys_due && !view_due { return None; }
         let keys_of = keys_due.then(|| (checked.or(store.checked_given), store.opened_since.len()));
-        let keys = keys_of.map(|(checked, _)| {
-            let opened = store.opened_before.iter().chain(store.opened_since.iter().map(|(b, k)| (b, k)));
-            let mut bytes: Zeroizing<Vec<u8>> = Zeroizing::new(match checked {
-                Some(checked) => [&[1][..], &checked].concat(),
-                None => vec![0],
-            });
-            opened.for_each(|(b, k)| bytes.extend(b.iter().copied().chain(k.bytes())));
-            key.lock("keys", &bytes, b"stored keys", &mut self.rng)
-        });
-        let (view_of, view_wholes) = if view_due { (store.replayed, store.wholes) } else { (0, 0) };
-        let view = view_due.then(|| key.lock("view", &store.replay.to_view(view_of), ENGINE.as_bytes(), &mut self.rng));
-        Some(Warming {
-            keys,
-            view,
-            revision: store.warm_revision.clone(),
-            lineage: store.log.lineage(),
-            keys_of,
-            view_of,
-            view_wholes,
-        })
+        let opened = keys_due.then(|| store.opened_before.iter()
+            .chain(store.opened_since.iter().map(|(b, k)| (b, k)))
+            .map(|(b, k)| (*b, k.clone())).collect());
+        let replay = view_due.then(|| store.replay.capture_view());
+        let receipt = Warming {
+            keys: None, view: None,
+            revision: store.warm_revision.clone(), lineage: store.log.lineage(), keys_of,
+            view_of: if view_due { store.replayed } else { 0 },
+            view_wholes: if view_due { store.wholes } else { 0 },
+        };
+        let mut seed = Zeroizing::new([0u8; 32]);
+        self.rng.fill_bytes(&mut *seed);
+        let rng = SeededRng::new("warm snapshot encryption", &*seed);
+        Some(WarmCapture { key, rng, opened, replay, receipt })
     }
 
     /// Whether device `d`'s shelf lacks something of `Warm` (`warming`), as cheaply as it tells: the node's saver is
@@ -6422,3 +6478,29 @@ mod receive_empty_tests;
 #[cfg(test)]
 #[path = "request_basis_tests.rs"]
 mod request_basis_tests;
+
+/// Preserve receipt order and first occurrence, exactly as the per-entry scan does.
+/// Keeping iteration generic lets the regression count actual history visits.
+fn grouped_file_roots<'a>(
+    entries: impl IntoIterator<Item = EntryId>,
+    edits: impl IntoIterator<Item = &'a Edit>,
+) -> BTreeMap<EntryId, Vec<FileRoot>> {
+    let mut groups: BTreeMap<_, (BTreeSet<FileRoot>, Vec<FileRoot>)> = entries.into_iter()
+        .map(|entry| (entry, (BTreeSet::new(), vec![]))).collect();
+    if !groups.is_empty() {
+        for edit in edits {
+            let Some((seen, roots)) = edit.entry().and_then(|entry| groups.get_mut(&entry)) else { continue };
+            for &root in edit.files() {
+                if seen.insert(root) { roots.push(root); }
+            }
+        }
+    }
+    groups.into_iter().map(|(entry, (_, roots))| (entry, roots)).collect()
+}
+
+#[cfg(test)]
+#[path = "entry_files_batch_tests.rs"]
+mod entry_files_batch_tests;
+#[cfg(test)]
+#[path = "latest_replay_tests.rs"]
+mod latest_replay_tests;
