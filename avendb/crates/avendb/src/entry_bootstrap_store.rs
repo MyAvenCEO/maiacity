@@ -57,6 +57,25 @@ pub(crate) struct RetainedOverlay {
     readings: Readings,
 }
 
+// One-time transition to ordinary canonical state, never reuse an overlay as proof.
+fn canonical_owner_replacement(on: SignerId, store: &Store, base: &RestoredOwnerJudgment) -> Option<Shown> {
+    let state=&store.replay.state;
+    if store.replayed != store.log.edits().len() { return None; }
+    let en=state.entry(base.entry)?;
+    if !state.acts_for(on,en.vault) { return None; }
+    let held=|id: EditId| store.signed.contains_key(&id) && store.bodies.contains_key(&id);
+    if !base.history.changes().iter().all(|c| held(c.write.edit))
+        || !state.entry_writes(base.entry).all(|w| held(w.edit)) { return None; }
+    let lane=Lane::with_built_ins(state.lane_of(en.vault,&store.readings));
+    let canonical=judged_anew(on,state,(&store.readings,&store.bodies),&store.readings.groups,en,&lane);
+    if !base.history.changes().iter().all(|old| canonical.history.get(old.write.edit).is_some_and(|now|
+        now.write==old.write && now.counted==old.counted && now.fits==old.fits
+            && now.touches==old.touches && now.adds==old.adds)) { return None; }
+    if !canonical.items().contains_key(&MAIN)
+        || canonical.items().values().any(Item::has_parked_updates) { return None; }
+    Some(canonical)
+}
+
 impl Lab {
 
     pub fn owner_bases_pending(&self, on: SignerId) -> bool {
@@ -168,6 +187,25 @@ impl Lab {
         let mut restored = Vec::new();
         for entry in &entries {
             let snapshot = self.held(on).bootstrap_bases[entry].0;
+            // Only attempt retirement after the complete attested frontier is locally held.
+            // Frontier presence alone never establishes content/judgment completeness.
+            let frontier_held = self.projection_authority(on,snapshot,*entry)
+                .is_some_and(|(_,stated,_)| stated.basis.iter().all(|id| self.held(on).signed.contains_key(id)));
+            if frontier_held {
+                let sealed=&self.held(on).bootstrap_bases[entry].1;
+                if let Some(base)=self.decode_owner_judgment(on,snapshot,*entry,sealed,false) {
+                    if let Some(canonical)=canonical_owner_replacement(on,self.held(on),&base) {
+                        let store=self.stores.get_mut(&on).expect("device");
+                        store.shown.insert(*entry,canonical);
+                        store.bootstrap_bases.remove(entry);
+                        store.bootstrap_progress.remove(entry);
+                        store.bootstrap_pending.remove(entry);
+                        store.bootstrap_active.remove(entry);
+                        store.bootstrap_revision=Arc::new(());
+                        continue;
+                    }
+                }
+            }
             let reusable = self.held(on).bootstrap_progress.get(entry)
                 .is_some_and(|p| p.basis.matches(self.held(on)))
                 && self.active_owner_base(on, *entry).is_some();
@@ -497,6 +535,11 @@ mod tests {
         lab.receive(phone,evidence,vec![]);
         assert_eq!(lab.owner_base_wait_reason(phone,entry),Some("missing-schema-lane"));
         assert!(lab.edit(phone,vault,entry, |_| {}).is_err());
+        lab.sync(mac,phone);
+        assert!(lab.active_owner_base(phone,entry).is_none());
+        assert!(!lab.held(phone).bootstrap_bases.contains_key(&entry));
+        assert!(lab.owner_base_wait_reason(phone,entry).is_none());
+        lab.edit(phone,vault,entry,|item| { item.edit_document_v0(|d| d.title="Canonical again".into()); }).unwrap();
     }
 
     #[test]

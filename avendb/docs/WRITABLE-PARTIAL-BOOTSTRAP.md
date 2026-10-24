@@ -817,3 +817,20 @@ vault selectors per pass, at most four peers, 64 IDs per reply and one ten-secon
 round deadline). This does not prove arbitrary-size schema discovery completeness;
 a lane outside that bounded result stays honestly read-only, with ordinary sync
 as fallback. No wall-clock or physical-device latency success is claimed.
+
+Schema demand scheduling: [fd88b9f9](https://github.com/MyAvenCEO/maiacity/commit/fd88b9f9), committed and pushed; Rust tests pending.
+
+### Return from retained bootstrap to canonical local state
+
+A lane-mismatched or legacy anchor must not keep a fully reconstructed entry
+read-only forever. Retirement now independently runs ordinary `judged_anew` on the
+current canonical replay, only after every owner-attested history change and every
+currently accepted target write has an actual locally held signature and decrypted
+body. All attested Write/count/fits/touches/adds judgments must correspond; canonical
+MAIN must exist and no resulting item may contain parked Loro updates. Only then
+is the retained anchor and its pending state removed and the canonical Shown used.
+This is not frontier-ID-only or JSON-only equality. Owner-envelope parsing for this
+comparison remains root/scope/decryption authenticated; normal public restoration
+still performs its existing full-holder mismatch rejection. The full-history end
+of the lane regression now requires anchor retirement and a successful normal edit.
+Lean retirement gate lemmas passed; executable Rust validation remains pending.
