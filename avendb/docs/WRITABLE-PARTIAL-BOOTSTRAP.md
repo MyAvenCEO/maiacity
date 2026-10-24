@@ -692,3 +692,7 @@ notified. Cancellation retains prepared-receive admission until detached work en
 provider current-policy revision fencing and receiver ordinary signature/admission
 remain in place. No new authority was added. Rust regression execution is pending;
 syntax/diff checks passed.
+
+Transport review corrections:
+[94a61c5f](https://github.com/MyAvenCEO/maiacity/commit/94a61c5f), pushed on
+`codex/bootstrap-retry-review`; tests pending combined Rust execution.
