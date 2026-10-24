@@ -1612,6 +1612,8 @@ export class Studio {
 	 * played on while its domes were still being built, a little every frame, choppy at every cut.
 	 */
 	async preparePlayback(all = false) {
+		// Future worlds warm in the background; footage never waits for a 3D scene.
+		if (!this.worldClips.length || (!all && !isWorld(this.picture))) return;
 		// Play's readying is its start's (the sound came first); Prepare's is its own
 		const own = !this.loading;
 		if (own) this.beginLoading(false);

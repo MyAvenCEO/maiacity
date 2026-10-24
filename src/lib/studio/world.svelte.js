@@ -1,4 +1,4 @@
-import { waitForWorld } from './world-loading.js';
+import { currentWorldPage, waitForWorld } from './world-loading.js';
 import { FramePacer } from './frame-pacer.js';
 // The world viewer: a live sandbox in film mode (contract C3), in an iframe of the same origin, slaved to the
 // timeline's clock through `window.__film`. It draws the exact frame of a world shot the timeline asks for — at proxy
@@ -207,6 +207,15 @@ export class WorldViewer {
 				// (a page whose context the GPU dropped is going: never taken for the fresh one coming)
 				const win = /** @type {(Window & { __film?: Film, __lost?: boolean }) | null} */ (iframe.contentWindow);
 				if (win) forwardConsole(win, 'world');
+				// Navigation is asynchronous: never consume the outgoing document's API or errors.
+				if (!currentWorldPage(win, url, location.href)) {
+					if (performance.now() - t0 > wait) {
+						this.state = 'unavailable';
+						this.error = 'The requested world page has not opened yet.';
+					}
+					await new Promise((r) => setTimeout(r, 100));
+					continue;
+				}
 				this.loadingLabel = /** @type {any} */ (win)?.__filmLoadLabel || this.loadingLabel;
 				const failure = /** @type {any} */ (win)?.__filmMountError;
 				if (failure) {
@@ -215,8 +224,10 @@ export class WorldViewer {
 					return;
 				}
 				film = win?.__lost ? undefined : win?.__film;
-			} catch {
-				break; // another origin: not film mode
+			} catch (e) {
+				this.error = `Cannot connect to world page ${url}: ${e instanceof Error ? e.message : String(e)}`;
+				console.warn(this.error);
+				break;
 			}
 			if (film && typeof film.show === 'function') {
 				forwardConsole(/** @type {Window} */ (iframe.contentWindow), 'world');
@@ -232,7 +243,7 @@ export class WorldViewer {
 					if (this.rolling) this.plays(true);
 					this.state = 'ready';
 					// loaded again after the GPU dropped it: nothing to say any more
-					if (this.error.startsWith('the GPU dropped')) this.error = '';
+					this.error = '';
 					return;
 				} catch (e) {
 					if (generation !== this.loadGeneration) return;
@@ -269,8 +280,9 @@ export class WorldViewer {
 	retry() {
 		const iframe = this.iframe, url = this.url;
 		if (!iframe || !url) return;
-		this.loadGeneration++;
-		this.forget();
+		// Invalidate the outgoing API before asynchronous navigation, even at the same URL.
+		try { if (iframe.contentWindow) /** @type {any} */ (iframe.contentWindow).__lost = true; } catch { /* outgoing origin */ }
+		this.detach();
 		iframe.src = 'about:blank';
 		this.iframe = null;
 		this.state = 'off';
@@ -369,6 +381,11 @@ export class WorldViewer {
 	rolling = false;
 
 	detach() {
+		++this.loadGeneration;
+		this.queued = null;
+		this.busy = false;
+		this.error = '';
+		this.loadingLabel = '';
 		void import('./jobs/mac.js').then((m) => m.studioWorld(false));
 		this.film = null;
 		this.drawn = '';
@@ -434,16 +451,18 @@ export class WorldViewer {
 	 * @param {Film} film @param {ShotSpec} s @param {boolean} meter @param {boolean} [live] @returns {Promise<void>}
 	 */
 	prepareOne(film, s, meter, live = true) {
+		const generation = this.loadGeneration;
 		const t0 = performance.now();
 		const slow = setInterval(() => console.warn(`world: still preparing ${s.meta?.name ?? 'a shot'} after ${Math.round((performance.now() - t0) / 1000)} s`), 15000);
 		/** @type {() => void} */
 		let end = () => {};
 		const gone = new Promise((r) => (end = () => r(false)));
 		this.ends.add(end);
-		return Promise.race([film.prepare([s], { live, meter }).then((r) => r !== false), gone])
-			.then((done) => void (done && this.film === film && this.readyShots.add(specKey(s))))
+		return Promise.race([Promise.resolve().then(() => film.prepare([s], { live, meter })).then((r) => r !== false), gone])
+			.then((done) => void (done && generation === this.loadGeneration && this.film === film && this.readyShots.add(specKey(s))))
 			.catch((/** @type {Error} */ e) => {
-				this.error = `prepare: ${e?.message ?? e}`;
+				if (generation !== this.loadGeneration || this.film !== film) return;
+				this.error = `prepare: ${e instanceof Error ? e.message : String(e)}`;
 				console.warn(`world: ${this.error}`);
 			})
 			.finally(() => {
@@ -499,7 +518,7 @@ export class WorldViewer {
 		this.ends.add(end);
 		const p = Promise.race([Promise.resolve(film.dress(mine)), gone])
 			.then(() => {})
-			.catch((/** @type {Error} */ e) => console.warn(`world: the timeline was not dressed: ${e?.message ?? e}`))
+			.catch((/** @type {Error} */ e) => console.warn(`world: the timeline was not dressed: ${e instanceof Error ? e.message : String(e)}`))
 			.finally(() => this.ends.delete(end));
 		this.dressing = p;
 		return p;
@@ -589,16 +608,19 @@ export class WorldViewer {
 		else if (!this.pacer.accept(performance.now(), this.previewFps)) return;
 		this.busy = true;
 		const t0 = performance.now();
+		const film = this.film, generation = this.loadGeneration;
+		const current = () => this.film === film && this.loadGeneration === generation;
 		const k = this.scale * Math.min(1, Math.max(320, this.px) / Math.max(o.width, o.height));
 		const w = Math.round(o.width * k), h = Math.round(o.height * k);
-		Promise.resolve(this.film.show({ ...o, width: w, height: h }))
+		Promise.resolve().then(() => current() ? film.show({ ...o, width: w, height: h }) : false)
 			.then((drew) => {
-				if (drew === false || !this.film) return;
+				if (drew === false || !current()) return;
 				this.drawn = specKey(o.spec);
 				this.drawnAt = performance.now();
 			})
-			.catch((/** @type {Error} */ e) => void (this.error = `show: ${e?.message ?? e}`))
+			.catch((/** @type {Error} */ e) => { if (current()) this.error = `show: ${e instanceof Error ? e.message : String(e)}`; })
 			.finally(() => {
+				if (!current()) return;
 				// the resolution steps (1, ¾, ½, ⅓) on the slower tenth of recent frames: each step reallocates the targets,
 				// so it moves rarely — down when frames are slow, up again only when they are well within time
 				this.took.push(performance.now() - t0);

@@ -34,3 +34,10 @@ export function waitForWorld(ready, inspect, timeout, poll = 250) {
 		check();
 	});
 }
+
+/** Only the requested document may answer a world load. An iframe retains its old window while navigating.
+ * @param {any} win @param {string} url @param {string} base */
+export function currentWorldPage(win, url, base) {
+	try { return !!win && !win.__lost && new URL(win.location.href).href === new URL(url, base).href; }
+	catch { return false; }
+}
