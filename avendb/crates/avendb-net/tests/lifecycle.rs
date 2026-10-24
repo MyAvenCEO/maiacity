@@ -113,6 +113,18 @@ async fn failed_final_save_reports_failure_and_retains_lease_until_failed_node_i
     assert!(node.try_act(|_, _| ()).await.is_err());
     std::fs::rename(dir.join("staging-held"), dir.join("new")).unwrap();
     drop(node);
-    let owner = reader.writer().unwrap();
+    // Aborted background futures can release their last Shared reference on the
+    // next executor turn. A failed node must retain the lease while held above;
+    // after drop, require bounded eventual release rather than synchronous Drop.
+    let owner = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            match reader.writer() {
+                Ok(owner) => break owner,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock =>
+                    tokio::time::sleep(Duration::from_millis(5)).await,
+                Err(error) => panic!("replacement writer: {error}"),
+            }
+        }
+    }).await.expect("dropped failed node releases its writer lease");
     owner.shutdown().await.unwrap();
 }
