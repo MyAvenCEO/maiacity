@@ -35,6 +35,12 @@ use crate::world::levels;
 /// entries it holds; and every entry, cards and profiles too, in the order they were created (`row`). A draft the
 /// vault hasn't landed (`Lab::landed`) has no main line yet: it is in none of its tables, and `drafts` counts them.
 pub fn database(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
+    database_of(lab, me, vault, None)
+}
+
+/// The same canonical rows/versions restricted by held type metadata before any
+/// entry body is projected. None retains the complete database studio contract.
+pub fn database_of(lab: &Lab, me: SignerId, vault: VaultId, types: Option<&[String]>) -> Value {
     let st = lab.state(me);
     let (edits, keys) = lab.size(me);
     let lane = lab.lane(me, vault);
@@ -65,7 +71,9 @@ pub fn database(lab: &Lab, me: SignerId, vault: VaultId) -> Value {
         "schemas": lane.schemas().map(schema).collect::<Vec<_>>(),
         "lenses": lane.lenses().map(lens).collect::<Vec<_>>(),
         "audiences": audiences.iter().map(audience).collect::<Vec<_>>(),
-        "rows": entries.iter().map(|en| row(lab, me, en)).collect::<Vec<_>>(),
+        "rows": entries.iter().filter(|en| types.is_none_or(|types|
+            lab.meaning(me, en.id).is_some_and(|m| types.iter().any(|ty| ty == m.attrs.ty.as_str()))))
+            .map(|en| row(lab, me, en)).collect::<Vec<_>>(),
         "drafts": drafts.len(),
     })
 }

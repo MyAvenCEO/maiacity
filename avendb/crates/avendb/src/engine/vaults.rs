@@ -374,7 +374,10 @@ pub(super) fn cap_groups(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Res
 /// `{"op": "database", "vault"}`, `{"op": "note", "entry"}` and `{"op": "log"}` (`data`).
 pub(super) fn data(lab: &Lab, me: SignerId, name: &str, o: &Map<String, Value>) -> Result<Value, Refused> {
     Ok(match name {
-        "database" => data::database(lab, me, vault_of(o, "vault")?),
+        "database" => {
+            let types = o.get("types").map(|_| texts_of(o, "types")).transpose()?;
+            data::database_of(lab, me, vault_of(o, "vault")?, types.as_deref())
+        },
         "note" => data::note(lab, me, entry_of(o)?).unwrap_or(Value::Null),
         _ => data::history(lab, me),
     })
