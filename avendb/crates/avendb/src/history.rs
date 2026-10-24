@@ -122,7 +122,28 @@ pub struct Scratch {
     tip: Option<EditId>,
 }
 
+/// The exact scratch state attested by an entry's owners, never an authorization kernel.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ScratchImage {
+    pub snapshot: Vec<u8>,
+    pub holds: BTreeSet<EditId>,
+    pub authored: BTreeSet<BlobId>,
+    pub tip: Option<EditId>,
+}
+
 impl Scratch {
+    pub(crate) fn image(&self) -> Option<ScratchImage> {
+        if self.item.has_parked_updates() { return None; }
+        Some(ScratchImage { snapshot: self.item.bytes(), holds: self.holds.iter().copied().collect(),
+            authored: self.authored.clone(), tip: self.tip })
+    }
+    pub(crate) fn from_owner_image(image: ScratchImage, signer: SignerId, line: Line) -> Option<Self> {
+        if image.tip.is_some_and(|id| !image.holds.contains(&id)) { return None; }
+        let item = Item::from_owner_snapshot(&image.snapshot, signer, line)?;
+        if item.authored() != image.authored { return None; }
+        Some(Self { item, holds: image.holds.into_iter().collect(), authored: image.authored, tip: image.tip })
+    }
+
     /// The schemas the writes it read were written under: those `Lane::fits` looked up for them.
     pub fn authored(&self) -> &BTreeSet<BlobId> {
         &self.authored

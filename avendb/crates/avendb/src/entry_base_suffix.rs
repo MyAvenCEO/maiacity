@@ -40,7 +40,7 @@ fn bounded_write(w: &Write) -> bool {
     w.deps.len() <= MAX_LINKS && w.via.len() <= MAX_LINKS && w.shares.len() <= MAX_LINKS
         && w.deps.iter().copied().collect::<BTreeSet<_>>().len() == w.deps.len()
 }
-fn encode_write(w: &Write, out: &mut Vec<u8>) {
+pub(super) fn encode_write(w: &Write, out: &mut Vec<u8>) {
     w.edit.encode(out); w.author.encode(out); w.actor.encode(out); w.entry.encode(out);
     w.stay.encode(out); w.epoch.encode(out); w.deps.encode(out); w.proposal.encode(out);
     w.via.encode(out); w.first.encode(out); w.audience.encode(out); w.shares.encode(out);
@@ -51,7 +51,7 @@ fn links<T: Decode>(r: &mut WireReader<'_>) -> Option<Vec<T>> {
     if count > MAX_LINKS { return None; }
     (0..count).map(|_| T::decode(r).ok()).collect()
 }
-fn decode_write(r: &mut WireReader<'_>) -> Option<Write> {
+pub(super) fn decode_write(r: &mut WireReader<'_>) -> Option<Write> {
     Some(Write {
         edit: Decode::decode(r).ok()?, author: Decode::decode(r).ok()?,
         actor: Decode::decode(r).ok()?, entry: Decode::decode(r).ok()?,

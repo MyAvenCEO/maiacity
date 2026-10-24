@@ -362,3 +362,42 @@ and must not be silently presented as historical equivalence.
 Provenance audit and checked model:
 [`c6215f94`](https://github.com/MyAvenCEO/maiacity/commit/c6215f94). This resolves the
 mechanism choice; it does not mark full writable bootstrap implemented or verified.
+
+### Owner-attested judgment-state restoration implementation
+
+`entry_judgment.rs` now implements the next coherent Snapshot-model slice rather than
+requiring an independent-history proof from a fresh holder. `draft_judged_entry_base` signs
+one encrypted bounded frame containing per-line full CRDT bases and the owners' attested
+content judgment. `restore_owner_judgment` checks the ordinary signed root, current reader
+permission, entry key, owner standing and removal-sensitive policy before restoring it.
+No authorization kernel is included or overwritten.
+
+The restored History retains every bounded Write, counted/fits verdict, actual touches and
+row additions; proposal labels are retained, historical CRDT update bodies are omitted.
+Mine is recomputed from those attested additions/verdicts. After restores attributes,
+per-line imported edit sets, requested schema IDs, and scratch snapshot/held edits/authored
+schema IDs/tip. Scratch restoration verifies the full snapshot mode and authored schema
+set, restores the receiving device's own editing peer, and preserves ordinary update import
+checks. Paths, lists, writes, line counts and total frame bytes are bounded. As previously
+recorded, the Loro API still needs decoder resource isolation before production activation.
+
+A full holder compares exact judgment metadata and canonical per-line snapshot bytes;
+structurally valid but false owner-attested attributes are rejected. A partial holder takes
+the judgment on the entry owners' word, exactly the documented Snapshot trust assumption.
+Known later removals refuse restoration; a previously returned object is not a cached
+capability and exposes no write operation. The independently replayed State and held log
+remain unchanged. A historical cut older than the full holder's current judgment currently
+falls back conservatively rather than overriding independently available evidence.
+
+`JudgmentRestore.lean` proves kernel preservation, exact accepted judgment replacement and
+known-removal refusal with explicit authority assumptions; standalone Lean passed. Rust
+syntax checks passed; Cargo pending shared compiler availability. Tests under `owner_judgment`
+exercise a partial phone holding only original entry setup, exact metadata roundtrip with
+historical bodies absent, identical row ownership, full-holder lie rejection, malformed or
+foreign ciphertext, known revocation, and identical real `Judging::resume/judge` results for
+a new suffix using only that suffix's body versus full historical bodies.
+
+This is a real restoration path but not yet Store/Node writable activation: policy replay
+anchors, the Store's normal replay equality invariant, baseline invalidation during live
+removals, and atomic durable baseline+suffix recovery remain to be integrated. The returned
+object deliberately remains non-writable until that integration and its regressions pass.
