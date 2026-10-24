@@ -170,6 +170,10 @@ async function ops(device, passkey, vault) {
 	if (empty.rows.length || empty.totalEntries !== selected.totalEntries) throw new Error('empty type selection changed metadata');
 	const refused = await device.run({ op: 'entry_views', vault, kind: 'not-a-kind' });
 	if (!refused.refused) throw new Error('invalid collection selector accepted');
+	const picked = await run(device, { op: 'entry_views', entries: [task.entry, task.entry], as: vault });
+	if (picked.rows.length !== 1 || picked.rows[0].status !== 'doing' || picked.totalEntries !== 1) throw new Error('explicit ID collection mismatch');
+	const ambiguous = await device.run({ op: 'entry_views', vault, entries: [task.entry] });
+	if (!ambiguous.refused) throw new Error('ambiguous collection scope accepted');
 	out.collection = true;
 	const found = { op: 'found', vaults: [{ kind: 'coop', name: 'Eve Farm COOP' }, { kind: 'coop', name: 'Eve COOP' }] };
 	[out.mayFound] = await run(device, { op: 'may', ops: [found] });

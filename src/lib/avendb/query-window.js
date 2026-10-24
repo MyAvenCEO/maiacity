@@ -13,6 +13,10 @@ export function replyEntries(got) {
  * Bound traversal of user-authored JSON; negated filters cannot identify a visible entry. */
 export function queryEntries(op) {
 	const entries = new Set(op?.entry && /^[0-9a-f]{64}$/.test(op.entry) ? [op.entry] : []);
+	if (Array.isArray(op?.entries)) for (const entry of op.entries.slice(0, 512)) {
+		if (typeof entry === 'string' && /^[0-9a-f]{64}$/.test(entry)) entries.add(entry);
+		if (entries.size === 512) break;
+	}
 	const pending = [op?.where];
 	for (let visited = 0; pending.length && visited < 512 && entries.size < 512; visited++) {
 		const where = pending.pop();

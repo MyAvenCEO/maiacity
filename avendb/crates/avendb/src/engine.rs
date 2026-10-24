@@ -164,7 +164,7 @@ fn bad(why: impl Into<String>) -> Refused {
 /// The fields of each op beside `op`: a field it doesn't take is a mistake, never ignored.
 fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
-        "entry_views" => &["vault", "types", "as", "kind"],
+        "entry_views" => &["vault", "entries", "types", "as", "kind"],
         "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow"],
         "get" => &["entry", "schema", "line", "at", "version"],
         "pin" => &["entry", "at"],
@@ -837,14 +837,25 @@ pub fn entry_views_snapshot(lab: &Lab, me: SignerId, op: &Value) -> Result<Optio
 }
 
 fn entry_views_capture(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Option<world::EntryViews>, Refused> {
-    let vault = vault_of(o, "vault")?;
-    let actor = o.get("as").map(|_| vault_of(o, "as")).transpose()?.unwrap_or(vault);
+    if o.contains_key("vault") == o.contains_key("entries") {
+        return Err(bad("entry_views requires exactly one of vault or entries"));
+    }
+    let vault = o.get("vault").map(|_| vault_of(o, "vault")).transpose()?;
+    let ids = o.get("entries").map(|value| {
+        let values = value.as_array().ok_or_else(|| bad("entries must be an array"))?;
+        if values.len() > 512 { return Err(bad("at most 512 entries")); }
+        let mut ids = values.iter().map(|value| id_of(Some(value), "entry", EntryId::from_hex)).collect::<Result<Vec<_>, _>>()?;
+        ids.sort(); ids.dedup();
+        Ok(ids)
+    }).transpose()?;
+    let actor = o.get("as").map(|_| vault_of(o, "as")).transpose()?.or(vault).or_else(|| lab.vault_of(me));
     let types = o.get("types").map(|_| texts_of(o, "types")).transpose()?;
     let kind = o.get("kind").map(|value| value.as_str().ok_or_else(|| bad("kind must be text"))).transpose()?;
     if kind.is_some_and(|kind| !["note", "todo", "file", "schema", "lens", "record", "sealed"].contains(&kind)) {
         return Err(bad("unknown entry kind"));
     }
-    Ok(world::entry_views(lab, me, vault, actor, types.as_deref(), kind))
+    let Some(actor) = actor else { return Ok(None); };
+    Ok(world::entry_views(lab, me, vault, ids.as_deref(), actor, types.as_deref(), kind))
 }
 
 fn entry_views_inner(lab: &Lab, me: SignerId, o: &Map<String, Value>, synced: &SyncedTo) -> Result<Value, Refused> {

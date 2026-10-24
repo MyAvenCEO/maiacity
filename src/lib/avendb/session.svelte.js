@@ -1,3 +1,4 @@
+import { observedWindow } from './observed-window.js';
 /*
  * This tab's avenDB device, the one every page of the site shares: the person's account on this browser, loaded once,
  * unlocked once with their passkey, and kept open as long as the tab lives, so that leaving avenDB for another page of
@@ -875,7 +876,7 @@ const api = {
 	/** Subscribe to any targeted local query, independent of the world summary.
 	 * @param {() => any} query @param {(answer: any) => void} take @param {(error: Error) => void} [failed] */
 	observe(query, take, failed) {
-		const reader = createReactiveRead({ read: (/** @type {any} */ d, /** @type {any} */ op, /** @type {AbortSignal} */ signal) => near(d, op, { signal }), take, failed });
+		const reader = createReactiveRead({ read: observedWindow((d, op, signal, demand) => near(d, op, { signal, demand, scoped: true })), take, failed });
 		const dispose = $effect.root(() => {
 			$effect(() => {
 				void revision;

@@ -78,4 +78,16 @@ theorem safe_candidate_filter (candidate selected : SummaryRow → Bool)
     (h : selected row = true) : candidate row && selected row = true := by
   simp [safe row h, h]
 
+-- Explicit IDs narrow the canonical projection, never create authorization.
+def selectedEntries (ids : List Nat) (authorized : List SummaryRow) : List SummaryRow :=
+  authorized.filter (fun row => ids.contains row.entry)
+
+theorem explicit_entry_preserves_canonical_row (ids : List Nat) (rows : List SummaryRow)
+    (row : SummaryRow) (h : row ∈ selectedEntries ids rows) : row ∈ rows := by
+  exact (List.mem_filter.mp h).1
+
+def boundedIds (ids : List Nat) : Prop := ids.length ≤ 512
+
+theorem admitted_ids_bounded (ids : List Nat) (admitted : boundedIds ids) : ids.length ≤ 512 := admitted
+
 end AvenDB.LocalWrite

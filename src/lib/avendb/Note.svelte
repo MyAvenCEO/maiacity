@@ -29,11 +29,13 @@
 	import ArticleView from './ArticleView.svelte';
 	import { diff } from './diff.js';
 	import { flowsFor, stageOf } from './flows.js';
+	import { entryCollection } from './entry-collection.svelte.js';
+	import { entryDetail } from './entry-detail.svelte.js';
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
 	import Lines from './Lines.svelte';
 	import Mark from './Mark.svelte';
-	import { allowed, blockText, deleting, may, windowRead } from './ops.js';
+	import { allowed, blockText, deleting, may } from './ops.js';
 	import { at as atPath, changeWords, clashes, pathWords, valueWords } from './paths.js';
 	import Share from './Share.svelte';
 	import SparkCanvas from './SparkCanvas.svelte';
@@ -82,17 +84,10 @@
 	 */
 	let { world, actor, api, busy, entry, back = '#sparks', backTo = 'All sparks' } = $props();
 
-	/** The note, its changes and its original are independent reads of this mounted view. */
-	let readWindows = $state.raw(/** @type {any} */ (null));
-	$effect(() => {
-		const windows = { note: api.window?.(), changes: api.window?.(), original: api.window?.() };
-		readWindows = windows;
-		return () => { for (const window of Object.values(windows)) window?.close(); };
-	});
+	const detail = entryDetail(() => api, () => entry ? { op: 'note', entry } : null);
+	const loaded = $derived(detail.phase !== 'loading');
+	const note = $derived(/** @type {NoteData | null} */ (detail.value));
 
-	let received = $state.raw(/** @type {{ entry: string, note: NoteData | null } | null} */ (null));
-	const loaded = $derived(received?.entry === entry);
-	const note = $derived(loaded ? received?.note ?? null : null);
 	/** the line picked: `null` for the main line, else the id of its proposal's or variant's first edit */
 	let line = $state(/** @type {string | null} */ (null));
 	/** the edit whose version shows, read-only: '' for the line's latest */
@@ -119,60 +114,24 @@
 	/** the conflicts where the person takes the proposal's value, by place (`place`) */
 	let taking = $state(/** @type {Record<string, boolean>} */ ({}));
 
-	const item = $derived(world.entries.find((e) => e.entry === entry));
-
-	// Request an explicit target even before its metadata arrives in this device's world.
-	$effect(() => {
-		void world;
-		const e = entry;
-		if (!e || (api.window && !readWindows)) return;
-		let gone = false;
-		const request = windowRead(api, { op: 'note', entry: e }, null, readWindows?.note);
-		request.result.then((/** @type {NoteData | null} */ n) => {
-			if (!gone) received = { entry: e, note: n };
-		});
-		return () => { gone = true; request.close(); };
-	});
+	const collection = entryCollection(() => api, () => ({ op: 'entry_views', entries: [entry], as: actor }));
+	const item = $derived(collection.rows.find((e) => e.entry === entry));
 
 	/**
 	 * What each write of a record that is no document or article changed (the `history` op's changes, avendb's
 	 * `ops::diff`), by its edit, in words: the places it set or took out at any depth, and the lists whose rows it
 	 * changed. A document's and an article's show as their text's diff instead. Read again each time the note is.
 	 */
-	let changed = $state(/** @type {Record<string, string[]>} */ ({}));
-	$effect(() => {
-		const [e, kind] = [entry, note?.kind];
-		if (!note || kind === 'document' || (textual(kind) && kind !== 'story')) return void (changed = {});
-		if (api.window && !readWindows) return;
-		let gone = false;
-		const request = windowRead(api, { op: 'history', entry: e }, null, readWindows?.changes);
-		request.result.then((/** @type {any} */ h) => {
-			/** @type {Record<string, string[]>} */
-			const by = {};
-			for (const x of h?.edits ?? []) if (x.changes?.length) by[x.id] = x.changes.map(changeWords);
-			if (!gone) changed = by;
-		});
-		return () => {
-			gone = true;
-			request.close();
-		};
+	const historyDetail = entryDetail(() => api, () => !note || note.kind === 'document' || (textual(note.kind) && note.kind !== 'story') ? null : { op: 'history', entry });
+	const changed = $derived.by(() => {
+		/** @type {Record<string, string[]>} */
+		const by = {};
+		for (const x of historyDetail.value?.edits ?? []) if (x.changes?.length) by[x.id] = x.changes.map(changeWords);
+		return by;
 	});
-
-	/** the note this one is a copy of, as its page reads it, where this browser reads it */
-	let receivedOriginal = $state.raw(/** @type {{ entry: string, note: NoteData | null } | null} */ (null));
-	const original = $derived(receivedOriginal?.entry === item?.forkOf ? receivedOriginal?.note ?? null : null);
-
-	// and the original's history, which this one's goes on into
-	$effect(() => {
-		void world;
-		const from = item?.forkOf;
-		if (!from) return;
-		if (api.window && !readWindows) return;
-		let gone = false;
-		const request = windowRead(api, { op: 'note', entry: from }, null, readWindows?.original);
-		request.result.then((/** @type {NoteData | null} */ n) => { if (!gone) receivedOriginal = { entry: from, note: n }; });
-		return () => { gone = true; request.close(); };
-	});
+	// The original may belong to another vault; its explicit ID retains the same authorization path.
+	const originalDetail = entryDetail(() => api, () => item?.forkOf ? { op: 'note', entry: item.forkOf } : null);
+	const original = $derived(/** @type {NoteData | null} */ (originalDetail.value));
 
 	const key = (/** @type {string | null} */ l) => l ?? '';
 	const lines = $derived(note?.lines ?? []);
@@ -320,9 +279,14 @@
 		};
 	});
 
+	let draftEntry = '';
 	$effect(() => {
-		const now = lines;
+		const now = lines, currentEntry = entry;
 		untrack(() => {
+			if (draftEntry !== currentEntry) {
+				drafts = {}; titles = {}; shown = {}; named = {};
+				line = null; viewing = ''; draftEntry = currentEntry;
+			}
 			for (const l of now) {
 				const at = key(l.line);
 				// a line the person isn't editing follows what arrives
@@ -391,7 +355,7 @@
 	 *  @param {string | null} on @returns {Promise<{ id: number, type: string }[]>} */
 	async function blocksOn(on) {
 		const got = await api.ask({ op: 'get', entry, line: on });
-		return got.ok?.record.blocks ?? [];
+		return got.ok?.record?.blocks ?? [];
 	}
 
 	/**
@@ -410,16 +374,19 @@
 
 	async function save() {
 		if (!here || !unsaved) return;
-		const [on, text] = [here.line, drafts[k]];
-		await api.run('Saving', { ...saving(on, text, await blocksOn(on)), as: actor });
+		const [on, text, target, acting, owner] = [here.line, drafts[k], entry, actor, api];
+		const blocks = await blocksOn(on);
+		if (entry !== target || actor !== acting || api !== owner) return;
+		await owner.run('Saving', { ...saving(on, text, blocks), as: acting });
 	}
 
 	async function retitle() {
 		const title = (titles[k] ?? '').trim();
 		if (!here || !title || title === (here.title ?? '')) return;
-		const on = here.line;
+		const [on, target, acting, owner] = [here.line, entry, actor, api];
 		// the heading a note opens with, block 1, is its title too: one write changes both, where the ops allow both
 		const heading = lets('heading') && (await blocksOn(on)).some((b) => b.id === 1 && b.type === 'heading');
+		if (entry !== target || actor !== acting || api !== owner) return;
 		const set = (/** @type {unknown[]} */ path) => ({ op: 'set', entry, line: on, path, value: title });
 		const ops = heading ? [set(['title']), set(blockText(1))] : [set(['title'])];
 		await api.run('Renaming', { op: 'batch', as: actor, ops });

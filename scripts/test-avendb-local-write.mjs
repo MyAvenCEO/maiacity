@@ -11,6 +11,9 @@ assert(['chromium', 'webkit'].includes(engine));
 const collectionAt = process.argv.indexOf('--collection');
 const collectionView = collectionAt < 0 ? '' : process.argv[collectionAt + 1];
 assert(!collectionView || ['sparks','artifacts'].includes(collectionView));
+const detailAt = process.argv.indexOf('--detail');
+const detailView = detailAt < 0 ? '' : process.argv[detailAt + 1];
+assert(!detailView || ['story','note'].includes(detailView));
 const worldView = process.argv.includes('--world-view');
 const remote = `
 const entry = 'a'.repeat(64), mine = 'b'.repeat(64);
@@ -33,6 +36,13 @@ if(collectionKind){
  window.fixtureCollectionAdd=()=>{world.entries.push(make('8','New collection entry'));wake();};
  window.fixtureCollectionRevoke=()=>{for(const e of world.entries)if(e.vault===mine)e.readers=[];wake();};
  window.fixtureCollectionReadOps=[];
+}
+const detailKind = new URLSearchParams(location.search).get('detail');
+if(detailKind){
+ const make=(id,title)=>({entry:id.repeat(64),vault:mine,type:detailKind,kind:'note',title,text:'Body',tags:[],readers:[mine],writers:[mine],sharers:[mine],record:{kind:detailKind==='story'?'story':'document',title,text:'Body'}});
+ world.entries.push(make('d','Detail seed'),make('e','Other detail'));
+ window.fixtureDetailRefuse=()=>{window.detailRefused=true;wake();};
+ window.fixtureDetailRemote=title=>{const e=world.entries.find(e=>e.entry==='d'.repeat(64));e.title=e.record.title=title;wake();};
 }
 const wake = () => { revision++; if(!window.fixtureMuteWake) for(const resolve of waiters.splice(0)) resolve(true); };
 window.fixtureRemoteStatus = next => {status=next;world.entries[0].status=next;wake();};
@@ -63,15 +73,22 @@ export class Device {
   if(op.op==='entry_views'){
    window.fixtureCollectionReadOps?.push(structuredClone(op));
    if(window.fixtureCollectionRefuse)return {refused:'NoCap',why:'NoCap'};
-   const all=world.entries.filter(e=>e.vault===op.vault), actor=op.as??op.vault;
+   const all=world.entries.filter(e=>op.entries ? op.entries.includes(e.entry) : e.vault===op.vault), actor=op.as??op.vault;
    const result={ok:{rows:structuredClone(all.filter(e=>(!op.types || op.types.includes(e.type)) && (!op.kind || e.kind===op.kind))),totalEntries:all.length,readableEntries:all.filter(e=>e.public || e.readers?.includes(actor)).length}};
    if(window.fixtureHoldCollection && op.vault===mine)await new Promise(resolve=>(window.collectionWaiters??=[]).push(resolve));
    return result;
   }
+  if(op.op==='note'){
+   if(window.detailRefused)return {refused:'NoCap',why:'NoCap'};
+   const e=world.entries.find(e=>e.entry===op.entry);
+   if(!e)return {ok:null};
+   return {ok:{vault:e.vault,entry:e.entry,kind:e.record?.kind,lines:[{line:null,name:null,heads:[],history:[],title:e.title,text:e.text,record:e.record,blocks:[],base:null,conflicts:null}],edits:[]}};
+  }
+  if(op.op==='history')return {ok:{edits:[]}};
   if(op.op==='room')return {ok:{entry,room:{kind:'room',look:'self',name:'Fixture',messages:structuredClone(messages)},count:messages.length}};
   if(op.op==='bring'){counts.brings++;return new Promise(()=>{});}
-  if(op.op==='get')return {ok:{status}};
-  if(op.op==='set'){const target=world.entries.find(e=>e.entry===op.entry);if(target)target[op.path[0]]=op.value;status=op.value;wake();return {ok:true};}
+  if(op.op==='get')return {ok:{status,record:world.entries.find(e=>e.entry===op.entry)?.record??{}}};
+  if(op.op==='set'){const target=world.entries.find(e=>e.entry===op.entry);if(target){target[op.path[0]]=op.value;if(target.record)target.record[op.path[0]]=op.value;}status=op.value;wake();return {ok:true};}
   if(op.op==='may')return {ok:op.ops.map(()=>true)};
   if(op.op==='creatable')return {ok:{tags:[]}};
   if(op.op==='taggable')return {ok:{tags:[]}};
@@ -109,11 +126,34 @@ try {
  const page=await context.newPage();
  page.setDefaultTimeout(20000);
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto(origin+'/__local-write?room='+ 'a'.repeat(64)+(worldView?'&world-view':'')+(collectionView?'&collection='+collectionView:''));
+ await page.goto(origin+'/__local-write?room='+ 'a'.repeat(64)+(worldView?'&world-view':'')+(collectionView?'&collection='+collectionView:'')+(detailView?'&detail='+detailView:''));
  await page.getByTestId('phase').filter({hasText:'closed'}).waitFor();
  await page.getByRole('button',{name:'Unlock fixture'}).click();
  await page.getByTestId('phase').filter({hasText:'open'}).waitFor();
- if(collectionView){
+ if(detailView){
+  const title=detailView==='story'?page.getByLabel('Its title',{exact:true}):page.locator('input.title');
+  await title.waitFor();
+  assert.equal(await title.inputValue(),'Detail seed');
+  await page.evaluate(()=>{window.fixtureHoldWorld=true;});
+  await page.evaluate(()=>window.fixtureSession.run('Rename detail',{op:'set',entry:'d'.repeat(64),path:['title'],value:'Accepted detail title'}));
+  await page.waitForFunction(()=>document.querySelector('input.title')?.value==='Accepted detail title',null,{timeout:1500});
+  await page.evaluate(()=>window.fixtureDetailRemote('Remote detail title'));
+  await page.waitForFunction(()=>document.querySelector('input.title')?.value==='Remote detail title',null,{timeout:1500});
+  await title.fill('Unsubmitted detail draft');
+  await page.evaluate(()=>window.fixtureDetailRemote('New remote detail title'));
+  await page.waitForTimeout(250);
+  assert.equal(await title.inputValue(),'Unsubmitted detail draft');
+  await page.evaluate(()=>window.fixtureSwitchEntry('e'.repeat(64)));
+  await page.waitForFunction(()=>document.querySelector('input.title')?.value==='Other detail',null,{timeout:1500});
+  if(detailView==='note'){
+   await page.evaluate(()=>window.fixtureDetailRefuse());
+   await page.getByText('This browser holds no edit of this note',{exact:false}).waitFor({timeout:1500});
+   assert.equal(await page.getByText('Opening the note…',{exact:true}).count(),0);
+  }
+  assert.equal(await page.evaluate(()=>window.fixtureHoldWorld),true);
+  assert.deepEqual(errors,[]);
+  console.log('PASS '+engine+': actual '+detailView+' local and remote title with world held');
+ } else if(collectionView){
   const rowTitle=text=>page.locator('li.row b').filter({hasText:new RegExp('^'+text+'$')});
   await rowTitle('Collection seed').waitFor();
   assert.equal(await rowTitle('Hidden entry').count(),0);

@@ -1,5 +1,10 @@
 <script>
  import { onMount } from 'svelte';
+ import Story from '../../../src/lib/avendb/Story.svelte';
+ import Note from '../../../src/lib/avendb/Note.svelte';
+ const detailView = new URLSearchParams(location.search).get('detail');
+ let fixtureEntry = $state('d'.repeat(64));
+ window.fixtureSwitchEntry = value => fixtureEntry = value;
  import Sparks from '../../../src/lib/avendb/Sparks.svelte';
  import Artifacts from '../../../src/lib/avendb/Artifacts.svelte';
  const collectionView = new URLSearchParams(location.search).get('collection');
@@ -16,7 +21,11 @@
 <button onclick={() => session.unlock()}>Unlock fixture</button>
 <p data-testid="phase">{session.phase}</p>
 {#if session.phase === 'open' && session.world}
- {#if collectionView === 'sparks'}
+ {#if detailView === 'story'}
+ <Story world={session.world} actor={'b'.repeat(64)} api={session.api} busy={!!session.doing} entry={fixtureEntry} step='published' />
+ {:else if detailView === 'note'}
+ <Note world={session.world} actor={'b'.repeat(64)} api={session.api} busy={!!session.doing} entry={fixtureEntry} />
+ {:else if collectionView === 'sparks'}
  <Sparks world={session.world} vault={fixtureVault} actor={'b'.repeat(64)} api={session.api} busy={!!session.doing} onaccess={() => {}} onopen={() => {}} onstory={() => {}} />
  {:else if collectionView === 'artifacts'}
  <Artifacts world={session.world} vault={fixtureVault} actor={'b'.repeat(64)} api={session.api} busy={!!session.doing} onaccess={() => {}} onopen={() => {}} />
