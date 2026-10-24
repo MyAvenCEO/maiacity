@@ -1,7 +1,7 @@
 // @ts-nocheck
 // One local media resolver for profiles, posts and legacy content hashes. No HTTP fallback.
 import { deviceOf, learn } from '../../../game/code/sources/device.js';
-import { localFile } from '$lib/media/local-file.js';
+import { mediaEntry, forgetMedia, resetMedia } from './local-media-state.js';
 import { useLocalMedia } from '$lib/media/local-resolver.js';
 import { localDevice } from './local.js';
 import { native } from '$lib/native';
@@ -15,15 +15,22 @@ let owner;
 let streaming;
 let snapshot;
 let snapshotDevice;
+function useMediaDevice(device) {
+    if (device === owner) return;
+    resetMedia(urls, wanted, url => URL.revokeObjectURL(url));
+    streaming?.stop(); streaming = null; owner = device;
+}
 // Reuse the session's world snapshot; no separate metadata fetch on every profile render.
 export function localMediaWorld(world) {
 	snapshot = world;
 	snapshotDevice = deviceOf();
+    useMediaDevice(snapshotDevice);
 	void refreshLocalMedia();
 }
 
 export function localMedia(vault, name) {
 	if (typeof window === 'undefined' || !name) return '';
+    useMediaDevice(deviceOf());
 	const key = `${vault || ''}/${name}`;
 	if (!wanted.has(key)) {
 		wanted.set(key, { vault, name });
@@ -36,21 +43,18 @@ export function refreshLocalMedia() {
 	if (loading) return loading;
 	loading = (async () => {
 		const d = await localDevice();
-		if (d !== owner) {
-			for (const key of Object.keys(urls)) { if (urls[key]?.startsWith('blob:')) URL.revokeObjectURL(urls[key]); delete urls[key]; }
-			for (const item of wanted.values()) { delete item.root; delete item.entry; }
-			streaming?.stop(); streaming = null; owner = d;
-		}
+        if (d !== deviceOf()) return;
+        useMediaDevice(d);
 		if (!d) return;
 		const world = (snapshotDevice === d && snapshot) || (await d.run({ op: 'world' }))?.ok;
-		const entries = world?.entries || [];
+		if (d !== deviceOf()) return;
 		for (const [key, request] of wanted) {
-			const entry = localFile(entries, request.vault, request.name);
+			const entry = mediaEntry(world, request);
+            if (entry === undefined) continue; // an incomplete summary is not a deletion
 			if (entry && request.entry !== entry.entry) { learn([entry.entry]); request.entry = entry.entry; }
 			const file = entry?.files?.[0];
 			if (!file || file.len == null) {
-				if (urls[key]?.startsWith('blob:')) URL.revokeObjectURL(urls[key]);
-				delete urls[key]; delete request.root;
+				forgetMedia(urls, key, request, url => URL.revokeObjectURL(url));
 				continue;
 			}
 			if (request.root === file.root) continue;
@@ -69,6 +73,10 @@ export function refreshLocalMedia() {
 					if (await streaming.ready) url = address(file, mime);
 					else url = URL.createObjectURL(await whole(read, file, mime));
 				}
+                if (d !== deviceOf()) {
+                    if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+                    return; // never publish a completed old-device read into its replacement
+                }
 				const old = urls[key];
 				urls[key] = url;
 				request.root = file.root;

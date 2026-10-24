@@ -202,7 +202,9 @@
 		void loadFounder();
 		// the views, logic and configs again, off this device's own copy of Maia City now that it is open
 		void loadCode();
-		await session.initialWorld().catch(() => {});
+		// A newly founded account explicitly initializes its entry-based setup once.
+        // Routine unlocks join only the metadata summary.
+        await (founded ? session.refresh() : session.initialWorld()).catch(() => {});
 		invited = await claimInvite();
 		if (founded && session.world && seeded(session.world)[0]?.[0]) await goto(`${base}/app/`);
 	}
