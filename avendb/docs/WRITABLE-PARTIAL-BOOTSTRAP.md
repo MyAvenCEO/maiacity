@@ -627,3 +627,6 @@ Unknown request versions and malformed lengths have focused protocol regressions
 Stored-schema rows are intrinsically read-only; their assertion does not measure
 writable readiness. The test separately waits for the durable gate and performs a
 permitted local mutation. Rust execution remains pending; syntax/diff checks passed.
+
+Compatibility correction committed and pushed:
+[1f139e73](https://github.com/MyAvenCEO/maiacity/commit/1f139e737).
