@@ -35,3 +35,17 @@ test('birch replaces quince in ten choices without removing old planted quinces'
  expect(SEEDLINGS).toHaveLength(10);expect(SEEDLINGS.some(x=>x.id==='birch')).toBe(true);
  const s=planted();s.players.A.tree.plant='quince';expect(advance(s,now+DAY_MS).players.A.tree.plant).toBe('quince');
 });
+
+
+test('a dropped canister can be picked up repeatedly at its saved location after reload', () => {
+ let s = take(planted(), now);
+ for (const [i, at] of [{x:-35,z:22}, {x:70,z:-40}, {x:0,z:0}].entries()) {
+  const t = now + (i + 1) * 5000;
+  s = act(s, 'A', {type:'putWater', ...at}, t);
+  s = advance(JSON.parse(JSON.stringify(s)), t + 1000);
+  expect(s.water).toMatchObject({...at, carriedBy:null});
+  expect(() => act(s, 'A', {type:'takeWater', ...WATER_HOME}, t + 2000)).toThrow('closer');
+  s = act(s, 'A', {type:'takeWater', x:at.x + 2.5, z:at.z}, t + 2000);
+  expect(s.water.carriedBy).toBe('A');
+ }
+});
