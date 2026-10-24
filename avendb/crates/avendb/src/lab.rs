@@ -3116,7 +3116,13 @@ impl Lab {
     /// checks its own edits by.
     fn latest(&self, d: SignerId) -> &State {
         let store = self.held(d);
-        store.latest.get_or_init(|| store.log.view())
+        store.latest.get_or_init(|| {
+            // The maintained replay is a prefix of this held log, even while receive defers
+            // materialization. Advance it with the SAME guards/fallback as refresh; never
+            // expose its stale state directly. Withdrawal resets that prefix and restore
+            // replaces the Store. Cloning still costs history work under Lab's lock.
+            replay_on_why(store.replay.clone(), store.log.edits(), store.replayed).0.state
+        })
     }
 
     /// The write `action` authored by device `on` alone, drafted on `view`, what `on`'s edits say, if `view` accepts
@@ -6459,3 +6465,6 @@ fn grouped_file_roots<'a>(
 #[cfg(test)]
 #[path = "entry_files_batch_tests.rs"]
 mod entry_files_batch_tests;
+#[cfg(test)]
+#[path = "latest_replay_tests.rs"]
+mod latest_replay_tests;
