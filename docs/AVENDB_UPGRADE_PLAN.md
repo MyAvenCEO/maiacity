@@ -6,6 +6,18 @@ Last maintained: 2026-10-25. Current execution order: keep three subagents plus 
 
 ## Latest delivery and follow-up checkpoint — 24 October 2026, evening
 
+
+### Separate working-set integration — 25 October
+
+This branch, `codex/avendb-working-set`, is separate from release PR1271 (`codex/avendb-bootstrap-followup`, current release candidate `dacbbf0a`). Neither branch is deployed; installed production/dev app remains711fcebe pending successful delivery and acceptance. Do not push these broader changes into the frozen release merely to synchronize status.
+
+- **Doing — authenticated deferred warm bodies:** [a59cf1b1](https://github.com/MyAvenCEO/maiacity/commit/a59cf1b1), [d0593fb8](https://github.com/MyAvenCEO/maiacity/commit/d0593fb8), publication correction [6c7434b3](https://github.com/MyAvenCEO/maiacity/commit/6c7434b3). Runtime metadata receipt and on-demand history hydration implemented, current key required, corruption/change fallback retained. Rust validation pending; no physical speed claim. Bounded receipts and changed logs still require canonical fallback. See AVENDB_WARM_DEFERRED_BODY_BOUNDARY.md.
+- **Doing — shared/proposal receive on owner-held partial bases:** [bf482a3a](https://github.com/MyAvenCEO/maiacity/commit/bf482a3a), [ed526552](https://github.com/MyAvenCEO/maiacity/commit/ed526552). Group-free proof chains retain canonical authorization; proposal forks fetch exact causal bodies before judgment. Rust validation pending. Non-owner adoption, local shared/proposal partial authoring, cap groups and compact per-line checkpoints remain open. See avendb/docs/WRITABLE-PARTIAL-BOOTSTRAP.md.
+- **Doing — Docs view demand:** [6ee54020](https://github.com/MyAvenCEO/maiacity/commit/6ee54020), typed tests [636f7751](https://github.com/MyAvenCEO/maiacity/commit/636f7751). Scoped story/post collection and selected-note observation replace whole-world discovery. Isolated full application check passed0errors/27warnings and8focused tests passed. Combined validation and delivery pending; no global completeness claim.
+
+Compiler queue: the native authentication test build in the release checkout is active; do not start a competing Cargo build. Next validate the corrected release S3 engine regression, then combined working-set core/warm/proposal regressions. Separate Lean integration is running. Preserve all account/vault/node data; physical Mac offline/reconnect and iPhone/iPad acceptance remain open, as does the full original M3–M7 scope recorded below.
+
+
 ### Current release and separate follow-up status — 24 October 2026
 
 
