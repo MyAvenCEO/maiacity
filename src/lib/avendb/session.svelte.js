@@ -49,7 +49,7 @@ import { createVaultContext } from './context.js';
 import { createMoveChecks } from './move-checks.js';
 import { beforeLocalWrite } from './local-write.js';
 import { createReactiveRead } from './reactive-read.js';
-import { latest } from './latest.js';
+import { createWorldReader } from './world-reader.js';
 import { createEntryWindow, createReadWindow, replyEntries } from './query-window.js';
 import { bringEntries, learn, useDevice } from '../../../game/code/sources/device.js';
 import { sync } from './sync.svelte.js';
@@ -476,6 +476,7 @@ async function started(d, nonce, credential, { name, relay }) {
  *  off it, the games' and the assets' (game/code/sources/device.js); then it asks what its key move asks of the person
  *  (`checkMove`). @param {any} d */
 function running(d) {
+	if (device && device !== d) retireWorld(device);
 	device = d;
 	phase = 'open';
 	useDevice({
@@ -581,14 +582,16 @@ function watch() {
 	})().catch((/** @type {Error} */ e) => on() && (error = `Watching local changes failed: ${e.message}`));
 	(async () => {
 		let [edits, keys] = await d.size();
-		let took = await timed(refresh);
+		if (!on()) return;
+		let took = await timed(() => refreshDevice(d));
 		while (on() && (await d.changed(edits, keys)) && on()) {
 			await new Promise((r) => setTimeout(r, Math.max(SETTLE, 2 * took)));
 			if (!on()) break;
 			[edits, keys] = await d.size();
-			took = await timed(refresh);
+			if (!on()) break;
+			took = await timed(() => refreshDevice(d));
 		}
-	})().catch((/** @type {Error} */ e) => (error = `Showing what arrives failed: ${e.message}`));
+	})().catch((/** @type {Error} */ e) => on() && (error = `Showing what arrives failed: ${e.message}`));
 }
 
 /** How long `work` took, in milliseconds, with the redraw it set off (a task later, after Svelte's own).
@@ -600,36 +603,46 @@ async function timed(work) {
 	return performance.now() - t;
 }
 
-/** World reads share one publication order across explicit and background callers. */
-let worldAsked = 0, worldShown = 0;
-async function readWorld(/** @type {any} */ d) {
-	const n = ++worldAsked;
-	/** @type {import('./vaults.js').WorldView | null} */
-	const w = answer(await near(d, { op: 'world' })) ?? null;
-	if (d === device && n > worldShown) {
-		worldShown = n;
-		world = w;
-		context.reconcile();
+/** Both background watchers and explicit barriers share one reader per device. */
+const worldReaders = new WeakMap();
+const retiredWorlds = new WeakSet();
+function retireWorld(/** @type {any} */ d) {
+	retiredWorlds.add(d);
+	worldReaders.get(d)?.cancel(new Error('The avenDB device changed during its world refresh.'));
+	// Keep the terminal reader until this device object is collected: late callers
+	// during asynchronous close must not resurrect a new reader for it.
+}
+function refreshDevice(/** @type {any} */ d) {
+	if (retiredWorlds.has(d)) return Promise.reject(new Error('The avenDB device changed before its world refresh.'));
+	let reader = worldReaders.get(d);
+	if (!reader) {
+		reader = createWorldReader({
+			read: async () => {
+				if (device !== d) throw new Error('The avenDB device changed before its world refresh.');
+				return answer(await near(d, { op: 'world' })) ?? null;
+			},
+			take: (w) => {
+				if (device !== d) throw new Error('The avenDB device changed during its world refresh.');
+				world = w;
+				context.reconcile();
+			}
+		});
+		worldReaders.set(d, reader);
 	}
+	return reader.request();
 }
 
-/** Explicit barrier for callers whose next operation needs the new world. */
+/** Explicit barrier: its snapshot starts after this call, even if an older read runs. */
 async function refresh() {
 	const d = device;
-	if (d) await readWorld(d);
+	if (d) await refreshDevice(d);
 }
 
-/** One background summary reader per device; accepted writes never wait for it. */
-const worldReaders = new WeakMap();
+/** Accepted local writes do not wait for their requested summary. */
 function queueRefresh(/** @type {any} */ d) {
-	if (!d) return;
-	let go = worldReaders.get(d);
-	if (!go) {
-		go = latest(async () => { if (device === d) await readWorld(d); }, () => {},
-			(/** @type {Error} */ e) => { if (device === d) error = `Showing local changes failed: ${e.message}`; });
-		worldReaders.set(d, go);
-	}
-	void go(true);
+	if (d) void refreshDevice(d).catch((/** @type {Error} */ e) => {
+		if (device === d) error = `Showing local changes failed: ${e.message}`;
+	});
 }
 
 /**
@@ -802,6 +815,7 @@ async function lock() {
 	if (mac) return;
 	moveChecks.stop();
 	const d = device;
+	if (d) retireWorld(d);
 	watching = null;
 	useDevice(null);
 	[device, world, vault] = [null, null, ''];
@@ -813,6 +827,7 @@ async function lock() {
  *  in the app's folder or in OPFS; the account is new here, and every page of the tab sees it so. */
 async function forget() {
 	moveChecks.stop();
+	if (device) retireWorld(device);
 	await device?.close();
 	watching = null;
 	useDevice(null);

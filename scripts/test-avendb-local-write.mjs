@@ -13,7 +13,7 @@ const entry = 'a'.repeat(64), mine = 'b'.repeat(64);
 const messages = [], waiters = [];
 let status='open';
 let revision = 0;
-const counts = window.fixtureCounts = { brings: 0, writes: 0, worlds: 0 };
+const counts = window.fixtureCounts = { brings: 0, writes: 0, worlds: 0, activeWorlds:0, maxWorlds:0 };
 const world = { mine, vaults:[{id:mine,name:'Fixture',kind:'human',acting:{as:mine},devices:[]}],
  entries:[{entry,vault:mine,type:'room',kind:'room',readers:[mine],record:{kind:'room',look:'self',name:'Fixture'}}] };
 const wake = () => { revision++; for(const resolve of waiters.splice(0)) resolve(true); };
@@ -32,7 +32,7 @@ export class Device {
  async changed(edits){return edits!==revision?true:new Promise(r=>waiters.push(r));}
  async moving(){return null;}
  async run(op){
-  if(op.op==='world'){counts.worlds++;const snapshot={...structuredClone(world),marker:window.fixtureWorldVersion??0};if(window.fixtureHoldWorld)await new Promise(r=>(window.worldWaiters??=[]).push(r));return {ok:snapshot};}
+  if(op.op==='world'){counts.worlds++;counts.activeWorlds++;counts.maxWorlds=Math.max(counts.maxWorlds,counts.activeWorlds);try{const snapshot={...structuredClone(world),marker:window.fixtureWorldVersion??0};if(window.fixtureHoldWorld)await new Promise(r=>(window.worldWaiters??=[]).push(r));return {ok:snapshot};}finally{counts.activeWorlds--;}}
   if(op.op==='room')return {ok:{entry,room:{kind:'room',look:'self',name:'Fixture',messages:structuredClone(messages)},count:messages.length}};
   if(op.op==='bring'){counts.brings++;return new Promise(()=>{});}
   if(op.op==='get')return {ok:{status}};
@@ -111,14 +111,26 @@ try {
   window.oldWorldRead=window.fixtureSession.refresh();
  });
  await page.waitForFunction(()=>(window.worldWaiters??[]).length>0);
- await page.evaluate(async()=>{
+ await page.evaluate(()=>{
   window.fixtureWorldVersion=2;
-  window.fixtureHoldWorld=false;
-  await window.fixtureSession.refresh();
+  window.newWorldFinished=false;
+  window.newWorldRead=window.fixtureSession.refresh().then(()=>window.newWorldFinished=true);
  });
+ assert.equal(await page.evaluate(()=>window.newWorldFinished),false);
+ assert.equal(await page.evaluate(()=>window.fixtureCounts.activeWorlds),1);
+ await page.evaluate(async()=>{window.fixtureReleaseWorld();await Promise.all([window.oldWorldRead,window.newWorldRead]);});
  assert.equal(await page.evaluate(()=>window.fixtureSession.world.marker),2);
- await page.evaluate(async()=>{window.fixtureReleaseWorld();await window.oldWorldRead;});
- assert.equal(await page.evaluate(()=>window.fixtureSession.world.marker),2);
+ assert.equal(await page.evaluate(()=>window.fixtureCounts.maxWorlds),1);
+ // A captured-device explicit barrier must fail rather than let follow-up work
+ // use a different account's world after a lock/replacement.
+ await page.evaluate(()=>{
+  window.fixtureHoldWorld=true;
+  window.staleWorld=window.fixtureSession.refresh().then(()=>false,()=>true);
+ });
+ await page.waitForFunction(()=>(window.worldWaiters??[]).length>0);
+ await page.evaluate(async()=>{await window.fixtureSession.lock();});
+ assert.equal(await page.evaluate(()=>window.staleWorld),true);
+ await page.evaluate(()=>window.fixtureReleaseWorld());
  assert.deepEqual(errors,[]);
  console.log('PASS '+engine+': actual Session renders accepted chat+non-chat local mutations, preserves refused draft, and remote messages before blocked world refresh; local browser harness '+localMs+'ms (synthetic device, not physical latency)');
 } finally { await browser?.close();await server?.close(); }

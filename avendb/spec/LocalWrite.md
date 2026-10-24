@@ -28,8 +28,8 @@ from JavaScript or the Rust engine.
   Composer and a non-chat subscriber with only the device/passkey boundary
   synthetic. Full-world reads and peer bring are held; real insert/set run calls
   complete, authorized reads render, refusal preserves the draft, a replica
-  change invalidates the view, and an older summary cannot overwrite a newer
-  explicit refresh. See `scripts/fixtures/local-write/CONTRACT.md`.
+  change invalidates the view, and an explicit refresh cannot join a held older
+  summary (single-flight followup: `WorldReads.md`). See `scripts/fixtures/local-write/CONTRACT.md`.
 - Explicit summary barriers remain at NewVaults (new IDs needed for name sharing)
   and Artifact (new schema needed for the next operation), identified in the
   independent caller audit. Other audited callers use result IDs/direct reads

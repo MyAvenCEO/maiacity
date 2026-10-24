@@ -22,8 +22,10 @@ The contract applies to the generic avenDB session API:
    the full-world refresh/backoff. The fixture injects an accepted local replica
    change; it does **not** test actual peer transport latency.
 5. An engine refusal leaves the draft intact, reports the refusal and renders no
-   fabricated message. An older world response cannot overwrite a newer explicit
-   refresh, tested with deliberately reversed response ordering.
+   fabricated message. World reads are single-flight per device; explicit refresh
+   cannot join a snapshot started before its call. A held read and queued refresh
+   verify maximum concurrency one and the newer returned marker. Locking the
+   device rejects its blocked explicit barrier before the held read is released.
 
 `api.refresh()` remains an explicit barrier for code whose **next operation**
 needs the updated world. The vault-creation/public-name-sharing and missing-schema
