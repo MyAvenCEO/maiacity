@@ -742,3 +742,5 @@ it cannot invent an unpublished key or repair a corrupt body by refetching the
 already-held signed edit. Lazy nodes retain their existing explicit-pull semantics.
 Physical mobile latency and a full key-envelope network round trip are not proven
 by these scheduling/core regressions.
+
+Key-wait scheduling implementation: [8b587621](https://github.com/MyAvenCEO/maiacity/commit/8b587621), committed and pushed. Rust validation remains pending integration.
