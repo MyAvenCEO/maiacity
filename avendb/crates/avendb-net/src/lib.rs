@@ -2242,6 +2242,7 @@ impl Shared {
             let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 lab.set_now(unix_now());
                 let before = lab.log(shared.me).revision();
+                let anchors_before = lab.bootstrap_stamp(shared.me);
                 let out = f(&mut lab, me);
                 let now = lab.size(shared.me);
                 // Restore and checkpoint withdrawal can replace edits without changing their count. Wake
@@ -2262,7 +2263,7 @@ impl Shared {
                 let signing = shared.signers.as_ref().is_some_and(|signers| {
                     lab.signing_pending(shared.me) || (!lab.locked(shared.me) && signers.root_due())
                 });
-                if grew || signing || (warm && !shared.warm.swap(true, Ordering::Relaxed)) {
+                if grew || signing || anchors_before != lab.bootstrap_stamp(shared.me) || (warm && !shared.warm.swap(true, Ordering::Relaxed)) {
                     shared.edits.iter().for_each(|edits| edits.due.notify_one());
                 }
                 if !warm {

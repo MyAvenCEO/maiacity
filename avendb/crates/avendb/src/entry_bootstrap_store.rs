@@ -182,7 +182,7 @@ impl Lab {
 impl Backup {
     /// Durable companion to the existing signed-log backup. Ciphertext only; decoding
     /// grants no authority and restore rechecks its signed root and current policy.
-    pub fn bootstrap_bytes(&self) -> Vec<u8> {
+    pub fn bootstrap_bytes(&self) -> Option<Vec<u8>> {
         encode_anchors(&self.bootstrap_bases, self.signed.iter())
     }
     pub fn with_bootstrap_bytes(mut self, bytes: &[u8]) -> Option<Self> {
@@ -231,6 +231,53 @@ mod tests {
     use super::*;
     use crate::cast::{document, human_on};
     #[test]
+    fn bootstrap_companion_1024_boundary_is_recoverable_1025_refuses_encoding() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Owner");
+        let mac = lab.device_of(owner, "Mac");
+        let vault = human_on(&mut lab, owner, &[mac]);
+        let entry = lab
+            .create(mac, vault, vault, "note", &[], document("Base", "old", mac))
+            .unwrap();
+        let mut backup = lab.backup(mac);
+        let template = backup
+            .signed
+            .iter()
+            .find(|s| matches!(s.edit.action,Action::Write{entry:e,..}if e==entry))
+            .unwrap()
+            .clone();
+        // Transport-only fixtures; modified signatures never enter Lab admission.
+        backup.signed = (0..1024)
+            .map(|n| {
+                let mut s = template.clone();
+                s.edit.depth = n;
+                s
+            })
+            .collect();
+        let snapshot = backup.signed[0].edit.id();
+        backup.bootstrap_bases.insert(entry, (snapshot, vec![1]));
+        let bytes = backup.bootstrap_bytes().expect("exact bound is encodable");
+        assert!(
+            Backup::new(backup.signed.clone(), backup.blobs.values().cloned())
+                .with_bootstrap_bytes(&bytes)
+                .is_some()
+        );
+        let mut extra = template;
+        extra.edit.depth = 1024;
+        backup.signed.push(extra);
+        assert!(
+            backup.bootstrap_bytes().is_none(),
+            "refuse before acknowledging an undecodable save"
+        );
+        assert!(
+            Backup::new(backup.signed, backup.blobs.values().cloned())
+                .with_bootstrap_bytes(&bytes)
+                .is_some(),
+            "previous durable anchor remains usable"
+        );
+    }
+
+    #[test]
     fn bootstrap_companion_fences_concurrent_writes_without_depth_assumptions() {
         let mut lab = Lab::new();
         let owner = lab.passkey("Owner");
@@ -270,7 +317,7 @@ mod tests {
         backup.signed.push(held);
         // Opaque transport fixture only: this does not attest or activate a writable base.
         backup.bootstrap_bases.insert(entry, (later, vec![1, 2, 3]));
-        let bytes = backup.bootstrap_bytes();
+        let bytes = backup.bootstrap_bytes().unwrap();
         assert!(
             Backup::new(backup.signed.clone(), backup.blobs.values().cloned())
                 .with_bootstrap_bytes(&bytes)
@@ -341,7 +388,7 @@ mod tests {
         assert_eq!(lab.item(pad, entry).unwrap().record(), expected);
         // Recreate from serialized ciphertext anchors plus the ordinary signed suffix.
         let saved = lab.backup(phone);
-        let bytes = saved.bootstrap_bytes();
+        let bytes = saved.bootstrap_bytes().unwrap();
         let disk = Backup::new(saved.signed().to_vec(), saved.blobs.values().cloned())
             .with_bootstrap_bytes(&bytes)
             .unwrap();
@@ -417,13 +464,19 @@ mod tests {
 fn encode_anchors<'a>(
     anchors: &Anchors,
     signed: impl Iterator<Item = &'a crate::sign::Signed> + Clone,
-) -> Vec<u8> {
+) -> Option<Vec<u8>> {
     if anchors.is_empty() {
-        return Vec::new();
+        return Some(Vec::new());
+    }
+    if anchors.len() > 16 {
+        return None;
     }
     let mut b = b"avenDB bootstrap anchors 1\n".to_vec();
     (anchors.len() as u32).encode(&mut b);
     for (entry, (snapshot, sealed)) in anchors {
+        if sealed.len() > MAX_BYTES + 128 || !signed.clone().any(|s| s.edit.id() == *snapshot) {
+            return None;
+        }
         entry.encode(&mut b);
         snapshot.encode(&mut b);
         sealed.encode(&mut b);
@@ -433,10 +486,14 @@ fn encode_anchors<'a>(
             .clone()
             .filter(|s| matches!(s.edit.action,Action::Write{entry:e,..}if e==*entry))
             .map(|s| s.edit.id())
+            .take(1025)
             .collect();
+        if suffix.len() > 1024 {
+            return None;
+        }
         suffix.encode(&mut b);
     }
-    b
+    Some(b)
 }
 
 impl Lab {
@@ -449,7 +506,7 @@ impl Lab {
             .collect()
     }
     /// Capture ciphertext anchors with the same held signed frontier as a journal save.
-    pub fn bootstrap_bytes(&self, on: SignerId) -> Vec<u8> {
+    pub fn bootstrap_bytes(&self, on: SignerId) -> Option<Vec<u8>> {
         let store = self.held(on);
         encode_anchors(
             &store.bootstrap_bases,

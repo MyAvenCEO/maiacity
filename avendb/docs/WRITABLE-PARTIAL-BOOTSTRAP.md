@@ -497,3 +497,23 @@ remain open. No privileged hosted peer or global kernel replacement was introduc
 Implementation: [a6930f38](https://github.com/MyAvenCEO/maiacity/commit/a6930f38d).
 The commit is pushed to `codex/checkpoint-demand-delivery`; integration and Rust
 validation remain pending. Do not interpret source completion as runtime delivery.
+
+### Follow-up durability corrections
+
+Anchor encoding now returns an explicit failure before constructing a save if any
+companion exceeds its decoder's 1024-write/16-anchor/size limits or lacks its
+snapshot. `Edits::due` propagates that failure before journal acknowledgement,
+retaining the previous durable state; it does not silently retire an anchor or
+claim newer writes durable. Returning to canonical-full storage or renewing a base
+is still required before an over-bound partial holder can resume saving. A new
+1024/1025 boundary regression checks successful round trip and refusal, respectively.
+
+`Shared::act` now compares the small bootstrap identity stamp before/after a call
+and wakes the saver for anchor-only adoption even when the signed log is unchanged.
+A Node/Shelf regression drains prior notifications, adopts a real owner checkpoint,
+checks unchanged log revision, requires the new wakeup and reads the saved companion.
+No public adoption operation or runtime auto-activation is enabled by this fix.
+
+Rust tests pending root compiler queue: `bootstrap_companion_1024_boundary` and
+`bootstrap_anchor_only_adoption`; rustfmt parser and diff checks passed. Existing
+Lean journal assumptions are unchanged.
