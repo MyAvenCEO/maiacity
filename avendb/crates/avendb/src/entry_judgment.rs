@@ -185,8 +185,7 @@ fn put_judgment_parts(history: &History, after: &After) -> Option<Vec<u8>> {
         ids.sort();
         ids.encode(&mut b);
     }
-    shown
-        .after
+    after
         .asked
         .iter()
         .copied()
