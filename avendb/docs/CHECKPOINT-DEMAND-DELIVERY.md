@@ -145,3 +145,6 @@ gate, starts an older save, receives a newer owner checkpoint, and releases both
 requires the old save to report no pin, the newer root to remain durable, and a late explicit
 old pin attempt to be rejected. No sleep decides ordering. Validation is pending the shared
 integration compiler; no live data is used.
+
+Pin-order repair: [`7bc7351b`](https://github.com/MyAvenCEO/maiacity/commit/7bc7351b).
+Lean serialized-publication lemmas passed; Rust regression remains pending integration.
