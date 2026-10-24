@@ -3,7 +3,21 @@
 import { expect, test } from 'bun:test';
 import { EventEmitter } from 'node:events';
 import { PassThrough, Writable } from 'node:stream';
-import { connect, ok, parseResult } from './avendb.mjs';
+import { connect, DEVICE, DIR, HARNESS, ok, parseResult } from './avendb.mjs';
+
+test('defaults to the embedded application and preserves standalone overrides', () => {
+	const env = { ...process.env };
+	delete env.AVENDB_DEVICE;
+	const source = `import { DEVICE } from ${JSON.stringify(new URL('./avendb.mjs', import.meta.url).href)}; console.log(DEVICE);`;
+	const resolve = () => {
+		const result = Bun.spawnSync([process.execPath, '-e', source], { env });
+		expect(result.exitCode).toBe(0);
+		return result.stdout.toString().trim();
+	};
+	expect(resolve()).toMatch(/\/Applications\/(theOS|The OS)\.app\/Contents\/MacOS\/maiacity-studio$/);
+	env.AVENDB_DEVICE = '/custom/avendb-device';
+	expect(resolve()).toBe(env.AVENDB_DEVICE);
+});
 
 const text = (t, isError = false) => ({ content: [{ type: 'text', text: t }], isError });
 const WAIT = 'agentScripts is waiting for its person to answer its access request: they open theOS app on this Mac.';
@@ -41,7 +55,11 @@ test('a tool answer: JSON, text, an error, the waiting and a no', () => {
 test('initialize, then tools/call, each answer by its id', async () => {
 	let child;
 	const s = connect({
-		spawn: () => (child = mock((m) => (m.method === 'initialize' ? { protocolVersion: '2025-06-18' } : text(JSON.stringify({ ok: { got: m.params } })))))
+		spawn: (executable, args) => {
+			expect(executable).toBe(DEVICE);
+			expect(args).toEqual(['agent', HARNESS, '--dir', DIR]);
+			return (child = mock((m) => (m.method === 'initialize' ? { protocolVersion: '2025-06-18' } : text(JSON.stringify({ ok: { got: m.params } })))));
+		}
 	});
 	const got = await s.ask({ op: 'world' });
 	expect(got.got).toEqual({ name: 'avendb_ask', arguments: { op: { op: 'world' } } });

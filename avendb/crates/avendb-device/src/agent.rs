@@ -1,6 +1,6 @@
 //! An agent device, as an MCP server on stdio: `avendb-device agent <harness>`, which an agent harness (Claude Code,
 //! Codex, Cursor, Grok, or our own native aven) starts on its person's Mac. Claude Code's is
-//! `claude mcp add --scope user avendb -- <the app's avendb-device> agent claude`, the device agentClaude.
+//! `claude mcp add --scope user avendb -- <the app's maiacity-studio> agent claude`, the device agentClaude.
 //!
 //! A coop's aven is its one AI identity, avenMAIA for Maia City: a vault the coop owns alone, which lives on its
 //! server, its device, and owns nothing (Samuel 2026-10-18: one aven per coop, none per person, no agent vaults under
