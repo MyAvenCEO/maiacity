@@ -635,3 +635,32 @@ Integration API: `owner_base_durability_pending` is the boolean journal receipt 
 `owner_base_pending` in the bounded reconstruction work is a suffix count. They are
 independent reasons for read-only status and must both be zero/false before mutation
 readiness. Runtime tests use the durable-specific name to avoid conflating them.
+
+### Exact historical-body dependency fetching
+
+Core prerequisite `5c3d5201` (local cherry-pick `3893566b`) reports exact missing
+same-entry signed IDs and retains a read-only prefix. The common Node pump now
+requests those IDs via bounded protocol kind 21 instead of requesting all history.
+Each reply is a subset of ordinary `Lab::answered` disclosure, additionally requiring
+current READ/key entitlement and matching entry; request IDs grant no authority.
+Provider revision fencing rejects a response prepared across a policy change.
+Replies enter the existing prepared signature/current-state admission path. Inline
+ciphertext arrives with its signed edit. Already-held IDs are filtered; missing
+keys remain ordinary key-recovery work, avoiding pointless duplicate body requests.
+
+One sweep covers at most four entries, 32 IDs per request, three rotating live peers,
+and 512 KiB response memory under existing page/provider admission. Unavailable or
+older peers leave explicit pending dependencies and back off (at least 250 ms),
+with new work waking the pump. Entry/peer rotation prevents a permanently unavailable
+first candidate from starving other bounded work. No hosted-peer exception or
+unrestricted content lookup was introduced. Existing history sync remains available
+for old peers and oversized individual edits.
+
+Lean subset-authorization model passed. Added `dependency_reply_is_scoped_and_current_authorized`,
+`dependency_request_is_exact_and_bounded`, and
+`exact_dependency_arriving_late_is_received_without_unrelated_history` (missing body,
+later availability, peer loss and another peer) regressions. **Rust tests not yet run**
+while the root owns the compiler queue. Syntax and diff checks passed. Full-holder
+concurrent-cut equivalence is covered by the prerequisite core regression, also
+pending combined execution. Ordinary authorization-cache construction and digest
+save scans remain CPU costs; bounded wire size alone is not a latency proof.

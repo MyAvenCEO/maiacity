@@ -112,6 +112,7 @@ pub mod bucket;
 mod demand;
 mod discovery;
 mod checkpoint_delivery;
+mod bootstrap_dependencies;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod disk;
 #[cfg(not(target_arch = "wasm32"))]
@@ -736,6 +737,7 @@ impl Node {
             store: store.clone(),
             opts,
             peers: Mutex::default(),
+            dependency_peer_turn: std::sync::atomic::AtomicUsize::new(0),
             dialing: Mutex::default(),
             logs: Mutex::default(),
             world_encoding: Arc::default(),
@@ -2051,6 +2053,7 @@ struct Shared {
     opts: Options,
     /// The live connection to each peer, with the device its hello proved: whom the blob gate lets in.
     peers: Mutex<HashMap<EndpointId, Peer>>,
+    dependency_peer_turn: std::sync::atomic::AtomicUsize,
     /// A lock for each endpoint, held while dialing it, so that a node dials each peer once.
     dialing: Mutex<HashMap<EndpointId, Arc<tokio::sync::Mutex<()>>>>,
     /// Its device's edits by their logs, as they were when they were last worked out.
@@ -2865,7 +2868,14 @@ impl Shared {
             if pending {
                 tokio::task::yield_now().await;
             } else {
-                self.bootstrap_due.notified().await;
+                let missing=self.fetch_owner_dependencies().await;
+                if missing {
+                    // Network failure is an explicit wait, not a tight reconstruction loop.
+                    tokio::select! {
+                        _=self.bootstrap_due.notified()=>{},
+                        _=time::sleep(self.opts.retry.max(Duration::from_millis(250)))=>{},
+                    }
+                } else { self.bootstrap_due.notified().await; }
             }
         }
     }
