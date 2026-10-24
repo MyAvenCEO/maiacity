@@ -1,3 +1,4 @@
+// @ts-nocheck — Bun runtime fixtures, matching adjacent tests.
 import {expect,test} from 'bun:test';
 import {observedRevisions} from './observed-revisions.js';
 import {createReactiveRead} from './reactive-read.js';

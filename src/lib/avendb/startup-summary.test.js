@@ -1,3 +1,4 @@
+// @ts-nocheck — Bun runtime fixtures, matching adjacent tests.
 import { expect, test } from 'bun:test';
 import { summaryView, completeEntries } from './startup-summary.js';
 test('only audited dashboard and scoped chat use summary startup', () => {

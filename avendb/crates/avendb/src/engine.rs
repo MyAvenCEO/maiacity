@@ -229,7 +229,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
-const READS: [&str; 33] = [
+const READS: [&str; 34] = [
     "entry_views",
     "query",
     "objective_check",

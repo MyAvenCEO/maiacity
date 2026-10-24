@@ -1070,5 +1070,7 @@ export const session = {
 	run: api.run,
 	runAll: api.runAll,
 	ask: api.ask,
+	initialWorld: api.initialWorld,
+	viewChanged: api.viewChanged,
 	observe: api.observe
 };

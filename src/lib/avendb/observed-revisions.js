@@ -12,7 +12,7 @@ export function observedRevisions(answer) {
   const revision = row?.observedRevision;
   if (!hex.test(row?.entry ?? '') || !revision || !['main-heads','checkpoint-basis'].includes(revision.kind)
    || typeof revision.frontierComplete !== 'boolean' || !Array.isArray(revision.heads)
-   || revision.heads.length > 32 || revision.heads.some(h => typeof h !== 'string' || !hex.test(h))) continue;
+   || revision.heads.length > 32 || revision.heads.some((/** @type {unknown} */ h) => typeof h !== 'string' || !hex.test(h))) continue;
   out.push({entry: row.entry, kind: revision.kind, heads: [...revision.heads], frontierComplete: revision.frontierComplete, readOnly: row.readOnly === true});
  }
  return out;
