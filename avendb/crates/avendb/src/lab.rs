@@ -5248,9 +5248,12 @@ impl Lab {
     /// readable file keys must permit each file. Opened/light devices hydrate these in background.
     pub fn demanded_files(&self, d: SignerId, entries: &[EntryId]) -> Vec<FileRoot> {
         let st = self.latest(d);
-        let files: BTreeSet<FileRoot> = entries.iter()
-            .filter(|entry| st.entry(**entry).is_some_and(|en| st.wants(d, en)))
-            .flat_map(|entry| self.entry_files(d, *entry))
+        // Many active entries still require just one held-history pass. Selection
+        // precedes grouping; file() inside the projection still checks readable keys.
+        let selected = entries.iter().copied()
+            .filter(|entry| st.entry(*entry).is_some_and(|en| st.wants(d, en)));
+        let files: BTreeSet<FileRoot> = self.entry_files_batch(d, selected)
+            .into_values().flatten()
             .filter_map(|(root, len)| len.map(|_| root))
             .collect();
         files.into_iter().collect()

@@ -132,3 +132,5 @@ import AvenDB.IndexedHistoryAdmission
 
 import AvenDB.DeferredBodyReadiness
 import AvenDB.ScopedDocumentView
+
+import AvenDB.DemandedFilesBatch
