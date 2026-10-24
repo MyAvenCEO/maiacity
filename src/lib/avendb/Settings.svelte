@@ -1302,11 +1302,6 @@
 
 <Frame nav={menu} navLabel="{nameOf(v)}’s settings" navIcon="settings">
 	<div class="page">
-		<article class="card wide">
-			<h3>This device’s connection</h3>
-			<p class="soft">Check download and upload speed on this device. The check starts only when you choose to run it.</p>
-			<a class="btn" href="{base}/app/network/">Network diagnostics</a>
-		</article>
 		{@render part('profile', profile)}
 		{@render part('owners', ownership)}
 		{@render part('devices', hardware)}

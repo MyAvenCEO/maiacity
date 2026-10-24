@@ -20,6 +20,8 @@
 	import { claimInvite, failure, later, open, signUpName, waits } from '$lib/app/entry.js';
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import { session } from '$lib/avendb/session.svelte.js';
+	import Diagnostics from '$lib/app/Diagnostics.svelte';
+	import { lifecycle } from '$lib/avendb/lifecycle.js';
 	import { pillVaults, seeded, signerName } from '$lib/avendb/vaults.js';
 	import { remember } from '$lib/app/session';
 	import { forwardConsole, native } from '$lib/native';
@@ -126,6 +128,7 @@
 	);
 
 	onMount(async () => {
+		if (!native()) lifecycle()?.start();
 		// in the Mac app, every page's warnings and errors go into the app's log, which has a reader, as the studio's do
 		forwardConsole(window, 'app');
 		// the views and logic modules from the Maia City vault (C10), loaded beside avenDB's start so the app's pages run
@@ -367,6 +370,8 @@
 	<meta name="robots" content="noindex" />
 	{#if phase !== 'ready'}<title>{session.phase === 'new' ? 'Sign in' : 'Unlock'} · maiaCITY</title>{:else if closed}<title>Not open to you yet · maiaCITY</title>{/if}
 </svelte:head>
+
+<Diagnostics />
 
 <!-- pinned to the home screen: a dark strip behind the status bar's white words, except over a world in full screen -->
 {#if !(phase === 'ready' && immersive && !closed)}<div class="status-strip" aria-hidden="true"></div>{/if}

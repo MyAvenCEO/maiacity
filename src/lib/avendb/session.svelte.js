@@ -48,6 +48,7 @@ import { acting as actingIn, plain } from './vaults.js';
 import { createVaultContext } from './context.js';
 import { createMoveChecks } from './move-checks.js';
 import { beforeLocalWrite } from './local-write.js';
+import { noteLifecycle } from './lifecycle.js';
 import { createReactiveRead } from './reactive-read.js';
 import { createWorldReader } from './world-reader.js';
 import { createEntryWindow, createReadWindow, replyEntries } from './query-window.js';
@@ -445,6 +446,7 @@ function unlock(at = QUIET) {
  *  the device the function it shows its own by with `device`. @param {Steps} at */
 async function opening({ step, device: shown }) {
 	if (mac) return macOpened(await stepping(shown(), 'open'));
+	noteLifecycle('unlocking');
 	// the store first, so that a tab that can't open it never asks for the passkey: one tab at a time holds it
 	await store.hold().catch(() => {
 		const why = new Error(`avenDB is open in another tab of ${here}: it opens in one tab at a time`);
@@ -479,6 +481,7 @@ function running(d) {
 	if (device && device !== d) retireWorld(device);
 	device = d;
 	phase = 'open';
+	if (!mac) noteLifecycle('open');
 	useDevice({
 		// Demand disposal belongs to this device even while a replacement is opening. Never send stale work to it.
 		run: (/** @type {any} */ op) => op?.op === 'demand' ? d.run(op) : device === d ? send(op) : Promise.reject(new Error('the device changed')),
@@ -813,6 +816,7 @@ async function rename(name) {
  *  unlock opens it again. In the Mac app its device runs on beside the app, which signs out of its own key alone. */
 async function lock() {
 	if (mac) return;
+	noteLifecycle('locked');
 	moveChecks.stop();
 	const d = device;
 	if (d) retireWorld(d);

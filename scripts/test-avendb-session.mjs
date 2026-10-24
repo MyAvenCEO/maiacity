@@ -42,7 +42,7 @@ try {
  const chrome='/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
  browser=await (engine==='webkit'?webkit.launch({headless:true}):chromium.launch({headless:true,
    executablePath:process.env.AVENDB_CHROMIUM || (existsSync(chrome)?chrome:undefined)}));
- const context=await browser.newContext();
+ const context=await browser.newContext({viewport:{width:390,height:844}});
  await context.route('**/*',async route=>{
    const url=new URL(route.request().url());
    if(url.origin!==origin)return route.abort();
@@ -53,10 +53,27 @@ try {
  const page=await context.newPage();
  page.setDefaultTimeout(20000);
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const probes=[];page.on('request',request=>{if(request.url().includes('speed.cloudflare.com') || request.url().includes('/release.json'))probes.push(request.url());});
  await page.goto(origin+'/__session-lifecycle');
  await page.getByTestId('phase').filter({hasText:'closed'}).waitFor();
+ const diagnostics=page.getByRole('button',{name:'Open diagnostics'});
+ assert.equal(await diagnostics.evaluate(el=>getComputedStyle(el).position),'fixed');
+ await diagnostics.click();
+ if(process.env.AVENDB_LIFECYCLE_SCREENSHOT)await page.screenshot({path:process.env.AVENDB_LIFECYCLE_SCREENSHOT});
+ await page.getByRole('button',{name:'Network diagnostics',exact:true}).click();
+ await page.frameLocator('iframe[title="This device’s network check"]').getByRole('button',{name:'Run connection check'}).waitFor();
+ assert.equal(await page.evaluate(()=>window.fixtureSession.phase),'closed');
+ assert.deepEqual(probes,[]);
+ await page.getByRole('button',{name:'Close diagnostics'}).click();
+ assert.equal(await diagnostics.evaluate(el=>document.activeElement===el),true);
  await page.getByRole('button',{name:'Unlock fixture'}).click();
  await page.getByTestId('phase').filter({hasText:'open'}).waitFor();
+ await diagnostics.click();
+ await page.keyboard.press('Escape');
+ assert.equal(await diagnostics.evaluate(el=>document.activeElement===el),true);
+ await diagnostics.click();
+ await page.mouse.click(2,2);
+ await page.waitForFunction(()=>!document.querySelector('dialog').open);
  const document=await page.evaluate(()=>{window.originalDevice=window.fixtureSession.device;return window.fixtureDocument});
  for(let i=0;i<4;i++) {
    await page.getByRole('button',{name:'Change view'}).click();
@@ -66,12 +83,23 @@ try {
  }
  // pushState can emit framenavigated in Playwright: document identity and Navigation Timing distinguish it.
  assert.equal(await page.evaluate(()=>performance.getEntriesByType('navigation').length),1);
+ assert.equal(await page.evaluate(()=>window.fixtureLifecycle.snapshot().current.documents),1);
  assert.deepEqual(await page.evaluate(()=>window.fixtureCounts),{opens:1,holds:1,closes:0,releases:0,unlocks:1});
+ await page.evaluate(()=>window.fixtureSession.lock());
+ assert.deepEqual(await page.evaluate(()=>{const r=window.fixtureLifecycle.snapshot();return [r.current.documents,r.current.phase]}),[1,'locked']);
+ await page.getByRole('button',{name:'Unlock fixture'}).click();
+ await page.getByTestId('phase').filter({hasText:'open'}).waitFor();
  await page.reload();
  await page.getByTestId('phase').filter({hasText:'closed'}).waitFor();
  assert.notEqual(await page.evaluate(()=>window.fixtureDocument),document);
  assert.equal(await page.evaluate(()=>window.fixtureSession.device),null);
  assert.deepEqual(await page.evaluate(()=>window.fixtureCounts),{opens:0,holds:0,closes:0,releases:0,unlocks:0});
+ const restart=await page.evaluate(()=>window.fixtureLifecycle.snapshot());
+ assert.equal(restart.current.documents,2); assert.equal(restart.previous.phase,'open');
+ assert.equal(restart.navigation,'reload');
+ await diagnostics.click();
+ await page.getByText('Page restart details',{exact:true}).click();
+ await page.getByText('This window has loaded 2 documents. Navigation: reload.',{exact:true}).waitFor();
  assert.deepEqual(errors,[]);
- console.log('PASS '+engine+': view teardown/remount preserves exact open device; new document stays locked');
+ console.log('PASS '+engine+': global mobile diagnostics works locked/open without auto probes; close/Escape/outside preserve document; lifecycle distinguishes view/lock/reload and new document stays locked');
 } finally { await browser?.close();await server?.close(); }
