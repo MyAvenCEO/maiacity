@@ -236,3 +236,6 @@ local/remote suffix admission path including schema/row ownership and proposal a
 differential convergence against full history; bounded Loro decoding; durable base+suffix
 recovery; capability negotiation and measured device acceptance. The full writable bootstrap
 is not complete. This isolated stage is not part of the frozen release candidate.
+
+Stage-two implementation: [`1ce8bd2b`](https://github.com/MyAvenCEO/maiacity/commit/1ce8bd2b).
+Lean and Rust syntax checks passed; Cargo remains explicitly pending shared-queue availability.
