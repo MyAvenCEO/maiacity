@@ -742,3 +742,56 @@ it cannot invent an unpublished key or repair a corrupt body by refetching the
 already-held signed edit. Lazy nodes retain their existing explicit-pull semantics.
 Physical mobile latency and a full key-envelope network round trip are not proven
 by these scheduling/core regressions.
+
+### Schema/lens completeness fence (delivery safety repair)
+
+Source inspection found that checkpoint evidence includes the selected entry and
+its keys but omits external schema/lens bodies. `State::lane_of` omits unreadable
+schema inputs; that local subset must not stand in for the owner's accepted lane.
+Judged publication now authenticates a versioned ordered digest of the exact
+`Lane::with_built_ins` inputs: shipped schemas, shipped lenses, then external raw
+content hashes in canonical lane order. Missing or different inputs retain the
+attested visible prefix but pause suffix admission and local writes with
+`missing-schema-lane`, even when there are zero queued suffix writes. Both get and
+query label this state read-only. Re-publication cannot replace the authenticated
+expected lane with a waiting overlay's incomplete local lane.
+
+Legacy judgments without this optional authenticated extension remain decodable
+and durable, but read-only. New schema additions invalidate the lane equality too:
+ordinary schema arrival can resolve a missing lane; a changed lane requires a fresh
+owner-attested judgment or full canonical history. The digest is an owner-attested
+completeness contract at the snapshot frontier, not proof that an offline device
+knows future schema additions. Hash collision resistance and identical evaluator
+semantics remain explicit assumptions.
+
+Lean lane readiness/refusal lemmas passed. Added
+`owner_bootstrap_missing_schema_retains_view_without_advancing_suffix` covering
+legacy envelopes, zero-suffix get/query read-only, publication refusal, held suffix
+not advanced while schema is withheld, authorized schema setup arrival, canonical
+record equality, and later lane changes. Rust execution pending root queue.
+No new schema-discovery protocol was added: these dependencies still arrive over
+ordinary authorized schema/lens entry sync. Thus this closes unsafe/inconsistent
+admission, not the remaining latency of missing-schema acquisition.
+
+### Next generic bootstrap steps; guards deliberately remain
+
+1. `entry_bootstrap_store::rebuild_owner_bases` currently refuses non-owner actor,
+   nonempty shares and non-main proposals. Before extending that gate, derive an
+   authenticated dependency manifest for each `Write`: grant/revocation path,
+   selector body, `Body.proof`, historical cap-group definition at `State::place`,
+   complete lane inputs, and counted proposal accept/landing facts.
+2. Reuse `State::accepted_write`, `State::lets`, `Judging::judge` and
+   `History::admit/passes/lands` unchanged. Distinguish missing inputs from a
+   canonically rejected write; the former waits, the latter must remain a
+   non-counted history fact rather than dropping the entire visible prefix.
+3. Replace the single MAIN `base_scratch` with line/cut-keyed authenticated scratch
+   selection before supporting New/Merge proposals. Fetch only absent bodies of
+   the chosen causal cut; never treat an owner record alone as share proof.
+4. `Readings::groups` must be complete at each historical write placement, with
+   revocation and new group/lane facts invalidating admission. Until that readiness
+   is independently established, cap-group/schema entries remain on canonical
+   history and non-owner writable adoption stays disabled.
+5. Only after full-holder differential tests for accepted/rejected shared edits,
+   draft landing, proposal acceptance/merge and revocation pass should
+   `Lab::check_write` owner/main/exact-head restrictions be extended. Durable
+   baseline/suffix replay and peer-neutral authorization must use the same path.

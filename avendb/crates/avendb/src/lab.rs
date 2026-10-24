@@ -3311,7 +3311,7 @@ impl Lab {
     /// it: the edit, and the write it is, with the shares its readers judge it by.
     fn check_write(&self, on: SignerId, view: &State, action: Action) -> Result<(Edit, Write), Refusal> {
         if let Action::Write { entry, vault, actor, proposal, deps, .. } = &action {
-            if self.held(on).bootstrap_pending.contains(entry) { return Err(Refusal::ReadOnly); }
+            if self.held(on).bootstrap_pending.contains(entry) || self.owner_base_wait_reason(on, *entry).is_some() { return Err(Refusal::ReadOnly); }
             if self.held(on).bootstrap_active.contains(entry)
                 && (self.owner_base_pending(on, *entry) > 0 || self.held(on).replayed != self.held(on).log.edits().len() || *actor != *vault || *proposal != Proposal::Main || *deps != self.shown(on,*entry).heads(MAIN)) {
                 return Err(Refusal::ReadOnly);

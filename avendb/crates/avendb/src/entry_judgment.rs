@@ -21,6 +21,7 @@ const MAX_PATH: usize = 64;
 
 pub struct RestoredOwnerJudgment {
     entry: EntryId,
+    lane_digest: Option<[u8; 32]>,
     history: History,
     after: After,
     items: BTreeMap<Line, Item>,
@@ -39,6 +40,13 @@ impl RestoredOwnerJudgment {
         false
     }
 }
+// Exact Lane::with_built_ins input order, including shipped schema/lens versions.
+fn bootstrap_lane_digest(state: &State, readings: &Readings, vault: VaultId) -> [u8; 32] {
+    let mut h = Hasher::new("bootstrap lane inputs v1");
+    for bytes in crate::lens::blobs::SHIPPED.iter().chain(&crate::lens::blobs::LENSES).map(|s| s.as_bytes()).chain(state.lane_of(vault, readings)) { h.update(&BlobId::of(bytes).0); }
+    h.finalize()
+}
+const LANE_ATTESTATION: &[u8] = b"lane1";
 fn judgment_context(vault: VaultId, entry: EntryId) -> Vec<u8> {
     let mut b = JUDGMENT.to_vec();
     vault.encode(&mut b);
@@ -339,6 +347,7 @@ fn get_judgment(bytes: &[u8], entry: EntryId, on: SignerId) -> Option<RestoredOw
     let mine = history.mine();
     Some(RestoredOwnerJudgment {
         entry,
+        lane_digest: None,
         history,
         after: After {
             scratch,
@@ -362,6 +371,11 @@ impl Lab {
         signers: &[SignerId],
         entry: EntryId,
     ) -> Result<PreparedEntryBase, Refusal> {
+        if self.owner_base_wait_reason(on, entry).is_some()
+            || self.owner_base_pending(on, entry) > 0
+            || self.owner_base_durability_pending(on, entry) {
+            return Err(Refusal::ReadOnly);
+        }
         let prepared = self.draft_entry_base(on, signers, entry)?;
         let Action::Snapshot { vault, states } = &prepared.draft.edit.action else {
             return Err(Refusal::NotAccepted);
@@ -387,6 +401,8 @@ impl Lab {
         put_anchor_metadata(store, entry)
             .ok_or(Refusal::NotAccepted)?
             .encode(&mut bytes);
+        bytes.extend_from_slice(LANE_ATTESTATION);
+        bytes.extend_from_slice(&bootstrap_lane_digest(&store.replay.state, &store.readings, vault));
         if bytes.len() > MAX_BYTES {
             return Err(Refusal::NotAccepted);
         }
@@ -446,9 +462,12 @@ impl Lab {
         let metadata = r.bytes().ok()?;
         let policy_bytes = r.bytes().ok()?;
         let (policy, bodies) = get_anchor_metadata(&policy_bytes, entry, vault)?;
-        if !r.done() {
-            return None;
-        }
+        // Old owner judgments remain useful read-only state, never a writable empty-lane claim.
+        let lane_digest = if r.done() { None } else {
+            if r.take(LANE_ATTESTATION.len()).ok()? != LANE_ATTESTATION { return None; }
+            Some(r.take(32).ok()?.try_into().ok()?)
+        };
+        if !r.done() { return None; }
         let lines = decode(&base, vault, entry, &stated.basis)?;
         let mut restored = get_judgment(&metadata, entry, on)?;
         if policy.writes.iter().collect::<Vec<_>>()
@@ -461,6 +480,7 @@ impl Lab {
         {
             return None;
         }
+        restored.lane_digest = lane_digest;
         restored.policy = policy;
         restored.bodies = bodies;
         for (line, base) in &lines {
@@ -611,6 +631,8 @@ mod tests {
             .unwrap()
             .encode(&mut plain);
         policy_bytes.encode(&mut plain);
+        plain.extend_from_slice(LANE_ATTESTATION);
+        plain.extend_from_slice(&lying.lane_digest.unwrap());
         let lie = keys::seal_edit(&key, &plain, &judgment_context(v, entry), &mut lab.rng);
         let root = FileRoot {
             hash: crate::hash::content(&lie),

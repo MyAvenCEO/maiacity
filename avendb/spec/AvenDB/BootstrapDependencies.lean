@@ -20,3 +20,13 @@ theorem keyPriority_requires_authority (a w p : Bool) (h : keyPriority a w p = t
 theorem releasedView_has_no_key_priority (w p : Bool) : keyPriority false w p = false := by
   simp [keyPriority]
 end AvenDB.BootstrapDependencies
+
+namespace AvenDB.BootstrapDependencies
+-- Digest equality models identical ordered lane bytes under collision resistance;
+-- owner publication attests the complete lane at its accepted snapshot frontier.
+def laneReady (attested : Option Nat) (localDigest : Nat) : Bool :=
+  attested == some localDigest
+theorem legacy_lane_not_writable (d : Nat) : laneReady none d = false := by simp [laneReady]
+theorem different_lane_not_writable (a b : Nat) (h : a ≠ b) : laneReady (some a) b = false := by
+  simp [laneReady, h]
+end AvenDB.BootstrapDependencies
