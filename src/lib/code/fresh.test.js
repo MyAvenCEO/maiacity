@@ -95,7 +95,7 @@ describe('the code loader', () => {
 	};
 	const load = (rows, newest) => loadCode({ url: AT, vault: VAULT, fetch: served(rows).get, verify: trusting, keep: proofs(), newest, device: false });
 
-	afterEach(() => avendb.use([], viewOfEntry));
+	afterEach(() => avendb.reset());
 
 	test('an older version after a newer one is refused: the newer one loaded stays', async () => {
 		const newest = newestKeeper({ storage: false });
@@ -112,13 +112,13 @@ describe('the code loader', () => {
 	test('where nothing of it is loaded (a page loaded again), the path is refused, saying both versions, never the seed', async () => {
 		const newest = newestKeeper({ storage: false });
 		await load([rowAt(5, { version: 2 })], newest);
-		avendb.use([], viewOfEntry);
-		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
+		avendb.reset();
+		expect(codeAt('views/view-holders')).toMatchObject(ENTRIES['views/view-holders']);
 		await load([rowAt(3)], newest);
 		expect(() => codeAt('views/view-holders')).toThrow(/views\/view-holders .*refused, the version handed out \(v1, 3 writes.*\(v2, 5 writes/);
 		expect(() => codeIn('views/view-')).toThrow(/refused/);
 		// the other paths read as ever
-		expect(codeAt('views/coop-chart')).toBe(ENTRIES['views/coop-chart']);
+		expect(codeAt('views/coop-chart')).toMatchObject(ENTRIES['views/coop-chart']);
 	});
 	test("an exact pin by heads is never this rule's: it names the version loaded, whatever is newer", async () => {
 		const newest = newestKeeper({ storage: false });

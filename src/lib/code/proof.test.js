@@ -36,7 +36,7 @@ const keep = () => {
 	return { get: (k) => kept.get(k), put: (k, v) => kept.set(k, v), kept };
 };
 
-afterEach(() => avendb.use([], viewOfEntry));
+afterEach(() => avendb.reset());
 
 describe("avenDB's WebAssembly", () => {
 	test('takes the rows a feed hands out as JSON for no proof', async () => {
@@ -56,7 +56,7 @@ describe('the code loader takes nothing unproven', () => {
 		for (const body of [json({ code: [row] }), json([row]), EMPTY]) {
 			const r = await loadCode({ url: AT, vault: CITY, fetch: served(body).get, timeout: 60000, keep: kept });
 			expect(r.error).toStartWith(`the proof at ${AT} doesn't check out: `);
-			expect(codeAt('views/view-holders')).toBe(holders);
+			expect(codeAt('views/view-holders')).toMatchObject(holders);
 		}
 		expect(kept.kept.size).toBe(0);
 	});
@@ -66,7 +66,7 @@ describe('the code loader takes nothing unproven', () => {
 		};
 		const r = await loadCode({ url: AT, vault: CITY, fetch: served(json([row])).get, verify: failing, keep: keep() });
 		expect(r).toEqual({ error: `the proof at ${AT} doesn't check out: a signature that does not check out` });
-		expect(codeAt('views/view-holders')).toBe(holders);
+		expect(codeAt('views/view-holders')).toMatchObject(holders);
 	});
 	test('with no anchor, nothing is asked of the feed, and the seed runs', async () => {
 		for (const vault of ['', 'Maia City', 'C1'.repeat(32)]) {
@@ -75,7 +75,7 @@ describe('the code loader takes nothing unproven', () => {
 			expect(r).toEqual({ error: NO_ANCHOR });
 			expect(f.asked).toEqual([]);
 		}
-		expect(codeAt('views/view-holders')).toBe(holders);
+		expect(codeAt('views/view-holders')).toMatchObject(holders);
 	});
 	test('a check that takes too long loads nothing now, and what it proves is kept for the next load', async () => {
 		let done;
@@ -83,7 +83,7 @@ describe('the code loader takes nothing unproven', () => {
 		const kept = keep();
 		const r = await loadCode({ url: AT, vault: CITY, fetch: served(json([row])).get, verify: slow, keep: kept, timeout: 20 });
 		expect(r).toEqual({ error: `${AT} took longer than 20 ms to prove`, passing: true });
-		expect(codeAt('views/view-holders')).toBe(holders);
+		expect(codeAt('views/view-holders')).toMatchObject(holders);
 		done();
 		await new Promise((ok) => setTimeout(ok, 5));
 		expect([...kept.kept.values()].map((k) => k.tag)).toEqual(['"x"']);

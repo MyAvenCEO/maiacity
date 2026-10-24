@@ -88,7 +88,7 @@ export const NEIGHBOURS = [];
  * from another and for what it buys from the world market; building, enlarging and founding cost wares alone.
  */
 export const HEARTS = {
-	/** what one settler issues, an in-game hour: 24 a day, 720 a month (game/policy.hearts.json) */
+	/** what one settler issues, an in-game hour: 24 a day, 720 a month */
 	perHour: /** @type {number} */ (M.hearts.perHour),
 	/** HEARTs in one gold */
 	perGold: /** @type {number} */ (M.hearts.perGold),

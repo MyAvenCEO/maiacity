@@ -4,7 +4,8 @@
  * it is kept. Their home is the Maia City vault in avenDB (./sources/avendb.js, C10; Samuel 2026-10-17: every dynamic
  * config and every piece of code our hosts run goes through avenDB), loaded once with `loadCode()`; the repo's code/
  * (bundled as code/index.js by scripts/code-index.mjs) is the seed, served offline, before that load, and for any path
- * the vault does not hold. Reading stays synchronous: what was loaded is read as the seed is.
+ * not yet claimed by the vault. Once observed, a vault path never falls back on deletion, rejection or absence.
+ * Every result records its source and exact revision pin. Reading stays synchronous.
  *
  *   codeAt('views/village-scene')            the entry: { ref, type, title, ..., files, hash }
  *   codeAt('views/village-scene@3f2a…')       the same, only while its hash starts so (a ref pinned to a version)
@@ -18,10 +19,23 @@
  */
 import { ENTRIES } from '../../code/index.js';
 import { avendb, loadCode as load } from './sources/avendb.js';
-import { parseEntryRef } from './ref.js';
+import { entryRef, parseEntryRef } from './ref.js';
 import { deviceOf } from './sources/device.js';
 
 export class CodeError extends Error {}
+
+const resolved = new WeakMap();
+function withProvenance(entry) {
+	if (!resolved.has(entry)) {
+		const source = entry.source ?? 'repo';
+		const heads = (Array.isArray(entry.heads) ? entry.heads : String(entry.heads ?? '').split(',')).filter(Boolean).sort();
+		const provenance = source === 'avendb'
+			? { source, revision: entry.hash, pin: entryRef({ vault: entry.vault, entry: entry.entry, heads }), vault: entry.vault, entry: entry.entry, heads }
+			: { source, role: 'bootstrap', revision: entry.hash, pin: `${entry.ref}@${entry.hash}` };
+		resolved.set(entry, { ...entry, source, provenance });
+	}
+	return resolved.get(entry);
+}
 
 const REPO_REF = /^((?:views|logic|configs)\/[a-z0-9][a-z0-9-]*(?:\/[a-z0-9][a-z0-9-]*)*)(?:@([0-9a-f]{6,64}))?$/;
 
@@ -39,14 +53,14 @@ export function parseCodeRef(ref) {
 /** the entry `ref` names @param {string} ref */
 export function codeAt(ref) {
 	const r = parseCodeRef(ref);
-	if (r.source === 'avendb') return avendb.at(r);
-	// the vault handed out an older version of it than this device proved before (./fresh.js): refused, not the seed's
-	const older = avendb.staleAt(r.path);
-	if (older) throw new CodeError(older);
+	if (r.source === 'avendb') return withProvenance(avendb.at(r));
+	// a vault-owned path that cannot run is refused, never replaced by the repo seed
+	const refusal = avendb.refusalAt(r.path);
+	if (refusal) throw new CodeError(refusal);
 	const e = avendb.byPath(r.path) ?? ENTRIES[r.path];
 	if (!e) throw new CodeError(`no code entry ${r.path}`);
 	if (r.hash && !e.hash.startsWith(r.hash)) throw new CodeError(`${r.path} is ${e.hash.slice(0, 12)}… now, not ${r.hash.slice(0, 12)}…`);
-	return e;
+	return withProvenance(e);
 }
 
 /**
@@ -62,8 +76,8 @@ export function configAt(ref) {
 
 /** every entry under `prefix`, in the order of their refs, each as `codeAt` reads it */
 export const codeIn = (prefix) => {
-	const all = { ...ENTRIES, ...avendb.all() };
-	return Object.keys(all)
+	const paths = new Set([...Object.keys(ENTRIES), ...avendb.paths()]);
+	return [...paths]
 		.filter((k) => k.startsWith(prefix))
 		.sort()
 		.map((k) => codeAt(k));

@@ -26,7 +26,7 @@ const repo = all.filter((e) => e.type !== 'config');
 const rowsOf = (entries) => entries.map((e, i) => ({ entry: `e${String(i).padStart(63, '0')}`, vault: VAULT, heads: `${String(i).padStart(60, '0')}cafe`, ...recordOf(e), record: recordOf(e).value }));
 const strip = ({ source, vault, entry, heads, engine, ...e }) => e;
 
-afterEach(() => avendb.use([], viewOfEntry));
+afterEach(() => avendb.reset());
 
 describe('the copy', () => {
 	test('every view, logic module and config of the repo comes back from the vault as the same entry, with the same hash', () => {
@@ -82,11 +82,11 @@ describe('loaded entries', () => {
 		expect(codeAt('views/view-holders')).toMatchObject({ title: 'Holders, from the vault', source: 'avendb', vault: VAULT });
 		expect(codeIn('views/').find((e) => e.ref === 'views/view-holders').title).toBe('Holders, from the vault');
 		expect(defaultViews()[0].name).toBe('Holders, from the vault');
-		expect(codeAt('views/coop-chart')).toBe(ENTRIES['views/coop-chart']);
+		expect(codeAt('views/coop-chart')).toMatchObject(ENTRIES['views/coop-chart']);
 		expect(examples().map((v) => v.id)).toEqual(['village-scene', 'coop-chart', 'dome-planner']);
 		expect(codeIn('views/').length).toBe(Object.keys(ENTRIES).filter((k) => k.startsWith('views/')).length);
 	});
-	test('what the checker refuses, an engine the repo does not ship, a wrong kind or a path twice is left out, and the seed stays', () => {
+	test('rejected, unsupported and ambiguous vault code never falls back to the seed', () => {
 		const r = avendb.use(
 			[
 				changed('views/view-holders', { source: '<img src="https://x.example/a.png">' }),
@@ -103,7 +103,39 @@ describe('loaded entries', () => {
 		expect(r.refused.join('\n')).toMatch(/views\/view-holders: .*address/);
 		expect(r.refused.join('\n')).toMatch(/views\/coop-chart: written for view engine 99, which the repo does not ship/);
 		expect(r.refused.join('\n')).toMatch(/held twice/);
-		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
+		for (const path of ['views/view-holders', 'views/coop-chart', 'views/village-scene', 'views/dome-planner']) expect(() => codeAt(path)).toThrow();
+	});
+	test('a vault deletion and a later missing snapshot cannot resurrect repo code', () => {
+		const original = row('views/view-holders');
+		avendb.use([original], viewOfEntry);
+		avendb.use([{ ...original, tags: [...original.tags, 'avendb:deleted'] }], viewOfEntry);
+		expect(() => codeAt('views/view-holders')).toThrow(/deleted in avenDB/);
+		avendb.use([], viewOfEntry);
+		expect(() => codeAt('views/view-holders')).toThrow(/deleted in avenDB/);
+		avendb.use([original], viewOfEntry);
+		expect(codeAt('views/view-holders').source).toBe('avendb');
+		avendb.use([], viewOfEntry);
+		expect(() => codeAt('views/view-holders')).toThrow(/missing from avenDB/);
+		expect(() => codeIn('views/view-')).toThrow(/missing from avenDB/);
+	});
+	test('every resolution records its authority and an exact revision pin', () => {
+		const seed = codeAt('views/view-holders');
+		expect(seed.provenance).toEqual({ source: 'repo', role: 'bootstrap', revision: seed.hash, pin: `${seed.ref}@${seed.hash}` });
+		expect(codeAt(seed.provenance.pin)).toBe(seed);
+		avendb.use([row('views/view-holders')], viewOfEntry);
+		const live = codeAt('views/view-holders');
+		expect(live.provenance.source).toBe('avendb');
+		expect(live.provenance.revision).toBe(live.hash);
+		expect(live.provenance.heads).toEqual([live.heads]);
+		expect(codeAt(live.provenance.pin)).toBe(live);
+	});
+	test('an invalid duplicate blocks a valid alias regardless of row order', () => {
+		const valid = row('views/view-holders');
+		const bad = { ...valid, entry: 'f'.repeat(64), record: { ...valid.record, engine: { host: 'view', version: 99, hash: 'f'.repeat(64) } } };
+		for (const rows of [[valid, bad], [bad, valid]]) {
+			avendb.use(rows, viewOfEntry);
+			expect(() => codeAt('views/view-holders')).toThrow(/held twice/);
+		}
 	});
 	test('a loaded view runs on the view engine it names, never below the floor (H4)', () => {
 		// as the copy of 2026-10-17 wrote them: for view engine 2, the latest then
@@ -179,16 +211,16 @@ describe('loading', () => {
 		const other = { ...rowsOf([ENTRIES['views/coop-chart']])[0], vault: 'b'.repeat(64), seed: 'Maia City' };
 		const r = await load(proof([...rowsOf([ENTRIES['views/view-holders']]), other]));
 		expect(r).toEqual({ error: `the proof at ${AT} proved code of another vault than Maia City's` });
-		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
+		expect(codeAt('views/view-holders')).toMatchObject(ENTRIES['views/view-holders']);
 	});
 	test('no feed, or no network: the seed stays, and nothing throws', async () => {
 		expect(await load(proof([], { status: 404 }))).toEqual({ error: `${AT} answered 404` });
 		expect(await load({ get: async () => { throw new Error('offline'); } })).toEqual({ error: `${AT} could not be reached: offline`, passing: true });
-		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
+		expect(codeAt('views/view-holders')).toMatchObject(ENTRIES['views/view-holders']);
 	});
 	test('an empty vault (one reset and not seeded yet): the seed runs', async () => {
 		expect(await load(proof([]))).toEqual({ taken: [], refused: [] });
-		expect(codeAt('views/view-holders')).toBe(ENTRIES['views/view-holders']);
+		expect(codeAt('views/view-holders')).toMatchObject(ENTRIES['views/view-holders']);
 	});
 	test("the live feed's proof is read for Maia City's views, logic modules and configs; switched off, nothing is asked and the seed runs", async () => {
 		expect(feedOf('https://avendb.maia.city/feed/code', VAULT)).toBe(`https://avendb.maia.city/feed/proof?vault=${VAULT}&type=view,logic,config`);
