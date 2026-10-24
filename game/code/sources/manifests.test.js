@@ -155,3 +155,32 @@ test('manifest diagnostics report scheduling without claiming delivery or retain
  expect(state.runs.at(-1).requested).toBe(0);
  expect(JSON.stringify(state)).not.toContain('/private/route/');
 });
+
+test('known view dependencies are prioritized while unrelated query history is withheld', async () => {
+ const controller = new AbortController();
+ let release, hinted;
+ const withheld = new Promise(resolve => { release = resolve; });
+ const published = new Promise(resolve => { hinted = resolve; });
+ const hints = [], brought = [];
+ const manifest = m({ id: 'partial', routes: ['*'], parts: [{ entry: id(71) }, { query: { type: ['note'] } }] });
+ const device = { run: async op => {
+  if (op.op === 'query' && op.where?.type?.[0] === 'manifest') return { ok: { rows: [{ record: manifest }] } };
+  if (op.op === 'query') return withheld;
+  if (op.op === 'get' && op.entry === id(71)) return { ok: { record: { title: 'Useful local view' } } };
+  throw new Error('Unexpected broad or remote read');
+ } };
+ const running = bringDeclared('/partial/', { device, signal: controller.signal,
+  prioritize: async ids => { hints.push(...ids); hinted(); }, bring: async ids => brought.push(...ids) });
+ await Promise.race([published, new Promise((_, reject) => setTimeout(() => reject(new Error('demand blocked by unrelated history')), 100))]);
+ expect(hints).toEqual([id(71)]);
+ expect((await device.run({ op: 'get', entry: id(71) })).ok.record.title).toBe('Useful local view');
+ // Scheduling is not a claim of complete discovery or peer delivery.
+ expect(brought).toEqual([]);
+ const { manifestDiagnostics } = await import('./manifests.js');
+ expect(manifestDiagnostics().pending).toBeGreaterThan(0);
+ controller.abort();
+ release({ ok: { rows: [{ entry: id(72), type: 'note' }] } });
+ await expect(running).rejects.toThrow();
+ expect(brought).toEqual([]);
+ expect(hints).toEqual([id(71)]);
+});

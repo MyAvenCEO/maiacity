@@ -62,8 +62,15 @@ export function useView(path) {
 	const view = { device: opened, path, controller, demand, done: null };
 	activeView = view;
 	view.done = (async () => {
+		// Learned IDs are scheduling hints, not trusted records. Do not wait for an
+		// unrelated manifest query before telling the node what this view needs.
+		if (before.length) void demand.add(before.slice(0, AT_ONCE));
 		const declared = await bringDeclared(path, {
 			device: opened, signal,
+			prioritize: (ids) => {
+				signal.throwIfAborted();
+				return demand.add(ids);
+			},
 			bring: async (ids) => {
 				const scoped = await demand.add(ids);
 				return bringEntries(ids, opened, { signal, path, prioritize: !scoped });
