@@ -455,3 +455,41 @@ The full original bootstrap/performance goal is not marked complete.
 Store-adoption stage: [`503e1aa4`](https://github.com/MyAvenCEO/maiacity/commit/503e1aa4).
 Required pending Rust filter: `cargo test -p avendb --lib owner_bootstrap_store -- --nocapture`,
 followed by `owner_judgment`, `counted_base`, and existing ordinary history/sharing regressions.
+
+### Durable native/PWA anchor plumbing (follow-up, not production activation)
+
+The common `avendb-net::edits` Shelf path now captures the owner-encrypted anchor
+companion under the same Lab lock as signed save records. Explicit adopted bases
+use checksummed v3 journal/head objects; ordinary stores still write v2 and both
+versions are readable. Head compaction retains the companion. A lost write
+acknowledgement retries without losing the anchor; a torn object is rejected.
+Startup attaches the companion to the ordinary Backup before restore, where all
+owner/current-policy checks still run. An invalid companion discards only derived
+bootstrap state, never the signed log. Native disk and PWA OPFS use this one path.
+
+The durable fence names **all held entry-write IDs plus the snapshot**, including
+concurrent writes with equal/lower depth. Depth is not a causal frontier. The
+companion is bounded to 16 entries and 1024 held entry writes per anchor (512
+attested facts plus at most 512 suffix facts). The small save-dirty stamp compares
+entry/signed-snapshot identities; an unchanged ordinary save does not clone the
+full backup. Ciphertext serialization still scans held signed IDs when a save is
+due; its cost remains a measured optimization debt. Vault export v1 explicitly
+refuses adopted partial holders instead of claiming a restorable export while
+omitting their bases.
+
+Validation: `BootstrapAnchor.lean` passed including the new atomic-journal
+assumption model; rustfmt parser and `git diff --check` passed. **Rust compilation
+and tests remain pending the root's shared compiler queue.** Required filters:
+`avendb: bootstrap_companion_fences_concurrent_writes_without_depth_assumptions`,
+`avendb-net: bootstrap_journal` (codec, lost acknowledgement, torn journal, whole
+head retention), and the existing owner-bootstrap Store regression plus complete
+edits persistence regressions. These tests do not claim iPhone performance.
+
+Activation remains explicit core API only. Required before runtime enablement:
+per-entry incremental reconstruction with policy invalidation; dependency-closed
+concurrent suffix selection (never depth filtering); refusal or canonical handling
+of later entry Mark/audience changes and unsupported shared/proposal writes;
+measured native/PWA persistence and UI latency. Root's warm-path owner is handling
+these reconstruction gates independently. Shared/capability/proposal bootstrap,
+export format support, runtime publication/adoption and physical-device validation
+remain open. No privileged hosted peer or global kernel replacement was introduced.

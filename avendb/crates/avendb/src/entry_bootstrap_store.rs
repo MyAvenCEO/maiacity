@@ -183,33 +183,14 @@ impl Backup {
     /// Durable companion to the existing signed-log backup. Ciphertext only; decoding
     /// grants no authority and restore rechecks its signed root and current policy.
     pub fn bootstrap_bytes(&self) -> Vec<u8> {
-        let mut b = b"avenDB bootstrap anchors 1\n".to_vec();
-        (self.bootstrap_bases.len() as u32).encode(&mut b);
-        for (entry, (snapshot, sealed)) in &self.bootstrap_bases {
-            entry.encode(&mut b);
-            snapshot.encode(&mut b);
-            sealed.encode(&mut b);
-            let depth = self
-                .signed
-                .iter()
-                .find(|s| s.edit.id() == *snapshot)
-                .map(|s| s.edit.depth)
-                .unwrap_or(u64::MAX);
-            let suffix: Vec<_> = self
-                .signed
-                .iter()
-                .filter(|s| {
-                    s.edit.depth > depth
-                        && matches!(s.edit.action,Action::Write{entry:e,..}if e==*entry)
-                })
-                .map(|s| s.edit.id())
-                .collect();
-            suffix.encode(&mut b);
-        }
-        b
+        encode_anchors(&self.bootstrap_bases, self.signed.iter())
     }
     pub fn with_bootstrap_bytes(mut self, bytes: &[u8]) -> Option<Self> {
-        if bytes.len() > 16 * (MAX_BYTES + 256) {
+        if bytes.is_empty() {
+            self.bootstrap_bases.clear();
+            return Some(self);
+        }
+        if bytes.len() > 16 * (MAX_BYTES + 256 + 1024 * 32) {
             return None;
         }
         let mut r = WireReader::new(bytes);
@@ -222,12 +203,13 @@ impl Backup {
             let entry = EntryId::decode(&mut r).ok()?;
             let snapshot = EditId::decode(&mut r).ok()?;
             let sealed = r.bytes().ok()?;
-            let suffix = seq::<EditId>(&mut r, 32, 512)?;
+            let suffix = seq::<EditId>(&mut r, 32, 1024)?;
             // Detect a torn pair: the durable anchor must not name acknowledged suffix
             // edits absent from the signed-log backup supplied with it.
-            if !suffix
-                .iter()
-                .all(|id| self.signed.iter().any(|s| s.edit.id() == *id))
+            if !self.signed.iter().any(|s| s.edit.id() == snapshot)
+                || !suffix
+                    .iter()
+                    .all(|id| self.signed.iter().any(|s| s.edit.id() == *id))
             {
                 return None;
             }
@@ -248,6 +230,60 @@ impl Backup {
 mod tests {
     use super::*;
     use crate::cast::{document, human_on};
+    #[test]
+    fn bootstrap_companion_fences_concurrent_writes_without_depth_assumptions() {
+        let mut lab = Lab::new();
+        let owner = lab.passkey("Owner");
+        let mac = lab.device_of(owner, "Mac");
+        let pad = lab.device_of(owner, "Pad");
+        let vault = human_on(&mut lab, owner, &[mac, pad]);
+        let entry = lab
+            .create(mac, vault, vault, "note", &[], document("Base", "old", mac))
+            .unwrap();
+        lab.sync(mac, pad);
+        let concurrent = lab
+            .edit(pad, vault, entry, |i| i.set_text(2, "concurrent"))
+            .unwrap();
+        lab.edit(mac, vault, entry, |i| i.set_text(2, "first"))
+            .unwrap();
+        let later = lab
+            .edit(mac, vault, entry, |i| i.set_text(2, "second"))
+            .unwrap();
+        let held = lab
+            .backup(pad)
+            .signed()
+            .iter()
+            .find(|s| s.edit.id() == concurrent)
+            .unwrap()
+            .clone();
+        let mut backup = lab.backup(mac);
+        assert!(
+            held.edit.depth
+                < backup
+                    .signed
+                    .iter()
+                    .find(|s| s.edit.id() == later)
+                    .unwrap()
+                    .edit
+                    .depth
+        );
+        backup.signed.push(held);
+        // Opaque transport fixture only: this does not attest or activate a writable base.
+        backup.bootstrap_bases.insert(entry, (later, vec![1, 2, 3]));
+        let bytes = backup.bootstrap_bytes();
+        assert!(
+            Backup::new(backup.signed.clone(), backup.blobs.values().cloned())
+                .with_bootstrap_bytes(&bytes)
+                .is_some()
+        );
+        backup.signed.retain(|s| s.edit.id() != concurrent);
+        assert!(
+            Backup::new(backup.signed, backup.blobs.values().cloned())
+                .with_bootstrap_bytes(&bytes)
+                .is_none()
+        );
+    }
+
     #[test]
     fn owner_bootstrap_store_writes_reopens_and_converges_concurrent_suffixes() {
         let mut lab = Lab::new();
@@ -375,5 +411,49 @@ mod tests {
                 .with_bootstrap_bytes(&bytes[..bytes.len() - 1])
                 .is_none()
         );
+    }
+}
+
+fn encode_anchors<'a>(
+    anchors: &Anchors,
+    signed: impl Iterator<Item = &'a crate::sign::Signed> + Clone,
+) -> Vec<u8> {
+    if anchors.is_empty() {
+        return Vec::new();
+    }
+    let mut b = b"avenDB bootstrap anchors 1\n".to_vec();
+    (anchors.len() as u32).encode(&mut b);
+    for (entry, (snapshot, sealed)) in anchors {
+        entry.encode(&mut b);
+        snapshot.encode(&mut b);
+        sealed.encode(&mut b);
+        // Depth is not causality: an unseen concurrent write may predate the snapshot.
+        // Fence every held entry write (including any held baseline facts) instead.
+        let suffix: Vec<_> = signed
+            .clone()
+            .filter(|s| matches!(s.edit.action,Action::Write{entry:e,..}if e==*entry))
+            .map(|s| s.edit.id())
+            .collect();
+        suffix.encode(&mut b);
+    }
+    b
+}
+
+impl Lab {
+    /// Small identity stamp; the signed snapshot fixes its ciphertext root.
+    pub fn bootstrap_stamp(&self, on: SignerId) -> Vec<(EntryId, EditId)> {
+        self.held(on)
+            .bootstrap_bases
+            .iter()
+            .map(|(e, (s, _))| (*e, *s))
+            .collect()
+    }
+    /// Capture ciphertext anchors with the same held signed frontier as a journal save.
+    pub fn bootstrap_bytes(&self, on: SignerId) -> Vec<u8> {
+        let store = self.held(on);
+        encode_anchors(
+            &store.bootstrap_bases,
+            store.log.ids().iter().map(|id| &store.signed[id]),
+        )
     }
 }

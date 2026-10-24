@@ -41,7 +41,7 @@ use std::io::ErrorKind;
 use std::sync::{Arc, Mutex};
 
 use anyhow::{Context as _, Result, anyhow, ensure};
-use avendb::id::{BlobId, EditId, SignerId};
+use avendb::id::{BlobId, EditId, EntryId, SignerId};
 use avendb::lab::{Checked, Lab, Warm, Warming};
 use avendb::policy::{Log, LogRevision};
 use avendb::sign::Signed;
@@ -58,6 +58,10 @@ use crate::{BACKOFF_MAX, Cursor, Shared};
 const HEAD: &[u8] = b"avenDB head 2\n";
 /// What every journal entry starts with, of the same version.
 const ENTRY: &[u8] = b"avenDB journal 2\n";
+/// Explicit adopted baselines use v3; ordinary stores retain their v2 format.
+const HEAD_ANCHORS: &[u8] = b"avenDB head 3\n";
+const ENTRY_ANCHORS: &[u8] = b"avenDB journal 3\n";
+const MAX_ANCHORS: usize = 16 * (1024 * 1024 + 256 + 1024 * 32);
 /// What every pack starts with: avenDB's edits, version 1.
 const PACK: &[u8] = b"avenDB edits 1\n";
 /// How many journal entries a head comes after.
@@ -105,12 +109,14 @@ struct Book {
     head: u64,
     /// The records of the journal's entries from `mark` on: the next pack.
     pending: Vec<u8>,
+    anchors: Vec<u8>,
 }
 
 /// What the shelf holds of the node's device.
 struct Kept {
     /// The first `written` edits of the device's log.
     written: usize,
+    anchor_stamp: Vec<(EntryId, EditId)>,
     /// The log whose first `written` edits were persisted. Withdrawals and restores start a new lineage, even
     /// when the number of edits stays the same; an in-flight save acknowledges only the lineage it wrote.
     lineage: Option<LogRevision>,
@@ -129,6 +135,8 @@ impl Kept {
 /// of the whole log, up to place `to`, and the McEliece keys the shelf lacks.
 struct Due {
     to: usize,
+    anchor_stamp: Vec<(EntryId, EditId)>,
+    anchors: Vec<u8>,
     lineage: LogRevision,
     records: Vec<u8>,
     keys: Vec<(BlobId, Arc<[u8]>)>,
@@ -136,7 +144,7 @@ struct Due {
 }
 
 /// What a node takes back from its shelf as it starts: its edits, in the order they were saved, and McEliece keys.
-pub(crate) type Stored = (Vec<Signed>, Vec<Arc<[u8]>>);
+pub(crate) type Stored = (Vec<Signed>, Vec<Arc<[u8]>>, Vec<u8>);
 
 /// Head `n` of `bytes`, by its number and the hash of its bytes: it names its packs by their hashes, each checked as it
 /// is read (`Shelf::read_blob`), so one head named so holds the very edits it held.
@@ -208,6 +216,7 @@ impl Cursor<'_> {
 /// A head: the packs that hold the device's edits up to journal entry `journal`, and every McEliece key.
 #[derive(Default)]
 struct Head {
+    anchors: Vec<u8>,
     journal: u64,
     packs: Vec<Blob>,
     keys: Vec<Key>,
@@ -215,41 +224,56 @@ struct Head {
 
 impl Head {
     fn to_bytes(&self) -> Bytes {
-        let mut out = HEAD.to_vec();
+        let mut out = if self.anchors.is_empty() { HEAD } else { HEAD_ANCHORS }.to_vec();
         out.extend(self.journal.to_be_bytes());
         out.extend((self.packs.len() as u32).to_be_bytes());
         self.packs.iter().for_each(|pack| put_blob(&mut out, pack));
         put_keys(&mut out, &self.keys);
+        if !self.anchors.is_empty() {
+            out.extend((self.anchors.len() as u32).to_be_bytes());
+            out.extend(&self.anchors);
+        }
         summed(out)
     }
 
     fn from_bytes(bytes: &[u8]) -> Option<Head> {
-        let mut r = Cursor(unsummed(bytes)?.strip_prefix(HEAD)?);
+        let bytes = unsummed(bytes)?;
+        let current = bytes.starts_with(HEAD_ANCHORS);
+        let mut r = Cursor(bytes.strip_prefix(if current { HEAD_ANCHORS } else { HEAD })?);
         let journal = u64::from_be_bytes(r.array()?);
         let packs = (0..u32::from_be_bytes(r.array()?)).map(|_| r.blob()).collect::<Option<_>>()?;
         let keys = r.keys()?;
-        r.0.is_empty().then_some(Head { journal, packs, keys })
+        let anchors = if current { read_anchors(&mut r)? } else { Vec::new() };
+        r.0.is_empty().then_some(Head { journal, packs, keys, anchors })
     }
 }
 
 /// A journal entry: the McEliece keys a save brought, and the records of its new edits.
 struct Entry {
+    anchors: Vec<u8>,
     keys: Vec<Key>,
     records: Vec<u8>,
 }
 
 impl Entry {
     fn to_bytes(&self) -> Bytes {
-        let mut out = ENTRY.to_vec();
+        let mut out = if self.anchors.is_empty() { ENTRY } else { ENTRY_ANCHORS }.to_vec();
         put_keys(&mut out, &self.keys);
+        if !self.anchors.is_empty() {
+            out.extend((self.anchors.len() as u32).to_be_bytes());
+            out.extend(&self.anchors);
+        }
         out.extend(&self.records);
         summed(out)
     }
 
     fn from_bytes(bytes: &[u8]) -> Option<Entry> {
-        let mut r = Cursor(unsummed(bytes)?.strip_prefix(ENTRY)?);
+        let bytes = unsummed(bytes)?;
+        let current = bytes.starts_with(ENTRY_ANCHORS);
+        let mut r = Cursor(bytes.strip_prefix(if current { ENTRY_ANCHORS } else { ENTRY })?);
         let keys = r.keys()?;
-        Some(Entry { keys, records: r.0.to_vec() })
+        let anchors = if current { read_anchors(&mut r)? } else { Vec::new() };
+        Some(Entry { keys, records: r.0.to_vec(), anchors })
     }
 }
 
@@ -277,6 +301,14 @@ async fn numbered(shelf: &Shelf, prefix: &str) -> Result<Vec<(u64, String)>> {
     Ok(found)
 }
 
+fn read_anchors(r: &mut Cursor<'_>) -> Option<Vec<u8>> {
+    let n = u32::from_be_bytes(r.array()?) as usize;
+    if n > MAX_ANCHORS || r.0.len() < n { return None; }
+    let (bytes, rest) = r.0.split_at(n);
+    r.0 = rest;
+    Some(bytes.to_vec())
+}
+
 impl Edits {
     /// The edits on `shelf`, and what it holds, for its device to take back: the edits of its newest head that reads
     /// whole and of the journal after it, each once, in the order they were saved, and every McEliece key that reads
@@ -302,6 +334,7 @@ impl Edits {
         let mut seen = HashSet::new();
         signed.retain(|s| seen.insert(s.edit.id()));
         let started = named.map(|named| (named, signed.len()));
+        let mut anchors = head.anchors;
         let mut keys: BTreeMap<BlobId, u64> = head.keys.into_iter().collect();
         let (mut pending, mut next) = (Vec::new(), head.journal);
         while let Some(bytes) = shelf.get(&journal_name(next)).await? {
@@ -312,6 +345,7 @@ impl Edits {
                 continue;
             };
             signed.extend(edits.into_iter().filter(|s| seen.insert(s.edit.id())));
+            anchors = entry.anchors;
             pending.extend(entry.records);
             keys.extend(entry.keys);
         }
@@ -326,12 +360,12 @@ impl Edits {
                 }
             }
         }
-        let kept = Kept { written: 0, lineage: None, keys: keys.keys().copied().collect(), whole: false };
-        let book = Book { packs: head.packs, keys, mark: head.journal, next, head: next_head, pending };
+        let kept = Kept { anchor_stamp: Vec::new(), written: 0, lineage: None, keys: keys.keys().copied().collect(), whole: false };
+        let book = Book { packs: head.packs, keys, mark: head.journal, next, head: next_head, pending, anchors: anchors.clone() };
         let (book, kept) = (tokio::sync::Mutex::new(book), Mutex::new(kept));
         let (slots, checked) = (Mutex::new((0, 0)), Mutex::new(None));
         let edits = Edits { shelf, book, kept, slots, started, checked, due: Notify::new() };
-        Ok((edits, (signed, bytes)))
+        Ok((edits, (signed, bytes, anchors)))
     }
 
     /// What the device worked out before, as the shelf keeps it (`slots/`): its keys and its stored views, each the
@@ -422,6 +456,7 @@ impl Edits {
         let kept = self.kept.lock().expect("kept");
         !kept.continues(lab.log(me))
             || kept.written < lab.size(me).0
+            || kept.anchor_stamp != lab.bootstrap_stamp(me)
             || lab.blob_ids(me).iter().any(|b| !kept.keys.contains(b))
     }
 
@@ -434,7 +469,8 @@ impl Edits {
         for b in lab.blob_ids(me).into_iter().filter(|b| !kept.keys.contains(b)) {
             keys.push((b, lab.blob(me, b).context("a key the device holds")?));
         }
-        let fresh = ids.len() > kept.written || !keys.is_empty();
+        let anchor_stamp = lab.bootstrap_stamp(me);
+        let fresh = ids.len() > kept.written || !keys.is_empty() || kept.anchor_stamp != anchor_stamp;
         let packing = journaled + u64::from(fresh) >= JOURNALED;
         let whole = !kept.continues(lab.log(me)) || ids.len() < kept.written || (packing && packs >= PACKS);
         if !whole && !fresh && !packing {
@@ -444,7 +480,9 @@ impl Edits {
         for id in &ids[if whole { 0 } else { kept.written }..] {
             record(&mut records, lab.signed_edit(me, *id).context("an edit the device holds")?);
         }
-        Ok(Some(Due { to: ids.len(), lineage: lab.log(me).lineage(), records, keys, whole }))
+        let anchors = lab.bootstrap_bytes(me);
+        ensure!(anchors.len() <= MAX_ANCHORS, "bootstrap anchor save exceeds its bound");
+        Ok(Some(Due { anchors, anchor_stamp, to: ids.len(), lineage: lab.log(me).lineage(), records, keys, whole }))
     }
 
     /// Puts `due` on the shelf: each new McEliece key as a blob, then the new edits and keys in the next journal
@@ -471,23 +509,26 @@ impl Edits {
         if due.whole {
             let pack = self.pack_on(on, &due.records).await?;
             book.keys.extend(brought);
-            let head = Head { journal: book.next, packs: vec![pack], keys: book.keys.clone().into_iter().collect() };
+            let head = Head { anchors: due.anchors.clone(), journal: book.next, packs: vec![pack], keys: book.keys.clone().into_iter().collect() };
             self.put_head_on(on, book, &head).await?;
             (book.packs, book.mark) = (vec![pack], book.next);
             book.pending.clear();
+            book.anchors = due.anchors.clone();
             let mut kept = self.kept.lock().expect("kept");
             (kept.written, kept.whole) = (due.to, false);
             kept.lineage = Some(due.lineage);
+            kept.anchor_stamp = due.anchor_stamp;
             kept.keys.extend(ids);
             return Ok(());
         }
         let (mut records, mut keys) = (&due.records[..], brought);
-        while !records.is_empty() || !keys.is_empty() {
+        while !records.is_empty() || !keys.is_empty() || book.anchors != due.anchors {
             let name = journal_name(book.next);
-            let entry = Entry { keys: keys.clone(), records: records.to_vec() };
+            let entry = Entry { anchors: due.anchors.clone(), keys: keys.clone(), records: records.to_vec() };
             match on.put(&name, entry.to_bytes()).await {
                 Ok(()) => {
                     book.next += 1;
+                    book.anchors = due.anchors.clone();
                     book.pending.extend(records);
                     book.keys.extend(keys);
                     break;
@@ -503,6 +544,7 @@ impl Edits {
                         Some(there) if ours(&there) => {
                             records = &records[there.records.len()..];
                             keys.retain(|k| !there.keys.contains(k));
+                            book.anchors = there.anchors;
                             book.pending.extend(&there.records);
                             book.keys.extend(there.keys);
                         }
@@ -515,6 +557,7 @@ impl Edits {
         {
             let mut kept = self.kept.lock().expect("kept");
             kept.written = due.to;
+            kept.anchor_stamp = due.anchor_stamp;
             kept.lineage = Some(due.lineage);
             kept.keys.extend(ids);
         }
@@ -523,7 +566,7 @@ impl Edits {
             let mut packs = book.packs.clone();
             packs.push(pack);
             let keys = book.keys.clone().into_iter().collect();
-            self.put_head_on(on, book, &Head { journal: book.next, packs: packs.clone(), keys }).await?;
+            self.put_head_on(on, book, &Head { anchors: book.anchors.clone(), journal: book.next, packs: packs.clone(), keys }).await?;
             (book.packs, book.mark) = (packs, book.next);
             book.pending.clear();
         }
@@ -569,7 +612,7 @@ pub(crate) fn unpack(pack: &[u8]) -> Option<Vec<Signed>> {
 /// Puts the first head on `shelf`, a new node's: of `packs` and the McEliece keys `keys`, each a blob the shelf holds.
 /// A node started on it takes back their edits and keys (`Edits::open`), each checked again: a restored snapshot.
 pub(crate) async fn put_first_head(shelf: &Shelf, packs: Vec<Blob>, keys: Vec<Key>) -> Result<()> {
-    Ok(shelf.put(&head_name(1), Head { journal: 0, packs, keys }.to_bytes()).await?)
+    Ok(shelf.put(&head_name(1), Head { anchors: Vec::new(), journal: 0, packs, keys }.to_bytes()).await?)
 }
 
 /// Head `n` on `shelf`, named by `checked`, and the edits of its packs, every one of which must read whole.
@@ -758,6 +801,67 @@ mod tests {
         }
     }
 
+    #[test]
+    fn bootstrap_journal_codec_rejects_torn_anchors_and_keeps_legacy_compatible() {
+        let legacy = Entry { keys: vec![], anchors: vec![], records: vec![] }.to_bytes();
+        assert!(legacy.starts_with(ENTRY));
+        assert!(Entry::from_bytes(&legacy).unwrap().anchors.is_empty());
+        let entry = Entry { keys: vec![], anchors: vec![7; 64], records: vec![1,2,3] };
+        let bytes = entry.to_bytes();
+        assert_eq!(Entry::from_bytes(&bytes).unwrap().anchors, entry.anchors);
+        for n in [0, ENTRY_ANCHORS.len(), bytes.len()-1] {
+            assert!(Entry::from_bytes(&bytes[..n]).is_none());
+        }
+        let mut oversized = ENTRY_ANCHORS.to_vec();
+        put_keys(&mut oversized, &[]);
+        oversized.extend(((MAX_ANCHORS+1) as u32).to_be_bytes());
+        assert!(Entry::from_bytes(&summed(oversized)).is_none());
+        let head = Head { journal: 4, packs: vec![], keys: vec![], anchors: entry.anchors };
+        assert_eq!(Head::from_bytes(&head.to_bytes()).unwrap().anchors, head.anchors);
+    }
+
+    #[tokio::test]
+    async fn bootstrap_journal_reopens_atomic_anchor_and_suffix_and_retries() {
+        let folder = std::env::temp_dir().join(format!("avendb-anchor-{}", crate::shelf::fresh()));
+        let writer = crate::disk::open(&folder).unwrap().writer().unwrap();
+        let shelf = writer.shelf();
+        let (edits, _) = Edits::open(shelf.clone()).await.unwrap();
+        let lab = Lab::new();
+        // The opaque bytes test transport durability, not authority. Core tests reject invalid anchors.
+        let mut log_lab = lab;
+        let me = log_lab.device("journal");
+        let mut records = Vec::new();
+        record(&mut records, &signed(0));
+        let anchors = vec![9; 96];
+        // Simulate a completed object write whose acknowledgement was lost.
+        shelf.put(&journal_name(0), Entry { keys: vec![], records: records.clone(), anchors: anchors.clone() }.to_bytes()).await.unwrap();
+        let mut book = edits.book.lock().await;
+        let due = Due { to: 1, lineage: log_lab.log(me).lineage(), records, keys: vec![], whole: false, anchors: anchors.clone(), anchor_stamp: vec![] };
+        edits.put(&mut book, due).await.unwrap();
+        drop(book);
+        let (_, (saved, _, retained)) = Edits::open(shelf.clone()).await.unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(retained, anchors);
+        // A torn next record cannot replace the previous complete anchor/frontier pair.
+        let mut next = Entry { keys: vec![], records: vec![], anchors: vec![8; 96] }.to_bytes().to_vec();
+        next.pop();
+        shelf.put(&journal_name(1), Bytes::from(next)).await.unwrap();
+        let (_, (saved, _, retained)) = Edits::open(shelf.clone()).await.unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(retained, anchors);
+        // Whole-log compaction names the same anchor in the committed head.
+        let mut book = edits.book.lock().await;
+        let mut records = Vec::new();
+        record(&mut records, &signed(0));
+        edits.put(&mut book, Due { to: 1, lineage: log_lab.log(me).lineage(), records, keys: vec![], whole: true, anchors: anchors.clone(), anchor_stamp: vec![] }).await.unwrap();
+        drop(book);
+        let (_, (saved, _, retained)) = Edits::open(shelf.clone()).await.unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(retained, anchors);
+        drop(writer);
+        std::fs::remove_dir_all(folder).unwrap();
+    }
+
     /// A shelf that deliberately fragments reads, including a record's four-byte length. The greatest request
     /// size makes the bounded I/O contract observable without relying on allocator or process-memory timings.
     fn fragmented(bytes: Bytes, fragment: usize) -> (Shelf, Arc<AtomicUsize>) {
@@ -836,8 +940,8 @@ mod tests {
         let valid_hash = Hash::new(&valid);
         let wrong_hash = Hash::new(b"a different content hash");
         let heads = [
-            Head { journal: 0, packs: vec![(valid_hash, valid.len() as u64)], keys: vec![] }.to_bytes(),
-            Head { journal: 0, packs: vec![(wrong_hash, changed.len() as u64)], keys: vec![] }.to_bytes(),
+            Head { anchors: Vec::new(), journal: 0, packs: vec![(valid_hash, valid.len() as u64)], keys: vec![] }.to_bytes(),
+            Head { anchors: Vec::new(), journal: 0, packs: vec![(wrong_hash, changed.len() as u64)], keys: vec![] }.to_bytes(),
         ];
         let expected_start = checked(1, &heads[0]);
         let (shelf, mut calls) = Shelf::new();
@@ -867,7 +971,7 @@ mod tests {
                 }
             }
         });
-        let (edits, (actual, keys)) = Edits::open(shelf).await.expect("the earlier head reads whole");
+        let (edits, (actual, keys, _)) = Edits::open(shelf).await.expect("the earlier head reads whole");
         assert_eq!(actual, expected);
         assert!(keys.is_empty());
         assert_eq!(edits.started(), Some((expected_start, expected.len())));
@@ -877,7 +981,7 @@ mod tests {
         let first = signed(0).edit;
         let second = signed(1).edit;
         let mut log = Log::from_edits(vec![first.clone(), second]);
-        let kept = Kept { written: 2, lineage: Some(log.lineage()), keys: HashSet::new(), whole: false };
+        let kept = Kept { anchor_stamp: Vec::new(), written: 2, lineage: Some(log.lineage()), keys: HashSet::new(), whole: false };
         assert!(kept.continues(&log));
         log.let_go(&[first.id()].into());
         log.receive([signed(2).edit]);
@@ -1011,7 +1115,7 @@ mod tests {
         assert_eq!(shelf.get(&head_name(1)).await.unwrap().unwrap(), old_head);
         assert_eq!(shelf.get(&head_name(2)).await.unwrap().unwrap(), second_head);
         drop(edits);
-        let (reopened, (signed, keys)) = Edits::open(shelf).await.expect("restart from the newest head");
+        let (reopened, (signed, keys, _)) = Edits::open(shelf).await.expect("restart from the newest head");
         let restored: Vec<_> = signed.iter().map(|s| s.edit.id()).collect();
         assert_eq!(restored, expected, "restart selects the latest saved branch");
         w.lab.restore_from(me, Backup::new(signed, keys));

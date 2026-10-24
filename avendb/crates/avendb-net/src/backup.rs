@@ -427,6 +427,9 @@ impl Node {
         let base_ask = newest.as_ref().map(|m| m.ask.clone());
         let compact = whole || newest.as_ref().is_some_and(|m| core::due(m.packs.len()));
         let take = move |lab: &avendb::lab::Lab, me| -> Result<Taken> {
+            // The v1 vault export does not carry owner-attested base anchors. Refuse a
+            // misleading successful backup until that format can restore partial holders.
+            ensure!(lab.bootstrap_stamp(me).is_empty(), "vault export of adopted partial bases is not supported yet");
             let edits: &[Edit] = lab.log(me).edits();
             let snap = core::snapshot_places(edits, lab.state(me), v);
             let plan = core::plan(edits, &snap, base_ask.as_ref(), compact);
