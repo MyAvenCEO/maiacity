@@ -715,3 +715,30 @@ missing-cut fixture checks the planned request before late-body receipt and no
 request after it. Syntax/diff checks passed; root owns Rust execution. Remaining
 architecture gap is ordinary key recovery for already-held ciphertext, which this
 exact Signed-edit protocol intentionally does not misrepresent as a missing body.
+
+### Active-view missing-key recovery priority
+
+Implemented current-authorized `owner_base_key_waits` scheduling hints. Held encrypted
+suffixes waiting for a key now wake the bootstrap pump, and active-view waits schedule
+the existing coalesced peer pull path (at most three live peers per retry, rotated).
+Each ordinary pull batch recomputes current key waits and puts those active entry logs
+before other active entries. Governance/key-family logs still precede entries. View
+replacement/release and discovery wake the pump; the hints expire with existing view
+leases and disappear on key arrival or authority removal. No new wire authority or
+key disclosure path was added, and held ciphertext is still excluded from exact-body
+repair.
+
+Lean scheduling lemmas passed in `AvenDB/BootstrapDependencies.lean`. Extended
+`owner_bootstrap_retains_key_wait_and_resumes_on_key_arrival` to check entry hints,
+late-key removal and revoked-device removal; existing assertions retain the prefix,
+block writes and require no missing signed-body demand. Added
+`key_wait_priority_is_limited_to_current_view_and_removes_resolved_wait`. Rust tests
+remain pending the root compiler queue; parser and diff checks passed.
+
+Limits: ordinary `Keys`/`Wraps` for an entry share its log with writes, so this is
+prioritized authorized delta-log recovery, not selective envelope-only transfer.
+It depends on peers announcing changed log frontiers and ordinary key admission;
+it cannot invent an unpublished key or repair a corrupt body by refetching the
+already-held signed edit. Lazy nodes retain their existing explicit-pull semantics.
+Physical mobile latency and a full key-envelope network round trip are not proven
+by these scheduling/core regressions.

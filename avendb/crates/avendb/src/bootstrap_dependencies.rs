@@ -1,6 +1,15 @@
 //! Exact dependency repair is a subset of ordinary authorized disclosure.
 use super::*;
 impl Lab {
+    /// Current-authorized retained entries waiting for a key, not for ciphertext.
+    /// These hints only reorder existing ordinary log requests.
+    pub fn owner_base_key_waits(&self, on: SignerId) -> Vec<EntryId> {
+        if self.locked(on) { return vec![]; }
+        self.held(on).bootstrap_bases.keys().copied()
+            .filter(|entry| self.owner_base_wait_reason(on, *entry) == Some("missing-entry-key"))
+            .collect()
+    }
+
     pub fn owner_base_dependency_reply(
         &self,
         me: SignerId,

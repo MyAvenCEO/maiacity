@@ -352,3 +352,37 @@ mod network_tests {
         receiver.shutdown().await.unwrap();
     }
 }
+
+
+/// Key edits share the existing entry log. Never resend held ciphertext to recover a key.
+/// Active leases and current owner authority bound this scheduling hint.
+pub(crate) fn key_logs(active: &[LogId], waits: &[EntryId]) -> Vec<LogId> {
+    active.iter().copied().filter(|log| matches!(log, LogId::Entry(entry) if waits.contains(entry))).collect()
+}
+impl Shared {
+    pub(crate) async fn prioritize_owner_keys(self: &Arc<Self>) -> bool {
+        let waits = self.read(|lab, me| lab.owner_base_key_waits(me)).await;
+        let active = self.demands.lock().expect("demands").entries(Instant::now());
+        if key_logs(&active, &waits).is_empty() { return false; }
+        // Reuse the existing coalesced pull scheduler and ordinary authorized delta protocol.
+        let mut peers: Vec<_> = self.peers.lock().expect("peers").values()
+            .filter(|peer| peer.conn.close_reason().is_none()).map(|peer| peer.endpoint).collect();
+        if !peers.is_empty() {
+            let turn = self.dependency_peer_turn.fetch_add(1, Ordering::Relaxed) % peers.len();
+            peers.rotate_left(turn);
+        }
+        for endpoint in peers.into_iter().take(3) { self.ask_soon(endpoint); }
+        true
+    }
+}
+#[cfg(test)]
+mod key_priority_tests {
+    use super::*;
+    #[test]
+    fn key_wait_priority_is_limited_to_current_view_and_removes_resolved_wait() {
+        let a=EntryId([1;32]); let b=EntryId([2;32]);
+        assert_eq!(key_logs(&[LogId::Entry(a)], &[a,b]), vec![LogId::Entry(a)]);
+        assert!(key_logs(&[], &[a]).is_empty());
+        assert!(key_logs(&[LogId::Entry(a)], &[]).is_empty());
+    }
+}
