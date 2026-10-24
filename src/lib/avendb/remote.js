@@ -55,11 +55,13 @@ function fail(why) {
 /** The worker, started on first use. */
 function started() {
 	if (worker) return worker;
+	noteLifecycle('worker-start');
 	const current = new Worker(new URL('./remote.worker.js', import.meta.url), { type: 'module' });
 	worker = current;
 	const carriers = rtcPageHost(); transports = carriers;
 	const suspended = () => carriers.suspend();
 	globalThis.addEventListener?.('pagehide', suspended);
+	current.addEventListener('messageerror', () => noteLifecycle('worker-message-error'));
 	current.onmessage = ({ data }) => {
 		if (worker !== current) return;
 		if (carriers.message(data)) return;

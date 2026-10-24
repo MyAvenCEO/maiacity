@@ -13,7 +13,7 @@
 -->
 <script lang="ts">
 	import { base } from '$app/paths';
-	import { goto } from '$app/navigation';
+	import { goto, afterNavigate, beforeNavigate } from '$app/navigation';
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
 	import { ApiError, me, passBy, signOut, type Founder } from '$lib/auth/client';
@@ -21,7 +21,7 @@
 	import { pillContext } from '$lib/app/pill.svelte.js';
 	import { session } from '$lib/avendb/session.svelte.js';
 	import Diagnostics from '$lib/app/Diagnostics.svelte';
-	import { lifecycle } from '$lib/avendb/lifecycle.js';
+	import { lifecycle, noteLifecycle } from '$lib/avendb/lifecycle.js';
 	import { pillVaults, seeded, signerName } from '$lib/avendb/vaults.js';
 	import { remember } from '$lib/app/session';
 	import { forwardConsole, native } from '$lib/native';
@@ -126,6 +126,9 @@
 			? rows([...start.own, ...reported(start.report, start.t0)], start.plan, words, { now: clock, ended: start.ended, failed: !!start.error })
 			: []
 	);
+
+	afterNavigate(() => { if (!native()) noteLifecycle('route-navigation'); });
+	beforeNavigate(({ willUnload }) => { if (!native() && willUnload) noteLifecycle('app-navigation-unload'); });
 
 	onMount(async () => {
 		if (!native()) lifecycle()?.start();
