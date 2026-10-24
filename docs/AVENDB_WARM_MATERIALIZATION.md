@@ -33,3 +33,9 @@ The prior prototype passed eight warm/scratch core regressions, including exact 
 The final source adds clean-shutdown current-view publication, a real write/save/shutdown/reopen regression, legacy policy-only slot upgrade, stricter aggregate metadata decoding bounds, and per-export adjunct budgeting. Standalone Lean passed and `git diff --check` is clean. **Final-source Rust validation remains pending the parent’s single integrated build.** Do not mark this task Done or infer deployed behavior from the prototype results.
 
 Focused final filters: core `own_materialization`, `unchanged_warm_restore`, `ordinary_reconstruction`, and `bounded_decoder`; net `clean_shutdown_publishes_recent_materialization_without_background_reencoding`, plus existing optional-snapshot/shutdown regressions. No live account, store, or installed application was touched.
+
+## Follow-up: reject stale adjunct before copying
+
+Warm restore now checks exact-frontier eligibility before copying the decrypted materialization adjunct into retained state. A valid older policy prefix still restores as before, but its unusable adjunct no longer causes a second allocation of up to 32 MiB. Decrypting the authenticated slot itself and valid exact-frontier imports retain their existing costs. This is an allocation reduction, not active-working-set-first startup.
+
+The existing successor/frontier, corruption and revocation regressions cover the unchanged fallback decision. Standalone `WarmMaterialization.lean` and whitespace checks passed on this follow-up; focused final-source Rust tests await the shared compiler slot. The real clean-close/reopen regression remains required before claiming delivery.
