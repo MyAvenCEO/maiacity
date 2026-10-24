@@ -67,3 +67,28 @@ Twelve targeted JavaScript tests passed; changed Svelte components and the sessi
 The media resolver distinguishes an unenumerated collection from a confirmed full-world deletion. Same-device incomplete summaries retain resolved URLs; full-world deletion still revokes them. Device replacement clears URLs and file identities immediately on summary/render access, and an old asynchronous read cannot publish into a replacement device. Four focused media regressions pass alongside the twelve summary/reader tests. New unresolved media still needs file metadata; this does not claim complete scoped media discovery.
 
 The app's explicit `founded` result requests one full freshness barrier for entry-based account initialization. Routine unlocks still join metadata-only startup. This does not silently run entry seeding against partial collections, nor does it add a full-world request to every ordinary dashboard open. Later repository seed top-ups still require complete inventory; fully scoped maintenance remains separate work.
+
+## Follow-up: file-only media inventory (isolated candidate)
+
+Two consumers still defeated lazy item restoration by requesting `world` only to
+resolve media: profile/local-media fallback before a complete shared snapshot, and
+manifest traversal of `aven:` references. They now use canonical `entry_views`
+with `types: ['file']`; local-media scopes to requested vaults. Cross-vault legacy
+roots enumerate identity metadata through `world_summary`, then query each vault
+sequentially. No unrelated note/chat/game body is projected by this inventory.
+Authorization remains the engine's existing projection policy.
+
+An unavailable/refused/incomplete inventory throws rather than confirming empty;
+local-media retains already resolved same-device URLs on that path. Actual device
+replacement still clears them. Demand is captured before awaits, so a newly added
+vault request cannot be mistaken for a missing file in the prior inventory.
+Enumeration is of currently held local files, not a promise of complete peer
+history. File collections themselves remain unpaginated. This is evidence of
+avoided work, not proof of the cause or resolution of iPhone document restarts.
+
+Validation: 26 focused Bun tests pass (file inventory, manifest traversal,
+local-media state), Svelte module compilation passes, and
+`AvenDB/LocalFileInventory.lean` passes. Lean proves only the modeled preservation
+and subset properties; canonical engine authorization remains a premise. No Cargo,
+physical iPhone measurement, production deployment, or live-store mutation here.
+Keep this follow-up separate from the frozen release until explicitly integrated.

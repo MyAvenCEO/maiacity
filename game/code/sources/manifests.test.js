@@ -140,7 +140,12 @@ test('following a timeline prioritizes audio file entries named by aven roots', 
 	const d = { run: async op => {
 		if (op.op === 'query') return { ok: { rows: [{ record: m({ id: 'film', routes: ['/studio/'], parts: [{ entry: timeline, follow: 1 }] }) }] } };
 		if (op.op === 'get') return { ok: { record: { clips: JSON.stringify([{ hash: `aven:${root}:100:84:audio%2Fmpeg` }]) } } };
-		if (op.op === 'world') return { ok: { entries: [{ entry: audio, files: [{ root }] }] } };
+		if (op.op === 'world_summary') return { ok: { vaults: [{ id: MAIA_CITY }] } };
+        if (op.op === 'entry_views') {
+            expect(op.types).toEqual(['file']);
+            return { ok: { rows: [{ entry: audio, files: [{ root }] }] } };
+        }
+        throw new Error('Unexpected full-world read');
 	} };
 	const brought = [];
 	await bringDeclared('/studio/', { device: d, bring: async ids => brought.push(...ids) });
