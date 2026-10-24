@@ -8,6 +8,7 @@ const { chromium, webkit } = await import(process.env.AVENDB_TEST_PLAYWRIGHT || 
 const at = process.argv.indexOf('--browser');
 const engine = at < 0 ? 'chromium' : process.argv[at + 1];
 assert(['chromium', 'webkit'].includes(engine));
+const worldView = process.argv.includes('--world-view');
 const remote = `
 const entry = 'a'.repeat(64), mine = 'b'.repeat(64);
 const messages = [], waiters = [];
@@ -17,8 +18,10 @@ let serial = Promise.resolve();
 window.fixtureOperations = [];
 const counts = window.fixtureCounts = { brings: 0, writes: 0, worlds: 0, activeWorlds:0, maxWorlds:0 };
 const world = { mine, vaults:[{id:mine,name:'Fixture',kind:'human',acting:{as:mine},devices:[]}],
- entries:[{entry,vault:mine,type:'room',kind:'room',readers:[mine],record:{kind:'room',look:'self',name:'Fixture'}}] };
+ shares:[], groups:[], entries:[{entry:'c'.repeat(64),vault:mine,by:mine,authors:[mine],type:'todo',kind:'todo',title:'Generic collection acceptance',status:'open',tags:[],readers:[mine],writers:[mine],sharers:[mine],levels:{[mine]:'owner'}},{entry,vault:mine,type:'room',kind:'room',readers:[mine],record:{kind:'room',look:'self',name:'Fixture'}}] };
 const wake = () => { revision++; if(!window.fixtureMuteWake) for(const resolve of waiters.splice(0)) resolve(true); };
+window.fixtureRemoteStatus = next => {status=next;world.entries[0].status=next;wake();};
+window.fixtureRevokeTodo = () => {world.entries[0].readers=[];world.entries[0].writers=[];wake();};
 window.fixtureRemote = text => { messages.push({id:messages.length+1,text,at:Date.now(),by:{vault:mine},actor:mine});wake(); };
 window.fixtureHoldWorld = false;
 window.fixtureReleaseWorld = () => { window.fixtureHoldWorld = false; for(const resolve of (window.worldWaiters ?? []).splice(0)) resolve(); };
@@ -42,10 +45,14 @@ export class Device {
  }
  async runNow(op){
   if(op.op==='world'){counts.worlds++;counts.activeWorlds++;counts.maxWorlds=Math.max(counts.maxWorlds,counts.activeWorlds);try{const snapshot={...structuredClone(world),marker:window.fixtureWorldVersion??0};if(window.fixtureHoldWorld)await new Promise(r=>(window.worldWaiters??=[]).push(r));return {ok:snapshot};}finally{counts.activeWorlds--;}}
+  if(op.op==='entry_views')return {ok:{rows:structuredClone(world.entries.filter(e=>e.vault===op.vault && (!op.types || op.types.includes(e.type))))}};
   if(op.op==='room')return {ok:{entry,room:{kind:'room',look:'self',name:'Fixture',messages:structuredClone(messages)},count:messages.length}};
   if(op.op==='bring'){counts.brings++;return new Promise(()=>{});}
   if(op.op==='get')return {ok:{status}};
-  if(op.op==='set'){status=op.value;wake();return {ok:true};}
+  if(op.op==='set'){status=op.value;world.entries[0].status=status;wake();return {ok:true};}
+  if(op.op==='may')return {ok:op.ops.map(()=>true)};
+  if(op.op==='creatable')return {ok:{tags:[]}};
+  if(op.op==='taggable')return {ok:{tags:[]}};
   if(op.op==='insert' && window.fixtureRefuse)return {refused:'NoCap',why:'NoCap'};
   if(op.op==='insert'){counts.writes++;messages.push({...op.value,by:{vault:mine},actor:mine});wake();return {ok:{entry}};}
   return {ok:null};
@@ -80,10 +87,24 @@ try {
  const page=await context.newPage();
  page.setDefaultTimeout(20000);
  const errors=[];page.on('pageerror',e=>errors.push(e.message));
- await page.goto(origin+'/__local-write?room='+ 'a'.repeat(64));
+ await page.goto(origin+'/__local-write?room='+ 'a'.repeat(64)+(worldView?'&world-view':''));
  await page.getByTestId('phase').filter({hasText:'closed'}).waitFor();
  await page.getByRole('button',{name:'Unlock fixture'}).click();
  await page.getByTestId('phase').filter({hasText:'open'}).waitFor();
+ if(worldView){
+  await page.getByText('Generic collection acceptance',{exact:true}).waitFor();
+  await page.evaluate(()=>{window.fixtureHoldWorld=true;});
+  await page.getByRole('button',{name:'Open',exact:true}).click();
+  await page.getByRole('button',{name:'Doing',exact:true}).waitFor({timeout:1500});
+  assert.equal(await page.evaluate(()=>window.fixtureHoldWorld),true);
+  await page.evaluate(()=>window.fixtureRemoteStatus('done'));
+  await page.getByRole('button',{name:'Done',exact:true}).waitFor({timeout:1500});
+  await page.evaluate(()=>window.fixtureRevokeTodo());
+  await page.getByText('Generic collection acceptance',{exact:true}).waitFor({state:'hidden',timeout:1500});
+  assert.equal(await page.evaluate(()=>window.fixtureHoldWorld),true);
+  assert.deepEqual(errors,[]);
+  console.log('PASS '+engine+': actual Todos reflects locally accepted change before blocked world summary');
+ } else {
  await page.waitForSelector('textarea');
  await page.evaluate(()=>{window.fixtureBehind();window.fixtureHoldWorld=true;});
  await page.locator('textarea').first().fill('local message while peers unavailable');
@@ -165,4 +186,5 @@ try {
  await page.evaluate(()=>window.fixtureReleaseWorld());
  assert.deepEqual(errors,[]);
  console.log('PASS '+engine+': actual Session renders accepted chat+non-chat local mutations, preserves refused draft, and remote messages before blocked world refresh; local browser harness '+localMs+'ms (synthetic device, not physical latency)');
+ }
 } finally { await browser?.close();await server?.close(); }

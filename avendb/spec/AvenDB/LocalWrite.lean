@@ -40,4 +40,27 @@ theorem background_waits_for_reactive_turn : backgroundMayDispatch false = false
 
 theorem background_after_reactive_turn : backgroundMayDispatch true = true := rfl
 
+-- Active collection rows are selected from the same authoritative projection as
+-- the full world. Neither mutation arguments nor summary readiness construct rows.
+-- Abstract model only: Rust differential tests establish implementation correspondence.
+structure SummaryRow where
+  entry : Nat
+  vault : Nat
+  canonicalFields : Nat
+  deriving DecidableEq
+
+def collection (vault : Nat) (authorized : List SummaryRow) : List SummaryRow :=
+  authorized.filter (fun row => row.vault == vault)
+
+theorem collection_preserves_canonical_row (vault : Nat) (authorized : List SummaryRow)
+    (row : SummaryRow) (h : row ∈ collection vault authorized) : row ∈ authorized := by
+  exact (List.mem_filter.mp h).1
+
+def collectionResult (vault : Nat) (authorized : List SummaryRow) (_summaryReady : Bool) :=
+  collection vault authorized
+
+theorem collection_independent_of_summary (vault : Nat) (authorized : List SummaryRow)
+    (summaryReadyA summaryReadyB : Bool) :
+    collectionResult vault authorized summaryReadyA = collectionResult vault authorized summaryReadyB := rfl
+
 end AvenDB.LocalWrite

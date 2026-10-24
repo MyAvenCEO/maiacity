@@ -8,6 +8,7 @@ import { why } from './vaults.js';
 
 /** The ops that only read: they run on what the device holds, change nothing, and take no ceremony. */
 export const READS = [
+	'entry_views',
 	'query',
 	'get',
 	'history',

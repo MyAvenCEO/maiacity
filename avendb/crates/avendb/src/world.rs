@@ -322,11 +322,6 @@ impl World {
 
     pub fn to_json(&self, me: SignerId) -> Value {
         let ids = |xs: &[VaultId]| xs.iter().map(|v| hex(&v.0)).collect::<Vec<_>>();
-        let holders = |hs: Option<&Vec<Holder>>| {
-            let holder =
-                |h: &Holder| json!({ "device": hex(&h.device.0), "has": h.has, "of": h.of, "checked": h.checked });
-            hs.into_iter().flatten().map(holder).collect::<Vec<_>>()
-        };
         let owner = |p: &Principal| match p {
             Principal::Vault(v) => json!({ "vault": hex(&v.0) }),
             Principal::Signer(s) => {
@@ -394,74 +389,6 @@ impl World {
                 "syncs": c.syncs.iter().map(syncing).collect::<Vec<_>>(),
             })
         };
-        let synced = &self.synced_to;
-        let file = |(f, len): &(FileRoot, Option<u64>)| {
-            json!({
-                "root": hex(&f.hash),
-                "size": f.size,
-                "len": len,
-                "pieces": f.size.div_ceil(PIECE).max(1),
-                "syncedTo": holders(synced.files.get(f)),
-            })
-        };
-        let entry = |i: &EntryView| {
-            let (kind, title, text, status) = match &i.what {
-                What::Note { title, text, .. } => ("note", Some(title), Some(text), None),
-                What::Todo { title, status } => ("todo", Some(title), None, Some(status_name(*status))),
-                What::File { title, .. } => ("file", Some(title), None, None),
-                What::Lane { title, lens } => (if *lens { "lens" } else { "schema" }, Some(title), None, None),
-                What::Record { title, text, .. } => ("record", Some(title), text.as_ref(), None),
-                What::Sealed => ("sealed", None, None, None),
-            };
-            let (fork_of, deleted, edits, (proposals, variants), media) = match &i.what {
-                What::Note { fork_of, deleted, edits, proposals, variants, .. } => {
-                    (fork_of.as_ref(), *deleted, *edits, (*proposals, *variants), None)
-                }
-                What::File { deleted, media, .. } => (None, *deleted, 0, (0, 0), Some(media)),
-                What::Record { deleted, .. } => (None, *deleted, 0, (0, 0), None),
-                _ => (None, false, 0, (0, 0), None),
-            };
-            let fork_at = fork_of.map(|(_, at)| at.iter().map(|e| hex(&e.0)).collect::<Vec<_>>());
-            let levels: Map<String, Value> =
-                i.levels.iter().map(|(v, r)| (hex(&v.0), Value::from(level_name(*r)))).collect();
-            let with = |need: Level| i.levels.iter().filter(|(_, r)| r.allows(need)).map(|(v, _)| v.0).collect();
-            let (readers, writers): (Vec<[u8; 32]>, Vec<[u8; 32]>) = (with(Level::Read), with(Level::Write));
-            let sharers: Vec<[u8; 32]> =
-                i.levels.iter().filter(|(_, r)| *r == Level::Owner).map(|(v, _)| v.0).collect();
-            let hexes = |xs: Vec<[u8; 32]>| xs.iter().map(hex).collect::<Vec<_>>();
-            json!({
-                "entry": hex(&i.entry.0),
-                "vault": hex(&i.vault.0),
-                "by": hex(&i.by.0),
-                "authors": i.authors.iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
-                "type": i.ty,
-                "tags": i.tags,
-                "created": i.created,
-                "audience": hex(&i.audience.0),
-                "public": i.public,
-                "levels": levels,
-                "readers": hexes(readers),
-                "writers": hexes(writers),
-                "sharers": hexes(sharers),
-                "kind": kind,
-                "title": title,
-                "text": text,
-                "status": status,
-                "forkOf": fork_of.map(|(e, _)| hex(&e.0)),
-                "forkAt": fork_at,
-                "deleted": deleted,
-                "edits": edits,
-                "proposals": proposals,
-                "variants": variants,
-                "media": media,
-                "record": match &i.what {
-                    What::Record { record, .. } | What::Note { record: Some(record), .. } => record.clone(),
-                    _ => Value::Null,
-                },
-                "files": i.files.iter().map(file).collect::<Vec<_>>(),
-                "syncedTo": holders(synced.entries.get(&i.entry)),
-            })
-        };
         json!({
             "me": hex(&me.0),
             "mine": hex(&self.mine.0),
@@ -471,7 +398,7 @@ impl World {
             "vaults": self.vaults.iter().map(vault).collect::<Vec<_>>(),
             "shares": self.shares.iter().map(share).collect::<Vec<_>>(),
             "audiences": self.audiences.iter().map(audience).collect::<Vec<_>>(),
-            "entries": self.entries.iter().map(entry).collect::<Vec<_>>(),
+            "entries": self.entries.iter().map(|i| entry_json(i, &self.synced_to)).collect::<Vec<_>>(),
             "groups": rules::groups().iter().map(rules::Group::to_json).collect::<Vec<_>>(),
             "kinds": kinds_json(),
         })
@@ -589,6 +516,92 @@ pub fn world(lab: &Lab, me: SignerId) -> Option<World> {
         audiences,
         entries,
         synced_to,
+    })
+}
+
+/// A scoped collection of exactly the canonical world-entry rows. No full world,
+/// share inventory or audience inventory is materialized. Sealed metadata remains
+/// sealed; filtering by type can use only meaning this device already knows.
+pub fn entry_views(lab: &Lab, me: SignerId, vault: VaultId, types: Option<&[String]>, synced: &SyncedTo) -> Option<Value> {
+    lab.vault_of(me)?;
+    let rows = lab.state(me).entries().iter()
+        .filter(|en| en.vault == vault && lab.landed(me, en.id))
+        .filter(|en| types.is_none_or(|types| lab.meaning(me, en.id).is_some_and(|m| types.iter().any(|ty| ty == m.attrs.ty.as_str()))))
+        .map(|en| entry_json(&entry(lab, me, en), synced))
+        .collect::<Vec<_>>();
+    Some(json!({ "rows": rows }))
+}
+
+/// The single projection shared by full-world and active collection reads.
+fn entry_json(i: &EntryView, synced: &SyncedTo) -> Value {
+    let holders = |hs: Option<&Vec<Holder>>| {
+        hs.into_iter().flatten().map(|h| json!({ "device": hex(&h.device.0), "has": h.has, "of": h.of, "checked": h.checked })).collect::<Vec<_>>()
+    };
+    let file = |(f, len): &(FileRoot, Option<u64>)| {
+        json!({
+            "root": hex(&f.hash),
+            "size": f.size,
+            "len": len,
+            "pieces": f.size.div_ceil(PIECE).max(1),
+            "syncedTo": holders(synced.files.get(f)),
+        })
+    };
+
+    let (kind, title, text, status) = match &i.what {
+        What::Note { title, text, .. } => ("note", Some(title), Some(text), None),
+        What::Todo { title, status } => ("todo", Some(title), None, Some(status_name(*status))),
+        What::File { title, .. } => ("file", Some(title), None, None),
+        What::Lane { title, lens } => (if *lens { "lens" } else { "schema" }, Some(title), None, None),
+        What::Record { title, text, .. } => ("record", Some(title), text.as_ref(), None),
+        What::Sealed => ("sealed", None, None, None),
+    };
+    let (fork_of, deleted, edits, (proposals, variants), media) = match &i.what {
+        What::Note { fork_of, deleted, edits, proposals, variants, .. } => {
+            (fork_of.as_ref(), *deleted, *edits, (*proposals, *variants), None)
+        }
+        What::File { deleted, media, .. } => (None, *deleted, 0, (0, 0), Some(media)),
+        What::Record { deleted, .. } => (None, *deleted, 0, (0, 0), None),
+        _ => (None, false, 0, (0, 0), None),
+    };
+    let fork_at = fork_of.map(|(_, at)| at.iter().map(|e| hex(&e.0)).collect::<Vec<_>>());
+    let levels: Map<String, Value> =
+        i.levels.iter().map(|(v, r)| (hex(&v.0), Value::from(level_name(*r)))).collect();
+    let with = |need: Level| i.levels.iter().filter(|(_, r)| r.allows(need)).map(|(v, _)| v.0).collect();
+    let (readers, writers): (Vec<[u8; 32]>, Vec<[u8; 32]>) = (with(Level::Read), with(Level::Write));
+    let sharers: Vec<[u8; 32]> =
+        i.levels.iter().filter(|(_, r)| *r == Level::Owner).map(|(v, _)| v.0).collect();
+    let hexes = |xs: Vec<[u8; 32]>| xs.iter().map(hex).collect::<Vec<_>>();
+    json!({
+        "entry": hex(&i.entry.0),
+        "vault": hex(&i.vault.0),
+        "by": hex(&i.by.0),
+        "authors": i.authors.iter().map(|v| hex(&v.0)).collect::<Vec<_>>(),
+        "type": i.ty,
+        "tags": i.tags,
+        "created": i.created,
+        "audience": hex(&i.audience.0),
+        "public": i.public,
+        "levels": levels,
+        "readers": hexes(readers),
+        "writers": hexes(writers),
+        "sharers": hexes(sharers),
+        "kind": kind,
+        "title": title,
+        "text": text,
+        "status": status,
+        "forkOf": fork_of.map(|(e, _)| hex(&e.0)),
+        "forkAt": fork_at,
+        "deleted": deleted,
+        "edits": edits,
+        "proposals": proposals,
+        "variants": variants,
+        "media": media,
+        "record": match &i.what {
+            What::Record { record, .. } | What::Note { record: Some(record), .. } => record.clone(),
+            _ => Value::Null,
+        },
+        "files": i.files.iter().map(file).collect::<Vec<_>>(),
+        "syncedTo": holders(synced.entries.get(&i.entry)),
     })
 }
 

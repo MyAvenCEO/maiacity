@@ -164,6 +164,7 @@ fn bad(why: impl Into<String>) -> Refused {
 /// The fields of each op beside `op`: a field it doesn't take is a mistake, never ignored.
 fn fields(name: &str) -> Option<&'static [&'static str]> {
     Some(match name {
+        "entry_views" => &["vault", "types"],
         "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow"],
         "get" => &["entry", "schema", "line", "at", "version"],
         "pin" => &["entry", "at"],
@@ -227,7 +228,8 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
 }
 
 /// The ops that only read what the device holds, and `api_pass`, which signs a pass and keeps nothing.
-const READS: [&str; 31] = [
+const READS: [&str; 32] = [
+    "entry_views",
     "query",
     "objective_check",
     "get",
@@ -334,6 +336,7 @@ pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
         return world(lab, me, &SyncedTo::default());
     }
     let out = op_of(v).and_then(|(name, o)| match name {
+        "entry_views" => entry_views_inner(lab, me, o, &SyncedTo::default()),
         "query" => query(lab, me, o),
         "get" => get(lab, me, o),
         "pin" => pin(lab, me, o),
@@ -815,6 +818,22 @@ fn open_link(
         at = row.and_then(Value::as_object).cloned().ok_or_else(|| no("NoRow", "the record holds no such row"))?;
     }
     Ok(at)
+}
+
+/// Scoped canonical entry summaries, with current node holdings supplied by any
+/// peer. The normal core read has no transport holdings, exactly like `world`.
+pub fn entry_views(lab: &Lab, me: SignerId, op: &Value, synced: &SyncedTo) -> Value {
+    let result = op_of(op).and_then(|(name, o)| {
+        if name != "entry_views" { return Err(bad("expected entry_views")); }
+        entry_views_inner(lab, me, o, synced)
+    });
+    match result { Ok(rows) => json!({ "ok": rows }), Err(why) => why.to_json() }
+}
+
+fn entry_views_inner(lab: &Lab, me: SignerId, o: &Map<String, Value>, synced: &SyncedTo) -> Result<Value, Refused> {
+    let vault = vault_of(o, "vault")?;
+    let types = o.get("types").map(|_| texts_of(o, "types")).transpose()?;
+    Ok(world::entry_views(lab, me, vault, types.as_deref(), synced).unwrap_or(Value::Null))
 }
 
 /// `{"op": "query", "vault"?, "where"?, "schema"?, "select"?, "order"?, "limit"?, "offset"?, "depth"?, "follow"?}`:

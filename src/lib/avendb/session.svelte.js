@@ -683,7 +683,7 @@ const ENTRY = /^[0-9a-f]{64}$/;
 
 /** the reads whose answers name the entries a view shows, which the page learns (`learn`): not the device's own
  *  bookkeeping (`world`, `jobs`, `synced`, `log`, `bring`, …), whose answers name everything it holds */
-const VIEWS = new Set(['query', 'get', 'room', 'history', 'note', 'pin', 'posts', 'code', 'aip', 'aip_records', 'aips', 'database']);
+const VIEWS = new Set(['entry_views', 'query', 'get', 'room', 'history', 'note', 'pin', 'posts', 'code', 'aip', 'aip_records', 'aips', 'database']);
 
 /** The entries answer `got` of a view's read names: its entry, or each row's, shallow. @param {any} got */
 const namedIn = replyEntries;

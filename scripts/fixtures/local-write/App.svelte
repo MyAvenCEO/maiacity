@@ -1,5 +1,7 @@
 <script>
  import { onMount } from 'svelte';
+ import Todos from '../../../src/lib/avendb/Todos.svelte';
+ const worldView = new URLSearchParams(location.search).has('world-view');
  import Chat from '../../../src/lib/chat/Chat.svelte';
  import { session } from '../../../src/lib/avendb/session.svelte.js';
  let status = $state('');
@@ -8,6 +10,10 @@
 </script>
 <button onclick={() => session.unlock()}>Unlock fixture</button>
 <p data-testid="phase">{session.phase}</p>
-{#if session.phase === 'open' && session.world}<Chat />{/if}
+{#if session.phase === 'open' && session.world}
+ {#if worldView}
+ <Todos world={session.world} vault={'b'.repeat(64)} actor={'b'.repeat(64)} api={session.api} busy={!!session.doing} onaccess={() => {}} />
+ {:else}<Chat />{/if}
+{/if}
 
 <p data-testid="todo-status">{status}</p>

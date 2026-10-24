@@ -106,6 +106,12 @@ impl Node {
             Some("world") => {
                 self.world_encoded(engine::WorldSnapshot::into_json).await?
             }
+            Some("entry_views") => {
+                // Same holdings and authorization projection as world, independently
+                // of the background world's encoding lane and UI pacing.
+                let synced = self.synced_to().await;
+                self.read(move |lab, me| engine::entry_views(lab, me, &op, &synced)).await
+            }
             Some("read_file") => return self.read_bytes(&op).await,
             _ if engine::brings(&op) => self.put(op, bytes).await?,
             Some("jobs") => json!({ "ok": self.jobs().to_json_for(crate::acting()) }),

@@ -10,7 +10,7 @@
 <script>
 	import Frame from './Frame.svelte';
 	import Icon from './Icon.svelte';
-	import { allowed, creatable, may } from './ops.js';
+	import { allowed, answer, creatable, may } from './ops.js';
 	import Share from './Share.svelte';
 	import Tags from './Tags.svelte';
 	import {
@@ -37,7 +37,20 @@
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
 	const here = $derived(byId.get(vault));
 	const as = $derived(byId.get(actor));
-	const entries = $derived(world.entries.filter((e) => e.vault === vault));
+	// One active generic collection subscription; global world remains the metadata
+	// source for vault/share navigation, never the barrier for accepted todo edits.
+	let collection = $state(/** @type {import('./vaults.js').EntryView[]} */ ([]));
+	let collectionError = $state('');
+	$effect(() => {
+		const selected = vault;
+		collection = [];
+		collectionError = '';
+		return api.observe(() => ({ op: 'entry_views', vault: selected }), (/** @type {any} */ out) => {
+			try { collection = answer(out)?.rows ?? []; collectionError = ''; }
+			catch (error) { collection = []; collectionError = String(error); }
+		}, (/** @type {Error} */ error) => { collection = []; collectionError = error.message; });
+	});
+	const entries = $derived(collection);
 	const seen = $derived(entries.filter((e) => reads(e, actor)));
 	const todos = $derived(seen.filter((e) => e.kind === 'todo'));
 	const tags = $derived(tagsOf(todos));
@@ -133,6 +146,7 @@
 
 <Frame nav={tags.length ? narrow : undefined} navLabel="Narrow the todos" navIcon="todo">
 	<section class="todos-of">
+		{#if collectionError}<p role="alert">{collectionError}</p>{/if}
 		{#if todos.length}<p class="head"><span class="chip">{left} of {count(todos.length, 'todo')} left</span></p>{/if}
 
 		{#if !seen.length && vault !== actor}
