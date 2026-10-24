@@ -74,6 +74,9 @@
 //! device reads off those of them the vault created itself and the device counts (`lane_of`): what it reads and judges
 //! the vault's entries by.
 
+#[path = "bootstrap_dependencies.rs"]
+mod bootstrap_dependencies;
+
 #[path = "entry_base.rs"]
 mod entry_base;
 pub use entry_base::{AuthenticatedCountedEntryBase, AuthenticatedEntryBaseEnvelope, PreparedEntryBase, RestoredOwnerJudgment};

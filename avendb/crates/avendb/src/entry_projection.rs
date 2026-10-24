@@ -549,7 +549,7 @@ impl Lab {
 
 // Bound every variable-length field before encoding/cloning evidence. Oversized legacy setup
 // remains available through ordinary history; the first-view lane never needs an oversized page.
-fn bounded_offer_edit(signed: &Signed) -> bool {
+pub(super) fn bounded_offer_edit(signed: &Signed) -> bool {
     use crate::sign::WebAuthn;
     let e = &signed.edit;
     if e.parents.len() > 64 || e.cosigners.len() > 8 || signed.sigs.len() > 8 { return false; }
@@ -565,6 +565,7 @@ fn bounded_offer_edit(signed: &Signed) -> bool {
     match &e.action {
         Action::Write { deps, via, create: Some(c), files, body, .. } =>
             deps.len() <= 64 && via.len() <= 16 && c.audience.len() <= 64 && files.len() <= 64 && body.len() <= (128 << 10),
+        Action::Write { deps, via, create:None, files, body, .. } => deps.len()<=64 && via.len()<=16 && files.len()<=64 && body.len()<=(128<<10),
         Action::Snapshot { states, .. } => states.len() <= 16 && states.iter().all(|s| s.basis.len() <= 64),
         Action::Mark { caps, wants, keep, via, .. } => caps.as_ref().is_none_or(|x| x.len() <= 64)
             && wants.as_ref().is_none_or(|x| x.len() <= 64) && keep.len() <= 64 && via.len() <= 16,
