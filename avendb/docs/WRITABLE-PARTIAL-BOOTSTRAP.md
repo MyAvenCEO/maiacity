@@ -882,3 +882,5 @@ from partial state, historical cap-group-dependent grants, proposal/merge suffix
 and general recovery from a canonically rejected suffix. Before those extensions,
 prove selector/group readiness at each write placement and maintain per-line causal
 scratch/checkpoint state for proposal starts, edits, owner accepts and merges.
+
+Shared-main receive implementation: [5445d85a](https://github.com/MyAvenCEO/maiacity/commit/5445d85a). Lean/parser checks passed; the signed regression still awaits the shared Rust compiler queue. This is not delivery or completion of shared-holder/proposal bootstrap.
