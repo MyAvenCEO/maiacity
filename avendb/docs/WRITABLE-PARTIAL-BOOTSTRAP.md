@@ -873,3 +873,5 @@ so the repair covers native and browser backends equally.
 checks the captured-name race and propagation of the original storage failure when
 neither location works. Rust parser/diff checks pass; Cargo and regenerated WASM /
 real-browser carrier validation remain queued with root's compiler slot.
+
+Range-finalization race implementation: [f3c1a77a](https://github.com/MyAvenCEO/maiacity/commit/f3c1a77a). Parser/diff passed; deterministic Rust and browser/WASM delivery checks pending.
