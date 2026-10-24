@@ -301,8 +301,9 @@ impl Lab {
                 .remove(&(on, entry));
             store.bootstrap_active.insert(entry);
             {
+                let basis = OverlayBasis::of(store);
                 store.bootstrap_progress.insert(entry, BootstrapProgress {
-                    basis: OverlayBasis::of(store), policy: view.slice_of(entry),
+                    basis, policy: view.slice_of(entry),
                     base_scratch, pending,
                 });
             }
