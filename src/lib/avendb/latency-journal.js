@@ -80,8 +80,10 @@ export async function measureLatency(stage, work, journal = latencyJournal, now 
 export function policyObservations(network) {
  const observed = network?.policy_observations;
  if (observed?.stage !== 'local-completion-to-peer-policy-observation') return null;
+ /** @type {any[]} */
+ const samples = Array.isArray(observed.samples) ? observed.samples : [];
  return { stage: observed.stage,
-  samples: (Array.isArray(observed.samples) ? observed.samples : []).slice(-64)
+  samples: samples.slice(-64)
    .filter(s => s && Number.isFinite(s.ms) && s.ms >= 0 && s.ms < 30000 && ['standing', 'not-standing'].includes(s.outcome))
    .map(s => ({ ms: s.ms, outcome: s.outcome })) };
 }
