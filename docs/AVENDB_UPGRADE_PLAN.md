@@ -9,6 +9,10 @@ Last maintained: 2026-10-25. Current execution order: keep three subagents plus 
 ### Current release and separate follow-up status — 24 October 2026
 
 
+**Frontend release gate passed:** the integrated candidate now passes full `bun run check` with0errors/27existing CSS warnings, and22AIP/query-window regressions pass. The combined check exposed only new AIP fixture typing; typed Node test/assert/fs imports and fixture annotations repair it without suppressing checking. Native authentication compilation remains live; final Rust coverage for the suffix-retirement guard and indexed warm history will run in full CI and the shared local compiler queue. Candidate is being marked ready for matching WASM/full checks; no merge or deployment has occurred.
+
+
+
 **Combined delivery preparation:** integrated warm-history indexing [196d72f3](https://github.com/MyAvenCEO/maiacity/commit/196d72f3) preserves the canonical dependency gate with preceding-write lookup; Lean passed119jobs, while full crate regressions remain queued behind the native authentication build. Full working-set-first/deferred-body startup is still open. Application type repair [90f4f174](https://github.com/MyAvenCEO/maiacity/commit/90f4f174) passed0errors/27existing CSS warnings and25focused tests before integration. Proposal demand [f379ded3](https://github.com/MyAvenCEO/maiacity/commit/f379ded3) plus HITL correction [e84ab686](https://github.com/MyAvenCEO/maiacity/commit/e84ab686) register scoped discovery even on empty local results; all three consumers own reference-counted lifetimes.22tests/96assertions and Svelte compilation passed on the agent branch. Combined frontend check is running. No new deployment/installation or physical acceptance is claimed.
 
 

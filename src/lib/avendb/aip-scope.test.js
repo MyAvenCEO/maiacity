@@ -1,12 +1,22 @@
-import { expect, test } from 'bun:test';
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { readFile } from 'node:fs/promises';
+/** @param {unknown} actual */
+const expect = actual => ({
+ /** @param {unknown} expected */ toBe: expected => assert.equal(actual, expected),
+ /** @param {unknown} expected */ toEqual: expected => assert.deepEqual(actual, expected),
+ toBeUndefined: () => assert.equal(actual, undefined)
+});
 import { createAipScope } from './aip-scope.js';
 import { createReactiveRead } from './reactive-read.js';
 import { observedWindow } from './observed-window.js';
 const flush = async () => { for (let i=0;i<30;i++) await Promise.resolve(); };
 
 test('mounted AIP consumers share a real discovery lease, released only by the last consumer', async () => {
-	const calls=[], reads=[], answers=[];
-	const owner={run:async op=>{calls.push(op);return {ok:{accepted:true}};}};
+	/** @type {any[]} */ const calls=[];
+	/** @type {unknown[]} */ const reads=[];
+	/** @type {unknown[]} */ const answers=[];
+	const owner={run:async (/** @type {any} */ op)=>{calls.push(op);return {ok:{accepted:true}};}};
 	let starts=0, stops=0;
 	const scope=createAipScope({
 		observe(query,take,failed) {
@@ -25,7 +35,8 @@ test('mounted AIP consumers share a real discovery lease, released only by the l
 });
 
 test('closed generations cannot overwrite a replacement consumer', () => {
-	const callbacks=[], seen=[]; let resets=0;
+	/** @type {((out: any) => void)[]} */ const callbacks=[];
+	/** @type {unknown[]} */ const seen=[]; let resets=0;
 	const scope=createAipScope({observe:(_q,take)=>{callbacks.push(take);return ()=>{};},query:()=>({op:'aips'}),take:v=>seen.push(v),failed:()=>{},reset:()=>resets++});
 	const first=scope.hold(); first(); const next=scope.hold();
 	callbacks[0]('old'); callbacks[1]('current'); expect(seen).toEqual(['current']);
@@ -39,7 +50,7 @@ test('HITL-only mounting reads AIPs and retains its lease after a proposals view
 	const proposals=scope.hold(); proposals(); expect(live).toBe(1); expect(reads).toBe(1);
 	hitl(); expect(live).toBe(0);
 	// Guard the actual consumer wiring that previously omitted this lifetime.
-	const source=await Bun.file(new URL('./Hitl.svelte',import.meta.url)).text();
-	expect(source).toContain('onMount(() => held.hold())');
-	expect(source).not.toContain('held.again()');
+	const source=await readFile(new URL('./Hitl.svelte',import.meta.url), 'utf8');
+	assert.ok(source.includes('onMount(() => held.hold())'));
+	assert.ok(!source.includes('held.again()'));
 });
