@@ -42,4 +42,13 @@ theorem lazyEquivalent (snapshot : Option α) (canonical : α)
   | none => rfl
   | some value => exact valid value rfl
 
+-- A metadata summary projects authority unchanged and does not claim empty entries.
+structure Summary (authority : Type) where
+  metadata : authority
+  entriesComplete : Bool
+
+def summary (metadata : α) : Summary α := ⟨metadata, false⟩
+theorem summaryAuthority (metadata : α) : (summary metadata).metadata = metadata := rfl
+theorem summaryIncomplete (metadata : α) : (summary metadata).entriesComplete = false := rfl
+
 end AvenDB.WarmMaterialization

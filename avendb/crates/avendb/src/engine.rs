@@ -195,7 +195,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "undo" => &["entry", "line", "edit", "as"],
         "fork" => &["entry", "line", "into", "schema", "ops", "as"],
         "batch" | "may" => &["ops", "as"],
-        "world" | "log" | "jobs" | "synced" | "network" | "measure_peer_policy" => &[],
+        "world" | "world_summary" | "log" | "jobs" | "synced" | "network" | "measure_peer_policy" => &[],
         "code" => &["vault", "type"],
         "posts" => &["limit", "after"],
         "bring" => &["vaults", "entries", "prioritize"],
@@ -245,6 +245,7 @@ const READS: [&str; 33] = [
     "cap_groups",
     "kinds",
     "world",
+    "world_summary",
     "jobs",
     "database",
     "note",
@@ -334,6 +335,14 @@ pub fn prepared(out: Result<Prepared, Refused>) -> Value {
 /// `world` names no device it is synced to, and `read_file` reads no bytes, and `jobs` are a node's: a node answers
 /// those (avendb-net's `Node::run`).
 pub fn read(lab: &Lab, me: SignerId, v: &Value) -> Value {
+    if name(v) == Some("world_summary") {
+        let summary = crate::world::summary(lab, me).map(|world| {
+            let mut value = world.to_json(me);
+            value["entriesComplete"] = Value::Bool(false);
+            value
+        });
+        return json!({ "ok": summary });
+    }
     if name(v) == Some("world") {
         return world(lab, me, &SyncedTo::default());
     }
