@@ -33,7 +33,7 @@ encryption and passkeys, schemas and lenses, Loro documents and their history an
 | `crates/avendb-net` | avenDB on the network: each device a node on an iroh endpoint of its own ed25519 key, X25519MLKEM768 the only key exchange, a hello that proves the device on every connection, sync by shares and keep shares, McEliece keys and file pieces in iroh-blobs behind a gate, each device's holdings told to each peer that may know them (`holdings`), and signed, kept and passed on (`statements`), linking a new device by its passkey, `Node::run`, the jobs it runs in the background (`jobs`), each place's shelf (OPFS, a folder or the server's bucket), and the server's node (`server`) |
 | `crates/avendb-server` | avenDB's server as its binary runs it: its node on its shelf, its bucket's S3 client (`bucket`), its relay, which lets in only the devices the server knows, and the Maia Universe's feed (`feed`) (see [The server](#the-server)) |
 | `crates/avendb-browser` | A device of its person in a web page: the network crate as WebAssembly, its node reaching every peer through the server's relay, `PageDevice.run` (see [A device in the browser](#a-device-in-the-browser)) |
-| `crates/avendb-device` | The same device run natively in the Mac app, hosted in the app's own process or as a sidecar, its calls in lines of JSON (see [Natively, beside the Mac app](#natively-beside-the-mac-app)); the agents' devices, each the MCP server of its harness (`agent`), and the drives it hosts (`drive`) |
+| `crates/avendb-device` | The same device run natively in the Mac app, hosted in the app's own process; also available as a standalone JSON-line device (see [Natively, beside the Mac app](#natively-beside-the-mac-app)); the agents' devices, each the MCP server of its harness (`agent`), and the drives it hosts (`drive`) |
 | `Dockerfile.server`, `compose.yml` | The server's image, built from `avendb/` alone, which `avendb.yml` deploys (see [Deploying the server](#deploying-the-server)), and a compose file that runs it on this machine, which is not deployed |
 | `scripts/build-web.sh` | Builds `avendb-browser` into the page's own device, `src/lib/avendb/device/` in the app (committed, so the app builds without Rust) |
 | `scripts/test-browser.sh` | Builds `avendb-browser` for the browser and runs its test page in headless Chromium |
@@ -215,10 +215,16 @@ In the Mac app the device runs natively, not in the page (`crates/avendb-device`
 (`vault/app/src/avendb.rs`, `avendb_device::host`), and the page (`src/lib/avendb/native.js`) calls it as it calls its
 own device, each call answered by the device itself, with no lines of JSON between. The same calls run as lines of JSON
 in `avendb-device --dir <folder> [--volumes <folder>]`, the sidecar (`serve`), each call a line on the device's stdin,
-each answer one on its stdout; it logs on its stderr as `RUST_LOG` says, else its warnings. The app's build makes that
-sidecar too (`vault/app/build.rs`, in this workspace and lockfile, in its `app` profile, optimised). Its calls include
+each answer one on its stdout; it logs on its stderr as `RUST_LOG` says, else its warnings. This standalone binary
+is built separately when needed; the app neither builds nor bundles it. The app links the device library through
+`vault/app/Cargo.toml`, using the app workspace's lockfile and profiles. Its calls include
 `found`, `link`, `open`, `steps`, `run [op]`, `fileStart`, `fileChunk`, `fileEnd`, `fileAgain` and `fileDrop`
 to hand `put_file` a file's bytes, and `drives`, `joinDrive`, `openDrive` and `ejectDrive` for the drives it hosts.
+
+Existing MCP settings that point to `theOS.app/Contents/MacOS/avendb-device` must change only the executable
+to `theOS.app/Contents/MacOS/maiacity-studio`, keeping `agent`, the harness name and any `--dir` argument.
+The agent uses the same device directory and identity; no re-link or vault reset is needed. Newly generated
+commands already use the running app executable (`agentCommand`).
 
 - **Direct.** Its node binds UDP sockets of its own on every interface, IPv4 and IPv6, and maps a port on the router
   where one lets it (UPnP, NAT-PMP, PCP: `Options::direct`), so it reaches the person's other devices directly wherever

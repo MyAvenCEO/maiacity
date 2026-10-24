@@ -1,6 +1,6 @@
-# avenDB: the user-owned, end-to-end encrypted database, its own workspace beside the media vault (vault/), so the two
-# never build together: its crates pick their own versions and features, iroh's among them, and nothing here can
-# change what the media vault runs. See README.md.
+# avenDB: the user-owned, end-to-end encrypted database, with its own workspace for standalone tools and the server.
+# The Mac app in vault/ links its device crates directly and builds them with the app workspace's lockfile and profiles.
+# See README.md.
 [workspace]
 resolver = "3"
 exclude = ["vendor/iroh"]
@@ -48,8 +48,8 @@ inherits = "release"
 codegen-units = 16
 lto = "thin"
 
-# The Mac app's native device (avendb-device, built by vault/app/build.rs as the app's sidecar): optimised as a
-# release, but in parallel codegen units, without LTO and incrementally, so the app's build doesn't wait long on it
+# The standalone native device: optimised as a release, with parallel codegen units and incremental builds.
+# The embedded device uses vault/'s profiles instead.
 [profile.app]
 inherits = "release"
 codegen-units = 16

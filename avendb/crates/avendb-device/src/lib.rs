@@ -1,11 +1,11 @@
-//! avenDB's device in the Mac app, maiaCITY Studio: the browser's device (`avendb_browser::Device`) run natively beside
-//! the app, as its sidecar. Its node binds UDP sockets of its own on every interface and maps a port on the router
+//! avenDB's native device: the browser's device (`avendb_browser::Device`) hosted in the Mac app's process or run
+//! as a standalone JSON-line server. Its node binds UDP sockets on every interface and maps a port on the router
 //! where one lets it, so it reaches its peers directly and through the relay only where it must
 //! (`avendb_net::Options::direct`); its TLS is aws-lc-rs, X25519MLKEM768 only; and it keeps what it holds on a shelf
 //! in a folder on disk (`avendb_net::disk`), not in the web view's store.
 //!
-//! The app (vault/app/src/avendb.rs) starts it with the folder it keeps its account in and talks to it in lines of
-//! JSON on its stdin and stdout, for the app's avenDB page (src/lib/avendb/native.js):
+//! The app (vault/app/src/avendb.rs) calls `Host` directly for its avenDB page (src/lib/avendb/native.js).
+//! The standalone server exposes the same calls as lines of JSON on stdin and stdout:
 //!
 //! - the app asks `{"id": n, "call": name, "args": [..]}` and the device answers `{"id": n, "ok": value}` or
 //!   `{"id": n, "error": why}`, each call as the page's device answers it (`avendb_browser::PageDevice`), ids in hex;

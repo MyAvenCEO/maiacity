@@ -71,8 +71,8 @@ function check() {
 		git('merge', '--ff-only', '--quiet', latest);
 		log(`fast-forwarded to ${git('log', '-1', '--format=%h %s')}`);
 		if (changed.some((f) => f.startsWith('avendb/'))) {
-			// `tauri dev` watches the app's own crates, not avendb/: a touched build.rs has it build the app again, and
-			// the build script avenDB's native device, the app's sidecar, from the new sources
+			// `tauri dev` watches the app's own crates, not avendb/: touching build.rs rebuilds the app
+			// and its embedded avenDB dependency from the new sources
 			const now = new Date();
 			utimesSync(join(ROOT, 'vault/app/build.rs'), now, now);
 			log('avenDB changed: building the app and its native device again');
