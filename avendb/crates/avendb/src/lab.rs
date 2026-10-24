@@ -76,7 +76,7 @@
 
 #[path = "entry_projection.rs"]
 mod entry_projection;
-pub use entry_projection::{PreparedEntryProjection, VerifiedEntryProjection};
+pub use entry_projection::{EntryProjectionOffer, PreparedEntryProjection, VerifiedEntryProjection};
 
 use std::borrow::Cow;
 use std::cell::OnceCell;

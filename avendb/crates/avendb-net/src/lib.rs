@@ -111,6 +111,7 @@ mod blobs;
 pub mod bucket;
 mod demand;
 mod discovery;
+mod checkpoint_delivery;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod disk;
 #[cfg(not(target_arch = "wasm32"))]
