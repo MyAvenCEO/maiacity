@@ -1873,13 +1873,18 @@ impl Drop for Node {
 fn restore(
     mut lab: Lab,
     me: SignerId,
-    (signed, keys): edits::Stored,
+    (signed, keys, anchors): edits::Stored,
     started: Option<(Checked, usize)>,
     warm: &Warm,
 ) -> (Lab, Vec<EditId>) {
     let stored = signed.iter().map(|s| s.edit.id()).collect();
     if !signed.is_empty() {
-        lab.restore_warm(me, Backup::new(signed, keys), started, warm);
+        let backup = Backup::new(signed, keys);
+        let backup = if anchors.is_empty() { backup } else {
+            // Invalid companion never invalidates or discards the ordinary signed log.
+            backup.clone().with_bootstrap_bytes(&anchors).unwrap_or(backup)
+        };
+        lab.restore_warm(me, backup, started, warm);
     }
     (lab, stored)
 }
