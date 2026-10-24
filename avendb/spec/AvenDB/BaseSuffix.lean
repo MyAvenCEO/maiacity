@@ -37,4 +37,21 @@ theorem duplicate_rejected (entry : Nat) (held : List Nat) (suffix : Fact)
 
 theorem structural_link_not_permission (entry : Nat) (held : List Nat) (suffix : Fact) :
     writable entry held suffix = false := rfl
+-- An unseen concurrent write is selected by membership, never by checkpoint depth.
+def unseen (held : List Nat) (fact : Fact) : Bool := !(held.contains fact.id)
+
+theorem absent_selected (held : List Nat) (fact : Fact) (h : fact.id ∉ held) :
+    unseen held fact = true := by
+  simp [unseen, h]
+
+-- Unsupported or unavailable suffix evidence, or changed entry policy, cannot
+-- leave a partial overlay writable. These booleans are implementation premises.
+def activate (samePolicy completeSupportedSuffix : Bool) : Bool :=
+  samePolicy && completeSupportedSuffix
+
+theorem changed_policy_inactive (complete : Bool) : activate false complete = false := by
+  simp [activate]
+
+theorem incomplete_suffix_inactive (policy : Bool) : activate policy false = false := by
+  simp [activate]
 end AvenDB.BaseSuffix
