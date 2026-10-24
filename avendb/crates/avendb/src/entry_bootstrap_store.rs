@@ -9,7 +9,7 @@ pub(crate) struct BootstrapProgress {
     basis: OverlayBasis,
     policy: crate::policy::Slice,
     base_scratch: Option<Scratch>,
-    pending: std::collections::VecDeque<Edit>,
+    pending: std::collections::VecDeque<EditId>,
     missing: Vec<EditId>,
     wait_reason: Option<&'static str>,
 }
@@ -248,19 +248,17 @@ impl Lab {
             let (mut pending, base_scratch, mut missing, mut wait_reason) = match resumed {
                 Some(saved) => saved,
                 None => {
-                    let suffix: Vec<_> = store.log.edits().iter()
-                        .filter(|e| judging.history.get(e.id()).is_none()
-                            && matches!(e.action,Action::Write{entry:eid,..}if eid==entry))
-                        .cloned().collect();
-                    (std::collections::VecDeque::from(crate::policy::order(&suffix)), original_scratch, Vec::new(), None)
+                    let judged: HashSet<_> = judging.history.changes().iter().map(|c| c.write.edit).collect();
+                    let suffix = store.log.entry_suffix_ids(entry, &judged);
+                    (std::collections::VecDeque::from(suffix), original_scratch, Vec::new(), None)
                 }
             };
             let mut opened_suffix = Vec::new();
             while budget > 0 && missing.is_empty() && wait_reason.is_none() {
-                let Some(edit) = pending.pop_front() else { break; };
+                let Some(id) = pending.pop_front() else { break; };
+                let Some(edit) = store.log.entry_write(id).cloned() else { continue 'anchor; };
                 budget -= 1;
                 store.bootstrap_cursor = Some(entry);
-                let id = edit.id();
                 // Only normal verified signed-log entries, never owner-invented signatures.
                 if !store.signed.get(&id).is_some_and(|s| s.verify().is_ok()) {
                     continue 'anchor;
@@ -286,7 +284,7 @@ impl Lab {
                 };
                 let Some(key) = store.keys.get(&key_id, w.key()) else {
                     wait_reason = Some("missing-entry-key");
-                    pending.push_front(edit);
+                    pending.push_front(id);
                     break;
                 };
                 let Some(opened) = keys::open_edit(key, body, &write_context(&edit))
@@ -296,7 +294,7 @@ impl Lab {
                     // fix invalid authentication/body encoding. Preserve the prefix but
                     // never count the bad body or claim that its key is merely missing.
                     wait_reason = Some("invalid-entry-body");
-                    pending.push_front(edit);
+                    pending.push_front(id);
                     break;
                 };
                 if judging
@@ -312,7 +310,7 @@ impl Lab {
                 if !opened.content.is_empty() {
                     missing = judging.history.missing_dependency_bodies(&w.deps, judging.scratch.as_ref());
                     if !missing.is_empty() {
-                        pending.push_front(edit);
+                        pending.push_front(id);
                         break;
                     }
                 }
