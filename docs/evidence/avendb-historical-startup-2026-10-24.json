@@ -1,0 +1,622 @@
+{
+  "schema": 1,
+  "date": "2026-10-24",
+  "scope": "Historical preserved-store copy on native Mac; isolated relay, no live writer or production peers",
+  "fixture_commit": "571899da935d371fd13de0b5471f9a7c34126812",
+  "core_baseline_commit": "23286402ee4b88dfdb36441fdd1123a9a48cac36",
+  "validation": {
+    "tests_passed": 1,
+    "tests_failed": 0,
+    "identity_preserved": true,
+    "metadata_preserved": true,
+    "immutable_history_preserved": true,
+    "edits": 63647,
+    "keys": 85,
+    "visible_records": 2281,
+    "derived_slots_deliberately_damaged": 4
+  },
+  "phases": [
+    {
+      "metric_capture_ms": 2575.8880409999997,
+      "metrics": {
+        "counts": {
+          "edits checked": 726,
+          "edits offered": 63647,
+          "keys from the shelf": 5127,
+          "keys opened": 7,
+          "refresh rounds": 1,
+          "replay whole: the first since it opened": 1,
+          "replay: from its stored view": 0,
+          "stored view: none that opens": 1
+        },
+        "timers": {
+          "check": {
+            "count": 1.0,
+            "max_ms": 225.252,
+            "total_ms": 225.252
+          },
+          "open keys": {
+            "count": 1.0,
+            "max_ms": 814.279,
+            "total_ms": 814.279
+          },
+          "open view": {
+            "count": 1.0,
+            "max_ms": 24.558,
+            "total_ms": 24.558
+          },
+          "read": {
+            "count": 1.0,
+            "max_ms": 66.455,
+            "total_ms": 66.455
+          },
+          "refresh": {
+            "count": 1.0,
+            "max_ms": 3926.45,
+            "total_ms": 3926.45
+          },
+          "replay": {
+            "count": 1.0,
+            "max_ms": 2051.213,
+            "total_ms": 2051.213
+          },
+          "show items": {
+            "count": 1.0,
+            "max_ms": 922.203,
+            "total_ms": 922.203
+          },
+          "upkeep": {
+            "count": 1.0,
+            "max_ms": 46.05,
+            "total_ms": 46.05
+          }
+        }
+      },
+      "open_ms": 7929.200875,
+      "phase": "cold",
+      "steps": {
+        "over": true,
+        "steps": [
+          {
+            "at": 0,
+            "step": "keys",
+            "took": 634
+          },
+          {
+            "at": 634,
+            "step": "restore",
+            "took": 6937
+          },
+          {
+            "at": 7571,
+            "step": "node",
+            "took": 115
+          },
+          {
+            "at": 7686,
+            "step": "check",
+            "took": 243
+          }
+        ]
+      },
+      "observe_ms": 262.441625,
+      "observe_delta": {
+        "counts": {
+          "edits checked": 0,
+          "edits offered": 0,
+          "keys from the shelf": 0,
+          "keys opened": 0,
+          "refresh rounds": 0,
+          "replay whole: a checkpoint came": 0,
+          "replay whole: a checkpoint it held covers a new edit": 0,
+          "replay whole: a move among its last edits kept a new edit out": 0,
+          "replay whole: a move among its last edits stood not": 0,
+          "replay whole: a move it held stood not": 0,
+          "replay whole: a move keeps not every write of its entry": 0,
+          "replay whole: a new edit as deep as a new move": 0,
+          "replay whole: a new edit builds on another new one as deep": 0,
+          "replay whole: a new edit sorts before its place": 0,
+          "replay whole: a new grant rests on one a revocation names": 0,
+          "replay whole: a removal came": 0,
+          "replay whole: a snapshot came": 0,
+          "replay whole: an edit it held builds on a new one": 0,
+          "replay whole: fewer edits than it held": 0,
+          "replay whole: its removals rank otherwise": 0,
+          "replay whole: its tail ran out": 0,
+          "replay whole: no base to resolve on": 0,
+          "replay whole: no place to step on from": 0,
+          "replay whole: the first since it opened": 0,
+          "replay: from its stored view": 0,
+          "stored view: none that opens": 0
+        },
+        "timers": {
+          "check": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "open keys": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "open view": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "read": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "refresh": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "replay": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "show items": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "upkeep": {
+            "count": 0.0,
+            "total_ms": 0.0
+          }
+        }
+      }
+    },
+    {
+      "metric_capture_ms": 2207.398083,
+      "metrics": {
+        "counts": {
+          "edits checked": 0,
+          "edits offered": 63647,
+          "keys from the shelf": 5134,
+          "keys opened": 0,
+          "refresh rounds": 1,
+          "replay: from its stored view": 1,
+          "stored view: none that opens": 0
+        },
+        "timers": {
+          "check": {
+            "count": 1.0,
+            "max_ms": 186.144,
+            "total_ms": 186.144
+          },
+          "open keys": {
+            "count": 1.0,
+            "max_ms": 821.372,
+            "total_ms": 821.372
+          },
+          "open view": {
+            "count": 1.0,
+            "max_ms": 147.114,
+            "total_ms": 147.114
+          },
+          "read": {
+            "count": 1.0,
+            "max_ms": 61.486,
+            "total_ms": 61.486
+          },
+          "refresh": {
+            "count": 1.0,
+            "max_ms": 1885.785,
+            "total_ms": 1885.785
+          },
+          "replay": {
+            "count": 1.0,
+            "max_ms": 0.007,
+            "total_ms": 0.007
+          },
+          "show items": {
+            "count": 1.0,
+            "max_ms": 938.189,
+            "total_ms": 938.189
+          },
+          "upkeep": {
+            "count": 1.0,
+            "max_ms": 47.024,
+            "total_ms": 47.024
+          }
+        }
+      },
+      "open_ms": 3888.50475,
+      "phase": "warm-1",
+      "steps": {
+        "over": true,
+        "steps": [
+          {
+            "at": 0,
+            "step": "keys",
+            "took": 2
+          },
+          {
+            "at": 2,
+            "step": "restore",
+            "took": 3334
+          },
+          {
+            "at": 3336,
+            "step": "node",
+            "took": 118
+          },
+          {
+            "at": 3454,
+            "step": "check",
+            "took": 434
+          }
+        ]
+      },
+      "observe_ms": 217.672542,
+      "observe_delta": {
+        "counts": {
+          "edits checked": 0,
+          "edits offered": 0,
+          "keys from the shelf": 0,
+          "keys opened": 0,
+          "refresh rounds": 0,
+          "replay whole: a checkpoint came": 0,
+          "replay whole: a checkpoint it held covers a new edit": 0,
+          "replay whole: a move among its last edits kept a new edit out": 0,
+          "replay whole: a move among its last edits stood not": 0,
+          "replay whole: a move it held stood not": 0,
+          "replay whole: a move keeps not every write of its entry": 0,
+          "replay whole: a new edit as deep as a new move": 0,
+          "replay whole: a new edit builds on another new one as deep": 0,
+          "replay whole: a new edit sorts before its place": 0,
+          "replay whole: a new grant rests on one a revocation names": 0,
+          "replay whole: a removal came": 0,
+          "replay whole: a snapshot came": 0,
+          "replay whole: an edit it held builds on a new one": 0,
+          "replay whole: fewer edits than it held": 0,
+          "replay whole: its removals rank otherwise": 0,
+          "replay whole: its tail ran out": 0,
+          "replay whole: no base to resolve on": 0,
+          "replay whole: no place to step on from": 0,
+          "replay whole: the first since it opened": 0,
+          "replay: from its stored view": 0,
+          "stored view: none that opens": 0
+        },
+        "timers": {
+          "check": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "open keys": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "open view": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "read": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "refresh": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "replay": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "show items": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "upkeep": {
+            "count": 0.0,
+            "total_ms": 0.0
+          }
+        }
+      }
+    },
+    {
+      "metric_capture_ms": 1626.45175,
+      "metrics": {
+        "counts": {
+          "edits checked": 0,
+          "edits offered": 63647,
+          "keys from the shelf": 5134,
+          "keys opened": 0,
+          "refresh rounds": 1,
+          "replay: from its stored view": 1,
+          "stored view: none that opens": 0
+        },
+        "timers": {
+          "check": {
+            "count": 1.0,
+            "max_ms": 185.94,
+            "total_ms": 185.94
+          },
+          "open keys": {
+            "count": 1.0,
+            "max_ms": 782.41,
+            "total_ms": 782.41
+          },
+          "open view": {
+            "count": 1.0,
+            "max_ms": 141.128,
+            "total_ms": 141.128
+          },
+          "read": {
+            "count": 1.0,
+            "max_ms": 62.052,
+            "total_ms": 62.052
+          },
+          "refresh": {
+            "count": 1.0,
+            "max_ms": 1723.458,
+            "total_ms": 1723.458
+          },
+          "replay": {
+            "count": 1.0,
+            "max_ms": 0.494,
+            "total_ms": 0.494
+          },
+          "show items": {
+            "count": 1.0,
+            "max_ms": 824.231,
+            "total_ms": 824.231
+          },
+          "upkeep": {
+            "count": 1.0,
+            "max_ms": 34.512,
+            "total_ms": 34.512
+          }
+        }
+      },
+      "open_ms": 3594.540417,
+      "phase": "warm-2",
+      "steps": {
+        "over": true,
+        "steps": [
+          {
+            "at": 0,
+            "step": "keys",
+            "took": 3
+          },
+          {
+            "at": 3,
+            "step": "restore",
+            "took": 3206
+          },
+          {
+            "at": 3209,
+            "step": "node",
+            "took": 102
+          },
+          {
+            "at": 3311,
+            "step": "check",
+            "took": 283
+          }
+        ]
+      },
+      "observe_ms": 209.01920900000002,
+      "observe_delta": {
+        "counts": {
+          "edits checked": 0,
+          "edits offered": 0,
+          "keys from the shelf": 0,
+          "keys opened": 0,
+          "refresh rounds": 0,
+          "replay whole: a checkpoint came": 0,
+          "replay whole: a checkpoint it held covers a new edit": 0,
+          "replay whole: a move among its last edits kept a new edit out": 0,
+          "replay whole: a move among its last edits stood not": 0,
+          "replay whole: a move it held stood not": 0,
+          "replay whole: a move keeps not every write of its entry": 0,
+          "replay whole: a new edit as deep as a new move": 0,
+          "replay whole: a new edit builds on another new one as deep": 0,
+          "replay whole: a new edit sorts before its place": 0,
+          "replay whole: a new grant rests on one a revocation names": 0,
+          "replay whole: a removal came": 0,
+          "replay whole: a snapshot came": 0,
+          "replay whole: an edit it held builds on a new one": 0,
+          "replay whole: fewer edits than it held": 0,
+          "replay whole: its removals rank otherwise": 0,
+          "replay whole: its tail ran out": 0,
+          "replay whole: no base to resolve on": 0,
+          "replay whole: no place to step on from": 0,
+          "replay whole: the first since it opened": 0,
+          "replay: from its stored view": 0,
+          "stored view: none that opens": 0
+        },
+        "timers": {
+          "check": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "open keys": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "open view": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "read": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "refresh": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "replay": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "show items": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "upkeep": {
+            "count": 0.0,
+            "total_ms": 0.0
+          }
+        }
+      }
+    },
+    {
+      "metric_capture_ms": 1629.538417,
+      "metrics": {
+        "counts": {
+          "edits checked": 63647,
+          "edits offered": 63647,
+          "keys from the shelf": 0,
+          "keys opened": 5134,
+          "refresh rounds": 1,
+          "replay whole: the first since it opened": 1,
+          "replay: from its stored view": 0,
+          "stored view: none that opens": 1
+        },
+        "timers": {
+          "check": {
+            "count": 1.0,
+            "max_ms": 1347.934,
+            "total_ms": 1347.934
+          },
+          "open keys": {
+            "count": 1.0,
+            "max_ms": 10930.258,
+            "total_ms": 10930.258
+          },
+          "open view": {
+            "count": 1.0,
+            "max_ms": 0.0,
+            "total_ms": 0.0
+          },
+          "read": {
+            "count": 1.0,
+            "max_ms": 77.985,
+            "total_ms": 77.985
+          },
+          "refresh": {
+            "count": 1.0,
+            "max_ms": 14088.353,
+            "total_ms": 14088.353
+          },
+          "replay": {
+            "count": 1.0,
+            "max_ms": 2120.355,
+            "total_ms": 2120.355
+          },
+          "show items": {
+            "count": 1.0,
+            "max_ms": 899.001,
+            "total_ms": 899.001
+          },
+          "upkeep": {
+            "count": 1.0,
+            "max_ms": 34.085,
+            "total_ms": 34.085
+          }
+        }
+      },
+      "open_ms": 16896.900958,
+      "phase": "recovery",
+      "steps": {
+        "over": true,
+        "steps": [
+          {
+            "at": 0,
+            "step": "keys",
+            "took": 4
+          },
+          {
+            "at": 4,
+            "step": "restore",
+            "took": 16400
+          },
+          {
+            "at": 16404,
+            "step": "node",
+            "took": 106
+          },
+          {
+            "at": 16510,
+            "step": "check",
+            "took": 386
+          }
+        ]
+      },
+      "observe_ms": 220.178583,
+      "observe_delta": {
+        "counts": {
+          "edits checked": 0,
+          "edits offered": 0,
+          "keys from the shelf": 0,
+          "keys opened": 0,
+          "refresh rounds": 0,
+          "replay whole: a checkpoint came": 0,
+          "replay whole: a checkpoint it held covers a new edit": 0,
+          "replay whole: a move among its last edits kept a new edit out": 0,
+          "replay whole: a move among its last edits stood not": 0,
+          "replay whole: a move it held stood not": 0,
+          "replay whole: a move keeps not every write of its entry": 0,
+          "replay whole: a new edit as deep as a new move": 0,
+          "replay whole: a new edit builds on another new one as deep": 0,
+          "replay whole: a new edit sorts before its place": 0,
+          "replay whole: a new grant rests on one a revocation names": 0,
+          "replay whole: a removal came": 0,
+          "replay whole: a snapshot came": 0,
+          "replay whole: an edit it held builds on a new one": 0,
+          "replay whole: fewer edits than it held": 0,
+          "replay whole: its removals rank otherwise": 0,
+          "replay whole: its tail ran out": 0,
+          "replay whole: no base to resolve on": 0,
+          "replay whole: no place to step on from": 0,
+          "replay whole: the first since it opened": 0,
+          "replay: from its stored view": 0,
+          "stored view: none that opens": 0
+        },
+        "timers": {
+          "check": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "open keys": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "open view": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "read": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "refresh": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "replay": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "show items": {
+            "count": 0.0,
+            "total_ms": 0.0
+          },
+          "upkeep": {
+            "count": 0.0,
+            "total_ms": 0.0
+          }
+        }
+      }
+    }
+  ],
+  "limitations": [
+    "One historical native-copy run, not current production or physical iPhone/iPad performance.",
+    "Nested timers must not be summed as wall time.",
+    "open_ms excludes authentication, inventory observation and metric capture.",
+    "Metric capture is diagnostic overhead and itself contends for the Lab lock.",
+    "No conclusion about the cause of iOS foreground document restarts.",
+    "No new optimization or final-release acceptance is established by this measurement."
+  ]
+}
