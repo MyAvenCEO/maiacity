@@ -290,4 +290,10 @@ try {
  assert.deepEqual(errors,[]);
  console.log('PASS '+engine+': actual Session renders accepted chat+non-chat local mutations, preserves refused draft, and remote messages before blocked world refresh; local browser harness '+localMs+'ms (synthetic device, not physical latency)');
  }
-} finally { await browser?.close();await server?.close(); }
+} finally {
+ // Release deliberately held fake engine work before shutting down the local fixture server.
+ for (const context of browser?.contexts() ?? []) for (const page of context.pages()) {
+  await page.evaluate(() => window.fixtureReleaseWorld?.()).catch(() => {});
+ }
+ await browser?.close(); await server?.close();
+}
