@@ -6,6 +6,12 @@ Last maintained: 2026-10-25. Current execution order: keep three subagents plus 
 
 ## Latest delivery and follow-up checkpoint — 24 October 2026, evening
 
+### Current release and follow-up status — 25 October
+
+Release PR[#1271](https://github.com/MyAvenCEO/maiacity/pull/1271) merged as [6e230f6b](https://github.com/MyAvenCEO/maiacity/commit/6e230f6bede2191a5bfa8fdea687bdd1e41338ca) after all exact-artifact checks passed, including real Chromium/WASM and net/server. Deployment run[40144547892](https://github.com/MyAvenCEO/maiacity/actions/runs/40144547892) is running; success is not yet established. The current installed Mac remains711fcebe. The final Mac build is running from clean merge6e230f6b using its CI site artifact: release identity and all856 file BLAKE3 hashes verified. Local Vite config loading failed in shared dependencies, so the successful exact-source CI frontend replaces the unit-test placeholder; no application-source workaround was introduced. Native build overrides only beforeBuildCommand to avoid rebuilding this verified frontend. Installation and physical acceptance remain pending.
+
+The separate working-set branch now includes released fixes via [2b2d8683](https://github.com/MyAvenCEO/maiacity/commit/2b2d8683). Bootstrap fixture repair [da32aa70](https://github.com/MyAvenCEO/maiacity/commit/da32aa70) passed15/15 focused tests on its frozen agent tree; it uses actual contact exchange and verifies read-only proposal wait followed by exact causal recovery. Combined full core after all new query/batch changes remains required. Latest combined application check:0errors/27warnings; Lean124jobs before importing the release fallback module. Original M3–M7 scope and physical mobile acceptance are not complete. Older snapshots below are historical.
+
 
 ### Separate working-set integration — 25 October
 
