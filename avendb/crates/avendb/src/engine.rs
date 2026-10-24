@@ -168,7 +168,7 @@ fn fields(name: &str) -> Option<&'static [&'static str]> {
         "query" => &["vault", "where", "schema", "select", "order", "limit", "offset", "depth", "follow", "observeRevision"],
         "get" => &["entry", "schema", "line", "at", "version"],
         "pin" => &["entry", "at"],
-        "checkpoint_view" => &["entry"],
+        "checkpoint_view" | "checkpoint_entry_base" => &["entry"],
         "history" => &["entry", "limit"],
         "room" => &["entry", "last", "before"],
         "schemas" => &["vault"],
@@ -922,7 +922,8 @@ fn query(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refus
         } else {
             lab.item(me, entry).and_then(|item| see_within(lane, item, &schema, depth))
         };
-        let Some((seen, cut)) = visible else { continue };
+        let Some((mut seen, cut)) = visible else { continue };
+        seen.read_only |= lab.owner_base_pending(me,entry);
         if w.holds(&m.attrs, &seen.record) {
             let provenance = checkpoint.map(|p| json!({ "snapshot": p.snapshot().to_hex(),
                 "basis": ids(p.basis()), "partial": true, "freshness": "owner-attested-basis" }))
@@ -1070,7 +1071,7 @@ fn get(lab: &Lab, me: SignerId, o: &Map<String, Value>) -> Result<Value, Refused
         None => lab.item_on(me, entry, line).ok_or(Refused::NoEntry)?,
     };
     let mut seen = see(&lane(lab, me, vault), item, &schema).ok_or_else(|| unseen(&schema))?;
-    seen.read_only |= at.is_some();
+    seen.read_only |= at.is_some() || lab.owner_base_pending(me,entry);
     let mut out = row(entry, vault, &m.attrs, &seen, seen.record.clone());
     out["line"] = line_json(line);
     out["heads"] = ids(&h.heads(line)).into();

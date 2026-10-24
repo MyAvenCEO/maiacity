@@ -730,6 +730,7 @@ struct Store {
     bootstrap_bases: entry_base::Anchors,
     bootstrap_state: Option<State>,
     bootstrap_active: HashSet<EntryId>,
+    bootstrap_pending: HashSet<EntryId>,
     bootstrap_basis: Option<entry_base::OverlayBasis>,
     bootstrap_revision: Arc<()>,
     /// How many of its edits that replay is of, the first of its log: those after it step on it (`replay_on`).
@@ -820,6 +821,7 @@ impl Default for Store {
             bootstrap_bases: BTreeMap::new(),
             bootstrap_state: None,
             bootstrap_active: HashSet::new(),
+            bootstrap_pending: HashSet::new(),
             bootstrap_basis: None,
             bootstrap_revision: Arc::new(()),
             replayed: 0,
@@ -3300,6 +3302,7 @@ impl Lab {
     /// it: the edit, and the write it is, with the shares its readers judge it by.
     fn check_write(&self, on: SignerId, view: &State, action: Action) -> Result<(Edit, Write), Refusal> {
         if let Action::Write { entry, vault, actor, proposal, deps, .. } = &action {
+            if self.held(on).bootstrap_pending.contains(entry) { return Err(Refusal::ReadOnly); }
             if self.held(on).bootstrap_active.contains(entry)
                 && (self.held(on).replayed != self.held(on).log.edits().len() || *actor != *vault || *proposal != Proposal::Main || *deps != self.shown(on,*entry).heads(MAIN)) {
                 return Err(Refusal::ReadOnly);
