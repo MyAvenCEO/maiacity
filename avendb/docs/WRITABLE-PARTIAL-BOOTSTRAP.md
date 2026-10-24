@@ -834,3 +834,14 @@ comparison remains root/scope/decryption authenticated; normal public restoratio
 still performs its existing full-holder mismatch rejection. The full-history end
 of the lane regression now requires anchor retirement and a successful normal edit.
 Lean retirement gate lemmas passed; executable Rust validation remains pending.
+
+Retirement correction: a newly held suffix can be uncounted because its schema is
+missing even when every encrypted/decrypted target body is present. Retirement now
+also requires every canonical post-base change to be counted. This conservative
+gate intentionally retains read-only state for genuinely rejected suffixes until
+complete rejection semantics are modeled separately. Regression
+`canonical_retirement_waits_for_suffix_schema_even_with_all_target_bodies` authors
+an ordinary signed update through the custom document-v0 schema/lens, withholds
+those lane entries while delivering the target body, refuses retirement, then
+supplies the authorized lane evidence and compares canonical results. Lean gate
+lemma and parser/diff checks passed; Rust execution pending root queue.

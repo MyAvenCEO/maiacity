@@ -49,3 +49,9 @@ theorem retirement_needs_matching_judgments (b j m p : Bool) (h : retire b j m p
   simp [retire, Bool.and_eq_true] at h
   exact h.1.1.2
 end AvenDB.BootstrapDependencies
+
+namespace AvenDB.BootstrapDependencies
+-- Uncounted new suffix may mean incomplete semantic inputs, not a proven rejection.
+def retireWithSuffix (baseSafe suffixCounted : Bool) : Bool := baseSafe && suffixCounted
+theorem uncounted_suffix_prevents_retirement (b : Bool) : retireWithSuffix b false = false := by simp [retireWithSuffix]
+end AvenDB.BootstrapDependencies

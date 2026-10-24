@@ -71,6 +71,10 @@ fn canonical_owner_replacement(on: SignerId, store: &Store, base: &RestoredOwner
     if !base.history.changes().iter().all(|old| canonical.history.get(old.write.edit).is_some_and(|now|
         now.write==old.write && now.counted==old.counted && now.fits==old.fits
             && now.touches==old.touches && now.adds==old.adds)) { return None; }
+    // An uncounted post-base write may lack a schema/lens rather than be a final
+    // rejection. Keep the anchor until all supported suffix judgments are known.
+    if canonical.history.changes().iter().any(|c|
+        base.history.get(c.write.edit).is_none() && !c.counted) { return None; }
     if !canonical.items().contains_key(&MAIN)
         || canonical.items().values().any(Item::has_parked_updates) { return None; }
     Some(canonical)
@@ -472,6 +476,41 @@ impl Backup {
 mod tests {
     use super::*;
     use crate::cast::{document, human_on};
+    #[test]
+    fn canonical_retirement_waits_for_suffix_schema_even_with_all_target_bodies() {
+        use crate::lens::example::{DOCUMENT_V0,DOCUMENT_LENS};
+        let mut lab=Lab::new(); let owner=lab.passkey("Suffix lane owner");
+        let mac=lab.device_of(owner,"Mac"); let phone=lab.device_of(owner,"Phone");
+        let vault=human_on(&mut lab,owner,&[mac,phone]);
+        let entry=lab.create(mac,vault,vault,"note",&[],document("Base","old",mac)).unwrap();
+        lab.sync(mac,phone);
+        let PreparedEntryBase{draft,sealed,..}=lab.draft_judged_entry_base(mac,&[owner],entry).unwrap();
+        let snapshot=lab.complete(mac,draft,&[]).unwrap();
+        let base=lab.restore_owner_judgment(mac,snapshot,entry,&sealed).unwrap();
+        assert!(canonical_owner_replacement(phone,lab.held(phone),&base).is_some());
+        lab.add_schema(mac,vault,vault,DOCUMENT_V0.bytes()).unwrap();
+        lab.add_schema(mac,vault,vault,DOCUMENT_LENS.bytes()).unwrap();
+        let suffix=lab.edit(mac,vault,entry,|item| {
+            assert!(item.edit_document_v0(|d| d.title="Written through custom schema".into()));
+        }).unwrap();
+        assert!(lab.history(mac,entry).unwrap().get(suffix).unwrap().counted);
+        let signed=lab.signed_edit(mac,suffix).unwrap().clone();
+        lab.receive(phone,vec![signed],vec![]);
+        assert!(lab.held(phone).bodies.contains_key(&suffix));
+        assert!(!lab.history(phone,entry).unwrap().get(suffix).unwrap().counted,
+            "held ciphertext and body do not establish missing schema semantics");
+        assert!(canonical_owner_replacement(phone,lab.held(phone),&base).is_none(),
+            "must not retire while canonical suffix is missing its schema");
+        let evidence:Vec<_>=lab.log(mac).ids().iter().filter_map(|id| {
+            let signed=lab.signed_edit(mac,*id)?;
+            (!matches!(&signed.edit.action,Action::Write{entry:e,..} if *e==entry)).then(||signed.clone())
+        }).collect();
+        lab.receive(phone,evidence,vec![]);
+        let canonical=canonical_owner_replacement(phone,lab.held(phone),&base).unwrap();
+        assert!(canonical.history.get(suffix).unwrap().counted);
+        assert_eq!(canonical.items()[&MAIN].record(),lab.item(mac,entry).unwrap().record());
+    }
+
     #[test]
     fn owner_bootstrap_missing_schema_retains_view_without_advancing_suffix() {
         use crate::cast::document_v0;
