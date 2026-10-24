@@ -10,10 +10,8 @@ import { bark, frond, grassBlades, leaves } from './textures'
 
 type Rand = () => number
 
-export function seeded(seed: number): Rand {
-	let s = seed >>> 0 || 1
-	return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296)
-}
+import { seeded } from '$lib/assets/seeded.js'
+export { seeded } from '$lib/assets/seeded.js'
 
 const shared = <T,>(make: () => T) => {
 	let v: T | undefined

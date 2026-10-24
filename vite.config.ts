@@ -29,10 +29,10 @@ export default defineConfig(({ command }) => ({
 					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
 			},
 
-			// The whole site is prerendered and served from GitHub Pages.
+			// Caddy serves the prerendered site from the active immutable release.
 			adapter: adapter({ fallback: '404.html' }),
 
-			// GitHub Pages serves the project site under /<repo>; CI sets BASE_PATH.
+			// Production uses the domain root; other mounts may supply BASE_PATH.
 			paths: { base: (process.env.BASE_PATH ?? '') as '' | `/${string}` },
 
 			// a link to a journal day that is not published yet: its page comes with it being published — a warning,

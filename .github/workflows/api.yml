@@ -386,30 +386,7 @@ jobs:
             echo "::error::avenDB's server started without its bucket: run the avenDB workflow (avendb.yml) to give it back"
             BUCKETLESS=1
           fi
-          ssh prod "docker exec maia-city-caddy wget -qO- http://avendb:3350/healthz" && echo " ← its relay answers inside" \
-            || echo "::warning::avenDB's relay does not answer inside"
-          # its host agrees TLS keys by X25519MLKEM768 alone (deploy/Caddyfile), which the runner's curl can't: as avendb.yml
-          pq() { docker run --rm curlimages/curl:8.16.0 --curves X25519MLKEM768 "$@"; }
-          if ! pq -fsS "https://$AVENDB_HOST/healthz"; then
-            echo "::warning::https://$AVENDB_HOST does not answer yet — check its A record (-> $HOST) and let Caddy finish its certificate."
-            exit "${BUCKETLESS:-0}"
-          fi
-          echo " ← https://$AVENDB_HOST answers, by X25519MLKEM768"
-          # the Maia Universe's feed: the posts the server keeps that everyone may read
-          if FEED=$(pq -fsS --max-time 10 "https://$AVENDB_HOST/feed/posts"); then
-            echo "$FEED" | head -c 300; echo " ← https://$AVENDB_HOST/feed/posts"
-          else
-            echo "::warning::https://$AVENDB_HOST/feed/posts does not answer: the server before its feed, or Caddy's route?"
-          fi
-          # a browser's pass rides in the relay's URL (?token=, ~23 KB): the relay must still take its WebSocket
-          PASS=$(head -c 24000 /dev/zero | tr '\0' A)
-          CODE=$(pq -s -o /dev/null -w '%{http_code}' --http1.1 --max-time 5 "https://$AVENDB_HOST/relay?token=$PASS" \
-            -H 'Connection: Upgrade' -H 'Upgrade: websocket' -H 'Sec-WebSocket-Version: 13' \
-            -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' -H 'Sec-WebSocket-Protocol: iroh-relay-v1' || true)
-          if [ "$CODE" != 101 ]; then
-            echo "::error::https://$AVENDB_HOST/relay answers $CODE to a browser's pass, not 101: no browser can join (Caddy's max_header_size?)"; exit 1
-          fi
-          echo "101 ← its relay takes a browser's pass"
+          bash deploy/check-avendb.sh
           exit "${BUCKETLESS:-0}"
       # Health is judged on the server, not through DNS: a missing A record must
       # not make a good deploy look broken.

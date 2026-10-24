@@ -93,6 +93,7 @@ const ALLOWED = {
 	'src/routes/games/[world=world]/mounts.js': { imports: { '$lib/sandbox-2/interior/interior': "Sandbox 3's domes on film: each raised in the page" }, owner: ASSET },
 	'src/lib/sandbox-2/interior/spaces.ts': {
 		imports: {
+			'$lib/models/timber.v1.js': `${WHY.coops}; the unchanged historical builders moved from this module into asset ownership (A12)`,
 			'./plants': `the squares' shrubs: ${WHY.plants}`,
 			'$lib/models/minidomes.js': 'the mini domes for its `mini` coops, which only a test asks for (Sandbox 4 draws them from the box)'
 		},

@@ -17,7 +17,7 @@
  */
 import { COVER } from './cover.js';
 import { FLOORS } from './floors.js';
-import { versioned } from '../app/versions.js';
+import { registerAssets } from '$lib/assets/register.js';
 
 /**
  * the cover's older versions, with their frozen builders (none yet)
@@ -50,7 +50,7 @@ const LIST = [
 ];
 
 /** the biomes and the cover, their versions and history ($lib/app/versions.js): the `biomes` group's recipes */
-export const BUILT = versioned(LIST, 'make', HISTORY);
+export const BUILT = registerAssets(LIST, 'make', HISTORY);
 
 /**
  * A kind of cover built at a seed, as its ref: what a biome's floor asks the renderer for.

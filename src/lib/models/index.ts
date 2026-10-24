@@ -14,15 +14,16 @@ import { bellTent, bellTentBag, firePlace } from './belltent.js';
 import { WAYSIDE_INFO, travelVan } from './wayside.js';
 import { pallet } from './pallet.js';
 import { DOME_ROOMS } from './domerooms.js';
-import { playground, timberCoop, timberHutch } from '$lib/sandbox-2/interior/spaces';
+import { playground, timberCoop, timberHutch } from './timber.v1.js';
 import { waterCanister } from './water-canister.js';
-import { FIRST, versioned, type Version, type Change } from '$lib/app/versions.js';
+import { FIRST, type Version, type Change } from '$lib/app/versions.js';
+import { registerAssets } from '$lib/assets/register.js';
 
 /** a model's builder: none of its arguments, or the values of the parameters it declares, in their order */
 type Make = (...args: any[]) => THREE.Object3D;
 /** what a model's recipe is built with, when a world places it otherwise than as it is listed ($lib/assets/params.js):
  *  each takes its `value` when not given */
-type Param = { id: string; label: string; type: 'number' | 'integer' | 'string'; value: number | string; min?: number; max?: number; step?: number; maxLength?: number };
+type Param = import('$lib/assets/params.js').Param;
 /** one kind of a model (a small and a big excavator): the viewer shows its variants to switch between, as the Actors
  *  gallery shows a kind's breeds; `make` is the first's */
 export type Variant = { id: string; label: string; note: string; make: Make };
@@ -169,5 +170,5 @@ const LIST: Omit<Model, 'versions' | 'version'>[] = [
 	{ id: 'euro-pallet', label: 'Euro pallet', note: 'an empty EPAL, 1200 × 800 mm and 144 mm high: five top boards on three cross boards, nine blocks under them and three bottom boards, in two woods. The machines carry it loaded (the goods pod, the forklift); a factory’s line stacks its raw material and its product on it', usedIn: 'Factories', make: () => pallet() }
 ];
 
-export const MODELS: Model[] = versioned([...LIST, ...DOME_ROOMS], 'make', HISTORY);
+export const MODELS: Model[] = registerAssets([...LIST, ...DOME_ROOMS], 'make', HISTORY);
 
