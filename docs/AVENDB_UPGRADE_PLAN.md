@@ -684,3 +684,13 @@ The focused full-world file projection is implemented, independently reviewed, c
 This completes hosted/PWA delivery of this increment. It does not upgrade the installed Mac build, establish physical-device latency targets, or close task5's remaining generic performance work. Installed30d acceptance from tasks3–4 remains its own earlier verified boundary.
 
 Private operational evidence: `/private/tmp/avendb-32439-deployment-evidence.json`, `/private/tmp/avendb-site-32439-served-check.log`, `/private/tmp/avendb-32439-hosted-image.log`, `/private/tmp/avendb-32439-hosted-deploy.log`, `/private/tmp/avendb-32439-api-deploy.log`.
+
+### Warm-startup diagnostic isolation (2026-10-24)
+
+The startup measurement follow-up now has a focused implementation: `Lab::work_metrics` reads recorded timers/counters without full `Lab::perf` history and vouching calculations. The copied-store rehearsal uses it and reuses captured stored-view counters for its warm/recovery assertions. This addresses the diagnostic bottleneck sampled above; it does **not** close production warm-unlock latency or physical PWA acceptance.
+
+Lean contract and boundaries: `avendb/spec/WorkMetrics.md` and `AvenDB/WorkMetrics.lean`. The new Rust regression checks repeated observation, equivalence to full diagnostic timer/count fields, and unchanged history/policy/entry inventory. Validation and commit reference are recorded with this slice's completion below. No application installation or live-store change is part of this slice.
+
+Implementation: [869b9d88](https://github.com/MyAvenCEO/maiacity/commit/869b9d88). Lean observation proofs passed. The original profile logs distinguish the combined Mac build (`studio-combined-mac-build.log`, release optimized) from its rehearsal (`studio-rehearsal-build.log`, test optimized with debuginfo). The receipt alone does not identify the profile. This distinction is not causal proof of any particular delay; the earlier 3.619-second app-profile warm result already had negligible replay and substantial read/show/upkeep work. **Production warm-start optimization remains open**, as do physical-device unlock measurements.
+
+Focused validation passed: `cargo test --locked -p avendb --test work_metrics` (one passed; zero failed, 8.79 seconds after compilation) and `lake env lean AvenDB/WorkMetrics.lean`. Rehearsal target compilation and a new copied-store run are not claimed by this slice; batch compilation with integration gates, then measure cold and two same-binary warm opens separately. The core source hash changes, so the first upgraded open must reconstruct its old derived view. Existing authoritative data and authorization checks remain unchanged.
