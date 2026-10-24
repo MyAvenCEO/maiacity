@@ -1,6 +1,6 @@
 # Warm unlock: reuse one round's family authorization
 
-Warm reopening is not synonymous with policy replay. The preserved-store measurements in AVENDB_UPGRADE_PLAN.md show stored-view reuse with replay around 0.007–0.008ms, but open-keys around 0.8s, show-items around 0.9–1.0s and upkeep around 1.6s. These are prior measurements under load, not a new physical-device benchmark or a promise that this slice removes those delays.
+Warm reopening is not synonymous with policy replay. The preserved-store measurements in AVENDB_UPGRADE_PLAN.md show stored-view reuse with replay around 0.007–0.008ms, but open-keys around 0.8s, show-items around 0.9–1.0s and upkeep around 34.5–35.6ms (the separate 1.641s column is metric capture, not upkeep). These are prior measurements under load, not a new physical-device benchmark or a promise that this slice removes those delays.
 
 `Lab::refresh` still reconstructs opened keys, readings, shown items and upkeep from canonical persisted history. Within one `upkeep` call it already computes every authorized current key family. Previously its move-wrap pass called `State::entitled` again for every entry's current audience. That repeats reader enumeration and acting-vault traversal for entries sharing a family.
 
@@ -19,3 +19,5 @@ Validation fixture checks every current entry for owner, other readers, hosted p
 These results demonstrate a micro-optimization, not the explanation or resolution of multi-second startup. No physical account, app, vault or store was accessed. Full integration CI remains pending.
 
 Remaining: fresh same-artifact cold/warm measurements, opening keys, read/show reconstruction and stewardship costs, browser worker scheduling, snapshot capture copies and physical local/remote latency. This small optimization alone cannot close the reported 10-second unlock issue.
+
+Implementation and validated tests: [1113cc42](https://github.com/MyAvenCEO/maiacity/commit/1113cc42). Raw archived warm timers additionally report read 70–90ms and opening the stored view 138–143ms. Dominant measured warm CPU work remains open-keys and show-items.
