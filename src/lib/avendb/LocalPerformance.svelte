@@ -27,7 +27,7 @@
   latencyJournal.flush();
   evidence = latencyJournal.snapshot();
   exported = JSON.stringify({ ...evidence, device: deviceLabel, exportedAt: Date.now(),
-   semantics: { calls: 'Local engine response including queue and any signing ceremony; not rendered or remotely replicated.', unlock: 'User unlock request to completion; includes authentication interaction.', view: 'First local view answer; not proof of completeness or a rendered frame.', peer: 'Authenticated connection transport RTT estimate; not edit acceptance or remote visibility.' } }, null, 2);
+   semantics: { calls: 'Local engine response including queue and any signing ceremony; not rendered or remotely replicated.', unlock: 'User unlock request to completion; includes authentication interaction.', view: 'View readiness and rendered frames are not instrumented by this report.', peer: 'Authenticated connection transport RTT estimate; not edit acceptance or remote visibility.' } }, null, 2);
   const url = URL.createObjectURL(new Blob([exported], { type: 'application/json' }));
   const link = document.createElement('a'); link.href = url; link.download = `maia-latency-${deviceLabel.replace(/ /g, '-')}-${Date.now()}.json`;
   link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
@@ -59,7 +59,7 @@
  <table><thead><tr><th>Recent stage</th><th>Duration</th><th>Result</th></tr></thead><tbody>
  {#each evidence.samples.slice(-12).reverse() as sample}<tr><td>{sample.stage}</td><td>{ms(sample.ms)}</td><td>{sample.outcome}</td></tr>{/each}
  </tbody></table>{/if}
- <p>Local call completion is not a rendered frame or remote acknowledgement. Transport RTT is the connection estimate, not write propagation. Unlock totals include authentication time. First local answers can be partial.</p>
+ <p>Local call completion is not a rendered frame or remote acknowledgement. Transport RTT is the connection estimate, not write propagation. Unlock totals include authentication time. View readiness and rendered-frame latency are not measured here.</p>
  <h3>Studio playback · target 30 FPS</h3>
  <p>{playback.frames} measured world frames · {playback.fps === null ? 'FPS unavailable' : `${playback.fps.toFixed(1)} FPS`} · render p95 {ms(playback.renderP95)} · frame gap p95 {ms(playback.gapP95)}.</p>
  <p>{playback.cuts} measured cuts · cut gap p95 {ms(playback.cutP95)} · {playback.longGaps} gaps over 50 ms · {playback.failures} draw failures. Pauses are excluded; these measurements do not cover native video playback.</p>

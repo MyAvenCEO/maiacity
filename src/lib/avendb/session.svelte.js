@@ -52,6 +52,7 @@ import { createVaultContext } from './context.js';
 import { createMoveChecks } from './move-checks.js';
 import { beforeLocalWrite } from './local-write.js';
 import { noteLifecycle } from './lifecycle.js';
+import { measureLatency } from './latency-journal.js';
 import { createReactiveRead } from './reactive-read.js';
 import { createWorldReader } from './world-reader.js';
 import { createEntryWindow, createReadWindow, replyEntries } from './query-window.js';
@@ -430,7 +431,7 @@ function unlock(at = QUIET) {
 	if (phase !== 'closed') return unlocking ?? Promise.resolve();
 	unlocking ??= (async () => {
 		try {
-			await opening(at);
+			await measureLatency('unlock.total', () => opening(at));
 		} catch (e) {
 			if (!String(/** @type {Error} */ (e)?.message ?? e).includes('holds no vault this device belongs to')) throw e;
 			await (mac ? mac.call('forget') : store.aside());

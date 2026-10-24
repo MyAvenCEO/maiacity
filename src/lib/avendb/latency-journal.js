@@ -1,7 +1,7 @@
 /** Device-local, bounded timing evidence. Never stores operation arguments, IDs, keys or error text. */
 const KEY = 'avendb:latency:v1';
 export const TIMED_OPS = new Set(['status', 'world', 'entries', 'entry', 'entry_views', 'query', 'get', 'room', 'history', 'read_file', 'synced', 'cap_groups', 'bring', 'bring_entries', 'network', 'create', 'set', 'unset', 'insert', 'remove', 'move', 'tag', 'merge', 'review', 'put_file']);
-const STAGES = new Set(['unlock.total', 'view.first-local-answer', 'peer.transport-rtt', ...[...TIMED_OPS].map(op => `call.${op}`)]);
+const STAGES = new Set(['unlock.total', 'peer.transport-rtt', ...[...TIMED_OPS].map(op => `call.${op}`)]);
 const LIMIT = 120;
 /** @typedef {{ stage: string, ms: number, at: number, outcome: 'ok' | 'refused' | 'failed' }} Sample */
 /** @param {unknown} value @returns {value is Sample} */
@@ -58,4 +58,14 @@ export function recordPeerTimings(network, journal = latencyJournal) {
   }
  }
  return paths;
+}
+
+/** Time an actual operation with a monotonic clock; propagate its exact result or error.
+ * @template T @param {string} stage @param {() => Promise<T>} work
+ * @param {ReturnType<typeof createLatencyJournal>} [journal] @param {() => number} [now] */
+export async function measureLatency(stage, work, journal = latencyJournal, now = () => performance.now()) {
+ const start = now();
+ /** @type {'ok' | 'failed'} */ let outcome = 'failed';
+ try { const result = await work(); outcome = 'ok'; return result; }
+ finally { journal.record(stage, Math.max(0, now() - start), outcome); }
 }

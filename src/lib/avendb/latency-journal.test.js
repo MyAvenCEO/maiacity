@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { expect, test } from 'bun:test';
-import { createLatencyJournal, recordPeerTimings } from './latency-journal.js';
+import { createLatencyJournal, recordPeerTimings, measureLatency } from './latency-journal.js';
 import { createLocalTimings } from './local-timings.js';
 function fixture(initial = null) {
  let stored = initial, writes = 0, tick = 100;
@@ -47,4 +47,13 @@ test('peer sampling retains selected measured RTT only, never addresses or claim
  expect(recordPeerTimings({ peers: [{ device: 'SECRET-ID', endpoint: 'SECRET-IP', paths: [{ selected: true, rtt_ms: 23, addr: 'SECRET' }, { selected: false, rtt_ms: 5 }, { selected: true, rtt_ms: 0 }] }] }, f.journal)).toBe(1);
  expect(f.journal.snapshot().samples[0].stage).toBe('peer.transport-rtt');
  f.journal.flush(); expect(f.raw()).not.toContain('SECRET');
+});
+
+test('unlock duration uses a monotonic clock and preserves results and failures', async () => {
+ const f = fixture(); let tick = 10;
+ expect(await measureLatency('unlock.total', async () => { tick = 35; return 'opened'; }, f.journal, () => tick)).toBe('opened');
+ const failure = new Error('private account error');
+ await expect(measureLatency('unlock.total', async () => { tick = 50; throw failure; }, f.journal, () => tick)).rejects.toBe(failure);
+ expect(f.journal.snapshot().samples.map(s => [s.ms, s.outcome])).toEqual([[25, 'ok'], [15, 'failed']]);
+ f.journal.flush(); expect(f.raw()).not.toContain('private account');
 });
