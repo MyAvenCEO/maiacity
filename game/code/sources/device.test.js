@@ -145,3 +145,33 @@ test('an empty local catalog does not wait for an unfinished background bring', 
 	await sync;
 	expect(result).toBeNull();
 });
+
+test('learned demand publishes before manifest discovery and closes on device replacement', async () => {
+ const { useView } = await import('./device.js');
+ globalThis.localStorage = store();
+ globalThis.location = { pathname: '/fresh/' };
+ learn([id(81)], '/fresh/');
+ let release, publish;
+ const withheld = new Promise(resolve => { release = resolve; });
+ const published = new Promise(resolve => { publish = resolve; });
+ const calls = [];
+ const d = { run: async op => {
+  calls.push(op);
+  if (op.op === 'query') return withheld;
+  if (op.op === 'demand') { publish(); return { ok: { accepted: true } }; }
+  throw new Error('No transfer before discovery');
+ } };
+ try {
+  useDevice(d);
+  const pending = useView('/fresh/');
+  await Promise.race([published, new Promise((_, reject) => setTimeout(() => reject(new Error('learned demand blocked')), 100))]);
+  expect(calls.filter(op => op.op === 'demand')[0].entries).toEqual([id(81)]);
+  useDevice(null);
+  await Promise.resolve();
+  expect(calls.filter(op => op.op === 'demand').at(-1).entries).toEqual([]);
+  release({ ok: { rows: [{ record: { kind: 'manifest', id: 'late', routes: ['*'], parts: [{ entry: id(82) }] } }] } });
+  await pending;
+  expect(calls.filter(op => op.op === 'bring')).toEqual([]);
+  expect(calls.filter(op => op.op === 'demand').flatMap(op => op.entries)).not.toContain(id(82));
+ } finally { delete globalThis.location; }
+});

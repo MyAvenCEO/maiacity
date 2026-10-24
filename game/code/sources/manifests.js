@@ -169,7 +169,8 @@ export async function manifestsOf(d, { vault = MAIA_CITY, signal } = {}) {
 /**
  * What the manifests declare for path `path`, brought by `bring` (./device.js `bringEntries`) a priority at a time, the
  * highest first; then, for leaves that `follow`, the entries the brought records name, a level at a time. The rows the
- * queries read are the feed's public ones, a listing without records, and those the device already holds (`rowsFor`).
+ * queries read are canonical locally held rows (`rowsFor`). Optional `prioritize` publishes known explicit IDs
+ * before query discovery; it changes scheduling only, not authorization or completeness.
  * Answers the entries asked for.
  * @param {string} path @param {{ device?: any, bring: (ids: string[]) => Promise<any>, vault?: string, fetch?: any }} o
  */
@@ -197,11 +198,15 @@ export async function bringDeclared(path, options) {
  }
 }
 
-async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: get = globalThis.fetch, signal }) {
+async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: get = globalThis.fetch, signal, prioritize = () => {} }) {
 	signal?.throwIfAborted();
 	const leaves = leavesFor(await manifestsOf(d, { vault, fetch: get, signal }), path);
 	signal?.throwIfAborted();
 	if (!leaves.length) return [];
+	// These IDs are already declared by canonical local manifests. Publish scheduling
+	// hints before unrelated query materialization or transfer; hints grant no access.
+	await prioritize(entriesOf(leaves.filter(({ leaf }) => leaf.entry), []));
+	signal?.throwIfAborted();
 	const rows = await rowsFor(leaves, { device: d, vault, fetch: get, signal });
 	signal?.throwIfAborted();
 	const asked = new Set();
@@ -238,8 +243,8 @@ async function planDeclared(path, { device: d, bring, vault = MAIA_CITY, fetch: 
 }
 
 /**
- * The rows the queries among leaves `leaves` read, once: the feed's public rows of vault `vault` (a listing without
- * records, of the types the queries name where every one names some) and the rows device `d` holds of those types.
+ * The rows device `d` locally holds for queries among `leaves`, without records.
+ * A local result is not proof that discovery or peer delivery is complete.
  */
 async function rowsFor(leaves, { device: d, vault, fetch: get, signal }) {
 	const queries = leaves.map(({ leaf }) => leaf.query).filter(Boolean);
