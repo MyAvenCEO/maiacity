@@ -3412,10 +3412,12 @@ mod tests {
         while tokio::time::timeout(Duration::ZERO,node.shared.bootstrap_due.notified()).await.is_ok() {}
         assert!(node.act(move|lab,me|lab.adopt_owner_entry_base(me,snapshot,entry,prepared.sealed)).await);
         assert!(!node.read(|lab,me|lab.owner_bases_pending(me)).await,"dependency wait is not runnable replay");
+        assert_eq!(node.read(move|lab,me|bootstrap_dependencies::missing_batch(lab,me,entry)).await,vec![dependency]);
         tokio::time::timeout(Duration::from_millis(100),node.shared.bootstrap_due.notified()).await.expect("new dependency wait must wake the network pump");
         let mut changed=node.shared.size.subscribe();changed.borrow_and_update();
         node.act(move|lab,me|lab.receive(me,vec![dependency_signed],vec![])).await;
         assert!(node.read(|lab,me|lab.owner_base_missing(me).is_empty()).await);
+        assert!(node.read(move|lab,me|bootstrap_dependencies::missing_batch(lab,me,entry)).await.is_empty(),"next peer must not re-fetch a dependency already received");
         tokio::time::timeout(Duration::from_millis(100),changed.changed()).await.unwrap().unwrap();
         node.shutdown().await.unwrap();
     }

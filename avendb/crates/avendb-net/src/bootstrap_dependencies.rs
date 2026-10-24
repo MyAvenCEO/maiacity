@@ -81,6 +81,19 @@ fn validate_reply(reply: &Reply, entry: EntryId, ids: &[EditId]) -> Result<()> {
     );
     Ok(())
 }
+/// Recheck current authorized demand and local holdings before each peer attempt.
+pub(crate) fn missing_batch(lab: &Lab, me: SignerId, entry: EntryId) -> Vec<EditId> {
+    lab.owner_base_missing(me)
+        .into_iter()
+        .find(|(e, _)| *e == entry)
+        .map(|(_, ids)| {
+            ids.into_iter()
+                .filter(|id| lab.signed_edit(me, *id).is_none())
+                .take(32)
+                .collect()
+        })
+        .unwrap_or_default()
+}
 impl Shared {
     /// One bounded sweep; disconnected/legacy peers leave the exact wait visible.
     /// The caller backs off between unresolved sweeps, while new local work wakes it.
@@ -119,12 +132,17 @@ impl Shared {
                 .cloned()
                 .collect()
         };
-        for (entry, ids) in missing {
+        for (entry, _) in missing {
             for peer in &peers {
-                if let Err(error) = self
-                    .fetch_owner_dependency_batch(peer, entry, ids.clone())
-                    .await
-                {
+                let ids = self
+                    .read_class(lab_schedule::Class::Background, move |lab, me| {
+                        missing_batch(lab, me, entry)
+                    })
+                    .await;
+                if ids.is_empty() {
+                    break;
+                }
+                if let Err(error) = self.fetch_owner_dependency_batch(peer, entry, ids).await {
                     tracing::debug!(%error,"avendb: targeted dependency retry remains pending");
                 }
                 let unresolved = self
