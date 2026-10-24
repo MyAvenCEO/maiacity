@@ -1,42 +1,41 @@
-# sv
+# maiaCITY
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+The public site, cooperative games, film studio and theOS desktop application. SvelteKit builds the static site; Caddy serves it. avenDB owns vault records and media, with an embedded native device in the Mac app and a browser device for the web. The API remains a separate service, not the studio's storage backend.
 
-## Creating a project
+## Develop and check
 
-If you're seeing this, you've probably already done this step. Congrats!
-
-```sh
-# create a new project
-npx sv create my-app
-```
-
-To recreate this project with the same configuration:
+Use the Bun version in `.bun-version`. From the repository root:
 
 ```sh
-# recreate this project
-bun x sv@0.17.0 create --template minimal --types ts --install bun .
+bun install --frozen-lockfile
+bun run dev
+bun run check
+bun --bun run build
+bun run preview
 ```
 
-## Developing
+The build uses Bun's Vite runtime to match the release witness. Production is served at the domain root; `BASE_PATH` is optional for other mounts. Native development additionally requires Rust and the macOS build tools; `vault/app/tauri.conf.json` defines the frontend/native handoff. A page hot reload does not upgrade the native device.
 
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
+API dependencies and tests:
 
 ```sh
-npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
+cd api && bun install --frozen-lockfile && cd ..
+bun test ./api/test
 ```
 
-## Building
+`.github/workflows/kernel.yml` is the authoritative application test list and Chromium/WebKit probe gate. `avendb-checks.yml` checks avenDB's Rust/Lean workspace. Tests that exercise native devices, storage migrations or recovery must use isolated stores, never a live device directory.
 
-To create a production version of your app:
+## Ownership map
 
-```sh
-npm run build
-```
+| Area | Owner / entry point |
+| --- | --- |
+| Site and app navigation | `src/routes`, `src/lib/app`; shared game/world descriptors in `game/places.js` |
+| Game simulations and film contracts | `game`, `src/lib/sandbox-*`, `src/lib/maiacity-*`; frozen versions stay distinct |
+| Vault records, capabilities, synchronization | `avendb`; browser/session integration in `src/lib/avendb` |
+| Studio cuts and media | `src/lib/studio/cuts.js`, `aven.js`; media loading/decoding in `media-sources.js` |
+| Native device, rendering, MCP commands | `vault/app`; the embedded device is not a packaged avenDB sidecar |
+| Public media aliases | `src/lib/media`, `deploy/Caddyfile`; stable public URLs are not private sealed references |
+| API and infrastructure | `api`, `infra`, `deploy`; API/site/avenDB have independent release workflows |
+| Dynamic code and assets | avenDB publication; `code/` is reviewed bootstrap/recovery input, not a competing live writer |
 
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
+Read [architecture and retirement decisions](docs/ARCHITECTURE.md) before changing an ownership boundary, [deployment ownership](deploy/OWNERSHIP.md) before changing release mechanics, and [release acceptance](docs/AVENDB_RELEASE_ACCEPTANCE.md) before operating a device. Merged code and green CI are not proof of installed-Mac acceptance or successful recovery.

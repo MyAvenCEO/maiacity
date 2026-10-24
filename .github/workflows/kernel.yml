@@ -90,6 +90,9 @@ jobs:
           ./src/lib/studio/aven.test.js
           ./src/lib/studio/cuts.test.js
           ./src/lib/studio/refresh.test.js
+          ./src/lib/studio/media-sources.test.js
+          ./game/places.test.js
+          ./deploy/check-avendb.test.js
           ./src/lib/studio/media-proxies.test.js
           ./scripts/film/avendb.test.mjs
           ./scripts/diagnostics/network-probe.test.mjs
