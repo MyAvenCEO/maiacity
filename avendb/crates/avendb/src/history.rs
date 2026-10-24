@@ -244,6 +244,20 @@ impl History {
         Ok(())
     }
 
+    /// Restore already counted metadata in one pass without repeatedly scanning
+    /// its entire prefix for dependencies. This is not authorization: every write
+    /// still passes the same canonical builds-on gate before entering the index.
+    pub(crate) fn from_changes(changes: Vec<Change>) -> Result<Self, Refusal> {
+        let mut preceding: HashMap<EditId, Vec<&Write>> = HashMap::new();
+        for change in &changes {
+            policy::builds_on_lookup(&change.write, |id| {
+                preceding.get(&id).into_iter().flatten().copied()
+            })?;
+            preceding.entry(change.write.edit).or_default().push(&change.write);
+        }
+        Ok(Self { changes })
+    }
+
     /// One ordinary admission gate for local authoring and remote counting. The caller
     /// derives authorization from the current policy, proof and row ownership. This
     /// does not authenticate a Write or make missing history trustworthy.
@@ -918,6 +932,36 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn indexed_history_restore_matches_sequential_admission() {
+        let signer = SignerId::from_u64(2);
+        let mut repo = Repo::new(&Item::document("Start", signer), signer);
+        for n in 0..32 {
+            repo.edit(signer, MAIN, |i| { i.edit_document(|d| d.title = format!("Edit {n}")); });
+        }
+        let branch = repo.propose(signer, &repo.heads(MAIN), "Proposal").unwrap();
+        repo.edit(signer, Some(branch), |i| { i.edit_document(|d| d.title = "Branch".into()); });
+        let canonical = repo.history().changes().to_vec();
+        let check = |changes: Vec<Change>| {
+            let mut sequential = History::default();
+            let expected = changes.iter().cloned().try_for_each(|c| sequential.push(c));
+            let actual = History::from_changes(changes.clone());
+            assert_eq!(actual.as_ref().err(), expected.as_ref().err());
+            if let Ok(actual) = actual {
+                assert_eq!(actual.changes().iter().map(|c| &c.write).collect::<Vec<_>>(),
+                    sequential.changes().iter().map(|c| &c.write).collect::<Vec<_>>());
+                assert_eq!(actual.changes().iter().map(|c| &c.body).collect::<Vec<_>>(),
+                    sequential.changes().iter().map(|c| &c.body).collect::<Vec<_>>());
+            }
+        };
+        check(canonical.clone());
+        let mut missing = canonical.clone(); missing.remove(0); check(missing);
+        let mut future = canonical.clone(); future.swap(0, 1); check(future);
+        let mut wrong_entry = canonical.clone(); wrong_entry[1].write.entry = EntryId::from_u64(99); check(wrong_entry);
+        let mut wrong_branch = canonical.clone(); wrong_branch.last_mut().unwrap().write.proposal = Proposal::On(EditId::from_u64(999)); check(wrong_branch);
+        let mut duplicate = canonical.clone(); duplicate.insert(1, canonical[0].clone()); check(duplicate);
+    }
 
     #[test]
     fn undo_takes_back_one_change_and_keeps_the_rest() {

@@ -281,29 +281,28 @@ impl Saved {
         if writes.len() != self.changes.len() {
             return None;
         }
-        let mut history = History::default();
+        let mut changes = Vec::with_capacity(writes.len());
         let mut attrs = st.first_attrs(en, r);
         for (w, (id, fits, counted, touches, adds)) in writes.into_iter().zip(self.changes) {
             if w.edit != id {
                 return None;
             }
             let body = bodies.get(&id);
-            history
-                .push(Change {
+            changes.push(Change {
                     write: w.clone(),
                     body: body.map(|b| b.content.clone()),
                     fits,
                     counted,
                     touches,
                     adds,
-                })
-                .ok()?;
+                });
             if !w.first && w.actor == en.vault {
                 if let (Some(a), Some(b)) = (attrs.as_mut(), body) {
                     a.tags = b.tags.apply(&a.tags);
                 }
             }
         }
+        let history = History::from_changes(changes).ok()?;
         let mut items = BTreeMap::new();
         let mut imported = BTreeMap::new();
         let asked = self.asked;
