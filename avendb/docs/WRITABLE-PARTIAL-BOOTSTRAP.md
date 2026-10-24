@@ -996,3 +996,22 @@ or wrong-length final read. It explicitly assumes the temporary name belongs to
 that blob and makes no cryptographic/content-integrity claim. It supplements the
 implementation after the release blocker was diagnosed; it was not retroactively
 Lean-first. Its focused Lean check passed; Rust/browser validation remains separate.
+
+### Combined shared/proposal fixture repair and execution evidence
+
+The new shared-vault fixtures initially returned `UnknownKey` before reaching any
+bootstrap logic: ordinary sync does not introduce an unrelated recipient's seed
+contact. They now use the public bidirectional `share_contact` handshake before
+issuing a grant. No key or authority is injected directly. The earlier main-only
+proposal refusal regression is superseded by the implemented exact-cut fallback:
+it now requires retained prefix, missing-body wait, no counted proposal and local
+`ReadOnly`, followed by exact-body retrieval and matching counted proposal/name/item.
+
+The frozen corrected tree passed all **15 bootstrap_store tests** (13.43 seconds)
+including shared/proposal receive, malformed proof, owner accept/merge, historical
+revocation, key/schema waits, concurrent suffix, restart and durable bounds.
+Command: `cargo test -p avendb --lib bootstrap_store::tests -- --nocapture`.
+Log: `/private/tmp/avendb-shared-fixture-stable.log`. An earlier run compiled the old
+fixture tree and is not validation of these edits. No production admission rules
+changed in this repair; full combined/release and physical-device acceptance remain
+separate gates.

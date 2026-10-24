@@ -512,7 +512,8 @@ mod tests {
         let vault=human_on(&mut lab,owner,&[mac,phone,pad,bad]);
         let guest=lab.passkey("Guest"); let guest_device=lab.device_of(guest,"Guest device");
         let guest_vault=human_on(&mut lab,guest,&[guest_device]);
-        lab.sync(guest_device,mac);
+        lab.share_contact(guest_device,mac,guest_vault);
+        lab.share_contact(mac,guest_device,vault);
         let share=lab.issue(mac,&[owner],crate::cast::share(vault,Who::Vault(guest_vault),Level::Write,crate::cast::of_type("note"))).unwrap();
         for device in [phone,pad,bad,guest_device] { lab.sync(mac,device); }
         let entry=lab.create_in(mac,vault,vault,vec![share],"note",&[],document("Base","old",mac)).unwrap();
@@ -576,7 +577,8 @@ mod tests {
         let mac=lab.device_of(owner,"Mac"); let phone=lab.device_of(owner,"Phone"); let pad=lab.device_of(owner,"Pad");
         let vault=human_on(&mut lab,owner,&[mac,phone,pad]);
         let guest=lab.passkey("Proposal guest"); let device=lab.device_of(guest,"Guest device");
-        let guest_vault=human_on(&mut lab,guest,&[device]); lab.sync(device,mac);
+        let guest_vault=human_on(&mut lab,guest,&[device]);
+        lab.share_contact(device,mac,guest_vault); lab.share_contact(mac,device,vault);
         let share=lab.issue(mac,&[owner],crate::cast::share(vault,Who::Vault(guest_vault),Level::Write,crate::cast::of_type("note"))).unwrap();
         for d in [phone,pad,device] {lab.sync(mac,d);}
         let entry=lab.create_in(mac,vault,vault,vec![share],"note",&[],document("Base","old",mac)).unwrap();
@@ -1035,7 +1037,7 @@ mod tests {
     }
 
     #[test]
-    fn owner_bootstrap_refuses_an_unsupported_proposal_suffix() {
+    fn owner_bootstrap_waits_for_proposal_causal_bodies() {
         let mut lab = Lab::new();
         let owner = lab.passkey("Proposal owner");
         let mac = lab.device_of(owner, "Mac");
@@ -1050,11 +1052,24 @@ mod tests {
         lab.receive(phone, offer.evidence, vec![]);
         assert!(lab.adopt_owner_entry_base(phone, snapshot, entry, sealed.clone()));
         let heads = lab.held(mac).shown.get(&entry).unwrap().history.heads(MAIN);
-        let proposal = lab.propose(mac, vault, entry, &heads, "Unsupported partial proposal").unwrap();
+        let proposal = lab.propose(mac, vault, entry, &heads, "Partial proposal requiring its cut").unwrap();
         let signed = lab.backup(mac).signed().iter().find(|s| s.edit.id() == proposal).unwrap().clone();
         lab.receive(phone, vec![signed], vec![]);
-        assert!(!lab.held(phone).bootstrap_active.contains(&entry), "the main-only overlay cannot silently omit a held proposal");
-        assert!(!lab.adopt_owner_entry_base(phone, snapshot, entry, sealed));
+        assert!(lab.held(phone).bootstrap_active.contains(&entry), "retain the verified prefix during causal-body recovery");
+        assert!(lab.owner_base_pending(phone, entry)>0);
+        assert!(!lab.owner_base_missing(phone).is_empty());
+        assert_eq!(lab.edit(phone,vault,entry,|i|i.set_text(2,"must wait")).unwrap_err(),Refusal::ReadOnly);
+        assert!(lab.history(phone,entry).unwrap().get(proposal).is_none(), "unmaterialized proposal must not count yet");
+        for _ in 0..8 {
+            let ids:Vec<_>=lab.owner_base_missing(phone).into_iter().flat_map(|(_,ids)|ids).collect();
+            if ids.is_empty(){break;}
+            let signed=ids.into_iter().map(|id|lab.signed_edit(mac,id).unwrap().clone()).collect();
+            lab.receive(phone,signed,vec![]);
+        }
+        assert_eq!(lab.owner_base_pending(phone,entry),0);
+        assert!(lab.history(phone,entry).unwrap().get(proposal).unwrap().counted);
+        assert_eq!(lab.history(phone,entry).unwrap().name(proposal),lab.history(mac,entry).unwrap().name(proposal));
+        assert_eq!(lab.item_on(phone,entry,Some(proposal)).unwrap().record(),lab.item_on(mac,entry,Some(proposal)).unwrap().record());
     }
 
     #[test]
