@@ -910,11 +910,31 @@ impl Store {
 /// that changes; and its tip, what a refresh that removed nothing checks instead of that hash (`Tip`).
 struct Shown {
     history: History,
-    items: BTreeMap<Line, Item>,
+    items: OnceLock<BTreeMap<Line, Item>>,
+    deferred: std::sync::Mutex<Option<(SignerId, BTreeMap<Line, Vec<u8>>)>>,
     print: [u8; 32],
     tip: Tip,
     /// Where judging its writes left off, to judge the writes that come after on (`Judging::resume`).
     after: After,
+}
+
+impl Shown {
+    /// Only own, authenticated exact-basis snapshots reach this path. History
+    /// remains eager: authorization, heads and stewardship never depend on reads.
+    fn items(&self) -> &BTreeMap<Line, Item> {
+        self.items.get_or_init(|| {
+            let (signer, mut saved) = self.deferred.lock().expect("deferred items lock")
+                .take().expect("unmaterialized own snapshot");
+            self.history.lines().into_iter()
+                .filter(|line| *line != MAIN || self.history.landed())
+                .filter_map(|line| {
+                    let item = saved.remove(&line)
+                        .and_then(|bytes| Item::from_own_snapshot(&bytes, signer, line))
+                        .or_else(|| crate::history::build_from(&self.history.history(line), signer, line));
+                    item.map(|item| (line, item))
+                }).collect()
+        })
+    }
 }
 
 /// What judging an entry's writes leaves, to judge a write that comes after them as judging all of them again would
@@ -3975,7 +3995,7 @@ impl Lab {
         if self.hosted.contains_key(&d) {
             return None;
         }
-        self.held(d).shown.get(&entry)?.items.get(&line).cloned()
+        self.held(d).shown.get(&entry)?.items().get(&line).cloned()
     }
 
     fn shown(&self, d: SignerId, entry: EntryId) -> &History {
@@ -4184,7 +4204,7 @@ impl Lab {
         if !self.sees(d, entry) {
             return None;
         }
-        self.held(d).shown.get(&entry)?.items.get(&line)
+        self.held(d).shown.get(&entry)?.items().get(&line)
     }
 
     /// Whether entry `e` has landed, as device `d` shows it (`History::landed`): it is no draft, or its vault took it
@@ -4433,7 +4453,7 @@ impl Lab {
             out.extend(slice.to_wire());
         }
         for shown in store.shown.values() {
-            for item in shown.items.values() {
+            for item in shown.items().values() {
                 out.extend(item.record().to_string().into_bytes());
             }
         }
@@ -6460,7 +6480,9 @@ fn show_items(d: SignerId, store: &mut Store) {
         let (mut j, from, items) = match old.remove(&en.id) {
             Some(s) if resumes(&s) => {
                 let from = s.tip.writes;
-                (Judging::resume(en, r, lane(en.vault), s.history, s.after), from, Some(s.items))
+                s.items(); // materialize the target before moving its validated history
+                let items = s.items.into_inner().expect("materialized above");
+                (Judging::resume(en, r, lane(en.vault), s.history, s.after), from, Some(items))
             }
             _ => (Judging::new(st, en, r, lane(en.vault)), 0, None),
         };
@@ -6510,8 +6532,8 @@ fn judged_anew(
 /// Two showings of an entry show the same: the same writes, judged alike, and the same record on each line.
 fn same_shown(a: &Shown, b: &Shown) -> bool {
     a.history.changes() == b.history.changes()
-        && a.items.keys().eq(b.items.keys())
-        && a.items.iter().zip(&b.items).all(|((_, x), (_, y))| x.record() == y.record())
+        && a.items().keys().eq(b.items().keys())
+        && a.items().iter().zip(b.items()).all(|((_, x), (_, y))| x.record() == y.record())
 }
 
 /// The writes of one entry as a device judges them, one after the other in the order they were accepted, each on what
@@ -6635,7 +6657,7 @@ impl<'a> Judging<'a> {
                 imported.insert(l, changes.iter().map(|c| c.write.edit).collect());
             }
         }
-        Shown { history, items, print, tip, after: After { scratch, attrs, mine, imported, asked } }
+        Shown { history, items: OnceLock::from(items), deferred: std::sync::Mutex::new(None), print, tip, after: After { scratch, attrs, mine, imported, asked } }
     }
 }
 

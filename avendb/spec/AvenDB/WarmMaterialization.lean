@@ -29,4 +29,17 @@ theorem unchangedClose (held : Nat) : ¬ closeDue held held held := by
 theorem recentDurableClose (held saved : Nat) (nonempty : held > 0) (changed : held ≠ saved) :
     closeDue held held saved := by simp [closeDue, nonempty, changed]
 
+-- Deferring only materialization preserves already validated history and authority.
+-- Snapshot decoding failure selects canonical construction.
+def lazyRead (snapshot : Option α) (canonical : α) : α := snapshot.getD canonical
+
+theorem lazyFallback (canonical : α) : lazyRead none canonical = canonical := rfl
+
+theorem lazyEquivalent (snapshot : Option α) (canonical : α)
+    (valid : ∀ value, snapshot = some value → value = canonical) :
+    lazyRead snapshot canonical = canonical := by
+  cases snapshot with
+  | none => rfl
+  | some value => exact valid value rfl
+
 end AvenDB.WarmMaterialization

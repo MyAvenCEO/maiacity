@@ -250,7 +250,7 @@ fn ordinary_reconstruction_bounds_scratch_retention_before_final_sweep() {
             document(&format!("Note {i}"), "retained content", device)).unwrap();
         let shown = lab.stores.get_mut(&device).unwrap().shown.remove(&entry).unwrap();
         assert!(shown.after.scratch.is_some());
-        expected.insert(entry, (shown.items[&MAIN].record(), shown.items[&MAIN].version()));
+        expected.insert(entry, (shown.items()[&MAIN].record(), shown.items()[&MAIN].version()));
         // The exact helper used during show_items, before its final cache sweep.
         retain_recent_shown(&mut reconstructed, &mut recent, entry, shown);
         let held = reconstructed.values().filter(|s| s.after.scratch.is_some()).count();
@@ -261,7 +261,7 @@ fn ordinary_reconstruction_bounds_scratch_retention_before_final_sweep() {
     let selected: HashSet<_> = recent.iter().rev().take(SCRATCHES).copied().collect();
     for (entry, shown) in &reconstructed {
         assert_eq!(shown.after.scratch.is_some(), selected.contains(entry), "same final cache selection");
-        assert_eq!((shown.items[&MAIN].record(), shown.items[&MAIN].version()), expected[entry]);
+        assert_eq!((shown.items()[&MAIN].record(), shown.items()[&MAIN].version()), expected[entry]);
     }
     eprintln!("ordinary reconstructed={} retained_scratch_peak={peak} bound={SCRATCHES}", reconstructed.len());
 }
@@ -301,10 +301,20 @@ fn own_materialization_restores_exact_state_and_successor_writes() {
         for _ in 0..10 {
             let saved = warm_materialization::decode(extra).unwrap().remove(&entry).unwrap();
             let restored = saved.restore(d, st, &store.readings, &store.bodies, en, shown.print, shown.tip).unwrap();
+            assert!(restored.items.get().is_none(), "restoring history must not import Loro snapshots");
+            assert_eq!(restored.history.changes().len(), shown.history.changes().len());
             assert!(same_shown(shown, &restored));
+            assert!(restored.items.get().is_some(), "the first item read materializes this entry");
+            assert!(restored.deferred.lock().unwrap().is_none(), "drop saved bytes after import");
             black_box(restored);
         }
         eprintln!("own materialization 10x canonical={canonical:?} cached_including_decode={:?}", started.elapsed());
+        let damaged = warm_materialization::decode(extra).unwrap().remove(&entry).unwrap()
+            .restore(d, st, &store.readings, &store.bodies, en, shown.print, shown.tip).unwrap();
+        for bytes in damaged.deferred.lock().unwrap().as_mut().unwrap().1.values_mut() {
+            *bytes = vec![0xff];
+        }
+        assert!(same_shown(shown, &damaged), "failed deferred snapshot imports rebuild from validated history");
         let saved = warm_materialization::decode(extra).unwrap().remove(&entry).unwrap();
         let mut fewer_bodies = store.bodies.clone();
         let last = st.entry_writes(entry).last().unwrap().edit;
@@ -326,7 +336,7 @@ fn own_materialization_restores_exact_state_and_successor_writes() {
     assert!(after > before, "unchanged restore must actually use materialization");
     let cached = lab.item(d, entry).unwrap().record();
     let version = lab.item(d, entry).unwrap().version();
-    let proposal_version = lab.held(d).shown[&entry].items[&Some(proposal)].version();
+    let proposal_version = lab.held(d).shown[&entry].items()[&Some(proposal)].version();
     lab.edit(d, v, entry, |it| it.set_text(2, "successor")).unwrap();
     let successor = lab.item(d, entry).unwrap().record();
     let successor_version = lab.item(d, entry).unwrap().version();
@@ -335,7 +345,7 @@ fn own_materialization_restores_exact_state_and_successor_writes() {
         "legacy policy-only warm state must be eligible for materialization upgrade");
     assert_eq!(lab.item(d, entry).unwrap().record(), cached);
     assert_eq!(lab.item(d, entry).unwrap().version(), version);
-    assert_eq!(lab.held(d).shown[&entry].items[&Some(proposal)].version(), proposal_version);
+    assert_eq!(lab.held(d).shown[&entry].items()[&Some(proposal)].version(), proposal_version);
     lab.edit(d, v, entry, |it| it.set_text(2, "successor")).unwrap();
     assert_eq!(lab.item(d, entry).unwrap().record(), successor);
     assert_eq!(lab.item(d, entry).unwrap().version(), successor_version);
