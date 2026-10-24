@@ -17,7 +17,8 @@
 	HTML; until then, or where it can't, the source is what shows.
 -->
 <script>
-	import { windowRead } from './ops.js';
+	import { entryCollection } from './entry-collection.svelte.js';
+	import { documentQuery } from './document-query.js';
 	import { tick } from 'svelte';
 	import { typesetIn } from '$lib/sandbox/math-host.js';
 	import { DOC_PICTURE, fileNamed, pictures, render } from './article.js';
@@ -35,12 +36,6 @@
 	 */
 	let { world, vault, actor, api, entry = '', onaccess } = $props();
 
-	let noteWindow = $state.raw(/** @type {any} */ (null));
-	$effect(() => {
-		const window = api.window?.();
-		noteWindow = window;
-		return () => window?.close();
-	});
 
 	const SECTIONS = /** @type {const} */ ([
 		['paper', 'Paper'],
@@ -49,7 +44,8 @@
 	]);
 
 	const byId = $derived(new Map(world.vaults.map((v) => [v.id, v])));
-	const seen = $derived(world.entries.filter((e) => e.vault === vault && !e.deleted && reads(e, actor)));
+	const collection = entryCollection(() => api, () => documentQuery(vault, actor));
+	const seen = $derived(collection.rows.filter((e) => e.vault === vault && !e.deleted && reads(e, actor)));
 	/** each doc post, by the story it is drawn from */
 	const posts = $derived(
 		new Map(
@@ -87,12 +83,9 @@
 		loaded = false;
 		line = null;
 		if (!e) return;
-		void world;
-		if (api.window && !noteWindow) return;
-		let gone = false;
-		const request = windowRead(api, { op: 'note', entry: e }, null, noteWindow);
-		request.result.then((/** @type {any} */ n) => { if (!gone) [note, loaded] = [n, true]; });
-		return () => { gone = true; request.close(); };
+		return api.observe(() => ({ op: 'note', entry: e }), (/** @type {any} */ out) => {
+			note = out?.ok ?? null; loaded = true;
+		}, () => { note = null; loaded = true; });
 	});
 	/** the line whose text shows: main, or a proposal or variant picked on the right */
 	let line = $state(/** @type {string | null} */ (null));
@@ -207,9 +200,10 @@
 	{:else if !docs.length}
 		<p class="soft empty">
 			<Icon name="article" size={18} />
-			{#if seen.length}No doc in {nameOf(byId.get(vault))} yet. Each doc goes into Maia City as an AIP its owners
-				accept.{:else}{nameOf(byId.get(actor))} sees nothing in {nameOf(byId.get(vault))}. A vault that owns it can
-				share its docs in <button class="link" onclick={onaccess}>Sharing</button>.{/if}
+			{#if collection.phase === 'loading'}Reading locally available documents…
+			{:else if collection.phase === 'error'}Documents could not be read: {collection.error}
+			{:else}No readable document is available locally in {nameOf(byId.get(vault))} yet.
+				More documents may arrive as this view syncs. Access can be managed in <button class="link" onclick={onaccess}>Sharing</button>.{/if}
 		</p>
 	{:else if picked}
 		<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
