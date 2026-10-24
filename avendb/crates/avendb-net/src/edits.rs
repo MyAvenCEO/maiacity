@@ -739,6 +739,7 @@ impl Shared {
 mod tests {
     use super::*;
     use crate::shelf::Call;
+    use avendb::lab::Backup;
     use avendb::id::VaultId;
     use avendb::policy::{Action, Edit};
     use std::sync::atomic::{AtomicUsize, Ordering};

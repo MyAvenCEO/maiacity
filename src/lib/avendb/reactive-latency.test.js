@@ -1,3 +1,4 @@
+// @ts-nocheck — Bun runtime fixture, matching adjacent reactive-read tests.
 import { expect, test } from 'bun:test';
 import { beginReactiveTiming } from './reactive-latency.js';
 import { createReactiveRead } from './reactive-read.js';
